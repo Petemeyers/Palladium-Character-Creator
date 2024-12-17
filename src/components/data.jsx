@@ -456,7 +456,7 @@ export const dispositions = [
   { range: [38, 46], text: 'Schemer, gambler, takes chances, looking for the best deal' },
   { range: [47, 56], text: 'Friendly, talkative' },
   { range: [57, 60], text: 'Courteous, hospitable' },
-  { range: [61, 70], text: 'Tough guy, impudent, self-reliant, confident' },
+  { range: [61, 70], text: 'Tough, impudent, self-reliant, confident' },
   { range: [71, 78], text: 'Complainer, constantly aggravated about something or somebody' },
   { range: [79, 88], text: 'Arrogant, snobbish, feels superior' },
   { range: [89, 95], text: 'Easy-going, laid back, trusts almost anyone until proven unworthy' },

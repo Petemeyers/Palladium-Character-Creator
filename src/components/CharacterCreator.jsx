@@ -12,16 +12,27 @@ import {
   characterClasses,
   getAvailableClasses,
   speciesCharacteristics
-} from './data';
+} from './data.jsx';
 import {
   rollDice,
   calculateAttributeRolls,
   determineCharacterAge,
   rollFromTable,
 } from './util';
+import PsionicsRoll from './PsionicsRoll';
+import DiceLoadingSpinner from './DiceLoadingSpinner';
+import D20LoadingSpinner from './D20LoadingSpinner';
 
 const Navbar = () => {
   const [isOpen, setIsOpen] = useState(false);
+  const navigate = useNavigate();
+  const token = localStorage.getItem('token');
+
+  const handleLogout = () => {
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    navigate('/login');
+  };
 
   const toggleMenu = () => {
     setIsOpen(!isOpen);
@@ -29,16 +40,13 @@ const Navbar = () => {
 
   return (
     <nav className="navbar">
-      <div className="logo">MyApp</div>
+      <div className="logo">Palladium Character Creator</div>
       <div className="hamburger" onClick={toggleMenu}>
         &#9776;
       </div>
       <ul className={`nav-links ${isOpen ? 'open' : ''}`}>
         <li>
           <Link to="/">Home</Link>
-        </li>
-        <li>
-          <Link to="/chat">Begin Adventure</Link>
         </li>
         <li>
           <Link to="/character-creation">Character Creation</Link>
@@ -49,16 +57,25 @@ const Navbar = () => {
         <li>
           <Link to="/character-list">Character List</Link>
         </li>
+        {token ? (
+          <li>
+            <button onClick={handleLogout} className="logout-btn">Logout</button>
+          </li>
+        ) : (
+          <li>
+            <Link to="/login">Login</Link>
+          </li>
+        )}
       </ul>
     </nav>
   );
 };
 
-const CharacterCreator = ({ onCharacterCreate = () => {} }) => {
+const CharacterCreator = ({ onCreateCharacter }) => {
   const navigate = useNavigate();
   const [species, setSpecies] = useState('HUMAN');
   const [attributes, setAttributes] = useState({});
-  const [level, setLevel] = useState(1);
+  const [level, setLevel] = useState('1');
   const [hp, setHp] = useState(null);
   const [alignment, setAlignment] = useState('Good: Principled');
   const [characterName, setCharacterName] = useState('');
@@ -71,31 +88,94 @@ const CharacterCreator = ({ onCharacterCreate = () => {} }) => {
   const [useCryptoRandom, setUseCryptoRandom] = useState(false);
   const [characterClass, setCharacterClass] = useState('');
   const [availableClasses, setAvailableClasses] = useState([]);
+  const [psionics, setPsionics] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [attributesRolled, setAttributesRolled] = useState(false);
+  const [autoRollEnabled, setAutoRollEnabled] = useState(false);
+  const [minTotalValue, setMinTotalValue] = useState(70); // Default minimum total
+  const [isAutoRolling, setIsAutoRolling] = useState(false);
+  const [gender, setGender] = useState('Male');
+  const [customGender, setCustomGender] = useState('');
+  const [isRolling, setIsRolling] = useState(false);
+  const [rollType, setRollType] = useState('');
 
-  const regenerateAttributes = () => {
-    const diceRolls = speciesData[species];
-    if (diceRolls) {
-      const results = calculateAttributeRolls(diceRolls, useCryptoRandom);
-      const updatedAttributes = {};
-      let totalSum = 0;
-      
-      Object.keys(results).forEach((attr) => {
-        updatedAttributes[attr] = results[attr];
-        const dice = diceRolls[attr];
-        updatedAttributes[`${attr}_highlight`] = getHighlightColor(
-          results[attr],
-          dice
-        );
+  const handleAutoRoll = async () => {
+    setIsAutoRolling(true);
+    let currentTotal = 0;
+    let rollCount = 0;
+    const maxRolls = 10000; // Safety limit to prevent infinite loops
+
+    while (currentTotal <= minTotalValue && rollCount < maxRolls) {
+      const diceRolls = speciesData[species];
+      if (diceRolls) {
+        const results = calculateAttributeRolls(diceRolls, useCryptoRandom);
+        const updatedAttributes = {};
+        let totalSum = 0;
         
-        // Add to total sum
-        totalSum += results[attr];
-      });
-      
-      // Add total sum to attributes
-      updatedAttributes.total = totalSum;
-      
-      setAttributes(updatedAttributes);
-      setBonusRolled(false);
+        Object.keys(results).forEach((attr) => {
+          updatedAttributes[attr] = results[attr];
+          const dice = diceRolls[attr];
+          updatedAttributes[`${attr}_highlight`] = getHighlightColor(
+            results[attr],
+            dice
+          );
+          
+          totalSum += results[attr];
+        });
+        
+        updatedAttributes.total = totalSum;
+        currentTotal = totalSum;
+        
+        setAttributes(updatedAttributes);
+        setBonusRolled(false);
+        
+        // Add a small delay to prevent browser freezing
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+      rollCount++;
+    }
+    
+    setIsAutoRolling(true);
+    setAttributesRolled(true);
+    
+    if (rollCount >= maxRolls) {
+      alert('Maximum roll attempts reached. Please try again or adjust your minimum total.');
+    }
+  };
+
+  const regenerateAttributes = async () => {
+    setLoading(true);
+    try {
+      if (autoRollEnabled) {
+        await handleAutoRoll();
+      } else {
+        // Original roll logic
+        const diceRolls = speciesData[species];
+        if (diceRolls) {
+          const results = calculateAttributeRolls(diceRolls, useCryptoRandom);
+          const updatedAttributes = {};
+          let totalSum = 0;
+          
+          Object.keys(results).forEach((attr) => {
+            updatedAttributes[attr] = results[attr];
+            const dice = diceRolls[attr];
+            updatedAttributes[`${attr}_highlight`] = getHighlightColor(
+              results[attr],
+              dice
+            );
+            
+            totalSum += results[attr];
+          });
+          
+          updatedAttributes.total = totalSum;
+          
+          setAttributes(updatedAttributes);
+          setBonusRolled(false);
+          setAttributesRolled(true);
+        }
+      }
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -149,11 +229,12 @@ const CharacterCreator = ({ onCharacterCreate = () => {} }) => {
   };
 
   const rollHP = () => {
-    if (hp === null || hp === '') {
-      const pe = attributes.PE || 0;
-      const totalHP = rollDice(6, level, useCryptoRandom) + pe;
-      setHp(totalHP);
-    }
+    if (hp !== null) return; // Prevent re-rolling
+    const baseHP = 10;
+    const hpRoll = rollDice(6, 1);
+    const totalHP = baseHP + hpRoll;
+    setHp(totalHP);
+    console.log('Rolled HP:', totalHP);
   };
 
   const rollAge = () => {
@@ -172,34 +253,50 @@ const CharacterCreator = ({ onCharacterCreate = () => {} }) => {
 
   const rollSocialBackground = () => {
     if (socialBackground === '') {
-      const roll = rollDice(100, 1, useCryptoRandom);
-      const background = rollFromTable(roll, socialBackgrounds);
-      setSocialBackground(background);
+      setIsRolling(true);
+      setRollType('Social Background');
     }
   };
 
   const handleRollDisposition = () => {
     if (disposition === '') {
-      const roll = rollDice(100, 1, useCryptoRandom);
-      const result = rollFromTable(roll, dispositions);
-      setDisposition(result);
+      setIsRolling(true);
+      setRollType('Disposition');
     }
   };
 
   const handleRollHostility = () => {
     if (hostility === '') {
-      const roll = rollDice(100, 1, useCryptoRandom);
-      const result = rollFromTable(roll, hostilities);
-      setHostility(result);
+      setIsRolling(true);
+      setRollType('Personal Hostility');
     }
   };
 
   const handleRollOrigin = () => {
     if (origin === '') {
-      const roll = rollDice(100, 1, useCryptoRandom);
-      const result = rollFromTable(roll, landsOfOrigin);
-      setOrigin(result);
+      setIsRolling(true);
+      setRollType('Land of Origin');
     }
+  };
+
+  const handleRollFinish = (result) => {
+    const roll = result * 5; // Convert d20 to d100 range
+    switch (rollType) {
+      case 'Social Background':
+        setSocialBackground(rollFromTable(roll, socialBackgrounds));
+        break;
+      case 'Disposition':
+        setDisposition(rollFromTable(roll, dispositions));
+        break;
+      case 'Personal Hostility':
+        setHostility(rollFromTable(roll, hostilities));
+        break;
+      case 'Land of Origin':
+        setOrigin(rollFromTable(roll, landsOfOrigin));
+        break;
+    }
+    setIsRolling(false);
+    setRollType('');
   };
 
   const updateAvailableClasses = () => {
@@ -226,53 +323,71 @@ const CharacterCreator = ({ onCharacterCreate = () => {} }) => {
     updateAvailableClasses();
   }, [species, attributes, alignment]);
 
-  const handleCreateCharacter = () => {
-    if (
-      !characterName ||
-      !species ||
-      Object.keys(attributes).length === 0 ||
-      !hp ||
-      !characterClass
-    ) {
-      alert(
-        'Please ensure all character details, including class, are filled out before creating your character.'
-      );
+  const handlePsionicsRoll = (result) => {
+    setPsionics(result);
+  };
+
+  const handleSubmit = async () => {
+    if (!hp) {
+      alert('Please roll HP before creating character');
       return;
     }
-    const newCharacter = {
+
+    console.log('Submitting character data:', {
       name: characterName,
       species,
-      attributes,
-      level,
-      hp,
+      class: characterClass,
+      level: 1,
+      hp: Number(hp),
       alignment,
+      attributes,
       age,
       socialBackground,
       disposition,
       hostility,
       origin,
-      class: characterClass
-    };
-    onCharacterCreate(newCharacter);
-    navigate('/character-list');
-    // Reset state
-    setSpecies('HUMAN');
-    setAttributes({});
-    setLevel(1);
-    setHp(null);
-    setAlignment('Good: Principled');
-    setCharacterName('');
-    setAge('');
-    setSocialBackground('');
-    setDisposition('');
-    setHostility('');
-    setOrigin('');
-    setBonusRolled(false);
+      gender
+    });
+
+    try {
+      const response = await onCreateCharacter({
+        name: characterName,
+        species,
+        class: characterClass,
+        level: 1,
+        hp: Number(hp),
+        alignment,
+        attributes,
+        age,
+        socialBackground,
+        disposition,
+        hostility,
+        origin,
+        gender
+      });
+
+      console.log('Character creation response:', response);
+      navigate('/character-list');
+    } catch (error) {
+      console.error('Error creating character:', {
+        message: error.message,
+        response: error.response?.data,
+        data: error.response?.data?.details
+      });
+      alert(`Failed to create character: ${error.message}`);
+    }
   };
 
   const renderClassSelection = () => {
     // Group available classes by category
     const groupedClasses = availableClasses.reduce((acc, className) => {
+      // Filter out Mind Mage if psionics isn't Major or Master
+      if (className === 'Mind Mage' && 
+          (!psionics || typeof psionics !== 'string' || 
+           (!psionics.includes('Major') && !psionics.includes('Master')))) {
+        return acc;
+      }
+      
       const category = characterClasses[className].category;
       if (!acc[category]) {
         acc[category] = [];
@@ -301,7 +416,7 @@ const CharacterCreator = ({ onCharacterCreate = () => {} }) => {
             </optgroup>
           ))}
         </select>
-        
+
         {/* Display class requirements when a class is selected */}
         {characterClass && (
           <div className="class-requirements">
@@ -310,7 +425,7 @@ const CharacterCreator = ({ onCharacterCreate = () => {} }) => {
               {Object.entries(characterClasses[characterClass].requirements).map(([attr, value]) => (
                 <li key={attr}>
                   {attr === 'alignment' && 'Alignment: Evil required'}
-                  {attr === 'psionics' && 'Must have psionics ability'}
+                  {attr === 'psionics' && 'Must have Major or Master psionics ability'}
                   {attr !== 'alignment' && attr !== 'psionics' && `${attr}: ${value}`}
                 </li>
               ))}
@@ -338,6 +453,18 @@ const CharacterCreator = ({ onCharacterCreate = () => {} }) => {
     }
   };
 
+  // Update level handler to properly handle string/number conversion
+  const handleLevelChange = (e) => {
+    const value = e.target.value;
+    if (value === '' || (parseInt(value) > 0 && !isNaN(parseInt(value)))) {
+      setLevel(value);
+    }
+  };
+
+  if (loading) {
+    return <DiceLoadingSpinner />;
+  }
+
   return (
     <div className="container">
       <Navbar />
@@ -352,17 +479,72 @@ const CharacterCreator = ({ onCharacterCreate = () => {} }) => {
         />
       </div>
 
+      <div id="gender-section">
+        <label htmlFor="gender-select">Choose Gender:</label>
+        <select
+          id="gender-select"
+          value={gender}
+          onChange={(e) => {
+            setGender(e.target.value);
+            if (e.target.value !== 'Custom') {
+              setCustomGender(''); // Reset custom gender when selecting a preset option
+            }
+          }}
+          disabled={attributesRolled}
+          className={attributesRolled ? 'disabled-select' : ''}
+        >
+          <option value="Male">Male</option>
+          <option value="Female">Female</option>
+          <option value="Non-Binary">Non-Binary</option>
+          <option value="Custom">Custom</option>
+        </select>
+
+        {/* Show custom gender input when 'Custom' is selected */}
+        {gender === 'Custom' && (
+          <div className="custom-gender-input">
+            <label htmlFor="custom-gender">Enter Gender:</label>
+            <input
+              type="text"
+              id="custom-gender"
+              value={customGender}
+              onChange={(e) => setCustomGender(e.target.value)}
+              placeholder="Enter your gender identity"
+              disabled={attributesRolled}
+            />
+          </div>
+        )}
+      </div>
+
       <label htmlFor="species">Choose Species:</label>
       <select
         id="species"
         value={species}
         onChange={(e) => setSpecies(e.target.value)}
+        disabled={attributesRolled}
+        className={attributesRolled ? 'disabled-select' : ''}
       >
         {Object.keys(speciesData).map((spec) => (
           <option key={spec} value={spec}>
             {spec}
           </option>
         ))}
+      </select>
+
+      <label htmlFor="alignment-select">Choose Alignment:</label>
+      <select
+        id="alignment-select"
+        value={alignment}
+        onChange={(e) => setAlignment(e.target.value)}
+        disabled={attributesRolled}
+        className={attributesRolled ? 'disabled-select' : ''}
+      >
+        <option value="Good: Principled">Good: Principled</option>
+        <option value="Good: Scrupulous">Good: Scrupulous</option>
+        <option value="Selfish: Unprincipled">Selfish: Unprincipled</option>
+        <option value="Selfish: Anarchist">Selfish: Anarchist</option>
+        <option value="Evil: Miscreant">Evil: Miscreant</option>
+        <option value="Evil: Aberrant">Evil: Aberrant</option>
+        <option value="Evil: Diabolic">Evil: Diabolic</option>
       </select>
 
       <div>
@@ -377,7 +559,40 @@ const CharacterCreator = ({ onCharacterCreate = () => {} }) => {
         </label>
       </div>
 
-      <button onClick={regenerateAttributes}>Roll Attributes</button>
+      <div className="auto-roll-controls">
+        <label htmlFor="autoRollEnabled">
+          <input
+            type="checkbox"
+            id="autoRollEnabled"
+            checked={autoRollEnabled}
+            onChange={(e) => setAutoRollEnabled(e.target.checked)}
+            disabled={attributesRolled}
+          />
+          Auto-roll until minimum total
+        </label>
+        
+        {autoRollEnabled && (
+          <div className="min-total-input">
+            <label htmlFor="minTotalValue">Minimum Total:</label>
+            <input
+              type="number"
+              id="minTotalValue"
+              value={minTotalValue}
+              onChange={(e) => setMinTotalValue(parseInt(e.target.value, 10))}
+              min="0"
+              max="200"
+              disabled={attributesRolled || isAutoRolling}
+            />
+          </div>
+        )}
+      </div>
+
+      <button 
+        onClick={regenerateAttributes}
+        disabled={isAutoRolling}
+      >
+        {isAutoRolling ? 'Auto-Rolling...' : 'Roll Attributes'}
+      </button>
 
       <label htmlFor="character-level">Level:</label>
       <input
@@ -385,7 +600,8 @@ const CharacterCreator = ({ onCharacterCreate = () => {} }) => {
         id="character-level"
         min="1"
         value={level}
-        onChange={(e) => setLevel(parseInt(e.target.value, 10))}
+        onChange={handleLevelChange}
+        className="form-input"
       />
 
       <table id="attributes-table">
@@ -436,20 +652,6 @@ const CharacterCreator = ({ onCharacterCreate = () => {} }) => {
         <div id="final-character-hp">HP: {hp}</div>
       </div>
 
-      <select
-        id="alignment-select"
-        value={alignment}
-        onChange={(e) => setAlignment(e.target.value)}
-      >
-        <option value="Good: Principled">Good: Principled</option>
-        <option value="Good: Scrupulous">Good: Scrupulous</option>
-        <option value="Selfish: Unprincipled">Selfish: Unprincipled</option>
-        <option value="Selfish: Anarchist">Selfish: Anarchist</option>
-        <option value="Evil: Miscreant">Evil: Miscreant</option>
-        <option value="Evil: Aberrant">Evil: Aberrant</option>
-        <option value="Evil: Diabolic">Evil: Diabolic</option>
-      </select>
-
       <button onClick={rollBonus} disabled={bonusRolled}>
         Roll Bonus for Attributes
       </button>
@@ -481,19 +683,45 @@ const CharacterCreator = ({ onCharacterCreate = () => {} }) => {
         <div>Land of Origin: {origin}</div>
       </div>
 
+      {/* Move psionics section here, before class selection */}
+      {attributes.IQ && (
+        <PsionicsRoll
+          IQ={attributes.IQ}
+          mentalEndurance={attributes.ME || 0}
+          onRollPsionics={handlePsionicsRoll}
+        />
+      )}
+
+      {/* Class selection after psionics */}
       {renderClassSelection()}
 
-      <button onClick={handleCreateCharacter}>Create Character</button>
+      <button onClick={handleSubmit}>Create Character</button>
 
       <button onClick={() => navigate(-1)} className="back-button">
         Back
       </button>
+      {isRolling && (
+        <D20LoadingSpinner 
+          onFinish={handleRollFinish}
+          rollType={rollType}
+        />
+      )}
+
+      {attributes.PS && (
+        <div className="carry-weight-section">
+          <h3>Carry Weight Calculations</h3>
+          <p>Maximum Carry Weight: {attributes.PS * 10} lbs</p>
+          <p>Light Activity Duration: {attributes.PE * 2} minutes</p>
+          <p>Heavy Activity Duration: {attributes.PE} minutes</p>
+        </div>
+      )}
     </div>
   );
 };
 
 CharacterCreator.propTypes = {
-  onCharacterCreate: PropTypes.func,
+  onCreateCharacter: PropTypes.func.isRequired
 };
 
 export default CharacterCreator;
+

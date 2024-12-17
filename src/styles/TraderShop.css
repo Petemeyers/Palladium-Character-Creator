@@ -1,0 +1,189 @@
+/* Base styles from app.css */
+.trader-shop {
+  background-color: white;
+  padding: 20px;
+  border-radius: 10px;
+  box-shadow: 0 0 15px rgba(0, 0, 0, 0.1);
+  width: 100%;
+  max-width: 1200px;
+  margin: 20px auto;
+  padding-top: 120px;
+}
+
+/* Shop controls */
+.shop-controls {
+  margin: 20px 0;
+  display: flex;
+  gap: 10px;
+}
+
+.shop-controls button {
+  padding: 10px 20px;
+  background-color: #28a745;
+  color: white;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: background-color 0.3s;
+}
+
+.shop-controls button.active {
+  background-color: #218838;
+}
+
+.shop-controls button:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+/* Character selection */
+.character-selection {
+  margin: 20px 0;
+  padding: 15px;
+  background-color: #f5f5f5;
+  border-radius: 8px;
+}
+
+.character-selection select {
+  width: 100%;
+  max-width: 300px;
+  padding: 10px;
+  margin-top: 10px;
+  border: 1px solid #ccc;
+  border-radius: 5px;
+  font-size: 16px;
+}
+
+.character-selection h2 {
+  margin-bottom: 10px;
+  font-size: 1.2em;
+  color: #333;
+}
+
+/* Category sections */
+.category-section {
+  margin-bottom: 20px;
+  background-color: #f5f5f5;
+  border-radius: 8px;
+  padding: 15px;
+}
+
+.category-section h2 {
+  color: #333;
+  padding: 10px;
+  margin: 0 0 15px 0;
+  border-bottom: 2px solid #28a745;
+  font-size: 1.4em;
+}
+
+/* Items grid */
+.items-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 15px;
+  padding: 5px;
+}
+
+/* Inventory section */
+.inventory-section {
+  margin-top: 30px;
+  background-color: #f5f5f5;
+  border-radius: 8px;
+  padding: 15px;
+}
+
+.inventory-section h3 {
+  color: #333;
+  padding: 10px;
+  margin: 0 0 15px 0;
+  border-bottom: 2px solid #28a745;
+}
+
+.inventory-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 15px;
+  padding: 5px;
+}
+
+.inventory-item {
+  background: white;
+  padding: 10px;
+  border-radius: 4px;
+  border: 1px solid #ddd;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.inventory-item h4 {
+  margin: 0 0 5px 0;
+  color: #333;
+}
+
+.inventory-item p {
+  margin: 0;
+  color: #666;
+  font-size: 0.9em;
+}
+
+/* Loading state */
+.loading-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(255, 255, 255, 0.8);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+  .items-grid {
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  }
+
+  .inventory-grid {
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  }
+}
+
+@media (min-width: 1200px) {
+  .items-grid {
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  }
+}
+
+/* Add these styles for the fixed inventory bar */
+.inventory-bar {
+  position: fixed;
+  top: 60px; /* Height of navbar */
+  left: 0;
+  right: 0;
+  background-color: #f8f9fa;
+  padding: 10px 20px;
+  border-bottom: 1px solid #ddd;
+  z-index: 999;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.selected-character-info {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.character-inventory {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.inventory-item {
+  background-color: #e9ecef;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 0.9em;
+  color: #495057;
+}

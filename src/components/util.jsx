@@ -1,117 +1,69 @@
-// Stronger random number generator using Web Crypto API
-export function getCryptoRandomInt(min, max) {
-  if (min < 0 || max < 0) {
-    throw new Error("min and max must be non-negative integers.");
-  }
-  if (min > max) {
-    throw new Error("Max must be greater than min");
-  }
-
-  const range = max - min + 1;
-  const maxRange = 0xffffffff;
-  const biasLimit = maxRange - (maxRange % range);
-  let randomValue;
-
-  do {
-    const randomValues = new Uint32Array(1);
-    window.crypto.getRandomValues(randomValues);
-    randomValue = randomValues[0];
-  } while (randomValue >= biasLimit);
-
-  return min + (randomValue % range);
-}
-
-// Roll dice function with an option for strong randomness
-export function rollDice(sides, number, useCryptoRandom = false) {
-  if (sides <= 0 || number <= 0) {
-    throw new Error("Number of sides and number of dice must be positive integers.");
-  }
-
+export const rollDice = (sides, count, useCryptoRandom = false) => {
   let total = 0;
-
-  for (let i = 0; i < number; i++) {
+  for (let i = 0; i < count; i++) {
     if (useCryptoRandom) {
-      // Use stronger randomness with Web Crypto API
-      total += getCryptoRandomInt(1, sides);
+      const array = new Uint32Array(1);
+      crypto.getRandomValues(array);
+      total += (array[0] % sides) + 1;
     } else {
-      // Use standard pseudo-randomness
       total += Math.floor(Math.random() * sides) + 1;
     }
   }
-
   return total;
-}
+};
 
-// Function to calculate the result of multiple dice rolls based on attribute definitions
-export function calculateAttributeRolls(diceRolls, useCryptoRandom = false) {
+export const calculateAttributeRolls = (diceRolls, useCryptoRandom) => {
   const results = {};
-  for (const [attribute, dice] of Object.entries(diceRolls)) {
-    const diceMatch = dice.match(/^(\d+)d(\d+)$/);
-    if (!diceMatch) {
-      throw new Error(`Invalid dice notation for attribute ${attribute}: expected format 'NdX' (e.g., 2d6).`);
-    }
-    const [, numDice, sides] = diceMatch.map(Number);
-    results[attribute] = rollDice(sides, numDice, useCryptoRandom);
-  }
+  Object.entries(diceRolls).forEach(([attr, dice]) => {
+    const [numDice, sides] = dice.split('d').map(Number);
+    results[attr] = rollDice(sides, numDice, useCryptoRandom);
+  });
   return results;
-}
+};
 
-// Function to determine character age based on species and dice roll
-import { ageTable } from './data';
+export const determineCharacterAge = (species, roll) => {
+  const ageTable = {
+    HUMAN: [16, 19, 22, 24, 26, 28, 30, 34],
+    WOLFEN: [16, 19, 22, 24, 26, 28, 30, 34],
+    GOBLIN: [16, 19, 22, 24, 26, 28, 30, 34],
+    HOB_GOBLIN: [16, 19, 22, 24, 26, 28, 30, 34],
+    ORC: [16, 19, 22, 24, 26, 28, 30, 34],
+    OGRE: [18, 22, 26, 28, 30, 34, 38, 42],
+    TROLL: [18, 22, 26, 28, 30, 34, 38, 42],
+    TROGLODYTE: [18, 22, 26, 28, 30, 34, 38, 42],
+    DWARF: [20, 25, 30, 35, 40, 50, 60, 70],
+    KOBOLD: [20, 25, 30, 35, 40, 50, 60, 70],
+    GNOME: [20, 25, 30, 35, 40, 50, 60, 70],
+    ELF: [20, 24, 28, 30, 50, 80, 100, 200],
+    CHANGELING: [20, 24, 28, 30, 50, 80, 100, 200],
+  };
 
-export function determineCharacterAge(species, ageRoll) {
-  const ageValues = ageTable[species];
-  if (!ageValues) {
-    throw new Error(`No age data found for species: ${species}`);
+  const speciesAges = ageTable[species];
+  if (!speciesAges) {
+    return 'Unknown';
   }
 
-  let characterAge;
+  // Map roll (1-100) to age ranges
+  const index = Math.floor(roll / 12.5); // 100/8 = 12.5 to split into 8 ranges
+  return speciesAges[Math.min(index, speciesAges.length - 1)];
+};
 
-  if (ageRoll <= 17) {
-    characterAge = ageValues[0];
-  } else if (ageRoll <= 28) {
-    characterAge = ageValues[1];
-  } else if (ageRoll <= 35) {
-    characterAge = ageValues[2];
-  } else if (ageRoll <= 49) {
-    characterAge = ageValues[3];
-  } else if (ageRoll <= 59) {
-    characterAge = ageValues[4];
-  } else if (ageRoll <= 73) {
-    characterAge = ageValues[5];
-  } else if (ageRoll <= 89) {
-    characterAge = ageValues[6];
-  } else {
-    characterAge = ageValues[7];
+export const rollFromTable = (roll, table) => {
+  // Convert string ranges like '1-20' to array entries if needed
+  const entries = Array.isArray(table) ? table : 
+    Object.entries(table).map(([range, result]) => {
+      const [min, max] = range.split('-').map(Number);
+      return { range: [min, max], text: result };
+    });
+
+  for (const entry of entries) {
+    if (Array.isArray(entry.range)) {
+      const [min, max] = entry.range;
+      if (roll >= min && roll <= max) {
+        // Check for either text or background property
+        return entry.text || entry.background;
+      }
+    }
   }
-
-  return characterAge;
-}
-
-// Generalized function to roll from any table based on a percentile roll
-export function rollFromTable(roll, table) {
-  const foundItem = table.find(
-    (item) => roll >= item.range[0] && roll <= item.range[1]
-  );
-
-  if (!foundItem) {
-    throw new Error(`No match found for roll: ${roll}`);
-  }
-
-  return foundItem.description || foundItem.text || foundItem.background || "Unknown";
-}
-
-// Example usage:
-// Import different tables and use the same function to get the result
-import { socialBackgrounds, dispositions, hostilities, landsOfOrigin } from './data';
-
-const rollValue = rollDice(100, 1, true);
-const socialBackground = rollFromTable(rollValue, socialBackgrounds);
-const disposition = rollFromTable(rollValue, dispositions);
-const hostility = rollFromTable(rollValue, hostilities);
-const landOfOrigin = rollFromTable(rollValue, landsOfOrigin);
-
-console.log("Social Background:", socialBackground);
-console.log("Disposition:", disposition);
-console.log("Hostility:", hostility);
-console.log("Land of Origin:", landOfOrigin);
+  return 'Unknown';
+};
