@@ -1,0 +1,85 @@
+.ai-gamemaster-container {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+.context-section {
+  margin-bottom: 20px;
+}
+
+.context-input {
+  width: 100%;
+  min-height: 100px;
+  padding: 10px;
+  margin-bottom: 10px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  resize: vertical;
+}
+
+.chat-interface {
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 20px;
+  background-color: #f9f9f9;
+}
+
+.gm-response {
+  margin-bottom: 20px;
+  padding: 15px;
+  background-color: #fff;
+  border-radius: 4px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.input-section {
+  display: flex;
+  gap: 10px;
+}
+
+.player-input {
+  flex: 1;
+  min-height: 60px;
+  padding: 10px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  resize: vertical;
+}
+
+.send-button {
+  padding: 10px 20px;
+  background-color: #4caf50;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.send-button:disabled {
+  background-color: #cccccc;
+  cursor: not-allowed;
+}
+
+.clear-button {
+  padding: 5px 10px;
+  background-color: #f44336;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.error-message {
+  color: #f44336;
+  margin-top: 10px;
+  padding: 10px;
+  background-color: #ffebee;
+  border-radius: 4px;
+}
+
+.debug-info {
+  margin-top: 20px;
+  font-size: 12px;
+  color: #666;
+}

@@ -2,7 +2,9 @@
 import React, { useState } from 'react';
 import CharacterList from './CharacterList';
 import PartyBuilder from './PartyBuilder';
-import './HomePage.css';
+import '../styles/HomePage.css';
+import PropTypes from 'prop-types';
+
 const PartyPage = ({ characters, onDelete }) => {
   const [party, setParty] = useState([]);
 
@@ -35,6 +37,11 @@ const PartyPage = ({ characters, onDelete }) => {
       <PartyBuilder party={party} onRemoveFromParty={handleRemoveFromParty} />
     </div>
   );
+};
+
+PartyPage.propTypes = {
+  characters: PropTypes.array.isRequired,
+  onDelete: PropTypes.func.isRequired,
 };
 
 export default PartyPage;

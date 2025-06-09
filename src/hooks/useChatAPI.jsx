@@ -1,44 +1,42 @@
-import axios from 'axios';
 import { useState } from 'react';
+import axiosInstance from '../utils/axios';
 
-export const useChatAPI = () => {
-  const [messages, setMessages] = useState([]);
-  const [isLoading, setIsLoading] = useState(false);
+const useChatAPI = () => {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
 
-  // Function to send a message without requiring a token
-  const sendMessage = async (message) => {
-    if (!message.trim()) return;
+  const sendMessage = async (message, character) => {
+    setLoading(true);
+    setError(null);
 
     try {
-      setIsLoading(true);
-
-      // Send the message to the backend
-      const response = await axios.post(
-        'http://localhost:5000/chat', // Make sure this matches your backend URL
-        { message }
-      );
-
-      // Store the bot response along with the user message
-      setMessages((prevMessages) => [
-        ...prevMessages,
-        { sender: 'user', text: message },
-        { sender: 'GM', text: response.data.message },
-      ]);
+      const response = await axiosInstance.post('/chat', {
+        message,
+        character: {
+          name: character.name,
+          level: character.level,
+          class: character.class,
+          alignment: character.alignment,
+          background: character.background,
+          species: character.species,
+          attributes: character.attributes
+        }
+      });
 
       return response.data;
-    } catch (error) {
-      console.error('Error details:', error); // Log detailed error for debugging
-
-      if (axios.isAxiosError(error)) {
-        console.error('Axios Error:', error.response?.data);
-        throw new Error(`Chat API Error: ${error.response?.data?.message || error.message}`);
-      } else {
-        throw new Error('An unexpected error occurred. Please try again later.');
-      }
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to send message');
+      throw err;
     } finally {
-      setIsLoading(false);
+      setLoading(false);
     }
   };
 
-  return { sendMessage, messages, isLoading };
+  return {
+    sendMessage,
+    loading,
+    error
+  };
 };
+
+export default useChatAPI;

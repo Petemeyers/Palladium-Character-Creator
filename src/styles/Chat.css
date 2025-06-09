@@ -1,0 +1,164 @@
+.chat-container {
+  max-width: 800px;
+  margin: 20px auto;
+  padding: 20px;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.chat-header {
+  text-align: center;
+  margin-bottom: 20px;
+}
+
+.chat-messages {
+  height: 400px;
+  overflow-y: auto;
+  padding: 10px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  margin-bottom: 20px;
+}
+
+.message {
+  margin: 10px 0;
+  padding: 10px;
+  border-radius: 8px;
+  max-width: 70%;
+  display: flex;
+  align-items: flex-start;
+}
+
+.message.user {
+  background-color: #4caf50;
+  color: white;
+  margin-left: auto;
+}
+
+.message.ai {
+  background-color: #f1f1f1;
+  color: black;
+  margin-right: auto;
+}
+
+.chat-input {
+  display: flex;
+  gap: 10px;
+}
+
+.chat-input input {
+  flex: 1;
+  padding: 10px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+
+.chat-input button {
+  padding: 10px 20px;
+  background-color: #4caf50;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.chat-input button:hover {
+  background-color: #45a049;
+}
+
+.begin-adventure {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 2rem;
+}
+
+.party-info {
+  background: #f5f5f5;
+  padding: 15px;
+  border-radius: 8px;
+  margin: 15px 0;
+}
+
+.party-info h3 {
+  margin: 0 0 10px 0;
+  color: #333;
+}
+
+.party-info ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.party-info li {
+  padding: 5px 0;
+  border-bottom: 1px solid #ddd;
+}
+
+.party-info li:last-child {
+  border-bottom: none;
+}
+
+select {
+  width: 100%;
+  max-width: 400px;
+  padding: 8px;
+  margin: 10px 0;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 16px;
+}
+
+.party-members-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.party-member-card {
+  background: #f8f8f8;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.character-portrait {
+  width: 100px;
+  height: 100px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid #4caf50;
+  margin-bottom: 0.5rem;
+}
+
+.character-portrait.placeholder {
+  background: #eee;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #666;
+  font-size: 0.8rem;
+}
+
+.character-details {
+  width: 100%;
+}
+
+.character-details h4 {
+  margin: 0.5rem 0;
+  color: #333;
+  font-size: 1.1rem;
+}
+
+.character-details p {
+  margin: 0.2rem 0;
+  color: #666;
+  font-size: 0.9rem;
+}

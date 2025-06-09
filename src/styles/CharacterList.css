@@ -1,0 +1,273 @@
+.inventory-preview {
+  max-width: 200px;
+  max-height: 100px;
+  overflow-y: auto;
+  padding: 5px;
+}
+
+.inventory-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.inventory-item-preview {
+  font-size: 0.9em;
+  padding: 2px 5px;
+  background-color: #f5f5f5;
+  border-radius: 3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+td {
+  vertical-align: top;
+  padding: 10px;
+}
+
+.image-cell {
+  min-width: 120px;
+}
+
+.actions-cell {
+  white-space: nowrap;
+}
+.character-list {
+  padding: 20px;
+  background-color: #f9f9f9;
+  border-radius: 8px;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+}
+
+.character-list h1 {
+  font-size: 28px;
+  color: #333;
+  margin-bottom: 20px;
+}
+
+.character-list table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.character-list th,
+.character-list td {
+  padding: 12px;
+  text-align: left;
+  border-bottom: 1px solid #ddd;
+  vertical-align: top;
+}
+
+.character-list th {
+  background-color: #007bff;
+  color: white;
+}
+
+.character-list tr:hover {
+  background-color: #f1f1f1;
+}
+
+.character-list .edit-name-container {
+  display: flex;
+  align-items: center;
+}
+
+.character-list .edit-name-input {
+  margin-right: 10px;
+  padding: 5px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+}
+
+.character-list .edit-name-buttons {
+  display: flex;
+}
+
+.character-list .save-btn,
+.character-list .cancel-btn,
+.character-list .delete-btn,
+.character-list .edit-btn {
+  padding: 5px 10px;
+  margin-left: 5px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.3s;
+  color: white;
+}
+
+.character-list .save-btn {
+  background-color: #28a745;
+}
+
+.character-list .cancel-btn,
+.character-list .delete-btn {
+  background-color: #dc3545;
+}
+
+.character-list .edit-btn {
+  background-color: #007bff;
+}
+
+.character-list .save-btn:hover {
+  background-color: #218838;
+}
+
+.character-list .cancel-btn:hover,
+.character-list .delete-btn:hover {
+  background-color: #c82333;
+}
+
+.character-image {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 10px;
+}
+
+.image-container {
+  position: relative;
+  width: 100px;
+  height: 100px;
+}
+
+.image-container img {
+  border-radius: 8px;
+  border: 2px solid #ddd;
+}
+
+.change-image-btn,
+.upload-image-btn {
+  background-color: #4caf50;
+  color: white;
+  border: none;
+  padding: 5px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.change-image-btn:hover,
+.upload-image-btn:hover {
+  background-color: #45a049;
+}
+
+.image-cell {
+  width: 120px;
+  vertical-align: middle;
+}
+
+.attributes-cell {
+  max-width: 200px;
+  padding-right: 20px;
+}
+
+/* Add these styles for sorting */
+.sortable {
+  cursor: pointer;
+  user-select: none;
+  position: relative;
+  padding-right: 20px; /* Space for the arrow */
+}
+
+.sortable:hover {
+  background-color: #0056b3;
+}
+
+.sortable::after {
+  content: "↕";
+  position: absolute;
+  right: 5px;
+  opacity: 0.3;
+}
+
+.sortable:hover::after {
+  opacity: 1;
+}
+
+/* Style for sorted columns */
+.character-list th[data-sorted="true"] {
+  background-color: #005cbf;
+}
+
+/* Responsive table */
+@media screen and (max-width: 1200px) {
+  .character-list {
+    overflow-x: auto;
+  }
+
+  .character-list table {
+    min-width: 1000px;
+  }
+}
+
+/* Add these styles */
+.attribute-total {
+  margin-top: 10px;
+  padding-top: 5px;
+  border-top: 1px solid #ddd;
+  font-weight: bold;
+  color: #007bff;
+}
+
+.attributes-cell {
+  max-width: 200px;
+  padding-right: 20px;
+}
+
+.attribute {
+  margin: 2px 0;
+}
+
+.bulk-actions {
+  margin: 20px 0;
+  display: flex;
+  gap: 10px;
+  justify-content: flex-start;
+}
+
+.delete-all-btn {
+  background-color: #dc3545;
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.delete-all-btn:disabled {
+  background-color: #dc354580;
+  cursor: not-allowed;
+}
+
+.delete-all-btn:hover:not(:disabled) {
+  background-color: #c82333;
+}
+
+/* Style for checkboxes */
+.character-list th input[type="checkbox"],
+.character-list td input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+  margin: 0;
+  padding: 0;
+}
+
+.character-list th:first-child,
+.character-list td:first-child {
+  width: 40px;
+  text-align: center;
+  padding: 8px;
+}
+
+.assign-equipment-btn:hover {
+  background-color: #45a049 !important;
+  opacity: 0.9;
+}
+
+.assign-equipment-btn:active {
+  transform: translateY(1px);
+}

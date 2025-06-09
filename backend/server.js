@@ -1,144 +1,218 @@
-/* eslint-env node */
-import cors from "cors";
-import dotenv from "dotenv";
-//import { fileURLToPath } from "url";
-//import path from "path";
 import express from "express";
-import { connectDB } from "./config/connectDB.js";
+import cors from "cors";
+import mongoose from "mongoose";
+import dotenv from "dotenv";
+import swaggerUi from "swagger-ui-express";
+import { specs } from "./swagger.js";
+import shopRoutes from "./routes/shopRoutes.js";
 import characterRoutes from "./routes/characterRoutes.js";
-import OpenAI from "openai";
+import userRoutes from "./routes/userRoutes.js";
+import chatRoutes from "./routes/chatRoutes.js";
+import partyRoutes from "./routes/partyRoutes.js";
 import process from "process";
+import { errorLogger, errorHandler } from "./middleware/errorMiddleware.js";
+import axios from "axios";
 
-// Load environment variables early
 dotenv.config();
-// ES Module fix for __dirname
-//const __filename = fileURLToPath(import.meta.url);
-//const __dirname = path.dirname(__filename);
-
-console.log("MONGODB_URI:", process.env.MONGODB_URI);
-console.log("OPENAI_API_KEY:", process.env.OPENAI_API_KEY);
-
-// Validate required environment variables
-if (!process.env.MONGODB_URI || !process.env.OPENAI_API_KEY) {
-  console.error(
-    "Missing required environment variables: MONGODB_URI or OPENAI_API_KEY"
-  );
-  process.exit(1); // Exit the process if necessary environment variables are missing
-}
 
 const app = express();
 
-// CORS configuration
-app.use(
-  cors({
-    origin: "http://localhost:5173", // Your frontend URL (adjust as needed)
-    credentials: true,
-  })
-);
-
 // Middleware
+app.use(cors());
 app.use(express.json({ limit: "50mb" }));
-app.use(express.urlencoded({ extended: true, limit: "50mb" }));
+app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
-// Health check route
-app.get("/health", (req, res) => {
-  res.status(200).json({ status: "ok" });
-});
+// Swagger documentation
+app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(specs));
 
 // Routes
-app.use("/api/characters", characterRoutes);
+app.use("/api/v1/shop", shopRoutes);
+app.use("/api/v1/characters", characterRoutes);
+app.use("/api/v1/users", userRoutes);
+app.use("/api/v1/chat", chatRoutes);
+app.use("/api/v1/parties", partyRoutes);
 
-// Basic route
-app.get("/", (req, res) => {
-  res.send("API is running...");
-});
-
-// OpenAI configuration
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
-
-// Chat endpoint
-app.post("/chat", async (req, res) => {
-  const { message } = req.body;
-  if (!message) {
-    return res.status(400).json({ message: "Message content is missing" });
+// Debug route registration
+console.log("Registered routes:");
+app._router.stack.forEach((middleware) => {
+  if (middleware.route) {
+    console.log(
+      `${Object.keys(middleware.route.methods)} ${middleware.route.path}`
+    );
+  } else if (middleware.name === "router") {
+    middleware.handle.stack.forEach((handler) => {
+      if (handler.route) {
+        console.log(
+          `${Object.keys(handler.route.methods)} ${handler.route.path}`
+        );
+      }
+    });
   }
+});
 
+// MongoDB connection
+mongoose
+  .connect(process.env.MONGODB_URI)
+  .then(() => {
+    console.log("Connected to MongoDB");
+    // Log available routes for debugging
+    console.log("Available routes:");
+    app._router.stack.forEach((r) => {
+      if (r.route && r.route.path) {
+        console.log(r.route.path);
+      }
+    });
+  })
+  .catch((err) => console.error("MongoDB connection error:", err));
+
+// Game Session Schema
+const sessionSchema = new mongoose.Schema({
+  sessionId: { type: String, required: true, unique: true },
+  campaignSettings: Object,
+  playerState: Object,
+  context: String,
+  lastUpdate: { type: Date, default: Date.now },
+});
+
+const GameSession = mongoose.model("GameSession", sessionSchema);
+
+// AI Service endpoints
+const AI_SERVICE_URL = "http://localhost:8000";
+const DEV_AI_SERVICE_URL = "http://localhost:8001";
+
+// Create new game session
+app.post("/api/session/create", async (req, res) => {
   try {
-    const response = await openai.chat.completions.create({
-      model: "gpt-3.5-turbo",
-      messages: [{ role: "user", content: message }],
-      max_tokens: 150,
-      temperature: 0.7,
+    const { campaignSettings } = req.body;
+    const sessionId = Date.now().toString();
+
+    // Create session in MongoDB
+    const session = new GameSession({
+      sessionId,
+      campaignSettings,
+      context: "",
+      playerState: {},
+    });
+    await session.save();
+
+    // Create session in AI service
+    await axios.post(`${AI_SERVICE_URL}/session/create`, {
+      session_id: sessionId,
+      campaign_settings: campaignSettings,
     });
 
-    const aiResponse = response.choices[0].message.content.trim();
-    res.json({ message: aiResponse });
+    res.json({
+      success: true,
+      sessionId,
+      message: "Game session created successfully",
+    });
   } catch (error) {
-    console.error("Error generating response from OpenAI:", error);
+    console.error("Session Creation Error:", error);
     res.status(500).json({
-      message: "An error occurred while communicating with OpenAI.",
+      success: false,
+      message: "Failed to create game session",
     });
   }
 });
 
-// Error handling middleware
-/* eslint-disable-next-line no-unused-vars */
-app.use((err, req, res, _next) => {
-  // kept underscore but disabled ESLint warning
-  console.error(err.stack);
-  res.status(500).json({
-    message: "Internal Server Error",
-    error: process.env.NODE_ENV === "development" ? err.message : undefined,
-  });
+// Generate AI response
+app.post("/api/game/interact", async (req, res) => {
+  try {
+    const { sessionId, playerInput, playerState } = req.body;
+
+    // Get session from MongoDB
+    const session = await GameSession.findOne({ sessionId });
+    if (!session) {
+      return res.status(404).json({
+        success: false,
+        message: "Session not found",
+      });
+    }
+
+    // Call AI service
+    const aiResponse = await axios.post(`${AI_SERVICE_URL}/generate`, {
+      session_id: sessionId,
+      player_input: playerInput,
+      player_state: playerState,
+    });
+
+    // Update session in MongoDB
+    session.playerState = playerState;
+    session.lastUpdate = new Date();
+    await session.save();
+
+    res.json({
+      success: true,
+      response: aiResponse.data.response,
+      sessionId,
+    });
+  } catch (error) {
+    console.error("AI Interaction Error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to process game interaction",
+    });
+  }
+});
+
+// Development testing endpoint
+app.post("/api/dev/test-generate", async (req, res) => {
+  try {
+    const { context, playerInput } = req.body;
+
+    const response = await axios.post(`${DEV_AI_SERVICE_URL}/test/generate`, {
+      context,
+      player_input: playerInput,
+      max_tokens: 100,
+    });
+
+    res.json({
+      success: true,
+      response: response.data.response,
+    });
+  } catch (error) {
+    console.error("Dev Test Error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to generate test response",
+    });
+  }
+});
+
+// Get session info
+app.get("/api/session/:sessionId", async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const session = await GameSession.findOne({ sessionId });
+
+    if (!session) {
+      return res.status(404).json({
+        success: false,
+        message: "Session not found",
+      });
+    }
+
+    res.json({
+      success: true,
+      session: session.toObject(),
+    });
+  } catch (error) {
+    console.error("Session Fetch Error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch session information",
+    });
+  }
 });
 
 const PORT = process.env.PORT || 5000;
-
-// Start server function
-const startServer = async () => {
-  try {
-    // Connect to MongoDB
-    await connectDB();
-    console.log("MongoDB Connected Successfully");
-
-    // Start the server
-    const server = app.listen(PORT, "0.0.0.0", () => {
-      console.log(`Server running on port ${PORT}`);
-      console.log(`Server URL: http://localhost:${PORT}`);
-    });
-
-    // Graceful shutdown
-    const shutdown = () => {
-      console.log("Shutting down gracefully...");
-      server.close(() => {
-        console.log("Server closed");
-        process.exit(0);
-      });
-    };
-
-    // Handle shutdown signals
-    process.on("SIGTERM", shutdown);
-    process.on("SIGINT", shutdown);
-
-    return server;
-  } catch (error) {
-    console.error("Failed to start server:", error);
-    process.exit(1);
-  }
-};
-
-// Start the server
-startServer().catch(console.error);
-
-// Handle uncaught exceptions
-process.on("uncaughtException", (error) => {
-  console.error("Uncaught Exception:", error);
-  process.exit(1);
+app.listen(PORT, () => {
+  console.log(`Server is running on port ${PORT}`);
+  console.log(
+    `API Documentation available at http://localhost:${PORT}/api-docs`
+  );
 });
 
-// Handle unhandled promise rejections
-process.on("unhandledRejection", (error) => {
-  console.error("Unhandled Rejection:", error);
-});
+// Error handling middleware
+app.use(errorLogger);
+app.use(errorHandler);

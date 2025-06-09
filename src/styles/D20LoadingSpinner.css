@@ -1,0 +1,42 @@
+.d20-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(255, 255, 255, 0.9);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+}
+
+.d20-container {
+  position: relative;
+  width: 300px;
+  height: 300px;
+  margin: 0 auto;
+  cursor: grab;
+}
+
+.d20-container:active {
+  cursor: grabbing;
+}
+
+.roll-type {
+  font-size: 18px;
+  margin-top: 10px;
+}
+
+.stop-roll-btn {
+  margin-top: 20px;
+  padding: 10px 20px;
+  font-size: 16px;
+}
+
+.instructions {
+  font-size: 16px;
+  margin-top: 10px;
+  color: #666;
+}
