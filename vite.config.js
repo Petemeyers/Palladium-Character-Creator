@@ -14,4 +14,9 @@ export default defineConfig({
       },
     },
   },
+  resolve: {
+    alias: {
+      "@": "/src", // Optional: use @ for your src folder
+    },
+  },
 });
