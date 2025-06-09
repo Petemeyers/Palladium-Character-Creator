@@ -495,8 +495,6 @@ const CharacterCreator = ({ onCreateCharacter }) => {
         >
           <option value="Male">Male</option>
           <option value="Female">Female</option>
-          <option value="Non-Binary">Non-Binary</option>
-          <option value="Custom">Custom</option>
         </select>
 
         {/* Show custom gender input when 'Custom' is selected */}
