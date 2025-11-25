@@ -1624,9 +1624,25 @@ const TacticalMap = ({
                 return 0; // Same type, maintain original order
               })
               .map((combatant, index) => {
-              // Only show on primary position for large creatures
-              const isPrimaryPosition = getCreaturePrimaryPosition(combatant)?.x === col && getCreaturePrimaryPosition(combatant)?.y === row;
+              // Get the combatant's primary position
+              const primaryPos = getCreaturePrimaryPosition(combatant);
+              if (!primaryPos) {
+                // Debug: log missing positions
+                if (process.env.NODE_ENV === 'development') {
+                  console.warn(`[TacticalMap] Combatant ${combatant._id} (${combatant.name}) has no position`);
+                }
+                return null;
+              }
+              
+              // Only show icon on the primary position (top-left corner for large creatures)
+              // For single-cell creatures, this will be their exact position
+              const isPrimaryPosition = primaryPos.x === col && primaryPos.y === row;
               if (!isPrimaryPosition) return null;
+              
+              // Debug: verify icon should render
+              if (process.env.NODE_ENV === 'development' && index === 0) {
+                console.log(`[TacticalMap] Rendering icon for ${combatant.name} at (${col}, ${row}), isEnemy: ${combatant.isEnemy}, fogEnabled: ${fogEnabled}`);
+              }
 
               // ✅ Check enemy visibility for rendering
               // In darkness/fog, enemies should be completely invisible if not visible
@@ -1634,6 +1650,7 @@ const TacticalMap = ({
               
               // ✅ In darkness, completely hide unseen enemies (opacity 0, or don't render)
               // If fog is enabled and enemy is not visible, don't render the icon at all
+              // BUT always show player icons regardless of fog
               if (combatant.isEnemy && fogEnabled && !enemyVisible) {
                 return null; // Don't render unseen enemies in fog of war
               }
@@ -1665,11 +1682,13 @@ const TacticalMap = ({
                     y={iconY}
                     textAnchor="middle"
                     fontSize="20"
+                    fill="currentColor"
                     style={{ 
                       pointerEvents: 'none', 
                       userSelect: 'none',
                       opacity: flashingCombatants.has(combatant._id) ? undefined : 1,
-                      animation: flashingCombatants.has(combatant._id) ? 'flash-slow 0.5s ease-in-out infinite' : 'none'
+                      animation: flashingCombatants.has(combatant._id) ? 'flash-slow 0.5s ease-in-out infinite' : 'none',
+                      zIndex: 10 // Ensure icons are above other elements
                     }}
                   >
                     {combatant.isEnemy ? "🗡️" : "🛡️"}
@@ -1851,7 +1870,7 @@ const TacticalMap = ({
             {texturePatterns}
           </defs>
           
-          {/* Animated Lighting filter overlay (if terrain has lighting info) */}
+          {/* Animated Lighting filter overlay (if terrain has lighting info) - rendered FIRST so icons appear on top */}
           {terrain?.lighting && (() => {
             const lightingFilter = getLightingFilter(terrain.lighting);
             if (lightingFilter.opacity > 0) {
@@ -1876,7 +1895,7 @@ const TacticalMap = ({
             return null;
           })()}
           
-          {/* Render grid cells with terrain and features */}
+          {/* Render grid cells with terrain, features, and combatant icons - rendered AFTER lighting so icons are visible */}
           {renderGrid()}
           
           {/* MAP_EDITOR mode: Editor overlay */}

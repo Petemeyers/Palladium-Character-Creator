@@ -14,31 +14,64 @@
  * @param {Function} log - Logging function
  * @returns {boolean} True if power was successfully activated
  */
-export function usePsionic(powerName, caster, target, log) {
-  // TODO: Implement psionic power activation
-  // Check ISP, apply effects, deduct cost, etc.
-  
+export function usePsionic(powerName, caster, target, log, options = {}) {
+  // Check basic requirements
   if (!powerName || !caster) {
-    return false;
+    return {
+      success: false,
+      message: "Invalid psionic power or caster",
+      additionalLogs: [],
+      casterUpdates: null,
+      targetUpdates: null
+    };
   }
 
-  // TODO: Get power data from psionics database
-  // const power = getPsionicPower(powerName);
-  // if (!power) return false;
+  // Get power from caster's psionic powers
+  const power = caster.psionicPowers?.find(p => p?.name === powerName);
+  if (!power) {
+    return {
+      success: false,
+      message: `${caster.name} does not know ${powerName}`,
+      additionalLogs: [],
+      casterUpdates: null,
+      targetUpdates: null
+    };
+  }
+
+  // Check ISP cost
+  const ispCost = power.isp || power.ISP || 10; // Default to 10 if not specified
+  const currentISP = caster.ISP || caster.isp || 0;
   
-  // TODO: Check ISP cost
-  // if (caster.ISP < power.isp) {
-  //   log(`${caster.name} lacks the ISP to use ${powerName}`);
-  //   return false;
-  // }
+  if (currentISP < ispCost) {
+    return {
+      success: false,
+      message: `${caster.name} lacks the ISP to use ${powerName} (needs ${ispCost}, has ${currentISP})`,
+      additionalLogs: [],
+      casterUpdates: null,
+      targetUpdates: null
+    };
+  }
+
+  // Deduct ISP and prepare updates
+  const casterUpdates = {
+    deltaISP: -ispCost
+  };
+
+  // For now, just log the activation - actual effects will be handled by executePsionicPower
+  // The actual damage/effects should be applied in executePsionicPower based on power type
+  if (log && typeof log === 'function') {
+    log(`🧠 ${caster.name} activates ${powerName}! (${ispCost} ISP)`, "info");
+  }
   
-  // TODO: Apply power effects
-  // applyPsionicEffect(power, caster, target, log);
-  
-  // TODO: Deduct ISP
-  // caster.ISP -= power.isp;
-  
-  return true;
+  return {
+    success: true,
+    message: `${caster.name} successfully uses ${powerName}`,
+    additionalLogs: [],
+    power: power,
+    ispCost: ispCost,
+    casterUpdates: casterUpdates,
+    targetUpdates: null // Will be set by executePsionicPower if needed
+  };
 }
 
 /**

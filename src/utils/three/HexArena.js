@@ -132,11 +132,54 @@ export function initHexArena(containerElement) {
   }
 
   function dispose() {
+    if (disposed) return; // Prevent double disposal
     disposed = true;
+    
     window.removeEventListener("resize", resize);
-    renderer.dispose();
-    renderer.forceContextLoss();
-    containerElement.innerHTML = "";
+    
+    // Safely remove renderer DOM element
+    if (renderer && renderer.domElement) {
+      const parent = renderer.domElement.parentNode;
+      if (parent && parent.contains(renderer.domElement)) {
+        try {
+          parent.removeChild(renderer.domElement);
+        } catch (error) {
+          // Element may have already been removed by React
+          console.warn("[HexArena] Could not remove renderer DOM element:", error);
+        }
+      }
+    }
+    
+    // Dispose Three.js resources
+    if (renderer) {
+      try {
+        renderer.dispose();
+        renderer.forceContextLoss();
+      } catch (error) {
+        console.warn("[HexArena] Error disposing renderer:", error);
+      }
+    }
+    
+    if (controls) {
+      try {
+        controls.dispose();
+      } catch (error) {
+        console.warn("[HexArena] Error disposing controls:", error);
+      }
+    }
+    
+    // Clear container safely (React will handle DOM cleanup)
+    if (containerElement && containerElement.parentNode) {
+      try {
+        // Only clear if React hasn't already removed it
+        if (containerElement.parentNode.contains(containerElement)) {
+          // Don't use innerHTML = "" as it conflicts with React
+          // React will handle the cleanup
+        }
+      } catch (error) {
+        console.warn("[HexArena] Error clearing container:", error);
+      }
+    }
   }
 
   return {

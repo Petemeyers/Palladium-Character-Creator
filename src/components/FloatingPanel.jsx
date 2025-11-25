@@ -26,10 +26,21 @@ const FloatingPanel = ({
   minWidth = 200,
   minHeight = 150,
   bg = "white",
+  center = false,
   children
 }) => {
   const [position, setPosition] = useState({ x: initialX, y: initialY });
   const [size, setSize] = useState({ width: initialWidth, height: initialHeight });
+
+  // Center the panel on mount if center prop is true
+  useEffect(() => {
+    if (center && typeof window !== 'undefined') {
+      setPosition({
+        x: Math.max(0, (window.innerWidth - initialWidth) / 2),
+        y: Math.max(0, (window.innerHeight - initialHeight) / 2)
+      });
+    }
+  }, [center, initialWidth, initialHeight]);
   const [isDragging, setIsDragging] = useState(false);
   const [isResizing, setIsResizing] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });

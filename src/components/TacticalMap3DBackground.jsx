@@ -258,19 +258,42 @@ export default function TacticalMap3DBackground({
       
       // Dispose of Three.js resources
       tileMeshes.forEach((mesh) => {
-        mesh.geometry.dispose();
-        mesh.material.dispose();
+        if (mesh.geometry) mesh.geometry.dispose();
+        if (mesh.material) mesh.material.dispose();
       });
       characterMarkers.forEach((marker) => {
-        marker.geometry.dispose();
-        marker.material.dispose();
+        if (marker.geometry) marker.geometry.dispose();
+        if (marker.material) marker.material.dispose();
       });
       
-      if (renderer.domElement.parentNode) {
-        renderer.domElement.parentNode.removeChild(renderer.domElement);
+      // Safely remove renderer DOM element
+      if (renderer && renderer.domElement) {
+        const parent = renderer.domElement.parentNode;
+        if (parent && parent.contains(renderer.domElement)) {
+          try {
+            parent.removeChild(renderer.domElement);
+          } catch (error) {
+            // Element may have already been removed by React
+            console.warn("Could not remove renderer DOM element:", error);
+          }
+        }
       }
-      renderer.dispose();
-      controls.dispose();
+      
+      if (renderer) {
+        try {
+          renderer.dispose();
+        } catch (error) {
+          console.warn("Error disposing renderer:", error);
+        }
+      }
+      
+      if (controls) {
+        try {
+          controls.dispose();
+        } catch (error) {
+          console.warn("Error disposing controls:", error);
+        }
+      }
     };
   }, [terrain, mapType]); // Only recreate on terrain/mapType change
 
@@ -286,10 +309,16 @@ export default function TacticalMap3DBackground({
     const currentIds = new Set(Object.keys(positions));
     characterMarkers.forEach((marker, id) => {
       if (!currentIds.has(id)) {
-        characterGroup.remove(marker);
-        marker.geometry.dispose();
-        marker.material.dispose();
-        characterMarkers.delete(id);
+        try {
+          if (characterGroup && marker && characterGroup.children.includes(marker)) {
+            characterGroup.remove(marker);
+          }
+          if (marker.geometry) marker.geometry.dispose();
+          if (marker.material) marker.material.dispose();
+          characterMarkers.delete(id);
+        } catch (error) {
+          console.warn("Error removing character marker:", error);
+        }
       }
     });
     

@@ -726,6 +726,7 @@ export default function CombatPage({ characters = [] }) {
   const prevAiControlRef = useRef(aiControlEnabled);
   const wasPausedRef = useRef(false);
   const [showTacticalMap, setShowTacticalMap] = useState(false); // Toggle tactical map display
+  const [show3DView, setShow3DView] = useState(false); // Toggle 3D view display (hidden by default)
   const [mapViewMode, setMapViewMode] = useState('2D'); // '2D' or '3D' view mode
   const [mapHeight, setMapHeight] = useState(1200); // Map height in pixels
   const [movementMode, setMovementMode] = useState({ active: false, isRunning: false }); // Track if player is selecting movement and running mode
@@ -1382,10 +1383,14 @@ useEffect(() => {
   const generateCryptoId = () => {
     try {
       const timestamp = Date.now();
-      const randomRoll = CryptoSecureDice.parseAndRoll("1d999999");
+      // Use multiple smaller dice rolls to get a large random number (max die size is 1000)
+      const roll1 = CryptoSecureDice.parseAndRoll("1d1000");
+      const roll2 = CryptoSecureDice.parseAndRoll("1d1000");
+      const roll3 = CryptoSecureDice.parseAndRoll("1d1000");
+      const combinedRandom = roll1.totalWithBonus * 1000000 + roll2.totalWithBonus * 1000 + roll3.totalWithBonus;
       const microtime = performance.now(); // Add microsecond precision
       idCounter++; // Increment counter for uniqueness
-      return `${timestamp}-${randomRoll.totalWithBonus}-${Math.floor(microtime * 1000)}-${idCounter}`;
+      return `${timestamp}-${combinedRandom}-${Math.floor(microtime * 1000)}-${idCounter}`;
     } catch (error) {
       // Log error for debugging
       if (process.env.NODE_ENV === 'development') {
@@ -1395,7 +1400,7 @@ useEffect(() => {
       const timestamp = Date.now();
       const microtime = performance.now();
       idCounter++; // Increment counter for uniqueness
-      return `${timestamp}-${Math.floor(Math.random() * 1000)}-${Math.floor(microtime * 1000)}-${idCounter}`;
+      return `${timestamp}-${Math.floor(Math.random() * 1000000)}-${Math.floor(microtime * 1000)}-${idCounter}`;
     }
   };
 
@@ -1822,12 +1827,14 @@ useEffect(() => {
         // For unknown ranged weapons, assume they can attack at any distance
         return { canAttack: true, reason: "Ranged weapon" };
       } else {
-        // For unknown melee weapons, use weapon length or standard 5ft range
-        const effectiveRange = weaponLength > 0 ? weaponLength : 5;
+        // For unknown melee weapons, adjacent hexes (5ft) are always in melee range
+        // Weapon length only matters for reach weapons that can attack beyond adjacent hexes
+        // Minimum melee range is 5.5ft to account for adjacent hexes in hex grid
+        const effectiveRange = Math.max(5.5, weaponLength > 0 ? weaponLength : 5.5);
         const canAttack = distance <= effectiveRange;
         return { 
           canAttack, 
-          reason: canAttack ? `Within melee range (${weaponType} weapon, ${weaponLength}ft)` : `Out of melee range (${Math.round(distance)}ft > ${effectiveRange}ft)`,
+          reason: canAttack ? `Within melee range (${weaponType} weapon, adjacent hex)` : `Out of melee range (${Math.round(distance)}ft > ${effectiveRange}ft)`,
           maxRange: effectiveRange
         };
       }
@@ -3734,11 +3741,26 @@ useEffect(() => {
     const healingPsionics = fighterPsionics.filter((power) => {
       const cost = getPsionicCost(power);
       if (cost > ispAvailable) return false;
+      
+      // Exclude detection/utility powers that don't actually heal
+      const powerName = (power.name || "").toLowerCase();
+      if (powerName.includes("see aura") || powerName.includes("detect") || 
+          powerName.includes("sense") || powerName.includes("telepathy") ||
+          powerName.includes("empathy") || powerName.includes("presence sense")) {
+        return false;
+      }
+      
       const type = (power.attackType || "").toLowerCase();
       if (type === "healing") return true;
       const category = (power.category || "").toLowerCase();
       if (category.includes("healing")) return true;
       if ((power.effect || "").toLowerCase().includes("heal")) return true;
+      
+      // Only include powers that explicitly mention HP healing
+      const description = (power.description || "").toLowerCase();
+      if (description.includes("restore hp") || description.includes("heal hp") || 
+          description.includes("regain hit points")) return true;
+      
       return false;
     });
 
@@ -3758,6 +3780,9 @@ useEffect(() => {
     });
 
     const attemptHealing = (targetsToHeal) => {
+      // Track which powers we've already tried this turn to prevent loops
+      const triedPowers = new Set();
+      
       for (const candidate of targetsToHeal) {
         const isSelfTarget = candidate.id === player.id;
         const spell = healingSpells.find((spellOption) =>
@@ -3776,6 +3801,9 @@ useEffect(() => {
         }
 
         const psionic = healingPsionics.find((power) => {
+          // Skip if we've already tried this power
+          if (triedPowers.has(power.name)) return false;
+          
           const category = getPsionicTargetCategory(power);
           if (isSelfTarget) {
             return category === "self" || category === "ally";
@@ -3792,6 +3820,7 @@ useEffect(() => {
         });
 
         if (psionic) {
+          triedPowers.add(psionic.name); // Mark as tried
           addLog(
             `💚 ${player.name} channels ${psionic.name} to help ${candidate.name}.`,
             "info"
@@ -3972,7 +4001,18 @@ useEffect(() => {
     const isMagicFocused = magicKeywords.some((keyword) =>
       occLower.includes(keyword)
     );
-    const isMindMage = occLower.includes("mind mage");
+    const isMindMage = occLower.includes("mind mage") || occLower.includes("mindmage");
+
+    // Debug logging for mind mages
+    if (isMindMage) {
+      addLog(`🧠 ${player.name} is a Mind Mage - checking psionic powers...`, "info");
+      addLog(`🧠 Available psionic powers: ${fighterPsionics.length}, Offensive: ${offensivePsionics.length}, ISP: ${ispAvailable}`, "info");
+      if (bestOffensivePsionic) {
+        addLog(`🧠 Best offensive psionic: ${bestOffensivePsionic.name} (cost: ${getPsionicCost(bestOffensivePsionic)} ISP)`, "info");
+      } else {
+        addLog(`🧠 No viable offensive psionic found (target: ${target?.name}, distance: ${Math.round(currentDistance)}ft)`, "info");
+      }
+    }
 
     const attemptOffensiveSpell = (spell) => {
       addLog(
@@ -3998,20 +4038,32 @@ useEffect(() => {
       return false;
     };
 
+    // For mind mages, prioritize psionics over weapons and spells
+    // For others, use psionics if no spell available or at long range
     const shouldUsePsionics =
       !!bestOffensivePsionic &&
       (isMindMage ||
-        !bestOffensiveSpell ||
+        (!bestOffensiveSpell && currentDistance > 5.5) ||
         currentDistance > 20);
 
+    if (isMindMage) {
+      addLog(`🧠 Mind Mage psionic decision: shouldUsePsionics=${shouldUsePsionics}, bestOffensivePsionic=${bestOffensivePsionic?.name || 'none'}`, "info");
+    }
+
     if (shouldUsePsionics && bestOffensivePsionic) {
-      if (attemptOffensivePsionic(bestOffensivePsionic)) {
+      const psionicResult = attemptOffensivePsionic(bestOffensivePsionic);
+      if (isMindMage) {
+        addLog(`🧠 Psionic execution result: ${psionicResult ? 'SUCCESS' : 'FAILED'}`, psionicResult ? "info" : "error");
+      }
+      if (psionicResult) {
         return;
       }
     }
 
+    // Only use spells if not a mind mage (mind mages should prefer psionics)
     const shouldUseSpell =
       !!bestOffensiveSpell &&
+      !isMindMage &&
       (isMagicFocused ||
         currentDistance > 20 ||
         !bestOffensivePsionic);
@@ -6542,17 +6594,27 @@ useEffect(() => {
   }
 
   function executePsionicPower(caster, target, power) {
+    if (!power || !power.name) {
+      addLog(`❌ Invalid psionic power provided to executePsionicPower`, "error");
+      return false;
+    }
+    
+    addLog(`🧠 Executing psionic: ${power.name} (cost: ${getPsionicCost(power)} ISP, caster ISP: ${getFighterISP(caster)})`, "info");
+    
     const resolution = usePsionic(power.name, caster, target, addLog, {
       combatTerrain,
       positions,
     });
 
     if (!resolution.success) {
+      addLog(`❌ Psionic ${power.name} failed: ${resolution.message || 'Unknown error'}`, "error");
       (resolution.additionalLogs || []).forEach(entry => {
         addLog(entry.message, entry.type || "error");
       });
       return false;
     }
+    
+    addLog(`✅ Psionic ${power.name} executed successfully`, "info");
 
     setFighters(prev => prev.map(fighter => {
       if (fighter.id === caster.id) {
@@ -8235,13 +8297,12 @@ useEffect(() => {
       {fighters.length > 0 && (
         <FloatingPanel
           title={`🗺️ Combat Arena - Dual View (2D + 3D)`}
-          initialX={50}
-          initialY={200}
           initialWidth={1600}
           initialHeight={800}
           zIndex={1000}
           minWidth={1000}
           minHeight={600}
+          center={true}
         >
           <VStack align="stretch" spacing={3}>
             <HStack justify="space-between" align="center" wrap="wrap">
@@ -8284,6 +8345,14 @@ useEffect(() => {
                   onClick={() => setShowTacticalMap(!showTacticalMap)}
                 >
                   {showTacticalMap ? "🗺️ Hide Map" : "🗺️ Show Map"}
+                </Button>
+                <Button
+                  size="sm"
+                  colorScheme={show3DView ? "purple" : "gray"}
+                  variant={show3DView ? "solid" : "outline"}
+                  onClick={() => setShow3DView(!show3DView)}
+                >
+                  {show3DView ? "🎮 Hide 3D View" : "🎮 Show 3D View"}
                 </Button>
                 {showTacticalMap && (
                   <Button
@@ -9409,7 +9478,7 @@ useEffect(() => {
                 {/* Dual View: 2D and 3D side-by-side */}
                 <Flex direction="row" gap={4} width="100%" height="100%">
                   {/* 2D Tactical Map - Always mounted */}
-                  <Box width="50%" minHeight="600px">
+                  <Box width={show3DView ? "50%" : "100%"} minHeight="600px">
                 <TacticalMap
                   combatants={fighters.map(f => ({ 
                     ...f, 
@@ -9462,16 +9531,19 @@ useEffect(() => {
                 />
               </Box>
 
-                  {/* 3D Hex Arena - Always mounted */}
-                  <Box width="50%" minHeight="600px">
-                    <HexArena3D
-                      mapDefinition={mapDefinition}
-                      fighters={fighters}
-                      positions={positions}
-                      terrain={arenaEnvironment}
-                      mode={mode}
-                    />
-                  </Box>
+                  {/* 3D Hex Arena - Hidden by default, toggle with button */}
+                  {show3DView && (
+                    <Box width="50%" minHeight="600px">
+                      <HexArena3D
+                        mapDefinition={mapDefinition}
+                        fighters={fighters}
+                        positions={positions}
+                        terrain={arenaEnvironment}
+                        mode={mode}
+                        visible={show3DView}
+                      />
+                    </Box>
+                  )}
                 </Flex>
 
                 {/* Melee Round & Action Panel */}
@@ -9891,14 +9963,13 @@ useEffect(() => {
             {/* Combat Info Panel */}
             <FloatingPanel
               title="📊 Combat Info"
-              initialX={0}
-              initialY={0}
               initialWidth={350}
               initialHeight={600}
               zIndex={1001}
               minWidth={300}
               minHeight={400}
               bg="rgba(255, 255, 255, 0.85)"
+              center={true}
             >
               <Tabs size="sm" colorScheme="blue" isLazy>
                 <TabList>
