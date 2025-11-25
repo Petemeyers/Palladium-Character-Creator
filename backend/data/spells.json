@@ -1,0 +1,85 @@
+{
+  "level1": {
+    "Magic Missile": {
+      "level": 1,
+      "range": "100ft",
+      "duration": "Instant",
+      "ppe": 4,
+      "combatDamage": "1d4+1",
+      "description": "Unerring magical projectile"
+    },
+    "Blinding Flash": {
+      "level": 1,
+      "range": "60ft",
+      "duration": "2-8 melees",
+      "ppe": 2,
+      "combatDamage": "0",
+      "description": "Blinds target temporarily"
+    },
+    "Armor of Ithan": {
+      "level": 1,
+      "range": "Self",
+      "duration": "1 minute per level",
+      "ppe": 10,
+      "combatDamage": "0",
+      "description": "Creates magical armor"
+    }
+  },
+  "level2": {
+    "Fire Bolt": {
+      "level": 2,
+      "range": "100ft",
+      "duration": "Instant",
+      "ppe": 5,
+      "combatDamage": "2d6",
+      "description": "Bolt of fire"
+    },
+    "Lightning Bolt": {
+      "level": 2,
+      "range": "100ft",
+      "duration": "Instant",
+      "ppe": 7,
+      "combatDamage": "3d6",
+      "description": "Electrical discharge"
+    }
+  },
+  "level3": {
+    "Fireball": {
+      "level": 3,
+      "range": "100ft",
+      "duration": "Instant",
+      "ppe": 10,
+      "combatDamage": "4d6",
+      "description": "Explosive fire spell"
+    },
+    "Ice Bolt": {
+      "level": 3,
+      "range": "100ft",
+      "duration": "Instant",
+      "ppe": 8,
+      "combatDamage": "3d6",
+      "description": "Bolt of ice"
+    }
+  },
+  "level4": {
+    "Lightning Arc": {
+      "level": 4,
+      "range": "150ft",
+      "duration": "Instant",
+      "ppe": 12,
+      "combatDamage": "5d6",
+      "description": "Powerful lightning attack"
+    }
+  },
+  "level5": {
+    "Meteor": {
+      "level": 5,
+      "range": "200ft",
+      "duration": "Instant",
+      "ppe": 20,
+      "combatDamage": "6d6",
+      "description": "Summons a meteor"
+    }
+  }
+}
+

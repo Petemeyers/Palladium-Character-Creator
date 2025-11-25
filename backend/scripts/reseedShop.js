@@ -2,7 +2,7 @@ import mongoose from "mongoose";
 import dotenv from "dotenv";
 import ShopItem from "../models/ShopItem.js";
 import items from "../items.js";
-import weaponShop from "../weaponShop.js";
+// weaponShop import removed - using frontend data instead
 import process from "process";
 
 dotenv.config();
@@ -15,33 +15,7 @@ const reseedShop = async () => {
     await ShopItem.deleteMany({});
     console.log("Cleared existing items");
 
-    const weapons = weaponShop.getItems();
-    console.log("Weapons to add:", weapons.length);
-
     const existingItemIds = new Set();
-
-    // Validate and format weapons
-    const formattedWeapons = weapons
-      .filter((weapon) => {
-        // Check required fields
-        if (!weapon.id || !weapon.price) {
-          console.log("Invalid weapon:", weapon);
-          return false;
-        }
-        if (existingItemIds.has(weapon.id)) {
-          console.log(`Skipping duplicate weapon ID: ${weapon.id}`);
-          return false;
-        }
-        existingItemIds.add(weapon.id);
-        return true;
-      })
-      .map((weapon) => ({
-        itemId: weapon.id.toString(),
-        name: weapon.name,
-        type: weapon.type || "Weapon",
-        category: weapon.category,
-        price: weapon.price,
-      }));
 
     // Validate and format items
     const formattedItems = items
@@ -66,7 +40,7 @@ const reseedShop = async () => {
         price: item.price,
       }));
 
-    const allItems = [...formattedWeapons, ...formattedItems];
+    const allItems = [...formattedItems];
     console.log("Valid items to insert:", allItems.length);
 
     const result = await ShopItem.insertMany(allItems);

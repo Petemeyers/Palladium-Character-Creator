@@ -1,3 +1,5 @@
+import process from "process";
+
 export const errorLogger = (err, req, res, next) => {
   console.error("Error:", err);
   next(err);

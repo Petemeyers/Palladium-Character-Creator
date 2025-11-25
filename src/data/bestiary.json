@@ -1,0 +1,6322 @@
+{
+    "bestiary": {
+      "monsters": [
+        {
+          "id": "minotaur",
+          "name": "Minotaur",
+          "category": "monster",
+          "alignment": [
+            "principled",
+            "scrupulous",
+            "aberrant",
+            "selfish"
+          ],
+          "size": "8 feet tall",
+          "AR": 12,
+          "HP": "7d8",
+          "attacks": [
+            {
+              "name": "Claw",
+              "damage": "2d6",
+              "count": 2
+            },
+            {
+              "name": "Horn Charge",
+              "damage": "4d6",
+              "count": 1
+            },
+            {
+              "name": "Weapon (Large Sword/Axe)",
+              "damage": "2d6",
+              "count": 1
+            }
+          ],
+          "bonuses": {
+            "damage": 6,
+            "strike": 2,
+            "parry": 2,
+            "dodge": 2
+          },
+          "abilities": [
+            "Night vision 60 ft",
+            "Resistant to fire/cold (half damage)"
+          ],
+          "spd": 20,
+          "lifeSpan": "400 years",
+          "description": "Beast-men with bull heads, blazing yellow-orange eyes, usually tribal in the southern hemisphere.",
+          "HF": 12
+        },
+        {
+          "id": "scarecrow",
+          "name": "Scarecrow",
+          "category": "undead",
+          "alignment": [
+            "evil"
+          ],
+          "size": "6 feet tall",
+          "AR": 6,
+          "HP": "6d8",
+          "attacks": [
+            {
+              "name": "Hand-to-Hand",
+              "damage": "1d6",
+              "count": 2
+            },
+            {
+              "name": "Weapon",
+              "damage": "1d6",
+              "count": 1
+            }
+          ],
+          "bonuses": {
+            "damage": 4,
+            "strike": 2,
+            "parry": 2,
+            "dodge": 2,
+            "saveMagic": 3
+          },
+          "abilities": [
+            "Immune to normal weapons",
+            "Only fire destroys (double damage)",
+            "Regenerates if dismembered (12h)"
+          ],
+          "spd": 10,
+          "lifeSpan": "Until destroyed",
+          "description": "Animated straw scarecrows created by mad diabolists; still roam Eastern Territory.",
+          "HF": 10
+        },
+        {
+          "id": "spectre",
+          "name": "Spectre",
+          "category": "undead",
+          "alignment": [
+            "selfish",
+            "evil"
+          ],
+          "size": "Variable",
+          "AR": 14,
+          "HP": "6d8",
+          "attacks": [
+            {
+              "name": "Psionic Attack",
+              "damage": "2d6",
+              "count": 2
+            }
+          ],
+          "bonuses": {
+            "strike": 2,
+            "dodge": 2
+          },
+          "abilities": [
+            "Psionics: Levels 1-3, I.S.P. 90",
+            "Fly 18 mph",
+            "Resistant to fire/cold (half damage)",
+            "Only psionics/magic/magic weapons affect"
+          ],
+          "spd": 18,
+          "lifeSpan": "Immortal",
+          "description": "Wraith-like energy creatures in humanoid form, not ghosts nor flesh beings.",
+          "HF": 14
+        },
+        {
+          "id": "unicorn",
+          "name": "Unicorn",
+          "category": "creature_of_magic",
+          "alignment": [
+            "good",
+            "selfish"
+          ],
+          "size": "Sleek, small horse",
+          "AR": 6,
+          "HP": "8d8",
+          "attacks": [
+            {
+              "name": "Front Kick",
+              "damage": "2d6",
+              "count": 1
+            },
+            {
+              "name": "Rear Kick",
+              "damage": "3d6",
+              "count": 1
+            },
+            {
+              "name": "Horn Charge",
+              "damage": "4d6",
+              "count": 1
+            }
+          ],
+          "bonuses": {
+            "damage": 3,
+            "strike": 3,
+            "parry": 3,
+            "dodge": 3,
+            "allSaves": 3
+          },
+          "psionics": "Empathy, limited telepathy",
+          "magicAbilities": [
+            "Healing touch (2d6)",
+            "Purify water (3x/day)"
+          ],
+          "clericalAbilities": [
+            "Remove curse 33%"
+          ],
+          "abilities": [
+            "Night vision 90 ft",
+            "See invisible",
+            "Running speed 40 mph, never tires",
+            "Resistant to fire/cold (half damage)",
+            "Only virgin pure of heart may tame"
+          ],
+          "spd": 40,
+          "lifeSpan": "10,000 years",
+          "description": "Beautiful horse-like creature with a silver horn and cloven hooves. Sacred defenders of the pure; will only allow a virgin of spotless heart to ride.",
+          "HF": 13
+        },
+        {
+          "id": "pegasus",
+          "name": "Pegasus",
+          "category": "creature_of_magic",
+          "alignment": [
+            "good",
+            "selfish",
+            "evil"
+          ],
+          "size": "Typical horse",
+          "AR": 6,
+          "HP": "5d8",
+          "attacks": [
+            {
+              "name": "Front Kick",
+              "damage": "3d6",
+              "count": 1
+            },
+            {
+              "name": "Rear Kick",
+              "damage": "4d6",
+              "count": 1
+            }
+          ],
+          "bonuses": {
+            "damage": 4,
+            "strike": 3,
+            "dodge": 3,
+            "allSaves": 2
+          },
+          "psionics": "Empathy, limited telepathy",
+          "magicAbilities": [
+            "Summon thunderstorm (1/day)"
+          ],
+          "abilities": [
+            "Night vision 90 ft",
+            "Flight ability (cannot run fast on ground)",
+            "Flying speed 60 mph"
+          ],
+          "spd": 30,
+          "lifeSpan": "1,000 years",
+          "description": "Majestic winged horse that soars among storm clouds. Loyal only to honorable riders.",
+          "HF": 12
+        },
+        {
+          "id": "harpy",
+          "name": "Harpy",
+          "category": "monster",
+          "alignment": [
+            "evil"
+          ],
+          "size": "7 feet tall, 18-foot wingspan",
+          "AR": 6,
+          "HP": "6d8",
+          "attacks": [
+            {
+              "name": "Claw",
+              "damage": "1d8",
+              "count": 2
+            },
+            {
+              "name": "Bite",
+              "damage": "1d6",
+              "count": 1
+            }
+          ],
+          "bonuses": {
+            "damage": 4,
+            "dodge": 2,
+            "saveMagic": 2
+          },
+          "abilities": [
+            "Night vision 90 ft",
+            "Flight ability (cannot run fast on ground)",
+            "Fly 50 mph",
+            "Sense good and evil",
+            "Stench 25 ft radius (save vs poison or suffer -2 strike, -3 parry/dodge)",
+            "Tricky despite low I.Q."
+          ],
+          "spd": 10,
+          "lifeSpan": "2,000 years",
+          "description": "Head/upper body of ugly woman, legs/tail/wings of bird. Hates all good and beautiful.",
+          "HF": 13
+        },
+        {
+          "id": "chimera",
+          "name": "Chimera",
+          "category": "monster",
+          "alignment": [
+            "evil"
+          ],
+          "size": "4 feet tall, 10 feet long",
+          "AR": 10,
+          "HP": "7d8",
+          "attacks": [
+            {
+              "name": "Claw",
+              "damage": "1d8",
+              "count": 2
+            },
+            {
+              "name": "Bite",
+              "damage": "1d8",
+              "count": 1
+            },
+            {
+              "name": "Fire Breath",
+              "damage": "3d6",
+              "count": 1,
+              "range": "16 ft, 4 ft wide"
+            }
+          ],
+          "bonuses": {
+            "damage": 4,
+            "strike": 2,
+            "dodge": 2
+          },
+          "abilities": [
+            "Night vision 60 ft",
+            "Prowl 68%",
+            "Track 74%",
+            "Bio-regeneration 1d8 every melee"
+          ],
+          "spd": 40,
+          "lifeSpan": "2,000 years",
+          "description": "Lion head, goat body, dragon tail. Breathes flame. Common in Yin-Sloth jungles.",
+          "HF": 14
+        },
+        {
+          "id": "mummy",
+          "name": "Mummy",
+          "category": "undead",
+          "alignment": [
+            "evil"
+          ],
+          "size": "6-10 feet tall",
+          "AR": 12,
+          "HP": "6d8+10",
+          "attacks": [
+            {
+              "name": "Hand-to-Hand",
+              "damage": "1d8",
+              "count": 2
+            }
+          ],
+          "bonuses": {
+            "damage": 4,
+            "saveMagic": 2
+          },
+          "abilities": [
+            "Night vision 90 ft",
+            "Prowl 40%",
+            "Normal weapons do no damage"
+          ],
+          "spd": 6,
+          "lifeSpan": "Until destroyed by magic",
+          "description": "Animated undead in graveyards, catacombs, dungeons. Created by Men of Magic.",
+          "HF": 12
+        },
+        {
+          "id": "gryphon",
+          "name": "Gryphon",
+          "category": "creature_of_magic",
+          "alignment": [
+            "unaligned"
+          ],
+          "size": "4 feet tall, 7 feet long",
+          "AR": 9,
+          "HP": "8d8",
+          "attacks": [
+            {
+              "name": "Claw",
+              "damage": "2d6",
+              "count": 3
+            },
+            {
+              "name": "Bite",
+              "damage": "1d6",
+              "count": 1
+            }
+          ],
+          "bonuses": {
+            "damage": 4,
+            "strike": 3,
+            "dodge": 3,
+            "allSaves": 2
+          },
+          "psionics": "None",
+          "magicAbilities": "None",
+          "abilities": [
+            "Night vision 120 ft",
+            "Exceptional vision (180° arc)",
+            "Fly 50 mph",
+            "Prowl 66%",
+            "Track 44%",
+            "Territorial dive attack against intruders"
+          ],
+          "spd": 20,
+          "lifeSpan": "200 years",
+          "description": "Eagle head and claws, lion body, sweeping wings. Fiercely territorial hunters that swoop on trespassers from great heights.",
+          "HF": 15
+        },
+        {
+          "id": "ghost",
+          "name": "Ghost",
+          "category": "undead",
+          "alignment": [
+            "unaligned"
+          ],
+          "size": "Variable",
+          "AR": 17,
+          "HP": "6d8",
+          "attacks": [
+            {
+              "name": "Verbal/Emotional Harassment",
+              "damage": "psychological",
+              "count": 1
+            }
+          ],
+          "bonuses": {},
+          "abilities": [
+            "Limited telepathy",
+            "Turn invisible",
+            "See invisible",
+            "Limited telekinesis (max 30 lbs)",
+            "Night vision 90 ft",
+            "Fly 20 mph",
+            "Intangible (pass through solid objects)",
+            "Possession",
+            "Impervious to all attacks"
+          ],
+          "spd": 20,
+          "lifeSpan": "Immortal",
+          "description": "Essences of powerful entities after death. Frustrated, angry, jealous of living.",
+          "HF": 14
+        },
+        {
+          "id": "werewolf",
+          "name": "Werewolf",
+          "category": "werebeast",
+          "alignment": [
+            "evil",
+            "selfish"
+          ],
+          "size": "Variable (average 6-10 feet)",
+          "AR": 12,
+          "HP": "5d8",
+          "attacks": [
+            {
+              "name": "Bite",
+              "damage": "1d8+2",
+              "count": 1
+            },
+            {
+              "name": "Claw",
+              "damage": "1d6",
+              "count": 1
+            }
+          ],
+          "bonuses": {
+            "parry": 2,
+            "dodge": 2
+          },
+          "psionics": "None",
+          "magicAbilities": "None",
+          "abilities": [
+            "Impervious to normal weapons (only silver/magic)",
+            "Resistant to fire/cold (half damage)",
+            "Bio-regeneration 1d8 every 4 melees",
+            "Night vision 60 ft",
+            "Transform at night (maintain I.Q./memory)",
+            "Track 74%",
+            "Rise again unless head severed, burned, and buried separately"
+          ],
+          "spd": 20,
+          "lifeSpan": "Immortal",
+          "description": "Humanoid by day, wolf by night. Maintains intelligence in animal form and can only be slain permanently by silver or by burning the severed head.",
+          "HF": 13
+        },
+        {
+          "id": "weretiger",
+          "name": "Weretiger",
+          "category": "werebeast",
+          "alignment": [
+            "evil",
+            "selfish"
+          ],
+          "size": "Variable (average 6-10 feet)",
+          "AR": 12,
+          "HP": "6d8",
+          "attacks": [
+            {
+              "name": "Claw/Bite",
+              "damage": "2d6",
+              "count": 1
+            }
+          ],
+          "bonuses": {
+            "parry": 2,
+            "dodge": 2
+          },
+          "psionics": "None",
+          "magicAbilities": "None",
+          "abilities": [
+            "Impervious to normal weapons (only silver/magic)",
+            "Resistant to fire/cold (half damage)",
+            "Bio-regeneration 1d8 every 4 melees",
+            "Night vision 60 ft",
+            "Transform at night (maintain I.Q./memory)",
+            "Track 74%",
+            "Rise again unless head severed, burned, and buried separately"
+          ],
+          "spd": 22,
+          "lifeSpan": "Immortal",
+          "description": "Humanoid by day, tiger by night. More powerful than werewolves and just as difficult to kill permanently.",
+          "HF": 13
+        },
+        {
+          "id": "werepanther",
+          "name": "Werepanther",
+          "category": "werebeast",
+          "alignment": [
+            "evil",
+            "selfish"
+          ],
+          "size": "Variable (average 6-10 feet)",
+          "AR": 12,
+          "HP": "5d8",
+          "attacks": [
+            {
+              "name": "Claw/Bite",
+              "damage": "1d8+2",
+              "count": 1
+            }
+          ],
+          "bonuses": {
+            "parry": 2,
+            "dodge": 2
+          },
+          "psionics": "None",
+          "magicAbilities": "None",
+          "abilities": [
+            "Impervious to normal weapons (only silver/magic)",
+            "Resistant to fire/cold (half damage)",
+            "Bio-regeneration 1d8 every 4 melees",
+            "Night vision 60 ft",
+            "Transform at night (maintain I.Q./memory)",
+            "Track 74%",
+            "Rise again unless head severed, burned, and buried separately"
+          ],
+          "spd": 24,
+          "lifeSpan": "Immortal",
+          "description": "Humanoid by day, panther by night. Graceful and stealthy predators that stalk prey even after apparent death.",
+          "HF": 13
+        },
+        {
+          "id": "werebear",
+          "name": "Werebear",
+          "category": "werebeast",
+          "alignment": [
+            "evil",
+            "selfish"
+          ],
+          "size": "Variable (average 6-10 feet)",
+          "AR": 12,
+          "HP": "7d8",
+          "attacks": [
+            {
+              "name": "Claw",
+              "damage": "3d6",
+              "count": 1
+            },
+            {
+              "name": "Bite",
+              "damage": "1d8",
+              "count": 1
+            }
+          ],
+          "bonuses": {
+            "parry": 1,
+            "dodge": 1
+          },
+          "psionics": "None",
+          "magicAbilities": "None",
+          "abilities": [
+            "Impervious to normal weapons (only silver/magic)",
+            "Resistant to fire/cold (half damage)",
+            "Bio-regeneration 1d8 every 4 melees",
+            "Night vision 60 ft",
+            "Transform at night (maintain I.Q./memory)",
+            "Track 74%",
+            "Rise again unless head severed, burned, and buried separately"
+          ],
+          "spd": 18,
+          "lifeSpan": "Immortal",
+          "description": "Humanoid by day, bear by night. The most powerful of common werebeasts, feared for their resilience and unstoppable rage.",
+          "HF": 13
+        },
+        {
+          "id": "sphinx",
+          "name": "Sphinx",
+          "category": "creature_of_magic",
+          "alignment": [
+            "good",
+            "selfish"
+          ],
+          "size": "5 feet tall, 8-10 feet long",
+          "AR": 10,
+          "HP": "10d8",
+          "attacks": [
+            {
+              "name": "Claw",
+              "damage": "2d6",
+              "count": 2
+            }
+          ],
+          "bonuses": {
+            "damage": 6,
+            "strike": 3,
+            "parry": 3,
+            "dodge": 3,
+            "allSaves": 2
+          },
+          "psionics": "Limited telepathy and clairvoyance (I.S.P. 150)",
+          "magicAbilities": "All wizard spells levels 1-5 at 6th-level proficiency",
+          "clericalAbilities": "None",
+          "abilities": [
+            "Night vision 120 ft",
+            "Running speed 24",
+            "Flying speed 45 mph",
+            "Average to high I.Q.",
+            "Prowl 60%",
+            "Track 77%",
+            "Speaks all languages",
+            "Riddle mastery and ancient lore"
+          ],
+          "spd": 24,
+          "lifeSpan": "2,000 years",
+          "description": "Lion body, eagle wings, and a humanoid face. Guardians of forgotten temples who test intruders with wit before unleashing deadly magic.",
+          "HF": 16
+        },
+        {
+          "id": "green_mold",
+          "name": "Green Mold",
+          "category": "plant",
+          "alignment": [
+            "unaligned"
+          ],
+          "size": "Variable",
+          "AR": 15,
+          "HP": "100d10",
+          "attacks": [
+            {
+              "name": "Infection",
+              "damage": "1d4 daily",
+              "count": 1
+            }
+          ],
+          "bonuses": {},
+          "abilities": [
+            "Alchemical nightmare result",
+            "Infects through cursed items/contact",
+            "Causes -5 strike/parry/dodge, 1d4 damage daily",
+            "At half HP: half speed, -2 all saves",
+            "Impervious to fire/cold, natural AR 15",
+            "Only remove curse destroys"
+          ],
+          "spd": 0,
+          "lifeSpan": "Immortal",
+          "description": "Cursed plant infection. Only remove curse can destroy green mold."
+        },
+        {
+          "id": "bug_bear",
+          "name": "Bug Bear",
+          "category": "humanoid",
+          "alignment": [
+            "selfish",
+            "evil"
+          ],
+          "alignment_tendency": "tend toward selfish/evil",
+          "size": "5 feet tall, short, squat, broad",
+          "AR": 8,
+          "HP": "4d8",
+          "attacks": [
+            {
+              "name": "Claw",
+              "damage": "1d6",
+              "count": 2
+            },
+            {
+              "name": "Bite",
+              "damage": "1d4",
+              "count": 1
+            },
+            {
+              "name": "Weapon",
+              "damage": "by weapon",
+              "count": 1
+            }
+          ],
+          "bonuses": {
+            "strike": 1,
+            "parry": 1,
+            "damage": 3,
+            "tracking": 8
+          },
+          "abilities": [
+            "Night vision 60 ft",
+            "See invisible",
+            "Turn invisible (1 minute, once per 3 melees)",
+            "Metamorphosis into bear",
+            "Teleport (max 40 ft, once every other melee)",
+            "+8 on all tracking skills",
+            "Low intelligence, poor craftsmen",
+            "Prefer stone weapons",
+            "Barbaric nomads",
+            "Mischievous, cruel, shy"
+          ],
+          "psionics": "None",
+          "magicAbilities": "None",
+          "spd": 18,
+          "lifeSpan": "80 years",
+          "description": "Fur-covered, bear-like people with canine teeth, ~150-200 lbs. Not familiar with armor or iron. Barbaric nomads who are mischievous, cruel, and shy, favoring ambush tactics.",
+          "HF": 10
+        },
+        {
+          "id": "black_bear",
+          "name": "Black Bear",
+          "category": "animal",
+          "alignment": [
+            "unaligned"
+          ],
+          "size": "6-8 feet tall, 500-1000 pounds",
+          "AR": 6,
+          "HP": "8d8",
+          "attacks": [
+            {
+              "name": "Claw",
+              "damage": "1d8",
+              "count": 2
+            },
+            {
+              "name": "Bite",
+              "damage": "1d6",
+              "count": 1
+            }
+          ],
+          "bonuses": {
+            "strike": 1,
+            "damage": 4
+          },
+          "abilities": [
+            "Prowl 26%",
+            "Track by smell 60%",
+            "Night vision 20 ft",
+            "Swim 60%",
+            "Climb 80%",
+            "Rages when wounded (+2 damage, -1 parry/dodge)",
+            "Can stand upright to intimidate foes",
+            "Highly territorial; avoids large groups of humanoids"
+          ],
+          "psionics": "None",
+          "magicAbilities": "None",
+          "spd": 16,
+          "lifeSpan": "20 years",
+          "description": "Black bear found throughout Palladium. Fur value 200 gp, meat 150 gp.",
+          "HF": 7,
+          "variants": [
+            {
+              "name": "Old Kingdom Blackbear",
+              "region": "Old Kingdom, Land of the Southwinds, Timro, Eastern Territory",
+              "HP": "6d10",
+              "description": "Large black bears found in the Old Kingdom regions. Skilled climbers."
+            }
+          ]
+        },
+        {
+          "id": "brown_bear",
+          "name": "Brown Bear",
+          "category": "animal",
+          "alignment": [
+            "unaligned"
+          ],
+          "size": "8-10 feet tall, 600-1000 pounds",
+          "AR": 6,
+          "HP": "9d8",
+          "attacks": [
+            {
+              "name": "Claw",
+              "damage": "2d6",
+              "count": 2
+            },
+            {
+              "name": "Bite",
+              "damage": "1d8",
+              "count": 1
+            }
+          ],
+          "bonuses": {
+            "strike": 2,
+            "damage": 6
+          },
+          "abilities": [
+            "Prowl 25%",
+            "Track by smell 66%",
+            "Night vision 20 ft",
+            "Swim 80%",
+            "Climb 64%",
+            "Rages when wounded (+2 damage, -1 parry/dodge)",
+            "Can stand upright to intimidate foes",
+            "Highly territorial; will defend cubs ferociously"
+          ],
+          "psionics": "None",
+          "magicAbilities": "None",
+          "spd": 18,
+          "lifeSpan": "20 years",
+          "description": "Eastern Territory, Northern Wilderness, Lopan. Fur 250 gp, meat 180 gp.",
+          "HF": 7
+        },
+        {
+          "id": "grizzly_bear",
+          "name": "Grizzly Bear",
+          "category": "animal",
+          "alignment": [
+            "unaligned"
+          ],
+          "size": "8-10 feet tall, 800-1800 pounds",
+          "AR": 6,
+          "HP": "10d8",
+          "attacks": [
+            {
+              "name": "Claw",
+              "damage": "2d6",
+              "count": 3
+            },
+            {
+              "name": "Bite",
+              "damage": "1d8",
+              "count": 1
+            }
+          ],
+          "bonuses": {
+            "strike": 2,
+            "damage": 6
+          },
+          "abilities": [
+            "Prowl 28%",
+            "Track by smell 68%",
+            "Night vision 20 ft",
+            "Swim 70%",
+            "Climb 60%",
+            "Rages when wounded (+2 damage, -1 parry/dodge)",
+            "Can stand upright to intimidate foes",
+            "Highly territorial loner"
+          ],
+          "psionics": "None",
+          "magicAbilities": "None",
+          "spd": 16,
+          "lifeSpan": "25 years",
+          "description": "Northern Grizzly. Fur 350 gp, meat 250 gp.",
+          "HF": 7
+        },
+        {
+          "id": "silver_bear",
+          "name": "Silver Bear",
+          "category": "animal",
+          "alignment": [
+            "unaligned"
+          ],
+          "size": "5-10 feet tall, 300-600 pounds",
+          "AR": 6,
+          "HP": "8d8",
+          "attacks": [
+            {
+              "name": "Claw",
+              "damage": "1d8",
+              "count": 2
+            },
+            {
+              "name": "Bite",
+              "damage": "1d6",
+              "count": 1
+            }
+          ],
+          "bonuses": {
+            "strike": 1,
+            "damage": 4
+          },
+          "abilities": [
+            "Prowl 44%",
+            "Track by smell 70%",
+            "Night vision 30 ft",
+            "Swim 60%",
+            "Climb 88%",
+            "Rages when wounded (+2 damage, -1 parry/dodge)",
+            "Can stand upright to intimidate foes",
+            "Territorial but less aggressive than grizzlies"
+          ],
+          "psionics": "None",
+          "magicAbilities": "None",
+          "spd": 14,
+          "lifeSpan": "25 years",
+          "description": "Western Silver Bear. Fur 600 gp, meat 180 gp.",
+          "HF": 7
+        },
+        {
+          "id": "song_bird",
+          "name": "Song Bird",
+          "category": "animal",
+          "alignment": [
+            "unaligned"
+          ],
+          "size": "4-12 inches tall",
+          "AR": 2,
+          "HP": "1d6",
+          "attacks": [
+            {
+              "name": "Peck/Claw",
+              "damage": "1d2",
+              "count": 1
+            }
+          ],
+          "bonuses": {
+            "dodge": 3
+          },
+          "abilities": [
+            "Song",
+            "Fly 24 mph",
+            "Exceptional vision (spot insects at 60 ft)"
+          ],
+          "psionics": "None",
+          "magicAbilities": "None",
+          "spd": 10,
+          "lifeSpan": "6 years",
+          "description": "Common songbirds found globally. Value 10-30 gp.",
+          "HF": 0
+        },
+        {
+          "id": "game_bird",
+          "name": "Game Bird",
+          "category": "animal",
+          "alignment": [
+            "unaligned"
+          ],
+          "size": "9-36 inches tall",
+          "AR": 2,
+          "HP": "1d8",
+          "attacks": [
+            {
+              "name": "Peck/Claw",
+              "damage": "1d2",
+              "count": 1
+            }
+          ],
+          "bonuses": {
+            "dodge": 1
+          },
+          "abilities": [
+            "Fly 25 mph",
+            "Short bursts to startle predators"
+          ],
+          "psionics": "None",
+          "magicAbilities": "None",
+          "spd": 12,
+          "lifeSpan": "8 years",
+          "description": "Hunting birds found globally. Meat valued at 15 gp.",
+          "HF": 0
+        },
+        {
+          "id": "hawk",
+          "name": "Hawk",
+          "category": "animal",
+          "alignment": [
+            "unaligned"
+          ],
+          "size": "8-10 inches tall",
+          "AR": 2,
+          "HP": "1d8",
+          "attacks": [
+            {
+              "name": "Talons",
+              "damage": "1d4",
+              "count": 2
+            },
+            {
+              "name": "Bite",
+              "damage": "1d6",
+              "count": 1
+            }
+          ],
+          "bonuses": {
+            "strike": 3,
+            "damage": 2,
+            "dodge": 3
+          },
+          "abilities": [
+            "Fly 30 mph",
+            "Night vision 60 ft",
+            "Track by sound/smell 50%",
+            "Dive attack +2 strike on surprise prey"
+          ],
+          "psionics": "None",
+          "magicAbilities": "None",
+          "spd": 15,
+          "lifeSpan": "8 years",
+          "description": "Bird of prey found globally. Value 50 gp.",
+          "HF": 4
+        },
+        {
+          "id": "owl",
+          "name": "Owl",
+          "category": "animal",
+          "alignment": [
+            "unaligned"
+          ],
+          "size": "8-42 inches tall",
+          "AR": 3,
+          "HP": "1d8",
+          "attacksPerMelee": 4,
+          "attacks": [
+            {
+              "name": "Talons",
+              "damage": "1d4",
+              "count": 2
+            }
+          ],
+          "bonuses": {
+            "strike": 2,
+            "damage": 1,
+            "dodge": 2
+          },
+          "abilities": [
+            "Fly 26 mph",
+            "Night vision 20 ft",
+            "Track by smell/hearing 60%",
+            "Near-silent flight"
+          ],
+          "psionics": "None",
+          "magicAbilities": "None",
+          "spd": 12,
+          "lifeSpan": "10 years",
+          "description": "Nocturnal bird found globally. Value 3 gp for magic use.",
+          "HF": 3
+        },
+        {
+          "id": "vulture",
+          "name": "Vulture",
+          "category": "animal",
+          "alignment": [
+            "unaligned"
+          ],
+          "size": "2-3 feet tall, 14-30 pounds",
+          "AR": 2,
+          "HP": "2d6",
+          "attacks": [
+            {
+              "name": "Claws",
+              "damage": "1d4",
+              "count": 2
+            }
+          ],
+          "bonuses": {
+            "strike": 1,
+            "damage": 2
+          },
+          "abilities": [
+            "Fly 24 mph",
+            "Track by smell 66%",
+            "Immune to most diseases from carrion"
+          ],
+          "psionics": "None",
+          "magicAbilities": "None",
+          "spd": 10,
+          "lifeSpan": "12 years",
+          "description": "Carrion bird found globally. No value.",
+          "HF": 2
+        },
+        {
+          "id": "booted_eagle",
+          "name": "Booted Eagle",
+          "category": "animal",
+          "alignment": [
+            "unaligned"
+          ],
+          "size": "2-3.5 feet tall, 15-35 pounds",
+          "AR": 3,
+          "HP": "3d6",
+          "attacks": [
+            {
+              "name": "Talons",
+              "damage": "1d8",
+              "count": 3
+            },
+            {
+              "name": "Bite",
+              "damage": "1d8",
+              "count": 1
+            }
+          ],
+          "bonuses": {
+            "damage": 3,
+            "strike": 4,
+            "dodge": 3
+          },
+          "abilities": [
+            "Fly 50 mph",
+            "Exceptional vision",
+            "Dive attack +2 strike when stooping"
+          ],
+          "psionics": "None",
+          "magicAbilities": "None",
+          "spd": 20,
+          "lifeSpan": "18 years",
+          "description": "Large eagle found globally. Plumage value 20 gp.",
+          "HF": 5
+        },
+        {
+          "id": "basilisk",
+          "name": "Basilisk",
+          "category": "monster",
+          "alignment": [
+            "evil"
+          ],
+          "size": "8 ft long plus 8-10 ft tail",
+          "AR": 14,
+          "HP": "7d8+10",
+          "attacks": [
+            {
+              "name": "Claw",
+              "damage": "3d6",
+              "count": 3
+            },
+            {
+              "name": "Bite",
+              "damage": "3d6",
+              "count": 1
+            },
+            {
+              "name": "Fire Breath",
+              "damage": "4d6",
+              "count": 1
+            }
+          ],
+          "bonuses": {
+            "strike": 3,
+            "parry": 3,
+            "dodge": 3,
+            "damage": 10,
+            "allSaves": 4
+          },
+          "abilities": [
+            "Night vision 120 ft",
+            "See invisible",
+            "Petrifying gaze (save vs magic)",
+            "Spell magic levels 1-3"
+          ],
+          "spd": 16,
+          "lifeSpan": "4000 years",
+          "description": "Cunning drake whose gaze turns victims to stone.",
+          "HF": 14
+        },
+        {
+          "id": "manticore",
+          "name": "Manticore",
+          "category": "monster",
+          "alignment": [
+            "evil"
+          ],
+          "size": "Lion-bodied, human-visaged, bat-winged; 8-10 ft long",
+          "AR": 14,
+          "HP": "15d8",
+          "attacks": [
+            {
+              "name": "Claw",
+              "damage": "2d6",
+              "count": 2
+            },
+            {
+              "name": "Bite",
+              "damage": "2d6",
+              "count": 1
+            },
+            {
+              "name": "Tail Spikes",
+              "damage": "1d8 each (up to 6/volley)",
+              "count": 1
+            }
+          ],
+          "bonuses": {
+            "strike": 2,
+            "parry": 2,
+            "dodge": 2,
+            "damage": 4
+          },
+          "abilities": [
+            "Fly 40 mph",
+            "Darkvision 120 ft",
+            "Spikes regrow daily",
+            "Can fire 1-6 tail spikes per melee (maximum 24 per day)"
+          ],
+          "spd": 24,
+          "lifeSpan": "Centuries",
+          "description": "Sadistic predator that toys with prey before unleashing storm of tail spikes.",
+          "HF": 13
+        },
+        {
+          "id": "wyvern",
+          "name": "Wyvern",
+          "category": "monster",
+          "alignment": [
+            "evil"
+          ],
+          "size": "Two-legged dragon, 30-45 ft long",
+          "AR": 15,
+          "HP": "20d8",
+          "attacks": [
+            {
+              "name": "Bite",
+              "damage": "3d6",
+              "count": 1
+            },
+            {
+              "name": "Claw",
+              "damage": "2d6",
+              "count": 2
+            },
+            {
+              "name": "Sting (tail)",
+              "damage": "2d6 + poison",
+              "count": 1
+            }
+          ],
+          "bonuses": {
+            "strike": 3,
+            "dodge": 2,
+            "damage": 5
+          },
+          "abilities": [
+            "Flight ability (cannot run fast on ground)",
+            "Fly 60 mph",
+            "Poison tail (save vs poison or suffer 2d6 damage per melee for 2d4 rounds)",
+            "Darkvision 120 ft"
+          ],
+          "spd": 30,
+          "lifeSpan": "Hundreds of years",
+          "description": "Brutal sky-raiders feared by caravans and griffon riders.",
+          "HF": 15
+        },
+        {
+          "id": "troll",
+          "name": "Troll",
+          "category": "monster",
+          "alignment": [
+            "evil"
+          ],
+          "size": "8-10 ft tall; wiry, rubbery flesh",
+          "AR": 13,
+          "HP": "14d10",
+          "attacks": [
+            {
+              "name": "Claw",
+              "damage": "2d6",
+              "count": 2
+            },
+            {
+              "name": "Bite",
+              "damage": "1d8",
+              "count": 1
+            }
+          ],
+          "bonuses": {
+            "damage": 4,
+            "parry": 2,
+            "dodge": 2
+          },
+          "abilities": [
+            "Regeneration 2d6 HP per melee (fire/acid stops)",
+            "Darkvision 90 ft",
+            "Scent 60%"
+          ],
+          "psionics": "Standard (per individual)",
+          "magicAbilities": "Per O.C.C.",
+          "spd": 22,
+          "lifeSpan": "200+ years",
+          "description": "Savage brutes that heal from almost any wound unless burned or melted. Rare individuals pursue O.C.C. training alongside monstrous kin.",
+          "HF": 14
+        },
+        {
+          "id": "ogre",
+          "name": "Ogre",
+          "category": "monster",
+          "alignment": [
+            "evil"
+          ],
+          "size": "7-9 ft tall; barrel-chested",
+          "AR": 12,
+          "HP": "12d8",
+          "attacks": [
+            {
+              "name": "Club/Tree Trunk",
+              "damage": "3d6",
+              "count": 1
+            },
+            {
+              "name": "Fist",
+              "damage": "2d6",
+              "count": 2
+            }
+          ],
+          "bonuses": {
+            "damage": 6,
+            "strike": 1,
+            "parry": 1
+          },
+          "abilities": [
+            "Darkvision 60 ft",
+            "Carry heavy loads; smash doors",
+            "Average I.Q. 8; raid in tribes of 3-30"
+          ],
+          "psionics": "Standard (per individual)",
+          "magicAbilities": "Per O.C.C.",
+          "spd": 18,
+          "lifeSpan": "120 years",
+          "description": "Crude, violent marauders who raid for food, coin, and slaves. Some serve as mercenaries or muscle for darker powers.",
+          "HF": 12
+        },
+        {
+          "id": "sea_serpent",
+          "name": "Sea Serpent",
+          "category": "monster",
+          "alignment": [
+            "evil",
+            "selfish"
+          ],
+          "size": "30-130 ft long; amphibious",
+          "AR": 10,
+          "HP": "20d8",
+          "attacks": [
+            {
+              "name": "Claw",
+              "damage": "3d6",
+              "count": 3
+            },
+            {
+              "name": "Bite",
+              "damage": "2d6",
+              "count": 1
+            },
+            {
+              "name": "Constrict/Drown",
+              "damage": "special",
+              "count": 1
+            },
+            {
+              "name": "Fire Breath (above water)",
+              "damage": "4d6+6",
+              "count": 1
+            }
+          ],
+          "bonuses": {
+            "damage": 6,
+            "strike": 3,
+            "parry": 3,
+            "dodge": 3,
+            "allSaves": 3
+          },
+          "psionics": "Minor (level 1 abilities, I.S.P. 25)",
+          "abilities": [
+            "Swim fast; breathe air & water",
+            "Minor psionics (low level)",
+            "Common in deep oceans"
+          ],
+          "spd": 45,
+          "lifeSpan": "Centuries",
+          "description": "Enormous amphibious predators that smash ships and drown sailors.",
+          "HF": 16
+        },
+        {
+          "id": "cockatrice",
+          "name": "Cockatrice",
+          "category": "monster",
+          "alignment": [
+            "evil"
+          ],
+          "size": "12 ft long; feathered serpent-drake",
+          "AR": 12,
+          "HP": "6d8+10",
+          "attacks": [
+            {
+              "name": "Claw",
+              "damage": "2d6",
+              "count": 2
+            },
+            {
+              "name": "Bite",
+              "damage": "1d8",
+              "count": 1
+            },
+            {
+              "name": "Tail",
+              "damage": "1d8",
+              "count": 1
+            },
+            {
+              "name": "Petrifying Gaze/Breath",
+              "damage": "special (standard save vs magic or turn to stone for 1d6 hours)",
+              "count": 1
+            }
+          ],
+          "bonuses": {
+            "strike": 2,
+            "parry": 3,
+            "dodge": 3,
+            "saveMagic": 1
+          },
+          "abilities": [
+            "Night vision 60 ft",
+            "Fly 60 mph",
+            "Withers plants in 10 ft radius",
+            "Vulnerable to rooster crow (paralyzed 1-4 hours)"
+          ],
+          "spd": 30,
+          "lifeSpan": "600 years",
+          "description": "Predatory dragon-birds that hunt humanoids; rooster's crow paralyzes them.",
+          "HF": 12
+        },
+        {
+          "id": "seven_headed_hydra",
+          "name": "Seven-Headed Hydra",
+          "category": "monster",
+          "alignment": [
+            "evil"
+          ],
+          "size": "25 ft tall, 50 ft long; seven distinct heads",
+          "AR": 10,
+          "HP": "30d8",
+          "attacks": [
+            {
+              "name": "Claw",
+              "damage": "2d6",
+              "count": 2
+            },
+            {
+              "name": "Bite (per head)",
+              "damage": "1d8",
+              "count": 7
+            },
+            {
+              "name": "Tail Whip",
+              "damage": "2d6",
+              "count": 1
+            },
+            {
+              "name": "Breaths/Eyes",
+              "damage": "special (varies by head)",
+              "count": 1
+            }
+          ],
+          "bonuses": {
+            "damage": 6,
+            "parry": 3,
+            "dodge": 3,
+            "allSaves": 1
+          },
+          "abilities": [
+            "Night vision 90 ft",
+            "Regenerates 2-12 HP per melee",
+            "Can regrow heads/limbs",
+            "Often studies wizard spells (levels 1-6 at 5th-level proficiency)"
+          ],
+          "spd": 20,
+          "lifeSpan": "Ancient",
+          "description": "Multi-breath terror whose severed heads return; walking catastrophe.",
+          "HF": 17
+        },
+        {
+          "id": "thunder_lizard",
+          "name": "Thunder Lizard",
+          "category": "monster",
+          "alignment": [
+            "selfish",
+            "evil"
+          ],
+          "size": "20 ft tall, up to 45 ft long; wingless emerald-gold behemoth",
+          "AR": 13,
+          "HP": "40d8",
+          "attacks": [
+            {
+              "name": "Crushing Blows",
+              "damage": "4d6",
+              "count": 2
+            },
+            {
+              "name": "Tail Whip",
+              "damage": "2d6",
+              "count": 1
+            },
+            {
+              "name": "Lightning Breath",
+              "damage": "6d6",
+              "count": 1,
+              "range": "60 ft"
+            }
+          ],
+          "bonuses": {
+            "strike": 4,
+            "parry": 4,
+            "dodge": 4,
+            "allSaves": 3
+          },
+          "abilities": [
+            "Night vision 90 ft",
+            "See invisible",
+            "Spell magic (adept)",
+            "Breathes lightning bolts",
+            "Resistant to many magics"
+          ],
+          "psionics": "Minor (level 1 abilities, I.S.P. 40)",
+          "spd": 18,
+          "lifeSpan": "3000 years",
+          "description": "Ancient titans steeped in lore and magic; thunder walks with them.",
+          "HF": 18
+        },
+        {
+          "id": "brownie_playable",
+          "name": "Brownie",
+          "category": "faerie_playable",
+          "playable": true,
+          "alignment_options": [
+            "good",
+            "unprincipled",
+            "scrupulous"
+          ],
+          "size": "10–18 inches; delicate, wingless",
+          "attribute_dice": {
+            "IQ": "4d6",
+            "ME": "4d6",
+            "MA": "4d6",
+            "PS": "2d6",
+            "PP": "6d6",
+            "PE": "3d6",
+            "PB": "5d6",
+            "Spd": "5d6"
+          },
+          "attacks": [
+            {
+              "name": "Tiny Blade/Dart",
+              "damage": "1d4"
+            },
+            {
+              "name": "Trick (trip/tangle)",
+              "damage": "special"
+            }
+          ],
+          "magic": "household/warding/illusion L1–4",
+          "psionics": "Minor",
+          "special_abilities": [
+            "Invisibility at will (limited while attacking)",
+            "Prowl 60%+, pick pockets 55% (tiny hands)",
+            "Blessing/hex of chores (aid/hinder simple labors)"
+          ],
+          "occ_limitations": [
+            "bard",
+            "diabolist (wards)",
+            "wizard (illusion)",
+            "thief"
+          ],
+          "AR": 2,
+          "HP": "2d6",
+          "spd": 25,
+          "lifeSpan": "200 years",
+          "description": "Tiny faerie folk known for household magic and trickery."
+        },
+        {
+          "id": "pixie_playable",
+          "name": "Pixie",
+          "category": "faerie_playable",
+          "playable": true,
+          "alignment_options": [
+            "anarchist",
+            "unprincipled",
+            "good"
+          ],
+          "size": "8–14 inches; gossamer wings",
+          "attribute_dice": {
+            "IQ": "4d6",
+            "ME": "4d6",
+            "MA": "4d6",
+            "PS": "2d6",
+            "PP": "7d6",
+            "PE": "3d6",
+            "PB": "5d6",
+            "Spd": "7d6"
+          },
+          "attacks": [
+            {
+              "name": "Faerie Needle",
+              "damage": "1d4"
+            },
+            {
+              "name": "Sleep Dust",
+              "damage": "special (save vs magic)"
+            }
+          ],
+          "magic": "illusion/light/slumber L1–5",
+          "psionics": "Minor",
+          "special_abilities": [
+            "Flight ~40 mph; perfect maneuverability",
+            "Invisibility & see invisible",
+            "Faerie dust (sleep or glow; small cone)"
+          ],
+          "occ_limitations": [
+            "bard",
+            "ranger/scout",
+            "wizard (illusion)",
+            "thief"
+          ],
+          "AR": 2,
+          "HP": "2d6",
+          "spd": 35,
+          "lifeSpan": "300 years",
+          "description": "Winged faerie folk with illusion magic and sleep dust."
+        },
+        {
+          "id": "human_wizard_playable",
+          "name": "Human Wizard",
+          "category": "pc_playable",
+          "playable": true,
+          "race": "Human",
+          "occ": "Wizard",
+          "alignment_options": [
+            "any"
+          ],
+          "size": "Varies by race",
+          "attribute_dice": {
+            "IQ": "3d6",
+            "ME": "3d6",
+            "MA": "3d6",
+            "PS": "3d6",
+            "PP": "3d6",
+            "PE": "3d6",
+            "PB": "3d6",
+            "Spd": "3d6"
+          },
+          "preferred_weapons": "Any, with leanings toward blade weapons and bows",
+          "attacks": [
+            {
+              "name": "Weapon (preferred)",
+              "damage": "by weapon"
+            },
+            {
+              "name": "Spellcasting",
+              "damage": "by spell"
+            }
+          ],
+          "magic": "Wizard spells (L1–9, as approved)",
+          "psionics": "None",
+          "lifeSpan": "Varies by race",
+          "AR": 8,
+          "HP": "4d6",
+          "spd": 18,
+          "description": "Human wizard capable of casting spells and using weapons."
+        },
+        {
+          "id": "elf_ranger_playable",
+          "name": "Elf Ranger",
+          "category": "pc_playable",
+          "playable": true,
+          "race": "Elf",
+          "occ": "Ranger",
+          "alignment_options": [
+            "any"
+          ],
+          "size": "Varies by race",
+          "attribute_dice": {
+            "IQ": "3d6",
+            "ME": "3d6",
+            "MA": "2d6",
+            "PS": "3d6",
+            "PP": "4d6",
+            "PE": "3d6",
+            "PB": "5d6",
+            "Spd": "3d6"
+          },
+          "preferred_weapons": "Large swords, short swords, long bows, knives, and blunt weapons",
+          "attacks": [
+            {
+              "name": "Weapon (preferred)",
+              "damage": "by weapon"
+            },
+            {
+              "name": "Bow/Long Bow",
+              "damage": "by weapon"
+            }
+          ],
+          "magic": "None",
+          "psionics": "None",
+          "lifeSpan": "Varies by race",
+          "AR": 10,
+          "HP": "6d6",
+          "spd": 20,
+          "description": "Elven ranger skilled in wilderness survival and archery."
+        },
+        {
+          "id": "dwarf_knight_playable",
+          "name": "Dwarf Knight",
+          "category": "pc_playable",
+          "playable": true,
+          "race": "Dwarf",
+          "occ": "Knight",
+          "alignment_options": [
+            "good"
+          ],
+          "size": "Varies by race",
+          "attribute_dice": {
+            "IQ": "3d6",
+            "ME": "3d6",
+            "MA": "2d6",
+            "PS": "4d6",
+            "PP": "3d6",
+            "PE": "4d6",
+            "Spd": "2d6"
+          },
+          "preferred_weapons": "Battle axes, ball and chains, blunt weapons, iron staves, slings",
+          "attacks": [
+            {
+              "name": "Weapon (preferred)",
+              "damage": "by weapon"
+            },
+            {
+              "name": "Lance/Charge",
+              "damage": "by weapon (mounted)"
+            }
+          ],
+          "magic": "None",
+          "psionics": "None",
+          "lifeSpan": "Varies by race",
+          "AR": 12,
+          "HP": "6d8",
+          "spd": 16,
+          "description": "Dwarven knight specializing in heavy weapons and mounted combat."
+        },
+        {
+          "id": "algor_giant",
+          "name": "Algor Giant (Frost Giant)",
+          "category": "giant_playable",
+          "playable": true,
+          "alignment_options": [
+            "any"
+          ],
+          "alignment_tendency": "often good or neutral",
+          "average_height": "14–16 ft",
+          "average_weight": "500–1200 lbs",
+          "AR": 14,
+          "HP": "8d8 + P.E. bonus",
+          "HF": 13,
+          "attribute_dice": {
+            "IQ": "3d6",
+            "ME": "2d6",
+            "MA": "3d6",
+            "PS": "5d6",
+            "PP": "3d6",
+            "PE": "4d6",
+            "PB": "3d6",
+            "Spd": "2d6"
+          },
+          "psionics": "Standard (Minor)",
+          "magicAbilities": "None",
+          "bonuses": {
+            "strike": 2,
+            "damage": 6,
+            "parry": 1,
+            "dodge": 1,
+            "saveMagic": 2,
+            "saveCold": 4
+          },
+          "occ_limitations": [
+            "any_except_thief_paladin_longbowman"
+          ],
+          "special_abilities": [
+            "Night vision 60 ft",
+            "Impervious to cold (no damage)",
+            "Frost Breath: 30 ft range, 6 ft wide, 4d6 damage (extra attack)",
+            "Resistant to magic (+2 save)",
+            "Bio-regeneration 1d8 HP every four melees",
+            "Can hurl ice boulders for 4d6 damage (range 150 ft)"
+          ],
+          "enemies": [
+            "elves",
+            "dwarves",
+            "humans"
+          ],
+          "dislikes": [
+            "orcs",
+            "goblins",
+            "hob-goblins"
+          ],
+          "allies": [
+            "wolfen",
+            "trolls",
+            "jotan",
+            "cyclops"
+          ],
+          "favorite_weapons": [
+            "giant axes",
+            "ball and chain",
+            "pole arms"
+          ],
+          "sources": [
+            {
+              "file": "Palladium.docx"
+            },
+            {
+              "file": "annotated_rulebook.json"
+            }
+          ],
+          "race": "Giant",
+          "spd": 24,
+          "lifeSpan": "250 years",
+          "description": "Massive frost giants of the northern wastes who combine raw strength with a code of hospitality. Though suspicious of warm-blooded folk, they can become stalwart allies against the forces of darkness."
+        },
+        {
+          "id": "cyclops_giant",
+          "name": "Cyclops",
+          "category": "giant_playable",
+          "playable": true,
+          "alignment_options": [
+            "any (tend selfish/evil)"
+          ],
+          "average_height": "14 ft",
+          "average_weight": "500–1000 lbs",
+          "AR": 13,
+          "HP": "7d8 + P.E. bonus",
+          "HF": 12,
+          "attribute_dice": {
+            "IQ": "3d6",
+            "ME": "2d6",
+            "MA": "4d6",
+            "PS": "5d6",
+            "PP": "4d6",
+            "PE": "4d6",
+            "PB": "2d6",
+            "Spd": "2d6"
+          },
+          "psionics": "Standard (Minor)",
+          "magicAbilities": [
+            "May channel lightning through melee weapons (adds 2d6-4d6 electrical damage)"
+          ],
+          "bonuses": {
+            "strike": 3,
+            "damage": 7,
+            "parry": 2,
+            "dodge": 1,
+            "saveMagic": 2
+          },
+          "occ_limitations": [
+            "any (tend toward men of arms)"
+          ],
+          "special_abilities": [
+            "Night vision 90 ft",
+            "See the invisible",
+            "Great natural strength",
+            "Create Lightning Shafts (magical javelins/arrows)",
+            "Bio-regeneration 1d8 HP every four melees",
+            "Resistant to fire/cold (half damage)"
+          ],
+          "enemies": [
+            "titans",
+            "changelings",
+            "trolls"
+          ],
+          "allies": [
+            "kobolds",
+            "ogres",
+            "jotan",
+            "gigantes",
+            "nimro",
+            "dragons"
+          ],
+          "favorite_weapons": [
+            "javelins",
+            "large swords",
+            "spears",
+            "short bows",
+            "long bows",
+            "slings (giant-sized)"
+          ],
+          "notes": [
+            "Very greedy",
+            "Wear heavy armor",
+            "Often worshipped by kobolds"
+          ],
+          "sources": [
+            {
+              "file": "Palladium.docx"
+            },
+            {
+              "file": "annotated_rulebook.json"
+            }
+          ],
+          "race": "Giant",
+          "spd": 22,
+          "lifeSpan": "220 years",
+          "description": "One-eyed smiths and raiders famed for forging thunderbolt weapons. Proud and avaricious, they sell their services to the highest bidder."
+        },
+        {
+          "id": "jotan_giant",
+          "name": "Jotan",
+          "category": "giant_playable",
+          "playable": true,
+          "alignment_options": [
+            "any (tend evil/selfish)"
+          ],
+          "average_height": "18–20 ft",
+          "average_weight": "700–1600 lbs",
+          "AR": 13,
+          "HP": "9d8 + P.E. bonus",
+          "HF": 12,
+          "attribute_dice": {
+            "IQ": "2d6",
+            "ME": "3d6",
+            "MA": "2d6",
+            "PS": "5d6",
+            "PP": "5d6",
+            "PE": "2d6",
+            "PB": "3d6",
+            "Spd": "3d6"
+          },
+          "psionics": "Standard (Minor)",
+          "magicAbilities": "Earth Warlock magic (levels 1-4 at 4th-level proficiency)",
+          "bonuses": {
+            "strike": 3,
+            "damage": 8,
+            "parry": 2,
+            "dodge": 2,
+            "saveMagic": 2,
+            "savePoison": 2
+          },
+          "occ_limitations": [
+            "men_of_arms",
+            "clergy",
+            "witch",
+            "warlock"
+          ],
+          "special_abilities": [
+            "Great strength and endurance",
+            "Metal shaping 65%",
+            "Stone shape 40%",
+            "Bio-regeneration 1d8 HP every four melees"
+          ],
+          "enemies": [
+            "titans",
+            "elves",
+            "humans",
+            "dwarves",
+            "gnomes"
+          ],
+          "allies": [
+            "cyclops",
+            "nimro",
+            "trolls",
+            "ogres",
+            "orcs",
+            "goblins"
+          ],
+          "favorite_weapons": [
+            "large swords",
+            "axes",
+            "ball and chain",
+            "blunt weapons"
+          ],
+          "notes": [
+            "Extremely hostile",
+            "Prefer heavy armor",
+            "Often command orcs, goblins, hob-goblins"
+          ],
+          "sources": [
+            {
+              "file": "annotated_rulebook.json"
+            }
+          ],
+          "race": "Giant",
+          "spd": 26,
+          "lifeSpan": "230 years",
+          "description": "Earth giants who carve fortresses into mountains and mold metal like clay. Brutal warlords who enslave lesser races to expand their cavern empires."
+        },
+        {
+          "id": "nimro_giant",
+          "name": "Nimro",
+          "category": "giant_playable",
+          "playable": true,
+          "alignment_options": [
+            "any (lean selfish/evil)"
+          ],
+          "average_height": "14–16 ft",
+          "average_weight": "500–1200 lbs",
+          "AR": 13,
+          "HP": "8d8 + P.E. bonus",
+          "HF": 13,
+          "attribute_dice": {
+            "IQ": "3d6",
+            "ME": "4d6",
+            "MA": "3d6",
+            "PS": "4d6",
+            "PP": "4d6",
+            "PE": "3d6",
+            "PB": "2d6",
+            "Spd": "4d6"
+          },
+          "psionics": "Standard (Minor)",
+          "magicAbilities": "Fire Warlock magic (levels 1-4 at 4th-level proficiency)",
+          "bonuses": {
+            "strike": 2,
+            "damage": 6,
+            "parry": 2,
+            "dodge": 2,
+            "saveMagic": 2,
+            "savePoison": 3
+          },
+          "occ_limitations": [
+            "any_except_knight_paladin_longbowman"
+          ],
+          "special_abilities": [
+            "Night vision 60 ft",
+            "Impervious to fire (no damage)",
+            "Fire Breath: 30 ft range, 4d6 damage",
+            "Bio-regeneration 1d8 HP every four melees"
+          ],
+          "enemies": [
+            "titans",
+            "elves",
+            "dwarves",
+            "humans",
+            "changelings",
+            "gnomes"
+          ],
+          "allies": [
+            "jotan",
+            "gigantes",
+            "ogres",
+            "trolls",
+            "orcs",
+            "goblins"
+          ],
+          "favorite_weapons": [
+            "large swords",
+            "blade weapons",
+            "blunt weapons"
+          ],
+          "notes": [
+            "Aggressive, cunning, greedy",
+            "Wear any armor",
+            "Large tribes at Mt. Nimro",
+            "Desire to build a giant kingdom"
+          ],
+          "sources": [
+            {
+              "file": "annotated_rulebook.json"
+            }
+          ],
+          "race": "Giant",
+          "spd": 24,
+          "lifeSpan": "250 years",
+          "description": "Copper-skinned fire giants who dream of reforging the world in flame. Nimro chieftains wield elemental sorcery and terrorize the Old Kingdom."
+        },
+        {
+          "id": "gigantes_giant",
+          "name": "Gigantes",
+          "category": "giant_playable",
+          "playable": true,
+          "alignment_options": [
+            "selfish",
+            "evil"
+          ],
+          "average_height": "10–16 ft",
+          "average_weight": "450–1000 lbs",
+          "AR": 12,
+          "HP": "7d8 + P.E. bonus",
+          "HF": 14,
+          "attribute_dice": {
+            "IQ": "2d6",
+            "ME": "1d6",
+            "MA": "2d6",
+            "PS": "5d6",
+            "PP": "4d6",
+            "PE": "5d6",
+            "PB": "2d6",
+            "Spd": "4d6"
+          },
+          "psionics": "Standard (Minor)",
+          "magicAbilities": "None (unless mutation grants spell use)",
+          "bonuses": {
+            "strike": 2,
+            "damage": 7,
+            "parry": 2,
+            "dodge": 1,
+            "saveMagic": 1,
+            "savePoison": 2
+          },
+          "occ_limitations": [
+            "men_of_arms",
+            "clergy",
+            "witch"
+          ],
+          "special_abilities": [
+            "Roll four random mutations (night vision, see invisible, impervious to fire, etc.)",
+            "20% chance of insanity linked to mutations",
+            "Bio-regeneration 1d8 HP every four melees"
+          ],
+          "enemies": [
+            "titans",
+            "elves",
+            "humans",
+            "dwarves",
+            "wolfen",
+            "gnomes",
+            "troglodytes",
+            "changelings"
+          ],
+          "allies": [
+            "cyclops",
+            "trolls",
+            "ogres",
+            "orcs",
+            "goblins"
+          ],
+          "favorite_weapons": [
+            "blade",
+            "blunt (giant-sized)"
+          ],
+          "notes": [
+            "Extremely hostile",
+            "Worship gods of darkness",
+            "Titans are arch-enemies"
+          ],
+          "sources": [
+            {
+              "file": "annotated_rulebook.json"
+            }
+          ],
+          "race": "Giant",
+          "spd": 22,
+          "lifeSpan": "180 years",
+          "description": "Mutant giants warped by ancient sorcery. Each possesses bizarre gifts and a volatile temperament, making them unpredictable foes."
+        },
+        {
+          "id": "titan_giant",
+          "name": "Titan",
+          "category": "giant_playable",
+          "playable": true,
+          "alignment_options": [
+            "any (strongly tend good)"
+          ],
+          "average_height": "12–14 ft",
+          "average_weight": "400–900 lbs",
+          "AR": 15,
+          "HP": "10d8 + P.E. bonus",
+          "HF": 15,
+          "attribute_dice": {
+            "IQ": "3d6",
+            "ME": "2d6",
+            "MA": "3d6",
+            "PS": "4d6",
+            "PP": "5d6",
+            "PE": "4d6",
+            "PB": "5d6",
+            "Spd": "4d6"
+          },
+          "psionics": "Standard (Minor)",
+          "magicAbilities": "All elemental and wizard spells up to level 6 at 8th-level proficiency",
+          "bonuses": {
+            "strike": 2,
+            "damage": 8,
+            "parry": 3,
+            "dodge": 3,
+            "saveMagic": 4,
+            "savePoison": 4
+          },
+          "occ_limitations": [
+            "men_of_arms",
+            "healer",
+            "wizard",
+            "warlock"
+          ],
+          "special_abilities": [
+            "Noble bearing and presence (very high P.B.)",
+            "Bio-regeneration 1d8 HP every four melees",
+            "Immune to disease",
+            "Sense ley line energy (60%)"
+          ],
+          "enemies": [
+            "giant races of darkness (e.g., gigantes, jotan, nimro)"
+          ],
+          "allies": [
+            "good-aligned kingdoms",
+            "dragon allies (occasional)"
+          ],
+          "favorite_weapons": [
+            "any (masterwork)"
+          ],
+          "notes": [
+            "Majestic giants, often leaders and champions against darkness"
+          ],
+          "sources": [
+            {
+              "file": "annotated_rulebook.json"
+            }
+          ],
+          "race": "Giant",
+          "spd": 30,
+          "lifeSpan": "500 years",
+          "description": "Noble scions of the Elemental Laws who seek balance in the world. Titans act as mentors to mortal heroes and wield both steel and sorcery with effortless grace."
+        },
+        {
+          "id": "great_horned_dragon_playable",
+          "name": "Great Horned Dragon",
+          "category": "dragon_playable",
+          "playable": true,
+          "alignment_options": [
+            "selfish",
+            "evil"
+          ],
+          "size": "70–90 ft long; colossal horns and crest",
+          "age_categories": [
+            "hatchling",
+            "young",
+            "adult",
+            "ancient"
+          ],
+          "attribute_dice": {
+            "IQ": "4d6",
+            "ME": "4d6",
+            "MA": "4d6",
+            "PS": "8d6",
+            "PP": "5d6",
+            "PE": "7d6",
+            "PB": "3d6",
+            "Spd": "5d6"
+          },
+          "breath_weapon": {
+            "type": "fire",
+            "damage": "7d6",
+            "range": "100 ft cone"
+          },
+          "attacks": [
+            {
+              "name": "Bite",
+              "damage": "6d6"
+            },
+            {
+              "name": "Claw",
+              "damage": "4d6"
+            },
+            {
+              "name": "Gore (Horns)",
+              "damage": "5d6"
+            },
+            {
+              "name": "Tail",
+              "damage": "5d6"
+            }
+          ],
+          "psionics": "Major",
+          "magic": "Wizard spells L1–9",
+          "occ_limitations": [
+            "dragon_only"
+          ],
+          "special_abilities": [
+            "Night vision 120 ft",
+            "Fly ~90 mph",
+            "Impervious to fire; half damage from cold",
+            "Aura of terror (save vs horror)"
+          ],
+          "enemies": [
+            "dragon slayers",
+            "rival dragons"
+          ],
+          "allies": [
+            "greater demons (rare pacts)",
+            "cultists (occasional)"
+          ],
+          "favorite_weapons": [
+            "natural weapons",
+            "sorcery"
+          ],
+          "sources": [
+            {
+              "file": "Palladium Fantasy RPG 1994"
+            }
+          ],
+          "HF": 17
+        },
+        {
+          "id": "mighty_wooly_dragon_playable",
+          "name": "Mighty Wooly Dragon",
+          "category": "dragon_playable",
+          "playable": true,
+          "alignment_options": [
+            "any (tend selfish)"
+          ],
+          "size": "60–80 ft long; shaggy fur between plates",
+          "age_categories": [
+            "hatchling",
+            "young",
+            "adult",
+            "ancient"
+          ],
+          "attribute_dice": {
+            "IQ": "4d6",
+            "ME": "4d6",
+            "MA": "3d6",
+            "PS": "7d6",
+            "PP": "5d6",
+            "PE": "8d6",
+            "PB": "3d6",
+            "Spd": "5d6"
+          },
+          "breath_weapon": {
+            "type": "frost",
+            "damage": "7d6",
+            "range": "90 ft cone"
+          },
+          "attacks": [
+            {
+              "name": "Bite",
+              "damage": "5d6"
+            },
+            {
+              "name": "Claw",
+              "damage": "4d6"
+            },
+            {
+              "name": "Tail Smash",
+              "damage": "5d6"
+            }
+          ],
+          "psionics": "Minor",
+          "magic": "Wizard spells L1–7",
+          "occ_limitations": [
+            "dragon_only"
+          ],
+          "special_abilities": [
+            "Impervious to cold/ice; half damage from fire",
+            "Fly ~80 mph",
+            "Snow burrow (move through drifts without penalty)"
+          ],
+          "enemies": [
+            "frost giant rivals",
+            "northern kingdoms"
+          ],
+          "allies": [
+            "ice cults",
+            "elementalists (water/air)"
+          ],
+          "favorite_weapons": [
+            "natural weapons",
+            "frost magic"
+          ],
+          "sources": [
+            {
+              "file": "Palladium Fantasy RPG 1994"
+            }
+          ],
+          "HF": 17
+        },
+        {
+          "id": "sea_dragon_playable",
+          "name": "Sea Dragon",
+          "category": "dragon_playable",
+          "playable": true,
+          "alignment_options": [
+            "selfish",
+            "any"
+          ],
+          "size": "55–85 ft long; finned crest, webbed claws",
+          "age_categories": [
+            "hatchling",
+            "young",
+            "adult",
+            "ancient"
+          ],
+          "attribute_dice": {
+            "IQ": "4d6",
+            "ME": "4d6",
+            "MA": "3d6",
+            "PS": "7d6",
+            "PP": "5d6",
+            "PE": "7d6",
+            "PB": "3d6",
+            "Spd": "5d6"
+          },
+          "breath_weapon": {
+            "type": "scalding steam",
+            "damage": "6d6",
+            "range": "80 ft cone (air) / 60 ft cloud (water)"
+          },
+          "attacks": [
+            {
+              "name": "Bite",
+              "damage": "5d6"
+            },
+            {
+              "name": "Claw",
+              "damage": "3d6"
+            },
+            {
+              "name": "Tail Lash",
+              "damage": "4d6"
+            }
+          ],
+          "psionics": "Minor",
+          "magic": "Wizard spells L1–8 (water/air emphasis)",
+          "occ_limitations": [
+            "dragon_only"
+          ],
+          "special_abilities": [
+            "Swim 50 mph",
+            "Breathe water & air",
+            "Hold breath 1 hour",
+            "Amphibious tactics vs ships"
+          ],
+          "enemies": [
+            "navies",
+            "sea serpents (territorial)"
+          ],
+          "allies": [
+            "sea hags (covenants)",
+            "sahuagin/merrow (coercion)"
+          ],
+          "favorite_weapons": [
+            "natural weapons",
+            "steam magic"
+          ],
+          "sources": [
+            {
+              "file": "Palladium Fantasy RPG 1994"
+            }
+          ],
+          "HF": 17
+        },
+        {
+          "id": "serpent_of_the_wind_playable",
+          "name": "Serpent of the Wind",
+          "category": "dragon_playable",
+          "playable": true,
+          "alignment_options": [
+            "selfish",
+            "any"
+          ],
+          "size": "≈20 ft long; wingless, snake-like dragon",
+          "age_categories": [
+            "hatchling",
+            "young",
+            "adult",
+            "ancient"
+          ],
+          "attribute_dice": {
+            "IQ": "4d6",
+            "ME": "4d6",
+            "MA": "4d6",
+            "PS": "6d6",
+            "PP": "7d6",
+            "PE": "6d6",
+            "PB": "3d6",
+            "Spd": "7d6"
+          },
+          "breath_weapon": {
+            "type": "wind lash",
+            "damage": "2d6 (per lash)",
+            "range": "line 50 ft"
+          },
+          "attacks": [
+            {
+              "name": "Wind Lash",
+              "damage": "2d6"
+            },
+            {
+              "name": "Constriction",
+              "damage": "special"
+            },
+            {
+              "name": "Bite",
+              "damage": "2d6"
+            }
+          ],
+          "psionics": "Minor",
+          "magic": "Air elemental magic (~10th-level proficiency)",
+          "occ_limitations": [
+            "dragon_only"
+          ],
+          "special_abilities": [
+            "Night vision 90 ft",
+            "See invisible; turn invisible",
+            "Half damage from fire/cold",
+            "Extremely agile flyers despite wingless form"
+          ],
+          "enemies": [
+            "sky mages",
+            "griffon aeries"
+          ],
+          "allies": [
+            "air warlocks",
+            "storm cults"
+          ],
+          "favorite_weapons": [
+            "wind magic",
+            "speed"
+          ],
+          "sources": [
+            {
+              "file": "Palladium Fantasy RPG 1994"
+            }
+          ]
+        },
+        {
+          "id": "human_paladin",
+          "name": "Human Paladin",
+          "category": "pc_playable",
+          "playable": true,
+          "race": "Human",
+          "occ": "Paladin",
+          "alignment_options": [
+            "good"
+          ],
+          "size": "Varies by race",
+          "attribute_dice": {
+            "IQ": "3d6",
+            "ME": "3d6",
+            "MA": "3d6",
+            "PS": "3d6",
+            "PP": "3d6",
+            "PE": "3d6",
+            "PB": "3d6",
+            "Spd": "3d6"
+          },
+          "preferred_weapons": "Any, with leanings toward blade weapons and bows",
+          "attacks": [
+            {
+              "name": "Weapon (preferred)",
+              "damage": "by weapon"
+            },
+            {
+              "name": "Lance/Charge",
+              "damage": "by weapon (mounted)"
+            }
+          ],
+          "magic": "None",
+          "psionics": "None",
+          "lifeSpan": "Varies by race",
+          "sources": [
+            {
+              "race": "annotated_rulebook.json occLimitations/favoriteWeapons"
+            },
+            {
+              "occ": "OCC.txt / Rulebook.txt (O.C.C. summaries)"
+            }
+          ]
+        },
+        {
+          "id": "human_knight",
+          "name": "Human Knight",
+          "category": "pc_playable",
+          "playable": true,
+          "race": "Human",
+          "occ": "Knight",
+          "alignment_options": [
+            "good"
+          ],
+          "size": "Varies by race",
+          "attribute_dice": {
+            "IQ": "3d6",
+            "ME": "3d6",
+            "MA": "3d6",
+            "PS": "3d6",
+            "PP": "3d6",
+            "PE": "3d6",
+            "PB": "3d6",
+            "Spd": "3d6"
+          },
+          "preferred_weapons": "Any, with leanings toward blade weapons and bows",
+          "attacks": [
+            {
+              "name": "Weapon (preferred)",
+              "damage": "by weapon"
+            },
+            {
+              "name": "Lance/Charge",
+              "damage": "by weapon (mounted)"
+            }
+          ],
+          "magic": "None",
+          "psionics": "None",
+          "lifeSpan": "Varies by race",
+          "sources": [
+            {
+              "race": "annotated_rulebook.json occLimitations/favoriteWeapons"
+            },
+            {
+              "occ": "OCC.txt / Rulebook.txt (O.C.C. summaries)"
+            }
+          ]
+        },
+        {
+          "id": "human_ranger",
+          "name": "Human Ranger",
+          "category": "pc_playable",
+          "playable": true,
+          "race": "Human",
+          "occ": "Ranger",
+          "alignment_options": [
+            "any"
+          ],
+          "size": "Varies by race",
+          "attribute_dice": {
+            "IQ": "3d6",
+            "ME": "3d6",
+            "MA": "3d6",
+            "PS": "3d6",
+            "PP": "3d6",
+            "PE": "3d6",
+            "PB": "3d6",
+            "Spd": "3d6"
+          },
+          "preferred_weapons": "Any, with leanings toward blade weapons and bows",
+          "attacks": [
+            {
+              "name": "Weapon (preferred)",
+              "damage": "by weapon"
+            },
+            {
+              "name": "Bow/Long Bow",
+              "damage": "by weapon"
+            }
+          ],
+          "magic": "None",
+          "psionics": "None",
+          "lifeSpan": "Varies by race",
+          "sources": [
+            {
+              "race": "annotated_rulebook.json occLimitations/favoriteWeapons"
+            },
+            {
+              "occ": "OCC.txt / Rulebook.txt (O.C.C. summaries)"
+            }
+          ]
+        },
+        {
+          "id": "human_thief",
+          "name": "Human Thief",
+          "category": "pc_playable",
+          "playable": true,
+          "race": "Human",
+          "occ": "Thief",
+          "alignment_options": [
+            "any"
+          ],
+          "size": "Varies by race",
+          "attribute_dice": {
+            "IQ": "3d6",
+            "ME": "3d6",
+            "MA": "3d6",
+            "PS": "3d6",
+            "PP": "3d6",
+            "PE": "3d6",
+            "PB": "3d6",
+            "Spd": "3d6"
+          },
+          "preferred_weapons": "Any, with leanings toward blade weapons and bows",
+          "attacks": [
+            {
+              "name": "Dagger/Short Blade",
+              "damage": "by weapon"
+            },
+            {
+              "name": "Backstab/Assassinate",
+              "damage": "special"
+            }
+          ],
+          "magic": "None",
+          "psionics": "None",
+          "lifeSpan": "Varies by race",
+          "sources": [
+            {
+              "race": "annotated_rulebook.json occLimitations/favoriteWeapons"
+            },
+            {
+              "occ": "OCC.txt / Rulebook.txt (O.C.C. summaries)"
+            }
+          ]
+        },
+        {
+          "id": "human_assassin",
+          "name": "Human Assassin",
+          "category": "pc_playable",
+          "playable": true,
+          "race": "Human",
+          "occ": "Assassin",
+          "alignment_options": [
+            "any"
+          ],
+          "size": "Varies by race",
+          "attribute_dice": {
+            "IQ": "3d6",
+            "ME": "3d6",
+            "MA": "3d6",
+            "PS": "3d6",
+            "PP": "3d6",
+            "PE": "3d6",
+            "PB": "3d6",
+            "Spd": "3d6"
+          },
+          "preferred_weapons": "Any, with leanings toward blade weapons and bows",
+          "attacks": [
+            {
+              "name": "Dagger/Short Blade",
+              "damage": "by weapon"
+            },
+            {
+              "name": "Backstab/Assassinate",
+              "damage": "special"
+            }
+          ],
+          "magic": "None",
+          "psionics": "None",
+          "lifeSpan": "Varies by race",
+          "sources": [
+            {
+              "race": "annotated_rulebook.json occLimitations/favoriteWeapons"
+            },
+            {
+              "occ": "OCC.txt / Rulebook.txt (O.C.C. summaries)"
+            }
+          ]
+        },
+        {
+          "id": "human_priest",
+          "name": "Human Priest",
+          "category": "pc_playable",
+          "playable": true,
+          "race": "Human",
+          "occ": "Priest",
+          "alignment_options": [
+            "good"
+          ],
+          "size": "Varies by race",
+          "attribute_dice": {
+            "IQ": "3d6",
+            "ME": "3d6",
+            "MA": "3d6",
+            "PS": "3d6",
+            "PP": "3d6",
+            "PE": "3d6",
+            "PB": "3d6",
+            "Spd": "3d6"
+          },
+          "preferred_weapons": "Any, with leanings toward blade weapons and bows",
+          "attacks": [
+            {
+              "name": "Weapon (preferred)",
+              "damage": "by weapon"
+            },
+            {
+              "name": "Spellcasting",
+              "damage": "by spell"
+            }
+          ],
+          "magic": "Clerical miracles & turn undead",
+          "psionics": "None",
+          "lifeSpan": "Varies by race",
+          "sources": [
+            {
+              "race": "annotated_rulebook.json occLimitations/favoriteWeapons"
+            },
+            {
+              "occ": "OCC.txt / Rulebook.txt (O.C.C. summaries)"
+            }
+          ]
+        },
+        {
+          "id": "human_diabolist",
+          "name": "Human Diabolist",
+          "category": "pc_playable",
+          "playable": true,
+          "race": "Human",
+          "occ": "Diabolist",
+          "alignment_options": [
+            "any"
+          ],
+          "size": "Varies by race",
+          "attribute_dice": {
+            "IQ": "3d6",
+            "ME": "3d6",
+            "MA": "3d6",
+            "PS": "3d6",
+            "PP": "3d6",
+            "PE": "3d6",
+            "PB": "3d6",
+            "Spd": "3d6"
+          },
+          "preferred_weapons": "Any, with leanings toward blade weapons and bows",
+          "attacks": [
+            {
+              "name": "Weapon (preferred)",
+              "damage": "by weapon"
+            },
+            {
+              "name": "Spellcasting",
+              "damage": "by spell"
+            }
+          ],
+          "magic": "Wards & circles (glyph magic)",
+          "psionics": "None",
+          "lifeSpan": "Varies by race",
+          "sources": [
+            {
+              "race": "annotated_rulebook.json occLimitations/favoriteWeapons"
+            },
+            {
+              "occ": "OCC.txt / Rulebook.txt (O.C.C. summaries)"
+            }
+          ]
+        },
+        {
+          "id": "human_summoner",
+          "name": "Human Summoner",
+          "category": "pc_playable",
+          "playable": true,
+          "race": "Human",
+          "occ": "Summoner",
+          "alignment_options": [
+            "any"
+          ],
+          "size": "Varies by race",
+          "attribute_dice": {
+            "IQ": "3d6",
+            "ME": "3d6",
+            "MA": "3d6",
+            "PS": "3d6",
+            "PP": "3d6",
+            "PE": "3d6",
+            "PB": "3d6",
+            "Spd": "3d6"
+          },
+          "preferred_weapons": "Any, with leanings toward blade weapons and bows",
+          "attacks": [
+            {
+              "name": "Weapon (preferred)",
+              "damage": "by weapon"
+            },
+            {
+              "name": "Spellcasting",
+              "damage": "by spell"
+            }
+          ],
+          "magic": "Circle magic & conjuration",
+          "psionics": "None",
+          "lifeSpan": "Varies by race",
+          "sources": [
+            {
+              "race": "annotated_rulebook.json occLimitations/favoriteWeapons"
+            },
+            {
+              "occ": "OCC.txt / Rulebook.txt (O.C.C. summaries)"
+            }
+          ]
+        },
+        {
+          "id": "human_merchant",
+          "name": "Human Merchant",
+          "category": "pc_playable",
+          "playable": true,
+          "race": "Human",
+          "occ": "Merchant",
+          "alignment_options": [
+            "any"
+          ],
+          "size": "Varies by race",
+          "attribute_dice": {
+            "IQ": "3d6",
+            "ME": "3d6",
+            "MA": "3d6",
+            "PS": "3d6",
+            "PP": "3d6",
+            "PE": "3d6",
+            "PB": "3d6",
+            "Spd": "3d6"
+          },
+          "preferred_weapons": "Any, with leanings toward blade weapons and bows",
+          "attacks": [
+            {
+              "name": "Weapon (preferred)",
+              "damage": "by weapon"
+            }
+          ],
+          "magic": "None",
+          "psionics": "None",
+          "lifeSpan": "Varies by race",
+          "sources": [
+            {
+              "race": "annotated_rulebook.json occLimitations/favoriteWeapons"
+            },
+            {
+              "occ": "OCC.txt / Rulebook.txt (O.C.C. summaries)"
+            }
+          ]
+        },
+        {
+          "id": "elf_paladin",
+          "name": "Elf Paladin",
+          "category": "pc_playable",
+          "playable": true,
+          "race": "Elf",
+          "occ": "Paladin",
+          "alignment_options": [
+            "good"
+          ],
+          "size": "Varies by race",
+          "attribute_dice": {
+            "IQ": "3d6",
+            "ME": "3d6",
+            "MA": "2d6",
+            "PS": "3d6",
+            "PP": "4d6",
+            "PE": "3d6",
+            "PB": "5d6",
+            "Spd": "3d6"
+          },
+          "preferred_weapons": "Large swords, short swords, long bows, knives, and blunt weapons",
+          "attacks": [
+            {
+              "name": "Weapon (preferred)",
+              "damage": "by weapon"
+            },
+            {
+              "name": "Lance/Charge",
+              "damage": "by weapon (mounted)"
+            }
+          ],
+          "magic": "None",
+          "psionics": "None",
+          "lifeSpan": "Varies by race",
+          "sources": [
+            {
+              "race": "annotated_rulebook.json occLimitations/favoriteWeapons"
+            },
+            {
+              "occ": "OCC.txt / Rulebook.txt (O.C.C. summaries)"
+            }
+          ]
+        },
+        {
+          "id": "elf_long_bowman",
+          "name": "Elf Long Bowman",
+          "category": "pc_playable",
+          "playable": true,
+          "race": "Elf",
+          "occ": "Long Bowman",
+          "alignment_options": [
+            "any"
+          ],
+          "size": "Varies by race",
+          "attribute_dice": {
+            "IQ": "3d6",
+            "ME": "3d6",
+            "MA": "2d6",
+            "PS": "3d6",
+            "PP": "4d6",
+            "PE": "3d6",
+            "PB": "5d6",
+            "Spd": "3d6"
+          },
+          "preferred_weapons": "Large swords, short swords, long bows, knives, and blunt weapons",
+          "attacks": [
+            {
+              "name": "Weapon (preferred)",
+              "damage": "by weapon"
+            },
+            {
+              "name": "Bow/Long Bow",
+              "damage": "by weapon"
+            }
+          ],
+          "magic": "None",
+          "psionics": "None",
+          "lifeSpan": "Varies by race",
+          "sources": [
+            {
+              "race": "annotated_rulebook.json occLimitations/favoriteWeapons"
+            },
+            {
+              "occ": "OCC.txt / Rulebook.txt (O.C.C. summaries)"
+            }
+          ]
+        },
+        {
+          "id": "elf_wizard",
+          "name": "Elf Wizard",
+          "category": "pc_playable",
+          "playable": true,
+          "race": "Elf",
+          "occ": "Wizard",
+          "alignment_options": [
+            "any"
+          ],
+          "size": "Varies by race",
+          "attribute_dice": {
+            "IQ": "3d6",
+            "ME": "3d6",
+            "MA": "2d6",
+            "PS": "3d6",
+            "PP": "4d6",
+            "PE": "3d6",
+            "PB": "5d6",
+            "Spd": "3d6"
+          },
+          "preferred_weapons": "Large swords, short swords, long bows, knives, and blunt weapons",
+          "attacks": [
+            {
+              "name": "Weapon (preferred)",
+              "damage": "by weapon"
+            },
+            {
+              "name": "Spellcasting",
+              "damage": "by spell"
+            }
+          ],
+          "magic": "Wizard spells (L1–9, as approved)",
+          "psionics": "None",
+          "lifeSpan": "Varies by race",
+          "sources": [
+            {
+              "race": "annotated_rulebook.json occLimitations/favoriteWeapons"
+            },
+            {
+              "occ": "OCC.txt / Rulebook.txt (O.C.C. summaries)"
+            }
+          ]
+        },
+        {
+          "id": "elf_knight",
+          "name": "Elf Knight",
+          "category": "pc_playable",
+          "playable": true,
+          "race": "Elf",
+          "occ": "Knight",
+          "alignment_options": [
+            "good"
+          ],
+          "size": "Varies by race",
+          "attribute_dice": {
+            "IQ": "3d6",
+            "ME": "3d6",
+            "MA": "2d6",
+            "PS": "3d6",
+            "PP": "4d6",
+            "PE": "3d6",
+            "PB": "5d6",
+            "Spd": "3d6"
+          },
+          "preferred_weapons": "Large swords, short swords, long bows, knives, and blunt weapons",
+          "attacks": [
+            {
+              "name": "Weapon (preferred)",
+              "damage": "by weapon"
+            },
+            {
+              "name": "Lance/Charge",
+              "damage": "by weapon (mounted)"
+            }
+          ],
+          "magic": "None",
+          "psionics": "None",
+          "lifeSpan": "Varies by race",
+          "sources": [
+            {
+              "race": "annotated_rulebook.json occLimitations/favoriteWeapons"
+            },
+            {
+              "occ": "OCC.txt / Rulebook.txt (O.C.C. summaries)"
+            }
+          ]
+        },
+        {
+          "id": "elf_healer",
+          "name": "Elf Healer",
+          "category": "pc_playable",
+          "playable": true,
+          "race": "Elf",
+          "occ": "Healer",
+          "alignment_options": [
+            "good"
+          ],
+          "size": "Varies by race",
+          "attribute_dice": {
+            "IQ": "3d6",
+            "ME": "3d6",
+            "MA": "2d6",
+            "PS": "3d6",
+            "PP": "4d6",
+            "PE": "3d6",
+            "PB": "5d6",
+            "Spd": "3d6"
+          },
+          "preferred_weapons": "Large swords, short swords, long bows, knives, and blunt weapons",
+          "attacks": [
+            {
+              "name": "Weapon (preferred)",
+              "damage": "by weapon"
+            },
+            {
+              "name": "Spellcasting",
+              "damage": "by spell"
+            }
+          ],
+          "magic": "Healing miracles & restorations",
+          "psionics": "None",
+          "lifeSpan": "Varies by race",
+          "sources": [
+            {
+              "race": "annotated_rulebook.json occLimitations/favoriteWeapons"
+            },
+            {
+              "occ": "OCC.txt / Rulebook.txt (O.C.C. summaries)"
+            }
+          ]
+        },
+        {
+          "id": "goblin",
+          "name": "Goblin",
+          "category": "humanoid",
+          "alignment": [
+            "evil",
+            "selfish"
+          ],
+          "size": "3-4 feet tall",
+          "AR": 8,
+          "HP": "2d6",
+          "attacks": [
+            {
+              "name": "Claw",
+              "damage": "1d4",
+              "count": 2
+            },
+            {
+              "name": "Bite",
+              "damage": "1d4",
+              "count": 1
+            },
+            {
+              "name": "Weapon (crude)",
+              "damage": "1d6",
+              "count": 1
+            }
+          ],
+          "bonuses": {
+            "damage": 1,
+            "strike": 1,
+            "dodge": 2
+          },
+          "abilities": [
+            "Night vision 60 ft",
+            "Prowl 40%",
+            "Track 30%",
+            "Resistant to cold (half damage)",
+            "Cowardly unless in groups of 20+, flee if outnumbered"
+          ],
+          "psionics": "None",
+          "magicAbilities": "None",
+          "spd": 12,
+          "lifeSpan": "60 years",
+          "description": "Small, cunning humanoids with dark skin and glowing red eyes. Live in tribes and are known for their cruelty and cowardice. Fear Wolfen and Ogres, and avoid direct fights without numbers.",
+          "HF": 8
+        },
+        {
+          "id": "hob_goblin",
+          "name": "Hob-Goblin",
+          "category": "humanoid",
+          "alignment": [
+            "evil",
+            "selfish"
+          ],
+          "size": "4-5 feet tall",
+          "AR": 10,
+          "HP": "3d6",
+          "attacks": [
+            {
+              "name": "Claw",
+              "damage": "1d6",
+              "count": 2
+            },
+            {
+              "name": "Bite",
+              "damage": "1d6",
+              "count": 1
+            },
+            {
+              "name": "Weapon (military)",
+              "damage": "1d8",
+              "count": 1
+            }
+          ],
+          "bonuses": {
+            "damage": 2,
+            "strike": 2,
+            "parry": 1,
+            "dodge": 1
+          },
+          "abilities": [
+            "Night vision 60 ft",
+            "Prowl 35%",
+            "Track 40%",
+            "Military tactics",
+            "Resistant to cold (half damage)",
+            "Organized into ranked companies with strict discipline"
+          ],
+          "psionics": "None",
+          "magicAbilities": "None",
+          "spd": 14,
+          "lifeSpan": "80 years",
+          "description": "Larger, more organized cousins of goblins. They form military units and are more disciplined fighters, often serving Wolfen or Orc commanders.",
+          "HF": 10
+        },
+        {
+          "id": "human_palladium",
+          "name": "Human",
+          "category": "humanoid",
+          "alignment": [
+            "any"
+          ],
+          "size": "5-6 feet tall",
+          "AR": 8,
+          "HP": "3d6",
+          "attacks": [
+            {
+              "name": "Weapon (trained)",
+              "damage": "by weapon",
+              "count": 1
+            }
+          ],
+          "bonuses": {},
+          "abilities": [
+            "Adaptive: +5% to all skill learn percentages",
+            "Build cities and kingdoms across Palladium",
+            "Morale driven by culture and leadership"
+          ],
+          "psionics": "Standard (per individual; 10% chance for minor powers)",
+          "magicAbilities": "Per O.C.C.",
+          "spd": 12,
+          "lifeSpan": "70 years",
+          "enemies": [
+            "Varies by nation (often Orcs, Goblins, Demons)"
+          ],
+          "allies": [
+            "Elves",
+            "Dwarves",
+            "Wolfen (treaties vary)"
+          ],
+          "description": "The most numerous race in the Palladium world. Their ambition and adaptability allow them to excel in every O.C.C.",
+          "HF": 6
+        },
+        {
+          "id": "elf_palladium",
+          "name": "Elf",
+          "category": "humanoid",
+          "alignment": [
+            "any (often principled or unprincipled)"
+          ],
+          "size": "6-7 feet tall, slender",
+          "AR": 9,
+          "HP": "4d6",
+          "attacks": [
+            {
+              "name": "Weapon (long blades or bows)",
+              "damage": "by weapon",
+              "count": 1
+            }
+          ],
+          "bonuses": {
+            "dodge": 1,
+            "initiative": 1
+          },
+          "abilities": [
+            "Nightvision 60 ft",
+            "Immune to disease (save +4)",
+            "Acute senses (+10% prowl, track, detect phases)"
+          ],
+          "psionics": "Standard (per individual)",
+          "magicAbilities": "Per O.C.C. (many pursue wizardry or warlock paths)",
+          "spd": 14,
+          "lifeSpan": "400+ years",
+          "enemies": [
+            "Orcs",
+            "Goblins",
+            "Trolls"
+          ],
+          "allies": [
+            "Humans",
+            "Dwarves (uneasy)",
+            "Wolfen (neutral)"
+          ],
+          "description": "Graceful, long-lived folk renowned for magic, archery, and ancient culture.",
+          "HF": 6
+        },
+        {
+          "id": "dwarf_palladium",
+          "name": "Dwarf",
+          "category": "humanoid",
+          "alignment": [
+            "any (often principled, scrupulous, or aberrant)"
+          ],
+          "size": "4-4.5 feet tall, stocky",
+          "AR": 10,
+          "HP": "4d6",
+          "attacks": [
+            {
+              "name": "Weapon (axes/hammers)",
+              "damage": "by weapon",
+              "count": 1
+            }
+          ],
+          "bonuses": {
+            "parry": 1,
+            "saveMagic": 2
+          },
+          "abilities": [
+            "Resistant to magic (+2 save vs spells)",
+            "Resistant to poison (+3 save)",
+            "Master smiths and stoneworkers"
+          ],
+          "psionics": "Standard (per individual, rare)",
+          "magicAbilities": "Per O.C.C. (few pursue wizardry, many become men of arms)",
+          "spd": 10,
+          "lifeSpan": "300 years",
+          "enemies": [
+            "Trolls",
+            "Orcs"
+          ],
+          "allies": [
+            "Humans",
+            "Gnomes",
+            "Elves (strained history)"
+          ],
+          "description": "Stout craftsmen and warriors who dwell in mountain strongholds and value honor and craftsmanship.",
+          "HF": 8
+        },
+        {
+          "id": "gnome_palladium",
+          "name": "Gnome",
+          "category": "humanoid",
+          "alignment": [
+            "any (often unprincipled or scrupulous)"
+          ],
+          "size": "3-3.5 feet tall",
+          "AR": 8,
+          "HP": "3d6",
+          "attacks": [
+            {
+              "name": "Weapon (light)",
+              "damage": "by weapon",
+              "count": 1
+            }
+          ],
+          "bonuses": {
+            "dodge": 1,
+            "savePoison": 1
+          },
+          "abilities": [
+            "Natural tinkers and engineers",
+            "+5% to mechanical and technical skills",
+            "Infrared vision 60 ft"
+          ],
+          "psionics": "Standard (per individual; 20% chance for minor senses)",
+          "magicAbilities": "Per O.C.C.",
+          "spd": 11,
+          "lifeSpan": "200 years",
+          "enemies": [
+            "Trolls",
+            "Goblins"
+          ],
+          "allies": [
+            "Dwarves",
+            "Humans"
+          ],
+          "description": "Small, clever folk who blend curiosity with craftsmanship. Many live alongside dwarven clans.",
+          "HF": 8
+        },
+        {
+          "id": "ogre_civilized",
+          "name": "Ogre (Civilized)",
+          "category": "humanoid",
+          "alignment": [
+            "selfish",
+            "evil"
+          ],
+          "size": "7-9 feet tall",
+          "AR": 12,
+          "HP": "12d8",
+          "attacks": [
+            {
+              "name": "Weapon (massive)",
+              "damage": "3d6",
+              "count": 1
+            }
+          ],
+          "bonuses": {
+            "strike": 1,
+            "parry": 1,
+            "damage": 6
+          },
+          "abilities": [
+            "Darkvision 60 ft",
+            "Carry heavy loads",
+            "Tribal culture with shamanistic leaders"
+          ],
+          "psionics": "Standard (per individual)",
+          "magicAbilities": "Per O.C.C. (limited to shamans/witches)",
+          "spd": 18,
+          "lifeSpan": "120 years",
+          "enemies": [
+            "Humans",
+            "Elves",
+            "Dwarves"
+          ],
+          "allies": [
+            "Orcs",
+            "Giants"
+          ],
+          "description": "Crude but potentially trainable giants who sometimes integrate into mixed monster communities.",
+          "HF": 12
+        },
+        {
+          "id": "troll_civilized",
+          "name": "Troll (Regenerating)",
+          "category": "humanoid",
+          "alignment": [
+            "selfish",
+            "evil"
+          ],
+          "size": "8-10 feet tall",
+          "AR": 13,
+          "HP": "14d10",
+          "attacks": [
+            {
+              "name": "Claw",
+              "damage": "2d6",
+              "count": 2
+            }
+          ],
+          "bonuses": {
+            "parry": 2,
+            "dodge": 2,
+            "damage": 4
+          },
+          "abilities": [
+            "Regeneration 2d6 HP per melee (fire/acid negates)",
+            "Darkvision 90 ft",
+            "Savage culture; respect strength"
+          ],
+          "psionics": "Standard (per individual)",
+          "magicAbilities": "Per O.C.C. (rare but possible)",
+          "spd": 22,
+          "lifeSpan": "200+ years",
+          "enemies": [
+            "Dwarves",
+            "Elves",
+            "Humans"
+          ],
+          "allies": [
+            "Ogres",
+            "Orcs"
+          ],
+          "description": "Towering humanoids who rely on rapid regeneration and brute force. Some become mercenaries or shock troops.",
+          "HF": 14
+        },
+        {
+          "id": "orc",
+          "name": "Orc",
+          "category": "humanoid",
+          "alignment": [
+            "evil",
+            "selfish"
+          ],
+          "size": "5-6 feet tall",
+          "AR": 12,
+          "HP": "4d6",
+          "attacks": [
+            {
+              "name": "Claw",
+              "damage": "1d8",
+              "count": 2
+            },
+            {
+              "name": "Bite",
+              "damage": "1d6",
+              "count": 1
+            },
+            {
+              "name": "Weapon (preferred)",
+              "damage": "2d6",
+              "count": 1
+            }
+          ],
+          "bonuses": {
+            "damage": 3,
+            "strike": 2,
+            "parry": 2,
+            "dodge": 1
+          },
+          "abilities": [
+            "Night vision 60 ft",
+            "Prowl 30%",
+            "Track 50%",
+            "Resistant to cold (half damage)",
+            "Organized warfare",
+            "Enemies humans and elves; relentless border raiders"
+          ],
+          "psionics": "None",
+          "magicAbilities": "Rare (shaman or witch traditions only)",
+          "spd": 16,
+          "lifeSpan": "100 years",
+          "description": "Strong, aggressive humanoids with greenish skin and tusks. They form large armies, practice brutal religions through shamans or witches, and frequently war with humans and elves.",
+          "HF": 12
+        },
+        {
+          "id": "kobold",
+          "name": "Kobold",
+          "category": "humanoid",
+          "alignment": [
+            "evil",
+            "selfish"
+          ],
+          "size": "2-3 feet tall",
+          "AR": 6,
+          "HP": "1d6",
+          "attacks": [
+            {
+              "name": "Claw",
+              "damage": "1d3",
+              "count": 2
+            },
+            {
+              "name": "Bite",
+              "damage": "1d3",
+              "count": 1
+            },
+            {
+              "name": "Weapon (small)",
+              "damage": "1d4",
+              "count": 1
+            }
+          ],
+          "bonuses": {
+            "damage": 0,
+            "strike": 1,
+            "dodge": 3
+          },
+          "abilities": [
+            "Night vision 60 ft",
+            "Prowl 50%",
+            "Track 25%",
+            "Trap making",
+            "Resistant to cold (half damage)",
+            "Burrow 30% / Trap disarm 60%",
+            "Sunlight sensitive (-2 strike/parry/dodge in daylight)"
+          ],
+          "psionics": "None",
+          "magicAbilities": "None",
+          "spd": 10,
+          "lifeSpan": "40 years",
+          "description": "Small, reptilian humanoids with scaly skin. They are cowardly but cunning, known for burrowing lairs, setting traps, and ambushes, but they are uncomfortable in sunlight.",
+          "HF": 8
+        },
+        {
+          "id": "wolfen",
+          "name": "Wolfen",
+          "category": "humanoid",
+          "alignment": [
+            "evil",
+            "selfish"
+          ],
+          "size": "6-7 feet tall",
+          "AR": 14,
+          "HP": "5d6",
+          "attacks": [
+            {
+              "name": "Claw",
+              "damage": "2d6",
+              "count": 2
+            },
+            {
+              "name": "Bite",
+              "damage": "1d8+2",
+              "count": 1
+            },
+            {
+              "name": "Weapon (preferred)",
+              "damage": "2d6",
+              "count": 1
+            }
+          ],
+          "bonuses": {
+            "damage": 4,
+            "strike": 3,
+            "parry": 3,
+            "dodge": 3
+          },
+          "abilities": [
+            "Night vision 90 ft",
+            "Prowl 60%",
+            "Track 80%",
+            "Pack tactics",
+            "Resistant to cold (half damage)",
+            "Enhanced hearing and smell",
+            "Pack discipline grants +2 initiative when fighting with other Wolfen"
+          ],
+          "psionics": "Standard (varies by individual)",
+          "magicAbilities": "Occasional shamans and priests",
+          "spd": 20,
+          "lifeSpan": "120 years",
+          "description": "Wolf-like humanoids with fur, pointed ears, and fangs. They are fierce warriors who fight in organized packs and often follow strict codes of honor.",
+          "HF": 13
+        },
+        {
+          "id": "changeling",
+          "name": "Changeling",
+          "category": "humanoid",
+          "alignment": [
+            "evil",
+            "selfish"
+          ],
+          "size": "Variable (5-6 feet average)",
+          "AR": 8,
+          "HP": "3d6",
+          "attacks": [
+            {
+              "name": "Claw",
+              "damage": "1d6",
+              "count": 2
+            },
+            {
+              "name": "Bite",
+              "damage": "1d6",
+              "count": 1
+            },
+            {
+              "name": "Weapon (disguised)",
+              "damage": "1d8",
+              "count": 1
+            }
+          ],
+          "bonuses": {
+            "damage": 2,
+            "strike": 2,
+            "parry": 2,
+            "dodge": 3
+          },
+          "abilities": [
+            "Shape shifting (perfect disguise)",
+            "Night vision 60 ft",
+            "Prowl 70%",
+            "Track 60%",
+            "Resistant to cold (half damage)",
+            "Can mimic voices perfectly",
+            "Cannot duplicate magical powers or auras"
+          ],
+          "psionics": "None",
+          "magicAbilities": "None",
+          "spd": 15,
+          "lifeSpan": "200 years",
+          "description": "Mysterious humanoids capable of perfect shape-shifting. They infiltrate human settlements by disguising themselves as trusted individuals, though they cannot mimic the powers or aura of magical beings.",
+          "HF": 12
+        },
+        {
+          "id": "troglodyte",
+          "name": "Troglodyte",
+          "category": "humanoid",
+          "alignment": [
+            "any (often good or selfish)"
+          ],
+          "size": "4-5 feet tall",
+          "AR": 10,
+          "HP": "3d6",
+          "attacks": [
+            {
+              "name": "Claw",
+              "damage": "1d6",
+              "count": 2
+            },
+            {
+              "name": "Bite",
+              "damage": "1d6",
+              "count": 1
+            },
+            {
+              "name": "Weapon (stone)",
+              "damage": "1d8",
+              "count": 1
+            }
+          ],
+          "bonuses": {
+            "strike": 1,
+            "parry": 1,
+            "damage": 2,
+            "allSaves": 1
+          },
+          "abilities": [
+            "Night vision 120 ft",
+            "Day vision limited to 30 ft",
+            "Climb 60%",
+            "Swim 60%",
+            "Fast and agile (Spd 20)",
+            "Fire/cold resistant (half damage)"
+          ],
+          "psionics": "Limited (I.S.P. 30)",
+          "magicAbilities": "None",
+          "spd": 20,
+          "lifeSpan": "90 years",
+          "description": "Broad-shouldered subterranean humanoids with pale skin and large dark eyes. They worship elemental or nymph deities and rarely venture above ground.",
+          "HF": 9
+        },
+        {
+          "id": "lycanthrope_generic",
+          "name": "Lycanthrope (Generic Template)",
+          "category": "werebeast",
+          "alignment": [
+            "evil"
+          ],
+          "alignment_tendency": "sometimes selfish",
+          "size": "6-10 feet (varies by type)",
+          "AR": 12,
+          "HP": "6d8",
+          "attacks": [
+            {
+              "name": "Teeth/Claws",
+              "damage": "2d6",
+              "count": 2
+            }
+          ],
+          "bonuses": {},
+          "abilities": [
+            "Impervious to normal weapons (except silver/magic)",
+            "Half damage from fire/cold",
+            "Bio-regeneration",
+            "Night vision 60 ft",
+            "Metamorphosis at night",
+            "Curse of Lycanthropy"
+          ],
+          "spd": 20,
+          "lifeSpan": "Varies by base race",
+          "description": "Base template for lycanthropes. Human/elf/dwarf/etc. by day; transforms into wolf, bear, tiger, or panther at night. Use specific were-beast entries (werewolf, weretiger, werepanther, werebear) for detailed stats.",
+          "HF": 12,
+          "notes": "This is a generic template. Use specific were-beast entries for detailed stats."
+        },
+        {
+          "id": "water_elemental_minor",
+          "name": "Water Elemental (Minor)",
+          "category": "elemental",
+          "alignment": [
+            "unaligned"
+          ],
+          "size": "6-8 feet tall",
+          "AR": 8,
+          "HP": "4d8",
+          "attacks": [
+            {
+              "name": "Water Blast",
+              "damage": "2d6",
+              "count": 2
+            },
+            {
+              "name": "Drown",
+              "damage": "special",
+              "count": 1
+            }
+          ],
+          "bonuses": {
+            "strike": 2,
+            "dodge": 2
+          },
+          "abilities": [
+            "Swim 20 mph",
+            "Breathe water",
+            "Vulnerable to fire (double damage)",
+            "Can merge with water sources",
+            "Bio-regenerates 2d6 S.D.C. per melee while submerged",
+            "Immune to cold",
+            "Can command aquatic animals within 200 ft (60% chance)"
+          ],
+          "psionics": "None",
+          "magicAbilities": "Elemental Water magic (Warlock 5th level); PPE 90",
+          "spd": 20,
+          "lifeSpan": "Immortal",
+          "description": "Living water spirits that can drown victims and blast with pressurized water. Serve Water Warlocks as scouts and guardians.",
+          "HF": 11
+        },
+        {
+          "id": "water_elemental_major",
+          "name": "Water Elemental (Major)",
+          "category": "elemental",
+          "alignment": [
+            "unaligned"
+          ],
+          "size": "12-15 feet tall",
+          "AR": 12,
+          "HP": "8d8",
+          "attacks": [
+            {
+              "name": "Water Blast",
+              "damage": "4d6",
+              "count": 3
+            },
+            {
+              "name": "Drown",
+              "damage": "special",
+              "count": 1
+            },
+            {
+              "name": "Tidal Wave",
+              "damage": "6d6",
+              "count": 1
+            }
+          ],
+          "bonuses": {
+            "strike": 4,
+            "dodge": 4,
+            "damage": 3
+          },
+          "abilities": [
+            "Swim 30 mph",
+            "Breathe water",
+            "Vulnerable to fire (double damage)",
+            "Can merge with water sources",
+            "Create whirlpools",
+            "Bio-regenerates 4d6 S.D.C. per melee while submerged",
+            "Immune to cold",
+            "Can command aquatic animals within 400 ft (80% chance)"
+          ],
+          "psionics": "None",
+          "magicAbilities": "Elemental Water magic (Warlock 10th level); PPE 180",
+          "spd": 30,
+          "lifeSpan": "Immortal",
+          "description": "Powerful water spirits capable of creating tidal waves and massive whirlpools. Often guard dimensional rifts beneath the sea.",
+          "HF": 15
+        },
+        {
+          "id": "fire_elemental_minor",
+          "name": "Fire Elemental (Minor)",
+          "category": "elemental",
+          "alignment": [
+            "unaligned"
+          ],
+          "size": "6-8 feet tall",
+          "AR": 10,
+          "HP": "4d8",
+          "attacks": [
+            {
+              "name": "Fire Touch",
+              "damage": "2d6",
+              "count": 2
+            },
+            {
+              "name": "Fireball",
+              "damage": "3d6",
+              "count": 1
+            }
+          ],
+          "bonuses": {
+            "strike": 2,
+            "dodge": 2
+          },
+          "abilities": [
+            "Impervious to fire",
+            "Vulnerable to water (double damage)",
+            "Can ignite flammable materials",
+            "Move through fire without harm",
+            "Bio-regenerates 2d6 S.D.C. per melee while in flames",
+            "Sees heat signatures 100 ft",
+            "Can teleport through connected flames (60 ft range)"
+          ],
+          "psionics": "None",
+          "magicAbilities": "Elemental Fire magic (Warlock 5th level); PPE 80",
+          "spd": 25,
+          "lifeSpan": "Immortal",
+          "description": "Living flames that burn everything they touch and can hurl fireballs. Serve Fire Warlocks or appear near great infernos.",
+          "HF": 12
+        },
+        {
+          "id": "fire_elemental_major",
+          "name": "Fire Elemental (Major)",
+          "category": "elemental",
+          "alignment": [
+            "unaligned"
+          ],
+          "size": "12-15 feet tall",
+          "AR": 14,
+          "HP": "8d8",
+          "attacks": [
+            {
+              "name": "Fire Touch",
+              "damage": "4d6",
+              "count": 3
+            },
+            {
+              "name": "Fireball",
+              "damage": "6d6",
+              "count": 1
+            },
+            {
+              "name": "Fire Storm",
+              "damage": "8d6",
+              "count": 1
+            }
+          ],
+          "bonuses": {
+            "strike": 4,
+            "dodge": 4,
+            "damage": 4
+          },
+          "abilities": [
+            "Impervious to fire",
+            "Vulnerable to water (double damage)",
+            "Can ignite flammable materials",
+            "Move through fire without harm",
+            "Create firestorms",
+            "Bio-regenerates 4d6 S.D.C. per melee in flames",
+            "Sees heat signatures 200 ft",
+            "Teleport through connected flames (180 ft range)"
+          ],
+          "psionics": "None",
+          "magicAbilities": "Elemental Fire magic (Warlock 10th level); PPE 200",
+          "spd": 35,
+          "lifeSpan": "Immortal",
+          "description": "Massive fire spirits capable of creating devastating firestorms and infernos. Only obey powerful magic circles or Fire Lords.",
+          "HF": 16
+        },
+        {
+          "id": "air_elemental_minor",
+          "name": "Air Elemental (Minor)",
+          "category": "elemental",
+          "alignment": [
+            "unaligned"
+          ],
+          "size": "6-8 feet tall",
+          "AR": 6,
+          "HP": "3d8",
+          "attacks": [
+            {
+              "name": "Wind Blast",
+              "damage": "1d6",
+              "count": 2
+            },
+            {
+              "name": "Tornado",
+              "damage": "2d6",
+              "count": 1
+            }
+          ],
+          "bonuses": {
+            "strike": 3,
+            "dodge": 4
+          },
+          "abilities": [
+            "Fly 40 mph",
+            "Invisible in air",
+            "Can become tornado",
+            "Vulnerable to earth attacks",
+            "Bio-regenerates 2d6 S.D.C. per melee while within strong winds",
+            "Half damage from physical attacks unless magic or psionic",
+            "Can suffocate foes (save vs magic or no actions for 1 melee)"
+          ],
+          "psionics": "None",
+          "magicAbilities": "Elemental Air magic (Warlock 5th level); PPE 70",
+          "spd": 40,
+          "lifeSpan": "Immortal",
+          "description": "Living wind spirits that can create tornadoes and become invisible in air. Summoned by Air Warlocks to scout or harry foes.",
+          "HF": 11
+        },
+        {
+          "id": "air_elemental_major",
+          "name": "Air Elemental (Major)",
+          "category": "elemental",
+          "alignment": [
+            "unaligned"
+          ],
+          "size": "12-15 feet tall",
+          "AR": 8,
+          "HP": "6d8",
+          "attacks": [
+            {
+              "name": "Wind Blast",
+              "damage": "3d6",
+              "count": 3
+            },
+            {
+              "name": "Tornado",
+              "damage": "4d6",
+              "count": 1
+            },
+            {
+              "name": "Hurricane",
+              "damage": "6d6",
+              "count": 1
+            }
+          ],
+          "bonuses": {
+            "strike": 5,
+            "dodge": 6,
+            "damage": 2
+          },
+          "abilities": [
+            "Fly 60 mph",
+            "Invisible in air",
+            "Can become tornado",
+            "Vulnerable to earth attacks",
+            "Create hurricanes",
+            "Bio-regenerates 4d6 S.D.C. per melee within storms",
+            "Half damage from physical attacks unless magic or psionic",
+            "Can hurl lightning bolts (4d6, counts as spell)"
+          ],
+          "psionics": "None",
+          "magicAbilities": "Elemental Air magic (Warlock 10th level); PPE 160",
+          "spd": 60,
+          "lifeSpan": "Immortal",
+          "description": "Powerful wind spirits capable of creating hurricanes and massive tornadoes. Treat mortals with aloof indifference unless bound.",
+          "HF": 14
+        },
+        {
+          "id": "earth_elemental_minor",
+          "name": "Earth Elemental (Minor)",
+          "category": "elemental",
+          "alignment": [
+            "unaligned"
+          ],
+          "size": "8-10 feet tall",
+          "AR": 16,
+          "HP": "6d8",
+          "attacks": [
+            {
+              "name": "Fist",
+              "damage": "3d6",
+              "count": 2
+            },
+            {
+              "name": "Rock Throw",
+              "damage": "2d6",
+              "count": 1
+            }
+          ],
+          "bonuses": {
+            "strike": 1,
+            "damage": 4
+          },
+          "abilities": [
+            "Impervious to normal weapons",
+            "Can merge with earth",
+            "Vulnerable to air attacks",
+            "Slow but powerful",
+            "Bio-regenerates 3d6 S.D.C. per melee while in contact with stone",
+            "Half damage from fire and cold",
+            "Sense vibrations 300 ft (detect burrowing/footfalls)"
+          ],
+          "psionics": "None",
+          "magicAbilities": "Elemental Earth magic (Warlock 5th level); PPE 90",
+          "spd": 8,
+          "lifeSpan": "Immortal",
+          "description": "Living rock spirits that are slow but incredibly strong and durable. Often used as guardians for ancient tombs.",
+          "HF": 13
+        },
+        {
+          "id": "earth_elemental_major",
+          "name": "Earth Elemental (Major)",
+          "category": "elemental",
+          "alignment": [
+            "unaligned"
+          ],
+          "size": "15-20 feet tall",
+          "AR": 20,
+          "HP": "12d8",
+          "attacks": [
+            {
+              "name": "Fist",
+              "damage": "6d6",
+              "count": 2
+            },
+            {
+              "name": "Rock Throw",
+              "damage": "4d6",
+              "count": 1
+            },
+            {
+              "name": "Earthquake",
+              "damage": "8d6",
+              "count": 1
+            }
+          ],
+          "bonuses": {
+            "strike": 2,
+            "damage": 8
+          },
+          "abilities": [
+            "Impervious to normal weapons",
+            "Can merge with earth",
+            "Vulnerable to air attacks",
+            "Slow but powerful",
+            "Create earthquakes",
+            "Bio-regenerates 5d6 S.D.C. per melee while in contact with stone",
+            "Half damage from fire and cold",
+            "Sense vibrations 600 ft (detect burrowing/footfalls)"
+          ],
+          "psionics": "None",
+          "magicAbilities": "Elemental Earth magic (Warlock 12th level); PPE 220",
+          "spd": 10,
+          "lifeSpan": "Immortal",
+          "description": "Massive earth spirits capable of creating earthquakes and throwing boulders. Frequently guard ley line nexuses or ancient vaults.",
+          "HF": 18
+        },
+        {
+          "id": "mud_mound",
+          "name": "Mud Mound (Earth Elemental Variant)",
+          "category": "elemental",
+          "alignment": [
+            "unaligned"
+          ],
+          "size": "12-18 feet across",
+          "AR": 12,
+          "HP": "10d8",
+          "attacks": [
+            {
+              "name": "Slam",
+              "damage": "3d6",
+              "count": 2
+            },
+            {
+              "name": "Engulf",
+              "damage": "special",
+              "count": 1
+            }
+          ],
+          "bonuses": {
+            "strike": 2,
+            "damage": 4,
+            "parry": 2
+          },
+          "abilities": [
+            "Amorphous body; half damage from physical attacks unless magic or fire",
+            "Bio-regenerates 3d6 S.D.C. per melee while in mud or swamp",
+            "Immune to cold and poison",
+            "Quicksand aura (30 ft): save vs magic or sink 1-4 feet per melee",
+            "Can hurl mud globes (2d6, blinds target on failed save)",
+            "Vulnerable to fire (double damage)"
+          ],
+          "psionics": "None",
+          "magicAbilities": "Elemental Earth/Water magic (Warlock 8th level); PPE 150",
+          "spd": 12,
+          "lifeSpan": "Immortal",
+          "description": "Semi-liquid earth elementals that lurk in swamps and river deltas. They drag intruders beneath the mire and smother them in mud.",
+          "HF": 14
+        },
+        {
+          "id": "ice_elemental",
+          "name": "Ice Elemental",
+          "category": "elemental",
+          "alignment": [
+            "unaligned"
+          ],
+          "size": "8-12 feet tall",
+          "AR": 14,
+          "HP": "6d8",
+          "attacks": [
+            {
+              "name": "Ice Touch",
+              "damage": "2d6",
+              "count": 2
+            },
+            {
+              "name": "Ice Shard",
+              "damage": "3d6",
+              "count": 1
+            }
+          ],
+          "bonuses": {
+            "strike": 2,
+            "dodge": 1
+          },
+          "abilities": [
+            "Impervious to cold",
+            "Vulnerable to fire (double damage)",
+            "Can freeze water",
+            "Create ice storms",
+            "Bio-regenerates 2d6 S.D.C. per melee in freezing conditions",
+            "Half damage from physical attacks unless magic or flaming",
+            "Aura of frost (10 ft): save vs magic or -2 strike/parry/dodge"
+          ],
+          "psionics": "None",
+          "magicAbilities": "Elemental Water (ice) magic (Warlock 8th level); PPE 140",
+          "spd": 15,
+          "lifeSpan": "Immortal",
+          "description": "Living ice spirits that freeze everything they touch and create blizzards. Serve winter gods or powerful Water Warlocks.",
+          "HF": 14
+        },
+        {
+          "id": "gargoyle",
+          "name": "Gargoyle",
+          "category": "monster",
+          "alignment": [
+            "evil"
+          ],
+          "size": "6-8 feet tall",
+          "AR": 12,
+          "HP": "6d8",
+          "attacks": [
+            {
+              "name": "Claw",
+              "damage": "2d6",
+              "count": 2
+            },
+            {
+              "name": "Bite",
+              "damage": "1d8",
+              "count": 1
+            }
+          ],
+          "bonuses": {
+            "strike": 2,
+            "parry": 2,
+            "dodge": 2
+          },
+          "abilities": [
+            "Fly 30 mph",
+            "Turn to stone (invulnerable)",
+            "Night vision 90 ft",
+            "Can blend with stone",
+            "Impervious to poison and disease"
+          ],
+          "spd": 20,
+          "lifeSpan": "Centuries",
+          "description": "Stone-winged creatures that can turn to stone and blend with architecture.",
+          "HF": 14
+        },
+        {
+          "id": "gargoyle_mage",
+          "name": "Gargoyle Mage",
+          "category": "monster",
+          "alignment": [
+            "evil"
+          ],
+          "size": "7-9 feet tall",
+          "AR": 14,
+          "HP": "8d8",
+          "attacks": [
+            {
+              "name": "Claw",
+              "damage": "2d6",
+              "count": 2
+            },
+            {
+              "name": "Spell",
+              "damage": "by spell",
+              "count": 1
+            }
+          ],
+          "bonuses": {
+            "strike": 3,
+            "parry": 3,
+            "dodge": 3,
+            "saveMagic": 2
+          },
+          "abilities": [
+            "Fly 35 mph",
+            "Turn to stone (invulnerable)",
+            "Night vision 90 ft",
+            "Can blend with stone",
+            "Wizard spells levels 1-6 (6th-level proficiency)",
+            "Impervious to poison and disease"
+          ],
+          "spd": 25,
+          "lifeSpan": "Centuries",
+          "description": "Intelligent gargoyles capable of casting spells and leading others of their kind.",
+          "HF": 14
+        },
+        {
+          "id": "vampire",
+          "name": "Vampire",
+          "category": "undead",
+          "alignment": [
+            "evil"
+          ],
+          "size": "Human-sized",
+          "AR": 16,
+          "HP": "8d8",
+          "attacks": [
+            {
+              "name": "Claw",
+              "damage": "2d6",
+              "count": 2
+            },
+            {
+              "name": "Bite",
+              "damage": "1d8+2",
+              "count": 1
+            }
+          ],
+          "bonuses": {
+            "strike": 3,
+            "parry": 3,
+            "dodge": 3,
+            "damage": 4
+          },
+          "abilities": [
+            "Turn to mist",
+            "Turn to bat",
+            "Hypnotic gaze",
+            "Impervious to normal weapons",
+            "Vulnerable to sunlight",
+            "Must drink blood to survive"
+          ],
+          "spd": 25,
+          "lifeSpan": "Immortal",
+          "description": "Undead creatures that feed on blood and can transform into mist or bats.",
+          "HF": 16
+        },
+        {
+          "id": "banshee",
+          "name": "Banshee",
+          "category": "undead",
+          "alignment": [
+            "evil"
+          ],
+          "size": "3 to 12 feet tall",
+          "AR": 10,
+          "HP": "5d8",
+          "attacks": [
+            {
+              "name": "Cry of the Banshee",
+              "damage": "Special",
+              "count": 1
+            }
+          ],
+          "bonuses": {
+            "saveMagic": 3,
+            "savePsionic": 3
+          },
+          "abilities": [
+            "Naturally invisible (can turn visible)",
+            "Turn into mist",
+            "Night vision 90 ft",
+            "Fly",
+            "Resistant to heat and cold (half damage)",
+            "Teleport 90%",
+            "Dimensional teleport 58%",
+            "Cry creates emotional turmoil: moaning (fear), weeping (despair), wail (devastating)"
+          ],
+          "spd": 18,
+          "lifeSpan": "Immortal",
+          "description": "Appears as an old, veiled woman in an eerie white glow. Her cry can cause terror, despair, and even suicidal tendencies in those who hear it. Symbol of hopelessness, despair, and death.",
+          "HF": 15
+        },
+        {
+          "id": "succubus_incubus",
+          "name": "Succubus/Incubus",
+          "category": "demon",
+          "alignment": [
+            "evil"
+          ],
+          "size": "4 to 16 feet tall (can change size)",
+          "AR": 10,
+          "HP": "8d8",
+          "attacks": [
+            {
+              "name": "Hand-to-Hand",
+              "damage": "1d6",
+              "count": 2
+            },
+            {
+              "name": "Charm Gaze",
+              "damage": "Special",
+              "count": 1
+            }
+          ],
+          "bonuses": {
+            "damage": 4,
+            "parry": 3,
+            "dodge": 3,
+            "saveMagic": 2
+          },
+          "abilities": [
+            "Can change physical size",
+            "Night vision 60 ft",
+            "Fly 18 mph",
+            "Metamorphosis",
+            "Charm gaze",
+            "P.B. 20 (appears extremely attractive)"
+          ],
+          "spd": 10,
+          "lifeSpan": "Immortal",
+          "description": "The succubus (female) and incubus (male) appear as extremely attractive people (P.B. 20) to lure the unsuspecting to their doom. Harbingers of death, they attract, seduce, and charm before slaying. Psychotic killers.",
+          "HF": 14
+        },
+        {
+          "id": "kukulcan",
+          "name": "Kukulcan",
+          "category": "creature_of_magic",
+          "alignment": [
+            "good",
+            "selfish"
+          ],
+          "size": "9 feet long, 15-foot wingspan",
+          "AR": 10,
+          "HP": "8d8",
+          "attacks": [
+            {
+              "name": "Claw",
+              "damage": "1d6",
+              "count": 2
+            },
+            {
+              "name": "Weapon",
+              "damage": "by weapon",
+              "count": 1
+            }
+          ],
+          "bonuses": {
+            "strike": 2,
+            "parry": 3,
+            "dodge": 3,
+            "allSaves": 2
+          },
+          "abilities": [
+            "Night vision 90 ft",
+            "See the invisible",
+            "Fly 60 mph",
+            "Fire and cold resistant (half damage)",
+            "Metamorphosis (any shape)",
+            "Psionics: Levels 1-3, I.S.P. 60",
+            "Magic: All air elemental magic levels 1-6"
+          ],
+          "spd": 40,
+          "lifeSpan": "1500 years",
+          "description": "Also known as the bird serpent; a symbol of light. Gentle and peaceful, often takes on a human guise to aid or protect good creatures. Extremely rare—fewer than a hundred exist worldwide.",
+          "HF": 8
+        },
+        {
+          "id": "gargoylite",
+          "name": "Gargoylite",
+          "category": "demon",
+          "alignment": [
+            "evil"
+          ],
+          "size": "4-6 feet tall",
+          "AR": 8,
+          "HP": "4d8",
+          "attacks": [
+            {
+              "name": "Claw",
+              "damage": "1d6",
+              "count": 2
+            },
+            {
+              "name": "Bite",
+              "damage": "1d4",
+              "count": 1
+            }
+          ],
+          "bonuses": {
+            "strike": 2,
+            "damage": 2,
+            "parry": 1,
+            "dodge": 2
+          },
+          "abilities": [
+            "Night vision 60 ft",
+            "Fly 40 mph",
+            "Fire and cold resistant (half damage)"
+          ],
+          "spd": 15,
+          "lifeSpan": "Centuries",
+          "description": "Smaller, weaker relatives of gargoyles. Less intelligent but still dangerous in groups.",
+          "HF": 14
+        },
+        {
+          "id": "gurgoyle",
+          "name": "Gurgoyle",
+          "category": "demon",
+          "alignment": [
+            "evil"
+          ],
+          "size": "5-7 feet tall",
+          "AR": 10,
+          "HP": "5d8",
+          "attacks": [
+            {
+              "name": "Claw",
+              "damage": "2d6",
+              "count": 2
+            },
+            {
+              "name": "Bite",
+              "damage": "1d6",
+              "count": 1
+            }
+          ],
+          "bonuses": {
+            "strike": 2,
+            "damage": 3,
+            "parry": 2,
+            "dodge": 2
+          },
+          "abilities": [
+            "Dark green or grey-green skin",
+            "Blazing yellow eyes",
+            "No wings (ground-bound)",
+            "Night vision 90 ft",
+            "Fire and cold resistant (half damage)"
+          ],
+          "spd": 18,
+          "lifeSpan": "Centuries",
+          "description": "Dark green or grey-green skin, blazing yellow eyes. Gurgoyles do not have wings but are just as numerous and nearly as dangerous as gargoyles.",
+          "HF": 14
+        },
+        {
+          "id": "couril",
+          "name": "The Couril",
+          "category": "demon",
+          "alignment": [
+            "evil"
+          ],
+          "size": "1.5 feet tall",
+          "AR": 6,
+          "HP": "3d8",
+          "attacks": [
+            {
+              "name": "Hand-to-Hand",
+              "damage": "1d6",
+              "count": 2
+            },
+            {
+              "name": "Magic",
+              "damage": "By spell",
+              "count": 1
+            },
+            {
+              "name": "Song",
+              "damage": "Special",
+              "count": 1
+            }
+          ],
+          "bonuses": {
+            "saveMagic": 2,
+            "dodge": 2
+          },
+          "abilities": [
+            "Forces creatures to dance through song (save negates)",
+            "Magic: Cloud of slumber, tongues, fleet feet, speed of the snail, ventriloquism",
+            "Small demon resembling faerie"
+          ],
+          "spd": 12,
+          "lifeSpan": "Centuries",
+          "description": "Little demons resembling faeries but slightly taller and darker. They compel their victims to dance uncontrollably through their song, often followed by physical assault with thrown objects.",
+          "HF": 8
+        },
+        {
+          "id": "ghoul_nasu",
+          "name": "Ghoul and Nasu",
+          "category": "demon",
+          "alignment": [
+            "evil"
+          ],
+          "size": "4 to 6 feet tall",
+          "AR": 12,
+          "HP": "6d8",
+          "attacks": [
+            {
+              "name": "Claw",
+              "damage": "1d6",
+              "count": 2
+            },
+            {
+              "name": "Bite",
+              "damage": "1d6",
+              "count": 1
+            },
+            {
+              "name": "Weapon",
+              "damage": "by weapon",
+              "count": 1
+            }
+          ],
+          "bonuses": {
+            "damage": 4,
+            "strike": 1,
+            "parry": 1,
+            "dodge": 1,
+            "saveMagic": 2
+          },
+          "abilities": [
+            "Night vision 120 ft",
+            "See the invisible",
+            "Fire and cold resistant (half damage)",
+            "Prowl 55%",
+            "Scale walls 68%",
+            "Dimensional teleport (self only) 77%"
+          ],
+          "spd": 12,
+          "lifeSpan": "Centuries",
+          "description": "Small, gnarled demons resembling humans that haunt graveyards and battlefields. They scavenge on corpses and rarely attack the living unless provoked by overwhelming numbers or commanded by a higher demon.",
+          "HF": 10
+        },
+        {
+          "id": "thelasae",
+          "name": "Thelasae",
+          "category": "demon",
+          "alignment": [
+            "evil"
+          ],
+          "size": "8 inches tall",
+          "AR": 10,
+          "HP": "3d8",
+          "attacks": [
+            {
+              "name": "Claw",
+              "damage": "1d6",
+              "count": 2
+            },
+            {
+              "name": "Bite",
+              "damage": "1d6",
+              "count": 1
+            }
+          ],
+          "bonuses": {
+            "strike": 2,
+            "dodge": 3,
+            "saveMagic": 2
+          },
+          "abilities": [
+            "Night vision 60 ft",
+            "See the invisible",
+            "Can turn invisible",
+            "Impervious to fire",
+            "Dimensional teleport 21%",
+            "Prowl 71%",
+            "Leap 20 feet",
+            "Natural 20 hits specific target (double damage)"
+          ],
+          "spd": 18,
+          "lifeSpan": "Centuries",
+          "description": "Tiny, insect-like demons with sharp barbs on their forearms, sides of the hands, shoulders, knees, and lower legs. Cruel creatures that relish maiming and torturing their victims.",
+          "HF": 8
+        },
+        {
+          "id": "shedim",
+          "name": "The Shedim",
+          "category": "demon",
+          "alignment": [
+            "evil"
+          ],
+          "size": "12 feet tall",
+          "AR": 12,
+          "HP": "6d8",
+          "attacks": [
+            {
+              "name": "Claw",
+              "damage": "2d8",
+              "count": 3
+            },
+            {
+              "name": "Bite",
+              "damage": "1d8",
+              "count": 1
+            }
+          ],
+          "bonuses": {
+            "damage": 4,
+            "strike": 2,
+            "parry": 2,
+            "dodge": 2,
+            "saveMagic": 2
+          },
+          "abilities": [
+            "Night vision 90 ft",
+            "Fire and cold resistant (half damage)",
+            "Teleport 11%",
+            "Dimensional teleport 12%",
+            "Head of a hawk, two hawk-like claws",
+            "No wings, cannot fly"
+          ],
+          "spd": 16,
+          "lifeSpan": "Immortal",
+          "description": "Demonic minions with the head of a hawk and two fierce, hawk-like claws. Despite lacking wings, they serve as relentless pawns for greater demons, lords, and gods. Attack savagely and unceasingly until defeated or commanded to cease.",
+          "HF": 12
+        },
+        {
+          "id": "cheetah",
+          "name": "Cheetah",
+          "category": "animal",
+          "alignment": [
+            "unaligned"
+          ],
+          "size": "5-7 feet long, 100-130 pounds",
+          "AR": 5,
+          "HP": "6d8",
+          "attacks": [
+            {
+              "name": "Claw",
+              "damage": "1d8",
+              "count": 3
+            },
+            {
+              "name": "Bite",
+              "damage": "1d6",
+              "count": 1
+            }
+          ],
+          "bonuses": {
+            "strike": 4,
+            "damage": 6,
+            "dodge": 6,
+            "parry": 6
+          },
+          "abilities": [
+            "Night vision 60 ft",
+            "Speed 70 (short sprints 2-4 minutes)",
+            "Climb 12%",
+            "Prowl 5%"
+          ],
+          "spd": 70,
+          "lifeSpan": "14 years",
+          "description": "Fastest land animal, capable of incredible bursts of speed. Found in southern grasslands, particularly common in the Land of the South Winds."
+        },
+        {
+          "id": "domestic_cat",
+          "name": "Domestic Cat",
+          "category": "animal",
+          "alignment": [
+            "unaligned"
+          ],
+          "size": "8-24 inches tall, 4-12 pounds",
+          "AR": 3,
+          "HP": "2d8",
+          "attacks": [
+            {
+              "name": "Claw/Bite",
+              "damage": "1",
+              "count": 2
+            }
+          ],
+          "bonuses": {
+            "strike": 1,
+            "dodge": 2
+          },
+          "abilities": [
+            "Night vision 30 ft",
+            "Climb 30%",
+            "Prowl 66%"
+          ],
+          "spd": 10,
+          "lifeSpan": "20 years",
+          "description": "Common household pet found worldwide. Independent and agile."
+        },
+        {
+          "id": "wild_dog",
+          "name": "Wild Dog",
+          "category": "animal",
+          "alignment": [
+            "unaligned"
+          ],
+          "size": "2-3.5 feet long, 20-50 pounds",
+          "AR": 5,
+          "HP": "3d8",
+          "attacks": [
+            {
+              "name": "Bite",
+              "damage": "1d6",
+              "count": 2
+            }
+          ],
+          "bonuses": {
+            "damage": 2,
+            "dodge": 3
+          },
+          "abilities": [
+            "Night vision 20 ft",
+            "Prowl 3%",
+            "Track (by smell) 60%",
+            "Travels in packs 7-28"
+          ],
+          "spd": 22,
+          "lifeSpan": "12 years",
+          "description": "Wild canines found worldwide, traveling in territorial packs."
+        },
+        {
+          "id": "domestic_dog",
+          "name": "Domestic Dog",
+          "category": "animal",
+          "alignment": [
+            "unaligned"
+          ],
+          "size": "3-4 feet long, 25-60 pounds",
+          "AR": 5,
+          "HP": "4d8",
+          "attacks": [
+            {
+              "name": "Bite",
+              "damage": "1d6",
+              "count": 2
+            }
+          ],
+          "bonuses": {
+            "damage": 2,
+            "strike": 1,
+            "dodge": 3
+          },
+          "abilities": [
+            "Night vision 30 ft",
+            "Track (by smell) 65%",
+            "Swim 60%",
+            "Relentless pursuit when following a fresh scent"
+          ],
+          "psionics": "None",
+          "magicAbilities": "None",
+          "spd": 24,
+          "lifeSpan": "15 years",
+          "description": "Trained hunting and companion dogs. Retrievers, spaniels, setters, and pointers.",
+          "HF": 4
+        },
+        {
+          "id": "work_dog",
+          "name": "Work Dog",
+          "category": "animal",
+          "alignment": [
+            "unaligned"
+          ],
+          "size": "3.5-4.5 feet long, 40-140 pounds",
+          "AR": 5,
+          "HP": "5d8",
+          "attacks": [
+            {
+              "name": "Bite",
+              "damage": "1d8",
+              "count": 2
+            }
+          ],
+          "bonuses": {
+            "damage": 2,
+            "strike": 2,
+            "dodge": 2
+          },
+          "abilities": [
+            "Night vision 20 ft",
+            "Track (by smell) 60%",
+            "Swim 50%",
+            "Carry loads or pull sleds with minimal fatigue"
+          ],
+          "psionics": "None",
+          "magicAbilities": "None",
+          "spd": 22,
+          "lifeSpan": "13 years",
+          "description": "Large working dogs used for guarding, herding, and heavy labor.",
+          "HF": 5
+        },
+        {
+          "id": "fox",
+          "name": "Fox",
+          "category": "animal",
+          "alignment": [
+            "unaligned"
+          ],
+          "size": "2-3 feet long, 6-15 pounds",
+          "AR": 5,
+          "HP": "3d8",
+          "attacks": [
+            {
+              "name": "Bite",
+              "damage": "1d4",
+              "count": 2
+            }
+          ],
+          "bonuses": {
+            "damage": 2,
+            "dodge": 5
+          },
+          "abilities": [
+            "Night vision 15 ft",
+            "Prowl 50%",
+            "Track (by smell) 60%",
+            "Swim 40%",
+            "Excellent hearing; can detect predators 300 ft away"
+          ],
+          "psionics": "None",
+          "magicAbilities": "None",
+          "spd": 23,
+          "lifeSpan": "12 years",
+          "description": "Cunning small canines found in red, grey, and silver varieties. Red fox in east and north; grey and silver in west, east, and Old Kingdom.",
+          "HF": 5
+        },
+        {
+          "id": "northern_timber_wolf",
+          "name": "Northern Timber Wolf",
+          "category": "animal",
+          "alignment": [
+            "unaligned"
+          ],
+          "size": "4-5 feet long, 60-130 pounds",
+          "AR": 6,
+          "HP": "6d8",
+          "attacks": [
+            {
+              "name": "Bite",
+              "damage": "2d6",
+              "count": 2
+            }
+          ],
+          "bonuses": {
+            "damage": 8,
+            "strike": 2,
+            "parry": 4,
+            "dodge": 4
+          },
+          "abilities": [
+            "Night vision 30 ft",
+            "Prowl 50%",
+            "Track (by smell) 85%",
+            "Swim 60%",
+            "Travels in packs 6-24",
+            "Territorial (forty-mile area)",
+            "Communicate via howls up to 5 miles"
+          ],
+          "psionics": "None",
+          "magicAbilities": "None",
+          "spd": 22,
+          "lifeSpan": "16 years",
+          "description": "Large, powerful wolves found in the Northern Wilderness. Travel in packs and defend large territories.",
+          "HF": 8
+        },
+        {
+          "id": "hyena",
+          "name": "Hyena",
+          "category": "animal",
+          "alignment": [
+            "unaligned"
+          ],
+          "size": "4-4.5 feet long, 60-120 pounds",
+          "AR": 5,
+          "HP": "4d8",
+          "attacks": [
+            {
+              "name": "Bite",
+              "damage": "1d8",
+              "count": 2
+            }
+          ],
+          "bonuses": {
+            "damage": 4,
+            "strike": 2,
+            "dodge": 3
+          },
+          "abilities": [
+            "Night vision 20 ft",
+            "Speed 40 mph",
+            "Prowl 25%",
+            "Track (by smell) 50%",
+            "Swim 4%",
+            "Travels in large packs 6-36",
+            "Bone-crushing jaws (counts as crush attack vs small prey)"
+          ],
+          "psionics": "None",
+          "magicAbilities": "None",
+          "spd": 40,
+          "lifeSpan": "20 years",
+          "description": "Scavenging pack animals with powerful jaws. Found in southern regions.",
+          "HF": 7
+        },
+        {
+          "id": "war_horse",
+          "name": "War Horse",
+          "category": "animal",
+          "alignment": [
+            "unaligned"
+          ],
+          "size": "72 inches tall, 1700-2100 pounds",
+          "AR": 5,
+          "HP": "8d8",
+          "attacks": [
+            {
+              "name": "Front Kick",
+              "damage": "3d6",
+              "count": 1
+            },
+            {
+              "name": "Rear Kick",
+              "damage": "5d6",
+              "count": 1
+            }
+          ],
+          "bonuses": {
+            "strike": 2,
+            "damage": 6,
+            "dodge": 2
+          },
+          "abilities": [
+            "Great strength and endurance",
+            "Speed 20 mph",
+            "Can pull up to five tons",
+            "Swim 50%",
+            "Battle trained; saves vs Horror +2 when ridden by trusted rider"
+          ],
+          "psionics": "None",
+          "magicAbilities": "None",
+          "spd": 20,
+          "lifeSpan": "10 years",
+          "description": "Large, powerful horses bred for battle. Highly valued and expensive.",
+          "HF": 3
+        },
+        {
+          "id": "race_horse",
+          "name": "Race Horse",
+          "category": "animal",
+          "alignment": [
+            "unaligned"
+          ],
+          "size": "60-64 inches tall, 1200 pounds",
+          "AR": 5,
+          "HP": "6d8",
+          "attacks": [
+            {
+              "name": "Front Kick",
+              "damage": "1d8",
+              "count": 1
+            },
+            {
+              "name": "Rear Kick",
+              "damage": "2d6",
+              "count": 1
+            }
+          ],
+          "bonuses": {
+            "strike": 2,
+            "dodge": 5
+          },
+          "abilities": [
+            "Speed 60 mph (max one hour)",
+            "Transport speed 15-30 mph (4-8 hours)",
+            "Can carry or pull 300-600 pounds",
+            "Skittish in combat unless morale tested"
+          ],
+          "psionics": "None",
+          "magicAbilities": "None",
+          "spd": 60,
+          "lifeSpan": "8 years",
+          "description": "Fastest horses, bred for speed and endurance. Extremely valuable.",
+          "HF": 2
+        },
+        {
+          "id": "jumper_riding_horse",
+          "name": "Jumper and Riding Horse",
+          "category": "animal",
+          "alignment": [
+            "unaligned"
+          ],
+          "size": "56-60 inches tall, 1100-1400 pounds",
+          "AR": 5,
+          "HP": "5d8",
+          "attacks": [
+            {
+              "name": "Front Kick",
+              "damage": "1d8",
+              "count": 1
+            },
+            {
+              "name": "Rear Kick",
+              "damage": "2d6",
+              "count": 1
+            }
+          ],
+          "bonuses": {
+            "dodge": 4
+          },
+          "abilities": [
+            "Speed 30-50 mph",
+            "Jump heights 4-6 feet (riding horse 3-4 feet)",
+            "Can carry up to 500 pounds",
+            "Pull 800-1200 pounds",
+            "Swim 50%",
+            "Sure-footed over rough ground"
+          ],
+          "psionics": "None",
+          "magicAbilities": "None",
+          "spd": 50,
+          "lifeSpan": "10 years",
+          "description": "Versatile horses used for riding and jumping. Most common type.",
+          "HF": 2
+        },
+        {
+          "id": "work_horse",
+          "name": "Work Horse",
+          "category": "animal",
+          "alignment": [
+            "unaligned"
+          ],
+          "size": "64-68 inches tall, 1200-1800 pounds",
+          "AR": 5,
+          "HP": "7d8",
+          "attacks": [
+            {
+              "name": "Front Kick",
+              "damage": "2d6",
+              "count": 1
+            },
+            {
+              "name": "Rear Kick",
+              "damage": "3d6",
+              "count": 1
+            }
+          ],
+          "bonuses": {
+            "damage": 4,
+            "dodge": 2
+          },
+          "abilities": [
+            "Great strength and endurance",
+            "Can pull up to four tons",
+            "Pair in tandem: up to fifteen tons",
+            "Speed 20 mph",
+            "Swim 50%",
+            "Docile temperament; +2 save vs Horror when within stable herd"
+          ],
+          "psionics": "None",
+          "magicAbilities": "None",
+          "spd": 20,
+          "lifeSpan": "12 years",
+          "description": "Heavy draft horses used for farm work and pulling loads.",
+          "HF": 3
+        },
+        {
+          "id": "pony",
+          "name": "Pony",
+          "category": "animal",
+          "alignment": [
+            "unaligned"
+          ],
+          "size": "48-58 inches tall, 800-1200 pounds",
+          "AR": 5,
+          "HP": "4d8",
+          "attacks": [
+            {
+              "name": "Kick",
+              "damage": "1d6",
+              "count": 2
+            }
+          ],
+          "bonuses": {
+            "dodge": 3
+          },
+          "abilities": [
+            "Speed 25 mph",
+            "Can carry up to 200 pounds",
+            "Pull 600-800 pounds",
+            "Swim 50%",
+            "Remarkably hardy; can survive on sparse forage"
+          ],
+          "psionics": "None",
+          "magicAbilities": "None",
+          "spd": 25,
+          "lifeSpan": "25 years",
+          "description": "Small, hardy horses suitable for children and light work.",
+          "HF": 1
+        },
+        {
+          "id": "donkey",
+          "name": "Donkey",
+          "category": "animal",
+          "alignment": [
+            "unaligned"
+          ],
+          "size": "40-50 inches tall, 400-600 pounds",
+          "AR": 5,
+          "HP": "4d8",
+          "attacks": [
+            {
+              "name": "Kick",
+              "damage": "1d6",
+              "count": 2
+            },
+            {
+              "name": "Bite",
+              "damage": "1d4",
+              "count": 1
+            }
+          ],
+          "bonuses": {
+            "dodge": 2
+          },
+          "abilities": [
+            "Speed 20 mph",
+            "Can carry up to 150 pounds",
+            "Pull 400-600 pounds",
+            "Swim 40%",
+            "Very stubborn",
+            "Sure-footed on mountain paths"
+          ],
+          "psionics": "None",
+          "magicAbilities": "None",
+          "spd": 20,
+          "lifeSpan": "30 years",
+          "description": "Sturdy pack animals known for their endurance and stubbornness.",
+          "HF": 1
+        },
+        {
+          "id": "mouse",
+          "name": "Mouse",
+          "category": "animal",
+          "alignment": [
+            "unaligned"
+          ],
+          "size": "2-4 inches long, less than 1 pound",
+          "AR": 2,
+          "HP": "1d4",
+          "attacks": [
+            {
+              "name": "Bite",
+              "damage": "1",
+              "count": 1
+            }
+          ],
+          "bonuses": {
+            "dodge": 5
+          },
+          "abilities": [
+            "Prowl 80%",
+            "Climb 90%",
+            "Excellent hearing; alert others to danger"
+          ],
+          "psionics": "None",
+          "magicAbilities": "None",
+          "spd": 8,
+          "lifeSpan": "2 years",
+          "description": "Small rodents found everywhere. Common pests but generally harmless.",
+          "HF": 0
+        },
+        {
+          "id": "squirrel",
+          "name": "Squirrel",
+          "category": "animal",
+          "alignment": [
+            "unaligned"
+          ],
+          "size": "6-12 inches long, less than 1 pound",
+          "AR": 3,
+          "HP": "1d6",
+          "attacks": [
+            {
+              "name": "Bite",
+              "damage": "1",
+              "count": 1
+            }
+          ],
+          "bonuses": {
+            "dodge": 6
+          },
+          "abilities": [
+            "Climb 95%",
+            "Prowl 70%",
+            "Can leap between trees up to 10 ft apart"
+          ],
+          "psionics": "None",
+          "magicAbilities": "None",
+          "spd": 12,
+          "lifeSpan": "5 years",
+          "description": "Arboreal rodents known for climbing and hoarding nuts.",
+          "HF": 0
+        },
+        {
+          "id": "raccoon",
+          "name": "Raccoon",
+          "category": "animal",
+          "alignment": [
+            "unaligned"
+          ],
+          "size": "2-3 feet long, 10-30 pounds",
+          "AR": 4,
+          "HP": "2d8",
+          "attacks": [
+            {
+              "name": "Claw",
+              "damage": "1d4",
+              "count": 2
+            },
+            {
+              "name": "Bite",
+              "damage": "1d4",
+              "count": 1
+            }
+          ],
+          "bonuses": {
+            "strike": 1,
+            "dodge": 4
+          },
+          "abilities": [
+            "Night vision 30 ft",
+            "Climb 85%",
+            "Swim 60%",
+            "Prowl 70%",
+            "Dexterous hands; 30% pick pocket equivalent"
+          ],
+          "psionics": "None",
+          "magicAbilities": "None",
+          "spd": 12,
+          "lifeSpan": "8 years",
+          "description": "Clever, dexterous mammals with distinctive masks. Excellent climbers and swimmers.",
+          "HF": 3
+        },
+        {
+          "id": "weasel",
+          "name": "Weasel",
+          "category": "animal",
+          "alignment": [
+            "unaligned"
+          ],
+          "size": "6-12 inches long, less than 1 pound",
+          "AR": 3,
+          "HP": "1d6",
+          "attacks": [
+            {
+              "name": "Bite",
+              "damage": "1d4",
+              "count": 1
+            }
+          ],
+          "bonuses": {
+            "strike": 2,
+            "dodge": 5
+          },
+          "abilities": [
+            "Prowl 85%",
+            "Climb 80%",
+            "Squeeze through openings as small as two inches"
+          ],
+          "psionics": "None",
+          "magicAbilities": "None",
+          "spd": 18,
+          "lifeSpan": "3 years",
+          "description": "Small, ferocious predators. Excellent hunters despite their size.",
+          "HF": 2
+        },
+        {
+          "id": "mink",
+          "name": "Mink",
+          "category": "animal",
+          "alignment": [
+            "unaligned"
+          ],
+          "size": "1-2 feet long, 1-3 pounds",
+          "AR": 4,
+          "HP": "2d6",
+          "attacks": [
+            {
+              "name": "Bite",
+              "damage": "1d4",
+              "count": 1
+            }
+          ],
+          "bonuses": {
+            "strike": 2,
+            "dodge": 4
+          },
+          "abilities": [
+            "Swim 90%",
+            "Prowl 75%",
+            "Can remain underwater for two minutes"
+          ],
+          "psionics": "None",
+          "magicAbilities": "None",
+          "spd": 16,
+          "lifeSpan": "4 years",
+          "description": "Semi-aquatic mustelids with valuable fur. Excellent swimmers.",
+          "HF": 2
+        },
+        {
+          "id": "badger",
+          "name": "Badger",
+          "category": "animal",
+          "alignment": [
+            "unaligned"
+          ],
+          "size": "2-3 feet long, 15-30 pounds",
+          "AR": 5,
+          "HP": "3d8",
+          "attacks": [
+            {
+              "name": "Claw",
+              "damage": "1d6",
+              "count": 2
+            },
+            {
+              "name": "Bite",
+              "damage": "1d6",
+              "count": 1
+            }
+          ],
+          "bonuses": {
+            "damage": 2,
+            "strike": 1,
+            "dodge": 2
+          },
+          "abilities": [
+            "Burrow 80%",
+            "Prowl 60%",
+            "Ferocious when cornered (+2 save vs Horror, +2 damage for 1 melee)"
+          ],
+          "psionics": "None",
+          "magicAbilities": "None",
+          "spd": 10,
+          "lifeSpan": "10 years",
+          "description": "Fierce burrowing mammals. Aggressive when cornered.",
+          "HF": 4
+        },
+        {
+          "id": "otter",
+          "name": "Otter",
+          "category": "animal",
+          "alignment": [
+            "unaligned"
+          ],
+          "size": "2-4 feet long, 10-30 pounds",
+          "AR": 4,
+          "HP": "2d8",
+          "attacks": [
+            {
+              "name": "Bite",
+              "damage": "1d6",
+              "count": 1
+            }
+          ],
+          "bonuses": {
+            "strike": 1,
+            "dodge": 4
+          },
+          "abilities": [
+            "Swim 95%",
+            "Hold breath 4 minutes",
+            "Prowl 70%",
+            "Playful nature; +10% to animal training checks"
+          ],
+          "psionics": "None",
+          "magicAbilities": "None",
+          "spd": 12,
+          "lifeSpan": "12 years",
+          "description": "Playful aquatic mammals. Excellent swimmers and divers.",
+          "HF": 2
+        },
+        {
+          "id": "deer",
+          "name": "Deer",
+          "category": "animal",
+          "alignment": [
+            "unaligned"
+          ],
+          "size": "28-56 inches tall, 30-280 pounds",
+          "AR": 5,
+          "HP": "4d8",
+          "attacks": [
+            {
+              "name": "Kick",
+              "damage": "1d6",
+              "count": 1
+            },
+            {
+              "name": "Butt (stag)",
+              "damage": "1d8+2",
+              "count": 1
+            }
+          ],
+          "bonuses": {
+            "strike": 1,
+            "dodge": 4
+          },
+          "abilities": [
+            "Speed 35 mph",
+            "Swim 60%",
+            "Keen hearing; surprise on 16+"
+          ],
+          "psionics": "None",
+          "magicAbilities": "None",
+          "spd": 35,
+          "lifeSpan": "10 years",
+          "description": "Graceful herbivores found worldwide. Stags have antlers.",
+          "HF": 2
+        },
+        {
+          "id": "wild_pig",
+          "name": "Wild Pig",
+          "category": "animal",
+          "alignment": [
+            "unaligned"
+          ],
+          "size": "5-6 feet long, 200-500 pounds",
+          "AR": 6,
+          "HP": "6d8",
+          "attacks": [
+            {
+              "name": "Bite/Tusk",
+              "damage": "1d8",
+              "count": 2
+            }
+          ],
+          "bonuses": {
+            "strike": 1,
+            "damage": 2,
+            "dodge": 3
+          },
+          "abilities": [
+            "Speed 20 mph",
+            "Swim 50%",
+            "Prowl 50%",
+            "Track (by smell) 44%",
+            "Charge attack +2 strike against surprised foes"
+          ],
+          "psionics": "None",
+          "magicAbilities": "None",
+          "spd": 20,
+          "lifeSpan": "8 years",
+          "description": "Feral pigs found in south, west, and east. Dangerous when cornered.",
+          "HF": 6
+        },
+        {
+          "id": "alinite_wild_boar",
+          "name": "Alinite Wild Boar",
+          "category": "animal",
+          "alignment": [
+            "unaligned"
+          ],
+          "size": "4.5-5 feet tall, 8-10 feet long, 1200-2000 pounds",
+          "AR": 6,
+          "HP": "8d8",
+          "attacks": [
+            {
+              "name": "Bite/Tusk",
+              "damage": "2d6",
+              "count": 3
+            },
+            {
+              "name": "Trample",
+              "damage": "1d8",
+              "count": 1
+            }
+          ],
+          "bonuses": {
+            "strike": 1,
+            "damage": 4,
+            "dodge": 2
+          },
+          "abilities": [
+            "Speed 26 mph",
+            "Swim 50%",
+            "Prowl 40%",
+            "Track (by smell) 50%",
+            "Charge for double damage once per melee"
+          ],
+          "psionics": "None",
+          "magicAbilities": "None",
+          "spd": 26,
+          "lifeSpan": "10 years",
+          "description": "Massive wild boars found in southern jungles. Extremely dangerous and aggressive.",
+          "HF": 10
+        },
+        {
+          "id": "giant_timber_spider",
+          "name": "Giant Timber Spider",
+          "category": "monster",
+          "alignment": [
+            "evil"
+          ],
+          "size": "3-4 feet long",
+          "AR": 6,
+          "HP": "6d6",
+          "attacks": [
+            {
+              "name": "Bite",
+              "damage": "1d6+poison",
+              "count": 1
+            }
+          ],
+          "bonuses": {
+            "strike": 1,
+            "dodge": 2
+          },
+          "abilities": [
+            "Prowl 60%",
+            "Track (by smell) 36%",
+            "Night vision 60 ft",
+            "Climb 80%",
+            "Poison: Causes swelling, fever, nausea; -1 strike, -2 dodge, -1 parry (cumulative); lasts 24 hours"
+          ],
+          "spd": 9,
+          "lifeSpan": "5 years",
+          "description": "Large spiders found in northern and eastern forests. Poisonous bite causes debilitating effects."
+        },
+        {
+          "id": "corinth_cave_spider",
+          "name": "Corinth Cave Spider",
+          "category": "monster",
+          "alignment": [
+            "evil"
+          ],
+          "size": "3 inches",
+          "AR": 3,
+          "HP": "1d4",
+          "attacks": [
+            {
+              "name": "Bite",
+              "damage": "poison (very potent)",
+              "count": 1
+            }
+          ],
+          "bonuses": {
+            "dodge": 3
+          },
+          "abilities": [
+            "Night vision 30 ft",
+            "Prowl 80%",
+            "Climb 98%",
+            "Poison: Very potent (as timber spider)"
+          ],
+          "spd": 6,
+          "lifeSpan": "1 year",
+          "description": "Small but deadly spiders found in mountains and caves. Extremely venomous despite size."
+        },
+        {
+          "id": "giant_cave_spider",
+          "name": "Giant Cave Spider",
+          "category": "monster",
+          "alignment": [
+            "evil"
+          ],
+          "size": "3-5 feet long",
+          "AR": 8,
+          "HP": "6d6",
+          "attacks": [
+            {
+              "name": "Bite",
+              "damage": "2d6+poison",
+              "count": 1
+            }
+          ],
+          "bonuses": {
+            "dodge": 2
+          },
+          "abilities": [
+            "Night vision 90 ft",
+            "Prowl 60%",
+            "Climb 88%",
+            "Poison: 2d6 damage; causes dizziness and nausea; -2 strike/parry/dodge; takes effect in 3 melees, lasts 1-4 melees"
+          ],
+          "spd": 10,
+          "lifeSpan": "8 years",
+          "description": "Large spiders found in mountains and caves of the south and Old Kingdom. Potent venom."
+        },
+        {
+          "id": "black_leaper",
+          "name": "Black Leaper",
+          "category": "monster",
+          "alignment": [
+            "evil"
+          ],
+          "size": "2 inches",
+          "AR": 3,
+          "HP": "1d4",
+          "attacks": [
+            {
+              "name": "Bite",
+              "damage": "poison (deadliest)",
+              "count": 2
+            }
+          ],
+          "bonuses": {
+            "dodge": 4
+          },
+          "abilities": [
+            "Night vision 12 ft",
+            "Prowl 94%",
+            "Climb 99%",
+            "Leap 1-4 feet per jump (up to 6 jumps per melee)",
+            "Poison: Deadliest in world; 6d6 damage; takes effect in 3 melees; -4 strike, -5 parry/dodge, -6 initiative; lasts 12 hours"
+          ],
+          "spd": 8,
+          "lifeSpan": "3 years",
+          "description": "Tiny but incredibly deadly spiders. Their poison is the deadliest in the world. Favored by alchemists and assassins. Found in east, south, and west (never in mountains)."
+        },
+        {
+          "id": "cherub",
+          "name": "The Cherubs",
+          "category": "creature_of_magic",
+          "alignment": [
+            "good",
+            "selfish"
+          ],
+          "size": "2-3 feet tall",
+          "AR": 12,
+          "HP": "8d10",
+          "attacks": [
+            {
+              "name": "Weapon/Magic",
+              "damage": "1d8",
+              "count": 2
+            }
+          ],
+          "bonuses": {
+            "strike": 2,
+            "damage": 6,
+            "dodge": 6,
+            "parry": 4,
+            "allSaves": 3
+          },
+          "abilities": [
+            "Night vision 90 ft",
+            "See the invisible",
+            "Turn invisible",
+            "Metamorphosis",
+            "Bio-regeneration 1d6 every two melees",
+            "Fly 50 mph",
+            "Dimensional teleport 50%",
+            "Psionics: Levels 1-3, I.S.P. 60",
+            "Magic: All levels 1-5 air elemental magic"
+          ],
+          "spd": 25,
+          "lifeSpan": "Immortal",
+          "description": "An infant with feathered wings and eyes of yellow flame. Celestial beings of air magic."
+        },
+        {
+          "id": "ariel",
+          "name": "Ariel",
+          "category": "creature_of_magic",
+          "alignment": [
+            "good",
+            "selfish"
+          ],
+          "size": "12-24 feet tall",
+          "AR": 15,
+          "HP": "8d10+20",
+          "attacks": [
+            {
+              "name": "Claw",
+              "damage": "3d6",
+              "count": 3
+            },
+            {
+              "name": "Magic",
+              "damage": "By spell",
+              "count": 1
+            }
+          ],
+          "bonuses": {
+            "strike": 2,
+            "damage": 8,
+            "parry": 3,
+            "dodge": 3,
+            "allSaves": 3
+          },
+          "abilities": [
+            "Night vision 60 ft",
+            "Fire and cold resistant (half damage)",
+            "Metamorphosis",
+            "Bio-regeneration 1d8 every two melees",
+            "Fly 30 mph",
+            "Dimensional teleport 11%",
+            "Psionics: Levels 1-3, I.S.P. 50",
+            "Magic: All levels 1-5 earth elemental magic"
+          ],
+          "spd": 15,
+          "lifeSpan": "Immortal",
+          "description": "Perhaps the most bizarre of the four angels, the Ariel has two human heads, the body of a lion, the wings of an angel, and the tail of a serpent."
+        },
+        {
+          "id": "seraph",
+          "name": "Seraph",
+          "category": "creature_of_magic",
+          "alignment": [
+            "good",
+            "selfish"
+          ],
+          "size": "12-15 feet tall",
+          "AR": 15,
+          "HP": "8d10+10",
+          "attacks": [
+            {
+              "name": "Weapon/Magic",
+              "damage": "2d6",
+              "count": 2
+            }
+          ],
+          "bonuses": {
+            "strike": 2,
+            "damage": 6,
+            "parry": 3,
+            "dodge": 3,
+            "allSaves": 3
+          },
+          "abilities": [
+            "Night vision 90 ft",
+            "Impervious to fire",
+            "Metamorphosis",
+            "Bio-regeneration 1d8 every two melees",
+            "Fly 40 mph",
+            "Dimensional teleport 50%",
+            "Psionics: Levels 1-3, I.S.P. 50",
+            "Magic: All levels 1-5 fire elemental magic"
+          ],
+          "spd": 20,
+          "lifeSpan": "Immortal",
+          "description": "Appears as a beautiful woman with wings of an angel. Celestial being of fire magic."
+        },
+        {
+          "id": "tharsis",
+          "name": "Tharsis",
+          "category": "creature_of_magic",
+          "alignment": [
+            "good",
+            "selfish"
+          ],
+          "size": "12-18 feet tall",
+          "AR": 14,
+          "HP": "8d10+10",
+          "attacks": [
+            {
+              "name": "Weapon/Magic",
+              "damage": "2d6",
+              "count": 3
+            }
+          ],
+          "bonuses": {
+            "strike": 4,
+            "damage": 6,
+            "parry": 4,
+            "dodge": 4,
+            "allSaves": 3
+          },
+          "abilities": [
+            "Night vision 60 ft",
+            "Fire and cold resistant (half damage)",
+            "Metamorphosis",
+            "Bio-regeneration 1d8 every two melees",
+            "Fly 20 mph",
+            "Swim 96% (speed 20 mph)",
+            "Dimensional teleport 60%",
+            "Psionics: Levels 1-3, I.S.P. 60",
+            "Magic: All levels 1-5 water elemental magic"
+          ],
+          "spd": 20,
+          "lifeSpan": "Immortal",
+          "description": "Also known as 'the Avenging Angel' and 'wingless angel.' Gentle creatures who abhor unnecessary violence, seeking out and eliminating evil. Resembles a beautiful golden sea horse of great stature."
+        },
+        {
+          "id": "alu",
+          "name": "Alu",
+          "category": "demon",
+          "alignment": [
+            "evil"
+          ],
+          "size": "6-8 feet tall",
+          "AR": 10,
+          "HP": "5d8",
+          "attacks": [
+            {
+              "name": "Claw",
+              "damage": "2d6",
+              "count": 2
+            },
+            {
+              "name": "Bite",
+              "damage": "1d8",
+              "count": 1
+            }
+          ],
+          "bonuses": {
+            "strike": 2,
+            "damage": 3,
+            "parry": 2,
+            "dodge": 2,
+            "saveMagic": 2
+          },
+          "abilities": [
+            "Night vision 120 ft",
+            "See the invisible",
+            "Fire and cold resistant (half damage)",
+            "Low I.Q."
+          ],
+          "spd": 30,
+          "lifeSpan": "Centuries",
+          "description": "Lesser demons found throughout the world. Common foot soldiers of demonic armies.",
+          "HF": 10
+        },
+        {
+          "id": "aquatic",
+          "name": "Aquatics",
+          "category": "demon",
+          "alignment": [
+            "evil"
+          ],
+          "size": "8-12 feet long",
+          "AR": 8,
+          "HP": "5d8",
+          "attacks": [
+            {
+              "name": "Tentacle",
+              "damage": "1d6",
+              "count": 4
+            },
+            {
+              "name": "Bite",
+              "damage": "2d6",
+              "count": 1
+            }
+          ],
+          "bonuses": {
+            "strike": 1,
+            "damage": 2,
+            "saveMagic": 2
+          },
+          "abilities": [
+            "Swim 20 mph",
+            "Speed on land 3",
+            "Night vision 200 ft",
+            "Dimensional teleport 18%",
+            "Regenerates limbs in 6 melees (1d8 points)",
+            "Psionics: Level 1, I.S.P. 45"
+          ],
+          "spd": 3,
+          "lifeSpan": "Centuries",
+          "description": "Sea demons with the appearance of both octopus and fish. Specialize in dragging victims underwater to drown them. Known for capsizing small boats.",
+          "HF": 12
+        },
+        {
+          "id": "baal_rog",
+          "name": "Baal-Rog",
+          "category": "demon",
+          "alignment": [
+            "selfish",
+            "evil"
+          ],
+          "size": "12 feet tall",
+          "AR": 14,
+          "HP": "11d8",
+          "attacks": [
+            {
+              "name": "Claw",
+              "damage": "3d6",
+              "count": 3
+            },
+            {
+              "name": "Fire Whip",
+              "damage": "special",
+              "count": 1
+            },
+            {
+              "name": "Magic",
+              "damage": "varies",
+              "count": 1
+            }
+          ],
+          "bonuses": {
+            "strike": 3,
+            "damage": 6,
+            "parry": 4,
+            "dodge": 4,
+            "allSaves": 3
+          },
+          "psionics": "None",
+          "magicAbilities": "All fire elemental spells (levels 1-4) plus Fire Whip (level 7) at 5th-level proficiency",
+          "abilities": [
+            "I.Q. 14",
+            "Night vision 90 ft",
+            "See and turn invisible",
+            "Fly 30 mph",
+            "Impervious to fire (no damage)",
+            "Dimensional teleport 57% (at 70)",
+            "Bio-regeneration 1d8 per melee",
+            "Knows all languages"
+          ],
+          "clericalAbilities": [
+            "Animate/control 2-12 dead (61%)",
+            "Turn dead 61%",
+            "Exorcism 29%",
+            "Remove curse 28%",
+            "Healing touch 1-8"
+          ],
+          "spd": 10,
+          "lifeSpan": "Immortal",
+          "HF": 17,
+          "description": "Huge red-brown muscular demons with flaming red eyes and massive black bat wings. Symbols of cunning and power, they covet magic scrolls, items, wealth, and power, and are usually loners."
+        },
+        {
+          "id": "demon_locust",
+          "name": "Demon Locusts",
+          "category": "demon",
+          "alignment": [
+            "evil"
+          ],
+          "size": "2-3 feet long",
+          "AR": 8,
+          "HP": "3d8",
+          "attacks": [
+            {
+              "name": "Bite",
+              "damage": "1d6",
+              "count": 2
+            },
+            {
+              "name": "Sting",
+              "damage": "1d4+poison",
+              "count": 1
+            }
+          ],
+          "bonuses": {
+            "strike": 2,
+            "dodge": 4
+          },
+          "abilities": [
+            "Fly 25 mph",
+            "Swarm attacks",
+            "Poison: Paralysis 1d4 melees",
+            "Fire resistant (half damage)"
+          ],
+          "spd": 12,
+          "lifeSpan": "Centuries",
+          "description": "Swarming demonic insects. Attack in massive numbers, overwhelming victims.",
+          "HF": 10
+        },
+        {
+          "id": "gallu_demon_bull",
+          "name": "Gallu the Demon Bull",
+          "category": "demon",
+          "alignment": [
+            "evil"
+          ],
+          "size": "10-12 feet tall",
+          "AR": 12,
+          "HP": "10d8",
+          "attacks": [
+            {
+              "name": "Horn Charge",
+              "damage": "4d6",
+              "count": 1
+            },
+            {
+              "name": "Trample",
+              "damage": "3d6",
+              "count": 1
+            },
+            {
+              "name": "Gore",
+              "damage": "2d8",
+              "count": 1
+            }
+          ],
+          "bonuses": {
+            "strike": 3,
+            "damage": 8,
+            "parry": 2,
+            "dodge": 2,
+            "saveMagic": 3
+          },
+          "abilities": [
+            "Night vision 90 ft",
+            "See the invisible",
+            "Fire and cold resistant (half damage)",
+            "Charge attack: +4 strike, double damage",
+            "Teleport 50%"
+          ],
+          "spd": 20,
+          "lifeSpan": "Immortal",
+          "description": "Massive demonic bulls with powerful horns. Charge attacks are devastating.",
+          "HF": 16
+        },
+        {
+          "id": "jinn",
+          "name": "The Jinn",
+          "category": "demon",
+          "alignment": [
+            "evil",
+            "selfish"
+          ],
+          "size": "Variable (can change)",
+          "AR": 12,
+          "HP": "8d8",
+          "attacks": [
+            {
+              "name": "Hand-to-Hand",
+              "damage": "2d6",
+              "count": 2
+            },
+            {
+              "name": "Magic",
+              "damage": "By spell",
+              "count": 1
+            }
+          ],
+          "bonuses": {
+            "strike": 2,
+            "damage": 4,
+            "parry": 3,
+            "dodge": 3,
+            "saveMagic": 3
+          },
+          "abilities": [
+            "Metamorphosis",
+            "Turn invisible",
+            "Teleport 90%",
+            "Dimensional teleport 60%",
+            "Magic: Spell levels 1-8",
+            "Can grant wishes (with consequences)"
+          ],
+          "spd": 15,
+          "lifeSpan": "Immortal",
+          "description": "Powerful shape-shifting demons. Known for granting wishes, but always with a twist or negative consequence.",
+          "HF": 15
+        },
+        {
+          "id": "magot",
+          "name": "Magot",
+          "category": "demon",
+          "alignment": [
+            "evil"
+          ],
+          "size": "20 feet tall",
+          "AR": 14,
+          "HP": "11d8",
+          "attacks": [
+            {
+              "name": "Stomping Foot",
+              "damage": "3d6",
+              "count": 3
+            },
+            {
+              "name": "Bite",
+              "damage": "6d6",
+              "count": 1
+            },
+            {
+              "name": "Eye Beam (Petrification)",
+              "damage": "petrification",
+              "count": 3,
+              "range": "60 feet",
+              "save": "magic 12 or higher",
+              "duration": "20 minutes"
+            }
+          ],
+          "bonuses": {
+            "damage": 8,
+            "allSaves": 3
+          },
+          "abilities": [
+            "Intelligence (I.Q.): 7",
+            "Night vision 120 ft",
+            "See the invisible",
+            "Turn into mist",
+            "Impervious to fire",
+            "Dimensional teleport 25%",
+            "Knows all languages",
+            "Bio-regeneration 2-12 HP per melee",
+            "Eye beams petrify victims (save vs. magic 12+, duration 20 minutes)"
+          ],
+          "spd": 24,
+          "lifeSpan": "Immortal",
+          "description": "Hideous giant maws mounted on three thick legs, with three long tentacle-like eyestalks. Magots are powerful demons native to Hades. They roam in herds in Hell, petrifying and devouring the living and the dead alike. Rarely are more than one or two encountered outside of Hades. They serve Mictla the Devourer, a greater demonic power.",
+          "HF": 14,
+          "notes": "Typically miscreant or diabolic alignment"
+        },
+        {
+          "id": "jungle_kodiak",
+          "name": "Jungle Kodiak",
+          "category": "animal",
+          "alignment": [
+            "unaligned"
+          ],
+          "size": "9-11 feet tall, 1000-2000 pounds",
+          "AR": 7,
+          "HP": "12d8",
+          "attacks": [
+            {
+              "name": "Claw",
+              "damage": "3d6",
+              "count": 3
+            },
+            {
+              "name": "Bite",
+              "damage": "2d8",
+              "count": 1
+            }
+          ],
+          "bonuses": {
+            "strike": 3,
+            "damage": 8
+          },
+          "abilities": [
+            "Prowl 30%",
+            "Track (by smell) 65%",
+            "Night vision 30 ft",
+            "Swim 75%",
+            "Climb 70%",
+            "Jungle adaptation: +2 prowl in dense vegetation"
+          ],
+          "spd": 18,
+          "lifeSpan": "30 years",
+          "description": "Massive kodiak bears adapted to jungle environments. Larger and more aggressive than their northern cousins. Found in southern jungles."
+        }
+      ],
+      "dragons": [
+        {
+          "id": "fire_dragon",
+          "name": "Fire Dragon",
+          "category": "dragon",
+          "alignment": [
+            "any"
+          ],
+          "size": "20-30 feet tall, 50-70 feet long, 100-foot wingspan",
+          "AR": 14,
+          "HP": "40d8",
+          "attacks": [
+            {
+              "name": "Claw",
+              "damage": "3d6",
+              "count": 3
+            },
+            {
+              "name": "Bite",
+              "damage": "4d6",
+              "count": 1
+            },
+            {
+              "name": "Fire Breath",
+              "damage": "5d6+6",
+              "count": 1,
+              "range": "40 ft, 6 ft wide"
+            }
+          ],
+          "bonuses": {
+            "strike": 3,
+            "damage": 10,
+            "parry": 3,
+            "dodge": 3,
+            "allSaves": 5
+          },
+          "abilities": [
+            "Night vision 90 ft",
+            "See the invisible",
+            "Impervious to fire",
+            "Metamorphosis",
+            "Fly 60 mph",
+            "Psionics: Levels 1-2, I.S.P. 90",
+            "Magic: Spell levels 1-6 (tenth-level proficiency)"
+          ],
+          "spd": 60,
+          "lifeSpan": "6000 years",
+          "description": "Dragons in shades of red from scarlet to alizarin, with massive wings and powerful limbs. Prolific in magic use and study, preferring warm climates.",
+          "HF": 17
+        },
+        {
+          "id": "ice_dragon",
+          "name": "Ice Dragon",
+          "category": "dragon",
+          "alignment": [
+            "any"
+          ],
+          "size": "20-30 feet tall, 50-70 feet long, 100-foot wingspan",
+          "AR": 14,
+          "HP": "40d8",
+          "attacks": [
+            {
+              "name": "Claw",
+              "damage": "3d6",
+              "count": 3
+            },
+            {
+              "name": "Bite",
+              "damage": "3d6",
+              "count": 1
+            },
+            {
+              "name": "Frost Breath",
+              "damage": "5d6+6",
+              "count": 1,
+              "range": "40 ft, 6 ft wide"
+            }
+          ],
+          "bonuses": {
+            "strike": 3,
+            "damage": 10,
+            "parry": 3,
+            "dodge": 3,
+            "allSaves": 5
+          },
+          "abilities": [
+            "Impervious to cold/ice",
+            "Metamorphosis",
+            "Fly 70 mph",
+            "Psionics: Levels 1-2, I.S.P. 90",
+            "Magic: Spell levels 1-6 (tenth-level proficiency)"
+          ],
+          "spd": 70,
+          "lifeSpan": "6000 years",
+          "description": "Dragons of any shade of blue or white; famed for their great magic and military leadership. Found primarily in the north, often seen in winter on the tundra of the Ophids Grasslands.",
+          "HF": 17
+        },
+        {
+          "id": "night_stalker",
+          "name": "Night Stalker",
+          "category": "dragon",
+          "alignment": [
+            "evil"
+          ],
+          "size": "20-30 feet tall, 50-70 feet long",
+          "AR": 14,
+          "HP": "40d8",
+          "attacks": [
+            {
+              "name": "Claw",
+              "damage": "3d6",
+              "count": 3
+            },
+            {
+              "name": "Bite",
+              "damage": "4d6",
+              "count": 1
+            }
+          ],
+          "bonuses": {
+            "strike": 3,
+            "damage": 10,
+            "parry": 3,
+            "dodge": 3,
+            "allSaves": 5
+          },
+          "abilities": [
+            "Night vision excellent",
+            "Virtually blind in daylight",
+            "Fly",
+            "Psionics: Levels 1-2, I.S.P. 90",
+            "Magic: Spell levels 1-6"
+          ],
+          "spd": 60,
+          "lifeSpan": "6000 years",
+          "description": "Dull green, grey, or black with large watery blue eyes, long serpentine body, powerful wings, and terrible claws. Symbol of darkness and the undead. Found throughout the world, particularly in mountainous areas and the Old Kingdom.",
+          "HF": 16
+        }
+      ]
+    }
+  }

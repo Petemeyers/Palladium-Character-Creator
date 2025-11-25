@@ -1,6 +1,7 @@
 import axios from "axios";
 import dotenv from "dotenv";
 import rateLimit from "express-rate-limit";
+import process from "process";
 
 dotenv.config();
 

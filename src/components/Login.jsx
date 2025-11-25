@@ -29,6 +29,11 @@ const Login = () => {
       
       if (response.data.token) {
         localStorage.setItem('token', response.data.token);
+        localStorage.setItem('user', JSON.stringify(response.data.user));
+        
+        // Log successful authentication
+        console.log('User authenticated successfully:', response.data.user);
+        
         navigate('/');
       } else {
         throw new Error('No token received');

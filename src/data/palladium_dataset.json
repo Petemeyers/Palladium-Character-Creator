@@ -1,0 +1,1054 @@
+{
+    "races": {
+      "Human": {
+        "description": "Most common race; adaptable, versatile, no restrictions.",
+        "bonuses": {},
+        "restrictedOCCs": [],
+        "lifespan": "60-80 years",
+        "specialAbilities": ["Adaptable: +1 elective skill at level 1"],
+        "gmOnly": false
+      },
+      "Elf": {
+        "description": "Graceful, long-lived, magically gifted.",
+        "bonuses": { "I.Q.": 2, "M.A.": 2, "P.P.": 1 },
+        "restrictedOCCs": ["Assassin (rare)"],
+        "lifespan": "600+ years",
+        "specialAbilities": ["Nightvision 60 ft", "Sense Magic (20% base)", "Resistant to disease (+2 save)"],
+        "gmOnly": false
+      },
+      "Dwarf": {
+        "description": "Stout, proud, often distrustful of magic.",
+        "bonuses": { "P.S.": 2, "P.E.": 2 },
+        "restrictedOCCs": ["Wizard", "Warlock", "Summoner", "Diabolist"],
+        "lifespan": "300+ years",
+        "specialAbilities": ["Stone Sense: detect slopes and depth underground", "Darkvision 60 ft"],
+        "gmOnly": false
+      },
+      "Gnome": {
+        "description": "Small, curious, clever, often dabble in magic.",
+        "bonuses": { "I.Q.": 1, "P.P.": 1 },
+        "restrictedOCCs": ["Knight", "Paladin"],
+        "lifespan": "150+ years",
+        "specialAbilities": ["Nightvision 40 ft", "Naturally good swimmers"],
+        "gmOnly": false
+      },
+      "Kobold": {
+        "description": "Crafty miners and sneaky fighters.",
+        "bonuses": { "P.S.": 1, "I.Q.": -1 },
+        "restrictedOCCs": ["Knight", "Paladin", "PriestOfLight"],
+        "lifespan": "120+ years",
+        "specialAbilities": ["Darkvision 60 ft", "Stonecunning (detect weak stone/ore)"],
+        "gmOnly": false
+      },
+      "Goblin": {
+        "description": "Small, tribal, mischievous, and cunning.",
+        "bonuses": { "P.P.": 1, "P.E.": -1 },
+        "restrictedOCCs": ["Knight", "Paladin", "PriestOfLight"],
+        "lifespan": "80-100 years",
+        "specialAbilities": ["Nightvision 60 ft", "Small size = stealth bonus"],
+        "gmOnly": false
+      },
+      "Hob-Goblin": {
+        "description": "Larger, meaner cousins of goblins.",
+        "bonuses": { "P.S.": 2, "P.E.": 1 },
+        "restrictedOCCs": ["Knight", "Paladin", "Summoner"],
+        "lifespan": "120+ years",
+        "specialAbilities": ["Nightvision 60 ft", "Intimidation bonus due to size"],
+        "gmOnly": false
+      },
+      "Orc": {
+        "description": "Savage, but disciplined under strong leadership.",
+        "bonuses": { "P.S.": 2, "P.E.": 1 },
+        "restrictedOCCs": ["Knight", "Paladin", "PriestOfLight"],
+        "lifespan": "90-120 years",
+        "specialAbilities": ["Nightvision 60 ft", "Track by scent 20%"],
+        "gmOnly": false
+      },
+      "Ogre": {
+        "description": "Massive humanoids with great strength.",
+        "bonuses": { "P.S.": 4, "P.E.": 2 },
+        "restrictedOCCs": ["Knight", "Paladin", "PriestOfLight", "Wizard"],
+        "lifespan": "150+ years",
+        "specialAbilities": ["Nightvision 60 ft", "Intimidation bonus"],
+        "gmOnly": false
+      },
+      "Troll": {
+        "description": "Huge humanoids with regenerative abilities.",
+        "bonuses": { "P.S.": 6, "P.E.": 2 },
+        "restrictedOCCs": ["Knight", "Paladin", "PriestOfLight", "Wizard", "Warlock"],
+        "lifespan": "200+ years",
+        "specialAbilities": ["Regeneration 2d6 HP/hour", "Nightvision 60 ft"],
+        "gmOnly": false
+      },
+      "Wolfen": {
+        "description": "Wolf-like humanoids with advanced civilization.",
+        "bonuses": { "P.S.": 2, "P.E.": 2, "Spd": 2 },
+        "restrictedOCCs": ["Knight", "Paladin", "Wizard"],
+        "lifespan": "150+ years",
+        "specialAbilities": ["Nightvision 100 ft", "Keen smell (track by scent 40%)"],
+        "gmOnly": false
+      },
+      "Changeling": {
+        "description": "Shapechangers, distrusted by all other races.",
+        "bonuses": { "M.A.": -2 },
+        "restrictedOCCs": ["PriestOfLight", "PriestOfDarkness", "Knight", "Paladin"],
+        "lifespan": "200+ years",
+        "specialAbilities": ["Shapeshift: assume humanoid form at will"],
+        "gmOnly": false
+      },
+      "Troglodyte": {
+        "description": "Primitive cave-dwellers, savage but strong.",
+        "bonuses": { "P.S.": 3, "I.Q.": -2 },
+        "restrictedOCCs": ["Wizard", "Warlock", "Diabolist", "Summoner", "PriestOfLight"],
+        "lifespan": "100+ years",
+        "specialAbilities": ["Nightvision 60 ft", "Resistant to cold environments"],
+        "gmOnly": false
+      },
+      "Giant": {
+        "description": "Towering beings of great strength.",
+        "bonuses": { "P.S.": 10, "P.E.": 4, "Spd": 2 },
+        "restrictedOCCs": ["Wizard", "Diabolist", "Summoner", "PriestOfLight"],
+        "lifespan": "500+ years",
+        "specialAbilities": ["Nightvision 100 ft", "Massive size (double carrying capacity)"],
+        "gmOnly": false
+      },
+      "Dragon Hatchling": {
+        "description": "Young dragon, already immensely powerful. GM permission only.",
+        "bonuses": { "P.S.": 10, "P.E.": 6, "I.Q.": 2, "M.A.": 2 },
+        "restrictedOCCs": ["All"],
+        "lifespan": "Thousands of years",
+        "specialAbilities": ["Flight", "Natural Armor", "Breath Weapon", "Magic & Psionics"],
+        "gmOnly": true
+      },
+      "Pixie": {
+        "description": "Tiny faerie folk with wings, magical and mischievous.",
+        "bonuses": { "P.P.": 4, "Spd": 4 },
+        "restrictedOCCs": ["Knight", "Paladin", "Mercenary", "Soldier"],
+        "lifespan": "500+ years",
+        "specialAbilities": ["Flight", "Invisibility (at will)", "Magic affinity"],
+        "gmOnly": true
+      },
+      "Sprite": {
+        "description": "Tiny winged faeries, fragile but magical.",
+        "bonuses": { "P.P.": 3, "M.A.": 2 },
+        "restrictedOCCs": ["Knight", "Paladin", "Soldier"],
+        "lifespan": "400+ years",
+        "specialAbilities": ["Flight", "Invisibility", "Natural magic use"],
+        "gmOnly": true
+      },
+      "Coyle": {
+        "description": "Coyote-like humanoids, allies of the Wolfen.",
+        "bonuses": { "P.S.": 2, "P.P.": 2 },
+        "restrictedOCCs": ["Knight", "Paladin"],
+        "lifespan": "120 years",
+        "specialAbilities": ["Nightvision 60 ft", "Enhanced hearing", "Track by scent 30%"],
+        "gmOnly": false
+      },
+      "Kankoran": {
+        "description": "Fox-like humanoids, master hunters and trackers.",
+        "bonuses": { "P.P.": 3, "I.Q.": 1 },
+        "restrictedOCCs": ["Paladin", "Knight"],
+        "lifespan": "140 years",
+        "specialAbilities": ["Nightvision 60 ft", "Track animals 50%", "Keen smell"],
+        "gmOnly": false
+      },
+      "Bearman of the North": {
+        "description": "Massive bear-like humanoids allied with Wolfen.",
+        "bonuses": { "P.S.": 6, "P.E.": 4 },
+        "restrictedOCCs": ["Wizard", "Summoner", "Diabolist"],
+        "lifespan": "200 years",
+        "specialAbilities": ["Nightvision 60 ft", "Claws 2d6 damage", "Hibernation resilience"],
+        "gmOnly": false
+      },
+      "Sea Giant": {
+        "description": "Giant kin tied to oceans, sailors or raiders.",
+        "bonuses": { "P.S.": 12, "P.E.": 6 },
+        "restrictedOCCs": ["Wizard", "Diabolist", "Summoner"],
+        "lifespan": "600 years",
+        "specialAbilities": ["Breathe underwater (limited)", "Nightvision 60 ft", "Swim 98%"],
+        "gmOnly": false
+      },
+      "Titan": {
+        "description": "Ancient giant race, rivals of the gods. GM permission only.",
+        "bonuses": { "P.S.": 15, "P.E.": 10, "I.Q.": 2 },
+        "restrictedOCCs": ["Wizard", "Clergy"],
+        "lifespan": "Immortal",
+        "specialAbilities": ["Supernatural strength", "Regeneration", "Magic & Psionics mastery"],
+        "gmOnly": true
+      }
+    },
+  
+    "occs": {
+      "Soldier": {
+        "category": "Men of Arms",
+        "occSkills": ["Hand to Hand: Basic", "W.P. Sword", "W.P. Spear", "W.P. Shield", "Running", "Scale Walls"],
+        "electiveSkills": { "level1": 6, "level3": 3, "level8": 3, "level12": 3, "list": ["Horsemanship", "Survival (Forest)", "Navigation", "W.P. Axe", "W.P. Crossbow", "Detect Ambush", "Recognize Weapon Quality", "W.P. Bow", "Swim", "First Aid"] },
+        "secondarySkills": { "level1": 8, "level4": 4, "level12": 4 },
+        "restrictedRaces": [],
+        "bonuses": {},
+        "PPE": "2d6",
+        "ISP": "0",
+        "special": "Disciplined military training and tactics."
+      },
+      "Mercenary Fighter": {
+        "category": "Men of Arms",
+        "occSkills": ["Hand to Hand: Mercenary", "W.P. Sword", "W.P. Small Shield", "Scale Walls (+10%)", "Streetwise"],
+        "electiveSkills": { "level1": 6, "level3": 3, "level8": 3, "level12": 3, "list": ["Forgery", "Disguise", "Horsemanship", "Pilot: Boat", "W.P. Axe", "W.P. Bow", "Swim (+5%)", "Pick Locks", "Detect Ambush", "Survival (Forest)"] },
+        "secondarySkills": { "level1": 8, "level4": 4, "level12": 4 },
+        "restrictedRaces": [],
+        "bonuses": {},
+        "PPE": "2d6",
+        "ISP": "0",
+        "special": "Versatile but less formal than soldiers."
+      },
+      "Knight": {
+        "category": "Men of Arms",
+        "occSkills": ["Hand to Hand: Knight", "W.P. Sword", "W.P. Lance", "W.P. Shield", "Horsemanship: Knight", "Lore: Heraldry", "Etiquette", "Literacy (Own Language)"],
+        "electiveSkills": { "level1": 4, "level3": 2, "level8": 2, "level12": 2, "list": ["Lore: Geography", "Lore: Religion", "W.P. Crossbow", "Language (Additional)", "Public Speaking", "Survival (Plains)", "Navigation", "W.P. Axe"] },
+        "secondarySkills": { "level1": 6, "level4": 3, "level12": 3 },
+        "restrictedRaces": ["Wolfen", "Troll", "Ogre", "Goblin", "Orc", "Kobold", "Changeling"],
+        "bonuses": {},
+        "PPE": "2d6",
+        "ISP": "0",
+        "special": "Must follow knightly code of honor."
+      },
+      "Paladin": {
+        "category": "Men of Arms",
+        "occSkills": ["Hand to Hand: Paladin", "W.P. Sword", "W.P. Shield", "Horsemanship", "First Aid", "Lore: Religion", "Literacy (Own Language)"],
+        "electiveSkills": { "level1": 5, "level3": 2, "level8": 2, "level12": 2, "list": ["Public Speaking", "Survival (Plains)", "Lore: Demon & Monster", "W.P. Crossbow", "Language (Additional)", "Lore: Magic", "W.P. Staff"] },
+        "secondarySkills": { "level1": 6, "level4": 3, "level12": 3 },
+        "restrictedRaces": ["Wolfen", "Troll", "Ogre", "Goblin", "Orc", "Kobold", "Changeling", "Gnome"],
+        "bonuses": {},
+        "PPE": "2d6+10",
+        "ISP": "0",
+        "special": "Holy warrior; must maintain alignment or lose powers."
+      },
+      "Ranger": {
+        "category": "Men of Arms",
+        "occSkills": ["Hand to Hand: Ranger", "Tracking", "Survival (Wilderness)", "W.P. Bow", "W.P. Sword", "Climb", "Identify Plants & Animals"],
+        "electiveSkills": { "level1": 5, "level3": 2, "level8": 2, "level12": 2, "list": ["Horsemanship", "Swim", "Survival (Forest)", "Survival (Plains)", "Survival (Arctic)", "Survival (Desert)", "W.P. Axe", "W.P. Spear", "Detect Ambush", "Navigation"] },
+        "secondarySkills": { "level1": 6, "level4": 3, "level12": 3 },
+        "restrictedRaces": [],
+        "bonuses": {},
+        "PPE": "2d6",
+        "ISP": "0",
+        "special": "Natural tracker and wilderness expert."
+      },
+      "Long Bowman": {
+        "category": "Men of Arms",
+        "occSkills": ["Hand to Hand: Basic", "W.P. Long Bow (+2 strike)", "W.P. Short Sword", "Running"],
+        "electiveSkills": { "level1": 4, "level3": 2, "level8": 2, "level12": 2, "list": ["Hunting", "Survival (Plains)", "Horsemanship", "Climb", "Detect Ambush", "W.P. Shield", "Swim", "Navigation"] },
+        "secondarySkills": { "level1": 6, "level4": 2, "level12": 2 },
+        "restrictedRaces": [],
+        "bonuses": {},
+        "PPE": "2d6",
+        "ISP": "0",
+        "special": "Master archer with exceptional range and accuracy."
+      },
+      "Thief": {
+        "category": "Rogue",
+        "occSkills": ["Hand to Hand: Thief", "Pick Locks", "Pick Pockets", "Scale Walls", "Move Silently", "Disguise", "Detect Concealment"],
+        "electiveSkills": { "level1": 4, "level3": 2, "level8": 2, "level12": 2, "list": ["Forgery", "Streetwise", "Acrobatics", "W.P. Dagger", "W.P. Garrote", "Poison Use", "Escape Artist", "Ventriloquism"] },
+        "secondarySkills": { "level1": 4, "level4": 2, "level12": 2 },
+        "restrictedRaces": [],
+        "bonuses": {},
+        "PPE": "2d6",
+        "ISP": "0",
+        "special": "Master of stealth and subterfuge."
+      },
+      "Assassin": {
+        "category": "Rogue",
+        "occSkills": ["Hand to Hand: Assassin", "Pick Locks", "Scale Walls", "Poison Use", "Move Silently", "Disguise", "Detect Concealment"],
+        "electiveSkills": { "level1": 4, "level3": 2, "level8": 2, "level12": 2, "list": ["Forgery", "Streetwise", "W.P. Garrote", "Acrobatics", "W.P. Dagger", "Escape Artist", "Ventriloquism", "W.P. Crossbow"] },
+        "secondarySkills": { "level1": 4, "level4": 2, "level12": 2 },
+        "restrictedRaces": [],
+        "bonuses": {},
+        "PPE": "2d6",
+        "ISP": "0",
+        "special": "Deadly killer with poison expertise."
+      },
+      "PriestOfLight": {
+        "category": "Clergy",
+        "occSkills": ["Hand to Hand: Basic", "Lore: Religion (+10%)", "First Aid", "Public Speaking", "Literacy (Own Language)", "Lore: Demon & Monster"],
+        "electiveSkills": { "level1": 4, "level3": 2, "level8": 2, "level12": 2, "list": ["Lore: Magic", "W.P. Staff", "Language (Additional)", "W.P. Crossbow", "Survival (Plains)", "Navigation", "Lore: Geography", "Lore: Ancient"] },
+        "secondarySkills": { "level1": 6, "level4": 3, "level12": 3 },
+        "restrictedRaces": ["Troll", "Ogre", "Orc", "Changeling"],
+        "bonuses": {},
+        "PPE": "2d6x10+20",
+        "ISP": "0",
+        "special": "Holy healer and protector against evil."
+      },
+      "PriestOfDarkness": {
+        "category": "Clergy",
+        "occSkills": ["Hand to Hand: Basic", "Lore: Religion (+10%)", "Lore: Demon & Monster", "Public Speaking", "Poison Use", "Literacy (Own Language)"],
+        "electiveSkills": { "level1": 4, "level3": 2, "level8": 2, "level12": 2, "list": ["W.P. Dagger", "W.P. Staff", "Disguise", "Lore: Magic", "Language (Additional)", "W.P. Crossbow", "Survival (Plains)", "Lore: Ancient"] },
+        "secondarySkills": { "level1": 6, "level4": 3, "level12": 3 },
+        "restrictedRaces": ["Elf", "Dwarf", "Gnome", "Changeling"],
+        "bonuses": {},
+        "PPE": "2d6x10+20",
+        "ISP": "0",
+        "special": "Dark priest with destructive powers."
+      },
+      "Wizard": {
+        "category": "Men of Magic",
+        "occSkills": ["Language: Native Tongue (98%)", "Literacy (Own Language)", "Lore: Magic", "Lore: History", "Identify Plants & Herbs", "Prowl", "Meditation", "Mathematics: Basic"],
+        "electiveSkills": { 
+          "level1": 4, 
+          "level3": 2, 
+          "level8": 2, 
+          "level12": 2, 
+          "list": [
+            "Lore: Demons & Monsters",
+            "Lore: Religion",
+            "Lore: Geography",
+            "Lore: Alchemy",
+            "Lore: Runes & Circles",
+            "Research",
+            "Literacy (Additional Language)",
+            "Language (Additional)",
+            "Mathematics: Advanced",
+            "Writing",
+            "Calligraphy",
+            "Art (Paint, Draw, Sculpt)",
+            "Navigation",
+            "Astronomy",
+            "Astrology",
+            "History (Advanced)",
+            "Anthropology",
+            "Archaeology",
+            "Gem Appraisal",
+            "Chemistry",
+            "Alchemy Theory",
+            "Herbology (Advanced)",
+            "Public Speaking",
+            "Charm/Impress",
+            "Etiquette",
+            "Teaching",
+            "Tutoring",
+            "Climb",
+            "Swim",
+            "Running",
+            "Horsemanship (Basic)",
+            "Pilot: Boat (Small)",
+            "Survival (Wilderness)",
+            "W.P. Dagger",
+            "W.P. Staff",
+            "W.P. Short Sword",
+            "W.P. Crossbow (Light)"
+          ] 
+        },
+        "secondarySkills": { "level1": 6, "level4": 3, "level12": 3 },
+        "restrictedRaces": ["Dwarf", "Troll", "Ogre", "Wolfen"],
+        "bonuses": {},
+        "PPE": "2d6x10+20",
+        "ISP": "0",
+        "special": "Versatile arcane spellcaster."
+      },
+      "Warlock": {
+        "category": "Men of Magic",
+        "occSkills": ["Hand to Hand: Basic", "Literacy (Own Language)", "Lore: Magic", "Read Magic", "Elemental Lore", "Mathematics: Basic"],
+        "electiveSkills": { "level1": 4, "level3": 2, "level8": 2, "level12": 2, "list": ["W.P. Staff", "W.P. Dagger", "Horsemanship", "Survival (Forest)", "Survival (Plains)", "Survival (Arctic)", "Survival (Desert)", "Lore: Geography"] },
+        "secondarySkills": { "level1": 6, "level4": 3, "level12": 3 },
+        "restrictedRaces": ["Dwarf", "Troll", "Ogre"],
+        "bonuses": {},
+        "PPE": "3d6x10+30",
+        "ISP": "0",
+        "special": "Elemental magic specialist (Earth, Air, Fire, Water)."
+      },
+      "Diabolist": {
+        "category": "Men of Magic",
+        "occSkills": ["Hand to Hand: Basic", "Literacy (Own Language)", "Lore: Magic (+15%)", "Read Magic", "Ward Drawing (+10%)", "Mathematics: Advanced"],
+        "electiveSkills": { "level1": 3, "level3": 2, "level8": 2, "level12": 2, "list": ["Lore: Demon & Monster", "Lore: Ancient", "W.P. Dagger", "Language (Additional)", "Lore: Religion", "Lore: Geography", "W.P. Staff"] },
+        "secondarySkills": { "level1": 6, "level4": 2, "level12": 2 },
+        "restrictedRaces": ["Dwarf", "Troll", "Ogre"],
+        "bonuses": {},
+        "PPE": "3d6x10+20",
+        "ISP": "0",
+        "special": "Specialist in magical wards and runes."
+      },
+      "Summoner": {
+        "category": "Men of Magic",
+        "occSkills": ["Hand to Hand: Basic", "Literacy (Own Language)", "Lore: Magic", "Read Magic", "Summoning Circles (+10%)", "Lore: Demon & Monster"],
+        "electiveSkills": { "level1": 3, "level3": 2, "level8": 2, "level12": 2, "list": ["Lore: Ancient", "W.P. Staff", "Language (Demon Tongues)", "Mathematics: Advanced", "Lore: Religion", "W.P. Dagger", "Lore: Geography"] },
+        "secondarySkills": { "level1": 6, "level4": 2, "level12": 2 },
+        "restrictedRaces": ["Dwarf", "Troll", "Ogre"],
+        "bonuses": {},
+        "PPE": "2d6x10+30",
+        "ISP": "0",
+        "special": "Can summon and command supernatural beings (dangerous!)."
+      },
+      "Mind Mage": {
+        "category": "Men of Magic",
+        "occSkills": ["Hand to Hand: Basic", "Meditation", "Lore: Psionics (+15%)", "Literacy (Own Language)", "Mathematics: Basic"],
+        "electiveSkills": { "level1": 3, "level3": 2, "level8": 2, "list": ["W.P. Dagger", "W.P. Staff", "Lore: Demon & Monster", "Language (Additional)", "Lore: Magic", "Lore: Religion", "Lore: Ancient", "Lore: Geography"] },
+        "secondarySkills": { "level1": 5, "level4": 2, "level12": 2 },
+        "restrictedRaces": ["Dwarf", "Troll", "Ogre"],
+        "bonuses": {},
+        "PPE": "1d6x10+10",
+        "ISP": "4d6x10+40",
+        "special": "Master psionicist with mental powers. Requires Major or Master psionics."
+      },
+      "Gladiator": {
+        "category": "Men of Arms",
+        "occSkills": ["Hand to Hand: Expert", "W.P. Sword", "W.P. Net", "W.P. Shield", "Acrobatics", "Performance (Show Combat)"],
+        "electiveSkills": { "level1": 4, "level3": 2, "level8": 2, "level12": 2, "list": ["W.P. Spear", "W.P. Axe", "Dance", "Public Speaking", "Wrestling", "Intimidation"] },
+        "secondarySkills": { "level1": 6, "level4": 3, "level12": 3 },
+        "restrictedRaces": [],
+        "bonuses": {},
+        "PPE": "2d6",
+        "ISP": "0",
+        "special": "Performs for crowds; bonuses to intimidation and showmanship."
+      },
+      "Sailor": {
+        "category": "Professional",
+        "occSkills": ["Hand to Hand: Basic", "Pilot: Boat", "Swimming", "Climbing", "Navigation", "Rope Use"],
+        "electiveSkills": { "level1": 4, "level3": 2, "level8": 2, "level12": 2, "list": ["Fishing", "Gambling", "Barter", "W.P. Cutlass", "W.P. Harpoon", "Weather Sense"] },
+        "secondarySkills": { "level1": 6, "level4": 3, "level12": 3 },
+        "restrictedRaces": [],
+        "bonuses": {},
+        "PPE": "2d6",
+        "ISP": "0",
+        "special": "Expert seamanship, survival at sea."
+      },
+      "Pirate": {
+        "category": "Rogue",
+        "occSkills": ["Hand to Hand: Rogue", "Pilot: Boat", "Swimming", "Scale Walls", "Streetwise", "W.P. Cutlass"],
+        "electiveSkills": { "level1": 4, "level3": 2, "level8": 2, "level12": 2, "list": ["Forgery", "Disguise", "W.P. Pistol Crossbow", "Gambling", "Intimidation", "Navigation"] },
+        "secondarySkills": { "level1": 5, "level4": 2, "level12": 2 },
+        "restrictedRaces": ["Dwarf", "Wolfen"],
+        "bonuses": {},
+        "PPE": "2d6",
+        "ISP": "0",
+        "special": "Outlaw at sea; intimidation bonus."
+      },
+      "Monk": {
+        "category": "Hybrid",
+        "occSkills": ["Hand to Hand: Martial Arts", "Meditation", "Lore: Religion", "Acrobatics", "W.P. Staff"],
+        "electiveSkills": { "level1": 4, "level3": 2, "level8": 2, "level12": 2, "list": ["Lore: Demon & Monster", "Lore: Magic", "Climbing", "Disguise", "Philosophy", "Healing Touch"] },
+        "secondarySkills": { "level1": 6, "level4": 3, "level12": 3 },
+        "restrictedRaces": ["Troll", "Ogre"],
+        "bonuses": {},
+        "PPE": "2d6x10+10",
+        "ISP": "1d6x10",
+        "special": "Martial arts and spiritual training."
+      },
+      "Illusionist": {
+        "category": "Men of Magic",
+        "occSkills": ["Hand to Hand: Basic", "Literacy", "Lore: Magic", "Read Magic", "Performance (Acting)", "Disguise (+10%)"],
+        "electiveSkills": { "level1": 3, "level3": 2, "level8": 2, "level12": 2, "list": ["Disguise", "Dance", "Lore: Demon & Monster", "W.P. Dagger", "Ventriloquism", "Sleight of Hand"] },
+        "secondarySkills": { "level1": 5, "level4": 2, "level12": 2 },
+        "restrictedRaces": ["Dwarf", "Troll", "Ogre"],
+        "bonuses": {},
+        "PPE": "2d6x10+10",
+        "ISP": "0",
+        "special": "Specializes in illusion magic (disguise, charm, phantasms)."
+      },
+      "Witch": {
+        "category": "Men of Magic",
+        "occSkills": ["Hand to Hand: Basic", "Literacy", "Lore: Magic", "Read Magic", "Poison Use", "Herbal Lore"],
+        "electiveSkills": { "level1": 2, "level3": 2, "level8": 2, "level12": 2, "list": ["Disguise", "Lore: Demon & Monster", "W.P. Dagger", "Brewing", "Animal Husbandry"] },
+        "secondarySkills": { "level1": 4, "level4": 2, "level12": 2 },
+        "restrictedRaces": ["Dwarf", "Elf", "Wolfen"],
+        "bonuses": {},
+        "PPE": "3d6x10+10",
+        "ISP": "0",
+        "special": "Makes pact with supernatural patron for dark magic."
+      },
+      "Scholar": {
+        "category": "Professional",
+        "occSkills": ["Hand to Hand: None", "Literacy (Multiple Languages)", "Math (Advanced)", "Lore: Geography", "Lore: History", "Lore: Magic (Basic)"],
+        "electiveSkills": { "level1": 3, "level3": 2, "level8": 2, "level12": 2, "list": ["Public Speaking", "Lore: Demon & Monster", "Research", "Language (Additional)", "Lore: Religion", "Lore: Ancient"] },
+        "secondarySkills": { "level1": 5, "level4": 2, "level12": 2 },
+        "restrictedRaces": [],
+        "bonuses": {},
+        "PPE": "2d6",
+        "ISP": "0",
+        "special": "Not a combat class; provides lore and knowledge."
+      },
+      "Merchant": {
+        "category": "Professional",
+        "occSkills": ["Hand to Hand: Basic", "Barter", "Mathematics (Basic)", "Literacy", "Public Speaking", "Appraise Goods"],
+        "electiveSkills": { "level1": 3, "level3": 2, "level8": 2, "level12": 2, "list": ["Forgery", "Gambling", "Streetwise", "Horsemanship", "Language (Additional)", "Accounting"] },
+        "secondarySkills": { "level1": 5, "level4": 2, "level12": 2 },
+        "restrictedRaces": [],
+        "bonuses": {},
+        "PPE": "2d6",
+        "ISP": "0",
+        "special": "Focused on trade, wealth, and influence."
+      },
+      "Druid": {
+        "category": "Clergy",
+        "occSkills": ["Hand to Hand: Basic", "Lore: Nature (+20%)", "Herbal Lore", "Survival (Forest)", "Identify Plants & Animals", "Literacy (Druidic)", "Tracking"],
+        "electiveSkills": { "level1": 4, "level3": 2, "level8": 2, "list": ["Horsemanship", "W.P. Staff", "W.P. Bow", "Survival (Plains)", "Survival (Mountains)", "Animal Husbandry", "Lore: Magic", "Astronomy"] },
+        "secondarySkills": { "level1": 6, "level4": 3, "level12": 3 },
+        "restrictedRaces": ["Troll", "Ogre", "Orc"],
+        "bonuses": {},
+        "PPE": "2d6x10+20",
+        "ISP": "0",
+        "special": "Nature priest with elemental magic and shapeshifting abilities."
+      },
+      "Shaman": {
+        "category": "Clergy",
+        "occSkills": ["Hand to Hand: Basic", "Lore: Religion (+15%)", "Lore: Spirits", "Herbal Lore", "Survival (Wilderness)", "Tracking", "First Aid"],
+        "electiveSkills": { "level1": 4, "level3": 2, "level8": 2, "list": ["Lore: Demon & Monster", "W.P. Staff", "Lore: Magic", "Animal Husbandry", "Survival (Forest)", "Survival (Plains)", "Identify Plants & Animals"] },
+        "secondarySkills": { "level1": 6, "level4": 3, "level12": 3 },
+        "restrictedRaces": ["Elf", "Dwarf"],
+        "bonuses": {},
+        "PPE": "2d6x10+30",
+        "ISP": "0",
+        "special": "Tribal priest with spirit magic and healing powers."
+      },
+      "Healer": {
+        "category": "Clergy",
+        "occSkills": ["Hand to Hand: Basic", "First Aid (+15%)", "Herbal Lore", "Holistic Medicine", "Diagnose Illness", "Lore: Religion", "Literacy (Own Language)"],
+        "electiveSkills": { "level1": 4, "level3": 2, "level8": 2, "list": ["W.P. Staff", "Surgery", "Lore: Demon & Monster", "Lore: Magic", "Language (Additional)", "Survival (Plains)", "Lore: Ancient"] },
+        "secondarySkills": { "level1": 6, "level4": 3, "level12": 3 },
+        "restrictedRaces": [],
+        "bonuses": {},
+        "PPE": "2d6x10+20",
+        "ISP": "0",
+        "special": "Dedicated healer with magical and mundane healing abilities."
+      },
+      "Priest": {
+        "category": "Clergy",
+        "occSkills": ["Hand to Hand: Basic", "Lore: Religion (+15%)", "First Aid", "Public Speaking", "Literacy (Own Language)", "Lore: Demon & Monster"],
+        "electiveSkills": { "level1": 4, "level3": 2, "level8": 2, "list": ["Lore: Magic", "W.P. Staff", "Language (Additional)", "W.P. Crossbow", "Survival (Plains)", "Navigation", "Lore: Geography", "Lore: Ancient"] },
+        "secondarySkills": { "level1": 6, "level4": 3, "level12": 3 },
+        "restrictedRaces": ["Troll", "Ogre", "Orc"],
+        "bonuses": {},
+        "PPE": "2d6x10+20",
+        "ISP": "0",
+        "special": "General priest class, can be good or evil alignment."
+      },
+      "Peasant": {
+        "category": "Optional",
+        "occSkills": ["Hand to Hand: Basic", "Farming", "Animal Husbandry", "Carpentry", "Cook"],
+        "electiveSkills": { "level1": 3, "level3": 1, "list": ["Herbal Lore", "Fishing", "Sewing", "Blacksmithing", "Carpentry", "W.P. Staff", "W.P. Bow"] },
+        "secondarySkills": { "level1": 4, "level4": 2 },
+        "restrictedRaces": [],
+        "bonuses": {},
+        "PPE": "2d6",
+        "ISP": "0",
+        "special": "Common folk with practical skills."
+      },
+      "Squire": {
+        "category": "Optional",
+        "occSkills": ["Hand to Hand: Expert", "W.P. Sword", "W.P. Shield", "Horsemanship", "Etiquette", "Literacy (Own Language)"],
+        "electiveSkills": { "level1": 4, "level3": 2, "list": ["W.P. Lance", "W.P. Crossbow", "Navigation", "Lore: Heraldry", "Public Speaking", "W.P. Axe"] },
+        "secondarySkills": { "level1": 6, "level4": 3 },
+        "restrictedRaces": [],
+        "bonuses": {},
+        "PPE": "2d6",
+        "ISP": "0",
+        "special": "Knight-in-training with noble connections."
+      },
+      "Noble": {
+        "category": "Optional",
+        "occSkills": ["Hand to Hand: Basic", "Etiquette (+15%)", "Literacy (Own Language)", "Public Speaking", "Lore: Heraldry", "Horsemanship"],
+        "electiveSkills": { "level1": 4, "level3": 2, "list": ["W.P. Sword", "W.P. Bow", "Language (Additional)", "Navigation", "Lore: Geography", "Dance", "Music", "Art"] },
+        "secondarySkills": { "level1": 6, "level4": 3 },
+        "restrictedRaces": [],
+        "bonuses": {},
+        "PPE": "3d6",
+        "ISP": "0",
+        "special": "Born into wealth and privilege; starts with extra gold (200)."
+      }
+    },
+  
+    "levelProgression": {
+      "Men of Arms": {
+        "hpPerLevel": "1d6",
+        "attacksPerMelee": {
+          "1": 4,
+          "3": 5,
+          "6": 6,
+          "9": 7,
+          "12": 8,
+          "15": 9
+        },
+        "saveProgression": {
+          "vsMagic": { "1": 12, "4": 11, "8": 10, "12": 9, "15": 8 },
+          "vsPoison": { "1": 14, "4": 13, "8": 12, "12": 11, "15": 10 },
+          "vsPsionics": { "1": 15, "4": 14, "8": 13, "12": 12, "15": 11 }
+        },
+        "combatBonuses": {
+          "3": { "strike": 1, "parry": 1 },
+          "6": { "strike": 1, "parry": 1, "dodge": 1 },
+          "9": { "strike": 1, "dodge": 1 },
+          "12": { "strike": 1, "parry": 1, "damage": 1 },
+          "15": { "strike": 1, "dodge": 1 }
+        }
+      },
+      "Men of Magic": {
+        "hpPerLevel": "1d4",
+        "attacksPerMelee": {
+          "1": 3,
+          "4": 4,
+          "8": 5,
+          "12": 6,
+          "15": 7
+        },
+        "saveProgression": {
+          "vsMagic": { "1": 10, "3": 9, "6": 8, "9": 7, "12": 6, "15": 5 },
+          "vsPoison": { "1": 14, "4": 13, "8": 12, "12": 11, "15": 10 },
+          "vsPsionics": { "1": 13, "4": 12, "8": 11, "12": 10, "15": 9 }
+        },
+        "combatBonuses": {
+          "5": { "dodge": 1 },
+          "10": { "strike": 1, "dodge": 1 },
+          "15": { "parry": 1 }
+        },
+        "ppePerLevel": "2d6",
+        "ispPerLevel": "0"
+      },
+      "Clergy": {
+        "hpPerLevel": "1d6",
+        "attacksPerMelee": {
+          "1": 3,
+          "4": 4,
+          "8": 5,
+          "12": 6,
+          "15": 7
+        },
+        "saveProgression": {
+          "vsMagic": { "1": 11, "3": 10, "6": 9, "9": 8, "12": 7, "15": 6 },
+          "vsPoison": { "1": 13, "4": 12, "8": 11, "12": 10, "15": 9 },
+          "vsPsionics": { "1": 14, "4": 13, "8": 12, "12": 11, "15": 10 }
+        },
+        "combatBonuses": {
+          "4": { "parry": 1 },
+          "8": { "dodge": 1 },
+          "12": { "strike": 1 }
+        },
+        "ppePerLevel": "2d6",
+        "ispPerLevel": "0"
+      },
+      "Rogue": {
+        "hpPerLevel": "1d6",
+        "attacksPerMelee": {
+          "1": 4,
+          "3": 5,
+          "6": 6,
+          "9": 7,
+          "12": 8,
+          "15": 9
+        },
+        "saveProgression": {
+          "vsMagic": { "1": 13, "4": 12, "8": 11, "12": 10, "15": 9 },
+          "vsPoison": { "1": 12, "3": 11, "6": 10, "9": 9, "12": 8, "15": 7 },
+          "vsPsionics": { "1": 15, "4": 14, "8": 13, "12": 12, "15": 11 }
+        },
+        "combatBonuses": {
+          "2": { "dodge": 1 },
+          "4": { "strike": 1 },
+          "6": { "dodge": 1 },
+          "8": { "parry": 1 },
+          "10": { "strike": 1, "dodge": 1 },
+          "12": { "parry": 1 },
+          "15": { "strike": 1 }
+        }
+      },
+      "Professional": {
+        "hpPerLevel": "1d4",
+        "attacksPerMelee": {
+          "1": 2,
+          "4": 3,
+          "8": 4,
+          "12": 5,
+          "15": 6
+        },
+        "saveProgression": {
+          "vsMagic": { "1": 14, "4": 13, "8": 12, "12": 11, "15": 10 },
+          "vsPoison": { "1": 14, "4": 13, "8": 12, "12": 11, "15": 10 },
+          "vsPsionics": { "1": 15, "4": 14, "8": 13, "12": 12, "15": 11 }
+        },
+        "combatBonuses": {
+          "6": { "dodge": 1 },
+          "12": { "strike": 1 }
+        }
+      },
+      "Optional": {
+        "hpPerLevel": "1d4",
+        "attacksPerMelee": {
+          "1": 2,
+          "3": 3,
+          "6": 4,
+          "9": 5,
+          "12": 6
+        },
+        "saveProgression": {
+          "vsMagic": { "1": 14, "4": 13, "8": 12, "12": 11, "15": 10 },
+          "vsPoison": { "1": 14, "4": 13, "8": 12, "12": 11, "15": 10 },
+          "vsPsionics": { "1": 15, "4": 14, "8": 13, "12": 12, "15": 11 }
+        },
+        "combatBonuses": {
+          "6": { "dodge": 1 },
+          "12": { "parry": 1 }
+        }
+      },
+      "Hybrid": {
+        "hpPerLevel": "1d6",
+        "attacksPerMelee": {
+          "1": 4,
+          "3": 5,
+          "5": 6,
+          "8": 7,
+          "11": 8,
+          "14": 9
+        },
+        "saveProgression": {
+          "vsMagic": { "1": 12, "4": 11, "8": 10, "12": 9, "15": 8 },
+          "vsPoison": { "1": 13, "4": 12, "8": 11, "12": 10, "15": 9 },
+          "vsPsionics": { "1": 14, "4": 13, "8": 12, "12": 11, "15": 10 }
+        },
+        "combatBonuses": {
+          "3": { "strike": 1 },
+          "6": { "parry": 1, "dodge": 1 },
+          "9": { "strike": 1 },
+          "12": { "dodge": 1 },
+          "15": { "strike": 1, "parry": 1 }
+        },
+        "ppePerLevel": "1d6",
+        "ispPerLevel": "1d4"
+      }
+    },
+  
+    "skills": {
+      "Hand to Hand: Basic": {
+        "type": "combat",
+        "description": "Basic training in hand-to-hand combat. 2 attacks per melee, +2 parry/dodge at level 1.",
+        "category": ["OCC", "Elective"],
+        "notes": "Improves with level progression."
+      },
+      "Hand to Hand: Mercenary": {
+        "type": "combat",
+        "description": "Specialized training for mercenaries. 3 attacks per melee, bonuses to parry and strike.",
+        "category": ["OCC"],
+        "notes": "Exclusive to Men of Arms."
+      },
+      "Hand to Hand: Knight": {
+        "type": "combat",
+        "description": "Combat style of knights. 3 attacks per melee, focus on mounted combat.",
+        "category": ["OCC"],
+        "notes": "Exclusive to Knight OCC."
+      },
+      "W.P. Sword": {
+        "type": "weapon proficiency",
+        "description": "Training with swords. +1 strike/parry at higher levels.",
+        "category": ["OCC", "Elective", "Secondary"],
+        "notes": "Secondary selection gives no bonus."
+      },
+      "W.P. Dagger": {
+        "type": "weapon proficiency",
+        "description": "Training with daggers. Useful in close combat.",
+        "category": ["Elective", "Secondary"],
+        "notes": "Secondary = no OCC bonuses."
+      },
+      "W.P. Staff": {
+        "type": "weapon proficiency",
+        "description": "Proficiency with staff weapons. Includes parry bonuses.",
+        "category": ["Elective", "Secondary"],
+        "notes": ""
+      },
+      "W.P. Bow": {
+        "type": "weapon proficiency",
+        "description": "Proficiency with bows. +1 strike at higher levels.",
+        "category": ["OCC", "Elective", "Secondary"],
+        "notes": "Secondary = no strike bonuses."
+      },
+      "W.P. Shield": {
+        "type": "weapon proficiency",
+        "description": "Training in shield combat. Parry and bash attacks.",
+        "category": ["OCC", "Elective", "Secondary"],
+        "notes": ""
+      },
+      "Climb": {
+        "type": "physical",
+        "description": "Ability to climb trees, cliffs, or walls. Success chance based on skill %.",
+        "category": ["OCC", "Elective", "Secondary"],
+        "notes": "Secondary = no +10% OCC bonus."
+      },
+      "Swim": {
+        "type": "physical",
+        "description": "Ability to swim. Roll vs skill % for endurance or survival checks.",
+        "category": ["Elective", "Secondary"],
+        "notes": "Secondary = base chance only."
+      },
+      "Horsemanship": {
+        "type": "physical",
+        "description": "Riding skill, includes handling horses in combat.",
+        "category": ["OCC", "Elective", "Secondary"],
+        "notes": "Knight/Paladin get advanced mounted combat."
+      },
+      "Lore: Magic": {
+        "type": "knowledge",
+        "description": "Understanding of magical traditions, symbols, and history.",
+        "category": ["OCC", "Elective", "Secondary"],
+        "notes": "Secondary = -10% penalty."
+      },
+      "Lore: Religion": {
+        "type": "knowledge",
+        "description": "Knowledge of gods, rituals, and churches.",
+        "category": ["OCC", "Elective", "Secondary"],
+        "notes": ""
+      },
+      "Lore: Demon & Monster": {
+        "type": "knowledge",
+        "description": "Identifying demons, monsters, and supernatural creatures.",
+        "category": ["Elective", "Secondary"],
+        "notes": "Secondary = reduced accuracy."
+      },
+      "Sense Magic": {
+        "type": "magic",
+        "description": "Ability to sense the presence of magic.",
+        "category": ["OCC"],
+        "notes": "Exclusive to Wizard, Warlock, Summoner."
+      },
+      "Read Magic": {
+        "type": "magic",
+        "description": "Allows the character to read magical scrolls, circles, and wards.",
+        "category": ["OCC"],
+        "notes": "Wizard, Warlock, Summoner, Diabolist only."
+      },
+      "Ward Drawing": {
+        "type": "magic",
+        "description": "Skill to create magical wards and runes.",
+        "category": ["OCC"],
+        "notes": "Exclusive to Diabolist."
+      },
+      "Summoning Circles": {
+        "type": "magic",
+        "description": "Knowledge to draw and activate summoning circles.",
+        "category": ["OCC"],
+        "notes": "Exclusive to Summoner."
+      },
+      "Meditation": {
+        "type": "psionic",
+        "description": "Focus ability used to restore ISP faster.",
+        "category": ["OCC"],
+        "notes": "Exclusive to Mind Mage and Monks."
+      },
+      "Lore: Psionics": {
+        "type": "knowledge",
+        "description": "Understanding of psychic powers, disciplines, and lore.",
+        "category": ["OCC"],
+        "notes": "Mind Mage only."
+      },
+      "Disguise": {
+        "type": "rogue",
+        "description": "Skill in altering appearance with props and makeup.",
+        "category": ["Elective", "Secondary"],
+        "notes": ""
+      },
+      "Forgery": {
+        "type": "rogue",
+        "description": "Creating false papers, coins, or documents.",
+        "category": ["Elective", "Secondary"],
+        "notes": "Secondary = -10% penalty."
+      },
+      "Pick Locks": {
+        "type": "rogue",
+        "description": "Skill in unlocking mechanisms without keys.",
+        "category": ["OCC", "Elective", "Secondary"],
+        "notes": "Secondary = -15% penalty."
+      },
+      "Pick Pockets": {
+        "type": "rogue",
+        "description": "Stealthily removing items from others.",
+        "category": ["OCC", "Secondary"],
+        "notes": "Secondary = -10% penalty."
+      },
+      "Streetwise": {
+        "type": "rogue",
+        "description": "Knowledge of criminal networks, black markets, and urban survival.",
+        "category": ["OCC", "Elective", "Secondary"],
+        "notes": ""
+      }
+    },
+  
+    "spells": {
+      "Fireball": {
+        "class": "Wizard",
+        "level": 3,
+        "range": "100 ft",
+        "duration": "Instant",
+        "damage": "4d6",
+        "description": "Launches a ball of fire at a target."
+      },
+      "Call Lightning": {
+        "class": "Warlock (Air)",
+        "level": 5,
+        "range": "200 ft",
+        "duration": "Instant",
+        "damage": "6d6",
+        "description": "Summons a bolt of lightning from the sky."
+      },
+      "Mystic Shield": {
+        "class": "Wizard",
+        "level": 2,
+        "range": "Self",
+        "duration": "2 minutes/level",
+        "description": "Creates a magical barrier that blocks damage."
+      },
+      "Ward of Protection": {
+        "class": "Diabolist",
+        "level": 3,
+        "range": "Touch",
+        "duration": "1 day/level",
+        "description": "Protective magical ward against demons."
+      },
+      "Summon Lesser Demon": {
+        "class": "Summoner",
+        "level": 7,
+        "range": "Circle",
+        "duration": "Until released",
+        "description": "Calls a lesser demon into a summoning circle."
+      }
+    },
+  
+    "psionics": {
+      "Telepathy": {
+        "class": "Mind Mage",
+        "ispCost": 4,
+        "range": "100 ft",
+        "duration": "2 minutes",
+        "description": "Communicate thoughts silently with another."
+      },
+      "Telekinesis": {
+        "class": "Mind Mage",
+        "ispCost": 6,
+        "range": "60 ft",
+        "duration": "2 minutes",
+        "description": "Move small objects with mental force."
+      },
+      "Mind Bolt": {
+        "class": "Mind Mage",
+        "ispCost": 8,
+        "range": "100 ft",
+        "damage": "3d6",
+        "description": "Psionic energy blast at a target."
+      },
+      "Sixth Sense": {
+        "class": "Minor Psionic",
+        "ispCost": 2,
+        "range": "Self",
+        "duration": "Until triggered",
+        "description": "Warns of danger a moment before it strikes."
+      },
+      "Meditation": {
+        "class": "Mind Mage / Monk",
+        "ispCost": 0,
+        "range": "Self",
+        "duration": "Special",
+        "description": "Doubles ISP recovery rate while resting."
+      }
+    },
+  
+    "crossReferences": {
+      "skillToOcc": {
+        "Pick Locks": {
+          "OCC": ["Thief", "Assassin"],
+          "Elective": ["Mercenary"],
+          "Secondary": ["All"]
+        },
+        "W.P. Sword": {
+          "OCC": ["Soldier", "Knight", "Paladin", "Ranger"],
+          "Elective": ["Gladiator", "Wizard", "Warlock"],
+          "Secondary": ["All"]
+        },
+        "Lore: Magic": {
+          "OCC": ["Wizard", "Warlock", "Diabolist", "Summoner"],
+          "Elective": ["PriestOfLight", "Illusionist"],
+          "Secondary": ["All"]
+        }
+      },
+      "raceToOcc": {
+        "Dwarf": {
+          "allowedOCCs": ["Soldier", "Mercenary", "Knight", "Paladin", "Ranger", "Thief", "Assassin", "PriestOfLight", "PriestOfDarkness", "Gladiator", "Sailor", "Pirate", "Scholar", "Merchant"],
+          "restrictedOCCs": ["Wizard", "Warlock", "Summoner", "Diabolist", "Illusionist", "Witch", "MindMage"]
+        },
+        "Wolfen": {
+          "allowedOCCs": ["Soldier", "Mercenary", "Ranger", "PriestOfDarkness", "PriestOfLight (rare)", "Gladiator", "Scholar"],
+          "restrictedOCCs": ["Knight", "Paladin", "Wizard", "Summoner"]
+        },
+        "Human": {
+          "allowedOCCs": ["All"],
+          "restrictedOCCs": []
+        }
+      }
+    },
+  
+    "secondarySkills": [
+      "Boxing",
+      "Climbing",
+      "Running",
+      "Swimming",
+      "Wrestling",
+      "Cooking",
+      "Dancing",
+      "Fishing",
+      "Sewing",
+      "Singing",
+      "Carpentry",
+      "Masonry",
+      "Pottery",
+      "Weaving",
+      "Animal Husbandry",
+      "Farming",
+      "Gardening",
+      "Horsemanship (Basic)",
+      "First Aid",
+      "Acrobatics",
+      "Gymnastics",
+      "Track Animals",
+      "Track Humanoids",
+      "Detect Ambush",
+      "Detect Concealment",
+      "Scale Walls",
+      "Pick Locks",
+      "Pick Pockets",
+      "Disguise",
+      "Forgery",
+      "Streetwise",
+      "Camouflage",
+      "Survival (Forest)",
+      "Survival (Plains)",
+      "Survival (Arctic)",
+      "Survival (Desert)",
+      "Navigation",
+      "Sense of Direction",
+      "W.P. Dagger",
+      "W.P. Staff",
+      "W.P. Club",
+      "W.P. Knife",
+      "W.P. Sword",
+      "W.P. Bow",
+      "W.P. Crossbow",
+      "W.P. Axe",
+      "W.P. Spear",
+      "W.P. Shield",
+      "Language (Additional)",
+      "Literacy (Basic)",
+      "Lore: Local History",
+      "Lore: Demon & Monster",
+      "Lore: Geography",
+      "Lore: Religion",
+      "Lore: Magic",
+      "Lore: Heraldry",
+      "Mathematics: Basic",
+      "Mathematics: Advanced",
+      "Gambling",
+      "Play Musical Instrument",
+      "Art (Drawing/Painting)",
+      "Rope Use",
+      "General Repair/Maintenance",
+      "Barter",
+      "Boat Building",
+      "Recognize Weapon Quality",
+      "Recognize Metals",
+      "Public Speaking",
+      "Pilot: Boat",
+      "Identify Plants & Animals"
+    ]
+  }
+  

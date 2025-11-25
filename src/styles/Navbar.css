@@ -1,95 +1,423 @@
+/* Navbar Container */
 .navbar {
-  background-color: #333;
-  padding: 1rem;
-  display: flex;
-  justify-content: space-between;
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+  padding: 0 1.5rem;
+  display: flex !important; /* ✅ Ensure navbar is always visible */
+  justify-content: flex-start;
   align-items: center;
-  position: sticky;
+  position: sticky !important; /* ✅ Ensure sticky positioning */
   top: 0;
-  z-index: 1000;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  z-index: 10000 !important; /* ✅ Very high z-index to stay on top */
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  min-height: 70px;
+  border-bottom: 2px solid rgba(255, 255, 255, 0.1);
+  gap: 1rem;
+  width: 100%; /* ✅ Ensure full width */
 }
 
-.nav-center {
-  display: none;
+/* Navbar Brand */
+.navbar-brand {
+  display: flex;
+  align-items: center;
+  z-index: 1001;
+}
+
+.navbar-title {
+  color: white;
+  text-decoration: none;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 1.5rem;
+  font-weight: bold;
+  transition: all 0.3s ease;
+}
+
+.navbar-title:hover {
+  transform: scale(1.05);
+  color: #4a9eff;
+}
+
+.navbar-icon {
+  font-size: 1.8rem;
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.1);
+  }
+}
+
+.navbar-text {
+  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  letter-spacing: 0.5px;
+}
+
+/* User Info Display */
+.navbar-user-info {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex: 1;
+  overflow: hidden;
+}
+
+.active-party-badge,
+.username-badge {
+  background: rgba(255, 255, 255, 0.1);
+  color: white;
+  padding: 0.4rem 0.8rem;
+  border-radius: 20px;
+  font-size: 0.85rem;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  backdrop-filter: blur(10px);
+  transition: all 0.3s ease;
+}
+
+.active-party-badge {
+  background: rgba(74, 158, 255, 0.2);
+  border-color: rgba(74, 158, 255, 0.4);
+}
+
+.active-party-badge:hover,
+.username-badge:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+}
+
+/* Hamburger Menu Button */
+.hamburger {
+  display: flex !important;
   flex-direction: column;
-  position: absolute;
-  top: 60px;
+  justify-content: space-around;
+  width: 2.5rem;
+  height: 2.5rem;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 0.5rem;
+  z-index: 1001;
+  position: relative;
+  transition: all 0.3s ease;
+  flex-shrink: 0;
+  order: 999;
+}
+
+.hamburger:hover {
+  transform: scale(1.1);
+}
+
+.hamburger-line {
+  display: block !important;
+  width: 2rem;
+  height: 3px;
+  background: white;
+  border-radius: 10px;
+  transition: all 0.3s linear;
+  position: relative;
+  transform-origin: center;
+}
+
+/* Hamburger Animation */
+.hamburger.open .hamburger-line:nth-child(1) {
+  transform: rotate(45deg) translateY(8px);
+  background: #4a9eff;
+}
+
+.hamburger.open .hamburger-line:nth-child(2) {
+  opacity: 0;
+  transform: translateX(-20px);
+}
+
+.hamburger.open .hamburger-line:nth-child(3) {
+  transform: rotate(-45deg) translateY(-8px);
+  background: #4a9eff;
+}
+
+/* Navigation Menu */
+.nav-menu {
+  position: fixed;
+  top: 70px;
+  right: -100%;
+  width: 320px;
+  height: calc(100vh - 70px);
+  background: linear-gradient(180deg, #16213e 0%, #0f1419 100%);
+  transition: right 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+  box-shadow: -4px 0 20px rgba(0, 0, 0, 0.5);
+  overflow-y: auto;
+  overflow-x: hidden;
+  z-index: 10001 !important; /* ✅ Higher than navbar to appear on top when open */
+}
+
+.nav-menu.open {
   right: 0;
-  background-color: #333;
-  width: 100%;
-  padding: 0;
 }
 
-.nav-right {
-  display: none;
+/* Overlay for mobile */
+.nav-overlay {
+  position: fixed;
+  top: 70px;
+  left: 0;
   width: 100%;
-  text-align: center;
-  padding: 0;
+  height: calc(100vh - 70px);
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(4px);
+  z-index: -1;
+  animation: fadeIn 0.3s ease;
 }
 
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.nav-menu-content {
+  padding: 1.5rem 0;
+}
+
+/* Navigation Section */
+.nav-section {
+  margin-bottom: 1.5rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding-bottom: 1rem;
+}
+
+.nav-section:last-child {
+  border-bottom: none;
+}
+
+.nav-section-title {
+  color: #4a9eff;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  padding: 0.5rem 1.5rem;
+  margin: 0 0 0.5rem 0;
+  opacity: 0.8;
+}
+
+/* Navigation Links */
 .nav-link {
   color: white;
   text-decoration: none;
-  padding: 15px 20px;
-  display: block;
+  padding: 0.9rem 1.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
   width: 100%;
-  text-align: center;
-  transition: background-color 0.3s;
+  text-align: left;
+  transition: all 0.3s ease;
+  border-left: 3px solid transparent;
+  font-size: 0.95rem;
+  position: relative;
+  overflow: hidden;
+}
+
+.nav-link::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+  width: 0;
+  background: rgba(74, 158, 255, 0.1);
+  transition: width 0.3s ease;
+  z-index: -1;
+}
+
+.nav-link:hover::before {
+  width: 100%;
 }
 
 .nav-link:hover {
-  background-color: #444;
+  color: #4a9eff;
+  border-left-color: #4a9eff;
+  padding-left: 2rem;
 }
 
-/* Hamburger menu */
-.hamburger {
-  font-size: 2rem;
-  cursor: pointer;
-  color: white;
-  background: none;
-  border: none;
-  padding: 0.5rem;
-  position: absolute;
-  right: 1rem;
-  top: 0.5rem;
+.nav-link.active {
+  background: rgba(74, 158, 255, 0.15);
+  border-left-color: #4a9eff;
+  color: #4a9eff;
+  font-weight: 600;
 }
 
-/* Show menu when open */
-.nav-center.open,
-.nav-right.open {
-  display: flex;
+/* Logout Section */
+.nav-section-logout {
+  margin-top: 2rem;
+  padding-top: 1rem;
+  border-top: 2px solid rgba(255, 255, 255, 0.1);
+  border-bottom: none;
 }
 
-/* Responsive adjustments */
-@media (max-width: 768px) {
-  .navbar {
-    padding-top: 0.5rem;
-    padding-bottom: 0.5rem;
-  }
-
-  .nav-link {
-    border-bottom: 1px solid #444;
-  }
-
-  .nav-link:last-child {
-    border-bottom: none;
-  }
-}
-
-/* Add these styles for the logout button */
 .logout-btn {
   background: none;
   border: none;
-  color: white;
   cursor: pointer;
   font-size: inherit;
-  padding: 15px 20px;
-  width: 100%;
-  text-align: center;
-  transition: background-color 0.3s;
+  font-family: inherit;
+  color: #ff6b6b;
+  transition: all 0.3s ease;
 }
 
 .logout-btn:hover {
-  background-color: #444;
+  background: rgba(255, 107, 107, 0.1);
+  border-left-color: #ff6b6b;
+  color: #ff8787;
+}
+
+/* Scrollbar Styling */
+.nav-menu::-webkit-scrollbar {
+  width: 6px;
+}
+
+.nav-menu::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.nav-menu::-webkit-scrollbar-thumb {
+  background: rgba(74, 158, 255, 0.5);
+  border-radius: 10px;
+}
+
+.nav-menu::-webkit-scrollbar-thumb:hover {
+  background: rgba(74, 158, 255, 0.7);
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .navbar {
+    padding: 0 1rem;
+    min-height: 60px;
+  }
+
+  .navbar-title {
+    font-size: 1.2rem;
+  }
+
+  .navbar-icon {
+    font-size: 1.5rem;
+  }
+
+  .navbar-user-info {
+    gap: 0.5rem;
+    margin-left: 1rem;
+  }
+
+  .active-party-badge,
+  .username-badge {
+    font-size: 0.75rem;
+    padding: 0.3rem 0.6rem;
+  }
+
+  .nav-menu {
+    top: 60px;
+    height: calc(100vh - 60px);
+    width: 280px;
+  }
+
+  .nav-overlay {
+    top: 60px;
+    height: calc(100vh - 60px);
+  }
+}
+
+@media (max-width: 480px) {
+  .navbar {
+    padding: 0 0.75rem;
+    gap: 0.5rem;
+  }
+
+  .navbar-title {
+    font-size: 1rem;
+  }
+
+  .navbar-icon {
+    font-size: 1.8rem;
+  }
+
+  .navbar-user-info {
+    flex-direction: column;
+    gap: 0.25rem;
+    margin-left: 0.5rem;
+    align-items: flex-start;
+  }
+
+  .active-party-badge,
+  .username-badge {
+    font-size: 0.7rem;
+    padding: 0.25rem 0.5rem;
+  }
+
+  .username-badge {
+    display: none;
+  }
+
+  .nav-menu {
+    width: 100%;
+    max-width: 300px;
+  }
+
+  .hamburger {
+    width: 2rem;
+    height: 2rem;
+  }
+
+  .hamburger-line {
+    width: 1.5rem;
+  }
+}
+
+/* Animation for menu items */
+.nav-menu.open .nav-link {
+  animation: slideIn 0.3s ease forwards;
+  opacity: 0;
+}
+
+.nav-menu.open .nav-section:nth-child(1) .nav-link {
+  animation-delay: 0.05s;
+}
+.nav-menu.open .nav-section:nth-child(2) .nav-link {
+  animation-delay: 0.1s;
+}
+.nav-menu.open .nav-section:nth-child(3) .nav-link {
+  animation-delay: 0.15s;
+}
+.nav-menu.open .nav-section:nth-child(4) .nav-link {
+  animation-delay: 0.2s;
+}
+.nav-menu.open .nav-section:nth-child(5) .nav-link {
+  animation-delay: 0.25s;
+}
+.nav-menu.open .nav-section:nth-child(6) .nav-link {
+  animation-delay: 0.3s;
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateX(50px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+/* Focus styles for accessibility */
+.nav-link:focus,
+.hamburger:focus,
+.navbar-title:focus {
+  outline: 2px solid #4a9eff;
+  outline-offset: 2px;
 }

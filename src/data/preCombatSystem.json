@@ -1,0 +1,206 @@
+{
+    "phase": "Pre-Combat / Encounter Phase",
+    "description": "Actions taken before initiative. Characters may prowl, observe, cast prep spells, or set ambushes while unseen.",
+    "actions": [
+      {
+        "name": "Observe / Detect",
+        "skill": ["Detect Ambush", "Detect Concealment", "Intelligence", "Perception"],
+        "roll": "d100 <= skill%",
+        "successEffect": "Gain tactical info; +10% to next Prowl or Aim.",
+        "failureEffect": "No useful data."
+      },
+      {
+        "name": "Prowl / Hide",
+        "skill": ["Prowl"],
+        "roll": "d100 <= Prowl%",
+        "successEffect": "Remain unseen until detected. Gain 'hidden' status.",
+        "failureEffect": "Noise or motion gives away position.",
+        "modifiers": {
+          "environment": {
+            "brightDaylight": -20,
+            "dimLight": 10,
+            "totalDarkness": 25,
+            "heavyCover": 20,
+            "noCover": -20
+          },
+          "armorPenalty": "-5 per 20 lbs. of armor worn"
+        }
+      },
+      {
+        "name": "Ready Weapon / Draw",
+        "skill": "None",
+        "roll": "Auto",
+        "successEffect": "Weapon ready at combat start; no first-action penalty.",
+        "failureEffect": "N/A"
+      },
+      {
+        "name": "Cast Preparation Spell",
+        "skill": "Spell Skill / PPE",
+        "roll": "Spell succeeds if uninterrupted",
+        "successEffect": "Buff active before initiative; duration starts now.",
+        "failureEffect": "Spell fizzles; PPE spent."
+      },
+      {
+        "name": "Set Ambush / Trap",
+        "skill": ["Trap/Mine", "Detect Ambush"],
+        "roll": "d100 <= skill%",
+        "successEffect": "Auto first strike if enemy enters trigger range.",
+        "failureEffect": "Trap malfunctions or is obvious."
+      },
+      {
+        "name": "Move Silently / Reposition",
+        "skill": ["Prowl", "Climb", "Swim"],
+        "roll": "d100 <= lowest applicable skill%",
+        "successEffect": "Change position undetected.",
+        "failureEffect": "Noise alerts enemies within 30 ft."
+      },
+      {
+        "name": "Use Item / Potion",
+        "skill": "None",
+        "roll": "Auto",
+        "successEffect": "Apply healing or buff before initiative.",
+        "failureEffect": "None"
+      },
+      {
+        "name": "Disguise / Conceal",
+        "skill": ["Disguise", "Concealment"],
+        "roll": "d100 <= skill%",
+        "successEffect": "Enemies take -20% detect chance.",
+        "failureEffect": "Appearance unconvincing."
+      },
+      {
+        "name": "Psionic Prep",
+        "skill": ["Mind Block", "Sixth Sense", "See the Invisible"],
+        "roll": "d100 <= psionic activation%",
+        "successEffect": "Power active; detect danger early.",
+        "failureEffect": "ISP spent; power fails."
+      },
+      {
+        "name": "Diplomacy / Parley",
+        "skill": ["Charm/Impress", "Invoke Trust"],
+        "roll": "d100 <= skill%",
+        "successEffect": "Enemy reaction improves one step (see reactions).",
+        "failureEffect": "Enemy ignores or becomes hostile."
+      }
+    ],
+    "lineOfVisionModifiers": {
+      "environment": {
+        "daylight": 0,
+        "dusk_or_dawn": -10,
+        "torchlight": -20,
+        "moonlight": -30,
+        "total_darkness": -50,
+        "fog_or_smoke": -25
+      },
+      "invisibility": {
+        "simple_invisibility": -50,
+        "superior_invisibility": -80,
+        "see_the_invisible_active": "+100 to detection (negates penalty)"
+      },
+      "distance": {
+        "within_20ft": "+20",
+        "within_50ft": "0",
+        "within_100ft": "-10",
+        "beyond_100ft": "-25"
+      }
+    },
+    "enemyAwareness": {
+      "roll": "d100 <= (vision + hearing + specialSenseMods + alignmentAlertness)",
+      "example": "A wolf (keen smell +20) in moonlight (-30) gets net -10 modifier."
+    },
+    "enemyReactions": [
+      {
+        "alignment": "Principled",
+        "intelligence": "High (16+)",
+        "reaction": ["Call for peace", "Attempt communication", "Ready defense only"]
+      },
+      {
+        "alignment": "Scrupulous",
+        "intelligence": "Average-High",
+        "reaction": ["Observe cautiously", "Issue warning", "Defend if threatened"]
+      },
+      {
+        "alignment": "Unprincipled",
+        "intelligence": "Average",
+        "reaction": ["Stalk prey", "Circle opponents", "Attack if cornered"]
+      },
+      {
+        "alignment": "Anarchist",
+        "intelligence": "Low-Average",
+        "reaction": ["Yell alarm", "Throw rock", "Retreat or rush unpredictably"]
+      },
+      {
+        "alignment": "Miscreant",
+        "intelligence": "Average",
+        "reaction": ["Growl in anger", "Advance slowly", "Attack within 1d4 melees"]
+      },
+      {
+        "alignment": "Aberrant",
+        "intelligence": "High",
+        "reaction": ["Study tactically", "Taunt", "Charge if attacked"]
+      },
+      {
+        "alignment": "Diabolic",
+        "intelligence": "Any",
+        "reaction": ["Immediate attack", "Charge nearest target", "Use most lethal ability first"]
+      }
+    ],
+    "sampleProwlCheckFlow": {
+      "playerRoll": "rollD100()",
+      "enemyDetectRoll": "rollD100()",
+      "comparison": "If playerRoll <= Prowl% + modifiers and enemyDetectRoll > detectChance → hidden = true",
+      "onSpotted": "Trigger enemyReaction() from alignment + intelligence table"
+    },
+    "alignmentAggressionModifiers": {
+      "Principled": -20,
+      "Scrupulous": -10,
+      "Unprincipled": 0,
+      "Anarchist": 10,
+      "Miscreant": 20,
+      "Aberrant": 15,
+      "Diabolic": 25,
+      "Good": -15,
+      "Selfish": 5,
+      "Evil": 25,
+      "Neutral": 0
+    },
+    "creatureTypeExamples": [
+      {
+        "creature": "Owl",
+        "intelligence": 2,
+        "alignment": "Neutral",
+        "typicalBehavior": "Stares, then flies away (no attack)"
+      },
+      {
+        "creature": "Wolf",
+        "intelligence": 5,
+        "alignment": "Neutral",
+        "typicalBehavior": "Growls, circles, may retreat if outnumbered"
+      },
+      {
+        "creature": "Troll",
+        "intelligence": 6,
+        "alignment": "Miscreant",
+        "typicalBehavior": "Snarls, approaches slowly, attacks if threatened"
+      },
+      {
+        "creature": "Minotaur",
+        "intelligence": 9,
+        "alignment": "Diabolic",
+        "typicalBehavior": "Immediately charges nearest enemy"
+      },
+      {
+        "creature": "Goblin",
+        "intelligence": 7,
+        "alignment": "Anarchist",
+        "typicalBehavior": "Yells alarm, retreats or swarms if with allies"
+      },
+      {
+        "creature": "Wizard NPC",
+        "intelligence": 16,
+        "alignment": "Principled",
+        "typicalBehavior": "May parley or cast detection spells first"
+      }
+    ]
+  }
+  

@@ -1,0 +1,269 @@
+{
+    "coreActions": {
+      "label": "Core Combat Options (Any Playable Character)",
+      "description": "These actions are available to all characters during combat",
+      "actions": [
+        {
+          "name": "Strike",
+          "types": ["melee", "ranged"],
+          "description": "Make an attack with a weapon or natural attack",
+          "cost": "1 attack",
+          "mechanic": "Roll to hit vs target AR"
+        },
+        {
+          "name": "Parry",
+          "types": ["weapon", "shield"],
+          "description": "Block a melee strike you can see coming",
+          "cost": "1 attack",
+          "mechanic": "Roll parry vs incoming attack"
+        },
+        {
+          "name": "Dodge",
+          "description": "Avoid an incoming attack by moving—works vs melee or missiles",
+          "cost": "1 attack",
+          "mechanic": "Roll dodge vs incoming attack"
+        },
+        {
+          "name": "Move / Reposition",
+          "description": "Step, sprint, vault cover, change elevation, close or open distance",
+          "cost": "1 attack",
+          "mechanic": "Movement based on Speed"
+        }, {
+          "name": "Draw / Ready / Reload",
+          "description": "Swap weapons, ready an item, string an arrow, crank a crossbow, etc.",
+          "cost": "1 attack",
+          "mechanic": "Item interaction"
+        },
+        {
+          "name": "Aim / Called shot",
+          "description": "Spend an action to line up a careful hit (trade speed for precision/location)",
+          "cost": "1 attack",
+          "mechanic": "+2 to hit, choose specific target"
+        },
+        {
+          "name": "Defend / Hold action",
+          "description": "Delay an attack to react later in the round",
+          "cost": "1 attack",
+          "mechanic": "Set trigger condition, execute when triggered"
+        },
+        {
+          "name": "Disengage / Withdraw",
+          "description": "Back out of melee to avoid free shots",
+          "cost": "1 attack",
+          "mechanic": "Opposed check to avoid opportunity attacks"
+        },
+        {
+          "name": "Combat Maneuvers",
+          "options": ["Shove", "Trip", "Tackle", "Disarm"],
+          "description": "Simple maneuvers to break guard, knock prone, or bat a weapon away",
+          "cost": "1 attack",
+          "mechanic": "Opposed rolls; GM adjudicates"
+        },
+        {
+          "name": "Use a skill in combat",
+          "description": "Prowl to slip away, Climb to gain height, First Aid under fire, etc.",
+          "cost": "1 attack",
+          "mechanic": "Skill roll with combat modifiers"
+        },
+        {
+          "name": "Use an item",
+          "description": "Drink a potion, throw oil, drop caltrops, light a torch, use a scroll",
+          "cost": "1 attack",
+          "mechanic": "Item-specific mechanics"
+        },
+        {
+          "name": "Cast a spell",
+          "description": "Pick a known spell, pay its cost/time, and resolve its effect",
+          "cost": "1+ attacks (varies by spell)",
+          "mechanic": "Spell-specific mechanics",
+          "requires": "Men of Magic"
+        },
+        {
+          "name": "Invoke a miracle",
+          "description": "Use your class's healing/banishing/blessing powers as allowed",
+          "cost": "1+ attacks (varies by miracle)",
+          "mechanic": "Miracle-specific mechanics",
+          "requires": "Clergy"
+        },
+        {
+          "name": "Use psionics",
+          "description": "Spend I.S.P. to activate a psychic power and resolve it",
+          "cost": "Variable I.S.P. + actions",
+          "mechanic": "Psionic power mechanics",
+          "requires": "Psionic abilities"
+        }
+      ]
+    },
+    "characterTypeBonus": {
+      "menOfArms": {
+        "classes": ["Soldier", "Mercenary", "Knight", "Paladin", "Long Bowman"],
+        "label": "Men of Arms",
+        "bonuses": [
+          {
+            "name": "Multiple Attacks",
+            "description": "More attacks per melee as you level (you can do more of the core options each round)",
+            "mechanic": "Gain additional attacks per melee round at higher levels"
+          },
+          {
+            "name": "Combat Bonuses",
+            "description": "Bigger combat bonuses (to strike, parry, dodge, damage)",
+            "mechanic": "Higher bonuses to all combat rolls"
+          },
+          {
+            "name": "Special Moves",
+            "description": "Unlocked by level: kick attacks, stun results on high natural rolls, and critical strikes on wider ranges",
+            "mechanic": "Class-specific combat abilities"
+          },
+          {
+            "name": "Shield Mastery",
+            "description": "Better parries and the option to bash or throw a shield",
+            "mechanic": "Improved shield AC, shield bash attack"
+          },
+          {
+            "name": "Weapon Proficiencies",
+            "description": "Accuracy/rate-of-fire boosts; melee profs add strike/parry; missile profs add shots/round",
+            "mechanic": "Weapon-specific bonuses"
+          },
+          {
+            "name": "Mounted Combat",
+            "description": "Lance charges, extra damage while riding, better parry/dodge on horseback",
+            "mechanic": "Charging mechanics, mounted combat bonuses",
+            "classes": ["Knight", "Paladin"]
+          }
+        ]
+      },
+      "stealthSkirmish": {
+        "classes": ["Thief", "Assassin", "Ranger"],
+        "label": "Stealth & Skirmishers",
+        "bonuses": [
+          {
+            "name": "Positioning Advantage",
+            "description": "Big upsides for attacking from behind (sneak/ambush), and some classes expand 'critical from behind' multipliers as they level",
+            "mechanic": "Backstab damage bonuses, expanded critical ranges"
+          },
+          {
+            "name": "Control Tools",
+            "description": "Trips, dirty tricks, garrotes, poison use (where allowed by class/alignment)",
+            "mechanic": "Special combat maneuvers, dirty fighting techniques"
+          },
+          {
+            "name": "Ranged Superiority",
+            "description": "Higher rates of fire, better aimed shots, and class-specific crit improvements with bows",
+            "mechanic": "Multiple shots per round, improved ranged attack bonuses",
+            "classes": ["Ranger", "Long Bowman", "Assassin"]
+          }
+        ]
+      },
+      "menOfMagic": {
+        "classes": ["Wizard", "Diabolist", "Alchemist"],
+        "label": "Men of Magic",
+        "bonuses": [
+          {
+            "name": "Spellcasting Categories",
+            "options": [
+              {
+                "name": "Offense",
+                "description": "Bolts, blasts",
+                "mechanic": "Direct damage spells"
+              },
+              {
+                "name": "Control",
+                "description": "Holds, walls, illusions",
+                "mechanic": "Battlefield control spells"
+              },
+              {
+                "name": "Defense",
+                "description": "Shields, counter-magic",
+                "mechanic": "Protective spells"
+              },
+              {
+                "name": "Utility",
+                "description": "Invisibility, flight, mobility",
+                "mechanic": "Strategic positioning spells"
+              }
+            ]
+          },
+          {
+            "name": "Action Economy Management",
+            "description": "Some spells are fast 'combat actions'; others take longer—plan your round around casting times",
+            "mechanic": "Variable casting times affect combat strategy"
+          }
+        ]
+      },
+      "clergy": {
+        "classes": ["Priest", "Shaman", "Healer"],
+        "label": "Clergy",
+        "bonuses": [
+          {
+            "name": "Healing and Buffs",
+            "description": "Lay on hands/heal, remove conditions, bless allies, turn/banish undead or demons when applicable",
+            "mechanic": "Healing, condition removal, buff spells"
+          },
+          {
+            "name": "Protective Actions",
+            "description": "Wards, sanctify areas, bolster saves",
+            "mechanic": "Area protection, saving throw bonuses"
+          },
+          {
+            "name": "Turning",
+            "description": "Turn/banish undead or demons",
+            "mechanic": "Specific creature type mechanics",
+            "requirements": "Target creature type"
+          }
+        ]
+      },
+      "naturalSpecial": {
+        "label": "Natural & Special Cases (Racial or OCC features)",
+        "bonuses": [
+          {
+            "name": "Natural Weapons",
+            "description": "Claws/bites/gore attacks for those who have them",
+            "mechanic": "Additional attack options"
+          },
+          {
+            "name": "Enhanced Senses & Mobility",
+            "description": "Nightvision, tracking, climbing/flying/sprinting—use these to control range and advantage",
+            "mechanic": "Environmental advantages, movement options"
+          },
+          {
+            "name": "Resistances/Saves",
+            "description": "Some races/classes halve fire/cold, ignore mundane weapons, or get better saves—lean into those when choosing tactics",
+            "mechanic": "Damage reduction, improved saving throws"
+          }
+        ]
+      }
+    },
+    "turnFlow": {
+      "label": "How a Turn Typically Flows",
+      "steps": [
+        {
+          "step": 1,
+          "description": "Pick a target or position goal"
+        },
+        {
+          "step": 2,
+          "description": "Spend one of your attacks per melee to do one thing (strike, cast, move+strike, parry/dodge as needed, etc.)"
+        },
+        {
+          "step": 3,
+          "description": "Repeat until you're out of attacks. Defensive parries/dodges also cost attacks, so budget!"
+        }
+      ],
+      "tips": [
+        "Budget your attacks—parries and dodges also consume them",
+        "Positioning and timing win fights",
+        "Plan around spell casting times",
+        "Use environmental advantages",
+        "Coordinate with party members"
+      ]
+    },
+    "quickReferenceTips": {
+      "budgeting": "Every character has a limited number of attacks per melee round - use them wisely",
+      "positioning": "Get behind enemies for backstab bonuses, use cover, control elevation",
+      "timing": "Hold actions for perfect moments, interrupt enemy spells, coordinate attacks",
+      "resourceManagement": "Track I.S.P., spell slots, daily abilities, and consumables",
+      "environmental": "Use oil, caltrops, lighting, and terrain to your advantage",
+      "teamwork": "Coordinate defensive positioning, healing, and combo attacks"
+    }
+  }
+  

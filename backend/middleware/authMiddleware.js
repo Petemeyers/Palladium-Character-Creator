@@ -20,6 +20,24 @@ export const authenticateToken = (req, res, next) => {
     next();
   } catch (error) {
     console.error("Auth error:", error);
-    return res.status(403).json({ message: "Invalid token" });
+
+    // Provide specific error messages for different JWT errors
+    if (error.name === "TokenExpiredError") {
+      return res.status(401).json({
+        message: "Token expired",
+        code: "TOKEN_EXPIRED",
+        expiredAt: error.expiredAt,
+      });
+    } else if (error.name === "JsonWebTokenError") {
+      return res.status(403).json({
+        message: "Invalid token",
+        code: "INVALID_TOKEN",
+      });
+    } else {
+      return res.status(403).json({
+        message: "Authentication failed",
+        code: "AUTH_FAILED",
+      });
+    }
   }
 };

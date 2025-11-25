@@ -1,0 +1,43 @@
+{
+    "movement": {
+      "encumbrance": {
+        "lightLoad": "Up to 40% of P.S. in lbs → no penalties.",
+        "mediumLoad": "41–70% of P.S. → -10% Spd, -5% skills, -1 strike/dodge.",
+        "heavyLoad": "71–100% of P.S. → -30% Spd, -10% skills, -2 strike/dodge.",
+        "overMax": "Over P.S. limit → cannot move effectively; collapse after 1d4 melees."
+      },
+      "armorPenalties": {
+        "lightArmor": { "spdPenalty": -5, "skillPenalty": -5, "description": "Light armor penalties" },
+        "heavyArmor": { "spdPenalty": -20, "skillPenalty": -10, "fatigueRate": 2, "description": "Heavy armor penalties" },
+        "fullPlate": { "spdPenalty": -30, "skillPenalty": -15, "fatigueRate": 3, "description": "Full plate penalties" },
+        "barding": { "leatherPenalty": -10, "chainPenalty": -20, "platePenalty": -30, "description": "Horse barding penalties" }
+      },
+      "carryingCapacity": {
+        "Human": 10,
+        "Elf": 8,
+        "Dwarf": 15,
+        "Wolfen": 20,
+        "Orc": 18,
+        "Troll": 25,
+        "Ogre": 22,
+        "Giant": 40,
+        "Changeling": 8,
+        "Pixie": 2,
+        "Gnome": 6,
+        "Kobold": 5,
+        "Goblin": 6
+      },
+      "mountMovement": {
+        "lightHorse": { "spd": 44, "carryingCapacity": 200, "description": "Light riding horse" },
+        "warHorse": { "spd": 38, "carryingCapacity": 300, "description": "Heavy war horse" },
+        "pony": { "spd": 30, "carryingCapacity": 120, "description": "Small pony" },
+        "wolfMount": { "spd": 40, "carryingCapacity": 150, "description": "Wolfen mount" },
+        "bardingPenalty": {
+          "leather": -5,
+          "chain": -15,
+          "plate": -25
+        }
+      }
+    }
+  }
+  

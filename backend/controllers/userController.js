@@ -25,11 +25,11 @@ export const login = async (req, res) => {
       return res.status(401).json({ message: "Invalid credentials" });
     }
 
-    // Generate token
+    // Generate token with extended expiration
     const token = jwt.sign(
       { id: user._id, username: user.username },
       process.env.JWT_SECRET,
-      { expiresIn: "24h" }
+      { expiresIn: "7d" } // Extended to 7 days for better user experience
     );
 
     res.json({
@@ -73,11 +73,11 @@ export const register = async (req, res) => {
 
     await user.save();
 
-    // Generate token
+    // Generate token with extended expiration
     const token = jwt.sign(
       { id: user._id, username: user.username },
       process.env.JWT_SECRET,
-      { expiresIn: "24h" }
+      { expiresIn: "7d" } // Extended to 7 days for better user experience
     );
 
     res.status(201).json({
@@ -92,6 +92,48 @@ export const register = async (req, res) => {
     res.status(500).json({
       message: "Server error",
       error: error.message,
+    });
+  }
+};
+
+// Refresh token endpoint
+export const refreshToken = async (req, res) => {
+  try {
+    const authHeader = req.headers["authorization"];
+    const token = authHeader && authHeader.split(" ")[1];
+
+    if (!token) {
+      return res.status(401).json({ message: "No token provided" });
+    }
+
+    // Verify the token (even if expired)
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+    // Check if user still exists
+    const user = await User.findById(decoded.id);
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // Generate new token
+    const newToken = jwt.sign(
+      { id: user._id, username: user.username },
+      process.env.JWT_SECRET,
+      { expiresIn: "7d" }
+    );
+
+    res.json({
+      token: newToken,
+      user: {
+        id: user._id,
+        username: user.username,
+      },
+    });
+  } catch (error) {
+    console.error("Token refresh error:", error);
+    res.status(401).json({
+      message: "Invalid token",
+      code: "INVALID_TOKEN_REFRESH",
     });
   }
 };

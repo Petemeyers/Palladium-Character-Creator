@@ -1,7 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import Navbar from './Navbar';
 import useChatAPI from '../hooks/useChatAPI';
 import axiosInstance from '../utils/axios';
+import { getSkillsForLocation } from '../data/skills';
+import { rollDice } from './util';
+import { useParty } from '../context/PartyContext';
+import PartyChat from './PartyChat';
 import '../styles/Chat.css';
 
 const Chat = () => {
@@ -9,7 +12,12 @@ const Chat = () => {
   const [inputMessage, setInputMessage] = useState('');
   const [selectedParty, setSelectedParty] = useState(null);
   const [parties, setParties] = useState([]);
+  const [currentLocation, setCurrentLocation] = useState(null);
+  const [availableSkills, setAvailableSkills] = useState([]);
+  const [showSkillRoller, setShowSkillRoller] = useState(false);
+  const [selectedSkill, setSelectedSkill] = useState('');
   const { sendMessage, loading, error } = useChatAPI();
+  const { activeParty, clearActiveParty, refreshActiveParty, refreshInterval } = useParty();
 
   const fetchParties = useCallback(async () => {
     try {
@@ -28,7 +36,56 @@ const Chat = () => {
 
   useEffect(() => {
     fetchParties();
+    
+    // Check if a location was selected from WorldMap
+    const savedLocation = localStorage.getItem('selectedLocation');
+    if (savedLocation) {
+      try {
+        const location = JSON.parse(savedLocation);
+        handleLocationSelect(location);
+        localStorage.removeItem('selectedLocation'); // Clear after use
+      } catch (error) {
+        console.error('Error parsing saved location:', error);
+      }
+    }
   }, [fetchParties]);
+
+  const handleLocationSelect = (location) => {
+    setCurrentLocation(location);
+    const skills = getSkillsForLocation(location.id);
+    setAvailableSkills(skills);
+    
+    // Add location message to chat
+    const locationMessage = {
+      id: Date.now(),
+      text: `📍 You arrive at ${location.label} in the ${location.region}. ${location.description}`,
+      sender: 'system',
+      timestamp: new Date()
+    };
+    setMessages(prev => [...prev, locationMessage]);
+  };
+
+  const handleSkillRoll = (skillName, character) => {
+    const skill = availableSkills.find(s => s.name === skillName);
+    if (!skill) return;
+
+    // Get character's attribute value
+    const attributeValue = character.attributes[skill.attribute] || 10;
+    
+    // Roll d20 for skill check
+    const roll = rollDice(20, 1);
+    const success = roll <= attributeValue;
+    
+    const rollMessage = {
+      id: Date.now(),
+      text: `🎲 ${character.name} rolls ${skillName} (${skill.attribute}: ${attributeValue}): Rolled ${roll} - ${success ? 'SUCCESS!' : 'FAILURE!'}`,
+      sender: 'system',
+      timestamp: new Date()
+    };
+    
+    setMessages(prev => [...prev, rollMessage]);
+    setShowSkillRoller(false);
+  };
 
   const handleSendMessage = async (e) => {
     e.preventDefault();
@@ -90,16 +147,50 @@ const Chat = () => {
 
   return (
     <>
-      <Navbar />
       <div className="chat-container">
         <div className="chat-header">
-          <h2>Begin Adventure</h2>
+          <h2>🗺️ Begin Adventure - Chat & Map System</h2>
+          
+          {activeParty ? (
+            <div className="active-party-info">
+              <h3>🎯 Active Party: {activeParty.name}</h3>
+              <p>Members: {activeParty.members?.length || 0} characters</p>
+              <p>Starting Location: {activeParty.startLocation?.label || "Unknown"} ({activeParty.startLocation?.region || "Unknown Region"})</p>
+              <p className="auto-refresh-info">🔄 Auto-refresh every {refreshInterval}s + Party-specific real-time updates</p>
+              <div className="party-controls">
+                <button
+                  className="unload-party-btn"
+                  onClick={() => {
+                    clearActiveParty();
+                    alert("Party unloaded from session!");
+                  }}
+                >
+                  Unload Party
+                </button>
+                <button
+                  className="refresh-party-btn"
+                  onClick={() => {
+                    refreshActiveParty();
+                    alert("Party data refreshed from database!");
+                  }}
+                >
+                  Refresh Party
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="no-active-party">
+              <p>⚠️ No active party loaded. Load a party from the Party List to begin your adventure!</p>
+              <p>Or select a party below to use temporarily:</p>
+            </div>
+          )}
+          
           {Array.isArray(parties) && parties.length > 0 ? (
             <select 
               value={selectedParty?._id || ''} 
               onChange={(e) => setSelectedParty(parties.find(p => p._id === e.target.value))}
             >
-              <option value="">Select a party</option>
+              <option value="">Select a party (temporary)</option>
               {parties.map(party => (
                 <option key={party._id} value={party._id}>
                   {party.name} ({party.members.length} members)
@@ -129,6 +220,49 @@ const Chat = () => {
           </div>
         )}
 
+        {currentLocation && (
+          <div className="location-info">
+            <h3>📍 Current Location: {currentLocation.label}</h3>
+            <p><strong>Region:</strong> {currentLocation.region}</p>
+            <p><strong>Description:</strong> {currentLocation.description}</p>
+            
+            {availableSkills.length > 0 && (
+              <div className="available-skills">
+                <h4>Available Skills:</h4>
+                <div className="skills-grid">
+                  {availableSkills.map(skill => (
+                    <button
+                      key={skill.name}
+                      className="skill-button"
+                      onClick={() => {
+                        setSelectedSkill(skill.name);
+                        setShowSkillRoller(true);
+                      }}
+                    >
+                      {skill.name} ({skill.attribute})
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {!currentLocation && selectedParty && (
+          <div className="location-prompt">
+            <h3>🗺️ Choose Your Starting Location</h3>
+            <p>Select a location to begin your adventure!</p>
+            <button 
+              className="choose-location-btn"
+              onClick={() => {
+                window.location.href = '/world-map';
+              }}
+            >
+              🗺️ Choose Location
+            </button>
+          </div>
+        )}
+
         <div className="chat-messages">
           {messages.map(message => (
             <div 
@@ -154,6 +288,35 @@ const Chat = () => {
             {loading ? 'Sending...' : 'Send'}
           </button>
         </form>
+
+        {showSkillRoller && selectedParty && selectedSkill && (
+          <div className="skill-roller-modal">
+            <div className="skill-roller-content">
+              <h3>🎲 Roll {selectedSkill}</h3>
+              <p>Choose a character to roll this skill:</p>
+              <div className="character-selector">
+                {selectedParty.members.map(char => (
+                  <button
+                    key={char._id}
+                    className="character-roll-btn"
+                    onClick={() => handleSkillRoll(selectedSkill, char)}
+                  >
+                    {char.name} ({char.attributes[availableSkills.find(s => s.name === selectedSkill)?.attribute] || 10})
+                  </button>
+                ))}
+              </div>
+              <button 
+                className="close-skill-roller"
+                onClick={() => setShowSkillRoller(false)}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Party Chat Section */}
+        <PartyChat username="GM" />
       </div>
     </>
   );

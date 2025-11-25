@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import PropTypes from 'prop-types';
-import axiosInstance from '../utils/axios';
+import axiosInstance from '../utils/axios.js';
 import { rollDice, calculateAttributeRolls } from './util';
 import { 
   speciesData, 

@@ -1,0 +1,142 @@
+{
+    "encounters": {
+      "forest_low": [
+        { "roll": "01-20", "result": "wolf" },
+        { "roll": "21-35", "result": "bandit" },
+        { "roll": "36-50", "result": "bear_black" },
+        { "roll": "51-65", "result": "harpy" },
+        { "roll": "66-80", "result": "scarecrow" },
+        { "roll": "81-90", "result": "minotaur" },
+        { "roll": "91-00", "result": "spectre" }
+      ],
+      "forest_high": [
+        { "roll": "01-15", "result": "troll" },
+        { "roll": "16-30", "result": "werebear" },
+        { "roll": "31-45", "result": "chimera" },
+        { "roll": "46-60", "result": "harpy" },
+        { "roll": "61-75", "result": "spectre" },
+        { "roll": "76-85", "result": "minotaur" },
+        { "roll": "86-95", "result": "dragon_red" },
+        { "roll": "96-00", "result": "unicorn" }
+      ],
+      "mountain_low": [
+        { "roll": "01-25", "result": "gryphon" },
+        { "roll": "26-40", "result": "bandit" },
+        { "roll": "41-55", "result": "bear_black" },
+        { "roll": "56-70", "result": "orc" },
+        { "roll": "71-80", "result": "troll" },
+        { "roll": "81-90", "result": "chimera" },
+        { "roll": "91-00", "result": "hydra" }
+      ],
+      "mountain_high": [
+        { "roll": "01-25", "result": "gryphon" },
+        { "roll": "26-50", "result": "chimera" },
+        { "roll": "51-70", "result": "harpy" },
+        { "roll": "71-85", "result": "mummy" },
+        { "roll": "86-95", "result": "werebear" },
+        { "roll": "96-00", "result": "hydra" }
+      ],
+      "plains": [
+        { "roll": "01-20", "result": "wolf" },
+        { "roll": "21-35", "result": "bandit" },
+        { "roll": "36-50", "result": "merchant" },
+        { "roll": "51-65", "result": "soldier" },
+        { "roll": "66-80", "result": "gryphon" },
+        { "roll": "81-90", "result": "minotaur" },
+        { "roll": "91-00", "result": "dragon_red" }
+      ],
+      "desert": [
+        { "roll": "01-25", "result": "bandit" },
+        { "roll": "26-40", "result": "mummy" },
+        { "roll": "41-55", "result": "scarecrow" },
+        { "roll": "56-70", "result": "cultist" },
+        { "roll": "71-80", "result": "minotaur" },
+        { "roll": "81-90", "result": "dragon_red" },
+        { "roll": "91-00", "result": "hydra" }
+      ],
+      "swamp": [
+        { "roll": "01-20", "result": "scarecrow" },
+        { "roll": "21-35", "result": "spectre" },
+        { "roll": "36-50", "result": "cultist" },
+        { "roll": "51-65", "result": "mummy" },
+        { "roll": "66-80", "result": "hydra" },
+        { "roll": "81-90", "result": "werebear" },
+        { "roll": "91-00", "result": "dragon_red" }
+      ],
+      "cave": [
+        { "roll": "01-25", "result": "goblin" },
+        { "roll": "26-40", "result": "orc" },
+        { "roll": "41-55", "result": "troll" },
+        { "roll": "56-70", "result": "spectre" },
+        { "roll": "71-80", "result": "mummy" },
+        { "roll": "81-90", "result": "hydra" },
+        { "roll": "91-00", "result": "dragon_red" }
+      ],
+      "road": [
+        { "roll": "01-30", "result": "bandit" },
+        { "roll": "31-50", "result": "merchant" },
+        { "roll": "51-65", "result": "soldier" },
+        { "roll": "66-75", "result": "noble" },
+        { "roll": "76-85", "result": "thief" },
+        { "roll": "86-95", "result": "assassin" },
+        { "roll": "96-00", "result": "knight" }
+      ],
+      "town": [
+        { "roll": "01-20", "result": "town_guard" },
+        { "roll": "21-40", "result": "merchant" },
+        { "roll": "41-60", "result": "peasant" },
+        { "roll": "61-75", "result": "priest" },
+        { "roll": "76-85", "result": "noble" },
+        { "roll": "86-95", "result": "wizard" },
+        { "roll": "96-00", "result": "knight" }
+      ],
+      "ruins": [
+        { "roll": "01-25", "result": "spectre" },
+        { "roll": "26-40", "result": "mummy" },
+        { "roll": "41-55", "result": "scarecrow" },
+        { "roll": "56-70", "result": "cultist" },
+        { "roll": "71-80", "result": "troll" },
+        { "roll": "81-90", "result": "minotaur" },
+        { "roll": "91-00", "result": "dragon_red" }
+      ],
+      "coast": [
+        { "roll": "01-20", "result": "bandit" },
+        { "roll": "21-35", "result": "merchant" },
+        { "roll": "36-50", "result": "soldier" },
+        { "roll": "51-65", "result": "gryphon" },
+        { "roll": "66-80", "result": "harpy" },
+        { "roll": "81-90", "result": "hydra" },
+        { "roll": "91-00", "result": "dragon_red" }
+      ],
+      "arctic": [
+        { "roll": "01-25", "result": "bear_black" },
+        { "roll": "26-40", "result": "wolf" },
+        { "roll": "41-55", "result": "troll" },
+        { "roll": "56-70", "result": "werebear" },
+        { "roll": "71-80", "result": "minotaur" },
+        { "roll": "81-90", "result": "dragon_red" },
+        { "roll": "91-00", "result": "hydra" }
+      ],
+      "daytime": [
+        { "roll": "01-20", "result": "merchant_caravan" },
+        { "roll": "21-35", "result": "merchant" },
+        { "roll": "36-50", "result": "soldier" },
+        { "roll": "51-65", "result": "peasant" },
+        { "roll": "66-75", "result": "noble" },
+        { "roll": "76-85", "result": "priest" },
+        { "roll": "86-95", "result": "knight" },
+        { "roll": "96-00", "result": "unicorn" }
+      ],
+      "nighttime": [
+        { "roll": "01-15", "result": "traveling_peddler" },
+        { "roll": "16-30", "result": "bandit" },
+        { "roll": "31-45", "result": "thief" },
+        { "roll": "46-60", "result": "assassin" },
+        { "roll": "61-75", "result": "cultist" },
+        { "roll": "76-85", "result": "spectre" },
+        { "roll": "86-95", "result": "werebear" },
+        { "roll": "96-00", "result": "dragon_red" }
+      ]
+    }
+  }
+  

@@ -6,7 +6,7 @@ import {
   Navigate,
 } from "react-router-dom";
 import LoginForm from "../components/LoginForm/LoginForm";
-
+import Dashboard from "../components/Dashboard";
 import Chat from "../components/Chat";
 
 const AppRoutes = () => {

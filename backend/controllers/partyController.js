@@ -1,12 +1,14 @@
 import Party from "../models/Party.js";
 import Character from "../models/Character.js";
+import { io } from "../server.js";
 
 export const createParty = async (req, res) => {
   try {
-    const { name, members } = req.body;
+    const { name, members, startLocation } = req.body;
 
     console.log("Creating party with user:", req.user);
     console.log("Members:", members);
+    console.log("Start Location:", startLocation);
 
     if (!name || typeof name !== "string" || name.trim().length === 0) {
       return res.status(400).json({
@@ -19,6 +21,18 @@ export const createParty = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: "At least one party member is required",
+      });
+    }
+
+    if (
+      !startLocation ||
+      !startLocation.id ||
+      !startLocation.label ||
+      !startLocation.region
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Starting location is required",
       });
     }
 
@@ -72,6 +86,7 @@ export const createParty = async (req, res) => {
     const party = new Party({
       name: name.trim(),
       members,
+      startLocation,
       owner: req.user.userId,
     });
 
@@ -90,6 +105,13 @@ export const createParty = async (req, res) => {
       path: "members",
       select: "name level class species attributes imageUrl",
     });
+
+    // Emit party update via WebSocket
+    try {
+      io.to(populatedParty._id.toString()).emit("partyUpdated", populatedParty);
+    } catch (wsError) {
+      console.error("Error emitting party update:", wsError);
+    }
 
     res.status(201).json({
       success: true,
@@ -123,10 +145,34 @@ export const getParties = async (req, res) => {
   }
 };
 
+export const getActiveParty = async (req, res) => {
+  try {
+    // Get the most recently updated party for the user
+    // This serves as a simple "active party" - can be enhanced later with explicit active flag
+    const activeParty = await Party.findOne({ owner: req.user.userId })
+      .sort({ updatedAt: -1 }) // Most recently updated
+      .populate({
+        path: "members",
+        select: "name level class species attributes imageUrl",
+      });
+
+    // Return 200 with null instead of 404 to avoid browser console errors
+    // Frontend will handle null as "no active party"
+    res.status(200).json(activeParty || null);
+  } catch (error) {
+    console.error("Error fetching active party:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch active party",
+      error: error.message,
+    });
+  }
+};
+
 export const updateParty = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, members } = req.body;
+    const { name, members, startLocation } = req.body;
 
     // Validate members exist
     const charactersExist = await Character.find({
@@ -161,6 +207,9 @@ export const updateParty = async (req, res) => {
     // Update party
     party.name = name;
     party.members = members;
+    if (startLocation) {
+      party.startLocation = startLocation;
+    }
     await party.save();
 
     // Update new members' party status
@@ -176,6 +225,13 @@ export const updateParty = async (req, res) => {
       path: "members",
       select: "name level class species attributes imageUrl",
     });
+
+    // Emit party update via WebSocket
+    try {
+      io.to(updatedParty._id.toString()).emit("partyUpdated", updatedParty);
+    } catch (wsError) {
+      console.error("Error emitting party update:", wsError);
+    }
 
     res.status(200).json({
       success: true,
@@ -213,6 +269,13 @@ export const deleteParty = async (req, res) => {
     );
 
     await party.deleteOne();
+
+    // Emit party deletion via WebSocket
+    try {
+      io.to(id.toString()).emit("partyDeleted", { id: id });
+    } catch (wsError) {
+      console.error("Error emitting party deletion:", wsError);
+    }
 
     res.status(200).json({
       success: true,
