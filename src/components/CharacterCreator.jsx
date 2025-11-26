@@ -140,28 +140,68 @@ const CharacterCreator = ({ onCreateCharacter }) => {
 
   // Recalculate stats when level or class changes
   useEffect(() => {
-    if (occData && level && attributes.PE) {
+    // Calculate HP even if O.C.C. isn't selected yet (use defaults)
+    if (level && attributes.PE) {
       const peBonus = Math.floor((attributes.PE || 0) / 4);
       const currentLevel = parseInt(level) || 1;
       
       let calculatedHP = hp;
-      if (useDeterministicHP) {
-        // Calculate deterministic HP for character creator
+      if (useDeterministicHP && occData) {
+        // Calculate deterministic HP for character creator (only if O.C.C. is selected)
         calculatedHP = calculateCreatorHP(currentLevel, peBonus, hp);
+      } else if (useDeterministicHP && !occData) {
+        // If no O.C.C. selected, use simple calculation: base HP + (level-1) * 8 + PE bonus
+        const baseHP = 20;
+        const hpPerLevel = 8; // Default
+        calculatedHP = baseHP + (currentLevel - 1) * hpPerLevel + (peBonus * currentLevel);
+      } else if (!useDeterministicHP) {
+        // Use rolled HP if available, otherwise calculate
+        calculatedHP = hp || (20 + (currentLevel - 1) * 8 + (peBonus * currentLevel));
       }
       
-      const stats = getStatsForLevel(
-        occData,
-        currentLevel,
-        attributes,
-        calculatedHP,
-        psionics?.ppe || 0,
-        psionics?.isp || 0,
-        occSkills,
-        electiveSkills,
-        secondarySkills
-      );
-      setLevelStats(stats);
+      // Only call getStatsForLevel if occData exists
+      let stats = {};
+      if (occData) {
+        stats = getStatsForLevel(
+          occData,
+          currentLevel,
+          attributes,
+          calculatedHP,
+          psionics?.ppe || 0,
+          psionics?.isp || 0,
+          occSkills,
+          electiveSkills,
+          secondarySkills
+        ) || {};
+      }
+      
+      // Ensure all required properties exist by merging with defaults
+      setLevelStats({
+        hp: calculatedHP || null, // Always use calculatedHP
+        attacksPerMelee: 2,
+        saves: { vsMagic: 14, vsPoison: 14, vsPsionics: 15 },
+        combatBonuses: { strike: 0, parry: 0, dodge: 0, damage: 0 },
+        ppe: 0,
+        isp: 0,
+        skillIncreases: { elective: 0, secondary: 0 },
+        ...stats, // Override with actual stats if provided
+        // Ensure saves and combatBonuses are always objects
+        saves: stats?.saves || { vsMagic: 14, vsPoison: 14, vsPsionics: 15 },
+        combatBonuses: stats?.combatBonuses || { strike: 0, parry: 0, dodge: 0, damage: 0 },
+        // Override hp with calculatedHP (calculatedHP takes precedence)
+        hp: calculatedHP || stats?.hp || null,
+      });
+    } else if (Object.keys(attributes).length === 0) {
+      // Reset levelStats if no attributes are rolled yet
+      setLevelStats({
+        hp: null,
+        attacksPerMelee: 2,
+        saves: { vsMagic: 14, vsPoison: 14, vsPsionics: 15 },
+        combatBonuses: { strike: 0, parry: 0, dodge: 0, damage: 0 },
+        ppe: 0,
+        isp: 0,
+        skillIncreases: { elective: 0, secondary: 0 },
+      });
     }
   }, [level, occData, attributes, hp, psionics, occSkills, electiveSkills, secondarySkills, useDeterministicHP]);
 
@@ -1844,10 +1884,10 @@ const CharacterCreator = ({ onCreateCharacter }) => {
           <div className="button-row">
             <Button 
               onClick={regenerateAttributes}
-              disabled={isAutoRolling}
+              disabled={isAutoRolling || attributesRolled}
               className="primary-button"
             >
-              {isAutoRolling ? '🎲 Auto-Rolling...' : '🎲 Roll Attributes'}
+              {isAutoRolling ? '🎲 Auto-Rolling...' : attributesRolled ? '✅ Attributes Locked' : '🎲 Roll Attributes'}
             </Button>
           </div>
 
@@ -2101,7 +2141,7 @@ const CharacterCreator = ({ onCreateCharacter }) => {
                   border: '1px solid #e2e8f0'
                 }}>
                   <span style={{ fontWeight: 'bold', color: '#4a5568' }}>⚔️ Attacks/Melee:</span>
-                  <strong style={{ color: '#2d3748', fontSize: '18px' }}>{levelStats.attacksPerMelee}</strong>
+                  <strong style={{ color: '#2d3748', fontSize: '18px' }}>{levelStats.attacksPerMelee ?? 2}</strong>
                   </div>
                 <div className="stat-row" style={{ 
                   backgroundColor: 'white', 
@@ -2110,7 +2150,7 @@ const CharacterCreator = ({ onCreateCharacter }) => {
                   border: '1px solid #e2e8f0'
                 }}>
                   <span style={{ fontWeight: 'bold', color: '#4a5568' }}>🛡️ Save vs Magic:</span>
-                  <strong style={{ color: '#2d3748', fontSize: '18px' }}>{levelStats.saves.vsMagic}</strong>
+                  <strong style={{ color: '#2d3748', fontSize: '18px' }}>{levelStats.saves?.vsMagic ?? 14}</strong>
                   </div>
                 <div className="stat-row" style={{ 
                   backgroundColor: 'white', 
@@ -2119,7 +2159,7 @@ const CharacterCreator = ({ onCreateCharacter }) => {
                   border: '1px solid #e2e8f0'
                 }}>
                   <span style={{ fontWeight: 'bold', color: '#4a5568' }}>💀 Save vs Poison:</span>
-                  <strong style={{ color: '#2d3748', fontSize: '18px' }}>{levelStats.saves.vsPoison}</strong>
+                  <strong style={{ color: '#2d3748', fontSize: '18px' }}>{levelStats.saves?.vsPoison ?? 14}</strong>
                   </div>
                 <div className="stat-row" style={{ 
                   backgroundColor: 'white', 
@@ -2128,7 +2168,7 @@ const CharacterCreator = ({ onCreateCharacter }) => {
                   border: '1px solid #e2e8f0'
                 }}>
                   <span style={{ fontWeight: 'bold', color: '#4a5568' }}>🧠 Save vs Psionics:</span>
-                  <strong style={{ color: '#2d3748', fontSize: '18px' }}>{levelStats.saves.vsPsionics}</strong>
+                  <strong style={{ color: '#2d3748', fontSize: '18px' }}>{levelStats.saves?.vsPsionics ?? 15}</strong>
                   </div>
                 <div className="stat-row" style={{ 
                   backgroundColor: 'white', 
@@ -2137,7 +2177,7 @@ const CharacterCreator = ({ onCreateCharacter }) => {
                   border: '1px solid #e2e8f0'
                 }}>
                   <span style={{ fontWeight: 'bold', color: '#4a5568' }}>🎯 Strike Bonus:</span>
-                  <strong style={{ color: '#38a169', fontSize: '18px' }}>+{levelStats.combatBonuses.strike}</strong>
+                  <strong style={{ color: '#38a169', fontSize: '18px' }}>+{levelStats.combatBonuses?.strike ?? 0}</strong>
                   </div>
                 <div className="stat-row" style={{ 
                   backgroundColor: 'white', 
@@ -2146,7 +2186,7 @@ const CharacterCreator = ({ onCreateCharacter }) => {
                   border: '1px solid #e2e8f0'
                 }}>
                   <span style={{ fontWeight: 'bold', color: '#4a5568' }}>🛡️ Parry Bonus:</span>
-                  <strong style={{ color: '#38a169', fontSize: '18px' }}>+{levelStats.combatBonuses.parry}</strong>
+                  <strong style={{ color: '#38a169', fontSize: '18px' }}>+{levelStats.combatBonuses?.parry ?? 0}</strong>
                   </div>
                 <div className="stat-row" style={{ 
                   backgroundColor: 'white', 
@@ -2155,7 +2195,7 @@ const CharacterCreator = ({ onCreateCharacter }) => {
                   border: '1px solid #e2e8f0'
                 }}>
                   <span style={{ fontWeight: 'bold', color: '#4a5568' }}>🏃 Dodge Bonus:</span>
-                  <strong style={{ color: '#38a169', fontSize: '18px' }}>+{levelStats.combatBonuses.dodge}</strong>
+                  <strong style={{ color: '#38a169', fontSize: '18px' }}>+{levelStats.combatBonuses?.dodge ?? 0}</strong>
                   </div>
                   {levelStats.ppe > 0 && (
                   <div className="stat-row" style={{ 

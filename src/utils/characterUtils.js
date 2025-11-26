@@ -6,11 +6,13 @@ const ensureItemTypes = (inventory) => {
     console.log(`Processing item ${index}:`, item);
 
     // Ensure type field - ALWAYS set a proper type
+    // Check if type is missing, not a string, or invalid
     if (
       !item.type ||
+      typeof item.type !== "string" ||
       item.type === "it" ||
       item.type.length < 4 ||
-      item.type.includaes("it")
+      item.type.includes("it")
     ) {
       // Determine type based on category or name
       if (

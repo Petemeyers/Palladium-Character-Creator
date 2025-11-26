@@ -55,6 +55,10 @@ const TacticalMap = ({
   mode = "COMBAT", // "MAP_EDITOR" | "COMBAT"
   mapDefinition = null, // Map definition for editor mode
 }) => {
+  // Helper to normalize combatant ids from various sources
+  const getCombatantId = (combatant) =>
+    combatant?._id || combatant?.id || combatant?.fighterId || combatant?.characterId;
+
   // ✅ Debug: Log mapType on mount/update to verify prop flow
   useEffect(() => {
     const effective = mapType || terrain?.mapType || "hex";
@@ -100,7 +104,7 @@ const TacticalMap = ({
   // Get cell content (combatant at this position)
   const getCellContent = (x, y) => {
     for (const [id, pos] of Object.entries(positions)) {
-      const combatant = combatants.find(c => c._id === id);
+      const combatant = combatants.find(c => getCombatantId(c) === id);
       if (combatant) {
         const creatureSize = getCreatureSize(combatant);
         
@@ -125,7 +129,7 @@ const TacticalMap = ({
     prevCurrentTurnRef.current = currentTurn;
     
     if (movementMode.active && currentTurn && positions[currentTurn]) {
-      const combatant = combatants.find(c => c._id === currentTurn);
+      const combatant = combatants.find(c => getCombatantId(c) === currentTurn);
       if (combatant) {
         const speed = combatant.Spd || combatant.spd || combatant.attributes?.Spd || combatant.attributes?.spd || 10;
         const attacksPerMelee = combatant.attacksPerMelee || 1;
@@ -188,10 +192,11 @@ const TacticalMap = ({
         }
       } else if (combatantAtCell) {
         // Clicking on a combatant selects them for viewing
-        setSelectedCombatant(combatantAtCell._id);
+        const combatantId = getCombatantId(combatantAtCell);
+        setSelectedCombatant(combatantId);
         // Notify parent component
         if (onSelectedCombatantChange) {
-          onSelectedCombatantChange(combatantAtCell._id);
+          onSelectedCombatantChange(combatantId);
         }
       } else {
         // Clicking on empty space clears selection
@@ -206,34 +211,60 @@ const TacticalMap = ({
   // Memoize combatants at position to avoid recalculating on every render
   const combatantsAtPosition = useMemo(() => {
     const map = new Map();
+    // Debug: log all positions and combatants (always log, not just in development)
+    if (mode === "COMBAT") {
+      console.log(`[TacticalMap] Building combatantsAtPosition map. Positions:`, Object.keys(positions).length, 'Combatants:', combatants.length);
+      console.log(`[TacticalMap] Position keys:`, Object.keys(positions));
+      console.log(`[TacticalMap] Combatant IDs:`, combatants.map(c => ({ _id: c._id, name: c.name, type: c.type || 'unknown' })));
+      
+      // Check for combatants without positions
+      const combatantsWithoutPositions = combatants.filter(c => {
+        const key = getCombatantId(c);
+        return !positions[key];
+      });
+      if (combatantsWithoutPositions.length > 0) {
+        console.warn(`[TacticalMap] ⚠️ ${combatantsWithoutPositions.length} combatant(s) have no positions:`, 
+          combatantsWithoutPositions.map(c => ({ name: c.name, id: getCombatantId(c), type: c.type || 'unknown' })));
+      }
+    }
+    
     for (let row = 0; row < GRID_CONFIG.GRID_HEIGHT; row++) {
       for (let col = 0; col < GRID_CONFIG.GRID_WIDTH; col++) {
         const combatantsAtPos = [];
         for (const [id, pos] of Object.entries(positions)) {
-          const combatant = combatants.find(c => c._id === id);
+          const combatant = combatants.find(c => getCombatantId(c) === id);
           if (combatant) {
             const creatureSize = getCreatureSize(combatant);
             if (col >= pos.x && col < pos.x + creatureSize.width &&
                 row >= pos.y && row < pos.y + 1) {
               combatantsAtPos.push(combatant);
             }
+          } else if (process.env.NODE_ENV === 'development' && mode === "COMBAT") {
+            // Debug: log when position exists but combatant not found
+            console.warn(`[TacticalMap] Position found for id ${id} but no matching combatant with _id=${id}`);
           }
         }
         map.set(`${col}-${row}`, combatantsAtPos);
       }
     }
     return map;
-  }, [positions, combatants, GRID_CONFIG.GRID_WIDTH, GRID_CONFIG.GRID_HEIGHT]);
+  }, [positions, combatants, GRID_CONFIG.GRID_WIDTH, GRID_CONFIG.GRID_HEIGHT, mode]);
 
   // Optimized function to get combatants at position
   const getCombatantsAtPosition = useCallback((x, y) => {
-    return combatantsAtPosition.get(`${x}-${y}`) || [];
-  }, [combatantsAtPosition]);
+    const result = combatantsAtPosition.get(`${x}-${y}`) || [];
+    // Debug: log if we have combatants but they're not showing
+    if (process.env.NODE_ENV === 'development' && result.length > 0 && mode === "COMBAT") {
+      console.log(`[TacticalMap] Found ${result.length} combatant(s) at (${x}, ${y}):`, result.map(c => ({ name: c.name, id: c._id, isEnemy: c.isEnemy })));
+    }
+    return result;
+  }, [combatantsAtPosition, mode]);
 
   // Get creature's primary position (top-left corner)
   const getCreaturePrimaryPosition = (combatant) => {
-    if (positions[combatant._id]) {
-      return positions[combatant._id];
+    const key = getCombatantId(combatant);
+    if (positions[key]) {
+      return positions[key];
     }
     return null;
   };
@@ -332,11 +363,14 @@ const TacticalMap = ({
     
     if (isPureDarkness && combatants && positions) {
       // Find all player positions
-      const playerFighters = combatants.filter(c => !c.isEnemy && positions[c._id]);
+      const playerFighters = combatants.filter(c => {
+        const key = getCombatantId(c);
+        return !c.isEnemy && positions[key];
+      });
       
       // Check if enemy is within sound detection range of any player
       for (const player of playerFighters) {
-        const playerPos = positions[player._id];
+        const playerPos = positions[getCombatantId(player)];
         if (!playerPos) continue;
         
         // Calculate distance in hexes and convert to feet (1 hex = 5 feet typically)
@@ -398,18 +432,19 @@ const TacticalMap = ({
       // Check for visible enemies nearby to apply gradient (even if this cell doesn't have an enemy)
       // Enemies must be within player visibility gradient range
       if (fogEnabled && combatants) {
-        const visibleEnemies = combatants.filter(c => 
-          c.isEnemy && 
-          positions[c._id] && 
-          isWithinPlayerVisibility(positions[c._id].x, positions[c._id].y)
-        );
+        const visibleEnemies = combatants.filter(c => {
+          const key = getCombatantId(c);
+          return c.isEnemy && 
+            positions[key] && 
+            isWithinPlayerVisibility(positions[key].x, positions[key].y);
+        });
       
       if (visibleEnemies.length > 0) {
         let minGradient = 1; // Start with grey
         
         // Calculate gradient from each visible enemy
-        visibleEnemies.forEach(enemy => {
-          const enemyPos = positions[enemy._id];
+          visibleEnemies.forEach(enemy => {
+            const enemyPos = positions[getCombatantId(enemy)];
           if (enemyPos) {
             const gradient = getEnemyVisibilityGradient(x, y, enemyPos.x, enemyPos.y, 3);
             minGradient = Math.min(minGradient, gradient);
@@ -482,10 +517,10 @@ const TacticalMap = ({
       }
       
       // Player characters
-      if (combatant._id === selectedCombatant) {
+      if (getCombatantId(combatant) === selectedCombatant) {
         return "#60a5fa"; // Light blue
       }
-      if (combatant._id === currentTurn) {
+      if (getCombatantId(combatant) === currentTurn) {
         return "#4ade80"; // Light green
       }
       return "#22d3ee"; // Light cyan for players
@@ -508,17 +543,18 @@ const TacticalMap = ({
       
       // Skip gradient in pure darkness (sound detection keeps hexes dark)
       if (!isPureDarkness) {
-        const visibleEnemies = combatants.filter(c => 
-          c.isEnemy && 
-          positions[c._id] && 
-          isWithinPlayerVisibility(positions[c._id].x, positions[c._id].y)
-        );
+        const visibleEnemies = combatants.filter(c => {
+          const key = getCombatantId(c);
+          return c.isEnemy && 
+            positions[key] && 
+            isWithinPlayerVisibility(positions[key].x, positions[key].y);
+        });
         
         if (visibleEnemies.length > 0) {
           let minGradient = 1;
           
           visibleEnemies.forEach(enemy => {
-            const enemyPos = positions[enemy._id];
+            const enemyPos = positions[getCombatantId(enemy)];
             if (enemyPos) {
               const gradient = getEnemyVisibilityGradient(x, y, enemyPos.x, enemyPos.y, 3);
               minGradient = Math.min(minGradient, gradient);
@@ -860,14 +896,17 @@ const TacticalMap = ({
     }
     
     // Find all player positions
-    const playerFighters = combatants.filter(c => !c.isEnemy && positions[c._id]);
+    const playerFighters = combatants.filter(c => {
+      const key = getCombatantId(c);
+      return !c.isEnemy && positions[key];
+    });
     if (playerFighters.length === 0) return 1;
     
     let minDistance = Infinity;
     
     // Calculate distance to nearest player
     playerFighters.forEach(player => {
-      const playerPos = positions[player._id];
+      const playerPos = positions[getCombatantId(player)];
       if (playerPos) {
         const distance = Math.max(Math.abs(x - playerPos.x), Math.abs(y - playerPos.y));
         minDistance = Math.min(minDistance, distance);
@@ -897,12 +936,15 @@ const TacticalMap = ({
     }
     
     // Find all player positions
-    const playerFighters = combatants.filter(c => !c.isEnemy && positions[c._id]);
+    const playerFighters = combatants.filter(c => {
+      const key = getCombatantId(c);
+      return !c.isEnemy && positions[key];
+    });
     if (playerFighters.length === 0) return false;
     
     // Check if cell is within range of any player
     for (const player of playerFighters) {
-      const playerPos = positions[player._id];
+      const playerPos = positions[getCombatantId(player)];
       if (playerPos) {
         const distance = Math.max(Math.abs(x - playerPos.x), Math.abs(y - playerPos.y));
         if (distance <= maxDistance) {
@@ -1527,7 +1569,11 @@ const TacticalMap = ({
                           textAnchor="middle"
                           fontSize="18"
                           opacity={cellVisible ? 0.9 : 0.3}
-                          style={{ pointerEvents: "none", userSelect: "none" }}
+                          style={{ 
+                            pointerEvents: "none", 
+                            userSelect: "none",
+                            fontFamily: 'Apple Color Emoji, Segoe UI Emoji, Segoe UI Symbol, Noto Color Emoji, emoji, Arial, sans-serif'
+                          }}
                         >
                           {emojiMap[feature]}
                         </text>
@@ -1548,7 +1594,11 @@ const TacticalMap = ({
                 textAnchor="middle"
                 fontSize="16"
                 opacity="0.6"
-                style={{ pointerEvents: 'none', userSelect: 'none' }}
+                style={{ 
+                  pointerEvents: 'none', 
+                  userSelect: 'none',
+                  fontFamily: 'Apple Color Emoji, Segoe UI Emoji, Segoe UI Symbol, Noto Color Emoji, emoji, Arial, sans-serif'
+                }}
               >
                 {terrainIcon}
               </text>
@@ -1616,33 +1666,38 @@ const TacticalMap = ({
             })}
             
             {/* Combatant icons - show all combatants at this position (COMBAT mode only) */}
-            {mode === "COMBAT" && combatantsAtPos
-              .sort((a, b) => {
-                // Sort so enemies appear on top of players
-                if (a.isEnemy && !b.isEnemy) return 1; // Enemy after player
-                if (!a.isEnemy && b.isEnemy) return -1; // Player before enemy
-                return 0; // Same type, maintain original order
-              })
-              .map((combatant, index) => {
-              // Get the combatant's primary position
-              const primaryPos = getCreaturePrimaryPosition(combatant);
-              if (!primaryPos) {
-                // Debug: log missing positions
-                if (process.env.NODE_ENV === 'development') {
-                  console.warn(`[TacticalMap] Combatant ${combatant._id} (${combatant.name}) has no position`);
-                }
-                return null;
-              }
-              
-              // Only show icon on the primary position (top-left corner for large creatures)
-              // For single-cell creatures, this will be their exact position
-              const isPrimaryPosition = primaryPos.x === col && primaryPos.y === row;
-              if (!isPrimaryPosition) return null;
-              
-              // Debug: verify icon should render
-              if (process.env.NODE_ENV === 'development' && index === 0) {
-                console.log(`[TacticalMap] Rendering icon for ${combatant.name} at (${col}, ${row}), isEnemy: ${combatant.isEnemy}, fogEnabled: ${fogEnabled}`);
-              }
+            {mode === "COMBAT" && combatantsAtPos && combatantsAtPos.length > 0 && (
+              (() => {
+                // Debug: log when we have combatants at this position (always log)
+                console.log(`[TacticalMap] Rendering ${combatantsAtPos.length} combatant(s) at cell (${col}, ${row})`);
+                return combatantsAtPos
+                  .sort((a, b) => {
+                    // Sort so enemies appear on top of players
+                    if (a.isEnemy && !b.isEnemy) return 1; // Enemy after player
+                    if (!a.isEnemy && b.isEnemy) return -1; // Player before enemy
+                    return 0; // Same type, maintain original order
+                  })
+                  .map((combatant, index) => {
+                  // Get the combatant's primary position
+                  const primaryPos = getCreaturePrimaryPosition(combatant);
+                  if (!primaryPos) {
+                    // Debug: log missing positions (always log)
+                    console.warn(`[TacticalMap] Combatant ${getCombatantId(combatant)} (${combatant.name}) has no position`);
+                    return null;
+                  }
+                  
+                  // Only show icon on the primary position (top-left corner for large creatures)
+                  // For single-cell creatures, this will be their exact position
+                  const isPrimaryPosition = primaryPos.x === col && primaryPos.y === row;
+                  if (!isPrimaryPosition) {
+                    if (index === 0) {
+                      console.log(`[TacticalMap] ${combatant.name} at primary pos (${primaryPos.x}, ${primaryPos.y}) but rendering cell (${col}, ${row}) - skipping`);
+                    }
+                    return null;
+                  }
+                  
+                  // Debug: verify icon should render (always log)
+                  console.log(`[TacticalMap] ✅ Rendering icon for ${combatant.name} at (${col}, ${row}), isEnemy: ${combatant.isEnemy}, fogEnabled: ${fogEnabled}`);
 
               // ✅ Check enemy visibility for rendering
               // In darkness/fog, enemies should be completely invisible if not visible
@@ -1662,7 +1717,7 @@ const TacticalMap = ({
               const iconY = centerY + 6 + offsetY;
 
               return (
-                <g key={combatant._id} opacity={1}>
+                <g key={getCombatantId(combatant)} opacity={1} style={{ pointerEvents: 'none' }}>
                   {/* Add background circle for enemy sword to make it more visible over player shield */}
                   {/* Only show background circle if enemy is visible */}
                   {combatant.isEnemy && enemyVisible && (
@@ -1677,25 +1732,43 @@ const TacticalMap = ({
                     />
                   )}
                   
+                  {/* Fallback colored circle - always visible even if emoji doesn't render */}
+                  <circle
+                    cx={iconX}
+                    cy={iconY - 2}
+                    r="8"
+                    fill={combatant.isEnemy ? "#dc2626" : "#2563eb"}
+                    stroke={combatant.isEnemy ? "#991b1b" : "#1e40af"}
+                    strokeWidth="2"
+                    opacity="0.9"
+                    style={{ pointerEvents: 'none' }}
+                  />
+                  
+                  {/* Emoji icon on top of fallback circle */}
                   <text
                     x={iconX}
                     y={iconY}
                     textAnchor="middle"
                     fontSize="20"
-                    fill="currentColor"
+                    fill={combatant.isEnemy ? "#ffffff" : "#ffffff"}
+                    stroke={combatant.isEnemy ? "#991b1b" : "#1e40af"}
+                    strokeWidth="0.5"
+                    dominantBaseline="middle"
                     style={{ 
                       pointerEvents: 'none', 
                       userSelect: 'none',
-                      opacity: flashingCombatants.has(combatant._id) ? undefined : 1,
-                      animation: flashingCombatants.has(combatant._id) ? 'flash-slow 0.5s ease-in-out infinite' : 'none',
-                      zIndex: 10 // Ensure icons are above other elements
+                      opacity: flashingCombatants.has(getCombatantId(combatant)) ? undefined : 1,
+                      animation: flashingCombatants.has(getCombatantId(combatant)) ? 'flash-slow 0.5s ease-in-out infinite' : 'none',
+                      zIndex: 10, // Ensure icons are above other elements
+                      fontFamily: 'Apple Color Emoji, Segoe UI Emoji, Segoe UI Symbol, Noto Color Emoji, emoji, Arial, sans-serif', // Enhanced emoji font support
+                      fontWeight: 'normal'
                     }}
                   >
                     {combatant.isEnemy ? "🗡️" : "🛡️"}
                   </text>
                   
                   {/* Current turn indicator */}
-                  {combatant._id === currentTurn && (
+                  {getCombatantId(combatant) === currentTurn && (
                     <circle
                       cx={iconX + size * 0.4}
                       cy={iconY - size * 0.4}
@@ -1745,7 +1818,9 @@ const TacticalMap = ({
                   })()}
                 </g>
               );
-            })}
+                }).filter(Boolean) // Remove null entries
+              })()
+            )}
           </g>
         );
       }

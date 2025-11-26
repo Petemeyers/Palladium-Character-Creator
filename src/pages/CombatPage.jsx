@@ -669,8 +669,53 @@ function convertUnifiedSpellToCombatSpell(spell) {
 export default function CombatPage({ characters = [] }) {
   const navigate = useNavigate();
   const [log, setLog] = useState([]);
+  const [logFilterType, setLogFilterType] = useState("all");
+  const [logSortOrder, setLogSortOrder] = useState("newest");
   const [fighters, setFighters] = useState([]);
   const [turnIndex, setTurnIndex] = useState(0);
+  
+  // Helper function for generating crypto-random IDs (must be defined before normalizeFighterId)
+  // Use useRef to persist idCounter across renders without causing re-renders
+  const idCounterRef = useRef(0);
+  const generateCryptoId = useCallback(() => {
+    try {
+      const timestamp = Date.now();
+      // Use multiple smaller dice rolls to get a large random number (max die size is 1000)
+      const roll1 = CryptoSecureDice.parseAndRoll("1d1000");
+      const roll2 = CryptoSecureDice.parseAndRoll("1d1000");
+      const roll3 = CryptoSecureDice.parseAndRoll("1d1000");
+      const combinedRandom = roll1.totalWithBonus * 1000000 + roll2.totalWithBonus * 1000 + roll3.totalWithBonus;
+      const microtime = performance.now(); // Add microsecond precision
+      idCounterRef.current++; // Increment counter for uniqueness
+      return `${timestamp}-${combinedRandom}-${Math.floor(microtime * 1000)}-${idCounterRef.current}`;
+    } catch (error) {
+      // Log error for debugging
+      if (process.env.NODE_ENV === 'development') {
+        console.warn('[generateCryptoId] Error generating crypto ID, using fallback:', error);
+      }
+      // Fallback to timestamp-based ID with microsecond precision
+      const timestamp = Date.now();
+      const microtime = performance.now();
+      idCounterRef.current++; // Increment counter for uniqueness
+      return `${timestamp}-${Math.floor(Math.random() * 1000000)}-${Math.floor(microtime * 1000)}-${idCounterRef.current}`;
+    }
+  }, []);
+  
+  // Helper to normalize fighter IDs - ensures both id and _id exist and point to the same value
+  // This provides backwards compatibility for code that uses either id or _id
+  const normalizeFighterId = useCallback((rawFighter) => {
+    if (!rawFighter) return rawFighter;
+    
+    // Get the primary ID (prefer id, then _id, then generate new)
+    const primaryId = rawFighter.id || rawFighter._id || generateCryptoId();
+    
+    // Return normalized fighter with both id and _id set to the same value
+    return {
+      ...rawFighter,
+      id: primaryId,
+      _id: primaryId, // Ensure both exist and point to the same value
+    };
+  }, [generateCryptoId]);
   const [meleeRound, setMeleeRound] = useState(1); // Track melee rounds (1 minute each)
   const [turnCounter, setTurnCounter] = useState(0); // Track absolute turn number (increments every turn)
   const [combatActive, setCombatActive] = useState(false);
@@ -704,6 +749,10 @@ export default function CombatPage({ characters = [] }) {
   useEffect(() => {
     positionsRef.current = positions;
   }, [positions]);
+  
+  // Track recently used psionics per fighter to prevent AI spamming the same power
+  const playerAIRecentlyUsedPsionicsRef = useRef(new Map());
+  
   const [pendingMovements, setPendingMovements] = useState({}); // Track pending movements (for RUN/SPRINT/CHARGE)
   const [temporaryHexSharing, setTemporaryHexSharing] = useState({}); // Track temporary hex sharing {characterId: {originalPos, targetHex, targetCharId}}
   const [flashingCombatants, setFlashingCombatants] = useState(new Set()); // Track which combatants are flashing
@@ -1378,31 +1427,6 @@ useEffect(() => {
     }
     return true;
   }, [selectedAction, targetOptions, currentFighter]);
-  // Helper function for generating crypto-random IDs
-  let idCounter = 0;
-  const generateCryptoId = () => {
-    try {
-      const timestamp = Date.now();
-      // Use multiple smaller dice rolls to get a large random number (max die size is 1000)
-      const roll1 = CryptoSecureDice.parseAndRoll("1d1000");
-      const roll2 = CryptoSecureDice.parseAndRoll("1d1000");
-      const roll3 = CryptoSecureDice.parseAndRoll("1d1000");
-      const combinedRandom = roll1.totalWithBonus * 1000000 + roll2.totalWithBonus * 1000 + roll3.totalWithBonus;
-      const microtime = performance.now(); // Add microsecond precision
-      idCounter++; // Increment counter for uniqueness
-      return `${timestamp}-${combinedRandom}-${Math.floor(microtime * 1000)}-${idCounter}`;
-    } catch (error) {
-      // Log error for debugging
-      if (process.env.NODE_ENV === 'development') {
-        console.warn('[generateCryptoId] Error generating crypto ID, using fallback:', error);
-      }
-      // Fallback to timestamp-based ID with microsecond precision
-      const timestamp = Date.now();
-      const microtime = performance.now();
-      idCounter++; // Increment counter for uniqueness
-      return `${timestamp}-${Math.floor(Math.random() * 1000000)}-${Math.floor(microtime * 1000)}-${idCounter}`;
-    }
-  };
 
   // Check if a hex is occupied by any LIVING combatant
   const isHexOccupied = useCallback((x, y, excludeId = null) => {
@@ -2023,42 +2047,23 @@ useEffect(() => {
 
     const defender = updated[defenderIndex];
     
-    // Check if target can be attacked (dead characters can't be attacked further)
-    if (defender.currentHP <= -21) {
-      addLog(`Invalid target! ${defender.name} is already dead`, "error");
-      return;
-    }
-    
-    // ✅ FIX: Don't allow attacking unconscious/dying targets if all enemies are already defeated
-    // Exception: Evil alignments may finish off dying enemies (coup de grâce)
-    if (defender.type === "enemy" && defender.currentHP <= 0) {
-      // Check if there are any conscious enemies remaining
-      const consciousEnemies = updated.filter(f => f.type === "enemy" && canFighterAct(f));
+    // ✅ CRITICAL: Check if defender can act (not unconscious/dead) before attacking
+    if (!canFighterAct(defender)) {
+      const hpStatus = getHPStatus(defender.currentHP);
+      // Allow evil alignments to finish off dying enemies (coup de grâce)
       const attackerAlignment = stateAttacker.alignment || stateAttacker.attributes?.alignment || "";
       const isEvil = isEvilAlignment(attackerAlignment);
       
-      if (consciousEnemies.length === 0) {
-        // All enemies are defeated
-        if (isEvil) {
-          // Evil alignments may finish off dying enemies (coup de grâce)
-          addLog(`😈 ${attacker.name} (${attackerAlignment}) finishes off dying ${defender.name}!`, "warning");
-        } else {
-          // Good/neutral alignments show mercy - don't attack unconscious enemies
-          addLog(`⚠️ All enemies are defeated! ${attacker.name} shows mercy and stops attacking.`, "info");
-          if (!combatEndCheckRef.current) {
-            combatEndCheckRef.current = true;
-            addLog("🎉 Victory! All enemies defeated!", "victory");
-            setCombatActive(false);
-          }
-          return;
-        }
-      } else {
-        // Still conscious enemies remaining - allow attacking dying ones
-        if (isEvil) {
-          addLog(`😈 ${attacker.name} (${attackerAlignment}) attacks dying ${defender.name}!`, "warning");
-        } else {
-      addLog(`⚠️ Attacking unconscious/dying target: ${defender.name}`, "warning");
-        }
+      if (defender.currentHP <= -21) {
+        addLog(`❌ ${attacker.name} cannot attack ${defender.name} - ${defender.name} is already dead`, "error");
+        return;
+      } else if (!isEvil && defender.currentHP <= 0) {
+        // Good/neutral alignments show mercy - don't attack unconscious/dying enemies
+        addLog(`⚠️ ${attacker.name} shows mercy and does not attack ${defender.name} (${hpStatus.description.toLowerCase()})`, "info");
+        return;
+      } else if (isEvil && defender.currentHP <= 0) {
+        // Evil alignments may finish off dying enemies (coup de grâce) - allow attack
+        addLog(`😈 ${attacker.name} (${attackerAlignment}) attempts to finish off ${defender.name}!`, "warning");
       }
     }
     
@@ -2861,6 +2866,25 @@ useEffect(() => {
         const hitEmoji = isCriticalHit ? "💥" : "⚔️";
         addLog(`${hitEmoji} ${attacker.name} ${isCriticalHit ? "CRITICALLY HITS" : "hits"} ${defender.name} for ${finalDamage} damage! (${defender.currentHP}/${defender.maxHP} HP)`, hitType);
         
+        // ✅ CRITICAL: Check for victory condition AFTER damage is applied
+        if (defender.type === "enemy") {
+          // Update the defender in the updated array to reflect new HP
+          updated[defenderIndex] = defender;
+          
+          // Check if there are any conscious enemies remaining
+          const remainingConsciousEnemies = updated.filter(f => f.type === "enemy" && canFighterAct(f));
+          
+          if (remainingConsciousEnemies.length === 0 && !combatEndCheckRef.current) {
+            // All enemies are defeated - end combat immediately
+            combatEndCheckRef.current = true;
+            addLog("🎉 Victory! All enemies defeated!", "victory");
+            setCombatActive(false);
+            // Update fighters state and return early to prevent further processing
+            setFighters(updated);
+            return;
+          }
+        }
+        
         // Check for braced weapon counter-damage (spear/polearm vs charge on natural 18-20)
         const defenderWeapon = defender.equippedWeapons?.primary || defender.equippedWeapons?.secondary || null;
         const isBraced = defensiveStance[defender.id] === "Brace" || 
@@ -2930,6 +2954,25 @@ useEffect(() => {
             addLog(`🩸 ${defender.name} is DYING! ${hpStatus.description}`, "defeat");
           } else {
             addLog(`😴 ${defender.name} has been knocked unconscious!`, "defeat");
+          }
+          
+          // ✅ CRITICAL: Check for victory condition AFTER damage is applied
+          if (defender.type === "enemy") {
+            // Update the defender in the updated array to reflect new HP
+            updated[defenderIndex] = defender;
+            
+            // Check if there are any conscious enemies remaining
+            const remainingConsciousEnemies = updated.filter(f => f.type === "enemy" && canFighterAct(f));
+            
+            if (remainingConsciousEnemies.length === 0 && !combatEndCheckRef.current) {
+              // All enemies are defeated - end combat immediately
+              combatEndCheckRef.current = true;
+              addLog("🎉 Victory! All enemies defeated!", "victory");
+              setCombatActive(false);
+              // Update fighters state and return early to prevent further processing
+              setFighters(updated);
+              return;
+            }
           }
           
           // Award XP if an enemy was defeated by players (only if dead, not just unconscious)
@@ -3967,6 +4010,10 @@ useEffect(() => {
       return pool[0];
     };
 
+    // Track recently used psionics per fighter to prevent spamming
+    const recentlyUsed = playerAIRecentlyUsedPsionicsRef.current.get(player.id) || [];
+    const lastUsedPsionic = recentlyUsed[recentlyUsed.length - 1];
+    
     const selectOffensivePsionic = (powersList) => {
       if (!target) return null;
       const viable = powersList.filter((power) => {
@@ -3976,10 +4023,36 @@ useEffect(() => {
         return currentDistance <= rangeFeet;
       });
       if (viable.length === 0) return null;
-      viable.sort(
-        (a, b) => parseRangeToFeet(a.range) - parseRangeToFeet(b.range)
-      );
-      return viable[0];
+      
+      // Filter out recently used psionics (prevent spamming the same power)
+      // Only exclude if we've used it in the last 3 actions
+      const available = viable.filter((power) => {
+        if (!lastUsedPsionic) return true;
+        // Allow using the same psionic if we have 3+ different options
+        if (viable.length >= 3 && recentlyUsed.length >= 2) {
+          // If we've used the same power twice in a row, try a different one
+          const lastTwo = recentlyUsed.slice(-2);
+          if (lastTwo.length === 2 && lastTwo[0] === lastTwo[1] && lastTwo[0] === power.name) {
+            return false; // Don't use the same power 3 times in a row
+          }
+        }
+        return true;
+      });
+      
+      // If we filtered everything out, use the original list (better than nothing)
+      const powersToChooseFrom = available.length > 0 ? available : viable;
+      
+      // Sort by range, then by cost (prefer cheaper if same range)
+      powersToChooseFrom.sort((a, b) => {
+        const rangeA = parseRangeToFeet(a.range);
+        const rangeB = parseRangeToFeet(b.range);
+        if (rangeA !== rangeB) return rangeA - rangeB;
+        const costA = getPsionicCost(a);
+        const costB = getPsionicCost(b);
+        return costA - costB;
+      });
+      
+      return powersToChooseFrom[0];
     };
 
     const bestOffensiveSpell = selectOffensiveSpell(offensiveSpells);
@@ -4032,6 +4105,15 @@ useEffect(() => {
         "info"
       );
       if (executePsionicPower(player, target, power)) {
+        // Track this psionic as recently used to prevent spamming
+        const recentlyUsed = playerAIRecentlyUsedPsionicsRef.current.get(player.id) || [];
+        recentlyUsed.push(power.name);
+        // Keep only last 3 used psionics per fighter
+        if (recentlyUsed.length > 3) {
+          recentlyUsed.shift();
+        }
+        playerAIRecentlyUsedPsionicsRef.current.set(player.id, recentlyUsed);
+        
         processingPlayerAIRef.current = false;
         return true;
       }
@@ -6330,10 +6412,13 @@ useEffect(() => {
       };
     }
     
-    // Apply size modifiers to new fighter (for both playable and regular creatures)
-    newFighter = applySizeModifiers(newFighter);
-    
-    setFighters(prev => [...prev, newFighter]);
+        // Apply size modifiers to new fighter (for both playable and regular creatures)
+        newFighter = applySizeModifiers(newFighter);
+        
+        // Normalize IDs to ensure both id and _id exist for backwards compatibility
+        newFighter = normalizeFighterId(newFighter);
+        
+        setFighters(prev => [...prev, newFighter]);
 
     addLog(`Added ${newFighter.name} to combat!`, "success");
     setCustomEnemyName("");
@@ -6525,12 +6610,15 @@ useEffect(() => {
         addLog(`📏 ${fighter.name} size category: ${sizeDesc}`, "info");
       }
       
-      return {
+      const updatedFighter = {
         ...fighter,
         initiative: initiativeTotal,
         attacksPerMelee: attacksPerMelee,
         remainingAttacks: attacksPerMelee // Start with full attacks
       };
+      
+      // Normalize IDs to ensure both id and _id exist for backwards compatibility
+      return normalizeFighterId(updatedFighter);
     });
 
     // Resolve initiative ties (1994 Palladium rules)
@@ -6640,8 +6728,11 @@ useEffect(() => {
     let updated = { ...fighter };
 
     if (updates.deltaISP) {
-      const isp = Math.max(0, getFighterISP(updated) + updates.deltaISP);
-      if (updated.currentISP !== undefined) updated.currentISP = isp;
+      const currentISP = getFighterISP(updated);
+      const isp = Math.max(0, currentISP + updates.deltaISP);
+      // Always set currentISP (for tracking current ISP)
+      updated.currentISP = isp;
+      // Also update ISP/isp if they exist (for backwards compatibility)
       if (updated.ISP !== undefined) updated.ISP = isp;
       if (updated.isp !== undefined) updated.isp = isp;
     }
@@ -7677,11 +7768,21 @@ useEffect(() => {
     }
   }
 
-  function selectParty(party) {
-    setSelectedParty(party);
+  const selectParty = useCallback((party) => {
+    console.log(`[selectParty] Called with ${party.length} characters:`, party.map(c => c.name));
+    
+    // Set selectedParty FIRST and ensure it persists (synchronously, outside transition)
+    // This ensures the party selection is immediately visible even if heavy computation is deferred
+    setSelectedParty([...party]); // Create a new array to ensure React detects the change
+    
+    // Close modal AFTER state is set
     onPartyClose();
     setShowPartySelector(false); // Ensure showPartySelector is also closed
     
+    // Process characters and create fighters
+    // CRITICAL: We need to create fighters and set them immediately, not defer with startTransition
+    // startTransition was causing the state update to be deferred indefinitely
+    console.log(`[selectParty] Processing ${party.length} characters (synchronously)`);
     const characterFighters = party.map(char => {
       // Use autoEquipWeapons to ensure weapons are properly equipped from inventory
       const updatedChar = autoEquipWeapons(char);
@@ -7750,12 +7851,12 @@ useEffect(() => {
           : (PPEValue > 0 ? PPEValue : undefined);
       
       const fighter = {
-      ...char,
+        ...char,
         id: `player-${char._id}-${generateCryptoId()}`,
-      type: "player",
-      currentHP: characterHP,
-      maxHP: characterHP,
-      initiative: 0,
+        type: "player", // Ensure type is explicitly set to "player" (overrides any type from char)
+        currentHP: characterHP,
+        maxHP: characterHP,
+        initiative: 0,
         status: "active",
         equippedWeapon: equippedWeaponName,
         equippedWeapons: equippedWeapons,
@@ -7783,33 +7884,56 @@ useEffect(() => {
         fighter.currentPPE = currentPPEValue;
       }
 
-      // Apply size modifiers to fighter
-      const fighterWithSizeMods = applySizeModifiers(fighter);
-      return fighterWithSizeMods;
-    });
-    
-    setFighters(prev => [...characterFighters, ...prev.filter(f => f.type === "enemy")]);
-    addLog(`Selected party: ${party.map(c => c.name).join(", ")}`, "info");
-    
-    // Debug: Log psionics and magic data for each character
-    characterFighters.forEach(fighter => {
-      if (fighter.psionicPowers && fighter.psionicPowers.length > 0) {
-        addLog(`🧠 ${fighter.name} has ${fighter.psionicPowers.length} psionic powers (ISP: ${fighter.ISP})`, "info");
-      }
-      if (fighter.magic && fighter.magic.length > 0) {
-        addLog(`🔮 ${fighter.name} has ${fighter.magic.length} spells (PPE: ${fighter.PPE})`, "info");
-      }
-    });
-    
-    // Log weapon equipping status
-    characterFighters.forEach(fighter => {
-      if (fighter.equippedWeapon !== "Unarmed") {
-        addLog(`⚔️ ${fighter.name} auto-equipped ${fighter.equippedWeapon}!`, "info");
-      } else {
-        addLog(`⚠️ ${fighter.name} has no weapons - using unarmed attacks`, "warning");
-      }
-    });
-  }
+        // Apply size modifiers to fighter
+        const fighterWithSizeMods = applySizeModifiers(fighter);
+        // Normalize IDs to ensure both id and _id exist for backwards compatibility
+        return normalizeFighterId(fighterWithSizeMods);
+      });
+      
+      // Replace existing player fighters with new party, keep enemies
+      // CRITICAL: Use functional update to access current fighters state (prev)
+      console.log(`[selectParty] About to setFighters with ${characterFighters.length} character fighters`);
+      console.log(`[selectParty] Character fighters details:`, 
+        characterFighters.map(f => ({ name: f.name, type: f.type, id: f.id })));
+      
+      setFighters(prev => {
+        const existingEnemies = prev.filter(f => f.type === "enemy");
+        const newFighters = [...characterFighters, ...existingEnemies];
+        
+        // Debug: Log fighter types to verify they're set correctly
+        console.log(`[selectParty] setFighters callback - Added ${characterFighters.length} player fighters:`, 
+          characterFighters.map(f => ({ name: f.name, type: f.type, id: f.id })));
+        console.log(`[selectParty] setFighters callback - Total fighters: ${newFighters.length} (${newFighters.filter(f => f.type === "player").length} players, ${newFighters.filter(f => f.type === "enemy").length} enemies)`);
+        console.log(`[selectParty] setFighters callback - Player fighter types check:`, newFighters.filter(f => f.type === "player").map(f => ({ name: f.name, type: f.type })));
+        
+        return newFighters;
+      });
+      console.log(`[selectParty] setFighters called (state update scheduled)`);
+      
+      // Note: selectedParty was already set synchronously before startTransition
+      // No need to set it again here - it should already be persisted
+      
+      addLog(`Selected party: ${party.map(c => c.name).join(", ")}`, "info");
+      
+      // Debug: Log psionics and magic data for each character
+      characterFighters.forEach(fighter => {
+        if (fighter.psionicPowers && fighter.psionicPowers.length > 0) {
+          addLog(`🧠 ${fighter.name} has ${fighter.psionicPowers.length} psionic powers (ISP: ${fighter.ISP})`, "info");
+        }
+        if (fighter.magic && fighter.magic.length > 0) {
+          addLog(`🔮 ${fighter.name} has ${fighter.magic.length} spells (PPE: ${fighter.PPE})`, "info");
+        }
+      });
+      
+      // Log weapon equipping status
+      characterFighters.forEach(fighter => {
+        if (fighter.equippedWeapon !== "Unarmed") {
+          addLog(`⚔️ ${fighter.name} auto-equipped ${fighter.equippedWeapon}!`, "info");
+        } else {
+          addLog(`⚠️ ${fighter.name} has no weapons - using unarmed attacks`, "warning");
+        }
+      });
+  }, [onPartyClose, addLog, autoEquipWeapons, getUnifiedAbilities, applySizeModifiers, generateCryptoId, calculateTotalHP, setFighters, setSelectedParty, normalizeFighterId]);
 
   // Initialize positions ONLY when combat starts (after startCombat is called)
   // Positions are NOT set until combat begins to prevent showing fighters on map prematurely
@@ -8055,13 +8179,26 @@ useEffect(() => {
               </Button>
             </>
           )}
-          <Button colorScheme="purple" onClick={() => { onPartyOpen(); setShowPartySelector(true); }} isDisabled={combatActive}>
+          <Button colorScheme="purple" onClick={() => {
+            startTransition(() => {
+              onPartyOpen();
+              setShowPartySelector(true);
+            });
+          }} isDisabled={combatActive}>
             Choose Party
           </Button>
-          <Button colorScheme="blue" onClick={onOpen}>
+          <Button colorScheme="blue" onClick={() => {
+            startTransition(() => {
+              onOpen();
+            });
+          }}>
             Add Enemy
           </Button>
-          <Button colorScheme="red" onClick={resetCombat}>
+          <Button colorScheme="red" onClick={() => {
+            startTransition(() => {
+              resetCombat();
+            });
+          }}>
             Reset Combat
           </Button>
           <Button
@@ -8297,11 +8434,11 @@ useEffect(() => {
       {fighters.length > 0 && (
         <FloatingPanel
           title={`🗺️ Combat Arena - Dual View (2D + 3D)`}
-          initialWidth={1600}
-          initialHeight={800}
+          initialWidth={1200}
+          initialHeight={600}
           zIndex={1000}
-          minWidth={1000}
-          minHeight={600}
+          minWidth={800}
+          minHeight={400}
           center={true}
         >
           <VStack align="stretch" spacing={3}>
@@ -9968,7 +10105,7 @@ useEffect(() => {
               zIndex={1001}
               minWidth={300}
               minHeight={400}
-              bg="rgba(255, 255, 255, 0.85)"
+              bg="rgba(255, 255, 255, 0.91)"
               center={true}
             >
               <Tabs size="sm" colorScheme="blue" isLazy>
@@ -9992,6 +10129,31 @@ useEffect(() => {
                 >
                   🎲 {showRollDetails ? "Hide" : "Show"} Dice Details
                 </Button>
+                <Select
+                          size="xs"
+                          width="120px"
+                          value={logFilterType || "all"}
+                          onChange={(e) => setLogFilterType(e.target.value)}
+                        >
+                          <option value="all">All Types</option>
+                          <option value="hit">Hits</option>
+                          <option value="miss">Misses</option>
+                          <option value="critical">Critical</option>
+                          <option value="victory">Victory</option>
+                          <option value="defeat">Defeat</option>
+                          <option value="info">Info</option>
+                          <option value="combat">Combat</option>
+                          <option value="error">Errors</option>
+                        </Select>
+                        <Select
+                          size="xs"
+                          width="120px"
+                          value={logSortOrder || "newest"}
+                          onChange={(e) => setLogSortOrder(e.target.value)}
+                        >
+                          <option value="newest">Newest First</option>
+                          <option value="oldest">Oldest First</option>
+                        </Select>
                 <Button 
                           size="xs" 
                   colorScheme="green"
@@ -10045,7 +10207,29 @@ useEffect(() => {
                                 </VStack>
                               </Box>
                             )}
-                            {log.map((entry) => (
+                            {(() => {
+                              // Filter and sort log entries
+                              let filteredLog = [...log];
+                              
+                              // Filter by type
+                              if (logFilterType !== "all") {
+                                filteredLog = filteredLog.filter(entry => entry.type === logFilterType);
+                              }
+                              
+                              // Sort by timestamp
+                              if (logSortOrder === "oldest") {
+                                filteredLog.sort((a, b) => {
+                                  const timeA = new Date(`2000-01-01 ${a.timestamp}`);
+                                  const timeB = new Date(`2000-01-01 ${b.timestamp}`);
+                                  return timeA - timeB;
+                                });
+                              } else {
+                                // Newest first (default - reverse chronological)
+                                filteredLog.reverse();
+                              }
+                              
+                              return filteredLog;
+                            })().map((entry) => (
                               <Box key={entry.id}>
                       <Text 
                                   fontSize="xs" 
