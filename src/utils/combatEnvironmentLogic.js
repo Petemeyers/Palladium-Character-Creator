@@ -82,33 +82,61 @@ export function getWeaponType(weapon) {
  * @param {Object} weapon - Weapon object
  * @returns {number} Length in feet
  */
-export function getWeaponLength(weapon) {
+/**
+ * Get weapon length/reach, adjusted for small/tiny races
+ * @param {Object} weapon - Weapon object
+ * @param {Object} character - Character object (optional, for size adjustments)
+ * @returns {number} Weapon length/reach in feet
+ */
+export function getWeaponLength(weapon, character = null) {
   if (!weapon) return 3; // Default medium weapon
+
+  let baseLength = 3;
 
   // Check explicit length property
   if (weapon.length && typeof weapon.length === "number") {
-    return weapon.length;
+    baseLength = weapon.length;
   }
-
   // Infer from reach
-  if (weapon.reach && typeof weapon.reach === "number") {
-    return weapon.reach;
+  else if (weapon.reach && typeof weapon.reach === "number") {
+    baseLength = weapon.reach;
+  }
+  // Infer from weapon type
+  else {
+    const weaponType = getWeaponType(weapon);
+    switch (weaponType) {
+      case "SHORT":
+        baseLength = 2;
+        break;
+      case "MEDIUM":
+        baseLength = 3;
+        break;
+      case "LONG":
+        baseLength = 6;
+        break;
+      case "HEAVY":
+        baseLength = 5;
+        break;
+      default:
+        baseLength = 3;
+    }
   }
 
-  // Infer from weapon type
-  const weaponType = getWeaponType(weapon);
-  switch (weaponType) {
-    case "SHORT":
-      return 2;
-    case "MEDIUM":
-      return 3;
-    case "LONG":
-      return 6;
-    case "HEAVY":
-      return 5;
-    default:
-      return 3;
+  // Apply size adjustments for small/tiny races using normal-sized weapons
+  if (character) {
+    try {
+      const { getAdjustedWeaponLength } = require('./weaponSizeSystem.js');
+      const race = character.species || character.race;
+      if (race) {
+        return getAdjustedWeaponLength(baseLength, race, character);
+      }
+    } catch (e) {
+      // If weaponSizeSystem not available, return base length
+      // This prevents circular dependency issues
+    }
   }
+
+  return baseLength;
 }
 
 /**

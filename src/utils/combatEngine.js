@@ -29,6 +29,8 @@ import {
   STAMINA_COSTS,
 } from "./combatFatigueSystem.js";
 
+import { getAdjustedWeaponDamage } from "./weaponSizeSystem.js";
+
 import {
   initializeGrappleState,
   attemptGrapple,
@@ -880,10 +882,17 @@ export class CombatEngine {
    */
   calculateDamage(attacker, weapon = null) {
     let baseDamage = 0;
+    let damageFormula = null;
 
     if (weapon && weapon.damage) {
+      // Get race/species for weapon size adjustment
+      const race = attacker.species || attacker.race || attacker.type;
+      
+      // Apply weapon size modifiers (giant +1 die, gnome reduced damage)
+      damageFormula = getAdjustedWeaponDamage(weapon.damage, race);
+      
       // Parse damage dice (e.g., "1d8", "2d6+3")
-      baseDamage = this.rollDamageDice(weapon.damage);
+      baseDamage = this.rollDamageDice(damageFormula);
     } else {
       // Unarmed damage
       const PS = attacker.attributes?.PS || attacker.PS || 10;

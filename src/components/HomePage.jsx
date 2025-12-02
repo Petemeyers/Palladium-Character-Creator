@@ -13,7 +13,7 @@ const HomePage = () => {
             Create Character
           </Link>
           <Link to="/character-list" className="home-button">
-            Generate Characters
+            Character List
           </Link>
           <Link to="/character-sheet" className="home-button">
             📄 Character Sheet

@@ -10,6 +10,7 @@ import Chat from './components/Chat';
 import Navbar from './components/Navbar';
 import axiosInstance from './utils/axios';
 import ErrorBoundary from './components/ErrorBoundary';
+import { syncEquippedWeapons } from './utils/weaponManager';
 
 // Lazy load heavy components
 import {
@@ -51,7 +52,9 @@ function App() {
   const fetchCharacters = useCallback(async () => {
     try {
       const response = await axiosInstance.get('/characters');
-      setCharacters(response.data);
+      // Sync equippedWeapons from equipped object for all characters to ensure consistency
+      const syncedCharacters = response.data.map(char => syncEquippedWeapons(char));
+      setCharacters(syncedCharacters);
       setDataLoaded(true);
     } catch (error) {
       console.error('Error fetching characters:', error);
@@ -88,10 +91,19 @@ function App() {
     try {
       const response = await axiosInstance.put(`/characters/${characterId}`, updates);
       if (response.data.success) {
+        // Sync equippedWeapons from equipped object for the updated character
+        const syncedCharacter = syncEquippedWeapons(response.data.character);
         setCharacters(chars => chars.map(char => 
-          char._id === characterId ? response.data.character : char
+          char._id === characterId ? syncedCharacter : char
         ));
-        return response.data.character;
+        return syncedCharacter;
+      } else if (response.data) {
+        // Handle case where response.data is the character directly (not wrapped in success)
+        const syncedCharacter = syncEquippedWeapons(response.data);
+        setCharacters(chars => chars.map(char => 
+          char._id === characterId ? syncedCharacter : char
+        ));
+        return syncedCharacter;
       }
     } catch (error) {
       console.error('Error updating character:', error);

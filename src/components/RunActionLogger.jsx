@@ -60,7 +60,6 @@ export default function RunActionLogger({ attacker, target, onUpdate, disabled =
   const movePerAction = runPerMelee / attacksPerMelee;
   const distance = getDistance(attacker.position, target.position);
   const weaponRange = attacker.weapon?.range || 5;
-  const timestamp = new Date().toLocaleTimeString();
 
   // --- Generic updater ---
   const updateLog = (logText, newPos, newActions) => {
@@ -86,12 +85,12 @@ export default function RunActionLogger({ attacker, target, onUpdate, disabled =
     const newActions = attacker.remainingAttacks - 1;
 
     const log = [
-      `[${timestamp}] 🏃 ${attacker.name} uses one action to RUN (Speed ${speed} → ${runPerMelee}ft/melee)`,
-      `[${timestamp}] 📍 Moves ${Math.round(moveDistance)}ft toward ${target.name} → new position ${coordsToString(newPos)}`,
+      `🏃 ${attacker.name} uses one action to RUN (Speed ${speed} → ${runPerMelee}ft/melee)`,
+      `📍 Moves ${Math.round(moveDistance)}ft toward ${target.name} → new position ${coordsToString(newPos)}`,
       stillOutOfRange
-        ? `[${timestamp}] 📍 Still ${Math.round(distance - moveDistance)}ft out of melee range`
-        : `[${timestamp}] ⚔️ Now within melee range!`,
-      `[${timestamp}] ⏭️ ${attacker.name} has ${newActions} action(s) remaining this melee.`,
+        ? `📍 Still ${Math.round(distance - moveDistance)}ft out of melee range`
+        : `⚔️ Now within melee range!`,
+      `⏭️ ${attacker.name} has ${newActions} action(s) remaining this melee.`,
     ];
 
     updateLog(log, newPos, newActions);
@@ -101,7 +100,7 @@ export default function RunActionLogger({ attacker, target, onUpdate, disabled =
   const handleCharge = () => {
     if (attacker.remainingAttacks <= 1) return; // need 2 actions (attack + recovery)
     if (distance < 20 || distance > 60) {
-      const msg = `[${timestamp}] ⚠️ ${attacker.name} needs 20–60ft to charge (currently ${Math.round(distance)}ft).`;
+      const msg = `⚠️ ${attacker.name} needs 20–60ft to charge (currently ${Math.round(distance)}ft).`;
       updateLog([msg], attacker.position, attacker.remainingAttacks);
       return;
     }
@@ -113,12 +112,12 @@ export default function RunActionLogger({ attacker, target, onUpdate, disabled =
     const damageRoll = rollDice(damageDie) * 2; // double damage
 
     const log = [
-      `[${timestamp}] ⚡ ${attacker.name} performs a CHARGE ATTACK!`,
-      `[${timestamp}] 🏇 Distance covered: ${Math.round(distance)}ft (Speed ${speed})`,
-      `[${timestamp}] 🎯 Strike Roll: ${strikeRoll} (+2 for charge)`,
-      `[${timestamp}] 💥 Damage: ${damageRoll} (double for charge)`,
-      `[${timestamp}] ⚔️ ${attacker.name} slams into ${target.name}!`,
-      `[${timestamp}] ⏭️ ${attacker.name} loses next action (now ${newActions} remaining).`,
+      `⚡ ${attacker.name} performs a CHARGE ATTACK!`,
+      `🏇 Distance covered: ${Math.round(distance)}ft (Speed ${speed})`,
+      `🎯 Strike Roll: ${strikeRoll} (+2 for charge)`,
+      `💥 Damage: ${damageRoll} (double for charge)`,
+      `⚔️ ${attacker.name} slams into ${target.name}!`,
+      `⏭️ ${attacker.name} loses next action (now ${newActions} remaining).`,
     ];
 
     updateLog(log, newPos, newActions);

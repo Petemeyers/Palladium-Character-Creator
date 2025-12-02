@@ -187,7 +187,7 @@ const TraderShop = () => {
             <h3>👕 Clothing & Equipment</h3>
             <p style={{ fontSize: '12px', color: '#666', marginBottom: '10px' }}>
               💡 <strong>Tip:</strong> Items in inventory need to be equipped to show here. 
-              <a href="/" style={{ color: '#007bff', textDecoration: 'underline', marginLeft: '5px' }}>
+              <a href="/character-list" style={{ color: '#007bff', textDecoration: 'underline', marginLeft: '5px' }}>
                 Go to Character List to equip items
               </a>
             </p>

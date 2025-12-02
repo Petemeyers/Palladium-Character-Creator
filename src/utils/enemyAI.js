@@ -11,6 +11,13 @@ import {
   getFatigueStatus,
   getSprintDistanceFeet,
 } from "./fatigueSystem.js";
+import {
+  evaluateWeaponBonuses,
+  rankWeaponsByBonuses,
+  analyzeClosingDistance,
+  getOptimalWeaponRecommendation,
+  makeWeaponBonusAIDecision,
+} from "./weaponBonusAI.js";
 
 // AI Personality types
 export const AI_PERSONALITIES = {
@@ -183,6 +190,28 @@ export class EnemyAI {
       return sprintDecision;
     }
 
+    // Get optimal weapon recommendation (prefers weapons with bonuses)
+    const primaryTarget = targets[0];
+    const weaponRecommendation = this.getOptimalWeaponForTarget(enemy, primaryTarget, combatState);
+    
+    // If recommendation suggests closing distance and it's beneficial, prioritize it
+    if (weaponRecommendation.action === "close_distance" && weaponRecommendation.score > 1.0) {
+      return {
+        action: COMBAT_ACTIONS.MOVE,
+        target: primaryTarget,
+        score: weaponRecommendation.score * 1.5, // Boost score for closing
+        reasoning: weaponRecommendation.reasoning,
+        isStrategic: true,
+        weaponRecommendation: weaponRecommendation,
+      };
+    }
+
+    // Select best weapon if recommendation is better than current
+    if (weaponRecommendation.weapon && weaponRecommendation.score > 0) {
+      // Update enemy's weapon preference (could be used to switch weapons)
+      enemy._preferredWeapon = weaponRecommendation.weapon;
+    }
+
     const availableActions = this.getAvailableActions(enemy, combatState);
     const scoredActions = this.scoreActions(
       availableActions,
@@ -196,13 +225,78 @@ export class EnemyAI {
 
     const bestAction = scoredActions[0];
 
+    // Enhance reasoning with weapon bonus info if available
+    let enhancedReasoning = bestAction.reasoning;
+    if (weaponRecommendation.evaluation && weaponRecommendation.evaluation.bonuses.length > 0) {
+      enhancedReasoning += ` | Weapon bonuses: ${weaponRecommendation.evaluation.bonuses.join(', ')}`;
+    }
+
     return {
       action: bestAction.action,
       target: bestAction.target,
       score: bestAction.score,
-      reasoning: bestAction.reasoning,
+      reasoning: enhancedReasoning,
       isStrategic: bestAction.score > 2.0,
+      weaponRecommendation: weaponRecommendation,
     };
+  }
+
+  /**
+   * Get optimal weapon for target based on bonuses
+   */
+  getOptimalWeaponForTarget(enemy, target, combatState) {
+    try {
+      // Get available weapons
+      const availableWeapons = [];
+      if (enemy.equippedWeapons && enemy.equippedWeapons.length > 0) {
+        enemy.equippedWeapons.forEach(w => {
+          if (w && w.name && w.name !== "Unarmed") {
+            availableWeapons.push(w);
+          }
+        });
+      }
+      if (enemy.inventory) {
+        enemy.inventory.forEach(item => {
+          if (item.type && (item.type.toLowerCase() === 'weapon' || item.damage)) {
+            if (!availableWeapons.find(w => w.name === item.name)) {
+              availableWeapons.push(item);
+            }
+          }
+        });
+      }
+
+      if (availableWeapons.length === 0) {
+        return {
+          weapon: null,
+          action: "attack",
+          score: 0,
+          reasoning: "No weapons available",
+        };
+      }
+
+      // Enhanced combat state
+      const enhancedCombatState = {
+        ...combatState,
+        terrain: combatState.terrain || "open",
+        terrainWidth: combatState.terrainWidth || 10,
+        terrainHeight: combatState.terrainHeight || 10,
+        terrainDensity: combatState.terrainDensity || 0,
+        hasObstructions: combatState.hasObstructions || false,
+        isFirstMeleeRound: combatState.round === 1,
+        combatDistance: combatState.combatDistance || this.calculateDistance(enemy, target) || 5,
+        hasClosedDistance: combatState.hasClosedDistance || false,
+      };
+
+      return getOptimalWeaponRecommendation(availableWeapons, enemy, target, enhancedCombatState);
+    } catch (error) {
+      console.warn("Failed to get optimal weapon:", error);
+      return {
+        weapon: null,
+        action: "attack",
+        score: 0,
+        reasoning: "Error evaluating weapons",
+      };
+    }
   }
 
   /**
@@ -449,6 +543,12 @@ export class EnemyAI {
       score += this.evaluateTarget(enemy, target, combatState);
     }
 
+    // Weapon bonus evaluation for strike/attack actions
+    if (action.type === "offensive" && target) {
+      const weaponBonusScore = this.evaluateWeaponBonusesForAction(enemy, target, combatState, action);
+      score += weaponBonusScore;
+    }
+
     // Health-based adjustments
     const healthRatio = enemy.currentHP / enemy.maxHP;
     if (healthRatio < 0.3) {
@@ -472,6 +572,96 @@ export class EnemyAI {
     score *= this.difficultyMultipliers[this.difficulty] || 1.0;
 
     return score;
+  }
+
+  /**
+   * Evaluate weapon bonuses for an action
+   * Prefers weapons with bonuses and closing distance for close-range bonuses
+   */
+  evaluateWeaponBonusesForAction(enemy, target, combatState, action) {
+    let bonusScore = 0;
+
+    try {
+      // Get available weapons
+      const availableWeapons = [];
+      if (enemy.equippedWeapons && enemy.equippedWeapons.length > 0) {
+        enemy.equippedWeapons.forEach(w => {
+          if (w && w.name && w.name !== "Unarmed") {
+            availableWeapons.push(w);
+          }
+        });
+      }
+      if (enemy.inventory) {
+        enemy.inventory.forEach(item => {
+          if (item.type && (item.type.toLowerCase() === 'weapon' || item.damage)) {
+            if (!availableWeapons.find(w => w.name === item.name)) {
+              availableWeapons.push(item);
+            }
+          }
+        });
+      }
+
+      if (availableWeapons.length === 0) {
+        return 0; // No weapons to evaluate
+      }
+
+      // Get current weapon
+      const currentWeapon = enemy.equippedWeapons?.[0] || enemy.equippedWeapon || availableWeapons[0];
+      const defenderWeapon = target.equippedWeapons?.[0] || target.equippedWeapon || null;
+
+      // Enhanced combat state with distance
+      const enhancedCombatState = {
+        ...combatState,
+        terrain: combatState.terrain || "open",
+        terrainWidth: combatState.terrainWidth || 10,
+        terrainHeight: combatState.terrainHeight || 10,
+        terrainDensity: combatState.terrainDensity || 0,
+        hasObstructions: combatState.hasObstructions || false,
+        isFirstMeleeRound: combatState.round === 1,
+        combatDistance: combatState.combatDistance || this.calculateDistance(enemy, target) || 5,
+        hasClosedDistance: combatState.hasClosedDistance || false,
+      };
+
+      // Evaluate current weapon bonuses
+      const currentEvaluation = evaluateWeaponBonuses(
+        currentWeapon,
+        enemy,
+        target,
+        defenderWeapon,
+        enhancedCombatState
+      );
+
+      // If action is strike/attack, add weapon bonus score
+      if (action.name === "Strike" || action.name === "Attack") {
+        bonusScore += currentEvaluation.score * 0.5; // Weight weapon bonuses
+        
+        // Prefer weapons with bonuses
+        if (currentEvaluation.totalBonus > 0) {
+          bonusScore += currentEvaluation.totalBonus * 0.3;
+        }
+      }
+
+      // Check if closing distance would help
+      if (action.name === "Move" || action.name === "Sprint to Target") {
+        const closeAnalysis = analyzeClosingDistance(enemy, target, currentWeapon, enhancedCombatState);
+        if (closeAnalysis.shouldClose && closeAnalysis.benefit > 0) {
+          bonusScore += closeAnalysis.benefit * 0.4; // Prefer closing if it provides bonuses
+        }
+      }
+
+      // Rank all weapons and prefer best one
+      const rankedWeapons = rankWeaponsByBonuses(availableWeapons, enemy, target, enhancedCombatState);
+      if (rankedWeapons.length > 0 && rankedWeapons[0].score > currentEvaluation.score) {
+        // There's a better weapon available
+        bonusScore += (rankedWeapons[0].score - currentEvaluation.score) * 0.2;
+      }
+
+    } catch (error) {
+      // If weapon bonus evaluation fails, continue without it
+      console.warn("Weapon bonus evaluation failed:", error);
+    }
+
+    return bonusScore;
   }
 
   /**

@@ -100,11 +100,13 @@ export function getEnvironmentCategory(
  * Compare weapon reach categories
  * @param {Object} weapon1 - First weapon
  * @param {Object} weapon2 - Second weapon
+ * @param {Object} character1 - Character using weapon1 (optional, for size adjustments)
+ * @param {Object} character2 - Character using weapon2 (optional, for size adjustments)
  * @returns {Object} Comparison result {longer: weapon, shorter: weapon, difference: number}
  */
-export function compareWeaponReach(weapon1, weapon2) {
-  const length1 = getWeaponLength(weapon1);
-  const length2 = getWeaponLength(weapon2);
+export function compareWeaponReach(weapon1, weapon2, character1 = null, character2 = null) {
+  const length1 = getWeaponLength(weapon1, character1);
+  const length2 = getWeaponLength(weapon2, character2);
 
   if (length1 > length2) {
     return {
@@ -263,11 +265,12 @@ export function getReachStrikeModifiers(
   isFirstMeleeRound = false,
   hasClosedDistance = true,
   combatDistance = 5,
-  attackType = "auto"
+  attackType = "auto",
+  attacker = null
 ) {
   const modifiers = { strike: 0, notes: [] };
   const weaponType = getWeaponType(attackerWeapon);
-  const weaponLength = getWeaponLength(attackerWeapon);
+  const weaponLength = getWeaponLength(attackerWeapon, attacker);
   const resolvedAttackType = getAttackType(attackerWeapon, attackType);
   const envCategory = getEnvironmentCategory(
     terrainWidth,

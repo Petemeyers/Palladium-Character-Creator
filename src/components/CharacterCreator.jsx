@@ -35,7 +35,8 @@ import { getRandomName } from '../data/characterNames';
 import { occSkillTables } from '../utils/occSkills';
 import { lookupSkill, getSkillPercentage } from '../utils/skillSystem';
 import { getSkillBonusesAtLevel } from '../data/skillProgression';
-import { skillBonuses as staticSkillBonuses } from '../data/skillBonuses';
+import { skillBonuses as staticSkillBonuses, calculateSkillBonuses } from '../data/skillBonuses';
+import { BASE_SAVES, OCC_SAVE_MODIFIERS, getLevelSaveBonus } from '../utils/savingThrowsSystem';
 
 // Function to get Mind Mage psionics based on level and psionic type
 const getMindMagePsionics = async (psionicResult, level) => {
@@ -175,32 +176,75 @@ const CharacterCreator = ({ onCreateCharacter }) => {
         ) || {};
       }
       
+      // Calculate skill bonuses
+      const skillBonuses = calculateSkillBonuses(
+        occSkills || [],
+        electiveSkills || [],
+        secondarySkills || [],
+        currentLevel
+      );
+      
+      // Calculate Save vs Horror Factor
+      const occCategory = occData?.category || "Men of Arms";
+      const baseHorrorSave = BASE_SAVES.horror || 12;
+      const occHorrorMod = OCC_SAVE_MODIFIERS[occCategory]?.horror || 0;
+      const levelHorrorBonus = getLevelSaveBonus(currentLevel);
+      const peHorrorBonus = Math.floor((attributes.PE || 0) / 2) - 5; // PE bonus: (PE-10)/2
+      const vsHorrorFactor = baseHorrorSave - occHorrorMod - levelHorrorBonus - peHorrorBonus;
+      
+      // Get combat mods from race and OCC
+      const raceData = species ? (palladiumData.races?.[species] || null) : null;
+      const raceCombatMods = raceData?.combatMods || { damage: 0, initiative: 0, speedBonus: 0 };
+      const occCombatMods = occData?.combatMods || { damage: 0, initiative: 0, speedBonus: 0 };
+      const totalInitiativeBonus = (skillBonuses.initiative || 0) + (raceCombatMods.initiative || 0) + (occCombatMods.initiative || 0);
+      const totalSpeedBonus = (raceCombatMods.speedBonus || 0) + (occCombatMods.speedBonus || 0);
+      
       // Ensure all required properties exist by merging with defaults
       setLevelStats({
-        hp: calculatedHP || null, // Always use calculatedHP
+        // Defaults
+        hp: null,
         attacksPerMelee: 2,
-        saves: { vsMagic: 14, vsPoison: 14, vsPsionics: 15 },
+        saves: { vsMagic: 14, vsPoison: 14, vsPsionics: 15, vsHorrorFactor: 12 },
         combatBonuses: { strike: 0, parry: 0, dodge: 0, damage: 0 },
         ppe: 0,
         isp: 0,
         skillIncreases: { elective: 0, secondary: 0 },
-        ...stats, // Override with actual stats if provided
-        // Ensure saves and combatBonuses are always objects
-        saves: stats?.saves || { vsMagic: 14, vsPoison: 14, vsPsionics: 15 },
-        combatBonuses: stats?.combatBonuses || { strike: 0, parry: 0, dodge: 0, damage: 0 },
-        // Override hp with calculatedHP (calculatedHP takes precedence)
+        skillBonuses: { strike: 0, parry: 0, dodge: 0, damage: 0, initiative: 0, ispBonus: 0, ispRecovery: 1, attacksPerMelee: 0, weaponProficiencies: [] },
+        initiativeBonus: 0,
+        speedBonus: 0,
+        ispBonus: 0,
+        ispRecovery: 1,
+        // Override with stats from getStatsForLevel
+        ...stats,
+        // Override with calculated values (these take precedence)
         hp: calculatedHP || stats?.hp || null,
+        saves: {
+          ...(stats?.saves || { vsMagic: 14, vsPoison: 14, vsPsionics: 15 }),
+          vsHorrorFactor: vsHorrorFactor
+        },
+        skillBonuses: skillBonuses,
+        initiativeBonus: totalInitiativeBonus,
+        speedBonus: totalSpeedBonus,
+        ispBonus: skillBonuses.ispBonus || 0,
+        ispRecovery: skillBonuses.ispRecovery || 1,
+        ppe: stats?.ppe || psionics?.ppe || 0,
+        isp: stats?.isp || psionics?.isp || 0,
       });
     } else if (Object.keys(attributes).length === 0) {
       // Reset levelStats if no attributes are rolled yet
       setLevelStats({
         hp: null,
         attacksPerMelee: 2,
-        saves: { vsMagic: 14, vsPoison: 14, vsPsionics: 15 },
+        saves: { vsMagic: 14, vsPoison: 14, vsPsionics: 15, vsHorrorFactor: 12 },
         combatBonuses: { strike: 0, parry: 0, dodge: 0, damage: 0 },
         ppe: 0,
         isp: 0,
         skillIncreases: { elective: 0, secondary: 0 },
+        skillBonuses: { strike: 0, parry: 0, dodge: 0, damage: 0, initiative: 0, ispBonus: 0, ispRecovery: 1, attacksPerMelee: 0, weaponProficiencies: [] },
+        initiativeBonus: 0,
+        speedBonus: 0,
+        ispBonus: 0,
+        ispRecovery: 1,
       });
     }
   }, [level, occData, attributes, hp, psionics, occSkills, electiveSkills, secondarySkills, useDeterministicHP]);
@@ -2197,6 +2241,44 @@ const CharacterCreator = ({ onCreateCharacter }) => {
                   <span style={{ fontWeight: 'bold', color: '#4a5568' }}>🏃 Dodge Bonus:</span>
                   <strong style={{ color: '#38a169', fontSize: '18px' }}>+{levelStats.combatBonuses?.dodge ?? 0}</strong>
                   </div>
+                <div className="stat-row" style={{ 
+                  backgroundColor: 'white', 
+                  padding: '10px', 
+                  borderRadius: '5px',
+                  border: '1px solid #e2e8f0'
+                }}>
+                  <span style={{ fontWeight: 'bold', color: '#4a5568' }}>⚔️ Damage Bonus:</span>
+                  <strong style={{ color: '#38a169', fontSize: '18px' }}>+{levelStats.combatBonuses?.damage ?? 0}</strong>
+                  </div>
+                <div className="stat-row" style={{ 
+                  backgroundColor: 'white', 
+                  padding: '10px', 
+                  borderRadius: '5px',
+                  border: '1px solid #e2e8f0'
+                }}>
+                  <span style={{ fontWeight: 'bold', color: '#4a5568' }}>⚡ Initiative Bonus:</span>
+                  <strong style={{ color: '#38a169', fontSize: '18px' }}>+{levelStats.initiativeBonus ?? 0}</strong>
+                  </div>
+                {(levelStats.speedBonus ?? 0) !== 0 && (
+                <div className="stat-row" style={{ 
+                  backgroundColor: 'white', 
+                  padding: '10px', 
+                  borderRadius: '5px',
+                  border: '1px solid #e2e8f0'
+                }}>
+                  <span style={{ fontWeight: 'bold', color: '#4a5568' }}>🏃 Speed Bonus:</span>
+                  <strong style={{ color: '#38a169', fontSize: '18px' }}>+{levelStats.speedBonus ?? 0}</strong>
+                  </div>
+                )}
+                <div className="stat-row" style={{ 
+                  backgroundColor: 'white', 
+                  padding: '10px', 
+                  borderRadius: '5px',
+                  border: '1px solid #e2e8f0'
+                }}>
+                  <span style={{ fontWeight: 'bold', color: '#4a5568' }}>😱 Save vs Horror Factor:</span>
+                  <strong style={{ color: '#2d3748', fontSize: '18px' }}>{levelStats.saves?.vsHorrorFactor ?? 12}</strong>
+                  </div>
                   {levelStats.ppe > 0 && (
                   <div className="stat-row" style={{ 
                     backgroundColor: 'white', 
@@ -2217,6 +2299,28 @@ const CharacterCreator = ({ onCreateCharacter }) => {
                   }}>
                     <span style={{ fontWeight: 'bold', color: '#4a5568' }}>🧠 ISP:</span>
                     <strong style={{ color: '#805ad5', fontSize: '18px' }}>{levelStats.isp}</strong>
+                    </div>
+                  )}
+                  {(levelStats.ispBonus ?? 0) > 0 && (
+                  <div className="stat-row" style={{ 
+                    backgroundColor: 'white', 
+                    padding: '10px', 
+                    borderRadius: '5px',
+                    border: '1px solid #e2e8f0'
+                  }}>
+                    <span style={{ fontWeight: 'bold', color: '#4a5568' }}>✨ ISP Bonus:</span>
+                    <strong style={{ color: '#805ad5', fontSize: '18px' }}>+{levelStats.ispBonus ?? 0}</strong>
+                    </div>
+                  )}
+                  {(levelStats.ispRecovery ?? 1) > 1 && (
+                  <div className="stat-row" style={{ 
+                    backgroundColor: 'white', 
+                    padding: '10px', 
+                    borderRadius: '5px',
+                    border: '1px solid #e2e8f0'
+                  }}>
+                    <span style={{ fontWeight: 'bold', color: '#4a5568' }}>🔄 ISP Recovery:</span>
+                    <strong style={{ color: '#805ad5', fontSize: '18px' }}>×{levelStats.ispRecovery ?? 1}</strong>
                     </div>
                   )}
                 </div>
@@ -2290,16 +2394,36 @@ const CharacterCreator = ({ onCreateCharacter }) => {
                     <div className="weapon-proficiencies">
                       <h4>⚔️ Weapon Proficiencies (Weapon-Specific):</h4>
                       <ul>
-                        {levelStats.skillBonuses.weaponProficiencies.map((wp, index) => (
-                          <li key={index}>
-                            <strong>{wp.name.replace('W.P. ', '')}:</strong>
-                            {wp.bonuses.strike > 0 && ` +${wp.bonuses.strike} strike`}
-                            {wp.bonuses.parry > 0 && ` +${wp.bonuses.parry} parry`}
-                            {wp.bonuses.dodge > 0 && ` +${wp.bonuses.dodge} dodge`}
-                            {wp.bonuses.damage > 0 && ` +${wp.bonuses.damage} damage`}
-                            <span className="wp-level-note"> (at level {level})</span>
-                          </li>
-                        ))}
+                        {levelStats.skillBonuses.weaponProficiencies.map((wp, index) => {
+                          // Recalculate bonuses at current level to ensure they're up to date
+                          const currentLevel = parseInt(level) || 1;
+                          const levelBasedBonuses = getSkillBonusesAtLevel(wp.name, currentLevel);
+                          let bonuses = levelBasedBonuses.bonuses || { strike: 0, parry: 0, dodge: 0, damage: 0 };
+                          
+                          // If no progression found, fall back to static bonuses
+                          if (bonuses.strike === 0 && bonuses.parry === 0 && bonuses.dodge === 0 && bonuses.damage === 0) {
+                            const staticBonus = staticSkillBonuses[wp.name];
+                            if (staticBonus) {
+                              bonuses = {
+                                strike: staticBonus.strike || 0,
+                                parry: staticBonus.parry || 0,
+                                dodge: staticBonus.dodge || 0,
+                                damage: staticBonus.damage || 0,
+                              };
+                            }
+                          }
+                          
+                          return (
+                            <li key={index}>
+                              <strong>{wp.name.replace('W.P. ', '')}:</strong>
+                              {bonuses.strike > 0 && ` +${bonuses.strike} strike`}
+                              {bonuses.parry > 0 && ` +${bonuses.parry} parry`}
+                              {bonuses.dodge > 0 && ` +${bonuses.dodge} dodge`}
+                              {bonuses.damage > 0 && ` +${bonuses.damage} damage`}
+                              <span className="wp-level-note"> (at level {currentLevel})</span>
+                            </li>
+                          );
+                        })}
                       </ul>
                       <p className="wp-note">* W.P. bonuses only apply when using that weapon type and improve with level</p>
                     </div>

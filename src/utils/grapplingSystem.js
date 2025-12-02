@@ -18,6 +18,7 @@ import {
   canLiftAndThrow,
   getLeveragePenalty,
 } from "./sizeStrengthModifiers.js";
+import { calculateArmorDamage } from "./equipmentManager.js";
 
 /**
  * Grapple states
@@ -45,6 +46,11 @@ export function initializeGrappleState(character) {
     },
     canUseLongWeapons: true, // Long weapons unusable when grappled
     roundsInGrapple: 0, // Consecutive rounds in grapple
+    // Positional tracking for grapple
+    sharedHex: null, // hex where the clinch is happening
+    attackerOriginHex: null, // where the grappler came from
+    isAttacker: false, // true for the one who initiated the grapple
+    hasGrappleAdvantage: false, // one-time bonus flag for reversal
   };
 }
 
@@ -55,7 +61,7 @@ export function initializeGrappleState(character) {
  * @param {Function} rollDice - Dice rolling function (defaults to Math.random)
  * @returns {Object} Result object with success status and message
  */
-export function attemptGrapple(attacker, defender, rollDice = null) {
+export function attemptGrapple(attacker, defender, rollDice = null, attackerPos = null, defenderPos = null) {
   if (!attacker.grappleState) {
     attacker.grappleState = initializeGrappleState(attacker);
   }
@@ -103,31 +109,43 @@ export function attemptGrapple(attacker, defender, rollDice = null) {
         defendRoll: 20,
       };
     } else {
-      // Automatic grapple success
-      attacker.grappleState.state = GRAPPLE_STATES.CLINCH;
-      attacker.grappleState.opponent = defender.id;
-      defender.grappleState.state = GRAPPLE_STATES.GRAPPLED;
-      defender.grappleState.opponent = attacker.id;
+      // Automatic grapple success - use initiateGrapple to pull into same hex
+      // Pass current positions if provided (from positions state)
+      const grappleResult = initiateGrapple({ attacker, defender, attackerPos, defenderPos });
+      
+      if (grappleResult.success) {
+        // Apply penalties to defender
+        grappleResult.defender.grappleState.penalties = {
+          strike: 0,
+          parry: -3,
+          dodge: -2,
+        };
+        grappleResult.defender.grappleState.canUseLongWeapons = false;
 
-      defender.grappleState.penalties = {
-        strike: 0,
-        parry: -3,
-        dodge: -2,
-      };
-      defender.grappleState.canUseLongWeapons = false;
+        drainStamina(grappleResult.attacker, STAMINA_COSTS.GRAPPLING, 1);
+        drainStamina(grappleResult.defender, STAMINA_COSTS.GRAPPLING, 1);
 
-      drainStamina(attacker, STAMINA_COSTS.GRAPPLING, 1);
-      drainStamina(defender, STAMINA_COSTS.GRAPPLING, 1);
-
-      return {
-        success: true,
-        message: `${attacker.name} automatically grapples ${defender.name} (strength advantage too great)!`,
-        attackRoll: null,
-        defendRoll: defenderRoll,
-        autoGrapple: true,
-        attackerState: attacker.grappleState,
-        defenderState: defender.grappleState,
-      };
+        return {
+          success: true,
+          message: `${attacker.name} automatically grapples ${defender.name} (strength advantage too great)!`,
+          attackRoll: null,
+          defendRoll: defenderRoll,
+          autoGrapple: true,
+          attacker: grappleResult.attacker,
+          defender: grappleResult.defender,
+          attackerState: grappleResult.attacker.grappleState,
+          defenderState: grappleResult.defender.grappleState,
+        };
+      } else {
+        // Failed to initiate grapple (distance issue)
+        drainStamina(attacker, STAMINA_COSTS.NORMAL_COMBAT, 1);
+        return {
+          success: false,
+          reason: grappleResult.reason,
+          attackRoll: null,
+          defendRoll: defenderRoll,
+        };
+      }
     }
   }
 
@@ -137,40 +155,51 @@ export function attemptGrapple(attacker, defender, rollDice = null) {
     rollFn() +
     attackerPPBonus +
     attackerStrikeBonus +
-    sizeModifiers.attackerStrikeBonus;
+    (sizeModifiers.strikeBonus || 0);
   const defendRoll =
     rollFn() +
     defenderPPBonus +
     defenderParryBonus +
-    sizeModifiers.defenderParryPenalty;
+    (sizeModifiers.defenderParryPenalty || 0);
 
   if (attackRoll > defendRoll) {
-    // Successfully grappled
-    attacker.grappleState.state = GRAPPLE_STATES.CLINCH;
-    attacker.grappleState.opponent = defender.id;
-    defender.grappleState.state = GRAPPLE_STATES.GRAPPLED;
-    defender.grappleState.opponent = attacker.id;
+    // Successfully grappled - use initiateGrapple to pull into same hex
+    // Pass current positions if provided (from positions state)
+    const grappleResult = initiateGrapple({ attacker, defender, attackerPos, defenderPos });
+    
+    if (grappleResult.success) {
+      // Apply penalties to defender
+      grappleResult.defender.grappleState.penalties = {
+        strike: 0,
+        parry: -3,
+        dodge: -2,
+      };
+      grappleResult.defender.grappleState.canUseLongWeapons = false;
 
-    // Apply penalties
-    defender.grappleState.penalties = {
-      strike: 0,
-      parry: -3,
-      dodge: -2,
-    };
-    defender.grappleState.canUseLongWeapons = false;
+      // Drain stamina (grappling costs 2x)
+      drainStamina(grappleResult.attacker, STAMINA_COSTS.GRAPPLING, 1);
+      drainStamina(grappleResult.defender, STAMINA_COSTS.GRAPPLING, 1);
 
-    // Drain stamina (grappling costs 2x)
-    drainStamina(attacker, STAMINA_COSTS.GRAPPLING, 1);
-    drainStamina(defender, STAMINA_COSTS.GRAPPLING, 1);
-
-    return {
-      success: true,
-      message: `${attacker.name} successfully grapples ${defender.name}!`,
-      attackRoll,
-      defendRoll,
-      attackerState: attacker.grappleState,
-      defenderState: defender.grappleState,
-    };
+      return {
+        success: true,
+        message: grappleResult.message, // Use message from initiateGrapple (no duplicate)
+        attackRoll,
+        defendRoll,
+        attacker: grappleResult.attacker,
+        defender: grappleResult.defender,
+        attackerState: grappleResult.attacker.grappleState,
+        defenderState: grappleResult.defender.grappleState,
+      };
+    } else {
+      // Failed to initiate grapple (distance issue)
+      drainStamina(attacker, STAMINA_COSTS.NORMAL_COMBAT, 1);
+      return {
+        success: false,
+        reason: grappleResult.reason,
+        attackRoll,
+        defendRoll,
+      };
+    }
   } else {
     // Failed to grapple
     drainStamina(attacker, STAMINA_COSTS.NORMAL_COMBAT, 1);
@@ -343,7 +372,42 @@ export function performTakedown(attacker, defender, rollDice = null) {
 }
 
 /**
+ * Check if attacker has Death Blow ability
+ * @param {Object} attacker - Character to check
+ * @returns {boolean} True if attacker has Death Blow ability
+ */
+export function hasDeathBlow(attacker) {
+  // Check hand-to-hand style for Death Blow
+  if (attacker?.handToHand?.hasDeathBlow) {
+    return true;
+  }
+  
+  // Check abilities array (from Character model)
+  if (attacker?.abilities && Array.isArray(attacker.abilities)) {
+    const hasAbility = attacker.abilities.some(
+      ability => 
+        (typeof ability === 'string' && ability.toLowerCase().includes('death blow')) ||
+        (typeof ability === 'object' && ability.name && ability.name.toLowerCase().includes('death blow'))
+    );
+    if (hasAbility) return true;
+  }
+  
+  // Check special_abilities array (from autoRoll)
+  if (attacker?.special_abilities && Array.isArray(attacker.special_abilities)) {
+    const hasAbility = attacker.special_abilities.some(
+      ability => 
+        (typeof ability === 'string' && ability.toLowerCase().includes('death blow')) ||
+        (typeof ability === 'object' && ability.name && ability.name.toLowerCase().includes('death blow'))
+    );
+    if (hasAbility) return true;
+  }
+  
+  return false;
+}
+
+/**
  * Ground strike (dagger or unarmed attack while grappling)
+ * Improved version with safer crit ranges and armor weak-point logic
  * @param {Object} attacker - Character attacking
  * @param {Object} defender - Character being attacked
  * @param {Object} weapon - Weapon being used (null for unarmed)
@@ -356,112 +420,143 @@ export function groundStrike(
   weapon = null,
   rollDice = null
 ) {
+  if (!attacker || !defender) {
+    return {
+      success: false,
+      hit: false,
+      reason: "Attacker or defender missing for ground strike.",
+    };
+  }
+
+  const attackerGrapple = attacker.grappleState;
+  const defenderGrapple = defender.grappleState;
+
   if (
-    !attacker.grappleState ||
-    (attacker.grappleState.state !== GRAPPLE_STATES.CLINCH &&
-      attacker.grappleState.state !== GRAPPLE_STATES.GROUND)
+    !attackerGrapple ||
+    !defenderGrapple ||
+    attackerGrapple.opponent !== defender.id
   ) {
     return {
       success: false,
-      reason: `${attacker.name} must be in a grapple to perform a ground strike!`,
+      hit: false,
+      reason: `${attacker.name} is not currently grappling ${defender.name}.`,
     };
   }
 
-  if (attacker.grappleState.opponent !== defender.id) {
+  if (
+    attackerGrapple.state !== GRAPPLE_STATES.CLINCH &&
+    attackerGrapple.state !== GRAPPLE_STATES.GROUND
+  ) {
     return {
       success: false,
-      reason: `${attacker.name} is not grappling ${defender.name}!`,
+      hit: false,
+      reason: `${attacker.name} must be in a clinch or on the ground with ${defender.name} to attempt a ground strike.`,
     };
   }
 
-  // Check if weapon is valid for grappling (short weapons only)
+  // Only short weapons (or unarmed) in a grapple
   if (weapon) {
     const weaponLength = weapon.length || weapon.range || 0;
     if (weaponLength > 2) {
-      // Long weapons (>2 feet) unusable in grapple
       return {
         success: false,
+        hit: false,
         reason: `${weapon.name} is too long to use in a grapple! Use a dagger or unarmed attack.`,
       };
     }
   }
 
-  // Get Physical Prowess bonus
   const attackerPP = attacker.attributes?.PP || attacker.PP || 10;
   const attackerPPBonus = Math.floor((attackerPP - 10) / 2);
 
-  // Get strike bonus
   const strikeBonus =
     attacker.bonuses?.strike || attacker.handToHand?.strikeBonus || 0;
 
-  // Dagger gets +1 bonus in grapple, crit on 18-20
-  const grappleBonus = weapon && weapon.type === "dagger" ? 1 : 0;
-  const critRange = weapon && weapon.type === "dagger" ? 18 : 20;
-
-  // Roll attack
+  // Dagger is slightly better in a grapple, but not insane
+  const daggerBonus = weapon && weapon.type === "dagger" ? 1 : 0;
   const rollFn = rollDice || (() => Math.floor(Math.random() * 20) + 1);
-  const attackRoll = rollFn() + attackerPPBonus + strikeBonus + grappleBonus;
+  const naturalRoll = rollFn();
 
-  // Drain stamina
+  const attackRoll = naturalRoll + attackerPPBonus + strikeBonus + daggerBonus;
+
+  // Grappling is tiring, especially in armor
   drainStamina(attacker, STAMINA_COSTS.GRAPPLING, 1);
+  // Defender also struggles and loses a bit of stamina
+  drainStamina(defender, STAMINA_COSTS.GRAPPLING, 0.5);
 
-  // Check for critical (natural 20 or expanded range for daggers)
-  const naturalRoll = attackRoll - attackerPPBonus - strikeBonus - grappleBonus;
-  const isCritical = naturalRoll >= critRange;
+  // Dagger crit range: 19–20, otherwise 20
+  const daggerCritRange = weapon && weapon.type === "dagger" ? 19 : 20;
+  const isCritical = naturalRoll >= daggerCritRange;
+  const attackerHasDeathBlow = hasDeathBlow(attacker);
 
-  if (isCritical && naturalRoll === 20) {
-    // Death Blow (natural 20) - instant kill
+  const baseDamageFormula = weapon ? weapon.damage || "1d6" : "1d4";
+  const ps = attacker.attributes?.PS || attacker.PS || 10;
+  const psBonus = Math.floor((ps - 10) / 2);
+
+  // 1) Death Blow: ONLY if attacker actually has it
+  if (naturalRoll === 20 && attackerHasDeathBlow) {
     return {
       success: true,
       hit: true,
       critical: true,
       deathBlow: true,
-      message: `💀 CRITICAL DEATH BLOW! ${attacker.name} delivers a killing strike to ${defender.name}!`,
-      damage: defender.currentHP || defender.hp || 999, // Instant kill
+      message: `💀 DEATH BLOW! ${attacker.name} finds a fatal opening in ${defender.name}'s defenses!`,
+      damage: defender.currentHP || defender.hp || 999,
       attackRoll,
+      naturalRoll,
+      ignoresArmor: true, // treat as chink-in-armor kill
     };
-  } else if (isCritical) {
-    // Critical hit (double damage)
-    const baseDamage = weapon ? weapon.damage || "1d6" : "1d4";
-    const damageRoll = rollDamage(baseDamage);
-    const psBonus = Math.floor(
-      ((attacker.attributes?.PS || attacker.PS || 10) - 10) / 2
-    );
+  }
+
+  // 2) Critical hit = "weak point in armor" strike
+  if (isCritical) {
+    const damageRoll = rollDamage(baseDamageFormula);
     const totalDamage = damageRoll * 2 + psBonus;
 
     return {
       success: true,
       hit: true,
       critical: true,
-      message: `💥 CRITICAL STRIKE! ${attacker.name} stabs ${defender.name} for ${totalDamage} damage!`,
+      deathBlow: false,
+      message: `💥 CRITICAL STRIKE! ${attacker.name} drives a blow into a weak point in ${defender.name}'s armor for ${totalDamage} damage!`,
       damage: totalDamage,
       attackRoll,
+      naturalRoll,
+      ignoresArmor: true, // this is your armor-gap mechanic
     };
-  } else if (attackRoll >= 12) {
-    // Normal hit
-    const baseDamage = weapon ? weapon.damage || "1d6" : "1d4";
-    const damageRoll = rollDamage(baseDamage);
-    const psBonus = Math.floor(
-      ((attacker.attributes?.PS || attacker.PS || 10) - 10) / 2
-    );
+  }
+
+  // 3) Normal hit (armor still works normally)
+  // You can later change the "12+" into your normal to-hit vs AR check if you want.
+  if (attackRoll >= 12) {
+    const damageRoll = rollDamage(baseDamageFormula);
     const totalDamage = damageRoll + psBonus;
 
     return {
       success: true,
       hit: true,
-      message: `${attacker.name} stabs ${defender.name} for ${totalDamage} damage!`,
+      critical: false,
+      deathBlow: false,
+      message: `${attacker.name} lands a solid strike on ${defender.name} in the grapple for ${totalDamage} damage!`,
       damage: totalDamage,
       attackRoll,
-    };
-  } else {
-    // Miss
-    return {
-      success: false,
-      hit: false,
-      reason: `${attacker.name}'s strike misses in the grapple (Roll: ${attackRoll}, need 12+)`,
-      attackRoll,
+      naturalRoll,
+      ignoresArmor: false, // armor still applies
     };
   }
+
+  // 4) Miss
+  return {
+    success: true,
+    hit: false,
+    critical: false,
+    deathBlow: false,
+    message: `${attacker.name} struggles to land a telling blow on ${defender.name} in the grapple. (Roll: ${attackRoll}, need 12+)`,
+    damage: 0,
+    attackRoll,
+    naturalRoll,
+    ignoresArmor: false,
+  };
 }
 
 /**
@@ -640,6 +735,476 @@ export function canUseWeaponInGrapple(character, weapon) {
   return true;
 }
 
+/**
+ * Apply damage with armor consideration for grapple strikes
+ * Handles ignoresArmor flag for critical hits and death blows (weak points in armor)
+ * @param {Object} result - Result object from groundStrike with ignoresArmor flag
+ * @param {Object} attacker - Attacking character
+ * @param {Object} defender - Defending character
+ * @returns {Object} Updated defender object with damage applied
+ */
+export function applyDamageWithArmor(result, attacker, defender) {
+  const damage = result.damage || 0;
+  if (damage <= 0) return defender;
+
+  const defenderCopy = { ...defender };
+
+  // 1) If this is a "weak point" hit (crit/Death Blow in grapple)
+  if (result.ignoresArmor) {
+    // Skip AR and armor S.D.C.; go straight to body (chink in armor)
+    // Apply to SDC first, then overflow to HP
+    const currentSDC = defenderCopy.currentSDC ?? defenderCopy.sdc ?? 0;
+    const newSDC = Math.max(0, currentSDC - damage);
+
+    defenderCopy.currentSDC = newSDC;
+    defenderCopy.sdc = newSDC;
+
+    if (damage > currentSDC) {
+      const overflow = damage - currentSDC;
+      const currentHP = defenderCopy.currentHP ?? defenderCopy.hp ?? defenderCopy.HP ?? 0;
+      const newHP = Math.max(0, currentHP - overflow);
+      
+      defenderCopy.currentHP = newHP;
+      defenderCopy.hp = newHP;
+      if (defenderCopy.HP !== undefined) {
+        defenderCopy.HP = newHP;
+      }
+    }
+
+    return defenderCopy;
+  }
+
+  // 2) Normal hit: apply armor logic using existing calculateArmorDamage function
+  try {
+    const armorResult = calculateArmorDamage(
+      defenderCopy,
+      result.attackRoll || result.naturalRoll || 12,
+      damage,
+      null // No specific slot targeted in grapple
+    );
+
+    if (armorResult.armorHit) {
+      // Armor absorbed the hit - update armor SDC
+      // The calculateArmorDamage function already modifies the armor object
+      // We just need to ensure the defender's equipped armor is updated
+      if (armorResult.brokenArmor && armorResult.brokenArmor.length > 0) {
+        // Armor pieces were broken - this is already handled in calculateArmorDamage
+        // but we can add logging here if needed
+      }
+      // Damage was absorbed by armor, no character damage
+      return defenderCopy;
+    } else {
+      // Armor didn't block, damage goes to character SDC/HP
+      const damageToCharacter = armorResult.damageToCharacter || damage;
+      const currentSDC = defenderCopy.currentSDC ?? defenderCopy.sdc ?? 0;
+      const newSDC = Math.max(0, currentSDC - damageToCharacter);
+
+      defenderCopy.currentSDC = newSDC;
+      defenderCopy.sdc = newSDC;
+
+      if (damageToCharacter > currentSDC) {
+        const overflow = damageToCharacter - currentSDC;
+        const currentHP = defenderCopy.currentHP ?? defenderCopy.hp ?? defenderCopy.HP ?? 0;
+        const newHP = Math.max(0, currentHP - overflow);
+        
+        defenderCopy.currentHP = newHP;
+        defenderCopy.hp = newHP;
+        if (defenderCopy.HP !== undefined) {
+          defenderCopy.HP = newHP;
+        }
+      }
+    }
+  } catch (error) {
+    // Armor system not available, apply damage directly to HP
+    console.warn("Armor damage calculation failed, applying direct damage:", error);
+    const currentHP = defenderCopy.currentHP ?? defenderCopy.hp ?? defenderCopy.HP ?? 0;
+    const newHP = Math.max(0, currentHP - damage);
+    
+    defenderCopy.currentHP = newHP;
+    defenderCopy.hp = newHP;
+    if (defenderCopy.HP !== undefined) {
+      defenderCopy.HP = newHP;
+    }
+  }
+
+  return defenderCopy;
+}
+
+/**
+ * Calculate hex distance between two positions
+ * @param {Object} pos1 - First position {x, y} or {q, r}
+ * @param {Object} pos2 - Second position {x, y} or {q, r}
+ * @returns {number} Distance in hexes
+ */
+function hexDistance(pos1, pos2) {
+  // Handle both {x, y} and {q, r} coordinate systems
+  const x1 = pos1.x ?? pos1.q ?? 0;
+  const y1 = pos1.y ?? pos1.r ?? 0;
+  const x2 = pos2.x ?? pos2.q ?? 0;
+  const y2 = pos2.y ?? pos2.r ?? 0;
+  
+  // Simple Euclidean distance (can be enhanced for hex grid later)
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
+/**
+ * Initiate grapple - pulls both fighters into the same hex
+ * @param {Object} attacker - Attacking character
+ * @param {Object} defender - Defending character
+ * @param {Function} hexDistanceFn - Optional hex distance function
+ * @returns {Object} Result with updated attacker and defender
+ */
+export function initiateGrapple({ attacker, defender, attackerPos = null, defenderPos = null, hexDistanceFn = hexDistance }) {
+  // Get positions - use provided positions if available, otherwise fall back to fighter's stored positions
+  const attackerHex = attackerPos || attacker.hex || attacker.position || { x: 0, y: 0 };
+  const defenderHex = defenderPos || defender.hex || defender.position || { x: 0, y: 0 };
+  
+  // Check if adjacent (grappling range) - for hex grids, adjacent means 1 hex (about 5 feet)
+  const distance = hexDistanceFn(attackerHex, defenderHex);
+  // For hex grid, adjacent hexes are ~5 feet apart, so allow up to 5.5 feet for melee range
+  if (distance > 5.5) {
+    return {
+      success: false,
+      reason: `${attacker.name} is too far to grapple ${defender.name} (${Math.round(distance)}ft away, need to be adjacent).`,
+    };
+  }
+
+  const attackerOriginHex = { ...attackerHex };
+  const sharedHex = { ...defenderHex }; // Pull attacker into defender's hex
+
+  // Initialize grapple states if needed
+  if (!attacker.grappleState) {
+    attacker.grappleState = initializeGrappleState(attacker);
+  }
+  if (!defender.grappleState) {
+    defender.grappleState = initializeGrappleState(defender);
+  }
+
+  const updatedAttacker = {
+    ...attacker,
+    hex: sharedHex,
+    position: sharedHex, // Also update position for compatibility
+    grappleState: {
+      ...attacker.grappleState,
+      state: GRAPPLE_STATES.CLINCH,
+      opponent: defender.id,
+      sharedHex,
+      attackerOriginHex,
+      isAttacker: true,
+    },
+  };
+
+  const updatedDefender = {
+    ...defender,
+    hex: sharedHex, // Defender stays in shared hex (both fighters are in same hex)
+    position: sharedHex, // Also update position for compatibility
+    grappleState: {
+      ...defender.grappleState,
+      state: GRAPPLE_STATES.CLINCH,
+      opponent: attacker.id,
+      sharedHex,
+      attackerOriginHex,
+      isAttacker: false,
+    },
+  };
+
+  return {
+    success: true,
+    attacker: updatedAttacker,
+    defender: updatedDefender,
+    message: `${attacker.name} tackles ${defender.name} and they grapple in the same hex!`,
+  };
+}
+
+/**
+ * Break grapple with push - moves grappler back to origin hex
+ * @param {Object} defender - Character pushing (the one being grappled)
+ * @param {Object} attacker - Original grappler (the one being pushed back)
+ * @returns {Object} Result with updated fighters
+ */
+export function breakGrappleWithPush({ defender, attacker }) {
+  const defGrapple = defender.grappleState;
+  const attGrapple = attacker.grappleState;
+
+  if (
+    !defGrapple ||
+    !attGrapple ||
+    defGrapple.opponent !== attacker.id ||
+    attGrapple.opponent !== defender.id ||
+    defGrapple.state !== GRAPPLE_STATES.CLINCH ||
+    attGrapple.state !== GRAPPLE_STATES.CLINCH
+  ) {
+    return {
+      success: false,
+      reason: `${defender.name} is not currently in a standing clinch with ${attacker.name}.`,
+    };
+  }
+
+  const originHex = attGrapple.attackerOriginHex || attacker.hex || attacker.position || { x: 0, y: 0 };
+
+  const updatedAttacker = {
+    ...attacker,
+    hex: originHex,
+    position: originHex,
+    grappleState: initializeGrappleState(attacker),
+  };
+
+  const updatedDefender = {
+    ...defender,
+    grappleState: initializeGrappleState(defender),
+  };
+
+  return {
+    success: true,
+    attacker: updatedAttacker,
+    defender: updatedDefender,
+    message: `${defender.name} pushes ${attacker.name} back to their original hex, breaking the grapple!`,
+  };
+}
+
+/**
+ * Break grapple with trip - ends grapple and knocks target prone
+ * @param {Object} defender - Character performing trip
+ * @param {Object} attacker - Character being tripped
+ * @returns {Object} Result with updated fighters
+ */
+export function breakGrappleWithTrip({ defender, attacker }) {
+  const defGrapple = defender.grappleState;
+  const attGrapple = attacker.grappleState;
+
+  if (
+    !defGrapple ||
+    !attGrapple ||
+    defGrapple.opponent !== attacker.id ||
+    attGrapple.opponent !== defender.id ||
+    defGrapple.state !== GRAPPLE_STATES.CLINCH ||
+    attGrapple.state !== GRAPPLE_STATES.CLINCH
+  ) {
+    return {
+      success: false,
+      reason: `${defender.name} is not currently in a standing clinch with ${attacker.name}.`,
+    };
+  }
+
+  const sharedHex = defGrapple.sharedHex || defender.hex || defender.position || { x: 0, y: 0 };
+
+  const updatedAttacker = {
+    ...attacker,
+    hex: sharedHex,
+    position: sharedHex,
+    isProne: true, // Mark as prone
+    grappleState: initializeGrappleState(attacker),
+  };
+
+  const updatedDefender = {
+    ...defender,
+    grappleState: initializeGrappleState(defender),
+  };
+
+  return {
+    success: true,
+    attacker: updatedAttacker,
+    defender: updatedDefender,
+    message: `${defender.name} trips ${attacker.name}, sending them to the ground and breaking the grapple!`,
+  };
+}
+
+/**
+ * Grappler Push Off - grappler voluntarily breaks clinch and pushes defender away
+ * @param {Object} grappler - Character who initiated the grapple
+ * @param {Object} defender - Character being grappled
+ * @param {Function} findSafeHex - Optional function to find a safe hex for pushing
+ * @returns {Object} Result with updated fighters
+ */
+export function grapplerPushOff({ grappler, defender, findSafeHex }) {
+  const gState = grappler.grappleState;
+  const dState = defender.grappleState;
+
+  if (
+    !gState ||
+    !dState ||
+    gState.state !== GRAPPLE_STATES.CLINCH ||
+    dState.state !== GRAPPLE_STATES.CLINCH ||
+    gState.opponent !== defender.id ||
+    dState.opponent !== grappler.id ||
+    !gState.isAttacker
+  ) {
+    return {
+      success: false,
+      reason: `${grappler.name} is not currently the grappler in a standing clinch with ${defender.name}.`,
+    };
+  }
+
+  const sharedHex = gState.sharedHex || grappler.hex || grappler.position || { x: 0, y: 0 };
+  // Where do we push the defender to?
+  const fallbackHex = gState.attackerOriginHex || grappler.hex || grappler.position || { x: 0, y: 0 };
+  const pushHex =
+    (typeof findSafeHex === "function"
+      ? findSafeHex(sharedHex, fallbackHex, defender)
+      : fallbackHex) || fallbackHex;
+
+  const updatedGrappler = {
+    ...grappler,
+    hex: sharedHex,
+    position: sharedHex,
+    grappleState: initializeGrappleState(grappler),
+  };
+
+  const updatedDefender = {
+    ...defender,
+    hex: pushHex,
+    position: pushHex,
+    grappleState: initializeGrappleState(defender),
+  };
+
+  return {
+    success: true,
+    attacker: updatedGrappler,
+    defender: updatedDefender,
+    message: `${grappler.name} shoves ${defender.name} away and breaks the grapple!`,
+  };
+}
+
+/**
+ * Defender Push Break - defender breaks clinch and shoves grappler back
+ * @param {Object} defender - Character being grappled
+ * @param {Object} grappler - Character who initiated the grapple
+ * @param {Function} findSafeHex - Optional function to find a safe hex for pushing
+ * @returns {Object} Result with updated fighters
+ */
+export function defenderPushBreak({ defender, grappler, findSafeHex }) {
+  const dState = defender.grappleState;
+  const gState = grappler.grappleState;
+
+  if (
+    !dState ||
+    !gState ||
+    dState.state !== GRAPPLE_STATES.CLINCH ||
+    gState.state !== GRAPPLE_STATES.CLINCH ||
+    dState.opponent !== grappler.id ||
+    gState.opponent !== defender.id ||
+    gState.isAttacker !== true // grappler must be the original initiator
+  ) {
+    return {
+      success: false,
+      reason: `${defender.name} is not currently being grappled by ${grappler.name} in a standing clinch.`,
+    };
+  }
+
+  const sharedHex = dState.sharedHex || defender.hex || defender.position || { x: 0, y: 0 };
+  const originHex = gState.attackerOriginHex || grappler.hex || grappler.position || { x: 0, y: 0 };
+
+  const pushHex =
+    (typeof findSafeHex === "function"
+      ? findSafeHex(sharedHex, originHex, grappler)
+      : originHex) || originHex;
+
+  const updatedGrappler = {
+    ...grappler,
+    hex: pushHex, // gets shoved back to origin
+    position: pushHex,
+    grappleState: initializeGrappleState(grappler),
+  };
+
+  const updatedDefender = {
+    ...defender,
+    hex: sharedHex, // holds ground
+    position: sharedHex,
+    grappleState: initializeGrappleState(defender),
+  };
+
+  return {
+    success: true,
+    attacker: updatedGrappler,
+    defender: updatedDefender,
+    message: `${defender.name} shoves ${grappler.name} back and breaks the grapple!`,
+  };
+}
+
+/**
+ * Defender Reversal - defender takes control of the clinch
+ * @param {Object} defender - Character being grappled
+ * @param {Object} grappler - Character who initiated the grapple
+ * @returns {Object} Result with updated fighters
+ */
+export function defenderReversal({ defender, grappler }) {
+  const dState = defender.grappleState;
+  const gState = grappler.grappleState;
+
+  if (
+    !dState ||
+    !gState ||
+    dState.state !== GRAPPLE_STATES.CLINCH ||
+    gState.state !== GRAPPLE_STATES.CLINCH ||
+    dState.opponent !== grappler.id ||
+    gState.opponent !== defender.id ||
+    gState.isAttacker !== true // must be reversing the original grappler
+  ) {
+    return {
+      success: false,
+      reason: `${defender.name} can't reverse a grapple that isn't currently controlled by ${grappler.name}.`,
+    };
+  }
+
+  const sharedHex = dState.sharedHex || defender.hex || defender.position || { x: 0, y: 0 };
+
+  // Defender becomes the new "attacker" in the clinch
+  const newDefenderState = {
+    ...initializeGrappleState(defender),
+    state: GRAPPLE_STATES.CLINCH,
+    opponent: grappler.id,
+    sharedHex,
+    attackerOriginHex: defender.hex || defender.position || sharedHex, // where *new* grappler originally stood
+    isAttacker: true,
+    hasGrappleAdvantage: true, // optional: one-time bonus flag
+    penalties: {
+      strike: 0,
+      parry: 0,
+      dodge: 0,
+    },
+    canUseLongWeapons: false,
+  };
+
+  const newGrapplerState = {
+    ...initializeGrappleState(grappler),
+    state: GRAPPLE_STATES.CLINCH,
+    opponent: defender.id,
+    sharedHex,
+    attackerOriginHex: gState.attackerOriginHex, // keep old for future pushes
+    isAttacker: false,
+    hasGrappleAdvantage: false,
+    penalties: {
+      strike: 0,
+      parry: -3,
+      dodge: -2,
+    },
+    canUseLongWeapons: false,
+  };
+
+  const updatedDefender = {
+    ...defender,
+    hex: sharedHex,
+    position: sharedHex,
+    grappleState: newDefenderState,
+  };
+
+  const updatedGrappler = {
+    ...grappler,
+    hex: sharedHex,
+    position: sharedHex,
+    grappleState: newGrapplerState,
+  };
+
+  return {
+    success: true,
+    attacker: updatedDefender, // defender is now the grappler
+    defender: updatedGrappler,
+    message: `${defender.name} reverses the clinch and gains the upper hand on ${grappler.name}!`,
+  };
+}
+
 export default {
   GRAPPLE_STATES,
   initializeGrappleState,
@@ -651,4 +1216,12 @@ export default {
   getGrappleStatus,
   resetGrapple,
   canUseWeaponInGrapple,
+  hasDeathBlow,
+  applyDamageWithArmor,
+  initiateGrapple,
+  breakGrappleWithPush,
+  breakGrappleWithTrip,
+  grapplerPushOff,
+  defenderPushBreak,
+  defenderReversal,
 };

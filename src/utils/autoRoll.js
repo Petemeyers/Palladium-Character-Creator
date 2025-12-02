@@ -114,6 +114,8 @@ function getClassHPBonus(occ) {
  * @param {string} customName - Optional custom name
  * @returns {Object} - Combat-ready fighter object
  */
+import { assignRandomWeaponToEnemy } from './enemyWeaponAssigner.js';
+
 export function createPlayableCharacterFighter(character, customName = null) {
   // Roll attributes
   const attributes = rollCharacterAttributes(character);

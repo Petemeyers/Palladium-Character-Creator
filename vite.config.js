@@ -24,5 +24,9 @@ export default defineConfig({
     alias: {
       "@": "/src", // Optional: use @ for your src folder
     },
+    dedupe: ["react", "react-dom"],
+  },
+  optimizeDeps: {
+    include: ["react", "react-dom", "react-router-dom"],
   },
 });

@@ -2,11 +2,28 @@
 import movementData from "../data/movement.json";
 
 // Calculate total weight of character's inventory
-export function calculateEncumbrance(inventory) {
+// @param {Array} inventory - Character's inventory array
+// @param {Object} character - Character object (optional, for size-based weight adjustments)
+export function calculateEncumbrance(inventory, character = null) {
   if (!inventory || !Array.isArray(inventory)) return 0;
 
   return inventory.reduce((total, item) => {
-    return total + (item.weight || 0);
+    let itemWeight = item.weight || 0;
+    
+    // Apply size-based weight adjustments for weapons if character provided
+    if (character && item.type && (item.type.toLowerCase() === 'weapon' || item.damage)) {
+      try {
+        const { getAdjustedWeaponWeight } = require('./weaponSizeSystem.js');
+        const race = character.species || character.race;
+        if (race) {
+          itemWeight = getAdjustedWeaponWeight(itemWeight, race, character);
+        }
+      } catch (e) {
+        // If weaponSizeSystem not available, use base weight
+      }
+    }
+    
+    return total + itemWeight;
   }, 0);
 }
 
@@ -105,7 +122,7 @@ export function getArmorPenalty(character) {
 
 // Calculate encumbrance info for a character
 export function getEncumbranceInfo(character) {
-  const currentWeight = calculateEncumbrance(character.inventory);
+  const currentWeight = calculateEncumbrance(character.inventory, character);
   const maxWeight =
     character.carryWeight?.maxWeight ||
     calculateMaxCarry(character.attributes?.PS || 10, character.species);

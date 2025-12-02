@@ -3,6 +3,8 @@
  * Handles right hand/left hand weapon slots and two-handed weapons
  */
 
+import { getAdjustedWeaponDamage } from './weaponSizeSystem.js';
+
 /**
  * Weapon slot types
  */
@@ -304,12 +306,21 @@ export function getWeaponBonuses(slots, character) {
  * Get weapon damage string
  * @param {object} weapon - Weapon object
  * @param {boolean} usingTwoHanded - Is weapon being used two-handed
+ * @param {object} character - Character object (optional, for weapon size modifiers)
  * @returns {string} - Damage dice string
  */
-export function getWeaponDamage(weapon, usingTwoHanded = false) {
+export function getWeaponDamage(weapon, usingTwoHanded = false, character = null) {
   if (!weapon) return "1d4"; // Unarmed
 
   let damage = weapon.damage || "1d6";
+
+  // Apply weapon size modifiers based on race (giant +1 die, gnome reduced)
+  if (character) {
+    const race = character.species || character.race;
+    if (race) {
+      damage = getAdjustedWeaponDamage(damage, race);
+    }
+  }
 
   // Add two-handed bonus
   if (usingTwoHanded && canUseTwoHanded(weapon)) {

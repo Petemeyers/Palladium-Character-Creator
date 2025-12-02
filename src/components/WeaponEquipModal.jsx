@@ -28,8 +28,19 @@ export default function WeaponEquipModal({
   const [selectedWeapon, setSelectedWeapon] = useState(null);
   const toast = useToast();
 
-  const availableWeapons = getAvailableWeapons(character);
   const weaponDisplayInfo = getWeaponDisplayInfo(character);
+  
+  // Get available weapons and filter out already equipped ones
+  const allAvailableWeapons = getAvailableWeapons(character);
+  const equippedWeaponNames = [
+    weaponDisplayInfo.rightHand.name,
+    weaponDisplayInfo.leftHand.name
+  ].filter(name => name !== "Unarmed");
+  
+  // Filter out weapons that are already equipped
+  const availableWeapons = allAvailableWeapons.filter(weapon => 
+    !equippedWeaponNames.includes(weapon.name)
+  );
 
   const handleEquipWeapon = async (weapon, slot) => {
     try {
@@ -44,6 +55,9 @@ export default function WeaponEquipModal({
         isClosable: true,
       });
       
+      // Reset selection and close
+      setSelectedSlot(null);
+      setSelectedWeapon(null);
       onClose();
     } catch (error) {
       console.error('Error equipping weapon:', error);
@@ -94,7 +108,12 @@ export default function WeaponEquipModal({
 
   const confirmEquip = () => {
     if (selectedWeapon && selectedSlot) {
-      handleEquipWeapon(selectedWeapon, selectedSlot);
+      // If Unarmed is selected, unequip instead of equip
+      if (selectedWeapon.name === "Unarmed") {
+        handleUnequipWeapon(selectedSlot);
+      } else {
+        handleEquipWeapon(selectedWeapon, selectedSlot);
+      }
     }
   };
 
@@ -114,29 +133,53 @@ export default function WeaponEquipModal({
                   <Text fontSize="sm" color="gray.400">Right Hand</Text>
                   <Text fontWeight="bold">{weaponDisplayInfo.rightHand.name}</Text>
                   <Text fontSize="sm" color="gray.300">Damage: {weaponDisplayInfo.rightHand.damage}</Text>
-                  <Button
-                    size="sm"
-                    colorScheme="blue"
-                    mt={2}
-                    onClick={() => handleSlotClick('right')}
-                    w="100%"
-                  >
-                    Change
-                  </Button>
+                  <HStack spacing={2} mt={2}>
+                    <Button
+                      size="sm"
+                      colorScheme="blue"
+                      flex={1}
+                      onClick={() => handleSlotClick('right')}
+                    >
+                      Change
+                    </Button>
+                    {weaponDisplayInfo.rightHand.name !== "Unarmed" && (
+                      <Button
+                        size="sm"
+                        colorScheme="red"
+                        variant="outline"
+                        flex={1}
+                        onClick={() => handleUnequipWeapon('right')}
+                      >
+                        Unequip
+                      </Button>
+                    )}
+                  </HStack>
                 </Box>
                 <Box flex={1} p={3} bg="gray.800" borderRadius="md" borderWidth="1px" borderColor="gray.700">
                   <Text fontSize="sm" color="gray.400">Left Hand</Text>
                   <Text fontWeight="bold">{weaponDisplayInfo.leftHand.name}</Text>
                   <Text fontSize="sm" color="gray.300">Damage: {weaponDisplayInfo.leftHand.damage}</Text>
-                  <Button
-                    size="sm"
-                    colorScheme="blue"
-                    mt={2}
-                    onClick={() => handleSlotClick('left')}
-                    w="100%"
-                  >
-                    Change
-                  </Button>
+                  <HStack spacing={2} mt={2}>
+                    <Button
+                      size="sm"
+                      colorScheme="blue"
+                      flex={1}
+                      onClick={() => handleSlotClick('left')}
+                    >
+                      Change
+                    </Button>
+                    {weaponDisplayInfo.leftHand.name !== "Unarmed" && (
+                      <Button
+                        size="sm"
+                        colorScheme="red"
+                        variant="outline"
+                        flex={1}
+                        onClick={() => handleUnequipWeapon('left')}
+                      >
+                        Unequip
+                      </Button>
+                    )}
+                  </HStack>
                 </Box>
               </HStack>
             </Box>
@@ -146,20 +189,51 @@ export default function WeaponEquipModal({
             {/* Available Weapons */}
             <Box>
               <Text fontSize="lg" fontWeight="bold" mb={2}>Available Weapons</Text>
-              {availableWeapons.length > 0 ? (
-                <VStack spacing={2} align="stretch">
-                  {availableWeapons.map((weapon, index) => (
-                      <Box
-                        key={index}
-                        p={3}
-                        borderRadius="md"
-                        borderWidth="1px"
-                        borderColor="gray.700"
-                        cursor="pointer"
-                        onClick={() => handleWeaponSelect(weapon)}
-                        bg={selectedWeapon?.name === weapon.name ? "gray.700" : "gray.800"}
-                        _hover={{ bg: "gray.700" }}
-                      >
+              <VStack spacing={2} align="stretch">
+                {/* Unarmed option - always available */}
+                <Box
+                  p={3}
+                  borderRadius="md"
+                  borderWidth="1px"
+                  borderColor="gray.700"
+                  cursor="pointer"
+                  onClick={() => {
+                    const unarmedWeapon = { name: "Unarmed", damage: "1d3", type: "unarmed", category: "unarmed" };
+                    handleWeaponSelect(unarmedWeapon);
+                  }}
+                  bg={selectedWeapon?.name === "Unarmed" ? "gray.700" : "gray.800"}
+                  _hover={{ bg: "gray.700" }}
+                >
+                  <HStack justify="space-between">
+                    <Box>
+                      <Text fontWeight="bold">Unarmed</Text>
+                      <Text fontSize="sm" color="gray.300">
+                        Damage: 1d3 | Type: unarmed
+                      </Text>
+                      <Text fontSize="xs" color="gray.400" mt={1}>
+                        Unequip weapon to use unarmed combat
+                      </Text>
+                    </Box>
+                    <Badge colorScheme="gray" variant="outline">
+                      Always Available
+                    </Badge>
+                  </HStack>
+                </Box>
+                
+                {/* Inventory weapons */}
+                {availableWeapons.length > 0 ? (
+                  availableWeapons.map((weapon, index) => (
+                    <Box
+                      key={index}
+                      p={3}
+                      borderRadius="md"
+                      borderWidth="1px"
+                      borderColor="gray.700"
+                      cursor="pointer"
+                      onClick={() => handleWeaponSelect(weapon)}
+                      bg={selectedWeapon?.name === weapon.name ? "gray.700" : "gray.800"}
+                      _hover={{ bg: "gray.700" }}
+                    >
                       <HStack justify="space-between">
                         <Box>
                           <Text fontWeight="bold">{weapon.name}</Text>
@@ -178,13 +252,13 @@ export default function WeaponEquipModal({
                         </Badge>
                       </HStack>
                     </Box>
-                  ))}
-                </VStack>
-              ) : (
-                <Text color="gray.400" textAlign="center" py={4}>
-                  No weapons available in inventory
-                </Text>
-              )}
+                  ))
+                ) : (
+                  <Text color="gray.400" textAlign="center" py={2} fontSize="sm">
+                    No other weapons in inventory
+                  </Text>
+                )}
+              </VStack>
             </Box>
 
             {/* Selection Summary */}

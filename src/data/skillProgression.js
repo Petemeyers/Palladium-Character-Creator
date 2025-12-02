@@ -345,6 +345,9 @@ export function getSkillBonusesAtLevel(skillName, level) {
     progression = physicalSkillProgression[skillName];
   } else if (weaponProficiencyProgression[skillName]) {
     progression = weaponProficiencyProgression[skillName];
+  } else if (skillName === "W.P. Dagger") {
+    // W.P. Dagger uses the same progression as W.P. Knife
+    progression = weaponProficiencyProgression["W.P. Knife"];
   }
 
   if (!progression) {

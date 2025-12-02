@@ -30,7 +30,6 @@ import {
   MenuButton,
   MenuList,
   MenuItem,
-  Collapse,
   Accordion,
   AccordionItem,
   AccordionButton,
@@ -49,12 +48,15 @@ import {
   Tab,
   TabPanel,
   Divider,
+  Wrap,
+  WrapItem,
 } from "@chakra-ui/react";
 import CryptoSecureDice from "../utils/cryptoDice";
 import bestiary from "../data/bestiary.json";
 import { getAllBestiaryEntries } from "../utils/bestiaryUtils.js";
 import CombatActionsPanel from "../components/CombatActionsPanel";
 import { createPlayableCharacterFighter, getPlayableCharacterRollDetails } from "../utils/autoRoll";
+import { assignRandomWeaponToEnemy } from "../utils/enemyWeaponAssigner";
 import { getRandomCombatSpell } from "../data/combatSpells";
 import { isTwoHandedWeapon, getWeaponDamage } from "../utils/weaponSlotManager";
 import { usePsionic } from "../utils/psionicEffects";
@@ -92,6 +94,9 @@ import {
 } from "../utils/distanceCombatSystem.js";
 import { getCombatModifiers, canUseWeapon, getWeaponType, getWeaponLength } from "../utils/combatEnvironmentLogic.js";
 import { getDynamicWidth, getActorsInProximity, getDynamicHeight } from "../utils/environmentMetrics.js";
+
+// Debug toggle for grapple system
+const DEBUG_GRAPPLE = true; // set to false in production
 import {
   getReachStrikeModifiers,
   getReachParryModifiers,
@@ -148,6 +153,13 @@ import {
   getGrappleStatus,
   resetGrapple,
   canUseWeaponInGrapple,
+  applyDamageWithArmor,
+  initiateGrapple,
+  breakGrappleWithPush,
+  breakGrappleWithTrip,
+  grapplerPushOff,
+  defenderPushBreak,
+  defenderReversal,
   GRAPPLE_STATES,
 } from "../utils/grapplingSystem.js";
 import {
@@ -729,6 +741,8 @@ export default function CombatPage({ characters = [] }) {
   const [showCombatChoices, setShowCombatChoices] = useState(false);
   const [aiControlEnabled, setAiControlEnabled] = useState(false);
   const [selectedAction, setSelectedAction] = useState(null);
+  const [selectedGrappleAction, setSelectedGrappleAction] = useState(null);
+  const [selectedManeuver, setSelectedManeuver] = useState(null);
   const [selectedTarget, setSelectedTarget] = useState(null);
   const [selectedWeaponSlot, setSelectedWeaponSlot] = useState(null);
   const [showWeaponModal, setShowWeaponModal] = useState(false);
@@ -760,6 +774,7 @@ export default function CombatPage({ characters = [] }) {
   const processingPlayerAIRef = useRef(false); // Prevent duplicate player AI turn processing
   const lastProcessedTurnRef = useRef(null); // Track the last processed turn to prevent duplicates
   const topCombatLogRef = useRef(null); // Ref for top combat log scroll container
+  const detailedCombatLogRef = useRef(null); // Ref for detailed combat log tab scroll container
   const justCreatedPendingMovementRef = useRef(new Set()); // Track movements created this turn (don't apply until NEXT turn)
   const handleEnemyTurnRef = useRef(null); // Store latest version of handleEnemyTurn to avoid dependency loops
   const attackRef = useRef(null); // Store attack function to avoid initialization order issues
@@ -1411,6 +1426,68 @@ useEffect(() => {
     [selectedAction?.name, getTargetOptionsForAction]
   );
 
+  // Get available grapple actions based on current state
+  const getAvailableGrappleActions = useCallback((fighter, target) => {
+    if (!fighter || !target) return [];
+    
+    const grappleStatus = getGrappleStatus(fighter);
+    const targetGrappleStatus = getGrappleStatus(target);
+    const actions = [];
+    
+    // If both are neutral, can attempt grapple
+    if (grappleStatus.state === GRAPPLE_STATES.NEUTRAL && targetGrappleStatus.state === GRAPPLE_STATES.NEUTRAL) {
+      actions.push({ value: 'grapple', label: '🤼 Attempt Grapple' });
+      return actions;
+    }
+    
+    // Check if in a clinch
+    const inClinch = grappleStatus.state === GRAPPLE_STATES.CLINCH && 
+                     targetGrappleStatus.state === GRAPPLE_STATES.CLINCH &&
+                     grappleStatus.opponent === target.id &&
+                     targetGrappleStatus.opponent === fighter.id;
+    
+    if (inClinch) {
+      // Check who is the grappler (isAttacker)
+      const fighterGrappleState = fighter.grappleState || {};
+      const isGrappler = fighterGrappleState.isAttacker === true;
+      
+      if (isGrappler) {
+        // Grappler actions
+        actions.push({ value: 'takedown', label: '⬇️ Takedown/Trip' });
+        actions.push({ value: 'groundStrike', label: '🗡️ Ground Strike' });
+        actions.push({ value: 'grapplerPushOff', label: '👊 Push Off (Break)' });
+      } else {
+        // Defender actions
+        actions.push({ value: 'defenderPushBreak', label: '💪 Push Break' });
+        actions.push({ value: 'defenderReversal', label: '🔄 Reversal (Take Control)' });
+        actions.push({ value: 'breakFree', label: '🏃 Break Free' });
+      }
+    }
+    
+    // If fighter is grappling on ground
+    if (grappleStatus.state === GRAPPLE_STATES.GROUND) {
+      actions.push({ value: 'maintain', label: '🔒 Maintain Grapple' });
+      actions.push({ value: 'groundStrike', label: '🗡️ Ground Strike' });
+    }
+    
+    // If fighter is pinned
+    if (grappleStatus.state === GRAPPLE_STATES.GRAPPLED) {
+      if (!inClinch) {
+        actions.push({ value: 'breakFree', label: '💪 Break Free' });
+        actions.push({ value: 'groundStrike', label: '🗡️ Ground Strike' });
+      }
+    }
+    
+    // If target is pinned
+    if (targetGrappleStatus.state === GRAPPLE_STATES.GRAPPLED) {
+      if (!actions.find(a => a.value === 'groundStrike')) {
+        actions.push({ value: 'groundStrike', label: '🗡️ Ground Strike' });
+      }
+    }
+    
+    return actions;
+  }, [getGrappleStatus, GRAPPLE_STATES]);
+
   const shouldShowTargetDropdown = useMemo(() => {
     if (!selectedAction) return false;
     if (!targetOptions || targetOptions.length === 0) return false;
@@ -1521,6 +1598,11 @@ useEffect(() => {
   // Define endTurn function with useCallback - MUST be before handleMoveSelect
   // PALLADIUM RAW: Alternating actions per initiative
   const endTurn = useCallback(() => {
+    // ✅ CRITICAL: Stop processing if combat has ended
+    if (!combatActive || combatEndCheckRef.current) {
+      return;
+    }
+    
     clearScheduledTurn();
 
     // Clear movement attempts tracker for old turns (keep only current and previous turn)
@@ -1539,6 +1621,11 @@ useEffect(() => {
     
     if (fightersWithActions.length === 0) {
       // All fighters are out of actions - start new melee round
+      // But only if combat is still active
+      if (!combatActive || combatEndCheckRef.current) {
+        return;
+      }
+      
       addLog(`⏰ Melee Round ${meleeRound} complete! Starting Round ${meleeRound + 1}...`, "combat");
       
       // Reset all fighters' actions for new melee round
@@ -1551,11 +1638,13 @@ useEffect(() => {
       setTurnIndex(0); // Start from highest initiative again
       setTurnCounter(prev => prev + 1);
       
-      // Clear processing flags for new round
-      combatEndCheckRef.current = false;
-      lastProcessedEnemyTurnRef.current = null;
-      processingPlayerAIRef.current = false;
-      lastOpenedChoicesTurnRef.current = null;
+      // Clear processing flags for new round (only if combat is still active)
+      if (combatActive && !combatEndCheckRef.current) {
+        combatEndCheckRef.current = false;
+        lastProcessedEnemyTurnRef.current = null;
+        processingPlayerAIRef.current = false;
+        lastOpenedChoicesTurnRef.current = null;
+      }
       
       return;
     }
@@ -1579,6 +1668,11 @@ useEffect(() => {
     
     // If no fighter found with actions, start new melee round (shouldn't happen due to check above, but safety)
     if (!foundNext) {
+      // Only start new round if combat is still active
+      if (!combatActive || combatEndCheckRef.current) {
+        return;
+      }
+      
       addLog(`⏰ All fighters out of actions - starting new melee round`, "combat");
       setFighters(prev => prev.map(f => ({
         ...f,
@@ -1593,8 +1687,12 @@ useEffect(() => {
     // NOTE: We do NOT reset remainingAttacks here - actions persist across the melee round
     // Each fighter keeps their remainingAttacks until the melee round completes
     
-    // Reset combat end check flag when starting a new action
-    combatEndCheckRef.current = false;
+    // ✅ CRITICAL: Only reset combat end check flag if combat is still active
+    // Don't reset if combat has ended (prevents further action processing)
+    if (combatActive && !combatEndCheckRef.current) {
+      // Reset flag only if combat is active and hasn't ended
+      // (combatEndCheckRef.current will be true if victory/defeat was declared)
+    }
     
     // Clear the last processed enemy turn ref when action changes
     lastProcessedEnemyTurnRef.current = null;
@@ -1647,7 +1745,7 @@ useEffect(() => {
       const entries = Array.from(visibilityLogRef.current);
       visibilityLogRef.current = new Set(entries.slice(-100));
     }
-  }, [fighters, turnIndex, temporaryHexSharing, addLog, meleeRound, turnCounter, clearScheduledTurn, canFighterAct]);
+  }, [fighters, turnIndex, temporaryHexSharing, addLog, meleeRound, turnCounter, clearScheduledTurn, canFighterAct, combatActive]);
 
   const scheduleEndTurn = useCallback(
     (delayOverride = null) => {
@@ -1911,6 +2009,424 @@ useEffect(() => {
     }
   }, [positions]);
 
+  // Trip maneuver handler
+  const executeTripManeuver = useCallback((attacker, defender) => {
+    if (!combatActive) return;
+    
+    const attackerInArray = fighters.find(f => f.id === attacker.id);
+    const defenderInArray = fighters.find(f => f.id === defender.id);
+    
+    if (!attackerInArray || !defenderInArray) {
+      addLog(`Invalid target for trip maneuver!`, "error");
+      return;
+    }
+    
+    // Check if attacker can act
+    if (attackerInArray.remainingAttacks <= 0) {
+      addLog(`⚠️ ${attacker.name} is out of attacks this turn!`, "error");
+      return;
+    }
+    
+    // Check if in grapple - if so, use breakGrappleWithTrip
+    const attackerGrapple = getGrappleStatus(attackerInArray);
+    const defenderGrapple = getGrappleStatus(defenderInArray);
+    const inGrapple = attackerGrapple.state === GRAPPLE_STATES.CLINCH && 
+                      defenderGrapple.state === GRAPPLE_STATES.CLINCH &&
+                      attackerGrapple.opponent === defender.id &&
+                      defenderGrapple.opponent === attacker.id;
+    
+    if (inGrapple) {
+      // Break grapple with trip
+      const result = breakGrappleWithTrip({ defender: attackerInArray, attacker: defenderInArray });
+      
+      if (result.success) {
+        addLog(result.message, "success");
+        
+        // Update fighters with new positions and states
+        setFighters(prev => prev.map(f => {
+          if (f.id === result.attacker.id) {
+            const updated = { ...f, ...result.attacker };
+            if (result.attacker.hex) {
+              updated.hex = result.attacker.hex;
+              updated.position = result.attacker.position || result.attacker.hex;
+            }
+            return updated;
+          }
+          if (f.id === result.defender.id) {
+            return { ...f, ...result.defender };
+          }
+          return f;
+        }));
+        
+        // Update positions
+        if (result.attacker.hex) {
+          setPositions(prev => ({
+            ...prev,
+            [result.attacker.id]: result.attacker.hex,
+          }));
+        }
+        
+        // Deduct action
+        setFighters(prev => prev.map(f => 
+          f.id === attacker.id 
+            ? { ...f, remainingAttacks: Math.max(0, f.remainingAttacks - 1) }
+            : f
+        ));
+      } else {
+        addLog(result.reason, "info");
+      }
+      return;
+    }
+    
+    // Not in grapple - contested roll
+    // Get P.P. bonuses
+    const attackerPP = attacker.attributes?.PP || attacker.PP || 10;
+    const defenderPP = defender.attributes?.PP || defender.PP || 10;
+    
+    const attackerPPBonus = Math.floor((attackerPP - 10) / 2);
+    const defenderPPBonus = Math.floor((defenderPP - 10) / 2);
+    
+    // Get hand-to-hand bonuses
+    const attackerStrikeBonus = attacker.bonuses?.strike || attacker.handToHand?.strikeBonus || 0;
+    const defenderParryBonus = defender.bonuses?.parry || defender.handToHand?.parryBonus || 0;
+    const defenderDodgeBonus = defender.bonuses?.dodge || defender.handToHand?.dodgeBonus || 0;
+    
+    // Attacker rolls strike
+    const attackerRoll = CryptoSecureDice.rollD20();
+    const attackerTotal = attackerRoll + attackerStrikeBonus + attackerPPBonus;
+    
+    // Defender can parry or dodge (use the higher of the two)
+    const defenderRoll = CryptoSecureDice.rollD20();
+    const defenderParryTotal = defenderRoll + defenderParryBonus + defenderPPBonus;
+    const defenderDodgeTotal = defenderRoll + defenderDodgeBonus + defenderPPBonus;
+    const defenderTotal = Math.max(defenderParryTotal, defenderDodgeTotal);
+    
+    addLog(`🎲 ${attacker.name} attempts trip: ${attackerRoll} + ${attackerStrikeBonus} (strike) + ${attackerPPBonus} (PP) = ${attackerTotal}`, "info");
+    addLog(`🎲 ${defender.name} defends: ${defenderRoll} + ${Math.max(defenderParryBonus, defenderDodgeBonus)} (parry/dodge) + ${defenderPPBonus} (PP) = ${defenderTotal}`, "info");
+    
+    if (attackerTotal > defenderTotal) {
+      // Trip successful!
+      addLog(`✅ ${attacker.name} successfully trips ${defender.name}!`, "success");
+      
+      // Knockdown effect: defender loses 1 action to recover and is prone
+      setFighters(prev => prev.map(f => 
+        f.id === defender.id 
+          ? { ...f, remainingAttacks: Math.max(0, (f.remainingAttacks || 0) - 1), isProne: true }
+          : f
+      ));
+      
+      addLog(`💥 ${defender.name} is knocked down! Loses 1 action to recover.`, "warning");
+    } else {
+      // Trip failed
+      addLog(`❌ ${defender.name} avoids the trip!`, "info");
+    }
+    
+    // Deduct attacker's action
+    setFighters(prev => prev.map(f => 
+      f.id === attacker.id 
+        ? { ...f, remainingAttacks: Math.max(0, f.remainingAttacks - 1) }
+        : f
+    ));
+  }, [fighters, combatActive, addLog, setFighters, getGrappleStatus, GRAPPLE_STATES, breakGrappleWithTrip, setPositions]);
+
+  // Shove maneuver handler
+  const executeShoveManeuver = useCallback((attacker, defender) => {
+    if (!combatActive) return;
+    
+    const attackerInArray = fighters.find(f => f.id === attacker.id);
+    const defenderInArray = fighters.find(f => f.id === defender.id);
+    
+    if (!attackerInArray || !defenderInArray) {
+      addLog(`Invalid target for shove maneuver!`, "error");
+      return;
+    }
+    
+    // Check if attacker can act
+    if (attackerInArray.remainingAttacks <= 0) {
+      addLog(`⚠️ ${attacker.name} is out of attacks this turn!`, "error");
+      return;
+    }
+    
+    // Check if in grapple - if so, use breakGrappleWithPush
+    const attackerGrapple = getGrappleStatus(attackerInArray);
+    const defenderGrapple = getGrappleStatus(defenderInArray);
+    const inGrapple = attackerGrapple.state === GRAPPLE_STATES.CLINCH && 
+                      defenderGrapple.state === GRAPPLE_STATES.CLINCH &&
+                      attackerGrapple.opponent === defender.id &&
+                      defenderGrapple.opponent === attacker.id;
+    
+    if (inGrapple) {
+      // Break grapple with push (defender pushes attacker back)
+      const result = breakGrappleWithPush({ defender: attackerInArray, attacker: defenderInArray });
+      
+      if (result.success) {
+        addLog(result.message, "success");
+        
+        // Update fighters with new positions and states
+        setFighters(prev => prev.map(f => {
+          if (f.id === result.attacker.id) {
+            const updated = { ...f, ...result.attacker };
+            if (result.attacker.hex) {
+              updated.hex = result.attacker.hex;
+              updated.position = result.attacker.position || result.attacker.hex;
+            }
+            return updated;
+          }
+          if (f.id === result.defender.id) {
+            return { ...f, ...result.defender };
+          }
+          return f;
+        }));
+        
+        // Update positions
+        if (result.attacker.hex) {
+          setPositions(prev => ({
+            ...prev,
+            [result.attacker.id]: result.attacker.hex,
+          }));
+        }
+        
+        // Deduct action
+        setFighters(prev => prev.map(f => 
+          f.id === attacker.id 
+            ? { ...f, remainingAttacks: Math.max(0, f.remainingAttacks - 1) }
+            : f
+        ));
+      } else {
+        addLog(result.reason, "info");
+      }
+      return;
+    }
+    
+    // Not in grapple - contested strength roll
+    const attackerPS = attacker.attributes?.PS || attacker.PS || 10;
+    const defenderPS = defender.attributes?.PS || defender.PS || 10;
+    
+    const attackerPSBonus = Math.floor((attackerPS - 10) / 2);
+    const defenderPSBonus = Math.floor((defenderPS - 10) / 2);
+    
+    // Attacker rolls strength
+    const attackerRoll = CryptoSecureDice.rollD20();
+    const attackerTotal = attackerRoll + attackerPSBonus;
+    
+    // Defender resists with strength
+    const defenderRoll = CryptoSecureDice.rollD20();
+    const defenderTotal = defenderRoll + defenderPSBonus;
+    
+    addLog(`🎲 ${attacker.name} attempts shove: ${attackerRoll} + ${attackerPSBonus} (PS) = ${attackerTotal}`, "info");
+    addLog(`🎲 ${defender.name} resists: ${defenderRoll} + ${defenderPSBonus} (PS) = ${defenderTotal}`, "info");
+    
+    if (attackerTotal > defenderTotal) {
+      // Shove successful - push defender back 1 hex
+      addLog(`✅ ${attacker.name} successfully shoves ${defender.name}!`, "success");
+      
+      // Move defender back 1 hex (simplified - could be enhanced with direction)
+      const defenderPos = positions[defender.id] || { x: 0, y: 0 };
+      const attackerPos = positions[attacker.id] || { x: 0, y: 0 };
+      
+      // Calculate direction away from attacker
+      const dx = defenderPos.x - attackerPos.x;
+      const dy = defenderPos.y - attackerPos.y;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+      
+      if (distance > 0) {
+        const newX = defenderPos.x + (dx / distance) * 5; // Push back 5 feet
+        const newY = defenderPos.y + (dy / distance) * 5;
+        
+        setPositions(prev => ({
+          ...prev,
+          [defender.id]: { x: newX, y: newY },
+        }));
+        
+        addLog(`💥 ${defender.name} is pushed back!`, "warning");
+      }
+    } else {
+      // Shove failed
+      addLog(`❌ ${defender.name} resists the shove!`, "info");
+    }
+    
+    // Deduct attacker's action
+    setFighters(prev => prev.map(f => 
+      f.id === attacker.id 
+        ? { ...f, remainingAttacks: Math.max(0, f.remainingAttacks - 1) }
+        : f
+    ));
+  }, [fighters, combatActive, addLog, setFighters, getGrappleStatus, GRAPPLE_STATES, breakGrappleWithPush, setPositions, positions]);
+
+  // Disarm maneuver handler
+  const executeDisarmManeuver = useCallback((attacker, defender) => {
+    if (!combatActive) return;
+    
+    const attackerInArray = fighters.find(f => f.id === attacker.id);
+    const defenderInArray = fighters.find(f => f.id === defender.id);
+    
+    if (!attackerInArray || !defenderInArray) {
+      addLog(`Invalid target for disarm maneuver!`, "error");
+      return;
+    }
+    
+    // Check if attacker can act
+    if (attackerInArray.remainingAttacks <= 0) {
+      addLog(`⚠️ ${attacker.name} is out of attacks this turn!`, "error");
+      return;
+    }
+    
+    // Check if defender has a weapon - try multiple formats
+    let defenderWeapon = null;
+    let weaponIndex = -1;
+    
+    // Try array format first (most common)
+    if (Array.isArray(defenderInArray.equippedWeapons)) {
+      for (let i = 0; i < defenderInArray.equippedWeapons.length; i++) {
+        const weapon = defenderInArray.equippedWeapons[i];
+        if (weapon && weapon.name && weapon.name !== "Unarmed" && weapon.type !== "unarmed") {
+          defenderWeapon = weapon;
+          weaponIndex = i;
+          break;
+        }
+      }
+    }
+    
+    // Try object format with primary/secondary
+    if (!defenderWeapon && defenderInArray.equippedWeapons) {
+      const primary = defenderInArray.equippedWeapons.primary;
+      const secondary = defenderInArray.equippedWeapons.secondary;
+      
+      if (primary && primary.name && primary.name !== "Unarmed" && primary.type !== "unarmed") {
+        defenderWeapon = primary;
+      } else if (secondary && secondary.name && secondary.name !== "Unarmed" && secondary.type !== "unarmed") {
+        defenderWeapon = secondary;
+      }
+    }
+    
+    // Try checking if equippedWeapons is an object with array-like properties
+    if (!defenderWeapon && defenderInArray.equippedWeapons) {
+      const weapons = defenderInArray.equippedWeapons;
+      if (weapons[0] && weapons[0].name && weapons[0].name !== "Unarmed" && weapons[0].type !== "unarmed") {
+        defenderWeapon = weapons[0];
+        weaponIndex = 0;
+      }
+    }
+    
+    if (!defenderWeapon || defenderWeapon.name === "Unarmed" || defenderWeapon.type === "unarmed") {
+      addLog(`❌ ${defender.name} has no weapon to disarm!`, "error");
+      if (process.env.NODE_ENV === 'development') {
+        console.log('[Disarm] Defender equippedWeapons:', defenderInArray.equippedWeapons);
+      }
+      return;
+    }
+    
+    // Contested roll: attacker's strike vs defender's parry
+    const attackerPP = attacker.attributes?.PP || attacker.PP || 10;
+    const defenderPP = defender.attributes?.PP || defender.PP || 10;
+    
+    const attackerPPBonus = Math.floor((attackerPP - 10) / 2);
+    const defenderPPBonus = Math.floor((defenderPP - 10) / 2);
+    
+    const attackerStrikeBonus = attacker.bonuses?.strike || attacker.handToHand?.strikeBonus || 0;
+    const defenderParryBonus = defender.bonuses?.parry || defender.handToHand?.parryBonus || 0;
+    
+    // Attacker rolls strike
+    const attackerRoll = CryptoSecureDice.rollD20();
+    const attackerTotal = attackerRoll + attackerStrikeBonus + attackerPPBonus;
+    
+    // Defender rolls parry
+    const defenderRoll = CryptoSecureDice.rollD20();
+    const defenderTotal = defenderRoll + defenderParryBonus + defenderPPBonus;
+    
+    addLog(`🎲 ${attacker.name} attempts disarm: ${attackerRoll} + ${attackerStrikeBonus} (strike) + ${attackerPPBonus} (PP) = ${attackerTotal}`, "info");
+    addLog(`🎲 ${defender.name} defends: ${defenderRoll} + ${defenderParryBonus} (parry) + ${defenderPPBonus} (PP) = ${defenderTotal}`, "info");
+    
+    if (attackerTotal > defenderTotal) {
+      // Disarm successful!
+      addLog(`✅ ${attacker.name} successfully disarms ${defender.name}!`, "success");
+      
+      // Get defender's position
+      const defenderPos = positions[defender.id] || defender.hex || defender.position || { x: 0, y: 0 };
+      
+      // Get adjacent hexes
+      const neighbors = getHexNeighbors(defenderPos.x, defenderPos.y);
+      
+      // Filter out occupied hexes
+      const availableHexes = neighbors.filter(hex => {
+        // Check if hex is occupied by another fighter
+        const isOccupied = Object.values(positions).some(pos => 
+          pos && Math.abs(pos.x - hex.x) < 0.5 && Math.abs(pos.y - hex.y) < 0.5
+        );
+        return !isOccupied && isValidPosition(hex.x, hex.y);
+      });
+      
+      // Choose a random hex (or fallback to first available, or defender's position if none)
+      let dropHex = defenderPos;
+      if (availableHexes.length > 0) {
+        const randomIndex = Math.floor(Math.random() * availableHexes.length);
+        dropHex = availableHexes[randomIndex];
+      }
+      
+      // Remove weapon from defender
+      setFighters(prev => prev.map(f => {
+        if (f.id === defender.id) {
+          const updated = { ...f };
+          
+          // Handle array format
+          if (Array.isArray(updated.equippedWeapons) && weaponIndex >= 0) {
+            const newWeapons = [...updated.equippedWeapons];
+            newWeapons[weaponIndex] = {
+              name: "Unarmed",
+              damage: "1d3",
+              type: "unarmed",
+              category: "unarmed",
+              slot: newWeapons[weaponIndex]?.slot || "Right Hand",
+            };
+            updated.equippedWeapons = newWeapons;
+          } 
+          // Handle object format with primary/secondary
+          else if (updated.equippedWeapons && typeof updated.equippedWeapons === 'object') {
+            const unarmedWeapon = { 
+              name: "Unarmed", 
+              damage: "1d3", 
+              type: "unarmed",
+              category: "unarmed",
+              slot: defenderWeapon.slot || "Right Hand",
+            };
+            
+            if (updated.equippedWeapons.primary?.name === defenderWeapon.name || 
+                (updated.equippedWeapons.primary && !Array.isArray(updated.equippedWeapons))) {
+              updated.equippedWeapons = {
+                ...updated.equippedWeapons,
+                primary: unarmedWeapon,
+              };
+            } else if (updated.equippedWeapons.secondary?.name === defenderWeapon.name) {
+              updated.equippedWeapons = {
+                ...updated.equippedWeapons,
+                secondary: unarmedWeapon,
+              };
+            } else if (updated.equippedWeapons[0] && updated.equippedWeapons[0].name === defenderWeapon.name) {
+              // Handle object with indexed properties
+              updated.equippedWeapons[0] = unarmedWeapon;
+            }
+          }
+          
+          return updated;
+        }
+        return f;
+      }));
+      
+      addLog(`💥 ${defender.name} drops ${defenderWeapon.name} at hex (${Math.round(dropHex.x)}, ${Math.round(dropHex.y)})!`, "warning");
+      addLog(`🗡️ ${defenderWeapon.name} is now on the ground and can be picked up.`, "info");
+    } else {
+      // Disarm failed
+      addLog(`❌ ${defender.name} maintains grip on ${defenderWeapon.name}!`, "info");
+    }
+    
+    // Deduct attacker's action
+    setFighters(prev => prev.map(f => 
+      f.id === attacker.id 
+        ? { ...f, remainingAttacks: Math.max(0, f.remainingAttacks - 1) }
+        : f
+    ));
+  }, [fighters, combatActive, addLog, setFighters, positions, getHexNeighbors, isValidPosition]);
+
   // Grapple action handler
   const handleGrappleAction = useCallback((actionType, attacker, defenderId) => {
     if (!combatActive) return;
@@ -1934,9 +2450,13 @@ useEffect(() => {
     
     let result;
     switch (actionType) {
-      case 'grapple':
-        result = attemptGrapple(attacker, defender, rollDice);
+      case 'grapple': {
+        // Get current positions from state to pass to initiateGrapple
+        const currentAttackerPos = positions[attacker.id] || attacker.hex || attacker.position;
+        const currentDefenderPos = positions[defenderId] || defender.hex || defender.position;
+        result = attemptGrapple(attacker, defender, rollDice, currentAttackerPos, currentDefenderPos);
         break;
+      }
       case 'maintain':
         result = maintainGrapple(attacker, defender, rollDice);
         break;
@@ -1947,18 +2467,49 @@ useEffect(() => {
         // Get equipped weapon (prefer dagger)
         const weapon = attacker.equippedWeapons?.primary || attacker.equippedWeapons?.secondary || null;
         result = groundStrike(attacker, defender, weapon, rollDice);
+        
+        if (DEBUG_GRAPPLE && result) {
+          console.log(
+            `[GRAPPLE DEBUG] ${attacker.name} vs ${defender.name} | ` +
+              `nat=${result.naturalRoll} total=${result.attackRoll} ` +
+              `hit=${result.hit} crit=${result.critical} deathBlow=${result.deathBlow} ` +
+              `ignoresArmor=${result.ignoresArmor} dmg=${result.damage}`
+          );
+        }
+        
+        if (DEBUG_GRAPPLE) {
+          console.log(
+            `[GRAPPLE DEBUG] Stamina: ${attacker.name} STA=${attacker.currentStamina}, ` +
+              `${defender.name} STA=${defender.currentStamina}`
+          );
+        }
         break;
       }
       case 'breakFree':
         result = breakFree(attacker, defender, rollDice);
         break;
+      case 'grapplerPushOff': {
+        result = grapplerPushOff({ grappler: attacker, defender });
+        break;
+      }
+      case 'defenderPushBreak': {
+        result = defenderPushBreak({ defender: attacker, grappler: defender });
+        break;
+      }
+      case 'defenderReversal': {
+        result = defenderReversal({ defender: attacker, grappler: defender });
+        break;
+      }
       default:
         addLog(`Unknown grapple action: ${actionType}`, "error");
         return;
     }
     
     if (result.success) {
-      addLog(result.message, "info");
+      // Safeguard against undefined message
+      if (result.message) {
+        addLog(result.message, "info");
+      }
       
       // Log size modifier information if present
       if (result.autoGrapple) {
@@ -1967,29 +2518,81 @@ useEffect(() => {
       }
       
       // Apply damage if any
-      if (result.damage) {
+      // For takedown, damage is always applied if result.damage exists (takedown doesn't use hit property)
+      // For ground strikes, result.hit indicates if the strike connected
+      if (result.damage && (actionType === 'takedown' || result.hit)) {
         const updated = [...fighters];
         const defenderIndex = updated.findIndex(f => f.id === defenderId);
         if (defenderIndex !== -1) {
           const defenderCopy = { ...updated[defenderIndex] };
-          const newHP = clampHP(getFighterHP(defenderCopy) - result.damage, defenderCopy);
-          applyHPToFighter(defenderCopy, newHP);
-
-          addLog(
-            `💥 ${defender.name} takes ${result.damage} damage! (HP: ${newHP}/${defenderCopy.maxHP || defenderCopy.hp || defenderCopy.HP})`,
-            "warning"
-          );
+          
+          // Use applyDamageWithArmor to handle armor logic
+          const updatedDefender = applyDamageWithArmor(result, attacker, defenderCopy);
+          
+          if (DEBUG_GRAPPLE) {
+            console.log(
+              `[GRAPPLE DEBUG] Post-damage: ` +
+                `${defender.name} HP=${updatedDefender.currentHP ?? updatedDefender.hp} ` +
+                `SDC=${updatedDefender.currentSDC ?? updatedDefender.sdc} ` +
+                (updatedDefender.equippedArmor
+                  ? `ArmorSDC=${updatedDefender.equippedArmor.currentSDC ?? updatedDefender.equippedArmor.sdc}`
+                  : `No armor`)
+            );
+          }
+          
+          // Get final HP for logging
+          const finalHP = getFighterHP(updatedDefender);
+          const maxHP = updatedDefender.maxHP || updatedDefender.hp || updatedDefender.HP;
+          
+          // Log damage application
+          if (result.ignoresArmor) {
+            // Critical hit or death blow - bypasses armor (chink in armor)
+            addLog(
+              `💥 ${defender.name} takes ${result.damage} damage (armor bypassed - weak point struck)! (HP: ${finalHP}/${maxHP})`,
+              result.critical ? "critical" : "warning"
+            );
+            
+            // Log broken armor if any (from calculateArmorDamage)
+            if (updatedDefender.equipped) {
+              const brokenArmor = Object.values(updatedDefender.equipped)
+                .filter(armor => armor && armor.broken && armor.currentSDC <= 0)
+                .map(armor => armor.name);
+              if (brokenArmor.length > 0) {
+                brokenArmor.forEach(name => {
+                  addLog(`💢 ${defender.name}'s ${name} is destroyed!`, "warning");
+                });
+              }
+            }
+          } else {
+            // Normal hit - armor may have absorbed some/all damage
+            const damageTaken = (getFighterHP(defenderCopy) - finalHP);
+            if (damageTaken > 0) {
+              addLog(
+                `💥 ${defender.name} takes ${damageTaken} damage! (HP: ${finalHP}/${maxHP})`,
+                "warning"
+              );
+            } else {
+              addLog(
+                `🛡️ ${defender.name}'s armor absorbs the blow! (Armor SDC damaged: ${result.damage})`,
+                "info"
+              );
+            }
+          }
           
           // Check for death blow
           if (result.deathBlow) {
-            applyHPToFighter(defenderCopy, -999);
-            defenderCopy.isDead = true;
+            applyHPToFighter(updatedDefender, -999);
+            updatedDefender.isDead = true;
             addLog(`💀 ${defender.name} is slain by death blow!`, "error");
           }
           
-          updated[defenderIndex] = defenderCopy;
+          // Update fighter state
+          updated[defenderIndex] = updatedDefender;
           setFighters(updated);
         }
+      } else if (!result.hit && result.message && actionType !== 'takedown') {
+        // Miss - log the message
+        addLog(result.message, "info");
       }
       
       // Deduct attack action
@@ -2000,14 +2603,51 @@ useEffect(() => {
         setFighters(updated);
       }
       
-      // Update fighter states
+      // Update fighter states - handle new format with attacker/defender objects
       setFighters(prev => prev.map(f => {
+        if (result.attacker && f.id === result.attacker.id) {
+          // Update position/hex if grapple pulled them together
+          const updated = { ...f, ...result.attacker };
+          if (result.attacker.hex) {
+            updated.hex = result.attacker.hex;
+            updated.position = result.attacker.position || result.attacker.hex;
+          }
+          return updated;
+        }
+        if (result.defender && f.id === result.defender.id) {
+          const updated = { ...f, ...result.defender };
+          if (result.defender.hex) {
+            updated.hex = result.defender.hex;
+            updated.position = result.defender.position || result.defender.hex;
+          }
+          return updated;
+        }
+        // Fallback to old format
         if (f.id === attacker.id) return { ...f, ...attacker };
         if (f.id === defenderId) return { ...f, ...defender };
         return f;
       }));
+      
+      // Update positions if grapple pulled fighters together - both fighters should be in same hex
+      if (result.attacker && result.attacker.hex) {
+        const sharedHex = result.attacker.hex;
+        setPositions(prev => {
+          const updated = { ...prev };
+          // Move attacker to shared hex
+          updated[result.attacker.id] = sharedHex;
+          // Move defender to same shared hex (both fighters grapple in same hex)
+          if (result.defender && result.defender.id) {
+            updated[result.defender.id] = sharedHex;
+          } else if (defenderId) {
+            updated[defenderId] = sharedHex;
+          }
+          return updated;
+        });
+      }
     } else {
-      addLog(result.reason || result.message, "info");
+      // Safeguard against undefined reason/message
+      const failureMessage = result.reason || result.message || `Grapple action failed`;
+      addLog(failureMessage, "info");
       
       // Still deduct attack if it was attempted
       if (actionType !== 'breakFree') {
@@ -2019,7 +2659,7 @@ useEffect(() => {
         }
       }
     }
-  }, [fighters, combatActive, addLog, clampHP, getFighterHP, applyHPToFighter, getCombinedGrappleModifiers, setFighters]);
+  }, [fighters, combatActive, addLog, clampHP, getFighterHP, applyHPToFighter, getCombinedGrappleModifiers, setFighters, setPositions]);
   // Define attack function with useCallback
   const attack = useCallback((attacker, defenderId, bonusModifiers = {}) => {
     // ✅ CRITICAL: Check if combat is still active before allowing attacks
@@ -2082,6 +2722,7 @@ useEffect(() => {
       setSelectedAction(null);
       setSelectedTarget(null);
       setSelectedAttackWeapon(null);
+      setSelectedManeuver(null);
       setSelectedAttack(0); // Reset attack selection
     }
 
@@ -2103,8 +2744,8 @@ useEffect(() => {
       // Use selected weapon for player attacks
       // Check if weapon is being used two-handed (either weapon is two-handed type or using two-handed grip)
       const isUsingTwoHanded = selectedAttackWeapon.twoHanded || isTwoHandedWeapon(selectedAttackWeapon);
-      // Use getWeaponDamage to properly calculate damage with two-handed bonuses
-      const weaponDamage = getWeaponDamage(selectedAttackWeapon, isUsingTwoHanded);
+      // Use getWeaponDamage to properly calculate damage with two-handed bonuses and weapon size modifiers
+      const weaponDamage = getWeaponDamage(selectedAttackWeapon, isUsingTwoHanded, attacker);
       attackData = {
         name: selectedAttackWeapon.name,
         damage: weaponDamage,
@@ -2333,7 +2974,8 @@ useEffect(() => {
             isFirstMeleeRound,
             hasClosed,
             attackDistance,
-            "auto" // Attack type - will auto-detect based on weapon
+            "auto", // Attack type - will auto-detect based on weapon
+            attacker // Pass attacker for size-based length adjustments
           );
           terrainModifiers.strike += reachModifiers.strike;
           terrainModifiers.notes.push(...reachModifiers.notes);
@@ -2361,7 +3003,10 @@ useEffect(() => {
         }
       }
       
-      const strikeBonus = baseStrikeBonus + chargeBonus + flankingBonus + tempBonus + terrainModifiers.strike + sneakAttackBonus;
+      // Check for grapple advantage bonus
+      const grappleAdvantage = attacker.grappleState?.hasGrappleAdvantage ? 2 : 0;
+      
+      const strikeBonus = baseStrikeBonus + chargeBonus + flankingBonus + tempBonus + terrainModifiers.strike + sneakAttackBonus + grappleAdvantage;
       
       if (tempBonus !== 0) {
         addLog(`⚡ ${attacker.name} has ${tempBonus > 0 ? '+' : ''}${tempBonus} temporary strike bonus!`, "info");
@@ -2373,6 +3018,23 @@ useEffect(() => {
       
       if (sneakAttackBonus > 0) {
         addLog(`🗡️ Sneak attack bonus: +${sneakAttackBonus} strike, ×${sneakDamageMultiplier} damage`, "combat");
+      }
+      
+      if (grappleAdvantage > 0) {
+        addLog(`🎯 ${attacker.name} gains +${grappleAdvantage} grapple advantage bonus!`, "info");
+        // Clear the advantage flag after use
+        setFighters(prev => prev.map(f => {
+          if (f.id === attacker.id && f.grappleState) {
+            return {
+              ...f,
+              grappleState: {
+                ...f.grappleState,
+                hasGrappleAdvantage: false,
+              },
+            };
+          }
+          return f;
+        }));
       }
       
       // Format dice formula correctly (handle negative bonuses)
@@ -2479,9 +3141,115 @@ useEffect(() => {
         addLog(`🎲 ${attacker.name} rolls ${attackDiceRoll} ${bonusDisplay} = ${attackRoll} vs AR ${targetAR}`, "info");
       }
       
-      // Check if defender has a defensive stance
+      // AUTO-PARRY: If enemy attacks and defender has Hand-to-Hand, auto-parry if conditions are met
       let defenseSuccess = false;
       let defenseType = defensiveStance[defender.id];
+      let autoParryUsed = false; // Track if auto-parry was used
+      
+      // Check for auto-parry when enemy attacks (only if no defensive stance already set)
+      if (!defenseType && attackRoll >= targetAR && canFighterAct(defender)) {
+        // Check if defender has Hand-to-Hand skill
+        const hasHandToHand = defender.handToHand && (
+          defender.handToHand.type || 
+          defender.handToHand.parryBonus !== undefined ||
+          defender.bonuses?.parry !== undefined
+        );
+        
+        // Check if defender has attacks remaining
+        const hasAttacksRemaining = defender.remainingAttacks > 0;
+        
+        // Auto-parry if defender has Hand-to-Hand and can act
+        if (hasHandToHand && hasAttacksRemaining) {
+          defenseType = "Parry";
+          autoParryUsed = true; // Mark that auto-parry was used
+          addLog(`🛡️ ${defender.name} automatically attempts to parry!`, "info");
+          
+          // Apply fatigue penalties to defense rolls
+          const fatiguedDefender = applyFatiguePenalties(defender);
+          const fatigueDefensePenalty = fatiguedDefender.bonuses?.parry || 0;
+          
+          // Get base parry bonus
+          let defenseBonus = (defender.bonuses?.parry || 0) + fatigueDefensePenalty;
+          
+          // Apply grapple penalties to defense rolls
+          const grappleStatus = getGrappleStatus(defender);
+          const grappleDefensePenalty = grappleStatus.penalties.parry || 0;
+          defenseBonus += grappleDefensePenalty;
+          
+          // Get size modifier penalty for defender
+          const sizeMod = getCombinedGrappleModifiers(attacker, defender);
+          defenseBonus += sizeMod.defenderParryPenalty || 0;
+          
+          // Apply reach-based parry modifiers (with combat distance)
+          if (combatTerrain && positions && positions[attacker.id] && positions[defender.id]) {
+            const attackerWeapon = attackData;
+            const defenderWeapon = defender.equippedWeapons?.primary || defender.equippedWeapons?.secondary || null;
+            
+            if (attackerWeapon && defenderWeapon) {
+              const hasClosed = hasClosedDistance(defender, attacker, combatStateRef.current);
+              const isFlanking = bonusModifiers.flankingBonus > 0;
+              const combatDistance = calculateDistance(positions[attacker.id], positions[defender.id]);
+              
+              const reachParryMods = getReachParryModifiers(
+                defenderWeapon,
+                attackerWeapon,
+                hasClosed,
+                isFlanking,
+                combatDistance
+              );
+              
+              defenseBonus += reachParryMods.parry;
+              if (reachParryMods.notes.length > 0) {
+                reachParryMods.notes.forEach(note => {
+                  addLog(`⚔️ ${note}`, "info");
+                });
+              }
+            }
+          }
+          
+          // Format dice formula correctly (handle negative bonuses)
+          const defenseDiceFormula = defenseBonus >= 0 ? `1d20+${defenseBonus}` : `1d20`;
+          const defenseBonusParam = defenseBonus >= 0 ? 0 : defenseBonus;
+          const defenseRollResult = CryptoSecureDice.parseAndRoll(defenseDiceFormula, defenseBonusParam);
+          const defenseRoll = defenseRollResult.totalWithBonus;
+          const defenseDiceRoll = defenseRollResult.diceRolls?.[0]?.result || defenseRoll;
+          
+          // Store defense roll in diceRolls
+          setDiceRolls(prev => [...prev, {
+            id: generateCryptoId(),
+            type: 'defense',
+            defender: defender.name,
+            defenseType: 'Parry',
+            roll: defenseDiceRoll,
+            total: defenseRoll,
+            bonus: defenseBonus,
+            timestamp: new Date().toLocaleTimeString()
+          }]);
+          
+          addLog(`🛡️ ${defender.name} parries! Rolls ${defenseDiceRoll} + ${defenseBonus} = ${defenseRoll}`, "info");
+          
+          if (defenseRoll >= attackRoll) {
+            defenseSuccess = true;
+            addLog(`✨ ${defender.name} successfully parries the attack!`, "success");
+            
+            // Deduct one attack for the parry
+            setFighters(prev => prev.map(f => 
+              f.id === defender.id 
+                ? { ...f, remainingAttacks: Math.max(0, (f.remainingAttacks || 0) - 1) }
+                : f
+            ));
+          } else {
+            addLog(`❌ ${defender.name}'s parry fails (${defenseRoll} < ${attackRoll}) - attack hits!`, "warning");
+            
+            // Deduct one attack for the failed parry attempt
+            setFighters(prev => prev.map(f => 
+              f.id === defender.id 
+                ? { ...f, remainingAttacks: Math.max(0, (f.remainingAttacks || 0) - 1) }
+                : f
+            ));
+          }
+        }
+      }
       
       // Check if this is a charge attack and if defender can dodge
       const isChargeAttack = bonusModifiers?.strikeBonus >= 2 || bonusModifiers.strikeBonus >= 2;
@@ -2515,7 +3283,8 @@ useEffect(() => {
         }
       }
       
-      if (defenseType && attackRoll >= targetAR) {
+      // Only process regular defense if auto-parry hasn't already handled it
+      if (defenseType && attackRoll >= targetAR && !autoParryUsed) {
         // Check if defender has attacks remaining to parry/dodge
         if (defender.remainingAttacks <= 0) {
           addLog(`⚠️ ${defender.name} is out of attacks and cannot ${defenseType.toLowerCase()}!`, "error");
@@ -6223,7 +6992,8 @@ useEffect(() => {
   // Auto-open combat choices when it's a player character's turn
   // Also responds to aiControlEnabled changes during combat
   useEffect(() => {
-    if (!combatActive) {
+    // ✅ CRITICAL: Stop processing if combat has ended
+    if (!combatActive || combatEndCheckRef.current) {
       lastAutoTurnKeyRef.current = null;
       return;
     }
@@ -6286,6 +7056,7 @@ useEffect(() => {
             setSelectedAction(null);
             setSelectedTarget(null);
             setSelectedAttackWeapon(null);
+            setSelectedManeuver(null);
             setMovementMode(prev => (prev.active ? { active: false, isRunning: false } : prev));
             setSelectedMovementFighter(null);
           }
@@ -6410,6 +7181,15 @@ useEffect(() => {
         initiative: 0,
         status: "active"
       };
+      
+      // Assign random weapon based on favorite/preferred weapons
+      const favoriteWeapons = creatureData.favorite_weapons || creatureData.preferred_weapons || creatureData.favoriteWeapons;
+      if (favoriteWeapons) {
+        newFighter = assignRandomWeaponToEnemy(newFighter, favoriteWeapons);
+        if (newFighter.equippedWeapons && newFighter.equippedWeapons[0]?.name !== "Unarmed") {
+          addLog(`⚔️ ${newFighter.name} wields ${newFighter.equippedWeapons[0]?.name}`, "info");
+        }
+      }
     }
     
         // Apply size modifiers to new fighter (for both playable and regular creatures)
@@ -6675,6 +7455,7 @@ useEffect(() => {
     positionsRef.current = positionMap;
     setPositions(positionMap);
     setCombatActive(true);
+    setMode("COMBAT"); // Ensure mode is set to COMBAT so icons appear on the map
     
     addLog("⚔️ Combat Started!", "combat");
     addLog(`Melee Round 1 begins - Actions will alternate in initiative order`, "info");
@@ -7067,6 +7848,7 @@ useEffect(() => {
       setSelectedAction(null);
       setSelectedTarget(null);
       setSelectedAttackWeapon(null);
+      setSelectedManeuver(null);
       setShowCombatChoices(false);
       closeCombatChoices(); // Also close via disclosure hook
       setTimeout(() => endTurn(), 500);
@@ -7267,60 +8049,74 @@ useEffect(() => {
           
           // If either fighter is grappled, use grapple actions
           if (grappleStatus.state !== GRAPPLE_STATES.NEUTRAL || targetGrappleStatus.state !== GRAPPLE_STATES.NEUTRAL) {
-            // Determine appropriate grapple action based on current state
-            let grappleAction = 'grapple';
+            // Use selected grapple action if available, otherwise determine from state
+            let grappleAction = selectedGrappleAction || 'grapple';
             
-            if (grappleStatus.state === GRAPPLE_STATES.GRAPPLING) {
-              // Already grappling - can maintain, takedown, or ground strike
-              grappleAction = 'maintain'; // Default to maintain grapple
-            } else if (grappleStatus.state === GRAPPLE_STATES.PINNED) {
-              // Pinned - can try to break free or ground strike
-              grappleAction = 'breakFree';
-            } else if (targetGrappleStatus.state === GRAPPLE_STATES.PINNED) {
-              // Target is pinned - can ground strike
-              grappleAction = 'groundStrike';
+            if (!selectedGrappleAction) {
+              // Fallback: determine appropriate grapple action based on current state
+              if (grappleStatus.state === GRAPPLE_STATES.CLINCH || grappleStatus.state === GRAPPLE_STATES.GROUND) {
+                // Already grappling - default to maintain
+                grappleAction = 'maintain';
+              } else if (grappleStatus.state === GRAPPLE_STATES.GRAPPLED) {
+                // Pinned - default to break free
+                grappleAction = 'breakFree';
+              } else if (targetGrappleStatus.state === GRAPPLE_STATES.GRAPPLED) {
+                // Target is pinned - default to ground strike
+                grappleAction = 'groundStrike';
+              }
             }
             
             // Execute grapple action
             handleGrappleAction(grappleAction, currentFighter, targetToExecute.id);
+            setSelectedGrappleAction(null); // Clear selection after use
             executingActionRef.current = false; // Clear lock after action completes
             clearTimeout(lockTimeout);
             setTimeout(() => endTurn(), 500);
             return;
           } else {
-            // Not in grapple - use standard maneuvers
-            const maneuvers = ["shove", "trip", "disarm", "grapple"];
-            try {
-              const maneuverRoll = CryptoSecureDice.parseAndRoll("1d4");
-              const maneuverIndex = maneuverRoll.totalWithBonus - 1;
-              const maneuver = maneuvers[maneuverIndex];
-              addLog(`🎲 Maneuver roll: ${maneuverRoll.totalWithBonus}/4 = ${maneuver}`, "info");
-              
-              if (maneuver === "grapple") {
-                // Use handleGrappleAction for grapple maneuver
-                handleGrappleAction('grapple', currentFighter, targetToExecute.id);
-                executingActionRef.current = false;
-                clearTimeout(lockTimeout);
-                setTimeout(() => endTurn(), 500);
-                return;
-              } else {
-                addLog(`${currentFighter.name} attempts to ${maneuver} ${targetToExecute.name}!`, "info");
-              }
-            } catch (error) {
-              if (process.env.NODE_ENV === 'development') {
-                console.warn('[executeSelectedAction] Error rolling for maneuver:', error);
-              }
-              const maneuver = maneuvers[0]; // Fallback to first maneuver
-              addLog(`${currentFighter.name} attempts to ${maneuver} ${targetToExecute.name}!`, "info");
+            // Not in grapple - use selected maneuver
+            if (!selectedManeuver) {
+              addLog(`⚠️ Please select a maneuver first!`, "error");
+              executingActionRef.current = false;
+              clearTimeout(lockTimeout);
+              return;
             }
-            // Decrement action and end turn
-            setFighters(prev => prev.map(f => 
-              f.id === currentFighter.id 
-                ? { ...f, remainingAttacks: Math.max(0, f.remainingAttacks - 1) }
-                : f
-            ));
-            executingActionRef.current = false; // Clear lock after action completes
-            setTimeout(() => endTurn(), 500);
+            
+            if (selectedManeuver === "grapple") {
+              // Use handleGrappleAction for grapple maneuver
+              handleGrappleAction('grapple', currentFighter, targetToExecute.id);
+              setSelectedManeuver(null); // Clear selection after use
+              executingActionRef.current = false;
+              clearTimeout(lockTimeout);
+              setTimeout(() => endTurn(), 500);
+              return;
+            } else if (selectedManeuver === "trip") {
+              executeTripManeuver(currentFighter, targetToExecute);
+              setSelectedManeuver(null); // Clear selection after use
+              executingActionRef.current = false;
+              clearTimeout(lockTimeout);
+              setTimeout(() => endTurn(), 500);
+              return;
+            } else if (selectedManeuver === "shove") {
+              executeShoveManeuver(currentFighter, targetToExecute);
+              setSelectedManeuver(null); // Clear selection after use
+              executingActionRef.current = false;
+              clearTimeout(lockTimeout);
+              setTimeout(() => endTurn(), 500);
+              return;
+            } else if (selectedManeuver === "disarm") {
+              executeDisarmManeuver(currentFighter, targetToExecute);
+              setSelectedManeuver(null); // Clear selection after use
+              executingActionRef.current = false;
+              clearTimeout(lockTimeout);
+              setTimeout(() => endTurn(), 500);
+              return;
+            } else {
+              addLog(`⚠️ Unknown maneuver: ${selectedManeuver}`, "error");
+              executingActionRef.current = false;
+              clearTimeout(lockTimeout);
+              return;
+            }
           }
         } else {
           addLog(`${currentFighter.name} wants to perform a maneuver but has no target selected!`, "error");
@@ -8081,10 +8877,18 @@ useEffect(() => {
   // Auto-scroll top combat log to show most recent entry
   useEffect(() => {
     if (topCombatLogRef.current && log.length > 0) {
-      // Scroll to top to show most recent entry (since entries are displayed in reverse order)
+      // Scroll to top to show most recent entry (newest entries are at the beginning of the array)
       topCombatLogRef.current.scrollTop = 0;
     }
   }, [log]);
+
+  // Auto-scroll detailed combat log to show most recent entry
+  useEffect(() => {
+    if (detailedCombatLogRef.current && log.length > 0 && logSortOrder === "newest") {
+      // Scroll to top to show most recent entry (newest entries are at the beginning of the array)
+      detailedCombatLogRef.current.scrollTop = 0;
+    }
+  }, [log, logSortOrder]);
 
   return (
     <Box
@@ -8406,7 +9210,7 @@ useEffect(() => {
                   </Text>
                 ) : (
                   <VStack spacing={0.5} align="stretch">
-                    {log.slice().reverse().map((entry) => (
+                    {log.map((entry) => (
                       <Text 
                         key={entry.id}
                         fontSize="xs" 
@@ -8688,104 +9492,91 @@ useEffect(() => {
           </VStack>
         </FloatingPanel>
       )}
-      <ResizableLayout
-        initialLeftWidth={350}
-        initialRightWidth={350}
-        minSidebarWidth={200}
-        maxSidebarWidth={600}
-        leftSidebar={
-          <>
-        {/* LEFT COLUMN - Party Members & Combat Options */}
-          <VStack align="start" spacing={4} h="full">
-            {/* Combat Options Panel */}
-            {fighters.length > 0 && currentFighter && currentFighter.type === "player" && combatActive && !aiControlEnabled && (
-              <VStack align="start" spacing={3} w="100%">
-              <HStack justify="space-between" w="100%">
-              <Heading size="md" color="green.600">🎯 Combat Options for {currentFighter.name}</Heading>
-                <HStack spacing={2}>
-                  <Button 
-                    size="sm" 
-                    colorScheme={isCombatChoicesOpen ? "green" : "gray"}
-                    variant={isCombatChoicesOpen ? "solid" : "outline"}
-                    onClick={() => {
-                      if (isCombatChoicesOpen) {
-                        closeCombatChoices();
-                        setShowCombatChoices(false);
-                      } else {
-                        openCombatChoices();
-                        setShowCombatChoices(true);
-                      }
-                    }}
-                    title={isCombatChoicesOpen ? "Hide combat choices" : "Show combat choices"}
-                  >
-                    {isCombatChoicesOpen ? "✓ Hide" : "Show"} Options
-                  </Button>
-                  <Button 
-                    size="sm" 
-                    colorScheme="green" 
-                    variant="outline"
-                    display={{ base: "block", md: "none" }}
-                    onClick={onMobileDrawerOpen}
-                  >
-                    📱 Mobile Menu
-                  </Button>
-                </HStack>
-              </HStack>
-              <Collapse in={showCombatChoices || isCombatChoicesOpen} animateOpacity>
-              <Box 
-                w="100%" 
-                p={4} 
-                border="2px solid" 
-                borderColor="green.400" 
-                borderRadius="md" 
-                bg="green.50"
-                boxShadow="md"
-              >
-                <VStack spacing={3} align="stretch">
-                  <HStack spacing={4} align="center" justify="center">
-                    {/* Action Dropdown */}
-                    <Select
-                      placeholder="Select Action"
-                      value={selectedAction?.name || ""}
-                      onChange={(e) => {
-                        const actionName = e.target.value;
-                        if (actionName) {
-                          // Create a simple action object
-                          const action = { name: actionName };
-                          setSelectedAction(action);
-                          setSelectedTarget(null);
-                          setSelectedSkill(null); // Clear skill when action changes
-                          
-                          // Set psionicsMode or spellsMode based on action
-                          if (actionName === "Psionics") {
-                            setPsionicsMode(true);
-                            setSpellsMode(false);
-                          } else if (actionName === "Spells") {
-                            setSpellsMode(true);
-                            setPsionicsMode(false);
+      {/* Combat Options FloatingPanel */}
+      {fighters.length > 0 && currentFighter && currentFighter.type === "player" && combatActive && !aiControlEnabled && (
+        <FloatingPanel
+          title={`🎯 Combat Options for ${currentFighter.name}`}
+          initialX={50}
+          initialY={50}
+          initialWidth={400}
+          initialHeight={600}
+          zIndex={1002}
+          minWidth={350}
+          minHeight={400}
+          bg="rgba(255, 255, 255, 0.95)"
+        >
+          <Box
+            w="100%"
+            h="100%"
+            overflowY="auto"
+            overflowX="hidden"
+            p={4}
+            sx={{
+              '&::-webkit-scrollbar': {
+                width: '8px',
+              },
+              '&::-webkit-scrollbar-track': {
+                background: 'transparent',
+              },
+              '&::-webkit-scrollbar-thumb': {
+                background: 'green.300',
+                borderRadius: '4px',
+              },
+              '&::-webkit-scrollbar-thumb:hover': {
+                background: 'green.400',
+              },
+            }}
+          >
+            <VStack spacing={3} align="stretch">
+                {/* Action Buttons */}
+                <Box>
+                  <Text fontSize="sm" fontWeight="bold" mb={2}>Select Action:</Text>
+                  <Wrap spacing={2}>
+                    {actionOptions.map((option) => (
+                      <Button
+                        key={option.value}
+                        size="sm"
+                        variant={selectedAction?.name === option.value ? "solid" : "outline"}
+                        colorScheme={selectedAction?.name === option.value ? "green" : "blue"}
+                        onClick={() => {
+                          const actionName = option.value;
+                          if (actionName) {
+                            // Create a simple action object
+                            const action = { name: actionName };
+                            setSelectedAction(action);
+                            setSelectedTarget(null);
+                            setSelectedSkill(null); // Clear skill when action changes
+                            setSelectedGrappleAction(null); // Clear grapple action when action changes
+                            
+                            // Set psionicsMode or spellsMode based on action
+                            if (actionName === "Psionics") {
+                              setPsionicsMode(true);
+                              setSpellsMode(false);
+                            } else if (actionName === "Spells") {
+                              setSpellsMode(true);
+                              setPsionicsMode(false);
+                            } else {
+                              setPsionicsMode(false);
+                              setSpellsMode(false);
+                            }
+                            
+                            addLog(`${currentFighter?.name} selects: ${actionName}`, "info");
                           } else {
+                            setSelectedAction(null);
+                            setSelectedTarget(null);
+                            setSelectedSkill(null);
                             setPsionicsMode(false);
                             setSpellsMode(false);
                           }
-                          
-                          addLog(`${currentFighter?.name} selects: ${actionName}`, "info");
-                        } else {
-                          setSelectedAction(null);
-                          setSelectedTarget(null);
-                          setSelectedSkill(null);
-                          setPsionicsMode(false);
-                          setSpellsMode(false);
-                        }
-                      }}
-                      width="180px"
-                      size="md"
-                    >
-                      {actionOptions.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </Select>
+                        }}
+                      >
+                        {option.label}
+                      </Button>
+                    ))}
+                  </Wrap>
+                </Box>
+                
+                <HStack spacing={4} align="center" justify="center" flexWrap="wrap">
 
                     {/* Dedicated Move Button */}
                     <Button
@@ -8832,189 +9623,249 @@ useEffect(() => {
                       </VStack>
                     )}
 
-                    {/* Target Dropdown (Strike / Combat Maneuvers / Psionics / Spells) */}
+                    {/* Target Buttons (Strike / Combat Maneuvers / Psionics / Spells) */}
                     {shouldShowTargetDropdown && (
-                      <Select
-                        placeholder="Select Target"
-                        value={selectedTarget?.id || ""}
-                        onChange={(e) => {
-                          const targetId = e.target.value;
-                          if (targetId) {
-                            const target = fighters.find(f => f.id === targetId);
-                            if (target) {
-                            setSelectedTarget(target);
-                            addLog(`Target selected: ${target.name}`, "info");
-                            }
-                          } else {
-                            setSelectedTarget(null);
-                          }
-                        }}
-                        width="180px"
-                        size="md"
-                      >
-                        {targetOptions.map((fighter, index, array) => {
-                          const sameNameCount = array.filter(f => f.name === fighter.name).length;
+                      <Box>
+                        <Text fontSize="sm" fontWeight="bold" mb={2}>Select Target:</Text>
+                        <Wrap spacing={2}>
+                          {targetOptions.map((fighter, index, array) => {
+                            const sameNameCount = array.filter(f => f.name === fighter.name).length;
                             const displayName = sameNameCount > 1 
-                            ? `${fighter.name} (#${array.filter(f => f.name === fighter.name).indexOf(fighter) + 1})`
+                              ? `${fighter.name} (#${array.filter(f => f.name === fighter.name).indexOf(fighter) + 1})`
                               : fighter.name;
-                          const hpValue = getFighterHP(fighter);
-                          const bloodied = fighter.maxHP ? hpValue <= fighter.maxHP * 0.5 : hpValue <= 0;
+                            const hpValue = getFighterHP(fighter);
+                            const bloodied = fighter.maxHP ? hpValue <= fighter.maxHP * 0.5 : hpValue <= 0;
                             return (
-                              <option key={fighter.id} value={fighter.id}>
-                              {displayName} {bloodied ? "🩸" : ""}
-                              </option>
+                              <Button
+                                key={fighter.id}
+                                size="sm"
+                                variant={selectedTarget?.id === fighter.id ? "solid" : "outline"}
+                                colorScheme={selectedTarget?.id === fighter.id ? "green" : "blue"}
+                                onClick={() => {
+                                  setSelectedTarget(fighter);
+                                  addLog(`Target selected: ${fighter.name}`, "info");
+                                }}
+                              >
+                                {displayName} {bloodied ? "🩸" : ""}
+                              </Button>
                             );
                           })}
-                      </Select>
+                        </Wrap>
+                      </Box>
                     )}
 
-                    {/* Weapon Selection (only for Strike) */}
+                    {/* Maneuver Selection Buttons (only for Combat Maneuvers when NOT in grapple) */}
+                    {selectedAction?.name === "Combat Maneuvers" && currentFighter && selectedTarget && (() => {
+                      const grappleStatus = getGrappleStatus(currentFighter);
+                      const targetGrappleStatus = getGrappleStatus(selectedTarget);
+                      const inGrapple = grappleStatus.state !== GRAPPLE_STATES.NEUTRAL || targetGrappleStatus.state !== GRAPPLE_STATES.NEUTRAL;
+                      
+                      if (!inGrapple) {
+                        const maneuvers = [
+                          { value: "trip", label: "Trip" },
+                          { value: "shove", label: "Shove" },
+                          { value: "disarm", label: "Disarm" },
+                          { value: "grapple", label: "Grapple" },
+                        ];
+                        
+                        return (
+                          <Box>
+                            <Text fontSize="sm" fontWeight="bold" mb={2}>Select Maneuver:</Text>
+                            <Wrap spacing={2}>
+                              {maneuvers.map((maneuver) => (
+                                <Button
+                                  key={maneuver.value}
+                                  size="sm"
+                                  variant={selectedManeuver === maneuver.value ? "solid" : "outline"}
+                                  colorScheme={selectedManeuver === maneuver.value ? "green" : "blue"}
+                                  onClick={() => {
+                                    setSelectedManeuver(maneuver.value);
+                                    addLog(`Maneuver selected: ${maneuver.label}`, "info");
+                                  }}
+                                >
+                                  {maneuver.label}
+                                </Button>
+                              ))}
+                            </Wrap>
+                          </Box>
+                        );
+                      }
+                      return null;
+                    })()}
+
+                    {/* Grapple Action Buttons (only for Combat Maneuvers when in grapple) */}
+                    {selectedAction?.name === "Combat Maneuvers" && currentFighter && selectedTarget && (() => {
+                      const grappleStatus = getGrappleStatus(currentFighter);
+                      const targetGrappleStatus = getGrappleStatus(selectedTarget);
+                      const inGrapple = grappleStatus.state !== GRAPPLE_STATES.NEUTRAL || targetGrappleStatus.state !== GRAPPLE_STATES.NEUTRAL;
+                      const availableActions = inGrapple ? getAvailableGrappleActions(currentFighter, selectedTarget) : [];
+                      
+                      if (availableActions.length > 0) {
+                        return (
+                          <Box>
+                            <Text fontSize="sm" fontWeight="bold" mb={2}>Select Grapple Action:</Text>
+                            <Wrap spacing={2}>
+                              {availableActions.map((action) => (
+                                <Button
+                                  key={action.value}
+                                  size="sm"
+                                  variant={selectedGrappleAction === action.value ? "solid" : "outline"}
+                                  colorScheme={selectedGrappleAction === action.value ? "green" : "blue"}
+                                  onClick={() => {
+                                    setSelectedGrappleAction(action.value);
+                                    addLog(`Grapple action selected: ${action.label}`, "info");
+                                  }}
+                                >
+                                  {action.label}
+                                </Button>
+                              ))}
+                            </Wrap>
+                          </Box>
+                        );
+                      }
+                      return null;
+                    })()}
+
+                    {/* Weapon Selection Buttons (only for Strike) */}
                     {selectedAction?.name === "Strike" && currentFighter && (
-                      <Select
-                        placeholder="Select Weapon"
-                        value={selectedAttackWeapon?.slot || ""}
-                        onChange={(e) => {
-                          const weaponSlot = e.target.value;
-                          if (weaponSlot && currentFighter.equippedWeapons) {
-                            const weapon = currentFighter.equippedWeapons.find(w => w.slot === weaponSlot);
-                            setSelectedAttackWeapon(weapon);
-                            addLog(`Weapon selected: ${weapon.name} (${weapon.damage})`, "info");
-                          } else {
-                            setSelectedAttackWeapon(null);
-                          }
-                        }}
-                        width="140px"
-                        size="md"
-                      >
-                        {currentFighter.equippedWeapons?.map((weapon, index) => (
-                          <option key={index} value={weapon.slot}>
-                            {weapon.slot}: {weapon.name}
-                          </option>
-                        ))}
-                      </Select>
+                      <Box>
+                        <Text fontSize="sm" fontWeight="bold" mb={2}>Select Weapon:</Text>
+                        <Wrap spacing={2}>
+                          {currentFighter.equippedWeapons?.map((weapon, index) => (
+                            <Button
+                              key={index}
+                              size="sm"
+                              variant={selectedAttackWeapon?.slot === weapon.slot ? "solid" : "outline"}
+                              colorScheme={selectedAttackWeapon?.slot === weapon.slot ? "green" : "blue"}
+                              onClick={() => {
+                                setSelectedAttackWeapon(weapon);
+                                addLog(`Weapon selected: ${weapon.name} (${weapon.damage})`, "info");
+                              }}
+                            >
+                              {weapon.slot}: {weapon.name}
+                            </Button>
+                          ))}
+                        </Wrap>
+                      </Box>
                     )}
 
-                    {/* Psionic Power Selection (only for Psionics) */}
+                    {/* Psionic Power Selection Buttons (only for Psionics) */}
                     {selectedAction?.name === "Psionics" && currentFighter && hasPsionics && psionicsMode && (
-                      <Select
-                        placeholder="Select Psionic Power"
-                        value={selectedPsionicPower?.name || ""}
-                        onChange={(e) => {
-                          const powerName = e.target.value;
-                          if (powerName) {
-                            const power = availablePsionicPowers.find(p => p.name === powerName);
-                            setSelectedPsionicPower(power);
-                            addLog(`Psionic power selected: ${power.name} (${power.isp} ISP)`, "info");
-                          } else {
-                            setSelectedPsionicPower(null);
-                          }
-                        }}
-                        width="200px"
-                        size="md"
-                      >
-                        {availablePsionicPowers.map((power, index) => (
-                          <option key={index} value={power.name}>
-                            {power.name} ({power.isp} ISP)
-                          </option>
-                        ))}
-                      </Select>
+                      <Box>
+                        <Text fontSize="sm" fontWeight="bold" mb={2}>Select Psionic Power:</Text>
+                        <Wrap spacing={2}>
+                          {availablePsionicPowers.map((power, index) => (
+                            <Button
+                              key={index}
+                              size="sm"
+                              variant={selectedPsionicPower?.name === power.name ? "solid" : "outline"}
+                              colorScheme={selectedPsionicPower?.name === power.name ? "green" : "blue"}
+                              onClick={() => {
+                                setSelectedPsionicPower(power);
+                                addLog(`Psionic power selected: ${power.name} (${power.isp} ISP)`, "info");
+                              }}
+                            >
+                              {power.name} ({power.isp} ISP)
+                            </Button>
+                          ))}
+                        </Wrap>
+                      </Box>
                     )}
 
-                    {/* Spell Selection (only for Spells) */}
+                    {/* Spell Selection Buttons (only for Spells) */}
                     {selectedAction?.name === "Spells" && currentFighter && hasSpells && spellsMode && (
-                      <Select
-                        placeholder="Select Spell"
-                        value={selectedSpell?.name || ""}
-                        onChange={(e) => {
-                          const spellName = e.target.value;
-                          if (spellName) {
-                            const spell = availableSpells.find(s => s.name === spellName);
-                            setSelectedSpell(spell);
-                            addLog(`Spell selected: ${spell.name} (${spell.cost ?? spell.ppe ?? spell.PPE ?? 0} PPE)`, "info");
-                          } else {
-                            setSelectedSpell(null);
-                          }
-                        }}
-                        width="200px"
-                        size="md"
-                      >
-                        {availableSpells.map((spell, index) => (
-                          <option key={index} value={spell.name}>
-                            {spell.name} ({spell.cost ?? spell.ppe ?? spell.PPE ?? 0} PPE)
-                          </option>
-                        ))}
-                      </Select>
+                      <Box>
+                        <Text fontSize="sm" fontWeight="bold" mb={2}>Select Spell:</Text>
+                        <Wrap spacing={2}>
+                          {availableSpells.map((spell, index) => (
+                            <Button
+                              key={index}
+                              size="sm"
+                              variant={selectedSpell?.name === spell.name ? "solid" : "outline"}
+                              colorScheme={selectedSpell?.name === spell.name ? "green" : "blue"}
+                              onClick={() => {
+                                setSelectedSpell(spell);
+                                addLog(`Spell selected: ${spell.name} (${spell.cost ?? spell.ppe ?? spell.PPE ?? 0} PPE)`, "info");
+                              }}
+                            >
+                              {spell.name} ({spell.cost ?? spell.ppe ?? spell.PPE ?? 0} PPE)
+                            </Button>
+                          ))}
+                        </Wrap>
+                      </Box>
                     )}
 
-                    {/* Skill Selection (only for Use Skill) */}
+                    {/* Skill Selection Buttons (only for Use Skill) */}
                     {selectedAction?.name === "Use Skill" && currentFighter && (
-                      <Select
-                        placeholder="Select Skill"
-                        value={selectedSkill?.name || ""}
-                        onChange={(e) => {
-                          const skillName = e.target.value;
-                          if (skillName) {
-                            const availableSkills = getAvailableSkills(currentFighter);
-                            const skill = availableSkills.find(s => s.name === skillName);
-                            setSelectedSkill(skill);
-                            addLog(`Skill selected: ${skill.name}`, "info");
-                            // Clear target if skill doesn't require one
-                            if (skill && !skill.requiresTarget) {
-                              setSelectedTarget(null);
-                            }
-                          } else {
-                            setSelectedSkill(null);
-                          }
-                        }}
-                        width="250px"
-                        size="md"
-                      >
-                        {getAvailableSkills(currentFighter).map((skill, index) => (
-                          <option key={index} value={skill.name}>
-                            {skill.name} {skill.cost > 0 && `(${skill.cost} ${skill.costType})`}
-                          </option>
-                        ))}
-                      </Select>
+                      <Box>
+                        <Text fontSize="sm" fontWeight="bold" mb={2}>Select Skill:</Text>
+                        <Wrap spacing={2}>
+                          {getAvailableSkills(currentFighter).map((skill, index) => (
+                            <Button
+                              key={index}
+                              size="sm"
+                              variant={selectedSkill?.name === skill.name ? "solid" : "outline"}
+                              colorScheme={selectedSkill?.name === skill.name ? "green" : "blue"}
+                              onClick={() => {
+                                setSelectedSkill(skill);
+                                addLog(`Skill selected: ${skill.name}`, "info");
+                                // Clear target if skill doesn't require one
+                                if (skill && !skill.requiresTarget) {
+                                  setSelectedTarget(null);
+                                }
+                              }}
+                            >
+                              {skill.name} {skill.cost > 0 && `(${skill.cost} ${skill.costType})`}
+                            </Button>
+                          ))}
+                        </Wrap>
+                      </Box>
                     )}
 
-                    {/* Target Selection for Skills that require targets */}
+                    {/* Target Selection Buttons for Skills that require targets */}
                     {selectedAction?.name === "Use Skill" && selectedSkill && selectedSkill.requiresTarget && (
-                      <Select
-                        placeholder="Select Target"
-                        value={selectedTarget?.id || ""}
-                        onChange={(e) => {
-                          const targetId = e.target.value;
-                          if (targetId) {
-                            const target = fighters.find(f => f.id === targetId);
-                            setSelectedTarget(target);
-                            addLog(`Target selected: ${target.name}`, "info");
-                          } else {
-                            setSelectedTarget(null);
-                          }
-                        }}
-                        width="150px"
-                        size="md"
-                      >
-                        {/* For healing skills, show allies; for other skills, show enemies */}
-                        {selectedSkill.type === "healer_ability" || selectedSkill.type === "clerical_ability" || selectedSkill.type === "medical_skill" ? (
-                          fighters
-                            .filter(f => f.type === currentFighter.type && f.id !== currentFighter.id && f.currentHP > -21)
-                            .map((fighter) => (
-                              <option key={fighter.id} value={fighter.id}>
-                                {fighter.name} ({fighter.currentHP}/{fighter.maxHP} HP)
-                                {fighter.currentHP <= 0 && ' 🩸'}
-                              </option>
-                            ))
-                        ) : (
-                          fighters
+                      <Box>
+                        <Text fontSize="sm" fontWeight="bold" mb={2}>Select Target:</Text>
+                        <Wrap spacing={2}>
+                          {/* For healing skills, show allies; for other skills, show enemies */}
+                          {selectedSkill.type === "healer_ability" || selectedSkill.type === "clerical_ability" || selectedSkill.type === "medical_skill" ? (
+                            fighters
+                              .filter(f => f.type === currentFighter.type && f.id !== currentFighter.id && f.currentHP > -21)
+                              .map((fighter) => (
+                                <Button
+                                  key={fighter.id}
+                                  size="sm"
+                                  variant={selectedTarget?.id === fighter.id ? "solid" : "outline"}
+                                  colorScheme={selectedTarget?.id === fighter.id ? "green" : "blue"}
+                                  onClick={() => {
+                                    setSelectedTarget(fighter);
+                                    addLog(`Target selected: ${fighter.name}`, "info");
+                                  }}
+                                >
+                                  {fighter.name} ({fighter.currentHP}/{fighter.maxHP} HP)
+                                  {fighter.currentHP <= 0 && ' 🩸'}
+                                </Button>
+                              ))
+                          ) : (
+                            fighters
                             .filter(f => f.type !== currentFighter.type && f.currentHP > 0)
                             .map((fighter) => (
-                              <option key={fighter.id} value={fighter.id}>
+                              <Button
+                                key={fighter.id}
+                                size="sm"
+                                variant={selectedTarget?.id === fighter.id ? "solid" : "outline"}
+                                colorScheme={selectedTarget?.id === fighter.id ? "green" : "blue"}
+                                onClick={() => {
+                                  setSelectedTarget(fighter);
+                                  addLog(`Target selected: ${fighter.name}`, "info");
+                                }}
+                              >
                                 {fighter.name}
-                              </option>
+                              </Button>
                             ))
-                        )}
-                      </Select>
+                          )}
+                        </Wrap>
+                      </Box>
                     )}
                   </HStack>
 
@@ -9074,11 +9925,17 @@ useEffect(() => {
                     </Box>
                   )}
                 </VStack>
-              </Box>
-              </Collapse>
-              </VStack>
-            )}
-
+            </Box>
+          </FloatingPanel>
+      )}
+      
+      <ResizableLayout
+        initialLeftWidth={350}
+        initialRightWidth={350}
+        minSidebarWidth={200}
+        maxSidebarWidth={600}
+        leftSidebar={
+          <VStack align="start" spacing={4} h="full">
             {/* Party Members Panel */}
             <Heading size="md" color="blue.600">🏰 Party Members ({alivePlayers.length}/{fighters.filter(f => f.type === "player").length})</Heading>
             <Box w="100%" maxH="300px" overflowY="auto" border="2px solid" borderColor="blue.400" p={4} borderRadius="md" bg="blue.50">
@@ -9443,7 +10300,6 @@ useEffect(() => {
               </Button>
             </HStack>
           </VStack>
-          </>
         }
         centerContent={
           <>
@@ -10178,6 +11034,7 @@ useEffect(() => {
               
                       {/* Combat Log & Dice Rolls */}
               <Box 
+                        ref={detailedCombatLogRef}
                         flex="1"
                         minH="300px"
                         maxH="500px"
@@ -10217,15 +11074,13 @@ useEffect(() => {
                               }
                               
                               // Sort by timestamp
+                              // Note: log array has newest entries at index 0 (added with [logEntry, ...prev])
                               if (logSortOrder === "oldest") {
-                                filteredLog.sort((a, b) => {
-                                  const timeA = new Date(`2000-01-01 ${a.timestamp}`);
-                                  const timeB = new Date(`2000-01-01 ${b.timestamp}`);
-                                  return timeA - timeB;
-                                });
-                              } else {
-                                // Newest first (default - reverse chronological)
+                                // Oldest first - reverse the array to put oldest at the beginning
                                 filteredLog.reverse();
+                              } else {
+                                // Newest first (default) - log already has newest at index 0, no need to reverse
+                                // filteredLog is already in newest-first order
                               }
                               
                               return filteredLog;

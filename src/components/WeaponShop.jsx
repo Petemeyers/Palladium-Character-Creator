@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axiosInstance from '../utils/axios';
 import ItemCard from './ItemCard';
 import Confetti from 'react-confetti';
-import { equipWeapon, getAvailableWeapons, getWeaponDisplayInfo } from '../utils/weaponManager';
+import { equipWeapon, getAvailableWeapons, getWeaponDisplayInfo, syncEquippedWeapons } from '../utils/weaponManager';
 import { hasBasicClothes, getAvailableRaceClothing, getRaceClothingInfo } from '../utils/raceClothingManager';
 import { 
   hasTradeableStartingEquipment, 
@@ -74,8 +74,10 @@ const WeaponShop = () => {
         }));
 
         const charactersResponse = await axiosInstance.get('/characters');
+        // Sync equippedWeapons from equipped object for all characters to ensure consistency
+        const syncedCharacters = charactersResponse.data.map(char => syncEquippedWeapons(char));
         setWeapons(enhancedWeapons);
-        setCharacters(charactersResponse.data);
+        setCharacters(syncedCharacters);
       } catch (error) {
         console.error('Error fetching data:', error);
         setError(error.message);
@@ -198,9 +200,10 @@ const WeaponShop = () => {
       // Update character in database
       await axiosInstance.put(`/characters/${selectedCharacter}`, updatedCharacter);
       
-      // Update character list after purchase
+      // Update character list after purchase and sync equippedWeapons
       const updatedCharacters = await axiosInstance.get('/characters');
-      setCharacters(updatedCharacters.data);
+      const syncedCharacters = updatedCharacters.data.map(char => syncEquippedWeapons(char));
+      setCharacters(syncedCharacters);
       
       // Show success modal and confetti with equip info
       let equipMessage = "";
@@ -558,39 +561,42 @@ const WeaponShop = () => {
     });
     
     const inventoryWeapons = inventory.filter(item => {
-      if (!item) return false;
+      if (!item || !item.name) return false;
       
       // Check if it's explicitly marked as a weapon
       if (item.type === "weapon" || item.type === "Weapon" || item.category === "Weapons") {
         return true;
       }
       
-      // Check weapon categories
-      if (item.category === 'one-handed' || item.category === 'two-handed') {
+      // Check weapon categories (must be a weapon category)
+      if (item.category === 'one-handed' || 
+          item.category === 'two-handed' || 
+          item.category === 'ranged' || 
+          item.category === 'thrown') {
         return true;
       }
       
-      // Check weapon names
+      // Check weapon names - be more strict, only match if it's clearly a weapon
       const itemName = item.name?.toLowerCase() || '';
       const weaponKeywords = [
         'axe', 'sword', 'bow', 'dagger', 'sling', 'spear', 'mace', 'club',
         'hammer', 'staff', 'wand', 'crossbow', 'lance', 'halberd', 'rapier',
         'scimitar', 'flail', 'morningstar', 'warhammer', 'battleaxe', 'longsword',
-        'shortsword', 'greatsword', 'handaxe', 'throwing axe', 'javelin', 'trident'
+        'shortsword', 'greatsword', 'handaxe', 'throwing axe', 'javelin', 'trident',
+        'knife', 'blade', 'pike', 'polearm', 'glaive', 'katana', 'cutlass'
       ];
       
-      return weaponKeywords.some(keyword => itemName.includes(keyword));
+      // Only return true if it matches a weapon keyword AND has damage property (weapons should have damage)
+      const hasWeaponKeyword = weaponKeywords.some(keyword => itemName.includes(keyword));
+      const hasDamage = item.damage || itemName.includes('unarmed');
+      
+      return hasWeaponKeyword && hasDamage;
     });
 
     console.log('🔍 Found inventory weapons:', inventoryWeapons);
 
-    // If no weapons found in inventory, try to show all items for debugging
+    // Only show actual weapons, not all items
     let weaponsToShow = inventoryWeapons;
-    if (inventoryWeapons.length === 0 && inventory.length > 0) {
-      // Show all items for debugging - let user see what's actually in inventory
-      console.log('🔍 No weapons found, showing all inventory items for debugging');
-      weaponsToShow = inventory;
-    }
 
     // Add current equipped weapons to the list
     const equippedWeapons = character.equippedWeapons || [
@@ -625,112 +631,248 @@ const WeaponShop = () => {
       const character = characters.find(c => c._id === selectedCharacter);
       if (!character) return;
 
-      // Find the weapon to equip - check all inventory sources like combat system
-      let weaponToEquip = null;
-      
-      // Check all possible inventory sources (like combat system)
-      const inventorySources = [
-        ...(character.inventory || []),
-        ...(character.wardrobe || []),
-        ...(character.items || []),
-        ...(character.gear || []),
-        ...(character.equipment || []),
-      ];
-      const inventory = inventorySources.filter(Boolean);
-      
-      console.log('🔍 Debug weapon equipping:', {
-        weaponName,
-        characterName: character.name,
-        inventory: inventory,
-        inventoryLength: inventory.length
-      });
-      
-      // Find weapon in inventory - improved detection logic
-      const inventoryWeapon = inventory.find(item => {
-        if (item.name !== weaponName) return false;
-        
-        // Check if it's explicitly marked as a weapon
-        if (item.type === "weapon" || item.type === "Weapon" || item.category === "Weapons") {
-          return true;
-        }
-        
-        // Check weapon categories
-        if (item.category === 'one-handed' || item.category === 'two-handed') {
-          return true;
-        }
-        
-        // Check weapon names
-        const itemName = item.name?.toLowerCase() || '';
-        const weaponKeywords = [
-          'axe', 'sword', 'bow', 'dagger', 'sling', 'spear', 'mace', 'club',
-          'hammer', 'staff', 'wand', 'crossbow', 'lance', 'halberd', 'rapier',
-          'scimitar', 'flail', 'morningstar', 'warhammer', 'battleaxe', 'longsword',
-          'shortsword', 'greatsword', 'handaxe', 'throwing axe', 'javelin', 'trident'
-        ];
-        
-        return weaponKeywords.some(keyword => itemName.includes(keyword));
-      });
-      
-      console.log('🔍 Found inventory weapon:', inventoryWeapon);
-      
-      if (inventoryWeapon) {
-        weaponToEquip = inventoryWeapon;
-      } else if (weaponName === "Unarmed") {
-        weaponToEquip = {
-          name: "Unarmed",
-          damage: "1d3",
-          type: "unarmed",
-          category: "unarmed"
-        };
-      }
-
-      if (!weaponToEquip) {
-        alert('Weapon not found in inventory');
-        return;
-      }
-
       // Initialize equipped object if not exists (like combat system)
       if (!character.equipped) {
         character.equipped = {};
       }
 
-      // Update the equipped weapon using combat system approach
-      const slotKey = selectedSlot === 'right' ? 'weaponPrimary' : 'weaponSecondary';
-      character.equipped[slotKey] = {
-        name: weaponToEquip.name,
-        damage: weaponToEquip.damage || "1d3",
-        range: weaponToEquip.range,
-        reach: weaponToEquip.reach,
-        category: weaponToEquip.category,
-        type: weaponToEquip.type
-      };
-
-      // Also update equippedWeapons array for compatibility
+      // Get current equipped weapons
       let equippedWeapons = character.equippedWeapons || [
         { name: "Unarmed", damage: "1d3", type: "unarmed", category: "unarmed", slot: "Right Hand" },
         { name: "Unarmed", damage: "1d3", type: "unarmed", category: "unarmed", slot: "Left Hand" }
       ];
 
+      // Check equipped object (combat system approach)
+      if (character.equipped.weaponPrimary) {
+        equippedWeapons[0] = {
+          name: character.equipped.weaponPrimary.name,
+          damage: character.equipped.weaponPrimary.damage || "1d3",
+          type: character.equipped.weaponPrimary.type,
+          category: character.equipped.weaponPrimary.category,
+          slot: "Right Hand"
+        };
+      }
+      if (character.equipped.weaponSecondary) {
+        equippedWeapons[1] = {
+          name: character.equipped.weaponSecondary.name,
+          damage: character.equipped.weaponSecondary.damage || "1d3",
+          type: character.equipped.weaponSecondary.type,
+          category: character.equipped.weaponSecondary.category,
+          slot: "Left Hand"
+        };
+      }
+
       const slotIndex = selectedSlot === 'right' ? 0 : 1;
+      const otherSlotIndex = selectedSlot === 'right' ? 1 : 0;
+      const currentWeaponInSlot = equippedWeapons[slotIndex];
+      const currentWeaponInOtherSlot = equippedWeapons[otherSlotIndex];
+
+      // Check if the weapon being equipped is already in the other slot
+      const isSwapping = currentWeaponInOtherSlot && 
+                        currentWeaponInOtherSlot.name === weaponName && 
+                        weaponName !== "Unarmed";
+
+      // Check if the weapon is already in the current slot
+      const isAlreadyEquipped = currentWeaponInSlot && 
+                                currentWeaponInSlot.name === weaponName && 
+                                weaponName !== "Unarmed";
+
+      let weaponToEquip = null;
+      let weaponToMoveToInventory = null;
+
+      if (isAlreadyEquipped) {
+        // Weapon is already in this slot, do nothing
+        alert(`${weaponName} is already equipped in ${selectedSlot === 'right' ? 'Right Hand' : 'Left Hand'}`);
+        return;
+      }
+
+      if (isSwapping) {
+        // Swap weapons between slots
+        console.log('🔄 Swapping weapons between slots');
+        weaponToEquip = currentWeaponInOtherSlot;
+        weaponToMoveToInventory = currentWeaponInSlot;
+      } else {
+        // Normal equip - find weapon in inventory
+        const inventorySources = [
+          ...(character.inventory || []),
+          ...(character.wardrobe || []),
+          ...(character.items || []),
+          ...(character.gear || []),
+          ...(character.equipment || []),
+        ];
+        const inventory = inventorySources.filter(Boolean);
+        
+        // Find weapon in inventory - improved detection logic
+        const inventoryWeapon = inventory.find(item => {
+          if (item.name !== weaponName) return false;
+          
+          // Check if it's explicitly marked as a weapon
+          if (item.type === "weapon" || item.type === "Weapon" || item.category === "Weapons") {
+            return true;
+          }
+          
+          // Check weapon categories
+          if (item.category === 'one-handed' || item.category === 'two-handed') {
+            return true;
+          }
+          
+          // Check weapon names
+          const itemName = item.name?.toLowerCase() || '';
+          const weaponKeywords = [
+            'axe', 'sword', 'bow', 'dagger', 'sling', 'spear', 'mace', 'club',
+            'hammer', 'staff', 'wand', 'crossbow', 'lance', 'halberd', 'rapier',
+            'scimitar', 'flail', 'morningstar', 'warhammer', 'battleaxe', 'longsword',
+            'shortsword', 'greatsword', 'handaxe', 'throwing axe', 'javelin', 'trident'
+          ];
+          
+          return weaponKeywords.some(keyword => itemName.includes(keyword));
+        });
+        
+        if (inventoryWeapon) {
+          weaponToEquip = inventoryWeapon;
+          weaponToMoveToInventory = currentWeaponInSlot;
+        } else if (weaponName === "Unarmed") {
+          weaponToEquip = {
+            name: "Unarmed",
+            damage: "1d3",
+            type: "unarmed",
+            category: "unarmed"
+          };
+          weaponToMoveToInventory = currentWeaponInSlot;
+        } else {
+          alert('Weapon not found in inventory');
+          return;
+        }
+      }
+
+      // Update the equipped weapon using combat system approach
+      const slotKey = selectedSlot === 'right' ? 'weaponPrimary' : 'weaponSecondary';
+      const otherSlotKey = selectedSlot === 'right' ? 'weaponSecondary' : 'weaponPrimary';
+      
+      // Update the selected slot
+      if (weaponToEquip.name === "Unarmed") {
+        // Remove weapon from equipped object if unarmed
+        delete character.equipped[slotKey];
+      } else {
+        character.equipped[slotKey] = {
+          name: weaponToEquip.name,
+          damage: weaponToEquip.damage || "1d3",
+          range: weaponToEquip.range,
+          reach: weaponToEquip.reach,
+          category: weaponToEquip.category,
+          type: weaponToEquip.type
+        };
+      }
+
+      // If swapping, update the other slot too
+      if (isSwapping && weaponToMoveToInventory && weaponToMoveToInventory.name !== "Unarmed") {
+        character.equipped[otherSlotKey] = {
+          name: weaponToMoveToInventory.name,
+          damage: weaponToMoveToInventory.damage || "1d3",
+          range: weaponToMoveToInventory.range,
+          reach: weaponToMoveToInventory.reach,
+          category: weaponToMoveToInventory.category,
+          type: weaponToMoveToInventory.type
+        };
+      } else if (isSwapping && weaponToMoveToInventory && weaponToMoveToInventory.name === "Unarmed") {
+        // If swapping to unarmed, clear the other slot
+        delete character.equipped[otherSlotKey];
+      }
+      
+      // If NOT swapping but the weapon was in the other slot, clear it from there
+      if (!isSwapping && currentWeaponInOtherSlot && currentWeaponInOtherSlot.name === weaponName && weaponName !== "Unarmed") {
+        // Weapon is being moved from other slot to this slot - clear the other slot
+        delete character.equipped[otherSlotKey];
+        // Also update the equippedWeapons array for the other slot
+        equippedWeapons[otherSlotIndex] = {
+          name: "Unarmed",
+          damage: "1d3",
+          type: "unarmed",
+          category: "unarmed",
+          slot: selectedSlot === 'right' ? "Left Hand" : "Right Hand"
+        };
+      }
+
+      // Update equippedWeapons array
       equippedWeapons[slotIndex] = {
         ...weaponToEquip,
         slot: selectedSlot === 'right' ? "Right Hand" : "Left Hand"
       };
+
+      // If swapping, update the other slot in the array too
+      if (isSwapping && weaponToMoveToInventory && weaponToMoveToInventory.name !== "Unarmed") {
+        equippedWeapons[otherSlotIndex] = {
+          ...weaponToMoveToInventory,
+          slot: selectedSlot === 'right' ? "Left Hand" : "Right Hand"
+        };
+      }
+
+      // Handle inventory updates
+      let updatedInventory = [...(character.inventory || [])];
+      
+      // Check if weapon was already equipped in the other slot (moving, not from inventory)
+      const wasInOtherSlot = !isSwapping && currentWeaponInOtherSlot && 
+                             currentWeaponInOtherSlot.name === weaponName && 
+                             weaponName !== "Unarmed";
+      
+      // If not swapping, not unarmed, and not moving from other slot, remove weapon from inventory
+      if (!isSwapping && !wasInOtherSlot && weaponToEquip.name !== "Unarmed") {
+        const weaponIndex = updatedInventory.findIndex(item => 
+          item.name === weaponToEquip.name &&
+          (item.type === "weapon" || item.type === "Weapon" || 
+           item.category === 'one-handed' || item.category === 'two-handed' ||
+           item.category === 'ranged' || item.category === 'thrown')
+        );
+        if (weaponIndex !== -1) {
+          updatedInventory.splice(weaponIndex, 1);
+        }
+      }
+
+      // If there's a weapon to move back to inventory (and it's not Unarmed), add it
+      if (weaponToMoveToInventory && weaponToMoveToInventory.name !== "Unarmed") {
+        // Check if it's already in inventory
+        const alreadyInInventory = updatedInventory.some(item => 
+          item.name === weaponToMoveToInventory.name &&
+          (item.type === "weapon" || item.type === "Weapon" || 
+           item.category === 'one-handed' || item.category === 'two-handed' ||
+           item.category === 'ranged' || item.category === 'thrown')
+        );
+        
+        if (!alreadyInInventory) {
+          updatedInventory.push(weaponToMoveToInventory);
+        }
+      }
+      
+      // If weapon was moved from other slot (not swapped), add the old weapon from that slot to inventory
+      if (wasInOtherSlot && currentWeaponInSlot && currentWeaponInSlot.name !== "Unarmed") {
+        const alreadyInInventory = updatedInventory.some(item => 
+          item.name === currentWeaponInSlot.name &&
+          (item.type === "weapon" || item.type === "Weapon" || 
+           item.category === 'one-handed' || item.category === 'two-handed' ||
+           item.category === 'ranged' || item.category === 'thrown')
+        );
+        
+        if (!alreadyInInventory) {
+          updatedInventory.push(currentWeaponInSlot);
+        }
+      }
 
       // Update character with both systems
       const updatedCharacter = {
         ...character,
         equipped: character.equipped,
         equippedWeapons: equippedWeapons,
+        inventory: updatedInventory,
         equippedWeapon: selectedSlot === 'right' ? weaponToEquip.name : character.equippedWeapon // Legacy support
       };
 
       // Update character in database
       await axiosInstance.put(`/characters/${selectedCharacter}`, updatedCharacter);
       
-      // Update character list
+      // Update character list and sync equippedWeapons
       const updatedCharacters = await axiosInstance.get('/characters');
-      setCharacters(updatedCharacters.data);
+      const syncedCharacters = updatedCharacters.data.map(char => syncEquippedWeapons(char));
+      setCharacters(syncedCharacters);
       
       // Close modal
       setShowWeaponSlotModal(false);
@@ -738,7 +880,11 @@ const WeaponShop = () => {
       setAvailableWeapons([]);
 
       // Show success message
-      alert(`Equipped ${weaponName} in ${selectedSlot === 'right' ? 'Right Hand' : 'Left Hand'}!`);
+      if (isSwapping) {
+        alert(`Swapped weapons! ${weaponName} moved to ${selectedSlot === 'right' ? 'Right Hand' : 'Left Hand'}!`);
+      } else {
+        alert(`Equipped ${weaponName} in ${selectedSlot === 'right' ? 'Right Hand' : 'Left Hand'}!`);
+      }
       
     } catch (error) {
       console.error('Error equipping weapon:', error);
