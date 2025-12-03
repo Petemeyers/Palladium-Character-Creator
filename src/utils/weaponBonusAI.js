@@ -5,7 +5,8 @@
  */
 
 import { getWeaponLength, getWeaponType } from './combatEnvironmentLogic.js';
-import { compareWeaponReach, calculateReachAdvantage } from './weaponSystem.js';
+import { calculateReachAdvantage } from './weaponSystem.js';
+import { compareWeaponReach } from './reachCombatRules.js';
 import { getReachStrikeModifiers, needsToCloseDistance, attemptCloseDistance } from './reachCombatRules.js';
 import { getWeaponBonuses } from './weaponSlotManager.js';
 import { getAdjustedWeaponDamage, getWeaponSizeForRace, WEAPON_SIZE } from './weaponSizeSystem.js';

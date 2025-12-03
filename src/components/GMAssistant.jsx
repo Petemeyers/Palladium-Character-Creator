@@ -280,8 +280,8 @@ const GMAssistant = () => {
               </h2>
               <AccordionPanel pb={4}>
                 <VStack align="stretch" spacing={2}>
-                  {mapStarts.map((start) => (
-                    <Box key={start.id} p={2} bg={bgColor} borderRadius="md">
+                  {mapStarts.map((start, index) => (
+                    <Box key={start.id || `map-start-${index}`} p={2} bg={bgColor} borderRadius="md">
                       <Text fontWeight="bold">{start.label}</Text>
                       <Text fontSize="sm" color="gray.600">{start.scene}</Text>
                     </Box>

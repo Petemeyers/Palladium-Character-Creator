@@ -35,10 +35,19 @@ const PartyChat = ({ username = "GM" }) => {
     // Load chat history when joining a party
     const loadChatHistory = async () => {
       try {
-        const response = await axiosInstance.get(`/messages/${activeParty._id}`);
+        // Suppress error logging for 404s (expected when party has no messages)
+        const response = await axiosInstance.get(`/messages/${activeParty._id}`, {
+          suppressErrorLogging: true
+        });
         setMessages(response.data);
         console.log(`Loaded ${response.data.length} messages for party ${activeParty._id}`);
       } catch (err) {
+        // 404 is expected if party has no messages yet - handle silently
+        if (err.response?.status === 404) {
+          setMessages([]);
+          return;
+        }
+        // Only log non-404 errors
         console.error("Failed to load chat history:", err);
         setMessages([]);
       }

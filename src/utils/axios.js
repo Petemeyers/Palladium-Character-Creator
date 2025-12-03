@@ -53,11 +53,16 @@ instance.interceptors.response.use(
   async (error) => {
     const apiError = createAPIError(error);
 
-    // Skip logging 404s for /parties/active - it's expected when no active party exists
+    // Skip logging 404s for expected endpoints:
+    // - /parties/active: expected when no active party exists
+    // - /messages/:partyId: expected when party has no messages yet
+    // Also check for suppressErrorLogging flag in request config
     const shouldSkipLogging = 
-      apiError instanceof APIError &&
-      apiError.status === 404 &&
-      error.config?.url?.includes('/parties/active');
+      error.config?.suppressErrorLogging === true ||
+      (apiError instanceof APIError &&
+       apiError.status === 404 &&
+       (error.config?.url?.includes('/parties/active') ||
+        error.config?.url?.includes('/messages/')));
 
     // Log all errors except skipped ones
     if (!shouldSkipLogging) {
@@ -151,8 +156,11 @@ instance.interceptors.response.use(
           break;
 
         case 404:
-          // Don't warn for /parties/active - it's expected when no active party exists
-          if (!error.config?.url?.includes('/parties/active')) {
+          // Don't warn for expected 404s:
+          // - /parties/active: expected when no active party exists
+          // - /messages/:partyId: expected when party has no messages yet
+          if (!error.config?.url?.includes('/parties/active') &&
+              !error.config?.url?.includes('/messages/')) {
             console.warn("Resource not found:", apiError.message);
           }
           break;
