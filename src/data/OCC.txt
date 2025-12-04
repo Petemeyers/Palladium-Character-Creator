@@ -1,0 +1,1796 @@
+# Men Of Arms
+
+The Men Of Arms are the combat-focused characters of the Palladium Role-Playing Game. Their training emphasizes physical prowess, weapon mastery, and battlefield tactics. Below is an overview of the various Men Of Arms O.C.C.s, their roles, skills, equipment, and levels of experience.
+
+---
+
+## Mercenary Fighter
+
+**Description:**  
+Mercenary Fighters are rough and tumble adventurers who sell their sword and muscle for gold and glory. They are jacks-of-all-trades in combat—adept at tracking, trapping, picking pockets, and prowling—though they tend to lack subtlety. For them, a locked door is best dealt with by kicking it in, and secrets are extracted with a good, hard slap.
+
+**Key Points:**
+- **Orientation:** Entirely physical; reading and writing are unimportant on the battlefield.
+- **Freedom:** Mercenaries are free agents with no obligations to a commander or king.
+- **Armor:** Most prefer heavy armour for maximum protection, though they can use any type.
+
+**Alignments:** Any  
+**Attribute Requirement:** P.S. 7
+
+**O.C.C. Skills:**
+- Hand to Hand (Mercenary)
+- W.P. Small Shield
+- Scale Walls (*+10% bonus*)
+
+**Elective Skills:**  
+*(Choose 6 at level 1, 3 at level 3, 3 at level 8, and 3 at level 12)*
+- Disguise (*+20% bonus*)
+- Forgery
+- Horsemanship (General)
+- Identify Tracks (*+5% bonus*)
+- Locate Secret Compartments/Doors
+- Medical
+- Pick Locks
+- Pick Pockets (*+5% bonus*)
+- Prowl (*+5% bonus*)
+- Read/Write
+- Track
+
+**Secondary Skills:**  
+*(Choose 8 at level 1, 4 at level 4, and 4 at level 12)*
+- Sense of Direction (*+5% bonus*)
+- Speak Additional Language (*+10% bonus*)
+- Swim (*+5% bonus*)
+- Recognize Precious Metals/Stones (*+5% bonus*)
+- Recognize Weapon Quality (*+6% bonus*)
+
+**Levels of Experience – Mercenary Fighter:**
+
+| Level | XP Required         |
+| ----- | ------------------- |
+| 1     | 0 - 1,900           |
+| 2     | 1,901 - 3,800       |
+| 3     | 3,801 - 7,600       |
+| 4     | 7,601 - 12,000      |
+| 5     | 12,001 - 20,000     |
+| 6     | 20,001 - 30,000     |
+| 7     | 30,001 - 45,000     |
+| 8     | 45,001 - 65,000     |
+| 9     | 65,001 - 90,000     |
+| 10    | 90,001 - 130,000    |
+| 11    | 130,001 - 170,000   |
+| 12    | 170,001 - 220,000   |
+| 13    | 220,001 - 270,000   |
+| 14    | 270,001 - 320,000   |
+| 15    | 320,001 - 370,000   |
+
+---
+
+## Soldier
+
+**Description:**  
+Soldiers are formally trained warriors dedicated to organized combat. They focus on inflicting maximum damage quickly and accurately. Unlike mercenaries, soldiers serve under commanders and are required to follow strict orders and military laws.
+
+**Key Points:**
+- **Role:** Instruments of war for defensive or offensive operations.
+- **Discipline:** They must obey orders and are held to military rules.
+- **Freedom:** Less freedom than mercenaries; assignments are dictated by superiors.
+- **Advantages:** Formal arms training, monthly salary, free room and board, and equipment.
+
+**Armor:**  
+- Soldiers prefer heavy armour for protection.  
+- Equipment is often provided by military-contracted shops at a discount.
+
+**Attribute Requirements:**  
+- **P.S.:** 10  
+- **P.E.:** 8
+
+**O.C.C. Skills:**
+- Hand to Hand (Soldier)
+- Scale Walls (*–12% penalty*)
+- W.P. Small Shield
+
+**Elective Skills:**  
+*(Choose 7 at level 1, 3 at level 3, 3 at level 8, and 3 at level 12)*
+- Forgery
+- Horsemanship (General)
+- Identify Tracks (*+2% bonus*)
+- Medical (*+4% bonus*)
+- Pick Pockets
+- Prowl
+- Read/Write
+- Track (*+2% bonus*)
+- Trap/Skin Small Animals
+- Various W.P. Options
+
+**Secondary Skills:**  
+*(Choose 7 at level 1, 4 at level 4, and 4 at level 12)*
+- Racial Histories (*+6% bonus*)
+- Recognize Weapon Quality (*+8% bonus*)
+- Religious Doctrine (*+4% bonus*)
+- Speak Additional Language (*+8% bonus*)
+- Swim (*+10% bonus*)
+
+**Levels of Experience – Soldier:**
+
+| Level | XP Required         |
+| ----- | ------------------- |
+| 1     | 0 - 2,000           |
+| 2     | 2,001 - 4,000       |
+| 3     | 4,001 - 8,000       |
+| 4     | 8,001 - 14,000      |
+| 5     | 14,001 - 22,000     |
+| 6     | 22,001 - 32,000     |
+| 7     | 32,001 - 47,000     |
+| 8     | 47,001 - 67,000     |
+| 9     | 67,001 - 92,000     |
+| 10    | 92,001 - 132,000    |
+| 11    | 132,001 - 174,000   |
+| 12    | 174,001 - 224,000   |
+| 13    | 224,001 - 274,000   |
+| 14    | 274,001 - 324,000   |
+| 15    | 324,001 - 374,000   |
+
+---
+
+## Long Bowman
+
+**Description:**  
+Long Bowmen are elite archers specialized in long-range combat. Their superior marksmanship allows them to deal devastating damage from a distance.
+
+**Key Points:**
+- **Role:** Precision archers skilled in using the long bow.
+- **Freedom:** They are free agents who excel in ranged combat.
+- **Armor:** Prefer armor types that balance protection and mobility (e.g., studded leather, chain mail).
+
+**Attribute Requirements:**  
+- **P.S.:** 10  
+- **P.P.:** 12
+
+**O.C.C. Skills:**
+- Hand to Hand (Long Bowman)
+- W.P. Long Bow
+
+**Elective Skills:**  
+*(Choose 8 at level 1, 3 at level 3, 3 at level 8, and 3 at level 12)*
+- Disguise
+- Forgery (*+6% bonus*)
+- Horsemanship (General)
+- Identify Tracks
+- Medical
+- Pick Locks
+- Pick Pockets (*+7% bonus*)
+- Prowl (*+4% bonus*)
+- Read/Write
+- Scale Walls (*+6% bonus*)
+- Track
+- Trap/Skin Small Animals (*+5% bonus*)
+
+**Secondary Skills:**  
+*(Choose 7 at level 1, 4 at level 4, and 4 at level 10)*
+- Carpentry (*+4% bonus*)
+- Paint (*+4% bonus*)
+- Recognize Precious Metals/Stones (*+5% bonus*)
+- Sailing (*+5% bonus*)
+- Sense of Direction (*+10% bonus*)
+- Tailor (*+10% bonus*)
+- Swim (*+10% bonus*)
+- Speak Additional Language (*+5% bonus*)
+
+**Levels of Experience – Long Bowman:**
+
+| Level | XP Required         |
+| ----- | ------------------- |
+| 1     | 0 - 2,100           |
+| 2     | 2,101 - 4,200       |
+| 3     | 4,201 - 8,400       |
+| 4     | 8,401 - 15,400      |
+| 5     | 15,401 - 23,400     |
+| 6     | 23,401 - 33,400     |
+| 7     | 33,401 - 48,400     |
+| 8     | 48,401 - 68,400     |
+| 9     | 68,401 - 93,400     |
+| 10    | 93,401 - 133,400    |
+| 11    | 133,401 - 173,400   |
+| 12    | 173,401 - 223,400   |
+| 13    | 223,401 - 273,400   |
+| 14    | 273,401 - 323,400   |
+| 15    | 323,401 - 373,400   |
+
+---
+
+## Knight
+
+**Description:**  
+Knights are trained soldiers who have been knighted for acts of courage and honor. They serve as enforcers of the law, protectors of the innocent, and are skilled in both horsemanship and melee combat.
+
+**Key Points:**
+- **Role:** Highly trained, versatile warriors often of noble birth.
+- **Code:** They adhere to the Code of Chivalry, emphasizing honor, justice, valor, and courtesy.
+- **Freedom:** Though sometimes tied to a sovereign, many knights operate as free agents.
+- **Armor:** Typically wear heavy armour (chain mail, double mail, scale mail, splint, or plate) with no movement penalties.
+
+**Alignment:**  
+- Knights can be of any alignment. Their social station as knights does not necessarily indicate their moral character.
+
+**Attribute Requirements:**  
+- **I.Q.:** 7  
+- **P.S.:** 10  
+- **P.E.:** 10  
+- **P.P.:** 12
+
+**O.C.C. Skills:**
+- Hand to Hand (Knight)
+- Horsemanship (Knight)
+- W.P. Large Shield
+- W.P. Lance
+
+**Elective Skills:**  
+*(Choose 7 at level 1, 3 at level 3, 3 at level 8, and 3 at level 12)*
+- Disguise
+- Forgery
+- Identify Tracks
+- Medical (*+4% bonus*)
+- Pick Locks
+- Pick Pockets
+- Read/Write (*+20% bonus*)
+- Scale Walls (*+6% bonus*)
+- Trap/Skin Small Animals (*+4% bonus*)
+- Trap/Skin Large Animals
+- Various W.P. Options
+
+**Secondary Skills:**  
+*(Choose 8 at level 1, 4 at level 4, and 4 at level 10)*
+- Dance (*+10% bonus*)
+- Demon/Devil Lore (*+10% bonus*)
+- Play String Instrument (*+4% bonus*)
+- Play Wind Instrument (*+6% bonus*)
+- Racial Histories (*+10% bonus*)
+- Recognize Precious Metals/Stones (*+5% bonus*)
+- Recognize Weapon Quality (*+12% bonus*)
+- Religious Doctrine (*+20% bonus*)
+- Read/Write Additional Language (*+10% bonus*)
+- Speak Additional Language (*+20% bonus*)
+- Sing (*+5% bonus*)
+
+**Levels of Experience – Knight:**
+
+| Level | XP Required         |
+| ----- | ------------------- |
+| 1     | 0 - 2,200           |
+| 2     | 2,201 - 4,400       |
+| 3     | 4,401 - 8,800       |
+| 4     | 8,801 - 15,500      |
+| 5     | 15,501 - 23,500     |
+| 6     | 23,501 - 33,500     |
+| 7     | 33,501 - 48,500     |
+| 8     | 48,501 - 68,500     |
+| 9     | 68,501 - 93,500     |
+| 10    | 93,501 - 133,500    |
+| 11    | 133,501 - 175,500   |
+| 12    | 175,501 - 225,500   |
+| 13    | 225,501 - 275,000   |
+| 14    | 275,001 - 325,000   |
+| 15    | 325,001 - 375,000   |
+
+---
+
+## Palladin
+
+**Description:**  
+Palladins are the epitome of knighthood—combining unparalleled combat prowess with nobility and chivalric ideals. They are often considered the highest rank among the Men of Arms and are expected to uphold a strict Code of Chivalry.  
+*Note: Evil Palladins (Anti-Palladins) follow a twisted, corrupted version of the chivalric code.*
+
+**Armor:**  
+- Like knights, palladins wear heavy armour for maximum protection.
+
+**Attribute Requirements:**  
+- **I.Q.:** 10  
+- **P.S.:** 12  
+- **P.P.:** 12  
+- **P.E.:** 10
+
+**O.C.C. Skills:**
+- Hand to Hand (Palladin)
+- Horsemanship (Palladin)
+- Read/Write (*+40% bonus*)
+- W.P. Large Shield
+- W.P. Lance
+
+**Elective Skills:**  
+*(Choose 7 at level 1, 3 at level 3, 3 at level 8, and 3 at level 12)*
+- Disguise
+- Identify Tracks
+- Medical (*+2% bonus*)
+- Pick Locks
+- Prowl (*+4% bonus*)
+- Scale Walls (*+10% bonus*)
+- Track
+- Trap/Skin Small Animals (*+4% bonus*)
+- Trap/Skin Large Animals
+- Various W.P. Options
+
+**Secondary Skills:**  
+*(Choose 10 at level 1, 3 at level 4, and 3 at level 10)*
+- Dance (*+20% bonus*)
+- Demon/Devil Lore (*+15% bonus*)
+- Faerie Lore (*+10% bonus*)
+- Play String Instrument (*+4% bonus*)
+- Play Wind Instrument (*+6% bonus*)
+- Recognize Precious Metals/Stones (*+5% bonus*)
+- Recognize Weapon Quality (*+12% bonus*)
+- Religious Doctrine (*+15% bonus*)
+- Read/Write Additional Language (*+20% bonus*)
+- Sing (*+5% bonus*)
+- Speak Additional Language (*+20% bonus*)
+
+**Levels of Experience – Palladin:**
+
+| Level | XP Required         |
+| ----- | ------------------- |
+| 1     | 0 - 2,400           |
+| 2     | 2,401 - 4,800       |
+| 3     | 4,801 - 9,600       |
+| 4     | 9,601 - 17,000      |
+| 5     | 17,001 - 25,000     |
+| 6     | 25,001 - 35,000     |
+| 7     | 35,001 - 50,000     |
+| 8     | 50,001 - 70,000     |
+| 9     | 70,001 - 95,000     |
+| 10    | 95,001 - 135,000    |
+| 11    | 135,001 - 177,000   |
+| 12    | 177,001 - 227,000   |
+| 13    | 227,001 - 277,000   |
+| 14    | 277,001 - 327,000   |
+| 15    | 327,001 - 377,000   |
+
+---
+
+## Ranger
+
+**Description:**  
+Rangers are expert scouts, hunters, and trackers. They are highly skilled in survival, able to navigate various terrains and adept at both hunting animals and tracking humanoid prey.
+
+**Key Points:**
+- **Role:** Essential for wilderness survival, scouting, and long-range combat.
+- **Weapon Proficiency:** The Ranger is the only other O.C.C. that may take the long bow as a weapon proficiency.
+- **Armor:** Prefer light or chain mail for mobility and stealth, though they can wear any type.
+
+**Attribute Requirements:**  
+- **I.Q.:** 9  
+- **P.S.:** 10  
+- **P.E.:** 13
+
+**O.C.C. Skills:**
+- Hand to Hand (Ranger)
+- Identify Tracks (*+22% bonus*)
+- Track (*+20% bonus*)
+
+**Elective Skills:**  
+*(Choose 8 at level 1, 3 at level 3, 3 at level 8, and 3 at level 12)*
+- Disguise
+- Dowsing (*+10% bonus*)
+- Horsemanship (General)
+- Identify Plants & Fruits (*+20% bonus*)
+- Medical (*+2% bonus*)
+- Prowl (*+40% bonus*)
+- Read/Write
+- Scale Walls
+- Trap/Skin Small Animals (*+20% bonus*)
+- Trap/Skin Large Animals (*+10% bonus*)
+- Use Poison
+- Various W.P. Options
+
+**Secondary Skills:**  
+*(Choose 10 at level 1, 4 at level 4, and 4 at level 10)*
+- Cook (*+10% bonus*)
+- Carpentry (*+10% bonus*)
+- Faerie Lore (*+15% bonus*)
+- Preserve Food (*+16% bonus*)
+- Plant/Farm Lore (*+20% bonus*)
+- Racial Histories (*+10% bonus*)
+- Recognize Poison (*+10% bonus*)
+- Sense of Direction (*+15% bonus*)
+- Speak Additional Language (*+15% bonus*)
+- Swim (*+15% bonus*)
+
+**Levels of Experience – Ranger:**
+
+| Level | XP Required         |
+| ----- | ------------------- |
+| 1     | 0 - 2,060           |
+| 2     | 2,061 - 4,120       |
+| 3     | 4,121 - 8,240       |
+| 4     | 8,241 - 15,100      |
+| 5     | 15,101 - 23,100     |
+| 6     | 23,101 - 33,100     |
+| 7     | 33,101 - 48,200     |
+| 8     | 48,201 - 68,300     |
+| 9     | 68,301 - 93,400     |
+| 10    | 93,401 - 133,500    |
+| 11    | 133,501 - 175,600   |
+| 12    | 175,601 - 223,700   |
+| 13    | 223,701 - 273,800   |
+| 14    | 273,801 - 324,900   |
+| 15    | 324,901 - 374,400   |
+
+---
+
+## Thief
+
+**Description:**  
+Thieves are experts in stealth, subterfuge, and ambush tactics. They excel at picking pockets, lockpicking, and silent movement, making them deadly when striking from the shadows.
+
+**Key Points:**
+- **Armor:** Prefer soft or studded leather for maximum stealth.
+- **Alignments:** Thieves cannot be Good; they are typically Selfish or Evil.
+- **Guilds:** Operate within Thieves' Guilds in many cities, which enforce territorial control.
+
+**Attribute Requirements:**  
+- **P.P.:** 9
+
+**O.C.C. Skills:**
+- Hand to Hand (Thief)
+- Scale Walls (*+10% bonus*)
+
+**Elective Skills:**  
+*(Choose 7 at level 1, 3 at level 3, 3 at level 8, and 3 at level 12)*
+- Disguise (*+5% bonus*)
+- Forgery (*+10% bonus*)
+- Locate Secret Compartments/Doors (*+6% bonus*)
+- Pick Locks (*+5% bonus*)
+- Pick Pockets (*+22% bonus*)
+- Prowl (*+15% bonus*)
+- Use Poison
+- Various Weapon Proficiencies (W.P.)
+
+**Secondary Skills:**  
+*(Choose 7 at level 1, 4 at level 4, and 4 at level 10)*
+- Imitate Voices (*+8% bonus*)
+- Recognize Poison (*+10% bonus*)
+- Recognize Precious Metals/Stones (*+10% bonus*)
+- Recognize Weapon Quality (*+4% bonus*)
+- Speak Additional Language (*+10% bonus*)
+- Ventriloquism (*+10% bonus*)
+
+**Levels of Experience – Thief:**
+
+| Level | XP Required         |
+| ----- | ------------------- |
+| 1     | 0 - 1,850           |
+| 2     | 1,851 - 3,700       |
+| 3     | 3,701 - 7,400       |
+| 4     | 7,401 - 13,000      |
+| 5     | 13,001 - 21,000     |
+| 6     | 21,001 - 31,000     |
+| 7     | 31,001 - 46,000     |
+| 8     | 46,001 - 66,000     |
+| 9     | 66,001 - 91,400     |
+| 10    | 91,401 - 131,500    |
+| 11    | 131,501 - 171,600   |
+| 12    | 171,601 - 221,700   |
+| 13    | 221,701 - 271,800   |
+| 14    | 271,801 - 321,900   |
+| 15    | 321,901 - 372,000   |
+
+---
+
+## Assassin
+
+**Description:**  
+Assassins are the masters of silent, precise killing. They combine expert hand-to-hand combat with superior stealth, deception, and tracking abilities. Unlike thieves, assassins are paid killers who operate under strict moral constraints—they cannot be Good.
+
+**Alignment Restrictions:**  
+- **Allowed Alignments:** Evil (Miscreant, Aberrant, Diabolic) and Selfish (Anarchist)  
+- **Not Allowed:** Good (Principled or Scrupulous) or Unprincipled alignments
+
+**Attribute Requirements:**  
+- **I.Q.:** 9  
+- **P.P.:** 14
+
+**O.C.C. Skills:**
+- Hand to Hand (Assassin)
+- Prowl (*+20% bonus*)
+
+**Elective Skills:**  
+*(At Level 1: Choose 4 skills plus 4 Weapon Proficiencies; additional choices at levels 3, 8, and 12)*
+- Disguise (*+8% bonus*)
+- Forgery
+- Horsemanship (General)
+- Identify Tracks (*+40% bonus*)
+- Medical (*+40% bonus*)
+- Pick Locks (*+7% bonus*)
+- Pick Pockets (*+10% bonus*)
+- Read/Write (*+10% bonus*)
+- Scale Walls (*+15% bonus*)
+- Track (*+5% bonus*)
+- Use Poison (*+15% bonus*)
+- Various Weapon Proficiencies (W.P.)
+
+**Secondary Skills:**  
+*(Choose 7 at level 1, 4 at level 4, and 4 at level 10)*
+- Imitate Voices (*+10% bonus*)
+- Recognize Poison (*+15% bonus*)
+- Recognize Precious Metals/Stones (*+15% bonus*)
+- Recognize Weapon Quality (*+12% bonus*)
+- Speak Additional Language (*+15% bonus*)
+- Swim (*+15% bonus*)
+- Ventriloquism (*+6% bonus*)
+
+**Levels of Experience – Assassin:**
+
+| Level | XP Required         |
+| ----- | ------------------- |
+| 1     | 0 – 2,180           |
+| 2     | 2,181 – 4,360       |
+| 3     | 4,361 – 8,720       |
+| 4     | 8,721 – 17,100      |
+| 5     | 17,101 – 25,200     |
+| 6     | 25,201 – 35,300     |
+| 7     | 35,301 – 50,400     |
+| 8     | 50,401 – 70,500     |
+| 9     | 70,501 – 95,600     |
+| 10    | 95,601 – 135,700    |
+| 11    | 135,701 – 175,800   |
+| 12    | 175,801 – 226,000   |
+| 13    | 226,001 – 276,200   |
+| 14    | 276,201 – 326,300   |
+| 15    | 326,301 – 376,400   |
+
+---
+
+## Optional O.C.C.s
+
+### Peasant / Farm or Stable Hand O.C.C.
+
+**Attribute Requirements:**  
+- **P.P.:** 7
+
+**O.C.C. Skills:**
+- Cook (*+50% bonus*)
+- Trap/Skin Small Animals (*+10% bonus*)
+- Speak One Additional Language (*+20% bonus*)
+
+**Elective Skills:**  
+*(Choose 5 at level 1, 3 at level 3, 2 at level 8, and 2 at level 12)*
+
+**Secondary Skills:**  
+*(Choose 6 at level 1, 3 at level 4, and 3 at level 10)*
+
+**Notes:**  
+- Levels of experience are the same as for the Mercenary Fighter.  
+- Common electives include: Disguise, Hand to Hand (Non-Men of Arms), Horsemanship (General), Identify Plants/Fruits (*+10% bonus*), Identify Tracks (*+5% bonus*), Medical, Pick Pockets, Scale Walls (*+2% bonus*), Track, and various W.P. skills.
+
+---
+
+### Squire O.C.C.
+
+**Attribute Requirements:**  
+- **I.Q.:** 7  
+- **P.S.:** 6
+
+**O.C.C. Skills:**
+- Hand to Hand (Mercenary Fighter)
+- W.P. Small Shield
+
+**Elective Skills:**  
+*(Choose 5 at level 1, 3 at level 3, 2 at level 8, and 2 at level 12)*
+
+**Secondary Skills:**  
+*(Choose 6 at level 1, 3 at level 4, and 3 at level 10)*
+
+**Notes:**  
+- Levels of experience are the same as for the Soldier.  
+- Common electives include: Disguise, Forgery, Horsemanship (Knight), Medical (*+6% bonus*), Pick Locks, Pick Pockets, Prowl, Read/Write (*+10% bonus*), Scale Walls (*+4% bonus*), Trap/Skin Small Animals, and various W.P. options.
+
+---
+
+### Scholar O.C.C.
+
+**Attribute Requirement:**  
+- **I.Q.:** 14
+
+**O.C.C. Skills:**
+- Read/Write (*+70% bonus*)
+- Mathematics (*+60% bonus*)
+- Speak (Two) Additional Languages (*+35% bonus*)
+
+**Elective Skills:**  
+*(Choose 4 at level 1, 4 at level 3, 2 at level 8, and 2 at level 12)*
+
+**Secondary Skills:**  
+*(Choose 10 at level 1, 4 at level 4, and 4 at level 10)*
+
+**Notes:**  
+- Levels of experience are the same as for the Wizard.  
+- Common electives include: Disguise, Forgery, Horsemanship (General), Identify Plants/Fruits (*+15% bonus*), Identify Tracks (*+10% bonus*), Locate Secret Compartments/Doors (*+4% bonus*), Medical, Pick Locks, Use Poison (*+10% bonus*), and various W.P. options.
+
+---
+
+### Merchant O.C.C.
+
+**Attribute Requirements:**  
+- **I.Q.:** 10
+
+**O.C.C. Skills:**
+- Mathematics (*+15% bonus*)
+- Speak Additional Languages (Knows 2) (*+30% bonus*)
+
+**Elective Skills:**  
+*(Choose 5 at level 1, 3 at level 3, 2 at level 8, and 2 at level 12)*
+
+**Secondary Skills:**  
+*(Choose 8 at level 1, 3 at level 4, and 3 at level 10)*
+
+**Notes:**  
+- Levels of experience are the same as for the Mercenary Fighter.  
+- Common electives include: Disguise, Forgery (*+6% bonus*), Hand to Hand (Mercenary Fighter), Horsemanship (General), Identify Plants/Fruits (*+4% bonus*), Pick Locks, Pick Pockets, Prowl, Read/Write (*+20% bonus*), and various W.P. options.
+
+---
+
+### Noble O.C.C.
+
+**Attribute Requirement:**  
+- **I.Q.:** 7
+
+**O.C.C. Skills:**
+- Read/Write (*+50% bonus*)
+- Horsemanship (Knight)
+
+**Elective Skills:**  
+*(Choose 6 at level 1, 2 at level 3, 2 at level 8, and 2 at level 12)*
+
+**Secondary Skills:**  
+*(Choose 8 at level 1, 3 at level 4, and 3 at level 10)*
+
+**Notes:**  
+- Levels of experience are the same as for the Soldier.  
+- Common electives include: Disguise, Forgery, Hand to Hand (Soldier), Medical, Pick Locks, Pick Pockets, Prowl, Scale Walls (*+4% bonus*), and various W.P. options.
+
+---
+
+## General Notes on Men Of Arms
+
+- **Weapon Proficiencies (W.P.):**  
+  The following proficiencies are available and common across Men of Arms O.C.C.s:  
+  - Throwing Axe  
+  - Battle Axe  
+  - Blunt  
+  - Ball and Chain  
+  - Knives  
+  - Pole Arms  
+  - Spears/Forks  
+  - Short Swords  
+  - Large Swords  
+  - Staves  
+  - Small Shield  
+  - Large Shield  
+  - Sling  
+  - Short Bow  
+  - Cross Bow
+
+- **Secondary Skills:**  
+  Additional skills that can be chosen for bonus effects include:  
+  - Carpentry (*+40% bonus*)  
+  - Paint (*+40% bonus*)  
+  - Recognize Precious Metals/Stones (*+50% bonus*)  
+  - Sailing (*+50% bonus*)  
+  - Sense of Direction (*+100% bonus*)  
+  - Tailor (*+100% bonus*)
+
+- **Experience Levels:**  
+  Each Men of Arms O.C.C. has its own XP progression table (as shown above for each class). These values determine when a character levels up and can select new elective and secondary skills.
+
+---
+
+This formatted structure uses clear Markdown headers and emphasis to separate and highlight each section. It should make the content easier to read and assist in fine-tuning the model on individual sections.
+
+
+# Wizard O.C.C.
+
+**Attribute Requirement:** I.Q. 10
+
+**O.C.C. Skills:**
+- **Spell casting**
+- **Magic combat**
+- **Scroll conversion**
+- **Power words (4)**
+- **Common knowledge spells (6)**
+- **Speaks 2 additional languages** (*+40% bonus*)
+- **Read/Write** (*+70% bonus*)
+
+**Power Words:**  
+The wizard knows the four simple power words: **Acba, Keron, Pein, and Yin**.  
+*(See the Diabolist section about power words.)*
+
+**Common Knowledge Spells:**  
+- Decipher magic  
+- Sense magic  
+- Cloud of slumber  
+- Sphere of light  
+- Tongues  
+- The enchanted cauldron
+
+**Speak 2 Additional Languages:**  
+The player may choose any 2 additional languages as an area of study and knowledge. *(See Secondary Skill table; O.C.C. skill bonus +40%.)*
+
+**Read/Write (Native Language):**  
+Wizards are extremely literate. *(O.C.C. skill bonus +70%; see Elective Skill table.)*
+
+---
+
+## Magic Combat (Wizard)
+
+| **Level** | **Magic Combat Bonus/Effect**                             |
+| --------- | --------------------------------------------------------- |
+| I         | Recognize enchantment **50%**                             |
+| II        | Recognize magic items **20%**                             |
+| III       | **+1 save vs. spell magic**                               |
+| IV        | **2 SPELL ATTACKS per melee**                             |
+| V         | **+2 spell strength**                                     |
+| VI        | **+2 save vs. spell magic**                               |
+| VII       | **+1 save vs. circles/wards**                             |
+| VIII      | Recognize enchantment **80%**                             |
+| IX        | **+3 spell strength**                                     |
+| X         | Recognize magic items **60%**                             |
+| XI        | **+2 save vs. circles/wards**                             |
+| XII       | **+3 save vs. spell magic**                               |
+| XIII      | Sense evil **55%**                                        |
+| XIV       | **+4 spell strength**                                     |
+| XV        | **+4 save vs. spell magic**                               |
+
+---
+
+## Spell Scroll Casting / Conversion
+
+| **Level** | **Maximum Spells per Day** | **Conversion Bonus (%)** |
+| --------- | -------------------------- | ------------------------ |
+| I         | 2                          | 8%                       |
+| II        | 3                          | 12%                      |
+| III       | 5                          | 20%                      |
+| IV        | 6                          | 28%                      |
+| V         | 8                          | 36%                      |
+| VI        | 9                          | 42%                      |
+| VII       | 11                         | 50%                      |
+| VIII      | 12                         | 58%                      |
+| IX        | 14                         | 66%                      |
+| X         | 15                         | 72%                      |
+| XI        | 17                         | 80%                      |
+| XII       | 18                         | 84%                      |
+| XIII      | 20                         | 88%                      |
+| XIV       | 21                         | 90%                      |
+| XV        | 23                         | 92%                      |
+
+*Spell casting here indicates the maximum number of spells that can be cast per 24-hour period.*
+
+---
+
+## Elective & Secondary Skills (Wizard)
+
+- **Elective Skills:** Choose 6 at level one, 3 at level three, 3 at level eight, and 3 at level twelve.
+- **Secondary Skills:** Choose 8 at level one, 3 at level four, and 3 at level ten.
+
+### Elective Skills – Levels of Experience (Magic Wizard)
+
+| **Elective Skill**                | **Level Range (XP)**          |
+| --------------------------------- | ----------------------------- |
+| Recognize runes                   | Level I: 0 – 1,871            |
+| Study circles                     | Level II: 1,871 – 3,740         |
+| Study symbols                     | Level III: 3,741 – 8,480        |
+| Study wards                       | Level IV: 8,481 – 16,900        |
+| Level V                           | 16,901 – 24,900               |
+| Disguise (*+5% bonus*)             | Level VI: 24,901 – 34,900       |
+| Forgery (*+5% bonus*)              | Level VII: 34,901 – 49,900      |
+| Hand to Hand: Non-Men of Arms     | Level VIII: 49,901 – 69,900     |
+| Horsemanship (General)            | Level IX: 69,901 – 94,900       |
+| Identify Plants/Fruits (*+5% bonus*)| Level X: 94,901 – 134,800      |
+| Medical (*+18% bonus*)             | Level XI: 134,801 – 174,700     |
+| Pick locks (*+3% bonus*)           | Level XII: 174,701 – 224,600    |
+| Pick pockets (*+4% bonus*)         | Level XIII: 224,601 – 274,500   |
+| Prowl (*+4% bonus*)                | Level XIV: 274,501 – 324,400    |
+| W.P. Throwing Axe                 | Level XV: 324,401 – 374,300     |
+| *(Additional W.P. options available)* |                             |
+
+**Secondary Skills (with O.C.C. Bonuses):**
+- Demon and Devil lore (*+15% bonus*)
+- Faerie lore (*+15% bonus*)
+- Mathematics (*+20% bonus*)
+- Racial Histories (*+20% bonus*)
+- Read/Write additional language (*+30% bonus*)
+- Recognize poison (*+5% bonus*)
+- Religious doctrine (*+15% bonus*)
+- Speak additional language (*+40% bonus*)
+
+---
+
+# Spell Descriptions
+
+These spell descriptions apply to wizard spell magic and also to dragons, faerie folk, some magical creatures, gods, witches, and clergy. Although the spells function identically, the means of acquiring them differ between wizards and other magic users.
+
+> **Note:** *The number of spells a wizard may know is unlimited, though their casting capacity is limited by daily spell slots.*
+
+## Fire Spells
+
+### **Level One**
+- **Spells:**  
+  - Blinding Flash  
+  - Cloud of Smoke  
+  - Create Coal  
+  - Flame Lick  
+  - Globe of Daylight  
+  - Night Vision (60 feet)  
+  - Resist Fire  
+  - Stench of Hades
+
+### **Level Two**
+- **Spells:**  
+  - Cloud of Ash  
+  - Darkness  
+  - Fiery Touch  
+  - Freeze Water  
+  - Resist Cold  
+  - Spontaneous Combustion  
+  - Swirling Lights  
+  - Tongue of Flame
+
+### **Level Three**
+- **Spells:**  
+  - Circle of Cold  
+  - Circle of Flame  
+  - Create Heat  
+  - Extinguish Fires  
+  - Fire Ball  
+  - Lower Temperature  
+  - Wall of Flame
+
+### **Level Four**
+- **Spells:**  
+  - Cloud of Steam  
+  - Flame Friend  
+  - Fuel Flame  
+  - Heal Burns  
+  - Heat Objects/Water  
+  - Mini-Fireballs
+
+### **Level Five**
+- **Spells:**  
+  - Blue Flame  
+  - Breath Fire  
+  - Eat Fire  
+  - Screaming Wall of Flame  
+  - Wall of Ice
+
+### **Level Six**
+- **Spells:**  
+  - Dancing Fires  
+  - Eternal Flame  
+  - Flame of Life  
+  - Ten Foot Wheel of Fire
+
+### **Level Seven**
+- **Spells:**  
+  - Fire Whip  
+  - Melt Metal  
+  - River of Lava
+
+### **Level Eight**
+- **Spells:**  
+  - Burst into Flame
+
+---
+
+## Air Spells
+
+### **Level One**
+- **Spells:**  
+  - Breath Without Air  
+  - Clap of Thunder  
+  - Cloud of Slumber  
+  - Cloud of Steam  
+  - Create Light  
+  - Create Mild Wind (2 mph)  
+  - Howling Wind  
+  - Stop Wind
+
+### **Level Two**
+- **Spells:**  
+  - Change Wind Direction  
+  - Create Air  
+  - Heavy Breathing  
+  - Levitate  
+  - Mesmerism  
+  - Miasma  
+  - Northerly Wind  
+  - Silence (15-foot radius)  
+  - Wind Rush (60 mph)
+
+### **Level Three**
+- **Spells:**  
+  - Call Lightning  
+  - Darkness  
+  - Fingers of the Wind  
+  - Float in Air  
+  - Fifteen Foot Air Bubble  
+  - Northern Lights  
+  - Resist Cold  
+  - Walk the Wind
+
+### **Level Four**
+- **Spells:**  
+  - Ball Lightning  
+  - Calm Storm  
+  - Dissipate Gases  
+  - Freeze Water  
+  - Invisibility  
+  - Leaf Rustler  
+  - Phantom Footman  
+  - Protection from Lightning
+
+### **Level Five**
+- **Spells:**  
+  - Breath of Life  
+  - Circle of Rain  
+  - Darken the Sky  
+  - Detect the Invisible  
+  - Invisible Wall  
+  - Phantom  
+  - Whirlwind
+
+### **Level Six**
+- **Spells:**  
+  - Electric Field/Wall  
+  - Electromagnetism  
+  - Mist of Death  
+  - Snow Storm  
+  - Vacuum  
+  - Whisper of Wind
+
+### **Level Seven**
+- **Spells:**  
+  - Atmosphere Manipulation  
+  - Hurricane  
+  - Rainbow  
+  - Tornado
+
+---
+
+## Water Spells
+
+### **Level One**
+- **Spells:**  
+  - Cloud of Steam  
+  - Color Water  
+  - Create Fog  
+  - Dowsing  
+  - Float on Water  
+  - Purple Mist  
+  - Saltwater to Fresh  
+  - Water to Wine
+
+### **Level Two**
+- **Spells:**  
+  - Breath Underwater  
+  - Fog of Fear  
+  - Foul Water  
+  - Liquid (Any) to Water  
+  - Resist Fire  
+  - Ride the Waves  
+  - Walk the Waves  
+  - Water Seal
+
+### **Level Three**
+- **Spells:**  
+  - Calm Waters  
+  - Circle of Rain  
+  - Command Fish  
+  - Freeze Water  
+  - Resist Cold  
+  - Sheet of Ice  
+  - Wall of Ice
+
+### **Level Four**
+- **Spells:**  
+  - Create Water  
+  - Hail  
+  - Shards of Ice  
+  - Snow Storm  
+  - Swim Like the Dolphin  
+  - Water Wisps
+
+### **Level Five**
+- **Spells:**  
+  - Earth to Mud  
+  - Protection from Lightning  
+  - Ten Foot Ball of Ice  
+  - Toxic Mist  
+  - Whirlpool
+
+### **Level Six**
+- **Spells:**  
+  - Heal Burns  
+  - Hurricane  
+  - Ice Elemental  
+  - Summon Sharks/Whales  
+  - Encase in Ice
+
+### **Level Seven**
+- **Spells:**  
+  - Drought  
+  - Rain Dance  
+  - Storm  
+  - Tidal Wave
+
+---
+
+## Earth Spells
+
+### **Level One**
+- **Spells:**  
+  - Chameleon  
+  - Dowsing  
+  - Dust Storm  
+  - Fool's Gold  
+  - Identify Minerals  
+  - Identify Plants  
+  - Rock to Mud  
+  - Rot Wood
+
+### **Level Two**
+- **Spells:**  
+  - Create Dirt or Clay  
+  - Dirt to Clay  
+  - Dirt to Sand  
+  - Grow Plants  
+  - Hopping Stones  
+  - Track  
+  - Wall of Clay  
+  - Wither Plants
+
+### **Level Three**
+- **Spells:**  
+  - Animate Plants  
+  - Create Mound  
+  - Crumble Stone  
+  - Dig  
+  - Earth Rumble  
+  - Encase Object in Stone  
+  - Locate Minerals  
+  - Wall of Stone
+
+### **Level Four**
+- **Spells:**  
+  - Animate Object  
+  - Cocoon of Stone (Self)  
+  - Mend Stone  
+  - Quicksand  
+  - Repel Animals  
+  - Rust  
+  - Sand Storm  
+  - Wall of Thorns
+
+### **Level Five**
+- **Spells:**  
+  - Chasm  
+  - Clay to Lead  
+  - Clay to Stone  
+  - Close Fissures  
+  - Mud Mound  
+  - River of Lava  
+  - Travel Through Earth
+
+### **Level Six**
+- **Spells:**  
+  - Clay to Iron  
+  - Earthquake  
+  - Mend Metal  
+  - Sculpt and Animate Clay Animals  
+  - Stone to Flesh  
+  - Travel Through Stone  
+  - Wood to Stone
+
+### **Level Seven**
+- **Spells:**  
+  - Create Golem  
+  - Metal to Clay  
+  - Metal to Wood  
+  - Petrification  
+  - Wall of Iron
+
+### **Level Eight**
+- **Spells:**  
+  - Cap Volcano  
+  - Magnetism  
+  - Soul Transference  
+  - Suspended Animation
+
+---
+
+# The Mind Mage O.C.C.
+
+**Attribute Requirements:** I.Q. 9 *(for major or master psionics)*
+
+**O.C.C. Skills:**
+- **Read/Write** (*+50% bonus*)
+- **Speaks 3 additional languages** (*+40% bonus*)
+- **Magic combat**
+
+**Elective Skills:**  
+*(Choose 7 at level 1, 3 at level 3, 3 at level 8, and 3 at level 12)*  
+*(Magic electives are the same as for Wizard)*
+
+**Elective Skills List (examples):**
+- Recognize runes
+- Study circles
+- Study symbols
+- Study wards
+- Disguise
+- Dowsing (*+15% bonus*)
+- Forgery (*+60% bonus*)
+- Hand to Hand: Non-men of arms
+- Horsemanship (General)
+- Locate Secret Compartments/Doors (*+10% bonus*)
+- Medical (*+40% bonus*)
+- Pick locks (*+20% bonus*)
+- Pick pockets (*+20% bonus*)
+- Prowl (*+40% bonus*)
+- Trap/Skin Small Animals
+- [Various Weapon Proficiencies, e.g., W.P. Battle Axe, Blunt, Knives, etc.]
+
+**Secondary Skills:**  
+*(Choose 10 at level 1, 4 at level 4, and 4 at level 10)*
+
+**O.C.C. Bonus Secondary Skills (examples):**
+- Demon and Devil lore (*+100% bonus*)
+- Faerie lore (*+80% bonus*)
+- Imitate voices (*+80% bonus*)
+- Mathematics (*+200% bonus*)
+- Racial Histories (*+120% bonus*)
+- Read/Write additional language (*+300% bonus*)
+- Recognize poison (*+60% bonus*)
+- Religious doctrine (*+100% bonus*)
+- Sense of direction (*+200% bonus*)
+- Speak additional language (*+400% bonus*)
+- Ventriloquism (*+100% bonus*)
+
+---
+
+## Magic Combat – Mind Mage (Psionics)
+
+| **Level** | **Mind Mage Magic Combat Bonus/Effect**             |
+| --------- | ----------------------------------------------------- |
+| 1         | **+1 save vs. psionic attack**                        |
+| 2         | Recognize illusions (*+39% bonus*)                   |
+| 3         | **+1 save vs. spell magic**                           |
+| 4         | **2 psionic attacks per melee**                       |
+| 5         | **+2 save vs. insanity**                              |
+| 6         | **+2 save vs. psionic attack**                        |
+| 7         | **+1 save vs. circles/wards**                         |
+| 8         | Recognize illusions (*+69% bonus*)                   |
+| 9         | **+3 save vs. psionic attack**                        |
+| 10        | **+2 save vs. spell magic**                           |
+| 11        | **+3 save vs. insanity**                              |
+| 12        | **+2 save vs. circles/wards**                         |
+| 13        | Recognize illusions (*+92% bonus*)                   |
+| 14        | **+4 save vs. psionic attack**                        |
+| 15        | **+4 save vs. insanity**                              |
+
+---
+
+## Levels of Experience – Mind Mage
+
+| **Level** | **XP Required**       |
+| --------- | --------------------- |
+| 1         | 0 – 2,200             |
+| 2         | 2,201 – 4,400         |
+| 3         | 4,401 – 8,800         |
+| 4         | 8,801 – 17,700        |
+| 5         | 17,701 – 25,700       |
+| 6         | 25,701 – 35,700       |
+| 7         | 35,701 – 50,700       |
+| 8         | 50,701 – 70,700       |
+| 9         | 70,701 – 95,700       |
+| 10        | 95,701 – 135,700      |
+| 11        | 135,701 – 185,700     |
+| 12        | 185,701 – 225,700     |
+| 13        | 225,701 – 275,700     |
+| 14        | 275,701 – 325,700     |
+| 15        | 325,701 – 375,700     |
+
+---
+
+# Psionics
+
+**Overview:**  
+Psionics (or Extra Sensory Perception, E.S.P.) are the paranormal powers of the mind (e.g., telepathy, empathy, telekinesis). These abilities are hereditary and vary among intelligent lifeforms. Most races have the potential for psionics—except those that are inherently non-psionic.
+
+**Determining Psionics:**  
+- **Roll Percentile Dice (once):**
+  - **01–60:** No appreciable psionic abilities
+  - **61–79:** Minor psionic (level 1 abilities only)
+  - **80–89:** Major psionic (abilities levels 1–3; can choose pseudo-mind mage O.C.C.)
+  - **90–100:** Master psionic (full range, levels 1–10; natural mind mage)
+
+**Determining Psionic Abilities & Inner Strength:**
+
+- **Minor Psionics:** Limited to level 1 abilities (roll for each ability; 60% chance to know each).
+- **Major Psionics:** Gain levels 1–3 abilities at corresponding experience levels.
+- **Master Psionics:** Gain a new psionic level with each level of experience (up through level 10).
+
+**Inner Strength Points (I.S.P.):**  
+- **Base I.S.P. = Mental Endurance (M.E.)**  
+- **Each level:** Add 1–8 I.S.P.  
+- **Mind Mage:** Additionally, roll one d20 at first level and add to base; add 10 I.S.P. per level thereafter.
+
+**Using Psionics:**  
+- Each psionic ability requires a set number of I.S.P.  
+- I.S.P. recovery: 4 I.S.P. per 2 hours of sleep/relaxation or 3 per hour of meditation.
+
+**Saving Throws vs. Psionic Attacks:**
+- **Non-Psionic Characters:** Must roll 15+  
+- **Minor/Major Psionics:** Must roll 12+  
+- **Master Psionics:** Must roll 10+
+
+---
+
+# Diabolist O.C.C.
+
+**Attribute Requirement:** I.Q. 12
+
+**O.C.C. Skills:**
+- **Knows all symbols** (expert in mystic symbols, arrows, swords, animals, colors, stones)
+- **Knows all power words** (keys to activating wards and circles)
+- **Knows all runes** (able to read and write the ancient language)
+- **Knows wards** (understands ward symbology; limited by daily ward creation per level)
+- **Magic combat**
+- **Read/Write** (*+40% bonus*)
+- **Decipher circles**
+
+**Additional Details:**
+- **Power Words:** The diabolist knows all power words and their meanings.
+- **Decipher Circles:** Ability to deduce a circle’s function and determine the correct invocation *(similar to wizard scroll conversion)*.
+
+---
+
+## Magic Combat – Ward Activation Table (Diabolist)
+
+- **Level I:** 2 +2 save vs. wards; 1 save vs. circles; Value: 4 & 3  
+- **Level II:** Recognize enchantment 40% → Value: 5  
+- **Level IV:** +2 ward strength → Value: 4 → 6  
+- **Level V:** 1 save vs. spell magic → Value: 5 → 8  
+- **Level VI:** Recognize magic items 58% → Value: 6 → 10  
+- **Level VII:** 1 circle strength → Value: 7 → 12  
+- **Level VIII:** +3 ward strength → Value: 8 → 14  
+- **Level IX:** +2 save vs. spell magic → Value: 9 → 16  
+- **Level X:** +3 save vs. wards → Value: 10 → 18  
+- **Level XI:** +2 circle strength → Value: 11 → 20  
+- **Level XII:** +4 ward strength → Value: 12 → 22  
+- **Level XIII:** +2 save vs. circles → Value: 13 → 24  
+- **Level XIV:** +4 save vs. wards → Value: 14 → 26  
+- **Level XV:** +3 save vs. spell magic → Value: 15 → 28
+
+---
+
+## Deciphering Circles (Diabolist)
+
+| **Level** | **Deduce Function** | **Decipher Invocation** |
+| --------- | ------------------- | ------------------------- |
+| 1         | 18%                 | 8%                        |
+| 2         | 28%                 | 16%                       |
+| 3         | 38%                 | 24%                       |
+| 4         | 48%                 | 32%                       |
+| 5         | 62%                 | 40%                       |
+| 6         | 76%                 | 48%                       |
+| 7         | 84%                 | 56%                       |
+| 8         | 88%                 | 64%                       |
+| 9         | 91%                 | 72%                       |
+| 10        | 93%                 | 80%                       |
+| 11        | 95%                 | 88%                       |
+| 12        | 96%                 | 90%                       |
+| 13        | 97%                 | 93%                       |
+| 14        | 98%                 | 95%                       |
+| 15        | 99%                 | 97%                       |
+
+---
+
+## Elective Skills (Diabolist)
+
+**Elective Skills (choose 6 at level 1, 3 at level 3, 3 at level 8, and 3 at level 12):**
+- Study Circles (magic)
+- Disguise (*+80% bonus*)
+- Forgery (*+20% bonus*)
+- Hand to Hand (Non-men-at-arms)
+- Horsemanship (General)
+- Identify Plants/Fruits (*+4% bonus*)
+- Medical (*+? bonus*)
+- Pick Locks
+- Pick Pockets
+- Prowl
+- Use Poison (*+4% bonus*)
+- W.P. options: Throwing Axe, Blunt, Knives, Short Sword, Staves, Sling, Crossbow
+
+**Secondary Skills (choose any, with the following bonuses):**
+- Demon and Devil lore (*+20% bonus*)
+- Faerie lore (*+10% bonus*)
+- Mathematics (*+30% bonus*)
+- Paint (*+15% bonus*)
+- Preserve Food (*+6% bonus*)
+- Racial Histories (*+10% bonus*)
+- Read/Write additional language (*+40% bonus*)
+- Religious doctrine (*+20% bonus*)
+- Sense of direction (*+8% bonus*)
+- Ventriloquism (*+5% bonus*)
+
+**Levels of Experience – Diabolist:**
+
+| **Level** | **XP Required**        |
+| --------- | ---------------------- |
+| I         | 0 – 1,950              |
+| II        | 1,951 – 3,900          |
+| III       | 3,901 – 8,800          |
+| IV        | 8,801 – 17,600         |
+| V         | 17,601 – 25,600        |
+| VI        | 25,601 – 35,600        |
+| VII       | 35,601 – 50,600        |
+| VIII      | 50,601 – 70,600        |
+| IX        | 70,601 – 95,600        |
+| X         | 95,601 – 125,600       |
+| XI        | 125,601 – 175,600      |
+| XII       | 175,601 – 225,600      |
+| XIII      | 225,601 – 275,600      |
+| XIV       | 275,601 – 325,600      |
+| XV        | 325,601 – 375,600      |
+
+---
+
+# Summoner O.C.C.
+
+**Elective Skills:**  
+*(Choose 5 at level 1, 3 at level 3, 2 at level 8, and 2 at level 12)*
+
+**Attribute Requirements:**  
+- I.Q. 10  
+- M.E. 14
+
+**O.C.C. Skills:**
+- Knows all symbols
+- Knows all power words
+- Recognizes wards (**90% chance**)
+- Circle magic
+- Decipher circles
+- Magic combat
+- Read/Write (*+40% bonus*)
+
+**Secondary Skills:**  
+*(Choose 6 at level 1, 4 at level 4, and 4 at level 10; Bonus: +30%)*
+
+**Knows All Symbols:**  
+Expert in mystic symbols (including magic, swords, arrows, animals, colors, and stones).
+
+**Knows All Power Words:**  
+Understands and can use all power words to activate circles.
+
+**Recognize Wards (90%):**  
+Able to recognize a real ward 90% of the time.
+
+**Circle Magic:**  
+Knows all circles of summoning and protection.
+
+**Decipher Circles:**  
+Ability to deduce a circle’s function and decipher the correct invocation  
+*(See Diabolist section for details.)*
+
+---
+
+## Magic Combat (Summoner Bonuses by Level)
+
+| **Level** | **Bonus/Effect**                           |
+| --------- | ------------------------------------------ |
+| I         | **+1 save vs. circles**                    |
+| II        | **+1 circle strength**                     |
+| III       | Recognize enchantment (*40% bonus*)        |
+| IV        | **+1 save vs. spell magic**                |
+| V         | **+2 circle strength**                     |
+| VI        | **+2 save vs. wards**                      |
+| VII       | Recognize magic item (*40% bonus*)         |
+| VIII      | **+2 save vs. circles**                    |
+| IX        | **+3 circle strength**                     |
+| X         | **+2 save vs. spell magic**                |
+| XI        | **+3 save vs. circles**                    |
+| XII       | Sense evil (**50% chance**)                |
+| XIII      | **+3 save vs. wards**                      |
+| XIV       | **+3 save vs. spell magic**                |
+| XV        | **+4 save vs. circles**                    |
+
+---
+
+## Decipher Circles (Summoner)
+
+| **Level** | **Deduce Function** | **Decipher Invocation** |
+| --------- | ------------------- | ------------------------- |
+| 1         | 20%                 | 10%                       |
+| 2         | 30%                 | 20%                       |
+| 3         | 40%                 | 30%                       |
+| 4         | 50%                 | 40%                       |
+| 5         | 65%                 | 50%                       |
+| 6         | 80%                 | 60%                       |
+| 7         | 90%                 | 70%                       |
+| 8         | 92%                 | 80%                       |
+| 9         | 93%                 | 85%                       |
+| 10        | 94%                 | 90%                       |
+| 11        | 95%                 | 92%                       |
+| 12        | 96%                 | 94%                       |
+| 13        | 97%                 | 96%                       |
+| 14        | 98%                 | 98%                       |
+| 15        | 99%                 | 99%                       |
+
+---
+
+## Levels of Experience – Summoner
+
+| **Level** | **XP Range**            |
+| --------- | ----------------------- |
+| I         | 0 – 2,100               |
+| II        | 2,101 – 4,200           |
+| III       | 4,201 – 8,400           |
+| IV        | 8,401 – 17,800          |
+| V         | 17,801 – 26,800         |
+| VI        | 26,801 – 36,800         |
+| VII       | 36,801 – 51,800         |
+| VIII      | 51,801 – 71,800         |
+| IX        | 71,801 – 96,800         |
+| X         | 96,801 – 136,800        |
+| XI        | 136,801 – 176,800       |
+| XII       | 176,801 – 226,800       |
+| XIII      | 226,801 – 276,800       |
+| XIV       | 276,801 – 327,800       |
+| XV        | 327,801 – 377,800       |
+
+---
+
+# Clergy O.C.C.
+
+**Attribute Requirements:**  
+- I.Q. 7 *(devoted to a god)*
+
+**O.C.C. Skills:**
+- **Spell casting**
+- **Magic combat**
+- **Clerical abilities and prayers**
+- **Speak one additional language** (*+25% bonus*)
+
+**Elective Skills:**  
+*(Choose 6 at level 1, 3 at level 3, 3 at level 8, and 3 at level 12)*
+
+**Secondary Skills:**  
+*(Choose 6 at level 1, 4 at level 4, and 4 at level 10)*
+
+### Elective Skills (Magic – Same as Wizard)
+- Study circles
+- Study symbols
+- Disguise
+- Forgery
+- Hand-to-Hand Combat *(varies)*
+- Horsemanship (General)
+- Identify Plants/Fruits
+- Locate Secret Compartments/Doors (*+30% bonus*)
+- Medical (*+10% bonus*)
+- Prowl (*+20% bonus*)
+- Read/Write (*+30% bonus*)
+- Use Poison (*+80% bonus*)
+- Various Weapon Proficiencies: Throwing Axe, Battle Axe, Blunt, Knives, etc.
+
+### Secondary Skills (with Bonuses)
+- Demon and Devil lore (*+30% bonus*)
+- Faerie lore (*+10% bonus*)
+- Mathematics (*+40% bonus*)
+- Paint (*+50% bonus*)
+- Play String Instrument (*+80% bonus*)
+- Play Wind Instrument (*+80% bonus*)
+- Racial Histories (*+10% bonus*)
+- Read/Write Additional Language (*+20% bonus*)
+- Recognize Poison (*+10% bonus*)
+- Sing (*+10% bonus*)
+- Speak Additional Language (*+26% bonus*)
+- Religious Doctrine (*+30% bonus*)
+
+**Levels of Experience – Priest / Priestess:**
+
+| **Level** | **XP Range**          |
+| --------- | --------------------- |
+| I         | 0 – 1,930             |
+| II        | 1,931 – 3,860         |
+| III       | 3,861 – 7,720         |
+| IV        | 7,721 – 15,200        |
+| V         | 15,201 – 23,300       |
+| VI        | 23,301 – 33,400       |
+| VII       | 33,401 – 48,500       |
+| VIII      | 48,501 – 68,600       |
+| IX        | 68,601 – 93,700       |
+| X         | 93,701 – 123,800      |
+| XI        | 123,801 – 163,900     |
+| XII       | 163,901 – 204,200     |
+| XIII      | 204,201 – 254,400     |
+| XIV       | 254,401 – 304,600     |
+| XV        | 304,601 – 364,800     |
+
+**Spell Casting (Spells Known by Level):**
+
+| **Level** | **Spells Known** |
+| --------- | ---------------- |
+| I         | 2                |
+| II        | 3                |
+| III       | 4                |
+| IV        | 5                |
+| V         | 7                |
+| VI        | 8                |
+| VII       | 10               |
+| VIII      | 11               |
+| IX        | 12               |
+| X         | 14               |
+| XI        | 15               |
+| XII       | 17               |
+| XIII      | 18               |
+| XIV       | 20               |
+| XV        | —                |
+
+**Magic Combat (Clergy – See “Gods of Light” for details):**  
+- At Level I: **+1 save vs. spell magic**, **+1 save vs. circles/wards**, **+1 spell strength**, **Sense Evil 40% chance**, **2 spell attacks per melee**, **Recognize enchantment 30%**, etc.  
+- Bonuses increase with higher levels.
+
+---
+
+# Druid O.C.C.
+
+**Attribute Requirements:**  
+- I.Q. 9  
+- P.E. 12
+
+**O.C.C. Skills:**
+- **Dowsing** (*+20% bonus*)
+- **Identify Plants/Fruits** (*+20% bonus*)
+- **Druidic abilities**
+- **Speak 2 additional languages** (*+20% bonus*)
+
+**Elective Skills:**  
+*(Choose 7 at level 1, 3 at level 3, 3 at level 8, and 3 at level 12)*  
+*For magic electives, see Wizard section.*
+
+**Elective Skills Examples:**
+- Disguise
+- Hand-to-Hand (Non-Men-of-Arms)
+- Horsemanship (Knight)
+- Identify Tracks (*+10% bonus*)
+- Medical (*+10% bonus*)
+- Prowl (*+8% bonus*)
+- Read/Write (*+30% bonus*)
+- Track (*+10% bonus*)
+- Trap/Skin Small Animals (*+15% bonus*)
+- Trap/Skin Large Animals (*+6% bonus*)
+- Use Poison
+- Various Weapon Proficiencies *(stone axe, blunt, knives, spears/forks, staves, sling, short bow, crossbow, small shield)*
+
+**Secondary Skills:**  
+*(Choose 10 at level 1, 4 at level 4, and 4 at level 10)*  
+- Carpentry (*+15% bonus*)
+- Cook (*+10% bonus*)
+- Faerie Lore (*+20% bonus*)
+- Play String Instrument (*+10% bonus*)
+- Play Wind Instrument (*+12% bonus*)
+- Plant/Farm Lore (*+20% bonus*)
+- Preserve Food (*+20% bonus*)
+- Racial Histories (*+10% bonus*)
+- Recognize Poison (*+6% bonus*)
+- Sailing (*+10% bonus*)
+- Sense of Direction (*+15% bonus*)
+- Speak Additional Language (*+20% bonus*)
+- Swim (*+20% bonus*)
+
+**Levels of Experience – Druid (Clergy):**
+
+| **Level** | **XP Range**           |
+| --------- | ---------------------- |
+| I         | 0 – 1,860              |
+| II        | 1,861 – 3,720          |
+| III       | 3,721 – 7,440          |
+| IV        | 7,441 – 14,880         |
+| V         | 14,881 – 23,880        |
+| VI        | 23,881 – 34,880        |
+| VII       | 34,881 – 48,880        |
+| VIII      | 48,881 – 68,880        |
+| IX        | 68,881 – 92,880        |
+| X         | 92,881 – 122,880       |
+| XI        | 122,881 – 162,880      |
+| XII       | 162,881 – 202,880      |
+| XIII      | 202,881 – 252,880      |
+| XIV       | 252,881 – 303,880      |
+| XV        | 303,881 – 363,880      |
+
+---
+
+# Shaman O.C.C.
+
+**Attribute Requirements:**  
+- I.Q. 9  
+- P.E. 10
+
+**O.C.C. Skills:**
+- **Spell casting**
+- **Magic combat**
+- **Clerical abilities (light or dark) and prayers**
+- **Speak one additional language** (*+20% bonus*)
+
+**Elective Skills:**  
+*(Choose 6 at level 1, 3 at level 3, 3 at level 8, and 3 at level 12)*  
+*For magic electives, same as Wizard.*
+
+**Examples of Elective Skills:**
+- Study circles
+- Study symbols
+- Disguise
+- Dowsing (*+5% bonus*)
+- Hand-to-Hand (Mercenary)
+- Horsemanship (General)
+- Identify Plants/Fruits (*+8% bonus*)
+- Identify Tracks (*+5% bonus*)
+- Locate Secret Compartments/Doors (*+10% bonus*)
+- Medical (*+4% bonus*)
+- Pick Pockets
+- Prowl
+- Read/Write (*+10% bonus*)
+- Use Poison
+- Various Weapon Proficiencies (throwing axe, battle axe, blunt, knives, spears/forks, short swords, large swords, staves, small shield, sling, short bow, crossbow)
+
+**Secondary Skills:**  
+*(Choose 8 at level 1, 4 at level 4, and 4 at level 10)*  
+- Cook (*+8% bonus*)
+- Dance (*+10% bonus*)
+- Demon and Devil Lore (*+15% bonus*)
+- Faerie Lore (*+5% bonus*)
+- Imitate Voices (*+4% bonus*)
+- Plant/Farm Lore (*+4% bonus*)
+- Preserve Food (*+4% bonus*)
+- Racial Histories (*+10% bonus*)
+- Recognize Poison (*+2% bonus*)
+- Religious Doctrine (*+5% bonus*)
+- Sing (*+10% bonus*)
+- Speak Additional Language (*+20% bonus*)
+- Swim (*+5% bonus*)
+- Ventriloquism (*+10% bonus*)
+
+**Levels of Experience – Shaman (Clergy):**
+
+| **Level** | **XP Range**          |
+| --------- | --------------------- |
+| I         | 0 – 1,900             |
+| II        | 1,901 – 3,800         |
+| III       | 3,801 – 7,600         |
+| IV        | 7,601 – 15,000        |
+| V         | 15,001 – 23,000       |
+| VI        | 23,001 – 33,000       |
+| VII       | 33,001 – 48,000       |
+| VIII      | 48,001 – 68,000       |
+| IX        | 68,001 – 93,000       |
+| X         | 93,001 – 123,000      |
+| XI        | 123,001 – 163,000     |
+| XII       | 163,001 – 203,300     |
+| XIII      | 203,301 – 253,400     |
+| XIV       | 253,401 – 303,500     |
+| XV        | 303,501 – 365,600     |
+
+*Magic Combat and related tables for the shaman are similar to those for Clergy: Gods of Light, with corresponding bonus adjustments.*
+
+---
+
+# Healer O.C.C. Specifications
+
+**Attribute Requirements:**  
+- **Physical Endurance (P.E.):** 15
+
+**O.C.C. Skills:**
+- **Medical** (*+15% bonus*)
+- **Identify Plants/Fruits** (*+12% bonus*)
+- **Healing Abilities**
+- **Speak Two Additional Languages** (*+25% bonus*)
+
+**Elective Skills:**  
+*(Choose 6 at level 1, 3 at level 3, 3 at level 8, and 3 at level 12)*  
+*For magic electives, see Wizard section.*
+
+**Secondary Skills:**  
+*(Choose 8 at level 1, 4 at level 4, and 4 at level 10)*
+
+**Examples of Elective Skills:**
+- Disguise
+- Hand-to-Hand (Non-Men-of-Arms)
+- Horsemanship (General)
+- Locate Secret Compartments/Doors
+- Dowsing (*+6% bonus*)
+- Pick Pockets
+- Read/Write (*+30% bonus*)
+- Scale Walls
+- Use Poison (*+40% bonus*)
+- Weapon Proficiencies (Throwing Axe, Battle Axe, Blunt, Knives, Spears/Forks, Short Swords, Large Swords, Staves, Small Shield, Sling, Short Bow, Crossbow)
+- Trap/Skin Small Animals (*+2% bonus*)
+
+**Secondary Skills (with Bonuses):**
+- Carpentry (*+60% bonus*)
+- Cook (*+100% bonus*)
+- Demon and Devil Lore (*+10% bonus*)
+- Faerie Lore (*+10% bonus*)
+- Plant/Farm Lore (*+10% bonus*)
+- Preserve Food (*+10% bonus*)
+- Racial Histories (*+10% bonus*)
+- Recognize Poison (*+60% bonus*)
+- Religious Doctrine (*+60% bonus*)
+- Sense of Direction (*+60% bonus*)
+- Sing (*+100% bonus*)
+- Speak Additional Language (*+250% bonus*)
+- Swim (*+100% bonus*)
+
+**Levels of Experience – Healer (Clergy):**
+
+| **Level** | **XP Range**           |
+| --------- | ---------------------- |
+| I         | 0 – 1,800              |
+| II        | 1,801 – 3,600          |
+| III       | 3,601 – 7,200          |
+| IV        | 7,201 – 14,000         |
+| V         | 14,001 – 22,500        |
+| VI        | 22,501 – 34,000        |
+| VII       | 34,001 – 47,500        |
+| VIII      | 47,501 – 67,500        |
+| IX        | 67,501 – 91,500        |
+| X         | 91,501 – 121,500       |
+| XI        | 121,501 – 161,500      |
+| XII       | 161,501 – 201,500      |
+| XIII      | 201,501 – 251,500      |
+| XIV       | 251,501 – 301,500      |
+| XV        | 301,501 – 370,500      |
+
+---
+
+# Spell Casting & Magic Combat Overview
+
+**Key Concepts:**
+
+- **Spell Casting:**  
+  The number of spells a wizard may cast per day is unlimited by known spells but limited by daily slots.
+
+- **Spell Levels:**  
+  There are 11 levels of spell magic. The level indicates the power, rarity, and cost of the spell.
+
+- **Level of Spell Caster:**  
+  A higher-level wizard casts more powerful spells. For example, a 3rd-level wizard casting a spell with a duration of "5 melees per level" maintains it for 15 melees.
+
+- **Range, Area Affect, and Line of Vision:**  
+  - **Range:** Maximum distance the spell can be cast.  
+  - **Area Affect:** The radius in which a spell affects targets.  
+  - **Line of Vision:** The target must be visible unless the spell specifies otherwise.
+
+- **Duration:**  
+  Spells last for a specified number of melees per level of the spell caster.
+
+- **Attacks per Melee:**  
+  A melee round is roughly one minute (60 seconds). Each character may attack or move during this time.
+
+- **Base Magic Strength/Attack:**  
+  The base is 12 for all spells, with bonuses added according to the caster's level.
+
+- **Saving Throws vs. Magic:**  
+  Characters roll a d20 to save against a magic attack. Bonuses to save are applied based on attributes and O.C.C. skills.  
+  - **Note:** A saving throw is made only once per magic attack, not every melee round.
+
+- **Cancelling Spells:**  
+  A spell caster can cancel his own spell at any time without penalty.
+
+- **Negate Magic:**  
+  A fourth-level spell used to cancel another spell. *(See its description for details.)*
+
+- **Recognize Enchantment / Recognize Magic Item / Sense Evil:**  
+  These abilities allow a wizard to detect magic usage, identify magic items, and sense evil auras, respectively.
+
+- **Elemental vs. Spell Magic:**  
+  Elemental magic is different from incantation-based spell magic. Elemental spells mimic natural effects but are cast as spells by wizards under certain limitations.
+
+- **Dispel Magic:**  
+  Can temporarily negate spells or wards.  

@@ -1,0 +1,247 @@
+{
+  "species": {
+    "goblin": {
+      "canSurrender": true,
+      "surrenderBias": 3,
+      "neverFlee": false,
+      "notes": "Cowardly skirmisher; will surrender quickly at low HP."
+    },
+    "kobold": {
+      "canSurrender": true,
+      "surrenderBias": 3,
+      "neverFlee": false,
+      "notes": "Tricksy but cowardly; prefers surrender to death."
+    },
+    "peasant": {
+      "canSurrender": true,
+      "surrenderBias": 4,
+      "neverFlee": false,
+      "notes": "Non-combatant; very likely to surrender when badly injured."
+    },
+    "bandit": {
+      "canSurrender": true,
+      "surrenderBias": 3,
+      "neverFlee": false,
+      "notes": "Low morale criminal; surrenders when fight turns."
+    },
+    "orc": {
+      "canSurrender": true,
+      "surrenderBias": 1,
+      "neverFlee": false,
+      "notes": "Tough but not suicidal."
+    },
+    "human": {
+      "canSurrender": true,
+      "surrenderBias": 1,
+      "neverFlee": false,
+      "notes": "Baseline humanoid behavior."
+    },
+    "elf": {
+      "canSurrender": true,
+      "surrenderBias": 1,
+      "neverFlee": false,
+      "notes": "Disciplined but values survival."
+    },
+    "dwarf": {
+      "canSurrender": true,
+      "surrenderBias": 0,
+      "neverFlee": false,
+      "notes": "Stubborn; fights longer before surrender."
+    },
+    "undead": {
+      "canSurrender": false,
+      "surrenderBias": 0,
+      "neverFlee": true,
+      "notes": "Mindless or enslaved to will; never surrenders."
+    },
+    "skeleton": {
+      "canSurrender": false,
+      "surrenderBias": 0,
+      "neverFlee": true,
+      "notes": "Undead; never surrenders."
+    },
+    "zombie": {
+      "canSurrender": false,
+      "surrenderBias": 0,
+      "neverFlee": true,
+      "notes": "Undead; never surrenders."
+    },
+    "demon": {
+      "canSurrender": false,
+      "surrenderBias": -2,
+      "neverFlee": false,
+      "notes": "Supernatural terror; may flee but never surrenders."
+    },
+    "golem": {
+      "canSurrender": false,
+      "surrenderBias": 0,
+      "neverFlee": true,
+      "notes": "Construct; fights until destroyed."
+    },
+    "mummy": {
+      "canSurrender": false,
+      "surrenderBias": 0,
+      "neverFlee": true,
+      "notes": "Undead; never surrenders."
+    },
+    "ghost": {
+      "canSurrender": false,
+      "surrenderBias": 0,
+      "neverFlee": false,
+      "notes": "Undead spirit; may flee but never surrenders."
+    },
+    "spectre": {
+      "canSurrender": false,
+      "surrenderBias": 0,
+      "neverFlee": false,
+      "notes": "Undead energy creature; may flee but never surrenders."
+    },
+    "scarecrow": {
+      "canSurrender": false,
+      "surrenderBias": 0,
+      "neverFlee": true,
+      "notes": "Animated undead; fights until destroyed."
+    },
+    "minotaur": {
+      "canSurrender": true,
+      "surrenderBias": 0,
+      "neverFlee": false,
+      "notes": "Tribal beast-man; fights with honor but can surrender."
+    },
+    "unicorn": {
+      "canSurrender": true,
+      "surrenderBias": -1,
+      "neverFlee": false,
+      "notes": "Noble magical creature; resists surrender."
+    },
+    "pegasus": {
+      "canSurrender": true,
+      "surrenderBias": 0,
+      "neverFlee": false,
+      "notes": "Magical flying horse; may flee or surrender."
+    },
+    "gryphon": {
+      "canSurrender": true,
+      "surrenderBias": 0,
+      "neverFlee": false,
+      "notes": "Proud magical creature; may flee but rarely surrenders."
+    },
+    "sphinx": {
+      "canSurrender": true,
+      "surrenderBias": -1,
+      "neverFlee": false,
+      "notes": "Intelligent guardian; resists surrender."
+    },
+    "chimera": {
+      "canSurrender": false,
+      "surrenderBias": -1,
+      "neverFlee": false,
+      "notes": "Fierce magical beast; may flee but never surrenders."
+    },
+    "werewolf": {
+      "canSurrender": true,
+      "surrenderBias": 1,
+      "neverFlee": false,
+      "notes": "Shape-shifter; may surrender when losing."
+    },
+    "weretiger": {
+      "canSurrender": true,
+      "surrenderBias": 0,
+      "neverFlee": false,
+      "notes": "Fierce shape-shifter; fights hard but can surrender."
+    },
+    "werepanther": {
+      "canSurrender": true,
+      "surrenderBias": 1,
+      "neverFlee": false,
+      "notes": "Stealthy shape-shifter; may surrender to survive."
+    },
+    "werebear": {
+      "canSurrender": true,
+      "surrenderBias": 0,
+      "neverFlee": false,
+      "notes": "Powerful shape-shifter; fights hard but can surrender."
+    },
+    "troll": {
+      "canSurrender": true,
+      "surrenderBias": -1,
+      "neverFlee": false,
+      "notes": "Tough and cunning; resists surrender."
+    },
+    "ogre": {
+      "canSurrender": true,
+      "surrenderBias": 0,
+      "neverFlee": false,
+      "notes": "Brutish giant; may surrender when outmatched."
+    },
+    "harpy": {
+      "canSurrender": true,
+      "surrenderBias": 2,
+      "neverFlee": false,
+      "notes": "Cowardly monster; likely to flee or surrender."
+    },
+    "bugBear": {
+      "canSurrender": true,
+      "surrenderBias": 1,
+      "neverFlee": false,
+      "notes": "Aggressive humanoid; may surrender when losing."
+    },
+    "defaultHumanoid": {
+      "canSurrender": true,
+      "surrenderBias": 1,
+      "neverFlee": false,
+      "notes": "Fallback for generic humanoids."
+    }
+  },
+  "alignment": {
+    "principled": {
+      "surrenderBiasDelta": -1,
+      "notes": "Heroic; resists surrender."
+    },
+    "scrupulous": {
+      "surrenderBiasDelta": -1,
+      "notes": "Brave, values honor."
+    },
+    "aberrant": {
+      "surrenderBiasDelta": -1,
+      "notes": "Fanatical or ruthless."
+    },
+    "diabolic": {
+      "surrenderBiasDelta": -1,
+      "notes": "Might flee, but rarely surrenders."
+    },
+    "anarchist": {
+      "surrenderBiasDelta": 1,
+      "notes": "Chaotic self-preservation."
+    },
+    "miscreant": {
+      "surrenderBiasDelta": 1,
+      "notes": "Opportunistic; will surrender to survive."
+    },
+    "unprincipled": {
+      "surrenderBiasDelta": 1,
+      "notes": "Will bail out when losing."
+    },
+    "default": {
+      "surrenderBiasDelta": 0,
+      "notes": "Neutral effect."
+    },
+    "good": {
+      "surrenderBiasDelta": -1,
+      "notes": "Good alignment; resists surrender (maps to principled/scrupulous behavior)."
+    },
+    "selfish": {
+      "surrenderBiasDelta": 1,
+      "notes": "Selfish alignment; will surrender to survive (maps to unprincipled/anarchist behavior)."
+    },
+    "evil": {
+      "surrenderBiasDelta": -1,
+      "notes": "Evil alignment; might flee but rarely surrenders (maps to miscreant/aberrant/diabolic behavior)."
+    },
+    "neutral": {
+      "surrenderBiasDelta": 0,
+      "notes": "Neutral alignment; baseline behavior."
+    }
+  }
+}
+

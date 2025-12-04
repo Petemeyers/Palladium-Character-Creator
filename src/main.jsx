@@ -6,6 +6,7 @@ import App from "./App";
 import theme from "./theme";     
 import { ColorModeScript } from "@chakra-ui/react";
 import { PartyProvider } from "./context/PartyContext";
+import { GameSettingsProvider } from "./context/GameSettingsContext";
 import TokenManager from "./utils/tokenManager";
 
 // Validate and clean up tokens on app startup
@@ -17,7 +18,9 @@ ReactDOM.createRoot(document.getElementById("root")).render(
     <ColorModeScript initialColorMode={theme.config.initialColorMode} />
     <BrowserRouter>
       <PartyProvider>
-        <App />
+        <GameSettingsProvider>
+          <App />
+        </GameSettingsProvider>
       </PartyProvider>
       </BrowserRouter>
     </ChakraProvider>

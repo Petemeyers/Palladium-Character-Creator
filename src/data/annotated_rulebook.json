@@ -1,0 +1,2256 @@
+{
+    "species": [
+      {
+        "name": "HUMAN",
+        "averageHeight": "4 - 6.10 ft.",
+        "canHavePsionics": "None",
+        "occLimitations": "None",
+        "attributeDice": {
+          "IQ": 3,
+          "ME": 3,
+          "MA": 3,
+          "PS": 3,
+          "PP": 3,
+          "PE": 3,
+          "PB": 3,
+          "Spd": 3
+        },
+        "hitPoints": "Standard; see determining hit points",
+        "alignment": "Any",
+        "physicalAppearance": "Varies widely. Tend to be tall, lean, or muscular; hair can be blonde, brown, or black. Weight ~90 to 250 lbs.",
+        "specialNaturalAbilities": "Adaptive, resourceful",
+        "enemies": "Wolfen, goblins, hob-goblins, orcs, kobolds, ogres, trolls, changelings, giants",
+        "allies": "Elves, dwarves, gnomes; indifferent toward troglodytes and faerie folk",
+        "favoriteWeapons": "Any, with leanings toward blade weapons and bows",
+        "otherNotes": [
+          "Worship a variety of deities",
+          "Wear all types of armor",
+          "Highly skilled and educated",
+          "Aggressive and ambitious",
+          "Explore and master many areas of knowledge (magic, arms, clergy, crafts, arts, etc.)"
+        ]
+      },
+      {
+        "name": "ELF",
+        "averageHeight": "6 - 6.10 ft.",
+        "canHavePsionics": "60 ft.",
+        "occLimitations": "None",
+        "attributeDice": {
+          "IQ": 3,
+          "ME": 3,
+          "MA": 2,
+          "PS": 3,
+          "PP": 4,
+          "PE": 3,
+          "PB": 5,
+          "Spd": 3
+        },
+        "hitPoints": "Standard; see determining hit points",
+        "alignment": "Any",
+        "physicalAppearance": "Tall, slender, and handsome with youthful features. Dark or brown hair, pointed ears, dark eyes; ~150-200 lbs.",
+        "specialNaturalAbilities": "Night vision up to 90 feet",
+        "enemies": "Dwarves, trolls, ogres, kobolds, goblins, hobgoblins, orcs, gnomes",
+        "allies": "Humans, faerie folk (pixies, brownies, sprites); generally indifferent toward changelings, troglodytes, and wolfen",
+        "favoriteWeapons": "Large swords, short swords, long bows, knives, and blunt weapons",
+        "otherNotes": [
+          "Elves typically regard wolfen as dangerous and seldom aid them",
+          "Average lifespan ~600 years"
+        ]
+      },
+      {
+        "name": "DWARF",
+        "averageHeight": "3 - 4 ft.",
+        "canHavePsionics": "90 ft.",
+        "occLimitations": "No magic (except Mind Mage), No Long Bowman (too short)",
+        "attributeDice": {
+          "IQ": 3,
+          "ME": 3,
+          "MA": 2,
+          "PS": 4,
+          "PP": 3,
+          "PE": 4,
+          "PR": 2,
+          "Spd": 2
+        },
+        "hitPoints": "Standard; see determining hit points",
+        "alignment": "Any",
+        "physicalAppearance": "Short, husky, muscular, with white hair and an aged appearance; ~3–4 ft tall, 100–200 lbs.",
+        "specialNaturalAbilities": [
+          "Night vision up to 90 feet",
+          "Normal day vision",
+          "+6 bonus to recognize weapon quality",
+          "+4 bonus to recognize precious metals/stones"
+        ],
+        "enemies": "Elves, goblins, hob-goblins, orcs, ogres, trolls, and wolfen; also dislike gnomes, changelings, giants",
+        "allies": "Humans, kobolds, troglodytes; indifferent toward faerie folk",
+        "favoriteWeapons": "Battle axes, ball and chains, blunt weapons, iron staves, slings",
+        "otherNotes": [
+          "Worship a variety of deities",
+          "Wear all types of armor, especially chain and plate",
+          "Excellent men of arms",
+          "Have long forsaken most magic (except Mind Mages or witches)",
+          "Average lifespan ~200 years"
+        ]
+      },
+      {
+        "name": "GOBLIN",
+        "averageHeight": "3 - 4 ft.",
+        "canHavePsionics": "90 ft.",
+        "occLimitations": "No magic O.C.C. (except witch and cobbler), No Long Bowman, Knight, or Paladin",
+        "attributeDice": {
+          "IQ": 3,
+          "ME": 2,
+          "MA": 3,
+          "PS": 3,
+          "PP": 3,
+          "PE": 4,
+          "PB": 2,
+          "Spd": 3
+        },
+        "hitPoints": "Standard; see determining hit points",
+        "alignment": "Any (tend toward selfish or evil)",
+        "physicalAppearance": "Short and skinny with spindly limbs, large ears, dark eyes, hair color black/brown/red; ~60–100 lbs.",
+        "specialNaturalAbilities": [
+          "Night vision up to 90 feet",
+          "Day vision equivalent",
+          "Potential natural magic in Cobblers",
+          "+10% bonus to recognize weapon quality"
+        ],
+        "enemies": "Humans, kobolds, dwarves, elves, gnomes, changelings",
+        "allies": "Hob-goblins, orcs, trolls, wolfen; indifferent toward ogres, troglodytes, giants",
+        "favoriteWeapons": "All weapons except polearms and long bows",
+        "otherNotes": [
+          "Worship evil gods, devils, or demons",
+          "Often serve as mercenaries",
+          "Wear any type of armor (prefer studded leather and chain)",
+          "Poor craftsmen, lazy, cruel, vindictive",
+          "Average lifespan ~80 years"
+        ]
+      },
+      {
+        "name": "HOB-GOBLIN",
+        "averageHeight": "4 - 5 ft.",
+        "canHavePsionics": "40 ft.",
+        "occLimitations": "No magic O.C.C. (except witch), No Long Bowman, Knight, or Paladin",
+        "attributeDice": {
+          "IQ": 2,
+          "ME": 4,
+          "MA": 3,
+          "PS": 3,
+          "PP": 3,
+          "PE": 3,
+          "PR": 2,
+          "Spd": 2
+        },
+        "hitPoints": "Standard; see determining hit points",
+        "alignment": "Any (tend toward selfish/evil)",
+        "physicalAppearance": "Gaunt goblins with large ears, dark complexion, dark eyes, stringy hair. ~4–5 ft tall, 90–150 lbs.",
+        "specialNaturalAbilities": [
+          "Night vision up to 40 feet",
+          "Normal day vision",
+          "Natural resistance to psionic attacks (high M.E.)"
+        ],
+        "enemies": "Humans, elves, gnomes, dwarves, kobolds, changelings",
+        "allies": "Goblins, orcs, trolls, wolfen; indifferent toward ogres, troglodytes, giants",
+        "favoriteWeapons": "Spears, polearms, blunt weapons",
+        "otherNotes": [
+          "Worship evil gods, devils, demons",
+          "Often sell services as mercenaries",
+          "Wear all types of armor",
+          "Poor craftsmen, lazy, cruel, vindictive",
+          "Average lifespan ~60 years"
+        ]
+      },
+      {
+        "name": "KOBOLD",
+        "averageHeight": "3 - 4 ft.",
+        "canHavePsionics": "90 ft.",
+        "occLimitations": "No Long Bowman, Knight, or Paladin",
+        "attributeDice": {
+          "IQ": 3,
+          "ME": 2,
+          "MA": 3,
+          "PS": 3,
+          "PP": 3,
+          "PE": 4,
+          "PB": 2,
+          "Spd": 3
+        },
+        "hitPoints": "Standard; see determining hit points",
+        "alignment": "Any (tend to be selfish/evil)",
+        "physicalAppearance": "Short, thin, waxen complexion, bald or white-haired, thick leathery skin, yellow/red eyes, pointed teeth; ~70–120 lbs.",
+        "specialNaturalAbilities": [
+          "Night vision up to 90 feet",
+          "Normal day vision",
+          "+10% bonus to recognize weapon quality"
+        ],
+        "enemies": "Humans, elves, gnomes, changelings, goblins, hob-goblins",
+        "allies": "Trolls, wolfen, troglodytes, dwarves, giants; indifferent toward orcs and ogres",
+        "favoriteWeapons": "Picks, hammers, knives, swords",
+        "otherNotes": [
+          "Worship demons",
+          "Sometimes hire out as mercenaries",
+          "Prefer studded, chain, scale, or plate armor",
+          "Average lifespan ~160 years"
+        ]
+      },
+      {
+        "name": "ORC",
+        "averageHeight": "5 - 6.8 ft.",
+        "canHavePsionics": "40 ft.",
+        "occLimitations": "No magic O.C.C. (except witch and warlock), No Knight or Paladin",
+        "attributeDice": {
+          "IQ": 2,
+          "ME": 2,
+          "MA": 3,
+          "PS": 3,
+          "PP": 3,
+          "PE": 4,
+          "PB": 2,
+          "Spd": 3
+        },
+        "hitPoints": "Standard; see determining hit points",
+        "alignment": "Any (tend toward selfish/evil)",
+        "physicalAppearance": "Broad-shouldered, husky, large canine teeth, dark complexion, black/dark brown hair, ~130–240 lbs.",
+        "specialNaturalAbilities": [
+          "Night vision up to 40 feet",
+          "Normal day vision",
+          "High physical strength (P.S.)"
+        ],
+        "enemies": "Humans, elves, dwarves, gnomes, changelings",
+        "allies": "Goblins, hob-goblins, trolls, ogres, wolfen; indifferent toward kobolds, troglodytes, giants",
+        "favoriteWeapons": "Any (particularly melee combat)",
+        "otherNotes": [
+          "Worship evil deities, devils, demons, or other dark forces",
+          "Often serve as mercenaries",
+          "Wear all types of armor",
+          "Poor craftsmen, greedy, cruel, hot-tempered",
+          "Claws do 1–6 damage (plus P.S. bonus if applicable), bite does 1–6 (no P.S. bonus)"
+        ]
+      },
+      {
+        "name": "OGRE",
+        "averageHeight": "6 - 8 ft.",
+        "canHavePsionics": "40 ft.",
+        "occLimitations": "None",
+        "attributeDice": {
+          "IQ": 3,
+          "ME": 3,
+          "MA": 2,
+          "PS": 4,
+          "PP": 3,
+          "PE": 4,
+          "PB": 2,
+          "Spd": 3
+        },
+        "hitPoints": "Standard; see determining hit points",
+        "alignment": "Any (often selfish/evil)",
+        "physicalAppearance": "Huge, hairy, muscular humanoids with canine teeth and sharp claws. Gray/tan hide, sometimes scaly; ~180–300 lbs.",
+        "specialNaturalAbilities": [
+          "Night vision up to 40 feet",
+          "High P.E. and P.S."
+        ],
+        "enemies": "Humans, elves, dwarves, gnomes, faerie folk, changelings",
+        "allies": "Orcs; dislike/distrust goblins, hob-goblins, kobolds, wolfen, trolls",
+        "favoriteWeapons": "Slings, large swords, axes, blunt weapons",
+        "otherNotes": [
+          "Worship war gods and elemental forces",
+          "May hire out as mercenaries",
+          "Wear all types of armor",
+          "Poor craftsmen, vengeful, greedy, paranoid",
+          "Claws do 1–8 damage (plus P.S. bonus), bite does 1–6 (no P.S. bonus)",
+          "Average lifespan ~90 years"
+        ]
+      },
+      {
+        "name": "TROLL",
+        "averageHeight": "10 - 12 ft.",
+        "canHavePsionics": "60 ft.",
+        "occLimitations": "None (though they typically choose Mercenary Fighter, Thief, Assassin; seldom dabble in magic)",
+        "attributeDice": {
+          "IQ": 3,
+          "ME": 2,
+          "MA": 2,
+          "PS": 5,
+          "PP": 4,
+          "PE": 4,
+          "PB": 2,
+          "Spd": 2
+        },
+        "hitPoints": "Standard; see determining hit points",
+        "alignment": "Any (tend toward selfish/evil)",
+        "physicalAppearance": "Giant, frightful, imposing, powerful claws, fangs, pale blotchy skin, stringy hair, red-rimmed eyes; ~400–600 lbs.",
+        "specialNaturalAbilities": [
+          "Night vision up to 60 feet",
+          "Great strength, agility, endurance"
+        ],
+        "enemies": "Humans, elves, gnomes",
+        "allies": "Kobolds, goblins, hob-goblins, orcs, giants; indifferent toward wolfen, dwarves, troglodytes, ogres, changelings",
+        "favoriteWeapons": "Large blade weapons, sickles, scythes, axes, picks, large swords",
+        "otherNotes": [
+          "Worship evil deities",
+          "Rarely sell services as mercenaries",
+          "Wear all types of armor (especially leather)",
+          "Poor craftsmen",
+          "Clever, cunning, treacherous",
+          "Claws do 2–12 damage (plus P.S. bonus), bite does 2–12 (no P.S. bonus)",
+          "Average lifespan ~120 years"
+        ]
+      },
+      {
+        "name": "TROGLODYTE",
+        "averageHeight": "4 - 5 ft.",
+        "canHavePsionics": "120 ft.",
+        "occLimitations": "Limited to O.C.C. of Mercenary Fighter, Thief, Assassin, Priest, Shaman, and Healer ONLY",
+        "attributeDice": {
+          "IQ": 2,
+          "ME": 2,
+          "MA": 3,
+          "PS": 4,
+          "PP": 4,
+          "PE": 3,
+          "PB": 2,
+          "Spd": 5
+        },
+        "hitPoints": "Standard; see determining hit points",
+        "alignment": "Any (often good or selfish)",
+        "physicalAppearance": "Broad-shouldered, pale skin, large dark eyes, flabby body, reptilian/amphibian-like head; ~130–250 lbs.",
+        "specialNaturalAbilities": [
+          "Night vision up to 120 feet",
+          "Day vision limited to 30 feet",
+          "Great speed and agility"
+        ],
+        "enemies": "Generally fear or dislike all surface dwellers",
+        "allies": "Indifferent toward other subterranean races (dwarves, kobolds, gnomes, goblins)",
+        "favoriteWeapons": "Thrown rocks, cudgels, stone axes, stone hammers, stone tools, wooden clubs",
+        "otherNotes": [
+          "Often worship nymph or elemental deities",
+          "Wear little or no clothing (no armor)",
+          "Rarely use metal weapons unless found",
+          "No worldly goods (though like sparkly items)",
+          "Claws do 6 damage (plus P.S. bonus), bite 1–6 (no P.S. bonus)",
+          "Average lifespan ~90 years"
+        ]
+      },
+      {
+        "name": "CHANGELING",
+        "averageHeight": "3 - 10 ft.",
+        "canHavePsionics": "None",
+        "occLimitations": "None",
+        "attributeDice": {
+          "IQ": 3,
+          "ME": 5,
+          "MA": 4,
+          "PS": 3,
+          "PP": 3,
+          "PE": 2,
+          "PB": 2,
+          "Spd": 2
+        },
+        "hitPoints": "Standard; see determining hit points",
+        "alignment": "Any",
+        "physicalAppearance": "Naturally tall, thin, ambiguous features, but can shift shape to appear as any humanoid between 3–10 feet tall. Mass can vary ~30 lbs.",
+        "specialNaturalAbilities": [
+          "Shape-shift into any humanoid form within size range (1 full melee round)",
+          "Cannot shift into animals or objects",
+          "Genderless; can appear male or female",
+          "Physical attributes remain constant (lost limb remains lost in all forms)"
+        ],
+        "enemies": "Generally distrusted or feared by all races",
+        "allies": "Often prefer company of elves, humans, wolfen, orcs, trolls",
+        "favoriteWeapons": "Any",
+        "otherNotes": [
+          "Worship any variety of deities",
+          "Wear all types of armor",
+          "Tend to be suspicious of strangers",
+          "Fair craftsmen and metalworkers"
+        ]
+      },
+      {
+        "name": "GNOME",
+        "averageHeight": "2 - 2.6 ft.",
+        "canHavePsionics": "90 ft.",
+        "occLimitations": "Limited to O.C.C. of Mercenary Fighter, Ranger, Thief, Assassin, Clergy, and Magic O.C.C. (except Mind Mage)",
+        "attributeDice": {
+          "IQ": 3,
+          "ME": 2,
+          "MA": 3,
+          "PS": 2,
+          "PP": 4,
+          "PE": 4,
+          "PD": 4,
+          "Spd": 2
+        },
+        "hitPoints": "Standard; see determining hit points",
+        "alignment": "Any",
+        "physicalAppearance": "Very short and handsome, white hair, bushy eyebrows, sparkling blue eyes. Males have neatly trimmed beards. ~20–50 lbs.",
+        "specialNaturalAbilities": [
+          "Night vision up to 90 feet",
+          "Extremely agile; +10% to prowl"
+        ],
+        "enemies": "Kobolds, trolls, dwarves, goblins, hobgoblins, orcs, ogres",
+        "allies": "Humans, elves, faerie folk; indifferent toward troglodytes, changelings, wolfen",
+        "favoriteWeapons": "Knives, short swords, slings, short bows, crossbows (gnome-sized gear deals less damage)",
+        "otherNotes": [
+          "Gnomes and dwarves are cousins but fiercely dislike each other",
+          "Worship various deities",
+          "Wear all types of armor",
+          "Average lifespan ~300 years"
+        ]
+      },
+      {
+        "name": "WOLFEN",
+        "averageHeight": "7 - 9 ft.",
+        "canHavePsionics": "40 ft.",
+        "occLimitations": "None",
+        "attributeDice": {
+          "IQ": 3,
+          "ME": 3,
+          "MA": 2,
+          "PS": 4,
+          "PP": 3,
+          "PE": 3,
+          "PR": 3,
+          "Spd": 4
+        },
+        "hitPoints": "Standard; see determining hit points",
+        "alignment": "Any (often principled or aberrant, with a strong code of honor)",
+        "physicalAppearance": "Giant humanoid wolves, fur typically dark or light gray, pronounced muzzle, sharp canine teeth, powerful jaws. ~190–300 lbs.",
+        "specialNaturalAbilities": [
+          "Night vision up to 40 feet",
+          "Excellent sense of smell and hearing (+80% to tracking by scent)"
+        ],
+        "enemies": "Humans, dwarves, changelings",
+        "allies": "Goblins, hob-goblins, kobolds, orcs, ogres, trolls; indifferent toward gnomes, troglodytes, giants, faerie folk",
+        "favoriteWeapons": "Pole arms, ball and chain, swords, axes",
+        "otherNotes": [
+          "Worship a variety of deities",
+          "Wear all types of armor",
+          "Competent builders and craftsmen",
+          "Serve as superior foot soldiers",
+          "Provide aid and protection to those who request it",
+          "Claws: 1–6 plus O.C.C./P.S. bonus; bite: 1–8 (no P.S. bonus)",
+          "Average lifespan ~50 years"
+        ]
+      },
+      {
+        "name": "FAERIE (Common)",
+        "averageHeight": "6 inches tall",
+        "canHavePsionics": "None",
+        "occLimitations": "None (typically do not choose an O.C.C.)",
+        "attributeDice": {
+          "IQ": 3,
+          "ME": 2,
+          "MA": 2,
+          "PS": 1,
+          "PP": 4,
+          "PE": 2,
+          "PB": 5,
+          "Spd": 4
+        },
+        "hitPoints": "P.E. × 5",
+        "alignment": "Any (often unprincipled or anarchist)",
+        "physicalAppearance": "Tiny winged humanoid, extremely attractive",
+        "specialNaturalAbilities": [
+          "Flying (Spd ×8)",
+          "Nightvision 90 ft",
+          "See the invisible",
+          "Identify plants/fruits 50%",
+          "Locate water 40%",
+          "Prowl 76%",
+          "+4 to dodge in flight"
+        ],
+        "enemies": "Generally disliked by most non-faerie races",
+        "allies": "Other faerie folk",
+        "favoriteWeapons": "None (often rely on mischief or magic)",
+        "otherNotes": [
+          "Never wear armor",
+          "Tend toward playful mischief"
+        ]
+      },
+      {
+        "name": "FAERIE (Silver Bells)",
+        "averageHeight": "6 inches tall",
+        "canHavePsionics": "None",
+        "occLimitations": "None",
+        "attributeDice": {
+          "IQ": 3,
+          "ME": 2,
+          "MA": 2,
+          "PS": 1,
+          "PP": 3,
+          "PE": 2,
+          "PB": 5,
+          "Spd": 4
+        },
+        "hitPoints": "P.E. × 5",
+        "alignment": "Any (often unprincipled, anarchist, or scrupulous)",
+        "physicalAppearance": "Tiny winged faeries with a musical, chiming voice and bright coloration",
+        "specialNaturalAbilities": [
+          "Flying (Spd ×8)",
+          "Nightvision 90 ft",
+          "See the invisible",
+          "Identify plants/fruits 60%",
+          "Prowl 75%",
+          "Locate secret compartments/doors 54%",
+          "+4 to dodge"
+        ],
+        "enemies": "Disliked by most non-faerie folk",
+        "allies": "Other faerie folk",
+        "favoriteWeapons": "None typically",
+        "otherNotes": [
+          "Never wear armor",
+          "Often seen at dawn playing in the morning sun"
+        ]
+      },
+      {
+        "name": "FAERIE (Green Wood)",
+        "averageHeight": "6 inches tall",
+        "canHavePsionics": "None",
+        "occLimitations": "None",
+        "attributeDice": {
+          "IQ": 3,
+          "ME": 2,
+          "MA": 2,
+          "PS": 1,
+          "PP": 4,
+          "PE": 2,
+          "PB": 4,
+          "Spd": 4
+        },
+        "hitPoints": "P.E. × 5",
+        "alignment": "Any (tend to be unprincipled or anarchist)",
+        "physicalAppearance": "Tiny winged faeries, often with a greenish tint; closely tied to forests",
+        "specialNaturalAbilities": [
+          "Flying (Spd ×8)",
+          "Nightvision 90 ft",
+          "See the invisible",
+          "Identify plants/fruits 80%",
+          "Prowl 80%",
+          "Locate water 70%",
+          "Pick pockets 50%",
+          "+3 to dodge"
+        ],
+        "enemies": "Generally distrusted by most non-faerie folk",
+        "allies": "Other faerie folk",
+        "favoriteWeapons": "Tiny bows/arrows (faerie weapons)",
+        "otherNotes": [
+          "Never wear armor",
+          "Extremely mischievous",
+          "Knows faerie magic: charm, grow plants, animate plants, circle of rain, circle of flame, faeries' dance"
+        ]
+      },
+      {
+        "name": "FAERIE (Night-Elves)",
+        "averageHeight": "6 inches tall",
+        "canHavePsionics": "None",
+        "occLimitations": "None",
+        "attributeDice": {
+          "IQ": 3,
+          "ME": 2,
+          "MA": 2,
+          "PS": 1,
+          "PP": 4,
+          "PE": 2,
+          "PB": 4,
+          "Spd": 4
+        },
+        "hitPoints": "P.E. × 4",
+        "alignment": "Any (usually good or selfish)",
+        "physicalAppearance": "Tiny faeries with a nocturnal, shadowy vibe; still winged and delicate",
+        "specialNaturalAbilities": [
+          "Flying (Spd ×10)",
+          "Nightvision 90 ft",
+          "See the invisible",
+          "Identify plants/fruits 80%",
+          "Prowl 80%",
+          "Locate water 70%",
+          "Pick pockets 50%",
+          "+3 to dodge"
+        ],
+        "enemies": "Generally disliked by non-faerie folk",
+        "allies": "Other faerie folk",
+        "favoriteWeapons": "Tiny faerie weapons (if any)",
+        "otherNotes": [
+          "Never wear armor",
+          "Knows faerie magic: mesmerism, mend wood/clay, ventriloquism, turn self into mist, faeries' dance"
+        ]
+      },
+      {
+        "name": "PIXIE",
+        "averageHeight": "12 inches tall (wingless, but can fly)",
+        "canHavePsionics": "None",
+        "occLimitations": "None",
+        "attributeDice": {
+          "IQ": 3,
+          "ME": 2,
+          "MA": 2,
+          "PS": 1,
+          "PP": 4,
+          "PE": 2,
+          "PB": 3,
+          "Spd": 3
+        },
+        "hitPoints": "P.E. × 4",
+        "alignment": "Any (often unprincipled or anarchist)",
+        "physicalAppearance": "Small, slender, fiery red hair, fair complexion, no wings yet can magically fly",
+        "specialNaturalAbilities": [
+          "Flight (Spd ×5)",
+          "Nightvision 60 ft",
+          "Turn self invisible at will",
+          "Prowl 60%",
+          "Pick pockets 50%",
+          "Pick locks 40%",
+          "Locate secret compartments/doors 48%",
+          "+2 to dodge"
+        ],
+        "enemies": "Disliked by most people for pranks",
+        "allies": "Other faerie folk",
+        "favoriteWeapons": "If any, tiny or improvised",
+        "otherNotes": [
+          "May wear soft leather armor (S.D.C. 10, A.R. 8)",
+          "Knows faerie magic: charm, cloud of slumber, wind rush, sphere of light, mend wood/clay, tongue, circle of rain"
+        ]
+      },
+      {
+        "name": "FROST-PIXIE",
+        "averageHeight": "12 inches tall",
+        "canHavePsionics": "None",
+        "occLimitations": "None",
+        "attributeDice": {
+          "IQ": 3,
+          "ME": 2,
+          "MA": 2,
+          "PS": 1,
+          "PP": 4,
+          "PE": 2,
+          "PB": 4,
+          "Spd": 4
+        },
+        "hitPoints": "P.E. × 4",
+        "alignment": "Any (often unprincipled or anarchist)",
+        "physicalAppearance": "Small, wingless faerie folk with a frosty or icy coloration; can fly via magic",
+        "specialNaturalAbilities": [
+          "Flight (Spd ×10)",
+          "Nightvision 60 ft",
+          "Turn self invisible",
+          "Finger of frost (touch attack, 2 damage + possible stun if fail save vs magic)",
+          "Frost breath (range 4 ft, 1–6 damage, blinds 1–6 melee rounds unless save vs magic)",
+          "Pass through ice"
+        ],
+        "enemies": "Generally disliked by non-faerie folk, blamed for cold snaps and hail",
+        "allies": "Other faerie folk",
+        "favoriteWeapons": "Rarely use weapons",
+        "otherNotes": [
+          "Never wear armor",
+          "Knows faerie magic: wind rush, north wind, freeze water, hail, snow storm, wall of ice"
+        ]
+      },
+      {
+        "name": "LEPRECHAUN",
+        "averageHeight": "2–3 feet tall",
+        "canHavePsionics": "None",
+        "occLimitations": "None (faerie shoemaker/tailor, not usually an O.C.C.)",
+        "attributeDice": {
+          "IQ": 3,
+          "ME": 2,
+          "MA": 2,
+          "PS": 2,
+          "PP": 4,
+          "PE": 3,
+          "PB": 3,
+          "Spd": 4
+        },
+        "hitPoints": "P.E. × 4",
+        "alignment": "Any, but almost always anarchist (unprincipled or miscreant likely)",
+        "physicalAppearance": "Small, often bearded faerie folk, whimsical and sly",
+        "specialNaturalAbilities": [
+          "Nightvision 60 ft",
+          "Turn self invisible",
+          "Ventriloquism",
+          "Speaks all tongues",
+          "Prowl 44%",
+          "Pick pockets 82%",
+          "Pick locks 55%",
+          "Locate secret compartments/doors 64%",
+          "Recognize precious metals/stones 96%"
+        ],
+        "enemies": "Generally disliked by larger folk for trickery",
+        "allies": "All faerie folk",
+        "favoriteWeapons": "Primarily trickery, illusions; rarely normal weapons",
+        "otherNotes": [
+          "Super greedy (hoards gold, gems, or magic items)",
+          "Lives in secluded places, usually alone",
+          "Always loyal to faerie folk"
+        ]
+      },
+      {
+        "name": "BROWNIE",
+        "averageHeight": "1–2 feet tall",
+        "canHavePsionics": "None",
+        "occLimitations": "None",
+        "attributeDice": {
+          "IQ": 2,
+          "ME": 2,
+          "MA": 3,
+          "PS": 2,
+          "PP": 3,
+          "PE": 2,
+          "PB": 3,
+          "Spd": 4
+        },
+        "hitPoints": "P.E. × 4",
+        "alignment": "Any (often good or selfish)",
+        "physicalAppearance": "Tiny, shy, unarmored faerie folk; considered the most liked among faeries",
+        "specialNaturalAbilities": [
+          "Nightvision 90 ft",
+          "Turn self invisible",
+          "Prowl 75%",
+          "Pick pockets 50%",
+          "Pick locks 40%",
+          "Locate secret compartments/doors 40%"
+        ],
+        "enemies": "Primarily disliked by malicious beings",
+        "allies": "Other faerie folk; sometimes friendly with kind mortals",
+        "favoriteWeapons": "None; they never use weapons",
+        "otherNotes": [
+          "Knows faerie magic: mend wood/clay, cloud of slumber, animate objects",
+          "Never wear armor",
+          "Shy but still fond of mild pranks"
+        ]
+      },
+      {
+        "name": "SPRITE (Tree Sprite)",
+        "averageHeight": "6 inches tall",
+        "canHavePsionics": "None",
+        "occLimitations": "None",
+        "attributeDice": {
+          "IQ": 2,
+          "ME": 2,
+          "MA": 2,
+          "PS": 1,
+          "PP": 4,
+          "PE": 2,
+          "PB": 4,
+          "Spd": 4
+        },
+        "hitPoints": "P.E. × 2",
+        "alignment": "Any (often good or selfish)",
+        "physicalAppearance": "Tiny winged faerie folk strongly tied to trees and forests",
+        "specialNaturalAbilities": [
+          "Flight (Spd ×6)",
+          "Nightvision 60 ft",
+          "Identify plants/fruits 80%",
+          "Prowl 80%",
+          "+4 to dodge"
+        ],
+        "enemies": "Disliked by evil folk who hate faeries",
+        "allies": "Other faerie folk",
+        "favoriteWeapons": "None; do not typically use weapons",
+        "otherNotes": [
+          "Knows faerie magic: animate plants, charm, faeries' dance",
+          "Travel in groups of 8 to 48",
+          "Never wear clothes or armor"
+        ]
+      },
+      {
+        "name": "SPRITE (Water Sprite)",
+        "averageHeight": "6 inches tall",
+        "canHavePsionics": "None",
+        "occLimitations": "None",
+        "attributeDice": {
+          "IQ": 2,
+          "ME": 2,
+          "MA": 2,
+          "PS": 1,
+          "PP": 4,
+          "PE": 2,
+          "PB": 4,
+          "Spd": 4
+        },
+        "hitPoints": "P.E. × 2",
+        "alignment": "Any (often good or selfish)",
+        "physicalAppearance": "Tiny winged faerie folk fond of ponds, lakes, streams",
+        "specialNaturalAbilities": [
+          "Flight (Spd ×6)",
+          "Nightvision 60 ft",
+          "Swim",
+          "Prowl 60%",
+          "+4 to dodge"
+        ],
+        "enemies": "Generally disliked by those who despise faeries",
+        "allies": "Other faerie folk",
+        "favoriteWeapons": "None",
+        "otherNotes": [
+          "Knows faerie magic: circle of rain, create fog, purple mist",
+          "Travel in groups of 6 to 36",
+          "Never wear clothes or armor"
+        ]
+      },
+      {
+        "name": "SPRITE (Wind-Puff)",
+        "averageHeight": "6 inches tall",
+        "canHavePsionics": "None",
+        "occLimitations": "None",
+        "attributeDice": {
+          "IQ": 2,
+          "ME": 2,
+          "MA": 2,
+          "PS": 1,
+          "PP": 4,
+          "PE": 2,
+          "PB": 4,
+          "Spd": 4
+        },
+        "hitPoints": "P.E. × 2",
+        "alignment": "Any (often good or selfish)",
+        "physicalAppearance": "Tiny winged faeries associated with breezes and gusts",
+        "specialNaturalAbilities": [
+          "Flight (Spd ×4)",
+          "Nightvision 60 ft",
+          "Identify plants/fruits 80%",
+          "Prowl 60%",
+          "+4 to dodge"
+        ],
+        "enemies": "Non-faerie folk who resent mischief",
+        "allies": "Other faerie folk",
+        "favoriteWeapons": "None typically",
+        "otherNotes": [
+          "Knows faerie magic: charm, mend wood/clay, faeries' dance",
+          "Never wear clothes or armor, travel in groups of 6 to 36"
+        ]
+      },
+      {
+        "name": "SPRIGGAN",
+        "averageHeight": "6–12 inches tall",
+        "canHavePsionics": "None",
+        "occLimitations": "None (builders, typically no standard O.C.C.)",
+        "attributeDice": {
+          "IQ": 2,
+          "ME": 2,
+          "MA": 2,
+          "PS": 5,
+          "PP": 3,
+          "PE": 4,
+          "PB": 2,
+          "Spd": 2
+        },
+        "hitPoints": "P.E. × 3",
+        "alignment": "Any (usually selfish or miscreant)",
+        "physicalAppearance": "Small, gnarled, stony-skinned faerie folk, solitary builders",
+        "specialNaturalAbilities": [
+          "Nightvision 40 ft",
+          "Pass through stone, rock, clay as if air"
+        ],
+        "enemies": "Generally disliked by most people",
+        "allies": "Occasionally other faerie folk (often work alone)",
+        "favoriteWeapons": "Rarely use weapons",
+        "otherNotes": [
+          "Knows faerie magic: dust storm, mend stone, crumble stone, rock to mud",
+          "Seldom in groups >2",
+          "Rarely wear armor"
+        ]
+      },
+      {
+        "name": "NYMPH",
+        "averageHeight": "2–3 ft tall (faerie form)",
+        "canHavePsionics": "None",
+        "occLimitations": "None (protector of nature)",
+        "attributeDice": {
+          "IQ": 3,
+          "ME": 2,
+          "MA": 2,
+          "PS": 2,
+          "PP": 3,
+          "PE": 3,
+          "PB": 4,
+          "Spd": 3
+        },
+        "hitPoints": "P.E. × 5",
+        "alignment": "Any (usually good or unprincipled)",
+        "physicalAppearance": "Ethereally beautiful, can appear as a small winged being; associated with nature’s bounty",
+        "specialNaturalAbilities": [
+          "Nightvision 90 ft",
+          "Flight (Spd ×6)",
+          "Turn invisible",
+          "Swim",
+          "Speak all languages",
+          "Know all plants, herbs, poisons",
+          "Only magic can harm them (in some lore)"
+        ],
+        "enemies": "Evil beings who would harm nature",
+        "allies": "Other faerie folk, some good-aligned mortals",
+        "favoriteWeapons": "None",
+        "otherNotes": [
+          "Knows powerful faerie magic (10th-level potency): cloud of slumber, dust storm, create fog, purple mist, call lightning, grow plants, animate plants, extinguish fires, wind rush, part waters, calm waters, wall of thorns, breath of life",
+          "Solitary, secretive, typically good"
+        ]
+      },
+      {
+        "name": "BOGIES",
+        "averageHeight": "6–12 inches tall",
+        "canHavePsionics": "None",
+        "occLimitations": "O.C.C.: One (unclear; often none)",
+        "attributeDice": {
+          "IQ": 2,
+          "ME": 2,
+          "MA": 2,
+          "PS": 1,
+          "PP": 4,
+          "PE": 3,
+          "PB": 1,
+          "Spd": 4
+        },
+        "hitPoints": "P.E. × 3",
+        "alignment": "Any (tend toward selfish or evil)",
+        "physicalAppearance": "Small faerie able to polymorph into large spiders, scorpions, or centipedes; adept climbers",
+        "specialNaturalAbilities": [
+          "Nightvision 90 ft",
+          "Normal dayvision",
+          "Polymorph into a larger spider/scorpion/centipede",
+          "Climb/scale walls 92%",
+          "Prowl 77%"
+        ],
+        "enemies": "All non-faerie (they love to scare or harm them)",
+        "allies": "Other mischievous faerie folk",
+        "favoriteWeapons": "They may use small weapons or illusions",
+        "otherNotes": [
+          "Knows faerie magic: wind rush, fog of fear, wisps of confusion, purple mist, sphere of light, mesmerism, ventriloquism, animate objects",
+          "Tricks or hurts non-faerie folk, disliked by them"
+        ]
+      },
+      {
+        "name": "TOAD STOOLS",
+        "averageHeight": "6–12 inches tall",
+        "canHavePsionics": "None",
+        "occLimitations": "None",
+        "attributeDice": {
+          "IQ": 2,
+          "ME": 2,
+          "MA": 2,
+          "PS": 1,
+          "PP": 3,
+          "PE": 3,
+          "PB": 1,
+          "Spd": 3
+        },
+        "hitPoints": "P.E. × 3",
+        "alignment": "Any (usually evil)",
+        "physicalAppearance": "Faerie fungus-like beings able to morph into true toads",
+        "specialNaturalAbilities": [
+          "Nightvision 90 ft",
+          "Dayvision 40 ft",
+          "Swim",
+          "Recognize poison 98%",
+          "Polymorph into a true toad at will",
+          "Speaks all faerie languages"
+        ],
+        "enemies": "Hated by most people",
+        "allies": "Rarely any; sometimes other malicious faeries",
+        "favoriteWeapons": "None",
+        "otherNotes": [
+          "Knows faerie magic: create fog, animate plants",
+          "Cruel, malicious, spiteful"
+        ]
+      },
+      {
+        "name": "PUCK",
+        "averageHeight": "3 ft tall",
+        "canHavePsionics": "None",
+        "occLimitations": "None (thief-like tendencies)",
+        "attributeDice": {
+          "IQ": 2,
+          "ME": 2,
+          "MA": 2,
+          "PS": 2,
+          "PP": 4,
+          "PE": 3,
+          "PR": 2,
+          "Spd": 4
+        },
+        "hitPoints": "P.E. × 3",
+        "alignment": "Any (tend toward evil or selfish)",
+        "physicalAppearance": "Dirty grey complexion, can polymorph into goat, dog, pony, or wild boar. Cruel, depraved",
+        "specialNaturalAbilities": [
+          "Nightvision 60 ft",
+          "Normal dayvision",
+          "Polymorph into goat/dog/pony/wild boar",
+          "Prowl 50%",
+          "Pick pockets 55%",
+          "Pick locks 45%",
+          "Recognize poison 72%"
+        ],
+        "enemies": "Most civilized folk (they are cruel tricksters)",
+        "allies": "May travel in pairs or small groups",
+        "favoriteWeapons": "Short blade weapons; may wear leather armor",
+        "otherNotes": [
+          "Bite does 1–6 damage, claws 1–6",
+          "Evil, depraved, rarely more than 8 in a group"
+        ]
+      },
+      {
+        "name": "SATYRS",
+        "averageHeight": "Varies, typically 4–5 ft",
+        "canHavePsionics": "None",
+        "occLimitations": "None",
+        "attributeDice": {
+          "IQ": 2,
+          "ME": 2,
+          "MA": 2,
+          "PS": 3,
+          "PP": 3,
+          "PE": 3,
+          "PR": 2,
+          "Spd": 4
+        },
+        "hitPoints": "P.E. × 3",
+        "alignment": "Any (tend toward selfish miscreant)",
+        "physicalAppearance": "Goat-like faerie folk (goat legs, humanoid torso), often malicious or mischievous",
+        "specialNaturalAbilities": [
+          "Nightvision 40 ft",
+          "Normal dayvision",
+          "Speaks all tongues of the faerie folk"
+        ],
+        "enemies": "Often disliked by mortals for malice",
+        "allies": "Other faerie folk or savage creatures",
+        "favoriteWeapons": "Crude tools and weapons (clubs, staves, cudgels)",
+        "otherNotes": [
+          "Knows faerie magic: change direction of wind, create mild wind, howling wind",
+          "Run in packs, malicious and mischievous"
+        ]
+      },
+      {
+        "name": "WILL-O-THE-WISP",
+        "averageHeight": "Incorporeal or tree-dwelling shape; no standard height",
+        "canHavePsionics": "None",
+        "occLimitations": "None",
+        "attributeDice": {
+          "IQ": 2,
+          "ME": 4,
+          "MA": 2,
+          "PS": 4,
+          "PP": 2,
+          "PE": 4,
+          "PR": 3,
+          "Spd": 1
+        },
+        "hitPoints": "P.E. × 8",
+        "alignment": "Any (tend toward good or selfish)",
+        "physicalAppearance": "Glowing presence often inhabiting a tree with human-like features",
+        "specialNaturalAbilities": [
+          "See day/night for 100 ft radius",
+          "Animate/control its tree (4 attacks per melee in combat, 1–6 or 2–6 damage by branch)",
+          "No need for precious metals/gems"
+        ],
+        "enemies": "Varies (often opposed by evil that threatens its domain)",
+        "allies": "Faerie folk, friendly creatures",
+        "favoriteWeapons": "None (uses living tree limbs)",
+        "otherNotes": [
+          "Knows faerie magic: circle of rain, call lightning, extinguish fires, mend wood/clay, sphere of light, wind rush, create fog, purple mist",
+          "May guard a faerie friend’s treasure"
+        ]
+      },
+      {
+        "name": "MERMAIDS",
+        "averageHeight": "Human torso size; fish-like tail",
+        "canHavePsionics": "None",
+        "occLimitations": "None",
+        "attributeDice": {
+          "IQ": 2,
+          "ME": 3,
+          "MA": 4,
+          "PS": 2,
+          "PP": 2,
+          "PE": 3,
+          "PB": 5,
+          "Spd": 5
+        },
+        "hitPoints": "P.E. × 3",
+        "alignment": "Any (usually evil or selfish)",
+        "physicalAppearance": "Humanoid upper body, fishtail lower body, often dangerous sea witches",
+        "specialNaturalAbilities": [
+          "Swim",
+          "Breathe underwater",
+          "Nightvision 120 ft",
+          "Normal dayvision",
+          "Singing",
+          "Song of the damned (special faerie magic style)"
+        ],
+        "enemies": "Sailors, land dwellers they choose to ensnare",
+        "allies": "Possibly allied sea creatures if equally malicious",
+        "favoriteWeapons": "Often rely on magic or enthralling songs",
+        "otherNotes": [
+          "Knows faerie magic: charm, love charm, mesmerism, create fog, part waters, (summon) storm",
+          "Often keep undersea treasures, ride dolphins/whales"
+        ]
+      },
+      {
+        "name": "MERROWS",
+        "averageHeight": "Similar to mermaids but can be larger or smaller variants",
+        "canHavePsionics": "None",
+        "occLimitations": "None",
+        "attributeDice": {
+          "IQ": 2,
+          "ME": 3,
+          "MA": 3,
+          "PS": 4,
+          "PP": 2,
+          "PE": 3,
+          "PR": 4,
+          "Spd": 5
+        },
+        "hitPoints": "P.E. × 3",
+        "alignment": "Any (tend toward good or selfish)",
+        "physicalAppearance": "Humanoid upper body, fish-like tail; friendlier than mermaids",
+        "specialNaturalAbilities": [
+          "Swim",
+          "Breathe underwater",
+          "Nightvision 120 ft",
+          "Normal dayvision",
+          "Singing (non-magical)"
+        ],
+        "enemies": "Occasional conflicts with evil sea creatures",
+        "allies": "Often friendly with dolphins, whales, seals, walruses",
+        "favoriteWeapons": "Seldom use weapons, prefer peaceful existence",
+        "otherNotes": [
+          "Knows faerie magic: calm storm, summon storm, part waters, create fog, wind rush, charm",
+          "Love to play and chase in the sea"
+        ]
+      },
+      {
+        "name": "ALGOR GIANT",
+        "averageHeight": "14–16 ft.",
+        "canHavePsionics": "Standard",
+        "occLimitations": "Any except Thief, Paladin, and Longbowman",
+        "attributeDice": {
+          "IQ": 3,
+          "ME": 2,
+          "MA": 3,
+          "PS": 5,
+          "PP": 3,
+          "PE": 4,
+          "PB": 3,
+          "Spd": 2
+        },
+        "hitPoints": "Standard",
+        "alignment": "Any",
+        "physicalAppearance": "Pale white or pale blue skin, golden/silver hair, dark eyes, ~500–1200 lbs",
+        "specialNaturalAbilities": [
+          "Night vision 60 ft",
+          "Impervious to cold (no damage)",
+          "Frost Breath (range 30 ft, 6 ft wide, does 4–24 damage)"
+        ],
+        "enemies": "Elves, dwarves, humans; dislike orcs, goblins, hob-goblins",
+        "allies": "Wolfen, trolls, jotans, cyclops; indifferent to others",
+        "favoriteWeapons": "Giant-sized axes, ball and chain, pole arms",
+        "otherNotes": []
+      },
+      {
+        "name": "CYCLOPS GIANT",
+        "averageHeight": "14 ft.",
+        "canHavePsionics": "Standard",
+        "occLimitations": "Any (tend toward men of arms)",
+        "attributeDice": {
+          "IQ": 3,
+          "ME": 2,
+          "MA": 4,
+          "PS": 5,
+          "PP": 4,
+          "PE": 4,
+          "PB": 2,
+          "Spd": 2
+        },
+        "hitPoints": "Standard",
+        "alignment": "Any (tend toward selfish/evil)",
+        "physicalAppearance": "Olive skin, one large central eye, long dark hair, ~500–1000 lbs",
+        "specialNaturalAbilities": [
+          "Night vision 90 ft",
+          "See the invisible",
+          "Great natural strength"
+        ],
+        "enemies": "Titans, changelings, trolls",
+        "allies": "Kobolds, ogres, jotan, gigantes, nimro, dragons",
+        "favoriteWeapons": "Javelins, large swords, spears, bows, slings (giant-sized)",
+        "otherNotes": [
+          "Can create 'Lightning Shafts' (magical javelins/arrows)",
+          "Very greedy, wear heavy armor, often worshipped by kobolds"
+        ]
+      },
+      {
+        "name": "JOTAN GIANT",
+        "averageHeight": "18–20 ft.",
+        "canHavePsionics": "Standard",
+        "occLimitations": "Men of arms, clergy, witch, or warlock",
+        "attributeDice": {
+          "IQ": 2,
+          "ME": 3,
+          "MA": 2,
+          "PS": 5,
+          "PP": 5,
+          "PE": 2,
+          "PB": 3,
+          "Spd": 3
+        },
+        "hitPoints": "Standard",
+        "alignment": "Any (tend to be evil or selfish)",
+        "physicalAppearance": "Huge, bronze-skinned, dark eyes, brown hair, ~700–1600 lbs",
+        "specialNaturalAbilities": [
+          "Great strength and endurance"
+        ],
+        "enemies": "Titans, elves, humans, dwarves, gnomes",
+        "allies": "Cyclops, nimro, trolls, ogres, orcs, goblins",
+        "favoriteWeapons": "Large swords, axes, ball and chain, blunt weapons",
+        "otherNotes": [
+          "Extremely hostile",
+          "Prefer heavy armor",
+          "Often command orcs, goblins, hob-goblins"
+        ]
+      },
+      {
+        "name": "GIGANTES GIANT",
+        "averageHeight": "10–16 ft.",
+        "canHavePsionics": "Standard",
+        "occLimitations": "Men of arms, clergy, or witch",
+        "attributeDice": {
+          "IQ": 2,
+          "ME": 1,
+          "MA": 2,
+          "PS": 5,
+          "PP": 4,
+          "PE": 5,
+          "PB": 2,
+          "Spd": 4
+        },
+        "hitPoints": "Standard",
+        "alignment": "Selfish or evil",
+        "physicalAppearance": "Humanoid giant with possible extra limbs/features; ~450–1000 lbs",
+        "specialNaturalAbilities": [
+          "Roll four random abilities (night vision, see invisible, impervious to fire, etc.)"
+        ],
+        "enemies": "Titans, elves, humans, dwarves, wolfen, gnomes, troglodytes, changelings",
+        "allies": "Cyclops, trolls, ogres, orcs, goblins",
+        "favoriteWeapons": "Blade, blunt (giant-sized)",
+        "otherNotes": [
+          "Extremely hostile, worship gods of darkness, titans are arch-enemies"
+        ]
+      },
+      {
+        "name": "NIMRO GIANT",
+        "averageHeight": "14–16 ft.",
+        "canHavePsionics": "Standard",
+        "occLimitations": "Any except knight, paladin, or longbowman",
+        "attributeDice": {
+          "IQ": 3,
+          "ME": 4,
+          "MA": 3,
+          "PS": 4,
+          "PP": 4,
+          "PE": 3,
+          "PB": 2,
+          "Spd": 4
+        },
+        "hitPoints": "Standard",
+        "alignment": "Any (lean heavily toward selfish/evil)",
+        "physicalAppearance": "Copper or red skin, black/red-brown hair, yellow eyes, ~500–1200 lbs",
+        "specialNaturalAbilities": [
+          "Night vision 60 ft",
+          "Impervious to fire (no damage)",
+          "Fire Breath (range 30 ft, does 4–24 damage)"
+        ],
+        "enemies": "Titans, elves, dwarves, humans, changelings, gnomes",
+        "allies": "Jotan, gigantes, ogres, trolls, orcs, goblins",
+        "favoriteWeapons": "Large swords, blade weapons, blunt weapons",
+        "otherNotes": [
+          "Aggressive, cunning, greedy",
+          "Wear any armor, large tribes at Mt. Nimro",
+          "Desire to build a giant kingdom"
+        ]
+      },
+      {
+        "name": "TITAN GIANT",
+        "averageHeight": "12–14 ft.",
+        "canHavePsionics": "Standard",
+        "occLimitations": "Men of arms, Healer, Wizard, Warlock",
+        "attributeDice": {
+          "IQ": 3,
+          "ME": 2,
+          "MA": 3,
+          "PS": 4,
+          "PP": 5,
+          "PE": 4,
+          "PB": 5,
+          "Spd": 4
+        },
+        "hitPoints": "Standard",
+        "alignment": "Any (strongly tend toward good)",
+        "physicalAppearance": "Majestic giant men/women, golden/silver/brown hair, warm eyes, ~400–900 lbs",
+        "specialNaturalAbilities": [
+          "Night vision 90 ft",
+          "See the invisible",
+          "Turn the dead",
+          "Great physical strength and beauty"
+        ],
+        "enemies": "Gigantes, jotan, gods of darkness, ogres, trolls, kobolds, orcs, goblins, and all evil/injustice",
+        "allies": "Gods of light, champions of justice/goodness",
+        "favoriteWeapons": "Large swords, ball and chain, pole arms, battle axe, longbow, sling",
+        "otherNotes": [
+          "Extremely long-lived (up to ~1000 years)",
+          "Heroic and protective of goodness"
+        ]
+      }
+    ],
+    "occupationalClasses": [
+      {
+        "group": "Men of Arms",
+        "classes": [
+          {
+            "name": "Mercenary Fighter",
+            "requirements": "P.S. 7"
+          },
+          {
+            "name": "Soldier",
+            "requirements": "P.S. 10, P.E. 8"
+          },
+          {
+            "name": "Knight",
+            "requirements": "I.Q. 7, P.E. 10, P.P. 12, P.S. 10"
+          },
+          {
+            "name": "Paladin",
+            "requirements": "I.Q. 10, P.E. 10, P.P. 12, P.S. 12"
+          },
+          {
+            "name": "Long Bowman",
+            "requirements": "P.S. 10, P.P. 12"
+          },
+          {
+            "name": "Ranger",
+            "requirements": "I.Q. 9, P.E. 13, P.S. 10"
+          },
+          {
+            "name": "Thief",
+            "requirements": "P.P. 9"
+          },
+          {
+            "name": "Assassin",
+            "requirements": "I.Q. 9, P.P. 14"
+          }
+        ]
+      },
+      {
+        "group": "Men of Magic",
+        "classes": [
+          {
+            "name": "Wizard (spell magic)",
+            "requirements": "I.Q. 10"
+          },
+          {
+            "name": "Witch (devil worshiper)",
+            "requirements": "I.Q. 5 (evil alignment)"
+          },
+          {
+            "name": "Warlock (elemental magic)",
+            "requirements": "I.Q. 6, M.E. 10"
+          },
+          {
+            "name": "Diabolist (circles/symbols)",
+            "requirements": "I.Q. 12"
+          },
+          {
+            "name": "Summoner (demonology)",
+            "requirements": "I.Q. 10, M.E. 14"
+          },
+          {
+            "name": "Mind Mage (psionics)",
+            "requirements": "I.Q. 9 (psionics)"
+          },
+          {
+            "name": "Alchemist (Non-player class)",
+            "requirements": "I.Q. 7"
+          }
+        ]
+      },
+      {
+        "group": "Clergy",
+        "classes": [
+          {
+            "name": "Priest/Priestess",
+            "requirements": "I.Q. 9, P.E. 12"
+          },
+          {
+            "name": "Druid",
+            "requirements": "I.Q. 9, P.E. 9"
+          },
+          {
+            "name": "Shaman",
+            "requirements": "P.E. 15"
+          },
+          {
+            "name": "Healer",
+            "requirements": "P.P. 7"
+          }
+        ]
+      },
+      {
+        "group": "Optional O.C.C.'s",
+        "classes": [
+          {
+            "name": "Peasant/Farm/Stable hand",
+            "requirements": "P.S. 7"
+          },
+          {
+            "name": "Squire",
+            "requirements": "I.Q. 7, P.S. 6"
+          },
+          {
+            "name": "Scholar",
+            "requirements": "I.Q. 14"
+          },
+          {
+            "name": "Merchant",
+            "requirements": "I.Q. 10"
+          },
+          {
+            "name": "Noble",
+            "requirements": "I.Q. 7, 200 gold (Same as Men at Arms)"
+          }
+        ]
+      }
+    ],
+    "initialEquipment": {
+      "MenAtArms": {
+        "equipment": [
+          "Set of clothes",
+          "Boots",
+          "Belt",
+          "One large sack",
+          "One small sack",
+          "One low-quality weapon (of any type)"
+        ],
+        "gold": "120 gp",
+        "note": "Soldiers start with the same but receive extra equipment upon enlistment."
+      },
+      "MenOfMagic": {
+        "equipment": [
+          "Set of clothes",
+          "Boots",
+          "Belt",
+          "Large sack",
+          "Unused notebook (blank pages)",
+          "Ink",
+          "Pen and quills",
+          "Chalk",
+          "Candle",
+          "One knife"
+        ],
+        "gold": "110 gp"
+      },
+      "Clergy": {
+        "equipment": [
+          "Set of clothes",
+          "Boots",
+          "Belt",
+          "Backpack or sack",
+          "One vial of holy water",
+          "One scented candle",
+          "Bandages",
+          "Half dozen sticks of incense",
+          "One knife"
+        ],
+        "gold": "105 gp"
+      },
+      "Optional": {
+        "equipment": [
+          "Basic set of clothes",
+          "Boots",
+          "Sack",
+          "One low-quality weapon"
+        ],
+        "gold": "50 gp",
+        "noble": {
+          "equipment": "Same as Men at Arms",
+          "gold": "200 gp"
+        }
+      }
+    },
+    "weapons": {
+      "axes": [
+        {
+          "name": "Battle Axe",
+          "handed": "Two-handed",
+          "avgLength": "0.8m (2.75ft)",
+          "avgWeight": "2kg (4.6lb)",
+          "damage": "2-12",
+          "cost": "40 gp"
+        },
+        {
+          "name": "Throwing Axe",
+          "handed": "One-handed",
+          "avgLength": "0.4m (1.25ft)",
+          "avgWeight": "1.4kg (3lb)",
+          "damage": "1-6",
+          "cost": "8 gp"
+        },
+        {
+          "name": "Stone Axe",
+          "handed": "One-handed",
+          "avgLength": "0.6m (2ft)",
+          "avgWeight": "1.8kg (4lb)",
+          "damage": "1-8",
+          "cost": "18 gp"
+        },
+        {
+          "name": "Bipennis (Double-Headed Axe)",
+          "handed": "One-handed",
+          "avgLength": "0.8m (2.75ft)",
+          "avgWeight": "2.8kg (6lb)",
+          "damage": "2-12",
+          "cost": "45 gp"
+        }
+      ],
+      "poleArms": [
+        {
+          "name": "Awl Pike",
+          "handed": "Two-handed",
+          "avgLength": "3.2m (10ft)",
+          "avgWeight": "2.7kg (6lb)",
+          "damage": "2-12",
+          "cost": "45 gp"
+        },
+        {
+          "name": "Beaked Axe",
+          "handed": "Two-handed",
+          "avgLength": "2.3m (7.5ft)",
+          "avgWeight": "2.3kg (5lb)",
+          "damage": "2-12",
+          "cost": "40 gp"
+        },
+        {
+          "name": "Berdiche",
+          "handed": "Two-handed",
+          "avgLength": "2.1m (7ft)",
+          "avgWeight": "3.2kg (7lb)",
+          "damage": "2-12",
+          "cost": "50 gp"
+        },
+        {
+          "name": "Glaive",
+          "handed": "Two-handed",
+          "avgLength": "2.3m (7.5ft)",
+          "avgWeight": "2.7kg (6lb)",
+          "damage": "2-12",
+          "cost": "40 gp"
+        },
+        {
+          "name": "Guisarme",
+          "handed": "Two-handed",
+          "avgLength": "2.5m (7.25ft)",
+          "avgWeight": "2.7kg (6lb)",
+          "damage": "2-12",
+          "cost": "50 gp"
+        },
+        {
+          "name": "Halberd",
+          "handed": "Two-handed",
+          "avgLength": "2.2m (7.25ft)",
+          "avgWeight": "2.3kg (5lb)",
+          "damage": "3-18",
+          "cost": "60 gp"
+        },
+        {
+          "name": "Sabre Halberd",
+          "handed": "Two-handed",
+          "avgLength": "2.4m (8ft)",
+          "avgWeight": "3.2kg (7lb)",
+          "damage": "3-18",
+          "cost": "60 gp"
+        },
+        {
+          "name": "Hippe",
+          "handed": "Two-handed",
+          "avgLength": "2.3m (7.5ft)",
+          "avgWeight": "2.7kg (6lb)",
+          "damage": "3-18",
+          "cost": "55 gp"
+        },
+        {
+          "name": "Lucerne Hammer",
+          "handed": "Two-handed",
+          "avgLength": "2.9m (9.75ft)",
+          "avgWeight": "2.9kg (6.5lb)",
+          "damage": "2-12",
+          "cost": "40 gp"
+        },
+        {
+          "name": "Military Fork",
+          "handed": "Two-handed",
+          "avgLength": "2.1m (7ft)",
+          "avgWeight": "2.3kg (5lb)",
+          "damage": "1-8",
+          "cost": "30 gp"
+        },
+        {
+          "name": "Pike",
+          "handed": "Two-handed",
+          "avgLength": "5.0m (16ft)",
+          "avgWeight": "3.6kg (8lb)",
+          "damage": "1-8",
+          "cost": "45 gp"
+        },
+        {
+          "name": "Runka",
+          "handed": "Two-handed",
+          "avgLength": "2.3m (7.5ft)",
+          "avgWeight": "2.7kg (6lb)",
+          "damage": "2-12",
+          "cost": "45 gp"
+        },
+        {
+          "name": "Scythe",
+          "handed": "Two-handed",
+          "avgLength": "2.4m (8ft)",
+          "avgWeight": "2.3kg (5lb)",
+          "damage": "1-8",
+          "cost": "45 gp"
+        },
+        {
+          "name": "Voulge",
+          "handed": "Two-handed",
+          "avgLength": "2.1m (7ft)",
+          "avgWeight": "2.3kg (5lb)",
+          "damage": "3-18",
+          "cost": "60 gp"
+        }
+      ],
+      "spears": [
+        {
+          "name": "Short Spear",
+          "handed": "One-handed",
+          "avgLength": "1.2-1.8m (4-6ft)",
+          "avgWeight": "1.8kg (4lb)",
+          "damage": "1-6",
+          "cost": "30 gp"
+        },
+        {
+          "name": "Long Spear",
+          "handed": "Two-handed",
+          "avgLength": "2.1-3.0m (7-10ft)",
+          "avgWeight": "2.9kg (6.5lb)",
+          "damage": "1-8",
+          "cost": "40 gp"
+        },
+        {
+          "name": "Javelin",
+          "handed": "One-handed",
+          "avgLength": "2.1m (7ft)",
+          "avgWeight": "1.8kg (4lb)",
+          "damage": "1-6",
+          "cost": "30 gp"
+        },
+        {
+          "name": "Trident",
+          "handed": "One-handed",
+          "avgLength": "1.5m (5ft)",
+          "avgWeight": "1.8kg (4lb)",
+          "damage": "1-8",
+          "cost": "40 gp"
+        },
+        {
+          "name": "Lance (Paladin & Knights Only)",
+          "handed": "Two-handed",
+          "avgLength": "4.0m (13ft)",
+          "avgWeight": "3.6kg (8lb)",
+          "damage": "1-8",
+          "cost": "60 gp"
+        }
+      ],
+      "knivesAndDaggers": [
+        {
+          "name": "Dagger/Knife",
+          "handed": "One-handed",
+          "avgLength": "0.2-0.5m (10-20in)",
+          "avgWeight": "0.5kg (1lb)",
+          "damage": "1-6",
+          "cost": "10 gp"
+        }
+      ],
+      "shortSwords": [
+        {
+          "name": "Short Sword",
+          "handed": "One-handed",
+          "avgLength": "0.7m (2.5ft)",
+          "avgWeight": "1.4kg (3lb)",
+          "damage": "1-6",
+          "cost": "40 gp"
+        },
+        {
+          "name": "Sabre",
+          "handed": "One-handed",
+          "avgLength": "0.6m (2ft)",
+          "avgWeight": "1.4kg (3lb)",
+          "damage": "1-6",
+          "cost": "30 gp"
+        },
+        {
+          "name": "Scimitar",
+          "handed": "One-handed",
+          "avgLength": "0.7m (2.5ft)",
+          "avgWeight": "1.5kg (3.5lb)",
+          "damage": "1-6",
+          "cost": "35 gp"
+        },
+        {
+          "name": "Falchion",
+          "handed": "One-handed",
+          "avgLength": "0.8m (2.75ft)",
+          "avgWeight": "1.8kg (4lb)",
+          "damage": "1-8",
+          "cost": "50 gp"
+        },
+        {
+          "name": "Cutlass",
+          "handed": "One-handed",
+          "avgLength": "0.6m (2ft)",
+          "avgWeight": "1.4kg (3lb)",
+          "damage": "1-6",
+          "cost": "35 gp"
+        }
+      ],
+      "largeSwords": [
+        {
+          "name": "Bastard Sword",
+          "handed": "Two-handed",
+          "avgLength": "1.0m (3.75ft)",
+          "avgWeight": "2.1kg (4.5lb)",
+          "damage": "1-8+2",
+          "cost": "50 gp"
+        },
+        {
+          "name": "Broadsword",
+          "handed": "One-handed",
+          "avgLength": "0.9m (3ft)",
+          "avgWeight": "1.6kg (3.5lb)",
+          "damage": "1-8",
+          "cost": "40 gp"
+        },
+        {
+          "name": "Claymore",
+          "handed": "Two-handed",
+          "avgLength": "1.2m (4ft)",
+          "avgWeight": "2.9kg (6.5lb)",
+          "damage": "2-12",
+          "cost": "60 gp"
+        },
+        {
+          "name": "Flamberge",
+          "handed": "Two-handed",
+          "avgLength": "1.3m (4.25ft)",
+          "avgWeight": "3.4kg (7.5lb)",
+          "damage": "3-18",
+          "cost": "70 gp"
+        },
+        {
+          "name": "Long Sword",
+          "handed": "One-handed",
+          "avgLength": "0.9m (3ft)",
+          "avgWeight": "1.6kg (3.5lb)",
+          "damage": "1-8+2",
+          "cost": "55 gp"
+        },
+        {
+          "name": "Two-Handed Espandon",
+          "handed": "Two-handed",
+          "avgLength": "1.2m (4ft)",
+          "avgWeight": "2.1kg (4.5lb)",
+          "damage": "2-12",
+          "cost": "60 gp"
+        }
+      ],
+      "ballAndChainWeapons": [
+        {
+          "name": "Ball and Chain",
+          "handed": "Not two-handed",
+          "avgLength": "0.9m (3ft)",
+          "avgWeight": "2.1kg (4.5lb)",
+          "damage": "1-8",
+          "cost": "50 gp"
+        },
+        {
+          "name": "Flail",
+          "handed": "Two-handed",
+          "avgLength": "1.6m (5.25ft)",
+          "avgWeight": "2.5kg (5.5lb)",
+          "damage": "2-12",
+          "cost": "55 gp"
+        },
+        {
+          "name": "Goupillon Flail",
+          "handed": "Two-handed",
+          "avgLength": "0.5m (2ft)",
+          "avgWeight": "2.1kg (4.5lb)",
+          "damage": "3-18",
+          "cost": "60 gp"
+        },
+        {
+          "name": "Mace & Chain",
+          "handed": "Not two-handed",
+          "avgLength": "0.9m (3ft)",
+          "avgWeight": "2.1kg (4.5lb)",
+          "damage": "2-12",
+          "cost": "50 gp"
+        },
+        {
+          "name": "Nunchaku",
+          "handed": "Two-handed",
+          "avgLength": "0.8m (2.75ft)",
+          "avgWeight": "1.1kg (2.5lb)",
+          "damage": "1-8",
+          "cost": "30 gp"
+        }
+      ],
+      "bluntWeapons": [
+        {
+          "name": "Arab Mace",
+          "handed": "Not two-handed",
+          "avgLength": "0.6m (2ft)",
+          "avgWeight": "1.4kg (3lb)",
+          "damage": "1-8",
+          "cost": "40 gp"
+        },
+        {
+          "name": "Mace",
+          "handed": "Not two-handed",
+          "avgLength": "0.7m (2.5ft)",
+          "avgWeight": "2.0kg (4.5lb)",
+          "damage": "1-8",
+          "cost": "40 gp"
+        },
+        {
+          "name": "Hercules Club",
+          "handed": "Two-handed",
+          "avgLength": "1.2m (4ft)",
+          "avgWeight": "2.5kg (5.5lb)",
+          "damage": "2-12",
+          "cost": "60 gp"
+        },
+        {
+          "name": "Morning Star",
+          "handed": "Not two-handed",
+          "avgLength": "0.8m (2.75ft)",
+          "avgWeight": "1.0kg (2.5lb)",
+          "damage": "1-8",
+          "cost": "40 gp"
+        },
+        {
+          "name": "Quarterstaff",
+          "handed": "Two-handed",
+          "avgLength": "1.8m (6ft)",
+          "avgWeight": "1.5kg (3.5lb)",
+          "damage": "1-8",
+          "cost": "30 gp"
+        },
+        {
+          "name": "Iron Staff",
+          "handed": "Two-handed",
+          "avgLength": "1.8-2.1m (6-7ft)",
+          "avgWeight": "3.2kg (7lb)",
+          "damage": "1-8+2",
+          "cost": "45 gp"
+        }
+      ],
+      "missileWeapons": [
+        {
+          "name": "Short Bow",
+          "handed": "Two-handed",
+          "avgLength": "N/A",
+          "avgWeight": "1kg (2lb)",
+          "damage": "1-6",
+          "cost": "30 gp"
+        },
+        {
+          "name": "Long Bow",
+          "handed": "Two-handed",
+          "avgLength": "N/A",
+          "avgWeight": "2kg (4lb)",
+          "damage": "2-12",
+          "cost": "70 gp"
+        },
+        {
+          "name": "Arrows (Dozen)",
+          "handed": "N/A",
+          "avgLength": "N/A",
+          "avgWeight": "N/A",
+          "damage": "N/A",
+          "cost": "10-20 gp"
+        },
+        {
+          "name": "Crossbow",
+          "handed": "Two-handed",
+          "avgLength": "N/A",
+          "avgWeight": "3kg (7lb)",
+          "damage": "1-8",
+          "cost": "60 gp"
+        },
+        {
+          "name": "Bolts (Dozen)",
+          "handed": "N/A",
+          "avgLength": "N/A",
+          "avgWeight": "N/A",
+          "damage": "N/A",
+          "cost": "15 gp"
+        },
+        {
+          "name": "Sling",
+          "handed": "Not two-handed",
+          "avgLength": "N/A",
+          "avgWeight": "57g (2oz)",
+          "damage": "1-6",
+          "cost": "10 gp"
+        }
+      ],
+      "miscellaneousWeapons": [
+        {
+          "name": "Dart",
+          "handed": "Not two-handed",
+          "avgLength": "0.15m (6in)",
+          "avgWeight": "170g (6oz)",
+          "damage": "1-4",
+          "cost": "1 gp"
+        },
+        {
+          "name": "Bull Whip",
+          "handed": "Not two-handed",
+          "avgLength": "2.4m (8ft)",
+          "avgWeight": "1.4kg (3lb)",
+          "damage": "1-8",
+          "cost": "20 gp"
+        },
+        {
+          "name": "Meat Cleaver",
+          "handed": "Not two-handed",
+          "avgLength": "0.3m (1ft)",
+          "avgWeight": "0.5kg (1lb)",
+          "damage": "1-6",
+          "cost": "2 gp"
+        },
+        {
+          "name": "Shovel",
+          "handed": "Two-handed",
+          "avgLength": "1.2m (4ft)",
+          "avgWeight": "2.0kg (5lb)",
+          "damage": "1-6",
+          "cost": "10 gp"
+        }
+      ]
+    },
+    "psionics": {
+      "description": "Psionics (Extra Sensory Perception, or ESP) are paranormal mental powers such as telepathy, empathy, and telekinesis. They are hereditary traits shared by humans and other intelligent lifeforms.",
+      "determiningProcedure": "Roll 1d100 under GM supervision to determine psionic ability.",
+      "table": {
+        "01-60": "No Psionic Abilities",
+        "61-79": "Minor Psionics",
+        "80-89": "Major Psionics (pseudo-mind mage potential)",
+        "90-100": "Master Psionics (mind mage potential)"
+      },
+      "levels": {
+        "minor": {
+          "abilities": "Limited to Level 1 psionic abilities. Roll percentile dice for each of the 12 Level 1 abilities (60% chance each).",
+          "innerStrengthPoints": "Base I.S.P. equals Mental Endurance (M.E.). At each new level, roll 1d6 and add the result."
+        },
+        "major": {
+          "abilities": "Access to Levels 1-3. At Level 1, roll for Level 1 abilities; at Level 2, roll for 13 Level 2 abilities; at Level 3, roll for Level 3 abilities. No further psionic abilities are gained past Level 3.",
+          "innerStrengthPoints": "Base I.S.P. equals M.E. At each new level, roll 1d8 and add the result."
+        },
+        "master": {
+          "abilities": "Access to Levels 1-10. At Level 1, roll for Level 1 abilities; each subsequent level grants new abilities corresponding to that psionic level.",
+          "innerStrengthPoints": "Base I.S.P. equals M.E. At each new level, roll 1d8 and add the result."
+        },
+        "mindMage": {
+          "description": "Mind Mages are dedicated to mastering their mental abilities. They automatically know and can use all psionic abilities as they manifest (no rolls required).",
+          "innerStrengthPoints": "Base I.S.P. equals M.E., then roll 1d20 and add the result. For each new level, add an additional 10 I.S.P."
+        }
+      }
+    },
+    "clothing": [
+      {
+        "name": "Socks",
+        "cost": "0.5 gp"
+      },
+      {
+        "name": "Shirt (Wool)",
+        "cost": "6 gp"
+      },
+      {
+        "name": "Shirt (Silk)",
+        "cost": "15 gp"
+      },
+      {
+        "name": "Vest",
+        "cost": "15 gp"
+      },
+      {
+        "name": "Jacket (Light)",
+        "cost": "20 gp"
+      },
+      {
+        "name": "Jacket (Heavy)",
+        "cost": "40 gp"
+      },
+      {
+        "name": "Jacket (Short, Down-Filled)",
+        "cost": "55 gp"
+      },
+      {
+        "name": "Jacket (Long, Down-Filled)",
+        "cost": "75 gp"
+      },
+      {
+        "name": "Jacket (Leather)",
+        "cost": "40 gp"
+      },
+      {
+        "name": "Jacket, Fur (Common, Heavy)",
+        "cost": "70 gp"
+      },
+      {
+        "name": "Pants",
+        "cost": "12 gp"
+      },
+      {
+        "name": "Work Pants",
+        "cost": "16 gp"
+      },
+      {
+        "name": "Skirt",
+        "cost": "10 gp"
+      },
+      {
+        "name": "Dress (Common)",
+        "cost": "30 gp"
+      },
+      {
+        "name": "Dress (Fancy)",
+        "cost": "60 gp"
+      },
+      {
+        "name": "Surcoat",
+        "cost": "40 gp"
+      },
+      {
+        "name": "Boots (Cloth)",
+        "cost": "8 gp"
+      },
+      {
+        "name": "Boots (Soft Leather)",
+        "cost": "15 gp"
+      },
+      {
+        "name": "Boots (Leather)",
+        "cost": "20 gp"
+      },
+      {
+        "name": "Boots (Work/Reinforced)",
+        "cost": "30 gp"
+      },
+      {
+        "name": "Boots, Knee-High",
+        "cost": "50 gp"
+      },
+      {
+        "name": "Boots, Hip-High",
+        "cost": "70 gp"
+      },
+      {
+        "name": "Shoes",
+        "cost": "20 gp"
+      },
+      {
+        "name": "Sandals",
+        "cost": "10 gp"
+      },
+      {
+        "name": "Scarf",
+        "cost": "5 gp"
+      },
+      {
+        "name": "Cap (Pull Over)",
+        "cost": "5 gp"
+      },
+      {
+        "name": "Hat (Short Brim)",
+        "cost": "15 gp"
+      },
+      {
+        "name": "Hat (Large Brim)",
+        "cost": "20 gp"
+      },
+      {
+        "name": "Hat (Large Brim, Leather)",
+        "cost": "35 gp"
+      },
+      {
+        "name": "Belt",
+        "cost": "4 gp"
+      },
+      {
+        "name": "Sword Belt",
+        "cost": "6 gp"
+      },
+      {
+        "name": "Sword Sheath",
+        "cost": "18 gp"
+      },
+      {
+        "name": "Knife Sheath",
+        "cost": "10 gp"
+      },
+      {
+        "name": "Cape (Short)",
+        "cost": "15 gp"
+      },
+      {
+        "name": "Cape (Long)",
+        "cost": "25 gp"
+      },
+      {
+        "name": "Cape (Long, Hooded)",
+        "cost": "35 gp"
+      },
+      {
+        "name": "Robe (Light)",
+        "cost": "20 gp"
+      }
+    ],
+    "additionalItems": {
+      "containersAndStorage": {
+        "items": [
+          {
+            "name": "Saddle Bag",
+            "cost": "20 gp"
+          },
+          {
+            "name": "Small Pocket Purse",
+            "cost": "1 gp"
+          },
+          {
+            "name": "Belt Purse",
+            "description": "Attaches to belt",
+            "cost": "2 gp"
+          },
+          {
+            "name": "Shoulder Purse (Small)",
+            "cost": "5 gp"
+          },
+          {
+            "name": "Shoulder Purse (Large)",
+            "cost": "12 gp"
+          },
+          {
+            "name": "Small Sack",
+            "cost": "4 gp"
+          },
+          {
+            "name": "Large Sack",
+            "cost": "8 gp"
+          },
+          {
+            "name": "Knapsack",
+            "cost": "15 gp"
+          },
+          {
+            "name": "Backpack",
+            "cost": "20 gp"
+          },
+          {
+            "name": "Cloth Handle Bag",
+            "cost": "10 gp"
+          },
+          {
+            "name": "Leather Handle Bag",
+            "cost": "18 gp"
+          },
+          {
+            "name": "Tobacco Pouch",
+            "cost": ""
+          },
+          {
+            "name": "Water Skin (2 pints)",
+            "cost": "5 gp"
+          },
+          {
+            "name": "Water Skin (1/2 gallon)",
+            "cost": "10 gp"
+          },
+          {
+            "name": "Water Skin (1 gallon)",
+            "cost": "15 gp"
+          }
+        ]
+      },
+      "barrelsAndStorageVessels": {
+        "items": [
+          {
+            "name": "Cask (Wood, 4 gallons)",
+            "cost": "12 gp"
+          },
+          {
+            "name": "Cask (Wood, 10 gallons)",
+            "cost": "18 gp"
+          },
+          {
+            "name": "Cask (Wood, 25 gallons)",
+            "cost": "30 gp"
+          },
+          {
+            "name": "Vial (Glass, 2 oz)",
+            "cost": "2 gp"
+          },
+          {
+            "name": "Jar (Glass, 1 pint)",
+            "cost": "4 gp"
+          },
+          {
+            "name": "Jar (Glass, 2 pints)",
+            "cost": "8 gp"
+          },
+          {
+            "name": "Jar (Glass, 4 pints)",
+            "cost": "10 gp"
+          },
+          {
+            "name": "Jar (Glass, 1 gallon)",
+            "cost": "15 gp"
+          },
+          {
+            "name": "Jug (1/2 gallon)",
+            "cost": "10 gp"
+          },
+          {
+            "name": "Jug (1 gallon)",
+            "cost": "15 gp"
+          },
+          {
+            "name": "Jug (5 gallons)",
+            "cost": "25 gp"
+          },
+          {
+            "name": "Bucket (Wood, 5 gallons)",
+            "cost": "5 gp"
+          },
+          {
+            "name": "Bucket (Metal, 5 gallons)",
+            "cost": "7 gp"
+          },
+          {
+            "name": "Snuff Box",
+            "cost": "5 gp"
+          },
+          {
+            "name": "Small Wood Box (1 lb)",
+            "cost": "5 gp"
+          }
+        ]
+      }
+    }
+  }
+  

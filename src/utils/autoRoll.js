@@ -19,13 +19,25 @@ export function rollCharacterAttributes(character) {
   }
 
   const attributes = {};
+  const attributeRolls = {}; // Store detailed roll info for logging
   const attributeNames = ["IQ", "ME", "MA", "PS", "PP", "PE", "PB", "Spd"];
 
   attributeNames.forEach((attr) => {
     if (character.attribute_dice[attr]) {
-      attributes[attr] = rollDice(character.attribute_dice[attr]);
+      const diceNotation = character.attribute_dice[attr];
+      const rollResult = rollDiceDetailed(diceNotation);
+      attributes[attr] = rollResult.totalWithBonus;
+      attributeRolls[attr] = rollResult; // Store for later use
+      
+      // Debug logging for attribute rolls
+      const rollBreakdown = rollResult.diceRolls?.map(d => d.result).join(' + ') || rollResult.totalWithBonus;
+      const bonus = rollResult.bonus ? ` + ${rollResult.bonus}` : '';
+      console.log(`🎲 ${character.name || 'Character'} ${attr}: ${diceNotation} = [${rollBreakdown}]${bonus} = ${attributes[attr]}`);
     }
   });
+
+  // Store roll details on attributes object for getPlayableCharacterRollDetails
+  attributes._rollDetails = attributeRolls;
 
   return attributes;
 }
@@ -115,6 +127,7 @@ function getClassHPBonus(occ) {
  * @returns {Object} - Combat-ready fighter object
  */
 import { assignRandomWeaponToEnemy } from './enemyWeaponAssigner.js';
+import shopItems from '../data/shopItems.js';
 
 export function createPlayableCharacterFighter(character, customName = null) {
   // Roll attributes
@@ -127,11 +140,36 @@ export function createPlayableCharacterFighter(character, customName = null) {
   const rolledHP = rollPlayableCharacterHP(character, attributes);
 
   // Calculate AR (Armor Rating) - default if not specified
-  const ar = character.AR || calculateDefaultAR(character, attributes);
+  let ar = character.AR || calculateDefaultAR(character, attributes);
+  
+  // Add armor for knights (chain mail, double mail, scale mail, splint, or plate)
+  if (character.occ === "Knight" || character.occ === "Paladin") {
+    const knightArmors = [
+      { name: "Chain Mail", AR: 13 },
+      { name: "Double Mail", AR: 14 },
+      { name: "Scale Mail", AR: 14 },
+      { name: "Splint Mail", AR: 15 },
+      { name: "Plate Armor", AR: 16 }
+    ];
+    const selectedArmor = knightArmors[Math.floor(Math.random() * knightArmors.length)];
+    ar = selectedArmor.AR;
+    console.log(`🛡️ ${character.name || 'Knight'} equipped with ${selectedArmor.name} (AR: ${ar})`);
+  }
 
   // Calculate Speed
   const speed =
     character.Spd || character.spd || attributes.Spd || attributes.spd || 18;
+
+  // Assign weapons from rulebook/preferred_weapons
+  let assignedWeapons = [];
+  if (character.preferred_weapons) {
+    const tempFighter = { name: character.name, race: character.race, species: character.race };
+    const weaponAssigned = assignRandomWeaponToEnemy(tempFighter, character.preferred_weapons);
+    if (weaponAssigned.equippedWeapons && weaponAssigned.equippedWeapons.length > 0) {
+      assignedWeapons = weaponAssigned.equippedWeapons.filter(w => w.name !== "Unarmed");
+      console.log(`⚔️ ${character.name || 'Character'} assigned weapon: ${assignedWeapons.map(w => w.name).join(', ')}`);
+    }
+  }
 
   const processedAttacks =
     (character.attacks || []).length > 0
@@ -142,6 +180,16 @@ export function createPlayableCharacterFighter(character, customName = null) {
               attack.damage === "by spell" ||
               attack.damage === "variable")
           ) {
+            // Use assigned weapon damage if available, otherwise use default
+            const assignedWeapon = assignedWeapons.find(w => 
+              attack.name.toLowerCase().includes(w.name.toLowerCase()) ||
+              w.name.toLowerCase().includes(attack.name.toLowerCase().split(' ')[0])
+            );
+            
+            if (assignedWeapon && assignedWeapon.damage) {
+              return { ...attack, damage: assignedWeapon.damage };
+            }
+            
             const defaultDamage = getDefaultWeaponDamage(
               character.preferred_weapons
             );
@@ -156,19 +204,21 @@ export function createPlayableCharacterFighter(character, customName = null) {
           }
           return attack;
         })
+      : assignedWeapons.length > 0
+      ? assignedWeapons.map(w => ({
+          name: w.name,
+          damage: w.damage || "1d6",
+          count: 1
+        }))
       : [{ name: "Unarmed Strike", damage: "1d4", count: 1 }];
 
-  const derivedWeapons = processedAttacks
-    .filter(
-      (attack) =>
-        typeof attack.damage === "string" &&
-        attack.damage.toLowerCase() !== "by spell" &&
-        attack.name
-    )
-    .map((attack, index) => {
-      const attackName = attack.name.toLowerCase();
+  // Use assigned weapons if available, otherwise derive from attacks
+  let derivedWeapons = [];
+  if (assignedWeapons.length > 0) {
+    derivedWeapons = assignedWeapons.map((weapon, index) => {
+      const attackName = weapon.name.toLowerCase();
       const isRanged =
-        (typeof attack.range === "number" && attack.range > 10) ||
+        (typeof weapon.range === "number" && weapon.range > 10) ||
         attackName.includes("bow") ||
         attackName.includes("arrow") ||
         attackName.includes("sling") ||
@@ -176,15 +226,44 @@ export function createPlayableCharacterFighter(character, customName = null) {
         attackName.includes("bolt");
 
       return {
-        name: attack.name,
-        damage: attack.damage,
+        name: weapon.name,
+        damage: weapon.damage || "1d6",
         slot: index === 0 ? "Right Hand" : `Slot ${index + 1}`,
         type: isRanged ? "ranged" : "melee",
         category: isRanged ? "ranged" : "melee",
-        range: typeof attack.range === "number" ? attack.range : undefined,
-        reach: attack.reach,
+        range: weapon.range,
+        reach: weapon.reach,
       };
     });
+  } else {
+    derivedWeapons = processedAttacks
+      .filter(
+        (attack) =>
+          typeof attack.damage === "string" &&
+          attack.damage.toLowerCase() !== "by spell" &&
+          attack.name
+      )
+      .map((attack, index) => {
+        const attackName = attack.name.toLowerCase();
+        const isRanged =
+          (typeof attack.range === "number" && attack.range > 10) ||
+          attackName.includes("bow") ||
+          attackName.includes("arrow") ||
+          attackName.includes("sling") ||
+          attackName.includes("crossbow") ||
+          attackName.includes("bolt");
+
+        return {
+          name: attack.name,
+          damage: attack.damage,
+          slot: index === 0 ? "Right Hand" : `Slot ${index + 1}`,
+          type: isRanged ? "ranged" : "melee",
+          category: isRanged ? "ranged" : "melee",
+          range: typeof attack.range === "number" ? attack.range : undefined,
+          reach: attack.reach,
+        };
+      });
+  }
 
   if (derivedWeapons.length === 0) {
     derivedWeapons.push({
@@ -201,6 +280,21 @@ export function createPlayableCharacterFighter(character, customName = null) {
   derivedWeapons.primary = derivedWeapons[0];
   derivedWeapons.secondary = derivedWeapons[1] || null;
 
+  // Determine size category based on race (default to MEDIUM for humans/standard races)
+  let sizeCategory = "MEDIUM";
+  const raceLower = (character.race || "").toLowerCase();
+  if (raceLower.includes("giant") || raceLower.includes("troll") || raceLower.includes("ogre")) {
+    sizeCategory = "LARGE";
+  } else if (raceLower.includes("dwarf") || raceLower.includes("halfling") || raceLower.includes("gnome")) {
+    sizeCategory = "SMALL";
+  } else if (raceLower.includes("elf") || raceLower.includes("human") || raceLower.includes("knight")) {
+    sizeCategory = "MEDIUM";
+  }
+  
+  // Set height/weight defaults based on race for size calculation
+  const height = character.height || (sizeCategory === "LARGE" ? 8 : sizeCategory === "SMALL" ? 3.5 : 5.5);
+  const weight = character.weight || (sizeCategory === "LARGE" ? 300 : sizeCategory === "SMALL" ? 80 : 150);
+
   // Create fighter object
   const fighter = {
     id: `playable-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`,
@@ -211,7 +305,10 @@ export function createPlayableCharacterFighter(character, customName = null) {
     race: character.race,
     occ: character.occ,
     alignment: character.alignment_options?.[0] || "unaligned",
-    size: character.size,
+    size: character.size || sizeCategory,
+    sizeCategory: sizeCategory,
+    height: height,
+    weight: weight,
 
     // Combat stats
     HP: character.HP,
@@ -381,10 +478,11 @@ export function getPlayableCharacterRollDetails(character, attributes) {
     combatStats: {},
   };
 
-  // Attribute rolls
+  // Attribute rolls - use stored roll details if available, otherwise roll again
   Object.keys(character.attribute_dice || {}).forEach((attr) => {
     const dice = character.attribute_dice[attr];
-    const roll = rollDiceDetailed(dice);
+    // Use stored roll details if available (from rollCharacterAttributes)
+    const roll = attributes._rollDetails?.[attr] || rollDiceDetailed(dice);
     details.attributes[attr] = {
       dice: dice,
       roll: roll,

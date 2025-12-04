@@ -101,14 +101,22 @@ export function getSizeCategory(creature) {
   }
 
   // Infer from height/weight if available
-  const height = creature.height || creature.attributes?.height || 0;
-  const weight = creature.weight || creature.attributes?.weight || 0;
+  const height = creature.height || creature.attributes?.height;
+  const weight = creature.weight || creature.attributes?.weight;
+
+  // Only use height/weight if they're actually set (not 0 or undefined)
+  // Default to MEDIUM if height/weight are not provided
+  if (height === undefined && weight === undefined) {
+    return SIZE_CATEGORIES.MEDIUM;
+  }
 
   if (height >= 20 || weight >= 5000) return SIZE_CATEGORIES.GIANT;
   if (height >= 12 || weight >= 2000) return SIZE_CATEGORIES.HUGE;
   if (height >= 7 || weight >= 500) return SIZE_CATEGORIES.LARGE;
-  if (height < 2 || weight < 50) return SIZE_CATEGORIES.TINY;
-  if (height < 4 || weight < 100) return SIZE_CATEGORIES.SMALL;
+  if (height !== undefined && height < 2) return SIZE_CATEGORIES.TINY;
+  if (height !== undefined && height < 4) return SIZE_CATEGORIES.SMALL;
+  if (weight !== undefined && weight < 50) return SIZE_CATEGORIES.TINY;
+  if (weight !== undefined && weight < 100) return SIZE_CATEGORIES.SMALL;
 
   return SIZE_CATEGORIES.MEDIUM;
 }

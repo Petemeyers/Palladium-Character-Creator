@@ -161,18 +161,66 @@ function selectRandomWeapon(matchingWeapons, enemy = {}) {
  * @returns {Object} Formatted weapon object
  */
 function formatWeaponForEnemy(weapon) {
+  const weaponName = (weapon.name || '').toLowerCase();
+  
+  // Detect if weapon is ranged based on name, category, or range property
+  const isRanged = weapon.range > 0 || 
+                   weapon.category === 'bow' || 
+                   weapon.category === 'crossbow' ||
+                   weapon.category === 'ranged' ||
+                   weapon.type === 'ranged' ||
+                   weapon.type === 'missile' ||
+                   weaponName.includes('bow') ||
+                   weaponName.includes('crossbow') ||
+                   weaponName.includes('sling') ||
+                   weaponName.includes('thrown');
+  
+  // Detect if weapon is melee
+  const isMelee = !isRanged && (
+    weapon.reach > 0 ||
+    weapon.category === 'sword' ||
+    weapon.category === 'axe' ||
+    weapon.category === 'blunt' ||
+    weapon.category === 'melee' ||
+    weapon.type === 'melee'
+  );
+  
+  // Set proper type
+  let weaponType = 'weapon';
+  if (isRanged) {
+    weaponType = 'ranged';
+  } else if (isMelee) {
+    weaponType = 'melee';
+  }
+  
+  // Set default range for bows if not specified
+  let weaponRange = weapon.range;
+  if (isRanged && !weaponRange) {
+    if (weaponName.includes('long bow') || weaponName === 'longbow') {
+      weaponRange = 640; // Long bow range
+    } else if (weaponName.includes('short bow') || weaponName === 'shortbow') {
+      weaponRange = 360; // Short bow range
+    } else if (weaponName.includes('bow')) {
+      weaponRange = 360; // Default bow range
+    } else if (weaponName.includes('crossbow')) {
+      weaponRange = 480; // Crossbow range
+    }
+  }
+  
   return {
     name: weapon.name,
-    type: 'weapon',
-    category: weapon.category || 'weapon',
+    type: weaponType,
+    category: weapon.category || (isRanged ? 'ranged' : 'melee'),
     damage: weapon.damage || '1d6',
     weight: weapon.weight || 0,
     price: weapon.price || 0,
     description: weapon.description || '',
     reach: weapon.reach || weapon.length || null,
-    range: weapon.range || null,
-    twoHanded: weapon.twoHanded || weapon.handed === 'two-handed',
+    range: weaponRange,
+    twoHanded: weapon.twoHanded || weapon.handed === 'two-handed' || isRanged,
     bonuses: weapon.bonuses || null,
+    ammunition: isRanged && weaponName.includes('bow') ? 'arrows' : 
+                (isRanged && weaponName.includes('crossbow') ? 'bolts' : null),
   };
 }
 

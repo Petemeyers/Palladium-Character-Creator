@@ -57,6 +57,7 @@ import { getAllBestiaryEntries } from "../utils/bestiaryUtils.js";
 import CombatActionsPanel from "../components/CombatActionsPanel";
 import { createPlayableCharacterFighter, getPlayableCharacterRollDetails } from "../utils/autoRoll";
 import { assignRandomWeaponToEnemy } from "../utils/enemyWeaponAssigner";
+import { initializeAmmo, useAmmo, canFireMissileWeapon } from "../utils/combatAmmoManager";
 import { getRandomCombatSpell } from "../data/combatSpells";
 import { isTwoHandedWeapon, getWeaponDamage } from "../utils/weaponSlotManager";
 import { usePsionic } from "../utils/psionicEffects";
@@ -135,6 +136,18 @@ import CircleManagerPanel from "../components/CircleManagerPanel.jsx";
 import CircleRechargePanel from "../components/CircleRechargePanel.jsx";
 import FloatingPanel from "../components/FloatingPanel.jsx";
 import { findBeePath } from "../ai";
+import GameSettingsPanel from "../components/GameSettingsPanel";
+import { useGameSettings } from "../context/GameSettingsContext";
+import { applyPainStagger } from "../utils/painSystem";
+import { resolveMoraleCheck } from "../utils/moraleSystem";
+import { resolveHorrorCheck } from "../utils/horrorSystem";
+import {
+  getThreatPositionsForFighter,
+  makeIsHexOccupied,
+  findBestRetreatHex,
+  isAtMapEdge,
+} from "../utils/routingSystem";
+import { canBeCaptured, tieUpPrisoner, lootPrisoner } from "../utils/captureSystem";
 import { 
   initializeCombatFatigue, 
   drainStamina, 
@@ -703,6 +716,7 @@ export default function CombatPage({ characters = [] }) {
   const [logSortOrder, setLogSortOrder] = useState("newest");
   const [fighters, setFighters] = useState([]);
   const [turnIndex, setTurnIndex] = useState(0);
+  const [ammoCount, setAmmoCount] = useState({}); // Track ammunition for ranged weapons
   
   // Helper function for generating crypto-random IDs (must be defined before normalizeFighterId)
   // Use useRef to persist idCounter across renders without causing re-renders
@@ -746,6 +760,134 @@ export default function CombatPage({ characters = [] }) {
       _id: primaryId, // Ensure both exist and point to the same value
     };
   }, [generateCryptoId]);
+  
+  // Helper to ensure fighters have default moraleState and mentalState
+  const normalizeFighter = useCallback((rawFighter) => {
+    if (!rawFighter) return rawFighter;
+    
+    const fighter = normalizeFighterId(rawFighter);
+    
+    // Ensure mentalState exists
+    if (!fighter.mentalState) {
+      fighter.mentalState = {
+        horrorSeen: [],
+        insanityPoints: 0,
+        disorders: [],
+        lastFailedHorrorId: null,
+      };
+    }
+    
+    // Ensure moraleState exists
+    if (!fighter.moraleState) {
+      fighter.moraleState = {
+        status: "STEADY",
+        moraleValue: undefined, // moraleSystem will fill
+        failedChecks: 0,
+        lastCheckRound: 0,
+        lastReason: null,
+        hasFled: false,
+      };
+    }
+    
+    return fighter;
+  }, [normalizeFighterId]);
+  
+  // Helper function to determine HP status based on Palladium coma rules
+  const getHPStatus = (currentHP) => {
+    if (currentHP > 0) return { status: "conscious", canAct: true, description: "Conscious" };
+    if (currentHP === 0) return { status: "unconscious", canAct: false, description: "Unconscious (stable)" };
+    if (currentHP >= -10) return { status: "dying", canAct: false, description: "Dying (need help in 1d4 minutes)" };
+    if (currentHP >= -20) return { status: "critical", canAct: false, description: "Critical (need help in 1d4 rounds)" };
+    return { status: "dead", canAct: false, description: "DEAD" };
+  };
+
+  // Helper to check if fighter can act (conscious only)
+  const canFighterAct = (fighter) => {
+    if (!fighter) return false;
+    const hpStatus = getHPStatus(fighter.currentHP);
+    return hpStatus.canAct && fighter.status !== "defeated";
+  };
+  
+  // Helper to calculate allies down ratio for morale checks
+  const getAlliesDownRatio = useCallback((fightersArray, subject) => {
+    if (!subject || !Array.isArray(fightersArray)) return 0;
+    
+    const sameSideType = subject.type;
+    const allies = fightersArray.filter(f => 
+      f.id !== subject.id && 
+      f.type === sameSideType &&
+      !f.isDead &&
+      !f.isKO
+    );
+    if (allies.length === 0) return 0;
+    const downAllies = allies.filter(f => 
+      f.currentHP <= 0 || 
+      !canFighterAct(f) ||
+      f.status === "defeated"
+    );
+    return downAllies.length / allies.length;
+  }, [canFighterAct]);
+  
+  // Low-HP "I give up" morale check
+  const maybeTriggerLowHpMorale = useCallback((fighter, allFighters, currentRound, addLog, settings) => {
+    if (!settings?.useMoraleRouting || !fighter) return fighter;
+
+    const maxHP =
+      fighter.maxHP ||
+      fighter.totalHP ||
+      fighter.currentHP ||
+      1;
+
+    const hpPercent = maxHP > 0 ? (fighter.currentHP ?? maxHP) / maxHP : 1;
+
+    // Only start "I give up" checks when VERY low on HP
+    // e.g. 20% or less (tune as you like)
+    if (hpPercent > 0.2) return fighter;
+
+    // Don't keep re-rolling if already fled, routed, or surrendered
+    if (fighter.moraleState?.status === "ROUTED" || 
+        fighter.moraleState?.status === "SURRENDERED" || 
+        fighter.moraleState?.hasFled) {
+      return fighter;
+    }
+
+    const alliesDownRatio = getAlliesDownRatio(allFighters, fighter);
+
+    const { success, moraleState, result } = resolveMoraleCheck(fighter, {
+      roundNumber: currentRound || 0,
+      reason: "low_hp",
+      hpPercent,
+      alliesDownRatio,
+      horrorFailed: false,
+      bigPainHit: false,
+    });
+
+    const updated = {
+      ...fighter,
+      moraleState,
+    };
+
+    if (!success) {
+      if (moraleState.status === "SURRENDERED") {
+        addLog(
+          `🤚 ${fighter.name} collapses, dropping their weapon: "I surrender!"`,
+          "warning"
+        );
+      } else if (moraleState.status === "ROUTED") {
+        addLog(
+          `🏃 ${fighter.name} is badly wounded and panics! Attempts to flee!`,
+          "warning"
+        );
+      } else if (moraleState.status === "SHAKEN") {
+        addLog(
+          `😨 ${fighter.name} hesitates, injured and losing resolve...`,
+          "info"
+        );
+      }
+    }
+
+    return updated;
+  }, [getAlliesDownRatio]);
   const [meleeRound, setMeleeRound] = useState(1); // Track melee rounds (1 minute each)
   const [turnCounter, setTurnCounter] = useState(0); // Track absolute turn number (increments every turn)
   const [combatActive, setCombatActive] = useState(false);
@@ -758,6 +900,8 @@ export default function CombatPage({ characters = [] }) {
   const [showRollDetails, setShowRollDetails] = useState(false);
   const [showCombatChoices, setShowCombatChoices] = useState(false);
   const [aiControlEnabled, setAiControlEnabled] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const { settings } = useGameSettings();
   const [selectedAction, setSelectedAction] = useState(null);
   const [selectedGrappleAction, setSelectedGrappleAction] = useState(null);
   const [selectedManeuver, setSelectedManeuver] = useState(null);
@@ -986,22 +1130,6 @@ export default function CombatPage({ characters = [] }) {
       clearScheduledTurn();
     }
   }, [combatPaused, clearScheduledTurn]);
-
-  // Helper function to determine HP status based on Palladium coma rules
-  const getHPStatus = (currentHP) => {
-    if (currentHP > 0) return { status: "conscious", canAct: true, description: "Conscious" };
-    if (currentHP === 0) return { status: "unconscious", canAct: false, description: "Unconscious (stable)" };
-    if (currentHP >= -10) return { status: "dying", canAct: false, description: "Dying (need help in 1d4 minutes)" };
-    if (currentHP >= -20) return { status: "critical", canAct: false, description: "Critical (need help in 1d4 rounds)" };
-    return { status: "dead", canAct: false, description: "DEAD" };
-  };
-
-  // Helper to check if fighter can act (conscious only)
-  const canFighterAct = (fighter) => {
-    if (!fighter) return false;
-    const hpStatus = getHPStatus(fighter.currentHP);
-    return hpStatus.canAct && fighter.status !== "defeated";
-  };
 
   // Helper: Check if alignment is evil (would attack dying targets)
   const isEvilAlignment = (alignment) => {
@@ -1963,11 +2091,23 @@ useEffect(() => {
                            weaponName.toLowerCase().includes('sling') ||
                            weaponName.toLowerCase().includes('gun') ||
                            weaponName.toLowerCase().includes('thrown') ||
-                           weaponName.toLowerCase().includes('spell');
+                           weaponName.toLowerCase().includes('spell') ||
+                           (attackData?.type === 'ranged') ||
+                           (attackData?.range && attackData.range > 10);
       
       if (isRangedWeapon) {
-        // For unknown ranged weapons, assume they can attack at any distance
-        return { canAttack: true, reason: "Ranged weapon" };
+        // Get weapon range from attackData or use defaults
+        const weaponRange = attackData?.range || 
+                          (weaponName.toLowerCase().includes('long bow') || weaponName.toLowerCase() === 'longbow' ? 640 :
+                           weaponName.toLowerCase().includes('short bow') || weaponName.toLowerCase() === 'shortbow' ? 360 :
+                           weaponName.toLowerCase().includes('bow') ? 360 :
+                           weaponName.toLowerCase().includes('crossbow') ? 480 : 100);
+        const canAttack = distance <= weaponRange;
+        return { 
+          canAttack, 
+          reason: canAttack ? `Within range (${Math.round(distance)}ft ≤ ${weaponRange}ft)` : `Out of range (${Math.round(distance)}ft > ${weaponRange}ft)`,
+          maxRange: weaponRange
+        };
       } else {
         // For unknown melee weapons, adjacent hexes (5ft) are always in melee range
         // Weapon length only matters for reach weapons that can attack beyond adjacent hexes
@@ -2257,6 +2397,53 @@ useEffect(() => {
         // Log range info for successful attacks
         if (rangeValidation.rangeInfo) {
           addLog(`📍 ${attacker.name} attacking at ${rangeValidation.rangeInfo}`, "info");
+        }
+      }
+      
+      // Check ammunition for ranged weapons
+      const weaponName = attackData?.name || "";
+      const isRangedWeapon = weaponName.toLowerCase().includes('bow') || 
+                             weaponName.toLowerCase().includes('crossbow') ||
+                             weaponName.toLowerCase().includes('sling') ||
+                             (attackData?.type === 'ranged') ||
+                             (attackData?.range && attackData.range > 10);
+      
+      if (isRangedWeapon) {
+        // Determine ammo type
+        const ammoType = weaponName.toLowerCase().includes('crossbow') ? 'bolts' : 
+                        weaponName.toLowerCase().includes('bow') ? 'arrows' : 
+                        weaponName.toLowerCase().includes('sling') ? 'stones' : 'arrows';
+        
+        // Check if fighter has ammo
+        const fighterAmmo = ammoCount[attacker.id] || {};
+        const currentAmmo = fighterAmmo[ammoType] || 0;
+        
+        if (currentAmmo <= 0) {
+          // Initialize ammo if not set (give default amount)
+          if (!ammoCount[attacker.id]) {
+            setAmmoCount(prev => ({
+              ...prev,
+              [attacker.id]: { [ammoType]: 20 } // Default 20 arrows/bolts
+            }));
+            addLog(`🏹 ${attacker.name} loads ${ammoType} (20 remaining)`, "info");
+          } else {
+            addLog(`❌ ${attacker.name} is out of ${ammoType}! Cannot fire ${weaponName}.`, "error");
+            return;
+          }
+        } else {
+          // Deplete ammo
+          setAmmoCount(prev => {
+            const newAmmo = { ...prev };
+            if (!newAmmo[attacker.id]) newAmmo[attacker.id] = {};
+            newAmmo[attacker.id][ammoType] = Math.max(0, (newAmmo[attacker.id][ammoType] || 0) - 1);
+            return newAmmo;
+          });
+          const remainingAmmo = Math.max(0, currentAmmo - 1);
+          if (remainingAmmo > 0) {
+            addLog(`🏹 ${attacker.name} fires ${weaponName} (${remainingAmmo} ${ammoType} remaining)`, "info");
+          } else {
+            addLog(`🏹 ${attacker.name} fires ${weaponName} (OUT OF ${ammoType.toUpperCase()}!)`, "warning");
+          }
         }
       }
     }
@@ -2864,8 +3051,8 @@ useEffect(() => {
           }
           
           // Deduct 1 attack for defensive action
-          defender.remainingAttacks = Math.max(0, (defender.remainingAttacks || 0) - 1);
-          addLog(`${defender.name} used 1 attack to defend (${defender.remainingAttacks}/${defender.attacksPerMelee} remaining)`, "info");
+          updated[defenderIndex].remainingAttacks = Math.max(0, (updated[defenderIndex].remainingAttacks || 0) - 1);
+          addLog(`${defender.name} used 1 attack to defend (${updated[defenderIndex].remainingAttacks}/${defender.attacksPerMelee} remaining)`, "info");
         }
         
         // Clear defensive stance after it's used (one-time use per turn)
@@ -3047,15 +3234,64 @@ useEffect(() => {
         const newHP = clampHP(startingHP - finalDamage, defender);
         applyHPToFighter(defender, newHP);
         
-        // Log the hit
-        const hitType = isCriticalHit ? "critical" : "hit";
-        const hitEmoji = isCriticalHit ? "💥" : "⚔️";
-        addLog(`${hitEmoji} ${attacker.name} ${isCriticalHit ? "CRITICALLY HITS" : "hits"} ${defender.name} for ${finalDamage} damage! (${defender.currentHP}/${defender.maxHP} HP)`, hitType);
+        // 🧊 Pain Stagger + Morale System Integration
+        let defenderAfterHit = { ...defender };
+        let bigPainHit = false;
+        
+        // 1) Pain stagger (only if enabled)
+        if (settings.usePainStagger) {
+          const painResult = applyPainStagger({
+            defender: defenderAfterHit,
+            damageDealt: finalDamage,
+            weapon: attackData,
+            addLog: addLog,
+          });
+          
+          if (painResult.updatedDefender) {
+            defenderAfterHit = painResult.updatedDefender;
+          }
+          bigPainHit = painResult.painTriggered;
+        }
+        
+        // 2) Morale check (only if enabled)
+        if (settings.useMoraleRouting) {
+          const maxHP = defenderAfterHit.maxHP || defenderAfterHit.totalHP || defenderAfterHit.currentHP || 1;
+          const hpPercent = maxHP > 0 ? defenderAfterHit.currentHP / maxHP : 1;
+          
+          const alliesDownRatio = getAlliesDownRatio(updated, defenderAfterHit);
+          
+          const moraleOutcome = resolveMoraleCheck(defenderAfterHit, {
+            roundNumber: meleeRound || 0,
+            reason: bigPainHit ? "pain_hit" : "damage",
+            hpPercent: hpPercent,
+            alliesDownRatio: alliesDownRatio,
+            horrorFailed: false,
+            bigPainHit: bigPainHit,
+          });
+          
+          defenderAfterHit = {
+            ...defenderAfterHit,
+            moraleState: moraleOutcome.moraleState,
+          };
+          
+          if (moraleOutcome.moraleState.status === "ROUTED") {
+            addLog(`🏃 ${defenderAfterHit.name} breaks and ROUTES!`, "warning");
+          } else if (
+            moraleOutcome.moraleState.status === "SHAKEN" &&
+            moraleOutcome.result &&
+            !moraleOutcome.success
+          ) {
+            addLog(`😨 ${defenderAfterHit.name} is SHAKEN by the attack!`, "info");
+          }
+        }
+        
+        // 3) Replace original defender in updated array with defenderAfterHit
+        updated[defenderIndex] = defenderAfterHit;
+        // Use defenderAfterHit directly instead of reassigning const defender
         
         // ✅ CRITICAL: Check for victory condition AFTER damage is applied
-        if (defender.type === "enemy") {
-          // Update the defender in the updated array to reflect new HP
-          updated[defenderIndex] = defender;
+        if (defenderAfterHit.type === "enemy") {
+          // Defender already updated in array above
           
           // Check if there are any conscious enemies remaining
           const remainingConsciousEnemies = updated.filter(f => f.type === "enemy" && canFighterAct(f));
@@ -3072,8 +3308,8 @@ useEffect(() => {
         }
         
         // Check for braced weapon counter-damage (spear/polearm vs charge on natural 18-20)
-        const defenderWeapon = defender.equippedWeapons?.primary || defender.equippedWeapons?.secondary || null;
-        const isBraced = defensiveStance[defender.id] === "Brace" || 
+        const defenderWeapon = defenderAfterHit.equippedWeapons?.primary || defenderAfterHit.equippedWeapons?.secondary || null;
+        const isBraced = defensiveStance[defenderAfterHit.id] === "Brace" || 
                         (defenseType === "Parry" && defenderWeapon && (defenderWeapon.name?.toLowerCase().includes("spear") || 
                               defenderWeapon.name?.toLowerCase().includes("pike") ||
                               defenderWeapon.name?.toLowerCase().includes("polearm") ||
@@ -3108,44 +3344,44 @@ useEffect(() => {
         // Knockdown check for massive attackers (2x defender weight) in charges
         if (bonusModifiers.damageMultiplier >= 2 && !defenseSuccess) {
           const attackerWeight = attacker.weight || 150;
-          const defenderWeight = defender.weight || 150;
+          const defenderWeight = defenderAfterHit.weight || 150;
           if (attackerWeight >= defenderWeight * 2) {
             // Roll P.E. check for knockdown
-            const peCheck = defender.PE || defender.pe || defender.attributes?.PE || defender.attributes?.pe || 10;
+            const peCheck = defenderAfterHit.PE || defenderAfterHit.pe || defenderAfterHit.attributes?.PE || defenderAfterHit.attributes?.pe || 10;
             const peRoll = CryptoSecureDice.parseAndRoll("1d20").totalWithBonus;
             if (peRoll > peCheck) {
-              addLog(`💥 ${defender.name} is knocked down! (P.E. ${peCheck} < roll ${peRoll}) - loses 1 action to recover`, "warning");
+              addLog(`💥 ${defenderAfterHit.name} is knocked down! (P.E. ${peCheck} < roll ${peRoll}) - loses 1 action to recover`, "warning");
               // Deduct 1 action from defender
-              defender.remainingAttacks = Math.max(0, (defender.remainingAttacks || 0) - 1);
+              updated[defenderIndex].remainingAttacks = Math.max(0, (updated[defenderIndex].remainingAttacks || 0) - 1);
             } else {
-              addLog(`💪 ${defender.name} resists knockdown! (P.E. ${peCheck} >= roll ${peRoll})`, "info");
+              addLog(`💪 ${defenderAfterHit.name} resists knockdown! (P.E. ${peCheck} >= roll ${peRoll})`, "info");
             }
           }
         }
         
         // Determine HP status based on coma rules
-        const hpStatus = getHPStatus(defender.currentHP);
+        const hpStatus = getHPStatus(defenderAfterHit.currentHP);
         
         // Check if defender is defeated (unconscious or worse)
-        if (defender.currentHP <= 0) {
-          defender.status = "defeated";
+        if (defenderAfterHit.currentHP <= 0) {
+          defenderAfterHit.status = "defeated";
+          updated[defenderIndex] = defenderAfterHit; // Update status in array
           
-          if (defender.currentHP <= -21) {
-            addLog(`💀 ${defender.name} has been KILLED! (${hpStatus.description})`, "defeat");
+          if (defenderAfterHit.currentHP <= -21) {
+            addLog(`💀 ${defenderAfterHit.name} has been KILLED! (${hpStatus.description})`, "defeat");
             // Reset grapple state when fighter dies
-            resetGrapple(defender);
-          } else if (defender.currentHP <= -11) {
-            addLog(`⚠️ ${defender.name} is CRITICALLY wounded! ${hpStatus.description}`, "defeat");
-          } else if (defender.currentHP <= -1) {
-            addLog(`🩸 ${defender.name} is DYING! ${hpStatus.description}`, "defeat");
+            resetGrapple(defenderAfterHit);
+          } else if (defenderAfterHit.currentHP <= -11) {
+            addLog(`⚠️ ${defenderAfterHit.name} is CRITICALLY wounded! ${hpStatus.description}`, "defeat");
+          } else if (defenderAfterHit.currentHP <= -1) {
+            addLog(`🩸 ${defenderAfterHit.name} is DYING! ${hpStatus.description}`, "defeat");
           } else {
-            addLog(`😴 ${defender.name} has been knocked unconscious!`, "defeat");
+            addLog(`😴 ${defenderAfterHit.name} has been knocked unconscious!`, "defeat");
           }
           
           // ✅ CRITICAL: Check for victory condition AFTER damage is applied
-          if (defender.type === "enemy") {
-            // Update the defender in the updated array to reflect new HP
-            updated[defenderIndex] = defender;
+          if (defenderAfterHit.type === "enemy") {
+            // Defender already updated in array above
             
             // Check if there are any conscious enemies remaining
             const remainingConsciousEnemies = updated.filter(f => f.type === "enemy" && canFighterAct(f));
@@ -3162,16 +3398,16 @@ useEffect(() => {
           }
           
           // Award XP if an enemy was defeated by players (only if dead, not just unconscious)
-          if (defender.type === "enemy" && defender.currentHP <= -21) {
+          if (defenderAfterHit.type === "enemy" && defenderAfterHit.currentHP <= -21) {
             const alivePlayers = updated.filter(f => f.type === "player" && canFighterAct(f));
             if (alivePlayers.length > 0) {
               // Find enemy in bestiary for XP calculation using getMonsterByName
-              const enemyData = getMonsterByName(defender.name, bestiary) || getAllBestiaryEntries(bestiary)?.find(m => 
-                m.name.toLowerCase() === defender.name.toLowerCase()
+              const enemyData = getMonsterByName(defenderAfterHit.name, bestiary) || getAllBestiaryEntries(bestiary)?.find(m => 
+                m.name.toLowerCase() === defenderAfterHit.name.toLowerCase()
               );
               
               // Calculate XP reward
-              const xpReward = enemyData?.XPValue || calculateMonsterXP(enemyData || defender);
+              const xpReward = enemyData?.XPValue || calculateMonsterXP(enemyData || defenderAfterHit);
               const xpPerPlayer = Math.floor(xpReward / alivePlayers.length);
               
               // Use grantXPFromEnemy to properly award XP (returns updated characters, but we'll log for now)
@@ -3854,6 +4090,105 @@ useEffect(() => {
       return;
     }
     
+    // 1) First, refresh the enemy from state (in case their HP / morale changed)
+    const fightersSnapshot = fighters;
+    let liveEnemy = fightersSnapshot.find(f => f.id === enemy.id) || enemy;
+    
+    // 2) Low-HP "I give up" morale check (only if Morale & Routing enabled)
+    liveEnemy = maybeTriggerLowHpMorale(
+      liveEnemy,
+      fightersSnapshot,
+      meleeRound,
+      addLog,
+      settings
+    );
+    
+    // Make sure we store the updated moraleState back into fighters
+    setFighters(prev =>
+      prev.map(f => (f.id === liveEnemy.id ? { ...f, moraleState: liveEnemy.moraleState } : f))
+    );
+    
+    // 2.5) NEW: Check for SURRENDERED or CAPTURED (before routing)
+    if (
+      settings.useMoraleRouting &&
+      (liveEnemy.moraleState?.status === "SURRENDERED" || liveEnemy.isCaptured || liveEnemy.hasSurrendered)
+    ) {
+      addLog(`🤚 ${liveEnemy.name} has surrendered and will not act.`, "info");
+      
+      // Remove ability to fight
+      setFighters(prev =>
+        prev.map(f =>
+          f.id === liveEnemy.id
+            ? {
+                ...f,
+                remainingAttacks: 0,
+                hasSurrendered: true,
+              }
+            : f
+        )
+      );
+      
+      // Enemy does nothing this turn
+      processingEnemyTurnRef.current = false;
+      scheduleEndTurn();
+      return;
+    }
+    
+    // 3) 🏃 Routing System: Check if enemy is routed and should flee
+    if (settings.useMoraleRouting && liveEnemy.moraleState?.status === "ROUTED" && !liveEnemy.moraleState?.hasFled) {
+      const currentPositions = positionsRef.current || positions;
+      
+      const threats = getThreatPositionsForFighter(liveEnemy, fightersSnapshot, currentPositions);
+      const isHexOccupied = makeIsHexOccupied(currentPositions, liveEnemy.id);
+      
+      const dest = findBestRetreatHex({
+        currentPos: currentPositions[liveEnemy.id],
+        threatPositions: threats,
+        maxSteps: 4,
+        isHexOccupied: isHexOccupied,
+        getHexNeighbors: getHexNeighbors,
+        isValidPosition: isValidPosition,
+        calculateDistance: calculateDistance,
+      });
+      
+      if (dest) {
+        setPositions((prev) => ({
+          ...prev,
+          [liveEnemy.id]: dest.position,
+        }));
+        
+        let hasFled = liveEnemy.moraleState?.hasFled || false;
+        if (isAtMapEdge(dest.position, GRID_CONFIG.GRID_WIDTH, GRID_CONFIG.GRID_HEIGHT)) {
+          hasFled = true;
+        }
+        
+        setFighters((prev) =>
+          prev.map((f) =>
+            f.id === liveEnemy.id
+              ? {
+                  ...f,
+                  remainingAttacks: 0,
+                  moraleState: {
+                    ...(f.moraleState || {}),
+                    hasFled: hasFled,
+                  },
+                }
+              : f
+          )
+        );
+        
+        addLog(`🏃‍♂️ ${liveEnemy.name} turns tail and flees the battle!`, "warning");
+        processingEnemyTurnRef.current = false;
+        scheduleEndTurn();
+        return;
+      }
+      
+      // No safe hex – falls through to normal AI behavior (maybe defend/cower)
+    }
+    
+    // Update enemy reference for rest of function
+    enemy = liveEnemy;
+    
     // Check if enemy has actions remaining
     if (enemy.remainingAttacks <= 0) {
       addLog(`⏭️ ${enemy.name} has no actions remaining - passing to next fighter in initiative order`, "info");
@@ -3888,6 +4223,62 @@ useEffect(() => {
         visiblePlayers.push(target);
         // Update awareness to Alert when enemy can see target
         updateAwareness(enemy, target, AWARENESS_STATES.ALERT);
+        
+        // 😱 Horror Factor Check: When player sees enemy with HF > 0
+        // Check from player's perspective when they can see the enemy
+        if (settings.useInsanityTrauma) {
+          // Check if enemy has Horror Factor
+          const enemyHF = enemy.HF || enemy.hf || enemy.horrorFactor || 0;
+          if (enemyHF > 0) {
+            // Check if player can see this enemy (reverse visibility check)
+            const playerCanSeeEnemy = canAISeeTarget(target, enemy, positions, combatTerrain, {
+              useFogOfWar: fogEnabled,
+              fogOfWarVisibleCells: visibleCells
+            });
+            
+            if (playerCanSeeEnemy) {
+              const horrorResult = resolveHorrorCheck(target, enemy);
+              
+              if (horrorResult.triggered) {
+                const updatedViewer = horrorResult.updatedViewer;
+                
+                // Update viewer in fighters list
+                setFighters((prev) =>
+                  prev.map((f) => (f.id === target.id ? updatedViewer : f))
+                );
+                
+                if (!horrorResult.success) {
+                  // Apply immediate fear penalties: lose 1 action, small strike penalty
+                  setFighters((prev) =>
+                    prev.map((f) => {
+                      if (f.id !== target.id) return f;
+                      
+                      const before = f.remainingAttacks ?? getAttacksPerMelee(f);
+                      const after = Math.max(0, before - 1);
+                      
+                      return {
+                        ...f,
+                        remainingAttacks: after,
+                        tempMentalPenalties: {
+                          ...(f.tempMentalPenalties || {}),
+                          strike: -2,
+                          parry: -1,
+                          dodge: -1,
+                          roundsRemaining: 1,
+                        },
+                      };
+                    })
+                  );
+                  
+                  addLog(
+                    `😱 ${target.name} recoils in horror at the sight of ${enemy.name} and loses 1 action!`,
+                    "warning"
+                  );
+                }
+              }
+            }
+          }
+        }
       } else {
         // Use calculatePerceptionCheck to determine if enemy can detect hidden target
         const perceptionCheck = calculatePerceptionCheck(
@@ -5320,15 +5711,22 @@ useEffect(() => {
       // Auto-roll attributes and create playable character fighter
       newFighter = createPlayableCharacterFighter(creatureData, customEnemyName);
       
-      // Log detailed roll information
+      // Log detailed roll information with debug details
       const rollDetails = getPlayableCharacterRollDetails(creatureData, newFighter.attributes);
       
       addLog(`🎲 Auto-rolled ${newFighter.name}:`, "info");
-      addLog(`   Attributes: ${Object.entries(rollDetails.attributes).map(([attr, data]) => 
-        `${attr}: ${data.dice} = ${data.value}`).join(", ")}`, "info");
+      // Enhanced attribute roll logging
+      Object.entries(rollDetails.attributes).forEach(([attr, data]) => {
+        const rollBreakdown = data.roll?.diceRolls?.map(d => d.result).join(' + ') || data.value;
+        const bonus = data.roll?.bonus ? ` + ${data.roll.bonus}` : '';
+        addLog(`   🎲 ${attr}: ${data.dice} = [${rollBreakdown}]${bonus} = ${data.value}`, "info");
+      });
       addLog(`   HP: ${newFighter.currentHP}, AR: ${newFighter.AR}, Speed: ${newFighter.Spd || newFighter.spd || newFighter.attributes?.Spd || newFighter.attributes?.spd || 10}`, "info");
       addLog(`   Bonuses: ${Object.entries(newFighter.bonuses).map(([key, val]) => 
         `${key}: +${val}`).join(", ")}`, "info");
+      if (newFighter.equippedWeapons && newFighter.equippedWeapons.length > 0 && newFighter.equippedWeapons[0].name !== "Unarmed Strike") {
+        addLog(`   ⚔️ Weapons: ${newFighter.equippedWeapons.map(w => w.name).join(", ")}`, "info");
+      }
       
       // Debug: Log psionics and magic data
       if (newFighter.psionicPowers && newFighter.psionicPowers.length > 0) {
@@ -5364,8 +5762,30 @@ useEffect(() => {
         // Apply size modifiers to new fighter (for both playable and regular creatures)
         newFighter = applySizeModifiers(newFighter);
         
-        // Normalize IDs to ensure both id and _id exist for backwards compatibility
-        newFighter = normalizeFighterId(newFighter);
+        // Normalize fighter to ensure IDs, moraleState, and mentalState exist
+        newFighter = normalizeFighter(newFighter);
+        
+        // Initialize ammo for ranged weapons
+        const equippedWeapon = newFighter.equippedWeapons?.[0];
+        if (equippedWeapon) {
+          const weaponName = (equippedWeapon.name || "").toLowerCase();
+          const isRanged = weaponName.includes('bow') || 
+                          weaponName.includes('crossbow') ||
+                          weaponName.includes('sling') ||
+                          equippedWeapon.type === 'ranged' ||
+                          (equippedWeapon.range && equippedWeapon.range > 10);
+          
+          if (isRanged) {
+            const ammoType = weaponName.includes('crossbow') ? 'bolts' : 
+                           weaponName.includes('bow') ? 'arrows' : 
+                           weaponName.includes('sling') ? 'stones' : 'arrows';
+            setAmmoCount(prev => ({
+              ...prev,
+              [newFighter.id]: { [ammoType]: 20 } // Default 20 arrows/bolts
+            }));
+            addLog(`🏹 ${newFighter.name} starts with 20 ${ammoType}`, "info");
+          }
+        }
         
         setFighters(prev => [...prev, newFighter]);
 
@@ -7313,6 +7733,15 @@ useEffect(() => {
           >
             {aiControlEnabled ? "🤖 AI ON" : "🎮 Manual"}
           </Button>
+          <Button
+            size="sm"
+            colorScheme="gray"
+            variant="outline"
+            onClick={() => setShowSettings(true)}
+            title="Configure game settings (pain stagger, morale, insanity)"
+          >
+            ⚙️ Game Settings
+          </Button>
         </HStack>
       </Flex>
 
@@ -7930,6 +8359,81 @@ useEffect(() => {
                       }
                       return null;
                     })()}
+
+                    {/* Capture Actions (for surrendered enemies) */}
+                    {selectedTarget && canBeCaptured(selectedTarget) && currentFighter && currentFighter.type === "player" && (
+                      <Box>
+                        <Text fontSize="sm" fontWeight="bold" mb={2} color="orange.600">
+                          ⛓️ Prisoner Actions:
+                        </Text>
+                        <Wrap spacing={2}>
+                          <Button
+                            size="sm"
+                            colorScheme="orange"
+                            variant="outline"
+                            onClick={() => {
+                              if (!canBeCaptured(selectedTarget)) {
+                                addLog(`${selectedTarget.name} cannot be captured right now.`, "info");
+                                return;
+                              }
+                              
+                              setFighters(prev =>
+                                prev.map(f => {
+                                  if (f.id === selectedTarget.id) {
+                                    const captured = tieUpPrisoner(f, currentFighter.id);
+                                    addLog(
+                                      `⛓️ ${currentFighter.name} ties up ${captured.name}, taking them prisoner!`,
+                                      "info"
+                                    );
+                                    return captured;
+                                  }
+                                  return f;
+                                })
+                              );
+                              setSelectedTarget(null);
+                            }}
+                          >
+                            ⛓️ Capture / Tie Up
+                          </Button>
+                          <Button
+                            size="sm"
+                            colorScheme="yellow"
+                            variant="outline"
+                            onClick={() => {
+                              setFighters(prev => {
+                                let lootResult = null;
+                                
+                                const updated = prev.map(f => {
+                                  if (f.id === selectedTarget.id) {
+                                    const { updatedFighter, loot } = lootPrisoner(f);
+                                    lootResult = loot;
+                                    return updatedFighter;
+                                  }
+                                  return f;
+                                });
+                                
+                                if (lootResult) {
+                                  const lootCount = (lootResult.inventory?.length || 0) + 
+                                                   (lootResult.weapons?.length || 0) + 
+                                                   (lootResult.armor ? 1 : 0);
+                                  addLog(
+                                    `💰 ${selectedTarget.name} is searched; ${lootCount} item${lootCount !== 1 ? 's' : ''} confiscated.`,
+                                    "info"
+                                  );
+                                  // Here you could push lootResult into a party loot bag state
+                                  // setLoot(prev => [...prev, lootResult]);
+                                }
+                                
+                                return updated;
+                              });
+                              setSelectedTarget(null);
+                            }}
+                          >
+                            💰 Loot Prisoner
+                          </Button>
+                        </Wrap>
+                      </Box>
+                    )}
 
                     {/* Weapon Selection Buttons (only for Strike) */}
                     {selectedAction?.name === "Strike" && currentFighter && (
@@ -10032,6 +10536,9 @@ useEffect(() => {
           </DrawerFooter>
         </DrawerContent>
       </Drawer>
+
+      {/* Game Settings Modal */}
+      <GameSettingsPanel isOpen={showSettings} onClose={() => setShowSettings(false)} />
 
     </Box>
   );
