@@ -21,6 +21,10 @@ export const STAMINA_COSTS = {
   SPRINTING: 1.5, // Sprinting, charging, repeated dodging
   SPELLCASTING: 1.0, // Casting spells under duress
   MOUNTED_COMBAT: 0.5, // Reduced strain if experienced rider
+  // New: flying movement
+  FLY_HOVER: 0.5, // Slow circling / gliding (your "menace" behavior)
+  FLY_CRUISE: 1.0, // Normal sustained flight
+  FLY_SPRINT: 1.5, // Fast climb / dive / high-speed reposition
 };
 
 /**
@@ -116,7 +120,14 @@ export function initializeCombatFatigue(character) {
  * @returns {number} Stamina cost per melee round
  */
 export function getStaminaCost(actionType, character = {}) {
-  let cost = STAMINA_COSTS[actionType] || STAMINA_COSTS.NORMAL_COMBAT;
+  let cost;
+
+  // Allow passing a numeric cost directly (backwards compatible)
+  if (typeof actionType === "number") {
+    cost = actionType;
+  } else {
+    cost = STAMINA_COSTS[actionType] ?? STAMINA_COSTS.NORMAL_COMBAT;
+  }
 
   // Add encumbrance modifiers
   const armorWeight =
@@ -482,6 +493,60 @@ export function resetFatigue(character) {
   }
 }
 
+/**
+ * Drain stamina for flying movement
+ * @param {Object} fighter - Fighter object
+ * @param {string} mode - Flight mode: "FLY_HOVER", "FLY_CRUISE", or "FLY_SPRINT"
+ * @param {number} rounds - Number of rounds (default 1)
+ * @returns {Object} Updated fighter object
+ */
+export function spendFlyingStamina(fighter, mode = "FLY_CRUISE", rounds = 1) {
+  if (!fighter) return fighter;
+
+  // Initialize fatigue state if needed
+  if (!fighter.fatigueState) {
+    fighter.fatigueState = initializeCombatFatigue(fighter);
+  }
+
+  const cost = (STAMINA_COSTS[mode] || STAMINA_COSTS.FLY_CRUISE) * rounds;
+  const state = fighter.fatigueState;
+
+  state.currentStamina = Math.max(0, state.currentStamina - cost);
+  state.lastActionType = mode;
+
+  // Update fatigue penalties
+  updateFatiguePenalties(fighter);
+
+  // Also sync to legacy SP field if it exists
+  if (fighter.SP !== undefined) {
+    fighter.SP = state.currentStamina;
+  }
+  if (fighter.currentStamina !== undefined) {
+    fighter.currentStamina = state.currentStamina;
+  }
+
+  return fighter;
+}
+
+/**
+ * Should a flying creature land to rest based on current stamina?
+ * Used by flying AI (hawks, eagles, etc.) to decide when to peel off.
+ */
+export function shouldLandToRest(character) {
+  if (!character) return false;
+
+  if (!character.fatigueState) {
+    character.fatigueState = initializeCombatFatigue(character);
+  }
+
+  const { currentStamina, maxStamina } = character.fatigueState;
+  if (maxStamina == null) return false;
+
+  // Land when ≤ 20% of max stamina, with a minimum threshold of 4 SP
+  const threshold = Math.max(4, maxStamina * 0.2);
+  return currentStamina <= threshold;
+}
+
 export default {
   initializeCombatFatigue,
   getStaminaCost,
@@ -493,6 +558,8 @@ export default {
   getFatigueStatus,
   canPerformAction,
   resetFatigue,
+  spendFlyingStamina,
+  shouldLandToRest,
   STAMINA_COSTS,
   ENCUMBRANCE_MODIFIERS,
   FATIGUE_LEVELS,

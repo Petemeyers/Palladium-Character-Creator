@@ -347,6 +347,11 @@ export function createPlayableCharacterFighter(character, customName = null) {
     // Metadata
     description: character.description,
     lifeSpan: character.lifeSpan,
+    
+    // Initialize altitude for flying creatures (starts at 0 = grounded)
+    // Altitude is tracked in 5ft increments, similar to hex distances
+    altitude: 0,
+    altitudeFeet: 0,
   };
 
   return fighter;

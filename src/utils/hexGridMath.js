@@ -62,8 +62,17 @@ export function worldVectorFromEntity(
   radius = HEX_RADIUS,
   thickness = HEX_TILE_THICKNESS
 ) {
-  const elevation = thickness / 2 + (entity.height || 0) * 0.3;
-  return worldVectorFromAxial(entity.q || 0, entity.r || 0, elevation, radius);
+  // Get base elevation from tile height (for terrain elevation)
+  const tileElevation = thickness / 2 + (entity.height || 0) * 0.3;
+  
+  // Add creature altitude (for flying creatures) - altitude is in feet, convert to 3D units
+  // Assuming 1 unit = 1 foot, or adjust scale as needed
+  // Altitude is tracked in 5ft increments, so we need to scale it appropriately
+  const altitude = entity.altitude || entity.altitudeFeet || 0;
+  const altitude3D = altitude * 0.1; // Scale altitude to 3D units (adjust as needed)
+  
+  const totalElevation = tileElevation + altitude3D;
+  return worldVectorFromAxial(entity.q || 0, entity.r || 0, totalElevation, radius);
 }
 
 export function createFlatHexGeometry(

@@ -191,6 +191,18 @@
       "surrenderBias": 1,
       "neverFlee": false,
       "notes": "Fallback for generic humanoids."
+    },
+    "hawk": {
+      "canSurrender": false,
+      "surrenderBias": 0,
+      "neverFlee": false,
+      "aiProfile": "skittish_flying_predator",
+      "flightStyle": "circling",
+      "cruiseFraction": 0.25,
+      "circleRadiusFeet": 30,
+      "circleRadiusToleranceFeet": 10,
+      "avoidLargerEnemies": true,
+      "notes": "Small flying predator; avoids larger armed enemies, hunts tiny prey and scavenges corpses."
     }
   },
   "alignment": {

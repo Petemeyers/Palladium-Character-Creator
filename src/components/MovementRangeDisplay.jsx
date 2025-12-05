@@ -23,7 +23,7 @@ const MovementRangeDisplay = ({
 
   const speed = combatant.Spd || combatant.spd || combatant.attributes?.Spd || combatant.attributes?.spd || 10;
   const attacksPerMelee = combatant.attacksPerMelee || 1;
-  const movement = calculateMovementPerAction(speed, attacksPerMelee);
+  const movement = calculateMovementPerAction(speed, attacksPerMelee, combatant);
 
   return (
     <VStack spacing={2} align="stretch">

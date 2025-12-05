@@ -21,7 +21,7 @@ export default function MovementInfoDisplay({
     combatant.attributes?.spd ||
     10;
   const attacksPerMelee = combatant.attacksPerMelee || combatant.actions || 1;
-  const movementData = calculateMovementPerAction(speed, attacksPerMelee);
+  const movementData = calculateMovementPerAction(speed, attacksPerMelee, combatant);
   const movement =
     movementData.feetPerAction || movementData.display?.feetPerAction || 0;
 

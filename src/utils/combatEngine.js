@@ -285,6 +285,17 @@ export class CombatEngine {
     target.skills = parsedAbilities.skills || {};
     target.combatSkills = combatSkills;
     target.hasNightvision = !!parsedAbilities.senses?.nightvision?.active;
+    
+    // Initialize altitude for all fighters (starts at 0 = grounded)
+    // Altitude is tracked in 5ft increments, similar to hex distances
+    if (target.altitude === undefined && target.altitudeFeet === undefined) {
+      target.altitude = 0;
+      target.altitudeFeet = 0;
+    } else if (target.altitude === undefined) {
+      target.altitude = target.altitudeFeet || 0;
+    } else if (target.altitudeFeet === undefined) {
+      target.altitudeFeet = target.altitude || 0;
+    }
 
     const sizeInfo = getSizeScale(target);
     if (sizeInfo) {

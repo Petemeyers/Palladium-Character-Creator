@@ -19,6 +19,8 @@ import { calculateDistance } from "../data/movementRules.js";
 import { MOVEMENT_RATES, ENGAGEMENT_RANGES } from "../data/movementRules.js";
 import { getDynamicWidth, isTightTerrain } from "./environmentMetrics.js";
 import { canUseWeapon } from "./combatEnvironmentLogic.js";
+import { canFly, isFlying, getAltitude, calculateFlightMovement } from "./abilitySystem.js";
+import { getWeaponLength } from "./combatEnvironmentLogic.js";
 
 /**
  * Calculate movement per action based on Speed and attacks per melee
@@ -26,13 +28,31 @@ import { canUseWeapon } from "./combatEnvironmentLogic.js";
  * - Speed × 18 = feet per melee (running speed)
  * - Movement per action = (Speed × 18) ÷ Attacks per Melee
  * - Walking speed = ~half of running speed
+ * - Flight speed = Speed × multiplier × 18 feet per melee (e.g., Spd ×8)
  *
  * @param {number} speed - Character's Speed attribute
  * @param {number} attacksPerMelee - Number of attacks per melee round
+ * @param {Object} fighter - Optional fighter object (for flight speed calculation)
  * @returns {Object} Movement calculations
  */
-export function calculateMovementPerAction(speed, attacksPerMelee) {
-  // OFFICIAL 1994 PALLADIUM FORMULA: Speed × 18 = feet per melee (running)
+export function calculateMovementPerAction(speed, attacksPerMelee, fighter = null) {
+  // Check if fighter is flying and has flight speed multiplier
+  const isCurrentlyFlying = fighter && isFlying(fighter);
+  if (isCurrentlyFlying) {
+    const flightMovement = calculateFlightMovement(fighter, attacksPerMelee);
+    if (flightMovement) {
+      return {
+        ...flightMovement,
+        display: {
+          feetPerAction: Math.round(flightMovement.feetPerAction),
+          feetPerMelee: Math.round(flightMovement.feetPerMelee),
+        },
+        isFlight: true,
+      };
+    }
+  }
+  
+  // Ground movement: OFFICIAL 1994 PALLADIUM FORMULA: Speed × 18 = feet per melee (running)
   const feetPerMelee = speed * 18;
   const feetPerAction = feetPerMelee / attacksPerMelee;
 
@@ -53,6 +73,7 @@ export function calculateMovementPerAction(speed, attacksPerMelee) {
       feetPerAction: Math.round(feetPerAction),
       feetPerMelee: Math.round(feetPerMelee),
     },
+    isFlight: false,
   };
 }
 
@@ -81,7 +102,7 @@ export function analyzeMovementAndAttack(
     10;
   const attacksPerMelee = attacker.attacksPerMelee || 1;
 
-  const movement = calculateMovementPerAction(speed, attacksPerMelee);
+  const movement = calculateMovementPerAction(speed, attacksPerMelee, attacker);
   const weaponRange = getWeaponRange(weapon);
 
   // Check if already in range
@@ -228,7 +249,7 @@ export function executeChargeAttack(
     10;
   const attacksPerMelee = attacker.attacksPerMelee || 1;
 
-  const movement = calculateMovementPerAction(speed, attacksPerMelee);
+  const movement = calculateMovementPerAction(speed, attacksPerMelee, attacker);
   const weaponRange = getWeaponRange(weapon);
 
   // Charge requirements
@@ -379,19 +400,72 @@ export function validateAttackRange(
   const weaponRange = getWeaponRange(weapon);
   const engagementRange = getEngagementRange(distance);
 
-  const canAttack = distance <= weaponRange;
+  // Check if target is currently flying (airborne) vs just having flight capability
+  const targetIsFlying = isFlying(target);
+  const attackerCanFly = canFly(attacker);
+  const attackerIsFlying = isFlying(attacker);
+  const targetAltitude = getAltitude(target);
+  
+  // Check if this is a melee attack (weapon range <= 10 feet typically)
+  const isMeleeAttack = weaponRange <= 10;
+  
+  // Check if attacker has ranged weapons
+  const weaponName = (weapon?.name || "").toLowerCase();
+  const hasRangedWeapon = weaponName.includes('bow') || 
+                          weaponName.includes('crossbow') || 
+                          weaponName.includes('sling') || 
+                          weaponName.includes('thrown') || 
+                          (weapon?.range && weapon.range > 10);
+  
+  // For melee attacks against flying targets:
+  // - Attacker must be flying OR
+  // - Have ranged weapon OR
+  // - Weapon reach must be >= target altitude (for low-flying targets)
+  let isUnreachable = false;
+  if (targetIsFlying && isMeleeAttack && !hasRangedWeapon) {
+    if (attackerIsFlying || attackerCanFly) {
+      // Attacker can fly, so they can reach
+      isUnreachable = false;
+    } else {
+      // Ground attacker with melee weapon - check if weapon reach can reach altitude
+      const weaponReach = getWeaponLength(weapon) || weaponRange;
+      // Only allow if weapon has significant reach (polearm/lance) and target is low-flying
+      if (weaponReach >= targetAltitude && targetAltitude <= 15 && weaponReach >= 10) {
+        // Long reach weapon can hit low-flying target
+        isUnreachable = false;
+      } else {
+        // Cannot reach flying target
+        isUnreachable = true;
+      }
+    }
+  }
+  
+  let canAttack = distance <= weaponRange && !isUnreachable;
+  
+  let reason;
+  if (isUnreachable) {
+    if (targetAltitude > 15) {
+      reason = `${target.name || 'Target'} is flying too high (${targetAltitude}ft) to be reached by melee attacks from ground`;
+    } else {
+      reason = `${target.name || 'Target'} is flying and cannot be reached by melee attacks from ground`;
+    }
+    canAttack = false;
+  } else if (distance <= weaponRange) {
+    reason = `Within range (${Math.round(distance)}ft ≤ ${weaponRange}ft)`;
+  } else {
+    reason = `Out of range (${Math.round(distance)}ft > ${weaponRange}ft)`;
+  }
 
   return {
     canAttack,
     distance: Math.round(distance),
     weaponRange,
     engagementRange,
-    reason: canAttack
-      ? `Within range (${Math.round(distance)}ft ≤ ${weaponRange}ft)`
-      : `Out of range (${Math.round(distance)}ft > ${weaponRange}ft)`,
+    reason,
     suggestions: canAttack
       ? []
       : generateMovementSuggestions(distance, weaponRange, attacker),
+    isUnreachable: isUnreachable || false,
   };
 }
 
@@ -410,7 +484,7 @@ function generateMovementSuggestions(distance, weaponRange, attacker) {
     attacker.attributes?.spd ||
     10;
   const attacksPerMelee = attacker.attacksPerMelee || 1;
-  const movement = calculateMovementPerAction(speed, attacksPerMelee);
+  const movement = calculateMovementPerAction(speed, attacksPerMelee, attacker);
 
   const suggestions = [];
 

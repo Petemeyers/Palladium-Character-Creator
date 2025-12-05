@@ -95,6 +95,7 @@ import {
 } from "../utils/distanceCombatSystem.js";
 import { getCombatModifiers, canUseWeapon, getWeaponType, getWeaponLength } from "../utils/combatEnvironmentLogic.js";
 import { getDynamicWidth, getActorsInProximity, getDynamicHeight } from "../utils/environmentMetrics.js";
+import { canFly, isFlying, getAltitude, parseAbilities } from "../utils/abilitySystem.js";
 
 // Debug toggle for grapple system
 const DEBUG_GRAPPLE = true; // set to false in production
@@ -2076,6 +2077,12 @@ useEffect(() => {
   ) => {
     const weaponName = attackData?.name || "Unarmed";
     
+    // Check if target is currently flying (airborne) vs just having flight capability
+    const targetIsFlying = isFlying(defender);
+    const attackerCanFly = canFly(attacker);
+    const attackerIsFlying = isFlying(attacker);
+    const targetAltitude = getAltitude(defender);
+    
     // Try to find weapon in weapons database using getWeaponByName
     const weapon = getWeaponByName(weaponName) || weapons.find(w => w.name.toLowerCase() === weaponName.toLowerCase());
     
@@ -2113,11 +2120,51 @@ useEffect(() => {
         // Weapon length only matters for reach weapons that can attack beyond adjacent hexes
         // Minimum melee range is 5.5ft to account for adjacent hexes in hex grid
         const effectiveRange = Math.max(5.5, weaponLength > 0 ? weaponLength : 5.5);
-        const canAttack = distance <= effectiveRange;
+        
+        // Check if this is a melee attack
+        const isMeleeAttack = true;
+        
+        // For melee attacks against flying targets:
+        // - Attacker must be flying OR
+        // - Weapon reach must be >= target altitude (for low-flying targets with long reach weapons)
+        let isUnreachable = false;
+        if (targetIsFlying && isMeleeAttack) {
+          if (attackerIsFlying || attackerCanFly) {
+            // Attacker can fly, so they can reach
+            isUnreachable = false;
+          } else {
+            // Ground attacker with melee weapon - check if weapon reach can reach altitude
+            // Only allow if weapon has significant reach (polearm/lance) and target is low-flying
+            if (effectiveRange >= targetAltitude && targetAltitude <= 15 && effectiveRange >= 10) {
+              // Long reach weapon can hit low-flying target
+              isUnreachable = false;
+            } else {
+              // Cannot reach flying target
+              isUnreachable = true;
+            }
+          }
+        }
+        
+        const canAttack = distance <= effectiveRange && !isUnreachable;
+        
+        let reason;
+        if (isUnreachable) {
+          if (targetAltitude > 15) {
+            reason = `${defender.name || 'Target'} is flying too high (${targetAltitude}ft) to be reached by melee attacks from ground`;
+          } else {
+            reason = `${defender.name || 'Target'} is flying and cannot be reached by melee attacks from ground`;
+          }
+        } else if (canAttack) {
+          reason = `Within melee range (${weaponType} weapon, adjacent hex)`;
+        } else {
+          reason = `Out of melee range (${Math.round(distance)}ft > ${effectiveRange}ft)`;
+        }
+        
         return { 
           canAttack, 
-          reason: canAttack ? `Within melee range (${weaponType} weapon, adjacent hex)` : `Out of melee range (${Math.round(distance)}ft > ${effectiveRange}ft)`,
-          maxRange: effectiveRange
+          reason,
+          maxRange: effectiveRange,
+          isUnreachable: isUnreachable || false
         };
       }
     }
@@ -4561,7 +4608,8 @@ useEffect(() => {
             1;
           const movementStats = calculateMovementPerAction(
             speed,
-            Math.max(1, attacksPerMelee)
+            Math.max(1, attacksPerMelee),
+            enemy
           );
           const fullFeetPerAction =
             movementStats.fullMovementPerAction ||
@@ -5749,6 +5797,12 @@ useEffect(() => {
         status: "active"
       };
       
+      // Parse abilities from string array to structured format (needed for canFly check)
+      if (newFighter.abilities && Array.isArray(newFighter.abilities)) {
+        const parsedAbilities = parseAbilities(newFighter.abilities);
+        newFighter.abilities = parsedAbilities;
+      }
+      
       // Assign random weapon based on favorite/preferred weapons
       const favoriteWeapons = creatureData.favorite_weapons || creatureData.preferred_weapons || creatureData.favoriteWeapons;
       if (favoriteWeapons) {
@@ -5761,6 +5815,32 @@ useEffect(() => {
     
         // Apply size modifiers to new fighter (for both playable and regular creatures)
         newFighter = applySizeModifiers(newFighter);
+        
+        // Initialize altitude for flying creatures
+        // Altitude is tracked in 5ft increments, similar to hex distances
+        if (canFly(newFighter)) {
+          // Check if this is a hawk or similar skittish flying predator
+          // These should start flying at altitude 20ft (4 hexes)
+          const nameLower = (newFighter.name || newFighter.species || newFighter.type || "").toLowerCase();
+          const isHawkOrFlyingPredator = nameLower.includes("hawk") || 
+                                         nameLower.includes("eagle") || 
+                                         nameLower.includes("falcon") ||
+                                         nameLower.includes("vulture");
+          
+          if (isHawkOrFlyingPredator) {
+            // Start flying at 20ft altitude
+            newFighter.altitude = 20;
+            newFighter.altitudeFeet = 20;
+            addLog(`🦅 ${newFighter.name} starts flying at 20ft altitude`, "info");
+          } else {
+            // Other flying creatures start grounded
+            newFighter.altitude = 0;
+            newFighter.altitudeFeet = 0;
+          }
+        } else {
+          newFighter.altitude = 0;
+          newFighter.altitudeFeet = 0;
+        }
         
         // Normalize fighter to ensure IDs, moraleState, and mentalState exist
         newFighter = normalizeFighter(newFighter);
@@ -7003,33 +7083,50 @@ useEffect(() => {
 
 
   function resetCombat() {
-    // Reset closed distances when combat ends
-    resetClosedDistances(combatStateRef.current);
-    setFighters(prev => prev.map(f => {
-      // Use resetGrapple to reset grapple state for each fighter
-      const fighterCopy = { ...f };
-      resetGrapple(fighterCopy);
+    try {
+      // Reset closed distances when combat ends
+      if (combatStateRef.current) {
+        resetClosedDistances(combatStateRef.current);
+      }
       
-      return {
-        ...fighterCopy,
-        currentHP: f.maxHP,
-        status: "active",
-        initiative: 0
-      };
-    }));
-    setTurnIndex(0);
-    setCombatActive(false);
-    setCombatPaused(false);
-    lastAutoTurnKeyRef.current = null;
-    setLog([]);
-    setDiceRolls([]);
-    setSelectedParty([]);
-    setSelectedAttack(0); // Reset attack selection
-    setPsionicsMode(false); // Reset psionics mode
-    setSpellsMode(false); // Reset spells mode
-    setVisibleCells([]);
-    setExploredCells(resetFogMemory());
-    addLog("Combat reset! Fog of war memory cleared.", "info");
+      setFighters(prev => prev.map(f => {
+        // Use resetGrapple to reset grapple state for each fighter
+        const fighterCopy = { ...f };
+        resetGrapple(fighterCopy);
+        
+        return {
+          ...fighterCopy,
+          currentHP: f.maxHP || f.HP || f.hp || 30,
+          status: "active",
+          initiative: 0,
+          remainingAttacks: f.attacksPerMelee || 2,
+        };
+      }));
+      
+      setTurnIndex(0);
+      setMeleeRound(1);
+      setTurnCounter(0);
+      setCombatActive(false);
+      setCombatPaused(false);
+      lastAutoTurnKeyRef.current = null;
+      processingEnemyTurnRef.current = false;
+      processingPlayerAIRef.current = false;
+      combatEndCheckRef.current = false;
+      setLog([]);
+      setDiceRolls([]);
+      setSelectedParty([]);
+      setSelectedAttack(0); // Reset attack selection
+      setPsionicsMode(false); // Reset psionics mode
+      setSpellsMode(false); // Reset spells mode
+      setVisibleCells([]);
+      setExploredCells(resetFogMemory());
+      setSelectedTarget(null);
+      setCurrentFighter(null);
+      addLog("Combat reset! Fog of war memory cleared.", "info");
+    } catch (error) {
+      console.error("Error resetting combat:", error);
+      addLog(`Error resetting combat: ${error.message}`, "error");
+    }
   }
 
   // Weapon management functions
@@ -7298,7 +7395,12 @@ useEffect(() => {
           name: equippedWeaponName,
           damage: equippedWeapons[0]?.damage || "1d3",
           type: (equippedWeapons[0]?.type === "unarmed" || !equippedWeapons[0]) ? "melee" : "melee"
-        }]
+        }],
+        
+        // Initialize altitude for all fighters (starts at 0 = grounded)
+        // Altitude is tracked in 5ft increments, similar to hex distances
+        altitude: char.altitude || 0,
+        altitudeFeet: char.altitudeFeet || char.altitude || 0,
       };
 
       if (currentPPEValue !== undefined) {
@@ -7307,6 +7409,14 @@ useEffect(() => {
 
         // Apply size modifiers to fighter
         const fighterWithSizeMods = applySizeModifiers(fighter);
+        
+        // Initialize altitude for flying creatures (starts at 0 = grounded)
+        // Altitude is tracked in 5ft increments, similar to hex distances
+        if (!fighterWithSizeMods.altitude && !fighterWithSizeMods.altitudeFeet) {
+          fighterWithSizeMods.altitude = 0;
+          fighterWithSizeMods.altitudeFeet = 0;
+        }
+        
         // Normalize IDs to ensure both id and _id exist for backwards compatibility
         return normalizeFighterId(fighterWithSizeMods);
       });
@@ -7624,9 +7734,7 @@ useEffect(() => {
             Add Enemy
           </Button>
           <Button colorScheme="red" onClick={() => {
-            startTransition(() => {
-              resetCombat();
-            });
+            resetCombat();
           }}>
             Reset Combat
           </Button>
@@ -8015,7 +8123,7 @@ useEffect(() => {
                   {(() => {
                     const speed = currentFighter.Spd || currentFighter.spd || currentFighter.attributes?.Spd || currentFighter.attributes?.spd || 10;
                     const attacksPerMelee = currentFighter.attacksPerMelee || 1;
-                    const movement = calculateMovementPerAction(speed, attacksPerMelee);
+                    const movement = calculateMovementPerAction(speed, attacksPerMelee, currentFighter);
                     
                     return (
                       <Box bg="blue.50" p={2} borderRadius="md" mt={2}>

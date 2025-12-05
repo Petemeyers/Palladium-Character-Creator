@@ -146,18 +146,30 @@ function parseAbility(abilityStr) {
   }
 
   // === Flight ===
+  // Parse flight abilities like "Flying (Spd ×8)", "Flight (Spd ×5)", "Fly 30 mph", etc.
   const flightMatch = str.match(
-    /flight\s+ability|fly\s+(\d+)\s*mph|flying\s+speed\s+(\d+)\s*mph/i
+    /(?:flying|flight)\s*(?:\(|:)?\s*(?:spd|speed)\s*×\s*(\d+)|fly\s+(\d+)\s*mph|flying\s+speed\s+(\d+)\s*mph/i
   );
   if (flightMatch) {
-    const speed = flightMatch[1]
-      ? parseInt(flightMatch[1])
-      : flightMatch[2]
-      ? parseInt(flightMatch[2])
-      : 30;
+    let speedMultiplier = null;
+    let mphSpeed = null;
+    
+    // Check for Spd multiplier format: "Flying (Spd ×8)" or "Flight (Spd ×5)"
+    if (flightMatch[1]) {
+      speedMultiplier = parseInt(flightMatch[1]);
+    }
+    // Check for mph format: "Fly 30 mph" or "Flying speed 60 mph"
+    else if (flightMatch[2]) {
+      mphSpeed = parseInt(flightMatch[2]);
+    }
+    else if (flightMatch[3]) {
+      mphSpeed = parseInt(flightMatch[3]);
+    }
+    
     result.movement = result.movement || {};
     result.movement.flight = {
-      speed: speed,
+      speedMultiplier: speedMultiplier, // e.g., 8 for "Spd ×8"
+      mphSpeed: mphSpeed, // e.g., 30 for "30 mph"
       mode: "air",
       active: true,
       cannotRunFast: str.includes("cannot run fast"),
@@ -544,14 +556,109 @@ export function getSkillPercent(abilities, skill) {
 }
 
 /**
- * Check if fighter can fly
+ * Check if fighter can fly (has flight capability)
  * @param {Object} fighter - Fighter object with parsed abilities
- * @returns {boolean} True if fighter can fly
+ * @returns {boolean} True if fighter has flight capability
  */
 export function canFly(fighter) {
   if (!fighter) return false;
   const abilities = fighter.abilities || fighter;
   return abilities?.movement?.flight?.active === true;
+}
+
+/**
+ * Check if fighter is currently flying (airborne)
+ * @param {Object} fighter - Fighter object
+ * @returns {boolean} True if fighter is currently airborne
+ */
+export function isFlying(fighter) {
+  if (!fighter) return false;
+  // Check if fighter has altitude > 0 (currently airborne)
+  const altitude = fighter.altitude || fighter.altitudeFeet || 0;
+  return altitude > 0;
+}
+
+/**
+ * Get fighter's current altitude in feet
+ * @param {Object} fighter - Fighter object
+ * @returns {number} Altitude in feet (0 = ground level)
+ * Note: Altitude is tracked in 5ft increments, similar to hex distances
+ */
+export function getAltitude(fighter) {
+  if (!fighter) return 0;
+  // Prefer altitudeFeet, fallback to altitude, default to 0
+  return fighter.altitudeFeet !== undefined ? fighter.altitudeFeet : 
+         fighter.altitude !== undefined ? fighter.altitude : 0;
+}
+
+/**
+ * Set fighter's altitude
+ * @param {Object} fighter - Fighter object (will be modified)
+ * @param {number} altitudeFeet - New altitude in feet (should be in 5ft increments)
+ */
+export function setAltitude(fighter, altitudeFeet) {
+  if (!fighter) return;
+  fighter.altitude = altitudeFeet;
+  fighter.altitudeFeet = altitudeFeet;
+}
+
+/**
+ * Get flight speed multiplier from fighter's abilities
+ * @param {Object} fighter - Fighter object
+ * @returns {number|null} Flight speed multiplier (e.g., 8 for "Spd ×8") or null if not found
+ */
+export function getFlightSpeedMultiplier(fighter) {
+  if (!fighter) return null;
+  const abilities = fighter.abilities || fighter;
+  return abilities?.movement?.flight?.speedMultiplier || null;
+}
+
+/**
+ * Calculate flight movement speed based on Spd and flight multiplier
+ * Uses official Palladium rules: Flight speed = Spd × multiplier × 18 feet per melee
+ * @param {Object} fighter - Fighter object with Spd attribute and flight ability
+ * @param {number} attacksPerMelee - Number of attacks per melee round
+ * @returns {Object} Flight movement calculations
+ */
+export function calculateFlightMovement(fighter, attacksPerMelee = 1) {
+  if (!fighter) return null;
+  
+  const speed = fighter.Spd || fighter.spd || fighter.attributes?.Spd || fighter.attributes?.spd || 10;
+  const flightMultiplier = getFlightSpeedMultiplier(fighter);
+  
+  if (!flightMultiplier) {
+    // Fallback: if no multiplier, use mph speed if available
+    const abilities = fighter.abilities || fighter;
+    const mphSpeed = abilities?.movement?.flight?.mphSpeed;
+    if (mphSpeed) {
+      // Convert mph to feet per melee: mph × 5280 ft/mile ÷ 3600 sec/hour × 15 sec/melee
+      // Simplified: mph × 22 = feet per melee (approximate)
+      const feetPerMelee = Math.round(mphSpeed * 22);
+      const feetPerAction = feetPerMelee / attacksPerMelee;
+      return {
+        feetPerMelee,
+        feetPerAction,
+        combatMovementPerAction: Math.floor(feetPerAction * 0.5), // Combat flight speed
+        fullMovementPerAction: feetPerAction,
+        source: "mph",
+      };
+    }
+    return null;
+  }
+  
+  // Official Palladium: Flight speed = Spd × multiplier × 18 feet per melee
+  // (Same base formula as ground movement, but multiplied by flight multiplier)
+  const feetPerMelee = speed * flightMultiplier * 18;
+  const feetPerAction = feetPerMelee / attacksPerMelee;
+  
+  return {
+    feetPerMelee,
+    feetPerAction,
+    combatMovementPerAction: Math.floor(feetPerAction * 0.5), // Combat flight speed (can move and attack)
+    fullMovementPerAction: feetPerAction, // Full flight speed
+    multiplier: flightMultiplier,
+    source: "spd_multiplier",
+  };
 }
 
 /**
@@ -576,5 +683,10 @@ export default {
   hasSkill,
   getSkillPercent,
   canFly,
+  isFlying,
+  getAltitude,
+  setAltitude,
+  getFlightSpeedMultiplier,
+  calculateFlightMovement,
   canSeeInvisible,
 };
