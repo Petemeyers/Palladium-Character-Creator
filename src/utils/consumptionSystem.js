@@ -10,6 +10,19 @@ function removeItemById(character, itemId) {
 }
 
 /**
+ * Find a food item in a character's inventory.
+ * Returns the first food/ration item found, or null if none exists.
+ */
+export function findFoodItem(character) {
+  if (!character || !character.inventory) return null;
+  
+  return character.inventory.find((item) => {
+    const type = item.type || item.category || "";
+    return type === "ration" || type === "food";
+  }) || null;
+}
+
+/**
  * Generic "consume" function: food, rations, potions, etc.
  * For now, rations just restore a bit of stamina.
  */
@@ -37,6 +50,7 @@ export function consumeItem(character, item, { log = () => {} } = {}) {
 }
 
 export default {
+  findFoodItem,
   consumeItem,
 };
 

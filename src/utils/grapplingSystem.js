@@ -17,8 +17,15 @@ import {
   getSizeCategory,
   canLiftAndThrow,
   getLeveragePenalty,
+  canCarryTarget,
 } from "./sizeStrengthModifiers.js";
 import { calculateArmorDamage } from "./equipmentManager.js";
+import {
+  linkCombinedBodies,
+  COMBINED_ROLES,
+  COMBINED_MODES,
+} from "./combinedBodySystem.js";
+import { canFly, isFlying, getAltitude } from "./abilitySystem.js";
 
 /**
  * Grapple states
@@ -1205,6 +1212,82 @@ export function defenderReversal({ defender, grappler }) {
   };
 }
 
+/**
+ * Perform aerial pickup - hawk grabs prey and takes to the air
+ * Requires an existing ground grapple
+ * @param {Object} attacker - Flying creature attempting pickup (e.g., hawk)
+ * @param {Object} defender - Target being picked up (e.g., mouse)
+ * @returns {Object} Result object with success status, carrier, carried, and message
+ */
+export function performAerialPickup(attacker, defender) {
+  // Needs an existing grapple
+  if (
+    !attacker.grappleState ||
+    attacker.grappleState.state !== GRAPPLE_STATES.GROUND ||
+    attacker.grappleState.opponent !== defender.id
+  ) {
+    return {
+      success: false,
+      reason: `${attacker.name} must already have ${defender.name} grappled on the ground before picking them up.`,
+    };
+  }
+
+  // Only meaningful for flyers
+  if (!isFlying(attacker) && !canFly(attacker)) {
+    return {
+      success: false,
+      reason: `${attacker.name} cannot fly and cannot carry prey into the air.`,
+    };
+  }
+
+  // Check size/strength carry rules
+  if (!canCarryTarget(attacker, defender)) {
+    return {
+      success: false,
+      reason: `${attacker.name} is not large/strong enough to carry ${defender.name}.`,
+    };
+  }
+
+  // Take off if currently on ground
+  if (!isFlying(attacker)) {
+    attacker.isFlying = true;
+    attacker.altitude = getAltitude(attacker) || 10; // default takeoff altitude
+  } else {
+    const currentAltitude = getAltitude(attacker) || 0;
+    if (currentAltitude < 5) {
+      attacker.altitude = 10;
+    }
+  }
+
+  // Link as carrier+carried; movement is controlled by attacker
+  const { primary: carrier, secondary: carried } = linkCombinedBodies(
+    attacker,
+    defender,
+    COMBINED_ROLES.CARRIER,
+    COMBINED_MODES.AERIAL_CARRY
+  );
+
+  // Defender is grappled and essentially helpless
+  if (!carried.grappleState) {
+    carried.grappleState = initializeGrappleState(carried);
+  }
+  carried.grappleState.state = GRAPPLE_STATES.GRAPPLED;
+  carried.grappleState.opponent = carrier.id;
+  carried.grappleState.penalties = {
+    strike: -10,
+    parry: -10,
+    dodge: -10,
+  };
+  carried.grappleState.canUseLongWeapons = false;
+
+  return {
+    success: true,
+    carrier,
+    carried,
+    message: `${carrier.name} scoops up ${carried.name} in its talons and takes to the air!`,
+  };
+}
+
 export default {
   GRAPPLE_STATES,
   initializeGrappleState,
@@ -1224,4 +1307,5 @@ export default {
   grapplerPushOff,
   defenderPushBreak,
   defenderReversal,
+  performAerialPickup,
 };

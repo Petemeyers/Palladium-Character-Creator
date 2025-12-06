@@ -1767,6 +1767,55 @@ const TacticalMap = ({
                     {combatant.isEnemy ? "🗡️" : "🛡️"}
                   </text>
                   
+                  {/* Altitude indicator for flying combatants */}
+                  {(combatant.isFlying || (combatant.altitudeFeet ?? 0) > 0) && (() => {
+                    const altitude = combatant.altitudeFeet ?? combatant.altitude ?? 0;
+                    // Color coding by altitude bands: low (5-15ft), mid (20-40ft), high (45+ft)
+                    let fillColor = "#2563eb"; // Default blue
+                    if (altitude >= 5 && altitude <= 15) {
+                      fillColor = "#22c55e"; // Green for low altitude (melee reach)
+                    } else if (altitude >= 20 && altitude <= 40) {
+                      fillColor = "#3b82f6"; // Blue for mid altitude
+                    } else if (altitude >= 45) {
+                      fillColor = "#8b5cf6"; // Purple for high altitude
+                    }
+                    
+                    return (
+                      <g>
+                        {/* Background circle for better visibility */}
+                        <circle
+                          cx={iconX}
+                          cy={iconY + 18}
+                          r="12"
+                          fill="rgba(0, 0, 0, 0.6)"
+                          stroke="rgba(255, 255, 255, 0.3)"
+                          strokeWidth="1"
+                          style={{ pointerEvents: 'none' }}
+                        />
+                        {/* Altitude text */}
+                        <text
+                          x={iconX}
+                          y={iconY + 18}
+                          textAnchor="middle"
+                          fontSize="9"
+                          fill={fillColor}
+                          stroke="white"
+                          strokeWidth="2"
+                          strokeLinejoin="round"
+                          dominantBaseline="middle"
+                          style={{ 
+                            pointerEvents: 'none', 
+                            userSelect: 'none',
+                            fontWeight: 'bold',
+                            zIndex: 11
+                          }}
+                        >
+                          {altitude}ft
+                        </text>
+                      </g>
+                    );
+                  })()}
+                  
                   {/* Current turn indicator */}
                   {getCombatantId(combatant) === currentTurn && (
                     <circle

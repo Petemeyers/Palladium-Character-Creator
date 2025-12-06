@@ -32,6 +32,7 @@ import {
   scavengeCorpse,
 } from "../scavengingSystem";
 import { findFoodItem, consumeItem } from "../consumptionSystem";
+import { runFlyingTurn } from "./flyingBehaviorSystem";
 
 /**
  * Hawk AI Helper Functions
@@ -626,6 +627,8 @@ export function runEnemyTurnAI(enemy, context) {
     setDefensiveStance,
     setTemporaryHexSharing,
     setCombatActive,
+    // Attack & combat
+    attack,
     // Refs
     positionsRef,
     processingEnemyTurnRef,
@@ -680,9 +683,63 @@ export function runEnemyTurnAI(enemy, context) {
     decayAwareness(enemy, target);
   });
 
-  // 🕊️ FLIGHT AI: If enemy can fly but is currently grounded, check if threatened by melee-only enemies
+  // 🦅 Flying Enemy Behavior Integration
   const enemyCanFly = canFly(enemy);
   const enemyIsFlying = isFlying(enemy);
+
+  // If the enemy is airborne, ALWAYS delegate to the flying behavior system.
+  // We never want flying creatures (like the hawk) to use ground flanking logic
+  // while in the air.
+  // Note: We check enemyIsFlying first (must be actually flying), then enemyCanFly (must have flight ability)
+  if (enemyIsFlying && enemyCanFly) {
+    addLog(
+      `🦅 ${enemy.name} is airborne at ${
+        enemy.altitudeFeet ?? enemy.altitude ?? 0
+      }ft - using flying behavior`,
+      "info"
+    );
+
+    runFlyingTurn(enemy, {
+      fighters,
+      positions,
+      setPositions,
+      enemyIndex: fighters.findIndex((f) => f.id === enemy.id),
+      movementMap: null, // Not used in runFlyingTurn currently
+      addLog,
+      updateFighter: (id, updates) => {
+        setFighters((prev) =>
+          prev.map((f) => (f.id === id ? { ...f, ...updates } : f))
+        );
+      },
+      applyDamage: null, // Not used in runFlyingTurn currently
+      endTurn,
+      scheduleEndTurn,
+      canFighterAct,
+      selectBestAttackForEnemy: null, // Not used in runFlyingTurn currently
+      isEnemyFlying: (id) => {
+        const fighter = fighters.find((f) => f.id === id);
+        return fighter ? isFlying(fighter) : false;
+      },
+      canFlyFn: canFly,
+      getBestRangedAttack: null, // Not used in runFlyingTurn currently
+      syncCombinedPositions: null, // Not used in runFlyingTurn currently
+      applyFallDamage: null, // Not used in runFlyingTurn currently
+      getEnemyAwarenessState: null, // Not used in runFlyingTurn currently
+      setEnemyAwarenessState: null, // Not used in runFlyingTurn currently
+      calculateDistanceFn: calculateDistance,
+      importMetaEnv: import.meta.env,
+    });
+
+    // ✅ Do NOT fall through to ground AI when flying
+    processingEnemyTurnRef.current = false;
+    // Use setTimeout to ensure turn actually ends (scheduleEndTurn may have delays)
+    setTimeout(() => {
+      endTurn();
+    }, 1500);
+    return;
+  }
+
+  // 🕊️ FLIGHT AI: If enemy can fly but is currently grounded, check if threatened by melee-only enemies
   if (enemyCanFly && !enemyIsFlying && allPlayers.length > 0) {
     // Check if any nearby players are melee-only threats
     const threateningMeleeEnemies = allPlayers.filter((player) => {
@@ -1743,7 +1800,9 @@ export function runEnemyTurnAI(enemy, context) {
         }
       }
     }
-  } else if (!reasoning) {
+  } // <-- closes the `if (!target) {` block
+
+  if (!reasoning) {
     reasoning = `following layered AI plan: ${
       actionPlan?.aiAction || "Strike"
     }`;
@@ -1783,7 +1842,9 @@ export function runEnemyTurnAI(enemy, context) {
         );
         selectedAttack = allAttacks[attackRoll.totalWithBonus - 1];
       } catch (error) {
-        if (process.env.NODE_ENV === "development") {
+        const isDev =
+          import.meta.env.DEV || import.meta.env.MODE === "development";
+        if (isDev) {
           console.warn(
             "[runEnemyTurnAI] Error rolling for attack selection:",
             error
@@ -1799,7 +1860,9 @@ export function runEnemyTurnAI(enemy, context) {
         );
         selectedAttack = availableAttacks[attackRoll.totalWithBonus - 1];
       } catch (error) {
-        if (process.env.NODE_ENV === "development") {
+        const isDev =
+          import.meta.env.DEV || import.meta.env.MODE === "development";
+        if (isDev) {
           console.warn(
             "[runEnemyTurnAI] Error rolling for available attack selection:",
             error
@@ -2574,7 +2637,8 @@ export function runEnemyTurnAI(enemy, context) {
       (distance * GRID_CONFIG.CELL_SIZE);
 
     // Log movement ratio for debugging (if significant movement)
-    if (process.env.NODE_ENV === "development" && moveRatio > 0.1) {
+    const isDev = import.meta.env.DEV || import.meta.env.MODE === "development";
+    if (isDev && moveRatio > 0.1) {
       console.debug(
         `[runEnemyTurnAI] Movement ratio: ${(moveRatio * 100).toFixed(
           1

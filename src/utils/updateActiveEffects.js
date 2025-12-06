@@ -7,13 +7,62 @@
  */
 
 /**
+ * Calculate fall damage based on height
+ * @param {number} heightFeet - Height fallen in feet
+ * @returns {number} Damage dice (e.g., 1d6 per 10ft)
+ */
+export function calculateFallDamage(heightFeet) {
+  if (heightFeet <= 0) return 0;
+  // Rough rule: 1d6 per 10ft, minimum 1d6
+  const dicePer10ft = Math.max(1, Math.floor(heightFeet / 10));
+  return dicePer10ft; // Returns number of d6 to roll
+}
+
+/**
+ * Apply fall damage to a character
+ * @param {Object} character - Character who fell
+ * @param {number} heightFeet - Height fallen in feet
+ * @param {Function} logCallback - Optional logging function
+ * @returns {Object} Updated character with damage applied
+ */
+export function applyFallDamage(character, heightFeet, logCallback = null) {
+  if (!character || heightFeet <= 0) return character;
+
+  const damageDice = calculateFallDamage(heightFeet);
+  // Simple fall damage: 1d6 per 10ft (can be enhanced with actual dice rolling)
+  const estimatedDamage = Math.floor(damageDice * 3.5); // Average of 1d6 = 3.5
+
+  const currentHP = character.currentHP ?? character.hp ?? character.HP ?? 0;
+  const newHP = Math.max(0, currentHP - estimatedDamage);
+
+  const updated = {
+    ...character,
+    currentHP: newHP,
+    hp: newHP,
+  };
+  if (character.HP !== undefined) {
+    updated.HP = newHP;
+  }
+
+  if (logCallback) {
+    logCallback(
+      `💥 ${character.name} takes ${estimatedDamage} damage from falling ${heightFeet}ft!`,
+      "combat"
+    );
+  }
+
+  return updated;
+}
+
+/**
  * Update active effects for a character
  * @param {Object} character - Character with active effects
- * @param {number} timePassed - Time passed in rounds or seconds
+ * @param {number} currentRound - Current melee round
+ * @param {Function} logCallback - Optional logging function
+ * @param {Function} applyFallDamageFn - Optional fall damage function
  * @returns {Object} Updated character with effects updated
  */
-export function updateActiveEffects(character, timePassed = 1) {
-  // TODO: Update all active effects, reduce durations, remove expired
+export function updateActiveEffects(character, currentRound = 1, logCallback = null, applyFallDamageFn = null) {
   if (!character) {
     return character;
   }
@@ -23,10 +72,59 @@ export function updateActiveEffects(character, timePassed = 1) {
     activeEffects: character.activeEffects || [],
   };
 
-  // TODO: Update each effect
-  // updatedCharacter.activeEffects = updatedCharacter.activeEffects
-  //   .map(effect => updateEffect(effect, timePassed))
-  //   .filter(effect => effect.duration > 0);
+  // Update each effect and filter expired ones
+  updatedCharacter.activeEffects = updatedCharacter.activeEffects
+    .map((effect) => {
+      // Decrement remaining rounds if applicable
+      if (effect.remainingRounds !== undefined) {
+        return {
+          ...effect,
+          remainingRounds: Math.max(0, effect.remainingRounds - 1),
+        };
+      }
+      // Check expiration by round number
+      if (effect.expiresOn !== undefined && effect.expiresOn <= currentRound) {
+        return { ...effect, expired: true };
+      }
+      return effect;
+    })
+    .filter((effect) => {
+      // Remove expired effects
+      if (effect.expired) {
+        // Handle FLIGHT effect expiration specially
+        if (effect.type === "FLIGHT") {
+          const wasFlying = updatedCharacter.isFlying;
+          const alt = updatedCharacter.altitudeFeet ?? 0;
+
+          updatedCharacter.isFlying = false;
+          updatedCharacter.altitudeFeet = 0;
+          updatedCharacter.aiFlightState = null;
+
+          if (wasFlying && alt > 0) {
+            if (logCallback) {
+              logCallback(
+                `💥 ${updatedCharacter.name}'s ${effect.name || "flight"} ends and they plummet ${alt}ft to the ground!`,
+                "warning"
+              );
+            }
+
+            // Apply fall damage if function provided
+            if (applyFallDamageFn) {
+              const fallDamageFn = applyFallDamageFn || applyFallDamage;
+              const afterFall = fallDamageFn(updatedCharacter, alt, logCallback);
+              Object.assign(updatedCharacter, afterFall);
+            }
+          }
+        }
+        return false; // Remove expired effect
+      }
+
+      // Keep active effects
+      if (effect.remainingRounds !== undefined) {
+        return effect.remainingRounds > 0;
+      }
+      return true;
+    });
 
   return updatedCharacter;
 }

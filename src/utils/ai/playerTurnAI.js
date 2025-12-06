@@ -796,7 +796,10 @@ export function runPlayerTurnAI(player, context) {
                       // Can't continue - end turn
                       addLog(`⏭️ ${player.name} cannot continue moving (attempts: ${currentTracker?.count || 0}/3, distance: ${Math.round(newDistance)}ft) - ending turn`, "info");
                       processingPlayerAIRef.current = false;
-                      scheduleEndTurn();
+                      // Use setTimeout to ensure turn actually ends
+                      setTimeout(() => {
+                        endTurn();
+                      }, 1500);
                     }
                   }, 500);
                 }

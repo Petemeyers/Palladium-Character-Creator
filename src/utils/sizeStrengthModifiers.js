@@ -304,6 +304,43 @@ export function getLeveragePenalty(attacker, defender) {
   return 0;
 }
 
+/**
+ * Check if a carrier can carry a target (for aerial pickup, mounts, etc.)
+ * @param {Object} carrier - Creature attempting to carry
+ * @param {Object} carried - Creature being carried
+ * @returns {boolean} True if carrier can carry the target
+ */
+export function canCarryTarget(carrier, carried) {
+  if (!carrier || !carried) return false;
+
+  const carrierSize = getSizeCategory(carrier);
+  const carriedSize = getSizeCategory(carried);
+
+  // Quick size gating
+  const sizeOrder = [
+    SIZE_CATEGORIES.TINY,
+    SIZE_CATEGORIES.SMALL,
+    SIZE_CATEGORIES.MEDIUM,
+    SIZE_CATEGORIES.LARGE,
+    SIZE_CATEGORIES.HUGE,
+    SIZE_CATEGORIES.GIANT,
+  ];
+
+  const carrierIdx = sizeOrder.indexOf(carrierSize);
+  const carriedIdx = sizeOrder.indexOf(carriedSize);
+
+  if (carrierIdx === -1 || carriedIdx === -1) return false;
+
+  // Basic rule: carrier must be at least 1 step bigger
+  if (carrierIdx <= carriedIdx) return false;
+
+  // Strength check – can't be absurdly weak
+  const carrierPS = getPhysicalStrength(carrier);
+  if (carrierPS < 8) return false;
+
+  return true;
+}
+
 export default {
   SIZE_CATEGORIES,
   SIZE_DEFINITIONS,
@@ -313,4 +350,5 @@ export default {
   applySizeModifiers,
   canLiftAndThrow,
   getLeveragePenalty,
+  canCarryTarget,
 };

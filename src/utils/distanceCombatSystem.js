@@ -404,7 +404,8 @@ export function validateAttackRange(
   const targetIsFlying = isFlying(target);
   const attackerCanFly = canFly(attacker);
   const attackerIsFlying = isFlying(attacker);
-  const targetAltitude = getAltitude(target);
+  const targetAltitude = getAltitude(target) || 0;
+  const attackerAltitude = getAltitude(attacker) || 0;
   
   // Check if this is a melee attack (weapon range <= 10 feet typically)
   const isMeleeAttack = weaponRange <= 10;
@@ -417,25 +418,38 @@ export function validateAttackRange(
                           weaponName.includes('thrown') || 
                           (weapon?.range && weapon.range > 10);
   
-  // For melee attacks against flying targets:
-  // - Attacker must be flying OR
-  // - Have ranged weapon OR
-  // - Weapon reach must be >= target altitude (for low-flying targets)
+  // For melee attacks, check vertical reach in both directions:
+  // - Ground attacker vs flying target (existing check)
+  // - Flying attacker vs ground target (NEW: must dive to melee altitude)
   let isUnreachable = false;
-  if (targetIsFlying && isMeleeAttack && !hasRangedWeapon) {
-    if (attackerIsFlying || attackerCanFly) {
-      // Attacker can fly, so they can reach
-      isUnreachable = false;
-    } else {
-      // Ground attacker with melee weapon - check if weapon reach can reach altitude
-      const weaponReach = getWeaponLength(weapon) || weaponRange;
-      // Only allow if weapon has significant reach (polearm/lance) and target is low-flying
-      if (weaponReach >= targetAltitude && targetAltitude <= 15 && weaponReach >= 10) {
-        // Long reach weapon can hit low-flying target
-        isUnreachable = false;
-      } else {
-        // Cannot reach flying target
-        isUnreachable = true;
+  if (isMeleeAttack && !hasRangedWeapon) {
+    const verticalSeparation = Math.abs(attackerAltitude - targetAltitude);
+    const weaponReach = getWeaponLength(weapon, attacker) || weaponRange;
+    // Rough estimate: weapon reach + body reach (3ft for arm/neck extension)
+    const maxMeleeVertical = weaponReach + 3;
+    
+    // Check if vertical separation exceeds melee reach
+    if (verticalSeparation > maxMeleeVertical) {
+      // Determine which direction the problem is
+      if (targetIsFlying && !attackerIsFlying) {
+        // Ground attacker trying to hit high-flying target
+        if (targetAltitude > 15) {
+          isUnreachable = true;
+        } else if (weaponReach < targetAltitude || weaponReach < 10) {
+          // Short weapon can't reach even low-flying target
+          isUnreachable = true;
+        }
+      } else if (attackerIsFlying && !targetIsFlying) {
+        // Flying attacker trying to hit ground target from high altitude
+        // Attacker must dive to melee altitude (0-5ft) to attack
+        if (attackerAltitude > maxMeleeVertical) {
+          isUnreachable = true;
+        }
+      } else if (attackerIsFlying && targetIsFlying) {
+        // Both flying - check if they're at similar altitudes
+        if (verticalSeparation > maxMeleeVertical) {
+          isUnreachable = true;
+        }
       }
     }
   }
@@ -444,10 +458,19 @@ export function validateAttackRange(
   
   let reason;
   if (isUnreachable) {
-    if (targetAltitude > 15) {
-      reason = `${target.name || 'Target'} is flying too high (${targetAltitude}ft) to be reached by melee attacks from ground`;
+    const verticalSeparation = Math.abs(attackerAltitude - targetAltitude);
+    if (targetIsFlying && !attackerIsFlying) {
+      if (targetAltitude > 15) {
+        reason = `${target.name || 'Target'} is flying too high (${targetAltitude}ft) to be reached by melee attacks from ground`;
+      } else {
+        reason = `${target.name || 'Target'} is flying and cannot be reached by melee attacks from ground`;
+      }
+    } else if (attackerIsFlying && !targetIsFlying) {
+      reason = `${attacker.name || 'Attacker'} is flying too high (${attackerAltitude}ft) to reach ${target.name || 'target'} on the ground with melee attacks`;
+    } else if (attackerIsFlying && targetIsFlying) {
+      reason = `${attacker.name || 'Attacker'} and ${target.name || 'target'} are at different altitudes (${verticalSeparation}ft apart) and cannot reach each other with melee attacks`;
     } else {
-      reason = `${target.name || 'Target'} is flying and cannot be reached by melee attacks from ground`;
+      reason = `Target is too high/low for melee attacks`;
     }
     canAttack = false;
   } else if (distance <= weaponRange) {

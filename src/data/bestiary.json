@@ -949,6 +949,7 @@
             "unaligned"
           ],
           "size": "8-10 inches tall",
+          "sizeCategory": "SMALL",
           "AR": 2,
           "HP": "1d8",
           "attacks": [
@@ -979,7 +980,7 @@
           "spd": 15,
           "lifeSpan": "8 years",
           "description": "Bird of prey found globally. Value 50 gp.",
-          "HF": 4
+          "HF": 0
         },
         {
           "id": "owl",
@@ -5188,6 +5189,7 @@
             "unaligned"
           ],
           "size": "2-4 inches long, less than 1 pound",
+          "sizeCategory": "TINY",
           "AR": 2,
           "HP": "1d4",
           "attacks": [

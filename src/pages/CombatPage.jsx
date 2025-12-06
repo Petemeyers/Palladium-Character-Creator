@@ -96,6 +96,15 @@ import {
 import { getCombatModifiers, canUseWeapon, getWeaponType, getWeaponLength } from "../utils/combatEnvironmentLogic.js";
 import { getDynamicWidth, getActorsInProximity, getDynamicHeight } from "../utils/environmentMetrics.js";
 import { canFly, isFlying, getAltitude, parseAbilities } from "../utils/abilitySystem.js";
+import {
+  canFighterFly,
+  startFlying,
+  landFighter,
+  changeAltitude,
+  performDiveAttack,
+  liftAndCarry,
+  dropCarriedTarget,
+} from "../utils/flightActions.js";
 
 // Debug toggle for grapple system
 const DEBUG_GRAPPLE = true; // set to false in production
@@ -139,6 +148,7 @@ import FloatingPanel from "../components/FloatingPanel.jsx";
 import { findBeePath } from "../ai";
 import GameSettingsPanel from "../components/GameSettingsPanel";
 import { useGameSettings } from "../context/GameSettingsContext";
+import { syncCombinedPositions } from "../utils/combinedBodySystem.js";
 import { applyPainStagger } from "../utils/painSystem";
 import { resolveMoraleCheck } from "../utils/moraleSystem";
 import { resolveHorrorCheck } from "../utils/horrorSystem";
@@ -159,6 +169,7 @@ import {
 import { createAIActionSelector } from "../utils/combatEngine.js";
 import { runPlayerTurnAI } from "../utils/ai/playerTurnAI";
 import { runEnemyTurnAI } from "../utils/ai/enemyTurnAI";
+import { runFlyingTurn, isFlyingCreature, moveFlyingCreature as moveFlyingCreatureHelper, performDiveAttack as performDiveAttackHelper } from "../utils/ai/flyingBehaviorSystem";
 import {
   initializeGrappleState,
   attemptGrapple,
@@ -735,7 +746,7 @@ export default function CombatPage({ characters = [] }) {
       return `${timestamp}-${combinedRandom}-${Math.floor(microtime * 1000)}-${idCounterRef.current}`;
     } catch (error) {
       // Log error for debugging
-      if (process.env.NODE_ENV === 'development') {
+      if (import.meta.env?.DEV || import.meta.env?.MODE === 'development') {
         console.warn('[generateCryptoId] Error generating crypto ID, using fallback:', error);
       }
       // Fallback to timestamp-based ID with microsecond precision
@@ -832,6 +843,11 @@ export default function CombatPage({ characters = [] }) {
   // Low-HP "I give up" morale check
   const maybeTriggerLowHpMorale = useCallback((fighter, allFighters, currentRound, addLog, settings) => {
     if (!settings?.useMoraleRouting || !fighter) return fighter;
+
+    // NEW: dying/unconscious characters do not make morale checks
+    if (!canFighterAct(fighter) || (fighter.currentHP ?? 0) <= 0) {
+      return fighter;
+    }
 
     const maxHP =
       fighter.maxHP ||
@@ -938,6 +954,7 @@ export default function CombatPage({ characters = [] }) {
   const lastProcessedTurnRef = useRef(null); // Track the last processed turn to prevent duplicates
   const topCombatLogRef = useRef(null); // Ref for top combat log scroll container
   const detailedCombatLogRef = useRef(null); // Ref for detailed combat log tab scroll container
+  const aiUnreachableTargetsRef = useRef({}); // Track unreachable targets per attacker: { [attackerId]: Set<defenderId> }
   const justCreatedPendingMovementRef = useRef(new Set()); // Track movements created this turn (don't apply until NEXT turn)
   const handleEnemyTurnRef = useRef(null); // Store latest version of handleEnemyTurn to avoid dependency loops
   const attackRef = useRef(null); // Store attack function to avoid initialization order issues
@@ -1395,6 +1412,8 @@ export default function CombatPage({ characters = [] }) {
   const actionOptions = useMemo(() => {
     const hasPsionicOptions = availablePsionicPowers.length > 0;
     const hasSpellOptions = availableSpells.length > 0;
+    const fighterCanFly = currentFighter && canFighterFly(currentFighter);
+    const fighterIsFlying = currentFighter && isFlying(currentFighter);
 
     const baseOptions = [
       { value: "Strike", label: "⚔️ Strike" },
@@ -1408,6 +1427,25 @@ export default function CombatPage({ characters = [] }) {
       { value: "Hide", label: "👤 Hide / Prowl" },
     ];
 
+    // Add flight actions if fighter can fly
+    if (fighterCanFly) {
+      if (!fighterIsFlying) {
+        baseOptions.push({ value: "Fly", label: "🪽 Fly (Take Off)" });
+      } else {
+        baseOptions.push({ value: "Land", label: "🛬 Land" });
+        baseOptions.push({ value: "Change Altitude", label: "⬆️⬇️ Change Altitude" });
+        baseOptions.push({ value: "Dive Attack", label: "🦅 Dive Attack" });
+        
+        // Add carry/drop if grappling or carrying
+        if (currentFighter.grappleState?.state === "grapple_ground" && currentFighter.grappleState?.opponent) {
+          baseOptions.push({ value: "Lift & Carry", label: "✈️ Lift & Carry" });
+        }
+        if (currentFighter.isCarrying && currentFighter.carriedTargetId) {
+          baseOptions.push({ value: "Drop Target", label: "💥 Drop Target" });
+        }
+      }
+    }
+
     if (hasPsionicOptions) {
       baseOptions.push({ value: "Psionics", label: "🧠 Psionics" });
     }
@@ -1416,7 +1454,7 @@ export default function CombatPage({ characters = [] }) {
     }
 
     return baseOptions;
-  }, [availablePsionicPowers, availableSpells]);
+  }, [availablePsionicPowers, availableSpells, currentFighter]);
 
 useEffect(() => {
   if (
@@ -2016,7 +2054,43 @@ useEffect(() => {
           addLog(`❌ ${combatant.name} cannot close into melee - weapon range too long!`, "error");
           return;
         }
-      } else {
+        } else {
+        // Check if new position is off-board (fled/routed)
+        const isOffBoard = 
+          x < 0 || 
+          y < 0 || 
+          x >= GRID_CONFIG.GRID_WIDTH || 
+          y >= GRID_CONFIG.GRID_HEIGHT;
+
+        if (isOffBoard && combatant) {
+          // Character has moved off-board - remove from combat
+          const isBird = (combatant.species || combatant.name || "").toLowerCase().includes("hawk") ||
+                        (combatant.species || combatant.name || "").toLowerCase().includes("bird") ||
+                        (combatant.species || combatant.name || "").toLowerCase().includes("owl") ||
+                        (combatant.species || combatant.name || "").toLowerCase().includes("eagle");
+          
+          if (isBird) {
+            addLog(`🦅 ${combatant.name} flies away from the battle.`, "info");
+          } else {
+            addLog(`🏃 ${combatant.name} has fled the battlefield!`, "warning");
+          }
+
+          // Remove from fighters array
+          setFighters((prev) => prev.filter((f) => f.id !== selectedMovementFighter));
+          
+          // Remove from positions
+          setPositions((prev) => {
+            const updated = { ...prev };
+            delete updated[selectedMovementFighter];
+            positionsRef.current = updated;
+            return updated;
+          });
+
+          // End turn
+          setTimeout(() => endTurn(), 1500);
+          return;
+        }
+
         // Normal movement
         setPositions(prev => {
           const updated = {
@@ -2081,7 +2155,9 @@ useEffect(() => {
     const targetIsFlying = isFlying(defender);
     const attackerCanFly = canFly(attacker);
     const attackerIsFlying = isFlying(attacker);
-    const targetAltitude = getAltitude(defender);
+    const targetAltitude = getAltitude(defender) || 0;
+    const attackerAltitude = getAltitude(attacker) || 0;
+    const verticalSeparation = Math.abs(attackerAltitude - targetAltitude);
     
     // Try to find weapon in weapons database using getWeaponByName
     const weapon = getWeaponByName(weaponName) || weapons.find(w => w.name.toLowerCase() === weaponName.toLowerCase());
@@ -2124,22 +2200,30 @@ useEffect(() => {
         // Check if this is a melee attack
         const isMeleeAttack = true;
         
-        // For melee attacks against flying targets:
-        // - Attacker must be flying OR
-        // - Weapon reach must be >= target altitude (for low-flying targets with long reach weapons)
+        // SYMMETRIC ALTITUDE CHECK: For melee attacks, check vertical separation for both sides
+        // - Ground attacker vs flying target: must have reach >= altitude
+        // - Flying attacker vs ground target: must dive to melee altitude
+        // - Both flying: must be at similar altitudes
         let isUnreachable = false;
-        if (targetIsFlying && isMeleeAttack) {
-          if (attackerIsFlying || attackerCanFly) {
-            // Attacker can fly, so they can reach
-            isUnreachable = false;
-          } else {
-            // Ground attacker with melee weapon - check if weapon reach can reach altitude
-            // Only allow if weapon has significant reach (polearm/lance) and target is low-flying
-            if (effectiveRange >= targetAltitude && targetAltitude <= 15 && effectiveRange >= 10) {
-              // Long reach weapon can hit low-flying target
+        
+        if (isMeleeAttack) {
+          // 3D reach check: if vertical gap is bigger than reach, melee can't connect
+          if (verticalSeparation > effectiveRange) {
+            isUnreachable = true;
+          }
+          
+          // Extra rule / nicer messaging for ground attackers vs flying targets
+          if (targetIsFlying && !attackerIsFlying) {
+            // Allow only long-reach weapons to hit low-flying targets
+            if (
+              effectiveRange >= targetAltitude &&
+              targetAltitude <= 15 &&
+              effectiveRange >= 10 &&
+              verticalSeparation <= effectiveRange
+            ) {
+              // Long reach weapon vs low-flying target is ok
               isUnreachable = false;
             } else {
-              // Cannot reach flying target
               isUnreachable = true;
             }
           }
@@ -2149,10 +2233,16 @@ useEffect(() => {
         
         let reason;
         if (isUnreachable) {
-          if (targetAltitude > 15) {
-            reason = `${defender.name || 'Target'} is flying too high (${targetAltitude}ft) to be reached by melee attacks from ground`;
+          if (targetIsFlying && !attackerIsFlying) {
+            if (targetAltitude > 15) {
+              reason = `${defender.name || "Target"} is flying too high (${targetAltitude}ft) to be reached by melee attacks from ground`;
+            } else {
+              reason = `${defender.name || "Target"} is flying and cannot be reached by melee attacks from ground`;
+            }
+          } else if (verticalSeparation > effectiveRange) {
+            reason = `${defender.name || "Target"} is too far above/below (${verticalSeparation.toFixed(1)}ft vertical) for melee reach (${effectiveRange.toFixed(1)}ft)`;
           } else {
-            reason = `${defender.name || 'Target'} is flying and cannot be reached by melee attacks from ground`;
+            reason = `${defender.name || "Target"} cannot be reached by melee attacks from current position`;
           }
         } else if (canAttack) {
           reason = `Within melee range (${weaponType} weapon, adjacent hex)`;
@@ -2558,7 +2648,7 @@ useEffect(() => {
         if (attackerWeapon) {
           const calledShotCheck = canUseCalledShot(attackerWeapon, attackDistance);
           // Store called shot info for potential use (not implemented in UI yet)
-          if (calledShotCheck.canUse && process.env.NODE_ENV === 'development') {
+          if (calledShotCheck.canUse && (import.meta.env?.DEV || import.meta.env?.MODE === 'development')) {
             // Only log in development to avoid spam
             // addLog(`🎯 Called shot available: ${calledShotCheck.reason}`, "info");
           }
@@ -3590,6 +3680,24 @@ useEffect(() => {
     });
   }, [addLog, attack, fighters, setFighters, setPositions, positionsRef]);
 
+  // Handle altitude changes for flying fighters
+  const handleChangeAltitude = useCallback((fighter, deltaFeet) => {
+    if (!fighter || !isFlying(fighter)) {
+      addLog(`❌ ${fighter?.name || 'Fighter'} must be flying to change altitude`, "error");
+      return;
+    }
+
+    const result = changeAltitude(fighter, deltaFeet, { maxAltitude: 100 });
+    if (result.success) {
+      setFighters(prev => prev.map(f => 
+        f.id === fighter.id ? result.fighter : f
+      ));
+      addLog(result.message, "info");
+    } else {
+      addLog(`❌ ${result.reason}`, "error");
+    }
+  }, [addLog, setFighters]);
+
   // Handle position changes on the tactical map
   const handlePositionChange = useCallback((combatantId, newPosition, movementInfo = null) => {
     const combatant = fighters.find(f => f.id === combatantId);
@@ -3618,7 +3726,10 @@ useEffect(() => {
         [combatantId]: newPosition
         };
         positionsRef.current = updated;
-        return updated;
+        // Sync combined body positions (mounts, carriers, etc.)
+        const synced = syncCombinedPositions(fighters, updated);
+        positionsRef.current = synced;
+        return synced;
       });
       
       // Add to flashing set (CHARGE uses up the turn)
@@ -3642,15 +3753,54 @@ useEffect(() => {
         // The bonuses will apply automatically
       }
     } else {
+      // Check if new position is off-board (fled/routed)
+      const isOffBoard = 
+        newPosition.x < 0 || 
+        newPosition.y < 0 || 
+        newPosition.x >= GRID_CONFIG.GRID_WIDTH || 
+        newPosition.y >= GRID_CONFIG.GRID_HEIGHT;
+
+      if (isOffBoard && combatant) {
+        // Character has moved off-board - remove from combat
+        const isBird = (combatant.species || combatant.name || "").toLowerCase().includes("hawk") ||
+                      (combatant.species || combatant.name || "").toLowerCase().includes("bird") ||
+                      (combatant.species || combatant.name || "").toLowerCase().includes("owl") ||
+                      (combatant.species || combatant.name || "").toLowerCase().includes("eagle");
+        
+        if (isBird) {
+          addLog(`🦅 ${combatant.name} flies away from the battle.`, "info");
+        } else {
+          addLog(`🏃 ${combatant.name} has fled the battlefield!`, "warning");
+        }
+
+        // Remove from fighters array
+        setFighters((prev) => prev.filter((f) => f.id !== combatantId));
+        
+        // Remove from positions
+        setPositions((prev) => {
+          const updated = { ...prev };
+          delete updated[combatantId];
+          positionsRef.current = updated;
+          return updated;
+        });
+
+        // End turn
+        setTimeout(() => endTurn(), 1500);
+        return;
+      }
+
       // Normal movement (MOVE) - update position immediately (use transition for performance)
       startTransition(() => {
         setPositions(prev => {
           const updated = {
-          ...prev,
-          [combatantId]: newPosition
+            ...prev,
+            [combatantId]: newPosition
           };
           positionsRef.current = updated;
-          return updated;
+          // Sync combined body positions (mounts, carriers, etc.)
+          const synced = syncCombinedPositions(fighters, updated);
+          positionsRef.current = synced;
+          return synced;
         });
       });
       
@@ -3877,7 +4027,7 @@ useEffect(() => {
   // Helper function to get equipped weapons for a character
   const getEquippedWeapons = useCallback((character) => {
     // Disabled expensive logging in production - only enable for debugging
-    const isDev = process.env.NODE_ENV === 'development';
+    const isDev = import.meta.env?.DEV || import.meta.env?.MODE === 'development';
     // eslint-disable-next-line no-constant-condition
     if (isDev && false) { // Set to true only when debugging
       console.log('🔍 getEquippedWeapons called for:', character.name);
@@ -4137,6 +4287,166 @@ useEffect(() => {
       return;
     }
     
+    // 🦅 FLYING AI: Let flying creatures use the generic flight AI first
+    // This handles stamina, landing, scavenging, prey hunting, and circling for ANY flyer
+    if (isFlyingCreature(enemy, canFly) && (enemy.isFlying || enemy.altitudeFeet > 0)) {
+      const flyingHandled = runFlyingTurn(enemy, {
+        fighters: fighters,
+        positions: positions,
+        addLog: addLog,
+        canFlyFn: canFly,
+        moveFlyingCreature: (creature, hex, opts) => {
+          return moveFlyingCreatureHelper(creature, hex, {
+            gameState: {
+              fighters: fighters,
+              positions: positions,
+            },
+            positions: positions,
+            log: addLog,
+            moveCreatureOnMap: (creature, targetHex, movementOpts) => {
+              // Use handlePositionChange for proper movement
+              handlePositionChange(creature.id, targetHex, {
+                ...movementOpts,
+                mode: "FLY",
+              });
+            },
+          }, opts);
+        },
+        getReachableEnemies: (flier, allFighters, allPositions) => {
+          return allFighters.filter(f => 
+            f.type !== flier.type && 
+            canFighterAct(f) && 
+            f.currentHP > 0 && 
+            !isTargetBlocked(flier.id, f.id, allPositions)
+          );
+        },
+        pickClosestEnemy: (flier, enemies, allPositions) => {
+          const flierPos = allPositions[flier.id];
+          if (!flierPos) return null;
+          return enemies.sort((a, b) => 
+            calculateDistance(flierPos, allPositions[a.id]) - 
+            calculateDistance(flierPos, allPositions[b.id])
+          )[0];
+        },
+        performDiveAttack: (flier, target) => {
+          return performDiveAttackHelper(flier, target, {
+            gameState: {
+              fighters: fighters,
+              positions: positions,
+            },
+            positions: positions,
+            log: addLog,
+            moveCreatureOnMap: (creature, targetHex, movementOpts) => {
+              // Use handlePositionChange for proper movement
+              handlePositionChange(creature.id, targetHex, {
+                ...movementOpts,
+                mode: "FLY",
+              });
+            },
+            performMeleeAttack: (attacker, defender, options) => {
+              // Find appropriate attack
+              const diveAttack = attacker.attacks?.find(a => 
+                a.name?.toLowerCase().includes("talons") || 
+                a.name?.toLowerCase().includes("bite") || 
+                a.name?.toLowerCase().includes("claw")
+              ) || attacker.attacks?.[0];
+              
+              if (diveAttack) {
+                const updatedAttacker = { 
+                  ...attacker, 
+                  selectedAttack: diveAttack,
+                  isFlying: true,
+                };
+                
+                // Execute attack with dive bonus from options
+                const diveBonus = options?.attackBonus || 0;
+                attack(updatedAttacker, defender.id, { 
+                  strikeBonus: diveBonus, // Use strikeBonus to match existing attack system
+                  diveBonus: diveBonus, // Also include for logging
+                  source: options?.source || "DIVE_ATTACK",
+                });
+                
+                // Deduct action
+                setFighters((prev) =>
+                  prev.map((f) =>
+                    f.id === attacker.id
+                      ? { ...f, remainingAttacks: Math.max(0, f.remainingAttacks - 1) }
+                      : f
+                  )
+                );
+                
+                processingEnemyTurnRef.current = false;
+                scheduleEndTurn();
+              }
+            },
+            setFighters: setFighters,
+          });
+        },
+        getFlightFocusPoint: (flier) => {
+          // Focus on the closest enemy or own position
+          const reachable = fighters.filter(f => 
+            f.type !== flier.type && 
+            canFighterAct(f) && 
+            f.currentHP > 0 && 
+            !isTargetBlocked(flier.id, f.id, positions)
+          );
+          const closest = reachable.sort((a, b) => 
+            calculateDistance(positions[flier.id], positions[a.id]) - 
+            calculateDistance(positions[flier.id], positions[b.id])
+          )[0];
+          return closest ? positions[closest.id] : positions[flier.id];
+        },
+        findSafeLandingHex: (flier) => {
+          const myPos = positions[flier.id];
+          if (!myPos) return null;
+          // Find a hex away from enemies
+          const nearbyEnemies = fighters.filter(f => 
+            f.type !== flier.type && 
+            canFighterAct(f) && 
+            f.currentHP > 0 && 
+            calculateDistance(myPos, positions[f.id]) < 50
+          );
+          if (nearbyEnemies.length > 0) {
+            const nearestThreat = nearbyEnemies.sort((a, b) => 
+              calculateDistance(myPos, positions[a.id]) - 
+              calculateDistance(myPos, positions[b.id])
+            )[0];
+            const threatPos = positions[nearestThreat.id];
+            const dx = myPos.x - threatPos.x;
+            const dy = myPos.y - threatPos.y;
+            const angle = Math.atan2(dy, dx);
+            const retreatDistance = 20; // Move 20ft away
+            const newPos = {
+              x: myPos.x + Math.cos(angle) * (retreatDistance / 5),
+              y: myPos.y + Math.sin(angle) * (retreatDistance / 5),
+            };
+            return newPos;
+          }
+          return myPos; // Land in current position if no threats
+        },
+        updateFighter: (updatedFighter) => {
+          setFighters((prev) => prev.map((f) => (f.id === updatedFighter.id ? updatedFighter : f)));
+        },
+        updatePositions: (updatedPositions) => {
+          setPositions(updatedPositions);
+          positionsRef.current = updatedPositions;
+        },
+        setPositions: setPositions,
+        setFighters: setFighters,
+        calculateDistanceFn: calculateDistance,
+      });
+      
+      if (flyingHandled) {
+        // Flying AI handled the turn, don't run normal ground AI
+        processingEnemyTurnRef.current = false;
+        // Use setTimeout to ensure turn actually ends
+        setTimeout(() => {
+          endTurn();
+        }, 1500);
+        return;
+      }
+    }
+    
     // 1) First, refresh the enemy from state (in case their HP / morale changed)
     const fightersSnapshot = fighters;
     let liveEnemy = fightersSnapshot.find(f => f.id === enemy.id) || enemy;
@@ -4284,43 +4594,51 @@ useEffect(() => {
             });
             
             if (playerCanSeeEnemy) {
-              const horrorResult = resolveHorrorCheck(target, enemy);
+              // Check if horror was already triggered for this enemy
+              const mentalState = target.mentalState || {};
+              const horrorId = enemy.id || enemy.name;
+              const horrorSeen = mentalState.horrorSeen || new Set();
               
-              if (horrorResult.triggered) {
-                const updatedViewer = horrorResult.updatedViewer;
+              // Only trigger horror check if not already seen
+              if (!horrorSeen.has(horrorId)) {
+                const horrorResult = resolveHorrorCheck(target, enemy);
                 
-                // Update viewer in fighters list
-                setFighters((prev) =>
-                  prev.map((f) => (f.id === target.id ? updatedViewer : f))
-                );
-                
-                if (!horrorResult.success) {
-                  // Apply immediate fear penalties: lose 1 action, small strike penalty
+                if (horrorResult.triggered) {
+                  const updatedViewer = horrorResult.updatedViewer;
+                  
+                  // Update viewer in fighters list
                   setFighters((prev) =>
-                    prev.map((f) => {
-                      if (f.id !== target.id) return f;
-                      
-                      const before = f.remainingAttacks ?? getAttacksPerMelee(f);
-                      const after = Math.max(0, before - 1);
-                      
-                      return {
-                        ...f,
-                        remainingAttacks: after,
-                        tempMentalPenalties: {
-                          ...(f.tempMentalPenalties || {}),
-                          strike: -2,
-                          parry: -1,
-                          dodge: -1,
-                          roundsRemaining: 1,
-                        },
-                      };
-                    })
+                    prev.map((f) => (f.id === target.id ? updatedViewer : f))
                   );
                   
-                  addLog(
-                    `😱 ${target.name} recoils in horror at the sight of ${enemy.name} and loses 1 action!`,
-                    "warning"
-                  );
+                  if (!horrorResult.success) {
+                    // Apply immediate fear penalties: lose 1 action, small strike penalty
+                    setFighters((prev) =>
+                      prev.map((f) => {
+                        if (f.id !== target.id) return f;
+                        
+                        const before = f.remainingAttacks ?? getAttacksPerMelee(f);
+                        const after = Math.max(0, before - 1);
+                        
+                        return {
+                          ...f,
+                          remainingAttacks: after,
+                          tempMentalPenalties: {
+                            ...(f.tempMentalPenalties || {}),
+                            strike: -2,
+                            parry: -1,
+                            dodge: -1,
+                            roundsRemaining: 1,
+                          },
+                        };
+                      })
+                    );
+                    
+                    addLog(
+                      `😱 ${target.name} recoils in horror at the sight of ${enemy.name} and loses 1 action!`,
+                      "warning"
+                    );
+                  }
                 }
               }
             }
@@ -4765,8 +5083,12 @@ useEffect(() => {
         ? calculateDistance(positions[enemy.id], positions[t.id])
         : Infinity;
       
-      // Check if target is blocked by another combatant
-      const isBlocked = isTargetBlocked(enemy.id, t.id, positions);
+      const isBlockedLoS = isTargetBlocked(enemy.id, t.id, positions);
+      
+      const unreachableForEnemy = aiUnreachableTargetsRef.current?.[enemy.id];
+      const isUnreachableMelee = unreachableForEnemy?.has(t.id) || false;
+      
+      const isBlocked = isBlockedLoS || isUnreachableMelee;
       
       return {
         target: t,
@@ -4849,7 +5171,7 @@ useEffect(() => {
           const attackRoll = CryptoSecureDice.parseAndRoll(`1d${allAttacks.length}`);
           selectedAttack = allAttacks[attackRoll.totalWithBonus - 1];
         } catch (error) {
-          if (process.env.NODE_ENV === 'development') {
+          if (import.meta.env?.DEV || import.meta.env?.MODE === 'development') {
             console.warn('[handleEnemyTurn] Error rolling for attack selection:', error);
           }
           selectedAttack = allAttacks[0];
@@ -4860,7 +5182,7 @@ useEffect(() => {
           const attackRoll = CryptoSecureDice.parseAndRoll(`1d${availableAttacks.length}`);
           selectedAttack = availableAttacks[attackRoll.totalWithBonus - 1];
         } catch (error) {
-          if (process.env.NODE_ENV === 'development') {
+          if (import.meta.env?.DEV || import.meta.env?.MODE === 'development') {
             console.warn('[handleEnemyTurn] Error rolling for available attack selection:', error);
           }
           selectedAttack = availableAttacks[0];
@@ -4999,7 +5321,23 @@ useEffect(() => {
               processingEnemyTurnRef.current = false;
               scheduleEndTurn();
             } else {
-              addLog(`❌ ${enemy.name} cannot reach ${target.name} from flanking position`, "error");
+              if (rangeValidation.isUnreachable) {
+                addLog(
+                  `❌ ${enemy.name} realizes ${target.name} is unreachable (${rangeValidation.reason}).`,
+                  "warning"
+                );
+                
+                // Remember this for this combat
+                if (!aiUnreachableTargetsRef.current[enemy.id]) {
+                  aiUnreachableTargetsRef.current[enemy.id] = new Set();
+                }
+                aiUnreachableTargetsRef.current[enemy.id].add(target.id);
+              } else {
+                addLog(
+                  `❌ ${enemy.name} cannot reach ${target.name} from flanking position (${rangeValidation.reason})`,
+                  "error"
+                );
+              }
               processingEnemyTurnRef.current = false;
               scheduleEndTurn();
             }
@@ -5025,7 +5363,7 @@ useEffect(() => {
           addLog(`⚡ ${enemy.name} decides to charge! (${aiDecision.reason})`, "info");
           break;
           
-        case 'move_and_attack':
+        case 'move_and_attack': {
           movementType = 'MOVE';
           movementDescription = 'moves closer';
           // Use Palladium movement calculation: Speed × 18 ÷ attacks per melee = feet per action
@@ -5034,6 +5372,7 @@ useEffect(() => {
           hexesToMove = Math.floor(moveAndAttackWalkingSpeed / GRID_CONFIG.CELL_SIZE);
           addLog(`🏃 ${enemy.name} moves closer to attack (${aiDecision.reason})`, "info");
           break;
+        }
           
         case 'move_closer': {
           movementType = 'RUN';
@@ -5149,7 +5488,7 @@ useEffect(() => {
       const moveRatio = (actualHexesToMove * GRID_CONFIG.CELL_SIZE) / (distance * GRID_CONFIG.CELL_SIZE);
       
       // Log movement ratio for debugging (if significant movement)
-      if (process.env.NODE_ENV === 'development' && moveRatio > 0.1) {
+      if ((import.meta.env?.DEV || import.meta.env?.MODE === 'development') && moveRatio > 0.1) {
         console.debug(`[handleEnemyTurn] Movement ratio: ${(moveRatio * 100).toFixed(1)}% of distance`);
       }
       
@@ -5831,6 +6170,13 @@ useEffect(() => {
             // Start flying at 20ft altitude
             newFighter.altitude = 20;
             newFighter.altitudeFeet = 20;
+            newFighter.isFlying = true; // Mark as actively flying
+            // Initialize flight state to cruising mode
+            newFighter.aiFlightState = {
+              mode: "cruising",
+              previousAltitude: null,
+              cruiseAltitudeFeet: 20,
+            };
             addLog(`🦅 ${newFighter.name} starts flying at 20ft altitude`, "info");
           } else {
             // Other flying creatures start grounded
@@ -5914,7 +6260,7 @@ useEffect(() => {
     // ✅ Check if combatTerrain already exists (set from onComplete) - if so, use it instead of overwriting
     if (!skipPhase0 && combatTerrain && combatTerrain.mapType) {
       // ✅ combatTerrain was already set from onComplete, use it (preserves mapType)
-      if (process.env.NODE_ENV === 'development') {
+      if (import.meta.env?.DEV || import.meta.env?.MODE === 'development') {
         console.log('[CombatPage] startCombat - Using existing combatTerrain with mapType:', combatTerrain.mapType);
       }
       // Don't overwrite - combatTerrain is already set correctly
@@ -5965,7 +6311,7 @@ useEffect(() => {
       const env = phase0Results.environment;
       
       // ✅ Debug: Log what we're storing
-      if (process.env.NODE_ENV === 'development') {
+      if (import.meta.env?.DEV || import.meta.env?.MODE === 'development') {
         console.log('[CombatPage] startCombat - Setting combatTerrain from phase0Results with mapType:', env.mapType, 'Full env:', env);
       }
       
@@ -6829,7 +7175,6 @@ useEffect(() => {
           clearTimeout(lockTimeout);
           return;
         }
-        return;
       }
       
       case "Psionics": {
@@ -6925,7 +7270,7 @@ useEffect(() => {
         break;
       }
       
-      case "Use Skill":
+      case "Use Skill": {
         // Check if skill is selected
         if (!selectedSkill) {
           addLog(`${currentFighter.name} must select a skill first!`, "error");
@@ -7062,7 +7407,153 @@ useEffect(() => {
         clearTimeout(lockTimeout);
         setTimeout(() => endTurn(), 1500);
         return;
+      }
       
+      case "Fly": {
+        const result = startFlying(currentFighter, { altitude: 20 });
+        if (result.success) {
+          setFighters(prev => prev.map(f => 
+            f.id === currentFighter.id ? result.fighter : f
+          ));
+          addLog(result.message, "info");
+        } else {
+          addLog(`❌ ${result.reason}`, "error");
+        }
+        executingActionRef.current = false;
+        clearTimeout(lockTimeout);
+        setTimeout(() => endTurn(), 500);
+        return;
+      }
+
+      case "Land": {
+        const carried = currentFighter.carriedTargetId 
+          ? fighters.find(f => f.id === currentFighter.carriedTargetId)
+          : null;
+        const result = landFighter(currentFighter, { controlledLanding: true, carriedTarget: carried });
+        if (result.success) {
+          setFighters(prev => prev.map(f => {
+            if (f.id === currentFighter.id) return result.fighter;
+            if (result.dropped && f.id === result.dropped.target.id) return result.dropped.target;
+            return f;
+          }));
+          addLog(result.message, "info");
+          if (result.dropped) {
+            addLog(result.dropped.message, "warning");
+          }
+        } else {
+          addLog(`❌ ${result.reason}`, "error");
+        }
+        executingActionRef.current = false;
+        clearTimeout(lockTimeout);
+        setTimeout(() => endTurn(), 500);
+        return;
+      }
+
+      case "Change Altitude": {
+        // For now, use a simple prompt. In full implementation, show modal with ±5, ±10, ±20 options
+        // Default to +10ft climb
+        const deltaFeet = 10; // TODO: Add UI for altitude change amount
+        const result = changeAltitude(currentFighter, deltaFeet);
+        if (result.success) {
+          setFighters(prev => prev.map(f => 
+            f.id === currentFighter.id ? result.fighter : f
+          ));
+          addLog(result.message, "info");
+        } else {
+          addLog(`❌ ${result.reason}`, "error");
+        }
+        executingActionRef.current = false;
+        clearTimeout(lockTimeout);
+        setTimeout(() => endTurn(), 500);
+        return;
+      }
+
+      case "Dive Attack": {
+        if (!targetToExecute) {
+          addLog(`❌ ${currentFighter.name} must select a target for dive attack!`, "error");
+          executingActionRef.current = false;
+          clearTimeout(lockTimeout);
+          return;
+        }
+        const result = performDiveAttack(currentFighter, targetToExecute);
+        if (result.success) {
+          setFighters(prev => prev.map(f => 
+            f.id === currentFighter.id ? result.fighter : f
+          ));
+          addLog(result.message, "info");
+          // Perform the actual attack with dive bonus
+          attack(currentFighter, targetToExecute.id, { attackBonus: result.attackBonus, source: "DIVE_ATTACK" });
+          return; // attack handles endTurn
+        } else {
+          addLog(`❌ ${result.reason}`, "error");
+          executingActionRef.current = false;
+          clearTimeout(lockTimeout);
+          return;
+        }
+      }
+
+      case "Lift & Carry": {
+        if (!targetToExecute) {
+          addLog(`❌ ${currentFighter.name} must select a grappled target to carry!`, "error");
+          executingActionRef.current = false;
+          clearTimeout(lockTimeout);
+          return;
+        }
+        const result = liftAndCarry(currentFighter, targetToExecute);
+        if (result.success) {
+          setFighters(prev => prev.map(f => {
+            if (f.id === currentFighter.id) return result.carrier;
+            if (f.id === targetToExecute.id) return result.carried;
+            return f;
+          }));
+          // Sync positions
+          const newPositions = syncCombinedPositions(fighters, positions);
+          setPositions(newPositions);
+          addLog(result.message, "info");
+        } else {
+          addLog(`❌ ${result.reason}`, "error");
+        }
+        executingActionRef.current = false;
+        clearTimeout(lockTimeout);
+        setTimeout(() => endTurn(), 500);
+        return;
+      }
+
+      case "Drop Target": {
+        const carriedId = currentFighter.carriedTargetId;
+        if (!carriedId) {
+          addLog(`❌ ${currentFighter.name} is not carrying anyone!`, "error");
+          executingActionRef.current = false;
+          clearTimeout(lockTimeout);
+          return;
+        }
+        const carried = fighters.find(f => f.id === carriedId);
+        if (!carried) {
+          addLog(`❌ Cannot find carried target!`, "error");
+          executingActionRef.current = false;
+          clearTimeout(lockTimeout);
+          return;
+        }
+        const result = dropCarriedTarget(currentFighter, carried, { height: getAltitude(currentFighter) || 0 });
+        if (result.success) {
+          setFighters(prev => prev.map(f => {
+            if (f.id === currentFighter.id) return result.fighter;
+            if (f.id === carried.id) return result.target;
+            return f;
+          }));
+          addLog(result.message, "warning");
+          if (result.fallDamage) {
+            addLog(`💥 ${carried.name} takes fall damage!`, "combat");
+          }
+        } else {
+          addLog(`❌ ${result.reason}`, "error");
+        }
+        executingActionRef.current = false;
+        clearTimeout(lockTimeout);
+        setTimeout(() => endTurn(), 500);
+        return;
+      }
+
       default:
         addLog(`${currentFighter.name} performs ${actionToExecute.name}.`, "info");
         // Decrement action and end turn for any unhandled action
@@ -7121,7 +7612,6 @@ useEffect(() => {
       setVisibleCells([]);
       setExploredCells(resetFogMemory());
       setSelectedTarget(null);
-      setCurrentFighter(null);
       addLog("Combat reset! Fog of war memory cleared.", "info");
     } catch (error) {
       console.error("Error resetting combat:", error);
@@ -7556,7 +8046,7 @@ useEffect(() => {
       }
       
       // Debug logging (only in development)
-      if (process.env.NODE_ENV === 'development' && visible.length > 0) {
+      if ((import.meta.env?.DEV || import.meta.env?.MODE === 'development') && visible.length > 0) {
         console.log(`[Fog of War] Calculated ${visible.length} visible cells from ${observerPositions.length} observer(s)`, {
           observerPositions,
           baseRange,
@@ -8348,6 +8838,71 @@ useEffect(() => {
                       🏃 Run
                     </Button>
 
+                    {/* Flight Altitude Controls - Only show if fighter can fly and is currently flying */}
+                    {currentFighter && canFighterFly(currentFighter) && isFlying(currentFighter) && (
+                      <VStack spacing={1} align="stretch" borderWidth="1px" borderColor="blue.300" borderRadius="md" p={2} bg="blue.50">
+                        <Text fontSize="xs" fontWeight="bold" color="blue.700">
+                          🪽 Altitude: {currentFighter.altitudeFeet ?? currentFighter.altitude ?? 0}ft
+                        </Text>
+                        <HStack spacing={1} flexWrap="wrap">
+                          <Button
+                            size="xs"
+                            colorScheme="blue"
+                            variant="outline"
+                            onClick={() => handleChangeAltitude(currentFighter, -20)}
+                            title="Descend 20ft"
+                          >
+                            ⬇️ -20ft
+                          </Button>
+                          <Button
+                            size="xs"
+                            colorScheme="blue"
+                            variant="outline"
+                            onClick={() => handleChangeAltitude(currentFighter, -10)}
+                            title="Descend 10ft"
+                          >
+                            ⬇️ -10ft
+                          </Button>
+                          <Button
+                            size="xs"
+                            colorScheme="blue"
+                            variant="outline"
+                            onClick={() => handleChangeAltitude(currentFighter, -5)}
+                            title="Descend 5ft"
+                          >
+                            ⬇️ -5ft
+                          </Button>
+                          <Button
+                            size="xs"
+                            colorScheme="blue"
+                            variant="outline"
+                            onClick={() => handleChangeAltitude(currentFighter, 5)}
+                            title="Climb 5ft"
+                          >
+                            ⬆️ +5ft
+                          </Button>
+                          <Button
+                            size="xs"
+                            colorScheme="blue"
+                            variant="outline"
+                            onClick={() => handleChangeAltitude(currentFighter, 10)}
+                            title="Climb 10ft"
+                          >
+                            ⬆️ +10ft
+                          </Button>
+                          <Button
+                            size="xs"
+                            colorScheme="blue"
+                            variant="outline"
+                            onClick={() => handleChangeAltitude(currentFighter, 20)}
+                            title="Climb 20ft"
+                          >
+                            ⬆️ +20ft
+                          </Button>
+                        </HStack>
+                      </VStack>
+                    )}
+
                     {/* Movement Instructions */}
                     {showTacticalMap && currentFighter && currentFighter.type === "player" && (
                       <VStack spacing={1} align="start">
@@ -8852,6 +9407,19 @@ useEffect(() => {
                           {fighter.ISP !== undefined && ` | ISP: ${fighter.ISP}`}
                           {fighter.PPE !== undefined && ` | PPE: ${fighter.PPE}`}
                         </Text>
+                        {/* Altitude and Carrying Status */}
+                        <HStack spacing={2} fontSize="sm">
+                          <Text color="blue.700">
+                            🪽 Altitude: {isFlying(fighter) && (fighter.altitudeFeet ?? 0) > 0
+                              ? `${fighter.altitudeFeet ?? fighter.altitude ?? 0}ft`
+                              : 'Ground'}
+                          </Text>
+                          {fighter.isCarrying && fighter.carriedTargetId && (
+                            <Text color="purple.700">
+                              ✈️ Carrying: {fighters.find(f => f.id === fighter.carriedTargetId)?.name || 'Target'}
+                            </Text>
+                          )}
+                        </HStack>
                         
                         {/* Combat Bonuses */}
                         {(fighter.bonuses || fighter.occBonuses) && (
@@ -9385,6 +9953,11 @@ useEffect(() => {
                             {formatAttacksRemaining(currentFighter.remainingAttacks || 0, currentFighter.attacksPerMelee || 2)}
                           </Text>
                         )}
+                        {currentFighter && isFlying(currentFighter) && (currentFighter.altitudeFeet ?? currentFighter.altitude ?? 0) > 0 && (
+                          <Text fontSize="sm" color="blue.600" fontWeight="bold" mt={1}>
+                            🦅 Airborne at {currentFighter.altitudeFeet ?? currentFighter.altitude ?? 0}ft
+                          </Text>
+                        )}
                         {currentFighter && currentFighter.type === "player" && !aiControlEnabled && (
                           <Text fontSize="sm" color="blue.600" fontWeight="bold" mt={1}>
                             🎯 Combat choices available below
@@ -9607,6 +10180,19 @@ useEffect(() => {
                             {fighter.ISP !== undefined && ` | ISP: ${fighter.ISP}`}
                             {fighter.PPE !== undefined && ` | PPE: ${fighter.PPE}`}
                           </Box>
+                          {/* Altitude and Carrying Status */}
+                          <HStack spacing={2} fontSize="sm">
+                            <Text>
+                              🪽 Altitude: {isFlying(fighter) && (fighter.altitudeFeet ?? 0) > 0
+                                ? `${fighter.altitudeFeet ?? fighter.altitude ?? 0}ft`
+                                : 'Ground'}
+                            </Text>
+                            {fighter.isCarrying && fighter.carriedTargetId && (
+                              <Text color="purple.700">
+                                ✈️ Carrying: {fighters.find(f => f.id === fighter.carriedTargetId)?.name || 'Target'}
+                              </Text>
+                            )}
+                          </HStack>
                           
                           {/* Combat Bonuses */}
                           {(fighter.bonuses || fighter.occBonuses) && (
@@ -9995,6 +10581,22 @@ useEffect(() => {
                             <Text fontWeight="bold" fontSize="sm">Position:</Text>
                             <Text>
                               x: {positions[currentFighter.id].x}, y: {positions[currentFighter.id].y}
+                            </Text>
+                          </Box>
+                        )}
+                        <Box>
+                          <Text fontWeight="bold" fontSize="sm">🪽 Altitude:</Text>
+                          <Text>
+                            {isFlying(currentFighter) && (currentFighter.altitudeFeet ?? 0) > 0
+                              ? `${currentFighter.altitudeFeet ?? currentFighter.altitude ?? 0}ft`
+                              : 'Ground'}
+                          </Text>
+                        </Box>
+                        {currentFighter.isCarrying && currentFighter.carriedTargetId && (
+                          <Box>
+                            <Text fontWeight="bold" fontSize="sm">✈️ Carrying:</Text>
+                            <Text>
+                              {fighters.find(f => f.id === currentFighter.carriedTargetId)?.name || 'Target'}
                             </Text>
                           </Box>
                         )}
@@ -10501,7 +11103,7 @@ useEffect(() => {
         }}
         onComplete={(results) => {
           // ✅ Debug: Log what we receive
-          if (process.env.NODE_ENV === 'development') {
+          if (import.meta.env?.DEV || import.meta.env?.MODE === 'development') {
             console.log('[CombatPage] Phase0PreCombatModal onComplete called with results:', results);
             console.log('[CombatPage] results.environment?.mapType:', results.environment?.mapType);
             console.log('[CombatPage] Full environment object:', results.environment);
@@ -10543,7 +11145,7 @@ useEffect(() => {
           // ✅ Set combatTerrain immediately so TacticalMap can use it before combat starts
           if (results.environment) {
             // ✅ CRITICAL: Verify mapType exists before setting
-            if (process.env.NODE_ENV === 'development') {
+            if (import.meta.env?.DEV || import.meta.env?.MODE === 'development') {
               console.log('[CombatPage] Raw results.environment:', results.environment);
               console.log('[CombatPage] results.environment keys:', Object.keys(results.environment));
               console.log('[CombatPage] results.environment.mapType value:', results.environment.mapType);
@@ -10553,7 +11155,7 @@ useEffect(() => {
             }
             
             setCombatTerrain(results.environment);
-            if (process.env.NODE_ENV === 'development') {
+            if (import.meta.env?.DEV || import.meta.env?.MODE === 'development') {
               console.log('[CombatPage] Set combatTerrain immediately with mapType:', results.environment?.mapType);
               console.log('[CombatPage] combatTerrain after set:', { mapType: results.environment?.mapType, terrain: results.environment?.terrain, lighting: results.environment?.lighting });
             }
