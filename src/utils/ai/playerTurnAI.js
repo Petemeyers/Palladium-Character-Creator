@@ -149,7 +149,7 @@ export function runPlayerTurnAI(player, context) {
     return;
   }
 
-  const occLower = (player.occ || player.class || "").toLowerCase();
+  const occLower = (player.OCC || player.occ || player.class || "").toLowerCase();
   const fighterSpells = getFighterSpells(player);
   const fighterPsionics = getFighterPsionicPowers(player);
   const ppeAvailable = getFighterPPE(player);
@@ -423,6 +423,17 @@ export function runPlayerTurnAI(player, context) {
   );
   const isMindMage = occLower.includes("mind mage") || occLower.includes("mindmage");
 
+  // Debug logging for magic-focused characters
+  if (isMagicFocused) {
+    addLog(`🔮 ${player.name} spell check: Found ${fighterSpells.length} total spells, ${fighterPsionics.length} psionic powers`, "info");
+    if (fighterSpells.length > 0) {
+      addLog(`🔮 ${player.name} spells: ${fighterSpells.map(s => s.name).join(', ')}`, "info");
+    } else {
+      addLog(`🔮 ${player.name} has no spells found in: magic=${!!player.magic}, spells=${!!player.spells}, knownSpells=${!!player.knownSpells}, spellbook=${!!player.spellbook}, abilities=${!!player.abilities}`, "warning");
+    }
+    addLog(`🔮 ${player.name} PPE: ${ppeAvailable}, ISP: ${ispAvailable}`, "info");
+  }
+
   // Debug logging for mind mages
   if (isMindMage) {
     addLog(`🧠 ${player.name} is a Mind Mage - checking psionic powers...`, "info");
@@ -490,12 +501,23 @@ export function runPlayerTurnAI(player, context) {
   }
 
   // Only use spells if not a mind mage (mind mages should prefer psionics)
+  // For magic-focused classes (wizard, etc.), ALWAYS prioritize spells over melee
+  // The spell range check happens in executeSpell, so we can try to use spells at any distance
   const shouldUseSpell =
     !!bestOffensiveSpell &&
     !isMindMage &&
-    (isMagicFocused ||
+    (isMagicFocused || // Magic classes always prefer spells when available
       currentDistance > 20 ||
       !bestOffensivePsionic);
+
+  // Debug logging for magic-focused classes
+  if (isMagicFocused) {
+    if (bestOffensiveSpell) {
+      addLog(`🔮 ${player.name} is magic-focused - prioritizing spell: ${bestOffensiveSpell.name}`, "info");
+    } else {
+      addLog(`🔮 ${player.name} is magic-focused but has no offensive spells available`, "info");
+    }
+  }
 
   if (shouldUseSpell && bestOffensiveSpell) {
     if (attemptOffensiveSpell(bestOffensiveSpell)) {
@@ -503,7 +525,23 @@ export function runPlayerTurnAI(player, context) {
     }
   }
 
-  // Smart weapon selection based on distance and available weapons
+  // For magic-focused classes, if we have spells/psionics available, don't use melee
+  // Allow movement to get in range, but skip melee attacks
+  const hasMagicAvailable = (bestOffensiveSpell || bestOffensivePsionic);
+  if (isMagicFocused && hasMagicAvailable) {
+    // If we tried to use magic but it failed (e.g., out of range), allow movement
+    // But don't fall through to melee - magic classes should use magic, not melee
+    if (currentDistance > 5.5) {
+      addLog(`🔮 ${player.name} is magic-focused with magic available but out of range - will move to get in range`, "info");
+      // Allow movement to continue below
+    } else {
+      // In melee range but magic-focused - still prefer magic over melee
+      addLog(`🔮 ${player.name} is magic-focused - skipping melee in favor of magic`, "info");
+      processingPlayerAIRef.current = false;
+      scheduleEndTurn();
+      return;
+    }
+  }
   addLog(`🔍 ${player.name} checking weapons...`, "info");
   let selectedAttack = null;
   let attackName = "Unarmed Strike";

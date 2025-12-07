@@ -35,7 +35,7 @@ const TacticalMap = ({
   flashingCombatants: externalFlashingCombatants = null,
   movementMode = { active: false, isRunning: false },
   terrain = null,
-  mapType = "hex", // "hex" or "square"
+  mapType, // "hex" or "square" - no default to allow terrain.mapType fallback
   // Fog of War props
   visibleCells = [], // Array of visible cell positions [{x, y}, ...]
   exploredCells = [], // Array of explored (memory) cell positions [{x, y}, ...]
@@ -59,18 +59,18 @@ const TacticalMap = ({
   const getCombatantId = (combatant) =>
     combatant?._id || combatant?.id || combatant?.fighterId || combatant?.characterId;
 
+  // ✅ Use mapType from prop, fallback to terrain.mapType, then default to hex
+  const effectiveMapType = mapType ?? terrain?.mapType ?? "hex";
+  
   // ✅ Debug: Log mapType on mount/update to verify prop flow
   useEffect(() => {
-    const effective = mapType || terrain?.mapType || "hex";
-    console.log('[TacticalMap] mapType prop:', mapType, '| terrain?.mapType:', terrain?.mapType, '| effectiveMapType:', effective);
-    // eslint-disable-next-line no-undef
-    if (typeof process !== 'undefined' && process.env?.NODE_ENV === 'development' && terrain) {
-      console.log('[TacticalMap] Full terrain object:', terrain);
+    if (import.meta.env.DEV) {
+      console.log('[TacticalMap] mapType prop:', mapType, '| terrain?.mapType:', terrain?.mapType, '| effectiveMapType:', effectiveMapType);
+      if (terrain) {
+        console.log('[TacticalMap] Full terrain object:', terrain);
+      }
     }
-  }, [mapType, terrain?.mapType, terrain]);
-  
-  // ✅ Use mapType from prop, fallback to terrain.mapType, then default to hex
-  const effectiveMapType = mapType || terrain?.mapType || "hex";
+  }, [mapType, terrain?.mapType, effectiveMapType, terrain]);
   
   const [selectedCombatant, setSelectedCombatant] = useState(null);
   const [hoveredCell, setHoveredCell] = useState(null);
@@ -209,53 +209,55 @@ const TacticalMap = ({
   }, [movementMode, validMoves, getCellContent, onSelectedCombatantChange]);
 
   // Memoize combatants at position to avoid recalculating on every render
+  // Keyed by "x,y" coordinates for efficient lookup
   const combatantsAtPosition = useMemo(() => {
-    const map = new Map();
-    // Debug: log all positions and combatants (always log, not just in development)
-    if (mode === "COMBAT") {
-      console.log(`[TacticalMap] Building combatantsAtPosition map. Positions:`, Object.keys(positions).length, 'Combatants:', combatants.length);
-      console.log(`[TacticalMap] Position keys:`, Object.keys(positions));
-      console.log(`[TacticalMap] Combatant IDs:`, combatants.map(c => ({ _id: c._id, name: c.name, type: c.type || 'unknown' })));
+    const map = new Map(); // key: "x,y", value: array of combatants
+
+    // Build map directly from combatant positions (by coordinate)
+    for (const c of combatants) {
+      if (!c) continue;
+      
+      // Get position from positions object (keyed by combatant ID)
+      const combatantId = getCombatantId(c);
+      const pos = positions[combatantId] || c.position;
+      
+      if (!pos) continue;
+      
+      const key = `${pos.x},${pos.y}`;
+      if (!map.has(key)) {
+        map.set(key, []);
+      }
+      map.get(key).push(c);
+    }
+
+    // Log only when data actually changes (inside useMemo)
+    if (mode === "COMBAT" && import.meta.env.DEV) {
+      console.log('[TacticalMap] Building combatantsAtPosition map. ' +
+                  `Positions: ${map.size} Combatants: ${combatants.length}`);
+      console.log('[TacticalMap] Position keys:', [...map.keys()]);
+      console.log('[TacticalMap] Combatant IDs:', combatants.map(c => c?.id || c?._id || 'unknown'));
       
       // Check for combatants without positions
       const combatantsWithoutPositions = combatants.filter(c => {
-        const key = getCombatantId(c);
-        return !positions[key];
+        const combatantId = getCombatantId(c);
+        return !positions[combatantId] && !c.position;
       });
       if (combatantsWithoutPositions.length > 0) {
         console.warn(`[TacticalMap] ⚠️ ${combatantsWithoutPositions.length} combatant(s) have no positions:`, 
           combatantsWithoutPositions.map(c => ({ name: c.name, id: getCombatantId(c), type: c.type || 'unknown' })));
       }
     }
-    
-    for (let row = 0; row < GRID_CONFIG.GRID_HEIGHT; row++) {
-      for (let col = 0; col < GRID_CONFIG.GRID_WIDTH; col++) {
-        const combatantsAtPos = [];
-        for (const [id, pos] of Object.entries(positions)) {
-          const combatant = combatants.find(c => getCombatantId(c) === id);
-          if (combatant) {
-            const creatureSize = getCreatureSize(combatant);
-            if (col >= pos.x && col < pos.x + creatureSize.width &&
-                row >= pos.y && row < pos.y + 1) {
-              combatantsAtPos.push(combatant);
-            }
-          } else if (process.env.NODE_ENV === 'development' && mode === "COMBAT") {
-            // Debug: log when position exists but combatant not found
-            console.warn(`[TacticalMap] Position found for id ${id} but no matching combatant with _id=${id}`);
-          }
-        }
-        map.set(`${col}-${row}`, combatantsAtPos);
-      }
-    }
+
     return map;
-  }, [positions, combatants, GRID_CONFIG.GRID_WIDTH, GRID_CONFIG.GRID_HEIGHT, mode]);
+  }, [combatants, positions, mode]);
 
   // Optimized function to get combatants at position
   const getCombatantsAtPosition = useCallback((x, y) => {
-    const result = combatantsAtPosition.get(`${x}-${y}`) || [];
-    // Debug: log if we have combatants but they're not showing
-    if (process.env.NODE_ENV === 'development' && result.length > 0 && mode === "COMBAT") {
-      console.log(`[TacticalMap] Found ${result.length} combatant(s) at (${x}, ${y}):`, result.map(c => ({ name: c.name, id: c._id, isEnemy: c.isEnemy })));
+    const key = `${x},${y}`;
+    const result = combatantsAtPosition.get(key) || [];
+    // Debug: log only for specific cells in development (to avoid spam)
+    if (import.meta.env.DEV && mode === "COMBAT" && result.length > 0 && x === 15 && y === 14) {
+      console.log(`[TacticalMap] Found ${result.length} combatant(s) at (${x}, ${y}):`, result.map(c => ({ name: c.name, id: c.id || c._id, isEnemy: c.isEnemy })));
     }
     return result;
   }, [combatantsAtPosition, mode]);
@@ -754,7 +756,7 @@ const TacticalMap = ({
   // Get cell shape points based on map type
   // Returns string format for polygon points attribute
   const getCellShape = (centerX, centerY) => {
-    if (mapType === "square") {
+    if (effectiveMapType === "square") {
       // ✅ Square cells: use HEX_SIZE * 2 as the cell size (matches getCellPixelPosition)
       const squareCellSize = GRID_CONFIG.HEX_SIZE * 2;
       const halfSize = squareCellSize / 2;
@@ -768,7 +770,7 @@ const TacticalMap = ({
 
   // Get pixel position based on map type
   const getCellPixelPosition = (col, row) => {
-    if (mapType === "square") {
+    if (effectiveMapType === "square") {
       const size = GRID_CONFIG.HEX_SIZE * 2;
       const x = col * size;
       const y = row * size;
@@ -1227,7 +1229,7 @@ const TacticalMap = ({
         const isMovementColorCell = validMove || (selectedTargetHex && selectedTargetHex.x === col && selectedTargetHex.y === row);
         
         // Base fill color (texture or terrain color, without movement colors)
-        const baseCellColor = getCellColor(col, row, combatantsAtPos[0], baseTerrainColor);
+        const baseCellColor = getCellColor(col, row, combatantsAtPos[0]);
         // Remove movement colors from base color calculation for texture layer
         const baseFillColor = isMovementColorCell 
           ? getCellFill(terrainType, baseTerrainColor) // Use terrain color/texture for base
@@ -1668,8 +1670,10 @@ const TacticalMap = ({
             {/* Combatant icons - show all combatants at this position (COMBAT mode only) */}
             {mode === "COMBAT" && combatantsAtPos && combatantsAtPos.length > 0 && (
               (() => {
-                // Debug: log when we have combatants at this position (always log)
-                console.log(`[TacticalMap] Rendering ${combatantsAtPos.length} combatant(s) at cell (${col}, ${row})`);
+                // Debug: log only for specific cells in development (to avoid spam)
+                if (import.meta.env.DEV && col === 15 && row === 14) {
+                  console.log(`[TacticalMap] Rendering ${combatantsAtPos.length} combatant(s) at cell (${col}, ${row})`);
+                }
                 return combatantsAtPos
                   .sort((a, b) => {
                     // Sort so enemies appear on top of players
@@ -1690,14 +1694,17 @@ const TacticalMap = ({
                   // For single-cell creatures, this will be their exact position
                   const isPrimaryPosition = primaryPos.x === col && primaryPos.y === row;
                   if (!isPrimaryPosition) {
-                    if (index === 0) {
+                    // Debug: log only for specific cells in development (to avoid spam)
+                    if (import.meta.env.DEV && index === 0 && col === 15 && row === 14) {
                       console.log(`[TacticalMap] ${combatant.name} at primary pos (${primaryPos.x}, ${primaryPos.y}) but rendering cell (${col}, ${row}) - skipping`);
                     }
                     return null;
                   }
                   
-                  // Debug: verify icon should render (always log)
-                  console.log(`[TacticalMap] ✅ Rendering icon for ${combatant.name} at (${col}, ${row}), isEnemy: ${combatant.isEnemy}, fogEnabled: ${fogEnabled}`);
+                  // Debug: verify icon should render (only for specific cells in development)
+                  if (import.meta.env.DEV && col === 15 && row === 14) {
+                    console.log(`[TacticalMap] ✅ Rendering icon for ${combatant.name} at (${col}, ${row}), isEnemy: ${combatant.isEnemy}, fogEnabled: ${fogEnabled}`);
+                  }
 
               // ✅ Check enemy visibility for rendering
               // In darkness/fog, enemies should be completely invisible if not visible

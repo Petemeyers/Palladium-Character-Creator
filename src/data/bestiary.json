@@ -2188,307 +2188,6 @@
           "description": "Noble scions of the Elemental Laws who seek balance in the world. Titans act as mentors to mortal heroes and wield both steel and sorcery with effortless grace."
         },
         {
-          "id": "great_horned_dragon_playable",
-          "name": "Great Horned Dragon",
-          "category": "dragon_playable",
-          "playable": true,
-          "alignment_options": [
-            "selfish",
-            "evil"
-          ],
-          "size": "70–90 ft long; colossal horns and crest",
-          "age_categories": [
-            "hatchling",
-            "young",
-            "adult",
-            "ancient"
-          ],
-          "attribute_dice": {
-            "IQ": "4d6",
-            "ME": "4d6",
-            "MA": "4d6",
-            "PS": "8d6",
-            "PP": "5d6",
-            "PE": "7d6",
-            "PB": "3d6",
-            "Spd": "5d6"
-          },
-          "breath_weapon": {
-            "type": "fire",
-            "damage": "7d6",
-            "range": "100 ft cone"
-          },
-          "attacks": [
-            {
-              "name": "Bite",
-              "damage": "6d6"
-            },
-            {
-              "name": "Claw",
-              "damage": "4d6"
-            },
-            {
-              "name": "Gore (Horns)",
-              "damage": "5d6"
-            },
-            {
-              "name": "Tail",
-              "damage": "5d6"
-            }
-          ],
-          "psionics": "Major",
-          "magic": "Wizard spells L1–9",
-          "occ_limitations": [
-            "dragon_only"
-          ],
-          "special_abilities": [
-            "Night vision 120 ft",
-            "Fly ~90 mph",
-            "Impervious to fire; half damage from cold",
-            "Aura of terror (save vs horror)"
-          ],
-          "enemies": [
-            "dragon slayers",
-            "rival dragons"
-          ],
-          "allies": [
-            "greater demons (rare pacts)",
-            "cultists (occasional)"
-          ],
-          "favorite_weapons": [
-            "natural weapons",
-            "sorcery"
-          ],
-          "sources": [
-            {
-              "file": "Palladium Fantasy RPG 1994"
-            }
-          ],
-          "HF": 17
-        },
-        {
-          "id": "mighty_wooly_dragon_playable",
-          "name": "Mighty Wooly Dragon",
-          "category": "dragon_playable",
-          "playable": true,
-          "alignment_options": [
-            "any (tend selfish)"
-          ],
-          "size": "60–80 ft long; shaggy fur between plates",
-          "age_categories": [
-            "hatchling",
-            "young",
-            "adult",
-            "ancient"
-          ],
-          "attribute_dice": {
-            "IQ": "4d6",
-            "ME": "4d6",
-            "MA": "3d6",
-            "PS": "7d6",
-            "PP": "5d6",
-            "PE": "8d6",
-            "PB": "3d6",
-            "Spd": "5d6"
-          },
-          "breath_weapon": {
-            "type": "frost",
-            "damage": "7d6",
-            "range": "90 ft cone"
-          },
-          "attacks": [
-            {
-              "name": "Bite",
-              "damage": "5d6"
-            },
-            {
-              "name": "Claw",
-              "damage": "4d6"
-            },
-            {
-              "name": "Tail Smash",
-              "damage": "5d6"
-            }
-          ],
-          "psionics": "Minor",
-          "magic": "Wizard spells L1–7",
-          "occ_limitations": [
-            "dragon_only"
-          ],
-          "special_abilities": [
-            "Impervious to cold/ice; half damage from fire",
-            "Fly ~80 mph",
-            "Snow burrow (move through drifts without penalty)"
-          ],
-          "enemies": [
-            "frost giant rivals",
-            "northern kingdoms"
-          ],
-          "allies": [
-            "ice cults",
-            "elementalists (water/air)"
-          ],
-          "favorite_weapons": [
-            "natural weapons",
-            "frost magic"
-          ],
-          "sources": [
-            {
-              "file": "Palladium Fantasy RPG 1994"
-            }
-          ],
-          "HF": 17
-        },
-        {
-          "id": "sea_dragon_playable",
-          "name": "Sea Dragon",
-          "category": "dragon_playable",
-          "playable": true,
-          "alignment_options": [
-            "selfish",
-            "any"
-          ],
-          "size": "55–85 ft long; finned crest, webbed claws",
-          "age_categories": [
-            "hatchling",
-            "young",
-            "adult",
-            "ancient"
-          ],
-          "attribute_dice": {
-            "IQ": "4d6",
-            "ME": "4d6",
-            "MA": "3d6",
-            "PS": "7d6",
-            "PP": "5d6",
-            "PE": "7d6",
-            "PB": "3d6",
-            "Spd": "5d6"
-          },
-          "breath_weapon": {
-            "type": "scalding steam",
-            "damage": "6d6",
-            "range": "80 ft cone (air) / 60 ft cloud (water)"
-          },
-          "attacks": [
-            {
-              "name": "Bite",
-              "damage": "5d6"
-            },
-            {
-              "name": "Claw",
-              "damage": "3d6"
-            },
-            {
-              "name": "Tail Lash",
-              "damage": "4d6"
-            }
-          ],
-          "psionics": "Minor",
-          "magic": "Wizard spells L1–8 (water/air emphasis)",
-          "occ_limitations": [
-            "dragon_only"
-          ],
-          "special_abilities": [
-            "Swim 50 mph",
-            "Breathe water & air",
-            "Hold breath 1 hour",
-            "Amphibious tactics vs ships"
-          ],
-          "enemies": [
-            "navies",
-            "sea serpents (territorial)"
-          ],
-          "allies": [
-            "sea hags (covenants)",
-            "sahuagin/merrow (coercion)"
-          ],
-          "favorite_weapons": [
-            "natural weapons",
-            "steam magic"
-          ],
-          "sources": [
-            {
-              "file": "Palladium Fantasy RPG 1994"
-            }
-          ],
-          "HF": 17
-        },
-        {
-          "id": "serpent_of_the_wind_playable",
-          "name": "Serpent of the Wind",
-          "category": "dragon_playable",
-          "playable": true,
-          "alignment_options": [
-            "selfish",
-            "any"
-          ],
-          "size": "≈20 ft long; wingless, snake-like dragon",
-          "age_categories": [
-            "hatchling",
-            "young",
-            "adult",
-            "ancient"
-          ],
-          "attribute_dice": {
-            "IQ": "4d6",
-            "ME": "4d6",
-            "MA": "4d6",
-            "PS": "6d6",
-            "PP": "7d6",
-            "PE": "6d6",
-            "PB": "3d6",
-            "Spd": "7d6"
-          },
-          "breath_weapon": {
-            "type": "wind lash",
-            "damage": "2d6 (per lash)",
-            "range": "line 50 ft"
-          },
-          "attacks": [
-            {
-              "name": "Wind Lash",
-              "damage": "2d6"
-            },
-            {
-              "name": "Constriction",
-              "damage": "special"
-            },
-            {
-              "name": "Bite",
-              "damage": "2d6"
-            }
-          ],
-          "psionics": "Minor",
-          "magic": "Air elemental magic (~10th-level proficiency)",
-          "occ_limitations": [
-            "dragon_only"
-          ],
-          "special_abilities": [
-            "Night vision 90 ft",
-            "See invisible; turn invisible",
-            "Half damage from fire/cold",
-            "Extremely agile flyers despite wingless form"
-          ],
-          "enemies": [
-            "sky mages",
-            "griffon aeries"
-          ],
-          "allies": [
-            "air warlocks",
-            "storm cults"
-          ],
-          "favorite_weapons": [
-            "wind magic",
-            "speed"
-          ],
-          "sources": [
-            {
-              "file": "Palladium Fantasy RPG 1994"
-            }
-          ]
-        },
-        {
           "id": "human_paladin",
           "name": "Human Paladin",
           "category": "pc_playable",
@@ -6318,6 +6017,307 @@
           "lifeSpan": "6000 years",
           "description": "Dull green, grey, or black with large watery blue eyes, long serpentine body, powerful wings, and terrible claws. Symbol of darkness and the undead. Found throughout the world, particularly in mountainous areas and the Old Kingdom.",
           "HF": 16
+        },
+        {
+          "id": "great_horned_dragon_playable",
+          "name": "Great Horned Dragon",
+          "category": "dragon_playable",
+          "playable": true,
+          "alignment_options": [
+            "selfish",
+            "evil"
+          ],
+          "size": "70–90 ft long; colossal horns and crest",
+          "age_categories": [
+            "hatchling",
+            "young",
+            "adult",
+            "ancient"
+          ],
+          "attribute_dice": {
+            "IQ": "4d6",
+            "ME": "4d6",
+            "MA": "4d6",
+            "PS": "8d6",
+            "PP": "5d6",
+            "PE": "7d6",
+            "PB": "3d6",
+            "Spd": "5d6"
+          },
+          "breath_weapon": {
+            "type": "fire",
+            "damage": "7d6",
+            "range": "100 ft cone"
+          },
+          "attacks": [
+            {
+              "name": "Bite",
+              "damage": "6d6"
+            },
+            {
+              "name": "Claw",
+              "damage": "4d6"
+            },
+            {
+              "name": "Gore (Horns)",
+              "damage": "5d6"
+            },
+            {
+              "name": "Tail",
+              "damage": "5d6"
+            }
+          ],
+          "psionics": "Major",
+          "magic": "Wizard spells L1–9",
+          "occ_limitations": [
+            "dragon_only"
+          ],
+          "special_abilities": [
+            "Night vision 120 ft",
+            "Fly ~90 mph",
+            "Impervious to fire; half damage from cold",
+            "Aura of terror (save vs horror)"
+          ],
+          "enemies": [
+            "dragon slayers",
+            "rival dragons"
+          ],
+          "allies": [
+            "greater demons (rare pacts)",
+            "cultists (occasional)"
+          ],
+          "favorite_weapons": [
+            "natural weapons",
+            "sorcery"
+          ],
+          "sources": [
+            {
+              "file": "Palladium Fantasy RPG 1994"
+            }
+          ],
+          "HF": 17
+        },
+        {
+          "id": "mighty_wooly_dragon_playable",
+          "name": "Mighty Wooly Dragon",
+          "category": "dragon_playable",
+          "playable": true,
+          "alignment_options": [
+            "any (tend selfish)"
+          ],
+          "size": "60–80 ft long; shaggy fur between plates",
+          "age_categories": [
+            "hatchling",
+            "young",
+            "adult",
+            "ancient"
+          ],
+          "attribute_dice": {
+            "IQ": "4d6",
+            "ME": "4d6",
+            "MA": "3d6",
+            "PS": "7d6",
+            "PP": "5d6",
+            "PE": "8d6",
+            "PB": "3d6",
+            "Spd": "5d6"
+          },
+          "breath_weapon": {
+            "type": "frost",
+            "damage": "7d6",
+            "range": "90 ft cone"
+          },
+          "attacks": [
+            {
+              "name": "Bite",
+              "damage": "5d6"
+            },
+            {
+              "name": "Claw",
+              "damage": "4d6"
+            },
+            {
+              "name": "Tail Smash",
+              "damage": "5d6"
+            }
+          ],
+          "psionics": "Minor",
+          "magic": "Wizard spells L1–7",
+          "occ_limitations": [
+            "dragon_only"
+          ],
+          "special_abilities": [
+            "Impervious to cold/ice; half damage from fire",
+            "Fly ~80 mph",
+            "Snow burrow (move through drifts without penalty)"
+          ],
+          "enemies": [
+            "frost giant rivals",
+            "northern kingdoms"
+          ],
+          "allies": [
+            "ice cults",
+            "elementalists (water/air)"
+          ],
+          "favorite_weapons": [
+            "natural weapons",
+            "frost magic"
+          ],
+          "sources": [
+            {
+              "file": "Palladium Fantasy RPG 1994"
+            }
+          ],
+          "HF": 17
+        },
+        {
+          "id": "sea_dragon_playable",
+          "name": "Sea Dragon",
+          "category": "dragon_playable",
+          "playable": true,
+          "alignment_options": [
+            "selfish",
+            "any"
+          ],
+          "size": "55–85 ft long; finned crest, webbed claws",
+          "age_categories": [
+            "hatchling",
+            "young",
+            "adult",
+            "ancient"
+          ],
+          "attribute_dice": {
+            "IQ": "4d6",
+            "ME": "4d6",
+            "MA": "3d6",
+            "PS": "7d6",
+            "PP": "5d6",
+            "PE": "7d6",
+            "PB": "3d6",
+            "Spd": "5d6"
+          },
+          "breath_weapon": {
+            "type": "scalding steam",
+            "damage": "6d6",
+            "range": "80 ft cone (air) / 60 ft cloud (water)"
+          },
+          "attacks": [
+            {
+              "name": "Bite",
+              "damage": "5d6"
+            },
+            {
+              "name": "Claw",
+              "damage": "3d6"
+            },
+            {
+              "name": "Tail Lash",
+              "damage": "4d6"
+            }
+          ],
+          "psionics": "Minor",
+          "magic": "Wizard spells L1–8 (water/air emphasis)",
+          "occ_limitations": [
+            "dragon_only"
+          ],
+          "special_abilities": [
+            "Swim 50 mph",
+            "Breathe water & air",
+            "Hold breath 1 hour",
+            "Amphibious tactics vs ships"
+          ],
+          "enemies": [
+            "navies",
+            "sea serpents (territorial)"
+          ],
+          "allies": [
+            "sea hags (covenants)",
+            "sahuagin/merrow (coercion)"
+          ],
+          "favorite_weapons": [
+            "natural weapons",
+            "steam magic"
+          ],
+          "sources": [
+            {
+              "file": "Palladium Fantasy RPG 1994"
+            }
+          ],
+          "HF": 17
+        },
+        {
+          "id": "serpent_of_the_wind_playable",
+          "name": "Serpent of the Wind",
+          "category": "dragon_playable",
+          "playable": true,
+          "alignment_options": [
+            "selfish",
+            "any"
+          ],
+          "size": "≈20 ft long; wingless, snake-like dragon",
+          "age_categories": [
+            "hatchling",
+            "young",
+            "adult",
+            "ancient"
+          ],
+          "attribute_dice": {
+            "IQ": "4d6",
+            "ME": "4d6",
+            "MA": "4d6",
+            "PS": "6d6",
+            "PP": "7d6",
+            "PE": "6d6",
+            "PB": "3d6",
+            "Spd": "7d6"
+          },
+          "breath_weapon": {
+            "type": "wind lash",
+            "damage": "2d6 (per lash)",
+            "range": "line 50 ft"
+          },
+          "attacks": [
+            {
+              "name": "Wind Lash",
+              "damage": "2d6"
+            },
+            {
+              "name": "Constriction",
+              "damage": "special"
+            },
+            {
+              "name": "Bite",
+              "damage": "2d6"
+            }
+          ],
+          "psionics": "Minor",
+          "magic": "Air elemental magic (~10th-level proficiency)",
+          "occ_limitations": [
+            "dragon_only"
+          ],
+          "special_abilities": [
+            "Night vision 90 ft",
+            "See invisible; turn invisible",
+            "Half damage from fire/cold",
+            "Extremely agile flyers despite wingless form"
+          ],
+          "enemies": [
+            "sky mages",
+            "griffon aeries"
+          ],
+          "allies": [
+            "air warlocks",
+            "storm cults"
+          ],
+          "favorite_weapons": [
+            "wind magic",
+            "speed"
+          ],
+          "sources": [
+            {
+              "file": "Palladium Fantasy RPG 1994"
+            }
+          ]
         }
       ]
     }

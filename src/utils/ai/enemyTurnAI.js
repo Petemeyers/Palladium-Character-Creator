@@ -2331,15 +2331,7 @@ export function runEnemyTurnAI(enemy, context) {
     if (flankingPositions.length > 0 && currentFlankingBonus === 0) {
       addLog(`🎯 ${enemy.name} considers flanking ${target.name}`, "info");
 
-      // Find the best flanking position (closest to current position)
-      const bestFlankPos = flankingPositions.reduce((best, current) => {
-        const bestDist = calculateDistance(currentPos, best);
-        const currentDist = calculateDistance(currentPos, current);
-        return currentDist < bestDist ? current : best;
-      });
-
-      // Check if we can reach the flanking position
-      const flankDistance = calculateDistance(currentPos, bestFlankPos);
+      // Find the best flanking position (closest to current position AND within attack range)
       const speed =
         enemy.Spd ||
         enemy.spd ||
@@ -2348,7 +2340,37 @@ export function runEnemyTurnAI(enemy, context) {
         10;
       const maxMoveDistance = speed * 5; // 5 feet per hex
 
-      if (flankDistance <= maxMoveDistance) {
+      // Filter flanking positions to only those that are:
+      // 1. Within movement range
+      // 2. Within attack range after moving
+      const validFlankingPositions = flankingPositions.filter((flankPos) => {
+        const flankDistance = calculateDistance(currentPos, flankPos);
+        if (flankDistance > maxMoveDistance) return false; // Can't reach it
+
+        // Check if this flanking position is within attack range
+        const distanceFromFlankToTarget = calculateDistance(
+          flankPos,
+          targetPos
+        );
+        const rangeValidation = validateWeaponRange(
+          enemy,
+          target,
+          selectedAttack,
+          distanceFromFlankToTarget
+        );
+        return rangeValidation.canAttack;
+      });
+
+      if (validFlankingPositions.length > 0) {
+        // Find the best valid flanking position (closest to current position)
+        const bestFlankPos = validFlankingPositions.reduce((best, current) => {
+          const bestDist = calculateDistance(currentPos, best);
+          const currentDist = calculateDistance(currentPos, current);
+          return currentDist < bestDist ? current : best;
+        });
+
+        const flankDistance = calculateDistance(currentPos, bestFlankPos);
+
         addLog(`🎯 ${enemy.name} attempts to flank ${target.name}`, "info");
 
         // Move to flanking position
@@ -2423,6 +2445,13 @@ export function runEnemyTurnAI(enemy, context) {
           }
         }, 1000);
         return;
+      } else {
+        // No valid flanking positions (either can't reach them or they're out of attack range)
+        // Fall through to normal movement logic
+        addLog(
+          `🎯 ${enemy.name} cannot reach a valid flanking position - will move directly toward ${target.name}`,
+          "info"
+        );
       }
     }
 

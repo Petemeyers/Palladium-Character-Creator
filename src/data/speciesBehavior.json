@@ -88,6 +88,9 @@
       "canSurrender": false,
       "surrenderBias": 0,
       "neverFlee": true,
+      "movementMode": "float",
+      "canFly": true,
+      "usesGroundRun": false,
       "aiProfile": "undead_flyer",
       "flightStyle": "hover",
       "cruiseFraction": 0.2,
@@ -99,12 +102,15 @@
       "isScavenger": false,
       "avoidLargerEnemies": false,
       "diveBonusToStrike": 0,
-      "notes": "Intangible undead that drift and hover rather than land; use hover-style flight, not predator dives."
+      "notes": "Intangible undead that drift and hover rather than land; use hover-style flight, not predator dives. Incorporeal; doesn't really 'run' so poorGroundRunner is less meaningful. Better to treat as having no real ground mode, only hover/float."
     },
     "spectre": {
       "canSurrender": false,
       "surrenderBias": 0,
       "neverFlee": true,
+      "movementMode": "float",
+      "canFly": true,
+      "usesGroundRun": false,
       "aiProfile": "undead_flyer",
       "flightStyle": "hover",
       "cruiseFraction": 0.25,
@@ -116,7 +122,7 @@
       "isScavenger": false,
       "avoidLargerEnemies": false,
       "diveBonusToStrike": 1,
-      "notes": "More aggressive ghostly undead; drift through the air and swoop toward living targets."
+      "notes": "More aggressive ghostly undead; drift through the air and swoop toward living targets. Incorporeal; doesn't really 'run' so poorGroundRunner is less meaningful. Better to treat as having no real ground mode, only hover/float."
     },
     "scarecrow": {
       "canSurrender": false,
@@ -140,6 +146,7 @@
       "canSurrender": true,
       "surrenderBias": 0,
       "neverFlee": false,
+      "poorGroundRunner": false,
       "aiProfile": "aerial_brute",
       "flightStyle": "circling",
       "cruiseFraction": 0.35,
@@ -151,12 +158,13 @@
       "isScavenger": true,
       "avoidLargerEnemies": false,
       "diveBonusToStrike": 3,
-      "notes": "Powerful aerial predator; will dive on animals and humanoids up to large size, can scavenge, and uses aggressive dive attacks."
+      "notes": "Powerful aerial predator; will dive on animals and humanoids up to large size, can scavenge, and uses aggressive dive attacks. Front half eagle, back half lion; the lion hindquarters give solid ground charge capability."
     },
     "sphinx": {
       "canSurrender": true,
       "surrenderBias": -1,
       "neverFlee": false,
+      "poorGroundRunner": false,
       "aiProfile": "enigmatic_flyer",
       "flightStyle": "circling",
       "cruiseFraction": 0.4,
@@ -168,7 +176,7 @@
       "isScavenger": false,
       "avoidLargerEnemies": false,
       "diveBonusToStrike": 2,
-      "notes": "Riddle-giving guardian; can fly in wide circles and dive on intruders if negotiation fails."
+      "notes": "Riddle-giving guardian; can fly in wide circles and dive on intruders if negotiation fails. Lion body with wings; like a lion that can fly."
     },
     "chimera": {
       "canSurrender": false,
@@ -216,6 +224,8 @@
       "canSurrender": true,
       "surrenderBias": 2,
       "neverFlee": false,
+      "poorGroundRunner": true,
+      "preferFlight": true,
       "aiProfile": "cowardly_sky_raider",
       "flightStyle": "circling",
       "cruiseFraction": 0.3,
@@ -227,7 +237,7 @@
       "isScavenger": false,
       "avoidLargerEnemies": true,
       "diveBonusToStrike": 1,
-      "notes": "Cowardly flying raider; prefers to swoop at medium humanoids, avoids larger threats, and often flees or surrenders when hurt."
+      "notes": "Cowardly flying raider; prefers to swoop at medium humanoids, avoids larger threats, and often flees or surrenders when hurt. Half-woman, half-bird; rules already call out that they can't run fast on the ground, plus mythologically they're very much airborne hunters."
     },
     "bugBear": {
       "canSurrender": true,
@@ -245,6 +255,8 @@
       "canSurrender": false,
       "surrenderBias": 0,
       "neverFlee": false,
+      "poorGroundRunner": true,
+      "preferFlight": true,
       "aiProfile": "skittish_flying_predator",
       "flightStyle": "circling",
       "cruiseFraction": 0.25,
@@ -256,12 +268,14 @@
       "isScavenger": true,
       "avoidLargerEnemies": true,
       "diveBonusToStrike": 2,
-      "notes": "Small flying predator; avoids larger enemies, hunts tiny/small animals and faerie-sized foes, scavenges corpses, and dives with +2 strike."
+      "notes": "Small flying predator; avoids larger enemies, hunts tiny/small animals and faerie-sized foes, scavenges corpses, and dives with +2 strike. Classic raptor; mostly perches and flies, ground walking is rare and awkward."
     },
     "owl": {
       "canSurrender": false,
       "surrenderBias": 0,
       "neverFlee": false,
+      "poorGroundRunner": true,
+      "preferFlight": true,
       "aiProfile": "nocturnal_flying_predator",
       "flightStyle": "circling",
       "cruiseFraction": 0.3,
@@ -271,12 +285,14 @@
       "maxPreySize": "SMALL",
       "isScavenger": false,
       "avoidLargerEnemies": true,
-      "notes": "Nocturnal flying predator; hunts small animals."
+      "notes": "Nocturnal flying predator; hunts small animals. Stealth flier, not a ground runner."
     },
     "vulture": {
       "canSurrender": false,
       "surrenderBias": 0,
       "neverFlee": false,
+      "poorGroundRunner": true,
+      "preferFlight": true,
       "aiProfile": "scavenger_flyer",
       "flightStyle": "circling",
       "cruiseFraction": 0.3,
@@ -286,12 +302,14 @@
       "maxPreySize": "MEDIUM",
       "isScavenger": true,
       "avoidLargerEnemies": true,
-      "notes": "Scavenger flyer; mostly hunts corpses, not live prey."
+      "notes": "Scavenger flyer; mostly hunts corpses, not live prey. Textbook clumsy walker with ungainly, hopping gait; built to soar and feed on carcasses."
     },
     "pixie": {
       "canSurrender": true,
       "surrenderBias": 2,
       "neverFlee": false,
+      "poorGroundRunner": true,
+      "preferFlight": true,
       "aiProfile": "trickster_faerie",
       "flightStyle": "hover",
       "cruiseFraction": 0.5,
@@ -299,12 +317,13 @@
       "maxPreySize": "TINY",
       "isScavenger": false,
       "avoidLargerEnemies": false,
-      "notes": "Tiny faerie; hovers and uses trickery."
+      "notes": "Tiny faerie; hovers and uses trickery. Tiny winged faerie; basically a hover unit. When on the ground, steps are short and slow, so treat ground running as bad."
     },
     "dragon": {
       "canSurrender": false,
       "surrenderBias": -3,
       "neverFlee": true,
+      "poorGroundRunner": false,
       "aiProfile": "ancient_dragon",
       "flightStyle": "circling",
       "cruiseFraction": 0.5,
@@ -316,12 +335,14 @@
       "isScavenger": false,
       "avoidLargerEnemies": false,
       "diveBonusToStrike": 4,
-      "notes": "Dominant flying predator; rarely flees, circles high above the battlefield, dive-bombing large prey with devastating attacks."
+      "notes": "Dominant flying predator; rarely flees, circles high above the battlefield, dive-bombing large prey with devastating attacks. Huge, four-legged; iconic as both ground terrors and fliers."
     },
     "pegasus": {
       "canSurrender": true,
       "surrenderBias": 0,
       "neverFlee": false,
+      "poorGroundRunner": true,
+      "preferFlight": true,
       "aiProfile": "noble_mount",
       "flightStyle": "circling",
       "cruiseFraction": 0.4,
@@ -333,12 +354,14 @@
       "isScavenger": false,
       "avoidLargerEnemies": false,
       "diveBonusToStrike": 0,
-      "notes": "Magical flying horse; usually a mount or ally. Circles and repositions in the air but does not dive-bomb prey."
+      "notes": "Magical flying horse; usually a mount or ally. Circles and repositions in the air but does not dive-bomb prey. Rule text says 'flight ability (cannot run fast on ground)' even though it's horse-bodied; we follow the book."
     },
     "song_bird": {
       "canSurrender": true,
       "surrenderBias": 3,
       "neverFlee": false,
+      "poorGroundRunner": true,
+      "preferFlight": true,
       "aiProfile": "skittish_flying_prey",
       "flightStyle": "flitting",
       "cruiseFraction": 0.3,
@@ -350,12 +373,14 @@
       "isScavenger": false,
       "avoidLargerEnemies": true,
       "diveBonusToStrike": 0,
-      "notes": "Tiny song birds; mostly flee and flit between perches, rarely attack."
+      "notes": "Tiny song birds; mostly flee and flit between perches, rarely attack. Tiny percher; hops more than it 'runs.'"
     },
     "game_bird": {
       "canSurrender": true,
       "surrenderBias": 3,
       "neverFlee": false,
+      "poorGroundRunner": true,
+      "preferFlight": true,
       "aiProfile": "skittish_ground_flyer",
       "flightStyle": "flitting",
       "cruiseFraction": 0.25,
@@ -367,12 +392,14 @@
       "isScavenger": false,
       "avoidLargerEnemies": true,
       "diveBonusToStrike": 0,
-      "notes": "Ground birds that burst into short flight mainly to escape predators."
+      "notes": "Ground birds that burst into short flight mainly to escape predators. In reality many (pheasants, quail, grouse) run well on the ground, but for design purposes ('birds are ground clumsy and always prefer to fly') we treat them as 'don't sprint with talons,' and only run short distances."
     },
     "booted_eagle": {
       "canSurrender": true,
       "surrenderBias": 0,
       "neverFlee": false,
+      "poorGroundRunner": true,
+      "preferFlight": true,
       "aiProfile": "aerial_predator",
       "flightStyle": "circling",
       "cruiseFraction": 0.4,
@@ -384,12 +411,15 @@
       "isScavenger": false,
       "avoidLargerEnemies": true,
       "diveBonusToStrike": 2,
-      "notes": "Larger raptor than a hawk; circles high and stoops on small prey with dive bonuses."
+      "notes": "Larger raptor than a hawk; circles high and stoops on small prey with dive bonuses. Another large raptor; eagles spend most of their time perched or aloft, not walking."
     },
     "banshee": {
       "canSurrender": false,
       "surrenderBias": 0,
       "neverFlee": true,
+      "movementMode": "float",
+      "canFly": true,
+      "usesGroundRun": false,
       "aiProfile": "undead_flyer",
       "flightStyle": "hover",
       "cruiseFraction": 0.25,
@@ -401,12 +431,15 @@
       "isScavenger": false,
       "avoidLargerEnemies": false,
       "diveBonusToStrike": 0,
-      "notes": "Wailing spirit that glides and phases; uses hover movement while circling prey."
+      "notes": "Wailing spirit that glides and phases; uses hover movement while circling prey. Incorporeal; doesn't really 'run' so poorGroundRunner is less meaningful. Better to treat as having no real ground mode, only hover/float."
     },
     "air_elemental_minor": {
       "canSurrender": false,
       "surrenderBias": 0,
       "neverFlee": true,
+      "movementMode": "float",
+      "canFly": true,
+      "usesGroundRun": false,
       "aiProfile": "elemental_flyer",
       "flightStyle": "swirl",
       "cruiseFraction": 0.5,
@@ -418,12 +451,15 @@
       "isScavenger": false,
       "avoidLargerEnemies": false,
       "diveBonusToStrike": 0,
-      "notes": "Minor air elemental; constantly airborne, circling and swirling instead of landing."
+      "notes": "Minor air elemental; constantly airborne, circling and swirling instead of landing. Elemental; doesn't really 'run' so poorGroundRunner is less meaningful. Better to treat as having no real ground mode, only hover/float."
     },
     "air_elemental_major": {
       "canSurrender": false,
       "surrenderBias": 0,
       "neverFlee": true,
+      "movementMode": "float",
+      "canFly": true,
+      "usesGroundRun": false,
       "aiProfile": "elemental_flyer",
       "flightStyle": "swirl",
       "cruiseFraction": 0.6,
@@ -435,12 +471,13 @@
       "isScavenger": false,
       "avoidLargerEnemies": false,
       "diveBonusToStrike": 0,
-      "notes": "Major air elemental; powerful flying storm entity that rarely if ever lands."
+      "notes": "Major air elemental; powerful flying storm entity that rarely if ever lands. Elemental; doesn't really 'run' so poorGroundRunner is less meaningful. Better to treat as having no real ground mode, only hover/float."
     },
     "manticore": {
       "canSurrender": false,
       "surrenderBias": -2,
       "neverFlee": false,
+      "poorGroundRunner": false,
       "aiProfile": "aerial_brute",
       "flightStyle": "circling",
       "cruiseFraction": 0.45,
@@ -452,12 +489,14 @@
       "isScavenger": true,
       "avoidLargerEnemies": false,
       "diveBonusToStrike": 3,
-      "notes": "Savage flying beast with tail spikes; circles and dive-bombs medium and large prey."
+      "notes": "Savage flying beast with tail spikes; circles and dive-bombs medium and large prey. Lion-like body with wings and tail; again, should be dangerous both on ground and in the air."
     },
     "wyvern": {
       "canSurrender": false,
       "surrenderBias": -1,
       "neverFlee": false,
+      "poorGroundRunner": true,
+      "preferFlight": true,
       "aiProfile": "aerial_brute",
       "flightStyle": "circling",
       "cruiseFraction": 0.45,
@@ -469,12 +508,14 @@
       "isScavenger": true,
       "avoidLargerEnemies": false,
       "diveBonusToStrike": 3,
-      "notes": "Dragon-like predator; uses wide, high circles and venomous dive attacks."
+      "notes": "Dragon-like predator; uses wide, high circles and venomous dive attacks. Rules note poor ground running; anatomically they're like an unbalanced, two-legged dragon with huge wings."
     },
     "cockatrice": {
       "canSurrender": true,
       "surrenderBias": 1,
       "neverFlee": false,
+      "poorGroundRunner": true,
+      "preferFlight": true,
       "aiProfile": "skittish_flying_brute",
       "flightStyle": "flitting",
       "cruiseFraction": 0.3,
@@ -486,12 +527,13 @@
       "isScavenger": false,
       "avoidLargerEnemies": true,
       "diveBonusToStrike": 1,
-      "notes": "Short-hop flier with petrifying bite; prefers quick flutters and close-range strikes."
+      "notes": "Short-hop flier with petrifying bite; prefers quick flutters and close-range strikes. Small, chicken/dragon hybrid; more flappy/hoppy than true sprinter."
     },
     "gargoyle": {
       "canSurrender": false,
       "surrenderBias": -2,
       "neverFlee": true,
+      "poorGroundRunner": false,
       "aiProfile": "aerial_brute",
       "flightStyle": "circling",
       "cruiseFraction": 0.4,
@@ -503,12 +545,13 @@
       "isScavenger": true,
       "avoidLargerEnemies": false,
       "diveBonusToStrike": 2,
-      "notes": "Stone-winged demon statue; launches from perches, circles, and dive-attacks intruders."
+      "notes": "Stone-winged demon statue; launches from perches, circles, and dive-attacks intruders. Winged brutes, but they stand and run/climb on strong legs; no special clumsiness implied."
     },
     "gargoyle_mage": {
       "canSurrender": false,
       "surrenderBias": -1,
       "neverFlee": true,
+      "poorGroundRunner": false,
       "aiProfile": "caster_flying_brute",
       "flightStyle": "circling",
       "cruiseFraction": 0.4,
@@ -520,12 +563,13 @@
       "isScavenger": true,
       "avoidLargerEnemies": false,
       "diveBonusToStrike": 1,
-      "notes": "Winged stone caster; combines circling flight with spell use and opportunistic dives."
+      "notes": "Winged stone caster; combines circling flight with spell use and opportunistic dives. Winged brutes, but they stand and run/climb on strong legs; no special clumsiness implied."
     },
     "gargoylite": {
       "canSurrender": false,
       "surrenderBias": -1,
       "neverFlee": false,
+      "poorGroundRunner": false,
       "aiProfile": "aerial_brute",
       "flightStyle": "circling",
       "cruiseFraction": 0.35,
@@ -537,12 +581,13 @@
       "isScavenger": true,
       "avoidLargerEnemies": false,
       "diveBonusToStrike": 2,
-      "notes": "Smaller flying gargoyle variant; packs mob enemies and dive from mid-altitude."
+      "notes": "Smaller flying gargoyle variant; packs mob enemies and dive from mid-altitude. Winged brutes, but they stand and run/climb on strong legs; no special clumsiness implied."
     },
     "gurgoyle": {
       "canSurrender": false,
       "surrenderBias": -2,
       "neverFlee": true,
+      "poorGroundRunner": false,
       "aiProfile": "aerial_brute",
       "flightStyle": "circling",
       "cruiseFraction": 0.4,
@@ -554,12 +599,13 @@
       "isScavenger": true,
       "avoidLargerEnemies": false,
       "diveBonusToStrike": 2,
-      "notes": "Larger gargoyle-type demon; aggressive aerial brute using repeated dives."
+      "notes": "Larger gargoyle-type demon; aggressive aerial brute using repeated dives. Winged brutes, but they stand and run/climb on strong legs; no special clumsiness implied."
     },
     "kukulcan": {
       "canSurrender": false,
       "surrenderBias": -3,
       "neverFlee": true,
+      "poorGroundRunner": false,
       "aiProfile": "aerial_brute",
       "flightStyle": "circling",
       "cruiseFraction": 0.5,
@@ -571,12 +617,13 @@
       "isScavenger": false,
       "avoidLargerEnemies": false,
       "diveBonusToStrike": 4,
-      "notes": "Legendary feathered serpent; high-altitude circling and devastating dive attacks."
+      "notes": "Legendary feathered serpent; high-altitude circling and devastating dive attacks. Mostly slithering/hovering; but not 'clumsy,' just a different movement mode."
     },
     "succubus_incubus": {
       "canSurrender": true,
       "surrenderBias": 0,
       "neverFlee": false,
+      "poorGroundRunner": false,
       "aiProfile": "demon_flyer",
       "flightStyle": "hover",
       "cruiseFraction": 0.3,
@@ -588,29 +635,23 @@
       "isScavenger": false,
       "avoidLargerEnemies": false,
       "diveBonusToStrike": 1,
-      "notes": "Winged tempter; prefers hovering near targets and repositioning rather than animal-style hunting."
+      "notes": "Winged tempter; prefers hovering near targets and repositioning rather than animal-style hunting. Winged demons but fundamentally humanoid; should move like people when on ground."
     },
     "shedim": {
       "canSurrender": false,
       "surrenderBias": -2,
       "neverFlee": true,
-      "aiProfile": "demon_flyer",
-      "flightStyle": "circling",
-      "cruiseFraction": 0.4,
-      "circleRadiusFeet": 50,
-      "circleRadiusToleranceFeet": 20,
-      "cruiseAltitudeFeet": 30,
-      "preferredPreyTags": ["humanoid"],
-      "maxPreySize": "LARGE",
-      "isScavenger": false,
-      "avoidLargerEnemies": false,
-      "diveBonusToStrike": 3,
-      "notes": "Terrifying demon with hawk features; circles enemies and uses dive attacks combined with teleportation tricks."
+      "aiProfile": "demon_brute",
+      "movementMode": "ground",
+      "canFly": false,
+      "usesGroundRun": true,
+      "notes": "Terrifying demon with hawk features; fast, brutal ground attacker with teleportation tricks, but cannot actually fly."
     },
     "cherub": {
       "canSurrender": false,
       "surrenderBias": -2,
       "neverFlee": true,
+      "poorGroundRunner": false,
       "aiProfile": "angelic_flyer",
       "flightStyle": "circling",
       "cruiseFraction": 0.4,
@@ -622,12 +663,13 @@
       "isScavenger": false,
       "avoidLargerEnemies": false,
       "diveBonusToStrike": 3,
-      "notes": "Holy winged being; engages aerially against evil foes with controlled dive strikes."
+      "notes": "Holy winged being; engages aerially against evil foes with controlled dive strikes. Angelic/divine humanoid; their base body is human-like, so they can walk/run reasonably."
     },
     "ariel": {
       "canSurrender": false,
       "surrenderBias": -2,
       "neverFlee": true,
+      "poorGroundRunner": false,
       "aiProfile": "angelic_flyer",
       "flightStyle": "circling",
       "cruiseFraction": 0.45,
@@ -639,12 +681,13 @@
       "isScavenger": false,
       "avoidLargerEnemies": false,
       "diveBonusToStrike": 3,
-      "notes": "Fire-and-air aligned divine flier; uses strafing and dive attacks against evil targets."
+      "notes": "Fire-and-air aligned divine flier; uses strafing and dive attacks against evil targets. Angelic/divine humanoid; their base body is human-like, so they can walk/run reasonably."
     },
     "seraph": {
       "canSurrender": false,
       "surrenderBias": -3,
       "neverFlee": true,
+      "poorGroundRunner": false,
       "aiProfile": "angelic_flyer",
       "flightStyle": "circling",
       "cruiseFraction": 0.5,
@@ -656,12 +699,13 @@
       "isScavenger": false,
       "avoidLargerEnemies": false,
       "diveBonusToStrike": 4,
-      "notes": "High-ranking celestial; operates at high altitude with powerful swooping assaults."
+      "notes": "High-ranking celestial; operates at high altitude with powerful swooping assaults. Angelic/divine humanoid; their base body is human-like, so they can walk/run reasonably."
     },
     "tharsis": {
       "canSurrender": false,
       "surrenderBias": -3,
       "neverFlee": true,
+      "poorGroundRunner": false,
       "aiProfile": "angelic_flyer",
       "flightStyle": "circling",
       "cruiseFraction": 0.45,
@@ -673,12 +717,13 @@
       "isScavenger": false,
       "avoidLargerEnemies": false,
       "diveBonusToStrike": 4,
-      "notes": "Mighty celestial champion; engages great monsters in mid-air with heavy dive blows."
+      "notes": "Mighty celestial champion; engages great monsters in mid-air with heavy dive blows. Angelic/divine humanoid; their base body is human-like, so they can walk/run reasonably."
     },
     "baal_rog": {
       "canSurrender": false,
       "surrenderBias": -3,
       "neverFlee": true,
+      "poorGroundRunner": false,
       "aiProfile": "demon_flyer",
       "flightStyle": "circling",
       "cruiseFraction": 0.45,
@@ -690,12 +735,14 @@
       "isScavenger": false,
       "avoidLargerEnemies": false,
       "diveBonusToStrike": 4,
-      "notes": "Winged demon lord; prefers dominating aerial combat with brutal dive and sweep attacks."
+      "notes": "Winged demon lord; prefers dominating aerial combat with brutal dive and sweep attacks. Big demon with wings; think Balrog: very scary runner."
     },
     "demon_locust": {
       "canSurrender": false,
       "surrenderBias": -1,
       "neverFlee": false,
+      "poorGroundRunner": true,
+      "preferFlight": true,
       "aiProfile": "swarm_flyer",
       "flightStyle": "swarm",
       "cruiseFraction": 0.35,
@@ -707,12 +754,13 @@
       "isScavenger": true,
       "avoidLargerEnemies": false,
       "diveBonusToStrike": 1,
-      "notes": "Flying demonic locust swarm; operates as a mass of small fliers with short darting dives."
+      "notes": "Flying demonic locust swarm; operates as a mass of small fliers with short darting dives. Flying insect swarm; ground movement should be more 'skitter/hop' than a proper run."
     },
     "fire_dragon": {
       "canSurrender": false,
       "surrenderBias": -3,
       "neverFlee": true,
+      "poorGroundRunner": false,
       "aiProfile": "ancient_dragon",
       "flightStyle": "circling",
       "cruiseFraction": 0.5,
@@ -724,12 +772,13 @@
       "isScavenger": false,
       "avoidLargerEnemies": false,
       "diveBonusToStrike": 4,
-      "notes": "Classic fire dragon; high soaring circles, breath strafes, and devastating dive attacks."
+      "notes": "Classic fire dragon; high soaring circles, breath strafes, and devastating dive attacks. Huge, four-legged; iconic as both ground terrors and fliers."
     },
     "ice_dragon": {
       "canSurrender": false,
       "surrenderBias": -3,
       "neverFlee": true,
+      "poorGroundRunner": false,
       "aiProfile": "ancient_dragon",
       "flightStyle": "circling",
       "cruiseFraction": 0.5,
@@ -741,12 +790,13 @@
       "isScavenger": false,
       "avoidLargerEnemies": false,
       "diveBonusToStrike": 4,
-      "notes": "Cold-region dragon; mirrors fire dragon flight, with icy breath and similar aerial tactics."
+      "notes": "Cold-region dragon; mirrors fire dragon flight, with icy breath and similar aerial tactics. Huge, four-legged; iconic as both ground terrors and fliers."
     },
     "night_stalker": {
       "canSurrender": false,
       "surrenderBias": -2,
       "neverFlee": true,
+      "poorGroundRunner": false,
       "aiProfile": "ancient_dragon",
       "flightStyle": "circling",
       "cruiseFraction": 0.45,
@@ -758,7 +808,7 @@
       "isScavenger": false,
       "avoidLargerEnemies": false,
       "diveBonusToStrike": 5,
-      "notes": "Stealthy nocturnal dragon; circles in darkness and executes extremely hard-hitting dives."
+      "notes": "Stealthy nocturnal dragon; circles in darkness and executes extremely hard-hitting dives. Huge, four-legged; iconic as both ground terrors and fliers."
     }
   },
   "alignment": {

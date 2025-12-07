@@ -58,7 +58,7 @@ import CombatActionsPanel from "../components/CombatActionsPanel";
 import { createPlayableCharacterFighter, getPlayableCharacterRollDetails } from "../utils/autoRoll";
 import { assignRandomWeaponToEnemy } from "../utils/enemyWeaponAssigner";
 import { initializeAmmo, useAmmo, canFireMissileWeapon } from "../utils/combatAmmoManager";
-import { getRandomCombatSpell } from "../data/combatSpells";
+import { getRandomCombatSpell, getSpellsForLevel } from "../data/combatSpells";
 import { isTwoHandedWeapon, getWeaponDamage } from "../utils/weaponSlotManager";
 import { usePsionic } from "../utils/psionicEffects";
 import { applyInitialEffect } from "../utils/updateActiveEffects";
@@ -105,6 +105,7 @@ import {
   liftAndCarry,
   dropCarriedTarget,
 } from "../utils/flightActions.js";
+import { getDefaultMovementMode, getSpeciesProfile } from "../utils/ai/movementModeHelpers.js";
 
 // Debug toggle for grapple system
 const DEBUG_GRAPPLE = true; // set to false in production
@@ -164,6 +165,9 @@ import {
   drainStamina, 
   applyFatiguePenalties,
   getFatigueStatus,
+  resolveCollapseFromExhaustion,
+  updateFatiguePenalties,
+  recoverStamina,
   STAMINA_COSTS 
 } from "../utils/combatFatigueSystem.js";
 import { createAIActionSelector } from "../utils/combatEngine.js";
@@ -976,6 +980,7 @@ export default function CombatPage({ characters = [] }) {
   const [mapViewMode, setMapViewMode] = useState('2D'); // '2D' or '3D' view mode
   const [mapHeight, setMapHeight] = useState(1200); // Map height in pixels
   const [movementMode, setMovementMode] = useState({ active: false, isRunning: false }); // Track if player is selecting movement and running mode
+  const [playerMovementMode, setPlayerMovementMode] = useState('ground'); // Track player's chosen movement mode: 'ground' | 'flight'
   const [selectedCombatantId, setSelectedCombatantId] = useState(null); // Track selected combatant from map
   const [hoveredCell, setHoveredCell] = useState(null); // Track hovered hex cell
   const [selectedHex, setSelectedHex] = useState(null); // Track selected hex for movement
@@ -1357,6 +1362,11 @@ export default function CombatPage({ characters = [] }) {
         normalizedEntry = { name: entry };
       }
       
+      // Clean up spell name - remove "Spell: " prefix if present
+      if (normalizedEntry.name && normalizedEntry.name.startsWith("Spell: ")) {
+        normalizedEntry.name = normalizedEntry.name.replace(/^Spell: /i, "");
+      }
+      
       // Check if this is a unified spell and convert it
       if (normalizedEntry.type === "magic" || normalizedEntry.source === "unified") {
         const converted = convertUnifiedSpellToCombatSpell(normalizedEntry);
@@ -1387,11 +1397,79 @@ export default function CombatPage({ characters = [] }) {
       }
     };
 
+    // Debug logging for wizards
+    const isWizard = fighter.OCC?.toLowerCase().includes("wizard") || 
+                    fighter.occ?.toLowerCase().includes("wizard") ||
+                    fighter.class?.toLowerCase().includes("wizard");
+    
+    if (isWizard && import.meta.env.DEV) {
+      const magicAbilities = Array.isArray(fighter.abilities) 
+        ? fighter.abilities.filter(a => a.type === "magic" || a.type === "spell")
+        : [];
+      console.log(`🔮 [getFighterSpells] Checking spells for ${fighter.name}:`);
+      console.log(`  - magic:`, fighter.magic, `(length: ${fighter.magic?.length || 0})`);
+      if (fighter.magic && fighter.magic.length > 0) {
+        console.log(`  - magic contents:`, JSON.stringify(fighter.magic, null, 2));
+      }
+      console.log(`  - abilities:`, fighter.abilities, `(length: ${fighter.abilities?.length || 0})`);
+      if (fighter.abilities && fighter.abilities.length > 0) {
+        console.log(`  - abilities contents:`, JSON.stringify(fighter.abilities.slice(0, 3), null, 2));
+      }
+      console.log(`  - magicAbilities:`, magicAbilities, `(length: ${magicAbilities.length})`);
+      if (magicAbilities.length > 0) {
+        console.log(`  - First magic ability:`, JSON.stringify(magicAbilities[0], null, 2));
+      }
+      console.log(`  - OCC:`, fighter.OCC || fighter.occ || fighter.class);
+      console.log(`  - level:`, fighter.level);
+    }
+
     addSpellList(fighter.magic);
     addSpellList(fighter.spells);
     addSpellList(fighter.knownSpells);
     addSpellList(fighter.spellbook);
     addSpellList(fighter.spellList);
+    
+    // Also check abilities array for spells (type: "magic")
+    if (Array.isArray(fighter.abilities)) {
+      fighter.abilities.forEach((ability) => {
+        if (ability.type === "magic" || ability.type === "spell") {
+          addSpellEntry(ability);
+        }
+      });
+    }
+    
+    // Also check unified abilities if available (imported at top of file)
+    try {
+      const unified = getUnifiedAbilities(fighter);
+      if (unified?.magic) {
+        if (Array.isArray(unified.magic)) {
+          unified.magic.forEach(addSpellEntry);
+        } else if (unified.magic && typeof unified.magic === 'object') {
+          // Check knownSpells, spells, or any array property
+          if (Array.isArray(unified.magic.knownSpells)) {
+            unified.magic.knownSpells.forEach(addSpellEntry);
+          }
+          if (Array.isArray(unified.magic.spells)) {
+            unified.magic.spells.forEach(addSpellEntry);
+          }
+          // Also check if magic itself has spell-like properties
+          Object.values(unified.magic).forEach((value) => {
+            if (Array.isArray(value)) {
+              value.forEach(addSpellEntry);
+            }
+          });
+        }
+      }
+    } catch (e) {
+      // Silently fail if getUnifiedAbilities has issues
+      if (isWizard && import.meta.env.DEV) {
+        console.warn(`🔮 [getFighterSpells] Error getting unified abilities:`, e);
+      }
+    }
+
+    if (isWizard && import.meta.env.DEV) {
+      console.log(`🔮 [getFighterSpells] Found ${normalised.length} spells for ${fighter.name}:`, normalised.map(s => s.name));
+    }
 
     return normalised;
   }, []);
@@ -1422,6 +1500,8 @@ export default function CombatPage({ characters = [] }) {
       { value: "Brace", label: "⚔️ Brace (vs Charge)" },
       { value: "Run", label: "🏃 Run" },
       { value: "Defend/Hold", label: "🛡️ Defend" },
+      { value: "Light Rest", label: "😮‍💨 Catch Breath (Light Rest)" },
+      { value: "Full Rest", label: "🧘 Full Rest" },
       { value: "Combat Maneuvers", label: "⚔️ Maneuver" },
       { value: "Use Skill", label: "🛠️ Use Skill" },
       { value: "Hide", label: "👤 Hide / Prowl" },
@@ -1934,6 +2014,161 @@ useEffect(() => {
     }
   }, [fighters, turnIndex, temporaryHexSharing, addLog, meleeRound, turnCounter, clearScheduledTurn, canFighterAct, combatActive]);
 
+  // Collapse-from-exhaustion check at the start of a fighter's turn
+  useEffect(() => {
+    if (!fighters.length || turnIndex < 0) return;
+
+    const currentFighter = fighters[turnIndex];
+    if (!currentFighter || !currentFighter.fatigueState) return;
+
+    const fatigue = getFatigueStatus(currentFighter);
+
+    // 1) If they are already collapsed, tick down collapseRoundsRemaining
+    if (currentFighter.fatigueState.status === "collapsed") {
+      const remaining = currentFighter.fatigueState.collapseRoundsRemaining ?? 0;
+
+      if (remaining > 0) {
+        // Decrement remaining melees and keep them down
+        setFighters(prev =>
+          prev.map(f =>
+            f.id === currentFighter.id
+              ? {
+                  ...f,
+                  fatigueState: {
+                    ...f.fatigueState,
+                    collapseRoundsRemaining: remaining - 1,
+                  },
+                }
+              : f
+          )
+        );
+
+        addLog(
+          `💤 ${currentFighter.name} is collapsed from exhaustion (${remaining - 1} melees remaining).`,
+          "status"
+        );
+
+        // Their turn effectively does nothing - skip to next fighter
+        setTimeout(() => {
+          endTurn();
+        }, 1000);
+        return;
+      }
+
+      // They wake up this turn: switch them to "exhausted" with severe penalties
+      // Stamina was already bumped to Severe threshold (-15) when they collapsed
+      setFighters(prev =>
+        prev.map(f => {
+          if (f.id === currentFighter.id) {
+            const updatedFighter = {
+              ...f,
+              fatigueState: {
+                ...f.fatigueState,
+                status: "exhausted",
+                fatigueLevel: 3,
+                collapseRoundsRemaining: 0,
+                // Preserve currentStamina (should be at Severe threshold from collapse)
+                // updateFatiguePenalties will recalculate penalties based on this
+              },
+            };
+            // Update penalties after status change (will set correct penalties for -15 stamina)
+            updateFatiguePenalties(updatedFighter);
+            return updatedFighter;
+          }
+          return f;
+        })
+      );
+
+      addLog(
+        `😓 ${currentFighter.name} staggers back to their feet, still exhausted.`,
+        "status"
+      );
+
+      return;
+    }
+
+    // 2) If they are in the risk band, roll the collapse check
+    if (fatigue.status === "collapse_risk") {
+      const stamina = currentFighter.fatigueState.currentStamina;
+      const { collapsed, roll, target, durationMelees, newStamina } =
+        resolveCollapseFromExhaustion(currentFighter, stamina);
+
+      if (collapsed) {
+        // Update fighter to fully collapsed
+        setFighters(prev =>
+          prev.map(f =>
+            f.id === currentFighter.id
+              ? {
+                  ...f,
+                  fatigueState: {
+                    ...f.fatigueState,
+                    status: "collapsed",
+                    currentStamina: newStamina,
+                    collapseRoundsRemaining: durationMelees,
+                    penalties: {
+                      strike: -5,
+                      parry: -5,
+                      dodge: -5,
+                      ps: 0,
+                      speed: 0,
+                    },
+                  },
+                }
+            : f
+          )
+        );
+
+        addLog(
+          `⚠️ ${currentFighter.name} collapses from exhaustion! (rolled ${roll} vs P.E. ${target})`,
+          "warning"
+        );
+
+        // Their turn is basically a no-op now - skip to next fighter
+        setTimeout(() => {
+          endTurn();
+        }, 1000);
+        return;
+      } else {
+        // They stay up but are in bad shape; keep them in collapse_risk
+        setFighters(prev =>
+          prev.map(f =>
+            f.id === currentFighter.id
+              ? {
+                  ...f,
+                  fatigueState: {
+                    ...f.fatigueState,
+                    status: "collapse_risk",
+                    currentStamina: newStamina,
+                  },
+                }
+            : f
+          )
+        );
+
+        addLog(
+          `😣 ${currentFighter.name} nearly collapses from exhaustion (rolled ${roll} vs P.E. ${target}) but stays on their feet.`,
+          "status"
+        );
+      }
+    }
+  }, [fighters, turnIndex, addLog, endTurn]);
+
+  // Auto-set default movement mode when fighter or target changes
+  useEffect(() => {
+    if (!currentFighter || !selectedTarget) {
+      // If no target, default to ground
+      setPlayerMovementMode('ground');
+      return;
+    }
+
+    const mode = getDefaultMovementMode(currentFighter, selectedTarget, {
+      fighters,
+      positions,
+    });
+
+    setPlayerMovementMode(mode);
+  }, [currentFighter, selectedTarget, fighters, positions]);
+
   const scheduleEndTurn = useCallback(
     (delayOverride = null) => {
       if (combatPausedRef.current) {
@@ -1957,6 +2192,67 @@ useEffect(() => {
     },
     [clearScheduledTurn, getActionDelay, endTurn]
   );
+
+  // Helper function for player flight movement
+  const handlePlayerFlightMove = useCallback(async (fighter, targetHex, oldPos, selectedMove) => {
+    if (!fighter) return;
+
+    const currentAlt = fighter.altitudeFeet ?? fighter.altitude ?? 0;
+    const minCruiseAlt = 10;
+
+    // Take off if not already flying
+    if (!fighter.isFlying || currentAlt <= 0) {
+      const updatedFighter = { ...fighter };
+      startFlying(updatedFighter, {
+        fighters,
+        positions,
+        setFighters,
+        setPositions,
+        addLog,
+      });
+      
+      // Update fighter state
+      setFighters(prev => prev.map(f => 
+        f.id === fighter.id ? updatedFighter : f
+      ));
+      
+      addLog(`🦅 ${fighter.name} takes off into the air!`, "info");
+      
+      // Ensure minimum cruising altitude
+      if ((updatedFighter.altitudeFeet ?? 0) < minCruiseAlt) {
+        changeAltitude(updatedFighter, minCruiseAlt - (updatedFighter.altitudeFeet ?? 0), {
+          fighters,
+          positions,
+          setFighters,
+          setPositions,
+          addLog,
+        });
+      }
+    }
+
+    // Move horizontally to target hex
+    setPositions(prev => {
+      const updated = {
+        ...prev,
+        [fighter.id]: { x: targetHex.x, y: targetHex.y }
+      };
+      positionsRef.current = updated;
+      return updated;
+    });
+
+    // Update fighter position
+    setFighters(prev => prev.map(f => {
+      if (f.id === fighter.id) {
+        return {
+          ...f,
+          position: { x: targetHex.x, y: targetHex.y },
+          isFlying: true,
+          altitudeFeet: Math.max(minCruiseAlt, f.altitudeFeet ?? minCruiseAlt),
+        };
+      }
+      return f;
+    }));
+  }, [fighters, positions, setFighters, setPositions, addLog]);
 
   // Handler for movement selection from TacticalMap
   const handleMoveSelect = useCallback((x, y) => {
@@ -2091,15 +2387,28 @@ useEffect(() => {
           return;
         }
 
-        // Normal movement
-        setPositions(prev => {
-          const updated = {
-          ...prev,
-          [selectedMovementFighter]: { x, y }
-          };
-          positionsRef.current = updated;
-          return updated;
-        });
+        // Normal movement - check if this should be flight or ground
+        const profile = getSpeciesProfile(combatant);
+        const useFlight = playerMovementMode === 'flight' && canFighterFly(combatant);
+        
+        // Handle floaters (ghosts, elementals) - always use flight
+        if (profile.movementMode === 'float' || profile.usesGroundRun === false) {
+          // Floaters always move as "flight" even if not explicitly set
+          handlePlayerFlightMove(combatant, { x, y }, oldPos, selectedMove);
+        } else if (useFlight) {
+          // Flight movement
+          handlePlayerFlightMove(combatant, { x, y }, oldPos, selectedMove);
+        } else {
+          // Ground movement
+          setPositions(prev => {
+            const updated = {
+            ...prev,
+            [selectedMovementFighter]: { x, y }
+            };
+            positionsRef.current = updated;
+            return updated;
+          });
+        }
       }
       
       // Deduct action points based on movement distance
@@ -2119,7 +2428,8 @@ useEffect(() => {
       
       const movementType = movementMode.isRunning ? "runs" : "moves";
       const actionText = actionCost > 1 ? ` (${actionCost} actions)` : "";
-      addLog(`🚶 ${currentFighter?.name} ${movementType} from (${oldPos.x}, ${oldPos.y}) to (${x}, ${y})${actionText}`, "info");
+      const movementModeText = playerMovementMode === 'flight' ? "flies" : movementType;
+      addLog(`🚶 ${currentFighter?.name} ${movementModeText} from (${oldPos.x}, ${oldPos.y}) to (${x}, ${y})${actionText}`, "info");
       
       // Clear movement mode
       setMovementMode({ active: false, isRunning: false });
@@ -2138,7 +2448,7 @@ useEffect(() => {
       // Always end turn after movement to alternate actions
       setTimeout(() => endTurn(), 500);
       }
-  }, [movementMode, selectedMovementFighter, positions, currentFighter, addLog, fighters, isHexOccupied, getWeaponRange, turnCounter, endTurn]);
+  }, [movementMode, selectedMovementFighter, positions, currentFighter, addLog, fighters, isHexOccupied, getWeaponRange, turnCounter, endTurn, handlePlayerFlightMove, playerMovementMode]);
 
   // Enhanced attack validation with distance-based combat system
   const validateWeaponRange = useCallback((
@@ -7068,6 +7378,69 @@ useEffect(() => {
         setTimeout(() => endTurn(), 500);
         return;
       
+      case "Light Rest": {
+        // Player takes a moment to catch their breath
+        const restCost = getActionCost("USE_SKILL"); // 1 action by default
+
+        setFighters(prev =>
+          prev.map(f => {
+            if (f.id !== currentFighter.id) return f;
+
+            // Clone so recoverStamina can safely mutate fatigueState
+            const cloned = { ...f };
+            const updatedFatigue = recoverStamina(cloned, "LIGHT_REST", 1);
+
+            return {
+              ...cloned,
+              fatigueState: { ...updatedFatigue },
+              remainingAttacks: Math.max(
+                0,
+                f.remainingAttacks -
+                  (restCost === "all" ? f.remainingAttacks : restCost)
+              ),
+            };
+          })
+        );
+
+        addLog(
+          `😮‍💨 ${currentFighter.name} takes a moment to catch their breath and recover stamina.`,
+          "info"
+        );
+
+        executingActionRef.current = false;
+        clearTimeout(lockTimeout);
+        setTimeout(() => endTurn(), 500);
+        return;
+      }
+
+      case "Full Rest": {
+        // Player drops out of the action to fully rest
+        setFighters(prev =>
+          prev.map(f => {
+            if (f.id !== currentFighter.id) return f;
+
+            const cloned = { ...f };
+            const updatedFatigue = recoverStamina(cloned, "FULL_REST", 1);
+
+            return {
+              ...cloned,
+              fatigueState: { ...updatedFatigue },
+              remainingAttacks: 0, // full turn spent resting
+            };
+          })
+        );
+
+        addLog(
+          `🧘 ${currentFighter.name} pauses to fully rest, focusing on recovering stamina this round.`,
+          "info"
+        );
+
+        executingActionRef.current = false;
+        clearTimeout(lockTimeout);
+        setTimeout(() => endTurn(), 500);
+        return;
+      }
+      
       case "Brace": {
         // Set defensive stance for bracing against charges (spear/polearm)
         const braceWeapon = getEquippedWeapons(currentFighter)?.primary || getEquippedWeapons(currentFighter)?.secondary || null;
@@ -7843,20 +8216,125 @@ useEffect(() => {
       const unified = getUnifiedAbilities(char);
       const derivedSpells = unified?.magic?.knownSpells || [];
       let magicSpells = Array.isArray(char.magic) ? [...char.magic] : [];
+      
+      // Debug logging for wizards
+      const isWizardChar = (char.OCC || char.occ || char.class || "").toLowerCase().includes("wizard");
+      if (isWizardChar && import.meta.env.DEV) {
+        const magicAbilities = Array.isArray(char.abilities) ? char.abilities.filter(a => a.type === "magic" || a.type === "spell") : [];
+        console.log(`🔮 [selectParty] Converting ${char.name} (Wizard):`);
+        console.log(`  - magic:`, char.magic, `(length: ${char.magic?.length || 0})`);
+        console.log(`  - abilities:`, char.abilities, `(length: ${char.abilities?.length || 0})`);
+        console.log(`  - magicAbilities:`, magicAbilities, `(length: ${magicAbilities.length})`);
+        console.log(`  - unified:`, unified);
+        console.log(`  - derivedSpells:`, derivedSpells, `(length: ${derivedSpells.length})`);
+        if (magicAbilities.length > 0) {
+          console.log(`  - First magic ability:`, JSON.stringify(magicAbilities[0], null, 2));
+        }
+      }
+      
+      // If no spells in magic array, check abilities array for spells with type: "magic"
+      if (magicSpells.length === 0 && Array.isArray(char.abilities)) {
+        const magicAbilities = char.abilities.filter(a => {
+          const type = a.type?.toLowerCase();
+          return type === "magic" || type === "spell" || (a.name && a.name.toLowerCase().startsWith("spell:"));
+        });
+        if (magicAbilities.length > 0) {
+          if (isWizardChar && import.meta.env.DEV) {
+            console.log(`🔮 [selectParty] Found ${magicAbilities.length} magic abilities for ${char.name}, converting to spells...`);
+            console.log(`🔮 [selectParty] Magic abilities:`, JSON.stringify(magicAbilities, null, 2));
+          }
+          magicSpells = magicAbilities.map(ability => {
+            // Convert ability to spell format
+            const spellName = ability.name?.replace(/^Spell: /i, "") || ability.name;
+            // Try to extract cost from various fields
+            const cost = ability.cost || ability.ppeCost || ability.value || 10; // Default PPE cost if not specified
+            const converted = {
+              name: spellName,
+              cost: typeof cost === "number" ? cost : (typeof cost === "string" ? parseInt(cost) || 10 : 10),
+              damage: ability.damage || "",
+              effect: ability.effect || "",
+              type: "magic",
+              source: "abilities"
+            };
+            if (isWizardChar && import.meta.env.DEV) {
+              console.log(`🔮 [selectParty] Converted ability to spell:`, JSON.stringify(ability, null, 2), '→', JSON.stringify(converted, null, 2));
+            }
+            return converted;
+          });
+        } else if (isWizardChar && import.meta.env.DEV) {
+          console.log(`🔮 [selectParty] No magic abilities found in abilities array for ${char.name}`);
+          if (Array.isArray(char.abilities) && char.abilities.length > 0) {
+            console.log(`🔮 [selectParty] Sample abilities (first 3):`, JSON.stringify(char.abilities.slice(0, 3), null, 2));
+          }
+        }
+      }
+      
+      // Also check unified abilities
       if (magicSpells.length === 0 && derivedSpells.length > 0) {
+        if (isWizardChar && import.meta.env.DEV) {
+          console.log(`🔮 [selectParty] Using ${derivedSpells.length} derived spells from unified abilities for ${char.name}`);
+        }
         magicSpells = derivedSpells
           .map(convertUnifiedSpellToCombatSpell)
           .filter(Boolean);
+      }
+      
+      // If still no spells, load from spell database for wizards
+      if (magicSpells.length === 0 && isWizardChar) {
+        try {
+          const wizardLevel = char.level || 1;
+          const availableSpells = getSpellsForLevel(wizardLevel);
+          
+          // Take a reasonable number of spells (e.g., 5-10 spells for a level 15 wizard)
+          const numSpells = Math.min(Math.max(5, Math.floor(wizardLevel / 2)), availableSpells.length);
+          const selectedSpells = availableSpells.slice(0, numSpells);
+          
+          magicSpells = selectedSpells.map(spell => ({
+            name: spell.name,
+            cost: spell.ppeCost || 10,
+            damage: spell.damage || "",
+            effect: spell.description || "",
+            range: spell.range || "",
+            level: spell.level || 1,
+            type: "magic",
+            source: "spellDatabase"
+          }));
+          
+          if (import.meta.env.DEV) {
+            console.log(`🔮 [selectParty] Loaded ${magicSpells.length} spells from spell database for ${char.name} (level ${wizardLevel})`);
+            console.log(`🔮 [selectParty] Loaded spells:`, magicSpells.map(s => s.name).join(', '));
+          }
+        } catch (error) {
+          console.error(`🔮 [selectParty] Error loading spells from database for ${char.name}:`, error);
+        }
+      }
+      
+      if (isWizardChar && import.meta.env.DEV) {
+        console.log(`🔮 [selectParty] Final magicSpells for ${char.name}:`, magicSpells.length, 'spells');
+        if (magicSpells.length > 0) {
+          console.log(`🔮 [selectParty] Spell names:`, magicSpells.map(s => s.name).join(', '));
+        }
       }
 
       const existingPPE = typeof char.PPE === "number" ? char.PPE : 0;
       const derivedPPE =
         (unified?.magic?.maxPPE ?? unified?.energy?.PPE ?? 0);
-      const PPEValue = existingPPE > 0 ? existingPPE : derivedPPE;
+      let PPEValue = existingPPE > 0 ? existingPPE : derivedPPE;
+      
+      // If wizard has spells but no PPE, give them a default amount based on level
+      // Default: 10 PPE per level, minimum 20 PPE for level 1-2, max 200 PPE
+      if (magicSpells.length > 0 && PPEValue === 0) {
+        const wizardLevel = char.level || 1;
+        PPEValue = Math.min(Math.max(20, wizardLevel * 10), 200);
+        if (import.meta.env.DEV) {
+          console.log(`🔮 [selectParty] Wizard ${char.name} has spells but no PPE - initializing to ${PPEValue} PPE (level ${wizardLevel})`);
+        }
+      }
+      
       const currentPPEValue =
         typeof char.currentPPE === "number"
           ? char.currentPPE
-          : (PPEValue > 0 ? PPEValue : undefined);
+          : PPEValue; // Always set currentPPE to PPEValue if not explicitly set
       
       const fighter = {
         ...char,
@@ -7880,6 +8358,7 @@ useEffect(() => {
         magic: magicSpells,
         ISP: char.ISP || 0,
         PPE: PPEValue,
+        currentPPE: currentPPEValue, // Always set currentPPE
         // Add attacks array for combat (equipped weapon or unarmed)
         attacks: [{
           name: equippedWeaponName,
@@ -7892,10 +8371,6 @@ useEffect(() => {
         altitude: char.altitude || 0,
         altitudeFeet: char.altitudeFeet || char.altitude || 0,
       };
-
-      if (currentPPEValue !== undefined) {
-        fighter.currentPPE = currentPPEValue;
-      }
 
         // Apply size modifiers to fighter
         const fighterWithSizeMods = applySizeModifiers(fighter);
@@ -8760,6 +9235,30 @@ useEffect(() => {
             }}
           >
             <VStack spacing={3} align="stretch">
+                {/* Movement Mode Toggle - only show if fighter can fly */}
+                {currentFighter && canFighterFly(currentFighter) && (
+                  <Box>
+                    <Text fontSize="sm" fontWeight="bold" mb={2}>Movement Mode:</Text>
+                    <HStack spacing={2}>
+                      <Button
+                        size="sm"
+                        variant={playerMovementMode === 'ground' ? "solid" : "outline"}
+                        colorScheme={playerMovementMode === 'ground' ? "blue" : "gray"}
+                        onClick={() => setPlayerMovementMode('ground')}
+                      >
+                        Ground
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant={playerMovementMode === 'flight' ? "solid" : "outline"}
+                        colorScheme={playerMovementMode === 'flight' ? "blue" : "gray"}
+                        onClick={() => setPlayerMovementMode('flight')}
+                      >
+                        Fly
+                      </Button>
+                    </HStack>
+                  </Box>
+                )}
                 {/* Action Buttons */}
                 <Box>
                   <Text fontSize="sm" fontWeight="bold" mb={2}>Select Action:</Text>
@@ -9407,13 +9906,27 @@ useEffect(() => {
                           {fighter.ISP !== undefined && ` | ISP: ${fighter.ISP}`}
                           {fighter.PPE !== undefined && ` | PPE: ${fighter.PPE}`}
                         </Text>
-                        {/* Altitude and Carrying Status */}
+                        {/* Altitude, Stamina, and Carrying Status */}
                         <HStack spacing={2} fontSize="sm">
                           <Text color="blue.700">
                             🪽 Altitude: {isFlying(fighter) && (fighter.altitudeFeet ?? 0) > 0
                               ? `${fighter.altitudeFeet ?? fighter.altitude ?? 0}ft`
                               : 'Ground'}
                           </Text>
+                          {(() => {
+                            const fatigueStatus = getFatigueStatus(fighter);
+                            if (fatigueStatus && fatigueStatus.maxStamina) {
+                              const staminaColor = fatigueStatus.stamina <= 0 ? "red.700" : 
+                                                   fatigueStatus.stamina < fatigueStatus.maxStamina * 0.5 ? "orange.700" : "green.700";
+                              return (
+                                <Text color={staminaColor}>
+                                  💪 Stamina: {fatigueStatus.stamina?.toFixed(1) || 0}/{fatigueStatus.maxStamina || 0} SP
+                                  {fatigueStatus.status !== "ready" && ` (${fatigueStatus.description})`}
+                                </Text>
+                              );
+                            }
+                            return null;
+                          })()}
                           {fighter.isCarrying && fighter.carriedTargetId && (
                             <Text color="purple.700">
                               ✈️ Carrying: {fighters.find(f => f.id === fighter.carriedTargetId)?.name || 'Target'}
@@ -10180,13 +10693,27 @@ useEffect(() => {
                             {fighter.ISP !== undefined && ` | ISP: ${fighter.ISP}`}
                             {fighter.PPE !== undefined && ` | PPE: ${fighter.PPE}`}
                           </Box>
-                          {/* Altitude and Carrying Status */}
+                          {/* Altitude, Stamina, and Carrying Status */}
                           <HStack spacing={2} fontSize="sm">
                             <Text>
                               🪽 Altitude: {isFlying(fighter) && (fighter.altitudeFeet ?? 0) > 0
                                 ? `${fighter.altitudeFeet ?? fighter.altitude ?? 0}ft`
                                 : 'Ground'}
                             </Text>
+                            {(() => {
+                              const fatigueStatus = getFatigueStatus(fighter);
+                              if (fatigueStatus && fatigueStatus.maxStamina) {
+                                const staminaColor = fatigueStatus.stamina <= 0 ? "red.700" : 
+                                                     fatigueStatus.stamina < fatigueStatus.maxStamina * 0.5 ? "orange.700" : "green.700";
+                                return (
+                                  <Text color={staminaColor}>
+                                    💪 Stamina: {fatigueStatus.stamina?.toFixed(1) || 0}/{fatigueStatus.maxStamina || 0} SP
+                                    {fatigueStatus.status !== "ready" && ` (${fatigueStatus.description})`}
+                                  </Text>
+                                );
+                              }
+                              return null;
+                            })()}
                             {fighter.isCarrying && fighter.carriedTargetId && (
                               <Text color="purple.700">
                                 ✈️ Carrying: {fighters.find(f => f.id === fighter.carriedTargetId)?.name || 'Target'}
