@@ -19,7 +19,12 @@ import { calculateDistance } from "../data/movementRules.js";
 import { MOVEMENT_RATES, ENGAGEMENT_RANGES } from "../data/movementRules.js";
 import { getDynamicWidth, isTightTerrain } from "./environmentMetrics.js";
 import { canUseWeapon } from "./combatEnvironmentLogic.js";
-import { canFly, isFlying, getAltitude, calculateFlightMovement } from "./abilitySystem.js";
+import {
+  canFly,
+  isFlying,
+  getAltitude,
+  calculateFlightMovement,
+} from "./abilitySystem.js";
 import { getWeaponLength } from "./combatEnvironmentLogic.js";
 
 /**
@@ -35,7 +40,11 @@ import { getWeaponLength } from "./combatEnvironmentLogic.js";
  * @param {Object} fighter - Optional fighter object (for flight speed calculation)
  * @returns {Object} Movement calculations
  */
-export function calculateMovementPerAction(speed, attacksPerMelee, fighter = null) {
+export function calculateMovementPerAction(
+  speed,
+  attacksPerMelee,
+  fighter = null
+) {
   // Check if fighter is flying and has flight speed multiplier
   const isCurrentlyFlying = fighter && isFlying(fighter);
   if (isCurrentlyFlying) {
@@ -51,7 +60,7 @@ export function calculateMovementPerAction(speed, attacksPerMelee, fighter = nul
       };
     }
   }
-  
+
   // Ground movement: OFFICIAL 1994 PALLADIUM FORMULA: Speed × 18 = feet per melee (running)
   const feetPerMelee = speed * 18;
   const feetPerAction = feetPerMelee / attacksPerMelee;
@@ -406,18 +415,19 @@ export function validateAttackRange(
   const attackerIsFlying = isFlying(attacker);
   const targetAltitude = getAltitude(target) || 0;
   const attackerAltitude = getAltitude(attacker) || 0;
-  
+
   // Check if this is a melee attack (weapon range <= 10 feet typically)
   const isMeleeAttack = weaponRange <= 10;
-  
+
   // Check if attacker has ranged weapons
   const weaponName = (weapon?.name || "").toLowerCase();
-  const hasRangedWeapon = weaponName.includes('bow') || 
-                          weaponName.includes('crossbow') || 
-                          weaponName.includes('sling') || 
-                          weaponName.includes('thrown') || 
-                          (weapon?.range && weapon.range > 10);
-  
+  const hasRangedWeapon =
+    weaponName.includes("bow") ||
+    weaponName.includes("crossbow") ||
+    weaponName.includes("sling") ||
+    weaponName.includes("thrown") ||
+    (weapon?.range && weapon.range > 10);
+
   // For melee attacks, check vertical reach in both directions:
   // - Ground attacker vs flying target (existing check)
   // - Flying attacker vs ground target (NEW: must dive to melee altitude)
@@ -427,7 +437,7 @@ export function validateAttackRange(
     const weaponReach = getWeaponLength(weapon, attacker) || weaponRange;
     // Rough estimate: weapon reach + body reach (3ft for arm/neck extension)
     const maxMeleeVertical = weaponReach + 3;
-    
+
     // Check if vertical separation exceeds melee reach
     if (verticalSeparation > maxMeleeVertical) {
       // Determine which direction the problem is
@@ -453,22 +463,32 @@ export function validateAttackRange(
       }
     }
   }
-  
+
   let canAttack = distance <= weaponRange && !isUnreachable;
-  
+
   let reason;
   if (isUnreachable) {
     const verticalSeparation = Math.abs(attackerAltitude - targetAltitude);
     if (targetIsFlying && !attackerIsFlying) {
       if (targetAltitude > 15) {
-        reason = `${target.name || 'Target'} is flying too high (${targetAltitude}ft) to be reached by melee attacks from ground`;
+        reason = `${
+          target.name || "Target"
+        } is flying too high (${targetAltitude}ft) to be reached by melee attacks from ground`;
       } else {
-        reason = `${target.name || 'Target'} is flying and cannot be reached by melee attacks from ground`;
+        reason = `${
+          target.name || "Target"
+        } is flying and cannot be reached by melee attacks from ground`;
       }
     } else if (attackerIsFlying && !targetIsFlying) {
-      reason = `${attacker.name || 'Attacker'} is flying too high (${attackerAltitude}ft) to reach ${target.name || 'target'} on the ground with melee attacks`;
+      reason = `${
+        attacker.name || "Attacker"
+      } is flying too high (${attackerAltitude}ft) to reach ${
+        target.name || "target"
+      } on the ground with melee attacks`;
     } else if (attackerIsFlying && targetIsFlying) {
-      reason = `${attacker.name || 'Attacker'} and ${target.name || 'target'} are at different altitudes (${verticalSeparation}ft apart) and cannot reach each other with melee attacks`;
+      reason = `${attacker.name || "Attacker"} and ${
+        target.name || "target"
+      } are at different altitudes (${verticalSeparation}ft apart) and cannot reach each other with melee attacks`;
     } else {
       reason = `Target is too high/low for melee attacks`;
     }
@@ -608,4 +628,83 @@ export function calculateEnemyMovementAI(
     analysis: bestAnalysis,
     selectedAttack: bestAttack,
   };
+}
+
+/**
+ * Simple axial hex distance helper (q,r with implied s = -q-r)
+ * @param {Object} a - First hex position {q, r}
+ * @param {Object} b - Second hex position {q, r}
+ * @returns {number} Hex distance between the two positions
+ */
+function hexAxialDistance(a, b) {
+  const dq = a.q - b.q;
+  const dr = a.r - b.r;
+  const ds = -a.q - a.r - (-b.q - b.r);
+  return (Math.abs(dq) + Math.abs(dr) + Math.abs(ds)) / 2;
+}
+
+/**
+ * Finds a retreat hex for a fleeing unit.
+ *
+ * - Considers hexes within `maxSteps` of startHex.
+ * - Scores each by "minimum distance to any enemy".
+ * - Returns the hex that maximizes that score.
+ *
+ * If gridWidth/gridHeight are omitted, it just ignores bounds.
+ *
+ * @param {Object} params - Parameters object
+ * @param {Object} params.startHex - Starting hex position {q, r}
+ * @param {Array<Object>} params.enemyPositions - Array of enemy hex positions [{q, r}, ...]
+ * @param {number} params.maxSteps - Maximum steps to retreat (default: 3)
+ * @param {number} [params.gridWidth] - Optional grid width for bounds checking
+ * @param {number} [params.gridHeight] - Optional grid height for bounds checking
+ * @returns {Object|null} Best retreat hex {q, r} or null if none found
+ */
+export function findRetreatDestination({
+  startHex,
+  enemyPositions,
+  maxSteps = 3,
+  gridWidth,
+  gridHeight,
+}) {
+  if (!startHex || !enemyPositions || enemyPositions.length === 0) {
+    return null;
+  }
+
+  const inBounds = (q, r) => {
+    if (typeof gridWidth === "number" && typeof gridHeight === "number") {
+      return q >= 0 && r >= 0 && q < gridWidth && r < gridHeight;
+    }
+    // If bounds are not provided, assume all candidates are valid
+    return true;
+  };
+
+  let bestHex = null;
+  let bestScore = -Infinity;
+
+  for (let dq = -maxSteps; dq <= maxSteps; dq++) {
+    for (let dr = -maxSteps; dr <= maxSteps; dr++) {
+      const candidate = { q: startHex.q + dq, r: startHex.r + dr };
+
+      // Skip staying in place
+      const stepDist = hexAxialDistance(startHex, candidate);
+      if (stepDist === 0 || stepDist > maxSteps) continue;
+
+      if (!inBounds(candidate.q, candidate.r)) continue;
+
+      let minEnemyDist = Infinity;
+      for (const enemyPos of enemyPositions) {
+        const d = hexAxialDistance(candidate, enemyPos);
+        if (d < minEnemyDist) minEnemyDist = d;
+      }
+
+      // Maximize minimum distance to any enemy
+      if (minEnemyDist > bestScore) {
+        bestScore = minEnemyDist;
+        bestHex = candidate;
+      }
+    }
+  }
+
+  return bestHex;
 }

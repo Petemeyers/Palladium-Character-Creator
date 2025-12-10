@@ -139,10 +139,18 @@ export function handleChargeAttack(attacker, target, context) {
   
   // Attack with charge bonuses (merge with momentum modifiers if applicable)
   setTimeout(() => {
+    // executeChargeAttack returns bonuses.strike and bonuses.damage
+    // attack() expects strikeBonus and damageMultiplier
+    const baseStrikeBonus = chargeResult.bonuses.strike || 0;
+    const baseDamageMultiplier = chargeResult.bonuses.damage || 1;
+    
+    // Apply momentum modifiers if applicable (momentum adds on top of base charge)
+    const momentumStrikeBonus = chargeMomentumMods ? chargeMomentumMods.strike - 2 : 0; // Base charge is +2, momentum adds more
+    const momentumDamageMultiplier = chargeMomentumMods?.damageMultiplier || 1;
+    
     const finalChargeBonuses = {
-      ...chargeResult.bonuses,
-      strikeBonus: (chargeResult.bonuses.strike || 0) + (chargeMomentumMods ? chargeMomentumMods.strike - 2 : 0), // Base charge is +2, momentum adds more
-      damageMultiplier: chargeMomentumMods ? chargeMomentumMods.damageMultiplier : chargeResult.bonuses.damage
+      strikeBonus: baseStrikeBonus + momentumStrikeBonus,
+      damageMultiplier: momentumDamageMultiplier > 1 ? momentumDamageMultiplier : baseDamageMultiplier
     };
     
     attack(attacker, target.id, finalChargeBonuses);

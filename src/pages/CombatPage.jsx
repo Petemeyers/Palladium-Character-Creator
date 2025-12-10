@@ -56,12 +56,13 @@ import bestiary from "../data/bestiary.json";
 import { getAllBestiaryEntries } from "../utils/bestiaryUtils.js";
 import CombatActionsPanel from "../components/CombatActionsPanel";
 import { createPlayableCharacterFighter, getPlayableCharacterRollDetails } from "../utils/autoRoll";
-import { assignRandomWeaponToEnemy } from "../utils/enemyWeaponAssigner";
+import { assignRandomWeaponToEnemy, getDefaultWeaponForEnemy } from "../utils/enemyWeaponAssigner";
+import armorShopData from "../data/armorShopData";
 import { initializeAmmo, useAmmo, canFireMissileWeapon } from "../utils/combatAmmoManager";
 import { getRandomCombatSpell, getSpellsForLevel } from "../data/combatSpells";
 import { isTwoHandedWeapon, getWeaponDamage } from "../utils/weaponSlotManager";
 import { usePsionic } from "../utils/psionicEffects";
-import { applyInitialEffect } from "../utils/updateActiveEffects";
+import { applyInitialEffect, applyFallDamage } from "../utils/updateActiveEffects";
 import TacticalMap from "../components/TacticalMap";
 import HexArena3D from "../components/HexArena3D";
 import Phase0PreCombatModal from "../components/Phase0PreCombatModal";
@@ -152,7 +153,7 @@ import { useGameSettings } from "../context/GameSettingsContext";
 import { syncCombinedPositions } from "../utils/combinedBodySystem.js";
 import { applyPainStagger } from "../utils/painSystem";
 import { resolveMoraleCheck } from "../utils/moraleSystem";
-import { resolveHorrorCheck } from "../utils/horrorSystem";
+import { hasHorrorFactor, resolveHorrorCheck } from "../utils/horrorSystem";
 import {
   getThreatPositionsForFighter,
   makeIsHexOccupied,
@@ -174,6 +175,7 @@ import { createAIActionSelector } from "../utils/combatEngine.js";
 import { runPlayerTurnAI } from "../utils/ai/playerTurnAI";
 import { runEnemyTurnAI } from "../utils/ai/enemyTurnAI";
 import { runFlyingTurn, isFlyingCreature, moveFlyingCreature as moveFlyingCreatureHelper, performDiveAttack as performDiveAttackHelper } from "../utils/ai/flyingBehaviorSystem";
+import { hasAnyValidOffensiveOption } from "../utils/ai/meleeReachabilityHelpers";
 import {
   initializeGrappleState,
   attemptGrapple,
@@ -209,6 +211,7 @@ import {
 import {
   handleMoveSelect as handleMoveSelectHandler,
   handleRunActionUpdate as handleRunActionUpdateHandler,
+  handleWithdrawAction,
 } from "../utils/combatActionHandlers/movementActions.js";
 import {
   handleChargeAttack as handleChargeAttackHandler,
@@ -294,6 +297,23 @@ function findRetreatDestination({
     safetyScore: bestScore,
   };
 }
+
+// Simple type helper: undead should not flee from normal fear
+const UNDEAD_KEYWORDS = [
+  "undead",
+  "mummy",
+  "skeleton",
+  "zombie",
+  "ghoul",
+  "wight",
+  "wraith",
+  "vampire",
+  "lich",
+  "spectre",
+  "specter",
+  "ghost",
+  "banshee",
+];
 
 const HEAL_KEYWORDS = ["heal", "restor", "regenerat", "revive", "resurrect", "resurrection", "lay on hands"];
 const TOUCH_RANGE_HINTS = ["touch", "target", "per person", "per target", "per creature", "per ally"];
@@ -674,6 +694,66 @@ function resolveMagicSave(caster, target, spellName, options = {}) {
   };
 }
 
+// Infer spell tags based on name and description
+function inferSpellTags(spellName, baseTags = []) {
+  const name = (spellName || "").toLowerCase();
+  const tags = new Set(baseTags || []);
+
+  // Healing
+  if (
+    name.includes("heal") ||
+    name.includes("healing") ||
+    name.includes("restoration") ||
+    name.includes("regeneration") ||
+    name.includes("cure")
+  ) {
+    tags.add("healing");
+    tags.add("support");
+  }
+
+  // Escape / defensive
+  if (
+    name.includes("teleport") ||
+    name.includes("dimension door") ||
+    name.includes("escape") ||
+    name.includes("invisibility") ||
+    name.includes("sanctuary") ||
+    name.includes("invulnerability") ||
+    name.includes("armor of") // armor-type self buffs
+  ) {
+    tags.add("escape");      // includes disengage-type things
+    tags.add("defensive");
+  }
+
+  // Area or direct damage
+  if (
+    name.includes("bolt") ||
+    name.includes("ball") ||
+    name.includes("blast") ||
+    name.includes("missile") ||
+    name.includes("arc") ||
+    name.includes("meteor") ||
+    name.includes("fireball") ||
+    name.includes("lightning") ||
+    name.includes("ice bolt")
+  ) {
+    tags.add("direct_damage");
+  }
+
+  if (
+    name.includes("cloud") ||
+    name.includes("storm") ||
+    name.includes("explosion") ||
+    name.includes("rain of") ||
+    name.includes("circle")
+  ) {
+    tags.add("area");
+    tags.add("direct_damage");
+  }
+
+  return Array.from(tags);
+}
+
 function convertUnifiedSpellToCombatSpell(spell) {
   if (!spell) return null;
 
@@ -709,11 +789,16 @@ function convertUnifiedSpellToCombatSpell(spell) {
 
   const description = spell.description || spell.effect || "";
 
+  // Infer tags from spell name
+  const baseTags = spell.tags || [];
+  const tags = inferSpellTags(spell.name, baseTags);
+
   const combatSpell = {
     name: spell.name,
     cost,
     effect: spell.effect || description,
     description,
+    tags,
   };
 
   if (damage) combatSpell.damage = damage;
@@ -723,6 +808,44 @@ function convertUnifiedSpellToCombatSpell(spell) {
   if (spell.save) combatSpell.save = spell.save;
 
   return combatSpell;
+}
+
+// Simple helper: treat classic undead as never-fleeing
+function isUndeadCreature(fighter) {
+  if (!fighter) return false;
+
+  const typeString = (
+    fighter.creatureType ||
+    fighter.species ||
+    fighter.race ||
+    fighter.occ ||
+    fighter.name ||
+    ""
+  )
+    .toString()
+    .toLowerCase();
+
+  // Core undead types
+  const undeadKeywords = [
+    "undead",
+    "skeleton",
+    "zombie",
+    "mummy",
+    "vampire",
+    "lich",
+    "ghoul",
+    "ghost",
+    "wight",
+    "wraith",
+    "spectre",
+    "specter",
+    "revenant",
+    "animated dead",
+  ];
+
+  return undeadKeywords.some((kw) => typeString.includes(kw));
+  // TODO (later): allow special "holy fear" flags to override this for
+  // things like holy wards, turn undead, etc.
 }
 
 export default function CombatPage({ characters = [] }) {
@@ -817,12 +940,29 @@ export default function CombatPage({ characters = [] }) {
     return { status: "dead", canAct: false, description: "DEAD" };
   };
 
+  // Get settings early so it can be used in callbacks
+  const { settings } = useGameSettings();
+
   // Helper to check if fighter can act (conscious only)
   const canFighterAct = (fighter) => {
     if (!fighter) return false;
     const hpStatus = getHPStatus(fighter.currentHP);
     return hpStatus.canAct && fighter.status !== "defeated";
   };
+
+  // Simple helper: treat classic undead as immune to routing/fleeing
+  const isUndead = useCallback((creature) => {
+    if (!creature) return false;
+
+    const label = (
+      creature.species ||
+      creature.type ||
+      creature.name ||
+      ""
+    ).toLowerCase();
+
+    return UNDEAD_KEYWORDS.some((kw) => label.includes(kw));
+  }, []);
   
   // Helper to calculate allies down ratio for morale checks
   const getAlliesDownRatio = useCallback((fightersArray, subject) => {
@@ -909,11 +1049,79 @@ export default function CombatPage({ characters = [] }) {
 
     return updated;
   }, [getAlliesDownRatio]);
+
+  // Helper function to run Horror Factor and Morale checks together
+  const runHorrorAndMorale = useCallback((attacker, defender, fightersArray, combatState, log) => {
+    let scarySource = null;
+    let horrorTarget = null;
+
+    // Decide who is scary
+    if (hasHorrorFactor(attacker)) {
+      scarySource = attacker;
+      horrorTarget = defender;
+    } else if (hasHorrorFactor(defender)) {
+      scarySource = defender;
+      horrorTarget = attacker;
+    }
+
+    if (!scarySource || !horrorTarget) {
+      return { attacker, defender, horrorFailed: false };
+    }
+
+    // Get latest horror target state to ensure we have persisted meta
+    const latestHorrorTarget = fightersArray.find(f => f.id === horrorTarget.id) || horrorTarget;
+
+    // 1) Apply Horror Factor check once per pair
+    const updatedHorrorTarget = resolveHorrorCheck({
+      source: scarySource,
+      target: latestHorrorTarget,
+      combatState,
+      log,
+    });
+
+    const sourceId = scarySource.id || scarySource.name || "UNKNOWN_SOURCE";
+    const horrorCheck = updatedHorrorTarget.meta?.horrorChecks?.[sourceId];
+    const horrorFailed = horrorCheck?.result === "fail";
+
+    // 2) Feed into morale if enabled
+    let finalTarget = updatedHorrorTarget;
+    if (settings.useMoraleRouting && canFighterAct(updatedHorrorTarget)) {
+      const maxHP = updatedHorrorTarget.maxHP ?? updatedHorrorTarget.hpMax ?? updatedHorrorTarget.totalHP ?? 1;
+      const curHP = updatedHorrorTarget.currentHP ?? updatedHorrorTarget.HP ?? maxHP;
+      const hpPercent = Math.max(0, curHP / maxHP);
+
+      const alliesDownRatio = getAlliesDownRatio(fightersArray, updatedHorrorTarget);
+
+      const moraleResult = resolveMoraleCheck(updatedHorrorTarget, {
+        roundNumber: combatState.currentRound ?? combatState.meleeRound ?? 1,
+        reason: "horror",
+        hpPercent,
+        alliesDownRatio,
+        horrorFailed,
+        bigPainHit: false,
+      });
+
+      finalTarget = {
+        ...updatedHorrorTarget,
+        moraleState: moraleResult.moraleState,
+      };
+    }
+
+    if (finalTarget.id === attacker.id) {
+      return { attacker: finalTarget, defender, horrorFailed };
+    } else {
+      return { attacker, defender: finalTarget, horrorFailed };
+    }
+  }, [getAlliesDownRatio, canFighterAct, settings, resolveMoraleCheck]);
+
   const [meleeRound, setMeleeRound] = useState(1); // Track melee rounds (1 minute each)
   const [turnCounter, setTurnCounter] = useState(0); // Track absolute turn number (increments every turn)
   const [combatActive, setCombatActive] = useState(false);
   const [selectedCreature, setSelectedCreature] = useState("");
   const [customEnemyName, setCustomEnemyName] = useState("");
+  const [enemyCount, setEnemyCount] = useState(1);
+  const [enemyLevel, setEnemyLevel] = useState(1);
+  const [selectedArmor, setSelectedArmor] = useState("");
   const [selectedAttack, setSelectedAttack] = useState(0);
   const [selectedParty, setSelectedParty] = useState([]);
   const [showPartySelector, setShowPartySelector] = useState(false);
@@ -922,7 +1130,6 @@ export default function CombatPage({ characters = [] }) {
   const [showCombatChoices, setShowCombatChoices] = useState(false);
   const [aiControlEnabled, setAiControlEnabled] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-  const { settings } = useGameSettings();
   const [selectedAction, setSelectedAction] = useState(null);
   const [selectedGrappleAction, setSelectedGrappleAction] = useState(null);
   const [selectedManeuver, setSelectedManeuver] = useState(null);
@@ -1033,6 +1240,23 @@ export default function CombatPage({ characters = [] }) {
     () => sortedCreatures.find((creature) => creature.id === selectedCreature),
     [sortedCreatures, selectedCreature]
   );
+
+  // Get all available armors from armorShopData
+  const availableArmors = useMemo(() => {
+    const allArmors = [
+      ...(armorShopData.lightArmor || []),
+      ...(armorShopData.mediumArmor || []),
+      ...(armorShopData.heavyArmor || []),
+      ...(armorShopData.shields || []),
+    ];
+    // Add "None" option
+    return [{ name: "None", ar: 0, sdc: 0, type: "none", description: "No armor" }, ...allArmors];
+  }, []);
+
+  // Check if selected creature is humanoid
+  const isSelectedHumanoid = useMemo(() => {
+    return selectedCreatureData ? isHumanoid(selectedCreatureData) : false;
+  }, [selectedCreatureData]);
   useEffect(() => {
     if (selectedCreature && !selectedCreatureData) {
       setSelectedCreature("");
@@ -1487,6 +1711,32 @@ export default function CombatPage({ characters = [] }) {
   const hasPsionics = availablePsionicPowers.length > 0;
   const hasSpells = availableSpells.length > 0;
 
+  // Helpers for movement UI
+  const canFlyNow = currentFighter && currentFighter.type === "player" && canFighterFly(currentFighter);
+  const speciesProfile = currentFighter ? getSpeciesProfile(currentFighter) : null;
+  const isFloatOnly = !!speciesProfile && (speciesProfile.movementMode === "float" || speciesProfile.usesGroundRun === false);
+
+  // Decide what label to show on the Move button
+  let moveLabel = "🚶 Move";
+  let moveTitle = !showTacticalMap
+    ? "Show tactical map first to enable movement"
+    : "Click to activate movement mode";
+
+  if (currentFighter && currentFighter.type === "player") {
+    if (isFloatOnly) {
+      moveLabel = "🌀 Move (Float)";
+      moveTitle = "This creature moves by floating/flying; it does not run on the ground.";
+    } else if (canFlyNow) {
+      if (playerMovementMode === "flight") {
+        moveLabel = "🪽 Move (Fly)";
+        moveTitle = "Move by flying using aerial movement rules.";
+      } else {
+        moveLabel = "🚶 Move (Run)";
+        moveTitle = "Move on the ground using normal running rules.";
+      }
+    }
+  }
+
   const actionOptions = useMemo(() => {
     const hasPsionicOptions = availablePsionicPowers.length > 0;
     const hasSpellOptions = availableSpells.length > 0;
@@ -1590,6 +1840,7 @@ useEffect(() => {
       switch (actionName) {
         case "Strike":
         case "Combat Maneuvers":
+        case "Dive Attack":
           return fighters.filter(
             (f) =>
               f.type !== currentFighter.type &&
@@ -1759,7 +2010,7 @@ useEffect(() => {
     if (!selectedAction) return false;
     if (!targetOptions || targetOptions.length === 0) return false;
     const actionName = selectedAction.name;
-    if (!["Strike", "Combat Maneuvers", "Psionics", "Spells"].includes(actionName)) {
+    if (!["Strike", "Combat Maneuvers", "Psionics", "Spells", "Dive Attack"].includes(actionName)) {
       return false;
     }
     if (
@@ -1896,10 +2147,70 @@ useEffect(() => {
       addLog(`⏰ Melee Round ${meleeRound} complete! Starting Round ${meleeRound + 1}...`, "combat");
       
       // Reset all fighters' actions for new melee round
-      setFighters(prev => prev.map(f => ({
+      // Also reset the "no ranged options" log flag for each fighter
+      setFighters(prev => {
+        const updated = prev.map(f => {
+          const fighter = {
         ...f,
         remainingAttacks: f.attacksPerMelee || 2
-      })));
+          };
+          // Clear the loggedNoRangedRound flag for new melee round
+          if (fighter.meta?.loggedNoRangedRound !== undefined) {
+            fighter.meta = {
+              ...fighter.meta,
+              loggedNoRangedRound: undefined,
+              loggedNoRangedOptions: false,
+            };
+          }
+          return fighter;
+        });
+        
+        // Check for stalemate: if neither side can hit the other
+        const playerFighters = updated.filter(f => f.type === "player" && canFighterAct(f) && f.currentHP > 0);
+        const enemyFighters = updated.filter(f => f.type === "enemy" && canFighterAct(f) && f.currentHP > 0);
+        
+        if (playerFighters.length > 0 && enemyFighters.length > 0) {
+          // Build context for hasAnyValidOffensiveOption
+          const context = {
+            getFighterSpells: (f) => f.spells || [],
+            getFighterPsionicPowers: (f) => f.psionicPowers || [],
+            getFighterPPE: getFighterPPE,
+            getFighterISP: getFighterISP,
+            getSpellCost: getSpellCost,
+            getPsionicCost: getPsionicCost,
+            getSpellRangeInFeet: getSpellRangeInFeet,
+            parseRangeToFeet: parseRangeToFeet,
+            isOffensiveSpell: isOffensiveSpell,
+            calculateDistance: calculateDistance,
+            positions: positions,
+          };
+          
+          // Check if players have any valid offensive options
+          const playersCanAttack = playerFighters.some(player => 
+            hasAnyValidOffensiveOption(player, enemyFighters, context)
+          );
+          
+          // Check if enemies have any valid offensive options
+          const enemiesCanAttack = enemyFighters.some(enemy => 
+            hasAnyValidOffensiveOption(enemy, playerFighters, context)
+          );
+          
+          // If neither side can attack, end combat as stalemate
+          if (!playersCanAttack && !enemiesCanAttack) {
+            addLog("⚠️ Neither side can attack the other (stalemate). Combat ends.", "warning");
+            setCombatActive(false);
+            combatEndCheckRef.current = true;
+            return updated;
+          }
+        }
+        
+        return updated;
+      });
+      
+      // Only continue if combat is still active
+      if (!combatActive || combatEndCheckRef.current) {
+        return;
+      }
       
       setMeleeRound(prev => prev + 1);
       setTurnIndex(0); // Start from highest initiative again
@@ -2350,7 +2661,7 @@ useEffect(() => {
           addLog(`❌ ${combatant.name} cannot close into melee - weapon range too long!`, "error");
           return;
         }
-        } else {
+      } else {
         // Check if new position is off-board (fled/routed)
         const isOffBoard = 
           x < 0 || 
@@ -2400,14 +2711,14 @@ useEffect(() => {
           handlePlayerFlightMove(combatant, { x, y }, oldPos, selectedMove);
         } else {
           // Ground movement
-          setPositions(prev => {
-            const updated = {
-            ...prev,
-            [selectedMovementFighter]: { x, y }
-            };
-            positionsRef.current = updated;
-            return updated;
-          });
+        setPositions(prev => {
+          const updated = {
+          ...prev,
+          [selectedMovementFighter]: { x, y }
+          };
+          positionsRef.current = updated;
+          return updated;
+        });
         }
       }
       
@@ -2479,7 +2790,11 @@ useEffect(() => {
       const weaponLength = getWeaponLength(fallbackWeapon);
       
       // Use weapon type to determine if it's ranged
-      const isRangedWeapon = weaponName.toLowerCase().includes('bow') || 
+      // Breath weapons (Fire Breath, Ice Breath, etc.) are treated as ranged/area attacks
+      const isBreathWeapon = weaponName.toLowerCase().includes('breath') || 
+                            weaponName.toLowerCase().includes('breath weapon');
+      const isRangedWeapon = isBreathWeapon ||
+                           weaponName.toLowerCase().includes('bow') || 
                            weaponName.toLowerCase().includes('crossbow') ||
                            weaponName.toLowerCase().includes('sling') ||
                            weaponName.toLowerCase().includes('gun') ||
@@ -2490,16 +2805,24 @@ useEffect(() => {
       
       if (isRangedWeapon) {
         // Get weapon range from attackData or use defaults
-        const weaponRange = attackData?.range || 
+        // Breath weapons typically have 20-60ft range (cone/line)
+        let weaponRange;
+        if (isBreathWeapon) {
+          weaponRange = attackData?.range || 30; // Default 30ft for breath weapons
+        } else {
+          weaponRange = attackData?.range || 
                           (weaponName.toLowerCase().includes('long bow') || weaponName.toLowerCase() === 'longbow' ? 640 :
                            weaponName.toLowerCase().includes('short bow') || weaponName.toLowerCase() === 'shortbow' ? 360 :
                            weaponName.toLowerCase().includes('bow') ? 360 :
                            weaponName.toLowerCase().includes('crossbow') ? 480 : 100);
+        }
         const canAttack = distance <= weaponRange;
+        const rangeType = isBreathWeapon ? 'breath weapon' : 'ranged';
         return { 
           canAttack, 
-          reason: canAttack ? `Within range (${Math.round(distance)}ft ≤ ${weaponRange}ft)` : `Out of range (${Math.round(distance)}ft > ${weaponRange}ft)`,
-          maxRange: weaponRange
+          reason: canAttack ? `Within ${rangeType} range (${Math.round(distance)}ft ≤ ${weaponRange}ft)` : `Out of ${rangeType} range (${Math.round(distance)}ft > ${weaponRange}ft)`,
+          maxRange: weaponRange,
+          rangeInfo: isBreathWeapon ? `${rangeType} (${weaponRange}ft cone/line)` : `ranged (${weaponRange}ft)`
         };
       } else {
         // For unknown melee weapons, adjacent hexes (5ft) are always in melee range
@@ -2532,8 +2855,8 @@ useEffect(() => {
               verticalSeparation <= effectiveRange
             ) {
               // Long reach weapon vs low-flying target is ok
-              isUnreachable = false;
-            } else {
+            isUnreachable = false;
+          } else {
               isUnreachable = true;
             }
           }
@@ -2544,9 +2867,9 @@ useEffect(() => {
         let reason;
         if (isUnreachable) {
           if (targetIsFlying && !attackerIsFlying) {
-            if (targetAltitude > 15) {
+          if (targetAltitude > 15) {
               reason = `${defender.name || "Target"} is flying too high (${targetAltitude}ft) to be reached by melee attacks from ground`;
-            } else {
+          } else {
               reason = `${defender.name || "Target"} is flying and cannot be reached by melee attacks from ground`;
             }
           } else if (verticalSeparation > effectiveRange) {
@@ -2689,7 +3012,37 @@ useEffect(() => {
       return;
     }
 
-    const defender = updated[defenderIndex];
+    let defender = updated[defenderIndex];
+    
+    // 😱 Horror Factor + Morale Check: Before attack, check for Horror Factor and integrate with morale
+    // This should happen ONCE per encounter per target (idempotent via horrorSystem.js)
+    // Called at the start of attack/engagement as per Palladium rules
+    if (settings.useInsanityTrauma) {
+      const { attacker: updatedAttacker, defender: updatedDefender } = runHorrorAndMorale(
+        stateAttacker,
+        defender,
+        fighters,
+        {
+          currentRound: meleeRound,
+          meleeRound: meleeRound,
+        },
+        addLog
+      );
+      
+      // Use the updated fighters (may have horror/morale effects applied)
+      if (updatedAttacker.id === stateAttacker.id) {
+        // Attacker was affected by horror (defender has HF)
+        const attackerIdx = updated.findIndex(f => f.id === updatedAttacker.id);
+        if (attackerIdx !== -1) {
+          updated[attackerIdx] = updatedAttacker;
+        }
+      }
+      if (updatedDefender.id === defender.id) {
+        // Defender was affected by horror (attacker has HF)
+        defender = updatedDefender;
+        updated[defenderIndex] = defender;
+      }
+    }
     
     // ✅ CRITICAL: Check if defender can act (not unconscious/dead) before attacking
     if (!canFighterAct(defender)) {
@@ -3700,36 +4053,57 @@ useEffect(() => {
           bigPainHit = painResult.painTriggered;
         }
         
-        // 2) Morale check (only if enabled)
-        if (settings.useMoraleRouting) {
+        // 2) Morale check (only if enabled and defender is not incapacitated)
+        if (settings.useMoraleRouting && canFighterAct(defenderAfterHit)) {
           const maxHP = defenderAfterHit.maxHP || defenderAfterHit.totalHP || defenderAfterHit.currentHP || 1;
           const hpPercent = maxHP > 0 ? defenderAfterHit.currentHP / maxHP : 1;
           
           const alliesDownRatio = getAlliesDownRatio(updated, defenderAfterHit);
+          
+          // Check if defender already failed a horror check this round
+          // (horrorFailed would be set if horror was checked earlier in the attack flow)
+          const horrorFailed = defenderAfterHit.meta?.horrorFailedRound === meleeRound ||
+                               defenderAfterHit.statusEffects?.includes("HORROR_SHOCKED");
           
           const moraleOutcome = resolveMoraleCheck(defenderAfterHit, {
             roundNumber: meleeRound || 0,
             reason: bigPainHit ? "pain_hit" : "damage",
             hpPercent: hpPercent,
             alliesDownRatio: alliesDownRatio,
-            horrorFailed: false,
+            horrorFailed: horrorFailed,
             bigPainHit: bigPainHit,
           });
           
-          defenderAfterHit = {
-            ...defenderAfterHit,
-            moraleState: moraleOutcome.moraleState,
-          };
-          
-          if (moraleOutcome.moraleState.status === "ROUTED") {
+          const isUndead = isUndeadCreature(defenderAfterHit);
+          let moraleState = moraleOutcome.moraleState;
+
+          if (moraleState.status === "ROUTED" && isUndead) {
+            // Undead never actually route: downgrade to SHAKEN instead
+            addLog(
+              `🧟 ${defenderAfterHit.name} would break and flee, but as undead it fights on!`,
+              "info"
+            );
+            moraleState = {
+              ...moraleState,
+              status: "SHAKEN",
+            };
+          } else if (moraleState.status === "ROUTED") {
             addLog(`🏃 ${defenderAfterHit.name} breaks and ROUTES!`, "warning");
           } else if (
-            moraleOutcome.moraleState.status === "SHAKEN" &&
+            moraleState.status === "SHAKEN" &&
             moraleOutcome.result &&
             !moraleOutcome.success
           ) {
-            addLog(`😨 ${defenderAfterHit.name} is SHAKEN by the attack!`, "info");
+            addLog(
+              `😨 ${defenderAfterHit.name} is SHAKEN by the attack and loses next action!`,
+              "info"
+            );
           }
+
+          defenderAfterHit = {
+            ...defenderAfterHit,
+            moraleState,
+          };
         }
         
         // 3) Replace original defender in updated array with defenderAfterHit
@@ -3803,6 +4177,28 @@ useEffect(() => {
             } else {
               addLog(`💪 ${defenderAfterHit.name} resists knockdown! (P.E. ${peCheck} >= roll ${peRoll})`, "info");
             }
+          }
+        }
+        
+        // Check if flying character should fall (HP <= 0 means they can't maintain flight)
+        // Only check if they were flying before and now are unconscious/dying
+        if (isFlying(defenderAfterHit) && defenderAfterHit.currentHP <= 0) {
+          const currentAltitude = getAltitude(defenderAfterHit) || 0;
+          if (currentAltitude > 0) {
+            addLog(`💥 ${defenderAfterHit.name} is hit and plummets ${currentAltitude}ft to the ground!`, "warning");
+            
+            // Apply fall damage
+            const afterFall = applyFallDamage(defenderAfterHit, currentAltitude, addLog);
+            defenderAfterHit = {
+              ...afterFall,
+              isFlying: false,
+              altitude: 0,
+              altitudeFeet: 0,
+              aiFlightState: null,
+            };
+            
+            // Update in the array
+            updated[defenderIndex] = defenderAfterHit;
           }
         }
         
@@ -4103,8 +4499,8 @@ useEffect(() => {
       startTransition(() => {
         setPositions(prev => {
           const updated = {
-            ...prev,
-            [combatantId]: newPosition
+          ...prev,
+          [combatantId]: newPosition
           };
           positionsRef.current = updated;
           // Sync combined body positions (mounts, carriers, etc.)
@@ -4418,6 +4814,129 @@ useEffect(() => {
     // Mark as processing IMMEDIATELY
     processingPlayerAIRef.current = true;
     
+    // ✅ CRITICAL: Get latest player state from fighters array to ensure we have persisted moraleState
+    const latestPlayer = fighters.find(f => f.id === player.id) || player;
+    
+    // 🔴 NEW: Check if routed - if so, attempt to flee instead of fighting
+    if (
+      settings.useMoraleRouting &&
+      (latestPlayer.moraleState?.status === "ROUTED" ||
+        latestPlayer.statusEffects?.includes("ROUTED"))
+    ) {
+      const isUndead = isUndeadCreature(latestPlayer);
+
+      if (isUndead) {
+        // Undead PCs/NPCs under player side AI never flee
+        addLog(
+          `🧟 ${latestPlayer.name} is ROUTED but, being undead, refuses to flee and fights on!`,
+          "info"
+        );
+
+        // Downgrade / clear ROUTED so we don't loop this every turn
+        if (latestPlayer.moraleState?.status === "ROUTED") {
+          latestPlayer.moraleState = {
+            ...latestPlayer.moraleState,
+            status: "SHAKEN",
+          };
+        }
+
+        if (latestPlayer.statusEffects?.includes("ROUTED")) {
+          latestPlayer.statusEffects = latestPlayer.statusEffects.filter(
+            (s) => s !== "ROUTED"
+          );
+        }
+      } else {
+        addLog(
+          `🏃 ${latestPlayer.name} is ROUTED and attempts to flee!`,
+          "warning"
+        );
+
+        const currentPositions = positionsRef.current || positions;
+        const myPos = currentPositions[latestPlayer.id];
+
+        if (myPos) {
+          // Find nearest visible threat
+          const allEnemies = fighters.filter(
+            (f) =>
+              f.type === "enemy" &&
+              canFighterAct(f) &&
+              f.currentHP > 0
+          );
+
+          const nearestThreat = allEnemies
+            .filter((e) => {
+              const threatPos = currentPositions[e.id];
+              return (
+                threatPos &&
+                canAISeeTarget(
+                  latestPlayer,
+                  e,
+                  currentPositions,
+                  combatTerrain,
+                  {
+                    useFogOfWar: fogEnabled,
+                    fogOfWarVisibleCells: visibleCells,
+                  }
+                )
+              );
+            })
+            .sort((a, b) => {
+              const distA = calculateDistance(
+                myPos,
+                currentPositions[a.id] || {}
+              );
+              const distB = calculateDistance(
+                myPos,
+                currentPositions[b.id] || {}
+              );
+              return distA - distB;
+            })[0];
+
+          if (nearestThreat) {
+            const threatPos = currentPositions[nearestThreat.id];
+            // Move directly away from nearest threat
+            const dx = myPos.x - threatPos.x;
+            const dy = myPos.y - threatPos.y;
+            const length = Math.sqrt(dx * dx + dy * dy) || 1;
+            const fleeDistance = 3; // Move 3 hexes away
+            const fleePos = {
+              x: Math.round(myPos.x + (dx / length) * fleeDistance),
+              y: Math.round(myPos.y + (dy / length) * fleeDistance),
+            };
+
+            // Try to move to flee position (if valid)
+            if (
+              isValidPosition &&
+              isValidPosition(fleePos.x, fleePos.y, combatTerrain)
+            ) {
+              setPositions((prev) => ({
+                ...prev,
+                [latestPlayer.id]: fleePos,
+              }));
+              addLog(
+                `🏃 ${latestPlayer.name} flees to (${fleePos.x}, ${fleePos.y})!`,
+                "warning"
+              );
+            } else {
+              addLog(
+                `🏃 ${latestPlayer.name} attempts to flee but cannot find a safe path!`,
+                "warning"
+              );
+            }
+          } else {
+            addLog(
+              `⚠️ ${latestPlayer.name} is ROUTED but has no known position on the map!`,
+              "warning"
+            );
+          }
+        }
+      }
+
+      processingPlayerAIRef.current = false;
+      scheduleEndTurn();
+      return; // CRITICAL: Exit early, don't continue with normal AI
+      }
+    
     // Build context for AI module
     const context = {
       fighters,
@@ -4427,6 +4946,7 @@ useEffect(() => {
       meleeRound,
       turnCounter,
       combatActive,
+      aiControlEnabled, // Pass AI control state to AI module
       // Core helpers
       canFighterAct,
       getHPStatus,
@@ -4444,6 +4964,7 @@ useEffect(() => {
       isHexOccupied,
       handlePositionChange,
       getEquippedWeapons,
+      findRetreatDestination,
       // Visibility / fog
       fogEnabled,
       visibleCells,
@@ -4494,8 +5015,8 @@ useEffect(() => {
       getTargetsInLine,
     };
     
-    // Delegate to AI module
-    runPlayerTurnAI(player, context);
+    // Delegate to AI module - use latestPlayer to ensure we have persisted state
+    runPlayerTurnAI(latestPlayer, context);
   }, [
     fighters,
     positions,
@@ -4519,6 +5040,7 @@ useEffect(() => {
     isHexOccupied,
     handlePositionChange,
     getEquippedWeapons,
+    findRetreatDestination,
     fogEnabled,
     visibleCells,
     canAISeeTarget,
@@ -4561,6 +5083,9 @@ useEffect(() => {
     isValidPosition,
     findBeePath,
     getTargetsInLine,
+    aiControlEnabled,
+    isUndead,
+    settings,
   ]);
 
   // Define handleEnemyTurn function with useCallback last
@@ -4802,33 +5327,102 @@ useEffect(() => {
     }
     
     // 3) 🏃 Routing System: Check if enemy is routed and should flee
-    if (settings.useMoraleRouting && liveEnemy.moraleState?.status === "ROUTED" && !liveEnemy.moraleState?.hasFled) {
-      const currentPositions = positionsRef.current || positions;
-      
-      const threats = getThreatPositionsForFighter(liveEnemy, fightersSnapshot, currentPositions);
-      const isHexOccupied = makeIsHexOccupied(currentPositions, liveEnemy.id);
-      
-      const dest = findBestRetreatHex({
-        currentPos: currentPositions[liveEnemy.id],
-        threatPositions: threats,
-        maxSteps: 4,
-        isHexOccupied: isHexOccupied,
-        getHexNeighbors: getHexNeighbors,
-        isValidPosition: isValidPosition,
-        calculateDistance: calculateDistance,
-      });
-      
-      if (dest) {
+    // CRITICAL: This must happen BEFORE any attack/movement logic
+    if (
+      settings.useMoraleRouting &&
+      (liveEnemy.moraleState?.status === "ROUTED" ||
+        liveEnemy.statusEffects?.includes("ROUTED"))
+    ) {
+      const isUndead = isUndeadCreature(liveEnemy);
+
+      if (isUndead) {
+        addLog(
+          `🧟 ${liveEnemy.name} is ROUTED but, as undead, refuses to flee and continues fighting!`,
+          "info"
+        );
+
+        if (liveEnemy.moraleState?.status === "ROUTED") {
+          liveEnemy.moraleState = {
+            ...liveEnemy.moraleState,
+            status: "SHAKEN",
+          };
+        }
+
+        if (liveEnemy.statusEffects?.includes("ROUTED")) {
+          liveEnemy.statusEffects = liveEnemy.statusEffects.filter((s) => s !== "ROUTED");
+        }
+      } else {
+        addLog(`🏃 ${liveEnemy.name} is ROUTED and attempts to flee!`, "warning");
+
+        const currentPositions = positionsRef.current || positions;
+        const myPos = currentPositions[liveEnemy.id];
+
+        if (myPos) {
+          // Find nearest visible threat
+          const allPlayers = fightersSnapshot.filter(
+            (f) => f.type === "player" && canFighterAct(f) && f.currentHP > 0
+          );
+
+          const nearestThreat = allPlayers
+            .filter((p) => {
+              const threatPos = currentPositions[p.id];
+              return (
+                threatPos &&
+                canAISeeTarget(liveEnemy, p, currentPositions, combatTerrain, {
+                  useFogOfWar: fogEnabled,
+                  fogOfWarVisibleCells: visibleCells,
+                })
+              );
+            })
+            .sort((a, b) => {
+              const distA = calculateDistance(
+                myPos,
+                currentPositions[a.id] || {}
+              );
+              const distB = calculateDistance(
+                myPos,
+                currentPositions[b.id] || {}
+              );
+              return distA - distB;
+            })[0];
+
+          if (nearestThreat) {
+            const threatPos = currentPositions[nearestThreat.id];
+            // Move directly away from nearest threat
+            const dx = myPos.x - threatPos.x;
+            const dy = myPos.y - threatPos.y;
+            const length = Math.sqrt(dx * dx + dy * dy) || 1;
+            const fleeDistance = 3; // Move 3 hexes away
+            const fleePos = {
+              x: Math.round(myPos.x + (dx / length) * fleeDistance),
+              y: Math.round(myPos.y + (dy / length) * fleeDistance),
+            };
+
+            // Try to move to flee position (if valid)
+            if (
+              isValidPosition &&
+              isValidPosition(fleePos.x, fleePos.y, combatTerrain)
+            ) {
         setPositions((prev) => ({
           ...prev,
-          [liveEnemy.id]: dest.position,
+                [liveEnemy.id]: fleePos,
         }));
-        
-        let hasFled = liveEnemy.moraleState?.hasFled || false;
-        if (isAtMapEdge(dest.position, GRID_CONFIG.GRID_WIDTH, GRID_CONFIG.GRID_HEIGHT)) {
-          hasFled = true;
+              addLog(
+                `🏃 ${liveEnemy.name} flees to (${fleePos.x}, ${fleePos.y})!`,
+                "warning"
+              );
+            } else {
+              addLog(
+                `🏃 ${liveEnemy.name} attempts to flee but cannot find a safe path!`,
+                "warning"
+              );
+            }
+          } else {
+            addLog(`🏃 ${liveEnemy.name} flees in terror!`, "warning");
+          }
         }
-        
+
+        // Set remaining attacks to 0 and mark as fled
         setFighters((prev) =>
           prev.map((f) =>
             f.id === liveEnemy.id
@@ -4837,20 +5431,18 @@ useEffect(() => {
                   remainingAttacks: 0,
                   moraleState: {
                     ...(f.moraleState || {}),
-                    hasFled: hasFled,
+                    status: "ROUTED",
+                    hasFled: true,
                   },
                 }
               : f
           )
         );
         
-        addLog(`🏃‍♂️ ${liveEnemy.name} turns tail and flees the battle!`, "warning");
         processingEnemyTurnRef.current = false;
         scheduleEndTurn();
-        return;
+        return; // CRITICAL: Exit early, don't continue with normal AI
       }
-      
-      // No safe hex – falls through to normal AI behavior (maybe defend/cower)
     }
     
     // Update enemy reference for rest of function
@@ -4893,6 +5485,7 @@ useEffect(() => {
         
         // 😱 Horror Factor Check: When player sees enemy with HF > 0
         // Check from player's perspective when they can see the enemy
+        // Uses centralized horrorSystem.js to ensure only one check per source/target pair
         if (settings.useInsanityTrauma) {
           // Check if enemy has Horror Factor
           const enemyHF = enemy.HF || enemy.hf || enemy.horrorFactor || 0;
@@ -4904,53 +5497,25 @@ useEffect(() => {
             });
             
             if (playerCanSeeEnemy) {
-              // Check if horror was already triggered for this enemy
-              const mentalState = target.mentalState || {};
-              const horrorId = enemy.id || enemy.name;
-              const horrorSeen = mentalState.horrorSeen || new Set();
-              
-              // Only trigger horror check if not already seen
-              if (!horrorSeen.has(horrorId)) {
-                const horrorResult = resolveHorrorCheck(target, enemy);
+              // Use centralized check - idempotent, safe to call every time
+              // It will only process once per source/target pair
+              // IMPORTANT: Get the latest fighter state from the fighters array to ensure we have persisted meta
+              const latestTarget = fighters.find(f => f.id === target.id) || target;
+              const updatedTarget = resolveHorrorCheck({
+                source: enemy,
+                target: latestTarget,
+                combatState: {
+                  currentRound: meleeRound,
+                  meleeRound: meleeRound,
+                },
+                log: addLog,
+              });
                 
-                if (horrorResult.triggered) {
-                  const updatedViewer = horrorResult.updatedViewer;
-                  
-                  // Update viewer in fighters list
-                  setFighters((prev) =>
-                    prev.map((f) => (f.id === target.id ? updatedViewer : f))
+              // Always persist the updated target to ensure meta.horrorChecks is saved
+              // The function is idempotent, so this is safe even if nothing changed
+                setFighters((prev) =>
+                prev.map((f) => (f.id === target.id ? updatedTarget : f))
                   );
-                  
-                  if (!horrorResult.success) {
-                    // Apply immediate fear penalties: lose 1 action, small strike penalty
-                    setFighters((prev) =>
-                      prev.map((f) => {
-                        if (f.id !== target.id) return f;
-                        
-                        const before = f.remainingAttacks ?? getAttacksPerMelee(f);
-                        const after = Math.max(0, before - 1);
-                        
-                        return {
-                          ...f,
-                          remainingAttacks: after,
-                          tempMentalPenalties: {
-                            ...(f.tempMentalPenalties || {}),
-                            strike: -2,
-                            parry: -1,
-                            dodge: -1,
-                            roundsRemaining: 1,
-                          },
-                        };
-                      })
-                    );
-                    
-                    addLog(
-                      `😱 ${target.name} recoils in horror at the sight of ${enemy.name} and loses 1 action!`,
-                      "warning"
-                    );
-                  }
-                }
-              }
             }
           }
         }
@@ -6234,7 +6799,7 @@ useEffect(() => {
         endTurn();
       }, 1500); // Reduced delay for faster turn progression
     }, 1500);
-  }, [fighters, addLog, endTurn, attack, positions, handlePositionChange, isHexOccupied, getAvailableSkills, isEvilAlignment, calculateDistance, setFighters, healerAbility, clericalHealingTouch, medicalTreatment, combatTerrain, arenaEnvironment, scheduleEndTurn]);
+  }, [fighters, addLog, endTurn, attack, positions, handlePositionChange, isHexOccupied, getAvailableSkills, isEvilAlignment, calculateDistance, setFighters, healerAbility, clericalHealingTouch, medicalTreatment, combatTerrain, arenaEnvironment, scheduleEndTurn, settings, canFighterAct, isValidPosition, canAISeeTarget, fogEnabled, visibleCells, setPositions]);
   
   // Store the latest handleEnemyTurn in a ref to avoid dependency loops in useEffect
   useEffect(() => {
@@ -6400,13 +6965,128 @@ useEffect(() => {
       return fallbackHP;
     }
   }
-  function addCreature(creatureData) {
+
+  /**
+   * Apply level-based stat adjustments to an enemy
+   * @param {Object} fighter - Fighter object
+   * @param {number} level - Level (1-15)
+   * @returns {Object} Updated fighter with level adjustments
+   */
+  function applyLevelToEnemy(fighter, level) {
+    if (!fighter || level <= 1) return fighter;
+    
+    const levelMultiplier = level - 1; // How many levels above 1
+    
+    // HP adjustment: +10% per level above 1 (or use level progression if available)
+    const baseHP = fighter.maxHP || fighter.currentHP || 20;
+    const hpPerLevel = Math.max(1, Math.floor(baseHP * 0.1)); // 10% per level
+    const adjustedHP = baseHP + (hpPerLevel * levelMultiplier);
+    
+    // AR adjustment: +1 per 3 levels (rounded down)
+    const arBonus = Math.floor(levelMultiplier / 3);
+    const baseAR = fighter.AR || 10;
+    const adjustedAR = Math.min(20, baseAR + arBonus); // Cap at 20
+    
+    // Combat bonuses: +1 strike/parry/dodge per 2 levels
+    const combatBonus = Math.floor(levelMultiplier / 2);
+    
+    // Attacks per melee: +1 per 4 levels
+    const attacksBonus = Math.floor(levelMultiplier / 4);
+    
+    return {
+      ...fighter,
+      level: level,
+      currentHP: adjustedHP,
+      maxHP: adjustedHP,
+      AR: adjustedAR,
+      bonuses: {
+        ...(fighter.bonuses || {}),
+        strike: (fighter.bonuses?.strike || 0) + combatBonus,
+        parry: (fighter.bonuses?.parry || 0) + combatBonus,
+        dodge: (fighter.bonuses?.dodge || 0) + combatBonus,
+      },
+      attacksPerMelee: (fighter.attacksPerMelee || 2) + attacksBonus,
+    };
+  }
+
+  /**
+   * Check if a creature is humanoid
+   * @param {Object} creatureData - Creature data from bestiary
+   * @returns {boolean} True if humanoid
+   */
+  function isHumanoid(creatureData) {
+    if (!creatureData) return false;
+    
+    const category = (creatureData.category || "").toLowerCase();
+    const name = (creatureData.name || "").toLowerCase();
+    const species = (creatureData.species || creatureData.race || "").toLowerCase();
+    
+    // Check category
+    if (category === "humanoid") return true;
+    
+    // Check common humanoid species
+    const humanoidSpecies = [
+      "human", "elf", "dwarf", "gnome", "halfling", "kobold", "goblin", 
+      "orc", "hobgoblin", "bugbear", "ogre", "troll", "giant", "wolfen"
+    ];
+    if (humanoidSpecies.some(s => species.includes(s) || name.includes(s))) {
+      return true;
+    }
+    
+    return false;
+  }
+
+  /**
+   * Equip armor to an enemy fighter
+   * @param {Object} fighter - Fighter object
+   * @param {Object} armorData - Armor data from armorShopData
+   * @returns {Object} Updated fighter with armor equipped
+   */
+  function equipArmorToEnemy(fighter, armorData) {
+    if (!fighter || !armorData || armorData.name === "None") {
+      return fighter;
+    }
+
+    // Initialize equipped object if needed
+    if (!fighter.equipped) {
+      fighter.equipped = {};
+    }
+
+    // Equip armor to chest slot (main armor piece)
+    fighter.equipped.chest = {
+      name: armorData.name,
+      armorRating: armorData.ar,
+      sdc: armorData.sdc,
+      currentSDC: armorData.sdc,
+      weight: armorData.weight || 0,
+      price: armorData.cost || 0,
+      category: armorData.type || "armor",
+      type: "armor",
+      slot: "chest",
+      broken: false,
+    };
+
+    // Update AR - use armor's AR if it's higher than base AR
+    const armorAR = armorData.ar || 0;
+    const baseAR = fighter.AR || 10;
+    fighter.AR = Math.max(baseAR, armorAR);
+
+    // Also set equippedArmor for backwards compatibility
+    fighter.equippedArmor = armorData.name;
+
+    return fighter;
+  }
+
+  function addCreature(creatureData, customNameOverride = null, levelOverride = null, armorOverride = null) {
     let newFighter;
+    const nameToUse = customNameOverride || customEnemyName;
+    const level = levelOverride || enemyLevel || 1;
+    const armorToEquip = armorOverride || selectedArmor;
     
     // Check if this is a playable character
     if (creatureData.playable) {
       // Auto-roll attributes and create playable character fighter
-      newFighter = createPlayableCharacterFighter(creatureData, customEnemyName);
+      newFighter = createPlayableCharacterFighter(creatureData, nameToUse);
       
       // Log detailed roll information with debug details
       const rollDetails = getPlayableCharacterRollDetails(creatureData, newFighter.attributes);
@@ -6439,7 +7119,7 @@ useEffect(() => {
         ...creatureData,
         id: `enemy-${generateCryptoId()}`,
         type: "enemy",
-        name: customEnemyName || creatureData.name,
+        name: nameToUse || creatureData.name,
         currentHP: rolledHP,
         maxHP: rolledHP,
         initiative: 0,
@@ -6453,17 +7133,48 @@ useEffect(() => {
       }
       
       // Assign random weapon based on favorite/preferred weapons
+      // For humanoids, always assign a weapon (even if no preferred weapons listed)
       const favoriteWeapons = creatureData.favorite_weapons || creatureData.preferred_weapons || creatureData.favoriteWeapons;
+      const isHumanoidCreature = isHumanoid(creatureData);
+      
       if (favoriteWeapons) {
         newFighter = assignRandomWeaponToEnemy(newFighter, favoriteWeapons);
         if (newFighter.equippedWeapons && newFighter.equippedWeapons[0]?.name !== "Unarmed") {
           addLog(`⚔️ ${newFighter.name} wields ${newFighter.equippedWeapons[0]?.name}`, "info");
+        }
+      } else if (isHumanoidCreature) {
+        // Humanoids without preferred weapons get a random common weapon
+        const defaultWeapon = getDefaultWeaponForEnemy(newFighter);
+        if (defaultWeapon && defaultWeapon.name !== "Unarmed") {
+          newFighter = assignRandomWeaponToEnemy(newFighter, defaultWeapon.name);
+          addLog(`⚔️ ${newFighter.name} wields ${newFighter.equippedWeapons?.[0]?.name || defaultWeapon.name}`, "info");
+        }
+      }
+      
+      // Apply level-based stat adjustments
+      if (level > 1) {
+        newFighter = applyLevelToEnemy(newFighter, level);
+        addLog(`📊 ${newFighter.name} adjusted to level ${level} (HP: ${newFighter.maxHP}, AR: ${newFighter.AR})`, "info");
+      }
+
+      // Equip armor for humanoids (after level adjustments so AR is calculated correctly)
+      if (isHumanoidCreature && armorToEquip && armorToEquip !== "None") {
+        const armorData = availableArmors.find(a => a.name === armorToEquip);
+        if (armorData) {
+          newFighter = equipArmorToEnemy(newFighter, armorData);
+          addLog(`🛡️ ${newFighter.name} equipped with ${armorData.name} (AR: ${armorData.ar})`, "info");
         }
       }
     }
     
         // Apply size modifiers to new fighter (for both playable and regular creatures)
         newFighter = applySizeModifiers(newFighter);
+        
+        // Apply level-based stat adjustments for playable characters too
+        if (level > 1) {
+          newFighter = applyLevelToEnemy(newFighter, level);
+          addLog(`📊 ${newFighter.name} adjusted to level ${level} (HP: ${newFighter.maxHP}, AR: ${newFighter.AR})`, "info");
+        }
         
         // Initialize altitude for flying creatures
         // Altitude is tracked in 5ft increments, similar to hex distances
@@ -6526,8 +7237,55 @@ useEffect(() => {
         setFighters(prev => [...prev, newFighter]);
 
     addLog(`Added ${newFighter.name} to combat!`, "success");
+    return newFighter;
+  }
+
+  /**
+   * Add multiple enemies to combat (up to 10)
+   * @param {Object} creatureData - The creature data from bestiary
+   * @param {number} count - Number of enemies to add (1-10)
+   * @param {number} level - Level for all enemies (1-15)
+   * @param {string} armorName - Armor name to equip (optional)
+   */
+  function addMultipleEnemies(creatureData, count, level = 1, armorName = null) {
+    if (!creatureData) {
+      addLog(`❌ No creature selected`, "error");
+      return;
+    }
+
+    // Clamp count between 1 and 10
+    const enemyCount = Math.max(1, Math.min(10, Math.floor(count) || 1));
+    
+    if (enemyCount > 10) {
+      addLog(`❌ Cannot add more than 10 enemies at once`, "error");
+      return;
+    }
+
+    addLog(`➕ Adding ${enemyCount} ${creatureData.name}${enemyCount > 1 ? 's' : ''} to combat...`, "info");
+
+    const newFighters = [];
+    
+    for (let i = 0; i < enemyCount; i++) {
+      // For multiple enemies, add a number suffix to distinguish them
+      const enemyName = enemyCount > 1 
+        ? `${customEnemyName || creatureData.name} #${i + 1}`
+        : (customEnemyName || creatureData.name);
+      
+      const newFighter = addCreature(creatureData, enemyName, level, armorName);
+      if (newFighter) {
+        newFighters.push(newFighter);
+      }
+    }
+
+    if (newFighters.length > 0) {
+      addLog(`✅ Successfully added ${newFighters.length} ${creatureData.name}${newFighters.length > 1 ? 's' : ''} to combat!`, "success");
+    }
+
+    // Clear form
     setCustomEnemyName("");
     setSelectedCreature("");
+    setEnemyLevel(1); // Reset level
+    setSelectedArmor(""); // Reset armor
     onClose();
   }
 
@@ -6681,8 +7439,15 @@ useEffect(() => {
       const equippedWeapon = getEquippedWeapons(fighter)?.primary || getEquippedWeapons(fighter)?.secondary || null;
       const reachInitiativeMod = equippedWeapon ? getReachInitiativeModifier(equippedWeapon) : 0;
       
-      const totalBonus = handToHandBonus + ppBonus + reachInitiativeMod;
+      // Apply horror factor initiative penalty (if they failed horror this round)
+      const horrorInitPenalty = fighter.meta?.horrorInitPenalty ?? 0;
+      
+      const totalBonus = handToHandBonus + ppBonus + reachInitiativeMod + horrorInitPenalty;
       let initiativeTotal = d20 + totalBonus;
+      
+      if (horrorInitPenalty < 0) {
+        addLog(`${fighter.name} suffers ${Math.abs(horrorInitPenalty)} initiative penalty from horror!`, "info");
+      }
       
       // Store initial roll for tie resolution
       fighter._initialInitiativeRoll = initiativeTotal;
@@ -6738,11 +7503,18 @@ useEffect(() => {
         addLog(`📏 ${fighter.name} size category: ${sizeDesc}`, "info");
       }
       
+      // Clear horror initiative penalty after applying it (only applies to this melee round)
+      const fighterMeta = { ...(fighter.meta || {}) };
+      if (fighterMeta.horrorInitPenalty !== undefined) {
+        delete fighterMeta.horrorInitPenalty;
+      }
+      
       const updatedFighter = {
         ...fighter,
         initiative: initiativeTotal,
         attacksPerMelee: attacksPerMelee,
-        remainingAttacks: attacksPerMelee // Start with full attacks
+        remainingAttacks: attacksPerMelee, // Start with full attacks
+        meta: fighterMeta,
       };
       
       // Normalize IDs to ensure both id and _id exist for backwards compatibility
@@ -6816,28 +7588,85 @@ useEffect(() => {
       return false;
     }
     
-    addLog(`🧠 Executing psionic: ${power.name} (cost: ${getPsionicCost(power)} ISP, caster ISP: ${getFighterISP(caster)})`, "info");
+    // ✅ CRITICAL: Get latest caster and target from fighters array to ensure we have persisted ISP
+    const latestCaster = fighters.find(f => f.id === caster.id) || caster;
+    const latestTarget = target ? (fighters.find(f => f.id === target.id) || target) : null;
     
-    const resolution = usePsionic(power.name, caster, target, addLog, {
+    // Pass combatState to usePsionic for Stop Bleeding guard checks
+    const resolution = usePsionic(power.name, latestCaster, latestTarget, addLog, {
       combatTerrain,
       positions,
+      combatState: {
+        currentRound: meleeRound,
+        meleeRound: meleeRound,
+        fighters: fighters,
+        positions: positions
+      }
     });
 
     if (!resolution.success) {
+      // Only log error if it's not a "silent" failure (like already attempted this round)
+      if (resolution.reason !== "already_attempted_this_round" && resolution.reason !== "already_stabilized") {
       addLog(`❌ Psionic ${power.name} failed: ${resolution.message || 'Unknown error'}`, "error");
+      }
       (resolution.additionalLogs || []).forEach(entry => {
         addLog(entry.message, entry.type || "error");
       });
       return false;
     }
     
+    // Handle special psionic effects (Paralysis, etc.)
+    if (power.name === "Bio-Manipulation (Paralysis)" && resolution.success) {
+      // Apply paralysis status effect with duration
+      const durationRounds = 4; // 1d4 melees, defaulting to 4
+      setFighters(prev => prev.map(fighter => {
+        if (fighter.id === target.id) {
+          const updated = { ...fighter };
+          if (!updated.statusEffects) {
+            updated.statusEffects = [];
+          }
+          // Remove existing paralysis if any
+          updated.statusEffects = updated.statusEffects.filter(e => 
+            (typeof e === 'string' && e !== "PARALYZED") ||
+            (typeof e === 'object' && e.type !== "PARALYZED")
+          );
+          // Add new paralysis effect
+          updated.statusEffects.push({
+            type: "PARALYZED",
+            name: "Paralyzed",
+            remainingRounds: durationRounds,
+            duration: durationRounds,
+            caster: caster,
+            appliedAt: Date.now(),
+          });
+          addLog(`🧠 ${target.name} is paralyzed for ${durationRounds} melee rounds!`, "status");
+          return updated;
+        }
+        return fighter;
+      }));
+    }
+    
+    // Don't duplicate success log - usePsionic already logs it for Stop Bleeding
+    // For other psionics, the log is already in usePsionic
+    if (power.name !== "Stop Bleeding") {
     addLog(`✅ Psionic ${power.name} executed successfully`, "info");
+    }
 
+    // ✅ CRITICAL: Apply updates using latest fighter state
     setFighters(prev => prev.map(fighter => {
-      if (fighter.id === caster.id) {
-        return applyFighterUpdates(fighter, resolution.casterUpdates);
+      if (fighter.id === latestCaster.id) {
+        const updated = applyFighterUpdates(fighter, resolution.casterUpdates);
+        // Debug log for ISP changes (only for Stop Bleeding to diagnose spam)
+        if (power.name === "Stop Bleeding" && resolution.casterUpdates?.deltaISP) {
+          const beforeISP = getFighterISP(fighter);
+          const afterISP = getFighterISP(updated);
+          if (import.meta.env.DEV) {
+            console.log(`[Stop Bleeding] ${latestCaster.name} ISP: ${beforeISP} → ${afterISP} (delta: ${resolution.casterUpdates.deltaISP})`);
+          }
+        }
+        return updated;
       }
-      if (target && resolution.targetUpdates && fighter.id === target.id) {
+      if (latestTarget && resolution.targetUpdates && fighter.id === latestTarget.id) {
         return applyFighterUpdates(fighter, resolution.targetUpdates);
       }
       return fighter;
@@ -6846,6 +7675,17 @@ useEffect(() => {
     (resolution.additionalLogs || []).forEach(entry => {
       addLog(entry.message, entry.type || "info");
     });
+
+    // ✅ CRITICAL: Decrement remainingAttacks BEFORE endTurn() to prevent AI from executing multiple psionics in the same turn
+    setFighters(prev => prev.map(fighter => {
+      if (fighter.id === latestCaster.id) {
+        return {
+          ...fighter,
+          remainingAttacks: Math.max(0, (fighter.remainingAttacks || 0) - 1)
+        };
+      }
+      return fighter;
+    }));
 
     endTurn();
       return true;
@@ -7115,6 +7955,18 @@ useEffect(() => {
     }
 
       addLog(`🔮 ${caster.name} spent ${spellCost} PPE`, "combat");
+      
+      // ✅ CRITICAL: Decrement remainingAttacks BEFORE endTurn() to prevent AI from executing multiple spells in the same turn
+      setFighters(prev => prev.map(fighter => {
+        if (fighter.id === caster.id) {
+          return {
+            ...fighter,
+            remainingAttacks: Math.max(0, (fighter.remainingAttacks || 0) - 1)
+          };
+        }
+        return fighter;
+      }));
+      
       endTurn();
     return true;
   }
@@ -7163,6 +8015,18 @@ useEffect(() => {
     }
 
     addLog(`🔮 ${caster.name} spent ${spellCost} PPE`, "combat");
+    
+    // ✅ CRITICAL: Decrement remainingAttacks BEFORE endTurn() to prevent AI from executing multiple spells in the same turn
+    setFighters(prev => prev.map(fighter => {
+      if (fighter.id === caster.id) {
+        return {
+          ...fighter,
+          remainingAttacks: Math.max(0, (fighter.remainingAttacks || 0) - 1)
+        };
+      }
+      return fighter;
+    }));
+    
     endTurn();
     return true;
   }
@@ -7363,6 +8227,37 @@ useEffect(() => {
               ? { ...f, remainingAttacks: Math.max(0, f.remainingAttacks - 1) }
               : f
           ));
+          setTimeout(() => endTurn(), 500);
+        }
+        return;
+      
+      case "Withdraw":
+        // Withdraw action - move away from enemies to a safer position
+        if (currentFighter.type === "player") {
+          handleWithdrawAction({
+            currentFighter,
+            fighters,
+            positions,
+            setPositions,
+            addLog,
+            endTurn: () => {
+              executingActionRef.current = false;
+              clearTimeout(lockTimeout);
+              endTurn();
+            },
+            maxWithdrawSteps: 3,
+          });
+        } else {
+          // For enemies, use AI withdraw logic (already handled in enemyTurnAI)
+          addLog(`🏃 ${currentFighter.name} withdraws to a safer position.`, "info");
+          setDefensiveStance(prev => ({ ...prev, [currentFighter.id]: "Retreat" }));
+          setFighters(prev => prev.map(f => 
+            f.id === currentFighter.id 
+              ? { ...f, remainingAttacks: Math.max(0, f.remainingAttacks - 1) }
+              : f
+          ));
+          executingActionRef.current = false;
+          clearTimeout(lockTimeout);
           setTimeout(() => endTurn(), 500);
         }
         return;
@@ -7926,7 +8821,7 @@ useEffect(() => {
         setTimeout(() => endTurn(), 500);
         return;
       }
-
+      
       default:
         addLog(`${currentFighter.name} performs ${actionToExecute.name}.`, "info");
         // Decrement action and end turn for any unhandled action
@@ -8357,6 +9252,7 @@ useEffect(() => {
         psionicPowers: char.psionicPowers || [],
         magic: magicSpells,
         ISP: char.ISP || 0,
+        currentISP: typeof char.currentISP === "number" ? char.currentISP : (char.ISP || 0), // Initialize currentISP from ISP
         PPE: PPEValue,
         currentPPE: currentPPEValue, // Always set currentPPE
         // Add attacks array for combat (equipped weapon or unarmed)
@@ -8793,13 +9689,34 @@ useEffect(() => {
             size="sm"
             colorScheme={aiControlEnabled ? "purple" : "gray"}
             variant={aiControlEnabled ? "solid" : "outline"}
-            onClick={() => {
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              try {
               const newValue = !aiControlEnabled;
+                console.log('AI Control button clicked, current state:', aiControlEnabled, 'new state:', newValue);
               setAiControlEnabled(newValue);
               if (newValue) {
                 addLog("🤖 AI Control ENABLED - Players will be controlled by AI", "info");
+                  // If combat is active and it's a player's turn, trigger AI immediately
+                  if (combatActive && currentFighter && currentFighter.type === "player" && !processingPlayerAIRef.current) {
+                    setTimeout(() => {
+                      if (combatActive && canFighterAct(currentFighter) && !combatPausedRef.current) {
+                        handlePlayerAITurn(currentFighter);
+                      }
+                    }, 100);
+                  }
               } else {
                 addLog("🎮 Manual Control ENABLED - Players will control themselves", "info");
+                  // If combat choices were closed, reopen them for manual control
+                  if (combatActive && currentFighter && currentFighter.type === "player" && !showCombatChoices) {
+                    setShowCombatChoices(true);
+                    openCombatChoices();
+                  }
+                }
+              } catch (error) {
+                console.error('Error toggling AI control:', error);
+                addLog("❌ Error toggling AI control - see console for details", "error");
               }
             }}
             title={aiControlEnabled ? "Disable AI control - players will control themselves" : "Enable AI control - AI will control players"}
@@ -9199,606 +10116,6 @@ useEffect(() => {
           </VStack>
         </FloatingPanel>
       )}
-      {/* Combat Options FloatingPanel */}
-      {fighters.length > 0 && currentFighter && currentFighter.type === "player" && combatActive && !aiControlEnabled && (
-        <FloatingPanel
-          title={`🎯 Combat Options for ${currentFighter.name}`}
-          initialX={50}
-          initialY={50}
-          initialWidth={400}
-          initialHeight={600}
-          zIndex={1002}
-          minWidth={350}
-          minHeight={400}
-          bg="rgba(255, 255, 255, 0.95)"
-        >
-          <Box
-            w="100%"
-            h="100%"
-            overflowY="auto"
-            overflowX="hidden"
-            p={4}
-            sx={{
-              '&::-webkit-scrollbar': {
-                width: '8px',
-              },
-              '&::-webkit-scrollbar-track': {
-                background: 'transparent',
-              },
-              '&::-webkit-scrollbar-thumb': {
-                background: 'green.300',
-                borderRadius: '4px',
-              },
-              '&::-webkit-scrollbar-thumb:hover': {
-                background: 'green.400',
-              },
-            }}
-          >
-            <VStack spacing={3} align="stretch">
-                {/* Movement Mode Toggle - only show if fighter can fly */}
-                {currentFighter && canFighterFly(currentFighter) && (
-                  <Box>
-                    <Text fontSize="sm" fontWeight="bold" mb={2}>Movement Mode:</Text>
-                    <HStack spacing={2}>
-                      <Button
-                        size="sm"
-                        variant={playerMovementMode === 'ground' ? "solid" : "outline"}
-                        colorScheme={playerMovementMode === 'ground' ? "blue" : "gray"}
-                        onClick={() => setPlayerMovementMode('ground')}
-                      >
-                        Ground
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant={playerMovementMode === 'flight' ? "solid" : "outline"}
-                        colorScheme={playerMovementMode === 'flight' ? "blue" : "gray"}
-                        onClick={() => setPlayerMovementMode('flight')}
-                      >
-                        Fly
-                      </Button>
-                    </HStack>
-                  </Box>
-                )}
-                {/* Action Buttons */}
-                <Box>
-                  <Text fontSize="sm" fontWeight="bold" mb={2}>Select Action:</Text>
-                  <Wrap spacing={2}>
-                    {actionOptions.map((option) => (
-                      <Button
-                        key={option.value}
-                        size="sm"
-                        variant={selectedAction?.name === option.value ? "solid" : "outline"}
-                        colorScheme={selectedAction?.name === option.value ? "green" : "blue"}
-                        onClick={() => {
-                          const actionName = option.value;
-                          if (actionName) {
-                            // Create a simple action object
-                            const action = { name: actionName };
-                            setSelectedAction(action);
-                            setSelectedTarget(null);
-                            setSelectedSkill(null); // Clear skill when action changes
-                            setSelectedGrappleAction(null); // Clear grapple action when action changes
-                            
-                            // Set psionicsMode or spellsMode based on action
-                            if (actionName === "Psionics") {
-                              setPsionicsMode(true);
-                              setSpellsMode(false);
-                            } else if (actionName === "Spells") {
-                              setSpellsMode(true);
-                              setPsionicsMode(false);
-                            } else {
-                              setPsionicsMode(false);
-                              setSpellsMode(false);
-                            }
-                            
-                            addLog(`${currentFighter?.name} selects: ${actionName}`, "info");
-                          } else {
-                            setSelectedAction(null);
-                            setSelectedTarget(null);
-                            setSelectedSkill(null);
-                            setPsionicsMode(false);
-                            setSpellsMode(false);
-                          }
-                        }}
-                      >
-                        {option.label}
-                      </Button>
-                    ))}
-                  </Wrap>
-                </Box>
-                
-                <HStack spacing={4} align="center" justify="center" flexWrap="wrap">
-
-                    {/* Dedicated Move Button */}
-                    <Button
-                      colorScheme="blue"
-                      onClick={activateMovementMode}
-                      isDisabled={!currentFighter || currentFighter.type !== "player" || !showTacticalMap}
-                      size="md"
-                      title={!showTacticalMap ? "Show tactical map first to enable movement" : "Click to activate movement mode"}
-                    >
-                      🚶 Move
-                    </Button>
-
-                    {/* Dedicated Run Button */}
-                    <Button
-                      colorScheme="orange"
-                      onClick={() => {
-                        if (currentFighter && currentFighter.type === "player") {
-                          setMovementMode({ active: true, isRunning: true });
-                          setSelectedMovementFighter(currentFighter.id);
-                          addLog(`🏃 ${currentFighter.name} prepares to run (full speed movement)`, "info");
-                        }
-                      }}
-                      isDisabled={!currentFighter || currentFighter.type !== "player" || !showTacticalMap}
-                      size="md"
-                      title={!showTacticalMap ? "Show tactical map first to enable running" : "Click to activate running mode (full speed)"}
-                    >
-                      🏃 Run
-                    </Button>
-
-                    {/* Flight Altitude Controls - Only show if fighter can fly and is currently flying */}
-                    {currentFighter && canFighterFly(currentFighter) && isFlying(currentFighter) && (
-                      <VStack spacing={1} align="stretch" borderWidth="1px" borderColor="blue.300" borderRadius="md" p={2} bg="blue.50">
-                        <Text fontSize="xs" fontWeight="bold" color="blue.700">
-                          🪽 Altitude: {currentFighter.altitudeFeet ?? currentFighter.altitude ?? 0}ft
-                        </Text>
-                        <HStack spacing={1} flexWrap="wrap">
-                          <Button
-                            size="xs"
-                            colorScheme="blue"
-                            variant="outline"
-                            onClick={() => handleChangeAltitude(currentFighter, -20)}
-                            title="Descend 20ft"
-                          >
-                            ⬇️ -20ft
-                          </Button>
-                          <Button
-                            size="xs"
-                            colorScheme="blue"
-                            variant="outline"
-                            onClick={() => handleChangeAltitude(currentFighter, -10)}
-                            title="Descend 10ft"
-                          >
-                            ⬇️ -10ft
-                          </Button>
-                          <Button
-                            size="xs"
-                            colorScheme="blue"
-                            variant="outline"
-                            onClick={() => handleChangeAltitude(currentFighter, -5)}
-                            title="Descend 5ft"
-                          >
-                            ⬇️ -5ft
-                          </Button>
-                          <Button
-                            size="xs"
-                            colorScheme="blue"
-                            variant="outline"
-                            onClick={() => handleChangeAltitude(currentFighter, 5)}
-                            title="Climb 5ft"
-                          >
-                            ⬆️ +5ft
-                          </Button>
-                          <Button
-                            size="xs"
-                            colorScheme="blue"
-                            variant="outline"
-                            onClick={() => handleChangeAltitude(currentFighter, 10)}
-                            title="Climb 10ft"
-                          >
-                            ⬆️ +10ft
-                          </Button>
-                          <Button
-                            size="xs"
-                            colorScheme="blue"
-                            variant="outline"
-                            onClick={() => handleChangeAltitude(currentFighter, 20)}
-                            title="Climb 20ft"
-                          >
-                            ⬆️ +20ft
-                          </Button>
-                        </HStack>
-                      </VStack>
-                    )}
-
-                    {/* Movement Instructions */}
-                    {showTacticalMap && currentFighter && currentFighter.type === "player" && (
-                      <VStack spacing={1} align="start">
-                        <Text fontSize="xs" color="blue.600" fontStyle="italic">
-                          Click &quot;Move&quot; then click a green hex to move
-                        </Text>
-                        <Text fontSize="xs" color="orange.600" fontStyle="italic">
-                          Click &quot;Run&quot; then click a green hex to run (full speed)
-                        </Text>
-                        {movementMode.active && (
-                          <Text fontSize="xs" color="green.600" fontWeight="bold">
-                            ✅ {movementMode.isRunning ? "Running" : "Movement"} mode active - select destination hex
-                          </Text>
-                        )}
-                      </VStack>
-                    )}
-
-                    {/* Target Buttons (Strike / Combat Maneuvers / Psionics / Spells) */}
-                    {shouldShowTargetDropdown && (
-                      <Box>
-                        <Text fontSize="sm" fontWeight="bold" mb={2}>Select Target:</Text>
-                        <Wrap spacing={2}>
-                          {targetOptions.map((fighter, index, array) => {
-                            const sameNameCount = array.filter(f => f.name === fighter.name).length;
-                            const displayName = sameNameCount > 1 
-                              ? `${fighter.name} (#${array.filter(f => f.name === fighter.name).indexOf(fighter) + 1})`
-                              : fighter.name;
-                            const hpValue = getFighterHP(fighter);
-                            const bloodied = fighter.maxHP ? hpValue <= fighter.maxHP * 0.5 : hpValue <= 0;
-                            return (
-                              <Button
-                                key={fighter.id}
-                                size="sm"
-                                variant={selectedTarget?.id === fighter.id ? "solid" : "outline"}
-                                colorScheme={selectedTarget?.id === fighter.id ? "green" : "blue"}
-                                onClick={() => {
-                                  setSelectedTarget(fighter);
-                                  addLog(`Target selected: ${fighter.name}`, "info");
-                                }}
-                              >
-                                {displayName} {bloodied ? "🩸" : ""}
-                              </Button>
-                            );
-                          })}
-                        </Wrap>
-                      </Box>
-                    )}
-
-                    {/* Maneuver Selection Buttons (only for Combat Maneuvers when NOT in grapple) */}
-                    {selectedAction?.name === "Combat Maneuvers" && currentFighter && selectedTarget && (() => {
-                      const grappleStatus = getGrappleStatus(currentFighter);
-                      const targetGrappleStatus = getGrappleStatus(selectedTarget);
-                      const inGrapple = grappleStatus.state !== GRAPPLE_STATES.NEUTRAL || targetGrappleStatus.state !== GRAPPLE_STATES.NEUTRAL;
-                      
-                      if (!inGrapple) {
-                        const maneuvers = [
-                          { value: "trip", label: "Trip" },
-                          { value: "shove", label: "Shove" },
-                          { value: "disarm", label: "Disarm" },
-                          { value: "grapple", label: "Grapple" },
-                        ];
-                        
-                        return (
-                          <Box>
-                            <Text fontSize="sm" fontWeight="bold" mb={2}>Select Maneuver:</Text>
-                            <Wrap spacing={2}>
-                              {maneuvers.map((maneuver) => (
-                                <Button
-                                  key={maneuver.value}
-                                  size="sm"
-                                  variant={selectedManeuver === maneuver.value ? "solid" : "outline"}
-                                  colorScheme={selectedManeuver === maneuver.value ? "green" : "blue"}
-                                  onClick={() => {
-                                    setSelectedManeuver(maneuver.value);
-                                    addLog(`Maneuver selected: ${maneuver.label}`, "info");
-                                  }}
-                                >
-                                  {maneuver.label}
-                                </Button>
-                              ))}
-                            </Wrap>
-                          </Box>
-                        );
-                      }
-                      return null;
-                    })()}
-
-                    {/* Grapple Action Buttons (only for Combat Maneuvers when in grapple) */}
-                    {selectedAction?.name === "Combat Maneuvers" && currentFighter && selectedTarget && (() => {
-                      const grappleStatus = getGrappleStatus(currentFighter);
-                      const targetGrappleStatus = getGrappleStatus(selectedTarget);
-                      const inGrapple = grappleStatus.state !== GRAPPLE_STATES.NEUTRAL || targetGrappleStatus.state !== GRAPPLE_STATES.NEUTRAL;
-                      const availableActions = inGrapple ? getAvailableGrappleActions(currentFighter, selectedTarget) : [];
-                      
-                      if (availableActions.length > 0) {
-                        return (
-                          <Box>
-                            <Text fontSize="sm" fontWeight="bold" mb={2}>Select Grapple Action:</Text>
-                            <Wrap spacing={2}>
-                              {availableActions.map((action) => (
-                                <Button
-                                  key={action.value}
-                                  size="sm"
-                                  variant={selectedGrappleAction === action.value ? "solid" : "outline"}
-                                  colorScheme={selectedGrappleAction === action.value ? "green" : "blue"}
-                                  onClick={() => {
-                                    setSelectedGrappleAction(action.value);
-                                    addLog(`Grapple action selected: ${action.label}`, "info");
-                                  }}
-                                >
-                                  {action.label}
-                                </Button>
-                              ))}
-                            </Wrap>
-                          </Box>
-                        );
-                      }
-                      return null;
-                    })()}
-
-                    {/* Capture Actions (for surrendered enemies) */}
-                    {selectedTarget && canBeCaptured(selectedTarget) && currentFighter && currentFighter.type === "player" && (
-                      <Box>
-                        <Text fontSize="sm" fontWeight="bold" mb={2} color="orange.600">
-                          ⛓️ Prisoner Actions:
-                        </Text>
-                        <Wrap spacing={2}>
-                          <Button
-                            size="sm"
-                            colorScheme="orange"
-                            variant="outline"
-                            onClick={() => {
-                              if (!canBeCaptured(selectedTarget)) {
-                                addLog(`${selectedTarget.name} cannot be captured right now.`, "info");
-                                return;
-                              }
-                              
-                              setFighters(prev =>
-                                prev.map(f => {
-                                  if (f.id === selectedTarget.id) {
-                                    const captured = tieUpPrisoner(f, currentFighter.id);
-                                    addLog(
-                                      `⛓️ ${currentFighter.name} ties up ${captured.name}, taking them prisoner!`,
-                                      "info"
-                                    );
-                                    return captured;
-                                  }
-                                  return f;
-                                })
-                              );
-                              setSelectedTarget(null);
-                            }}
-                          >
-                            ⛓️ Capture / Tie Up
-                          </Button>
-                          <Button
-                            size="sm"
-                            colorScheme="yellow"
-                            variant="outline"
-                            onClick={() => {
-                              setFighters(prev => {
-                                let lootResult = null;
-                                
-                                const updated = prev.map(f => {
-                                  if (f.id === selectedTarget.id) {
-                                    const { updatedFighter, loot } = lootPrisoner(f);
-                                    lootResult = loot;
-                                    return updatedFighter;
-                                  }
-                                  return f;
-                                });
-                                
-                                if (lootResult) {
-                                  const lootCount = (lootResult.inventory?.length || 0) + 
-                                                   (lootResult.weapons?.length || 0) + 
-                                                   (lootResult.armor ? 1 : 0);
-                                  addLog(
-                                    `💰 ${selectedTarget.name} is searched; ${lootCount} item${lootCount !== 1 ? 's' : ''} confiscated.`,
-                                    "info"
-                                  );
-                                  // Here you could push lootResult into a party loot bag state
-                                  // setLoot(prev => [...prev, lootResult]);
-                                }
-                                
-                                return updated;
-                              });
-                              setSelectedTarget(null);
-                            }}
-                          >
-                            💰 Loot Prisoner
-                          </Button>
-                        </Wrap>
-                      </Box>
-                    )}
-
-                    {/* Weapon Selection Buttons (only for Strike) */}
-                    {selectedAction?.name === "Strike" && currentFighter && (
-                      <Box>
-                        <Text fontSize="sm" fontWeight="bold" mb={2}>Select Weapon:</Text>
-                        <Wrap spacing={2}>
-                          {currentFighter.equippedWeapons?.map((weapon, index) => (
-                            <Button
-                              key={index}
-                              size="sm"
-                              variant={selectedAttackWeapon?.slot === weapon.slot ? "solid" : "outline"}
-                              colorScheme={selectedAttackWeapon?.slot === weapon.slot ? "green" : "blue"}
-                              onClick={() => {
-                                setSelectedAttackWeapon(weapon);
-                                addLog(`Weapon selected: ${weapon.name} (${weapon.damage})`, "info");
-                              }}
-                            >
-                              {weapon.slot}: {weapon.name}
-                            </Button>
-                          ))}
-                        </Wrap>
-                      </Box>
-                    )}
-
-                    {/* Psionic Power Selection Buttons (only for Psionics) */}
-                    {selectedAction?.name === "Psionics" && currentFighter && hasPsionics && psionicsMode && (
-                      <Box>
-                        <Text fontSize="sm" fontWeight="bold" mb={2}>Select Psionic Power:</Text>
-                        <Wrap spacing={2}>
-                          {availablePsionicPowers.map((power, index) => (
-                            <Button
-                              key={index}
-                              size="sm"
-                              variant={selectedPsionicPower?.name === power.name ? "solid" : "outline"}
-                              colorScheme={selectedPsionicPower?.name === power.name ? "green" : "blue"}
-                              onClick={() => {
-                                setSelectedPsionicPower(power);
-                                addLog(`Psionic power selected: ${power.name} (${power.isp} ISP)`, "info");
-                              }}
-                            >
-                              {power.name} ({power.isp} ISP)
-                            </Button>
-                          ))}
-                        </Wrap>
-                      </Box>
-                    )}
-
-                    {/* Spell Selection Buttons (only for Spells) */}
-                    {selectedAction?.name === "Spells" && currentFighter && hasSpells && spellsMode && (
-                      <Box>
-                        <Text fontSize="sm" fontWeight="bold" mb={2}>Select Spell:</Text>
-                        <Wrap spacing={2}>
-                          {availableSpells.map((spell, index) => (
-                            <Button
-                              key={index}
-                              size="sm"
-                              variant={selectedSpell?.name === spell.name ? "solid" : "outline"}
-                              colorScheme={selectedSpell?.name === spell.name ? "green" : "blue"}
-                              onClick={() => {
-                                setSelectedSpell(spell);
-                                addLog(`Spell selected: ${spell.name} (${spell.cost ?? spell.ppe ?? spell.PPE ?? 0} PPE)`, "info");
-                              }}
-                            >
-                              {spell.name} ({spell.cost ?? spell.ppe ?? spell.PPE ?? 0} PPE)
-                            </Button>
-                          ))}
-                        </Wrap>
-                      </Box>
-                    )}
-
-                    {/* Skill Selection Buttons (only for Use Skill) */}
-                    {selectedAction?.name === "Use Skill" && currentFighter && (
-                      <Box>
-                        <Text fontSize="sm" fontWeight="bold" mb={2}>Select Skill:</Text>
-                        <Wrap spacing={2}>
-                          {getAvailableSkills(currentFighter).map((skill, index) => (
-                            <Button
-                              key={index}
-                              size="sm"
-                              variant={selectedSkill?.name === skill.name ? "solid" : "outline"}
-                              colorScheme={selectedSkill?.name === skill.name ? "green" : "blue"}
-                              onClick={() => {
-                                setSelectedSkill(skill);
-                                addLog(`Skill selected: ${skill.name}`, "info");
-                                // Clear target if skill doesn't require one
-                                if (skill && !skill.requiresTarget) {
-                                  setSelectedTarget(null);
-                                }
-                              }}
-                            >
-                              {skill.name} {skill.cost > 0 && `(${skill.cost} ${skill.costType})`}
-                            </Button>
-                          ))}
-                        </Wrap>
-                      </Box>
-                    )}
-
-                    {/* Target Selection Buttons for Skills that require targets */}
-                    {selectedAction?.name === "Use Skill" && selectedSkill && selectedSkill.requiresTarget && (
-                      <Box>
-                        <Text fontSize="sm" fontWeight="bold" mb={2}>Select Target:</Text>
-                        <Wrap spacing={2}>
-                          {/* For healing skills, show allies; for other skills, show enemies */}
-                          {selectedSkill.type === "healer_ability" || selectedSkill.type === "clerical_ability" || selectedSkill.type === "medical_skill" ? (
-                            fighters
-                              .filter(f => f.type === currentFighter.type && f.id !== currentFighter.id && f.currentHP > -21)
-                              .map((fighter) => (
-                                <Button
-                                  key={fighter.id}
-                                  size="sm"
-                                  variant={selectedTarget?.id === fighter.id ? "solid" : "outline"}
-                                  colorScheme={selectedTarget?.id === fighter.id ? "green" : "blue"}
-                                  onClick={() => {
-                                    setSelectedTarget(fighter);
-                                    addLog(`Target selected: ${fighter.name}`, "info");
-                                  }}
-                                >
-                                  {fighter.name} ({fighter.currentHP}/{fighter.maxHP} HP)
-                                  {fighter.currentHP <= 0 && ' 🩸'}
-                                </Button>
-                              ))
-                          ) : (
-                            fighters
-                            .filter(f => f.type !== currentFighter.type && f.currentHP > 0)
-                            .map((fighter) => (
-                              <Button
-                                key={fighter.id}
-                                size="sm"
-                                variant={selectedTarget?.id === fighter.id ? "solid" : "outline"}
-                                colorScheme={selectedTarget?.id === fighter.id ? "green" : "blue"}
-                                onClick={() => {
-                                  setSelectedTarget(fighter);
-                                  addLog(`Target selected: ${fighter.name}`, "info");
-                                }}
-                              >
-                                {fighter.name}
-                              </Button>
-                            ))
-                          )}
-                        </Wrap>
-                      </Box>
-                    )}
-                  </HStack>
-
-                  {/* Execute Button */}
-                  <Button
-                    colorScheme="green"
-                    onClick={executeSelectedAction}
-                    size="md"
-                    isDisabled={!selectedAction}
-                    width="full"
-                    maxWidth="300px"
-                    alignSelf="center"
-                  >
-                    {selectedAction 
-                      ? `Execute ${selectedAction.name} →` 
-                      : "Select Action First"}
-                  </Button>
-
-                  {/* Action Summary */}
-                  {selectedAction && (
-                    <Box p={3} bg="green.100" borderRadius="md" borderWidth="1px" borderColor="green.300">
-                      <Text fontSize="sm" color="green.700" textAlign="center" fontWeight="bold">
-                        {selectedAction.name}
-                        {selectedTarget && ` targeting ${selectedTarget.name}`}
-                      </Text>
-                      {selectedAction.name === "Strike" && selectedAttackWeapon && (
-                        <Text fontSize="xs" color="green.600" mt={1}>
-                          Using: {selectedAttackWeapon.name} ({selectedAttackWeapon.damage})
-                        </Text>
-                      )}
-                      {selectedAction.name === "Psionics" && selectedPsionicPower && (
-                        <Text fontSize="xs" color="purple.600" mt={1}>
-                          Using: {selectedPsionicPower.name} ({selectedPsionicPower.isp} ISP)
-                        </Text>
-                      )}
-                      {selectedAction.name === "Spells" && selectedSpell && (
-                        <Text fontSize="xs" color="blue.600" mt={1}>
-                          Using: {selectedSpell.name} ({selectedSpell.cost} PPE)
-                        </Text>
-                      )}
-                      {selectedAction.name === "Use Skill" && selectedSkill && (
-                        <VStack spacing={1} align="start" mt={1}>
-                          <Text fontSize="xs" color="teal.600">
-                            Using: {selectedSkill.name}
-                            {selectedSkill.cost > 0 && ` (${selectedSkill.cost} ${selectedSkill.costType})`}
-                          </Text>
-                          <Text fontSize="xs" color="gray.600" fontStyle="italic">
-                            {selectedSkill.description}
-                          </Text>
-                          {selectedTarget && (
-                            <Text fontSize="xs" color="teal.700">
-                              Target: {selectedTarget.name}
-                            </Text>
-                          )}
-                        </VStack>
-                      )}
-                    </Box>
-                  )}
-                </VStack>
-            </Box>
-          </FloatingPanel>
-      )}
       
       <ResizableLayout
         initialLeftWidth={350}
@@ -10079,10 +10396,10 @@ useEffect(() => {
             {fighters.filter(f => f.type === "player").length > 0 && (
               <Box w="100%" mt={4}>
                 <Heading size="sm" color="orange.600" mb={2}>⚔️ Equipped Weapons</Heading>
-                <Box 
-                  w="100%" 
+          <Box
+            w="100%"
                   maxH="200px" 
-                  overflowY="auto" 
+            overflowY="auto"
                   border="2px solid" 
                   borderColor="orange.400" 
                   p={3} 
@@ -10183,6 +10500,621 @@ useEffect(() => {
                   })}
                 </Box>
               </Box>
+            )}
+
+            {/* Combat Options - Moved here to appear under Equipped Weapons */}
+            {fighters.length > 0 && currentFighter && currentFighter.type === "player" && combatActive && !aiControlEnabled && (
+              <Box w="100%" mt={4}>
+                <Heading size="sm" color="green.600" mb={2}>🎯 Combat Options for {currentFighter.name}</Heading>
+                <Box 
+                  w="100%" 
+                  maxH="600px" 
+                  overflowY="auto" 
+                  border="2px solid" 
+                  borderColor="green.400" 
+            p={4}
+                  borderRadius="md" 
+                  bg="green.50"
+          >
+            <VStack spacing={3} align="stretch">
+                    {/* Movement Mode Toggle - only show if fighter can fly */}
+                    {currentFighter && currentFighter.type === "player" && canFlyNow && (
+                      <Box>
+                        <Text fontSize="sm" fontWeight="bold" mb={2}>Movement Mode:</Text>
+                        <HStack spacing={2}>
+                          <Button
+                            size="sm"
+                            variant={playerMovementMode === 'ground' ? "solid" : "outline"}
+                            colorScheme={playerMovementMode === 'ground' ? "blue" : "gray"}
+                            onClick={() => setPlayerMovementMode('ground')}
+                            isDisabled={isFloatOnly}
+                          >
+                            Ground
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant={playerMovementMode === 'flight' ? "solid" : "outline"}
+                            colorScheme={playerMovementMode === 'flight' ? "purple" : "gray"}
+                            onClick={() => setPlayerMovementMode('flight')}
+                          >
+                            Fly
+                          </Button>
+                        </HStack>
+                      </Box>
+                    )}
+                {/* Action Buttons */}
+                <Box>
+                  <Text fontSize="sm" fontWeight="bold" mb={2}>Select Action:</Text>
+                  <Wrap spacing={2}>
+                    {actionOptions.map((option) => (
+                      <Button
+                        key={option.value}
+                        size="sm"
+                        variant={selectedAction?.name === option.value ? "solid" : "outline"}
+                        colorScheme={selectedAction?.name === option.value ? "green" : "blue"}
+                        onClick={() => {
+                          const actionName = option.value;
+                          if (actionName) {
+                            // Create a simple action object
+                            const action = { name: actionName };
+                            setSelectedAction(action);
+                            setSelectedTarget(null);
+                            setSelectedSkill(null); // Clear skill when action changes
+                            setSelectedGrappleAction(null); // Clear grapple action when action changes
+                            
+                            // Set psionicsMode or spellsMode based on action
+                            if (actionName === "Psionics") {
+                              setPsionicsMode(true);
+                              setSpellsMode(false);
+                            } else if (actionName === "Spells") {
+                              setSpellsMode(true);
+                              setPsionicsMode(false);
+                            } else {
+                              setPsionicsMode(false);
+                              setSpellsMode(false);
+                            }
+                            
+                            addLog(`${currentFighter?.name} selects: ${actionName}`, "info");
+                          } else {
+                            setSelectedAction(null);
+                            setSelectedTarget(null);
+                            setSelectedSkill(null);
+                            setPsionicsMode(false);
+                            setSpellsMode(false);
+                          }
+                        }}
+                      >
+                        {option.label}
+                      </Button>
+                    ))}
+                  </Wrap>
+                </Box>
+                
+                <HStack spacing={4} align="center" justify="center" flexWrap="wrap">
+                      {/* Movement Mode Toggle (only for flyers) */}
+                      {currentFighter && currentFighter.type === "player" && canFlyNow && (
+                        <HStack spacing={2} align="center">
+                          <Text fontSize="xs" fontWeight="bold">
+                            Movement Mode:
+                          </Text>
+                          <Button
+                            size="xs"
+                            variant={playerMovementMode === "ground" ? "solid" : "outline"}
+                            colorScheme={playerMovementMode === "ground" ? "blue" : "gray"}
+                            onClick={() => setPlayerMovementMode("ground")}
+                            isDisabled={isFloatOnly}
+                          >
+                            Ground
+                          </Button>
+                          <Button
+                            size="xs"
+                            variant={playerMovementMode === "flight" ? "solid" : "outline"}
+                            colorScheme={playerMovementMode === "flight" ? "purple" : "gray"}
+                            onClick={() => setPlayerMovementMode("flight")}
+                          >
+                            Fly
+                          </Button>
+                        </HStack>
+                      )}
+
+                      {/* Dedicated Move Button (label depends on movement mode) */}
+                    <Button
+                      colorScheme="blue"
+                      onClick={activateMovementMode}
+                      isDisabled={!currentFighter || currentFighter.type !== "player" || !showTacticalMap}
+                      size="md"
+                        title={moveTitle}
+                    >
+                        {moveLabel}
+                    </Button>
+
+                      {/* Dedicated Run Button (ground-only dash) */}
+                    <Button
+                      colorScheme="orange"
+                      onClick={() => {
+                        if (currentFighter && currentFighter.type === "player") {
+                          setMovementMode({ active: true, isRunning: true });
+                          setSelectedMovementFighter(currentFighter.id);
+                          addLog(`🏃 ${currentFighter.name} prepares to run (full speed movement)`, "info");
+                        }
+                      }}
+                        isDisabled={
+                          !currentFighter ||
+                          currentFighter.type !== "player" ||
+                          !showTacticalMap ||
+                          isFloatOnly
+                        }
+                      size="md"
+                        title={
+                          !showTacticalMap
+                            ? "Show tactical map first to enable running"
+                            : isFloatOnly
+                            ? "This creature cannot run on the ground."
+                            : "Click to activate running mode (full speed)"
+                        }
+                    >
+                      🏃 Run
+                    </Button>
+                    </HStack>
+
+                    {/* Flight Altitude Controls - Only show if fighter can fly and is currently flying */}
+                    {currentFighter && canFighterFly(currentFighter) && isFlying(currentFighter) && (
+                      <VStack spacing={1} align="stretch" borderWidth="1px" borderColor="blue.300" borderRadius="md" p={2} bg="blue.50">
+                        <Text fontSize="xs" fontWeight="bold" color="blue.700">
+                          🪽 Altitude: {currentFighter.altitudeFeet ?? currentFighter.altitude ?? 0}ft
+                        </Text>
+                        <HStack spacing={1} flexWrap="wrap">
+                          <Button
+                            size="xs"
+                            colorScheme="blue"
+                            variant="outline"
+                            onClick={() => handleChangeAltitude(currentFighter, -20)}
+                            title="Descend 20ft"
+                          >
+                            ⬇️ -20ft
+                          </Button>
+                          <Button
+                            size="xs"
+                            colorScheme="blue"
+                            variant="outline"
+                            onClick={() => handleChangeAltitude(currentFighter, -10)}
+                            title="Descend 10ft"
+                          >
+                            ⬇️ -10ft
+                          </Button>
+                          <Button
+                            size="xs"
+                            colorScheme="blue"
+                            variant="outline"
+                            onClick={() => handleChangeAltitude(currentFighter, -5)}
+                            title="Descend 5ft"
+                          >
+                            ⬇️ -5ft
+                          </Button>
+                          <Button
+                            size="xs"
+                            colorScheme="blue"
+                            variant="outline"
+                            onClick={() => handleChangeAltitude(currentFighter, 5)}
+                            title="Climb 5ft"
+                          >
+                            ⬆️ +5ft
+                          </Button>
+                          <Button
+                            size="xs"
+                            colorScheme="blue"
+                            variant="outline"
+                            onClick={() => handleChangeAltitude(currentFighter, 10)}
+                            title="Climb 10ft"
+                          >
+                            ⬆️ +10ft
+                          </Button>
+                          <Button
+                            size="xs"
+                            colorScheme="blue"
+                            variant="outline"
+                            onClick={() => handleChangeAltitude(currentFighter, 20)}
+                            title="Climb 20ft"
+                          >
+                            ⬆️ +20ft
+                          </Button>
+                        </HStack>
+                      </VStack>
+                    )}
+
+                    {/* Movement Instructions */}
+                    {showTacticalMap && currentFighter && currentFighter.type === "player" && (
+                      <VStack spacing={1} align="start">
+                        <Text fontSize="xs" color="blue.600" fontStyle="italic">
+                          Click &quot;{canFlyNow ? (playerMovementMode === "flight" ? "Move (Fly)" : "Move (Run)") : "Move"}&quot; then click a green hex to move
+                        </Text>
+                        <Text fontSize="xs" color="orange.600" fontStyle="italic">
+                          Click &quot;Run&quot; then click a green hex to run (full speed)
+                        </Text>
+                        {movementMode.active && (
+                          <Text fontSize="xs" color="green.600" fontWeight="bold">
+                            ✅ {movementMode.isRunning ? "Running" : "Movement"} mode active - select destination hex
+                          </Text>
+                        )}
+                      </VStack>
+                    )}
+
+                    {/* Target Buttons (Strike / Combat Maneuvers / Psionics / Spells) */}
+                    {shouldShowTargetDropdown && (
+                      <Box>
+                        <Text fontSize="sm" fontWeight="bold" mb={2}>Select Target:</Text>
+                        <Wrap spacing={2}>
+                          {targetOptions.map((fighter, index, array) => {
+                            const sameNameCount = array.filter(f => f.name === fighter.name).length;
+                            const displayName = sameNameCount > 1 
+                              ? `${fighter.name} (#${array.filter(f => f.name === fighter.name).indexOf(fighter) + 1})`
+                              : fighter.name;
+                            const hpValue = getFighterHP(fighter);
+                            const bloodied = fighter.maxHP ? hpValue <= fighter.maxHP * 0.5 : hpValue <= 0;
+                            return (
+                              <Button
+                                key={fighter.id}
+                                size="sm"
+                                variant={selectedTarget?.id === fighter.id ? "solid" : "outline"}
+                                colorScheme={selectedTarget?.id === fighter.id ? "green" : "blue"}
+                                onClick={() => {
+                                  setSelectedTarget(fighter);
+                                  addLog(`Target selected: ${fighter.name}`, "info");
+                                }}
+                              >
+                                {displayName} {bloodied ? "🩸" : ""}
+                              </Button>
+                            );
+                          })}
+                        </Wrap>
+                      </Box>
+                    )}
+
+                    {/* Maneuver Selection Buttons (only for Combat Maneuvers when NOT in grapple) */}
+                    {selectedAction?.name === "Combat Maneuvers" && currentFighter && selectedTarget && (() => {
+                      const grappleStatus = getGrappleStatus(currentFighter);
+                      const targetGrappleStatus = getGrappleStatus(selectedTarget);
+                      const inGrapple = grappleStatus.state !== GRAPPLE_STATES.NEUTRAL || targetGrappleStatus.state !== GRAPPLE_STATES.NEUTRAL;
+                      
+                      if (!inGrapple) {
+                        const maneuvers = [
+                          { value: "trip", label: "Trip" },
+                          { value: "shove", label: "Shove" },
+                          { value: "disarm", label: "Disarm" },
+                          { value: "grapple", label: "Grapple" },
+                        ];
+                        
+                        return (
+                          <Box>
+                            <Text fontSize="sm" fontWeight="bold" mb={2}>Select Maneuver:</Text>
+                            <Wrap spacing={2}>
+                              {maneuvers.map((maneuver) => (
+                                <Button
+                                  key={maneuver.value}
+                                  size="sm"
+                                  variant={selectedManeuver === maneuver.value ? "solid" : "outline"}
+                                  colorScheme={selectedManeuver === maneuver.value ? "green" : "blue"}
+                                  onClick={() => {
+                                    setSelectedManeuver(maneuver.value);
+                                    addLog(`Maneuver selected: ${maneuver.label}`, "info");
+                                  }}
+                                >
+                                  {maneuver.label}
+                                </Button>
+                              ))}
+                            </Wrap>
+                          </Box>
+                        );
+                      }
+                      return null;
+                    })()}
+
+                    {/* Grapple Action Buttons (only for Combat Maneuvers when in grapple) */}
+                    {selectedAction?.name === "Combat Maneuvers" && currentFighter && selectedTarget && (() => {
+                      const grappleStatus = getGrappleStatus(currentFighter);
+                      const targetGrappleStatus = getGrappleStatus(selectedTarget);
+                      const inGrapple = grappleStatus.state !== GRAPPLE_STATES.NEUTRAL || targetGrappleStatus.state !== GRAPPLE_STATES.NEUTRAL;
+                      const availableActions = inGrapple ? getAvailableGrappleActions(currentFighter, selectedTarget) : [];
+                      
+                      if (availableActions.length > 0) {
+                        return (
+                          <Box>
+                            <Text fontSize="sm" fontWeight="bold" mb={2}>Select Grapple Action:</Text>
+                            <Wrap spacing={2}>
+                              {availableActions.map((action) => (
+                                <Button
+                                  key={action.value}
+                                  size="sm"
+                                  variant={selectedGrappleAction === action.value ? "solid" : "outline"}
+                                  colorScheme={selectedGrappleAction === action.value ? "green" : "blue"}
+                                  onClick={() => {
+                                    setSelectedGrappleAction(action.value);
+                                    addLog(`Grapple action selected: ${action.label}`, "info");
+                                  }}
+                                >
+                                  {action.label}
+                                </Button>
+                              ))}
+                            </Wrap>
+                          </Box>
+                        );
+                      }
+                      return null;
+                    })()}
+
+                    {/* Capture Actions (for surrendered enemies) */}
+                    {selectedTarget && canBeCaptured(selectedTarget) && currentFighter && currentFighter.type === "player" && (
+                      <Box>
+                        <Text fontSize="sm" fontWeight="bold" mb={2} color="orange.600">
+                          ⛓️ Prisoner Actions:
+                        </Text>
+                        <Wrap spacing={2}>
+                          <Button
+                            size="sm"
+                            colorScheme="orange"
+                            variant="outline"
+                            onClick={() => {
+                              if (!canBeCaptured(selectedTarget)) {
+                                addLog(`${selectedTarget.name} cannot be captured right now.`, "info");
+                                return;
+                              }
+                              
+                              setFighters(prev =>
+                                prev.map(f => {
+                                  if (f.id === selectedTarget.id) {
+                                    const captured = tieUpPrisoner(f, currentFighter.id);
+                                    addLog(
+                                      `⛓️ ${currentFighter.name} ties up ${captured.name}, taking them prisoner!`,
+                                      "info"
+                                    );
+                                    return captured;
+                                  }
+                                  return f;
+                                })
+                              );
+                              setSelectedTarget(null);
+                            }}
+                          >
+                            ⛓️ Capture / Tie Up
+                          </Button>
+                          <Button
+                            size="sm"
+                            colorScheme="yellow"
+                            variant="outline"
+                            onClick={() => {
+                              setFighters(prev => {
+                                let lootResult = null;
+                                
+                                const updated = prev.map(f => {
+                                  if (f.id === selectedTarget.id) {
+                                    const { updatedFighter, loot } = lootPrisoner(f);
+                                    lootResult = loot;
+                                    return updatedFighter;
+                                  }
+                                  return f;
+                                });
+                                
+                                if (lootResult) {
+                                  const lootCount = (lootResult.inventory?.length || 0) + 
+                                                   (lootResult.weapons?.length || 0) + 
+                                                   (lootResult.armor ? 1 : 0);
+                                  addLog(
+                                    `💰 ${selectedTarget.name} is searched; ${lootCount} item${lootCount !== 1 ? 's' : ''} confiscated.`,
+                                    "info"
+                                  );
+                                }
+                                
+                                return updated;
+                              });
+                              setSelectedTarget(null);
+                            }}
+                          >
+                            💰 Loot Prisoner
+                          </Button>
+                        </Wrap>
+                      </Box>
+                    )}
+
+                    {/* Weapon Selection Buttons (only for Strike) */}
+                    {selectedAction?.name === "Strike" && currentFighter && (
+                      <Box>
+                        <Text fontSize="sm" fontWeight="bold" mb={2}>Select Weapon:</Text>
+                        <Wrap spacing={2}>
+                          {currentFighter.equippedWeapons?.map((weapon, index) => (
+                            <Button
+                              key={index}
+                              size="sm"
+                              variant={selectedAttackWeapon?.slot === weapon.slot ? "solid" : "outline"}
+                              colorScheme={selectedAttackWeapon?.slot === weapon.slot ? "green" : "blue"}
+                              onClick={() => {
+                                setSelectedAttackWeapon(weapon);
+                                addLog(`Weapon selected: ${weapon.name} (${weapon.damage})`, "info");
+                              }}
+                            >
+                              {weapon.slot}: {weapon.name}
+                            </Button>
+                          ))}
+                        </Wrap>
+                      </Box>
+                    )}
+
+                    {/* Psionic Power Selection Buttons (only for Psionics) */}
+                    {selectedAction?.name === "Psionics" && currentFighter && hasPsionics && psionicsMode && (
+                      <Box>
+                        <Text fontSize="sm" fontWeight="bold" mb={2}>Select Psionic Power:</Text>
+                        <Wrap spacing={2}>
+                          {availablePsionicPowers.map((power, index) => (
+                            <Button
+                              key={index}
+                              size="sm"
+                              variant={selectedPsionicPower?.name === power.name ? "solid" : "outline"}
+                              colorScheme={selectedPsionicPower?.name === power.name ? "green" : "blue"}
+                              onClick={() => {
+                                setSelectedPsionicPower(power);
+                                addLog(`Psionic power selected: ${power.name} (${power.isp} ISP)`, "info");
+                              }}
+                            >
+                              {power.name} ({power.isp} ISP)
+                            </Button>
+                          ))}
+                        </Wrap>
+                      </Box>
+                    )}
+
+                    {/* Spell Selection Buttons (only for Spells) */}
+                    {selectedAction?.name === "Spells" && currentFighter && hasSpells && spellsMode && (
+                      <Box>
+                        <Text fontSize="sm" fontWeight="bold" mb={2}>Select Spell:</Text>
+                        <Wrap spacing={2}>
+                          {availableSpells.map((spell, index) => (
+                            <Button
+                              key={index}
+                              size="sm"
+                              variant={selectedSpell?.name === spell.name ? "solid" : "outline"}
+                              colorScheme={selectedSpell?.name === spell.name ? "green" : "blue"}
+                              onClick={() => {
+                                setSelectedSpell(spell);
+                                addLog(`Spell selected: ${spell.name} (${spell.cost ?? spell.ppe ?? spell.PPE ?? 0} PPE)`, "info");
+                              }}
+                            >
+                              {spell.name} ({spell.cost ?? spell.ppe ?? spell.PPE ?? 0} PPE)
+                            </Button>
+                          ))}
+                        </Wrap>
+                      </Box>
+                    )}
+
+                    {/* Skill Selection Buttons (only for Use Skill) */}
+                    {selectedAction?.name === "Use Skill" && currentFighter && (
+                      <Box>
+                        <Text fontSize="sm" fontWeight="bold" mb={2}>Select Skill:</Text>
+                        <Wrap spacing={2}>
+                          {getAvailableSkills(currentFighter).map((skill, index) => (
+                            <Button
+                              key={index}
+                              size="sm"
+                              variant={selectedSkill?.name === skill.name ? "solid" : "outline"}
+                              colorScheme={selectedSkill?.name === skill.name ? "green" : "blue"}
+                              onClick={() => {
+                                setSelectedSkill(skill);
+                                addLog(`Skill selected: ${skill.name}`, "info");
+                                // Clear target if skill doesn't require one
+                                if (skill && !skill.requiresTarget) {
+                                  setSelectedTarget(null);
+                                }
+                              }}
+                            >
+                              {skill.name} {skill.cost > 0 && `(${skill.cost} ${skill.costType})`}
+                            </Button>
+                          ))}
+                        </Wrap>
+                      </Box>
+                    )}
+
+                    {/* Target Selection Buttons for Skills that require targets */}
+                    {selectedAction?.name === "Use Skill" && selectedSkill && selectedSkill.requiresTarget && (
+                      <Box>
+                        <Text fontSize="sm" fontWeight="bold" mb={2}>Select Target:</Text>
+                        <Wrap spacing={2}>
+                          {/* For healing skills, show allies; for other skills, show enemies */}
+                          {selectedSkill.type === "healer_ability" || selectedSkill.type === "clerical_ability" || selectedSkill.type === "medical_skill" ? (
+                            fighters
+                              .filter(f => f.type === currentFighter.type && f.id !== currentFighter.id && f.currentHP > -21)
+                              .map((fighter) => (
+                                <Button
+                                  key={fighter.id}
+                                  size="sm"
+                                  variant={selectedTarget?.id === fighter.id ? "solid" : "outline"}
+                                  colorScheme={selectedTarget?.id === fighter.id ? "green" : "blue"}
+                                  onClick={() => {
+                                    setSelectedTarget(fighter);
+                                    addLog(`Target selected: ${fighter.name}`, "info");
+                                  }}
+                                >
+                                  {fighter.name} ({fighter.currentHP}/{fighter.maxHP} HP)
+                                  {fighter.currentHP <= 0 && ' 🩸'}
+                                </Button>
+                              ))
+                          ) : (
+                            fighters
+                            .filter(f => f.type !== currentFighter.type && f.currentHP > 0)
+                            .map((fighter) => (
+                              <Button
+                                key={fighter.id}
+                                size="sm"
+                                variant={selectedTarget?.id === fighter.id ? "solid" : "outline"}
+                                colorScheme={selectedTarget?.id === fighter.id ? "green" : "blue"}
+                                onClick={() => {
+                                  setSelectedTarget(fighter);
+                                  addLog(`Target selected: ${fighter.name}`, "info");
+                                }}
+                              >
+                                {fighter.name}
+                              </Button>
+                            ))
+                          )}
+                        </Wrap>
+                      </Box>
+                    )}
+
+                  {/* Execute Button */}
+                  <Button
+                    colorScheme="green"
+                    onClick={executeSelectedAction}
+                    size="md"
+                    isDisabled={!selectedAction}
+                    width="full"
+                    maxWidth="300px"
+                    alignSelf="center"
+                  >
+                    {selectedAction 
+                      ? `Execute ${selectedAction.name} →` 
+                      : "Select Action First"}
+                  </Button>
+
+                  {/* Action Summary */}
+                  {selectedAction && (
+                    <Box p={3} bg="green.100" borderRadius="md" borderWidth="1px" borderColor="green.300">
+                      <Text fontSize="sm" color="green.700" textAlign="center" fontWeight="bold">
+                        {selectedAction.name}
+                        {selectedTarget && ` targeting ${selectedTarget.name}`}
+                      </Text>
+                      {selectedAction.name === "Strike" && selectedAttackWeapon && (
+                        <Text fontSize="xs" color="green.600" mt={1}>
+                          Using: {selectedAttackWeapon.name} ({selectedAttackWeapon.damage})
+                        </Text>
+                      )}
+                      {selectedAction.name === "Psionics" && selectedPsionicPower && (
+                        <Text fontSize="xs" color="purple.600" mt={1}>
+                          Using: {selectedPsionicPower.name} ({selectedPsionicPower.isp} ISP)
+                        </Text>
+                      )}
+                      {selectedAction.name === "Spells" && selectedSpell && (
+                        <Text fontSize="xs" color="blue.600" mt={1}>
+                          Using: {selectedSpell.name} ({selectedSpell.cost} PPE)
+                        </Text>
+                      )}
+                      {selectedAction.name === "Use Skill" && selectedSkill && (
+                        <VStack spacing={1} align="start" mt={1}>
+                          <Text fontSize="xs" color="teal.600">
+                            Using: {selectedSkill.name}
+                            {selectedSkill.cost > 0 && ` (${selectedSkill.cost} ${selectedSkill.costType})`}
+                          </Text>
+                          <Text fontSize="xs" color="gray.600" fontStyle="italic">
+                            {selectedSkill.description}
+                          </Text>
+                          {selectedTarget && (
+                            <Text fontSize="xs" color="teal.700">
+                              Target: {selectedTarget.name}
+                            </Text>
+                          )}
+                        </VStack>
+                      )}
+                    </Box>
+                  )}
+                </VStack>
+            </Box>
+                </Box>
             )}
             
             {/* Quick Add Buttons */}
@@ -11372,6 +12304,63 @@ useEffect(() => {
               />
             </FormControl>
 
+            <FormControl mb={4}>
+              <FormLabel>Level (1-15):</FormLabel>
+              <Input
+                type="number"
+                min="1"
+                max="15"
+                value={enemyLevel}
+                onChange={(e) => {
+                  const val = parseInt(e.target.value, 10) || 1;
+                  setEnemyLevel(Math.max(1, Math.min(15, val)));
+                }}
+                placeholder="1"
+              />
+              <Text fontSize="xs" color="gray.500" mt={1}>
+                Level affects HP (+10% per level), AR (+1 per 3 levels), and combat bonuses (+1 per 2 levels).
+              </Text>
+            </FormControl>
+
+            {/* Armor Selection - Only show for humanoids */}
+            {isSelectedHumanoid && (
+              <FormControl mb={4}>
+                <FormLabel>Armor (Humanoid Only):</FormLabel>
+                <Select
+                  placeholder="Select armor (optional)"
+                  value={selectedArmor}
+                  onChange={(e) => setSelectedArmor(e.target.value)}
+                >
+                  {availableArmors.map((armor) => (
+                    <option key={armor.name} value={armor.name}>
+                      {armor.name} {armor.name !== "None" ? `(AR: ${armor.ar}, SDC: ${armor.sdc})` : ""}
+                    </option>
+                  ))}
+                </Select>
+                <Text fontSize="xs" color="gray.500" mt={1}>
+                  Select armor to equip. Armor AR replaces base AR if higher.
+                </Text>
+              </FormControl>
+            )}
+
+            <FormControl mb={4}>
+              <FormLabel>Number of Enemies (1-10):</FormLabel>
+              <Input
+                type="number"
+                min="1"
+                max="10"
+                value={enemyCount}
+                onChange={(e) => {
+                  const val = parseInt(e.target.value, 10) || 1;
+                  setEnemyCount(Math.max(1, Math.min(10, val)));
+                }}
+                placeholder="1"
+              />
+              <Text fontSize="xs" color="gray.500" mt={1}>
+                You can add up to 10 enemies at once. Multiple enemies will be numbered (e.g., &quot;Goblin #1&quot;, &quot;Goblin #2&quot;).
+              </Text>
+            </FormControl>
+
             {selectedCreature && (
               <Box mb={4} p={3} border="1px solid" borderColor="gray.200" borderRadius="md">
                 <Text fontWeight="bold" mb={2}>Creature Preview:</Text>
@@ -11412,11 +12401,24 @@ useEffect(() => {
                 colorScheme="blue" 
                 onClick={() => {
                   const creature = selectedCreatureData;
-                  if (creature) addCreature(creature);
+                  if (creature) {
+                    if (enemyCount === 1) {
+                      // Single enemy - use original function
+                      addCreature(creature, null, enemyLevel, selectedArmor);
+                      setCustomEnemyName("");
+                      setSelectedCreature("");
+                      setEnemyLevel(1); // Reset level
+                      setSelectedArmor(""); // Reset armor
+                      onClose();
+                    } else {
+                      // Multiple enemies - use new function
+                      addMultipleEnemies(creature, enemyCount, enemyLevel, selectedArmor);
+                    }
+                  }
                 }}
-                isDisabled={!selectedCreatureData}
+                isDisabled={!selectedCreatureData || enemyCount < 1 || enemyCount > 10}
               >
-                Add to Combat
+                {enemyCount === 1 ? "Add to Combat" : `Add ${enemyCount} to Combat`}
               </Button>
               <Button onClick={onClose}>Cancel</Button>
             </HStack>
@@ -11746,6 +12748,26 @@ useEffect(() => {
                     isDisabled={!currentFighter || currentFighter.type !== "player" || !showTacticalMap}
                   >
                     🏃 Run
+                  </Button>
+                  <Button
+                    colorScheme="purple"
+                    onClick={() => {
+                      if (currentFighter && currentFighter.type === "player") {
+                        handleWithdrawAction({
+                          currentFighter,
+                          fighters,
+                          positions,
+                          setPositions,
+                          addLog,
+                          endTurn: () => endTurn(),
+                          maxWithdrawSteps: 3,
+                        });
+                        onMobileDrawerClose();
+                      }
+                    }}
+                    isDisabled={!currentFighter || currentFighter.type !== "player" || currentFighter.isDown}
+                  >
+                    🏃 Withdraw
                   </Button>
                 </VStack>
                 

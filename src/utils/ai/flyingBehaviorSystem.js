@@ -305,11 +305,40 @@ export function runFlyingTurn(flier, ctx) {
           newPos.y >= GRID_HEIGHT;
 
         if (isOffBoard) {
-          // Character has moved off-board - remove from combat
+          // Character has moved off-board - check if they should leave
           const isBird = (flier.species || flier.name || "").toLowerCase().includes("hawk") ||
                         (flier.species || flier.name || "").toLowerCase().includes("bird") ||
                         (flier.species || flier.name || "").toLowerCase().includes("owl") ||
                         (flier.species || flier.name || "").toLowerCase().includes("eagle");
+          
+          // For flying hunters (hawks, etc.), only leave if no prey exists on the map
+          if (isBird && ctx && ctx.fighters) {
+            // Check if there are any prey animals on the map
+            const allFighters = ctx.fighters || [];
+            const hasPrey = allFighters.some((f) => {
+              if (!f || f.id === flier.id) return false;
+              const name = (f.name || "").toLowerCase();
+              const size = (f.sizeCategory || f.size || "").toLowerCase();
+              const isSmallBody = ["tiny", "small"].includes(size);
+              const preyKeywords = ["mouse", "rat", "rabbit", "squirrel", "songbird"];
+              const isNamedPrey = preyKeywords.some((k) => name.includes(k));
+              return isSmallBody || isNamedPrey;
+            });
+
+            // If prey exists, don't leave - prevent moving off-board
+            if (hasPrey) {
+              // Keep them on the board by clamping position
+              const clampedPos = {
+                x: Math.max(0, Math.min(newPos.x, GRID_WIDTH - 1)),
+                y: Math.max(0, Math.min(newPos.y, GRID_HEIGHT - 1)),
+              };
+              setPositions((prev) => ({
+                ...prev,
+                [flier.id]: clampedPos,
+              }));
+              return true;
+            }
+          }
           
           if (typeof addLog === "function") {
             if (isBird) {
@@ -386,7 +415,11 @@ export function moveFlyingCreature(flier, targetHex, context, options = {}) {
 
   flier.isFlying = true;
   if (flier.altitudeFeet == null) {
-    flier.altitudeFeet = options.altitudeFeet ?? 20;
+    // Default altitude: 100ft for hawks/birds, 20ft for others
+  const defaultAltitude = (flier.name?.toLowerCase().includes("hawk") || 
+                           flier.species?.toLowerCase().includes("hawk") ||
+                           flier.tags?.some(t => t.toLowerCase().includes("bird"))) ? 100 : 20;
+  flier.altitudeFeet = options.altitudeFeet ?? defaultAltitude;
   }
 
   const movementType = options.movementType || "FLY";
@@ -425,7 +458,11 @@ export function performDiveAttack(flier, target, context) {
   flier.isFlying = true;
   const targetAltitude = target.altitudeFeet ?? 0;
   const attackAltitude = targetAltitude + 5;
-  const previousAltitude = flier.altitudeFeet ?? 20;
+  // Default altitude: 100ft for hawks/birds, 20ft for others
+  const defaultAltitude = (flier.name?.toLowerCase().includes("hawk") || 
+                           flier.species?.toLowerCase().includes("hawk") ||
+                           flier.tags?.some(t => t.toLowerCase().includes("bird"))) ? 100 : 20;
+  const previousAltitude = flier.altitudeFeet ?? defaultAltitude;
   const newAltitude = Math.min(previousAltitude, attackAltitude);
   flier.altitudeFeet = newAltitude;
 

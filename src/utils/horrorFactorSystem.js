@@ -92,13 +92,13 @@ export function triggerHorrorFactor(
   const positions = options.positions || {};
 
   targets.forEach((target) => {
+    const creatureId = creature.id || creature.name?.toLowerCase() || "unknown";
+    
     // Skip if target already rolled vs this creature type (unless bypassed)
+    // Use meta.horrorChecks for consistent tracking (same as horrorSystem.js)
     if (!bypassRepeatCheck) {
-      target._horrorChecked = target._horrorChecked || new Set();
-      const creatureId =
-        creature.id || creature.name?.toLowerCase() || "unknown";
-
-      if (target._horrorChecked.has(creatureId)) {
+      const prevChecks = target.meta?.horrorChecks || {};
+      if (prevChecks[creatureId]) {
         return; // Already checked this encounter
       }
     }
@@ -110,11 +110,20 @@ export function triggerHorrorFactor(
     }
 
     // Mark as checked once visible (prevents re-triggering on same sighting)
+    // Use meta.horrorChecks for consistent tracking
     if (!bypassRepeatCheck) {
-      target._horrorChecked = target._horrorChecked || new Set();
-      const creatureId =
-        creature.id || creature.name?.toLowerCase() || "unknown";
-      target._horrorChecked.add(creatureId);
+      const currentRound = options.currentRound ?? options.meleeRound ?? 1;
+      const prevChecks = target.meta?.horrorChecks || {};
+      target.meta = {
+        ...(target.meta || {}),
+        horrorChecks: {
+          ...prevChecks,
+          [creatureId]: {
+            round: currentRound,
+            result: "pending", // Will be updated after save roll
+          },
+        },
+      };
     }
 
     log(`👁️ ${creature.name} emerges into view! Horror Factor ${HF}`, "horror");
@@ -131,6 +140,22 @@ export function triggerHorrorFactor(
     // Calculate actual save success against HF value (HF is the target, not base 12)
     const actualSaveTarget = HF;
     const saveSuccess = saveResult.total >= actualSaveTarget;
+
+    // Update meta to record the result
+    if (!bypassRepeatCheck) {
+      const currentRound = options.currentRound ?? options.meleeRound ?? 1;
+      const prevChecks = target.meta?.horrorChecks || {};
+      target.meta = {
+        ...(target.meta || {}),
+        horrorChecks: {
+          ...prevChecks,
+          [creatureId]: {
+            round: currentRound,
+            result: saveSuccess ? "success" : "fail",
+          },
+        },
+      };
+    }
 
     // Log with correct HF target (includes tempBonus from courage auras if present)
     const tempBonusDisplay =
@@ -258,8 +283,12 @@ export function triggerHorrorFactor(
  */
 export function resetHorrorChecks(combatants) {
   combatants.forEach((c) => {
+    // Clear both old _horrorChecked Set and new meta.horrorChecks
     if (c._horrorChecked) {
       c._horrorChecked.clear();
+    }
+    if (c.meta?.horrorChecks) {
+      c.meta.horrorChecks = {};
     }
   });
 }

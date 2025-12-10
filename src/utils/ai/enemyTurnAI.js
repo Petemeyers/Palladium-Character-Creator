@@ -33,6 +33,91 @@ import {
 } from "../scavengingSystem";
 import { findFoodItem, consumeItem } from "../consumptionSystem";
 import { runFlyingTurn } from "./flyingBehaviorSystem";
+import {
+  canThreatenWithMelee,
+  canThreatenWithMeleeWithWeapon,
+  markTargetUnreachable,
+  isTargetUnreachable,
+  getReachableEnemies,
+  hasAnyValidOffensiveOption,
+} from "./meleeReachabilityHelpers";
+
+const UNDEAD_KEYWORDS = [
+  "vampire",
+  "mummy",
+  "skeleton",
+  "zombie",
+  "ghoul",
+  "wraith",
+  "wight",
+  "lich",
+  "spectre",
+  "ghost",
+];
+
+function isUndeadUnit(unit) {
+  const label = (
+    unit?.species ||
+    unit?.race ||
+    unit?.type ||
+    unit?.name ||
+    ""
+  ).toLowerCase();
+
+  if (!label) return false;
+  return UNDEAD_KEYWORDS.some((w) => label.includes(w));
+}
+
+// Undead creature detection for routing immunity
+function isUndeadCreature(fighter) {
+  const name = (fighter.name || fighter.displayName || "").toLowerCase();
+  const type = (fighter.type || fighter.creatureType || "").toLowerCase();
+
+  const undeadKeywords = [
+    "undead",
+    "vampire",
+    "mummy",
+    "zombie",
+    "skeleton",
+    "ghoul",
+    "wight",
+    "wraith",
+    "lich",
+    "ghost",
+    "spectre",
+  ];
+
+  return undeadKeywords.some((k) => name.includes(k) || type.includes(k));
+}
+
+// Healer OCC detection based on rulebook OCC list (Clergy)
+function isHealerOccForAI(fighter) {
+  if (!fighter) return false;
+
+  const occText = [
+    fighter.OCC,
+    fighter.occ,
+    fighter.class,
+    fighter.occName,
+    fighter.rcc,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  // Map directly to OCCs you defined in occData.js (category: "Clergy")
+  // Priest, PriestOfLight, PriestOfDarkness, Healer, Druid, Shaman
+  const healerPatterns = [
+    "priest of light",
+    "priest of darkness",
+    "priest",   // generic priest OCC
+    "healer",
+    "druid",
+    "shaman",
+  ];
+
+  return healerPatterns.some((pattern) => occText.includes(pattern));
+}
 
 /**
  * Hawk AI Helper Functions
@@ -150,6 +235,225 @@ function isBiggerThreat(attacker, target) {
   if (aIndex === -1 || tIndex === -1) return true;
 
   return tIndex > aIndex; // Target is strictly larger than the hawk
+}
+
+/**
+ * Check if a fighter is a prey animal (mice, rats, rabbits, etc.)
+ * @param {Object} fighter - Fighter object
+ * @returns {boolean} True if fighter is a prey animal
+ */
+function isPreyAnimal(fighter) {
+  if (!fighter) return false;
+
+  const name = (fighter.baseName || fighter.name || "").toLowerCase();
+  const size = (fighter.sizeCategory || fighter.size || "").toLowerCase();
+
+  // Tiny / Small animals are fair game by default
+  const isSmallBody = ["tiny", "small"].includes(size);
+
+  // Specific species tags
+  const preyKeywords = ["mouse", "rat", "rabbit", "squirrel", "songbird"];
+  const isNamedPrey = preyKeywords.some((k) => name.includes(k));
+
+  return isSmallBody || isNamedPrey;
+}
+
+/**
+ * Check if a fighter is a flying hunter (hawk, falcon, eagle, etc.)
+ * @param {Object} fighter - Fighter object
+ * @returns {boolean} True if fighter is a flying hunter
+ */
+function isFlyingHunter(fighter) {
+  if (!fighter) return false;
+
+  const name = (fighter.name || "").toLowerCase();
+  const species = (fighter.species || "").toLowerCase();
+
+  const hunterKeywords = ["hawk", "falcon", "eagle", "vulture", "owl"];
+  const isBirdOfPrey =
+    hunterKeywords.some((k) => name.includes(k)) ||
+    hunterKeywords.some((k) => species.includes(k));
+
+  return isFlying(fighter) && isBirdOfPrey;
+}
+
+/**
+ * Find nearby hiding spots (burrow, bush, rock, ruins, etc.)
+ * @param {Object} fighter - Fighter object
+ * @param {Object} positions - Positions map
+ * @param {Object} terrain - Terrain data (optional)
+ * @param {Array} objects - Map objects array (optional)
+ * @param {number} maxRadiusHexes - Maximum search radius in hexes
+ * @returns {Object|null} Nearest hiding spot object or null
+ */
+function findNearbyHidingSpot(
+  fighter,
+  positions,
+  terrain,
+  objects,
+  maxRadiusHexes = 6
+) {
+  if (!fighter || !positions || !objects) return null;
+
+  const myPos = positions[fighter.id];
+  if (!myPos) return null;
+
+  // objects: expected shape: [{ id, position: {x,y}, tags: ['cover','burrow'] }, ...]
+  const hidingCandidates = objects.filter((obj) => {
+    const tags = obj.tags || [];
+    const hasHideTag =
+      tags.includes("cover") ||
+      tags.includes("burrow") ||
+      tags.includes("hideout") ||
+      tags.includes("foliage");
+
+    if (!hasHideTag || !obj.position) return false;
+
+    const dx = obj.position.x - myPos.x;
+    const dy = obj.position.y - myPos.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    return dist <= maxRadiusHexes; // radius in hexes
+  });
+
+  if (!hidingCandidates.length) return null;
+
+  // Simple "closest hiding spot"
+  hidingCandidates.sort((a, b) => {
+    const da =
+      (a.position.x - myPos.x) * (a.position.x - myPos.x) +
+      (a.position.y - myPos.y) * (a.position.y - myPos.y);
+    const db =
+      (b.position.x - myPos.x) * (b.position.x - myPos.x) +
+      (b.position.y - myPos.y) * (b.position.y - myPos.y);
+    return da - db;
+  });
+
+  return hidingCandidates[0];
+}
+
+// Altitude bands for flying hunters (hawks, etc.)
+const HAWK_SCOUT_ALT_MIN_FT = 60; // cruising high when no prey
+const HAWK_SCOUT_ALT_MAX_FT = 100; // max climb when no prey
+const HAWK_HUNT_ALT_MIN_FT = 25; // lower band when actively hunting
+const HAWK_HUNT_ALT_MAX_FT = 60; // don't stay higher than this when prey is known
+const HAWK_CLIMB_STEP_FT = 20; // per idle turn
+const HAWK_DESCENT_STEP_FT = 20;
+
+/**
+ * Adjust a flying hunter's altitude while it's circling.
+ * - If there is NO visible prey: climb toward a random high scouting altitude (60–100ft).
+ * - If there IS visible prey: stay in a lower hunting band (25–60ft).
+ * @param {Object} flier - Flying creature
+ * @param {boolean} hasVisiblePrey - Whether there are visible ground targets
+ * @param {Function} addLog - Logging function
+ * @param {Function} setFighters - Function to update fighters state
+ * @param {Array} fighters - Array of all fighters (to get latest flier state)
+ */
+function updateCirclingHunterAltitude(
+  flier,
+  hasVisiblePrey,
+  addLog,
+  setFighters,
+  fighters
+) {
+  if (!flier) return;
+
+  // Get latest flier state from fighters array
+  const latestFlier = fighters?.find((f) => f.id === flier.id) || flier;
+
+  const currentAlt =
+    typeof latestFlier.altitudeFeet === "number"
+      ? latestFlier.altitudeFeet
+      : typeof latestFlier.altitude === "number"
+      ? latestFlier.altitude
+      : 0;
+
+  // When no prey is visible: climb up into scouting band and just hang there
+  if (!hasVisiblePrey) {
+    let targetAlt = latestFlier.scoutingAltitudeFeet;
+
+    if (!targetAlt) {
+      const rand =
+        HAWK_SCOUT_ALT_MIN_FT +
+        Math.floor(
+          Math.random() * (HAWK_SCOUT_ALT_MAX_FT - HAWK_SCOUT_ALT_MIN_FT + 1)
+        );
+
+      // Store the target scouting altitude on the fighter
+      setFighters((prev) =>
+        prev.map((f) =>
+          f.id === flier.id ? { ...f, scoutingAltitudeFeet: rand } : f
+        )
+      );
+
+      targetAlt = rand;
+
+      // If we're already at or above the target, no need to climb
+      if (currentAlt >= targetAlt) {
+        return;
+      }
+    }
+
+    if (targetAlt && currentAlt < targetAlt) {
+      const nextAlt = Math.min(targetAlt, currentAlt + HAWK_CLIMB_STEP_FT);
+
+      setFighters((prev) =>
+        prev.map((f) =>
+          f.id === flier.id
+            ? {
+                ...f,
+                altitude: nextAlt,
+                altitudeFeet: nextAlt,
+              }
+            : f
+        )
+      );
+
+      addLog(
+        `🦅 ${flier.name} climbs to ${nextAlt}ft, scanning for prey.`,
+        "info"
+      );
+    }
+
+    // If already at/above target, just glide; no log spam needed.
+    return;
+  }
+
+  // If there IS visible prey: stay in a lower hunting band
+  // (don't sit forever at 80–100ft when there are targets on the ground)
+  let targetAlt = currentAlt;
+
+  if (currentAlt < HAWK_HUNT_ALT_MIN_FT) {
+    targetAlt = HAWK_HUNT_ALT_MIN_FT;
+  } else if (currentAlt > HAWK_HUNT_ALT_MAX_FT) {
+    targetAlt = HAWK_HUNT_ALT_MAX_FT;
+  }
+
+  if (targetAlt !== currentAlt) {
+    const dir = Math.sign(targetAlt - currentAlt);
+    const step = dir > 0 ? HAWK_CLIMB_STEP_FT : HAWK_DESCENT_STEP_FT;
+    const nextAlt =
+      dir > 0
+        ? Math.min(targetAlt, currentAlt + step)
+        : Math.max(targetAlt, currentAlt - step);
+
+    setFighters((prev) =>
+      prev.map((f) =>
+        f.id === flier.id
+          ? {
+              ...f,
+              altitude: nextAlt,
+              altitudeFeet: nextAlt,
+            }
+          : f
+      )
+    );
+
+    addLog(
+      `🦅 ${flier.name} adjusts altitude to ${nextAlt}ft while circling above prey.`,
+      "info"
+    );
+  }
 }
 
 /**
@@ -374,6 +678,7 @@ function handleFlyingIdleOrHarassAction(flier, context) {
     positionsRef,
     setFighters,
     addLog,
+    fighters,
     GRID_CONFIG,
   } = context;
 
@@ -386,6 +691,27 @@ function handleFlyingIdleOrHarassAction(flier, context) {
 
   // Must be circling style
   if (flightStyle !== "circling") return false;
+
+  // Check for visible ground prey (only stuff on the ground counts as hawk prey)
+  const groundPrey = fighters.filter(
+    (f) =>
+      !f.isDead &&
+      f.type === "player" &&
+      !isFlying(f) && // only stuff on the ground counts as hawk prey
+      f.currentHP > 0 &&
+      f.currentHP > -21
+  );
+
+  const hasVisiblePrey = groundPrey.length > 0;
+
+  // Adjust altitude based on whether prey is visible
+  updateCirclingHunterAltitude(
+    flier,
+    hasVisiblePrey,
+    addLog,
+    setFighters,
+    fighters
+  );
 
   const actionsPerMelee = flier.attacksPerMelee || flier.remainingAttacks || 4;
   const fullPerAction = getFullSpeedPerAction(flier, actionsPerMelee);
@@ -572,6 +898,147 @@ function countArmedThreats(
 }
 
 /**
+ * Attempt tactical withdraw when enemy has no valid offensive options
+ * Actually moves the enemy away from threats, or falls back to defending in place.
+ * @param {Object} params - Parameters object
+ * @param {Object} params.enemy - The enemy fighter
+ * @param {Array} params.fighters - All fighters
+ * @param {Object} params.positions - Position map
+ * @param {Function} params.addLog - Logging function
+ * @param {Function} params.findRetreatDestination - Retreat destination finder
+ * @param {Function} params.isHexOccupied - Hex occupation checker
+ * @param {Function} params.handlePositionChange - Function to move fighter
+ * @param {Function} params.setDefensiveStance - Function to set defensive stance
+ * @param {Function} params.scheduleEndTurn - Turn end scheduler
+ * @param {Function} params.canFighterAct - Function to check if fighter can act
+ * @param {Object} params.GRID_CONFIG - Grid configuration
+ * @returns {boolean} True if withdrawal move was made, false if just defending
+ */
+function attemptTacticalWithdraw({
+  enemy,
+  fighters,
+  positions,
+  addLog,
+  findRetreatDestination,
+  isHexOccupied,
+  handlePositionChange,
+  setDefensiveStance,
+  scheduleEndTurn,
+  canFighterAct,
+  GRID_CONFIG,
+}) {
+  try {
+    const currentPos = positions[enemy.id];
+    if (!currentPos) {
+      addLog(
+        `⚠️ ${enemy.name} cannot withdraw (no position data). Holding position defensively.`,
+        "warning"
+      );
+      setDefensiveStance((prev) => ({ ...prev, [enemy.id]: "Defend" }));
+      scheduleEndTurn();
+      return false;
+    }
+
+    // Get active player fighters as threats
+    const playerFighters = fighters.filter(
+      (f) =>
+        f.type === "player" &&
+        canFighterAct(f) &&
+        f.currentHP > 0 &&
+        f.currentHP > -21
+    );
+
+    // If no active enemies, just end turn
+    if (playerFighters.length === 0) {
+      addLog(
+        `⚠️ ${enemy.name} finds no active foes and cautiously lowers their guard.`,
+        "info"
+      );
+      setDefensiveStance((prev) => ({ ...prev, [enemy.id]: "Defend" }));
+      scheduleEndTurn();
+      return false;
+    }
+
+    // Calculate threat positions
+    const threatPositions = playerFighters
+      .map((f) => positions[f.id])
+      .filter(Boolean);
+
+    if (threatPositions.length === 0) {
+      addLog(
+        `🛡️ ${enemy.name} cannot see any threats. Holding position defensively.`,
+        "info"
+      );
+      setDefensiveStance((prev) => ({ ...prev, [enemy.id]: "Defend" }));
+      scheduleEndTurn();
+      return false;
+    }
+
+    // Calculate max retreat steps based on movement
+    const speed =
+      enemy.Spd ||
+      enemy.spd ||
+      enemy.attributes?.Spd ||
+      enemy.attributes?.spd ||
+      10;
+    const attacksPerMelee = enemy.attacksPerMelee || 2;
+    const fullFeetPerAction = (speed * 18) / Math.max(1, attacksPerMelee);
+    const maxSteps = Math.max(
+      1,
+      Math.min(Math.floor(fullFeetPerAction / GRID_CONFIG.CELL_SIZE), 5)
+    );
+
+    // Try to find retreat destination
+    const retreatDestination = findRetreatDestination({
+      currentPos,
+      threatPositions,
+      maxSteps,
+      enemyId: enemy.id,
+      isHexOccupied,
+    });
+
+    if (retreatDestination && retreatDestination.position) {
+      addLog(
+        `🚶 ${enemy.name} withdraws from unreachable foes to (${retreatDestination.position.x}, ${retreatDestination.position.y}).`,
+        "info"
+      );
+
+      // Actually move the enemy using handlePositionChange
+      handlePositionChange(enemy.id, retreatDestination.position, {
+        movementType: "withdraw",
+        source: "AI_WITHDRAW",
+        threatPositions: threatPositions,
+      });
+
+      // Set defensive stance to "Retreat"
+      setDefensiveStance((prev) => ({ ...prev, [enemy.id]: "Retreat" }));
+
+      scheduleEndTurn();
+      return true;
+    }
+
+    // No safe retreat hex found → defend in place
+    addLog(
+      `⚠️ ${enemy.name} looks for a safe place to withdraw but finds none; defending in place.`,
+      "warning"
+    );
+
+    setDefensiveStance((prev) => ({ ...prev, [enemy.id]: "Defend" }));
+    scheduleEndTurn();
+    return false;
+  } catch (err) {
+    console.error("Error during tactical withdraw:", err);
+    addLog(
+      `⚠️ ${enemy.name} tries to withdraw but something goes wrong; they hold position defensively.`,
+      "warning"
+    );
+    setDefensiveStance((prev) => ({ ...prev, [enemy.id]: "Defend" }));
+    scheduleEndTurn();
+    return false;
+  }
+}
+
+/**
  * Run enemy turn AI
  * @param {Object} enemy - The enemy fighter object
  * @param {Object} context - Context object containing all necessary dependencies
@@ -650,6 +1117,82 @@ export function runEnemyTurnAI(enemy, context) {
     return;
   }
 
+  // 🔴 NEW: Check if paralyzed
+  const isParalyzed = enemy.statusEffects?.some(
+    (e) =>
+      (typeof e === "string" && e === "PARALYZED") ||
+      (typeof e === "object" && e.type === "PARALYZED")
+  );
+  if (isParalyzed) {
+    addLog(`⏭️ ${enemy.name} is paralyzed and cannot act this round!`, "info");
+    processingEnemyTurnRef.current = false;
+    scheduleEndTurn();
+    return;
+  }
+
+  // ✅ Define allPlayers early so ROUTED logic and rest of AI can use it
+  const allPlayers = fighters.filter(
+    (f) =>
+      f.type === "player" &&
+      canFighterAct(f) &&
+      f.currentHP > 0 && // conscious only
+      f.currentHP > -21 // not dead
+  );
+
+  // 🔴 NEW: Check if routed - if so, attempt to flee instead of fighting
+  if (
+    enemy.moraleState?.status === "ROUTED" ||
+    enemy.statusEffects?.includes("ROUTED")
+  ) {
+    if (isUndeadCreature(enemy)) {
+      // 🧟 Undead: clear ROUTED and stand ground
+      addLog(
+        `💀 ${enemy.name} is undead and refuses to flee (ignoring ROUTED).`,
+        "info"
+      );
+
+      enemy.moraleState = {
+        ...(enemy.moraleState || {}),
+        status: "STEADFAST",
+      };
+
+      if (Array.isArray(enemy.statusEffects)) {
+        enemy.statusEffects = enemy.statusEffects.filter(
+          (s) => s !== "ROUTED"
+        );
+      }
+
+      // fall through to normal action selection instead of flee
+    } else if (!isUndeadCreature(enemy)) {
+      addLog(`🏃 ${enemy.name} is ROUTED and attempts to flee!`, "warning");
+
+    // Use the same tactical withdraw logic as "no way to hit" fallback
+    const didWithdraw = attemptTacticalWithdraw({
+      enemy,
+      fighters,
+      positions,
+      addLog,
+      findRetreatDestination,
+      isHexOccupied,
+      handlePositionChange,
+      setDefensiveStance,
+      scheduleEndTurn,
+      canFighterAct,
+      GRID_CONFIG,
+    });
+
+    // If withdrawal failed, end turn (withdraw function already handled logging)
+    if (!didWithdraw) {
+      processingEnemyTurnRef.current = false;
+      scheduleEndTurn();
+      return;
+    }
+
+    // Withdrawal succeeded and already scheduled move + endTurn
+    processingEnemyTurnRef.current = false;
+    return;
+  }
+
   // Check if combat is still active
   if (!combatActive) {
     addLog(`⚠️ Combat ended, ${enemy.name} skips turn`, "info");
@@ -668,15 +1211,7 @@ export function runEnemyTurnAI(enemy, context) {
     return;
   }
 
-  // ✅ FIX: Filter players by visibility AND exclude unconscious/dying/dead targets
-  // Only target conscious players (HP > 0) - unconscious/dying players are already defeated
-  const allPlayers = fighters.filter(
-    (f) =>
-      f.type === "player" &&
-      canFighterAct(f) &&
-      f.currentHP > 0 && // Only conscious players
-      f.currentHP > -21 // Not dead
-  );
+  // allPlayers is already defined above (after paralyzed check) for use in ROUTED logic
 
   // Decay awareness for each player target
   allPlayers.forEach((target) => {
@@ -687,11 +1222,11 @@ export function runEnemyTurnAI(enemy, context) {
   const enemyCanFly = canFly(enemy);
   const enemyIsFlying = isFlying(enemy);
 
-  // If the enemy is airborne, ALWAYS delegate to the flying behavior system.
-  // We never want flying creatures (like the hawk) to use ground flanking logic
-  // while in the air.
+  // If the enemy is airborne, delegate to the flying behavior system.
+  // EXCEPTION: Flying hunters (hawks, etc.) use the inline diving/circling logic below
+  // instead of the generic runFlyingTurn, so they can actively hunt prey.
   // Note: We check enemyIsFlying first (must be actually flying), then enemyCanFly (must have flight ability)
-  if (enemyIsFlying && enemyCanFly) {
+  if (enemyIsFlying && enemyCanFly && !isFlyingHunter(enemy)) {
     addLog(
       `🦅 ${enemy.name} is airborne at ${
         enemy.altitudeFeet ?? enemy.altitude ?? 0
@@ -732,10 +1267,7 @@ export function runEnemyTurnAI(enemy, context) {
 
     // ✅ Do NOT fall through to ground AI when flying
     processingEnemyTurnRef.current = false;
-    // Use setTimeout to ensure turn actually ends (scheduleEndTurn may have delays)
-    setTimeout(() => {
-      endTurn();
-    }, 1500);
+    scheduleEndTurn();
     return;
   }
 
@@ -769,8 +1301,8 @@ export function runEnemyTurnAI(enemy, context) {
     if (threateningMeleeEnemies.length > 0) {
       // Take off to escape melee threats!
       // Altitude is tracked in 5ft increments (similar to hex distances)
-      // Default take-off altitude: 30ft (6 hexes of altitude)
-      const newAltitude = 30;
+      // For hawks: use 100ft altitude (realistic soaring/circling height)
+      const newAltitude = isHawk(enemy) ? 100 : 30;
       setFighters((prev) =>
         prev.map((f) =>
           f.id === enemy.id
@@ -849,11 +1381,26 @@ export function runEnemyTurnAI(enemy, context) {
       skill.type === "medical_skill"
   );
 
+  // Healer archetype = Clergy OCCs (Priest, Healer, Druid, Shaman, etc.) OR explicit healer skills
+  const hasHealerSkills =
+    Array.isArray(enemy.skills) &&
+    enemy.skills.some((s) =>
+      ["Healer OCC R.C.C. Skill", "Holistic Medicine"].includes(s.name)
+    );
+
+  const isHealer = isHealerOccForAI(enemy) || hasHealerSkills;
+
   // Check for allies that need healing (only for non-evil alignments)
   const enemyAlignment = enemy.alignment || enemy.attributes?.alignment || "";
   const isEvil = isEvilAlignment(enemyAlignment);
+  const isGood = !isEvil && (
+    (enemyAlignment || "").toLowerCase().includes("good") ||
+    (enemyAlignment || "").toLowerCase().includes("principled") ||
+    (enemyAlignment || "").toLowerCase().includes("scrupulous")
+  );
 
-  if (healingSkills.length > 0 && !isEvil) {
+  // Good-aligned healers prioritize healing allies
+  if (isHealer && isGood && (healingSkills.length > 0 || hasHealerSkills)) {
     // Find injured allies (same type as enemy)
     const allies = fighters.filter(
       (f) =>
@@ -1003,6 +1550,311 @@ export function runEnemyTurnAI(enemy, context) {
     }
   }
 
+  /**
+   * Prey idle brain:
+   * - If scary enemy nearby => run/hide (retreat)
+   * - Else if safe and food/loot nearby => scavenge/forage
+   * - Else => wander / sniff around (flavor)
+   */
+  function runPreyIdleTurn({
+    fighter,
+    enemies,
+    allies,
+    positions,
+    terrain,
+    objects,
+    log,
+    setFighters,
+    scheduleEndTurn,
+    processingEnemyTurnRef,
+    setPositions,
+    positionsRef,
+    calculateDistance,
+    findRetreatDestination,
+    handlePositionChange,
+    isHexOccupied,
+  }) {
+    if (!fighter || !positions) return;
+
+    const myPos = positions[fighter.id];
+    if (!myPos) {
+      scheduleEndTurn();
+      if (processingEnemyTurnRef) processingEnemyTurnRef.current = false;
+      return;
+    }
+
+    // 1) THREAT DETECTION: any hostile within "fear radius"
+    const FEAR_RADIUS_HEXES = 12; // ~60 ft on 5ft hexes
+    let nearestThreat = null;
+    let nearestThreatDistSq = Infinity;
+
+    for (const enemy of enemies) {
+      if (!enemy || enemy.isDead || enemy.isDying || enemy.currentHP <= 0)
+        continue;
+
+      const enemyPos = positions[enemy.id];
+      if (!enemyPos) continue;
+
+      const dx = enemyPos.x - myPos.x;
+      const dy = enemyPos.y - myPos.y;
+      const distSq = dx * dx + dy * dy;
+
+      if (distSq <= FEAR_RADIUS_HEXES * FEAR_RADIUS_HEXES) {
+        // You could add extra logic here: only count predators, flying hunters, etc.
+        if (distSq < nearestThreatDistSq) {
+          nearestThreatDistSq = distSq;
+          nearestThreat = enemy;
+        }
+      }
+    }
+
+    // 1a) If there is a threat: run/hide using existing retreat logic
+    if (nearestThreat) {
+      const threatPos = positions[nearestThreat.id];
+
+      // Prefer to flee *away* from threat, using existing retreat code
+      const threatPositions = threatPos ? [threatPos] : [];
+      const retreatDestination = findRetreatDestination({
+        currentPos: myPos,
+        threatPositions,
+        maxSteps: 5,
+        enemyId: fighter.id,
+        isHexOccupied,
+      });
+
+      if (retreatDestination) {
+        log(
+          `🐭 ${fighter.name} panics at the sight of ${nearestThreat.name} and scurries away!`,
+          "info"
+        );
+
+        // Move toward retreat destination
+        if (handlePositionChange && retreatDestination.position) {
+          handlePositionChange(fighter.id, retreatDestination.position, {
+            action: "RETREAT",
+            actionCost: 0,
+            description: "Flee from threat",
+          });
+        } else if (setPositions) {
+          setPositions((prev) => {
+            const updated = {
+              ...prev,
+              [fighter.id]: retreatDestination.position,
+            };
+            if (positionsRef) positionsRef.current = updated;
+            return updated;
+          });
+        }
+
+        setFighters((prev) =>
+          prev.map((f) =>
+            f.id === fighter.id
+              ? {
+                  ...f,
+                  defensiveStance: "Retreat",
+                  remainingAttacks: Math.max(0, f.remainingAttacks - 1),
+                }
+              : f
+          )
+        );
+
+        scheduleEndTurn();
+        if (processingEnemyTurnRef) processingEnemyTurnRef.current = false;
+        return;
+      }
+
+      // If no retreat destination found, just cower / defend
+      log(
+        `🐭 ${fighter.name} freezes in fear, unable to find a way to flee from ${nearestThreat.name}.`,
+        "info"
+      );
+
+      setFighters((prev) =>
+        prev.map((f) =>
+          f.id === fighter.id
+            ? {
+                ...f,
+                remainingAttacks: Math.max(0, f.remainingAttacks - 1),
+                defensiveStance: "Cower",
+              }
+            : f
+        )
+      );
+
+      scheduleEndTurn();
+      if (processingEnemyTurnRef) processingEnemyTurnRef.current = false;
+      return;
+    }
+
+    // 2) SAFE: SCAVENGE / FORAGE
+    // Reuse existing scavenging helpers for small prey
+    const SCAVENGE_RADIUS = 6; // 6-hex "forage" radius
+
+    // First, look for corpses
+    const allFighters = [...(allies || []), ...(enemies || [])];
+    const corpse = findNearbyCorpse(
+      fighter,
+      allFighters,
+      positions,
+      SCAVENGE_RADIUS
+    );
+    if (corpse) {
+      const corpsePos = positions[corpse.id];
+      if (corpsePos) {
+        const dist = calculateDistance
+          ? calculateDistance(myPos, corpsePos)
+          : Math.sqrt(
+              (corpsePos.x - myPos.x) ** 2 + (corpsePos.y - myPos.y) ** 2
+            ) * 5; // Convert hexes to feet
+
+        if (dist > 5) {
+          // Move partway toward corpse (simple 1-hex step)
+          const dx = corpsePos.x - myPos.x;
+          const dy = corpsePos.y - myPos.y;
+          const step = {
+            x: myPos.x + Math.sign(dx),
+            y: myPos.y + Math.sign(dy),
+          };
+
+          log(
+            `🐭 ${fighter.name} cautiously noses toward a nearby corpse to scavenge.`,
+            "info"
+          );
+
+          if (setPositions) {
+            setPositions((prev) => {
+              const updated = { ...prev, [fighter.id]: step };
+              if (positionsRef) positionsRef.current = updated;
+              return updated;
+            });
+          }
+
+          setFighters((prev) =>
+            prev.map((f) =>
+              f.id === fighter.id
+                ? {
+                    ...f,
+                    remainingAttacks: Math.max(0, f.remainingAttacks - 1),
+                  }
+                : f
+            )
+          );
+
+          scheduleEndTurn();
+          if (processingEnemyTurnRef) processingEnemyTurnRef.current = false;
+          return;
+        }
+
+        // Already adjacent: actually scavenge/eat
+        log(`${fighter.name} scavenges from the corpse.`, "info");
+        scavengeCorpse(fighter, corpse, log);
+
+        setFighters((prev) =>
+          prev.map((f) =>
+            f.id === fighter.id
+              ? {
+                  ...f,
+                  remainingAttacks: Math.max(0, f.remainingAttacks - 1),
+                  defensiveStance: "Idle/Forage",
+                }
+              : f
+          )
+        );
+
+        scheduleEndTurn();
+        if (processingEnemyTurnRef) processingEnemyTurnRef.current = false;
+        return;
+      }
+    }
+
+    // 2b) Optional: forage items (grain, crumbs, berries) via consumptionSystem
+    const foodItem = findFoodItem(fighter);
+    if (foodItem) {
+      log(`${fighter.name} snacks on ${foodItem.name}.`, "info");
+      consumeItem(fighter, foodItem, { log });
+
+      setFighters((prev) =>
+        prev.map((f) =>
+          f.id === fighter.id
+            ? {
+                ...f,
+                remainingAttacks: Math.max(0, f.remainingAttacks - 1),
+                defensiveStance: "Idle/Forage",
+              }
+            : f
+        )
+      );
+
+      scheduleEndTurn();
+      if (processingEnemyTurnRef) processingEnemyTurnRef.current = false;
+      return;
+    }
+
+    // 3) WANDER / IDLE: sniff around a bit, maybe toward a future hiding spot
+    const hideSpot = findNearbyHidingSpot(
+      fighter,
+      positions,
+      terrain,
+      objects || [],
+      12
+    );
+
+    if (hideSpot) {
+      const hx = hideSpot.position.x - myPos.x;
+      const hy = hideSpot.position.y - myPos.y;
+      const step = {
+        x: myPos.x + Math.sign(hx),
+        y: myPos.y + Math.sign(hy),
+      };
+
+      log(`${fighter.name} creeps cautiously toward a hiding place.`, "info");
+
+      if (setPositions) {
+        setPositions((prev) => {
+          const updated = { ...prev, [fighter.id]: step };
+          if (positionsRef) positionsRef.current = updated;
+          return updated;
+        });
+      }
+
+      setFighters((prev) =>
+        prev.map((f) =>
+          f.id === fighter.id
+            ? { ...f, remainingAttacks: Math.max(0, f.remainingAttacks - 1) }
+            : f
+        )
+      );
+
+      scheduleEndTurn();
+      if (processingEnemyTurnRef) processingEnemyTurnRef.current = false;
+      return;
+    }
+
+    // No threats, no food, no clear hiding spot: pure idle flavor
+    const idleLines = [
+      `${fighter.name} sniffs the air nervously.`,
+      `${fighter.name} grooms itself and twitches its whiskers.`,
+      `${fighter.name} pauses, listening for danger.`,
+    ];
+    const line = idleLines[Math.floor(Math.random() * idleLines.length)];
+    log(line, "info");
+
+    setFighters((prev) =>
+      prev.map((f) =>
+        f.id === fighter.id
+          ? {
+              ...f,
+              remainingAttacks: Math.max(0, f.remainingAttacks - 1),
+              defensiveStance: "Idle/Alert",
+            }
+          : f
+      )
+    );
+
+    scheduleEndTurn();
+    if (processingEnemyTurnRef) processingEnemyTurnRef.current = false;
+  }
+
   const playerTargets = visiblePlayers;
   if (playerTargets.length === 0) {
     // Check if there are players but they're just not visible
@@ -1012,6 +1864,34 @@ export function runEnemyTurnAI(enemy, context) {
         "info"
       );
     } else {
+      // Check if this is a prey animal - if so, use idle/forage behavior instead of just defending
+      if (isPreyAnimal(enemy)) {
+        const playerEnemies = fighters.filter(
+          (f) => f.type === "player" && canFighterAct(f)
+        );
+        const enemyAllies = fighters.filter(
+          (f) => f.type === "enemy" && f.id !== enemy.id
+        );
+        runPreyIdleTurn({
+          fighter: enemy,
+          enemies: playerEnemies,
+          allies: enemyAllies,
+          positions,
+          terrain: combatTerrain,
+          objects: arenaEnvironment?.objects || [],
+          log: addLog,
+          setFighters,
+          scheduleEndTurn,
+          processingEnemyTurnRef,
+          setPositions,
+          positionsRef,
+          calculateDistance,
+          findRetreatDestination,
+          handlePositionChange,
+          isHexOccupied,
+        });
+        return;
+      }
       addLog(`${enemy.name} has no targets and defends.`, "info");
     }
     processingEnemyTurnRef.current = false;
@@ -1302,32 +2182,19 @@ export function runEnemyTurnAI(enemy, context) {
         // Check if target is blocked by another combatant
         const isBlocked = isTargetBlocked(enemy.id, t.id, positions);
 
-        // Check if target is currently flying and enemy cannot reach it
-        const targetIsFlying = isFlying(t);
-        const targetAltitude = getAltitude(t);
+        // Check if target is unreachable using centralized helper
+        // First check if already marked as unreachable
+        let isUnreachable = isTargetUnreachable(enemy, t);
 
-        // Target is unreachable if:
-        // - Target is flying AND
-        // - Enemy cannot fly (not airborne) AND
-        // - Enemy has no ranged weapons AND
-        // - Target altitude is too high for melee reach
-        let isUnreachable = false;
-        if (targetIsFlying && !enemyIsFlying && !enemyHasRangedWeapon) {
-          // Check if enemy has long-reach melee weapons that could hit low-flying targets
-          const hasLongReachWeapon =
-            enemy.equippedWeapons?.primary ||
-            enemy.equippedWeapons?.secondary ||
-            enemy.attacks?.some((a) => {
-              const name = a.name?.toLowerCase() || "";
-              return (
-                (name.includes("pike") ||
-                  name.includes("lance") ||
-                  name.includes("polearm") ||
-                  name.includes("halberd")) &&
-                targetAltitude <= 15
-              );
-            });
-          isUnreachable = !hasLongReachWeapon;
+        // If not marked, check actual reachability
+        if (!isUnreachable) {
+          // For melee-focused enemies without ranged weapons, check melee reachability
+          if (!enemyHasRangedWeapon) {
+            isUnreachable = !canThreatenWithMelee(enemy, t);
+            if (isUnreachable) {
+              markTargetUnreachable(enemy, t);
+            }
+          }
         }
 
         return {
@@ -1516,26 +2383,8 @@ export function runEnemyTurnAI(enemy, context) {
       }
     }
 
-    // 3. EATING: If grounded and has food, eat it (only when grounded, not flying)
-    if (!enemyIsFlying && enemy.remainingAttacks > 0) {
-      const foodItem = findFoodItem(enemy);
-      if (foodItem) {
-        consumeItem(enemy, foodItem, { log: addLog });
-
-        // Deduct action
-        setFighters((prev) =>
-          prev.map((f) =>
-            f.id === enemy.id
-              ? { ...f, remainingAttacks: Math.max(0, f.remainingAttacks - 1) }
-              : f
-          )
-        );
-
-        processingEnemyTurnRef.current = false;
-        scheduleEndTurn();
-        return;
-      }
-    }
+    // 3. EATING: Removed generic eating block - only scavengers/prey/hawks eat mid-fight
+    // (See hawk/skittish-specific eating block further down)
 
     if (isSkittishFlyingPredator) {
       const profile = getSpeciesBehaviorProfile(enemy);
@@ -1564,7 +2413,7 @@ export function runEnemyTurnAI(enemy, context) {
         );
         // Maintain altitude and move away from threats
         if (!enemyIsFlying) {
-          const newAltitude = 20;
+          const newAltitude = isHawk(enemy) ? 100 : 20;
           setFighters((prev) =>
             prev.map((f) =>
               f.id === enemy.id
@@ -1660,7 +2509,7 @@ export function runEnemyTurnAI(enemy, context) {
             );
             // Ensure flying
             if (!enemyIsFlying) {
-              const newAltitude = 20;
+              const newAltitude = isHawk(enemy) ? 100 : 20;
               setFighters((prev) =>
                 prev.map((f) =>
                   f.id === enemy.id
@@ -1679,7 +2528,7 @@ export function runEnemyTurnAI(enemy, context) {
               "info"
             );
             if (!enemyIsFlying) {
-              const newAltitude = 20;
+              const newAltitude = isHawk(enemy) ? 100 : 20;
               setFighters((prev) =>
                 prev.map((f) =>
                   f.id === enemy.id
@@ -1732,23 +2581,101 @@ export function runEnemyTurnAI(enemy, context) {
       }
     } else {
       // Normal AI target selection (non-hawk)
-      // If no reachable targets, provide fallback behavior
+      // If no reachable targets, check if enemy has any valid offensive options
       if (targetsInRange.length === 0 && targetsWithDistance.length > 0) {
         const allUnreachable = targetsWithDistance.every(
           (t) => t.isUnreachable
         );
         if (allUnreachable) {
-          addLog(
-            `🚫 ${enemy.name} cannot reach any targets - all enemies are flying and ${enemy.name} has no ranged weapons!`,
-            "warning"
-          );
-          addLog(
-            `😤 ${enemy.name} snorts in frustration and holds position.`,
-            "info"
-          );
-          processingEnemyTurnRef.current = false;
-          scheduleEndTurn();
-          return;
+          // Check if enemy has any way to attack (ranged, spells, psionics)
+          if (!hasAnyValidOffensiveOption(enemy, playerTargets)) {
+            // Does this enemy behave like a flying predator and are there any prey at all?
+            const hasPreyTargets =
+              isFlyingHunter(enemy) && playerTargets.some(isPreyAnimal);
+
+            // If this is a prey animal, use prey idle behavior instead of withdraw
+            if (isPreyAnimal(enemy)) {
+              const playerEnemies = fighters.filter(
+                (f) => f.type === "player" && canFighterAct(f)
+              );
+              const enemyAllies = fighters.filter(
+                (f) => f.type === "enemy" && f.id !== enemy.id
+              );
+              runPreyIdleTurn({
+                fighter: enemy,
+                enemies: playerEnemies,
+                allies: enemyAllies,
+                positions,
+                terrain: combatTerrain,
+                objects: arenaEnvironment?.objects || [],
+                log: addLog,
+                setFighters,
+                scheduleEndTurn,
+                processingEnemyTurnRef,
+                setPositions,
+                positionsRef,
+                calculateDistance,
+                findRetreatDestination,
+                handlePositionChange,
+                isHexOccupied,
+              });
+              return;
+            }
+
+            // Flying hunters with prey targets should keep hunting, not withdraw
+            if (hasPreyTargets) {
+              // Continue circling/hunting instead of withdrawing
+              // The hawk will dive on prey in subsequent turns
+              processingEnemyTurnRef.current = false;
+              scheduleEndTurn();
+              return;
+            }
+
+            // Non-prey fallback: defend/withdraw as before
+            // Only log this once per combat for this fighter (spam control)
+            if (!enemy._noOffenseLogged) {
+              addLog(
+                `⚠️ ${enemy.name} has no way to hit any enemies (flight/range). Attempting to withdraw to safety.`,
+                "warning"
+              );
+              // Mark that we've logged this for this fighter
+              setFighters((prev) =>
+                prev.map((f) =>
+                  f.id === enemy.id ? { ...f, _noOffenseLogged: true } : f
+                )
+              );
+            }
+            processingEnemyTurnRef.current = false;
+
+            // Attempt tactical withdraw instead of just ending turn
+            const didWithdraw = attemptTacticalWithdraw({
+              enemy,
+              fighters,
+              positions,
+              addLog,
+              findRetreatDestination,
+              isHexOccupied,
+              handlePositionChange,
+              setDefensiveStance,
+              scheduleEndTurn,
+              canFighterAct,
+              GRID_CONFIG,
+            });
+
+            // If withdrawal failed, end turn (withdraw function already handled logging)
+            if (!didWithdraw) {
+              return;
+            }
+
+            // Withdrawal succeeded and already scheduled move + endTurn
+            return;
+          } else {
+            addLog(
+              `🚫 ${enemy.name} cannot reach any targets with melee - all enemies are flying!`,
+              "warning"
+            );
+            // Enemy has ranged options, so continue (they'll use ranged attacks)
+          }
         }
       }
 
@@ -2089,13 +3016,23 @@ export function runEnemyTurnAI(enemy, context) {
             const currentPos = positions[enemy.id];
             const targetPos = positions[target.id];
 
-            // Fly up to 20ft altitude
+            // Fly up to cruising altitude (100ft for hawks, 20ft for others)
+            const cruiseAltitude = isHawk(enemy) ? 100 : 20;
             setFighters((prev) =>
               prev.map((f) =>
-                f.id === enemy.id ? { ...f, altitude: 20, altitudeFeet: 20 } : f
+                f.id === enemy.id
+                  ? {
+                      ...f,
+                      altitude: cruiseAltitude,
+                      altitudeFeet: cruiseAltitude,
+                    }
+                  : f
               )
             );
-            addLog(`🦅 ${enemy.name} climbs back to 20ft altitude`, "info");
+            addLog(
+              `🦅 ${enemy.name} climbs back to ${cruiseAltitude}ft altitude`,
+              "info"
+            );
 
             // Move away from target (hit-and-run pattern)
             if (currentPos && targetPos) {
@@ -2135,7 +3072,7 @@ export function runEnemyTurnAI(enemy, context) {
       return;
     } else if (!enemyIsFlying && currentDist <= 30) {
       // Hawk on ground, take off and dive
-      const takeOffAltitude = 20;
+      const takeOffAltitude = isHawk(enemy) ? 100 : 20;
       setFighters((prev) =>
         prev.map((f) =>
           f.id === enemy.id
@@ -2231,46 +3168,30 @@ export function runEnemyTurnAI(enemy, context) {
     const currentPos = positions[enemy.id];
     const targetPos = positions[target.id];
 
-    // Check if target is unreachable (flying target for ground creature without ranged weapons)
-    const targetIsFlying = isFlying(target);
-    const targetAltitude = getAltitude(target);
-    const enemyCanFly = canFly(enemy);
-    const enemyIsFlying = isFlying(enemy);
-    const enemyHasRangedWeapon =
-      enemy.equippedWeapons?.primary ||
-      enemy.equippedWeapons?.secondary ||
-      enemy.attacks?.some((a) => {
-        const name = a.name?.toLowerCase() || "";
-        return (
-          name.includes("bow") ||
-          name.includes("crossbow") ||
-          name.includes("sling") ||
-          name.includes("thrown") ||
-          (a.range && a.range > 10)
-        );
-      });
-
-    if (targetIsFlying && !enemyIsFlying && !enemyHasRangedWeapon) {
-      // Check if enemy has long-reach melee weapons that could hit low-flying targets
-      const hasLongReachWeapon =
+    // Check if target is unreachable using centralized helper
+    if (!canThreatenWithMelee(enemy, target)) {
+      // Check if enemy has ranged weapons - if so, they can still attack
+      const enemyHasRangedWeapon =
         enemy.equippedWeapons?.primary ||
         enemy.equippedWeapons?.secondary ||
         enemy.attacks?.some((a) => {
           const name = a.name?.toLowerCase() || "";
           return (
-            (name.includes("pike") ||
-              name.includes("lance") ||
-              name.includes("polearm") ||
-              name.includes("halberd")) &&
-            targetAltitude <= 15
+            name.includes("bow") ||
+            name.includes("crossbow") ||
+            name.includes("sling") ||
+            name.includes("thrown") ||
+            (a.range && a.range > 10)
           );
         });
 
-      if (!hasLongReachWeapon) {
+      if (!enemyHasRangedWeapon) {
+        const targetAltitude = getAltitude(target) || 0;
         addLog(
-          `🚫 ${enemy.name} cannot reach ${target.name} - ${target.name} is flying (${targetAltitude}ft) and ${enemy.name} has no ranged weapons!`,
+          `🚫 ${enemy.name} cannot reach ${target.name} with melee - ${target.name} is flying (${targetAltitude}ft) and ${enemy.name} has no ranged weapons!`,
           "warning"
         );
+        markTargetUnreachable(enemy, target);
         // Skip this target - don't waste actions trying to reach an unreachable target
         processingEnemyTurnRef.current = false;
         scheduleEndTurn();
@@ -2292,16 +3213,66 @@ export function runEnemyTurnAI(enemy, context) {
         targetPos,
         equippedWeapon
       );
+      // NEW: Double-check with full range logic (including altitude) before trusting inRange
+      const currentDistance = calculateDistance(currentPos, targetPos);
+      const rangeValidation = validateWeaponRange(
+        enemy,
+        target,
+        equippedWeapon,
+        currentDistance
+      );
+
+      // Only trust movementAnalysis.inRange if altitude-aware range check also says canAttack
+      const actuallyInRange =
+        movementAnalysis.inRange && rangeValidation.canAttack;
+
       if (
         movementAnalysis.recommendations &&
         movementAnalysis.recommendations.length > 0
       ) {
+        if (movementAnalysis.inRange && !rangeValidation.canAttack) {
+          // Movement analysis says "in range" but altitude check says "unreachable"
+          addLog(
+            `🔍 ${enemy.name} analyzes movement: ${movementAnalysis.distance}ft away, but ${rangeValidation.reason}`,
+            "info"
+          );
+        } else {
+          addLog(
+            `🔍 ${enemy.name} analyzes movement: ${
+              movementAnalysis.distance
+            }ft away, ${actuallyInRange ? "in range" : "needs to move"}`,
+            "info"
+          );
+        }
+      }
+
+      // If target is unreachable due to altitude, mark it and skip movement
+      if (
+        !rangeValidation.canAttack &&
+        (rangeValidation.reason?.includes("flying too high") ||
+          rangeValidation.reason?.includes(
+            "cannot be reached by melee attacks from ground"
+          ))
+      ) {
+        markTargetUnreachable(enemy, target);
         addLog(
-          `🔍 ${enemy.name} analyzes movement: ${
-            movementAnalysis.distance
-          }ft away, ${movementAnalysis.inRange ? "in range" : "needs to move"}`,
-          "info"
+          `❌ ${enemy.name} realizes ${target.name} is unreachable (${rangeValidation.reason}).`,
+          "warning"
         );
+        // Mark target as unreachable for this round to prevent spam
+        if (!enemy.meta) enemy.meta = {};
+        if (!enemy.meta.unreachableTargetsThisRound) {
+          enemy.meta.unreachableTargetsThisRound = [];
+        }
+        if (!enemy.meta.unreachableTargetsThisRound.includes(target.id)) {
+          enemy.meta.unreachableTargetsThisRound.push(target.id);
+        }
+        setFighters((prev) =>
+          prev.map((f) => (f.id === enemy.id ? { ...f, meta: enemy.meta } : f))
+        );
+        processingEnemyTurnRef.current = false;
+        scheduleEndTurn();
+        return;
       }
     }
 
@@ -2328,131 +3299,161 @@ export function runEnemyTurnAI(enemy, context) {
     );
 
     // If we can flank, prioritize flanking positions
+    // BUT: Check if target is reachable with melee first
     if (flankingPositions.length > 0 && currentFlankingBonus === 0) {
-      addLog(`🎯 ${enemy.name} considers flanking ${target.name}`, "info");
-
-      // Find the best flanking position (closest to current position AND within attack range)
-      const speed =
-        enemy.Spd ||
-        enemy.spd ||
-        enemy.attributes?.Spd ||
-        enemy.attributes?.spd ||
-        10;
-      const maxMoveDistance = speed * 5; // 5 feet per hex
-
-      // Filter flanking positions to only those that are:
-      // 1. Within movement range
-      // 2. Within attack range after moving
-      const validFlankingPositions = flankingPositions.filter((flankPos) => {
-        const flankDistance = calculateDistance(currentPos, flankPos);
-        if (flankDistance > maxMoveDistance) return false; // Can't reach it
-
-        // Check if this flanking position is within attack range
-        const distanceFromFlankToTarget = calculateDistance(
-          flankPos,
-          targetPos
-        );
-        const rangeValidation = validateWeaponRange(
-          enemy,
-          target,
-          selectedAttack,
-          distanceFromFlankToTarget
-        );
-        return rangeValidation.canAttack;
-      });
-
-      if (validFlankingPositions.length > 0) {
-        // Find the best valid flanking position (closest to current position)
-        const bestFlankPos = validFlankingPositions.reduce((best, current) => {
-          const bestDist = calculateDistance(currentPos, best);
-          const currentDist = calculateDistance(currentPos, current);
-          return currentDist < bestDist ? current : best;
-        });
-
-        const flankDistance = calculateDistance(currentPos, bestFlankPos);
-
-        addLog(`🎯 ${enemy.name} attempts to flank ${target.name}`, "info");
-
-        // Move to flanking position
-        setPositions((prev) => {
-          const updated = {
-            ...prev,
-            [enemy.id]: bestFlankPos,
-          };
-          positionsRef.current = updated;
-          return updated;
-        });
-
-        // Deduct movement action cost
-        const movementCost = Math.ceil(flankDistance / (speed * 5));
-        setFighters((prev) =>
-          prev.map((f) =>
-            f.id === enemy.id
-              ? {
-                  ...f,
-                  remainingAttacks: Math.max(
-                    0,
-                    f.remainingAttacks - movementCost
-                  ),
-                }
-              : f
-          )
-        );
-
+      // Check if target is reachable with melee before attempting to flank
+      if (!canThreatenWithMelee(enemy, target)) {
         addLog(
-          `🎯 ${enemy.name} moves to flanking position (${bestFlankPos.x}, ${bestFlankPos.y})`,
-          "info"
+          `❌ ${enemy.name} skips flanking ${target.name} (target unreachable in melee)`,
+          "warning"
         );
+        markTargetUnreachable(enemy, target);
+        // Don't attempt flanking if target is unreachable - skip to next action
+      } else {
+        addLog(`🎯 ${enemy.name} considers flanking ${target.name}`, "info");
 
-        // Continue with attack after movement
-        setTimeout(() => {
-          const newDistance = calculateDistance(bestFlankPos, targetPos);
+        // Find the best flanking position (closest to current position AND within attack range)
+        const speed =
+          enemy.Spd ||
+          enemy.spd ||
+          enemy.attributes?.Spd ||
+          enemy.attributes?.spd ||
+          10;
+
+        // For flying creatures, movement is not limited by ground speed
+        // They can use flight movement which may allow longer distances
+        // For now, we'll use a more generous movement allowance for fliers
+        const enemyIsFlying = isFlying(enemy);
+        const enemyCanFly = canFly(enemy);
+        const maxMoveDistance =
+          enemyCanFly || enemyIsFlying
+            ? speed * 10 // Flying creatures can move further (10ft per speed point)
+            : speed * 5; // Ground movement: 5 feet per hex
+
+        // Log movement type for debugging
+        if (enemyCanFly || enemyIsFlying) {
+          addLog(
+            `🦅 ${enemy.name} uses flight movement (max ${maxMoveDistance}ft)`,
+            "info"
+          );
+        }
+
+        // Filter flanking positions to only those that are:
+        // 1. Within movement range
+        // 2. Within attack range after moving
+        const validFlankingPositions = flankingPositions.filter((flankPos) => {
+          const flankDistance = calculateDistance(currentPos, flankPos);
+          if (flankDistance > maxMoveDistance) return false; // Can't reach it
+
+          // Check if this flanking position is within attack range
+          const distanceFromFlankToTarget = calculateDistance(
+            flankPos,
+            targetPos
+          );
           const rangeValidation = validateWeaponRange(
             enemy,
             target,
             selectedAttack,
-            newDistance
+            distanceFromFlankToTarget
+          );
+          return rangeValidation.canAttack;
+        });
+
+        if (validFlankingPositions.length > 0) {
+          // Find the best valid flanking position (closest to current position)
+          const bestFlankPos = validFlankingPositions.reduce(
+            (best, current) => {
+              const bestDist = calculateDistance(currentPos, best);
+              const currentDist = calculateDistance(currentPos, current);
+              return currentDist < bestDist ? current : best;
+            }
           );
 
-          if (rangeValidation.canAttack) {
-            const flankingBonus = calculateFlankingBonus(
-              bestFlankPos,
-              targetPos,
-              positions,
-              enemy.id
+          const flankDistance = calculateDistance(currentPos, bestFlankPos);
+
+          addLog(`🎯 ${enemy.name} attempts to flank ${target.name}`, "info");
+
+          // Move to flanking position
+          setPositions((prev) => {
+            const updated = {
+              ...prev,
+              [enemy.id]: bestFlankPos,
+            };
+            positionsRef.current = updated;
+            return updated;
+          });
+
+          // Deduct movement action cost
+          const movementCost = Math.ceil(flankDistance / (speed * 5));
+          setFighters((prev) =>
+            prev.map((f) =>
+              f.id === enemy.id
+                ? {
+                    ...f,
+                    remainingAttacks: Math.max(
+                      0,
+                      f.remainingAttacks - movementCost
+                    ),
+                  }
+                : f
+            )
+          );
+
+          addLog(
+            `🎯 ${enemy.name} moves to flanking position (${bestFlankPos.x}, ${bestFlankPos.y})`,
+            "info"
+          );
+
+          // Continue with attack after movement
+          setTimeout(() => {
+            const newDistance = calculateDistance(bestFlankPos, targetPos);
+            const rangeValidation = validateWeaponRange(
+              enemy,
+              target,
+              selectedAttack,
+              newDistance
             );
-            if (flankingBonus > 0) {
-              addLog(
-                `🎯 ${enemy.name} gains flanking bonus (+${flankingBonus} to hit)!`,
-                "info"
+
+            if (rangeValidation.canAttack) {
+              const flankingBonus = calculateFlankingBonus(
+                bestFlankPos,
+                targetPos,
+                positions,
+                enemy.id
               );
+              if (flankingBonus > 0) {
+                addLog(
+                  `🎯 ${enemy.name} gains flanking bonus (+${flankingBonus} to hit)!`,
+                  "info"
+                );
+              }
+
+              // Execute attack with flanking bonus
+              const updatedEnemy = { ...enemy, selectedAttack: selectedAttack };
+              const bonuses = flankingBonus > 0 ? { flankingBonus } : {};
+              attack(updatedEnemy, target.id, bonuses);
+
+              processingEnemyTurnRef.current = false;
+              scheduleEndTurn();
+            } else {
+              addLog(
+                `❌ ${enemy.name} cannot reach ${target.name} from flanking position`,
+                "error"
+              );
+              processingEnemyTurnRef.current = false;
+              scheduleEndTurn();
             }
-
-            // Execute attack with flanking bonus
-            const updatedEnemy = { ...enemy, selectedAttack: selectedAttack };
-            const bonuses = flankingBonus > 0 ? { flankingBonus } : {};
-            attack(updatedEnemy, target.id, bonuses);
-
-            processingEnemyTurnRef.current = false;
-            scheduleEndTurn();
-          } else {
-            addLog(
-              `❌ ${enemy.name} cannot reach ${target.name} from flanking position`,
-              "error"
-            );
-            processingEnemyTurnRef.current = false;
-            scheduleEndTurn();
-          }
-        }, 1000);
-        return;
-      } else {
-        // No valid flanking positions (either can't reach them or they're out of attack range)
-        // Fall through to normal movement logic
-        addLog(
-          `🎯 ${enemy.name} cannot reach a valid flanking position - will move directly toward ${target.name}`,
-          "info"
-        );
-      }
+          }, 1000);
+          return;
+        } else {
+          // No valid flanking positions (either can't reach them or they're out of attack range)
+          // Fall through to normal movement logic
+          addLog(
+            `🎯 ${enemy.name} cannot reach a valid flanking position - will move directly toward ${target.name}`,
+            "info"
+          );
+        }
+      } // Close the else block for reachable target check
     }
 
     // Get enemy speed for movement calculations
@@ -2729,13 +3730,97 @@ export function runEnemyTurnAI(enemy, context) {
           );
           // Don't end turn, continue to attack below
         } else {
+          // Check if target is unreachable due to altitude (flying too high)
+          const isFlyingTooHigh =
+            rangeValidation.reason?.includes("flying too high") ||
+            rangeValidation.reason?.includes(
+              "cannot be reached by melee attacks from ground"
+            );
+
+          if (isFlyingTooHigh) {
+            // Target is flying too high - mark as unreachable and end turn immediately
+            markTargetUnreachable(enemy, target);
+            addLog(
+              `❌ ${enemy.name} realizes ${target.name} is unreachable (${rangeValidation.reason}).`,
+              "warning"
+            );
+            // Mark target as unreachable for this round to prevent spam
+            if (!enemy.meta) enemy.meta = {};
+            if (!enemy.meta.unreachableTargetsThisRound) {
+              enemy.meta.unreachableTargetsThisRound = [];
+            }
+            if (!enemy.meta.unreachableTargetsThisRound.includes(target.id)) {
+              enemy.meta.unreachableTargetsThisRound.push(target.id);
+            }
+            setFighters((prev) =>
+              prev.map((f) =>
+                f.id === enemy.id ? { ...f, meta: enemy.meta } : f
+              )
+            );
+            processingEnemyTurnRef.current = false;
+            scheduleEndTurn();
+            return;
+          }
+
+          // Cannot attack from current position - try to find alternative path
+          // If no alternative found, end turn
           addLog(
-            `⚔️ ${enemy.name} cannot reach target (${rangeValidation.reason}) and ends turn`,
-            "info"
+            `⚠️ ${enemy.name} cannot get any closer to ${target.name} and is out of melee range (path blocked).`,
+            "warning"
           );
-          processingEnemyTurnRef.current = false;
-          scheduleEndTurn();
-          return;
+
+          // Try to find alternative path (same logic as RUN/SPRINT section)
+          let foundAlternative = false;
+          for (let offset = 1; offset <= 3 && !foundAlternative; offset++) {
+            const testPositions = [
+              { x: newX - offset, y: newY },
+              { x: newX + offset, y: newY },
+              { x: newX, y: newY - offset },
+              { x: newX, y: newY + offset },
+              { x: newX - offset, y: newY - offset },
+              { x: newX + offset, y: newY + offset },
+            ];
+
+            for (const testPos of testPositions) {
+              if (
+                testPos.x >= 0 &&
+                testPos.x < GRID_CONFIG.GRID_WIDTH &&
+                testPos.y >= 0 &&
+                testPos.y < GRID_CONFIG.GRID_HEIGHT
+              ) {
+                if (!isHexOccupied(testPos.x, testPos.y, enemy.id)) {
+                  const testDistance = calculateDistance(testPos, targetPos);
+                  const testRangeValidation = validateWeaponRange(
+                    enemy,
+                    target,
+                    selectedAttack,
+                    testDistance
+                  );
+                  if (testRangeValidation.canAttack) {
+                    newX = testPos.x;
+                    newY = testPos.y;
+                    foundAlternative = true;
+                    addLog(
+                      `📍 ${enemy.name} adjusts path to avoid ${occupant.name}, moving to (${newX}, ${newY})`,
+                      "info"
+                    );
+                    break;
+                  }
+                }
+              }
+            }
+          }
+
+          if (!foundAlternative) {
+            addLog(
+              `⚔️ ${enemy.name} cannot reach target (${rangeValidation.reason}) and ends turn`,
+              "info"
+            );
+            processingEnemyTurnRef.current = false;
+            scheduleEndTurn();
+            return;
+          }
+          // Found alternative - continue with movement
         }
       } else {
         // Not occupied, safe to move
@@ -2899,6 +3984,53 @@ export function runEnemyTurnAI(enemy, context) {
           }
 
           if (attackRange <= 5.5) {
+            // Check if occupant (target) is actually reachable (altitude check)
+            const distanceFromCurrentPos = calculateDistance(
+              currentPos,
+              targetPos
+            );
+            const rangeValidation = validateWeaponRange(
+              enemy,
+              occupant, // occupant is the target in this case
+              selectedAttack,
+              distanceFromCurrentPos
+            );
+
+            // Check if target is unreachable due to altitude (flying too high)
+            const isFlyingTooHigh =
+              rangeValidation.reason?.includes("flying too high") ||
+              rangeValidation.reason?.includes(
+                "cannot be reached by melee attacks from ground"
+              );
+
+            if (isFlyingTooHigh) {
+              // Target is flying too high - mark as unreachable and end turn immediately
+              markTargetUnreachable(enemy, occupant);
+              addLog(
+                `❌ ${enemy.name} realizes ${occupant.name} is unreachable (${rangeValidation.reason}).`,
+                "warning"
+              );
+              // Mark target as unreachable for this round to prevent spam
+              if (!enemy.meta) enemy.meta = {};
+              if (!enemy.meta.unreachableTargetsThisRound) {
+                enemy.meta.unreachableTargetsThisRound = [];
+              }
+              if (
+                !enemy.meta.unreachableTargetsThisRound.includes(occupant.id)
+              ) {
+                enemy.meta.unreachableTargetsThisRound.push(occupant.id);
+              }
+              setFighters((prev) =>
+                prev.map((f) =>
+                  f.id === enemy.id ? { ...f, meta: enemy.meta } : f
+                )
+              );
+              processingEnemyTurnRef.current = false;
+              scheduleEndTurn();
+              return;
+            }
+
+            // Target is reachable - proceed with closing into opponent
             closingIntoOpponent = true;
             attackOfOpportunityAttacker = occupant;
             addLog(
@@ -2945,10 +4077,69 @@ export function runEnemyTurnAI(enemy, context) {
                 `🚫 ${enemy.name} cannot find path to target - all hexes occupied`,
                 "info"
               );
-              addLog(`⏭️ ${enemy.name} ends turn (blocked)`, "info");
-              processingEnemyTurnRef.current = false;
-              scheduleEndTurn();
-              return;
+
+              // Check if enemy can still attack from current position despite being blocked
+              const distanceFromCurrentPos = calculateDistance(
+                currentPos,
+                targetPos
+              );
+              const rangeValidation = validateWeaponRange(
+                enemy,
+                target,
+                selectedAttack,
+                distanceFromCurrentPos
+              );
+
+              // Check if target is unreachable due to altitude (flying too high)
+              const isFlyingTooHigh =
+                rangeValidation.reason?.includes("flying too high") ||
+                rangeValidation.reason?.includes(
+                  "cannot be reached by melee attacks from ground"
+                );
+
+              if (isFlyingTooHigh) {
+                // Target is flying too high - mark as unreachable and end turn immediately
+                markTargetUnreachable(enemy, target);
+                addLog(
+                  `❌ ${enemy.name} realizes ${target.name} is unreachable (${rangeValidation.reason}).`,
+                  "warning"
+                );
+                // Mark target as unreachable for this round to prevent spam
+                if (!enemy.meta) enemy.meta = {};
+                if (!enemy.meta.unreachableTargetsThisRound) {
+                  enemy.meta.unreachableTargetsThisRound = [];
+                }
+                if (
+                  !enemy.meta.unreachableTargetsThisRound.includes(target.id)
+                ) {
+                  enemy.meta.unreachableTargetsThisRound.push(target.id);
+                }
+                setFighters((prev) =>
+                  prev.map((f) =>
+                    f.id === enemy.id ? { ...f, meta: enemy.meta } : f
+                  )
+                );
+                processingEnemyTurnRef.current = false;
+                scheduleEndTurn();
+                return;
+              }
+
+              if (!rangeValidation.canAttack) {
+                addLog(
+                  `⚠️ ${enemy.name} cannot get any closer to ${target.name} and is out of melee range (path blocked). Ending turn.`,
+                  "warning"
+                );
+                processingEnemyTurnRef.current = false;
+                scheduleEndTurn();
+                return;
+              }
+
+              // Can attack from current position - continue to attack below
+              addLog(
+                `⚔️ ${enemy.name} is within range from current position (${rangeValidation.reason}) and attacks`,
+                "info"
+              );
+              // Don't end turn, continue to attack section below
             }
           }
         }
@@ -3115,9 +4306,7 @@ export function runEnemyTurnAI(enemy, context) {
               );
             }
             processingEnemyTurnRef.current = false;
-            setTimeout(() => {
-              endTurn();
-            }, 1500);
+            scheduleEndTurn();
           }
 
           return currentPositions;
@@ -3274,8 +4463,7 @@ export function runEnemyTurnAI(enemy, context) {
 
     // End turn after attack
     processingEnemyTurnRef.current = false;
-    setTimeout(() => {
-      endTurn();
-    }, 1500); // Reduced delay for faster turn progression
+    scheduleEndTurn();
   }, 1500);
+}
 }

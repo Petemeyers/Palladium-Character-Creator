@@ -314,10 +314,17 @@ export function assignRandomWeaponToEnemy(enemy, favoriteWeapons) {
   // Parse favorite weapons
   const searchTerms = parseFavoriteWeapons(favoriteWeapons);
   
-  // If no favorite weapons specified, use default weapon
+  // If no favorite weapons specified, try to get default weapon
   if (searchTerms.length === 0) {
-    console.log(`No favorite weapons for ${enemy.name}, using default`);
-    // Could assign a basic weapon here if desired
+    console.log(`No favorite weapons for ${enemy.name}, trying default weapon`);
+    const defaultWeapon = getDefaultWeaponForEnemy(enemy);
+    if (defaultWeapon && defaultWeapon.name !== "Unarmed") {
+      enemy = equipWeaponToEnemy(enemy, defaultWeapon);
+      enemy = addWeaponToInventory(enemy, defaultWeapon);
+      console.log(`Assigned default weapon to ${enemy.name}: ${defaultWeapon.name}`);
+      return enemy;
+    }
+    // If still no weapon, return enemy as-is (will be unarmed)
     return enemy;
   }
   

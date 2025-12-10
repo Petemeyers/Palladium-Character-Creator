@@ -183,6 +183,8 @@ export class CombatEngine {
         if (opponents.length > 0) {
           triggerHorrorFactor(creature, opponents, terrain, this.logCallback, {
             positions: positions,
+            currentRound: this.currentRound,
+            meleeRound: this.currentRound,
           });
         }
       }

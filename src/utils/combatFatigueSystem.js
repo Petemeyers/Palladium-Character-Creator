@@ -78,6 +78,39 @@ export const RECOVERY_RATES = {
 };
 
 /**
+ * Check if a creature is undead (does not fatigue in Palladium)
+ * @param {Object} character - Character object
+ * @returns {boolean} True if undead
+ */
+function isUndeadCreature(character) {
+  // Look at several common places we store type/category
+  const tags = [
+    character.species,
+    character.category,
+    character.type,
+    character.race,
+    character.occ,
+    ...(character.tags || []),
+    ...(character.traits || []),
+  ]
+    .filter(Boolean)
+    .map((v) => v.toString().toLowerCase());
+
+  // Bestiary.json uses category: "undead" for Vampire
+  // Also check for common undead keywords
+  return (
+    tags.includes("undead") ||
+    tags.includes("vampire") ||
+    tags.includes("zombie") ||
+    tags.includes("skeleton") ||
+    tags.includes("lich") ||
+    tags.includes("ghost") ||
+    tags.includes("wraith") ||
+    tags.includes("spectre")
+  );
+}
+
+/**
  * Initialize combat fatigue state for a character
  * @param {Object} character - Character object with attributes
  * @returns {Object} Fatigue state object
@@ -121,6 +154,10 @@ export function initializeCombatFatigue(character) {
  * @returns {number} Stamina cost per melee round
  */
 export function getStaminaCost(actionType, character = {}) {
+  // 🧟 Undead do not lose stamina
+  if (character?.isUndead) {
+    return 0; // Undead never lose stamina
+  }
   let cost;
 
   // Allow passing a numeric cost directly (backwards compatible)
@@ -180,6 +217,27 @@ export function getStaminaCost(actionType, character = {}) {
  * @returns {Object} Updated fatigue state
  */
 export function drainStamina(character, actionType, rounds = 1) {
+  // 🧟 Undead do not lose stamina
+  if (character?.isUndead) {
+    // Make sure fatigueState exists for UI, but don't change stamina
+    if (!character.fatigueState) {
+      character.fatigueState = initializeCombatFatigue(character);
+    }
+    // Set status to "tireless" for UI flavor
+    if (character.fatigueState) {
+      character.fatigueState.status = "tireless";
+      character.fatigueState.fatigueLevel = 0;
+      character.fatigueState.penalties = {
+        strike: 0,
+        parry: 0,
+        dodge: 0,
+        ps: 0,
+        speed: 1.0,
+      };
+    }
+    return character.fatigueState;
+  }
+
   if (!character.fatigueState) {
     character.fatigueState = initializeCombatFatigue(character);
   }
@@ -187,11 +245,30 @@ export function drainStamina(character, actionType, rounds = 1) {
   const state = character.fatigueState;
   const cost = getStaminaCost(actionType, character) * rounds;
 
-  state.currentStamina -= cost;
+  const previousStamina = state.currentStamina;
+
+  // Allow stamina to go below zero so deeper fatigue levels can trigger.
+  // Floor it at -maxStamina just so it doesn't run away infinitely.
+  const minStamina = -state.maxStamina;
+  const newStamina = previousStamina - cost;
+  state.currentStamina = Math.max(minStamina, newStamina);
+
+  // If we just crossed from >0 to ≤0, apply an EXHAUSTED status effect once.
+  if (
+    previousStamina > 0 &&
+    state.currentStamina <= 0 &&
+    !character.statusEffects?.includes("EXHAUSTED")
+  ) {
+    if (!character.statusEffects) {
+      character.statusEffects = [];
+    }
+    character.statusEffects.push("EXHAUSTED");
+  }
+
   state.lastActionType = actionType;
   state.totalRoundsActive += rounds;
 
-  // Update fatigue level and penalties
+  // Recalculate fatigue tier + penalties based on the new (possibly negative) stamina
   updateFatiguePenalties(character);
 
   return state;

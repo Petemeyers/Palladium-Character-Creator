@@ -1,4 +1,5 @@
 import { getMovementRange } from "../../data/movementRules";
+import { findRetreatDestination } from "../distanceCombatSystem";
 
 /**
  * Handle movement selection from TacticalMap
@@ -283,5 +284,121 @@ export function handleRunActionUpdate(updatedAttacker, context) {
       addLog(logEntry, "info");
     });
   }
+}
+
+/**
+ * Player-triggered Withdraw action.
+ *
+ * Expected context fields (mirror other movement handlers):
+ * - currentFighter
+ * - fighters
+ * - positions
+ * - setPositions
+ * - addLog
+ * - endTurn
+ * - gridWidth / gridHeight (optional but nice if you have them)
+ * - maxWithdrawSteps (optional override, default 3)
+ */
+export function handleWithdrawAction(context) {
+  const {
+    currentFighter,
+    fighters,
+    positions,
+    setPositions,
+    addLog,
+    endTurn,
+    gridWidth,
+    gridHeight,
+    maxWithdrawSteps = 3,
+  } = context || {};
+
+  if (!currentFighter || !positions || !setPositions || !endTurn) {
+    console.warn("[handleWithdrawAction] Missing context data");
+    return;
+  }
+
+  const myId = currentFighter.id;
+  const myPos = positions[myId];
+
+  if (!myPos) {
+    addLog?.(
+      `⚠️ ${currentFighter.name} tries to withdraw, but has no known position.`,
+      "warning"
+    );
+    endTurn?.();
+    return;
+  }
+
+  // Collect enemy positions
+  // Note: We need to convert x,y coordinates to q,r hex coordinates
+  // For now, assume positions use x,y and we'll convert them
+  const enemyPositions = (fighters || [])
+    .filter(
+      (f) =>
+        f.id !== myId &&
+        f.type !== currentFighter.type &&
+        !f.isDown &&
+        f.currentHP > 0 &&
+        positions[f.id]
+    )
+    .map((f) => {
+      const pos = positions[f.id];
+      // Convert x,y to q,r if needed (for now, assume they're the same or use x as q, y as r)
+      return { q: pos.q ?? pos.x, r: pos.r ?? pos.y };
+    });
+
+  if (!enemyPositions.length) {
+    // No enemies? Just defend in place.
+    addLog?.(
+      `🛡️ ${currentFighter.name} withdraws into a defensive stance (no enemies in sight).`,
+      "info"
+    );
+    endTurn?.();
+    return;
+  }
+
+  // Convert current position to q,r format
+  const startHex = { q: myPos.q ?? myPos.x, r: myPos.r ?? myPos.y };
+
+  const retreatHex = findRetreatDestination({
+    startHex,
+    enemyPositions,
+    maxSteps: maxWithdrawSteps,
+    gridWidth,
+    gridHeight,
+  });
+
+  if (
+    !retreatHex ||
+    (retreatHex.q === startHex.q && retreatHex.r === startHex.r)
+  ) {
+    addLog?.(
+      `🛡️ ${currentFighter.name} finds no safer ground to withdraw to and defends in place.`,
+      "info"
+    );
+    endTurn?.();
+    return;
+  }
+
+  // Apply the movement - convert q,r back to x,y format
+  setPositions((prev) => ({
+    ...prev,
+    [myId]: {
+      ...prev[myId],
+      x: retreatHex.q,
+      y: retreatHex.r,
+      q: retreatHex.q,
+      r: retreatHex.r,
+    },
+  }));
+
+  addLog?.(
+    `🏃 ${currentFighter.name} withdraws to (${retreatHex.q}, ${retreatHex.r}) and takes a defensive stance.`,
+    "info"
+  );
+
+  // You could later set a proper "defensive stance" flag on the fighter here
+  // (e.g., via setFighters), but for now we just end the turn.
+  endTurn?.();
 }
 

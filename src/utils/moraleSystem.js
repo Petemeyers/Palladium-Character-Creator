@@ -2,6 +2,33 @@
 import CryptoSecureDice from "./cryptoDice";
 import speciesBehaviorData from "../data/speciesBehavior.json";
 
+// 🔹 Simple undead detector by name/species
+const UNDEAD_KEYWORDS = [
+  "vampire",
+  "mummy",
+  "skeleton",
+  "zombie",
+  "ghoul",
+  "wraith",
+  "wight",
+  "lich",
+  "spectre",
+  "ghost",
+];
+
+export function isUndeadFighter(fighter) {
+  const label = (
+    fighter?.species ||
+    fighter?.race ||
+    fighter?.type ||
+    fighter?.name ||
+    ""
+  ).toLowerCase();
+
+  if (!label) return false;
+  return UNDEAD_KEYWORDS.some((word) => label.includes(word));
+}
+
 /**
  * Compute a base morale target from ME and level.
  */
@@ -182,6 +209,37 @@ export function resolveMoraleCheck(fighter, context = {}) {
     };
   }
 
+  // 🧟 Undead never fail morale checks (no ROUTED/SURRENDER)
+  if (isUndeadFighter(fighter)) {
+    const previous = fighter.moraleState || {};
+    const logger = context.logger || context.log || (() => {});
+
+    const moraleState = {
+      ...previous,
+      status:
+        previous.status &&
+        previous.status !== "ROUTED" &&
+        previous.status !== "SURRENDERED"
+          ? previous.status
+          : "UNSHAKEN",
+      lastCheckRound:
+        context.roundNumber ?? previous.lastCheckRound ?? null,
+      notes: "Undead: immune to morale, never rout or surrender.",
+    };
+
+    if (logger) {
+      logger(
+        `💀 ${fighter.name} is undead and ignores morale checks (never flees).`
+      );
+    }
+
+    return {
+      success: true,
+      moraleState,
+      result: "AUTO_PASS_UNDEAD",
+    };
+  }
+
   const {
     roundNumber = 0,
     reason = "generic",
@@ -203,6 +261,17 @@ export function resolveMoraleCheck(fighter, context = {}) {
   if (alliesDownRatio >= 0.75) target -= 2;
   if (horrorFailed) target -= 2;
   if (bigPainHit) target -= 1;
+  
+  // Phobia penalty: if reason is "horror" and fighter has a matching phobia, additional penalty
+  if (reason === "horror" && fighter.mentalState?.disorders) {
+    const disorders = fighter.mentalState.disorders || [];
+    // Check if any phobia matches (we'll need to pass creature info in context for exact match)
+    // For now, if they have any phobia and reason is horror, apply penalty
+    const hasPhobia = disorders.some(d => d.type === "phobia");
+    if (hasPhobia) {
+      target -= 2; // Additional -2 for phobia
+    }
+  }
 
   // Bonuses – brave classes
   const occ = fighter.OCC || fighter.occ || "";

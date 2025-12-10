@@ -332,6 +332,7 @@ export function createPlayableCharacterFighter(character, customName = null) {
     psionics: character.psionics,
     psionicPowers: character.psionicPowers || [],
     ISP: character.ISP || 0,
+    currentISP: typeof character.currentISP === "number" ? character.currentISP : (character.ISP || 0), // Initialize currentISP from ISP
     PPE: character.PPE || 0,
 
     // Combat state

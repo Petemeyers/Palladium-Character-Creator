@@ -2,9 +2,12 @@
  * Psionic Effects System
  * Handles activation and effects of psionic powers
  * Manages ISP costs, durations, and combat interactions
- * 
- * TODO: Implement psionic effects system
  */
+
+import {
+  canAttemptStopBleeding,
+  markBleedingStopped,
+} from "./bleedingSystem.js";
 
 /**
  * Activate a psionic power
@@ -12,7 +15,8 @@
  * @param {Object} caster - Character using the power
  * @param {Object} target - Target of the power
  * @param {Function} log - Logging function
- * @returns {boolean} True if power was successfully activated
+ * @param {Object} options - Additional options including combatState
+ * @returns {Object} Result object with success, message, updates, etc.
  */
 export function usePsionic(powerName, caster, target, log, options = {}) {
   // Check basic requirements
@@ -22,47 +26,147 @@ export function usePsionic(powerName, caster, target, log, options = {}) {
       message: "Invalid psionic power or caster",
       additionalLogs: [],
       casterUpdates: null,
-      targetUpdates: null
+      targetUpdates: null,
     };
   }
 
   // Get power from caster's psionic powers
-  const power = caster.psionicPowers?.find(p => p?.name === powerName);
+  const power = caster.psionicPowers?.find((p) => p?.name === powerName);
   if (!power) {
     return {
       success: false,
       message: `${caster.name} does not know ${powerName}`,
       additionalLogs: [],
       casterUpdates: null,
-      targetUpdates: null
+      targetUpdates: null,
     };
   }
 
-  // Check ISP cost
+  // Get ISP cost
   const ispCost = power.isp || power.ISP || 10; // Default to 10 if not specified
-  const currentISP = caster.ISP || caster.isp || 0;
-  
+  const currentISP = caster.currentISP ?? caster.ISP ?? caster.isp ?? 0;
+
+  // --- STOP BLEEDING SPECIAL CASE ---
+  if (powerName === "Stop Bleeding") {
+    const combatState = options.combatState || { meleeRound: 1 };
+    const check = canAttemptStopBleeding(caster, target, combatState);
+
+    if (!check.ok) {
+      if (check.reason === "already_stabilized") {
+        if (log && typeof log === "function") {
+          log(
+            `🧠 ${
+              target?.name || "Target"
+            } is already stabilized; skipping Stop Bleeding.`,
+            "info"
+          );
+        }
+      } else if (check.reason === "already_attempted_this_round") {
+        if (log && typeof log === "function") {
+          log(
+            `🧠 Stop Bleeding already attempted on ${
+              target?.name || "target"
+            } this round; skipping.`,
+            "info"
+          );
+        }
+      } else if (check.reason === "not_bleeding") {
+        if (log && typeof log === "function") {
+          log(
+            `🧠 ${
+              target?.name || "Target"
+            } is not bleeding; Stop Bleeding not needed.`,
+            "info"
+          );
+        }
+      } else if (check.reason === "insufficient_isp") {
+        if (log && typeof log === "function") {
+          log(
+            `🧠 ${caster.name} lacks ISP for Stop Bleeding (needs ${ispCost}, has ${currentISP}).`,
+            "info"
+          );
+        }
+      }
+      return {
+        success: false,
+        message: `Stop Bleeding cannot be used: ${check.reason}`,
+        reason: check.reason,
+        additionalLogs: [],
+        casterUpdates: null,
+        targetUpdates: null,
+      };
+    }
+
+    // *** THIS is the ONLY place we should modify ISP and log it ***
+    const beforeISP = currentISP;
+    const afterISP = Math.max(0, beforeISP - ispCost);
+
+    const casterUpdates = {
+      deltaISP: -ispCost,
+    };
+
+    // Mark bleeding as stopped
+    const updatedTarget = { ...target };
+    markBleedingStopped(updatedTarget, check.round);
+
+    const targetUpdates = {
+      statusEffects: updatedTarget.statusEffects,
+      conditions: updatedTarget.conditions,
+      activeEffects: updatedTarget.activeEffects,
+      meta: updatedTarget.meta,
+    };
+
+    if (log && typeof log === "function") {
+      log(
+        `🧠 Executing psionic: Stop Bleeding (cost: ${ispCost} ISP, caster ISP: ${beforeISP}→${afterISP})`,
+        "info"
+      );
+      log(`✅ Psionic Stop Bleeding executed successfully`, "info");
+      log(
+        `💚 ${caster.name} channels Stop Bleeding to help ${
+          target?.name || "target"
+        }.`,
+        "info"
+      );
+    }
+
+    return {
+      success: true,
+      message: `${caster.name} successfully uses Stop Bleeding`,
+      additionalLogs: [],
+      power: power,
+      ispCost: ispCost,
+      casterUpdates: casterUpdates,
+      targetUpdates: targetUpdates,
+    };
+  }
+
+  // --- ALL OTHER PSIONICS CONTINUE AS BEFORE ---
   if (currentISP < ispCost) {
     return {
       success: false,
       message: `${caster.name} lacks the ISP to use ${powerName} (needs ${ispCost}, has ${currentISP})`,
       additionalLogs: [],
       casterUpdates: null,
-      targetUpdates: null
+      targetUpdates: null,
     };
   }
 
   // Deduct ISP and prepare updates
+  const beforeISP = currentISP;
+  const afterISP = Math.max(0, beforeISP - ispCost);
   const casterUpdates = {
-    deltaISP: -ispCost
+    deltaISP: -ispCost,
   };
 
-  // For now, just log the activation - actual effects will be handled by executePsionicPower
-  // The actual damage/effects should be applied in executePsionicPower based on power type
-  if (log && typeof log === 'function') {
-    log(`🧠 ${caster.name} activates ${powerName}! (${ispCost} ISP)`, "info");
+  // Log the activation
+  if (log && typeof log === "function") {
+    log(
+      `🧠 Executing psionic: ${powerName} (cost: ${ispCost} ISP, caster ISP: ${beforeISP}→${afterISP})`,
+      "info"
+    );
   }
-  
+
   return {
     success: true,
     message: `${caster.name} successfully uses ${powerName}`,
@@ -70,7 +174,7 @@ export function usePsionic(powerName, caster, target, log, options = {}) {
     power: power,
     ispCost: ispCost,
     casterUpdates: casterUpdates,
-    targetUpdates: null // Will be set by executePsionicPower if needed
+    targetUpdates: null, // Will be set by executePsionicPower if needed
   };
 }
 
@@ -104,7 +208,7 @@ export function getISPCost(powerName) {
 export function applyPsionicEffect(power, caster, target, log) {
   // TODO: Apply power-specific effects
   // Handle different attack types: ranged, melee, healing, buff, etc.
-  
+
   if (!power || !caster || !target) {
     return;
   }
@@ -130,4 +234,3 @@ export default {
   getISPCost,
   applyPsionicEffect,
 };
-

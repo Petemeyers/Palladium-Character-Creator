@@ -61,14 +61,14 @@ const TacticalMap = ({
 
   // ✅ Use mapType from prop, fallback to terrain.mapType, then default to hex
   const effectiveMapType = mapType ?? terrain?.mapType ?? "hex";
-  
+
   // ✅ Debug: Log mapType on mount/update to verify prop flow
   useEffect(() => {
     if (import.meta.env.DEV) {
       console.log('[TacticalMap] mapType prop:', mapType, '| terrain?.mapType:', terrain?.mapType, '| effectiveMapType:', effectiveMapType);
       if (terrain) {
-        console.log('[TacticalMap] Full terrain object:', terrain);
-      }
+      console.log('[TacticalMap] Full terrain object:', terrain);
+    }
     }
   }, [mapType, terrain?.mapType, effectiveMapType, terrain]);
   
@@ -247,7 +247,7 @@ const TacticalMap = ({
           combatantsWithoutPositions.map(c => ({ name: c.name, id: getCombatantId(c), type: c.type || 'unknown' })));
       }
     }
-
+    
     return map;
   }, [combatants, positions, mode]);
 
@@ -1672,7 +1672,7 @@ const TacticalMap = ({
               (() => {
                 // Debug: log only for specific cells in development (to avoid spam)
                 if (import.meta.env.DEV && col === 15 && row === 14) {
-                  console.log(`[TacticalMap] Rendering ${combatantsAtPos.length} combatant(s) at cell (${col}, ${row})`);
+                console.log(`[TacticalMap] Rendering ${combatantsAtPos.length} combatant(s) at cell (${col}, ${row})`);
                 }
                 return combatantsAtPos
                   .sort((a, b) => {
@@ -1703,7 +1703,7 @@ const TacticalMap = ({
                   
                   // Debug: verify icon should render (only for specific cells in development)
                   if (import.meta.env.DEV && col === 15 && row === 14) {
-                    console.log(`[TacticalMap] ✅ Rendering icon for ${combatant.name} at (${col}, ${row}), isEnemy: ${combatant.isEnemy}, fogEnabled: ${fogEnabled}`);
+                  console.log(`[TacticalMap] ✅ Rendering icon for ${combatant.name} at (${col}, ${row}), isEnemy: ${combatant.isEnemy}, fogEnabled: ${fogEnabled}`);
                   }
 
               // ✅ Check enemy visibility for rendering
