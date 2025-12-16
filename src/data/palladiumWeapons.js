@@ -5,6 +5,7 @@ export const palladiumWeapons = [
   // ⚔️ AXES
   {
     name: "Battle Axe",
+    wp: "W.P. Battle Axe",
     damage: "2d6",
     type: "weapon",
     category: "one-handed",
@@ -19,6 +20,8 @@ export const palladiumWeapons = [
   },
   {
     name: "Throwing Axe",
+    wp: "W.P. Throwing Axe",
+    throwable: true,
     damage: "1d6",
     type: "weapon",
     category: "one-handed",
@@ -34,6 +37,7 @@ export const palladiumWeapons = [
   },
   {
     name: "Stone Axe",
+    wp: "W.P. Battle Axe",
     damage: "1d8",
     type: "weapon",
     category: "one-handed",
@@ -48,6 +52,7 @@ export const palladiumWeapons = [
   },
   {
     name: "Bipennis (Double-Headed Axe)",
+    wp: "W.P. Battle Axe",
     damage: "2d6",
     type: "weapon",
     category: "one-handed",
@@ -62,6 +67,7 @@ export const palladiumWeapons = [
   },
   {
     name: "Orcin Pick",
+    wp: "W.P. Battle Axe",
     damage: "1d8",
     type: "weapon",
     category: "two-handed",
@@ -78,6 +84,7 @@ export const palladiumWeapons = [
   // ⚔️ POLEARMS
   {
     name: "Awl Pike",
+    wp: "W.P. Pole arms",
     damage: "2d6",
     type: "weapon",
     category: "two-handed",
@@ -92,6 +99,7 @@ export const palladiumWeapons = [
   },
   {
     name: "Beaked Axe",
+    wp: "W.P. Pole arms",
     damage: "2d6",
     type: "weapon",
     category: "two-handed",
@@ -106,6 +114,7 @@ export const palladiumWeapons = [
   },
   {
     name: "Berdiche",
+    wp: "W.P. Pole arms",
     damage: "2d6",
     type: "weapon",
     category: "two-handed",
@@ -120,6 +129,7 @@ export const palladiumWeapons = [
   },
   {
     name: "Glaive",
+    wp: "W.P. Pole arms",
     damage: "2d6",
     type: "weapon",
     category: "two-handed",
@@ -134,6 +144,7 @@ export const palladiumWeapons = [
   },
   {
     name: "Guisarme",
+    wp: "W.P. Pole arms",
     damage: "2d6",
     type: "weapon",
     category: "two-handed",
@@ -148,6 +159,7 @@ export const palladiumWeapons = [
   },
   {
     name: "Halberd",
+    wp: "W.P. Pole arms",
     damage: "3d6",
     type: "weapon",
     category: "two-handed",
@@ -162,6 +174,7 @@ export const palladiumWeapons = [
   },
   {
     name: "Sabre Halberd",
+    wp: "W.P. Pole arms",
     damage: "3d6",
     type: "weapon",
     category: "two-handed",
@@ -176,6 +189,7 @@ export const palladiumWeapons = [
   },
   {
     name: "Lucerne Hammer",
+    wp: "W.P. Pole arms",
     damage: "2d6",
     type: "weapon",
     category: "two-handed",
@@ -190,6 +204,7 @@ export const palladiumWeapons = [
   },
   {
     name: "Military Fork",
+    wp: "W.P. Spears/Forks",
     damage: "1d8",
     type: "weapon",
     category: "two-handed",
@@ -204,6 +219,7 @@ export const palladiumWeapons = [
   },
   {
     name: "Pike",
+    wp: "W.P. Pole arms",
     damage: "1d8",
     type: "weapon",
     category: "two-handed",
@@ -218,6 +234,7 @@ export const palladiumWeapons = [
   },
   {
     name: "Runka",
+    wp: "W.P. Pole arms",
     damage: "2d6",
     type: "weapon",
     category: "two-handed",
@@ -232,6 +249,7 @@ export const palladiumWeapons = [
   },
   {
     name: "Scythe",
+    wp: "W.P. Pole arms",
     damage: "1d8",
     type: "weapon",
     category: "two-handed",
@@ -246,6 +264,7 @@ export const palladiumWeapons = [
   },
   {
     name: "Voulge",
+    wp: "W.P. Pole arms",
     damage: "3d6",
     type: "weapon",
     category: "two-handed",
@@ -262,6 +281,8 @@ export const palladiumWeapons = [
   // ⚔️ SPEARS
   {
     name: "Short Spear",
+    wp: "W.P. Spears/Forks",
+    throwable: true,
     damage: "1d6",
     type: "weapon",
     category: "one-handed",
@@ -277,6 +298,7 @@ export const palladiumWeapons = [
   },
   {
     name: "Long Spear",
+    wp: "W.P. Spears/Forks",
     damage: "1d8",
     type: "weapon",
     category: "two-handed",
@@ -291,6 +313,8 @@ export const palladiumWeapons = [
   },
   {
     name: "Javelin",
+    wp: "W.P. Spears/Forks",
+    throwable: true,
     damage: "1d6",
     type: "weapon",
     category: "one-handed",
@@ -306,6 +330,8 @@ export const palladiumWeapons = [
   },
   {
     name: "Trident",
+    wp: "W.P. Spears/Forks",
+    throwable: true,
     damage: "1d8",
     type: "weapon",
     category: "two-handed",
@@ -320,6 +346,7 @@ export const palladiumWeapons = [
   },
   {
     name: "Lance",
+    wp: "W.P. Lance",
     damage: "1d8",
     type: "weapon",
     category: "two-handed",
@@ -336,6 +363,8 @@ export const palladiumWeapons = [
   // ⚔️ DAGGERS AND KNIVES
   {
     name: "Dagger",
+    wp: "W.P. Knives",
+    throwable: true,
     damage: "1d6",
     type: "weapon",
     category: "one-handed",
@@ -353,6 +382,7 @@ export const palladiumWeapons = [
   // ⚔️ SHORT SWORDS
   {
     name: "Short Sword",
+    wp: "W.P. Short swords",
     damage: "1d6",
     type: "weapon",
     category: "one-handed",
@@ -367,6 +397,7 @@ export const palladiumWeapons = [
   },
   {
     name: "Sabre",
+    wp: "W.P. Short swords",
     damage: "1d6",
     type: "weapon",
     category: "one-handed",
@@ -381,6 +412,7 @@ export const palladiumWeapons = [
   },
   {
     name: "Scimitar",
+    wp: "W.P. Short swords",
     damage: "1d6",
     type: "weapon",
     category: "one-handed",
@@ -395,6 +427,7 @@ export const palladiumWeapons = [
   },
   {
     name: "Falchion",
+    wp: "W.P. Short swords",
     damage: "1d8",
     type: "weapon",
     category: "one-handed",
@@ -409,6 +442,7 @@ export const palladiumWeapons = [
   },
   {
     name: "Cutlass",
+    wp: "W.P. Short swords",
     damage: "1d6",
     type: "weapon",
     category: "one-handed",
@@ -425,6 +459,7 @@ export const palladiumWeapons = [
   // ⚔️ LARGE SWORDS
   {
     name: "Bastard Sword",
+    wp: "W.P. Large sword",
     damage: "1d8+2",
     type: "weapon",
     category: "two-handed",
@@ -439,6 +474,7 @@ export const palladiumWeapons = [
   },
   {
     name: "Broadsword",
+    wp: "W.P. Large sword",
     damage: "1d8",
     type: "weapon",
     category: "one-handed",
@@ -453,6 +489,7 @@ export const palladiumWeapons = [
   },
   {
     name: "Claymore",
+    wp: "W.P. Large sword",
     damage: "2d6",
     type: "weapon",
     category: "two-handed",
@@ -467,6 +504,7 @@ export const palladiumWeapons = [
   },
   {
     name: "Flamberge",
+    wp: "W.P. Large sword",
     damage: "3d6",
     type: "weapon",
     category: "two-handed",
@@ -481,6 +519,7 @@ export const palladiumWeapons = [
   },
   {
     name: "Long Sword",
+    wp: "W.P. Large sword",
     damage: "1d8+2",
     type: "weapon",
     category: "one-handed",
@@ -495,6 +534,7 @@ export const palladiumWeapons = [
   },
   {
     name: "2-Handed Espandon",
+    wp: "W.P. Large sword",
     damage: "2d6",
     type: "weapon",
     category: "two-handed",
@@ -511,6 +551,7 @@ export const palladiumWeapons = [
   // ⚔️ BALL & CHAIN WEAPONS
   {
     name: "Ball & Chain",
+    wp: "W.P. Ball and Chain",
     damage: "1d8",
     type: "weapon",
     category: "one-handed",
@@ -525,6 +566,7 @@ export const palladiumWeapons = [
   },
   {
     name: "Flail",
+    wp: "W.P. Ball and Chain",
     damage: "2d6",
     type: "weapon",
     category: "two-handed",
@@ -539,6 +581,7 @@ export const palladiumWeapons = [
   },
   {
     name: "Goupillon Flail",
+    wp: "W.P. Ball and Chain",
     damage: "3d6",
     type: "weapon",
     category: "two-handed",
@@ -553,6 +596,7 @@ export const palladiumWeapons = [
   },
   {
     name: "Mace & Chain",
+    wp: "W.P. Ball and Chain",
     damage: "2d6",
     type: "weapon",
     category: "one-handed",
@@ -567,6 +611,7 @@ export const palladiumWeapons = [
   },
   {
     name: "Nunchaku",
+    wp: "W.P. Ball and Chain",
     damage: "1d8",
     type: "weapon",
     category: "two-handed",
@@ -583,6 +628,7 @@ export const palladiumWeapons = [
   // ⚔️ BLUNT WEAPONS
   {
     name: "Mace",
+    wp: "W.P. Blunt",
     damage: "1d8",
     type: "weapon",
     category: "one-handed",
@@ -597,6 +643,7 @@ export const palladiumWeapons = [
   },
   {
     name: "Morning Star",
+    wp: "W.P. Blunt",
     damage: "1d8",
     type: "weapon",
     category: "one-handed",
@@ -611,6 +658,7 @@ export const palladiumWeapons = [
   },
   {
     name: "Club",
+    wp: "W.P. Blunt",
     damage: "1d6",
     type: "weapon",
     category: "one-handed",
@@ -625,6 +673,7 @@ export const palladiumWeapons = [
   },
   {
     name: "Cudgel",
+    wp: "W.P. Blunt",
     damage: "1d8",
     type: "weapon",
     category: "one-handed",
@@ -639,6 +688,7 @@ export const palladiumWeapons = [
   },
   {
     name: "Maul",
+    wp: "W.P. Blunt",
     damage: "1d6",
     type: "weapon",
     category: "one-handed",
@@ -653,6 +703,7 @@ export const palladiumWeapons = [
   },
   {
     name: "Hercules Club",
+    wp: "W.P. Blunt",
     damage: "2d6",
     type: "weapon",
     category: "two-handed",
@@ -667,6 +718,7 @@ export const palladiumWeapons = [
   },
   {
     name: "War Club (Wood)",
+    wp: "W.P. Blunt",
     damage: "1d6",
     type: "weapon",
     category: "one-handed",
@@ -681,6 +733,7 @@ export const palladiumWeapons = [
   },
   {
     name: "Horseman Hammer",
+    wp: "W.P. Blunt",
     damage: "1d8",
     type: "weapon",
     category: "one-handed",
@@ -695,6 +748,7 @@ export const palladiumWeapons = [
   },
   {
     name: "Arab Mace",
+    wp: "W.P. Blunt",
     damage: "1d8",
     type: "weapon",
     category: "one-handed",
@@ -709,6 +763,7 @@ export const palladiumWeapons = [
   },
   {
     name: "War Hammer",
+    wp: "W.P. Blunt",
     damage: "2d6",
     type: "weapon",
     category: "one-handed",
@@ -725,6 +780,7 @@ export const palladiumWeapons = [
   // ⚔️ STAVES
   {
     name: "Short Staff",
+    wp: "W.P. Staves",
     damage: "1d6",
     type: "weapon",
     category: "one-handed",
@@ -739,6 +795,7 @@ export const palladiumWeapons = [
   },
   {
     name: "Long Staff",
+    wp: "W.P. Staves",
     damage: "1d8",
     type: "weapon",
     category: "two-handed",
@@ -753,6 +810,7 @@ export const palladiumWeapons = [
   },
   {
     name: "Bo Staff",
+    wp: "W.P. Staves",
     damage: "1d8",
     type: "weapon",
     category: "two-handed",
@@ -767,6 +825,7 @@ export const palladiumWeapons = [
   },
   {
     name: "Quarterstaff",
+    wp: "W.P. Staves",
     damage: "1d8",
     type: "weapon",
     category: "two-handed",
@@ -781,6 +840,7 @@ export const palladiumWeapons = [
   },
   {
     name: "Iron Staff",
+    wp: "W.P. Staves",
     damage: "1d8+2",
     type: "weapon",
     category: "two-handed",
@@ -797,6 +857,7 @@ export const palladiumWeapons = [
   // 🏹 MISSILE WEAPONS
   {
     name: "Sling",
+    wp: "W.P. Sling",
     damage: "1d6",
     type: "weapon",
     category: "ranged",
@@ -814,6 +875,7 @@ export const palladiumWeapons = [
   },
   {
     name: "Short Bow",
+    wp: "W.P. Short bow",
     damage: "1d6",
     type: "weapon",
     category: "bow",
@@ -831,6 +893,7 @@ export const palladiumWeapons = [
   },
   {
     name: "Long Bow",
+    wp: "W.P. Long bow",
     damage: "2d6",
     type: "weapon",
     category: "bow",
@@ -848,6 +911,7 @@ export const palladiumWeapons = [
   },
   {
     name: "Crossbow",
+    wp: "W.P. Cross bow",
     damage: "1d8",
     type: "weapon",
     category: "crossbow",

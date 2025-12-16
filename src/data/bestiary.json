@@ -2930,8 +2930,7 @@
             "Dwarves",
             "Wolfen (treaties vary)"
           ],
-          "description": "The most numerous race in the Palladium world. Their ambition and adaptability allow them to excel in every O.C.C.",
-          "HF": 6
+          "description": "The most numerous race in the Palladium world. Their ambition and adaptability allow them to excel in every O.C.C."
         },
         {
           "id": "elf_palladium",
@@ -2973,8 +2972,7 @@
             "Dwarves (uneasy)",
             "Wolfen (neutral)"
           ],
-          "description": "Graceful, long-lived folk renowned for magic, archery, and ancient culture.",
-          "HF": 6
+          "description": "Graceful, long-lived folk renowned for magic, archery, and ancient culture."
         },
         {
           "id": "dwarf_palladium",
@@ -4034,6 +4032,7 @@
           "id": "succubus_incubus",
           "name": "Succubus/Incubus",
           "category": "demon",
+          "species": "demon",
           "alignment": [
             "evil"
           ],
@@ -4118,6 +4117,7 @@
           "id": "gargoylite",
           "name": "Gargoylite",
           "category": "demon",
+          "species": "demon",
           "alignment": [
             "evil"
           ],
@@ -4156,6 +4156,7 @@
           "id": "gurgoyle",
           "name": "Gurgoyle",
           "category": "demon",
+          "species": "demon",
           "alignment": [
             "evil"
           ],
@@ -4196,6 +4197,7 @@
           "id": "couril",
           "name": "The Couril",
           "category": "demon",
+          "species": "demon",
           "alignment": [
             "evil"
           ],
@@ -5413,6 +5415,7 @@
           "size": "12-24 feet tall",
           "AR": 15,
           "HP": "8d10+20",
+          "isFearless": true,
           "attacks": [
             {
               "name": "Claw",
@@ -5432,6 +5435,8 @@
             "dodge": 3,
             "allSaves": 3
           },
+          "magicAbilities": "All levels 1-5 earth elemental magic",
+          "ISP": 50,
           "abilities": [
             "Night vision 60 ft",
             "Fire and cold resistant (half damage)",
@@ -5609,6 +5614,7 @@
           "id": "baal_rog",
           "name": "Baal-Rog",
           "category": "demon",
+          "species": "demon",
           "alignment": [
             "selfish",
             "evil"
@@ -5624,8 +5630,10 @@
             },
             {
               "name": "Fire Whip",
-              "damage": "special",
-              "count": 1
+              "damage": "4d6",
+              "count": 1,
+              "reach": 15,
+              "type": "flexible"
             },
             {
               "name": "Magic",

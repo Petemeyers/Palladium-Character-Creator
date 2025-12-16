@@ -689,7 +689,7 @@ export class CombatEngine {
 
     // Get attack bonuses (use unified abilities system)
     const strikeBonus =
-      getCombatBonus(attacker, "strike") ||
+      getCombatBonus(attacker, "strike", weapon) ||
       attacker.bonuses?.strike ||
       attacker.handToHand?.strikeBonus ||
       0;
@@ -1530,11 +1530,13 @@ export async function combatRound(combatants, bestiaryData = null) {
 function resolveAttack(attacker, defender, useRandomHitLocations = true) {
   if (!attacker.alive || !defender.alive) return "";
 
-  const strikeBonus = attacker.bonuses?.strike || 0;
+  const strikeBonus = getCombatBonus(attacker, "strike", attacker.weapon || attacker.weaponSlots?.rightHand || attacker.weaponSlots?.twoHanded || null) || (attacker.bonuses?.strike || 0);
   const fatiguePenalty = attacker.fatigueState?.penalties?.strike || 0;
   const attackRoll = rollD20() + strikeBonus - fatiguePenalty;
 
-  const parryRoll = rollD20() + (defender.bonuses?.parry || 0);
+  const parryBonus = getCombatBonus(defender, "parry", defender.weaponSlots?.leftHand || defender.weaponSlots?.rightHand || defender.weaponSlots?.twoHanded || null) || (defender.bonuses?.parry || 0);
+
+  const parryRoll = rollD20() + parryBonus;
 
   if (attackRoll >= defender.armorRating && attackRoll > parryRoll) {
     // Calculate base damage

@@ -34,6 +34,8 @@ export function calculateVisibleCells(
     isProwling = false,
     terrainObstacles = [],
     mapType = "hex",
+    observerAltitude = 0, // ✅ Observer's altitude in feet
+    fighterPositions = null, // ✅ Map of fighter positions with altitude {fighterId: {x, y, altitude}}
   } = options;
 
   if (!observerPos || !observerPos.x || !observerPos.y) {
@@ -83,8 +85,33 @@ export function calculateVisibleCells(
       const distanceInCells = calculateDistance(observerPos, cellPos);
       const distanceInFeet = distanceInCells * cellSize;
 
-      // Skip if beyond effective range
-      if (distanceInFeet > effectiveRange) {
+      // ✅ Check altitude difference if fog is enabled and fighter positions are provided
+      let altitudeBlocked = false;
+      if (fighterPositions && fighterPositions instanceof Map) {
+        // Check if there's a fighter at this cell position
+        for (const [fighterId, fighterPos] of fighterPositions.entries()) {
+          if (fighterPos.x === x && fighterPos.y === y) {
+            const fighterAltitude = fighterPos.altitude || 0;
+            const altitudeDiff = Math.abs(observerAltitude - fighterAltitude);
+            
+            // ✅ Fog obscures based on 3D distance (horizontal + vertical)
+            // If altitude difference is significant, it affects visibility range
+            const total3DDistance = Math.sqrt(
+              distanceInFeet * distanceInFeet + 
+              altitudeDiff * altitudeDiff
+            );
+            
+            // If 3D distance exceeds range, this fighter is obscured by fog
+            if (total3DDistance > effectiveRange) {
+              altitudeBlocked = true;
+              break;
+            }
+          }
+        }
+      }
+      
+      // Skip if beyond effective range (or 3D range for altitude)
+      if (distanceInFeet > effectiveRange || altitudeBlocked) {
         continue;
       }
 
@@ -98,10 +125,11 @@ export function calculateVisibleCells(
         continue; // Too dark or too far
       }
 
-      // Check line of sight (check for obstacles blocking path)
+      // ✅ Check line of sight (check for obstacles blocking path)
+      // Default to true for empty terrain (no obstructions)
       let hasLOS = true;
 
-      // Use terrain obstacles if available
+      // Use terrain obstacles if available (empty by default for open arena)
       if (terrainObstacles.length > 0) {
         const losResult = calculateLineOfSight(observerPos, cellPos, {
           obstacles: terrainObstacles,
@@ -116,6 +144,7 @@ export function calculateVisibleCells(
         );
         hasLOS = losResult.hasLineOfSight;
       }
+      // ✅ If no obstacles specified, LOS is always true (open arena)
 
       // If we have LOS and lighting allows, cell is visible
       if (hasLOS && lightingResult.canSee) {
@@ -198,10 +227,16 @@ export function calculateVisibleCellsMultiple(
   observers.forEach((observerPos) => {
     if (!observerPos || !observerPos.x || !observerPos.y) return;
 
+    // ✅ Pass observer altitude if available
+    const observerOptions = {
+      ...options,
+      observerAltitude: observerPos.altitude || options.observerAltitude || 0,
+    };
+
     const visibleCells = calculateVisibleCells(
       observerPos,
       visibilityRange,
-      options
+      observerOptions
     );
     visibleCells.forEach((cell) => {
       allVisibleCells.add(`${cell.x}-${cell.y}`);

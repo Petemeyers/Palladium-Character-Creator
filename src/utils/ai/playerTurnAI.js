@@ -17,6 +17,7 @@ import {
   hasAnyRangedOptionAgainstFlying,
 } from "./meleeReachabilityHelpers";
 import { findNearbyCorpse, scavengeCorpse } from "../scavengingSystem";
+import { findFoodItem, consumeItem } from "../consumptionSystem";
 import {
   chooseBestOffensivePsionic,
   chooseBestHealingPsionic,
@@ -73,13 +74,13 @@ function isUndeadCreature(fighter) {
 // --- Alignment / archetype helpers for healer AI ---
 
 function getAlignmentTextForAI(fighter = {}) {
-  return (
+  const alignment =
     fighter.alignmentName ||
     fighter.alignment ||
     fighter.alignmentText ||
     fighter.alignmentDescription ||
-    ""
-  ).toLowerCase();
+    "";
+  return String(alignment).toLowerCase();
 }
 
 function isGoodAlignedForAI(fighter = {}) {
@@ -530,7 +531,7 @@ export function runPlayerTurnAI(player, context) {
 
     player.moraleState = {
       ...(player.moraleState || {}),
-      status: "STEADFAST",
+      status: "UNSHAKEN",
     };
 
     if (Array.isArray(player.statusEffects)) {
@@ -1136,7 +1137,7 @@ export function runPlayerTurnAI(player, context) {
       if (distSq <= FEAR_RADIUS_HEXES * FEAR_RADIUS_HEXES) {
         if (distSq < nearestThreatDistSq) {
           nearestThreatDistSq = distSq;
-          nearestThreat = enemy;
+        nearestThreat = enemy;
         }
       }
     }
@@ -1358,6 +1359,64 @@ export function runPlayerTurnAI(player, context) {
       scheduleEndTurn();
       if (processingPlayerAIRef) processingPlayerAIRef.current = false;
       return;
+    }
+
+    // Small idle wander: spend one action making a tiny reposition (prey shouldn't look frozen).
+    // This keeps them visually alive even when there are no enemies visible.
+    if (positions && positions[fighter.id] && Math.random() < 0.55) {
+      const p = positions[fighter.id];
+      const isHex = terrain?.mapType === "hex";
+      const dirs = isHex
+        ? [
+            { dx: 1, dy: 0 },
+            { dx: -1, dy: 0 },
+            { dx: 0, dy: 1 },
+            { dx: 0, dy: -1 },
+            { dx: 1, dy: -1 },
+            { dx: -1, dy: 1 },
+          ]
+        : [
+            { dx: 1, dy: 0 },
+            { dx: -1, dy: 0 },
+            { dx: 0, dy: 1 },
+            { dx: 0, dy: -1 },
+          ];
+
+      // shuffle directions
+      for (let i = dirs.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [dirs[i], dirs[j]] = [dirs[j], dirs[i]];
+      }
+
+      for (const d of dirs) {
+        const nx = p.x + d.dx;
+        const ny = p.y + d.dy;
+        if (typeof isHexOccupied === "function" && isHexOccupied(nx, ny))
+          continue;
+
+        setPositions((prev) => ({
+          ...prev,
+          [fighter.id]: { ...prev[fighter.id], x: nx, y: ny },
+        }));
+
+        log(`🐾 ${fighter.name} wanders cautiously, sniffing the ground.`);
+
+        setFighters((prev) =>
+          prev.map((f) =>
+            f.id === fighter.id
+              ? {
+                  ...f,
+                  remainingAttacks: Math.max(0, (f.remainingAttacks || 0) - 1),
+                  defensiveStance: "Idle/Alert",
+                }
+              : f
+          )
+        );
+
+        scheduleEndTurn();
+        if (processingPlayerAIRef) processingPlayerAIRef.current = false;
+        return;
+      }
     }
 
     // No threats, no food, no clear hiding spot: pure idle flavor
@@ -2524,7 +2583,7 @@ export function runPlayerTurnAI(player, context) {
             );
 
             addLog(
-              `🎯 ${player.name} moves to flanking position (${bestFlankPos.x}, ${bestFlankPos.y})`,
+              `🎯 ${player.name} targets flanking position (${bestFlankPos.x}, ${bestFlankPos.y})`,
               "info"
             );
 

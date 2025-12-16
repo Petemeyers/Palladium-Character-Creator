@@ -16,6 +16,18 @@ const UNDEAD_KEYWORDS = [
   "ghost",
 ];
 
+// 🔹 Simple demon detector by name/species
+const DEMON_KEYWORDS = [
+  "demon",
+  "devil",
+  "fiend",
+  "baal-rog",
+  "baal_rog",
+  "baalrog",
+  "infernal",
+  "hellspawn",
+];
+
 export function isUndeadFighter(fighter) {
   const label = (
     fighter?.species ||
@@ -27,6 +39,45 @@ export function isUndeadFighter(fighter) {
 
   if (!label) return false;
   return UNDEAD_KEYWORDS.some((word) => label.includes(word));
+}
+
+export function isDemonFighter(fighter) {
+  if (fighter?.isDemon === true) return true;
+  
+  const label = (
+    fighter?.species ||
+    fighter?.race ||
+    fighter?.type ||
+    fighter?.name ||
+    fighter?.category ||
+    ""
+  ).toLowerCase();
+
+  if (!label) return false;
+  return DEMON_KEYWORDS.some((word) => label.includes(word));
+}
+
+/**
+ * Centralized fear immunity check used by Horror System, Morale System, and Routing logic.
+ * Returns true if the fighter is immune to fear effects (Horror Factor, morale routing, etc.)
+ * 
+ * @param {Object} fighter - Fighter object to check
+ * @returns {boolean} True if fighter is immune to fear
+ */
+export function isFearImmune(fighter) {
+  if (!fighter) return false;
+  
+  return (
+    fighter.isFearless ||
+    fighter.fearless ||
+    fighter.immuneToHorror ||
+    fighter.neverFlee ||
+    fighter.type === "demon" ||
+    fighter.type === "devil" ||
+    fighter.type === "undead" ||
+    isUndeadFighter(fighter) ||
+    isDemonFighter(fighter)
+  );
 }
 
 /**
@@ -209,34 +260,30 @@ export function resolveMoraleCheck(fighter, context = {}) {
     };
   }
 
-  // 🧟 Undead never fail morale checks (no ROUTED/SURRENDER)
-  if (isUndeadFighter(fighter)) {
+  // 🛡️ Fear-immune creatures never fail morale checks (no ROUTED/SURRENDER)
+  if (isFearImmune(fighter)) {
     const previous = fighter.moraleState || {};
     const logger = context.logger || context.log || (() => {});
 
     const moraleState = {
       ...previous,
-      status:
-        previous.status &&
-        previous.status !== "ROUTED" &&
-        previous.status !== "SURRENDERED"
-          ? previous.status
-          : "UNSHAKEN",
+      status: "STEADY", // Force to STEADY (rule-accurate)
+      failedChecks: 0, // Reset failed checks
       lastCheckRound:
         context.roundNumber ?? previous.lastCheckRound ?? null,
-      notes: "Undead: immune to morale, never rout or surrender.",
+      notes: "Fear-immune: immune to morale, never rout or surrender.",
     };
 
     if (logger) {
       logger(
-        `💀 ${fighter.name} is undead and ignores morale checks (never flees).`
+        `🛡️ ${fighter.name} is immune to fear and ignores morale checks (never flees).`
       );
     }
 
     return {
       success: true,
       moraleState,
-      result: "AUTO_PASS_UNDEAD",
+      result: "AUTO_PASS_FEAR_IMMUNE",
     };
   }
 

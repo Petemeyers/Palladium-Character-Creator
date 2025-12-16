@@ -14,6 +14,7 @@
 
 import { OCCS } from "../data/occData.js";
 import { occSkillTables } from "./occSkills.js";
+import { getSkillBonusesAtLevel } from "../data/skillProgression.js";
 
 /**
  * Extract Hand to Hand type from OCC skills
@@ -40,22 +41,30 @@ function extractHandToHandType(occData) {
  * @param {string} handToHandType - Hand to Hand type
  * @returns {number} Attacks per melee
  */
-function getAttacksPerMeleeFromHandToHand(handToHandType) {
-  if (!handToHandType) return 2; // Default
+function getAttacksPerMeleeFromHandToHand(handToHandType, level = 1) {
+  if (!handToHandType) return 1; // Rulebook default if no H2H selected (esp. Non-Men of Arms)
 
-  const type = handToHandType.toLowerCase();
+  // Normalize to our skillProgression keys
+  const type = String(handToHandType).toLowerCase();
 
-  // Palladium 1994 Hand to Hand attacks per melee
-  if (type.includes("basic")) return 2;
-  if (type.includes("expert")) return 3;
-  if (type.includes("martial arts")) return 4;
-  if (type.includes("assassin")) return 4;
-  if (type.includes("mercenary")) return 3;
-  if (type.includes("knight")) return 3;
-  if (type.includes("rogue")) return 3;
-  if (type.includes("paladin")) return 3;
+  let skillName = null;
+  if (type.includes("soldier")) skillName = "Hand to Hand (Soldier)";
+  else if (type.includes("mercenary")) skillName = "Hand to Hand (Mercenary)";
+  else if (
+    type.includes("non-men") ||
+    type.includes("non men") ||
+    type.includes("non-men of arms")
+  ) {
+    skillName = "Hand to Hand (Non-Men of Arms)";
+  } else if (type.includes("basic")) skillName = "Hand to Hand (Basic)";
+  else if (type.includes("expert")) skillName = "Hand to Hand (Expert)";
+  else if (type.includes("martial")) skillName = "Hand to Hand (Martial Arts)";
 
-  return 2; // Default fallback
+  if (!skillName) return 1;
+
+  const prog = getSkillBonusesAtLevel(skillName, level);
+  // getSkillBonusesAtLevel returns the total attacks-per-melee at that level (state table)
+  return prog.attacks || 1;
 }
 
 /**
@@ -115,7 +124,7 @@ export function mapOCCSkillsToCombat(character) {
     prowl: 0,
     track: 0,
     handToHand: null,
-    attacksPerMelee: 2, // Default
+    attacksPerMelee: 1, // Default
     horsemanship: 0,
     psionics: false,
     magicUser: false,

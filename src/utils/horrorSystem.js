@@ -7,7 +7,141 @@
  */
 
 import CryptoSecureDice from "./cryptoDice.js";
-import { resolveMoraleCheck } from "./moraleSystem.js";
+import { resolveMoraleCheck, isFearImmune } from "./moraleSystem.js";
+
+/**
+ * Robust fear immunity check based on category/creatureType/species/race/name.
+ * This makes demons like Baal-Rog immune even if isDemonFighter() is imperfect,
+ * because bestiary reliably includes "category": "demon"
+ *
+ * @param {Object} f - Fighter object to check
+ * @returns {boolean} True if fighter is immune to fear
+ */
+function isFearImmuneFighter(f) {
+  if (!f) return false;
+
+  // Explicit flags always win
+  if (f.isFearless || f.immuneToFear || f.neverFlee) return true;
+
+  const blob = `${f.category || ""} ${f.creatureType || ""} ${
+    f.species || ""
+  } ${f.race || ""} ${f.name || ""}`.toLowerCase();
+
+  // Core fearless buckets (tweak list if you want demons to sometimes flee)
+  return (
+    blob.includes("undead") ||
+    blob.includes("demon") ||
+    blob.includes("devil") ||
+    blob.includes("construct") ||
+    blob.includes("golem") ||
+    blob.includes("elemental")
+  );
+}
+
+// --- Shared humanoid/scary source classification ---
+// Centralized here so CombatPage only calls hasHorrorFactor/resolveHorrorCheck,
+// and never re-implements humanoid logic (no drift).
+const HUMANOID_TAGS = [
+  "human",
+  "elf",
+  "dwarf",
+  "gnome",
+  "halfling",
+  "kobold",
+  "goblin",
+  "orc",
+  "hobgoblin",
+  "bugbear",
+  "ogre",
+  "troll",
+  "troglodyte",
+];
+
+const SCARY_CATEGORY_HINTS = [
+  "monster",
+  "undead",
+  "demon",
+  "devil",
+  "dragon",
+  "beast",
+  "creature",
+  "aberration",
+  "elemental",
+  "construct",
+  "fiend",
+  "horror",
+  "alien",
+];
+
+function normStr(v) {
+  return String(v ?? "")
+    .trim()
+    .toLowerCase();
+}
+
+function containsWord(haystack, needle) {
+  if (!haystack || !needle) return false;
+  const re = new RegExp(
+    `\\b${needle.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\\\$&")}\\b`,
+    "i"
+  );
+  return re.test(String(haystack));
+}
+
+/**
+ * Centralized "normal humanoid" classifier.
+ * Handles variants like "Elf Longbowman", "Human Bandit", etc.
+ * Explicit monster-ish categories override name/species matches.
+ */
+export function isNormalHumanoid(source) {
+  if (!source) return false;
+
+  // If the source is explicitly monster-ish, it is NOT a normal humanoid.
+  const category = normStr(source.category);
+  const creatureType = normStr(source.creatureType);
+  const typeBlob = `${category} ${creatureType}`;
+  if (SCARY_CATEGORY_HINTS.some((h) => typeBlob.includes(h))) {
+    return false;
+  }
+
+  // Category-level humanoid buckets
+  if (
+    category === "humanoid" ||
+    category.includes("humanoid") ||
+    category.includes("pc_playable") ||
+    category.includes("pc playable") ||
+    category.includes("npc")
+  ) {
+    return true;
+  }
+
+  // Direct species/race labels
+  const species = normStr(source.species);
+  const race = normStr(source.race);
+  if (HUMANOID_TAGS.includes(species) || HUMANOID_TAGS.includes(race)) {
+    return true;
+  }
+
+  // Name/id/type fallbacks (handles "Elf Longbowman", "Human Bandit", etc.)
+  const name = normStr(source.name);
+  const id = normStr(source.id);
+  const blob = `${name} ${id} ${species} ${race} ${creatureType}`;
+  return HUMANOID_TAGS.some((tag) => containsWord(blob, tag));
+}
+
+/**
+ * Centralized HF gating:
+ * - Normal humanoids NEVER trigger HF unless `forceHorrorFactor: true`.
+ * - Everything else triggers HF when HF > 0.
+ */
+export function canTriggerHorrorFactor(source) {
+  if (!source) return false;
+  const hf = getHorrorFactor(source);
+  if (!hf || hf <= 0) return false;
+  if (source.forceHorrorFactor === true) return true;
+  if (isNormalHumanoid(source)) return false;
+  return true;
+}
 
 /**
  * Get Horror Factor from a creature
@@ -31,7 +165,7 @@ export function getHorrorFactor(creature) {
  * @returns {boolean} True if creature has HF > 0
  */
 export function hasHorrorFactor(creature) {
-  return getHorrorFactor(creature) > 0;
+  return canTriggerHorrorFactor(creature);
 }
 
 /**
@@ -188,22 +322,48 @@ export function resolveHorrorCheck({
     return target;
   }
 
-  const horrorFactor = source.horrorFactor ?? source.hf ?? source.HF ?? 0;
-  if (!horrorFactor) {
-    return target; // no Horror Factor on this creature
-  }
+  // Extract sourceId early for "already checked" guard
+  const sourceId = source?.id || source?.name || "UNKNOWN_SOURCE";
+  const round = combatState?.currentRound ?? combatState?.meleeRound ?? 1;
 
-  const sourceId = source.id || source.name || "UNKNOWN_SOURCE";
-  const round = combatState.currentRound ?? combatState.meleeRound ?? 1;
-
+  // 🔒 Already processed for this source -> do nothing (prevents spam)
   let updatedTarget = ensureMeta(target);
   const prevChecks = updatedTarget.meta.horrorChecks;
   const prev = prevChecks[sourceId];
-
-  // 🔒 Already rolled vs this creature in this ENCOUNTER -> do nothing
   if (prev) {
-    return updatedTarget;
+    return updatedTarget; // Already checked (success, fail, or immune)
   }
+
+  // 🛠️ Fix #1: Horror Factor must respect fear immunity
+  // Check immunity BEFORE rolling dice or applying any effects
+  // Use both category-based check (robust) and function-based check (comprehensive)
+  if (isFearImmuneFighter(target) || isFearImmune(target)) {
+    log?.(
+      `🛡️ ${target.name} is immune to fear and ignores Horror Factor routing.`,
+      "info"
+    );
+
+    // Record immunity check so we don't spam the log on subsequent calls
+    return {
+      ...target,
+      meta: {
+        ...(target.meta || {}),
+        horrorChecks: {
+          ...(target.meta?.horrorChecks || {}),
+          [sourceId]: {
+            round: round,
+            result: "immune",
+          },
+        },
+      },
+    };
+  }
+
+  const horrorFactor = getHorrorFactor(source);
+  if (!horrorFactor) return target;
+
+  // ✅ Normal humanoids never trigger HF unless forceHorrorFactor: true
+  if (!canTriggerHorrorFactor(source)) return target;
 
   // --- First time this target faces this Horror Factor creature ---
   const baseRoll = CryptoSecureDice.rollD20();
@@ -277,6 +437,17 @@ export function applyHorrorFailureEffects({
   // Prevent double-applying in same round even if someone calls us twice
   if (target.meta?.horrorFailedRound === round) {
     return target;
+  }
+
+  // 🛠️ Fix #1: Horror Factor must respect fear immunity
+  // Fear-immune creatures never route from Horror Factor
+  // Use both category-based check (robust) and function-based check (comprehensive)
+  if (isFearImmuneFighter(target) || isFearImmune(target)) {
+    log(
+      `🛡️ ${target.name} is immune to fear and ignores Horror Factor routing.`,
+      "info"
+    );
+    return target; // DO NOT apply ROUTED or any horror effects
   }
 
   const horrorFactor = getHorrorFactor(source);

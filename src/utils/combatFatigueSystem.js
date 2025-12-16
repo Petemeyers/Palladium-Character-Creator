@@ -148,15 +148,46 @@ export function initializeCombatFatigue(character) {
 }
 
 /**
+ * Check if a fighter can fatigue (stamina drain applies)
+ * @param {Object} fighter - Fighter/character object
+ * @returns {boolean} True if fighter can fatigue, false if immune
+ */
+export function canFatigue(fighter) {
+  if (!fighter) return true; // Default to can fatigue if fighter is null/undefined
+
+  // Hard immunities (explicit flags)
+  if (fighter.isUndead === true) return false;
+  if (fighter.neverTire === true) return false;
+
+  const type = (fighter.category || fighter.type || "").toLowerCase();
+  const race = (fighter.race || fighter.species || "").toLowerCase();
+  const name = (fighter.name || "").toLowerCase();
+
+  // Demons / deevils / devils / elementals / constructs / golems / undead
+  const immuneTypes = ["demon", "devil", "deevil", "elemental", "construct", "golem", "undead"];
+  if (immuneTypes.some(t => type.includes(t) || race.includes(t) || name.includes(t))) {
+    return false;
+  }
+
+  // Creature-of-magic: default immune unless explicitly allowed to fatigue
+  if (type.includes("creature_of_magic") || type.includes("creature of magic") || type.includes("creatureofmagic")) {
+    return fighter.canFatigue === true; // explicit override to enable fatigue
+  }
+
+  // Default: can fatigue
+  return true;
+}
+
+/**
  * Get stamina cost for an action type
  * @param {string} actionType - Type of action (from STAMINA_COSTS)
  * @param {Object} character - Character object (for encumbrance check)
  * @returns {number} Stamina cost per melee round
  */
 export function getStaminaCost(actionType, character = {}) {
-  // 🧟 Undead do not lose stamina
-  if (character?.isUndead) {
-    return 0; // Undead never lose stamina
+  // Check if character can fatigue
+  if (!canFatigue(character)) {
+    return 0; // Immune creatures never lose stamina
   }
   let cost;
 
@@ -217,8 +248,8 @@ export function getStaminaCost(actionType, character = {}) {
  * @returns {Object} Updated fatigue state
  */
 export function drainStamina(character, actionType, rounds = 1) {
-  // 🧟 Undead do not lose stamina
-  if (character?.isUndead) {
+  // Check if character can fatigue - if not, no stamina drain
+  if (!canFatigue(character)) {
     // Make sure fatigueState exists for UI, but don't change stamina
     if (!character.fatigueState) {
       character.fatigueState = initializeCombatFatigue(character);
@@ -290,6 +321,17 @@ export function resolveCollapseFromExhaustion(fighter, staminaOverride) {
       target: 0,
       durationMelees: 0,
       newStamina: 0,
+    };
+  }
+
+  // Immune creatures never collapse from exhaustion
+  if (!canFatigue(fighter)) {
+    return {
+      collapsed: false,
+      roll: 0,
+      target: 0,
+      durationMelees: 0,
+      newStamina: fighter.fatigueState?.currentStamina || fighter.fatigueState?.maxStamina || 0,
     };
   }
 
@@ -372,6 +414,21 @@ export function resolveCollapseFromExhaustion(fighter, staminaOverride) {
  */
 export function updateFatiguePenalties(character) {
   if (!character.fatigueState) {
+    return;
+  }
+
+  // Immune creatures never get fatigue penalties
+  if (!canFatigue(character)) {
+    // Set status to "tireless" and clear all penalties
+    character.fatigueState.status = "tireless";
+    character.fatigueState.fatigueLevel = 0;
+    character.fatigueState.penalties = {
+      strike: 0,
+      parry: 0,
+      dodge: 0,
+      ps: 0,
+      speed: 1.0,
+    };
     return;
   }
 

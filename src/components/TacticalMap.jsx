@@ -62,15 +62,6 @@ const TacticalMap = ({
   // ✅ Use mapType from prop, fallback to terrain.mapType, then default to hex
   const effectiveMapType = mapType ?? terrain?.mapType ?? "hex";
 
-  // ✅ Debug: Log mapType on mount/update to verify prop flow
-  useEffect(() => {
-    if (import.meta.env.DEV) {
-      console.log('[TacticalMap] mapType prop:', mapType, '| terrain?.mapType:', terrain?.mapType, '| effectiveMapType:', effectiveMapType);
-      if (terrain) {
-      console.log('[TacticalMap] Full terrain object:', terrain);
-    }
-    }
-  }, [mapType, terrain?.mapType, effectiveMapType, terrain]);
   
   const [selectedCombatant, setSelectedCombatant] = useState(null);
   const [hoveredCell, setHoveredCell] = useState(null);
@@ -230,23 +221,6 @@ const TacticalMap = ({
       map.get(key).push(c);
     }
 
-    // Log only when data actually changes (inside useMemo)
-    if (mode === "COMBAT" && import.meta.env.DEV) {
-      console.log('[TacticalMap] Building combatantsAtPosition map. ' +
-                  `Positions: ${map.size} Combatants: ${combatants.length}`);
-      console.log('[TacticalMap] Position keys:', [...map.keys()]);
-      console.log('[TacticalMap] Combatant IDs:', combatants.map(c => c?.id || c?._id || 'unknown'));
-      
-      // Check for combatants without positions
-      const combatantsWithoutPositions = combatants.filter(c => {
-        const combatantId = getCombatantId(c);
-        return !positions[combatantId] && !c.position;
-      });
-      if (combatantsWithoutPositions.length > 0) {
-        console.warn(`[TacticalMap] ⚠️ ${combatantsWithoutPositions.length} combatant(s) have no positions:`, 
-          combatantsWithoutPositions.map(c => ({ name: c.name, id: getCombatantId(c), type: c.type || 'unknown' })));
-      }
-    }
     
     return map;
   }, [combatants, positions, mode]);
@@ -255,10 +229,6 @@ const TacticalMap = ({
   const getCombatantsAtPosition = useCallback((x, y) => {
     const key = `${x},${y}`;
     const result = combatantsAtPosition.get(key) || [];
-    // Debug: log only for specific cells in development (to avoid spam)
-    if (import.meta.env.DEV && mode === "COMBAT" && result.length > 0 && x === 15 && y === 14) {
-      console.log(`[TacticalMap] Found ${result.length} combatant(s) at (${x}, ${y}):`, result.map(c => ({ name: c.name, id: c.id || c._id, isEnemy: c.isEnemy })));
-    }
     return result;
   }, [combatantsAtPosition, mode]);
 
@@ -1670,10 +1640,6 @@ const TacticalMap = ({
             {/* Combatant icons - show all combatants at this position (COMBAT mode only) */}
             {mode === "COMBAT" && combatantsAtPos && combatantsAtPos.length > 0 && (
               (() => {
-                // Debug: log only for specific cells in development (to avoid spam)
-                if (import.meta.env.DEV && col === 15 && row === 14) {
-                console.log(`[TacticalMap] Rendering ${combatantsAtPos.length} combatant(s) at cell (${col}, ${row})`);
-                }
                 return combatantsAtPos
                   .sort((a, b) => {
                     // Sort so enemies appear on top of players
@@ -1685,8 +1651,6 @@ const TacticalMap = ({
                   // Get the combatant's primary position
                   const primaryPos = getCreaturePrimaryPosition(combatant);
                   if (!primaryPos) {
-                    // Debug: log missing positions (always log)
-                    console.warn(`[TacticalMap] Combatant ${getCombatantId(combatant)} (${combatant.name}) has no position`);
                     return null;
                   }
                   
@@ -1720,8 +1684,17 @@ const TacticalMap = ({
               // Calculate offset for multiple combatants
               const offsetX = combatantsAtPos.length > 1 ? (index - (combatantsAtPos.length - 1) / 2) * 8 : 0;
               const offsetY = combatantsAtPos.length > 1 ? (index - (combatantsAtPos.length - 1) / 2) * 6 : 0;
+              
+              // Calculate altitude offset for flying creatures (0.4 pixels per foot for visual scale)
+              // This makes altitude visible: 5ft = 2px up, 20ft = 8px up, 80ft = 32px up, 120ft = 48px up
+              const altitude = combatant.altitudeFeet ?? combatant.altitude ?? 0;
+              const altitudeOffsetY = altitude > 0 ? -(altitude * 0.4) : 0;
+              
+              // Base icon position (ground level)
+              const baseIconY = centerY + 6 + offsetY;
+              // Icon position with altitude offset (moves up for flying creatures)
               const iconX = centerX + offsetX;
-              const iconY = centerY + 6 + offsetY;
+              const iconY = baseIconY + altitudeOffsetY;
 
               return (
                 <g key={getCombatantId(combatant)} opacity={1} style={{ pointerEvents: 'none' }}>
@@ -1789,20 +1762,20 @@ const TacticalMap = ({
                     
                     return (
                       <g>
-                        {/* Background circle for better visibility */}
+                        {/* Background circle for better visibility - stays at ground level */}
                         <circle
                           cx={iconX}
-                          cy={iconY + 18}
+                          cy={baseIconY + 18}
                           r="12"
                           fill="rgba(0, 0, 0, 0.6)"
                           stroke="rgba(255, 255, 255, 0.3)"
                           strokeWidth="1"
                           style={{ pointerEvents: 'none' }}
                         />
-                        {/* Altitude text */}
+                        {/* Altitude text - stays at ground level to show how high the icon is */}
                         <text
                           x={iconX}
-                          y={iconY + 18}
+                          y={baseIconY + 18}
                           textAnchor="middle"
                           fontSize="9"
                           fill={fillColor}

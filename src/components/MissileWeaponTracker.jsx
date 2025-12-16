@@ -10,12 +10,13 @@ import {
   Tooltip,
   Alert,
   AlertIcon,
-  Button,
   Grid,
   GridItem,
   Divider
 } from "@chakra-ui/react";
-import { getMissileWeapon, getRangeInfo, isMissileWeapon } from "../data/missileWeapons";
+import { getMissileWeapon, getRangeInfo } from "../data/missileWeapons";
+import { getWeaponByName } from "../data/weapons.js";
+import { getInventoryAmmoCount } from "../utils/combatAmmoManager.js";
 
 /**
  * MissileWeaponTracker Component
@@ -23,31 +24,44 @@ import { getMissileWeapon, getRangeInfo, isMissileWeapon } from "../data/missile
  */
 const MissileWeaponTracker = ({ 
   character, 
-  ammoCount = {},
-  onAmmoChange,
   targetDistance = null,
   isCompact = false
 }) => {
-  // Find missile weapons in character's inventory
-  const missileWeapons = character.inventory?.filter(item => 
-    isMissileWeapon(item) || getMissileWeapon(item.name)
-  ) || [];
+  // Helper to get weapon data from either missileWeapons.js or weapons.js
+  const getWeaponData = (item) => {
+    return getMissileWeapon(item?.name) || getWeaponByName(item?.name) || null;
+  };
+
+  // Find missile weapons in character's inventory (from either source)
+  const missileWeapons = character.inventory?.filter(item => {
+    const w = getWeaponData(item);
+    const ammoType = w?.ammunition;
+    const hasRange = Number.isFinite(w?.maxRange) || Number.isFinite(w?.range);
+    return ammoType && ammoType !== "self" && hasRange;
+  }) || [];
 
   // Get equipped missile weapon
-  const equippedMissile = missileWeapons.find(w => w.name === character.equippedWeapon);
-  const weaponData = equippedMissile ? getMissileWeapon(equippedMissile.name) : null;
+  const equippedItem = character.inventory?.find(w => w.name === character.equippedWeapon);
+  const weaponData = equippedItem ? getWeaponData(equippedItem) : null;
 
   if (missileWeapons.length === 0 && !weaponData) {
     return null; // No missile weapons
   }
 
-  // Get current ammo count for equipped weapon
-  const currentAmmo = weaponData ? (ammoCount[character._id]?.[weaponData.ammunition] || 0) : 0;
+  // Normalize range -> maxRange for getRangeInfo()
+  const normalizedWeaponData = weaponData ? {
+    ...weaponData,
+    maxRange: weaponData.maxRange || weaponData.range
+  } : null;
+
+  // Get current ammo count from inventory (not separate state)
+  const ammoType = weaponData?.ammunition;
+  const currentAmmo = ammoType ? getInventoryAmmoCount(character, ammoType) : 0;
   const maxAmmo = weaponData?.startingAmmo || 20;
-  const ammoPercentage = (currentAmmo / maxAmmo) * 100;
+  const ammoPercentage = maxAmmo > 0 ? (currentAmmo / maxAmmo) * 100 : 0;
 
   // Calculate range info if target distance provided
-  const rangeInfo = targetDistance && weaponData ? getRangeInfo(targetDistance, weaponData) : null;
+  const rangeInfo = targetDistance && normalizedWeaponData ? getRangeInfo(targetDistance, normalizedWeaponData) : null;
 
   // Get ammo color based on remaining
   const getAmmoColor = (percentage) => {
@@ -59,7 +73,7 @@ const MissileWeaponTracker = ({
 
   // Compact view for initiative tracker
   if (isCompact) {
-    if (!equippedMissile || !weaponData) return null;
+    if (!equippedItem || !weaponData) return null;
 
     return (
       <Tooltip label={`${currentAmmo}/${maxAmmo} ${weaponData.ammunition}`} placement="top">
@@ -93,9 +107,9 @@ const MissileWeaponTracker = ({
           <Text fontWeight="bold" fontSize="sm">
             🏹 Missile Weapon Tracker
           </Text>
-          {equippedMissile && (
+          {equippedItem && (
             <Badge colorScheme="blue" fontSize="xs">
-              {equippedMissile.name}
+              {equippedItem.name}
             </Badge>
           )}
         </HStack>
@@ -212,37 +226,13 @@ const MissileWeaponTracker = ({
               </>
             )}
 
-            {/* Reload/Replenish Buttons */}
-            {onAmmoChange && (
-              <HStack spacing={2} mt={2}>
-                {currentAmmo > 0 && (
-                  <Button 
-                    size="xs" 
-                    colorScheme="red" 
-                    onClick={() => onAmmoChange(character._id, weaponData.ammunition, currentAmmo - 1)}
-                    isDisabled={currentAmmo === 0}
-                  >
-                    Fire (-1)
-                  </Button>
-                )}
-                <Button 
-                  size="xs" 
-                  colorScheme="blue" 
-                  onClick={() => onAmmoChange(character._id, weaponData.ammunition, Math.min(currentAmmo + 10, maxAmmo))}
-                  isDisabled={currentAmmo === maxAmmo}
-                >
-                  Reload (+10)
-                </Button>
-                <Button 
-                  size="xs" 
-                  colorScheme="green" 
-                  onClick={() => onAmmoChange(character._id, weaponData.ammunition, maxAmmo)}
-                  variant="outline"
-                >
-                  Replenish
-                </Button>
-              </HStack>
-            )}
+            {/* Ammo Info Alert (inventory-based, no free reload) */}
+            <Alert status="info" mt={2} size="sm">
+              <AlertIcon />
+              <Text fontSize="xs">
+                Ammunition is managed through inventory. Add arrows/bolts/stones to inventory to replenish.
+              </Text>
+            </Alert>
 
             {/* Special Notes */}
             {weaponData.special && (
@@ -265,8 +255,9 @@ const MissileWeaponTracker = ({
                 {missileWeapons
                   .filter(w => w.name !== character.equippedWeapon)
                   .map((weapon, idx) => {
-                    const wData = getMissileWeapon(weapon.name);
-                    const wAmmo = wData ? (ammoCount[character._id]?.[wData.ammunition] || 0) : 0;
+                    const wData = getWeaponData(weapon);
+                    const wAmmoType = wData?.ammunition;
+                    const wAmmo = wAmmoType ? getInventoryAmmoCount(character, wAmmoType) : 0;
                     return (
                       <HStack key={idx} justify="space-between" fontSize="xs">
                         <Text>{weapon.name}</Text>

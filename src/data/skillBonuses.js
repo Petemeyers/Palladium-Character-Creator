@@ -234,6 +234,7 @@ export function calculateSkillBonuses(
       totals.weaponProficiencies.push({
         name: skill,
         bonuses: levelBasedBonuses.bonuses,
+        specials: levelBasedBonuses.specials || {},
         level: level,
       });
     } else if (
@@ -275,3 +276,160 @@ export default {
   skillBonuses,
   calculateSkillBonuses,
 };
+
+
+// Resolve which W.P. applies to a weapon object (best-effort inference from name/category).
+// NOTE: Prefer adding an explicit `wp` field to weapons in your weapons dataset for perfect accuracy.
+export function inferWeaponProficiencyName(weapon) {
+  if (!weapon) return null;
+
+  // If weapons have an explicit wp tag, use it (this is the most accurate)
+  if (weapon.wp && typeof weapon.wp === "string") return weapon.wp;
+
+  const name = String(weapon.name || "").toLowerCase();
+  const category = String(weapon.category || "").toLowerCase();
+
+  // Missile weapon categories
+  if (category === "bow") {
+    if (name.includes("long")) return "W.P. Long bow";
+    return "W.P. Short bow";
+  }
+  if (category === "crossbow") return "W.P. Cross bow";
+  if (name === "sling" || category === "sling") return "W.P. Sling";
+
+  // Melee categories by name
+  if (name.includes("shield")) {
+    return name.includes("large") ? "W.P. Large shield" : "W.P. Small shield";
+  }
+  if (name.includes("short sword") || name.includes("sabre") || name.includes("scimitar") || name.includes("cutlass"))
+    return "W.P. Short swords";
+  if (
+    name.includes("bastard") ||
+    name.includes("broadsword") ||
+    name.includes("long sword") ||
+    name.includes("claymore") ||
+    name.includes("flamberge") ||
+    name.includes("espandon")
+  ) {
+    return "W.P. Large sword";
+  }
+  if (name.includes("dagger") || name.includes("knife")) return "W.P. Knives";
+  if (name.includes("throwing axe")) return "W.P. Throwing axe";
+  if (name.includes("battle axe") || name.includes("axe") || name.includes("bipennis") || name.includes("pick"))
+    return "W.P. Battle Axe";
+  if (name.includes("lance")) return "W.P. Lance";
+  if (name.includes("spear") || name.includes("fork") || name.includes("trident") || name.includes("javelin"))
+    return "W.P. Spears/Forks";
+  if (name.includes("staff") || name.includes("stave")) return "W.P. Staves";
+  if (
+    name.includes("pole") ||
+    name.includes("halberd") ||
+    name.includes("pike") ||
+    name.includes("glaive") ||
+    name.includes("guisarme") ||
+    name.includes("voulge") ||
+    name.includes("berdiche")
+  )
+    return "W.P. Pole arms";
+  if (name.includes("ball") && name.includes("chain")) return "W.P. Ball and Chain";
+  if (
+    name.includes("mace") ||
+    name.includes("club") ||
+    name.includes("hammer") ||
+    name.includes("flail") ||
+    name.includes("morning star")
+  )
+    return "W.P. Blunt";
+
+  return null;
+}
+
+// Returns W.P. bonuses for the currently-used weapon.
+// If the character is untrained, bonuses are 0; for bows/crossbows/slings, rateOfFire falls back to 1.
+export function getWeaponProficiencyBonusesForWeapon(combatBonuses, weapon) {
+  const rawWpName = inferWeaponProficiencyName(weapon);
+  if (!rawWpName) {
+    const name = String(weapon?.name || "").toLowerCase();
+    const category = String(weapon?.category || "").toLowerCase();
+    const isMissile = category === "bow" || category === "crossbow" || name === "sling";
+    return { strike: 0, parry: 0, throwStrike: 0, rateOfFire: isMissile ? 1 : null, proficient: false };
+  }
+
+  const normalize = (s) =>
+    String(s || "")
+      .toLowerCase()
+      .replace(/\./g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+
+  const n = normalize(rawWpName);
+
+  // Expand a few common equivalents so "W.P. Cross bow" == "W.P. Crossbow", etc.
+  const candidates = new Set([n]);
+
+  if (n === "wp short sword" || n === "wp short swords") {
+    candidates.add("wp short sword");
+    candidates.add("wp short swords");
+  }
+  if (n === "wp large sword" || n === "wp large swords") {
+    candidates.add("wp large sword");
+    candidates.add("wp large swords");
+    candidates.add("wp sword"); // some datasets use generic
+  }
+  if (n === "wp throwing axe") {
+    candidates.add("wp axe");
+  }
+  if (n === "wp battle axe") {
+    candidates.add("wp axe");
+  }
+  if (n === "wp long bow" || n === "wp short bow") {
+    candidates.add("wp bow");
+  }
+  if (n === "wp cross bow") {
+    candidates.add("wp crossbow");
+  }
+  if (n === "wp crossbow") {
+    candidates.add("wp cross bow");
+  }
+  if (n === "wp pole arms") {
+    candidates.add("wp polearms");
+  }
+  if (n === "wp polearms") {
+    candidates.add("wp pole arms");
+  }
+  if (n === "wp knives") {
+    candidates.add("wp knife");
+  }
+  if (n === "wp knife") {
+    candidates.add("wp knives");
+  }
+  if (n === "wp spears/forks") {
+    candidates.add("wp spear/forks");
+    candidates.add("wp spear forks");
+    candidates.add("wp spears forks");
+  }
+
+  const list = combatBonuses?.weaponProficiencies || [];
+
+  const wpEntry =
+    list.find((wp) => candidates.has(normalize(wp.name))) ||
+    null;
+
+  if (!wpEntry) {
+    const weaponName = String(weapon?.name || "").toLowerCase();
+    const category = String(weapon?.category || "").toLowerCase();
+    const isMissile = category === "bow" || category === "crossbow" || weaponName === "sling";
+    const rofFallback = isMissile ? 1 : null;
+    return { strike: 0, parry: 0, throwStrike: 0, rateOfFire: rofFallback, proficient: false };
+  }
+
+  const rof = wpEntry.specials?.rateOfFire ?? null;
+  return {
+    strike: wpEntry.bonuses?.strike || 0,
+    parry: wpEntry.bonuses?.parry || 0,
+    throwStrike: wpEntry.bonuses?.throwStrike || 0,
+    rateOfFire: rof,
+    proficient: true,
+  };
+}
+

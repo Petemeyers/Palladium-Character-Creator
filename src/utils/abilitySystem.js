@@ -78,11 +78,21 @@ function parseAbility(abilityStr) {
   }
 
   // === Resistance to Damage Types ===
-  const resistantMatch = str.match(/resistant\s+to\s+([^\(]+)/i);
+  // Match patterns like "Fire and cold resistant (half damage)" or "resistant to fire/cold"
+  const resistantMatch = str.match(/(?:fire\s+and\s+cold|fire\/cold|fire\s*,\s*cold)\s+resistant|resistant\s+to\s+([^\(]+)/i);
   if (resistantMatch) {
-    const damageTypes = resistantMatch[1]
-      .split(/[\/,]/)
-      .map((s) => s.trim().toLowerCase());
+    let damageTypes = [];
+    
+    // Handle "Fire and cold resistant" pattern
+    if (str.includes("fire") && str.includes("cold") && str.includes("resistant")) {
+      damageTypes = ["fire", "cold"];
+    } else if (resistantMatch[1]) {
+      // Handle "resistant to X/Y" pattern
+      damageTypes = resistantMatch[1]
+        .split(/[\/,]/)
+        .map((s) => s.trim().toLowerCase());
+    }
+    
     const multiplierMatch = str.match(/half\s+damage|\(0\.5\)|50%/i);
     const multiplier = multiplierMatch ? 0.5 : 0.75; // Default to 75% if not specified
 
@@ -238,6 +248,19 @@ function parseAbility(abilityStr) {
     };
   }
 
+  // === Dimensional Teleport ===
+  const teleportMatch = str.match(/dimensional\s+teleport\s+(\d+)%\s*(?:\(at\s+(\d+)\))?/i);
+  if (teleportMatch) {
+    const basePercent = parseInt(teleportMatch[1]);
+    const levelBonus = teleportMatch[2] ? parseInt(teleportMatch[2]) : null;
+    result.skills = result.skills || {};
+    result.skills.dimensionalTeleport = {
+      basePercent: basePercent,
+      levelBonus: levelBonus, // Level at which bonus applies (e.g., "at 70" means +13% at level 70)
+      active: true,
+    };
+  }
+
   // === Skills (Track, Prowl, Climb, Swim, Horsemanship, etc.) ===
   // Many monsters and OCCs list these explicitly (Track: 74%, Prowl: 66%, etc.)
   const skillMatches = [
@@ -373,14 +396,34 @@ export function parseAbilities(abilities = []) {
  * @param {Object} fighter - Fighter object with parsed abilities
  * @returns {Object} { healed: number, log: string } or null if no regeneration
  */
-export function applyBioRegeneration(fighter) {
+export function applyBioRegeneration(fighter, meleeRound = 1) {
   if (!fighter.abilities?.healing || fighter.abilities.healing.type !== "bio")
     return null;
 
   const regen = fighter.abilities.healing;
   if (!regen.active) return null;
 
-  // Check if it's time to regenerate (simplified - assumes called each melee)
+  // Check interval: if intervalCount > 1, only regenerate every N melees
+  const intervalCount = regen.intervalCount || 1;
+  if (intervalCount > 1) {
+    // Track which melee rounds regeneration occurs on
+    // Initialize tracking if needed
+    if (!fighter.meta) fighter.meta = {};
+    if (!fighter.meta.bioRegenLastMelee) {
+      fighter.meta.bioRegenLastMelee = 0;
+    }
+    
+    // Check if it's time to regenerate (every N melees)
+    const meleesSinceLastRegen = meleeRound - fighter.meta.bioRegenLastMelee;
+    if (meleesSinceLastRegen < intervalCount) {
+      return null; // Not time to regenerate yet
+    }
+    
+    // Update last regeneration melee
+    fighter.meta.bioRegenLastMelee = meleeRound;
+  }
+
+  // Roll healing
   const healed = rollDice(regen.rate);
   const maxHP = fighter.maxHP || fighter.HP || 100;
   const currentHP = fighter.currentHP || fighter.hp || fighter.currentHP || 0;
@@ -393,9 +436,10 @@ export function applyBioRegeneration(fighter) {
   if (fighter.currentHP !== undefined) fighter.currentHP = newHP;
   if (fighter.hp !== undefined) fighter.hp = newHP;
 
+  const intervalText = intervalCount > 1 ? ` (every ${intervalCount} melees)` : "";
   return {
     healed: actualHealed,
-    log: `${fighter.name} regenerates ${actualHealed} HP (${regen.rate})`,
+    log: `${fighter.name} regenerates ${actualHealed} HP (${regen.rate})${intervalText}`,
   };
 }
 

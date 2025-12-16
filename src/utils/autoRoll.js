@@ -26,11 +26,12 @@ export function rollCharacterAttributes(character) {
     if (character.attribute_dice[attr]) {
       const diceNotation = character.attribute_dice[attr];
       const rollResult = rollDiceDetailed(diceNotation);
-      attributes[attr] = rollResult.totalWithBonus;
+      attributes[attr] = rollResult.total; // rollDiceDetailed returns 'total', not 'totalWithBonus'
       attributeRolls[attr] = rollResult; // Store for later use
       
       // Debug logging for attribute rolls
-      const rollBreakdown = rollResult.diceRolls?.map(d => d.result).join(' + ') || rollResult.totalWithBonus;
+      // rollDiceDetailed returns { total, rolls: number[], notation }
+      const rollBreakdown = rollResult.rolls?.join(' + ') || rollResult.total;
       const bonus = rollResult.bonus ? ` + ${rollResult.bonus}` : '';
       console.log(`🎲 ${character.name || 'Character'} ${attr}: ${diceNotation} = [${rollBreakdown}]${bonus} = ${attributes[attr]}`);
     }

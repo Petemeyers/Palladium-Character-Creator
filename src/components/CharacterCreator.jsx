@@ -37,6 +37,7 @@ import { lookupSkill, getSkillPercentage } from '../utils/skillSystem';
 import { getSkillBonusesAtLevel } from '../data/skillProgression';
 import { skillBonuses as staticSkillBonuses, calculateSkillBonuses } from '../data/skillBonuses';
 import { BASE_SAVES, OCC_SAVE_MODIFIERS, getLevelSaveBonus } from '../utils/savingThrowsSystem';
+import { OCCS, ELECTIVE_SKILLS, SECONDARY_SKILLS } from '../data/occData';
 
 // Function to get Mind Mage psionics based on level and psionic type
 const getMindMagePsionics = async (psionicResult, level) => {
@@ -613,7 +614,8 @@ const CharacterCreator = ({ onCreateCharacter }) => {
       return;
     }
     
-    const occData = palladiumData.occs[selectedOcc];
+    // Try new OCCS first, fall back to old palladiumData for compatibility
+    const occData = OCCS[selectedOcc] || palladiumData.occs[selectedOcc];
     if (!occData) return;
     
     // Reset previous level when OCC changes
@@ -1038,7 +1040,7 @@ const CharacterCreator = ({ onCreateCharacter }) => {
         )}
 
         {/* O.C.C. Skills Selection */}
-        {characterClass && palladiumData.occs[characterClass] && (
+        {characterClass && (OCCS[characterClass] || palladiumData.occs[characterClass]) && (
           <div className="occ-skills-selection">
             <h4>O.C.C. Skills</h4>
             
@@ -1056,74 +1058,99 @@ const CharacterCreator = ({ onCreateCharacter }) => {
             </div>
 
             {/* Elective Skills */}
-            {palladiumData.occs[characterClass].electiveSkills?.level1 > 0 && (
-              <div className="elective-skills">
-                <h5>Elective Skills (Choose {palladiumData.occs[characterClass].electiveSkills.level1}):</h5>
-                <select
-                  multiple
-                  size="6"
-                  value={electiveSkills}
-                  onChange={(e) => {
-                    const selected = Array.from(e.target.selectedOptions, option => option.value);
-                    if (selected.length <= palladiumData.occs[characterClass].electiveSkills.level1) {
-                      setElectiveSkills(selected);
-                    }
-                  }}
-                >
-                  {palladiumData.occs[characterClass].electiveSkills?.list
-                    ?.filter(skill => !isSkillInOccSkills(skill, occSkills)) // Filter out skills already in OCC skills
-                    .map((skill, idx) => {
-                    const skillData = palladiumData.skills[skill];
-                      const formattedSkill = formatSkillWithPercent(skill, characterClass, parseInt(level) || 1);
-                    return (
-                      <option key={idx} value={skill} title={skillData?.description || skill}>
-                          {formattedSkill}
-                      </option>
-                    );
-                  })}
-                </select>
-                <p>Selected: {electiveSkills.length}/{palladiumData.occs[characterClass].electiveSkills.level1}</p>
-              </div>
-            )}
+            {(() => {
+              const occData = OCCS[characterClass] || palladiumData.occs[characterClass];
+              const electiveCount = occData?.electiveSkills?.level1 || 0;
+              
+              if (electiveCount > 0) {
+                // Use all ELECTIVE_SKILLS instead of just the OCC's specific list
+                const availableElectiveSkills = ELECTIVE_SKILLS.filter(skill => 
+                  !isSkillInOccSkills(skill, occSkills)
+                );
+                
+                return (
+                  <div className="elective-skills">
+                    <h5>Elective Skills (Choose {electiveCount}):</h5>
+                    <select
+                      multiple
+                      size="10"
+                      value={electiveSkills}
+                      onChange={(e) => {
+                        const selected = Array.from(e.target.selectedOptions, option => option.value);
+                        if (selected.length <= electiveCount) {
+                          setElectiveSkills(selected);
+                        }
+                      }}
+                    >
+                      {availableElectiveSkills.map((skill, idx) => {
+                        const skillData = palladiumData.skills?.[skill];
+                        const formattedSkill = formatSkillWithPercent(skill, characterClass, parseInt(level) || 1);
+                        return (
+                          <option key={idx} value={skill} title={skillData?.description || skill}>
+                            {formattedSkill}
+                          </option>
+                        );
+                      })}
+                    </select>
+                    <p>Selected: {electiveSkills.length}/{electiveCount}</p>
+                  </div>
+                );
+              }
+              return null;
+            })()}
 
             {/* Secondary Skills */}
-            {palladiumData.occs[characterClass].secondarySkills?.level1 > 0 && (
-              <div className="secondary-skills">
-                <h5>Secondary Skills (Choose {palladiumData.occs[characterClass].secondarySkills.level1}):</h5>
-                <p className="skill-hint">Basic/general skills only - no advanced or OCC-specific skills</p>
-                <select
-                  multiple
-                  size="8"
-                  value={secondarySkills}
-                  onChange={(e) => {
-                    const selected = Array.from(e.target.selectedOptions, option => option.value);
-                    if (selected.length <= palladiumData.occs[characterClass].secondarySkills.level1) {
-                      setSecondarySkills(selected);
-                    }
-                  }}
-                >
-                  {palladiumData.secondarySkills
-                    .filter(skill => !isSkillInOccSkills(skill, occSkills)) // Filter out skills already in OCC skills
-                    .map((skill, idx) => {
-                      const formattedSkill = formatSkillWithPercent(skill, characterClass, parseInt(level) || 1);
-                      return (
-                    <option key={idx} value={skill} title={`Basic skill: ${skill}`}>
-                          {formattedSkill}
-                    </option>
-                      );
-                    })}
+            {(() => {
+              const occData = OCCS[characterClass] || palladiumData.occs[characterClass];
+              const secondaryCount = occData?.secondarySkills?.level1 || 0;
+              
+              if (secondaryCount > 0) {
+                return (
+                  <div className="secondary-skills">
+                    <h5>Secondary Skills (Choose {secondaryCount}):</h5>
+                    <p className="skill-hint">Basic/general skills only - no advanced or OCC-specific skills</p>
+                    <select
+                      multiple
+                      size="8"
+                      value={secondarySkills}
+                      onChange={(e) => {
+                        const selected = Array.from(e.target.selectedOptions, option => option.value);
+                        if (selected.length <= secondaryCount) {
+                          setSecondarySkills(selected);
+                        }
+                      }}
+                    >
+                      {(SECONDARY_SKILLS || palladiumData.secondarySkills || [])
+                        .filter(skill => !isSkillInOccSkills(skill, occSkills)) // Filter out skills already in OCC skills
+                        .map((skill, idx) => {
+                          const formattedSkill = formatSkillWithPercent(skill, characterClass, parseInt(level) || 1);
+                          return (
+                            <option key={idx} value={skill} title={`Basic skill: ${skill}`}>
+                              {formattedSkill}
+                            </option>
+                          );
+                        })}
                 </select>
-                <p>Selected: {secondarySkills.length}/{palladiumData.occs[characterClass].secondarySkills.level1}</p>
-              </div>
-            )}
+                <p>Selected: {secondarySkills.length}/{secondaryCount}</p>
+                  </div>
+                );
+              }
+              return null;
+            })()}
 
             {/* O.C.C. Special Notes */}
-            {palladiumData.occs[characterClass].special && (
-              <div className="occ-special">
-                <h5>Special:</h5>
-                <p>{palladiumData.occs[characterClass].special}</p>
-              </div>
-            )}
+            {(() => {
+              const occData = OCCS[characterClass] || palladiumData.occs[characterClass];
+              if (occData?.special) {
+                return (
+                  <div className="occ-special">
+                    <h5>Special:</h5>
+                    <p>{occData.special}</p>
+                  </div>
+                );
+              }
+              return null;
+            })()}
           </div>
         )}
 
@@ -2536,9 +2563,14 @@ const CharacterCreator = ({ onCreateCharacter }) => {
                     fontSize: '14px'
                   }}
                 >
-                  {occData.electiveSkills?.list
-                    ?.filter(skill => !electiveSkills.includes(skill) && !isSkillInOccSkills(skill, occSkills))
-                    .map((skill, idx) => {
+                  {(() => {
+                    // Use all ELECTIVE_SKILLS instead of just the OCC's specific list
+                    const availableElectiveSkills = ELECTIVE_SKILLS.filter(skill => 
+                      !electiveSkills.includes(skill) && 
+                      !isSkillInOccSkills(skill, occSkills)
+                    );
+                    
+                    return availableElectiveSkills.map((skill, idx) => {
                       const skillData = palladiumData.skills?.[skill];
                       const formattedSkill = formatSkillWithPercent(skill, occData.name, parseInt(pendingLevelChange) || parseInt(level) || 1);
                       return (
@@ -2546,7 +2578,8 @@ const CharacterCreator = ({ onCreateCharacter }) => {
                           {formattedSkill}
                         </option>
                       );
-                    })}
+                    });
+                  })()}
                 </select>
                 <p style={{ marginTop: '8px', fontSize: '0.9em', color: '#666' }}>
                   Selected: {pendingSkillSelections.elective.selected.length}/{pendingSkillSelections.elective.count}
@@ -2589,7 +2622,7 @@ const CharacterCreator = ({ onCreateCharacter }) => {
                     fontSize: '14px'
                   }}
                 >
-                  {palladiumData.secondarySkills
+                  {(SECONDARY_SKILLS || palladiumData.secondarySkills || [])
                     ?.filter(skill => !secondarySkills.includes(skill) && !isSkillInOccSkills(skill, occSkills))
                     .map((skill, idx) => {
                       const formattedSkill = formatSkillWithPercent(skill, occData.name, parseInt(pendingLevelChange) || parseInt(level) || 1);

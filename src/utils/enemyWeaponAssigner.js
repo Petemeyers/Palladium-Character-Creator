@@ -162,35 +162,44 @@ function selectRandomWeapon(matchingWeapons, enemy = {}) {
  */
 function formatWeaponForEnemy(weapon) {
   const weaponName = (weapon.name || '').toLowerCase();
+  const weaponCategory = (weapon.category || '').toLowerCase();
+  const weaponType = (weapon.type || '').toLowerCase();
   
-  // Detect if weapon is ranged based on name, category, or range property
-  const isRanged = weapon.range > 0 || 
-                   weapon.category === 'bow' || 
-                   weapon.category === 'crossbow' ||
-                   weapon.category === 'ranged' ||
-                   weapon.type === 'ranged' ||
-                   weapon.type === 'missile' ||
+  // Detect if weapon is ranged based on name, category, or type
+  // Note: A weapon having a range property doesn't make it ranged if it's primarily melee
+  // (e.g., Spear can be thrown but is primarily melee)
+  const isRanged = weaponCategory === 'bow' || 
+                   weaponCategory === 'crossbow' ||
+                   weaponCategory === 'ranged' ||
+                   weaponType === 'ranged' ||
+                   weaponType === 'missile' ||
                    weaponName.includes('bow') ||
                    weaponName.includes('crossbow') ||
                    weaponName.includes('sling') ||
-                   weaponName.includes('thrown');
+                   (weaponName.includes('thrown') && !weaponName.includes('throwing')); // "thrown" in category, not "throwing knife/axe"
   
   // Detect if weapon is melee
+  // Weapons with reach are melee (even if they can be thrown)
+  // Also check category and type
   const isMelee = !isRanged && (
     weapon.reach > 0 ||
-    weapon.category === 'sword' ||
-    weapon.category === 'axe' ||
-    weapon.category === 'blunt' ||
-    weapon.category === 'melee' ||
-    weapon.type === 'melee'
+    weaponCategory === 'sword' ||
+    weaponCategory === 'axe' ||
+    weaponCategory === 'blunt' ||
+    weaponCategory === 'melee' ||
+    weaponCategory === 'one-handed' ||
+    weaponCategory === 'two-handed' ||
+    weaponCategory === 'exotic' ||
+    weaponType === 'melee' ||
+    weaponType === 'weapon'
   );
   
   // Set proper type
-  let weaponType = 'weapon';
+  let finalWeaponType = 'weapon';
   if (isRanged) {
-    weaponType = 'ranged';
+    finalWeaponType = 'ranged';
   } else if (isMelee) {
-    weaponType = 'melee';
+    finalWeaponType = 'melee';
   }
   
   // Set default range for bows if not specified
@@ -209,7 +218,7 @@ function formatWeaponForEnemy(weapon) {
   
   return {
     name: weapon.name,
-    type: weaponType,
+    type: finalWeaponType,
     category: weapon.category || (isRanged ? 'ranged' : 'melee'),
     damage: weapon.damage || '1d6',
     weight: weapon.weight || 0,
@@ -230,7 +239,7 @@ function formatWeaponForEnemy(weapon) {
  * @param {Object} weapon - Weapon to equip
  * @returns {Object} Updated enemy with weapon equipped
  */
-function equipWeaponToEnemy(enemy, weapon) {
+export function equipWeaponToEnemy(enemy, weapon) {
   const formattedWeapon = formatWeaponForEnemy(weapon);
   
   // Initialize equippedWeapons if needed
@@ -278,7 +287,11 @@ function equipWeaponToEnemy(enemy, weapon) {
  * @param {Object} weapon - Weapon to add
  * @returns {Object} Updated enemy with weapon in inventory
  */
-function addWeaponToInventory(enemy, weapon) {
+export function addWeaponToInventory(enemy, weapon) {
+  if (!enemy || !weapon) {
+    console.warn('addWeaponToInventory: Missing enemy or weapon parameter');
+    return enemy || {};
+  }
   const formattedWeapon = formatWeaponForEnemy(weapon);
   
   // Initialize inventory if needed
@@ -427,6 +440,8 @@ export default {
   assignRandomWeaponToEnemy,
   assignRandomWeaponsToEnemies,
   getDefaultWeaponForEnemy,
+  equipWeaponToEnemy,
+  addWeaponToInventory,
   parseFavoriteWeapons,
   findMatchingWeapons,
   selectRandomWeapon,

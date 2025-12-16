@@ -468,3 +468,52 @@ export const getWeaponsByStrength = (characterPS) => {
     (weapon) => characterPS >= (weapon.strengthRequired || 0)
   );
 };
+
+// Baal-Rog Fire Whip - Special supernatural weapon with 15ft reach
+export const baalRogFireWhip = {
+  id: "baal_rog_fire_whip",
+  name: "Fire Whip",
+  damage: "4d6",
+  type: "weapon",
+  category: "melee",
+  weaponType: "flexible",
+  lengthFt: 15,
+  reach: 15, // 15 feet = 3 hexes
+  reachHexes: 3,
+  weight: 5,
+  price: 0, // Not purchasable - supernatural weapon
+  strengthRequired: 20, // Requires supernatural strength
+  isMagical: true,
+  isSupernatural: true,
+  
+  properties: {
+    reach: true,
+    flexible: true,
+    entangleCapable: true,
+    disarmCapable: true,
+    tripCapable: true,
+    pullCapable: true,
+    antiAir: true,
+    fireDamage: true, // Fire-based damage
+  },
+  
+  specialAttacks: [
+    "entangle",
+    "disarm",
+    "trip",
+    "pull"
+  ],
+  
+  counters: {
+    parryPenalty: -2,      // Hard to parry flexible weapons
+    dodgeAllowed: true,
+    shieldBlock: false     // Whips are difficult to block with shields
+  },
+  
+  restrictions: {
+    requiresSupernaturalStrength: true,
+    nonDemonicPenalty: -4  // Non-demons have difficulty using it
+  },
+  
+  notes: "15 ft supernatural whip used by Baal-Rog demons; designed for control, entanglement, and extended reach combat. Can strike targets up to 15ft away horizontally and vertically (3D reach)."
+};

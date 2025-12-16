@@ -19,6 +19,7 @@ import { calculateDistance } from "../data/movementRules.js";
 import { MOVEMENT_RATES, ENGAGEMENT_RANGES } from "../data/movementRules.js";
 import { getDynamicWidth, isTightTerrain } from "./environmentMetrics.js";
 import { canUseWeapon } from "./combatEnvironmentLogic.js";
+import { isWithinWhipReach, validateFlexibleWeaponReach } from "./whipReachSystem.js";
 import {
   canFly,
   isFlying,
@@ -431,34 +432,58 @@ export function validateAttackRange(
   // For melee attacks, check vertical reach in both directions:
   // - Ground attacker vs flying target (existing check)
   // - Flying attacker vs ground target (NEW: must dive to melee altitude)
+  // - Special handling for flexible reach weapons (whips) with 3D reach calculation
   let isUnreachable = false;
   if (isMeleeAttack && !hasRangedWeapon) {
-    const verticalSeparation = Math.abs(attackerAltitude - targetAltitude);
-    const weaponReach = getWeaponLength(weapon, attacker) || weaponRange;
-    // Rough estimate: weapon reach + body reach (3ft for arm/neck extension)
-    const maxMeleeVertical = weaponReach + 3;
+    // Check if this is a flexible reach weapon (like Fire Whip)
+    const weaponName = (weapon?.name || "").toLowerCase();
+    const isFlexibleReach = weapon?.weaponType === "flexible" || 
+                            weapon?.properties?.flexible === true ||
+                            weapon?.properties?.entangleCapable === true ||
+                            weaponName.includes("whip");
+    
+    if (isFlexibleReach && weapon?.reach && weapon.reach > 5) {
+      // Use 3D reach calculation for flexible weapons
+      const withinReach = isWithinWhipReach(
+        attackerPos,
+        targetPos,
+        attackerAltitude,
+        targetAltitude,
+        weapon.reach
+      );
+      
+      if (!withinReach) {
+        isUnreachable = true;
+      }
+    } else {
+      // Standard melee reach calculation
+      const verticalSeparation = Math.abs(attackerAltitude - targetAltitude);
+      const weaponReach = getWeaponLength(weapon, attacker) || weaponRange;
+      // Rough estimate: weapon reach + body reach (3ft for arm/neck extension)
+      const maxMeleeVertical = weaponReach + 3;
 
-    // Check if vertical separation exceeds melee reach
-    if (verticalSeparation > maxMeleeVertical) {
-      // Determine which direction the problem is
-      if (targetIsFlying && !attackerIsFlying) {
-        // Ground attacker trying to hit high-flying target
-        if (targetAltitude > 15) {
-          isUnreachable = true;
-        } else if (weaponReach < targetAltitude || weaponReach < 10) {
-          // Short weapon can't reach even low-flying target
-          isUnreachable = true;
-        }
-      } else if (attackerIsFlying && !targetIsFlying) {
-        // Flying attacker trying to hit ground target from high altitude
-        // Attacker must dive to melee altitude (0-5ft) to attack
-        if (attackerAltitude > maxMeleeVertical) {
-          isUnreachable = true;
-        }
-      } else if (attackerIsFlying && targetIsFlying) {
-        // Both flying - check if they're at similar altitudes
-        if (verticalSeparation > maxMeleeVertical) {
-          isUnreachable = true;
+      // Check if vertical separation exceeds melee reach
+      if (verticalSeparation > maxMeleeVertical) {
+        // Determine which direction the problem is
+        if (targetIsFlying && !attackerIsFlying) {
+          // Ground attacker trying to hit high-flying target
+          if (targetAltitude > 15) {
+            isUnreachable = true;
+          } else if (weaponReach < targetAltitude || weaponReach < 10) {
+            // Short weapon can't reach even low-flying target
+            isUnreachable = true;
+          }
+        } else if (attackerIsFlying && !targetIsFlying) {
+          // Flying attacker trying to hit ground target from high altitude
+          // Attacker must dive to melee altitude (0-5ft) to attack
+          if (attackerAltitude > maxMeleeVertical) {
+            isUnreachable = true;
+          }
+        } else if (attackerIsFlying && targetIsFlying) {
+          // Both flying - check if they're at similar altitudes
+          if (verticalSeparation > maxMeleeVertical) {
+            isUnreachable = true;
+          }
         }
       }
     }

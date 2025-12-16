@@ -84,39 +84,127 @@ export const SIZE_DEFINITIONS = {
 export function getSizeCategory(creature) {
   if (!creature) return SIZE_CATEGORIES.MEDIUM;
 
-  // Check if creature has explicit size category
+  // 1) Explicit size category fields
   if (creature.sizeCategory) {
-    const sizeUpper = creature.sizeCategory.toUpperCase();
+    const sizeUpper = String(creature.sizeCategory).toUpperCase();
     if (Object.values(SIZE_CATEGORIES).includes(sizeUpper)) {
       return sizeUpper;
     }
   }
 
-  // Check if creature has explicit size property
-  if (creature.size) {
+  // 2) Explicit size field that may already be a category enum
+  if (creature.size && typeof creature.size === "string") {
     const sizeUpper = creature.size.toUpperCase();
     if (Object.values(SIZE_CATEGORIES).includes(sizeUpper)) {
       return sizeUpper;
     }
   }
 
-  // Infer from height/weight if available
-  const height = creature.height || creature.attributes?.height;
-  const weight = creature.weight || creature.attributes?.weight;
+  // 3) Parse size text like: "2-3 feet tall, 14-30 pounds" or "28-56 inches tall"
+  function parseSizeText(sizeText) {
+    if (!sizeText || typeof sizeText !== "string")
+      return { heightFt: null, weightLb: null };
 
-  // Only use height/weight if they're actually set (not 0 or undefined)
-  // Default to MEDIUM if height/weight are not provided
-  if (height === undefined && weight === undefined) {
+    const t = sizeText.toLowerCase();
+
+    // Feet
+    const feetMatch = t.match(
+      /(\d+(?:\.\d+)?)\s*(?:-|to)?\s*(\d+(?:\.\d+)?)?\s*(?:feet|foot|ft)\b/
+    );
+    let heightFt = null;
+    if (feetMatch) {
+      const a = parseFloat(feetMatch[1]);
+      const b = feetMatch[2] ? parseFloat(feetMatch[2]) : a;
+      if (!Number.isNaN(a) && !Number.isNaN(b)) heightFt = (a + b) / 2;
+    }
+
+    // Inches (only if no feet found)
+    if (heightFt == null) {
+      const inchMatch = t.match(
+        /(\d+(?:\.\d+)?)\s*(?:-|to)?\s*(\d+(?:\.\d+)?)?\s*(?:inches|inch|in)\b/
+      );
+      if (inchMatch) {
+        const a = parseFloat(inchMatch[1]);
+        const b = inchMatch[2] ? parseFloat(inchMatch[2]) : a;
+        if (!Number.isNaN(a) && !Number.isNaN(b)) heightFt = (a + b) / 2 / 12;
+      }
+    }
+
+    // Weight
+    const wtMatch = t.match(
+      /(\d+(?:\.\d+)?)\s*(?:-|to)?\s*(\d+(?:\.\d+)?)?\s*(?:pounds|pound|lbs|lb)\b/
+    );
+    let weightLb = null;
+    if (wtMatch) {
+      const a = parseFloat(wtMatch[1]);
+      const b = wtMatch[2] ? parseFloat(wtMatch[2]) : a;
+      if (!Number.isNaN(a) && !Number.isNaN(b)) weightLb = (a + b) / 2;
+    }
+
+    return { heightFt, weightLb };
+  }
+
+  // 4) Numeric height/weight, with safe fallbacks
+  let height =
+    creature.height ??
+    creature.attributes?.height ??
+    creature.stats?.height ??
+    null;
+  let weight =
+    creature.weight ??
+    creature.attributes?.weight ??
+    creature.stats?.weight ??
+    null;
+
+  // Some data sources store these as strings
+  if (typeof height === "string") {
+    const parsed = parseSizeText(height);
+    height = parsed.heightFt ?? null;
+  }
+  if (typeof weight === "string") {
+    const parsed = parseSizeText(weight);
+    weight = parsed.weightLb ?? null;
+  }
+
+  const parsedFromSize = parseSizeText(creature.size);
+  if ((height == null || height === 0) && parsedFromSize.heightFt != null)
+    height = parsedFromSize.heightFt;
+  if ((weight == null || weight === 0) && parsedFromSize.weightLb != null)
+    weight = parsedFromSize.weightLb;
+
+  const categoryText = String(
+    creature.category ||
+      creature.creatureCategory ||
+      creature.creatureType ||
+      ""
+  ).toLowerCase();
+  const isAnimal = categoryText.includes("animal");
+
+  // If we truly have no measurements, do NOT default to Tiny (this broke humanoids like Elf).
+  if ((height == null || height === 0) && (weight == null || weight === 0)) {
+    // Unknown animals tend to be SMALL-ish; unknown humanoids default to MEDIUM.
+    return isAnimal ? SIZE_CATEGORIES.SMALL : SIZE_CATEGORIES.MEDIUM;
+  }
+
+  // Prefer height-based categorization when height is known.
+  if (height != null && height > 0) {
+    if (height >= 20) return SIZE_CATEGORIES.GIANT;
+    if (height >= 12) return SIZE_CATEGORIES.HUGE;
+    if (height >= 7) return SIZE_CATEGORIES.LARGE;
+    if (height < 2) return SIZE_CATEGORIES.TINY;
+    if (height < 4) return SIZE_CATEGORIES.SMALL;
     return SIZE_CATEGORIES.MEDIUM;
   }
 
-  if (height >= 20 || weight >= 5000) return SIZE_CATEGORIES.GIANT;
-  if (height >= 12 || weight >= 2000) return SIZE_CATEGORIES.HUGE;
-  if (height >= 7 || weight >= 500) return SIZE_CATEGORIES.LARGE;
-  if (height !== undefined && height < 2) return SIZE_CATEGORIES.TINY;
-  if (height !== undefined && height < 4) return SIZE_CATEGORIES.SMALL;
-  if (weight !== undefined && weight < 50) return SIZE_CATEGORIES.TINY;
-  if (weight !== undefined && weight < 100) return SIZE_CATEGORIES.SMALL;
+  // Weight-only fallback
+  if (weight != null) {
+    if (weight >= 5000) return SIZE_CATEGORIES.GIANT;
+    if (weight >= 2000) return SIZE_CATEGORIES.HUGE;
+    if (weight >= 500) return SIZE_CATEGORIES.LARGE;
+    if (weight >= 100) return SIZE_CATEGORIES.MEDIUM;
+    if (weight >= 50) return SIZE_CATEGORIES.SMALL;
+    return SIZE_CATEGORIES.TINY;
+  }
 
   return SIZE_CATEGORIES.MEDIUM;
 }
@@ -278,6 +366,116 @@ export function canLiftAndThrow(attacker, defender) {
 }
 
 /**
+ * Check if a creature can carry another creature while flying (or otherwise).
+ * Tuned for "hawk mid-air grab" (size-first, weight as a guardrail).
+ * @param {Object} carrier - The creature attempting to carry
+ * @param {Object} target - The creature to be carried
+ * @param {Object} options - Optional configuration
+ * @returns {Object} Result with canCarry boolean and reason
+ */
+export function canCarryTarget(carrier, target, options = {}) {
+  if (!carrier || !target)
+    return { canCarry: false, reason: "Carrier and target required" };
+
+  const carrierSize = getSizeCategory(carrier);
+  const targetSize = getSizeCategory(target);
+
+  const sizeOrder = {
+    [SIZE_CATEGORIES.TINY]: 0,
+    [SIZE_CATEGORIES.SMALL]: 1,
+    [SIZE_CATEGORIES.MEDIUM]: 2,
+    [SIZE_CATEGORIES.LARGE]: 3,
+    [SIZE_CATEGORIES.HUGE]: 4,
+    [SIZE_CATEGORIES.GIANT]: 5,
+  };
+
+  const cIdx = sizeOrder[carrierSize] ?? 2;
+  const tIdx = sizeOrder[targetSize] ?? 2;
+  const sizeDiff = cIdx - tIdx;
+
+  // Never carry something larger than you.
+  if (sizeDiff < 0) {
+    return {
+      canCarry: false,
+      reason: `${carrier.name || "Carrier"} is too small to carry ${
+        target.name || "target"
+      }`,
+      carrierSize,
+      targetSize,
+    };
+  }
+
+  const carrierPS = getPhysicalStrength(carrier);
+  const targetPS = getPhysicalStrength(target);
+
+  // Same-size carry requires meaningful PS advantage.
+  const sameSizePsMargin = options.sameSizePsMargin ?? 10;
+  if (sizeDiff === 0 && carrierPS < targetPS + sameSizePsMargin) {
+    return {
+      canCarry: false,
+      reason: `${
+        carrier.name || "Carrier"
+      } lacks the strength to carry a same-sized target (${carrierPS} vs ${targetPS})`,
+      carrierSize,
+      targetSize,
+    };
+  }
+
+  // Weight gate (estimate if missing). Gameplay guardrail.
+  const sizeWeightEstimates = {
+    [SIZE_CATEGORIES.TINY]: 5,
+    [SIZE_CATEGORIES.SMALL]: 30,
+    [SIZE_CATEGORIES.MEDIUM]: 150,
+    [SIZE_CATEGORIES.LARGE]: 600,
+    [SIZE_CATEGORIES.HUGE]: 2000,
+    [SIZE_CATEGORIES.GIANT]: 6000,
+  };
+
+  const targetWeight =
+    target.weight ||
+    target.attributes?.weight ||
+    target.stats?.weight ||
+    sizeWeightEstimates[targetSize] ||
+    150;
+  const capacityMultiplier = options.capacityMultiplier ?? 10;
+  const capacity = carrierPS * capacityMultiplier;
+
+  if (options.ignoreWeight !== true && targetWeight > capacity) {
+    return {
+      canCarry: false,
+      reason: `${carrier.name || "Carrier"} cannot lift ${
+        target.name || "target"
+      } (weight ${targetWeight} > capacity ${capacity})`,
+      carrierSize,
+      targetSize,
+      capacity,
+      targetWeight,
+    };
+  }
+
+  // If only 1 size step larger, optionally require a modest PS lead.
+  const minPsLeadForAdjacentSize = options.minPsLeadForAdjacentSize ?? 0;
+  if (sizeDiff === 1 && carrierPS < targetPS + minPsLeadForAdjacentSize) {
+    return {
+      canCarry: false,
+      reason: `${
+        carrier.name || "Carrier"
+      } is only slightly larger and not strong enough (${carrierPS} vs ${targetPS})`,
+      carrierSize,
+      targetSize,
+    };
+  }
+
+  return {
+    canCarry: true,
+    carrierSize,
+    targetSize,
+    capacity,
+    targetWeight,
+  };
+}
+
+/**
  * Get leverage penalty for ground combat
  * @param {Object} attacker - Attacking creature
  * @param {Object} defender - Defending creature
@@ -304,43 +502,6 @@ export function getLeveragePenalty(attacker, defender) {
   return 0;
 }
 
-/**
- * Check if a carrier can carry a target (for aerial pickup, mounts, etc.)
- * @param {Object} carrier - Creature attempting to carry
- * @param {Object} carried - Creature being carried
- * @returns {boolean} True if carrier can carry the target
- */
-export function canCarryTarget(carrier, carried) {
-  if (!carrier || !carried) return false;
-
-  const carrierSize = getSizeCategory(carrier);
-  const carriedSize = getSizeCategory(carried);
-
-  // Quick size gating
-  const sizeOrder = [
-    SIZE_CATEGORIES.TINY,
-    SIZE_CATEGORIES.SMALL,
-    SIZE_CATEGORIES.MEDIUM,
-    SIZE_CATEGORIES.LARGE,
-    SIZE_CATEGORIES.HUGE,
-    SIZE_CATEGORIES.GIANT,
-  ];
-
-  const carrierIdx = sizeOrder.indexOf(carrierSize);
-  const carriedIdx = sizeOrder.indexOf(carriedSize);
-
-  if (carrierIdx === -1 || carriedIdx === -1) return false;
-
-  // Basic rule: carrier must be at least 1 step bigger
-  if (carrierIdx <= carriedIdx) return false;
-
-  // Strength check – can't be absurdly weak
-  const carrierPS = getPhysicalStrength(carrier);
-  if (carrierPS < 8) return false;
-
-  return true;
-}
-
 export default {
   SIZE_CATEGORIES,
   SIZE_DEFINITIONS,
@@ -349,6 +510,6 @@ export default {
   getReachAdvantage,
   applySizeModifiers,
   canLiftAndThrow,
-  getLeveragePenalty,
   canCarryTarget,
+  getLeveragePenalty,
 };

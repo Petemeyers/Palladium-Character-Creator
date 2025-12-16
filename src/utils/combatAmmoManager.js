@@ -4,11 +4,82 @@
  */
 
 import { getMissileWeapon, isMissileWeapon } from "../data/missileWeapons";
+import { getWeaponByName } from "../data/weapons.js";
+
+// Inventory item name aliases for ammo types.
+// (People tend to write "rocks"/"stones" interchangeably for slings.)
+const AMMO_NAME_ALIASES = {
+  arrows: ["arrows", "arrow", "standard arrows", "bodkin arrows", "fire arrows", "silver arrows"],
+  bolts: ["bolts", "bolt", "crossbow bolts", "crossbow bolt"],
+  "sling stones": ["sling stones", "sling stone", "stones", "stone", "rocks", "rock"],
+  darts: ["darts", "dart", "blowgun darts", "poisoned darts"],
+};
+
+function normName(value) {
+  return String(value || "").trim().toLowerCase();
+}
 
 /**
- * Initialize ammunition for all characters with missile weapons
- * @param {array} characters - Array of character objects
- * @returns {object} - Ammo count object { characterId: { ammoType: count } }
+ * Given a weapon item/name, return the most reliable data we can find
+ * (missileWeapons.js -> weapons.js -> raw item).
+ */
+function getWeaponData(weapon) {
+  const name = typeof weapon === "string" ? weapon : weapon?.name;
+  return getMissileWeapon(name) || getWeaponByName(name) || weapon || null;
+}
+
+/** Get inventory item name aliases that satisfy an ammoType. */
+export function getAmmoAliases(ammoType) {
+  const key = normName(ammoType);
+  return AMMO_NAME_ALIASES[key] || [key];
+}
+
+/** Sum ammo across stacks in inventory. */
+export function getInventoryAmmoCount(character, ammoType) {
+  const aliases = getAmmoAliases(ammoType);
+  const inv = Array.isArray(character?.inventory) ? character.inventory : [];
+
+  return inv.reduce((sum, item) => {
+    const itemName = normName(item?.name);
+    if (!itemName || !aliases.includes(itemName)) return sum;
+    const qty = Number.isFinite(item?.quantity) ? Number(item.quantity) : 1;
+    return sum + Math.max(0, qty);
+  }, 0);
+}
+
+/**
+ * Decrement ammo in a character inventory. Returns a NEW character object.
+ * Ammo items are left in inventory with quantity=0 (per your requirement).
+ */
+export function decrementInventoryAmmo(character, ammoType, amount = 1) {
+  const aliases = getAmmoAliases(ammoType);
+  const inv = Array.isArray(character?.inventory) ? character.inventory : [];
+  if (amount <= 0 || inv.length === 0) return character;
+
+  let remaining = amount;
+
+  const nextInv = inv.map((item) => {
+    if (remaining <= 0) return item;
+
+    const itemName = normName(item?.name);
+    if (!itemName || !aliases.includes(itemName)) return item;
+
+    const qty = Number.isFinite(item?.quantity) ? Number(item.quantity) : 1;
+    const current = Math.max(0, qty);
+    if (current <= 0) return { ...item, quantity: 0 };
+
+    const spend = Math.min(current, remaining);
+    remaining -= spend;
+
+    return { ...item, quantity: current - spend };
+  });
+
+  return remaining === amount ? character : { ...character, inventory: nextInv };
+}
+
+/**
+ * Initialize ammo counts strictly from inventory.
+ * Returns { characterId: { ammoType: count } }
  */
 export function initializeAmmo(characters) {
   const ammoCount = {};
@@ -16,150 +87,83 @@ export function initializeAmmo(characters) {
   characters.forEach((char) => {
     if (!char.inventory) return;
 
-    const missileWeapons = char.inventory.filter((item) => {
-      const weaponData = getMissileWeapon(item.name);
-      return weaponData || isMissileWeapon(item);
-    });
+    const ammoTypesNeeded = new Set();
 
-    if (missileWeapons.length > 0) {
-      ammoCount[char._id] = {};
+    for (const item of char.inventory) {
+      const w = getWeaponData(item);
+      const ammoType = normName(w?.ammunition);
+      const hasRange = Number.isFinite(w?.maxRange) || Number.isFinite(w?.range);
+      if (!ammoType || ammoType === "self" || !hasRange) continue;
+      ammoTypesNeeded.add(ammoType);
+    }
 
-      missileWeapons.forEach((weapon) => {
-        const weaponData = getMissileWeapon(weapon.name);
-        if (weaponData && weaponData.ammunition) {
-          // Check if character already has ammo count set
-          if (!ammoCount[char._id][weaponData.ammunition]) {
-            ammoCount[char._id][weaponData.ammunition] =
-              weaponData.startingAmmo;
-          }
-        }
-      });
+    if (ammoTypesNeeded.size === 0) return;
+
+    const charId = char.id || char._id;
+    if (!charId) return;
+
+    ammoCount[charId] = {};
+    for (const ammoType of ammoTypesNeeded) {
+      ammoCount[charId][ammoType] = getInventoryAmmoCount(char, ammoType);
     }
   });
 
   return ammoCount;
 }
 
-/**
- * Use ammunition for a character's missile weapon
- * @param {object} ammoCount - Current ammo count state
- * @param {string} characterId - Character ID
- * @param {string} ammoType - Type of ammunition
- * @param {number} amount - Amount to use (negative to add, positive to subtract)
- * @returns {object} - Updated ammo count
- */
-export function useAmmo(ammoCount, characterId, ammoType, amount = 1) {
-  const newAmmoCount = { ...ammoCount };
-
-  if (!newAmmoCount[characterId]) {
-    newAmmoCount[characterId] = {};
-  }
-
-  if (!newAmmoCount[characterId][ammoType]) {
-    newAmmoCount[characterId][ammoType] = 0;
-  }
-
-  // Subtract ammo (don't go below 0)
-  newAmmoCount[characterId][ammoType] = Math.max(
-    0,
-    newAmmoCount[characterId][ammoType] - amount
-  );
-
-  return newAmmoCount;
-}
-
-/**
- * Set ammunition count for a character
- * @param {object} ammoCount - Current ammo count state
- * @param {string} characterId - Character ID
- * @param {string} ammoType - Type of ammunition
- * @param {number} newCount - New ammo count
- * @returns {object} - Updated ammo count
- */
-export function setAmmo(ammoCount, characterId, ammoType, newCount) {
-  const newAmmoCount = { ...ammoCount };
-
-  if (!newAmmoCount[characterId]) {
-    newAmmoCount[characterId] = {};
-  }
-
-  newAmmoCount[characterId][ammoType] = Math.max(0, newCount);
-
-  return newAmmoCount;
-}
-
-/**
- * Replenish all ammunition after combat
- * @param {object} ammoCount - Current ammo count state
- * @param {array} characters - Array of character objects
- * @returns {object} - Replenished ammo count
- */
-export function replenishAllAmmo(characters) {
-  return initializeAmmo(characters);
-}
-
-/**
- * Check if character can fire missile weapon
- * @param {object} character - Character object
- * @param {object} ammoCount - Current ammo count state
- * @returns {object} - { canFire: boolean, reason: string }
- */
 export function canFireMissileWeapon(character, ammoCount) {
-  // Check if equipped weapon is a missile weapon
   const equippedWeapon = character.inventory?.find(
     (item) => item.name === character.equippedWeapon
   );
 
-  if (!equippedWeapon) {
-    return { canFire: false, reason: "No weapon equipped" };
+  if (!equippedWeapon) return { canFire: false, reason: "No weapon equipped" };
+
+  const weaponData = getWeaponData(equippedWeapon);
+  const ammoType = normName(weaponData?.ammunition);
+  const hasRange = Number.isFinite(weaponData?.maxRange) || Number.isFinite(weaponData?.range);
+
+  if (!ammoType || ammoType === "self" || !hasRange) {
+    return { canFire: true, reason: "Not a ranged weapon that consumes ammo" };
   }
 
-  const weaponData = getMissileWeapon(equippedWeapon.name);
+  const currentAmmo =
+    ammoCount[character.id || character._id]?.[ammoType] ?? getInventoryAmmoCount(character, ammoType);
 
-  if (!weaponData) {
-    return { canFire: true, reason: "Not a missile weapon (melee attack)" };
-  }
+  if (currentAmmo <= 0) return { canFire: false, reason: `Out of ${ammoType}!` };
 
-  // Check ammunition
-  const currentAmmo = ammoCount[character._id]?.[weaponData.ammunition] || 0;
-
-  if (currentAmmo <= 0) {
-    return {
-      canFire: false,
-      reason: `Out of ${weaponData.ammunition}!`,
-    };
-  }
-
-  return {
-    canFire: true,
-    reason: `${currentAmmo} ${weaponData.ammunition} remaining`,
-  };
+  return { canFire: true, reason: `${currentAmmo} ${ammoType} remaining` };
 }
 
 /**
  * Get ammunition info for character
  * @param {object} character - Character object
- * @param {object} ammoCount - Current ammo count state
+ * @param {object} ammoCount - Optional ammo count cache (for UI)
  * @returns {object|null} - Ammo info or null
  */
-export function getAmmoInfo(character, ammoCount) {
+export function getAmmoInfo(character, ammoCount = null) {
   const equippedWeapon = character.inventory?.find(
     (item) => item.name === character.equippedWeapon
   );
 
   if (!equippedWeapon) return null;
 
-  const weaponData = getMissileWeapon(equippedWeapon.name);
+  const weaponData = getWeaponData(equippedWeapon);
   if (!weaponData) return null;
 
-  const currentAmmo = ammoCount[character._id]?.[weaponData.ammunition] || 0;
-  const maxAmmo = weaponData.startingAmmo;
+  const ammoType = normName(weaponData?.ammunition);
+  const hasRange = Number.isFinite(weaponData?.maxRange) || Number.isFinite(weaponData?.range);
+  
+  if (!ammoType || ammoType === "self" || !hasRange) return null;
+
+  const charId = character.id || character._id;
+  const currentAmmo = ammoCount?.[charId]?.[ammoType] ?? getInventoryAmmoCount(character, ammoType);
+  const maxAmmo = weaponData.startingAmmo || 20;
 
   return {
-    ammoType: weaponData.ammunition,
+    ammoType: ammoType,
     current: currentAmmo,
     max: maxAmmo,
-    percentage: (currentAmmo / maxAmmo) * 100,
+    percentage: maxAmmo > 0 ? (currentAmmo / maxAmmo) * 100 : 0,
     weaponData,
   };
 }
@@ -171,17 +175,18 @@ export function getAmmoInfo(character, ammoCount) {
  * @returns {object} - { modifier: number, description: string }
  */
 export function calculateRangeModifier(distance, weapon) {
-  if (!weapon || !weapon.maxRange) {
+  const maxRange = weapon?.maxRange || weapon?.range;
+  if (!maxRange || !Number.isFinite(maxRange)) {
     return { modifier: 0, description: "Melee range" };
   }
 
   if (distance <= 10) {
     return { modifier: +2, description: "Point-Blank (+2)" };
-  } else if (distance <= weapon.maxRange / 3) {
+  } else if (distance <= maxRange / 3) {
     return { modifier: 0, description: "Short range" };
-  } else if (distance <= (weapon.maxRange * 2) / 3) {
+  } else if (distance <= (maxRange * 2) / 3) {
     return { modifier: -1, description: "Medium range (-1)" };
-  } else if (distance <= weapon.maxRange) {
+  } else if (distance <= maxRange) {
     return { modifier: -3, description: "Long range (-3)" };
   } else {
     return { modifier: null, description: "Out of range!" };
@@ -190,10 +195,10 @@ export function calculateRangeModifier(distance, weapon) {
 
 export default {
   initializeAmmo,
-  useAmmo,
-  setAmmo,
-  replenishAllAmmo,
   canFireMissileWeapon,
+  getInventoryAmmoCount,
+  decrementInventoryAmmo,
   getAmmoInfo,
   calculateRangeModifier,
+  getAmmoAliases,
 };

@@ -3,7 +3,12 @@
  *
  * Base skill percentages for each O.C.C., plus stat-based modifiers.
  * Skills represent non-combat abilities: stealth, knowledge, trades, etc.
+ * 
+ * NOTE: Skill percentage calculations now delegate to skillSystem.js
+ * to use rulebook-accurate progression tables from skillProgression.js
  */
+
+import { getSkillPercentage } from './skillSystem.js';
 
 // ========== O.C.C. BASE SKILL TABLES ==========
 
@@ -249,24 +254,38 @@ const mentalSkills = ["meditation", "hypnosis", "detectDeception"];
 
 /**
  * Build complete skill set for a character
+ * NOTE: This function now delegates to skillSystem.js to avoid conflicting rule systems.
+ * All skill percentages come from skillProgression.js tables via skillSystem.js.
+ * 
  * @param {string} occ - O.C.C. name
  * @param {number} iq - Intelligence
  * @param {number} pp - Physical Prowess
  * @param {number} me - Mental Endurance
  * @param {number} level - Character level
  * @returns {Object} - Skill set with base, modifiers, and total
+ * @deprecated Consider using getSkillPercentage() from skillSystem.js directly
  */
 export function buildSkillSet(occ, iq, pp, me, level = 1) {
   const baseSkills = occSkillTables[occ] || {};
   const iqMod = iqBonus(iq);
   const ppMod = ppBonus(pp);
   const meMod = meBonus(me);
-  const levelBonus = (level - 1) * 5; // +5% per level after 1st
 
   const result = {};
+  
+  // Create a character object for skillSystem.js
+  const character = {
+    level,
+    IQ: iq,
+    iq,
+    PP: pp,
+    pp,
+    ME: me,
+    me,
+  };
 
   Object.entries(baseSkills).forEach(([skill, base]) => {
-    // Determine which modifier applies
+    // Determine which modifier applies (for display purposes)
     let statBonus = iqMod; // Default: IQ bonus
 
     if (physicalSkills.includes(skill)) {
@@ -275,13 +294,14 @@ export function buildSkillSet(occ, iq, pp, me, level = 1) {
       statBonus = meMod; // Mental skills use ME
     }
 
-    // Calculate total
-    const total = Math.min(98, base + statBonus + levelBonus); // Cap at 98%
+    // Get skill percentage from skillSystem.js (uses skillProgression.js tables)
+    // This replaces the old +5%/level logic - now uses rulebook-accurate progression tables
+    const total = getSkillPercentage(character, skill, 'occ');
 
     result[skill] = {
       base,
       statBonus,
-      levelBonus,
+      levelBonus: total - base - statBonus, // Calculate what the level bonus contributed
       total,
       type: physicalSkills.includes(skill)
         ? "Physical"

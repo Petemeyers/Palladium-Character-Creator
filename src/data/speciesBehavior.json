@@ -670,6 +670,7 @@
       "surrenderBias": -2,
       "neverFlee": true,
       "poorGroundRunner": false,
+      "preferFlight": true,
       "aiProfile": "angelic_flyer",
       "flightStyle": "circling",
       "cruiseFraction": 0.45,
@@ -681,7 +682,7 @@
       "isScavenger": false,
       "avoidLargerEnemies": false,
       "diveBonusToStrike": 3,
-      "notes": "Fire-and-air aligned divine flier; uses strafing and dive attacks against evil targets. Angelic/divine humanoid; their base body is human-like, so they can walk/run reasonably."
+      "notes": "Fire-and-air aligned divine flier; prefers flying for strategic advantage against ground enemies. Uses strafing and dive attacks against evil targets. Angelic/divine humanoid; their base body is human-like, so they can walk/run reasonably."
     },
     "seraph": {
       "canSurrender": false,

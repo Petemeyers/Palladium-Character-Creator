@@ -51,25 +51,28 @@ import {
   Wrap,
   WrapItem,
 } from "@chakra-ui/react";
-import CryptoSecureDice from "../utils/cryptoDice";
+import CryptoSecureDice from "../utils/cryptoDice.js";
 import bestiary from "../data/bestiary.json";
 import { getAllBestiaryEntries } from "../utils/bestiaryUtils.js";
-import CombatActionsPanel from "../components/CombatActionsPanel";
-import { createPlayableCharacterFighter, getPlayableCharacterRollDetails } from "../utils/autoRoll";
-import { assignRandomWeaponToEnemy, getDefaultWeaponForEnemy } from "../utils/enemyWeaponAssigner";
-import armorShopData from "../data/armorShopData";
-import { initializeAmmo, useAmmo, canFireMissileWeapon } from "../utils/combatAmmoManager";
-import { getRandomCombatSpell, getSpellsForLevel } from "../data/combatSpells";
-import { isTwoHandedWeapon, getWeaponDamage } from "../utils/weaponSlotManager";
-import { usePsionic } from "../utils/psionicEffects";
-import { applyInitialEffect, applyFallDamage } from "../utils/updateActiveEffects";
-import TacticalMap from "../components/TacticalMap";
-import HexArena3D from "../components/HexArena3D";
-import Phase0PreCombatModal from "../components/Phase0PreCombatModal";
-import ResizableLayout from "../components/ResizableLayout";
-import { getInitialPositions, getEngagementRange, MOVEMENT_RATES, GRID_CONFIG, MOVEMENT_ACTIONS, calculateDistance, getMovementRange, getHexNeighbors, isValidPosition } from "../data/movementRules";
-import { getDistanceBetween } from "../utils/positionManager";
-import { resolvePhase0Encounter, preCombatSystem, executePreCombatAction, hasSpecialSenses } from "../utils/stealthSystem";
+import CombatActionsPanel from "../components/CombatActionsPanel.jsx";
+import { createPlayableCharacterFighter, getPlayableCharacterRollDetails } from "../utils/autoRoll.js";
+import { assignRandomWeaponToEnemy, getDefaultWeaponForEnemy, equipWeaponToEnemy, addWeaponToInventory } from "../utils/enemyWeaponAssigner.js";
+import armorShopData from "../data/armorShopData.js";
+import { initializeAmmo, canFireMissileWeapon, getInventoryAmmoCount, decrementInventoryAmmo } from "../utils/combatAmmoManager.js";
+import { getRandomCombatSpell, getSpellsForLevel } from "../data/combatSpells.js";
+import { getSpellsForCreature } from "../utils/magicAbilitiesParser.js";
+import { hasDimensionalTeleport, attemptDimensionalTeleport } from "../utils/dimensionalTeleport.js";
+import { parseClericalAbilities, getAvailableClericalAbilities, animateDead, turnDead, performExorcism, removeCurse, clericalHealingTouch, isDead, isUndead } from "../utils/clericalAbilities.js";
+import { isTwoHandedWeapon, getWeaponDamage } from "../utils/weaponSlotManager.js";
+import { usePsionic } from "../utils/psionicEffects.js";
+import { applyInitialEffect, applyFallDamage } from "../utils/updateActiveEffects.js";
+import TacticalMap from "../components/TacticalMap.jsx";
+import HexArena3D from "../components/HexArena3D.jsx";
+import Phase0PreCombatModal from "../components/Phase0PreCombatModal.jsx";
+import ResizableLayout from "../components/ResizableLayout.jsx";
+import { getInitialPositions, getEngagementRange, MOVEMENT_RATES, GRID_CONFIG, MOVEMENT_ACTIONS, calculateDistance, getMovementRange, getHexNeighbors, isValidPosition } from "../data/movementRules.js";
+import { getDistanceBetween } from "../utils/positionManager.js";
+import { resolvePhase0Encounter, preCombatSystem, executePreCombatAction, hasSpecialSenses } from "../utils/stealthSystem.js";
 import { 
   canAISeeTarget, 
   updateAwareness,
@@ -79,12 +82,12 @@ import {
   attemptMidCombatHide,
   AWARENESS_STATES 
 } from "../utils/aiVisibilityFilter.js";
-import { calculateVisibleCells, calculateVisibleCellsMultiple, getVisibilityRange } from "../utils/visibilityCalculator";
-import { updateFogMemory, resetFogMemory } from "../utils/fogMemorySystem";
-import { getAttacksPerMelee, getCreatureAttacksPerMelee, getActionCost, formatAttacksRemaining } from "../utils/actionEconomy";
-import { calculateTotalHP } from "../utils/levelProgression";
-import { grantXPFromEnemy, getMonsterByName, calculateMonsterXP } from "../utils/enemyXP";
-import { weapons, getWeaponByName } from "../data/weapons.js";
+import { calculateVisibleCells, calculateVisibleCellsMultiple, getVisibilityRange } from "../utils/visibilityCalculator.js";
+import { updateFogMemory, resetFogMemory } from "../utils/fogMemorySystem.js";
+import { getAttacksPerMelee, getCreatureAttacksPerMelee, getActionCost, formatAttacksRemaining } from "../utils/actionEconomy.js";
+import { calculateTotalHP } from "../utils/levelProgression.js";
+import { grantXPFromEnemy, getMonsterByName, calculateMonsterXP } from "../utils/enemyXP.js";
+import { weapons, getWeaponByName, baalRogFireWhip } from "../data/weapons.js";
 import { calculateRangePenalty, calculateReachAdvantage } from "../utils/weaponSystem.js";
 import { 
   analyzeMovementAndAttack, 
@@ -96,7 +99,7 @@ import {
 } from "../utils/distanceCombatSystem.js";
 import { getCombatModifiers, canUseWeapon, getWeaponType, getWeaponLength } from "../utils/combatEnvironmentLogic.js";
 import { getDynamicWidth, getActorsInProximity, getDynamicHeight } from "../utils/environmentMetrics.js";
-import { canFly, isFlying, getAltitude, parseAbilities } from "../utils/abilitySystem.js";
+import { canFly, isFlying, getAltitude, parseAbilities, calculateFlightMovement, applyBioRegeneration } from "../utils/abilitySystem.js";
 import {
   canFighterFly,
   startFlying,
@@ -130,7 +133,7 @@ import {
 } from "../utils/reachCombatRules.js";
 import MovementRangeDisplay from "../components/MovementRangeDisplay.jsx";
 import RunActionLogger from "../components/RunActionLogger.jsx";
-import { autoEquipWeapons, getWeaponDisplayInfo } from "../utils/weaponManager";
+import { autoEquipWeapons, getWeaponDisplayInfo } from "../utils/weaponManager.js";
 import { 
   getCoverBonus,
   applyLightingEffects, 
@@ -138,29 +141,30 @@ import {
   calculateLineOfSight,
   calculatePerceptionCheck 
 } from "../utils/terrainSystem.js";
-import { castSpell, getUnifiedAbilities } from "../utils/unifiedAbilities.js";
+import { castSpell, getUnifiedAbilities, getCombatBonus } from "../utils/unifiedAbilities.js";
 import { createProtectionCircle, isProtectionCircle, CIRCLE_TYPES } from "../utils/protectionCircleSystem.js";
 import { updateProtectionCirclesOnMap } from "../utils/protectionCircleMapSystem.js";
-import { healerAbility, medicalTreatment, clericalHealingTouch } from "../utils/healingSystem.js";
+import { healerAbility, medicalTreatment } from "../utils/healingSystem.js";
 import { getSkillPercentage, rollSkillCheck, lookupSkill } from "../utils/skillSystem.js";
 import CirclePlacementTool from "../components/CirclePlacementTool.jsx";
 import CircleManagerPanel from "../components/CircleManagerPanel.jsx";
 import CircleRechargePanel from "../components/CircleRechargePanel.jsx";
 import FloatingPanel from "../components/FloatingPanel.jsx";
-import { findBeePath } from "../ai";
-import GameSettingsPanel from "../components/GameSettingsPanel";
-import { useGameSettings } from "../context/GameSettingsContext";
+import { findBeePath } from "../ai/index.js";
+import GameSettingsPanel from "../components/GameSettingsPanel.jsx";
+import { useGameSettings } from "../context/GameSettingsContext.jsx";
 import { syncCombinedPositions } from "../utils/combinedBodySystem.js";
-import { applyPainStagger } from "../utils/painSystem";
-import { resolveMoraleCheck } from "../utils/moraleSystem";
-import { hasHorrorFactor, resolveHorrorCheck } from "../utils/horrorSystem";
+import { applyPainStagger } from "../utils/painSystem.js";
+import { resolveMoraleCheck, isFearImmune } from "../utils/moraleSystem.js";
+import { hasHorrorFactor, resolveHorrorCheck } from "../utils/horrorSystem.js";
+import { processCourageAuras, clearCourageBonuses } from "../utils/courageAuraSystem.js";
 import {
   getThreatPositionsForFighter,
   makeIsHexOccupied,
   findBestRetreatHex,
   isAtMapEdge,
-} from "../utils/routingSystem";
-import { canBeCaptured, tieUpPrisoner, lootPrisoner } from "../utils/captureSystem";
+} from "../utils/routingSystem.js";
+import { canBeCaptured, tieUpPrisoner, lootPrisoner } from "../utils/captureSystem.js";
 import { 
   initializeCombatFatigue, 
   drainStamina, 
@@ -169,13 +173,15 @@ import {
   resolveCollapseFromExhaustion,
   updateFatiguePenalties,
   recoverStamina,
-  STAMINA_COSTS 
+  resetFatigue,
+  STAMINA_COSTS,
+  canFatigue
 } from "../utils/combatFatigueSystem.js";
 import { createAIActionSelector } from "../utils/combatEngine.js";
-import { runPlayerTurnAI } from "../utils/ai/playerTurnAI";
-import { runEnemyTurnAI } from "../utils/ai/enemyTurnAI";
-import { runFlyingTurn, isFlyingCreature, moveFlyingCreature as moveFlyingCreatureHelper, performDiveAttack as performDiveAttackHelper } from "../utils/ai/flyingBehaviorSystem";
-import { hasAnyValidOffensiveOption } from "../utils/ai/meleeReachabilityHelpers";
+import { runPlayerTurnAI } from "../utils/ai/playerTurnAI.js";
+import { runEnemyTurnAI } from "../utils/ai/enemyTurnAI.js";
+import { runFlyingTurn, isFlyingCreature, moveFlyingCreature as moveFlyingCreatureHelper, performDiveAttack as performDiveAttackHelper } from "../utils/ai/flyingBehaviorSystem.js";
+import { hasAnyValidOffensiveOption } from "../utils/ai/meleeReachabilityHelpers.js";
 import {
   initializeGrappleState,
   attemptGrapple,
@@ -200,6 +206,7 @@ import {
   getCombinedGrappleModifiers,
   getReachAdvantage,
   applySizeModifiers,
+  canCarryTarget,
   SIZE_CATEGORIES,
   SIZE_DEFINITIONS,
 } from "../utils/sizeStrengthModifiers.js";
@@ -240,80 +247,21 @@ function findRetreatDestination({
   enemyId,
   isHexOccupied,
 }) {
-  if (
-    !currentPos ||
-    !Array.isArray(threatPositions) ||
-    threatPositions.length === 0 ||
-    !maxSteps ||
-    maxSteps <= 0
-  ) {
-    return null;
-  }
-
-  const startingScore = minDistanceToThreats(currentPos, threatPositions);
-  let bestPosition = currentPos;
-  let bestScore = startingScore;
-  let workingPosition = currentPos;
-  let stepsTaken = 0;
-
-  for (let step = 0; step < maxSteps; step += 1) {
-    const neighbors = getHexNeighbors(workingPosition.x, workingPosition.y)
-      .filter((hex) => isValidPosition(hex.x, hex.y))
-      .filter((hex) => !isHexOccupied(hex.x, hex.y, enemyId));
-
-    if (neighbors.length === 0) {
-      break;
-    }
-
-    let selectedNeighbor = null;
-    let selectedScore = bestScore;
-
-    neighbors.forEach((hex) => {
-      const score = minDistanceToThreats(hex, threatPositions);
-      if (score > selectedScore + 0.01) {
-        selectedNeighbor = hex;
-        selectedScore = score;
-      }
-    });
-
-    if (!selectedNeighbor) {
-      break;
-    }
-
-    workingPosition = selectedNeighbor;
-    bestPosition = selectedNeighbor;
-    bestScore = selectedScore;
-    stepsTaken += 1;
-  }
-
-  if (stepsTaken === 0 || bestScore <= startingScore) {
-    return null;
-  }
-
-  return {
-    position: bestPosition,
-    stepsMoved: stepsTaken,
-    distanceFeet: calculateDistance(currentPos, bestPosition),
-    safetyScore: bestScore,
-  };
+  // ✅ Delegate to routingSystem (best-of-all-within-N-steps + tie-moves + edge preference)
+  return findBestRetreatHex({
+    currentPos,
+    threatPositions,
+    maxSteps,
+    isHexOccupied: (x, y) => (isHexOccupied ? isHexOccupied(x, y, enemyId) : false),
+    getHexNeighbors,
+    isValidPosition: (x, y) => isValidPosition(x, y),
+    calculateDistance,
+    gridWidth: GRID_CONFIG.GRID_WIDTH,
+    gridHeight: GRID_CONFIG.GRID_HEIGHT,
+    allowTieMoves: true,
+    preferEdgeEscape: true,
+  });
 }
-
-// Simple type helper: undead should not flee from normal fear
-const UNDEAD_KEYWORDS = [
-  "undead",
-  "mummy",
-  "skeleton",
-  "zombie",
-  "ghoul",
-  "wight",
-  "wraith",
-  "vampire",
-  "lich",
-  "spectre",
-  "specter",
-  "ghost",
-  "banshee",
-];
 
 const HEAL_KEYWORDS = ["heal", "restor", "regenerat", "revive", "resurrect", "resurrection", "lay on hands"];
 const TOUCH_RANGE_HINTS = ["touch", "target", "per person", "per target", "per creature", "per ally"];
@@ -694,66 +642,6 @@ function resolveMagicSave(caster, target, spellName, options = {}) {
   };
 }
 
-// Infer spell tags based on name and description
-function inferSpellTags(spellName, baseTags = []) {
-  const name = (spellName || "").toLowerCase();
-  const tags = new Set(baseTags || []);
-
-  // Healing
-  if (
-    name.includes("heal") ||
-    name.includes("healing") ||
-    name.includes("restoration") ||
-    name.includes("regeneration") ||
-    name.includes("cure")
-  ) {
-    tags.add("healing");
-    tags.add("support");
-  }
-
-  // Escape / defensive
-  if (
-    name.includes("teleport") ||
-    name.includes("dimension door") ||
-    name.includes("escape") ||
-    name.includes("invisibility") ||
-    name.includes("sanctuary") ||
-    name.includes("invulnerability") ||
-    name.includes("armor of") // armor-type self buffs
-  ) {
-    tags.add("escape");      // includes disengage-type things
-    tags.add("defensive");
-  }
-
-  // Area or direct damage
-  if (
-    name.includes("bolt") ||
-    name.includes("ball") ||
-    name.includes("blast") ||
-    name.includes("missile") ||
-    name.includes("arc") ||
-    name.includes("meteor") ||
-    name.includes("fireball") ||
-    name.includes("lightning") ||
-    name.includes("ice bolt")
-  ) {
-    tags.add("direct_damage");
-  }
-
-  if (
-    name.includes("cloud") ||
-    name.includes("storm") ||
-    name.includes("explosion") ||
-    name.includes("rain of") ||
-    name.includes("circle")
-  ) {
-    tags.add("area");
-    tags.add("direct_damage");
-  }
-
-  return Array.from(tags);
-}
-
 function convertUnifiedSpellToCombatSpell(spell) {
   if (!spell) return null;
 
@@ -789,16 +677,11 @@ function convertUnifiedSpellToCombatSpell(spell) {
 
   const description = spell.description || spell.effect || "";
 
-  // Infer tags from spell name
-  const baseTags = spell.tags || [];
-  const tags = inferSpellTags(spell.name, baseTags);
-
   const combatSpell = {
     name: spell.name,
     cost,
     effect: spell.effect || description,
     description,
-    tags,
   };
 
   if (damage) combatSpell.damage = damage;
@@ -810,44 +693,6 @@ function convertUnifiedSpellToCombatSpell(spell) {
   return combatSpell;
 }
 
-// Simple helper: treat classic undead as never-fleeing
-function isUndeadCreature(fighter) {
-  if (!fighter) return false;
-
-  const typeString = (
-    fighter.creatureType ||
-    fighter.species ||
-    fighter.race ||
-    fighter.occ ||
-    fighter.name ||
-    ""
-  )
-    .toString()
-    .toLowerCase();
-
-  // Core undead types
-  const undeadKeywords = [
-    "undead",
-    "skeleton",
-    "zombie",
-    "mummy",
-    "vampire",
-    "lich",
-    "ghoul",
-    "ghost",
-    "wight",
-    "wraith",
-    "spectre",
-    "specter",
-    "revenant",
-    "animated dead",
-  ];
-
-  return undeadKeywords.some((kw) => typeString.includes(kw));
-  // TODO (later): allow special "holy fear" flags to override this for
-  // things like holy wards, turn undead, etc.
-}
-
 export default function CombatPage({ characters = [] }) {
   const navigate = useNavigate();
   const [log, setLog] = useState([]);
@@ -855,7 +700,8 @@ export default function CombatPage({ characters = [] }) {
   const [logSortOrder, setLogSortOrder] = useState("newest");
   const [fighters, setFighters] = useState([]);
   const [turnIndex, setTurnIndex] = useState(0);
-  const [ammoCount, setAmmoCount] = useState({}); // Track ammunition for ranged weapons
+  // Ammo is now inventory-based - computed from fighters' inventory
+  const ammoCount = useMemo(() => initializeAmmo(fighters), [fighters]); // For UI/trackers
   
   // Helper function for generating crypto-random IDs (must be defined before normalizeFighterId)
   // Use useRef to persist idCounter across renders without causing re-renders
@@ -946,22 +792,124 @@ export default function CombatPage({ characters = [] }) {
   // Helper to check if fighter can act (conscious only)
   const canFighterAct = (fighter) => {
     if (!fighter) return false;
+
+    // Units that have fully fled the battlefield cannot act
+    if (fighter.moraleState?.hasFled) return false;
+    if (Array.isArray(fighter.statusEffects) && fighter.statusEffects.includes("FLED")) return false;
+
+    // NOTE: ROUTED units CAN act (they should spend actions fleeing).
+    // Blocking ROUTED here causes freezes and premature "All players defeated" checks.
     const hpStatus = getHPStatus(fighter.currentHP);
     return hpStatus.canAct && fighter.status !== "defeated";
   };
 
-  // Simple helper: treat classic undead as immune to routing/fleeing
-  const isUndead = useCallback((creature) => {
-    if (!creature) return false;
+  // Helper to mark a fighter as fled off-map (soft swap: keep in fighters, remove from map)
+  const markFighterFledOffMap = useCallback((fighterId, nameForLog) => {
+    // 1) Keep them in fighters, but mark fled + no actions
+    setFighters((prev) =>
+      prev.map((f) =>
+        f.id === fighterId
+          ? {
+              ...f,
+              remainingAttacks: 0,
+              moraleState: {
+                ...(f.moraleState || {}),
+                status: "ROUTED", // or "FLED" if you want a distinct status
+                hasFled: true,
+              },
+              statusEffects: Array.isArray(f.statusEffects)
+                ? Array.from(new Set([...f.statusEffects, "FLED"]))
+                : ["FLED"],
+            }
+          : f
+      )
+    );
 
-    const label = (
-      creature.species ||
-      creature.type ||
-      creature.name ||
-      ""
-    ).toLowerCase();
+    // 2) Remove them from the map so they disappear from grid
+    setPositions((prev) => {
+      const next = { ...prev };
+      delete next[fighterId];
+      positionsRef.current = next;
+      return next;
+    });
 
-    return UNDEAD_KEYWORDS.some((kw) => label.includes(kw));
+    if (nameForLog) addLog(`🏃 ${nameForLog} flees off the battlefield!`, "warning");
+  }, [addLog]);
+
+  // =========================
+  // Predator/Prey visibility + panic helpers (Hawk ↔ Mouse)
+  // =========================
+  // Define these early so they're available for other hooks
+  const isPredatorBird = useCallback((f) => {
+    if (!f) return false;
+    const name = (f.name || "").toLowerCase();
+    // Expand later (eagle, falcon, owl, etc.)
+    if (name.includes("hawk")) return true;
+    // Treat any flying "raptor" style creature as predator bird if tagged
+    const tags = (f.tags || f.aiTags || []).map(t => String(t).toLowerCase());
+    if (tags.includes("predator_bird") || tags.includes("raptor")) return true;
+    return false;
+  }, []);
+
+  const isTinyPrey = useCallback((f) => {
+    if (!f) return false;
+    const name = (f.name || "").toLowerCase();
+    if (name.includes("mouse")) return true;
+    try {
+      const cat = getSizeCategory(f);
+      return cat === SIZE_CATEGORIES.TINY;
+    } catch {
+      return false;
+    }
+  }, []);
+
+  // Asymmetric detection:
+  // - Tiny prey often does NOT see a flying hawk until it is low/committed (dive / close pass)
+  // - Hawks see tiny prey more easily (always "spotted" for AI purposes)
+  const canAISeeTargetAsymmetric = useCallback((viewer, target, pos, terrain, opts = {}) => {
+    const base = canAISeeTarget(viewer, target, pos, terrain, opts);
+
+    // Tiny prey has trouble spotting a flying hawk overhead unless it's very low or already alerted
+    if (isTinyPrey(viewer) && isPredatorBird(target) && isFlying(target)) {
+      const alt = getAltitude(target) || 0;
+      const aw = getAwareness?.(viewer, target);
+      const awareState = aw?.state || aw?.awarenessState || "";
+      const isAlerted =
+        awareState === AWARENESS_STATES?.ALERT ||
+        String(awareState).toUpperCase() === "ALERT" ||
+        String(awareState).toUpperCase() === "AWARE";
+      // Only spot the hawk if it's basically on the deck / committing to a strike
+      if (!isAlerted && alt > 5) return false;
+    }
+
+    // Predator bird vision advantage: hawk sees tiny prey even when prey can't see hawk yet
+    if (isPredatorBird(viewer) && isTinyPrey(target)) {
+      return true;
+    }
+
+    return base;
+  }, [isTinyPrey, isPredatorBird, canAISeeTarget, getAwareness, AWARENESS_STATES, getAltitude, isFlying]);
+
+  // Optional helper to restore a fled fighter back onto the map (for reuse in later encounters)
+  // Usage: restoreFledFighterToMap(fighterId, { x: 10, y: 10 })
+  const restoreFledFighterToMap = useCallback((fighterId, spawnPos) => {
+    setFighters((prev) =>
+      prev.map((f) =>
+        f.id === fighterId
+          ? {
+              ...f,
+              moraleState: { ...(f.moraleState || {}), hasFled: false, status: "STEADY" },
+              statusEffects: (f.statusEffects || []).filter((s) => s !== "FLED"),
+            }
+          : f
+      )
+    );
+
+    setPositions((prev) => {
+      const next = { ...prev, [fighterId]: spawnPos };
+      positionsRef.current = next;
+      return next;
+    });
   }, []);
   
   // Helper to calculate allies down ratio for morale checks
@@ -1122,6 +1070,8 @@ export default function CombatPage({ characters = [] }) {
   const [enemyCount, setEnemyCount] = useState(1);
   const [enemyLevel, setEnemyLevel] = useState(1);
   const [selectedArmor, setSelectedArmor] = useState("");
+  const [selectedWeapon, setSelectedWeapon] = useState("");
+  const [selectedAmmoCount, setSelectedAmmoCount] = useState(0);
   const [selectedAttack, setSelectedAttack] = useState(0);
   const [selectedParty, setSelectedParty] = useState([]);
   const [showPartySelector, setShowPartySelector] = useState(false);
@@ -1172,11 +1122,15 @@ export default function CombatPage({ characters = [] }) {
   const lastOpenedChoicesTurnRef = useRef(null); // Track which turn we opened choices for
   const movementAttemptsRef = useRef({}); // Track movement attempts per fighter to prevent infinite loops: {fighterId: {count, lastDistance, lastPosition}}
   const combatEndCheckRef = useRef(false); // Prevent duplicate combat end checks
+  const combatOverRef = useRef(false); // ✅ AUTHORITATIVE: Combat is over (checked by all timeouts/actions)
   const lastProcessedEnemyTurnRef = useRef(null); // Track last processed enemy turn to prevent duplicates
   const executingActionRef = useRef(false); // Prevent multiple rapid action executions
   const visibilityLogRef = useRef(new Set()); // Track visibility logs to prevent spam: Set of "playerId_turnCounter"
   const turnTimeoutRef = useRef(null); // Track scheduled end turn timeout
+  const allTimeoutsRef = useRef([]); // ✅ Track ALL timeouts so we can clear them on combat end
   const combatPausedRef = useRef(false); // Track paused state in async callbacks
+  const resolvedSpellEffectsRef = useRef(new Set()); // Track resolved spell effects to prevent duplicates: Set of "castId::targetId"
+  const activeCastIdsRef = useRef(new Set()); // ✅ Track active cast IDs to prevent duplicate casts
   const recentLogMessagesRef = useRef(new Map()); // Track recent log messages to prevent duplicates (React Strict Mode): Map<messageKey, timestamp>
   const lastAutoTurnKeyRef = useRef(null); // Prevent duplicate auto-processing per turn
   const lastNoActionLogRef = useRef(new Map()); // Track "no action" logs per fighter per turn: Map<fighterId_turnCounter, true>
@@ -1194,6 +1148,8 @@ export default function CombatPage({ characters = [] }) {
   const [selectedMovementFighter, setSelectedMovementFighter] = useState(null); // Track which fighter is moving
   const [psionicsMode, setPsionicsMode] = useState(false); // Track if player is selecting psionic power
   const [spellsMode, setSpellsMode] = useState(false); // Track if player is selecting spell
+  const [clericalAbilitiesMode, setClericalAbilitiesMode] = useState(false); // Track if player is selecting clerical ability
+  const [selectedClericalAbility, setSelectedClericalAbility] = useState(null); // Selected clerical ability
   const [selectedSkill, setSelectedSkill] = useState(null); // Track selected skill for use
   const [showPhase0Modal, setShowPhase0Modal] = useState(false); // Phase 0 scene setup modal
   const [arenaSpeed, setArenaSpeed] = useState("slow"); // Combat pacing: slow/normal/fast
@@ -1252,6 +1208,54 @@ export default function CombatPage({ characters = [] }) {
     // Add "None" option
     return [{ name: "None", ar: 0, sdc: 0, type: "none", description: "No armor" }, ...allArmors];
   }, []);
+
+  // Get all available weapons (including natural attacks for non-humanoids)
+  const availableWeapons = useMemo(() => {
+    const baseWeapons = [{ name: "None", damage: null, type: "none", description: "Use default weapon assignment" }, ...weapons];
+    
+    // For non-humanoid creatures with natural attacks, add them to the weapon list
+    if (selectedCreatureData && !isHumanoid(selectedCreatureData) && selectedCreatureData.attacks && Array.isArray(selectedCreatureData.attacks)) {
+      const naturalAttacks = selectedCreatureData.attacks
+        .filter(attack => attack.name && attack.damage !== "by spell" && attack.damage !== "varies" && !attack.name.toLowerCase().includes("magic"))
+        .map(attack => {
+          // Special handling for Fire Whip - use proper weapon definition
+          if (attack.name === "Fire Whip") {
+            return {
+              name: attack.name,
+              damage: baalRogFireWhip.damage || attack.damage || "4d6",
+              type: "melee",
+              category: "natural",
+              reach: baalRogFireWhip.reach || attack.reach || 15,
+              range: attack.range || 0,
+              weaponType: "flexible",
+              properties: baalRogFireWhip.properties || {},
+              specialAttacks: baalRogFireWhip.specialAttacks || [],
+            };
+          }
+          return {
+            name: attack.name,
+            damage: attack.damage || "1d6",
+            type: "melee",
+            category: "natural",
+            reach: attack.reach || 0,
+            range: attack.range || 0,
+          };
+        });
+      
+      // Add natural attacks to the beginning of the list (after "None")
+      return [baseWeapons[0], ...naturalAttacks, ...baseWeapons.slice(1)];
+    }
+    
+    return baseWeapons;
+  }, [selectedCreatureData]);
+
+  // Check if selected weapon requires ammo
+  const selectedWeaponRequiresAmmo = useMemo(() => {
+    if (!selectedWeapon || selectedWeapon === "None") return false;
+    const weapon = weapons.find(w => w.name === selectedWeapon);
+    if (!weapon) return false;
+    return Boolean(weapon.ammunition && weapon.ammunition !== "self");
+  }, [selectedWeapon]);
 
   // Check if selected creature is humanoid
   const isSelectedHumanoid = useMemo(() => {
@@ -1767,7 +1771,11 @@ export default function CombatPage({ characters = [] }) {
         baseOptions.push({ value: "Dive Attack", label: "🦅 Dive Attack" });
         
         // Add carry/drop if grappling or carrying
-        if (currentFighter.grappleState?.state === "grapple_ground" && currentFighter.grappleState?.opponent) {
+        if (
+          (currentFighter.grappleState?.state === GRAPPLE_STATES.GROUND ||
+           currentFighter.grappleState?.state === GRAPPLE_STATES.CLINCH) &&
+          currentFighter.grappleState?.opponent
+        ) {
           baseOptions.push({ value: "Lift & Carry", label: "✈️ Lift & Carry" });
         }
         if (currentFighter.isCarrying && currentFighter.carriedTargetId) {
@@ -1886,11 +1894,74 @@ useEffect(() => {
               getFighterHP(f) > MIN_COMBAT_HP
           );
         }
+        case "Clerical Abilities": {
+          if (!selectedClericalAbility) return [];
+          
+          const abilityName = selectedClericalAbility.name;
+          
+          // Animate Dead: targets are dead bodies (HP <= -21)
+          if (abilityName === "Animate Dead") {
+            return fighters.filter(f => isDead(f) && positions[f.id]);
+          }
+          
+          // Turn Dead: targets are undead enemies
+          if (abilityName === "Turn Dead") {
+            return fighters.filter(f => 
+              f.id !== currentFighter.id && 
+              isUndead(f) && 
+              positions[f.id] &&
+              f.status !== "defeated"
+            );
+          }
+          
+          // Exorcism: targets are demons, spirits, or possessed entities
+          if (abilityName === "Exorcism") {
+            return fighters.filter(f => {
+              if (f.id === currentFighter.id || !positions[f.id] || f.status === "defeated") return false;
+              const targetType = (f.type || f.category || f.species || "").toLowerCase();
+              return targetType.includes("demon") || 
+                     targetType.includes("devil") || 
+                     targetType.includes("spirit") || 
+                     targetType.includes("ghost") || 
+                     targetType.includes("wraith") ||
+                     f.possessed ||
+                     f.possessingEntity;
+            });
+          }
+          
+          // Remove Curse: targets are cursed characters
+          if (abilityName === "Remove Curse") {
+            return fighters.filter(f => 
+              f.id !== currentFighter.id && 
+              positions[f.id] &&
+              (f.cursed || f.hasCurse || (Array.isArray(f.statusEffects) && f.statusEffects.includes("CURSED")))
+            );
+          }
+          
+          // Healing Touch: targets are living allies (not undead, not self)
+          if (abilityName === "Healing Touch") {
+            return fighters.filter(f => 
+              f.id !== currentFighter.id &&
+              f.type === currentFighter.type &&
+              positions[f.id] &&
+              !isUndead(f) &&
+              f.status !== "defeated"
+            );
+          }
+          
+          return [];
+        }
+        case "Lift & Carry": {
+          const oppId = currentFighter?.grappleState?.opponent;
+          if (!oppId) return [];
+          const opp = fighters.find((f) => f.id === oppId);
+          return opp && opp.status !== "defeated" && getFighterHP(opp) > MIN_COMBAT_HP ? [opp] : [];
+        }
         default:
           return [];
       }
     },
-    [currentFighter, fighters, selectedPsionicPower, selectedSpell, getPsionicTargetCategory, spellRequiresTarget, MIN_COMBAT_HP]
+    [currentFighter, fighters, selectedPsionicPower, selectedSpell, selectedClericalAbility, positions, getPsionicTargetCategory, spellRequiresTarget, MIN_COMBAT_HP]
   );
 
   useEffect(() => {
@@ -1917,6 +1988,30 @@ useEffect(() => {
       setSelectedTarget(options[0]);
     }
   }, [selectedPsionicPower, selectedAction, currentFighter, fighters, selectedTarget, getTargetOptionsForAction, getPsionicTargetCategory]);
+
+  useEffect(() => {
+    if (!currentFighter) return;
+    if (selectedAction?.name !== "Clerical Abilities" || !selectedClericalAbility) return;
+    
+    const abilityName = selectedClericalAbility.name;
+    const requiresTarget = abilityName !== "Animate Dead"; // Animate Dead doesn't need target selection
+    
+    if (!requiresTarget) {
+      setSelectedTarget(null);
+      return;
+    }
+    
+    const options = getTargetOptionsForAction("Clerical Abilities");
+    if (!options || options.length === 0) {
+      setSelectedTarget(null);
+      return;
+    }
+    
+    const stillValid = selectedTarget && options.some((opt) => opt.id === selectedTarget.id);
+    if (!stillValid) {
+      setSelectedTarget(options[0]);
+    }
+  }, [selectedClericalAbility, selectedAction, currentFighter, fighters, selectedTarget, getTargetOptionsForAction]);
 
   useEffect(() => {
     if (!currentFighter) return;
@@ -2010,8 +2105,15 @@ useEffect(() => {
     if (!selectedAction) return false;
     if (!targetOptions || targetOptions.length === 0) return false;
     const actionName = selectedAction.name;
-    if (!["Strike", "Combat Maneuvers", "Psionics", "Spells", "Dive Attack"].includes(actionName)) {
+    if (!["Strike", "Combat Maneuvers", "Psionics", "Spells", "Dive Attack", "Clerical Abilities"].includes(actionName)) {
       return false;
+    }
+    // For Clerical Abilities, only show target dropdown if ability requires a target
+    if (actionName === "Clerical Abilities" && selectedClericalAbility) {
+      const abilityName = selectedClericalAbility.name;
+      if (abilityName === "Animate Dead") {
+        return false; // Animate Dead doesn't need target selection
+      }
     }
     if (
       currentFighter &&
@@ -2021,7 +2123,7 @@ useEffect(() => {
       return false;
     }
     return true;
-  }, [selectedAction, targetOptions, currentFighter]);
+  }, [selectedAction, targetOptions, currentFighter, selectedClericalAbility]);
 
   // Check if a hex is occupied by any LIVING combatant
   const isHexOccupied = useCallback((x, y, excludeId = null) => {
@@ -2146,13 +2248,19 @@ useEffect(() => {
       
       addLog(`⏰ Melee Round ${meleeRound} complete! Starting Round ${meleeRound + 1}...`, "combat");
       
+      // End of melee: clear last melee's temp courage bonuses
+      clearCourageBonuses(fighters);
+      
       // Reset all fighters' actions for new melee round
       // Also reset the "no ranged options" log flag for each fighter
       setFighters(prev => {
         const updated = prev.map(f => {
+          // Fix: Use proper fallback for animals (attacksPerMelee ?? attacks ?? 2)
+          const apm = f.attacksPerMelee ?? f.attacks ?? 2; // fallback for animals
           const fighter = {
-        ...f,
-        remainingAttacks: f.attacksPerMelee || 2
+            ...f,
+            remainingAttacks: apm,
+            // if you track "hasActedThisRound" etc, reset it here too
           };
           // Clear the loggedNoRangedRound flag for new melee round
           if (fighter.meta?.loggedNoRangedRound !== undefined) {
@@ -2204,7 +2312,29 @@ useEffect(() => {
           }
         }
         
-        return updated;
+        // ✅ Start of new melee: apply courage/holy aura bonuses + fear dispel
+        processCourageAuras(updated, positions, addLog);
+        
+        // ✅ Apply bio-regeneration for fighters with regeneration abilities
+        // Note: applyBioRegeneration mutates the fighter object, so we need to create new objects for React state
+        const currentMeleeRound = meleeRound; // Get current melee round for interval tracking
+        const updatedWithRegen = updated.map(fighter => {
+          const fighterCopy = { ...fighter };
+          const regenResult = applyBioRegeneration(fighterCopy, currentMeleeRound);
+          if (regenResult) {
+            addLog(regenResult.log, "healing");
+            // Return updated fighter with new HP and meta tracking
+            return {
+              ...fighterCopy,
+              currentHP: fighterCopy.currentHP,
+              hp: fighterCopy.currentHP,
+              meta: fighterCopy.meta, // Preserve bioRegenLastMelee tracking
+            };
+          }
+          return fighter;
+        });
+        
+        return updatedWithRegen;
       });
       
       // Only continue if combat is still active
@@ -2331,6 +2461,9 @@ useEffect(() => {
 
     const currentFighter = fighters[turnIndex];
     if (!currentFighter || !currentFighter.fatigueState) return;
+    
+    // Skip collapse checks for creatures that can't fatigue
+    if (!canFatigue(currentFighter)) return;
 
     const fatigue = getFatigueStatus(currentFighter);
 
@@ -2482,7 +2615,8 @@ useEffect(() => {
 
   const scheduleEndTurn = useCallback(
     (delayOverride = null) => {
-      if (combatPausedRef.current) {
+      // ✅ GUARD: Stop scheduling if combat is over (use ref for latest state)
+      if (combatOverRef.current || !combatActive || combatEndCheckRef.current || combatPausedRef.current) {
         clearScheduledTurn();
         return;
       }
@@ -2491,6 +2625,8 @@ useEffect(() => {
 
       if (delay <= 0) {
         clearScheduledTurn();
+        // ✅ GUARD: Check combat state before ending turn (use ref for latest state)
+        if (combatOverRef.current || !combatActive || combatEndCheckRef.current) return;
         endTurn();
         return;
       }
@@ -2498,10 +2634,15 @@ useEffect(() => {
       clearScheduledTurn();
       turnTimeoutRef.current = setTimeout(() => {
         turnTimeoutRef.current = null;
+        // ✅ GUARD: Check combat state in delayed callback (use ref for latest state)
+        if (combatOverRef.current || !combatActive || combatEndCheckRef.current) return;
         endTurn();
       }, delay);
+      
+      // ✅ Track this timeout so we can clear it on combat end
+      allTimeoutsRef.current.push(turnTimeoutRef.current);
     },
-    [clearScheduledTurn, getActionDelay, endTurn]
+    [clearScheduledTurn, getActionDelay, endTurn, combatActive]
   );
 
   // Helper function for player flight movement
@@ -2661,7 +2802,7 @@ useEffect(() => {
           addLog(`❌ ${combatant.name} cannot close into melee - weapon range too long!`, "error");
           return;
         }
-      } else {
+        } else {
         // Check if new position is off-board (fled/routed)
         const isOffBoard = 
           x < 0 || 
@@ -2694,7 +2835,7 @@ useEffect(() => {
           });
 
           // End turn
-          setTimeout(() => endTurn(), 1500);
+          safeEndTurn(1500);
           return;
         }
 
@@ -2711,14 +2852,14 @@ useEffect(() => {
           handlePlayerFlightMove(combatant, { x, y }, oldPos, selectedMove);
         } else {
           // Ground movement
-        setPositions(prev => {
-          const updated = {
-          ...prev,
-          [selectedMovementFighter]: { x, y }
-          };
-          positionsRef.current = updated;
-          return updated;
-        });
+          setPositions(prev => {
+            const updated = {
+            ...prev,
+            [selectedMovementFighter]: { x, y }
+            };
+            positionsRef.current = updated;
+            return updated;
+          });
         }
       }
       
@@ -2757,7 +2898,7 @@ useEffect(() => {
         addLog(`🎮 ${combatant.name} has ${remainingAfterMove} action(s) remaining this melee round`, "info");
       }
       // Always end turn after movement to alternate actions
-      setTimeout(() => endTurn(), 500);
+      safeEndTurn(500);
       }
   }, [movementMode, selectedMovementFighter, positions, currentFighter, addLog, fighters, isHexOccupied, getWeaponRange, turnCounter, endTurn, handlePlayerFlightMove, playerMovementMode]);
 
@@ -2771,6 +2912,12 @@ useEffect(() => {
     defenderPosOverride = null
   ) => {
     const weaponName = attackData?.name || "Unarmed";
+    
+    // ✅ Debug logging for Long Bow
+    if (import.meta.env.DEV && weaponName?.toLowerCase() === "long bow") {
+      console.log("DB getWeaponByName(Long Bow):", getWeaponByName("Long Bow"));
+      console.log("DB weapons.find(Long Bow):", weapons.find(w => w.name?.toLowerCase() === "long bow"));
+    }
     
     // Check if target is currently flying (airborne) vs just having flight capability
     const targetIsFlying = isFlying(defender);
@@ -2811,10 +2958,10 @@ useEffect(() => {
           weaponRange = attackData?.range || 30; // Default 30ft for breath weapons
         } else {
           weaponRange = attackData?.range || 
-                          (weaponName.toLowerCase().includes('long bow') || weaponName.toLowerCase() === 'longbow' ? 640 :
-                           weaponName.toLowerCase().includes('short bow') || weaponName.toLowerCase() === 'shortbow' ? 360 :
-                           weaponName.toLowerCase().includes('bow') ? 360 :
-                           weaponName.toLowerCase().includes('crossbow') ? 480 : 100);
+                        (weaponName.toLowerCase().includes('long bow') || weaponName.toLowerCase() === 'longbow' ? 640 :
+                         weaponName.toLowerCase().includes('short bow') || weaponName.toLowerCase() === 'shortbow' ? 360 :
+                         weaponName.toLowerCase().includes('bow') ? 360 :
+                         weaponName.toLowerCase().includes('crossbow') ? 480 : 100);
         }
         const canAttack = distance <= weaponRange;
         const rangeType = isBreathWeapon ? 'breath weapon' : 'ranged';
@@ -2825,6 +2972,37 @@ useEffect(() => {
           rangeInfo: isBreathWeapon ? `${rangeType} (${weaponRange}ft cone/line)` : `ranged (${weaponRange}ft)`
         };
       } else {
+        // Check if this is a flexible reach weapon (like Fire Whip)
+        const isFlexibleReach = weaponName.toLowerCase().includes("whip") ||
+                                attackData?.weaponType === "flexible" ||
+                                attackData?.properties?.flexible === true ||
+                                attackData?.properties?.entangleCapable === true;
+        
+        // For flexible reach weapons, use 3D reach calculation
+        if (isFlexibleReach && (attackData?.reach > 5 || attackData?.lengthFt > 5)) {
+          const maxReachFt = attackData?.reach || attackData?.lengthFt || 15;
+          
+          // Use 3D reach validation
+          const reachCheck = validateFlexibleWeaponReach(
+            attacker,
+            defender,
+            { name: weaponName, reach: maxReachFt, ...attackData },
+            attackerPos,
+            defenderPos
+          );
+          
+          return {
+            canAttack: reachCheck.withinReach,
+            reason: reachCheck.reason,
+            maxRange: maxReachFt,
+            isUnreachable: !reachCheck.withinReach,
+            requiresDive: false,
+            effectiveDistance: reachCheck.effectiveDistance,
+            horizontalFt: reachCheck.horizontalFt,
+            verticalFt: reachCheck.verticalFt
+          };
+        }
+        
         // For unknown melee weapons, adjacent hexes (5ft) are always in melee range
         // Weapon length only matters for reach weapons that can attack beyond adjacent hexes
         // Minimum melee range is 5.5ft to account for adjacent hexes in hex grid
@@ -2838,11 +3016,19 @@ useEffect(() => {
         // - Flying attacker vs ground target: must dive to melee altitude
         // - Both flying: must be at similar altitudes
         let isUnreachable = false;
+        let requiresDive = false;
         
         if (isMeleeAttack) {
           // 3D reach check: if vertical gap is bigger than reach, melee can't connect
+          // BUT: if the attacker is already flying above the target, it can resolve this
+          // with a Dive Attack (combined descent + strike in one action).
           if (verticalSeparation > effectiveRange) {
-            isUnreachable = true;
+            if (attackerIsFlying && attackerAltitude > targetAltitude) {
+              requiresDive = true;
+              isUnreachable = false;
+            } else {
+              isUnreachable = true;
+            }
           }
           
           // Extra rule / nicer messaging for ground attackers vs flying targets
@@ -2855,21 +3041,23 @@ useEffect(() => {
               verticalSeparation <= effectiveRange
             ) {
               // Long reach weapon vs low-flying target is ok
-            isUnreachable = false;
-          } else {
+              isUnreachable = false;
+            } else {
               isUnreachable = true;
             }
           }
         }
         
-        const canAttack = distance <= effectiveRange && !isUnreachable;
+        const canAttack = distance <= effectiveRange && !isUnreachable && !requiresDive;
         
         let reason;
-        if (isUnreachable) {
+        if (requiresDive) {
+          reason = `${defender.name || "Target"} is too far below (${verticalSeparation.toFixed(1)}ft vertical) for melee reach (${effectiveRange.toFixed(1)}ft) — dive attack required`;
+        } else if (isUnreachable) {
           if (targetIsFlying && !attackerIsFlying) {
-          if (targetAltitude > 15) {
+            if (targetAltitude > 15) {
               reason = `${defender.name || "Target"} is flying too high (${targetAltitude}ft) to be reached by melee attacks from ground`;
-          } else {
+            } else {
               reason = `${defender.name || "Target"} is flying and cannot be reached by melee attacks from ground`;
             }
           } else if (verticalSeparation > effectiveRange) {
@@ -2887,7 +3075,8 @@ useEffect(() => {
           canAttack, 
           reason,
           maxRange: effectiveRange,
-          isUnreachable: isUnreachable || false
+          isUnreachable: isUnreachable || false,
+          requiresDive: requiresDive || false
         };
       }
     }
@@ -2901,23 +3090,78 @@ useEffect(() => {
         : (attackerPos && defenderPos
             ? calculateDistance(attackerPos, defenderPos)
             : Infinity);
-    const rangeValidation = validateAttackRange(
+    
+    // ✅ Normalize weapon.range into a usable numeric "feet" value when possible.
+    // This prevents validateAttackRange() from falling back to melee 5.5ft
+    // just because range was missing or stored as a string like "640 ft".
+    const resolveRangeFeet = (w, name) => {
+      const raw =
+        w?.range ?? w?.maxRange ?? w?.rangeFeet ?? attackData?.range ?? null;
+
+      if (typeof raw === "number" && raw > 0) return raw;
+
+      if (typeof raw === "string") {
+        const m = raw.replace(/,/g, "").match(/(\d+(\.\d+)?)/);
+        if (m) return parseFloat(m[1]);
+      }
+
+      const n = (name || "").toLowerCase();
+      if (n.includes("long bow") || n === "longbow") return 640;
+      if (n.includes("short bow") || n === "shortbow") return 360;
+      if (n.includes("crossbow")) return 320;
+      if (n.includes("sling")) return 160;
+
+      return null;
+    };
+
+    const looksRanged =
+      weaponName.toLowerCase().includes("bow") ||
+      weaponName.toLowerCase().includes("crossbow") ||
+      weaponName.toLowerCase().includes("sling") ||
+      weapon?.type === "ranged" ||
+      (typeof weapon?.range === "number" && weapon.range > 10);
+
+    const parsedRange = looksRanged ? resolveRangeFeet(weapon, weaponName) : null;
+    const normalizedWeapon =
+      parsedRange && weapon ? { ...weapon, range: parsedRange } : weapon;
+
+    let rangeValidation = validateAttackRange(
       attacker,
       defender,
       attackerPos,
       defenderPos,
-      weapon,
+      normalizedWeapon,
       effectiveDistance
     );
+
+    // ✅ Safety override: if downstream still claims melee 5.5ft for a ranged weapon,
+    // force a ranged decision using parsedRange.
+    if (
+      looksRanged &&
+      parsedRange &&
+      typeof rangeValidation?.maxRange === "number" &&
+      rangeValidation.maxRange <= 6
+    ) {
+      const canAttack = effectiveDistance <= parsedRange;
+      rangeValidation = {
+        ...rangeValidation,
+        canAttack,
+        maxRange: parsedRange,
+        reason: canAttack
+          ? `Within ranged range (${Math.round(effectiveDistance)}ft ≤ ${parsedRange}ft)`
+          : `Out of ranged range (${Math.round(effectiveDistance)}ft > ${parsedRange}ft)`,
+      };
+    }
     
     if (rangeValidation.canAttack) {
       // Add range penalty info for ranged weapons
-      if (weapon.range && weapon.range > 0) {
-        const rangePenalty = calculateRangePenalty(effectiveDistance, weapon);
+      const finalRange = parsedRange || weapon?.range || weapon?.maxRange;
+      if (finalRange && finalRange > 0) {
+        const rangePenalty = calculateRangePenalty(effectiveDistance, normalizedWeapon || weapon);
         return {
           canAttack: true,
           reason: rangeValidation.reason,
-          maxRange: weapon.range,
+          maxRange: finalRange,
           rangeInfo: rangePenalty.rangeInfo,
           penalty: rangePenalty.penalty
         };
@@ -2925,15 +3169,16 @@ useEffect(() => {
         return {
           canAttack: true,
           reason: rangeValidation.reason,
-          maxRange: weapon.reach || 5
+          maxRange: weapon?.reach || 5
         };
       }
     } else {
       // Provide movement suggestions when out of range
+      const finalRange = parsedRange || weapon?.range || weapon?.maxRange || weapon?.reach || 5;
       return {
         canAttack: false,
         reason: rangeValidation.reason,
-        maxRange: weapon.range || weapon.reach || 5,
+        maxRange: finalRange,
         suggestions: rangeValidation.suggestions
       };
     }
@@ -2987,7 +3232,8 @@ useEffect(() => {
       applyHPToFighter,
     });
   }, [fighters, combatActive, addLog, positions, setFighters, setPositions, clampHP, getFighterHP, applyHPToFighter]);
-  // Define attack function with useCallback
+
+  // Define attack function with useCallback (isPredatorBird, isTinyPrey, canAISeeTargetAsymmetric are defined earlier)
   const attack = useCallback((attacker, defenderId, bonusModifiers = {}) => {
     // ✅ CRITICAL: Check if combat is still active before allowing attacks
     if (!combatActive) {
@@ -3066,6 +3312,12 @@ useEffect(() => {
     
     // Find attacker in updated array to check/deduct attacks
     const attackerInArray = attackerIndex !== -1 ? updated[attackerIndex] : null;
+
+    // Allow callers (AI/actions) to patch attacker state for this action.
+    // Example: Dive Attack sets altitude/isFlying so range checks + post-attack state remain consistent.
+    if (attackerInArray && bonusModifiers?.attackerStatePatch) {
+      Object.assign(attackerInArray, bonusModifiers.attackerStatePatch);
+    }
     if (attackerInArray && attackerInArray.type === "player") {
       // Check if player has attacks remaining
       if (attackerInArray.remainingAttacks <= 0) {
@@ -3106,7 +3358,8 @@ useEffect(() => {
       attackData = {
         name: selectedAttackWeapon.name,
         damage: weaponDamage,
-        type: selectedAttackWeapon.type
+        type: (selectedAttackWeapon?.range != null || ["bow","crossbow","sling"].includes((selectedAttackWeapon?.category || "").toLowerCase())) ? "ranged" : selectedAttackWeapon.type,
+        range: selectedAttackWeapon?.range
       };
       
       // Check if weapon can be used while grappled
@@ -3183,8 +3436,39 @@ useEffect(() => {
         attackerPos,
         defenderPos
       );
-      
-      if (!rangeValidation.canAttack) {
+
+      // 🦅 Auto-dive support: flying predator birds (e.g., hawk) can descend-and-strike in a single action.
+      // This prevents the "hover above target forever" stalemate by converting a vertical gap into a dive attack.
+      if (
+        !rangeValidation.canAttack &&
+        rangeValidation.requiresDive &&
+        isPredatorBird(effectiveAttacker) &&
+        isFlying(effectiveAttacker)
+      ) {
+        const preferredDiveAttack =
+          (effectiveAttacker.attacks || []).find((a) => /talon|claw/i.test(a?.name || "")) ||
+          attackData;
+
+        const dive = performDiveAttack(
+          { ...effectiveAttacker, selectedAttack: preferredDiveAttack },
+          defender,
+          { attackOffsetFeet: 5 }
+        );
+
+        if (dive?.success) {
+          // Apply post-dive state (altitude drop) + dive strike bonus
+          try {
+            Object.assign(effectiveAttacker, dive.fighter || {});
+          } catch {
+            // no-op
+          }
+          attackData = preferredDiveAttack;
+          // Continue with attack using dive-modified state
+        } else {
+          addLog(`❌ ${attacker.name} cannot reach ${defender.name} for attack! (${rangeValidation.reason})`, "error");
+          return;
+        }
+      } else if (!rangeValidation.canAttack) {
         addLog(`❌ ${attacker.name} cannot reach ${defender.name} for attack! (${rangeValidation.reason})`, "error");
         
         // Show movement suggestions
@@ -3200,57 +3484,44 @@ useEffect(() => {
         }
       }
       
-      // Check ammunition for ranged weapons
+      // Ammunition for ranged weapons is strictly inventory-based.
+      // Bows require arrows, crossbows require bolts, slings require rocks/stones.
       const weaponName = attackData?.name || "";
-      const isRangedWeapon = weaponName.toLowerCase().includes('bow') || 
-                             weaponName.toLowerCase().includes('crossbow') ||
-                             weaponName.toLowerCase().includes('sling') ||
-                             (attackData?.type === 'ranged') ||
-                             (attackData?.range && attackData.range > 10);
-      
-      if (isRangedWeapon) {
-        // Determine ammo type
-        const ammoType = weaponName.toLowerCase().includes('crossbow') ? 'bolts' : 
-                        weaponName.toLowerCase().includes('bow') ? 'arrows' : 
-                        weaponName.toLowerCase().includes('sling') ? 'stones' : 'arrows';
-        
-        // Check if fighter has ammo
-        const fighterAmmo = ammoCount[attacker.id] || {};
-        const currentAmmo = fighterAmmo[ammoType] || 0;
-        
+      const isRangedWeapon =
+        weaponName.toLowerCase().includes("bow") ||
+        weaponName.toLowerCase().includes("crossbow") ||
+        weaponName.toLowerCase().includes("sling") ||
+        attackData?.type === "ranged" ||
+        (attackData?.range && attackData.range > 10);
+
+      const ammoType = attackData?.ammunition;
+      const requiresAmmo = Boolean(ammoType && ammoType !== "self" && isRangedWeapon);
+
+      if (requiresAmmo) {
+        const currentAmmo = getInventoryAmmoCount(attacker, ammoType);
+
         if (currentAmmo <= 0) {
-          // Initialize ammo if not set (give default amount)
-          if (!ammoCount[attacker.id]) {
-            setAmmoCount(prev => ({
-              ...prev,
-              [attacker.id]: { [ammoType]: 20 } // Default 20 arrows/bolts
-            }));
-            addLog(`🏹 ${attacker.name} loads ${ammoType} (20 remaining)`, "info");
-          } else {
-            addLog(`❌ ${attacker.name} is out of ${ammoType}! Cannot fire ${weaponName}.`, "error");
-            return;
-          }
+          addLog(`❌ ${attacker.name} is out of ${ammoType}! Cannot fire ${weaponName}.`, "error");
+          return;
+        }
+
+        // Spend 1 ammo per shot (hit or miss).
+        setFighters((prev) =>
+          prev.map((f) => (f.id === attacker.id ? decrementInventoryAmmo(f, ammoType, 1) : f))
+        );
+
+        const remainingAmmo = Math.max(0, currentAmmo - 1);
+        if (remainingAmmo > 0) {
+          addLog(`🏹 ${attacker.name} fires ${weaponName} (${remainingAmmo} ${ammoType} remaining)`, "info");
         } else {
-          // Deplete ammo
-          setAmmoCount(prev => {
-            const newAmmo = { ...prev };
-            if (!newAmmo[attacker.id]) newAmmo[attacker.id] = {};
-            newAmmo[attacker.id][ammoType] = Math.max(0, (newAmmo[attacker.id][ammoType] || 0) - 1);
-            return newAmmo;
-          });
-          const remainingAmmo = Math.max(0, currentAmmo - 1);
-          if (remainingAmmo > 0) {
-            addLog(`🏹 ${attacker.name} fires ${weaponName} (${remainingAmmo} ${ammoType} remaining)`, "info");
-          } else {
-            addLog(`🏹 ${attacker.name} fires ${weaponName} (OUT OF ${ammoType.toUpperCase()}!)`, "warning");
-          }
+          addLog(`🏹 ${attacker.name} fires ${weaponName} (OUT OF ${String(ammoType).toUpperCase()}!)`, "warning");
         }
       }
     }
 
     try {
       // Crypto secure attack roll with optional bonus modifiers (e.g., +2 from charge, flanking bonus)
-      const baseStrikeBonus = attacker.bonuses?.strike || 0;
+      const baseStrikeBonus = getCombatBonus(attacker, "strike", attackData) || 0;
       const chargeBonus = bonusModifiers.strikeBonus || 0;
       const flankingBonus = bonusModifiers.flankingBonus || 0;
       const tempBonus = (tempModifiers[attacker.id]?.strikeBonus || 0) + (tempModifiers[attacker.id]?.nextMeleeStrike || 0);
@@ -3573,7 +3844,7 @@ useEffect(() => {
           const fatigueDefensePenalty = fatiguedDefender.bonuses?.parry || 0;
           
           // Get base parry bonus
-          let defenseBonus = (defender.bonuses?.parry || 0) + fatigueDefensePenalty;
+          let defenseBonus = (getCombatBonus(defender, "parry", defender.weaponSlots?.leftHand || defender.weaponSlots?.rightHand || defender.weapon || null) || 0) + fatigueDefensePenalty;
           
           // Apply grapple penalties to defense rolls
           const grappleStatus = getGrappleStatus(defender);
@@ -3712,9 +3983,9 @@ useEffect(() => {
           
           if (defenseType === "Move") {
             // Move gives +1 to dodge
-            defenseBonus = (defender.bonuses?.dodge || 0) + 1 + fatigueDefensePenalty + grappleDefensePenalty + sizeDefensePenalty;
+            defenseBonus = (getCombatBonus(defender, "dodge", defender.weaponSlots?.leftHand || defender.weaponSlots?.rightHand || defender.weapon || null) || 0) + 1 + fatigueDefensePenalty + grappleDefensePenalty + sizeDefensePenalty;
           } else {
-            defenseBonus = (defender.bonuses?.[defenseType.toLowerCase()] || 0) + fatigueDefensePenalty + grappleDefensePenalty + sizeDefensePenalty;
+            defenseBonus = (getCombatBonus(defender, defenseType.toLowerCase(), defender.weaponSlots?.leftHand || defender.weaponSlots?.rightHand || defender.weapon || null) || 0) + fatigueDefensePenalty + grappleDefensePenalty + sizeDefensePenalty;
             
             // Apply reach-based parry modifiers (with combat distance)
             if (defenseType === "Parry" && combatTerrain && positions && positions[attacker.id] && positions[defender.id]) {
@@ -3912,6 +4183,28 @@ useEffect(() => {
         // Log attack data for debugging
         console.log(`Attack data for ${attacker.name}:`, attackData);
         
+        // Handle "by weapon" damage - resolve to actual weapon damage
+        if (attackData.damage && typeof attackData.damage === 'string' && attackData.damage.toLowerCase().includes('by weapon')) {
+          // Get equipped weapon
+          const equippedWeapon = attacker.equippedWeapons?.[0] || 
+                                 attacker.equippedWeapons?.primary || 
+                                 attacker.equippedWeapons?.secondary ||
+                                 (attacker.equippedWeapon ? { name: attacker.equippedWeapon, damage: null } : null);
+          
+          if (equippedWeapon) {
+            // Check if weapon is being used two-handed
+            const isUsingTwoHanded = equippedWeapon.twoHanded || isTwoHandedWeapon(equippedWeapon);
+            // Use getWeaponDamage to properly calculate damage with two-handed bonuses and weapon size modifiers
+            const weaponDamage = getWeaponDamage(equippedWeapon, isUsingTwoHanded, attacker);
+            attackData.damage = weaponDamage;
+            addLog(`⚔️ Using weapon damage: ${weaponDamage} from ${equippedWeapon.name}`, "info");
+          } else {
+            // No weapon equipped, use unarmed damage
+            attackData.damage = "1d3";
+            addLog(`⚠️ No weapon equipped, using unarmed damage: 1d3`, "info");
+          }
+        }
+        
         if (attackData.damage && typeof attackData.damage === 'string' && attackData.damage.includes('d')) {
           // Parse damage like "1d4" or "2d6" or "1d8+2"
           const parsed = parseDamageFormula(attackData.damage);
@@ -3963,18 +4256,36 @@ useEffect(() => {
         
         let damage = damageRollResult.totalWithBonus;
         
+        // Optional extra damage dice from action modifiers (e.g., dive attack momentum)
+        let extraDamageFromDive = 0;
+        if (bonusModifiers?.extraDamageDice) {
+          try {
+            const extraRoll = CryptoSecureDice.parseAndRoll(bonusModifiers.extraDamageDice);
+            extraDamageFromDive = extraRoll.totalWithBonus || 0;
+            damage += extraDamageFromDive;
+            addLog(`🪽 Bonus damage: ${bonusModifiers.extraDamageDice} = ${extraDamageFromDive}`, "info");
+          } catch (e) {
+            if (import.meta.env?.DEV || import.meta.env?.MODE === 'development') {
+              console.warn('[attack] extraDamageDice parse failed:', e);
+            }
+          }
+        }
+        
         // Critical hit doubles damage!
         if (isCriticalHit) {
+          const baseDamageBeforeCrit = damage;
           damage = damage * 2;
           // Calculate total bonus for logging (existing bonus + damage bonus)
           const parsedDamage = parseDamageFormula(attackData.damage);
           const totalBonusForLog = parsedDamage.existingBonus + safeDamageBonus;
-          addLog(`🎲 Damage: ${parsedDamage.baseFormula} + ${totalBonusForLog} = ${damageRollResult.totalWithBonus} × 2 (CRITICAL) = ${damage}`, "critical");
+          const extraText = extraDamageFromDive > 0 ? ` + ${extraDamageFromDive}` : "";
+          addLog(`🎲 Damage: ${parsedDamage.baseFormula} + ${totalBonusForLog}${extraText} = ${baseDamageBeforeCrit} × 2 (CRITICAL) = ${damage}`, "critical");
         } else {
           // Calculate total bonus for logging
           const parsedDamage = parseDamageFormula(attackData.damage);
           const totalBonusForLog = parsedDamage.existingBonus + safeDamageBonus;
-          addLog(`🎲 Damage: ${parsedDamage.baseFormula} + ${totalBonusForLog} = ${damage}`, "info");
+          const extraText = extraDamageFromDive > 0 ? ` + ${extraDamageFromDive}` : "";
+          addLog(`🎲 Damage: ${parsedDamage.baseFormula} + ${totalBonusForLog}${extraText} = ${damage}`, "info");
         }
         
         // Calculate damage with multipliers
@@ -4034,6 +4345,58 @@ useEffect(() => {
         const newHP = clampHP(startingHP - finalDamage, defender);
         applyHPToFighter(defender, newHP);
         
+        // ✅ OPTION B: Dive-hit auto-grapple (talon grab)
+        try {
+          const isDiveAttack =
+            bonusModifiers?.source === "DIVE_ATTACK" ||
+            bonusModifiers?.source === "DIVE" ||
+            bonusModifiers?.diveAttack === true;
+
+          const nameStr = (attacker?.species || attacker?.name || "").toLowerCase();
+          const isPredBird =
+            nameStr.includes("hawk") ||
+            nameStr.includes("eagle") ||
+            nameStr.includes("falcon") ||
+            nameStr.includes("owl");
+
+          // Only grapple if the strike hit AND target is still alive
+          if (isDiveAttack && isPredBird && newHP > 0) {
+            const attInUpdated = updated[attackerIndex];
+            const defInUpdated = updated[defenderIndex];
+
+            const attStatus = getGrappleStatus(attInUpdated);
+            const defStatus = getGrappleStatus(defInUpdated);
+
+            // Don't re-init if already grappling
+            if (attStatus.state === GRAPPLE_STATES.NEUTRAL && defStatus.state === GRAPPLE_STATES.NEUTRAL) {
+              // Ensure grapple states exist
+              if (!attInUpdated.grappleState) attInUpdated.grappleState = initializeGrappleState(attInUpdated);
+              if (!defInUpdated.grappleState) defInUpdated.grappleState = initializeGrappleState(defInUpdated);
+
+              // Hawk grabs prey on contact
+              attInUpdated.grappleState = {
+                ...attInUpdated.grappleState,
+                state: GRAPPLE_STATES.CLINCH,
+                opponent: defInUpdated.id,
+                hasGrappleAdvantage: true, // your existing +2 bonus is consumed next attack
+                canUseLongWeapons: false,
+              };
+
+              defInUpdated.grappleState = {
+                ...defInUpdated.grappleState,
+                state: GRAPPLE_STATES.GRAPPLED,
+                opponent: attInUpdated.id,
+                penalties: { strike: -2, parry: -3, dodge: -4 },
+                canUseLongWeapons: false,
+              };
+
+              addLog(`🪝 ${attInUpdated.name} hooks ${defInUpdated.name} in a talon-grab grapple!`, "combat");
+            }
+          }
+        } catch (e) {
+          console.warn("Dive grapple hook failed:", e);
+        }
+        
         // 🧊 Pain Stagger + Morale System Integration
         let defenderAfterHit = { ...defender };
         let bigPainHit = false;
@@ -4074,36 +4437,20 @@ useEffect(() => {
             bigPainHit: bigPainHit,
           });
           
-          const isUndead = isUndeadCreature(defenderAfterHit);
-          let moraleState = moraleOutcome.moraleState;
-
-          if (moraleState.status === "ROUTED" && isUndead) {
-            // Undead never actually route: downgrade to SHAKEN instead
-            addLog(
-              `🧟 ${defenderAfterHit.name} would break and flee, but as undead it fights on!`,
-              "info"
-            );
-            moraleState = {
-              ...moraleState,
-              status: "SHAKEN",
-            };
-          } else if (moraleState.status === "ROUTED") {
+          defenderAfterHit = {
+            ...defenderAfterHit,
+            moraleState: moraleOutcome.moraleState,
+          };
+          
+          if (moraleOutcome.moraleState.status === "ROUTED") {
             addLog(`🏃 ${defenderAfterHit.name} breaks and ROUTES!`, "warning");
           } else if (
-            moraleState.status === "SHAKEN" &&
+            moraleOutcome.moraleState.status === "SHAKEN" &&
             moraleOutcome.result &&
             !moraleOutcome.success
           ) {
-            addLog(
-              `😨 ${defenderAfterHit.name} is SHAKEN by the attack and loses next action!`,
-              "info"
-            );
+            addLog(`😨 ${defenderAfterHit.name} is SHAKEN by the attack!`, "info");
           }
-
-          defenderAfterHit = {
-            ...defenderAfterHit,
-            moraleState,
-          };
         }
         
         // 3) Replace original defender in updated array with defenderAfterHit
@@ -4120,8 +4467,18 @@ useEffect(() => {
           if (remainingConsciousEnemies.length === 0 && !combatEndCheckRef.current) {
             // All enemies are defeated - end combat immediately
             combatEndCheckRef.current = true;
+            combatOverRef.current = true; // ✅ AUTHORITATIVE: Set combat over flag
             addLog("🎉 Victory! All enemies defeated!", "victory");
             setCombatActive(false);
+            
+            // ✅ CRITICAL: Clear ALL pending timeouts to stop post-victory actions
+            if (turnTimeoutRef.current) {
+              clearTimeout(turnTimeoutRef.current);
+              turnTimeoutRef.current = null;
+            }
+            allTimeoutsRef.current.forEach(clearTimeout);
+            allTimeoutsRef.current = [];
+            
             // Update fighters state and return early to prevent further processing
             setFighters(updated);
             return;
@@ -4232,8 +4589,18 @@ useEffect(() => {
             if (remainingConsciousEnemies.length === 0 && !combatEndCheckRef.current) {
               // All enemies are defeated - end combat immediately
               combatEndCheckRef.current = true;
+              combatOverRef.current = true; // ✅ AUTHORITATIVE: Set combat over flag
               addLog("🎉 Victory! All enemies defeated!", "victory");
               setCombatActive(false);
+              
+              // ✅ CRITICAL: Clear ALL pending timeouts to stop post-victory actions
+              if (turnTimeoutRef.current) {
+                clearTimeout(turnTimeoutRef.current);
+                turnTimeoutRef.current = null;
+              }
+              allTimeoutsRef.current.forEach(clearTimeout);
+              allTimeoutsRef.current = [];
+              
               // Update fighters state and return early to prevent further processing
               setFighters(updated);
               return;
@@ -4242,7 +4609,10 @@ useEffect(() => {
           
           // Award XP if an enemy was defeated by players (only if dead, not just unconscious)
           if (defenderAfterHit.type === "enemy" && defenderAfterHit.currentHP <= -21) {
-            const alivePlayers = updated.filter(f => f.type === "player" && canFighterAct(f));
+            // Don't use canFighterAct() as the definition of "alive player." For defeat, use HP + status
+            const alivePlayers = updated.filter(
+              (f) => f.type === "player" && f.status !== "defeated" && f.status !== "fled" && getFighterHP(f) > 0
+            );
             if (alivePlayers.length > 0) {
               // Find enemy in bestiary for XP calculation using getMonsterByName
               const enemyData = getMonsterByName(defenderAfterHit.name, bestiary) || getAllBestiaryEntries(bestiary)?.find(m => 
@@ -4286,16 +4656,39 @@ useEffect(() => {
               return;
                 } else if (consciousEnemies.length === 0) {
                   combatEndCheckRef.current = true;
+                  combatOverRef.current = true; // ✅ AUTHORITATIVE: Set combat over flag
                   addLog("🎉 Victory! All enemies defeated!", "victory");
                   setCombatActive(false);
-              // Update fighters state immediately
-              setFighters(updated);
-              return;
+                  
+                  // ✅ CRITICAL: Clear ALL pending timeouts to stop post-victory actions
+                  if (turnTimeoutRef.current) {
+                    clearTimeout(turnTimeoutRef.current);
+                    turnTimeoutRef.current = null;
+                  }
+                  allTimeoutsRef.current.forEach(clearTimeout);
+                  allTimeoutsRef.current = [];
+                  
+                  // Update fighters state immediately
+                  setFighters(updated);
+                  return;
                 }
           }
         }
       } else {
         addLog(`❌ ${attacker.name} misses ${defender.name}!`, "miss");
+        
+        // Dive attack miss consequence: momentum penalty
+        if (bonusModifiers.tag === "DIVE_ATTACK" || bonusModifiers.source === "DIVE_ATTACK") {
+          // Apply momentum penalty: -2 parry for 1 action
+          if (attackerInArray) {
+            // Store temporary penalty that will be applied on next action
+            if (!attackerInArray.bonuses) attackerInArray.bonuses = {};
+            if (!attackerInArray.bonuses.tempPenalties) attackerInArray.bonuses.tempPenalties = {};
+            attackerInArray.bonuses.tempPenalties.parry = (attackerInArray.bonuses.tempPenalties.parry || 0) - 2;
+            attackerInArray.bonuses.tempPenalties.diveMomentum = true; // Flag to clear after 1 action
+            addLog(`⚠️ ${attacker.name} overcommits on the dive and is off-balance! (-2 parry until next action)`, "warning");
+          }
+        }
         
         // Check for heavy weapon recovery penalty
         const missMargin = attackRoll - targetAR;
@@ -4340,10 +4733,15 @@ useEffect(() => {
     // ALWAYS end turn after each action - this ensures alternating action system
     // endTurn() will cycle to the next fighter with actions remaining
     // If this fighter still has actions, they'll get another turn after others act
-      setTimeout(() => {
+      const timeoutId = setTimeout(() => {
+        // ✅ GUARD: Check combat state in delayed callback (use ref for latest state)
+        if (combatOverRef.current || !combatActive || combatEndCheckRef.current) return;
         endTurn();
       }, 1500);
-  }, [fighters, addLog, endTurn]);
+      
+      // ✅ Track this timeout so we can clear it on combat end
+      allTimeoutsRef.current.push(timeoutId);
+  }, [fighters, addLog, endTurn, isPredatorBird, performDiveAttack, isFlying]);
 
   // Handle charge attack (move and attack with bonuses)
   const handleChargeAttack = useCallback((attacker, target) => {
@@ -4491,7 +4889,7 @@ useEffect(() => {
         });
 
         // End turn
-        setTimeout(() => endTurn(), 1500);
+        safeEndTurn(1500);
         return;
       }
 
@@ -4499,8 +4897,8 @@ useEffect(() => {
       startTransition(() => {
         setPositions(prev => {
           const updated = {
-          ...prev,
-          [combatantId]: newPosition
+            ...prev,
+            [combatantId]: newPosition
           };
           positionsRef.current = updated;
           // Sync combined body positions (mounts, carriers, etc.)
@@ -4518,7 +4916,7 @@ useEffect(() => {
           // Handle action cost - if it costs actions, end the turn
           if (actionCost === "all" || actionCost >= 1) {
             addLog(`⏭️ ${combatant.name} used ${actionCost === "all" ? "all actions" : `${actionCost} action(s)`} for movement`, "info");
-            setTimeout(() => endTurn(), 1500);
+            safeEndTurn(1500);
           }
         } else {
           addLog(`📍 ${combatant.name} moved to position (${newPosition.x}, ${newPosition.y})`, "info");
@@ -4656,26 +5054,46 @@ useEffect(() => {
     return priority;
   }, []);
 
+  // Unified movement calculation - single source of truth
+  const getMaxMoveFtThisAction = useCallback((fighter, movementType = "Run") => {
+    const speed = fighter.Spd || fighter.spd || fighter.attributes?.Spd || fighter.attributes?.spd || 10;
+    const attacksPerMelee = fighter.attacksPerMelee || fighter.actionsPerMelee || 4;
+    
+    // Check if fighter is flying
+    const isFlying = fighter.isFlying || fighter.altitude > 0;
+    const canFly = fighter.abilities?.some(a => a.toLowerCase().includes("fly")) || 
+                   fighter.abilities?.some(a => a.toLowerCase().includes("flight"));
+    
+    if (isFlying || canFly) {
+      // Flight movement: Speed × multiplier × 18 feet per melee
+      // Default flight multiplier is 8 (30 mph for Speed 10)
+      const flightMultiplier = 8; // Can be extracted from abilities if needed
+      const feetPerMelee = speed * flightMultiplier * 18;
+      const feetPerAction = feetPerMelee / attacksPerMelee;
+      return feetPerAction;
+    }
+    
+    // Ground movement: OFFICIAL 1994 PALLADIUM FORMULA
+    // Speed × 18 = feet per melee (running speed)
+    const feetPerMelee = speed * 18;
+    const feetPerAction = feetPerMelee / attacksPerMelee;
+    
+    // Walking speed is ~half of running speed (Palladium rule)
+    if (movementType === "MOVE" || movementType === "Walk") {
+      return Math.floor(feetPerAction * 0.5);
+    }
+    
+    // Running speed (full speed)
+    return feetPerAction;
+  }, []);
+
   // Helper function to find flanking positions around a target
   const findFlankingPositions = useCallback((targetPos, allPositions, attackerId) => {
     const flankingPositions = [];
-    const directions = [
-      { x: 1, y: 0 },   // Right
-      { x: -1, y: 0 },  // Left
-      { x: 0, y: 1 },   // Down
-      { x: 0, y: -1 },  // Up
-      { x: 1, y: 1 },   // Down-right
-      { x: -1, y: -1 }, // Up-left
-      { x: 1, y: -1 },  // Up-right
-      { x: -1, y: 1 },  // Down-left
-    ];
+    // ✅ Use hex neighbors (6 directions) instead of square grid (8 directions)
+    const neighbors = getHexNeighbors(targetPos.x, targetPos.y);
     
-    directions.forEach(dir => {
-      const flankPos = {
-        x: targetPos.x + dir.x,
-        y: targetPos.y + dir.y
-      };
-      
+    neighbors.forEach(flankPos => {
       // Check if position is valid and not occupied (exclude attacker)
       let isOccupied = false;
       for (const [id, pos] of Object.entries(allPositions)) {
@@ -4696,23 +5114,10 @@ useEffect(() => {
   // Helper function to calculate flanking bonus
   const calculateFlankingBonus = useCallback((attackerPos, targetPos, allPositions, attackerId) => {
     let flankingCount = 0;
-    const directions = [
-      { x: 1, y: 0 },   // Right
-      { x: -1, y: 0 },  // Left
-      { x: 0, y: 1 },   // Down
-      { x: 0, y: -1 },  // Up
-      { x: 1, y: 1 },   // Down-right
-      { x: -1, y: -1 }, // Up-left
-      { x: 1, y: -1 },  // Up-right
-      { x: -1, y: 1 },  // Down-left
-    ];
+    // ✅ Use hex neighbors (6 directions) instead of square grid (8 directions)
+    const neighbors = getHexNeighbors(targetPos.x, targetPos.y);
     
-    directions.forEach(dir => {
-      const checkPos = {
-        x: targetPos.x + dir.x,
-        y: targetPos.y + dir.y
-      };
-      
+    neighbors.forEach(checkPos => {
       // Check if any ally is at this position
       for (const [id, pos] of Object.entries(allPositions)) {
         if (pos.x === checkPos.x && pos.y === checkPos.y && id !== attackerId) {
@@ -4746,14 +5151,17 @@ useEffect(() => {
     if (character.equippedWeapons && Array.isArray(character.equippedWeapons)) {
       character.equippedWeapons.forEach(weapon => {
         if (weapon && weapon.name && weapon.name !== "Unarmed") {
+          // ✅ Merge canonical weapon stats to ensure range/reach/etc are populated
+          const base = getWeaponByName(weapon.name) || {};
+          const merged = { ...base, ...weapon }; // equipped overrides canonical
           weapons.push({
-            name: weapon.name,
-            damage: weapon.damage || "1d3",
+            name: merged.name,
+            damage: merged.damage || "1d3",
             slot: weapon.slot || "Right Hand",
-            range: weapon.range,
-            reach: weapon.reach,
-            category: weapon.category,
-            type: weapon.type
+            range: merged.range,
+            reach: merged.reach,
+            category: merged.category,
+            type: merged.type
           });
         }
       });
@@ -4766,14 +5174,17 @@ useEffect(() => {
       weaponSlots.forEach(slot => {
         const weapon = character.equipped[slot];
         if (weapon && weapon.name && weapon.name !== "Unarmed") {
+          // ✅ Merge canonical weapon stats to ensure range/reach/etc are populated
+          const base = getWeaponByName(weapon.name) || {};
+          const merged = { ...base, ...weapon }; // equipped overrides canonical
           weapons.push({
-            name: weapon.name,
-            damage: weapon.damage || "1d3",
+            name: merged.name,
+            damage: merged.damage || "1d3",
             slot: slot,
-            range: weapon.range,
-            reach: weapon.reach,
-            category: weapon.category,
-            type: weapon.type
+            range: merged.range,
+            reach: merged.reach,
+            category: merged.category,
+            type: merged.type
           });
         }
       });
@@ -4815,127 +5226,192 @@ useEffect(() => {
     processingPlayerAIRef.current = true;
     
     // ✅ CRITICAL: Get latest player state from fighters array to ensure we have persisted moraleState
-    const latestPlayer = fighters.find(f => f.id === player.id) || player;
-    
-    // 🔴 NEW: Check if routed - if so, attempt to flee instead of fighting
-    if (
-      settings.useMoraleRouting &&
-      (latestPlayer.moraleState?.status === "ROUTED" ||
-        latestPlayer.statusEffects?.includes("ROUTED"))
-    ) {
-      const isUndead = isUndeadCreature(latestPlayer);
+    let latestPlayer = fighters.find(f => f.id === player.id) || player;
 
-      if (isUndead) {
-        // Undead PCs/NPCs under player side AI never flee
-        addLog(
-          `🧟 ${latestPlayer.name} is ROUTED but, being undead, refuses to flee and fights on!`,
-          "info"
+    // 🐭 Predator panic: tiny prey ROUTES when a predator bird is nearby/visible.
+    // This triggers the existing routed-flee logic immediately.
+    if (settings.useMoraleRouting && isTinyPrey(latestPlayer)) {
+      const currentPositions = positionsRef.current || positions;
+      const myPos = currentPositions?.[latestPlayer.id];
+      if (myPos) {
+        const predators = fighters.filter(f =>
+          f.type === "enemy" &&
+          canFighterAct(f) &&
+          f.currentHP > 0 &&
+          isPredatorBird(f)
         );
 
-        // Downgrade / clear ROUTED so we don't loop this every turn
-        if (latestPlayer.moraleState?.status === "ROUTED") {
-          latestPlayer.moraleState = {
-            ...latestPlayer.moraleState,
-            status: "SHAKEN",
+        let nearestPred = null;
+        let nearestDist = Infinity;
+        let predatorVisible = false;
+
+        predators.forEach((p) => {
+          const pPos = currentPositions?.[p.id];
+          if (!pPos) return;
+          const dist = calculateDistance(myPos, pPos);
+          if (dist < nearestDist) {
+            nearestDist = dist;
+            nearestPred = p;
+          }
+          const vis = canAISeeTargetAsymmetric(latestPlayer, p, currentPositions, combatTerrain, {
+            useFogOfWar: fogEnabled,
+            fogOfWarVisibleCells: visibleCells,
+          });
+          if (vis) predatorVisible = true;
+        });
+
+        // Mice can also "sense" danger at close range (hearing), even if the hawk is hard to see.
+        const hearingPanicRangeFt = 30; // 6 hexes
+        const shouldPanic = nearestPred && (predatorVisible || nearestDist <= hearingPanicRangeFt);
+
+        if (shouldPanic && latestPlayer.moraleState?.status !== "ROUTED") {
+          addLog(`🐭 ${latestPlayer.name} panics and ROUTES from ${nearestPred.name}!`, "warning");
+
+          // Persist morale state
+          setFighters(prev =>
+            prev.map(f =>
+              f.id === latestPlayer.id
+                ? {
+                    ...f,
+                    moraleState: {
+                      ...(f.moraleState || {}),
+                      status: "ROUTED",
+                      reason: "predator_threat",
+                    },
+                  }
+                : f
+            )
+          );
+
+          // Also update local view so this turn uses routed logic immediately
+          latestPlayer = {
+            ...latestPlayer,
+            moraleState: {
+              ...(latestPlayer.moraleState || {}),
+              status: "ROUTED",
+              reason: "predator_threat",
+            },
           };
         }
-
-        if (latestPlayer.statusEffects?.includes("ROUTED")) {
-          latestPlayer.statusEffects = latestPlayer.statusEffects.filter(
-            (s) => s !== "ROUTED"
-          );
-        }
+      }
+    }
+    
+    // 🔴 NEW: Check if routed - if so, attempt to flee instead of fighting
+    if (settings.useMoraleRouting && (latestPlayer.moraleState?.status === "ROUTED" || latestPlayer.statusEffects?.includes("ROUTED"))) {
+      // 🛡️ Fear-immune creatures never flee - clear ROUTED and continue with normal turn
+      if (latestPlayer.neverFlee || isFearImmune(latestPlayer)) {
+        addLog(`🛡️ ${latestPlayer.name} is immune to fear and refuses to flee (ignoring ROUTED).`, "info");
+        // Clear ROUTED status
+        setFighters(prev => prev.map(f => {
+          if (f.id === latestPlayer.id) {
+            return {
+              ...f,
+              moraleState: {
+                ...(f.moraleState || {}),
+                status: "STEADY",
+              },
+              statusEffects: Array.isArray(f.statusEffects) ? f.statusEffects.filter(s => s !== "ROUTED") : f.statusEffects,
+            };
+          }
+          return f;
+        }));
+        // Continue with normal turn (don't flee)
       } else {
-        addLog(
-          `🏃 ${latestPlayer.name} is ROUTED and attempts to flee!`,
-          "warning"
-        );
+        addLog(`🏃 ${latestPlayer.name} is ROUTED and attempts to flee!`, "warning");
+      
+      const currentPositions = positionsRef.current || positions;
+      const myPos = currentPositions[latestPlayer.id];
+      
+      if (myPos) {
+        // Evaluate ALL reachable candidates within maxSteps (non-greedy) and allow tie-moves.
+        // This stops the endless loop of: routed → can't find strictly-better step → end turn.
+        const threatPositions = getThreatPositionsForFighter(
+          latestPlayer,
+          fighters,
+          currentPositions
+        ).filter(Boolean);
 
-        const currentPositions = positionsRef.current || positions;
-        const myPos = currentPositions[latestPlayer.id];
+        if (threatPositions.length === 0) {
+          // ✅ No threats to flee from, mark as fled
+          addLog(`🏃 ${latestPlayer.name} flees in terror!`, "warning");
+          markFighterFledOffMap(latestPlayer.id, latestPlayer.name);
+          processingPlayerAIRef.current = false;
+          scheduleEndTurn();
+          return;
+        } else {
+          const occ = makeIsHexOccupied(currentPositions, latestPlayer.id);
+          const retreat = findBestRetreatHex({
+            currentPos: myPos,
+            threatPositions,
+            maxSteps: 3,
+            isHexOccupied: (x, y) => occ(x, y, latestPlayer.id),
+            getHexNeighbors,
+            isValidPosition: (x, y) => isValidPosition(x, y, combatTerrain),
+            calculateDistance,
+            gridWidth: GRID_CONFIG.GRID_WIDTH,
+            gridHeight: GRID_CONFIG.GRID_HEIGHT,
+            allowTieMoves: true,
+            preferEdgeEscape: true,
+          });
 
-        if (myPos) {
-          // Find nearest visible threat
-          const allEnemies = fighters.filter(
-            (f) =>
-              f.type === "enemy" &&
-              canFighterAct(f) &&
-              f.currentHP > 0
-          );
+          if (retreat?.position) {
+            const atEdge =
+              retreat.reachedEdge ||
+              isAtMapEdge(retreat.position, GRID_CONFIG.GRID_WIDTH, GRID_CONFIG.GRID_HEIGHT);
 
-          const nearestThreat = allEnemies
-            .filter((e) => {
-              const threatPos = currentPositions[e.id];
-              return (
-                threatPos &&
-                canAISeeTarget(
-                  latestPlayer,
-                  e,
-                  currentPositions,
-                  combatTerrain,
-                  {
-                    useFogOfWar: fogEnabled,
-                    fogOfWarVisibleCells: visibleCells,
-                  }
+            if (atEdge) {
+              markFighterFledOffMap(latestPlayer.id, latestPlayer.name);
+              processingPlayerAIRef.current = false;
+              scheduleEndTurn();
+              return;
+            } else {
+              // ✅ Routed player moves but hasn't reached edge yet - still in combat, just fleeing
+              setPositions((prev) => ({ ...prev, [latestPlayer.id]: retreat.position }));
+              addLog(
+                `🏃 ${latestPlayer.name} flees ${Math.round(retreat.distanceFeet)}ft to (${retreat.position.x}, ${retreat.position.y})!`,
+                "warning"
+              );
+              
+              // Set remaining attacks to 0 (routed units don't fight) but DON'T set hasFled
+              setFighters((prev) =>
+                prev.map((f) =>
+                  f.id === latestPlayer.id
+                    ? {
+                        ...f,
+                        remainingAttacks: 0,
+                        moraleState: {
+                          ...(f.moraleState || {}),
+                          status: "ROUTED",
+                          hasFled: false, // ✅ Still on map, just fleeing
+                        },
+                      }
+                    : f
                 )
               );
-            })
-            .sort((a, b) => {
-              const distA = calculateDistance(
-                myPos,
-                currentPositions[a.id] || {}
-              );
-              const distB = calculateDistance(
-                myPos,
-                currentPositions[b.id] || {}
-              );
-              return distA - distB;
-            })[0];
-
-          if (nearestThreat) {
-            const threatPos = currentPositions[nearestThreat.id];
-            // Move directly away from nearest threat
-            const dx = myPos.x - threatPos.x;
-            const dy = myPos.y - threatPos.y;
-            const length = Math.sqrt(dx * dx + dy * dy) || 1;
-            const fleeDistance = 3; // Move 3 hexes away
-            const fleePos = {
-              x: Math.round(myPos.x + (dx / length) * fleeDistance),
-              y: Math.round(myPos.y + (dy / length) * fleeDistance),
-            };
-
-            // Try to move to flee position (if valid)
-            if (
-              isValidPosition &&
-              isValidPosition(fleePos.x, fleePos.y, combatTerrain)
-            ) {
-              setPositions((prev) => ({
-                ...prev,
-                [latestPlayer.id]: fleePos,
-              }));
-              addLog(
-                `🏃 ${latestPlayer.name} flees to (${fleePos.x}, ${fleePos.y})!`,
-                "warning"
-              );
-            } else {
-              addLog(
-                `🏃 ${latestPlayer.name} attempts to flee but cannot find a safe path!`,
-                "warning"
-              );
+              
+              // End turn after moving
+              processingPlayerAIRef.current = false;
+              scheduleEndTurn();
+              return;
             }
           } else {
-            addLog(
-              `⚠️ ${latestPlayer.name} is ROUTED but has no known position on the map!`,
-              "warning"
-            );
+            // ✅ If routed player cannot find a safe path, mark them as fled (they're effectively out of combat)
+            addLog(`🏃 ${latestPlayer.name} attempts to flee but cannot find a safe path! Marking as fled.`, "warning");
+            markFighterFledOffMap(latestPlayer.id, latestPlayer.name);
+            processingPlayerAIRef.current = false;
+            scheduleEndTurn();
+            return;
           }
         }
+      } else {
+        // ✅ No position, mark as fled
+        markFighterFledOffMap(latestPlayer.id, latestPlayer.name);
+        processingPlayerAIRef.current = false;
+        scheduleEndTurn();
+        return;
       }
-
-      processingPlayerAIRef.current = false;
-      scheduleEndTurn();
-      return; // CRITICAL: Exit early, don't continue with normal AI
       }
+    }
     
     // Build context for AI module
     const context = {
@@ -4964,7 +5440,6 @@ useEffect(() => {
       isHexOccupied,
       handlePositionChange,
       getEquippedWeapons,
-      findRetreatDestination,
       // Visibility / fog
       fogEnabled,
       visibleCells,
@@ -5040,7 +5515,6 @@ useEffect(() => {
     isHexOccupied,
     handlePositionChange,
     getEquippedWeapons,
-    findRetreatDestination,
     fogEnabled,
     visibleCells,
     canAISeeTarget,
@@ -5084,8 +5558,14 @@ useEffect(() => {
     findBeePath,
     getTargetsInLine,
     aiControlEnabled,
-    isUndead,
-    settings,
+    markFighterFledOffMap,
+    isTinyPrey,
+    isPredatorBird,
+    canAISeeTargetAsymmetric,
+    settings.useMoraleRouting,
+    fogEnabled,
+    visibleCells,
+    getAwareness,
   ]);
 
   // Define handleEnemyTurn function with useCallback last
@@ -5120,6 +5600,436 @@ useEffect(() => {
       addLog(`⚠️ Combat ended, ${enemy.name} skips turn`, "info");
       processingEnemyTurnRef.current = false;
       return;
+    }
+    
+    // 🦅 Hawk predator override: if grappling/carrying, handle here (don't defer to generic flying AI)
+    let liveEnemy = fighters.find(f => f.id === enemy.id) || enemy;
+    const enemyNameStr = (liveEnemy?.species || liveEnemy?.name || "").toLowerCase();
+    const isPredBird =
+      enemyNameStr.includes("hawk") ||
+      enemyNameStr.includes("eagle") ||
+      enemyNameStr.includes("falcon") ||
+      enemyNameStr.includes("owl");
+
+    // 1) If carrying: climb → fly away → drop (hawk mid-air prey logic)
+    if (isPredBird && liveEnemy?.isCarrying && liveEnemy?.carriedTargetId) {
+      const carried = fighters.find(f => f.id === liveEnemy.carriedTargetId);
+
+      if (!carried) {
+        // orphan carry state
+        setFighters(prev => prev.map(f => (
+          f.id === liveEnemy.id ? { ...f, isCarrying: false, carriedTargetId: null } : f
+        )));
+        processingEnemyTurnRef.current = false;
+        scheduleEndTurn();
+        return;
+      }
+
+      const livePos = (positionsRef.current || positions);
+      const myPos = livePos[liveEnemy.id];
+      const alt = getAltitude(liveEnemy) || 0;
+
+      // Carry state lives on the hawk so we can enforce "fly away before drop"
+      const carryState = liveEnemy.aiPredatorCarry || {
+        movedAway: false,
+        desiredAlt: 40,
+        safeDistanceFt: 60,
+      };
+
+      // A) Climb first (one action)
+      if (alt < carryState.desiredAlt) {
+        const step = Math.min(20, carryState.desiredAlt - alt);
+        const climbed = changeAltitude(liveEnemy, +step);
+        if (climbed.success) {
+          setFighters(prev => prev.map(f => {
+            if (f.id !== liveEnemy.id) return f;
+            const ra = Number(f.remainingAttacks ?? 0) || 0;
+            return {
+              ...climbed.fighter,
+              remainingAttacks: Math.max(0, ra - 1),
+              aiPredatorCarry: { ...carryState },
+            };
+          }));
+          addLog(`🦅 ${liveEnemy.name} climbs with prey (${alt}ft → ${alt + step}ft)!`, "info");
+        }
+        processingEnemyTurnRef.current = false;
+        scheduleEndTurn();
+        return;
+      }
+
+      // B) Ensure we "fly away" at least once before dropping (one action)
+      if (!carryState.movedAway && myPos) {
+        // Find closest threat (exclude the carried prey)
+        const threats = fighters.filter(f =>
+          f.type !== liveEnemy.type &&
+          canFighterAct(f) &&
+          f.currentHP > 0 &&
+          f.id !== carried.id &&
+          !f.isCarried
+        );
+
+        let retreatTarget = null;
+        if (threats.length > 0) {
+          const nearest = threats
+            .map(t => ({ t, d: calculateDistance(myPos, livePos[t.id]) }))
+            .filter(x => x.d != null && !Number.isNaN(x.d))
+            .sort((a, b) => a.d - b.d)[0];
+          if (nearest?.t && livePos[nearest.t.id]) {
+            const tp = livePos[nearest.t.id];
+            const dx = myPos.x - tp.x;
+            const dy = myPos.y - tp.y;
+            const ang = Math.atan2(dy, dx);
+            const retreatHexes = 6; // ~30ft
+            retreatTarget = {
+              x: Math.round(myPos.x + Math.cos(ang) * retreatHexes),
+              y: Math.round(myPos.y + Math.sin(ang) * retreatHexes),
+            };
+          }
+        }
+
+        // If no threats, drift toward nearest edge (predators tend to take prey away)
+        if (!retreatTarget) {
+          const left = myPos.x;
+          const right = (GRID_CONFIG.GRID_WIDTH - 1) - myPos.x;
+          const top = myPos.y;
+          const bottom = (GRID_CONFIG.GRID_HEIGHT - 1) - myPos.y;
+          const min = Math.min(left, right, top, bottom);
+          const retreatHexes = 6;
+          if (min === left) retreatTarget = { x: myPos.x - retreatHexes, y: myPos.y };
+          else if (min === right) retreatTarget = { x: myPos.x + retreatHexes, y: myPos.y };
+          else if (min === top) retreatTarget = { x: myPos.x, y: myPos.y - retreatHexes };
+          else retreatTarget = { x: myPos.x, y: myPos.y + retreatHexes };
+        }
+
+        // Clamp + find nearest free hex
+        const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+        let targetHex = {
+          x: clamp(retreatTarget.x, 0, GRID_CONFIG.GRID_WIDTH - 1),
+          y: clamp(retreatTarget.y, 0, GRID_CONFIG.GRID_HEIGHT - 1),
+        };
+
+        const occ = (x, y) => isHexOccupied(x, y, liveEnemy.id);
+        if (occ(targetHex.x, targetHex.y) || !isValidPosition(targetHex.x, targetHex.y)) {
+          const neighbors = getHexNeighbors(targetHex.x, targetHex.y)
+            .filter(n => isValidPosition(n.x, n.y) && !occ(n.x, n.y));
+          if (neighbors.length > 0) targetHex = neighbors[0];
+        }
+
+        handlePositionChange(liveEnemy.id, targetHex, {
+          action: "FLY",
+          actionCost: 0,
+          description: "Carries prey away",
+        });
+        addLog(`🦅 ${liveEnemy.name} carries ${carried.name} away through the air!`, "warning");
+
+        setFighters(prev => prev.map(f => {
+          if (f.id !== liveEnemy.id) return f;
+          const ra = Number(f.remainingAttacks ?? 0) || 0;
+          return {
+            ...f,
+            remainingAttacks: Math.max(0, ra - 1),
+            aiPredatorCarry: { ...carryState, movedAway: true },
+          };
+        }));
+
+        processingEnemyTurnRef.current = false;
+        scheduleEndTurn();
+        return;
+      }
+
+      // C) Drop for damage (one action)
+      const drop = dropCarriedTarget(liveEnemy, carried, { height: alt });
+      if (drop.success) {
+        setFighters(prev => prev.map(f => {
+          if (f.id === liveEnemy.id) {
+            const ra = Number(f.remainingAttacks ?? 0) || 0;
+            return { ...drop.fighter, remainingAttacks: Math.max(0, ra - 1), aiPredatorCarry: null };
+          }
+          if (f.id === carried.id) return drop.target;
+          return f;
+        }));
+        addLog(`💥 ${liveEnemy.name} drops ${carried.name} from ${alt}ft!`, "warning");
+      } else {
+        addLog(`❌ ${liveEnemy.name} failed to drop prey: ${drop.reason}`, "error");
+        // Still consume an action for the attempt
+        setFighters(prev => prev.map(f => {
+          if (f.id !== liveEnemy.id) return f;
+          const ra = Number(f.remainingAttacks ?? 0) || 0;
+          return { ...f, remainingAttacks: Math.max(0, ra - 1) };
+        }));
+      }
+
+      processingEnemyTurnRef.current = false;
+      scheduleEndTurn();
+      return;
+    }
+
+    // 2) If grappling (but not carrying): finish-kill with beak/talons OR lift & carry
+    if (isPredBird && liveEnemy?.grappleState?.opponent && liveEnemy?.grappleState?.state !== GRAPPLE_STATES.NEUTRAL) {
+      const prey = fighters.find(f => f.id === liveEnemy.grappleState.opponent);
+
+      if (!prey) {
+        // orphan grapple
+        setFighters(prev => prev.map(f => {
+          if (f.id === liveEnemy.id) {
+            const copy = { ...f };
+            resetGrapple(copy);
+            return copy;
+          }
+          return f;
+        }));
+        processingEnemyTurnRef.current = false;
+        scheduleEndTurn();
+        return;
+      }
+
+      const preyHP = prey.currentHP ?? prey.hp ?? 0;
+      const preyMax = getFighterMaxHP(prey) || 1;
+      const weakThreshold = Math.max(6, Math.floor(preyMax * 0.25));
+
+      // Prefer "beak/talons/claw/bite" while holding prey
+      const finisher = (liveEnemy.attacks || []).find(a => {
+        const n = (a.name || "").toLowerCase();
+        return n.includes("beak") || n.includes("talon") || n.includes("claw") || n.includes("bite");
+      }) || (liveEnemy.attacks || [])[0];
+
+      // A) If prey is weak, finish it.
+      if (preyHP <= weakThreshold && finisher) {
+        const updatedAttacker = { ...liveEnemy, selectedAttack: finisher };
+        addLog(`🦅 ${liveEnemy.name} tears into ${prey.name} with ${finisher.name}!`, "combat");
+        // attack() will end the turn; release the enemy-turn lock first.
+        processingEnemyTurnRef.current = false;
+        setTimeout(() => {
+              attack(updatedAttacker, prey.id, {
+          source: "GRAPPLE_FINISH",
+                consumeAttackerAction: true,
+              });
+              }, 0);
+              return; // attack + scheduleEndTurn handled elsewhere
+      }
+
+      // B) Otherwise, attempt to lift & carry ONLY if physically possible.
+      // If the attempt fails, we don't "free follow-up" into an attack (that would be 2 actions).
+      const carryFeasible = canCarryTarget(liveEnemy, prey, { capacityMultiplier: 10 });
+      if (carryFeasible?.canCarry) {
+        const lift = liftAndCarry(liveEnemy, prey, { positions: (positionsRef.current || positions) });
+        if (lift.success) {
+          setFighters(prev => prev.map(f => {
+            if (f.id === liveEnemy.id) {
+              const ra = Number(f.remainingAttacks ?? 0) || 0;
+              return {
+                ...lift.carrier,
+                remainingAttacks: Math.max(0, ra - 1),
+                aiPredatorCarry: { movedAway: false, desiredAlt: 40, safeDistanceFt: 60 },
+              };
+            }
+            if (f.id === prey.id) return lift.carried;
+            return f;
+          }));
+          // Keep carried prey "stacked" on the carrier immediately (don't rely on stale fighters closure)
+          setPositions(prevPos => {
+            const base = { ...(positionsRef.current || prevPos) };
+            const carrierPos = base[lift.carrier.id] || base[liveEnemy.id];
+            if (carrierPos) base[lift.carried.id] = { ...carrierPos };
+            positionsRef.current = base;
+            return base;
+          });
+          addLog(`🦅 ${liveEnemy.name} snatches ${prey.name} mid-air and begins to carry them!`, "warning");
+        } else {
+          // Consume an action for the failed lift attempt
+          setFighters(prev => prev.map(f => {
+            if (f.id !== liveEnemy.id) return f;
+            const ra = Number(f.remainingAttacks ?? 0) || 0;
+            return { ...f, remainingAttacks: Math.max(0, ra - 1) };
+          }));
+          addLog(`⚠️ ${liveEnemy.name} fails to get a clean lift: ${lift.reason}`, "info");
+        }
+
+        processingEnemyTurnRef.current = false;
+        scheduleEndTurn();
+        return;
+      }
+
+      // C) If carrying is not feasible, just keep mauling in the grapple.
+      if (finisher) {
+        const updatedAttacker = { ...liveEnemy, selectedAttack: finisher };
+        addLog(`🦅 ${liveEnemy.name} mauls ${prey.name} with ${finisher.name}!`, "combat");
+        // attack() will end the turn; release the enemy-turn lock first.
+        processingEnemyTurnRef.current = false;
+        setTimeout(() => {
+          attack(updatedAttacker, prey.id, {
+            source: "GRAPPLE_MAUL",
+            consumeAttackerAction: true,
+          });
+        }, 500);
+        return;
+      }
+
+      processingEnemyTurnRef.current = false;
+      scheduleEndTurn();
+      return;
+    }
+
+    // 3) Predator dive logic (Option B): if the hawk is flying, it can dive-swoop to contact and strike in ONE action.
+    // This bypasses any "10ft dive" gating and prevents the "hover forever out of reach" stalemate.
+    if (isPredBird && isFlying(liveEnemy) && (liveEnemy.remainingAttacks ?? 0) > 0) {
+      const livePos = (positionsRef.current || positions);
+      const myPos = livePos[liveEnemy.id];
+
+      // Choose closest valid prey
+      const candidates = fighters.filter(f =>
+        f.type !== liveEnemy.type &&
+        canFighterAct(f) &&
+        (f.currentHP ?? 0) > 0 &&
+        !f.isCarried
+      );
+
+      if (myPos && candidates.length > 0) {
+        const prey = candidates
+          .map(t => ({ t, d: calculateDistance(myPos, livePos[t.id]) }))
+          .filter(x => x.d != null && !Number.isNaN(x.d))
+          .sort((a, b) => a.d - b.d)[0]?.t;
+
+        if (prey && livePos[prey.id]) {
+          const preyPos = livePos[prey.id];
+          const curAlt = getAltitude(liveEnemy) || 0;
+          const preyAlt = getAltitude(prey) || 0;
+          const verticalGap = Math.abs(curAlt - preyAlt);
+          const dist = calculateDistance(myPos, preyPos);
+
+          // If prey is visible but too far for an immediate swoop, glide/hover toward it instead of circling in place.
+          // This prevents the "frozen hovering" loop when distance is large.
+          if (dist > 60) {
+            const occ = (x, y) => isHexOccupied(x, y, liveEnemy.id);
+
+            // Soar higher and higher while gliding in to improve spotting and line up a dive.
+            // Each glide action: climb in steps (up to a cap). The dive will then start from whatever altitude we've built up.
+            const MIN_SCOUT_ALT = 80;
+            const CLIMB_PER_GLIDE = 40;
+            const MAX_SCOUT_ALT = 300;
+
+            let scoutAlt = Number(curAlt || 0) || 0;
+            if (scoutAlt < MIN_SCOUT_ALT) scoutAlt = MIN_SCOUT_ALT;
+            else scoutAlt = Math.min(MAX_SCOUT_ALT, scoutAlt + CLIMB_PER_GLIDE);
+
+            if ((curAlt || 0) < scoutAlt) {
+              setFighters(prev => prev.map(f => (
+                f.id === liveEnemy.id ? { ...f, isFlying: true, altitudeFeet: scoutAlt, altitude: scoutAlt } : f
+              )));
+              addLog(`🦅 ${liveEnemy.name} climbs higher to scout (${Math.round(scoutAlt)}ft).`, "info");
+            }
+
+            // Step up to 3 hexes closer this action
+            let step = { ...myPos };
+            for (let i = 0; i < 3; i++) {
+              const neighbors = (getHexNeighbors(step.x, step.y) || [])
+                .filter(n => isValidPosition(n.x, n.y) && !occ(n.x, n.y));
+              if (!neighbors.length) break;
+              const best = neighbors.sort((a, b) => calculateDistance(a, preyPos) - calculateDistance(b, preyPos))[0];
+              // Only move if it meaningfully improves distance
+              if (calculateDistance(best, preyPos) >= calculateDistance(step, preyPos)) break;
+              step = best;
+            }
+            if (step && (step.x !== myPos.x || step.y !== myPos.y)) {
+              const basePos = { ...((positionsRef.current || positions)) };
+              basePos[liveEnemy.id] = { ...step };
+              const syncedPos = syncCombinedPositions(fighters, basePos);
+              positionsRef.current = syncedPos;
+              setPositions(syncedPos);
+              addLog(`🦅 ${liveEnemy.name} glides toward ${prey.name} from above.`, "info");
+              // Spend an action for the glide
+              setFighters(prev => prev.map(f => {
+                if (f.id !== liveEnemy.id) return f;
+                const ra = Number(f.remainingAttacks ?? 0) || 0;
+                return { ...f, remainingAttacks: Math.max(0, ra - 1) };
+              }));
+              processingEnemyTurnRef.current = false;
+              scheduleEndTurn();
+              return;
+            } else {
+              // Couldn't improve horizontal distance this action (blocked / already optimal).
+              // Still spend the action to "glide & gain altitude" so the hawk doesn't freeze.
+              addLog(`🦅 ${liveEnemy.name} glides in slow circles at ${Math.round(Math.max(curAlt || 0, scoutAlt))}ft, lining up a dive.`, "info");
+              setFighters(prev => prev.map(f => {
+                if (f.id !== liveEnemy.id) return f;
+                const ra = Number(f.remainingAttacks ?? 0) || 0;
+                return { ...f, remainingAttacks: Math.max(0, ra - 1) };
+              }));
+              processingEnemyTurnRef.current = false;
+              scheduleEndTurn();
+              return;
+            }
+          }
+
+          // Dive if we're close-ish but vertical separation makes melee impossible, OR if within a short swoop range.
+          const shouldDive = (dist <= 60 && verticalGap > 5.5) || (dist <= 20 && verticalGap >= 0);
+
+          if (shouldDive) {
+            // Pick an adjacent hex to the prey (can't occupy prey's hex)
+            const occ = (x, y) => isHexOccupied(x, y, liveEnemy.id);
+            const adj = getHexNeighbors(preyPos.x, preyPos.y)
+              .filter(n => isValidPosition(n.x, n.y) && !occ(n.x, n.y));
+
+            if (adj.length > 0) {
+              const contactHex = adj.sort((a, b) =>
+                calculateDistance(myPos, a) - calculateDistance(myPos, b)
+              )[0];
+
+              // Move as part of the swoop (no extra action). Update positionsRef immediately so attack() uses the new distance.
+              const basePos = { ...((positionsRef.current || positions)) };
+              basePos[liveEnemy.id] = { ...contactHex };
+              const syncedPos = syncCombinedPositions(fighters, basePos);
+              positionsRef.current = syncedPos;
+              setPositions(syncedPos);
+
+              addLog(`🏃 ${liveEnemy.name} dives to position (${contactHex.x}, ${contactHex.y}) - Dive-swoops to contact`, "info");
+
+              // Set near-contact altitude and strike
+              const diveAttack = (liveEnemy.attacks || []).find(a => {
+                const n = (a.name || "").toLowerCase();
+                return n.includes("talon") || n.includes("claw") || n.includes("bite") || n.includes("beak");
+              }) || (liveEnemy.attacks || [])[0];
+
+              const attackerCopy = { ...liveEnemy };
+              const dive = performDiveAttack(attackerCopy, prey, { attackOffsetFeet: 5 });
+              const contactAlt = dive?.newAltitude ?? (preyAlt + 5);
+
+              const updatedAttacker = {
+                ...liveEnemy,
+                selectedAttack: diveAttack,
+                isFlying: true,
+                altitudeFeet: contactAlt,
+                altitude: contactAlt,
+              };
+
+              setFighters(prev => prev.map(f => (f.id === updatedAttacker.id ? updatedAttacker : f)));
+              
+              // Only log dive if there was an actual altitude drop (not already at contact altitude)
+              const actualDrop = Math.max(0, curAlt - contactAlt);
+              if (actualDrop > 0.1) {
+                addLog(`🦅 ${liveEnemy.name} dive-swoops (${curAlt}ft → ${contactAlt}ft) at ${prey.name}!`, "combat");
+              } else {
+                addLog(`🦅 ${liveEnemy.name} swoops low and strikes ${prey.name}!`, "combat");
+              }
+
+              // attack() ends the turn; release the lock first.
+              processingEnemyTurnRef.current = false;
+              setTimeout(() => {
+                attack(updatedAttacker, prey.id, {
+                strikeBonus: dive?.attackBonus ?? 0,
+                source: "DIVE_ATTACK",
+                diveAttack: true,
+                diveFromFeet: curAlt,
+                diveToFeet: contactAlt,
+                attackerStatePatch: { isFlying: true, altitudeFeet: contactAlt, altitude: contactAlt },
+                consumeAttackerAction: true,
+              });
+              }, 0);
+              return;
+            }
+          }
+        }
+      }
     }
     
     // 🦅 FLYING AI: Let flying creatures use the generic flight AI first
@@ -5284,7 +6194,29 @@ useEffect(() => {
     
     // 1) First, refresh the enemy from state (in case their HP / morale changed)
     const fightersSnapshot = fighters;
-    let liveEnemy = fightersSnapshot.find(f => f.id === enemy.id) || enemy;
+    liveEnemy = fightersSnapshot.find(f => f.id === enemy.id) || enemy;
+    
+    // 🛠️ Fix #2: Safety net - Clear ROUTED for fear-immune creatures BEFORE routing logic runs
+    // This guarantees HF, Morale, Spell fear, and future mechanics can never force fear-immune flight
+    if (isFearImmune(liveEnemy) || liveEnemy.neverFlee) {
+      // Force-clear any fear-based routing
+      if (liveEnemy.moraleState?.status === "ROUTED") {
+        liveEnemy.moraleState = {
+          ...(liveEnemy.moraleState || {}),
+          status: "STEADY",
+        };
+      }
+      if (Array.isArray(liveEnemy.statusEffects)) {
+        liveEnemy.statusEffects = liveEnemy.statusEffects.filter(s => s !== "ROUTED");
+      }
+      // Update state immediately
+      setFighters(prev => prev.map(f => {
+        if (f.id === liveEnemy.id) {
+          return { ...f, moraleState: liveEnemy.moraleState, statusEffects: liveEnemy.statusEffects };
+        }
+        return f;
+      }));
+    }
     
     // 2) Low-HP "I give up" morale check (only if Morale & Routing enabled)
     liveEnemy = maybeTriggerLowHpMorale(
@@ -5328,121 +6260,122 @@ useEffect(() => {
     
     // 3) 🏃 Routing System: Check if enemy is routed and should flee
     // CRITICAL: This must happen BEFORE any attack/movement logic
-    if (
-      settings.useMoraleRouting &&
-      (liveEnemy.moraleState?.status === "ROUTED" ||
-        liveEnemy.statusEffects?.includes("ROUTED"))
-    ) {
-      const isUndead = isUndeadCreature(liveEnemy);
-
-      if (isUndead) {
-        addLog(
-          `🧟 ${liveEnemy.name} is ROUTED but, as undead, refuses to flee and continues fighting!`,
-          "info"
-        );
-
-        if (liveEnemy.moraleState?.status === "ROUTED") {
-          liveEnemy.moraleState = {
-            ...liveEnemy.moraleState,
-            status: "SHAKEN",
-          };
+    if (settings.useMoraleRouting && (liveEnemy.moraleState?.status === "ROUTED" || liveEnemy.statusEffects?.includes("ROUTED"))) {
+      // 🛡️ Fear-immune creatures never flee - clear ROUTED and continue with normal turn
+      if (liveEnemy.neverFlee || isFearImmune(liveEnemy)) {
+        addLog(`🛡️ ${liveEnemy.name} is immune to fear and refuses to flee (ignoring ROUTED).`, "info");
+        // Clear ROUTED status and update local copy
+        liveEnemy.moraleState = {
+          ...(liveEnemy.moraleState || {}),
+          status: "STEADY",
+        };
+        if (Array.isArray(liveEnemy.statusEffects)) {
+          liveEnemy.statusEffects = liveEnemy.statusEffects.filter(s => s !== "ROUTED");
         }
-
-        if (liveEnemy.statusEffects?.includes("ROUTED")) {
-          liveEnemy.statusEffects = liveEnemy.statusEffects.filter((s) => s !== "ROUTED");
-        }
+        // Update state
+        setFighters(prev => prev.map(f => {
+          if (f.id === liveEnemy.id) {
+            return { ...f, moraleState: liveEnemy.moraleState, statusEffects: liveEnemy.statusEffects };
+          }
+          return f;
+        }));
+        // Continue with normal AI turn (don't end turn)
       } else {
+        // Normal routing behavior - attempt to flee
         addLog(`🏃 ${liveEnemy.name} is ROUTED and attempts to flee!`, "warning");
-
+        
         const currentPositions = positionsRef.current || positions;
         const myPos = currentPositions[liveEnemy.id];
-
+        
         if (myPos) {
-          // Find nearest visible threat
-          const allPlayers = fightersSnapshot.filter(
-            (f) => f.type === "player" && canFighterAct(f) && f.currentHP > 0
-          );
+        // Evaluate ALL reachable candidates within maxSteps (non-greedy) and allow tie-moves.
+        // This stops the endless loop of: routed → can't find strictly-better step → end turn.
+        const threatPositions = getThreatPositionsForFighter(
+          liveEnemy,
+          fightersSnapshot,
+          currentPositions
+        ).filter(Boolean);
 
-          const nearestThreat = allPlayers
-            .filter((p) => {
-              const threatPos = currentPositions[p.id];
-              return (
-                threatPos &&
-                canAISeeTarget(liveEnemy, p, currentPositions, combatTerrain, {
-                  useFogOfWar: fogEnabled,
-                  fogOfWarVisibleCells: visibleCells,
-                })
-              );
-            })
-            .sort((a, b) => {
-              const distA = calculateDistance(
-                myPos,
-                currentPositions[a.id] || {}
-              );
-              const distB = calculateDistance(
-                myPos,
-                currentPositions[b.id] || {}
-              );
-              return distA - distB;
-            })[0];
+        if (threatPositions.length === 0) {
+          // ✅ No threats to flee from, mark as fled
+          addLog(`🏃 ${liveEnemy.name} flees in terror!`, "warning");
+          markFighterFledOffMap(liveEnemy.id, liveEnemy.name);
+          processingEnemyTurnRef.current = false;
+          scheduleEndTurn();
+          return;
+        } else {
+          const occ = makeIsHexOccupied(currentPositions, liveEnemy.id);
+          const retreat = findBestRetreatHex({
+            currentPos: myPos,
+            threatPositions,
+            maxSteps: 3,
+            isHexOccupied: (x, y) => occ(x, y, liveEnemy.id),
+            getHexNeighbors,
+            isValidPosition: (x, y) => isValidPosition(x, y, combatTerrain),
+            calculateDistance,
+            gridWidth: GRID_CONFIG.GRID_WIDTH,
+            gridHeight: GRID_CONFIG.GRID_HEIGHT,
+            allowTieMoves: true,
+            preferEdgeEscape: true,
+          });
 
-          if (nearestThreat) {
-            const threatPos = currentPositions[nearestThreat.id];
-            // Move directly away from nearest threat
-            const dx = myPos.x - threatPos.x;
-            const dy = myPos.y - threatPos.y;
-            const length = Math.sqrt(dx * dx + dy * dy) || 1;
-            const fleeDistance = 3; // Move 3 hexes away
-            const fleePos = {
-              x: Math.round(myPos.x + (dx / length) * fleeDistance),
-              y: Math.round(myPos.y + (dy / length) * fleeDistance),
-            };
+          if (retreat?.position) {
+            const atEdge =
+              retreat.reachedEdge ||
+              isAtMapEdge(retreat.position, GRID_CONFIG.GRID_WIDTH, GRID_CONFIG.GRID_HEIGHT);
 
-            // Try to move to flee position (if valid)
-            if (
-              isValidPosition &&
-              isValidPosition(fleePos.x, fleePos.y, combatTerrain)
-            ) {
-        setPositions((prev) => ({
-          ...prev,
-                [liveEnemy.id]: fleePos,
-        }));
-              addLog(
-                `🏃 ${liveEnemy.name} flees to (${fleePos.x}, ${fleePos.y})!`,
-                "warning"
-              );
+            if (atEdge) {
+              markFighterFledOffMap(liveEnemy.id, liveEnemy.name);
+              processingEnemyTurnRef.current = false;
+              scheduleEndTurn();
+              return;
             } else {
+              // ✅ Routed unit moves but hasn't reached edge yet - still in combat, just fleeing
+              setPositions((prev) => ({ ...prev, [liveEnemy.id]: retreat.position }));
               addLog(
-                `🏃 ${liveEnemy.name} attempts to flee but cannot find a safe path!`,
+                `🏃 ${liveEnemy.name} flees ${Math.round(retreat.distanceFeet)}ft to (${retreat.position.x}, ${retreat.position.y})!`,
                 "warning"
               );
+              
+              // Set remaining attacks to 0 (routed units don't fight) but DON'T set hasFled
+              setFighters((prev) =>
+                prev.map((f) =>
+                  f.id === liveEnemy.id
+                    ? {
+                        ...f,
+                        remainingAttacks: 0,
+                        moraleState: {
+                          ...(f.moraleState || {}),
+                          status: "ROUTED",
+                          hasFled: false, // ✅ Still on map, just fleeing
+                        },
+                      }
+                    : f
+                )
+              );
+              
+              // End turn after moving
+              processingEnemyTurnRef.current = false;
+              scheduleEndTurn();
+              return;
             }
           } else {
-            addLog(`🏃 ${liveEnemy.name} flees in terror!`, "warning");
+            // ✅ If routed enemy cannot find a safe path, mark them as fled (they're effectively out of combat)
+            addLog(`🏃 ${liveEnemy.name} attempts to flee but cannot find a safe path! Marking as fled.`, "warning");
+            markFighterFledOffMap(liveEnemy.id, liveEnemy.name);
+            processingEnemyTurnRef.current = false;
+            scheduleEndTurn();
+            return;
           }
         }
-
-        // Set remaining attacks to 0 and mark as fled
-        setFighters((prev) =>
-          prev.map((f) =>
-            f.id === liveEnemy.id
-              ? {
-                  ...f,
-                  remainingAttacks: 0,
-                  moraleState: {
-                    ...(f.moraleState || {}),
-                    status: "ROUTED",
-                    hasFled: true,
-                  },
-                }
-              : f
-          )
-        );
-        
+      } else {
+        // ✅ No position, mark as fled
+        markFighterFledOffMap(liveEnemy.id, liveEnemy.name);
         processingEnemyTurnRef.current = false;
         scheduleEndTurn();
-        return; // CRITICAL: Exit early, don't continue with normal AI
+        return;
       }
+    }
     }
     
     // Update enemy reference for rest of function
@@ -5487,9 +6420,8 @@ useEffect(() => {
         // Check from player's perspective when they can see the enemy
         // Uses centralized horrorSystem.js to ensure only one check per source/target pair
         if (settings.useInsanityTrauma) {
-          // Check if enemy has Horror Factor
-          const enemyHF = enemy.HF || enemy.hf || enemy.horrorFactor || 0;
-          if (enemyHF > 0) {
+          // Check if enemy has Horror Factor (uses centralized canTriggerHorrorFactor)
+          if (hasHorrorFactor(enemy)) {
             // Check if player can see this enemy (reverse visibility check)
             const playerCanSeeEnemy = canAISeeTarget(target, enemy, positions, combatTerrain, {
               useFogOfWar: fogEnabled,
@@ -5510,12 +6442,12 @@ useEffect(() => {
                 },
                 log: addLog,
               });
-                
+              
               // Always persist the updated target to ensure meta.horrorChecks is saved
               // The function is idempotent, so this is safe even if nothing changed
-                setFighters((prev) =>
+              setFighters((prev) =>
                 prev.map((f) => (f.id === target.id ? updatedTarget : f))
-                  );
+              );
             }
           }
         }
@@ -6005,10 +6937,33 @@ useEffect(() => {
         target = bestReachable.target;
         reasoning = `attacking closest reachable target (${Math.round(bestReachable.distance)}ft away)`;
       } else if (blockedTargets.length > 0) {
-        // All targets blocked - try area attack or choose alternative
-        const bestBlocked = blockedTargets[0];
-        target = bestBlocked.target;
-        reasoning = `target blocked by ${getBlockingCombatant(enemy.id, target.id, positions)?.name || 'another combatant'}, considering area attack`;
+        // All targets blocked - check if they're unreachable (flying too high) vs just blocked by another combatant
+        const unreachableTargets = blockedTargets.filter(t => {
+          const unreachableForEnemy = aiUnreachableTargetsRef.current?.[enemy.id];
+          return unreachableForEnemy?.has(t.target.id) || false;
+        });
+        const justBlockedTargets = blockedTargets.filter(t => {
+          const unreachableForEnemy = aiUnreachableTargetsRef.current?.[enemy.id];
+          return !unreachableForEnemy?.has(t.target.id);
+        });
+        
+        if (justBlockedTargets.length > 0) {
+          // Some targets are just blocked by other combatants - try area attack
+          const bestBlocked = justBlockedTargets[0];
+          target = bestBlocked.target;
+          reasoning = `target blocked by ${getBlockingCombatant(enemy.id, target.id, positions)?.name || 'another combatant'}, considering area attack`;
+        } else if (unreachableTargets.length > 0) {
+          // All targets are unreachable (e.g., all flying) - skip this turn or find alternative
+          // Don't select an unreachable target - end turn instead
+          addLog(`❌ ${enemy.name} has no reachable targets (all enemies are unreachable)`, "warning");
+          processingEnemyTurnRef.current = false;
+          scheduleEndTurn();
+          return;
+        } else {
+          // Fallback
+          target = blockedTargets[0].target;
+          reasoning = `target blocked, attempting attack anyway`;
+        }
       } else {
         // Fallback
         target = targetsInRange[0].target;
@@ -6093,6 +7048,45 @@ useEffect(() => {
       selectedAttack = { ...selectedAttack, damage: spell.damage, name: attackName };
     }
 
+    // ✅ Auto-resolve "Weapon (...)" / "by weapon" into the equipped weapon
+    const isGenericWeaponAttack =
+      (selectedAttack?.damage || "").toLowerCase() === "by weapon" ||
+      (selectedAttack?.name || "").toLowerCase().startsWith("weapon (");
+
+    if (isGenericWeaponAttack) {
+      // Collect equipped weapon candidates (supports both array style and {primary/secondary})
+      const candidates = [
+        ...(Array.isArray(enemy.equippedWeapons) ? enemy.equippedWeapons : []),
+        enemy.equippedWeapons?.primary,
+        enemy.equippedWeapons?.secondary,
+      ].filter(Boolean).filter(w => (w.name || "").toLowerCase() !== "unarmed");
+
+      if (candidates.length > 0) {
+        // Prefer bows at long distance, otherwise just take the first
+        const currentPos = positions[enemy.id];
+        const targetPos = positions[target.id];
+        const distance = currentPos && targetPos ? calculateDistance(currentPos, targetPos) : 0;
+        const isLongDistance = distance > 60; // Prefer ranged weapons at long distance
+        
+        const chosen =
+          (isLongDistance && candidates.find(w => (w.name || "").toLowerCase().includes("bow"))) ||
+          candidates[0];
+
+        selectedAttack = {
+          ...selectedAttack,
+          name: chosen.name,                 // shows "Long Bow" instead of "Weapon (...)"
+          weapon: chosen,                    // lets your getWeaponRange() path work
+          damage: chosen.damage || selectedAttack.damage,
+          range: chosen.range ?? selectedAttack.range,
+          reach: chosen.reach ?? selectedAttack.reach,
+          type: chosen.type ?? selectedAttack.type,
+          category: chosen.category ?? selectedAttack.category,
+        };
+
+        attackName = selectedAttack.name; // IMPORTANT: keep logs consistent
+      }
+    }
+
     // Check weapon range for enemy attacks
     if (positions && positions[enemy.id] && positions[target.id]) {
       // Check if enemy just arrived from pending movement - use CURRENT position
@@ -6106,6 +7100,88 @@ useEffect(() => {
       
       // Use proper weapon range validation
       const rangeValidation = validateWeaponRange(enemy, target, selectedAttack, currentDistance);
+
+      // OPTION B (Recommended): Dive Attack (combined descent + strike).
+      // If the enemy is flying and the only thing blocking a melee strike is altitude,
+      // treat this as solvable by a Dive Attack rather than "unreachable".
+      const enemyIsFlyingNow = isFlying(enemy) || enemy.isFlying;
+      const attackNameLower = String(selectedAttack?.name || "").toLowerCase();
+      const isLikelyMeleeAttack =
+        selectedAttack?.type !== "spell" &&
+        selectedAttack?.type !== "ranged" &&
+        !((selectedAttack?.range || 0) > 10) &&
+        !attackNameLower.includes("bow") &&
+        !attackNameLower.includes("crossbow") &&
+        !attackNameLower.includes("sling");
+
+      const diveTriggered =
+        !rangeValidation.canAttack &&
+        enemyIsFlyingNow &&
+        isLikelyMeleeAttack &&
+        (
+          rangeValidation.requiresDive ||
+          String(rangeValidation.reason || "").includes("dive attack required") ||
+          String(rangeValidation.reason || "").includes("too far above/below")
+        );
+
+      if (diveTriggered) {
+        const livePositions = positionsRef.current || positions;
+        const enemyPos = livePositions?.[enemy.id];
+        const tgtPos = livePositions?.[target.id];
+        const landingCandidates = tgtPos ? findFlankingPositions(tgtPos, livePositions, enemy.id) : [];
+
+        if (enemyPos && tgtPos && landingCandidates.length > 0) {
+          // Choose closest adjacent landing hex around the target (already filtered as unoccupied)
+          const landing = landingCandidates.reduce((best, cur) => {
+            const bd = calculateDistance(enemyPos, best);
+            const cd = calculateDistance(enemyPos, cur);
+            return cd < bd ? cur : best;
+          });
+
+          // Dive uses the flyer's per-action movement budget (treat as RUN distance)
+          const speed = enemy.Spd || enemy.spd || enemy.attributes?.Spd || enemy.attributes?.spd || 10;
+          const feetPerAction = (speed * 18) / (enemy.attacksPerMelee || 1);
+          const distToLanding = calculateDistance(enemyPos, landing);
+
+          if (distToLanding <= feetPerAction + 0.01) {
+            const targetAlt = getAltitude(target) || 0;
+
+            addLog(`🪽 ${enemy.name} DIVE ATTACKS ${target.name}!`, "combat");
+
+            // Move attacker into melee adjacency as part of the same action
+            setPositions(prev => {
+              const updated = { ...prev, [enemy.id]: landing };
+              positionsRef.current = updated;
+              return updated;
+            });
+
+            // Execute the strike with dive bonuses.
+            const updatedEnemy = { ...enemy, selectedAttack };
+            const diveBonuses = {
+              strikeBonus: 2,
+              extraDamageDice: "1d6",
+              // Make sure the post-attack fighter state keeps the descended altitude.
+              attackerStatePatch: {
+                altitudeFeet: targetAlt,
+                altitude: targetAlt,
+                isFlying: targetAlt > 0,
+              },
+              // Ensure range check uses the landing hex immediately (before React state settles)
+              attackerPosOverride: landing,
+              defenderPosOverride: tgtPos,
+              distanceOverride: calculateDistance(landing, tgtPos),
+            };
+
+            setTimeout(() => {
+              attack(updatedEnemy, target.id, diveBonuses);
+              processingEnemyTurnRef.current = false;
+              scheduleEndTurn();
+            }, 500);
+
+            return;
+          }
+        }
+      }
       
       if (!rangeValidation.canAttack) {
         needsToMoveCloser = true;
@@ -6138,86 +7214,168 @@ useEffect(() => {
       const flankingPositions = findFlankingPositions(targetPos, positions, enemy.id);
       const currentFlankingBonus = calculateFlankingBonus(currentPos, targetPos, positions, enemy.id);
       
+      // Check if target is already marked as unreachable
+      const unreachableForEnemy = aiUnreachableTargetsRef.current?.[enemy.id];
+      const isTargetUnreachable = unreachableForEnemy?.has(target.id) || false;
+      
       // If we can flank, prioritize flanking positions
-      if (flankingPositions.length > 0 && currentFlankingBonus === 0) {
-        addLog(`🎯 ${enemy.name} considers flanking ${target.name}`, "info");
+      // BUT: Check if target is reachable with melee first (skip if already marked unreachable)
+      if (flankingPositions.length > 0 && currentFlankingBonus === 0 && !isTargetUnreachable) {
+        // Check if target is reachable with melee before attempting to flank
+        const currentDistance = calculateDistance(currentPos, targetPos);
+        const rangeCheck = validateWeaponRange(enemy, target, selectedAttack, currentDistance);
         
-        // Find the best flanking position (closest to current position)
-        const bestFlankPos = flankingPositions.reduce((best, current) => {
-          const bestDist = calculateDistance(currentPos, best);
-          const currentDist = calculateDistance(currentPos, current);
-          return currentDist < bestDist ? current : best;
-        });
+        if (!rangeCheck.canAttack && rangeCheck.isUnreachable) {
+          // Target is unreachable (e.g., flying too high) - mark it and skip flanking
+          if (!aiUnreachableTargetsRef.current[enemy.id]) {
+            aiUnreachableTargetsRef.current[enemy.id] = new Set();
+          }
+          aiUnreachableTargetsRef.current[enemy.id].add(target.id);
+          addLog(
+            `❌ ${enemy.name} skips flanking ${target.name} (target unreachable: ${rangeCheck.reason})`,
+            "warning"
+          );
+          // Skip to next action instead of attempting to flank - fall through to normal movement logic
+        } else {
+          addLog(`🎯 ${enemy.name} considers flanking ${target.name}`, "info");
         
-        // Check if we can reach the flanking position
-        const flankDistance = calculateDistance(currentPos, bestFlankPos);
-        const speed = enemy.Spd || enemy.spd || enemy.attributes?.Spd || enemy.attributes?.spd || 10;
-        const maxMoveDistance = speed * 5; // 5 feet per hex
-        
-        if (flankDistance <= maxMoveDistance) {
-          addLog(`🎯 ${enemy.name} attempts to flank ${target.name}`, "info");
+          // TWO-STAGE FLANKING APPROACH:
+          // Stage 1: Far away (>30ft) - just move toward target, don't pick specific flank tile
+          // Stage 2: Near enough (≤30ft) - pick reachable flank tile or step toward best one
+          const distanceToTarget = calculateDistance(currentPos, targetPos);
+          const flankPlanRadiusFt = 30; // 6 hexes * 5ft
           
-          // Move to flanking position
-          setPositions(prev => {
-            const updated = {
-            ...prev,
-            [enemy.id]: bestFlankPos
-            };
-            positionsRef.current = updated;
-            return updated;
-          });
-          
-          // Deduct movement action cost
-          const movementCost = Math.ceil(flankDistance / (speed * 5));
-          setFighters(prev => prev.map(f => 
-            f.id === enemy.id 
-              ? { ...f, remainingAttacks: Math.max(0, f.remainingAttacks - movementCost) }
-              : f
-          ));
-          
-          addLog(`🎯 ${enemy.name} moves to flanking position (${bestFlankPos.x}, ${bestFlankPos.y})`, "info");
-          
-          // Continue with attack after movement
-          setTimeout(() => {
-            const newDistance = calculateDistance(bestFlankPos, targetPos);
-            const rangeValidation = validateWeaponRange(enemy, target, selectedAttack, newDistance);
+          if (distanceToTarget > flankPlanRadiusFt) {
+            // Far away: don't pick a flank tile yet — just close distance
+            // Fall through to normal movement logic (which will move toward target)
+            addLog(`🎯 ${enemy.name} is too far (${Math.round(distanceToTarget)}ft) to plan flanking, closing distance first`, "info");
+            // Continue to normal movement below
+          } else {
+            // Near enough: pick best reachable flank tile or step toward it
+            const maxMoveFt = getMaxMoveFtThisAction(enemy, "Run");
             
-            if (rangeValidation.canAttack) {
-              const flankingBonus = calculateFlankingBonus(bestFlankPos, targetPos, positions, enemy.id);
-              if (flankingBonus > 0) {
-                addLog(`🎯 ${enemy.name} gains flanking bonus (+${flankingBonus} to hit)!`, "info");
-              }
-              
-              // Execute attack with flanking bonus
-              const updatedEnemy = { ...enemy, selectedAttack: selectedAttack };
-              const bonuses = flankingBonus > 0 ? { flankingBonus } : {};
-              attack(updatedEnemy, target.id, bonuses);
-              
-              processingEnemyTurnRef.current = false;
-              scheduleEndTurn();
-            } else {
-              if (rangeValidation.isUnreachable) {
-                addLog(
-                  `❌ ${enemy.name} realizes ${target.name} is unreachable (${rangeValidation.reason}).`,
-                  "warning"
-                );
-                
-                // Remember this for this combat
-                if (!aiUnreachableTargetsRef.current[enemy.id]) {
-                  aiUnreachableTargetsRef.current[enemy.id] = new Set();
+            // Score and filter flanking positions
+            const scoredFlankPositions = flankingPositions
+              .map(flankPos => {
+                const dist = calculateDistance(currentPos, flankPos);
+                const targetDist = calculateDistance(flankPos, targetPos);
+                // Score: prefer closer to current position, prefer behind target
+                const score = 1000 - dist - (targetDist * 0.1);
+                return { pos: flankPos, dist, targetDist, score };
+              })
+              .filter(fp => {
+                // Filter out occupied positions
+                for (const [id, pos] of Object.entries(positions)) {
+                  if (id !== enemy.id && pos.x === fp.pos.x && pos.y === fp.pos.y) {
+                    return false;
+                  }
                 }
-                aiUnreachableTargetsRef.current[enemy.id].add(target.id);
+                return isValidPosition(fp.pos.x, fp.pos.y);
+              })
+              .sort((a, b) => b.score - a.score);
+            
+            if (scoredFlankPositions.length === 0) {
+              addLog(`❌ ${enemy.name} has no valid flanking positions available`, "info");
+              // Fall through to normal movement
+            } else {
+              // Find best reachable flank position
+              const bestFlank = scoredFlankPositions.find(fp => fp.dist <= maxMoveFt);
+              
+              let targetFlankPos;
+              if (bestFlank) {
+                // Can reach a flank position this action
+                targetFlankPos = bestFlank.pos;
+                addLog(`🎯 ${enemy.name} attempts to flank ${target.name} (can reach flank tile)`, "info");
               } else {
-                addLog(
-                  `❌ ${enemy.name} cannot reach ${target.name} from flanking position (${rangeValidation.reason})`,
-                  "error"
-                );
+                // Can't reach any flank position - step toward the best one
+                const bestCandidate = scoredFlankPositions[0];
+                // Calculate step position toward best flank (move maxMoveFt toward it)
+                const dx = bestCandidate.pos.x - currentPos.x;
+                const dy = bestCandidate.pos.y - currentPos.y;
+                const stepDist = Math.min(bestCandidate.dist, maxMoveFt);
+                const stepRatio = stepDist / bestCandidate.dist;
+                targetFlankPos = {
+                  x: Math.round(currentPos.x + (dx * stepRatio)),
+                  y: Math.round(currentPos.y + (dy * stepRatio))
+                };
+                // Ensure valid position
+                if (!isValidPosition(targetFlankPos.x, targetFlankPos.y)) {
+                  // Fallback: move toward target instead
+                  addLog(`🎯 ${enemy.name} cannot reach flanking position, moving toward target instead`, "info");
+                  // Fall through to normal movement
+                } else {
+                  addLog(`🎯 ${enemy.name} steps toward flanking position (need=${Math.round(bestCandidate.dist)}ft, max=${Math.round(maxMoveFt)}ft)`, "info");
+                }
               }
-              processingEnemyTurnRef.current = false;
-              scheduleEndTurn();
+              
+              if (targetFlankPos) {
+                // Move to flanking position (or step toward it)
+                const actualFlankDistance = calculateDistance(currentPos, targetFlankPos);
+                
+                setPositions(prev => {
+                  const updated = {
+                    ...prev,
+                    [enemy.id]: targetFlankPos
+                  };
+                  positionsRef.current = updated;
+                  return updated;
+                });
+                
+                // Deduct movement action cost (1 action for movement)
+                setFighters(prev => prev.map(f => 
+                  f.id === enemy.id 
+                    ? { ...f, remainingAttacks: Math.max(0, f.remainingAttacks - 1) }
+                    : f
+                ));
+                
+                addLog(`🎯 ${enemy.name} targets flanking position (${targetFlankPos.x}, ${targetFlankPos.y})`, "info");
+                
+                // Continue with attack after movement
+                setTimeout(() => {
+                  if (!combatActive || combatEndCheckRef.current) return;
+                  
+                  const newDistance = calculateDistance(targetFlankPos, targetPos);
+                  const rangeValidation = validateWeaponRange(enemy, target, selectedAttack, newDistance);
+                  
+                  if (rangeValidation.canAttack) {
+                    const flankingBonus = calculateFlankingBonus(targetFlankPos, targetPos, positions, enemy.id);
+                    if (flankingBonus > 0) {
+                      addLog(`🎯 ${enemy.name} gains flanking bonus (+${flankingBonus} to hit)!`, "info");
+                    }
+                    
+                    // Execute attack with flanking bonus
+                    const updatedEnemy = { ...enemy, selectedAttack: selectedAttack };
+                    const bonuses = flankingBonus > 0 ? { flankingBonus } : {};
+                    attack(updatedEnemy, target.id, bonuses);
+                    
+                    processingEnemyTurnRef.current = false;
+                    scheduleEndTurn();
+                  } else {
+                    if (rangeValidation.isUnreachable) {
+                      addLog(
+                        `❌ ${enemy.name} realizes ${target.name} is unreachable (${rangeValidation.reason}).`,
+                        "warning"
+                      );
+                      
+                      // Remember this for this combat
+                      if (!aiUnreachableTargetsRef.current[enemy.id]) {
+                        aiUnreachableTargetsRef.current[enemy.id] = new Set();
+                      }
+                      aiUnreachableTargetsRef.current[enemy.id].add(target.id);
+                    } else {
+                      addLog(
+                        `❌ ${enemy.name} cannot reach ${target.name} from flanking position (${rangeValidation.reason})`,
+                        "error"
+                      );
+                    }
+                    processingEnemyTurnRef.current = false;
+                    scheduleEndTurn();
+                  }
+                }, 1000);
+                return;
+              }
             }
-          }, 1000);
-          return;
+          }
         }
       }
       
@@ -6233,6 +7391,7 @@ useEffect(() => {
         case 'charge':
           movementType = 'CHARGE';
           movementDescription = 'charges';
+          // Charge is limited to 3 hexes max
           hexesToMove = Math.min(Math.round(currentDistance / GRID_CONFIG.CELL_SIZE) - 1, 3);
           isChargingAttack = true;
           addLog(`⚡ ${enemy.name} decides to charge! (${aiDecision.reason})`, "info");
@@ -6241,10 +7400,9 @@ useEffect(() => {
         case 'move_and_attack': {
           movementType = 'MOVE';
           movementDescription = 'moves closer';
-          // Use Palladium movement calculation: Speed × 18 ÷ attacks per melee = feet per action
-          const moveAndAttackFeetPerAction = (speed * 18) / (enemy.attacksPerMelee || 1);
-          const moveAndAttackWalkingSpeed = Math.floor(moveAndAttackFeetPerAction * 0.5); // Walking speed
-          hexesToMove = Math.floor(moveAndAttackWalkingSpeed / GRID_CONFIG.CELL_SIZE);
+          // Use unified movement calculation for walking speed
+          const moveAndAttackFeet = getMaxMoveFtThisAction(enemy, "MOVE");
+          hexesToMove = Math.floor(moveAndAttackFeet / GRID_CONFIG.CELL_SIZE);
           addLog(`🏃 ${enemy.name} moves closer to attack (${aiDecision.reason})`, "info");
           break;
         }
@@ -6252,9 +7410,9 @@ useEffect(() => {
         case 'move_closer': {
           movementType = 'RUN';
           movementDescription = 'runs closer';
-          // Use Palladium movement calculation: Speed × 18 ÷ attacks per melee = feet per action
-          const moveCloserFeetPerAction = (speed * 18) / (enemy.attacksPerMelee || 1);
-          hexesToMove = Math.floor(moveCloserFeetPerAction / GRID_CONFIG.CELL_SIZE);
+          // Use unified movement calculation for running speed
+          const moveCloserFeet = getMaxMoveFtThisAction(enemy, "Run");
+          hexesToMove = Math.floor(moveCloserFeet / GRID_CONFIG.CELL_SIZE);
           addLog(`🏃 ${enemy.name} runs closer (${aiDecision.reason})`, "info");
           break;
         }
@@ -6265,9 +7423,16 @@ useEffect(() => {
           if (rangedAttack) {
             addLog(`🏹 ${enemy.name} uses ranged attack instead of moving (${aiDecision.reason})`, "info");
             setTimeout(() => {
+              if (!combatActive || combatEndCheckRef.current) return;
               const flankingBonus = calculateFlankingBonus(positions[enemy.id], positions[target.id], positions, enemy.id);
               const bonuses = flankingBonus > 0 ? { flankingBonus } : {};
-              attack(enemy, target.id, bonuses);
+              // Preserve selectedAttack for ranged attacks
+              const updatedEnemyForRanged = { 
+                ...enemy, 
+                selectedAttack: rangedAttack,
+                attacks: enemy.attacks || []
+              };
+              attack(updatedEnemyForRanged, target.id, bonuses);
             }, 1000);
             processingEnemyTurnRef.current = false;
             scheduleEndTurn();
@@ -6276,31 +7441,31 @@ useEffect(() => {
           // Fall back to movement if no ranged attack
           movementType = MOVEMENT_ACTIONS.RUN.name;
           movementDescription = 'runs closer';
-          // Use MOVEMENT_RATES for Palladium movement calculation
-          const movementRates = MOVEMENT_RATES.calculateMovement(speed);
-          const fallbackFeetPerAction = movementRates.running / (enemy.attacksPerMelee || 1);
-          hexesToMove = Math.floor(fallbackFeetPerAction / GRID_CONFIG.CELL_SIZE);
+          // Use unified movement calculation
+          const fallbackFeet = getMaxMoveFtThisAction(enemy, "Run");
+          hexesToMove = Math.floor(fallbackFeet / GRID_CONFIG.CELL_SIZE);
           break;
         }
           
         default:
           movementType = MOVEMENT_ACTIONS.MOVE.name;
           movementDescription = 'moves';
-          hexesToMove = 1;
+          // Use unified movement calculation
+          const defaultFeet = getMaxMoveFtThisAction(enemy, "MOVE");
+          hexesToMove = Math.floor(defaultFeet / GRID_CONFIG.CELL_SIZE);
       }
       
-      // Legacy fallback for very far distances - use Palladium movement
+      // For very far distances, ensure we use RUN movement type
       if (currentDistance > 20 * GRID_CONFIG.CELL_SIZE) {
-        // Far away - RUN (move at full speed using Palladium formula)
+        // Far away - RUN (move at full speed)
         movementType = MOVEMENT_ACTIONS.RUN.name;
         movementDescription = 'runs';
         
-        // Use MOVEMENT_RATES for official Palladium movement
-        const movementRates = MOVEMENT_RATES.calculateMovement(speed);
-        const maxMovementFeet = movementRates.running / (enemy.attacksPerMelee || 1); // Use feet per action
+        // Use unified movement calculation
+        const maxMovementFeet = getMaxMoveFtThisAction(enemy, "Run");
         hexesToMove = Math.floor(maxMovementFeet / GRID_CONFIG.CELL_SIZE);
         
-        addLog(`🏃 ${enemy.name} is very far away, ${movementDescription} at full speed (${maxMovementFeet}ft/action)`, "info");
+        addLog(`🏃 ${enemy.name} is very far away, ${movementDescription} at full speed (${Math.round(maxMovementFeet)}ft/action)`, "info");
       }
       // else: close distance (1-3 hexes) - use default MOVE (1 hex)
       
@@ -6345,7 +7510,11 @@ useEffect(() => {
       // Calculate distance in hexes for movement calculations
       const hexDistance = Math.round(currentDistance / GRID_CONFIG.CELL_SIZE);
       
-      addLog(`🔍 ${enemy.name} movement debug: distance=${Math.round(currentDistance)}ft, hexDistance=${hexDistance}, hexesToMove=${hexesToMove}, movementType=${movementType}`, "info");
+      // Use unified movement calculation
+      const maxMoveFtThisAction = getMaxMoveFtThisAction(enemy, movementType);
+      const maxHexesThisAction = Math.floor(maxMoveFtThisAction / GRID_CONFIG.CELL_SIZE);
+      
+      addLog(`🔍 ${enemy.name} movement debug: distance=${Math.round(currentDistance)}ft, hexDistance=${hexDistance}, hexesToMove=${hexesToMove}, maxThisAction=${Math.round(maxMoveFtThisAction)}ft (${maxHexesThisAction} hexes), movementType=${movementType}`, "info");
       
       // Determine actual hexes to move (don't overshoot, but ensure at least 1 hex if far away)
       // Fix: Ensure we always make progress toward the target
@@ -6457,9 +7626,15 @@ useEffect(() => {
             
             if (rangeValidation.canAttack && hasActionsRemaining) {
               // In range - perform a single attack, then end turn
-                    const updatedEnemyForAttack = { ...enemy, selectedAttack: selectedAttack };
-                    attack(updatedEnemyForAttack, target.id, {});
-                    processingEnemyTurnRef.current = false;
+              // Ensure selectedAttack is preserved (don't let weapon selection override natural attacks)
+              const updatedEnemyForAttack = { 
+                ...enemy, 
+                selectedAttack: selectedAttack,
+                // Explicitly set to prevent weapon selection from overriding
+                attacks: enemy.attacks || []
+              };
+              attack(updatedEnemyForAttack, target.id, {});
+              processingEnemyTurnRef.current = false;
               scheduleEndTurn();
               return;
             } else {
@@ -6609,7 +7784,7 @@ useEffect(() => {
         // 1994 Palladium format: RUN/SPRINT uses one action
         const feetPerMelee = speed * 18; // Official formula
         addLog(`🏃 ${enemy.name} uses one action to RUN (Speed ${speed} → ${feetPerMelee}ft/melee)`, "info");
-        addLog(`📍 Moves ${Math.round(distanceMoved)}ft toward ${target.name} → new position (${targetX},${targetY})`, "info");
+        addLog(`📍 Moves up to ${Math.round(distanceMoved)}ft toward ${target.name} → new position (${targetX},${targetY})`, "info");
         
         // Deduct 1 action for movement
         setFighters(prev => prev.map(f => {
@@ -6651,13 +7826,18 @@ useEffect(() => {
             
             if (rangeValidation.canAttack && hasActionsRemaining) {
               addLog(`⚔️ ${enemy.name} is now in range (${rangeValidation.reason})!`, "info");
-                const updatedEnemyForAttack = { ...enemy, selectedAttack: selectedAttack };
+              // Preserve selectedAttack from attacks array (don't let weapon selection override)
+              const updatedEnemyForAttack = { 
+                ...enemy, 
+                selectedAttack: selectedAttack,
+                attacks: enemy.attacks || [] // Ensure attacks array is preserved
+              };
               attack(updatedEnemyForAttack, target.id, {
                 attackerPosOverride: latestEnemyPos,
                 defenderPosOverride: latestTargetPos,
                 distanceOverride: finalDistance
               });
-                processingEnemyTurnRef.current = false;
+              processingEnemyTurnRef.current = false;
               scheduleEndTurn();
               } else {
                 if (finalDistance > 5) {
@@ -6667,8 +7847,10 @@ useEffect(() => {
                 }
                 processingEnemyTurnRef.current = false;
                 setTimeout(() => {
+                  // ✅ GUARD: Check combat state in delayed callback
+                  if (!combatActive || combatEndCheckRef.current) return;
                   endTurn();
-              }, 1500);
+                }, 1500);
               }
               
               return currentPositions;
@@ -6704,7 +7886,7 @@ useEffect(() => {
         // All players are defeated
         if (isEvil) {
           // Evil alignments may finish off dying players (coup de grâce)
-      const hpStatus = getHPStatus(target.currentHP);
+          const hpStatus = getHPStatus(target.currentHP);
           addLog(`😈 ${enemy.name} (${enemyAlignment}) finishes off dying ${target.name} (${hpStatus.description})!`, "warning");
         } else {
           // Good/neutral alignments show mercy - don't attack unconscious players
@@ -6723,7 +7905,7 @@ useEffect(() => {
         if (isEvil) {
           addLog(`😈 ${enemy.name} (${enemyAlignment}) attacks dying ${target.name} (${hpStatus.description})!`, "warning");
         } else {
-      addLog(`⚠️ ${enemy.name} targeting ${target.name} who is ${hpStatus.description}`, "warning");
+          addLog(`⚠️ ${enemy.name} targeting ${target.name} who is ${hpStatus.description}`, "warning");
         }
       }
     }
@@ -6744,8 +7926,14 @@ useEffect(() => {
         const chargeBonus = isChargingAttack ? { strikeBonus: +2 } : {};
         
         // Attack all targets in line, but this is still ONE action
+        // Preserve selectedAttack for area attacks
+        const updatedEnemyForArea = { 
+          ...enemy, 
+          selectedAttack: selectedAttack,
+          attacks: enemy.attacks || []
+        };
         targetsInLine.forEach((lineTarget) => {
-          attack(enemy, lineTarget.id, {
+          attack(updatedEnemyForArea, lineTarget.id, {
             ...chargeBonus,
             flankingBonus: calculateFlankingBonus(
               positions[enemy.id],
@@ -6755,7 +7943,7 @@ useEffect(() => {
             ),
           });
         });
-          processingEnemyTurnRef.current = false;
+        processingEnemyTurnRef.current = false;
         scheduleEndTurn();
         return;
       }
@@ -6764,7 +7952,12 @@ useEffect(() => {
     addLog(`🤖 ${enemy.name} ${reasoning} and attacks ${target.name} with ${attackName}!`, "info");
     
     // Create updated enemy with selected attack (don't update state yet to prevent re-render loop)
-    const updatedEnemy = { ...enemy, selectedAttack: selectedAttack };
+    // Preserve selectedAttack from attacks array - don't let weapon selection override natural attacks
+    const updatedEnemy = { 
+      ...enemy, 
+      selectedAttack: selectedAttack,
+      attacks: enemy.attacks || [] // Ensure attacks array is preserved
+    };
     
     // Get the number of attacks for this attack type
     const attackCount = selectedAttack.count || 1;
@@ -6773,33 +7966,54 @@ useEffect(() => {
     const chargeBonus = isChargingAttack ? { strikeBonus: +2 } : {};
     
     // Check for flanking bonus
-    const currentFlankingBonus = calculateFlankingBonus(positions[enemy.id], positions[target.id], positions, enemy.id);
-    const flankingBonus = currentFlankingBonus > 0 ? { flankingBonus: currentFlankingBonus } : {};
+    const attackFlankingBonus = calculateFlankingBonus(positions[enemy.id], positions[target.id], positions, enemy.id);
+    const flankingBonus = attackFlankingBonus > 0 ? { flankingBonus: attackFlankingBonus } : {};
     
     // Combine all bonuses
     const allBonuses = { ...chargeBonus, ...flankingBonus };
     
-    if (flankingBonus.flankingBonus > 0) {
-      addLog(`🎯 ${enemy.name} gains +${flankingBonus.flankingBonus} flanking bonus!`, "info");
+    if (attackFlankingBonus > 0) {
+      addLog(`🎯 ${enemy.name} gains +${attackFlankingBonus} flanking bonus!`, "info");
     }
     
     // Execute attack - handle attack count for multi-strike attacks
     // The count property is for attacks that hit multiple times in ONE action (like dual wield)
+    if (attackCount > 1) {
+      addLog(`⚔️ ${enemy.name} performs ${attackCount}-strike attack!`, "info");
+    }
+    attack(updatedEnemy, target.id, allBonuses);
+    
+    // End of handleEnemyTurn
     setTimeout(() => {
-      // If attackCount > 1, this represents a multi-strike attack (all in one action)
-      // The attack function should handle this internally, but we log it for clarity
-      if (attackCount > 1) {
-        addLog(`⚔️ ${enemy.name} performs ${attackCount}-strike attack!`, "info");
-      }
-      attack(updatedEnemy, target.id, allBonuses);
-      
-      // End turn after attack
       processingEnemyTurnRef.current = false;
-      setTimeout(() => {
-        endTurn();
-      }, 1500); // Reduced delay for faster turn progression
+      scheduleEndTurn();
     }, 1500);
-  }, [fighters, addLog, endTurn, attack, positions, handlePositionChange, isHexOccupied, getAvailableSkills, isEvilAlignment, calculateDistance, setFighters, healerAbility, clericalHealingTouch, medicalTreatment, combatTerrain, arenaEnvironment, scheduleEndTurn, settings, canFighterAct, isValidPosition, canAISeeTarget, fogEnabled, visibleCells, setPositions]);
+  }, [
+    fighters,
+    addLog,
+    endTurn,
+    attack,
+    positions,
+    handlePositionChange,
+    isHexOccupied,
+    getAvailableSkills,
+    isEvilAlignment,
+    calculateDistance,
+    setFighters,
+    healerAbility,
+    clericalHealingTouch,
+    medicalTreatment,
+    combatTerrain,
+    arenaEnvironment,
+    scheduleEndTurn,
+    settings,
+    canFighterAct,
+    isValidPosition,
+    canAISeeTarget,
+    fogEnabled,
+    visibleCells,
+    setPositions,
+  ]);
   
   // Store the latest handleEnemyTurn in a ref to avoid dependency loops in useEffect
   useEffect(() => {
@@ -7077,16 +8291,72 @@ useEffect(() => {
     return fighter;
   }
 
-  function addCreature(creatureData, customNameOverride = null, levelOverride = null, armorOverride = null) {
+  // Helper function to get allowed alignments for a race and assign random alignment
+  const getRandomAlignmentForRace = useCallback((race, species) => {
+    const allAlignments = [
+      "Principled", "Scrupulous", // Good
+      "Unprincipled", "Anarchist", // Selfish
+      "Miscreant", "Aberrant", "Diabolic" // Evil
+    ];
+    
+    // Try to get alignment restrictions from annotated_rulebook.json
+    // For now, use a simple mapping based on common race tendencies
+    const raceName = (race || species || "").toUpperCase();
+    
+    // Races that tend toward evil/selfish
+    if (["GOBLIN", "HOB-GOBLIN", "KOBOLD", "ORC", "TROLL", "OGRE"].includes(raceName)) {
+      const evilSelfish = ["Unprincipled", "Anarchist", "Miscreant", "Aberrant", "Diabolic"];
+      return evilSelfish[Math.floor(Math.random() * evilSelfish.length)];
+    }
+    
+    // Races that tend toward good
+    if (["ELF", "GNOME"].includes(raceName)) {
+      const goodSelfish = ["Principled", "Scrupulous", "Unprincipled", "Anarchist"];
+      return goodSelfish[Math.floor(Math.random() * goodSelfish.length)];
+    }
+    
+    // Default: any alignment (most races)
+    return allAlignments[Math.floor(Math.random() * allAlignments.length)];
+  }, []);
+
+  function addCreature(creatureData, customNameOverride = null, levelOverride = null, armorOverride = null, weaponOverride = null, ammoOverride = null) {
     let newFighter;
     const nameToUse = customNameOverride || customEnemyName;
     const level = levelOverride || enemyLevel || 1;
     const armorToEquip = armorOverride || selectedArmor;
+    const weaponToEquip = weaponOverride !== undefined ? weaponOverride : selectedWeapon;
+    const ammoToGive = ammoOverride !== undefined ? ammoOverride : selectedAmmoCount;
     
     // Check if this is a playable character
     if (creatureData.playable) {
       // Auto-roll attributes and create playable character fighter
       newFighter = createPlayableCharacterFighter(creatureData, nameToUse);
+      
+      // ✅ Override weapon if one was selected
+      if (weaponToEquip && weaponToEquip !== "None") {
+        const weaponData = weapons.find(w => w.name === weaponToEquip);
+        if (weaponData) {
+          newFighter = equipWeaponToEnemy(newFighter, weaponData);
+          newFighter = addWeaponToInventory(newFighter, weaponData);
+          addLog(`⚔️ ${newFighter.name} wields ${weaponData.name}`, "info");
+          
+          // Add ammo if weapon requires it and ammo count is provided
+          if (weaponData.ammunition && weaponData.ammunition !== "self" && ammoToGive > 0) {
+            if (!newFighter.inventory) {
+              newFighter.inventory = [];
+            }
+            // Add ammo to inventory
+            const ammoItem = {
+              name: weaponData.ammunition,
+              type: "ammunition",
+              quantity: ammoToGive,
+              weight: 0.1 * ammoToGive
+            };
+            newFighter.inventory.push(ammoItem);
+            addLog(`📦 ${newFighter.name} receives ${ammoToGive} ${weaponData.ammunition}`, "info");
+          }
+        }
+      }
       
       // Log detailed roll information with debug details
       const rollDetails = getPlayableCharacterRollDetails(creatureData, newFighter.attributes);
@@ -7112,6 +8382,13 @@ useEffect(() => {
       if (newFighter.magic && newFighter.magic.length > 0) {
         addLog(`🔮 ${newFighter.name} has ${newFighter.magic.length} spells (PPE: ${newFighter.PPE})`, "info");
       }
+      
+      // ✅ Assign random alignment if not already set
+      if (!newFighter.alignment && !newFighter.alignmentName) {
+        const randomAlignment = getRandomAlignmentForRace(newFighter.race || newFighter.species, newFighter.species);
+        newFighter.alignment = randomAlignment;
+        newFighter.alignmentName = randomAlignment;
+      }
     } else {
       // Regular creature (existing logic)
       const rolledHP = rollHP(creatureData.HP);
@@ -7127,28 +8404,138 @@ useEffect(() => {
       };
       
       // Parse abilities from string array to structured format (needed for canFly check)
+      // Parse clerical abilities if present
+      if (newFighter.clericalAbilities && Array.isArray(newFighter.clericalAbilities)) {
+        const parsedClerical = parseClericalAbilities(newFighter.clericalAbilities);
+        if (Object.keys(parsedClerical).length > 0) {
+          // Store parsed clerical abilities in fighter's abilities object
+          if (!newFighter.abilities) newFighter.abilities = {};
+          if (!newFighter.abilities.clerical) newFighter.abilities.clerical = {};
+          newFighter.abilities.clerical = parsedClerical;
+          addLog(`🙏 ${newFighter.name} has clerical abilities: ${Object.keys(parsedClerical).join(", ")}`, "info");
+        }
+      }
+      
       if (newFighter.abilities && Array.isArray(newFighter.abilities)) {
         const parsedAbilities = parseAbilities(newFighter.abilities);
         newFighter.abilities = parsedAbilities;
       }
       
-      // Assign random weapon based on favorite/preferred weapons
-      // For humanoids, always assign a weapon (even if no preferred weapons listed)
-      const favoriteWeapons = creatureData.favorite_weapons || creatureData.preferred_weapons || creatureData.favoriteWeapons;
+      // Assign weapon - use selected weapon if provided, otherwise use default/random assignment
       const isHumanoidCreature = isHumanoid(creatureData);
       
-      if (favoriteWeapons) {
-        newFighter = assignRandomWeaponToEnemy(newFighter, favoriteWeapons);
-        if (newFighter.equippedWeapons && newFighter.equippedWeapons[0]?.name !== "Unarmed") {
-          addLog(`⚔️ ${newFighter.name} wields ${newFighter.equippedWeapons[0]?.name}`, "info");
+      if (isHumanoidCreature && weaponToEquip && weaponToEquip !== "None") {
+        // Use selected weapon
+        const weaponData = weapons.find(w => w.name === weaponToEquip);
+        if (weaponData) {
+          newFighter = equipWeaponToEnemy(newFighter, weaponData);
+          newFighter = addWeaponToInventory(newFighter, weaponData);
+          addLog(`⚔️ ${newFighter.name} wields ${weaponData.name}`, "info");
+          
+          // Add ammo if weapon requires it and ammo count is provided
+          if (weaponData.ammunition && weaponData.ammunition !== "self" && ammoToGive > 0) {
+            if (!newFighter.inventory) {
+              newFighter.inventory = [];
+            }
+            // Add ammo to inventory
+            const ammoItem = {
+              name: weaponData.ammunition,
+              type: "ammunition",
+              quantity: ammoToGive,
+              category: "ammunition"
+            };
+            newFighter.inventory.push(ammoItem);
+            addLog(`📦 ${newFighter.name} has ${ammoToGive} ${weaponData.ammunition}`, "info");
+          }
         }
-      } else if (isHumanoidCreature) {
-        // Humanoids without preferred weapons get a random common weapon
-        const defaultWeapon = getDefaultWeaponForEnemy(newFighter);
-        if (defaultWeapon && defaultWeapon.name !== "Unarmed") {
-          newFighter = assignRandomWeaponToEnemy(newFighter, defaultWeapon.name);
-          addLog(`⚔️ ${newFighter.name} wields ${newFighter.equippedWeapons?.[0]?.name || defaultWeapon.name}`, "info");
+      } else {
+        // Use default/random weapon assignment
+        const favoriteWeapons = creatureData.favorite_weapons || creatureData.preferred_weapons || creatureData.favoriteWeapons;
+        
+        if (favoriteWeapons) {
+          newFighter = assignRandomWeaponToEnemy(newFighter, favoriteWeapons);
+          if (newFighter.equippedWeapons && newFighter.equippedWeapons[0]?.name !== "Unarmed") {
+            addLog(`⚔️ ${newFighter.name} wields ${newFighter.equippedWeapons[0]?.name}`, "info");
+          }
+        } else if (isHumanoidCreature) {
+          // Humanoids without preferred weapons get a random common weapon
+          const defaultWeapon = getDefaultWeaponForEnemy(newFighter);
+          if (defaultWeapon && defaultWeapon.name !== "Unarmed") {
+            newFighter = assignRandomWeaponToEnemy(newFighter, defaultWeapon.name);
+            addLog(`⚔️ ${newFighter.name} wields ${newFighter.equippedWeapons?.[0]?.name || defaultWeapon.name}`, "info");
+          }
+        } else if (creatureData.attacks && Array.isArray(creatureData.attacks) && creatureData.attacks.length > 0) {
+          // Non-humanoid creatures: convert natural attacks to equipped weapons
+          // Check if a specific natural attack was selected from the dropdown
+          let physicalAttack = null;
+          if (weaponToEquip && weaponToEquip !== "None") {
+            // User selected a specific natural attack
+            physicalAttack = creatureData.attacks.find(
+              attack => attack.name && attack.name === weaponToEquip
+            );
+          }
+          
+          // If no specific attack selected, find the first non-magic/spellcasting attack
+          if (!physicalAttack) {
+            physicalAttack = creatureData.attacks.find(
+              attack => attack.name && 
+              !attack.name.toLowerCase().includes("magic") && 
+              !attack.name.toLowerCase().includes("spell") &&
+              attack.damage !== "by spell"
+            ) || creatureData.attacks[0]; // Fallback to first attack if all are magic
+          }
+          
+          if (physicalAttack && physicalAttack.name) {
+            // Initialize equippedWeapons if needed
+            if (!newFighter.equippedWeapons || !Array.isArray(newFighter.equippedWeapons)) {
+              newFighter.equippedWeapons = [
+                { name: "Unarmed", damage: "1d3", type: "unarmed", category: "unarmed", slot: "Right Hand" },
+                { name: "Unarmed", damage: "1d3", type: "unarmed", category: "unarmed", slot: "Left Hand" }
+              ];
+            }
+            
+            // Convert natural attack to weapon format
+            // Special handling for Fire Whip - use proper weapon definition
+            let naturalWeapon;
+            if (physicalAttack.name === "Fire Whip") {
+              naturalWeapon = {
+                ...baalRogFireWhip,
+                slot: "Right Hand",
+                category: "natural", // Keep as natural attack category
+                damage: physicalAttack.damage || baalRogFireWhip.damage || "4d6", // Use damage from attack or weapon definition
+              };
+            } else {
+              naturalWeapon = {
+                name: physicalAttack.name,
+                damage: physicalAttack.damage || "1d6",
+                type: "melee",
+                category: "natural",
+                slot: "Right Hand",
+                reach: physicalAttack.reach || 0,
+                range: physicalAttack.range || 0,
+              };
+            }
+            
+            newFighter.equippedWeapons[0] = naturalWeapon;
+            newFighter.equippedWeapon = physicalAttack.name; // Legacy support
+            newFighter.weapon = physicalAttack.name; // Legacy support
+            
+            // Initialize equipped object if needed
+            if (!newFighter.equipped) {
+              newFighter.equipped = {};
+            }
+            newFighter.equipped.weaponPrimary = naturalWeapon;
+            
+            addLog(`⚔️ ${newFighter.name} uses ${physicalAttack.name} (${physicalAttack.damage || "1d6"})`, "info");
+          }
         }
+      }
+      
+      // ✅ Assign random alignment if not already set
+      if (!newFighter.alignment && !newFighter.alignmentName) {
+        const randomAlignment = getRandomAlignmentForRace(newFighter.race || newFighter.species, newFighter.species);
+        newFighter.alignment = randomAlignment;
+        newFighter.alignmentName = randomAlignment;
       }
       
       // Apply level-based stat adjustments
@@ -7176,6 +8563,103 @@ useEffect(() => {
           addLog(`📊 ${newFighter.name} adjusted to level ${level} (HP: ${newFighter.maxHP}, AR: ${newFighter.AR})`, "info");
         }
         
+        // Load spells if creature has magicAbilities
+        if (newFighter.magicAbilities && typeof newFighter.magicAbilities === "string") {
+          // Use enhanced parser for complex magicAbilities strings
+          const spellResult = getSpellsForCreature(newFighter.magicAbilities);
+          
+          if (spellResult.spells.length > 0) {
+            // Convert to combat spell format
+            const selectedSpells = spellResult.spells.map(spell => ({
+              name: spell.name,
+              cost: spell.ppeCost || spell.cost || 10,
+              damage: spell.damage || spell.combatDamage || "",
+              effect: spell.description || "",
+              level: spell.level || 1,
+              range: spell.range || "100ft",
+            }));
+            
+            newFighter.magic = selectedSpells;
+            newFighter.PPE = newFighter.PPE || spellResult.ppe;
+            newFighter.currentPPE = newFighter.currentPPE || newFighter.PPE;
+            addLog(`🔮 ${newFighter.name} has ${selectedSpells.length} spells available (${newFighter.magicAbilities})`, "info");
+          } else {
+            // Fallback to old method if parser returns no spells
+            const magicText = newFighter.magicAbilities.toLowerCase();
+            const levelMatch = magicText.match(/levels?\s+(\d+)[-\s]+(\d+)/);
+            const maxLevel = levelMatch ? parseInt(levelMatch[2]) : 5;
+            
+            const availableSpells = getSpellsForLevel(maxLevel);
+            if (availableSpells.length > 0) {
+              const numSpells = Math.min(5, Math.max(3, availableSpells.length));
+              const selectedSpells = [];
+              for (let i = 0; i < numSpells; i++) {
+                const randomIndex = Math.floor(Math.random() * availableSpells.length);
+                const spell = availableSpells[randomIndex];
+                if (!selectedSpells.find(s => s.name === spell.name)) {
+                  selectedSpells.push({
+                    name: spell.name,
+                    cost: spell.ppeCost || spell.cost || 10,
+                    damage: spell.damage || spell.combatDamage || "",
+                    effect: spell.description || "",
+                    level: spell.level || 1,
+                    range: spell.range || "100ft",
+                  });
+                }
+              }
+              newFighter.magic = selectedSpells;
+              newFighter.PPE = newFighter.PPE || (maxLevel * 20);
+              newFighter.currentPPE = newFighter.currentPPE || newFighter.PPE;
+              addLog(`🔮 ${newFighter.name} has ${selectedSpells.length} spells available (${newFighter.magicAbilities})`, "info");
+            }
+          }
+        }
+        
+        // Initialize ISP for psionic creatures (check abilities for psionics)
+        if (!newFighter.ISP && !newFighter.currentISP) {
+          const abilitiesText = Array.isArray(newFighter.abilities) 
+            ? newFighter.abilities.join(" ").toLowerCase()
+            : (typeof newFighter.abilities === "string" ? newFighter.abilities.toLowerCase() : "");
+          const hasPsionics = abilitiesText.includes("psionic") || 
+                             abilitiesText.includes("isp") ||
+                             (newFighter.psionicPowers && newFighter.psionicPowers.length > 0) ||
+                             (newFighter.psionics && newFighter.psionics.length > 0);
+          
+          if (hasPsionics) {
+            // Default ISP: 20 + (level * 10), minimum 30, max 200
+            const creatureLevel = newFighter.level || 1;
+            const defaultISP = Math.min(Math.max(30, 20 + (creatureLevel * 10)), 200);
+            newFighter.ISP = defaultISP;
+            newFighter.currentISP = defaultISP;
+            addLog(`🧠 ${newFighter.name} has psionic abilities - initialized with ${defaultISP} ISP`, "info");
+          }
+        } else if (newFighter.ISP && !newFighter.currentISP) {
+          // If ISP is set but currentISP is not, initialize it
+          newFighter.currentISP = newFighter.ISP;
+        }
+        
+        // Initialize PPE for magic users (if not already set by magicAbilities)
+        if (!newFighter.PPE && !newFighter.currentPPE) {
+          const abilitiesText = Array.isArray(newFighter.abilities) 
+            ? newFighter.abilities.join(" ").toLowerCase()
+            : (typeof newFighter.abilities === "string" ? newFighter.abilities.toLowerCase() : "");
+          const hasMagic = abilitiesText.includes("magic") || 
+                          (newFighter.magic && newFighter.magic.length > 0) ||
+                          newFighter.magicAbilities;
+          
+          if (hasMagic) {
+            // Default PPE: level * 20, minimum 20, max 200
+            const creatureLevel = newFighter.level || 1;
+            const defaultPPE = Math.min(Math.max(20, creatureLevel * 20), 200);
+            newFighter.PPE = defaultPPE;
+            newFighter.currentPPE = defaultPPE;
+            addLog(`🔮 ${newFighter.name} has magic abilities - initialized with ${defaultPPE} PPE`, "info");
+          }
+        } else if (newFighter.PPE && !newFighter.currentPPE) {
+          // If PPE is set but currentPPE is not, initialize it
+          newFighter.currentPPE = newFighter.PPE;
+        }
+        
         // Initialize altitude for flying creatures
         // Altitude is tracked in 5ft increments, similar to hex distances
         if (canFly(newFighter)) {
@@ -7187,18 +8671,23 @@ useEffect(() => {
                                          nameLower.includes("falcon") ||
                                          nameLower.includes("vulture");
           
-          if (isHawkOrFlyingPredator) {
-            // Start flying at 20ft altitude
-            newFighter.altitude = 20;
-            newFighter.altitudeFeet = 20;
+          // Check if creature prefers flight (from speciesBehavior.json)
+          const speciesProfile = getSpeciesProfile(newFighter);
+          const prefersFlight = speciesProfile?.preferFlight || false;
+          
+          if (isHawkOrFlyingPredator || prefersFlight) {
+            // Start flying at appropriate altitude (hawks at 20ft, others at 15ft for strategic advantage)
+            const startAltitude = isHawkOrFlyingPredator ? 20 : 15;
+            newFighter.altitude = startAltitude;
+            newFighter.altitudeFeet = startAltitude;
             newFighter.isFlying = true; // Mark as actively flying
             // Initialize flight state to cruising mode
             newFighter.aiFlightState = {
               mode: "cruising",
               previousAltitude: null,
-              cruiseAltitudeFeet: 20,
+              cruiseAltitudeFeet: startAltitude,
             };
-            addLog(`🦅 ${newFighter.name} starts flying at 20ft altitude`, "info");
+            addLog(`🦅 ${newFighter.name} starts flying at ${startAltitude}ft altitude`, "info");
           } else {
             // Other flying creatures start grounded
             newFighter.altitude = 0;
@@ -7222,16 +8711,7 @@ useEffect(() => {
                           equippedWeapon.type === 'ranged' ||
                           (equippedWeapon.range && equippedWeapon.range > 10);
           
-          if (isRanged) {
-            const ammoType = weaponName.includes('crossbow') ? 'bolts' : 
-                           weaponName.includes('bow') ? 'arrows' : 
-                           weaponName.includes('sling') ? 'stones' : 'arrows';
-            setAmmoCount(prev => ({
-              ...prev,
-              [newFighter.id]: { [ammoType]: 20 } // Default 20 arrows/bolts
-            }));
-            addLog(`🏹 ${newFighter.name} starts with 20 ${ammoType}`, "info");
-          }
+          // Ammo is now strictly inventory-based - no free ammo given
         }
         
         setFighters(prev => [...prev, newFighter]);
@@ -7246,8 +8726,10 @@ useEffect(() => {
    * @param {number} count - Number of enemies to add (1-10)
    * @param {number} level - Level for all enemies (1-15)
    * @param {string} armorName - Armor name to equip (optional)
+   * @param {string} weaponName - Weapon name to equip (optional)
+   * @param {number} ammoCount - Ammo count to give (optional)
    */
-  function addMultipleEnemies(creatureData, count, level = 1, armorName = null) {
+  function addMultipleEnemies(creatureData, count, level = 1, armorName = null, weaponName = null, ammoCount = null) {
     if (!creatureData) {
       addLog(`❌ No creature selected`, "error");
       return;
@@ -7271,7 +8753,7 @@ useEffect(() => {
         ? `${customEnemyName || creatureData.name} #${i + 1}`
         : (customEnemyName || creatureData.name);
       
-      const newFighter = addCreature(creatureData, enemyName, level, armorName);
+      const newFighter = addCreature(creatureData, enemyName, level, armorName, weaponName, ammoCount);
       if (newFighter) {
         newFighters.push(newFighter);
       }
@@ -7286,6 +8768,8 @@ useEffect(() => {
     setSelectedCreature("");
     setEnemyLevel(1); // Reset level
     setSelectedArmor(""); // Reset armor
+    setSelectedWeapon(""); // Reset weapon
+    setSelectedAmmoCount(0); // Reset ammo
     onClose();
   }
 
@@ -7414,6 +8898,34 @@ useEffect(() => {
       }
       
       // Initialize fog of war will be handled by useEffect when positions are set
+    } else {
+      // ✅ Default empty terrain: no obstructions, basic lighting, all characters visible within range
+      const defaultTerrain = {
+        terrain: "OPEN_GROUND",
+        terrainData: {
+          name: "Open Ground",
+          movementModifier: 1.0,
+          visibilityModifier: 1.0,
+          cover: 0,
+          density: 0,
+        },
+        lighting: "BRIGHT_DAYLIGHT",
+        lightingData: {
+          name: "Bright Daylight",
+          visibilityBonus: 0,
+          prowlModifier: 0,
+        },
+        mapType: "hex",
+        visibilityRange: 120, // Full visibility range for basic lighting
+        obstacles: [], // No obstructions
+        grid: null, // No grid-based obstacles
+        description: "Open combat arena - no obstructions",
+      };
+      
+      if (!combatTerrain) {
+        setCombatTerrain(defaultTerrain);
+        addLog("🌲 Default Arena: Open ground, bright lighting, no obstructions", "info");
+      }
     }
     
     setCombatPaused(false);
@@ -7423,6 +8935,8 @@ useEffect(() => {
     setShowPartySelector(false);
     setPsionicsMode(false); // Reset psionics mode
     setSpellsMode(false); // Reset spells mode
+    setClericalAbilitiesMode(false); // Reset clerical abilities mode
+    setSelectedClericalAbility(null); // Clear selected clerical ability
     // Reset fog memory for new combat
     setVisibleCells([]);
     setExploredCells(resetFogMemory());
@@ -7509,12 +9023,32 @@ useEffect(() => {
         delete fighterMeta.horrorInitPenalty;
       }
       
+      // Reset ROUTED status at combat start (fighters should start fresh)
+      // They can become ROUTED during combat from morale checks, but shouldn't start ROUTED
+      const resetMoraleState = fighter.moraleState?.status === "ROUTED" || fighter.moraleState?.status === "SURRENDERED"
+        ? { ...(fighter.moraleState || {}), status: "STEADY", failedChecks: 0 }
+        : fighter.moraleState;
+
+      // ✅ Clear encounter-scoped horror metadata on combat start
+      // (prevents HF from leaking between separate combats)
+      if (fighterMeta.horrorChecks !== undefined) {
+        delete fighterMeta.horrorChecks;
+      }
+      if (fighterMeta.horrorFailedRound !== undefined) {
+        delete fighterMeta.horrorFailedRound;
+      }
+      
       const updatedFighter = {
         ...fighter,
         initiative: initiativeTotal,
         attacksPerMelee: attacksPerMelee,
         remainingAttacks: attacksPerMelee, // Start with full attacks
         meta: fighterMeta,
+        moraleState: resetMoraleState,
+        // Clear ROUTED status effect if present
+        statusEffects: Array.isArray(fighter.statusEffects) 
+          ? fighter.statusEffects.filter(s => s !== "ROUTED")
+          : fighter.statusEffects,
       };
       
       // Normalize IDs to ensure both id and _id exist for backwards compatibility
@@ -7574,12 +9108,22 @@ useEffect(() => {
     
     positionsRef.current = positionMap;
     setPositions(positionMap);
+    // ✅ Reset combat-over flags when starting new combat
+    combatEndCheckRef.current = false;
+    combatOverRef.current = false;
+    allTimeoutsRef.current = []; // Clear any stale timeouts
+    activeCastIdsRef.current.clear(); // Clear any stale cast IDs
+    resolvedSpellEffectsRef.current.clear(); // Clear any stale spell effects
+    
     setCombatActive(true);
     setMode("COMBAT"); // Ensure mode is set to COMBAT so icons appear on the map
     
     addLog("⚔️ Combat Started!", "combat");
     addLog(`Melee Round 1 begins - Actions will alternate in initiative order`, "info");
     addLog(`Initiative Order: ${updatedFighters.map(f => `${f.name} (${f.initiative})`).join(", ")}`, "info");
+    
+    // ✅ Start of combat: apply courage/holy aura bonuses + fear dispel for Round 1
+    processCourageAuras(updatedFighters, positionMap, addLog);
   }
 
   function executePsionicPower(caster, target, power) {
@@ -7607,7 +9151,7 @@ useEffect(() => {
     if (!resolution.success) {
       // Only log error if it's not a "silent" failure (like already attempted this round)
       if (resolution.reason !== "already_attempted_this_round" && resolution.reason !== "already_stabilized") {
-      addLog(`❌ Psionic ${power.name} failed: ${resolution.message || 'Unknown error'}`, "error");
+        addLog(`❌ Psionic ${power.name} failed: ${resolution.message || 'Unknown error'}`, "error");
       }
       (resolution.additionalLogs || []).forEach(entry => {
         addLog(entry.message, entry.type || "error");
@@ -7649,7 +9193,7 @@ useEffect(() => {
     // Don't duplicate success log - usePsionic already logs it for Stop Bleeding
     // For other psionics, the log is already in usePsionic
     if (power.name !== "Stop Bleeding") {
-    addLog(`✅ Psionic ${power.name} executed successfully`, "info");
+      addLog(`✅ Psionic ${power.name} executed successfully`, "info");
     }
 
     // ✅ CRITICAL: Apply updates using latest fighter state
@@ -7676,20 +9220,9 @@ useEffect(() => {
       addLog(entry.message, entry.type || "info");
     });
 
-    // ✅ CRITICAL: Decrement remainingAttacks BEFORE endTurn() to prevent AI from executing multiple psionics in the same turn
-    setFighters(prev => prev.map(fighter => {
-      if (fighter.id === latestCaster.id) {
-        return {
-          ...fighter,
-          remainingAttacks: Math.max(0, (fighter.remainingAttacks || 0) - 1)
-        };
-      }
-      return fighter;
-    }));
-
     endTurn();
-      return true;
-    }
+    return true;
+  }
     
   function applyFighterUpdates(fighter, updates) {
     if (!updates) return fighter;
@@ -7819,6 +9352,48 @@ useEffect(() => {
 
   // Execute spell
   function executeSpell(caster, target, spell) {
+    // ✅ GUARD: Stop all processing if combat is over (use ref for latest state)
+    if (combatOverRef.current || !combatActive || combatEndCheckRef.current) {
+      return false;
+    }
+
+    // ✅ DE-DUPE: Generate unique cast ID with high-resolution timestamp + random
+    // Use performance.now() for better precision than Date.now()
+    const castId = `${caster.id}:${spell.name || spell.id || 'spell'}:${performance.now()}:${Math.random().toString(36).substr(2, 9)}`;
+    
+    // ✅ PREVENT DUPLICATE CASTS: Check if this exact cast ID is already active
+    if (activeCastIdsRef.current.has(castId)) {
+      // This exact cast is already being processed - skip
+      return false;
+    }
+    
+    // Mark cast as active immediately
+    activeCastIdsRef.current.add(castId);
+    
+    // Clean up old cast IDs (keep last 50 to prevent memory leak)
+    if (activeCastIdsRef.current.size > 50) {
+      const entries = Array.from(activeCastIdsRef.current);
+      activeCastIdsRef.current = new Set(entries.slice(-25));
+    }
+    
+    // ✅ DE-DUPE: Check if this spell effect has already been resolved for this target
+    const effectKey = target ? `${castId}::${target.id}` : `${castId}::self`;
+    
+    if (resolvedSpellEffectsRef.current.has(effectKey)) {
+      // This spell effect has already been resolved - skip
+      activeCastIdsRef.current.delete(castId); // Clean up
+      return false;
+    }
+    
+    // Mark as resolved immediately to prevent duplicate processing
+    resolvedSpellEffectsRef.current.add(effectKey);
+    
+    // Clean up old entries (keep last 100 to prevent memory leak)
+    if (resolvedSpellEffectsRef.current.size > 100) {
+      const entries = Array.from(resolvedSpellEffectsRef.current);
+      resolvedSpellEffectsRef.current = new Set(entries.slice(-50));
+    }
+
     // Check if this is a protection circle spell using isProtectionCircle
     if (isProtectionCircle(spell)) {
       // Handle protection circle creation
@@ -7910,10 +9485,16 @@ useEffect(() => {
       }
     }
 
-    addLog(`🔮 ${caster.name} casts ${combatSpell.name}!`, "combat");
+    addLog(`🔮 ${caster.name} casts ${combatSpell.name}! (castId=${castId.substring(0, 30)}...)`, "combat");
 
-    setFighters((prev) =>
-      prev.map((f) => {
+    setFighters((prev) => {
+      // ✅ GUARD: Check combat state inside setState callback
+      if (combatOverRef.current || !combatActive || combatEndCheckRef.current) {
+        activeCastIdsRef.current.delete(castId); // Clean up on abort
+        return prev;
+      }
+      
+      return prev.map((f) => {
         if (f.id !== caster.id) return f;
         const updated = { ...f };
         if (typeof updated.PPE === "number") {
@@ -7923,8 +9504,8 @@ useEffect(() => {
           updated.currentPPE = Math.max(0, updated.currentPPE - spellCost);
         }
         return updated;
-      })
-    );
+      });
+    });
 
     if (healingFormula && healTarget) {
       let healAmount = 0;
@@ -7940,41 +9521,50 @@ useEffect(() => {
       }
 
       if (healAmount > 0) {
-        setFighters((prev) =>
-          prev.map((f) => {
+        setFighters((prev) => {
+          // ✅ GUARD: Check combat state inside setState callback
+          if (combatOverRef.current || !combatActive || combatEndCheckRef.current) {
+            activeCastIdsRef.current.delete(castId); // Clean up on abort
+            return prev;
+          }
+          
+          return prev.map((f) => {
             if (f.id !== healTarget.id) return f;
             const updatedTarget = { ...f };
             const newHP = clampHP(getFighterHP(updatedTarget) + healAmount, updatedTarget);
             applyHPToFighter(updatedTarget, newHP);
             return updatedTarget;
-          })
-        );
+          });
+        });
         addLog(`💚 ${healTarget.name} recovers ${healAmount} HP from ${combatSpell.name}!`, "combat");
       } else if (combatSpell.effect) {
         addLog(`✨ ${combatSpell.effect}`, "combat");
-    }
+      }
 
       addLog(`🔮 ${caster.name} spent ${spellCost} PPE`, "combat");
       
-      // ✅ CRITICAL: Decrement remainingAttacks BEFORE endTurn() to prevent AI from executing multiple spells in the same turn
-      setFighters(prev => prev.map(fighter => {
-        if (fighter.id === caster.id) {
-          return {
-            ...fighter,
-            remainingAttacks: Math.max(0, (fighter.remainingAttacks || 0) - 1)
-          };
-        }
-        return fighter;
-      }));
+      // ✅ GUARD: Check combat state before ending turn (use ref for latest state)
+      if (combatOverRef.current || !combatActive || combatEndCheckRef.current) {
+        activeCastIdsRef.current.delete(castId); // Clean up on abort
+        return false;
+      }
       
+      activeCastIdsRef.current.delete(castId); // Clean up after successful completion
       endTurn();
-    return true;
-  }
+      return true;
+    }
 
+    // Handle damage spells
     let spellSaveInfo = null;
     let saveResisted = false;
 
     if (hasSpellDamage(combatSpell) && target) {
+      // ✅ GUARD: Check combat state before processing (use ref for latest state)
+      if (combatOverRef.current || !combatActive || combatEndCheckRef.current) {
+        activeCastIdsRef.current.delete(castId); // Clean up on abort
+        return false;
+      }
+      
       spellSaveInfo = resolveMagicSave(caster, target, combatSpell.name);
       if (spellSaveInfo) {
         const { roll, totalBonus, total, dc, resisted } = spellSaveInfo;
@@ -7992,22 +9582,34 @@ useEffect(() => {
     }
 
     if (combatSpell.damage && target) {
+      // ✅ GUARD: Check combat state before applying damage (use ref for latest state)
+      if (combatOverRef.current || !combatActive || combatEndCheckRef.current) {
+        activeCastIdsRef.current.delete(castId); // Clean up on abort
+        return false;
+      }
+      
       const damageRoll = CryptoSecureDice.parseAndRoll(combatSpell.damage);
       let damage = damageRoll.totalWithBonus;
       if (saveResisted) {
         damage = Math.max(1, Math.floor(damage / 2));
       }
 
-      setFighters((prev) =>
-        prev.map((f) => {
+      setFighters((prev) => {
+        // ✅ GUARD: Double-check combat state inside setState callback (use ref for latest state)
+        if (combatOverRef.current || !combatActive || combatEndCheckRef.current) {
+          activeCastIdsRef.current.delete(castId); // Clean up on abort
+          return prev;
+        }
+        
+        return prev.map((f) => {
           if (f.id !== target.id) return f;
 
           const updatedTarget = { ...f };
           const newHP = clampHP(getFighterHP(updatedTarget) - damage, updatedTarget);
           applyHPToFighter(updatedTarget, newHP);
           return updatedTarget;
-        })
-      );
+        });
+      });
 
       addLog(`💥 ${combatSpell.name} hits ${target.name} for ${damage} damage!`, "combat");
     } else if (combatSpell.effect) {
@@ -8016,17 +9618,13 @@ useEffect(() => {
 
     addLog(`🔮 ${caster.name} spent ${spellCost} PPE`, "combat");
     
-    // ✅ CRITICAL: Decrement remainingAttacks BEFORE endTurn() to prevent AI from executing multiple spells in the same turn
-    setFighters(prev => prev.map(fighter => {
-      if (fighter.id === caster.id) {
-        return {
-          ...fighter,
-          remainingAttacks: Math.max(0, (fighter.remainingAttacks || 0) - 1)
-        };
-      }
-      return fighter;
-    }));
+    // ✅ GUARD: Check combat state before ending turn (use ref for latest state)
+    if (combatOverRef.current || !combatActive || combatEndCheckRef.current) {
+      activeCastIdsRef.current.delete(castId); // Clean up on abort
+      return false;
+    }
     
+    activeCastIdsRef.current.delete(castId); // Clean up after successful completion
     endTurn();
     return true;
   }
@@ -8139,7 +9737,7 @@ useEffect(() => {
         ));
         executingActionRef.current = false; // Clear lock after action completes
         clearTimeout(lockTimeout);
-        setTimeout(() => endTurn(), 500);
+        safeEndTurn(500);
         return;
       }
       
@@ -8154,7 +9752,7 @@ useEffect(() => {
             ? { ...f, remainingAttacks: Math.max(0, f.remainingAttacks - (dodgeCost === "all" ? f.remainingAttacks : dodgeCost)) }
             : f
         ));
-        setTimeout(() => endTurn(), 500);
+        safeEndTurn(500);
         return;
       }
       
@@ -8186,7 +9784,7 @@ useEffect(() => {
         ));
         executingActionRef.current = false;
         clearTimeout(lockTimeout);
-        setTimeout(() => endTurn(), 500);
+        safeEndTurn(500);
         return;
       }
       
@@ -8205,7 +9803,7 @@ useEffect(() => {
               ? { ...f, remainingAttacks: Math.max(0, f.remainingAttacks - 1) }
               : f
           ));
-          setTimeout(() => endTurn(), 500);
+          safeEndTurn(500);
         }
         return;
       
@@ -8227,7 +9825,7 @@ useEffect(() => {
               ? { ...f, remainingAttacks: Math.max(0, f.remainingAttacks - 1) }
               : f
           ));
-          setTimeout(() => endTurn(), 500);
+          safeEndTurn(500);
         }
         return;
       
@@ -8258,7 +9856,7 @@ useEffect(() => {
           ));
           executingActionRef.current = false;
           clearTimeout(lockTimeout);
-          setTimeout(() => endTurn(), 500);
+          safeEndTurn(500);
         }
         return;
       
@@ -8270,7 +9868,7 @@ useEffect(() => {
             ? { ...f, remainingAttacks: Math.max(0, f.remainingAttacks - 1) }
             : f
         ));
-        setTimeout(() => endTurn(), 500);
+        safeEndTurn(500);
         return;
       
       case "Light Rest": {
@@ -8304,7 +9902,7 @@ useEffect(() => {
 
         executingActionRef.current = false;
         clearTimeout(lockTimeout);
-        setTimeout(() => endTurn(), 500);
+        safeEndTurn(500);
         return;
       }
 
@@ -8332,7 +9930,7 @@ useEffect(() => {
 
         executingActionRef.current = false;
         clearTimeout(lockTimeout);
-        setTimeout(() => endTurn(), 500);
+        safeEndTurn(500);
         return;
       }
       
@@ -8352,7 +9950,7 @@ useEffect(() => {
               : f
           ));
           executingActionRef.current = false; // Clear lock after action completes
-          setTimeout(() => endTurn(), 500);
+          safeEndTurn(500);
         } else {
           addLog(`❌ ${currentFighter.name} cannot brace without a spear, pike, polearm, or lance!`, "error");
           executingActionRef.current = false; // Clear lock on error
@@ -8390,7 +9988,7 @@ useEffect(() => {
             setSelectedGrappleAction(null); // Clear selection after use
             executingActionRef.current = false; // Clear lock after action completes
             clearTimeout(lockTimeout);
-            setTimeout(() => endTurn(), 500);
+            safeEndTurn(500);
             return;
           } else {
             // Not in grapple - use selected maneuver
@@ -8407,28 +10005,28 @@ useEffect(() => {
               setSelectedManeuver(null); // Clear selection after use
               executingActionRef.current = false;
               clearTimeout(lockTimeout);
-              setTimeout(() => endTurn(), 500);
+              safeEndTurn(500);
               return;
             } else if (selectedManeuver === "trip") {
               executeTripManeuver(currentFighter, targetToExecute);
               setSelectedManeuver(null); // Clear selection after use
               executingActionRef.current = false;
               clearTimeout(lockTimeout);
-              setTimeout(() => endTurn(), 500);
+              safeEndTurn(500);
               return;
             } else if (selectedManeuver === "shove") {
               executeShoveManeuver(currentFighter, targetToExecute);
               setSelectedManeuver(null); // Clear selection after use
               executingActionRef.current = false;
               clearTimeout(lockTimeout);
-              setTimeout(() => endTurn(), 500);
+              safeEndTurn(500);
               return;
             } else if (selectedManeuver === "disarm") {
               executeDisarmManeuver(currentFighter, targetToExecute);
               setSelectedManeuver(null); // Clear selection after use
               executingActionRef.current = false;
               clearTimeout(lockTimeout);
-              setTimeout(() => endTurn(), 500);
+              safeEndTurn(500);
               return;
             } else {
               addLog(`⚠️ Unknown maneuver: ${selectedManeuver}`, "error");
@@ -8469,6 +10067,196 @@ useEffect(() => {
           return; // executePsionicPower handles turn ending
         }
         break;
+      }
+      
+      case "Clerical Abilities": {
+        const clericalAbilities = getAvailableClericalAbilities(currentFighter);
+        if (clericalAbilities.length === 0) {
+          addLog(`❌ ${currentFighter.name} has no clerical abilities!`, "error");
+          executingActionRef.current = false;
+          clearTimeout(lockTimeout);
+          return;
+        }
+        
+        // Check if ability is selected
+        if (!selectedClericalAbility) {
+          addLog(`❌ ${currentFighter.name} must select a clerical ability first!`, "error");
+          executingActionRef.current = false;
+          clearTimeout(lockTimeout);
+          return;
+        }
+        
+        // Execute the selected clerical ability
+        const abilityName = selectedClericalAbility.name;
+        let result = null;
+        
+        switch (abilityName) {
+          case "Animate Dead": {
+            // Find dead characters on the map
+            const deadBodies = fighters.filter(f => isDead(f) && positions[f.id]);
+            if (deadBodies.length === 0) {
+              addLog(`❌ No dead bodies available to animate!`, "error");
+              executingActionRef.current = false;
+              clearTimeout(lockTimeout);
+              return;
+            }
+            
+            result = animateDead(currentFighter, deadBodies, { log: addLog });
+            
+            if (result.success && result.animated) {
+              // TODO: Create animated undead fighters from result.animated
+              // For now, just log success
+              addLog(`✨ ${result.animated.length} dead body/bodies animated!`, "info");
+            }
+            break;
+          }
+          
+          case "Turn Dead": {
+            // Find undead targets
+            const undeadTargets = fighters.filter(f => 
+              f.id !== currentFighter.id && 
+              isUndead(f) && 
+              positions[f.id]
+            );
+            
+            if (undeadTargets.length === 0) {
+              addLog(`❌ No undead targets available!`, "error");
+              executingActionRef.current = false;
+              clearTimeout(lockTimeout);
+              return;
+            }
+            
+            result = turnDead(currentFighter, undeadTargets, { log: addLog });
+            
+            if (result.success) {
+              // Apply turn effects to turned/destroyed undead
+              if (result.turned && result.turned.length > 0) {
+                // Mark as routed/fled
+                setFighters(prev => prev.map(f => {
+                  if (result.turned.some(t => t.id === f.id)) {
+                    return {
+                      ...f,
+                      moraleState: { ...(f.moraleState || {}), status: "ROUTED", hasFled: true },
+                      statusEffects: Array.isArray(f.statusEffects) 
+                        ? [...f.statusEffects, "FLED"] 
+                        : ["FLED"]
+                    };
+                  }
+                  return f;
+                }));
+              }
+              
+              if (result.destroyed && result.destroyed.length > 0) {
+                // Destroy undead (set HP to -100 or remove from combat)
+                setFighters(prev => prev.map(f => {
+                  if (result.destroyed.some(t => t.id === f.id)) {
+                    return { ...f, currentHP: -100, status: "defeated" };
+                  }
+                  return f;
+                }));
+              }
+            }
+            break;
+          }
+          
+          case "Exorcism": {
+            if (!targetToExecute) {
+              addLog(`❌ ${currentFighter.name} must select a target for Exorcism!`, "error");
+              executingActionRef.current = false;
+              clearTimeout(lockTimeout);
+              return;
+            }
+            
+            result = performExorcism(currentFighter, targetToExecute, { log: addLog });
+            
+            if (result.success && result.banished) {
+              // Remove or mark target as banished
+              addLog(`✨ ${targetToExecute.name} has been banished!`, "info");
+              // Could remove from combat or mark as banished
+            }
+            break;
+          }
+          
+          case "Remove Curse": {
+            if (!targetToExecute) {
+              addLog(`❌ ${currentFighter.name} must select a target for Remove Curse!`, "error");
+              executingActionRef.current = false;
+              clearTimeout(lockTimeout);
+              return;
+            }
+            
+            result = removeCurse(currentFighter, targetToExecute, { log: addLog });
+            
+            if (result.success && result.removed) {
+              // Remove curse status from target
+              setFighters(prev => prev.map(f => {
+                if (f.id === targetToExecute.id) {
+                  const newStatusEffects = Array.isArray(f.statusEffects)
+                    ? f.statusEffects.filter(e => e !== "CURSED")
+                    : [];
+                  return {
+                    ...f,
+                    cursed: false,
+                    hasCurse: false,
+                    statusEffects: newStatusEffects
+                  };
+                }
+                return f;
+              }));
+            }
+            break;
+          }
+          
+          case "Healing Touch": {
+            if (!targetToExecute) {
+              addLog(`❌ ${currentFighter.name} must select a target for Healing Touch!`, "error");
+              executingActionRef.current = false;
+              clearTimeout(lockTimeout);
+              return;
+            }
+            
+            result = clericalHealingTouch(currentFighter, targetToExecute, { log: addLog });
+            
+            if (result.success) {
+              // Update target HP
+              setFighters(prev => prev.map(f => {
+                if (f.id === targetToExecute.id) {
+                  return {
+                    ...f,
+                    currentHP: result.currentHp,
+                    hp: result.currentHp
+                  };
+                }
+                return f;
+              }));
+              addLog(result.message, "healing");
+            } else {
+              addLog(`❌ ${result.reason || "Healing Touch failed"}`, "error");
+            }
+            break;
+          }
+          
+          default:
+            addLog(`❌ Unknown clerical ability: ${abilityName}`, "error");
+            executingActionRef.current = false;
+            clearTimeout(lockTimeout);
+            return;
+        }
+        
+        // Deduct action cost
+        setFighters(prev => prev.map(f => 
+          f.id === currentFighter.id 
+            ? { ...f, remainingAttacks: Math.max(0, f.remainingAttacks - 1) }
+            : f
+        ));
+        
+        // Clear selections
+        setClericalAbilitiesMode(false);
+        setSelectedClericalAbility(null);
+        executingActionRef.current = false;
+        clearTimeout(lockTimeout);
+        safeEndTurn(500);
+        return;
       }
       
       case "Spells": {
@@ -8673,7 +10461,7 @@ useEffect(() => {
     setSelectedTarget(null);
         executingActionRef.current = false;
         clearTimeout(lockTimeout);
-        setTimeout(() => endTurn(), 1500);
+        safeEndTurn(1500);
         return;
       }
       
@@ -8689,7 +10477,7 @@ useEffect(() => {
         }
         executingActionRef.current = false;
         clearTimeout(lockTimeout);
-        setTimeout(() => endTurn(), 500);
+        safeEndTurn(500);
         return;
       }
 
@@ -8713,7 +10501,7 @@ useEffect(() => {
         }
         executingActionRef.current = false;
         clearTimeout(lockTimeout);
-        setTimeout(() => endTurn(), 500);
+        safeEndTurn(500);
         return;
       }
 
@@ -8732,7 +10520,7 @@ useEffect(() => {
         }
         executingActionRef.current = false;
         clearTimeout(lockTimeout);
-        setTimeout(() => endTurn(), 500);
+        safeEndTurn(500);
         return;
       }
 
@@ -8743,19 +10531,104 @@ useEffect(() => {
           clearTimeout(lockTimeout);
           return;
         }
-        const result = performDiveAttack(currentFighter, targetToExecute);
-        if (result.success) {
-          setFighters(prev => prev.map(f => 
-            f.id === currentFighter.id ? result.fighter : f
-          ));
-          addLog(result.message, "info");
-          // Perform the actual attack with dive bonus
-          attack(currentFighter, targetToExecute.id, { attackBonus: result.attackBonus, source: "DIVE_ATTACK" });
-          return; // attack handles endTurn
-        } else {
-          addLog(`❌ ${result.reason}`, "error");
+
+        // ✅ Only requirement: must be flying
+        if (!isFlying(currentFighter)) {
+          addLog(`❌ ${currentFighter.name} must be flying to perform a dive attack`, "error");
           executingActionRef.current = false;
           clearTimeout(lockTimeout);
+          return;
+        }
+
+        const fromAlt = getAltitude(currentFighter) || 0;
+        const toAlt = getAltitude(targetToExecute) || 0;
+
+        // ✅ Dive Attack (player) should descend to contact altitude = targetAlt + 5 (still flying)
+        const contactAlt = toAlt + 5;
+
+        const updatedAttacker = {
+          ...currentFighter,
+          isFlying: true,
+          altitudeFeet: contactAlt,
+          altitude: contactAlt,
+        };
+
+        const drop = Math.max(0, fromAlt - contactAlt);
+        const diveBonus = Math.min(4, Math.floor(drop / 10));
+
+        setFighters(prev => prev.map(f => (f.id === updatedAttacker.id ? updatedAttacker : f)));
+
+        addLog(`🦅 ${currentFighter.name} dives (${fromAlt}ft → ${contactAlt}ft) to strike ${targetToExecute.name}!`, "combat");
+
+        attack(updatedAttacker, targetToExecute.id, {
+          strikeBonus: diveBonus,
+          source: "DIVE_ATTACK",
+          diveFromFeet: fromAlt,
+          diveToFeet: contactAlt,
+        });
+
+        return; // attack() handles endTurn
+      }
+
+      case "Dimensional Teleport": {
+        if (!hasDimensionalTeleport(currentFighter)) {
+          addLog(`❌ ${currentFighter.name} does not have dimensional teleport ability!`, "error");
+          executingActionRef.current = false;
+          clearTimeout(lockTimeout);
+          return;
+        }
+
+        // Teleport requires selecting a destination hex
+        if (!selectedMovementHex || !showTacticalMap) {
+          addLog(`❌ ${currentFighter.name} must select a destination hex on the tactical map to teleport!`, "error");
+          executingActionRef.current = false;
+          clearTimeout(lockTimeout);
+          return;
+        }
+
+        const currentPos = positions[currentFighter.id];
+        if (!currentPos) {
+          addLog(`❌ Cannot find current position for ${currentFighter.name}!`, "error");
+          executingActionRef.current = false;
+          clearTimeout(lockTimeout);
+          return;
+        }
+
+        const result = attemptDimensionalTeleport(
+          currentFighter,
+          selectedMovementHex,
+          currentPos,
+          { maxRange: 500, log: addLog }
+        );
+
+        if (result.success) {
+          // Move fighter to new position
+          handlePositionChange(currentFighter.id, result.newPosition);
+          
+          // Deduct action cost (teleport costs 1-2 actions, using 1 for now)
+          setFighters(prev => prev.map(f => 
+            f.id === currentFighter.id 
+              ? { ...f, remainingAttacks: Math.max(0, f.remainingAttacks - 1) }
+              : f
+          ));
+          
+          addLog(result.message, "info");
+          executingActionRef.current = false;
+          clearTimeout(lockTimeout);
+          safeEndTurn(500);
+          return;
+        } else {
+          // Teleport failed - still costs an action
+          setFighters(prev => prev.map(f => 
+            f.id === currentFighter.id 
+              ? { ...f, remainingAttacks: Math.max(0, f.remainingAttacks - 1) }
+              : f
+          ));
+          
+          addLog(`❌ ${result.reason}`, "warning");
+          executingActionRef.current = false;
+          clearTimeout(lockTimeout);
+          safeEndTurn(500);
           return;
         }
       }
@@ -8767,7 +10640,7 @@ useEffect(() => {
           clearTimeout(lockTimeout);
           return;
         }
-        const result = liftAndCarry(currentFighter, targetToExecute);
+        const result = liftAndCarry(currentFighter, targetToExecute, { positions });
         if (result.success) {
           setFighters(prev => prev.map(f => {
             if (f.id === currentFighter.id) return result.carrier;
@@ -8783,7 +10656,7 @@ useEffect(() => {
         }
         executingActionRef.current = false;
         clearTimeout(lockTimeout);
-        setTimeout(() => endTurn(), 500);
+        safeEndTurn(500);
         return;
       }
 
@@ -8818,10 +10691,10 @@ useEffect(() => {
         }
         executingActionRef.current = false;
         clearTimeout(lockTimeout);
-        setTimeout(() => endTurn(), 500);
+        safeEndTurn(500);
         return;
       }
-      
+
       default:
         addLog(`${currentFighter.name} performs ${actionToExecute.name}.`, "info");
         // Decrement action and end turn for any unhandled action
@@ -8832,7 +10705,7 @@ useEffect(() => {
         ));
         executingActionRef.current = false; // Clear lock after action completes
         clearTimeout(lockTimeout);
-        setTimeout(() => endTurn(), 500);
+        safeEndTurn(500);
         return;
     }
 
@@ -8852,6 +10725,67 @@ useEffect(() => {
         // Use resetGrapple to reset grapple state for each fighter
         const fighterCopy = { ...f };
         resetGrapple(fighterCopy);
+        
+        // Reset stamina/fatigue state
+        if (fighterCopy.fatigueState) {
+          resetFatigue(fighterCopy);
+        } else {
+          // Initialize fatigue state if it doesn't exist
+          fighterCopy.fatigueState = initializeCombatFatigue(fighterCopy);
+        }
+        
+        // Reset ISP and PPE to max values (always reset, even if 0)
+        // Re-initialize PPE for creatures with magicAbilities if it's missing or 0
+        if ((!fighterCopy.PPE || fighterCopy.PPE === 0) && fighterCopy.magicAbilities) {
+          const spellResult = getSpellsForCreature(fighterCopy.magicAbilities);
+          if (spellResult.ppe > 0) {
+            fighterCopy.PPE = spellResult.ppe; // Use parser's PPE calculation
+            addLog(`🔮 ${fighterCopy.name} PPE re-initialized to ${spellResult.ppe} from magicAbilities on combat reset.`, "info");
+          } else {
+            // Fallback to simple calculation if parser fails
+            const magicText = typeof fighterCopy.magicAbilities === "string" 
+              ? fighterCopy.magicAbilities.toLowerCase() 
+              : "";
+            const levelMatch = magicText.match(/levels?\s+(\d+)[-\s]+(\d+)/);
+            const maxLevel = levelMatch ? parseInt(levelMatch[2]) : 5;
+            fighterCopy.PPE = maxLevel * 20;
+          }
+        }
+        
+        const maxISP = fighterCopy.ISP !== undefined ? fighterCopy.ISP : 0;
+        const maxPPE = fighterCopy.PPE !== undefined ? fighterCopy.PPE : 0;
+        fighterCopy.currentISP = maxISP;
+        fighterCopy.currentPPE = maxPPE;
+        
+        // Reset altitude (flying creatures should start grounded)
+        fighterCopy.altitude = 0;
+        fighterCopy.altitudeFeet = 0;
+        fighterCopy.isFlying = false;
+        
+        // Reset morale state
+        if (fighterCopy.moraleState) {
+          fighterCopy.moraleState = {
+            ...fighterCopy.moraleState,
+            status: "STEADY",
+            failedChecks: 0,
+          };
+        }
+        
+        // Clear status effects (ROUTED, etc.)
+        if (Array.isArray(fighterCopy.statusEffects)) {
+          fighterCopy.statusEffects = fighterCopy.statusEffects.filter(
+            effect => effect !== "ROUTED" && effect !== "SURRENDERED"
+          );
+        }
+        
+        // Reset meta (horror checks, initiative penalties, etc.)
+        if (fighterCopy.meta) {
+          const newMeta = { ...fighterCopy.meta };
+          delete newMeta.horrorChecks;
+          delete newMeta.horrorInitPenalty;
+          delete newMeta.horrorFailedRound;
+          fighterCopy.meta = Object.keys(newMeta).length > 0 ? newMeta : undefined;
+        }
         
         return {
           ...fighterCopy,
@@ -8877,6 +10811,8 @@ useEffect(() => {
       setSelectedAttack(0); // Reset attack selection
       setPsionicsMode(false); // Reset psionics mode
       setSpellsMode(false); // Reset spells mode
+      setClericalAbilitiesMode(false); // Reset clerical abilities mode
+      setSelectedClericalAbility(null); // Clear selected clerical ability
       setVisibleCells([]);
       setExploredCells(resetFogMemory());
       setSelectedTarget(null);
@@ -9252,7 +11188,6 @@ useEffect(() => {
         psionicPowers: char.psionicPowers || [],
         magic: magicSpells,
         ISP: char.ISP || 0,
-        currentISP: typeof char.currentISP === "number" ? char.currentISP : (char.ISP || 0), // Initialize currentISP from ISP
         PPE: PPEValue,
         currentPPE: currentPPEValue, // Always set currentPPE
         // Add attacks array for combat (equipped weapon or unarmed)
@@ -9347,11 +11282,26 @@ useEffect(() => {
           combatEndCheckRef.current = true;
           addLog("💀 All players are defeated! Enemies win!", "defeat");
           setCombatActive(false);
+          
+          // ✅ CRITICAL: Clear all pending timeouts to stop post-victory actions
+          if (turnTimeoutRef.current) {
+            clearTimeout(turnTimeoutRef.current);
+            turnTimeoutRef.current = null;
+          }
         } else if (consciousEnemies.length === 0) {
           // All enemies are either dead or unconscious - players win
           combatEndCheckRef.current = true;
+          combatOverRef.current = true; // ✅ AUTHORITATIVE: Set combat over flag
           addLog("🎉 Victory! All enemies defeated!", "victory");
           setCombatActive(false);
+          
+          // ✅ CRITICAL: Clear ALL pending timeouts to stop post-victory actions
+          if (turnTimeoutRef.current) {
+            clearTimeout(turnTimeoutRef.current);
+            turnTimeoutRef.current = null;
+          }
+          allTimeoutsRef.current.forEach(clearTimeout);
+          allTimeoutsRef.current = [];
         }
       };
       
@@ -9361,13 +11311,14 @@ useEffect(() => {
   }, [fighters, combatActive, turnIndex, alivePlayers, aliveEnemies, canFighterAct, addLog]); // Check on turn changes
 
   // Update visible cells for fog of war (optimized for performance)
+  // ✅ Enhanced to account for altitude when fog is enabled
   const updateVisibleCells = useCallback(() => {
     if (!fogEnabled || !fighters || !positions || Object.keys(positions).length === 0) {
       setVisibleCells([]);
       return;
     }
 
-    // Get all player positions
+    // Get all player positions with altitude
     const playerFighters = fighters.filter(f => f.type === "player" && positions[f.id]);
     if (playerFighters.length === 0) {
       setVisibleCells([]);
@@ -9379,15 +11330,29 @@ useEffect(() => {
     const lighting = combatTerrain?.lighting || "BRIGHT_DAYLIGHT";
     const baseRange = combatTerrain?.visibilityRange || getVisibilityRange(lighting, false, null);
     
-    // Extract terrain obstacles from terrain data if available
-    const terrainObstaclesList = []; // Can be populated from terrain.grid if needed
+    // ✅ Extract terrain obstacles from terrain data if available (default empty)
+    const terrainObstaclesList = combatTerrain?.obstacles || []; // Empty by default for open arena
     
-    // Calculate visible cells for all players (union)
-    const observerPositions = playerFighters.map(f => positions[f.id]).filter(pos => pos);
+    // ✅ Calculate visible cells for all players (union), accounting for altitude
+    const observerPositions = playerFighters.map(f => {
+      const pos = positions[f.id];
+      const altitude = f.altitudeFeet || f.altitude || 0;
+      return { ...pos, altitude }; // Include altitude in position
+    }).filter(pos => pos && pos.x !== undefined && pos.y !== undefined);
+    
     if (observerPositions.length === 0) {
       setVisibleCells([]);
       return;
     }
+    
+    // ✅ Get all fighter positions with altitude for fog calculation
+    const allFighterPositions = new Map();
+    fighters.forEach(f => {
+      if (positions[f.id]) {
+        const altitude = f.altitudeFeet || f.altitude || 0;
+        allFighterPositions.set(f.id, { ...positions[f.id], altitude });
+      }
+    });
     
     // Use requestAnimationFrame to batch DOM updates and avoid blocking
     requestAnimationFrame(() => {
@@ -9402,7 +11367,9 @@ useEffect(() => {
           hasInfravision: false, // TODO: Check player abilities for infravision
           isProwling: false, // TODO: Check if player is successfully prowling
           terrainObstacles: terrainObstaclesList,
-          mapType: combatTerrain?.mapType || "hex"
+          mapType: combatTerrain?.mapType || "hex",
+          observerAltitude: observerPositions[0].altitude || 0, // ✅ Pass altitude
+          fighterPositions: allFighterPositions, // ✅ Pass all fighter positions with altitude
         });
       } else {
         // Multiple observers - use calculateVisibleCellsMultiple to combine visibility
@@ -9412,7 +11379,8 @@ useEffect(() => {
           hasInfravision: false, // TODO: Check player abilities for infravision
           isProwling: false, // TODO: Check if player is successfully prowling
           terrainObstacles: terrainObstaclesList,
-          mapType: combatTerrain?.mapType || "hex"
+          mapType: combatTerrain?.mapType || "hex",
+          fighterPositions: allFighterPositions, // ✅ Pass all fighter positions with altitude
         });
       }
       
@@ -9689,34 +11657,13 @@ useEffect(() => {
             size="sm"
             colorScheme={aiControlEnabled ? "purple" : "gray"}
             variant={aiControlEnabled ? "solid" : "outline"}
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              try {
+            onClick={() => {
               const newValue = !aiControlEnabled;
-                console.log('AI Control button clicked, current state:', aiControlEnabled, 'new state:', newValue);
               setAiControlEnabled(newValue);
               if (newValue) {
                 addLog("🤖 AI Control ENABLED - Players will be controlled by AI", "info");
-                  // If combat is active and it's a player's turn, trigger AI immediately
-                  if (combatActive && currentFighter && currentFighter.type === "player" && !processingPlayerAIRef.current) {
-                    setTimeout(() => {
-                      if (combatActive && canFighterAct(currentFighter) && !combatPausedRef.current) {
-                        handlePlayerAITurn(currentFighter);
-                      }
-                    }, 100);
-                  }
               } else {
                 addLog("🎮 Manual Control ENABLED - Players will control themselves", "info");
-                  // If combat choices were closed, reopen them for manual control
-                  if (combatActive && currentFighter && currentFighter.type === "player" && !showCombatChoices) {
-                    setShowCombatChoices(true);
-                    openCombatChoices();
-                  }
-                }
-              } catch (error) {
-                console.error('Error toggling AI control:', error);
-                addLog("❌ Error toggling AI control - see console for details", "error");
               }
             }}
             title={aiControlEnabled ? "Disable AI control - players will control themselves" : "Enable AI control - AI will control players"}
@@ -10213,8 +12160,11 @@ useEffect(() => {
                           {fighter.class && !fighter.OCC && (
                             <Badge colorScheme="purple" size="sm">Class: {fighter.class}</Badge>
                           )}
-                          {fighter.alignment && (
-                            <Badge colorScheme="gray" size="sm">{fighter.alignment}</Badge>
+                          {/* ✅ Alignment Display */}
+                          {(fighter.alignment || fighter.alignmentName || fighter.alignmentText) && (
+                            <Badge colorScheme="gray" size="sm">
+                              {fighter.alignment || fighter.alignmentName || fighter.alignmentText}
+                            </Badge>
                           )}
                         </HStack>
                         
@@ -10223,6 +12173,23 @@ useEffect(() => {
                           {fighter.ISP !== undefined && ` | ISP: ${fighter.ISP}`}
                           {fighter.PPE !== undefined && ` | PPE: ${fighter.PPE}`}
                         </Text>
+                        
+                        {/* ✅ Attributes Display */}
+                        {fighter.attributes && (
+                          <Box fontSize="xs" color="gray.600">
+                            <Text fontWeight="medium">Attributes:</Text>
+                            <HStack spacing={2} flexWrap="wrap">
+                              {fighter.attributes.IQ && <Text>IQ: {fighter.attributes.IQ}</Text>}
+                              {fighter.attributes.ME && <Text>ME: {fighter.attributes.ME}</Text>}
+                              {fighter.attributes.MA && <Text>MA: {fighter.attributes.MA}</Text>}
+                              {fighter.attributes.PS && <Text>PS: {fighter.attributes.PS}</Text>}
+                              {fighter.attributes.PP && <Text>PP: {fighter.attributes.PP}</Text>}
+                              {fighter.attributes.PE && <Text>PE: {fighter.attributes.PE}</Text>}
+                              {fighter.attributes.PB && <Text>PB: {fighter.attributes.PB}</Text>}
+                              {fighter.attributes.Spd && <Text>Spd: {fighter.attributes.Spd}</Text>}
+                            </HStack>
+                          </Box>
+                        )}
                         {/* Altitude, Stamina, and Carrying Status */}
                         <HStack spacing={2} fontSize="sm">
                           <Text color="blue.700">
@@ -10311,12 +12278,12 @@ useEffect(() => {
                         )}
                         
                         {/* Equipment Accordion */}
-                        {(fighter.equipped || fighter.equippedWeapons || fighter.equippedArmor || fighter.equippedWeapon) && (
+                        {(fighter.equipped || fighter.equippedWeapons || fighter.equippedArmor || fighter.equippedWeapon || fighter.attacks) && (
                           <Accordion allowToggle w="100%" size="xs">
                             <AccordionItem border="none">
                               <AccordionButton px={0} py={1} _hover={{ bg: "transparent" }}>
                                 <Box flex="1" textAlign="left">
-                                  <Text fontSize="xs" color="gray.600" fontWeight="bold">Equipment</Text>
+                                  <Text fontSize="xs" color="gray.600" fontWeight="bold">Equipment & Attacks</Text>
                                 </Box>
                                 <AccordionIcon />
                               </AccordionButton>
@@ -10355,11 +12322,36 @@ useEffect(() => {
                                       </>
                                     );
                                   })()}
-                                  {fighter.equippedArmor && (
-                                    <HStack spacing={2}>
+                                  {fighter.attacks && fighter.attacks.length > 0 && (
+                                    <Box>
+                                      <Text fontWeight="medium">Attacks:</Text>
+                                      {fighter.attacks.map((attack, idx) => (
+                                        <Text key={idx} pl={2}>• {attack.name || attack} {attack.damage && `(${attack.damage})`}</Text>
+                                      ))}
+                                    </Box>
+                                  )}
+                                  {/* ✅ Armor Display */}
+                                  {(fighter.equippedArmor || fighter.AR) && (
+                                    <Box>
                                       <Text fontWeight="medium">Armor:</Text>
-                                      <Text>{fighter.equippedArmor.name || fighter.equippedArmor}</Text>
-                                    </HStack>
+                                      {fighter.equippedArmor ? (
+                                        <Text pl={2}>• {fighter.equippedArmor.name || fighter.equippedArmor} (AR: {fighter.AR || 10})</Text>
+                                      ) : (
+                                        <Text pl={2}>• AR: {fighter.AR || 10}</Text>
+                                      )}
+                                    </Box>
+                                  )}
+                                  
+                                  {/* ✅ Ammo Display */}
+                                  {fighter.inventory && fighter.inventory.length > 0 && (
+                                    <Box>
+                                      <Text fontWeight="medium">Ammunition:</Text>
+                                      {fighter.inventory
+                                        .filter(item => item.type === "ammunition" || (item.name && (item.name.toLowerCase().includes("arrow") || item.name.toLowerCase().includes("bolt") || item.name.toLowerCase().includes("bullet"))))
+                                        .map((item, idx) => (
+                                          <Text key={idx} pl={2}>• {item.name}: {item.quantity || 0}</Text>
+                                        ))}
+                                    </Box>
                                   )}
                                   {fighter.equipped && (
                                     <Box>
@@ -10396,10 +12388,10 @@ useEffect(() => {
             {fighters.filter(f => f.type === "player").length > 0 && (
               <Box w="100%" mt={4}>
                 <Heading size="sm" color="orange.600" mb={2}>⚔️ Equipped Weapons</Heading>
-          <Box
-            w="100%"
+                <Box 
+                  w="100%" 
                   maxH="200px" 
-            overflowY="auto"
+                  overflowY="auto" 
                   border="2px solid" 
                   borderColor="orange.400" 
                   p={3} 
@@ -10512,11 +12504,11 @@ useEffect(() => {
                   overflowY="auto" 
                   border="2px solid" 
                   borderColor="green.400" 
-            p={4}
+                  p={4} 
                   borderRadius="md" 
                   bg="green.50"
-          >
-            <VStack spacing={3} align="stretch">
+                >
+                  <VStack spacing={3} align="stretch">
                     {/* Movement Mode Toggle - only show if fighter can fly */}
                     {currentFighter && currentFighter.type === "player" && canFlyNow && (
                       <Box>
@@ -10542,55 +12534,57 @@ useEffect(() => {
                         </HStack>
                       </Box>
                     )}
-                {/* Action Buttons */}
-                <Box>
-                  <Text fontSize="sm" fontWeight="bold" mb={2}>Select Action:</Text>
-                  <Wrap spacing={2}>
-                    {actionOptions.map((option) => (
-                      <Button
-                        key={option.value}
-                        size="sm"
-                        variant={selectedAction?.name === option.value ? "solid" : "outline"}
-                        colorScheme={selectedAction?.name === option.value ? "green" : "blue"}
-                        onClick={() => {
-                          const actionName = option.value;
-                          if (actionName) {
-                            // Create a simple action object
-                            const action = { name: actionName };
-                            setSelectedAction(action);
-                            setSelectedTarget(null);
-                            setSelectedSkill(null); // Clear skill when action changes
-                            setSelectedGrappleAction(null); // Clear grapple action when action changes
-                            
-                            // Set psionicsMode or spellsMode based on action
-                            if (actionName === "Psionics") {
-                              setPsionicsMode(true);
-                              setSpellsMode(false);
-                            } else if (actionName === "Spells") {
-                              setSpellsMode(true);
-                              setPsionicsMode(false);
-                            } else {
-                              setPsionicsMode(false);
-                              setSpellsMode(false);
-                            }
-                            
-                            addLog(`${currentFighter?.name} selects: ${actionName}`, "info");
-                          } else {
-                            setSelectedAction(null);
-                            setSelectedTarget(null);
-                            setSelectedSkill(null);
-                            setPsionicsMode(false);
-                            setSpellsMode(false);
-                          }
-                        }}
-                      >
-                        {option.label}
-                      </Button>
-                    ))}
-                  </Wrap>
-                </Box>
-                
-                <HStack spacing={4} align="center" justify="center" flexWrap="wrap">
+                    {/* Action Buttons */}
+                    <Box>
+                      <Text fontSize="sm" fontWeight="bold" mb={2}>Select Action:</Text>
+                      <Wrap spacing={2}>
+                        {actionOptions.map((option) => (
+                          <Button
+                            key={option.value}
+                            size="sm"
+                            variant={selectedAction?.name === option.value ? "solid" : "outline"}
+                            colorScheme={selectedAction?.name === option.value ? "green" : "blue"}
+                            onClick={() => {
+                              const actionName = option.value;
+                              if (actionName) {
+                                // Create a simple action object
+                                const action = { name: actionName };
+                                setSelectedAction(action);
+                                setSelectedTarget(null);
+                                setSelectedSkill(null); // Clear skill when action changes
+                                setSelectedGrappleAction(null); // Clear grapple action when action changes
+                                
+                                // Set psionicsMode or spellsMode based on action
+                                if (actionName === "Psionics") {
+                                  setPsionicsMode(true);
+                                  setSpellsMode(false);
+                                } else if (actionName === "Spells") {
+                                  setSpellsMode(true);
+                                  setPsionicsMode(false);
+                                } else {
+                                  setPsionicsMode(false);
+                                  setSpellsMode(false);
+                                }
+                                
+                                addLog(`${currentFighter?.name} selects: ${actionName}`, "info");
+                              } else {
+                                setSelectedAction(null);
+                                setSelectedTarget(null);
+                                setSelectedSkill(null);
+                                setPsionicsMode(false);
+                                setSpellsMode(false);
+                                setClericalAbilitiesMode(false);
+                                setSelectedClericalAbility(null);
+                              }
+                            }}
+                          >
+                            {option.label}
+                          </Button>
+                        ))}
+                      </Wrap>
+                    </Box>
+
+                    <HStack spacing={4} align="center" justify="center" flexWrap="wrap">
                       {/* Movement Mode Toggle (only for flyers) */}
                       {currentFighter && currentFighter.type === "player" && canFlyNow && (
                         <HStack spacing={2} align="center">
@@ -10618,33 +12612,33 @@ useEffect(() => {
                       )}
 
                       {/* Dedicated Move Button (label depends on movement mode) */}
-                    <Button
-                      colorScheme="blue"
-                      onClick={activateMovementMode}
-                      isDisabled={!currentFighter || currentFighter.type !== "player" || !showTacticalMap}
-                      size="md"
+                      <Button
+                        colorScheme="blue"
+                        onClick={activateMovementMode}
+                        isDisabled={!currentFighter || currentFighter.type !== "player" || !showTacticalMap}
+                        size="md"
                         title={moveTitle}
-                    >
+                      >
                         {moveLabel}
-                    </Button>
+                      </Button>
 
                       {/* Dedicated Run Button (ground-only dash) */}
-                    <Button
-                      colorScheme="orange"
-                      onClick={() => {
-                        if (currentFighter && currentFighter.type === "player") {
-                          setMovementMode({ active: true, isRunning: true });
-                          setSelectedMovementFighter(currentFighter.id);
-                          addLog(`🏃 ${currentFighter.name} prepares to run (full speed movement)`, "info");
-                        }
-                      }}
+                      <Button
+                        colorScheme="orange"
+                        onClick={() => {
+                          if (currentFighter && currentFighter.type === "player") {
+                            setMovementMode({ active: true, isRunning: true });
+                            setSelectedMovementFighter(currentFighter.id);
+                            addLog(`🏃 ${currentFighter.name} prepares to run (full speed movement)`, "info");
+                          }
+                        }}
                         isDisabled={
                           !currentFighter ||
                           currentFighter.type !== "player" ||
                           !showTacticalMap ||
                           isFloatOnly
                         }
-                      size="md"
+                        size="md"
                         title={
                           !showTacticalMap
                             ? "Show tactical map first to enable running"
@@ -10652,9 +12646,9 @@ useEffect(() => {
                             ? "This creature cannot run on the ground."
                             : "Click to activate running mode (full speed)"
                         }
-                    >
-                      🏃 Run
-                    </Button>
+                      >
+                        🏃 Run
+                      </Button>
                     </HStack>
 
                     {/* Flight Altitude Controls - Only show if fighter can fly and is currently flying */}
@@ -10938,6 +12932,29 @@ useEffect(() => {
                       </Box>
                     )}
 
+                    {/* Clerical Abilities Selection (only for Clerical Abilities) */}
+                    {selectedAction?.name === "Clerical Abilities" && currentFighter && clericalAbilitiesMode && (
+                      <Box>
+                        <Text fontSize="sm" fontWeight="bold" mb={2}>Select Clerical Ability:</Text>
+                        <Wrap spacing={2}>
+                          {getAvailableClericalAbilities(currentFighter).map((ability, index) => (
+                            <Button
+                              key={index}
+                              size="sm"
+                              variant={selectedClericalAbility?.name === ability.name ? "solid" : "outline"}
+                              colorScheme={selectedClericalAbility?.name === ability.name ? "green" : "purple"}
+                              onClick={() => {
+                                setSelectedClericalAbility(ability);
+                                addLog(`Clerical ability selected: ${ability.name} (${ability.description})`, "info");
+                              }}
+                            >
+                              {ability.name} ({ability.description})
+                            </Button>
+                          ))}
+                        </Wrap>
+                      </Box>
+                    )}
+
                     {/* Psionic Power Selection Buttons (only for Psionics) */}
                     {selectedAction?.name === "Psionics" && currentFighter && hasPsionics && psionicsMode && (
                       <Box>
@@ -11057,64 +13074,64 @@ useEffect(() => {
                       </Box>
                     )}
 
-                  {/* Execute Button */}
-                  <Button
-                    colorScheme="green"
-                    onClick={executeSelectedAction}
-                    size="md"
-                    isDisabled={!selectedAction}
-                    width="full"
-                    maxWidth="300px"
-                    alignSelf="center"
-                  >
-                    {selectedAction 
-                      ? `Execute ${selectedAction.name} →` 
-                      : "Select Action First"}
-                  </Button>
+                    {/* Execute Button */}
+                    <Button
+                      colorScheme="green"
+                      onClick={executeSelectedAction}
+                      size="md"
+                      isDisabled={!selectedAction}
+                      width="full"
+                      maxWidth="300px"
+                      alignSelf="center"
+                    >
+                      {selectedAction 
+                        ? `Execute ${selectedAction.name} →` 
+                        : "Select Action First"}
+                    </Button>
 
-                  {/* Action Summary */}
-                  {selectedAction && (
-                    <Box p={3} bg="green.100" borderRadius="md" borderWidth="1px" borderColor="green.300">
-                      <Text fontSize="sm" color="green.700" textAlign="center" fontWeight="bold">
-                        {selectedAction.name}
-                        {selectedTarget && ` targeting ${selectedTarget.name}`}
-                      </Text>
-                      {selectedAction.name === "Strike" && selectedAttackWeapon && (
-                        <Text fontSize="xs" color="green.600" mt={1}>
-                          Using: {selectedAttackWeapon.name} ({selectedAttackWeapon.damage})
+                    {/* Action Summary */}
+                    {selectedAction && (
+                      <Box p={3} bg="green.100" borderRadius="md" borderWidth="1px" borderColor="green.300">
+                        <Text fontSize="sm" color="green.700" textAlign="center" fontWeight="bold">
+                          {selectedAction.name}
+                          {selectedTarget && ` targeting ${selectedTarget.name}`}
                         </Text>
-                      )}
-                      {selectedAction.name === "Psionics" && selectedPsionicPower && (
-                        <Text fontSize="xs" color="purple.600" mt={1}>
-                          Using: {selectedPsionicPower.name} ({selectedPsionicPower.isp} ISP)
-                        </Text>
-                      )}
-                      {selectedAction.name === "Spells" && selectedSpell && (
-                        <Text fontSize="xs" color="blue.600" mt={1}>
-                          Using: {selectedSpell.name} ({selectedSpell.cost} PPE)
-                        </Text>
-                      )}
-                      {selectedAction.name === "Use Skill" && selectedSkill && (
-                        <VStack spacing={1} align="start" mt={1}>
-                          <Text fontSize="xs" color="teal.600">
-                            Using: {selectedSkill.name}
-                            {selectedSkill.cost > 0 && ` (${selectedSkill.cost} ${selectedSkill.costType})`}
+                        {selectedAction.name === "Strike" && selectedAttackWeapon && (
+                          <Text fontSize="xs" color="green.600" mt={1}>
+                            Using: {selectedAttackWeapon.name} ({selectedAttackWeapon.damage})
                           </Text>
-                          <Text fontSize="xs" color="gray.600" fontStyle="italic">
-                            {selectedSkill.description}
+                        )}
+                        {selectedAction.name === "Psionics" && selectedPsionicPower && (
+                          <Text fontSize="xs" color="purple.600" mt={1}>
+                            Using: {selectedPsionicPower.name} ({selectedPsionicPower.isp} ISP)
                           </Text>
-                          {selectedTarget && (
-                            <Text fontSize="xs" color="teal.700">
-                              Target: {selectedTarget.name}
+                        )}
+                        {selectedAction.name === "Spells" && selectedSpell && (
+                          <Text fontSize="xs" color="blue.600" mt={1}>
+                            Using: {selectedSpell.name} ({selectedSpell.cost} PPE)
+                          </Text>
+                        )}
+                        {selectedAction.name === "Use Skill" && selectedSkill && (
+                          <VStack spacing={1} align="start" mt={1}>
+                            <Text fontSize="xs" color="teal.600">
+                              Using: {selectedSkill.name}
+                              {selectedSkill.cost > 0 && ` (${selectedSkill.cost} ${selectedSkill.costType})`}
                             </Text>
-                          )}
-                        </VStack>
-                      )}
-                    </Box>
-                  )}
-                </VStack>
-            </Box>
+                            <Text fontSize="xs" color="gray.600" fontStyle="italic">
+                              {selectedSkill.description}
+                            </Text>
+                            {selectedTarget && (
+                              <Text fontSize="xs" color="teal.700">
+                                Target: {selectedTarget.name}
+                              </Text>
+                            )}
+                          </VStack>
+                        )}
+                      </Box>
+                    )}
+                  </VStack>
                 </Box>
+              </Box>
             )}
             
             {/* Quick Add Buttons */}
@@ -11615,8 +13632,11 @@ useEffect(() => {
                             {fighter.class && !fighter.OCC && (
                               <Badge colorScheme="purple" size="sm">Class: {fighter.class}</Badge>
                             )}
-                            {fighter.alignment && (
-                              <Badge colorScheme="gray" size="sm">{fighter.alignment}</Badge>
+                            {/* ✅ Alignment Display */}
+                            {(fighter.alignment || fighter.alignmentName || fighter.alignmentText) && (
+                              <Badge colorScheme="gray" size="sm">
+                                {fighter.alignment || fighter.alignmentName || fighter.alignmentText}
+                              </Badge>
                             )}
                           </HStack>
                           
@@ -11625,6 +13645,23 @@ useEffect(() => {
                             {fighter.ISP !== undefined && ` | ISP: ${fighter.ISP}`}
                             {fighter.PPE !== undefined && ` | PPE: ${fighter.PPE}`}
                           </Box>
+                          
+                          {/* ✅ Attributes Display */}
+                          {fighter.attributes && (
+                            <Box fontSize="xs" color="gray.600">
+                              <Text fontWeight="medium">Attributes:</Text>
+                              <HStack spacing={2} flexWrap="wrap">
+                                {fighter.attributes.IQ && <Text>IQ: {fighter.attributes.IQ}</Text>}
+                                {fighter.attributes.ME && <Text>ME: {fighter.attributes.ME}</Text>}
+                                {fighter.attributes.MA && <Text>MA: {fighter.attributes.MA}</Text>}
+                                {fighter.attributes.PS && <Text>PS: {fighter.attributes.PS}</Text>}
+                                {fighter.attributes.PP && <Text>PP: {fighter.attributes.PP}</Text>}
+                                {fighter.attributes.PE && <Text>PE: {fighter.attributes.PE}</Text>}
+                                {fighter.attributes.PB && <Text>PB: {fighter.attributes.PB}</Text>}
+                                {fighter.attributes.Spd && <Text>Spd: {fighter.attributes.Spd}</Text>}
+                              </HStack>
+                            </Box>
+                          )}
                           {/* Altitude, Stamina, and Carrying Status */}
                           <HStack spacing={2} fontSize="sm">
                             <Text>
@@ -11765,11 +13802,28 @@ useEffect(() => {
                                         ))}
                                       </Box>
                                     )}
-                                    {fighter.equippedArmor && (
-                                      <HStack spacing={2}>
+                                    {/* ✅ Armor Display */}
+                                    {(fighter.equippedArmor || fighter.AR) && (
+                                      <Box>
                                         <Text fontWeight="medium">Armor:</Text>
-                                        <Text>{fighter.equippedArmor.name || fighter.equippedArmor}</Text>
-                                      </HStack>
+                                        {fighter.equippedArmor ? (
+                                          <Text pl={2}>• {fighter.equippedArmor.name || fighter.equippedArmor} (AR: {fighter.AR || 10})</Text>
+                                        ) : (
+                                          <Text pl={2}>• AR: {fighter.AR || 10}</Text>
+                                        )}
+                                      </Box>
+                                    )}
+                                    
+                                    {/* ✅ Ammo Display */}
+                                    {fighter.inventory && fighter.inventory.length > 0 && (
+                                      <Box>
+                                        <Text fontWeight="medium">Ammunition:</Text>
+                                        {fighter.inventory
+                                          .filter(item => item.type === "ammunition" || (item.name && (item.name.toLowerCase().includes("arrow") || item.name.toLowerCase().includes("bolt") || item.name.toLowerCase().includes("bullet"))))
+                                          .map((item, idx) => (
+                                            <Text key={idx} pl={2}>• {item.name}: {item.quantity || 0}</Text>
+                                          ))}
+                                      </Box>
                                     )}
                                     {fighter.equipped && (
                                       <Box>
@@ -12343,6 +14397,55 @@ useEffect(() => {
               </FormControl>
             )}
 
+            {/* Weapon Selection - Show for humanoids OR creatures with natural attacks */}
+            {(isSelectedHumanoid || (selectedCreatureData && selectedCreatureData.attacks && Array.isArray(selectedCreatureData.attacks) && selectedCreatureData.attacks.some(a => a.name && a.damage !== "by spell" && a.damage !== "varies"))) && (
+              <FormControl mb={4}>
+                <FormLabel>{isSelectedHumanoid ? "Weapon (Humanoid Only):" : "Natural Attack:"}</FormLabel>
+                <Select
+                  placeholder="Select weapon (optional)"
+                  value={selectedWeapon}
+                  onChange={(e) => {
+                    setSelectedWeapon(e.target.value);
+                    // Reset ammo count when weapon changes
+                    if (e.target.value === "None" || !availableWeapons.find(w => w.name === e.target.value)?.ammunition) {
+                      setSelectedAmmoCount(0);
+                    }
+                  }}
+                >
+                  {availableWeapons.map((weapon) => (
+                    <option key={weapon.name} value={weapon.name}>
+                      {weapon.name} {weapon.name !== "None" ? `(${weapon.damage || "N/A"} damage${weapon.ammunition ? `, needs ${weapon.ammunition}` : ""})` : ""}
+                    </option>
+                  ))}
+                </Select>
+                <Text fontSize="xs" color="gray.500" mt={1}>
+                  {isSelectedHumanoid 
+                    ? "Select weapon to equip. Leave as \"None\" to use default weapon assignment."
+                    : "Select natural attack to use. Leave as \"None\" to use default attack assignment."}
+                </Text>
+              </FormControl>
+            )}
+
+            {/* Ammo Selection - Only show for ranged weapons that require ammo */}
+            {isSelectedHumanoid && selectedWeaponRequiresAmmo && (
+              <FormControl mb={4}>
+                <FormLabel>Ammunition Count:</FormLabel>
+                <Input
+                  type="number"
+                  min="0"
+                  value={selectedAmmoCount}
+                  onChange={(e) => {
+                    const val = parseInt(e.target.value, 10) || 0;
+                    setSelectedAmmoCount(Math.max(0, val));
+                  }}
+                  placeholder="0"
+                />
+                <Text fontSize="xs" color="gray.500" mt={1}>
+                  Amount of {availableWeapons.find(w => w.name === selectedWeapon)?.ammunition || "ammunition"} to give this enemy.
+                </Text>
+              </FormControl>
+            )}
+
             <FormControl mb={4}>
               <FormLabel>Number of Enemies (1-10):</FormLabel>
               <Input
@@ -12404,15 +14507,17 @@ useEffect(() => {
                   if (creature) {
                     if (enemyCount === 1) {
                       // Single enemy - use original function
-                      addCreature(creature, null, enemyLevel, selectedArmor);
+                      addCreature(creature, null, enemyLevel, selectedArmor, selectedWeapon, selectedAmmoCount);
                       setCustomEnemyName("");
                       setSelectedCreature("");
                       setEnemyLevel(1); // Reset level
                       setSelectedArmor(""); // Reset armor
+                      setSelectedWeapon(""); // Reset weapon
+                      setSelectedAmmoCount(0); // Reset ammo
                       onClose();
                     } else {
                       // Multiple enemies - use new function
-                      addMultipleEnemies(creature, enemyCount, enemyLevel, selectedArmor);
+                      addMultipleEnemies(creature, enemyCount, enemyLevel, selectedArmor, selectedWeapon, selectedAmmoCount);
                     }
                   }
                 }}
