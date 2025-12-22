@@ -55,6 +55,7 @@ export function canThreatenWithMelee(attacker, target, weapon = null) {
   const targetIsFlying = !!isFlying(target);
   const targetAltitude = getAltitude(target) || 0;
   const attackerAltitude = getAltitude(attacker) || 0;
+  const verticalSeparation = Math.abs(attackerAltitude - targetAltitude);
 
   // If attacker is a flying hunter and target is prey on the ground,
   // treat them as *reachable* because we can dive.
@@ -62,29 +63,12 @@ export function canThreatenWithMelee(attacker, target, weapon = null) {
     return true; // we will dive as part of the attack action
   }
 
-  // If attacker can fly, they can adjust altitude to match target
-  // (assuming they're not already too high/low to dive/climb)
-  if (attackerCanFly || attackerIsFlying) {
-    // Flying attacker can generally reach targets by adjusting altitude
-    // Exception: if target is on ground and attacker is very high, they'd need to dive
-    // But for simplicity, if attacker can fly, assume they can reach
-    return true;
-  }
-
-  // Ground attacker vs ground target: always reachable
-  if (!targetIsFlying || targetAltitude <= 5) {
-    return true;
-  }
-
-  // Ground attacker vs flying target: need weapon reach >= target altitude
-  // Get max melee reach in feet
+  // Determine melee reach in feet (weapon reach + body reach)
   let maxReachFeet = 2; // Default: knife/short sword (2ft)
 
   if (weapon) {
-    // Check specific weapon
     maxReachFeet = getWeaponLength(weapon, attacker) || 2;
   } else {
-    // Check all equipped weapons and attacks for max reach
     const weapons = [
       attacker.equippedWeapons?.primary,
       attacker.equippedWeapons?.secondary,
@@ -92,16 +76,25 @@ export function canThreatenWithMelee(attacker, target, weapon = null) {
     ].filter(Boolean);
 
     if (weapons.length > 0) {
-      maxReachFeet = Math.max(
-        ...weapons.map((w) => getWeaponLength(w, attacker) || 2)
-      );
+      maxReachFeet = Math.max(...weapons.map((w) => getWeaponLength(w, attacker) || 2));
     }
   }
 
   // Add body reach (arm extension, ~3ft)
   const totalReach = maxReachFeet + 3;
 
-  // If target altitude is above total reach, it's unreachable
+  // Flying attackers do NOT automatically get melee reach at any altitude.
+  // If you're 20ft above a ground target, you need to dive/descend first (handled elsewhere).
+  if (attackerCanFly || attackerIsFlying) {
+    return verticalSeparation <= totalReach;
+  }
+
+  // Ground attacker vs ground target: always reachable
+  if (!targetIsFlying || targetAltitude <= 5) {
+    return true;
+  }
+
+  // Ground attacker vs flying target: need total reach >= target altitude
   return totalReach >= targetAltitude;
 }
 

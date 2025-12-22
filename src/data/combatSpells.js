@@ -58,4 +58,39 @@ export const getRandomCombatSpell = (wizardLevel = 3) => {
   return availableSpells[randomIndex];
 };
 
+/**
+ * Get ALL spells from the database (not just combat-damage ones)
+ * Used for unrestricted wizard magic and quest-map capabilities
+ * @returns {Array} Array of all spells normalized to combat format
+ */
+export const getAllSpellsFromDB = () => {
+  const all = [];
+
+  Object.keys(spellData).forEach((levelKey) => {
+    const levelSpells = spellData[levelKey];
+
+    Object.keys(levelSpells).forEach((spellName) => {
+      const s = levelSpells[spellName];
+
+      all.push({
+        name: spellName,
+        level: s.level || parseInt(levelKey.replace(/\D/g, ""), 10) || 1,
+        range: s.range,
+        description: s.description,
+        save: s.save,
+        ppeCost: s.ppeCost ?? s.PPE ?? s.ppe ?? s.cost ?? 10,
+        combatDamage: s.combatDamage ?? s.damage ?? "",
+        damage: s.combatDamage ?? s.damage ?? "",
+        damageType: s.damageType,
+        duration: s.duration,
+        effect: s.effect,
+        // include anything else you rely on…
+        raw: s,
+      });
+    });
+  });
+
+  return all;
+};
+
 export default combatSpells;

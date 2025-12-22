@@ -65,12 +65,20 @@ export function lootPrisoner(fighter) {
   if (!fighter) return { updatedFighter: fighter, loot: [] };
 
   const inventory = fighter.inventory || fighter.items || [];
-  const weapons = fighter.weapons || fighter.equippedWeapons || [];
+  const equippedWeapons = fighter.equippedWeapons || [];
+  const weapons = fighter.weapons || [];
+  
+  // Include equipped weapons in loot (including natural attacks like Fire Whip)
+  // Exclude "Unarmed", "None", and "Claw" (natural attacks that can't be removed)
+  const allWeapons = [...weapons, ...equippedWeapons.filter(w => 
+    w && w.name && w.name !== "Unarmed" && w.name !== "None" && w.name !== "Claw"
+  )];
+  
   const armor = fighter.equippedArmor || fighter.armor || null;
 
   const loot = {
     inventory,
-    weapons,
+    weapons: allWeapons,
     armor
   };
 
@@ -79,7 +87,14 @@ export function lootPrisoner(fighter) {
     inventory: [],
     items: [],
     weapons: [],
-    equippedWeapons: [],
+    equippedWeapons: fighter.equippedWeapons?.map(w => {
+      // If weapon was looted, replace with Unarmed (unless it's already Unarmed, None, or Claw)
+      if (w && w.name && w.name !== "Unarmed" && w.name !== "None" && w.name !== "Claw") {
+        return { name: "Unarmed", damage: "1d3", type: "unarmed", category: "unarmed", slot: w.slot || "Right Hand" };
+      }
+      // Keep Unarmed, None, and Claw as-is (they weren't looted)
+      return w;
+    }) || [],
     equippedArmor: null,
     armor: null
   };

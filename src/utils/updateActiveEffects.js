@@ -29,11 +29,23 @@ export function applyFallDamage(character, heightFeet, logCallback = null) {
   if (!character || heightFeet <= 0) return character;
 
   const damageDice = calculateFallDamage(heightFeet);
-  // Simple fall damage: 1d6 per 10ft (can be enhanced with actual dice rolling)
-  const estimatedDamage = Math.floor(damageDice * 3.5); // Average of 1d6 = 3.5
+  // Use actual dice rolling for fall damage (1d6 per 10ft)
+  let fallDamage = 0;
+  try {
+    // Roll damage dice (e.g., "3d6" for 30ft fall)
+    const damageFormula = `${damageDice}d6`;
+    const rollResult = typeof CryptoSecureDice !== 'undefined' && CryptoSecureDice
+      ? CryptoSecureDice.parseAndRoll(damageFormula)
+      : null;
+    fallDamage = rollResult ? rollResult.totalWithBonus : Math.floor(damageDice * 3.5);
+  } catch (e) {
+    // Fallback to average if dice rolling fails
+    fallDamage = Math.floor(damageDice * 3.5);
+  }
 
   const currentHP = character.currentHP ?? character.hp ?? character.HP ?? 0;
-  const newHP = Math.max(0, currentHP - estimatedDamage);
+  // Allow HP to go below 0 (dying/critical states), minimum -21 (death threshold)
+  const newHP = Math.max(-21, currentHP - fallDamage);
 
   const updated = {
     ...character,
@@ -46,7 +58,7 @@ export function applyFallDamage(character, heightFeet, logCallback = null) {
 
   if (logCallback) {
     logCallback(
-      `💥 ${character.name} takes ${estimatedDamage} damage from falling ${heightFeet}ft!`,
+      `💥 ${character.name} takes ${fallDamage} damage from falling ${heightFeet}ft!`,
       "combat"
     );
   }

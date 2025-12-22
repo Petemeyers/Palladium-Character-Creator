@@ -172,28 +172,50 @@ export function createPlayableCharacterFighter(character, customName = null) {
     }
   }
 
+  const normalizeName = (s) =>
+    String(s || "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, ""); // strips spaces, slashes, dashes, etc.
+
   const processedAttacks =
     (character.attacks || []).length > 0
       ? (character.attacks || []).map((attack) => {
           if (
             attack.damage &&
-            (attack.damage.includes("by weapon") ||
+            (String(attack.damage).includes("by weapon") ||
               attack.damage === "by spell" ||
               attack.damage === "variable")
           ) {
-            // Use assigned weapon damage if available, otherwise use default
-            const assignedWeapon = assignedWeapons.find(w => 
-              attack.name.toLowerCase().includes(w.name.toLowerCase()) ||
-              w.name.toLowerCase().includes(attack.name.toLowerCase().split(' ')[0])
-            );
-            
+            const attackName = String(attack.name || "");
+            const attackNorm = normalizeName(attackName);
+
+            // ✅ Prefer an assigned weapon for "by weapon" attacks.
+            // Handle name mismatches like "Longbow" vs "Long Bow" and "Bow/Long Bow" slashes.
+            let assignedWeapon =
+              assignedWeapons.find((w) => {
+                const wn = normalizeName(w?.name);
+                if (!wn) return false;
+                return attackNorm.includes(wn) || wn.includes(attackNorm);
+              }) || null;
+
+            // Special-case: "Weapon (preferred)" should inherit the primary assigned weapon.
+            if (!assignedWeapon && attackNorm.includes("weaponpreferred")) {
+              assignedWeapon = assignedWeapons[0] || null;
+            }
+
+            // Special-case: bow attacks should inherit the first assigned bow/longbow/etc.
+            if (!assignedWeapon && attackNorm.includes("bow")) {
+              assignedWeapon =
+                assignedWeapons.find((w) => normalizeName(w?.name).includes("bow")) ||
+                assignedWeapons[0] ||
+                null;
+            }
+
             if (assignedWeapon && assignedWeapon.damage) {
               return { ...attack, damage: assignedWeapon.damage };
             }
-            
-            const defaultDamage = getDefaultWeaponDamage(
-              character.preferred_weapons
-            );
+
+            const defaultDamage = getDefaultWeaponDamage(character.preferred_weapons);
 
             if (attack.damage === "by spell") {
               return { ...attack, damage: "2d6" };
@@ -206,10 +228,10 @@ export function createPlayableCharacterFighter(character, customName = null) {
           return attack;
         })
       : assignedWeapons.length > 0
-      ? assignedWeapons.map(w => ({
+      ? assignedWeapons.map((w) => ({
           name: w.name,
           damage: w.damage || "1d6",
-          count: 1
+          count: 1,
         }))
       : [{ name: "Unarmed Strike", damage: "1d4", count: 1 }];
 

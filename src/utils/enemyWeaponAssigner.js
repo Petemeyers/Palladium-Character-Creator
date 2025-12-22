@@ -72,17 +72,54 @@ function findMatchingWeapons(searchTerms, enemy = {}) {
     
     // Check each search term
     for (const term of searchTerms) {
-      const termLower = term.toLowerCase();
+      const termLower = term.toLowerCase().trim();
       
-      // Direct name match
-      if (weaponName.includes(termLower)) {
+      // Normalize plurals and extract base weapon type
+      // "long bows" -> "bow", "large swords" -> "sword", "knives" -> "knife"
+      const normalizedTerm = termLower
+        .replace(/\s*(long|short|composite|heavy|light|great|war|battle|hand)\s+/g, ' ') // Remove modifiers
+        .replace(/\s+/g, ' ') // Normalize spaces
+        .trim();
+      
+      // Extract base weapon type (remove plurals and modifiers)
+      let baseTerm = normalizedTerm;
+      if (baseTerm.endsWith('s') && baseTerm.length > 1) {
+        baseTerm = baseTerm.slice(0, -1); // Remove plural 's'
+      }
+      
+      // Map compound terms to base types
+      const termMappings = {
+        'bow': 'bow',
+        'long bow': 'bow',
+        'short bow': 'bow',
+        'composite bow': 'bow',
+        'sword': 'sword',
+        'large sword': 'sword',
+        'short sword': 'sword',
+        'greatsword': 'sword',
+        'knife': 'knife',
+        'knives': 'knife',
+        'dagger': 'knife',
+        'blunt': 'blunt',
+        'blunt weapon': 'blunt',
+        'mace': 'blunt',
+        'hammer': 'blunt',
+        'club': 'blunt',
+      };
+      
+      // Check if we have a mapping for this term
+      const mappedTerm = termMappings[normalizedTerm] || termMappings[baseTerm] || baseTerm;
+      
+      // Direct name match (check both original term and normalized)
+      if (weaponName.includes(termLower) || weaponName.includes(normalizedTerm) || weaponName.includes(baseTerm) || weaponName.includes(mappedTerm)) {
         matchingWeapons.push(weapon);
         break;
       }
       
       // Category map match
-      if (WEAPON_CATEGORY_MAP[termLower]) {
-        const categoryTerms = WEAPON_CATEGORY_MAP[termLower];
+      if (WEAPON_CATEGORY_MAP[termLower] || WEAPON_CATEGORY_MAP[normalizedTerm] || WEAPON_CATEGORY_MAP[baseTerm] || WEAPON_CATEGORY_MAP[mappedTerm]) {
+        const categoryKey = WEAPON_CATEGORY_MAP[termLower] || WEAPON_CATEGORY_MAP[normalizedTerm] || WEAPON_CATEGORY_MAP[baseTerm] || WEAPON_CATEGORY_MAP[mappedTerm];
+        const categoryTerms = categoryKey;
         if (categoryTerms.some(catTerm => 
           weaponName.includes(catTerm) || 
           weaponCategory.includes(catTerm) ||
@@ -94,17 +131,34 @@ function findMatchingWeapons(searchTerms, enemy = {}) {
       }
       
       // Generic term match (blade, blunt, etc.)
-      if (termLower === 'blade' && (weaponCategory.includes('sword') || weaponCategory.includes('blade'))) {
+      if ((termLower === 'blade' || mappedTerm === 'blade') && (weaponCategory.includes('sword') || weaponCategory.includes('blade'))) {
         matchingWeapons.push(weapon);
         break;
       }
       
-      if (termLower === 'blunt' && (weaponCategory.includes('mace') || weaponCategory.includes('hammer') || weaponCategory.includes('club'))) {
+      if ((termLower === 'blunt' || mappedTerm === 'blunt' || normalizedTerm.includes('blunt')) && (weaponCategory.includes('mace') || weaponCategory.includes('hammer') || weaponCategory.includes('club'))) {
         matchingWeapons.push(weapon);
         break;
       }
       
-      if (termLower === 'bow' && (weaponName.includes('bow') || weaponCategory.includes('bow'))) {
+      // Enhanced bow matching - handles "long bows", "bow", etc.
+      if ((termLower.includes('bow') || normalizedTerm.includes('bow') || baseTerm.includes('bow') || mappedTerm === 'bow') && 
+          (weaponName.includes('bow') || weaponCategory.includes('bow'))) {
+        matchingWeapons.push(weapon);
+        break;
+      }
+      
+      // Enhanced sword matching
+      if ((termLower.includes('sword') || normalizedTerm.includes('sword') || baseTerm.includes('sword') || mappedTerm === 'sword') && 
+          (weaponName.includes('sword') || weaponCategory.includes('sword'))) {
+        matchingWeapons.push(weapon);
+        break;
+      }
+      
+      // Enhanced knife/dagger matching
+      if ((termLower.includes('knife') || normalizedTerm.includes('knife') || baseTerm.includes('knife') || mappedTerm === 'knife' ||
+           termLower.includes('dagger') || normalizedTerm.includes('dagger') || baseTerm.includes('dagger')) && 
+          (weaponName.includes('knife') || weaponName.includes('dagger') || weaponCategory.includes('knife') || weaponCategory.includes('dagger'))) {
         matchingWeapons.push(weapon);
         break;
       }
@@ -135,12 +189,13 @@ function findMatchingWeapons(searchTerms, enemy = {}) {
 }
 
 /**
- * Select a random weapon from matching weapons
+ * Select a random weapon from matching weapons, prioritizing specific preferences
  * @param {Array} matchingWeapons - Array of matching weapons
  * @param {Object} enemy - Enemy character
+ * @param {Array} searchTerms - Original search terms for prioritization
  * @returns {Object|null} Selected weapon or null
  */
-function selectRandomWeapon(matchingWeapons, enemy = {}) {
+function selectRandomWeapon(matchingWeapons, enemy = {}, searchTerms = []) {
   if (!matchingWeapons || matchingWeapons.length === 0) {
     return null;
   }
@@ -150,9 +205,46 @@ function selectRandomWeapon(matchingWeapons, enemy = {}) {
     return matchingWeapons[0];
   }
   
-  // Random selection
-  const randomIndex = Math.floor(Math.random() * matchingWeapons.length);
-  return matchingWeapons[randomIndex];
+  // Prioritize weapons based on search terms
+  // Check if any search term specifically mentions bow, sword, etc.
+  const searchTermsLower = searchTerms.map(t => t.toLowerCase());
+  const hasBowPreference = searchTermsLower.some(t => t.includes('bow'));
+  const hasSwordPreference = searchTermsLower.some(t => t.includes('sword'));
+  const hasKnifePreference = searchTermsLower.some(t => t.includes('knife') || t.includes('dagger'));
+  
+  // Score weapons based on preference matches
+  const scoredWeapons = matchingWeapons.map(weapon => {
+    const weaponName = (weapon.name || '').toLowerCase();
+    let score = 0;
+    
+    // Higher priority for specific preferences
+    if (hasBowPreference && weaponName.includes('bow')) {
+      score += 100; // Highest priority for bows if bow is preferred
+    }
+    if (hasSwordPreference && weaponName.includes('sword')) {
+      score += 50;
+    }
+    if (hasKnifePreference && (weaponName.includes('knife') || weaponName.includes('dagger'))) {
+      score += 30;
+    }
+    
+    // Lower priority for generic matches
+    score += 10;
+    
+    return { weapon, score };
+  });
+  
+  // Sort by score (highest first)
+  scoredWeapons.sort((a, b) => b.score - a.score);
+  
+  // If there's a clear winner (score difference > 50), prefer it
+  // Otherwise, randomly select from top tier (within 20 points of top score)
+  const topScore = scoredWeapons[0].score;
+  const topTier = scoredWeapons.filter(w => w.score >= topScore - 20);
+  
+  // Random selection from top tier
+  const randomIndex = Math.floor(Math.random() * topTier.length);
+  return topTier[randomIndex].weapon;
 }
 
 /**
@@ -344,6 +436,13 @@ export function assignRandomWeaponToEnemy(enemy, favoriteWeapons) {
   // Find matching weapons
   const matchingWeapons = findMatchingWeapons(searchTerms, enemy);
   
+  // Debug: log matched weapons for troubleshooting
+  if (import.meta.env?.DEV || import.meta.env?.MODE === 'development') {
+    if (matchingWeapons.length > 0) {
+      console.log(`[Weapon Assigner] ${enemy.name} matched ${matchingWeapons.length} weapons:`, matchingWeapons.map(w => w.name).join(', '));
+    }
+  }
+  
   if (matchingWeapons.length === 0) {
     console.warn(`No matching weapons found for ${enemy.name} with preferences: ${searchTerms.join(', ')}`);
     // Fallback: try to find any weapon
@@ -360,8 +459,8 @@ export function assignRandomWeaponToEnemy(enemy, favoriteWeapons) {
     return enemy;
   }
   
-  // Select random weapon
-  const selectedWeapon = selectRandomWeapon(matchingWeapons, enemy);
+  // Select random weapon (prioritizing specific preferences)
+  const selectedWeapon = selectRandomWeapon(matchingWeapons, enemy, searchTerms);
   
   if (!selectedWeapon) {
     console.warn(`Failed to select weapon for ${enemy.name}`);

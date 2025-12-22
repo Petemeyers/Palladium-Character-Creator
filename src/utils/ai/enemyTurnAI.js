@@ -8,6 +8,15 @@
 
 import CryptoSecureDice from "../cryptoDice";
 import { getRandomCombatSpell } from "../../data/combatSpells";
+import { createThreatProfile } from "./threatAnalysis";
+import {
+  getWeaknessMemoryForEnemy,
+  recordWeaknessAttempt,
+  recordWeaknessOutcome,
+  mergeWeaknessMemory,
+} from "./weaknessMemory";
+import { tryKnowledgeCheck } from "./knowledgeChecks";
+import { selectSpellForRole } from "./unifiedSpellSelection";
 import {
   decayAwareness,
   updateAwareness,
@@ -41,6 +50,172 @@ import {
   getReachableEnemies,
   hasAnyValidOffensiveOption,
 } from "./meleeReachabilityHelpers";
+
+// -----------------------------------------------------------------------------
+// Weakness Memory Persistence (across encounters)
+// - enemyTurnAI.js is "pure-ish", but module-scope + localStorage is fine in-browser.
+// - If localStorage is unavailable, it gracefully degrades to in-memory only.
+// -----------------------------------------------------------------------------
+
+const AI_WEAKNESS_STORE_KEY = "palladium_ai_weakness_memory_v1";
+const _inMemoryWeaknessStore = new Map(); // fallback if localStorage fails
+
+function safeReadWeaknessStore() {
+  try {
+    if (typeof window === "undefined" || !window.localStorage) return null;
+    const raw = window.localStorage.getItem(AI_WEAKNESS_STORE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return null;
+  }
+}
+
+function safeWriteWeaknessStore(obj) {
+  try {
+    if (typeof window === "undefined" || !window.localStorage) return false;
+    window.localStorage.setItem(AI_WEAKNESS_STORE_KEY, JSON.stringify(obj));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function getEnemyMemoryKey(enemy) {
+  // Stable-ish key: prefer base species/name over ephemeral encounter ids.
+  const base =
+    enemy?.baseName ||
+    enemy?.species ||
+    enemy?.race ||
+    enemy?.name ||
+    enemy?.id ||
+    "unknown_enemy";
+  const occ = enemy?.OCC || enemy?.occ || enemy?.class || "";
+  return `${String(base).toLowerCase()}::${String(occ).toLowerCase()}`;
+}
+
+function getTargetMemoryKey(target) {
+  const base =
+    target?.baseName ||
+    target?.species ||
+    target?.race ||
+    target?.name ||
+    target?.id ||
+    "unknown_target";
+  const cat = target?.category || target?.type || target?.creatureType || "";
+  return `${String(base).toLowerCase()}::${String(cat).toLowerCase()}`;
+}
+
+function loadPersistentWeaknessMemory(enemy) {
+  const enemyKey = getEnemyMemoryKey(enemy);
+
+  // 1) Try localStorage
+  const store = safeReadWeaknessStore();
+  if (store && store[enemyKey]) return store[enemyKey];
+
+  // 2) Fallback to module memory
+  return _inMemoryWeaknessStore.get(enemyKey) || {};
+}
+
+function savePersistentWeaknessMemory(enemy, memoryObj) {
+  const enemyKey = getEnemyMemoryKey(enemy);
+
+  // 1) Try localStorage
+  const store = safeReadWeaknessStore();
+  if (store) {
+    store[enemyKey] = memoryObj || {};
+    const ok = safeWriteWeaknessStore(store);
+    if (ok) return;
+  }
+
+  // 2) Fallback
+  _inMemoryWeaknessStore.set(enemyKey, memoryObj || {});
+}
+
+function inferCasterRole(enemy) {
+  const name = (enemy?.name || enemy?.baseName || "").toLowerCase();
+  const cat = (
+    enemy?.category ||
+    enemy?.type ||
+    enemy?.creatureType ||
+    ""
+  ).toLowerCase();
+  const occ = (
+    enemy?.OCC ||
+    enemy?.occ ||
+    enemy?.class ||
+    enemy?.occName ||
+    enemy?.rcc ||
+    ""
+  ).toLowerCase();
+
+  // Angel / Demon shortcuts
+  if (name.includes("ariel") || cat.includes("angel")) return "angel";
+  if (
+    cat.includes("demon") ||
+    name.includes("baal-rog") ||
+    name.includes("baalrog")
+  )
+    return "demon";
+
+  // Wizard / mage-ish
+  if (
+    occ.includes("wizard") ||
+    occ.includes("warlock") ||
+    occ.includes("mage") ||
+    cat.includes("wizard")
+  )
+    return "wizard";
+
+  // Default: treat as wizard if it has spells
+  return "wizard";
+}
+
+function getEnemySpellCatalog(enemy) {
+  // Keep this permissive: your CombatPage may store spells differently per creature.
+  // The unified selector can accept an array of spell objects.
+  if (!enemy) return [];
+
+  // Check spellbook first (used by Ariel and other unrestricted casters)
+  if (Array.isArray(enemy.spellbook) && enemy.spellbook.length > 0) {
+    return enemy.spellbook;
+  }
+
+  const direct =
+    enemy.spells ||
+    enemy.combatSpells ||
+    enemy.magic ||
+    enemy.magicSpells ||
+    enemy.magicAbilities?.spells ||
+    enemy.magicAbilities?.spellList ||
+    [];
+
+  if (Array.isArray(direct)) return direct;
+  if (Array.isArray(direct?.spells)) return direct.spells;
+  return [];
+}
+
+function setEnemyAIDebug(setFighters, enemyId, debugPatch) {
+  if (!setFighters || !enemyId) return;
+  setFighters((prev) =>
+    prev.map((f) => {
+      if (f.id !== enemyId) return f;
+      const meta = f.meta || {};
+      return {
+        ...f,
+        meta: {
+          ...meta,
+          aiDebug: {
+            ...(meta.aiDebug || {}),
+            ...debugPatch,
+            updatedAt: Date.now(),
+          },
+        },
+      };
+    })
+  );
+}
 
 const UNDEAD_KEYWORDS = [
   "vampire",
@@ -266,8 +441,8 @@ function isBiggerThreat(attacker, target) {
  * @param {Object} fighter - Fighter object
  * @returns {boolean} True if fighter is a prey animal
  */
-  function isPreyAnimal(fighter) {
-    if (!fighter) return false;
+function isPreyAnimal(fighter) {
+  if (!fighter) return false;
 
   const name = (fighter.baseName || fighter.name || "").toLowerCase();
   const size = (fighter.sizeCategory || fighter.size || "").toLowerCase();
@@ -280,7 +455,7 @@ function isBiggerThreat(attacker, target) {
   const isNamedPrey = preyKeywords.some((k) => name.includes(k));
 
   return isSmallBody || isNamedPrey;
-  }
+}
 
 /**
  * Check if a fighter is a flying hunter (hawk, falcon, eagle, etc.)
@@ -1125,6 +1300,22 @@ export function runEnemyTurnAI(enemy, context) {
     getTargetsInLine,
   } = context;
 
+  // -----------------------------------------------------------------------------
+  // Load weakness memory once per turn for this enemy (persistent across encounters)
+  // We store it on enemy.meta._weaknessMemory for easy access and HUD rendering.
+  // -----------------------------------------------------------------------------
+  const persistentMemory = loadPersistentWeaknessMemory(enemy);
+  if (!enemy.meta) enemy.meta = {};
+  if (!enemy.meta._weaknessMemory) {
+    enemy.meta._weaknessMemory = persistentMemory || {};
+  } else {
+    // Merge in persisted data (in case enemy object survived while storage updated)
+    enemy.meta._weaknessMemory = mergeWeaknessMemory(
+      enemy.meta._weaknessMemory,
+      persistentMemory || {}
+    );
+  }
+
   // ✅ CRITICAL: Check if enemy can act (conscious, not dying/dead/unconscious)
   if (!canFighterAct(enemy)) {
     const hpStatus = getHPStatus(enemy.currentHP);
@@ -1647,7 +1838,7 @@ export function runEnemyTurnAI(enemy, context) {
           // You could add extra logic here: only count predators, flying hunters, etc.
           if (distSq < nearestThreatDistSq) {
             nearestThreatDistSq = distSq;
-          nearestThreat = enemy;
+            nearestThreat = enemy;
           }
         }
       }
@@ -2816,9 +3007,11 @@ export function runEnemyTurnAI(enemy, context) {
           a.name.toLowerCase() === "magic" ||
           a.name.toLowerCase() === "spellcasting" ||
           a.damage === "by spell" ||
-          (enemy.magicAbilities && (a.name.toLowerCase().includes("spell") || a.name.toLowerCase().includes("magic")))
+          (enemy.magicAbilities &&
+            (a.name.toLowerCase().includes("spell") ||
+              a.name.toLowerCase().includes("magic")))
       );
-      
+
       // Check if creature has charge-type attacks (Horn Charge, Gore, Ram, etc.)
       const chargeAttacks = availableAttacks.filter(
         (a) =>
@@ -2829,7 +3022,10 @@ export function runEnemyTurnAI(enemy, context) {
       );
 
       // Prioritize magic attacks if creature has magicAbilities or spells available
-      if (magicAttacks.length > 0 && (enemy.magicAbilities || (enemy.magic && enemy.magic.length > 0))) {
+      if (
+        magicAttacks.length > 0 &&
+        (enemy.magicAbilities || (enemy.magic && enemy.magic.length > 0))
+      ) {
         // Has magic - prefer magic attacks (70% chance) but allow other attacks (30%)
         const allAttacks = [
           ...magicAttacks,
@@ -2921,13 +3117,173 @@ export function runEnemyTurnAI(enemy, context) {
       selectedAttack.name === "Spellcasting" ||
       selectedAttack.damage === "by spell"
     ) {
-      const spell = getRandomCombatSpell(enemy.level || 3);
-      attackName = `${spell.name} (${spell.damageType})`;
-      // Update the attack damage to use the spell's damage
+      // -----------------------------------------------------------------------
+      // Threat-aware + memory-aware spell selection
+      // - Threat profile tags start false (must be earned)
+      // - Weakness memory tracks suspected/confirmed/disproven
+      // - Debug HUD shows inferred vs confirmed via meta.aiDebug
+      // -----------------------------------------------------------------------
+
+      // Ensure meta containers exist
+      if (!enemy.meta) enemy.meta = {};
+      if (!enemy.meta._threatProfiles) enemy.meta._threatProfiles = {};
+
+      const role = inferCasterRole(enemy);
+      const catalog = getEnemySpellCatalog(enemy);
+      const targetKey = target ? getTargetMemoryKey(target) : "no_target";
+
+      const enemyPos = positions?.[enemy.id];
+      const targetPos = target ? positions?.[target.id] : null;
+      const distFt =
+        enemyPos && targetPos
+          ? calculateDistance(enemyPos, targetPos)
+          : Infinity;
+
+      // 1) Load + merge persistent weakness memory
+      const persisted = loadPersistentWeaknessMemory(enemy) || {};
+      const inEncounter = enemy.meta._weaknessMemory || {};
+      const mergedMemory = mergeWeaknessMemory(persisted, inEncounter);
+
+      // 1a) Apply any deferred outcomes (optional hook set by spell resolver)
+      // Expected shape (recommended):
+      // enemy.meta.lastSpellOutcome = { targetKey, spellName, element, outcome, notes }
+      const lastOutcome = enemy.meta.lastSpellOutcome;
+      if (lastOutcome && typeof lastOutcome === "object") {
+        try {
+          const tk = lastOutcome.targetKey || targetKey;
+          recordWeaknessOutcome(mergedMemory, tk, lastOutcome);
+        } catch {
+          // ignore
+        }
+        enemy.meta.lastSpellOutcome = null;
+      }
+
+      enemy.meta._weaknessMemory = mergedMemory;
+
+      // 2) Threat profile tags (start false; must be earned)
+      let threatProfile = enemy.meta._threatProfiles[targetKey] || null;
+      try {
+        threatProfile = createThreatProfile({
+          caster: enemy,
+          target,
+          previous: threatProfile,
+          combatTerrain,
+          arenaEnvironment,
+          weaknessMemory: mergedMemory?.[targetKey] || null,
+        });
+      } catch {
+        // If module uses a simpler signature, fall back safely.
+        try {
+          threatProfile = createThreatProfile(enemy, target);
+        } catch {
+          // keep existing
+        }
+      }
+      enemy.meta._threatProfiles[targetKey] = threatProfile;
+
+      // 3) Knowledge check can promote inferred -> suspected/confirmed (no auto reveal)
+      try {
+        const knowledge = tryKnowledgeCheck({
+          caster: enemy,
+          target,
+          threatProfile,
+          weaknessMemory: mergedMemory,
+          distanceFeet: distFt,
+        });
+        if (knowledge?.weaknessMemory) {
+          enemy.meta._weaknessMemory = mergeWeaknessMemory(
+            enemy.meta._weaknessMemory,
+            knowledge.weaknessMemory
+          );
+        }
+        if (knowledge?.threatProfile) {
+          threatProfile = knowledge.threatProfile;
+          enemy.meta._threatProfiles[targetKey] = threatProfile;
+        }
+      } catch {
+        // ignore
+      }
+
+      // 4) Spam guard: avoid repeating last 2 spells unless we learned something new
+      const recentSpells = enemy.meta._recentSpells || [];
+      const avoidSpellNames = new Set(
+        recentSpells
+          .slice(-2)
+          .map((s) => String(s?.name || "").toLowerCase())
+          .filter(Boolean)
+      );
+
+      let chosen = null;
+      if (Array.isArray(catalog) && catalog.length > 0 && target) {
+        try {
+          chosen = selectSpellForRole({
+            role,
+            caster: enemy,
+            target,
+            distanceFeet: distFt,
+            catalog,
+            threatProfile,
+            weaknessMemory: enemy.meta._weaknessMemory?.[targetKey] || null,
+            avoidSpellNames,
+          });
+        } catch {
+          chosen = null;
+        }
+      }
+
+      // Fallback to old random system if we can't pick from catalog
+      const spell = chosen || getRandomCombatSpell(enemy.level || 3);
+
+      // 5) Record attempt (confirmation/disproof comes from resolution hooks)
+      if (target) {
+        try {
+          enemy.meta._weaknessMemory = recordWeaknessAttempt(
+            enemy.meta._weaknessMemory || {},
+            targetKey,
+            spell
+          );
+        } catch {
+          // ignore
+        }
+      }
+
+      // 6) Update recent-spell history (spam prevention)
+      enemy.meta._recentSpells = [
+        ...recentSpells,
+        { name: spell?.name, t: Date.now() },
+      ].slice(-6);
+
+      // 7) Persist memory across encounters
+      savePersistentWeaknessMemory(enemy, enemy.meta._weaknessMemory || {});
+
+      // 8) Debug HUD: inferred vs confirmed
+      const mem = enemy.meta._weaknessMemory?.[targetKey] || null;
+      setEnemyAIDebug(setFighters, enemy.id, {
+        casterRole: role,
+        targetKey,
+        targetId: target?.id,
+        targetName: target?.name,
+        distanceFeet: Number.isFinite(distFt) ? Math.round(distFt) : null,
+        selectedSpell: spell?.name,
+        avoidedRecent: Array.from(avoidSpellNames),
+        threatProfile: threatProfile || null,
+        weaknesses: {
+          inferred: mem?.suspected || null,
+          confirmed: mem?.confirmed || null,
+          disproven: mem?.disproven || null,
+        },
+      });
+
+      attackName = spell?.name
+        ? `${spell.name}${spell.damageType ? ` (${spell.damageType})` : ""}`
+        : "Spell";
+
       selectedAttack = {
         ...selectedAttack,
-        damage: spell.damage,
+        damage: spell?.damage || selectedAttack.damage,
         name: attackName,
+        spell,
+        type: "spell",
       };
     }
 
@@ -3354,6 +3710,72 @@ export function runEnemyTurnAI(enemy, context) {
               "cannot be reached by melee attacks from ground"
             ))
         ) {
+          // If we can fly, pursue the target into the air instead of giving up.
+          const enemyCanFlyNow = canFly(enemy);
+          const enemyIsFlyingNow = isFlying(enemy);
+          const targetAltFeet = target?.altitudeFeet ?? target?.altitude ?? 0;
+          const enemyAltFeet = enemy?.altitudeFeet ?? enemy?.altitude ?? 0;
+
+          if (enemyCanFlyNow) {
+            // Climb/descend in 20ft steps per action (keeps it Palladium-ish and avoids "teleport to altitude").
+            const ALT_STEP_FT = 20;
+            const desiredAlt = Math.max(0, targetAltFeet);
+            let nextAlt = enemyAltFeet;
+
+            if (!enemyIsFlyingNow && enemyAltFeet <= 0) {
+              // Take off
+              nextAlt = Math.min(ALT_STEP_FT, desiredAlt || ALT_STEP_FT);
+            } else if (enemyAltFeet < desiredAlt) {
+              nextAlt = Math.min(enemyAltFeet + ALT_STEP_FT, desiredAlt);
+            } else if (enemyAltFeet > desiredAlt) {
+              nextAlt = Math.max(enemyAltFeet - ALT_STEP_FT, desiredAlt);
+            }
+
+            // Spend 1 action to change altitude / take off
+            const enemyHasActions = (enemy.remainingAttacks ?? 0) > 0;
+
+            if (enemyHasActions) {
+              const updatedMeta = { ...(enemy.meta || {}) };
+              updatedMeta.aiDebug = updatedMeta.aiDebug || {};
+              updatedMeta.aiDebug.flight = {
+                ...(updatedMeta.aiDebug.flight || {}),
+                intent: "pursue_air",
+                target: target.name,
+                inferredFrom: rangeValidation.reason,
+                fromAlt: enemyAltFeet,
+                toAlt: nextAlt,
+                targetAlt: desiredAlt,
+              };
+
+              addLog(
+                `🦅 ${enemy.name} takes to the air to pursue ${target.name} (${enemyAltFeet}ft → ${nextAlt}ft)`,
+                "info"
+              );
+
+              setFighters((prev) =>
+                prev.map((f) => {
+                  if (f.id !== enemy.id) return f;
+                  return {
+                    ...f,
+                    isFlying: true,
+                    altitudeFeet: nextAlt,
+                    altitude: nextAlt,
+                    meta: updatedMeta,
+                    remainingAttacks: Math.max(
+                      0,
+                      (f.remainingAttacks ?? 0) - 1
+                    ),
+                  };
+                })
+              );
+
+              processingEnemyTurnRef.current = false;
+              scheduleEndTurn();
+              return;
+            }
+          }
+
+          // Target is flying too high and we can't (or can't act) -> mark as unreachable and end turn immediately
           markTargetUnreachable(enemy, target);
           addLog(
             `❌ ${enemy.name} realizes ${target.name} is unreachable (${rangeValidation.reason}).`,
@@ -4575,6 +4997,51 @@ export function runEnemyTurnAI(enemy, context) {
     // Execute attack - handle attack count for multi-strike attacks
     // The count property is for attacks that hit multiple times in ONE action (like dual wield)
     setTimeout(() => {
+      // -----------------------------------------------------------------------
+      // OPTIONAL: Weakness outcome feedback hook (if your combat engine provides it)
+      // If context exposes `onAICombatResolution`, it can call back with:
+      // { casterId, targetId, spellName, outcome: "confirmed"|"disproven"|"no_effect", notes }
+      // This keeps enemyTurnAI.js signature unchanged.
+      // -----------------------------------------------------------------------
+      const maybeResolutionHook = context?.onAICombatResolution;
+      if (
+        typeof maybeResolutionHook === "function" &&
+        updatedEnemy?.selectedAttack?.spell &&
+        target?.id
+      ) {
+        try {
+          // Register a one-shot listener for this action. Your engine can call it later.
+          maybeResolutionHook({
+            casterId: enemy.id,
+            targetId: target.id,
+            spellName: updatedEnemy.selectedAttack.spell.name,
+            onResolved: (resolution) => {
+              try {
+                const targetKey = getTargetMemoryKey(target);
+                enemy.meta._weaknessMemory = recordWeaknessOutcome(
+                  enemy.meta._weaknessMemory || {},
+                  targetKey,
+                  resolution
+                );
+                savePersistentWeaknessMemory(
+                  enemy,
+                  enemy.meta._weaknessMemory || {}
+                );
+                setEnemyAIDebug(setFighters, enemy.id, {
+                  lastResolution: resolution,
+                  weaknessMemory:
+                    enemy.meta._weaknessMemory?.[targetKey] || null,
+                });
+              } catch (e) {
+                // swallow
+              }
+            },
+          });
+        } catch (e) {
+          // swallow
+        }
+      }
+
       // If attackCount > 1, this represents a multi-strike attack (all in one action)
       // The attack function should handle this internally, but we log it for clarity
       if (attackCount > 1) {

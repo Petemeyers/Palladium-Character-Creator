@@ -54,24 +54,33 @@ const WeaponShop = () => {
         console.log('🔍 Fetched weapons from database:', weaponsResponse.data);
         
         // Transform database weapons to match frontend format
-        const enhancedWeapons = weaponsResponse.data.map((weapon) => ({
-          itemId: weapon.itemId,
-          name: weapon.name,
-          type: weapon.type || "weapon",
-          category: weapon.category,
-          price: weapon.price,
-          damage: weapon.damage,
-          weight: weapon.weight,
-          length: weapon.length,
-          handed: weapon.handed,
-          reach: weapon.reach,
-          range: weapon.range,
-          rateOfFire: weapon.rateOfFire,
-          ammunition: weapon.ammunition,
-          strengthRequired: weapon.strengthRequired,
-          notes: weapon.notes,
-          description: weapon.description || `${weapon.name} - ${weapon.damage} damage`
-        }));
+        // Filter out special/unpurchasable weapons (price: 0, isSpecial: true, isSupernatural: true, purchasable: false)
+        const enhancedWeapons = weaponsResponse.data
+          .filter((weapon) => {
+            // Exclude special weapons that shouldn't be in the shop
+            if (weapon.isSpecial === true || weapon.isSupernatural === true) return false;
+            if (weapon.purchasable === false) return false;
+            if (weapon.price === 0 && weapon.isMagical === true) return false; // Magical weapons with 0 price are special
+            return true;
+          })
+          .map((weapon) => ({
+            itemId: weapon.itemId,
+            name: weapon.name,
+            type: weapon.type || "weapon",
+            category: weapon.category,
+            price: weapon.price,
+            damage: weapon.damage,
+            weight: weapon.weight,
+            length: weapon.length,
+            handed: weapon.handed,
+            reach: weapon.reach,
+            range: weapon.range,
+            rateOfFire: weapon.rateOfFire,
+            ammunition: weapon.ammunition,
+            strengthRequired: weapon.strengthRequired,
+            notes: weapon.notes,
+            description: weapon.description || `${weapon.name} - ${weapon.damage} damage`
+          }));
 
         const charactersResponse = await axiosInstance.get('/characters');
         // Sync equippedWeapons from equipped object for all characters to ensure consistency

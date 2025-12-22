@@ -238,6 +238,11 @@ export function getAttacksPerMelee(character) {
  * Status effect types and their properties
  */
 export const STATUS_EFFECTS = {
+  SHAKEN: {
+    name: "Shaken",
+    duration: 1,
+    penalties: { strike: -1, parry: -1, dodge: -1 },
+  },
   STUNNED: {
     name: "Stunned",
     duration: 1,
@@ -355,10 +360,29 @@ export function updateStatusEffects(character, currentRound = 1) {
 
   character.statusEffects = character.statusEffects
     .map((effect) => {
-      effect.remainingRounds =
-        (effect.remainingRounds || effect.duration || 1) - 1;
-      return effect;
+      // Defensive normalization: statusEffects may contain legacy strings (e.g., "FLED")
+      // or other non-object values. Normalize to an object so we never try to mutate a string.
+      if (!effect) return null;
+
+      if (typeof effect === "string") {
+        const normalized = {
+          type: effect,
+          name: effect,
+          duration: 1,
+          remainingRounds: 1,
+        };
+        normalized.remainingRounds =
+          (normalized.remainingRounds || normalized.duration || 1) - 1;
+        return normalized;
+      }
+
+      if (typeof effect !== "object") return null;
+
+      const next = { ...effect };
+      next.remainingRounds = (next.remainingRounds || next.duration || 1) - 1;
+      return next;
     })
+    .filter(Boolean)
     .filter((effect) => {
       if (effect.remainingRounds <= 0) {
         // Remove penalties/bonuses when effect expires

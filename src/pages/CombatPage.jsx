@@ -14,6 +14,12 @@ import {
   Input,
   FormControl,
   FormLabel,
+  Table,
+  Thead,
+  Tbody,
+  Tr,
+  Th,
+  Td,
   Modal,
   ModalOverlay,
   ModalContent,
@@ -59,8 +65,26 @@ import { createPlayableCharacterFighter, getPlayableCharacterRollDetails } from 
 import { assignRandomWeaponToEnemy, getDefaultWeaponForEnemy, equipWeaponToEnemy, addWeaponToInventory } from "../utils/enemyWeaponAssigner.js";
 import armorShopData from "../data/armorShopData.js";
 import { initializeAmmo, canFireMissileWeapon, getInventoryAmmoCount, decrementInventoryAmmo } from "../utils/combatAmmoManager.js";
-import { getRandomCombatSpell, getSpellsForLevel } from "../data/combatSpells.js";
-import { getSpellsForCreature } from "../utils/magicAbilitiesParser.js";
+import { getSpellsForLevel } from "../data/combatSpells.js";
+import { selectAISpell } from "../utils/ai/selectAISpell.js";
+import { getSpellsForCreature, SPELL_ELEMENT_MAP } from "../utils/magicAbilitiesParser.js";
+import { updateStatusEffects } from "../utils/statusEffectSystem.js";
+import { createThreatProfile } from "../utils/ai/threatAnalysis.js";
+import { selectSpell } from "../utils/ai/unifiedSpellSelection.js";
+import {
+  parseRangeToFeet,
+  getSpellCost,
+  getSpellRangeInFeet,
+  spellCanAffectTarget,
+  spellRequiresTarget,
+  getSpellHealingFormula,
+  hasSpellDamage,
+  isHealingSpell,
+  isOffensiveSpell,
+  isSupportSpell,
+  getPsionicCost,
+} from "../utils/spellUtils.js";
+import { getFighterSpells as getFighterSpellsUtil } from "../utils/getFighterSpells.js";
 import { hasDimensionalTeleport, attemptDimensionalTeleport } from "../utils/dimensionalTeleport.js";
 import { parseClericalAbilities, getAvailableClericalAbilities, animateDead, turnDead, performExorcism, removeCurse, clericalHealingTouch, isDead, isUndead } from "../utils/clericalAbilities.js";
 import { isTwoHandedWeapon, getWeaponDamage } from "../utils/weaponSlotManager.js";
@@ -70,6 +94,7 @@ import TacticalMap from "../components/TacticalMap.jsx";
 import HexArena3D from "../components/HexArena3D.jsx";
 import Phase0PreCombatModal from "../components/Phase0PreCombatModal.jsx";
 import ResizableLayout from "../components/ResizableLayout.jsx";
+import LootWindow from "../components/LootWindow.jsx";
 import { getInitialPositions, getEngagementRange, MOVEMENT_RATES, GRID_CONFIG, MOVEMENT_ACTIONS, calculateDistance, getMovementRange, getHexNeighbors, isValidPosition } from "../data/movementRules.js";
 import { getDistanceBetween } from "../utils/positionManager.js";
 import { resolvePhase0Encounter, preCombatSystem, executePreCombatAction, hasSpecialSenses } from "../utils/stealthSystem.js";
@@ -97,6 +122,7 @@ import {
   calculateEnemyMovementAI,
   getWeaponRange
 } from "../utils/distanceCombatSystem.js";
+import { validateFlexibleWeaponReach } from "../utils/whipReachSystem.js";
 import { getCombatModifiers, canUseWeapon, getWeaponType, getWeaponLength } from "../utils/combatEnvironmentLogic.js";
 import { getDynamicWidth, getActorsInProximity, getDynamicHeight } from "../utils/environmentMetrics.js";
 import { canFly, isFlying, getAltitude, parseAbilities, calculateFlightMovement, applyBioRegeneration } from "../utils/abilitySystem.js";
@@ -153,6 +179,7 @@ import FloatingPanel from "../components/FloatingPanel.jsx";
 import { findBeePath } from "../ai/index.js";
 import GameSettingsPanel from "../components/GameSettingsPanel.jsx";
 import { useGameSettings } from "../context/GameSettingsContext.jsx";
+import WeaknessDebugHUD from "../components/WeaknessDebugHUD.jsx";
 import { syncCombinedPositions } from "../utils/combinedBodySystem.js";
 import { applyPainStagger } from "../utils/painSystem.js";
 import { resolveMoraleCheck, isFearImmune } from "../utils/moraleSystem.js";
@@ -263,272 +290,6 @@ function findRetreatDestination({
   });
 }
 
-const HEAL_KEYWORDS = ["heal", "restor", "regenerat", "revive", "resurrect", "resurrection", "lay on hands"];
-const TOUCH_RANGE_HINTS = ["touch", "target", "per person", "per target", "per creature", "per ally"];
-const SELF_ONLY_HINTS = ["self only", "self-only"];
-const SUPPORT_KEYWORDS = [
-  "fly",
-  "invisibility",
-  "invisible",
-  "shield",
-  "armor",
-  "protection",
-  "protect",
-  "bless",
-  "speed",
-  "strength",
-  "resist",
-  "resistance",
-  "levitate",
-  "levitation",
-  "globe",
-  "light",
-  "darkness",
-  "circle",
-  "ward",
-  "flight",
-  "float",
-  "haste",
-  "boost",
-  "enhance",
-];
-const HARMFUL_KEYWORDS = [
-  "immobilize",
-  "trap",
-  "paralyze",
-  "blind",
-  "curse",
-  "ensnare",
-  "sleep",
-  "disease",
-  "poison",
-  "stun",
-  "control",
-  "dominate",
-  "fear",
-  "agonize",
-  "pain",
-  "hold",
-  "silence",
-];
-
-function parseRangeToFeet(rangeValue) {
-  if (!rangeValue) return Infinity;
-  const range = String(rangeValue).toLowerCase();
-  if (range.includes("line of sight") || range.includes("line-of-sight") || range.includes("any target")) return Infinity;
-  if (range.includes("self")) return 0;
-  if (range.includes("touch") || range.includes("melee")) return 5;
-
-  const numberMatch = range.match(/(\d+(\.\d+)?)/);
-  if (!numberMatch) return Infinity;
-
-  const value = parseFloat(numberMatch[1]);
-  if (Number.isNaN(value)) return Infinity;
-
-  if (range.includes("mile")) {
-    return value * 5280;
-  }
-
-  return value;
-}
-
-function getSpellCost(spell) {
-  if (!spell) return 0;
-  const candidates = [
-    spell.cost,
-    spell.ppe,
-    spell.PPE,
-    spell.ppeCost,
-    spell.PPECOST,
-    spell.ppCost,
-    spell.ispCost,
-  ];
-
-  for (const candidate of candidates) {
-    if (typeof candidate === "number" && !Number.isNaN(candidate)) {
-      return candidate;
-    }
-    if (typeof candidate === "string") {
-      const numeric = parseInt(candidate.replace(/[^\d-]+/g, ""), 10);
-      if (!Number.isNaN(numeric)) {
-        return numeric;
-      }
-    }
-  }
-
-  return 0;
-}
-
-function getPsionicCost(power) {
-  if (!power) return 0;
-  const candidates = [power.isp, power.cost, power.ISP];
-  for (const candidate of candidates) {
-    if (typeof candidate === "number" && !Number.isNaN(candidate)) {
-      return candidate;
-    }
-    if (typeof candidate === "string") {
-      const numeric = parseInt(candidate.replace(/[^\d-]+/g, ""), 10);
-      if (!Number.isNaN(numeric)) {
-        return numeric;
-      }
-    }
-  }
-  return 0;
-}
-
-function extractHealingFormulaFromText(text) {
-  if (!text || typeof text !== "string") return null;
-  const lower = text.toLowerCase();
-  if (!HEAL_KEYWORDS.some((keyword) => lower.includes(keyword))) return null;
-
-  const diceMatch = text.match(/(\d+d\d+(\s*[+-]\s*\d+)?)/i);
-  if (diceMatch) {
-    return { type: "dice", expression: diceMatch[1].replace(/\s+/g, "") };
-  }
-
-  const flatMatch = text.match(/(\d+)\s*(hp|hit points|points|s\.?d\.?c\.?|sdc)/i);
-  if (flatMatch) {
-    return { type: "flat", amount: parseInt(flatMatch[1], 10) };
-  }
-
-  return null;
-}
-
-function getSpellHealingFormula(spell) {
-  if (!spell) return null;
-
-  if (typeof spell.healingAmount === "number") {
-    return { type: "flat", amount: spell.healingAmount };
-  }
-
-  if (typeof spell.healing === "number") {
-    return { type: "flat", amount: spell.healing };
-  }
-
-  const healingFields = [
-    spell.healing,
-    spell.effect,
-    spell.damage,
-    spell.description,
-    spell.notes,
-  ];
-
-  for (const field of healingFields) {
-    const formula = extractHealingFormulaFromText(field);
-    if (formula) return formula;
-  }
-
-  return null;
-}
-
-function hasSpellDamage(spell) {
-  if (!spell) return false;
-
-  const damageCandidates = [
-    spell.combatDamage,
-    spell.damage,
-    spell.effect,
-    spell.description,
-  ];
-
-  for (const candidate of damageCandidates) {
-    if (!candidate) continue;
-    if (typeof candidate === "number") {
-      if (candidate > 0) return true;
-      continue;
-    }
-
-    if (typeof candidate === "string") {
-      const lower = candidate.toLowerCase();
-      if (lower.includes("heals")) continue;
-      if (lower.includes("damage") && !lower.includes("no damage")) return true;
-      if (/\d+d\d+/i.test(lower)) return true;
-      const numeric = parseInt(lower.replace(/[^\d-]+/g, ""), 10);
-      if (!Number.isNaN(numeric) && numeric > 0) return true;
-    }
-  }
-
-  return false;
-}
-
-function getSpellRangeInFeet(spell) {
-  if (!spell) return Infinity;
-  return parseRangeToFeet(spell.range);
-}
-
-function isHealingSpell(spell) {
-  if (!spell) return false;
-  if (typeof spell.damageType === "string" && spell.damageType.toLowerCase().includes("healing")) {
-    return true;
-  }
-  if (typeof spell.category === "string" && spell.category.toLowerCase().includes("healing")) {
-    return true;
-  }
-  return Boolean(getSpellHealingFormula(spell));
-}
-
-function isOffensiveSpell(spell) {
-  return !isHealingSpell(spell) && hasSpellDamage(spell);
-}
-
-function isSupportSpell(spell) {
-  if (!spell) return false;
-  if (isHealingSpell(spell)) return true;
-  if (hasSpellDamage(spell)) return false;
-
-  const name = (spell.name || "").toLowerCase();
-  const description = (spell.description || spell.effect || "").toLowerCase();
-  const range = (spell.range || "").toLowerCase();
-
-  if (HARMFUL_KEYWORDS.some((keyword) => name.includes(keyword) || description.includes(keyword))) {
-    return false;
-  }
-
-  if (range.includes("self")) return true;
-  if (range.includes("touch") || range.includes("per person") || range.includes("per target")) {
-    if (SUPPORT_KEYWORDS.some((keyword) => name.includes(keyword) || description.includes(keyword))) {
-      return true;
-    }
-  }
-
-  return SUPPORT_KEYWORDS.some((keyword) => name.includes(keyword) || description.includes(keyword));
-}
-
-function doesSpellRequireTarget(spell) {
-  if (!spell) return false;
-  if (hasSpellDamage(spell)) return true;
-  const range = (spell.range || "").toLowerCase();
-  if (!range) return false;
-  if (range.includes("self") && !TOUCH_RANGE_HINTS.some((hint) => range.includes(hint))) {
-    return false;
-  }
-  if (TOUCH_RANGE_HINTS.some((hint) => range.includes(hint))) return true;
-  if (/\d/.test(range) || range.includes("line") || range.includes("area")) return true;
-  return false;
-}
-
-function spellCanAffectTarget(spell, caster, target) {
-  if (!spell) return false;
-  if (!target) return !doesSpellRequireTarget(spell);
-  if (!caster) return false;
-  if (target.id === caster.id) return true;
-
-  const range = (spell.range || "").toLowerCase();
-  if (!range) return true;
-
-  if (SELF_ONLY_HINTS.some((hint) => range.includes(hint))) return false;
-  if (range.includes("self") && !TOUCH_RANGE_HINTS.some((hint) => range.includes(hint))) {
-    return false;
-  }
-
-  const isFriendlyTarget = caster.type === target.type;
-  if (!isFriendlyTarget) {
-    if (isHealingSpell(spell)) return false;
-    if (isSupportSpell(spell)) return false;
-  }
-
-  return true;
-}
 
 function getAttributeSaveBonus(value, thresholds) {
   for (const [threshold, bonus] of thresholds) {
@@ -693,6 +454,54 @@ function convertUnifiedSpellToCombatSpell(spell) {
   return combatSpell;
 }
 
+// ---------------------------------------------------------------------------
+// AI Threat/Weakness hooks (used by enemyTurnAI deferred outcome integration)
+// - These are intentionally tiny and local to CombatPage.jsx.
+// - enemyTurnAI reads caster.meta.lastSpellOutcome on next selection turn.
+// - threatAnalysis.js can optionally merge caster.meta._earnedThreatTags[targetKey].
+// ---------------------------------------------------------------------------
+
+function getAIMemoryTargetKey(target) {
+  const base =
+    target?.baseName ||
+    target?.species ||
+    target?.race ||
+    target?.name ||
+    target?.id ||
+    "unknown_target";
+  const cat = target?.category || target?.type || target?.creatureType || "";
+  return `${String(base).toLowerCase()}::${String(cat).toLowerCase()}`;
+}
+
+function inferSpellElementForAI(combatSpell) {
+  if (!combatSpell || !combatSpell.name) return null;
+  const dmgType = (combatSpell.damageType || "").toLowerCase();
+  if (dmgType && dmgType !== "force" && dmgType !== "magic") return dmgType;
+  const mapped = SPELL_ELEMENT_MAP?.[combatSpell.name] || null;
+  if (mapped) return String(mapped).toLowerCase();
+  const n = combatSpell.name.toLowerCase();
+  if (n.includes("flame") || n.includes("fire")) return "fire";
+  if (n.includes("ice") || n.includes("cold") || n.includes("frost")) return "cold";
+  if (n.includes("lightning")) return "electricity";
+  return null;
+}
+
+function getThreatTagsEarnedBySpell(combatSpell) {
+  const name = (combatSpell?.name || "").toLowerCase();
+  // Spells that help infer "what is this thing / what protections are up"
+  if (name.includes("sense magic")) return { detect_magic: true, aura_magic_present: true };
+  if (name.includes("sense evil")) return { detect_alignment: true, aura_evil_present: true };
+  if (name.includes("see the invisible") || name.includes("see invisible")) return { detect_invisible: true, detect_hidden_threat: true };
+  if (name.includes("sense traps")) return { detect_traps: true, hazard_awareness: true };
+  if (name.includes("words of truth")) return { interrogation_truth: true, intel_gathering: true };
+  if (name.includes("commune with dead")) return { divination: true, lore_from_spirits: true };
+  if (name.includes("commune with spirits")) return { divination: true, lore_from_spirits: true };
+  if (name.includes("detect poison")) return { detect_poison: true, toxin_threat: true };
+  if (name.includes("xray vision") || name.includes("x-ray vision")) return { anatomy_scan: true, see_through_obstacles: true };
+  if (name.includes("eyes of the wolf") || name.includes("spirit of the wolf")) return { enhanced_senses: true, track_target: true, anti_ambush: true };
+  return null;
+}
+
 export default function CombatPage({ characters = [] }) {
   const navigate = useNavigate();
   const [log, setLog] = useState([]);
@@ -761,6 +570,9 @@ export default function CombatPage({ characters = [] }) {
         lastFailedHorrorId: null,
       };
     }
+    
+    // Ensure meta container exists for AI debug + memory
+    if (!fighter.meta) fighter.meta = {};
     
     // Ensure moraleState exists
     if (!fighter.moraleState) {
@@ -867,6 +679,19 @@ export default function CombatPage({ characters = [] }) {
   // - Tiny prey often does NOT see a flying hawk until it is low/committed (dive / close pass)
   // - Hawks see tiny prey more easily (always "spotted" for AI purposes)
   const canAISeeTargetAsymmetric = useCallback((viewer, target, pos, terrain, opts = {}) => {
+    // ✅ Adjacent ⇒ visible override (AI sanity):
+    // If you're in adjacent melee range, we treat the target as visible regardless of LoS heuristics.
+    try {
+      const p1 = pos?.[viewer?.id];
+      const p2 = pos?.[target?.id];
+      if (p1 && p2) {
+        const d = calculateDistance(p1, p2);
+        if (typeof d === "number" && d <= 5.5) return true;
+      }
+    } catch {
+      // ignore and fall back to normal logic
+    }
+
     const base = canAISeeTarget(viewer, target, pos, terrain, opts);
 
     // Tiny prey has trouble spotting a flying hawk overhead unless it's very low or already alerted
@@ -1089,6 +914,8 @@ export default function CombatPage({ characters = [] }) {
   const [selectedAttackWeapon, setSelectedAttackWeapon] = useState(null);
   const [selectedPsionicPower, setSelectedPsionicPower] = useState(null);
   const [selectedSpell, setSelectedSpell] = useState(null);
+  const [spellSearch, setSpellSearch] = useState("");
+  const [spellLevelFilter, setSpellLevelFilter] = useState("all");
   const [defensiveStance, setDefensiveStance] = useState({}); // Track defensive actions by fighter ID
   const [activeCircles, setActiveCircles] = useState([]); // Track active protection circles
   const [showCirclePlacementTool, setShowCirclePlacementTool] = useState(false); // Show GM circle placement tool
@@ -1103,6 +930,24 @@ export default function CombatPage({ characters = [] }) {
   useEffect(() => {
     positionsRef.current = positions;
   }, [positions]);
+
+  // Keep latest fighters/turnIndex snapshots available to async guardrails without relying on stale closures.
+  const fightersRef = useRef(fighters);
+  useEffect(() => {
+    fightersRef.current = fighters;
+  }, [fighters]);
+
+  const turnIndexRef = useRef(turnIndex);
+  useEffect(() => {
+    turnIndexRef.current = turnIndex;
+  }, [turnIndex]);
+
+  // Prefer a ref snapshot only when it's non-empty; avoids transient {} snapshots causing AI to see "no threats".
+  const pickNonEmptyObject = useCallback((preferred, fallback) => {
+    return preferred && typeof preferred === "object" && Object.keys(preferred).length > 0
+      ? preferred
+      : fallback;
+  }, []);
   
   // Track recently used psionics per fighter to prevent AI spamming the same power
   const playerAIRecentlyUsedPsionicsRef = useRef(new Map());
@@ -1112,10 +957,16 @@ export default function CombatPage({ characters = [] }) {
   const [flashingCombatants, setFlashingCombatants] = useState(new Set()); // Track which combatants are flashing
   const processingEnemyTurnRef = useRef(false); // Prevent duplicate enemy turn processing (use ref for synchronous check)
   const processingPlayerAIRef = useRef(false); // Prevent duplicate player AI turn processing
+  // Player AI async guardrails:
+  // - playerAIActionScheduledRef: set true as soon as AI schedules any delayed work (movement/attack/spell)
+  // - playerAITurnTokenRef: incremented each player AI turn; delayed callbacks must match token or abort
+  const playerAIActionScheduledRef = useRef(false);
+  const playerAITurnTokenRef = useRef(0);
   const lastProcessedTurnRef = useRef(null); // Track the last processed turn to prevent duplicates
   const topCombatLogRef = useRef(null); // Ref for top combat log scroll container
   const detailedCombatLogRef = useRef(null); // Ref for detailed combat log tab scroll container
   const aiUnreachableTargetsRef = useRef({}); // Track unreachable targets per attacker: { [attackerId]: Set<defenderId> }
+  const aiUnreachableTurnsRef = useRef(new Map()); // key: `${attackerId}:${defenderId}` => { count, lastTurnCounter }
   const justCreatedPendingMovementRef = useRef(new Set()); // Track movements created this turn (don't apply until NEXT turn)
   const handleEnemyTurnRef = useRef(null); // Store latest version of handleEnemyTurn to avoid dependency loops
   const attackRef = useRef(null); // Store attack function to avoid initialization order issues
@@ -1127,15 +978,625 @@ export default function CombatPage({ characters = [] }) {
   const executingActionRef = useRef(false); // Prevent multiple rapid action executions
   const visibilityLogRef = useRef(new Set()); // Track visibility logs to prevent spam: Set of "playerId_turnCounter"
   const turnTimeoutRef = useRef(null); // Track scheduled end turn timeout
+  const pendingTurnAdvanceRef = useRef(false); // ✅ Prevent AI re-entry while a turn advance is scheduled but not yet executed
   const allTimeoutsRef = useRef([]); // ✅ Track ALL timeouts so we can clear them on combat end
   const combatPausedRef = useRef(false); // Track paused state in async callbacks
   const resolvedSpellEffectsRef = useRef(new Set()); // Track resolved spell effects to prevent duplicates: Set of "castId::targetId"
   const activeCastIdsRef = useRef(new Set()); // ✅ Track active cast IDs to prevent duplicate casts
+  const combatCastGuardRef = useRef(new Set()); // ✅ Track spell casts per action window to prevent machine-gun casting: Set of "casterId:spellName:turnIndex:meleeRound"
+  const lastSpellMemoryRef = useRef({}); // ✅ Track last spells cast per fighter to avoid spam: { [fighterId]: spellName, [fighterId_recent]: [spell1, spell2] }
+  // Improvised ammo + retreat memory for anti-air logic
+  // key: enemyId -> { qty, types: { rock?: n, brick?: n, branch?: n, bone?: n }, expiresAtTurn }
+  const aiImprovisedAmmoRef = useRef(new Map());
+  const aiRetreatedFromAirborneRef = useRef(new Map()); // key: "enemyId:targetId" -> lastRetreatTurn
+  // ===============================
+  // Arena props (rocks/branches/bricks) seeded by arenaEnvironment
+  // ===============================
+  const arenaPropsRef = useRef(new Map()); // key "x,y" -> { rock: n, branch: n, brick: n, bone: n }
+  const arenaPropsSeededForRef = useRef(null); // env key we last seeded for (resets when combat ends)
+  // =========================
+  // AI Spell Selection Guards
+  // =========================
+  const enemySpellLoopGuardRef = useRef(new Map()); // key: `${enemyId}:${meleeRound}` => { lastCastAt, lastSpellName, targetId, recent: string[], lastMeleeRound }
   const recentLogMessagesRef = useRef(new Map()); // Track recent log messages to prevent duplicates (React Strict Mode): Map<messageKey, timestamp>
   const lastAutoTurnKeyRef = useRef(null); // Prevent duplicate auto-processing per turn
   const lastNoActionLogRef = useRef(new Map()); // Track "no action" logs per fighter per turn: Map<fighterId_turnCounter, true>
+  const noActionsPassLogRef = useRef(new Set()); // Track "no actions remaining" pass logs per fighter per melee round: Set<`${fighterId}:${meleeRound}`>
   const prevAiControlRef = useRef(aiControlEnabled);
   const wasPausedRef = useRef(false);
+
+  // =========================
+  // AI transient refs reset (per-combat)
+  // =========================
+  function resetAITransientRefs() {
+    // These are intentionally NOT persisted across combats.
+    if (aiImprovisedAmmoRef.current?.clear) aiImprovisedAmmoRef.current.clear();
+    if (aiUnreachableTurnsRef.current?.clear) aiUnreachableTurnsRef.current.clear();
+    aiUnreachableTargetsRef.current = {};
+    if (aiRetreatedFromAirborneRef.current?.clear) aiRetreatedFromAirborneRef.current.clear();
+
+    // Arena props should be reseeded per combat/environment.
+    if (arenaPropsRef.current?.clear) arenaPropsRef.current.clear();
+    arenaPropsSeededForRef.current = null;
+
+    // Spell spam guards / last-spell memory should reset on combat start.
+    if (enemySpellLoopGuardRef.current?.clear) enemySpellLoopGuardRef.current.clear();
+    lastSpellMemoryRef.current = {};
+    noActionsPassLogRef.current = new Set();
+
+    // ✅ Also remove improvised ammo items from inventories (fresh combat)
+    setFighters((prev) =>
+      prev.map((f) => {
+        const inv = Array.isArray(f.inventory) ? f.inventory : [];
+        const nextInv = inv.filter((it) => !isImprovisedAmmoInventoryItem(it));
+        return nextInv.length === inv.length ? f : { ...f, inventory: nextInv };
+      })
+    );
+  }
+  
+  // =========================
+  // AI Spell Selection Helper Functions
+  // =========================
+  const normalizeDamageType = useCallback((dt) => (dt || "").toLowerCase().trim(), []);
+  
+  const targetHasImmunityText = useCallback((target, needle) => {
+    if (!target || !needle) return false;
+    
+    const n = (needle || "").toLowerCase();
+    
+    // Check if abilities is a parsed object (structured)
+    if (target.abilities && typeof target.abilities === "object" && !Array.isArray(target.abilities)) {
+      // Check impervious_to array (e.g., ["fire", "cold"])
+      if (Array.isArray(target.abilities.impervious_to)) {
+        const imperviousTypes = target.abilities.impervious_to.map(t => String(t).toLowerCase());
+        if (n.includes("fire") && imperviousTypes.includes("fire")) return true;
+        if (n.includes("cold") && imperviousTypes.includes("cold")) return true;
+        if (n.includes("ice") && imperviousTypes.includes("cold")) return true;
+        if (n.includes("poison") && imperviousTypes.includes("poison")) return true;
+        if (n.includes("magic") && imperviousTypes.includes("magic")) return true;
+      }
+      
+      // Check immunities array
+      if (Array.isArray(target.abilities.immunities)) {
+        const immuneTypes = target.abilities.immunities.map(t => String(t).toLowerCase());
+        if (n.includes("fire") && immuneTypes.includes("fire")) return true;
+        if (n.includes("cold") && immuneTypes.includes("cold")) return true;
+        if (n.includes("ice") && immuneTypes.includes("cold")) return true;
+        if (n.includes("poison") && immuneTypes.includes("poison")) return true;
+        if (n.includes("magic") && immuneTypes.includes("magic")) return true;
+      }
+      
+      // Check other array (unparsed ability strings)
+      if (Array.isArray(target.abilities.other)) {
+        const otherAbilities = target.abilities.other.map(s => String(s).toLowerCase());
+        if (otherAbilities.some(txt => txt.includes(n))) return true;
+      }
+    }
+    
+    // Fallback: Check if abilities is an array of strings
+    const list = [
+      ...(Array.isArray(target?.abilities) ? target.abilities : []),
+      ...(target?.immunities || []),
+      ...(target?.resistances || []),
+      ...(target?.notes ? [target.notes] : []),
+    ]
+      .filter(Boolean)
+      .map((s) => String(s).toLowerCase());
+    
+    return list.some((txt) => txt.includes(n));
+  }, []);
+
+  // ✅ AI Anti-Air: improvised thrown object (house-rule, engine-friendly)
+  // Make this unambiguously ranged/thrown for all classifier paths.
+  function buildImprovisedThrownAttack(attacker, propType = "rock") {
+    const size = String(attacker?.sizeCategory || attacker?.size || "").toLowerCase();
+
+    let damage = "1d6";
+    let range = 60; // feet
+    if (size.includes("large")) {
+      damage = "2d6";
+      range = 80;
+    } else if (size.includes("huge") || size.includes("gargantuan")) {
+      damage = "3d6";
+      range = 100;
+    }
+
+    const ps = Number(attacker?.PS ?? attacker?.ps ?? attacker?.attributes?.PS ?? attacker?.attributes?.ps ?? 0) || 0;
+    const bonus = ps >= 24 ? 2 : ps >= 18 ? 1 : 0;
+    const finalDamage = bonus > 0 ? `${damage}+${bonus}` : damage;
+
+    const prop = String(propType || "rock").toLowerCase();
+    const name =
+      prop === "branch" ? "Thrown Branch" :
+      prop === "brick" ? "Thrown Brick" :
+      prop === "bone" ? "Thrown Bone" :
+      prop === "rock" ? "Thrown Rock" :
+      "Thrown Debris";
+
+    return {
+      // display
+      name,
+
+      // ✅ HARD FLAGS (cover all classifiers)
+      damage: finalDamage,
+      type: "ranged",
+      rangeCategory: "ranged",
+      isRanged: true,
+      isThrown: true,
+      weaponType: "thrown",
+      category: "thrown",
+      attackMode: "thrown",
+
+      // ✅ Range/Damage (what validateWeaponRange uses)
+      range, // must be >10 to avoid melee inference
+
+      // extra "do not classify as melee" hints
+      isMelee: false,
+      length: 0,
+
+      ammoTag: "improvised",
+      count: 1,
+    };
+  }
+
+  function getImprovisedAmmoQty(enemyId) {
+    return aiImprovisedAmmoRef.current.get(enemyId)?.qty || 0;
+  }
+
+  function getImprovisedAmmoBreakdown(enemyId) {
+    return aiImprovisedAmmoRef.current.get(enemyId)?.types || {};
+  }
+
+  function getImprovisedAmmoSummaryForFighter(fighterId) {
+    const qty = getImprovisedAmmoQty(fighterId);
+    if (qty <= 0) return null;
+    const types = getImprovisedAmmoBreakdown(fighterId);
+    return {
+      qty,
+      types,
+      details: formatImprovisedAmmoBreakdown(types),
+    };
+  }
+
+  function isImprovisedAmmoInventoryItem(item) {
+    if (!item) return false;
+    if (item.ammoTag === "improvised") return true;
+    if (item.category === "improvised") return true;
+    if ((item.type || "").toLowerCase() === "ammunition" && (item.subtype || "") === "improvised") return true;
+    const n = (item.name || "").toLowerCase();
+    return n.startsWith("improvised ") || n.includes("(improvised)");
+  }
+
+  function syncImprovisedAmmoIntoFighterInventory(fighterId, typesMap) {
+    const safeTypes = typesMap && typeof typesMap === "object" ? typesMap : {};
+    const total = Object.values(safeTypes).reduce((s, n) => s + (Number(n) || 0), 0);
+
+    setFighters((prev) =>
+      prev.map((f) => {
+        if (f.id !== fighterId) return f;
+        const inv = Array.isArray(f.inventory) ? f.inventory : [];
+        const kept = inv.filter((it) => !isImprovisedAmmoInventoryItem(it));
+
+        if (total <= 0) return { ...f, inventory: kept };
+
+        const makeItem = (type, qty) => ({
+          name:
+            type === "rock" ? "Improvised Rock" :
+            type === "brick" ? "Improvised Brick" :
+            type === "branch" ? "Improvised Branch" :
+            type === "bone" ? "Improvised Bone" :
+            "Improvised Debris",
+          type: "ammunition",
+          subtype: "improvised",
+          category: "improvised",
+          ammoTag: "improvised",
+          quantity: Number(qty) || 0,
+          weight: 0,
+          price: 0,
+        });
+
+        const improvisedItems = Object.entries(safeTypes)
+          .filter(([, n]) => (Number(n) || 0) > 0)
+          .map(([t, n]) => makeItem(t, n));
+
+        return { ...f, inventory: [...kept, ...improvisedItems] };
+      })
+    );
+  }
+
+  function formatImprovisedAmmoBreakdown(types = {}) {
+    const parts = Object.entries(types)
+      .filter(([, n]) => (n || 0) > 0)
+      .map(([t, n]) => {
+        const plural =
+          n === 1
+            ? t
+            : t === "branch"
+              ? "branches"
+              : `${t}s`;
+        return `${n} ${plural}`;
+      });
+    return parts.length ? parts.join(", ") : "none";
+  }
+
+  function grantImprovisedAmmo(enemyId, qty, currentTurnCounter, typesDelta = null) {
+    const cur =
+      aiImprovisedAmmoRef.current.get(enemyId) || {
+        qty: 0,
+        types: {},
+        expiresAtTurn: currentTurnCounter + 6,
+      };
+    const nextTypes = { ...(cur.types || {}) };
+    if (typesDelta && typeof typesDelta === "object") {
+      for (const [t, n] of Object.entries(typesDelta)) {
+        nextTypes[t] = (nextTypes[t] || 0) + (Number(n) || 0);
+      }
+    }
+    aiImprovisedAmmoRef.current.set(enemyId, {
+      qty: Math.min(6, (cur.qty || 0) + qty),
+      types: nextTypes,
+      expiresAtTurn: Math.max(cur.expiresAtTurn || 0, currentTurnCounter + 6),
+    });
+
+    // ✅ Keep fighter.inventory in sync (real item, not just UI)
+    syncImprovisedAmmoIntoFighterInventory(enemyId, nextTypes);
+  }
+
+  function consumeImprovisedAmmo(enemyId) {
+    const cur = aiImprovisedAmmoRef.current.get(enemyId);
+    if (!cur || cur.qty <= 0) return false;
+    const nextQty = Math.max(0, cur.qty - 1);
+    const nextTypes = { ...(cur.types || {}) };
+
+    // Pick an item type to consume (deterministic priority)
+    const order = ["rock", "brick", "branch", "bone"];
+    let usedType = "debris";
+    for (const t of order) {
+      if ((nextTypes[t] || 0) > 0) {
+        nextTypes[t] -= 1;
+        usedType = t;
+        break;
+      }
+    }
+
+    aiImprovisedAmmoRef.current.set(enemyId, { ...cur, qty: nextQty, types: nextTypes });
+
+    // ✅ Keep fighter.inventory in sync (real item, not just UI)
+    syncImprovisedAmmoIntoFighterInventory(enemyId, nextTypes);
+
+    return usedType;
+  }
+
+  function cleanupImprovisedAmmo(currentTurnCounter) {
+    for (const [enemyId, v] of aiImprovisedAmmoRef.current.entries()) {
+      if ((v?.expiresAtTurn ?? 0) <= currentTurnCounter || (v?.qty ?? 0) <= 0) {
+        aiImprovisedAmmoRef.current.delete(enemyId);
+        // ✅ Remove expired improvised ammo from fighter.inventory
+        syncImprovisedAmmoIntoFighterInventory(enemyId, {});
+      }
+    }
+  }
+
+  // Environment profiles (tweak freely)
+  const ENV_PROP_PROFILES = {
+    forest: {
+      density: 0.18, // chance per cell to have any props
+      bundles: [
+        { type: "branch", min: 1, max: 3, weight: 0.60 },
+        { type: "rock", min: 1, max: 2, weight: 0.25 },
+        { type: "bone", min: 1, max: 2, weight: 0.15 },
+      ],
+    },
+    cave: {
+      density: 0.22,
+      bundles: [
+        { type: "rock", min: 1, max: 3, weight: 0.75 },
+        { type: "bone", min: 1, max: 2, weight: 0.10 },
+        { type: "brick", min: 1, max: 2, weight: 0.15 }, // loose chunks / rubble
+      ],
+    },
+    ruins: {
+      density: 0.25,
+      bundles: [
+        { type: "brick", min: 1, max: 3, weight: 0.70 },
+        { type: "rock", min: 1, max: 2, weight: 0.20 },
+        { type: "bone", min: 1, max: 2, weight: 0.10 },
+      ],
+    },
+    // default fallback
+    generic: {
+      density: 0.12,
+      bundles: [
+        { type: "rock", min: 1, max: 2, weight: 0.60 },
+        { type: "branch", min: 1, max: 2, weight: 0.25 },
+        { type: "brick", min: 1, max: 2, weight: 0.15 },
+      ],
+    },
+  };
+
+  function pickWeighted(bundles) {
+    const total = bundles.reduce((s, b) => s + (b.weight || 0), 0) || 1;
+    let r = Math.random() * total;
+    for (const b of bundles) {
+      r -= b.weight || 0;
+      if (r <= 0) return b;
+    }
+    return bundles[bundles.length - 1];
+  }
+
+  function randInt(min, max) {
+    return Math.floor(Math.random() * (max - min + 1)) + min;
+  }
+
+  function cellKey(x, y) {
+    return `${x},${y}`;
+  }
+
+  // If you have "combatTerrain" with blocked/solid cells, wire that here.
+  // For now: seed only valid positions, and skip occupied at seeding time.
+  function seedArenaProps({
+    arenaEnvironment: envIn,
+    isValidPosition: isValidPositionFn,
+    isHexOccupied: isHexOccupiedFn,
+    width = GRID_CONFIG?.GRID_WIDTH ?? 40,
+    height = GRID_CONFIG?.GRID_HEIGHT ?? 40,
+  }) {
+    // envIn is often an object (mapDefinition/combatTerrain). Prefer a meaningful label over "[object Object]".
+    let envRaw = (
+      typeof envIn === "string"
+        ? envIn
+        : (envIn?.biome ||
+            envIn?.environmentName ||
+            envIn?.environment ||
+            envIn?.name ||
+            envIn?.mapName ||
+            envIn?.type ||
+            envIn?.terrainType ||
+            envIn?.mapType ||
+            "")
+    )
+      .toString()
+      .toLowerCase();
+    // Guard: mapType like "hex"/"square" isn't an environment profile.
+    if (envRaw === "hex" || envRaw === "square") envRaw = "";
+    const env =
+      envRaw.includes("forest") ? "forest" :
+      envRaw.includes("cave") ? "cave" :
+      envRaw.includes("ruin") ? "ruins" :
+      "generic";
+
+    const profile = ENV_PROP_PROFILES[env] || ENV_PROP_PROFILES.generic;
+    const newMap = new Map();
+
+    for (let x = 0; x < width; x++) {
+      for (let y = 0; y < height; y++) {
+        if (!isValidPositionFn(x, y)) continue;
+        if (isHexOccupiedFn(x, y, null)) continue; // skip occupied at seed time
+        if (Math.random() > profile.density) continue;
+
+        const bundle = pickWeighted(profile.bundles);
+        const qty = randInt(bundle.min, bundle.max);
+
+        const k = cellKey(x, y);
+        const cur = newMap.get(k) || {};
+        newMap.set(k, { ...cur, [bundle.type]: (cur[bundle.type] || 0) + qty });
+      }
+    }
+
+    arenaPropsRef.current = newMap;
+  }
+
+  function takePropsAtCell(x, y, wantTypes, maxTake = 2) {
+    const k = cellKey(x, y);
+    const cur = arenaPropsRef.current.get(k);
+    if (!cur) return { taken: {}, total: 0 };
+
+    let remaining = maxTake;
+    const taken = {};
+
+    for (const t of wantTypes) {
+      if (remaining <= 0) break;
+      const have = cur[t] || 0;
+      if (have <= 0) continue;
+
+      const take = Math.min(have, remaining);
+      taken[t] = (taken[t] || 0) + take;
+      cur[t] = have - take;
+      remaining -= take;
+    }
+
+    // Cleanup empty cells
+    const stillHasAny = Object.values(cur).some((n) => (n || 0) > 0);
+    if (!stillHasAny) arenaPropsRef.current.delete(k);
+    else arenaPropsRef.current.set(k, cur);
+
+    const total = Object.values(taken).reduce((s, n) => s + n, 0);
+    return { taken, total };
+  }
+
+  function findAndTakeNearbyProps(myPos, radius = 2) {
+    if (!myPos) return { taken: {}, total: 0 };
+
+    const wantTypes = ["rock", "brick", "branch", "bone"]; // all count as throwable “debris”
+    // Check center + rings of neighbors up to radius
+    const visited = new Set();
+    const queue = [{ x: myPos.x, y: myPos.y, d: 0 }];
+
+    while (queue.length) {
+      const node = queue.shift();
+      const k = cellKey(node.x, node.y);
+      if (visited.has(k)) continue;
+      visited.add(k);
+
+      // Try to take from this cell
+      const got = takePropsAtCell(node.x, node.y, wantTypes, 2);
+      if (got.total > 0) return got;
+
+      if (node.d >= radius) continue;
+      const nbrs = getHexNeighbors(node.x, node.y) || [];
+      for (const n of nbrs) queue.push({ x: n.x, y: n.y, d: node.d + 1 });
+    }
+
+    return { taken: {}, total: 0 };
+  }
+  
+  const isTargetImmuneToSpellDamageType = useCallback((target, spell) => {
+    if (!spell || !target) return false;
+    
+    // Determine spell damage type from multiple sources
+    let effectiveDmgType = normalizeDamageType(spell?.damageType);
+    
+    // Fallback 1: Check SPELL_ELEMENT_MAP if damageType is not set
+    if (!effectiveDmgType || effectiveDmgType === "force" || effectiveDmgType === "magic") {
+      const spellElement = SPELL_ELEMENT_MAP[spell.name] || null;
+      if (spellElement) {
+        effectiveDmgType = spellElement.toLowerCase();
+      }
+    }
+    
+    // Fallback 2: Check spell name for fire/cold keywords
+    const spellNameLower = (spell.name || "").toLowerCase();
+    if (!effectiveDmgType || effectiveDmgType === "force" || effectiveDmgType === "magic") {
+      if (spellNameLower.includes("fire") || spellNameLower.includes("flame") || spellNameLower.includes("burn")) {
+        effectiveDmgType = "fire";
+      } else if (spellNameLower.includes("cold") || spellNameLower.includes("ice") || spellNameLower.includes("frost")) {
+        effectiveDmgType = "cold";
+      } else if (spellNameLower.includes("poison") || spellNameLower.includes("toxin")) {
+        effectiveDmgType = "poison";
+      }
+    }
+    
+    if (!effectiveDmgType) return false;
+    
+    // Common "no effect" patterns
+    if (effectiveDmgType.includes("fire")) {
+      return (
+        targetHasImmunityText(target, "impervious to fire") ||
+        targetHasImmunityText(target, "immune to fire") ||
+        targetHasImmunityText(target, "immunity to fire")
+      );
+    }
+    if (effectiveDmgType.includes("cold") || effectiveDmgType.includes("ice")) {
+      return (
+        targetHasImmunityText(target, "impervious to cold") ||
+        targetHasImmunityText(target, "immune to cold") ||
+        targetHasImmunityText(target, "immunity to cold") ||
+        targetHasImmunityText(target, "impervious to ice")
+      );
+    }
+    if (effectiveDmgType.includes("poison") || effectiveDmgType.includes("toxin")) {
+      return (
+        targetHasImmunityText(target, "immune to poison") ||
+        targetHasImmunityText(target, "immunity to poison") ||
+        targetHasImmunityText(target, "poison immunity")
+      );
+    }
+    if (effectiveDmgType.includes("magic") || effectiveDmgType.includes("spell")) {
+      return (
+        targetHasImmunityText(target, "immune to magic") ||
+        targetHasImmunityText(target, "impervious to magic")
+      );
+    }
+    
+    return false;
+  }, [normalizeDamageType, targetHasImmunityText]);
+  
+  // Initialize weakness memory for AI fighters
+  const weaknessMemoryRef = useRef({}); // Store weakness memory per AI fighter
+  
+  // Initialize threat profiles for enemies
+  const initializeThreatProfile = useCallback((fighter) => {
+    if (!fighter.threatProfile) {
+      setFighters(prev => prev.map(f => 
+        f.id === fighter.id 
+          ? { ...f, threatProfile: createThreatProfile() }
+          : f
+      ));
+    }
+  }, []);
+
+  const pickEnemySpellFromCatalog = useCallback((enemy, target) => {
+    // Full catalog for Ariel comes from getFighterSpellsUtil(enemy) now
+    const catalog = (getFighterSpellsUtil?.(enemy) || []).filter(Boolean);
+    if (catalog.length === 0) return null;
+    
+    const guardKey = `${enemy.id}:${meleeRound}`;
+    const now = Date.now();
+    const guard = enemySpellLoopGuardRef.current.get(guardKey) || {
+      lastCastAt: 0,
+      lastSpellName: null,
+      targetId: null,
+      recent: [],
+      lastMeleeRound: null,
+    };
+    
+    // 1) Hard "cooldown" (prevents rapid-fire spam loops)
+    if (now - guard.lastCastAt < 1200) return null;
+    
+    // 2) One spell per melee per enemy (prevents machine-gun casting)
+    // If you WANT more than 1 spell/melee later, change this to a counter.
+    if (guard.lastCastAt && guardKey && guard.lastMeleeRound === meleeRound) {
+      // already cast this melee
+      return null;
+    }
+    
+    // Initialize weakness memory for this AI if needed
+    if (!weaknessMemoryRef.current[enemy.id]) {
+      weaknessMemoryRef.current[enemy.id] = {};
+    }
+    
+    // Initialize threat profile for target if needed
+    if (target && !target.threatProfile) {
+      initializeThreatProfile(target);
+    }
+    
+    // Use unified spell selection system (Palladium-faithful)
+    const selectedSpell = selectSpell(
+      enemy,
+      target,
+      catalog,
+      weaknessMemoryRef.current[enemy.id],
+      meleeRound,
+      {
+        avoidRepeating: true,
+        lastSpellName: guard.lastSpellName,
+        maxPPE: enemy.currentPPE || enemy.PPE || Infinity
+      }
+    );
+    
+    // Fallback to old system if unified selection returns null
+    if (!selectedSpell) {
+      // Filter: can affect target + not immune
+      const viable = catalog.filter((s) => {
+        if (!s) return false;
+        // If spell needs a target, ensure it can affect the chosen target
+        if (spellRequiresTarget?.(s) || s.requiresTarget) {
+          if (!spellCanAffectTarget?.(s, enemy, target)) return false;
+        }
+        if (isTargetImmuneToSpellDamageType(target, s)) return false;
+        
+        // Avoid repeating the same spell into the same target back-to-back
+        const name = (s.name || "").toLowerCase();
+        if (guard.targetId === target?.id && guard.recent.slice(-2).includes(name)) {
+          return false;
+        }
+        return true;
+      });
+      
+      if (viable.length === 0) return null;
+      
+      // Simple bias: offensive if enemy is "attacking"
+      const offensive = viable.filter((s) => isOffensiveSpell?.(s));
+      const pool = offensive.length > 0 ? offensive : viable;
+      
+      // Random pick
+      const idx = Math.floor(Math.random() * pool.length);
+      return pool[idx] || null;
+    }
+    
+    return selectedSpell;
+  }, [meleeRound, spellRequiresTarget, spellCanAffectTarget, isTargetImmuneToSpellDamageType, isOffensiveSpell, initializeThreatProfile]);
+  
   const [showTacticalMap, setShowTacticalMap] = useState(false); // Toggle tactical map display
   const [show3DView, setShow3DView] = useState(false); // Toggle 3D view display (hidden by default)
   const [mapViewMode, setMapViewMode] = useState('2D'); // '2D' or '3D' view mode
@@ -1152,6 +1613,9 @@ export default function CombatPage({ characters = [] }) {
   const [selectedClericalAbility, setSelectedClericalAbility] = useState(null); // Selected clerical ability
   const [selectedSkill, setSelectedSkill] = useState(null); // Track selected skill for use
   const [showPhase0Modal, setShowPhase0Modal] = useState(false); // Phase 0 scene setup modal
+  const [lootWindowOpen, setLootWindowOpen] = useState(false); // Loot window state
+  const [selectedLootSource, setSelectedLootSource] = useState(null); // Fighter to loot from
+  const [lootData, setLootData] = useState(null); // Loot data to display
   const [arenaSpeed, setArenaSpeed] = useState("slow"); // Combat pacing: slow/normal/fast
   const [phase0Results, setPhase0Results] = useState(null); // Store Phase 0 scene setup
   const [combatTerrain, setCombatTerrain] = useState(null); // Store terrain data for combat
@@ -1242,8 +1706,14 @@ export default function CombatPage({ characters = [] }) {
           };
         });
       
+      // Get natural attack names to filter duplicates from weapons array
+      const naturalAttackNames = new Set(naturalAttacks.map(attack => attack.name));
+      
+      // Filter out weapons that are already in natural attacks (to prevent duplicates)
+      const filteredWeapons = baseWeapons.slice(1).filter(weapon => !naturalAttackNames.has(weapon.name));
+      
       // Add natural attacks to the beginning of the list (after "None")
-      return [baseWeapons[0], ...naturalAttacks, ...baseWeapons.slice(1)];
+      return [baseWeapons[0], ...naturalAttacks, ...filteredWeapons];
     }
     
     return baseWeapons;
@@ -1284,6 +1754,46 @@ export default function CombatPage({ characters = [] }) {
     if (mapDefinition) return mapDefinition;
     return phase0Results?.environment || null;
   }, [combatTerrain, mapDefinition, phase0Results]);
+
+  useEffect(() => {
+    // Seed props once at start of combat (or whenever environment changes while combat is active)
+    if (!combatActive) {
+      arenaPropsSeededForRef.current = null;
+      return;
+    }
+
+    let envKey = (
+      typeof arenaEnvironment === "string"
+        ? arenaEnvironment
+        : (arenaEnvironment?.biome ||
+            arenaEnvironment?.environmentName ||
+            arenaEnvironment?.environment ||
+            arenaEnvironment?.name ||
+            arenaEnvironment?.mapName ||
+            arenaEnvironment?.type ||
+            arenaEnvironment?.terrainType ||
+            arenaEnvironment?.mapType ||
+            "generic")
+    )
+      .toString()
+      .toLowerCase();
+    if (envKey === "hex" || envKey === "square") envKey = "generic";
+    if (arenaPropsSeededForRef.current === envKey) return;
+
+    try {
+      seedArenaProps({
+        arenaEnvironment,
+        isValidPosition,
+        isHexOccupied,
+        width: GRID_CONFIG?.GRID_WIDTH ?? 40,
+        height: GRID_CONFIG?.GRID_HEIGHT ?? 40,
+      });
+      arenaPropsSeededForRef.current = envKey;
+      addLog(`🌿 Arena props seeded for environment: ${envKey}`, "info");
+    } catch {
+      // props are optional; fail silently
+    }
+  }, [combatActive, arenaEnvironment]);
 
   // Initialize mapDefinition from phase0Results when available
   useEffect(() => {
@@ -1368,6 +1878,7 @@ export default function CombatPage({ characters = [] }) {
       clearTimeout(turnTimeoutRef.current);
       turnTimeoutRef.current = null;
     }
+    pendingTurnAdvanceRef.current = false;
   }, []);
 
   useEffect(() => {
@@ -1572,134 +2083,25 @@ export default function CombatPage({ characters = [] }) {
   const alivePlayers = fighters.filter(f => f.type === "player" && f.currentHP > -21);
   const aliveEnemies = fighters.filter(f => f.type === "enemy" && f.currentHP > -21);
 
+  const shouldShowCombatOptions =
+    fighters.length > 0 &&
+    currentFighter &&
+    currentFighter.type === "player" &&
+    combatActive &&
+    !aiControlEnabled;
+
+  const isArielTurn =
+    shouldShowCombatOptions &&
+    String(currentFighter?.name || "").trim().toLowerCase() === "ariel";
+
   const getFighterPsionicPowers = useCallback((fighter) => {
     if (!fighter || !Array.isArray(fighter.psionicPowers)) return [];
     return fighter.psionicPowers.filter(Boolean);
   }, []);
 
+  // Use the utility function from getFighterSpells.js
   const getFighterSpells = useCallback((fighter) => {
-    if (!fighter) return [];
-
-    const normalised = [];
-    const seen = new Set();
-
-    const addSpellEntry = (entry) => {
-      if (!entry) return;
-      let normalizedEntry = entry;
-      if (typeof entry === "string") {
-        normalizedEntry = { name: entry };
-      }
-      
-      // Clean up spell name - remove "Spell: " prefix if present
-      if (normalizedEntry.name && normalizedEntry.name.startsWith("Spell: ")) {
-        normalizedEntry.name = normalizedEntry.name.replace(/^Spell: /i, "");
-      }
-      
-      // Check if this is a unified spell and convert it
-      if (normalizedEntry.type === "magic" || normalizedEntry.source === "unified") {
-        const converted = convertUnifiedSpellToCombatSpell(normalizedEntry);
-        if (converted) {
-          normalizedEntry = converted;
-        }
-      }
-      
-      const name = normalizedEntry.name || normalizedEntry.spell || normalizedEntry.title;
-      if (!name || seen.has(name)) return;
-      seen.add(name);
-
-      normalised.push({
-        ...normalizedEntry,
-        name,
-        cost: getSpellCost(normalizedEntry),
-      });
-    };
-
-    const addSpellList = (list) => {
-      if (!list) return;
-      if (Array.isArray(list)) {
-        list.forEach(addSpellEntry);
-        return;
-      }
-      if (Array.isArray(list?.spells)) {
-        list.spells.forEach(addSpellEntry);
-      }
-    };
-
-    // Debug logging for wizards
-    const isWizard = fighter.OCC?.toLowerCase().includes("wizard") || 
-                    fighter.occ?.toLowerCase().includes("wizard") ||
-                    fighter.class?.toLowerCase().includes("wizard");
-    
-    if (isWizard && import.meta.env.DEV) {
-      const magicAbilities = Array.isArray(fighter.abilities) 
-        ? fighter.abilities.filter(a => a.type === "magic" || a.type === "spell")
-        : [];
-      console.log(`🔮 [getFighterSpells] Checking spells for ${fighter.name}:`);
-      console.log(`  - magic:`, fighter.magic, `(length: ${fighter.magic?.length || 0})`);
-      if (fighter.magic && fighter.magic.length > 0) {
-        console.log(`  - magic contents:`, JSON.stringify(fighter.magic, null, 2));
-      }
-      console.log(`  - abilities:`, fighter.abilities, `(length: ${fighter.abilities?.length || 0})`);
-      if (fighter.abilities && fighter.abilities.length > 0) {
-        console.log(`  - abilities contents:`, JSON.stringify(fighter.abilities.slice(0, 3), null, 2));
-      }
-      console.log(`  - magicAbilities:`, magicAbilities, `(length: ${magicAbilities.length})`);
-      if (magicAbilities.length > 0) {
-        console.log(`  - First magic ability:`, JSON.stringify(magicAbilities[0], null, 2));
-      }
-      console.log(`  - OCC:`, fighter.OCC || fighter.occ || fighter.class);
-      console.log(`  - level:`, fighter.level);
-    }
-
-    addSpellList(fighter.magic);
-    addSpellList(fighter.spells);
-    addSpellList(fighter.knownSpells);
-    addSpellList(fighter.spellbook);
-    addSpellList(fighter.spellList);
-    
-    // Also check abilities array for spells (type: "magic")
-    if (Array.isArray(fighter.abilities)) {
-      fighter.abilities.forEach((ability) => {
-        if (ability.type === "magic" || ability.type === "spell") {
-          addSpellEntry(ability);
-        }
-      });
-    }
-    
-    // Also check unified abilities if available (imported at top of file)
-    try {
-      const unified = getUnifiedAbilities(fighter);
-      if (unified?.magic) {
-        if (Array.isArray(unified.magic)) {
-          unified.magic.forEach(addSpellEntry);
-        } else if (unified.magic && typeof unified.magic === 'object') {
-          // Check knownSpells, spells, or any array property
-          if (Array.isArray(unified.magic.knownSpells)) {
-            unified.magic.knownSpells.forEach(addSpellEntry);
-          }
-          if (Array.isArray(unified.magic.spells)) {
-            unified.magic.spells.forEach(addSpellEntry);
-          }
-          // Also check if magic itself has spell-like properties
-          Object.values(unified.magic).forEach((value) => {
-            if (Array.isArray(value)) {
-              value.forEach(addSpellEntry);
-            }
-          });
-        }
-      }
-    } catch (e) {
-      // Silently fail if getUnifiedAbilities has issues
-      if (isWizard && import.meta.env.DEV) {
-        console.warn(`🔮 [getFighterSpells] Error getting unified abilities:`, e);
-      }
-    }
-
-    if (isWizard && import.meta.env.DEV) {
-      console.log(`🔮 [getFighterSpells] Found ${normalised.length} spells for ${fighter.name}:`, normalised.map(s => s.name));
-    }
-
-    return normalised;
+    return getFighterSpellsUtil(fighter, convertUnifiedSpellToCombatSpell);
   }, []);
 
   const availablePsionicPowers = useMemo(
@@ -1714,6 +2116,127 @@ export default function CombatPage({ characters = [] }) {
 
   const hasPsionics = availablePsionicPowers.length > 0;
   const hasSpells = availableSpells.length > 0;
+
+  // --- AI flight preference helpers ---
+  const parseFlyMphFromAbilities = useCallback((fighter) => {
+    if (!fighter) return 0;
+    const abilities = fighter?.abilities;
+    
+    // Handle parsed object structure first (most common after abilities are parsed)
+    if (abilities && typeof abilities === "object" && !Array.isArray(abilities)) {
+      if (abilities?.movement?.flight?.mphSpeed) {
+        return abilities.movement.flight.mphSpeed;
+      }
+      return 0;
+    }
+    
+    // Handle array of strings (raw abilities from bestiary)
+    if (Array.isArray(abilities)) {
+      for (const a of abilities) {
+        const s = String(a || "");
+        // matches: "Fly 30 mph", "Fly: 30 mph", "Fly 45mph"
+        const m = s.match(/fly[^0-9]*([\d.]+)\s*mph/i);
+        if (m) {
+          const mph = Number(m[1]);
+          if (!Number.isNaN(mph) && mph > 0) return mph;
+        }
+      }
+    }
+    
+    return 0;
+  }, []);
+
+  const estimateGroundMphFromSpd = useCallback((fighter) => {
+    // Palladium: Speed attribute × 18 = feet per melee (15 seconds)
+    // mph = (ft/melee) / 22 (since 1 mph ≈ 22 ft per 15 sec)
+    const spd = Number(fighter?.attributes?.Spd ?? fighter?.Spd ?? fighter?.spd ?? 0);
+    if (!spd || Number.isNaN(spd)) return 0;
+    const ftPerMelee = spd * 18;
+    return ftPerMelee / 22;
+  }, []);
+
+  // Palladium-ish conversion:
+  // mph → feet per melee (15 sec): mph * 22 feet per 15 sec  (since 1 mph ≈ 22 ft / 15 sec)
+  const getFighterFlySpeedFeetPerMelee = useCallback((fighter) => {
+    const mph = parseFlyMphFromAbilities(fighter);
+    if (!mph) return 0;
+    return Math.round(mph * 22);
+  }, [parseFlyMphFromAbilities]);
+
+  const getFighterGroundFeetPerAction = useCallback((fighter) => {
+    // Your movement system generally uses: speed attribute = feet per action for "Move" baseline.
+    // Many places treat Spd as feet per action in grid movement.
+    const spd = Number(fighter?.attributes?.Spd ?? fighter?.Spd ?? fighter?.spd ?? 0);
+    if (!spd || Number.isNaN(spd)) return 0;
+    return spd;
+  }, []);
+
+  const getFighterFlyFeetPerAction = useCallback((fighter) => {
+    // Convert fly ft/melee into per-action using the fighter's attacks/melee
+    const ftPerMelee = getFighterFlySpeedFeetPerMelee(fighter);
+    if (!ftPerMelee) return 0;
+    const apm = Number(fighter?.attacksPerMelee ?? fighter?.attacks ?? fighter?.actionsPerMelee ?? 0) || 0;
+    if (!apm) return 0;
+    return Math.max(1, Math.floor(ftPerMelee / apm));
+  }, [getFighterFlySpeedFeetPerMelee]);
+
+  const getPreferredMovementModeForAI = useCallback((fighter, contextTarget = null) => {
+    // Only prefer flight if the creature can fly at all
+    if (!canFighterFly(fighter)) return "ground";
+
+    // Hard override: if already airborne, stay in flight mode
+    if (isFlying(fighter) && (getAltitude(fighter) || 0) > 0) return "flight";
+
+    // Hard override: if target is airborne, prefer flight for pursuit (pairs with air-chase)
+    if (contextTarget && isFlying(contextTarget) && (getAltitude(contextTarget) || 0) > 0) return "flight";
+
+    // IMPORTANT: Don't auto-prefer flight just because it's faster if we're melee-only and the target is grounded.
+    // Otherwise AI will take off, then refuse to engage forever due to melee reachability checks at altitude.
+    try {
+      const targetAlt = contextTarget ? (getAltitude(contextTarget) || 0) : 0;
+      const targetGrounded = !contextTarget || !isFlying(contextTarget) || targetAlt <= 5;
+      if (targetGrounded) {
+        const weaponCandidates = [];
+        if (Array.isArray(fighter?.equippedWeapons) && fighter.equippedWeapons.length > 0) {
+          weaponCandidates.push(...fighter.equippedWeapons);
+        } else if (fighter?.equipped) {
+          if (fighter.equipped.weaponPrimary) weaponCandidates.push(fighter.equipped.weaponPrimary);
+          if (fighter.equipped.weaponSecondary) weaponCandidates.push(fighter.equipped.weaponSecondary);
+        }
+        // As a last resort, also consider attack entries (some creatures store natural attacks here).
+        if (Array.isArray(fighter?.attacks) && fighter.attacks.length > 0) {
+          weaponCandidates.push(...fighter.attacks);
+        }
+        const hasRangedOption = weaponCandidates.some((w) => {
+          const name = String(w?.name || "").toLowerCase();
+          const type = String(w?.type || "").toLowerCase();
+          const rangeVal = w?.range;
+          const rangeNum = typeof rangeVal === "number" ? rangeVal : Number(rangeVal);
+          return (
+            type === "ranged" ||
+            name.includes("bow") ||
+            name.includes("crossbow") ||
+            name.includes("sling") ||
+            name.includes("thrown") ||
+            (Number.isFinite(rangeNum) && rangeNum > 10)
+          );
+        });
+        if (!hasRangedOption) return "ground";
+      }
+    } catch {
+      // ignore and fall back to speed heuristic
+    }
+
+    const flyPerAction = getFighterFlyFeetPerAction(fighter);
+    const groundPerAction = getFighterGroundFeetPerAction(fighter);
+
+    // If we can't compute fly/action, don't force flight
+    if (!flyPerAction) return "ground";
+
+    // Prefer flight only if meaningfully faster (avoids mode flipping for tiny gains)
+    const ratio = groundPerAction > 0 ? flyPerAction / groundPerAction : 999;
+    return ratio >= 1.25 ? "flight" : "ground";
+  }, [getFighterFlyFeetPerAction, getFighterGroundFeetPerAction]);
 
   // Helpers for movement UI
   const canFlyNow = currentFighter && currentFighter.type === "player" && canFighterFly(currentFighter);
@@ -1822,7 +2345,7 @@ useEffect(() => {
     []
   );
 
-  const spellRequiresTarget = useCallback(doesSpellRequireTarget, []);
+  // spellRequiresTarget is now imported from spellUtils.js
 
   const getPsionicTargetCategory = useCallback(
     (power) => {
@@ -2205,6 +2728,43 @@ useEffect(() => {
     }
   }, [turnIndex, turnCounter, fighters, pendingMovements, addLog, isHexOccupied]);
 
+  // Handle clicking on defeated combatants to show loot window
+  useEffect(() => {
+    if (selectedCombatantId) {
+      const selectedFighter = fighters.find(f => f.id === selectedCombatantId);
+      
+      if (selectedFighter) {
+        // Check if fighter is defeated (dead, unconscious, or HP <= 0)
+        const isDefeated = 
+          selectedFighter.isDead || 
+          selectedFighter.isKO || 
+          (selectedFighter.currentHP ?? 0) <= 0 ||
+          selectedFighter.status === "defeated";
+        
+        if (isDefeated) {
+          // Generate loot from the defeated fighter
+          const { loot } = lootPrisoner(selectedFighter);
+          
+          // Only show loot window if there's actually loot
+          const hasLoot = 
+            (loot.inventory?.length || 0) > 0 ||
+            (loot.weapons?.length || 0) > 0 ||
+            loot.armor !== null;
+          
+          if (hasLoot) {
+            setSelectedLootSource(selectedFighter);
+            setLootData(loot);
+            setLootWindowOpen(true);
+          } else {
+            addLog(`💰 ${selectedFighter.name} has no loot.`, "info");
+          }
+        }
+      }
+      
+      // Reset selection after handling
+      setSelectedCombatantId(null);
+    }
+  }, [selectedCombatantId, fighters, addLog]);
 
   // Handler for enabling movement mode
   const activateMovementMode = useCallback(() => {
@@ -2218,6 +2778,11 @@ useEffect(() => {
   // Define endTurn function with useCallback - MUST be before handleMoveSelect
   // PALLADIUM RAW: Alternating actions per initiative
   const endTurn = useCallback(() => {
+    // ✅ Always release any AI "in progress" locks when a turn actually ends
+    pendingTurnAdvanceRef.current = false;
+    processingEnemyTurnRef.current = false;
+    processingPlayerAIRef.current = false;
+
     // ✅ CRITICAL: Stop processing if combat has ended
     if (!combatActive || combatEndCheckRef.current) {
       return;
@@ -2248,6 +2813,13 @@ useEffect(() => {
       
       addLog(`⏰ Melee Round ${meleeRound} complete! Starting Round ${meleeRound + 1}...`, "combat");
       
+      // ✅ Clear cast guard for new melee round (allows new casts in new round)
+      combatCastGuardRef.current.clear();
+      // ✅ Clear spell loop guard for new melee round (allows new spell casts)
+      enemySpellLoopGuardRef.current.clear();
+      // ✅ Reset "no actions remaining" pass-log guard each melee
+      noActionsPassLogRef.current = new Set();
+      
       // End of melee: clear last melee's temp courage bonuses
       clearCourageBonuses(fighters);
       
@@ -2255,11 +2827,15 @@ useEffect(() => {
       // Also reset the "no ranged options" log flag for each fighter
       setFighters(prev => {
         const updated = prev.map(f => {
+          // ✅ Tick down + clear status effects each melee
+          // (needed so temporary effects like SHAKEN expire correctly)
+          const withStatus = updateStatusEffects({ ...f }, meleeRound + 1);
           // Fix: Use proper fallback for animals (attacksPerMelee ?? attacks ?? 2)
-          const apm = f.attacksPerMelee ?? f.attacks ?? 2; // fallback for animals
+          const apm = withStatus.attacksPerMelee ?? withStatus.attacks ?? 2; // fallback for animals
           const fighter = {
-            ...f,
+            ...withStatus,
             remainingAttacks: apm,
+            spellsCastThisMelee: 0, // ✅ Reset spells cast counter for new melee round (RAW)
             // if you track "hasActedThisRound" etc, reset it here too
           };
           // Clear the loggedNoRangedRound flag for new melee round
@@ -2278,29 +2854,14 @@ useEffect(() => {
         const enemyFighters = updated.filter(f => f.type === "enemy" && canFighterAct(f) && f.currentHP > 0);
         
         if (playerFighters.length > 0 && enemyFighters.length > 0) {
-          // Build context for hasAnyValidOffensiveOption
-          const context = {
-            getFighterSpells: (f) => f.spells || [],
-            getFighterPsionicPowers: (f) => f.psionicPowers || [],
-            getFighterPPE: getFighterPPE,
-            getFighterISP: getFighterISP,
-            getSpellCost: getSpellCost,
-            getPsionicCost: getPsionicCost,
-            getSpellRangeInFeet: getSpellRangeInFeet,
-            parseRangeToFeet: parseRangeToFeet,
-            isOffensiveSpell: isOffensiveSpell,
-            calculateDistance: calculateDistance,
-            positions: positions,
-          };
-          
           // Check if players have any valid offensive options
           const playersCanAttack = playerFighters.some(player => 
-            hasAnyValidOffensiveOption(player, enemyFighters, context)
+            hasAnyValidOffensiveOption(player, enemyFighters)
           );
           
           // Check if enemies have any valid offensive options
           const enemiesCanAttack = enemyFighters.some(enemy => 
-            hasAnyValidOffensiveOption(enemy, playerFighters, context)
+            hasAnyValidOffensiveOption(enemy, playerFighters)
           );
           
           // If neither side can attack, end combat as stalemate
@@ -2618,6 +3179,7 @@ useEffect(() => {
       // ✅ GUARD: Stop scheduling if combat is over (use ref for latest state)
       if (combatOverRef.current || !combatActive || combatEndCheckRef.current || combatPausedRef.current) {
         clearScheduledTurn();
+        pendingTurnAdvanceRef.current = false;
         return;
       }
 
@@ -2627,15 +3189,20 @@ useEffect(() => {
         clearScheduledTurn();
         // ✅ GUARD: Check combat state before ending turn (use ref for latest state)
         if (combatOverRef.current || !combatActive || combatEndCheckRef.current) return;
+        pendingTurnAdvanceRef.current = true;
         endTurn();
         return;
       }
 
       clearScheduledTurn();
+      pendingTurnAdvanceRef.current = true;
       turnTimeoutRef.current = setTimeout(() => {
         turnTimeoutRef.current = null;
         // ✅ GUARD: Check combat state in delayed callback (use ref for latest state)
-        if (combatOverRef.current || !combatActive || combatEndCheckRef.current) return;
+        if (combatOverRef.current || !combatActive || combatEndCheckRef.current) {
+          pendingTurnAdvanceRef.current = false;
+          return;
+        }
         endTurn();
       }, delay);
       
@@ -2835,7 +3402,7 @@ useEffect(() => {
           });
 
           // End turn
-          safeEndTurn(1500);
+          scheduleEndTurn(1500);
           return;
         }
 
@@ -2898,7 +3465,7 @@ useEffect(() => {
         addLog(`🎮 ${combatant.name} has ${remainingAfterMove} action(s) remaining this melee round`, "info");
       }
       // Always end turn after movement to alternate actions
-      safeEndTurn(500);
+      scheduleEndTurn(500);
       }
   }, [movementMode, selectedMovementFighter, positions, currentFighter, addLog, fighters, isHexOccupied, getWeaponRange, turnCounter, endTurn, handlePlayerFlightMove, playerMovementMode]);
 
@@ -2911,13 +3478,67 @@ useEffect(() => {
     attackerPosOverride = null,
     defenderPosOverride = null
   ) => {
-    const weaponName = attackData?.name || "Unarmed";
+    const weaponName = String(attackData?.name || "Unarmed");
+    const weaponNameLower = weaponName.toLowerCase();
+
+    // ✅ Thrown/ranged fast-path:
+    // Ensure thrown attacks never fall into melee validation logic.
+    const isExplicitThrown =
+      attackData?.isThrown === true ||
+      attackData?.weaponType === "thrown" ||
+      attackData?.category === "thrown" ||
+      attackData?.attackMode === "thrown";
+    // Name-based ranged detection (covers cases where attack entries omit range/type metadata)
+    const isNameRanged =
+      weaponNameLower.includes("bow") ||
+      weaponNameLower.includes("crossbow") ||
+      weaponNameLower.includes("sling");
+
+    // Provide sane default ranges by name when metadata is missing (prevents 60ft fallback for bows)
+    const impliedRangeByName =
+      weaponNameLower.includes("long bow") || weaponNameLower === "longbow"
+        ? 640
+        : weaponNameLower.includes("short bow") || weaponNameLower === "shortbow"
+          ? 360
+          : weaponNameLower.includes("crossbow")
+            ? 320
+            : weaponNameLower.includes("sling")
+              ? 160
+              : null;
+
+    const isExplicitRanged =
+      attackData?.type === "ranged" ||
+      attackData?.rangeCategory === "ranged" ||
+      attackData?.isRanged === true ||
+      isExplicitThrown ||
+      isNameRanged ||
+      (attackData?.range != null && Number(attackData.range) > 10) ||
+      weaponNameLower.includes("thrown");
+    if (isExplicitRanged) {
+      const maxRange =
+        Number(attackData?.range ?? attackData?.rangeFt ?? attackData?.rangeFeet ?? impliedRangeByName ?? 0) || 60;
+      const canAttack = distance <= maxRange;
+      return {
+        canAttack,
+        reason: canAttack
+          ? `Within ranged range (${Math.round(distance)}ft ≤ ${maxRange}ft)`
+          : `Out of ranged range (${Math.round(distance)}ft > ${maxRange}ft)`,
+        maxRange,
+        isUnreachable: false,
+        requiresDive: false,
+        rangeInfo: `ranged (${maxRange}ft)`,
+      };
+    }
     
     // ✅ Debug logging for Long Bow
     if (import.meta.env.DEV && weaponName?.toLowerCase() === "long bow") {
       console.log("DB getWeaponByName(Long Bow):", getWeaponByName("Long Bow"));
       console.log("DB weapons.find(Long Bow):", weapons.find(w => w.name?.toLowerCase() === "long bow"));
     }
+    
+    // Get positions early - needed for flexible reach weapons
+    const attackerPos = attackerPosOverride || positions[attacker.id];
+    const defenderPos = defenderPosOverride || positions[defender.id];
     
     // Check if target is currently flying (airborne) vs just having flight capability
     const targetIsFlying = isFlying(defender);
@@ -2963,11 +3584,17 @@ useEffect(() => {
                          weaponName.toLowerCase().includes('bow') ? 360 :
                          weaponName.toLowerCase().includes('crossbow') ? 480 : 100);
         }
-        const canAttack = distance <= weaponRange;
+        // ✅ 3D range check for flying targets (works even if caller passed horizontal distance)
+        const horizontalDistance =
+          attackerPos && defenderPos ? calculateDistance(attackerPos, defenderPos) : distance;
+        const distanceForRangeCheck = Math.hypot(horizontalDistance, verticalSeparation);
+        const canAttack = distanceForRangeCheck <= weaponRange;
         const rangeType = isBreathWeapon ? 'breath weapon' : 'ranged';
         return { 
           canAttack, 
-          reason: canAttack ? `Within ${rangeType} range (${Math.round(distance)}ft ≤ ${weaponRange}ft)` : `Out of ${rangeType} range (${Math.round(distance)}ft > ${weaponRange}ft)`,
+          reason: canAttack
+            ? `Within ${rangeType} range (${Math.round(distanceForRangeCheck)}ft ≤ ${weaponRange}ft)`
+            : `Out of ${rangeType} range (${Math.round(distanceForRangeCheck)}ft > ${weaponRange}ft)`,
           maxRange: weaponRange,
           rangeInfo: isBreathWeapon ? `${rangeType} (${weaponRange}ft cone/line)` : `ranged (${weaponRange}ft)`
         };
@@ -3008,8 +3635,26 @@ useEffect(() => {
         // Minimum melee range is 5.5ft to account for adjacent hexes in hex grid
         const effectiveRange = Math.max(5.5, weaponLength > 0 ? weaponLength : 5.5);
         
-        // Check if this is a melee attack
-        const isMeleeAttack = true;
+        // Check if this is a melee attack (do NOT force melee for thrown/ranged)
+        const isExplicitThrown =
+          attackData?.isThrown === true ||
+          attackData?.weaponType === "thrown" ||
+          attackData?.category === "thrown" ||
+          attackData?.attackMode === "thrown";
+        const weaponNameLower = weaponName.toLowerCase();
+        const isNameRanged =
+          weaponNameLower.includes("bow") ||
+          weaponNameLower.includes("crossbow") ||
+          weaponNameLower.includes("sling");
+        const isExplicitRanged =
+          attackData?.type === "ranged" ||
+          attackData?.rangeCategory === "ranged" ||
+          attackData?.isRanged === true ||
+          isExplicitThrown ||
+          isNameRanged ||
+          (attackData?.range && attackData.range > 10) ||
+          weaponName.toLowerCase().includes("thrown");
+        const isMeleeAttack = !isExplicitRanged;
         
         // SYMMETRIC ALTITUDE CHECK: For melee attacks, check vertical separation for both sides
         // - Ground attacker vs flying target: must have reach >= altitude
@@ -3066,7 +3711,9 @@ useEffect(() => {
             reason = `${defender.name || "Target"} cannot be reached by melee attacks from current position`;
           }
         } else if (canAttack) {
-          reason = `Within melee range (${weaponType} weapon, adjacent hex)`;
+          reason = isMeleeAttack
+            ? `Within melee range (${weaponType} weapon, adjacent hex)`
+            : `Within ranged range (${Math.round(distance)}ft ≤ ${effectiveRange}ft)`;
         } else {
           reason = `Out of melee range (${Math.round(distance)}ft > ${effectiveRange}ft)`;
         }
@@ -3082,8 +3729,6 @@ useEffect(() => {
     }
     
     // Use enhanced distance-based validation
-    const attackerPos = attackerPosOverride || positions[attacker.id];
-    const defenderPos = defenderPosOverride || positions[defender.id];
     const effectiveDistance =
       typeof distance === "number" && !Number.isNaN(distance)
         ? distance
@@ -3235,26 +3880,63 @@ useEffect(() => {
 
   // Define attack function with useCallback (isPredatorBird, isTinyPrey, canAISeeTargetAsymmetric are defined earlier)
   const attack = useCallback((attacker, defenderId, bonusModifiers = {}) => {
+    const isDebugThrownAttack =
+      (import.meta.env?.DEV || import.meta.env?.MODE === "development") &&
+      (
+        attacker?.selectedAttack?.weaponType === "thrown" ||
+        attacker?.selectedAttack?.isThrown === true ||
+        attacker?.selectedAttack?.category === "thrown"
+      );
+
+    // ✅ AUTHORITATIVE COMBAT-END GUARD:
+    // Attacks can be scheduled via timeouts; once combat end has been declared, ignore late arrivals silently.
+    if (combatOverRef.current || combatEndCheckRef.current) {
+      if (isDebugThrownAttack) {
+        addLog(`DEBUG throw: attack() aborted (combat over)`, "info");
+      }
+      return;
+    }
+
     // ✅ CRITICAL: Check if combat is still active before allowing attacks
     if (!combatActive) {
-      addLog(`⚠️ Combat has ended, ${attacker.name} cannot attack`, "info");
+      if (isDebugThrownAttack) {
+        addLog(`DEBUG throw: attack() aborted (combatActive=false)`, "info");
+      }
       return;
     }
     
-    const stateAttacker = fighters.find(f => f.id === attacker.id) || attacker;
+    let stateAttacker = fighters.find(f => f.id === attacker.id) || attacker;
+
+    // ✅ Hard guard: never execute an attack with 0 actions remaining (prevents ghost actions/log spam)
+    if ((stateAttacker.remainingAttacks ?? 0) <= 0) {
+      addLog(`⚠️ ${stateAttacker.name} has no actions remaining!`, "error");
+      // Ensure we don't stall the combat loop if an AI branch attempted an action late.
+      scheduleEndTurn();
+      return;
+    }
 
     // ✅ CRITICAL: Check if attacker can act (must be conscious, not dying/dead/unconscious)
     if (!canFighterAct(stateAttacker)) {
       const hpStatus = getHPStatus(stateAttacker.currentHP);
       addLog(`❌ ${attacker.name} cannot attack (${hpStatus.description})!`, "error");
+      scheduleEndTurn();
       return;
     }
     
     const updated = fighters.map(f => ({ ...f }));
     const attackerIndex = updated.findIndex(f => f.id === stateAttacker.id);
+    // If caller passed a pre-selected attack (AI), prefer it over the stale fighter snapshot.
+    if (attacker?.selectedAttack) {
+      if (attackerIndex !== -1) {
+        updated[attackerIndex].selectedAttack = attacker.selectedAttack;
+      } else {
+        stateAttacker = { ...stateAttacker, selectedAttack: attacker.selectedAttack };
+      }
+    }
     const defenderIndex = updated.findIndex(f => f.id === defenderId);
     if (defenderIndex === -1) {
       addLog(`Invalid target! Target with ID ${defenderId} not found`, "error");
+      scheduleEndTurn();
       return;
     }
 
@@ -3386,8 +4068,49 @@ useEffect(() => {
       return;
     }
 
+    // ✅ Guardrail: always resolve placeholder/generic enemy attacks to the actually equipped weapon.
+    // This is shared with the planner so the two cannot diverge again.
+    if (attacker.type === "enemy") {
+      const resolved = resolveEnemyEffectiveAttack(effectiveAttacker, attackData, { preferRanged: true });
+      attackData = resolved.attack;
+    }
+
+    // ✅ FIX: If this is a spell attack, route to executeSpell() instead of melee/ranged attack
+    if (attackData.type === "spell" || attackData.damage === "by spell" || attackData.spell) {
+      const spellToCast = attackData.spell || attackData;
+      const spellTarget = defender;
+      
+      // Check if attacker has actions remaining
+      const attackerInArray = updated.find(f => f.id === attacker.id);
+      if (attackerInArray && attackerInArray.remainingAttacks <= 0) {
+        addLog(`⚠️ ${attacker.name} has no actions remaining!`, "error");
+        return;
+      }
+      
+      // Execute the spell (executeSpell will handle action consumption, PPE, etc.)
+      const spellSuccess = executeSpell(attackerInArray || attacker, spellTarget, spellToCast);
+      if (spellSuccess) {
+        // Spell was cast successfully - executeSpell handles turn ending
+        return;
+      } else {
+        // Spell failed - still consume action if it was attempted
+        if (attackerInArray && attackerInArray.remainingAttacks > 0) {
+          setFighters(prev => prev.map(f => 
+            f.id === attacker.id 
+              ? { ...f, remainingAttacks: Math.max(0, f.remainingAttacks - 1) }
+              : f
+          ));
+        }
+        scheduleEndTurn();
+        return;
+      }
+    }
+
     // Check range and line of sight for attacks
-    const livePositions = positionsRef.current || positions;
+    const livePositions =
+      positionsRef.current && Object.keys(positionsRef.current).length > 0
+        ? positionsRef.current
+        : positions;
     if (
       livePositions &&
       (livePositions[attacker.id] || bonusModifiers?.attackerPosOverride) &&
@@ -3428,17 +4151,32 @@ useEffect(() => {
       }
       
       // Use proper weapon range validation
+      const vSepFt = Math.abs((getAltitude(attacker) || 0) - (getAltitude(defender) || 0));
+      const attackNameLower = String(attackData?.name || "").toLowerCase();
+      const isRangedForRangeCheck =
+        attackData?.type === "ranged" ||
+        attackData?.weaponType === "thrown" ||
+        attackData?.isThrown === true ||
+        (attackData?.range != null && Number(attackData.range) > 10) ||
+        (attackData?.category && String(attackData.category).toLowerCase() === "thrown") ||
+        // Name-based fallback (enemy attacks are sometimes "Strike" with a ranged weapon name)
+        attackNameLower.includes("bow") ||
+        attackNameLower.includes("crossbow") ||
+        attackNameLower.includes("sling");
+      const distanceForRangeCheck = isRangedForRangeCheck ? Math.hypot(distance, vSepFt) : distance;
+
       const rangeValidation = validateWeaponRange(
         attacker,
         defender,
         attackData,
-        distance,
+        distanceForRangeCheck,
         attackerPos,
         defenderPos
       );
 
       // 🦅 Auto-dive support: flying predator birds (e.g., hawk) can descend-and-strike in a single action.
       // This prevents the "hover above target forever" stalemate by converting a vertical gap into a dive attack.
+      const isEnemyAttacker = attacker?.type === "enemy";
       if (
         !rangeValidation.canAttack &&
         rangeValidation.requiresDive &&
@@ -3465,17 +4203,60 @@ useEffect(() => {
           attackData = preferredDiveAttack;
           // Continue with attack using dive-modified state
         } else {
+          // Dive attacks are melee-only, so this error is always valid to log
           addLog(`❌ ${attacker.name} cannot reach ${defender.name} for attack! (${rangeValidation.reason})`, "error");
+          // ✅ Last safety net: if AI attempted an illegal action, consume an action and advance.
+          if (isEnemyAttacker || attacker?.aiControlled === true) {
+            setFighters(prev => prev.map(f => {
+              if (f.id !== attacker.id) return f;
+              const ra = Number(f.remainingAttacks ?? 0) || 0;
+              return { ...f, remainingAttacks: Math.max(0, ra - 1) };
+            }));
+            scheduleEndTurn(0);
+          }
           return;
         }
       } else if (!rangeValidation.canAttack) {
-        addLog(`❌ ${attacker.name} cannot reach ${defender.name} for attack! (${rangeValidation.reason})`, "error");
+        // Check if this is a ranged attack - if so, don't log melee-specific errors
+        const isRangedAttackForError =
+          attackData?.type === "ranged" ||
+          attackData?.weaponType === "thrown" ||
+          attackData?.isThrown === true ||
+          (attackData?.range != null && Number(attackData.range) > 10) ||
+          (attackData?.category && String(attackData.category).toLowerCase() === "thrown") ||
+          attackNameLower.includes("bow") ||
+          attackNameLower.includes("crossbow") ||
+          attackNameLower.includes("sling");
         
-        // Show movement suggestions
-        if (rangeValidation.suggestions && rangeValidation.suggestions.length > 0) {
-          addLog(`💡 Options: ${rangeValidation.suggestions.slice(0, 3).join(", ")}`, "info");
+        const reasonLower = String(rangeValidation.reason || "").toLowerCase();
+        const isMeleeSpecificError = 
+          reasonLower.includes("melee") ||
+          reasonLower.includes("flying too high") ||
+          reasonLower.includes("to be reached by melee");
+        
+        // Only log error if it's not a ranged attack with a melee-specific error message
+        // (ranged attacks will be validated separately and don't need melee error spam)
+        if (!(isRangedAttackForError && isMeleeSpecificError)) {
+          addLog(`❌ ${attacker.name} cannot reach ${defender.name} for attack! (${rangeValidation.reason})`, "error");
+          
+          // Show movement suggestions
+          if (rangeValidation.suggestions && rangeValidation.suggestions.length > 0) {
+            addLog(`💡 Options: ${rangeValidation.suggestions.slice(0, 3).join(", ")}`, "info");
+          }
         }
         
+        // ✅ Avoid infinite AI turn loops:
+        // If an AI-controlled fighter attempts an illegal attack, consume an action and advance.
+        const isAIControlledFighter = isEnemyAttacker || attacker?.aiControlled === true;
+        if (isAIControlledFighter && attacker?.id) {
+          setFighters(prev => prev.map(f => {
+            if (f.id !== attacker.id) return f;
+            const ra = Number(f.remainingAttacks ?? 0) || 0;
+            return { ...f, remainingAttacks: Math.max(0, ra - 1) };
+          }));
+          scheduleEndTurn(0);
+        }
+
         return;
       } else {
         // Log range info for successful attacks
@@ -3498,17 +4279,33 @@ useEffect(() => {
       const requiresAmmo = Boolean(ammoType && ammoType !== "self" && isRangedWeapon);
 
       if (requiresAmmo) {
-        const currentAmmo = getInventoryAmmoCount(attacker, ammoType);
+        // IMPORTANT: apply ammo decrement into the same `updated` array that will later be committed.
+        // Otherwise later `setFighters(updated)` calls can overwrite the decrement (UI shows old ammo).
+        const currentAmmo = getInventoryAmmoCount(attackerInArray || attacker, ammoType);
 
         if (currentAmmo <= 0) {
           addLog(`❌ ${attacker.name} is out of ${ammoType}! Cannot fire ${weaponName}.`, "error");
+          // ✅ If AI is out of ammo and attempted to shoot, consume an action and advance to prevent stalls.
+          if (isEnemyAttacker || attacker?.aiControlled === true) {
+            setFighters(prev => prev.map(f => {
+              if (f.id !== attacker.id) return f;
+              const ra = Number(f.remainingAttacks ?? 0) || 0;
+              return { ...f, remainingAttacks: Math.max(0, ra - 1) };
+            }));
+            scheduleEndTurn(0);
+          }
           return;
         }
 
         // Spend 1 ammo per shot (hit or miss).
-        setFighters((prev) =>
-          prev.map((f) => (f.id === attacker.id ? decrementInventoryAmmo(f, ammoType, 1) : f))
-        );
+        if (attackerIndex !== -1) {
+          updated[attackerIndex] = decrementInventoryAmmo(updated[attackerIndex], ammoType, 1);
+        } else {
+          // Fallback (should be rare): update via functional state update
+          setFighters((prev) =>
+            prev.map((f) => (f.id === attacker.id ? decrementInventoryAmmo(f, ammoType, 1) : f))
+          );
+        }
 
         const remainingAmmo = Math.max(0, currentAmmo - 1);
         if (remainingAmmo > 0) {
@@ -3681,14 +4478,31 @@ useEffect(() => {
       // Check for grapple advantage bonus
       const grappleAdvantage = attacker.grappleState?.hasGrappleAdvantage ? 2 : 0;
       
-      const strikeBonus = baseStrikeBonus + chargeBonus + flankingBonus + tempBonus + terrainModifiers.strike + sneakAttackBonus + grappleAdvantage;
+      const isRangedForBonus =
+        attackData?.type === "ranged" ||
+        attackData?.weaponType === "thrown" ||
+        attackData?.isThrown === true ||
+        (attackData?.range != null && Number(attackData.range) > 10) ||
+        (attackData?.category && String(attackData.category).toLowerCase() === "thrown");
+
+      // Flanking is melee-only (avoid ranged attackers "flanking" from 100+ ft).
+      const effectiveFlankingBonus = isRangedForBonus ? 0 : flankingBonus;
+
+      const strikeBonus =
+        baseStrikeBonus +
+        chargeBonus +
+        effectiveFlankingBonus +
+        tempBonus +
+        terrainModifiers.strike +
+        sneakAttackBonus +
+        grappleAdvantage;
       
       if (tempBonus !== 0) {
         addLog(`⚡ ${attacker.name} has ${tempBonus > 0 ? '+' : ''}${tempBonus} temporary strike bonus!`, "info");
       }
       
-      if (flankingBonus > 0) {
-        addLog(`🎯 ${attacker.name} gains +${flankingBonus} flanking bonus!`, "info");
+      if (effectiveFlankingBonus > 0) {
+        addLog(`🎯 ${attacker.name} gains +${effectiveFlankingBonus} flanking bonus!`, "info");
       }
       
       if (sneakAttackBonus > 0) {
@@ -3816,13 +4630,26 @@ useEffect(() => {
         addLog(`🎲 ${attacker.name} rolls ${attackDiceRoll} ${bonusDisplay} = ${attackRoll} vs AR ${targetAR}`, "info");
       }
       
+      const isRangedAttack =
+        attackData?.type === "ranged" ||
+        attackData?.weaponType === "thrown" ||
+        (attackData?.range != null && Number(attackData.range) > 10) ||
+        (attackData?.category && String(attackData.category).toLowerCase() === "thrown");
+
       // AUTO-PARRY: If enemy attacks and defender has Hand-to-Hand, auto-parry if conditions are met
+      // NOTE: Ranged/thrown attacks are NOT parryable under our rules; only dodge/cover applies.
       let defenseSuccess = false;
       let defenseType = defensiveStance[defender.id];
       let autoParryUsed = false; // Track if auto-parry was used
+
+      // If defender chose Parry but incoming is ranged/thrown, treat as Dodge (or no defense if they can't dodge).
+      if (defenseType === "Parry" && isRangedAttack) {
+        defenseType = "Dodge";
+        addLog(`🏹 ${defender.name} cannot parry a ranged attack and attempts to dodge instead!`, "info");
+      }
       
       // Check for auto-parry when enemy attacks (only if no defensive stance already set)
-      if (!defenseType && attackRoll >= targetAR && canFighterAct(defender)) {
+      if (!defenseType && !isRangedAttack && attackRoll >= targetAR && canFighterAct(defender)) {
         // Check if defender has Hand-to-Hand skill
         const hasHandToHand = defender.handToHand && (
           defender.handToHand.type || 
@@ -4649,11 +5476,21 @@ useEffect(() => {
                 
                 if (consciousPlayers.length === 0) {
                   combatEndCheckRef.current = true;
+                  combatOverRef.current = true; // ✅ AUTHORITATIVE: Stop all further actions (defeat)
                   addLog("💀 All players are defeated! Enemies win!", "defeat");
                   setCombatActive(false);
-              // Update fighters state immediately
-              setFighters(updated);
-              return;
+
+                  // ✅ CRITICAL: Clear ALL pending timeouts to stop post-defeat actions
+                  if (turnTimeoutRef.current) {
+                    clearTimeout(turnTimeoutRef.current);
+                    turnTimeoutRef.current = null;
+                  }
+                  allTimeoutsRef.current.forEach(clearTimeout);
+                  allTimeoutsRef.current = [];
+
+                  // Update fighters state immediately
+                  setFighters(updated);
+                  return;
                 } else if (consciousEnemies.length === 0) {
                   combatEndCheckRef.current = true;
                   combatOverRef.current = true; // ✅ AUTHORITATIVE: Set combat over flag
@@ -4889,7 +5726,7 @@ useEffect(() => {
         });
 
         // End turn
-        safeEndTurn(1500);
+        scheduleEndTurn(1500);
         return;
       }
 
@@ -4916,7 +5753,7 @@ useEffect(() => {
           // Handle action cost - if it costs actions, end the turn
           if (actionCost === "all" || actionCost >= 1) {
             addLog(`⏭️ ${combatant.name} used ${actionCost === "all" ? "all actions" : `${actionCost} action(s)`} for movement`, "info");
-            safeEndTurn(1500);
+            scheduleEndTurn(1500);
           }
         } else {
           addLog(`📍 ${combatant.name} moved to position (${newPosition.x}, ${newPosition.y})`, "info");
@@ -5061,8 +5898,19 @@ useEffect(() => {
     
     // Check if fighter is flying
     const isFlying = fighter.isFlying || fighter.altitude > 0;
-    const canFly = fighter.abilities?.some(a => a.toLowerCase().includes("fly")) || 
-                   fighter.abilities?.some(a => a.toLowerCase().includes("flight"));
+    // Check abilities - can be array (raw) or object (parsed)
+    let canFly = false;
+    if (Array.isArray(fighter.abilities)) {
+      canFly = fighter.abilities.some(a => 
+        typeof a === "string" && (a.toLowerCase().includes("fly") || a.toLowerCase().includes("flight"))
+      );
+    } else if (fighter.abilities && typeof fighter.abilities === "object") {
+      // Check parsed abilities object
+      canFly = fighter.abilities.movement?.flight || 
+               (Array.isArray(fighter.abilities.other) && fighter.abilities.other.some(a => 
+                 typeof a === "string" && (a.toLowerCase().includes("fly") || a.toLowerCase().includes("flight"))
+               ));
+    }
     
     if (isFlying || canFly) {
       // Flight movement: Speed × multiplier × 18 feet per melee
@@ -5160,6 +6008,8 @@ useEffect(() => {
             slot: weapon.slot || "Right Hand",
             range: merged.range,
             reach: merged.reach,
+            ammunition: merged.ammunition,
+            weaponType: merged.weaponType,
             category: merged.category,
             type: merged.type
           });
@@ -5183,6 +6033,8 @@ useEffect(() => {
             slot: slot,
             range: merged.range,
             reach: merged.reach,
+            ammunition: merged.ammunition,
+            weaponType: merged.weaponType,
             category: merged.category,
             type: merged.type
           });
@@ -5208,11 +6060,101 @@ useEffect(() => {
     return weapons;
   }, []);
 
+  // Shared guardrail: resolve placeholder/generic enemy attack entries into the actually equipped weapon.
+  // This is intentionally used by BOTH planner (handleEnemyTurn) and executor (attack()) so they cannot diverge.
+  const resolveEnemyEffectiveAttack = useCallback(
+    (enemy, attackData, opts = {}) => {
+      const beforeName = String(attackData?.name || "");
+      const nameLower = beforeName.toLowerCase();
+      const damageLower = String(attackData?.damage || "").toLowerCase();
+
+      const looksGeneric =
+        nameLower === "strike" ||
+        nameLower === "unarmed" ||
+        nameLower === "" ||
+        nameLower.includes("punch") ||
+        nameLower.includes("kick") ||
+        nameLower.startsWith("weapon (") ||
+        damageLower.includes("by weapon");
+
+      const looksPlaceholderRanged =
+        nameLower.includes("bow/") ||
+        nameLower.includes("crossbow/") ||
+        nameLower.includes("sling/") ||
+        nameLower.includes("bow /") ||
+        nameLower.includes("crossbow /") ||
+        nameLower.includes("sling /") ||
+        nameLower.includes("bow/long bow") ||
+        nameLower.includes("bow/longbow");
+
+      // If the selected attack already looks like a real specific weapon (and not a placeholder), keep it.
+      if (!looksGeneric && !looksPlaceholderRanged) {
+        return { attack: attackData, meta: { beforeName, afterName: beforeName, equippedName: null } };
+      }
+
+      const preferRanged = Boolean(opts.preferRanged ?? true);
+      const eqList = getEquippedWeapons(enemy) || [];
+      const equipped = eqList.filter((w) => w && w.name && String(w.name).toLowerCase() !== "unarmed");
+
+      const rangedLike = (w) => {
+        const n = String(w?.name || "").toLowerCase();
+        return (
+          (w?.range != null && Number(w.range) > 10) ||
+          n.includes("bow") ||
+          n.includes("crossbow") ||
+          n.includes("sling")
+        );
+      };
+
+      const candidates = preferRanged ? equipped.filter(rangedLike) : equipped;
+      const chosen =
+        (preferRanged
+          ? [...candidates].sort((a, b) => (Number(b?.range) || 0) - (Number(a?.range) || 0))[0]
+          : candidates[0]) ||
+        equipped[0] ||
+        null;
+      if (!chosen) {
+        return { attack: attackData, meta: { beforeName, afterName: beforeName, equippedName: null } };
+      }
+
+      const chosenIsRanged = rangedLike(chosen);
+      const weaponDamage = getWeaponDamage(
+        chosen,
+        Boolean(chosen.twoHanded || isTwoHandedWeapon(chosen)),
+        enemy
+      );
+
+      const normalized = {
+        ...attackData,
+        name: chosen.name,
+        weapon: chosen,
+        damage: weaponDamage || attackData?.damage,
+        type: chosenIsRanged ? "ranged" : (chosen.type ?? attackData?.type),
+        range: chosen.range ?? attackData?.range,
+        reach: chosen.reach ?? attackData?.reach,
+        category: chosen.category ?? attackData?.category,
+        weaponType: chosen.weaponType ?? attackData?.weaponType,
+        ammunition: chosen.ammunition ?? attackData?.ammunition,
+      };
+
+      return {
+        attack: normalized,
+        meta: { beforeName, afterName: String(normalized?.name || ""), equippedName: String(chosen?.name || "") },
+      };
+    },
+    [getEquippedWeapons, getWeaponDamage, isTwoHandedWeapon]
+  );
+
   // AI logic for player characters
   const handlePlayerAITurn = useCallback((player) => {
     if (combatPausedRef.current) {
       addLog(`⏸️ Combat paused - ${player.name}'s turn is waiting`, "info");
       processingPlayerAIRef.current = false;
+      return;
+    }
+
+    // If an endTurn is already scheduled, don't start another AI turn in the delay window.
+    if (pendingTurnAdvanceRef.current) {
       return;
     }
 
@@ -5231,7 +6173,10 @@ useEffect(() => {
     // 🐭 Predator panic: tiny prey ROUTES when a predator bird is nearby/visible.
     // This triggers the existing routed-flee logic immediately.
     if (settings.useMoraleRouting && isTinyPrey(latestPlayer)) {
-      const currentPositions = positionsRef.current || positions;
+      const currentPositions =
+        positionsRef.current && Object.keys(positionsRef.current).length > 0
+          ? positionsRef.current
+          : positions;
       const myPos = currentPositions?.[latestPlayer.id];
       if (myPos) {
         const predators = fighters.filter(f =>
@@ -5319,7 +6264,10 @@ useEffect(() => {
       } else {
         addLog(`🏃 ${latestPlayer.name} is ROUTED and attempts to flee!`, "warning");
       
-      const currentPositions = positionsRef.current || positions;
+      const currentPositions =
+        positionsRef.current && Object.keys(positionsRef.current).length > 0
+          ? positionsRef.current
+          : positions;
       const myPos = currentPositions[latestPlayer.id];
       
       if (myPos) {
@@ -5414,15 +6362,67 @@ useEffect(() => {
     }
     
     // Build context for AI module
+    const positionsForAI = pickNonEmptyObject(positionsRef.current, positions);
+    // Optional turn banner to confirm turn flow (opt-in).
+    // Usage: localStorage.debugTurnFlow = "1"
+    try {
+      if (
+        typeof window !== "undefined" &&
+        window?.localStorage?.getItem("debugTurnFlow") === "1"
+      ) {
+        addLog(
+          `🟦 Turn: ${latestPlayer.name} (${latestPlayer.type}) | actions=${latestPlayer.remainingAttacks ?? 0}`,
+          "info"
+        );
+      }
+    } catch {
+      // no-op
+    }
+
+    // Optional Ariel-specific turn outcome banner (opt-in, low noise).
+    // Usage: localStorage.debugArielAI = "1"
+    let dbgAriel = false;
+    try {
+      dbgAriel =
+        typeof window !== "undefined" &&
+        window?.localStorage?.getItem("debugArielAI") === "1" &&
+        String(latestPlayer?.name || "").toLowerCase().includes("ariel");
+    } catch {
+      dbgAriel = false;
+    }
+    if (dbgAriel) {
+      const enemyCount = (fighters || []).filter(
+        (f) => f?.type === "enemy" && canFighterAct(f) && (Number(f?.currentHP ?? 0) > -21)
+      ).length;
+      const hpVal = latestPlayer?.currentHP ?? latestPlayer?.HP ?? latestPlayer?.hp;
+      addLog(
+        `🟦 ArielTurn start | actions=${latestPlayer?.remainingAttacks ?? 0} | HP=${hpVal ?? "?"} | alt=${getAltitude(latestPlayer) || 0} | enemyCount=${enemyCount}`,
+        "info"
+      );
+      addLog(
+        `🧪 ArielActCheck | canAct=${canFighterAct(latestPlayer)} | status=${latestPlayer?.status || latestPlayer?.condition || "none"} | effects=${(latestPlayer?.statusEffects || [])
+          .map((e) => (e && typeof e === "object" ? (e.name || e.type || JSON.stringify(e)) : String(e)))
+          .join(",")}`,
+        "info"
+      );
+    }
+    // New token per AI turn; delayed callbacks (and watchdog) must match this token or abort.
+    const playerAITurnToken = (playerAITurnTokenRef.current || 0) + 1;
+    playerAITurnTokenRef.current = playerAITurnToken;
+
     const context = {
       fighters,
-      positions: positionsRef.current || positions,
+      positions: positionsForAI,
       combatTerrain,
       arenaEnvironment,
       meleeRound,
       turnCounter,
       combatActive,
       aiControlEnabled, // Pass AI control state to AI module
+      // Player AI async guardrails
+      playerAIActionScheduledRef,
+      playerAITurnTokenRef,
+      playerAITurnToken,
       // Core helpers
       canFighterAct,
       getHPStatus,
@@ -5491,7 +6491,74 @@ useEffect(() => {
     };
     
     // Delegate to AI module - use latestPlayer to ensure we have persisted state
+    // Reset action-scheduled marker for this AI turn
+    playerAIActionScheduledRef.current = false;
     runPlayerTurnAI(latestPlayer, context);
+
+    // ✅ Invariant: player AI must spend an action OR end the turn.
+    // This catches early returns that clear the processing flag or forget to advance,
+    // and prevents the "enemy machine-gunning" feel even when initiative alternates.
+    const startActions = Number(latestPlayer.remainingAttacks ?? 0) || 0;
+    const startTurnIndex = turnIndexRef.current;
+    const startFighterId = latestPlayer.id;
+    setTimeout(() => {
+      if (!combatActive || combatEndCheckRef.current) return;
+      const curIdx = turnIndexRef.current;
+      const curFighterId = fightersRef.current?.[curIdx]?.id;
+      if (curIdx !== startTurnIndex || curFighterId !== startFighterId) return;
+
+      const fNow = (fightersRef.current || []).find((x) => x.id === startFighterId);
+      const nowActions = Number(fNow?.remainingAttacks ?? 0) || 0;
+
+      if (
+        processingPlayerAIRef.current &&
+        nowActions === startActions &&
+        !playerAIActionScheduledRef.current
+      ) {
+        if (dbgAriel) {
+          addLog(`🟥 ArielTurn forced endTurn (AI made no action)`, "warning");
+        }
+        addLog(`🛑 ${latestPlayer.name} AI made no action — forcing endTurn().`, "warning");
+        processingPlayerAIRef.current = false;
+        // Invalidate any delayed AI callbacks for this fighter/turn
+        playerAITurnTokenRef.current = (playerAITurnTokenRef.current || 0) + 1;
+        scheduleEndTurn(0);
+      }
+    }, 250);
+
+    // ✅ Fail-safe: if a player AI module forgets to end the turn, don't let combat stall forever.
+    // This should be a no-op in normal flow because the AI should clear processingPlayerAIRef
+    // and scheduleEndTurn promptly.
+    // runPlayerTurnAI uses delayed execution (~1000ms + 1500ms) before it actually attacks.
+    // Give it enough runway before we declare the AI "stuck".
+    const watchdogDelay = Math.max(
+      2800,
+      (getActionDelay?.(arenaSpeed) || 0) + 2600
+    );
+    setTimeout(() => {
+      if (!combatActive || combatEndCheckRef.current) return;
+      // Only fire for the SAME fighter + SAME AI token that scheduled this watchdog.
+      const curIdx = turnIndexRef.current;
+      const curFighterId = fightersRef.current?.[curIdx]?.id;
+      if (curIdx !== startTurnIndex || curFighterId !== startFighterId) return;
+      if (playerAITurnTokenRef.current !== playerAITurnToken) return;
+
+      const fNow = (fightersRef.current || []).find((x) => x.id === startFighterId);
+      const nowActions = Number(fNow?.remainingAttacks ?? 0) || 0;
+
+      // Only force-release if we're still stuck "processing" and no action has been scheduled.
+      if (
+        processingPlayerAIRef.current &&
+        nowActions === startActions &&
+        !playerAIActionScheduledRef.current
+      ) {
+        processingPlayerAIRef.current = false;
+        addLog(`⏱️ AI watchdog: forcing end of ${latestPlayer.name}'s turn`, "warning");
+        // Invalidate any delayed AI callbacks for this fighter/turn
+        playerAITurnTokenRef.current = (playerAITurnTokenRef.current || 0) + 1;
+        scheduleEndTurn(0);
+      }
+    }, watchdogDelay);
   }, [
     fighters,
     positions,
@@ -5529,6 +6596,7 @@ useEffect(() => {
     getActionDelay,
     arenaSpeed,
     positionsRef,
+    pickNonEmptyObject,
     movementAttemptsRef,
     playerAIRecentlyUsedPsionicsRef,
     processingPlayerAIRef,
@@ -5574,6 +6642,11 @@ useEffect(() => {
     if (processingEnemyTurnRef.current) {
       console.warn('🚫 BLOCKED: Already processing enemy turn, skipping duplicate call for', enemy.name);
       addLog(`🚫 DEBUG: Blocked duplicate call for ${enemy.name}`, "error");
+      return;
+    }
+
+    // If an endTurn is already scheduled, don't start another enemy turn in the delay window.
+    if (pendingTurnAdvanceRef.current) {
       return;
     }
 
@@ -5625,7 +6698,7 @@ useEffect(() => {
         return;
       }
 
-      const livePos = (positionsRef.current || positions);
+      const livePos = pickNonEmptyObject(positionsRef.current, positions);
       const myPos = livePos[liveEnemy.id];
       const alt = getAltitude(liveEnemy) || 0;
 
@@ -5812,7 +6885,7 @@ useEffect(() => {
       // If the attempt fails, we don't "free follow-up" into an attack (that would be 2 actions).
       const carryFeasible = canCarryTarget(liveEnemy, prey, { capacityMultiplier: 10 });
       if (carryFeasible?.canCarry) {
-        const lift = liftAndCarry(liveEnemy, prey, { positions: (positionsRef.current || positions) });
+        const lift = liftAndCarry(liveEnemy, prey, { positions: pickNonEmptyObject(positionsRef.current, positions) });
         if (lift.success) {
           setFighters(prev => prev.map(f => {
             if (f.id === liveEnemy.id) {
@@ -5828,7 +6901,7 @@ useEffect(() => {
           }));
           // Keep carried prey "stacked" on the carrier immediately (don't rely on stale fighters closure)
           setPositions(prevPos => {
-            const base = { ...(positionsRef.current || prevPos) };
+            const base = { ...(pickNonEmptyObject(positionsRef.current, prevPos)) };
             const carrierPos = base[lift.carrier.id] || base[liveEnemy.id];
             if (carrierPos) base[lift.carried.id] = { ...carrierPos };
             positionsRef.current = base;
@@ -5873,7 +6946,7 @@ useEffect(() => {
     // 3) Predator dive logic (Option B): if the hawk is flying, it can dive-swoop to contact and strike in ONE action.
     // This bypasses any "10ft dive" gating and prevents the "hover forever out of reach" stalemate.
     if (isPredBird && isFlying(liveEnemy) && (liveEnemy.remainingAttacks ?? 0) > 0) {
-      const livePos = (positionsRef.current || positions);
+      const livePos = pickNonEmptyObject(positionsRef.current, positions);
       const myPos = livePos[liveEnemy.id];
 
       // Choose closest valid prey
@@ -5931,7 +7004,7 @@ useEffect(() => {
               step = best;
             }
             if (step && (step.x !== myPos.x || step.y !== myPos.y)) {
-              const basePos = { ...((positionsRef.current || positions)) };
+              const basePos = { ...(pickNonEmptyObject(positionsRef.current, positions)) };
               basePos[liveEnemy.id] = { ...step };
               const syncedPos = syncCombinedPositions(fighters, basePos);
               positionsRef.current = syncedPos;
@@ -5976,7 +7049,7 @@ useEffect(() => {
               )[0];
 
               // Move as part of the swoop (no extra action). Update positionsRef immediately so attack() uses the new distance.
-              const basePos = { ...((positionsRef.current || positions)) };
+              const basePos = { ...(pickNonEmptyObject(positionsRef.current, positions)) };
               basePos[liveEnemy.id] = { ...contactHex };
               const syncedPos = syncCombinedPositions(fighters, basePos);
               positionsRef.current = syncedPos;
@@ -6032,9 +7105,33 @@ useEffect(() => {
       }
     }
     
-    // 🦅 FLYING AI: Let flying creatures use the generic flight AI first
-    // This handles stamina, landing, scavenging, prey hunting, and circling for ANY flyer
-    if (isFlyingCreature(enemy, canFly) && (enemy.isFlying || enemy.altitudeFeet > 0)) {
+    // 🦅 FLYING AI (Predator-bird only):
+    // Circling/harass/hunt behavior should NOT apply to general fliers like Baal-Rog in a duel.
+    // We restrict the generic flight AI to predator birds *only* when tiny prey exists (mouse/rat/etc.).
+    const hasTinyPreyOnBoard = (() => {
+      try {
+        const preyKeywords = ["mouse", "rat", "rabbit", "squirrel", "songbird"];
+        const hostiles = fighters.filter(
+          (f) => f && f.type !== enemy.type && canFighterAct(f) && (f.currentHP ?? 0) > 0
+        );
+        return hostiles.some((f) => {
+          const name = String(f.name || "").toLowerCase();
+          const size = String(f.sizeCategory || f.size || "").toLowerCase();
+          const isSmallBody = size === "tiny" || size === "small";
+          const isNamedPrey = preyKeywords.some((k) => name.includes(k));
+          return isSmallBody || isNamedPrey;
+        });
+      } catch {
+        return false;
+      }
+    })();
+
+    if (
+      isPredBird &&
+      hasTinyPreyOnBoard &&
+      isFlyingCreature(enemy, canFly) &&
+      (enemy.isFlying || enemy.altitudeFeet > 0)
+    ) {
       const flyingHandled = runFlyingTurn(enemy, {
         fighters: fighters,
         positions: positions,
@@ -6284,7 +7381,10 @@ useEffect(() => {
         // Normal routing behavior - attempt to flee
         addLog(`🏃 ${liveEnemy.name} is ROUTED and attempts to flee!`, "warning");
         
-        const currentPositions = positionsRef.current || positions;
+        const currentPositions =
+          positionsRef.current && Object.keys(positionsRef.current).length > 0
+            ? positionsRef.current
+            : positions;
         const myPos = currentPositions[liveEnemy.id];
         
         if (myPos) {
@@ -6656,13 +7756,18 @@ useEffect(() => {
       normalizeLabel(arenaEnvironment?.lighting) ??
       "daylight";
 
+    const positionsForEngineAI =
+      positionsRef.current && Object.keys(positionsRef.current).length > 0
+        ? positionsRef.current
+        : positions;
+
     const engineContext = {
       combatants: fighters,
       environment: {
         terrain: engineTerrain,
         lighting: engineLighting,
       },
-      positions: positionsRef.current || positions,
+      positions: positionsForEngineAI,
       logCallback: (message, type = "ai") => {
         addLog(message, type);
       },
@@ -6715,7 +7820,10 @@ useEffect(() => {
             : "Dodge";
 
         if (stance === "Retreat") {
-          const currentPositions = positionsRef.current || positions;
+          const currentPositions =
+            positionsRef.current && Object.keys(positionsRef.current).length > 0
+              ? positionsRef.current
+              : positions;
           const currentPos = currentPositions?.[enemy.id];
           const threatPositions = playerTargets
             .map((target) => currentPositions?.[target.id])
@@ -6894,8 +8002,10 @@ useEffect(() => {
       
       const unreachableForEnemy = aiUnreachableTargetsRef.current?.[enemy.id];
       const isUnreachableMelee = unreachableForEnemy?.has(t.id) || false;
-      
-      const isBlocked = isBlockedLoS || isUnreachableMelee;
+
+      // IMPORTANT: "Unreachable in melee" is NOT the same as "blocked".
+      // (Minotaur vs flying Ariel): we still want to allow targeting for spells / thrown objects / ranged attacks.
+      const isBlocked = isBlockedLoS;
       
       return {
         target: t,
@@ -6903,6 +8013,7 @@ useEffect(() => {
         hpPercent: t.currentHP / t.maxHP,
         isWounded: t.currentHP < t.maxHP,
         isBlocked: isBlocked,
+        isUnreachableMelee: isUnreachableMelee,
         priority: calculateTargetPriority(t, dist, isBlocked)
       };
     }).sort((a, b) => a.priority - b.priority); // Sort by priority (lower = better)
@@ -6975,6 +8086,84 @@ useEffect(() => {
       reasoning = `following layered AI plan: ${actionPlan?.aiAction || "Strike"}`;
     }
 
+    // ✅ AIR-CHASE PREFLIGHT
+    // If target is airborne and attacker has flight capability but is not currently flying,
+    // spend an action to take off (and optionally climb toward target altitude).
+    const tgtAlt = getAltitude(target) || 0;
+    const meAlt = getAltitude(liveEnemy) || 0;
+    const targetIsAirborne = isFlying(target) && tgtAlt > 0;
+    const attackerCanFly = canFly(liveEnemy);
+    const attackerIsFlying = isFlying(liveEnemy);
+
+    if (targetIsAirborne && attackerCanFly && !attackerIsFlying) {
+      // Take off into a reasonable initial band; try to close vertical gap without teleporting to 100ft instantly
+      const TAKEOFF_ALT_FT = 20;
+      const CLIMB_STEP_FT = 20; // one action per climb step (keeps it consistent with your UI increments)
+      const desired = Math.max(TAKEOFF_ALT_FT, Math.min(tgtAlt, meAlt + CLIMB_STEP_FT));
+
+      addLog(
+        `🪽 ${liveEnemy.name} takes off to pursue ${target.name} (${meAlt}ft → ${desired}ft).`,
+        "info"
+      );
+
+      // Apply flight state + altitude
+      setFighters(prev =>
+        prev.map(f =>
+          f.id === liveEnemy.id
+            ? {
+                ...f,
+                isFlying: true,
+                altitude: desired,
+                altitudeFeet: desired,
+                remainingAttacks: Math.max(0, (f.remainingAttacks ?? 0) - 1),
+              }
+            : f
+        )
+      );
+
+      processingEnemyTurnRef.current = false;
+      scheduleEndTurn();
+      return;
+    }
+
+    // ✅ AIR-CHASE CLIMB/DESCEND (already flying)
+    // If both are airborne but altitude mismatch keeps melee unreachable, adjust altitude first.
+    if (targetIsAirborne && attackerCanFly && attackerIsFlying) {
+      const verticalSeparation = Math.abs(meAlt - tgtAlt);
+      // 5.5ft is your melee "adjacent hex" minimum; if we're way off, spend an action syncing altitude band.
+      if (verticalSeparation > 10 && (liveEnemy.remainingAttacks ?? 0) > 0) {
+        const CLIMB_STEP_FT = 20;
+        const nextAlt =
+          meAlt < tgtAlt
+            ? Math.min(tgtAlt, meAlt + CLIMB_STEP_FT)
+            : Math.max(tgtAlt, meAlt - CLIMB_STEP_FT);
+
+        if (nextAlt !== meAlt) {
+          addLog(
+            `🪽 ${liveEnemy.name} adjusts altitude while chasing ${target.name} (${meAlt}ft → ${nextAlt}ft).`,
+            "info"
+          );
+
+          setFighters(prev =>
+            prev.map(f =>
+              f.id === liveEnemy.id
+                ? {
+                    ...f,
+                    altitude: nextAlt,
+                    altitudeFeet: nextAlt,
+                    remainingAttacks: Math.max(0, (f.remainingAttacks ?? 0) - 1),
+                  }
+                : f
+            )
+          );
+
+          processingEnemyTurnRef.current = false;
+          scheduleEndTurn();
+          return;
+        }
+      }
+    }
+
     // Check if enemy needs to move closer to attack
     let needsToMoveCloser = false;
     let currentDistance = Infinity;
@@ -7039,53 +8228,103 @@ useEffect(() => {
       }
     }
     
-    // If attack is Spellcasting, choose a specific spell
+    // If attack is Spellcasting, choose a specific spell (FULL CATALOG + IMMUNITY AWARE + LOOP GUARD)
     let attackName = selectedAttack.name;
     if (selectedAttack.name === "Spellcasting" || selectedAttack.damage === "by spell") {
-      const spell = getRandomCombatSpell(enemy.level || 3);
-      attackName = `${spell.name} (${spell.damageType})`;
-      // Update the attack damage to use the spell's damage
-      selectedAttack = { ...selectedAttack, damage: spell.damage, name: attackName };
-    }
-
-    // ✅ Auto-resolve "Weapon (...)" / "by weapon" into the equipped weapon
-    const isGenericWeaponAttack =
-      (selectedAttack?.damage || "").toLowerCase() === "by weapon" ||
-      (selectedAttack?.name || "").toLowerCase().startsWith("weapon (");
-
-    if (isGenericWeaponAttack) {
-      // Collect equipped weapon candidates (supports both array style and {primary/secondary})
-      const candidates = [
-        ...(Array.isArray(enemy.equippedWeapons) ? enemy.equippedWeapons : []),
-        enemy.equippedWeapons?.primary,
-        enemy.equippedWeapons?.secondary,
-      ].filter(Boolean).filter(w => (w.name || "").toLowerCase() !== "unarmed");
-
-      if (candidates.length > 0) {
-        // Prefer bows at long distance, otherwise just take the first
-        const currentPos = positions[enemy.id];
-        const targetPos = positions[target.id];
-        const distance = currentPos && targetPos ? calculateDistance(currentPos, targetPos) : 0;
-        const isLongDistance = distance > 60; // Prefer ranged weapons at long distance
+      const chosenSpell = pickEnemySpellFromCatalog(enemy, target);
+      
+      if (chosenSpell) {
+        attackName = `${chosenSpell.name} (${chosenSpell.damageType || "magic"})`;
         
-        const chosen =
-          (isLongDistance && candidates.find(w => (w.name || "").toLowerCase().includes("bow"))) ||
-          candidates[0];
-
+        // Mark cast lock immediately (prevents rapid repeat calls before state updates land)
+        const guardKey = `${enemy.id}:${meleeRound}`;
+        const now = Date.now();
+        const prev = enemySpellLoopGuardRef.current.get(guardKey) || { recent: [] };
+        const nextRecent = [...(prev.recent || []), (chosenSpell.name || "").toLowerCase()].slice(-6);
+        
+        enemySpellLoopGuardRef.current.set(guardKey, {
+          ...prev,
+          lastCastAt: now,
+          lastSpellName: chosenSpell.name,
+          targetId: target?.id || null,
+          lastMeleeRound: meleeRound,
+          recent: nextRecent,
+        });
+        
+        // Build a real spell attack object (matches your actionPlan spell shape)
         selectedAttack = {
           ...selectedAttack,
-          name: chosen.name,                 // shows "Long Bow" instead of "Weapon (...)"
-          weapon: chosen,                    // lets your getWeaponRange() path work
-          damage: chosen.damage || selectedAttack.damage,
-          range: chosen.range ?? selectedAttack.range,
-          reach: chosen.reach ?? selectedAttack.reach,
-          type: chosen.type ?? selectedAttack.type,
-          category: chosen.category ?? selectedAttack.category,
+          type: "spell",
+          spell: chosenSpell,
+          name: attackName,
+          damage: chosenSpell.damage || chosenSpell.combatDamage || "by spell",
         };
-
-        attackName = selectedAttack.name; // IMPORTANT: keep logs consistent
+        
+        // Also persist on the enemy object for downstream consumers (safe/no-op if unused)
+        enemy.selectedAttack = selectedAttack;
+      } else {
+        // No viable spell (immunity/range/loop-guard) → fall back to a physical attack
+        const fallback = (availableAttacks || []).find(
+          (a) => a && a.name && a.name !== "Spellcasting" && (a.damage || "").toLowerCase() !== "by spell"
+        );
+        if (fallback) {
+          selectedAttack = fallback;
+          attackName = fallback.name;
+        } else {
+          addLog(`⚠️ ${enemy.name} has no viable spells or attacks available`, "info");
+          processingEnemyTurnRef.current = false;
+          scheduleEndTurn();
+          return;
+        }
       }
     }
+
+    // ✅ Guardrail: resolve any placeholder/generic enemy attack entries into the actually equipped weapon
+    // BEFORE range validation / movement planning (shared with attack()).
+    {
+      const before = String(selectedAttack?.name || "");
+      const { attack: normalized, meta } = resolveEnemyEffectiveAttack(enemy, selectedAttack, { preferRanged: true });
+      selectedAttack = normalized;
+      attackName = selectedAttack?.name || attackName;
+
+      // Optional one-run debug: set localStorage.debugAttackNormalize = "1"
+      const debugNormalize =
+        (import.meta.env?.DEV || import.meta.env?.MODE === "development") &&
+        typeof window !== "undefined" &&
+        window?.localStorage?.getItem("debugAttackNormalize") === "1";
+      if (debugNormalize && meta?.afterName && before !== meta.afterName) {
+        const vSepFt = Math.abs((getAltitude(enemy) || 0) - (getAltitude(target) || 0));
+        const n = String(selectedAttack?.name || "").toLowerCase();
+        const isRangedLike = n.includes("bow") || n.includes("crossbow") || n.includes("sling") || n.includes("thrown") ||
+          selectedAttack?.type === "ranged" || (selectedAttack?.range != null && Number(selectedAttack.range) > 10);
+        const rangeDist = isRangedLike ? Math.hypot(currentDistance, vSepFt) : currentDistance;
+        addLog(
+          `DEBUG normalize: "${meta.beforeName}" → "${meta.afterName}" | equipped="${meta.equippedName}" | d=${Math.round(rangeDist)}ft | atkRange=${selectedAttack?.range ?? "n/a"}`,
+          "info"
+        );
+      }
+    }
+
+    // Helper: enemy range validation uses 3D distance (horizontal + altitude) for ranged attacks
+    const isRangedLikeForEnemy = (atk) => {
+      const n = String(atk?.name || "").toLowerCase();
+      return (
+        atk?.type === "ranged" ||
+        atk?.weaponType === "thrown" ||
+        atk?.isThrown === true ||
+        (atk?.range != null && Number(atk.range) > 10) ||
+        (atk?.category && String(atk.category).toLowerCase() === "thrown") ||
+        n.includes("bow") ||
+        n.includes("crossbow") ||
+        n.includes("sling")
+      );
+    };
+
+    const validateEnemyAttackRange = (distFt, atk = selectedAttack, attackerF = enemy, defenderF = target) => {
+      const vSepFt = Math.abs((getAltitude(attackerF) || 0) - (getAltitude(defenderF) || 0));
+      const d = isRangedLikeForEnemy(atk) ? Math.hypot(distFt, vSepFt) : distFt;
+      return validateWeaponRange(attackerF, defenderF, atk, d);
+    };
 
     // Check weapon range for enemy attacks
     if (positions && positions[enemy.id] && positions[target.id]) {
@@ -7098,8 +8337,16 @@ useEffect(() => {
       
       addLog(`📍 ${enemy.name} is at (${enemyCurrentPos.x}, ${enemyCurrentPos.y}), ${target.name} is at (${targetCurrentPos.x}, ${targetCurrentPos.y}), distance: ${Math.round(currentDistance)}ft`, "info");
       
-      // Use proper weapon range validation
-      const rangeValidation = validateWeaponRange(enemy, target, selectedAttack, currentDistance);
+      // ✅ Guardrail (again, just in case): keep selectedAttack resolved before validating.
+      // This uses the same resolver as attack() so planner/executor cannot diverge.
+      if (enemy?.type === "enemy" && selectedAttack) {
+        const { attack: normalized } = resolveEnemyEffectiveAttack(enemy, selectedAttack, { preferRanged: true });
+        selectedAttack = normalized;
+        attackName = selectedAttack?.name || attackName;
+      }
+
+      // Use proper weapon range validation (3D distance for ranged)
+      const rangeValidation = validateEnemyAttackRange(currentDistance);
 
       // OPTION B (Recommended): Dive Attack (combined descent + strike).
       // If the enemy is flying and the only thing blocking a melee strike is altitude,
@@ -7125,7 +8372,10 @@ useEffect(() => {
         );
 
       if (diveTriggered) {
-        const livePositions = positionsRef.current || positions;
+        const livePositions =
+          positionsRef.current && Object.keys(positionsRef.current).length > 0
+            ? positionsRef.current
+            : positions;
         const enemyPos = livePositions?.[enemy.id];
         const tgtPos = livePositions?.[target.id];
         const landingCandidates = tgtPos ? findFlankingPositions(tgtPos, livePositions, enemy.id) : [];
@@ -7182,6 +8432,325 @@ useEffect(() => {
           }
         }
       }
+
+      // ✅ HARD GUARDRAIL: Target airborne + attacker cannot fly + melee unreachable → change plan (no melee spam loops)
+      // RAW-faithful: if you can't reach, you don't keep "trying" the same melee plan.
+      if (!rangeValidation.canAttack && rangeValidation.isUnreachable) {
+        const targetAlt = getAltitude(target) || 0;
+        const targetIsAirborne = isFlying(target) && targetAlt > 5;
+        const attackerCanFlyNow = canFly(enemy) || isFlying(enemy);
+
+        if (targetIsAirborne && !attackerCanFlyNow) {
+          // Track unreachable attempts per attacker/target across turns
+          const k = `${enemy.id}:${target.id}`;
+          const prev = aiUnreachableTurnsRef.current.get(k) || { count: 0, lastTurnCounter: null };
+          const nextCount = prev.lastTurnCounter === turnCounter ? prev.count : (prev.count + 1);
+          aiUnreachableTurnsRef.current.set(k, { count: nextCount, lastTurnCounter: turnCounter });
+
+          if (import.meta.env?.DEV || import.meta.env?.MODE === "development") {
+            addLog(
+              `DEBUG anti-air: attackerType=${enemy.type} targetType=${target.type} ammo=${getImprovisedAmmoQty(
+                enemy.id
+              )} stuck=${nextCount}`,
+              "info"
+            );
+          }
+
+          // Remember this for this combat (melee-unreachable)
+          if (!aiUnreachableTargetsRef.current[enemy.id]) aiUnreachableTargetsRef.current[enemy.id] = new Set();
+          aiUnreachableTargetsRef.current[enemy.id].add(target.id);
+
+          // Option A: if we have improvised ammo and can throw and in range → throw (consumes ammo).
+          const ps = Number(enemy.PS ?? enemy.ps ?? enemy.attributes?.PS ?? enemy.attributes?.ps ?? 0) || 0;
+          const dmgBonus = Number(enemy?.bonuses?.damage ?? enemy?.bonuses?.Damage ?? 0) || 0;
+          const sizeText = String(enemy?.sizeCategory || enemy?.size || "").toLowerCase();
+          // Some bestiary entries don't have explicit PS; fall back to size/damage bonus heuristics.
+          const canThrow =
+            ps >= 18 ||
+            dmgBonus >= 4 ||
+            sizeText.includes("large") ||
+            sizeText.includes("huge") ||
+            sizeText.includes("gargantuan");
+          const thrownAttack = buildImprovisedThrownAttack(enemy);
+          const ammoQtyNow = getImprovisedAmmoQty(enemy.id);
+
+          // Use 3D distance for thrown range checks (matches validateWeaponRange/attack() ranged logic)
+          const throwVsepFt = Math.abs((getAltitude(enemy) || 0) - (getAltitude(target) || 0));
+          const throwDistance3D = Math.hypot(currentDistance, throwVsepFt);
+
+          if (ammoQtyNow > 0 && canThrow && throwDistance3D <= (thrownAttack.range || 60)) {
+
+            addLog(
+              `🪨 ${enemy.name} uses improvised ammo (${ammoQtyNow} left: ${formatImprovisedAmmoBreakdown(
+                getImprovisedAmmoBreakdown(enemy.id)
+              )}) and hurls debris at ${target.name}!`,
+              "combat"
+            );
+
+            const usedType = consumeImprovisedAmmo(enemy.id);
+            const usedAttack = buildImprovisedThrownAttack(enemy, usedType);
+
+            // Use latest attacker snapshot to avoid stale remainingAttacks / state races
+            const liveThrower = fighters.find((f) => f.id === enemy.id) || enemy;
+            const updatedEnemyForThrow = {
+              ...liveThrower,
+              selectedAttack: usedAttack,
+              attacks: liveThrower.attacks || enemy.attacks || [],
+            };
+
+            // ✅ Reset "stuck" counter since we took a productive anti-air action (throw)
+            aiUnreachableTurnsRef.current.delete(k);
+
+            // attack() consumes the action and ends the turn; release the enemy-turn lock first.
+            processingEnemyTurnRef.current = false;
+            if (combatOverRef.current || !combatActive || combatEndCheckRef.current) return;
+            // Clarify what was thrown
+            if (usedType && usedType !== "debris") {
+              addLog(`🪨 ${enemy.name} throws a ${usedType}!`, "info");
+            }
+            const attackFn = attackRef.current || attack;
+            if (import.meta.env?.DEV || import.meta.env?.MODE === "development") {
+              addLog(
+                `DEBUG throw: calling attack() with ${updatedEnemyForThrow.name} remainingAttacks=${updatedEnemyForThrow.remainingAttacks ?? "?"}`,
+                "info"
+              );
+            }
+            attackFn(updatedEnemyForThrow, target.id, {});
+            return;
+          }
+
+          // Option B+: if we’ve been stuck for 2+ turns, do a productive fallback.
+          // Priority:
+          // 1) If we have improvised ammo, throw.
+          // 2) Else SEARCH locally to pick up rocks/branches (grants ammo).
+          // 3) Retreat ONCE from this airborne target, then stop retreating.
+          // 4) Defend in place (stable).
+          if (nextCount >= 2) {
+            cleanupImprovisedAmmo(turnCounter);
+
+            const ammoQty = getImprovisedAmmoQty(enemy.id);
+            const ps = Number(enemy.PS ?? enemy.ps ?? enemy.attributes?.PS ?? enemy.attributes?.ps ?? 0) || 0;
+            const dmgBonus = Number(enemy?.bonuses?.damage ?? enemy?.bonuses?.Damage ?? 0) || 0;
+            const sizeText = String(enemy?.sizeCategory || enemy?.size || "").toLowerCase();
+            const canThrow =
+              ps >= 18 ||
+              dmgBonus >= 4 ||
+              sizeText.includes("large") ||
+              sizeText.includes("huge") ||
+              sizeText.includes("gargantuan");
+            const thrownAttack = buildImprovisedThrownAttack(enemy);
+            const throwVsepFt = Math.abs((getAltitude(enemy) || 0) - (getAltitude(target) || 0));
+            const throwDistance3D = Math.hypot(currentDistance, throwVsepFt);
+            const throwInRange = throwDistance3D <= (thrownAttack.range || 60);
+
+            // 1) If we already have ammo and can throw and in range → throw now.
+            if (ammoQty > 0 && canThrow && throwInRange) {
+              addLog(
+                `🪨 ${enemy.name} uses improvised ammo (${ammoQty} left: ${formatImprovisedAmmoBreakdown(
+                  getImprovisedAmmoBreakdown(enemy.id)
+                )}) and hurls debris at ${target.name}!`,
+                "combat"
+              );
+
+              // spend 1 ammo
+              const usedType = consumeImprovisedAmmo(enemy.id);
+              const usedAttack = buildImprovisedThrownAttack(enemy, usedType);
+
+              // Use latest attacker snapshot to avoid stale remainingAttacks / state races
+              const liveThrower = fighters.find((f) => f.id === enemy.id) || enemy;
+              const updatedEnemyForThrow = {
+                ...liveThrower,
+                selectedAttack: usedAttack,
+                attacks: liveThrower.attacks || enemy.attacks || [],
+              };
+
+              // ✅ Reset "stuck" counter since we took a productive anti-air action (throw)
+              aiUnreachableTurnsRef.current.delete(k);
+
+              // attack() consumes the action and ends the turn; release the enemy-turn lock first.
+              processingEnemyTurnRef.current = false;
+              if (combatOverRef.current || !combatActive || combatEndCheckRef.current) return;
+              if (usedType && usedType !== "debris") {
+                addLog(`🪨 ${enemy.name} throws a ${usedType}!`, "info");
+              }
+              const attackFn = attackRef.current || attack;
+              if (import.meta.env?.DEV || import.meta.env?.MODE === "development") {
+                addLog(
+                  `DEBUG throw: calling attack() with ${updatedEnemyForThrow.name} remainingAttacks=${updatedEnemyForThrow.remainingAttacks ?? "?"}`,
+                  "info"
+                );
+              }
+              attackFn(updatedEnemyForThrow, target.id, {});
+              return;
+            }
+
+            // 2) Search/pickup action: pull real props from the arena based on environment seed
+            if (ammoQty <= 0 && canThrow) {
+              const livePos = pickNonEmptyObject(positionsRef.current, positions);
+              const myPos = livePos?.[enemy.id];
+
+              const got = findAndTakeNearbyProps(myPos, 2); // radius 2 hexes
+              const foundQty = got.total;
+
+              if (foundQty > 0) {
+                grantImprovisedAmmo(enemy.id, foundQty, turnCounter, got.taken);
+                // ✅ Reset "stuck" counter since we took a productive anti-air action (found ammo)
+                aiUnreachableTurnsRef.current.delete(k);
+
+                const details = formatImprovisedAmmoBreakdown(got.taken);
+
+                addLog(
+                  `🔎 ${enemy.name} searches nearby and grabs ${details} as improvised missiles.`,
+                  "info"
+                );
+
+                setFighters((prevF) =>
+                  prevF.map((f) =>
+                    f.id === enemy.id
+                      ? { ...f, remainingAttacks: Math.max(0, (f.remainingAttacks ?? 1) - 1) }
+                      : f
+                  )
+                );
+
+                setDefensiveStance((prevSt) => ({ ...prevSt, [enemy.id]: "Search" }));
+                processingEnemyTurnRef.current = false;
+                scheduleEndTurn();
+                return;
+              }
+
+              // Nothing found nearby -> don’t retreat forever; defend.
+              addLog(
+                `🔎 ${enemy.name} searches for rocks/branches but finds nothing usable nearby.`,
+                "info"
+              );
+
+              setDefensiveStance((prevSt) => ({ ...prevSt, [enemy.id]: "Defend" }));
+              setFighters((prevF) =>
+                prevF.map((f) =>
+                  f.id === enemy.id
+                    ? { ...f, remainingAttacks: Math.max(0, (f.remainingAttacks ?? 1) - 1) }
+                    : f
+                )
+              );
+
+              processingEnemyTurnRef.current = false;
+              scheduleEndTurn();
+              return;
+            }
+
+            // 3) Retreat only ONCE per enemy/target every few turns, otherwise stop backing up forever.
+            const retreatKey = `${enemy.id}:${target.id}`;
+            const lastRetreatTurn = aiRetreatedFromAirborneRef.current.get(retreatKey);
+            const canRetreatAgain = lastRetreatTurn == null || (turnCounter - lastRetreatTurn) >= 4;
+
+            // If we're far away already, retreating just worsens the stalemate. Only consider retreat when close-ish.
+            if (canRetreatAgain && currentDistance <= 30) {
+              addLog(
+                `🐂 ${enemy.name} cannot engage ${target.name} (airborne, no flight). Withdrawing once to avoid wasting actions.`,
+                "warning"
+              );
+
+              try {
+                const livePos = pickNonEmptyObject(positionsRef.current, positions);
+                const myPos = livePos?.[enemy.id];
+                const tgtPos = livePos?.[target.id];
+
+                if (myPos && tgtPos) {
+                  const occ = (x, y) => isHexOccupied(x, y, enemy.id);
+                  const neighbors = (getHexNeighbors(myPos.x, myPos.y) || [])
+                    .filter((n) => isValidPosition(n.x, n.y) && !occ(n.x, n.y));
+
+                  if (neighbors.length > 0) {
+                    const best = neighbors.sort(
+                      (a, b) => calculateDistance(b, tgtPos) - calculateDistance(a, tgtPos)
+                    )[0];
+
+                    setPositions((prevPos) => {
+                      const updatedPos = { ...prevPos, [enemy.id]: best };
+                      positionsRef.current = updatedPos;
+                      return updatedPos;
+                    });
+
+                    setFighters((prevF) =>
+                      prevF.map((f) =>
+                        f.id === enemy.id
+                          ? { ...f, remainingAttacks: Math.max(0, (f.remainingAttacks ?? 1) - 1) }
+                          : f
+                      )
+                    );
+
+                    aiRetreatedFromAirborneRef.current.set(retreatKey, turnCounter);
+                    setDefensiveStance((prevSt) => ({ ...prevSt, [enemy.id]: "Retreat" }));
+                    addLog(`🏃 ${enemy.name} withdraws from the unreachable airborne target.`, "info");
+
+                    processingEnemyTurnRef.current = false;
+                    scheduleEndTurn();
+                    return;
+                  }
+                }
+              } catch {
+                // fall through to defend
+              }
+            }
+
+            // 4) Stable fallback:
+            // - If far away, don't stall by defending — close distance so throws can happen.
+            // - If close and still no options, defend.
+            if (currentDistance > 30) {
+              addLog(
+                `🏃 ${enemy.name} has no viable anti-air action yet and closes distance instead of defending.`,
+                "info"
+              );
+              // Fall through: the normal movement logic below will handle spending the action and moving.
+            } else {
+              addLog(
+                `🛡️ ${enemy.name} holds position and DEFENDS (no viable anti-air action this turn).`,
+                "info"
+              );
+
+              setDefensiveStance((prevSt) => ({ ...prevSt, [enemy.id]: "Defend" }));
+              setFighters((prevF) =>
+                prevF.map((f) =>
+                  f.id === enemy.id
+                    ? { ...f, remainingAttacks: Math.max(0, (f.remainingAttacks ?? 1) - 1) }
+                    : f
+                )
+              );
+
+              processingEnemyTurnRef.current = false;
+              scheduleEndTurn();
+              return;
+            }
+          }
+
+          // If we're close-ish and can throw but have no ammo yet, SEARCH once to acquire nearby props.
+          // (This prevents the "stand adjacent doing nothing" loop.)
+          if (canThrow && currentDistance <= 30 && getImprovisedAmmoQty(enemy.id) <= 0) {
+            const livePos = pickNonEmptyObject(positionsRef.current, positions);
+            const myPos = livePos?.[enemy.id];
+            const got = findAndTakeNearbyProps(myPos, 2);
+            if (got.total > 0) {
+              grantImprovisedAmmo(enemy.id, got.total, turnCounter, got.taken);
+              // ✅ Reset "stuck" counter since we took a productive anti-air action (found ammo)
+              aiUnreachableTurnsRef.current.delete(k);
+              const details = formatImprovisedAmmoBreakdown(got.taken);
+              addLog(`🔎 ${enemy.name} searches nearby and grabs ${details} as improvised missiles.`, "info");
+
+              setFighters((prevF) =>
+                prevF.map((f) =>
+                  f.id === enemy.id
+                    ? { ...f, remainingAttacks: Math.max(0, (f.remainingAttacks ?? 1) - 1) }
+                    : f
+                )
+              );
+              setDefensiveStance((prevSt) => ({ ...prevSt, [enemy.id]: "Search" }));
+              processingEnemyTurnRef.current = false;
+              scheduleEndTurn();
+              return;
+            }
+          }
+        }
+      }
       
       if (!rangeValidation.canAttack) {
         needsToMoveCloser = true;
@@ -7218,12 +8787,19 @@ useEffect(() => {
       const unreachableForEnemy = aiUnreachableTargetsRef.current?.[enemy.id];
       const isTargetUnreachable = unreachableForEnemy?.has(target.id) || false;
       
-      // If we can flank, prioritize flanking positions
+      const isRangedSelectedAttackForFlank =
+        selectedAttack?.type === "ranged" ||
+        selectedAttack?.weaponType === "thrown" ||
+        selectedAttack?.isThrown === true ||
+        (selectedAttack?.range != null && Number(selectedAttack.range) > 10) ||
+        (selectedAttack?.category && String(selectedAttack.category).toLowerCase() === "thrown");
+
+      // If we can flank, prioritize flanking positions (MELEE ONLY)
       // BUT: Check if target is reachable with melee first (skip if already marked unreachable)
-      if (flankingPositions.length > 0 && currentFlankingBonus === 0 && !isTargetUnreachable) {
+      if (!isRangedSelectedAttackForFlank && flankingPositions.length > 0 && currentFlankingBonus === 0 && !isTargetUnreachable) {
         // Check if target is reachable with melee before attempting to flank
         const currentDistance = calculateDistance(currentPos, targetPos);
-        const rangeCheck = validateWeaponRange(enemy, target, selectedAttack, currentDistance);
+        const rangeCheck = validateEnemyAttackRange(currentDistance);
         
         if (!rangeCheck.canAttack && rangeCheck.isUnreachable) {
           // Target is unreachable (e.g., flying too high) - mark it and skip flanking
@@ -7335,7 +8911,7 @@ useEffect(() => {
                   if (!combatActive || combatEndCheckRef.current) return;
                   
                   const newDistance = calculateDistance(targetFlankPos, targetPos);
-                  const rangeValidation = validateWeaponRange(enemy, target, selectedAttack, newDistance);
+                  const rangeValidation = validateEnemyAttackRange(newDistance);
                   
                   if (rangeValidation.canAttack) {
                     const flankingBonus = calculateFlankingBonus(targetFlankPos, targetPos, positions, enemy.id);
@@ -7494,7 +9070,7 @@ useEffect(() => {
         addLog(`📍 ${enemy.name} is already at target position, skipping movement`, "info");
         // Continue to attack if in range
         const distanceFromCurrentPos = calculateDistance(currentPos, targetPos);
-        const rangeValidation = validateWeaponRange(enemy, target, selectedAttack, distanceFromCurrentPos);
+        const rangeValidation = validateEnemyAttackRange(distanceFromCurrentPos);
         
         if (rangeValidation.canAttack) {
           addLog(`⚔️ ${enemy.name} attacks from current position (${rangeValidation.reason})`, "info");
@@ -7556,10 +9132,46 @@ useEffect(() => {
         newX = isNaN(newX) ? currentPos.x : newX;
         newY = isNaN(newY) ? currentPos.y : newY;
         
+        // ✅ Air-vs-ground rule: never attempt to move into an airborne target's hex.
+        // Hex occupancy is 2D; a flying target "occupies" its XY, so ground units should move adjacent instead.
+        const targetAltForMove = getAltitude(target) || 0;
+        const targetIsAirborneForMove = isFlying(target) && targetAltForMove > 5;
+        const attackerCanFlyForMove = canFly(enemy) || isFlying(enemy);
+
+        if (targetIsAirborneForMove && !attackerCanFlyForMove && newX === targetPos.x && newY === targetPos.y) {
+          const neighbors = getHexNeighbors(targetPos.x, targetPos.y) || [];
+          const open = neighbors.filter((n) => isValidPosition(n.x, n.y) && !isHexOccupied(n.x, n.y, enemy.id));
+          if (open.length > 0) {
+            const best = open.reduce((best, cur) => {
+              const bd = calculateDistance(currentPos, best);
+              const cd = calculateDistance(currentPos, cur);
+              return cd < bd ? cur : best;
+            });
+            newX = best.x;
+            newY = best.y;
+          }
+        }
+
         addLog(`🔍 ${enemy.name} calculated movement: from (${currentPos.x}, ${currentPos.y}) to (${newX}, ${newY}), hexesThisTurn=${hexesThisTurn}`, "info");
         
         // Check if destination is occupied
-        const occupant = isHexOccupied(newX, newY, enemy.id);
+        let occupant = isHexOccupied(newX, newY, enemy.id);
+
+        // If we still collided with an airborne target's hex (rounding), try an adjacent fallback.
+        if (occupant && targetIsAirborneForMove && !attackerCanFlyForMove && occupant.id === target.id) {
+          const neighbors = getHexNeighbors(targetPos.x, targetPos.y) || [];
+          const open = neighbors.filter((n) => isValidPosition(n.x, n.y) && !isHexOccupied(n.x, n.y, enemy.id));
+          if (open.length > 0) {
+            const best = open.reduce((best, cur) => {
+              const bd = calculateDistance(currentPos, best);
+              const cd = calculateDistance(currentPos, cur);
+              return cd < bd ? cur : best;
+            });
+            newX = best.x;
+            newY = best.y;
+            occupant = isHexOccupied(newX, newY, enemy.id);
+          }
+        }
         if (occupant) {
           addLog(`🚫 ${enemy.name} cannot move to (${newX}, ${newY}) - occupied by ${occupant.name}`, "info");
           
@@ -7567,7 +9179,7 @@ useEffect(() => {
           const distanceFromCurrentPos = calculateDistance(currentPos, targetPos);
           
           // Check if within weapon range
-          const rangeValidation = validateWeaponRange(enemy, target, selectedAttack, distanceFromCurrentPos);
+          const rangeValidation = validateEnemyAttackRange(distanceFromCurrentPos);
           
           if (rangeValidation.canAttack) {
             addLog(`⚔️ ${enemy.name} is within range (${rangeValidation.reason}) and attacks`, "info");
@@ -7619,7 +9231,7 @@ useEffect(() => {
           } else {
             // After movement, check if we're now in range
             const newDistanceAfterMove = calculateDistance({ x: newX, y: newY }, targetPos);
-            const rangeValidation = validateWeaponRange(enemy, target, selectedAttack, newDistanceAfterMove);
+            const rangeValidation = validateEnemyAttackRange(newDistanceAfterMove);
             
             const updatedEnemy = fighters.find(f => f.id === enemy.id);
             const hasActionsRemaining = updatedEnemy && updatedEnemy.remainingAttacks > 0;
@@ -7803,7 +9415,7 @@ useEffect(() => {
             const latestEnemyPos = currentPositions[enemy.id] || { x: targetX, y: targetY };
             const latestTargetPos = currentPositions[target.id] || targetPos;
             const finalDistance = calculateDistance(latestEnemyPos, latestTargetPos);
-            const rangeValidation = validateWeaponRange(enemy, target, selectedAttack, finalDistance);
+            const rangeValidation = validateEnemyAttackRange(finalDistance);
             
             const updatedEnemy = fighters.find(f => f.id === enemy.id);
             const hasActionsRemaining = updatedEnemy && updatedEnemy.remainingAttacks > 0;
@@ -7893,8 +9505,17 @@ useEffect(() => {
           addLog(`⚠️ All players are defeated! ${enemy.name} shows mercy and stops attacking.`, "info");
           if (!combatEndCheckRef.current) {
             combatEndCheckRef.current = true;
+            combatOverRef.current = true; // ✅ AUTHORITATIVE: Stop all further actions (defeat)
             addLog("💀 All players are defeated! Enemies win!", "defeat");
             setCombatActive(false);
+
+            // ✅ CRITICAL: Clear ALL pending timeouts to stop post-defeat actions
+            if (turnTimeoutRef.current) {
+              clearTimeout(turnTimeoutRef.current);
+              turnTimeoutRef.current = null;
+            }
+            allTimeoutsRef.current.forEach(clearTimeout);
+            allTimeoutsRef.current = [];
           }
           processingEnemyTurnRef.current = false;
           return;
@@ -7965,14 +9586,23 @@ useEffect(() => {
     // Determine if this is a charging attack (for bonuses)
     const chargeBonus = isChargingAttack ? { strikeBonus: +2 } : {};
     
-    // Check for flanking bonus
-    const attackFlankingBonus = calculateFlankingBonus(positions[enemy.id], positions[target.id], positions, enemy.id);
+    const isRangedSelectedAttack =
+      selectedAttack?.type === "ranged" ||
+      selectedAttack?.weaponType === "thrown" ||
+      selectedAttack?.isThrown === true ||
+      (selectedAttack?.range != null && Number(selectedAttack.range) > 10) ||
+      (selectedAttack?.category && String(selectedAttack.category).toLowerCase() === "thrown");
+
+    // Flanking is melee-only.
+    const attackFlankingBonus = isRangedSelectedAttack
+      ? 0
+      : calculateFlankingBonus(positions[enemy.id], positions[target.id], positions, enemy.id);
     const flankingBonus = attackFlankingBonus > 0 ? { flankingBonus: attackFlankingBonus } : {};
     
     // Combine all bonuses
     const allBonuses = { ...chargeBonus, ...flankingBonus };
     
-    if (attackFlankingBonus > 0) {
+    if (attackFlankingBonus > 0 && !isRangedSelectedAttack) {
       addLog(`🎯 ${enemy.name} gains +${attackFlankingBonus} flanking bonus!`, "info");
     }
     
@@ -7983,11 +9613,8 @@ useEffect(() => {
     }
     attack(updatedEnemy, target.id, allBonuses);
     
-    // End of handleEnemyTurn
-    setTimeout(() => {
-      processingEnemyTurnRef.current = false;
-      scheduleEndTurn();
-    }, 1500);
+    // End of handleEnemyTurn: schedule the turn advance; AI locks are released in endTurn()
+    scheduleEndTurn(1500);
   }, [
     fighters,
     addLog,
@@ -8042,8 +9669,30 @@ useEffect(() => {
       return;
     }
 
-      const currentFighter = fighters[turnIndex];
+    const currentFighter = fighters[turnIndex];
     if (!currentFighter) {
+      return;
+    }
+
+    // ✅ If the fighter has no actions left, don't re-run AI/menus repeatedly.
+    // This can happen because endTurn() increments turnCounter before fighter state updates settle.
+    if ((currentFighter.remainingAttacks ?? 0) <= 0) {
+      const noActionLoopKey = `NOA_${currentFighter.id}_${meleeRound}`;
+      if (lastAutoTurnKeyRef.current === noActionLoopKey) return;
+      lastAutoTurnKeyRef.current = noActionLoopKey;
+
+      const passLogKey = `${currentFighter.id}:${meleeRound}`;
+      if (!noActionsPassLogRef.current.has(passLogKey)) {
+        noActionsPassLogRef.current.add(passLogKey);
+        addLog(
+          `⏭️ ${currentFighter.name} has no actions remaining - passing to next fighter in initiative order`,
+          "info"
+        );
+        // prevent unbounded growth
+        if (noActionsPassLogRef.current.size > 200) noActionsPassLogRef.current = new Set();
+      }
+
+      endTurn();
       return;
     }
 
@@ -8060,6 +9709,60 @@ useEffect(() => {
         endTurn();
         return;
       }
+
+    // If AI is controlling this fighter, auto-select movement mode preference
+    // NOTE: We may also auto-takeoff for AI-controlled fliers (costs 1 action).
+    let fighterForAITurn = currentFighter;
+    if (aiControlEnabled && currentFighter) {
+      // If there's an obvious current target, pass it so flight is preferred when target is airborne.
+      // This keeps Ariel airborne if she chose to fly and improves flier pursuit behavior.
+      let targetForPreference = null;
+      try {
+        if (currentFighter.type === "player") {
+          // players generally target nearest enemy for AI planning
+          targetForPreference = fighters.find((f) => f.type === "enemy" && f.currentHP > 0) || null;
+        } else {
+          targetForPreference = fighters.find((f) => f.type === "player" && f.currentHP > 0) || null;
+        }
+      } catch { /* ignore */ }
+
+      const preferred = getPreferredMovementModeForAI(currentFighter, targetForPreference);
+
+      // Only flip it if it actually changes (prevents pointless rerenders)
+      if (preferred && preferred !== playerMovementMode) {
+        setPlayerMovementMode(preferred);
+      }
+
+      // Optional/Recommended: If AI prefers flight, auto-takeoff immediately (spend 1 action),
+      // so the AI doesn't "stay grounded in flight mode" when it intends to solve an air problem.
+      if (
+        currentFighter.type === "player" &&
+        preferred === "flight" &&
+        canFighterFly(currentFighter) &&
+        !isFlying(currentFighter) &&
+        (getAltitude(currentFighter) || 0) <= 0 &&
+        (currentFighter.remainingAttacks ?? 0) > 0
+      ) {
+        try {
+          const takeoff = startFlying(currentFighter, { altitude: 20 });
+          if (takeoff?.success && takeoff.fighter) {
+            const spent = 1;
+            const nextFighter = {
+              ...takeoff.fighter,
+              remainingAttacks: Math.max(
+                0,
+                Number(takeoff.fighter.remainingAttacks ?? currentFighter.remainingAttacks ?? 0) - spent
+              ),
+            };
+            setFighters((prev) => prev.map((f) => (f.id === currentFighter.id ? nextFighter : f)));
+            addLog(`🪽 ${currentFighter.name} takes off to 20ft (AI auto-takeoff)`, "info");
+            fighterForAITurn = nextFighter;
+          }
+        } catch {
+          // ignore
+        }
+      }
+    }
       
     if (currentFighter.type === "player") {
         if (aiControlEnabled) {
@@ -8076,7 +9779,7 @@ useEffect(() => {
                 processingPlayerAIRef.current = false;
                 return;
               }
-                  handlePlayerAITurn(currentFighter);
+                  handlePlayerAITurn(fighterForAITurn);
             }, 0);
             });
           }
@@ -8131,6 +9834,18 @@ useEffect(() => {
     endTurn,
     showCombatChoices,
     selectedAction,
+    getPreferredMovementModeForAI,
+    getFighterFlyFeetPerAction,
+    getFighterGroundFeetPerAction,
+    getFighterFlySpeedFeetPerMelee,
+    canFighterFly,
+    isFlying,
+    getAltitude,
+    fighters,
+    playerMovementMode,
+    addLog,
+    openCombatChoices,
+    closeCombatChoices,
   ]);
 
   // Helper function to roll HP from dice formulas like "2d6" or "1d8+3" or ranges like "24-96"
@@ -8291,16 +10006,135 @@ useEffect(() => {
     return fighter;
   }
 
-  // Helper function to get allowed alignments for a race and assign random alignment
-  const getRandomAlignmentForRace = useCallback((race, species) => {
+  /**
+   * Get random alignment from creature's bestiary entry
+   * Maps broad categories (good/selfish/evil) to specific Palladium alignments
+   * @param {Object} creatureData - The creature data from bestiary.json
+   * @returns {string} - Randomly selected alignment
+   */
+  const getRandomAlignmentFromBestiary = useCallback((creatureData) => {
+    if (!creatureData) return "Unprincipled"; // Default fallback
+
+    // All Palladium Fantasy RPG alignments as per rulebook
+    const PALLADIUM_ALIGNMENTS = {
+      // Good alignments
+      "principled": "Principled",
+      "scrupulous": "Scrupulous",
+      // Selfish alignments
+      "unprincipled": "Unprincipled",
+      "anarchist": "Anarchist",
+      // Evil alignments
+      "miscreant": "Miscreant",
+      "aberrant": "Aberrant",
+      "diabolic": "Diabolic",
+      // Broad categories (will be expanded to specific alignments)
+      "good": ["Principled", "Scrupulous"],
+      "selfish": ["Unprincipled", "Anarchist"],
+      "evil": ["Miscreant", "Aberrant", "Diabolic"],
+      // Special case
+      "unaligned": "Unaligned"
+    };
+
+    // Get alignment array from creature data
+    let alignmentOptions = creatureData.alignment || creatureData.alignment_options || [];
+    
+    // If alignment is a string, convert to array
+    if (typeof alignmentOptions === "string") {
+      alignmentOptions = [alignmentOptions];
+    }
+    
+    // If no alignment specified, check alignment_tendency
+    if (!Array.isArray(alignmentOptions) || alignmentOptions.length === 0) {
+      const tendency = creatureData.alignment_tendency || "";
+      if (tendency) {
+        // Map tendency to alignment options
+        const tendencyLower = tendency.toLowerCase();
+        if (tendencyLower.includes("good")) {
+          alignmentOptions = ["good"];
+        } else if (tendencyLower.includes("evil") || tendencyLower.includes("selfish")) {
+          alignmentOptions = ["evil", "selfish"];
+        } else if (tendencyLower.includes("selfish")) {
+          alignmentOptions = ["selfish"];
+        } else {
+          alignmentOptions = ["any"];
+        }
+      } else {
+        // Default: any alignment
+        alignmentOptions = ["any"];
+      }
+    }
+
+    // Expand broad categories to specific alignments
+    const expandedOptions = [];
+    for (const align of alignmentOptions) {
+      const alignLower = align.toLowerCase().trim();
+      
+      if (alignLower === "any") {
+        // Include all alignments except unaligned
+        expandedOptions.push("Principled", "Scrupulous", "Unprincipled", "Anarchist", 
+                            "Miscreant", "Aberrant", "Diabolic");
+      } else if (PALLADIUM_ALIGNMENTS[alignLower]) {
+        const mapped = PALLADIUM_ALIGNMENTS[alignLower];
+        if (Array.isArray(mapped)) {
+          // Broad category - add all specific alignments
+          expandedOptions.push(...mapped);
+        } else {
+          // Specific alignment
+          expandedOptions.push(mapped);
+        }
+      } else {
+        // Try to match with case-insensitive partial match
+        const found = Object.keys(PALLADIUM_ALIGNMENTS).find(key => 
+          key.includes(alignLower) || alignLower.includes(key)
+        );
+        if (found) {
+          const mapped = PALLADIUM_ALIGNMENTS[found];
+          if (Array.isArray(mapped)) {
+            expandedOptions.push(...mapped);
+          } else {
+            expandedOptions.push(mapped);
+          }
+        } else {
+          // Unknown alignment - capitalize and use as-is
+          expandedOptions.push(align.charAt(0).toUpperCase() + align.slice(1).toLowerCase());
+        }
+      }
+    }
+
+    // Remove duplicates
+    const uniqueOptions = [...new Set(expandedOptions)];
+
+    // If we have valid options, randomly select one
+    if (uniqueOptions.length > 0) {
+      const selected = uniqueOptions[Math.floor(Math.random() * uniqueOptions.length)];
+      return selected;
+    }
+
+    // Fallback: return a default alignment based on creature category
+    const category = (creatureData.category || "").toLowerCase();
+    if (category.includes("demon") || category.includes("undead")) {
+      return "Miscreant"; // Default evil for demons/undead
+    } else if (category.includes("creature_of_magic") && creatureData.alignment?.includes("good")) {
+      return "Principled"; // Default good for good-aligned magical creatures
+    } else {
+      return "Unprincipled"; // Default selfish for most creatures
+    }
+  }, []);
+
+  // Legacy function for backward compatibility (now uses bestiary-based selection)
+  const getRandomAlignmentForRace = useCallback((race, species, creatureData = null) => {
+    // If creatureData is provided, use the new bestiary-based function
+    if (creatureData) {
+      return getRandomAlignmentFromBestiary(creatureData);
+    }
+    
+    // Fallback to old behavior if creatureData not available
     const allAlignments = [
       "Principled", "Scrupulous", // Good
       "Unprincipled", "Anarchist", // Selfish
       "Miscreant", "Aberrant", "Diabolic" // Evil
     ];
     
-    // Try to get alignment restrictions from annotated_rulebook.json
-    // For now, use a simple mapping based on common race tendencies
     const raceName = (race || species || "").toUpperCase();
     
     // Races that tend toward evil/selfish
@@ -8317,7 +10151,7 @@ useEffect(() => {
     
     // Default: any alignment (most races)
     return allAlignments[Math.floor(Math.random() * allAlignments.length)];
-  }, []);
+  }, [getRandomAlignmentFromBestiary]);
 
   function addCreature(creatureData, customNameOverride = null, levelOverride = null, armorOverride = null, weaponOverride = null, ammoOverride = null) {
     let newFighter;
@@ -8383,12 +10217,12 @@ useEffect(() => {
         addLog(`🔮 ${newFighter.name} has ${newFighter.magic.length} spells (PPE: ${newFighter.PPE})`, "info");
       }
       
-      // ✅ Assign random alignment if not already set
-      if (!newFighter.alignment && !newFighter.alignmentName) {
-        const randomAlignment = getRandomAlignmentForRace(newFighter.race || newFighter.species, newFighter.species);
-        newFighter.alignment = randomAlignment;
-        newFighter.alignmentName = randomAlignment;
-      }
+      // ✅ Assign random alignment from bestiary entry (always pick one from the array/category)
+      // Even if alignment exists as an array, we need to pick a specific one
+      const randomAlignment = getRandomAlignmentFromBestiary(creatureData);
+      newFighter.alignment = randomAlignment;
+      newFighter.alignmentName = randomAlignment;
+      addLog(`🎲 ${newFighter.name} alignment: ${randomAlignment}`, "info");
     } else {
       // Regular creature (existing logic)
       const rolledHP = rollHP(creatureData.HP);
@@ -8449,94 +10283,187 @@ useEffect(() => {
           }
         }
       } else {
+        // Check if creature has Claw attack - use it as default "unarmed" for all creatures
+        const hasClawAttack = creatureData.attacks && Array.isArray(creatureData.attacks) && 
+          creatureData.attacks.some(attack => attack.name && attack.name === "Claw");
+        
+        // Initialize equippedWeapons with Claw if available, otherwise Unarmed
+        // This allows creatures with Claw to still equip weapons (which will replace Claw)
+        if (!newFighter.equippedWeapons || !Array.isArray(newFighter.equippedWeapons)) {
+          if (hasClawAttack) {
+            const clawAttack = creatureData.attacks.find(attack => attack.name === "Claw");
+            const defaultClaw = {
+              name: "Claw",
+              damage: clawAttack?.damage || "1d6",
+              type: "melee",
+              category: "natural",
+              slot: "Right Hand",
+              reach: clawAttack?.reach || 0,
+              range: clawAttack?.range || 0,
+            };
+            newFighter.equippedWeapons = [
+              defaultClaw,
+              { ...defaultClaw, slot: "Left Hand" }
+            ];
+          } else {
+            newFighter.equippedWeapons = [
+              { name: "Unarmed", damage: "1d3", type: "unarmed", category: "unarmed", slot: "Right Hand" },
+              { name: "Unarmed", damage: "1d3", type: "unarmed", category: "unarmed", slot: "Left Hand" }
+            ];
+          }
+        }
+        
         // Use default/random weapon assignment
         const favoriteWeapons = creatureData.favorite_weapons || creatureData.preferred_weapons || creatureData.favoriteWeapons;
         
         if (favoriteWeapons) {
           newFighter = assignRandomWeaponToEnemy(newFighter, favoriteWeapons);
-          if (newFighter.equippedWeapons && newFighter.equippedWeapons[0]?.name !== "Unarmed") {
+          if (newFighter.equippedWeapons && newFighter.equippedWeapons[0]?.name !== "Unarmed" && newFighter.equippedWeapons[0]?.name !== "Claw") {
             addLog(`⚔️ ${newFighter.name} wields ${newFighter.equippedWeapons[0]?.name}`, "info");
+          } else if (hasClawAttack && newFighter.equippedWeapons[0]?.name === "Claw") {
+            // Creature with Claw didn't get a favorite weapon, so they're using Claw
+            const clawAttack = creatureData.attacks.find(attack => attack.name === "Claw");
+            addLog(`⚔️ ${newFighter.name} uses Claw (${clawAttack?.damage || "1d6"})`, "info");
           }
-        } else if (isHumanoidCreature) {
-          // Humanoids without preferred weapons get a random common weapon
-          const defaultWeapon = getDefaultWeaponForEnemy(newFighter);
-          if (defaultWeapon && defaultWeapon.name !== "Unarmed") {
-            newFighter = assignRandomWeaponToEnemy(newFighter, defaultWeapon.name);
-            addLog(`⚔️ ${newFighter.name} wields ${newFighter.equippedWeapons?.[0]?.name || defaultWeapon.name}`, "info");
-          }
-        } else if (creatureData.attacks && Array.isArray(creatureData.attacks) && creatureData.attacks.length > 0) {
-          // Non-humanoid creatures: convert natural attacks to equipped weapons
-          // Check if a specific natural attack was selected from the dropdown
-          let physicalAttack = null;
-          if (weaponToEquip && weaponToEquip !== "None") {
-            // User selected a specific natural attack
-            physicalAttack = creatureData.attacks.find(
-              attack => attack.name && attack.name === weaponToEquip
-            );
-          }
-          
-          // If no specific attack selected, find the first non-magic/spellcasting attack
-          if (!physicalAttack) {
-            physicalAttack = creatureData.attacks.find(
-              attack => attack.name && 
-              !attack.name.toLowerCase().includes("magic") && 
-              !attack.name.toLowerCase().includes("spell") &&
-              attack.damage !== "by spell"
-            ) || creatureData.attacks[0]; // Fallback to first attack if all are magic
-          }
-          
-          if (physicalAttack && physicalAttack.name) {
-            // Initialize equippedWeapons if needed
-            if (!newFighter.equippedWeapons || !Array.isArray(newFighter.equippedWeapons)) {
-              newFighter.equippedWeapons = [
-                { name: "Unarmed", damage: "1d3", type: "unarmed", category: "unarmed", slot: "Right Hand" },
-                { name: "Unarmed", damage: "1d3", type: "unarmed", category: "unarmed", slot: "Left Hand" }
-              ];
+        } else {
+          if (isHumanoidCreature) {
+            // Humanoids without preferred weapons get a random common weapon
+            // But they can still use Claw as default if they have it
+            const defaultWeapon = getDefaultWeaponForEnemy(newFighter);
+            if (defaultWeapon && defaultWeapon.name !== "Unarmed" && defaultWeapon.name !== "Claw") {
+              newFighter = assignRandomWeaponToEnemy(newFighter, defaultWeapon.name);
+              addLog(`⚔️ ${newFighter.name} wields ${newFighter.equippedWeapons?.[0]?.name || defaultWeapon.name}`, "info");
+            } else if (hasClawAttack) {
+              // Humanoid with Claw - log that they're using Claw
+              addLog(`⚔️ ${newFighter.name} uses Claw (${creatureData.attacks.find(a => a.name === "Claw")?.damage || "1d6"})`, "info");
+            }
+          } else if (creatureData.attacks && Array.isArray(creatureData.attacks) && creatureData.attacks.length > 0) {
+            // Non-humanoid creatures: convert natural attacks to equipped weapons
+            // Check if a specific natural attack was selected from the dropdown
+            let physicalAttack = null;
+            if (weaponToEquip && weaponToEquip !== "None") {
+              // User selected a specific natural attack
+              physicalAttack = creatureData.attacks.find(
+                attack => attack.name && attack.name === weaponToEquip
+              );
             }
             
-            // Convert natural attack to weapon format
-            // Special handling for Fire Whip - use proper weapon definition
-            let naturalWeapon;
-            if (physicalAttack.name === "Fire Whip") {
-              naturalWeapon = {
-                ...baalRogFireWhip,
-                slot: "Right Hand",
-                category: "natural", // Keep as natural attack category
-                damage: physicalAttack.damage || baalRogFireWhip.damage || "4d6", // Use damage from attack or weapon definition
-              };
-            } else {
-              naturalWeapon = {
-                name: physicalAttack.name,
-                damage: physicalAttack.damage || "1d6",
-                type: "melee",
-                category: "natural",
-                slot: "Right Hand",
-                reach: physicalAttack.reach || 0,
-                range: physicalAttack.range || 0,
-              };
+            // If no specific attack selected, find the first non-magic/spellcasting attack
+            // Prioritize Fire Whip if it exists, then Claw, then other physical attacks
+            if (!physicalAttack) {
+              // First, try to find Fire Whip
+              physicalAttack = creatureData.attacks.find(
+                attack => attack.name && attack.name === "Fire Whip"
+              );
+              
+              // If no Fire Whip, try Claw
+              if (!physicalAttack) {
+                physicalAttack = creatureData.attacks.find(
+                  attack => attack.name && attack.name === "Claw"
+                );
+              }
+              
+              // If still no physical attack, find any non-magic/spellcasting attack
+              if (!physicalAttack) {
+                physicalAttack = creatureData.attacks.find(
+                  attack => attack.name && 
+                  !attack.name.toLowerCase().includes("magic") && 
+                  !attack.name.toLowerCase().includes("spell") &&
+                  attack.damage !== "by spell"
+                ) || creatureData.attacks[0]; // Fallback to first attack if all are magic
+              }
             }
             
-            newFighter.equippedWeapons[0] = naturalWeapon;
-            newFighter.equippedWeapon = physicalAttack.name; // Legacy support
-            newFighter.weapon = physicalAttack.name; // Legacy support
-            
-            // Initialize equipped object if needed
-            if (!newFighter.equipped) {
-              newFighter.equipped = {};
+            if (physicalAttack && physicalAttack.name) {
+              // Convert natural attack to weapon format
+              // Special handling for Fire Whip - use proper weapon definition
+              let naturalWeapon;
+              if (physicalAttack.name === "Fire Whip") {
+                // Get Fire Whip from weapons array or use baalRogFireWhip
+                const fireWhipWeapon = getWeaponByName("Fire Whip") || baalRogFireWhip;
+                naturalWeapon = {
+                  ...fireWhipWeapon,
+                  slot: "Left Hand", // Fire Whip goes in left hand for Baal-Rog
+                  category: "natural", // Keep as natural attack category
+                  damage: physicalAttack.damage || fireWhipWeapon.damage || "4d6", // Use damage from attack or weapon definition
+                };
+                // Set Fire Whip in left hand (index 1)
+                newFighter.equippedWeapons[1] = naturalWeapon;
+                
+                // Also set in equipped object for consistency
+                if (!newFighter.equipped) {
+                  newFighter.equipped = {};
+                }
+                newFighter.equipped.weaponSecondary = naturalWeapon;
+                
+                // Set legacy fields
+                newFighter.equippedWeapon = physicalAttack.name; // Legacy support
+                newFighter.weapon = physicalAttack.name; // Legacy support
+              } else if (physicalAttack.name === "Claw") {
+                // Claw is already set as default, but update with correct damage if different
+                const clawWeapon = {
+                  name: "Claw",
+                  damage: physicalAttack.damage || "1d6",
+                  type: "melee",
+                  category: "natural",
+                  slot: "Right Hand",
+                  reach: physicalAttack.reach || 0,
+                  range: physicalAttack.range || 0,
+                };
+                newFighter.equippedWeapons[0] = clawWeapon;
+                
+                // Initialize equipped object if needed
+                if (!newFighter.equipped) {
+                  newFighter.equipped = {};
+                }
+                newFighter.equipped.weaponPrimary = clawWeapon;
+                
+                // Set legacy fields
+                newFighter.equippedWeapon = physicalAttack.name; // Legacy support
+                newFighter.weapon = physicalAttack.name; // Legacy support
+              } else {
+                // Other natural attacks (not Claw, not Fire Whip)
+                naturalWeapon = {
+                  name: physicalAttack.name,
+                  damage: physicalAttack.damage || "1d6",
+                  type: "melee",
+                  category: "natural",
+                  slot: "Right Hand",
+                  reach: physicalAttack.reach || 0,
+                  range: physicalAttack.range || 0,
+                };
+                newFighter.equippedWeapons[0] = naturalWeapon;
+                
+                // Initialize equipped object if needed
+                if (!newFighter.equipped) {
+                  newFighter.equipped = {};
+                }
+                newFighter.equipped.weaponPrimary = naturalWeapon;
+                
+                // Set legacy fields
+                newFighter.equippedWeapon = physicalAttack.name; // Legacy support
+                newFighter.weapon = physicalAttack.name; // Legacy support
+              }
+              
+              // Only log if it's not Claw (since Claw is default and already logged above)
+              if (physicalAttack.name !== "Claw") {
+                addLog(`⚔️ ${newFighter.name} uses ${physicalAttack.name} (${physicalAttack.damage || "1d6"})`, "info");
+              }
+            } else if (hasClawAttack) {
+              // Creature has Claw but no other physical attack selected - Claw is already set as default
+              const clawAttack = creatureData.attacks.find(attack => attack.name === "Claw");
+              addLog(`⚔️ ${newFighter.name} uses Claw (${clawAttack?.damage || "1d6"})`, "info");
             }
-            newFighter.equipped.weaponPrimary = naturalWeapon;
-            
-            addLog(`⚔️ ${newFighter.name} uses ${physicalAttack.name} (${physicalAttack.damage || "1d6"})`, "info");
           }
         }
       }
       
-      // ✅ Assign random alignment if not already set
-      if (!newFighter.alignment && !newFighter.alignmentName) {
-        const randomAlignment = getRandomAlignmentForRace(newFighter.race || newFighter.species, newFighter.species);
-        newFighter.alignment = randomAlignment;
-        newFighter.alignmentName = randomAlignment;
-      }
+      // ✅ Assign random alignment from bestiary entry (always pick one from the array/category)
+      // Even if alignment exists as an array, we need to pick a specific one
+      const randomAlignment = getRandomAlignmentFromBestiary(creatureData);
+      newFighter.alignment = randomAlignment;
+      newFighter.alignmentName = randomAlignment;
+      addLog(`🎲 ${newFighter.name} alignment: ${randomAlignment}`, "info");
       
       // Apply level-based stat adjustments
       if (level > 1) {
@@ -8565,12 +10492,19 @@ useEffect(() => {
         
         // Load spells if creature has magicAbilities
         if (newFighter.magicAbilities && typeof newFighter.magicAbilities === "string") {
+          // Check if this is Wizard (Invocation) magic - use fullList for unrestricted access
+          const isWizardMagic = /spell\s+magic|wizard\s+magic|invocation\s+magic|invocation/i.test(newFighter.magicAbilities.toLowerCase());
+          
           // Use enhanced parser for complex magicAbilities strings
-          const spellResult = getSpellsForCreature(newFighter.magicAbilities);
+          // For Wizard magic, get full list and store in spellbook; also get curated list for magic
+          const spellResult = getSpellsForCreature(newFighter.magicAbilities, {
+            fullList: isWizardMagic, // Full list for Wizard magic
+            includeNonCombat: true   // Include all spells, not just combat
+          });
           
           if (spellResult.spells.length > 0) {
             // Convert to combat spell format
-            const selectedSpells = spellResult.spells.map(spell => ({
+            const allSpells = spellResult.spells.map(spell => ({
               name: spell.name,
               cost: spell.ppeCost || spell.cost || 10,
               damage: spell.damage || spell.combatDamage || "",
@@ -8579,10 +10513,23 @@ useEffect(() => {
               range: spell.range || "100ft",
             }));
             
-            newFighter.magic = selectedSpells;
+            // For Wizard magic: store full list in spellbook, curated list in magic
+            if (isWizardMagic || spellResult.unrestricted) {
+              newFighter.spellbook = allSpells; // Full catalog
+              // Also keep a curated subset in magic for quick access (combat damage spells only)
+              const combatSpells = allSpells.filter(s => s.damage && s.damage !== "0" && s.damage !== "");
+              newFighter.magic = combatSpells.slice(0, 20); // Top 20 combat spells for quick access
+              // Set unrestricted flag for getFighterSpells to detect
+              newFighter.unrestricted = true;
+              newFighter.magicProfile = { isWizardMagic: true, unrestricted: true };
+            } else {
+              // For elemental magic, use the curated list
+              newFighter.magic = allSpells;
+            }
+            
             newFighter.PPE = newFighter.PPE || spellResult.ppe;
             newFighter.currentPPE = newFighter.currentPPE || newFighter.PPE;
-            addLog(`🔮 ${newFighter.name} has ${selectedSpells.length} spells available (${newFighter.magicAbilities})`, "info");
+            addLog(`🔮 ${newFighter.name} has ${isWizardMagic ? allSpells.length + ' spells in spellbook' : allSpells.length + ' spells'} available (${newFighter.magicAbilities})`, "info");
           } else {
             // Fallback to old method if parser returns no spells
             const magicText = newFighter.magicAbilities.toLowerCase();
@@ -9114,6 +11061,9 @@ useEffect(() => {
     allTimeoutsRef.current = []; // Clear any stale timeouts
     activeCastIdsRef.current.clear(); // Clear any stale cast IDs
     resolvedSpellEffectsRef.current.clear(); // Clear any stale spell effects
+    combatCastGuardRef.current.clear(); // ✅ Clear cast guard for new combat
+    // ✅ Reset per-combat AI refs (anti-air ammo, unreachable counters, spell spam guards, arena props)
+    resetAITransientRefs();
     
     setCombatActive(true);
     setMode("COMBAT"); // Ensure mode is set to COMBAT so icons appear on the map
@@ -9290,6 +11240,11 @@ useEffect(() => {
   }
 
   function applyHPToFighter(fighter, newHP) {
+    const wasConscious = (fighter.currentHP ?? fighter.hp ?? fighter.HP ?? 0) > 0;
+    const isNowUnconscious = newHP <= 0;
+    const wasFlying = isFlying(fighter);
+    const currentAltitude = wasFlying ? (getAltitude(fighter) || 0) : 0;
+    
     if (fighter.currentHP !== undefined) fighter.currentHP = newHP;
     if (fighter.hp !== undefined) fighter.hp = newHP;
     if (fighter.HP !== undefined) fighter.HP = newHP;
@@ -9310,6 +11265,37 @@ useEffect(() => {
     } else {
       fighter.status = "defeated";
       fighter.isDead = true;
+    }
+    
+    // ✅ FLYING FALL CHECK: If flying character becomes unconscious, they fall immediately
+    if (wasConscious && isNowUnconscious && wasFlying && currentAltitude > 0) {
+      addLog(`💥 ${fighter.name} is hit and plummets ${currentAltitude}ft to the ground!`, "warning");
+      // Apply fall damage and ground the character
+      const afterFall = applyFallDamage(fighter, currentAltitude, addLog);
+      Object.assign(fighter, {
+        ...afterFall,
+        isFlying: false,
+        altitude: 0,
+        altitudeFeet: 0,
+        aiFlightState: null,
+      });
+      // Update HP status after fall damage
+      const hpAfterFall = fighter.currentHP ?? fighter.hp ?? fighter.HP ?? 0;
+      if (hpAfterFall <= MIN_COMBAT_HP) {
+        fighter.status = "defeated";
+        fighter.isDead = true;
+      } else if (hpAfterFall > 0) {
+        fighter.status = "active";
+      } else if (hpAfterFall === 0) {
+        fighter.status = "unconscious";
+      } else if (hpAfterFall >= -10) {
+        fighter.status = "dying";
+      } else if (hpAfterFall >= -20) {
+        fighter.status = "critical";
+      } else {
+        fighter.status = "defeated";
+        fighter.isDead = true;
+      }
     }
   }
 
@@ -9485,7 +11471,123 @@ useEffect(() => {
       }
     }
 
+    // ✅ CAST DE-DUPE / ANTI-LOOP GUARD: Prevent machine-gun casting in same action window
+    const castKey = `${caster.id}:${combatSpell.name}:${turnIndex}:${meleeRound}`;
+    if (combatCastGuardRef.current.has(castKey)) {
+      // We already resolved this exact cast for this action window
+      activeCastIdsRef.current.delete(castId); // Clean up
+      resolvedSpellEffectsRef.current.delete(effectKey); // Clean up
+      return false;
+    }
+    combatCastGuardRef.current.add(castKey);
+
+    // ✅ RAW WIZARD LIMIT: 1 spell per melee (2 at lvl 4+ later)
+    if ((caster.spellsCastThisMelee || 0) >= 1) {
+      addLog(`⏭️ ${caster.name} cannot cast another spell this melee`, "info");
+      activeCastIdsRef.current.delete(castId); // Clean up
+      resolvedSpellEffectsRef.current.delete(effectKey); // Clean up
+      return false;
+    }
+
     addLog(`🔮 ${caster.name} casts ${combatSpell.name}! (castId=${castId.substring(0, 30)}...)`, "combat");
+
+    // ✅ IMMUNITY CHECK: Check for damage type immunity BEFORE save/resist logic
+    // This prevents contradictory "fails to resist" + "impervious" messages
+    if (hasSpellDamage(combatSpell) && target) {
+      // Determine spell damage type
+      const dmgType = (combatSpell.damageType || "").toLowerCase();
+      
+      // Fallback: Check SPELL_ELEMENT_MAP if damageType is not set
+      let spellElement = null;
+      if (!dmgType || dmgType === "force" || dmgType === "magic") {
+        spellElement = SPELL_ELEMENT_MAP[combatSpell.name] || null;
+      }
+      
+      // Map spell element to damage type
+      const effectiveDmgType = dmgType || (spellElement ? spellElement.toLowerCase() : null);
+      
+      // Also check spell name for fire/cold keywords as fallback
+      const spellNameLower = combatSpell.name.toLowerCase();
+      const isFireSpell = effectiveDmgType === "fire" || spellElement === "fire" || 
+                         spellNameLower.includes("fire") || spellNameLower.includes("flame");
+      const isColdSpell = effectiveDmgType === "cold" || spellElement === "cold" || 
+                         spellNameLower.includes("cold") || spellNameLower.includes("ice") || spellNameLower.includes("frost");
+      
+      // Check target immunities
+      const targetAbilities = target.abilities || {};
+      let isImmune = false;
+      let immunityType = null;
+      
+      // Check parsed abilities object for impervious_to
+      if (targetAbilities.impervious_to && Array.isArray(targetAbilities.impervious_to)) {
+        if (isFireSpell && targetAbilities.impervious_to.includes("fire")) {
+          isImmune = true;
+          immunityType = "fire";
+        } else if (isColdSpell && targetAbilities.impervious_to.includes("cold")) {
+          isImmune = true;
+          immunityType = "cold";
+        } else if (effectiveDmgType && targetAbilities.impervious_to.includes(effectiveDmgType)) {
+          isImmune = true;
+          immunityType = effectiveDmgType;
+        }
+      }
+      
+      // Also check raw abilities array if it exists (fallback)
+      if (!isImmune && Array.isArray(target.abilities)) {
+        if (isFireSpell && target.abilities.some(a => 
+          typeof a === "string" && 
+          (a.toLowerCase().includes("impervious to fire") || 
+           a.toLowerCase().includes("impervious to fire (no damage)"))
+        )) {
+          isImmune = true;
+          immunityType = "fire";
+        } else if (isColdSpell && target.abilities.some(a => 
+          typeof a === "string" && 
+          (a.toLowerCase().includes("impervious to cold") || 
+           a.toLowerCase().includes("impervious to cold (no damage)"))
+        )) {
+          isImmune = true;
+          immunityType = "cold";
+        }
+      }
+      
+      // If immune, log immunity message, spend PPE, end turn, and return early
+      if (isImmune) {
+        addLog(`🛡️ ${target.name} is impervious to ${immunityType} and takes no damage from ${combatSpell.name}!`, "info");
+        addLog(`🔮 ${caster.name} spent ${spellCost} PPE`, "combat");
+
+        // -------------------------------------------------------------------
+        // AI: write deferred outcome so enemyTurnAI can mark this element as
+        // DISPROVEN against this target (prevents Flame Lick spam vs Baal-Rog).
+        // -------------------------------------------------------------------
+        try {
+          if (!caster.meta) caster.meta = {};
+          const targetKey = getAIMemoryTargetKey(target);
+          caster.meta.lastSpellOutcome = {
+            targetKey,
+            spellName: combatSpell.name,
+            element: immunityType || inferSpellElementForAI(combatSpell),
+            outcome: "disproven",
+            notes: `Target is impervious to ${immunityType || "this element"}`,
+          };
+        } catch (e) {
+          // swallow
+        }
+        
+        // ✅ Increment spells cast this melee (RAW: 1 spell per melee limit) - spell was cast even if immune
+        setFighters(prev => 
+          prev.map(f => 
+            f.id === caster.id
+              ? { ...f, spellsCastThisMelee: (f.spellsCastThisMelee || 0) + 1 }
+              : f
+          )
+        );
+        
+        activeCastIdsRef.current.delete(castId); // Clean up
+        endTurn();
+        return true;
+      }
+    }
 
     setFighters((prev) => {
       // ✅ GUARD: Check combat state inside setState callback
@@ -9506,6 +11608,28 @@ useEffect(() => {
         return updated;
       });
     });
+
+    // -----------------------------------------------------------------------
+    // AI: "threat intel" spells earn threat-analysis tags (inferred, not confirmed)
+    // Stored on caster.meta._earnedThreatTags[targetKey] so createThreatProfile
+    // can merge them if you choose.
+    // -----------------------------------------------------------------------
+    try {
+      const earned = getThreatTagsEarnedBySpell(combatSpell);
+      if (earned && target) {
+        if (!caster.meta) caster.meta = {};
+        if (!caster.meta._earnedThreatTags) caster.meta._earnedThreatTags = {};
+        const targetKey = getAIMemoryTargetKey(target);
+        caster.meta._earnedThreatTags[targetKey] = {
+          ...(caster.meta._earnedThreatTags[targetKey] || {}),
+          ...earned,
+          _lastSourceSpell: combatSpell.name,
+          _t: Date.now(),
+        };
+      }
+    } catch (e) {
+      // swallow
+    }
 
     if (healingFormula && healTarget) {
       let healAmount = 0;
@@ -9588,6 +11712,132 @@ useEffect(() => {
         return false;
       }
       
+      // Check for fire/cold resistance (half damage) - immunity already checked above
+      const targetAbilities = target.abilities || {};
+      const spellNameLower = combatSpell.name.toLowerCase();
+      const spellElement = SPELL_ELEMENT_MAP[combatSpell.name] || null;
+      const dmgType = (combatSpell.damageType || "").toLowerCase();
+      const isFireSpell = dmgType === "fire" || spellElement === "fire" || 
+                         spellNameLower.includes("fire") || spellNameLower.includes("flame");
+      const isColdSpell = dmgType === "cold" || spellElement === "cold" || 
+                         spellNameLower.includes("cold") || spellNameLower.includes("ice") || spellNameLower.includes("frost");
+      
+      // Check for fire resistance (half damage)
+      if (isFireSpell) {
+        const fireResistance = targetAbilities.resistances?.fire;
+        if (fireResistance && fireResistance < 1.0) {
+          const damageRoll = CryptoSecureDice.parseAndRoll(combatSpell.damage);
+          let damage = Math.floor(damageRoll.totalWithBonus * fireResistance);
+          if (saveResisted) {
+            damage = Math.max(1, Math.floor(damage / 2));
+          }
+          
+          setFighters((prev) => {
+            if (combatOverRef.current || !combatActive || combatEndCheckRef.current) {
+              activeCastIdsRef.current.delete(castId);
+              return prev;
+            }
+            
+            return prev.map((f) => {
+              if (f.id !== target.id) return f;
+              const updatedTarget = { ...f };
+              const newHP = clampHP(getFighterHP(updatedTarget) - damage, updatedTarget);
+              applyHPToFighter(updatedTarget, newHP);
+              return updatedTarget;
+            });
+          });
+          
+          addLog(`💥 ${combatSpell.name} hits ${target.name} for ${damage} damage (fire resistance: ${Math.round(fireResistance * 100)}%)!`, "combat");
+          addLog(`🔮 ${caster.name} spent ${spellCost} PPE`, "combat");
+
+          // AI: spell worked (confirmed effective vs target; not a "weakness" claim)
+          try {
+            if (!caster.meta) caster.meta = {};
+            const targetKey = getAIMemoryTargetKey(target);
+            caster.meta.lastSpellOutcome = {
+              targetKey,
+              spellName: combatSpell.name,
+              element: inferSpellElementForAI(combatSpell),
+              outcome: damage > 0 ? "confirmed" : "no_effect",
+              notes: saveResisted ? "Target partially resisted" : "Spell dealt damage",
+            };
+          } catch (e) {
+            // swallow
+          }
+          
+          // ✅ Increment spells cast this melee (RAW: 1 spell per melee limit)
+          setFighters(prev => 
+            prev.map(f => 
+              f.id === caster.id
+                ? { ...f, spellsCastThisMelee: (f.spellsCastThisMelee || 0) + 1 }
+                : f
+            )
+          );
+          
+          activeCastIdsRef.current.delete(castId);
+          endTurn();
+          return true;
+        }
+      }
+      
+      // Check for cold resistance (half damage)
+      if (isColdSpell) {
+        const coldResistance = targetAbilities.resistances?.cold;
+        if (coldResistance && coldResistance < 1.0) {
+          const damageRoll = CryptoSecureDice.parseAndRoll(combatSpell.damage);
+          let damage = Math.floor(damageRoll.totalWithBonus * coldResistance);
+          if (saveResisted) {
+            damage = Math.max(1, Math.floor(damage / 2));
+          }
+          
+          setFighters((prev) => {
+            if (combatOverRef.current || !combatActive || combatEndCheckRef.current) {
+              activeCastIdsRef.current.delete(castId);
+              return prev;
+            }
+            
+            return prev.map((f) => {
+              if (f.id !== target.id) return f;
+              const updatedTarget = { ...f };
+              const newHP = clampHP(getFighterHP(updatedTarget) - damage, updatedTarget);
+              applyHPToFighter(updatedTarget, newHP);
+              return updatedTarget;
+            });
+          });
+          
+          addLog(`💥 ${combatSpell.name} hits ${target.name} for ${damage} damage (cold resistance: ${Math.round(coldResistance * 100)}%)!`, "combat");
+          addLog(`🔮 ${caster.name} spent ${spellCost} PPE`, "combat");
+
+          // AI: spell worked (confirmed effective vs target; not a "weakness" claim)
+          try {
+            if (!caster.meta) caster.meta = {};
+            const targetKey = getAIMemoryTargetKey(target);
+            caster.meta.lastSpellOutcome = {
+              targetKey,
+              spellName: combatSpell.name,
+              element: inferSpellElementForAI(combatSpell),
+              outcome: damage > 0 ? "confirmed" : "no_effect",
+              notes: saveResisted ? "Target partially resisted" : "Spell dealt damage",
+            };
+          } catch (e) {
+            // swallow
+          }
+          
+          // ✅ Increment spells cast this melee (RAW: 1 spell per melee limit)
+          setFighters(prev => 
+            prev.map(f => 
+              f.id === caster.id
+                ? { ...f, spellsCastThisMelee: (f.spellsCastThisMelee || 0) + 1 }
+                : f
+            )
+          );
+          
+          activeCastIdsRef.current.delete(castId);
+          endTurn();
+          return true;
+        }
+      }
+      
       const damageRoll = CryptoSecureDice.parseAndRoll(combatSpell.damage);
       let damage = damageRoll.totalWithBonus;
       if (saveResisted) {
@@ -9606,14 +11856,34 @@ useEffect(() => {
 
           const updatedTarget = { ...f };
           const newHP = clampHP(getFighterHP(updatedTarget) - damage, updatedTarget);
+          // applyHPToFighter will handle the fall check automatically
           applyHPToFighter(updatedTarget, newHP);
+          
           return updatedTarget;
         });
       });
 
       addLog(`💥 ${combatSpell.name} hits ${target.name} for ${damage} damage!`, "combat");
+      
+      // ✅ Increment spells cast this melee (RAW: 1 spell per melee limit)
+      setFighters(prev => 
+        prev.map(f => 
+          f.id === caster.id
+            ? { ...f, spellsCastThisMelee: (f.spellsCastThisMelee || 0) + 1 }
+            : f
+        )
+      );
     } else if (combatSpell.effect) {
       addLog(`✨ ${combatSpell.effect}`, "combat");
+      
+      // ✅ Increment spells cast this melee (RAW: 1 spell per melee limit)
+      setFighters(prev => 
+        prev.map(f => 
+          f.id === caster.id
+            ? { ...f, spellsCastThisMelee: (f.spellsCastThisMelee || 0) + 1 }
+            : f
+        )
+      );
     }
 
     addLog(`🔮 ${caster.name} spent ${spellCost} PPE`, "combat");
@@ -9674,7 +11944,7 @@ useEffect(() => {
       setSelectedManeuver(null);
       setShowCombatChoices(false);
       closeCombatChoices(); // Also close via disclosure hook
-      setTimeout(() => endTurn(), 500);
+      scheduleEndTurn(500);
       return;
     }
 
@@ -9737,7 +12007,7 @@ useEffect(() => {
         ));
         executingActionRef.current = false; // Clear lock after action completes
         clearTimeout(lockTimeout);
-        safeEndTurn(500);
+        scheduleEndTurn(500);
         return;
       }
       
@@ -9752,7 +12022,7 @@ useEffect(() => {
             ? { ...f, remainingAttacks: Math.max(0, f.remainingAttacks - (dodgeCost === "all" ? f.remainingAttacks : dodgeCost)) }
             : f
         ));
-        safeEndTurn(500);
+        scheduleEndTurn(500);
         return;
       }
       
@@ -9784,7 +12054,7 @@ useEffect(() => {
         ));
         executingActionRef.current = false;
         clearTimeout(lockTimeout);
-        safeEndTurn(500);
+        scheduleEndTurn(500);
         return;
       }
       
@@ -9803,7 +12073,7 @@ useEffect(() => {
               ? { ...f, remainingAttacks: Math.max(0, f.remainingAttacks - 1) }
               : f
           ));
-          safeEndTurn(500);
+          scheduleEndTurn(500);
         }
         return;
       
@@ -9825,7 +12095,7 @@ useEffect(() => {
               ? { ...f, remainingAttacks: Math.max(0, f.remainingAttacks - 1) }
               : f
           ));
-          safeEndTurn(500);
+          scheduleEndTurn(500);
         }
         return;
       
@@ -9856,7 +12126,7 @@ useEffect(() => {
           ));
           executingActionRef.current = false;
           clearTimeout(lockTimeout);
-          safeEndTurn(500);
+          scheduleEndTurn(500);
         }
         return;
       
@@ -9868,7 +12138,7 @@ useEffect(() => {
             ? { ...f, remainingAttacks: Math.max(0, f.remainingAttacks - 1) }
             : f
         ));
-        safeEndTurn(500);
+        scheduleEndTurn(500);
         return;
       
       case "Light Rest": {
@@ -9902,7 +12172,7 @@ useEffect(() => {
 
         executingActionRef.current = false;
         clearTimeout(lockTimeout);
-        safeEndTurn(500);
+        scheduleEndTurn(500);
         return;
       }
 
@@ -9930,7 +12200,7 @@ useEffect(() => {
 
         executingActionRef.current = false;
         clearTimeout(lockTimeout);
-        safeEndTurn(500);
+        scheduleEndTurn(500);
         return;
       }
       
@@ -9950,7 +12220,7 @@ useEffect(() => {
               : f
           ));
           executingActionRef.current = false; // Clear lock after action completes
-          safeEndTurn(500);
+          scheduleEndTurn(500);
         } else {
           addLog(`❌ ${currentFighter.name} cannot brace without a spear, pike, polearm, or lance!`, "error");
           executingActionRef.current = false; // Clear lock on error
@@ -9988,7 +12258,7 @@ useEffect(() => {
             setSelectedGrappleAction(null); // Clear selection after use
             executingActionRef.current = false; // Clear lock after action completes
             clearTimeout(lockTimeout);
-            safeEndTurn(500);
+            scheduleEndTurn(500);
             return;
           } else {
             // Not in grapple - use selected maneuver
@@ -10005,28 +12275,28 @@ useEffect(() => {
               setSelectedManeuver(null); // Clear selection after use
               executingActionRef.current = false;
               clearTimeout(lockTimeout);
-              safeEndTurn(500);
+              scheduleEndTurn(500);
               return;
             } else if (selectedManeuver === "trip") {
               executeTripManeuver(currentFighter, targetToExecute);
               setSelectedManeuver(null); // Clear selection after use
               executingActionRef.current = false;
               clearTimeout(lockTimeout);
-              safeEndTurn(500);
+              scheduleEndTurn(500);
               return;
             } else if (selectedManeuver === "shove") {
               executeShoveManeuver(currentFighter, targetToExecute);
               setSelectedManeuver(null); // Clear selection after use
               executingActionRef.current = false;
               clearTimeout(lockTimeout);
-              safeEndTurn(500);
+              scheduleEndTurn(500);
               return;
             } else if (selectedManeuver === "disarm") {
               executeDisarmManeuver(currentFighter, targetToExecute);
               setSelectedManeuver(null); // Clear selection after use
               executingActionRef.current = false;
               clearTimeout(lockTimeout);
-              safeEndTurn(500);
+              scheduleEndTurn(500);
               return;
             } else {
               addLog(`⚠️ Unknown maneuver: ${selectedManeuver}`, "error");
@@ -10255,7 +12525,7 @@ useEffect(() => {
         setSelectedClericalAbility(null);
         executingActionRef.current = false;
         clearTimeout(lockTimeout);
-        safeEndTurn(500);
+        scheduleEndTurn(500);
         return;
       }
       
@@ -10461,7 +12731,7 @@ useEffect(() => {
     setSelectedTarget(null);
         executingActionRef.current = false;
         clearTimeout(lockTimeout);
-        safeEndTurn(1500);
+        scheduleEndTurn(1500);
         return;
       }
       
@@ -10477,7 +12747,7 @@ useEffect(() => {
         }
         executingActionRef.current = false;
         clearTimeout(lockTimeout);
-        safeEndTurn(500);
+        scheduleEndTurn(500);
         return;
       }
 
@@ -10501,7 +12771,7 @@ useEffect(() => {
         }
         executingActionRef.current = false;
         clearTimeout(lockTimeout);
-        safeEndTurn(500);
+        scheduleEndTurn(500);
         return;
       }
 
@@ -10520,7 +12790,7 @@ useEffect(() => {
         }
         executingActionRef.current = false;
         clearTimeout(lockTimeout);
-        safeEndTurn(500);
+        scheduleEndTurn(500);
         return;
       }
 
@@ -10615,7 +12885,7 @@ useEffect(() => {
           addLog(result.message, "info");
           executingActionRef.current = false;
           clearTimeout(lockTimeout);
-          safeEndTurn(500);
+          scheduleEndTurn(500);
           return;
         } else {
           // Teleport failed - still costs an action
@@ -10628,7 +12898,7 @@ useEffect(() => {
           addLog(`❌ ${result.reason}`, "warning");
           executingActionRef.current = false;
           clearTimeout(lockTimeout);
-          safeEndTurn(500);
+          scheduleEndTurn(500);
           return;
         }
       }
@@ -10656,7 +12926,7 @@ useEffect(() => {
         }
         executingActionRef.current = false;
         clearTimeout(lockTimeout);
-        safeEndTurn(500);
+        scheduleEndTurn(500);
         return;
       }
 
@@ -10691,7 +12961,7 @@ useEffect(() => {
         }
         executingActionRef.current = false;
         clearTimeout(lockTimeout);
-        safeEndTurn(500);
+        scheduleEndTurn(500);
         return;
       }
 
@@ -10705,7 +12975,7 @@ useEffect(() => {
         ));
         executingActionRef.current = false; // Clear lock after action completes
         clearTimeout(lockTimeout);
-        safeEndTurn(500);
+        scheduleEndTurn(500);
         return;
     }
 
@@ -10716,6 +12986,9 @@ useEffect(() => {
 
   function resetCombat() {
     try {
+      // ✅ Reset per-combat AI refs (prevents stale behavior after multiple resets)
+      resetAITransientRefs();
+
       // Reset closed distances when combat ends
       if (combatStateRef.current) {
         resetClosedDistances(combatStateRef.current);
@@ -10737,7 +13010,39 @@ useEffect(() => {
         // Reset ISP and PPE to max values (always reset, even if 0)
         // Re-initialize PPE for creatures with magicAbilities if it's missing or 0
         if ((!fighterCopy.PPE || fighterCopy.PPE === 0) && fighterCopy.magicAbilities) {
-          const spellResult = getSpellsForCreature(fighterCopy.magicAbilities);
+          // Check if this is Wizard (Invocation) magic - use fullList for unrestricted access
+          const isWizardMagic = fighterCopy.magicAbilities && typeof fighterCopy.magicAbilities === "string" &&
+            /spell\s+magic|wizard\s+magic|invocation\s+magic|invocation/i.test(fighterCopy.magicAbilities.toLowerCase());
+          
+          const spellResult = getSpellsForCreature(fighterCopy.magicAbilities, {
+            fullList: isWizardMagic, // Full list for Wizard magic
+            includeNonCombat: true   // Include all spells
+          });
+          
+          if (spellResult.spells.length > 0) {
+            // Convert to combat spell format
+            const allSpells = spellResult.spells.map(spell => ({
+              name: spell.name,
+              cost: spell.ppeCost || spell.cost || 10,
+              damage: spell.damage || spell.combatDamage || "",
+              effect: spell.description || "",
+              level: spell.level || 1,
+              range: spell.range || "100ft",
+            }));
+            
+            // For Wizard magic: store full list in spellbook
+            if (isWizardMagic || spellResult.unrestricted) {
+              fighterCopy.spellbook = allSpells; // Full catalog
+              const combatSpells = allSpells.filter(s => s.damage && s.damage !== "0" && s.damage !== "");
+              fighterCopy.magic = combatSpells.slice(0, 20); // Top 20 combat spells for quick access
+              // Set unrestricted flag for getFighterSpells to detect
+              fighterCopy.unrestricted = true;
+              fighterCopy.magicProfile = { isWizardMagic: true, unrestricted: true };
+            } else {
+              fighterCopy.magic = allSpells;
+            }
+          }
+          
           if (spellResult.ppe > 0) {
             fighterCopy.PPE = spellResult.ppe; // Use parser's PPE calculation
             addLog(`🔮 ${fighterCopy.name} PPE re-initialized to ${spellResult.ppe} from magicAbilities on combat reset.`, "info");
@@ -11280,14 +13585,17 @@ useEffect(() => {
         if (consciousPlayers.length === 0) {
           // All players are either dead or unconscious - enemies win
           combatEndCheckRef.current = true;
+          combatOverRef.current = true; // ✅ AUTHORITATIVE: Stop all further actions (defeat)
           addLog("💀 All players are defeated! Enemies win!", "defeat");
           setCombatActive(false);
           
-          // ✅ CRITICAL: Clear all pending timeouts to stop post-victory actions
+          // ✅ CRITICAL: Clear ALL pending timeouts to stop post-defeat actions
           if (turnTimeoutRef.current) {
             clearTimeout(turnTimeoutRef.current);
             turnTimeoutRef.current = null;
           }
+          allTimeoutsRef.current.forEach(clearTimeout);
+          allTimeoutsRef.current = [];
         } else if (consciousEnemies.length === 0) {
           // All enemies are either dead or unconscious - players win
           combatEndCheckRef.current = true;
@@ -11805,265 +14113,6 @@ useEffect(() => {
 
       {/* Round/Turn Display - Only shown during active combat */}
 
-      {/* Combined Combat Arena & Tactical Map Controls - Resizable */}
-      {fighters.length > 0 && (
-        <FloatingPanel
-          title={`🗺️ Combat Arena - Dual View (2D + 3D)`}
-          initialWidth={1200}
-          initialHeight={600}
-          zIndex={1000}
-          minWidth={800}
-          minHeight={400}
-          center={true}
-        >
-          <VStack align="stretch" spacing={3}>
-            <HStack justify="space-between" align="center" wrap="wrap">
-              <VStack align="start" spacing={1}>
-                <Text fontSize="xs" color="gray.600">
-                  Dual-view battlefield: 2D tactical map (left) + 3D hex arena (right) - ${currentMapType === "square" ? "⬛ (Dungeon)" : "⬡ (Wilderness)"}
-              </Text>
-                {mode === "MAP_EDITOR" && (
-                  <Text fontSize="xs" color="blue.600" fontWeight="bold">
-                    📝 Map Editor Mode - Edit your battlefield
-                </Text>
-              )}
-                {mode === "COMBAT" && (
-                  <Text fontSize="xs" color="red.600" fontWeight="bold">
-                    ⚔️ Combat Mode - Active battle
-                </Text>
-              )}
-              </VStack>
-              <HStack spacing={2}>
-                <Button
-                  size="sm"
-                  colorScheme={mode === "MAP_EDITOR" ? "blue" : "gray"}
-                  variant={mode === "MAP_EDITOR" ? "solid" : "outline"}
-                  onClick={() => setMode("MAP_EDITOR")}
-                >
-                  📝 Map Editor
-                </Button>
-                <Button
-                  size="sm"
-                  colorScheme={mode === "COMBAT" ? "red" : "gray"}
-                  variant={mode === "COMBAT" ? "solid" : "outline"}
-                  onClick={() => setMode("COMBAT")}
-                >
-                  ⚔️ Combat View
-                </Button>
-                <Button
-                  size="sm"
-                  colorScheme={showTacticalMap ? "green" : "gray"}
-                  variant={showTacticalMap ? "solid" : "outline"}
-                  onClick={() => setShowTacticalMap(!showTacticalMap)}
-                >
-                  {showTacticalMap ? "🗺️ Hide Map" : "🗺️ Show Map"}
-                </Button>
-                <Button
-                  size="sm"
-                  colorScheme={show3DView ? "purple" : "gray"}
-                  variant={show3DView ? "solid" : "outline"}
-                  onClick={() => setShow3DView(!show3DView)}
-                >
-                  {show3DView ? "🎮 Hide 3D View" : "🎮 Show 3D View"}
-                </Button>
-                {showTacticalMap && (
-                  <Button
-                    size="sm"
-                    colorScheme={mapViewMode === '2D' ? "blue" : "purple"}
-                    variant={mapViewMode === '2D' ? "solid" : "outline"}
-                    onClick={() => setMapViewMode(mapViewMode === '2D' ? '3D' : '2D')}
-                  >
-                    {mapViewMode === '2D' ? "📐 2D View" : "🎮 3D View"}
-                  </Button>
-                )}
-                {mode === "MAP_EDITOR" && (
-                  <Button
-                    size="sm"
-                    colorScheme="green"
-                    onClick={startCombatFromEditor}
-                  >
-                    ▶️ Start Combat
-                  </Button>
-              )}
-              </HStack>
-            </HStack>
-            
-            {/* Map Height Controls */}
-            {showTacticalMap && mapViewMode === '2D' && (
-              <HStack spacing={2} align="center" justify="space-between" wrap="wrap">
-                <HStack spacing={2}>
-                  <Text fontSize="xs" color="gray.600" fontWeight="semibold">
-                    Map Height: {mapHeight}px
-                </Text>
-                  <Button 
-                    size="xs" 
-                    colorScheme="blue" 
-                    onClick={() => setMapHeight(prev => Math.max(400, prev - 50))}
-                    title="Decrease map height"
-                  >
-                    ➖
-                  </Button>
-                  <Button 
-                    size="xs" 
-                    colorScheme="blue" 
-                    onClick={() => setMapHeight(prev => Math.min(1200, prev + 50))}
-                    title="Increase map height"
-                  >
-                    ➕
-                  </Button>
-                </HStack>
-                <Button 
-                  size="xs" 
-                  colorScheme="purple" 
-                  onClick={() => {
-                    // Debug function - can be expanded if needed
-                    console.log('Map Height:', mapHeight);
-                  }} 
-                  title="Debug map dimensions"
-                >
-                  🔍 Debug
-                </Button>
-              </HStack>
-            )}
-            
-            {/* Movement Mode Active Info Box */}
-            {showTacticalMap && mapViewMode === '2D' && movementMode.active && currentFighter && positions[currentFighter.id] && (
-              <Box p={3} bg="green.50" borderRadius="md" borderWidth="1px" borderColor="green.300">
-                <VStack align="stretch" spacing={2} fontSize="xs">
-                  <HStack spacing={2} align="center">
-                    <Text fontSize="sm" fontWeight="bold" color="green.700">
-                      🚶 Movement Mode Active
-                    </Text>
-                    <Badge colorScheme={movementMode.isRunning ? "green" : "orange"} fontSize="xs">
-                      {movementMode.isRunning ? "Running" : "Walking"}
-                    </Badge>
-                  </HStack>
-                  <Text fontSize="xs" color="gray.700">
-                    Click a colored hex to select destination:
-                  </Text>
-                  <HStack spacing={2} wrap="wrap">
-                    <Badge colorScheme="green" fontSize="xs">🟢 Green: 1 action (15s)</Badge>
-                    <Badge colorScheme="yellow" fontSize="xs">🟡 Yellow: 2 actions (30s)</Badge>
-                    <Badge colorScheme="orange" fontSize="xs">🟠 Orange: 3 actions (45s)</Badge>
-                    <Badge colorScheme="red" fontSize="xs">🔴 Red: 4 actions (60s)</Badge>
-                  </HStack>
-              
-              {/* Palladium Movement Analysis */}
-                  {(() => {
-                    const speed = currentFighter.Spd || currentFighter.spd || currentFighter.attributes?.Spd || currentFighter.attributes?.spd || 10;
-                    const attacksPerMelee = currentFighter.attacksPerMelee || 1;
-                    const movement = calculateMovementPerAction(speed, attacksPerMelee, currentFighter);
-                    
-                    return (
-                      <Box bg="blue.50" p={2} borderRadius="md" mt={2}>
-                        <VStack spacing={1} align="stretch">
-                          <Text fontSize="xs" fontWeight="bold" color="blue.700">
-                            📊 Palladium Movement (Speed {speed} × 18 = {movement.display.feetPerMelee}ft/melee)
-                          </Text>
-                          <HStack spacing={2} fontSize="xs" wrap="wrap">
-                            <Badge colorScheme={movementMode.isRunning ? "green" : "orange"}>
-                              {movementMode.isRunning ? "Running" : "Walking"}: {movementMode.isRunning ? movement.display.feetPerAction : movement.combatMovementPerAction}ft/action
-                            </Badge>
-                            <Badge colorScheme="purple">
-                              Total: {movement.display.feetPerMelee}ft/melee
-                            </Badge>
-                          </HStack>
-                          <Text fontSize="xs" color="gray.600" fontStyle="italic">
-                            ⚡ Official 1994 Formula: Speed × 18 = Feet/Melee
-                          </Text>
-                        </VStack>
-                  </Box>
-                    );
-              })()}
-              
-                  {/* Selected Hex Info */}
-                  {selectedHex && (() => {
-                    const distance = calculateDistance(positions[currentFighter.id], selectedHex);
-                    const engagementRange = getEngagementRange(distance);
-                    return (
-                      <Box bg="white" p={2} borderRadius="md" borderWidth="1px" borderColor="green.300" mt={2}>
-                        <VStack spacing={2} align="stretch">
-                          <HStack spacing={2} align="center" wrap="wrap">
-                            <Badge colorScheme="green" fontSize="xs">
-                              Target: ({selectedHex.x}, {selectedHex.y})
-                            </Badge>
-                            <Badge colorScheme="blue" fontSize="xs">
-                              Distance: {Math.round(distance)}ft
-                            </Badge>
-                            <Badge colorScheme={engagementRange.canMeleeAttack ? "red" : "orange"} fontSize="xs">
-                              {engagementRange.name}
-                            </Badge>
-                          </HStack>
-                          <HStack spacing={2}>
-                <Button
-                              size="xs"
-                  colorScheme="green"
-                              onClick={() => handleMoveSelect(selectedHex.x, selectedHex.y)}
-                            >
-                              ✓ Execute Move
-                            </Button>
-                            <Button
-                              size="xs"
-                              variant="outline"
-                              onClick={() => setSelectedHex(null)}
-                            >
-                              Cancel
-                </Button>
-              </HStack>
-                        </VStack>
-            </Box>
-                    );
-                  })()}
-                </VStack>
-        </Box>
-      )}
-
-            {/* Hex Selection Info Box */}
-            {showTacticalMap && mapViewMode === '2D' && !movementMode.active && (hoveredCell || selectedHex) && (
-              <Box p={2} bg="blue.100" borderRadius="md" borderWidth="1px" borderColor="blue.300">
-                <VStack align="stretch" spacing={2} fontSize="xs">
-                  {selectedHex && currentFighter && positions[currentFighter.id] && (() => {
-                    const distance = calculateDistance(positions[currentFighter.id], selectedHex);
-                    const engagementRange = getEngagementRange(distance);
-                    return (
-                      <HStack spacing={2} align="center">
-                        <Badge colorScheme="green" fontSize="xs">
-                          Selected Hex: ({selectedHex.x}, {selectedHex.y})
-                        </Badge>
-                        <Badge colorScheme="blue" fontSize="xs">
-                          Distance: {Math.round(distance)}ft
-                        </Badge>
-                        <Badge colorScheme={engagementRange.canMeleeAttack ? "red" : "orange"} fontSize="xs">
-                          {engagementRange.name}
-                        </Badge>
-                      </HStack>
-                    );
-                  })()}
-                  {hoveredCell && selectedCombatantId && positions[selectedCombatantId] && (() => {
-                    const distance = calculateDistance(positions[selectedCombatantId], hoveredCell);
-                    return (
-                      <HStack spacing={2} align="center">
-                        <Badge colorScheme="blue" fontSize="xs">
-                          Hovered: ({hoveredCell.x}, {hoveredCell.y})
-                        </Badge>
-                        <Badge colorScheme="cyan" fontSize="xs">
-                          Distance: {Math.round(distance)}ft
-                        </Badge>
-                      </HStack>
-                    );
-                  })()}
-                  {hoveredCell && !selectedCombatantId && (
-                    <Badge colorScheme="blue" fontSize="xs" w="fit-content">
-                      Hovered: ({hoveredCell.x}, {hoveredCell.y})
-                    </Badge>
-              )}
-            </VStack>
-        </Box>
-      )}
-          </VStack>
-        </FloatingPanel>
-      )}
-      
       <ResizableLayout
         initialLeftWidth={350}
         initialRightWidth={350}
@@ -12343,16 +14392,34 @@ useEffect(() => {
                                   )}
                                   
                                   {/* ✅ Ammo Display */}
-                                  {fighter.inventory && fighter.inventory.length > 0 && (
-                                    <Box>
-                                      <Text fontWeight="medium">Ammunition:</Text>
-                                      {fighter.inventory
-                                        .filter(item => item.type === "ammunition" || (item.name && (item.name.toLowerCase().includes("arrow") || item.name.toLowerCase().includes("bolt") || item.name.toLowerCase().includes("bullet"))))
-                                        .map((item, idx) => (
-                                          <Text key={idx} pl={2}>• {item.name}: {item.quantity || 0}</Text>
+                                  {(() => {
+                                    const invAmmo =
+                                      fighter.inventory?.filter(
+                                        (item) =>
+                                          item?.type === "ammunition" ||
+                                          (item?.name &&
+                                            (item.name.toLowerCase().includes("arrow") ||
+                                              item.name.toLowerCase().includes("bolt") ||
+                                              item.name.toLowerCase().includes("bullet")))
+                                      ) || [];
+                                    const improvised = getImprovisedAmmoSummaryForFighter(fighter.id);
+                                    if (invAmmo.length === 0 && !improvised) return null;
+                                    return (
+                                      <Box>
+                                        <Text fontWeight="medium">Ammunition:</Text>
+                                        {invAmmo.map((item, idx) => (
+                                          <Text key={idx} pl={2}>
+                                            • {item.name}: {item.quantity || 0}
+                                          </Text>
                                         ))}
-                                    </Box>
-                                  )}
+                                        {improvised && (
+                                          <Text pl={2}>
+                                            • Improvised missiles: {improvised.qty} ({improvised.details})
+                                          </Text>
+                                        )}
+                                      </Box>
+                                    );
+                                  })()}
                                   {fighter.equipped && (
                                     <Box>
                                       <Text fontWeight="medium">Other:</Text>
@@ -12495,7 +14562,7 @@ useEffect(() => {
             )}
 
             {/* Combat Options - Moved here to appear under Equipped Weapons */}
-            {fighters.length > 0 && currentFighter && currentFighter.type === "player" && combatActive && !aiControlEnabled && (
+            {shouldShowCombatOptions && !isArielTurn && (
               <Box w="100%" mt={4}>
                 <Heading size="sm" color="green.600" mb={2}>🎯 Combat Options for {currentFighter.name}</Heading>
                 <Box 
@@ -12978,26 +15045,110 @@ useEffect(() => {
                       </Box>
                     )}
 
-                    {/* Spell Selection Buttons (only for Spells) */}
+                    {/* Spell Selection - Searchable Scrollable List (only for Spells) */}
                     {selectedAction?.name === "Spells" && currentFighter && hasSpells && spellsMode && (
                       <Box>
                         <Text fontSize="sm" fontWeight="bold" mb={2}>Select Spell:</Text>
-                        <Wrap spacing={2}>
-                          {availableSpells.map((spell, index) => (
-                            <Button
-                              key={index}
-                              size="sm"
-                              variant={selectedSpell?.name === spell.name ? "solid" : "outline"}
-                              colorScheme={selectedSpell?.name === spell.name ? "green" : "blue"}
-                              onClick={() => {
-                                setSelectedSpell(spell);
-                                addLog(`Spell selected: ${spell.name} (${spell.cost ?? spell.ppe ?? spell.PPE ?? 0} PPE)`, "info");
-                              }}
+                        
+                        {/* Search and Filter Controls */}
+                        <VStack spacing={2} mb={3} align="stretch">
+                          <Input
+                            placeholder="Search spells..."
+                            value={spellSearch}
+                            onChange={(e) => setSpellSearch(e.target.value)}
+                            size="sm"
+                          />
+                          <Select
+                            size="sm"
+                            value={spellLevelFilter}
+                            onChange={(e) => setSpellLevelFilter(e.target.value)}
+                          >
+                            <option value="all">All Levels</option>
+                            <option value="1">Level 1</option>
+                            <option value="2">Level 2</option>
+                            <option value="3">Level 3</option>
+                            <option value="4">Level 4</option>
+                            <option value="5">Level 5</option>
+                            <option value="6">Level 6+</option>
+                          </Select>
+                        </VStack>
+                        
+                        {/* Filtered Spell List */}
+                        {(() => {
+                          const filtered = availableSpells.filter((spell) => {
+                            const matchesSearch = !spellSearch || 
+                              spell.name.toLowerCase().includes(spellSearch.toLowerCase()) ||
+                              (spell.effect && spell.effect.toLowerCase().includes(spellSearch.toLowerCase()));
+                            const matchesLevel = spellLevelFilter === "all" || 
+                              (spellLevelFilter === "6" ? (spell.level || 1) >= 6 : (spell.level || 1) === parseInt(spellLevelFilter));
+                            return matchesSearch && matchesLevel;
+                          });
+                          
+                          return (
+                            <Box
+                              maxH="300px"
+                              overflowY="auto"
+                              border="1px solid"
+                              borderColor="gray.200"
+                              borderRadius="md"
+                              p={2}
                             >
-                              {spell.name} ({spell.cost ?? spell.ppe ?? spell.PPE ?? 0} PPE)
-                            </Button>
-                          ))}
-                        </Wrap>
+                              <VStack spacing={1} align="stretch">
+                                {filtered.length === 0 ? (
+                                  <Text fontSize="xs" color="gray.500" p={2} textAlign="center">
+                                    No spells found
+                                  </Text>
+                                ) : (
+                                  filtered.map((spell, index) => {
+                                    const ppeCost = spell.cost ?? spell.ppe ?? spell.PPE ?? 0;
+                                    const hasDamage = spell.damage && spell.damage !== "0" && spell.damage !== "";
+                                    const isSelected = selectedSpell?.name === spell.name;
+                                    
+                                    return (
+                                      <Button
+                                        key={index}
+                                        size="sm"
+                                        variant={isSelected ? "solid" : "outline"}
+                                        colorScheme={isSelected ? "green" : "blue"}
+                                        isDisabled={!hasDamage && import.meta.env?.DEV !== true}
+                                        onClick={() => {
+                                          setSelectedSpell(spell);
+                                          addLog(`Spell selected: ${spell.name} (${ppeCost} PPE)`, "info");
+                                        }}
+                                        justifyContent="flex-start"
+                                        textAlign="left"
+                                        whiteSpace="normal"
+                                        height="auto"
+                                        py={2}
+                                      >
+                                        <VStack align="start" spacing={0} width="100%">
+                                          <HStack width="100%" justify="space-between">
+                                            <Text fontSize="xs" fontWeight="bold">
+                                              {spell.name}
+                                            </Text>
+                                            <Badge fontSize="xs" colorScheme={hasDamage ? "green" : "gray"}>
+                                              {ppeCost} PPE
+                                            </Badge>
+                                          </HStack>
+                                          {spell.level && (
+                                            <Text fontSize="xs" color="gray.600">
+                                              Level {spell.level}
+                                            </Text>
+                                          )}
+                                          {!hasDamage && (
+                                            <Text fontSize="xs" color="orange.500" fontStyle="italic">
+                                              (Non-combat)
+                                            </Text>
+                                          )}
+                                        </VStack>
+                                      </Button>
+                                    );
+                                  })
+                                )}
+                              </VStack>
+                            </Box>
+                          );
+                        })()}
                       </Box>
                     )}
 
@@ -13315,10 +15466,10 @@ useEffect(() => {
                   />
                 )}
                 
-                {/* Dual View: 2D and 3D side-by-side */}
-                <Flex direction="row" gap={4} width="100%" height="100%">
+                {/* Dual View: 2D map first, then 3D below */}
+                <Flex direction="column" gap={4} width="100%" height="100%">
                   {/* 2D Tactical Map - Always mounted */}
-                  <Box width={show3DView ? "50%" : "100%"} minHeight="600px">
+                  <Box width="100%" minHeight="600px">
                 <TacticalMap
                   combatants={fighters.map(f => ({ 
                     ...f, 
@@ -13371,123 +15522,9 @@ useEffect(() => {
                 />
               </Box>
 
-                  {/* 3D Hex Arena - Hidden by default, toggle with button */}
-                  {show3DView && (
-                    <Box width="50%" minHeight="600px">
-                      <HexArena3D
-                        mapDefinition={mapDefinition}
-                        fighters={fighters}
-                        positions={positions}
-                        terrain={arenaEnvironment}
-                        mode={mode}
-                        visible={show3DView}
-                      />
-                    </Box>
-                  )}
                 </Flex>
 
-                {/* Melee Round & Action Panel */}
-                {showTacticalMap && fighters.length > 0 && combatActive && (
-                  <FloatingPanel
-                    title="⚔️ Melee Round & Action"
-                    initialX={550}
-                    initialY={60}
-                    initialWidth={400}
-                    initialHeight={500}
-                    zIndex={1001}
-                    minWidth={350}
-                    minHeight={300}
-                  >
-                    <VStack align="stretch" spacing={3} fontSize="sm">
-                      <Box>
-                        <Text fontWeight="bold" fontSize="lg" color="green.600">
-                          Melee Round {meleeRound} - {currentFighter?.name}&apos;s Action
-                        </Text>
-                        <Text fontSize="md">
-                          Initiative Order Action: <strong>{currentFighter?.name}</strong> (Initiative: {currentFighter?.initiative || 'N/A'})
-                          {currentFighter?.type === "enemy" ? " (Enemy)" : " (Player Character)"}
-                        </Text>
-                        <Text fontSize="xs" color="gray.600" fontStyle="italic">
-                          Actions alternate in initiative order until all fighters are out of actions
-                        </Text>
-                        {currentFighter && (
-                          <Text fontSize="sm" color="orange.600" fontWeight="bold" mt={2}>
-                            {formatAttacksRemaining(currentFighter.remainingAttacks || 0, currentFighter.attacksPerMelee || 2)}
-                          </Text>
-                        )}
-                        {currentFighter && isFlying(currentFighter) && (currentFighter.altitudeFeet ?? currentFighter.altitude ?? 0) > 0 && (
-                          <Text fontSize="sm" color="blue.600" fontWeight="bold" mt={1}>
-                            🦅 Airborne at {currentFighter.altitudeFeet ?? currentFighter.altitude ?? 0}ft
-                          </Text>
-                        )}
-                        {currentFighter && currentFighter.type === "player" && !aiControlEnabled && (
-                          <Text fontSize="sm" color="blue.600" fontWeight="bold" mt={1}>
-                            🎯 Combat choices available below
-                          </Text>
-                        )}
-                        {currentFighter && currentFighter.type === "player" && aiControlEnabled && (
-                          <Text fontSize="sm" color="purple.600" fontWeight="bold" mt={1}>
-                            🤖 AI-controlled player turn
-                          </Text>
-                        )}
-                        {currentFighter && currentFighter.type === "player" && selectedAction && (
-                          <Text fontSize="sm" color="green.600" fontWeight="bold" mt={1}>
-                            ✅ Ready: {selectedAction.name}
-                            {selectedTarget && ` → ${selectedTarget.name}`}
-                          </Text>
-                        )}
-                      </Box>
-                      
-                      {/* Palladium Movement Analysis */}
-                      {currentFighter && positions[currentFighter.id] && (
-                        <Box p={2} bg="blue.50" borderRadius="md" border="1px solid" borderColor="blue.200">
-                          <MovementRangeDisplay 
-                            combatant={currentFighter}
-                            position={positions[currentFighter.id]}
-                            scale={1}
-                            showVisual={false}
-                          />
-                        </Box>
-                      )}
-                      
-                      {/* Run Action Logger */}
-                      {currentFighter && 
-                       positions[currentFighter.id] && 
-                       combatActive && 
-                       fighters.some(f => f.type === "enemy" && f.currentHP > 0) && (() => {
-                        const enemyTarget = fighters.find(f => f.type === "enemy" && f.currentHP > 0);
-                        return enemyTarget && positions[enemyTarget.id] ? (
-                        <Box>
-                          <RunActionLogger 
-                              attacker={{...currentFighter, position: positions[currentFighter.id]}}
-                              target={{...enemyTarget, position: positions[enemyTarget.id]}}
-                            onUpdate={handleRunActionUpdate}
-                            disabled={currentFighter.type !== "player"}
-                          />
-                        </Box>
-                        ) : null;
-                      })()}
-                      
-                      {/* Next Turn Button */}
-                      <HStack spacing={2} mt={2}>
-                        <Button
-                          size="sm"
-                          colorScheme="green"
-                          onClick={executeSelectedAction}
-                          isDisabled={
-                            combatPaused ||
-                            (aiControlEnabled && currentFighter && currentFighter.type === "player")
-                          }
-                          w="full"
-                        >
-                          {currentFighter && currentFighter.type === "player" && selectedAction 
-                            ? `Execute ${selectedAction.name} →` 
-                            : "Next Turn →"}
-                        </Button>
-                      </HStack>
-                    </VStack>
-                  </FloatingPanel>
-                )}
+                {/* Melee Round & Action Panel moved into Combat Arena - Dual View panel below */}
               </Box>
             )}
 
@@ -13523,13 +15560,355 @@ useEffect(() => {
                 </Box>
               </Box>
             )}
+            
+            {/* Combat Arena - Controls Panel (2D map is shown via Show/Hide Map above) */}
+            {fighters.length > 0 && (
+              <Box w="100%" display="flex" justifyContent="center" mt={4} mb={4}>
+                <FloatingPanel
+                  title={`⚔️ Combat Arena - Controls`}
+                  initialWidth={1200}
+                  initialHeight={600}
+                  zIndex={1000}
+                  minWidth={800}
+                  minHeight={400}
+                  center={false}
+                >
+                  <VStack align="stretch" spacing={3}>
+                    <HStack justify="space-between" align="center" wrap="wrap">
+                      <VStack align="start" spacing={1}>
+                        <Text fontSize="xs" color="gray.600">
+                          Combat controls + turn flow (2D map is shown via Show/Hide Map). {currentMapType === "square" ? "⬛ (Dungeon)" : "⬡ (Wilderness)"}
+                        </Text>
+                        {mode === "MAP_EDITOR" && (
+                          <Text fontSize="xs" color="blue.600" fontWeight="bold">
+                            📝 Map Editor Mode - Edit your battlefield
+                          </Text>
+                        )}
+                        {mode === "COMBAT" && (
+                          <Text fontSize="xs" color="red.600" fontWeight="bold">
+                            ⚔️ Combat Mode - Active battle
+                          </Text>
+                        )}
+                      </VStack>
+                      <HStack spacing={2}>
+                        <Button
+                          size="sm"
+                          colorScheme={mode === "MAP_EDITOR" ? "blue" : "gray"}
+                          variant={mode === "MAP_EDITOR" ? "solid" : "outline"}
+                          onClick={() => setMode("MAP_EDITOR")}
+                        >
+                          📝 Map Editor
+                        </Button>
+                        <Button
+                          size="sm"
+                          colorScheme={mode === "COMBAT" ? "red" : "gray"}
+                          variant={mode === "COMBAT" ? "solid" : "outline"}
+                          onClick={() => setMode("COMBAT")}
+                        >
+                          ⚔️ Combat View
+                        </Button>
+                        <Button
+                          size="sm"
+                          colorScheme={showTacticalMap ? "green" : "gray"}
+                          variant={showTacticalMap ? "solid" : "outline"}
+                          onClick={() => setShowTacticalMap(!showTacticalMap)}
+                        >
+                          {showTacticalMap ? "🗺️ Hide Map" : "🗺️ Show Map"}
+                        </Button>
+                        <Button
+                          size="sm"
+                          colorScheme={show3DView ? "purple" : "gray"}
+                          variant={show3DView ? "solid" : "outline"}
+                          onClick={() => setShow3DView(!show3DView)}
+                        >
+                          {show3DView ? "🎮 Hide 3D Window" : "🎮 Show 3D Window"}
+                        </Button>
+                        {showTacticalMap && (
+                          <Button
+                            size="sm"
+                            colorScheme={mapViewMode === '2D' ? "blue" : "purple"}
+                            variant={mapViewMode === '2D' ? "solid" : "outline"}
+                            onClick={() => setMapViewMode(mapViewMode === '2D' ? '3D' : '2D')}
+                          >
+                            {mapViewMode === '2D' ? "📐 2D View" : "🎮 3D View"}
+                          </Button>
+                        )}
+                        {mode === "MAP_EDITOR" && (
+                          <Button
+                            size="sm"
+                            colorScheme="green"
+                            onClick={startCombatFromEditor}
+                          >
+                            ▶️ Start Combat
+                          </Button>
+                        )}
+                      </HStack>
+                    </HStack>
+                    
+                    {/* Turn Flow */}
+                    <Flex direction="column" gap={4} width="100%" height="100%">
+                      {/* Melee Round & Action Panel (below map) */}
+                      {combatActive && (
+                        <Box
+                          p={3}
+                          border="2px solid"
+                          borderColor="green.300"
+                          bg="green.50"
+                          borderRadius="md"
+                        >
+                          <Flex
+                            gap={4}
+                            direction={{ base: "column", lg: "row" }}
+                            align="stretch"
+                          >
+                            <Box flex="1" minW={0}>
+                              <VStack align="stretch" spacing={3} fontSize="sm">
+                                <Box>
+                                  <Text fontWeight="bold" fontSize="lg" color="green.700">
+                                    ⚔️ Melee Round {meleeRound} - {currentFighter?.name}&apos;s Action
+                                  </Text>
+                                  <Text fontSize="md">
+                                    Initiative Order Action: <strong>{currentFighter?.name}</strong> (Initiative: {currentFighter?.initiative || 'N/A'})
+                                    {currentFighter?.type === "enemy" ? " (Enemy)" : " (Player Character)"}
+                                  </Text>
+                                  <Text fontSize="xs" color="gray.600" fontStyle="italic">
+                                    Actions alternate in initiative order until all fighters are out of actions
+                                  </Text>
+                                  {currentFighter && (
+                                    <Text fontSize="sm" color="orange.600" fontWeight="bold" mt={2}>
+                                      {formatAttacksRemaining(currentFighter.remainingAttacks || 0, currentFighter.attacksPerMelee || 2)}
+                                    </Text>
+                                  )}
+                                  {currentFighter && isFlying(currentFighter) && (currentFighter.altitudeFeet ?? currentFighter.altitude ?? 0) > 0 && (
+                                    <Text fontSize="sm" color="blue.600" fontWeight="bold" mt={1}>
+                                      🦅 Airborne at {currentFighter.altitudeFeet ?? currentFighter.altitude ?? 0}ft
+                                    </Text>
+                                  )}
+                                  {currentFighter && currentFighter.type === "player" && !aiControlEnabled && (
+                                    <Text fontSize="sm" color="blue.600" fontWeight="bold" mt={1}>
+                                      🎯 Combat choices available below
+                                    </Text>
+                                  )}
+                                  {currentFighter && currentFighter.type === "player" && aiControlEnabled && (
+                                    <Text fontSize="sm" color="purple.600" fontWeight="bold" mt={1}>
+                                      🤖 AI-controlled player turn
+                                    </Text>
+                                  )}
+                                  {currentFighter && currentFighter.type === "player" && selectedAction && (
+                                    <Text fontSize="sm" color="green.600" fontWeight="bold" mt={1}>
+                                      ✅ Ready: {selectedAction.name}
+                                      {selectedTarget && ` → ${selectedTarget.name}`}
+                                    </Text>
+                                  )}
+                                </Box>
+
+                                {/* Palladium Movement Analysis */}
+                                {currentFighter && positions[currentFighter.id] && (
+                                  <Box p={2} bg="blue.50" borderRadius="md" border="1px solid" borderColor="blue.200">
+                                    <MovementRangeDisplay
+                                      combatant={currentFighter}
+                                      position={positions[currentFighter.id]}
+                                      scale={1}
+                                      showVisual={false}
+                                    />
+                                  </Box>
+                                )}
+
+                                {/* Run Action Logger */}
+                                {currentFighter &&
+                                 positions[currentFighter.id] &&
+                                 fighters.some(f => f.type === "enemy" && f.currentHP > 0) && (() => {
+                                  const enemyTarget = fighters.find(f => f.type === "enemy" && f.currentHP > 0);
+                                  return enemyTarget && positions[enemyTarget.id] ? (
+                                  <Box>
+                                    <RunActionLogger
+                                      attacker={{...currentFighter, position: positions[currentFighter.id]}}
+                                      target={{...enemyTarget, position: positions[enemyTarget.id]}}
+                                      onUpdate={handleRunActionUpdate}
+                                      disabled={currentFighter.type !== "player"}
+                                    />
+                                  </Box>
+                                  ) : null;
+                                })()}
+
+                                {/* Next Turn Button */}
+                                <HStack spacing={2} mt={2}>
+                                  <Button
+                                    size="sm"
+                                    colorScheme="green"
+                                    onClick={executeSelectedAction}
+                                    isDisabled={
+                                      combatPaused ||
+                                      (aiControlEnabled && currentFighter && currentFighter.type === "player")
+                                    }
+                                    w="full"
+                                  >
+                                    {currentFighter && currentFighter.type === "player" && selectedAction
+                                      ? `Execute ${selectedAction.name} →`
+                                      : "Next Turn →"}
+                                  </Button>
+                                </HStack>
+                              </VStack>
+                            </Box>
+
+                            {/* Ariel-only: show Combat Options next to the action panel (right side) */}
+                            {isArielTurn && currentFighter && (
+                              <Box
+                                w={{ base: "100%", lg: "420px" }}
+                                flexShrink={0}
+                                border="2px solid"
+                                borderColor="green.300"
+                                bg="green.50"
+                                borderRadius="md"
+                                p={3}
+                                overflow="hidden"
+                              >
+                                <Text fontWeight="bold" fontSize="md" color="green.700" mb={2}>
+                                  🎯 Combat Options for {currentFighter?.name}
+                                </Text>
+
+                                <CombatActionsPanel
+                                  character={currentFighter}
+                                  selectedAction={selectedAction}
+                                  selectedTarget={selectedTarget}
+                                  availableTargets={targetOptions}
+                                  onActionSelect={(action, character) => {
+                                    const actionName = action?.name;
+                                    if (actionName) {
+                                      setSelectedAction(action);
+                                      setSelectedTarget(null);
+                                      setSelectedSkill(null);
+                                      setSelectedGrappleAction(null);
+
+                                      if (actionName === "Psionics") {
+                                        setPsionicsMode(true);
+                                        setSpellsMode(false);
+                                      } else if (actionName === "Spells") {
+                                        setSpellsMode(true);
+                                        setPsionicsMode(false);
+                                      } else {
+                                        setPsionicsMode(false);
+                                        setSpellsMode(false);
+                                      }
+
+                                      addLog(`${character?.name || currentFighter?.name} selects: ${actionName}`, "info");
+                                    } else {
+                                      setSelectedAction(null);
+                                      setSelectedTarget(null);
+                                      setSelectedSkill(null);
+                                      setPsionicsMode(false);
+                                      setSpellsMode(false);
+                                      setClericalAbilitiesMode(false);
+                                      setSelectedClericalAbility(null);
+                                    }
+                                  }}
+                                  onTargetSelect={(target) => {
+                                    setSelectedTarget(target);
+                                    if (target?.name) addLog(`Target selected: ${target.name}`, "info");
+                                  }}
+                                />
+
+                                <VStack spacing={2} align="stretch" mt={3}>
+                                  <Button
+                                    colorScheme="blue"
+                                    onClick={activateMovementMode}
+                                    isDisabled={!currentFighter || currentFighter.type !== "player" || !showTacticalMap}
+                                    size="sm"
+                                    title={moveTitle}
+                                  >
+                                    {moveLabel}
+                                  </Button>
+                                  <Button
+                                    colorScheme="orange"
+                                    onClick={() => {
+                                      if (currentFighter && currentFighter.type === "player") {
+                                        setMovementMode({ active: true, isRunning: true });
+                                        setSelectedMovementFighter(currentFighter.id);
+                                        addLog(`🏃 ${currentFighter.name} prepares to run (full speed movement)`, "info");
+                                      }
+                                    }}
+                                    isDisabled={
+                                      !currentFighter ||
+                                      currentFighter.type !== "player" ||
+                                      !showTacticalMap ||
+                                      isFloatOnly
+                                    }
+                                    size="sm"
+                                    title={
+                                      !showTacticalMap
+                                        ? "Show tactical map first to enable running"
+                                        : isFloatOnly
+                                        ? "This creature cannot run on the ground."
+                                        : "Click to activate running mode (full speed)"
+                                    }
+                                  >
+                                    🏃 Run
+                                  </Button>
+                                  <Button
+                                    colorScheme="purple"
+                                    onClick={() => {
+                                      if (currentFighter && currentFighter.type === "player") {
+                                        handleWithdrawAction({
+                                          currentFighter,
+                                          fighters,
+                                          positions,
+                                          setPositions,
+                                          addLog,
+                                          endTurn: () => endTurn(),
+                                          maxWithdrawSteps: 3,
+                                        });
+                                      }
+                                    }}
+                                    isDisabled={!currentFighter || currentFighter.type !== "player" || currentFighter.isDown}
+                                    size="sm"
+                                  >
+                                    🏃 Withdraw
+                                  </Button>
+                                </VStack>
+                              </Box>
+                            )}
+                          </Flex>
+                        </Box>
+                      )}
+                    </Flex>
+                  </VStack>
+                </FloatingPanel>
+              </Box>
+            )}
+
+            {/* 3D Map - Top-of-screen resizable window */}
+            {show3DView && fighters.length > 0 && (
+              <FloatingPanel
+                title={`🎮 3D Hex Arena`}
+                initialX={20}
+                initialY={10}
+                initialWidth={1200}
+                initialHeight={700}
+                zIndex={1200}
+                minWidth={700}
+                minHeight={450}
+                bg="rgba(255, 255, 255, 0.95)"
+                center={false}
+              >
+                <Box width="100%" height="100%">
+                  <HexArena3D
+                    mapDefinition={mapDefinition}
+                    fighters={fighters}
+                    positions={positions}
+                    terrain={arenaEnvironment}
+                    mode={mode}
+                    visible={show3DView}
+                  />
+                </Box>
+              </FloatingPanel>
+            )}
           </VStack>
           </>
         }
         rightSidebar={
           <>
-        {/* RIGHT COLUMN - Enemies */}
-          <VStack align="start" spacing={4} h="full">
+            {/* RIGHT COLUMN - Enemies */}
+            <VStack align="start" spacing={4} h="full">
             <Heading size="md" color="red.600">👹 Enemies ({aliveEnemies.length}/{fighters.filter(f => f.type === "enemy").length})</Heading>
             <Box w="100%" maxH="300px" overflowY="auto" border="2px solid" borderColor="red.400" p={4} borderRadius="md" bg="red.50">
               {fighters.filter(f => f.type === "enemy").length === 0 ? (
@@ -13815,16 +16194,34 @@ useEffect(() => {
                                     )}
                                     
                                     {/* ✅ Ammo Display */}
-                                    {fighter.inventory && fighter.inventory.length > 0 && (
-                                      <Box>
-                                        <Text fontWeight="medium">Ammunition:</Text>
-                                        {fighter.inventory
-                                          .filter(item => item.type === "ammunition" || (item.name && (item.name.toLowerCase().includes("arrow") || item.name.toLowerCase().includes("bolt") || item.name.toLowerCase().includes("bullet"))))
-                                          .map((item, idx) => (
-                                            <Text key={idx} pl={2}>• {item.name}: {item.quantity || 0}</Text>
+                                    {(() => {
+                                      const invAmmo =
+                                        fighter.inventory?.filter(
+                                          (item) =>
+                                            item?.type === "ammunition" ||
+                                            (item?.name &&
+                                              (item.name.toLowerCase().includes("arrow") ||
+                                                item.name.toLowerCase().includes("bolt") ||
+                                                item.name.toLowerCase().includes("bullet")))
+                                        ) || [];
+                                      const improvised = getImprovisedAmmoSummaryForFighter(fighter.id);
+                                      if (invAmmo.length === 0 && !improvised) return null;
+                                      return (
+                                        <Box>
+                                          <Text fontWeight="medium">Ammunition:</Text>
+                                          {invAmmo.map((item, idx) => (
+                                            <Text key={idx} pl={2}>
+                                              • {item.name}: {item.quantity || 0}
+                                            </Text>
                                           ))}
-                                      </Box>
-                                    )}
+                                          {improvised && (
+                                            <Text pl={2}>
+                                              • Improvised missiles: {improvised.qty} ({improvised.details})
+                                            </Text>
+                                          )}
+                                        </Box>
+                                      );
+                                    })()}
                                     {fighter.equipped && (
                                       <Box>
                                         <Text fontWeight="medium">Other:</Text>
@@ -13856,34 +16253,25 @@ useEffect(() => {
                 </Grid>
               )}
             </Box>
-            
-            {/* Quick Add Enemy Button */}
-            <HStack spacing={2}>
-                <Button 
-                  size="sm" 
-                colorScheme="red" 
-                variant="outline"
-                onClick={onOpen}
-              >
-                + Enemy
-              </Button>
-            </HStack>
-            
             {/* Combat Info Panel */}
-            <FloatingPanel
-              title="📊 Combat Info"
-              initialWidth={350}
-              initialHeight={600}
-              zIndex={1001}
-              minWidth={300}
-              minHeight={400}
-              bg="rgba(255, 255, 255, 0.91)"
-              center={true}
+            <Box
+              w="100%"
+              border="2px solid"
+              borderColor="blue.400"
+              borderRadius="md"
+              bg="white"
+              p={3}
+              maxH="700px"
+              overflow="hidden"
             >
+              <Heading size="sm" color="blue.700" mb={2}>
+                📊 Combat Info
+              </Heading>
               <Tabs size="sm" colorScheme="blue" isLazy>
                 <TabList>
                   <Tab fontSize="xs">🗒️ Log</Tab>
                   <Tab fontSize="xs">⚔️ Fighter</Tab>
+                  <Tab fontSize="xs">📦 Inventory</Tab>
                   <Tab fontSize="xs">📍 Positions</Tab>
                   <Tab fontSize="xs">⬡ Legend</Tab>
                   <Tab fontSize="xs">🔧 Debug</Tab>
@@ -14065,6 +16453,103 @@ useEffect(() => {
                 )}
             </Box>
           </VStack>
+                  </TabPanel>
+
+                  {/* Combat Inventory Tab */}
+                  <TabPanel p={2}>
+                    <VStack align="stretch" spacing={3}>
+                      <Text fontSize="xs" color="gray.600">
+                        Read-only snapshot of what each combatant is carrying right now (plus improvised ammo picked up in the arena).
+                      </Text>
+
+                      {["player", "enemy"].map((side) => {
+                        const list = fighters.filter((f) => f.type === side);
+                        const title = side === "player" ? "Party" : "Enemies";
+                        return (
+                          <Box key={side} borderWidth="1px" borderColor="gray.200" borderRadius="md" p={2} bg="white">
+                            <HStack justify="space-between" mb={2}>
+                              <Text fontSize="sm" fontWeight="bold">{title}</Text>
+                              <Badge colorScheme={side === "player" ? "blue" : "red"} size="sm">
+                                {list.length}
+                              </Badge>
+                            </HStack>
+
+                            {list.length === 0 ? (
+                              <Text fontSize="xs" color="gray.500">None</Text>
+                            ) : (
+                              <Accordion allowMultiple size="sm">
+                                {list.map((f) => {
+                                  const inv = Array.isArray(f.inventory) ? f.inventory : [];
+                                  const improvised = getImprovisedAmmoSummaryForFighter(f.id);
+                                  const hasAny = inv.length > 0 || Boolean(improvised);
+                                  return (
+                                    <AccordionItem key={f.id} border="none">
+                                      <AccordionButton px={0}>
+                                        <Box flex="1" textAlign="left">
+                                          <HStack spacing={2}>
+                                            <Text fontSize="sm" fontWeight="semibold">{f.name}</Text>
+                                            <Badge colorScheme={side === "player" ? "blue" : "red"} size="xs">
+                                              {side}
+                                            </Badge>
+                                            {improvised && (
+                                              <Badge colorScheme="orange" size="xs">
+                                                Improvised: {improvised.qty}
+                                              </Badge>
+                                            )}
+                                          </HStack>
+                                        </Box>
+                                        <AccordionIcon />
+                                      </AccordionButton>
+                                      <AccordionPanel px={0} pt={1} pb={2}>
+                                        {!hasAny ? (
+                                          <Text fontSize="xs" color="gray.500">No inventory items.</Text>
+                                        ) : (
+                                          <VStack align="stretch" spacing={1}>
+                                            {improvised && (
+                                              <Box p={2} bg="orange.50" borderWidth="1px" borderColor="orange.200" borderRadius="md">
+                                                <Text fontSize="xs" fontWeight="bold" color="orange.700">
+                                                  Improvised missiles
+                                                </Text>
+                                                <Text fontSize="xs">
+                                                  Qty: {improvised.qty} ({improvised.details})
+                                                </Text>
+                                              </Box>
+                                            )}
+
+                                            {inv.length > 0 && (
+                                              <Box borderWidth="1px" borderColor="gray.100" borderRadius="md" overflow="hidden">
+                                                <Table size="xs" variant="simple">
+                                                  <Thead>
+                                                    <Tr>
+                                                      <Th>Item</Th>
+                                                      <Th>Type</Th>
+                                                      <Th isNumeric>Qty</Th>
+                                                    </Tr>
+                                                  </Thead>
+                                                  <Tbody>
+                                                    {inv.map((it, idx) => (
+                                                      <Tr key={idx}>
+                                                        <Td>{it?.name || "Item"}</Td>
+                                                        <Td>{it?.type || it?.category || "-"}</Td>
+                                                        <Td isNumeric>{it?.quantity ?? it?.qty ?? "-"}</Td>
+                                                      </Tr>
+                                                    ))}
+                                                  </Tbody>
+                                                </Table>
+                                              </Box>
+                                            )}
+                                          </VStack>
+                                        )}
+                                      </AccordionPanel>
+                                    </AccordionItem>
+                                  );
+                                })}
+                              </Accordion>
+                            )}
+                          </Box>
+                        );
+                      })}
+                    </VStack>
                   </TabPanel>
 
                   {/* Current Fighter Tab */}
@@ -14252,55 +16737,73 @@ useEffect(() => {
 
                   {/* Debug Info Tab */}
                   <TabPanel p={2}>
-                    <VStack align="stretch" spacing={2} fontSize="xs" fontFamily="mono">
-                      <Box>
-                        <Text fontWeight="bold">Round:</Text>
-                        <Text>{meleeRound}</Text>
-                      </Box>
-                      <Box>
-                        <Text fontWeight="bold">Turn:</Text>
-                        <Text>{turnIndex + 1} / {fighters.length}</Text>
-                      </Box>
-                      <Box>
-                        <Text fontWeight="bold">Fighters:</Text>
-                        <Text>
-                          {fighters.filter(f => f.type === "player").length} players,{" "}
-                          {fighters.filter(f => f.type === "enemy").length} enemies
-                        </Text>
-                      </Box>
-                      <Box>
-                        <Text fontWeight="bold">Combat Active:</Text>
-                        <Badge colorScheme={combatActive ? "green" : "gray"} size="sm">
-                          {combatActive ? "Yes" : "No"}
-                        </Badge>
-                      </Box>
-                      {combatTerrain && (
-                        <>
-                          <Box>
-                            <Text fontWeight="bold">🌲 Terrain:</Text>
-                            <Text fontSize="xs">{combatTerrain.terrainData?.name || combatTerrain.terrain}</Text>
-                          </Box>
-                          <Box>
-                            <Text fontWeight="bold">💡 Lighting:</Text>
-                            <Text fontSize="xs">{combatTerrain.lightingData?.name || combatTerrain.lighting}</Text>
-                          </Box>
-                          {combatTerrain.description && (
+                    <VStack align="stretch" spacing={3}>
+                      <VStack align="stretch" spacing={2} fontSize="xs" fontFamily="mono">
+                        <Box>
+                          <Text fontWeight="bold">Round:</Text>
+                          <Text>{meleeRound}</Text>
+                        </Box>
+                        <Box>
+                          <Text fontWeight="bold">Turn:</Text>
+                          <Text>{turnIndex + 1} / {fighters.length}</Text>
+                        </Box>
+                        <Box>
+                          <Text fontWeight="bold">Fighters:</Text>
+                          <Text>
+                            {fighters.filter(f => f.type === "player").length} players,{" "}
+                            {fighters.filter(f => f.type === "enemy").length} enemies
+                          </Text>
+                        </Box>
+                        <Box>
+                          <Text fontWeight="bold">Combat Active:</Text>
+                          <Badge colorScheme={combatActive ? "green" : "gray"} size="sm">
+                            {combatActive ? "Yes" : "No"}
+                          </Badge>
+                        </Box>
+                        {combatTerrain && (
+                          <>
                             <Box>
-                              <Text fontWeight="bold">📝 Scene:</Text>
-                              <Text fontSize="xs">{combatTerrain.description}</Text>
+                              <Text fontWeight="bold">🌲 Terrain:</Text>
+                              <Text fontSize="xs">{combatTerrain.terrainData?.name || combatTerrain.terrain}</Text>
                             </Box>
-                          )}
-                        </>
-                      )}
+                            <Box>
+                              <Text fontWeight="bold">💡 Lighting:</Text>
+                              <Text fontSize="xs">{combatTerrain.lightingData?.name || combatTerrain.lighting}</Text>
+                            </Box>
+                            {combatTerrain.description && (
+                              <Box>
+                                <Text fontWeight="bold">📝 Scene:</Text>
+                                <Text fontSize="xs">{combatTerrain.description}</Text>
+                              </Box>
+                            )}
+                          </>
+                        )}
+                      </VStack>
+                      
+                      {/* AI Weakness / Threat Debug */}
+                      <WeaknessDebugHUD fighters={fighters} />
                     </VStack>
                   </TabPanel>
                 </TabPanels>
               </Tabs>
-            </FloatingPanel>
+            </Box>
+
+            {/* Quick Add Enemy Button */}
+            <HStack spacing={2}>
+              <Button
+                size="sm"
+                colorScheme="red"
+                variant="outline"
+                onClick={onOpen}
+              >
+                + Enemy
+              </Button>
+            </HStack>
           </VStack>
           </>
         }
-      />
+      >
+      </ResizableLayout>
 
       {/* Add Enemy Modal */}
       <Modal isOpen={isOpen} onClose={onClose}>
@@ -14900,6 +17403,107 @@ useEffect(() => {
           </DrawerFooter>
         </DrawerContent>
       </Drawer>
+
+      {/* Loot Window - Opens when clicking on defeated characters */}
+      <LootWindow
+        isOpen={lootWindowOpen}
+        onClose={() => {
+          setLootWindowOpen(false);
+          setSelectedLootSource(null);
+          setLootData(null);
+        }}
+        loot={lootData}
+        sourceName={selectedLootSource?.name || "Defeated Enemy"}
+        onTakeItem={(item, itemType) => {
+          // Handle taking a single item
+          // TODO: Add item to player inventory/party inventory
+          addLog(`💰 ${item.name} taken from ${selectedLootSource?.name || "enemy"}`, "info");
+          
+          // Remove item from loot
+          if (lootData) {
+            const updatedLoot = { ...lootData };
+            if (itemType === "inventory") {
+              updatedLoot.inventory = updatedLoot.inventory?.filter(i => i !== item) || [];
+            } else if (itemType === "weapon") {
+              updatedLoot.weapons = updatedLoot.weapons?.filter(w => w !== item) || [];
+            } else if (itemType === "armor") {
+              updatedLoot.armor = null;
+            }
+            
+            // Update fighter to remove looted item
+            setFighters(prev => prev.map(f => {
+              if (f.id === selectedLootSource?.id) {
+                if (itemType === "inventory") {
+                  return {
+                    ...f,
+                    inventory: f.inventory?.filter(i => i !== item) || [],
+                    items: f.items?.filter(i => i !== item) || []
+                  };
+                } else if (itemType === "weapon") {
+                  return {
+                    ...f,
+                    weapons: f.weapons?.filter(w => w !== item) || [],
+                    equippedWeapons: f.equippedWeapons?.filter(w => w.name !== item.name) || []
+                  };
+                } else if (itemType === "armor") {
+                  return {
+                    ...f,
+                    armor: null,
+                    equippedArmor: null
+                  };
+                }
+              }
+              return f;
+            }));
+            
+            // Update loot data
+            setLootData(updatedLoot);
+            
+            // Close if no more loot
+            if (
+              (updatedLoot.inventory?.length || 0) === 0 &&
+              (updatedLoot.weapons?.length || 0) === 0 &&
+              !updatedLoot.armor
+            ) {
+              setLootWindowOpen(false);
+              setSelectedLootSource(null);
+              setLootData(null);
+            }
+          }
+        }}
+        onTakeAll={(allItems) => {
+          // Handle taking all items
+          allItems.forEach((item) => {
+            addLog(`💰 ${item.name} taken from ${selectedLootSource?.name || "enemy"}`, "info");
+          });
+          
+          // Remove all items from fighter
+          setFighters(prev => prev.map(f => {
+            if (f.id === selectedLootSource?.id) {
+              return {
+                ...f,
+                inventory: [],
+                items: [],
+                weapons: [],
+                equippedWeapons: f.equippedWeapons?.map(w => 
+                  w && w.name && w.name !== "Unarmed" && w.name !== "None" 
+                    ? { name: "Unarmed", damage: "1d3", type: "unarmed", category: "unarmed", slot: w.slot || "Right Hand" }
+                    : w
+                ) || [],
+                armor: null,
+                equippedArmor: null
+              };
+            }
+            return f;
+          }));
+          
+          // Close loot window
+          setLootWindowOpen(false);
+          setSelectedLootSource(null);
+          setLootData(null);
+        }}
+        allowSelection={true}
+      />
 
       {/* Game Settings Modal */}
       <GameSettingsPanel isOpen={showSettings} onClose={() => setShowSettings(false)} />

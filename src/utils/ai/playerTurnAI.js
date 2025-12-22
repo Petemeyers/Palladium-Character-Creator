@@ -7,11 +7,13 @@
  */
 
 import { isBleeding } from "../bleedingSystem.js";
+import { canFly, isFlying, getAltitude } from "../abilitySystem";
 import {
   canThreatenWithMelee,
   canThreatenWithMeleeWithWeapon,
   markTargetUnreachable,
   isTargetUnreachable,
+  clearUnreachableTarget,
   getReachableEnemies,
   hasAnyValidOffensiveOption,
   hasAnyRangedOptionAgainstFlying,
@@ -463,6 +465,10 @@ export function runPlayerTurnAI(player, context) {
     movementAttemptsRef,
     playerAIRecentlyUsedPsionicsRef,
     processingPlayerAIRef,
+    // Player AI async guardrails (optional, provided by CombatPage)
+    playerAIActionScheduledRef,
+    playerAITurnTokenRef,
+    playerAITurnToken,
     // Spell/power utilities
     isOffensiveSpell,
     isHealingSpell,
@@ -493,6 +499,35 @@ export function runPlayerTurnAI(player, context) {
     getTargetsInLine,
   } = context;
 
+  const tokenStillValid = () => {
+    if (!playerAITurnTokenRef || !playerAITurnToken) return true;
+    return playerAITurnTokenRef.current === playerAITurnToken;
+  };
+  const markActionScheduled = () => {
+    if (playerAIActionScheduledRef) playerAIActionScheduledRef.current = true;
+  };
+
+  // Minimal, low-noise AI trace for Ariel (opt-in).
+  // Usage: localStorage.debugArielAI = "1"
+  const dbg =
+    typeof window !== "undefined" &&
+    window?.localStorage?.getItem("debugArielAI") === "1" &&
+    String(player?.name || "")
+      .toLowerCase()
+      .includes("ariel");
+  const trace = (msg) => {
+    if (dbg) addLog?.(`🧠 ArielAI: ${msg}`, "info");
+  };
+
+  trace(
+    `start | remainingAttacks=${player?.remainingAttacks ?? "?"} | enemies=${
+      fighters.filter(
+        (f) =>
+          f.type === "enemy" && canFighterAct(f) && (f.currentHP ?? 0) > -21
+      ).length
+    } | posKeys=${Object.keys(positions || {}).length}`
+  );
+
   // ✅ CRITICAL: Check if player can act (conscious, not dying/dead/unconscious)
   if (!canFighterAct(player)) {
     const hpStatus = getHPStatus(player.currentHP);
@@ -500,6 +535,7 @@ export function runPlayerTurnAI(player, context) {
       `⏭️ ${player.name} cannot act (${hpStatus.description}), skipping turn`,
       "info"
     );
+    trace(`exit: cannot act (${hpStatus?.description || "unknown"})`);
     processingPlayerAIRef.current = false;
     scheduleEndTurn();
     return;
@@ -513,6 +549,7 @@ export function runPlayerTurnAI(player, context) {
   );
   if (isParalyzed) {
     addLog(`⏭️ ${player.name} is paralyzed and cannot act this round!`, "info");
+    trace(`exit: paralyzed`);
     processingPlayerAIRef.current = false;
     scheduleEndTurn();
     return;
@@ -547,6 +584,7 @@ export function runPlayerTurnAI(player, context) {
     player.statusEffects?.includes("ROUTED")
   ) {
     addLog(`🏃 ${player.name} is ROUTED and attempts to flee!`, "warning");
+    trace(`route: attempting flee`);
 
     // Attempt to withdraw from threats
     const currentPos = positions[player.id];
@@ -555,6 +593,7 @@ export function runPlayerTurnAI(player, context) {
         `⚠️ ${player.name} cannot withdraw (no position data).`,
         "warning"
       );
+      trace(`exit: routed but no position data`);
       processingPlayerAIRef.current = false;
       scheduleEndTurn();
       return;
@@ -572,6 +611,7 @@ export function runPlayerTurnAI(player, context) {
     // If no active enemies, just end turn
     if (enemyFighters.length === 0) {
       addLog(`⚠️ ${player.name} finds no active foes.`, "info");
+      trace(`exit: no active foes`);
       processingPlayerAIRef.current = false;
       scheduleEndTurn();
       return;
@@ -584,6 +624,29 @@ export function runPlayerTurnAI(player, context) {
 
     if (threatPositions.length === 0) {
       addLog(`🛡️ ${player.name} cannot see any threats.`, "info");
+      trace(
+        `exit: no threats | enemyIds=${enemyFighters
+          .map((e) => e.id)
+          .join(",")}`
+      );
+      // Optional one-run debug: set localStorage.debugThreatPositions = "1"
+      try {
+        if (
+          typeof window !== "undefined" &&
+          window?.localStorage?.getItem("debugThreatPositions") === "1"
+        ) {
+          addLog(
+            `DEBUG: ${
+              player.name
+            } threatPositions empty. enemies=${enemyFighters
+              .map((e) => e.id)
+              .join(",")} posKeys=${Object.keys(positions || {}).length}`,
+            "warning"
+          );
+        }
+      } catch {
+        // no-op (non-browser)
+      }
       processingPlayerAIRef.current = false;
       scheduleEndTurn();
       return;
@@ -616,6 +679,9 @@ export function runPlayerTurnAI(player, context) {
       addLog(
         `🚶 ${player.name} withdraws from threats to (${retreatDestination.position.x}, ${retreatDestination.position.y}).`,
         "info"
+      );
+      trace(
+        `action: withdraw | to=(${retreatDestination.position.x},${retreatDestination.position.y})`
       );
 
       // Actually move the player using handlePositionChange
@@ -654,6 +720,9 @@ export function runPlayerTurnAI(player, context) {
       `⏭️ ${player.name} has no actions remaining - passing to next fighter in initiative order`,
       "info"
     );
+    trace(
+      `exit: no actions remaining | remainingAttacks=${player.remainingAttacks}`
+    );
     processingPlayerAIRef.current = false;
     scheduleEndTurn();
     return;
@@ -672,44 +741,113 @@ export function runPlayerTurnAI(player, context) {
   // Get equipped weapons early for reachability checks
   const equippedWeapons = getEquippedWeapons(player);
 
+  // Check if player has ranged weapons (used to determine if we should respect "unreachable" marks)
+  const hasRangedWeapon = equippedWeapons.some((w) => {
+    const name = (w.name || "").toLowerCase();
+    const type = (w.type || "").toLowerCase();
+    const isRanged =
+      type === "ranged" ||
+      name.includes("bow") ||
+      name.includes("crossbow") ||
+      name.includes("sling") ||
+      name.includes("thrown") ||
+      (w.range && w.range > 10);
+    if (dbg) {
+      trace(
+        `weapon check: ${w.name || "unnamed"} | type=${w.type} | range=${
+          w.range
+        } | isRanged=${isRanged}`
+      );
+    }
+    return isRanged;
+  });
+
+  if (dbg) {
+    trace(
+      `weapon detection: equippedWeapons=${
+        equippedWeapons.length
+      } | hasRanged=${hasRangedWeapon} | weapons=[${equippedWeapons
+        .map((w) => `${w.name || "unnamed"}(type=${w.type}, range=${w.range})`)
+        .join(", ")}]`
+    );
+  }
+
   const enemyTargets = allEnemies.filter((target) => {
     // First check visibility
-    if (
-      !canAISeeTarget(player, target, positions, combatTerrain, {
-        useFogOfWar: fogEnabled,
-        fogOfWarVisibleCells: visibleCells,
-      })
-    ) {
+    const canSee = canAISeeTarget(player, target, positions, combatTerrain, {
+      useFogOfWar: fogEnabled,
+      fogOfWarVisibleCells: visibleCells,
+    });
+    if (!canSee) {
+      trace(`target ${target.id}: filtered (visibility=false)`);
       return false;
     }
 
-    // Check if already marked as unreachable
-    if (isTargetUnreachable(player, target)) {
+    // If the player is a flier and the target is grounded, melee reachability can be solved by descending/dive.
+    // In that case, we should NOT permanently mark the target unreachable (that would cause AI to skip forever).
+    const targetAlt = getAltitude(target) || 0;
+    const targetIsFlying = isFlying(target) && targetAlt > 0;
+    const allowDescendToGroundTarget =
+      !hasRangedWeapon &&
+      (canFly(player) || isFlying(player)) &&
+      !targetIsFlying &&
+      targetAlt <= 5;
+
+    // Only check "unreachable" mark if player has NO ranged weapons AND we cannot solve it by descending.
+    if (
+      !hasRangedWeapon &&
+      !allowDescendToGroundTarget &&
+      isTargetUnreachable(player, target)
+    ) {
+      trace(
+        `target ${target.id}: filtered (marked unreachable, no ranged weapon)`
+      );
       return false;
+    }
+
+    // If target was previously marked unreachable but player now has ranged weapons, clear the mark
+    if (hasRangedWeapon && isTargetUnreachable(player, target)) {
+      clearUnreachableTarget(player, target.id);
+      trace(
+        `target ${target.id}: cleared unreachable mark (player has ranged weapon)`
+      );
     }
 
     // For melee-focused players without ranged weapons, check melee reachability early
-    const hasRangedWeapon = equippedWeapons.some((w) => {
-      const name = (w.name || "").toLowerCase();
-      return (
-        name.includes("bow") ||
-        name.includes("crossbow") ||
-        name.includes("sling") ||
-        name.includes("thrown") ||
-        (w.range && w.range > 10)
-      );
-    });
-
     if (!hasRangedWeapon) {
+      // If flier vs grounded target, clear any stale unreachable mark and allow targeting.
+      // Actual descent/dive policy is handled later in the AI action selection.
+      if (allowDescendToGroundTarget) {
+        if (isTargetUnreachable(player, target)) {
+          clearUnreachableTarget(player, target.id);
+          trace(
+            `target ${target.id}: cleared unreachable mark (flier can descend to ground target)`
+          );
+        }
+        trace(
+          `target ${target.id}: ACCEPTED | hasRanged=${hasRangedWeapon} (can descend to engage)`
+        );
+        return true;
+      }
+
       // Check if target is reachable with melee (includes altitude check)
-      if (!canThreatenWithMelee(player, target)) {
+      const canThreaten = canThreatenWithMelee(player, target);
+      if (!canThreaten) {
+        trace(
+          `target ${target.id}: filtered (melee unreachable, no ranged weapon)`
+        );
         markTargetUnreachable(player, target);
         return false;
       }
     }
 
+    trace(`target ${target.id}: ACCEPTED | hasRanged=${hasRangedWeapon}`);
     return true;
   });
+
+  trace(
+    `targets: allEnemies=${allEnemies.length} | filtered=${enemyTargets.length} | equippedWeapons=${equippedWeapons.length}`
+  );
 
   if (enemyTargets.length === 0) {
     // Check if there are enemies but they're just not visible
@@ -729,8 +867,12 @@ export function runPlayerTurnAI(player, context) {
           visibilityLogRef.current = new Set(entries.slice(-50));
         }
       }
+      trace(
+        `exit: no visible targets | allEnemies=${allEnemies.length} | filtered=0`
+      );
     } else {
       addLog(`${player.name} has no targets and defends.`, "info");
+      trace(`exit: no targets (all enemies defeated/removed)`);
     }
     processingPlayerAIRef.current = false;
     scheduleEndTurn();
@@ -1137,7 +1279,7 @@ export function runPlayerTurnAI(player, context) {
       if (distSq <= FEAR_RADIUS_HEXES * FEAR_RADIUS_HEXES) {
         if (distSq < nearestThreatDistSq) {
           nearestThreatDistSq = distSq;
-        nearestThreat = enemy;
+          nearestThreat = enemy;
         }
       }
     }
@@ -1672,9 +1814,35 @@ export function runPlayerTurnAI(player, context) {
 
   const selectOffensiveSpell = (spellsList) => {
     if (!target) return null;
-    const viable = spellsList.filter((spell) =>
-      spellCanAffectTarget(spell, player, target)
-    );
+
+    // Check target immunities
+    const targetAbilities = target.abilities || {};
+    const isFireImmune = Array.isArray(targetAbilities.impervious_to)
+      ? targetAbilities.impervious_to.some((t) =>
+          String(t).toLowerCase().includes("fire")
+        )
+      : false;
+
+    const viable = spellsList.filter((spell) => {
+      // Check if spell can affect target (friendly/enemy restrictions)
+      if (!spellCanAffectTarget(spell, player, target)) return false;
+
+      // Filter out fire spells if target is fire-immune
+      if (isFireImmune) {
+        const spellName = (spell.name || "").toLowerCase();
+        const damageType = (spell.damageType || "").toLowerCase();
+        if (
+          spellName.includes("fire") ||
+          spellName.includes("flame") ||
+          spellName.includes("burn") ||
+          damageType === "fire"
+        ) {
+          return false;
+        }
+      }
+
+      return true;
+    });
     if (viable.length === 0) return null;
     const inRange = viable.filter((spell) => {
       const rangeFeet = getSpellRangeInFeet(spell);
@@ -1684,9 +1852,16 @@ export function runPlayerTurnAI(player, context) {
         currentDistance <= rangeFeet
       );
     });
-    const pool = inRange.length > 0 ? inRange : viable;
-    pool.sort((a, b) => getSpellRangeInFeet(a) - getSpellRangeInFeet(b));
-    return pool[0];
+    // If nothing is in range, don't pick a "melee-range" spell at 120ft and waste the action.
+    if (inRange.length === 0) return null;
+
+    // Prefer longer-range spells when multiple are viable (prevents picking Flame Lick over Fire Ball at distance).
+    const rangeVal = (spell) => {
+      const r = getSpellRangeInFeet(spell);
+      return r === Infinity ? 1_000_000_000 : Number(r || 0);
+    };
+    inRange.sort((a, b) => rangeVal(b) - rangeVal(a));
+    return inRange[0];
   };
 
   // Track recently used psionics per fighter to prevent spamming
@@ -2059,14 +2234,30 @@ export function runPlayerTurnAI(player, context) {
   }
 
   const attemptOffensiveSpell = (spell) => {
+    const latestPlayer = fighters.find((f) => f.id === player.id) || player;
+
+    // Respect the RAW limit (enforced again inside executeSpell). Don't even log "unleashes" if blocked.
+    if ((latestPlayer.spellsCastThisMelee || 0) >= 1) return false;
+
+    // Avoid misleading logs for obviously out-of-range spells.
+    if (target && currentDistance !== Infinity) {
+      const rangeFeet = getSpellRangeInFeet(spell);
+      if (rangeFeet !== Infinity && currentDistance > rangeFeet) return false;
+    }
+
     addLog(
       `🔮 ${player.name} unleashes ${spell.name} at ${target.name}!`,
       "info"
     );
-    if (executeSpell(player, target, spell)) {
+    // Mark immediately so CombatPage watchdog/invariant doesn't end-turn while a spell action is executing.
+    markActionScheduled();
+    const result = executeSpell(player, target, spell);
+    if (result) {
       processingPlayerAIRef.current = false;
       return true;
     }
+
+    // If the spell fails (resisted/invalid/etc.), fall through so the AI can try psionics, move, or melee.
     return false;
   };
 
@@ -2075,6 +2266,8 @@ export function runPlayerTurnAI(player, context) {
       `🧠 ${player.name} focuses ${power.name} on ${target.name}!`,
       "info"
     );
+    // Mark immediately so CombatPage watchdog/invariant doesn't end-turn while a psionic action is executing.
+    markActionScheduled();
     if (executePsionicPower(player, target, power)) {
       // Track this psionic as recently used to prevent spamming
       const recentlyUsed =
@@ -2275,15 +2468,31 @@ export function runPlayerTurnAI(player, context) {
   if (equippedWeapons.length > 0) {
     // Smart weapon selection based on distance to target
     // Categorize weapons by range and type
-    const meleeWeapons = equippedWeapons.filter((w) => {
-      const range = getWeaponRange(w);
-      return range <= 5.5; // Melee range
-    });
+    // IMPORTANT: treat "reach" weapons (e.g. 10-20ft) as MELEE, not ranged.
+    // Only count weapons as ranged if they are truly missile/thrown/firearm style (ammo/keywords),
+    // and use actual distance checks before choosing them.
+    const isTrueRangedWeapon = (w) => {
+      const name = String(w?.name || "").toLowerCase();
+      if (w?.ammunition) return true;
+      if (w?.ammoType) return true;
+      if (w?.isRanged === true) return true;
+      if (name.includes("bow")) return true;
+      if (name.includes("crossbow")) return true;
+      if (name.includes("sling")) return true;
+      if (
+        name.includes("gun") ||
+        name.includes("rifle") ||
+        name.includes("pistol")
+      )
+        return true;
+      if (name.includes("throwing") || name.includes("thrown")) return true;
+      // Fall back to data-driven: very long numeric ranges are almost certainly ranged
+      const r = Number(getWeaponRange(w) || 0);
+      return r > 30;
+    };
 
-    const rangedWeapons = equippedWeapons.filter((w) => {
-      const range = getWeaponRange(w);
-      return range > 5.5; // Ranged weapons
-    });
+    const meleeWeapons = equippedWeapons.filter((w) => !isTrueRangedWeapon(w));
+    const rangedWeapons = equippedWeapons.filter((w) => isTrueRangedWeapon(w));
 
     // Use getWeaponType and getWeaponLength for detailed weapon info
     const weaponTypeInfo = equippedWeapons
@@ -2302,11 +2511,36 @@ export function runPlayerTurnAI(player, context) {
       addLog(`🔍 Weapon details: ${weaponTypeInfo}`, "info");
     }
 
-    // Choose weapon based on distance - prioritize ranged when far away
-    if (currentDistance > 5.5 && rangedWeapons.length > 0) {
-      // Far range - prefer ranged weapons
-      selectedWeapon =
-        rangedWeapons[Math.floor(Math.random() * rangedWeapons.length)];
+    // Choose weapon based on distance (and *actual* reachability)
+    const canReachTargetWithWeapon = (w) => {
+      if (!target) return true;
+      const r = getWeaponRange(w);
+      if (!Number.isFinite(currentDistance) || currentDistance === Infinity)
+        return true;
+      return r === Infinity || (typeof r === "number" && r >= currentDistance);
+    };
+
+    const reachableMelee = meleeWeapons.filter(canReachTargetWithWeapon);
+    const reachableRanged = rangedWeapons.filter(canReachTargetWithWeapon);
+
+    // Prefer a melee/reach weapon if it can already hit (e.g. Fire Whip at 15ft)
+    if (currentDistance <= 20 && reachableMelee.length > 0) {
+      reachableMelee.sort(
+        (a, b) =>
+          Number(getWeaponRange(b) || 0) - Number(getWeaponRange(a) || 0)
+      );
+      selectedWeapon = reachableMelee[0];
+      addLog(
+        `🗡️ ${player.name} selects ${selectedWeapon.name} for melee combat`,
+        "info"
+      );
+    } else if (reachableRanged.length > 0) {
+      // Otherwise prefer a true ranged weapon that can actually reach
+      reachableRanged.sort(
+        (a, b) =>
+          Number(getWeaponRange(b) || 0) - Number(getWeaponRange(a) || 0)
+      );
+      selectedWeapon = reachableRanged[0];
       addLog(
         `🏹 ${player.name} selects ${
           selectedWeapon.name
@@ -2314,7 +2548,7 @@ export function runPlayerTurnAI(player, context) {
         "info"
       );
     } else if (currentDistance <= 5.5 && meleeWeapons.length > 0) {
-      // Close range - prefer melee weapons
+      // Close range - prefer melee weapons even if range calc is weird
       selectedWeapon =
         meleeWeapons[Math.floor(Math.random() * meleeWeapons.length)];
       addLog(
@@ -2417,8 +2651,40 @@ export function runPlayerTurnAI(player, context) {
         positions[target.id]
       );
       // Use proper weapon range validation
+      // If this is a melee strike and the attacker is airborne but the target is grounded,
+      // treat the attacker as able to descend for the strike (prevents "hover forever" stalemates).
+      const atkName = String(selectedAttack?.name || "").toLowerCase();
+      const atkType = String(selectedAttack?.type || "").toLowerCase();
+      const atkRangeNum =
+        typeof selectedAttack?.range === "number"
+          ? selectedAttack.range
+          : Number(selectedAttack?.range);
+      const isRangedLike =
+        atkType === "ranged" ||
+        atkName.includes("bow") ||
+        atkName.includes("crossbow") ||
+        atkName.includes("sling") ||
+        atkName.includes("thrown") ||
+        (Number.isFinite(atkRangeNum) && atkRangeNum > 10);
+      const attackerAlt = getAltitude(player) || 0;
+      const targetAlt = getAltitude(target) || 0;
+      const targetIsAirborne = isFlying(target) && targetAlt > 0;
+      const shouldAutoDescendForMelee =
+        !hasRangedWeapon &&
+        !isRangedLike &&
+        attackerAlt > 0 &&
+        !targetIsAirborne &&
+        targetAlt <= 5;
+      const attackerForRangeCheck = shouldAutoDescendForMelee
+        ? { ...player, altitude: 0, altitudeFeet: 0 }
+        : player;
+      if (dbg && shouldAutoDescendForMelee) {
+        trace(
+          `auto-descend: enabling melee-vs-ground range check | fromAlt=${attackerAlt}ft`
+        );
+      }
       const rangeValidation = validateWeaponRange(
-        player,
+        attackerForRangeCheck,
         target,
         selectedAttack,
         currentDistance
@@ -2528,8 +2794,20 @@ export function runPlayerTurnAI(player, context) {
       // If we can flank, prioritize flanking positions
       // BUT: Check if target is reachable with melee first
       if (flankingPositions.length > 0 && currentFlankingBonus === 0) {
-        // Check if target is reachable with melee before attempting to flank
-        if (!canThreatenWithMelee(player, target)) {
+        // ✅ FIX: Don't attempt ground flanking if target is flying and player isn't
+        const targetIsFlying =
+          target.isFlying || (target.altitudeFeet ?? target.altitude ?? 0) > 0;
+        const playerIsFlying =
+          player.isFlying || (player.altitudeFeet ?? player.altitude ?? 0) > 0;
+
+        if (targetIsFlying && !playerIsFlying) {
+          addLog(
+            `❌ ${player.name} skips flanking ${target.name} (target is flying, player is grounded - use spells/ranged instead)`,
+            "warning"
+          );
+          markTargetUnreachable(player, target);
+          // Don't attempt flanking if target is flying and player isn't - skip to next action
+        } else if (!canThreatenWithMelee(player, target)) {
           addLog(
             `❌ ${player.name} skips flanking ${target.name} (target unreachable in melee)`,
             "warning"
@@ -2537,7 +2815,42 @@ export function runPlayerTurnAI(player, context) {
           markTargetUnreachable(player, target);
           // Don't attempt flanking if target is unreachable - skip to next action
         } else {
-          addLog(`🎯 ${player.name} considers flanking ${target.name}`, "info");
+          // ✅ NEW: Check if melee requires dive attack (player flying, target on ground)
+          const playerIsFlyingCheck =
+            player.isFlying || (player.altitudeFeet ?? 0) > 0;
+          const targetIsFlyingCheck =
+            target.isFlying || (target.altitudeFeet ?? 0) > 0;
+          if (playerIsFlyingCheck && !targetIsFlyingCheck) {
+            // Pre-check: if player is flying and target is on ground, validate if dive is needed
+            const preRangeCheck = validateWeaponRange(
+              player,
+              target,
+              selectedAttack,
+              currentDistance
+            );
+            const reasonLower = (preRangeCheck.reason || "").toLowerCase();
+            if (
+              reasonLower.includes("dive attack required") ||
+              reasonLower.includes("too far below")
+            ) {
+              addLog(
+                `🦅 ${player.name} skips flanking ${target.name} (dive attack required - use spells or dive instead)`,
+                "ai"
+              );
+              markTargetUnreachable(player, target);
+              // Skip flanking, will fall through to spell selection
+            } else {
+              addLog(
+                `🎯 ${player.name} considers flanking ${target.name}`,
+                "info"
+              );
+            }
+          } else {
+            addLog(
+              `🎯 ${player.name} considers flanking ${target.name}`,
+              "info"
+            );
+          }
 
           // Find the best flanking position (closest to current position)
           const bestFlankPos = flankingPositions.reduce((best, current) => {
@@ -2644,6 +2957,32 @@ export function runPlayerTurnAI(player, context) {
                       `❌ ${player.name} cannot reach ${target.name} from flanking position (${rangeValidation.reason})`,
                       "error"
                     );
+
+                    // ✅ NEW: If "dive attack required" and player is flying, skip retry loop
+                    const playerIsFlying =
+                      player.isFlying || (player.altitudeFeet ?? 0) > 0;
+                    const targetIsFlying =
+                      target.isFlying || (target.altitudeFeet ?? 0) > 0;
+                    const reasonLower = (
+                      rangeValidation.reason || ""
+                    ).toLowerCase();
+                    const requiresDive =
+                      reasonLower.includes("dive attack required") ||
+                      reasonLower.includes("too far below");
+
+                    if (playerIsFlying && !targetIsFlying && requiresDive) {
+                      // Player is flying, target is on ground, melee requires dive
+                      // Skip the retry loop - either dive or use spells
+                      addLog(
+                        `🦅 ${player.name} is flying too high for melee - will use spells or dive attack instead`,
+                        "ai"
+                      );
+                      markTargetUnreachable(player, target);
+                      processingPlayerAIRef.current = false;
+                      scheduleEndTurn();
+                      return;
+                    }
+
                     // Check if we should continue trying to move closer - use closure variables
                     setTimeout(() => {
                       const updatedPlayerState = fighters.find(
@@ -2975,8 +3314,34 @@ export function runPlayerTurnAI(player, context) {
         }
 
         const newDistance = chosenMove.distance;
+        // Same auto-descend logic for post-move reachability checks.
+        const atkName = String(selectedAttack?.name || "").toLowerCase();
+        const atkType = String(selectedAttack?.type || "").toLowerCase();
+        const atkRangeNum =
+          typeof selectedAttack?.range === "number"
+            ? selectedAttack.range
+            : Number(selectedAttack?.range);
+        const isRangedLike =
+          atkType === "ranged" ||
+          atkName.includes("bow") ||
+          atkName.includes("crossbow") ||
+          atkName.includes("sling") ||
+          atkName.includes("thrown") ||
+          (Number.isFinite(atkRangeNum) && atkRangeNum > 10);
+        const attackerAlt = getAltitude(player) || 0;
+        const targetAlt = getAltitude(target) || 0;
+        const targetIsAirborne = isFlying(target) && targetAlt > 0;
+        const shouldAutoDescendForMelee =
+          !hasRangedWeapon &&
+          !isRangedLike &&
+          attackerAlt > 0 &&
+          !targetIsAirborne &&
+          targetAlt <= 5;
+        const attackerForRangeCheck = shouldAutoDescendForMelee
+          ? { ...player, altitude: 0, altitudeFeet: 0 }
+          : player;
         const rangeValidation = validateWeaponRange(
-          player,
+          attackerForRangeCheck,
           target,
           selectedAttack,
           newDistance
@@ -3081,7 +3446,38 @@ export function runPlayerTurnAI(player, context) {
                     targetPos
                   );
                   const latestRangeValidation = validateWeaponRange(
-                    player,
+                    (function () {
+                      const atkName = String(
+                        selectedAttack?.name || ""
+                      ).toLowerCase();
+                      const atkType = String(
+                        selectedAttack?.type || ""
+                      ).toLowerCase();
+                      const atkRangeNum =
+                        typeof selectedAttack?.range === "number"
+                          ? selectedAttack.range
+                          : Number(selectedAttack?.range);
+                      const isRangedLike =
+                        atkType === "ranged" ||
+                        atkName.includes("bow") ||
+                        atkName.includes("crossbow") ||
+                        atkName.includes("sling") ||
+                        atkName.includes("thrown") ||
+                        (Number.isFinite(atkRangeNum) && atkRangeNum > 10);
+                      const attackerAlt = getAltitude(player) || 0;
+                      const targetAlt = getAltitude(target) || 0;
+                      const targetIsAirborne =
+                        isFlying(target) && targetAlt > 0;
+                      const shouldAutoDescendForMelee =
+                        !hasRangedWeapon &&
+                        !isRangedLike &&
+                        attackerAlt > 0 &&
+                        !targetIsAirborne &&
+                        targetAlt <= 5;
+                      return shouldAutoDescendForMelee
+                        ? { ...player, altitude: 0, altitudeFeet: 0 }
+                        : player;
+                    })(),
                     target,
                     selectedAttack,
                     latestDistance
@@ -3144,6 +3540,8 @@ export function runPlayerTurnAI(player, context) {
     `🤖 ${player.name} ${reasoning} and attacks ${target.name} with ${attackName}!`,
     "info"
   );
+  // Mark immediately so CombatPage's invariant doesn't end-turn before delayed execution happens.
+  markActionScheduled();
 
   // Create updatedPlayer with selectedAttack
   const updatedPlayer = { ...player, selectedAttack: selectedAttack };
@@ -3183,6 +3581,7 @@ export function runPlayerTurnAI(player, context) {
 
     // Execute attack - only ONE attack per turn
     setTimeout(() => {
+      if (!tokenStillValid()) return;
       // Get current fighter state to check remaining attacks before executing
       const currentFighterState = fighters.find((f) => f.id === player.id);
 
@@ -3190,7 +3589,8 @@ export function runPlayerTurnAI(player, context) {
       if (currentFighterState && currentFighterState.remainingAttacks <= 0) {
         addLog(`⚠️ ${player.name} is out of attacks this turn!`, "warning");
         processingPlayerAIRef.current = false;
-        setTimeout(() => endTurn(), 500);
+        // Respect CombatPage turn-advance lock
+        scheduleEndTurn(500);
         return;
       }
 
@@ -3202,16 +3602,56 @@ export function runPlayerTurnAI(player, context) {
           ? calculateDistance(attackerPos, defenderPos)
           : undefined;
 
+      if (!tokenStillValid()) return;
       attack(updatedPlayer, target.id, {
         flankingBonus,
         attackerPosOverride: attackerPos,
         defenderPosOverride: defenderPos,
         distanceOverride: latestDistance,
+        // If we're melee-only and currently airborne vs a grounded target, auto-descend before the strike.
+        ...(function () {
+          const atkName = String(selectedAttack?.name || "").toLowerCase();
+          const atkType = String(selectedAttack?.type || "").toLowerCase();
+          const atkRangeNum =
+            typeof selectedAttack?.range === "number"
+              ? selectedAttack.range
+              : Number(selectedAttack?.range);
+          const isRangedLike =
+            atkType === "ranged" ||
+            atkName.includes("bow") ||
+            atkName.includes("crossbow") ||
+            atkName.includes("sling") ||
+            atkName.includes("thrown") ||
+            (Number.isFinite(atkRangeNum) && atkRangeNum > 10);
+          const attackerAlt = getAltitude(player) || 0;
+          const targetAlt = getAltitude(target) || 0;
+          const targetIsAirborne = isFlying(target) && targetAlt > 0;
+          const shouldAutoDescendForMelee =
+            !hasRangedWeapon &&
+            !isRangedLike &&
+            attackerAlt > 0 &&
+            !targetIsAirborne &&
+            targetAlt <= 5;
+          if (!shouldAutoDescendForMelee) return {};
+          if (dbg) {
+            trace(
+              `action: auto-descend before melee strike | fromAlt=${attackerAlt}ft`
+            );
+          }
+          return {
+            attackerStatePatch: {
+              altitude: 0,
+              altitudeFeet: 0,
+              isFlying: false,
+            },
+          };
+        })(),
       });
 
       // Only one attack per tick. Clear processing flag and advance turn.
       const actionDelay = getActionDelay(arenaSpeed);
       setTimeout(() => {
+        if (!tokenStillValid()) return;
         processingPlayerAIRef.current = false;
         if (combatActive) {
           endTurn();
@@ -3222,6 +3662,8 @@ export function runPlayerTurnAI(player, context) {
 
   // Use a longer delay to ensure position state is fully updated, then execute attack
   setTimeout(() => {
+    if (!tokenStillValid()) return;
+    markActionScheduled();
     executeAttack(0); // No flanking bonus by default
   }, 1000);
 }

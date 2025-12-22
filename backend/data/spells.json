@@ -1,13 +1,5 @@
 {
   "level1": {
-    "Magic Missile": {
-      "level": 1,
-      "range": "100ft",
-      "duration": "Instant",
-      "ppe": 4,
-      "combatDamage": "1d4+1",
-      "description": "Unerring magical projectile"
-    },
     "Blinding Flash": {
       "level": 1,
       "range": "60ft",
@@ -16,35 +8,259 @@
       "combatDamage": "0",
       "description": "Blinds target temporarily"
     },
-    "Armor of Ithan": {
+    "Cloud of Smoke": {
+      "level": 1,
+      "range": "60ft",
+      "duration": "2 melees per level",
+      "ppe": 2,
+      "combatDamage": "0",
+      "description": "Creates a cloud of smoke"
+    },
+    "Flame Lick": {
+      "level": 1,
+      "range": "Touch",
+      "duration": "Instant",
+      "ppe": 3,
+      "combatDamage": "1d6",
+      "description": "Small flame attack"
+    },
+    "Globe of Daylight": {
+      "level": 1,
+      "range": "60ft",
+      "duration": "10 minutes per level",
+      "ppe": 2,
+      "combatDamage": "0",
+      "description": "Creates a globe of light"
+    },
+    "Night Vision": {
       "level": 1,
       "range": "Self",
-      "duration": "1 minute per level",
-      "ppe": 10,
+      "duration": "10 minutes per level",
+      "ppe": 2,
       "combatDamage": "0",
-      "description": "Creates magical armor"
+      "description": "See in darkness up to 60 feet"
+    },
+    "Resist Fire": {
+      "level": 1,
+      "range": "Self",
+      "duration": "2 minutes per level",
+      "ppe": 5,
+      "combatDamage": "0",
+      "description": "Resist fire damage"
+    },
+    "Stench of Hades": {
+      "level": 1,
+      "range": "30ft radius",
+      "duration": "2 melees per level",
+      "ppe": 3,
+      "combatDamage": "0",
+      "description": "Foul odor that causes nausea"
+    },
+    "Breath Without Air": {
+      "level": 1,
+      "range": "Self",
+      "duration": "2 minutes per level",
+      "ppe": 4,
+      "combatDamage": "0",
+      "description": "Breathe without air"
+    },
+    "Clap of Thunder": {
+      "level": 1,
+      "range": "60ft",
+      "duration": "Instant",
+      "ppe": 2,
+      "combatDamage": "0",
+      "description": "Loud thunderclap"
+    },
+    "Cloud of Slumber": {
+      "level": 1,
+      "range": "30ft",
+      "duration": "2 melees per level",
+      "ppe": 3,
+      "combatDamage": "0",
+      "description": "Cloud that causes sleep"
+    },
+    "Create Light": {
+      "level": 1,
+      "range": "60ft",
+      "duration": "10 minutes per level",
+      "ppe": 2,
+      "combatDamage": "0",
+      "description": "Creates magical light"
+    },
+    "Create Mild Wind": {
+      "level": 1,
+      "range": "60ft",
+      "duration": "2 minutes per level",
+      "ppe": 2,
+      "combatDamage": "0",
+      "description": "Creates a 2 mph wind"
+    },
+    "Chameleon": {
+      "level": 1,
+      "range": "Self",
+      "duration": "5 minutes per level",
+      "ppe": 3,
+      "combatDamage": "0",
+      "description": "Blend with surroundings"
+    },
+    "Dust Storm": {
+      "level": 1,
+      "range": "30ft radius",
+      "duration": "2 melees per level",
+      "ppe": 3,
+      "combatDamage": "0",
+      "description": "Creates a dust storm"
+    },
+    "Color Water": {
+      "level": 1,
+      "range": "Touch",
+      "duration": "Permanent",
+      "ppe": 1,
+      "combatDamage": "0",
+      "description": "Colors water"
+    },
+    "Create Fog": {
+      "level": 1,
+      "range": "60ft",
+      "duration": "10 minutes per level",
+      "ppe": 3,
+      "combatDamage": "0",
+      "description": "Creates fog"
     }
   },
   "level2": {
-    "Fire Bolt": {
+    "Cloud of Ash": {
       "level": 2,
-      "range": "100ft",
+      "range": "30ft radius",
+      "duration": "2 melees per level",
+      "ppe": 4,
+      "combatDamage": "0",
+      "description": "Cloud of ash that blinds"
+    },
+    "Darkness": {
+      "level": 2,
+      "range": "60ft",
+      "duration": "2 minutes per level",
+      "ppe": 4,
+      "combatDamage": "0",
+      "description": "Creates magical darkness"
+    },
+    "Fiery Touch": {
+      "level": 2,
+      "range": "Touch",
       "duration": "Instant",
       "ppe": 5,
       "combatDamage": "2d6",
-      "description": "Bolt of fire"
+      "description": "Touch attack with fire"
     },
-    "Lightning Bolt": {
+    "Spontaneous Combustion": {
+      "level": 2,
+      "range": "60ft",
+      "duration": "Instant",
+      "ppe": 6,
+      "combatDamage": "2d6",
+      "description": "Causes target to burst into flames"
+    },
+    "Tongue of Flame": {
+      "level": 2,
+      "range": "30ft",
+      "duration": "Instant",
+      "ppe": 5,
+      "combatDamage": "2d6",
+      "description": "Flame tongue attack"
+    },
+    "Change Wind Direction": {
       "level": 2,
       "range": "100ft",
+      "duration": "2 minutes per level",
+      "ppe": 4,
+      "combatDamage": "0",
+      "description": "Changes wind direction"
+    },
+    "Create Air": {
+      "level": 2,
+      "range": "30ft",
+      "duration": "10 minutes per level",
+      "ppe": 4,
+      "combatDamage": "0",
+      "description": "Creates breathable air"
+    },
+    "Levitate": {
+      "level": 2,
+      "range": "Self or other",
+      "duration": "2 minutes per level",
+      "ppe": 5,
+      "combatDamage": "0",
+      "description": "Levitate object or person"
+    },
+    "Mesmerism": {
+      "level": 2,
+      "range": "30ft",
+      "duration": "2 melees per level",
+      "ppe": 4,
+      "combatDamage": "0",
+      "description": "Hypnotic suggestion"
+    },
+    "Wind Rush": {
+      "level": 2,
+      "range": "60ft",
       "duration": "Instant",
-      "ppe": 7,
-      "combatDamage": "3d6",
-      "description": "Electrical discharge"
+      "ppe": 5,
+      "combatDamage": "1d6",
+      "description": "Blast of wind (60 mph)"
+    },
+    "Create Dirt or Clay": {
+      "level": 2,
+      "range": "Touch",
+      "duration": "Permanent",
+      "ppe": 4,
+      "combatDamage": "0",
+      "description": "Creates dirt or clay"
+    },
+    "Hopping Stones": {
+      "level": 2,
+      "range": "60ft",
+      "duration": "5 minutes per level",
+      "ppe": 4,
+      "combatDamage": "0",
+      "description": "Creates stepping stones"
+    },
+    "Breath Underwater": {
+      "level": 2,
+      "range": "Self",
+      "duration": "10 minutes per level",
+      "ppe": 4,
+      "combatDamage": "0",
+      "description": "Breathe underwater"
+    },
+    "Walk the Waves": {
+      "level": 2,
+      "range": "Self",
+      "duration": "10 minutes per level",
+      "ppe": 4,
+      "combatDamage": "0",
+      "description": "Walk on water"
     }
   },
   "level3": {
-    "Fireball": {
+    "Circle of Cold": {
+      "level": 3,
+      "range": "30ft radius",
+      "duration": "2 melees per level",
+      "ppe": 6,
+      "combatDamage": "1d6 per melee",
+      "description": "Area of cold damage"
+    },
+    "Circle of Flame": {
+      "level": 3,
+      "range": "30ft radius",
+      "duration": "2 melees per level",
+      "ppe": 6,
+      "combatDamage": "2d6 per melee",
+      "description": "Area of fire damage"
+    },
+    "Fire Ball": {
       "level": 3,
       "range": "100ft",
       "duration": "Instant",
@@ -52,34 +268,463 @@
       "combatDamage": "4d6",
       "description": "Explosive fire spell"
     },
-    "Ice Bolt": {
+    "Wall of Flame": {
       "level": 3,
-      "range": "100ft",
-      "duration": "Instant",
+      "range": "60ft",
+      "duration": "2 melees per level",
       "ppe": 8,
-      "combatDamage": "3d6",
-      "description": "Bolt of ice"
+      "combatDamage": "2d6 per melee",
+      "description": "Wall of fire"
+    },
+    "Call Lightning": {
+      "level": 3,
+      "range": "200ft",
+      "duration": "Instant",
+      "ppe": 10,
+      "combatDamage": "4d6",
+      "description": "Summons lightning from sky"
+    },
+    "Fingers of the Wind": {
+      "level": 3,
+      "range": "60ft",
+      "duration": "2 melees per level",
+      "ppe": 6,
+      "combatDamage": "1d6",
+      "description": "Wind fingers attack"
+    },
+    "Float in Air": {
+      "level": 3,
+      "range": "Self",
+      "duration": "2 minutes per level",
+      "ppe": 6,
+      "combatDamage": "0",
+      "description": "Float in air"
+    },
+    "Walk the Wind": {
+      "level": 3,
+      "range": "Self",
+      "duration": "2 minutes per level",
+      "ppe": 8,
+      "combatDamage": "0",
+      "description": "Walk on air"
+    },
+    "Animate Plants": {
+      "level": 3,
+      "range": "60ft",
+      "duration": "2 melees per level",
+      "ppe": 8,
+      "combatDamage": "0",
+      "description": "Animate plants to attack"
+    },
+    "Earth Rumble": {
+      "level": 3,
+      "range": "30ft radius",
+      "duration": "2 melees per level",
+      "ppe": 8,
+      "combatDamage": "1d6 per melee",
+      "description": "Ground shakes causing damage"
+    },
+    "Wall of Stone": {
+      "level": 3,
+      "range": "60ft",
+      "duration": "Permanent",
+      "ppe": 10,
+      "combatDamage": "0",
+      "description": "Creates stone wall"
+    },
+    "Calm Waters": {
+      "level": 3,
+      "range": "100ft radius",
+      "duration": "10 minutes per level",
+      "ppe": 6,
+      "combatDamage": "0",
+      "description": "Calms water"
+    },
+    "Sheet of Ice": {
+      "level": 3,
+      "range": "60ft",
+      "duration": "10 minutes per level",
+      "ppe": 8,
+      "combatDamage": "0",
+      "description": "Creates sheet of ice"
+    },
+    "Wall of Ice": {
+      "level": 3,
+      "range": "60ft",
+      "duration": "10 minutes per level",
+      "ppe": 8,
+      "combatDamage": "0",
+      "description": "Creates ice wall"
     }
   },
   "level4": {
-    "Lightning Arc": {
+    "Cloud of Steam": {
       "level": 4,
-      "range": "150ft",
+      "range": "30ft radius",
+      "duration": "2 melees per level",
+      "ppe": 6,
+      "combatDamage": "1d6 per melee",
+      "description": "Cloud of scalding steam"
+    },
+    "Flame Friend": {
+      "level": 4,
+      "range": "60ft",
+      "duration": "2 melees per level",
+      "ppe": 8,
+      "combatDamage": "2d6 per melee",
+      "description": "Animated flame attacks"
+    },
+    "Mini-Fireballs": {
+      "level": 4,
+      "range": "100ft",
       "duration": "Instant",
-      "ppe": 12,
-      "combatDamage": "5d6",
-      "description": "Powerful lightning attack"
+      "ppe": 8,
+      "combatDamage": "2d6 each (1-4 fireballs)",
+      "description": "Multiple small fireballs"
+    },
+    "Ball Lightning": {
+      "level": 4,
+      "range": "100ft",
+      "duration": "2 melees per level",
+      "ppe": 10,
+      "combatDamage": "3d6 per melee",
+      "description": "Ball of lightning"
+    },
+    "Invisibility": {
+      "level": 4,
+      "range": "Self or other",
+      "duration": "2 minutes per level",
+      "ppe": 10,
+      "combatDamage": "0",
+      "description": "Turn invisible"
+    },
+    "Protection from Lightning": {
+      "level": 4,
+      "range": "Self",
+      "duration": "2 minutes per level",
+      "ppe": 8,
+      "combatDamage": "0",
+      "description": "Protection from lightning"
+    },
+    "Animate Object": {
+      "level": 4,
+      "range": "60ft",
+      "duration": "2 melees per level",
+      "ppe": 10,
+      "combatDamage": "0",
+      "description": "Animate object to attack"
+    },
+    "Quicksand": {
+      "level": 4,
+      "range": "30ft radius",
+      "duration": "2 melees per level",
+      "ppe": 8,
+      "combatDamage": "1d6 per melee",
+      "description": "Creates quicksand"
+    },
+    "Sand Storm": {
+      "level": 4,
+      "range": "60ft radius",
+      "duration": "2 melees per level",
+      "ppe": 8,
+      "combatDamage": "1d6 per melee",
+      "description": "Creates sandstorm"
+    },
+    "Wall of Thorns": {
+      "level": 4,
+      "range": "60ft",
+      "duration": "10 minutes per level",
+      "ppe": 10,
+      "combatDamage": "1d6 per melee",
+      "description": "Wall of thorns"
+    },
+    "Create Water": {
+      "level": 4,
+      "range": "Touch",
+      "duration": "Permanent",
+      "ppe": 6,
+      "combatDamage": "0",
+      "description": "Creates water"
+    },
+    "Hail": {
+      "level": 4,
+      "range": "100ft radius",
+      "duration": "2 melees per level",
+      "ppe": 8,
+      "combatDamage": "2d6 per melee",
+      "description": "Hailstorm"
+    },
+    "Shards of Ice": {
+      "level": 4,
+      "range": "60ft",
+      "duration": "Instant",
+      "ppe": 8,
+      "combatDamage": "3d6",
+      "description": "Ice shards attack"
     }
   },
   "level5": {
-    "Meteor": {
+    "Blue Flame": {
       "level": 5,
+      "range": "60ft",
+      "duration": "Instant",
+      "ppe": 12,
+      "combatDamage": "5d6",
+      "description": "Intense blue flame"
+    },
+    "Breath Fire": {
+      "level": 5,
+      "range": "30ft cone",
+      "duration": "Instant",
+      "ppe": 12,
+      "combatDamage": "5d6",
+      "description": "Breathe fire"
+    },
+    "Screaming Wall of Flame": {
+      "level": 5,
+      "range": "60ft",
+      "duration": "2 melees per level",
+      "ppe": 12,
+      "combatDamage": "4d6 per melee",
+      "description": "Wall of screaming fire"
+    },
+    "Breath of Life": {
+      "level": 5,
+      "range": "Touch",
+      "duration": "Instant",
+      "ppe": 15,
+      "combatDamage": "0",
+      "description": "Restore life to recently dead"
+    },
+    "Whirlwind": {
+      "level": 5,
+      "range": "60ft",
+      "duration": "2 melees per level",
+      "ppe": 12,
+      "combatDamage": "3d6 per melee",
+      "description": "Creates whirlwind"
+    },
+    "Chasm": {
+      "level": 5,
+      "range": "60ft",
+      "duration": "Permanent",
+      "ppe": 15,
+      "combatDamage": "4d6",
+      "description": "Creates chasm in ground"
+    },
+    "River of Lava": {
+      "level": 5,
+      "range": "60ft",
+      "duration": "2 melees per level",
+      "ppe": 12,
+      "combatDamage": "4d6 per melee",
+      "description": "Creates river of lava"
+    },
+    "Travel Through Earth": {
+      "level": 5,
+      "range": "Self",
+      "duration": "2 minutes per level",
+      "ppe": 12,
+      "combatDamage": "0",
+      "description": "Travel through earth"
+    },
+    "Earth to Mud": {
+      "level": 5,
+      "range": "30ft radius",
+      "duration": "2 melees per level",
+      "ppe": 10,
+      "combatDamage": "0",
+      "description": "Turns earth to mud"
+    },
+    "Ten Foot Ball of Ice": {
+      "level": 5,
+      "range": "100ft",
+      "duration": "Instant",
+      "ppe": 12,
+      "combatDamage": "5d6",
+      "description": "Large ice ball attack"
+    },
+    "Whirlpool": {
+      "level": 5,
+      "range": "60ft radius",
+      "duration": "2 melees per level",
+      "ppe": 12,
+      "combatDamage": "3d6 per melee",
+      "description": "Creates whirlpool"
+    }
+  },
+  "level6": {
+    "Dancing Fires": {
+      "level": 6,
+      "range": "60ft",
+      "duration": "2 melees per level",
+      "ppe": 15,
+      "combatDamage": "3d6 per melee",
+      "description": "Animated fires attack"
+    },
+    "Eternal Flame": {
+      "level": 6,
+      "range": "60ft",
+      "duration": "Permanent",
+      "ppe": 15,
+      "combatDamage": "2d6 per melee",
+      "description": "Permanent flame"
+    },
+    "Ten Foot Wheel of Fire": {
+      "level": 6,
+      "range": "60ft",
+      "duration": "2 melees per level",
+      "ppe": 15,
+      "combatDamage": "5d6 per melee",
+      "description": "Wheel of fire"
+    },
+    "Electric Field/Wall": {
+      "level": 6,
+      "range": "60ft",
+      "duration": "2 melees per level",
+      "ppe": 15,
+      "combatDamage": "4d6 per melee",
+      "description": "Electric field or wall"
+    },
+    "Mist of Death": {
+      "level": 6,
+      "range": "30ft radius",
+      "duration": "2 melees per level",
+      "ppe": 15,
+      "combatDamage": "3d6 per melee",
+      "description": "Deadly mist"
+    },
+    "Snow Storm": {
+      "level": 6,
+      "range": "100ft radius",
+      "duration": "2 melees per level",
+      "ppe": 15,
+      "combatDamage": "2d6 per melee",
+      "description": "Creates snowstorm"
+    },
+    "Earthquake": {
+      "level": 6,
+      "range": "100ft radius",
+      "duration": "2 melees per level",
+      "ppe": 20,
+      "combatDamage": "6d6 per melee",
+      "description": "Creates earthquake"
+    },
+    "Mend Metal": {
+      "level": 6,
+      "range": "Touch",
+      "duration": "Permanent",
+      "ppe": 12,
+      "combatDamage": "0",
+      "description": "Repairs metal"
+    },
+    "Stone to Flesh": {
+      "level": 6,
+      "range": "Touch",
+      "duration": "Permanent",
+      "ppe": 15,
+      "combatDamage": "0",
+      "description": "Turns stone to flesh"
+    },
+    "Hurricane": {
+      "level": 6,
+      "range": "200ft radius",
+      "duration": "2 melees per level",
+      "ppe": 20,
+      "combatDamage": "5d6 per melee",
+      "description": "Creates hurricane"
+    },
+    "Encase in Ice": {
+      "level": 6,
+      "range": "60ft",
+      "duration": "Permanent",
+      "ppe": 15,
+      "combatDamage": "0",
+      "description": "Encase target in ice"
+    }
+  },
+  "level7": {
+    "Melt Metal": {
+      "level": 7,
+      "range": "60ft",
+      "duration": "Instant",
+      "ppe": 18,
+      "combatDamage": "6d6",
+      "description": "Melts metal"
+    },
+    "Tornado": {
+      "level": 7,
+      "range": "100ft",
+      "duration": "2 melees per level",
+      "ppe": 20,
+      "combatDamage": "6d6 per melee",
+      "description": "Creates tornado"
+    },
+    "Petrification": {
+      "level": 7,
+      "range": "60ft",
+      "duration": "Permanent",
+      "ppe": 20,
+      "combatDamage": "0",
+      "description": "Turns target to stone"
+    },
+    "Wall of Iron": {
+      "level": 7,
+      "range": "60ft",
+      "duration": "Permanent",
+      "ppe": 18,
+      "combatDamage": "0",
+      "description": "Creates iron wall"
+    },
+    "Storm": {
+      "level": 7,
+      "range": "200ft radius",
+      "duration": "10 minutes per level",
+      "ppe": 20,
+      "combatDamage": "4d6 per melee",
+      "description": "Creates storm"
+    },
+    "Tidal Wave": {
+      "level": 7,
       "range": "200ft",
       "duration": "Instant",
       "ppe": 20,
-      "combatDamage": "6d6",
-      "description": "Summons a meteor"
+      "combatDamage": "7d6",
+      "description": "Creates tidal wave"
+    }
+  },
+  "level8": {
+    "Burst into Flame": {
+      "level": 8,
+      "range": "60ft",
+      "duration": "Instant",
+      "ppe": 25,
+      "combatDamage": "8d6",
+      "description": "Target bursts into flame"
+    },
+    "Magnetism": {
+      "level": 8,
+      "range": "60ft",
+      "duration": "2 minutes per level",
+      "ppe": 20,
+      "combatDamage": "0",
+      "description": "Control magnetic forces"
+    },
+    "Soul Transference": {
+      "level": 8,
+      "range": "Touch",
+      "duration": "Permanent",
+      "ppe": 30,
+      "combatDamage": "0",
+      "description": "Transfer soul to another body"
+    },
+    "Suspended Animation": {
+      "level": 8,
+      "range": "Touch",
+      "duration": "Permanent until dispelled",
+      "ppe": 20,
+      "combatDamage": "0",
+      "description": "Puts target in suspended animation"
     }
   }
 }
-

@@ -19,7 +19,10 @@ import { calculateDistance } from "../data/movementRules.js";
 import { MOVEMENT_RATES, ENGAGEMENT_RANGES } from "../data/movementRules.js";
 import { getDynamicWidth, isTightTerrain } from "./environmentMetrics.js";
 import { canUseWeapon } from "./combatEnvironmentLogic.js";
-import { isWithinWhipReach, validateFlexibleWeaponReach } from "./whipReachSystem.js";
+import {
+  isWithinWhipReach,
+  validateFlexibleWeaponReach,
+} from "./whipReachSystem.js";
 import {
   canFly,
   isFlying,
@@ -403,11 +406,30 @@ export function validateAttackRange(
   weapon,
   overrideDistance = null
 ) {
-  const distance =
+  const weaponRange = getWeaponRange(weapon);
+
+  const weaponNameLower = (weapon?.name || "").toLowerCase();
+  const isNameRanged =
+    weaponNameLower.includes("bow") ||
+    weaponNameLower.includes("crossbow") ||
+    weaponNameLower.includes("sling") ||
+    weaponNameLower.includes("thrown");
+
+  const horizontalDistance =
     typeof overrideDistance === "number" && !Number.isNaN(overrideDistance)
       ? overrideDistance
       : calculateDistance(attackerPos, targetPos);
-  const weaponRange = getWeaponRange(weapon);
+
+  const verticalDistance = Math.abs(
+    (getAltitude(attacker) || 0) - (getAltitude(target) || 0)
+  );
+
+  // ✅ Use 3D distance for ranged attacks so planner/AI/executor agree.
+  const distance =
+    isNameRanged || (weapon?.range && weapon.range > 10)
+      ? Math.hypot(horizontalDistance, verticalDistance)
+      : horizontalDistance;
+
   const engagementRange = getEngagementRange(distance);
 
   // Check if target is currently flying (airborne) vs just having flight capability
@@ -418,10 +440,11 @@ export function validateAttackRange(
   const attackerAltitude = getAltitude(attacker) || 0;
 
   // Check if this is a melee attack (weapon range <= 10 feet typically)
-  const isMeleeAttack = weaponRange <= 10;
+  // Treat name-ranged weapons as non-melee even if their range metadata is missing (prevents melee altitude gating for bows).
+  const isMeleeAttack = weaponRange <= 10 && !isNameRanged;
 
   // Check if attacker has ranged weapons
-  const weaponName = (weapon?.name || "").toLowerCase();
+  const weaponName = weaponNameLower;
   const hasRangedWeapon =
     weaponName.includes("bow") ||
     weaponName.includes("crossbow") ||
@@ -437,11 +460,12 @@ export function validateAttackRange(
   if (isMeleeAttack && !hasRangedWeapon) {
     // Check if this is a flexible reach weapon (like Fire Whip)
     const weaponName = (weapon?.name || "").toLowerCase();
-    const isFlexibleReach = weapon?.weaponType === "flexible" || 
-                            weapon?.properties?.flexible === true ||
-                            weapon?.properties?.entangleCapable === true ||
-                            weaponName.includes("whip");
-    
+    const isFlexibleReach =
+      weapon?.weaponType === "flexible" ||
+      weapon?.properties?.flexible === true ||
+      weapon?.properties?.entangleCapable === true ||
+      weaponName.includes("whip");
+
     if (isFlexibleReach && weapon?.reach && weapon.reach > 5) {
       // Use 3D reach calculation for flexible weapons
       const withinReach = isWithinWhipReach(
@@ -451,7 +475,7 @@ export function validateAttackRange(
         targetAltitude,
         weapon.reach
       );
-      
+
       if (!withinReach) {
         isUnreachable = true;
       }
