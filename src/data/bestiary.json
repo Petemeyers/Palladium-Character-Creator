@@ -5449,7 +5449,17 @@
           ],
           "spd": 15,
           "lifeSpan": "Immortal",
-          "description": "Perhaps the most bizarre of the four angels, the Ariel has two human heads, the body of a lion, the wings of an angel, and the tail of a serpent."
+          "description": "Perhaps the most bizarre of the four angels, the Ariel has two human heads, the body of a lion, the wings of an angel, and the tail of a serpent.",
+          "visual": {
+            "modelUrl": "/assets/models/characters/ariel.glb",
+            "baseHeightFt": 6,
+            "yawOffsetDeg": 90
+          },
+          "footprint": {
+            "feet": 20,
+            "hexes": 4,
+            "radiusHex": 2
+          }
         },
         {
           "id": "seraph",

@@ -24,6 +24,7 @@ import {
   NpcMemoryEditor,
 } from './components/LazyComponents';
 import CombatPage from './pages/CombatPage';
+import MapMakerPage from "./pages/MapMakerPage";
 import AutoRollDemo from './components/AutoRollDemo';
 import { useParams } from 'react-router-dom';
 
@@ -230,6 +231,11 @@ function App() {
         <Route path="/combat" element={
           <PrivateRoute>
             <CombatPage characters={characters} />
+          </PrivateRoute>
+        } />
+        <Route path="/map-maker" element={
+          <PrivateRoute>
+            <MapMakerPage />
           </PrivateRoute>
         } />
         <Route path="/auto-roll-demo" element={

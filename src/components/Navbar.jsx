@@ -126,6 +126,9 @@ const Navbar = () => {
             <Link to="/combat" className={`nav-link ${isActive('/combat')}`} onClick={closeMenu}>
               ⚔️ Combat Arena
             </Link>
+            <Link to="/map-maker" className={`nav-link ${isActive('/map-maker')}`} onClick={closeMenu}>
+              🗺️ Map Maker
+            </Link>
           </div>
 
           {/* Shopping Section */}

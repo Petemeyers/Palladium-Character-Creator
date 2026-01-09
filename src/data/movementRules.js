@@ -234,8 +234,10 @@ export const TERRAIN_TYPES = {
 // Hex grid utility functions
 // Convert offset coordinates to cube coordinates for easier distance calculation
 function offsetToCube(col, row) {
-  const x = col;
-  const z = row - (col - (col & 1)) / 2;
+  // odd-r horizontal layout (flat-top) to cube
+  // https://www.redblobgames.com/grids/hexagons/ (odd-r)
+  const x = col - (row - (row & 1)) / 2;
+  const z = row;
   const y = -x - z;
   return { x, y, z };
 }
@@ -254,26 +256,27 @@ function hexDistance(pos1, pos2) {
 
 // Get all neighbors of a hex (6 directions)
 export function getHexNeighbors(col, row) {
-  const parity = col & 1; // 0 for even columns, 1 for odd columns
+  const parity = row & 1; // 0 for even rows, 1 for odd rows
 
-  // Neighbor offsets for odd-q vertical layout (pointy-top hexes)
+  // Neighbor offsets for odd-r horizontal layout (flat-top hexes)
+  // Even rows are shifted left; odd rows are shifted right.
   const directions =
     parity === 0
       ? [
           [+1, 0],
-          [+1, -1],
           [0, -1],
           [-1, -1],
           [-1, 0],
+          [-1, +1],
           [0, +1],
         ]
       : [
-          [+1, +1],
           [+1, 0],
+          [+1, -1],
           [0, -1],
           [-1, 0],
-          [-1, +1],
           [0, +1],
+          [+1, +1],
         ];
 
   return directions.map(([dx, dy]) => ({

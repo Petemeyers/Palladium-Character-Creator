@@ -21,6 +21,9 @@ const HomePage = () => {
           <Link to="/combat" className="home-button">
             ⚔️ Combat Arena
           </Link>
+          <Link to="/map-maker" className="home-button">
+            🗺️ Map Maker
+          </Link>
           <Link to="/trader-shop" className="home-button">
             Trader Shop
           </Link>

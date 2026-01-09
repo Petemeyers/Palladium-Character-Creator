@@ -51,6 +51,9 @@ export function loadCreature(idOrName) {
     lifeSpan: entry.lifeSpan || "unknown",
     actions: 3,
     alive: true,
+    // Preserve visual and footprint data for 3D rendering
+    visual: entry.visual,
+    footprint: entry.footprint,
   };
 
   return normalized;

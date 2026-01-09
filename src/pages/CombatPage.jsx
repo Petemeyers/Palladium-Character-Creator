@@ -1621,6 +1621,17 @@ export default function CombatPage({ characters = [] }) {
   const [combatTerrain, setCombatTerrain] = useState(null); // Store terrain data for combat
   const [mode, setMode] = useState("MAP_EDITOR"); // "MAP_EDITOR" | "COMBAT"
   const [mapDefinition, setMapDefinition] = useState(null); // Map definition for editor mode
+  const arena3DRef = useRef(null);
+  // Editor paint selection (start simple)
+  const [selectedTerrainType, setSelectedTerrainType] = useState("grass");
+  // Incremental 3D sync queue
+  const pending3DChangesRef = useRef([]);
+  const rafFlushRef = useRef(null);
+  // Keep the latest mapDefinition for RAF flush
+  const mapDefinitionRef = useRef(null);
+  useEffect(() => {
+    mapDefinitionRef.current = mapDefinition;
+  }, [mapDefinition]);
   const [enemySortMode, setEnemySortMode] = useState("type"); // Sort mode for bestiary creatures
   const [creatureTypeFilter, setCreatureTypeFilter] = useState("all"); // Filter bestiary by category
   const collator = useMemo(() => new Intl.Collator(undefined, { sensitivity: "base" }), []);
@@ -1801,6 +1812,60 @@ export default function CombatPage({ characters = [] }) {
       setMapDefinition(phase0Results.environment);
     }
   }, [phase0Results, mapDefinition]);
+
+  // Incremental 3D sync queue
+  const queue3DCellChange = useCallback((col, row, cell) => {
+    pending3DChangesRef.current.push({ col, row, cell });
+    if (rafFlushRef.current) return;
+
+    rafFlushRef.current = requestAnimationFrame(() => {
+      const changes = pending3DChangesRef.current;
+      pending3DChangesRef.current = [];
+      rafFlushRef.current = null;
+
+      const latest = mapDefinitionRef.current;
+      if (changes.length && latest && arena3DRef.current?.syncMapEditorState) {
+        arena3DRef.current.syncMapEditorState(latest, changes);
+      }
+    });
+  }, []);
+
+  // Editor cell edit handler
+  const handleMapCellEdit = useCallback(
+    (x, y, cell) => {
+      setMapDefinition((prev) => {
+        const updated = { ...(prev || {}) };
+        if (!updated.grid) updated.grid = [];
+        if (!updated.grid[y]) updated.grid[y] = [];
+        updated.grid[y][x] = cell;
+        return updated;
+      });
+
+      queue3DCellChange(x, y, cell);
+    },
+    [queue3DCellChange]
+  );
+
+  const handleMapCellsEdit = useCallback(
+    (changes) => {
+      if (!Array.isArray(changes) || changes.length === 0) return;
+      setMapDefinition((prev) => {
+        const updated = { ...(prev || {}) };
+        const nextGrid = Array.isArray(updated.grid)
+          ? updated.grid.map((row) => (Array.isArray(row) ? [...row] : []))
+          : [];
+        changes.forEach((c) => {
+          if (!nextGrid[c.y]) nextGrid[c.y] = [];
+          nextGrid[c.y][c.x] = c.cell;
+        });
+        updated.grid = nextGrid;
+        return updated;
+      });
+      // Feed into the existing incremental 3D queue (single RAF flush)
+      changes.forEach((c) => queue3DCellChange(c.x, c.y, c.cell));
+    },
+    [queue3DCellChange]
+  );
 
   // Start combat from editor - switches from MAP_EDITOR to COMBAT mode
   // Start combat from editor - switches from MAP_EDITOR to COMBAT mode
@@ -15497,6 +15562,13 @@ useEffect(() => {
                       terrain={mode === "MAP_EDITOR" ? mapDefinition : arenaEnvironment}
                       activeCircles={activeCircles}
                       mapType={currentMapType}
+                      mode={mode}
+                      mapDefinition={mapDefinition}
+                      // ✅ editor paint wiring
+                      selectedTerrainType={selectedTerrainType}
+                      onSelectedTerrainTypeChange={setSelectedTerrainType}
+                      onMapCellEdit={handleMapCellEdit}
+                      onMapCellsEdit={handleMapCellsEdit}
                   visibleCells={visibleCells}
                   exploredCells={exploredCells}
                   fogEnabled={fogEnabled}
@@ -15517,8 +15589,6 @@ useEffect(() => {
                   })()}
                   visibilityRange={combatTerrain?.visibilityRange || getVisibilityRange(combatTerrain?.lighting || "BRIGHT_DAYLIGHT", false, null)}
                       mapHeight={mapHeight}
-                      mode={mode}
-                      mapDefinition={mapDefinition}
                 />
               </Box>
 
@@ -15634,13 +15704,31 @@ useEffect(() => {
                           </Button>
                         )}
                         {mode === "MAP_EDITOR" && (
-                          <Button
-                            size="sm"
-                            colorScheme="green"
-                            onClick={startCombatFromEditor}
-                          >
-                            ▶️ Start Combat
-                          </Button>
+                          <>
+                            <Button
+                              size="sm"
+                              colorScheme="blue"
+                              variant="outline"
+                              onClick={() => {
+                                if (mapDefinition) {
+                                  setCombatTerrain(mapDefinition);
+                                  // Show a brief confirmation
+                                  console.log("✅ Map applied to combat terrain");
+                                }
+                              }}
+                              title="Apply your map edits to the combat arena (without starting combat)"
+                            >
+                              💾 Apply Map
+                            </Button>
+                            <Button
+                              size="sm"
+                              colorScheme="green"
+                              onClick={startCombatFromEditor}
+                              title="Apply map and start combat"
+                            >
+                              ▶️ Start Combat
+                            </Button>
+                          </>
                         )}
                       </HStack>
                     </HStack>
@@ -15892,6 +15980,7 @@ useEffect(() => {
               >
                 <Box width="100%" height="100%">
                   <HexArena3D
+                    ref={arena3DRef}
                     mapDefinition={mapDefinition}
                     fighters={fighters}
                     positions={positions}

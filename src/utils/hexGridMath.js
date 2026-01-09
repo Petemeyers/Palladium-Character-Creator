@@ -3,16 +3,45 @@ import * as THREE from "three";
 export const HEX_RADIUS = 1;
 export const HEX_TILE_THICKNESS = 0.05;
 
-// Flat-top hexes using odd-q offset layout
+// --- Vertical scale (shared by tiles + altitude) ---
+// World Y scale: 1 world unit = 5 feet (used for altitude)
+export const FEET_PER_WORLD_Y_UNIT = 5;
+// Tile height units: 1 unit = 2.5 feet (so 2 units = 5 feet)
+export const FEET_PER_TILE_HEIGHT_UNIT = 2.5;
+export const TILE_HEIGHT_UNIT_TO_WORLD_Y = FEET_PER_TILE_HEIGHT_UNIT / FEET_PER_WORLD_Y_UNIT; // 0.5
+// Base tile height=0 should sit at ground; we keep a tiny minimum thickness so tiles are visible.
+export const MIN_TILE_TOP_WORLD_Y = HEX_TILE_THICKNESS; // bottom is always y=0, top at least this
+
+function toNumberOr(value, fallback) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function getTileHeightUnits(value) {
+  return toNumberOr(value, 0);
+}
+
+export function tileSurfaceWorldY(tileHeightUnits = 0) {
+  const hUnits = getTileHeightUnits(tileHeightUnits);
+  const topY = hUnits * TILE_HEIGHT_UNIT_TO_WORLD_Y;
+  return Math.max(MIN_TILE_TOP_WORLD_Y, topY);
+}
+
+// Flat-top hexes using odd-r offset layout (rows are staggered horizontally).
+// This matches TacticalMap's pixel layout: x = W*(col + 0.5*(row&1)), y = 1.5*R*row.
 export function offsetToAxial(col = 0, row = 0) {
-  const q = col;
-  const r = row - (col - (col & 1)) / 2;
+  // odd-r horizontal layout (flat-top)
+  // q = col - (row - (row&1))/2
+  // r = row
+  const q = col - (row - (row & 1)) / 2;
+  const r = row;
   return { q, r };
 }
 
 export function axialToOffset(q = 0, r = 0) {
-  const col = q;
-  const row = r + (q - (q & 1)) / 2;
+  // inverse of odd-r
+  const col = q + (r - (r & 1)) / 2;
+  const row = r;
   return { col, row };
 }
 
@@ -48,7 +77,9 @@ export function worldVectorFromTile(
   thickness = HEX_TILE_THICKNESS
 ) {
   if (!tile) return new THREE.Vector3();
-  const elevation = thickness / 2 + (tile.height || 0) * 0.3;
+  // Return a point on the tile "surface" (top), not its mesh center.
+  // Thickness is not used for elevation; elevation is represented by tile.height units.
+  const elevation = tileSurfaceWorldY(tile.height || tile.elevation || 0);
   if (tile.gridPosition) {
     const { col, row } = tile.gridPosition;
     const { x, z } = computeCenterFromOffset(col, row, radius);
@@ -62,16 +93,21 @@ export function worldVectorFromEntity(
   radius = HEX_RADIUS,
   thickness = HEX_TILE_THICKNESS
 ) {
-  // Get base elevation from tile height (for terrain elevation)
-  const tileElevation = thickness / 2 + (entity.height || 0) * 0.3;
-  
-  // Add creature altitude (for flying creatures) - altitude is in feet, convert to 3D units
-  // Assuming 1 unit = 1 foot, or adjust scale as needed
-  // Altitude is tracked in 5ft increments, so we need to scale it appropriately
-  const altitude = entity.altitude || entity.altitudeFeet || 0;
-  const altitude3D = altitude * 0.1; // Scale altitude to 3D units (adjust as needed)
-  
-  const totalElevation = tileElevation + altitude3D;
+  // Terrain tile elevation (in height units)
+  const tileHeightUnits =
+    entity.tileHeightUnits ??
+    entity.tileHeight ??
+    entity.terrainHeight ??
+    entity.heightUnits ??
+    entity.height ??
+    0;
+  const tileElevation = tileSurfaceWorldY(tileHeightUnits);
+
+  // Creature altitude is in FEET; convert using world Y scale (5ft = 1 world unit).
+  const altitudeFeet = toNumberOr(entity.altitudeFeet ?? entity.altitude ?? 0, 0);
+  const altitudeWorld = altitudeFeet / FEET_PER_WORLD_Y_UNIT;
+
+  const totalElevation = tileElevation + altitudeWorld;
   return worldVectorFromAxial(entity.q || 0, entity.r || 0, totalElevation, radius);
 }
 

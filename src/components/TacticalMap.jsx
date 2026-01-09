@@ -54,6 +54,11 @@ const TacticalMap = ({
   // Editor/Combat mode
   mode = "COMBAT", // "MAP_EDITOR" | "COMBAT"
   mapDefinition = null, // Map definition for editor mode
+  // MAP_EDITOR paint palette
+  selectedTerrainType = "grass", // Editor: currently selected paint terrain
+  onSelectedTerrainTypeChange = null, // Editor: (terrainKey) => void
+  onMapCellEdit = null, // Editor: (col,row,cell) -> parent handles state + 3D sync
+  onMapCellsEdit = null, // Editor: (changes: Array<{x,y,cell}>) -> bulk edit for bucket fill
 }) => {
   // Helper to normalize combatant ids from various sources
   const getCombatantId = (combatant) =>
@@ -71,6 +76,25 @@ const TacticalMap = ({
   const mapScrollRef = useRef(null);
   const prevMovementModeRef = useRef(false);
   const prevCurrentTurnRef = useRef(null);
+
+  // MAP_EDITOR: brush mode + drag-painting support
+  const [editorBrushMode, setEditorBrushMode] = useState("terrain"); // "terrain" | "bucket" | "raise" | "lower"
+  const [editorHeightStep, setEditorHeightStep] = useState(1);
+  const isPointerPaintingRef = useRef(false);
+  const lastPaintedCellKeyRef = useRef(null);
+
+  function normalizeEditorTerrainKey(raw) {
+    const t = String(raw || "grass").toLowerCase();
+    if (["grass", "forest", "rock", "water", "sand", "hill", "road"].includes(t)) return t;
+    if (t.includes("forest")) return "forest";
+    if (t.includes("rock") || t.includes("mountain") || t.includes("ruins") || t.includes("cave")) return "rock";
+    if (t.includes("water") || t.includes("swamp") || t.includes("marsh")) return "water";
+    if (t.includes("sand") || t.includes("desert")) return "sand";
+    if (t.includes("hill")) return "hill";
+    if (t.includes("road") || t.includes("urban") || t.includes("city")) return "road";
+    if (t.includes("open") || t.includes("field") || t.includes("plain") || t.includes("ground")) return "grass";
+    return "grass";
+  }
   
   // Use external flashing state if provided, otherwise use internal
   const flashingCombatants = externalFlashingCombatants || internalFlashingCombatants;
@@ -79,6 +103,19 @@ const TacticalMap = ({
   const HEX_RADIUS = GRID_CONFIG.HEX_SIZE / 2;
   const HEX_WIDTH = Math.sqrt(3) * HEX_RADIUS;
   const HEX_VERTICAL_SPACING = (3 / 2) * HEX_RADIUS;
+
+  // Editor terrain palette
+  const editorTerrainPalette = useMemo(
+    () => [
+      { key: "grass", label: "Grass", swatch: "#67a95b", icon: "🌿" },
+      { key: "forest", label: "Forest", swatch: "#2f6b3c", icon: "🌲" },
+      { key: "water", label: "Water", swatch: "#2b6cb0", icon: "💧" },
+      { key: "rock", label: "Rock", swatch: "#718096", icon: "🪨" },
+      { key: "sand", label: "Sand", swatch: "#d6b56b", icon: "🏜️" },
+      { key: "road", label: "Road", swatch: "#6b4f3a", icon: "🛣️" },
+    ],
+    []
+  );
 
   // Auto-position map: align with window edges (top and left)
   useEffect(() => {
@@ -164,40 +201,278 @@ const TacticalMap = ({
   }, [currentTurn, externalFlashingCombatants]);
 
   // Handle cell click with debouncing to prevent performance issues
-  const handleCellClick = useCallback((x, y) => {
-    // Use requestAnimationFrame to defer the execution and prevent blocking
-    requestAnimationFrame(() => {
-      const combatantAtCell = getCellContent(x, y);
-      
-      if (movementMode.active) {
-        // In movement mode, check if this is a valid move
-        const isValidMove = validMoves.some(move => move.x === x && move.y === y);
-        if (isValidMove) {
-          console.log('🎯 Selecting hex:', x, y);
-          setSelectedTargetHex({ x, y });
-          if (onSelectedHexChange) {
-            onSelectedHexChange({ x, y });
-          }
-        } else {
-          console.log('❌ Invalid move to hex:', x, y);
+  const applyMapEditorEdit = useCallback(
+    (x, y) => {
+      if (mode !== "MAP_EDITOR" || !mapDefinition) return false;
+
+      const prevCell =
+        (Array.isArray(mapDefinition.grid) &&
+          Array.isArray(mapDefinition.grid?.[y]) &&
+          mapDefinition.grid?.[y]?.[x]) ||
+        {};
+
+      const prevElevationRaw =
+        Number.isFinite(prevCell.elevation)
+          ? prevCell.elevation
+          : Number.isFinite(prevCell.height)
+          ? prevCell.height
+          : 0;
+      const prevElevation = Number(prevElevationRaw) || 0;
+
+      let nextCell = { ...prevCell };
+
+      if (editorBrushMode === "terrain") {
+        const terrainKey = selectedTerrainType || "grass";
+        nextCell = {
+          ...nextCell,
+          terrain: terrainKey,
+          terrainType: terrainKey,
+        };
+      } else if (editorBrushMode === "bucket") {
+        // Bucket is handled separately (flood fill) — do nothing here.
+        return false;
+      } else if (editorBrushMode === "raise" || editorBrushMode === "lower") {
+        const step = Number(editorHeightStep) || 1;
+        const delta = editorBrushMode === "raise" ? step : -step;
+        const nextElevation = prevElevation + delta;
+        nextCell = {
+          ...nextCell,
+          elevation: nextElevation,
+          height: nextElevation, // keep 3D builder compatibility
+        };
+      }
+
+      if (typeof onMapCellEdit === "function") {
+        onMapCellEdit(x, y, nextCell);
+        return true;
+      }
+
+      return false;
+    },
+    [
+      editorBrushMode,
+      editorHeightStep,
+      mapDefinition,
+      mode,
+      onMapCellEdit,
+      selectedTerrainType,
+    ]
+  );
+
+  const floodFillTerrain = useCallback(
+    (startX, startY) => {
+      if (mode !== "MAP_EDITOR" || !mapDefinition) return;
+      if (!Array.isArray(mapDefinition.grid)) return;
+
+      const replacement = normalizeEditorTerrainKey(selectedTerrainType || "grass");
+      const startCell = mapDefinition.grid?.[startY]?.[startX] || {};
+      const target = normalizeEditorTerrainKey(startCell.terrainType || startCell.terrain || mapDefinition.baseTerrain);
+
+      if (!replacement || replacement === target) return;
+
+      const width = mapDefinition.grid?.[0]?.length ?? GRID_CONFIG.GRID_WIDTH;
+      const height = mapDefinition.grid?.length ?? GRID_CONFIG.GRID_HEIGHT;
+
+      const inBounds = (x, y) => x >= 0 && y >= 0 && x < width && y < height;
+
+      const getNeighbors = (x, y) => {
+        if (effectiveMapType === "square") {
+          return [
+            { x: x + 1, y },
+            { x: x - 1, y },
+            { x, y: y + 1 },
+            { x, y: y - 1 },
+          ];
         }
-      } else if (combatantAtCell) {
-        // Clicking on a combatant selects them for viewing
-        const combatantId = getCombatantId(combatantAtCell);
-        setSelectedCombatant(combatantId);
-        // Notify parent component
-        if (onSelectedCombatantChange) {
-          onSelectedCombatantChange(combatantId);
-        }
-      } else {
-        // Clicking on empty space clears selection
-        setSelectedCombatant(null);
-        if (onSelectedCombatantChange) {
-          onSelectedCombatantChange(null);
+        // Hex neighbors for odd-r layout (matches TacticalMap pixel staggering)
+        const odd = y & 1;
+        const dirs = odd
+          ? [
+              { dx: +1, dy: 0 },
+              { dx: +1, dy: -1 },
+              { dx: 0, dy: -1 },
+              { dx: -1, dy: 0 },
+              { dx: 0, dy: +1 },
+              { dx: +1, dy: +1 },
+            ]
+          : [
+              { dx: +1, dy: 0 },
+              { dx: 0, dy: -1 },
+              { dx: -1, dy: -1 },
+              { dx: -1, dy: 0 },
+              { dx: -1, dy: +1 },
+              { dx: 0, dy: +1 },
+            ];
+        return dirs.map((d) => ({ x: x + d.dx, y: y + d.dy }));
+      };
+
+      const visited = new Set();
+      const queue = [{ x: startX, y: startY }];
+      const changes = [];
+
+      while (queue.length) {
+        const cur = queue.pop();
+        if (!cur) break;
+        const k = `${cur.x},${cur.y}`;
+        if (visited.has(k)) continue;
+        visited.add(k);
+        if (!inBounds(cur.x, cur.y)) continue;
+
+        const cell = mapDefinition.grid?.[cur.y]?.[cur.x] || {};
+        const cellKey = normalizeEditorTerrainKey(cell.terrainType || cell.terrain || mapDefinition.baseTerrain);
+        if (cellKey !== target) continue; // border
+
+        changes.push({
+          x: cur.x,
+          y: cur.y,
+          cell: {
+            ...cell,
+            terrain: replacement,
+            terrainType: replacement,
+          },
+        });
+
+        for (const n of getNeighbors(cur.x, cur.y)) {
+          if (!inBounds(n.x, n.y)) continue;
+          const nk = `${n.x},${n.y}`;
+          if (!visited.has(nk)) queue.push(n);
         }
       }
-    });
-  }, [movementMode, validMoves, getCellContent, onSelectedCombatantChange]);
+
+      if (changes.length === 0) return;
+
+      if (typeof onMapCellsEdit === "function") {
+        onMapCellsEdit(changes);
+        return;
+      }
+
+      if (typeof onMapCellEdit === "function") {
+        // Fallback (slower): apply one-by-one
+        changes.forEach((c) => onMapCellEdit(c.x, c.y, c.cell));
+      }
+    },
+    [
+      effectiveMapType,
+      mapDefinition,
+      mode,
+      onMapCellEdit,
+      onMapCellsEdit,
+      selectedTerrainType,
+    ]
+  );
+
+  const handleCellClick = useCallback(
+    (x, y) => {
+      // Use requestAnimationFrame to defer the execution and prevent blocking
+      requestAnimationFrame(() => {
+        // MAP_EDITOR mode: paint terrain/elevation and notify parent
+        if (mode === "MAP_EDITOR" && mapDefinition) {
+          applyMapEditorEdit(x, y);
+          // Important: stop here—don't run movement/combatant selection logic in editor mode
+          return;
+        }
+
+        const combatantAtCell = getCellContent(x, y);
+
+        if (movementMode.active) {
+          // In movement mode, check if this is a valid move
+          const isValidMove = validMoves.some((move) => move.x === x && move.y === y);
+          if (isValidMove) {
+            console.log("🎯 Selecting hex:", x, y);
+            setSelectedTargetHex({ x, y });
+            if (onSelectedHexChange) {
+              onSelectedHexChange({ x, y });
+            }
+          } else {
+            console.log("❌ Invalid move to hex:", x, y);
+          }
+        } else if (combatantAtCell) {
+          // Clicking on a combatant selects them for viewing
+          const combatantId = getCombatantId(combatantAtCell);
+          setSelectedCombatant(combatantId);
+          // Notify parent component
+          if (onSelectedCombatantChange) {
+            onSelectedCombatantChange(combatantId);
+          }
+        } else {
+          // Clicking on empty space clears selection
+          setSelectedCombatant(null);
+          if (onSelectedCombatantChange) {
+            onSelectedCombatantChange(null);
+          }
+        }
+      });
+    },
+    [
+      applyMapEditorEdit,
+      getCellContent,
+      mapDefinition,
+      mode,
+      movementMode.active,
+      onSelectedCombatantChange,
+      onSelectedHexChange,
+      validMoves,
+    ]
+  );
+
+  // Global pointer-up handler so dragging stops even if pointer leaves the SVG
+  useEffect(() => {
+    const stopPainting = () => {
+      isPointerPaintingRef.current = false;
+      lastPaintedCellKeyRef.current = null;
+    };
+    window.addEventListener("pointerup", stopPainting);
+    window.addEventListener("pointercancel", stopPainting);
+    window.addEventListener("blur", stopPainting);
+    return () => {
+      window.removeEventListener("pointerup", stopPainting);
+      window.removeEventListener("pointercancel", stopPainting);
+      window.removeEventListener("blur", stopPainting);
+    };
+  }, []);
+
+  const handleCellPointerDown = useCallback(
+    (col, row, e) => {
+      if (mode !== "MAP_EDITOR" || !mapDefinition) {
+        // fall back to normal click behavior outside editor mode
+        return;
+      }
+      e.preventDefault();
+      e.stopPropagation();
+
+      // Bucket fill is click-only (no drag)
+      if (editorBrushMode === "bucket") {
+        floodFillTerrain(col, row);
+        return;
+      }
+
+      isPointerPaintingRef.current = true;
+      lastPaintedCellKeyRef.current = null;
+      const key = `${col},${row}`;
+      lastPaintedCellKeyRef.current = key;
+      applyMapEditorEdit(col, row);
+    },
+    [applyMapEditorEdit, editorBrushMode, floodFillTerrain, mapDefinition, mode]
+  );
+
+  const handleCellPointerOver = useCallback(
+    (col, row, e) => {
+      if (mode !== "MAP_EDITOR" || !mapDefinition) return;
+      if (!isPointerPaintingRef.current) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const key = `${col},${row}`;
+      if (lastPaintedCellKeyRef.current === key) return;
+      lastPaintedCellKeyRef.current = key;
+      applyMapEditorEdit(col, row);
+    },
+    [applyMapEditorEdit, mapDefinition, mode]
+  );
+
+  const handleCellPointerUp = useCallback(() => {
+    isPointerPaintingRef.current = false;
+    lastPaintedCellKeyRef.current = null;
+  }, []);
 
   // Memoize combatants at position to avoid recalculating on every render
   // Keyed by "x,y" coordinates for efficient lookup
@@ -252,6 +527,14 @@ const TacticalMap = ({
     CAVE_INTERIOR: "#3b3b3b",    // dark gray
     WATER: "#3ba4ff",            // light blue
     INTERIOR: "#666666",        // interior dungeon floor
+    // Map-editor palette (lowercase) — keep in sync with editorTerrainPalette keys.
+    grass: "#9dd66b",
+    forest: "#58a65c",
+    rock: "#7d7d7d",
+    water: "#3ba4ff",
+    sand: "#d6b56b",
+    road: "#b9a57f",
+    hill: "#7d7d7d",
   };
 
   // Terrain texture mapping (path to texture images in public/assets/textures/terrain/)
@@ -267,6 +550,14 @@ const TacticalMap = ({
     CAVE_INTERIOR: "/assets/textures/terrain/cave.png",         // Cave interior texture
     WATER: "/assets/textures/terrain/water.png",                // Water texture
     INTERIOR: "/assets/textures/terrain/interior.png",          // Interior floor texture
+    // Map-editor palette (lowercase) — map to the closest available texture set.
+    grass: "/assets/textures/terrain/grassland.png",
+    forest: "/assets/textures/terrain/light_forest.png",
+    rock: "/assets/textures/terrain/rocky.png",
+    water: "/assets/textures/terrain/water.png",
+    sand: "/assets/textures/terrain/grassland.png",
+    road: "/assets/textures/terrain/urban.png",
+    hill: "/assets/textures/terrain/rocky.png",
   };
 
   // Generate unique pattern ID for each terrain type to avoid conflicts
@@ -1077,38 +1368,52 @@ const TacticalMap = ({
     const patternWidth = 1 + extendLeft + extendRight; // Extend more on right
     const patternHeight = 1 + extendTop + extendBottom; // Extend more on bottom
     
-    return Object.entries(terrainTextures).map(([terrainType, texturePath]) => {
+    // Use Map to deduplicate patterns by patternId (same texture path = same pattern)
+    // This prevents duplicate keys when WATER and water both map to the same texture
+    const patternMap = new Map();
+    
+    Object.entries(terrainTextures).forEach(([terrainType, texturePath]) => {
       const patternId = getTexturePatternId(terrainType);
       
-      // Texture-specific adjustments
-      // Dense forest needs to be shifted left
-      let imageX = patternX;
-      if (terrainType === "DENSE_FOREST") {
-        imageX = patternX - 0.15; // Shift dense forest texture 15% further left
+      // Only create pattern if we haven't seen this patternId yet
+      if (!patternMap.has(patternId)) {
+        // Texture-specific adjustments
+        // Dense forest needs to be shifted left
+        let imageX = patternX;
+        if (terrainType === "DENSE_FOREST") {
+          imageX = patternX - 0.15; // Shift dense forest texture 15% further left
+        }
+        
+        patternMap.set(patternId, {
+          patternId,
+          texturePath,
+          imageX,
+        });
       }
-      
-      return (
-        <pattern
-          key={patternId}
-          id={patternId}
-          patternUnits="objectBoundingBox"
-          x={patternX}
+    });
+    
+    // Convert map to array of pattern elements with unique keys
+    return Array.from(patternMap.entries()).map(([patternId, config]) => (
+      <pattern
+        key={patternId}
+        id={patternId}
+        patternUnits="objectBoundingBox"
+        x={patternX}
+        y={patternY}
+        width={patternWidth}
+        height={patternHeight}
+        patternContentUnits="objectBoundingBox"
+      >
+        <image
+          href={config.texturePath}
+          x={config.imageX}
           y={patternY}
           width={patternWidth}
           height={patternHeight}
-          patternContentUnits="objectBoundingBox"
-        >
-          <image
-            href={texturePath}
-            x={imageX}
-            y={patternY}
-            width={patternWidth}
-            height={patternHeight}
-            preserveAspectRatio="none"
-          />
-        </pattern>
-      );
-    });
+          preserveAspectRatio="none"
+        />
+      </pattern>
+    ));
   }, [useTextures]);
 
   // Helper to get fill for cell (texture pattern or solid color)
@@ -1267,6 +1572,9 @@ const TacticalMap = ({
                   strokeWidth={hoveredCell?.x === col && hoveredCell?.y === row ? "3" : "1.5"}
                   style={{ cursor: selectedCombatant ? "pointer" : "default" }}
                   onClick={() => handleCellClick(col, row)}
+                  onPointerDown={(e) => handleCellPointerDown(col, row, e)}
+                  onPointerOver={(e) => handleCellPointerOver(col, row, e)}
+                  onPointerUp={handleCellPointerUp}
                   onMouseEnter={() => {
                     setHoveredCell({ x: col, y: row });
                     if (onHoveredCellChange) {
@@ -1289,6 +1597,9 @@ const TacticalMap = ({
                   strokeWidth={hoveredCell?.x === col && hoveredCell?.y === row ? "3" : "1.5"}
                   style={{ cursor: selectedCombatant ? "pointer" : "default" }}
                   onClick={() => handleCellClick(col, row)}
+                  onPointerDown={(e) => handleCellPointerDown(col, row, e)}
+                  onPointerOver={(e) => handleCellPointerOver(col, row, e)}
+                  onPointerUp={handleCellPointerUp}
                   onMouseEnter={() => {
                     setHoveredCell({ x: col, y: row });
                     if (onHoveredCellChange) {
@@ -2005,8 +2316,190 @@ const TacticalMap = ({
           {/* MAP_EDITOR mode: Editor overlay */}
           {mode === "MAP_EDITOR" && mapDefinition && (
             <g id="map-editor-overlay">
-              {/* Editor UI will be rendered here */}
-              {/* Placeholder for future editor features */}
+              <foreignObject x={12} y={12} width={180} height={300}>
+                <div
+                  style={{
+                    pointerEvents: "auto",
+                    userSelect: "none",
+                    fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, sans-serif",
+                    background: "rgba(255,255,255,0.92)",
+                    border: "1px solid rgba(0,0,0,0.2)",
+                    borderRadius: 10,
+                    padding: 10,
+                    boxShadow: "0 6px 18px rgba(0,0,0,0.18)",
+                    display: "flex",
+                    flexDirection: "column",
+                    height: "100%",
+                  }}
+                >
+                  <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 8, color: "#111827" }}>
+                    Brush
+                  </div>
+
+                  <div style={{ display: "flex", gap: 6, marginBottom: 10, flexWrap: "wrap" }}>
+                    {[
+                      { key: "terrain", label: "Terrain" },
+                      { key: "bucket", label: "Bucket" },
+                      { key: "raise", label: "Raise" },
+                      { key: "lower", label: "Lower" },
+                    ].map((b) => {
+                      const active = editorBrushMode === b.key;
+                      return (
+                        <button
+                          key={b.key}
+                          type="button"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setEditorBrushMode(b.key);
+                          }}
+                          style={{
+                            padding: "6px 8px",
+                            borderRadius: 8,
+                            border: active ? "2px solid #2563eb" : "1px solid rgba(0,0,0,0.18)",
+                            background: active ? "rgba(37,99,235,0.10)" : "white",
+                            cursor: "pointer",
+                            fontSize: 11,
+                            fontWeight: 700,
+                            color: "#111827",
+                          }}
+                        >
+                          {b.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {(editorBrushMode === "raise" || editorBrushMode === "lower") && (
+                    <div style={{ marginBottom: 10 }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6, color: "#111827" }}>
+                        Height step
+                      </div>
+                      <div style={{ display: "flex", gap: 6 }}>
+                        {[1, 2, 5].map((n) => {
+                          const active = Number(editorHeightStep) === n;
+                          return (
+                            <button
+                              key={n}
+                              type="button"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                setEditorHeightStep(n);
+                              }}
+                              style={{
+                                padding: "6px 8px",
+                                borderRadius: 8,
+                                border: active ? "2px solid #16a34a" : "1px solid rgba(0,0,0,0.18)",
+                                background: active ? "rgba(22,163,74,0.10)" : "white",
+                                cursor: "pointer",
+                                fontSize: 11,
+                                fontWeight: 800,
+                                color: "#111827",
+                                minWidth: 34,
+                              }}
+                            >
+                              {n}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {editorBrushMode === "terrain" && (
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "1fr",
+                        gap: 6,
+                        overflowY: "auto",
+                        flex: 1,
+                        maxHeight: "170px",
+                        paddingRight: 4,
+                      }}
+                    >
+                      {editorTerrainPalette.map((t) => {
+                        const active = (selectedTerrainType || "grass") === t.key;
+                        return (
+                          <button
+                            key={t.key}
+                            type="button"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation(); // don't click-through to the map
+                              if (onSelectedTerrainTypeChange)
+                                onSelectedTerrainTypeChange(t.key);
+                            }}
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 8,
+                              width: "100%",
+                              padding: "6px 8px",
+                              borderRadius: 8,
+                              border: active
+                                ? "2px solid #2563eb"
+                                : "1px solid rgba(0,0,0,0.18)",
+                              background: active
+                                ? "rgba(37,99,235,0.10)"
+                                : "white",
+                              cursor: "pointer",
+                              textAlign: "left",
+                            }}
+                          >
+                            <span
+                              style={{
+                                width: 14,
+                                height: 14,
+                                borderRadius: 4,
+                                background: t.swatch,
+                                border: "1px solid rgba(0,0,0,0.25)",
+                                display: "inline-block",
+                                flex: "0 0 auto",
+                              }}
+                            />
+                            <span style={{ width: 18, textAlign: "center" }}>
+                              {t.icon}
+                            </span>
+                            <span
+                              style={{
+                                fontSize: 12,
+                                fontWeight: 600,
+                                color: "#111827",
+                              }}
+                            >
+                              {t.label}
+                            </span>
+                            {active && (
+                              <span
+                                style={{
+                                  marginLeft: "auto",
+                                  fontSize: 11,
+                                  color: "#2563eb",
+                                  fontWeight: 700,
+                                }}
+                              >
+                                ACTIVE
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  <div style={{ marginTop: 10, fontSize: 11, color: "#374151", opacity: 0.9 }}>
+                    {editorBrushMode === "terrain"
+                      ? "Click-drag to paint terrain."
+                      : editorBrushMode === "bucket"
+                      ? "Click a tile to fill a connected region (stops at different terrain)."
+                      : editorBrushMode === "raise"
+                      ? "Click-drag to raise tiles."
+                      : "Click-drag to lower tiles."}
+                  </div>
+                </div>
+              </foreignObject>
             </g>
           )}
           
@@ -2130,6 +2623,12 @@ TacticalMap.propTypes = {
   // Hex selection callbacks
   onHoveredCellChange: PropTypes.func,
   onSelectedHexChange: PropTypes.func,
+  // Editor/Combat mode
+  mode: PropTypes.oneOf(["MAP_EDITOR", "COMBAT"]),
+  mapDefinition: PropTypes.object,
+  selectedTerrainType: PropTypes.string,
+  onSelectedTerrainTypeChange: PropTypes.func,
+  onMapCellEdit: PropTypes.func,
 };
 
 export default TacticalMap;
