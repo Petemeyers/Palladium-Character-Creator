@@ -999,9 +999,9 @@
           "flying_hunter"
         ],
         "visual": {
-          "modelUrl": "/assets/models/creatures/hawk.glb",
+          "modelUrl": "/assets/models/characters/hawk_perching.glb",
           "anchorTo": "feet",
-          "modelScale": 0.13,
+          "modelScale": 1.0,
           "desiredHeightFt": 0.75
         }
       },
