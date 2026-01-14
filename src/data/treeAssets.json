@@ -1,0 +1,187 @@
+{
+  "treeAssets": {
+    "spruce_dense": {
+      "id": "spruce_dense",
+      "name": "Dense Spruce",
+      "biome": ["northern_forest", "taiga"],
+      "tags": ["tree", "conifer", "cover", "foliage", "perchable"],
+      "dimensions": {
+        "heightFt": 35,
+        "trunkDiameterFt": 5,
+        "trunkRadiusFt": 2.5,
+        "canopyDiameterFt": 18,
+        "canopyRadiusFt": 9,
+        "canopyBaseHeightFt": 6
+      },
+      "interaction": {
+        "blocksMovement": true,
+        "blocksLOS": "partial",
+        "cover": {
+          "softCoverBonus": 1,
+          "hardCoverBonus": 2,
+          "concealmentPct": 35
+        },
+        "climb": {
+          "allowed": true,
+          "difficulty": "medium",
+          "ascentFtPerAction": 10
+        }
+      },
+      "perches": [
+        {
+          "id": "p1_low_branch",
+          "localPosFt": { "x": 2.0, "y": 12.0, "z": 1.2 },
+          "localFacingHint": { "x": 1, "y": 0, "z": 0 },
+          "radiusFt": 1.0,
+          "maxCreatureSize": "SMALL",
+          "approach": "air_only",
+          "perchHeightFt": 12,
+          "occupancy": { "maxOccupants": 1 }
+        },
+        {
+          "id": "p2_high_branch",
+          "localPosFt": { "x": -2.5, "y": 22.0, "z": -1.0 },
+          "localFacingHint": { "x": -1, "y": 0, "z": 0 },
+          "radiusFt": 1.0,
+          "maxCreatureSize": "SMALL",
+          "approach": "air_only",
+          "perchHeightFt": 22,
+          "occupancy": { "maxOccupants": 1 }
+        }
+      ],
+      "model": {
+        "path": "/assets/models/trees/spruce_dense.glb",
+        "anchorTo": "base",
+        "scale": 1.0,
+        "randomYaw": true,
+        "collision": {
+          "type": "cylinder",
+          "radiusFt": 2.5,
+          "heightFt": 35
+        }
+      }
+    },
+    "pine_tall": {
+      "id": "pine_tall",
+      "name": "Tall Pine",
+      "biome": ["northern_forest", "mountain", "taiga"],
+      "tags": ["tree", "conifer", "cover", "foliage", "perchable"],
+      "dimensions": {
+        "heightFt": 60,
+        "trunkDiameterFt": 5,
+        "trunkRadiusFt": 2.5,
+        "canopyDiameterFt": 12,
+        "canopyRadiusFt": 6,
+        "canopyBaseHeightFt": 18
+      },
+      "interaction": {
+        "blocksMovement": true,
+        "blocksLOS": "partial",
+        "cover": {
+          "softCoverBonus": 1,
+          "hardCoverBonus": 2,
+          "concealmentPct": 30
+        },
+        "climb": {
+          "allowed": true,
+          "difficulty": "hard",
+          "ascentFtPerAction": 8
+        }
+      },
+      "perches": [
+        {
+          "id": "p1_high_branch",
+          "localPosFt": { "x": 0.4, "y": 35.0, "z": 0.1 },
+          "localFacingHint": { "x": 1, "y": 0, "z": 0 },
+          "radiusFt": 1.0,
+          "maxCreatureSize": "SMALL",
+          "approach": "air_only",
+          "perchHeightFt": 35,
+          "occupancy": { "maxOccupants": 1 }
+        }
+      ],
+      "model": {
+        "path": "/assets/models/trees/pine_tall.glb",
+        "anchorTo": "base",
+        "scale": 1.0,
+        "randomYaw": true,
+        "collision": {
+          "type": "cylinder",
+          "radiusFt": 2.5,
+          "heightFt": 60
+        }
+      }
+    },
+    "oak_mature": {
+      "id": "oak_mature",
+      "name": "Mature Oak",
+      "biome": ["temperate_forest", "deciduous_forest"],
+      "tags": ["tree", "deciduous", "cover", "foliage", "perchable"],
+      "dimensions": {
+        "heightFt": 50,
+        "trunkDiameterFt": 5,
+        "trunkRadiusFt": 2.5,
+        "canopyDiameterFt": 24,
+        "canopyRadiusFt": 12,
+        "canopyBaseHeightFt": 20
+      },
+      "interaction": {
+        "blocksMovement": true,
+        "blocksLOS": "partial",
+        "cover": {
+          "softCoverBonus": 2,
+          "hardCoverBonus": 3,
+          "concealmentPct": 40
+        },
+        "climb": {
+          "allowed": true,
+          "difficulty": "medium",
+          "ascentFtPerAction": 10
+        }
+      },
+      "perches": [
+        {
+          "id": "p1_low_branch",
+          "localPosFt": { "x": 1.2, "y": 18.0, "z": 0.6 },
+          "localFacingHint": { "x": 1, "y": 0, "z": 0 },
+          "radiusFt": 1.2,
+          "maxCreatureSize": "SMALL",
+          "approach": "air_only",
+          "perchHeightFt": 18,
+          "occupancy": { "maxOccupants": 1 }
+        },
+        {
+          "id": "p2_mid_branch",
+          "localPosFt": { "x": -1.5, "y": 28.0, "z": -0.8 },
+          "localFacingHint": { "x": -1, "y": 0, "z": 0 },
+          "radiusFt": 1.2,
+          "maxCreatureSize": "MEDIUM",
+          "approach": "air_only",
+          "perchHeightFt": 28,
+          "occupancy": { "maxOccupants": 1 }
+        },
+        {
+          "id": "p3_high_branch",
+          "localPosFt": { "x": 0.6, "y": 38.0, "z": 0.3 },
+          "localFacingHint": { "x": 1, "y": 0, "z": 0 },
+          "radiusFt": 1.0,
+          "maxCreatureSize": "SMALL",
+          "approach": "air_only",
+          "perchHeightFt": 38,
+          "occupancy": { "maxOccupants": 1 }
+        }
+      ],
+      "model": {
+        "path": "/assets/models/trees/oak_mature.glb",
+        "anchorTo": "base",
+        "scale": 1.0,
+        "randomYaw": true,
+        "collision": {
+          "type": "cylinder",
+          "radiusFt": 2.5,
+          "heightFt": 50
+        }
+      }
+    }
+  }
+}

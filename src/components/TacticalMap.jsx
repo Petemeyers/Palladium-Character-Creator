@@ -136,10 +136,23 @@ const TacticalMap = ({
       if (combatant) {
         const creatureSize = getCreatureSize(combatant);
         
-        // Check if this hex is occupied by this large creature (width only)
-        if (x >= pos.x && x < pos.x + creatureSize.width &&
-            y >= pos.y && y < pos.y + 1) { // Only 1 hex tall
-          return combatant;
+        // ✅ Segmented occupancy: check each occupied segment hex
+        if (creatureSize.segmented && Array.isArray(creatureSize.segmentOffsets)) {
+          for (const seg of creatureSize.segmentOffsets) {
+            const ox = pos.x + seg.dx;
+            const oy = pos.y + seg.dy;
+            if (x === ox && y === oy) return combatant;
+          }
+        } else {
+          // Legacy occupancy: width-only rectangle
+          if (
+            x >= pos.x &&
+            x < pos.x + creatureSize.width &&
+            y >= pos.y &&
+            y < pos.y + 1
+          ) {
+            return combatant;
+          }
         }
       }
     }
@@ -515,6 +528,56 @@ const TacticalMap = ({
     }
     return null;
   };
+
+  // Helper: build segment cells for segmented body creatures
+  // eslint-disable-next-line no-unused-vars
+  function buildSegmentedCells(headPos, creature) {
+    if (!headPos || !creature?.segmentedBody?.enabled) return [];
+    
+    const segments = [];
+    const defDir = creature.segmentedBody?.defaultDirection ?? "W";
+    
+    // Direction offsets for hex grid (odd-r horizontal layout)
+    const dirOffsets = {
+      W: { x: -1, y: 0 },   // West
+      E: { x: 1, y: 0 },    // East
+      NW: { x: -1, y: -1 }, // Northwest (varies by row parity)
+      NE: { x: 1, y: -1 },  // Northeast (varies by row parity)
+      SW: { x: -1, y: 1 },  // Southwest (varies by row parity)
+      SE: { x: 1, y: 1 }    // Southeast (varies by row parity)
+    };
+    
+    let cursor = { ...headPos };
+    const dir = dirOffsets[defDir] ?? dirOffsets.W;
+    
+    // Handle row parity for diagonal directions (odd-r layout)
+    let actualDir = dir;
+    if (defDir === "NW" || defDir === "NE" || defDir === "SW" || defDir === "SE") {
+      const parity = headPos.y & 1; // 0 for even rows, 1 for odd rows
+      if (defDir === "NW") actualDir = parity === 0 ? { x: -1, y: -1 } : { x: 0, y: -1 };
+      if (defDir === "NE") actualDir = parity === 0 ? { x: 0, y: -1 } : { x: 1, y: -1 };
+      if (defDir === "SW") actualDir = parity === 0 ? { x: -1, y: 1 } : { x: 0, y: 1 };
+      if (defDir === "SE") actualDir = parity === 0 ? { x: 0, y: 1 } : { x: 1, y: 1 };
+    }
+    
+    creature.segmentedBody.segments.forEach((seg) => {
+      for (let i = 0; i < seg.hexes; i++) {
+        segments.push({
+          x: cursor.x,
+          y: cursor.y,
+          segmentType: seg.type
+        });
+        
+        // Move cursor to next segment position
+        cursor = {
+          x: cursor.x + actualDir.x,
+          y: cursor.y + actualDir.y
+        };
+      }
+    });
+    
+    return segments;
+  }
 
   // Terrain base colors (fallback when textures not available)
   const terrainColors = {
@@ -1996,6 +2059,10 @@ const TacticalMap = ({
               const offsetX = combatantsAtPos.length > 1 ? (index - (combatantsAtPos.length - 1) / 2) * 8 : 0;
               const offsetY = combatantsAtPos.length > 1 ? (index - (combatantsAtPos.length - 1) / 2) * 6 : 0;
               
+              // Get token offset from bestiary configuration (for aligning icon with creature's head/front)
+              const tokenOffsetX = combatant.token?.iconOffsetX ?? 0;
+              const tokenOffsetY = combatant.token?.iconOffsetY ?? 0;
+              
               // Calculate altitude offset for flying creatures (0.4 pixels per foot for visual scale)
               // This makes altitude visible: 5ft = 2px up, 20ft = 8px up, 80ft = 32px up, 120ft = 48px up
               const altitude = combatant.altitudeFeet ?? combatant.altitude ?? 0;
@@ -2003,12 +2070,17 @@ const TacticalMap = ({
               
               // Base icon position (ground level)
               const baseIconY = centerY + 6 + offsetY;
-              // Icon position with altitude offset (moves up for flying creatures)
-              const iconX = centerX + offsetX;
-              const iconY = baseIconY + altitudeOffsetY;
+              // Icon position with altitude offset and token offset (moves up for flying creatures, adjusts for head alignment)
+              const iconX = centerX + offsetX + tokenOffsetX;
+              const iconY = baseIconY + altitudeOffsetY + tokenOffsetY;
+
+              // Get creature size for body part rendering
+              const creatureSize = getCreatureSize(combatant);
+              const bodyPartsEnabled = creatureSize.width > 1;
 
               return (
                 <g key={getCombatantId(combatant)} opacity={1} style={{ pointerEvents: 'none' }}>
+                  {/* Head icon - main icon for all characters */}
                   {/* Add background circle for enemy sword to make it more visible over player shield */}
                   {/* Only show background circle if enemy is visible */}
                   {combatant.isEnemy && enemyVisible && (
@@ -2057,6 +2129,127 @@ const TacticalMap = ({
                   >
                     {combatant.isEnemy ? "🗡️" : "🛡️"}
                   </text>
+
+                  {/* Body part icons for creatures wider than 5 ft */}
+                  {bodyPartsEnabled && (() => {
+                    // ✅ Prefer segmented offsets if available (true hex placement)
+                    if (creatureSize.segmented && Array.isArray(creatureSize.segmentOffsets)) {
+                      const parts = creatureSize.segmentOffsets;
+                      const icons = [];
+
+                      // Debug logging for segment direction verification
+                      if (import.meta.env.DEV && combatant.name?.toLowerCase().includes("thunder")) {
+                        console.log("SEG DEBUG", {
+                          id: combatant.id,
+                          name: combatant.name,
+                          facing: creatureSize.facing,
+                          tailDir: creatureSize.tailDir,
+                          offsets: creatureSize.segmentOffsets,
+                          combatantFacing: combatant.facingDirection || combatant.facing || combatant.direction,
+                          defaultDirection: combatant.segmentedBody?.defaultDirection
+                        });
+                      }
+
+                      // Use token-provided icons if available, otherwise fallback glyphs
+                      const bodyGlyph = combatant.token?.bodyIconGlyph ?? "⬛";
+                      const tailGlyph = combatant.token?.tailIconGlyph ?? "🔸";
+
+                      for (const seg of parts) {
+                        if (seg.part === "head") continue; // head already rendered at iconX/iconY
+
+                        const absCol = primaryPos.x + seg.dx;
+                        const absRow = primaryPos.y + seg.dy;
+
+                        // Convert that hex cell to pixel center
+                        const p = getCellPixelPosition(absCol, absRow);
+                        if (!p) continue;
+
+                        // Apply same stacking offsets + token offsets as head (keeps the chain aligned)
+                        const sx = p.x + offsetX + tokenOffsetX;
+                        const sy = (p.y + 6 + offsetY) + altitudeOffsetY + tokenOffsetY;
+
+                        const glyph = seg.part === "tail" ? tailGlyph : bodyGlyph;
+
+                        icons.push(
+                          <g key={`seg-${seg.part}-${seg.index}-${absCol}-${absRow}`}>
+                            <circle
+                              cx={sx}
+                              cy={sy - 2}
+                              r="6"
+                              fill={combatant.isEnemy ? "#991b1b" : "#1e40af"}
+                              stroke={combatant.isEnemy ? "#7f1d1d" : "#1e3a8a"}
+                              strokeWidth="1.5"
+                              opacity="0.8"
+                              style={{ pointerEvents: "none" }}
+                            />
+                            <text
+                              x={sx}
+                              y={sy}
+                              textAnchor="middle"
+                              fontSize="12"
+                              fill="#ffffff"
+                              dominantBaseline="middle"
+                              style={{
+                                pointerEvents: "none",
+                                userSelect: "none",
+                                fontFamily:
+                                  "Apple Color Emoji, Segoe UI Emoji, Segoe UI Symbol, Noto Color Emoji, emoji, Arial, sans-serif",
+                                fontWeight: "normal",
+                              }}
+                            >
+                              {glyph}
+                            </text>
+                          </g>
+                        );
+                      }
+
+                      return icons;
+                    }
+
+                    // ⬇️ Legacy fallback (non-segmented): keep your old behavior
+                    const bodyPartIcons = [];
+                    const numBodyParts = creatureSize.width - 1;
+                    for (let i = 1; i <= numBodyParts; i++) {
+                      const bodyOffsetX = HEX_WIDTH * i;
+                      const bodyPartX = iconX + bodyOffsetX;
+                      const isTail = i === numBodyParts;
+                      const bodyPartIcon = isTail ? "🔸" : "⬛";
+
+                      bodyPartIcons.push(
+                        <g key={`body-part-${i}`}>
+                          <circle
+                            cx={bodyPartX}
+                            cy={iconY - 2}
+                            r="6"
+                            fill={combatant.isEnemy ? "#991b1b" : "#1e40af"}
+                            stroke={combatant.isEnemy ? "#7f1d1d" : "#1e3a8a"}
+                            strokeWidth="1.5"
+                            opacity="0.8"
+                            style={{ pointerEvents: "none" }}
+                          />
+                          <text
+                            x={bodyPartX}
+                            y={iconY}
+                            textAnchor="middle"
+                            fontSize="12"
+                            fill="#ffffff"
+                            dominantBaseline="middle"
+                            style={{
+                              pointerEvents: "none",
+                              userSelect: "none",
+                              fontFamily:
+                                "Apple Color Emoji, Segoe UI Emoji, Segoe UI Symbol, Noto Color Emoji, emoji, Arial, sans-serif",
+                              fontWeight: "normal",
+                            }}
+                          >
+                            {bodyPartIcon}
+                          </text>
+                        </g>
+                      );
+                    }
+
+                    return bodyPartIcons;
+                  })()}
                   
                   {/* Altitude indicator for flying combatants */}
                   {(combatant.isFlying || (combatant.altitudeFeet ?? 0) > 0) && (() => {

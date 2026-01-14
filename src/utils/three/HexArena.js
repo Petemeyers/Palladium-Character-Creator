@@ -321,6 +321,77 @@ function updateWaterEffects(characterMesh, isInWater) {
   // Note: Animation is handled in the animate() loop, not here
 }
 
+/**
+ * Apply a lighting preset to the HexArena scene
+ * @param {THREE.Scene} scene - Three.js scene
+ * @param {THREE.WebGLRenderer} renderer - Three.js renderer
+ * @param {string} presetKey - Preset key from LIGHTING_PRESETS
+ */
+function applyLightingPresetToArena(scene, renderer, presetKey) {
+  // Dynamic import to avoid circular dependencies
+  // eslint-disable-next-line no-undef
+  const { LIGHTING_PRESETS } = require("../../data/lightingPresets");
+  const preset = LIGHTING_PRESETS[presetKey];
+  if (!preset) {
+    console.warn(`[HexArena] Unknown lighting preset: ${presetKey}`);
+    return;
+  }
+
+  // Remove old lights
+  scene.children
+    .filter((obj) => obj.isLight)
+    .forEach((light) => scene.remove(light));
+
+  // ☀️ Sun (DirectionalLight)
+  const sun = new THREE.DirectionalLight(
+    preset.sun.color,
+    preset.sun.intensity
+  );
+  sun.position.set(...preset.sun.position);
+  sun.castShadow = preset.sun.castShadow;
+
+  if (preset.sun.castShadow) {
+    sun.shadow.mapSize.width = preset.sun.shadow.mapSize;
+    sun.shadow.mapSize.height = preset.sun.shadow.mapSize;
+    sun.shadow.bias = preset.sun.shadow.bias;
+    sun.shadow.radius = 4; // Soft shadows
+
+    // Configure shadow camera
+    const shadowCam = preset.sun.shadow.camera;
+    sun.shadow.camera.near = shadowCam.near;
+    sun.shadow.camera.far = shadowCam.far;
+    sun.shadow.camera.left = shadowCam.left;
+    sun.shadow.camera.right = shadowCam.right;
+    sun.shadow.camera.top = shadowCam.top;
+    sun.shadow.camera.bottom = shadowCam.bottom;
+  }
+
+  scene.add(sun);
+
+  // 🌤 Ambient Light
+  scene.add(
+    new THREE.AmbientLight(preset.ambient.color, preset.ambient.intensity)
+  );
+
+  // 🌍 Hemisphere Light (sky bounce)
+  scene.add(
+    new THREE.HemisphereLight(
+      preset.hemisphere.skyColor,
+      preset.hemisphere.groundColor,
+      preset.hemisphere.intensity
+    )
+  );
+
+  // 🎥 Renderer tone mapping
+  if (preset.environment.toneMapping === "ACES") {
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  }
+  renderer.toneMappingExposure = preset.environment.exposure;
+
+  // Update scene background if needed
+  scene.background = new THREE.Color(preset.hemisphere.skyColor);
+}
+
 export function initHexArena(containerElement) {
   if (!containerElement) {
     console.error("HexArena: No container element provided.");
@@ -328,7 +399,7 @@ export function initHexArena(containerElement) {
   }
 
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color("#1a1e2e");
+  scene.background = new THREE.Color("#87CEEB"); // Sky blue for daylight
 
   const camera = new THREE.PerspectiveCamera(
     60,
@@ -341,6 +412,13 @@ export function initHexArena(containerElement) {
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setSize(containerElement.clientWidth, containerElement.clientHeight);
   renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap; // Soft shadows for better quality
+  renderer.toneMapping = THREE.ACESFilmicToneMapping; // Better color handling
+  renderer.toneMappingExposure = 1.0;
+
+  // Physically correct lighting and color space
+  renderer.physicallyCorrectLights = true;
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
 
   containerElement.innerHTML = "";
   containerElement.appendChild(renderer.domElement);
@@ -379,12 +457,44 @@ export function initHexArena(containerElement) {
     controls.zoomToCursor = true;
   }
 
-  const sun = new THREE.DirectionalLight(0xffffff, 1);
-  sun.position.set(20, 40, 20);
-  sun.castShadow = true;
-  const ambient = new THREE.AmbientLight(0xffffff, 0.4);
-  scene.add(sun);
+  // === Realistic Daylight Lighting ===
+
+  // Hemisphere light for sky/ground color (realistic daylight)
+  const hemisphereLight = new THREE.HemisphereLight(
+    0x87ceeb, // Sky blue (top)
+    0x8b7355, // Ground brown (bottom)
+    0.6 // Intensity
+  );
+  scene.add(hemisphereLight);
+
+  // Ambient light for overall illumination (reduced since hemisphere provides color)
+  const ambient = new THREE.AmbientLight(0xffffff, 0.3);
   scene.add(ambient);
+
+  // Main sun/directional light (warm daylight)
+  const sun = new THREE.DirectionalLight(0xfff4e6, 1.2); // Warm white/yellow sunlight
+  sun.position.set(30, 50, 20); // Higher and more angled for realistic daylight
+  sun.castShadow = true;
+
+  // Enhanced shadow settings for better quality
+  sun.shadow.mapSize.width = 4096;
+  sun.shadow.mapSize.height = 4096;
+  sun.shadow.camera.near = 0.5;
+  sun.shadow.camera.far = 200;
+  sun.shadow.camera.left = -50;
+  sun.shadow.camera.right = 50;
+  sun.shadow.camera.top = 50;
+  sun.shadow.camera.bottom = -50;
+  sun.shadow.bias = -0.0001;
+  sun.shadow.normalBias = 0.02;
+  sun.shadow.radius = 4; // Soft shadows
+
+  scene.add(sun);
+
+  // Fill light from opposite side (subtle, reduces harsh shadows)
+  const fillLight = new THREE.DirectionalLight(0xffffff, 0.3);
+  fillLight.position.set(-20, 30, -15);
+  scene.add(fillLight);
 
   let gridRoot = null;
   let tileMeshLookup = new Map();
@@ -933,7 +1043,15 @@ export function initHexArena(containerElement) {
           pos.y += sphereRadius + waterOffset;
         }
 
+        // 1. Update position FIRST
         characterMesh.position.copy(pos);
+
+        // 2. Apply foot offset (already done above)
+        // pos.y already has footOffsetUnscaled * scale applied
+
+        // ⚠️ Facing will be applied LAST at the end of syncCombatState
+        // Do NOT touch group.rotation.y here
+
         characterMesh.userData.occupiedHexes = occupiedHexes;
         characterMesh.userData.isWater = isWater;
         characterMesh.userData.terrainType = terrainType;
@@ -953,97 +1071,135 @@ export function initHexArena(containerElement) {
       }
     });
 
-    // === Facing: rotate each unit toward nearest opposing unit ===
-    // Build a quick lookup of fighters by id
+    // === Facing: rotate each unit toward nearest opposing unit (LAST, after all position updates) ===
+    // Build a quick lookup of fighters by id and groups
     const fighterById = new Map();
+    const groupsById = new Map();
     fighters.forEach((f) => {
-      if (f?.id) fighterById.set(f.id, f);
+      if (f?.id) {
+        fighterById.set(f.id, f);
+        const mesh = characterMeshes.get(f.id);
+        if (mesh) groupsById.set(f.id, mesh);
+      }
     });
 
     // Precompute candidate enemy lists by team
     const players = fighters.filter((f) => f?.type === "player");
     const enemies = fighters.filter((f) => f?.type === "enemy");
 
-    const getOpponents = (fighter) => {
-      if (!fighter) return [];
-      if (fighter.type === "player") return enemies;
-      if (fighter.type === "enemy") return players;
-      // Fallback: treat non-player as enemy-ish
-      return enemies.length ? enemies : players;
+    const getNearestEnemy = (combatant, allCombatants) => {
+      if (!combatant || !allCombatants) return null;
+      const opponents = combatant.type === "player" ? enemies : players;
+      if (opponents.length === 0) return null;
+
+      const myGroup = groupsById.get(combatant.id);
+      if (!myGroup) return null;
+
+      let nearest = null;
+      let nearestDist = Infinity;
+
+      for (const opp of opponents) {
+        const oppGroup = groupsById.get(opp.id);
+        if (!oppGroup || opp.id === combatant.id) continue;
+
+        const dx = oppGroup.position.x - myGroup.position.x;
+        const dz = oppGroup.position.z - myGroup.position.z;
+        const dist = Math.sqrt(dx * dx + dz * dz);
+
+        if (dist < nearestDist) {
+          nearestDist = dist;
+          nearest = opp;
+        }
+      }
+
+      return nearest;
     };
 
+    const faceWorldTarget = (group, targetWorldPos) => {
+      if (!group || !targetWorldPos) return;
+      const dx = targetWorldPos.x - group.position.x;
+      const dz = targetWorldPos.z - group.position.z;
+      const yaw = Math.atan2(dx, dz);
+      const yawOffset = group.userData?.yawOffsetRad ?? 0;
+      group.rotation.y = yaw + yawOffset;
+    };
+
+    // ✅ Apply facing LAST (after all position updates)
     fighters.forEach((fighter) => {
       const id = fighter?.id;
       if (!id) return;
       const mesh = characterMeshes.get(id);
       if (!mesh) return;
 
-      const myAxial = axialPosById.get(id);
-      if (!myAxial) return;
-
-      // Find nearest opponent by hex distance
-      const opponents = getOpponents(fighter);
-      let best = null;
-      let bestDist = Infinity;
-      for (const opp of opponents) {
-        const oppId = opp?.id;
-        if (!oppId || oppId === id) continue;
-        const oppAxial = axialPosById.get(oppId);
-        if (!oppAxial) continue;
-        const d = hexDistance(myAxial, oppAxial);
-        if (d < bestDist) {
-          bestDist = d;
-          best = oppId;
-        }
-      }
-
-      if (!best || !Number.isFinite(bestDist)) return;
-      const targetMesh = characterMeshes.get(best);
-      if (!targetMesh) return;
-
-      // Calculate direction to target (in world space)
-      const dx = targetMesh.position.x - mesh.position.x;
-      const dz = targetMesh.position.z - mesh.position.z;
-
-      // In Three.js with hex grid:
-      // - X axis: horizontal (left-right)
-      // - Z axis: vertical (up-down in screen space, where +Z is typically "south/down")
-      // - rotation.y = 0 faces +Z direction (south/down)
-      // - Math.atan2(dx, dz) gives angle from +Z axis toward target
-      const yaw = Math.atan2(dx, dz);
-
-      // Apply any model-specific yaw offset (for models with wrong forward direction)
-      const yawOffset = mesh.userData?.yawOffsetRad ?? 0;
-      mesh.rotation.y = yaw + yawOffset;
-
-      // Debug logging (only for first few frames or specific fighters)
+      // ✅ Use world-space facing ONLY for Thunder Lizard (megafauna)
       if (
-        fighter.name?.toLowerCase().includes("ariel") &&
-        Math.random() < 0.01
+        id.includes("thunder_lizard") ||
+        fighter.name?.toLowerCase().includes("thunder")
       ) {
-        const targetFighter = fighterById.get(best);
-        console.log(
-          `[HexArena Facing] ${fighter.name} facing ${
-            targetFighter?.name || best
-          }:`,
-          {
-            myPos: {
-              x: mesh.position.x.toFixed(1),
-              z: mesh.position.z.toFixed(1),
-            },
-            targetPos: {
-              x: targetMesh.position.x.toFixed(1),
-              z: targetMesh.position.z.toFixed(1),
-            },
-            delta: { dx: dx.toFixed(1), dz: dz.toFixed(1) },
-            yawRad: yaw.toFixed(3),
-            yawDeg: ((yaw * 180) / Math.PI).toFixed(1),
-            yawOffsetDeg: ((yawOffset * 180) / Math.PI).toFixed(1),
-            finalYawDeg: (((yaw + yawOffset) * 180) / Math.PI).toFixed(1),
+        const enemy = getNearestEnemy(fighter, fighters);
+        if (enemy) {
+          const enemyGroup = groupsById.get(enemy.id);
+          if (enemyGroup) {
+            faceWorldTarget(mesh, enemyGroup.position);
           }
-        );
+        }
+      } else {
+        // Hex-direction facing for humanoids and other creatures
+        const myAxial = axialPosById.get(id);
+        if (!myAxial) return;
+
+        const opponents = fighter.type === "player" ? enemies : players;
+        let best = null;
+        let bestDist = Infinity;
+        for (const opp of opponents) {
+          const oppId = opp?.id;
+          if (!oppId || oppId === id) continue;
+          const oppAxial = axialPosById.get(oppId);
+          if (!oppAxial) continue;
+          const d = hexDistance(myAxial, oppAxial);
+          if (d < bestDist) {
+            bestDist = d;
+            best = oppId;
+          }
+        }
+
+        if (!best || !Number.isFinite(bestDist)) return;
+        const targetMesh = characterMeshes.get(best);
+        if (!targetMesh) return;
+
+        // Calculate direction to target (in world space)
+        const dx = targetMesh.position.x - mesh.position.x;
+        const dz = targetMesh.position.z - mesh.position.z;
+        const yaw = Math.atan2(dx, dz);
+
+        // Apply any model-specific yaw offset (for models with wrong forward direction)
+        const yawOffset = mesh.userData?.yawOffsetRad ?? 0;
+        mesh.rotation.y = yaw + yawOffset;
       }
     });
+
+    // ✅ End-of-frame rotation log (to confirm overwrite) for Thunder Lizard
+    if (import.meta.env.DEV) {
+      fighters.forEach((fighter) => {
+        if (
+          fighter.id?.includes("thunder_lizard") ||
+          fighter.name?.toLowerCase().includes("thunder")
+        ) {
+          const mesh = characterMeshes.get(fighter.id);
+          if (mesh) {
+            console.log("[HexArena Facing Final]", fighter.name, {
+              rotationY: mesh.rotation.y.toFixed(3),
+              rotationYDeg: ((mesh.rotation.y * 180) / Math.PI).toFixed(1),
+              position: {
+                x: mesh.position.x.toFixed(2),
+                y: mesh.position.y.toFixed(2),
+                z: mesh.position.z.toFixed(2),
+              },
+            });
+          }
+        }
+      });
+    }
 
     // Remove character meshes for fighters that no longer exist or have no position
     characterMeshes.forEach((mesh, fighterId) => {
@@ -1168,5 +1324,7 @@ export function initHexArena(containerElement) {
     getOccupiedHexesForFighter,
     getOccupiedHexes, // Export for use in pathfinding/blocking logic
     getScaleForFootprint, // Export for use elsewhere if needed
+    applyLighting: (presetKey) =>
+      applyLightingPresetToArena(scene, renderer, presetKey), // Export lighting control
   };
 }

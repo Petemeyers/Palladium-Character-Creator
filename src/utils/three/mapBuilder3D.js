@@ -7,6 +7,8 @@ import {
 } from "../hexGridMath.js";
 import { tileSurfaceWorldY } from "../hexGridMath.js";
 
+const textureLoader = new THREE.TextureLoader();
+
 const TERRAIN_TYPES = [
   "grass",
   "forest",
@@ -163,7 +165,33 @@ function createTerrainTexture(terrainType) {
     return textureCache.get(terrainType);
   }
 
-  // Create procedural texture based on terrain type
+  // ✅ Load actual texture file for grass/grassland terrain
+  if (terrainType === "grass") {
+    const texture = textureLoader.load(
+      "/assets/textures/terrain/grass_tile.png"
+    );
+
+    texture.wrapS = THREE.RepeatWrapping;
+    texture.wrapT = THREE.RepeatWrapping;
+
+    // 1x1 means "fit one tile across the hex top".
+    // If you want more detail, try 2,2 or 3,3 later.
+    texture.repeat.set(0.5, 0.5);
+
+    texture.center.set(0.5, 0.5);
+    texture.rotation = 0;
+
+    // quality
+    texture.anisotropy = 8;
+    texture.generateMipmaps = true;
+    texture.minFilter = THREE.LinearMipmapLinearFilter;
+    texture.magFilter = THREE.LinearFilter;
+
+    textureCache.set(terrainType, texture);
+    return texture;
+  }
+
+  // Create procedural texture based on terrain type (for other terrain types)
   const canvas = document.createElement("canvas");
   canvas.width = 256;
   canvas.height = 256;
@@ -176,15 +204,7 @@ function createTerrainTexture(terrainType) {
   ctx.fillRect(0, 0, 256, 256);
 
   // Add texture pattern based on terrain
-  if (terrainType === "grass") {
-    // Grass texture: add small random dots
-    ctx.fillStyle = "#2d6b3f";
-    for (let i = 0; i < 200; i++) {
-      const x = Math.random() * 256;
-      const y = Math.random() * 256;
-      ctx.fillRect(x, y, 2, 2);
-    }
-  } else if (terrainType === "forest") {
+  if (terrainType === "forest") {
     // Forest: darker with some variation
     ctx.fillStyle = "#1a3d26";
     for (let i = 0; i < 150; i++) {
@@ -247,10 +267,43 @@ function createTerrainTexture(terrainType) {
   const texture = new THREE.CanvasTexture(canvas);
   texture.wrapS = THREE.RepeatWrapping;
   texture.wrapT = THREE.RepeatWrapping;
-  texture.repeat.set(2, 2); // Repeat texture for better coverage
+  texture.repeat.set(1, 1); // Fit texture to hex (don't tile)
+  texture.center.set(0.5, 0.5);
+  texture.rotation = 0;
   textureCache.set(terrainType, texture);
 
   return texture;
+}
+
+// Build a true hex-prism (better UVs than CylinderGeometry)
+function createHexColumnGeometry(radius, height) {
+  // 2D hex in XY, extruded along +Z, then rotated so extrusion becomes +Y.
+  const shape = new THREE.Shape();
+  for (let i = 0; i < 6; i++) {
+    const angle = (Math.PI / 3) * i;
+    const x = radius * Math.cos(angle);
+    const y = radius * Math.sin(angle);
+    if (i === 0) shape.moveTo(x, y);
+    else shape.lineTo(x, y);
+  }
+  shape.closePath();
+
+  const geom = new THREE.ExtrudeGeometry(shape, {
+    depth: height,
+    bevelEnabled: false,
+    steps: 1,
+  });
+
+  // ExtrudeGeometry goes from z=0..depth; rotate so that becomes y=0..height.
+  geom.rotateX(-Math.PI / 2);
+
+  // Ensure bottom sits at y=0 (after rotation, it already should, but keep it explicit)
+  geom.translate(0, 0, 0);
+
+  // Improve normals for lighting
+  geom.computeVertexNormals();
+
+  return geom;
 }
 
 export function createHexMesh(tile, size = 1) {
@@ -264,24 +317,34 @@ export function createHexMesh(tile, size = 1) {
   const topY = tileSurfaceWorldY(tileHeightUnits);
   const geomHeight = Math.max(0.01, topY);
 
-  const geometry = new THREE.CylinderGeometry(size, size, geomHeight, 6);
+  const geometry = createHexColumnGeometry(size, geomHeight);
 
   // Create material with texture
   const texture = createTerrainTexture(tile.terrain || "grass");
   const material = new THREE.MeshStandardMaterial({
     map: texture,
-    color: TERRAIN_COLOR[tile.terrain] || "#888888", // Keep color as fallback/tint
+    color: 0xffffff, // No fake tint - let lighting do the work
+    roughness: 0.85, // Grass feels sunlit
+    metalness: 0.0,
     flatShading: true,
   });
+
+  // Physically correct texture color space
+  if (texture) {
+    texture.colorSpace = THREE.SRGBColorSpace;
+  }
 
   const mesh = new THREE.Mesh(geometry, material);
   mesh.castShadow = true;
   mesh.receiveShadow = true;
 
+  // ✅ Match mapScene3D flat-top orientation
+  mesh.rotation.y = Math.PI / 6; // 30 degrees
+
   const pos = worldVectorFromAxial(
     tile.q ?? 0,
     tile.r ?? 0,
-    geometry.parameters.height / 2, // bottom at y=0
+    geomHeight / 2, // bottom at y=0
     size
   );
   mesh.position.copy(pos);
@@ -477,9 +540,7 @@ export function updateHexMeshFromCell(mesh, col, row, cell, hexRadius = 1) {
   const nextColor = terrainColor(tile.terrain);
   const texture = createTerrainTexture(tile.terrain || "grass");
   if (mesh.material) {
-    if (mesh.material.map) {
-      mesh.material.map.dispose();
-    }
+    // Don't dispose cached textures (they're shared across tiles)
     mesh.material.map = texture;
     mesh.material.needsUpdate = true;
     if (mesh.material.color) {
@@ -495,12 +556,10 @@ export function updateHexMeshFromCell(mesh, col, row, cell, hexRadius = 1) {
 
     // Rebuild geometry so the tile fills down to y=0.
     if (mesh.geometry) mesh.geometry.dispose();
-    mesh.geometry = new THREE.CylinderGeometry(
-      hexRadius,
-      hexRadius,
-      geomHeight,
-      6
-    );
+    mesh.geometry = createHexColumnGeometry(hexRadius, geomHeight);
+
+    // ✅ Keep the same orientation after rebuild
+    mesh.rotation.y = Math.PI / 6; // 30 degrees
 
     const pos = worldVectorFromAxial(tile.q, tile.r, geomHeight / 2, hexRadius);
     mesh.position.copy(pos);

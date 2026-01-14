@@ -376,6 +376,10 @@ export function createPlayableCharacterFighter(character, customName = null) {
     // Altitude is tracked in 5ft increments, similar to hex distances
     altitude: 0,
     altitudeFeet: 0,
+
+    // Preserve visual and footprint data for 3D rendering
+    visual: character.visual,
+    footprint: character.footprint,
   };
 
   return fighter;

@@ -163,23 +163,31 @@ export const TACTICAL_ZONES = {
 // Grid system constants
 // Map size presets based on physical tabletop norms (1" hexes)
 export const MAP_PRESETS = {
-  smallIndoor: { width: 20, height: 15 },   // Skirmish / dungeon room
-  standard: { width: 30, height: 20 },      // Standard outdoor encounter
-  largeOutdoor: { width: 40, height: 30 },  // Big set-piece battle (default)
+  smallIndoor: { width: 20, height: 15 }, // Skirmish / dungeon room
+  standard: { width: 30, height: 20 }, // Standard outdoor encounter
+  largeOutdoor: { width: 40, height: 30 }, // Big set-piece battle (default)
 };
 
 // Get appropriate map preset based on terrain and map type
 export function getMapPreset(terrain, mapType) {
   // Small indoor for dungeons/caves
-  if (mapType === "square" || terrain === "CAVE_INTERIOR" || terrain === "URBAN") {
+  if (
+    mapType === "square" ||
+    terrain === "CAVE_INTERIOR" ||
+    terrain === "URBAN"
+  ) {
     return MAP_PRESETS.smallIndoor;
   }
-  
+
   // Standard for most outdoor encounters
-  if (terrain === "DENSE_FOREST" || terrain === "LIGHT_FOREST" || terrain === "ROCKY_TERRAIN") {
+  if (
+    terrain === "DENSE_FOREST" ||
+    terrain === "LIGHT_FOREST" ||
+    terrain === "ROCKY_TERRAIN"
+  ) {
     return MAP_PRESETS.standard;
   }
-  
+
   // Large outdoor for open ground, swamps, wilderness
   return MAP_PRESETS.largeOutdoor;
 }
@@ -477,9 +485,114 @@ export function getMovementRange(
   return validPositions;
 }
 
-// Calculate creature size in hexes based on length only (width)
+// ------------------------------------------------------------
+// Creature sizing + segmented bodies (head/body/tail)
+// ------------------------------------------------------------
+
+function oppositeDir(dir) {
+  const d = (dir || "").toUpperCase();
+  const map = { E: "W", W: "E", NE: "SW", NW: "SE", SE: "NW", SW: "NE" };
+  return map[d] || "W";
+}
+
+// Flat-top, odd-r offset neighbors (row-based offset)
+function stepOddR(col, row, dir) {
+  const odd = row % 2 === 1;
+  switch ((dir || "W").toUpperCase()) {
+    case "E":
+      return { x: col + 1, y: row };
+    case "W":
+      return { x: col - 1, y: row };
+    case "NE":
+      return { x: col + (odd ? 1 : 0), y: row - 1 };
+    case "NW":
+      return { x: col + (odd ? 0 : -1), y: row - 1 };
+    case "SE":
+      return { x: col + (odd ? 1 : 0), y: row + 1 };
+    case "SW":
+      return { x: col + (odd ? 0 : -1), y: row + 1 };
+    default:
+      return { x: col - 1, y: row };
+  }
+}
+
+function buildSegmentOffsets(totalHexes, tailDir) {
+  // Returns offsets relative to head at (0,0)
+  const offsets = [{ dx: 0, dy: 0, part: "head", index: 0 }];
+  let cx = 0;
+  let cy = 0;
+  for (let i = 1; i < totalHexes; i++) {
+    const next = stepOddR(cx, cy, tailDir);
+    const dx = next.x - 0;
+    const dy = next.y - 0;
+    offsets.push({ dx, dy, part: "segment", index: i });
+    cx = next.x;
+    cy = next.y;
+  }
+  return offsets;
+}
+
+// Calculate creature size in hexes
 export function getCreatureSize(creature) {
-  if (!creature || !creature.size) return { width: 1, length: 1 };
+  if (!creature) return { width: 1, length: 1 };
+
+  // ✅ Segmented body support (preferred if present)
+  // Support both old format (segments array) and new format (headHexes/bodyHexes/tailHexes)
+  if (creature.segmentedBody) {
+    let headHexes = 1;
+    let bodyHexes = 0;
+    let tailHexes = 0;
+
+    if (creature.segmentedBody.headHexes !== undefined) {
+      // New format: headHexes, bodyHexes, tailHexes
+      headHexes = creature.segmentedBody.headHexes ?? 1;
+      bodyHexes = creature.segmentedBody.bodyHexes ?? 0;
+      tailHexes = creature.segmentedBody.tailHexes ?? 0;
+    } else if (
+      creature.segmentedBody.segments &&
+      Array.isArray(creature.segmentedBody.segments)
+    ) {
+      // Old format: segments array
+      creature.segmentedBody.segments.forEach((seg) => {
+        if (seg.type === "head") headHexes = seg.hexes ?? 1;
+        else if (seg.type === "body") bodyHexes += seg.hexes ?? 0;
+        else if (seg.type === "tail") tailHexes += seg.hexes ?? 0;
+      });
+    }
+
+    const totalHexes = Math.max(1, headHexes + bodyHexes + tailHexes);
+
+    const facing =
+      creature.facingDirection ??
+      creature.facing ??
+      creature.direction ??
+      creature.segmentedBody.defaultDirection ??
+      "E";
+
+    // Tail should extend BEHIND the head (opposite of facing)
+    const tailDir = oppositeDir(facing);
+
+    const offsets = buildSegmentOffsets(totalHexes, tailDir).map((o) => {
+      // Mark which ones are "body" vs "tail" for icon choice
+      if (o.index === 0) return { ...o, part: "head" };
+      // indices: 1..bodyHexes => body, rest => tail
+      const isTail = o.index > bodyHexes;
+      return { ...o, part: isTail ? "tail" : "body" };
+    });
+
+    return {
+      width: totalHexes,
+      length: 1,
+      segmented: true,
+      facing,
+      tailDir,
+      segmentOffsets: offsets,
+      totalHexes,
+    };
+  }
+
+  // Fallback: legacy size parsing
+  if (!creature.size) return { width: 1, length: 1 };
 
   const size = creature.size.toLowerCase();
 
@@ -487,7 +600,7 @@ export function getCreatureSize(creature) {
   let length = 0;
 
   // Common size patterns - only use length/width
-  if (size.includes("45 ft long")) {
+  if (size.includes("45 ft long") || size.includes("45 feet long")) {
     length = 45;
   } else if (size.includes("10 feet long") || size.includes("10 ft long")) {
     length = 10;
@@ -504,8 +617,8 @@ export function getCreatureSize(creature) {
 
   // Minimum 1 hex, maximum based on actual size
   return {
-    width: Math.max(1, Math.min(widthInHexes, 9)), // Thunder lizard = 9 hexes wide
-    length: Math.max(1, Math.min(widthInHexes, 9)), // Same as width for 2D representation
+    width: Math.max(1, widthInHexes),
+    length: 1,
   };
 }
 
@@ -519,25 +632,31 @@ export function getInitialPositions(playerCount, enemyCount) {
 
   const centerCol = Math.floor(GRID_CONFIG.GRID_WIDTH / 2);
   const centerRow = Math.floor(GRID_CONFIG.GRID_HEIGHT / 2);
-  const hexRadius = Math.max(GRID_CONFIG.GRID_WIDTH, GRID_CONFIG.GRID_HEIGHT) / 2;
+  const hexRadius =
+    Math.max(GRID_CONFIG.GRID_WIDTH, GRID_CONFIG.GRID_HEIGHT) / 2;
 
   // Helper to check if position is within hex boundary
   const isWithinHexBoundary = (col, row) => {
     // Simple check: ensure we're within the grid bounds
-    if (col < 0 || col >= GRID_CONFIG.GRID_WIDTH || row < 0 || row >= GRID_CONFIG.GRID_HEIGHT) {
+    if (
+      col < 0 ||
+      col >= GRID_CONFIG.GRID_WIDTH ||
+      row < 0 ||
+      row >= GRID_CONFIG.GRID_HEIGHT
+    ) {
       return false;
     }
-    
+
     // For hexagonal maps, check hex distance from center using axial coordinates
     const { q, r } = offsetToAxial(col, row);
     const centerAxial = offsetToAxial(centerCol, centerRow);
-    
+
     // Calculate hex distance from center
     const dq = q - centerAxial.q;
     const dr = r - centerAxial.r;
-    const ds = -(q + r) - (-(centerAxial.q + centerAxial.r));
+    const ds = -(q + r) - -(centerAxial.q + centerAxial.r);
     const distance = (Math.abs(dq) + Math.abs(dr) + Math.abs(ds)) / 2;
-    
+
     // Keep positions within ~85% of the radius to ensure they're well within the visible hex boundary
     return distance <= hexRadius * 0.85;
   };
@@ -546,11 +665,11 @@ export function getInitialPositions(playerCount, enemyCount) {
   // Position them about 1/3 from the left edge, centered vertically
   const playerStartX = Math.max(5, Math.floor(centerCol * 0.4)); // ~20% from left, but at least 5 hexes in
   const playerStartY = centerRow;
-  
+
   for (let i = 0; i < playerCount; i++) {
     let x = playerStartX + i;
     let y = playerStartY;
-    
+
     // If position is outside hex boundary, adjust it
     let attempts = 0;
     while (!isWithinHexBoundary(x, y) && attempts < 10) {
@@ -560,13 +679,13 @@ export function getInitialPositions(playerCount, enemyCount) {
       if (y < centerRow) y++;
       attempts++;
     }
-    
+
     // If still not valid, use a safe position near center-left
     if (!isWithinHexBoundary(x, y)) {
       x = Math.max(5, centerCol - 8);
       y = centerRow + (i - Math.floor(playerCount / 2));
     }
-    
+
     positions.players.push({
       x: x,
       y: y,
@@ -576,13 +695,16 @@ export function getInitialPositions(playerCount, enemyCount) {
 
   // Enemies start on the right-center side, within the hex boundary
   // Position them about 1/3 from the right edge, centered vertically
-  const enemyStartX = Math.min(GRID_CONFIG.GRID_WIDTH - 5, Math.floor(centerCol * 1.6)); // ~60% from left
+  const enemyStartX = Math.min(
+    GRID_CONFIG.GRID_WIDTH - 5,
+    Math.floor(centerCol * 1.6)
+  ); // ~60% from left
   const enemyStartY = centerRow;
-  
+
   for (let i = 0; i < enemyCount; i++) {
     let x = enemyStartX - i;
     let y = enemyStartY + (i - Math.floor(enemyCount / 2)); // Slight vertical spread
-    
+
     // If position is outside hex boundary, adjust it
     let attempts = 0;
     while (!isWithinHexBoundary(x, y) && attempts < 10) {
@@ -592,13 +714,13 @@ export function getInitialPositions(playerCount, enemyCount) {
       if (y < centerRow) y++;
       attempts++;
     }
-    
+
     // If still not valid, use a safe position near center-right
     if (!isWithinHexBoundary(x, y)) {
       x = Math.min(GRID_CONFIG.GRID_WIDTH - 5, centerCol + 8);
       y = centerRow + (i - Math.floor(enemyCount / 2));
     }
-    
+
     positions.enemies.push({
       x: x,
       y: y,

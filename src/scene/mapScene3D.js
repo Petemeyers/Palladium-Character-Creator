@@ -347,6 +347,78 @@ function applyLighting(scene, ambientLight, sun, lightingKey) {
   }
 }
 
+/**
+ * Apply a lighting preset to a scene (new modular system)
+ * @param {THREE.Scene} scene - Three.js scene
+ * @param {THREE.WebGLRenderer} renderer - Three.js renderer
+ * @param {string} presetKey - Preset key from LIGHTING_PRESETS
+ */
+export function applyLightingPreset(scene, renderer, presetKey) {
+  // Dynamic import to avoid circular dependencies
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { LIGHTING_PRESETS } = require("../data/lightingPresets");
+  const preset = LIGHTING_PRESETS[presetKey];
+  if (!preset) {
+    console.warn(`[mapScene3D] Unknown lighting preset: ${presetKey}`);
+    return;
+  }
+
+  // Remove old lights
+  scene.children
+    .filter((obj) => obj.isLight)
+    .forEach((light) => scene.remove(light));
+
+  // ☀️ Sun (DirectionalLight)
+  const sun = new THREE.DirectionalLight(
+    preset.sun.color,
+    preset.sun.intensity
+  );
+  sun.position.set(...preset.sun.position);
+  sun.castShadow = preset.sun.castShadow;
+
+  if (preset.sun.castShadow) {
+    sun.shadow.mapSize.width = preset.sun.shadow.mapSize;
+    sun.shadow.mapSize.height = preset.sun.shadow.mapSize;
+    sun.shadow.bias = preset.sun.shadow.bias;
+    sun.shadow.radius = 4; // Soft shadows
+
+    // Configure shadow camera
+    const shadowCam = preset.sun.shadow.camera;
+    sun.shadow.camera.near = shadowCam.near;
+    sun.shadow.camera.far = shadowCam.far;
+    sun.shadow.camera.left = shadowCam.left;
+    sun.shadow.camera.right = shadowCam.right;
+    sun.shadow.camera.top = shadowCam.top;
+    sun.shadow.camera.bottom = shadowCam.bottom;
+  }
+
+  scene.add(sun);
+
+  // 🌤 Ambient Light
+  scene.add(
+    new THREE.AmbientLight(preset.ambient.color, preset.ambient.intensity)
+  );
+
+  // 🌍 Hemisphere Light (sky bounce)
+  scene.add(
+    new THREE.HemisphereLight(
+      preset.hemisphere.skyColor,
+      preset.hemisphere.groundColor,
+      preset.hemisphere.intensity
+    )
+  );
+
+  // 🎥 Renderer tone mapping
+  if (preset.environment.toneMapping === "ACES") {
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  }
+  renderer.toneMappingExposure = preset.environment.exposure;
+  
+  // Enable physically correct lights
+  renderer.physicallyCorrectLights = true;
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+}
+
 export function create3DMapScene(container, maybeOptions = {}, maybeOnAction) {
   if (!container) {
     throw new Error("create3DMapScene requires a container element.");
@@ -531,19 +603,25 @@ export function create3DMapScene(container, maybeOptions = {}, maybeOnAction) {
     if (enforceFlat || perTileTexture || tile.height) {
       const geometry = createFlatHexGeometry(HEX_RADIUS, HEX_TILE_THICKNESS);
       const material = new THREE.MeshStandardMaterial({
-        color: perTileTexture ? 0xffffff : perTileColor,
-        roughness: 0.85,
-        metalness: 0,
+        color: 0xffffff, // No fake tint - let lighting do the work
+        roughness: 0.85, // Grass feels sunlit
+        metalness: 0.0,
         map: perTileTexture || null,
       });
+      
+      // Physically correct texture color space
+      if (perTileTexture) {
+        perTileTexture.colorSpace = THREE.SRGBColorSpace;
+      }
       mesh = new THREE.Mesh(geometry, material);
       // Rotate hex to flat-top orientation (CylinderGeometry creates point-top by default)
       mesh.rotation.y = Math.PI / 6; // 30 degrees
     } else {
       mesh = createHexMesh(tile, tileSize, heightScale);
     }
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
+      // Terrain meshes: receive shadows but don't cast (keeps hexes readable)
+      mesh.castShadow = false;
+      mesh.receiveShadow = true;
     const coverFromGrid = tile.gridCell?.cover;
     mesh.userData = {
       ...tile,

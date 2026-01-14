@@ -6,6 +6,41 @@ import {
   HEX_TILE_THICKNESS,
 } from "./hexGridMath.js";
 
+// --- Facing helpers (flat-top hex, world: +X east, +Z south) ---
+function normalizeDir(dir) {
+  if (!dir) return null;
+  const s = String(dir).toUpperCase().trim();
+  // allow common aliases
+  if (s === "N") return "NW"; // optional fallback if you ever store N/S
+  if (s === "S") return "SE";
+  return s;
+}
+
+function directionToYawRad(dir) {
+  // We treat the MODEL'S forward as +Z in local space.
+  // yaw = atan2(dx, dz) => yaw=0 faces +Z; yaw=+PI/2 faces +X.
+  const d = normalizeDir(dir);
+  // unit-ish vectors for yaw only (not movement math)
+  const map = {
+    E: { dx: 1.0, dz: 0.0 },
+    W: { dx: -1.0, dz: 0.0 },
+    NE: { dx: 0.5, dz: -0.8660254038 },
+    NW: { dx: -0.5, dz: -0.8660254038 },
+    SE: { dx: 0.5, dz: 0.8660254038 },
+    SW: { dx: -0.5, dz: 0.8660254038 },
+  };
+  const v = map[d] || map.E;
+  return Math.atan2(v.dx, v.dz);
+}
+
+export function applyFacingToCharacterGroup(group, dir) {
+  if (!group) return;
+  const yawOffsetRad = group.userData?.yawOffsetRad ?? 0;
+  const yaw = directionToYawRad(dir) + yawOffsetRad;
+  group.rotation.y = yaw;
+  group.userData.facingDirection = dir;
+}
+
 /**
  * Calculate scale factor for a character based on footprint
  * @param {Object} character - Character object with visual and footprint data
@@ -72,6 +107,19 @@ export function createCharacterIcon(character = {}) {
   const yawOffsetRad = degreesToRadians(visual?.yawOffsetDeg ?? 0);
   group.userData.yawOffsetRad = yawOffsetRad;
 
+  // Store head offset for 3D model alignment (if specified)
+  if (visual?.headOffset) {
+    group.userData.headWorldOffset = visual.headOffset;
+  }
+
+  // ✅ Apply an initial facing immediately (so 3D doesn't default "north")
+  const initialFacing =
+    character.facingDirection ||
+    character.direction ||
+    visual.defaultDirection ||
+    "E";
+  applyFacingToCharacterGroup(group, initialFacing);
+
   // Debug logging (scale will be computed during GLB load based on world-space footprint)
   console.log(`[CharacterIcon] Creating icon for ${name}:`, {
     modelUrl,
@@ -109,7 +157,8 @@ export function createCharacterIcon(character = {}) {
         // Store how far the model's feet are below its origin
         // This will be used later to position the model correctly on the ground
         // Negative because minY is below origin (typically negative)
-        const modelFootOffset = -originalMinY;
+        // Note: This may be recalculated after head anchor shift
+        let modelFootOffset = -originalMinY;
 
         // Tabletop-correct: scale by BODY radius, not wing span
         // On tabletop minis, wings/tails/weapons are overhang - base size is defined by body mass
@@ -123,12 +172,27 @@ export function createCharacterIcon(character = {}) {
         const originalCenter = originalBox.getCenter(new THREE.Vector3());
         model.position.set(-originalCenter.x, 0, -originalCenter.z);
 
-        // Step 2: Scale model to match desired footprint radius in world space
-        // This is computed in HexArena.js based on radiusHex and hex spacing
-        // Fallback to old feet-based scaling if desiredRadiusWorld not provided
+        // Step 2: Choose scale
+        // Priority:
+        // 1) visual.desiredHeightFt (rulebook-accurate height for humanoids)
+        // 2) footprint.desiredRadiusWorld (big monsters like Ariel)
+        // 3) fallback feet-based
+        const desiredHeightFt = character?.visual?.desiredHeightFt;
         const desiredRadiusWorld = character?.footprint?.desiredRadiusWorld;
+
         let scale;
-        if (desiredRadiusWorld && modelRadiusUnscaled > 0) {
+
+        if (desiredHeightFt && originalSize.y > 0) {
+          const targetHeightWorld = desiredHeightFt / 2.5; // 1 world unit = 2.5 ft
+          scale = targetHeightWorld / originalSize.y;
+
+          console.log(`[CharacterIcon] Height scaling for ${name}:`, {
+            desiredHeightFt,
+            targetHeightWorld: targetHeightWorld.toFixed(3),
+            modelHeightUnscaled: originalSize.y.toFixed(3),
+            calculatedScale: scale.toFixed(3),
+          });
+        } else if (desiredRadiusWorld && modelRadiusUnscaled > 0) {
           // Tabletop correction: model sits INSIDE base, not on the rim
           // On real minis, the sculpt sits inside the base rim, so we subtract half a hex
           const insetRadius = Math.max(
@@ -136,17 +200,14 @@ export function createCharacterIcon(character = {}) {
             desiredRadiusWorld - HEX_RADIUS * 0.5
           );
           scale = insetRadius / modelRadiusUnscaled;
-          console.log(
-            `[CharacterIcon] Scaling ${name} by world-space footprint (tabletop-correct):`,
-            {
-              modelRadiusUnscaled: modelRadiusUnscaled.toFixed(3),
-              desiredRadiusWorld: desiredRadiusWorld.toFixed(3),
-              insetRadius: insetRadius.toFixed(3),
-              calculatedScale: scale.toFixed(3),
-            }
-          );
+
+          console.log(`[CharacterIcon] Footprint scaling for ${name}:`, {
+            modelRadiusUnscaled: modelRadiusUnscaled.toFixed(3),
+            desiredRadiusWorld: desiredRadiusWorld.toFixed(3),
+            insetRadius: insetRadius.toFixed(3),
+            calculatedScale: scale.toFixed(3),
+          });
         } else {
-          // Fallback to feet-based scaling if desiredRadiusWorld not available
           scale = getScaleForFootprint(character);
           console.log(
             `[CharacterIcon] Using fallback feet-based scaling for ${name}:`,
@@ -182,6 +243,118 @@ export function createCharacterIcon(character = {}) {
           0.001
         );
         const actualScale = maxScaledDim / maxOriginalDim;
+
+        // ✅ Optional per-creature scale multiplier (lets us fix badly-authored GLBs)
+        const modelScaleMultiplier = visual?.modelScale ?? 1.0;
+        if (modelScaleMultiplier !== 1.0) {
+          model.scale.multiplyScalar(modelScaleMultiplier);
+          model.updateMatrixWorld(true);
+        }
+
+        // Recompute bbox after scale multiplier for accurate measurements
+        const finalBbox = new THREE.Box3().setFromObject(model);
+        const finalSize = finalBbox.getSize(new THREE.Vector3());
+
+        // Scale check logging (to verify actual scaled height)
+        if (import.meta.env.DEV && character.name) {
+          const desiredHeightFt =
+            character.visual?.desiredHeightFt || character.visual?.baseHeightFt;
+          const scaledHeightWorld = finalSize.y;
+          const scaledHeightFt = scaledHeightWorld * 2.5; // 1 unit = 2.5 ft
+          console.log("[ScaleCheck]", character.name, {
+            desiredHeightFt: desiredHeightFt,
+            modelScale: modelScaleMultiplier,
+            scaledHeightWorld: scaledHeightWorld.toFixed(3),
+            scaledHeightFt: scaledHeightFt.toFixed(1),
+          });
+        }
+
+        // ✅ Head anchor alignment (for creatures where the "token origin" is the head)
+        if (visual?.anchorTo === "head") {
+          // Now supports: "xMax","xMin","yMax","yMin","zMax","zMin"
+          const headAnchor = visual?.headAnchor ?? "zMax";
+          const bbox = new THREE.Box3().setFromObject(model);
+
+          // Anchor probe logging (to determine correct head anchor)
+          if (import.meta.env.DEV && character.name) {
+            console.log("[AnchorProbe]", character.name, {
+              xMax: bbox.max.x.toFixed(3),
+              xMin: bbox.min.x.toFixed(3),
+              zMax: bbox.max.z.toFixed(3),
+              zMin: bbox.min.z.toFixed(3),
+              currentAnchor: headAnchor,
+            });
+          }
+
+          const center = new THREE.Vector3();
+          bbox.getCenter(center);
+
+          // Move model so bbox-center is at origin first (stable baseline)
+          model.position.x += -center.x;
+          model.position.y += -center.y;
+          model.position.z += -center.z;
+          model.updateMatrixWorld(true);
+
+          // Recompute bbox after centering
+          const bbox2 = new THREE.Box3().setFromObject(model);
+
+          let shiftX = 0,
+            shiftY = 0,
+            shiftZ = 0;
+          switch (headAnchor) {
+            case "xMax":
+              shiftX = -bbox2.max.x;
+              break;
+            case "xMin":
+              shiftX = -bbox2.min.x;
+              break;
+            case "yMax":
+              shiftY = -bbox2.max.y;
+              break;
+            case "yMin":
+              shiftY = -bbox2.min.y;
+              break;
+            case "zMax":
+              shiftZ = -bbox2.max.z;
+              break;
+            case "zMin":
+              shiftZ = -bbox2.min.z;
+              break;
+            default:
+              shiftZ = -bbox2.max.z;
+              break;
+          }
+
+          model.position.x += shiftX;
+          model.position.y += shiftY;
+          model.position.z += shiftZ;
+          model.updateMatrixWorld(true);
+
+          // ✅ CRITICAL: Recalculate foot offset AFTER head anchor shift
+          // The head anchor moves the model, so the feet are now at a different Y position
+          const finalBbox = new THREE.Box3().setFromObject(model);
+          const finalMinY = finalBbox.min.y;
+
+          // ✅ Keep modelFootOffset UN-SCALED (so later: modelFootOffset * scale is correct)
+          // finalMinY is already in scaled world units, so divide by scale to get unscaled local units
+          modelFootOffset = scale > 0 ? -finalMinY / scale : -finalMinY;
+
+          console.log("[CharacterIcon] Head anchored to hex center:", {
+            headAnchor,
+            shiftX,
+            shiftY,
+            shiftZ,
+            newFootOffset: modelFootOffset.toFixed(3),
+          });
+
+          // Quick sanity log to verify no double-scale
+          console.log("[FootOffsetCheck]", character.name, {
+            finalMinY: finalMinY.toFixed(3),
+            scale: scale.toFixed(3),
+            modelFootOffset_unscaled: modelFootOffset.toFixed(3),
+            appliedOffset_scaled: (modelFootOffset * scale).toFixed(3),
+          });
+        }
 
         // Enable shadows
         model.traverse((child) => {
@@ -244,6 +417,15 @@ export function createCharacterIcon(character = {}) {
         currentPos.y += waterOffset; // Add water offset if in water
 
         group.position.copy(currentPos);
+
+        // ✅ Re-apply facing after model load (some GLBs come rotated)
+        const currentFacing =
+          group.userData.facingDirection ||
+          character.facingDirection ||
+          character.direction ||
+          visual.defaultDirection ||
+          "E";
+        applyFacingToCharacterGroup(group, currentFacing);
 
         console.log(`[CharacterIcon] ✓ Loaded model: ${modelUrl}`);
         console.log(`[CharacterIcon]   Original size:`, originalSize);
