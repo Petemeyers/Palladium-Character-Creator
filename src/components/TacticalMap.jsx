@@ -34,6 +34,8 @@ const TacticalMap = ({
   currentTurn = null,
   flashingCombatants: externalFlashingCombatants = null,
   movementMode = { active: false, isRunning: false },
+  dangerHexes = [],
+  allowEmptyHexSelection = false,
   terrain = null,
   mapType, // "hex" or "square" - no default to allow terrain.mapType fallback
   // Fog of War props
@@ -99,6 +101,14 @@ const TacticalMap = ({
   // Use external flashing state if provided, otherwise use internal
   const flashingCombatants = externalFlashingCombatants || internalFlashingCombatants;
 
+  const dangerHexSet = useMemo(() => {
+    return new Set(
+      (dangerHexes || [])
+        .filter((h) => h && Number.isFinite(h.x) && Number.isFinite(h.y))
+        .map((h) => `${h.x},${h.y}`)
+    );
+  }, [dangerHexes]);
+
   // Hex grid constants for flat-top tessellation
   const HEX_RADIUS = GRID_CONFIG.HEX_SIZE / 2;
   const HEX_WIDTH = Math.sqrt(3) * HEX_RADIUS;
@@ -151,7 +161,7 @@ const TacticalMap = ({
             y >= pos.y &&
             y < pos.y + 1
           ) {
-            return combatant;
+          return combatant;
           }
         }
       }
@@ -399,6 +409,9 @@ const TacticalMap = ({
           } else {
             console.log("❌ Invalid move to hex:", x, y);
           }
+        } else if (allowEmptyHexSelection && onSelectedHexChange) {
+          setSelectedTargetHex({ x, y });
+          onSelectedHexChange({ x, y });
         } else if (combatantAtCell) {
           // Clicking on a combatant selects them for viewing
           const combatantId = getCombatantId(combatantAtCell);
@@ -422,6 +435,7 @@ const TacticalMap = ({
       mapDefinition,
       mode,
       movementMode.active,
+      allowEmptyHexSelection,
       onSelectedCombatantChange,
       onSelectedHexChange,
       validMoves,
@@ -1572,6 +1586,8 @@ const TacticalMap = ({
         const baseFillColor = isMovementColorCell 
           ? getCellFill(terrainType, baseTerrainColor) // Use terrain color/texture for base
           : getCellFill(terrainType, baseCellColor);
+
+        const isDangerHex = dangerHexSet.has(`${col},${row}`);
         
         // Movement color overlay (will be rendered on top)
         let movementOverlayColor = null;
@@ -1697,6 +1713,32 @@ const TacticalMap = ({
                   fill={movementOverlayColor}
                   fillOpacity={0.7} // More opaque to show movement colors clearly
                   style={{ pointerEvents: 'none' }} // Don't block clicks
+                />
+              )
+            )}
+
+            {/* Danger hex overlay (suppression) */}
+            {isDangerHex && (
+              effectiveMapType === "square" ? (
+                <rect
+                  x={x + 2}
+                  y={y + 2}
+                  width={GRID_CONFIG.HEX_SIZE * 2 - 4}
+                  height={GRID_CONFIG.HEX_SIZE * 2 - 4}
+                  fill="none"
+                  stroke="#f59e0b"
+                  strokeWidth="2"
+                  opacity="0.85"
+                  style={{ pointerEvents: "none" }}
+                />
+              ) : (
+                <polygon
+                  points={cellPoints}
+                  fill="none"
+                  stroke="#f59e0b"
+                  strokeWidth="2"
+                  opacity="0.85"
+                  style={{ pointerEvents: "none" }}
                 />
               )
             )}
@@ -2799,6 +2841,8 @@ TacticalMap.propTypes = {
     active: PropTypes.bool,
     isRunning: PropTypes.bool
   }),
+  dangerHexes: PropTypes.array,
+  allowEmptyHexSelection: PropTypes.bool,
   terrain: PropTypes.object, // Terrain data with grid, features, etc.
   mapType: PropTypes.string, // "hex" or "square"
   // Fog of War props
@@ -2816,6 +2860,7 @@ TacticalMap.propTypes = {
   // Hex selection callbacks
   onHoveredCellChange: PropTypes.func,
   onSelectedHexChange: PropTypes.func,
+  onMapCellsEdit: PropTypes.func,
   // Editor/Combat mode
   mode: PropTypes.oneOf(["MAP_EDITOR", "COMBAT"]),
   mapDefinition: PropTypes.object,

@@ -500,12 +500,26 @@ export function initHexArena(containerElement) {
   let tileMeshLookup = new Map();
   let characterGroup = null;
   let characterMeshes = new Map(); // Map of fighter ID to character mesh/group
+  let projectileGroup = null;
+  let projectileMeshes = new Map(); // Map of projectile ID to mesh
+  let dangerRingGroup = null;
+  let dangerRingMeshes = new Map(); // key: "x,y" -> mesh
   let disposed = false;
 
   // Initialize character group
   characterGroup = new THREE.Group();
   characterGroup.name = "characters";
   scene.add(characterGroup);
+
+  // Initialize projectile group
+  projectileGroup = new THREE.Group();
+  projectileGroup.name = "projectiles";
+  scene.add(projectileGroup);
+
+  // Initialize danger ring group
+  dangerRingGroup = new THREE.Group();
+  dangerRingGroup.name = "dangerRings";
+  scene.add(dangerRingGroup);
 
   function animate() {
     if (disposed) return;
@@ -548,6 +562,49 @@ export function initHexArena(containerElement) {
         });
       }
     });
+
+    // Update projectile positions
+    const now = performance.now();
+    projectileMeshes.forEach((mesh) => {
+      const data = mesh.userData?.projectile;
+      if (!data) return;
+      const durationMs = Math.max(1, data.durationMs || 1);
+      const tRaw = (now - (data.firedAtMs || now)) / durationMs;
+      const t = Math.min(1, Math.max(0, tRaw));
+
+      const fromWorld = worldFromGrid(data.from);
+      const toWorld = worldFromGrid(data.to);
+      if (!fromWorld || !toWorld) return;
+
+      const pos = fromWorld.clone().lerp(toWorld, t);
+      mesh.position.copy(pos);
+
+      // Orient mesh along travel direction
+      const dir = toWorld.clone().sub(fromWorld);
+      if (dir.lengthSq() > 0.0001) {
+        dir.normalize();
+        mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+      }
+
+      if (t >= 1) {
+        projectileGroup.remove(mesh);
+        mesh.geometry?.dispose?.();
+        if (Array.isArray(mesh.material)) {
+          mesh.material.forEach((m) => m?.dispose?.());
+        } else {
+          mesh.material?.dispose?.();
+        }
+        projectileMeshes.delete(data.id);
+      }
+    });
+
+    // Pulse danger rings (subtle)
+    if (dangerRingMeshes.size > 0) {
+      const pulse = 0.65 + 0.25 * Math.sin(now * 0.006);
+      dangerRingMeshes.forEach((mesh) => {
+        if (mesh.material) mesh.material.opacity = pulse;
+      });
+    }
 
     renderer.render(scene, camera);
   }
@@ -771,7 +828,28 @@ export function initHexArena(containerElement) {
     rebuildGridFromEnvironment(terrain);
   }
 
-  function syncCombatState({ fighters = [], positions = {}, terrain }) {
+  function disposeCharacterMesh(mesh) {
+    if (!mesh) return;
+    mesh.traverse((child) => {
+      if (child.isMesh) {
+        if (child.geometry) child.geometry.dispose();
+        if (Array.isArray(child.material)) {
+          child.material.forEach((mat) => mat?.dispose?.());
+        } else if (child.material) {
+          child.material.dispose();
+        }
+      }
+    });
+  }
+
+  function syncCombatState({
+    fighters = [],
+    positions = {},
+    renderPositions,
+    projectiles = [],
+    dangerHexes = [],
+    terrain,
+  }) {
     rebuildGridFromEnvironment(terrain);
 
     // Update character representations
@@ -794,7 +872,7 @@ export function initHexArena(containerElement) {
 
       const fighterId = fighter.id;
       currentFighterIds.add(fighterId);
-      const position = positions[fighterId];
+      const position = (renderPositions || positions)[fighterId];
 
       if (!position) {
         // Fighter has no position, skip
@@ -865,14 +943,54 @@ export function initHexArena(containerElement) {
         tileHeightUnits = 0;
       }
 
+      // Resolve model URL based on flying state and perching state (if provided)
+      const fighterVisual = fighter.visual || {};
+      const isPerched = fighter.perchedOn && fighter.perchedOn.treeId;
+      const isAirborne =
+        fighter.isFlying || (fighter.altitudeFeet ?? fighter.altitude ?? 0) > 0;
+      const baseModelUrl = fighterVisual.modelUrl;
+      const groundedModelUrl =
+        fighterVisual.groundedModelUrl ||
+        fighterVisual.perchingModelUrl ||
+        baseModelUrl;
+      const flyingModelUrl =
+        fighterVisual.flyingModelUrl || fighterVisual.flightModelUrl;
+      const perchingModelUrl =
+        fighterVisual.perchingModelUrl || fighterVisual.perchModelUrl;
+      
+      // Priority: perching > flying > grounded
+      let desiredModelUrl;
+      if (isPerched && perchingModelUrl) {
+        desiredModelUrl = perchingModelUrl;
+      } else if (isAirborne && flyingModelUrl) {
+        desiredModelUrl = flyingModelUrl;
+      } else {
+        desiredModelUrl = groundedModelUrl;
+      }
+
       // Check if character mesh already exists
       let characterMesh = characterMeshes.get(fighterId);
+      const currentModelUrl = characterMesh?.userData?.visual?.modelUrl;
+      const shouldSwapModel =
+        characterMesh &&
+        desiredModelUrl &&
+        currentModelUrl &&
+        desiredModelUrl !== currentModelUrl;
+
+      if (shouldSwapModel) {
+        characterGroup.remove(characterMesh);
+        disposeCharacterMesh(characterMesh);
+        characterMeshes.delete(fighterId);
+        characterMesh = null;
+      }
 
       if (!characterMesh) {
         // Create new character icon (5ft sphere placeholder or GLB model)
         // Preserve visual and footprint from fighter before spreading
-        const fighterVisual = fighter.visual;
         const fighterFootprint = fighter.footprint;
+        const resolvedVisual = desiredModelUrl
+          ? { ...fighterVisual, modelUrl: desiredModelUrl }
+          : fighterVisual;
 
         // Compute desired footprint radius in world space (for model scaling)
         // This ensures the model matches the hex footprint regardless of GLB authoring scale
@@ -889,7 +1007,7 @@ export function initHexArena(containerElement) {
           name: fighter.name || fighter.characterName || "Unknown",
           alignment: fighter.type === "enemy" ? "evil" : "good",
           // Explicitly preserve visual and footprint after spread to ensure they win
-          visual: fighterVisual,
+          visual: resolvedVisual,
           footprint: {
             ...fighterFootprint,
             desiredRadiusWorld, // Pass world-space radius for model scaling
@@ -1196,7 +1314,127 @@ export function initHexArena(containerElement) {
                 z: mesh.position.z.toFixed(2),
               },
             });
+
+    syncProjectiles(projectiles);
+    syncDangerRings(dangerHexes);
           }
+
+  function worldFromGrid(pos) {
+    if (!pos) return null;
+    const axial = offsetToAxial(pos.x, pos.y);
+    return worldVectorFromEntity(
+      {
+        q: axial.q,
+        r: axial.r,
+        altitudeFeet: pos.altitudeFeet || 0,
+        tileHeightUnits: 0,
+      },
+      HEX_RADIUS,
+      HEX_TILE_THICKNESS
+    );
+  }
+
+  function createDangerRingMesh() {
+    const inner = HEX_RADIUS * 0.9;
+    const outer = HEX_RADIUS * 1.05;
+    const geom = new THREE.RingGeometry(inner, outer, 48);
+    const mat = new THREE.MeshBasicMaterial({
+      color: 0xf59e0b,
+      transparent: true,
+      opacity: 0.85,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    });
+    const mesh = new THREE.Mesh(geom, mat);
+    mesh.rotation.x = -Math.PI / 2;
+    mesh.position.y = 0.03;
+    mesh.renderOrder = 10;
+    return mesh;
+  }
+
+  function syncDangerRings(dangerHexes = []) {
+    if (!dangerRingGroup) return;
+    const wanted = new Set(
+      (dangerHexes || [])
+        .filter((h) => h && Number.isFinite(h.x) && Number.isFinite(h.y))
+        .map((h) => `${h.x},${h.y}`)
+    );
+
+    dangerRingMeshes.forEach((mesh, key) => {
+      if (!wanted.has(key)) {
+        dangerRingGroup.remove(mesh);
+        mesh.geometry?.dispose?.();
+        if (Array.isArray(mesh.material)) {
+          mesh.material.forEach((m) => m?.dispose?.());
+        } else {
+          mesh.material?.dispose?.();
+        }
+        dangerRingMeshes.delete(key);
+      }
+    });
+
+    (dangerHexes || []).forEach((h) => {
+      if (!h || !Number.isFinite(h.x) || !Number.isFinite(h.y)) return;
+      const key = `${h.x},${h.y}`;
+      if (dangerRingMeshes.has(key)) return;
+      const mesh = createDangerRingMesh();
+      const world = worldFromGrid(h);
+      if (world) {
+        mesh.position.x = world.x;
+        mesh.position.z = world.z;
+      }
+      dangerRingGroup.add(mesh);
+      dangerRingMeshes.set(key, mesh);
+    });
+  }
+
+  function createProjectileMesh(projectile) {
+    const kind = projectile.kind || "generic";
+    let geometry;
+    let material;
+    if (kind === "stone") {
+      geometry = new THREE.SphereGeometry(0.06, 10, 10);
+      material = new THREE.MeshStandardMaterial({ color: 0x777777 });
+    } else {
+      geometry = new THREE.CylinderGeometry(0.02, 0.02, 0.5, 6);
+      material = new THREE.MeshStandardMaterial({ color: 0x9b6b3f });
+    }
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.castShadow = true;
+    mesh.receiveShadow = false;
+    mesh.userData.projectile = projectile;
+    return mesh;
+  }
+
+  function syncProjectiles(projectiles) {
+    const activeIds = new Set();
+    (projectiles || []).forEach((projectile) => {
+      if (!projectile?.id) return;
+      activeIds.add(projectile.id);
+
+      let mesh = projectileMeshes.get(projectile.id);
+      if (!mesh) {
+        mesh = createProjectileMesh(projectile);
+        projectileGroup.add(mesh);
+        projectileMeshes.set(projectile.id, mesh);
+      }
+      mesh.userData.projectile = projectile;
+    });
+
+    // Remove stale projectiles
+    projectileMeshes.forEach((mesh, id) => {
+      if (!activeIds.has(id)) {
+        projectileGroup.remove(mesh);
+        mesh.geometry?.dispose?.();
+        if (Array.isArray(mesh.material)) {
+          mesh.material.forEach((m) => m?.dispose?.());
+        } else {
+          mesh.material?.dispose?.();
+        }
+        projectileMeshes.delete(id);
+      }
+    });
+  }
         }
       });
     }

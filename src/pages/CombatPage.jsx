@@ -914,6 +914,9 @@ export default function CombatPage({ characters = [] }) {
   const [selectedAttackWeapon, setSelectedAttackWeapon] = useState(null);
   const [selectedPsionicPower, setSelectedPsionicPower] = useState(null);
   const [selectedSpell, setSelectedSpell] = useState(null);
+  const [cinematicProjectiles, setCinematicProjectiles] = useState(false);
+  const [targetingMode, setTargetingMode] = useState(null); // null | "OVERWATCH_HEX"
+  const [overwatchTargetHex, setOverwatchTargetHex] = useState(null);
   const [spellSearch, setSpellSearch] = useState("");
   const [spellLevelFilter, setSpellLevelFilter] = useState("all");
   const [defensiveStance, setDefensiveStance] = useState({}); // Track defensive actions by fighter ID
@@ -926,10 +929,380 @@ export default function CombatPage({ characters = [] }) {
   const [showMovementSelection, setShowMovementSelection] = useState(false); // Show movement selection UI
   const [tempModifiers, setTempModifiers] = useState({}); // Track temporary bonuses/penalties (e.g., charge)
   const [positions, setPositions] = useState({}); // Combatant positions on tactical map
+  const [renderPositions, setRenderPositions] = useState({}); // Render-only positions (visual pose)
+  const [projectiles, setProjectiles] = useState([]); // Render-only projectiles
+  const [overwatchHexes, setOverwatchHexes] = useState([]); // Render-only overwatch danger hexes
+  const [overwatchShots, setOverwatchShots] = useState([]); // Render-only overwatch shots
   const positionsRef = useRef(positions);
+  const renderPositionsRef = useRef(renderPositions);
+  const prevPositionsRef = useRef(null);
+  const suppressNextAnimationRef = useRef(new Set());
+  const actionClockRef = useRef({ busy: false, endsAtMs: 0 });
+  const timelineRef = useRef({ events: [], locked: false });
+  const suppressEndTurnRef = useRef(false);
   useEffect(() => {
     positionsRef.current = positions;
   }, [positions]);
+
+  useEffect(() => {
+    renderPositionsRef.current = renderPositions;
+  }, [renderPositions]);
+
+  const confirmOverwatchHex = useCallback(
+    (hex) => {
+      const shooter = fightersRef.current?.[turnIndexRef.current];
+      if (!shooter || !hex) return;
+
+      const weapon = selectedAttackWeapon;
+      if (!weapon) {
+        addLog(`${shooter.name} wants to overwatch but has no weapon selected!`, "error");
+        return;
+      }
+
+      const isUsingTwoHanded = weapon.twoHanded || isTwoHandedWeapon(weapon);
+      const weaponDamage = getWeaponDamage(weapon, isUsingTwoHanded, shooter);
+      const attackSnapshot = {
+        name: weapon.name,
+        damage: weaponDamage,
+        type:
+          weapon?.range != null ||
+          ["bow", "crossbow", "sling"].includes((weapon?.category || "").toLowerCase())
+            ? "ranged"
+            : weapon.type,
+        range: weapon?.range,
+        ammunition: weapon?.ammunition,
+        weaponType: weapon?.weaponType,
+        category: weapon?.category,
+      };
+      const damageBonus = shooter.bonuses?.damage || 0;
+      const safeDamageBonus =
+        typeof damageBonus === "number" && !isNaN(damageBonus) ? damageBonus : 0;
+      const parseDamageFormula = (damageStr) => {
+        if (!damageStr || typeof damageStr !== "string") {
+          return { baseFormula: "1d6", existingBonus: 0 };
+        }
+
+        const bonusMatch = damageStr.match(/^(\d+d\d+)\+(\d+)$/);
+        if (bonusMatch) {
+          return {
+            baseFormula: bonusMatch[1],
+            existingBonus: parseInt(bonusMatch[2], 10),
+          };
+        }
+
+        const diceMatch = damageStr.match(/^(\d+d\d+)$/);
+        if (diceMatch) {
+          return {
+            baseFormula: diceMatch[1],
+            existingBonus: 0,
+          };
+        }
+
+        return { baseFormula: damageStr, existingBonus: 0 };
+      };
+      let damageRollResult;
+      let damageFormulaSnapshot = "";
+      let dmgStr = weaponDamage;
+      if (typeof dmgStr === "string" && dmgStr.includes("-")) {
+        dmgStr = dmgStr.replace("-", "d");
+      }
+      if (typeof dmgStr === "string" && dmgStr.includes("d")) {
+        const parsed = parseDamageFormula(dmgStr);
+        const totalBonus = parsed.existingBonus + safeDamageBonus;
+        damageFormulaSnapshot =
+          totalBonus >= 0 ? `${parsed.baseFormula}+${totalBonus}` : parsed.baseFormula;
+        const damageBonusParam = totalBonus >= 0 ? 0 : totalBonus;
+        damageRollResult = CryptoSecureDice.parseAndRoll(
+          damageFormulaSnapshot,
+          damageBonusParam
+        );
+      } else if (dmgStr != null && !isNaN(dmgStr)) {
+        const numericDamage = parseInt(dmgStr, 10);
+        const diceCount = Math.max(1, Math.floor(numericDamage / 3));
+        const diceSize = numericDamage <= 3 ? 4 : 6;
+        const baseFormula = `${diceCount}d${diceSize}`;
+        damageFormulaSnapshot =
+          safeDamageBonus >= 0 ? `${baseFormula}+${safeDamageBonus}` : baseFormula;
+        const damageBonusParam = safeDamageBonus >= 0 ? 0 : safeDamageBonus;
+        damageRollResult = CryptoSecureDice.parseAndRoll(
+          damageFormulaSnapshot,
+          damageBonusParam
+        );
+      } else {
+        damageFormulaSnapshot = safeDamageBonus >= 0 ? `1d6+${safeDamageBonus}` : "1d6";
+        const damageBonusParam = safeDamageBonus >= 0 ? 0 : safeDamageBonus;
+        damageRollResult = CryptoSecureDice.parseAndRoll(
+          damageFormulaSnapshot,
+          damageBonusParam
+        );
+      }
+
+      attackSnapshot.damageTotal = damageRollResult?.totalWithBonus ?? 0;
+      attackSnapshot.damageDiceRolls = damageRollResult?.diceRolls || [];
+      attackSnapshot.damageFormula = damageFormulaSnapshot;
+
+      const baseStrikeBonus = getCombatBonus(shooter, "strike", attackSnapshot) || 0;
+      const tempBonus =
+        (tempModifiers[shooter.id]?.strikeBonus || 0) +
+        (tempModifiers[shooter.id]?.nextMeleeStrike || 0);
+      const strikeBonus = baseStrikeBonus + tempBonus;
+
+      if (tempModifiers[shooter.id]?.nextMeleeStrike) {
+        const updatedTempMods = { ...tempModifiers };
+        delete updatedTempMods[shooter.id].nextMeleeStrike;
+        if (Object.keys(updatedTempMods[shooter.id]).length === 0) {
+          delete updatedTempMods[shooter.id];
+        }
+        setTempModifiers(updatedTempMods);
+      }
+
+      const diceFormula = strikeBonus >= 0 ? `1d20+${strikeBonus}` : `1d20`;
+      const bonus = strikeBonus >= 0 ? 0 : strikeBonus;
+      const rollResult = CryptoSecureDice.parseAndRoll(diceFormula, bonus);
+      let attackRoll = rollResult.totalWithBonus;
+
+      const fatiguedShooter = applyFatiguePenalties(shooter);
+      const fatiguePenalty = fatiguedShooter.bonuses?.strike || 0;
+      if (fatiguePenalty < 0) {
+        attackRoll += fatiguePenalty;
+      }
+
+      const attackDiceRoll = rollResult.diceRolls?.[0]?.result || attackRoll - strikeBonus;
+      const isCriticalHit = attackDiceRoll === 20;
+      const isCriticalMiss = attackDiceRoll === 1;
+
+      attackSnapshot.attackRoll = attackRoll;
+      attackSnapshot.attackDiceRoll = attackDiceRoll;
+      attackSnapshot.isCriticalHit = isCriticalHit;
+      attackSnapshot.isCriticalMiss = isCriticalMiss;
+      attackSnapshot.strikeBonus = strikeBonus;
+      attackSnapshot.scatterSeed = `${shooter.id}|${attackSnapshot.name}|${attackDiceRoll}|${attackRoll}`;
+      addLog(
+        `🏹 ${shooter.name} fires overwatch (d20=${attackDiceRoll}, total=${attackRoll}, dmg=${attackSnapshot.damageTotal}).`,
+        "info"
+      );
+
+      const projectileResult = spawnProjectileToHex({
+        attackerId: shooter.id,
+        targetHex: hex,
+        attackData: attackSnapshot,
+      });
+
+      if (!projectileResult) {
+        addLog(`⚠️ ${shooter.name} could not fire overwatch.`, "error");
+        return;
+      }
+
+      const impactAtMs = projectileResult.impactAtMs;
+      const isNoticeable = projectileResult.durationMs >= 450;
+      if (isNoticeable) {
+        const isHiddenShooter =
+          shooter?.isHidden ||
+          shooter?.statusEffects?.includes("HIDDEN") ||
+          shooter?.statusEffects?.includes("INVISIBLE");
+        const visibleThreat = !isHiddenShooter;
+        const revealLeadMs = 250;
+
+        const occupantsNow = Object.entries(positionsRef.current || {})
+          .filter(([id, pos]) => id !== shooter.id && pos.x === hex.x && pos.y === hex.y)
+          .map(([id]) => id);
+
+        occupantsNow.forEach((occId) => {
+          applySuppressionToFighter(occId, {
+            sourceId: shooter.id,
+            kind: "COVERFIRE_HEX",
+            dangerHexes: [{ x: hex.x, y: hex.y }],
+            lane: null,
+            startedAtMs: performance.now(),
+            impactAtMs,
+            expiresAtMs: impactAtMs + 500,
+            visibleThreat,
+            revealedAtMs: visibleThreat ? null : impactAtMs - revealLeadMs,
+            severity: "MED",
+          });
+        });
+      }
+
+      // spend action immediately
+      setFighters((prev) =>
+        prev.map((f) =>
+          f.id === shooter.id
+            ? { ...f, remainingAttacks: Math.max(0, (f.remainingAttacks || 0) - 1) }
+            : f
+        )
+      );
+
+      const shotId = `ow_${shooter.id}_${hex.x}_${hex.y}_${Math.round(impactAtMs)}`;
+
+      setOverwatchShots((prev) => [
+        ...prev,
+        {
+          id: shotId,
+          shooterId: shooter.id,
+          firedAtMs: performance.now(),
+          impactAtMs,
+          from: { ...positionsRef.current?.[shooter.id] },
+          to: { x: hex.x, y: hex.y },
+          attackSnapshot,
+          projectileId: null,
+          visible: !(shooter.isHidden || shooter.statusEffects?.includes("HIDDEN")),
+        },
+      ]);
+
+      scheduleTimelineEvent({
+        id: `impact_${shotId}`,
+        type: "PROJECTILE_IMPACT",
+        timeMs: impactAtMs,
+        data: {
+          shooterId: shooter.id,
+          targetHex: { ...hex },
+          weaponData: attackSnapshot,
+          impactAtMs,
+          attackSnapshot: {
+            ...attackSnapshot,
+            scatterSeed: `${attackSnapshot.scatterSeed}|${Math.round(impactAtMs)}`,
+          },
+        },
+      });
+
+      setOverwatchHexes((prev) => [
+        ...prev,
+        {
+          x: hex.x,
+          y: hex.y,
+          expiresAtMs: impactAtMs + 200,
+          shooterId: shooter.id,
+          kind: projectileResult.kind,
+        },
+      ]);
+
+      addLog(`🏹 ${shooter.name} fires overwatch at (${hex.x}, ${hex.y}).`, "info");
+      setSelectedAction(null);
+      setOverwatchTargetHex(null);
+      setTargetingMode(null);
+      setShowCombatChoices(false);
+      closeCombatChoices();
+      scheduleEndTurn(500);
+    },
+    [
+      addLog,
+      applyFatiguePenalties,
+      applySuppressionToFighter,
+      closeCombatChoices,
+      getCombatBonus,
+      getWeaponDamage,
+      isTwoHandedWeapon,
+      scheduleEndTurn,
+      scheduleTimelineEvent,
+      selectedAttackWeapon,
+      spawnProjectileToHex,
+      tempModifiers,
+      setTempModifiers,
+    ]
+  );
+
+  const handleSelectedHexChange = useCallback(
+    (hex) => {
+      if (targetingMode === "OVERWATCH_HEX" && hex) {
+        setOverwatchTargetHex(hex);
+        confirmOverwatchHex(hex);
+        return;
+      }
+      setSelectedHex(hex);
+    },
+    [targetingMode, confirmOverwatchHex]
+  );
+
+  const dangerHexes = useMemo(() => {
+    const hexes = [];
+    fighters.forEach((f) => {
+      const s = f?.suppression;
+      if (
+        s?.isSuppressed &&
+        s?.visibleThreat &&
+        Array.isArray(s.dangerHexes)
+      ) {
+        s.dangerHexes.forEach((h) => {
+          if (h && Number.isFinite(h.x) && Number.isFinite(h.y)) {
+            hexes.push({ x: h.x, y: h.y });
+          }
+        });
+      }
+    });
+    overwatchHexes.forEach((h) => {
+      if (h && Number.isFinite(h.x) && Number.isFinite(h.y)) {
+        hexes.push({ x: h.x, y: h.y });
+      }
+    });
+    return hexes;
+  }, [fighters, overwatchHexes]);
+
+  useEffect(() => {
+    setRenderPositions((prev) => {
+      const next = { ...prev };
+      Object.entries(positions).forEach(([id, pos]) => {
+        if (!next[id]) {
+          next[id] = {
+            x: pos.x,
+            y: pos.y,
+            altitudeFeet: pos.altitudeFeet ?? 0,
+            facing: pos.facing || 0,
+          };
+        }
+      });
+      Object.keys(next).forEach((id) => {
+        if (!positions[id]) delete next[id];
+      });
+      return next;
+    });
+  }, [positions]);
+
+  useEffect(() => {
+    if (!positions || Object.keys(positions).length === 0) return;
+
+    if (!prevPositionsRef.current) {
+      prevPositionsRef.current = positions;
+      return;
+    }
+
+    const prev = prevPositionsRef.current;
+    prevPositionsRef.current = positions;
+
+    for (const [id, newPos] of Object.entries(positions)) {
+      const oldPos = prev[id];
+      if (!oldPos) continue;
+
+      const moved = oldPos.x !== newPos.x || oldPos.y !== newPos.y;
+      if (!moved) continue;
+
+      if (suppressNextAnimationRef.current.has(id)) {
+        suppressNextAnimationRef.current.delete(id);
+        setRenderPositions((rp) => ({
+          ...rp,
+          [id]: {
+            ...(rp[id] || {}),
+            x: newPos.x,
+            y: newPos.y,
+          },
+        }));
+        continue;
+      }
+
+      const dx = newPos.x - oldPos.x;
+      const dy = newPos.y - oldPos.y;
+      const approxCells = Math.max(Math.abs(dx), Math.abs(dy));
+      const distanceFeet = approxCells * 5;
+
+      const fighter = fightersRef.current?.find?.((f) => f.id === id);
+      const altitudeFeet = fighter?.altitudeFeet ?? fighter?.altitude ?? 0;
+
+      enqueueMoveAnimation(
+        id,
+        { x: newPos.x, y: newPos.y, altitudeFeet },
+        getMoveDurationMs(distanceFeet)
+      );
+    }
+  }, [positions, enqueueMoveAnimation, getMoveDurationMs]);
 
   // Keep latest fighters/turnIndex snapshots available to async guardrails without relying on stale closures.
   const fightersRef = useRef(fighters);
@@ -1938,6 +2311,559 @@ export default function CombatPage({ characters = [] }) {
     [arenaSpeed]
   );
 
+  const getMoveDurationMs = useCallback(
+    (distanceFeet) => {
+      const base = getActionDelay();
+      const scaled = Math.round(
+        base * Math.min(1, Math.max(0.25, (distanceFeet || 0) / 30))
+      );
+      return Math.max(250, Math.min(2500, scaled));
+    },
+    [getActionDelay]
+  );
+
+  const markActionBusy = useCallback((durationMs) => {
+    if (!durationMs || durationMs <= 0) return;
+    const now = performance.now();
+    actionClockRef.current.busy = true;
+    actionClockRef.current.endsAtMs = Math.max(
+      actionClockRef.current.endsAtMs || 0,
+      now + durationMs
+    );
+  }, []);
+
+  const isActionBusy = useCallback(() => {
+    if (!actionClockRef.current.busy) return false;
+    const now = performance.now();
+    if (now >= actionClockRef.current.endsAtMs) {
+      actionClockRef.current.busy = false;
+      return false;
+    }
+    return true;
+  }, []);
+
+  const enqueueMoveAnimation = useCallback(
+    (fighterId, toPos, durationMs) => {
+      if (!fighterId || !toPos || durationMs <= 0) return;
+
+      const lerp = (a, b, t) => a + (b - a) * t;
+      const easeInOut = (t) =>
+        t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+
+      const startMs = performance.now();
+
+      setRenderPositions((prev) => {
+        const cur =
+          prev[fighterId] ||
+          positionsRef.current?.[fighterId] ||
+          toPos;
+        return {
+          ...prev,
+          [fighterId]: {
+            x: cur.x,
+            y: cur.y,
+            altitudeFeet: cur.altitudeFeet ?? 0,
+            facing: cur.facing ?? 0,
+          },
+        };
+      });
+
+      markActionBusy(durationMs);
+
+      const tick = () => {
+        const now = performance.now();
+        const tRaw = (now - startMs) / durationMs;
+        const t = Math.min(1, Math.max(0, tRaw));
+        const k = easeInOut(t);
+
+        setRenderPositions((prev) => {
+          const cur = prev[fighterId];
+          if (!cur) return prev;
+          return {
+            ...prev,
+            [fighterId]: {
+              ...cur,
+              x: lerp(cur.x, toPos.x, k),
+              y: lerp(cur.y, toPos.y, k),
+              altitudeFeet: lerp(cur.altitudeFeet ?? 0, toPos.altitudeFeet ?? 0, k),
+            },
+          };
+        });
+
+        if (t < 1) {
+          requestAnimationFrame(tick);
+        }
+      };
+
+      requestAnimationFrame(tick);
+    },
+    [setRenderPositions, markActionBusy]
+  );
+
+  const applySuppressionToFighter = useCallback(
+    (fighterId, payload) => {
+      if (!fighterId || !payload) return;
+      const now = performance.now();
+      const severityRank = { LOW: 1, MED: 2, HIGH: 3 };
+
+      setFighters((prev) => {
+        let changed = false;
+        const next = prev.map((f) => {
+          if (f.id !== fighterId) return f;
+          if (!canFighterAct(f)) return f;
+
+          const existing = f.suppression;
+          const existingExpired =
+            existing?.expiresAtMs && existing.expiresAtMs <= now;
+          const existingRank = severityRank[existing?.severity] || 0;
+          const newRank = severityRank[payload?.severity] || 1;
+          const existingImpact = existing?.impactAtMs ?? Infinity;
+          const newImpact = payload?.impactAtMs ?? Infinity;
+
+          let nextSuppression;
+          if (!existing || existingExpired) {
+            nextSuppression = { ...payload, isSuppressed: true };
+          } else if (newRank > existingRank || newImpact < existingImpact) {
+            nextSuppression = {
+              ...payload,
+              isSuppressed: true,
+              visibleThreat:
+                existing.visibleThreat || payload.visibleThreat,
+              revealedAtMs:
+                payload.revealedAtMs ?? existing.revealedAtMs,
+            };
+          } else {
+            nextSuppression = {
+              ...existing,
+              isSuppressed: true,
+              visibleThreat:
+                existing.visibleThreat || payload.visibleThreat,
+              revealedAtMs:
+                existing.revealedAtMs ?? payload.revealedAtMs,
+            };
+          }
+
+          if (JSON.stringify(existing) !== JSON.stringify(nextSuppression)) {
+            changed = true;
+            return { ...f, suppression: nextSuppression };
+          }
+          return f;
+        });
+
+        return changed ? next : prev;
+      });
+    },
+    [canFighterAct, setFighters]
+  );
+
+  const getProjectileKindAndSpeed = useCallback((attackData) => {
+    const weaponName = String(attackData?.name || "").toLowerCase();
+    const ammoType = String(attackData?.ammunition || "").toLowerCase();
+    const weaponType = String(attackData?.weaponType || "").toLowerCase();
+    const category = String(attackData?.category || "").toLowerCase();
+
+    let kind = "generic";
+    if (ammoType.includes("arrow") || weaponName.includes("bow")) kind = "arrow";
+    else if (ammoType.includes("bolt") || weaponName.includes("crossbow"))
+      kind = "bolt";
+    else if (
+      ammoType.includes("stone") ||
+      ammoType.includes("rock") ||
+      weaponName.includes("sling")
+    )
+      kind = "stone";
+    else if (weaponType.includes("thrown") || category.includes("thrown"))
+      kind = "thrown";
+
+    const speedByKind = {
+      arrow: 180,
+      bolt: 160,
+      stone: 120,
+      thrown: 90,
+      generic: 140,
+    };
+    const speed = speedByKind[kind] || 140;
+    return { kind, speed };
+  }, []);
+
+  const scheduleTimelineEvent = useCallback((evt) => {
+    if (!evt || !Number.isFinite(evt.timeMs)) return;
+    timelineRef.current.events.push(evt);
+    timelineRef.current.events.sort((a, b) => a.timeMs - b.timeMs);
+  }, []);
+
+  const popDueTimelineEvents = useCallback(() => {
+    const now = performance.now();
+    const due = [];
+    const rest = [];
+    timelineRef.current.events.forEach((e) => {
+      if (e.timeMs <= now) due.push(e);
+      else rest.push(e);
+    });
+    timelineRef.current.events = rest;
+    return due;
+  }, []);
+
+  const resolveOverwatchImpact = useCallback(
+    ({ shooterId, targetHex, weaponData, attackSnapshot }) => {
+      if (!shooterId || !targetHex || !weaponData || !attackSnapshot) return;
+      const shooter =
+        fightersRef.current?.find?.((f) => f.id === shooterId) || null;
+      if (!shooter) return;
+      addLog(
+        `🟠 Overwatch impact at (${targetHex.x}, ${targetHex.y}) (d20=${attackSnapshot.attackDiceRoll}, total=${attackSnapshot.attackRoll}).`,
+        "info"
+      );
+
+      const order = fightersRef.current || [];
+      const orderIndex = new Map(order.map((f, idx) => [f.id, idx]));
+      const sortByOrder = (a, b) => {
+        const ia = orderIndex.get(a.id) ?? Number.MAX_SAFE_INTEGER;
+        const ib = orderIndex.get(b.id) ?? Number.MAX_SAFE_INTEGER;
+        if (ia !== ib) return ia - ib;
+        return String(a.id).localeCompare(String(b.id));
+      };
+
+      const wouldHitTarget = (snapshot, targetAR) => {
+        if (snapshot.isCriticalMiss) return false;
+        if (snapshot.isCriticalHit) return true;
+        return snapshot.attackRoll >= targetAR;
+      };
+
+      const getCandidatesAtHex = (hex) =>
+        Object.entries(positionsRef.current || {})
+          .filter(([, pos]) => pos.x === hex.x && pos.y === hex.y)
+          .map(([id]) => fightersRef.current?.find?.((f) => f.id === id))
+          .filter(Boolean)
+          .sort(sortByOrder);
+
+      const tryResolveAtHex = (hex, snapshot) => {
+        const candidates = getCandidatesAtHex(hex);
+        if (!candidates.length) {
+          return false;
+        }
+
+        for (const target of candidates) {
+          const targetAR = target.AR || target.ar || 10;
+          if (wouldHitTarget(snapshot, targetAR)) {
+            suppressEndTurnRef.current = true;
+            try {
+              attack(shooter, target.id, {
+                attackDataOverride: weaponData,
+                preRoll: snapshot,
+                suppressEndTurn: true,
+                forceNoDefense: true,
+                skipStaminaDrain: true,
+                skipTempModifiers: true,
+              });
+              const snapDamage = snapshot?.damageTotal ?? "unknown";
+              addLog(
+                `🎯 Overwatch hits ${target.name} for ${snapDamage} (snapshot).`,
+                "warning"
+              );
+            } finally {
+              suppressEndTurnRef.current = false;
+            }
+            return true;
+          }
+        }
+        return false;
+      };
+
+      if (attackSnapshot.isCriticalMiss) {
+        const neighbors = getHexNeighbors(targetHex.x, targetHex.y) || [];
+        if (!neighbors.length) {
+          addLog(`🟠 Overwatch CRIT MISS scatters but hits nothing.`, "info");
+          return;
+        }
+
+        const seed = String(attackSnapshot.scatterSeed || "");
+        let h = 2166136261;
+        for (let i = 0; i < seed.length; i++) {
+          h ^= seed.charCodeAt(i);
+          h = Math.imul(h, 16777619);
+        }
+        const startIdx = (h >>> 0) % neighbors.length;
+        let scatterHex = null;
+        for (let i = 0; i < neighbors.length; i++) {
+          const candidate = neighbors[(startIdx + i) % neighbors.length];
+          if (candidate && isValidPosition(candidate.x, candidate.y)) {
+            scatterHex = candidate;
+            break;
+          }
+        }
+
+        if (!scatterHex) {
+          addLog(`🟠 Overwatch CRIT MISS scatters but hits nothing.`, "info");
+          return;
+        }
+
+        const scatterSnapshot = { ...attackSnapshot, isCriticalMiss: false };
+
+        addLog(
+          `🟠 Overwatch CRIT MISS scatters to (${scatterHex.x}, ${scatterHex.y})…`,
+          "info"
+        );
+
+        const hit = tryResolveAtHex(scatterHex, scatterSnapshot);
+        if (!hit) {
+          addLog(
+            `🟠 Scatter lands at (${scatterHex.x}, ${scatterHex.y}) but hits no one.`,
+            "info"
+          );
+        }
+        return;
+      }
+
+      const hit = tryResolveAtHex(targetHex, attackSnapshot);
+      if (!hit) {
+        addLog(
+          `🟠 Overwatch lands at (${targetHex.x}, ${targetHex.y}) but hits no one.`,
+          "info"
+        );
+      }
+    },
+    [addLog, attack]
+  );
+
+  const handleTimelineEvent = useCallback(
+    (evt) => {
+      if (!evt || evt.type !== "PROJECTILE_IMPACT") return;
+      const { shooterId, targetHex, weaponData, attackSnapshot } = evt.data || {};
+      if (!shooterId || !targetHex || !attackSnapshot) return;
+
+      resolveOverwatchImpact({
+        shooterId,
+        targetHex,
+        weaponData,
+        attackSnapshot,
+      });
+    },
+    [resolveOverwatchImpact]
+  );
+
+  useEffect(() => {
+    const intervalId = setInterval(() => {
+      if (!timelineRef.current.locked) {
+        const due = popDueTimelineEvents();
+        if (due.length) {
+          due.forEach(handleTimelineEvent);
+        }
+      }
+
+      const now = performance.now();
+      setOverwatchHexes((prev) =>
+        prev.filter((h) => !h?.expiresAtMs || h.expiresAtMs > now)
+      );
+      setOverwatchShots((prev) =>
+        prev.filter((s) => !s?.impactAtMs || s.impactAtMs > now)
+      );
+
+      setFighters((prev) => {
+        let changed = false;
+        const next = prev.map((f) => {
+          const sup = f.suppression;
+          if (!sup?.isSuppressed) return f;
+
+          if (sup.expiresAtMs && now >= sup.expiresAtMs) {
+            changed = true;
+            const nextF = { ...f };
+            delete nextF.suppression;
+            return nextF;
+          }
+
+          if (!sup.visibleThreat && sup.revealedAtMs && now >= sup.revealedAtMs) {
+            changed = true;
+            return {
+              ...f,
+              suppression: { ...sup, visibleThreat: true },
+            };
+          }
+
+          return f;
+        });
+        return changed ? next : prev;
+      });
+    }, 100);
+
+    return () => clearInterval(intervalId);
+  }, [setFighters, popDueTimelineEvents, handleTimelineEvent]);
+
+  const pickMissGridNear = useCallback(
+    (targetPos) => {
+      const offsets = [
+        { x: 1, y: 0 },
+        { x: -1, y: 0 },
+        { x: 0, y: 1 },
+        { x: 0, y: -1 },
+        { x: 1, y: -1 },
+        { x: -1, y: 1 },
+      ];
+      for (const off of offsets) {
+        const x = targetPos.x + off.x;
+        const y = targetPos.y + off.y;
+        if (
+          x >= 0 &&
+          y >= 0 &&
+          x < GRID_CONFIG.GRID_WIDTH &&
+          y < GRID_CONFIG.GRID_HEIGHT
+        ) {
+          return { x, y };
+        }
+      }
+      return { x: targetPos.x, y: targetPos.y };
+    },
+    []
+  );
+
+  const spawnProjectile = useCallback(
+    ({ attackerId, defenderId, attackData, hit }) => {
+      if (!attackerId || !defenderId) return;
+
+      const attackerPos =
+        renderPositionsRef.current?.[attackerId] ||
+        positionsRef.current?.[attackerId];
+      const defenderPos =
+        renderPositionsRef.current?.[defenderId] ||
+        positionsRef.current?.[defenderId];
+      if (!attackerPos || !defenderPos) return;
+
+      const fromGrid = {
+        x: Math.round(attackerPos.x),
+        y: Math.round(attackerPos.y),
+      };
+      const toGridBase = {
+        x: Math.round(defenderPos.x),
+        y: Math.round(defenderPos.y),
+      };
+
+      const attacker = fightersRef.current?.find?.((f) => f.id === attackerId);
+      const defender = fightersRef.current?.find?.((f) => f.id === defenderId);
+
+      const { kind, speed } = getProjectileKindAndSpeed(attackData);
+
+      const targetGrid = hit ? toGridBase : pickMissGridNear(toGridBase);
+
+      const distanceFeet = calculateDistance(fromGrid, targetGrid);
+      const durationMs = Math.max(
+        180,
+        Math.min(900, Math.round((distanceFeet / speed) * 1000))
+      );
+
+      if (cinematicProjectiles) {
+        markActionBusy(Math.min(durationMs, 900));
+      }
+
+      const isNoticeable = durationMs >= 450;
+      if (isNoticeable && defender) {
+        const isHiddenShooter =
+          attacker?.isHidden ||
+          attacker?.statusEffects?.includes("HIDDEN") ||
+          attacker?.statusEffects?.includes("INVISIBLE");
+        const impactAtMs = performance.now() + durationMs;
+        const revealLeadMs = 250;
+        const visibleThreat = !isHiddenShooter;
+
+        applySuppressionToFighter(defenderId, {
+          sourceId: attackerId,
+          kind: "PROJECTILE_INBOUND",
+          dangerHexes: [{ x: targetGrid.x, y: targetGrid.y }],
+          lane: null,
+          startedAtMs: performance.now(),
+          impactAtMs,
+          expiresAtMs: impactAtMs + 500,
+          visibleThreat,
+          revealedAtMs: visibleThreat ? null : impactAtMs - revealLeadMs,
+          severity: kind === "arrow" || kind === "bolt" ? "MED" : "LOW",
+        });
+      }
+
+      const fromAlt = (attacker?.altitudeFeet ?? attacker?.altitude ?? 0) + 4;
+      const toAlt = (defender?.altitudeFeet ?? defender?.altitude ?? 0) + 4;
+
+      const projectile = {
+        id: `p_${crypto.randomUUID?.() || Math.random().toString(16).slice(2)}`,
+        kind,
+        from: { x: fromGrid.x, y: fromGrid.y, altitudeFeet: fromAlt },
+        to: { x: targetGrid.x, y: targetGrid.y, altitudeFeet: toAlt },
+        firedAtMs: performance.now(),
+        durationMs,
+      };
+
+      setProjectiles((prev) => [...prev, projectile]);
+
+      // Cleanup after animation completes
+      const cleanupDelay = durationMs + 200;
+      const timeoutId = setTimeout(() => {
+        setProjectiles((prev) => prev.filter((p) => p.id !== projectile.id));
+      }, cleanupDelay);
+      allTimeoutsRef.current.push(timeoutId);
+    },
+    [
+      calculateDistance,
+      pickMissGridNear,
+      cinematicProjectiles,
+      markActionBusy,
+      applySuppressionToFighter,
+      getProjectileKindAndSpeed,
+    ]
+  );
+
+  const spawnProjectileToHex = useCallback(
+    ({ attackerId, targetHex, attackData }) => {
+      if (!attackerId || !targetHex || !attackData) return null;
+
+      const attackerPos =
+        renderPositionsRef.current?.[attackerId] ||
+        positionsRef.current?.[attackerId];
+      if (!attackerPos) return null;
+
+      const fromGrid = {
+        x: Math.round(attackerPos.x),
+        y: Math.round(attackerPos.y),
+      };
+      const targetGrid = {
+        x: Math.round(targetHex.x),
+        y: Math.round(targetHex.y),
+      };
+
+      const { kind, speed } = getProjectileKindAndSpeed(attackData);
+      const distanceFeet = calculateDistance(fromGrid, targetGrid);
+      const durationMs = Math.max(
+        180,
+        Math.min(900, Math.round((distanceFeet / speed) * 1000))
+      );
+
+      if (cinematicProjectiles) {
+        markActionBusy(Math.min(durationMs, 900));
+      }
+
+      const attacker =
+        fightersRef.current?.find?.((f) => f.id === attackerId) || null;
+      const fromAlt = (attacker?.altitudeFeet ?? attacker?.altitude ?? 0) + 4;
+
+      const projectile = {
+        id: `p_${crypto.randomUUID?.() || Math.random().toString(16).slice(2)}`,
+        kind,
+        from: { x: fromGrid.x, y: fromGrid.y, altitudeFeet: fromAlt },
+        to: { x: targetGrid.x, y: targetGrid.y, altitudeFeet: fromAlt },
+        firedAtMs: performance.now(),
+        durationMs,
+      };
+
+      setProjectiles((prev) => [...prev, projectile]);
+
+      const cleanupDelay = durationMs + 200;
+      const timeoutId = setTimeout(() => {
+        setProjectiles((prev) => prev.filter((p) => p.id !== projectile.id));
+      }, cleanupDelay);
+      allTimeoutsRef.current.push(timeoutId);
+
+      return { durationMs, kind, impactAtMs: projectile.firedAtMs + durationMs };
+    },
+    [calculateDistance, getProjectileKindAndSpeed, cinematicProjectiles, markActionBusy]
+  );
+
   const clearScheduledTurn = useCallback(() => {
     if (turnTimeoutRef.current) {
       clearTimeout(turnTimeoutRef.current);
@@ -2843,6 +3769,9 @@ useEffect(() => {
   // Define endTurn function with useCallback - MUST be before handleMoveSelect
   // PALLADIUM RAW: Alternating actions per initiative
   const endTurn = useCallback(() => {
+    if (suppressEndTurnRef.current) {
+      return;
+    }
     // ✅ Always release any AI "in progress" locks when a turn actually ends
     pendingTurnAdvanceRef.current = false;
     processingEnemyTurnRef.current = false;
@@ -3241,6 +4170,9 @@ useEffect(() => {
 
   const scheduleEndTurn = useCallback(
     (delayOverride = null) => {
+      if (suppressEndTurnRef.current) {
+        return;
+      }
       // ✅ GUARD: Stop scheduling if combat is over (use ref for latest state)
       if (combatOverRef.current || !combatActive || combatEndCheckRef.current || combatPausedRef.current) {
         clearScheduledTurn();
@@ -3248,14 +4180,26 @@ useEffect(() => {
         return;
       }
 
+      const tryEndTurn = () => {
+        if (combatOverRef.current || !combatActive || combatEndCheckRef.current) {
+          pendingTurnAdvanceRef.current = false;
+          return;
+        }
+        if (isActionBusy()) {
+          requestAnimationFrame(tryEndTurn);
+          return;
+        }
+        pendingTurnAdvanceRef.current = true;
+        endTurn();
+      };
+
       const delay = typeof delayOverride === "number" ? delayOverride : getActionDelay();
 
       if (delay <= 0) {
         clearScheduledTurn();
         // ✅ GUARD: Check combat state before ending turn (use ref for latest state)
         if (combatOverRef.current || !combatActive || combatEndCheckRef.current) return;
-        pendingTurnAdvanceRef.current = true;
-        endTurn();
+        tryEndTurn();
         return;
       }
 
@@ -3268,13 +4212,13 @@ useEffect(() => {
           pendingTurnAdvanceRef.current = false;
           return;
         }
-        endTurn();
+        tryEndTurn();
       }, delay);
       
       // ✅ Track this timeout so we can clear it on combat end
       allTimeoutsRef.current.push(turnTimeoutRef.current);
     },
-    [clearScheduledTurn, getActionDelay, endTurn, combatActive]
+    [clearScheduledTurn, getActionDelay, endTurn, combatActive, isActionBusy]
   );
 
   // Helper function for player flight movement
@@ -3324,6 +4268,18 @@ useEffect(() => {
       return updated;
     });
 
+    const moveDistance = oldPos ? calculateDistance(oldPos, targetHex) : 5;
+    const altitudeFeet = Math.max(
+      minCruiseAlt,
+      fighter.altitudeFeet ?? fighter.altitude ?? minCruiseAlt
+    );
+    enqueueMoveAnimation(
+      fighter.id,
+      { x: targetHex.x, y: targetHex.y, altitudeFeet },
+      getMoveDurationMs(moveDistance)
+    );
+    suppressNextAnimationRef.current.add(fighter.id);
+
     // Update fighter position
     setFighters(prev => prev.map(f => {
       if (f.id === fighter.id) {
@@ -3336,7 +4292,7 @@ useEffect(() => {
       }
       return f;
     }));
-  }, [fighters, positions, setFighters, setPositions, addLog]);
+  }, [fighters, positions, setFighters, setPositions, addLog, enqueueMoveAnimation, getMoveDurationMs, calculateDistance]);
 
   // Handler for movement selection from TacticalMap
   const handleMoveSelect = useCallback((x, y) => {
@@ -4096,7 +5052,9 @@ useEffect(() => {
 
     // Get attack data - use selected weapon for players, selectedAttack for enemies
     let attackData;
-    if (attacker.type === "player" && selectedAttackWeapon) {
+    if (bonusModifiers?.attackDataOverride) {
+      attackData = bonusModifiers.attackDataOverride;
+    } else if (attacker.type === "player" && selectedAttackWeapon) {
       // Use selected weapon for player attacks
       // Check if weapon is being used two-handed (either weapon is two-handed type or using two-handed grip)
       const isUsingTwoHanded = selectedAttackWeapon.twoHanded || isTwoHandedWeapon(selectedAttackWeapon);
@@ -4342,6 +5300,13 @@ useEffect(() => {
 
       const ammoType = attackData?.ammunition;
       const requiresAmmo = Boolean(ammoType && ammoType !== "self" && isRangedWeapon);
+      const isProjectileAttack =
+        isRangedWeapon ||
+        attackData?.type === "ranged" ||
+        attackData?.rangeCategory === "ranged" ||
+        attackData?.isRanged === true ||
+        attackData?.weaponType === "thrown" ||
+        attackData?.category === "thrown";
 
       if (requiresAmmo) {
         // IMPORTANT: apply ammo decrement into the same `updated` array that will later be committed.
@@ -4386,9 +5351,14 @@ useEffect(() => {
       const baseStrikeBonus = getCombatBonus(attacker, "strike", attackData) || 0;
       const chargeBonus = bonusModifiers.strikeBonus || 0;
       const flankingBonus = bonusModifiers.flankingBonus || 0;
-      const tempBonus = (tempModifiers[attacker.id]?.strikeBonus || 0) + (tempModifiers[attacker.id]?.nextMeleeStrike || 0);
+      let tempBonus =
+        (tempModifiers[attacker.id]?.strikeBonus || 0) +
+        (tempModifiers[attacker.id]?.nextMeleeStrike || 0);
+      if (bonusModifiers?.skipTempModifiers) {
+        tempBonus = 0;
+      }
       // Clear nextMeleeStrike after using it (one-time penalty)
-      if (tempModifiers[attacker.id]?.nextMeleeStrike) {
+      if (!bonusModifiers?.skipTempModifiers && tempModifiers[attacker.id]?.nextMeleeStrike) {
         const updatedTempMods = { ...tempModifiers };
         delete updatedTempMods[attacker.id].nextMeleeStrike;
         if (Object.keys(updatedTempMods[attacker.id]).length === 0) {
@@ -4553,7 +5523,7 @@ useEffect(() => {
       // Flanking is melee-only (avoid ranged attackers "flanking" from 100+ ft).
       const effectiveFlankingBonus = isRangedForBonus ? 0 : flankingBonus;
 
-      const strikeBonus =
+      const computedStrikeBonus =
         baseStrikeBonus +
         chargeBonus +
         effectiveFlankingBonus +
@@ -4561,6 +5531,8 @@ useEffect(() => {
         terrainModifiers.strike +
         sneakAttackBonus +
         grappleAdvantage;
+      const strikeBonus =
+        bonusModifiers?.preRoll?.strikeBonus ?? computedStrikeBonus;
       
       if (tempBonus !== 0) {
         addLog(`⚡ ${attacker.name} has ${tempBonus > 0 ? '+' : ''}${tempBonus} temporary strike bonus!`, "info");
@@ -4591,6 +5563,23 @@ useEffect(() => {
         }));
       }
       
+      const preRoll = bonusModifiers?.preRoll;
+      let attackRollResult;
+      let attackRoll;
+      let attackDiceRoll;
+      let isCriticalHit;
+      let isCriticalMiss;
+
+      if (preRoll) {
+        attackRoll = preRoll.attackRoll;
+        attackDiceRoll = preRoll.attackDiceRoll;
+        isCriticalHit = preRoll.isCriticalHit;
+        isCriticalMiss = preRoll.isCriticalMiss;
+        attackRollResult = {
+          totalWithBonus: attackRoll,
+          diceRolls: [{ result: attackDiceRoll }],
+        };
+      } else {
       // Format dice formula correctly (handle negative bonuses)
       // The dice parser only accepts + in the formula, so use the bonus parameter for negatives
       const diceFormula = strikeBonus >= 0 ? `1d20+${strikeBonus}` : `1d20`;
@@ -4604,8 +5593,8 @@ useEffect(() => {
       const sizeMod = getCombinedGrappleModifiers(attacker, defender);
       const sizeStrikeBonus = reachMod.strikeBonus; // Use reach bonus for regular attacks
       
-      const attackRollResult = CryptoSecureDice.parseAndRoll(diceFormula, bonus);
-      let attackRoll = attackRollResult.totalWithBonus;
+        attackRollResult = CryptoSecureDice.parseAndRoll(diceFormula, bonus);
+        attackRoll = attackRollResult.totalWithBonus;
       
       // Apply fatigue penalty to attack roll
       if (fatiguePenalty < 0) {
@@ -4620,13 +5609,20 @@ useEffect(() => {
         addLog(`📏 ${reachMod.description}`, "info");
       }
       
+        if (!bonusModifiers?.skipStaminaDrain) {
       // Drain stamina for normal combat action
       const staminaDrained = drainStamina(attacker, STAMINA_COSTS.NORMAL_COMBAT, 1);
       if (staminaDrained.currentStamina < staminaDrained.maxStamina * 0.5) {
         const status = getFatigueStatus(attacker);
         if (status.status !== "ready") {
           addLog(`⚠️ ${attacker.name} is ${status.description.toLowerCase()}! (Stamina: ${status.stamina.toFixed(1)}/${status.maxStamina})`, "warning");
+            }
         }
+        }
+
+        attackDiceRoll = attackRollResult.diceRolls?.[0]?.result || attackRoll - strikeBonus;
+        isCriticalHit = attackDiceRoll === 20; // Natural 20 = critical hit
+        isCriticalMiss = attackDiceRoll === 1; // Natural 1 = critical miss
       }
       
       let targetAR = defender.AR || defender.ar || 10;
@@ -4644,7 +5640,7 @@ useEffect(() => {
       }
       
       // Apply lighting penalties (only if distance was calculated)
-      if (combatTerrain && combatTerrain.lightingData && positions && positions[attacker.id] && positions[defenderId]) {
+      if (!preRoll && combatTerrain && combatTerrain.lightingData && positions && positions[attacker.id] && positions[defenderId]) {
         const attackDistance = calculateDistance(positions[attacker.id], positions[defenderId]);
         // Convert hex distance to feet (assuming 5 feet per hex/square)
         const distanceInFeet = attackDistance * 5;
@@ -4672,7 +5668,6 @@ useEffect(() => {
       }
       
       // Log the attack roll and store in diceRolls
-      const attackDiceRoll = attackRollResult.diceRolls?.[0]?.result || attackRoll - strikeBonus;
       setDiceRolls(prev => [...prev, {
         id: generateCryptoId(),
         type: 'attack',
@@ -4682,9 +5677,6 @@ useEffect(() => {
         bonus: strikeBonus,
         timestamp: new Date().toLocaleTimeString()
       }]);
-      const isCriticalHit = attackDiceRoll === 20; // Natural 20 = critical hit
-      const isCriticalMiss = attackDiceRoll === 1; // Natural 1 = critical miss
-      
       if (isCriticalHit) {
         addLog(`🎲 ${attacker.name} rolls NATURAL 20! Critical Hit! (Total: ${attackRoll} vs AR ${targetAR})`, "critical");
       } else if (isCriticalMiss) {
@@ -4707,6 +5699,11 @@ useEffect(() => {
       let defenseType = defensiveStance[defender.id];
       let autoParryUsed = false; // Track if auto-parry was used
 
+      if (bonusModifiers?.forceNoDefense) {
+        defenseType = null;
+        autoParryUsed = false;
+      }
+
       // If defender chose Parry but incoming is ranged/thrown, treat as Dodge (or no defense if they can't dodge).
       if (defenseType === "Parry" && isRangedAttack) {
         defenseType = "Dodge";
@@ -4714,7 +5711,7 @@ useEffect(() => {
       }
       
       // Check for auto-parry when enemy attacks (only if no defensive stance already set)
-      if (!defenseType && !isRangedAttack && attackRoll >= targetAR && canFighterAct(defender)) {
+      if (!bonusModifiers?.forceNoDefense && !defenseType && !isRangedAttack && attackRoll >= targetAR && canFighterAct(defender)) {
         // Check if defender has Hand-to-Hand skill
         const hasHandToHand = defender.handToHand && (
           defender.handToHand.type || 
@@ -5026,6 +6023,18 @@ useEffect(() => {
         });
       }
       
+      const didHit =
+        !isCriticalMiss && (isCriticalHit || attackRoll >= targetAR) && !defenseSuccess;
+
+      if (isProjectileAttack) {
+        spawnProjectile({
+          attackerId: attacker.id,
+          defenderId,
+          attackData,
+          hit: didHit,
+        });
+      }
+      
       // Critical miss auto-fails
       if (isCriticalMiss) {
         addLog(`❌ ${attacker.name} FUMBLES the attack!`, "miss");
@@ -5034,7 +6043,7 @@ useEffect(() => {
         return;
       }
       // Critical hit auto-succeeds, normal hit requires beating AR
-      if ((isCriticalHit || attackRoll >= targetAR) && !defenseSuccess) {
+      if (didHit) {
         // Hit! Crypto secure damage roll
         const damageBonus = attacker.bonuses?.damage || 0;
         
@@ -5071,6 +6080,7 @@ useEffect(() => {
         
         // Use crypto dice for damage roll
         let damageRollResult;
+        const loggedDamageSource = preRoll?.damageFormula ?? attackData.damage;
         
         // Log attack data for debugging
         console.log(`Attack data for ${attacker.name}:`, attackData);
@@ -5097,7 +6107,12 @@ useEffect(() => {
           }
         }
         
-        if (attackData.damage && typeof attackData.damage === 'string' && attackData.damage.includes('d')) {
+        if (preRoll?.damageTotal != null) {
+          damageRollResult = {
+            totalWithBonus: preRoll.damageTotal,
+            diceRolls: preRoll.damageDiceRolls || [],
+          };
+        } else if (attackData.damage && typeof attackData.damage === 'string' && attackData.damage.includes('d')) {
           // Parse damage like "1d4" or "2d6" or "1d8+2"
           const parsed = parseDamageFormula(attackData.damage);
           const totalBonus = parsed.existingBonus + safeDamageBonus;
@@ -5168,13 +6183,13 @@ useEffect(() => {
           const baseDamageBeforeCrit = damage;
           damage = damage * 2;
           // Calculate total bonus for logging (existing bonus + damage bonus)
-          const parsedDamage = parseDamageFormula(attackData.damage);
+          const parsedDamage = parseDamageFormula(loggedDamageSource);
           const totalBonusForLog = parsedDamage.existingBonus + safeDamageBonus;
           const extraText = extraDamageFromDive > 0 ? ` + ${extraDamageFromDive}` : "";
           addLog(`🎲 Damage: ${parsedDamage.baseFormula} + ${totalBonusForLog}${extraText} = ${baseDamageBeforeCrit} × 2 (CRITICAL) = ${damage}`, "critical");
         } else {
           // Calculate total bonus for logging
-          const parsedDamage = parseDamageFormula(attackData.damage);
+          const parsedDamage = parseDamageFormula(loggedDamageSource);
           const totalBonusForLog = parsedDamage.existingBonus + safeDamageBonus;
           const extraText = extraDamageFromDive > 0 ? ` + ${extraDamageFromDive}` : "";
           addLog(`🎲 Damage: ${parsedDamage.baseFormula} + ${totalBonusForLog}${extraText} = ${damage}`, "info");
@@ -5635,6 +6650,7 @@ useEffect(() => {
     // ALWAYS end turn after each action - this ensures alternating action system
     // endTurn() will cycle to the next fighter with actions remaining
     // If this fighter still has actions, they'll get another turn after others act
+    if (!bonusModifiers?.suppressEndTurn) {
       const timeoutId = setTimeout(() => {
         // ✅ GUARD: Check combat state in delayed callback (use ref for latest state)
         if (combatOverRef.current || !combatActive || combatEndCheckRef.current) return;
@@ -5643,7 +6659,16 @@ useEffect(() => {
       
       // ✅ Track this timeout so we can clear it on combat end
       allTimeoutsRef.current.push(timeoutId);
-  }, [fighters, addLog, endTurn, isPredatorBird, performDiveAttack, isFlying]);
+    }
+  }, [
+    fighters,
+    addLog,
+    endTurn,
+    isPredatorBird,
+    performDiveAttack,
+    isFlying,
+    spawnProjectile,
+  ]);
 
   // Handle charge attack (move and attack with bonuses)
   const handleChargeAttack = useCallback((attacker, target) => {
@@ -5737,6 +6762,21 @@ useEffect(() => {
         positionsRef.current = synced;
         return synced;
       });
+
+      const chargeDistance = calculateDistance(
+        positions[combatantId] || newPosition,
+        newPosition
+      );
+      enqueueMoveAnimation(
+        combatantId,
+        {
+          x: newPosition.x,
+          y: newPosition.y,
+          altitudeFeet: combatant?.altitudeFeet ?? combatant?.altitude ?? 0,
+        },
+        getMoveDurationMs(chargeDistance)
+      );
+      suppressNextAnimationRef.current.add(combatantId);
       
       // Add to flashing set (CHARGE uses up the turn)
       setFlashingCombatants(prev => new Set(prev).add(combatantId));
@@ -5789,6 +6829,11 @@ useEffect(() => {
           positionsRef.current = updated;
           return updated;
         });
+        setRenderPositions((prev) => {
+          const updated = { ...prev };
+          delete updated[combatantId];
+          return updated;
+        });
 
         // End turn
         scheduleEndTurn(1500);
@@ -5809,6 +6854,21 @@ useEffect(() => {
           return synced;
         });
       });
+
+      const moveDistance = calculateDistance(
+        positions[combatantId] || newPosition,
+        newPosition
+      );
+      enqueueMoveAnimation(
+        combatantId,
+        {
+          x: newPosition.x,
+          y: newPosition.y,
+          altitudeFeet: combatant?.altitudeFeet ?? combatant?.altitude ?? 0,
+        },
+        getMoveDurationMs(moveDistance)
+      );
+      suppressNextAnimationRef.current.add(combatantId);
       
       if (combatant) {
         if (movementInfo) {
@@ -5825,7 +6885,7 @@ useEffect(() => {
         }
       }
     }
-  }, [fighters, addLog, endTurn]);
+  }, [fighters, addLog, endTurn, enqueueMoveAnimation, getMoveDurationMs, calculateDistance, setRenderPositions]);
 
   // Helper function to get all targets in a line for area attacks
   const getTargetsInLine = useCallback((attackerId, targetId, positions) => {
@@ -5962,7 +7022,7 @@ useEffect(() => {
     const attacksPerMelee = fighter.attacksPerMelee || fighter.actionsPerMelee || 4;
     
     // Check if fighter is flying
-    const isFlying = fighter.isFlying || fighter.altitude > 0;
+    const isFlyingState = fighter.isFlying || fighter.altitude > 0;
     // Check abilities - can be array (raw) or object (parsed)
     let canFly = false;
     if (Array.isArray(fighter.abilities)) {
@@ -5977,7 +7037,8 @@ useEffect(() => {
                ));
     }
     
-    if (isFlying || canFly) {
+    // If currently flying, use flight speed
+    if (isFlyingState && canFly) {
       // Flight movement: Speed × multiplier × 18 feet per melee
       // Default flight multiplier is 8 (30 mph for Speed 10)
       const flightMultiplier = 8; // Can be extracted from abilities if needed
@@ -5986,7 +7047,33 @@ useEffect(() => {
       return feetPerAction;
     }
     
-    // Ground movement: OFFICIAL 1994 PALLADIUM FORMULA
+    // If can fly but grounded, use slower ground speed
+    if (canFly && !isFlyingState) {
+      // Check for explicit ground speed in movementProfile
+      const groundSpd = fighter.movementProfile?.groundSpd;
+      if (groundSpd) {
+        const feetPerMelee = groundSpd * 18;
+        const feetPerAction = feetPerMelee / attacksPerMelee;
+        if (movementType === "MOVE" || movementType === "Walk") {
+          return Math.floor(feetPerAction * 0.5);
+        }
+        return feetPerAction;
+      }
+      
+      // Fallback: use default slow ground speed for flying creatures
+      // Small flyers (hawks, pixies) get Spd 4 on ground
+      const sizeCategory = fighter.sizeCategory || fighter.size || "MEDIUM";
+      const isSmall = sizeCategory === "TINY" || sizeCategory === "SMALL";
+      const groundSpeed = isSmall ? 4 : 6;
+      const feetPerMelee = groundSpeed * 18;
+      const feetPerAction = feetPerMelee / attacksPerMelee;
+      if (movementType === "MOVE" || movementType === "Walk") {
+        return Math.floor(feetPerAction * 0.5);
+      }
+      return feetPerAction;
+    }
+    
+    // Ground movement for non-flying creatures: OFFICIAL 1994 PALLADIUM FORMULA
     // Speed × 18 = feet per melee (running speed)
     const feetPerMelee = speed * 18;
     const feetPerAction = feetPerMelee / attacksPerMelee;
@@ -11120,6 +12207,22 @@ useEffect(() => {
     
     positionsRef.current = positionMap;
     setPositions(positionMap);
+    setProjectiles([]);
+    setOverwatchHexes([]);
+    setOverwatchShots([]);
+    timelineRef.current.events = [];
+    setRenderPositions(() => {
+      const renderMap = {};
+      Object.entries(positionMap).forEach(([id, pos]) => {
+        renderMap[id] = {
+          x: pos.x,
+          y: pos.y,
+          altitudeFeet: 0,
+          facing: pos.facing || 0,
+        };
+      });
+      return renderMap;
+    });
     // ✅ Reset combat-over flags when starting new combat
     combatEndCheckRef.current = false;
     combatOverRef.current = false;
@@ -12009,6 +13112,7 @@ useEffect(() => {
       setSelectedManeuver(null);
       setShowCombatChoices(false);
       closeCombatChoices(); // Also close via disclosure hook
+      setTargetingMode(null);
       scheduleEndTurn(500);
       return;
     }
@@ -12056,6 +13160,26 @@ useEffect(() => {
           clearTimeout(lockTimeout);
           return;
         }
+        break;
+      case "Overwatch Shot":
+        if (!weaponToExecute) {
+          addLog(`${currentFighter.name} wants to overwatch but has no weapon selected!`, "error");
+          executingActionRef.current = false;
+          clearTimeout(lockTimeout);
+          return;
+        }
+        if (!overwatchTargetHex) {
+          setTargetingMode("OVERWATCH_HEX");
+          addLog("🎯 Select a hex for Overwatch.", "info");
+          executingActionRef.current = false;
+          clearTimeout(lockTimeout);
+          return;
+        }
+
+        // Hex selection commits the overwatch; nothing else to do here.
+        executingActionRef.current = false;
+        clearTimeout(lockTimeout);
+        return;
         executingActionRef.current = false; // Clear lock if we break
         break;
       
@@ -14071,6 +15195,12 @@ useEffect(() => {
                         <Text fontSize="sm" fontWeight="bold" color="blue.600">
                           📍 Selected: {selectedFighter.name}
               </Text>
+                        {selectedFighter.suppression?.isSuppressed &&
+                          selectedFighter.suppression?.visibleThreat && (
+                            <Badge colorScheme="orange" size="sm">
+                              SUPPRESSED
+                            </Badge>
+                          )}
                         {selectedPos && (
                           <Text fontSize="xs" color="gray.600">
                             Position: ({selectedPos.x}, {selectedPos.y})
@@ -14232,6 +15362,12 @@ useEffect(() => {
                             {fighter.name}
                           </Text>
                           {fighter.id === currentFighter?.id && <Badge colorScheme="yellow" size="md">Current Turn</Badge>}
+                          {fighter.suppression?.isSuppressed &&
+                            fighter.suppression?.visibleThreat && (
+                              <Badge colorScheme="orange" size="md">
+                                SUPPRESSED
+                              </Badge>
+                            )}
                           {(() => {
                             const hpStatus = getHPStatus(fighter.currentHP);
                             // Use hpStatus for consistent status display
@@ -15542,6 +16678,7 @@ useEffect(() => {
                     isEnemy: f.type === "enemy" 
                   }))}
                   positions={positions}
+                  dangerHexes={dangerHexes}
                   onPositionChange={handlePositionChange}
                   currentTurn={currentFighter?.id}
                   highlightMovement={combatActive}
@@ -15558,7 +16695,8 @@ useEffect(() => {
                       }}
                       onSelectedCombatantChange={setSelectedCombatantId}
                       onHoveredCellChange={setHoveredCell}
-                      onSelectedHexChange={setSelectedHex}
+                      allowEmptyHexSelection={targetingMode === "OVERWATCH_HEX"}
+                      onSelectedHexChange={handleSelectedHexChange}
                       terrain={mode === "MAP_EDITOR" ? mapDefinition : arenaEnvironment}
                       activeCircles={activeCircles}
                       mapType={currentMapType}
@@ -15867,6 +17005,13 @@ useEffect(() => {
                                       setSelectedTarget(null);
                                       setSelectedSkill(null);
                                       setSelectedGrappleAction(null);
+                                    if (actionName === "Overwatch Shot") {
+                                      setTargetingMode("OVERWATCH_HEX");
+                                      setOverwatchTargetHex(null);
+                                      addLog("🎯 Select a hex for Overwatch.", "info");
+                                    } else {
+                                      setTargetingMode(null);
+                                    }
 
                                       if (actionName === "Psionics") {
                                         setPsionicsMode(true);
@@ -15888,6 +17033,7 @@ useEffect(() => {
                                       setSpellsMode(false);
                                       setClericalAbilitiesMode(false);
                                       setSelectedClericalAbility(null);
+                                      setTargetingMode(null);
                                     }
                                   }}
                                   onTargetSelect={(target) => {
@@ -15984,6 +17130,9 @@ useEffect(() => {
                     mapDefinition={mapDefinition}
                     fighters={fighters}
                     positions={positions}
+                    renderPositions={renderPositions}
+                    projectiles={projectiles}
+                    dangerHexes={dangerHexes}
                     terrain={arenaEnvironment}
                     mode={mode}
                     visible={show3DView}
@@ -16052,6 +17201,12 @@ useEffect(() => {
                               {displayName}
                             </Text>
                             {fighter.id === currentFighter?.id && <Badge colorScheme="yellow" size="md">Current Turn</Badge>}
+                          {fighter.suppression?.isSuppressed &&
+                            fighter.suppression?.visibleThreat && (
+                              <Badge colorScheme="orange" size="md">
+                                SUPPRESSED
+                              </Badge>
+                            )}
                             {(() => {
                               const hpStatus = getHPStatus(fighter.currentHP);
                               // Use hpStatus for consistent status display
@@ -17412,6 +18567,13 @@ useEffect(() => {
                   availableTargets={targetOptions}
                   onActionSelect={(action, character) => {
                     setSelectedAction(action);
+                    if (action?.name === "Overwatch Shot") {
+                      setTargetingMode("OVERWATCH_HEX");
+                      setOverwatchTargetHex(null);
+                      addLog("🎯 Select a hex for Overwatch.", "info");
+                    } else {
+                      setTargetingMode(null);
+                    }
                     addLog(`${character.name} selects: ${action.name}`, "info");
                   }}
                   onTargetSelect={(target) => {

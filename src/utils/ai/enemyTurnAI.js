@@ -43,6 +43,11 @@ import {
 import { findFoodItem, consumeItem } from "../consumptionSystem";
 import { runFlyingTurn } from "./flyingBehaviorSystem";
 import {
+  pickBestPerchForFlyer,
+  reservePerch,
+  toSimpleAIObject,
+} from "../treeAssetHelpers";
+import {
   canThreatenWithMelee,
   canThreatenWithMeleeWithWeapon,
   markTargetUnreachable,
@@ -2456,6 +2461,50 @@ export function runEnemyTurnAI(enemy, context) {
         (t) => t.distance <= 100 && !t.isUnreachable
       );
 
+      // 🛡️ SUPPRESSION AWARENESS: prefer cover when under visible threat
+      if (
+        enemy.suppression?.isSuppressed &&
+        enemy.suppression?.visibleThreat &&
+        enemy.remainingAttacks > 0
+      ) {
+        const rawObjects = arenaEnvironment?.objects || [];
+        const coverObjects = rawObjects
+          .map((obj) => (obj?.position ? obj : toSimpleAIObject(obj)))
+          .filter(Boolean);
+        const hideSpot = findNearbyHidingSpot(
+          enemy,
+          positions,
+          combatTerrain,
+          coverObjects,
+          6
+        );
+
+        if (hideSpot?.position && handlePositionChange) {
+          handlePositionChange(enemy.id, hideSpot.position, {
+            action: "MOVE",
+            actionCost: 1,
+            description: "Move to cover (suppression)",
+          });
+
+          setFighters((prev) =>
+            prev.map((f) =>
+              f.id === enemy.id
+                ? {
+                    ...f,
+                    remainingAttacks: Math.max(0, f.remainingAttacks - 1),
+                  }
+                : f
+            )
+          );
+
+          addLog(`🛡️ ${enemy.name} seeks cover under incoming fire.`, "info");
+
+          processingEnemyTurnRef.current = false;
+          scheduleEndTurn();
+          return;
+        }
+      }
+
       // 🦅 HAWK AI: Special behaviors (landing, scavenging, hunting, circling, eating)
       // Note: enemyCanFly and enemyIsFlying are declared earlier in function (line 684-685)
       const isSkittishFlyingPredator =
@@ -2516,17 +2565,77 @@ export function runEnemyTurnAI(enemy, context) {
             );
           }
 
-          // Land: set altitude to 0
-          setFighters((prev) =>
-            prev.map((f) =>
-              f.id === enemy.id ? { ...f, altitude: 0, altitudeFeet: 0 } : f
-            )
-          );
+          // Land: attempt a real tree perch first, fall back to ground landing
+          const targetGrid = target?.id ? positions[target.id] : null;
+          const perchChoice = pickBestPerchForFlyer({
+            flyer: enemy,
+            flyerGrid: myPos,
+            targetGrid,
+            arenaEnvironment,
+            options: {
+              intent: target ? "STALK" : "SCOUT",
+              maxTreeSearchCells: 8,
+              preferDistanceToTargetCells: target ? 3 : 6,
+            },
+          });
 
-          addLog(
-            `🦅 ${enemy.name} lands and perches to rest, recovering stamina.`,
-            "info"
-          );
+          if (perchChoice) {
+            const tree = (arenaEnvironment?.objects || []).find(
+              (o) => o.id === perchChoice.treeId
+            );
+
+            if (tree && reservePerch(tree, perchChoice.perchId, enemy.id)) {
+              setPositions((prev) => {
+                const updated = {
+                  ...prev,
+                  [enemy.id]: {
+                    x: perchChoice.treeGrid.x,
+                    y: perchChoice.treeGrid.y,
+                  },
+                };
+                positionsRef.current = updated;
+                return updated;
+              });
+
+              setFighters((prev) =>
+                prev.map((f) =>
+                  f.id === enemy.id
+                    ? {
+                        ...f,
+                        isFlying: false,
+                        perchedOn: {
+                          treeId: perchChoice.treeId,
+                          perchId: perchChoice.perchId,
+                        },
+                        altitude: perchChoice.altitudeFeet,
+                        altitudeFeet: perchChoice.altitudeFeet,
+                        perchOffsetFeet: perchChoice.localOffsetFeet,
+                      }
+                    : f
+                )
+              );
+
+              addLog(`🦅 ${enemy.name} lands on a branch to rest.`, "info");
+            } else {
+              setFighters((prev) =>
+                prev.map((f) =>
+                  f.id === enemy.id
+                    ? { ...f, isFlying: false, altitude: 0, altitudeFeet: 0 }
+                    : f
+                )
+              );
+              addLog(`🦅 ${enemy.name} lands on the ground to rest.`, "info");
+            }
+          } else {
+            setFighters((prev) =>
+              prev.map((f) =>
+                f.id === enemy.id
+                  ? { ...f, isFlying: false, altitude: 0, altitudeFeet: 0 }
+                  : f
+              )
+            );
+            addLog(`🦅 ${enemy.name} lands on the ground to rest.`, "info");
+          }
 
           // Rest this action (recover stamina)
           recoverStamina(enemy, "FULL_REST", 1);
@@ -3343,6 +3452,83 @@ export function runEnemyTurnAI(enemy, context) {
             `📍 ${enemy.name} attacking at ${rangeValidation.rangeInfo}`,
             "info"
           );
+        }
+      }
+    }
+
+    // 🦅 HAWK PERCHING BEHAVIOR: perch when idle/scouting and not attacking
+    if (
+      isFlying(enemy) &&
+      enemy.remainingAttacks > 0 &&
+      isSkittishFlyingPredatorCheck &&
+      !enemy.perchedOn &&
+      positions[enemy.id] &&
+      arenaEnvironment?.objects?.length
+    ) {
+      const shouldPerch =
+        !target ||
+        (target && currentDistance > 30 && !needsToMoveCloser) ||
+        (target && !isPreferredHawkPrey(enemy, target));
+
+      if (shouldPerch) {
+        const perchChoice = pickBestPerchForFlyer({
+          flyer: enemy,
+          flyerGrid: positions[enemy.id],
+          targetGrid: target ? positions[target.id] : null,
+          arenaEnvironment,
+          options: {
+            intent: target ? "STALK" : "SCOUT",
+            maxTreeSearchCells: 8,
+            preferDistanceToTargetCells: target ? 3 : 6,
+          },
+        });
+
+        if (perchChoice) {
+          const tree = arenaEnvironment.objects.find(
+            (o) => o.id === perchChoice.treeId
+          );
+
+          if (tree && reservePerch(tree, perchChoice.perchId, enemy.id)) {
+            setPositions((prev) => {
+              const updated = {
+                ...prev,
+                [enemy.id]: {
+                  x: perchChoice.treeGrid.x,
+                  y: perchChoice.treeGrid.y,
+                },
+              };
+              positionsRef.current = updated;
+              return updated;
+            });
+
+            setFighters((prev) =>
+              prev.map((f) =>
+                f.id === enemy.id
+                  ? {
+                      ...f,
+                      isFlying: false,
+                      perchedOn: {
+                        treeId: perchChoice.treeId,
+                        perchId: perchChoice.perchId,
+                      },
+                      altitude: perchChoice.altitudeFeet,
+                      altitudeFeet: perchChoice.altitudeFeet,
+                      perchOffsetFeet: perchChoice.localOffsetFeet,
+                      remainingAttacks: Math.max(0, f.remainingAttacks - 1),
+                    }
+                  : f
+              )
+            );
+
+            addLog(
+              `🦅 ${enemy.name} perches on a nearby tree to observe the area.`,
+              "info"
+            );
+
+            processingEnemyTurnRef.current = false;
+            scheduleEndTurn();
+            return;
+          }
         }
       }
     }

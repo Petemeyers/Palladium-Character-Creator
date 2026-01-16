@@ -11,6 +11,13 @@
           "mechanic": "Roll to hit vs target AR"
         },
         {
+          "name": "Overwatch Shot",
+          "types": ["ranged", "thrown"],
+          "description": "Fire at a chosen hex; shot resolves on impact",
+          "cost": "1 attack",
+          "mechanic": "Delayed ranged attack at a target hex"
+        },
+        {
           "name": "Parry",
           "types": ["weapon", "shield"],
           "description": "Block a melee strike you can see coming",

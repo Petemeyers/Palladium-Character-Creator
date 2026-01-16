@@ -658,6 +658,37 @@ export function getFlightSpeedMultiplier(fighter) {
 }
 
 /**
+ * Get ground movement speed for a flying creature when grounded
+ * Flying creatures should have separate, slower ground speeds
+ * @param {Object} fighter - Fighter object with movementProfile or Spd
+ * @returns {number|null} Ground speed attribute (for Spd × 18 calculation) or null if not applicable
+ */
+export function getGroundSpeedForFlyer(fighter) {
+  if (!fighter) return null;
+  
+  // Check if creature can fly
+  if (!canFly(fighter)) return null;
+  
+  // If currently flying, return null (should use flight speed, not ground speed)
+  if (isFlying(fighter)) return null;
+  
+  // Check for explicit movement profile (new system)
+  if (fighter.movementProfile?.groundSpd) {
+    return fighter.movementProfile.groundSpd;
+  }
+  
+  // Fallback: use a default slow ground speed for flying creatures
+  // Default: 4 for small flyers (birds, pixies), 6 for medium/large
+  const sizeCategory = fighter.sizeCategory || fighter.size || "MEDIUM";
+  const sizeOrder = { TINY: 0, SMALL: 1, MEDIUM: 2, LARGE: 3, HUGE: 4, GIANT: 5 };
+  const sizeValue = sizeOrder[sizeCategory] ?? 2;
+  
+  // Small flyers (hawks, pixies) get Spd 4 on ground
+  // Medium+ flyers get Spd 6 on ground (still slower than flight)
+  return sizeValue <= 1 ? 4 : 6;
+}
+
+/**
  * Calculate flight movement speed based on Spd and flight multiplier
  * Uses official Palladium rules: Flight speed = Spd × multiplier × 18 feet per melee
  * @param {Object} fighter - Fighter object with Spd attribute and flight ability

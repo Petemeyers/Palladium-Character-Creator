@@ -998,8 +998,16 @@
           "raptor",
           "flying_hunter"
         ],
+        "movementProfile": {
+          "groundSpd": 4,
+          "groundRunSpd": 6,
+          "preferFlight": true
+        },
         "visual": {
-          "modelUrl": "/assets/models/characters/hawk_perching.glb",
+          "modelUrl": "/assets/models/characters/hawk_grounded.glb",
+          "groundedModelUrl": "/assets/models/characters/hawk_grounded.glb",
+          "flyingModelUrl": "/assets/models/characters/hawk_flying.glb",
+          "perchingModelUrl": "/assets/models/characters/hawk_perching.glb",
           "anchorTo": "feet",
           "modelScale": 1.0,
           "desiredHeightFt": 0.75

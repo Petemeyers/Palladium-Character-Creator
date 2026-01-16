@@ -28,6 +28,7 @@ import {
   isFlying,
   getAltitude,
   calculateFlightMovement,
+  getGroundSpeedForFlyer,
 } from "./abilitySystem.js";
 import { getWeaponLength } from "./combatEnvironmentLogic.js";
 
@@ -65,8 +66,12 @@ export function calculateMovementPerAction(
     }
   }
 
+  // Check if this is a flying creature on the ground (use slower ground speed)
+  const groundSpeed = fighter ? getGroundSpeedForFlyer(fighter) : null;
+  const effectiveSpeed = groundSpeed !== null ? groundSpeed : speed;
+
   // Ground movement: OFFICIAL 1994 PALLADIUM FORMULA: Speed × 18 = feet per melee (running)
-  const feetPerMelee = speed * 18;
+  const feetPerMelee = effectiveSpeed * 18;
   const feetPerAction = feetPerMelee / attacksPerMelee;
 
   // Walking speed is ~half of running speed (Palladium rule)

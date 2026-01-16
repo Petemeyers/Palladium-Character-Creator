@@ -50,7 +50,7 @@
         }
       ],
       "model": {
-        "path": "/assets/models/trees/spruce_dense.glb",
+        "path": "/assets/models/trees/tree_test.glb",
         "anchorTo": "base",
         "scale": 1.0,
         "randomYaw": true,

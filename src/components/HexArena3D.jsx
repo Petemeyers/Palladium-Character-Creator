@@ -9,7 +9,17 @@ import React, {
 import { Box, Text } from "@chakra-ui/react";
 
 const HexArena3D = forwardRef(function HexArena3D(
-  { mapDefinition, fighters, positions, terrain, mode, visible = false },
+  {
+    mapDefinition,
+    fighters,
+    positions,
+    renderPositions,
+    projectiles,
+    dangerHexes,
+    terrain,
+    mode,
+    visible = false,
+  },
   ref
 ) {
   const containerRef = useRef(null);
@@ -67,11 +77,14 @@ const HexArena3D = forwardRef(function HexArena3D(
       arenaRef.current.syncCombatState({
         fighters,
         positions,
+        renderPositions,
+        projectiles,
+        dangerHexes,
         terrain,
         mapType: terrain?.mapType || "hex",
       });
     }
-  }, [mapDefinition, fighters, positions, terrain, mode]);
+  }, [mapDefinition, fighters, positions, renderPositions, projectiles, dangerHexes, terrain, mode]);
 
   return (
     <Box

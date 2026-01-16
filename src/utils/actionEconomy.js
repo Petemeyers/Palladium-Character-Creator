@@ -128,6 +128,7 @@ export function getActionCost(actionType) {
     GRAPPLE: 1,
     USE_SKILL: 1,
     USE_ITEM: 1,
+    OVERWATCH_SHOT: 1,
 
     // Variable cost actions
     CAST_SPELL: 1, // Minimum, varies by spell
