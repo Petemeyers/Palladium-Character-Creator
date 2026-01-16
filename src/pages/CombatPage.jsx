@@ -948,269 +948,67 @@ export default function CombatPage({ characters = [] }) {
     renderPositionsRef.current = renderPositions;
   }, [renderPositions]);
 
-  const confirmOverwatchHex = useCallback(
-    (hex) => {
-      const shooter = fightersRef.current?.[turnIndexRef.current];
-      if (!shooter || !hex) return;
+  const { isOpen, onOpen, onClose } = useDisclosure();
+  const { isOpen: isPartyOpen, onOpen: onPartyOpen, onClose: onPartyClose } = useDisclosure();
+  const { isOpen: isCombatChoicesOpen, onOpen: openCombatChoices, onClose: closeCombatChoices } =
+    useDisclosure();
+  const { isOpen: isMobileDrawerOpen, onOpen: onMobileDrawerOpen, onClose: onMobileDrawerClose } =
+    useDisclosure();
 
-      const weapon = selectedAttackWeapon;
-      if (!weapon) {
-        addLog(`${shooter.name} wants to overwatch but has no weapon selected!`, "error");
-        return;
-      }
+  const applySuppressionToFighter = useCallback(
+    (fighterId, payload) => {
+      if (!fighterId || !payload) return;
+      const now = performance.now();
+      const severityRank = { LOW: 1, MED: 2, HIGH: 3 };
 
-      const isUsingTwoHanded = weapon.twoHanded || isTwoHandedWeapon(weapon);
-      const weaponDamage = getWeaponDamage(weapon, isUsingTwoHanded, shooter);
-      const attackSnapshot = {
-        name: weapon.name,
-        damage: weaponDamage,
-        type:
-          weapon?.range != null ||
-          ["bow", "crossbow", "sling"].includes((weapon?.category || "").toLowerCase())
-            ? "ranged"
-            : weapon.type,
-        range: weapon?.range,
-        ammunition: weapon?.ammunition,
-        weaponType: weapon?.weaponType,
-        category: weapon?.category,
-      };
-      const damageBonus = shooter.bonuses?.damage || 0;
-      const safeDamageBonus =
-        typeof damageBonus === "number" && !isNaN(damageBonus) ? damageBonus : 0;
-      const parseDamageFormula = (damageStr) => {
-        if (!damageStr || typeof damageStr !== "string") {
-          return { baseFormula: "1d6", existingBonus: 0 };
-        }
+      setFighters((prev) => {
+        let changed = false;
+        const next = prev.map((f) => {
+          if (f.id !== fighterId) return f;
+          if (!canFighterAct(f)) return f;
 
-        const bonusMatch = damageStr.match(/^(\d+d\d+)\+(\d+)$/);
-        if (bonusMatch) {
-          return {
-            baseFormula: bonusMatch[1],
-            existingBonus: parseInt(bonusMatch[2], 10),
-          };
-        }
+          const existing = f.suppression;
+          const existingExpired =
+            existing?.expiresAtMs && existing.expiresAtMs <= now;
+          const existingRank = severityRank[existing?.severity] || 0;
+          const newRank = severityRank[payload?.severity] || 1;
+          const existingImpact = existing?.impactAtMs ?? Infinity;
+          const newImpact = payload?.impactAtMs ?? Infinity;
 
-        const diceMatch = damageStr.match(/^(\d+d\d+)$/);
-        if (diceMatch) {
-          return {
-            baseFormula: diceMatch[1],
-            existingBonus: 0,
-          };
-        }
+          let nextSuppression;
+          if (!existing || existingExpired) {
+            nextSuppression = { ...payload, isSuppressed: true };
+          } else if (newRank > existingRank || newImpact < existingImpact) {
+            nextSuppression = {
+              ...payload,
+              isSuppressed: true,
+              visibleThreat:
+                existing.visibleThreat || payload.visibleThreat,
+              revealedAtMs:
+                payload.revealedAtMs ?? existing.revealedAtMs,
+            };
+          } else {
+            nextSuppression = {
+              ...existing,
+              isSuppressed: true,
+              visibleThreat:
+                existing.visibleThreat || payload.visibleThreat,
+              revealedAtMs:
+                existing.revealedAtMs ?? payload.revealedAtMs,
+            };
+          }
 
-        return { baseFormula: damageStr, existingBonus: 0 };
-      };
-      let damageRollResult;
-      let damageFormulaSnapshot = "";
-      let dmgStr = weaponDamage;
-      if (typeof dmgStr === "string" && dmgStr.includes("-")) {
-        dmgStr = dmgStr.replace("-", "d");
-      }
-      if (typeof dmgStr === "string" && dmgStr.includes("d")) {
-        const parsed = parseDamageFormula(dmgStr);
-        const totalBonus = parsed.existingBonus + safeDamageBonus;
-        damageFormulaSnapshot =
-          totalBonus >= 0 ? `${parsed.baseFormula}+${totalBonus}` : parsed.baseFormula;
-        const damageBonusParam = totalBonus >= 0 ? 0 : totalBonus;
-        damageRollResult = CryptoSecureDice.parseAndRoll(
-          damageFormulaSnapshot,
-          damageBonusParam
-        );
-      } else if (dmgStr != null && !isNaN(dmgStr)) {
-        const numericDamage = parseInt(dmgStr, 10);
-        const diceCount = Math.max(1, Math.floor(numericDamage / 3));
-        const diceSize = numericDamage <= 3 ? 4 : 6;
-        const baseFormula = `${diceCount}d${diceSize}`;
-        damageFormulaSnapshot =
-          safeDamageBonus >= 0 ? `${baseFormula}+${safeDamageBonus}` : baseFormula;
-        const damageBonusParam = safeDamageBonus >= 0 ? 0 : safeDamageBonus;
-        damageRollResult = CryptoSecureDice.parseAndRoll(
-          damageFormulaSnapshot,
-          damageBonusParam
-        );
-      } else {
-        damageFormulaSnapshot = safeDamageBonus >= 0 ? `1d6+${safeDamageBonus}` : "1d6";
-        const damageBonusParam = safeDamageBonus >= 0 ? 0 : safeDamageBonus;
-        damageRollResult = CryptoSecureDice.parseAndRoll(
-          damageFormulaSnapshot,
-          damageBonusParam
-        );
-      }
-
-      attackSnapshot.damageTotal = damageRollResult?.totalWithBonus ?? 0;
-      attackSnapshot.damageDiceRolls = damageRollResult?.diceRolls || [];
-      attackSnapshot.damageFormula = damageFormulaSnapshot;
-
-      const baseStrikeBonus = getCombatBonus(shooter, "strike", attackSnapshot) || 0;
-      const tempBonus =
-        (tempModifiers[shooter.id]?.strikeBonus || 0) +
-        (tempModifiers[shooter.id]?.nextMeleeStrike || 0);
-      const strikeBonus = baseStrikeBonus + tempBonus;
-
-      if (tempModifiers[shooter.id]?.nextMeleeStrike) {
-        const updatedTempMods = { ...tempModifiers };
-        delete updatedTempMods[shooter.id].nextMeleeStrike;
-        if (Object.keys(updatedTempMods[shooter.id]).length === 0) {
-          delete updatedTempMods[shooter.id];
-        }
-        setTempModifiers(updatedTempMods);
-      }
-
-      const diceFormula = strikeBonus >= 0 ? `1d20+${strikeBonus}` : `1d20`;
-      const bonus = strikeBonus >= 0 ? 0 : strikeBonus;
-      const rollResult = CryptoSecureDice.parseAndRoll(diceFormula, bonus);
-      let attackRoll = rollResult.totalWithBonus;
-
-      const fatiguedShooter = applyFatiguePenalties(shooter);
-      const fatiguePenalty = fatiguedShooter.bonuses?.strike || 0;
-      if (fatiguePenalty < 0) {
-        attackRoll += fatiguePenalty;
-      }
-
-      const attackDiceRoll = rollResult.diceRolls?.[0]?.result || attackRoll - strikeBonus;
-      const isCriticalHit = attackDiceRoll === 20;
-      const isCriticalMiss = attackDiceRoll === 1;
-
-      attackSnapshot.attackRoll = attackRoll;
-      attackSnapshot.attackDiceRoll = attackDiceRoll;
-      attackSnapshot.isCriticalHit = isCriticalHit;
-      attackSnapshot.isCriticalMiss = isCriticalMiss;
-      attackSnapshot.strikeBonus = strikeBonus;
-      attackSnapshot.scatterSeed = `${shooter.id}|${attackSnapshot.name}|${attackDiceRoll}|${attackRoll}`;
-      addLog(
-        `🏹 ${shooter.name} fires overwatch (d20=${attackDiceRoll}, total=${attackRoll}, dmg=${attackSnapshot.damageTotal}).`,
-        "info"
-      );
-
-      const projectileResult = spawnProjectileToHex({
-        attackerId: shooter.id,
-        targetHex: hex,
-        attackData: attackSnapshot,
-      });
-
-      if (!projectileResult) {
-        addLog(`⚠️ ${shooter.name} could not fire overwatch.`, "error");
-        return;
-      }
-
-      const impactAtMs = projectileResult.impactAtMs;
-      const isNoticeable = projectileResult.durationMs >= 450;
-      if (isNoticeable) {
-        const isHiddenShooter =
-          shooter?.isHidden ||
-          shooter?.statusEffects?.includes("HIDDEN") ||
-          shooter?.statusEffects?.includes("INVISIBLE");
-        const visibleThreat = !isHiddenShooter;
-        const revealLeadMs = 250;
-
-        const occupantsNow = Object.entries(positionsRef.current || {})
-          .filter(([id, pos]) => id !== shooter.id && pos.x === hex.x && pos.y === hex.y)
-          .map(([id]) => id);
-
-        occupantsNow.forEach((occId) => {
-          applySuppressionToFighter(occId, {
-            sourceId: shooter.id,
-            kind: "COVERFIRE_HEX",
-            dangerHexes: [{ x: hex.x, y: hex.y }],
-            lane: null,
-            startedAtMs: performance.now(),
-            impactAtMs,
-            expiresAtMs: impactAtMs + 500,
-            visibleThreat,
-            revealedAtMs: visibleThreat ? null : impactAtMs - revealLeadMs,
-            severity: "MED",
-          });
+          if (JSON.stringify(existing) !== JSON.stringify(nextSuppression)) {
+            changed = true;
+            return { ...f, suppression: nextSuppression };
+          }
+          return f;
         });
-      }
 
-      // spend action immediately
-      setFighters((prev) =>
-        prev.map((f) =>
-          f.id === shooter.id
-            ? { ...f, remainingAttacks: Math.max(0, (f.remainingAttacks || 0) - 1) }
-            : f
-        )
-      );
-
-      const shotId = `ow_${shooter.id}_${hex.x}_${hex.y}_${Math.round(impactAtMs)}`;
-
-      setOverwatchShots((prev) => [
-        ...prev,
-        {
-          id: shotId,
-          shooterId: shooter.id,
-          firedAtMs: performance.now(),
-          impactAtMs,
-          from: { ...positionsRef.current?.[shooter.id] },
-          to: { x: hex.x, y: hex.y },
-          attackSnapshot,
-          projectileId: null,
-          visible: !(shooter.isHidden || shooter.statusEffects?.includes("HIDDEN")),
-        },
-      ]);
-
-      scheduleTimelineEvent({
-        id: `impact_${shotId}`,
-        type: "PROJECTILE_IMPACT",
-        timeMs: impactAtMs,
-        data: {
-          shooterId: shooter.id,
-          targetHex: { ...hex },
-          weaponData: attackSnapshot,
-          impactAtMs,
-          attackSnapshot: {
-            ...attackSnapshot,
-            scatterSeed: `${attackSnapshot.scatterSeed}|${Math.round(impactAtMs)}`,
-          },
-        },
+        return changed ? next : prev;
       });
-
-      setOverwatchHexes((prev) => [
-        ...prev,
-        {
-          x: hex.x,
-          y: hex.y,
-          expiresAtMs: impactAtMs + 200,
-          shooterId: shooter.id,
-          kind: projectileResult.kind,
-        },
-      ]);
-
-      addLog(`🏹 ${shooter.name} fires overwatch at (${hex.x}, ${hex.y}).`, "info");
-      setSelectedAction(null);
-      setOverwatchTargetHex(null);
-      setTargetingMode(null);
-      setShowCombatChoices(false);
-      closeCombatChoices();
-      scheduleEndTurn(500);
     },
-    [
-      addLog,
-      applyFatiguePenalties,
-      applySuppressionToFighter,
-      closeCombatChoices,
-      getCombatBonus,
-      getWeaponDamage,
-      isTwoHandedWeapon,
-      scheduleEndTurn,
-      scheduleTimelineEvent,
-      selectedAttackWeapon,
-      spawnProjectileToHex,
-      tempModifiers,
-      setTempModifiers,
-    ]
-  );
-
-  const handleSelectedHexChange = useCallback(
-    (hex) => {
-      if (targetingMode === "OVERWATCH_HEX" && hex) {
-        setOverwatchTargetHex(hex);
-        confirmOverwatchHex(hex);
-        return;
-      }
-      setSelectedHex(hex);
-    },
-    [targetingMode, confirmOverwatchHex]
+    [canFighterAct, setFighters]
   );
 
   const dangerHexes = useMemo(() => {
@@ -1256,53 +1054,6 @@ export default function CombatPage({ characters = [] }) {
       return next;
     });
   }, [positions]);
-
-  useEffect(() => {
-    if (!positions || Object.keys(positions).length === 0) return;
-
-    if (!prevPositionsRef.current) {
-      prevPositionsRef.current = positions;
-      return;
-    }
-
-    const prev = prevPositionsRef.current;
-    prevPositionsRef.current = positions;
-
-    for (const [id, newPos] of Object.entries(positions)) {
-      const oldPos = prev[id];
-      if (!oldPos) continue;
-
-      const moved = oldPos.x !== newPos.x || oldPos.y !== newPos.y;
-      if (!moved) continue;
-
-      if (suppressNextAnimationRef.current.has(id)) {
-        suppressNextAnimationRef.current.delete(id);
-        setRenderPositions((rp) => ({
-          ...rp,
-          [id]: {
-            ...(rp[id] || {}),
-            x: newPos.x,
-            y: newPos.y,
-          },
-        }));
-        continue;
-      }
-
-      const dx = newPos.x - oldPos.x;
-      const dy = newPos.y - oldPos.y;
-      const approxCells = Math.max(Math.abs(dx), Math.abs(dy));
-      const distanceFeet = approxCells * 5;
-
-      const fighter = fightersRef.current?.find?.((f) => f.id === id);
-      const altitudeFeet = fighter?.altitudeFeet ?? fighter?.altitude ?? 0;
-
-      enqueueMoveAnimation(
-        id,
-        { x: newPos.x, y: newPos.y, altitudeFeet },
-        getMoveDurationMs(distanceFeet)
-      );
-    }
-  }, [positions, enqueueMoveAnimation, getMoveDurationMs]);
 
   // Keep latest fighters/turnIndex snapshots available to async guardrails without relying on stale closures.
   const fightersRef = useRef(fighters);
@@ -2251,21 +2002,16 @@ export default function CombatPage({ characters = [] }) {
     // This just switches the UI mode and sets up the terrain
   }, [mapDefinition]);
   
-  const { isOpen, onOpen, onClose } = useDisclosure();
-  const { isOpen: isPartyOpen, onOpen: onPartyOpen, onClose: onPartyClose } = useDisclosure();
-  
   // Sync showPartySelector with isPartyOpen for compatibility
   useEffect(() => {
     setShowPartySelector(isPartyOpen);
   }, [isPartyOpen]);
-  const { isOpen: isCombatChoicesOpen, onOpen: openCombatChoices, onClose: closeCombatChoices } = useDisclosure();
-  const { isOpen: isMobileDrawerOpen, onOpen: onMobileDrawerOpen, onClose: onMobileDrawerClose } = useDisclosure();
-  
+
   // Sync showCombatChoices with isCombatChoicesOpen for compatibility
   useEffect(() => {
     setShowCombatChoices(isCombatChoicesOpen);
   }, [isCombatChoicesOpen]);
-  
+
   // Sync isCombatChoicesOpen with showCombatChoices when showCombatChoices changes externally
   useEffect(() => {
     if (showCombatChoices && !isCombatChoicesOpen) {
@@ -2400,61 +2146,52 @@ export default function CombatPage({ characters = [] }) {
     [setRenderPositions, markActionBusy]
   );
 
-  const applySuppressionToFighter = useCallback(
-    (fighterId, payload) => {
-      if (!fighterId || !payload) return;
-      const now = performance.now();
-      const severityRank = { LOW: 1, MED: 2, HIGH: 3 };
+  useEffect(() => {
+    if (!positions || Object.keys(positions).length === 0) return;
 
-      setFighters((prev) => {
-        let changed = false;
-        const next = prev.map((f) => {
-          if (f.id !== fighterId) return f;
-          if (!canFighterAct(f)) return f;
+    if (!prevPositionsRef.current) {
+      prevPositionsRef.current = positions;
+      return;
+    }
 
-          const existing = f.suppression;
-          const existingExpired =
-            existing?.expiresAtMs && existing.expiresAtMs <= now;
-          const existingRank = severityRank[existing?.severity] || 0;
-          const newRank = severityRank[payload?.severity] || 1;
-          const existingImpact = existing?.impactAtMs ?? Infinity;
-          const newImpact = payload?.impactAtMs ?? Infinity;
+    const prev = prevPositionsRef.current;
+    prevPositionsRef.current = positions;
 
-          let nextSuppression;
-          if (!existing || existingExpired) {
-            nextSuppression = { ...payload, isSuppressed: true };
-          } else if (newRank > existingRank || newImpact < existingImpact) {
-            nextSuppression = {
-              ...payload,
-              isSuppressed: true,
-              visibleThreat:
-                existing.visibleThreat || payload.visibleThreat,
-              revealedAtMs:
-                payload.revealedAtMs ?? existing.revealedAtMs,
-            };
-          } else {
-            nextSuppression = {
-              ...existing,
-              isSuppressed: true,
-              visibleThreat:
-                existing.visibleThreat || payload.visibleThreat,
-              revealedAtMs:
-                existing.revealedAtMs ?? payload.revealedAtMs,
-            };
-          }
+    for (const [id, newPos] of Object.entries(positions)) {
+      const oldPos = prev[id];
+      if (!oldPos) continue;
 
-          if (JSON.stringify(existing) !== JSON.stringify(nextSuppression)) {
-            changed = true;
-            return { ...f, suppression: nextSuppression };
-          }
-          return f;
-        });
+      const moved = oldPos.x !== newPos.x || oldPos.y !== newPos.y;
+      if (!moved) continue;
 
-        return changed ? next : prev;
-      });
-    },
-    [canFighterAct, setFighters]
-  );
+      if (suppressNextAnimationRef.current.has(id)) {
+        suppressNextAnimationRef.current.delete(id);
+        setRenderPositions((rp) => ({
+          ...rp,
+          [id]: {
+            ...(rp[id] || {}),
+            x: newPos.x,
+            y: newPos.y,
+          },
+        }));
+        continue;
+      }
+
+      const dx = newPos.x - oldPos.x;
+      const dy = newPos.y - oldPos.y;
+      const approxCells = Math.max(Math.abs(dx), Math.abs(dy));
+      const distanceFeet = approxCells * 5;
+
+      const fighter = fightersRef.current?.find?.((f) => f.id === id);
+      const altitudeFeet = fighter?.altitudeFeet ?? fighter?.altitude ?? 0;
+
+      enqueueMoveAnimation(
+        id,
+        { x: newPos.x, y: newPos.y, altitudeFeet },
+        getMoveDurationMs(distanceFeet)
+      );
+    }
+  }, [positions, enqueueMoveAnimation, getMoveDurationMs]);
 
   const getProjectileKindAndSpeed = useCallback((attackData) => {
     const weaponName = String(attackData?.name || "").toLowerCase();
@@ -2546,9 +2283,13 @@ export default function CombatPage({ characters = [] }) {
         for (const target of candidates) {
           const targetAR = target.AR || target.ar || 10;
           if (wouldHitTarget(snapshot, targetAR)) {
+            const attackFn = attackRef.current;
+            if (!attackFn) {
+              return false;
+            }
             suppressEndTurnRef.current = true;
             try {
-              attack(shooter, target.id, {
+              attackFn(shooter, target.id, {
                 attackDataOverride: weaponData,
                 preRoll: snapshot,
                 suppressEndTurn: true,
@@ -2623,7 +2364,7 @@ export default function CombatPage({ characters = [] }) {
         );
       }
     },
-    [addLog, attack]
+    [addLog]
   );
 
   const handleTimelineEvent = useCallback(
@@ -4221,6 +3962,271 @@ useEffect(() => {
     [clearScheduledTurn, getActionDelay, endTurn, combatActive, isActionBusy]
   );
 
+  const confirmOverwatchHex = useCallback(
+    (hex) => {
+      const shooter = fightersRef.current?.[turnIndexRef.current];
+      if (!shooter || !hex) return;
+
+      const weapon = selectedAttackWeapon;
+      if (!weapon) {
+        addLog(`${shooter.name} wants to overwatch but has no weapon selected!`, "error");
+        return;
+      }
+
+      const isUsingTwoHanded = weapon.twoHanded || isTwoHandedWeapon(weapon);
+      const weaponDamage = getWeaponDamage(weapon, isUsingTwoHanded, shooter);
+      const attackSnapshot = {
+        name: weapon.name,
+        damage: weaponDamage,
+        type:
+          weapon?.range != null ||
+          ["bow", "crossbow", "sling"].includes((weapon?.category || "").toLowerCase())
+            ? "ranged"
+            : weapon.type,
+        range: weapon?.range,
+        ammunition: weapon?.ammunition,
+        weaponType: weapon?.weaponType,
+        category: weapon?.category,
+      };
+      const damageBonus = shooter.bonuses?.damage || 0;
+      const safeDamageBonus =
+        typeof damageBonus === "number" && !isNaN(damageBonus) ? damageBonus : 0;
+      const parseDamageFormula = (damageStr) => {
+        if (!damageStr || typeof damageStr !== "string") {
+          return { baseFormula: "1d6", existingBonus: 0 };
+        }
+
+        const bonusMatch = damageStr.match(/^(\d+d\d+)\+(\d+)$/);
+        if (bonusMatch) {
+          return {
+            baseFormula: bonusMatch[1],
+            existingBonus: parseInt(bonusMatch[2], 10),
+          };
+        }
+
+        const diceMatch = damageStr.match(/^(\d+d\d+)$/);
+        if (diceMatch) {
+          return {
+            baseFormula: diceMatch[1],
+            existingBonus: 0,
+          };
+        }
+
+        return { baseFormula: damageStr, existingBonus: 0 };
+      };
+      let damageRollResult;
+      let damageFormulaSnapshot = "";
+      let dmgStr = weaponDamage;
+      if (typeof dmgStr === "string" && dmgStr.includes("-")) {
+        dmgStr = dmgStr.replace("-", "d");
+      }
+      if (typeof dmgStr === "string" && dmgStr.includes("d")) {
+        const parsed = parseDamageFormula(dmgStr);
+        const totalBonus = parsed.existingBonus + safeDamageBonus;
+        damageFormulaSnapshot =
+          totalBonus >= 0 ? `${parsed.baseFormula}+${totalBonus}` : parsed.baseFormula;
+        const damageBonusParam = totalBonus >= 0 ? 0 : totalBonus;
+        damageRollResult = CryptoSecureDice.parseAndRoll(
+          damageFormulaSnapshot,
+          damageBonusParam
+        );
+      } else if (dmgStr != null && !isNaN(dmgStr)) {
+        const numericDamage = parseInt(dmgStr, 10);
+        const diceCount = Math.max(1, Math.floor(numericDamage / 3));
+        const diceSize = numericDamage <= 3 ? 4 : 6;
+        const baseFormula = `${diceCount}d${diceSize}`;
+        damageFormulaSnapshot =
+          safeDamageBonus >= 0 ? `${baseFormula}+${safeDamageBonus}` : baseFormula;
+        const damageBonusParam = safeDamageBonus >= 0 ? 0 : safeDamageBonus;
+        damageRollResult = CryptoSecureDice.parseAndRoll(
+          damageFormulaSnapshot,
+          damageBonusParam
+        );
+      } else {
+        damageFormulaSnapshot = safeDamageBonus >= 0 ? `1d6+${safeDamageBonus}` : "1d6";
+        const damageBonusParam = safeDamageBonus >= 0 ? 0 : safeDamageBonus;
+        damageRollResult = CryptoSecureDice.parseAndRoll(
+          damageFormulaSnapshot,
+          damageBonusParam
+        );
+      }
+
+      attackSnapshot.damageTotal = damageRollResult?.totalWithBonus ?? 0;
+      attackSnapshot.damageDiceRolls = damageRollResult?.diceRolls || [];
+      attackSnapshot.damageFormula = damageFormulaSnapshot;
+
+      const baseStrikeBonus = getCombatBonus(shooter, "strike", attackSnapshot) || 0;
+      const tempBonus =
+        (tempModifiers[shooter.id]?.strikeBonus || 0) +
+        (tempModifiers[shooter.id]?.nextMeleeStrike || 0);
+      const strikeBonus = baseStrikeBonus + tempBonus;
+
+      if (tempModifiers[shooter.id]?.nextMeleeStrike) {
+        const updatedTempMods = { ...tempModifiers };
+        delete updatedTempMods[shooter.id].nextMeleeStrike;
+        if (Object.keys(updatedTempMods[shooter.id]).length === 0) {
+          delete updatedTempMods[shooter.id];
+        }
+        setTempModifiers(updatedTempMods);
+      }
+
+      const diceFormula = strikeBonus >= 0 ? `1d20+${strikeBonus}` : `1d20`;
+      const bonus = strikeBonus >= 0 ? 0 : strikeBonus;
+      const rollResult = CryptoSecureDice.parseAndRoll(diceFormula, bonus);
+      let attackRoll = rollResult.totalWithBonus;
+
+      const fatiguedShooter = applyFatiguePenalties(shooter);
+      const fatiguePenalty = fatiguedShooter.bonuses?.strike || 0;
+      if (fatiguePenalty < 0) {
+        attackRoll += fatiguePenalty;
+      }
+
+      const attackDiceRoll = rollResult.diceRolls?.[0]?.result || attackRoll - strikeBonus;
+      const isCriticalHit = attackDiceRoll === 20;
+      const isCriticalMiss = attackDiceRoll === 1;
+
+      attackSnapshot.attackRoll = attackRoll;
+      attackSnapshot.attackDiceRoll = attackDiceRoll;
+      attackSnapshot.isCriticalHit = isCriticalHit;
+      attackSnapshot.isCriticalMiss = isCriticalMiss;
+      attackSnapshot.strikeBonus = strikeBonus;
+      attackSnapshot.scatterSeed = `${shooter.id}|${attackSnapshot.name}|${attackDiceRoll}|${attackRoll}`;
+      addLog(
+        `🏹 ${shooter.name} fires overwatch (d20=${attackDiceRoll}, total=${attackRoll}, dmg=${attackSnapshot.damageTotal}).`,
+        "info"
+      );
+
+      const projectileResult = spawnProjectileToHex({
+        attackerId: shooter.id,
+        targetHex: hex,
+        attackData: attackSnapshot,
+      });
+
+      if (!projectileResult) {
+        addLog(`⚠️ ${shooter.name} could not fire overwatch.`, "error");
+        return;
+      }
+
+      const impactAtMs = projectileResult.impactAtMs;
+      const isNoticeable = projectileResult.durationMs >= 450;
+      if (isNoticeable) {
+        const isHiddenShooter =
+          shooter?.isHidden ||
+          shooter?.statusEffects?.includes("HIDDEN") ||
+          shooter?.statusEffects?.includes("INVISIBLE");
+        const visibleThreat = !isHiddenShooter;
+        const revealLeadMs = 250;
+
+        const occupantsNow = Object.entries(positionsRef.current || {})
+          .filter(([id, pos]) => id !== shooter.id && pos.x === hex.x && pos.y === hex.y)
+          .map(([id]) => id);
+
+        occupantsNow.forEach((occId) => {
+          applySuppressionToFighter(occId, {
+            sourceId: shooter.id,
+            kind: "COVERFIRE_HEX",
+            dangerHexes: [{ x: hex.x, y: hex.y }],
+            lane: null,
+            startedAtMs: performance.now(),
+            impactAtMs,
+            expiresAtMs: impactAtMs + 500,
+            visibleThreat,
+            revealedAtMs: visibleThreat ? null : impactAtMs - revealLeadMs,
+            severity: "MED",
+          });
+        });
+      }
+
+      // spend action immediately
+      setFighters((prev) =>
+        prev.map((f) =>
+          f.id === shooter.id
+            ? { ...f, remainingAttacks: Math.max(0, (f.remainingAttacks || 0) - 1) }
+            : f
+        )
+      );
+
+      const shotId = `ow_${shooter.id}_${hex.x}_${hex.y}_${Math.round(impactAtMs)}`;
+
+      setOverwatchShots((prev) => [
+        ...prev,
+        {
+          id: shotId,
+          shooterId: shooter.id,
+          firedAtMs: performance.now(),
+          impactAtMs,
+          from: { ...positionsRef.current?.[shooter.id] },
+          to: { x: hex.x, y: hex.y },
+          attackSnapshot,
+          projectileId: null,
+          visible: !(shooter.isHidden || shooter.statusEffects?.includes("HIDDEN")),
+        },
+      ]);
+
+      scheduleTimelineEvent({
+        id: `impact_${shotId}`,
+        type: "PROJECTILE_IMPACT",
+        timeMs: impactAtMs,
+        data: {
+          shooterId: shooter.id,
+          targetHex: { ...hex },
+          weaponData: attackSnapshot,
+          impactAtMs,
+          attackSnapshot: {
+            ...attackSnapshot,
+            scatterSeed: `${attackSnapshot.scatterSeed}|${Math.round(impactAtMs)}`,
+          },
+        },
+      });
+
+      setOverwatchHexes((prev) => [
+        ...prev,
+        {
+          x: hex.x,
+          y: hex.y,
+          expiresAtMs: impactAtMs + 200,
+          shooterId: shooter.id,
+          kind: projectileResult.kind,
+        },
+      ]);
+
+      addLog(`🏹 ${shooter.name} fires overwatch at (${hex.x}, ${hex.y}).`, "info");
+      setSelectedAction(null);
+      setOverwatchTargetHex(null);
+      setTargetingMode(null);
+      setShowCombatChoices(false);
+      closeCombatChoices();
+      scheduleEndTurn(500);
+    },
+    [
+      addLog,
+      applyFatiguePenalties,
+      applySuppressionToFighter,
+      closeCombatChoices,
+      getCombatBonus,
+      getWeaponDamage,
+      isTwoHandedWeapon,
+      scheduleEndTurn,
+      scheduleTimelineEvent,
+      selectedAttackWeapon,
+      spawnProjectileToHex,
+      tempModifiers,
+      setTempModifiers,
+    ]
+  );
+
+  const handleSelectedHexChange = useCallback(
+    (hex) => {
+      if (targetingMode === "OVERWATCH_HEX" && hex) {
+        setOverwatchTargetHex(hex);
+        confirmOverwatchHex(hex);
+        return;
+      }
+      setSelectedHex(hex);
+    },
+    [targetingMode, confirmOverwatchHex]
+  );
+
   // Helper function for player flight movement
   const handlePlayerFlightMove = useCallback(async (fighter, targetHex, oldPos, selectedMove) => {
     if (!fighter) return;
@@ -5129,6 +5135,24 @@ useEffect(() => {
       }
     }
 
+    // Classify attack type early so it stays in scope for later combat resolution.
+    const weaponName = attackData?.name || "";
+    const isRangedWeapon =
+      weaponName.toLowerCase().includes("bow") ||
+      weaponName.toLowerCase().includes("crossbow") ||
+      weaponName.toLowerCase().includes("sling") ||
+      attackData?.type === "ranged" ||
+      (attackData?.range && attackData.range > 10);
+    const ammoType = attackData?.ammunition;
+    const requiresAmmo = Boolean(ammoType && ammoType !== "self" && isRangedWeapon);
+    const isProjectileAttack =
+      isRangedWeapon ||
+      attackData?.type === "ranged" ||
+      attackData?.rangeCategory === "ranged" ||
+      attackData?.isRanged === true ||
+      attackData?.weaponType === "thrown" ||
+      attackData?.category === "thrown";
+
     // Check range and line of sight for attacks
     const livePositions =
       positionsRef.current && Object.keys(positionsRef.current).length > 0
@@ -5290,24 +5314,6 @@ useEffect(() => {
       
       // Ammunition for ranged weapons is strictly inventory-based.
       // Bows require arrows, crossbows require bolts, slings require rocks/stones.
-      const weaponName = attackData?.name || "";
-      const isRangedWeapon =
-        weaponName.toLowerCase().includes("bow") ||
-        weaponName.toLowerCase().includes("crossbow") ||
-        weaponName.toLowerCase().includes("sling") ||
-        attackData?.type === "ranged" ||
-        (attackData?.range && attackData.range > 10);
-
-      const ammoType = attackData?.ammunition;
-      const requiresAmmo = Boolean(ammoType && ammoType !== "self" && isRangedWeapon);
-      const isProjectileAttack =
-        isRangedWeapon ||
-        attackData?.type === "ranged" ||
-        attackData?.rangeCategory === "ranged" ||
-        attackData?.isRanged === true ||
-        attackData?.weaponType === "thrown" ||
-        attackData?.category === "thrown";
-
       if (requiresAmmo) {
         // IMPORTANT: apply ammo decrement into the same `updated` array that will later be committed.
         // Otherwise later `setFighters(updated)` calls can overwrite the decrement (UI shows old ammo).
