@@ -7,6 +7,7 @@ import React, {
 } from "react";
 
 import { Box, Text } from "@chakra-ui/react";
+import PropTypes from "prop-types";
 
 const HexArena3D = forwardRef(function HexArena3D(
   {
@@ -113,5 +114,21 @@ const HexArena3D = forwardRef(function HexArena3D(
     </Box>
   );
 });
+
+HexArena3D.propTypes = {
+  mapDefinition: PropTypes.any,
+  fighters: PropTypes.array,
+  positions: PropTypes.object,
+  renderPositions: PropTypes.object,
+  projectiles: PropTypes.array,
+  dangerHexes: PropTypes.array,
+  terrain: PropTypes.object,
+  mode: PropTypes.string,
+  visible: PropTypes.bool,
+};
+
+HexArena3D.defaultProps = {
+  visible: false,
+};
 
 export default HexArena3D;

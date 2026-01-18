@@ -14,14 +14,38 @@
  * @returns {number} Distance in grid units
  */
 export function getDistanceBetween(pos1, pos2, gridType = "hex") {
-  // TODO: Calculate distance based on grid type
   if (!pos1 || !pos2) return Infinity;
   
   if (gridType === "hex") {
-    // Hex grid distance calculation
-    const dq = pos2.q - pos1.q;
-    const dr = pos2.r - pos1.r;
-    return (Math.abs(dq) + Math.abs(dr) + Math.abs(dq + dr)) / 2;
+    // Support BOTH axial {q,r} and offset {x,y} (odd-r) coordinates.
+    if (
+      pos1.q !== undefined && pos1.r !== undefined &&
+      pos2.q !== undefined && pos2.r !== undefined
+    ) {
+      const dq = pos2.q - pos1.q;
+      const dr = pos2.r - pos1.r;
+      return (Math.abs(dq) + Math.abs(dr) + Math.abs(dq + dr)) / 2;
+    }
+
+    // Offset {x,y} -> cube distance (odd-r horizontal layout)
+    if (
+      pos1.x !== undefined && pos1.y !== undefined &&
+      pos2.x !== undefined && pos2.y !== undefined
+    ) {
+      const offsetToCube = (col, row) => {
+        const x = col - (row - (row & 1)) / 2;
+        const z = row;
+        const y = -x - z;
+        return { x, y, z };
+      };
+      const a = offsetToCube(pos1.x, pos1.y);
+      const b = offsetToCube(pos2.x, pos2.y);
+      return (
+        (Math.abs(a.x - b.x) + Math.abs(a.y - b.y) + Math.abs(a.z - b.z)) / 2
+      );
+    }
+
+    return Infinity;
   } else {
     // Square grid distance (Manhattan or Euclidean)
     const dx = pos2.x - pos1.x;

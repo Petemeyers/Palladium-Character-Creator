@@ -15,13 +15,10 @@
  * - Charge attacks: +2 strike, double damage, lose next attack
  */
 
-import { calculateDistance } from "../data/movementRules.js";
-import { MOVEMENT_RATES, ENGAGEMENT_RANGES } from "../data/movementRules.js";
+import { calculateDistance, ENGAGEMENT_RANGES } from "../data/movementRules.js";
 import { getDynamicWidth, isTightTerrain } from "./environmentMetrics.js";
-import { canUseWeapon } from "./combatEnvironmentLogic.js";
 import {
   isWithinWhipReach,
-  validateFlexibleWeaponReach,
 } from "./whipReachSystem.js";
 import {
   canFly,
