@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import {
   buildHexagon3DFromGrid,
   buildRectangular3DMap,
@@ -502,9 +503,19 @@ export function initHexArena(containerElement) {
   let characterMeshes = new Map(); // Map of fighter ID to character mesh/group
   let projectileGroup = null;
   let projectileMeshes = new Map(); // Map of projectile ID to mesh
+  const gltfLoader = new GLTFLoader();
+  let arrowTemplate = null; // THREE.Group
+  let arrowTemplatePromise = null;
   let dangerRingGroup = null;
   let dangerRingMeshes = new Map(); // key: "x,y" -> mesh
   let disposed = false;
+  let timeScale = 1;
+
+  function setTimeScale(value) {
+    const next = Number(value);
+    if (!Number.isFinite(next)) return;
+    timeScale = Math.max(0.05, Math.min(5, next));
+  }
 
   // Initialize character group
   characterGroup = new THREE.Group();
@@ -569,7 +580,8 @@ export function initHexArena(containerElement) {
       const data = mesh.userData?.projectile;
       if (!data) return;
       const durationMs = Math.max(1, data.durationMs || 1);
-      const tRaw = (now - (data.firedAtMs || now)) / durationMs;
+      const elapsed = (now - (data.firedAtMs || now)) * timeScale;
+      const tRaw = elapsed / durationMs;
       const t = Math.min(1, Math.max(0, tRaw));
 
       const fromWorld = worldFromGrid(data.from);
@@ -588,12 +600,16 @@ export function initHexArena(containerElement) {
 
       if (t >= 1) {
         projectileGroup.remove(mesh);
-        mesh.geometry?.dispose?.();
-        if (Array.isArray(mesh.material)) {
-          mesh.material.forEach((m) => m?.dispose?.());
-        } else {
-          mesh.material?.dispose?.();
-        }
+        mesh.traverse?.((child) => {
+          if (child.geometry) child.geometry.dispose();
+          if (child.material) {
+            if (Array.isArray(child.material)) {
+              child.material.forEach((m) => m.dispose());
+            } else {
+              child.material.dispose();
+            }
+          }
+        });
         projectileMeshes.delete(data.id);
       }
     });
@@ -1314,10 +1330,48 @@ export function initHexArena(containerElement) {
                 z: mesh.position.z.toFixed(2),
               },
             });
+          }
+        }
+      });
+    }
 
     syncProjectiles(projectiles);
     syncDangerRings(dangerHexes);
+
+    // Remove character meshes for fighters that no longer exist or have no position
+    characterMeshes.forEach((mesh, fighterId) => {
+      if (!currentFighterIds.has(fighterId) || !positions[fighterId]) {
+        characterGroup.remove(mesh);
+        // Dispose of mesh resources
+        mesh.traverse((child) => {
+          if (child.geometry) child.geometry.dispose();
+          if (child.material) {
+            if (Array.isArray(child.material)) {
+              child.material.forEach((m) => m.dispose());
+            } else {
+              child.material.dispose();
+            }
           }
+        });
+        characterMeshes.delete(fighterId);
+      }
+    });
+
+    // Log footprint information for large creatures
+    occupiedHexesMap.forEach((hexes, fighterId) => {
+      if (hexes.length > 1) {
+        const fighter = fighters.find((f) => f.id === fighterId);
+        const name = fighter?.name || fighterId;
+        console.log(
+          `[HexArena] ${name} occupies ${hexes.length} hexes (radius ${
+            fighter?.footprint?.radiusHex ?? 0
+          })`
+        );
+      }
+    });
+
+    console.log(`[HexArena] Synced ${characterMeshes.size} characters`);
+  }
 
   function worldFromGrid(pos) {
     if (!pos) return null;
@@ -1350,6 +1404,42 @@ export function initHexArena(containerElement) {
     mesh.position.y = 0.03;
     mesh.renderOrder = 10;
     return mesh;
+  }
+
+  function ensureArrowTemplate() {
+    if (arrowTemplate) return Promise.resolve(arrowTemplate);
+    if (arrowTemplatePromise) return arrowTemplatePromise;
+
+    arrowTemplatePromise = new Promise((resolve, reject) => {
+      gltfLoader.load(
+        "/assets/models/arrow.glb",
+        (gltf) => {
+          const root = gltf.scene || gltf.scenes?.[0];
+          if (!root) {
+            reject(new Error("arrow.glb loaded but scene was empty"));
+            return;
+          }
+
+          arrowTemplate = root;
+          arrowTemplate.name = "arrowTemplate";
+          arrowTemplate.scale.setScalar(0.25);
+
+          arrowTemplate.traverse((obj) => {
+            if (obj.isMesh) {
+              obj.castShadow = true;
+              obj.receiveShadow = false;
+            }
+          });
+
+          console.log("[HexArena] arrow.glb loaded");
+          resolve(arrowTemplate);
+        },
+        undefined,
+        reject
+      );
+    });
+
+    return arrowTemplatePromise;
   }
 
   function syncDangerRings(dangerHexes = []) {
@@ -1389,7 +1479,64 @@ export function initHexArena(containerElement) {
   }
 
   function createProjectileMesh(projectile) {
-    const kind = projectile.kind || "generic";
+    const kindRaw = String(projectile.kind || "");
+    const kind = kindRaw.toLowerCase();
+    const isArrowKind =
+      kind === "arrow" ||
+      kind === "bolt" ||
+      kind.includes("arrow") ||
+      kind.includes("bolt");
+
+    // ALWAYS VISIBLE fallback first
+    if (isArrowKind) {
+      const group = new THREE.Group();
+      group.name = `proj_${kindRaw}`;
+      group.userData.projectile = projectile;
+
+      // Visible fallback right away (so first-shot timing never hides it)
+      const fallbackGeom = new THREE.CylinderGeometry(0.03, 0.03, 1.0, 8);
+      const fallbackMat = new THREE.MeshStandardMaterial({ color: 0xff00ff });
+      const fallback = new THREE.Mesh(fallbackGeom, fallbackMat);
+      fallback.castShadow = true;
+      fallback.frustumCulled = false;
+      group.add(fallback);
+
+      const attachClone = (template) => {
+        // remove fallback
+        group.remove(fallback);
+        fallbackGeom.dispose();
+        fallbackMat.dispose();
+
+        const clone = template.clone(true);
+        clone.name = "arrowGLB";
+        // Align +Z-forward GLB to +Y-forward, then flip to match travel direction.
+        clone.rotation.x = Math.PI / 2;
+        clone.rotation.z = Math.PI;
+        clone.traverse((obj) => {
+          if (obj.isMesh) {
+            obj.castShadow = true;
+            obj.receiveShadow = false;
+            obj.frustumCulled = false;
+          }
+        });
+
+        // TEMP: make it huge so you can’t miss it
+        clone.scale.setScalar(2);
+
+        group.add(clone);
+      };
+
+      if (arrowTemplate) {
+        attachClone(arrowTemplate);
+      } else {
+        ensureArrowTemplate()
+          .then(attachClone)
+          .catch((e) => console.warn("[HexArena] arrow load failed:", e));
+      }
+
+      return group;
+    }
+
     let geometry;
     let material;
     if (kind === "stone") {
@@ -1407,6 +1554,7 @@ export function initHexArena(containerElement) {
   }
 
   function syncProjectiles(projectiles) {
+    console.log("[HexArena] syncProjectiles count:", (projectiles || []).length, projectiles?.[0]);
     const activeIds = new Set();
     (projectiles || []).forEach((projectile) => {
       if (!projectile?.id) return;
@@ -1425,26 +1573,7 @@ export function initHexArena(containerElement) {
     projectileMeshes.forEach((mesh, id) => {
       if (!activeIds.has(id)) {
         projectileGroup.remove(mesh);
-        mesh.geometry?.dispose?.();
-        if (Array.isArray(mesh.material)) {
-          mesh.material.forEach((m) => m?.dispose?.());
-        } else {
-          mesh.material?.dispose?.();
-        }
-        projectileMeshes.delete(id);
-      }
-    });
-  }
-        }
-      });
-    }
-
-    // Remove character meshes for fighters that no longer exist or have no position
-    characterMeshes.forEach((mesh, fighterId) => {
-      if (!currentFighterIds.has(fighterId) || !positions[fighterId]) {
-        characterGroup.remove(mesh);
-        // Dispose of mesh resources
-        mesh.traverse((child) => {
+        mesh.traverse?.((child) => {
           if (child.geometry) child.geometry.dispose();
           if (child.material) {
             if (Array.isArray(child.material)) {
@@ -1454,24 +1583,9 @@ export function initHexArena(containerElement) {
             }
           }
         });
-        characterMeshes.delete(fighterId);
+        projectileMeshes.delete(id);
       }
     });
-
-    // Log footprint information for large creatures
-    occupiedHexesMap.forEach((hexes, fighterId) => {
-      if (hexes.length > 1) {
-        const fighter = fighters.find((f) => f.id === fighterId);
-        const name = fighter?.name || fighterId;
-        console.log(
-          `[HexArena] ${name} occupies ${hexes.length} hexes (radius ${
-            fighter?.footprint?.radiusHex ?? 0
-          })`
-        );
-      }
-    });
-
-    console.log(`[HexArena] Synced ${characterMeshes.size} characters`);
   }
 
   // Store occupied hexes map in arena API for pathfinding systems
@@ -1559,6 +1673,7 @@ export function initHexArena(containerElement) {
     syncMapEditorState,
     syncCombatState,
     dispose,
+    setTimeScale,
     getOccupiedHexesForFighter,
     getOccupiedHexes, // Export for use in pathfinding/blocking logic
     getScaleForFootprint, // Export for use elsewhere if needed

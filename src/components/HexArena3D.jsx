@@ -37,6 +37,9 @@ const HexArena3D = forwardRef(function HexArena3D(
     rebuildEditor: (terrainDef) => {
       arenaRef.current?.syncMapEditorState?.(terrainDef);
     },
+    setTimeScale: (value) => {
+      arenaRef.current?.setTimeScale?.(value);
+    },
   }));
 
   // Create arena ONCE

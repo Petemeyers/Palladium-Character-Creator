@@ -517,8 +517,17 @@ export default function CombatPage({ characters = [] }) {
   const [overwatchHexes, setOverwatchHexes] = useState([]); // Render-only overwatch danger hexes
   const [overwatchShots, setOverwatchShots] = useState([]); // Render-only overwatch shots
   const [combatTerrain, setCombatTerrain] = useState(null); // Store terrain data for combat
+  const [timeScale, setTimeScale] = useState(1);
+  const timeScaleRef = useRef(1);
+  const gameClockRef = useRef({
+    nowMs: 0,
+    lastRealMs: performance.now(),
+  });
   // Ammo is now inventory-based - computed from fighters' inventory
   const ammoCount = useMemo(() => initializeAmmo(fighters), [fighters]); // For UI/trackers
+  useEffect(() => {
+    timeScaleRef.current = timeScale;
+  }, [timeScale]);
   const formatAmmoDisplay = (fighter) => {
     if (!fighter) return "—";
     const fighterId = fighter.id || fighter._id;
@@ -587,6 +596,13 @@ export default function CombatPage({ characters = [] }) {
   const logFlushTimerRef = useRef(null);
   const LOG_STEP_MS = 500;
 
+  const scaleDelayMs = useCallback((value) => {
+    const raw = Number(value);
+    if (!Number.isFinite(raw)) return value;
+    const scale = Math.max(0.05, Number(timeScaleRef.current) || 1);
+    return raw / scale;
+  }, []);
+
   useEffect(() => {
     return () => {
       if (logFlushTimerRef.current) {
@@ -629,6 +645,7 @@ export default function CombatPage({ characters = [] }) {
     };
     logQueueRef.current.push(logEntry);
     if (!logFlushTimerRef.current) {
+      const stepMs = Math.max(30, scaleDelayMs(LOG_STEP_MS));
       logFlushTimerRef.current = setInterval(() => {
         const next = logQueueRef.current.shift();
         if (next) {
@@ -638,9 +655,9 @@ export default function CombatPage({ characters = [] }) {
           clearInterval(logFlushTimerRef.current);
           logFlushTimerRef.current = null;
         }
-      }, LOG_STEP_MS);
+      }, stepMs);
     }
-  }, [generateCryptoId]);
+  }, [generateCryptoId, scaleDelayMs]);
 
   // Helper to normalize fighter IDs - ensures both id and _id exist and point to the same value
   // This provides backwards compatibility for code that uses either id or _id
@@ -1912,6 +1929,9 @@ export default function CombatPage({ characters = [] }) {
   const [mode, setMode] = useState("MAP_EDITOR"); // "MAP_EDITOR" | "COMBAT"
   const [mapDefinition, setMapDefinition] = useState(null); // Map definition for editor mode
   const arena3DRef = useRef(null);
+  useEffect(() => {
+    arena3DRef.current?.setTimeScale?.(timeScale);
+  }, [timeScale]);
   // Editor paint selection (start simple)
   const [selectedTerrainType, setSelectedTerrainType] = useState("grass");
   // Incremental 3D sync queue
@@ -2322,15 +2342,19 @@ export default function CombatPage({ characters = [] }) {
     [getActionDelay]
   );
 
-  const markActionBusy = useCallback((durationMs) => {
-    if (!durationMs || durationMs <= 0) return;
-    const now = performance.now();
-    actionClockRef.current.busy = true;
-    actionClockRef.current.endsAtMs = Math.max(
-      actionClockRef.current.endsAtMs || 0,
-      now + durationMs
-    );
-  }, []);
+  const markActionBusy = useCallback(
+    (durationMs) => {
+      if (!durationMs || durationMs <= 0) return;
+      const scaledDurationMs = scaleDelayMs(durationMs);
+      const now = performance.now();
+      actionClockRef.current.busy = true;
+      actionClockRef.current.endsAtMs = Math.max(
+        actionClockRef.current.endsAtMs || 0,
+        now + scaledDurationMs
+      );
+    },
+    [scaleDelayMs]
+  );
 
   const isActionBusy = useCallback(() => {
     if (!actionClockRef.current.busy) return false;
@@ -2350,6 +2374,7 @@ export default function CombatPage({ characters = [] }) {
       const easeInOut = (t) =>
         t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
 
+      const scaledDurationMs = scaleDelayMs(durationMs);
       const startMs = performance.now();
 
       setRenderPositions((prev) => {
@@ -2372,7 +2397,7 @@ export default function CombatPage({ characters = [] }) {
 
       const tick = () => {
         const now = performance.now();
-        const tRaw = (now - startMs) / durationMs;
+        const tRaw = (now - startMs) / scaledDurationMs;
         const t = Math.min(1, Math.max(0, tRaw));
         const k = easeInOut(t);
 
@@ -2397,7 +2422,7 @@ export default function CombatPage({ characters = [] }) {
 
       requestAnimationFrame(tick);
     },
-    [setRenderPositions, markActionBusy]
+    [setRenderPositions, markActionBusy, scaleDelayMs]
   );
 
   useEffect(() => {
@@ -2484,7 +2509,7 @@ export default function CombatPage({ characters = [] }) {
   }, []);
 
   const popDueTimelineEvents = useCallback(() => {
-    const now = performance.now();
+    const now = gameClockRef.current.nowMs;
     const due = [];
     const rest = [];
     timelineRef.current.events.forEach((e) => {
@@ -2607,6 +2632,11 @@ export default function CombatPage({ characters = [] }) {
 
   useEffect(() => {
     const intervalId = setInterval(() => {
+      const realNow = performance.now();
+      const realDt = realNow - gameClockRef.current.lastRealMs;
+      gameClockRef.current.lastRealMs = realNow;
+      gameClockRef.current.nowMs += realDt * (Number(timeScaleRef.current) || 1);
+
       if (!timelineRef.current.locked) {
         const due = popDueTimelineEvents();
         if (due.length) {
@@ -2614,7 +2644,7 @@ export default function CombatPage({ characters = [] }) {
         }
       }
 
-      const now = performance.now();
+      const now = gameClockRef.current.nowMs;
       setOverwatchHexes((prev) =>
         prev.filter((h) => !h?.expiresAtMs || h.expiresAtMs > now)
       );
@@ -2712,6 +2742,7 @@ export default function CombatPage({ characters = [] }) {
         180,
         Math.min(900, Math.round((distanceFeet / speed) * 1000))
       );
+      const scaledDurationMs = scaleDelayMs(durationMs);
 
       if (cinematicProjectiles) {
         markActionBusy(Math.min(durationMs, 900));
@@ -2723,7 +2754,7 @@ export default function CombatPage({ characters = [] }) {
           attacker?.isHidden ||
           attacker?.statusEffects?.includes("HIDDEN") ||
           attacker?.statusEffects?.includes("INVISIBLE");
-        const impactAtMs = performance.now() + durationMs;
+        const impactAtMs = gameClockRef.current.nowMs + scaledDurationMs;
         const revealLeadMs = 250;
         const visibleThreat = !isHiddenShooter;
 
@@ -2734,7 +2765,7 @@ export default function CombatPage({ characters = [] }) {
           lane: null,
           startedAtMs: performance.now(),
           impactAtMs,
-          expiresAtMs: impactAtMs + 500,
+          expiresAtMs: impactAtMs + scaleDelayMs(500),
           visibleThreat,
           revealedAtMs: visibleThreat ? null : impactAtMs - revealLeadMs,
           severity: kind === "arrow" || kind === "bolt" ? "MED" : "LOW",
@@ -2752,11 +2783,13 @@ export default function CombatPage({ characters = [] }) {
         firedAtMs: performance.now(),
         durationMs,
       };
+      console.log("[spawnProjectile] kind=", projectile.kind, projectile);
+      console.log("[CombatPage] projectile spawned:", projectile);
 
       setProjectiles((prev) => [...prev, projectile]);
 
       // Cleanup after animation completes
-      const cleanupDelay = durationMs + 200;
+      const cleanupDelay = scaledDurationMs + scaleDelayMs(200);
       const timeoutId = setTimeout(() => {
         setProjectiles((prev) => prev.filter((p) => p.id !== projectile.id));
       }, cleanupDelay);
@@ -2768,6 +2801,7 @@ export default function CombatPage({ characters = [] }) {
       markActionBusy,
       applySuppressionToFighter,
       getProjectileKindAndSpeed,
+      scaleDelayMs,
     ]
   );
 
@@ -2795,6 +2829,7 @@ export default function CombatPage({ characters = [] }) {
         180,
         Math.min(900, Math.round((distanceFeet / speed) * 1000))
       );
+      const scaledDurationMs = scaleDelayMs(durationMs);
 
       if (cinematicProjectiles) {
         markActionBusy(Math.min(durationMs, 900));
@@ -2815,15 +2850,20 @@ export default function CombatPage({ characters = [] }) {
 
       setProjectiles((prev) => [...prev, projectile]);
 
-      const cleanupDelay = durationMs + 200;
+      const cleanupDelay = scaledDurationMs + scaleDelayMs(200);
       const timeoutId = setTimeout(() => {
         setProjectiles((prev) => prev.filter((p) => p.id !== projectile.id));
       }, cleanupDelay);
       allTimeoutsRef.current.push(timeoutId);
 
-      return { durationMs, kind, impactAtMs: projectile.firedAtMs + durationMs };
+      const impactAtMs = gameClockRef.current.nowMs + scaledDurationMs;
+      return {
+        durationMs,
+        kind,
+        impactAtMs,
+      };
     },
-    [getProjectileKindAndSpeed, cinematicProjectiles, markActionBusy]
+    [getProjectileKindAndSpeed, cinematicProjectiles, markActionBusy, scaleDelayMs]
   );
 
   const clearScheduledTurn = useCallback(() => {
@@ -4140,7 +4180,9 @@ export default function CombatPage({ characters = [] }) {
         endTurn();
       };
 
-      const delay = typeof delayOverride === "number" ? delayOverride : getActionDelay();
+      const delay =
+        typeof delayOverride === "number" ? delayOverride : getActionDelay();
+      const scaledDelay = scaleDelayMs(delay);
 
       if (delay <= 0) {
         clearScheduledTurn();
@@ -4160,12 +4202,12 @@ export default function CombatPage({ characters = [] }) {
           return;
         }
         tryEndTurn();
-      }, delay);
+      }, scaledDelay);
 
       // ✅ Track this timeout so we can clear it on combat end
       allTimeoutsRef.current.push(turnTimeoutRef.current);
     },
-    [clearScheduledTurn, getActionDelay, endTurn, combatActive, isActionBusy]
+    [clearScheduledTurn, getActionDelay, endTurn, combatActive, isActionBusy, scaleDelayMs]
   );
 
   const confirmOverwatchHex = useCallback(
@@ -4344,11 +4386,11 @@ export default function CombatPage({ characters = [] }) {
             sourceId: shooter.id,
             kind: "COVERFIRE_HEX",
             dangerHexes: [{ x: hex.x, y: hex.y }],
-            startedAtMs: now,
+            startedAtMs: gameClockRef.current.nowMs,
             impactAtMs,
-            expiresAtMs: impactAtMs + 500,
+            expiresAtMs: impactAtMs + scaleDelayMs(500),
             visibleThreat: !isHiddenShooter,
-            revealedAtMs: isHiddenShooter ? impactAtMs - 250 : null,
+            revealedAtMs: isHiddenShooter ? impactAtMs - scaleDelayMs(250) : null,
             severity: "MED",
           });
         }
@@ -4370,7 +4412,7 @@ export default function CombatPage({ characters = [] }) {
         {
           id: shotId,
           shooterId: shooter.id,
-          firedAtMs: performance.now(),
+          firedAtMs: gameClockRef.current.nowMs,
           impactAtMs,
           from: { ...positionsRef.current?.[shooter.id] },
           to: { x: hex.x, y: hex.y },
@@ -4401,7 +4443,7 @@ export default function CombatPage({ characters = [] }) {
         {
           x: hex.x,
           y: hex.y,
-          expiresAtMs: impactAtMs + 200,
+          expiresAtMs: impactAtMs + scaleDelayMs(200),
           shooterId: shooter.id,
           kind: projectileResult.kind,
         },
@@ -4423,6 +4465,7 @@ export default function CombatPage({ characters = [] }) {
       scheduleEndTurn,
       scheduleTimelineEvent,
       selectedAttackWeapon,
+      scaleDelayMs,
       spawnProjectileToHex,
       tempModifiers,
       setTempModifiers,
@@ -17426,6 +17469,28 @@ export default function CombatPage({ characters = [] }) {
                           )}
                         </HStack>
                       </HStack>
+
+                      <Box p={2} borderWidth="1px" borderRadius="md">
+                        <Text fontWeight="bold">⏱ Time</Text>
+                        <HStack spacing={3} align="center">
+                          <Text w="70px">{timeScale.toFixed(2)}×</Text>
+                          <input
+                            type="range"
+                            min="0.05"
+                            max="2"
+                            step="0.05"
+                            value={timeScale}
+                            onChange={(e) => setTimeScale(parseFloat(e.target.value))}
+                            style={{ width: "220px" }}
+                          />
+                          <Button size="sm" onClick={() => setTimeScale(1)}>
+                            Reset
+                          </Button>
+                        </HStack>
+                        <Text fontSize="sm" opacity={0.8}>
+                          0.05× = slow-mo | 1× = normal | 2× = fast
+                        </Text>
+                      </Box>
 
                       {/* Turn Flow */}
                       <Flex direction="column" gap={4} width="100%" height="100%">
