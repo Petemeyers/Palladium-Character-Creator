@@ -9768,7 +9768,25 @@ function CombatPage({ characters = [] }) {
         const merged = impactFighter ? { ...liveFighter, ...impactFighter } : liveFighter;
 
         if (liveFighter.id !== attackerId) {
-          return merged;
+          const liveRemaining = Number(liveFighter.remainingAttacks);
+          const impactRemaining = Number(impactFighter?.remainingAttacks);
+          if (
+            impactFighter &&
+            Number.isFinite(liveRemaining) &&
+            Number.isFinite(impactRemaining) &&
+            impactRemaining > liveRemaining &&
+            (import.meta.env?.DEV || DEBUG_COMBAT)
+          ) {
+            addLog(
+              `🧪 blocked stale remainingAttacks restore for ${liveFighter.name}: ${liveRemaining} -> ${impactRemaining}`,
+              "debug"
+            );
+          }
+
+          return {
+            ...merged,
+            remainingAttacks: liveFighter.remainingAttacks,
+          };
         }
 
         return {
@@ -14645,7 +14663,30 @@ function CombatPage({ characters = [] }) {
               // Always persist the updated target to ensure meta.horrorChecks is saved
               // The function is idempotent, so this is safe even if nothing changed
               commitFighters((prev) =>
-                prev.map((f) => (f.id === target.id ? updatedTarget : f))
+                prev.map((f) => {
+                  if (f.id !== target.id) return f;
+
+                  const merged = { ...f, ...updatedTarget };
+                  const liveRemaining = Number(f.remainingAttacks);
+                  const updatedRemaining = Number(updatedTarget.remainingAttacks);
+
+                  if (Number.isFinite(liveRemaining) && Number.isFinite(updatedRemaining)) {
+                    if (
+                      updatedRemaining > liveRemaining &&
+                      (import.meta.env?.DEV || DEBUG_COMBAT)
+                    ) {
+                      addLog(
+                        `🧪 blocked stale horror remainingAttacks restore for ${f.name}: ${liveRemaining} -> ${updatedRemaining}`,
+                        "debug"
+                      );
+                    }
+                    merged.remainingAttacks = Math.min(liveRemaining, updatedRemaining);
+                  } else {
+                    merged.remainingAttacks = f.remainingAttacks;
+                  }
+
+                  return merged;
+                })
               );
             }
           }
@@ -16932,6 +16973,16 @@ function CombatPage({ characters = [] }) {
 
     // Turn key must include turnCounter so the same fighter can act again after initiative wraps.
     const currentTurnKey = makeTurnStartKey(currentFighter, turnIndex, turnCounter);
+
+    if (playerAITimerRef.current || enemyTurnTimerRef.current) {
+      if (DEBUG_COMBAT) {
+        addLog(
+          "🚫 effect-turn-advance skipped because a direct turn start is already pending",
+          "warning"
+        );
+      }
+      return;
+    }
 
     // If the turn changed, release any "claims" from the prior turn so the new turn can schedule.
     if (lastNoActionTurnKeyRef.current && lastNoActionTurnKeyRef.current !== currentTurnKey) {
