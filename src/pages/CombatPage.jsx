@@ -6750,6 +6750,27 @@ function CombatPage({ characters = [] }) {
 
   const blockStaleAction = useCallback((actor, token, label = "action", opts = {}) => {
     if (isLiveAction(actor, token, opts)) return false;
+    const shouldSilenceInactive =
+      opts.silentIfInactive &&
+      (
+        combatOverRef.current ||
+        combatEndCheckRef.current ||
+        !combatActiveRef.current ||
+        (opts.silentIfAIControlDisabled && !aiControlEnabledRef.current)
+      );
+    if (shouldSilenceInactive) return true;
+
+    let debugTurnFlow = false;
+    try {
+      debugTurnFlow =
+        typeof window !== "undefined" &&
+        window?.localStorage?.getItem("debugTurnFlow") === "1";
+    } catch {
+      debugTurnFlow = false;
+    }
+
+    if (opts.debugOnly && !DEBUG_COMBAT && !debugTurnFlow) return true;
+
     addLog?.(
       `🚫 Stale action blocked: ${actor?.name || "Unknown"} ${label} token=${token || "none"}`,
       "warning"
@@ -13051,7 +13072,11 @@ function CombatPage({ characters = [] }) {
     const startTurnIndex = turnIndexRef.current;
     const startFighterId = latestPlayer.id;
     setTimeout(() => {
-      if (blockStaleAction(latestPlayer, playerTurnToken, "player AI no-action watchdog")) return;
+      if (blockStaleAction(latestPlayer, playerTurnToken, "player AI no-action watchdog", {
+        debugOnly: true,
+        silentIfAIControlDisabled: true,
+        silentIfInactive: true,
+      })) return;
       if (!combatActive || combatEndCheckRef.current) return;
       const curIdx = turnIndexRef.current;
       const curFighterId = fightersRef.current?.[curIdx]?.id;
@@ -13083,7 +13108,11 @@ function CombatPage({ characters = [] }) {
     // Give it enough runway before we declare the AI "stuck". Use fixed delay (arenaSpeed affects animation only).
     const watchdogDelay = 5000;
     setTimeout(() => {
-      if (blockStaleAction(latestPlayer, playerTurnToken, "player AI watchdog")) return;
+      if (blockStaleAction(latestPlayer, playerTurnToken, "player AI watchdog", {
+        debugOnly: true,
+        silentIfAIControlDisabled: true,
+        silentIfInactive: true,
+      })) return;
       if (!combatActive || combatEndCheckRef.current) return;
       // Only fire for the SAME fighter + SAME AI token that scheduled this watchdog.
       const curIdx = turnIndexRef.current;
