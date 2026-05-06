@@ -23,7 +23,7 @@ import { useParty } from "../context/PartyContext";
 import { rollDice, rollLoot, savingThrow, attackRoll, moraleCheck } from "./util";
 import getSocket from "../utils/socket";
 import axiosInstance from "../utils/axios";
-import { getEncumbranceInfo, getEncumbrancePenalty, getArmorPenalty } from "../utils/encumbrance";
+import { getEncumbranceInfo, getArmorPenalty } from "../utils/encumbrance";
 import { parseEffect } from "../data/consumables";
 import CombatActionsPanel from "./CombatActionsPanel";
 import { aiManager, AI_PERSONALITIES } from "../utils/enemyAI";
@@ -31,7 +31,7 @@ import { enhancedAIManager } from "../utils/openaiAdapter";
 import MissileWeaponTracker from "./MissileWeaponTracker";
 import WeaponSlots from "./WeaponSlots";
 import MovementPanel from "./MovementPanel";
-import { initializeAmmo, useAmmo, setAmmo, replenishAllAmmo, canFireMissileWeapon, getAmmoInfo } from "../utils/combatAmmoManager";
+import { initializeAmmo, setAmmo, canFireMissileWeapon } from "../utils/combatAmmoManager";
 import { getMissileWeapon, getRangeInfo } from "../data/missileWeapons";
 import { initializeWeaponSlots, equipWeapon, toggleTwoHandedGrip, getWeaponDamage, isTwoHandedWeapon } from "../utils/weaponSlotManager";
 import { initializePositions, updatePosition, getAutoTargetDistance, getAllDistances, getDistanceBetween } from "../utils/positionManager";
@@ -73,7 +73,7 @@ const InitiativeTracker = () => {
         if (!isCombatChoicesOpen) {
           openCombatChoices();
         }
-        
+
         // Auto-calculate distance to closest enemy
         if (Object.keys(positions).length > 0) {
           const allChars = [...activeParty.members, ...enemies];
@@ -87,7 +87,7 @@ const InitiativeTracker = () => {
         if (isCombatChoicesOpen) {
           closeCombatChoices();
         }
-        
+
         // Clear sprinting status when enemy's turn starts
         if (currentChar && currentChar.isEnemy) {
           setSprintingEnemies(prev => {
@@ -96,13 +96,13 @@ const InitiativeTracker = () => {
             return newSet;
           });
         }
-        
+
         // Handle AI decision making for enemy turns
         if (currentChar && currentChar.isEnemy && aiEnabled) {
           handleEnemyAITurn(currentChar);
         }
       }
-      
+
       // Turn off movement mode when turn changes
       setMovementMode(false);
     }
@@ -116,7 +116,7 @@ const InitiativeTracker = () => {
       const targets = order
         .filter(entry => !entry.isEnemy && entry.char.currentHP > 0)
         .map(entry => entry.char);
-      
+
       if (targets.length === 0) {
         logCombatEvent(`${enemy.name} has no targets and defends`);
         setTimeout(nextTurn, 1000); // Auto-advance after 1 second
@@ -142,11 +142,11 @@ const InitiativeTracker = () => {
 
         // Check if enemy has melee weapons and is out of range
         const weapon = enemy.equippedWeapon || enemy.weapon || "Unarmed";
-        const isMeleeWeapon = !weapon.toLowerCase().includes('bow') && 
-                             !weapon.toLowerCase().includes('crossbow') &&
-                             !weapon.toLowerCase().includes('sling') &&
-                             !weapon.toLowerCase().includes('gun') &&
-                             !weapon.toLowerCase().includes('thrown');
+        const isMeleeWeapon = !weapon.toLowerCase().includes('bow') &&
+          !weapon.toLowerCase().includes('crossbow') &&
+          !weapon.toLowerCase().includes('sling') &&
+          !weapon.toLowerCase().includes('gun') &&
+          !weapon.toLowerCase().includes('thrown');
 
         if (isMeleeWeapon && closestDistance > 5) {
           needsToMoveCloser = true;
@@ -160,31 +160,31 @@ const InitiativeTracker = () => {
         const targetPos = positions[closestTarget._id];
         const speed = enemy.Spd || enemy.spd || enemy.attributes?.Spd || enemy.attributes?.spd || 10;
         const movement = MOVEMENT_RATES.calculateMovement(speed);
-        
+
         // Calculate direction to target
         const dx = targetPos.x - currentPos.x;
         const dy = targetPos.y - currentPos.y;
         const distance = Math.sqrt(dx * dx + dy * dy);
-        
+
         // Move towards target
         // FIX: Use fullSpeed (official Palladium) instead of deprecated running
         const moveDistance = Math.min((movement.fullSpeed || movement.running || speed * 60) / GRID_CONFIG.CELL_SIZE, distance - 1); // Stop 1 cell away (5ft)
         const ratio = moveDistance / distance;
-        
+
         const newX = Math.round(currentPos.x + dx * ratio);
         const newY = Math.round(currentPos.y + dy * ratio);
-        
+
         // Update position
         handlePositionChange(enemy._id, { x: newX, y: newY });
-        
+
         const newDistance = getDistanceBetween(
           { ...positions, [enemy._id]: { x: newX, y: newY } },
           enemy._id,
           closestTarget._id
         );
-        
+
         logCombatEvent(`🏃 ${enemy.name} moves closer to ${closestTarget.name} (${Math.round(closestDistance)}ft → ${Math.round(newDistance)}ft)`);
-        
+
         socket.emit("partyMessage", {
           partyId: activeParty._id,
           user: "System",
@@ -212,7 +212,7 @@ const InitiativeTracker = () => {
 
       // Get AI personality for this enemy
       const personality = aiPersonalities[enemy._id] || AI_PERSONALITIES.TACTICAL;
-      
+
       // Create combat state for AI decision
       const combatState = {
         round: roundNumber,
@@ -224,11 +224,11 @@ const InitiativeTracker = () => {
 
       // Get AI decision (using enhanced manager)
       const decision = await enhancedAIManager.makeDecision(
-        enemy._id, 
-        enemy, 
-        targets, 
-        combatState, 
-        personality, 
+        enemy._id,
+        enemy,
+        targets,
+        combatState,
+        personality,
         aiDifficulty
       );
 
@@ -243,7 +243,7 @@ const InitiativeTracker = () => {
 
       // Execute the action using enhanced manager
       const result = enhancedAIManager.executeAction(enemy._id, decision, enemy, combatState);
-      
+
       if (result.success) {
         // Mark enemy as sprinting/flashing if they chose a sprint action
         if (result.action === "sprint" || result.action === "sprint_retreat") {
@@ -254,30 +254,30 @@ const InitiativeTracker = () => {
           });
           logCombatEvent(`💫 ${enemy.name} icon will flash until their next turn`);
         }
-        
+
         // Validate attack range before applying damage
         if (result.action === "strike" && result.target && result.damage) {
           const targetId = result.target._id;
-          
+
           // Check if this is a melee attack and validate range
           const weapon = result.weapon || enemy.equippedWeapon || "Unarmed";
-          const isMeleeWeapon = !weapon.toLowerCase().includes('bow') && 
-                               !weapon.toLowerCase().includes('crossbow') &&
-                               !weapon.toLowerCase().includes('sling') &&
-                               !weapon.toLowerCase().includes('gun') &&
-                               !weapon.toLowerCase().includes('thrown');
-          
+          const isMeleeWeapon = !weapon.toLowerCase().includes('bow') &&
+            !weapon.toLowerCase().includes('crossbow') &&
+            !weapon.toLowerCase().includes('sling') &&
+            !weapon.toLowerCase().includes('gun') &&
+            !weapon.toLowerCase().includes('thrown');
+
           // Get distance to target if positions are available
           let attackAllowed = true;
           if (isMeleeWeapon && positions && positions[enemy._id] && positions[targetId]) {
             const distance = getDistanceBetween(positions, enemy._id, targetId);
             const engagementRange = getEngagementRange(distance);
-            
+
             if (!engagementRange.canMeleeAttack) {
               attackAllowed = false;
               logCombatEvent(`❌ ${enemy.name} cannot reach ${result.target.name} for melee attack! (Distance: ${Math.round(distance)}ft, needs ≤5ft)`);
               logCombatEvent(`💡 ${enemy.name} must move closer first`);
-              
+
               // Log to party chat
               socket.emit("partyMessage", {
                 partyId: activeParty._id,
@@ -289,15 +289,15 @@ const InitiativeTracker = () => {
               logCombatEvent(`✅ ${enemy.name} is in melee range of ${result.target.name} (${Math.round(distance)}ft)`);
             }
           }
-          
+
           if (attackAllowed) {
             logCombatEvent(result.message);
-            
+
             const currentHp = hp[targetId] || result.target.currentHP || result.target.HP || 20;
             const newHp = Math.max(0, currentHp - result.damage);
-            
+
             setHp(prev => ({ ...prev, [targetId]: newHp }));
-            
+
             if (newHp <= 0) {
               logCombatEvent(`💀 ${result.target.name} has been defeated!`);
               setStatus(prev => ({ ...prev, [targetId]: "KO" }));
@@ -306,7 +306,7 @@ const InitiativeTracker = () => {
         } else {
           logCombatEvent(result.message);
         }
-        
+
         // Handle other action results
         if (result.action === "maneuver" && result.maneuver) {
           logCombatEvent(`⚔️ ${enemy.name} attempts to ${result.maneuver} ${result.target.name}`);
@@ -316,7 +316,7 @@ const InitiativeTracker = () => {
 
       // Auto-advance to next turn after AI action
       setTimeout(nextTurn, 2000); // 2 second delay to see the action
-      
+
     } catch (error) {
       console.error("AI decision error:", error);
       logCombatEvent(`❌ AI error for ${enemy.name}, skipping turn`);
@@ -387,7 +387,7 @@ const InitiativeTracker = () => {
     setEnemies((prev) => [...prev, enemy]);
     setHp((prev) => ({ ...prev, [id]: 20 })); // default HP 20
     setNewEnemyName("");
-    
+
     // Log enemy addition
     logCombatEvent(`🆕 Added enemy: ${enemy.name} (HP: 20)`);
   };
@@ -398,11 +398,11 @@ const InitiativeTracker = () => {
       ...activeParty.members.map((char) => {
         const baseRoll = rollDice(20, 1);
         const dexModifier = char.attributes?.PP ? Math.floor((char.attributes.PP - 10) / 2) : 0;
-        
+
         // Calculate encumbrance penalty
         const encumbranceInfo = getEncumbranceInfo(char);
         const encumbrancePenalty = encumbranceInfo.penalty.initiative;
-        
+
         // Post encumbrance penalty notice to PartyChat
         if (encumbrancePenalty < 0 && activeParty?._id) {
           socket.emit("partyMessage", {
@@ -412,10 +412,10 @@ const InitiativeTracker = () => {
             type: "system",
           });
         }
-        
+
         const totalInitiative = baseRoll + dexModifier + encumbrancePenalty;
-        return { 
-          char, 
+        return {
+          char,
           initiative: totalInitiative,
           dexModifier,
           encumbrancePenalty,
@@ -426,8 +426,8 @@ const InitiativeTracker = () => {
       ...enemies.map((char) => {
         const roll = rollDice(20, 1);
         const totalInitiative = roll; // Enemies don't get modifiers for now
-        return { 
-          char, 
+        return {
+          char,
           initiative: totalInitiative,
           dexModifier: 0,
           encumbrancePenalty: 0,
@@ -458,7 +458,7 @@ const InitiativeTracker = () => {
     // Initialize positions for tactical combat
     const initialPositions = initializePositions(activeParty.members, enemies);
     setPositions(initialPositions);
-    
+
     // Clear sprinting status and movement mode when new combat starts
     setSprintingEnemies(new Set());
     setMovementMode(false);
@@ -475,16 +475,16 @@ const InitiativeTracker = () => {
           return `${r.char.name}${r.isEnemy ? " (Enemy)" : ""} (${r.initiative}${modText})`;
         })
         .join(", ");
-      
+
       const logText = `🎲 **Round 1 - Initiative Rolled!** Order: ${initiativeText}`;
-      
+
       socket.emit("partyMessage", {
         partyId: activeParty._id,
         user: "System",
         text: logText,
         type: "system",
       });
-      
+
       logCombatEvent(logText);
       logCombatEvent("🏹 Missile weapon ammunition initialized");
     }
@@ -494,22 +494,22 @@ const InitiativeTracker = () => {
   const nextTurn = () => {
     const newIndex = (turnIndex + 1) % order.length;
     setTurnIndex(newIndex);
-    
+
     // If we've completed a full round, increment round number
     if (newIndex === 0) {
       const newRound = roundNumber + 1;
       setRoundNumber(newRound);
-      
+
       if (activeParty._id) {
         const logText = `🔄 Round ${newRound} begins!`;
-        
+
         socket.emit("partyMessage", {
           partyId: activeParty._id,
           user: "System",
           text: logText,
           type: "system",
         });
-        
+
         logCombatEvent(logText);
       }
     }
@@ -521,7 +521,7 @@ const InitiativeTracker = () => {
     const charSlots = weaponSlots[char._id] || initializeWeaponSlots(char);
     const weapon = charSlots.rightHand || { damage: "1d4", name: "Unarmed" };
     const usingTwoHanded = charSlots.usingTwoHanded;
-    
+
     // Check if using missile weapon and has ammunition
     const missileWeapon = getMissileWeapon(weapon.name);
     if (missileWeapon) {
@@ -537,18 +537,21 @@ const InitiativeTracker = () => {
         logCombatEvent(logText);
         return;
       }
-      
-      // Consume ammunition
-      const newAmmoCount = useAmmo(ammoCount, char._id, missileWeapon.ammunition, 1);
-      setAmmoCount(newAmmoCount);
-      
-      const remaining = newAmmoCount[char._id]?.[missileWeapon.ammunition] || 0;
-      logCombatEvent(`🏹 ${char.name} fires ${missileWeapon.name} (${remaining} ${missileWeapon.ammunition} remaining)`);
+
+      // Consume ammunition (spend 1) - using functional update for React batching safety
+      let remainingCount = 0;
+      setAmmoCount(prev => {
+        const prevCurrent = prev?.[char._id]?.[missileWeapon.ammunition] ?? 0;
+        remainingCount = Math.max(0, prevCurrent - 1);
+        return setAmmo(prev, char._id, missileWeapon.ammunition, remainingCount);
+      });
+
+      logCombatEvent(`🏹 ${char.name} fires ${missileWeapon.name} (${remainingCount} ${missileWeapon.ammunition} remaining)`);
     }
-    
+
     // Use new attackRoll system for criticals/fumbles
     const attackResult = attackRoll(char, null, weapon);
-    
+
     let bonus = 0;
     let bonusText = "";
 
@@ -557,7 +560,7 @@ const InitiativeTracker = () => {
       if (ability.type === "combat" && ability.bonusType === "attack") {
         // Check weapon-specific bonuses
         if (ability.weapon) {
-          const equippedWeapon = char.inventory?.find(item => 
+          const equippedWeapon = char.inventory?.find(item =>
             item.name === char.equippedWeapon && item.type === "Weapon"
           );
           if (equippedWeapon && equippedWeapon.name.toLowerCase().includes(ability.weapon.toLowerCase())) {
@@ -597,10 +600,10 @@ const InitiativeTracker = () => {
     const total = attackResult.roll + bonus;
     const hitThreshold = 12; // Example: 12+ to hit
     const hit = total >= hitThreshold;
-    
+
     let emoji = missileWeapon ? "🏹" : "⚔️";
     let resultText = "HIT!";
-    
+
     if (attackResult.result === "critical") {
       emoji = "💥";
       resultText = attackResult.message;
@@ -611,11 +614,11 @@ const InitiativeTracker = () => {
       emoji = "💨";
       resultText = "MISS!";
     }
-    
+
     const weaponDisplayName = weapon.name || "unarmed";
     const twoHandedIndicator = usingTwoHanded ? ' (2H)' : (isTwoHandedWeapon(weapon) ? ' (Two-Handed)' : '');
     const logText = `${emoji} ${char.name} attacks with ${weaponDisplayName}${twoHandedIndicator}${rangeText}! Roll = ${attackResult.roll}${bonusText} → Total ${total} - ${resultText} (Needs ${hitThreshold}+)`;
-    
+
     if (activeParty._id) {
       socket.emit("partyMessage", {
         partyId: activeParty._id,
@@ -623,7 +626,7 @@ const InitiativeTracker = () => {
         text: logText,
         type: "system",
       });
-      
+
       logCombatEvent(logText);
     }
 
@@ -634,7 +637,7 @@ const InitiativeTracker = () => {
       if (enemies.length > 0) {
         const randomEnemy = enemies[Math.floor(Math.random() * enemies.length)];
         const moraleResult = moraleCheck(randomEnemy.char);
-        
+
         socket.emit("partyMessage", {
           partyId: activeParty._id,
           user: "System",
@@ -653,15 +656,15 @@ const InitiativeTracker = () => {
   // Defense roll with armor bonus and penalties
   const handleDefense = (char, type = "Parry") => {
     const baseRoll = rollDice(20, 1);
-    
+
     // Get armor defense bonus
     const armor = char.inventory?.find(item => item.name === char.equippedArmor && item.type === "armor");
     const armorBonus = armor?.defense || 0;
-    
+
     // Get armor penalties
     const armorPenalty = getArmorPenalty(char);
     const encumbranceInfo = getEncumbranceInfo(char);
-    
+
     // Apply penalties to defense roll
     const totalPenalty = armorPenalty.skillPenalty + encumbranceInfo.penalty.skill;
     const totalRoll = baseRoll + armorBonus + totalPenalty;
@@ -669,10 +672,10 @@ const InitiativeTracker = () => {
     const success = totalRoll >= successThreshold;
     const emoji = success ? "🛡️" : "💥";
     const resultText = success ? "SUCCESS!" : "FAILED!";
-    
+
     const penaltyText = totalPenalty !== 0 ? ` + penalties (${totalPenalty})` : "";
     const logText = `${emoji} ${char.name} attempts to ${type}! Roll = ${baseRoll} + armor (${armorBonus})${penaltyText} = ${totalRoll} - ${resultText} (Needs ${successThreshold}+)`;
-    
+
     if (activeParty._id) {
       socket.emit("partyMessage", {
         partyId: activeParty._id,
@@ -680,7 +683,7 @@ const InitiativeTracker = () => {
         text: logText,
         type: "system",
       });
-      
+
       logCombatEvent(logText);
     }
   };
@@ -801,12 +804,12 @@ const InitiativeTracker = () => {
     let damageDice = "1d4"; // default unarmed damage
     let isSpellDamage = false;
     let spellUsed = null;
-    
+
     // Get weapon from weapon slots
     const charSlots = weaponSlots[char._id] || initializeWeaponSlots(char);
     const weapon = charSlots.rightHand;
     const usingTwoHanded = charSlots.usingTwoHanded;
-    
+
     if (weapon) {
       weaponName = weapon.name;
       // Use getWeaponDamage to get proper damage with two-handed bonus
@@ -823,7 +826,7 @@ const InitiativeTracker = () => {
         if (ability.usesRemaining !== null && ability.usesRemaining <= 0) {
           return; // Skip this spell, no uses left
         }
-        
+
         damageDice = ability.damage;
         weaponName = ability.name;
         isSpellDamage = true;
@@ -872,7 +875,7 @@ const InitiativeTracker = () => {
     const damageSource = isSpellDamage ? `via ${weaponName}` : `with ${weaponName}`;
     const twoHandedText = usingTwoHanded && weapon ? ' (Two-Handed)' : '';
     const logText = `💥 ${char.name} deals ${total} damage ${damageSource}${twoHandedText}${bonusText} (${damageDice} = ${rolls.join("+")}${bonus > 0 ? ` + ${bonus}` : ""}). HP now ${Math.max((hp[char._id] ?? 20) - total, 0)}`;
-    
+
     if (activeParty._id) {
       socket.emit("partyMessage", {
         partyId: activeParty._id,
@@ -880,7 +883,7 @@ const InitiativeTracker = () => {
         text: logText,
         type: "system",
       });
-      
+
       logCombatEvent(logText);
     }
   };
@@ -898,11 +901,11 @@ const InitiativeTracker = () => {
       const parts = diceStr.split("+");
       const dice = parts[0];
       const bonus = parts[1] ? parseInt(parts[1]) : 0;
-      
+
       const [num, sides] = dice.split("d").map(Number);
       let heal = bonus;
       const rolls = [];
-      
+
       for (let i = 0; i < num; i++) {
         const roll = rollDice(sides, 1);
         heal += roll;
@@ -931,7 +934,7 @@ const InitiativeTracker = () => {
         text: message,
         type: "system",
       });
-      
+
       logCombatEvent(message);
     }
   };
@@ -940,7 +943,7 @@ const InitiativeTracker = () => {
   const handleHpChange = (id, newVal) => {
     const newHp = parseInt(newVal) || 0;
     setHp((prev) => ({ ...prev, [id]: newHp }));
-    
+
     // Find character name for logging
     const allCombatants = [...activeParty.members, ...enemies];
     const combatant = allCombatants.find(c => c._id === id);
@@ -952,7 +955,7 @@ const InitiativeTracker = () => {
   // Handle status changes
   const handleStatusChange = (id, newStatus) => {
     setStatus((prev) => ({ ...prev, [id]: newStatus }));
-    
+
     // Find character name for logging
     const allCombatants = [...activeParty.members, ...enemies];
     const combatant = allCombatants.find(c => c._id === id);
@@ -965,7 +968,7 @@ const InitiativeTracker = () => {
   const handleAmmoChange = (characterId, ammoType, newCount) => {
     const newAmmoCount = setAmmo(ammoCount, characterId, ammoType, newCount);
     setAmmoCount(newAmmoCount);
-    
+
     // Find character name for logging
     const allCombatants = [...activeParty.members, ...enemies];
     const combatant = allCombatants.find(c => c._id === characterId);
@@ -981,7 +984,7 @@ const InitiativeTracker = () => {
 
     const weapon = character.inventory?.find(item => item.name === weaponName);
     const currentSlots = weaponSlots[characterId] || initializeWeaponSlots(character);
-    
+
     let newSlots;
     if (weapon) {
       newSlots = equipWeapon(currentSlots, weapon, slot);
@@ -991,7 +994,7 @@ const InitiativeTracker = () => {
     }
 
     setWeaponSlots(prev => ({ ...prev, [characterId]: newSlots }));
-    
+
     if (activeParty._id) {
       logCombatEvent(`⚔️ ${character.name} equipped ${weaponName || 'nothing'} in ${slot === 'rightHand' ? 'right hand' : 'left hand'}`);
     }
@@ -1016,7 +1019,7 @@ const InitiativeTracker = () => {
   const handlePositionChange = (characterId, newPosition) => {
     const newPositions = updatePosition(positions, characterId, newPosition);
     setPositions(newPositions);
-    
+
     const character = [...activeParty.members, ...enemies].find(c => c._id === characterId);
     if (character && activeParty._id) {
       logCombatEvent(`🏃 ${character.name} moved to (${newPosition.x}, ${newPosition.y})`);
@@ -1027,7 +1030,7 @@ const InitiativeTracker = () => {
   const handleMoveExecution = (targetHex) => {
     if (currentCharacter && targetHex) {
       handlePositionChange(currentCharacter._id, targetHex);
-      
+
       // Broadcast to party chat
       if (activeParty._id) {
         socket.emit("partyMessage", {
@@ -1037,7 +1040,7 @@ const InitiativeTracker = () => {
           type: "system",
         });
       }
-      
+
       // Turn off movement mode after successful move
       setMovementMode(false);
     }
@@ -1048,20 +1051,20 @@ const InitiativeTracker = () => {
     setOrder([]);
     setRoundNumber(1);
     setTurnIndex(0);
-    
+
     // Replenish all ammunition
     const allCharacters = [...activeParty.members, ...enemies];
-    const replenishedAmmo = replenishAllAmmo(allCharacters);
+    const replenishedAmmo = initializeAmmo(allCharacters);
     setAmmoCount(replenishedAmmo);
-    
+
     // Clear positions, sprinting status, and movement mode
     setPositions({});
     setTargetDistance(null);
     setSprintingEnemies(new Set());
     setMovementMode(false);
-    
+
     logCombatEvent("🏁 Combat ended - All ammunition replenished");
-    
+
     if (activeParty._id) {
       socket.emit("partyMessage", {
         partyId: activeParty._id,
@@ -1077,7 +1080,7 @@ const InitiativeTracker = () => {
   return (
     <Box className="container" p={4}>
       <Heading mb={4}>Combat Tracker</Heading>
-      
+
       {activeParty && (
         <Alert status="info" mb={4}>
           <AlertIcon />
@@ -1106,8 +1109,8 @@ const InitiativeTracker = () => {
         {/* Initiative Controls */}
         <Box>
           <HStack spacing={4} mb={4}>
-            <Button 
-              colorScheme="blue" 
+            <Button
+              colorScheme="blue"
               onClick={rollInitiative}
               isDisabled={activeParty.members.length === 0 && enemies.length === 0}
             >
@@ -1119,9 +1122,9 @@ const InitiativeTracker = () => {
               </Button>
             )}
             {order.length > 0 && (
-              <Button 
-                onClick={endCombat} 
-                colorScheme="red" 
+              <Button
+                onClick={endCombat}
+                colorScheme="red"
                 variant="outline"
               >
                 End Combat
@@ -1159,7 +1162,7 @@ const InitiativeTracker = () => {
                 Difficulty: {aiDifficulty}
               </Text>
             </HStack>
-            
+
             {/* LLM Controls */}
             <HStack spacing={4}>
               <Button
@@ -1206,7 +1209,7 @@ const InitiativeTracker = () => {
               >
                 {showTacticalMap ? "✅ Hide Tactical Map" : "🗺️ Show Tactical Map"}
               </Button>
-              
+
               {/* Movement Mode Button - only show for current character's turn */}
               {showTacticalMap && currentCharacter && !order[turnIndex]?.isEnemy && (
                 <Button
@@ -1218,7 +1221,7 @@ const InitiativeTracker = () => {
                   {movementMode ? "✓ Movement Mode Active" : "🏃 Choose Movement"}
                 </Button>
               )}
-              
+
               <Text fontSize="sm" color="gray.600">
                 View and manage character positions on the battlefield
               </Text>
@@ -1229,7 +1232,7 @@ const InitiativeTracker = () => {
         {/* Tactical Map Display */}
         {order.length > 0 && showTacticalMap && (
           <TacticalMap
-            combatants={[...activeParty.members.map(m => ({...m, isEnemy: false})), ...enemies.map(e => ({...e, isEnemy: true}))]}
+            combatants={[...activeParty.members.map(m => ({ ...m, isEnemy: false })), ...enemies.map(e => ({ ...e, isEnemy: true }))]}
             positions={positions}
             onPositionChange={handlePositionChange}
             currentTurn={currentCharacter?._id}
@@ -1254,8 +1257,8 @@ const InitiativeTracker = () => {
                 size="sm"
               />
               <Text fontSize="sm" color="gray.600">
-                {Object.keys(positions).length > 0 
-                  ? "Auto-calculated to closest enemy (or set manually)" 
+                {Object.keys(positions).length > 0
+                  ? "Auto-calculated to closest enemy (or set manually)"
                   : "Set distance to target for missile weapon range modifiers"}
               </Text>
               {targetDistance && (
@@ -1314,20 +1317,20 @@ const InitiativeTracker = () => {
         {/* Combat Choices Panel */}
         {order.length > 0 && currentCharacter && !order[turnIndex]?.isEnemy && showCombatChoices && (
           <Collapse in={isCombatChoicesOpen} animateOpacity>
-            <Box 
-              mt={4} 
-              p={4} 
-              borderWidth="2px" 
+            <Box
+              mt={4}
+              p={4}
+              borderWidth="2px"
               borderColor="blue.200"
-              borderRadius="md" 
-              bg="blue.50" 
+              borderRadius="md"
+              bg="blue.50"
               _dark={{ bg: "blue.900", borderColor: "blue.600" }}
               boxShadow="sm"
             >
               <Heading size="sm" mb={3} color="blue.600" _dark={{ color: "blue.300" }}>
                 🎯 Combat Options for {currentCharacter.name}
               </Heading>
-              <CombatActionsPanel 
+              <CombatActionsPanel
                 character={currentCharacter}
                 onActionSelect={(action, character) => {
                   console.log("Selected action:", action.name, "for character:", character.name);
@@ -1349,16 +1352,16 @@ const InitiativeTracker = () => {
               onToggleTwoHanded={() => handleToggleTwoHanded(currentCharacter._id)}
               compact={false}
             />
-            
+
             {Object.keys(positions).length > 0 && (
               <MovementPanel
                 character={currentCharacter}
                 positions={positions}
-                allCombatants={[...activeParty.members.map(m => ({...m, isEnemy: false})), ...enemies.map(e => ({...e, isEnemy: true}))]}
+                allCombatants={[...activeParty.members.map(m => ({ ...m, isEnemy: false })), ...enemies.map(e => ({ ...e, isEnemy: true }))]}
                 onMove={handlePositionChange}
               />
             )}
-            
+
             <MissileWeaponTracker
               character={currentCharacter}
               ammoCount={ammoCount}
@@ -1397,7 +1400,7 @@ const InitiativeTracker = () => {
                     }}
                   >
                     <Td>
-                      <Badge 
+                      <Badge
                         colorScheme={idx === turnIndex ? "teal" : "gray"}
                         size="lg"
                       >
@@ -1447,7 +1450,7 @@ const InitiativeTracker = () => {
                               weaponSlots={weaponSlots[entry.char._id] || initializeWeaponSlots(entry.char)}
                               compact={true}
                             />
-                            
+
                             {/* Compact ammo display */}
                             <MissileWeaponTracker
                               character={entry.char}
@@ -1459,25 +1462,25 @@ const InitiativeTracker = () => {
                         )}
                       </VStack>
                     </Td>
-                    
+
                     {/* Distance to closest enemy */}
                     {Object.keys(positions).length > 0 && (
                       <Td>
                         {(() => {
-                          const allChars = [...activeParty.members.map(m => ({...m, isEnemy: false})), ...enemies.map(e => ({...e, isEnemy: true}))];
+                          const allChars = [...activeParty.members.map(m => ({ ...m, isEnemy: false })), ...enemies.map(e => ({ ...e, isEnemy: true }))];
                           const distances = getAllDistances(positions, entry.char._id, allChars);
                           const closest = distances.find(d => d.character.isEnemy !== entry.isEnemy);
-                          
+
                           if (!closest) {
                             return <Text fontSize="xs" color="gray.500">—</Text>;
                           }
-                          
+
                           return (
                             <VStack align="start" spacing={0}>
-                              <Badge 
+                              <Badge
                                 colorScheme={
                                   closest.range.canMeleeAttack ? 'red' :
-                                  closest.range.canCharge ? 'orange' : 'blue'
+                                    closest.range.canCharge ? 'orange' : 'blue'
                                 }
                                 fontSize="xs"
                               >
@@ -1491,7 +1494,7 @@ const InitiativeTracker = () => {
                         })()}
                       </Td>
                     )}
-                    
+
                     <Td>
                       <Input
                         type="number"
@@ -1557,7 +1560,7 @@ const InitiativeTracker = () => {
                         >
                           🛡️ Parry
                         </Button>
-                        
+
                         {/* Magic Spells */}
                         {entry.char.magic?.length > 0 && (
                           <Select
@@ -1580,7 +1583,7 @@ const InitiativeTracker = () => {
                             ))}
                           </Select>
                         )}
-                        
+
                         {/* Psionic Powers */}
                         {entry.char.psionics?.length > 0 && (
                           <Select
@@ -1637,7 +1640,7 @@ const InitiativeTracker = () => {
                           </>
                         )}
                       </HStack>
-                      
+
                       {/* Consumables for party members */}
                       {!entry.isEnemy && entry.char.inventory && (
                         <Select
@@ -1646,7 +1649,7 @@ const InitiativeTracker = () => {
                           width="150px"
                           mt={1}
                           onChange={(e) => {
-                            const consumable = entry.char.inventory.find(item => 
+                            const consumable = entry.char.inventory.find(item =>
                               item.name === e.target.value && item.type === "consumable"
                             );
                             if (consumable) {

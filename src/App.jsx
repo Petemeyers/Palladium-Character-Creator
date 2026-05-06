@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import PropTypes from 'prop-types';
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import HomePage from './components/HomePage';
 import TraderShop from './components/TraderShop';
@@ -41,6 +42,11 @@ function CharacterSheetWrapper({ characters, onUpdateCharacter }) {
 
   return <CharacterSheet characterData={character} onSave={handleSave} />;
 }
+
+CharacterSheetWrapper.propTypes = {
+  characters: PropTypes.array.isRequired,
+  onUpdateCharacter: PropTypes.func.isRequired,
+};
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -230,7 +236,10 @@ function App() {
         } />
         <Route path="/combat" element={
           <PrivateRoute>
-            <CombatPage characters={characters} />
+            <CombatPage
+              characters={characters}
+              onUpdateCharacter={handleUpdateCharacter}
+            />
           </PrivateRoute>
         } />
         <Route path="/map-maker" element={

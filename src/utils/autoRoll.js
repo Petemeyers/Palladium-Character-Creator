@@ -129,6 +129,15 @@ function getClassHPBonus(occ) {
  */
 import { assignRandomWeaponToEnemy } from './enemyWeaponAssigner.js';
 import shopItems from '../data/shopItems.js';
+import { getUnifiedAbilities } from './unifiedAbilities.js';
+import { convertUnifiedSpellToCombatSpell } from './getFighterSpells.js';
+import { getAllSpellsFromDB } from '../data/combatSpells.js';
+import {
+  isWizardClassName,
+  buildWizardSpellbookForLevel,
+  createDeterministicRng,
+  normalizePPEState,
+} from './spellUtils.js';
 
 export function createPlayableCharacterFighter(character, customName = null) {
   // Roll attributes
@@ -164,7 +173,7 @@ export function createPlayableCharacterFighter(character, customName = null) {
   // Assign weapons from rulebook/preferred_weapons
   let assignedWeapons = [];
   if (character.preferred_weapons) {
-    const tempFighter = { name: character.name, race: character.race, species: character.race };
+    const tempFighter = { name: character.name, race: character.race, species: character.race, occ: character.occ };
     const weaponAssigned = assignRandomWeaponToEnemy(tempFighter, character.preferred_weapons);
     if (weaponAssigned.equippedWeapons && weaponAssigned.equippedWeapons.length > 0) {
       assignedWeapons = weaponAssigned.equippedWeapons.filter(w => w.name !== "Unarmed");
@@ -377,10 +386,84 @@ export function createPlayableCharacterFighter(character, customName = null) {
     altitude: 0,
     altitudeFeet: 0,
 
-    // Preserve visual and footprint data for 3D rendering
-    visual: character.visual,
-    footprint: character.footprint,
+    // Preserve visual and footprint for 3D rendering (explicit copy so nested bestiary shape is kept)
+    visual: character.visual
+      ? {
+          ...character.visual,
+          modelUrl: character.visual.modelUrl,
+          desiredHeightFt: character.visual.desiredHeightFt ?? character.visual.baseHeightFt,
+          baseHeightFt: character.visual.baseHeightFt ?? character.visual.desiredHeightFt,
+          yawOffsetDeg: character.visual.yawOffsetDeg ?? 0,
+        }
+      : {},
+    footprint: character.footprint
+      ? {
+          ...character.footprint,
+          feet: character.footprint.feet,
+          radiusHex: character.footprint.radiusHex ?? 0,
+        }
+      : {},
   };
+
+  // ✅ Normalize spells into a consistent combat-ready shape.
+  // Some flows (e.g. bestiary/autoRoll fighters) won't have spells in the same place as party fighters.
+  try {
+    const unified = getUnifiedAbilities(character);
+    const unifiedSpells =
+      unified?.spells ||
+      unified?.magic?.spells ||
+      unified?.magic ||
+      character?.knownSpells ||
+      character?.spellbook ||
+      character?.spells ||
+      [];
+    const rawCombatSpells = Array.isArray(unifiedSpells)
+      ? unifiedSpells.map(convertUnifiedSpellToCombatSpell).filter(Boolean)
+      : [];
+
+    const occOrClass = character?.occ || character?.class || fighter?.occ || "";
+    const fighterLevel = Number(character?.level ?? character?.Level ?? 1) || 1;
+    let combatSpells = rawCombatSpells;
+
+    // Enforce wizard progression for playable wizard PCs so level 1 does not get endgame spellbooks.
+    if (isWizardClassName(occOrClass)) {
+      const spellPool = combatSpells.length > 0 ? combatSpells : getAllSpellsFromDB();
+      const bounded = buildWizardSpellbookForLevel({
+        allSpells: spellPool,
+        level: fighterLevel,
+      });
+      combatSpells = bounded.spellbook.map(convertUnifiedSpellToCombatSpell).filter(Boolean);
+    }
+
+    fighter.knownSpells = combatSpells;
+    fighter.spells = combatSpells;
+    // keep a simple "has magic" signal for AI heuristics
+    fighter.magic = (combatSpells.length > 0) ? true : fighter.magic;
+    fighter.abilities = fighter.abilities || {};
+    if (combatSpells.length > 0) fighter.abilities.magic = combatSpells;
+  } catch (_err) {
+    // fail silently; spells are optional for many fighters
+  }
+
+  const normalizedPPE = normalizePPEState(
+    {
+      ...fighter,
+      level: Number(character?.level ?? character?.Level ?? 1) || 1,
+    },
+    {
+      rollMissingLevelGains: true,
+      rng: createDeterministicRng(
+        `${fighter.id || fighter.name || "auto-roll"}|auto-roll|${fighter.level || 1}`
+      ),
+    }
+  );
+  fighter.PPE = normalizedPPE.PPE;
+  fighter.maxPPE = normalizedPPE.maxPPE;
+  fighter.currentPPE = normalizedPPE.currentPPE;
+  fighter.ppeType = normalizedPPE.ppeType;
+  fighter.ppeBase = normalizedPPE.ppeBase;
+  fighter.ppeLevelGainsTotal = normalizedPPE.ppeLevelGainsTotal;
+  fighter.ppeLevelGainRolls = normalizedPPE.ppeLevelGainRolls;
 
   return fighter;
 }

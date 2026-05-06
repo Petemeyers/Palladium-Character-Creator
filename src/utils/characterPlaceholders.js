@@ -47,8 +47,8 @@ export function applyFacingToCharacterGroup(group, dir) {
  * @returns {number} Scale factor (clamped between 0.25 and 8)
  */
 function getScaleForFootprint(character) {
-  const desiredFeet = character?.footprint?.feet ?? 5; // default 1 hex
-  const baseHeightFt = character?.visual?.baseHeightFt ?? 6;
+  const desiredFeet = character?.footprint?.feet ?? character?.footprintFeet ?? 5; // default 1 hex
+  const baseHeightFt = character?.visual?.baseHeightFt ?? character?.visual?.desiredHeightFt ?? 6;
 
   // Simple tabletop rule: scale proportionally by "presence"
   const targetPresenceFt = desiredFeet; // 20 ft for Ariel
@@ -64,6 +64,46 @@ function degreesToRadians(deg) {
   return (n * Math.PI) / 180;
 }
 
+function applyMorphTargetsToModel(model, visualProfile) {
+  const morphTargets = visualProfile?.morphTargets;
+  if (!model || !morphTargets || typeof morphTargets !== "object") return;
+
+  model.traverse((child) => {
+    if (!child?.isMesh) return;
+    if (!child.morphTargetDictionary) return;
+
+    console.log("[MorphTargetCheck]", {
+      mesh: child.name,
+      targets: Object.keys(child.morphTargetDictionary),
+    });
+
+    if (!child.morphTargetInfluences) return;
+
+    Object.entries(morphTargets).forEach(([targetName, rawWeight]) => {
+      const index = child.morphTargetDictionary?.[targetName];
+
+      if (index === undefined) {
+        console.log("[MorphTargetMissing]", {
+          mesh: child.name,
+          wanted: targetName,
+          available: Object.keys(child.morphTargetDictionary || {}),
+        });
+        return;
+      }
+
+      const weight = Math.max(0, Math.min(1, Number(rawWeight) || 0));
+      child.morphTargetInfluences[index] = weight;
+
+      console.log("[MorphTargetApplied]", {
+        mesh: child.name,
+        targetName,
+        index,
+        weight,
+      });
+    });
+  });
+}
+
 export function createCharacterIcon(character = {}) {
   const {
     q = 0,
@@ -77,6 +117,7 @@ export function createCharacterIcon(character = {}) {
 
   const group = new THREE.Group();
   const modelUrl = visual?.modelUrl;
+  const visualProfile = character?.visualProfile || null;
 
   // Create placeholder (sphere) that will be replaced if model loads
   const sphereRadius = 1.0; // 5ft diameter = 2.5ft radius = 1 unit
@@ -142,6 +183,7 @@ export function createCharacterIcon(character = {}) {
 
         // Get the model scene - may need to clone if it's reused
         const model = gltf.scene.clone ? gltf.scene.clone() : gltf.scene;
+        applyMorphTargetsToModel(model, visualProfile);
 
         // Reset any existing transformations
         model.position.set(0, 0, 0);
@@ -367,6 +409,7 @@ export function createCharacterIcon(character = {}) {
         model.userData = {
           ...character,
           type: "characterModel",
+          visualProfile,
           originalSize,
           modelRadiusUnscaled, // Store for consistent scale calculation
           appliedScale: scale, // Store the scale that was applied

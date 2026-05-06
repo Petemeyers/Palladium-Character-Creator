@@ -9,6 +9,8 @@ import characterRoutes from "./routes/characterRoutes.js";
 import userRoutes from "./routes/userRoutes.js";
 import chatRoutes from "./routes/chatRoutes.js";
 import partyRoutes from "./routes/partyRoutes.js";
+import mapsRoutes from "./routes/mapsRoutes.js";
+import sessionRoutes from "./routes/sessionRoutes.js";
 import messageRoutes from "./routes/messages.js";
 import npcRoutes from "./routes/npc.js";
 import npcMemoryRoutes from "./routes/npcMemory.js";
@@ -48,7 +50,14 @@ const app = express();
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 // Middleware
-app.use(cors());
+app.use(
+  cors({
+    origin: true,
+    credentials: true,
+    allowedHeaders: ["Content-Type", "Authorization"],
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  })
+);
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
@@ -56,11 +65,17 @@ app.use(express.urlencoded({ limit: "50mb", extended: true }));
 app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(specs));
 
 // Routes
+app.get("/api/v1/health", (_req, res) => {
+  res.json({ status: "ok", serverTime: new Date().toISOString() });
+});
+
 app.use("/api/v1/shop", shopRoutes);
 app.use("/api/v1/characters", characterRoutes);
 app.use("/api/v1/users", userRoutes);
 app.use("/api/v1/chat", chatRoutes);
 app.use("/api/v1/parties", partyRoutes);
+app.use("/api/v1/maps", mapsRoutes);
+app.use("/api/v1/session", sessionRoutes);
 app.use("/api/v1/messages", messageRoutes);
 app.use("/api/v1/npc", npcRoutes);
 app.use("/api/v1/npc-memory", npcMemoryRoutes);
@@ -415,7 +430,8 @@ app.use(errorLogger);
 app.use(errorHandler);
 
 const PORT = process.env.PORT || 5000;
-server.listen(PORT, () => {
+server.listen(PORT, "0.0.0.0", () => {
+  console.log(`API on ${PORT}`);
   console.log(`Server is running on port ${PORT}`);
   console.log(`WebSocket server running on port ${PORT}`);
   console.log(

@@ -1,0 +1,55 @@
+.tutorial-pulse {
+  position: relative;
+  animation: tutorialPulse 1.15s ease-in-out infinite;
+  box-shadow: 0 0 0 0 rgba(124, 58, 237, 0.65);
+  transform-origin: center;
+  z-index: 2;
+}
+
+@keyframes tutorialPulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(124, 58, 237, 0.65);
+    transform: scale(1);
+  }
+
+  55% {
+    box-shadow: 0 0 0 12px rgba(124, 58, 237, 0);
+    transform: scale(1.035);
+  }
+
+  100% {
+    box-shadow: 0 0 0 0 rgba(124, 58, 237, 0);
+    transform: scale(1);
+  }
+}
+
+.tutorial-pulse-red {
+  position: relative;
+  animation: tutorialPulseRed 1.15s ease-in-out infinite;
+  box-shadow: 0 0 0 0 rgba(229, 62, 62, 0.65);
+  transform-origin: center;
+  z-index: 2;
+}
+
+@keyframes tutorialPulseRed {
+  0% {
+    box-shadow: 0 0 0 0 rgba(229, 62, 62, 0.65);
+    transform: scale(1);
+  }
+
+  55% {
+    box-shadow: 0 0 0 12px rgba(229, 62, 62, 0);
+    transform: scale(1.035);
+  }
+
+  100% {
+    box-shadow: 0 0 0 0 rgba(229, 62, 62, 0);
+    transform: scale(1);
+  }
+}
+
+.tutorial-help-text {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #1a202c;
+}

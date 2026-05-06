@@ -3,6 +3,75 @@
 /**
  * Get a list of hex positions for threats (enemies to the router).
  */
+export const HUMAN_ROUTING_PROFILE = Object.freeze({
+  id: "human_panic",
+  triggerStyle: "humanoid",
+  exitMode: "map_edge",
+  pathStyle: "panic",
+  safeDistanceFt: 0,
+  regroupAfterRounds: 0,
+  canRally: false,
+  corneredBehavior: "surrender",
+  ignoresFormation: false,
+  ignoresLeaderAnchor: false,
+  avoidCrowds: false,
+  prefersCover: false,
+});
+
+export const GIANT_PREDATOR_ROUTING_PROFILE = Object.freeze({
+  id: "giant_predator",
+  triggerStyle: "monster",
+  exitMode: "safe_distance",
+  pathStyle: "break_contact",
+  safeDistanceFt: 120,
+  regroupAfterRounds: 2,
+  canRally: true,
+  corneredBehavior: "berserk",
+  ignoresFormation: true,
+  ignoresLeaderAnchor: true,
+  avoidCrowds: true,
+  prefersCover: false,
+});
+
+export const TERRITORIAL_BEAST_ROUTING_PROFILE = Object.freeze({
+  id: "territorial_beast",
+  triggerStyle: "monster",
+  exitMode: "safe_distance",
+  pathStyle: "break_contact",
+  safeDistanceFt: 90,
+  regroupAfterRounds: 1,
+  canRally: false,
+  corneredBehavior: "fight",
+  ignoresFormation: true,
+  ignoresLeaderAnchor: true,
+  avoidCrowds: true,
+  prefersCover: false,
+});
+
+export function getRoutingProfile(fighter) {
+  if (fighter?.routingProfile && typeof fighter.routingProfile === "object") {
+    return {
+      ...HUMAN_ROUTING_PROFILE,
+      ...fighter.routingProfile,
+    };
+  }
+
+  if (fighter?.aiProfile === "territorial_behemoth") {
+    return GIANT_PREDATOR_ROUTING_PROFILE;
+  }
+
+  if (
+    fighter?.type === "enemy" &&
+    fighter?.canSurrender === false &&
+    !fighter?.neverFlee &&
+    fighter?.aiProfile
+  ) {
+    return TERRITORIAL_BEAST_ROUTING_PROFILE;
+  }
+
+  return HUMAN_ROUTING_PROFILE;
+}
+
 export function getThreatPositionsForFighter(fighter, fighters, positions) {
   if (!fighter || !Array.isArray(fighters) || !positions) return [];
 
@@ -45,6 +114,23 @@ export function isAtMapEdge(pos, gridWidth, gridHeight) {
     pos.x === gridWidth - 1 ||
     pos.y === gridHeight - 1
   );
+}
+
+function getMinimumThreatDistance(position, threatPositions, calculateDistance) {
+  if (
+    !position ||
+    !Array.isArray(threatPositions) ||
+    threatPositions.length === 0 ||
+    typeof calculateDistance !== "function"
+  ) {
+    return Number.POSITIVE_INFINITY;
+  }
+
+  return threatPositions.reduce((closest, threatPos) => {
+    if (!threatPos) return closest;
+    const distance = calculateDistance(position, threatPos);
+    return Math.min(closest, distance);
+  }, Number.POSITIVE_INFINITY);
 }
 
 /**
@@ -158,4 +244,67 @@ export function findBestRetreatHex({
     safetyScore: bestSafety,
     reachedEdge: bestIsEdge,
   };
+}
+
+export function findRoutingDestination({
+  currentPos,
+  threatPositions,
+  maxSteps,
+  isHexOccupied,
+  getHexNeighbors,
+  isValidPosition,
+  calculateDistance,
+  gridWidth,
+  gridHeight,
+  routingProfile,
+}) {
+  const profile = {
+    ...HUMAN_ROUTING_PROFILE,
+    ...(routingProfile || {}),
+  };
+
+  return findBestRetreatHex({
+    currentPos,
+    threatPositions,
+    maxSteps,
+    isHexOccupied,
+    getHexNeighbors,
+    isValidPosition,
+    calculateDistance,
+    gridWidth,
+    gridHeight,
+    allowTieMoves: true,
+    preferEdgeEscape: profile.exitMode === "map_edge",
+  });
+}
+
+export function hasSatisfiedRoutingExit({
+  position,
+  threatPositions,
+  calculateDistance,
+  gridWidth,
+  gridHeight,
+  routingProfile,
+}) {
+  const profile = {
+    ...HUMAN_ROUTING_PROFILE,
+    ...(routingProfile || {}),
+  };
+
+  if (!position) return false;
+
+  if (profile.exitMode === "map_edge") {
+    return isAtMapEdge(position, gridWidth, gridHeight);
+  }
+
+  if (profile.exitMode === "safe_distance") {
+    const minThreatDistance = getMinimumThreatDistance(
+      position,
+      threatPositions,
+      calculateDistance
+    );
+    return minThreatDistance >= Math.max(5, Number(profile.safeDistanceFt) || 0);
+  }
+
+  return false;
 }

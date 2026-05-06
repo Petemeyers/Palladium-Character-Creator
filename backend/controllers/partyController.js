@@ -172,20 +172,7 @@ export const getActiveParty = async (req, res) => {
 export const updateParty = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, members, startLocation } = req.body;
-
-    // Validate members exist
-    const charactersExist = await Character.find({
-      _id: { $in: members },
-      $or: [{ user: req.user.userId }, { isBulkCharacter: true }],
-    });
-
-    if (charactersExist.length !== members.length) {
-      return res.status(400).json({
-        success: false,
-        message: "One or more characters not found or not accessible",
-      });
-    }
+    const { name, members, startLocation, inventory, gold } = req.body;
 
     const party = await Party.findOne({ _id: id, owner: req.user.userId });
     if (!party) {
@@ -195,31 +182,69 @@ export const updateParty = async (req, res) => {
       });
     }
 
-    // Remove party status from old members
-    await Character.updateMany(
-      { _id: { $in: party.members } },
-      {
-        inParty: false,
-        partyOwner: null,
-      }
-    );
+    if (members !== undefined) {
+      // Validate members exist
+      const charactersExist = await Character.find({
+        _id: { $in: members },
+        $or: [{ user: req.user.userId }, { isBulkCharacter: true }],
+      });
 
-    // Update party
-    party.name = name;
-    party.members = members;
+      if (charactersExist.length !== members.length) {
+        return res.status(400).json({
+          success: false,
+          message: "One or more characters not found or not accessible",
+        });
+      }
+
+      // Remove party status from old members
+      await Character.updateMany(
+        { _id: { $in: party.members } },
+        {
+          inParty: false,
+          partyOwner: null,
+        }
+      );
+
+      party.members = members;
+
+      // Update new members' party status
+      await Character.updateMany(
+        { _id: { $in: members } },
+        {
+          inParty: true,
+          partyOwner: req.user.userId,
+        }
+      );
+    }
+
+    if (typeof name === "string") {
+      party.name = name;
+    }
+
     if (startLocation) {
       party.startLocation = startLocation;
     }
-    await party.save();
 
-    // Update new members' party status
-    await Character.updateMany(
-      { _id: { $in: members } },
-      {
-        inParty: true,
-        partyOwner: req.user.userId,
-      }
-    );
+    if (Array.isArray(inventory)) {
+      party.inventory = inventory.map((item) => ({
+        name: item.name || "Unknown Item",
+        type: ["weapon", "armor", "consumable", "misc"].includes(item.type)
+          ? item.type
+          : "misc",
+        damage: item.damage || "",
+        defense: Number(item.defense) || 0,
+        effect: item.effect || "",
+        weight: Number(item.weight) || 0,
+        quantity: Math.max(1, Number(item.quantity) || 1),
+        claimedBy: Array.isArray(item.claimedBy) ? item.claimedBy : [],
+      }));
+    }
+
+    if (gold !== undefined) {
+      party.gold = Number(gold) || 0;
+    }
+
+    await party.save();
 
     const updatedParty = await Party.findById(id).populate({
       path: "members",

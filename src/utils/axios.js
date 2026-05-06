@@ -29,7 +29,7 @@ instance.interceptors.request.use(
         {
           data: config.data,
           params: config.params,
-        }
+        },
       );
     }
 
@@ -38,7 +38,7 @@ instance.interceptors.request.use(
   (error) => {
     logError(error, { type: "request_interceptor" });
     return Promise.reject(error);
-  }
+  },
 );
 
 // Enhanced response interceptor with comprehensive error handling
@@ -47,6 +47,17 @@ instance.interceptors.response.use(
     // Log successful responses (only in development)
     if (import.meta.env?.DEV || import.meta.env?.MODE === "development") {
       console.log(`API Response: ${response.status} ${response.config.url}`);
+
+      // ✅ ADD: log the response body (pretty-printed)
+      try {
+        console.log(
+          "API Response Data:",
+          JSON.stringify(response.data, null, 2),
+        );
+      } catch {
+        // Fallback if something can't be stringified
+        console.log("API Response Data (raw):", response.data);
+      }
     }
     return response;
   },
@@ -57,12 +68,12 @@ instance.interceptors.response.use(
     // - /parties/active: expected when no active party exists
     // - /messages/:partyId: expected when party has no messages yet
     // Also check for suppressErrorLogging flag in request config
-    const shouldSkipLogging = 
+    const shouldSkipLogging =
       error.config?.suppressErrorLogging === true ||
       (apiError instanceof APIError &&
-       apiError.status === 404 &&
-       (error.config?.url?.includes('/parties/active') ||
-        error.config?.url?.includes('/messages/')));
+        apiError.status === 404 &&
+        (error.config?.url?.includes("/parties/active") ||
+          error.config?.url?.includes("/messages/")));
 
     // Log all errors except skipped ones
     if (!shouldSkipLogging) {
@@ -108,14 +119,14 @@ instance.interceptors.response.use(
               const refreshResponse = await axios.post(
                 "/users/refresh-token",
                 {},
-                { headers: { Authorization: `Bearer ${token}` } }
+                { headers: { Authorization: `Bearer ${token}` } },
               );
 
               if (refreshResponse.data.token) {
                 localStorage.setItem("token", refreshResponse.data.token);
                 localStorage.setItem(
                   "user",
-                  JSON.stringify(refreshResponse.data.user)
+                  JSON.stringify(refreshResponse.data.user),
                 );
 
                 // Retry original request with new token
@@ -130,7 +141,7 @@ instance.interceptors.response.use(
               if (window.location.pathname !== "/login") {
                 if (
                   window.confirm(
-                    "Session expired. Please log in again. Click OK to go to login page."
+                    "Session expired. Please log in again. Click OK to go to login page.",
                   )
                 ) {
                   window.location.href = "/login";
@@ -159,8 +170,10 @@ instance.interceptors.response.use(
           // Don't warn for expected 404s:
           // - /parties/active: expected when no active party exists
           // - /messages/:partyId: expected when party has no messages yet
-          if (!error.config?.url?.includes('/parties/active') &&
-              !error.config?.url?.includes('/messages/')) {
+          if (
+            !error.config?.url?.includes("/parties/active") &&
+            !error.config?.url?.includes("/messages/")
+          ) {
             console.warn("Resource not found:", apiError.message);
           }
           break;
@@ -182,7 +195,7 @@ instance.interceptors.response.use(
     }
 
     return Promise.reject(apiError);
-  }
+  },
 );
 
 // Enhanced API methods with better error handling

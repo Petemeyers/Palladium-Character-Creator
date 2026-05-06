@@ -8,6 +8,18 @@
 
 import CryptoSecureDice from "../cryptoDice";
 import { getRandomCombatSpell } from "../../data/combatSpells";
+import { getFighterSpells } from "../getFighterSpells.js";
+import {
+  ACTION_TYPES,
+  addAiClaimToPatch,
+  applyAiSkillEvents,
+  buildAiWorldState,
+  chooseAiAction,
+  consumeAiUnlock,
+  AI_KNOWLEDGE_SCOPE,
+  resolveAiAction,
+  updateAiMemoryAfterAction,
+} from "../../ai";
 import { createThreatProfile } from "./threatAnalysis";
 import {
   getWeaknessMemoryForEnemy,
@@ -55,6 +67,11 @@ import {
   getReachableEnemies,
   hasAnyValidOffensiveOption,
 } from "./meleeReachabilityHelpers";
+import {
+  findRoutingDestination,
+  getRoutingProfile,
+  hasSatisfiedRoutingExit,
+} from "../routingSystem.js";
 
 // -----------------------------------------------------------------------------
 // Weakness Memory Persistence (across encounters)
@@ -75,6 +92,55 @@ function safeReadWeaknessStore() {
   } catch {
     return null;
   }
+}
+
+function consumeUtilityAiUnlock({
+  enemy,
+  unlockType,
+  setFighters,
+  clearHidden = false,
+}) {
+  setFighters((prev) =>
+    prev.map((fighter) => {
+      if (fighter.id !== enemy.id) return fighter;
+
+      const nextPatch = consumeAiUnlock(
+        fighter.meta?.utilityPrivateWorldPatch ??
+          fighter.meta?.utilityWorldPatch ??
+          {},
+        fighter.id,
+        unlockType,
+      );
+
+      return {
+        ...fighter,
+        ...(clearHidden
+          ? {
+              hidden: false,
+              isProwling: false,
+              prowlState: {
+                ...(fighter.prowlState || {}),
+                hidden: false,
+                prowlSuccess: false,
+                brokenBy: unlockType,
+              },
+            }
+          : null),
+        meta: {
+          ...(fighter.meta || {}),
+          utilityPrivateWorldPatch: {
+            ...nextPatch,
+            scope: AI_KNOWLEDGE_SCOPE.PRIVATE,
+            hiddenActorIds: clearHidden
+              ? (nextPatch.hiddenActorIds ?? []).filter(
+                  (id) => id !== fighter.id,
+                )
+              : nextPatch.hiddenActorIds,
+          },
+        },
+      };
+    }),
+  );
 }
 
 function safeWriteWeaknessStore(obj) {
@@ -110,6 +176,236 @@ function getTargetMemoryKey(target) {
     "unknown_target";
   const cat = target?.category || target?.type || target?.creatureType || "";
   return `${String(base).toLowerCase()}::${String(cat).toLowerCase()}`;
+}
+
+function isConcealedFighter(fighter) {
+  return Boolean(
+    fighter?.hidden || fighter?.isProwling || fighter?.prowlState?.hidden,
+  );
+}
+
+function stripConcealment(fighter, reason = "movement") {
+  if (!fighter || !isConcealedFighter(fighter)) return fighter;
+  return {
+    ...fighter,
+    hidden: false,
+    isProwling: false,
+    prowlState: {
+      ...(fighter.prowlState || {}),
+      hidden: false,
+      prowlSuccess: false,
+      brokenBy: reason,
+    },
+  };
+}
+
+function revealAfterObviousMovement(
+  fighter,
+  setFighters,
+  addLog,
+  detail = "moving",
+) {
+  if (!isConcealedFighter(fighter) || typeof setFighters !== "function")
+    return false;
+  setFighters((prev) =>
+    prev.map((f) =>
+      f.id === fighter.id ? stripConcealment(f, "movement") : f,
+    ),
+  );
+  addLog?.(
+    `👁️ ${fighter.name} reveals ${fighter.type === "enemy" ? "its" : "their"} position by ${detail}.`,
+    "info",
+  );
+  return true;
+}
+
+function logUtilityAiDecision(addLog, enemy, action) {
+  if (!action) return;
+  console.log("[UTILITY AI CHOICE]", {
+    actor: enemy.name,
+    chosen: action.name,
+    score: action.score,
+    reason: action.reason,
+    alternatives: action.alternatives,
+  });
+  addLog?.(
+    `${enemy.name} chooses ${action.name} (${action.score ?? "n/a"}) - ${
+      action.reason || "utility scoring"
+    }`,
+    "debug",
+  );
+}
+
+function logUtilityAiPerception(actor, utilityWorld) {
+  const actorId = actor?.id ?? actor?._id ?? actor?.name;
+  console.log("[UTILITY AI PERCEPTION]", {
+    actor: actor?.name,
+    visibleIds: utilityWorld.visibilityByActorId?.[actorId],
+    hiddenActorIds: utilityWorld.hiddenActorIds,
+    unlocks: utilityWorld.unlockedActionsByActorId?.[actorId],
+    teamFocusTargetId: utilityWorld.teamFocusTargetId,
+    teamTactics: utilityWorld.teamTactics,
+    claims: utilityWorld.aiClaimsByRound?.[utilityWorld.round ?? 0],
+    flags: utilityWorld.flags,
+  });
+}
+
+function storeUtilityAiClaim({ enemy, action, utilityWorld, setFighters }) {
+  setFighters((prev) =>
+    prev.map((fighter) => {
+      if (fighter.id !== enemy.id) return fighter;
+
+      const claimPatch = addAiClaimToPatch(
+        fighter.meta?.utilityTeamWorldPatch ?? {},
+        fighter,
+        action,
+        utilityWorld,
+      );
+
+      return {
+        ...fighter,
+        meta: {
+          ...(fighter.meta || {}),
+          utilityTeamWorldPatch: {
+            ...claimPatch,
+            scope: AI_KNOWLEDGE_SCOPE.TEAM,
+          },
+        },
+      };
+    }),
+  );
+}
+
+function dispatchUtilityCombatEvent(event, addLog) {
+  if (!event) return;
+  if (event.type === "LOG") {
+    addLog?.(event.message, event.level || "info");
+    return;
+  }
+
+  if (event.type === "AI_SKILL_ROLL") {
+    addLog?.(`🎲 ${event.message}`, event.success ? "success" : "info");
+    return;
+  }
+
+  addLog?.(`[AI EVENT] ${event.type}`, "debug");
+}
+
+function persistUtilityAiMemory({ enemy, action, result, world, setFighters }) {
+  const nextMemory = updateAiMemoryAfterAction(
+    world.aiMemory,
+    enemy,
+    action,
+    result,
+    world,
+  );
+
+  setFighters((prev) =>
+    prev.map((fighter) =>
+      fighter.id === enemy.id
+        ? {
+            ...fighter,
+            meta: {
+              ...(fighter.meta || {}),
+              utilityAiMemory: nextMemory,
+              utilityPrivateWorldPatch: {
+                ...(fighter.meta?.utilityPrivateWorldPatch || {}),
+                scope: AI_KNOWLEDGE_SCOPE.PRIVATE,
+                aiMemory: nextMemory,
+              },
+            },
+          }
+        : fighter,
+    ),
+  );
+
+  return nextMemory;
+}
+
+function applyUtilityWorldPatch({ enemy, appliedWorld, setFighters }) {
+  const scope = appliedWorld.scope ?? AI_KNOWLEDGE_SCOPE.PRIVATE;
+  const patchKey =
+    scope === AI_KNOWLEDGE_SCOPE.TEAM
+      ? "utilityTeamWorldPatch"
+      : scope === AI_KNOWLEDGE_SCOPE.GLOBAL
+        ? "utilityWorldPatch"
+        : "utilityPrivateWorldPatch";
+
+  setFighters((prev) =>
+    prev.map((fighter) => {
+      if (fighter.id !== enemy.id) return fighter;
+
+      const isHidden = (appliedWorld.hiddenActorIds ?? []).includes(enemy.id);
+      return {
+        ...fighter,
+        ...(isHidden
+          ? {
+              hidden: true,
+              isProwling: true,
+              prowlState: {
+                ...(fighter.prowlState || {}),
+                hidden: true,
+                prowlSuccess: true,
+              },
+            }
+          : null),
+        meta: {
+          ...(fighter.meta || {}),
+          [patchKey]: {
+            ...(fighter.meta?.[patchKey] || {}),
+            scope,
+            lastKnownEnemyByActorId: appliedWorld.lastKnownEnemyByActorId,
+            flags: appliedWorld.flags,
+            hiddenActorIds: appliedWorld.hiddenActorIds,
+            unlockedActionsByActorId: appliedWorld.unlockedActionsByActorId,
+            aiMemory: appliedWorld.aiMemory,
+          },
+        },
+      };
+    }),
+  );
+}
+
+function getActionTarget(action, fighters) {
+  if (!action?.targetId) return null;
+  return fighters.find((fighter) => fighter.id === action.targetId) || null;
+}
+
+function moveTowardUtilityTarget({
+  enemy,
+  action,
+  positions,
+  calculateDistance,
+  handlePositionChange,
+  addLog,
+}) {
+  const currentPos = positions?.[enemy.id];
+  const targetPos = action?.targetPos;
+  if (!currentPos || !targetPos) return false;
+
+  const dist = calculateDistance(currentPos, targetPos);
+  if (!Number.isFinite(dist) || dist <= 5) return false;
+
+  const stepFeet = Math.min(15, Math.max(5, dist - 5));
+  const stepCells = stepFeet / 5;
+  const dx = Number(targetPos.x ?? 0) - Number(currentPos.x ?? 0);
+  const dy = Number(targetPos.y ?? 0) - Number(currentPos.y ?? 0);
+  const length = Math.max(1, Math.sqrt(dx * dx + dy * dy));
+  const destination = {
+    x: Math.round(Number(currentPos.x ?? 0) + (dx / length) * stepCells),
+    y: Math.round(Number(currentPos.y ?? 0) + (dy / length) * stepCells),
+  };
+
+  handlePositionChange(enemy.id, destination, {
+    action: action.type,
+    actionCost: 1,
+    source: "UTILITY_AI",
+  });
+  addLog?.(
+    `[AI] ${enemy.name} ${action.type === ACTION_TYPES.HUNT_ENEMY ? "hunts toward" : "moves toward"} (${destination.x}, ${destination.y}).`,
+    "ai",
+  );
+  return true;
 }
 
 function loadPersistentWeaknessMemory(enemy) {
@@ -198,6 +494,11 @@ function getEnemySpellCatalog(enemy) {
 
   if (Array.isArray(direct)) return direct;
   if (Array.isArray(direct?.spells)) return direct.spells;
+
+  // ✅ FALLBACK — critical for modular AI
+  const fallback = getFighterSpells?.(enemy) || [];
+  if (Array.isArray(fallback) && fallback.length > 0) return fallback;
+
   return [];
 }
 
@@ -218,7 +519,7 @@ function setEnemyAIDebug(setFighters, enemyId, debugPatch) {
           },
         },
       };
-    })
+    }),
   );
 }
 
@@ -495,7 +796,7 @@ function findNearbyHidingSpot(
   positions,
   terrain,
   objects,
-  maxRadiusHexes = 6
+  maxRadiusHexes = 6,
 ) {
   if (!fighter || !positions || !objects) return null;
 
@@ -558,7 +859,7 @@ function updateCirclingHunterAltitude(
   hasVisiblePrey,
   addLog,
   setFighters,
-  fighters
+  fighters,
 ) {
   if (!flier) return;
 
@@ -569,8 +870,8 @@ function updateCirclingHunterAltitude(
     typeof latestFlier.altitudeFeet === "number"
       ? latestFlier.altitudeFeet
       : typeof latestFlier.altitude === "number"
-      ? latestFlier.altitude
-      : 0;
+        ? latestFlier.altitude
+        : 0;
 
   // When no prey is visible: climb up into scouting band and just hang there
   if (!hasVisiblePrey) {
@@ -580,14 +881,14 @@ function updateCirclingHunterAltitude(
       const rand =
         HAWK_SCOUT_ALT_MIN_FT +
         Math.floor(
-          Math.random() * (HAWK_SCOUT_ALT_MAX_FT - HAWK_SCOUT_ALT_MIN_FT + 1)
+          Math.random() * (HAWK_SCOUT_ALT_MAX_FT - HAWK_SCOUT_ALT_MIN_FT + 1),
         );
 
       // Store the target scouting altitude on the fighter
       setFighters((prev) =>
         prev.map((f) =>
-          f.id === flier.id ? { ...f, scoutingAltitudeFeet: rand } : f
-        )
+          f.id === flier.id ? { ...f, scoutingAltitudeFeet: rand } : f,
+        ),
       );
 
       targetAlt = rand;
@@ -609,13 +910,13 @@ function updateCirclingHunterAltitude(
                 altitude: nextAlt,
                 altitudeFeet: nextAlt,
               }
-            : f
-        )
+            : f,
+        ),
       );
 
       addLog(
         `🦅 ${flier.name} climbs to ${nextAlt}ft, scanning for prey.`,
-        "info"
+        "info",
       );
     }
 
@@ -645,13 +946,13 @@ function updateCirclingHunterAltitude(
               altitude: nextAlt,
               altitudeFeet: nextAlt,
             }
-          : f
-      )
+          : f,
+      ),
     );
 
     addLog(
       `🦅 ${flier.name} adjusts altitude to ${nextAlt}ft while circling above prey.`,
-      "info"
+      "info",
     );
   }
 }
@@ -675,7 +976,7 @@ function getSpeciesBehaviorProfile(creature) {
   // Try case-insensitive match
   const speciesLower = species.toLowerCase();
   const matchingKey = Object.keys(speciesMap).find(
-    (key) => key.toLowerCase() === speciesLower
+    (key) => key.toLowerCase() === speciesLower,
   );
   if (matchingKey) {
     return speciesMap[matchingKey];
@@ -770,7 +1071,7 @@ function getFlightFocusPoint(flier, context) {
       f.type !== flier.type &&
       f.id !== flier.id &&
       f.currentHP > -21 &&
-      positions[f.id]
+      positions[f.id],
   );
 
   if (enemies.length === 0) return positions[flier.id];
@@ -882,6 +1183,16 @@ function handleFlyingIdleOrHarassAction(flier, context) {
     GRID_CONFIG,
   } = context;
 
+  // Low-noise AI debugging (opt-in).
+  // Usage: localStorage.debugCombatAI = "1"
+  const DEBUG_AI =
+    typeof window !== "undefined" &&
+    window?.localStorage?.getItem("debugCombatAI") === "1";
+
+  const dbgLog = (msg, level = "info") => {
+    if (DEBUG_AI) addLog?.(msg, level);
+  };
+
   if (!isFlying(flier)) return false;
 
   const flightStyle = getFlightStyle(flier);
@@ -899,7 +1210,7 @@ function handleFlyingIdleOrHarassAction(flier, context) {
       f.type === "player" &&
       !isFlying(f) && // only stuff on the ground counts as hawk prey
       f.currentHP > 0 &&
-      f.currentHP > -21
+      f.currentHP > -21,
   );
 
   const hasVisiblePrey = groundPrey.length > 0;
@@ -910,7 +1221,7 @@ function handleFlyingIdleOrHarassAction(flier, context) {
     hasVisiblePrey,
     addLog,
     setFighters,
-    fighters
+    fighters,
   );
 
   const actionsPerMelee = flier.attacksPerMelee || flier.remainingAttacks || 4;
@@ -949,10 +1260,11 @@ function handleFlyingIdleOrHarassAction(flier, context) {
       positionsRef.current = updated;
       return updated;
     });
+    revealAfterObviousMovement(flier, setFighters, addLog, "circling overhead");
 
     addLog(
       `🦅 ${flier.name} drifts to maintain circling pattern (${fallbackHex.x}, ${fallbackHex.y})`,
-      "info"
+      "info",
     );
     return true;
   }
@@ -975,13 +1287,14 @@ function handleFlyingIdleOrHarassAction(flier, context) {
       positionsRef.current = updated;
       return updated;
     });
+    revealAfterObviousMovement(flier, setFighters, addLog, "circling overhead");
 
     // Drain stamina for circling movement
     spendFlyingStamina(flier, "FLY_HOVER", 1);
 
     addLog(
       `🦅 ${flier.name} circles overhead, gliding to maintain position (${partialHex.x}, ${partialHex.y})`,
-      "info"
+      "info",
     );
     return true;
   }
@@ -995,13 +1308,14 @@ function handleFlyingIdleOrHarassAction(flier, context) {
     positionsRef.current = updated;
     return updated;
   });
+  revealAfterObviousMovement(flier, setFighters, addLog, "circling overhead");
 
   const distFromFocus = calculateDistance(nextHex, focusPoint);
   addLog(
     `🦅 ${flier.name} circles overhead, gliding to new position (${
       nextHex.x
     }, ${nextHex.y}) - maintaining ~${Math.round(distFromFocus)}ft radius`,
-    "info"
+    "info",
   );
 
   // Deduct one action for movement
@@ -1009,8 +1323,8 @@ function handleFlyingIdleOrHarassAction(flier, context) {
     prev.map((f) =>
       f.id === flier.id
         ? { ...f, remainingAttacks: Math.max(0, f.remainingAttacks - 1) }
-        : f
-    )
+        : f,
+    ),
   );
 
   return true;
@@ -1070,7 +1384,7 @@ function countArmedThreats(
   allFighters,
   positions,
   calculateDistance,
-  canFighterAct
+  canFighterAct,
 ) {
   if (!creature || !positions[creature.id]) return 0;
 
@@ -1132,7 +1446,7 @@ function attemptTacticalWithdraw({
     if (!currentPos) {
       addLog(
         `⚠️ ${enemy.name} cannot withdraw (no position data). Holding position defensively.`,
-        "warning"
+        "warning",
       );
       setDefensiveStance((prev) => ({ ...prev, [enemy.id]: "Defend" }));
       scheduleEndTurn();
@@ -1145,14 +1459,14 @@ function attemptTacticalWithdraw({
         f.type === "player" &&
         canFighterAct(f) &&
         f.currentHP > 0 &&
-        f.currentHP > -21
+        f.currentHP > -21,
     );
 
     // If no active enemies, just end turn
     if (playerFighters.length === 0) {
       addLog(
         `⚠️ ${enemy.name} finds no active foes and cautiously lowers their guard.`,
-        "info"
+        "info",
       );
       setDefensiveStance((prev) => ({ ...prev, [enemy.id]: "Defend" }));
       scheduleEndTurn();
@@ -1167,7 +1481,7 @@ function attemptTacticalWithdraw({
     if (threatPositions.length === 0) {
       addLog(
         `🛡️ ${enemy.name} cannot see any threats. Holding position defensively.`,
-        "info"
+        "info",
       );
       setDefensiveStance((prev) => ({ ...prev, [enemy.id]: "Defend" }));
       scheduleEndTurn();
@@ -1185,7 +1499,7 @@ function attemptTacticalWithdraw({
     const fullFeetPerAction = (speed * 18) / Math.max(1, attacksPerMelee);
     const maxSteps = Math.max(
       1,
-      Math.min(Math.floor(fullFeetPerAction / GRID_CONFIG.CELL_SIZE), 5)
+      Math.min(Math.floor(fullFeetPerAction / GRID_CONFIG.CELL_SIZE), 5),
     );
 
     // Try to find retreat destination
@@ -1200,7 +1514,7 @@ function attemptTacticalWithdraw({
     if (retreatDestination && retreatDestination.position) {
       addLog(
         `🚶 ${enemy.name} withdraws from unreachable foes to (${retreatDestination.position.x}, ${retreatDestination.position.y}).`,
-        "info"
+        "info",
       );
 
       // Actually move the enemy using handlePositionChange
@@ -1220,7 +1534,7 @@ function attemptTacticalWithdraw({
     // No safe retreat hex found → defend in place
     addLog(
       `⚠️ ${enemy.name} looks for a safe place to withdraw but finds none; defending in place.`,
-      "warning"
+      "warning",
     );
 
     setDefensiveStance((prev) => ({ ...prev, [enemy.id]: "Defend" }));
@@ -1230,7 +1544,7 @@ function attemptTacticalWithdraw({
     console.error("Error during tactical withdraw:", err);
     addLog(
       `⚠️ ${enemy.name} tries to withdraw but something goes wrong; they hold position defensively.`,
-      "warning"
+      "warning",
     );
     setDefensiveStance((prev) => ({ ...prev, [enemy.id]: "Defend" }));
     scheduleEndTurn();
@@ -1278,6 +1592,10 @@ export function runEnemyTurnAI(enemy, context) {
     healerAbility,
     clericalHealingTouch,
     medicalTreatment,
+    getFighterSpells: getFighterSpellsFromContext,
+    getFighterPsionicPowers,
+    getFighterPPE,
+    getFighterISP,
     // AI engine
     createAIActionSelector,
     GRID_CONFIG,
@@ -1294,6 +1612,7 @@ export function runEnemyTurnAI(enemy, context) {
     setDefensiveStance,
     setTemporaryHexSharing,
     setCombatActive,
+    onNoHostilesRemaining,
     // Attack & combat
     attack,
     // Refs
@@ -1304,6 +1623,32 @@ export function runEnemyTurnAI(enemy, context) {
     // Other
     getTargetsInLine,
   } = context;
+
+  const combatOverRef = context.combatOverRef;
+  const markDistanceClosed = context.markDistanceClosed;
+  const combatStateRef = context.combatStateRef;
+  const commitEnemyTurnAction = context.commitEnemyTurnAction;
+  const isEnemyTurnStillCurrent = context.isEnemyTurnStillCurrent;
+
+  /** One committed action per runEnemyTurnAI invocation (prevents move + attack fall-through). */
+  let actionCommitted = false;
+  function commitEnemyAction(reason) {
+    if (typeof commitEnemyTurnAction === "function") {
+      const ok = commitEnemyTurnAction(enemy, reason);
+      if (!ok) return false;
+    }
+    if (actionCommitted) {
+      console.warn("[ENEMY AI BLOCKED - duplicate action in same turn slice]", {
+        enemy: enemy?.name,
+        reason,
+        turnIndex,
+        round: meleeRound,
+      });
+      return false;
+    }
+    actionCommitted = true;
+    return true;
+  }
 
   // -----------------------------------------------------------------------------
   // Load weakness memory once per turn for this enemy (persistent across encounters)
@@ -1317,7 +1662,7 @@ export function runEnemyTurnAI(enemy, context) {
     // Merge in persisted data (in case enemy object survived while storage updated)
     enemy.meta._weaknessMemory = mergeWeaknessMemory(
       enemy.meta._weaknessMemory,
-      persistentMemory || {}
+      persistentMemory || {},
     );
   }
 
@@ -1326,7 +1671,7 @@ export function runEnemyTurnAI(enemy, context) {
     const hpStatus = getHPStatus(enemy.currentHP);
     addLog(
       `⏭️ ${enemy.name} cannot act (${hpStatus.description}), skipping turn`,
-      "info"
+      "info",
     );
     processingEnemyTurnRef.current = false;
     scheduleEndTurn();
@@ -1337,7 +1682,7 @@ export function runEnemyTurnAI(enemy, context) {
   const isParalyzed = enemy.statusEffects?.some(
     (e) =>
       (typeof e === "string" && e === "PARALYZED") ||
-      (typeof e === "object" && e.type === "PARALYZED")
+      (typeof e === "object" && e.type === "PARALYZED"),
   );
   if (isParalyzed) {
     addLog(`⏭️ ${enemy.name} is paralyzed and cannot act this round!`, "info");
@@ -1352,7 +1697,7 @@ export function runEnemyTurnAI(enemy, context) {
       f.type === "player" &&
       canFighterAct(f) &&
       f.currentHP > 0 && // conscious only
-      f.currentHP > -21 // not dead
+      f.currentHP > -21, // not dead
   );
 
   // 🔴 NEW: Check if routed - if so, attempt to flee instead of fighting
@@ -1364,7 +1709,7 @@ export function runEnemyTurnAI(enemy, context) {
       // 🧟 Undead: clear ROUTED and stand ground
       addLog(
         `💀 ${enemy.name} is undead and refuses to flee (ignoring ROUTED).`,
-        "info"
+        "info",
       );
 
       enemy.moraleState = {
@@ -1381,7 +1726,7 @@ export function runEnemyTurnAI(enemy, context) {
       // 😈 Demon: clear ROUTED and stand ground (demons are fearless)
       addLog(
         `😈 ${enemy.name} is a demon and refuses to flee (ignoring ROUTED).`,
-        "info"
+        "info",
       );
 
       enemy.moraleState = {
@@ -1395,33 +1740,249 @@ export function runEnemyTurnAI(enemy, context) {
 
       // fall through to normal action selection instead of flee
     } else if (!isUndeadCreature(enemy) && !isDemonCreature(enemy)) {
-      addLog(`🏃 ${enemy.name} is ROUTED and attempts to flee!`, "warning");
+      const routingProfile = getRoutingProfile(enemy);
+      const usesMonsterRouting = routingProfile.pathStyle !== "panic";
+      const currentPos = (positionsRef?.current || positions)?.[enemy.id];
 
-      // Use the same tactical withdraw logic as "no way to hit" fallback
-      const didWithdraw = attemptTacticalWithdraw({
-        enemy,
-        fighters,
-        positions,
-        addLog,
-        findRetreatDestination,
-        isHexOccupied,
-        handlePositionChange,
-        setDefensiveStance,
-        scheduleEndTurn,
-        canFighterAct,
-        GRID_CONFIG,
-      });
+      addLog(
+        usesMonsterRouting
+          ? `🦖 ${enemy.name} breaks and tries to withdraw from the fight!`
+          : `🏃 ${enemy.name} is ROUTED and attempts to flee!`,
+        usesMonsterRouting ? "info" : "warning",
+      );
 
-      // If withdrawal failed, end turn (withdraw function already handled logging)
-      if (!didWithdraw) {
+      if (!currentPos) {
+        addLog(
+          `⚠️ ${enemy.name} cannot ${usesMonsterRouting ? "withdraw" : "flee"} (no position data).`,
+          "warning",
+        );
         processingEnemyTurnRef.current = false;
         scheduleEndTurn();
         return;
       }
 
-      // Withdrawal succeeded and already scheduled move + endTurn
-      processingEnemyTurnRef.current = false;
-      return;
+      const threatPositions = allPlayers
+        .map((f) => positions[f.id])
+        .filter(Boolean);
+      if (threatPositions.length === 0) {
+        if (usesMonsterRouting && routingProfile.canRally) {
+          enemy.moraleState = {
+            ...(enemy.moraleState || {}),
+            status: "STEADY",
+            hasFled: false,
+            lastReason: "rallied_after_break_contact",
+          };
+          if (Array.isArray(enemy.statusEffects)) {
+            enemy.statusEffects = enemy.statusEffects.filter(
+              (s) => s !== "ROUTED",
+            );
+          }
+          setFighters((prev) =>
+            prev.map((f) =>
+              f.id === enemy.id
+                ? {
+                    ...f,
+                    moraleState: enemy.moraleState,
+                    statusEffects: enemy.statusEffects,
+                  }
+                : f,
+            ),
+          );
+          addLog(
+            `🦖 ${enemy.name} regains its nerve when no foe presses the attack.`,
+            "info",
+          );
+          processingEnemyTurnRef.current = false;
+          scheduleEndTurn();
+          return;
+        }
+
+        setFighters((prev) =>
+          prev.map((f) =>
+            f.id === enemy.id
+              ? {
+                  ...f,
+                  remainingAttacks: 0,
+                  moraleState: {
+                    ...(f.moraleState || {}),
+                    status: "ROUTED",
+                    hasFled: true,
+                  },
+                  statusEffects: Array.isArray(f.statusEffects)
+                    ? Array.from(new Set([...f.statusEffects, "FLED"]))
+                    : ["FLED"],
+                }
+              : f,
+          ),
+        );
+        setPositions((prev) => {
+          const next = { ...prev };
+          delete next[enemy.id];
+          if (positionsRef) positionsRef.current = next;
+          return next;
+        });
+        addLog(`🏃 ${enemy.name} flees off the battlefield!`, "warning");
+        processingEnemyTurnRef.current = false;
+        scheduleEndTurn();
+        return;
+      }
+
+      const speed =
+        enemy.Spd ||
+        enemy.spd ||
+        enemy.attributes?.Spd ||
+        enemy.attributes?.spd ||
+        10;
+      const attacksPerMelee = enemy.attacksPerMelee || 2;
+      const fullFeetPerAction = (speed * 18) / Math.max(1, attacksPerMelee);
+      const maxSteps = Math.max(
+        1,
+        Math.min(Math.floor(fullFeetPerAction / GRID_CONFIG.CELL_SIZE), 5),
+      );
+      const retreatDestination = findRoutingDestination({
+        currentPos,
+        threatPositions,
+        maxSteps,
+        isHexOccupied: (x, y) => isHexOccupied(x, y, enemy.id),
+        getHexNeighbors: (x, y) => {
+          const even = y % 2 === 0;
+          return [
+            { x: x + 1, y },
+            { x: x - 1, y },
+            { x, y: y + 1 },
+            { x, y: y - 1 },
+            { x: x + (even ? -1 : 1), y: y - 1 },
+            { x: x + (even ? -1 : 1), y: y + 1 },
+          ];
+        },
+        isValidPosition: (x, y) =>
+          x >= 0 &&
+          y >= 0 &&
+          x < GRID_CONFIG.GRID_WIDTH &&
+          y < GRID_CONFIG.GRID_HEIGHT,
+        calculateDistance,
+        gridWidth: GRID_CONFIG.GRID_WIDTH,
+        gridHeight: GRID_CONFIG.GRID_HEIGHT,
+        routingProfile,
+      });
+
+      if (retreatDestination?.position) {
+        const escaped = hasSatisfiedRoutingExit({
+          position: retreatDestination.position,
+          threatPositions,
+          calculateDistance,
+          gridWidth: GRID_CONFIG.GRID_WIDTH,
+          gridHeight: GRID_CONFIG.GRID_HEIGHT,
+          routingProfile,
+        });
+
+        if (escaped) {
+          setFighters((prev) =>
+            prev.map((f) =>
+              f.id === enemy.id
+                ? {
+                    ...f,
+                    remainingAttacks: 0,
+                    moraleState: {
+                      ...(f.moraleState || {}),
+                      status: "ROUTED",
+                      hasFled: true,
+                    },
+                    statusEffects: Array.isArray(f.statusEffects)
+                      ? Array.from(new Set([...f.statusEffects, "FLED"]))
+                      : ["FLED"],
+                  }
+                : f,
+            ),
+          );
+          setPositions((prev) => {
+            const next = { ...prev };
+            delete next[enemy.id];
+            if (positionsRef) positionsRef.current = next;
+            return next;
+          });
+          addLog(`🏃 ${enemy.name} flees off the battlefield!`, "warning");
+          processingEnemyTurnRef.current = false;
+          scheduleEndTurn();
+          return;
+        }
+
+        handlePositionChange(enemy.id, retreatDestination.position, {
+          movementType: usesMonsterRouting ? "break_contact" : "withdraw",
+          source: usesMonsterRouting ? "AI_MONSTER_ROUTING" : "AI_ROUTING",
+          threatPositions,
+        });
+        setDefensiveStance((prev) => ({ ...prev, [enemy.id]: "Retreat" }));
+        setFighters((prev) =>
+          prev.map((f) =>
+            f.id === enemy.id
+              ? {
+                  ...f,
+                  remainingAttacks: 0,
+                  moraleState: {
+                    ...(f.moraleState || {}),
+                    status: "ROUTED",
+                    hasFled: false,
+                    lastReason: usesMonsterRouting
+                      ? "break_contact_withdrawal"
+                      : f.moraleState?.lastReason,
+                  },
+                }
+              : f,
+          ),
+        );
+        addLog(
+          usesMonsterRouting
+            ? `🦖 ${enemy.name} breaks contact and withdraws to (${retreatDestination.position.x}, ${retreatDestination.position.y}).`
+            : `🏃 ${enemy.name} flees to (${retreatDestination.position.x}, ${retreatDestination.position.y})!`,
+          usesMonsterRouting ? "info" : "warning",
+        );
+        processingEnemyTurnRef.current = false;
+        scheduleEndTurn();
+        return;
+      }
+
+      if (
+        usesMonsterRouting &&
+        (routingProfile.corneredBehavior === "berserk" ||
+          routingProfile.corneredBehavior === "fight" ||
+          routingProfile.corneredBehavior === "push_through")
+      ) {
+        enemy.moraleState = {
+          ...(enemy.moraleState || {}),
+          status: "STEADY",
+          hasFled: false,
+          lastReason: "cornered_counterattack",
+        };
+        if (Array.isArray(enemy.statusEffects)) {
+          enemy.statusEffects = enemy.statusEffects.filter(
+            (s) => s !== "ROUTED",
+          );
+        }
+        setFighters((prev) =>
+          prev.map((f) =>
+            f.id === enemy.id
+              ? {
+                  ...f,
+                  moraleState: enemy.moraleState,
+                  statusEffects: enemy.statusEffects,
+                }
+              : f,
+          ),
+        );
+        addLog(
+          `🦖 ${enemy.name} is cornered and lashes out instead of running!`,
+          "warning",
+        );
+      } else {
+        addLog(
+          `⚠️ ${enemy.name} cannot find a safe escape route and hesitates.`,
+          "warning",
+        );
+        processingEnemyTurnRef.current = false;
+        scheduleEndTurn();
+        return;
+      }
     }
 
     // Check if combat is still active
@@ -1435,7 +1996,7 @@ export function runEnemyTurnAI(enemy, context) {
     if (enemy.remainingAttacks <= 0) {
       addLog(
         `⏭️ ${enemy.name} has no actions remaining - passing to next fighter in initiative order`,
-        "info"
+        "info",
       );
       processingEnemyTurnRef.current = false;
       scheduleEndTurn();
@@ -1462,7 +2023,7 @@ export function runEnemyTurnAI(enemy, context) {
         `🦅 ${enemy.name} is airborne at ${
           enemy.altitudeFeet ?? enemy.altitude ?? 0
         }ft - using flying behavior`,
-        "info"
+        "info",
       );
 
       runFlyingTurn(enemy, {
@@ -1474,7 +2035,7 @@ export function runEnemyTurnAI(enemy, context) {
         addLog,
         updateFighter: (id, updates) => {
           setFighters((prev) =>
-            prev.map((f) => (f.id === id ? { ...f, ...updates } : f))
+            prev.map((f) => (f.id === id ? { ...f, ...updates } : f)),
           );
         },
         applyDamage: null, // Not used in runFlyingTurn currently
@@ -1509,7 +2070,7 @@ export function runEnemyTurnAI(enemy, context) {
         if (!positions[enemy.id] || !positions[player.id]) return false;
         const dist = calculateDistance(
           positions[enemy.id],
-          positions[player.id]
+          positions[player.id],
         );
         if (dist > 30) return false; // Too far to be immediate threat
 
@@ -1541,20 +2102,20 @@ export function runEnemyTurnAI(enemy, context) {
           prev.map((f) =>
             f.id === enemy.id
               ? { ...f, altitude: newAltitude, altitudeFeet: newAltitude }
-              : f
-          )
+              : f,
+          ),
         );
         addLog(
           `🕊️ ${enemy.name} takes to the air (altitude: ${newAltitude}ft) to escape melee attackers!`,
-          "info"
+          "info",
         );
         // Deduct one action for taking off
         setFighters((prev) =>
           prev.map((f) =>
             f.id === enemy.id
               ? { ...f, remainingAttacks: Math.max(0, f.remainingAttacks - 1) }
-              : f
-          )
+              : f,
+          ),
         );
         processingEnemyTurnRef.current = false;
         scheduleEndTurn();
@@ -1573,7 +2134,7 @@ export function runEnemyTurnAI(enemy, context) {
         {
           useFogOfWar: fogEnabled,
           fogOfWarVisibleCells: visibleCells,
-        }
+        },
       );
 
       if (isVisible) {
@@ -1618,14 +2179,14 @@ export function runEnemyTurnAI(enemy, context) {
       (skill) =>
         skill.type === "healer_ability" ||
         skill.type === "clerical_ability" ||
-        skill.type === "medical_skill"
+        skill.type === "medical_skill",
     );
 
     // Healer archetype = Clergy OCCs (Priest, Healer, Druid, Shaman, etc.) OR explicit healer skills
     const hasHealerSkills =
       Array.isArray(enemy.skills) &&
       enemy.skills.some((s) =>
-        ["Healer OCC R.C.C. Skill", "Holistic Medicine"].includes(s.name)
+        ["Healer OCC R.C.C. Skill", "Holistic Medicine"].includes(s.name),
       );
 
     const isHealer = isHealerOccForAI(enemy) || hasHealerSkills;
@@ -1647,7 +2208,7 @@ export function runEnemyTurnAI(enemy, context) {
           f.type === enemy.type &&
           f.id !== enemy.id &&
           f.currentHP > -21 &&
-          (f.currentHP < f.maxHP * 0.5 || f.currentHP <= 0) // Injured or dying
+          (f.currentHP < f.maxHP * 0.5 || f.currentHP <= 0), // Injured or dying
       );
 
       if (allies.length > 0) {
@@ -1668,14 +2229,14 @@ export function runEnemyTurnAI(enemy, context) {
           // Prioritize Lust for Life for dying allies
           if (targetAlly.currentHP <= 0) {
             selectedHealingSkill = healingSkills.find(
-              (s) => s.name === "Lust for Life"
+              (s) => s.name === "Lust for Life",
             );
           }
 
           // Fallback to Healing Touch or First Aid
           if (!selectedHealingSkill) {
             selectedHealingSkill = healingSkills.find(
-              (s) => s.name.includes("Healing Touch") || s.name === "First Aid"
+              (s) => s.name.includes("Healing Touch") || s.name === "First Aid",
             );
           }
 
@@ -1691,7 +2252,7 @@ export function runEnemyTurnAI(enemy, context) {
             if (canUse) {
               addLog(
                 `🤖 ${enemy.name} uses ${selectedHealingSkill.name} on ${targetAlly.name}!`,
-                "info"
+                "info",
               );
 
               // Execute the healing skill
@@ -1700,7 +2261,7 @@ export function runEnemyTurnAI(enemy, context) {
               if (selectedHealingSkill.type === "healer_ability") {
                 const powerName = selectedHealingSkill.name.replace(
                   " (Healer)",
-                  ""
+                  "",
                 );
                 skillResult = healerAbility(enemy, targetAlly, powerName);
 
@@ -1714,8 +2275,8 @@ export function runEnemyTurnAI(enemy, context) {
                             currentISP: skillResult.ispRemaining,
                             ISP: skillResult.ispRemaining,
                           }
-                        : f
-                    )
+                        : f,
+                    ),
                   );
 
                   // Update ally HP
@@ -1724,14 +2285,14 @@ export function runEnemyTurnAI(enemy, context) {
                       prev.map((f) =>
                         f.id === targetAlly.id
                           ? { ...f, currentHP: skillResult.currentHp }
-                          : f
-                      )
+                          : f,
+                      ),
                     );
                   }
 
                   addLog(
                     skillResult.message,
-                    skillResult.success === false ? "error" : "success"
+                    skillResult.success === false ? "error" : "success",
                   );
                 }
               } else if (selectedHealingSkill.type === "clerical_ability") {
@@ -1742,8 +2303,8 @@ export function runEnemyTurnAI(enemy, context) {
                     prev.map((f) =>
                       f.id === targetAlly.id
                         ? { ...f, currentHP: skillResult.currentHp }
-                        : f
-                    )
+                        : f,
+                    ),
                   );
                   addLog(skillResult.message, "success");
                 }
@@ -1756,13 +2317,13 @@ export function runEnemyTurnAI(enemy, context) {
                     prev.map((f) =>
                       f.id === targetAlly.id
                         ? { ...f, currentHP: skillResult.currentHp }
-                        : f
-                    )
+                        : f,
+                    ),
                   );
                 }
                 addLog(
                   skillResult.message,
-                  skillResult.success ? "success" : "error"
+                  skillResult.success ? "success" : "error",
                 );
               }
 
@@ -1774,11 +2335,11 @@ export function runEnemyTurnAI(enemy, context) {
                         ...f,
                         remainingAttacks: Math.max(
                           0,
-                          f.remainingAttacks - selectedHealingSkill.cost
+                          f.remainingAttacks - selectedHealingSkill.cost,
                         ),
                       }
-                    : f
-                )
+                    : f,
+                ),
               );
 
               processingEnemyTurnRef.current = false;
@@ -1865,7 +2426,7 @@ export function runEnemyTurnAI(enemy, context) {
         if (retreatDestination) {
           log(
             `🐭 ${fighter.name} panics at the sight of ${nearestThreat.name} and scurries away!`,
-            "info"
+            "info",
           );
 
           // Move toward retreat destination
@@ -1884,6 +2445,12 @@ export function runEnemyTurnAI(enemy, context) {
               if (positionsRef) positionsRef.current = updated;
               return updated;
             });
+            revealAfterObviousMovement(
+              fighter,
+              setFighters,
+              addLog,
+              "retreating",
+            );
           }
 
           setFighters((prev) =>
@@ -1894,8 +2461,8 @@ export function runEnemyTurnAI(enemy, context) {
                     defensiveStance: "Retreat",
                     remainingAttacks: Math.max(0, f.remainingAttacks - 1),
                   }
-                : f
-            )
+                : f,
+            ),
           );
 
           scheduleEndTurn();
@@ -1906,7 +2473,7 @@ export function runEnemyTurnAI(enemy, context) {
         // If no retreat destination found, just cower / defend
         log(
           `🐭 ${fighter.name} freezes in fear, unable to find a way to flee from ${nearestThreat.name}.`,
-          "info"
+          "info",
         );
 
         setFighters((prev) =>
@@ -1917,8 +2484,8 @@ export function runEnemyTurnAI(enemy, context) {
                   remainingAttacks: Math.max(0, f.remainingAttacks - 1),
                   defensiveStance: "Cower",
                 }
-              : f
-          )
+              : f,
+          ),
         );
 
         scheduleEndTurn();
@@ -1936,7 +2503,7 @@ export function runEnemyTurnAI(enemy, context) {
         fighter,
         allFighters,
         positions,
-        SCAVENGE_RADIUS
+        SCAVENGE_RADIUS,
       );
       if (corpse) {
         const corpsePos = positions[corpse.id];
@@ -1944,7 +2511,7 @@ export function runEnemyTurnAI(enemy, context) {
           const dist = calculateDistance
             ? calculateDistance(myPos, corpsePos)
             : Math.sqrt(
-                (corpsePos.x - myPos.x) ** 2 + (corpsePos.y - myPos.y) ** 2
+                (corpsePos.x - myPos.x) ** 2 + (corpsePos.y - myPos.y) ** 2,
               ) * 5; // Convert hexes to feet
 
           if (dist > 5) {
@@ -1958,7 +2525,7 @@ export function runEnemyTurnAI(enemy, context) {
 
             log(
               `🐭 ${fighter.name} cautiously noses toward a nearby corpse to scavenge.`,
-              "info"
+              "info",
             );
 
             if (setPositions) {
@@ -1976,8 +2543,8 @@ export function runEnemyTurnAI(enemy, context) {
                       ...f,
                       remainingAttacks: Math.max(0, f.remainingAttacks - 1),
                     }
-                  : f
-              )
+                  : f,
+              ),
             );
 
             scheduleEndTurn();
@@ -1997,8 +2564,8 @@ export function runEnemyTurnAI(enemy, context) {
                     remainingAttacks: Math.max(0, f.remainingAttacks - 1),
                     defensiveStance: "Idle/Forage",
                   }
-                : f
-            )
+                : f,
+            ),
           );
 
           scheduleEndTurn();
@@ -2021,8 +2588,8 @@ export function runEnemyTurnAI(enemy, context) {
                   remainingAttacks: Math.max(0, f.remainingAttacks - 1),
                   defensiveStance: "Idle/Forage",
                 }
-              : f
-          )
+              : f,
+          ),
         );
 
         scheduleEndTurn();
@@ -2036,7 +2603,7 @@ export function runEnemyTurnAI(enemy, context) {
         positions,
         terrain,
         objects || [],
-        12
+        12,
       );
 
       if (hideSpot) {
@@ -2061,8 +2628,8 @@ export function runEnemyTurnAI(enemy, context) {
           prev.map((f) =>
             f.id === fighter.id
               ? { ...f, remainingAttacks: Math.max(0, f.remainingAttacks - 1) }
-              : f
-          )
+              : f,
+          ),
         );
 
         scheduleEndTurn();
@@ -2087,30 +2654,242 @@ export function runEnemyTurnAI(enemy, context) {
                 remainingAttacks: Math.max(0, f.remainingAttacks - 1),
                 defensiveStance: "Idle/Alert",
               }
-            : f
-        )
+            : f,
+        ),
       );
 
       scheduleEndTurn();
       if (processingEnemyTurnRef) processingEnemyTurnRef.current = false;
     }
 
+    const searchingTarget = allPlayers.find(
+      (target) =>
+        getAwareness(enemy, target) === AWARENESS_STATES.SEARCHING &&
+        positions?.[target.id],
+    );
+    const utilityBaseWorld = {
+      positions,
+      turnCounter,
+      calculateDistance,
+      getFighterSpells: getFighterSpellsFromContext || getFighterSpells,
+      getFighterPsionicPowers,
+      getFighterPPE,
+      getFighterISP,
+      visibilityByActorId: {
+        [enemy.id]: visiblePlayers.map((target) => target.id),
+      },
+      visibleEnemiesByActorId: {
+        [enemy.id]: visiblePlayers.map((target) => target.id),
+      },
+      lastKnownEnemyByActorId: searchingTarget
+        ? {
+            [enemy.id]: {
+              targetId: searchingTarget.id,
+              position: positions[searchingTarget.id],
+            },
+          }
+        : undefined,
+      recentEnemyPositions: allPlayers
+        .map((target) =>
+          positions?.[target.id]
+            ? { targetId: target.id, position: positions[target.id] }
+            : null,
+        )
+        .filter(Boolean),
+      flags: {
+        suspectedAmbush: visiblePlayers.length === 0 && allPlayers.length > 0,
+        enteringDanger: visiblePlayers.length === 0 && allPlayers.length > 0,
+        hasCover: Boolean(
+          combatTerrain?.cover || arenaEnvironment?.objects?.length,
+        ),
+      },
+      environmentType:
+        combatTerrain?.terrain === "forest" ||
+        combatTerrain?.terrain === "wilderness"
+          ? "wilderness"
+          : combatTerrain?.terrain,
+    };
+    const utilityWorld = buildAiWorldState({
+      actor: enemy,
+      fighters,
+      round: meleeRound,
+      encounter: context.encounter,
+      baseWorld: utilityBaseWorld,
+    });
+    logUtilityAiPerception(enemy, utilityWorld);
+    const utilityAction = chooseAiAction(enemy, utilityWorld);
+    storeUtilityAiClaim({
+      enemy,
+      action: utilityAction,
+      utilityWorld,
+      setFighters,
+    });
+
     const playerTargets = visiblePlayers;
     if (playerTargets.length === 0) {
+      if (
+        utilityAction?.type === ACTION_TYPES.USE_SKILL ||
+        utilityAction?.type === ACTION_TYPES.HUNT_ENEMY ||
+        utilityAction?.type === ACTION_TYPES.HUNT_REVEALED_ENEMY ||
+        utilityAction?.type === ACTION_TYPES.WARN_ALLIES ||
+        utilityAction?.type === ACTION_TYPES.GUARD
+      ) {
+        logUtilityAiDecision(addLog, enemy, utilityAction);
+
+        if (utilityAction.type === ACTION_TYPES.USE_SKILL) {
+          const result = resolveAiAction(utilityAction, enemy, utilityWorld);
+          const applied = applyAiSkillEvents({
+            events: result.events,
+            actor: enemy,
+            world: utilityWorld,
+          });
+
+          applyUtilityWorldPatch({
+            enemy,
+            appliedWorld: applied.world,
+            setFighters,
+          });
+          for (const event of applied.events) {
+            dispatchUtilityCombatEvent(event, addLog);
+          }
+          persistUtilityAiMemory({
+            enemy,
+            action: utilityAction,
+            result,
+            world: utilityWorld,
+            setFighters,
+          });
+        } else if (
+          utilityAction.type === ACTION_TYPES.HUNT_ENEMY ||
+          utilityAction.type === ACTION_TYPES.HUNT_REVEALED_ENEMY
+        ) {
+          const result = resolveAiAction(utilityAction, enemy, utilityWorld);
+          if (utilityAction.type === ACTION_TYPES.HUNT_REVEALED_ENEMY) {
+            addLog?.(`${enemy.name} follows the trail.`, "info");
+            consumeUtilityAiUnlock({
+              enemy,
+              unlockType: "HUNT_REVEALED_ENEMY",
+              setFighters,
+            });
+          }
+          moveTowardUtilityTarget({
+            enemy,
+            action: utilityAction,
+            positions,
+            calculateDistance,
+            handlePositionChange,
+            addLog,
+          });
+          persistUtilityAiMemory({
+            enemy,
+            action: utilityAction,
+            result,
+            world: utilityWorld,
+            setFighters,
+          });
+        } else if (utilityAction.type === ACTION_TYPES.WARN_ALLIES) {
+          const result = resolveAiAction(utilityAction, enemy, utilityWorld);
+          const alliedIds = fighters
+            .filter(
+              (fighter) =>
+                fighter.type === enemy.type && fighter.id !== enemy.id,
+            )
+            .map((fighter) => fighter.id);
+          const focusTargetId =
+            utilityAction.targetId ??
+            utilityWorld.lastKnownEnemyByActorId?.[enemy.id]?.targetId ??
+            null;
+
+          addLog?.(`${enemy.name} warns nearby allies of danger!`, "info");
+          consumeUtilityAiUnlock({
+            enemy,
+            unlockType: "WARN_ALLIES",
+            setFighters,
+          });
+          setDefensiveStance?.((prev) => ({ ...prev, [enemy.id]: "Guard" }));
+          setFighters((prev) =>
+            prev.map((fighter) =>
+              fighter.id === enemy.id
+                ? {
+                    ...fighter,
+                    meta: {
+                      ...(fighter.meta || {}),
+                      utilityTeamWorldPatch: {
+                        ...(fighter.meta?.utilityTeamWorldPatch || {}),
+                        scope: AI_KNOWLEDGE_SCOPE.TEAM,
+                        flags: {
+                          ...(fighter.meta?.utilityTeamWorldPatch?.flags || {}),
+                          ambushDetected: true,
+                          alliesWarned: true,
+                        },
+                        teamFocusTargetId: focusTargetId,
+                        warnedActorIds: alliedIds,
+                      },
+                    },
+                  }
+                : fighter,
+            ),
+          );
+          persistUtilityAiMemory({
+            enemy,
+            action: utilityAction,
+            result,
+            world: utilityWorld,
+            setFighters,
+          });
+        } else {
+          const result = resolveAiAction(utilityAction, enemy, utilityWorld);
+          setDefensiveStance?.((prev) => ({ ...prev, [enemy.id]: "Guard" }));
+          addLog?.(
+            `[AI] ${enemy.name} guards and scans for hidden threats.`,
+            "ai",
+          );
+          persistUtilityAiMemory({
+            enemy,
+            action: utilityAction,
+            result,
+            world: utilityWorld,
+            setFighters,
+          });
+        }
+
+        setFighters((prev) =>
+          prev.map((fighter) =>
+            fighter.id === enemy.id
+              ? {
+                  ...fighter,
+                  remainingAttacks: Math.max(
+                    0,
+                    (fighter.remainingAttacks ?? enemy.remainingAttacks ?? 1) -
+                      1,
+                  ),
+                }
+              : fighter,
+          ),
+        );
+        processingEnemyTurnRef.current = false;
+        scheduleEndTurn();
+        return;
+      }
+
       // Check if there are players but they're just not visible
       if (allPlayers.length > 0) {
         addLog(
           `👁️ ${enemy.name} cannot see any players (hidden/obscured).`,
-          "info"
+          "info",
         );
       } else {
+        if (onNoHostilesRemaining?.("enemy-no-targets")) {
+          if (processingEnemyTurnRef) processingEnemyTurnRef.current = false;
+          return;
+        }
         // Check if this is a prey animal - if so, use idle/forage behavior instead of just defending
         if (isPreyAnimal(enemy)) {
           const playerEnemies = fighters.filter(
-            (f) => f.type === "player" && canFighterAct(f)
+            (f) => f.type === "player" && canFighterAct(f),
           );
           const enemyAllies = fighters.filter(
-            (f) => f.type === "enemy" && f.id !== enemy.id
+            (f) => f.type === "enemy" && f.id !== enemy.id,
           );
           runPreyIdleTurn({
             fighter: enemy,
@@ -2195,12 +2974,152 @@ export function runEnemyTurnAI(enemy, context) {
       console.error("[AI] Failed to evaluate layered combat action", error);
       addLog(
         `⚠️ ${enemy.name} hesitates (AI error: ${error.message})`,
-        "error"
+        "error",
       );
     }
 
     if (actionPlan && !actionPlan.target && playerTargets.length > 0) {
       actionPlan.target = playerTargets[0];
+    }
+
+    if (
+      utilityAction &&
+      [
+        ACTION_TYPES.MELEE_ATTACK,
+        ACTION_TYPES.RANGED_ATTACK,
+        ACTION_TYPES.AMBUSH_ATTACK,
+        ACTION_TYPES.CAST_SPELL,
+        ACTION_TYPES.USE_SKILL,
+        ACTION_TYPES.WARN_ALLIES,
+      ].includes(utilityAction.type)
+    ) {
+      logUtilityAiDecision(addLog, enemy, utilityAction);
+
+      if (utilityAction.type === ACTION_TYPES.USE_SKILL) {
+        const result = resolveAiAction(utilityAction, enemy, utilityWorld);
+        const applied = applyAiSkillEvents({
+          events: result.events,
+          actor: enemy,
+          world: utilityWorld,
+        });
+
+        applyUtilityWorldPatch({
+          enemy,
+          appliedWorld: applied.world,
+          setFighters,
+        });
+        for (const event of applied.events) {
+          dispatchUtilityCombatEvent(event, addLog);
+        }
+        persistUtilityAiMemory({
+          enemy,
+          action: utilityAction,
+          result,
+          world: utilityWorld,
+          setFighters,
+        });
+        setFighters((prev) =>
+          prev.map((fighter) =>
+            fighter.id === enemy.id
+              ? {
+                  ...fighter,
+                  remainingAttacks: Math.max(
+                    0,
+                    (fighter.remainingAttacks ?? enemy.remainingAttacks ?? 1) -
+                      1,
+                  ),
+                }
+              : fighter,
+          ),
+        );
+        processingEnemyTurnRef.current = false;
+        scheduleEndTurn();
+        return;
+      }
+
+      if (utilityAction.type === ACTION_TYPES.WARN_ALLIES) {
+        const result = resolveAiAction(utilityAction, enemy, utilityWorld);
+        const alliedIds = fighters
+          .filter(
+            (fighter) => fighter.type === enemy.type && fighter.id !== enemy.id,
+          )
+          .map((fighter) => fighter.id);
+        const focusTargetId =
+          utilityAction.targetId ??
+          utilityWorld.lastKnownEnemyByActorId?.[enemy.id]?.targetId ??
+          null;
+
+        addLog?.(`${enemy.name} warns nearby allies of danger!`, "info");
+        consumeUtilityAiUnlock({
+          enemy,
+          unlockType: "WARN_ALLIES",
+          setFighters,
+        });
+        setDefensiveStance?.((prev) => ({ ...prev, [enemy.id]: "Guard" }));
+        setFighters((prev) =>
+          prev.map((fighter) =>
+            fighter.id === enemy.id
+              ? {
+                  ...fighter,
+                  remainingAttacks: Math.max(
+                    0,
+                    (fighter.remainingAttacks ?? enemy.remainingAttacks ?? 1) -
+                      1,
+                  ),
+                  meta: {
+                    ...(fighter.meta || {}),
+                    utilityTeamWorldPatch: {
+                      ...(fighter.meta?.utilityTeamWorldPatch || {}),
+                      scope: AI_KNOWLEDGE_SCOPE.TEAM,
+                      flags: {
+                        ...(fighter.meta?.utilityTeamWorldPatch?.flags || {}),
+                        ambushDetected: true,
+                        alliesWarned: true,
+                      },
+                      teamFocusTargetId: focusTargetId,
+                      warnedActorIds: alliedIds,
+                    },
+                  },
+                }
+              : fighter,
+          ),
+        );
+        persistUtilityAiMemory({
+          enemy,
+          action: utilityAction,
+          result,
+          world: utilityWorld,
+          setFighters,
+        });
+        processingEnemyTurnRef.current = false;
+        scheduleEndTurn();
+        return;
+      }
+
+      const utilityTarget = getActionTarget(utilityAction, fighters);
+      if (utilityTarget) {
+        const result = resolveAiAction(utilityAction, enemy, utilityWorld);
+        persistUtilityAiMemory({
+          enemy,
+          action: utilityAction,
+          result,
+          world: utilityWorld,
+          setFighters,
+        });
+        actionPlan = {
+          ...(actionPlan || {}),
+          type: "attack",
+          aiAction:
+            utilityAction.type === ACTION_TYPES.CAST_SPELL
+              ? "spell"
+              : utilityAction.type === ACTION_TYPES.RANGED_ATTACK
+                ? "ranged attack"
+                : "melee attack",
+          target: utilityTarget,
+          spell: utilityAction.spell,
+          utilityAction,
+        };
+      }
     }
 
     if (actionPlan) {
@@ -2210,7 +3129,7 @@ export function runEnemyTurnAI(enemy, context) {
           `[AI] ${enemy.name} holds position (${
             actionPlan.aiAction || "Hold"
           })`,
-          "ai"
+          "ai",
         );
         setFighters((prev) =>
           prev.map((f) =>
@@ -2219,11 +3138,11 @@ export function runEnemyTurnAI(enemy, context) {
                   ...f,
                   remainingAttacks: Math.max(
                     0,
-                    (f.remainingAttacks ?? enemy.remainingAttacks ?? 1) - 1
+                    (f.remainingAttacks ?? enemy.remainingAttacks ?? 1) - 1,
                   ),
                 }
-              : f
-          )
+              : f,
+          ),
         );
         processingEnemyTurnRef.current = false;
         scheduleEndTurn();
@@ -2235,8 +3154,8 @@ export function runEnemyTurnAI(enemy, context) {
           actionPlan.stance === "retreat"
             ? "Retreat"
             : actionPlan.defend === "parry"
-            ? "Parry"
-            : "Dodge";
+              ? "Parry"
+              : "Dodge";
 
         if (stance === "Retreat") {
           const currentPositions = positionsRef.current || positions;
@@ -2256,7 +3175,7 @@ export function runEnemyTurnAI(enemy, context) {
           const movementStats = calculateMovementPerAction(
             speed,
             Math.max(1, attacksPerMelee),
-            enemy
+            enemy,
           );
           const fullFeetPerAction =
             movementStats.fullMovementPerAction ||
@@ -2264,7 +3183,7 @@ export function runEnemyTurnAI(enemy, context) {
             (speed * 18) / Math.max(1, attacksPerMelee);
           const retreatSteps = Math.max(
             1,
-            Math.min(Math.floor(fullFeetPerAction / GRID_CONFIG.CELL_SIZE), 5)
+            Math.min(Math.floor(fullFeetPerAction / GRID_CONFIG.CELL_SIZE), 5),
           );
 
           let retreatDestination = null;
@@ -2283,36 +3202,36 @@ export function runEnemyTurnAI(enemy, context) {
               action: "RETREAT",
               actionCost: 0,
               description: `Withdraw ${Math.round(
-                retreatDestination.distanceFeet
+                retreatDestination.distanceFeet,
               )}ft`,
             };
             handlePositionChange(
               enemy.id,
               retreatDestination.position,
-              retreatInfo
+              retreatInfo,
             );
             addLog(
               `[AI] ${enemy.name} withdraws ${Math.round(
-                retreatDestination.distanceFeet
+                retreatDestination.distanceFeet,
               )}ft to (${retreatDestination.position.x}, ${
                 retreatDestination.position.y
               }).`,
-              "ai"
+              "ai",
             );
           } else if (!currentPos) {
             addLog(
               `[AI] ${enemy.name} tries to withdraw but has no recorded position.`,
-              "ai"
+              "ai",
             );
           } else if (threatPositions.length === 0) {
             addLog(
               `[AI] ${enemy.name} looks for an escape path but no enemies are visible.`,
-              "ai"
+              "ai",
             );
           } else {
             addLog(
               `[AI] ${enemy.name} tries to withdraw but finds no safe space!`,
-              "ai"
+              "ai",
             );
           }
 
@@ -2330,15 +3249,15 @@ export function runEnemyTurnAI(enemy, context) {
                     ...f,
                     remainingAttacks: Math.max(
                       0,
-                      (f.remainingAttacks ?? remainingBefore) - 1
+                      (f.remainingAttacks ?? remainingBefore) - 1,
                     ),
                   }
-                : f
-            )
+                : f,
+            ),
           );
           addLog(
             `⏭️ ${enemy.name} has ${remainingAfter} action(s) remaining this melee`,
-            "info"
+            "info",
           );
 
           processingEnemyTurnRef.current = false;
@@ -2349,7 +3268,7 @@ export function runEnemyTurnAI(enemy, context) {
             `[AI] ${
               enemy.name
             } prepares to ${stance.toLowerCase()} (+defense).`,
-            "ai"
+            "ai",
           );
           if (stance === "Parry" || stance === "Dodge") {
             setDefensiveStance((prev) => ({ ...prev, [enemy.id]: stance }));
@@ -2363,11 +3282,11 @@ export function runEnemyTurnAI(enemy, context) {
                   ...f,
                   remainingAttacks: Math.max(
                     0,
-                    (f.remainingAttacks ?? enemy.remainingAttacks ?? 1) - 1
+                    (f.remainingAttacks ?? enemy.remainingAttacks ?? 1) - 1,
                   ),
                 }
-              : f
-          )
+              : f,
+          ),
         );
         processingEnemyTurnRef.current = false;
         scheduleEndTurn();
@@ -2398,7 +3317,7 @@ export function runEnemyTurnAI(enemy, context) {
 
       // Strategy 3: Target players who are currently taking their turn (aggressive)
       const currentPlayerTarget = playerTargets.find(
-        (f) => f.id === fighters[turnIndex]?.id
+        (f) => f.id === fighters[turnIndex]?.id,
       );
 
       // Enhanced AI LOGIC: Smart target selection with pathfinding consideration
@@ -2458,7 +3377,7 @@ export function runEnemyTurnAI(enemy, context) {
 
       // Filter to only targets in reasonable range (within 100 ft to consider) and reachable
       const targetsInRange = targetsWithDistance.filter(
-        (t) => t.distance <= 100 && !t.isUnreachable
+        (t) => t.distance <= 100 && !t.isUnreachable,
       );
 
       // 🛡️ SUPPRESSION AWARENESS: prefer cover when under visible threat
@@ -2476,7 +3395,7 @@ export function runEnemyTurnAI(enemy, context) {
           positions,
           combatTerrain,
           coverObjects,
-          6
+          6,
         );
 
         if (hideSpot?.position && handlePositionChange) {
@@ -2493,8 +3412,8 @@ export function runEnemyTurnAI(enemy, context) {
                     ...f,
                     remainingAttacks: Math.max(0, f.remainingAttacks - 1),
                   }
-                : f
-            )
+                : f,
+            ),
           );
 
           addLog(`🛡️ ${enemy.name} seeks cover under incoming fire.`, "info");
@@ -2522,7 +3441,7 @@ export function runEnemyTurnAI(enemy, context) {
           // Find enemies nearby
           const nearbyEnemies = fighters
             .filter(
-              (f) => f.type === "player" && canFighterAct(f) && f.currentHP > 0
+              (f) => f.type === "player" && canFighterAct(f) && f.currentHP > 0,
             )
             .map((f) => ({
               fighter: f,
@@ -2536,7 +3455,7 @@ export function runEnemyTurnAI(enemy, context) {
           // Try to find a hex away from enemies (simplified: move away from nearest threat)
           if (nearbyEnemies.length > 0) {
             const nearestThreat = nearbyEnemies.sort(
-              (a, b) => a.dist - b.dist
+              (a, b) => a.dist - b.dist,
             )[0];
             const threatPos = nearestThreat.pos;
 
@@ -2555,13 +3474,19 @@ export function runEnemyTurnAI(enemy, context) {
               positionsRef.current = updated;
               return updated;
             });
+            revealAfterObviousMovement(
+              enemy,
+              setFighters,
+              addLog,
+              "retreating through the air",
+            );
 
             // Use sprint stamina for fleeing
             spendFlyingStamina(enemy, "FLY_SPRINT", 1);
 
             addLog(
               `🦅 ${enemy.name} is exhausted and flies to a safer location to rest.`,
-              "info"
+              "info",
             );
           }
 
@@ -2581,7 +3506,7 @@ export function runEnemyTurnAI(enemy, context) {
 
           if (perchChoice) {
             const tree = (arenaEnvironment?.objects || []).find(
-              (o) => o.id === perchChoice.treeId
+              (o) => o.id === perchChoice.treeId,
             );
 
             if (tree && reservePerch(tree, perchChoice.perchId, enemy.id)) {
@@ -2611,8 +3536,8 @@ export function runEnemyTurnAI(enemy, context) {
                         altitudeFeet: perchChoice.altitudeFeet,
                         perchOffsetFeet: perchChoice.localOffsetFeet,
                       }
-                    : f
-                )
+                    : f,
+                ),
               );
 
               addLog(`🦅 ${enemy.name} lands on a branch to rest.`, "info");
@@ -2621,8 +3546,8 @@ export function runEnemyTurnAI(enemy, context) {
                 prev.map((f) =>
                   f.id === enemy.id
                     ? { ...f, isFlying: false, altitude: 0, altitudeFeet: 0 }
-                    : f
-                )
+                    : f,
+                ),
               );
               addLog(`🦅 ${enemy.name} lands on the ground to rest.`, "info");
             }
@@ -2631,8 +3556,8 @@ export function runEnemyTurnAI(enemy, context) {
               prev.map((f) =>
                 f.id === enemy.id
                   ? { ...f, isFlying: false, altitude: 0, altitudeFeet: 0 }
-                  : f
-              )
+                  : f,
+              ),
             );
             addLog(`🦅 ${enemy.name} lands on the ground to rest.`, "info");
           }
@@ -2648,8 +3573,8 @@ export function runEnemyTurnAI(enemy, context) {
                     ...f,
                     remainingAttacks: Math.max(0, f.remainingAttacks - 1),
                   }
-                : f
-            )
+                : f,
+            ),
           );
 
           processingEnemyTurnRef.current = false;
@@ -2695,7 +3620,7 @@ export function runEnemyTurnAI(enemy, context) {
                 `🦅 ${enemy.name} moves toward ${
                   corpse.name || "a corpse"
                 } to scavenge.`,
-                "info"
+                "info",
               );
 
               // Deduct action
@@ -2706,8 +3631,8 @@ export function runEnemyTurnAI(enemy, context) {
                         ...f,
                         remainingAttacks: Math.max(0, f.remainingAttacks - 1),
                       }
-                    : f
-                )
+                    : f,
+                ),
               );
 
               processingEnemyTurnRef.current = false;
@@ -2725,8 +3650,8 @@ export function runEnemyTurnAI(enemy, context) {
                         ...f,
                         remainingAttacks: Math.max(0, f.remainingAttacks - 1),
                       }
-                    : f
-                )
+                    : f,
+                ),
               );
 
               processingEnemyTurnRef.current = false;
@@ -2753,7 +3678,7 @@ export function runEnemyTurnAI(enemy, context) {
           fighters,
           positions,
           calculateDistance,
-          canFighterAct
+          canFighterAct,
         );
         const shouldFlee =
           hpPercent < fleeAtHpPercent ||
@@ -2764,7 +3689,7 @@ export function runEnemyTurnAI(enemy, context) {
             `🦅 ${enemy.name} is ${
               hpPercent < fleeAtHpPercent ? "badly hurt" : "outnumbered"
             } and breaks off to escape!`,
-            "info"
+            "info",
           );
           // Maintain altitude and move away from threats
           if (!enemyIsFlying) {
@@ -2773,12 +3698,12 @@ export function runEnemyTurnAI(enemy, context) {
               prev.map((f) =>
                 f.id === enemy.id
                   ? { ...f, altitude: newAltitude, altitudeFeet: newAltitude }
-                  : f
-              )
+                  : f,
+              ),
             );
             addLog(
               `🦅 ${enemy.name} takes to the air (altitude: ${newAltitude}ft)`,
-              "info"
+              "info",
             );
           }
           // Move away from closest threat
@@ -2811,7 +3736,7 @@ export function runEnemyTurnAI(enemy, context) {
 
         // 1) Prefer tiny prey (faeries + tiny/small animals)
         const preyTargets = targetsInRange.filter((t) =>
-          isPreferredHawkPrey(enemy, t.target)
+          isPreferredHawkPrey(enemy, t.target),
         );
 
         if (preyTargets.length > 0) {
@@ -2825,12 +3750,12 @@ export function runEnemyTurnAI(enemy, context) {
           reasoning = `🦅 ${
             enemy.name
           } spots ${preyType} prey and dives to attack (${Math.round(
-            bestPrey.distance
+            bestPrey.distance,
           )}ft away)`;
         } else {
           // 2) No good prey — check for larger armed enemies
           const dangerousArmed = targetsInRange.filter(
-            (t) => isBiggerThreat(enemy, t.target) && isArmedThreat(t.target)
+            (t) => isBiggerThreat(enemy, t.target) && isArmedThreat(t.target),
           );
 
           if (dangerousArmed.length > 0) {
@@ -2847,7 +3772,7 @@ export function runEnemyTurnAI(enemy, context) {
               const angle = Math.atan2(dy, dx);
               const moveAwayDistance = Math.min(
                 10,
-                stayAtRangeFeet - currentDist
+                stayAtRangeFeet - currentDist,
               );
               const newPos = {
                 x: currentPos.x + Math.cos(angle) * (moveAwayDistance / 5),
@@ -2860,7 +3785,7 @@ export function runEnemyTurnAI(enemy, context) {
               });
               addLog(
                 `🦅 ${enemy.name} maintains distance from larger threats (staying ${stayAtRangeFeet}ft away)`,
-                "info"
+                "info",
               );
               // Ensure flying
               if (!enemyIsFlying) {
@@ -2873,8 +3798,8 @@ export function runEnemyTurnAI(enemy, context) {
                           altitude: newAltitude,
                           altitudeFeet: newAltitude,
                         }
-                      : f
-                  )
+                      : f,
+                  ),
                 );
               }
               processingEnemyTurnRef.current = false;
@@ -2884,7 +3809,7 @@ export function runEnemyTurnAI(enemy, context) {
               // Already at safe distance - circle overhead
               addLog(
                 `🦅 ${enemy.name} circles overhead, avoiding larger armed threats`,
-                "info"
+                "info",
               );
               if (!enemyIsFlying) {
                 const newAltitude = isHawk(enemy) ? 100 : 20;
@@ -2896,12 +3821,12 @@ export function runEnemyTurnAI(enemy, context) {
                           altitude: newAltitude,
                           altitudeFeet: newAltitude,
                         }
-                      : f
-                  )
+                      : f,
+                  ),
                 );
                 addLog(
                   `🦅 ${enemy.name} takes to the air (altitude: ${newAltitude}ft)`,
-                  "info"
+                  "info",
                 );
               }
               processingEnemyTurnRef.current = false;
@@ -2912,7 +3837,7 @@ export function runEnemyTurnAI(enemy, context) {
             // Some targets are same size or smaller but not prey-type
             // Pick the smallest/closest non-dangerous target
             const safeTargets = targetsInRange.filter(
-              (t) => !isBiggerThreat(enemy, t.target)
+              (t) => !isBiggerThreat(enemy, t.target),
             );
             if (safeTargets.length > 0) {
               safeTargets.sort((a, b) => a.distance - b.distance);
@@ -2920,7 +3845,7 @@ export function runEnemyTurnAI(enemy, context) {
               reasoning = `🦅 ${
                 enemy.name
               } targets closest manageable foe (${Math.round(
-                safeTargets[0].distance
+                safeTargets[0].distance,
               )}ft away)`;
             } else {
               // Fallback to closest
@@ -2928,14 +3853,14 @@ export function runEnemyTurnAI(enemy, context) {
               reasoning = `🦅 ${
                 enemy.name
               } cautiously approaches closest target (${Math.round(
-                targetsInRange[0].distance
+                targetsInRange[0].distance,
               )}ft away)`;
             }
           } else {
             // No targets in range
             addLog(
               `🦅 ${enemy.name} circles overhead, no suitable targets in range`,
-              "info"
+              "info",
             );
             processingEnemyTurnRef.current = false;
             scheduleEndTurn();
@@ -2947,7 +3872,7 @@ export function runEnemyTurnAI(enemy, context) {
         // If no reachable targets, check if enemy has any valid offensive options
         if (targetsInRange.length === 0 && targetsWithDistance.length > 0) {
           const allUnreachable = targetsWithDistance.every(
-            (t) => t.isUnreachable
+            (t) => t.isUnreachable,
           );
           if (allUnreachable) {
             // Check if enemy has any way to attack (ranged, spells, psionics)
@@ -2959,10 +3884,10 @@ export function runEnemyTurnAI(enemy, context) {
               // If this is a prey animal, use prey idle behavior instead of withdraw
               if (isPreyAnimal(enemy)) {
                 const playerEnemies = fighters.filter(
-                  (f) => f.type === "player" && canFighterAct(f)
+                  (f) => f.type === "player" && canFighterAct(f),
                 );
                 const enemyAllies = fighters.filter(
-                  (f) => f.type === "enemy" && f.id !== enemy.id
+                  (f) => f.type === "enemy" && f.id !== enemy.id,
                 );
                 runPreyIdleTurn({
                   fighter: enemy,
@@ -2999,13 +3924,13 @@ export function runEnemyTurnAI(enemy, context) {
               if (!enemy._noOffenseLogged) {
                 addLog(
                   `⚠️ ${enemy.name} has no way to hit any enemies (flight/range). Attempting to withdraw to safety.`,
-                  "warning"
+                  "warning",
                 );
                 // Mark that we've logged this for this fighter
                 setFighters((prev) =>
                   prev.map((f) =>
-                    f.id === enemy.id ? { ...f, _noOffenseLogged: true } : f
-                  )
+                    f.id === enemy.id ? { ...f, _noOffenseLogged: true } : f,
+                  ),
                 );
               }
               processingEnemyTurnRef.current = false;
@@ -3035,7 +3960,7 @@ export function runEnemyTurnAI(enemy, context) {
             } else {
               addLog(
                 `🚫 ${enemy.name} cannot reach any targets with melee - all enemies are flying!`,
-                "warning"
+                "warning",
               );
               // Enemy has ranged options, so continue (they'll use ranged attacks)
             }
@@ -3047,7 +3972,7 @@ export function runEnemyTurnAI(enemy, context) {
           if (weakestTarget && weakestTarget.currentHP < weakestTarget.maxHP) {
             target = weakestTarget;
             reasoning = `targeting the weakest foe (${Math.round(
-              (weakestTarget.currentHP / weakestTarget.maxHP) * 100
+              (weakestTarget.currentHP / weakestTarget.maxHP) * 100,
             )}% HP)`;
           } else if (easyTarget && (easyTarget.AR || easyTarget.ar) < 10) {
             target = easyTarget;
@@ -3072,7 +3997,7 @@ export function runEnemyTurnAI(enemy, context) {
             const bestReachable = reachableTargets[0];
             target = bestReachable.target;
             reasoning = `attacking closest reachable target (${Math.round(
-              bestReachable.distance
+              bestReachable.distance,
             )}ft away)`;
           } else if (blockedTargets.length > 0) {
             // All targets blocked - try area attack or choose alternative
@@ -3118,7 +4043,7 @@ export function runEnemyTurnAI(enemy, context) {
           a.damage === "by spell" ||
           (enemy.magicAbilities &&
             (a.name.toLowerCase().includes("spell") ||
-              a.name.toLowerCase().includes("magic")))
+              a.name.toLowerCase().includes("magic"))),
       );
 
       // Check if creature has charge-type attacks (Horn Charge, Gore, Ram, etc.)
@@ -3127,7 +4052,7 @@ export function runEnemyTurnAI(enemy, context) {
           a.name.toLowerCase().includes("charge") ||
           a.name.toLowerCase().includes("gore") ||
           a.name.toLowerCase().includes("ram") ||
-          a.name.toLowerCase().includes("trample")
+          a.name.toLowerCase().includes("trample"),
       );
 
       // Prioritize magic attacks if creature has magicAbilities or spells available
@@ -3144,7 +4069,7 @@ export function runEnemyTurnAI(enemy, context) {
         ];
         try {
           const attackRoll = CryptoSecureDice.parseAndRoll(
-            `1d${allAttacks.length}`
+            `1d${allAttacks.length}`,
           );
           selectedAttack = allAttacks[attackRoll.totalWithBonus - 1];
         } catch (error) {
@@ -3153,7 +4078,7 @@ export function runEnemyTurnAI(enemy, context) {
           if (isDev) {
             console.warn(
               "[runEnemyTurnAI] Error rolling for magic attack selection:",
-              error
+              error,
             );
           }
           selectedAttack = magicAttacks[0] || availableAttacks[0];
@@ -3166,7 +4091,7 @@ export function runEnemyTurnAI(enemy, context) {
         ];
         try {
           const attackRoll = CryptoSecureDice.parseAndRoll(
-            `1d${allAttacks.length}`
+            `1d${allAttacks.length}`,
           );
           selectedAttack = allAttacks[attackRoll.totalWithBonus - 1];
         } catch (error) {
@@ -3175,7 +4100,7 @@ export function runEnemyTurnAI(enemy, context) {
           if (isDev) {
             console.warn(
               "[runEnemyTurnAI] Error rolling for attack selection:",
-              error
+              error,
             );
           }
           selectedAttack = allAttacks[0];
@@ -3184,7 +4109,7 @@ export function runEnemyTurnAI(enemy, context) {
         // Choose attack strategically from available
         try {
           const attackRoll = CryptoSecureDice.parseAndRoll(
-            `1d${availableAttacks.length}`
+            `1d${availableAttacks.length}`,
           );
           selectedAttack = availableAttacks[attackRoll.totalWithBonus - 1];
         } catch (error) {
@@ -3193,7 +4118,7 @@ export function runEnemyTurnAI(enemy, context) {
           if (isDev) {
             console.warn(
               "[runEnemyTurnAI] Error rolling for available attack selection:",
-              error
+              error,
             );
           }
           selectedAttack = availableAttacks[0];
@@ -3204,7 +4129,7 @@ export function runEnemyTurnAI(enemy, context) {
     if (actionPlan?.aiAction && selectedAttack) {
       const aiActionName = actionPlan.aiAction.toLowerCase();
       const directMatch = availableAttacks.find(
-        (attack) => (attack.name || "").toLowerCase() === aiActionName
+        (attack) => (attack.name || "").toLowerCase() === aiActionName,
       );
       if (directMatch) {
         selectedAttack = directMatch;
@@ -3302,7 +4227,7 @@ export function runEnemyTurnAI(enemy, context) {
         if (knowledge?.weaknessMemory) {
           enemy.meta._weaknessMemory = mergeWeaknessMemory(
             enemy.meta._weaknessMemory,
-            knowledge.weaknessMemory
+            knowledge.weaknessMemory,
           );
         }
         if (knowledge?.threatProfile) {
@@ -3319,7 +4244,7 @@ export function runEnemyTurnAI(enemy, context) {
         recentSpells
           .slice(-2)
           .map((s) => String(s?.name || "").toLowerCase())
-          .filter(Boolean)
+          .filter(Boolean),
       );
 
       let chosen = null;
@@ -3349,7 +4274,7 @@ export function runEnemyTurnAI(enemy, context) {
           enemy.meta._weaknessMemory = recordWeaknessAttempt(
             enemy.meta._weaknessMemory || {},
             targetKey,
-            spell
+            spell,
           );
         } catch {
           // ignore
@@ -3411,7 +4336,7 @@ export function runEnemyTurnAI(enemy, context) {
         } is at (${targetCurrentPos.x}, ${
           targetCurrentPos.y
         }), distance: ${Math.round(currentDistance)}ft`,
-        "info"
+        "info",
       );
 
       // Use proper weapon range validation
@@ -3419,14 +4344,38 @@ export function runEnemyTurnAI(enemy, context) {
         enemy,
         target,
         selectedAttack,
-        currentDistance
+        currentDistance,
       );
+
+      // If we're already engaged/adjacent, do not select a charge/gore/ram style attack.
+      // (Charge is only valid when we actually charge; prevents "Horn Charge at 5ft".)
+      const distFtNow = Number.isFinite(currentDistance)
+        ? currentDistance
+        : Infinity;
+      const selName = String(selectedAttack?.name || "").toLowerCase();
+      const isChargeLike =
+        selName.includes("charge") ||
+        selName.includes("gore") ||
+        selName.includes("ram");
+      if (isChargeLike && distFtNow <= (GRID_CONFIG?.CELL_SIZE || 5) + 0.01) {
+        const nonCharge = (availableAttacks || []).find((a) => {
+          const n = String(a?.name || "").toLowerCase();
+          return !(
+            n.includes("charge") ||
+            n.includes("gore") ||
+            n.includes("ram")
+          );
+        });
+        if (nonCharge) {
+          selectedAttack = nonCharge;
+        }
+      }
 
       // Check if target is unreachable (flying target for ground creature)
       if (rangeValidation.isUnreachable) {
         addLog(
           `🚫 ${enemy.name} cannot reach ${target.name} - ${target.name} is flying and ${enemy.name} cannot fly!`,
-          "warning"
+          "warning",
         );
         // Skip this target and try another one, or do nothing this turn
         processingEnemyTurnRef.current = false;
@@ -3440,17 +4389,17 @@ export function runEnemyTurnAI(enemy, context) {
           `📍 ${enemy.name} is ${Math.round(currentDistance)}ft from ${
             target.name
           } (${rangeValidation.reason})`,
-          "info"
+          "info",
         );
       } else {
         addLog(
           `✅ ${enemy.name} is in range (${rangeValidation.reason})`,
-          "info"
+          "info",
         );
         if (rangeValidation.rangeInfo) {
           addLog(
             `📍 ${enemy.name} attacking at ${rangeValidation.rangeInfo}`,
-            "info"
+            "info",
           );
         }
       }
@@ -3485,7 +4434,7 @@ export function runEnemyTurnAI(enemy, context) {
 
         if (perchChoice) {
           const tree = arenaEnvironment.objects.find(
-            (o) => o.id === perchChoice.treeId
+            (o) => o.id === perchChoice.treeId,
           );
 
           if (tree && reservePerch(tree, perchChoice.perchId, enemy.id)) {
@@ -3500,6 +4449,12 @@ export function runEnemyTurnAI(enemy, context) {
               positionsRef.current = updated;
               return updated;
             });
+            revealAfterObviousMovement(
+              enemy,
+              setFighters,
+              addLog,
+              "perching to observe",
+            );
 
             setFighters((prev) =>
               prev.map((f) =>
@@ -3516,13 +4471,13 @@ export function runEnemyTurnAI(enemy, context) {
                       perchOffsetFeet: perchChoice.localOffsetFeet,
                       remainingAttacks: Math.max(0, f.remainingAttacks - 1),
                     }
-                  : f
-              )
+                  : f,
+              ),
             );
 
             addLog(
               `🦅 ${enemy.name} perches on a nearby tree to observe the area.`,
-              "info"
+              "info",
             );
 
             processingEnemyTurnRef.current = false;
@@ -3584,6 +4539,10 @@ export function runEnemyTurnAI(enemy, context) {
 
       // If hawk is flying high and prey is in range, dive to attack
       if (enemyIsFlying && currentAltitude >= 15 && currentDist <= 30) {
+        if (!commitEnemyAction("HAWK_DIVE")) {
+          processingEnemyTurnRef.current = false;
+          return;
+        }
         // Dive attack: drop altitude to 0-5ft and move toward target
         const diveAltitude = Math.min(5, currentAltitude - 15); // Drop to low altitude
 
@@ -3607,13 +4566,14 @@ export function runEnemyTurnAI(enemy, context) {
           positionsRef.current = updated;
           return updated;
         });
+        revealAfterObviousMovement(enemy, setFighters, addLog, "diving");
 
         setFighters((prev) =>
           prev.map((f) =>
             f.id === enemy.id
               ? { ...f, altitude: diveAltitude, altitudeFeet: diveAltitude }
-              : f
-          )
+              : f,
+          ),
         );
 
         // Drain stamina for dive attack (sprint)
@@ -3621,7 +4581,7 @@ export function runEnemyTurnAI(enemy, context) {
 
         addLog(
           `🦅 ${enemy.name} dives from ${currentAltitude}ft to ${diveAltitude}ft to strike ${target.name}!`,
-          "info"
+          "info",
         );
 
         // Deduct movement action
@@ -3629,18 +4589,26 @@ export function runEnemyTurnAI(enemy, context) {
           prev.map((f) =>
             f.id === enemy.id
               ? { ...f, remainingAttacks: Math.max(0, f.remainingAttacks - 1) }
-              : f
-          )
+              : f,
+          ),
         );
 
         // Attack immediately after dive
         setTimeout(() => {
+          if (
+            combatOverRef?.current ||
+            combatEndCheckRef?.current ||
+            !combatActive
+          ) {
+            processingEnemyTurnRef.current = false;
+            return;
+          }
           const newDistance = calculateDistance(newPos, targetPos);
           const rangeValidation = validateWeaponRange(
             enemy,
             target,
             selectedAttack,
-            newDistance
+            newDistance,
           );
 
           if (rangeValidation.canAttack) {
@@ -3651,6 +4619,13 @@ export function runEnemyTurnAI(enemy, context) {
 
             // After attack, immediately fly back up and away (hit-and-run)
             setTimeout(() => {
+              if (
+                combatOverRef?.current ||
+                combatEndCheckRef?.current ||
+                !combatActive
+              ) {
+                return;
+              }
               const currentPos = positions[enemy.id];
               const targetPos = positions[target.id];
 
@@ -3664,12 +4639,12 @@ export function runEnemyTurnAI(enemy, context) {
                         altitude: cruiseAltitude,
                         altitudeFeet: cruiseAltitude,
                       }
-                    : f
-                )
+                    : f,
+                ),
               );
               addLog(
                 `🦅 ${enemy.name} climbs back to ${cruiseAltitude}ft altitude`,
-                "info"
+                "info",
               );
 
               // Move away from target (hit-and-run pattern)
@@ -3687,9 +4662,15 @@ export function runEnemyTurnAI(enemy, context) {
                   positionsRef.current = updated;
                   return updated;
                 });
+                revealAfterObviousMovement(
+                  enemy,
+                  setFighters,
+                  addLog,
+                  "breaking away after the attack",
+                );
                 addLog(
                   `🦅 ${enemy.name} breaks away after the attack (hit-and-run)`,
-                  "info"
+                  "info",
                 );
               }
             }, 500);
@@ -3698,8 +4679,10 @@ export function runEnemyTurnAI(enemy, context) {
             // Still fly back up
             setFighters((prev) =>
               prev.map((f) =>
-                f.id === enemy.id ? { ...f, altitude: 20, altitudeFeet: 20 } : f
-              )
+                f.id === enemy.id
+                  ? { ...f, altitude: 20, altitudeFeet: 20 }
+                  : f,
+              ),
             );
           }
 
@@ -3719,20 +4702,20 @@ export function runEnemyTurnAI(enemy, context) {
                   altitude: takeOffAltitude,
                   altitudeFeet: takeOffAltitude,
                 }
-              : f
-          )
+              : f,
+          ),
         );
         addLog(
           `🦅 ${enemy.name} takes to the air (altitude: ${takeOffAltitude}ft) to hunt ${target.name}`,
-          "info"
+          "info",
         );
 
         setFighters((prev) =>
           prev.map((f) =>
             f.id === enemy.id
               ? { ...f, remainingAttacks: Math.max(0, f.remainingAttacks - 1) }
-              : f
-          )
+              : f,
+          ),
         );
 
         processingEnemyTurnRef.current = false;
@@ -3790,8 +4773,8 @@ export function runEnemyTurnAI(enemy, context) {
           prev.map((f) =>
             f.id === enemy.id
               ? { ...f, remainingAttacks: Math.max(0, f.remainingAttacks - 1) }
-              : f
-          )
+              : f,
+          ),
         );
 
         processingEnemyTurnRef.current = false;
@@ -3831,7 +4814,7 @@ export function runEnemyTurnAI(enemy, context) {
           const targetAltitude = getAltitude(target) || 0;
           addLog(
             `🚫 ${enemy.name} cannot reach ${target.name} with melee - ${target.name} is flying (${targetAltitude}ft) and ${enemy.name} has no ranged weapons!`,
-            "warning"
+            "warning",
           );
           markTargetUnreachable(enemy, target);
           // Skip this target - don't waste actions trying to reach an unreachable target
@@ -3853,7 +4836,7 @@ export function runEnemyTurnAI(enemy, context) {
           target,
           currentPos,
           targetPos,
-          equippedWeapon
+          equippedWeapon,
         );
         // NEW: Double-check with full range logic (including altitude) before trusting inRange
         const currentDistance = calculateDistance(currentPos, targetPos);
@@ -3861,7 +4844,7 @@ export function runEnemyTurnAI(enemy, context) {
           enemy,
           target,
           equippedWeapon,
-          currentDistance
+          currentDistance,
         );
 
         // Only trust movementAnalysis.inRange if altitude-aware range check also says canAttack
@@ -3874,16 +4857,16 @@ export function runEnemyTurnAI(enemy, context) {
         ) {
           if (movementAnalysis.inRange && !rangeValidation.canAttack) {
             // Movement analysis says "in range" but altitude check says "unreachable"
-            addLog(
+            dbgLog(
               `🔍 ${enemy.name} analyzes movement: ${movementAnalysis.distance}ft away, but ${rangeValidation.reason}`,
-              "info"
+              "info",
             );
           } else {
-            addLog(
+            dbgLog(
               `🔍 ${enemy.name} analyzes movement: ${
                 movementAnalysis.distance
               }ft away, ${actuallyInRange ? "in range" : "needs to move"}`,
-              "info"
+              "info",
             );
           }
         }
@@ -3893,7 +4876,7 @@ export function runEnemyTurnAI(enemy, context) {
           !rangeValidation.canAttack &&
           (rangeValidation.reason?.includes("flying too high") ||
             rangeValidation.reason?.includes(
-              "cannot be reached by melee attacks from ground"
+              "cannot be reached by melee attacks from ground",
             ))
         ) {
           // If we can fly, pursue the target into the air instead of giving up.
@@ -3935,7 +4918,7 @@ export function runEnemyTurnAI(enemy, context) {
 
               addLog(
                 `🦅 ${enemy.name} takes to the air to pursue ${target.name} (${enemyAltFeet}ft → ${nextAlt}ft)`,
-                "info"
+                "info",
               );
 
               setFighters((prev) =>
@@ -3949,10 +4932,10 @@ export function runEnemyTurnAI(enemy, context) {
                     meta: updatedMeta,
                     remainingAttacks: Math.max(
                       0,
-                      (f.remainingAttacks ?? 0) - 1
+                      (f.remainingAttacks ?? 0) - 1,
                     ),
                   };
-                })
+                }),
               );
 
               processingEnemyTurnRef.current = false;
@@ -3965,7 +4948,7 @@ export function runEnemyTurnAI(enemy, context) {
           markTargetUnreachable(enemy, target);
           addLog(
             `❌ ${enemy.name} realizes ${target.name} is unreachable (${rangeValidation.reason}).`,
-            "warning"
+            "warning",
           );
           // Mark target as unreachable for this round to prevent spam
           if (!enemy.meta) enemy.meta = {};
@@ -3977,8 +4960,8 @@ export function runEnemyTurnAI(enemy, context) {
           }
           setFighters((prev) =>
             prev.map((f) =>
-              f.id === enemy.id ? { ...f, meta: enemy.meta } : f
-            )
+              f.id === enemy.id ? { ...f, meta: enemy.meta } : f,
+            ),
           );
           processingEnemyTurnRef.current = false;
           scheduleEndTurn();
@@ -3992,20 +4975,20 @@ export function runEnemyTurnAI(enemy, context) {
         target,
         currentPos,
         targetPos,
-        availableAttacks
+        availableAttacks,
       );
 
       // Check for flanking opportunities
       const flankingPositions = findFlankingPositions(
         targetPos,
         positions,
-        enemy.id
+        enemy.id,
       );
       const currentFlankingBonus = calculateFlankingBonus(
         currentPos,
         targetPos,
         positions,
-        enemy.id
+        enemy.id,
       );
 
       // If we can flank, prioritize flanking positions
@@ -4015,12 +4998,12 @@ export function runEnemyTurnAI(enemy, context) {
         if (!canThreatenWithMelee(enemy, target)) {
           addLog(
             `❌ ${enemy.name} skips flanking ${target.name} (target unreachable in melee)`,
-            "warning"
+            "warning",
           );
           markTargetUnreachable(enemy, target);
           // Don't attempt flanking if target is unreachable - skip to next action
         } else {
-          addLog(`🎯 ${enemy.name} considers flanking ${target.name}`, "info");
+          dbgLog(`🎯 ${enemy.name} considers flanking ${target.name}`, "info");
 
           // Find the best flanking position (closest to current position AND within attack range)
           const speed =
@@ -4044,7 +5027,7 @@ export function runEnemyTurnAI(enemy, context) {
           if (enemyCanFly || enemyIsFlying) {
             addLog(
               `🦅 ${enemy.name} uses flight movement (max ${maxMoveDistance}ft)`,
-              "info"
+              "info",
             );
           }
 
@@ -4059,16 +5042,16 @@ export function runEnemyTurnAI(enemy, context) {
               // Check if this flanking position is within attack range
               const distanceFromFlankToTarget = calculateDistance(
                 flankPos,
-                targetPos
+                targetPos,
               );
               const rangeValidation = validateWeaponRange(
                 enemy,
                 target,
                 selectedAttack,
-                distanceFromFlankToTarget
+                distanceFromFlankToTarget,
               );
               return rangeValidation.canAttack;
-            }
+            },
           );
 
           if (validFlankingPositions.length > 0) {
@@ -4078,12 +5061,17 @@ export function runEnemyTurnAI(enemy, context) {
                 const bestDist = calculateDistance(currentPos, best);
                 const currentDist = calculateDistance(currentPos, current);
                 return currentDist < bestDist ? current : best;
-              }
+              },
             );
 
             const flankDistance = calculateDistance(currentPos, bestFlankPos);
 
-            addLog(`🎯 ${enemy.name} attempts to flank ${target.name}`, "info");
+            dbgLog(`🎯 ${enemy.name} attempts to flank ${target.name}`, "info");
+
+            if (!commitEnemyAction("FLANKING_MOVE")) {
+              processingEnemyTurnRef.current = false;
+              return;
+            }
 
             // Move to flanking position
             setPositions((prev) => {
@@ -4104,68 +5092,50 @@ export function runEnemyTurnAI(enemy, context) {
                       ...f,
                       remainingAttacks: Math.max(
                         0,
-                        f.remainingAttacks - movementCost
+                        f.remainingAttacks - movementCost,
                       ),
                     }
-                  : f
-              )
+                  : f,
+              ),
             );
 
-            addLog(
+            dbgLog(
               `🎯 ${enemy.name} targets flanking position (${bestFlankPos.x}, ${bestFlankPos.y})`,
-              "info"
+              "info",
             );
 
-            // Continue with attack after movement
+            // Flanking reposition only this slice (same rule as RUN/MOVE — no move+attack here).
             setTimeout(() => {
-              const newDistance = calculateDistance(bestFlankPos, targetPos);
-              const rangeValidation = validateWeaponRange(
-                enemy,
-                target,
-                selectedAttack,
-                newDistance
-              );
-
-              if (rangeValidation.canAttack) {
-                const flankingBonus = calculateFlankingBonus(
-                  bestFlankPos,
-                  targetPos,
-                  positions,
-                  enemy.id
-                );
-                if (flankingBonus > 0) {
-                  addLog(
-                    `🎯 ${enemy.name} gains flanking bonus (+${flankingBonus} to hit)!`,
-                    "info"
-                  );
-                }
-
-                // Execute attack with flanking bonus
-                const updatedEnemy = {
-                  ...enemy,
-                  selectedAttack: selectedAttack,
-                };
-                const bonuses = flankingBonus > 0 ? { flankingBonus } : {};
-                attack(updatedEnemy, target.id, bonuses);
-
+              if (
+                combatOverRef?.current ||
+                combatEndCheckRef?.current ||
+                !combatActive
+              ) {
                 processingEnemyTurnRef.current = false;
-                scheduleEndTurn();
-              } else {
-                addLog(
-                  `❌ ${enemy.name} cannot reach ${target.name} from flanking position`,
-                  "error"
-                );
-                processingEnemyTurnRef.current = false;
-                scheduleEndTurn();
+                return;
               }
+              const newDistance = calculateDistance(bestFlankPos, targetPos);
+              if (
+                markDistanceClosed &&
+                combatStateRef?.current &&
+                newDistance <= (GRID_CONFIG.CELL_SIZE || 5) + 0.01
+              ) {
+                try {
+                  markDistanceClosed(enemy, target, combatStateRef.current);
+                } catch {
+                  // ignore
+                }
+              }
+              processingEnemyTurnRef.current = false;
+              scheduleEndTurn(0);
             }, 1000);
             return;
           } else {
             // No valid flanking positions (either can't reach them or they're out of attack range)
             // Fall through to normal movement logic
-            addLog(
+            dbgLog(
               `🎯 ${enemy.name} cannot reach a valid flanking position - will move directly toward ${target.name}`,
-              "info"
+              "info",
             );
           }
         } // Close the else block for reachable target check
@@ -4190,12 +5160,12 @@ export function runEnemyTurnAI(enemy, context) {
           movementDescription = "charges";
           hexesToMove = Math.min(
             Math.round(currentDistance / GRID_CONFIG.CELL_SIZE) - 1,
-            3
+            3,
           );
           isChargingAttack = true;
           addLog(
             `⚡ ${enemy.name} decides to charge! (${aiDecision.reason})`,
-            "info"
+            "info",
           );
           break;
 
@@ -4206,14 +5176,14 @@ export function runEnemyTurnAI(enemy, context) {
           const moveAndAttackFeetPerAction =
             (speed * 18) / (enemy.attacksPerMelee || 1);
           const moveAndAttackWalkingSpeed = Math.floor(
-            moveAndAttackFeetPerAction * 0.5
+            moveAndAttackFeetPerAction * 0.5,
           ); // Walking speed
           hexesToMove = Math.floor(
-            moveAndAttackWalkingSpeed / GRID_CONFIG.CELL_SIZE
+            moveAndAttackWalkingSpeed / GRID_CONFIG.CELL_SIZE,
           );
           addLog(
             `🏃 ${enemy.name} moves closer to attack (${aiDecision.reason})`,
-            "info"
+            "info",
           );
           break;
         }
@@ -4225,7 +5195,7 @@ export function runEnemyTurnAI(enemy, context) {
           const moveCloserFeetPerAction =
             (speed * 18) / (enemy.attacksPerMelee || 1);
           hexesToMove = Math.floor(
-            moveCloserFeetPerAction / GRID_CONFIG.CELL_SIZE
+            moveCloserFeetPerAction / GRID_CONFIG.CELL_SIZE,
           );
           addLog(`🏃 ${enemy.name} runs closer (${aiDecision.reason})`, "info");
           break;
@@ -4234,25 +5204,43 @@ export function runEnemyTurnAI(enemy, context) {
         case "use_ranged": {
           // Try to use ranged attack instead of moving
           const rangedAttack = availableAttacks.find(
-            (a) => a.range && a.range > 0
+            (a) => a.range && a.range > 0,
           );
           if (rangedAttack) {
             addLog(
               `🏹 ${enemy.name} uses ranged attack instead of moving (${aiDecision.reason})`,
-              "info"
+              "info",
             );
+            if (!commitEnemyAction("USE_RANGED_INSTEAD")) {
+              processingEnemyTurnRef.current = false;
+              return;
+            }
             setTimeout(() => {
+              if (
+                combatOverRef?.current ||
+                combatEndCheckRef?.current ||
+                !combatActive
+              ) {
+                processingEnemyTurnRef.current = false;
+                return;
+              }
               const flankingBonus = calculateFlankingBonus(
                 positions[enemy.id],
                 positions[target.id],
                 positions,
-                enemy.id
+                enemy.id,
               );
-              const bonuses = flankingBonus > 0 ? { flankingBonus } : {};
-              attack(enemy, target.id, bonuses);
+              const bonuses = {
+                ...(flankingBonus > 0 ? { flankingBonus } : {}),
+                attackDataOverride: rangedAttack,
+              };
+              attack(
+                { ...enemy, selectedAttack: rangedAttack },
+                target.id,
+                bonuses,
+              );
+              processingEnemyTurnRef.current = false;
             }, 1000);
-            processingEnemyTurnRef.current = false;
-            scheduleEndTurn();
             return;
           }
           // Fall back to movement if no ranged attack
@@ -4263,7 +5251,7 @@ export function runEnemyTurnAI(enemy, context) {
           const fallbackFeetPerAction =
             movementRates.running / (enemy.attacksPerMelee || 1);
           hexesToMove = Math.floor(
-            fallbackFeetPerAction / GRID_CONFIG.CELL_SIZE
+            fallbackFeetPerAction / GRID_CONFIG.CELL_SIZE,
           );
           break;
         }
@@ -4288,25 +5276,34 @@ export function runEnemyTurnAI(enemy, context) {
 
         addLog(
           `🏃 ${enemy.name} is very far away, ${movementDescription} at full speed (${maxMovementFeet}ft/action)`,
-          "info"
+          "info",
         );
       }
       // else: close distance (1-3 hexes) - use default MOVE (1 hex)
 
+      // AI switch uses "MOVE"/"RUN"/"CHARGE" while MOVEMENT_ACTIONS uses Title Case — normalize.
+      const mtNorm = String(movementType || "").trim();
+      const mtUpper = mtNorm.toUpperCase();
+      const isChargeMovement =
+        mtNorm === MOVEMENT_ACTIONS.CHARGE.name || mtUpper === "CHARGE";
+      const isWalkOrMoveMovement =
+        mtNorm === MOVEMENT_ACTIONS.MOVE.name ||
+        ["MOVE", "WALK"].includes(mtUpper);
+
       // If we decided to CHARGE, make sure we're using a charge-type attack!
-      if (movementType === "CHARGE" && isChargingAttack) {
+      if (isChargeMovement && isChargingAttack) {
         const chargeAttacks = availableAttacks.filter(
           (a) =>
             a.name.toLowerCase().includes("charge") ||
             a.name.toLowerCase().includes("gore") ||
-            a.name.toLowerCase().includes("ram")
+            a.name.toLowerCase().includes("ram"),
         );
 
         if (chargeAttacks.length > 0) {
           selectedAttack = chargeAttacks[0]; // Use Horn Charge, Gore, etc.
           addLog(
             `⚡ ${enemy.name} selects ${selectedAttack.name} for the charge!`,
-            "combat"
+            "combat",
           );
         }
       }
@@ -4321,7 +5318,7 @@ export function runEnemyTurnAI(enemy, context) {
         // Already at target position, no movement needed
         addLog(
           `📍 ${enemy.name} is already at target position, skipping movement`,
-          "info"
+          "info",
         );
         // Continue to attack if in range
         const distanceFromCurrentPos = calculateDistance(currentPos, targetPos);
@@ -4329,19 +5326,19 @@ export function runEnemyTurnAI(enemy, context) {
           enemy,
           target,
           selectedAttack,
-          distanceFromCurrentPos
+          distanceFromCurrentPos,
         );
 
         if (rangeValidation.canAttack) {
           addLog(
             `⚔️ ${enemy.name} attacks from current position (${rangeValidation.reason})`,
-            "info"
+            "info",
           );
           // Continue to attack below (don't return)
         } else {
           addLog(
             `⚔️ ${enemy.name} cannot reach target (${rangeValidation.reason}) and ends turn`,
-            "info"
+            "info",
           );
           processingEnemyTurnRef.current = false;
           scheduleEndTurn();
@@ -4352,11 +5349,11 @@ export function runEnemyTurnAI(enemy, context) {
       // Calculate distance in hexes for movement calculations
       const hexDistance = Math.round(currentDistance / GRID_CONFIG.CELL_SIZE);
 
-      addLog(
+      dbgLog(
         `🔍 ${enemy.name} movement debug: distance=${Math.round(
-          currentDistance
+          currentDistance,
         )}ft, hexDistance=${hexDistance}, hexesToMove=${hexesToMove}, movementType=${movementType}`,
-        "info"
+        "info",
       );
 
       // Determine actual hexes to move (don't overshoot, but ensure at least 1 hex if far away)
@@ -4367,14 +5364,14 @@ export function runEnemyTurnAI(enemy, context) {
         // For very far distances, move more aggressively to prevent infinite loops
         actualHexesToMove = Math.min(
           hexesToMove * 3,
-          Math.floor(hexDistance / 3)
+          Math.floor(hexDistance / 3),
         );
         actualHexesToMove = Math.max(5, actualHexesToMove); // Minimum 5 hexes for far distances
-        addLog(
+        dbgLog(
           `🔍 ${enemy.name} far away (${Math.round(
-            currentDistance
+            currentDistance,
           )}ft), using aggressive movement: ${actualHexesToMove} hexes`,
-          "info"
+          "info",
         );
       } else {
         // Normal movement calculation
@@ -4390,17 +5387,14 @@ export function runEnemyTurnAI(enemy, context) {
       if (isDev && moveRatio > 0.1) {
         console.debug(
           `[runEnemyTurnAI] Movement ratio: ${(moveRatio * 100).toFixed(
-            1
-          )}% of distance`
+            1,
+          )}% of distance`,
         );
       }
 
       let newX, newY, movementInfo;
 
-      if (
-        movementType === MOVEMENT_ACTIONS.MOVE.name ||
-        movementType === MOVEMENT_ACTIONS.CHARGE.name
-      ) {
+      if (isChargeMovement || isWalkOrMoveMovement) {
         // MOVE: move calculated hexes immediately
         // CHARGE: move multiple hexes immediately and attack with bonuses
         const hexesThisTurn = actualHexesToMove; // Use the calculated movement distance
@@ -4418,9 +5412,9 @@ export function runEnemyTurnAI(enemy, context) {
         newX = isNaN(newX) ? currentPos.x : newX;
         newY = isNaN(newY) ? currentPos.y : newY;
 
-        addLog(
+        dbgLog(
           `🔍 ${enemy.name} calculated movement: from (${currentPos.x}, ${currentPos.y}) to (${newX}, ${newY}), hexesThisTurn=${hexesThisTurn}`,
-          "info"
+          "info",
         );
 
         // Check if destination is occupied
@@ -4428,13 +5422,13 @@ export function runEnemyTurnAI(enemy, context) {
         if (occupant) {
           addLog(
             `🚫 ${enemy.name} cannot move to (${newX}, ${newY}) - occupied by ${occupant.name}`,
-            "info"
+            "info",
           );
 
           // Recalculate distance from CURRENT position (not the blocked destination)
           const distanceFromCurrentPos = calculateDistance(
             currentPos,
-            targetPos
+            targetPos,
           );
 
           // Check if within weapon range
@@ -4442,13 +5436,13 @@ export function runEnemyTurnAI(enemy, context) {
             enemy,
             target,
             selectedAttack,
-            distanceFromCurrentPos
+            distanceFromCurrentPos,
           );
 
           if (rangeValidation.canAttack) {
             addLog(
               `⚔️ ${enemy.name} is within range (${rangeValidation.reason}) and attacks`,
-              "info"
+              "info",
             );
             // Don't end turn, continue to attack below
           } else {
@@ -4456,7 +5450,7 @@ export function runEnemyTurnAI(enemy, context) {
             const isFlyingTooHigh =
               rangeValidation.reason?.includes("flying too high") ||
               rangeValidation.reason?.includes(
-                "cannot be reached by melee attacks from ground"
+                "cannot be reached by melee attacks from ground",
               );
 
             if (isFlyingTooHigh) {
@@ -4464,7 +5458,7 @@ export function runEnemyTurnAI(enemy, context) {
               markTargetUnreachable(enemy, target);
               addLog(
                 `❌ ${enemy.name} realizes ${target.name} is unreachable (${rangeValidation.reason}).`,
-                "warning"
+                "warning",
               );
               // Mark target as unreachable for this round to prevent spam
               if (!enemy.meta) enemy.meta = {};
@@ -4476,8 +5470,8 @@ export function runEnemyTurnAI(enemy, context) {
               }
               setFighters((prev) =>
                 prev.map((f) =>
-                  f.id === enemy.id ? { ...f, meta: enemy.meta } : f
-                )
+                  f.id === enemy.id ? { ...f, meta: enemy.meta } : f,
+                ),
               );
               processingEnemyTurnRef.current = false;
               scheduleEndTurn();
@@ -4488,7 +5482,7 @@ export function runEnemyTurnAI(enemy, context) {
             // If no alternative found, end turn
             addLog(
               `⚠️ ${enemy.name} cannot get any closer to ${target.name} and is out of melee range (path blocked).`,
-              "warning"
+              "warning",
             );
 
             // Try to find alternative path (same logic as RUN/SPRINT section)
@@ -4516,7 +5510,7 @@ export function runEnemyTurnAI(enemy, context) {
                       enemy,
                       target,
                       selectedAttack,
-                      testDistance
+                      testDistance,
                     );
                     if (testRangeValidation.canAttack) {
                       newX = testPos.x;
@@ -4524,7 +5518,7 @@ export function runEnemyTurnAI(enemy, context) {
                       foundAlternative = true;
                       addLog(
                         `📍 ${enemy.name} adjusts path to avoid ${occupant.name}, moving to (${newX}, ${newY})`,
-                        "info"
+                        "info",
                       );
                       break;
                     }
@@ -4536,7 +5530,7 @@ export function runEnemyTurnAI(enemy, context) {
             if (!foundAlternative) {
               addLog(
                 `⚔️ ${enemy.name} cannot reach target (${rangeValidation.reason}) and ends turn`,
-                "info"
+                "info",
               );
               processingEnemyTurnRef.current = false;
               scheduleEndTurn();
@@ -4546,38 +5540,39 @@ export function runEnemyTurnAI(enemy, context) {
           }
         } else {
           // Not occupied, safe to move
-          const currentMovementAction =
-            movementType === MOVEMENT_ACTIONS.CHARGE.name
-              ? MOVEMENT_ACTIONS.CHARGE
-              : MOVEMENT_ACTIONS.MOVE;
+          if (!commitEnemyAction(`move:${movementType || "Move"}`)) {
+            processingEnemyTurnRef.current = false;
+            return;
+          }
+          const currentMovementAction = isChargeMovement
+            ? MOVEMENT_ACTIONS.CHARGE
+            : MOVEMENT_ACTIONS.MOVE;
           movementInfo = {
             action: movementType,
             actionCost: currentMovementAction.actionCost,
-            description:
-              movementType === MOVEMENT_ACTIONS.CHARGE.name
-                ? `Charge to position (${newX}, ${newY}) - ${MOVEMENT_ACTIONS.CHARGE.description}`
-                : `Move to position (${newX}, ${newY}) - ${MOVEMENT_ACTIONS.MOVE.description}`,
+            description: isChargeMovement
+              ? `Charge to position (${newX}, ${newY}) - ${MOVEMENT_ACTIONS.CHARGE.description}`
+              : `Move to position (${newX}, ${newY}) - ${MOVEMENT_ACTIONS.MOVE.description}`,
           };
 
           // Update position immediately for MOVE or CHARGE
           handlePositionChange(enemy.id, { x: newX, y: newY }, movementInfo);
 
           const distanceMoved = hexesThisTurn * GRID_CONFIG.CELL_SIZE;
-          const actionVerb =
-            movementType === MOVEMENT_ACTIONS.CHARGE.name ? "charges" : "moves";
+          const actionVerb = isChargeMovement ? "charges" : "moves";
 
           // Use MOVEMENT_RATES for 1994 Palladium format
           const movementRates = MOVEMENT_RATES.calculateMovement(speed);
           const runAction = MOVEMENT_ACTIONS.RUN;
           addLog(
             `🏃 ${enemy.name} uses ${runAction.actionCost} action(s) to ${runAction.name} (Speed ${speed} → ${movementRates.running}ft/melee)`,
-            "info"
+            "info",
           );
           addLog(
             `📍 ${enemy.name} ${actionVerb} ${Math.round(
-              distanceMoved
+              distanceMoved,
             )}ft toward ${target.name} → new position (${newX},${newY})`,
-            "info"
+            "info",
           );
 
           // Deduct 1 action for movement
@@ -4590,71 +5585,48 @@ export function runEnemyTurnAI(enemy, context) {
                 };
                 addLog(
                   `⏭️ ${enemy.name} has ${updatedEnemy.remainingAttacks} action(s) remaining this melee`,
-                  "info"
+                  "info",
                 );
                 return updatedEnemy;
               }
               return f;
-            })
+            }),
           );
 
-          if (movementType === MOVEMENT_ACTIONS.CHARGE.name) {
-            // CHARGE continues to attack on same turn (don't end turn yet!)
-            const chargeAction = MOVEMENT_ACTIONS.CHARGE;
-            addLog(
-              `⚡ Now within melee range! Charge attack: ${chargeAction.description}`,
-              "combat"
-            );
-            // Continue to attack section below (don't return)
-          } else {
-            // After movement, check if we're now in range
-            const newDistanceAfterMove = calculateDistance(
-              { x: newX, y: newY },
-              targetPos
-            );
-            const rangeValidation = validateWeaponRange(
-              enemy,
-              target,
-              selectedAttack,
-              newDistanceAfterMove
-            );
-
-            const updatedEnemy = fighters.find((f) => f.id === enemy.id);
-            const hasActionsRemaining =
-              updatedEnemy && updatedEnemy.remainingAttacks > 0;
-
-            if (rangeValidation.canAttack && hasActionsRemaining) {
-              // In range - perform a single attack, then end turn
-              const updatedEnemyForAttack = {
-                ...enemy,
-                selectedAttack: selectedAttack,
-              };
-              attack(updatedEnemyForAttack, target.id, {});
-              processingEnemyTurnRef.current = false;
-              scheduleEndTurn();
-              return;
-            } else {
-              // Not in range or no actions - end turn
-              const remainingDistance = Math.round(newDistanceAfterMove);
-              if (remainingDistance > 5) {
-                addLog(
-                  `📍 ${enemy.name} still ${remainingDistance}ft out of melee range - ending turn`,
-                  "info"
-                );
-              } else if (!hasActionsRemaining) {
-                addLog(
-                  `⏭️ ${enemy.name} has no actions remaining after movement - passing to next fighter`,
-                  "info"
-                );
-              }
-              processingEnemyTurnRef.current = false;
-              scheduleEndTurn();
-              return;
+          // Movement is this turn slice's committed action, including charge movement.
+          // Do not fall through into the attack section from the same enemy AI call.
+          const newDistanceAfterMove = calculateDistance(
+            { x: newX, y: newY },
+            targetPos,
+          );
+          if (
+            markDistanceClosed &&
+            combatStateRef?.current &&
+            newDistanceAfterMove <= (GRID_CONFIG.CELL_SIZE || 5) + 0.01
+          ) {
+            try {
+              markDistanceClosed(enemy, target, combatStateRef.current);
+            } catch {
+              // ignore
             }
           }
+          const remainingDistance = Math.round(newDistanceAfterMove);
+          if (remainingDistance > 5) {
+            addLog(
+              `📍 ${enemy.name} still ${remainingDistance}ft out of melee range - ending turn`,
+              "info",
+            );
+          }
+          processingEnemyTurnRef.current = false;
+          scheduleEndTurn(16);
+          return;
         }
       } else {
-        // RUN/SPRINT: Move immediately (Palladium 1994 - no future movement)
+        // RUN/SPRINT/CLOSE: Move immediately (Palladium 1994 — move only this slice, no deferred attack)
+        if (!commitEnemyAction("RUN_TO_RANGE")) {
+          processingEnemyTurnRef.current = false;
+          return;
+        }
         const moveDistance = actualHexesToMove;
 
         // FIX: Prevent NaN by checking distance is valid
@@ -4672,15 +5644,15 @@ export function runEnemyTurnAI(enemy, context) {
           0,
           Math.min(
             GRID_CONFIG.GRID_WIDTH - 1,
-            isNaN(newX) ? currentPos.x : newX
-          )
+            isNaN(newX) ? currentPos.x : newX,
+          ),
         );
         newY = Math.max(
           0,
           Math.min(
             GRID_CONFIG.GRID_HEIGHT - 1,
-            isNaN(newY) ? currentPos.y : newY
-          )
+            isNaN(newY) ? currentPos.y : newY,
+          ),
         );
 
         // Check if destination is occupied
@@ -4695,7 +5667,7 @@ export function runEnemyTurnAI(enemy, context) {
           if (occupantIsAlly) {
             addLog(
               `🏃 ${enemy.name} weaves past ${occupant.name} while running full tilt`,
-              "info"
+              "info",
             );
           } else {
             let attackRange = 5.5;
@@ -4715,20 +5687,20 @@ export function runEnemyTurnAI(enemy, context) {
               // Check if occupant (target) is actually reachable (altitude check)
               const distanceFromCurrentPos = calculateDistance(
                 currentPos,
-                targetPos
+                targetPos,
               );
               const rangeValidation = validateWeaponRange(
                 enemy,
                 occupant, // occupant is the target in this case
                 selectedAttack,
-                distanceFromCurrentPos
+                distanceFromCurrentPos,
               );
 
               // Check if target is unreachable due to altitude (flying too high)
               const isFlyingTooHigh =
                 rangeValidation.reason?.includes("flying too high") ||
                 rangeValidation.reason?.includes(
-                  "cannot be reached by melee attacks from ground"
+                  "cannot be reached by melee attacks from ground",
                 );
 
               if (isFlyingTooHigh) {
@@ -4736,7 +5708,7 @@ export function runEnemyTurnAI(enemy, context) {
                 markTargetUnreachable(enemy, occupant);
                 addLog(
                   `❌ ${enemy.name} realizes ${occupant.name} is unreachable (${rangeValidation.reason}).`,
-                  "warning"
+                  "warning",
                 );
                 // Mark target as unreachable for this round to prevent spam
                 if (!enemy.meta) enemy.meta = {};
@@ -4750,8 +5722,8 @@ export function runEnemyTurnAI(enemy, context) {
                 }
                 setFighters((prev) =>
                   prev.map((f) =>
-                    f.id === enemy.id ? { ...f, meta: enemy.meta } : f
-                  )
+                    f.id === enemy.id ? { ...f, meta: enemy.meta } : f,
+                  ),
                 );
                 processingEnemyTurnRef.current = false;
                 scheduleEndTurn();
@@ -4763,7 +5735,7 @@ export function runEnemyTurnAI(enemy, context) {
               attackOfOpportunityAttacker = occupant;
               addLog(
                 `⚔️ ${enemy.name} barrels through to engage ${occupant.name}!`,
-                "info"
+                "info",
               );
             } else {
               // Find nearest unoccupied hex toward target
@@ -4792,7 +5764,7 @@ export function runEnemyTurnAI(enemy, context) {
                       foundAlternative = true;
                       addLog(
                         `📍 ${enemy.name} adjusts path to avoid ${occupant.name}, moving to (${targetX}, ${targetY})`,
-                        "info"
+                        "info",
                       );
                       break;
                     }
@@ -4803,26 +5775,26 @@ export function runEnemyTurnAI(enemy, context) {
               if (!foundAlternative) {
                 addLog(
                   `🚫 ${enemy.name} cannot find path to target - all hexes occupied`,
-                  "info"
+                  "info",
                 );
 
                 // Check if enemy can still attack from current position despite being blocked
                 const distanceFromCurrentPos = calculateDistance(
                   currentPos,
-                  targetPos
+                  targetPos,
                 );
                 const rangeValidation = validateWeaponRange(
                   enemy,
                   target,
                   selectedAttack,
-                  distanceFromCurrentPos
+                  distanceFromCurrentPos,
                 );
 
                 // Check if target is unreachable due to altitude (flying too high)
                 const isFlyingTooHigh =
                   rangeValidation.reason?.includes("flying too high") ||
                   rangeValidation.reason?.includes(
-                    "cannot be reached by melee attacks from ground"
+                    "cannot be reached by melee attacks from ground",
                   );
 
                 if (isFlyingTooHigh) {
@@ -4830,7 +5802,7 @@ export function runEnemyTurnAI(enemy, context) {
                   markTargetUnreachable(enemy, target);
                   addLog(
                     `❌ ${enemy.name} realizes ${target.name} is unreachable (${rangeValidation.reason}).`,
-                    "warning"
+                    "warning",
                   );
                   // Mark target as unreachable for this round to prevent spam
                   if (!enemy.meta) enemy.meta = {};
@@ -4844,8 +5816,8 @@ export function runEnemyTurnAI(enemy, context) {
                   }
                   setFighters((prev) =>
                     prev.map((f) =>
-                      f.id === enemy.id ? { ...f, meta: enemy.meta } : f
-                    )
+                      f.id === enemy.id ? { ...f, meta: enemy.meta } : f,
+                    ),
                   );
                   processingEnemyTurnRef.current = false;
                   scheduleEndTurn();
@@ -4855,7 +5827,7 @@ export function runEnemyTurnAI(enemy, context) {
                 if (!rangeValidation.canAttack) {
                   addLog(
                     `⚠️ ${enemy.name} cannot get any closer to ${target.name} and is out of melee range (path blocked). Ending turn.`,
-                    "warning"
+                    "warning",
                   );
                   processingEnemyTurnRef.current = false;
                   scheduleEndTurn();
@@ -4865,7 +5837,7 @@ export function runEnemyTurnAI(enemy, context) {
                 // Can attack from current position - continue to attack below
                 addLog(
                   `⚔️ ${enemy.name} is within range from current position (${rangeValidation.reason}) and attacks`,
-                  "info"
+                  "info",
                 );
                 // Don't end turn, continue to attack section below
               }
@@ -4894,24 +5866,39 @@ export function runEnemyTurnAI(enemy, context) {
           positionsRef.current = updated;
           return updated;
         });
+        revealAfterObviousMovement(enemy, setFighters, addLog, "running");
 
         if (closingIntoOpponent && attackOfOpportunityAttacker) {
           addLog(
             `⚠️ ${attackOfOpportunityAttacker.name} gets an attack of opportunity against ${enemy.name}!`,
-            "warning"
+            "warning",
           );
           const attackerForAoO = attackOfOpportunityAttacker;
           const targetForAoO = enemy.id;
 
           setTimeout(() => {
+            if (
+              combatOverRef?.current ||
+              combatEndCheckRef?.current ||
+              !combatActive
+            ) {
+              return;
+            }
             if (attackRef.current) {
               attackRef.current(attackerForAoO, targetForAoO, {});
             } else {
               addLog(
                 `⚠️ Attack of opportunity delayed - attack system not ready`,
-                "info"
+                "info",
               );
               setTimeout(() => {
+                if (
+                  combatOverRef?.current ||
+                  combatEndCheckRef?.current ||
+                  !combatActive
+                ) {
+                  return;
+                }
                 if (attackRef.current) {
                   attackRef.current(attackerForAoO, targetForAoO, {});
                 }
@@ -4929,13 +5916,13 @@ export function runEnemyTurnAI(enemy, context) {
         const feetPerMelee = speed * 18; // Official formula
         addLog(
           `🏃 ${enemy.name} uses one action to RUN (Speed ${speed} → ${feetPerMelee}ft/melee)`,
-          "info"
+          "info",
         );
         addLog(
           `📍 Moves up to ${Math.round(distanceMoved)}ft toward ${
             target.name
           } → new position (${targetX},${targetY})`,
-          "info"
+          "info",
         );
 
         // Deduct 1 action for movement
@@ -4948,98 +5935,32 @@ export function runEnemyTurnAI(enemy, context) {
               };
               addLog(
                 `⏭️ ${enemy.name} has ${updatedEnemy.remainingAttacks} action(s) remaining this melee`,
-                "info"
+                "info",
               );
               return updatedEnemy;
             }
             return f;
-          })
+          }),
         );
 
-        // After RUN/SPRINT movement, check if we're now in range and can attack
-        setTimeout(() => {
-          setPositions((currentPositions) => {
-            positionsRef.current = currentPositions;
-            const latestEnemyPos = currentPositions[enemy.id] || {
-              x: targetX,
-              y: targetY,
-            };
-            const latestTargetPos = currentPositions[target.id] || targetPos;
-            const finalDistance = calculateDistance(
-              latestEnemyPos,
-              latestTargetPos
-            );
-            const rangeValidation = validateWeaponRange(
-              enemy,
-              target,
-              selectedAttack,
-              finalDistance
-            );
+        const distAfterRun = calculateDistance(
+          { x: targetX, y: targetY },
+          targetPos,
+        );
+        if (
+          markDistanceClosed &&
+          combatStateRef?.current &&
+          distAfterRun <= (GRID_CONFIG.CELL_SIZE || 5) + 0.01
+        ) {
+          try {
+            markDistanceClosed(enemy, target, combatStateRef.current);
+          } catch {
+            // ignore
+          }
+        }
 
-            const updatedEnemy = fighters.find((f) => f.id === enemy.id);
-            const hasActionsRemaining =
-              updatedEnemy && updatedEnemy.remainingAttacks > 0;
-
-            // ✅ FIX: Check combat status and target validity before attacking
-            if (!combatActive) {
-              addLog(`⚠️ Combat ended, ${enemy.name} stops moving`, "info");
-              processingEnemyTurnRef.current = false;
-              return currentPositions;
-            }
-
-            // Check if target is still valid
-            const updatedTarget = fighters.find((f) => f.id === target.id);
-            if (
-              !updatedTarget ||
-              updatedTarget.currentHP <= 0 ||
-              updatedTarget.currentHP <= -21
-            ) {
-              addLog(
-                `⚠️ ${enemy.name}'s target is no longer valid, ending turn`,
-                "info"
-              );
-              processingEnemyTurnRef.current = false;
-              scheduleEndTurn();
-              return currentPositions;
-            }
-
-            if (rangeValidation.canAttack && hasActionsRemaining) {
-              addLog(
-                `⚔️ ${enemy.name} is now in range (${rangeValidation.reason})!`,
-                "info"
-              );
-              const updatedEnemyForAttack = {
-                ...enemy,
-                selectedAttack: selectedAttack,
-              };
-              attack(updatedEnemyForAttack, target.id, {
-                attackerPosOverride: latestEnemyPos,
-                defenderPosOverride: latestTargetPos,
-                distanceOverride: finalDistance,
-              });
-              processingEnemyTurnRef.current = false;
-              scheduleEndTurn();
-            } else {
-              if (finalDistance > 5) {
-                addLog(
-                  `📍 ${enemy.name} still ${Math.round(
-                    finalDistance
-                  )}ft out of melee range - ending turn`,
-                  "info"
-                );
-              } else if (!hasActionsRemaining) {
-                addLog(
-                  `⏭️ ${enemy.name} has no actions remaining - passing to next fighter`,
-                  "info"
-                );
-              }
-              processingEnemyTurnRef.current = false;
-              scheduleEndTurn();
-            }
-
-            return currentPositions;
-          });
-        }, 800);
+        processingEnemyTurnRef.current = false;
+        scheduleEndTurn(16);
         return;
       }
     }
@@ -5047,6 +5968,10 @@ export function runEnemyTurnAI(enemy, context) {
     // ✅ FIX: Final validation: make sure target can still be attacked and combat is active
     if (!combatActive) {
       addLog(`⚠️ Combat ended, ${enemy.name} stops attacking`, "info");
+      processingEnemyTurnRef.current = false;
+      return;
+    }
+    if (combatOverRef?.current || combatEndCheckRef?.current) {
       processingEnemyTurnRef.current = false;
       return;
     }
@@ -5063,7 +5988,7 @@ export function runEnemyTurnAI(enemy, context) {
     if (target && target.currentHP <= 0 && target.currentHP > -21) {
       // Check if there are any conscious players remaining
       const consciousPlayers = fighters.filter(
-        (f) => f.type === "player" && canFighterAct(f) && f.currentHP > 0
+        (f) => f.type === "player" && canFighterAct(f) && f.currentHP > 0,
       );
       const enemyAlignment =
         enemy.alignment || enemy.attributes?.alignment || "";
@@ -5076,13 +6001,13 @@ export function runEnemyTurnAI(enemy, context) {
           const hpStatus = getHPStatus(target.currentHP);
           addLog(
             `😈 ${enemy.name} (${enemyAlignment}) finishes off dying ${target.name} (${hpStatus.description})!`,
-            "warning"
+            "warning",
           );
         } else {
           // Good/neutral alignments show mercy - don't attack unconscious players
           addLog(
             `⚠️ All players are defeated! ${enemy.name} shows mercy and stops attacking.`,
-            "info"
+            "info",
           );
           if (!combatEndCheckRef.current) {
             combatEndCheckRef.current = true;
@@ -5098,12 +6023,12 @@ export function runEnemyTurnAI(enemy, context) {
         if (isEvil) {
           addLog(
             `😈 ${enemy.name} (${enemyAlignment}) attacks dying ${target.name} (${hpStatus.description})!`,
-            "warning"
+            "warning",
           );
         } else {
           addLog(
             `⚠️ ${enemy.name} targeting ${target.name} who is ${hpStatus.description}`,
-            "warning"
+            "warning",
           );
         }
       }
@@ -5120,9 +6045,13 @@ export function runEnemyTurnAI(enemy, context) {
       const targetsInLine = getTargetsInLine(enemy.id, target.id, positions);
 
       if (targetsInLine.length > 0) {
+        if (!commitEnemyAction("AREA_ATTACK_LINE")) {
+          processingEnemyTurnRef.current = false;
+          return;
+        }
         addLog(
           `⚡ ${enemy.name} uses ${attackName} - area attack hitting ${targetsInLine.length} target(s)!`,
-          "info"
+          "info",
         );
 
         // Execute area attack on all targets in line (one action, multiple targets)
@@ -5130,13 +6059,15 @@ export function runEnemyTurnAI(enemy, context) {
 
         // Attack all targets in line, but this is still ONE action
         targetsInLine.forEach((lineTarget) => {
-          attack(enemy, lineTarget.id, {
+          attack({ ...enemy, selectedAttack }, lineTarget.id, {
             ...chargeBonus,
+            attackDataOverride: selectedAttack,
+            suppressEndTurn: true,
             flankingBonus: calculateFlankingBonus(
               positions[enemy.id],
               positions[lineTarget.id],
               positions,
-              enemy.id
+              enemy.id,
             ),
           });
         });
@@ -5146,16 +6077,18 @@ export function runEnemyTurnAI(enemy, context) {
       }
     }
 
+    if (!commitEnemyAction("MELEE_ATTACK")) {
+      processingEnemyTurnRef.current = false;
+      return;
+    }
+
     addLog(
       `🤖 ${enemy.name} ${reasoning} and attacks ${target.name} with ${attackName}!`,
-      "info"
+      "info",
     );
 
     // Create updated enemy with selected attack (don't update state yet to prevent re-render loop)
     const updatedEnemy = { ...enemy, selectedAttack: selectedAttack };
-
-    // Get the number of attacks for this attack type
-    const attackCount = selectedAttack.count || 1;
 
     // Determine if this is a charging attack (for bonuses)
     const chargeBonus = isChargingAttack ? { strikeBonus: +2 } : {};
@@ -5165,82 +6098,106 @@ export function runEnemyTurnAI(enemy, context) {
       positions[enemy.id],
       positions[target.id],
       positions,
-      enemy.id
+      enemy.id,
     );
     const flankingBonus =
       currentFlankingBonus > 0 ? { flankingBonus: currentFlankingBonus } : {};
 
+    const isAmbushUtilityAttack =
+      actionPlan?.utilityAction?.type === ACTION_TYPES.AMBUSH_ATTACK;
+    const ambushBonus = isAmbushUtilityAttack
+      ? { strikeBonus: 2, source: "AMBUSH_ATTACK" }
+      : {};
+
+    if (isAmbushUtilityAttack) {
+      addLog?.(`${enemy.name} strikes from hiding!`, "info");
+      consumeUtilityAiUnlock({
+        enemy,
+        unlockType: "AMBUSH_ATTACK",
+        setFighters,
+        clearHidden: true,
+      });
+    }
+
     // Combine all bonuses
-    const allBonuses = { ...chargeBonus, ...flankingBonus };
+    const allBonuses = {
+      ...chargeBonus,
+      ...flankingBonus,
+      ...ambushBonus,
+      attackDataOverride: selectedAttack,
+    };
 
     if (flankingBonus.flankingBonus > 0) {
-      addLog(
+      dbgLog(
         `🎯 ${enemy.name} gains +${flankingBonus.flankingBonus} flanking bonus!`,
-        "info"
+        "info",
       );
     }
 
-    // Execute attack - handle attack count for multi-strike attacks
-    // The count property is for attacks that hit multiple times in ONE action (like dual wield)
-    setTimeout(() => {
-      // -----------------------------------------------------------------------
-      // OPTIONAL: Weakness outcome feedback hook (if your combat engine provides it)
-      // If context exposes `onAICombatResolution`, it can call back with:
-      // { casterId, targetId, spellName, outcome: "confirmed"|"disproven"|"no_effect", notes }
-      // This keeps enemyTurnAI.js signature unchanged.
-      // -----------------------------------------------------------------------
-      const maybeResolutionHook = context?.onAICombatResolution;
-      if (
-        typeof maybeResolutionHook === "function" &&
-        updatedEnemy?.selectedAttack?.spell &&
-        target?.id
-      ) {
-        try {
-          // Register a one-shot listener for this action. Your engine can call it later.
-          maybeResolutionHook({
-            casterId: enemy.id,
-            targetId: target.id,
-            spellName: updatedEnemy.selectedAttack.spell.name,
-            onResolved: (resolution) => {
-              try {
-                const targetKey = getTargetMemoryKey(target);
-                enemy.meta._weaknessMemory = recordWeaknessOutcome(
-                  enemy.meta._weaknessMemory || {},
-                  targetKey,
-                  resolution
-                );
-                savePersistentWeaknessMemory(
-                  enemy,
-                  enemy.meta._weaknessMemory || {}
-                );
-                setEnemyAIDebug(setFighters, enemy.id, {
-                  lastResolution: resolution,
-                  weaknessMemory:
-                    enemy.meta._weaknessMemory?.[targetKey] || null,
-                });
-              } catch (e) {
-                // swallow
-              }
-            },
-          });
-        } catch (e) {
-          // swallow
-        }
-      }
-
-      // If attackCount > 1, this represents a multi-strike attack (all in one action)
-      // The attack function should handle this internally, but we log it for clarity
-      if (attackCount > 1) {
-        addLog(
-          `⚔️ ${enemy.name} performs ${attackCount}-strike attack!`,
-          "info"
-        );
-      }
-      attack(updatedEnemy, target.id, allBonuses);
-
-      // End turn after attack
+    if (
+      combatOverRef?.current ||
+      combatEndCheckRef?.current ||
+      !combatActive
+    ) {
       processingEnemyTurnRef.current = false;
-      scheduleEndTurn();
-    }, 1500);
+      return;
+    }
+    if (
+      typeof isEnemyTurnStillCurrent === "function" &&
+      !isEnemyTurnStillCurrent("modular-ai-attack")
+    ) {
+      processingEnemyTurnRef.current = false;
+      return;
+    }
+
+    // -----------------------------------------------------------------------
+    // OPTIONAL: Weakness outcome feedback hook (if your combat engine provides it)
+    // If context exposes `onAICombatResolution`, it can call back with:
+    // { casterId, targetId, spellName, outcome: "confirmed"|"disproven"|"no_effect", notes }
+    // This keeps enemyTurnAI.js signature unchanged.
+    // -----------------------------------------------------------------------
+    const maybeResolutionHook = context?.onAICombatResolution;
+    if (
+      typeof maybeResolutionHook === "function" &&
+      updatedEnemy?.selectedAttack?.spell &&
+      target?.id
+    ) {
+      try {
+        // Register a one-shot listener for this action. Your engine can call it later.
+        maybeResolutionHook({
+          casterId: enemy.id,
+          targetId: target.id,
+          spellName: updatedEnemy.selectedAttack.spell.name,
+          onResolved: (resolution) => {
+            try {
+              const targetKey = getTargetMemoryKey(target);
+              enemy.meta._weaknessMemory = recordWeaknessOutcome(
+                enemy.meta._weaknessMemory || {},
+                targetKey,
+                resolution,
+              );
+              savePersistentWeaknessMemory(
+                enemy,
+                enemy.meta._weaknessMemory || {},
+              );
+              setEnemyAIDebug(setFighters, enemy.id, {
+                lastResolution: resolution,
+                weaknessMemory:
+                  enemy.meta._weaknessMemory?.[targetKey] || null,
+              });
+            } catch (e) {
+              // swallow
+            }
+          },
+        });
+      } catch (e) {
+        // swallow
+      }
+    }
+
+    // Multi-strike (count > 1): attack() schedules sub-strikes and logs once.
+    attack(updatedEnemy, target.id, allBonuses);
+    processingEnemyTurnRef.current = false;
+    return;
   }
 }

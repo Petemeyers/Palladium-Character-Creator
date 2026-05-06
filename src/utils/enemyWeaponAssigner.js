@@ -296,6 +296,15 @@ function formatWeaponForEnemy(weapon) {
   
   // Set default range for bows if not specified
   let weaponRange = weapon.range;
+  // Set default length for bows if not specified
+  let weaponLength = weapon.length;
+  if (isRanged && !weaponLength) {
+    if (weaponName.includes('long bow') || weaponName === 'longbow') weaponLength = '6ft';
+    else if (weaponName.includes('short bow') || weaponName === 'shortbow') weaponLength = '4ft';
+    else if (weaponName.includes('crossbow')) weaponLength = '3ft';
+    else if (weaponName.includes('bow')) weaponLength = '5ft';
+  }
+
   if (isRanged && !weaponRange) {
     if (weaponName.includes('long bow') || weaponName === 'longbow') {
       weaponRange = 640; // Long bow range
@@ -311,17 +320,24 @@ function formatWeaponForEnemy(weapon) {
   return {
     name: weapon.name,
     type: finalWeaponType,
-    category: weapon.category || (isRanged ? 'ranged' : 'melee'),
+    // ✅ Normalize ranged weapons so downstream logic never treats bows as melee "SHORT" weapons.
+    category: isRanged ? 'ranged' : (weapon.category || 'melee'),
     damage: weapon.damage || '1d6',
     weight: weapon.weight || 0,
     price: weapon.price || 0,
     description: weapon.description || '',
-    reach: weapon.reach || weapon.length || null,
+    // For ranged weapons, reach should be null (length is not melee reach).
+    reach: isRanged ? null : (weapon.reach || null),
+    length: weaponLength || null,
     range: weaponRange,
     twoHanded: weapon.twoHanded || weapon.handed === 'two-handed' || isRanged,
     bonuses: weapon.bonuses || null,
-    ammunition: isRanged && weaponName.includes('bow') ? 'arrows' : 
-                (isRanged && weaponName.includes('crossbow') ? 'bolts' : null),
+    ammunition:
+      isRanged && weaponName.includes('bow')
+        ? 'arrows'
+        : isRanged && weaponName.includes('crossbow')
+        ? 'bolts'
+        : null,
   };
 }
 
@@ -434,8 +450,20 @@ export function assignRandomWeaponToEnemy(enemy, favoriteWeapons) {
   }
   
   // Find matching weapons
-  const matchingWeapons = findMatchingWeapons(searchTerms, enemy);
-  
+  let matchingWeapons = findMatchingWeapons(searchTerms, enemy);
+
+  // Wizards and other pure spellcasters should not be assigned bows
+  const occ = (enemy.occ || '').toLowerCase();
+  const isNoBowsOCC = ['wizard', 'warlock', 'witch', 'diabolist', 'summoner', 'mind mage'].some(
+    (n) => occ.includes(n)
+  );
+  if (isNoBowsOCC) {
+    matchingWeapons = matchingWeapons.filter((w) => {
+      const name = (w.name || '').toLowerCase();
+      return !name.includes('bow') && !name.includes('crossbow') && !name.includes('sling');
+    });
+  }
+
   // Debug: log matched weapons for troubleshooting
   if (import.meta.env?.DEV || import.meta.env?.MODE === 'development') {
     if (matchingWeapons.length > 0) {
@@ -445,12 +473,18 @@ export function assignRandomWeaponToEnemy(enemy, favoriteWeapons) {
   
   if (matchingWeapons.length === 0) {
     console.warn(`No matching weapons found for ${enemy.name} with preferences: ${searchTerms.join(', ')}`);
-    // Fallback: try to find any weapon
-    const allWeapons = shopItems.filter(item => 
+    // Fallback: try to find any weapon (exclude bows for spellcasters)
+    let fallbackPool = shopItems.filter(item =>
       item.type === 'weapon' || item.damage || item.category === 'weapon'
     );
-    if (allWeapons.length > 0) {
-      const fallbackWeapon = allWeapons[Math.floor(Math.random() * allWeapons.length)];
+    if (isNoBowsOCC) {
+      fallbackPool = fallbackPool.filter((w) => {
+        const name = (w.name || '').toLowerCase();
+        return !name.includes('bow') && !name.includes('crossbow') && !name.includes('sling');
+      });
+    }
+    if (fallbackPool.length > 0) {
+      const fallbackWeapon = fallbackPool[Math.floor(Math.random() * fallbackPool.length)];
       const formattedWeapon = formatWeaponForEnemy(fallbackWeapon);
       enemy = equipWeaponToEnemy(enemy, fallbackWeapon);
       enemy = addWeaponToInventory(enemy, fallbackWeapon);

@@ -265,9 +265,9 @@ export function parseMagicAbilities(magicAbilitiesStr) {
   };
 
   // Check for Wizard/Invocation magic (no element restriction)
-  // Patterns: "Spell Magic (Invocation)", "Wizard magic", "Invocation magic", "Spell Magic"
+  // Patterns: "Spell Magic (Invocation)", "Wizard magic", "Wizard spells (L1-9)", "Invocation magic", "Spell Magic"
   result.isWizardMagic =
-    /spell\s+magic|wizard\s+magic|invocation\s+magic|invocation/i.test(text);
+    /spell\s+magic|wizard\s+magic|wizard\s+spell|invocation\s+magic|invocation/i.test(text);
 
   // Extract element type (only if explicitly stated as elemental)
   const elementMatch = text.match(/(fire|earth|air|water|wind)\s+elemental/i);
@@ -281,13 +281,14 @@ export function parseMagicAbilities(magicAbilitiesStr) {
     result.element = null; // Explicitly set to null to indicate all elements allowed
   }
 
-  // Extract level ranges (e.g., "levels 1-4" or "level 1-5")
-  const levelRangeMatches = text.matchAll(/levels?\s+(\d+)[-\s]+(\d+)/gi);
+  // Extract level ranges (e.g., "levels 1-4", "level 1-5", or "L1-9" / "L1–9")
+  const levelRangeMatches = text.matchAll(/levels?\s+(\d+)[-\s]+(\d+)|l(\d+)[\s–-]+(\d+)/gi);
   for (const match of levelRangeMatches) {
-    result.levelRanges.push({
-      min: parseInt(match[1]),
-      max: parseInt(match[2]),
-    });
+    const min = parseInt(match[1] || match[3]);
+    const max = parseInt(match[2] || match[4]);
+    if (!isNaN(min) && !isNaN(max)) {
+      result.levelRanges.push({ min, max });
+    }
   }
 
   // Extract specific named spells (e.g., "Fire Whip (level 7)")

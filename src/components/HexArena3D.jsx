@@ -16,6 +16,8 @@ const HexArena3D = forwardRef(function HexArena3D(
     positions,
     renderPositions,
     projectiles,
+    embeddedArrows,
+    impactReactions,
     dangerHexes,
     terrain,
     mode,
@@ -83,12 +85,14 @@ const HexArena3D = forwardRef(function HexArena3D(
         positions,
         renderPositions,
         projectiles,
+        embeddedArrows,
+        impactReactions,
         dangerHexes,
         terrain,
         mapType: terrain?.mapType || "hex",
       });
     }
-  }, [mapDefinition, fighters, positions, renderPositions, projectiles, dangerHexes, terrain, mode]);
+  }, [mapDefinition, fighters, positions, renderPositions, projectiles, embeddedArrows, impactReactions, dangerHexes, terrain, mode]);
 
   return (
     <Box
@@ -124,6 +128,8 @@ HexArena3D.propTypes = {
   positions: PropTypes.object,
   renderPositions: PropTypes.object,
   projectiles: PropTypes.array,
+  embeddedArrows: PropTypes.array,
+  impactReactions: PropTypes.object,
   dangerHexes: PropTypes.array,
   terrain: PropTypes.object,
   mode: PropTypes.string,

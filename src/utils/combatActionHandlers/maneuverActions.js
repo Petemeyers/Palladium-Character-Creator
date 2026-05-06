@@ -2,6 +2,24 @@ import CryptoSecureDice from "../cryptoDice";
 import { getHexNeighbors, isValidPosition } from "../../data/movementRules";
 import { getGrappleStatus, breakGrappleWithTrip, breakGrappleWithPush, GRAPPLE_STATES } from "../grapplingSystem";
 
+function revealConcealment(fighter) {
+  if (!fighter) return fighter;
+  const wasHidden = !!(fighter.hidden || fighter.isProwling || fighter.prowlState?.hidden);
+  if (!wasHidden) return fighter;
+
+  return {
+    ...fighter,
+    hidden: false,
+    isProwling: false,
+    prowlState: {
+      ...(fighter.prowlState || {}),
+      hidden: false,
+      prowlSuccess: false,
+      brokenBy: "movement",
+    },
+  };
+}
+
 /**
  * Execute a trip maneuver
  * @param {Object} attacker - The attacker fighter object
@@ -46,19 +64,21 @@ export function executeTripManeuver(attacker, defender, context) {
     
     if (result.success) {
       addLog(result.message, "success");
+      const movedAttacker = revealConcealment(result.attacker);
+      const updatedDefenderResult = revealConcealment(result.defender);
       
       // Update fighters with new positions and states
       setFighters(prev => prev.map(f => {
-        if (f.id === result.attacker.id) {
-          const updated = { ...f, ...result.attacker };
-          if (result.attacker.hex) {
-            updated.hex = result.attacker.hex;
-            updated.position = result.attacker.position || result.attacker.hex;
+        if (f.id === movedAttacker.id) {
+          const updated = { ...f, ...movedAttacker };
+          if (movedAttacker.hex) {
+            updated.hex = movedAttacker.hex;
+            updated.position = movedAttacker.position || movedAttacker.hex;
           }
           return updated;
         }
-        if (f.id === result.defender.id) {
-          return { ...f, ...result.defender };
+        if (f.id === updatedDefenderResult.id) {
+          return { ...f, ...updatedDefenderResult };
         }
         return f;
       }));
@@ -67,8 +87,11 @@ export function executeTripManeuver(attacker, defender, context) {
       if (result.attacker.hex) {
         setPositions(prev => ({
           ...prev,
-          [result.attacker.id]: result.attacker.hex,
+          [movedAttacker.id]: movedAttacker.hex,
         }));
+      }
+      if (movedAttacker !== result.attacker) {
+        addLog(`👁️ ${result.attacker.name} is revealed after being thrown off balance!`, "info");
       }
       
       // Deduct action
@@ -257,6 +280,12 @@ export function executeShoveManeuver(attacker, defender, context) {
       }));
       
       addLog(`💥 ${defender.name} is pushed back!`, "warning");
+      if (defender.hidden || defender.isProwling || defender.prowlState?.hidden) {
+        setFighters(prev =>
+          prev.map(f => (f.id === defender.id ? revealConcealment(f) : f))
+        );
+        addLog(`👁️ ${defender.name} is revealed after being shoved out of position!`, "info");
+      }
     }
   } else {
     // Shove failed
@@ -340,9 +369,6 @@ export function executeDisarmManeuver(attacker, defender, context) {
   
   if (!defenderWeapon || defenderWeapon.name === "Unarmed" || defenderWeapon.type === "unarmed") {
     addLog(`❌ ${defender.name} has no weapon to disarm!`, "error");
-    if (process.env.NODE_ENV === 'development') {
-      console.log('[Disarm] Defender equippedWeapons:', defenderInArray.equippedWeapons);
-    }
     return;
   }
   

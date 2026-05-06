@@ -107,3 +107,19 @@ export default {
   findBeePath
 };
 
+export * from "./aiActionRegistry";
+export * from "./aiClaims";
+export * from "./aiDecisionEngine";
+export * from "./aiKnowledge";
+export * from "./aiMemory";
+export * from "./aiProfiles";
+export * from "./aiScoring";
+export * from "./aiSkillActions";
+export * from "./aiSpellActions";
+export * from "./aiTeamTactics";
+export * from "./aiThreatAssessment";
+export * from "./aiUnlocks";
+export * from "./aiWorldState";
+export * from "./applyAiSkillEvents";
+export * from "./resolveAiAction";
+

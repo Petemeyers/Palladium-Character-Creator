@@ -26,12 +26,10 @@
 import { calculateLineOfSight, applyLightingEffects } from "./terrainSystem.js";
 import {
   calculateDetection,
-  rollProwl,
   hasSpecialSenses,
 } from "./stealthSystem.js";
 import {
   getVisibilityRange,
-  calculateVisibleCells,
 } from "./visibilityCalculator.js";
 import CryptoSecureDice from "./cryptoDice.js";
 import { calculateDistance } from "../data/movementRules.js";
@@ -50,6 +48,21 @@ let globalVisibilityLog = null;
  */
 function awarenessKey(observerId, targetId) {
   return `${observerId}_${targetId}`;
+}
+
+function revealTargetConcealment(target, reason = "detected") {
+  if (!target) return;
+  const wasHidden = !!(target.hidden || target.isProwling || target.prowlState?.hidden);
+  if (!wasHidden) return;
+
+  target.hidden = false;
+  target.isProwling = false;
+  target.prowlState = {
+    ...(target.prowlState || {}),
+    hidden: false,
+    prowlSuccess: false,
+    brokenBy: reason,
+  };
 }
 
 /**
@@ -189,8 +202,7 @@ function getVisibilityAtPosition(observer, target, positions, combatTerrain) {
       reason: `Invalid positions - observer: ${observerId}, target: ${targetId}`,
     };
   }
-  const distanceInCells = calculateDistance(observerPos, targetPos);
-  const distanceInFeet = distanceInCells * 5; // 5 feet per hex
+  const distanceInFeet = calculateDistance(observerPos, targetPos);
 
   const lighting =
     combatTerrain?.lighting ||
@@ -396,11 +408,10 @@ export function canAISeeTarget(
     !target.hidden
   ) {
     // Simple distance check - bright daylight on open ground = very long visibility
-    const distanceInCells = calculateDistance(
+    const distanceInFeet = calculateDistance(
       positions[observerId],
       positions[targetId]
     );
-    const distanceInFeet = distanceInCells * 5;
 
     if (import.meta.env?.DEV || import.meta.env?.MODE === "development") {
       console.log(
@@ -535,16 +546,23 @@ export function canAISeeTarget(
       updateAwareness(observer, target, "Searching");
       return false;
     }
+
+    revealTargetConcealment(target, "detected");
   }
 
   // --- Heavy-Armor noise (penalizes stealth only)
   // Palladium: "Heavy armor makes plenty of noise, which makes prowling difficult"
   const armorWeight = calculateArmorWeight(target);
-  if (armorWeight > 30 && target.skills?.prowl && target.prowlState?.hidden) {
+  if (
+    armorWeight > 30 &&
+    (target.skills?.prowl || target.skills?.Prowl || target.prowlSkill) &&
+    target.prowlState?.hidden
+  ) {
     const noiseRoll = CryptoSecureDice.rollD100();
     const chanceToBeHeard = 10 + Math.floor(armorWeight / 5); // e.g., 40 lbs → 18%
 
     if (noiseRoll <= chanceToBeHeard) {
+      revealTargetConcealment(target, "noise");
       updateAwareness(observer, target, "Alert");
       return true; // Heavy armor made noise - detected!
     }
@@ -591,6 +609,7 @@ export function canAISeeTarget(
   }
 
   // --- If all checks passed, target is visible
+  revealTargetConcealment(target, "spotted");
   updateAwareness(observer, target, "Alert");
 
   if (import.meta.env?.DEV || import.meta.env?.MODE === "development") {
@@ -652,15 +671,19 @@ export function attemptMidCombatHide(
   combatTerrain,
   allEnemies
 ) {
-  if (!player.skills?.prowl && !player.skills?.Prowl) {
+  const prowlSkill =
+    player.skills?.prowl ||
+    player.skills?.Prowl ||
+    player.prowlSkill ||
+    0;
+
+  if (!prowlSkill) {
     return {
       success: false,
       reason: "No prowl skill.",
       log: `${player.name} has no Prowl skill.`,
     };
   }
-
-  const prowlSkill = player.skills?.prowl || player.skills?.Prowl || 0;
   const lighting =
     combatTerrain?.lighting ||
     combatTerrain?.lightingData?.name ||

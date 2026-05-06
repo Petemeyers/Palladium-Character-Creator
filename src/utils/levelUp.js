@@ -4,6 +4,7 @@
  */
 
 import { calculateTotalHP } from "./levelProgression.js";
+import { normalizePPEState, createDeterministicRng } from "./spellUtils.js";
 
 /**
  * Level up a character
@@ -51,6 +52,30 @@ export function levelUp(character) {
     level: newLevel,
     timestamp: new Date().toISOString(),
   });
+
+  // Keep PPE progression deterministic and persistent on level up.
+  const ppeSeed = [
+    updatedCharacter.id || updatedCharacter._id || updatedCharacter.name || "character",
+    "ppe-levelup",
+    newLevel,
+  ].join("|");
+  const normalizedPPE = normalizePPEState(updatedCharacter, {
+    rollMissingLevelGains: true,
+    rng: createDeterministicRng(ppeSeed),
+    preserveExplicitPPEAsAuthority: true,
+  });
+  updatedCharacter.PPE = normalizedPPE.PPE;
+  updatedCharacter.maxPPE = normalizedPPE.maxPPE;
+  updatedCharacter.currentPPE =
+    character.currentPPE != null
+      ? Math.min(normalizedPPE.maxPPE, character.currentPPE)
+      : normalizedPPE.currentPPE;
+  updatedCharacter.ppeType = normalizedPPE.ppeType;
+  updatedCharacter.ppeAuthority = normalizedPPE.ppeAuthority;
+  updatedCharacter.ppeProgressionModel = normalizedPPE.ppeProgressionModel;
+  updatedCharacter.ppeBase = normalizedPPE.ppeBase;
+  updatedCharacter.ppeLevelGainsTotal = normalizedPPE.ppeLevelGainsTotal;
+  updatedCharacter.ppeLevelGainRolls = normalizedPPE.ppeLevelGainRolls;
 
   return updatedCharacter;
 }

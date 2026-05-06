@@ -82,8 +82,8 @@ export function calculateVisibleCells(
       }
 
       // Calculate actual distance only for cells that might be in range
-      const distanceInCells = calculateDistance(observerPos, cellPos);
-      const distanceInFeet = distanceInCells * cellSize;
+      // calculateDistance already returns feet (hex dist × CELL_SIZE)
+      const distanceInFeet = calculateDistance(observerPos, cellPos);
 
       // ✅ Check altitude difference if fog is enabled and fighter positions are provided
       let altitudeBlocked = false;

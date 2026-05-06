@@ -1,5 +1,6 @@
 {
   "scripts": {
+    "dev": "nodemon server.js",
     "seed": "node scripts/seedItems.js",
     "build-gm-index": "node scripts/buildGMIndex.js"
   },

@@ -125,7 +125,7 @@ _Review the Racial Attribute Chart and Racial Descriptions before rolling._
 ## ATTRIBUTE BONUSES
 
 - **Bonus Die Rule:**  
-  - For attributes using **3D6**, if you roll a **16, 17, or 18**, you may roll one additional D6 and add it to your total.
+  - For attributes using **3D6**, if you roll a **17, or 18**, you may roll one additional D6 and add it to your total.
   - This bonus does **not apply** to attributes using **4D6 or 5D6**.
   - For attributes using **2D6**, you only gain a bonus die if you roll a **12**.
 

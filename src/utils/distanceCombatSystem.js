@@ -159,6 +159,17 @@ export function analyzeMovementAndAttack(
  * @param {Object} weapon - Weapon object
  * @returns {number} Range in feet
  */
+/** Known ranges for named ranged weapons when DB lookup has no range (e.g. "Bow/Long Bow" from bestiary) */
+const NAMED_RANGED_WEAPON_RANGES = {
+  "long bow": 640,
+  "longbow": 640,
+  "bow/long bow": 640,
+  "short bow": 360,
+  "shortbow": 360,
+  "crossbow": 480,
+  "sling": 160,
+};
+
 export function getWeaponRange(weapon) {
   if (!weapon) return 5.5; // Unarmed - default to adjacent hex range
 
@@ -166,6 +177,16 @@ export function getWeaponRange(weapon) {
   if (weapon.range && weapon.range > 0) {
     return weapon.range;
   }
+
+  // Name-based fallback for ranged weapons (e.g. bestiary "Bow/Long Bow" has no range field)
+  const name = (weapon.name || "").toLowerCase().trim();
+  const knownRange = NAMED_RANGED_WEAPON_RANGES[name];
+  if (knownRange) return knownRange;
+  if (name.includes("long bow") || name.includes("longbow")) return 640;
+  if (name.includes("short bow") || name.includes("shortbow")) return 360;
+  if (name.includes("crossbow")) return 480;
+  if (name.includes("sling")) return 160;
+  if (name.includes("bow")) return 360; // generic bow default
 
   // Melee weapons: In hex-based combat, all melee weapons can reach adjacent hexes (5ft)
   // The weapon.reach property is for reach weapons that can attack BEYOND adjacent hexes

@@ -4,7 +4,11 @@
  */
 
 import { getUnifiedAbilities } from "./unifiedAbilities.js";
-import { getSpellCost } from "./spellUtils.js";
+import {
+  getSpellCost,
+  isWizardClassName,
+  buildWizardSpellbookForLevel,
+} from "./spellUtils.js";
 import { getAllSpellsFromDB } from "../data/combatSpells.js";
 
 /**
@@ -12,7 +16,7 @@ import { getAllSpellsFromDB } from "../data/combatSpells.js";
  * @param {Object} spell - Unified spell object
  * @returns {Object|null} Combat spell object or null
  */
-function convertUnifiedSpellToCombatSpell(spell) {
+export function convertUnifiedSpellToCombatSpell(spell) {
   if (!spell) return null;
 
   // If already in combat format, return as-is
@@ -47,9 +51,34 @@ export function getFighterSpells(
   convertUnifiedSpellToCombatSpellFn = convertUnifiedSpellToCombatSpell
 ) {
   if (!fighter) return [];
+  const isPlayerSide = fighter.type === "player" || fighter.playable === true;
 
   const normalised = [];
   const seen = new Set();
+
+  const spellDbByName = new Map(); // cache: spell name (lower) -> full spell from DB
+  const ensureSpellEnriched = (entry) => {
+    const name = entry?.name || entry?.spell || entry?.title;
+    if (!name) return entry;
+    if (!spellDbByName.size) {
+      getAllSpellsFromDB().forEach((s) => spellDbByName.set((s.name || "").toLowerCase(), s));
+    }
+    const fromDb = spellDbByName.get(name.toLowerCase());
+    return fromDb ? { ...fromDb, ...entry, name } : entry; // DB fills damage/range when entry is name-only
+  };
+
+  const applyPlayerWizardBounds = (spells) => {
+    const list = Array.isArray(spells) ? spells : [];
+    if (!isPlayerSide) return list;
+    if (!isWizardClassName(fighter.OCC || fighter.occ || fighter.class || "")) return list;
+    const fighterLevel = Number(fighter.level || fighter.Level || 1) || 1;
+    const bounded = buildWizardSpellbookForLevel({
+      allSpells: list.length > 0 ? list : getAllSpellsFromDB(),
+      level: fighterLevel,
+      pickedSpellNames: list.map((s) => s?.name).filter(Boolean),
+    });
+    return bounded.spellbook.map((sp) => ({ ...sp, cost: getSpellCost(sp) }));
+  };
 
   const addSpellEntry = (entry) => {
     if (!entry) return;
@@ -57,6 +86,7 @@ export function getFighterSpells(
     if (typeof entry === "string") {
       normalizedEntry = { name: entry };
     }
+    normalizedEntry = ensureSpellEnriched(normalizedEntry);
 
     // Clean up spell name - remove "Spell: " prefix if present
     if (normalizedEntry.name && normalizedEntry.name.startsWith("Spell: ")) {
@@ -103,7 +133,7 @@ export function getFighterSpells(
     fighter.occ?.toLowerCase().includes("wizard") ||
     fighter.class?.toLowerCase().includes("wizard");
 
-  if (isWizard && import.meta.env.DEV) {
+  if (isWizard && import.meta.env.DEV && typeof window !== 'undefined' && window?.localStorage?.getItem('debugSpells') === '1') {
     const magicAbilities = Array.isArray(fighter.abilities)
       ? fighter.abilities.filter(
           (a) => a.type === "magic" || a.type === "spell"
@@ -155,7 +185,7 @@ export function getFighterSpells(
   ) {
     addSpellList(fighter.spellbook);
     // If spellbook exists, prefer it over other sources
-    return normalised;
+    return applyPlayerWizardBounds(normalised);
   }
 
   // Check for unrestricted wizard magic - if found, pull from full catalog
@@ -179,7 +209,7 @@ export function getFighterSpells(
     }
   } catch (error) {
     // Silently fail if getUnifiedAbilities has issues
-    if (isWizard && import.meta.env.DEV) {
+    if (isWizard && import.meta.env.DEV && typeof window !== 'undefined' && window?.localStorage?.getItem('debugSpells') === '1') {
       console.warn(
         `🔮 [getFighterSpells] Error getting unified abilities:`,
         error
@@ -187,7 +217,7 @@ export function getFighterSpells(
     }
   }
 
-  if (hasUnrestrictedWizardMagic) {
+  if (hasUnrestrictedWizardMagic && !isPlayerSide) {
     // Pull from full spell catalog
     const allSpells = getAllSpellsFromDB();
     allSpells.forEach(addSpellEntry);
@@ -229,12 +259,19 @@ export function getFighterSpells(
     }
   }
 
-  if (isWizard && import.meta.env.DEV) {
+  // Fallback: non-player wizards with no spells yet get full catalog.
+  // Player-side wizards should use creation-time progression data as source of truth.
+  if (isWizard && normalised.length === 0 && !isPlayerSide) {
+    const allSpells = getAllSpellsFromDB();
+    allSpells.forEach(addSpellEntry);
+  }
+
+  if (isWizard && import.meta.env.DEV && typeof window !== 'undefined' && window?.localStorage?.getItem('debugSpells') === '1') {
     console.log(
       `🔮 [getFighterSpells] Found ${normalised.length} spells for ${fighter.name}:`,
       normalised.map((s) => s.name)
     );
   }
 
-  return normalised;
+  return applyPlayerWizardBounds(normalised);
 }

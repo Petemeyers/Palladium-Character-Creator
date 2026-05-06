@@ -26,6 +26,7 @@ export function handleChargeAttack(attacker, target, context) {
     selectedAttackWeapon,
     combatTerrain,
     attack,
+    scheduleEndTurn,
     addLog,
     setPositions,
     setFighters,
@@ -153,7 +154,8 @@ export function handleChargeAttack(attacker, target, context) {
       damageMultiplier: momentumDamageMultiplier > 1 ? momentumDamageMultiplier : baseDamageMultiplier
     };
     
-    attack(attacker, target.id, finalChargeBonuses);
+    const delayMs = attack(attacker, target.id, finalChargeBonuses);
+    if (scheduleEndTurn) scheduleEndTurn(typeof delayMs === "number" ? delayMs : 0);
     
     // Apply charge penalty (lose next attack)
     if (chargeResult.penalties.loseNextAttack) {
@@ -190,6 +192,7 @@ export function handleStrikeWithMovement(attacker, movementHex, target, weapon, 
     positions,
     selectedAttackWeapon,
     attack,
+    scheduleEndTurn,
     addLog,
     setPositions,
     setSelectedMovementHex,
@@ -216,7 +219,8 @@ export function handleStrikeWithMovement(attacker, movementHex, target, weapon, 
   setTimeout(() => {
     // Use the provided weapon if available, otherwise use selectedAttackWeapon
     const weaponToUse = weapon || selectedAttackWeapon;
-    attack(attacker, target.id, {}, weaponToUse);
+    const delayMs = attack(attacker, target.id, {}, weaponToUse);
+    if (scheduleEndTurn) scheduleEndTurn(typeof delayMs === "number" ? delayMs : 0);
   }, movementHex ? 500 : 0); // Delay if moved
   
   // Clear movement selection

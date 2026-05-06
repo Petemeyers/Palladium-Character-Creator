@@ -1,0 +1,140 @@
+diff --git a/CombatPage.jsx b/CombatPage.jsx
+index 1111111..2222222 100644
+--- a/CombatPage.jsx
++++ b/CombatPage.jsx
+@@
+ function findRetreatDestination({
+   // ...existing code...
+ }
+ 
++// Treat common placeholders like "None" as empty (prevents accidental magic/psionics init)
++function isNoneish(value) {
++  if (value == null) return true;
++  if (Array.isArray(value)) return value.length === 0;
++  if (typeof value === "string") {
++    const v = value.trim().toLowerCase();
++    return v === "" || v === "none" || v === "n/a" || v === "na" || v === "no" || v === "null" || v === "0";
++  }
++  return false;
++}
++
+ function getAttributeSaveBonus(attributeValue = 0) {
+   // ...existing code...
+ }
+ 
+@@
+-        // Load spells if creature has magicAbilities
+-        if (newFighter.magicAbilities && typeof newFighter.magicAbilities === "string") {
++        // Load spells if creature has magicAbilities
++        if (!isNoneish(newFighter.magicAbilities) && typeof newFighter.magicAbilities === "string") {
+           const isWizardMagic = /spell\s+magic|wizard\s+magic|invocation\s+magic|invocation/i.test(newFighter.magicAbilities.toLowerCase());
+ 
+           // Use enhanced parser for complex magicAbilities strings
+           const spellResult = getSpellsForCreature(newFighter.magicAbilities, {
+             // ...existing code...
+           });
+           // ...existing code...
+         }
+ 
+@@
+-          const hasPsionics = abilitiesText.includes("psionic") || 
+-                             abilitiesText.includes("isp") ||
+-                             (newFighter.psionicPowers && newFighter.psionicPowers.length > 0) ||
+-                             (newFighter.psionics && newFighter.psionics.length > 0);
++          const hasPsionics = abilitiesText.includes("psionic") ||
++                             abilitiesText.includes("isp") ||
++                             (Array.isArray(newFighter.psionicPowers) && newFighter.psionicPowers.length > 0) ||
++                             (Array.isArray(newFighter.psionics) && newFighter.psionics.length > 0) ||
++                             (!isNoneish(newFighter.psionics) && typeof newFighter.psionics === "string" && /psionic|isp/i.test(newFighter.psionics));
+ 
+           if (hasPsionics) {
+             // Default ISP: 20 + (level * 10), minimum 30, max 200
+             const creatureLevel = newFighter.level || 1;
+             const defaultISP = Math.min(Math.max(30, 20 + (creatureLevel * 10)), 200);
+             newFighter.ISP = defaultISP;
+             newFighter.currentISP = defaultISP;
+             addLog(`🧠 ${newFighter.name} has psionic abilities - initialized with ${defaultISP} ISP`, "info");
+           }
+         } else if (newFighter.ISP && !newFighter.currentISP) {
+           // If ISP is set but currentISP is not, initialize it
+           newFighter.currentISP = newFighter.ISP;
+         }
+ 
+@@
+-          const hasMagic = abilitiesText.includes("magic") || 
+-                          (newFighter.magic && newFighter.magic.length > 0) ||
+-                          newFighter.magicAbilities;
++          const hasMagic = abilitiesText.includes("magic") ||
++                          (Array.isArray(newFighter.magic) && newFighter.magic.length > 0) ||
++                          (!isNoneish(newFighter.magicAbilities) && !!newFighter.magicAbilities);
+ 
+           if (hasMagic) {
+             // Default PPE: level * 20, minimum 20, max 200
+             const creatureLevel = newFighter.level || 1;
+             const defaultPPE = Math.min(Math.max(20, creatureLevel * 20), 200);
+             newFighter.PPE = defaultPPE;
+             newFighter.currentPPE = defaultPPE;
+             addLog(`🔮 ${newFighter.name} has magic abilities - initialized with ${defaultPPE} PPE`, "info");
+           }
+         } else if (newFighter.PPE && !newFighter.currentPPE) {
+           // If PPE is set but currentPPE is not, initialize it
+           newFighter.currentPPE = newFighter.PPE;
+         }
+ 
+@@
+-        if ((!fighterCopy.PPE || fighterCopy.PPE === 0) && fighterCopy.magicAbilities) {
++        if ((!fighterCopy.PPE || fighterCopy.PPE === 0) && !isNoneish(fighterCopy.magicAbilities)) {
+           const isWizardMagic = fighterCopy.magicAbilities && typeof fighterCopy.magicAbilities === "string" &&
+             /spell\s+magic|wizard\s+magic|invocation\s+magic|invocation/i.test(fighterCopy.magicAbilities.toLowerCase());
+@@
+-          const isWizardMagic = fighterCopy.magicAbilities && typeof fighterCopy.magicAbilities === "string" &&
++          const isWizardMagic = !isNoneish(fighterCopy.magicAbilities) && typeof fighterCopy.magicAbilities === "string" &&
+             /spell\s+magic|wizard\s+magic|invocation\s+magic|invocation/i.test(fighterCopy.magicAbilities.toLowerCase());
+diff --git a/CharacterCreator.jsx b/CharacterCreator.jsx
+index 3333333..4444444 100644
+--- a/CharacterCreator.jsx
++++ b/CharacterCreator.jsx
+@@
+       // Calculate ISP for Mind Mages
+       let characterISP = 0;
+       if (characterClass === 'Mind Mage' && attributes.baseISP) {
+         // Base ISP + 10 per level (level 1 = base ISP)
+         characterISP = attributes.baseISP + ((Number(level) || 1) - 1) * 10;
+       }
+ 
++      // ------------------------------------------------------------
++      // HARD O.C.C. GATES (prevents illegal psionics/magic on Men of Arms)
++      // ------------------------------------------------------------
++      const occCategory = String(occData?.category || "").toLowerCase();
++      const isMenOfArms =
++        occCategory.includes("men of arms") ||
++        occCategory.includes("man of arms") ||
++        occCategory.includes("men-of-arms");
++
++      // Men of Arms: no psionics (and no spells handled in this creator)
++      if (isMenOfArms) {
++        characterISP = 0;
++      }
++
+       const characterData = {
+         name: characterName || "Unnamed Character",
+         species,
+         class: characterClass,
+         occ: characterClass, // Set occ to same as class
+         level: Number(level) || 1,
+@@
+-        ISP: characterISP,
+-        psionicPowers: psionicPowers || [],
++        ISP: isMenOfArms ? 0 : characterISP,
++        currentISP: isMenOfArms ? 0 : characterISP,
++        psionicPowers: isMenOfArms ? [] : (psionicPowers || []),
++        // Explicit spell containers (creator currently doesn't pick spells)
++        spells: [],
++        magic: [],
+         occSkills: occSkills || [],
+         electiveSkills: electiveSkills || [],
+         secondarySkills: secondarySkills || [],
+         // Add starting equipment using modern system
+         inventory: inventory || [],
+         gold: gold || 100
+       };
