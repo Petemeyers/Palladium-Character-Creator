@@ -13092,6 +13092,34 @@ function CombatPage({ characters = [] }) {
     const startTurnCounter = turnCounterRef.current ?? turnCounter;
     const capturedTurnToken = playerTurnToken;
 
+    const spendNoActionPassForFighter = (fighterId, source) => {
+      const liveFighters = fightersRef.current ?? fighters;
+      const liveFighter = liveFighters.find((f) => f.id === fighterId);
+      const liveRemaining = Number(liveFighter?.remainingAttacks ?? 0) || 0;
+      if (liveRemaining <= 0) return false;
+
+      commitFighters((prev) =>
+        prev.map((f) => {
+          if (f.id !== fighterId) return f;
+          const remaining = Number(f.remainingAttacks ?? liveRemaining) || 0;
+          return {
+            ...f,
+            remainingAttacks: Math.max(0, remaining - 1),
+          };
+        })
+      );
+      addLog(`⏭️ ${liveFighter?.name ?? latestPlayer.name} passes and spends 1 action.`, "info");
+      if (DEBUG_COMBAT) {
+        console.warn("[PLAYER AI NO-ACTION PASS SPENT]", {
+          fighter: liveFighter?.name ?? latestPlayer.name,
+          source,
+          before: liveRemaining,
+          after: Math.max(0, liveRemaining - 1),
+        });
+      }
+      return true;
+    };
+
     const executePlayerAISpell = async (caster, target, spell, meta = {}) => {
       const liveFighters = fightersRef.current || [];
       const liveIndex = turnIndexRef.current;
@@ -13273,6 +13301,7 @@ function CombatPage({ characters = [] }) {
           addLog(`🟥 ArielTurn forced endTurn (AI made no action)`, "warning");
         }
         addLog(`🛑 ${latestPlayer.name} AI made no action — forcing endTurn().`, "warning");
+        spendNoActionPassForFighter(startFighterId, "player AI no-action watchdog");
         processingPlayerAIRef.current = false;
         // Invalidate any delayed AI callbacks for this fighter/turn
         playerAITurnTokenRef.current = (playerAITurnTokenRef.current || 0) + 1;
@@ -13310,6 +13339,7 @@ function CombatPage({ characters = [] }) {
       ) {
         processingPlayerAIRef.current = false;
         addLog(`⏱️ AI watchdog: forcing end of ${latestPlayer.name}'s turn`, "warning");
+        spendNoActionPassForFighter(startFighterId, "player AI watchdog");
         // Invalidate any delayed AI callbacks for this fighter/turn
         playerAITurnTokenRef.current = (playerAITurnTokenRef.current || 0) + 1;
         scheduleEndTurn(0);
