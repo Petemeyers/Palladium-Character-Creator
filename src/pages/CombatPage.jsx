@@ -37,6 +37,7 @@ import {
   MenuButton,
   MenuList,
   MenuItem,
+  MenuDivider,
   Accordion,
   AccordionItem,
   AccordionButton,
@@ -48,6 +49,15 @@ import {
   DrawerHeader,
   DrawerOverlay,
   DrawerContent,
+  Slider,
+  SliderTrack,
+  SliderFilledTrack,
+  SliderThumb,
+  NumberInput,
+  NumberInputField,
+  NumberInputStepper,
+  NumberIncrementStepper,
+  NumberDecrementStepper,
   DrawerCloseButton,
   IconButton,
   Tabs,
@@ -59,6 +69,12 @@ import {
   Wrap,
   WrapItem,
 } from "@chakra-ui/react";
+import { useClockPlayer } from "../utils/three/useClockPlayer.js";
+import {
+  shouldNarrateLogEntry,
+  buildNarrationContext,
+  narrateCombatEntry,
+} from "../ai/gm/combatNarrator.js";
 import { HamburgerIcon } from "@chakra-ui/icons";
 import CryptoSecureDice from "../utils/cryptoDice.js";
 import bestiary from "../data/bestiary.json";
@@ -67,7 +83,7 @@ import CombatActionsPanel from "../components/CombatActionsPanel.jsx";
 import { createPlayableCharacterFighter, getPlayableCharacterRollDetails } from "../utils/autoRoll.js";
 import { assignRandomWeaponToEnemy, getDefaultWeaponForEnemy, equipWeaponToEnemy, addWeaponToInventory } from "../utils/enemyWeaponAssigner.js";
 import armorShopData from "../data/armorShopData.js";
-import { initializeAmmo, canFireMissileWeapon, getInventoryAmmoCount, decrementInventoryAmmo } from "../utils/combatAmmoManager.js";
+import { initializeAmmo, setAmmo, canFireMissileWeapon, getInventoryAmmoCount, decrementInventoryAmmo } from "../utils/combatAmmoManager.js";
 import { getSpellsForLevel } from "../data/combatSpells.js";
 import { selectAISpell } from "../utils/ai/selectAISpell.js";
 import { getSpellsForCreature, SPELL_ELEMENT_MAP } from "../utils/magicAbilitiesParser.js";
@@ -81,7 +97,6 @@ import {
   spellCanAffectTarget,
   spellRequiresTarget,
   getSpellHealingFormula,
-  hasSpellDamage,
   isHealingSpell,
   isOffensiveSpell,
   isSupportSpell,
@@ -91,7 +106,6 @@ import { getFighterSpells as getFighterSpellsUtil } from "../utils/getFighterSpe
 import { hasDimensionalTeleport, attemptDimensionalTeleport } from "../utils/dimensionalTeleport.js";
 import { parseClericalAbilities, getAvailableClericalAbilities, animateDead, turnDead, performExorcism, removeCurse, clericalHealingTouch, isDead, isUndead } from "../utils/clericalAbilities.js";
 import { isTwoHandedWeapon, getWeaponDamage } from "../utils/weaponSlotManager.js";
-import { usePsionic as resolvePsionic } from "../utils/psionicEffects.js";
 import { applyInitialEffect, applyFallDamage } from "../utils/updateActiveEffects.js";
 import TacticalMap from "../components/TacticalMap.jsx";
 import HexArena3D from "../components/HexArena3D.jsx";
@@ -116,6 +130,8 @@ import { getAttacksPerMelee, getCreatureAttacksPerMelee, getActionCost, formatAt
 import { calculateTotalHP } from "../utils/levelProgression.js";
 import { grantXPFromEnemy, getMonsterByName, calculateMonsterXP } from "../utils/enemyXP.js";
 import { weapons, getWeaponByName, baalRogFireWhip } from "../data/weapons.js";
+import { presceneBattles, getPresceneById } from "../data/presceneBattles.js";
+import { getSavedPresets, savePreset, loadSavedPreset } from "../utils/savedPresets.js";
 import { calculateRangePenalty, calculateReachAdvantage } from "../utils/weaponSystem.js";
 import {
   analyzeMovementAndAttack,
@@ -142,6 +158,9 @@ import { getDefaultMovementMode, getSpeciesProfile } from "../utils/ai/movementM
 
 // Debug toggle for grapple system
 const DEBUG_GRAPPLE = true; // set to false in production
+const DEBUG_COMBAT =
+  typeof window !== "undefined" &&
+  window.localStorage?.getItem("debugCombat") === "true";
 import {
   getReachStrikeModifiers,
   getReachParryModifiers,
@@ -170,8 +189,8 @@ import {
   calculateLineOfSight,
   calculatePerceptionCheck
 } from "../utils/terrainSystem.js";
-import { castSpell, getUnifiedAbilities, getCombatBonus } from "../utils/unifiedAbilities.js";
-import { createProtectionCircle, isProtectionCircle, CIRCLE_TYPES } from "../utils/protectionCircleSystem.js";
+import { getUnifiedAbilities, getCombatBonus } from "../utils/unifiedAbilities.js";
+import { createProtectionCircle, CIRCLE_TYPES } from "../utils/protectionCircleSystem.js";
 import { updateProtectionCirclesOnMap } from "../utils/protectionCircleMapSystem.js";
 import { healerAbility, medicalTreatment } from "../utils/healingSystem.js";
 import { getSkillPercentage, rollSkillCheck, lookupSkill } from "../utils/skillSystem.js";
@@ -247,7 +266,6 @@ import {
 } from "../utils/combatActionHandlers/maneuverActions.js";
 import {
   handleMoveSelect as handleMoveSelectHandler,
-  handleRunActionUpdate as handleRunActionUpdateHandler,
   handleWithdrawAction,
 } from "../utils/combatActionHandlers/movementActions.js";
 import {
@@ -257,6 +275,14 @@ import {
 import {
   handleGrappleAction as handleGrappleActionHandler,
 } from "../utils/combatActionHandlers/grappleActions.js";
+
+const withTimeout = (promise, ms = 4000, label = "engine") => {
+  let t;
+  const timeout = new Promise((_, reject) => {
+    t = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(t));
+};
 
 function minDistanceToThreats(position, threatPositions) {
   if (!position || !Array.isArray(threatPositions) || threatPositions.length === 0) {
@@ -292,6 +318,16 @@ function findRetreatDestination({
   });
 }
 
+// Treat common placeholders like "None" as empty (prevents accidental magic/psionics init)
+function isNoneish(value) {
+  if (value == null) return true;
+  if (Array.isArray(value)) return value.length === 0;
+  if (typeof value === "string") {
+    const v = value.trim().toLowerCase();
+    return v === "" || v === "none" || v === "n/a" || v === "na" || v === "no" || v === "null" || v === "0";
+  }
+  return false;
+}
 
 function getAttributeSaveBonus(value, thresholds) {
   for (const [threshold, bonus] of thresholds) {
@@ -368,6 +404,7 @@ function getCasterSpellDC(caster, baseDC = 12) {
   return baseDC + levelBonus;
 }
 
+// eslint-disable-next-line no-unused-vars
 function resolveMagicSave(caster, target, spellName, options = {}) {
   if (!target) {
     return { resisted: false };
@@ -443,6 +480,8 @@ function convertUnifiedSpellToCombatSpell(spell) {
   const combatSpell = {
     name: spell.name,
     cost,
+    ppeCost: cost,
+    PPE: cost,
     effect: spell.effect || description,
     description,
   };
@@ -463,6 +502,7 @@ function convertUnifiedSpellToCombatSpell(spell) {
 // - threatAnalysis.js can optionally merge caster.meta._earnedThreatTags[targetKey].
 // ---------------------------------------------------------------------------
 
+// eslint-disable-next-line no-unused-vars
 function getAIMemoryTargetKey(target) {
   const base =
     target?.baseName ||
@@ -475,6 +515,7 @@ function getAIMemoryTargetKey(target) {
   return `${String(base).toLowerCase()}::${String(cat).toLowerCase()}`;
 }
 
+// eslint-disable-next-line no-unused-vars
 function inferSpellElementForAI(combatSpell) {
   if (!combatSpell || !combatSpell.name) return null;
   const dmgType = (combatSpell.damageType || "").toLowerCase();
@@ -488,6 +529,7 @@ function inferSpellElementForAI(combatSpell) {
   return null;
 }
 
+// eslint-disable-next-line no-unused-vars
 function getThreatTagsEarnedBySpell(combatSpell) {
   const name = (combatSpell?.name || "").toLowerCase();
   // Spells that help infer "what is this thing / what protections are up"
@@ -504,27 +546,443 @@ function getThreatTagsEarnedBySpell(combatSpell) {
   return null;
 }
 
-export default function CombatPage({ characters = [] }) {
+const PRE_BATTLE_STEPS = {
+  ROSTER: "roster",
+  DEPLOY: "deploy",
+  READY: "ready",
+};
+
+const DEPLOYMENT_FORMATIONS = {
+  SINGLE: "SINGLE",
+  LINE_CLOSE: "LINE_CLOSE",
+  LINE_SPACED: "LINE_SPACED",
+};
+
+const DEPLOYMENT_SIDE_ORDER = ["player", "enemy"];
+
+function getRosterTutorialTarget({
+  playerCount,
+  enemyCount,
+  quickChoicesOpen,
+  setupMode,
+}) {
+  if (quickChoicesOpen) return "quickChoice";
+
+  const hasPlayers = playerCount > 0;
+  const hasEnemies = enemyCount > 0;
+
+  if (!hasPlayers && !hasEnemies) return "quickStart";
+  if (hasPlayers && hasEnemies) return "nextDeployment";
+  if (hasPlayers && !hasEnemies) return "addEnemy";
+
+  if (setupMode === "manual") {
+    if (!hasPlayers) return "chooseParty";
+  }
+
+  return "quickStart";
+}
+
+function getRosterHint(target) {
+  switch (target) {
+    case "quickStart":
+      return "Start fast with a ready-made encounter.";
+    case "quickChoice":
+      return "Pick the quick battle you want to load.";
+    case "chooseParty":
+      return "Choose your heroes first.";
+    case "addEnemy":
+      return "Now add enemies.";
+    case "nextDeployment":
+      return "Ready. Continue to deployment.";
+    default:
+      return "Build your encounter.";
+  }
+}
+
+function getDeploymentTutorialTarget({
+  playersPlaced,
+  totalPlayers,
+  enemiesPlaced,
+  totalEnemies,
+  playersLocked,
+  enemiesLocked,
+}) {
+  if (totalPlayers > 0 && playersPlaced < totalPlayers) return "autoDeployPlayers";
+  if (totalPlayers > 0 && !playersLocked) return "lockPlayers";
+  if (totalEnemies > 0 && enemiesPlaced < totalEnemies) return "autoDeployEnemies";
+  if (totalEnemies > 0 && !enemiesLocked) return "lockEnemies";
+  return "continueReady";
+}
+
+function getDeploymentHint(target) {
+  switch (target) {
+    case "autoDeployPlayers":
+      return "Deploy your player side.";
+    case "lockPlayers":
+      return "Lock the player side when placement looks good.";
+    case "autoDeployEnemies":
+      return "Now deploy the enemy side.";
+    case "lockEnemies":
+      return "Lock the enemy side.";
+    case "continueReady":
+      return "Both sides are ready.";
+    default:
+      return "Deploy both sides.";
+  }
+}
+
+const EMBEDDED_ARROW_LIMIT = 40;
+const MAX_RENDERED_LOG_ENTRIES = 300;
+
+function canEmbedProjectile(projectile) {
+  const kind = String(projectile?.kind || "").toLowerCase();
+  return (
+    kind === "arrow" ||
+    kind === "bolt" ||
+    kind === "thrown" ||
+    kind.includes("arrow") ||
+    kind.includes("bolt")
+  );
+}
+
+function createEmbeddedArrow(projectile) {
+  if (!projectile?.id) return null;
+  const impact = projectile.impact || {
+    x: projectile.to?.x,
+    y: projectile.to?.y,
+    altitudeFeet: projectile.to?.altitudeFeet ?? 0.35,
+    hit: Boolean(projectile.impact?.hit),
+    targetId: projectile.impact?.targetId ?? null,
+    attackerId: projectile.impact?.attackerId ?? null,
+    defenderId: projectile.impact?.defenderId ?? null,
+    surface: projectile.impact?.surface ?? (projectile.impact?.hit ? "body" : "ground"),
+  };
+
+  return {
+    id: `embedded_${projectile.id}`,
+    kind: projectile.kind,
+    from: projectile.from,
+    to: projectile.to,
+    impact,
+    physics: projectile.physics,
+    firedAtMs: projectile.firedAtMs,
+    durationMs: projectile.durationMs,
+    baseDurationMs: projectile.baseDurationMs,
+    createdAtMs: performance.now(),
+  };
+}
+
+function normalizeClock(clock) {
+  const n = Number(clock);
+  if (!Number.isFinite(n) || n <= 0) return 12;
+  return ((Math.round(n) - 1) % 12) + 1;
+}
+
+function getHeadImpactByClock(clock) {
+  const safeClock = normalizeClock(clock);
+  const byClock = {
+    12: { zone: "head_front_high", bodyHeightFeet: 5.9, lateralFeet: 0, forwardFeet: 0.16 },
+    1: { zone: "head_right_high", bodyHeightFeet: 5.85, lateralFeet: 0.16, forwardFeet: 0.12 },
+    2: { zone: "head_right_side", bodyHeightFeet: 5.75, lateralFeet: 0.24, forwardFeet: 0.08 },
+    3: { zone: "head_right", bodyHeightFeet: 5.7, lateralFeet: 0.28, forwardFeet: 0.02 },
+    4: { zone: "head_right_low", bodyHeightFeet: 5.55, lateralFeet: 0.22, forwardFeet: 0.04 },
+    5: { zone: "head_lower_right", bodyHeightFeet: 5.45, lateralFeet: 0.14, forwardFeet: 0.06 },
+    6: { zone: "head_lower_front", bodyHeightFeet: 5.4, lateralFeet: 0, forwardFeet: 0.1 },
+    7: { zone: "head_lower_left", bodyHeightFeet: 5.45, lateralFeet: -0.14, forwardFeet: 0.06 },
+    8: { zone: "head_left_low", bodyHeightFeet: 5.55, lateralFeet: -0.22, forwardFeet: 0.04 },
+    9: { zone: "head_left", bodyHeightFeet: 5.7, lateralFeet: -0.28, forwardFeet: 0.02 },
+    10: { zone: "head_left_side", bodyHeightFeet: 5.75, lateralFeet: -0.24, forwardFeet: 0.08 },
+    11: { zone: "head_left_high", bodyHeightFeet: 5.85, lateralFeet: -0.16, forwardFeet: 0.12 },
+  };
+
+  return {
+    ...(byClock[safeClock] || byClock[12]),
+    clock: safeClock,
+    isHeadShot: true,
+  };
+}
+
+function getArrowImpactZone({ hit, total, roll, clock }) {
+  const safeClock = normalizeClock(clock);
+  const attackTotal = Number(total);
+  const naturalRoll = Number(roll);
+  const isHeadShot =
+    hit &&
+    Number.isFinite(attackTotal) &&
+    attackTotal >= 20;
+
+  if (isHeadShot) {
+    return {
+      ...getHeadImpactByClock(safeClock),
+      roll: naturalRoll,
+      total: attackTotal,
+    };
+  }
+
+  if (!hit) {
+    return {
+      zone: "ground",
+      clock: safeClock,
+      bodyHeightFeet: 0.35,
+      lateralFeet: 0,
+      forwardFeet: 0,
+      isHeadShot: false,
+      roll: naturalRoll,
+      total: attackTotal,
+    };
+  }
+
+  const byClock = {
+    12: { zone: "upper_chest", bodyHeightFeet: 4.9, lateralFeet: 0, forwardFeet: 0.1 },
+    1: { zone: "right_shoulder", bodyHeightFeet: 4.75, lateralFeet: 0.45, forwardFeet: 0.08 },
+    2: { zone: "right_upper_arm", bodyHeightFeet: 4.25, lateralFeet: 0.65, forwardFeet: 0.05 },
+    3: { zone: "right_side", bodyHeightFeet: 3.65, lateralFeet: 0.55, forwardFeet: 0.06 },
+    4: { zone: "right_hip", bodyHeightFeet: 3.0, lateralFeet: 0.35, forwardFeet: 0.05 },
+    5: { zone: "right_thigh", bodyHeightFeet: 2.25, lateralFeet: 0.25, forwardFeet: 0.04 },
+    6: { zone: "lower_body", bodyHeightFeet: 1.8, lateralFeet: 0, forwardFeet: 0.04 },
+    7: { zone: "left_thigh", bodyHeightFeet: 2.25, lateralFeet: -0.25, forwardFeet: 0.04 },
+    8: { zone: "left_hip", bodyHeightFeet: 3.0, lateralFeet: -0.35, forwardFeet: 0.05 },
+    9: { zone: "left_side", bodyHeightFeet: 3.65, lateralFeet: -0.55, forwardFeet: 0.06 },
+    10: { zone: "left_upper_arm", bodyHeightFeet: 4.25, lateralFeet: -0.65, forwardFeet: 0.05 },
+    11: { zone: "left_shoulder", bodyHeightFeet: 4.75, lateralFeet: -0.45, forwardFeet: 0.08 },
+  };
+
+  return {
+    ...(byClock[safeClock] || byClock[12]),
+    clock: safeClock,
+    isHeadShot: false,
+    roll: naturalRoll,
+    total: attackTotal,
+  };
+}
+
+function isRangedAttackData(attackData) {
+  const attackType = String(
+    attackData?.attackType ||
+      attackData?.type ||
+      attackData?.weaponType ||
+      attackData?.category ||
+      ""
+  ).toLowerCase();
+  const name = String(attackData?.name || "").toLowerCase();
+  const range = Number(attackData?.range ?? attackData?.rangeFt ?? attackData?.rangeFeet);
+
+  return (
+    attackType.includes("ranged") ||
+    attackType.includes("missile") ||
+    name.includes("bow") ||
+    name.includes("crossbow") ||
+    name.includes("sling") ||
+    (Number.isFinite(range) && range > 10)
+  );
+}
+
+function isAdjacentDistance(distanceFeet) {
+  const d = Number(distanceFeet);
+  return Number.isFinite(d) && d <= 5.5;
+}
+
+function createEmptyDeploymentState() {
+  return {
+    currentSide: "player",
+    selectionBySide: {
+      player: [],
+      enemy: [],
+    },
+    formationBySide: {
+      player: DEPLOYMENT_FORMATIONS.SINGLE,
+      enemy: DEPLOYMENT_FORMATIONS.SINGLE,
+    },
+    positionsBySide: {
+      player: {},
+      enemy: {},
+    },
+    lockedSides: {
+      player: false,
+      enemy: false,
+    },
+  };
+}
+
+function buildDeploymentCellKey(x, y) {
+  return `${x},${y}`;
+}
+
+function getDeploymentGridBounds(environment) {
+  const gridWidth =
+    environment?.gridWidth ||
+    environment?.width ||
+    environment?.grid?.[0]?.length ||
+    GRID_CONFIG.GRID_WIDTH ||
+    40;
+
+  const gridHeight =
+    environment?.gridHeight ||
+    environment?.height ||
+    environment?.grid?.length ||
+    GRID_CONFIG.GRID_HEIGHT ||
+    30;
+
+  return {
+    width: Math.max(1, Number(gridWidth) || 1),
+    height: Math.max(1, Number(gridHeight) || 1),
+  };
+}
+
+function clampDeploymentPoint(point, bounds) {
+  return {
+    x: Math.max(0, Math.min(bounds.width - 1, point?.x ?? 0)),
+    y: Math.max(0, Math.min(bounds.height - 1, point?.y ?? 0)),
+  };
+}
+
+function buildLineOffsets(count, spacing = 1) {
+  const start = -Math.floor((count - 1) / 2);
+  return Array.from({ length: count }, (_, index) => (start + index) * spacing);
+}
+
+function findNearestOpenDeploymentHex(preferredPoint, occupiedKeys, bounds) {
+  const preferred = clampDeploymentPoint(preferredPoint, bounds);
+  const preferredKey = buildDeploymentCellKey(preferred.x, preferred.y);
+
+  if (!occupiedKeys.has(preferredKey)) {
+    return preferred;
+  }
+
+  const maxRadius = Math.max(bounds.width, bounds.height);
+
+  for (let radius = 1; radius <= maxRadius; radius += 1) {
+    for (let dy = -radius; dy <= radius; dy += 1) {
+      for (let dx = -radius; dx <= radius; dx += 1) {
+        if (Math.max(Math.abs(dx), Math.abs(dy)) !== radius) continue;
+
+        const candidate = clampDeploymentPoint(
+          { x: preferred.x + dx, y: preferred.y + dy },
+          bounds
+        );
+        const key = buildDeploymentCellKey(candidate.x, candidate.y);
+
+        if (!occupiedKeys.has(key)) {
+          return candidate;
+        }
+      }
+    }
+  }
+
+  return null;
+}
+
+function buildDeploymentFormationPositions({
+  fighterIds,
+  anchor,
+  formation,
+  occupiedKeys,
+  bounds,
+  side = "player",
+}) {
+  if (!anchor || !Array.isArray(fighterIds) || fighterIds.length === 0) {
+    return {};
+  }
+
+  const localOccupied = new Set(occupiedKeys || []);
+  const spacing = formation === DEPLOYMENT_FORMATIONS.LINE_SPACED ? 2 : 1;
+  const desiredPoints =
+    fighterIds.length <= 1 || formation === DEPLOYMENT_FORMATIONS.SINGLE
+      ? [anchor]
+      : buildLineOffsets(fighterIds.length, spacing).map((offset) => ({
+          x: anchor.x + offset,
+          y: anchor.y,
+        }));
+
+  return fighterIds.reduce((acc, fighterId, index) => {
+    const preferred = clampDeploymentPoint(
+      desiredPoints[Math.min(index, desiredPoints.length - 1)] || anchor,
+      bounds
+    );
+    const placed = findNearestOpenDeploymentHex(preferred, localOccupied, bounds);
+
+    if (!placed) return acc;
+
+    localOccupied.add(buildDeploymentCellKey(placed.x, placed.y));
+    acc[fighterId] = {
+      x: placed.x,
+      y: placed.y,
+      facing: side === "enemy" ? 180 : 0,
+    };
+    return acc;
+  }, {});
+}
+
+function getSuggestedDeploymentAnchor(side, bounds) {
+  const centerX = Math.floor(bounds.width / 2);
+  const suggestedY = side === "enemy"
+    ? Math.max(1, Math.floor(bounds.height * 0.2))
+    : Math.max(1, Math.floor(bounds.height * 0.8));
+
+  return clampDeploymentPoint({ x: centerX, y: suggestedY }, bounds);
+}
+
+function CombatPage({ characters = [] }) {
   const navigate = useNavigate();
   const [log, setLog] = useState([]);
   const [logFilterType, setLogFilterType] = useState("all");
-  const [logSortOrder, setLogSortOrder] = useState("newest");
+  const [logSortOrder, setLogSortOrder] = useState("oldest");
+  const [logStepMode, setLogStepMode] = useState(false);
+  const [revealedLogCount, setRevealedLogCount] = useState(0);
+
+  const [gmNarrationEnabled, setGmNarrationEnabled] = useState(true);
+  const [gmNarrationMode, setGmNarrationMode] = useState("template");
+  // Later you can switch this to "local-llm"
+
+  const [gmNarration, setGmNarration] = useState([]);
+
+  const narratedLogIdsRef = useRef(new Set());
+  const gmNarrationQueueRef = useRef([]);
+  const gmNarrationBusyRef = useRef(false);
+
   const [fighters, setFighters] = useState([]);
   const [turnIndex, setTurnIndex] = useState(0);
   const [positions, setPositions] = useState({}); // Combatant positions on tactical map
   const [renderPositions, setRenderPositions] = useState({}); // Render-only positions (visual pose)
   const [projectiles, setProjectiles] = useState([]); // Render-only projectiles
+  const projectilesRef = useRef([]);
+  const [embeddedArrows, setEmbeddedArrows] = useState([]); // Arrows stuck after impact
   const [overwatchHexes, setOverwatchHexes] = useState([]); // Render-only overwatch danger hexes
   const [overwatchShots, setOverwatchShots] = useState([]); // Render-only overwatch shots
   const [combatTerrain, setCombatTerrain] = useState(null); // Store terrain data for combat
+  const [phase0Results, setPhase0Results] = useState(null); // Store Phase 0 scene setup (moved up for arenaEnvironment)
+  const [mapDefinition, setMapDefinition] = useState(null); // Map definition for editor mode (moved up for arenaEnvironment)
+
+  // ✅ arenaEnvironment MUST be declared early (before any hooks that reference it)
+  // This prevents "Cannot access before initialization" errors
+  const arenaEnvironment = useMemo(() => {
+    if (combatTerrain) return combatTerrain;
+    if (mapDefinition) return mapDefinition;
+    return phase0Results?.environment || null;
+  }, [combatTerrain, mapDefinition, phase0Results]);
+
+  useEffect(() => {
+    projectilesRef.current = projectiles;
+  }, [projectiles]);
+
   const [timeScale, setTimeScale] = useState(1);
   const timeScaleRef = useRef(1);
   const gameClockRef = useRef({
     nowMs: 0,
     lastRealMs: performance.now(),
   });
-  // Ammo is now inventory-based - computed from fighters' inventory
-  const ammoCount = useMemo(() => initializeAmmo(fighters), [fighters]); // For UI/trackers
+  // Ammo is now inventory-based - computed from fighters' inventory.
+  // Worker-applied ammo deltas are stored in overrides and merged here.
+  const [ammoOverrides, setAmmoOverrides] = useState({});
+  const [useElectronEngine, setUseElectronEngine] = useState(true);
+  const [seedMode, setSeedMode] = useState(false);
+  const [seedValue, setSeedValue] = useState(123456);
+  const rngStateRef = useRef(null);
+  const ENGINE_ENABLED = typeof window !== "undefined" && !!window?.engine?.call && useElectronEngine;
+  const ammoCount = useMemo(
+    () => ({ ...initializeAmmo(fighters), ...ammoOverrides }),
+    [fighters, ammoOverrides]
+  );
   useEffect(() => {
     timeScaleRef.current = timeScale;
   }, [timeScale]);
@@ -591,10 +1049,54 @@ export default function CombatPage({ characters = [] }) {
     }
   }, []);
 
+  const addGMNarration = useCallback(
+    (message, sourceEntry = null) => {
+      const narrationEntry = {
+        id: generateCryptoId(),
+        message,
+        type: "narration",
+        sourceLogId: sourceEntry?.id || null,
+        timestamp: new Date().toLocaleTimeString(),
+      };
+
+      setGmNarration((prev) => [narrationEntry, ...prev].slice(0, 100));
+    },
+    [generateCryptoId]
+  );
+
+  const processGMNarrationQueue = useCallback(async () => {
+    if (gmNarrationBusyRef.current) return;
+
+    gmNarrationBusyRef.current = true;
+
+    try {
+      while (gmNarrationQueueRef.current.length > 0) {
+        const context = gmNarrationQueueRef.current.shift();
+
+        const narration = await narrateCombatEntry(context, {
+          mode: gmNarrationMode,
+          model: "llama3.2",
+        });
+
+        if (narration) {
+          addGMNarration(narration, context.event);
+        }
+      }
+    } finally {
+      gmNarrationBusyRef.current = false;
+    }
+  }, [addGMNarration, gmNarrationMode]);
+
   const recentLogMessagesRef = useRef(new Map()); // Track recent log messages to prevent duplicates
   const logQueueRef = useRef([]);
   const logFlushTimerRef = useRef(null);
-  const LOG_STEP_MS = 500;
+  const combatLogSeqRef = useRef(0); // Monotonic sequence for stable ordering
+  const logStepModeRef = useRef(logStepMode);
+  const LOG_STEP_MS = 80; // Base delay between log flushes (lower = snappier; was 500)
+
+  useEffect(() => {
+    logStepModeRef.current = logStepMode;
+  }, [logStepMode]);
 
   const scaleDelayMs = useCallback((value) => {
     const raw = Number(value);
@@ -602,6 +1104,17 @@ export default function CombatPage({ characters = [] }) {
     const scale = Math.max(0.05, Number(timeScaleRef.current) || 1);
     return raw / scale;
   }, []);
+
+  const getVisualDurationMs = useCallback(
+    (baseMs, minMs = 120, maxMs = 2500) => {
+      const raw = Number(baseMs);
+      if (!Number.isFinite(raw) || raw <= 0) return minMs;
+
+      const scaled = scaleDelayMs(raw);
+      return Math.max(minMs, Math.min(maxMs, Math.round(scaled)));
+    },
+    [scaleDelayMs]
+  );
 
   useEffect(() => {
     return () => {
@@ -638,6 +1151,7 @@ export default function CombatPage({ characters = [] }) {
 
     const logEntry = {
       id: generateCryptoId(),
+      seq: ++combatLogSeqRef.current,
       message,
       type,
       timestamp: new Date().toLocaleTimeString(),
@@ -645,13 +1159,16 @@ export default function CombatPage({ characters = [] }) {
     };
     logQueueRef.current.push(logEntry);
     if (!logFlushTimerRef.current) {
-      const stepMs = Math.max(30, scaleDelayMs(LOG_STEP_MS));
+      const stepMs = Math.max(16, scaleDelayMs(LOG_STEP_MS));
       logFlushTimerRef.current = setInterval(() => {
-        const next = logQueueRef.current.shift();
-        if (next) {
-          setLog((prev) => [next, ...prev]);
+        const queue = logQueueRef.current;
+        const batchSize = logStepModeRef.current ? 1 : 5;
+        const batch = queue.splice(0, batchSize); // Step mode reveals/logs one entry at a time.
+        if (batch.length > 0) {
+          // Keep log in chronological order (oldest → newest) for readable transcript
+          setLog((prev) => [...prev, ...batch].slice(-MAX_RENDERED_LOG_ENTRIES));
         }
-        if (logQueueRef.current.length === 0) {
+        if (queue.length === 0) {
           clearInterval(logFlushTimerRef.current);
           logFlushTimerRef.current = null;
         }
@@ -718,6 +1235,212 @@ export default function CombatPage({ characters = [] }) {
     return { status: "dead", canAct: false, description: "DEAD" };
   }, []);
 
+  // ---------------------------------------------------------------------------
+  // Backwards-compatible KO + bleeding layer.
+  // Keep existing `status: "defeated"` semantics intact for canFighterAct/victory checks.
+  // ---------------------------------------------------------------------------
+  const getAttackWoundType = useCallback((attackData = {}) => {
+    const name = String(attackData.name || "").toLowerCase();
+    const type = String(
+      attackData.damageType ||
+        attackData.weaponType ||
+        attackData.attackType ||
+        attackData.type ||
+        ""
+    ).toLowerCase();
+
+    if (
+      type.includes("blunt") ||
+      name.includes("club") ||
+      name.includes("mace") ||
+      name.includes("staff") ||
+      name.includes("fist") ||
+      name.includes("punch") ||
+      name.includes("kick")
+    ) {
+      return "blunt";
+    }
+
+    if (
+      type.includes("piercing") ||
+      type.includes("slashing") ||
+      name.includes("bow") ||
+      name.includes("arrow") ||
+      name.includes("spear") ||
+      name.includes("dagger") ||
+      name.includes("knife") ||
+      name.includes("sword") ||
+      name.includes("axe") ||
+      name.includes("claw") ||
+      name.includes("bite")
+    ) {
+      return "bleeding";
+    }
+
+    return "trauma";
+  }, []);
+
+  const rollBleedRounds = useCallback(() => {
+    // 1d4 minutes; Palladium melee rounds often ~15s, so 4 melee rounds = 1 minute.
+    const minutes = CryptoSecureDice.parseAndRoll("1d4").totalWithBonus;
+    return minutes * 4;
+  }, []);
+
+  const applyIncapacitationCondition = useCallback(
+    ({ fighter, attackData, isCriticalHit, overkill = 0 }) => {
+      const hp = Number(fighter?.currentHP ?? 0) || 0;
+      const woundType = getAttackWoundType(attackData);
+
+      if (hp <= -21) {
+        return {
+          ...fighter,
+          status: "defeated",
+          condition: "dead",
+          bleeding: { active: false, stabilized: false, roundsRemaining: null },
+        };
+      }
+
+      const severeBleed =
+        woundType === "bleeding" && (isCriticalHit || overkill >= 10 || hp <= -11);
+
+      if (severeBleed) {
+        return {
+          ...fighter,
+          status: "defeated",
+          condition: "dying",
+          bleeding: {
+            active: true,
+            stabilized: false,
+            roundsRemaining: rollBleedRounds(),
+            source: attackData?.name || "attack",
+            damageType: woundType,
+          },
+        };
+      }
+
+      if (hp <= -11) {
+        return {
+          ...fighter,
+          status: "defeated",
+          condition: "critical",
+          bleeding: {
+            active: woundType === "bleeding",
+            stabilized: false,
+            roundsRemaining: woundType === "bleeding" ? rollBleedRounds() : null,
+            source: attackData?.name || "attack",
+            damageType: woundType,
+          },
+        };
+      }
+
+      if (woundType === "bleeding") {
+        return {
+          ...fighter,
+          status: "defeated",
+          condition: "unconsciousBleeding",
+          bleeding: {
+            active: true,
+            stabilized: false,
+            roundsRemaining: rollBleedRounds(),
+            source: attackData?.name || "attack",
+            damageType: woundType,
+          },
+        };
+      }
+
+      return {
+        ...fighter,
+        status: "defeated",
+        condition: "unconsciousStable",
+        bleeding: { active: false, stabilized: false, roundsRemaining: null },
+      };
+    },
+    [getAttackWoundType, rollBleedRounds]
+  );
+
+  const tickBleeding = useCallback(
+    (fighter) => {
+      if (!fighter?.bleeding?.active || fighter.bleeding.stabilized) return fighter;
+      const nextRounds = Math.max(0, (fighter.bleeding.roundsRemaining ?? 0) - 1);
+
+      if (nextRounds > 0) {
+        return {
+          ...fighter,
+          bleeding: { ...fighter.bleeding, roundsRemaining: nextRounds },
+        };
+      }
+
+      if (fighter.condition === "unconsciousBleeding") {
+        return {
+          ...fighter,
+          condition: "dying",
+          bleeding: { ...fighter.bleeding, roundsRemaining: rollBleedRounds() },
+        };
+      }
+
+      if (fighter.condition === "dying" || fighter.condition === "critical") {
+        return {
+          ...fighter,
+          condition: "dead",
+          status: "defeated",
+          currentHP: Math.min(Number(fighter.currentHP ?? -21) || -21, -21),
+          bleeding: { ...fighter.bleeding, active: false, roundsRemaining: null },
+        };
+      }
+
+      return fighter;
+    },
+    [rollBleedRounds]
+  );
+
+  const stabilizeBleeding = useCallback((fighter, source = "First Aid") => {
+    if (!fighter) return fighter;
+    const nextCondition =
+      fighter.condition === "dying" ||
+      fighter.condition === "critical" ||
+      fighter.condition === "unconsciousBleeding"
+        ? "unconsciousStable"
+        : fighter.condition;
+
+    return {
+      ...fighter,
+      condition: nextCondition,
+      bleeding: {
+        ...(fighter.bleeding || {}),
+        active: false,
+        stabilized: true,
+        roundsRemaining: null,
+        stabilizedBy: source,
+      },
+    };
+  }, []);
+
+  const applyHealingToFighter = useCallback((fighter, amount, source = "healing") => {
+    if (!fighter) return fighter;
+    const maxHP =
+      fighter.maxHP ?? fighter.hpMax ?? fighter.hitPoints ?? fighter.totalHP ?? 999;
+    const nextHP = Math.min(maxHP, (fighter.currentHP ?? 0) + (Number(amount) || 0));
+
+    if (nextHP > 0) {
+      const stabilized = stabilizeBleeding(fighter, source);
+      return {
+        ...stabilized,
+        currentHP: nextHP,
+        hp: nextHP,
+        status: "active",
+        condition: "conscious",
+        // Do not restore actions; they act on their next normal slot.
+        remainingAttacks: Number(fighter.remainingAttacks ?? 0) || 0,
+      };
+    }
+
+    return {
+      ...fighter,
+      currentHP: nextHP,
+      hp: nextHP,
+    };
+  }, [stabilizeBleeding]);
+
   // FNV-1a 32-bit hash for deterministic scatter
   const hash32 = useCallback((str) => {
     let h = 0x811c9dc5;
@@ -727,6 +1450,11 @@ export default function CombatPage({ characters = [] }) {
     }
     return h >>> 0;
   }, []);
+
+  // Deterministic "clock" (1..12) for polar miss direction.
+  const rollDeterministicClock12 = useCallback((seed) => {
+    return (hash32(String(seed)) % 12) + 1;
+  }, [hash32]);
 
   // odd-q offset neighbors (flat-top hex)
   const getNeighborOddQ = useCallback((col, row, dir) => {
@@ -782,7 +1510,11 @@ export default function CombatPage({ characters = [] }) {
     // NOTE: ROUTED units CAN act (they should spend actions fleeing).
     // Blocking ROUTED here causes freezes and premature "All players defeated" checks.
     const hpStatus = getHPStatus(fighter.currentHP);
-    return hpStatus.canAct && fighter.status !== "defeated";
+    // A fighter can be "Conscious" but still have a stale/incorrect status label.
+    // Only treat "defeated" as blocking if they are actually incapacitated by HP.
+    const statusLower = String(fighter.status ?? "").toLowerCase();
+    const blocksByStatus = statusLower === "defeated" && !hpStatus.canAct;
+    return hpStatus.canAct && !blocksByStatus;
   }, [getHPStatus]);
 
   // Helper to mark a fighter as fled off-map (soft swap: keep in fighters, remove from map)
@@ -1073,6 +1805,7 @@ export default function CombatPage({ characters = [] }) {
   const [selectedAmmoCount, setSelectedAmmoCount] = useState(0);
   const [selectedAttack, setSelectedAttack] = useState(0);
   const [selectedParty, setSelectedParty] = useState([]);
+  const [selectedRosterPreviewId, setSelectedRosterPreviewId] = useState(null);
   const [showPartySelector, setShowPartySelector] = useState(false);
   const [diceRolls, setDiceRolls] = useState([]);
   const [showRollDetails, setShowRollDetails] = useState(false);
@@ -1097,11 +1830,23 @@ export default function CombatPage({ characters = [] }) {
   const [activeCircles, setActiveCircles] = useState([]); // Track active protection circles
   const [showCirclePlacementTool, setShowCirclePlacementTool] = useState(false); // Show GM circle placement tool
   const [selectedCirclePosition, setSelectedCirclePosition] = useState(null); // Selected position for circle placement
+  const enemyListScrollRef = useRef(null);
+  const previousEnemyCountRef = useRef(0);
   const [showCircleManager, setShowCircleManager] = useState(false); // Show GM circle manager panel
   const [showCircleRecharge, setShowCircleRecharge] = useState(false); // Show circle recharge panel
   const [selectedMovementHex, setSelectedMovementHex] = useState(null); // Track movement hex for strike+movement
   const [showMovementSelection, setShowMovementSelection] = useState(false); // Show movement selection UI
   const [tempModifiers, setTempModifiers] = useState({}); // Track temporary bonuses/penalties (e.g., charge)
+
+  // --- Altitude UI (feet) ---
+  const [altitudeTargetFeet, setAltitudeTargetFeet] = useState(0);
+  const [hoveredHex, setHoveredHex] = useState(null);
+
+  // Optional: keep slider bounds sane (can later pull from species profile)
+  const getMaxAltitudeFeet = useCallback(() => {
+    // If you later store a cap in speciesProfile, plug it in here.
+    return 200; // default cap
+  }, []);
   const positionsRef = useRef(positions);
   const renderPositionsRef = useRef(renderPositions);
   const prevPositionsRef = useRef(null);
@@ -1230,10 +1975,135 @@ export default function CombatPage({ characters = [] }) {
     fightersRef.current = fighters;
   }, [fighters]);
 
+  useEffect(() => {
+    if (!gmNarrationEnabled) return;
+    if (!Array.isArray(log) || log.length === 0) return;
+
+    const oldestFirst = [...log].reverse();
+
+    for (const entry of oldestFirst) {
+      if (!entry?.id) continue;
+      if (narratedLogIdsRef.current.has(entry.id)) continue;
+      if (!shouldNarrateLogEntry(entry)) continue;
+
+      narratedLogIdsRef.current.add(entry.id);
+
+      const context = buildNarrationContext({
+        entry,
+        fighters: fightersRef.current ?? fighters,
+        positions: positionsRef.current ?? positions,
+        arenaEnvironment,
+        recentLog: log.slice(0, 8),
+      });
+
+      gmNarrationQueueRef.current.push(context);
+    }
+
+    processGMNarrationQueue();
+  }, [
+    log,
+    gmNarrationEnabled,
+    fighters,
+    positions,
+    arenaEnvironment,
+    processGMNarrationQueue,
+  ]);
+
+  const getFighterNow = useCallback(
+    (id) => {
+      return (fightersRef.current ?? fighters).find((f) => f.id === id) || null;
+    },
+    [fighters]
+  );
+
+  // Single helper so future patches don't forget to sync the ref + React state.
+  const commitFighters = useCallback((nextOrUpdater) => {
+    const base = fightersRef.current ?? [];
+    const next =
+      typeof nextOrUpdater === "function"
+        ? nextOrUpdater(base)
+        : nextOrUpdater;
+
+    fightersRef.current = next;
+    setFighters(next);
+  }, []);
+
+  /** When merging engine spell-impact patches, keep the caster's live PPE pool (stale patches often carry max PPE). */
+  const preserveCasterPPE = useCallback((live, merged, casterId) => {
+    if (!live || live.id !== casterId) return merged;
+    const liveCurrentPPE = Number(
+      live.currentPPE ??
+        live.derived?.currentPPE ??
+        live.magic?.currentPPE ??
+        live.PPE ??
+        live.ppe ??
+        0
+    );
+    const maxPPE = Number(
+      live.maxPPE ??
+        merged?.maxPPE ??
+        merged?.derived?.maxPPE ??
+        merged?.magic?.maxPPE ??
+        liveCurrentPPE
+    );
+    return {
+      ...merged,
+      currentPPE: liveCurrentPPE,
+      PPE: liveCurrentPPE,
+      ppe: liveCurrentPPE,
+      maxPPE,
+      derived: merged.derived
+        ? {
+            ...merged.derived,
+            currentPPE: liveCurrentPPE,
+            maxPPE: live.maxPPE ?? merged.derived.maxPPE ?? maxPPE,
+          }
+        : merged.derived,
+      magic: merged.magic
+        ? {
+            ...merged.magic,
+            currentPPE: liveCurrentPPE,
+            maxPPE: live.maxPPE ?? merged.magic.maxPPE ?? maxPPE,
+          }
+        : merged.magic,
+    };
+  }, []);
+
+  const stabilizeTargetById = useCallback(
+    (targetId, source = "First Aid") => {
+      const fightersNow = fightersRef.current ?? fighters;
+      const updated = fightersNow.map((f) => {
+        if (f.id !== targetId) return f;
+        const stabilized = stabilizeBleeding(f, source);
+        if (f?.bleeding?.active && !stabilized?.bleeding?.active) {
+          addLog(`🚑 ${f.name} is stabilized by ${source}!`, "healing");
+        }
+        return stabilized;
+      });
+      commitFighters(updated);
+    },
+    [fighters, stabilizeBleeding, commitFighters, addLog]
+  );
+
   const turnIndexRef = useRef(turnIndex);
   useEffect(() => {
     turnIndexRef.current = turnIndex;
   }, [turnIndex]);
+
+  const meleeRoundRef = useRef(meleeRound);
+  useEffect(() => {
+    meleeRoundRef.current = meleeRound;
+  }, [meleeRound]);
+
+  const turnCounterRef = useRef(turnCounter);
+  useEffect(() => {
+    turnCounterRef.current = turnCounter;
+  }, [turnCounter]);
+
+  const combatActiveRef = useRef(combatActive);
+  useEffect(() => {
+    combatActiveRef.current = combatActive;
+  }, [combatActive]);
 
   // Prefer a ref snapshot only when it's non-empty; avoids transient {} snapshots causing AI to see "no threats".
   const pickNonEmptyObject = useCallback((preferred, fallback) => {
@@ -1249,7 +2119,17 @@ export default function CombatPage({ characters = [] }) {
   const [temporaryHexSharing, setTemporaryHexSharing] = useState({}); // Track temporary hex sharing {characterId: {originalPos, targetHex, targetCharId}}
   const [flashingCombatants, setFlashingCombatants] = useState(new Set()); // Track which combatants are flashing
   const processingEnemyTurnRef = useRef(false); // Prevent duplicate enemy turn processing (use ref for synchronous check)
+  const pendingEnemyTurnRef = useRef(false); // Coalesce: when blocked, re-run once in finally if turn wasn't completed
   const processingPlayerAIRef = useRef(false); // Prevent duplicate player AI turn processing
+  const enemyTurnTimerRef = useRef(null); // Don't schedule if already pending (prevents double-schedule)
+  const playerAITimerRef = useRef(null);
+  const turnActionResolvingRef = useRef(false); // Action committed; block restarts until endTurn advances
+  const enemyActionLockRef = useRef(null); // One action per enemy per turn-slice (across callbacks)
+  const enemyActionCommittedThisSliceRef = useRef(false); // Busy clock should only block after an enemy action commits
+  const enemyActionCommittedSliceKeyRef = useRef(null);
+  const enemyTurnTokenRef = useRef(0); // Token to bail if state changed before timeout fired
+  const aiControlEnabledRef = useRef(aiControlEnabled);
+  const activePlayerAITurnKeysRef = useRef(new Set());
   // Player AI async guardrails:
   // - playerAIActionScheduledRef: set true as soon as AI schedules any delayed work (movement/attack/spell)
   // - playerAITurnTokenRef: incremented each player AI turn; delayed callbacks must match token or abort
@@ -1269,13 +2149,1091 @@ export default function CombatPage({ characters = [] }) {
   const movementAttemptsRef = useRef({}); // Track movement attempts per fighter to prevent infinite loops: {fighterId: {count, lastDistance, lastPosition}}
   const combatEndCheckRef = useRef(false); // Prevent duplicate combat end checks
   const combatOverRef = useRef(false); // ✅ AUTHORITATIVE: Combat is over (checked by all timeouts/actions)
+  const combatSessionRef = useRef(0); // Bumps on combat start/reset so old async callbacks cannot re-enter.
+  const currentTurnTokenRef = useRef(null); // Universal turn/action ownership token for delayed callbacks.
+  const handlePlayerAITurnRef = useRef(null);
+
+  // =========================
+  // Engine Adapter (for MOVE command authority)
+  // =========================
+  const engineRef = useRef(null);
+  const engineEventSubscribersRef = useRef(new Set());
+
+  // Ref for endTurn to avoid initialization order issues
+  const endTurnRef = useRef(null);
+  const scheduleEndTurnRef = useRef(null);
+  // Ref for setLocksByEid to avoid initialization order issues
+  const setLocksByEidRef = useRef(null);
+
+  const localCastSpell = useCallback(async ({ caster, target, spell, meta, state }) => {
+    const castId = meta?.castId ?? `spell:${Date.now()}`;
+    const flightMs = meta?.flightMs ?? 550;
+
+    return {
+      ok: true,
+      events: [
+        {
+          type: "SCHEDULED_EVENTS",
+          id: `spell:${castId}`,
+          kind: "spell",
+          owner: {
+            type: "spell",
+            id: castId,
+            caster,
+            target,
+          },
+          items: [
+            {
+              t: flightMs,
+              e: {
+                type: "ENGINE_CALL",
+                method: "resolveSpellImpact",
+                payload: {
+                  caster,
+                  target,
+                  spell,
+                  state,
+                  meta: {
+                    ...meta,
+                    castId,
+                  },
+                },
+              },
+            },
+          ],
+        },
+      ],
+    };
+  }, []);
+
+  const localResolveSpellImpact = useCallback(async ({ caster, target, spell, state, meta }) => {
+    const castId = meta?.castId ?? null;
+    const events = [];
+    const fightersNow = state?.fighters ?? fightersRef.current ?? [];
+    const targetId = typeof target === "string" ? target : target?.id;
+    const targetF = targetId ? fightersNow.find((f) => f.id === targetId) : null;
+    const damageFormula =
+      spell?.damage ??
+      spell?.combatDamage ??
+      spell?.Damage ??
+      spell?.combat_damage ??
+      null;
+
+    const rollDice = (formula) => {
+      const match = String(formula ?? "").match(/^(\d+)d(\d+)$/i);
+      if (!match) return Number(formula) || 0;
+      const count = Number(match[1]);
+      const sides = Number(match[2]);
+      let total = 0;
+      for (let i = 0; i < count; i += 1) {
+        total += 1 + Math.floor(Math.random() * sides);
+      }
+      return total;
+    };
+
+    if (damageFormula) {
+      events.push({
+        type: "LOG",
+        level: "info",
+        message: `🎯 Spell targetId=${targetId ?? "null"} hasTargetF=${!!targetF}`,
+        meta: castId ? { castId } : undefined,
+      });
+    }
+
+    if (damageFormula && targetF) {
+      const amount = Math.max(0, rollDice(damageFormula));
+      events.push({
+        type: "LOG",
+        level: "info",
+        message: `⚡ ${spell?.name ?? "Spell"} damage formula: ${damageFormula}`,
+        meta: castId ? { castId } : undefined,
+      });
+      events.push({
+        type: "DAMAGE",
+        targetId: targetF.id,
+        amount,
+        sourceId: caster,
+        kind: "spell",
+        damageType: spell?.damageType || "magic",
+        breakdown: {
+          base: amount,
+          final: amount,
+          type: spell?.damageType || "magic",
+          source: "localResolveSpellImpact",
+        },
+        meta: castId ? { castId } : undefined,
+      });
+    }
+
+    events.push({ type: "TURN_ENDED", eid: caster, meta: castId ? { castId } : undefined });
+    return { ok: true, events };
+  }, []);
+
+  const engineCall = useCallback(async (method, payload) => {
+    if (method === "resolveSpellImpact") {
+      const castId = payload?.meta?.castId ?? "none";
+      const payloadToken = payload?.meta?.turnToken;
+      const pending = activeSpellImpactRef.current;
+      const tokenMatches =
+        pending &&
+        pending.castId === castId &&
+        pending.turnToken &&
+        pending.turnToken === payloadToken &&
+        currentTurnTokenRef.current === payloadToken;
+      if (!tokenMatches) {
+        addLog?.(
+          `🚫 Stale spell impact blocked castId=${castId} token=${payloadToken || "none"}`,
+          "warning"
+        );
+        return { ok: false, error: { message: "stale spell impact", castId } };
+      }
+    }
+
+    if (typeof window !== "undefined" && window?.engine?.call) {
+      return window.engine.call(method, payload);
+    }
+
+    if (method === "castSpell") {
+      return localCastSpell(payload);
+    }
+
+    if (method === "resolveSpellImpact") {
+      return localResolveSpellImpact(payload);
+    }
+
+    if (engineRef.current?.call) {
+      return engineRef.current.call(method, payload);
+    }
+
+    return {
+      ok: false,
+      error: {
+        message: "Engine call unavailable",
+        method,
+      },
+    };
+  }, [addLog, localCastSpell, localResolveSpellImpact]);
+
+  const engineCallRef = useRef(engineCall);
+  useEffect(() => {
+    engineCallRef.current = engineCall;
+  }, [engineCall]);
+
+  // Event handler for engine events (used by both engine adapter and clock player)
+  const handleEngineEvent = useCallback((e) => {
+    // 🔥 Engine becomes authoritative for these events
+    if (e.type === "HEX_MOVED" || e.type === "MOVED") {
+      const { eid, to } = e;
+      setPositions((prev) => ({
+        ...prev,
+        [eid]: { x: to.x, y: to.y }, // Keep UI as x/y for now
+      }));
+    }
+
+    if (e.type === "HEX_PATH_MOVED") {
+      const { eid, path, to } = e;
+      // Simple version: snap to end position
+      // Later: animate step-by-step through path
+      const end = to || (path && path[path.length - 1]);
+      if (end) {
+        setPositions((prev) => ({
+          ...prev,
+          [eid]: { x: end.x, y: end.y },
+        }));
+      }
+    }
+
+    if (e.type === "HEX_MOVED_STEP") {
+      const { eid, to } = e;
+      setPositions((prev) => ({
+        ...prev,
+        [eid]: { x: to.x, y: to.y },
+      }));
+    }
+
+    if (e.type === "MOVE_ANIM_DONE") {
+      // Optional: clear "isMoving" UI flag or trigger completion callbacks
+      // For now, just acknowledge completion
+    }
+
+    if (e.type === "ENGINE_SET_LOCK") {
+      const { lock } = e;
+      if (lock?.type === "entity") {
+        // Update local lock map
+        setLocksByEidRef.current?.((prev) => ({
+          ...prev,
+          [lock.id]: { ...(prev[lock.id] || {}), [lock.lock]: true },
+        }));
+        // Mirror to worker lock state
+        if (window?.engine?.call) {
+          window.engine.call("addLock", { eid: lock.id, lock: lock.lock });
+        }
+      }
+    }
+
+    if (e.type === "ENGINE_CLEAR_LOCK" || e.type === "ENGINE_CLEAR_BUSY") {
+      // Handle both old ENGINE_CLEAR_BUSY (for backwards compatibility) and new ENGINE_CLEAR_LOCK
+      const lock = e.lock || (e.eid ? { type: "entity", id: e.eid, lock: "moving" } : null);
+      if (lock?.type === "entity") {
+        // Update local lock map
+        setLocksByEidRef.current?.((prev) => {
+          const cur = prev[lock.id] || {};
+          const next = { ...cur };
+          delete next[lock.lock];
+          const copy = { ...prev };
+          if (Object.keys(next).length === 0) {
+            delete copy[lock.id];
+          } else {
+            copy[lock.id] = next;
+          }
+          return copy;
+        });
+        // Mirror to worker lock state
+        if (window?.engine?.call) {
+          window.engine.call("removeLock", { eid: lock.id, lock: lock.lock });
+        }
+      }
+    }
+
+    // ENGINE_CALL is now executed by useClockPlayer (scheduler); this is fallback if one reaches here
+    if (e.type === "ENGINE_CALL") {
+      (async () => {
+        const { method, payload } = e;
+        const castId = payload?.meta?.castId ?? "none";
+        addLog?.(`🧪 ENGINE_CALL ${method} (castId=${castId})`, "info");
+
+        if (!method) {
+          addLog?.("⚠️ ENGINE_CALL missing method", "warning");
+          return;
+        }
+
+        if (method === "resolveSpellImpact") {
+          const pending = activeSpellImpactRef.current;
+          const payloadToken = payload?.meta?.turnToken;
+          const tokenMatches =
+            pending &&
+            pending.castId === castId &&
+            pending.turnToken &&
+            pending.turnToken === payloadToken &&
+            currentTurnTokenRef.current === payloadToken;
+          if (!tokenMatches) {
+            addLog?.(
+              `🚫 Stale spell impact blocked castId=${castId} token=${payloadToken || "none"}`,
+              "warning"
+            );
+            return;
+          }
+        }
+
+        try {
+          const result = await engineCallRef.current(method, payload);
+          const n = result?.events?.length ?? 0;
+          addLog?.(`🧪 ENGINE_CALL ${method} returned ${n} events (ok=${!!result?.ok})`, "info");
+
+          if (result?.ok && Array.isArray(result?.events)) {
+            for (const ev of result.events) {
+              const subs = engineEventSubscribersRef.current;
+              if (!subs?.size) {
+                if (ev?.type === "SCHEDULED_EVENTS") clockRef.current?.addSchedule?.(ev);
+                else handleEngineEventRef.current?.(ev);
+              } else {
+                subs.forEach((cb) => {
+                  try { cb(ev); } catch (err) {
+                    console.error("[EngineAdapter] ENGINE_CALL event subscriber error:", err);
+                  }
+                });
+              }
+            }
+          } else if (result?.error?.message) {
+            addLog?.(`⚠️ ENGINE_CALL ${method} error: ${result.error.message}`, "warning");
+          }
+        } catch (err) {
+          console.error("[EngineAdapter] ENGINE_CALL error:", err);
+          addLog?.(`⚠️ ENGINE_CALL ${method} threw: ${String(err?.message ?? err)}`, "warning");
+        }
+      })();
+      return;
+    }
+
+    if (e.type === "ATTACK_REQUESTED") {
+      // Forward charge attack to engine resolver
+      const { attacker, target, bonus, meta } = e;
+      if (window?.engine?.call) {
+        window.engine.call("resolveAttack", {
+          attackerId: attacker,
+          targetId: target,
+          attack: {
+            toHitBonus: bonus?.strikeBonus || 0,
+            damageMultiplier: bonus?.damageMultiplier || 1,
+            // Add other attack properties as needed
+          },
+          state: {
+            fighters: (fightersRef.current ?? fighters).map(f => ({
+              id: f.id ?? f._id,
+              name: f.name ?? f.characterName,
+              currentHP: f.currentHP ?? f.hp,
+              AR: f.AR ?? f.ar,
+              footprint: f.footprint,
+              // Add other needed properties
+            })),
+            positions: Object.fromEntries(
+              Object.entries(positionsRef.current ?? positions ?? {}).map(([id, p]) => [
+                id,
+                {
+                  x: Number(p?.x ?? p?.q ?? 0),
+                  y: Number(p?.y ?? p?.r ?? 0),
+                  altitudeFeet: Number(p?.altitudeFeet ?? p?.altitude ?? 0),
+                },
+              ])
+            ),
+          },
+          meta: meta || {},
+        }).then((result) => {
+          // Process attack result events if needed
+          if (result?.events) {
+            result.events.forEach((ev) => {
+              engineEventSubscribersRef.current.forEach((cb) => {
+                try {
+                  cb(ev);
+                } catch (err) {
+                  console.error("[EngineAdapter] Attack event subscriber error:", err);
+                }
+              });
+            });
+          }
+        });
+      }
+    }
+
+    if (e.type === "DEFENSIVE_STANCE") {
+      const { eid, until } = e;
+      // Update fighter to have defensive stance flag
+      setFighters((prev) =>
+        prev.map((f) =>
+          f.id === eid
+            ? { ...f, defensiveStance: true, defensiveStanceUntil: until }
+            : f
+        )
+      );
+    }
+
+    if (e.type === "AP_SPENT" || e.type === "ATTACKS_CONSUMED") {
+      const { eid, amount, remaining } = e;
+      setFighters((prev) =>
+        prev.map((f) =>
+          f.id === eid
+            ? { ...f, remainingAttacks: remaining !== undefined ? remaining : Math.max(0, (f.remainingAttacks ?? 0) - (amount || 1)) }
+            : f
+        )
+      );
+    }
+
+    if (e.type === "TURN_ENDED" || e.type === "TURN_SHOULD_END") {
+      const castId = e?.meta?.castId ?? e?.castId;
+      const pendingSpellImpact = activeSpellImpactRef.current;
+
+      const spellLockMatches =
+        pendingSpellImpact &&
+        (!pendingSpellImpact.turnToken ||
+          pendingSpellImpact.turnToken === currentTurnTokenRef.current) &&
+        (castId != null && castId !== ""
+          ? pendingSpellImpact.castId === castId
+          : e.type === "TURN_ENDED" &&
+            e?.eid === pendingSpellImpact.casterId);
+
+      if (spellLockMatches) {
+        addLog?.(
+          `🧪 Spell impact released turn: castId=${pendingSpellImpact.castId}`,
+          "info"
+        );
+        activeSpellImpactRef.current = null;
+        spellImpactTurnEndHandledRef.current = castId ?? pendingSpellImpact.castId;
+        executingActionRef.current = false;
+        if (turnTimeoutRef.current) {
+          clearTimeout(turnTimeoutRef.current);
+          turnTimeoutRef.current = null;
+        }
+        turnActionResolvingRef.current = false;
+        pendingTurnAdvanceRef.current = true;
+        scheduleEndTurnRef.current?.(0, "spell-impact-complete");
+        return;
+      }
+
+      endTurnRef.current?.();
+      return;
+    }
+
+    if (e.type === "LOG") {
+      addLog(e.message, e.level ?? "info");
+    }
+
+    if (e.type === "TEMP_HEX_SHARED") {
+      const { attacker, defender, originalPos, targetHex } = e;
+      setTemporaryHexSharing(prev => ({
+        ...prev,
+        [attacker]: {
+          originalPos: originalPos || positions[attacker],
+          targetHex: targetHex,
+          targetCharId: defender,
+          turnCreated: turnCounter,
+        },
+      }));
+    }
+
+    if (e.type === "ATTACK_OF_OPPORTUNITY") {
+      // Engine has already resolved the attack and emitted ATTACK_ROLL, DAMAGE, etc.
+      // This event is just for UI awareness - the actual attack events follow
+      // No action needed here, but we could add a visual indicator if needed
+    }
+
+    // Handle attack resolution events (from AoO or normal attacks)
+    if (e.type === "ATTACK_ROLL" || e.type === "DAMAGE" || e.type === "MISS" || e.type === "CRIT" || e.type === "HP_CHANGED") {
+      // These are already handled by existing combat event handlers
+      // But we ensure they're processed
+      if (e.type === "HP_CHANGED") {
+        setFighters((prev) =>
+          prev.map((f) =>
+            f.id === e.targetId
+              ? { ...f, currentHP: e.nextHP, hp: e.nextHP }
+              : f
+          )
+        );
+      }
+      if (e.type === "DAMAGE") {
+        // Apply damage to target
+        const { targetId, amount, sourceId } = e;
+        const isSpellDamage =
+          e?.kind === "spell" ||
+          e?.damageType === "magic" ||
+          String(e?.breakdown?.type || "").toLowerCase() === "spell";
+        const casterId =
+          typeof sourceId === "string" || typeof sourceId === "number"
+            ? sourceId
+            : sourceId?.id ?? null;
+        if (targetId && amount) {
+          setFighters((prev) => {
+            const liveList = fightersRef.current ?? prev;
+            const next = prev.map((f) => {
+              if (f.id !== targetId) return f;
+              const currentHP = f.currentHP ?? f.hp ?? 0;
+              const newHP = Math.max(0, currentHP - amount);
+              return { ...f, currentHP: newHP, hp: newHP };
+            });
+            if (!isSpellDamage || !casterId) return next;
+            return next.map((f) => {
+              if (f.id !== casterId) return f;
+              const live = liveList.find((x) => x.id === casterId);
+              return preserveCasterPPE(live, f, casterId);
+            });
+          });
+        }
+      }
+    }
+
+    // Handle reaction events
+    if (e.type === "REACTION_ROLL") {
+      const { defenderId, reactionType, d20, bonus, total, vs, outcome } = e;
+      const defender = fighters.find((f) => f.id === defenderId);
+      const defenderName = defender?.name || defenderId;
+      addLog?.(
+        `🛡️ ${defenderName} reaction (${reactionType}): ${d20} + ${bonus} = ${total} vs ${vs} → ${outcome.toUpperCase()}`,
+        "info"
+      );
+      return;
+    }
+
+    if (e.type === "ATTACK_DEFENDED") {
+      const { attackerId, defenderId, outcome, reactionType } = e;
+      const attacker = fighters.find((f) => f.id === attackerId);
+      const defender = fighters.find((f) => f.id === defenderId);
+      const attackerName = attacker?.name || attackerId;
+      const defenderName = defender?.name || defenderId;
+      addLog?.(
+        `🛡️ ${defenderName} defended attack from ${attackerName}: ${outcome.toUpperCase()} (${reactionType})`,
+        "info"
+      );
+      return;
+    }
+
+    if (e.type === "REACTION_SPENT") {
+      // Track reaction usage if needed for UI counters
+      // The engine already tracks this in fighter.reactionState
+      // This event is mainly for logging/debugging
+      return;
+    }
+
+    // Handle projectile events from scheduled attack animations
+    if (e.type === "PROJECTILE_SPAWN") {
+      const { projectile } = e;
+      if (projectile) {
+        const kind = String(projectile.kind || "generic").toLowerCase();
+        const measuredDistanceFeet =
+          projectile.from && projectile.to
+            ? calculateDistance(projectile.from, projectile.to)
+            : 0;
+        const distanceFeet = Number.isFinite(measuredDistanceFeet) ? measuredDistanceFeet : 0;
+        const gravityByKind = {
+          arrow: { perFoot: 0.45, min: 6, max: 55 },
+          bolt: { perFoot: 0.32, min: 4, max: 42 },
+          stone: { perFoot: 0.8, min: 8, max: 80 },
+          thrown: { perFoot: 0.7, min: 7, max: 70 },
+          generic: { perFoot: 0.4, min: 5, max: 50 },
+        };
+        const gravityConfig = gravityByKind[kind] || gravityByKind.generic;
+        const gravityFeet = Math.max(
+          gravityConfig.min,
+          Math.min(gravityConfig.max, distanceFeet * gravityConfig.perFoot)
+        );
+        const baseDurationMs = Number(projectile.flightMs ?? projectile.durationMs ?? 450);
+        const durationMs = getVisualDurationMs(baseDurationMs, 120, 2500);
+        const fromAlt = projectile.from?.altitudeFeet ?? projectile.meta?.fromAlt ?? projectile.fromAlt ?? 0;
+        const toAlt = projectile.to?.altitudeFeet ?? projectile.meta?.toAlt ?? projectile.toAlt ?? fromAlt;
+
+        // Add projectile to state for rendering
+        // The projectile object already has from/to positions
+        setProjectiles((prev) => {
+          // Avoid duplicates
+          if (prev.some((p) => p.id === projectile.id)) return prev;
+          return [
+            ...prev,
+            {
+              id: projectile.id,
+              kind,
+              from: { ...projectile.from, altitudeFeet: fromAlt },
+              to: { ...projectile.to, altitudeFeet: toAlt },
+              impact: projectile.impact || {
+                x: projectile.to?.x,
+                y: projectile.to?.y,
+                altitudeFeet: toAlt,
+                hit: Boolean(projectile.meta?.hit),
+                targetId: projectile.meta?.targetId ?? null,
+                attackerId: projectile.meta?.attackerId ?? null,
+                defenderId: projectile.meta?.defenderId ?? null,
+                surface: projectile.meta?.hit ? "body" : "ground",
+              },
+              meta: projectile.meta,
+              firedAtMs: performance.now(),
+              durationMs,
+              baseDurationMs: Number(projectile.baseDurationMs ?? baseDurationMs),
+              physics: projectile.physics || {
+                type: "ballistic",
+                gravityFeet,
+              },
+            },
+          ];
+        });
+      }
+      return;
+    }
+
+    if (e.type === "PROJECTILE_STEP") {
+      // Renderers sample projectile.from/to/firedAtMs/durationMs every frame.
+      // Ignoring step events prevents React state updates from causing 3D jitter.
+      return;
+    }
+
+    if (e.type === "PROJECTILE_LAUNCHED") {
+      const { projectileId, flightMs } = e;
+      if (projectileId && Number.isFinite(flightMs)) {
+        const scaledFlightMs = getVisualDurationMs(flightMs, 120, 2500);
+        setProjectiles((prev) =>
+          prev.map((p) =>
+            p.id === projectileId
+              ? { ...p, durationMs: scaledFlightMs, baseDurationMs: flightMs }
+              : p
+          )
+        );
+      }
+      return;
+    }
+
+    if (e.type === "PROJECTILE_IMPACT") {
+      // Impact is handled by ENGINE_CALL -> resolveAttackImpact
+      // This event is just for visual feedback
+      // Optionally trigger impact VFX here
+      return;
+    }
+
+    if (e.type === "PROJECTILE_DESPAWN") {
+      const { projectileId } = e;
+      const projectile = projectilesRef.current.find((p) => p.id === projectileId);
+      if (canEmbedProjectile(projectile)) {
+        const embedded = createEmbeddedArrow(projectile);
+        if (embedded) {
+          if (DEBUG_COMBAT) {
+            console.log("[ARROW_LANDING]", {
+              id: embedded.id,
+              hit: embedded.impact?.hit,
+              surface: embedded.impact?.surface,
+              roll: embedded.impact?.roll,
+              total: embedded.impact?.total,
+              clock: embedded.impact?.clock,
+              zone: embedded.impact?.zone,
+              isHeadShot: embedded.impact?.isHeadShot,
+              targetId: embedded.impact?.targetId,
+              to: embedded.to,
+            });
+          }
+          setEmbeddedArrows((arrows) => {
+            if (arrows.some((arrow) => arrow.id === embedded.id)) return arrows;
+            return [...arrows, embedded].slice(-EMBEDDED_ARROW_LIMIT);
+          });
+        }
+      }
+      setProjectiles((prev) => prev.filter((p) => p.id !== projectileId));
+      return;
+    }
+
+    if (e.type === "PPE_SPENT") {
+      const { eid, remaining, amount } = e;
+      const liveFighters = fightersRef.current || fighters;
+
+      const next = liveFighters.map((f) => {
+        if (f.id !== eid) return f;
+
+        const before = Number(
+          f.currentPPE ??
+            f.derived?.currentPPE ??
+            f.magic?.currentPPE ??
+            f.PPE ??
+            f.ppe ??
+            0
+        );
+
+        let after = Number.isFinite(Number(remaining))
+          ? Math.max(0, Number(remaining))
+          : Math.max(0, before - (Number(amount) || 0));
+        const amt = Number(amount) || 0;
+        if (amt > 0 && after > before) {
+          after = Math.max(0, before - amt);
+        }
+
+        const maxPPE = Number(
+          f.maxPPE ??
+            f.derived?.maxPPE ??
+            f.magic?.maxPPE ??
+            f.PPE ??
+            f.ppe ??
+            before
+        );
+
+        return {
+          ...f,
+          currentPPE: after,
+          maxPPE,
+          PPE: after,
+          ppe: after,
+          derived: f.derived
+            ? {
+                ...f.derived,
+                currentPPE: after,
+                maxPPE,
+              }
+            : f.derived,
+          magic: f.magic
+            ? {
+                ...f.magic,
+                currentPPE: after,
+                maxPPE,
+              }
+            : f.magic,
+        };
+      });
+
+      fightersRef.current = next;
+      setFighters(next);
+      return;
+    }
+
+    if (e.type === "ISP_SPENT") {
+      setFighters(prev =>
+        prev.map(f => {
+          if (f.id !== e.eid) return f;
+          const cur = (f.currentISP ?? f.ISP ?? 0);
+          return { ...f, currentISP: Math.max(0, cur - (e.amount ?? 0)) };
+        })
+      );
+      addLog?.(`🧠 ISP spent: ${e.amount}`, "info");
+      return;
+    }
+
+    if (e.type === "ALTITUDE_SET") {
+      setFighters(prev =>
+        prev.map(f => (f.id === e.eid ? { ...f, altitude: e.altitude } : f))
+      );
+      return;
+    }
+
+    if (e.type === "MOVE_SPENT") {
+      setFighters(prev =>
+        prev.map(f => {
+          if (f.id !== e.eid) return f;
+          const cur = f.movePoints ?? f.AP ?? 0;
+          return { ...f, movePoints: Math.max(0, cur - (e.amount ?? 0)) };
+        })
+      );
+      return;
+    }
+
+    if (e.type === "CIRCLE_CREATED") {
+      // Handle protection circle creation
+      const { circle } = e;
+      setActiveCircles((prev) => [...prev, circle]);
+      // Update map state if needed
+      if (updateProtectionCirclesOnMap) {
+        updateProtectionCirclesOnMap({
+          circles: [...activeCircles, circle],
+          combatants: fighters,
+          positions: positions,
+          log: addLog,
+        });
+      }
+    }
+
+    if (e.type === "STATUS_APPLIED" || e.type === "STATUS_UPDATED") {
+      setFighters((prev) =>
+        prev.map((f) => {
+          if (f.id !== e.targetId) return f;
+          const statuses = Array.isArray(f.statuses) ? [...f.statuses] : [];
+          const incoming = e.status;
+
+          const idx = statuses.findIndex((s) => s.id === incoming.id);
+          if (idx >= 0) statuses[idx] = incoming;
+          else statuses.push(incoming);
+
+          return { ...f, statuses };
+        })
+      );
+      return;
+    }
+
+    if (e.type === "STATUS_REMOVED") {
+      setFighters((prev) =>
+        prev.map((f) => {
+          if (f.id !== e.targetId) return f;
+          const statuses = Array.isArray(f.statuses) ? f.statuses : [];
+          const next = e.statusId
+            ? statuses.filter((s) => s.id !== e.statusId)
+            : e.key
+              ? statuses.filter((s) => s.key !== e.key)
+              : statuses;
+          return { ...f, statuses: next };
+        })
+      );
+      return;
+    }
+  }, [addLog, setFighters, setPositions, fighters, positions, turnCounter, setTemporaryHexSharing, activeCircles, getVisualDurationMs, preserveCasterPPE]);
+
+  // Use ref to keep handleEngineEvent stable for event subscription
+  const handleEngineEventRef = useRef(handleEngineEvent);
+  useEffect(() => {
+    handleEngineEventRef.current = handleEngineEvent;
+  }, [handleEngineEvent]);
+
+  // Clock player for scheduled events (replaces setTimeout approach)
+  const clock = useClockPlayer({
+    onEvent: handleEngineEvent,
+    replaceMode: false, // recommended once you have projectiles (allows concurrent schedules)
+    engineCall,
+    onCancelSchedule: useCallback((id, meta, reason) => {
+      const locks = meta?.locks || [];
+      // Clear only the locks listed in meta.locks (ownership pattern)
+      for (const lk of locks) {
+        if (lk.type === "entity") {
+          // Clear engine lock
+          if (window?.engine?.call) {
+            window.engine.call("removeLock", { eid: lk.id, lock: lk.lock });
+          }
+          // Clear local lock map
+          setLocksByEidRef.current?.((prev) => {
+            const cur = prev[lk.id] || {};
+            const next = { ...cur };
+            delete next[lk.lock];
+            const copy = { ...prev };
+            if (Object.keys(next).length === 0) {
+              delete copy[lk.id];
+            } else {
+              copy[lk.id] = next;
+            }
+            return copy;
+          });
+        }
+      }
+      addLog(`⛔ Schedule canceled (${reason}) [${meta?.kind ?? "unknown"}]`, "info");
+    }, [addLog]),
+  });
+
+  const clockRef = useRef(null);
+  useEffect(() => { clockRef.current = clock; }, [clock]);
+
+  useEffect(() => {
+    return () => {
+      if (enemyTurnTimerRef.current) clearTimeout(enemyTurnTimerRef.current);
+      if (playerAITimerRef.current) clearTimeout(playerAITimerRef.current);
+    };
+  }, []);
+
+  // Refs for terrain/environment so dispatch always reads latest values without recreating engine
+  // Initialize with null - will be updated in useEffect after arenaEnvironment is computed
+  const combatTerrainRef = useRef(null);
+  const arenaEnvironmentRef = useRef(null);
+
+  // Create engine adapter that provides dispatch() and onEvent()
+  // Effect A: Create engine adapter once (only depends on ENGINE_ENABLED)
+  useEffect(() => {
+    if (engineRef.current) return;
+
+    // Create adapter that wraps window.engine.call() for command dispatch
+    // and provides event subscription for reactive state updates
+    engineRef.current = {
+      call: async (method, payload) => {
+        if (typeof window !== "undefined" && window?.engine?.call) {
+          return window.engine.call(method, payload);
+        }
+
+        if (method === "castSpell") {
+          return localCastSpell(payload);
+        }
+
+        if (method === "resolveSpellImpact") {
+          return localResolveSpellImpact(payload);
+        }
+
+        return {
+          ok: false,
+          error: {
+            message: `No local engine fallback for ${method}`,
+            method,
+          },
+        };
+      },
+      dispatch: async (cmd) => {
+        if (!ENGINE_ENABLED || !window?.engine?.call) {
+          // Fallback: return error if engine not available
+          return { ok: false, error: { message: "Engine not available" } };
+        }
+
+        try {
+          // For MOVE command, we'll need to add a "move" method to the worker
+          // For now, this is a placeholder that will be implemented in the engine worker
+          if (cmd.type === "MOVE") {
+            // Build state snapshot for engine
+            const positionsLite = buildPositionsLite(positionsRef.current ?? positions);
+
+            // For movement, we need full fighter data (Spd, attacksPerMelee, name, weapons, AR)
+            const fullFighters = (fightersRef.current ?? fighters).map(f => ({
+              id: f.id ?? f._id,
+              name: f.name,
+              Spd: f.Spd,
+              spd: f.spd,
+              attributes: f.attributes,
+              attacksPerMelee: f.attacksPerMelee,
+              remainingAttacks: f.remainingAttacks,
+              currentHP: f.currentHP ?? f.hp,
+              hp: f.hp ?? f.currentHP,
+              AR: f.AR ?? f.ar,
+              ar: f.ar ?? f.AR,
+              isDown: f.isDown,
+              isDead: f.isDead,
+              isKO: f.isKO,
+              side: f.side ?? f.type ?? (f.isEnemy ? "enemy" : "player"),
+              type: f.type,
+              isEnemy: f.isEnemy,
+              // Weapon data for close-to-melee checks
+              equippedWeapons: f.equippedWeapons,
+              weapons: f.weapons,
+              // Movement capabilities (engine-side)
+              moveCaps: f.moveCaps ?? {
+                canFly: false,
+                canSwim: false,
+                canClimb: false,
+                canPhase: false,
+                ignoreDifficultTerrain: false,
+              },
+            }));
+
+            const result = await window.engine.call("move", {
+              eid: cmd.eid,
+              to: cmd.to,
+              mode: cmd.mode || "MOVE", // Default to MOVE if not specified
+              targetId: cmd.targetId, // Optional, for CHARGE
+              state: {
+                fighters: fullFighters, // Full fighters for movement calculation
+                positions: positionsLite, // Positions in {x,y} format
+                terrain: combatTerrainRef.current || arenaEnvironmentRef.current || null, // Terrain data for grid blocking (reads from ref)
+              },
+              meta: cmd.meta || {},
+            });
+
+            // Process events from response (locks will be set via ENGINE_SET_LOCK events)
+            if (result?.events) {
+              result.events.forEach((e) => {
+                engineEventSubscribersRef.current.forEach((cb) => {
+                  try {
+                    cb(e);
+                  } catch (err) {
+                    console.error("[EngineAdapter] Event subscriber error:", err);
+                  }
+                });
+              });
+            }
+
+            return { ok: true, result };
+          }
+
+          // Unknown command type
+          return { ok: false, error: { message: `Unknown command type: ${cmd.type}` } };
+        } catch (error) {
+          console.error("[EngineAdapter] Dispatch error:", error);
+          return { ok: false, error: { message: error?.message || String(error) } };
+        }
+      },
+      onEvent: (callback) => {
+        engineEventSubscribersRef.current.add(callback);
+        // Return unsubscribe function
+        return () => {
+          engineEventSubscribersRef.current.delete(callback);
+        };
+      },
+      getReachableHexes: async (eid) => {
+        if (!ENGINE_ENABLED || !window?.engine?.call) {
+          return { ok: false, error: { message: "Engine not available" } };
+        }
+
+        try {
+          // Build state snapshot for engine
+          const positionsLite = buildPositionsLite(positionsRef.current ?? positions);
+          const fullFighters = (fightersRef.current ?? fighters).map(f => ({
+            id: f.id ?? f._id,
+            name: f.name,
+            Spd: f.Spd,
+            spd: f.spd,
+            attributes: f.attributes,
+            attacksPerMelee: f.attacksPerMelee,
+            remainingAttacks: f.remainingAttacks,
+            currentHP: f.currentHP ?? f.hp,
+            hp: f.hp ?? f.currentHP,
+            AR: f.AR ?? f.ar,
+            ar: f.ar ?? f.AR,
+            isDown: f.isDown,
+            isDead: f.isDead,
+            isKO: f.isKO,
+            side: f.side ?? f.type ?? (f.isEnemy ? "enemy" : "player"),
+            type: f.type,
+            isEnemy: f.isEnemy,
+            // Movement capabilities (engine-side)
+            moveCaps: f.moveCaps ?? {
+              canFly: false,
+              canSwim: false,
+              canClimb: false,
+              canPhase: false,
+              ignoreDifficultTerrain: false,
+            },
+          }));
+
+          const result = await window.engine.call("getReachableHexes", {
+            eid,
+            state: {
+              fighters: fullFighters,
+              positions: positionsLite,
+              terrain: combatTerrainRef.current || arenaEnvironmentRef.current || null, // Reads from ref
+            },
+          });
+
+          return result;
+        } catch (error) {
+          console.error("[EngineAdapter] getReachableHexes error:", error);
+          return { ok: false, error: { message: error?.message || String(error) } };
+        }
+      },
+      setTimeScale: async (timeScale) => {
+        if (!ENGINE_ENABLED || !window?.engine?.call) {
+          return { ok: false, error: { message: "Engine not available" } };
+        }
+        try {
+          const result = await window.engine.call("setTimeScale", { timeScale });
+          return result;
+        } catch (error) {
+          console.error("[EngineAdapter] setTimeScale error:", error);
+          return { ok: false, error: { message: error?.message || String(error) } };
+        }
+      },
+      getTimeScale: async () => {
+        if (!ENGINE_ENABLED || !window?.engine?.call) {
+          return { ok: false, error: { message: "Engine not available" } };
+        }
+        try {
+          const result = await window.engine.call("getTimeScale");
+          return result;
+        } catch (error) {
+          console.error("[EngineAdapter] getTimeScale error:", error);
+          return { ok: false, error: { message: error?.message || String(error) } };
+        }
+      },
+    };
+    // Note: buildPositionsLite, fighters, positions are only used to read current values via refs
+    // when dispatch is called. The engine adapter itself doesn't need to be recreated when these change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ENGINE_ENABLED, localCastSpell, localResolveSpellImpact]); // Only recreate if ENGINE_ENABLED changes
+
+  // Effect B: Subscribe to engine events (separate from creation to avoid re-subscribing on terrain changes)
+  useEffect(() => {
+    if (!engineRef.current) return;
+
+    // Subscribe to engine events -> React state updates
+    const unsubscribe = engineRef.current.onEvent((e) => {
+      // Route SCHEDULED_EVENTS to clock player (replaces setTimeout approach)
+      if (e.type === "SCHEDULED_EVENTS") {
+        const isSpellSchedule =
+          e?.kind === "spell" ||
+          (e?.items || []).some((it) => it?.e?.method === "resolveSpellImpact");
+        if (isSpellSchedule && !spellScheduleAuthorizedRef.current) {
+          addLog?.(
+            `🚫 Ghost spell schedule dropped id=${e?.id ?? "?"} (not authorized from executeSpell)`,
+            "warning"
+          );
+          return;
+        }
+        if (!clock?.addSchedule) {
+          console.warn("[CombatPage] clock.addSchedule missing; dropping schedule", e);
+          return;
+        }
+        clock.addSchedule(e);
+        return;
+      }
+
+      // All other events go through handleEngineEvent (via ref to avoid churn)
+      handleEngineEventRef.current(e);
+    });
+
+    return () => {
+      unsubscribe?.();
+    };
+  }, [clock, addLog]); // addLog for ghost-schedule warnings; clock is stable
+
+  // Dispatcher function to pass into modular handlers
+  const dispatchEngineCommand = useCallback((cmd) => {
+    if (!engineRef.current) {
+      return Promise.resolve({ ok: false, error: { message: "Engine not ready" } });
+    }
+    return engineRef.current.dispatch(cmd);
+  }, []);
   const lastProcessedEnemyTurnRef = useRef(null); // Track last processed enemy turn to prevent duplicates
   const executingActionRef = useRef(false); // Prevent multiple rapid action executions
+  const actionLockTimeoutRef = useRef(null); // Timeout id for stuck-lock warning; cleared in finally
   const visibilityLogRef = useRef(new Set()); // Track visibility logs to prevent spam: Set of "playerId_turnCounter"
   const turnTimeoutRef = useRef(null); // Track scheduled end turn timeout
   const pendingTurnAdvanceRef = useRef(false); // ✅ Prevent AI re-entry while a turn advance is scheduled but not yet executed
+  const lastEndTurnAdvanceKeyRef = useRef(null); // Prevent duplicate endTurn() advances from delayed callbacks in one slice
   const allTimeoutsRef = useRef([]); // ✅ Track ALL timeouts so we can clear them on combat end
   const combatPausedRef = useRef(false); // Track paused state in async callbacks
+  const stepLogPauseOwnedRef = useRef(false); // Only resume automatically when Step Log caused the pause.
+  const activeSpellImpactRef = useRef(null); // Blocks turn advance until scheduled spell impact resolves.
+  /** Only executeSpell may enqueue worker spell schedules; blocks ghost SCHEDULED_EVENTS from engine onEvent. */
+  const spellScheduleAuthorizedRef = useRef(false);
+  /** One in-flight player spell per (id, round, turnIndex, remainingAttacks); cleared on endTurn / reset. */
+  const playerSpellInFlightKeyRef = useRef(null);
+  const spellImpactTurnEndHandledRef = useRef(null); // Prevents RAF retry from double-ending after TURN_ENDED.
   const resolvedSpellEffectsRef = useRef(new Set()); // Track resolved spell effects to prevent duplicates: Set of "castId::targetId"
   const activeCastIdsRef = useRef(new Set()); // ✅ Track active cast IDs to prevent duplicate casts
   const combatCastGuardRef = useRef(new Set()); // ✅ Track spell casts per action window to prevent machine-gun casting: Set of "casterId:spellName:turnIndex:meleeRound"
@@ -1293,7 +3251,12 @@ export default function CombatPage({ characters = [] }) {
   // AI Spell Selection Guards
   // =========================
   const enemySpellLoopGuardRef = useRef(new Map()); // key: `${enemyId}:${meleeRound}` => { lastCastAt, lastSpellName, targetId, recent: string[], lastMeleeRound }
-  const lastAutoTurnKeyRef = useRef(null); // Prevent duplicate auto-processing per turn
+  const lastNoActionTurnKeyRef = useRef(null);
+  const lastEnemyScheduleTurnKeyRef = useRef(null);
+  const lastPlayerAIScheduleTurnKeyRef = useRef(null);
+  const pendingTurnStartKeysRef = useRef(new Set());
+  /** Blocks duplicate player-AI turn entry for the same fighter/round/index/RA snapshot. */
+  const playerTurnInFlightKeyRef = useRef(null);
   const lastNoActionLogRef = useRef(new Map()); // Track "no action" logs per fighter per turn: Map<fighterId_turnCounter, true>
   const noActionsPassLogRef = useRef(new Set()); // Track "no actions remaining" pass logs per fighter per melee round: Set<`${fighterId}:${meleeRound}`>
   const prevAiControlRef = useRef(aiControlEnabled);
@@ -1304,6 +3267,20 @@ export default function CombatPage({ characters = [] }) {
   // =========================
   function resetAITransientRefs() {
     // These are intentionally NOT persisted across combats.
+    if (enemyTurnTimerRef.current) {
+      clearTimeout(enemyTurnTimerRef.current);
+      enemyTurnTimerRef.current = null;
+      lastEnemyScheduleTurnKeyRef.current = null;
+    }
+    if (playerAITimerRef.current) {
+      clearTimeout(playerAITimerRef.current);
+      playerAITimerRef.current = null;
+      lastPlayerAIScheduleTurnKeyRef.current = null;
+    }
+    activePlayerAITurnKeysRef.current.clear();
+    pendingTurnStartKeysRef.current.clear();
+    playerAIActionScheduledRef.current = false;
+    processingPlayerAIRef.current = false;
     if (aiImprovisedAmmoRef.current?.clear) aiImprovisedAmmoRef.current.clear();
     if (aiUnreachableTurnsRef.current?.clear) aiUnreachableTurnsRef.current.clear();
     aiUnreachableTargetsRef.current = {};
@@ -1315,8 +3292,18 @@ export default function CombatPage({ characters = [] }) {
 
     // Spell spam guards / last-spell memory should reset on combat start.
     if (enemySpellLoopGuardRef.current?.clear) enemySpellLoopGuardRef.current.clear();
+    activeSpellImpactRef.current = null;
+    spellScheduleAuthorizedRef.current = false;
+    playerSpellInFlightKeyRef.current = null;
+    currentTurnTokenRef.current = null;
+    spellImpactTurnEndHandledRef.current = null;
     lastSpellMemoryRef.current = {};
     noActionsPassLogRef.current = new Set();
+
+    // Separate turnKey claim refs - reset so new combat can schedule cleanly
+    lastNoActionTurnKeyRef.current = null;
+    lastEnemyScheduleTurnKeyRef.current = null;
+    lastPlayerAIScheduleTurnKeyRef.current = null;
 
     // ✅ Also remove improvised ammo items from inventories (fresh combat)
     setFighters((prev) =>
@@ -1327,6 +3314,54 @@ export default function CombatPage({ characters = [] }) {
       })
     );
   }
+
+  /** Clear turn/action flow latches and timers so reset/combat-end does not inherit stale state. */
+  function clearCombatFlowLocks() {
+    spellScheduleAuthorizedRef.current = false;
+    playerSpellInFlightKeyRef.current = null;
+    currentTurnTokenRef.current = null;
+    turnActionResolvingRef.current = false;
+    pendingTurnAdvanceRef.current = false;
+    processingEnemyTurnRef.current = false;
+    processingPlayerAIRef.current = false;
+    playerAIActionScheduledRef.current = false;
+
+    lastEndTurnAdvanceKeyRef.current = null;
+    pendingTurnStartKeysRef.current?.clear?.();
+
+    lastEnemyScheduleTurnKeyRef.current = null;
+    lastPlayerAIScheduleTurnKeyRef.current = null;
+
+    if (turnTimeoutRef.current) {
+      clearTimeout(turnTimeoutRef.current);
+      turnTimeoutRef.current = null;
+    }
+    if (enemyTurnTimerRef.current) {
+      clearTimeout(enemyTurnTimerRef.current);
+      enemyTurnTimerRef.current = null;
+    }
+    if (playerAITimerRef.current) {
+      clearTimeout(playerAITimerRef.current);
+      playerAITimerRef.current = null;
+    }
+    if (actionClockRef.current) {
+      actionClockRef.current.busy = false;
+      actionClockRef.current.endsAtMs = 0;
+    }
+
+    allTimeoutsRef.current.forEach((id) => clearTimeout(id));
+    allTimeoutsRef.current = [];
+    playerTurnInFlightKeyRef.current = null;
+  }
+
+  const getPlayerTurnInFlightKey = useCallback((fighter) => {
+    return [
+      fighter?.id ?? "unknown",
+      meleeRoundRef.current ?? 0,
+      turnIndexRef.current ?? 0,
+      fighter?.remainingAttacks ?? 0,
+    ].join(":");
+  }, []);
 
   // =========================
   // AI Spell Selection Helper Functions
@@ -1640,6 +3675,30 @@ export default function CombatPage({ characters = [] }) {
     return null;
   }, [positions, fighters]);
 
+  // Check if a hex is a valid landing cell for a flying combatant
+  const isLandingCellAllowed = useCallback((combatant, terrain, x, y) => {
+    if (!combatant) return false;
+
+    // Check if hex is occupied
+    const occupant = isHexOccupied(x, y, combatant.id);
+    if (occupant) {
+      // Allow landing on enemy hex (close-to-melee), but block on ally hex
+      const isEnemyHex = occupant.type !== combatant.type;
+      if (!isEnemyHex) {
+        return false; // Block landing on ally hex
+      }
+    }
+
+    // Check terrain (water blocks landing)
+    const cellData = terrain?.cells?.[`${x},${y}`] || arenaEnvironment?.cells?.[`${x},${y}`];
+    const isWater = cellData?.terrain === "water" || cellData?.terrain === "deep_water";
+    if (isWater) {
+      return false; // Block landing on water
+    }
+
+    return true; // Landing allowed
+  }, [isHexOccupied, arenaEnvironment]);
+
   // If you have "combatTerrain" with blocked/solid cells, wire that here.
   // For now: seed only valid positions, and skip occupied at seeding time.
   const seedArenaProps = useCallback(({
@@ -1910,6 +3969,18 @@ export default function CombatPage({ characters = [] }) {
   const [mapViewMode, setMapViewMode] = useState('2D'); // '2D' or '3D' view mode
   const [mapHeight, setMapHeight] = useState(1200); // Map height in pixels
   const [movementMode, setMovementMode] = useState({ active: false, isRunning: false }); // Track if player is selecting movement and running mode
+  const [selectedActionType, setSelectedActionType] = useState(null); // Track selected action type: "move", "withdraw", "charge"
+  // eslint-disable-next-line no-unused-vars
+  const [moveCostsByHex, setMoveCostsByHex] = useState({}); // Store movement costs by hex for tooltips (future use)
+  // eslint-disable-next-line no-unused-vars
+  const [locksByEid, setLocksByEid] = useState({}); // eid -> { moving: true, acting: true }
+
+  // Update setLocksByEidRef when setLocksByEid is defined
+  useEffect(() => {
+    setLocksByEidRef.current = setLocksByEid;
+  }, [setLocksByEid]);
+
+  const reachableCacheRef = useRef(new Map()); // Cache for reachable hexes: key: `${eid}:${mode}:${turnCounter}` -> { hexes, costsByKey }
   const [playerMovementMode, setPlayerMovementMode] = useState('ground'); // Track player's chosen movement mode: 'ground' | 'flight'
   const [selectedCombatantId, setSelectedCombatantId] = useState(null); // Track selected combatant from map
   const [hoveredCell, setHoveredCell] = useState(null); // Track hovered hex cell
@@ -1921,13 +3992,21 @@ export default function CombatPage({ characters = [] }) {
   const [selectedClericalAbility, setSelectedClericalAbility] = useState(null); // Selected clerical ability
   const [selectedSkill, setSelectedSkill] = useState(null); // Track selected skill for use
   const [showPhase0Modal, setShowPhase0Modal] = useState(false); // Phase 0 scene setup modal
+  const [showDeploymentModal, setShowDeploymentModal] = useState(false); // Guided deployment overlay
+  const [showPreBattleWizard, setShowPreBattleWizard] = useState(false); // Mobile-style setup flow
+  const [setupMode, setSetupMode] = useState("quick");
+  const [quickChoicesOpen, setQuickChoicesOpen] = useState(false);
+  const [manualDeploymentOpen, setManualDeploymentOpen] = useState(false);
+  const [preBattleStep, setPreBattleStep] = useState(PRE_BATTLE_STEPS.ROSTER);
+  const [preBattleDeployment, setPreBattleDeployment] = useState(() => createEmptyDeploymentState());
+  const [hasAutoOpenedPreBattleFlow, setHasAutoOpenedPreBattleFlow] = useState(false);
+  const [showSavePresetModal, setShowSavePresetModal] = useState(false);
+  const [savePresetName, setSavePresetName] = useState("");
   const [lootWindowOpen, setLootWindowOpen] = useState(false); // Loot window state
   const [selectedLootSource, setSelectedLootSource] = useState(null); // Fighter to loot from
   const [lootData, setLootData] = useState(null); // Loot data to display
   const [arenaSpeed, setArenaSpeed] = useState("slow"); // Combat pacing: slow/normal/fast
-  const [phase0Results, setPhase0Results] = useState(null); // Store Phase 0 scene setup
   const [mode, setMode] = useState("MAP_EDITOR"); // "MAP_EDITOR" | "COMBAT"
-  const [mapDefinition, setMapDefinition] = useState(null); // Map definition for editor mode
   const arena3DRef = useRef(null);
   useEffect(() => {
     arena3DRef.current?.setTimeScale?.(timeScale);
@@ -2158,11 +4237,347 @@ export default function CombatPage({ characters = [] }) {
     return selectedType === "square" ? "square" : "hex";
   }, [combatTerrain?.mapType, phase0Results?.environment?.mapType]);
 
-  const arenaEnvironment = useMemo(() => {
-    if (combatTerrain) return combatTerrain;
-    if (mapDefinition) return mapDefinition;
-    return phase0Results?.environment || null;
-  }, [combatTerrain, mapDefinition, phase0Results]);
+  const deploymentDragStateRef = useRef({
+    active: false,
+    side: null,
+    shouldSelect: true,
+    touchedIds: new Set(),
+  });
+
+  const deploymentBounds = useMemo(() => {
+    const deploymentEnvironment =
+      mode === "MAP_EDITOR"
+        ? mapDefinition
+        : arenaEnvironment || combatTerrain || phase0Results?.environment;
+
+    return getDeploymentGridBounds(deploymentEnvironment);
+  }, [mode, mapDefinition, arenaEnvironment, combatTerrain, phase0Results]);
+
+  const deploymentPreviewPositions = useMemo(() => ({
+    ...(preBattleDeployment.positionsBySide?.player || {}),
+    ...(preBattleDeployment.positionsBySide?.enemy || {}),
+  }), [preBattleDeployment.positionsBySide]);
+
+  const tacticalMapPositions = useMemo(() => {
+    if (!combatActive && Object.keys(deploymentPreviewPositions).length > 0) {
+      return deploymentPreviewPositions;
+    }
+    return positions;
+  }, [combatActive, deploymentPreviewPositions, positions]);
+
+  const playerSetupCount = useMemo(
+    () => fighters.filter((fighter) => fighter.type === "player").length,
+    [fighters]
+  );
+  const enemySetupCount = useMemo(
+    () => fighters.filter((fighter) => fighter.type === "enemy").length,
+    [fighters]
+  );
+  const rosterSetupReady = playerSetupCount > 0 && enemySetupCount > 0;
+
+  const isDeploymentReady = useMemo(() => {
+    if (!rosterSetupReady) return false;
+    const allRequiredIds = fighters
+      .filter((fighter) => fighter.type === "player" || fighter.type === "enemy")
+      .map((fighter) => fighter.id);
+    return allRequiredIds.length > 0 && allRequiredIds.every((fighterId) => deploymentPreviewPositions[fighterId]);
+  }, [fighters, deploymentPreviewPositions, rosterSetupReady]);
+
+  const rosterTutorialTarget = useMemo(
+    () =>
+      getRosterTutorialTarget({
+        playerCount: playerSetupCount,
+        enemyCount: enemySetupCount,
+        quickChoicesOpen,
+        setupMode,
+      }),
+    [playerSetupCount, enemySetupCount, quickChoicesOpen, setupMode]
+  );
+
+  const rosterHint = useMemo(
+    () => getRosterHint(rosterTutorialTarget),
+    [rosterTutorialTarget]
+  );
+
+  const deploymentTutorialTarget = useMemo(() => {
+    const playerList = fighters.filter((f) => f.type === "player");
+    const enemyList = fighters.filter((f) => f.type === "enemy");
+    const playerPos = preBattleDeployment.positionsBySide?.player || {};
+    const enemyPos = preBattleDeployment.positionsBySide?.enemy || {};
+    const playersPlaced = playerList.filter((f) => playerPos[f.id]).length;
+    const enemiesPlaced = enemyList.filter((f) => enemyPos[f.id]).length;
+    return getDeploymentTutorialTarget({
+      playersPlaced,
+      totalPlayers: playerList.length,
+      enemiesPlaced,
+      totalEnemies: enemyList.length,
+      playersLocked: Boolean(preBattleDeployment.lockedSides?.player),
+      enemiesLocked: Boolean(preBattleDeployment.lockedSides?.enemy),
+    });
+  }, [fighters, preBattleDeployment.positionsBySide, preBattleDeployment.lockedSides]);
+
+  const deploymentHint = useMemo(
+    () => getDeploymentHint(deploymentTutorialTarget),
+    [deploymentTutorialTarget]
+  );
+
+  const bothDeploymentSidesLocked = Boolean(
+    preBattleDeployment.lockedSides?.player && preBattleDeployment.lockedSides?.enemy
+  );
+
+  const getSideDeploymentIds = useCallback((side) => {
+    const sideIds = fighters.filter((fighter) => fighter.type === side).map((fighter) => fighter.id);
+    const selectedIds = preBattleDeployment.selectionBySide?.[side] || [];
+    return sideIds.filter((fighterId) => selectedIds.includes(fighterId));
+  }, [fighters, preBattleDeployment.selectionBySide]);
+
+  const setDeploymentSelectionForSide = useCallback((side, fighterId, shouldSelect) => {
+    setPreBattleDeployment((prev) => {
+      if (prev.lockedSides?.[side]) return prev;
+
+      const currentSelection = prev.selectionBySide?.[side] || [];
+      const alreadySelected = currentSelection.includes(fighterId);
+
+      if ((shouldSelect && alreadySelected) || (!shouldSelect && !alreadySelected)) {
+        return prev;
+      }
+
+      const nextSelection = shouldSelect
+        ? [...currentSelection, fighterId]
+        : currentSelection.filter((id) => id !== fighterId);
+
+      return {
+        ...prev,
+        currentSide: side,
+        selectionBySide: {
+          ...prev.selectionBySide,
+          [side]: nextSelection,
+        },
+        formationBySide: {
+          ...prev.formationBySide,
+          [side]: nextSelection.length <= 1
+            ? DEPLOYMENT_FORMATIONS.SINGLE
+            : (prev.formationBySide?.[side] || DEPLOYMENT_FORMATIONS.LINE_CLOSE),
+        },
+      };
+    });
+  }, []);
+
+  const handleDeploymentPickerMouseDown = useCallback((side, fighterId) => {
+    if (preBattleDeployment.currentSide !== side || preBattleDeployment.lockedSides?.[side]) return;
+
+    const isSelected = (preBattleDeployment.selectionBySide?.[side] || []).includes(fighterId);
+    const shouldSelect = !isSelected;
+
+    deploymentDragStateRef.current = {
+      active: true,
+      side,
+      shouldSelect,
+      touchedIds: new Set([fighterId]),
+    };
+
+    setDeploymentSelectionForSide(side, fighterId, shouldSelect);
+  }, [preBattleDeployment.currentSide, preBattleDeployment.lockedSides, preBattleDeployment.selectionBySide, setDeploymentSelectionForSide]);
+
+  const handleDeploymentPickerMouseEnter = useCallback((side, fighterId) => {
+    const dragState = deploymentDragStateRef.current;
+    if (!dragState.active || dragState.side !== side || dragState.touchedIds.has(fighterId)) return;
+
+    dragState.touchedIds.add(fighterId);
+    setDeploymentSelectionForSide(side, fighterId, dragState.shouldSelect);
+  }, [setDeploymentSelectionForSide]);
+
+  const stopDeploymentDragSelection = useCallback(() => {
+    deploymentDragStateRef.current = {
+      active: false,
+      side: null,
+      shouldSelect: true,
+      touchedIds: new Set(),
+    };
+  }, []);
+
+  const autoDeploySide = useCallback((side, { lockAfter = false } = {}) => {
+    const sideIds = fighters.filter((fighter) => fighter.type === side).map((fighter) => fighter.id);
+    if (sideIds.length === 0) return;
+
+    const formation = sideIds.length <= 1
+      ? DEPLOYMENT_FORMATIONS.SINGLE
+      : DEPLOYMENT_FORMATIONS.LINE_CLOSE;
+    const anchor = getSuggestedDeploymentAnchor(side, deploymentBounds);
+
+    setPreBattleDeployment((prev) => {
+      const occupiedKeys = new Set();
+
+      Object.entries(prev.positionsBySide || {}).forEach(([existingSide, sidePositions]) => {
+        Object.entries(sidePositions || {}).forEach(([fighterId, point]) => {
+          if (existingSide === side && sideIds.includes(fighterId)) return;
+          if (!point) return;
+          occupiedKeys.add(buildDeploymentCellKey(point.x, point.y));
+        });
+      });
+
+      const nextPositions = buildDeploymentFormationPositions({
+        fighterIds: sideIds,
+        anchor,
+        formation,
+        occupiedKeys,
+        bounds: deploymentBounds,
+        side,
+      });
+
+      return {
+        ...prev,
+        currentSide: side,
+        selectionBySide: {
+          ...prev.selectionBySide,
+          [side]: sideIds,
+        },
+        formationBySide: {
+          ...prev.formationBySide,
+          [side]: formation,
+        },
+        positionsBySide: {
+          ...prev.positionsBySide,
+          [side]: {
+            ...(prev.positionsBySide?.[side] || {}),
+            ...nextPositions,
+          },
+        },
+        lockedSides: lockAfter
+          ? {
+              ...prev.lockedSides,
+              [side]: true,
+            }
+          : prev.lockedSides,
+      };
+    });
+
+    addLog(`🤖 ${side === "player" ? "Player" : "Enemy"} side auto-deployed.`, "info");
+  }, [fighters, deploymentBounds, addLog]);
+
+  const handleDeploymentHexSelect = useCallback((x, y) => {
+    const side = preBattleDeployment.currentSide || "player";
+    if (preBattleDeployment.lockedSides?.[side]) {
+      addLog(`🔒 ${side === "player" ? "Player" : "Enemy"} side is locked. Unlock it to reposition.`, "warning");
+      return false;
+    }
+
+    const orderedSelectedIds = getSideDeploymentIds(side);
+    if (orderedSelectedIds.length === 0) {
+      addLog(`🧭 Select one or more ${side === "player" ? "player" : "enemy"} units before placing them.`, "info");
+      return false;
+    }
+
+    const formation = orderedSelectedIds.length <= 1
+      ? DEPLOYMENT_FORMATIONS.SINGLE
+      : (preBattleDeployment.formationBySide?.[side] || DEPLOYMENT_FORMATIONS.LINE_CLOSE);
+
+    setPreBattleDeployment((prev) => {
+      const occupiedKeys = new Set();
+
+      Object.entries(prev.positionsBySide || {}).forEach(([existingSide, sidePositions]) => {
+        Object.entries(sidePositions || {}).forEach(([fighterId, point]) => {
+          if (existingSide === side && orderedSelectedIds.includes(fighterId)) return;
+          if (!point) return;
+          occupiedKeys.add(buildDeploymentCellKey(point.x, point.y));
+        });
+      });
+
+      const nextPositions = buildDeploymentFormationPositions({
+        fighterIds: orderedSelectedIds,
+        anchor: { x, y },
+        formation,
+        occupiedKeys,
+        bounds: deploymentBounds,
+        side,
+      });
+
+      return {
+        ...prev,
+        positionsBySide: {
+          ...prev.positionsBySide,
+          [side]: {
+            ...(prev.positionsBySide?.[side] || {}),
+            ...nextPositions,
+          },
+        },
+      };
+    });
+
+    addLog(`🧭 ${side === "player" ? "Player" : "Enemy"} units placed at (${x}, ${y}).`, "info");
+    return true;
+  }, [preBattleDeployment.currentSide, preBattleDeployment.lockedSides, preBattleDeployment.formationBySide, getSideDeploymentIds, deploymentBounds, addLog]);
+
+  const lockDeploymentSide = useCallback((side) => {
+    const sideFighters = fighters.filter((fighter) => fighter.type === side);
+    const sidePositions = preBattleDeployment.positionsBySide?.[side] || {};
+    const missingIds = sideFighters.filter((fighter) => !sidePositions[fighter.id]).map((fighter) => fighter.name);
+
+    if (missingIds.length > 0) {
+      addLog(`⚠️ ${side === "player" ? "Player" : "Enemy"} side still needs: ${missingIds.join(", ")}`, "warning");
+      return;
+    }
+
+    setPreBattleDeployment((prev) => {
+      const lockedSides = {
+        ...prev.lockedSides,
+        [side]: true,
+      };
+      const nextSide = DEPLOYMENT_SIDE_ORDER.find((candidate) => !lockedSides[candidate]) || side;
+
+      return {
+        ...prev,
+        currentSide: nextSide,
+        lockedSides,
+      };
+    });
+
+    addLog(`✅ ${side === "player" ? "Player" : "Enemy"} side locked.`, "success");
+  }, [fighters, preBattleDeployment.positionsBySide, addLog]);
+
+  const unlockDeploymentSide = useCallback((side) => {
+    setPreBattleDeployment((prev) => ({
+      ...prev,
+      currentSide: side,
+      lockedSides: {
+        ...prev.lockedSides,
+        [side]: false,
+      },
+    }));
+
+    addLog(`↩️ ${side === "player" ? "Player" : "Enemy"} side unlocked.`, "info");
+  }, [addLog]);
+
+  const resetDeploymentPlanner = useCallback(() => {
+    setPreBattleDeployment(createEmptyDeploymentState());
+    addLog("🧹 Deployment plan cleared.", "info");
+  }, [addLog]);
+
+  const openGuidedSetup = useCallback((step = PRE_BATTLE_STEPS.ROSTER) => {
+    if (step === PRE_BATTLE_STEPS.ROSTER) {
+      setQuickChoicesOpen(false);
+      setManualDeploymentOpen(false);
+    }
+    if (step === PRE_BATTLE_STEPS.DEPLOY) {
+      setShowTacticalMap(true);
+      setShowPreBattleWizard(false);
+      setShowDeploymentModal(true);
+      setManualDeploymentOpen(false);
+    } else {
+      setShowDeploymentModal(false);
+      setManualDeploymentOpen(false);
+      setShowPreBattleWizard(true);
+    }
+    setPreBattleStep(step);
+  }, [setShowTacticalMap]);
+
+
+  // Update refs when terrain/environment values change (for engine dispatch method)
+  // Note: arenaEnvironment is now declared at the top of the component (after mapDefinition)
+  useEffect(() => {
+    combatTerrainRef.current = combatTerrain;
+    arenaEnvironmentRef.current = arenaEnvironment;
+  }, [combatTerrain, arenaEnvironment]);
 
   useEffect(() => {
     // Seed props once at start of combat (or whenever environment changes while combat is active)
@@ -2296,12 +4711,75 @@ export default function CombatPage({ characters = [] }) {
   }, [showCombatChoices, isCombatChoicesOpen, openCombatChoices, closeCombatChoices]);
 
   useEffect(() => {
+    const shouldAutoOpen =
+      !combatActive &&
+      !hasAutoOpenedPreBattleFlow &&
+      !showPhase0Modal &&
+      !showDeploymentModal &&
+      !showPreBattleWizard;
+
+    if (!shouldAutoOpen) return;
+
+    const timer = setTimeout(() => {
+      setShowPreBattleWizard(true);
+      setPreBattleStep(PRE_BATTLE_STEPS.ROSTER);
+      setHasAutoOpenedPreBattleFlow(true);
+    }, 150);
+
+    return () => clearTimeout(timer);
+  }, [
+    combatActive,
+    hasAutoOpenedPreBattleFlow,
+    showPhase0Modal,
+    showDeploymentModal,
+    showPreBattleWizard,
+  ]);
+
+  useEffect(() => {
+    const stopDrag = () => stopDeploymentDragSelection();
+    window.addEventListener("mouseup", stopDrag);
+    return () => window.removeEventListener("mouseup", stopDrag);
+  }, [stopDeploymentDragSelection]);
+
+  useEffect(() => {
+    const validIds = new Set(fighters.map((fighter) => fighter.id));
+
+    setPreBattleDeployment((prev) => ({
+      ...prev,
+      selectionBySide: Object.fromEntries(
+        Object.entries(prev.selectionBySide || {}).map(([side, ids]) => [
+          side,
+          (ids || []).filter((fighterId) => validIds.has(fighterId)),
+        ])
+      ),
+      positionsBySide: Object.fromEntries(
+        Object.entries(prev.positionsBySide || {}).map(([side, sidePositions]) => [
+          side,
+          Object.fromEntries(
+            Object.entries(sidePositions || {}).filter(([fighterId]) => validIds.has(fighterId))
+          ),
+        ])
+      ),
+    }));
+  }, [fighters]);
+
+  useEffect(() => {
+    if (combatActive) {
+      setShowPreBattleWizard(false);
+      setShowDeploymentModal(false);
+    }
+  }, [combatActive]);
+
+
+  useEffect(() => {
     combatPausedRef.current = combatPaused;
   }, [combatPaused]);
 
   useEffect(() => {
     if (wasPausedRef.current && !combatPaused) {
-      lastAutoTurnKeyRef.current = null;
+      lastNoActionTurnKeyRef.current = null;
+      lastEnemyScheduleTurnKeyRef.current = null;
+      lastPlayerAIScheduleTurnKeyRef.current = null;
     }
     wasPausedRef.current = combatPaused;
   }, [combatPaused]);
@@ -2309,12 +4787,28 @@ export default function CombatPage({ characters = [] }) {
   useEffect(() => {
     if (prevAiControlRef.current !== aiControlEnabled) {
       prevAiControlRef.current = aiControlEnabled;
-      lastAutoTurnKeyRef.current = null;
+      aiControlEnabledRef.current = aiControlEnabled;
+      lastNoActionTurnKeyRef.current = null;
+      lastEnemyScheduleTurnKeyRef.current = null;
+      lastPlayerAIScheduleTurnKeyRef.current = null;
+      if (!aiControlEnabled) {
+        if (playerAITimerRef.current) {
+          clearTimeout(playerAITimerRef.current);
+          playerAITimerRef.current = null;
+          pendingTurnStartKeysRef.current.clear();
+        }
+        playerAIActionScheduledRef.current = false;
+        processingPlayerAIRef.current = false;
+        playerAITurnTokenRef.current = (playerAITurnTokenRef.current || 0) + 1;
+        activePlayerAITurnKeysRef.current.clear();
+      }
     }
   }, [aiControlEnabled]);
 
   useEffect(() => {
-    lastAutoTurnKeyRef.current = null;
+    lastNoActionTurnKeyRef.current = null;
+    lastEnemyScheduleTurnKeyRef.current = null;
+    lastPlayerAIScheduleTurnKeyRef.current = null;
   }, [arenaSpeed]);
 
   const getActionDelay = useCallback(
@@ -2357,6 +4851,7 @@ export default function CombatPage({ characters = [] }) {
   );
 
   const isActionBusy = useCallback(() => {
+    if (executingActionRef.current) return true;
     if (!actionClockRef.current.busy) return false;
     const now = performance.now();
     if (now >= actionClockRef.current.endsAtMs) {
@@ -2501,6 +4996,63 @@ export default function CombatPage({ characters = [] }) {
     const speed = speedByKind[kind] || 140;
     return { kind, speed };
   }, []);
+
+  const clampNumber = useCallback(
+    (value, min, max) => Math.max(min, Math.min(max, Number(value) || 0)),
+    []
+  );
+
+  const getProjectileVisualPhysics = useCallback((kind, distanceFeet) => {
+    const configs = {
+      arrow: {
+        minMs: 260,
+        maxMs: 1200,
+        gravityPerFoot: 0.45,
+        minGravityFeet: 6,
+        maxGravityFeet: 55,
+      },
+      bolt: {
+        minMs: 240,
+        maxMs: 1000,
+        gravityPerFoot: 0.32,
+        minGravityFeet: 4,
+        maxGravityFeet: 42,
+      },
+      stone: {
+        minMs: 320,
+        maxMs: 1300,
+        gravityPerFoot: 0.8,
+        minGravityFeet: 8,
+        maxGravityFeet: 80,
+      },
+      thrown: {
+        minMs: 320,
+        maxMs: 1300,
+        gravityPerFoot: 0.7,
+        minGravityFeet: 7,
+        maxGravityFeet: 70,
+      },
+      generic: {
+        minMs: 260,
+        maxMs: 1100,
+        gravityPerFoot: 0.4,
+        minGravityFeet: 5,
+        maxGravityFeet: 50,
+      },
+    };
+
+    const cfg = configs[kind] || configs.generic;
+
+    return {
+      minMs: cfg.minMs,
+      maxMs: cfg.maxMs,
+      gravityFeet: clampNumber(
+        distanceFeet * cfg.gravityPerFoot,
+        cfg.minGravityFeet,
+        cfg.maxGravityFeet
+      ),
+    };
+  }, [clampNumber]);
 
   const scheduleTimelineEvent = useCallback((evt) => {
     if (!evt || !Number.isFinite(evt.timeMs)) return;
@@ -2710,7 +5262,7 @@ export default function CombatPage({ characters = [] }) {
   );
 
   const spawnProjectile = useCallback(
-    ({ attackerId, defenderId, attackData, hit }) => {
+    ({ attackerId, defenderId, attackData, hit, roll, total, clock }) => {
       if (!attackerId || !defenderId) return;
 
       const attackerPos =
@@ -2732,17 +5284,31 @@ export default function CombatPage({ characters = [] }) {
 
       const attacker = fightersRef.current?.find?.((f) => f.id === attackerId);
       const defender = fightersRef.current?.find?.((f) => f.id === defenderId);
+      const impactZone = getArrowImpactZone({
+        hit,
+        roll,
+        total,
+        clock,
+      });
+      if (impactZone.isHeadShot) {
+        addLog(
+          `🎯 HEADSHOT! ${attacker?.name || "Archer"}'s arrow strikes ${defender?.name || "the target"} in the ${impactZone.zone.replaceAll("_", " ")}!`,
+          "critical"
+        );
+      }
 
       const { kind, speed } = getProjectileKindAndSpeed(attackData);
 
       const targetGrid = hit ? toGridBase : pickMissGridNear(toGridBase);
 
       const distanceFeet = calculateDistance(fromGrid, targetGrid);
-      const durationMs = Math.max(
-        180,
-        Math.min(900, Math.round((distanceFeet / speed) * 1000))
+      const visualPhysics = getProjectileVisualPhysics(kind, distanceFeet);
+      const durationMs = clampNumber(
+        Math.round((distanceFeet / speed) * 1000),
+        visualPhysics.minMs,
+        visualPhysics.maxMs
       );
-      const scaledDurationMs = scaleDelayMs(durationMs);
+      const visualDurationMs = getVisualDurationMs(durationMs, 180, 2400);
 
       if (cinematicProjectiles) {
         markActionBusy(Math.min(durationMs, 900));
@@ -2754,7 +5320,7 @@ export default function CombatPage({ characters = [] }) {
           attacker?.isHidden ||
           attacker?.statusEffects?.includes("HIDDEN") ||
           attacker?.statusEffects?.includes("INVISIBLE");
-        const impactAtMs = gameClockRef.current.nowMs + scaledDurationMs;
+        const impactAtMs = gameClockRef.current.nowMs + visualDurationMs;
         const revealLeadMs = 250;
         const visibleThreat = !isHiddenShooter;
 
@@ -2773,25 +5339,75 @@ export default function CombatPage({ characters = [] }) {
       }
 
       const fromAlt = (attacker?.altitudeFeet ?? attacker?.altitude ?? 0) + 4;
-      const toAlt = (defender?.altitudeFeet ?? defender?.altitude ?? 0) + 4;
+      const defenderBaseAlt = defender?.altitudeFeet ?? defender?.altitude ?? 0;
+      const impactAlt = hit
+        ? defenderBaseAlt + impactZone.bodyHeightFeet
+        : 0.35;
 
       const projectile = {
         id: `p_${crypto.randomUUID?.() || Math.random().toString(16).slice(2)}`,
         kind,
         from: { x: fromGrid.x, y: fromGrid.y, altitudeFeet: fromAlt },
-        to: { x: targetGrid.x, y: targetGrid.y, altitudeFeet: toAlt },
+        to: { x: targetGrid.x, y: targetGrid.y, altitudeFeet: impactAlt },
+        impact: {
+          x: targetGrid.x,
+          y: targetGrid.y,
+          altitudeFeet: impactAlt,
+          hit,
+          targetId: hit ? defenderId : null,
+          attackerId,
+          defenderId,
+          surface: hit ? "body" : "ground",
+          roll,
+          total,
+          clock: impactZone.clock,
+          zone: impactZone.zone,
+          isHeadShot: impactZone.isHeadShot,
+          lateralFeet: impactZone.lateralFeet,
+          forwardFeet: impactZone.forwardFeet,
+        },
         firedAtMs: performance.now(),
-        durationMs,
+        durationMs: visualDurationMs,
+        baseDurationMs: durationMs,
+        physics: {
+          type: "ballistic",
+          gravityFeet: visualPhysics.gravityFeet,
+        },
       };
-      console.log("[spawnProjectile] kind=", projectile.kind, projectile);
-      console.log("[CombatPage] projectile spawned:", projectile);
+      if (DEBUG_COMBAT) {
+        console.log("[spawnProjectile] kind=", projectile.kind, projectile);
+        console.log("[CombatPage] projectile spawned:", projectile);
+      }
 
       setProjectiles((prev) => [...prev, projectile]);
 
       // Cleanup after animation completes
-      const cleanupDelay = scaledDurationMs + scaleDelayMs(200);
+      const cleanupDelay = visualDurationMs;
       const timeoutId = setTimeout(() => {
         setProjectiles((prev) => prev.filter((p) => p.id !== projectile.id));
+        if (canEmbedProjectile(projectile)) {
+          const embedded = createEmbeddedArrow(projectile);
+          if (embedded) {
+            if (DEBUG_COMBAT) {
+              console.log("[ARROW_LANDING]", {
+                id: embedded.id,
+                hit: embedded.impact?.hit,
+                surface: embedded.impact?.surface,
+                roll: embedded.impact?.roll,
+                total: embedded.impact?.total,
+                clock: embedded.impact?.clock,
+                zone: embedded.impact?.zone,
+                isHeadShot: embedded.impact?.isHeadShot,
+                targetId: embedded.impact?.targetId,
+                to: embedded.to,
+              });
+            }
+            setEmbeddedArrows((prev) => {
+              if (prev.some((arrow) => arrow.id === embedded.id)) return prev;
+              return [...prev, embedded].slice(-EMBEDDED_ARROW_LIMIT);
+            });
+          }
+        }
       }, cleanupDelay);
       allTimeoutsRef.current.push(timeoutId);
     },
@@ -2801,6 +5417,9 @@ export default function CombatPage({ characters = [] }) {
       markActionBusy,
       applySuppressionToFighter,
       getProjectileKindAndSpeed,
+      getProjectileVisualPhysics,
+      clampNumber,
+      getVisualDurationMs,
       scaleDelayMs,
     ]
   );
@@ -2825,11 +5444,13 @@ export default function CombatPage({ characters = [] }) {
 
       const { kind, speed } = getProjectileKindAndSpeed(attackData);
       const distanceFeet = calculateDistance(fromGrid, targetGrid);
-      const durationMs = Math.max(
-        180,
-        Math.min(900, Math.round((distanceFeet / speed) * 1000))
+      const visualPhysics = getProjectileVisualPhysics(kind, distanceFeet);
+      const durationMs = clampNumber(
+        Math.round((distanceFeet / speed) * 1000),
+        visualPhysics.minMs,
+        visualPhysics.maxMs
       );
-      const scaledDurationMs = scaleDelayMs(durationMs);
+      const visualDurationMs = getVisualDurationMs(durationMs, 180, 2400);
 
       if (cinematicProjectiles) {
         markActionBusy(Math.min(durationMs, 900));
@@ -2843,27 +5464,65 @@ export default function CombatPage({ characters = [] }) {
         id: `p_${crypto.randomUUID?.() || Math.random().toString(16).slice(2)}`,
         kind,
         from: { x: fromGrid.x, y: fromGrid.y, altitudeFeet: fromAlt },
-        to: { x: targetGrid.x, y: targetGrid.y, altitudeFeet: fromAlt },
+        to: { x: targetGrid.x, y: targetGrid.y, altitudeFeet: 0.35 },
+        impact: {
+          x: targetGrid.x,
+          y: targetGrid.y,
+          altitudeFeet: 0.35,
+          hit: false,
+          targetId: null,
+          attackerId,
+          defenderId: null,
+          surface: "ground",
+        },
         firedAtMs: performance.now(),
-        durationMs,
+        durationMs: visualDurationMs,
+        baseDurationMs: durationMs,
+        physics: {
+          type: "ballistic",
+          gravityFeet: visualPhysics.gravityFeet,
+        },
       };
 
       setProjectiles((prev) => [...prev, projectile]);
 
-      const cleanupDelay = scaledDurationMs + scaleDelayMs(200);
+      const cleanupDelay = visualDurationMs;
       const timeoutId = setTimeout(() => {
         setProjectiles((prev) => prev.filter((p) => p.id !== projectile.id));
+        if (canEmbedProjectile(projectile)) {
+          const embedded = createEmbeddedArrow(projectile);
+          if (embedded) {
+            if (DEBUG_COMBAT) {
+              console.log("[ARROW_LANDING]", {
+                id: embedded.id,
+                hit: embedded.impact?.hit,
+                surface: embedded.impact?.surface,
+                roll: embedded.impact?.roll,
+                total: embedded.impact?.total,
+                clock: embedded.impact?.clock,
+                zone: embedded.impact?.zone,
+                isHeadShot: embedded.impact?.isHeadShot,
+                targetId: embedded.impact?.targetId,
+                to: embedded.to,
+              });
+            }
+            setEmbeddedArrows((prev) => {
+              if (prev.some((arrow) => arrow.id === embedded.id)) return prev;
+              return [...prev, embedded].slice(-EMBEDDED_ARROW_LIMIT);
+            });
+          }
+        }
       }, cleanupDelay);
       allTimeoutsRef.current.push(timeoutId);
 
-      const impactAtMs = gameClockRef.current.nowMs + scaledDurationMs;
+      const impactAtMs = gameClockRef.current.nowMs + visualDurationMs;
       return {
         durationMs,
         kind,
         impactAtMs,
       };
     },
-    [getProjectileKindAndSpeed, cinematicProjectiles, markActionBusy, scaleDelayMs]
+    [getProjectileKindAndSpeed, getProjectileVisualPhysics, clampNumber, getVisualDurationMs, cinematicProjectiles, markActionBusy, scaleDelayMs]
   );
 
   const clearScheduledTurn = useCallback(() => {
@@ -2885,6 +5544,21 @@ export default function CombatPage({ characters = [] }) {
       clearScheduledTurn();
     }
   }, [combatPaused, clearScheduledTurn]);
+
+  useEffect(() => {
+    if (!logStepMode || !combatActive || log.length <= revealedLogCount) return;
+
+    stepLogPauseOwnedRef.current = true;
+    processingEnemyTurnRef.current = false;
+    processingPlayerAIRef.current = false;
+    lastProcessedEnemyTurnRef.current = null;
+    clearScheduledTurn();
+
+    if (!combatPausedRef.current) {
+      combatPausedRef.current = true;
+      setCombatPaused(true);
+    }
+  }, [log.length, revealedLogCount, logStepMode, combatActive, clearScheduledTurn]);
 
   // Helper: Check if alignment is evil (would attack dying targets)
   const isEvilAlignment = useCallback((alignment) => {
@@ -3075,6 +5749,44 @@ export default function CombatPage({ characters = [] }) {
   const activeFighters = fighters.filter(f => f.status === "active");
   const alivePlayers = fighters.filter(f => f.type === "player" && f.currentHP > -21);
   const aliveEnemies = fighters.filter(f => f.type === "enemy" && f.currentHP > -21);
+  const totalEnemyCount = fighters.filter((f) => f.type === "enemy").length;
+  const rosterFighters = useMemo(
+    () => fighters.filter((fighter) => fighter.type === "player" || fighter.type === "enemy"),
+    [fighters]
+  );
+  const rosterPreviewFighter = useMemo(
+    () => rosterFighters.find((fighter) => fighter.id === selectedRosterPreviewId) || null,
+    [rosterFighters, selectedRosterPreviewId]
+  );
+
+  useEffect(() => {
+    const previousCount = previousEnemyCountRef.current;
+    if (totalEnemyCount > previousCount) {
+      requestAnimationFrame(() => {
+        const el = enemyListScrollRef.current;
+        if (!el) return;
+        el.scrollTo({
+          top: el.scrollHeight,
+          behavior: previousCount === 0 ? "auto" : "smooth",
+        });
+      });
+    }
+    previousEnemyCountRef.current = totalEnemyCount;
+  }, [totalEnemyCount]);
+
+  useEffect(() => {
+    if (rosterFighters.length === 0) {
+      if (selectedRosterPreviewId !== null) {
+        setSelectedRosterPreviewId(null);
+      }
+      return;
+    }
+
+    const stillExists = rosterFighters.some((fighter) => fighter.id === selectedRosterPreviewId);
+    if (!stillExists) {
+      setSelectedRosterPreviewId(rosterFighters[0].id);
+    }
+  }, [rosterFighters, selectedRosterPreviewId]);
 
   const shouldShowCombatOptions =
     fighters.length > 0 &&
@@ -3649,6 +6361,7 @@ export default function CombatPage({ characters = [] }) {
 
       // Clear processing flag when turn changes
       processingEnemyTurnRef.current = false;
+      pendingEnemyTurnRef.current = false;
 
       // Clear flashing for the CURRENT fighter only (they've completed their turn)
       if (currentFighter) {
@@ -3749,10 +6462,518 @@ export default function CombatPage({ characters = [] }) {
     if (currentFighter && currentFighter.type === "player") {
       setMovementMode({ active: true, isRunning: false });
       setSelectedMovementFighter(currentFighter.id);
+      setSelectedActionType("move");
       setShowMovementSelection(true); // Show movement selection UI
       addLog(`🚶 Select a highlighted hex to move ${currentFighter.name}`, "info");
     }
   }, [currentFighter, addLog]);
+
+  /**
+   * Resolve movement mode from UI state
+   */
+  const resolveMoveMode = useCallback(({ movementMode, selectedActionType }) => {
+    if (selectedActionType === "withdraw") return "WITHDRAW";
+    if (selectedActionType === "charge") return "CHARGE";
+    if (movementMode?.isRunning) return "RUN";
+    return "MOVE";
+  }, []);
+
+  /**
+   * Fetch reachable hexes from engine (with caching)
+   */
+  const fetchReachableHexes = useCallback(async ({ eid, mode }) => {
+    if (!ENGINE_ENABLED || !window?.engine?.call || !engineRef.current) {
+      return null;
+    }
+
+    const cacheKey = `${eid}:${mode}:${turnCounter}`;
+    const cached = reachableCacheRef.current.get(cacheKey);
+    if (cached) return cached;
+
+    try {
+      const res = await engineRef.current.getReachableHexes(eid, mode);
+      if (!res?.ok) return null;
+
+      const costsByKey = new Map();
+      for (const h of res.hexes) {
+        costsByKey.set(`${h.x},${h.y}`, h.cost);
+      }
+
+      const data = { hexes: res.hexes, costsByKey, mode: res.mode || mode };
+      reachableCacheRef.current.set(cacheKey, data);
+      return data;
+    } catch (error) {
+      console.error("[CombatPage] fetchReachableHexes error:", error);
+      return null;
+    }
+  }, [turnCounter, ENGINE_ENABLED]);
+
+  // State for engine-authoritative valid moves
+  const [engineValidMoves, setEngineValidMoves] = useState([]);
+
+  // Fetch reachable hexes when movement mode activates
+  useEffect(() => {
+    if (!movementMode.active || !selectedMovementFighter) {
+      setEngineValidMoves([]);
+      setMoveCostsByHex({});
+      return;
+    }
+
+    const eid = selectedMovementFighter;
+    const mode = resolveMoveMode({ movementMode, selectedActionType });
+
+    // ENGINE AUTHORITATIVE
+    fetchReachableHexes({ eid, mode }).then((reachable) => {
+      if (reachable) {
+        // Highlight list for UI
+        const highlight = reachable.hexes.map(h => ({ x: h.x, y: h.y }));
+        setEngineValidMoves(highlight);
+
+        // Store costs for UI tooltips (future use)
+        const costsObj = {};
+        reachable.hexes.forEach(h => {
+          costsObj[`${h.x},${h.y}`] = h.cost;
+        });
+        setMoveCostsByHex(costsObj);
+
+        addLog(`🧭 Reachable hexes from engine (${reachable.mode}): ${highlight.length}`, "info");
+      } else {
+        // FALLBACK (temporary while verifying engine)
+        const fighter = fighters.find(f => f.id === eid);
+        if (fighter && positions[eid]) {
+          const speed = fighter.Spd || fighter.spd || fighter.attributes?.Spd || fighter.attributes?.spd || 10;
+          const attacksPerMelee = fighter.attacksPerMelee || 1;
+          const validPositions = getMovementRange(
+            positions[eid],
+            speed,
+            attacksPerMelee,
+            {},
+            mode === "RUN"
+          );
+          setEngineValidMoves(validPositions.map(p => ({ x: p.x, y: p.y })));
+          addLog("⚠️ Engine reachability failed; used fallback highlight.", "warning");
+        } else {
+          setEngineValidMoves([]);
+        }
+      }
+    });
+  }, [movementMode, selectedMovementFighter, selectedActionType, resolveMoveMode, fetchReachableHexes, fighters, positions, addLog, turnCounter]);
+
+  // Compute landing preview path when conditions are met
+  const landingPreviewPath = useMemo(() => {
+    // Conditions: movement mode active, fighter is flying, landing intent (altitudeTargetFeet === 0), hoveredHex is valid
+    if (
+      !movementMode.active ||
+      !selectedMovementFighter ||
+      !currentFighter ||
+      !isFlying(currentFighter) ||
+      altitudeTargetFeet !== 0 ||
+      !hoveredHex ||
+      !engineValidMoves.some(m => m.x === hoveredHex.x && m.y === hoveredHex.y)
+    ) {
+      return null;
+    }
+
+    const fromPos = positions[selectedMovementFighter];
+    if (!fromPos) return null;
+
+    // True hex line (axial) via cube lerp + cube round
+    const axialToCube = (q, r) => ({ x: q, y: -q - r, z: r });
+    const cubeToAxial = (c) => ({ x: c.x, y: c.z });
+    const cubeLerp = (a, b, t) => ({
+      x: a.x + (b.x - a.x) * t,
+      y: a.y + (b.y - a.y) * t,
+      z: a.z + (b.z - a.z) * t,
+    });
+    const cubeRound = (c) => {
+      let rx = Math.round(c.x), ry = Math.round(c.y), rz = Math.round(c.z);
+      const dx = Math.abs(rx - c.x), dy = Math.abs(ry - c.y), dz = Math.abs(rz - c.z);
+      if (dx > dy && dx > dz) rx = -ry - rz;
+      else if (dy > dz) ry = -rx - rz;
+      else rz = -rx - ry;
+      return { x: rx, y: ry, z: rz };
+    };
+    const hexLine = (aq, ar, bq, br) => {
+      const a = axialToCube(aq, ar);
+      const b = axialToCube(bq, br);
+      const N = Math.max(
+        Math.abs(a.x - b.x),
+        Math.abs(a.y - b.y),
+        Math.abs(a.z - b.z)
+      );
+      if (N === 0) return null;
+      const out = [];
+      for (let i = 0; i <= N; i++) {
+        const t = i / N;
+        const c = cubeRound(cubeLerp(a, b, t));
+        const ax = cubeToAxial(c);
+        // De-dupe in case of edge rounding artifacts
+        const last = out[out.length - 1];
+        if (!last || last.x !== ax.x || last.y !== ax.y) out.push(ax);
+      }
+      return out.length >= 2 ? out : null;
+    };
+
+    // Use it:
+    const path = hexLine(fromPos.x, fromPos.y, hoveredHex.x, hoveredHex.y);
+    return path;
+  }, [movementMode.active, selectedMovementFighter, currentFighter, altitudeTargetFeet, hoveredHex, engineValidMoves, positions]);
+
+  // Compute pathPreview for TacticalMap (wraps landingPreviewPath or computes general movement path)
+  const pathPreview = useMemo(() => {
+    // Landing path preview (already computed above)
+    if (landingPreviewPath) {
+      const isValid = engineValidMoves.some(m =>
+        hoveredHex && m.x === hoveredHex.x && m.y === hoveredHex.y
+      );
+      return {
+        cells: landingPreviewPath,
+        isValid,
+      };
+    }
+
+    // General movement path preview (when in movement mode with hovered hex)
+    if (
+      movementMode.active &&
+      selectedMovementFighter &&
+      hoveredHex &&
+      engineValidMoves.some(m => m.x === hoveredHex.x && m.y === hoveredHex.y)
+    ) {
+      const fromPos = positions[selectedMovementFighter];
+      if (!fromPos) return null;
+
+      // True hex line (axial) via cube lerp + cube round
+      const axialToCube = (q, r) => ({ x: q, y: -q - r, z: r });
+      const cubeToAxial = (c) => ({ x: c.x, y: c.z });
+      const cubeLerp = (a, b, t) => ({
+        x: a.x + (b.x - a.x) * t,
+        y: a.y + (b.y - a.y) * t,
+        z: a.z + (b.z - a.z) * t,
+      });
+      const cubeRound = (c) => {
+        let rx = Math.round(c.x), ry = Math.round(c.y), rz = Math.round(c.z);
+        const dx = Math.abs(rx - c.x), dy = Math.abs(ry - c.y), dz = Math.abs(rz - c.z);
+        if (dx > dy && dx > dz) rx = -ry - rz;
+        else if (dy > dz) ry = -rx - rz;
+        else rz = -rx - ry;
+        return { x: rx, y: ry, z: rz };
+      };
+      const hexLine = (aq, ar, bq, br) => {
+        const a = axialToCube(aq, ar);
+        const b = axialToCube(bq, br);
+        const N = Math.max(
+          Math.abs(a.x - b.x),
+          Math.abs(a.y - b.y),
+          Math.abs(a.z - b.z)
+        );
+        if (N === 0) return null;
+        const out = [];
+        for (let i = 0; i <= N; i++) {
+          const t = i / N;
+          const c = cubeRound(cubeLerp(a, b, t));
+          const ax = cubeToAxial(c);
+          // De-dupe in case of edge rounding artifacts
+          const last = out[out.length - 1];
+          if (!last || last.x !== ax.x || last.y !== ax.y) out.push(ax);
+        }
+        return out.length >= 2 ? out : null;
+      };
+
+      // Use it:
+      const path = hexLine(fromPos.x, fromPos.y, hoveredHex.x, hoveredHex.y);
+
+      const isValid = engineValidMoves.some(m => m.x === hoveredHex.x && m.y === hoveredHex.y);
+      return path ? { cells: path, isValid } : null;
+    }
+
+    return null;
+  }, [landingPreviewPath, movementMode.active, selectedMovementFighter, hoveredHex, engineValidMoves, positions]);
+
+  const makeTurnStartKey = useCallback((fighter, index, counter) => {
+    const round = meleeRoundRef.current ?? meleeRound ?? 1;
+    return [
+      fighter?.id ?? "?",
+      fighter?.type ?? "?",
+      round,
+      index ?? "?",
+      counter ?? turnCounterRef.current ?? "?",
+    ].join("|");
+  }, [meleeRound]);
+
+  const claimTurnStart = useCallback(
+    (fighter, index, counter, reason) => {
+      const key = makeTurnStartKey(fighter, index, counter);
+
+      if (pendingTurnStartKeysRef.current.has(key)) {
+        if (DEBUG_COMBAT) {
+          addLog?.(
+            `🚫 turn start skipped duplicate fighter=${fighter?.name} reason=${reason} key=${key}`,
+            "warning"
+          );
+        }
+        return null;
+      }
+
+      pendingTurnStartKeysRef.current.add(key);
+      return key;
+    },
+    [addLog, makeTurnStartKey]
+  );
+
+  const releaseTurnStart = useCallback((key) => {
+    if (!key) return;
+    pendingTurnStartKeysRef.current.delete(key);
+  }, []);
+
+  const makeTurnToken = useCallback((fighter) => {
+    const live = fightersRef.current?.find((f) => f.id === fighter?.id);
+    return [
+      combatSessionRef.current,
+      meleeRoundRef.current,
+      turnIndexRef.current,
+      fighter?.id ?? "?",
+      live?.remainingAttacks ?? fighter?.remainingAttacks ?? 0,
+    ].join(":");
+  }, []);
+
+  const isLiveAction = useCallback((actor, token, { allowSpellImpact = false } = {}) => {
+    const liveTurnFighter = fightersRef.current?.[turnIndexRef.current];
+    return (
+      !combatOverRef.current &&
+      !combatEndCheckRef.current &&
+      Boolean(token) &&
+      currentTurnTokenRef.current === token &&
+      liveTurnFighter?.id === actor?.id &&
+      (allowSpellImpact || !activeSpellImpactRef.current)
+    );
+  }, []);
+
+  const blockStaleAction = useCallback((actor, token, label = "action", opts = {}) => {
+    if (isLiveAction(actor, token, opts)) return false;
+    addLog?.(
+      `🚫 Stale action blocked: ${actor?.name || "Unknown"} ${label} token=${token || "none"}`,
+      "warning"
+    );
+    return true;
+  }, [addLog, isLiveAction]);
+
+  const startTurnOnce = useCallback((fighter, index, reason) => {
+    if (!fighter) return false;
+
+    const activeIndex = turnIndexRef.current;
+    if (index !== activeIndex) {
+      addLog?.(
+        `🚫 turn start skipped stale index fighter=${fighter?.name} reason=${reason} index=${index} activeIndex=${activeIndex}`,
+        "warning"
+      );
+      return false;
+    }
+
+    const activeFighter = fightersRef.current?.[activeIndex];
+    if (activeFighter?.id !== fighter.id) {
+      addLog?.(
+        `🚫 turn start skipped stale fighter=${fighter?.name} reason=${reason} active=${activeFighter?.name ?? "?"}`,
+        "warning"
+      );
+      return false;
+    }
+
+    const turnToken = makeTurnToken(activeFighter);
+    currentTurnTokenRef.current = turnToken;
+
+    if (fighter.type === "enemy" && processingEnemyTurnRef.current) {
+      if (DEBUG_COMBAT) {
+        console.warn("[ENEMY TURN SCHEDULE BLOCKED - already processing]", {
+          fighter: fighter?.name,
+          reason,
+        });
+      }
+      return false;
+    }
+
+    const counter = turnCounterRef.current;
+    const key = claimTurnStart(fighter, index, counter, reason);
+    if (!key) return false;
+
+    if (fighter.type === "enemy") {
+      const token = ++enemyTurnTokenRef.current;
+      addLog?.(`🧪 scheduleEnemyTurnStart ${fighter.name} in 0ms (reason=${reason})`, "info");
+
+      if (playerAITimerRef.current) {
+        clearTimeout(playerAITimerRef.current);
+        playerAITimerRef.current = null;
+        releaseTurnStart(lastPlayerAIScheduleTurnKeyRef.current);
+        lastPlayerAIScheduleTurnKeyRef.current = null;
+      }
+      playerAITurnTokenRef.current = (playerAITurnTokenRef.current || 0) + 1;
+
+      if (enemyTurnTimerRef.current) {
+        clearTimeout(enemyTurnTimerRef.current);
+        enemyTurnTimerRef.current = null;
+        releaseTurnStart(lastEnemyScheduleTurnKeyRef.current);
+      }
+      lastEnemyScheduleTurnKeyRef.current = key;
+      enemyTurnTimerRef.current = setTimeout(() => {
+        try {
+          enemyTurnTimerRef.current = null;
+          if (token !== enemyTurnTokenRef.current) return;
+          const liveFighters = fightersRef.current || fighters;
+          const liveIndex = turnIndexRef.current;
+          const latestFighter = liveFighters?.[liveIndex];
+          if (!latestFighter || latestFighter.id !== fighter.id) {
+            if (DEBUG_COMBAT) {
+              console.warn("[TURN START BLOCKED - stale scheduled fighter]", {
+                scheduled: fighter?.name,
+                scheduledId: fighter?.id,
+                live: latestFighter?.name,
+                liveId: latestFighter?.id,
+                liveIndex,
+                reason,
+              });
+            }
+            return;
+          }
+          const latestKey = makeTurnStartKey(latestFighter, turnIndexRef.current, turnCounterRef.current);
+          if (latestKey !== key) return;
+          if (blockStaleAction(latestFighter, turnToken, "scheduled enemy turn start")) {
+            processingEnemyTurnRef.current = false;
+            return;
+          }
+          if (
+            pendingTurnAdvanceRef.current ||
+            turnTimeoutRef.current ||
+            isActionBusy() ||
+            turnActionResolvingRef.current ||
+            !!activeSpellImpactRef.current
+          ) {
+            addLog?.(
+              `🚫 ${latestFighter?.name ?? fighter?.name} start blocked: pending=${pendingTurnAdvanceRef.current}, timeout=${!!turnTimeoutRef.current}, busy=${isActionBusy()}, resolving=${turnActionResolvingRef.current}, spellImpact=${!!activeSpellImpactRef.current}`,
+              "warning"
+            );
+            if (DEBUG_COMBAT) {
+              console.warn("[TURN START BLOCKED - turn not settled]", {
+                fighter: fighter?.name,
+                reason,
+                pendingTurnAdvance: pendingTurnAdvanceRef.current,
+                hasTurnTimeout: !!turnTimeoutRef.current,
+                actionBusy: isActionBusy(),
+                actionResolving: turnActionResolvingRef.current,
+                spellImpact: !!activeSpellImpactRef.current,
+              });
+            }
+            return;
+          }
+          if (
+            combatPausedRef.current ||
+            !combatActiveRef.current ||
+            !canFighterAct(latestFighter)
+          ) {
+            processingEnemyTurnRef.current = false;
+            return;
+          }
+          handleEnemyTurnRef.current?.(latestFighter, reason, { turnKey: key, token, turnToken });
+        } finally {
+          releaseTurnStart(key);
+          if (lastEnemyScheduleTurnKeyRef.current === key) {
+            lastEnemyScheduleTurnKeyRef.current = null;
+          }
+        }
+      }, 0);
+      return true;
+    }
+
+    if (fighter.type === "player") {
+      if (!aiControlEnabledRef.current) {
+        addLog?.(
+          `🎮 ${fighter.name} is waiting for manual player control`,
+          "info"
+        );
+        releaseTurnStart(key);
+        return false;
+      }
+
+      addLog?.(`🧪 schedulePlayerTurnStart ${fighter.name} in 0ms (reason=${reason})`, "info");
+
+      if (playerAITimerRef.current) {
+        clearTimeout(playerAITimerRef.current);
+        playerAITimerRef.current = null;
+        releaseTurnStart(lastPlayerAIScheduleTurnKeyRef.current);
+      }
+      lastPlayerAIScheduleTurnKeyRef.current = key;
+      playerAITimerRef.current = setTimeout(() => {
+        try {
+          playerAITimerRef.current = null;
+          const liveFighters = fightersRef.current || fighters;
+          const liveIndex = turnIndexRef.current;
+          const latestFighter = liveFighters?.[liveIndex];
+          if (!latestFighter || latestFighter.id !== fighter.id) {
+            if (DEBUG_COMBAT) {
+              console.warn("[TURN START BLOCKED - stale scheduled fighter]", {
+                scheduled: fighter?.name,
+                scheduledId: fighter?.id,
+                live: latestFighter?.name,
+                liveId: latestFighter?.id,
+                liveIndex,
+                reason,
+              });
+            }
+            return;
+          }
+          const latestKey = makeTurnStartKey(latestFighter, turnIndexRef.current, turnCounterRef.current);
+          if (latestKey !== key) return;
+          if (blockStaleAction(latestFighter, turnToken, "scheduled player turn start")) {
+            processingPlayerAIRef.current = false;
+            return;
+          }
+          if (
+            pendingTurnAdvanceRef.current ||
+            turnTimeoutRef.current ||
+            isActionBusy() ||
+            turnActionResolvingRef.current ||
+            !!activeSpellImpactRef.current
+          ) {
+            addLog?.(
+              `🚫 ${latestFighter?.name ?? fighter?.name} start blocked: pending=${pendingTurnAdvanceRef.current}, timeout=${!!turnTimeoutRef.current}, busy=${isActionBusy()}, resolving=${turnActionResolvingRef.current}, spellImpact=${!!activeSpellImpactRef.current}`,
+              "warning"
+            );
+            if (DEBUG_COMBAT) {
+              console.warn("[TURN START BLOCKED - turn not settled]", {
+                fighter: fighter?.name,
+                reason,
+                pendingTurnAdvance: pendingTurnAdvanceRef.current,
+                hasTurnTimeout: !!turnTimeoutRef.current,
+                actionBusy: isActionBusy(),
+                actionResolving: turnActionResolvingRef.current,
+                spellImpact: !!activeSpellImpactRef.current,
+              });
+            }
+            return;
+          }
+          if (
+            !aiControlEnabledRef.current ||
+            pendingTurnAdvanceRef.current ||
+            combatPausedRef.current ||
+            !combatActiveRef.current ||
+            !canFighterAct(latestFighter)
+          ) {
+            processingPlayerAIRef.current = false;
+            return;
+          }
+          handlePlayerAITurnRef.current?.(latestFighter, { turnToken });
+        } finally {
+          releaseTurnStart(key);
+          if (lastPlayerAIScheduleTurnKeyRef.current === key) {
+            lastPlayerAIScheduleTurnKeyRef.current = null;
+          }
+        }
+      }, 0);
+      return true;
+    }
+
+    releaseTurnStart(key);
+    return false;
+  }, [addLog, blockStaleAction, canFighterAct, claimTurnStart, isActionBusy, makeTurnStartKey, makeTurnToken, releaseTurnStart]);
+
   // Define endTurn function with useCallback - MUST be before handleMoveSelect
   // PALLADIUM RAW: Alternating actions per initiative
   const endTurn = useCallback(() => {
@@ -3761,48 +6982,85 @@ export default function CombatPage({ characters = [] }) {
     }
     // ✅ Always release any AI "in progress" locks when a turn actually ends
     pendingTurnAdvanceRef.current = false;
+    turnActionResolvingRef.current = false;
     processingEnemyTurnRef.current = false;
+    pendingEnemyTurnRef.current = false;
     processingPlayerAIRef.current = false;
+    playerTurnInFlightKeyRef.current = null;
+    playerSpellInFlightKeyRef.current = null;
+    currentTurnTokenRef.current = null;
+    // Invalidate any delayed player AI callbacks when turn ownership changes.
+    playerAITurnTokenRef.current = (playerAITurnTokenRef.current || 0) + 1;
+    // Cancel pending player AI timers (CombatPage-level scheduler).
+    if (playerAITimerRef.current) {
+      clearTimeout(playerAITimerRef.current);
+      playerAITimerRef.current = null;
+    }
+    // Reset enemy action lock on ownership change
+    enemyActionLockRef.current = null;
+    enemyActionCommittedThisSliceRef.current = false;
+    enemyActionCommittedSliceKeyRef.current = null;
+
+    // Prefer ref snapshots so turn-advance never depends on React commit timing.
+    const fightersNow = fightersRef.current ?? fighters;
+    const turnIndexNow = turnIndexRef.current ?? turnIndex;
+    const meleeRoundNow = meleeRoundRef.current ?? meleeRound;
+    const turnCounterNow = turnCounterRef.current ?? turnCounter;
+    const combatActiveNow = combatActiveRef.current ?? combatActive;
+    const endTurnAdvanceKey = `${meleeRoundNow}|${turnIndexNow}|${turnCounterNow}|${fightersNow?.[turnIndexNow]?.id ?? "?"}`;
 
     // ✅ CRITICAL: Stop processing if combat has ended
-    if (!combatActive || combatEndCheckRef.current) {
+    if (!combatActiveNow || combatEndCheckRef.current) {
       return;
     }
+
+    if (lastEndTurnAdvanceKeyRef.current === endTurnAdvanceKey) {
+      addLog?.(
+        `🚫 duplicate endTurn ignored key=${endTurnAdvanceKey}`,
+        "warning"
+      );
+      return;
+    }
+    lastEndTurnAdvanceKeyRef.current = endTurnAdvanceKey;
 
     clearScheduledTurn();
 
     // Clear movement attempts tracker for old turns (keep only current and previous turn)
-    const currentTurnKey = turnCounter;
+    const currentTurnKey = turnCounterNow;
     Object.keys(movementAttemptsRef.current).forEach(key => {
       const turnNum = parseInt(key.split('-').pop());
       if (turnNum < currentTurnKey - 1) {
         delete movementAttemptsRef.current[key];
       }
     });
+    // Clear reachable hexes cache each turn
+    reachableCacheRef.current.clear();
 
     // PALLADIUM RAW: Check if all fighters are out of actions (melee round complete)
-    const fightersWithActions = fighters.filter(f =>
+    const fightersWithActions = fightersNow.filter(f =>
       canFighterAct(f) && (f.remainingAttacks || 0) > 0
     );
 
     if (fightersWithActions.length === 0) {
       // All fighters are out of actions - start new melee round
       // But only if combat is still active
-      if (!combatActive || combatEndCheckRef.current) {
+      if (!combatActiveNow || combatEndCheckRef.current) {
         return;
       }
 
-      addLog(`⏰ Melee Round ${meleeRound} complete! Starting Round ${meleeRound + 1}...`, "combat");
+      addLog(`⏰ Melee Round ${meleeRoundNow} complete! Starting Round ${meleeRoundNow + 1}...`, "combat");
 
       // ✅ Clear cast guard for new melee round (allows new casts in new round)
       combatCastGuardRef.current.clear();
       // ✅ Clear spell loop guard for new melee round (allows new spell casts)
       enemySpellLoopGuardRef.current.clear();
+      pendingTurnStartKeysRef.current.clear();
+      lastEndTurnAdvanceKeyRef.current = null;
       // ✅ Reset "no actions remaining" pass-log guard each melee
       noActionsPassLogRef.current = new Set();
 
       // End of melee: clear last melee's temp courage bonuses
-      clearCourageBonuses(fighters);
+      clearCourageBonuses(fightersNow);
 
       // Reset all fighters' actions for new melee round
       // Also reset the "no ranged options" log flag for each fighter
@@ -3810,12 +7068,31 @@ export default function CombatPage({ characters = [] }) {
         const updated = prev.map(f => {
           // ✅ Tick down + clear status effects each melee
           // (needed so temporary effects like SHAKEN expire correctly)
-          const withStatus = updateStatusEffects({ ...f }, meleeRound + 1);
+          const withStatus = updateStatusEffects({ ...f }, meleeRoundNow + 1);
+          const withBleeding = tickBleeding(withStatus);
+          if (withBleeding !== withStatus) {
+            try {
+              if (
+                withStatus?.condition !== withBleeding?.condition &&
+                withBleeding?.condition === "dying"
+              ) {
+                addLog(`🩸 ${withBleeding.name} worsens to DYING from blood loss!`, "defeat");
+              } else if (
+                withStatus?.condition !== withBleeding?.condition &&
+                withBleeding?.condition === "dead"
+              ) {
+                addLog(`💀 ${withBleeding.name} bleeds out and dies!`, "defeat");
+              }
+            } catch {
+              // ignore
+            }
+          }
           // Fix: Use proper fallback for animals (attacksPerMelee ?? attacks ?? 2)
-          const apm = withStatus.attacksPerMelee ?? withStatus.attacks ?? 2; // fallback for animals
+          const apm =
+            withBleeding.attacksPerMelee ?? withBleeding.attacks ?? 2; // fallback for animals
           const fighter = {
-            ...withStatus,
-            remainingAttacks: apm,
+            ...withBleeding,
+            remainingAttacks: canFighterAct(withBleeding) ? apm : 0,
             spellsCastThisMelee: 0, // ✅ Reset spells cast counter for new melee round (RAW)
             // if you track "hasActedThisRound" etc, reset it here too
           };
@@ -3880,7 +7157,7 @@ export default function CombatPage({ characters = [] }) {
       });
 
       // Only continue if combat is still active
-      if (!combatActive || combatEndCheckRef.current) {
+      if (!combatActiveNow || combatEndCheckRef.current) {
         return;
       }
 
@@ -3889,7 +7166,7 @@ export default function CombatPage({ characters = [] }) {
       setTurnCounter(prev => prev + 1);
 
       // Clear processing flags for new round (only if combat is still active)
-      if (combatActive && !combatEndCheckRef.current) {
+      if (combatActiveNow && !combatEndCheckRef.current) {
         combatEndCheckRef.current = false;
         lastProcessedEnemyTurnRef.current = null;
         processingPlayerAIRef.current = false;
@@ -3901,29 +7178,41 @@ export default function CombatPage({ characters = [] }) {
 
     // PALLADIUM RAW: Move to next fighter in initiative order (wrapping around)
     // Find next active fighter with actions remaining, in initiative order
-    let nextIndex = (turnIndex + 1) % fighters.length;
+    let nextIndex = (turnIndexNow + 1) % fightersNow.length;
     let attempts = 0;
     let foundNext = false;
 
     // Loop through fighters in initiative order until we find one with actions
-    while (attempts < fighters.length) {
-      const nextFighter = fighters[nextIndex];
+    while (attempts < fightersNow.length) {
+      const nextFighter = fightersNow[nextIndex];
       if (nextFighter && canFighterAct(nextFighter) && (nextFighter.remainingAttacks || 0) > 0) {
         foundNext = true;
         break; // Found a fighter that can act and has actions
       }
-      nextIndex = (nextIndex + 1) % fighters.length;
+      if (
+        nextFighter &&
+        canFighterAct(nextFighter) &&
+        (Number(nextFighter.remainingAttacks ?? 0) || 0) <= 0
+      ) {
+        addLog(
+          `⏭️ ${nextFighter.name} has no actions remaining - passing to next fighter in initiative order`,
+          "info"
+        );
+      }
+      nextIndex = (nextIndex + 1) % fightersNow.length;
       attempts++;
     }
 
     // If no fighter found with actions, start new melee round (shouldn't happen due to check above, but safety)
     if (!foundNext) {
       // Only start new round if combat is still active
-      if (!combatActive || combatEndCheckRef.current) {
+      if (!combatActiveNow || combatEndCheckRef.current) {
         return;
       }
 
       addLog(`⏰ All fighters out of actions - starting new melee round`, "combat");
+      pendingTurnStartKeysRef.current.clear();
+      lastEndTurnAdvanceKeyRef.current = null;
       setFighters(prev => prev.map(f => ({
         ...f,
         remainingAttacks: f.attacksPerMelee || 2
@@ -3939,7 +7228,7 @@ export default function CombatPage({ characters = [] }) {
 
     // ✅ CRITICAL: Only reset combat end check flag if combat is still active
     // Don't reset if combat has ended (prevents further action processing)
-    if (combatActive && !combatEndCheckRef.current) {
+    if (combatActiveNow && !combatEndCheckRef.current) {
       // Reset flag only if combat is active and hasn't ended
       // (combatEndCheckRef.current will be true if victory/defeat was declared)
     }
@@ -3954,7 +7243,7 @@ export default function CombatPage({ characters = [] }) {
     lastOpenedChoicesTurnRef.current = null;
 
     // Clear temporary modifiers for the fighter ending their action
-    const currentFighterId = fighters[turnIndex]?.id;
+    const currentFighterId = fightersNow[turnIndexNow]?.id;
     if (currentFighterId) {
       setTempModifiers(prev => {
         const updated = { ...prev };
@@ -3965,7 +7254,7 @@ export default function CombatPage({ characters = [] }) {
       // Reset temporary hex sharing position
       if (temporaryHexSharing[currentFighterId]) {
         const tempPos = temporaryHexSharing[currentFighterId];
-        addLog(`↩️ ${fighters[turnIndex]?.name} returns to original position (${tempPos.originalPos.x}, ${tempPos.originalPos.y})`, "info");
+        addLog(`↩️ ${fightersNow[turnIndexNow]?.name} returns to original position (${tempPos.originalPos.x}, ${tempPos.originalPos.y})`, "info");
 
         setPositions(prev => {
           const updated = {
@@ -3984,6 +7273,8 @@ export default function CombatPage({ characters = [] }) {
       }
     }
 
+    turnIndexRef.current = nextIndex;
+    turnCounterRef.current = turnCounterNow + 1;
     setTurnIndex(nextIndex);
     setTurnCounter(prev => prev + 1); // Increment absolute action counter
 
@@ -3995,7 +7286,586 @@ export default function CombatPage({ characters = [] }) {
       const entries = Array.from(visibilityLogRef.current);
       visibilityLogRef.current = new Set(entries.slice(-100));
     }
-  }, [fighters, positions, turnIndex, temporaryHexSharing, addLog, meleeRound, turnCounter, clearScheduledTurn, canFighterAct, combatActive]);
+
+    startTurnOnce(fightersNow[nextIndex], nextIndex, "endTurn-direct");
+    return;
+  }, [fighters, positions, turnIndex, temporaryHexSharing, addLog, meleeRound, turnCounter, clearScheduledTurn, canFighterAct, combatActive, tickBleeding, startTurnOnce, releaseTurnStart]);
+
+  // Update endTurnRef when endTurn is defined
+  useEffect(() => {
+    endTurnRef.current = endTurn;
+  }, [endTurn]);
+
+  // Helper function to convert engine events to log lines
+  const nameOf = useCallback((id) => {
+    const f = (fightersRef.current ?? fighters).find((x) => (x.id ?? x._id) === id);
+    return f?.name || id || "Unknown";
+  }, [fighters]);
+
+  const eventToLogLine = useCallback((e) => {
+    switch (e.type) {
+      case "AI_INTENT": {
+        const kind = e.intent?.kind || "???";
+        const targetId = e.intent?.targetId;
+        const mode = e.intent?.attackMode ? ` (${e.intent.attackMode})` : "";
+        return `🧠 ${nameOf(e.actorId)} intent: ${kind}${mode}${targetId ? ` → ${nameOf(targetId)}` : ""}`;
+      }
+      case "TURN_STARTED": return `▶️ Turn started: ${nameOf(e.actorId)}`;
+      case "TURN_ENDED": return `⏭️ Turn ended: ${nameOf(e.actorId)}`;
+      case "ROLLED": return `🎲 Rolled d${e.sides}: ${e.value}`;
+      case "ROUND_STARTED": return `⏰ Round ${e.round} started`;
+      case "MELEE_ROUND_ENDED": return `⏰ Melee Round ${e.round} complete!`;
+      case "ATTACK_ROLL":
+        return `🎲 ${nameOf(e.attackerId)} attacks ${nameOf(e.targetId)}: ${e.d20} + ${e.bonus} = ${e.total} vs AR ${e.targetAR} ${e.hit ? (e.crit ? "(CRIT!)" : "(HIT)") : "(MISS)"}`;
+      case "DAMAGE":
+        return `🩸 ${nameOf(e.attackerId)} → ${nameOf(e.targetId)}: ${e.formula} = ${e.amount}`;
+      case "AMMO_SPENT":
+        return `🏹 Ammo: -${e.spent} ${e.ammoType} (now ${e.next})`;
+      case "HP_CHANGED":
+        return `❤️ ${nameOf(e.targetId)} HP: ${e.prevHP} → ${e.nextHP}`;
+      case "MISFIRE":
+        return `🏹 ${nameOf(e.attackerId)} misfires; no projectile is released`;
+      case "STRAY_HIT":
+        return `🏹 Stray shot from ${nameOf(e.attackerId)} clips ${nameOf(e.targetId)}`;
+      case "MISS":
+        return e.reason === "MISFIRE"
+          ? `💨 ${nameOf(e.attackerId)} fails to release the shot`
+          : `💨 ${nameOf(e.attackerId)} misses ${nameOf(e.targetId)}`;
+      case "CRIT":
+        return `💥 ${nameOf(e.attackerId)} critical hit on ${nameOf(e.targetId)}! (×${e.mult ?? 2})`;
+      case "ATTACKS_CONSUMED":
+        return `⚔️ ${nameOf(e.attackerId)} attacks: ${e.prev} → ${e.next}`;
+      case "REACTION_ROLL":
+        return `🛡️ ${nameOf(e.defenderId)} reaction (${e.reactionType}): ${e.d20} + ${e.bonus} = ${e.total} vs ${e.vs} → ${e.outcome.toUpperCase()}`;
+      case "ATTACK_DEFENDED":
+        return `🛡️ ${nameOf(e.defenderId)} defended attack from ${nameOf(e.attackerId)}: ${e.outcome.toUpperCase()} (${e.reactionType})`;
+      case "REACTION_SPENT":
+        return `🛡️ ${nameOf(e.defenderId)} used ${e.reactionType}`;
+      case "TURN_SHOULD_END":
+        return `⏭️ ${nameOf(e.actorId)} ends their turn`;
+      default: return e.type ? `ℹ️ ${e.type}` : `ℹ️ Event`;
+    }
+  }, [nameOf]);
+
+  // Apply worker attack result deltas (HP, remaining attacks, optionally ammo when setAmmoCount is provided).
+  const applyAttackDelta = useCallback((delta, opts = {}) => {
+    if (!delta) return;
+    const { setAmmoCount } = opts;
+
+    if (delta.hpById) {
+      setFighters((prev) =>
+        prev.map((f) => {
+          const id = f.id ?? f._id;
+          if (!id || delta.hpById[id] === undefined) return f;
+          return { ...f, currentHP: delta.hpById[id] };
+        })
+      );
+    }
+
+    if (delta.remainingAttacksById) {
+      setFighters((prev) =>
+        prev.map((f) => {
+          const id = f.id ?? f._id;
+          if (!id || delta.remainingAttacksById[id] === undefined) return f;
+          return { ...f, remainingAttacks: delta.remainingAttacksById[id] };
+        })
+      );
+    }
+
+    if (delta.ammo?.ownerId != null && delta.ammo?.ammoType != null && setAmmoCount) {
+      setAmmoCount((prev) =>
+        setAmmo(prev, delta.ammo.ownerId, delta.ammo.ammoType, delta.ammo.next)
+      );
+    }
+  }, []);
+
+  // Extract melee round reset logic (reused from endTurn)
+  const startNewMeleeRound = useCallback((nextRoundNumber) => {
+    addLog(`⏰ Melee Round ${meleeRound} complete! Starting Round ${nextRoundNumber}...`, "combat");
+
+    // ✅ Clear cast guard for new melee round (allows new casts in new round)
+    combatCastGuardRef.current.clear();
+    // ✅ Clear spell loop guard for new melee round (allows new spell casts)
+    enemySpellLoopGuardRef.current.clear();
+    // ✅ Reset "no actions remaining" pass-log guard each melee
+    noActionsPassLogRef.current = new Set();
+
+    // End of melee: clear last melee's temp courage bonuses
+    clearCourageBonuses(fighters);
+
+    // Reset all fighters' actions for new melee round
+    setFighters(prev => {
+      const updated = prev.map(f => {
+        // ✅ Tick down + clear status effects each melee
+        // (needed so temporary effects like SHAKEN expire correctly)
+        const withStatus = updateStatusEffects({ ...f }, nextRoundNumber);
+        // Fix: Use proper fallback for animals (attacksPerMelee ?? attacks ?? 2)
+        const apm = withStatus.attacksPerMelee ?? withStatus.attacks ?? 2; // fallback for animals
+        const fighter = {
+          ...withStatus,
+          remainingAttacks: apm,
+          spellsCastThisMelee: 0, // ✅ Reset spells cast counter for new melee round (RAW)
+        };
+        // Clear the loggedNoRangedRound flag for new melee round
+        if (fighter.meta?.loggedNoRangedRound !== undefined) {
+          fighter.meta = {
+            ...fighter.meta,
+            loggedNoRangedRound: undefined,
+            loggedNoRangedOptions: false,
+          };
+        }
+        return fighter;
+      });
+
+      // Check for stalemate: if neither side can hit the other
+      const playerFighters = updated.filter(f => f.type === "player" && canFighterAct(f) && f.currentHP > 0);
+      const enemyFighters = updated.filter(f => f.type === "enemy" && canFighterAct(f) && f.currentHP > 0);
+
+      if (playerFighters.length > 0 && enemyFighters.length > 0) {
+        // Check if players have any valid offensive options
+        const playersCanAttack = playerFighters.some(player =>
+          hasAnyValidOffensiveOption(player, enemyFighters)
+        );
+
+        // Check if enemies have any valid offensive options
+        const enemiesCanAttack = enemyFighters.some(enemy =>
+          hasAnyValidOffensiveOption(enemy, playerFighters)
+        );
+
+        // If neither side can attack, end combat as stalemate
+        if (!playersCanAttack && !enemiesCanAttack) {
+          addLog("⚠️ Neither side can attack the other (stalemate). Combat ends.", "warning");
+          setCombatActive(false);
+          combatEndCheckRef.current = true;
+          return updated;
+        }
+      }
+
+      // ✅ Start of new melee: apply courage/holy aura bonuses + fear dispel
+      processCourageAuras(updated, positions, addLog);
+
+      // ✅ Apply bio-regeneration for fighters with regeneration abilities
+      const currentMeleeRound = nextRoundNumber;
+      const updatedWithRegen = updated.map(fighter => {
+        const fighterCopy = { ...fighter };
+        const regenResult = applyBioRegeneration(fighterCopy, currentMeleeRound);
+        if (regenResult) {
+          addLog(regenResult.log, "healing");
+          return {
+            ...fighterCopy,
+            currentHP: fighterCopy.currentHP,
+            hp: fighterCopy.currentHP,
+            meta: fighterCopy.meta,
+          };
+        }
+        return fighter;
+      });
+
+      return updatedWithRegen;
+    });
+
+    // Clear processing flags for new round (only if combat is still active)
+    if (combatActive && !combatEndCheckRef.current) {
+      combatEndCheckRef.current = false;
+      lastProcessedEnemyTurnRef.current = null;
+      processingPlayerAIRef.current = false;
+      lastOpenedChoicesTurnRef.current = null;
+    }
+  }, [addLog, meleeRound, fighters, positions, combatActive, canFighterAct]);
+
+  // Helper to build lightweight position snapshot (reduces serialization cost)
+  const buildPositionsLite = useCallback((posMap) => {
+    const out = {};
+    const src = posMap || {};
+    for (const k of Object.keys(src)) {
+      const p = src[k];
+      if (!p) continue;
+      // Normalize key to match fightersLite id format (id ?? _id)
+      // If positions use _id keys, we need to normalize them
+      const normalizedKey = k; // Keep as-is for now, but ensure it matches fighter.id
+      // Standardize to {x,y}; keep altitude so projectile misses can resolve in 3D.
+      out[normalizedKey] = {
+        x: Number(p.x ?? p.q ?? 0),
+        y: Number(p.y ?? p.r ?? 0),
+        altitudeFeet: Number(p.altitudeFeet ?? p.altitude ?? 0),
+      };
+    }
+    return out;
+  }, []);
+
+  // Helper to build lightweight fighter snapshot (reduces serialization cost)
+  const buildFightersLite = useCallback((fightersArr) => {
+    return (fightersArr || []).map((f) => {
+      const id = f?.id ?? f?._id ?? null;
+
+      // crude ranged detector (adjust to your weapon schema)
+      const weapons = Array.isArray(f?.weapons) ? f.weapons : [];
+      const rangedWeapon = weapons.find((w) =>
+        w?.isMissileWeapon ||
+        w?.category === "ranged" ||
+        w?.type === "ranged" ||
+        w?.ammunition // many of yours use ammunition types
+      );
+
+      const rangedRange =
+        Number(rangedWeapon?.range ?? rangedWeapon?.maxRange ?? 0) || 0;
+
+      return {
+        id,
+        name: f?.name ?? f?.characterName ?? id,
+        currentHP: Number(f?.currentHP ?? f?.hp ?? 0),
+        AR: Number(f?.AR ?? f?.ar ?? f?.armorRating ?? 10),
+        isDead: !!f?.isDead,
+        isKO: !!f?.isKO,
+        status: f?.status ?? "",
+        remainingAttacks: Number(f?.remainingAttacks ?? 0),
+        footprint: f?.footprint,
+
+        // control/team classification (adjust to your schema)
+        isNPC: !!f?.isNPC,
+        isEnemy: !!f?.isEnemy,
+        side: f?.side ?? f?.team ?? (f?.isEnemy ? "enemy" : "player"),
+
+        // new AI-relevant fields
+        hasRanged: !!rangedWeapon,
+        rangedRange,          // 0 if none
+        preferredRange: rangedRange > 0 ? Math.min(8, Math.max(3, Math.floor(rangedRange / 2))) : 1,
+      };
+    });
+  }, []);
+
+  const pickEquippedWeapon = useCallback((f) => {
+    return (
+      f?.equippedWeapons?.[0] ||
+      f?.equippedWeapons?.primary ||
+      f?.equippedWeapons?.secondary ||
+      f?.attacks?.[0] ||
+      null
+    );
+  }, []);
+
+  const buildAttackProfilesById = useCallback((fightersArr) => {
+    const profiles = {};
+    for (const f of fightersArr || []) {
+      const id = f?.id ?? f?._id;
+      if (!id) continue;
+
+      const w = pickEquippedWeapon(f);
+
+      let damageFormula = "1d6";
+      let ammoType = null;
+      let rangedRange = 0;
+
+      if (w) {
+        const isUsingTwoHanded = !!w.twoHanded || (typeof isTwoHandedWeapon === "function" && isTwoHandedWeapon(w));
+        if (typeof getWeaponDamage === "function") {
+          try {
+            damageFormula = String(getWeaponDamage(w, isUsingTwoHanded, f) || damageFormula);
+          } catch {
+            damageFormula = String(w.damage || damageFormula);
+          }
+        } else {
+          damageFormula = String(w.damage || damageFormula);
+        }
+
+        ammoType = w.ammunition ?? w.ammoType ?? null;
+        rangedRange = Number(w.range ?? w.maxRange ?? 0) || 0;
+      }
+
+      const baseStrikeBonus =
+        Number(
+          f?.bonuses?.strike ??
+          f?.strikeBonus ??
+          f?.bonuses?.strikeBonus ??
+          0
+        ) || 0;
+
+      const baseAR = Number(f?.AR ?? f?.ar ?? 10) || 10;
+
+      profiles[id] = {
+        baseStrikeBonus,
+        damageFormula,
+        ammoType,
+        rangedRange,
+        preferredRange: rangedRange > 0 ? Math.min(8, Math.max(3, Math.floor(rangedRange / 2))) : 1,
+        baseAR,
+      };
+    }
+    return profiles;
+  }, [pickEquippedWeapon]);
+
+  const computeAttackOverride = useCallback((attacker, defender, attackMode) => {
+    if (!attacker || !defender) return null;
+
+    const positions = positionsRef.current || {};
+    const attackerId = attacker?.id ?? attacker?._id;
+    const defenderId = defender?.id ?? defender?._id;
+    const aPos = positions[attackerId];
+    const dPos = positions[defenderId];
+
+    // If we can't locate positions, do NOT allow an attack override.
+    if (!aPos || !dPos) return null;
+
+    const distHex = calculateDistance(aPos, dPos);
+    const distFeet = distHex * 5;
+
+    const weapon = pickEquippedWeapon(attacker);
+
+    // MELEE range gate (use your real melee reach if you have it; fallback to ~5.5ft)
+    if ((attackMode || "melee") === "melee") {
+      const meleeMaxFeet =
+        Number(weapon?.reachFeet ?? weapon?.reachFt ?? weapon?.reach ?? 5.5) || 5.5;
+
+      if (distFeet > meleeMaxFeet) {
+        // Out of melee range → do NOT supply an override → worker won't resolve the attack.
+        return null;
+      }
+    }
+
+    // RANGED range gate
+    if ((attackMode || "melee") === "ranged") {
+      const maxRangeFeet = Number(weapon?.range ?? weapon?.maxRange ?? 0) || 0;
+      if (maxRangeFeet > 0 && distFeet > maxRangeFeet) return null;
+    }
+
+    let targetAR = Number(defender?.AR ?? defender?.ar ?? 10) || 10;
+
+    if (combatTerrain && defenderId && positions[defenderId]) {
+      const coverBonus = getCoverBonus(
+        { x: positions[defenderId].x, y: positions[defenderId].y },
+        combatTerrain
+      );
+      if (coverBonus > 0) targetAR += coverBonus;
+    }
+
+    const isUsingTwoHanded =
+      !!weapon?.twoHanded ||
+      (typeof isTwoHandedWeapon === "function" && isTwoHandedWeapon(weapon));
+
+    let damageFormula = "1d6";
+    try {
+      if (typeof getWeaponDamage === "function") {
+        damageFormula = String(getWeaponDamage(weapon, isUsingTwoHanded, attacker) || damageFormula);
+      } else if (weapon?.damage) {
+        damageFormula = String(weapon.damage);
+      }
+    } catch {
+      if (weapon?.damage) damageFormula = String(weapon.damage);
+    }
+
+    const ammoType = weapon?.ammunition ?? weapon?.ammoType ?? null;
+
+    const attackSnapshot = {
+      weaponName: weapon?.name,
+      attackMode,
+      damageFormula,
+    };
+
+    const baseStrikeBonus = getCombatBonus(attacker, "strike", attackSnapshot) || 0;
+    const tempBonus =
+      (tempModifiers?.[attackerId]?.strikeBonus || 0) +
+      (tempModifiers?.[attackerId]?.nextMeleeStrike || 0);
+
+    let toHitBonus = baseStrikeBonus + tempBonus;
+
+    if (
+      combatTerrain?.lightingData &&
+      positions?.[attackerId] &&
+      positions?.[defenderId]
+    ) {
+      const lightingEffects = applyLightingEffects(
+        distFeet,
+        combatTerrain.lighting,
+        attacker.hasInfravision || false,
+        attacker
+      );
+
+      if (lightingEffects?.penalty < 0) {
+        toHitBonus += lightingEffects.penalty;
+      }
+    }
+
+    return {
+      toHitBonus,
+      targetAR,
+      damageFormula,
+      ammoType,
+      critOn: 20,
+      critMult: 2,
+    };
+  }, [
+    combatTerrain,
+    pickEquippedWeapon,
+    tempModifiers,
+    positionsRef,
+  ]);
+
+  // Engine-powered full turn boundary (uses worker thread when in Electron)
+  const onEndTurnFull = useCallback(async (actorId) => {
+    if (!ENGINE_ENABLED) {
+      endTurn();
+      return;
+    }
+    try {
+      const fightersLite = buildFightersLite(fightersRef.current ?? fighters);
+      const payload = {
+        state: {
+          fightersLite,
+          turnIndex,
+          turnCounter,
+          round: meleeRound,
+        },
+        intent: { type: "END_TURN_FULL", actorId },
+      };
+      const { nextState, events } = await withTimeout(
+        window.engine.call("resolveTurn", payload),
+        4000,
+        "resolveTurn"
+      );
+
+      // Apply back into React (single update)
+      if (nextState.turnCounter !== undefined) {
+        setTurnCounter(nextState.turnCounter);
+      }
+      if (nextState.turnIndex !== undefined) {
+        setTurnIndex(nextState.turnIndex);
+      }
+
+      if (nextState.round !== undefined) {
+        // If a new round started, run your real reset logic first
+        if (nextState.meleeRoundComplete) {
+          startNewMeleeRound(nextState.round);
+        }
+        setMeleeRound(nextState.round);
+      }
+
+      events.forEach((e) => {
+        const logLine = eventToLogLine(e);
+        addLog(logLine, "info");
+      });
+    } catch (error) {
+      console.error("Engine call failed:", error);
+      addLog(`🛑 Engine guard tripped: ${error?.message ?? error}`, "error");
+      endTurn();
+    }
+  }, [ENGINE_ENABLED, fighters, turnIndex, turnCounter, meleeRound, addLog, eventToLogLine, endTurn, startNewMeleeRound, buildFightersLite]);
+
+  // Optional: Fast-forward turns until a human player's turn (worker-driven)
+  // This can be wired to a "Fast Forward to Player" button in the UI
+  // eslint-disable-next-line no-unused-vars
+  const onAdvanceUntilHuman = useCallback(async () => {
+    if (!ENGINE_ENABLED) return;
+    try {
+      const fightersLite = buildFightersLite(fightersRef.current ?? fighters);
+      const currentFighter = fighters[turnIndex];
+      const { nextState, events } = await withTimeout(
+        window.engine.call("advanceUntilHuman", {
+          state: {
+            fightersLite,
+            turnIndex,
+            turnCounter,
+            round: meleeRound,
+          },
+          intent: {
+            actorId: currentFighter?.id ?? currentFighter?._id ?? null,
+            maxSteps: 100,
+          },
+        }),
+        4000,
+        "advanceUntilHuman"
+      );
+
+      // Apply state updates
+      if (nextState.turnCounter !== undefined) {
+        setTurnCounter(nextState.turnCounter);
+      }
+      if (nextState.turnIndex !== undefined) {
+        setTurnIndex(nextState.turnIndex);
+      }
+
+      if (nextState.round !== undefined) {
+        // If a new round started, run your real reset logic first
+        if (nextState.meleeRoundComplete) {
+          startNewMeleeRound(nextState.round);
+        }
+        setMeleeRound(nextState.round);
+      }
+
+      // Process events and add to combat log
+      (events || []).forEach((e) => {
+        const logLine = eventToLogLine(e);
+        addLog(logLine, "info");
+      });
+    } catch (error) {
+      console.error("advanceUntilHuman failed:", error);
+      addLog(`🛑 Engine guard tripped: ${error?.message ?? error}`, "error");
+    }
+  }, [ENGINE_ENABLED, buildFightersLite, fighters, turnIndex, turnCounter, meleeRound, startNewMeleeRound, addLog, eventToLogLine]);
+
+  // Helper to filter events during fast-forward (reduces log spam)
+  const shouldLogEvent = useCallback((e) => {
+    // Keep big events; drop noisy TURN_STARTED/ENDED during fast-forward if you want
+    return !["TURN_STARTED", "TURN_ENDED"].includes(e?.type);
+  }, []);
+
+  // Fast-forward turns until a player-controlled turn (worker-driven)
+  // This can be wired to a "Fast Forward to Player" button in the UI
+  // eslint-disable-next-line no-unused-vars
+  const onAdvanceUntilPlayer = useCallback(async () => {
+    if (!ENGINE_ENABLED) return;
+    try {
+      const fightersLite = buildFightersLite(fightersRef.current ?? fighters);
+      const currentFighter = fighters[turnIndex];
+      const { nextState, events, roundsAdvanced } = await withTimeout(
+        window.engine.call("advanceUntilPlayer", {
+          state: { fightersLite, turnIndex, turnCounter, round: meleeRound },
+          intent: {
+            actorId: currentFighter?.id ?? currentFighter?._id ?? null,
+            maxSteps: 400,
+            playerSides: ["player", "party", "ally"],
+          },
+        }),
+        4000,
+        "advanceUntilPlayer"
+      );
+
+      if (nextState.turnCounter !== undefined) setTurnCounter(nextState.turnCounter);
+      if (nextState.turnIndex !== undefined) setTurnIndex(nextState.turnIndex);
+
+      // If rounds advanced, run your full melee reset for EACH new round
+      if (roundsAdvanced > 0) {
+        // We only know the final round number from nextState.round; compute backwards
+        const finalRound = nextState.round ?? meleeRound;
+        const startRound = finalRound - roundsAdvanced + 1;
+
+        for (let r = startRound; r <= finalRound; r++) {
+          startNewMeleeRound(r);
+        }
+      }
+
+      if (nextState.round !== undefined) setMeleeRound(nextState.round);
+
+      // Filter events to reduce log spam during fast-forward
+      (events || []).filter(shouldLogEvent).forEach((e) => {
+        const logLine = eventToLogLine(e);
+        addLog(logLine, "info");
+      });
+    } catch (error) {
+      console.error("advanceUntilPlayer failed:", error);
+      addLog(`🛑 Engine guard tripped: ${error?.message ?? error}`, "error");
+    }
+  }, [
+    ENGINE_ENABLED,
+    buildFightersLite,
+    fighters,
+    turnIndex,
+    turnCounter,
+    meleeRound,
+    startNewMeleeRound,
+    addLog,
+    eventToLogLine,
+    shouldLogEvent,
+  ]);
 
   // Collapse-from-exhaustion check at the start of a fighter's turn
   useEffect(() => {
@@ -4035,9 +7905,7 @@ export default function CombatPage({ characters = [] }) {
         );
 
         // Their turn effectively does nothing - skip to next fighter
-        setTimeout(() => {
-          endTurn();
-        }, 1000);
+        onEndTurnFull(currentFighter?.id);
         return;
       }
 
@@ -4110,9 +7978,7 @@ export default function CombatPage({ characters = [] }) {
         );
 
         // Their turn is basically a no-op now - skip to next fighter
-        setTimeout(() => {
-          endTurn();
-        }, 1000);
+        onEndTurnFull(currentFighter?.id);
         return;
       } else {
         // They stay up but are in bad shape; keep them in collapse_risk
@@ -4137,7 +8003,7 @@ export default function CombatPage({ characters = [] }) {
         );
       }
     }
-  }, [fighters, turnIndex, addLog, endTurn]);
+  }, [fighters, turnIndex, addLog, onEndTurnFull, endTurn]);
 
   // Auto-set default movement mode when fighter or target changes
   useEffect(() => {
@@ -4155,8 +8021,14 @@ export default function CombatPage({ characters = [] }) {
     setPlayerMovementMode(mode);
   }, [currentFighter, selectedTarget, fighters, positions]);
 
+  // Rule: Only ONE place delays the next turn - scheduleEndTurn(animationMs).
+  // Default 0 = instant; pass durationMs only when a visual (projectile, movement) must finish.
   const scheduleEndTurn = useCallback(
-    (delayOverride = null) => {
+    (delayOverride = null, source = "unknown") => {
+      if (DEBUG_COMBAT) {
+        const delayMs = typeof delayOverride === "number" ? delayOverride : 0;
+        addLog(`🧪 scheduleEndTurn source=${source} delay=${delayMs}`, "debug");
+      }
       if (suppressEndTurnRef.current) {
         return;
       }
@@ -4167,25 +8039,71 @@ export default function CombatPage({ characters = [] }) {
         return;
       }
 
+      let waitingOnSpellCastId = null;
       const tryEndTurn = () => {
         if (combatOverRef.current || !combatActive || combatEndCheckRef.current) {
           pendingTurnAdvanceRef.current = false;
           return;
         }
-        if (isActionBusy()) {
+        const busy = isActionBusy();
+        const pending = pendingTurnAdvanceRef.current;
+        addLog(`🧪 tryEndTurn busy=${busy} pending=${pending}`, "info");
+        if (busy) {
           requestAnimationFrame(tryEndTurn);
           return;
         }
-        pendingTurnAdvanceRef.current = true;
-        endTurn();
+
+        const pendingSpell = activeSpellImpactRef.current;
+        if (pendingSpell && pendingSpell.turnCounter === turnCounterRef.current) {
+          waitingOnSpellCastId = pendingSpell.castId;
+          addLog(
+            `🧪 tryEndTurn blocked: spell impact pending castId=${pendingSpell.castId}`,
+            "info"
+          );
+          requestAnimationFrame(tryEndTurn);
+          return;
+        }
+
+        if (
+          waitingOnSpellCastId &&
+          spellImpactTurnEndHandledRef.current === waitingOnSpellCastId
+        ) {
+          return;
+        }
+
+        const current =
+          fightersRef.current?.[turnIndexRef.current] ||
+          fighters?.[turnIndexRef.current];
+        const manualPlayerWaiting =
+          current?.type === "player" &&
+          !aiControlEnabledRef.current &&
+          (Number(current?.remainingAttacks ?? 0) || 0) > 0 &&
+          current?.status !== "defeated" &&
+          current?.condition !== "dying";
+        if (manualPlayerWaiting) {
+          if (DEBUG_COMBAT) {
+            console.warn("[END TURN BLOCKED] manual player is waiting", {
+              fighter: current?.name,
+              remainingAttacks: current?.remainingAttacks,
+            });
+          }
+          return;
+        }
+
+        pendingTurnAdvanceRef.current = false;
+        addLog("🧪 tryEndTurn advancing turn", "info");
+        endTurnRef.current?.();
       };
 
       const delay =
-        typeof delayOverride === "number" ? delayOverride : getActionDelay();
+        typeof delayOverride === "number" ? delayOverride : 0;
       const scaledDelay = scaleDelayMs(delay);
 
       if (delay <= 0) {
         clearScheduledTurn();
+        // Treat immediate end-turn as "pending" until tryEndTurn advances,
+        // so effect-turn-advance cannot re-schedule the same fighter mid-slice.
+        pendingTurnAdvanceRef.current = true;
         // ✅ GUARD: Check combat state before ending turn (use ref for latest state)
         if (combatOverRef.current || !combatActive || combatEndCheckRef.current) return;
         tryEndTurn();
@@ -4207,8 +8125,12 @@ export default function CombatPage({ characters = [] }) {
       // ✅ Track this timeout so we can clear it on combat end
       allTimeoutsRef.current.push(turnTimeoutRef.current);
     },
-    [clearScheduledTurn, getActionDelay, endTurn, combatActive, isActionBusy, scaleDelayMs]
+    [addLog, clearScheduledTurn, endTurn, combatActive, isActionBusy, scaleDelayMs]
   );
+
+  useEffect(() => {
+    scheduleEndTurnRef.current = scheduleEndTurn;
+  }, [scheduleEndTurn]);
 
   const confirmOverwatchHex = useCallback(
     (hex) => {
@@ -4569,6 +8491,11 @@ export default function CombatPage({ characters = [] }) {
 
   // Handler for movement selection from TacticalMap
   const handleMoveSelect = useCallback((x, y) => {
+    if (!combatActive && (showDeploymentModal || manualDeploymentOpen)) {
+      handleDeploymentHexSelect(x, y);
+      return;
+    }
+
     if (movementMode.active && selectedMovementFighter && positions[selectedMovementFighter]) {
       const oldPos = positions[selectedMovementFighter];
 
@@ -4592,10 +8519,36 @@ export default function CombatPage({ characters = [] }) {
           addLog(`❌ Invalid move! ${combatant.name} cannot reach (${x}, ${y})`, "error");
           return;
         }
+      }
 
-        // Check if player has enough action points for this movement
-        if (combatant.remainingAttacks < selectedMove.actionCost) {
-          addLog(`❌ Not enough actions! ${combatant.name} needs ${selectedMove.actionCost} actions but only has ${combatant.remainingAttacks}`, "error");
+      // --- Landing intent (fly-move + target altitude 0) ---
+      // This must be computed before movement execution to determine totalCost
+      const currentAlt = combatant ? Number(combatant.altitudeFeet ?? combatant.altitude ?? 0) || 0 : 0;
+
+      const landingIntent =
+        combatant &&
+        playerMovementMode === "flight" &&
+        canFighterFly(combatant) &&
+        currentAlt > 0 &&
+        Number(altitudeTargetFeet ?? 0) === 0;
+
+      const moveCost = selectedMove ? (selectedMove.actionCost ?? 1) : 1;
+      const landingCost = landingIntent ? 1 : 0;
+      const totalCost = moveCost + landingCost;
+
+      // Require 2 actions if moving + landing
+      if (combatant && (combatant.remainingAttacks ?? 0) < totalCost) {
+        addLog(
+          `❌ Not enough actions! ${combatant.name} needs ${totalCost} action(s) to ${landingIntent ? "fly + land" : "move"} but only has ${combatant.remainingAttacks ?? 0}.`,
+          "error"
+        );
+        return;
+      }
+
+      // Execution-time landing legality check (prevents bypass)
+      if (landingIntent) {
+        if (!isLandingCellAllowed(combatant, combatTerrain, x, y)) {
+          addLog(`❌ ${combatant.name} can't land at (${x}, ${y}).`, "error");
           return;
         }
       }
@@ -4696,7 +8649,7 @@ export default function CombatPage({ characters = [] }) {
           });
 
           // End turn
-          scheduleEndTurn(1500);
+          scheduleEndTurn(0);
           return;
         }
 
@@ -4704,13 +8657,34 @@ export default function CombatPage({ characters = [] }) {
         const profile = getSpeciesProfile(combatant);
         const useFlight = playerMovementMode === 'flight' && canFighterFly(combatant);
 
+        // Re-detect landing intent for movement execution
+        const currentAltForMove = Number(combatant.altitudeFeet ?? combatant.altitude ?? 0) || 0;
+        const landingIntentForMove =
+          playerMovementMode === "flight" &&
+          canFighterFly(combatant) &&
+          currentAltForMove > 0 &&
+          Number(altitudeTargetFeet ?? 0) === 0;
+
         // Handle floaters (ghosts, elementals) - always use flight
         if (profile.movementMode === 'float' || profile.usesGroundRun === false) {
           // Floaters always move as "flight" even if not explicitly set
           handlePlayerFlightMove(combatant, { x, y }, oldPos, selectedMove);
         } else if (useFlight) {
-          // Flight movement
-          handlePlayerFlightMove(combatant, { x, y }, oldPos, selectedMove);
+          // Flight movement (but not landing - landing handled after move)
+          // Only call handlePlayerFlightMove if NOT landing (landing will set altitude to 0 after)
+          if (!landingIntentForMove) {
+            handlePlayerFlightMove(combatant, { x, y }, oldPos, selectedMove);
+          } else {
+            // For landing, just move position (altitude will be set to 0 after)
+            setPositions(prev => {
+              const updated = {
+                ...prev,
+                [selectedMovementFighter]: { x, y }
+              };
+              positionsRef.current = updated;
+              return updated;
+            });
+          }
         } else {
           // Ground movement
           setPositions(prev => {
@@ -4724,44 +8698,70 @@ export default function CombatPage({ characters = [] }) {
         }
       }
 
-      // Deduct action points based on movement distance
-      const actionCost = selectedMove ? selectedMove.actionCost : 1;
+      // Deduct action points (moveCost + landingCost if landingIntent)
+      const remainingAfter = combatant ? Math.max(0, (combatant.remainingAttacks ?? 0) - totalCost) : 0;
 
-      // Calculate remaining attacks before updating state
-      const remainingAfterMove = Math.max(0, combatant.remainingAttacks - actionCost);
+      if (combatant) {
+        setFighters(prev =>
+          prev.map(f => {
+            if (f.id !== selectedMovementFighter) return f;
 
-      setFighters(prev => prev.map(f => {
-        if (f.id === selectedMovementFighter) {
-          const updatedFighter = { ...f, remainingAttacks: remainingAfterMove };
-          addLog(`⏭️ ${f.name} used ${actionCost} action(s) for movement, ${remainingAfterMove} remaining this melee`, "info");
-          return updatedFighter;
+            const updated = { ...f, remainingAttacks: remainingAfter };
+
+            // If landing: override any minCruise altitude logic after the move
+            if (landingIntent) {
+              updated.altitudeFeet = 0;
+              updated.isFlying = false;
+            }
+
+            return updated;
+          })
+        );
+
+        if (landingIntent) {
+          addLog(
+            `🛬 ${combatant.name} flies to (${x}, ${y}) and lands (−${moveCost} move, −1 land = ${totalCost} actions). ${remainingAfter} remaining.`,
+            "info"
+          );
+        } else {
+          const movementType = movementMode.isRunning ? "runs" : "moves";
+          const actionText = moveCost > 1 ? ` (${moveCost} actions)` : "";
+          const movementModeText = playerMovementMode === "flight" ? "flies" : movementType;
+          addLog(
+            `🚶 ${combatant.name} ${movementModeText} from (${oldPos.x}, ${oldPos.y}) to (${x}, ${y})${actionText}`,
+            "info"
+          );
         }
-        return f;
-      }));
+      }
 
-      const movementType = movementMode.isRunning ? "runs" : "moves";
-      const actionText = actionCost > 1 ? ` (${actionCost} actions)` : "";
-      const movementModeText = playerMovementMode === 'flight' ? "flies" : movementType;
-      addLog(`🚶 ${currentFighter?.name} ${movementModeText} from (${oldPos.x}, ${oldPos.y}) to (${x}, ${y})${actionText}`, "info");
-
-      // Clear movement mode
+      // Clear movement mode (keep your existing clears)
       setMovementMode({ active: false, isRunning: false });
-      setShowMovementSelection(false); // Hide movement selection UI
-      setSelectedMovementHex(null); // Clear selected movement hex
+      setShowMovementSelection(false);
+      setSelectedMovementHex(null);
       setSelectedMovementFighter(null);
 
-      // ALWAYS end turn after movement - this ensures alternating action system
-      // endTurn() will cycle to the next fighter with actions remaining
-      // If this fighter still has actions, they'll get another turn after others act
-      if (remainingAfterMove <= 0) {
-        addLog(`⏭️ ${combatant.name} has no actions remaining - will pass to next fighter in initiative order`, "info");
-      } else {
-        addLog(`🎮 ${combatant.name} has ${remainingAfterMove} action(s) remaining this melee round`, "info");
-      }
-      // Always end turn after movement to alternate actions
+      // End turn (keep your existing schedule)
       scheduleEndTurn(500);
     }
-  }, [movementMode, selectedMovementFighter, positions, currentFighter, addLog, fighters, isHexOccupied, turnCounter, scheduleEndTurn, handlePlayerFlightMove, playerMovementMode]);
+  }, [
+    movementMode,
+    selectedMovementFighter,
+    positions,
+    addLog,
+    fighters,
+    isHexOccupied,
+    turnCounter,
+    scheduleEndTurn,
+    handlePlayerFlightMove,
+    playerMovementMode,
+    altitudeTargetFeet,
+    isLandingCellAllowed,
+    combatTerrain,
+    combatActive,
+    showDeploymentModal,
+    manualDeploymentOpen,
+    handleDeploymentHexSelect,
+  ]);
 
   // Enhanced attack validation with distance-based combat system
   const validateWeaponRange = useCallback((
@@ -4770,8 +8770,14 @@ export default function CombatPage({ characters = [] }) {
     attackData,
     distance,
     attackerPosOverride = null,
-    defenderPosOverride = null
+    defenderPosOverride = null,
+    actionType = null
   ) => {
+    // Spells bypass weapon range validation (spells have their own range logic)
+    if (actionType === 'spell' || attackData?.type === 'spell' || attackData?.spell || attackData?.damage === "by spell") {
+      return { canAttack: true, reason: 'Spell (range validated separately)', shouldEndTurn: false };
+    }
+
     const weaponName = String(attackData?.name || "Unarmed");
     const weaponNameLower = weaponName.toLowerCase();
 
@@ -4822,6 +8828,7 @@ export default function CombatPage({ characters = [] }) {
           isUnreachable: false,
           requiresDive: false,
           rangeInfo: `ranged (${maxRange}ft)`,
+          shouldEndTurn: true,
         };
       }
       const canAttack = distance <= maxRange;
@@ -4834,6 +8841,7 @@ export default function CombatPage({ characters = [] }) {
         isUnreachable: false,
         requiresDive: false,
         rangeInfo: `ranged (${maxRange}ft)`,
+        shouldEndTurn: !canAttack,
       };
     }
 
@@ -4909,7 +8917,8 @@ export default function CombatPage({ characters = [] }) {
             ? `Within ${rangeType} range (${Math.round(distanceForRangeCheck)}ft ≤ ${weaponRange}ft)`
             : `Out of ${rangeType} range (${Math.round(distanceForRangeCheck)}ft > ${weaponRange}ft)`,
           maxRange: weaponRange,
-          rangeInfo: isBreathWeapon ? `${rangeType} (${weaponRange}ft cone/line)` : `ranged (${weaponRange}ft)`
+          rangeInfo: isBreathWeapon ? `${rangeType} (${weaponRange}ft cone/line)` : `ranged (${weaponRange}ft)`,
+          shouldEndTurn: !canAttack,
         };
       } else {
         // Check if this is a flexible reach weapon (like Fire Whip)
@@ -4939,7 +8948,8 @@ export default function CombatPage({ characters = [] }) {
             requiresDive: false,
             effectiveDistance: reachCheck.effectiveDistance,
             horizontalFt: reachCheck.horizontalFt,
-            verticalFt: reachCheck.verticalFt
+            verticalFt: reachCheck.verticalFt,
+            shouldEndTurn: !reachCheck.withinReach,
           };
         }
 
@@ -5036,7 +9046,8 @@ export default function CombatPage({ characters = [] }) {
           reason,
           maxRange: effectiveRange,
           isUnreachable: isUnreachable || false,
-          requiresDive: requiresDive || false
+          requiresDive: requiresDive || false,
+          shouldEndTurn: !canAttack,
         };
       }
     }
@@ -5108,6 +9119,7 @@ export default function CombatPage({ characters = [] }) {
         reason: canAttack
           ? `Within ranged range (${Math.round(effectiveDistance)}ft ≤ ${parsedRange}ft)`
           : `Out of ranged range (${Math.round(effectiveDistance)}ft > ${parsedRange}ft)`,
+        shouldEndTurn: !canAttack,
       };
     }
 
@@ -5121,13 +9133,15 @@ export default function CombatPage({ characters = [] }) {
           reason: rangeValidation.reason,
           maxRange: finalRange,
           rangeInfo: rangePenalty.rangeInfo,
-          penalty: rangePenalty.penalty
+          penalty: rangePenalty.penalty,
+          shouldEndTurn: false,
         };
       } else {
         return {
           canAttack: true,
           reason: rangeValidation.reason,
-          maxRange: weapon?.reach || 5
+          maxRange: weapon?.reach || 5,
+          shouldEndTurn: false,
         };
       }
     } else {
@@ -5137,7 +9151,8 @@ export default function CombatPage({ characters = [] }) {
         canAttack: false,
         reason: rangeValidation.reason,
         maxRange: finalRange,
-        suggestions: rangeValidation.suggestions
+        suggestions: rangeValidation.suggestions,
+        shouldEndTurn: true,
       };
     }
   }, [positions, combatTerrain, addLog]);
@@ -5305,15 +9320,60 @@ export default function CombatPage({ characters = [] }) {
     return weapons;
   }, []);
 
-  const getFighterPPE = useCallback((fighter) => {
+  const hasFighterPPE = useCallback((fighter) => {
     return (
-      fighter.currentPPE ??
-      fighter.PPE ??
-      fighter.ppe ??
-      fighter.derived?.currentPPE ??
-      0
+      fighter?.currentPPE !== undefined ||
+      fighter?.PPE !== undefined ||
+      fighter?.ppe !== undefined ||
+      fighter?.derived?.currentPPE !== undefined ||
+      fighter?.derived?.maxPPE !== undefined ||
+      fighter?.magic?.currentPPE !== undefined ||
+      fighter?.magic?.maxPPE !== undefined
     );
   }, []);
+
+  const getFighterPPE = useCallback((fighter) => {
+    const value = Number(
+      fighter?.currentPPE ??
+        fighter?.derived?.currentPPE ??
+        fighter?.magic?.currentPPE ??
+        fighter?.PPE ??
+        fighter?.ppe ??
+        0
+    );
+
+    return Number.isFinite(value) ? value : 0;
+  }, []);
+
+  const getFighterMaxPPE = useCallback((fighter) => {
+    const value = Number(
+      fighter?.maxPPE ??
+        fighter?.derived?.maxPPE ??
+        fighter?.magic?.maxPPE ??
+        fighter?.PPE ??
+        fighter?.ppe ??
+        fighter?.currentPPE ??
+        0
+    );
+
+    return Number.isFinite(value) ? value : 0;
+  }, []);
+
+  const formatFighterPPE = useCallback(
+    (fighter) => {
+      if (!hasFighterPPE(fighter)) return "";
+
+      const current = getFighterPPE(fighter);
+      const max = getFighterMaxPPE(fighter);
+
+      if (max > 0 && max !== current) {
+        return ` | PPE: ${current}/${max}`;
+      }
+
+      return ` | PPE: ${current}`;
+    },
+    [getFighterPPE, getFighterMaxPPE, hasFighterPPE]
+  );
 
   const getFighterISP = useCallback((fighter) => {
     return (
@@ -5517,7 +9577,7 @@ export default function CombatPage({ characters = [] }) {
         });
 
         // End turn
-        scheduleEndTurn(1500);
+        scheduleEndTurn(0);
         return;
       }
 
@@ -5559,7 +9619,7 @@ export default function CombatPage({ characters = [] }) {
           // Handle action cost - if it costs actions, end the turn
           if (actionCost === "all" || actionCost >= 1) {
             addLog(`⏭️ ${combatant.name} used ${actionCost === "all" ? "all actions" : `${actionCost} action(s)`} for movement`, "info");
-            scheduleEndTurn(1500);
+            scheduleEndTurn(0);
           }
         } else {
           addLog(`📍 ${combatant.name} moved to position (${newPosition.x}, ${newPosition.y})`, "info");
@@ -5569,7 +9629,7 @@ export default function CombatPage({ characters = [] }) {
   }, [fighters, positions, addLog, scheduleEndTurn, enqueueMoveAnimation, getMoveDurationMs, setRenderPositions]);
 
   // Define attack function with useCallback (isPredatorBird, isTinyPrey, canAISeeTargetAsymmetric are defined earlier)
-  const attack = useCallback((attacker, defenderId, bonusModifiers = {}) => {
+  const attack = useCallback(async (attacker, defenderId, bonusModifiers = {}) => {
     const isDebugThrownAttack =
       (import.meta.env?.DEV || import.meta.env?.MODE === "development") &&
       (
@@ -5595,13 +9655,211 @@ export default function CombatPage({ characters = [] }) {
       return;
     }
 
-    let stateAttacker = fighters.find(f => f.id === attacker.id) || attacker;
+    const liveFighters = fightersRef.current ?? fighters;
+    let stateAttacker = liveFighters.find(f => f.id === attacker.id) || attacker;
+
+    if (bonusModifiers?.multiStrikeSubHit && bonusModifiers?.multiStrikeSequenceToken) {
+      const t = bonusModifiers.multiStrikeSequenceToken;
+      const activeFighter = fightersRef.current?.[turnIndexRef.current];
+      const stillSameAttackTurn =
+        !combatOverRef.current &&
+        !combatEndCheckRef.current &&
+        activeFighter?.id === t.fighterId &&
+        turnIndexRef.current === t.turnIndex &&
+        (meleeRoundRef.current ?? meleeRound) === t.meleeRound &&
+        (turnCounterRef.current ?? turnCounter) === t.turnCounter;
+
+      if (!stillSameAttackTurn) {
+        if (DEBUG_COMBAT) {
+          console.warn("[STALE MULTI-STRIKE BLOCKED]", {
+            attacker: attacker?.name,
+            strikeIndex: bonusModifiers?.multiStrikeIndex,
+            token: t,
+            activeFighter: activeFighter?.name,
+            liveTurnIndex: turnIndexRef.current,
+            liveRound: meleeRoundRef.current,
+            liveCounter: turnCounterRef.current,
+          });
+        }
+        return;
+      }
+    }
+
+    /** Safe for finishAttackAfterImpact / catch before `let attackData` is assigned (avoids TDZ). */
+    let attackDataForFinish = null;
+    /** Snapshot at attack entry so finalizeAttackSpend does not double-spend after in-attack RA mutations. */
+    let attackStartSnapshot = null;
+
+    const logRemainingAttacks = (fighter) => {
+      if (!fighter) return;
+      const attacksLeft = formatAttacksRemaining(
+        fighter.remainingAttacks ?? 0,
+        fighter.attacksPerMelee ?? fighter.actionsPerMelee ?? 0
+      );
+      addLog(`${fighter.name} has ${attacksLeft} remaining`, "info");
+    };
+
+    const finalizeAttackSpend = ({
+      updated,
+      attackerInArray,
+      delayMs = 0,
+      scheduleTurnEnd = true,
+      logRemaining = true,
+      reason: spendReason = "unknown",
+      attackStartRemainingAttacks: spendAttackStartRaw = undefined,
+    } = {}) => {
+      if (!updated) {
+        console.warn("[finalizeAttackSpend] Missing updated", {
+          hasUpdated: false,
+          attackerInArray,
+        });
+        return false;
+      }
+      if (!attackerInArray) {
+        console.warn("[finalizeAttackSpend] Missing attackerInArray", {
+          hasUpdated: true,
+          attackerInArray,
+        });
+        // Action has committed state; block turn restarts until endTurn advances.
+        turnActionResolvingRef.current = true;
+        commitFighters(updated);
+        if (scheduleTurnEnd) {
+          scheduleEndTurn(delayMs, "finalizeAttackSpend-null-attacker");
+        }
+        return true;
+      }
+
+      const attackerId = attackerInArray.id;
+      const liveFighters = fightersRef.current || fighters || updated || [];
+      const liveAttacker = liveFighters.find((f) => f.id === attackerId);
+
+      const capturedBefore = Number(spendAttackStartRaw);
+      const useCaptured =
+        spendReason !== "multi-strike-parent-complete" &&
+        spendAttackStartRaw !== undefined &&
+        spendAttackStartRaw !== null &&
+        Number.isFinite(capturedBefore);
+
+      const before = useCaptured
+        ? capturedBefore
+        : Number(
+            liveAttacker?.remainingAttacks ??
+              attackerInArray?.remainingAttacks ??
+              liveAttacker?.attacksPerMelee ??
+              attackerInArray?.attacksPerMelee ??
+              0
+          );
+
+      const impactById = new Map((updated || []).map((f) => [f.id, f]));
+      const impactAttacker = impactById.get(attackerId);
+      const impactRaNum = Number(impactAttacker?.remainingAttacks);
+
+      const canTrustUpdatedAlreadySpent = spendReason === "multi-strike-parent-complete";
+
+      const after =
+        canTrustUpdatedAlreadySpent &&
+        Number.isFinite(impactRaNum) &&
+        impactRaNum < before
+          ? impactRaNum
+          : Math.max(0, before - 1);
+
+      const committed = liveFighters.map((liveFighter) => {
+        const impactFighter = impactById.get(liveFighter.id);
+        const merged = impactFighter ? { ...liveFighter, ...impactFighter } : liveFighter;
+
+        if (liveFighter.id !== attackerId) {
+          return merged;
+        }
+
+        return {
+          ...merged,
+          remainingAttacks: after,
+        };
+      });
+
+      const attackerRowForLog =
+        committed.find((f) => f.id === attackerId) || attackerInArray;
+
+      if (logRemaining) {
+        logRemainingAttacks(attackerRowForLog);
+      }
+
+      // Action has committed state; block turn restarts until endTurn advances.
+      turnActionResolvingRef.current = true;
+      commitFighters(committed);
+
+      if (scheduleTurnEnd) {
+        scheduleEndTurn(delayMs, "finalizeAttackSpend");
+      }
+      return true;
+    };
+
+    /** Call only after roll/miss/damage (or other impact) has finished. */
+    const finishAttackAfterImpact = ({
+      updated: upd,
+      attacker: attackerPass,
+      attackerInArray: attackerInArrayPass,
+      attackData: attackDataPass = null,
+      reason = "UNKNOWN",
+      suppressEndTurn = false,
+      endTurnDelayMs = 0,
+      logRemaining: logRem = true,
+      attackStartRemainingAttacks: attackStartPass,
+    } = {}) => {
+      if (combatOverRef.current) {
+        turnActionResolvingRef.current = false;
+        pendingTurnAdvanceRef.current = false;
+        return false;
+      }
+
+      const attackerForLog = attackerPass ?? attackerInArrayPass ?? attacker;
+      const finalAttackData = attackDataPass ?? attackDataForFinish ?? null;
+
+      addLog(
+        `🧪 finishAttackAfterImpact reason=${reason} attacker=${attackerForLog?.name || "Unknown"} attack=${finalAttackData?.name || "Unknown Attack"}`,
+        "debug"
+      );
+
+      if (
+        reason === "UNKNOWN" ||
+        reason === "defer" ||
+        reason === "normal-end-before-impact"
+      ) {
+        addLog(
+          `🚫 BLOCKED premature action spend: ${attackerForLog?.name || "Unknown"} ${finalAttackData?.name || "Unknown Attack"} reason=${reason}`,
+          "warning"
+        );
+
+        turnActionResolvingRef.current = false;
+        pendingTurnAdvanceRef.current = false;
+        scheduleEndTurn(16, "blocked-premature-spend");
+        return false;
+      }
+
+      const attackerInArrayResolved =
+        upd?.find((f) => f.id === (attackerForLog?.id ?? attackerInArrayPass?.id)) ??
+        attackerInArrayPass ??
+        attackerForLog;
+
+      const spendAttackStart =
+        attackStartPass !== undefined ? attackStartPass : attackStartSnapshot;
+
+      return finalizeAttackSpend({
+        updated: upd,
+        attackerInArray: attackerInArrayResolved,
+        delayMs: endTurnDelayMs,
+        scheduleTurnEnd: !suppressEndTurn,
+        logRemaining: logRem,
+        reason,
+        attackStartRemainingAttacks: spendAttackStart,
+      });
+    };
 
     // ✅ Hard guard: never execute an attack with 0 actions remaining (prevents ghost actions/log spam)
     if ((stateAttacker.remainingAttacks ?? 0) <= 0) {
       addLog(`⚠️ ${stateAttacker.name} has no actions remaining!`, "error");
       // Ensure we don't stall the combat loop if an AI branch attempted an action late.
-      scheduleEndTurn();
+      scheduleEndTurn(0, "attack-guard-no-actions");
       return;
     }
 
@@ -5609,11 +9867,11 @@ export default function CombatPage({ characters = [] }) {
     if (!canFighterAct(stateAttacker)) {
       const hpStatus = getHPStatus(stateAttacker.currentHP);
       addLog(`❌ ${attacker.name} cannot attack (${hpStatus.description})!`, "error");
-      scheduleEndTurn();
+      scheduleEndTurn(0, "attack-guard-cannot-act");
       return;
     }
 
-    const updated = fighters.map(f => ({ ...f }));
+    const updated = liveFighters.map(f => ({ ...f }));
     const attackerIndex = updated.findIndex(f => f.id === stateAttacker.id);
     // If caller passed a pre-selected attack (AI), prefer it over the stale fighter snapshot.
     if (attacker?.selectedAttack) {
@@ -5626,20 +9884,59 @@ export default function CombatPage({ characters = [] }) {
     let defenderIndex = updated.findIndex(f => f.id === defenderId);
     if (defenderIndex === -1) {
       addLog(`Invalid target! Target with ID ${defenderId} not found`, "error");
-      scheduleEndTurn();
+      scheduleEndTurn(0, "attack-invalid-target");
       return;
     }
 
     let defender = updated[defenderIndex];
 
+    // Snapshot attack identity for early paths (horror-fail) before `let attackData` exists.
+    {
+      if (bonusModifiers?.attackDataOverride) {
+        attackDataForFinish = bonusModifiers.attackDataOverride;
+      } else if (attacker.type === "player" && selectedAttackWeapon) {
+        const isUsingTwoHanded =
+          selectedAttackWeapon.twoHanded || isTwoHandedWeapon(selectedAttackWeapon);
+        const weaponDamage = getWeaponDamage(selectedAttackWeapon, isUsingTwoHanded, attacker);
+        attackDataForFinish = {
+          name: selectedAttackWeapon.name,
+          damage: weaponDamage,
+          type:
+            selectedAttackWeapon?.range != null ||
+            ["bow", "crossbow", "sling"].includes(
+              (selectedAttackWeapon?.category || "").toLowerCase()
+            )
+              ? "ranged"
+              : selectedAttackWeapon.type,
+          range: selectedAttackWeapon?.range,
+        };
+      } else {
+        const attIdx0 = updated.findIndex((f) => f.id === stateAttacker.id);
+        const row0 = attIdx0 >= 0 ? updated[attIdx0] : stateAttacker;
+        if (row0?.selectedAttack) {
+          attackDataForFinish = row0.selectedAttack;
+        } else if (attacker?.selectedAttack) {
+          attackDataForFinish = attacker.selectedAttack;
+        } else if (row0?.attacks?.length) {
+          const atkIdx =
+            typeof selectedAttack === "number" &&
+            selectedAttack >= 0 &&
+            selectedAttack < row0.attacks.length
+              ? selectedAttack
+              : 0;
+          attackDataForFinish = row0.attacks[atkIdx];
+        }
+      }
+    }
+
     // 😱 Horror Factor + Morale Check: Before attack, check for Horror Factor and integrate with morale
     // This should happen ONCE per encounter per target (idempotent via horrorSystem.js)
     // Called at the start of attack/engagement as per Palladium rules
-    if (settings.useInsanityTrauma) {
-      const { attacker: updatedAttacker, defender: updatedDefender } = runHorrorAndMorale(
+    if (settings.useInsanityTrauma && !bonusModifiers?.multiStrikeSubHit) {
+      const { attacker: updatedAttacker, defender: updatedDefender, horrorFailed } = runHorrorAndMorale(
         stateAttacker,
         defender,
-        fighters,
+        liveFighters,
         {
           currentRound: meleeRound,
           meleeRound: meleeRound,
@@ -5653,6 +9950,20 @@ export default function CombatPage({ characters = [] }) {
         const attackerIdx = updated.findIndex(f => f.id === updatedAttacker.id);
         if (attackerIdx !== -1) {
           updated[attackerIdx] = updatedAttacker;
+        }
+
+        // Option A: If the attacker failed Horror Factor, they lose the action and do NOT complete the attack.
+        if (horrorFailed) {
+          const live = updated.find((f) => f.id === updatedAttacker.id) || updatedAttacker;
+          finishAttackAfterImpact({
+            updated,
+            attackerInArray: live,
+            attackData: attackDataForFinish,
+            reason: "horror-fail",
+            suppressEndTurn: false,
+            endTurnDelayMs: 0,
+          });
+          return;
         }
       }
       if (updatedDefender.id === defender.id) {
@@ -5685,6 +9996,14 @@ export default function CombatPage({ characters = [] }) {
     // Find attacker in updated array to check/deduct attacks
     const attackerInArray = attackerIndex !== -1 ? updated[attackerIndex] : null;
 
+    attackStartSnapshot = Number(
+      attackerInArray?.remainingAttacks ??
+        attacker?.remainingAttacks ??
+        attackerInArray?.attacksPerMelee ??
+        attacker?.attacksPerMelee ??
+        0
+    );
+
     // Allow callers (AI/actions) to patch attacker state for this action.
     // Example: Dive Attack sets altitude/isFlying so range checks + post-attack state remain consistent.
     if (attackerInArray && bonusModifiers?.attackerStatePatch) {
@@ -5696,19 +10015,53 @@ export default function CombatPage({ characters = [] }) {
         addLog(`⚠️ ${attacker.name} is out of attacks this turn!`, "error");
         return;
       }
-      // CRITICAL: Close combat choices modal immediately for player attacks
-      // This prevents multiple actions from being queued
-      setShowCombatChoices(false);
-      closeCombatChoices(); // Also close via disclosure hook
-      setSelectedAction(null);
-      setSelectedTarget(null);
-      setSelectedAttackWeapon(null);
-      setSelectedManeuver(null);
-      setSelectedAttack(0); // Reset attack selection
+      if (!bonusModifiers?.multiStrikeSubHit) {
+        // CRITICAL: Close combat choices modal immediately for player attacks
+        // This prevents multiple actions from being queued
+        setShowCombatChoices(false);
+        closeCombatChoices(); // Also close via disclosure hook
+        setSelectedAction(null);
+        setSelectedTarget(null);
+        setSelectedAttackWeapon(null);
+        setSelectedManeuver(null);
+        setSelectedAttack(0); // Reset attack selection
+      }
     }
 
     // Check if attacker is grappled - long weapons cannot be used
     const effectiveAttacker = attackerInArray || stateAttacker;
+    const effectiveAttackerType = effectiveAttacker?.type || attacker?.type;
+    const isAutomatedAttacker =
+      effectiveAttackerType === "enemy" ||
+      attacker?.aiControlled === true ||
+      effectiveAttacker?.aiControlled === true ||
+      (effectiveAttackerType === "player" && (aiControlEnabled || processingPlayerAIRef.current));
+    const burnFailedAutomatedActionAndEnd = (reason = "invalid attack") => {
+      const attackerId = effectiveAttacker?.id || attacker?.id;
+      if (!isAutomatedAttacker || !attackerId) return false;
+
+      setFighters((prev) => {
+        const next = prev.map((f) => {
+          if (f.id !== attackerId) return f;
+          const before = Number(f.remainingAttacks ?? 0) || 0;
+          return { ...f, remainingAttacks: Math.max(0, before - 1) };
+        });
+        fightersRef.current = next;
+        return next;
+      });
+
+      if (effectiveAttackerType === "player") {
+        playerAIActionScheduledRef.current = true;
+        processingPlayerAIRef.current = false;
+      }
+      if (effectiveAttackerType === "enemy") {
+        processingEnemyTurnRef.current = false;
+      }
+
+      addLog(`⏭️ ${effectiveAttacker?.name || attacker?.name || "Fighter"} loses 1 action: ${reason}`, "warning");
+      scheduleEndTurn(16, "burnFailedAutomatedActionAndEnd");
+      return true;
+    };
     const attackerGrappleStatus = getGrappleStatus(effectiveAttacker);
     if (attackerGrappleStatus.state !== GRAPPLE_STATES.NEUTRAL) {
       // Check if current weapon can be used in grapple
@@ -5756,15 +10109,85 @@ export default function CombatPage({ characters = [] }) {
     }
 
     if (!attackData) {
+      attackDataForFinish = null;
       addLog(`${attacker.name} has no attacks available!`, "error");
       return;
     }
 
-    // ✅ Guardrail: always resolve placeholder/generic enemy attacks to the actually equipped weapon.
+    // Normalize fallback unarmed strikes so the resolver always treats them as valid melee attacks.
+    if (
+      attackData?.isFallbackUnarmed ||
+      String(attackData?.name || "").toLowerCase() === "unarmed strike" ||
+      String(attackData?.name || "").toLowerCase() === "unarmed"
+    ) {
+      attackData = {
+        ...attackData,
+        name: attackData?.name || "Unarmed Strike",
+        attackType: "melee",
+        type: "melee",
+        weaponType: "melee",
+        category: "melee",
+        rangeCategory: "melee",
+        range: Number(attackData?.range ?? attackData?.rangeFeet ?? 5),
+        rangeFeet: Number(attackData?.rangeFeet ?? attackData?.range ?? 5),
+        reachFeet: Number(
+          attackData?.reachFeet ?? attackData?.rangeFeet ?? attackData?.range ?? 5
+        ),
+        damage: attackData?.damage || attackData?.damageDice || "1d3",
+        damageDice: attackData?.damageDice || attackData?.damage || "1d3",
+        count: Number(attackData?.count ?? 1),
+        isMelee: true,
+        isRanged: false,
+        isNaturalAttack: true,
+        isFallbackUnarmed: true,
+      };
+    }
+
+    // Guardrail: resolve placeholder/generic AI attacks to the actually equipped weapon.
     // This is shared with the planner so the two cannot diverge again.
-    if (attacker.type === "enemy") {
+    const isAIControlledAttacker =
+      attacker?.type === "enemy" ||
+      attacker?.aiControlled === true ||
+      effectiveAttacker?.aiControlled === true;
+    if (isAIControlledAttacker) {
       const resolved = resolveEnemyEffectiveAttack(effectiveAttacker, attackData, { preferRanged: true });
       attackData = resolved.attack;
+    }
+
+    attackDataForFinish = attackData;
+
+    if (DEBUG_COMBAT) {
+      addLog(
+        `DEBUG attackData final: attacker=${attacker.name} type=${attacker.type} ai=${attacker.aiControlled === true} attack=${attackData?.name} atkType=${attackData?.type} range=${attackData?.range ?? "none"}`,
+        "info"
+      );
+    }
+
+    const adjacentAttackDistance = (() => {
+      const attackerPos =
+        positionsRef.current?.[attacker?.id] ||
+        positions?.[attacker?.id];
+      const defenderPos =
+        positionsRef.current?.[defender?.id] ||
+        positions?.[defender?.id];
+      return attackerPos && defenderPos
+        ? calculateDistance(attackerPos, defenderPos)
+        : Number.POSITIVE_INFINITY;
+    })();
+
+    if (
+      isAutomatedAttacker &&
+      isRangedAttackData(attackData) &&
+      isAdjacentDistance(adjacentAttackDistance)
+    ) {
+      addLog(
+        `🚫 ${attacker.name} cannot use ${attackData?.name || "a ranged weapon"} while adjacent to ${defender.name}.`,
+        "warning"
+      );
+      burnFailedAutomatedActionAndEnd(
+        `ranged weapon blocked in melee range (${Math.round(adjacentAttackDistance)}ft)`
+      );
+      return;
     }
 
     // ✅ FIX: If this is a spell attack, route to executeSpell() instead of melee/ranged attack
@@ -5772,29 +10195,69 @@ export default function CombatPage({ characters = [] }) {
       const spellToCast = attackData.spell || attackData;
       const spellTarget = defender;
 
-      // Check if attacker has actions remaining
+      if (!spellToCast?.name) {
+        addLog(`⚠️ ${attacker.name} has no valid spell selected.`, "warning");
+        burnFailedAutomatedActionAndEnd("no valid spell selected");
+        return;
+      }
+
+      // Resolve caster from current state (no fallback - avoids PPE/state mismatch)
       const attackerInArray = updated.find(f => f.id === attacker.id);
-      if (attackerInArray && attackerInArray.remainingAttacks <= 0) {
+      if (!attackerInArray) {
+        addLog(`⚠️ Could not resolve caster ${attacker?.name} in state.`, "error");
+        burnFailedAutomatedActionAndEnd("caster missing from state");
+        return;
+      }
+      if (attackerInArray.remainingAttacks <= 0) {
         addLog(`⚠️ ${attacker.name} has no actions remaining!`, "error");
         return;
       }
 
-      // Execute the spell (executeSpell will handle action consumption, PPE, etc.)
-      const spellSuccess = executeSpellRef.current?.(attackerInArray || attacker, spellTarget, spellToCast);
-      if (spellSuccess) {
-        // Spell was cast successfully - executeSpell handles turn ending
+      // Execution lock for spell path to prevent re-entrant cast attempts
+      if (executingActionRef.current) {
+        addLog(`⚠️ Spell cast already in progress, ignoring duplicate.`, "warning");
         return;
-      } else {
-        // Spell failed - still consume action if it was attempted
-        if (attackerInArray && attackerInArray.remainingAttacks > 0) {
+      }
+      executingActionRef.current = true;
+      try {
+        const beforeRA = attackerInArray.remainingAttacks ?? 0;
+        const spellSuccess = await executeSpellRef.current?.(attackerInArray, spellTarget, spellToCast);
+        const afterRA = (fightersRef.current?.find(f => f.id === attacker.id)?.remainingAttacks) ?? beforeRA;
+
+        if (spellSuccess) {
+          const ra = Number(attackerInArray.remainingAttacks ?? 0) || 0;
+          attackerInArray.remainingAttacks = Math.max(0, ra - 1);
+          finishAttackAfterImpact({
+            updated,
+            attackerInArray,
+            attackData,
+            reason: "spell-cast-complete",
+            suppressEndTurn: true,
+            endTurnDelayMs: 16,
+          });
+          const pending = activeSpellImpactRef.current;
+          const spellOwnsTurnEnd =
+            pending &&
+            pending.turnCounter === turnCounterRef.current &&
+            pending.casterId === attacker.id;
+          if (!spellOwnsTurnEnd) {
+            scheduleEndTurn(16, "spell-cast-no-pending-impact");
+          }
+          return;
+        }
+        // Spell failed - only burn action if executeSpell didn't already
+        if (afterRA === beforeRA && beforeRA > 0) {
           setFighters(prev => prev.map(f =>
             f.id === attacker.id
               ? { ...f, remainingAttacks: Math.max(0, f.remainingAttacks - 1) }
               : f
           ));
         }
-        scheduleEndTurn();
+        addLog(`🧪 burned action, scheduling endTurn now`, "info");
+        scheduleEndTurn(16, "spell-failed-burn"); // delay so React can commit state before endTurn() reads fighters
         return;
+      } finally {
+        executingActionRef.current = false;
       }
     }
 
@@ -5815,6 +10278,7 @@ export default function CombatPage({ characters = [] }) {
       attackData?.isRanged === true ||
       attackData?.weaponType === "thrown" ||
       attackData?.category === "thrown";
+    let ammoContext = null;
 
     // Check range and line of sight for attacks
     const livePositions =
@@ -5875,18 +10339,23 @@ export default function CombatPage({ characters = [] }) {
         attackNameLower.includes("sling");
       const distanceForRangeCheck = isRangedForRangeCheck ? Math.hypot(distance, vSepFt) : distance;
 
+      const actionTypeForValidation =
+        attackData?.type === "spell" || attackData?.spell || attackData?.damage === "by spell"
+          ? "spell"
+          : null;
+
       const rangeValidation = validateWeaponRange(
         attacker,
         defender,
         attackData,
         distanceForRangeCheck,
         attackerPos,
-        defenderPos
+        defenderPos,
+        actionTypeForValidation
       );
 
       // 🦅 Auto-dive support: flying predator birds (e.g., hawk) can descend-and-strike in a single action.
       // This prevents the "hover above target forever" stalemate by converting a vertical gap into a dive attack.
-      const isEnemyAttacker = attacker?.type === "enemy";
       if (
         !rangeValidation.canAttack &&
         rangeValidation.requiresDive &&
@@ -5915,15 +10384,7 @@ export default function CombatPage({ characters = [] }) {
         } else {
           // Dive attacks are melee-only, so this error is always valid to log
           addLog(`❌ ${attacker.name} cannot reach ${defender.name} for attack! (${rangeValidation.reason})`, "error");
-          // ✅ Last safety net: if AI attempted an illegal action, consume an action and advance.
-          if (isEnemyAttacker || attacker?.aiControlled === true) {
-            setFighters(prev => prev.map(f => {
-              if (f.id !== attacker.id) return f;
-              const ra = Number(f.remainingAttacks ?? 0) || 0;
-              return { ...f, remainingAttacks: Math.max(0, ra - 1) };
-            }));
-            scheduleEndTurn(0);
-          }
+          burnFailedAutomatedActionAndEnd(rangeValidation.reason || "invalid range");
           return;
         }
       } else if (!rangeValidation.canAttack) {
@@ -5955,16 +10416,8 @@ export default function CombatPage({ characters = [] }) {
           }
         }
 
-        // ✅ Avoid infinite AI turn loops:
-        // If an AI-controlled fighter attempts an illegal attack, consume an action and advance.
-        const isAIControlledFighter = isEnemyAttacker || attacker?.aiControlled === true;
-        if (isAIControlledFighter && attacker?.id) {
-          setFighters(prev => prev.map(f => {
-            if (f.id !== attacker.id) return f;
-            const ra = Number(f.remainingAttacks ?? 0) || 0;
-            return { ...f, remainingAttacks: Math.max(0, ra - 1) };
-          }));
-          scheduleEndTurn(0);
+        if (rangeValidation.shouldEndTurn) {
+          burnFailedAutomatedActionAndEnd(rangeValidation.reason || "invalid range");
         }
 
         return;
@@ -5978,42 +10431,155 @@ export default function CombatPage({ characters = [] }) {
       // Ammunition for ranged weapons is strictly inventory-based.
       // Bows require arrows, crossbows require bolts, slings require rocks/stones.
       if (requiresAmmo) {
-        // IMPORTANT: apply ammo decrement into the same `updated` array that will later be committed.
-        // Otherwise later `setFighters(updated)` calls can overwrite the decrement (UI shows old ammo).
         const currentAmmo = getInventoryAmmoCount(attackerInArray || attacker, ammoType);
-
         if (currentAmmo <= 0) {
           addLog(`❌ ${attacker.name} is out of ${ammoType}! Cannot fire ${weaponName}.`, "error");
-          // ✅ If AI is out of ammo and attempted to shoot, consume an action and advance to prevent stalls.
-          if (isEnemyAttacker || attacker?.aiControlled === true) {
-            setFighters(prev => prev.map(f => {
-              if (f.id !== attacker.id) return f;
-              const ra = Number(f.remainingAttacks ?? 0) || 0;
-              return { ...f, remainingAttacks: Math.max(0, ra - 1) };
-            }));
-            scheduleEndTurn(0);
-          }
+          burnFailedAutomatedActionAndEnd(`out of ${ammoType}`);
           return;
         }
-
-        // Spend 1 ammo per shot (hit or miss).
-        if (attackerIndex !== -1) {
-          updated[attackerIndex] = decrementInventoryAmmo(updated[attackerIndex], ammoType, 1);
-        } else {
-          // Fallback (should be rare): update via functional state update
-          setFighters((prev) =>
-            prev.map((f) => (f.id === attacker.id ? decrementInventoryAmmo(f, ammoType, 1) : f))
-          );
-        }
-
-        const remainingAmmo = Math.max(0, currentAmmo - 1);
-        if (remainingAmmo > 0) {
-          addLog(`🏹 ${attacker.name} fires ${weaponName} (${remainingAmmo} ${ammoType} remaining)`, "info");
-        } else {
-          addLog(`🏹 ${attacker.name} fires ${weaponName} (OUT OF ${String(ammoType).toUpperCase()}!)`, "warning");
-        }
+        // Decrement happens AFTER roll resolution (so projectile misfires don't spend ammo).
+        ammoContext = { ammoType, currentAmmo, weaponName };
       }
     }
+
+    const strikeCountRaw = Math.max(1, Math.floor(Number(attackData?.count ?? 1)));
+    const isMultiStrikeParent =
+      strikeCountRaw > 1 &&
+      !bonusModifiers?.multiStrikeSubHit &&
+      !bonusModifiers?.preRoll &&
+      !isProjectileAttack;
+
+    if (isMultiStrikeParent) {
+      addLog(`⚔️ ${stateAttacker.name} performs ${strikeCountRaw}-strike attack!`, "info");
+
+      const strikeSequenceToken = {
+        fighterId: stateAttacker.id,
+        turnIndex: turnIndexRef.current,
+        meleeRound: meleeRoundRef.current ?? meleeRound,
+        turnCounter: turnCounterRef.current ?? turnCounter,
+      };
+
+      const mergedChildAttack = {
+        ...(bonusModifiers?.attackDataOverride || attackData),
+        count: 1,
+      };
+
+      return await new Promise((resolve) => {
+        let finishedCallbacks = 0;
+        let resolvedStrikeCount = 0;
+        const strikeTotal = strikeCountRaw;
+
+        const finishParentMultiStrike = () => {
+          if (resolvedStrikeCount <= 0) {
+            if (DEBUG_COMBAT) {
+              console.warn("[MULTI-STRIKE ENDED WITHOUT IMPACT - no spend]", {
+                attacker: attacker?.name,
+                attack: attackData?.name,
+              });
+            }
+            scheduleEndTurn(16, "multi-strike-no-impact");
+            resolve();
+            return;
+          }
+
+          const live = fightersRef.current ?? fighters;
+          const next = live.map((f) => {
+            if (f.id !== stateAttacker.id) return { ...f };
+            const ra = Number(f.remainingAttacks ?? 0) || 0;
+            return { ...f, remainingAttacks: Math.max(0, ra - 1) };
+          });
+          const attackerRow =
+            next.find((f) => f.id === stateAttacker.id) || attackerInArray || null;
+
+          finishAttackAfterImpact({
+            updated: next,
+            attackerInArray: attackerRow,
+            attackData,
+            reason: "multi-strike-parent-complete",
+            suppressEndTurn: Boolean(bonusModifiers?.suppressEndTurn),
+            endTurnDelayMs: 16,
+            logRemaining: Boolean(attackerRow),
+          });
+          resolve();
+        };
+
+        for (let i = 0; i < strikeTotal; i += 1) {
+          const strikeDelay = i * 450;
+          const strikeIndex = i;
+          const timeoutId = setTimeout(() => {
+            void (async () => {
+              let strikeRan = false;
+              try {
+                const activeFighter = fightersRef.current?.[turnIndexRef.current];
+                const stillSameAttackTurn =
+                  !combatOverRef.current &&
+                  !combatEndCheckRef.current &&
+                  activeFighter?.id === strikeSequenceToken.fighterId &&
+                  turnIndexRef.current === strikeSequenceToken.turnIndex &&
+                  (meleeRoundRef.current ?? meleeRound) === strikeSequenceToken.meleeRound &&
+                  (turnCounterRef.current ?? turnCounter) === strikeSequenceToken.turnCounter;
+
+                if (!stillSameAttackTurn) {
+                  if (DEBUG_COMBAT) {
+                    console.warn("[STALE MULTI-STRIKE BLOCKED]", {
+                      attacker: attacker?.name,
+                      strikeIndex,
+                      token: strikeSequenceToken,
+                      activeFighter: activeFighter?.name,
+                    });
+                  }
+                  return;
+                }
+
+                const liveAttacker =
+                  fightersRef.current?.find((f) => f.id === attacker.id) || attacker;
+                await attack(liveAttacker, defenderId, {
+                  ...bonusModifiers,
+                  attackDataOverride: mergedChildAttack,
+                  multiStrikeSubHit: true,
+                  multiStrikeSequenceToken: strikeSequenceToken,
+                  multiStrikeIndex: strikeIndex,
+                  multiStrikeTotal: strikeTotal,
+                  suppressActionSpend: true,
+                  suppressEndTurn: true,
+                });
+                strikeRan = true;
+              } catch (err) {
+                if (DEBUG_COMBAT) {
+                  console.warn("[MULTI-STRIKE STRIKE ERROR]", err);
+                }
+              } finally {
+                finishedCallbacks += 1;
+                if (strikeRan) {
+                  resolvedStrikeCount += 1;
+                }
+                if (finishedCallbacks >= strikeTotal) {
+                  finishParentMultiStrike();
+                }
+              }
+            })();
+          }, strikeDelay);
+          allTimeoutsRef.current.push(timeoutId);
+        }
+      });
+    }
+
+    const deferMultiStrikeHitEnd = () => {
+      if (bonusModifiers?.suppressEndTurn) {
+        // Do not spend/commit via finalize here (premature); blocked path clears locks + advances.
+        finishAttackAfterImpact({
+          updated,
+          attackerInArray,
+          attackData,
+          reason: "defer",
+          suppressEndTurn: true,
+          endTurnDelayMs: 0,
+          logRemaining: false,
+        });
+      } else {
+        endTurn();
+      }
+    };
 
     try {
       // Crypto secure attack roll with optional bonus modifiers (e.g., +2 from charge, flanking bonus)
@@ -6042,7 +10608,7 @@ export default function CombatPage({ characters = [] }) {
         // Get all actors in proximity to attacker
         const nearbyActors = getActorsInProximity(
           positions[attacker.id],
-          fighters,
+          liveFighters,
           positions,
           2
         );
@@ -6119,6 +10685,7 @@ export default function CombatPage({ characters = [] }) {
 
         if (!weaponCheck.canUse) {
           addLog(`❌ ${weaponCheck.reason}`, "error");
+          burnFailedAutomatedActionAndEnd(weaponCheck.reason || "weapon cannot be used here");
           return;
         }
 
@@ -6263,6 +10830,13 @@ export default function CombatPage({ characters = [] }) {
         const sizeStrikeBonus = reachMod.strikeBonus; // Use reach bonus for regular attacks
         if (import.meta.env?.DEV && settingsRef.current?.showCombatDebug) {
           addLog(`Debug: sizeMod=${sizeMod} reachStrike=${sizeStrikeBonus}`, "info");
+        }
+
+        if (DEBUG_COMBAT) {
+          addLog(
+            `🧪 resolving impact: attacker=${attacker?.name}, target=${defender?.name}, attack=${attackData?.name}, damage=${attackData?.damage || attackData?.damageDice || "?"}`,
+            "debug"
+          );
         }
 
         attackRollResult = CryptoSecureDice.parseAndRoll(diceFormula, bonus);
@@ -6494,7 +11068,7 @@ export default function CombatPage({ characters = [] }) {
       if (isChargeAttack && defenseType === "Dodge" && combatTerrain && positions && positions[defender.id]) {
         const terrainWidth = getDynamicWidth(
           combatTerrain.terrain,
-          getActorsInProximity(positions[defender.id], fighters, positions, 2),
+          getActorsInProximity(positions[defender.id], liveFighters, positions, 2),
           {
             attackerPos: positions[defender.id],
             positions: positions
@@ -6582,13 +11156,13 @@ export default function CombatPage({ characters = [] }) {
               if (defenderWeapon) {
                 const terrainWidth = getDynamicWidth(
                   combatTerrain.terrain,
-                  getActorsInProximity(positions[defender.id], fighters, positions, 2),
+                  getActorsInProximity(positions[defender.id], liveFighters, positions, 2),
                   {
                     attackerPos: positions[defender.id],
                     positions: positions
                   }
                 );
-                const terrainHeight = getDynamicHeight(combatTerrain.terrain, getActorsInProximity(positions[defender.id], fighters, positions, 2));
+                const terrainHeight = getDynamicHeight(combatTerrain.terrain, getActorsInProximity(positions[defender.id], liveFighters, positions, 2));
                 const terrainData = TERRAIN_TYPES[combatTerrain.terrain];
                 const terrainDensity = terrainData?.density || 0;
                 const isTightCombat = terrainWidth < 10;
@@ -6698,16 +11272,92 @@ export default function CombatPage({ characters = [] }) {
       let didHit =
         !isCriticalMiss && (isCriticalHit || attackRoll >= targetAR) && !defenseSuccess;
 
+      // Projectile NAT 1: MISFIRE (no projectile, no ammo spend, no stray, no scatter)
+      if (isProjectileAttack && attackDiceRoll === 1) {
+        addLog(
+          `[PROJECTILE MISFIRE] attacker=${attacker.name} roll=1 noProjectile=true ammoSpent=false`,
+          "warning"
+        );
+        // Consume 1 action to avoid stalls, but do not spend ammo.
+        if (attackerInArray) {
+          attackerInArray.remainingAttacks = Math.max(
+            0,
+            (attackerInArray.remainingAttacks || 0) - 1
+          );
+          // Log remaining attacks (misfire is still an action spent)
+          finishAttackAfterImpact({
+            updated,
+            attackerInArray,
+            attackData,
+            reason: "misfire",
+            suppressEndTurn: false,
+            endTurnDelayMs: 0,
+          });
+          return;
+        }
+        // If we can't resolve attacker, still commit state and advance.
+        finishAttackAfterImpact({
+          updated,
+          attackerInArray: null,
+          attackData,
+          reason: "misfire",
+          suppressEndTurn: false,
+          endTurnDelayMs: 0,
+          logRemaining: false,
+        });
+        return;
+      }
+
+      // Spend ammo (hit or miss) *after* misfire guard.
+      if (typeof ammoContext?.ammoType === "string") {
+        const { ammoType, currentAmmo, weaponName } = ammoContext;
+        if (attackerIndex !== -1) {
+          updated[attackerIndex] = decrementInventoryAmmo(updated[attackerIndex], ammoType, 1);
+        } else {
+          setFighters((prev) =>
+            prev.map((f) => (f.id === attacker.id ? decrementInventoryAmmo(f, ammoType, 1) : f))
+          );
+        }
+        const remainingAmmo = Math.max(0, currentAmmo - 1);
+        if (remainingAmmo > 0) {
+          addLog(`🏹 ${attacker.name} fires ${weaponName} (${remainingAmmo} ${ammoType} remaining)`, "info");
+        } else {
+          addLog(`🏹 ${attacker.name} fires ${weaponName} (OUT OF ${String(ammoType).toUpperCase()}!)`, "warning");
+        }
+      }
+
+      // Projectile hit/miss logs (polar miss math uses final total vs target AR)
+      if (isProjectileAttack) {
+        const seed = `${attacker.id}|${defenderId}|${attackDiceRoll}|${attackRoll}|${targetAR}`;
+        const clock = rollDeterministicClock12(seed);
+        if (didHit) {
+          addLog(
+            `[PROJECTILE HIT] attacker=${attacker.name} roll=${attackDiceRoll} total=${attackRoll} target=${targetAR} clock=${clock}`,
+            "info"
+          );
+        } else {
+          const missMargin = Math.max(1, Math.ceil(targetAR - attackRoll));
+          addLog(
+            `[PROJECTILE MISS] attacker=${attacker.name} roll=${attackDiceRoll} total=${attackRoll} target=${targetAR} margin=${missMargin} clock=${clock}`,
+            "info"
+          );
+        }
+      }
+
       if (isProjectileAttack) {
         spawnProjectile({
           attackerId: attacker.id,
           defenderId,
           attackData,
           hit: didHit,
+          roll: attackDiceRoll,
+          total: attackRoll,
+          clock,
         });
       }
 
       // Critical miss: deterministic scatter for projectile/ranged attacks (Option B)
+      // NOTE: projectile NAT 1 is handled above as MISFIRE, so this branch is now effectively dead for projectiles.
       if (isCriticalMiss && isProjectileAttack) {
         const livePositions2 =
           positionsRef.current && Object.keys(positionsRef.current).length > 0
@@ -6737,10 +11387,10 @@ export default function CombatPage({ characters = [] }) {
             "info"
           );
 
-          const sortByOrder = sortByFighterOrderFactory(fighters);
+          const sortByOrder = sortByFighterOrderFactory(liveFighters);
           const candidates = Object.entries(livePositions2 || {})
             .filter(([, pos]) => pos.x === scatterHex.x && pos.y === scatterHex.y)
-            .map(([id]) => fighters.find((f) => f.id === id))
+            .map(([id]) => liveFighters.find((f) => f.id === id))
             .filter(Boolean)
             .sort(sortByOrder);
 
@@ -6776,14 +11426,14 @@ export default function CombatPage({ characters = [] }) {
 
           if (isCriticalMiss) {
             addLog(`❌ ${attacker.name} FUMBLES the attack!`, "miss");
-            setFighters(updated);
-            endTurn();
+            commitFighters(updated);
+            deferMultiStrikeHitEnd();
             return;
           }
         } else {
           addLog(`❌ ${attacker.name} FUMBLES the attack!`, "miss");
-          setFighters(updated);
-          endTurn();
+          commitFighters(updated);
+          deferMultiStrikeHitEnd();
           return;
         }
       }
@@ -6791,8 +11441,8 @@ export default function CombatPage({ characters = [] }) {
       // Critical miss auto-fails (non-projectile, or if scatter did not retarget)
       if (isCriticalMiss) {
         addLog(`❌ ${attacker.name} FUMBLES the attack!`, "miss");
-        setFighters(updated);
-        endTurn();
+        commitFighters(updated);
+        deferMultiStrikeHitEnd();
         return;
       }
       // Critical hit auto-succeeds, normal hit requires beating AR
@@ -6970,13 +11620,13 @@ export default function CombatPage({ characters = [] }) {
         if (combatTerrain && positions && positions[defender.id]) {
           const terrainWidth = getDynamicWidth(
             combatTerrain.terrain,
-            getActorsInProximity(positions[defender.id], fighters, positions, 2),
+            getActorsInProximity(positions[defender.id], liveFighters, positions, 2),
             {
               attackerPos: positions[defender.id],
               positions: positions
             }
           );
-          const terrainHeight = getDynamicHeight(combatTerrain.terrain, fighters);
+          const terrainHeight = getDynamicHeight(combatTerrain.terrain, liveFighters);
           const terrainData = TERRAIN_TYPES[combatTerrain.terrain] || {};
           const isChargeAttack = bonusModifiers?.strikeBonus >= 2 || bonusModifiers.strikeBonus >= 2;
 
@@ -7134,19 +11784,13 @@ export default function CombatPage({ characters = [] }) {
             // All enemies are defeated - end combat immediately
             combatEndCheckRef.current = true;
             combatOverRef.current = true; // ✅ AUTHORITATIVE: Set combat over flag
+            clearCombatFlowLocks();
             addLog("🎉 Victory! All enemies defeated!", "victory");
+            addLog("🛑 Combat is over. No further attacks are scheduled.", "info");
             setCombatActive(false);
 
-            // ✅ CRITICAL: Clear ALL pending timeouts to stop post-victory actions
-            if (turnTimeoutRef.current) {
-              clearTimeout(turnTimeoutRef.current);
-              turnTimeoutRef.current = null;
-            }
-            allTimeoutsRef.current.forEach(clearTimeout);
-            allTimeoutsRef.current = [];
-
             // Update fighters state and return early to prevent further processing
-            setFighters(updated);
+            commitFighters(updated);
             return;
           }
         }
@@ -7233,17 +11877,25 @@ export default function CombatPage({ characters = [] }) {
 
         // Check if defender is defeated (unconscious or worse)
         if (defenderAfterHit.currentHP <= 0) {
-          defenderAfterHit.status = "defeated";
-          updated[defenderIndex] = defenderAfterHit; // Update status in array
+          const overkill = Math.abs(Number(defenderAfterHit.currentHP || 0));
+          defenderAfterHit = applyIncapacitationCondition({
+            fighter: defenderAfterHit,
+            attackData,
+            isCriticalHit,
+            overkill,
+          });
+          updated[defenderIndex] = defenderAfterHit;
 
-          if (defenderAfterHit.currentHP <= -21) {
+          if (defenderAfterHit.condition === "dead") {
             addLog(`💀 ${defenderAfterHit.name} has been KILLED! (${hpStatus.description})`, "defeat");
             // Reset grapple state when fighter dies
             resetGrapple(defenderAfterHit);
-          } else if (defenderAfterHit.currentHP <= -11) {
-            addLog(`⚠️ ${defenderAfterHit.name} is CRITICALLY wounded! ${hpStatus.description}`, "defeat");
-          } else if (defenderAfterHit.currentHP <= -1) {
-            addLog(`🩸 ${defenderAfterHit.name} is DYING! ${hpStatus.description}`, "defeat");
+          } else if (defenderAfterHit.condition === "critical") {
+            addLog(`⚠️ ${defenderAfterHit.name} is critically wounded! Needs help fast.`, "defeat");
+          } else if (defenderAfterHit.condition === "dying") {
+            addLog(`🩸 ${defenderAfterHit.name} is DYING! Bleeding out unless helped.`, "defeat");
+          } else if (defenderAfterHit.condition === "unconsciousBleeding") {
+            addLog(`🩸 ${defenderAfterHit.name} collapses unconscious and is bleeding!`, "defeat");
           } else {
             addLog(`😴 ${defenderAfterHit.name} has been knocked unconscious!`, "defeat");
           }
@@ -7259,19 +11911,12 @@ export default function CombatPage({ characters = [] }) {
               // All enemies are defeated - end combat immediately
               combatEndCheckRef.current = true;
               combatOverRef.current = true; // ✅ AUTHORITATIVE: Set combat over flag
+              clearCombatFlowLocks();
               addLog("🎉 Victory! All enemies defeated!", "victory");
               setCombatActive(false);
 
-              // ✅ CRITICAL: Clear ALL pending timeouts to stop post-victory actions
-              if (turnTimeoutRef.current) {
-                clearTimeout(turnTimeoutRef.current);
-                turnTimeoutRef.current = null;
-              }
-              allTimeoutsRef.current.forEach(clearTimeout);
-              allTimeoutsRef.current = [];
-
               // Update fighters state and return early to prevent further processing
-              setFighters(updated);
+              commitFighters(updated);
               return;
             }
           }
@@ -7319,36 +11964,24 @@ export default function CombatPage({ characters = [] }) {
             if (consciousPlayers.length === 0) {
               combatEndCheckRef.current = true;
               combatOverRef.current = true; // ✅ AUTHORITATIVE: Stop all further actions (defeat)
+              clearCombatFlowLocks();
               addLog("💀 All players are defeated! Enemies win!", "defeat");
+              addLog("🛑 Combat is over. No further attacks are scheduled.", "info");
               setCombatActive(false);
 
-              // ✅ CRITICAL: Clear ALL pending timeouts to stop post-defeat actions
-              if (turnTimeoutRef.current) {
-                clearTimeout(turnTimeoutRef.current);
-                turnTimeoutRef.current = null;
-              }
-              allTimeoutsRef.current.forEach(clearTimeout);
-              allTimeoutsRef.current = [];
-
               // Update fighters state immediately
-              setFighters(updated);
+              commitFighters(updated);
               return;
             } else if (consciousEnemies.length === 0) {
               combatEndCheckRef.current = true;
               combatOverRef.current = true; // ✅ AUTHORITATIVE: Set combat over flag
+              clearCombatFlowLocks();
               addLog("🎉 Victory! All enemies defeated!", "victory");
+              addLog("🛑 Combat is over. No further attacks are scheduled.", "info");
               setCombatActive(false);
 
-              // ✅ CRITICAL: Clear ALL pending timeouts to stop post-victory actions
-              if (turnTimeoutRef.current) {
-                clearTimeout(turnTimeoutRef.current);
-                turnTimeoutRef.current = null;
-              }
-              allTimeoutsRef.current.forEach(clearTimeout);
-              allTimeoutsRef.current = [];
-
               // Update fighters state immediately
-              setFighters(updated);
+              commitFighters(updated);
               return;
             }
           }
@@ -7369,59 +12002,124 @@ export default function CombatPage({ characters = [] }) {
           }
         }
 
+        // Signed miss delta (attackRoll - targetAR), used by heavy weapon recovery helper
+        const missDelta = attackRoll - targetAR;
+
         // Check for heavy weapon recovery penalty
-        const missMargin = attackRoll - targetAR;
-        const recoveryCheck = getHeavyWeaponRecovery(attackData, missMargin);
+        const recoveryCheck = getHeavyWeaponRecovery(attackData, missDelta);
         if (recoveryCheck.requiresRecovery) {
           recoveryCheck.notes.forEach(note => {
             addLog(`⚔️ ${note}`, "info");
           });
 
-          // Deduct one additional attack for recovery
-          if (attackerInArray) {
+          // Deduct one additional attack for recovery (not during multi-strike sub-hits; one action already spent)
+          if (!bonusModifiers?.suppressActionSpend && attackerInArray) {
             attackerInArray.remainingAttacks = Math.max(0, (attackerInArray.remainingAttacks || 0) - 1);
             addLog(`⏱️ ${attacker.name} loses 1 action to recover stance (${attackerInArray.remainingAttacks}/${attackerInArray.attacksPerMelee} remaining)`, "info");
           }
         }
       }
     } catch (error) {
-      console.error("Attack error:", error);
-      console.error("Error details:", {
-        message: error?.message,
-        stack: error?.stack,
-        attacker: attacker?.name,
-        defenderId,
-        attackData
-      });
-      addLog(`❌ Attack error for ${attacker.name}: ${error?.message || 'Unknown error'}`, "error");
+      const message =
+        error?.message ||
+        error?.stack ||
+        String(error);
+
+      addLog(
+        `⚠️ Attack resolution error for ${attacker?.name || "Unknown"} using ${attackDataForFinish?.name || "Unknown Attack"}: ${message}`,
+        "warning"
+      );
+
+      if (DEBUG_COMBAT) {
+        console.error("[ATTACK RESOLUTION ERROR]", {
+          attacker,
+          target: defender,
+          attackData: attackDataForFinish,
+          err: error,
+        });
+      }
+
+      turnActionResolvingRef.current = false;
+      pendingTurnAdvanceRef.current = false;
+
+      if (isAutomatedAttacker) {
+        const liveFightersCatch = fightersRef.current || fighters;
+        const updatedCatch = liveFightersCatch.map((f) => {
+          if (f.id !== attacker.id) return f;
+          const remaining = Math.max(0, Number(f.remainingAttacks ?? 0) - 1);
+          return { ...f, remainingAttacks: remaining };
+        });
+        const attackerRowCatch =
+          updatedCatch.find((f) => f.id === attacker.id) || attackerInArray || null;
+
+        addLog(
+          `⚠️ ${attacker?.name || "Fighter"}'s ${attackDataForFinish?.name || "attack"} failed to resolve and still costs 1 action.`,
+          "warning"
+        );
+
+        finishAttackAfterImpact({
+          updated: updatedCatch,
+          attackerInArray: attackerRowCatch,
+          attackData: attackDataForFinish,
+          reason: "attack-error-cost",
+          suppressEndTurn: false,
+          endTurnDelayMs: 16,
+        });
+        return;
+      }
+
+      scheduleEndTurn(16, "attack-catch-manual");
+      return;
     }
 
-    // Deduct 1 attack from attacker (Strike costs 1 attack)
-    if (attackerInArray) {
-      attackerInArray.remainingAttacks = Math.max(0, (attackerInArray.remainingAttacks || 0) - 1);
+    // Deduct 1 attack from attacker (Strike costs 1 action); multi-strike parent spends once after all sub-strikes.
+    if (attackerInArray && !bonusModifiers?.suppressActionSpend) {
+      const liveAttackerNow =
+        (fightersRef.current ?? liveFighters).find((f) => f.id === attackerInArray.id) ||
+        attackerInArray;
+
+      const beforeSpend = Number(
+        liveAttackerNow.remainingAttacks ?? attackerInArray.remainingAttacks ?? 0
+      );
+      attackerInArray.remainingAttacks = Math.max(0, beforeSpend - 1);
 
       // Log remaining attacks
-      if (attackerInArray.type === "player") {
-        const attacksLeft = formatAttacksRemaining(attackerInArray.remainingAttacks, attackerInArray.attacksPerMelee);
-        addLog(`${attacker.name} has ${attacksLeft} remaining`, "info");
-      }
     }
 
-    setFighters(updated);
+    const shouldLogRemaining =
+      Boolean(attackerInArray) &&
+      (!bonusModifiers?.suppressActionSpend ||
+        bonusModifiers?.multiStrikeIndex === bonusModifiers?.multiStrikeTotal - 1);
+
+    if (bonusModifiers?.suppressActionSpend) {
+      if (DEBUG_COMBAT) {
+        addLog(
+          `🧪 impact resolved without action spend: ${attacker?.name} ${attackDataForFinish?.name}`,
+          "debug"
+        );
+      }
+
+      commitFighters(updated);
+
+      // Do not clear turnActionResolvingRef here — multi-strike parent still owns the action
+      // until all child strikes finish and parent finalize runs.
+      pendingTurnAdvanceRef.current = false;
+
+      return true;
+    }
 
     // ALWAYS end turn after each action - this ensures alternating action system
     // endTurn() will cycle to the next fighter with actions remaining
     // If this fighter still has actions, they'll get another turn after others act
-    if (!bonusModifiers?.suppressEndTurn) {
-      const timeoutId = setTimeout(() => {
-        // ✅ GUARD: Check combat state in delayed callback (use ref for latest state)
-        if (combatOverRef.current || !combatActive || combatEndCheckRef.current) return;
-        endTurn();
-      }, 1500);
-
-      // ✅ Track this timeout so we can clear it on combat end
-      allTimeoutsRef.current.push(timeoutId);
-    }
+    finishAttackAfterImpact({
+      updated,
+      attackerInArray,
+      attackData: attackDataForFinish,
+      reason: "impact-resolved",
+      suppressEndTurn: Boolean(bonusModifiers?.suppressEndTurn),
+      endTurnDelayMs: 16,
+      logRemaining: shouldLogRemaining,
+    });
   }, [
     fighters,
     positions,
@@ -7431,9 +12129,11 @@ export default function CombatPage({ characters = [] }) {
     turnCounter,
     selectedAttack,
     selectedAttackWeapon,
+    aiControlEnabled,
     defensiveStance,
     tempModifiers,
     addLog,
+    blockStaleAction,
     endTurn,
     scheduleEndTurn,
     closeCombatChoices,
@@ -7452,6 +12152,9 @@ export default function CombatPage({ characters = [] }) {
     handlePositionChange,
     isHexOccupied,
     generateCryptoId,
+    rollDeterministicClock12,
+    commitFighters,
+    applyIncapacitationCondition,
     settings.useInsanityTrauma,
     settings.useMoraleRouting,
     settings.usePainStagger,
@@ -7539,6 +12242,7 @@ export default function CombatPage({ characters = [] }) {
       setTemporaryHexSharing,
       positionsRef,
       attackRef,
+      dispatchEngineCommand, // ✅ Add engine dispatcher
     });
   }, [
     movementMode,
@@ -7557,30 +12261,18 @@ export default function CombatPage({ characters = [] }) {
     setTemporaryHexSharing,
     positionsRef,
     attackRef,
+    dispatchEngineCommand, // ✅ Add to dependencies
   ]);
 
   // ✅ Run (spend action to move further / update run state)
-  const handleRunActionUpdateAction = useCallback((attacker, runMode) => {
+  // NOTE: Run actions are now handled through the engine MOVE command with mode "RUN"
+  // This function is kept for backward compatibility but should use engine dispatch
+  const handleRunActionUpdateAction = useCallback((attacker) => {
     if (!attacker) return;
-    handleRunActionUpdateHandler(attacker, {
-      fighters,
-      positions,
-      combatTerrain,
-      addLog,
-      setFighters,
-      setPositions,
-      positionsRef,
-      runMode,
-    });
-  }, [
-    fighters,
-    positions,
-    combatTerrain,
-    addLog,
-    setFighters,
-    setPositions,
-    positionsRef,
-  ]);
+    // Run actions are now engine-driven via MOVE command
+    // This is a no-op placeholder - actual run movement is handled by handleMoveSelect
+    addLog(`🏃 ${attacker.name} is running.`, "info");
+  }, [addLog]);
 
   // ✅ Withdraw (tactical retreat / disengage)
   const handleWithdraw = useCallback((attacker) => {
@@ -7646,23 +12338,59 @@ export default function CombatPage({ characters = [] }) {
     addLog,
   ]);
 
-  // Handle altitude changes for flying fighters
+  // Handle altitude changes for flying fighters (COSTS 1 ACTION)
   const handleChangeAltitude = useCallback((fighter, deltaFeet) => {
-    if (!fighter || !isFlying(fighter)) {
-      addLog(`❌ ${fighter?.name || 'Fighter'} must be flying to change altitude`, "error");
+    if (!fighter) return;
+
+    // must have actions
+    if ((fighter.remainingAttacks ?? 0) <= 0) {
+      addLog(`⚠️ ${fighter.name} has no actions remaining to change altitude!`, "error");
       return;
     }
 
-    const result = changeAltitude(fighter, deltaFeet, { maxAltitude: 100 });
-    if (result.success) {
-      setFighters(prev => prev.map(f =>
-        f.id === fighter.id ? result.fighter : f
-      ));
-      addLog(result.message, "info");
-    } else {
-      addLog(`❌ ${result.reason}`, "error");
-    }
-  }, [addLog, setFighters]);
+    const curAlt = fighter.altitudeFeet ?? fighter.altitude ?? 0;
+    const maxAlt = getMaxAltitudeFeet(fighter);
+    const nextAlt = Math.max(0, Math.min(maxAlt, curAlt + deltaFeet));
+
+    // If no change, do nothing (don't spend an action)
+    if (nextAlt === curAlt) return;
+
+    // Spend 1 action for ANY altitude change
+    setFighters(prev =>
+      prev.map(f => {
+        if (f.id !== fighter.id) return f;
+
+        const remaining = Math.max(0, (f.remainingAttacks ?? 0) - 1);
+        const updated = {
+          ...f,
+          altitudeFeet: nextAlt,
+          altitude: nextAlt,
+          // If you store flying state separately, toggle it here.
+          // "Landing" when you hit 0:
+          isFlying: nextAlt > 0,
+        };
+
+        addLog(
+          nextAlt === 0
+            ? `🛬 ${f.name} descends to 0ft and lands (1 action). ${remaining} action(s) left.`
+            : `🪽 ${f.name} changes altitude: ${curAlt}ft → ${nextAlt}ft (1 action). ${remaining} action(s) left.`,
+          "info"
+        );
+
+        return updated;
+      })
+    );
+
+    // Sync UI target to new altitude
+    setAltitudeTargetFeet(nextAlt);
+  }, [addLog, getMaxAltitudeFeet, setFighters]);
+
+  // Sync altitudeTargetFeet when turn/fighter changes
+  useEffect(() => {
+    if (!currentFighter) return;
+    const curAlt = currentFighter.altitudeFeet ?? currentFighter.altitude ?? 0;
+    setAltitudeTargetFeet(curAlt);
+  }, [currentFighter?.id, currentFighter]);
 
   // Helper function to get all targets in a line for area attacks
   const getTargetsInLine = useCallback((attackerId, targetId, positions) => {
@@ -7913,7 +12641,18 @@ export default function CombatPage({ characters = [] }) {
   }, [fighters]);
 
   // AI logic for player characters
-  const handlePlayerAITurn = useCallback((player) => {
+  const handlePlayerAITurn = useCallback((player, meta = {}) => {
+    if (!aiControlEnabledRef.current || !aiControlEnabled) {
+      processingPlayerAIRef.current = false;
+      return;
+    }
+
+    const playerTurnToken = meta?.turnToken ?? currentTurnTokenRef.current;
+    if (blockStaleAction(player, playerTurnToken, "player AI turn start")) {
+      processingPlayerAIRef.current = false;
+      return;
+    }
+
     if (combatPausedRef.current) {
       addLog(`⏸️ Combat paused - ${player.name}'s turn is waiting`, "info");
       processingPlayerAIRef.current = false;
@@ -7934,8 +12673,16 @@ export default function CombatPage({ characters = [] }) {
     // Mark as processing IMMEDIATELY
     processingPlayerAIRef.current = true;
 
-    // ✅ CRITICAL: Get latest player state from fighters array to ensure we have persisted moraleState
-    let latestPlayer = fighters.find(f => f.id === player.id) || player;
+    const liveFightersForPlayerAI = fightersRef.current ?? fighters;
+    // ✅ CRITICAL: Get latest player state from canonical ref snapshot (not stale closure)
+    // This prevents turn banners from showing reset/stale remainingAttacks.
+    let latestPlayer =
+      liveFightersForPlayerAI.find((f) => f.id === player.id) || player;
+    if ((latestPlayer.remainingAttacks ?? 0) <= 0) {
+      processingPlayerAIRef.current = false;
+      scheduleEndTurn(0);
+      return;
+    }
 
     // 🐭 Predator panic: tiny prey ROUTES when a predator bird is nearby/visible.
     // This triggers the existing routed-flee logic immediately.
@@ -7946,7 +12693,7 @@ export default function CombatPage({ characters = [] }) {
           : positions;
       const myPos = currentPositions?.[latestPlayer.id];
       if (myPos) {
-        const predators = fighters.filter(f =>
+        const predators = liveFightersForPlayerAI.filter(f =>
           f.type === "enemy" &&
           canFighterAct(f) &&
           f.currentHP > 0 &&
@@ -7980,7 +12727,7 @@ export default function CombatPage({ characters = [] }) {
           addLog(`🐭 ${latestPlayer.name} panics and ROUTES from ${nearestPred.name}!`, "warning");
 
           // Persist morale state
-          setFighters(prev =>
+          commitFighters(prev =>
             prev.map(f =>
               f.id === latestPlayer.id
                 ? {
@@ -8014,7 +12761,7 @@ export default function CombatPage({ characters = [] }) {
       if (latestPlayer.neverFlee || isFearImmune(latestPlayer)) {
         addLog(`🛡️ ${latestPlayer.name} is immune to fear and refuses to flee (ignoring ROUTED).`, "info");
         // Clear ROUTED status
-        setFighters(prev => prev.map(f => {
+        commitFighters(prev => prev.map(f => {
           if (f.id === latestPlayer.id) {
             return {
               ...f,
@@ -8029,8 +12776,7 @@ export default function CombatPage({ characters = [] }) {
         }));
         // Continue with normal turn (don't flee)
       } else {
-        addLog(`🏃 ${latestPlayer.name} is ROUTED and attempts to flee!`, "warning");
-
+        
         const currentPositions =
           positionsRef.current && Object.keys(positionsRef.current).length > 0
             ? positionsRef.current
@@ -8042,14 +12788,13 @@ export default function CombatPage({ characters = [] }) {
           // This stops the endless loop of: routed → can't find strictly-better step → end turn.
           const threatPositions = getThreatPositionsForFighter(
             latestPlayer,
-            fighters,
+            liveFightersForPlayerAI,
             currentPositions
           ).filter(Boolean);
 
           if (threatPositions.length === 0) {
             // ✅ No threats to flee from, mark as fled
-            addLog(`🏃 ${latestPlayer.name} flees in terror!`, "warning");
-            markFighterFledOffMap(latestPlayer.id, latestPlayer.name);
+                        markFighterFledOffMap(latestPlayer.id, latestPlayer.name);
             processingPlayerAIRef.current = false;
             scheduleEndTurn();
             return;
@@ -8088,7 +12833,7 @@ export default function CombatPage({ characters = [] }) {
                 );
 
                 // Set remaining attacks to 0 (routed units don't fight) but DON'T set hasFled
-                setFighters((prev) =>
+                commitFighters((prev) =>
                   prev.map((f) =>
                     f.id === latestPlayer.id
                       ? {
@@ -8111,8 +12856,7 @@ export default function CombatPage({ characters = [] }) {
               }
             } else {
               // ✅ If routed player cannot find a safe path, mark them as fled (they're effectively out of combat)
-              addLog(`🏃 ${latestPlayer.name} attempts to flee but cannot find a safe path! Marking as fled.`, "warning");
-              markFighterFledOffMap(latestPlayer.id, latestPlayer.name);
+                            markFighterFledOffMap(latestPlayer.id, latestPlayer.name);
               processingPlayerAIRef.current = false;
               scheduleEndTurn();
               return;
@@ -8138,7 +12882,7 @@ export default function CombatPage({ characters = [] }) {
         window?.localStorage?.getItem("debugTurnFlow") === "1"
       ) {
         addLog(
-          `🟦 Turn: ${latestPlayer.name} (${latestPlayer.type}) | actions=${latestPlayer.remainingAttacks ?? 0}`,
+          `🟦 Turn: ${latestPlayer.name} (${latestPlayer.type}) | attacksPerMelee=${latestPlayer.attacksPerMelee ?? latestPlayer.actionsPerMelee ?? "?"} | remainingAttacks=${latestPlayer.remainingAttacks ?? 0}`,
           "info"
         );
       }
@@ -8178,7 +12922,7 @@ export default function CombatPage({ characters = [] }) {
     playerAITurnTokenRef.current = playerAITurnToken;
 
     const context = {
-      fighters,
+      fighters: liveFightersForPlayerAI,
       positions: positionsForAI,
       combatTerrain,
       arenaEnvironment,
@@ -8190,6 +12934,13 @@ export default function CombatPage({ characters = [] }) {
       playerAIActionScheduledRef,
       playerAITurnTokenRef,
       playerAITurnToken,
+      pendingTurnAdvanceRef,
+      turnActionResolvingRef,
+      aiControlEnabledRef,
+      activePlayerAITurnKeysRef,
+      combatActiveRef,
+      combatOverRef,
+      turnIndexRef,
       // Core helpers
       canFighterAct,
       getHPStatus,
@@ -8220,7 +12971,7 @@ export default function CombatPage({ characters = [] }) {
       // Attack & combat
       attack,
       setPositions,
-      setFighters,
+      setFighters: commitFighters,
       getActionDelay,
       arenaSpeed,
       positionsRef,
@@ -8239,6 +12990,8 @@ export default function CombatPage({ characters = [] }) {
       spellCanAffectTarget,
       executeSpell: executeSpellRef.current,
       executePsionicPower: executePsionicPowerRef.current,
+      activeSpellImpactRef,
+      turnCounterRef,
       // Weapon utilities
       getWeaponRange,
       getWeaponType,
@@ -8258,6 +13011,17 @@ export default function CombatPage({ characters = [] }) {
     };
 
     // Delegate to AI module - use latestPlayer to ensure we have persisted state
+    const turnKey = getPlayerTurnInFlightKey(latestPlayer);
+    if (playerTurnInFlightKeyRef.current === turnKey) {
+      addLog(
+        `🚫 ${latestPlayer.name} player turn start blocked: same turn already in flight key=${turnKey}`,
+        "warning"
+      );
+      processingPlayerAIRef.current = false;
+      return;
+    }
+    playerTurnInFlightKeyRef.current = turnKey;
+
     // Reset action-scheduled marker for this AI turn
     playerAIActionScheduledRef.current = false;
     runPlayerTurnAI(latestPlayer, context);
@@ -8269,6 +13033,7 @@ export default function CombatPage({ characters = [] }) {
     const startTurnIndex = turnIndexRef.current;
     const startFighterId = latestPlayer.id;
     setTimeout(() => {
+      if (blockStaleAction(latestPlayer, playerTurnToken, "player AI no-action watchdog")) return;
       if (!combatActive || combatEndCheckRef.current) return;
       const curIdx = turnIndexRef.current;
       const curFighterId = fightersRef.current?.[curIdx]?.id;
@@ -8297,12 +13062,10 @@ export default function CombatPage({ characters = [] }) {
     // This should be a no-op in normal flow because the AI should clear processingPlayerAIRef
     // and scheduleEndTurn promptly.
     // runPlayerTurnAI uses delayed execution (~1000ms + 1500ms) before it actually attacks.
-    // Give it enough runway before we declare the AI "stuck".
-    const watchdogDelay = Math.max(
-      2800,
-      (getActionDelay?.(arenaSpeed) || 0) + 2600
-    );
+    // Give it enough runway before we declare the AI "stuck". Use fixed delay (arenaSpeed affects animation only).
+    const watchdogDelay = 5000;
     setTimeout(() => {
+      if (blockStaleAction(latestPlayer, playerTurnToken, "player AI watchdog")) return;
       if (!combatActive || combatEndCheckRef.current) return;
       // Only fire for the SAME fighter + SAME AI token that scheduled this watchdog.
       const curIdx = turnIndexRef.current;
@@ -8328,6 +13091,7 @@ export default function CombatPage({ characters = [] }) {
     }, watchdogDelay);
   }, [
     fighters,
+    getFighterNow,
     positions,
     combatTerrain,
     arenaEnvironment,
@@ -8335,10 +13099,12 @@ export default function CombatPage({ characters = [] }) {
     turnCounter,
     combatActive,
     canFighterAct,
+    blockStaleAction,
     getHPStatus,
     addLog,
     scheduleEndTurn,
     endTurn,
+    getPlayerTurnInFlightKey,
     isTargetBlocked,
     getBlockingCombatant,
     calculateTargetPriority,
@@ -8379,33 +13145,521 @@ export default function CombatPage({ characters = [] }) {
     settings.useMoraleRouting,
   ]);
 
-  // Define handleEnemyTurn function with useCallback last
-  const handleEnemyTurn = useCallback((enemy) => {
-    // Prevent duplicate processing using ref for immediate synchronous check
-    if (processingEnemyTurnRef.current) {
-      console.warn('🚫 BLOCKED: Already processing enemy turn, skipping duplicate call for', enemy.name);
-      addLog(`🚫 DEBUG: Blocked duplicate call for ${enemy.name}`, "error");
+  // AI execution adapters (wrappers for worker AI_INTENT)
+  const executeAIAttack = useCallback(async ({ attacker, target, mode }) => {
+    const actionToken = currentTurnTokenRef.current;
+    if (blockStaleAction(attacker, actionToken, "worker AI attack")) {
+      return;
+    }
+    if (attacker?.type === "enemy") {
+      const currentFighter = fightersRef.current?.[turnIndexRef.current];
+      const aid = attacker?.id ?? attacker?._id;
+      if (currentFighter?.id !== aid) {
+        addLog?.(
+          `🚫 Enemy action blocked: ${attacker?.name ?? aid} is no longer active fighter (active=${currentFighter?.name ?? "?"})`,
+          "warning"
+        );
+        return;
+      }
+    }
+    if (!ENGINE_ENABLED) {
+      // Fallback: use existing in-thread attack
+      const availableAttacks = attacker.attacks || [];
+      let selectedAttack = availableAttacks[0] || { name: "Strike", damage: "1d4", count: 1 };
+      if (mode === "ranged") {
+        const rangedAttack = availableAttacks.find((a) =>
+          a?.range && Number(a.range) > 10 ||
+          a?.type === "ranged" ||
+          a?.weaponType === "thrown" ||
+          a?.isThrown === true ||
+          (a?.category && String(a.category).toLowerCase() === "ranged")
+        );
+        if (rangedAttack) selectedAttack = rangedAttack;
+      } else {
+        const meleeAttack = availableAttacks.find((a) =>
+          !a?.range || Number(a.range) <= 1 ||
+          a?.type === "melee" ||
+          (a?.category && String(a.category).toLowerCase() === "melee")
+        );
+        if (meleeAttack) selectedAttack = meleeAttack;
+      }
+      const updatedAttacker = { ...attacker, selectedAttack, attacks: attacker.attacks || [] };
+      const resolved = resolveEnemyEffectiveAttack(updatedAttacker, selectedAttack, { preferRanged: mode === "ranged" });
+      const finalAttacker = { ...updatedAttacker, selectedAttack: resolved.attack };
+      const posNow = pickNonEmptyObject(positionsRef.current, positions);
+      const flankingBonus = calculateFlankingBonus(
+        posNow[attacker.id],
+        posNow[target.id],
+        posNow,
+        attacker.id
+      );
+      attack(finalAttacker, target.id, {
+        ...(flankingBonus > 0 ? { flankingBonus } : {}),
+        attackDataOverride: resolved.attack,
+      });
       return;
     }
 
+    const attackerId = attacker?.id ?? attacker?._id;
+    const targetId = target?.id ?? target?._id;
+    if (!attackerId || !targetId) return;
+
+    const toHitBonus = Number(attacker?.bonuses?.strike ?? attacker?.strikeBonus ?? attacker?.toHitBonus ?? 0);
+    const targetAR = Number(target?.AR ?? target?.ar ?? target?.armorRating ?? 10);
+
+    const availableAttacks = attacker.attacks || [];
+    let selectedAttack = availableAttacks[0] || { damage: "1d6" };
+    if (mode === "ranged") {
+      const rangedAttack = availableAttacks.find((a) =>
+        a?.range && Number(a.range) > 10 || a?.type === "ranged" || a?.weaponType === "thrown" || a?.isThrown === true ||
+        (a?.category && String(a.category).toLowerCase() === "ranged")
+      );
+      if (rangedAttack) selectedAttack = rangedAttack;
+    } else {
+      const meleeAttack = availableAttacks.find((a) =>
+        !a?.range || Number(a.range) <= 1 || a?.type === "melee" ||
+        (a?.category && String(a.category).toLowerCase() === "melee")
+      );
+      if (meleeAttack) selectedAttack = meleeAttack;
+    }
+    const damageFormula = typeof selectedAttack?.damage === "string" ? selectedAttack.damage : (selectedAttack?.damage ?? "1d6");
+
+    let ammoPayload = null;
+    if (mode === "ranged") {
+      const ammoType = selectedAttack?.ammunition ?? attacker?.equippedWeapon?.ammunition ?? attacker?.weapon?.ammunition ?? null;
+      if (ammoType) {
+        const current = (ammoCount ?? {})[attackerId]?.[ammoType] ?? 0;
+        ammoPayload = { ammoOwnerId: attackerId, ammoType, spend: 1, current };
+      }
+    }
+
+    const fightersArr = fightersRef.current ?? fighters;
+    const hpById = {};
+    for (const f of fightersArr) {
+      const id = f.id ?? f._id;
+      if (id) hpById[id] = Number(f.currentHP ?? f.hp ?? 0);
+    }
+    const positionsLite = buildPositionsLite(positionsRef.current ?? positions ?? {});
+    const fightersLite = buildFightersLite(fightersArr);
+
+    let result;
+    try {
+      result = await withTimeout(
+        window.engine.call("resolveAttack", {
+          attackerId,
+          targetId,
+          attack: {
+            toHitBonus,
+            targetAR,
+            damageFormula,
+            critOn: 20,
+            critMult: 2,
+            remainingAttacks: Number(attacker?.remainingAttacks ?? 1),
+          },
+          state: { hpById, positions: positionsLite, fighters: fightersLite },
+          ...(ammoPayload ? { ammo: ammoPayload } : {}),
+          ...(rngStateRef.current ? { rngState: rngStateRef.current } : {}),
+        }),
+        4000,
+        "resolveAttack"
+      );
+      if (result?.delta?.rngState) rngStateRef.current = result.delta.rngState;
+    } catch (err) {
+      console.error("[AI] resolveAttack failed:", err);
+      addLog(`🛑 Engine guard tripped: ${err?.message ?? err}`, "error");
+      return;
+    }
+
+    const { events = [], delta } = result || {};
+    events.forEach((e) => addLog(eventToLogLine(e), "combat"));
+    applyAttackDelta(delta);
+
+    const shouldEndTurn = (events || []).some((e) => e?.type === "TURN_SHOULD_END");
+    if (shouldEndTurn) {
+      await onEndTurnFull(attackerId);
+    }
+  }, [
+    ENGINE_ENABLED,
+    attack,
+    resolveEnemyEffectiveAttack,
+    calculateFlankingBonus,
+    positions,
+    addLog,
+    blockStaleAction,
+    eventToLogLine,
+    applyAttackDelta,
+    ammoCount,
+    fighters,
+    onEndTurnFull,
+    buildPositionsLite,
+    buildFightersLite,
+    pickNonEmptyObject,
+  ]);
+
+  // AI execution adapters (wrappers for worker AI_INTENT)
+  const executeAIMove = useCallback(async ({ mover, target, desiredRange, approach }) => {
+    // TODO: Integrate with your existing movement/pathfinding logic (Patch 10)
+    // Strategy: compute path to target; choose destination at distance ≈ desiredRange;
+    // if approach === "away", choose a step that increases distance.
+    void (mover, target, desiredRange, approach);
+  }, []);
+
+  // Worker-driven AI: one call per AI action (Patch 12). Worker chooses, resolves ATTACK, consumes actions; UI applies deltas and executes MOVE only.
+  const runAITurnFromWorker = useCallback(async (actor) => {
+    if (!ENGINE_ENABLED) return false;
+
+    const actorId = actor?.id ?? actor?._id ?? null;
+    if (!actorId) return false;
+
+    const fightersArr = fightersRef.current ?? fighters;
+    const fightersLite = buildFightersLite(fightersArr);
+    const positionsLite = buildPositionsLite(positionsRef.current ?? positions ?? {});
+    const attackProfilesById = buildAttackProfilesById(fightersArr);
+
+    const ammoCountLite = ammoCount;
+
+    let res;
+    try {
+      res = await withTimeout(
+        window.engine.call("aiExecuteStep", {
+          state: {
+            fightersLite,
+            positionsLite,
+            ammoCountLite,
+            attackProfilesById,
+            attackOverrideByKey: null,
+            turnIndex,
+            turnCounter,
+            round: meleeRound,
+            ...(rngStateRef.current ? { rngState: rngStateRef.current } : {}),
+          },
+          intent: {
+            actorId,
+            playerSides: ["player", "party", "ally"],
+            enemySides: ["enemy"],
+            actionCostAttack: 1,
+            actionCostMove: 1,
+            critOn: 20,
+            defaultCritMult: 2,
+          },
+        }),
+        4000,
+        "aiExecuteStep"
+      );
+    } catch (err) {
+      console.error("[AI] aiExecuteStep failed:", err);
+      addLog(`🛑 Engine guard tripped: ${err?.message ?? err}`, "error");
+      return false;
+    }
+
+    let events = res?.events || [];
+    let step = res?.step || null;
+    let delta = res?.delta || null;
+
+    for (const e of events) {
+      if (e?.type === "REQUEST_ATTACK_OVERRIDE") {
+        const attacker = fightersArr.find((f) => (f.id ?? f._id) === e.actorId);
+        const defender = fightersArr.find((f) => (f.id ?? f._id) === e.targetId);
+
+        const override = computeAttackOverride(attacker, defender, e.attackMode);
+
+        if (!override) {
+          addLog(`❌ ${attacker?.name ?? "Enemy"} cannot attack ${defender?.name ?? "target"} (out of range)`, "combat");
+          // Prefer move if you want:
+          await executeAIMove({ mover: attacker, target: defender, desiredRange: 1, approach: "toward" });
+          await onEndTurnFull(e.actorId);
+          return true;
+        }
+
+        const key = `${e.actorId}::${e.targetId}::${e.attackMode}`;
+
+        let followUp;
+        try {
+          followUp = await withTimeout(
+            window.engine.call("aiExecuteStep", {
+              state: {
+                fightersLite,
+                positionsLite,
+                ammoCountLite,
+                attackProfilesById,
+                attackOverrideByKey: { [key]: override },
+                turnIndex,
+                turnCounter,
+                round: meleeRound,
+                ...(rngStateRef.current ? { rngState: rngStateRef.current } : {}),
+              },
+              intent: {
+                actorId: e.actorId,
+                playerSides: ["player", "party", "ally"],
+                enemySides: ["enemy"],
+                actionCostAttack: 1,
+                actionCostMove: 1,
+                critOn: 20,
+                defaultCritMult: 2,
+              },
+            }),
+            4000,
+            "aiExecuteStep"
+          );
+        } catch (err2) {
+          console.error("[AI] aiExecuteStep follow-up failed:", err2);
+          addLog(`🛑 Engine guard tripped: ${err2?.message ?? err2}`, "error");
+          await onEndTurnFull(e.actorId);
+          return true;
+        }
+
+        events = followUp?.events || [];
+        delta = followUp?.delta || null;
+        step = followUp?.step || null;
+        break;
+      }
+    }
+
+    if (delta?.rngState) rngStateRef.current = delta.rngState;
+    if (delta?.fightersLite) {
+      const liteById = new Map(
+        (delta.fightersLite || []).map((f) => [(f.id ?? f._id), f])
+      );
+      setFighters((prev) =>
+        prev.map((f) => {
+          const id = f.id ?? f._id;
+          const lite = id ? liteById.get(id) : null;
+          if (!lite) return f;
+          return {
+            ...f,
+            currentHP: lite.currentHP ?? f.currentHP,
+            remainingAttacks: lite.remainingAttacks ?? f.remainingAttacks,
+          };
+        })
+      );
+    }
+
+    if (delta?.ammoDelta) {
+      setAmmoOverrides((prev) =>
+        setAmmo(prev, delta.ammoDelta.ownerId, delta.ammoDelta.ammoType, delta.ammoDelta.next)
+      );
+    }
+
+    events.forEach((e) => addLog(eventToLogLine(e), "combat"));
+
+    if (step?.kind === "MOVE" && step.targetId) {
+      const target =
+        (fightersRef.current ?? fighters).find((f) => (f.id ?? f._id) === step.targetId) || null;
+      if (target) {
+        await executeAIMove({
+          mover: actor,
+          target,
+          desiredRange: step.desiredRange ?? 1,
+          approach: step.approach ?? "toward",
+        });
+      }
+    }
+
+    const shouldEnd = events.some((e) => e?.type === "TURN_SHOULD_END");
+    if (shouldEnd) {
+      await onEndTurnFull(actorId);
+    }
+
+    return true;
+  }, [
+    ENGINE_ENABLED,
+    ammoCount,
+    buildFightersLite,
+    buildPositionsLite,
+    buildAttackProfilesById,
+    computeAttackOverride,
+    fighters,
+    positions,
+    turnIndex,
+    turnCounter,
+    meleeRound,
+    executeAIMove,
+    onEndTurnFull,
+    addLog,
+    eventToLogLine,
+  ]);
+
+  // Define handleEnemyTurn function with useCallback last
+  const handleEnemyTurn = useCallback(async (enemy, source = "unknown", meta = {}) => {
+    const { turnKey: metaTurnKey, token: metaToken } = meta;
+    addLog?.(`🧪 startEnemyTurn called (fighterId=${enemy?.id} name=${enemy?.name} source=${source})`, "info");
+
+    const liveTurnFighter = fightersRef.current?.[turnIndexRef.current];
+    if (!liveTurnFighter || liveTurnFighter.id !== enemy?.id) {
+      if (DEBUG_COMBAT) {
+        console.warn("[ENEMY TURN BLOCKED - stale fighter]", {
+          requested: enemy?.name,
+          live: liveTurnFighter?.name,
+          source,
+        });
+      }
+      return;
+    }
+    const enemyTurnActionToken = meta?.turnToken ?? currentTurnTokenRef.current;
+    if (blockStaleAction(enemy, enemyTurnActionToken, "enemy turn start")) {
+      processingEnemyTurnRef.current = false;
+      return;
+    }
+
+    if (
+      pendingTurnAdvanceRef.current ||
+      turnTimeoutRef.current ||
+      !!activeSpellImpactRef.current
+    ) {
+      if (DEBUG_COMBAT) {
+        console.warn("[ENEMY TURN BLOCKED - turn advance pending]", {
+          fighter: enemy?.name,
+          source,
+          pendingTurnAdvance: pendingTurnAdvanceRef.current,
+          hasTurnTimeout: !!turnTimeoutRef.current,
+          spellImpact: !!activeSpellImpactRef.current,
+        });
+      }
+      return;
+    }
+
+    // Prevent duplicate processing using ref for immediate synchronous check
+    if (processingEnemyTurnRef.current) {
+      const turnKeyForLog = metaTurnKey ?? `${enemy?.id}|round:${meleeRound}|turnIndex:${turnIndex}|turnCounter:${turnCounter}`;
+      const activeFighterId = fightersRef.current?.[turnIndexRef.current]?.id;
+      console.warn('🚫 BLOCKED: Already processing enemy turn', {
+        enemyName: enemy?.name,
+        source,
+        turnKey: turnKeyForLog,
+        token: metaToken,
+        processing: processingEnemyTurnRef.current,
+        timerPending: enemyTurnTimerRef.current != null,
+        activeFighterId,
+      });
+      addLog?.(`🚫 Blocked duplicate call for ${enemy?.name} (source=${source} turnKey=${turnKeyForLog} activeFighterId=${activeFighterId ?? "?"})`, "warning");
+      pendingEnemyTurnRef.current = true; // Coalesce: will re-schedule once in finally if turn wasn't completed
+      return;
+    }
+    const enemySliceKey = [
+      enemy?.id ?? "?",
+      meleeRoundRef.current ?? meleeRound,
+      turnIndexRef.current ?? turnIndex,
+      turnCounterRef.current ?? turnCounter,
+    ].join(":");
+
+    if (enemyActionCommittedSliceKeyRef.current !== enemySliceKey) {
+      enemyActionCommittedThisSliceRef.current = false;
+      enemyActionCommittedSliceKeyRef.current = enemySliceKey;
+    }
+
+    if (actionClockRef.current?.busy && enemyActionCommittedThisSliceRef.current) {
+      if (DEBUG_COMBAT) {
+        console.warn("[ENEMY TURN WAITING - committed action still busy]", {
+          fighter: enemy?.name,
+          source,
+        });
+      }
+      processingEnemyTurnRef.current = true;
+      pendingEnemyTurnRef.current = false;
+      scheduleEndTurn(16);
+      return;
+    }
+    processingEnemyTurnRef.current = true;
+    let didCompleteTurn = true; // false only for early no-op exits (pendingTurnAdvance, combatPaused)
+    try {
     // If an endTurn is already scheduled, don't start another enemy turn in the delay window.
     if (pendingTurnAdvanceRef.current) {
+      didCompleteTurn = false;
       return;
     }
 
     if (combatPausedRef.current) {
       addLog(`⏸️ Combat paused - ${enemy.name}'s turn is waiting`, "info");
-      processingEnemyTurnRef.current = false;
+      didCompleteTurn = false;
       return;
     }
+
+    const liveFighters = fightersRef.current ?? fighters;
+    const livePositions = pickNonEmptyObject(positionsRef.current, positions);
+    let liveEnemy = liveFighters.find((f) => f.id === enemy.id) ?? enemy;
+    const activeFighter = liveFighters[turnIndexRef.current ?? turnIndex];
+
+    if (activeFighter?.id !== liveEnemy.id) {
+      addLog?.(
+        `🚫 Enemy turn ignored: ${liveEnemy.name} is no longer active fighter (active=${activeFighter?.name ?? "?"})`,
+        "warning"
+      );
+      didCompleteTurn = false;
+      return;
+    }
+
+    const enemyTurnSliceToken = {
+      fighterId: liveEnemy.id,
+      turnCounter: turnCounterRef.current,
+      turnIndex: turnIndexRef.current,
+      meleeRound: meleeRoundRef.current ?? meleeRound,
+    };
+
+    const isEnemyTurnTokenStillCurrent = (label = "action") => {
+      const active = fightersRef.current?.[turnIndexRef.current];
+      const currentRound = meleeRoundRef.current ?? meleeRound;
+      const isCurrent =
+        active?.id === enemyTurnSliceToken.fighterId &&
+        turnCounterRef.current === enemyTurnSliceToken.turnCounter &&
+        turnIndexRef.current === enemyTurnSliceToken.turnIndex &&
+        currentRound === enemyTurnSliceToken.meleeRound &&
+        currentTurnTokenRef.current === enemyTurnActionToken &&
+        !combatOverRef.current &&
+        !combatEndCheckRef.current;
+
+      if (!isCurrent) {
+        addLog?.(
+          `🚫 Enemy delayed attack blocked: ${liveEnemy.name} turn token expired (${label})`,
+          "warning"
+        );
+      }
+      return isCurrent;
+    };
+
+    const guardedEnemyAttack = (...args) => {
+      if (!isEnemyTurnTokenStillCurrent("modular-ai-attack")) {
+        processingEnemyTurnRef.current = false;
+        return undefined;
+      }
+      return attack(...args);
+    };
 
     const settingsNow = settingsRef.current;
     const terrainNow = terrainRef.current;
 
+    const commitEnemyTurnAction = (enemyLike, reason) => {
+      const live =
+        (fightersRef.current || fighters).find((f) => f.id === enemyLike?.id) ||
+        enemyLike;
+      const key = [
+        live?.id,
+        meleeRoundRef.current ?? meleeRound,
+        turnIndexRef.current ?? turnIndex,
+        turnCounterRef.current ?? turnCounter,
+      ].join(":");
+
+      if (enemyActionLockRef.current === key) {
+        addLog?.(
+          `🛑 [ENEMY ACTION BLOCKED] ${live?.name || "Enemy"} already committed an action this turn slice; blocked ${reason}`,
+          "warning"
+        );
+        return false;
+      }
+      enemyActionLockRef.current = key;
+      enemyActionCommittedThisSliceRef.current = true;
+      enemyActionCommittedSliceKeyRef.current = [
+        live?.id ?? "?",
+        meleeRoundRef.current ?? meleeRound,
+        turnIndexRef.current ?? turnIndex,
+        turnCounterRef.current ?? turnCounter,
+      ].join(":");
+      return true;
+    };
+
     if (settingsNow?.useModularEnemyAI) {
-      runEnemyTurnAI(enemy, {
-        fighters,
-        positions,
+      runEnemyTurnAI(liveEnemy, {
+        fighters: liveFighters,
+        positions: livePositions,
         combatTerrain: terrainNow,
         arenaEnvironment,
         meleeRound,
@@ -8437,6 +13691,10 @@ export default function CombatPage({ characters = [] }) {
         healerAbility,
         clericalHealingTouch,
         medicalTreatment,
+        getFighterSpells,
+        getFighterPsionicPowers,
+        getFighterPPE,
+        getFighterISP,
         // AI engine
         createAIActionSelector,
         GRID_CONFIG,
@@ -8450,17 +13708,22 @@ export default function CombatPage({ characters = [] }) {
         canAISeeTarget,
         // State setters
         setPositions,
-        setFighters,
+        setFighters: commitFighters,
         setDefensiveStance,
         setTemporaryHexSharing,
         setCombatActive,
         // Attack & combat
-        attack,
+        attack: guardedEnemyAttack,
         // Refs
         positionsRef,
         processingEnemyTurnRef,
         attackRef,
         combatEndCheckRef,
+        combatOverRef,
+        markDistanceClosed,
+        combatStateRef,
+        commitEnemyTurnAction,
+        isEnemyTurnStillCurrent: isEnemyTurnTokenStillCurrent,
         // Other
         getTargetsInLine,
       });
@@ -8468,13 +13731,11 @@ export default function CombatPage({ characters = [] }) {
     }
 
     console.log('✅ Starting enemy turn for', enemy.name, 'at turn index', turnIndex);
-    processingEnemyTurnRef.current = true;
 
     // ✅ CRITICAL: Check if enemy can act (conscious, not dying/dead/unconscious)
     if (!canFighterAct(enemy)) {
       const hpStatus = getHPStatus(enemy.currentHP);
       addLog(`⏭️ ${enemy.name} cannot act (${hpStatus.description}), skipping turn`, "info");
-      processingEnemyTurnRef.current = false;
       scheduleEndTurn();
       return;
     }
@@ -8482,12 +13743,64 @@ export default function CombatPage({ characters = [] }) {
     // Check if combat is still active
     if (!combatActive) {
       addLog(`⚠️ Combat ended, ${enemy.name} skips turn`, "info");
-      processingEnemyTurnRef.current = false;
       return;
     }
 
+    // ✅ Guard against move+attack fallthrough in same slice (inline AI only)
+    let actionCommitted = false;
+    function commitEnemyAction(reason) {
+      if (actionCommitted) {
+        addLog?.(
+          `🚫 Enemy extra action blocked: ${liveEnemy.name} attempted ${reason} after action already committed`,
+          "warning"
+        );
+        console.warn("[INLINE ENEMY AI BLOCKED - duplicate action]", {
+          enemy: enemy?.name,
+          reason,
+        });
+        return false;
+      }
+      if (!commitEnemyTurnAction(liveEnemy, reason)) return false;
+      actionCommitted = true;
+      return true;
+    }
+
+    const commitOneEnemyAction = async (label, fn) => {
+      if (!commitEnemyAction(label)) return false;
+      await fn();
+      return true;
+    };
+
+    const guardEnemyStillActiveForAttack = (label = "attack") => {
+      if (!isEnemyTurnTokenStillCurrent(label)) {
+        return false;
+      }
+      if (pendingTurnAdvanceRef.current) {
+        addLog?.(
+          `🚫 Enemy action blocked: ${liveEnemy.name} (${label}) — turn advance pending`,
+          "warning"
+        );
+        return false;
+      }
+      if (activeSpellImpactRef.current) {
+        addLog?.(
+          `🚫 Enemy action blocked: ${liveEnemy.name} (${label}) — spell impact active`,
+          "warning"
+        );
+        return false;
+      }
+      const currentFighter = fightersRef.current?.[turnIndexRef.current];
+      if (currentFighter?.id !== liveEnemy.id) {
+        addLog?.(
+          `🚫 Enemy action blocked: ${liveEnemy.name} is no longer active fighter (active=${currentFighter?.name ?? "?"})`,
+          "warning"
+        );
+        return false;
+      }
+      return true;
+    };
+
     // 🦅 Hawk predator override: if grappling/carrying, handle here (don't defer to generic flying AI)
-    let liveEnemy = fighters.find(f => f.id === enemy.id) || enemy;
     const enemyNameStr = (liveEnemy?.species || liveEnemy?.name || "").toLowerCase();
     const isPredBird =
       enemyNameStr.includes("hawk") ||
@@ -8497,19 +13810,18 @@ export default function CombatPage({ characters = [] }) {
 
     // 1) If carrying: climb → fly away → drop (hawk mid-air prey logic)
     if (isPredBird && liveEnemy?.isCarrying && liveEnemy?.carriedTargetId) {
-      const carried = fighters.find(f => f.id === liveEnemy.carriedTargetId);
+      const carried = liveFighters.find(f => f.id === liveEnemy.carriedTargetId);
 
       if (!carried) {
         // orphan carry state
-        setFighters(prev => prev.map(f => (
+        commitFighters(prev => prev.map(f => (
           f.id === liveEnemy.id ? { ...f, isCarrying: false, carriedTargetId: null } : f
         )));
-        processingEnemyTurnRef.current = false;
         scheduleEndTurn();
         return;
       }
 
-      const livePos = pickNonEmptyObject(positionsRef.current, positions);
+      const livePos = livePositions;
       const myPos = livePos[liveEnemy.id];
       const alt = getAltitude(liveEnemy) || 0;
 
@@ -8525,7 +13837,7 @@ export default function CombatPage({ characters = [] }) {
         const step = Math.min(20, carryState.desiredAlt - alt);
         const climbed = changeAltitude(liveEnemy, +step);
         if (climbed.success) {
-          setFighters(prev => prev.map(f => {
+          commitFighters(prev => prev.map(f => {
             if (f.id !== liveEnemy.id) return f;
             const ra = Number(f.remainingAttacks ?? 0) || 0;
             return {
@@ -8536,7 +13848,6 @@ export default function CombatPage({ characters = [] }) {
           }));
           addLog(`🦅 ${liveEnemy.name} climbs with prey (${alt}ft → ${alt + step}ft)!`, "info");
         }
-        processingEnemyTurnRef.current = false;
         scheduleEndTurn();
         return;
       }
@@ -8544,7 +13855,7 @@ export default function CombatPage({ characters = [] }) {
       // B) Ensure we "fly away" at least once before dropping (one action)
       if (!carryState.movedAway && myPos) {
         // Find closest threat (exclude the carried prey)
-        const threats = fighters.filter(f =>
+        const threats = liveFighters.filter(f =>
           f.type !== liveEnemy.type &&
           canFighterAct(f) &&
           f.currentHP > 0 &&
@@ -8606,7 +13917,7 @@ export default function CombatPage({ characters = [] }) {
         });
         addLog(`🦅 ${liveEnemy.name} carries ${carried.name} away through the air!`, "warning");
 
-        setFighters(prev => prev.map(f => {
+        commitFighters(prev => prev.map(f => {
           if (f.id !== liveEnemy.id) return f;
           const ra = Number(f.remainingAttacks ?? 0) || 0;
           return {
@@ -8616,7 +13927,6 @@ export default function CombatPage({ characters = [] }) {
           };
         }));
 
-        processingEnemyTurnRef.current = false;
         scheduleEndTurn();
         return;
       }
@@ -8624,7 +13934,7 @@ export default function CombatPage({ characters = [] }) {
       // C) Drop for damage (one action)
       const drop = dropCarriedTarget(liveEnemy, carried, { height: alt });
       if (drop.success) {
-        setFighters(prev => prev.map(f => {
+        commitFighters(prev => prev.map(f => {
           if (f.id === liveEnemy.id) {
             const ra = Number(f.remainingAttacks ?? 0) || 0;
             return { ...drop.fighter, remainingAttacks: Math.max(0, ra - 1), aiPredatorCarry: null };
@@ -8636,25 +13946,24 @@ export default function CombatPage({ characters = [] }) {
       } else {
         addLog(`❌ ${liveEnemy.name} failed to drop prey: ${drop.reason}`, "error");
         // Still consume an action for the attempt
-        setFighters(prev => prev.map(f => {
+        commitFighters(prev => prev.map(f => {
           if (f.id !== liveEnemy.id) return f;
           const ra = Number(f.remainingAttacks ?? 0) || 0;
           return { ...f, remainingAttacks: Math.max(0, ra - 1) };
         }));
       }
 
-      processingEnemyTurnRef.current = false;
       scheduleEndTurn();
       return;
     }
 
     // 2) If grappling (but not carrying): finish-kill with beak/talons OR lift & carry
     if (isPredBird && liveEnemy?.grappleState?.opponent && liveEnemy?.grappleState?.state !== GRAPPLE_STATES.NEUTRAL) {
-      const prey = fighters.find(f => f.id === liveEnemy.grappleState.opponent);
+      const prey = liveFighters.find(f => f.id === liveEnemy.grappleState.opponent);
 
       if (!prey) {
         // orphan grapple
-        setFighters(prev => prev.map(f => {
+        commitFighters(prev => prev.map(f => {
           if (f.id === liveEnemy.id) {
             const copy = { ...f };
             resetGrapple(copy);
@@ -8662,7 +13971,6 @@ export default function CombatPage({ characters = [] }) {
           }
           return f;
         }));
-        processingEnemyTurnRef.current = false;
         scheduleEndTurn();
         return;
       }
@@ -8681,14 +13989,15 @@ export default function CombatPage({ characters = [] }) {
       if (preyHP <= weakThreshold && finisher) {
         const updatedAttacker = { ...liveEnemy, selectedAttack: finisher };
         addLog(`🦅 ${liveEnemy.name} tears into ${prey.name} with ${finisher.name}!`, "combat");
-        // attack() will end the turn; release the enemy-turn lock first.
-        processingEnemyTurnRef.current = false;
-        setTimeout(() => {
-          attack(updatedAttacker, prey.id, {
-            source: "GRAPPLE_FINISH",
-            consumeAttackerAction: true,
-          });
-        }, 0);
+        await commitOneEnemyAction("grapple-finish", async () => {
+          setTimeout(() => {
+            if (!guardEnemyStillActiveForAttack()) return;
+            attack(updatedAttacker, prey.id, {
+              source: "GRAPPLE_FINISH",
+              consumeAttackerAction: true,
+            });
+          }, 0);
+        });
         return; // attack + scheduleEndTurn handled elsewhere
       }
 
@@ -8696,9 +14005,9 @@ export default function CombatPage({ characters = [] }) {
       // If the attempt fails, we don't "free follow-up" into an attack (that would be 2 actions).
       const carryFeasible = canCarryTarget(liveEnemy, prey, { capacityMultiplier: 10 });
       if (carryFeasible?.canCarry) {
-        const lift = liftAndCarry(liveEnemy, prey, { positions: pickNonEmptyObject(positionsRef.current, positions) });
+        const lift = liftAndCarry(liveEnemy, prey, { positions: livePositions });
         if (lift.success) {
-          setFighters(prev => prev.map(f => {
+          commitFighters(prev => prev.map(f => {
             if (f.id === liveEnemy.id) {
               const ra = Number(f.remainingAttacks ?? 0) || 0;
               return {
@@ -8721,7 +14030,7 @@ export default function CombatPage({ characters = [] }) {
           addLog(`🦅 ${liveEnemy.name} snatches ${prey.name} mid-air and begins to carry them!`, "warning");
         } else {
           // Consume an action for the failed lift attempt
-          setFighters(prev => prev.map(f => {
+          commitFighters(prev => prev.map(f => {
             if (f.id !== liveEnemy.id) return f;
             const ra = Number(f.remainingAttacks ?? 0) || 0;
             return { ...f, remainingAttacks: Math.max(0, ra - 1) };
@@ -8729,7 +14038,6 @@ export default function CombatPage({ characters = [] }) {
           addLog(`⚠️ ${liveEnemy.name} fails to get a clean lift: ${lift.reason}`, "info");
         }
 
-        processingEnemyTurnRef.current = false;
         scheduleEndTurn();
         return;
       }
@@ -8738,18 +14046,18 @@ export default function CombatPage({ characters = [] }) {
       if (finisher) {
         const updatedAttacker = { ...liveEnemy, selectedAttack: finisher };
         addLog(`🦅 ${liveEnemy.name} mauls ${prey.name} with ${finisher.name}!`, "combat");
-        // attack() will end the turn; release the enemy-turn lock first.
-        processingEnemyTurnRef.current = false;
-        setTimeout(() => {
-          attack(updatedAttacker, prey.id, {
-            source: "GRAPPLE_MAUL",
-            consumeAttackerAction: true,
-          });
-        }, 500);
+        await commitOneEnemyAction("grapple-maul", async () => {
+          setTimeout(() => {
+            if (!guardEnemyStillActiveForAttack()) return;
+            attack(updatedAttacker, prey.id, {
+              source: "GRAPPLE_MAUL",
+              consumeAttackerAction: true,
+            });
+          }, 500);
+        });
         return;
       }
 
-      processingEnemyTurnRef.current = false;
       scheduleEndTurn();
       return;
     }
@@ -8757,11 +14065,11 @@ export default function CombatPage({ characters = [] }) {
     // 3) Predator dive logic (Option B): if the hawk is flying, it can dive-swoop to contact and strike in ONE action.
     // This bypasses any "10ft dive" gating and prevents the "hover forever out of reach" stalemate.
     if (isPredBird && isFlying(liveEnemy) && (liveEnemy.remainingAttacks ?? 0) > 0) {
-      const livePos = pickNonEmptyObject(positionsRef.current, positions);
+      const livePos = livePositions;
       const myPos = livePos[liveEnemy.id];
 
       // Choose closest valid prey
-      const candidates = fighters.filter(f =>
+      const candidates = liveFighters.filter(f =>
         f.type !== liveEnemy.type &&
         canFighterAct(f) &&
         (f.currentHP ?? 0) > 0 &&
@@ -8797,7 +14105,7 @@ export default function CombatPage({ characters = [] }) {
             else scoutAlt = Math.min(MAX_SCOUT_ALT, scoutAlt + CLIMB_PER_GLIDE);
 
             if ((curAlt || 0) < scoutAlt) {
-              setFighters(prev => prev.map(f => (
+              commitFighters(prev => prev.map(f => (
                 f.id === liveEnemy.id ? { ...f, isFlying: true, altitudeFeet: scoutAlt, altitude: scoutAlt } : f
               )));
               addLog(`🦅 ${liveEnemy.name} climbs higher to scout (${Math.round(scoutAlt)}ft).`, "info");
@@ -8815,31 +14123,29 @@ export default function CombatPage({ characters = [] }) {
               step = best;
             }
             if (step && (step.x !== myPos.x || step.y !== myPos.y)) {
-              const basePos = { ...(pickNonEmptyObject(positionsRef.current, positions)) };
+              const basePos = { ...livePositions };
               basePos[liveEnemy.id] = { ...step };
-              const syncedPos = syncCombinedPositions(fighters, basePos);
+              const syncedPos = syncCombinedPositions(liveFighters, basePos);
               positionsRef.current = syncedPos;
               setPositions(syncedPos);
               addLog(`🦅 ${liveEnemy.name} glides toward ${prey.name} from above.`, "info");
               // Spend an action for the glide
-              setFighters(prev => prev.map(f => {
+              commitFighters(prev => prev.map(f => {
                 if (f.id !== liveEnemy.id) return f;
                 const ra = Number(f.remainingAttacks ?? 0) || 0;
                 return { ...f, remainingAttacks: Math.max(0, ra - 1) };
               }));
-              processingEnemyTurnRef.current = false;
               scheduleEndTurn();
               return;
             } else {
               // Couldn't improve horizontal distance this action (blocked / already optimal).
               // Still spend the action to "glide & gain altitude" so the hawk doesn't freeze.
               addLog(`🦅 ${liveEnemy.name} glides in slow circles at ${Math.round(Math.max(curAlt || 0, scoutAlt))}ft, lining up a dive.`, "info");
-              setFighters(prev => prev.map(f => {
+              commitFighters(prev => prev.map(f => {
                 if (f.id !== liveEnemy.id) return f;
                 const ra = Number(f.remainingAttacks ?? 0) || 0;
                 return { ...f, remainingAttacks: Math.max(0, ra - 1) };
               }));
-              processingEnemyTurnRef.current = false;
               scheduleEndTurn();
               return;
             }
@@ -8860,9 +14166,9 @@ export default function CombatPage({ characters = [] }) {
               )[0];
 
               // Move as part of the swoop (no extra action). Update positionsRef immediately so attack() uses the new distance.
-              const basePos = { ...(pickNonEmptyObject(positionsRef.current, positions)) };
+              const basePos = { ...livePositions };
               basePos[liveEnemy.id] = { ...contactHex };
-              const syncedPos = syncCombinedPositions(fighters, basePos);
+              const syncedPos = syncCombinedPositions(liveFighters, basePos);
               positionsRef.current = syncedPos;
               setPositions(syncedPos);
 
@@ -8886,7 +14192,7 @@ export default function CombatPage({ characters = [] }) {
                 altitude: contactAlt,
               };
 
-              setFighters(prev => prev.map(f => (f.id === updatedAttacker.id ? updatedAttacker : f)));
+              commitFighters(prev => prev.map(f => (f.id === updatedAttacker.id ? updatedAttacker : f)));
 
               // Only log dive if there was an actual altitude drop (not already at contact altitude)
               const actualDrop = Math.max(0, curAlt - contactAlt);
@@ -8896,19 +14202,20 @@ export default function CombatPage({ characters = [] }) {
                 addLog(`🦅 ${liveEnemy.name} swoops low and strikes ${prey.name}!`, "combat");
               }
 
-              // attack() ends the turn; release the lock first.
-              processingEnemyTurnRef.current = false;
-              setTimeout(() => {
-                attack(updatedAttacker, prey.id, {
-                  strikeBonus: dive?.attackBonus ?? 0,
-                  source: "DIVE_ATTACK",
-                  diveAttack: true,
-                  diveFromFeet: curAlt,
-                  diveToFeet: contactAlt,
-                  attackerStatePatch: { isFlying: true, altitudeFeet: contactAlt, altitude: contactAlt },
-                  consumeAttackerAction: true,
-                });
-              }, 0);
+              await commitOneEnemyAction("predator-dive-attack", async () => {
+                setTimeout(async () => {
+                  if (!guardEnemyStillActiveForAttack()) return;
+                  attack(updatedAttacker, prey.id, {
+                    strikeBonus: dive?.attackBonus ?? 0,
+                    source: "DIVE_ATTACK",
+                    diveAttack: true,
+                    diveFromFeet: curAlt,
+                    diveToFeet: contactAlt,
+                    attackerStatePatch: { isFlying: true, altitudeFeet: contactAlt, altitude: contactAlt },
+                    consumeAttackerAction: true,
+                  });
+                }, 0);
+              });
               return;
             }
           }
@@ -8922,8 +14229,8 @@ export default function CombatPage({ characters = [] }) {
     const hasTinyPreyOnBoard = (() => {
       try {
         const preyKeywords = ["mouse", "rat", "rabbit", "squirrel", "songbird"];
-        const hostiles = fighters.filter(
-          (f) => f && f.type !== enemy.type && canFighterAct(f) && (f.currentHP ?? 0) > 0
+        const hostiles = liveFighters.filter(
+          (f) => f && f.type !== liveEnemy.type && canFighterAct(f) && (f.currentHP ?? 0) > 0
         );
         return hostiles.some((f) => {
           const name = String(f.name || "").toLowerCase();
@@ -8940,21 +14247,23 @@ export default function CombatPage({ characters = [] }) {
     if (
       isPredBird &&
       hasTinyPreyOnBoard &&
-      isFlyingCreature(enemy, canFly) &&
-      (enemy.isFlying || enemy.altitudeFeet > 0)
+      isFlyingCreature(liveEnemy, canFly) &&
+      (liveEnemy.isFlying || liveEnemy.altitudeFeet > 0)
     ) {
-      const flyingHandled = runFlyingTurn(enemy, {
-        fighters: fighters,
-        positions: positions,
+      const fightersNow = fightersRef.current ?? liveFighters;
+      const positionsNow = pickNonEmptyObject(positionsRef.current, livePositions);
+      const flyingHandled = runFlyingTurn(liveEnemy, {
+        fighters: fightersNow,
+        positions: positionsNow,
         addLog: addLog,
         canFlyFn: canFly,
         moveFlyingCreature: (creature, hex, opts) => {
           return moveFlyingCreatureHelper(creature, hex, {
             gameState: {
-              fighters: fighters,
-              positions: positions,
+              fighters: fightersNow,
+              positions: positionsNow,
             },
-            positions: positions,
+            positions: positionsNow,
             log: addLog,
             moveCreatureOnMap: (creature, targetHex, movementOpts) => {
               // Use handlePositionChange for proper movement
@@ -8984,10 +14293,10 @@ export default function CombatPage({ characters = [] }) {
         performDiveAttack: (flier, target) => {
           return performDiveAttackHelper(flier, target, {
             gameState: {
-              fighters: fighters,
-              positions: positions,
+              fighters: fightersNow,
+              positions: positionsNow,
             },
-            positions: positions,
+            positions: positionsNow,
             log: addLog,
             moveCreatureOnMap: (creature, targetHex, movementOpts) => {
               // Use handlePositionChange for proper movement
@@ -9005,6 +14314,7 @@ export default function CombatPage({ characters = [] }) {
               ) || attacker.attacks?.[0];
 
               if (diveAttack) {
+                if (!guardEnemyStillActiveForAttack()) return;
                 const updatedAttacker = {
                   ...attacker,
                   selectedAttack: diveAttack,
@@ -9013,58 +14323,48 @@ export default function CombatPage({ characters = [] }) {
 
                 // Execute attack with dive bonus from options
                 const diveBonus = options?.attackBonus || 0;
-                attack(updatedAttacker, defender.id, {
-                  strikeBonus: diveBonus, // Use strikeBonus to match existing attack system
-                  diveBonus: diveBonus, // Also include for logging
-                  source: options?.source || "DIVE_ATTACK",
+                commitOneEnemyAction("flying-melee-attack", async () => {
+                  attack(updatedAttacker, defender.id, {
+                    strikeBonus: diveBonus, // Use strikeBonus to match existing attack system
+                    diveBonus: diveBonus, // Also include for logging
+                    source: options?.source || "DIVE_ATTACK",
+                  });
                 });
-
-                // Deduct action
-                setFighters((prev) =>
-                  prev.map((f) =>
-                    f.id === attacker.id
-                      ? { ...f, remainingAttacks: Math.max(0, f.remainingAttacks - 1) }
-                      : f
-                  )
-                );
-
-                processingEnemyTurnRef.current = false;
-                scheduleEndTurn();
               }
             },
-            setFighters: setFighters,
+            setFighters: commitFighters,
           });
         },
         getFlightFocusPoint: (flier) => {
           // Focus on the closest enemy or own position
-          const reachable = fighters.filter(f =>
+          const reachable = fightersNow.filter(f =>
             f.type !== flier.type &&
             canFighterAct(f) &&
             f.currentHP > 0 &&
-            !isTargetBlocked(flier.id, f.id, positions)
+            !isTargetBlocked(flier.id, f.id, positionsNow)
           );
           const closest = reachable.sort((a, b) =>
-            calculateDistance(positions[flier.id], positions[a.id]) -
-            calculateDistance(positions[flier.id], positions[b.id])
+            calculateDistance(positionsNow[flier.id], positionsNow[a.id]) -
+            calculateDistance(positionsNow[flier.id], positionsNow[b.id])
           )[0];
-          return closest ? positions[closest.id] : positions[flier.id];
+          return closest ? positionsNow[closest.id] : positionsNow[flier.id];
         },
         findSafeLandingHex: (flier) => {
-          const myPos = positions[flier.id];
+          const myPos = positionsNow[flier.id];
           if (!myPos) return null;
           // Find a hex away from enemies
-          const nearbyEnemies = fighters.filter(f =>
+          const nearbyEnemies = fightersNow.filter(f =>
             f.type !== flier.type &&
             canFighterAct(f) &&
             f.currentHP > 0 &&
-            calculateDistance(myPos, positions[f.id]) < 50
+            calculateDistance(myPos, positionsNow[f.id]) < 50
           );
           if (nearbyEnemies.length > 0) {
             const nearestThreat = nearbyEnemies.sort((a, b) =>
-              calculateDistance(myPos, positions[a.id]) -
-              calculateDistance(myPos, positions[b.id])
+              calculateDistance(myPos, positionsNow[a.id]) -
+              calculateDistance(myPos, positionsNow[b.id])
             )[0];
-            const threatPos = positions[nearestThreat.id];
+            const threatPos = positionsNow[nearestThreat.id];
             const dx = myPos.x - threatPos.x;
             const dy = myPos.y - threatPos.y;
             const angle = Math.atan2(dy, dx);
@@ -9078,30 +14378,26 @@ export default function CombatPage({ characters = [] }) {
           return myPos; // Land in current position if no threats
         },
         updateFighter: (updatedFighter) => {
-          setFighters((prev) => prev.map((f) => (f.id === updatedFighter.id ? updatedFighter : f)));
+          commitFighters((prev) => prev.map((f) => (f.id === updatedFighter.id ? updatedFighter : f)));
         },
         updatePositions: (updatedPositions) => {
           setPositions(updatedPositions);
           positionsRef.current = updatedPositions;
         },
         setPositions: setPositions,
-        setFighters: setFighters,
+        setFighters: commitFighters,
         calculateDistanceFn: calculateDistance,
       });
 
       if (flyingHandled) {
         // Flying AI handled the turn, don't run normal ground AI
-        processingEnemyTurnRef.current = false;
-        // Use setTimeout to ensure turn actually ends
-        setTimeout(() => {
-          endTurn();
-        }, 1500);
+        scheduleEndTurn(0);
         return;
       }
     }
 
     // 1) First, refresh the enemy from state (in case their HP / morale changed)
-    const fightersSnapshot = fighters;
+    const fightersSnapshot = fightersRef.current ?? liveFighters;
     liveEnemy = fightersSnapshot.find(f => f.id === enemy.id) || enemy;
 
     // 🛠️ Fix #2: Safety net - Clear ROUTED for fear-immune creatures BEFORE routing logic runs
@@ -9118,7 +14414,7 @@ export default function CombatPage({ characters = [] }) {
         liveEnemy.statusEffects = liveEnemy.statusEffects.filter(s => s !== "ROUTED");
       }
       // Update state immediately
-      setFighters(prev => prev.map(f => {
+      commitFighters(prev => prev.map(f => {
         if (f.id === liveEnemy.id) {
           return { ...f, moraleState: liveEnemy.moraleState, statusEffects: liveEnemy.statusEffects };
         }
@@ -9136,7 +14432,7 @@ export default function CombatPage({ characters = [] }) {
     );
 
     // Make sure we store the updated moraleState back into fighters
-    setFighters(prev =>
+    commitFighters(prev =>
       prev.map(f => (f.id === liveEnemy.id ? { ...f, moraleState: liveEnemy.moraleState } : f))
     );
 
@@ -9148,7 +14444,7 @@ export default function CombatPage({ characters = [] }) {
       addLog(`🤚 ${liveEnemy.name} has surrendered and will not act.`, "info");
 
       // Remove ability to fight
-      setFighters(prev =>
+      commitFighters(prev =>
         prev.map(f =>
           f.id === liveEnemy.id
             ? {
@@ -9161,7 +14457,6 @@ export default function CombatPage({ characters = [] }) {
       );
 
       // Enemy does nothing this turn
-      processingEnemyTurnRef.current = false;
       scheduleEndTurn();
       return;
     }
@@ -9181,7 +14476,7 @@ export default function CombatPage({ characters = [] }) {
           liveEnemy.statusEffects = liveEnemy.statusEffects.filter(s => s !== "ROUTED");
         }
         // Update state
-        setFighters(prev => prev.map(f => {
+        commitFighters(prev => prev.map(f => {
           if (f.id === liveEnemy.id) {
             return { ...f, moraleState: liveEnemy.moraleState, statusEffects: liveEnemy.statusEffects };
           }
@@ -9190,8 +14485,7 @@ export default function CombatPage({ characters = [] }) {
         // Continue with normal AI turn (don't end turn)
       } else {
         // Normal routing behavior - attempt to flee
-        addLog(`🏃 ${liveEnemy.name} is ROUTED and attempts to flee!`, "warning");
-
+        
         const currentPositions =
           positionsRef.current && Object.keys(positionsRef.current).length > 0
             ? positionsRef.current
@@ -9209,9 +14503,7 @@ export default function CombatPage({ characters = [] }) {
 
           if (threatPositions.length === 0) {
             // ✅ No threats to flee from, mark as fled
-            addLog(`🏃 ${liveEnemy.name} flees in terror!`, "warning");
-            markFighterFledOffMap(liveEnemy.id, liveEnemy.name);
-            processingEnemyTurnRef.current = false;
+                        markFighterFledOffMap(liveEnemy.id, liveEnemy.name);
             scheduleEndTurn();
             return;
           } else {
@@ -9237,7 +14529,6 @@ export default function CombatPage({ characters = [] }) {
 
               if (atEdge) {
                 markFighterFledOffMap(liveEnemy.id, liveEnemy.name);
-                processingEnemyTurnRef.current = false;
                 scheduleEndTurn();
                 return;
               } else {
@@ -9249,7 +14540,7 @@ export default function CombatPage({ characters = [] }) {
                 );
 
                 // Set remaining attacks to 0 (routed units don't fight) but DON'T set hasFled
-                setFighters((prev) =>
+                commitFighters((prev) =>
                   prev.map((f) =>
                     f.id === liveEnemy.id
                       ? {
@@ -9266,15 +14557,12 @@ export default function CombatPage({ characters = [] }) {
                 );
 
                 // End turn after moving
-                processingEnemyTurnRef.current = false;
                 scheduleEndTurn();
                 return;
               }
             } else {
               // ✅ If routed enemy cannot find a safe path, mark them as fled (they're effectively out of combat)
-              addLog(`🏃 ${liveEnemy.name} attempts to flee but cannot find a safe path! Marking as fled.`, "warning");
-              markFighterFledOffMap(liveEnemy.id, liveEnemy.name);
-              processingEnemyTurnRef.current = false;
+                            markFighterFledOffMap(liveEnemy.id, liveEnemy.name);
               scheduleEndTurn();
               return;
             }
@@ -9282,7 +14570,6 @@ export default function CombatPage({ characters = [] }) {
         } else {
           // ✅ No position, mark as fled
           markFighterFledOffMap(liveEnemy.id, liveEnemy.name);
-          processingEnemyTurnRef.current = false;
           scheduleEndTurn();
           return;
         }
@@ -9294,8 +14581,9 @@ export default function CombatPage({ characters = [] }) {
 
     // Check if enemy has actions remaining
     if (enemy.remainingAttacks <= 0) {
-      addLog(`⏭️ ${enemy.name} has no actions remaining - passing to next fighter in initiative order`, "info");
-      processingEnemyTurnRef.current = false;
+      if (!(enemy?.moraleState?.hasFled) && !(Array.isArray(enemy?.statusEffects) && enemy.statusEffects.includes('FLED'))) {
+        addLog(`⏭️ ${enemy.name} has no actions remaining - passing to next fighter in initiative order`, 'info');
+      }
       scheduleEndTurn();
       return;
     }
@@ -9356,7 +14644,7 @@ export default function CombatPage({ characters = [] }) {
 
               // Always persist the updated target to ensure meta.horrorChecks is saved
               // The function is idempotent, so this is safe even if nothing changed
-              setFighters((prev) =>
+              commitFighters((prev) =>
                 prev.map((f) => (f.id === target.id ? updatedTarget : f))
               );
             }
@@ -9460,7 +14748,7 @@ export default function CombatPage({ characters = [] }) {
 
                 if (!skillResult.error) {
                   // Update enemy ISP
-                  setFighters(prev => prev.map(f =>
+                  commitFighters(prev => prev.map(f =>
                     f.id === enemy.id
                       ? { ...f, currentISP: skillResult.ispRemaining, ISP: skillResult.ispRemaining }
                       : f
@@ -9468,7 +14756,7 @@ export default function CombatPage({ characters = [] }) {
 
                   // Update ally HP
                   if (skillResult.healed !== undefined) {
-                    setFighters(prev => prev.map(f =>
+                    commitFighters(prev => prev.map(f =>
                       f.id === targetAlly.id
                         ? { ...f, currentHP: skillResult.currentHp }
                         : f
@@ -9481,7 +14769,7 @@ export default function CombatPage({ characters = [] }) {
                 skillResult = clericalHealingTouch(enemy, targetAlly);
 
                 if (!skillResult.error) {
-                  setFighters(prev => prev.map(f =>
+                  commitFighters(prev => prev.map(f =>
                     f.id === targetAlly.id
                       ? { ...f, currentHP: skillResult.currentHp }
                       : f
@@ -9493,7 +14781,7 @@ export default function CombatPage({ characters = [] }) {
                 skillResult = medicalTreatment(enemy, targetAlly, skillPercent);
 
                 if (skillResult.healed > 0) {
-                  setFighters(prev => prev.map(f =>
+                  commitFighters(prev => prev.map(f =>
                     f.id === targetAlly.id
                       ? { ...f, currentHP: skillResult.currentHp }
                       : f
@@ -9503,13 +14791,12 @@ export default function CombatPage({ characters = [] }) {
               }
 
               // Deduct action and end turn
-              setFighters(prev => prev.map(f =>
+              commitFighters(prev => prev.map(f =>
                 f.id === enemy.id
                   ? { ...f, remainingAttacks: Math.max(0, f.remainingAttacks - selectedHealingSkill.cost) }
                   : f
               ));
 
-              processingEnemyTurnRef.current = false;
               scheduleEndTurn();
               return;
             }
@@ -9526,9 +14813,16 @@ export default function CombatPage({ characters = [] }) {
       } else {
         addLog(`${enemy.name} has no targets and defends.`, "info");
       }
-      processingEnemyTurnRef.current = false;
       scheduleEndTurn();
       return;
+    }
+
+    // Worker-driven AI turn (Patch 9): worker picks intents, UI executes, then ends turn.
+    if (ENGINE_ENABLED) {
+      const didRun = await runAITurnFromWorker(enemy);
+      if (didRun) {
+        return;
+      }
     }
 
     const normalizeLabel = (value) => {
@@ -9586,10 +14880,68 @@ export default function CombatPage({ characters = [] }) {
 
     let actionPlan = null;
     try {
-      const selector = createAIActionSelector(engineContext);
-      actionPlan = selector(enemy, playerTargets, fighters);
+      // Electron path: do selection in worker
+      if (ENGINE_ENABLED) {
+        const fightersLite = buildFightersLite(fighters);
+        const positionsLite = buildPositionsLite(positionsForEngineAI);
+
+        const planLite = await withTimeout(
+          window.engine.call("aiSelectAction", {
+            enemyId: enemy.id ?? enemy._id ?? null,
+            fightersLite,
+            positionsLite,
+            playerSides: ["player", "party", "ally"],
+            enemySides: ["enemy"],
+            environment: { terrain: engineTerrain, lighting: engineLighting },
+          }),
+          4000,
+          "aiSelectAction"
+        );
+
+        // Convert worker AI_INTENT into your existing actionPlan shape
+        if (planLite?.type === "AI_INTENT" && planLite.intent) {
+          const { kind, targetId, attackMode, desiredRange, approach } = planLite.intent;
+
+          const target =
+            targetId
+              ? fighters.find((f) => (f.id ?? f._id) === targetId) || null
+              : null;
+
+          if (kind === "ATTACK" && target) {
+            // Use your existing attack execution paths
+            // The attack function will handle mode selection based on selectedAttack
+            // For now, we'll let the existing code handle attack mode selection
+            actionPlan = {
+              type: attackMode === "ranged" ? "strike" : "strike",
+              target,
+              aiAction: planLite.reason || "WorkerAI",
+              attackMode, // Pass through for adapter
+            };
+          } else if (kind === "MOVE" && target) {
+            // Movement will be handled by existing movement code
+            actionPlan = {
+              type: "move",
+              target,
+              aiAction: planLite.reason || "WorkerAI",
+              desiredRange,
+              approach, // "toward" or "away"
+            };
+          } else {
+            // HOLD
+            actionPlan = {
+              type: "hold",
+              target: null,
+              aiAction: planLite.reason || "AI",
+            };
+          }
+        }
+      } else {
+        // Browser fallback: keep your current in-thread selector
+        const selector = createAIActionSelector(engineContext);
+        actionPlan = selector(enemy, playerTargets, fighters);
+      }
     } catch (error) {
-      console.error("[AI] Failed to evaluate layered combat action", error);
+      console.error("[AI] Failed to evaluate action", error);
       addLog(`⚠️ ${enemy.name} hesitates (AI error: ${error.message})`, "error");
     }
 
@@ -9604,7 +14956,7 @@ export default function CombatPage({ characters = [] }) {
           `[AI] ${enemy.name} holds position (${actionPlan.aiAction || "Hold"})`,
           "ai"
         );
-        setFighters((prev) =>
+        commitFighters((prev) =>
           prev.map((f) =>
             f.id === enemy.id
               ? {
@@ -9617,7 +14969,6 @@ export default function CombatPage({ characters = [] }) {
               : f
           )
         );
-        processingEnemyTurnRef.current = false;
         scheduleEndTurn();
         return;
       }
@@ -9726,7 +15077,7 @@ export default function CombatPage({ characters = [] }) {
             1;
           const remainingAfter = Math.max(0, remainingBefore - 1);
 
-          setFighters((prev) =>
+          commitFighters((prev) =>
             prev.map((f) =>
               f.id === enemy.id
                 ? {
@@ -9744,7 +15095,6 @@ export default function CombatPage({ characters = [] }) {
             "info"
           );
 
-          processingEnemyTurnRef.current = false;
           scheduleEndTurn();
           return;
         } else {
@@ -9757,7 +15107,7 @@ export default function CombatPage({ characters = [] }) {
           }
         }
 
-        setFighters((prev) =>
+        commitFighters((prev) =>
           prev.map((f) =>
             f.id === enemy.id
               ? {
@@ -9770,7 +15120,6 @@ export default function CombatPage({ characters = [] }) {
               : f
           )
         );
-        processingEnemyTurnRef.current = false;
         scheduleEndTurn();
         return;
       }
@@ -9877,7 +15226,6 @@ export default function CombatPage({ characters = [] }) {
             // All targets are unreachable (e.g., all flying) - skip this turn or find alternative
             // Don't select an unreachable target - end turn instead
             addLog(`❌ ${enemy.name} has no reachable targets (all enemies are unreachable)`, "warning");
-            processingEnemyTurnRef.current = false;
             scheduleEndTurn();
             return;
           } else {
@@ -9917,7 +15265,7 @@ export default function CombatPage({ characters = [] }) {
       );
 
       // Apply flight state + altitude
-      setFighters(prev =>
+      commitFighters(prev =>
         prev.map(f =>
           f.id === liveEnemy.id
             ? {
@@ -9931,7 +15279,6 @@ export default function CombatPage({ characters = [] }) {
         )
       );
 
-      processingEnemyTurnRef.current = false;
       scheduleEndTurn();
       return;
     }
@@ -9954,7 +15301,7 @@ export default function CombatPage({ characters = [] }) {
             "info"
           );
 
-          setFighters(prev =>
+          commitFighters(prev =>
             prev.map(f =>
               f.id === liveEnemy.id
                 ? {
@@ -9967,7 +15314,6 @@ export default function CombatPage({ characters = [] }) {
             )
           );
 
-          processingEnemyTurnRef.current = false;
           scheduleEndTurn();
           return;
         }
@@ -9979,11 +15325,27 @@ export default function CombatPage({ characters = [] }) {
     let currentDistance = Infinity;
 
     // Select which attack to use (if creature has multiple attacks)
-    const availableAttacks = enemy.attacks || [{ name: "Claw", damage: "1d6", count: 1 }];
+    const availableAttacks = [...(enemy.attacks || [{ name: "Claw", damage: "1d6", count: 1 }])];
     let selectedAttack = availableAttacks[0]; // Default to first attack
     let isChargingAttack = false; // Track if this will be a charge attack
 
-    if (availableAttacks.length > 1) {
+    // ✅ Wizard with no weapon but spells: prefer Spellcasting so we don't loop on invalid melee
+    const spellbook = (getFighterSpellsUtil?.(enemy) || []).filter(Boolean);
+    const hasWeapon = !!(enemy.equippedWeapons?.length || enemy.equippedWeapon);
+    const canCast = spellbook.length > 0 && (Number(enemy.currentPPE ?? enemy.PPE ?? 0) > 0);
+    const hasSpellcasting = availableAttacks.some(a => a.name === "Spellcasting" || a.damage === "by spell");
+    if (!hasWeapon && canCast) {
+      if (hasSpellcasting) {
+        selectedAttack = availableAttacks.find(a => a.name === "Spellcasting" || a.damage === "by spell") || selectedAttack;
+      } else {
+        const spellEntry = { name: "Spellcasting", damage: "by spell", type: "spell" };
+        availableAttacks.push(spellEntry);
+        selectedAttack = spellEntry;
+      }
+    }
+
+    if (availableAttacks.length > 1 && !(!hasWeapon && canCast)) {
+      // Skip random pick when we've already forced Spellcasting for weaponless caster
       // Check if creature has charge-type attacks (Horn Charge, Gore, Ram, etc.)
       const chargeAttacks = availableAttacks.filter(a =>
         a.name.toLowerCase().includes('charge') ||
@@ -10041,14 +15403,18 @@ export default function CombatPage({ characters = [] }) {
     // If attack is Spellcasting, choose a specific spell (FULL CATALOG + IMMUNITY AWARE + LOOP GUARD)
     let attackName = selectedAttack.name;
     if (selectedAttack.name === "Spellcasting" || selectedAttack.damage === "by spell") {
-      const aiSpell = selectAISpell({
-        caster: enemy,
+      const spellbook = (getFighterSpellsUtil?.(enemy) || []).filter(Boolean);
+
+      const aiSpell = selectAISpell(
+        enemy,
+        spellbook,
         fighters,
         positions,
-        terrain: combatTerrain,
-        settings,
-      });
-      const chosenSpell = aiSpell || pickEnemySpellFromCatalog(enemy, target);
+        lastSpellMemoryRef?.current || {}
+      );
+
+      const chosenSpell =
+        aiSpell || pickEnemySpellFromCatalog(enemy, target);
 
       if (chosenSpell) {
         attackName = `${chosenSpell.name} (${chosenSpell.damageType || "magic"})`;
@@ -10089,7 +15455,6 @@ export default function CombatPage({ characters = [] }) {
           attackName = fallback.name;
         } else {
           addLog(`⚠️ ${enemy.name} has no viable spells or attacks available`, "info");
-          processingEnemyTurnRef.current = false;
           scheduleEndTurn();
           return;
         }
@@ -10239,11 +15604,13 @@ export default function CombatPage({ characters = [] }) {
               distanceOverride: calculateDistance(landing, tgtPos),
             };
 
-            setTimeout(() => {
-              attack(updatedEnemy, target.id, diveBonuses);
-              processingEnemyTurnRef.current = false;
-              scheduleEndTurn();
-            }, 500);
+            await commitOneEnemyAction("dive-attack", async () => {
+              setTimeout(() => {
+                if (!guardEnemyStillActiveForAttack()) return;
+                attack(updatedEnemy, target.id, diveBonuses);
+                // attack() calls scheduleEndTurn(0) when done - only place that delays next turn
+              }, 500);
+            });
 
             return;
           }
@@ -10308,7 +15675,7 @@ export default function CombatPage({ characters = [] }) {
             const usedAttack = buildImprovisedThrownAttack(enemy, usedType);
 
             // Use latest attacker snapshot to avoid stale remainingAttacks / state races
-            const liveThrower = fighters.find((f) => f.id === enemy.id) || enemy;
+            const liveThrower = (fightersRef.current ?? liveFighters).find((f) => f.id === enemy.id) || enemy;
             const updatedEnemyForThrow = {
               ...liveThrower,
               selectedAttack: usedAttack,
@@ -10319,7 +15686,6 @@ export default function CombatPage({ characters = [] }) {
             aiUnreachableTurnsRef.current.delete(k);
 
             // attack() consumes the action and ends the turn; release the enemy-turn lock first.
-            processingEnemyTurnRef.current = false;
             if (combatOverRef.current || !combatActive || combatEndCheckRef.current) return;
             // Clarify what was thrown
             if (usedType && usedType !== "debris") {
@@ -10332,7 +15698,10 @@ export default function CombatPage({ characters = [] }) {
                 "info"
               );
             }
-            attackFn(updatedEnemyForThrow, target.id, {});
+            await commitOneEnemyAction("improvised-throw", async () => {
+              if (!guardEnemyStillActiveForAttack()) return;
+              attackFn(updatedEnemyForThrow, target.id, {});
+            });
             return;
           }
 
@@ -10374,7 +15743,7 @@ export default function CombatPage({ characters = [] }) {
               const usedAttack = buildImprovisedThrownAttack(enemy, usedType);
 
               // Use latest attacker snapshot to avoid stale remainingAttacks / state races
-              const liveThrower = fighters.find((f) => f.id === enemy.id) || enemy;
+              const liveThrower = (fightersRef.current ?? liveFighters).find((f) => f.id === enemy.id) || enemy;
               const updatedEnemyForThrow = {
                 ...liveThrower,
                 selectedAttack: usedAttack,
@@ -10385,7 +15754,6 @@ export default function CombatPage({ characters = [] }) {
               aiUnreachableTurnsRef.current.delete(k);
 
               // attack() consumes the action and ends the turn; release the enemy-turn lock first.
-              processingEnemyTurnRef.current = false;
               if (combatOverRef.current || !combatActive || combatEndCheckRef.current) return;
               if (usedType && usedType !== "debris") {
                 addLog(`🪨 ${enemy.name} throws a ${usedType}!`, "info");
@@ -10397,7 +15765,10 @@ export default function CombatPage({ characters = [] }) {
                   "info"
                 );
               }
-              attackFn(updatedEnemyForThrow, target.id, {});
+              await commitOneEnemyAction("improvised-throw-stuck", async () => {
+                if (!guardEnemyStillActiveForAttack()) return;
+                attackFn(updatedEnemyForThrow, target.id, {});
+              });
               return;
             }
 
@@ -10421,7 +15792,7 @@ export default function CombatPage({ characters = [] }) {
                   "info"
                 );
 
-                setFighters((prevF) =>
+                commitFighters((prevF) =>
                   prevF.map((f) =>
                     f.id === enemy.id
                       ? { ...f, remainingAttacks: Math.max(0, (f.remainingAttacks ?? 1) - 1) }
@@ -10430,7 +15801,6 @@ export default function CombatPage({ characters = [] }) {
                 );
 
                 setDefensiveStance((prevSt) => ({ ...prevSt, [enemy.id]: "Search" }));
-                processingEnemyTurnRef.current = false;
                 scheduleEndTurn();
                 return;
               }
@@ -10442,7 +15812,7 @@ export default function CombatPage({ characters = [] }) {
               );
 
               setDefensiveStance((prevSt) => ({ ...prevSt, [enemy.id]: "Defend" }));
-              setFighters((prevF) =>
+              commitFighters((prevF) =>
                 prevF.map((f) =>
                   f.id === enemy.id
                     ? { ...f, remainingAttacks: Math.max(0, (f.remainingAttacks ?? 1) - 1) }
@@ -10450,7 +15820,6 @@ export default function CombatPage({ characters = [] }) {
                 )
               );
 
-              processingEnemyTurnRef.current = false;
               scheduleEndTurn();
               return;
             }
@@ -10488,7 +15857,7 @@ export default function CombatPage({ characters = [] }) {
                       return updatedPos;
                     });
 
-                    setFighters((prevF) =>
+                    commitFighters((prevF) =>
                       prevF.map((f) =>
                         f.id === enemy.id
                           ? { ...f, remainingAttacks: Math.max(0, (f.remainingAttacks ?? 1) - 1) }
@@ -10500,7 +15869,6 @@ export default function CombatPage({ characters = [] }) {
                     setDefensiveStance((prevSt) => ({ ...prevSt, [enemy.id]: "Retreat" }));
                     addLog(`🏃 ${enemy.name} withdraws from the unreachable airborne target.`, "info");
 
-                    processingEnemyTurnRef.current = false;
                     scheduleEndTurn();
                     return;
                   }
@@ -10526,7 +15894,7 @@ export default function CombatPage({ characters = [] }) {
               );
 
               setDefensiveStance((prevSt) => ({ ...prevSt, [enemy.id]: "Defend" }));
-              setFighters((prevF) =>
+              commitFighters((prevF) =>
                 prevF.map((f) =>
                   f.id === enemy.id
                     ? { ...f, remainingAttacks: Math.max(0, (f.remainingAttacks ?? 1) - 1) }
@@ -10534,7 +15902,6 @@ export default function CombatPage({ characters = [] }) {
                 )
               );
 
-              processingEnemyTurnRef.current = false;
               scheduleEndTurn();
               return;
             }
@@ -10553,7 +15920,7 @@ export default function CombatPage({ characters = [] }) {
               const details = formatImprovisedAmmoBreakdown(got.taken);
               addLog(`🔎 ${enemy.name} searches nearby and grabs ${details} as improvised missiles.`, "info");
 
-              setFighters((prevF) =>
+              commitFighters((prevF) =>
                 prevF.map((f) =>
                   f.id === enemy.id
                     ? { ...f, remainingAttacks: Math.max(0, (f.remainingAttacks ?? 1) - 1) }
@@ -10561,7 +15928,6 @@ export default function CombatPage({ characters = [] }) {
                 )
               );
               setDefensiveStance((prevSt) => ({ ...prevSt, [enemy.id]: "Search" }));
-              processingEnemyTurnRef.current = false;
               scheduleEndTurn();
               return;
             }
@@ -10704,6 +16070,10 @@ export default function CombatPage({ characters = [] }) {
               if (targetFlankPos) {
                 // Move to flanking position (or step toward it)
                 const actualFlankDistance = calculateDistance(currentPos, targetFlankPos);
+                const wasInMeleeBeforeFlankMove = rangeCheck.canAttack;
+                const flankCommitReason = wasInMeleeBeforeFlankMove ? "flank-attack" : "flank-move";
+                if (!commitEnemyAction(flankCommitReason)) return;
+
                 if (import.meta.env?.DEV && settingsRef.current?.showCombatDebug) {
                   addLog(
                     `Debug: flank move ${actualFlankDistance.toFixed(1)}ft for ${enemy.name}`,
@@ -10720,18 +16090,25 @@ export default function CombatPage({ characters = [] }) {
                   return updated;
                 });
 
-                // Deduct movement action cost (1 action for movement)
-                setFighters(prev => prev.map(f =>
-                  f.id === enemy.id
-                    ? { ...f, remainingAttacks: Math.max(0, f.remainingAttacks - 1) }
-                    : f
-                ));
-
                 addLog(`🎯 ${enemy.name} targets flanking position (${targetFlankPos.x}, ${targetFlankPos.y})`, "info");
 
+                if (!wasInMeleeBeforeFlankMove && actualFlankDistance > 0) {
+                  // Closing into a flank tile is movement for this slice; attack next turn.
+                  commitFighters(prev => prev.map(f =>
+                    f.id === enemy.id
+                      ? { ...f, remainingAttacks: Math.max(0, f.remainingAttacks - 1) }
+                      : f
+                  ));
+                  addLog(`⏭️ ${enemy.name} used this action to move into position.`, "info");
+                  processingEnemyTurnRef.current = false;
+                  scheduleEndTurn(16);
+                  return;
+                }
+
                 // Continue with attack after movement
-                setTimeout(() => {
+                setTimeout(async () => {
                   if (!combatActive || combatEndCheckRef.current) return;
+                  if (!guardEnemyStillActiveForAttack()) return;
 
                   const newDistance = calculateDistance(targetFlankPos, targetPos);
                   const rangeValidation = validateEnemyAttackRange(newDistance);
@@ -10746,9 +16123,6 @@ export default function CombatPage({ characters = [] }) {
                     const updatedEnemy = { ...enemy, selectedAttack: selectedAttack };
                     const bonuses = flankingBonus > 0 ? { flankingBonus } : {};
                     attack(updatedEnemy, target.id, bonuses);
-
-                    processingEnemyTurnRef.current = false;
-                    scheduleEndTurn();
                   } else {
                     if (rangeValidation.isUnreachable) {
                       addLog(
@@ -10767,7 +16141,6 @@ export default function CombatPage({ characters = [] }) {
                         "error"
                       );
                     }
-                    processingEnemyTurnRef.current = false;
                     scheduleEndTurn();
                   }
                 }, 1000);
@@ -10821,20 +16194,31 @@ export default function CombatPage({ characters = [] }) {
           const rangedAttack = availableAttacks.find(a => a.range && a.range > 0);
           if (rangedAttack) {
             addLog(`🏹 ${enemy.name} uses ranged attack instead of moving (${aiDecision.reason})`, "info");
+            if (!commitEnemyAction("USE_RANGED_INSTEAD")) return;
             setTimeout(() => {
-              if (!combatActive || combatEndCheckRef.current) return;
-              const flankingBonus = calculateFlankingBonus(positions[enemy.id], positions[target.id], positions, enemy.id);
-              const bonuses = flankingBonus > 0 ? { flankingBonus } : {};
-              // Preserve selectedAttack for ranged attacks
-              const updatedEnemyForRanged = {
-                ...enemy,
-                selectedAttack: rangedAttack,
-                attacks: enemy.attacks || []
-              };
-              attack(updatedEnemyForRanged, target.id, bonuses);
+              void (async () => {
+                if (combatOverRef.current || !combatActive || combatEndCheckRef.current) return;
+                if (!guardEnemyStillActiveForAttack()) return;
+                const flankingBonus = calculateFlankingBonus(
+                  positions[enemy.id],
+                  positions[target.id],
+                  positions,
+                  enemy.id
+                );
+                const bonuses = flankingBonus > 0 ? { flankingBonus } : {};
+                const updatedEnemyForRanged = {
+                  ...enemy,
+                  selectedAttack: rangedAttack,
+                  attacks: enemy.attacks || [],
+                };
+                await commitOneEnemyAction("ranged-attack", async () => {
+                  turnActionResolvingRef.current = true;
+                  pendingTurnAdvanceRef.current = false;
+                  await attack(updatedEnemyForRanged, target.id, bonuses);
+                });
+                processingEnemyTurnRef.current = false;
+              })();
             }, 1000);
-            processingEnemyTurnRef.current = false;
-            scheduleEndTurn();
             return;
           }
           // Fall back to movement if no ranged attack
@@ -10902,7 +16286,6 @@ export default function CombatPage({ characters = [] }) {
           // Continue to attack below (don't return)
         } else {
           addLog(`⚔️ ${enemy.name} cannot reach target (${rangeValidation.reason}) and ends turn`, "info");
-          processingEnemyTurnRef.current = false;
           scheduleEndTurn();
           return;
         }
@@ -10942,6 +16325,7 @@ export default function CombatPage({ characters = [] }) {
       if (movementType === MOVEMENT_ACTIONS.MOVE.name || movementType === MOVEMENT_ACTIONS.CHARGE.name) {
         // MOVE: move calculated hexes immediately
         // CHARGE: move multiple hexes immediately and attack with bonuses
+        if (!commitEnemyAction(movementType === MOVEMENT_ACTIONS.CHARGE.name ? "CHARGE_ATTACK" : "MOVE_CLOSER")) return;
         const hexesThisTurn = actualHexesToMove; // Use the calculated movement distance
 
         // FIX: Prevent NaN by ensuring distance is valid
@@ -11011,12 +16395,12 @@ export default function CombatPage({ characters = [] }) {
             // Don't end turn, continue to attack below
           } else {
             addLog(`⚔️ ${enemy.name} cannot reach target (${rangeValidation.reason}) and ends turn`, "info");
-            processingEnemyTurnRef.current = false;
             scheduleEndTurn();
             return;
           }
         } else {
           // Not occupied, safe to move
+          if (!commitEnemyAction(`move:${movementType || "Move"}`)) return;
           const currentMovementAction = movementType === MOVEMENT_ACTIONS.CHARGE.name ? MOVEMENT_ACTIONS.CHARGE : MOVEMENT_ACTIONS.MOVE;
           movementInfo = {
             action: movementType,
@@ -11039,7 +16423,7 @@ export default function CombatPage({ characters = [] }) {
           addLog(`📍 ${enemy.name} ${actionVerb} ${Math.round(distanceMoved)}ft toward ${target.name} → new position (${newX},${newY})`, "info");
 
           // Deduct 1 action for movement
-          setFighters(prev => prev.map(f => {
+          commitFighters(prev => prev.map(f => {
             if (f.id === enemy.id) {
               const updatedEnemy = { ...f, remainingAttacks: Math.max(0, f.remainingAttacks - 1) };
               addLog(`⏭️ ${enemy.name} has ${updatedEnemy.remainingAttacks} action(s) remaining this melee`, "info");
@@ -11048,48 +16432,24 @@ export default function CombatPage({ characters = [] }) {
             return f;
           }));
 
-          if (movementType === MOVEMENT_ACTIONS.CHARGE.name) {
-            // CHARGE continues to attack on same turn (don't end turn yet!)
-            const chargeAction = MOVEMENT_ACTIONS.CHARGE;
-            addLog(`⚡ Now within melee range! Charge attack: ${chargeAction.description}`, "combat");
-            // Continue to attack section below (don't return)
-          } else {
-            // After movement, check if we're now in range
-            const newDistanceAfterMove = calculateDistance({ x: newX, y: newY }, targetPos);
-            const rangeValidation = validateEnemyAttackRange(newDistanceAfterMove);
-
-            const updatedEnemy = fighters.find(f => f.id === enemy.id);
-            const hasActionsRemaining = updatedEnemy && updatedEnemy.remainingAttacks > 0;
-
-            if (rangeValidation.canAttack && hasActionsRemaining) {
-              // In range - perform a single attack, then end turn
-              // Ensure selectedAttack is preserved (don't let weapon selection override natural attacks)
-              const updatedEnemyForAttack = {
-                ...enemy,
-                selectedAttack: selectedAttack,
-                // Explicitly set to prevent weapon selection from overriding
-                attacks: enemy.attacks || []
-              };
-              attack(updatedEnemyForAttack, target.id, {});
-              processingEnemyTurnRef.current = false;
-              scheduleEndTurn();
-              return;
-            } else {
-              // Not in range or no actions - end turn
-              const remainingDistance = Math.round(newDistanceAfterMove);
-              if (remainingDistance > 5) {
-                addLog(`📍 ${enemy.name} still ${remainingDistance}ft out of melee range - ending turn`, "info");
-              } else if (!hasActionsRemaining) {
-                addLog(`⏭️ ${enemy.name} has no actions remaining after movement - passing to next fighter`, "info");
-              }
-              processingEnemyTurnRef.current = false;
-              scheduleEndTurn();
-              return;
+          const newDistanceAfterMove = calculateDistance({ x: newX, y: newY }, targetPos);
+          if (newDistanceAfterMove <= GRID_CONFIG.CELL_SIZE + 0.01) {
+            try {
+              markDistanceClosed(enemy, target, combatStateRef.current);
+            } catch {
+              // ignore
             }
           }
+
+          // Movement is the enemy's action for this turn slice.
+          // Do not continue into another move or attack from the same call.
+          processingEnemyTurnRef.current = false;
+          scheduleEndTurn(getMoveDurationMs(distanceMoved));
+          return;
         }
       } else {
         // RUN/SPRINT: Move immediately (Palladium 1994 - no future movement)
+        if (!commitEnemyAction("RUN_TO_RANGE")) return;
         const moveDistance = actualHexesToMove;
 
         // FIX: Prevent NaN by checking distance is valid
@@ -11167,7 +16527,6 @@ export default function CombatPage({ characters = [] }) {
               if (!foundAlternative) {
                 addLog(`🚫 ${enemy.name} cannot find path to target - all hexes occupied`, "info");
                 addLog(`⏭️ ${enemy.name} ends turn (blocked)`, "info");
-                processingEnemyTurnRef.current = false;
                 scheduleEndTurn();
                 return;
               }
@@ -11203,11 +16562,13 @@ export default function CombatPage({ characters = [] }) {
           const targetForAoO = enemy.id;
 
           setTimeout(() => {
+            if (combatOverRef.current || !combatActive || combatEndCheckRef.current) return;
             if (attackRef.current) {
               attackRef.current(attackerForAoO, targetForAoO, {});
             } else {
               addLog(`⚠️ Attack of opportunity delayed - attack system not ready`, "info");
               setTimeout(() => {
+                if (combatOverRef.current || !combatActive || combatEndCheckRef.current) return;
                 if (attackRef.current) {
                   attackRef.current(attackerForAoO, targetForAoO, {});
                 }
@@ -11224,7 +16585,7 @@ export default function CombatPage({ characters = [] }) {
         addLog(`📍 Moves up to ${Math.round(distanceMoved)}ft toward ${target.name} → new position (${targetX},${targetY})`, "info");
 
         // Deduct 1 action for movement
-        setFighters(prev => prev.map(f => {
+        commitFighters(prev => prev.map(f => {
           if (f.id === enemy.id) {
             const updatedEnemy = { ...f, remainingAttacks: Math.max(0, f.remainingAttacks - 1) };
             addLog(`⏭️ ${enemy.name} has ${updatedEnemy.remainingAttacks} action(s) remaining this melee`, "info");
@@ -11233,66 +16594,18 @@ export default function CombatPage({ characters = [] }) {
           return f;
         }));
 
-        // After RUN/SPRINT movement, check if we're now in range and can attack
-        setTimeout(() => {
-          setPositions(currentPositions => {
-            positionsRef.current = currentPositions;
-            const latestEnemyPos = currentPositions[enemy.id] || { x: targetX, y: targetY };
-            const latestTargetPos = currentPositions[target.id] || targetPos;
-            const finalDistance = calculateDistance(latestEnemyPos, latestTargetPos);
-            const rangeValidation = validateEnemyAttackRange(finalDistance);
+        const distAfterRun = calculateDistance({ x: targetX, y: targetY }, targetPos);
+        if (distAfterRun <= GRID_CONFIG.CELL_SIZE + 0.01) {
+          try {
+            markDistanceClosed(enemy, target, combatStateRef.current);
+          } catch {
+            // ignore
+          }
+        }
 
-            const updatedEnemy = fighters.find(f => f.id === enemy.id);
-            const hasActionsRemaining = updatedEnemy && updatedEnemy.remainingAttacks > 0;
-
-            // ✅ FIX: Check combat status and target validity before attacking
-            if (!combatActive) {
-              addLog(`⚠️ Combat ended, ${enemy.name} stops moving`, "info");
-              processingEnemyTurnRef.current = false;
-              return currentPositions;
-            }
-
-            // Check if target is still valid
-            const updatedTarget = fighters.find(f => f.id === target.id);
-            if (!updatedTarget || updatedTarget.currentHP <= 0 || updatedTarget.currentHP <= -21) {
-              addLog(`⚠️ ${enemy.name}'s target is no longer valid, ending turn`, "info");
-              processingEnemyTurnRef.current = false;
-              scheduleEndTurn();
-              return currentPositions;
-            }
-
-            if (rangeValidation.canAttack && hasActionsRemaining) {
-              addLog(`⚔️ ${enemy.name} is now in range (${rangeValidation.reason})!`, "info");
-              // Preserve selectedAttack from attacks array (don't let weapon selection override)
-              const updatedEnemyForAttack = {
-                ...enemy,
-                selectedAttack: selectedAttack,
-                attacks: enemy.attacks || [] // Ensure attacks array is preserved
-              };
-              attack(updatedEnemyForAttack, target.id, {
-                attackerPosOverride: latestEnemyPos,
-                defenderPosOverride: latestTargetPos,
-                distanceOverride: finalDistance
-              });
-              processingEnemyTurnRef.current = false;
-              scheduleEndTurn();
-            } else {
-              if (finalDistance > 5) {
-                addLog(`📍 ${enemy.name} still ${Math.round(finalDistance)}ft out of melee range - ending turn`, "info");
-              } else if (!hasActionsRemaining) {
-                addLog(`⏭️ ${enemy.name} has no actions remaining - passing to next fighter`, "info");
-              }
-              processingEnemyTurnRef.current = false;
-              setTimeout(() => {
-                // ✅ GUARD: Check combat state in delayed callback
-                if (!combatActive || combatEndCheckRef.current) return;
-                endTurn();
-              }, 1500);
-            }
-
-            return currentPositions;
-          });
-        }, 800);
+        // RUN = move only, then end slice (no delayed attack)
+        processingEnemyTurnRef.current = false;
+        scheduleEndTurn(getMoveDurationMs(distanceMoved));
         return;
       }
     }
@@ -11300,13 +16613,11 @@ export default function CombatPage({ characters = [] }) {
     // ✅ FIX: Final validation: make sure target can still be attacked and combat is active
     if (!combatActive) {
       addLog(`⚠️ Combat ended, ${enemy.name} stops attacking`, "info");
-      processingEnemyTurnRef.current = false;
       return;
     }
 
     if (!target || target.currentHP <= -21) {
       addLog(`⚠️ ${enemy.name}'s target is dead, ending turn`, "info");
-      processingEnemyTurnRef.current = false;
       scheduleEndTurn();
       return;
     }
@@ -11331,18 +16642,10 @@ export default function CombatPage({ characters = [] }) {
           if (!combatEndCheckRef.current) {
             combatEndCheckRef.current = true;
             combatOverRef.current = true; // ✅ AUTHORITATIVE: Stop all further actions (defeat)
+            clearCombatFlowLocks();
             addLog("💀 All players are defeated! Enemies win!", "defeat");
             setCombatActive(false);
-
-            // ✅ CRITICAL: Clear ALL pending timeouts to stop post-defeat actions
-            if (turnTimeoutRef.current) {
-              clearTimeout(turnTimeoutRef.current);
-              turnTimeoutRef.current = null;
-            }
-            allTimeoutsRef.current.forEach(clearTimeout);
-            allTimeoutsRef.current = [];
           }
-          processingEnemyTurnRef.current = false;
           return;
         }
       } else {
@@ -11378,19 +16681,28 @@ export default function CombatPage({ characters = [] }) {
           selectedAttack: selectedAttack,
           attacks: enemy.attacks || []
         };
-        targetsInLine.forEach((lineTarget) => {
-          attack(updatedEnemyForArea, lineTarget.id, {
-            ...chargeBonus,
-            flankingBonus: calculateFlankingBonus(
-              positions[enemy.id],
-              positions[lineTarget.id],
-              positions,
-              enemy.id
-            ),
-          });
+        if (!guardEnemyStillActiveForAttack()) return;
+        await commitOneEnemyAction("area-attack", async () => {
+          turnActionResolvingRef.current = true;
+          pendingTurnAdvanceRef.current = false;
+          const total = targetsInLine.length;
+          for (let i = 0; i < total; i += 1) {
+            const lineTarget = targetsInLine[i];
+            if (!guardEnemyStillActiveForAttack("area-line")) break;
+            const lastHit = i === total - 1;
+            await attack(updatedEnemyForArea, lineTarget.id, {
+              ...chargeBonus,
+              flankingBonus: calculateFlankingBonus(
+                positions[enemy.id],
+                positions[lineTarget.id],
+                positions,
+                enemy.id
+              ),
+              suppressActionSpend: !lastHit,
+            });
+          }
         });
         processingEnemyTurnRef.current = false;
-        scheduleEndTurn();
         return;
       }
     }
@@ -11404,9 +16716,6 @@ export default function CombatPage({ characters = [] }) {
       selectedAttack: selectedAttack,
       attacks: enemy.attacks || [] // Ensure attacks array is preserved
     };
-
-    // Get the number of attacks for this attack type
-    const attackCount = selectedAttack.count || 1;
 
     // Determine if this is a charging attack (for bonuses)
     const chargeBonus = isChargingAttack ? { strikeBonus: +2 } : {};
@@ -11431,16 +16740,61 @@ export default function CombatPage({ characters = [] }) {
       addLog(`🎯 ${enemy.name} gains +${attackFlankingBonus} flanking bonus!`, "info");
     }
 
-    // Execute attack - handle attack count for multi-strike attacks
-    // The count property is for attacks that hit multiple times in ONE action (like dual wield)
-    if (attackCount > 1) {
-      addLog(`⚔️ ${enemy.name} performs ${attackCount}-strike attack!`, "info");
+    // Check if worker AI specified attackMode (ranged/melee)
+    if (actionPlan?.attackMode) {
+      // Use worker AI adapter for attack execution
+      if (!guardEnemyStillActiveForAttack()) return;
+      await commitOneEnemyAction("worker-ai-attack", async () => {
+        turnActionResolvingRef.current = true;
+        pendingTurnAdvanceRef.current = false;
+        await executeAIAttack({
+          attacker: updatedEnemy,
+          target,
+          mode: actionPlan.attackMode,
+        });
+      });
+      processingEnemyTurnRef.current = false;
+      return;
     }
-    attack(updatedEnemy, target.id, allBonuses);
 
-    // End of handleEnemyTurn: schedule the turn advance; AI locks are released in endTurn()
-    scheduleEndTurn(1500);
+    await commitOneEnemyAction(`attack:${attackName}`, async () => {
+      if (!guardEnemyStillActiveForAttack()) return;
+      // Action committed; block effect-turn-advance until endTurn advances.
+      turnActionResolvingRef.current = true;
+      pendingTurnAdvanceRef.current = false;
+      await attack(updatedEnemy, target.id, allBonuses);
+    });
+    processingEnemyTurnRef.current = false;
+    return;
+    } finally {
+      processingEnemyTurnRef.current = false;
+      // Coalesce: if a duplicate was blocked and we didn't complete the turn, schedule one more run
+      // Guard: avoid ping-pong when turn is changing - only re-schedule if turn isn't already claimed + in-flight
+      if (pendingEnemyTurnRef.current && !didCompleteTurn) {
+        pendingEnemyTurnRef.current = false;
+        const stillCurrent =
+          fightersRef.current?.[turnIndexRef.current]?.id === enemy?.id;
+        const coalescedTurnKey = `${enemy?.id}|round:${meleeRound}|turnIndex:${turnIndex}|turnCounter:${turnCounter}`;
+        const alreadyClaimedAndActive =
+          lastEnemyScheduleTurnKeyRef.current === coalescedTurnKey &&
+          (enemyTurnTimerRef.current != null || processingEnemyTurnRef.current);
+        if (stillCurrent && !combatOverRef.current && combatActive && !alreadyClaimedAndActive) {
+          const fighterToRun =
+            fightersRef.current?.[turnIndexRef.current] || enemy;
+          addLog?.(`🔄 Coalesced blocked call, re-scheduling ${fighterToRun?.name}`, "info");
+          const coalescedTurnToken = currentTurnTokenRef.current;
+          setTimeout(() => {
+            if (blockStaleAction(fighterToRun, coalescedTurnToken, "coalesced enemy turn")) return;
+            handleEnemyTurn(fighterToRun, "coalesced", {
+              turnKey: coalescedTurnKey,
+              turnToken: coalescedTurnToken,
+            });
+          }, 0);
+        }
+      }
+    }
   }, [
+    ENGINE_ENABLED,
     fighters,
     addLog,
     endTurn,
@@ -11450,7 +16804,11 @@ export default function CombatPage({ characters = [] }) {
     isHexOccupied,
     getAvailableSkills,
     isEvilAlignment,
-    setFighters,
+    getFighterSpells,
+    getFighterPsionicPowers,
+    getFighterPPE,
+    getFighterISP,
+    commitFighters,
     combatTerrain,
     arenaEnvironment,
     scheduleEndTurn,
@@ -11485,12 +16843,20 @@ export default function CombatPage({ characters = [] }) {
     turnCounter,
     turnIndex,
     validateWeaponRange,
+    buildFightersLite,
+    buildPositionsLite,
+    executeAIAttack,
+    runAITurnFromWorker,
   ]);
 
   // Store the latest handleEnemyTurn in a ref to avoid dependency loops in useEffect
   useEffect(() => {
     handleEnemyTurnRef.current = handleEnemyTurn;
   }, [handleEnemyTurn]);
+
+  useEffect(() => {
+    handlePlayerAITurnRef.current = handlePlayerAITurn;
+  }, [handlePlayerAITurn]);
 
   // Store the attack function in a ref to avoid initialization order issues
   useEffect(() => {
@@ -11502,7 +16868,9 @@ export default function CombatPage({ characters = [] }) {
   useEffect(() => {
     // ✅ CRITICAL: Stop processing if combat has ended
     if (!combatActive || combatEndCheckRef.current) {
-      lastAutoTurnKeyRef.current = null;
+      lastNoActionTurnKeyRef.current = null;
+      lastEnemyScheduleTurnKeyRef.current = null;
+      lastPlayerAIScheduleTurnKeyRef.current = null;
       return;
     }
 
@@ -11510,29 +16878,50 @@ export default function CombatPage({ characters = [] }) {
       return;
     }
 
-    if (fighters.length === 0) {
+    const liveIndex = turnIndexRef.current;
+    const liveFighters = fightersRef.current ?? fighters;
+    const liveActiveFighter = liveFighters?.[liveIndex];
+    const stateActiveFighter = fighters?.[turnIndex];
+
+    if (!liveFighters?.length) {
       return;
     }
 
-    const currentFighter = fighters[turnIndex];
-    if (!currentFighter) {
+    if (!liveActiveFighter) {
       return;
     }
+
+    if (turnIndex !== liveIndex) {
+      addLog?.(
+        `🚫 turn effect skipped stale index state=${turnIndex} ref=${liveIndex}`,
+        "warning"
+      );
+      return;
+    }
+
+    if (stateActiveFighter?.id !== liveActiveFighter.id) {
+      addLog?.(
+        `🚫 turn effect skipped stale fighter state=${stateActiveFighter?.name ?? "?"} ref=${liveActiveFighter.name}`,
+        "warning"
+      );
+      return;
+    }
+
+    const currentFighter = liveActiveFighter;
 
     // ✅ If the fighter has no actions left, don't re-run AI/menus repeatedly.
     // This can happen because endTurn() increments turnCounter before fighter state updates settle.
     if ((currentFighter.remainingAttacks ?? 0) <= 0) {
       const noActionLoopKey = `NOA_${currentFighter.id}_${meleeRound}`;
-      if (lastAutoTurnKeyRef.current === noActionLoopKey) return;
-      lastAutoTurnKeyRef.current = noActionLoopKey;
+      if (lastNoActionTurnKeyRef.current === noActionLoopKey) return;
+      lastNoActionTurnKeyRef.current = noActionLoopKey;
 
       const passLogKey = `${currentFighter.id}:${meleeRound}`;
       if (!noActionsPassLogRef.current.has(passLogKey)) {
         noActionsPassLogRef.current.add(passLogKey);
-        addLog(
-          `⏭️ ${currentFighter.name} has no actions remaining - passing to next fighter in initiative order`,
-          "info"
-        );
+        if (!(currentFighter?.moraleState?.hasFled) && !(Array.isArray(currentFighter?.statusEffects) && currentFighter.statusEffects.includes('FLED'))) {
+          addLog(`⏭️ ${currentFighter.name} has no actions remaining - passing to next fighter in initiative order`, 'info');
+        }
         // prevent unbounded growth
         if (noActionsPassLogRef.current.size > 200) noActionsPassLogRef.current = new Set();
       }
@@ -11541,11 +16930,19 @@ export default function CombatPage({ characters = [] }) {
       return;
     }
 
-    const currentTurnKey = `${currentFighter.id}-${turnCounter}`;
-    if (lastAutoTurnKeyRef.current === currentTurnKey) {
-      return;
+    // Turn key must include turnCounter so the same fighter can act again after initiative wraps.
+    const currentTurnKey = makeTurnStartKey(currentFighter, turnIndex, turnCounter);
+
+    // If the turn changed, release any "claims" from the prior turn so the new turn can schedule.
+    if (lastNoActionTurnKeyRef.current && lastNoActionTurnKeyRef.current !== currentTurnKey) {
+      lastNoActionTurnKeyRef.current = null;
     }
-    lastAutoTurnKeyRef.current = currentTurnKey;
+    if (lastEnemyScheduleTurnKeyRef.current && lastEnemyScheduleTurnKeyRef.current !== currentTurnKey) {
+      lastEnemyScheduleTurnKeyRef.current = null;
+    }
+    if (lastPlayerAIScheduleTurnKeyRef.current && lastPlayerAIScheduleTurnKeyRef.current !== currentTurnKey) {
+      lastPlayerAIScheduleTurnKeyRef.current = null;
+    }
 
     // Skip fighters that can't act (unconscious, dying, dead)
     if (!canFighterAct(currentFighter)) {
@@ -11613,20 +17010,27 @@ export default function CombatPage({ characters = [] }) {
       if (aiControlEnabled) {
         // Handle player turn with AI - prevent duplicate calls
         if (!processingPlayerAIRef.current) {
+          if (
+            pendingTurnAdvanceRef.current ||
+            turnTimeoutRef.current ||
+            isActionBusy() ||
+            turnActionResolvingRef.current ||
+            !!activeSpellImpactRef.current
+          ) {
+            if (DEBUG_COMBAT) {
+              console.warn("[TURN EFFECT BLOCKED - player AI start not safe yet]", {
+                fighter: fighterForAITurn?.name,
+                pendingTurnAdvance: pendingTurnAdvanceRef.current,
+                hasTurnTimeout: !!turnTimeoutRef.current,
+                actionBusy: isActionBusy(),
+                actionResolving: turnActionResolvingRef.current,
+                spellImpact: !!activeSpellImpactRef.current,
+              });
+            }
+            return;
+          }
           setShowCombatChoices(false);
-          startTransition(() => {
-            setTimeout(() => {
-              if (
-                combatPausedRef.current ||
-                !combatActive ||
-                !canFighterAct(currentFighter)
-              ) {
-                processingPlayerAIRef.current = false;
-                return;
-              }
-              handlePlayerAITurn(fighterForAITurn);
-            }, 0);
-          });
+          startTurnOnce(fighterForAITurn, turnIndex, "effect-turn-advance");
         }
       } else {
         // Manual control: open choices once per turn
@@ -11650,20 +17054,41 @@ export default function CombatPage({ characters = [] }) {
       // Enemy turn (auto-run)
       setShowCombatChoices(false);
       closeCombatChoices(); // Also close via disclosure hook
+      if (
+        processingEnemyTurnRef.current ||
+        pendingTurnAdvanceRef.current ||
+        turnTimeoutRef.current ||
+        isActionBusy() ||
+        turnActionResolvingRef.current ||
+        !!activeSpellImpactRef.current
+      ) {
+        if (DEBUG_COMBAT) {
+          console.warn("[TURN EFFECT BLOCKED - enemy start not safe yet]", {
+            fighter: currentFighter?.name,
+            processingEnemy: processingEnemyTurnRef.current,
+            pendingTurnAdvance: pendingTurnAdvanceRef.current,
+            hasTurnTimeout: !!turnTimeoutRef.current,
+            actionBusy: isActionBusy(),
+            actionResolving: turnActionResolvingRef.current,
+            spellImpact: !!activeSpellImpactRef.current,
+          });
+        }
+        return;
+      }
       if (!processingEnemyTurnRef.current) {
-        startTransition(() => {
-          setTimeout(() => {
-            if (
-              combatPausedRef.current ||
-              !combatActive ||
-              !canFighterAct(currentFighter)
-            ) {
-              processingEnemyTurnRef.current = false;
-              return;
-            }
-            handleEnemyTurn(currentFighter);
-          }, 0);
-        });
+        // Diagnostic: log scheduling state to trace duplicate/overlap causes
+        if (import.meta.env?.DEV || import.meta.env?.MODE === "development") {
+          console.debug("[scheduleEnemyTurn]", {
+            currentTurnKey,
+            timerAlreadySet: !!enemyTurnTimerRef.current,
+            processing: processingEnemyTurnRef.current,
+            turnIndex,
+            fighterId: currentFighter?.id,
+            fighterName: currentFighter?.name,
+            source: "effect-turn-advance",
+          });
+        }
+        startTurnOnce(currentFighter, turnIndex, "effect-turn-advance");
       }
     }
   }, [
@@ -11689,6 +17114,9 @@ export default function CombatPage({ characters = [] }) {
     closeCombatChoices,
     getHPStatus,
     meleeRound,
+    makeTurnStartKey,
+    startTurnOnce,
+    isActionBusy,
   ]);
 
   // Helper function to roll HP from dice formulas like "2d6" or "1d8+3" or ranges like "24-96"
@@ -11994,7 +17422,7 @@ export default function CombatPage({ characters = [] }) {
     return allAlignments[Math.floor(Math.random() * allAlignments.length)];
   }, [getRandomAlignmentFromBestiary]);
 
-  function addCreature(creatureData, customNameOverride = null, levelOverride = null, armorOverride = null, weaponOverride = null, ammoOverride = null) {
+  function addCreature(creatureData, customNameOverride = null, levelOverride = null, armorOverride = null, weaponOverride = null, ammoOverride = null, fighterTypeOverride = null) {
     let newFighter;
     const nameToUse = customNameOverride || customEnemyName;
     const level = levelOverride || enemyLevel || 1;
@@ -12325,20 +17753,27 @@ export default function CombatPage({ characters = [] }) {
     // Apply size modifiers to new fighter (for both playable and regular creatures)
     newFighter = applySizeModifiers(newFighter);
 
+    // ✅ Override fighter type for prescenes (e.g. player-side characters)
+    if (fighterTypeOverride === "player") {
+      newFighter.type = "player";
+      newFighter.id = (newFighter.id || "").replace(/^enemy-/, "player-").replace(/^playable-/, "player-");
+    }
+
     // Apply level-based stat adjustments for playable characters too
     if (level > 1) {
       newFighter = applyLevelToEnemy(newFighter, level);
       addLog(`📊 ${newFighter.name} adjusted to level ${level} (HP: ${newFighter.maxHP}, AR: ${newFighter.AR})`, "info");
     }
 
-    // Load spells if creature has magicAbilities
-    if (newFighter.magicAbilities && typeof newFighter.magicAbilities === "string") {
+    // Load spells if creature has magicAbilities or magic (bestiary uses "magic" for wizard spells)
+    const magicAbilitiesStr = newFighter.magicAbilities ?? newFighter.magic;
+    if (!isNoneish(magicAbilitiesStr) && typeof magicAbilitiesStr === "string") {
       // Check if this is Wizard (Invocation) magic - use fullList for unrestricted access
-      const isWizardMagic = /spell\s+magic|wizard\s+magic|invocation\s+magic|invocation/i.test(newFighter.magicAbilities.toLowerCase());
+      const isWizardMagic = /spell\s+magic|wizard\s+magic|invocation\s+magic|invocation|wizard\s+spell/i.test(magicAbilitiesStr.toLowerCase());
 
       // Use enhanced parser for complex magicAbilities strings
       // For Wizard magic, get full list and store in spellbook; also get curated list for magic
-      const spellResult = getSpellsForCreature(newFighter.magicAbilities, {
+      const spellResult = getSpellsForCreature(magicAbilitiesStr, {
         fullList: isWizardMagic, // Full list for Wizard magic
         includeNonCombat: true   // Include all spells, not just combat
       });
@@ -12370,10 +17805,10 @@ export default function CombatPage({ characters = [] }) {
 
         newFighter.PPE = newFighter.PPE || spellResult.ppe;
         newFighter.currentPPE = newFighter.currentPPE || newFighter.PPE;
-        addLog(`🔮 ${newFighter.name} has ${isWizardMagic ? allSpells.length + ' spells in spellbook' : allSpells.length + ' spells'} available (${newFighter.magicAbilities})`, "info");
+        addLog(`🔮 ${newFighter.name} has ${isWizardMagic ? allSpells.length + ' spells in spellbook' : allSpells.length + ' spells'} available (${magicAbilitiesStr})`, "info");
       } else {
         // Fallback to old method if parser returns no spells
-        const magicText = newFighter.magicAbilities.toLowerCase();
+        const magicText = magicAbilitiesStr.toLowerCase();
         const levelMatch = magicText.match(/levels?\s+(\d+)[-\s]+(\d+)/);
         const maxLevel = levelMatch ? parseInt(levelMatch[2]) : 5;
 
@@ -12398,7 +17833,7 @@ export default function CombatPage({ characters = [] }) {
           newFighter.magic = selectedSpells;
           newFighter.PPE = newFighter.PPE || (maxLevel * 20);
           newFighter.currentPPE = newFighter.currentPPE || newFighter.PPE;
-          addLog(`🔮 ${newFighter.name} has ${selectedSpells.length} spells available (${newFighter.magicAbilities})`, "info");
+          addLog(`🔮 ${newFighter.name} has ${selectedSpells.length} spells available (${magicAbilitiesStr})`, "info");
         }
       }
     }
@@ -12410,8 +17845,9 @@ export default function CombatPage({ characters = [] }) {
         : (typeof newFighter.abilities === "string" ? newFighter.abilities.toLowerCase() : "");
       const hasPsionics = abilitiesText.includes("psionic") ||
         abilitiesText.includes("isp") ||
-        (newFighter.psionicPowers && newFighter.psionicPowers.length > 0) ||
-        (newFighter.psionics && newFighter.psionics.length > 0);
+        (Array.isArray(newFighter.psionicPowers) && newFighter.psionicPowers.length > 0) ||
+        (Array.isArray(newFighter.psionics) && newFighter.psionics.length > 0) ||
+        (!isNoneish(newFighter.psionics) && typeof newFighter.psionics === "string" && /psionic|isp/i.test(newFighter.psionics));
 
       if (hasPsionics) {
         // Default ISP: 20 + (level * 10), minimum 30, max 200
@@ -12432,8 +17868,8 @@ export default function CombatPage({ characters = [] }) {
         ? newFighter.abilities.join(" ").toLowerCase()
         : (typeof newFighter.abilities === "string" ? newFighter.abilities.toLowerCase() : "");
       const hasMagic = abilitiesText.includes("magic") ||
-        (newFighter.magic && newFighter.magic.length > 0) ||
-        newFighter.magicAbilities;
+        (Array.isArray(newFighter.magic) && newFighter.magic.length > 0) ||
+        (!isNoneish(newFighter.magicAbilities) && !!newFighter.magicAbilities);
 
       if (hasMagic) {
         // Default PPE: level * 20, minimum 20, max 200
@@ -12564,7 +18000,99 @@ export default function CombatPage({ characters = [] }) {
     onClose();
   }
 
-  function startCombat(skipPhase0 = false) {
+  /**
+   * Load a prescene battle - predefined fighters for quick combat start.
+   * Clears current fighters and loads the preset (players + enemies).
+   */
+  function loadPrescene(presceneId) {
+    const prescene = getPresceneById(presceneId);
+    if (!prescene) {
+      addLog(`❌ Prescene "${presceneId}" not found`, "error");
+      return;
+    }
+
+    resetAITransientRefs();
+    setCombatActive(false);
+    setFighters([]);
+    setPositions({});
+    setRenderPositions({});
+    setPhase0Results(null);
+    setCombatTerrain(null);
+
+    const creatures = getAllBestiaryEntries(bestiary);
+
+    // Add players first
+    for (const player of prescene.players) {
+      const creature = creatures.find((c) => c.id === player.bestiaryId);
+      if (!creature) {
+        addLog(`❌ Prescene: creature "${player.bestiaryId}" not found in bestiary`, "error");
+        continue;
+      }
+      addCreature(
+        creature,
+        player.name || creature.name,
+        1,
+        null,
+        player.weaponName || "None",
+        player.ammoCount ?? 0,
+        "player"
+      );
+    }
+
+    // Add enemies
+    for (const enemy of prescene.enemies) {
+      const creature = creatures.find((c) => c.id === enemy.bestiaryId);
+      if (!creature) {
+        addLog(`❌ Prescene: creature "${enemy.bestiaryId}" not found in bestiary`, "error");
+        continue;
+      }
+      addCreature(
+        creature,
+        enemy.name || creature.name,
+        1,
+        enemy.armorName || null,
+        enemy.weaponName || "None",
+        enemy.ammoCount ?? 0
+      );
+    }
+
+    addLog(`✅ Loaded prescene: ${prescene.name}`, "success");
+  }
+
+  /**
+   * Load a saved preset - restores fighters and positions directly.
+   */
+  function loadSavedPresetById(presetId) {
+    const data = loadSavedPreset(presetId);
+    if (!data || !data.fighters?.length) {
+      addLog(`❌ Saved preset not found or empty`, "error");
+      return;
+    }
+    resetAITransientRefs();
+    setCombatActive(false);
+    setFighters(data.fighters);
+    setPositions(data.positions || {});
+    setRenderPositions(data.positions || {});
+    setPhase0Results(null);
+    setCombatTerrain(null);
+    addLog(`✅ Loaded saved preset: ${data.name}`, "success");
+  }
+
+  function handleSavePreset() {
+    const name = savePresetName.trim() || `Combat ${new Date().toLocaleString()}`;
+    try {
+      savePreset({ name, fighters, positions });
+      addLog(`💾 Saved preset: ${name}`, "success");
+      setShowSavePresetModal(false);
+      setSavePresetName("");
+    } catch (e) {
+      addLog(`❌ Failed to save preset: ${e?.message || e}`, "error");
+    }
+  }
+
+  function startCombat(skipPhase0 = false, options = {}) {
+    const { skipDeployment = false } = options;
+
     // Apply Phase 0 scene setup if it exists
     // ✅ Check if combatTerrain already exists (set from onComplete) - if so, use it instead of overwriting
     if (!skipPhase0 && combatTerrain && combatTerrain.mapType) {
@@ -12685,9 +18213,16 @@ export default function CombatPage({ characters = [] }) {
       }
     }
 
+    clearCombatFlowLocks();
+    combatSessionRef.current += 1;
     setCombatPaused(false);
     setLog([]);
-    lastAutoTurnKeyRef.current = null;
+    setRevealedLogCount(0);
+    activeSpellImpactRef.current = null;
+    spellImpactTurnEndHandledRef.current = null;
+    lastNoActionTurnKeyRef.current = null;
+    lastEnemyScheduleTurnKeyRef.current = null;
+    lastPlayerAIScheduleTurnKeyRef.current = null;
     setTurnIndex(0);
     setShowPartySelector(false);
     setPsionicsMode(false); // Reset psionics mode
@@ -12782,9 +18317,17 @@ export default function CombatPage({ characters = [] }) {
 
       // Reset ROUTED status at combat start (fighters should start fresh)
       // They can become ROUTED during combat from morale checks, but shouldn't start ROUTED
-      const resetMoraleState = fighter.moraleState?.status === "ROUTED" || fighter.moraleState?.status === "SURRENDERED"
-        ? { ...(fighter.moraleState || {}), status: "STEADY", failedChecks: 0 }
-        : fighter.moraleState;
+      const resetMoraleState = (() => {
+        const base = fighter.moraleState || {};
+        const isRoutedOrSurrendered =
+          base.status === "ROUTED" || base.status === "SURRENDERED";
+        // Also clear "hasFled" so a previous combat can't soft-lock a new combat.
+        // FLED is a per-battle state (removed from map), not a persistent character trait.
+        const cleared = { ...base, hasFled: false };
+        return isRoutedOrSurrendered
+          ? { ...cleared, status: "STEADY", failedChecks: 0 }
+          : cleared;
+      })();
 
       // ✅ Clear encounter-scoped horror metadata on combat start
       // (prevents HF from leaking between separate combats)
@@ -12802,9 +18345,9 @@ export default function CombatPage({ characters = [] }) {
         remainingAttacks: attacksPerMelee, // Start with full attacks
         meta: fighterMeta,
         moraleState: resetMoraleState,
-        // Clear ROUTED status effect if present
+        // Clear per-combat status effects if present
         statusEffects: Array.isArray(fighter.statusEffects)
-          ? fighter.statusEffects.filter(s => s !== "ROUTED")
+          ? fighter.statusEffects.filter(s => s !== "ROUTED" && s !== "FLED")
           : fighter.statusEffects,
       };
 
@@ -12846,26 +18389,41 @@ export default function CombatPage({ characters = [] }) {
     const playerCount = fighters.filter(f => f.type === "player").length;
     const enemyCount = fighters.filter(f => f.type === "enemy").length;
 
-    const initialPositions = getInitialPositions(playerCount, enemyCount);
     const positionMap = {};
+    const shouldUseDeploymentPositions =
+      !skipDeployment &&
+      isDeploymentReady &&
+      Object.keys(deploymentPreviewPositions || {}).length > 0;
 
-    // Map positions to fighter IDs
-    let playerIndex = 0;
-    let enemyIndex = 0;
+    if (shouldUseDeploymentPositions) {
+      updatedFighters.forEach((fighter) => {
+        const deployedPos = deploymentPreviewPositions[fighter.id];
+        if (deployedPos) {
+          positionMap[fighter.id] = deployedPos;
+        }
+      });
+      addLog("🧭 Using guided deployment positions.", "info");
+    } else {
+      const initialPositions = getInitialPositions(playerCount, enemyCount);
 
-    updatedFighters.forEach(fighter => {
-      if (fighter.type === "player" && initialPositions.players[playerIndex]) {
-        positionMap[fighter.id] = initialPositions.players[playerIndex];
-        playerIndex++;
-      } else if (fighter.type === "enemy" && initialPositions.enemies[enemyIndex]) {
-        positionMap[fighter.id] = initialPositions.enemies[enemyIndex];
-        enemyIndex++;
-      }
-    });
+      let playerIndex = 0;
+      let enemyIndex = 0;
+
+      updatedFighters.forEach(fighter => {
+        if (fighter.type === "player" && initialPositions.players[playerIndex]) {
+          positionMap[fighter.id] = initialPositions.players[playerIndex];
+          playerIndex++;
+        } else if (fighter.type === "enemy" && initialPositions.enemies[enemyIndex]) {
+          positionMap[fighter.id] = initialPositions.enemies[enemyIndex];
+          enemyIndex++;
+        }
+      });
+    }
 
     positionsRef.current = positionMap;
     setPositions(positionMap);
     setProjectiles([]);
+    setEmbeddedArrows([]);
     setOverwatchHexes([]);
     setOverwatchShots([]);
     timelineRef.current.events = [];
@@ -12884,14 +18442,20 @@ export default function CombatPage({ characters = [] }) {
     // ✅ Reset combat-over flags when starting new combat
     combatEndCheckRef.current = false;
     combatOverRef.current = false;
-    allTimeoutsRef.current = []; // Clear any stale timeouts
+    clearCombatFlowLocks();
+    if (seedMode) rngStateRef.current = { seed: seedValue >>> 0, counter: 0 };
+    else rngStateRef.current = null;
     activeCastIdsRef.current.clear(); // Clear any stale cast IDs
     resolvedSpellEffectsRef.current.clear(); // Clear any stale spell effects
+    activeSpellImpactRef.current = null; // Clear stale delayed spell turn ownership
+    spellImpactTurnEndHandledRef.current = null;
     combatCastGuardRef.current.clear(); // ✅ Clear cast guard for new combat
     // ✅ Reset per-combat AI refs (anti-air ammo, unreachable counters, spell spam guards, arena props)
     resetAITransientRefs();
 
     setCombatActive(true);
+    setShowPreBattleWizard(false);
+    setShowDeploymentModal(false);
     setMode("COMBAT"); // Ensure mode is set to COMBAT so icons appear on the map
 
     addLog("⚔️ Combat Started!", "combat");
@@ -12902,6 +18466,7 @@ export default function CombatPage({ characters = [] }) {
     processCourageAuras(updatedFighters, positionMap, addLog);
   }
 
+  // eslint-disable-next-line no-unused-vars
   const applyFighterUpdates = useCallback((fighter, updates) => {
     if (!updates) return fighter;
 
@@ -12957,113 +18522,46 @@ export default function CombatPage({ characters = [] }) {
     return updated;
   }, [applyHPToFighter, clampHP, getFighterHP, getFighterISP]);
 
-  const executePsionicPower = useCallback((caster, target, power) => {
-    if (!power || !power.name) {
-      addLog(`❌ Invalid psionic power provided to executePsionicPower`, "error");
+  async function executePsionicPower(userFighter, target, power) {
+    if (!window.engine?.call) return false;
+
+    const state = { fighters, positions, turnCounter };
+
+    const res = await window.engine.call("usePsionic", {
+      user: userFighter.id,
+      target: target?.id ?? target ?? null,
+      power,
+      meta: { flightMs: 450 },
+      state,
+    });
+
+    if (!res?.ok) {
+      addLog?.(`❌ Psionic rejected: ${res?.error?.message ?? "Unknown error"}`, "error");
       return false;
     }
 
-    // ✅ CRITICAL: Get latest caster and target from fighters array to ensure we have persisted ISP
-    const latestCaster = fighters.find(f => f.id === caster.id) || caster;
-    const latestTarget = target ? (fighters.find(f => f.id === target.id) || target) : null;
-
-    // Pass combatState to resolvePsionic for Stop Bleeding guard checks
-    const resolution = resolvePsionic(power.name, latestCaster, latestTarget, addLog, {
-      combatTerrain,
-      positions,
-      combatState: {
-        currentRound: meleeRound,
-        meleeRound: meleeRound,
-        fighters: fighters,
-        positions: positions
-      }
-    });
-
-    if (!resolution.success) {
-      // Only log error if it's not a "silent" failure (like already attempted this round)
-      if (resolution.reason !== "already_attempted_this_round" && resolution.reason !== "already_stabilized") {
-        addLog(`❌ Psionic ${power.name} failed: ${resolution.message || 'Unknown error'}`, "error");
-      }
-      (resolution.additionalLogs || []).forEach(entry => {
-        addLog(entry.message, entry.type || "error");
-      });
-      return false;
-    }
-
-    // Handle special psionic effects (Paralysis, etc.)
-    if (power.name === "Bio-Manipulation (Paralysis)" && resolution.success) {
-      // Apply paralysis status effect with duration
-      const durationRounds = 4; // 1d4 melees, defaulting to 4
-      setFighters(prev => prev.map(fighter => {
-        if (fighter.id === target.id) {
-          const updated = { ...fighter };
-          if (!updated.statusEffects) {
-            updated.statusEffects = [];
-          }
-          // Remove existing paralysis if any
-          updated.statusEffects = updated.statusEffects.filter(e =>
-            (typeof e === 'string' && e !== "PARALYZED") ||
-            (typeof e === 'object' && e.type !== "PARALYZED")
-          );
-          // Add new paralysis effect
-          updated.statusEffects.push({
-            type: "PARALYZED",
-            name: "Paralyzed",
-            remainingRounds: durationRounds,
-            duration: durationRounds,
-            caster: caster,
-            appliedAt: Date.now(),
-          });
-          addLog(`🧠 ${target.name} is paralyzed for ${durationRounds} melee rounds!`, "status");
-          return updated;
+    const c = clockRef.current;
+    let scheduledSpellImpact = false;
+    for (const ev of res.events || []) {
+      if (!ev) continue;
+      if (ev.type === "SCHEDULED_EVENTS") {
+        addLog?.(
+          `🧪 addSchedule id=${ev?.id ?? "?"} items=${ev?.items?.length ?? 0} ` +
+            `first=${ev?.items?.[0]?.e?.type ?? "none"} last=${ev?.items?.at?.(-1)?.e?.type ?? "none"}`,
+          "info"
+        );
+        if (!c?.addSchedule) {
+          addLog?.("⚠️ clock.addSchedule missing in executePsionicPower", "warning");
+        } else {
+          c.addSchedule(ev);
         }
-        return fighter;
-      }));
+      } else {
+        await handleEngineEvent(ev);
+      }
     }
 
-    // Don't duplicate success log - usePsionic already logs it for Stop Bleeding
-    // For other psionics, the log is already in usePsionic
-    if (power.name !== "Stop Bleeding") {
-      addLog(`✅ Psionic ${power.name} executed successfully`, "info");
-    }
-
-    // ✅ CRITICAL: Apply updates using latest fighter state
-    setFighters(prev => prev.map(fighter => {
-      if (fighter.id === latestCaster.id) {
-        const updated = applyFighterUpdates(fighter, resolution.casterUpdates);
-        // Debug log for ISP changes (only for Stop Bleeding to diagnose spam)
-        if (power.name === "Stop Bleeding" && resolution.casterUpdates?.deltaISP) {
-          const beforeISP = getFighterISP(fighter);
-          const afterISP = getFighterISP(updated);
-          if (import.meta.env.DEV) {
-            console.log(`[Stop Bleeding] ${latestCaster.name} ISP: ${beforeISP} → ${afterISP} (delta: ${resolution.casterUpdates.deltaISP})`);
-          }
-        }
-        return updated;
-      }
-      if (latestTarget && resolution.targetUpdates && fighter.id === latestTarget.id) {
-        return applyFighterUpdates(fighter, resolution.targetUpdates);
-      }
-      return fighter;
-    }));
-
-    (resolution.additionalLogs || []).forEach(entry => {
-      addLog(entry.message, entry.type || "info");
-    });
-
-    endTurn();
     return true;
-  }, [
-    fighters,
-    combatTerrain,
-    positions,
-    meleeRound,
-    addLog,
-    setFighters,
-    applyFighterUpdates,
-    getFighterISP,
-    endTurn,
-  ]);
+  }
 
   useEffect(() => {
     executeSpellRef.current = executeSpell;
@@ -13073,578 +18571,378 @@ export default function CombatPage({ characters = [] }) {
     executePsionicPowerRef.current = executePsionicPower;
   });
 
+  // Clear spell de-dupe sets when turn advances (prevents sets from growing unbounded in long combats)
+  useEffect(() => {
+    activeCastIdsRef.current.clear();
+    resolvedSpellEffectsRef.current.clear();
+  }, [turnCounter]);
 
-  // Execute spell
-  function executeSpell(caster, target, spell) {
-    // ✅ GUARD: Stop all processing if combat is over (use ref for latest state)
-    if (combatOverRef.current || !combatActive || combatEndCheckRef.current) {
+
+  async function executeSpell(caster, target, spell) {
+    addLog?.(
+      `🧪 executeSpell entered caster=${caster?.name} spell=${spell?.name}`,
+      "info"
+    );
+
+    const callEngine = engineCallRef.current;
+    if (!callEngine) {
+      addLog?.("❌ executeSpell failed: engineCallRef missing", "error");
       return false;
     }
 
-    // ✅ DE-DUPE: Generate unique cast ID with high-resolution timestamp + random
-    // Use performance.now() for better precision than Date.now()
-    const castId = `${caster.id}:${spell.name || spell.id || 'spell'}:${performance.now()}:${Math.random().toString(36).substr(2, 9)}`;
+    if (!caster || !spell) {
+      addLog?.(
+        `❌ executeSpell failed: missing caster or spell caster=${caster?.name ?? "?"} spell=${spell?.name ?? "?"}`,
+        "error"
+      );
+      return false;
+    }
 
-    // ✅ PREVENT DUPLICATE CASTS: Check if this exact cast ID is already active
+    if (spellRequiresTarget?.(spell) && !target) {
+      addLog?.(
+        `❌ executeSpell failed: missing target for ${spell?.name}`,
+        "error"
+      );
+      return false;
+    }
+
+    const liveTurnFighter = fightersRef.current?.[turnIndexRef.current];
+    if (!liveTurnFighter || liveTurnFighter.id !== caster.id) {
+      addLog?.(
+        `🚫 Stale spell blocked: ${caster?.name || "Unknown"} tried to cast ${spell?.name || "Unknown Spell"} outside their live turn.`,
+        "warning"
+      );
+      return false;
+    }
+    const spellActionToken = currentTurnTokenRef.current ?? makeTurnToken(caster);
+    if (blockStaleAction(caster, spellActionToken, "spell cast")) {
+      return false;
+    }
+
+    if (activeSpellImpactRef.current) {
+      addLog?.(
+        `🚫 Spell blocked: ${caster?.name || "Unknown"} tried to cast while spell impact is active.`,
+        "warning"
+      );
+      return false;
+    }
+
+    addLog?.(
+      `🔥 SPELL DEBUG: ${spell?.name} | damage=${spell?.damage ?? spell?.combatDamage ?? "?"} | combatDamage=${spell?.combatDamage ?? "?"} | level=${spell?.level ?? "?"}`,
+      "info"
+    );
+
+    // ✅ DE-DUPE (FIXED): deterministic cast key per turn/action.
+    // Old version used performance.now()+random which made every "duplicate" unique,
+    // so it never prevented double-casts after lock recovery / rerenders.
+    const spellKey = spell?.name || spell?.id || "spell";
+    const targetKey = target?.id ?? target ?? "self";
+
+    // Use remainingAttacks as an action "slot" discriminator if available.
+    // This prevents blocking legitimate future casts in the same melee/turn.
+    const actionKey =
+      caster?.remainingAttacks ??
+      caster?.actionsRemaining ??
+      caster?.remainingActions ??
+      "na";
+
+    const castId = `${turnCounter}:${caster.id}:${spellKey}:${targetKey}:${actionKey}`;
+
     if (activeCastIdsRef.current.has(castId)) {
-      // This exact cast is already being processed - skip
-      return false;
+      addLog?.(
+        `🚫 Spell duplicate blocked castId=${castId} caster=${caster?.name} spell=${spell?.name}`,
+        "warning"
+      );
+      return false; // Already processed this cast (e.g. lock recovery retry)
     }
-
-    // Mark cast as active immediately
     activeCastIdsRef.current.add(castId);
+    turnActionResolvingRef.current = true;
+    pendingTurnAdvanceRef.current = false;
 
-    // Clean up old cast IDs (keep last 50 to prevent memory leak)
-    if (activeCastIdsRef.current.size > 50) {
-      const entries = Array.from(activeCastIdsRef.current);
-      activeCastIdsRef.current = new Set(entries.slice(-25));
-    }
-
-    // ✅ DE-DUPE: Check if this spell effect has already been resolved for this target
-    const effectKey = target ? `${castId}::${target.id}` : `${castId}::self`;
-
-    if (resolvedSpellEffectsRef.current.has(effectKey)) {
-      // This spell effect has already been resolved - skip
-      activeCastIdsRef.current.delete(castId); // Clean up
-      return false;
-    }
-
-    // Mark as resolved immediately to prevent duplicate processing
-    resolvedSpellEffectsRef.current.add(effectKey);
-
-    // Clean up old entries (keep last 100 to prevent memory leak)
-    if (resolvedSpellEffectsRef.current.size > 100) {
-      const entries = Array.from(resolvedSpellEffectsRef.current);
-      resolvedSpellEffectsRef.current = new Set(entries.slice(-50));
-    }
-
-    // Check if this is a protection circle spell using isProtectionCircle
-    if (isProtectionCircle(spell)) {
-      // Handle protection circle creation
-      const circlePosition = positions[caster.id] || { x: 0, y: 0 };
-      const circleType = spell.name || CIRCLE_TYPES.PROTECTION_FROM_EVIL;
-      const createdCircle = createProtectionCircle(caster, circleType, circlePosition, 5);
-
-      if (createdCircle) {
-        const fullCircle = {
-          ...createdCircle,
-          caster: caster.name || caster.id,
-          name: spell.name || circleType.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
-          bonus: 5,
-          remaining: 10,
-        };
-
-        setActiveCircles(prev => [...prev, fullCircle]);
-
-        // Use updateProtectionCirclesOnMap to update map state
-        updateProtectionCirclesOnMap({
-          circles: [...activeCircles, fullCircle],
-          combatants: fighters,
-          positions: positions,
-          log: addLog
-        });
-
-        addLog(`🕯️ ${caster.name} draws ${fullCircle.name}!`, "holy");
-        addLog(`✨ The circle glows with divine light (radius ${fullCircle.radius} ft, +${fullCircle.bonus} vs Horror).`, "holy");
-        return true;
+    const getSpellPPECostForCast = (s) => {
+      const candidates = [
+        s?.ppeCost,
+        s?.PPE,
+        s?.ppe,
+        s?.cost,
+        s?.raw?.ppeCost,
+        s?.raw?.PPE,
+        s?.raw?.ppe,
+        s?.raw?.cost,
+      ];
+      for (const value of candidates) {
+        const n = Number(value);
+        if (Number.isFinite(n) && n > 0) return n;
       }
-    }
-
-    // Use castSpell as a wrapper for unified spell casting interface
-    // Note: castSpell is a wrapper that calls activateAbility, but we use executeSpell for full implementation
-    const castResult = castSpell(caster, target, spell, addLog);
-    if (!castResult) {
-      return false; // castSpell handles validation and logging
-    }
-
-    // Convert unified spell to combat spell format if needed
-    let combatSpell = spell;
-    if (spell.type === "magic" || spell.source === "unified") {
-      const converted = convertUnifiedSpellToCombatSpell(spell);
-      if (converted) {
-        combatSpell = converted;
-      }
-    }
-
-    // Use getSpellCost for consistent cost extraction
-    const spellCost = getSpellCost(combatSpell);
-    const availablePPE =
-      caster.currentPPE ??
-      caster.PPE ??
-      0;
-    const healingFormula = getSpellHealingFormula(combatSpell);
-    const healTarget = healingFormula ? (target || caster) : null;
-
-    if (availablePPE < spellCost) {
-      addLog(`❌ ${caster.name} lacks the PPE to cast ${combatSpell.name}!`, "error");
-      return false;
-    }
-
-    // Validate target requirement
-    if (spellRequiresTarget(combatSpell) && !target) {
-      addLog(`❌ ${caster.name} must have a valid target for ${combatSpell.name}.`, "error");
-      return false;
-    }
-
-    // Validate if spell can affect the target (friendly/enemy restrictions, self-only, etc.)
-    if (target && !spellCanAffectTarget(combatSpell, caster, target)) {
-      const isFriendly = caster.type === target.type;
-      if (isHealingSpell(combatSpell) && !isFriendly) {
-        addLog(`❌ ${combatSpell.name} cannot be cast on enemies!`, "error");
-      } else if (isSupportSpell(combatSpell) && !isFriendly) {
-        addLog(`❌ ${combatSpell.name} cannot be cast on enemies!`, "error");
-      } else {
-        addLog(`❌ ${combatSpell.name} cannot affect ${target.name}!`, "error");
-      }
-      return false;
-    }
-
-    // Validate spell range if target is provided
-    if (target && positions[caster.id] && positions[target.id]) {
-      const rangeFeet = getSpellRangeInFeet(combatSpell);
-      const distance = calculateDistance(positions[caster.id], positions[target.id]);
-      if (rangeFeet !== Infinity && distance > rangeFeet) {
-        addLog(`❌ ${target.name} is ${Math.round(distance)}ft away, but ${combatSpell.name} has range ${rangeFeet}ft!`, "error");
-        return false;
-      }
-    }
-
-    // ✅ CAST DE-DUPE / ANTI-LOOP GUARD: Prevent machine-gun casting in same action window
-    const castKey = `${caster.id}:${combatSpell.name}:${turnIndex}:${meleeRound}`;
-    if (combatCastGuardRef.current.has(castKey)) {
-      // We already resolved this exact cast for this action window
-      activeCastIdsRef.current.delete(castId); // Clean up
-      resolvedSpellEffectsRef.current.delete(effectKey); // Clean up
-      return false;
-    }
-    combatCastGuardRef.current.add(castKey);
-
-    // ✅ RAW WIZARD LIMIT: 1 spell per melee (2 at lvl 4+ later)
-    if ((caster.spellsCastThisMelee || 0) >= 1) {
-      addLog(`⏭️ ${caster.name} cannot cast another spell this melee`, "info");
-      activeCastIdsRef.current.delete(castId); // Clean up
-      resolvedSpellEffectsRef.current.delete(effectKey); // Clean up
-      return false;
-    }
-
-    addLog(`🔮 ${caster.name} casts ${combatSpell.name}! (castId=${castId.substring(0, 30)}...)`, "combat");
-
-    // ✅ IMMUNITY CHECK: Check for damage type immunity BEFORE save/resist logic
-    // This prevents contradictory "fails to resist" + "impervious" messages
-    if (hasSpellDamage(combatSpell) && target) {
-      // Determine spell damage type
-      const dmgType = (combatSpell.damageType || "").toLowerCase();
-
-      // Fallback: Check SPELL_ELEMENT_MAP if damageType is not set
-      let spellElement = null;
-      if (!dmgType || dmgType === "force" || dmgType === "magic") {
-        spellElement = SPELL_ELEMENT_MAP[combatSpell.name] || null;
-      }
-
-      // Map spell element to damage type
-      const effectiveDmgType = dmgType || (spellElement ? spellElement.toLowerCase() : null);
-
-      // Also check spell name for fire/cold keywords as fallback
-      const spellNameLower = combatSpell.name.toLowerCase();
-      const isFireSpell = effectiveDmgType === "fire" || spellElement === "fire" ||
-        spellNameLower.includes("fire") || spellNameLower.includes("flame");
-      const isColdSpell = effectiveDmgType === "cold" || spellElement === "cold" ||
-        spellNameLower.includes("cold") || spellNameLower.includes("ice") || spellNameLower.includes("frost");
-
-      // Check target immunities
-      const targetAbilities = target.abilities || {};
-      let isImmune = false;
-      let immunityType = null;
-
-      // Check parsed abilities object for impervious_to
-      if (targetAbilities.impervious_to && Array.isArray(targetAbilities.impervious_to)) {
-        if (isFireSpell && targetAbilities.impervious_to.includes("fire")) {
-          isImmune = true;
-          immunityType = "fire";
-        } else if (isColdSpell && targetAbilities.impervious_to.includes("cold")) {
-          isImmune = true;
-          immunityType = "cold";
-        } else if (effectiveDmgType && targetAbilities.impervious_to.includes(effectiveDmgType)) {
-          isImmune = true;
-          immunityType = effectiveDmgType;
-        }
-      }
-
-      // Also check raw abilities array if it exists (fallback)
-      if (!isImmune && Array.isArray(target.abilities)) {
-        if (isFireSpell && target.abilities.some(a =>
-          typeof a === "string" &&
-          (a.toLowerCase().includes("impervious to fire") ||
-            a.toLowerCase().includes("impervious to fire (no damage)"))
-        )) {
-          isImmune = true;
-          immunityType = "fire";
-        } else if (isColdSpell && target.abilities.some(a =>
-          typeof a === "string" &&
-          (a.toLowerCase().includes("impervious to cold") ||
-            a.toLowerCase().includes("impervious to cold (no damage)"))
-        )) {
-          isImmune = true;
-          immunityType = "cold";
-        }
-      }
-
-      // If immune, log immunity message, spend PPE, end turn, and return early
-      if (isImmune) {
-        addLog(`🛡️ ${target.name} is impervious to ${immunityType} and takes no damage from ${combatSpell.name}!`, "info");
-        addLog(`🔮 ${caster.name} spent ${spellCost} PPE`, "combat");
-
-        // -------------------------------------------------------------------
-        // AI: write deferred outcome so enemyTurnAI can mark this element as
-        // DISPROVEN against this target (prevents Flame Lick spam vs Baal-Rog).
-        // -------------------------------------------------------------------
-        try {
-          if (!caster.meta) caster.meta = {};
-          const targetKey = getAIMemoryTargetKey(target);
-          caster.meta.lastSpellOutcome = {
-            targetKey,
-            spellName: combatSpell.name,
-            element: immunityType || inferSpellElementForAI(combatSpell),
-            outcome: "disproven",
-            notes: `Target is impervious to ${immunityType || "this element"}`,
-          };
-        } catch (err) {
-          if (import.meta.env?.DEV && settingsRef.current?.showCombatDebug) {
-            addLog(`Debug: AI memory write failed (${err?.message || "unknown"})`, "warning");
-          }
-        }
-
-        // ✅ Increment spells cast this melee (RAW: 1 spell per melee limit) - spell was cast even if immune
-        setFighters(prev =>
-          prev.map(f =>
-            f.id === caster.id
-              ? { ...f, spellsCastThisMelee: (f.spellsCastThisMelee || 0) + 1 }
-              : f
-          )
-        );
-
-        activeCastIdsRef.current.delete(castId); // Clean up
-        endTurn();
-        return true;
-      }
-    }
-
-    setFighters((prev) => {
-      // ✅ GUARD: Check combat state inside setState callback
-      if (combatOverRef.current || !combatActive || combatEndCheckRef.current) {
-        activeCastIdsRef.current.delete(castId); // Clean up on abort
-        return prev;
-      }
-
-      return prev.map((f) => {
-        if (f.id !== caster.id) return f;
-        const updated = { ...f };
-        if (typeof updated.PPE === "number") {
-          updated.PPE = Math.max(0, updated.PPE - spellCost);
-        }
-        if (typeof updated.currentPPE === "number") {
-          updated.currentPPE = Math.max(0, updated.currentPPE - spellCost);
-        }
-        return updated;
-      });
-    });
-
-    // -----------------------------------------------------------------------
-    // AI: "threat intel" spells earn threat-analysis tags (inferred, not confirmed)
-    // Stored on caster.meta._earnedThreatTags[targetKey] so createThreatProfile
-    // can merge them if you choose.
-    // -----------------------------------------------------------------------
-    try {
-      const earned = getThreatTagsEarnedBySpell(combatSpell);
-      if (earned && target) {
-        if (!caster.meta) caster.meta = {};
-        if (!caster.meta._earnedThreatTags) caster.meta._earnedThreatTags = {};
-        const targetKey = getAIMemoryTargetKey(target);
-        caster.meta._earnedThreatTags[targetKey] = {
-          ...(caster.meta._earnedThreatTags[targetKey] || {}),
-          ...earned,
-          _lastSourceSpell: combatSpell.name,
-          _t: Date.now(),
-        };
-      }
-    } catch (err) {
-      if (import.meta.env?.DEV && settingsRef.current?.showCombatDebug) {
-        addLog(`Debug: threat tag write failed (${err?.message || "unknown"})`, "warning");
-      }
-    }
-
-    if (healingFormula && healTarget) {
-      let healAmount = 0;
       try {
-        if (healingFormula.type === "dice") {
-          const roll = CryptoSecureDice.parseAndRoll(healingFormula.expression);
-          healAmount = Math.abs(roll.totalWithBonus);
-        } else if (typeof healingFormula.amount === "number") {
-          healAmount = Math.abs(healingFormula.amount);
-        }
-      } catch (error) {
-        console.warn(`Failed to parse healing formula for ${combatSpell.name}:`, error);
+        const utilCost = Number(getSpellCost?.(s));
+        if (Number.isFinite(utilCost) && utilCost > 0) return utilCost;
+      } catch {
+        // ignore
       }
+      return 0;
+    };
 
-      if (healAmount > 0) {
-        setFighters((prev) => {
-          // ✅ GUARD: Check combat state inside setState callback
-          if (combatOverRef.current || !combatActive || combatEndCheckRef.current) {
-            activeCastIdsRef.current.delete(castId); // Clean up on abort
-            return prev;
-          }
+    const spendFighterPPE = (casterId, amount, spellName = "spell") => {
+      const cost = Math.max(0, Number(amount) || 0);
+      if (!casterId || cost <= 0) return true;
 
-          return prev.map((f) => {
-            if (f.id !== healTarget.id) return f;
-            const updatedTarget = { ...f };
-            const newHP = clampHP(getFighterHP(updatedTarget) + healAmount, updatedTarget);
-            applyHPToFighter(updatedTarget, newHP);
-            return updatedTarget;
-          });
-        });
-        addLog(`💚 ${healTarget.name} recovers ${healAmount} HP from ${combatSpell.name}!`, "combat");
-      } else if (combatSpell.effect) {
-        addLog(`✨ ${combatSpell.effect}`, "combat");
-      }
+      const liveFighters = fightersRef.current || fighters;
+      const liveCaster = liveFighters.find((f) => f.id === casterId) || null;
 
-      addLog(`🔮 ${caster.name} spent ${spellCost} PPE`, "combat");
-
-      // ✅ GUARD: Check combat state before ending turn (use ref for latest state)
-      if (combatOverRef.current || !combatActive || combatEndCheckRef.current) {
-        activeCastIdsRef.current.delete(castId); // Clean up on abort
+      if (!liveCaster) {
+        addLog?.(`⚠️ Could not find caster to spend PPE.`, "warning");
         return false;
       }
 
-      activeCastIdsRef.current.delete(castId); // Clean up after successful completion
-      endTurn();
+      const before = Number(
+        liveCaster.currentPPE ??
+          liveCaster.derived?.currentPPE ??
+          liveCaster.magic?.currentPPE ??
+          liveCaster.PPE ??
+          liveCaster.ppe ??
+          0
+      );
+
+      if (!Number.isFinite(before) || before < cost) {
+        addLog?.(
+          `⚠️ ${liveCaster.name} does not have enough PPE for ${spellName}: ${before || 0}/${cost}`,
+          "warning"
+        );
+        return false;
+      }
+
+      const after = Math.max(0, before - cost);
+      const maxPPE = Number(
+        liveCaster.maxPPE ??
+          liveCaster.derived?.maxPPE ??
+          liveCaster.magic?.maxPPE ??
+          liveCaster.PPE ??
+          liveCaster.ppe ??
+          before
+      );
+
+      const next = liveFighters.map((f) => {
+        if (f.id !== casterId) return f;
+
+        return {
+          ...f,
+
+          currentPPE: after,
+
+          maxPPE,
+          // Keep PPE/ppe aligned with current pool so legacy readers do not show max after a spend.
+          PPE: after,
+          ppe: after,
+
+          derived: f.derived
+            ? {
+                ...f.derived,
+                currentPPE: after,
+                maxPPE,
+              }
+            : f.derived,
+
+          magic: f.magic
+            ? {
+                ...f.magic,
+                currentPPE: after,
+                maxPPE,
+              }
+            : f.magic,
+        };
+      });
+
+      fightersRef.current = next;
+      setFighters(next);
+      addLog?.(
+        `🔮 ${liveCaster.name} spends ${cost} PPE for ${spellName} (${before} → ${after})`,
+        "info"
+      );
       return true;
+    };
+
+    const ppeCost = getSpellPPECostForCast(spell);
+    const liveCaster =
+      (fightersRef.current || fighters).find((f) => f.id === caster.id) || caster;
+    const currentPPE = getFighterPPE(liveCaster);
+    if (ppeCost > 0 && currentPPE < ppeCost) {
+      activeCastIdsRef.current.delete(castId);
+      turnActionResolvingRef.current = false;
+      addLog?.(
+        `❌ ${caster.name} cannot cast ${spell?.name || "spell"}: needs ${ppeCost} PPE but only has ${currentPPE}.`,
+        "warning"
+      );
+      return false;
+    }
+    if (ppeCost <= 0) {
+      addLog?.(
+        `⚠️ ${spell?.name || "Spell"} has no PPE cost found. PPE will not decrease unless the spell data has ppeCost/cost.`,
+        "warning"
+      );
     }
 
-    // Handle damage spells
-    let spellSaveInfo = null;
-    let saveResisted = false;
+    const state = {
+      fighters: fightersRef.current || fighters,
+      positions: positionsRef.current || positions,
+      turnCounter,
+    };
 
-    if (hasSpellDamage(combatSpell) && target) {
-      // ✅ GUARD: Check combat state before processing (use ref for latest state)
-      if (combatOverRef.current || !combatActive || combatEndCheckRef.current) {
-        activeCastIdsRef.current.delete(castId); // Clean up on abort
+    const flightMs = 550;
+
+    const getSpellTurnKeyForCast = (liveCaster) => {
+      const live = fightersRef.current?.find((f) => f.id === liveCaster?.id);
+      return [
+        liveCaster?.id,
+        meleeRoundRef.current ?? meleeRound,
+        turnIndexRef.current ?? turnIndex,
+        live?.remainingAttacks ?? liveCaster?.remainingAttacks ?? 0,
+      ].join(":");
+    };
+    const spellTurnKey = getSpellTurnKeyForCast(caster);
+    if (playerSpellInFlightKeyRef.current === spellTurnKey) {
+      activeCastIdsRef.current.delete(castId);
+      turnActionResolvingRef.current = false;
+      addLog?.(
+        `🚫 Duplicate spell blocked for ${caster.name}: ${spell.name}`,
+        "warning"
+      );
+      return false;
+    }
+    playerSpellInFlightKeyRef.current = spellTurnKey;
+
+    let res;
+    try {
+      res = await callEngine("castSpell", {
+        caster: caster.id,
+        target: target?.id ?? target ?? null,
+        spell,
+        meta: { castId, flightMs, turnToken: spellActionToken },
+        state,
+      });
+    } catch (err) {
+      activeCastIdsRef.current.delete(castId);
+      turnActionResolvingRef.current = false;
+      playerSpellInFlightKeyRef.current = null;
+      addLog?.(
+        `❌ castSpell threw: ${err?.message ?? String(err)}`,
+        "error"
+      );
+      return false;
+    }
+
+    addLog?.(
+      `🧪 castSpell ok=${!!res?.ok} events=${res?.events?.length ?? 0} ` +
+        `types=[${(res?.events ?? []).map((e) => e?.type).filter(Boolean).join(", ")}]`,
+      "info"
+    );
+
+    if (!res?.ok) {
+      activeCastIdsRef.current.delete(castId); // Allow retry on transient rejection (LOS, moved target, etc.)
+      turnActionResolvingRef.current = false;
+      playerSpellInFlightKeyRef.current = null;
+      addLog?.(
+        `❌ Spell rejected: ${res?.error?.message ?? "unknown error"} method=castSpell`,
+        "error"
+      );
+      return false;
+    }
+
+    // The engine currently schedules spell impact but may not emit PPE_SPENT.
+    // Spend PPE here after cast approval, keeping the PPE_SPENT event handler as a backup.
+    const engineAlreadySpendsPPE = (res?.events || []).some((ev) => ev?.type === "PPE_SPENT");
+    if (!engineAlreadySpendsPPE && ppeCost > 0) {
+      const spentOk = spendFighterPPE(caster.id, ppeCost, spell?.name || "spell");
+      if (!spentOk) {
+        activeCastIdsRef.current.delete(castId);
+        turnActionResolvingRef.current = false;
+        playerSpellInFlightKeyRef.current = null;
         return false;
       }
+    }
 
-      spellSaveInfo = resolveMagicSave(caster, target, combatSpell.name);
-      if (spellSaveInfo) {
-        const { roll, totalBonus, total, dc, resisted } = spellSaveInfo;
-        addLog(
-          `🛡️ ${target.name} attempts to resist ${combatSpell.name}: roll ${roll} + ${totalBonus} = ${total} vs ${dc}`,
+    const c = clockRef.current;
+    let scheduledSpellImpact = false;
+    for (const ev of res.events || []) {
+      if (!ev) continue;
+      if (ev.type === "SCHEDULED_EVENTS") {
+        addLog?.(
+          `🧪 addSchedule id=${ev?.id ?? "?"} items=${ev?.items?.length ?? 0} ` +
+            `first=${ev?.items?.[0]?.e?.type ?? "none"} last=${ev?.items?.at?.(-1)?.e?.type ?? "none"}`,
           "info"
         );
-        if (resisted) {
-          addLog(`⚡ ${target.name} resists part of the spell!`, "warning");
-          saveResisted = true;
-        } else {
-          addLog(`🔥 ${target.name} fails to resist ${combatSpell.name}!`, "combat");
-        }
-      }
-    }
 
-    if (combatSpell.damage && target) {
-      // ✅ GUARD: Check combat state before applying damage (use ref for latest state)
-      if (combatOverRef.current || !combatActive || combatEndCheckRef.current) {
-        activeCastIdsRef.current.delete(castId); // Clean up on abort
-        return false;
-      }
-
-      // Check for fire/cold resistance (half damage) - immunity already checked above
-      const targetAbilities = target.abilities || {};
-      const spellNameLower = combatSpell.name.toLowerCase();
-      const spellElement = SPELL_ELEMENT_MAP[combatSpell.name] || null;
-      const dmgType = (combatSpell.damageType || "").toLowerCase();
-      const isFireSpell = dmgType === "fire" || spellElement === "fire" ||
-        spellNameLower.includes("fire") || spellNameLower.includes("flame");
-      const isColdSpell = dmgType === "cold" || spellElement === "cold" ||
-        spellNameLower.includes("cold") || spellNameLower.includes("ice") || spellNameLower.includes("frost");
-
-      // Check for fire resistance (half damage)
-      if (isFireSpell) {
-        const fireResistance = targetAbilities.resistances?.fire;
-        if (fireResistance && fireResistance < 1.0) {
-          const damageRoll = CryptoSecureDice.parseAndRoll(combatSpell.damage);
-          let damage = Math.floor(damageRoll.totalWithBonus * fireResistance);
-          if (saveResisted) {
-            damage = Math.max(1, Math.floor(damage / 2));
-          }
-
-          setFighters((prev) => {
-            if (combatOverRef.current || !combatActive || combatEndCheckRef.current) {
-              activeCastIdsRef.current.delete(castId);
-              return prev;
-            }
-
-            return prev.map((f) => {
-              if (f.id !== target.id) return f;
-              const updatedTarget = { ...f };
-              const newHP = clampHP(getFighterHP(updatedTarget) - damage, updatedTarget);
-              applyHPToFighter(updatedTarget, newHP);
-              return updatedTarget;
-            });
-          });
-
-          addLog(`💥 ${combatSpell.name} hits ${target.name} for ${damage} damage (fire resistance: ${Math.round(fireResistance * 100)}%)!`, "combat");
-          addLog(`🔮 ${caster.name} spent ${spellCost} PPE`, "combat");
-
-          // AI: spell worked (confirmed effective vs target; not a "weakness" claim)
-          try {
-            if (!caster.meta) caster.meta = {};
-            const targetKey = getAIMemoryTargetKey(target);
-            caster.meta.lastSpellOutcome = {
-              targetKey,
-              spellName: combatSpell.name,
-              element: inferSpellElementForAI(combatSpell),
-              outcome: damage > 0 ? "confirmed" : "no_effect",
-              notes: saveResisted ? "Target partially resisted" : "Spell dealt damage",
-            };
-          } catch (err) {
-            if (import.meta.env?.DEV && settingsRef.current?.showCombatDebug) {
-              addLog(`Debug: AI spell outcome write failed (${err?.message || "unknown"})`, "warning");
-            }
-          }
-
-          // ✅ Increment spells cast this melee (RAW: 1 spell per melee limit)
-          setFighters(prev =>
-            prev.map(f =>
-              f.id === caster.id
-                ? { ...f, spellsCastThisMelee: (f.spellsCastThisMelee || 0) + 1 }
-                : f
-            )
+        const scheduledItems = ev?.items ?? [];
+        // Spell casts defer TURN_ENDED to resolveSpellImpact (not listed as items here).
+        const scheduleEndsTurn = scheduledItems.some((item) => {
+          const type = item?.e?.type;
+          if (type === "TURN_ENDED" || type === "TURN_SHOULD_END") return true;
+          return (
+            type === "ENGINE_CALL" &&
+            item?.e?.method === "resolveSpellImpact"
           );
-
-          activeCastIdsRef.current.delete(castId);
-          endTurn();
-          return true;
-        }
-      }
-
-      // Check for cold resistance (half damage)
-      if (isColdSpell) {
-        const coldResistance = targetAbilities.resistances?.cold;
-        if (coldResistance && coldResistance < 1.0) {
-          const damageRoll = CryptoSecureDice.parseAndRoll(combatSpell.damage);
-          let damage = Math.floor(damageRoll.totalWithBonus * coldResistance);
-          if (saveResisted) {
-            damage = Math.max(1, Math.floor(damage / 2));
-          }
-
-          setFighters((prev) => {
-            if (combatOverRef.current || !combatActive || combatEndCheckRef.current) {
-              activeCastIdsRef.current.delete(castId);
-              return prev;
-            }
-
-            return prev.map((f) => {
-              if (f.id !== target.id) return f;
-              const updatedTarget = { ...f };
-              const newHP = clampHP(getFighterHP(updatedTarget) - damage, updatedTarget);
-              applyHPToFighter(updatedTarget, newHP);
-              return updatedTarget;
-            });
-          });
-
-          addLog(`💥 ${combatSpell.name} hits ${target.name} for ${damage} damage (cold resistance: ${Math.round(coldResistance * 100)}%)!`, "combat");
-          addLog(`🔮 ${caster.name} spent ${spellCost} PPE`, "combat");
-
-          // AI: spell worked (confirmed effective vs target; not a "weakness" claim)
-          try {
-            if (!caster.meta) caster.meta = {};
-            const targetKey = getAIMemoryTargetKey(target);
-            caster.meta.lastSpellOutcome = {
-              targetKey,
-              spellName: combatSpell.name,
-              element: inferSpellElementForAI(combatSpell),
-              outcome: damage > 0 ? "confirmed" : "no_effect",
-              notes: saveResisted ? "Target partially resisted" : "Spell dealt damage",
-            };
-          } catch (err) {
-            if (import.meta.env?.DEV && settingsRef.current?.showCombatDebug) {
-              addLog(`Debug: AI spell outcome write failed (${err?.message || "unknown"})`, "warning");
-            }
-          }
-
-          // ✅ Increment spells cast this melee (RAW: 1 spell per melee limit)
-          setFighters(prev =>
-            prev.map(f =>
-              f.id === caster.id
-                ? { ...f, spellsCastThisMelee: (f.spellsCastThisMelee || 0) + 1 }
-                : f
-            )
-          );
-
-          activeCastIdsRef.current.delete(castId);
-          endTurn();
-          return true;
-        }
-      }
-
-      const damageRoll = CryptoSecureDice.parseAndRoll(combatSpell.damage);
-      let damage = damageRoll.totalWithBonus;
-      if (saveResisted) {
-        damage = Math.max(1, Math.floor(damage / 2));
-      }
-
-      setFighters((prev) => {
-        // ✅ GUARD: Double-check combat state inside setState callback (use ref for latest state)
-        if (combatOverRef.current || !combatActive || combatEndCheckRef.current) {
-          activeCastIdsRef.current.delete(castId); // Clean up on abort
-          return prev;
-        }
-
-        return prev.map((f) => {
-          if (f.id !== target.id) return f;
-
-          const updatedTarget = { ...f };
-          const newHP = clampHP(getFighterHP(updatedTarget) - damage, updatedTarget);
-          // applyHPToFighter will handle the fall check automatically
-          applyHPToFighter(updatedTarget, newHP);
-
-          return updatedTarget;
         });
-      });
+        const spellScheduleOwnsTurn =
+          scheduleEndsTurn || ev?.kind === "spell";
 
-      addLog(`💥 ${combatSpell.name} hits ${target.name} for ${damage} damage!`, "combat");
+        if (spellScheduleOwnsTurn) {
+          activeSpellImpactRef.current = {
+            castId,
+            casterId: caster.id,
+            turnCounter: turnCounterRef.current ?? turnCounter,
+            turnToken: spellActionToken,
+          };
+          spellImpactTurnEndHandledRef.current = null;
+          addLog?.(
+            `🧪 Spell impact owns turn end: ${spell?.name} castId=${castId}`,
+            "info"
+          );
+        }
 
-      // ✅ Increment spells cast this melee (RAW: 1 spell per melee limit)
-      setFighters(prev =>
-        prev.map(f =>
-          f.id === caster.id
-            ? { ...f, spellsCastThisMelee: (f.spellsCastThisMelee || 0) + 1 }
-            : f
-        )
-      );
-    } else if (combatSpell.effect) {
-      addLog(`✨ ${combatSpell.effect}`, "combat");
+        addLog?.(
+          `🧪 spell schedule inspect kind=${ev?.kind ?? "?"} ` +
+            `type=${ev?.type ?? "?"} ` +
+            `method=${ev?.method ?? "?"} ` +
+            `items=${ev?.items?.length ?? 0} ` +
+            `firstType=${ev?.items?.[0]?.e?.type ?? "?"} ` +
+            `firstMethod=${ev?.items?.[0]?.e?.method ?? "?"}`,
+          "info"
+        );
 
-      // ✅ Increment spells cast this melee (RAW: 1 spell per melee limit)
-      setFighters(prev =>
-        prev.map(f =>
-          f.id === caster.id
-            ? { ...f, spellsCastThisMelee: (f.spellsCastThisMelee || 0) + 1 }
-            : f
-        )
-      );
+        if (!c?.addSchedule) {
+          addLog?.("⚠️ clock.addSchedule missing in executeSpell", "warning");
+          if (spellScheduleOwnsTurn) {
+            activeSpellImpactRef.current = null;
+          }
+        } else {
+          spellScheduleAuthorizedRef.current = true;
+          try {
+            c.addSchedule(ev);
+          } finally {
+            spellScheduleAuthorizedRef.current = false;
+          }
+          scheduledSpellImpact = true;
+        }
+      } else {
+        await handleEngineEvent(ev);
+      }
     }
 
-    addLog(`🔮 ${caster.name} spent ${spellCost} PPE`, "combat");
-
-    // ✅ GUARD: Check combat state before ending turn (use ref for latest state)
-    if (combatOverRef.current || !combatActive || combatEndCheckRef.current) {
-      activeCastIdsRef.current.delete(castId); // Clean up on abort
-      return false;
+    if (!scheduledSpellImpact && activeSpellImpactRef.current?.castId === castId) {
+      activeSpellImpactRef.current = null;
     }
 
-    activeCastIdsRef.current.delete(castId); // Clean up after successful completion
-    endTurn();
+    const impactStillOwnsTurn =
+      activeSpellImpactRef.current?.castId === castId &&
+      activeSpellImpactRef.current?.casterId === caster.id;
+    if (!impactStillOwnsTurn) {
+      turnActionResolvingRef.current = false;
+      playerSpellInFlightKeyRef.current = null;
+    }
+
     return true;
   }
-  function executeSelectedAction() {
+  async function executeSelectedAction() {
     const currentFighter = fighters[turnIndex];
 
     if (combatPausedRef.current) {
@@ -13698,13 +18996,13 @@ export default function CombatPage({ characters = [] }) {
     // Mark as executing to prevent rapid multiple clicks
     executingActionRef.current = true;
 
-    // Safety: Auto-clear lock after 5 seconds if it gets stuck
+    // Safety timeout: log warning if stuck (do NOT force-unlock; let finally() handle cleanup)
     const lockTimeout = setTimeout(() => {
       if (executingActionRef.current) {
-        console.warn('⚠️ Action lock was stuck, auto-clearing');
-        executingActionRef.current = false;
+        console.warn("⚠️ Action lock was stuck (timeout hit).");
       }
     }, 5000);
+    actionLockTimeoutRef.current = lockTimeout;
 
     // CRITICAL: Close combat choices modal immediately to prevent multiple actions
     // Clear selections so player can't queue another action
@@ -13718,6 +19016,7 @@ export default function CombatPage({ characters = [] }) {
     setShowCombatChoices(false);
     closeCombatChoices(); // Also close via disclosure hook
 
+    try {
     // Execute the selected action based on type
     switch (actionToExecute.name) {
       case "Strike":
@@ -13733,39 +19032,36 @@ export default function CombatPage({ characters = [] }) {
           }
           // Use the selected weapon for attack
           addLog(`${currentFighter.name} strikes with ${weaponToExecute.name}!`, "info");
-          attack(currentFighter, targetToExecute.id);
-          // Note: executingActionRef will be cleared when attack completes (endTurn resets it)
-          return; // attack function already calls endTurn
+          turnActionResolvingRef.current = true;
+          try {
+            await attack(currentFighter, targetToExecute.id);
+          } catch (err) {
+            turnActionResolvingRef.current = false;
+            pendingTurnAdvanceRef.current = false;
+            scheduleEndTurn(16, "executeCombat-strike-catch");
+            addLog(`⚠️ Strike failed: ${err?.message || err}`, "warning");
+          }
+          return; // attack already schedules endTurn
         } else if (!targetToExecute) {
           addLog(`${currentFighter.name} wants to strike but has no target selected!`, "error");
-          executingActionRef.current = false; // Clear lock on error
-          clearTimeout(lockTimeout);
           return;
         } else if (!weaponToExecute) {
           addLog(`${currentFighter.name} wants to strike but has no weapon selected!`, "error");
-          executingActionRef.current = false; // Clear lock on error
-          clearTimeout(lockTimeout);
           return;
         }
         break;
       case "Overwatch Shot":
         if (!weaponToExecute) {
           addLog(`${currentFighter.name} wants to overwatch but has no weapon selected!`, "error");
-          executingActionRef.current = false;
-          clearTimeout(lockTimeout);
           return;
         }
         if (!overwatchTargetHex) {
           setTargetingMode("OVERWATCH_HEX");
           addLog("🎯 Select a hex for Overwatch.", "info");
-          executingActionRef.current = false;
-          clearTimeout(lockTimeout);
           return;
         }
 
         // Hex selection commits the overwatch; nothing else to do here.
-        executingActionRef.current = false;
-        clearTimeout(lockTimeout);
         return;
 
       case "Parry": {
@@ -13779,8 +19075,6 @@ export default function CombatPage({ characters = [] }) {
             ? { ...f, remainingAttacks: Math.max(0, f.remainingAttacks - (parryCost === "all" ? f.remainingAttacks : parryCost)) }
             : f
         ));
-        executingActionRef.current = false; // Clear lock after action completes
-        clearTimeout(lockTimeout);
         scheduleEndTurn(500);
         return;
       }
@@ -13796,8 +19090,11 @@ export default function CombatPage({ characters = [] }) {
             ? { ...f, remainingAttacks: Math.max(0, f.remainingAttacks - (dodgeCost === "all" ? f.remainingAttacks : dodgeCost)) }
             : f
         ));
+        executingActionRef.current = false;
+        clearTimeout(lockTimeout);
         scheduleEndTurn(500);
         return;
+
       }
 
       case "Hide":
@@ -13826,8 +19123,6 @@ export default function CombatPage({ characters = [] }) {
             ? { ...f, remainingAttacks: Math.max(0, f.remainingAttacks - (hideCost === "all" ? f.remainingAttacks : hideCost)) }
             : f
         ));
-        executingActionRef.current = false;
-        clearTimeout(lockTimeout);
         scheduleEndTurn(500);
         return;
       }
@@ -13856,6 +19151,7 @@ export default function CombatPage({ characters = [] }) {
         // Movement mode activates - action will be deducted when movement is confirmed
         if (currentFighter.type === "player") {
           // Set running mode flag for movement calculations
+          setSelectedActionType("move");
           setMovementMode({ active: true, isRunning: true });
           setSelectedMovementFighter(currentFighter.id);
           addLog(`🏃 ${currentFighter.name} prepares to run (full speed movement)`, "info");
@@ -13877,8 +19173,6 @@ export default function CombatPage({ characters = [] }) {
         // Withdraw action - move away from enemies to a safer position
         if (currentFighter.type === "player") {
           dispatchCombatAction("WITHDRAW", { attacker: currentFighter });
-          executingActionRef.current = false;
-          clearTimeout(lockTimeout);
           endTurn();
         } else {
           // For enemies, use AI withdraw logic (already handled in enemyTurnAI)
@@ -13889,8 +19183,6 @@ export default function CombatPage({ characters = [] }) {
               ? { ...f, remainingAttacks: Math.max(0, f.remainingAttacks - 1) }
               : f
           ));
-          executingActionRef.current = false;
-          clearTimeout(lockTimeout);
           scheduleEndTurn(500);
         }
         return;
@@ -13935,8 +19227,6 @@ export default function CombatPage({ characters = [] }) {
           "info"
         );
 
-        executingActionRef.current = false;
-        clearTimeout(lockTimeout);
         scheduleEndTurn(500);
         return;
       }
@@ -13963,8 +19253,6 @@ export default function CombatPage({ characters = [] }) {
           "info"
         );
 
-        executingActionRef.current = false;
-        clearTimeout(lockTimeout);
         scheduleEndTurn(500);
         return;
       }
@@ -13984,11 +19272,9 @@ export default function CombatPage({ characters = [] }) {
               ? { ...f, remainingAttacks: Math.max(0, f.remainingAttacks - 1) }
               : f
           ));
-          executingActionRef.current = false; // Clear lock after action completes
           scheduleEndTurn(500);
         } else {
           addLog(`❌ ${currentFighter.name} cannot brace without a spear, pike, polearm, or lance!`, "error");
-          executingActionRef.current = false; // Clear lock on error
         }
         return;
       }
@@ -14021,16 +19307,12 @@ export default function CombatPage({ characters = [] }) {
             // Execute grapple action
             handleGrappleAction(grappleAction, currentFighter, targetToExecute.id);
             setSelectedGrappleAction(null); // Clear selection after use
-            executingActionRef.current = false; // Clear lock after action completes
-            clearTimeout(lockTimeout);
             scheduleEndTurn(500);
             return;
           } else {
             // Not in grapple - use selected maneuver
             if (!selectedManeuver) {
               addLog(`⚠️ Please select a maneuver first!`, "error");
-              executingActionRef.current = false;
-              clearTimeout(lockTimeout);
               return;
             }
 
@@ -14038,76 +19320,52 @@ export default function CombatPage({ characters = [] }) {
               // Use handleGrappleAction for grapple maneuver
               handleGrappleAction('grapple', currentFighter, targetToExecute.id);
               setSelectedManeuver(null); // Clear selection after use
-              executingActionRef.current = false;
-              clearTimeout(lockTimeout);
               scheduleEndTurn(500);
               return;
             } else if (selectedManeuver === "trip") {
               executeTripManeuver(currentFighter, targetToExecute);
               setSelectedManeuver(null); // Clear selection after use
-              executingActionRef.current = false;
-              clearTimeout(lockTimeout);
               scheduleEndTurn(500);
               return;
             } else if (selectedManeuver === "shove") {
               executeShoveManeuver(currentFighter, targetToExecute);
               setSelectedManeuver(null); // Clear selection after use
-              executingActionRef.current = false;
-              clearTimeout(lockTimeout);
               scheduleEndTurn(500);
               return;
             } else if (selectedManeuver === "disarm") {
               executeDisarmManeuver(currentFighter, targetToExecute);
               setSelectedManeuver(null); // Clear selection after use
-              executingActionRef.current = false;
-              clearTimeout(lockTimeout);
               scheduleEndTurn(500);
               return;
             } else {
               addLog(`⚠️ Unknown maneuver: ${selectedManeuver}`, "error");
-              executingActionRef.current = false;
-              clearTimeout(lockTimeout);
               return;
             }
           }
         } else {
           addLog(`${currentFighter.name} wants to perform a maneuver but has no target selected!`, "error");
-          executingActionRef.current = false; // Clear lock on error
-          clearTimeout(lockTimeout);
           return;
         }
       }
 
       case "Psionics": {
-        // Check if character has psionic powers
-        if (!currentFighter.psionicPowers || currentFighter.psionicPowers.length === 0) {
-          addLog(`${currentFighter.name} has no psionic powers available!`, "error");
-          return;
-        }
-        // Check ISP
-        if (!currentFighter.ISP || currentFighter.ISP <= 0) {
-          addLog(`${currentFighter.name} has no ISP remaining!`, "error");
-          return;
-        }
-        // Check if psionic power is selected
+        // Check if psionic power is selected (engine will validate ISP/powers)
         if (!selectedPsionicPower) {
-          addLog(`${currentFighter.name} must select a psionic power first!`, "error");
+          addLog("⚠️ No psionic power selected.", "error");
           return;
         }
-        // Execute the psionic power
-        const psionicSuccess = executePsionicPower(currentFighter, targetToExecute, selectedPsionicPower);
-        if (psionicSuccess) {
-          setPsionicsMode(false);
-          setSelectedPsionicPower(null);
-          return; // executePsionicPower handles turn ending
-        }
-        break;
+        const ok = await executePsionicPower(currentFighter, targetToExecute, selectedPsionicPower);
+        if (!ok) return;
+
+        // UI cleanup only
+        setPsionicsMode(false);
+        setSelectedPsionicPower(null);
+        setSelectedAction(null);
+        return;
       }
       case "Charge": {
         if (!targetToExecute || !weaponToExecute) {
           addLog(`${currentFighter.name} wants to charge but has no target/weapon selected!`, "error");
-          executingActionRef.current = false;
-          clearTimeout(lockTimeout);
           return;
         }
         dispatchCombatAction("CHARGE", {
@@ -14121,16 +19379,12 @@ export default function CombatPage({ characters = [] }) {
         const clericalAbilities = getAvailableClericalAbilities(currentFighter);
         if (clericalAbilities.length === 0) {
           addLog(`❌ ${currentFighter.name} has no clerical abilities!`, "error");
-          executingActionRef.current = false;
-          clearTimeout(lockTimeout);
           return;
         }
 
         // Check if ability is selected
         if (!selectedClericalAbility) {
           addLog(`❌ ${currentFighter.name} must select a clerical ability first!`, "error");
-          executingActionRef.current = false;
-          clearTimeout(lockTimeout);
           return;
         }
 
@@ -14144,8 +19398,6 @@ export default function CombatPage({ characters = [] }) {
             const deadBodies = fighters.filter(f => isDead(f) && positions[f.id]);
             if (deadBodies.length === 0) {
               addLog(`❌ No dead bodies available to animate!`, "error");
-              executingActionRef.current = false;
-              clearTimeout(lockTimeout);
               return;
             }
 
@@ -14169,8 +19421,6 @@ export default function CombatPage({ characters = [] }) {
 
             if (undeadTargets.length === 0) {
               addLog(`❌ No undead targets available!`, "error");
-              executingActionRef.current = false;
-              clearTimeout(lockTimeout);
               return;
             }
 
@@ -14210,8 +19460,6 @@ export default function CombatPage({ characters = [] }) {
           case "Exorcism": {
             if (!targetToExecute) {
               addLog(`❌ ${currentFighter.name} must select a target for Exorcism!`, "error");
-              executingActionRef.current = false;
-              clearTimeout(lockTimeout);
               return;
             }
 
@@ -14228,8 +19476,6 @@ export default function CombatPage({ characters = [] }) {
           case "Remove Curse": {
             if (!targetToExecute) {
               addLog(`❌ ${currentFighter.name} must select a target for Remove Curse!`, "error");
-              executingActionRef.current = false;
-              clearTimeout(lockTimeout);
               return;
             }
 
@@ -14258,25 +19504,19 @@ export default function CombatPage({ characters = [] }) {
           case "Healing Touch": {
             if (!targetToExecute) {
               addLog(`❌ ${currentFighter.name} must select a target for Healing Touch!`, "error");
-              executingActionRef.current = false;
-              clearTimeout(lockTimeout);
               return;
             }
 
             result = clericalHealingTouch(currentFighter, targetToExecute, { log: addLog });
 
             if (result.success) {
-              // Update target HP
-              setFighters(prev => prev.map(f => {
-                if (f.id === targetToExecute.id) {
-                  return {
-                    ...f,
-                    currentHP: result.currentHp,
-                    hp: result.currentHp
-                  };
-                }
-                return f;
-              }));
+              const fightersNow = fightersRef.current ?? fighters;
+              const updated = fightersNow.map((f) => {
+                if (f.id !== targetToExecute.id) return f;
+                const amount = Math.max(0, (result.currentHp ?? f.currentHP ?? 0) - (f.currentHP ?? 0));
+                return applyHealingToFighter(f, amount, "Healing Touch");
+              });
+              commitFighters(updated);
               addLog(result.message, "healing");
             } else {
               addLog(`❌ ${result.reason || "Healing Touch failed"}`, "error");
@@ -14286,8 +19526,6 @@ export default function CombatPage({ characters = [] }) {
 
           default:
             addLog(`❌ Unknown clerical ability: ${abilityName}`, "error");
-            executingActionRef.current = false;
-            clearTimeout(lockTimeout);
             return;
         }
 
@@ -14301,8 +19539,6 @@ export default function CombatPage({ characters = [] }) {
         // Clear selections
         setClericalAbilitiesMode(false);
         setSelectedClericalAbility(null);
-        executingActionRef.current = false;
-        clearTimeout(lockTimeout);
         scheduleEndTurn(500);
         return;
       }
@@ -14311,32 +19547,28 @@ export default function CombatPage({ characters = [] }) {
         // Check if character has spells
         if (!availableSpells || availableSpells.length === 0) {
           addLog(`${currentFighter.name} has no spells available!`, "error");
-          executingActionRef.current = false;
-          clearTimeout(lockTimeout);
           return;
         }
-        // Check PPE
-        const currentPPE =
+        // Check PPE (prefer live pool fields; PPE alone is often max on imports)
+        const currentPPE = Number(
           currentFighter.currentPPE ??
-          currentFighter.PPE ??
-          0;
+            currentFighter.derived?.currentPPE ??
+            currentFighter.magic?.currentPPE ??
+            currentFighter.PPE ??
+            currentFighter.ppe ??
+            0
+        );
         if (currentPPE <= 0) {
           addLog(`${currentFighter.name} has no PPE remaining!`, "error");
-          executingActionRef.current = false;
-          clearTimeout(lockTimeout);
           return;
         }
         // Check if spell is selected
         if (!selectedSpell) {
           addLog(`${currentFighter.name} must select a spell first!`, "error");
-          executingActionRef.current = false;
-          clearTimeout(lockTimeout);
           return;
         }
         if (spellRequiresTarget(selectedSpell) && !targetToExecute) {
           addLog(`${currentFighter.name} must select a target for ${selectedSpell.name}!`, "error");
-          executingActionRef.current = false;
-          clearTimeout(lockTimeout);
           return;
         }
         // Validate if spell can affect the target
@@ -14349,8 +19581,6 @@ export default function CombatPage({ characters = [] }) {
           } else {
             addLog(`${selectedSpell.name} cannot affect ${targetToExecute.name}!`, "error");
           }
-          executingActionRef.current = false;
-          clearTimeout(lockTimeout);
           return;
         }
         // Validate spell range
@@ -14359,17 +19589,42 @@ export default function CombatPage({ characters = [] }) {
           const distance = calculateDistance(positions[currentFighter.id], positions[targetToExecute.id]);
           if (rangeFeet !== Infinity && distance > rangeFeet) {
             addLog(`${targetToExecute.name} is ${Math.round(distance)}ft away, but ${selectedSpell.name} has range ${rangeFeet}ft!`, "error");
-            executingActionRef.current = false;
-            clearTimeout(lockTimeout);
             return;
           }
         }
-        // Execute the spell
-        const spellSuccess = executeSpellRef.current?.(currentFighter, targetToExecute, selectedSpell);
+        // Execute the spell (await — executeSpell is async, returns boolean)
+        const spellSuccess = await executeSpell(currentFighter, targetToExecute, selectedSpell);
         if (spellSuccess) {
+          const liveFightersNow = fightersRef.current ?? fighters;
+          const updated = liveFightersNow.map((f) => ({ ...f }));
+          const casterInArray = updated.find((f) => f.id === currentFighter.id);
+          if (casterInArray) {
+            casterInArray.remainingAttacks = Math.max(
+              0,
+              Number(casterInArray.remainingAttacks ?? 0) - 1
+            );
+          }
+          const pending = activeSpellImpactRef.current;
+          const spellOwnsTurnEnd =
+            pending &&
+            pending.turnCounter === turnCounterRef.current &&
+            pending.casterId === currentFighter.id;
+          commitFighters(updated);
+          if (casterInArray) {
+            const attacksLeft = formatAttacksRemaining(
+              casterInArray.remainingAttacks ?? 0,
+              casterInArray.attacksPerMelee ?? casterInArray.actionsPerMelee ?? 0
+            );
+            addLog(`${casterInArray.name} has ${attacksLeft} remaining`, "info");
+          }
+          if (!spellOwnsTurnEnd) {
+            scheduleEndTurn(16);
+          }
           setSpellsMode(false);
           setSelectedSpell(null);
-          return; // executeSpell handles turn ending
+          executingActionRef.current = false;
+          clearTimeout(lockTimeout);
+          return;
         }
         break;
       }
@@ -14378,16 +19633,12 @@ export default function CombatPage({ characters = [] }) {
         // Check if skill is selected
         if (!selectedSkill) {
           addLog(`${currentFighter.name} must select a skill first!`, "error");
-          executingActionRef.current = false;
-          clearTimeout(lockTimeout);
           return;
         }
 
         // Check if target is required and selected
         if (selectedSkill.requiresTarget && !targetToExecute) {
           addLog(`${selectedSkill.name} requires a target!`, "error");
-          executingActionRef.current = false;
-          clearTimeout(lockTimeout);
           return;
         }
 
@@ -14399,8 +19650,6 @@ export default function CombatPage({ characters = [] }) {
             const distance = calculateDistance(userPos, targetPos);
             if (distance > 5.5) { // 5.5 feet = 1 hex
               addLog(`❌ ${currentFighter.name} is too far from ${targetToExecute.name} (${Math.round(distance)}ft). Touch skills require being adjacent.`, "error");
-              executingActionRef.current = false;
-              clearTimeout(lockTimeout);
               return;
             }
           }
@@ -14416,8 +19665,6 @@ export default function CombatPage({ characters = [] }) {
 
           if (skillResult.error) {
             addLog(`❌ ${skillResult.error}`, "error");
-            executingActionRef.current = false;
-            clearTimeout(lockTimeout);
             return;
           }
 
@@ -14430,11 +19677,12 @@ export default function CombatPage({ characters = [] }) {
 
           // Update target HP if healed
           if (skillResult.healed !== undefined) {
-            setFighters(prev => prev.map(f =>
-              f.id === targetToExecute.id
-                ? { ...f, currentHP: skillResult.currentHp }
-                : f
-            ));
+            const fightersNow = fightersRef.current ?? fighters;
+            const updated = fightersNow.map((f) => {
+              if (f.id !== targetToExecute.id) return f;
+              return applyHealingToFighter(f, Number(skillResult.healed) || 0, powerName);
+            });
+            commitFighters(updated);
           }
 
           addLog(skillResult.message, skillResult.success === false ? "error" : "success");
@@ -14445,17 +19693,17 @@ export default function CombatPage({ characters = [] }) {
 
           if (skillResult.error) {
             addLog(`❌ ${skillResult.error}`, "error");
-            executingActionRef.current = false;
-            clearTimeout(lockTimeout);
             return;
           }
 
           // Update target HP
-          setFighters(prev => prev.map(f =>
-            f.id === targetToExecute.id
-              ? { ...f, currentHP: skillResult.currentHp }
-              : f
-          ));
+          const fightersNow = fightersRef.current ?? fighters;
+          const updated = fightersNow.map((f) => {
+            if (f.id !== targetToExecute.id) return f;
+            const amount = Math.max(0, (skillResult.currentHp ?? f.currentHP ?? 0) - (f.currentHP ?? 0));
+            return applyHealingToFighter(f, amount, "Healing Touch");
+          });
+          commitFighters(updated);
 
           addLog(skillResult.message, "success");
 
@@ -14464,13 +19712,18 @@ export default function CombatPage({ characters = [] }) {
           const skillPercent = selectedSkill.skillPercent || 50;
           skillResult = medicalTreatment(currentFighter, targetToExecute, skillPercent);
 
+          if (skillResult?.success) {
+            // Medical treatment stabilizes bleeding even if it doesn't restore HP.
+            stabilizeTargetById(targetToExecute.id, "First Aid");
+          }
           // Update target HP if healed
           if (skillResult.healed > 0) {
-            setFighters(prev => prev.map(f =>
-              f.id === targetToExecute.id
-                ? { ...f, currentHP: skillResult.currentHp }
-                : f
-            ));
+            const fightersNow = fightersRef.current ?? fighters;
+            const updated = fightersNow.map((f) => {
+              if (f.id !== targetToExecute.id) return f;
+              return applyHealingToFighter(f, Number(skillResult.healed) || 0, "First Aid");
+            });
+            commitFighters(updated);
           }
 
           addLog(skillResult.message, skillResult.success ? "success" : "error");
@@ -14507,9 +19760,7 @@ export default function CombatPage({ characters = [] }) {
         // Clear selections
         setSelectedSkill(null);
         setSelectedTarget(null);
-        executingActionRef.current = false;
-        clearTimeout(lockTimeout);
-        scheduleEndTurn(1500);
+        scheduleEndTurn(0);
         return;
       }
 
@@ -14523,8 +19774,6 @@ export default function CombatPage({ characters = [] }) {
         } else {
           addLog(`❌ ${result.reason}`, "error");
         }
-        executingActionRef.current = false;
-        clearTimeout(lockTimeout);
         scheduleEndTurn(500);
         return;
       }
@@ -14547,8 +19796,6 @@ export default function CombatPage({ characters = [] }) {
         } else {
           addLog(`❌ ${result.reason}`, "error");
         }
-        executingActionRef.current = false;
-        clearTimeout(lockTimeout);
         scheduleEndTurn(500);
         return;
       }
@@ -14566,8 +19813,6 @@ export default function CombatPage({ characters = [] }) {
         } else {
           addLog(`❌ ${result.reason}`, "error");
         }
-        executingActionRef.current = false;
-        clearTimeout(lockTimeout);
         scheduleEndTurn(500);
         return;
       }
@@ -14575,16 +19820,12 @@ export default function CombatPage({ characters = [] }) {
       case "Dive Attack": {
         if (!targetToExecute) {
           addLog(`❌ ${currentFighter.name} must select a target for dive attack!`, "error");
-          executingActionRef.current = false;
-          clearTimeout(lockTimeout);
           return;
         }
 
         // ✅ Only requirement: must be flying
         if (!isFlying(currentFighter)) {
           addLog(`❌ ${currentFighter.name} must be flying to perform a dive attack`, "error");
-          executingActionRef.current = false;
-          clearTimeout(lockTimeout);
           return;
         }
 
@@ -14608,12 +19849,20 @@ export default function CombatPage({ characters = [] }) {
 
         addLog(`🦅 ${currentFighter.name} dives (${fromAlt}ft → ${contactAlt}ft) to strike ${targetToExecute.name}!`, "combat");
 
-        attack(updatedAttacker, targetToExecute.id, {
-          strikeBonus: diveBonus,
-          source: "DIVE_ATTACK",
-          diveFromFeet: fromAlt,
-          diveToFeet: contactAlt,
-        });
+        turnActionResolvingRef.current = true;
+        try {
+          await attack(updatedAttacker, targetToExecute.id, {
+            strikeBonus: diveBonus,
+            source: "DIVE_ATTACK",
+            diveFromFeet: fromAlt,
+            diveToFeet: contactAlt,
+          });
+        } catch (err) {
+          turnActionResolvingRef.current = false;
+          pendingTurnAdvanceRef.current = false;
+          scheduleEndTurn(16, "executeCombat-dive-catch");
+          addLog(`⚠️ Dive attack failed: ${err?.message || err}`, "warning");
+        }
 
         return; // attack() handles endTurn
       }
@@ -14621,24 +19870,18 @@ export default function CombatPage({ characters = [] }) {
       case "Dimensional Teleport": {
         if (!hasDimensionalTeleport(currentFighter)) {
           addLog(`❌ ${currentFighter.name} does not have dimensional teleport ability!`, "error");
-          executingActionRef.current = false;
-          clearTimeout(lockTimeout);
           return;
         }
 
         // Teleport requires selecting a destination hex
         if (!selectedMovementHex || !showTacticalMap) {
           addLog(`❌ ${currentFighter.name} must select a destination hex on the tactical map to teleport!`, "error");
-          executingActionRef.current = false;
-          clearTimeout(lockTimeout);
           return;
         }
 
         const currentPos = positions[currentFighter.id];
         if (!currentPos) {
           addLog(`❌ Cannot find current position for ${currentFighter.name}!`, "error");
-          executingActionRef.current = false;
-          clearTimeout(lockTimeout);
           return;
         }
 
@@ -14661,8 +19904,6 @@ export default function CombatPage({ characters = [] }) {
           ));
 
           addLog(result.message, "info");
-          executingActionRef.current = false;
-          clearTimeout(lockTimeout);
           scheduleEndTurn(500);
           return;
         } else {
@@ -14674,8 +19915,6 @@ export default function CombatPage({ characters = [] }) {
           ));
 
           addLog(`❌ ${result.reason}`, "warning");
-          executingActionRef.current = false;
-          clearTimeout(lockTimeout);
           scheduleEndTurn(500);
           return;
         }
@@ -14684,8 +19923,6 @@ export default function CombatPage({ characters = [] }) {
       case "Lift & Carry": {
         if (!targetToExecute) {
           addLog(`❌ ${currentFighter.name} must select a grappled target to carry!`, "error");
-          executingActionRef.current = false;
-          clearTimeout(lockTimeout);
           return;
         }
         const result = liftAndCarry(currentFighter, targetToExecute, { positions });
@@ -14702,8 +19939,6 @@ export default function CombatPage({ characters = [] }) {
         } else {
           addLog(`❌ ${result.reason}`, "error");
         }
-        executingActionRef.current = false;
-        clearTimeout(lockTimeout);
         scheduleEndTurn(500);
         return;
       }
@@ -14712,15 +19947,11 @@ export default function CombatPage({ characters = [] }) {
         const carriedId = currentFighter.carriedTargetId;
         if (!carriedId) {
           addLog(`❌ ${currentFighter.name} is not carrying anyone!`, "error");
-          executingActionRef.current = false;
-          clearTimeout(lockTimeout);
           return;
         }
         const carried = fighters.find(f => f.id === carriedId);
         if (!carried) {
           addLog(`❌ Cannot find carried target!`, "error");
-          executingActionRef.current = false;
-          clearTimeout(lockTimeout);
           return;
         }
         const result = dropCarriedTarget(currentFighter, carried, { height: getAltitude(currentFighter) || 0 });
@@ -14737,8 +19968,6 @@ export default function CombatPage({ characters = [] }) {
         } else {
           addLog(`❌ ${result.reason}`, "error");
         }
-        executingActionRef.current = false;
-        clearTimeout(lockTimeout);
         scheduleEndTurn(500);
         return;
       }
@@ -14751,12 +19980,20 @@ export default function CombatPage({ characters = [] }) {
             ? { ...f, remainingAttacks: Math.max(0, f.remainingAttacks - 1) }
             : f
         ));
-        executingActionRef.current = false; // Clear lock after action completes
-        clearTimeout(lockTimeout);
         scheduleEndTurn(500);
         return;
     }
-
+    } catch (err) {
+      console.error(err);
+      addLog?.(`❌ Action failed: ${err?.message || err}`, "error");
+      scheduleEndTurn(500);
+    } finally {
+      if (actionLockTimeoutRef.current) {
+        clearTimeout(actionLockTimeoutRef.current);
+        actionLockTimeoutRef.current = null;
+      }
+      executingActionRef.current = false;
+    }
     // Clear selections - most actions return early, but this is a fallback
     // (Should not reach here due to returns above)
   }
@@ -14764,6 +20001,7 @@ export default function CombatPage({ characters = [] }) {
 
   function resetCombat() {
     try {
+      clearCombatFlowLocks();
       // ✅ Reset per-combat AI refs (prevents stale behavior after multiple resets)
       resetAITransientRefs();
 
@@ -14787,9 +20025,9 @@ export default function CombatPage({ characters = [] }) {
 
         // Reset ISP and PPE to max values (always reset, even if 0)
         // Re-initialize PPE for creatures with magicAbilities if it's missing or 0
-        if ((!fighterCopy.PPE || fighterCopy.PPE === 0) && fighterCopy.magicAbilities) {
+        if ((!fighterCopy.PPE || fighterCopy.PPE === 0) && !isNoneish(fighterCopy.magicAbilities)) {
           // Check if this is Wizard (Invocation) magic - use fullList for unrestricted access
-          const isWizardMagic = fighterCopy.magicAbilities && typeof fighterCopy.magicAbilities === "string" &&
+          const isWizardMagic = !isNoneish(fighterCopy.magicAbilities) && typeof fighterCopy.magicAbilities === "string" &&
             /spell\s+magic|wizard\s+magic|invocation\s+magic|invocation/i.test(fighterCopy.magicAbilities.toLowerCase());
 
           const spellResult = getSpellsForCreature(fighterCopy.magicAbilities, {
@@ -14884,13 +20122,25 @@ export default function CombatPage({ characters = [] }) {
       setTurnCounter(0);
       setCombatActive(false);
       setCombatPaused(false);
-      lastAutoTurnKeyRef.current = null;
+      setShowDeploymentModal(false);
+      setShowPreBattleWizard(true);
+      setPreBattleStep(PRE_BATTLE_STEPS.ROSTER);
+      setPreBattleDeployment(createEmptyDeploymentState());
+      setHasAutoOpenedPreBattleFlow(true);
+      lastNoActionTurnKeyRef.current = null;
+      lastEnemyScheduleTurnKeyRef.current = null;
+      lastPlayerAIScheduleTurnKeyRef.current = null;
       processingEnemyTurnRef.current = false;
+      pendingEnemyTurnRef.current = false;
+      enemyActionCommittedThisSliceRef.current = false;
+      enemyActionCommittedSliceKeyRef.current = null;
       processingPlayerAIRef.current = false;
       combatEndCheckRef.current = false;
       setLog([]);
       setDiceRolls([]);
       setSelectedParty([]);
+      setProjectiles([]);
+      setEmbeddedArrows([]);
       setSelectedAttack(0); // Reset attack selection
       setPsionicsMode(false); // Reset psionics mode
       setSpellsMode(false); // Reset spells mode
@@ -15365,30 +20615,18 @@ export default function CombatPage({ characters = [] }) {
           // All players are either dead or unconscious - enemies win
           combatEndCheckRef.current = true;
           combatOverRef.current = true; // ✅ AUTHORITATIVE: Stop all further actions (defeat)
+          clearCombatFlowLocks();
           addLog("💀 All players are defeated! Enemies win!", "defeat");
+          addLog("🛑 Combat is over. No further attacks are scheduled.", "info");
           setCombatActive(false);
-
-          // ✅ CRITICAL: Clear ALL pending timeouts to stop post-defeat actions
-          if (turnTimeoutRef.current) {
-            clearTimeout(turnTimeoutRef.current);
-            turnTimeoutRef.current = null;
-          }
-          allTimeoutsRef.current.forEach(clearTimeout);
-          allTimeoutsRef.current = [];
         } else if (consciousEnemies.length === 0) {
           // All enemies are either dead or unconscious - players win
           combatEndCheckRef.current = true;
           combatOverRef.current = true; // ✅ AUTHORITATIVE: Set combat over flag
+          clearCombatFlowLocks();
           addLog("🎉 Victory! All enemies defeated!", "victory");
+          addLog("🛑 Combat is over. No further attacks are scheduled.", "info");
           setCombatActive(false);
-
-          // ✅ CRITICAL: Clear ALL pending timeouts to stop post-victory actions
-          if (turnTimeoutRef.current) {
-            clearTimeout(turnTimeoutRef.current);
-            turnTimeoutRef.current = null;
-          }
-          allTimeoutsRef.current.forEach(clearTimeout);
-          allTimeoutsRef.current = [];
         }
       };
 
@@ -15525,21 +20763,47 @@ export default function CombatPage({ characters = [] }) {
     }
   };
 
+  const chronologicalLogEntries = useMemo(() => {
+    return [...log].sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0));
+  }, [log]);
+
+  const filteredChronologicalLogEntries = useMemo(() => {
+    if (logFilterType === "all") return chronologicalLogEntries;
+    return chronologicalLogEntries.filter(entry => entry.type === logFilterType);
+  }, [chronologicalLogEntries, logFilterType]);
+
+  const visibleTopLogEntries = useMemo(() => {
+    return logStepMode
+      ? chronologicalLogEntries.slice(0, revealedLogCount)
+      : chronologicalLogEntries;
+  }, [chronologicalLogEntries, logStepMode, revealedLogCount]);
+
+  const visibleDetailedLogEntries = useMemo(() => {
+    const revealed = logStepMode
+      ? filteredChronologicalLogEntries.slice(0, revealedLogCount)
+      : filteredChronologicalLogEntries;
+
+    return logSortOrder === "newest" ? [...revealed].reverse() : revealed;
+  }, [filteredChronologicalLogEntries, logSortOrder, logStepMode, revealedLogCount]);
+
   // Auto-scroll top combat log to show most recent entry
   useEffect(() => {
-    if (topCombatLogRef.current && log.length > 0) {
-      // Scroll to top to show most recent entry (newest entries are at the beginning of the array)
-      topCombatLogRef.current.scrollTop = 0;
+    if (topCombatLogRef.current && visibleTopLogEntries.length > 0) {
+      // Log is stored oldest → newest, so scroll to bottom to show the latest line.
+      topCombatLogRef.current.scrollTop = topCombatLogRef.current.scrollHeight;
     }
-  }, [log]);
+  }, [visibleTopLogEntries]);
 
   // Auto-scroll detailed combat log to show most recent entry
   useEffect(() => {
-    if (detailedCombatLogRef.current && log.length > 0 && logSortOrder === "newest") {
-      // Scroll to top to show most recent entry (newest entries are at the beginning of the array)
-      detailedCombatLogRef.current.scrollTop = 0;
+    if (detailedCombatLogRef.current && visibleDetailedLogEntries.length > 0) {
+      // When showing newest-first we want the most recent at the top; otherwise scroll to bottom.
+      detailedCombatLogRef.current.scrollTop =
+        logSortOrder === "newest"
+          ? 0
+          : detailedCombatLogRef.current.scrollHeight;
     }
-  }, [log, logSortOrder]);
+  }, [visibleDetailedLogEntries, logSortOrder]);
 
   return (
     <Box
@@ -15627,6 +20891,54 @@ export default function CombatPage({ characters = [] }) {
         <HStack>
           {!combatActive && (
             <>
+              <Menu>
+                <MenuButton as={Button} colorScheme="orange" variant="outline" size="sm">
+                  ⚡ Quick Start
+                </MenuButton>
+                <MenuList maxH="300px" overflowY="auto">
+                  {presceneBattles.map((p) => (
+                    <MenuItem key={p.id} onClick={() => loadPrescene(p.id)}>
+                      {p.name}
+                    </MenuItem>
+                  ))}
+                  {getSavedPresets().length > 0 && (
+                    <>
+                      <MenuDivider />
+                      {getSavedPresets().map((p) => (
+                        <MenuItem key={p.id} onClick={() => loadSavedPresetById(p.id)}>
+                          💾 {p.name}
+                        </MenuItem>
+                      ))}
+                    </>
+                  )}
+                </MenuList>
+              </Menu>
+              <Button
+                colorScheme="cyan"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setSavePresetName("");
+                  setShowSavePresetModal(true);
+                }}
+                isDisabled={fighters.length === 0}
+                title="Save current fighters and positions as a quick-start preset"
+              >
+                💾 Save Preset
+              </Button>
+              <Button
+                colorScheme="purple"
+                variant="outline"
+                onClick={() =>
+                  openGuidedSetup(
+                    rosterSetupReady
+                      ? (isDeploymentReady ? PRE_BATTLE_STEPS.READY : PRE_BATTLE_STEPS.ROSTER)
+                      : PRE_BATTLE_STEPS.ROSTER
+                  )
+                }
+              >
+                📱 Guided Setup
+              </Button>
               <Button colorScheme="teal" onClick={() => setShowPhase0Modal(true)} isDisabled={fighters.length < 2}>
                 🌲 Setup Scene
               </Button>
@@ -15635,8 +20947,38 @@ export default function CombatPage({ characters = [] }) {
                   Scene Ready
                 </Badge>
               )}
-              <Button colorScheme="green" onClick={() => startCombat()} isDisabled={fighters.length < 2}>
-                ⚔️ Start Combat
+              <Button
+                colorScheme="blue"
+                variant={showDeploymentModal ? "solid" : "outline"}
+                onClick={() => openGuidedSetup(PRE_BATTLE_STEPS.DEPLOY)}
+                isDisabled={!rosterSetupReady}
+              >
+                🧭 Deployment
+              </Button>
+              <Button
+                colorScheme="green"
+                variant="solid"
+                onClick={() => startCombat(false, { skipDeployment: true })}
+                isDisabled={fighters.length < 2}
+                title="Skip guided deployment and start battle with default starting positions"
+              >
+                ⚔️ Start Battle
+              </Button>
+              <Button
+                colorScheme="green"
+                variant="outline"
+                onClick={() =>
+                  openGuidedSetup(
+                    !rosterSetupReady
+                      ? PRE_BATTLE_STEPS.ROSTER
+                      : !isDeploymentReady
+                        ? PRE_BATTLE_STEPS.DEPLOY
+                        : PRE_BATTLE_STEPS.READY
+                  )
+                }
+                isDisabled={fighters.length < 2}
+              >
+                {isDeploymentReady ? "⚔️ Ready to Begin" : "⚔️ Continue Setup"}
               </Button>
             </>
           )}
@@ -15752,10 +21094,21 @@ export default function CombatPage({ characters = [] }) {
             variant={aiControlEnabled ? "solid" : "outline"}
             onClick={() => {
               const newValue = !aiControlEnabled;
+              aiControlEnabledRef.current = newValue;
               setAiControlEnabled(newValue);
               if (newValue) {
                 addLog("🤖 AI Control ENABLED - Players will be controlled by AI", "info");
               } else {
+                if (playerAITimerRef.current) {
+                  clearTimeout(playerAITimerRef.current);
+                  playerAITimerRef.current = null;
+                }
+                pendingTurnStartKeysRef.current.clear();
+                lastPlayerAIScheduleTurnKeyRef.current = null;
+                playerAIActionScheduledRef.current = false;
+                processingPlayerAIRef.current = false;
+                playerAITurnTokenRef.current = (playerAITurnTokenRef.current || 0) + 1;
+                activePlayerAITurnKeysRef.current.clear();
                 addLog("🎮 Manual Control ENABLED - Players will control themselves", "info");
               }
             }}
@@ -15774,6 +21127,89 @@ export default function CombatPage({ characters = [] }) {
           </Button>
         </HStack>
       </Flex>
+
+      {/* Clock Player Controls (pause/resume/speed/step) */}
+      {combatActive && (
+        <Box mb={4} p={3} border="1px solid" borderColor="gray.300" borderRadius="md" bg="gray.50">
+          <Text fontSize="sm" fontWeight="bold" mb={2}>
+            ⏱️ Animation Controls
+          </Text>
+          <HStack spacing={3} align="center">
+            <Button
+              size="sm"
+              colorScheme={clock.isPaused ? "green" : "orange"}
+              onClick={() => clock.setIsPaused((p) => !p)}
+            >
+              {clock.isPaused ? "▶ Resume" : "⏸ Pause"}
+            </Button>
+
+            <Text minW="50px" fontSize="sm">Speed</Text>
+            <Slider
+              min={0.25}
+              max={4}
+              step={0.25}
+              value={clock.speed}
+              onChange={(v) => clock.setSpeed(v)}
+              w="200px"
+            >
+              <SliderTrack>
+                <SliderFilledTrack />
+              </SliderTrack>
+              <SliderThumb />
+            </Slider>
+
+            <Text w="50px" fontSize="sm">{clock.speed.toFixed(2)}x</Text>
+
+            <Button
+              size="sm"
+              onClick={() => clock.stepForward(50)}
+              isDisabled={!clock.isPaused}
+              title="Step forward 50ms (paused only)"
+            >
+              Step +
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => clock.stepBack(120)}
+              isDisabled={!clock.isPaused}
+              title="Step back 120ms (paused only)"
+            >
+              Step -
+            </Button>
+          </HStack>
+        </Box>
+      )}
+
+      {/* Engine + RNG debug (Electron / replay) */}
+      <Box style={{ padding: 8, border: "1px solid #333", borderRadius: 8, marginBottom: 8 }}>
+        <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <input
+            type="checkbox"
+            checked={useElectronEngine}
+            onChange={(e) => setUseElectronEngine(e.target.checked)}
+            disabled={typeof window === "undefined" || !window?.engine?.call}
+          />
+          Use Electron Engine
+        </label>
+        <label style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 6 }}>
+          <input
+            type="checkbox"
+            checked={seedMode}
+            onChange={(e) => setSeedMode(e.target.checked)}
+          />
+          Seed Mode
+        </label>
+        <label style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 6 }}>
+          Seed:
+          <input
+            type="number"
+            value={seedValue}
+            onChange={(e) => setSeedValue(Number(e.target.value))}
+            style={{ width: 140 }}
+            disabled={!seedMode}
+          />
+        </label>
+      </Box>
 
       {/* Selected Character Info Box - Top of Screen */}
       {combatActive && (
@@ -15878,9 +21314,13 @@ export default function CombatPage({ characters = [] }) {
                   <Text fontSize="xs" color="gray.500" fontStyle="italic" h="20px" lineHeight="20px">
                     Combat log will appear here...
                   </Text>
+                ) : visibleTopLogEntries.length === 0 ? (
+                  <Text fontSize="xs" color="gray.500" fontStyle="italic" h="20px" lineHeight="20px">
+                    Log step mode is waiting for Next Log...
+                  </Text>
                 ) : (
                   <VStack spacing={0.5} align="stretch">
-                    {log.map((entry) => (
+                    {visibleTopLogEntries.map((entry) => (
                       <Text
                         key={entry.id}
                         fontSize="xs"
@@ -15890,6 +21330,44 @@ export default function CombatPage({ characters = [] }) {
                         h="20px"
                         lineHeight="20px"
                       >
+                        [#{String(entry.seq ?? 0).padStart(3, "0")} {entry.timestamp}] {entry.message}
+                      </Text>
+                    ))}
+                  </VStack>
+                )}
+              </Box>
+
+              <Box
+                w="100%"
+                border="1px solid"
+                borderColor="purple.200"
+                bg="purple.50"
+                p={3}
+                borderRadius="md"
+                mt={2}
+              >
+                <HStack justify="space-between" mb={2}>
+                  <Text fontSize="sm" fontWeight="bold" color="purple.700">
+                    🎙️ GM Narration
+                  </Text>
+
+                  <Button
+                    size="xs"
+                    colorScheme={gmNarrationEnabled ? "purple" : "gray"}
+                    onClick={() => setGmNarrationEnabled((prev) => !prev)}
+                  >
+                    {gmNarrationEnabled ? "On" : "Off"}
+                  </Button>
+                </HStack>
+
+                {gmNarration.length === 0 ? (
+                  <Text fontSize="xs" color="gray.500" fontStyle="italic">
+                    GM narration will appear as combat unfolds...
+                  </Text>
+                ) : (
+                  <VStack align="stretch" spacing={2} maxH="160px" overflowY="auto">
+                    {gmNarration.slice(0, 8).map((entry) => (
+                      <Text key={entry.id} fontSize="sm" color="purple.800">
                         [{entry.timestamp}] {entry.message}
                       </Text>
                     ))}
@@ -16017,7 +21495,7 @@ export default function CombatPage({ characters = [] }) {
                             <Text fontSize="sm" color="blue.700">
                               HP: {fighter.currentHP}/{fighter.maxHP} | AR: {fighter.AR || 10} | Speed: {fighter.Spd || fighter.spd || fighter.attributes?.Spd || fighter.attributes?.spd || 10}
                               {fighter.ISP !== undefined && ` | ISP: ${fighter.ISP}`}
-                              {fighter.PPE !== undefined && ` | PPE: ${fighter.PPE}`}
+                              {formatFighterPPE(fighter)}
                             </Text>
 
                             {/* ✅ Attributes Display */}
@@ -16492,6 +21970,7 @@ export default function CombatPage({ characters = [] }) {
                         colorScheme="orange"
                         onClick={() => {
                           if (currentFighter && currentFighter.type === "player") {
+                            setSelectedActionType("move");
                             setMovementMode({ active: true, isRunning: true });
                             setSelectedMovementFighter(currentFighter.id);
                             addLog(`🏃 ${currentFighter.name} prepares to run (full speed movement)`, "info");
@@ -16516,70 +21995,98 @@ export default function CombatPage({ characters = [] }) {
                       </Button>
                     </HStack>
 
-                    {/* Flight Altitude Controls - Only show if fighter can fly and is currently flying */}
-                    {currentFighter && canFighterFly(currentFighter) && isFlying(currentFighter) && (
-                      <VStack spacing={1} align="stretch" borderWidth="1px" borderColor="blue.300" borderRadius="md" p={2} bg="blue.50">
-                        <Text fontSize="xs" fontWeight="bold" color="blue.700">
-                          🪽 Altitude: {currentFighter.altitudeFeet ?? currentFighter.altitude ?? 0}ft
-                        </Text>
-                        <HStack spacing={1} flexWrap="wrap">
-                          <Button
-                            size="xs"
-                            colorScheme="blue"
-                            variant="outline"
-                            onClick={() => handleChangeAltitude(currentFighter, -20)}
-                            title="Descend 20ft"
+                    {/* Flight Altitude Controls - show if fighter can fly and is currently flying */}
+                    {currentFighter && canFighterFly(currentFighter) && isFlying(currentFighter) && (() => {
+                      const curAlt = currentFighter.altitudeFeet ?? currentFighter.altitude ?? 0;
+                      const maxAlt = getMaxAltitudeFeet(currentFighter);
+                      const step = 5; // feet per step
+
+                      return (
+                        <VStack
+                          spacing={2}
+                          align="stretch"
+                          borderWidth="1px"
+                          borderColor="blue.300"
+                          borderRadius="md"
+                          p={2}
+                          bg="blue.50"
+                        >
+                          <HStack justify="space-between" align="center">
+                            <Text fontSize="xs" fontWeight="bold" color="blue.700">
+                              🪽 Altitude: {curAlt}ft
+                            </Text>
+
+                            <HStack spacing={2} align="center">
+                              <Text fontSize="xs" color="gray.600">
+                                Target:
+                              </Text>
+
+                              <NumberInput
+                                size="xs"
+                                value={altitudeTargetFeet}
+                                min={0}
+                                max={maxAlt}
+                                step={step}
+                                onChange={(_, v) => setAltitudeTargetFeet(Number.isFinite(v) ? v : 0)}
+                                w="90px"
+                              >
+                                <NumberInputField />
+                                <NumberInputStepper>
+                                  <NumberIncrementStepper />
+                                  <NumberDecrementStepper />
+                                </NumberInputStepper>
+                              </NumberInput>
+                            </HStack>
+                          </HStack>
+
+                          <Slider
+                            value={altitudeTargetFeet}
+                            min={0}
+                            max={maxAlt}
+                            step={step}
+                            onChange={(v) => setAltitudeTargetFeet(v)}
                           >
-                            ⬇️ -20ft
-                          </Button>
-                          <Button
-                            size="xs"
-                            colorScheme="blue"
-                            variant="outline"
-                            onClick={() => handleChangeAltitude(currentFighter, -10)}
-                            title="Descend 10ft"
-                          >
-                            ⬇️ -10ft
-                          </Button>
-                          <Button
-                            size="xs"
-                            colorScheme="blue"
-                            variant="outline"
-                            onClick={() => handleChangeAltitude(currentFighter, -5)}
-                            title="Descend 5ft"
-                          >
-                            ⬇️ -5ft
-                          </Button>
-                          <Button
-                            size="xs"
-                            colorScheme="blue"
-                            variant="outline"
-                            onClick={() => handleChangeAltitude(currentFighter, 5)}
-                            title="Climb 5ft"
-                          >
-                            ⬆️ +5ft
-                          </Button>
-                          <Button
-                            size="xs"
-                            colorScheme="blue"
-                            variant="outline"
-                            onClick={() => handleChangeAltitude(currentFighter, 10)}
-                            title="Climb 10ft"
-                          >
-                            ⬆️ +10ft
-                          </Button>
-                          <Button
-                            size="xs"
-                            colorScheme="blue"
-                            variant="outline"
-                            onClick={() => handleChangeAltitude(currentFighter, 20)}
-                            title="Climb 20ft"
-                          >
-                            ⬆️ +20ft
-                          </Button>
-                        </HStack>
-                      </VStack>
-                    )}
+                            <SliderTrack>
+                              <SliderFilledTrack />
+                            </SliderTrack>
+                            <SliderThumb />
+                          </Slider>
+
+                          <HStack spacing={2} justify="space-between" flexWrap="wrap">
+                            {/* Quick nudges (each costs an action because they call handleChangeAltitude) */}
+                            <HStack spacing={1}>
+                              <Button size="xs" variant="outline" colorScheme="blue" onClick={() => handleChangeAltitude(currentFighter, -20)}>
+                                ⬇️ -20
+                              </Button>
+                              <Button size="xs" variant="outline" colorScheme="blue" onClick={() => handleChangeAltitude(currentFighter, -5)}>
+                                ⬇️ -5
+                              </Button>
+                              <Button size="xs" variant="outline" colorScheme="blue" onClick={() => handleChangeAltitude(currentFighter, 5)}>
+                                ⬆️ +5
+                              </Button>
+                              <Button size="xs" variant="outline" colorScheme="blue" onClick={() => handleChangeAltitude(currentFighter, 20)}>
+                                ⬆️ +20
+                              </Button>
+                            </HStack>
+
+                            {/* Apply target altitude (also costs 1 action) */}
+                            <Button
+                              size="xs"
+                              colorScheme="purple"
+                              onClick={() => handleChangeAltitude(currentFighter, altitudeTargetFeet - curAlt)}
+                              isDisabled={altitudeTargetFeet === curAlt}
+                              title="Spend 1 action to change altitude to the target value"
+                            >
+                              Apply Altitude (1 action)
+                            </Button>
+                          </HStack>
+
+                          <Text fontSize="xs" color="gray.600" fontStyle="italic">
+                            Changing altitude always costs 1 action. Descending to 0ft counts as landing.
+                          </Text>
+                        </VStack>
+                      );
+                    })()}
 
                     {/* Movement Instructions */}
                     {showTacticalMap && currentFighter && currentFighter.type === "player" && (
@@ -17274,14 +22781,20 @@ export default function CombatPage({ characters = [] }) {
                           _id: f.id,
                           isEnemy: f.type === "enemy"
                         }))}
-                        positions={positions}
+                        positions={tacticalMapPositions}
                         dangerHexes={dangerHexes}
                         onPositionChange={handlePositionChange}
                         currentTurn={currentFighter?.id}
                         highlightMovement={combatActive}
                         flashingCombatants={flashingCombatants}
                         movementMode={movementMode}
+                        validMoves={engineValidMoves.length > 0 ? engineValidMoves : undefined} // Pass engine-authoritative valid moves
                         onMoveSelect={(x, y) => {
+                          if (!combatActive && (showDeploymentModal || manualDeploymentOpen)) {
+                            handleDeploymentHexSelect(x, y);
+                            return;
+                          }
+
                           // If circle placement tool is active, set selected position
                           if (showCirclePlacementTool) {
                             setSelectedCirclePosition({ x, y });
@@ -17293,7 +22806,10 @@ export default function CombatPage({ characters = [] }) {
                           }
                         }}
                         onSelectedCombatantChange={setSelectedCombatantId}
-                        onHoveredCellChange={setHoveredCell}
+                        onHoveredCellChange={(hex) => {
+                          setHoveredCell(hex);
+                          setHoveredHex(hex);
+                        }}
                         allowEmptyHexSelection={targetingMode === "OVERWATCH_HEX"}
                         onSelectedHexChange={handleSelectedHexChange}
                         terrain={mode === "MAP_EDITOR" ? mapDefinition : arenaEnvironment}
@@ -17326,6 +22842,10 @@ export default function CombatPage({ characters = [] }) {
                         })()}
                         visibilityRange={combatTerrain?.visibilityRange || getVisibilityRange(combatTerrain?.lighting || "BRIGHT_DAYLIGHT", false, null)}
                         mapHeight={mapHeight}
+                        // Landing path preview
+                        pathPreviewCells={pathPreview?.cells ?? null}
+                        pathPreviewMode={landingPreviewPath ? "LANDING" : (pathPreview ? "MOVE" : null)}
+                        pathPreview={pathPreview}
                       />
                     </Box>
 
@@ -17842,6 +23362,7 @@ export default function CombatPage({ characters = [] }) {
                       positions={positions}
                       renderPositions={renderPositions}
                       projectiles={projectiles}
+                      embeddedArrows={embeddedArrows}
                       dangerHexes={dangerHexes}
                       terrain={arenaEnvironment}
                       mode={mode}
@@ -17857,9 +23378,9 @@ export default function CombatPage({ characters = [] }) {
           <>
             {/* RIGHT COLUMN - Enemies */}
             <VStack align="start" spacing={4} h="full">
-              <Heading size="md" color="red.600">👹 Enemies ({aliveEnemies.length}/{fighters.filter(f => f.type === "enemy").length})</Heading>
-              <Box w="100%" maxH="300px" overflowY="auto" border="2px solid" borderColor="red.400" p={4} borderRadius="md" bg="red.50">
-                {fighters.filter(f => f.type === "enemy").length === 0 ? (
+              <Heading size="md" color="red.600">👹 Enemies ({aliveEnemies.length}/{totalEnemyCount})</Heading>
+              <Box ref={enemyListScrollRef} w="100%" maxH="300px" overflowY="auto" border="2px solid" borderColor="red.400" p={4} borderRadius="md" bg="red.50">
+                {totalEnemyCount === 0 ? (
                   <Box color="gray.500" textAlign="center" py={8}>
                     <VStack spacing={3}>
                       <Text fontWeight="bold">No enemies added</Text>
@@ -17976,7 +23497,7 @@ export default function CombatPage({ characters = [] }) {
                                 <Box fontSize="sm">
                                   HP: {fighter.currentHP}/{fighter.maxHP} | AR: {fighter.AR || 10} | Speed: {fighter.Spd || fighter.spd || fighter.attributes?.Spd || fighter.attributes?.spd || 10}
                                   {fighter.ISP !== undefined && ` | ISP: ${fighter.ISP}`}
-                                  {fighter.PPE !== undefined && ` | PPE: ${fighter.PPE}`}
+                                  {formatFighterPPE(fighter)}
                                 </Box>
 
                                 {/* ✅ Attributes Display */}
@@ -18243,6 +23764,62 @@ export default function CombatPage({ characters = [] }) {
                           >
                             🎲 {showRollDetails ? "Hide" : "Show"} Dice Details
                           </Button>
+                          <Button
+                            size="xs"
+                            colorScheme={logStepMode ? "orange" : "gray"}
+                            variant={logStepMode ? "solid" : "outline"}
+                            onClick={() => {
+                              setLogStepMode((prev) => {
+                                const next = !prev;
+                                if (next) {
+                                  setRevealedLogCount(0);
+                                  if (combatActive) {
+                                    stepLogPauseOwnedRef.current = true;
+                                    setCombatPaused(true);
+                                  }
+                                } else {
+                                  setRevealedLogCount(log.length);
+                                  if (stepLogPauseOwnedRef.current) {
+                                    stepLogPauseOwnedRef.current = false;
+                                    setCombatPaused(false);
+                                  }
+                                }
+                                return next;
+                              });
+                            }}
+                            title="Reveal combat log entries one at a time for debugging"
+                          >
+                            🐞 Step Log {logStepMode ? "On" : "Off"}
+                          </Button>
+                          <Button
+                            size="xs"
+                            colorScheme="orange"
+                            variant="outline"
+                            onClick={() => {
+                              if (revealedLogCount < log.length) {
+                                setRevealedLogCount((count) => Math.min(count + 1, log.length));
+                                return;
+                              }
+
+                              if (combatActive) {
+                                stepLogPauseOwnedRef.current = false;
+                                setCombatPaused(false);
+                              }
+                            }}
+                            isDisabled={!logStepMode || (!combatActive && revealedLogCount >= log.length)}
+                          >
+                            {revealedLogCount < log.length ? "Next Log" : "Continue to Next Log"}
+                          </Button>
+                          {logStepMode && (
+                            <Button
+                              size="xs"
+                              variant="ghost"
+                              onClick={() => setRevealedLogCount(log.length)}
+                              isDisabled={revealedLogCount >= log.length}
+                            >
+                              Show All ({Math.min(revealedLogCount, log.length)}/{log.length})
+                            </Button>
+                          )}
                           <Select
                             size="xs"
                             width="120px"
@@ -18262,17 +23839,20 @@ export default function CombatPage({ characters = [] }) {
                           <Select
                             size="xs"
                             width="120px"
-                            value={logSortOrder || "newest"}
+                            value={logSortOrder || "oldest"}
                             onChange={(e) => setLogSortOrder(e.target.value)}
                           >
-                            <option value="newest">Newest First</option>
                             <option value="oldest">Oldest First</option>
+                            <option value="newest">Newest First</option>
                           </Select>
                           <Button
                             size="xs"
                             colorScheme="green"
                             onClick={() => {
-                              const logText = log.map(entry => `[${entry.timestamp}] ${entry.message}`).join('\n');
+                              const logText = [...log]
+                                .sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0))
+                                .map(entry => `[#${String(entry.seq ?? 0).padStart(3, "0")} ${entry.timestamp}] ${entry.message}`)
+                                .join('\n');
                               navigator.clipboard.writeText(logText);
                               alert('Combat log copied to clipboard!');
                             }}
@@ -18284,6 +23864,7 @@ export default function CombatPage({ characters = [] }) {
                             onClick={() => {
                               setLog([]);
                               setDiceRolls([]);
+                              setRevealedLogCount(0);
                             }}
                           >
                             Clear All
@@ -18322,34 +23903,21 @@ export default function CombatPage({ characters = [] }) {
                                   </VStack>
                                 </Box>
                               )}
-                              {(() => {
-                                // Filter and sort log entries
-                                let filteredLog = [...log];
-
-                                // Filter by type
-                                if (logFilterType !== "all") {
-                                  filteredLog = filteredLog.filter(entry => entry.type === logFilterType);
-                                }
-
-                                // Sort by timestamp
-                                // Note: log array has newest entries at index 0 (added with [logEntry, ...prev])
-                                if (logSortOrder === "oldest") {
-                                  // Oldest first - reverse the array to put oldest at the beginning
-                                  filteredLog.reverse();
-                                } else {
-                                  // Newest first (default) - log already has newest at index 0, no need to reverse
-                                  // filteredLog is already in newest-first order
-                                }
-
-                                return filteredLog;
-                              })().map((entry) => (
+                              {visibleDetailedLogEntries.length === 0 && log.length > 0 && (
+                                <Text fontSize="xs" color="gray.500" fontStyle="italic">
+                                  {logStepMode
+                                    ? "Press Next Log to reveal the next combat log entry."
+                                    : "No log entries match the current filter."}
+                                </Text>
+                              )}
+                              {visibleDetailedLogEntries.map((entry) => (
                                 <Box key={entry.id}>
                                   <Text
                                     fontSize="xs"
                                     color={getLogColor(entry.type)}
                                     fontWeight="bold"
                                   >
-                                    [{entry.timestamp}] {entry.message}
+                                    [#{String(entry.seq ?? 0).padStart(3, "0")} {entry.timestamp}] {entry.message}
                                   </Text>
 
                                   {entry.diceInfo && showRollDetails && (
@@ -18759,13 +24327,479 @@ export default function CombatPage({ characters = [] }) {
       >
       </ResizableLayout>
 
-      {/* Add Enemy Modal */}
-      <Modal isOpen={isOpen} onClose={onClose}>
+      {/* Save Preset Modal */}
+      <Modal isOpen={showSavePresetModal} onClose={() => { setShowSavePresetModal(false); setSavePresetName(""); }}>
         <ModalOverlay />
         <ModalContent>
-          <ModalHeader>Add Enemy to Combat</ModalHeader>
+          <ModalHeader>Save Starting Fighters</ModalHeader>
           <ModalCloseButton />
           <ModalBody pb={6}>
+            <FormControl>
+              <FormLabel>Preset name</FormLabel>
+              <Input
+                placeholder="e.g. Elf vs Minotaur"
+                value={savePresetName}
+                onChange={(e) => setSavePresetName(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleSavePreset()}
+              />
+            </FormControl>
+            <Text mt={2} fontSize="sm" color="gray.500">
+              Saves {fighters.length} fighter(s) and their positions. Appears in Quick Start.
+            </Text>
+          </ModalBody>
+          <ModalFooter>
+            <Button variant="ghost" mr={3} onClick={() => { setShowSavePresetModal(false); setSavePresetName(""); }}>
+              Cancel
+            </Button>
+            <Button colorScheme="cyan" onClick={handleSavePreset}>
+              Save
+            </Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
+
+      {/* Guided pre-battle flow */}
+      <Modal
+        isOpen={showPreBattleWizard && !combatActive}
+        onClose={() => setShowPreBattleWizard(false)}
+        size={preBattleStep === PRE_BATTLE_STEPS.ROSTER ? "4xl" : "lg"}
+        closeOnOverlayClick={false}
+      >
+        <ModalOverlay />
+        <ModalContent>
+          <ModalHeader>
+            {preBattleStep === PRE_BATTLE_STEPS.ROSTER
+              ? "📱 Step 1 of 3 — Choose Both Sides"
+              : "✅ Step 3 of 3 — Begin Combat"}
+          </ModalHeader>
+          <ModalCloseButton />
+          <ModalBody pb={6}>
+            <VStack align="stretch" spacing={4}>
+              <HStack spacing={2} justify="center">
+                <Badge colorScheme={preBattleStep === PRE_BATTLE_STEPS.ROSTER ? "purple" : "gray"} px={3} py={1}>
+                  1. Roster
+                </Badge>
+                <Badge colorScheme={preBattleStep === PRE_BATTLE_STEPS.DEPLOY ? "purple" : isDeploymentReady ? "green" : "gray"} px={3} py={1}>
+                  2. Deploy
+                </Badge>
+                <Badge colorScheme={preBattleStep === PRE_BATTLE_STEPS.READY ? "purple" : "gray"} px={3} py={1}>
+                  3. Begin
+                </Badge>
+              </HStack>
+
+              {preBattleStep === PRE_BATTLE_STEPS.ROSTER ? (
+                <>
+                  <Box
+                    bg="blue.50"
+                    border="1px solid"
+                    borderColor="blue.100"
+                    borderRadius="md"
+                    px={4}
+                    py={3}
+                    mb={2}
+                  >
+                    <Text className="tutorial-help-text">
+                      {rosterHint}
+                    </Text>
+                  </Box>
+
+                  {quickChoicesOpen ? (
+                    <VStack align="stretch" spacing={3}>
+                      <Text fontWeight="bold">Choose a quick battle</Text>
+
+                      {presceneBattles.map((battle, index) => (
+                        <Button
+                          key={battle.id}
+                          justifyContent="flex-start"
+                          variant={index === 0 ? "solid" : "outline"}
+                          colorScheme={index === 0 ? "purple" : "gray"}
+                          className={
+                            rosterTutorialTarget === "quickChoice" && index === 0
+                              ? "tutorial-pulse"
+                              : ""
+                          }
+                          onClick={() => {
+                            loadPrescene(battle.id);
+                            setQuickChoicesOpen(false);
+                            openGuidedSetup(PRE_BATTLE_STEPS.DEPLOY);
+                          }}
+                        >
+                          {battle.name}
+                        </Button>
+                      ))}
+
+                      {getSavedPresets().length > 0 && (
+                        <>
+                          <Divider />
+                          <Text fontWeight="bold" fontSize="sm">
+                            Saved presets
+                          </Text>
+                          {getSavedPresets().map((p) => (
+                            <Button
+                              key={p.id}
+                              justifyContent="flex-start"
+                              variant="outline"
+                              onClick={() => {
+                                loadSavedPresetById(p.id);
+                                setQuickChoicesOpen(false);
+                                openGuidedSetup(PRE_BATTLE_STEPS.DEPLOY);
+                              }}
+                            >
+                              💾 {p.name}
+                            </Button>
+                          ))}
+                        </>
+                      )}
+
+                      <Button
+                        variant="ghost"
+                        onClick={() => setQuickChoicesOpen(false)}
+                      >
+                        Back
+                      </Button>
+                    </VStack>
+                  ) : (
+                  <Grid templateColumns={{ base: "1fr", xl: "minmax(0, 2fr) 340px" }} gap={4} alignItems="start">
+                    <GridItem>
+                      <Grid templateColumns={{ base: "1fr", md: "1fr 1fr" }} gap={4}>
+                        <Box borderWidth="1px" borderRadius="lg" p={4} bg="blue.50">
+                          <Heading size="sm" mb={2}>🛡️ Player Characters</Heading>
+                          <Button
+                            colorScheme="blue"
+                            className={rosterTutorialTarget === "chooseParty" ? "tutorial-pulse" : ""}
+                            onClick={() => {
+                              setSetupMode("manual");
+                              onPartyOpen();
+                              setShowPartySelector(true);
+                            }}
+                            mb={3}
+                          >
+                            Choose Party
+                          </Button>
+                          <VStack align="stretch" spacing={2}>
+                            {fighters.filter((fighter) => fighter.type === "player").length > 0 ? (
+                              fighters
+                                .filter((fighter) => fighter.type === "player")
+                                .map((fighter) => {
+                                  const isPreviewSelected = rosterPreviewFighter?.id === fighter.id;
+                                  return (
+                                    <Box
+                                      key={fighter.id}
+                                      borderWidth="1px"
+                                      borderColor={isPreviewSelected ? "blue.400" : "blue.200"}
+                                      borderRadius="md"
+                                  p={2}
+                                      bg={isPreviewSelected ? "blue.100" : "white"}
+                                      cursor="pointer"
+                                      onClick={() => setSelectedRosterPreviewId(fighter.id)}
+                                    >
+                                  <HStack justify="space-between" align="start">
+                                    <VStack align="start" spacing={1} flex="1">
+                                      <Text fontSize="sm" fontWeight="semibold">{fighter.name}</Text>
+                                      <HStack spacing={2} align="center" onClick={(e) => e.stopPropagation()}>
+                                        <Text fontSize="xs" color="gray.600" fontWeight="bold">
+                                          Battle Side
+                                        </Text>
+                                        <Select
+                                          size="xs"
+                                          width="auto"
+                                          value={fighter.type}
+                                          onChange={(e) => changeFighterSide(fighter.id, e.target.value)}
+                                        >
+                                          <option value="enemy">Enemy Side</option>
+                                          <option value="player">Party Side</option>
+                                        </Select>
+                                      </HStack>
+                                    </VStack>
+                                    <HStack spacing={2} onClick={(e) => e.stopPropagation()}>
+                                      <Badge colorScheme="blue">Ready</Badge>
+                                      <Button
+                                        size="xs"
+                                        colorScheme="red"
+                                        variant="ghost"
+                                        onClick={() => removeFighter(fighter.id)}
+                                      >
+                                        X
+                                      </Button>
+                                    </HStack>
+                                  </HStack>
+                                    </Box>
+                                  );
+                                })
+                            ) : (
+                              <Text fontSize="sm" color="gray.500">No player characters selected yet.</Text>
+                            )}
+                          </VStack>
+                        </Box>
+
+                        <Box borderWidth="1px" borderRadius="lg" p={4} bg="red.50">
+                          <Heading size="sm" mb={2}>🗡️ Enemy Forces</Heading>
+                          <HStack mb={3} spacing={2} flexWrap="wrap">
+                            <Button
+                              colorScheme="orange"
+                              className={rosterTutorialTarget === "quickStart" ? "tutorial-pulse" : ""}
+                              onClick={() => {
+                                setSetupMode("quick");
+                                setQuickChoicesOpen(true);
+                              }}
+                            >
+                              Quick Start
+                            </Button>
+                            <Button
+                              colorScheme="red"
+                              className={rosterTutorialTarget === "addEnemy" ? "tutorial-pulse-red" : ""}
+                              onClick={() => {
+                                setSetupMode("manual");
+                                onOpen();
+                              }}
+                            >
+                              Add Enemy
+                            </Button>
+                          </HStack>
+                          <VStack align="stretch" spacing={2}>
+                            {fighters.filter((fighter) => fighter.type === "enemy").length > 0 ? (
+                              fighters
+                                .filter((fighter) => fighter.type === "enemy")
+                                .map((fighter) => {
+                                  const isPreviewSelected = rosterPreviewFighter?.id === fighter.id;
+                                  return (
+                                    <Box
+                                      key={fighter.id}
+                                      borderWidth="1px"
+                                      borderColor={isPreviewSelected ? "red.400" : "red.200"}
+                                      borderRadius="md"
+                                      p={2}
+                                      bg={isPreviewSelected ? "red.100" : "white"}
+                                      cursor="pointer"
+                                      onClick={() => setSelectedRosterPreviewId(fighter.id)}
+                                    >
+                                      <HStack justify="space-between" align="start">
+                                        <VStack align="start" spacing={1} flex="1">
+                                          <Text fontSize="sm" fontWeight="semibold">{fighter.name}</Text>
+                                          <HStack spacing={2} align="center" onClick={(e) => e.stopPropagation()}>
+                                            <Text fontSize="xs" color="gray.600" fontWeight="bold">
+                                              Battle Side
+                                            </Text>
+                                            <Select
+                                              size="xs"
+                                              width="auto"
+                                              value={fighter.type}
+                                              onChange={(e) => changeFighterSide(fighter.id, e.target.value)}
+                                            >
+                                              <option value="enemy">Enemy Side</option>
+                                              <option value="player">Party Side</option>
+                                            </Select>
+                                          </HStack>
+                                        </VStack>
+                                        <HStack spacing={2} onClick={(e) => e.stopPropagation()}>
+                                          <Badge colorScheme="red">Ready</Badge>
+                                          <Button
+                                            size="xs"
+                                            colorScheme="red"
+                                            variant="ghost"
+                                            onClick={() => removeFighter(fighter.id)}
+                                          >
+                                            X
+                                          </Button>
+                                        </HStack>
+                                      </HStack>
+                                    </Box>
+                                  );
+                                })
+                            ) : (
+                              <Text fontSize="sm" color="gray.500">No enemies added yet.</Text>
+                            )}
+                          </VStack>
+                        </Box>
+                      </Grid>
+                    </GridItem>
+
+                    <GridItem>
+                      <Box borderWidth="1px" borderRadius="lg" p={4} bg="gray.50" position="sticky" top="0">
+                        <Heading size="sm" mb={3}>Roster Preview</Heading>
+                        {rosterPreviewFighter ? (
+                          <VStack align="stretch" spacing={4}>
+                            <Box
+                              h="180px"
+                              borderWidth="2px"
+                              borderStyle="dashed"
+                              borderColor="gray.300"
+                              borderRadius="lg"
+                              bg="gray.100"
+                              display="flex"
+                              alignItems="center"
+                              justifyContent="center"
+                            >
+                              <VStack spacing={1}>
+                                <Text fontSize="3xl">🖼️</Text>
+                                <Text fontSize="sm" color="gray.600">Portrait Placeholder</Text>
+                              </VStack>
+                            </Box>
+
+                            <Box>
+                              <Text fontWeight="bold" fontSize="lg">{rosterPreviewFighter.name}</Text>
+                              <HStack mt={2} spacing={2} flexWrap="wrap">
+                                <Badge colorScheme={rosterPreviewFighter.type === "enemy" ? "red" : "blue"}>
+                                  {rosterPreviewFighter.type === "enemy" ? "Enemy Side" : "Party Side"}
+                                </Badge>
+                                {(rosterPreviewFighter.alignment || rosterPreviewFighter.alignmentName) && (
+                                  <Badge colorScheme="gray">
+                                    {rosterPreviewFighter.alignment || rosterPreviewFighter.alignmentName}
+                                  </Badge>
+                                )}
+                              </HStack>
+                            </Box>
+
+                            <Grid templateColumns="repeat(2, minmax(0, 1fr))" gap={3}>
+                              <Box>
+                                <Text fontSize="xs" color="gray.500" textTransform="uppercase">HP</Text>
+                                <Text fontWeight="semibold">
+                                  {rosterPreviewFighter.currentHP ?? rosterPreviewFighter.hp ?? "?"}
+                                  {rosterPreviewFighter.maxHP ? ` / ${rosterPreviewFighter.maxHP}` : ""}
+                                </Text>
+                              </Box>
+                              <Box>
+                                <Text fontSize="xs" color="gray.500" textTransform="uppercase">AR</Text>
+                                <Text fontWeight="semibold">{rosterPreviewFighter.AR || rosterPreviewFighter.ar || "?"}</Text>
+                              </Box>
+                              <Box>
+                                <Text fontSize="xs" color="gray.500" textTransform="uppercase">Speed</Text>
+                                <Text fontWeight="semibold">
+                                  {rosterPreviewFighter.Spd || rosterPreviewFighter.spd || rosterPreviewFighter.attributes?.Spd || rosterPreviewFighter.attributes?.spd || "?"}
+                                </Text>
+                              </Box>
+                              <Box>
+                                <Text fontSize="xs" color="gray.500" textTransform="uppercase">Attacks</Text>
+                                <Text fontWeight="semibold">{rosterPreviewFighter.attacksPerMelee || "?"}/melee</Text>
+                              </Box>
+                              <Box>
+                                <Text fontSize="xs" color="gray.500" textTransform="uppercase">Race / Species</Text>
+                                <Text fontWeight="semibold">{rosterPreviewFighter.species || rosterPreviewFighter.race || rosterPreviewFighter.creatureType || "Unknown"}</Text>
+                              </Box>
+                              <Box>
+                                <Text fontSize="xs" color="gray.500" textTransform="uppercase">Class / OCC</Text>
+                                <Text fontWeight="semibold">{rosterPreviewFighter.OCC || rosterPreviewFighter.occ || rosterPreviewFighter.class || "None"}</Text>
+                              </Box>
+                              {(rosterPreviewFighter.PPE !== undefined || rosterPreviewFighter.currentPPE !== undefined) && (
+                                <Box>
+                                  <Text fontSize="xs" color="gray.500" textTransform="uppercase">PPE</Text>
+                                  <Text fontWeight="semibold">{rosterPreviewFighter.currentPPE ?? rosterPreviewFighter.PPE}</Text>
+                                </Box>
+                              )}
+                              {(rosterPreviewFighter.ISP !== undefined || rosterPreviewFighter.currentISP !== undefined) && (
+                                <Box>
+                                  <Text fontSize="xs" color="gray.500" textTransform="uppercase">ISP</Text>
+                                  <Text fontWeight="semibold">{rosterPreviewFighter.currentISP ?? rosterPreviewFighter.ISP}</Text>
+                                </Box>
+                              )}
+                            </Grid>
+
+                            <Divider />
+
+                            <Box>
+                              <Text fontSize="xs" color="gray.500" textTransform="uppercase" mb={2}>
+                                Attributes
+                              </Text>
+                              <Wrap spacing={2}>
+                                {rosterPreviewFighter.attributes && Object.entries(rosterPreviewFighter.attributes).length > 0 ? (
+                                  Object.entries(rosterPreviewFighter.attributes).map(([attr, value]) => (
+                                    <WrapItem key={attr}>
+                                      <Badge colorScheme="purple">{attr}: {String(value)}</Badge>
+                                    </WrapItem>
+                                  ))
+                                ) : (
+                                  <Text fontSize="sm" color="gray.500">No attribute breakdown available.</Text>
+                                )}
+                              </Wrap>
+                            </Box>
+                          </VStack>
+                        ) : (
+                          <Text fontSize="sm" color="gray.500">
+                            Click a roster card to inspect that fighter here.
+                          </Text>
+                        )}
+                      </Box>
+                    </GridItem>
+                  </Grid>
+                  )}
+                </>
+              ) : (
+                <>
+                  <Alert status="success" borderRadius="md">
+                    <AlertIcon />
+                    Everything is set. This final window is the handoff from setup into live combat.
+                  </Alert>
+
+                  <Box borderWidth="1px" borderRadius="lg" p={4} bg="gray.50">
+                    <VStack align="stretch" spacing={3}>
+                      <HStack justify="space-between">
+                        <Text fontWeight="bold">Players ready</Text>
+                        <Badge colorScheme="blue">{playerSetupCount}</Badge>
+                      </HStack>
+                      <HStack justify="space-between">
+                        <Text fontWeight="bold">Enemies ready</Text>
+                        <Badge colorScheme="red">{enemySetupCount}</Badge>
+                      </HStack>
+                      <HStack justify="space-between">
+                        <Text fontWeight="bold">Deployment complete</Text>
+                        <Badge colorScheme={isDeploymentReady ? "green" : "yellow"}>
+                          {isDeploymentReady ? "Yes" : "Not yet"}
+                        </Badge>
+                      </HStack>
+                      {phase0Results && (
+                        <HStack justify="space-between">
+                          <Text fontWeight="bold">Scene setup</Text>
+                          <Badge colorScheme="teal">Applied</Badge>
+                        </HStack>
+                      )}
+                    </VStack>
+                  </Box>
+
+                </>
+              )}
+            </VStack>
+          </ModalBody>
+          <ModalFooter>
+            <HStack spacing={3}>
+              {preBattleStep === PRE_BATTLE_STEPS.READY ? (
+                <>
+                  <Button variant="outline" onClick={() => openGuidedSetup(PRE_BATTLE_STEPS.ROSTER)}>
+                    Back to Roster
+                  </Button>
+                  <Button variant="outline" onClick={() => openGuidedSetup(PRE_BATTLE_STEPS.DEPLOY)}>
+                    Back to Deployment
+                  </Button>
+                  <Button colorScheme="green" onClick={() => startCombat()} isDisabled={!isDeploymentReady}>
+                    ⚔️ Begin Combat
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <Button variant="outline" onClick={() => setShowPreBattleWizard(false)}>
+                    Close
+                  </Button>
+                  <Button
+                    colorScheme="purple"
+                    className={rosterTutorialTarget === "nextDeployment" ? "tutorial-pulse" : ""}
+                    onClick={() => openGuidedSetup(PRE_BATTLE_STEPS.DEPLOY)}
+                    isDisabled={!rosterSetupReady}
+                  >
+                    Next: Deployment
+                  </Button>
+                </>
+              )}
+            </HStack>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
+
+      {/* Add Enemy Modal */}
+      <Modal isOpen={isOpen} onClose={onClose} size="xl" scrollBehavior="inside">
+        <ModalOverlay />
+        <ModalContent maxH="90vh">
+          <ModalHeader>Add Enemy to Combat</ModalHeader>
+          <ModalCloseButton />
+          <ModalBody pb={6} overflowY="auto">
             <FormControl mb={4}>
               <FormLabel>Filter by Type:</FormLabel>
               <Select
@@ -19078,7 +25112,7 @@ export default function CombatPage({ characters = [] }) {
               >
                 Confirm Party
               </Button>
-              <Button onClick={onPartyClose}>
+              <Button onClick={() => { onPartyClose(); setShowPartySelector(false); }}>
                 Cancel
               </Button>
             </HStack>
@@ -19184,6 +25218,345 @@ export default function CombatPage({ characters = [] }) {
       </Modal>
 
       {/* Phase 0 Pre-Combat Modal */}
+      {showDeploymentModal && !combatActive && (
+        <Box
+          position="fixed"
+          inset={0}
+          bg="blackAlpha.600"
+          zIndex={1400}
+          display="flex"
+          alignItems={{ base: "flex-start", md: "center" }}
+          justifyContent="center"
+          px={3}
+          py={6}
+          // Let clicks pass through to the 2D Tactical Map rendered beneath this overlay.
+          pointerEvents="none"
+        >
+          <Box
+            width={{ base: "100%", lg: "900px" }}
+            maxW="1000px"
+            maxH={{ base: "min(70vh, calc(100vh - 112px))", lg: "calc(100vh - 96px)" }}
+            overflowY="auto"
+            bg="white"
+            borderWidth="1px"
+            borderRadius="xl"
+            boxShadow="2xl"
+            p={4}
+            pointerEvents="auto"
+          >
+            <VStack align="stretch" spacing={4}>
+              <HStack justify="space-between">
+                <Heading size="md">🧭 Step 2 of 3 — Deployment</Heading>
+                <Button size="sm" variant="ghost" onClick={() => setShowDeploymentModal(false)}>
+                  Close
+                </Button>
+              </HStack>
+
+              <Box
+                bg="blue.50"
+                border="1px solid"
+                borderColor="blue.100"
+                borderRadius="md"
+                px={4}
+                py={3}
+                mb={2}
+              >
+                <Text className="tutorial-help-text">
+                  {deploymentHint}
+                </Text>
+              </Box>
+
+              <HStack spacing={3} flexWrap="wrap">
+                <Badge colorScheme={preBattleDeployment.currentSide === "player" ? "blue" : "gray"} px={3} py={1}>
+                  Active Side: {preBattleDeployment.currentSide === "player" ? "Players" : "Enemies"}
+                </Badge>
+                <Badge colorScheme={preBattleDeployment.lockedSides?.player ? "green" : "yellow"} px={3} py={1}>
+                  Players: {preBattleDeployment.lockedSides?.player ? "Locked" : "Open"}
+                </Badge>
+                <Badge colorScheme={preBattleDeployment.lockedSides?.enemy ? "green" : "yellow"} px={3} py={1}>
+                  Enemies: {preBattleDeployment.lockedSides?.enemy ? "Locked" : "Open"}
+                </Badge>
+                {isDeploymentReady && (
+                  <Badge colorScheme="green" px={3} py={1}>
+                    All Units Placed
+                  </Badge>
+                )}
+              </HStack>
+
+              <Grid templateColumns={{ base: "1fr", xl: "1fr 1fr" }} gap={4}>
+                {DEPLOYMENT_SIDE_ORDER.map((side) => {
+                const sideFighters = fighters.filter((fighter) => fighter.type === side);
+                const selectedIds = preBattleDeployment.selectionBySide?.[side] || [];
+                const sidePositions = preBattleDeployment.positionsBySide?.[side] || {};
+                const placementCount = sideFighters.filter((fighter) => sidePositions[fighter.id]).length;
+                const canEditSide = preBattleDeployment.currentSide === side && !preBattleDeployment.lockedSides?.[side];
+                const selectedCount = selectedIds.length;
+                const activeFormation = selectedCount <= 1
+                  ? DEPLOYMENT_FORMATIONS.SINGLE
+                  : (preBattleDeployment.formationBySide?.[side] || DEPLOYMENT_FORMATIONS.LINE_CLOSE);
+
+                return (
+                  <Box key={side} borderWidth="1px" borderRadius="lg" p={4} bg={canEditSide ? "blue.50" : "gray.50"}>
+                    <HStack justify="space-between" mb={3}>
+                      <Heading size="sm">
+                        {side === "player" ? "🛡️ Player Side" : "🗡️ Enemy Side"}
+                      </Heading>
+                      <Badge colorScheme={preBattleDeployment.lockedSides?.[side] ? "green" : canEditSide ? "blue" : "gray"}>
+                        {placementCount}/{sideFighters.length} placed
+                      </Badge>
+                    </HStack>
+
+                    <Wrap spacing={2} mb={4}>
+                      <WrapItem>
+                        <Button
+                          size="sm"
+                          colorScheme={preBattleDeployment.currentSide === side ? "blue" : "gray"}
+                          variant={preBattleDeployment.currentSide === side ? "solid" : "outline"}
+                          onClick={() => setPreBattleDeployment((prev) => ({ ...prev, currentSide: side }))}
+                          isDisabled={preBattleDeployment.lockedSides?.[side]}
+                        >
+                          Take Turn
+                        </Button>
+                      </WrapItem>
+                      <WrapItem>
+                        <Button
+                          size="sm"
+                          colorScheme="blue"
+                          variant="outline"
+                          className={
+                            (side === "player" &&
+                              deploymentTutorialTarget === "autoDeployPlayers") ||
+                            (side === "enemy" &&
+                              deploymentTutorialTarget === "autoDeployEnemies")
+                              ? "tutorial-pulse"
+                              : ""
+                          }
+                          onClick={() => autoDeploySide(side)}
+                        >
+                          Auto Deploy
+                        </Button>
+                      </WrapItem>
+                      <WrapItem>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            setShowDeploymentModal(false);
+                            setManualDeploymentOpen(true);
+                          }}
+                        >
+                          Manual Place on Map
+                        </Button>
+                      </WrapItem>
+                      <WrapItem>
+                        {preBattleDeployment.lockedSides?.[side] ? (
+                          <Button size="sm" variant="outline" onClick={() => unlockDeploymentSide(side)}>
+                            Unlock
+                          </Button>
+                        ) : (
+                          <Button
+                            size="sm"
+                            colorScheme="green"
+                            className={
+                              (side === "player" &&
+                                deploymentTutorialTarget === "lockPlayers") ||
+                              (side === "enemy" &&
+                                deploymentTutorialTarget === "lockEnemies")
+                                ? "tutorial-pulse"
+                                : ""
+                            }
+                            onClick={() => lockDeploymentSide(side)}
+                          >
+                            Done Placing
+                          </Button>
+                        )}
+                      </WrapItem>
+                    </Wrap>
+
+                    <HStack spacing={2} mb={3} flexWrap="wrap">
+                      <Button
+                        size="sm"
+                        colorScheme={activeFormation === DEPLOYMENT_FORMATIONS.SINGLE ? "purple" : "gray"}
+                        variant={activeFormation === DEPLOYMENT_FORMATIONS.SINGLE ? "solid" : "outline"}
+                        isDisabled={!canEditSide}
+                        onClick={() => setPreBattleDeployment((prev) => ({
+                          ...prev,
+                          formationBySide: {
+                            ...prev.formationBySide,
+                            [side]: DEPLOYMENT_FORMATIONS.SINGLE,
+                          },
+                        }))}
+                      >
+                        Single
+                      </Button>
+                      <Button
+                        size="sm"
+                        colorScheme={activeFormation === DEPLOYMENT_FORMATIONS.LINE_CLOSE ? "purple" : "gray"}
+                        variant={activeFormation === DEPLOYMENT_FORMATIONS.LINE_CLOSE ? "solid" : "outline"}
+                        isDisabled={!canEditSide || selectedCount <= 1}
+                        onClick={() => setPreBattleDeployment((prev) => ({
+                          ...prev,
+                          formationBySide: {
+                            ...prev.formationBySide,
+                            [side]: DEPLOYMENT_FORMATIONS.LINE_CLOSE,
+                          },
+                        }))}
+                      >
+                        Line Close
+                      </Button>
+                      <Button
+                        size="sm"
+                        colorScheme={activeFormation === DEPLOYMENT_FORMATIONS.LINE_SPACED ? "purple" : "gray"}
+                        variant={activeFormation === DEPLOYMENT_FORMATIONS.LINE_SPACED ? "solid" : "outline"}
+                        isDisabled={!canEditSide || selectedCount <= 1}
+                        onClick={() => setPreBattleDeployment((prev) => ({
+                          ...prev,
+                          formationBySide: {
+                            ...prev.formationBySide,
+                            [side]: DEPLOYMENT_FORMATIONS.LINE_SPACED,
+                          },
+                        }))}
+                      >
+                        Line Spaced
+                      </Button>
+                    </HStack>
+
+                    <VStack align="stretch" spacing={2}>
+                      {sideFighters.map((fighter) => {
+                        const isSelected = selectedIds.includes(fighter.id);
+                        const isPlaced = Boolean(sidePositions[fighter.id]);
+
+                        return (
+                          <Box
+                            key={fighter.id}
+                            px={3}
+                            py={2}
+                            borderWidth="1px"
+                            borderRadius="md"
+                            bg={isSelected ? "blue.100" : "white"}
+                            borderColor={isSelected ? "blue.400" : isPlaced ? "green.300" : "gray.200"}
+                            cursor={canEditSide ? "pointer" : "default"}
+                            onMouseDown={() => handleDeploymentPickerMouseDown(side, fighter.id)}
+                            onMouseEnter={() => handleDeploymentPickerMouseEnter(side, fighter.id)}
+                          >
+                            <VStack align="stretch" spacing={2}>
+                              <HStack justify="space-between">
+                                <Text fontSize="sm" fontWeight="medium">{fighter.name}</Text>
+                                <HStack spacing={2}>
+                                  {isSelected && <Badge colorScheme="blue">Selected</Badge>}
+                                  {isPlaced && <Badge colorScheme="green">Placed</Badge>}
+                                </HStack>
+                              </HStack>
+                              <HStack spacing={2} align="center" onMouseDown={(e) => e.stopPropagation()}>
+                                <Text fontSize="xs" color="gray.600" fontWeight="bold">
+                                  Battle Side
+                                </Text>
+                                <Select
+                                  size="xs"
+                                  width="auto"
+                                  value={fighter.type}
+                                  onChange={(e) => changeFighterSide(fighter.id, e.target.value)}
+                                >
+                                  <option value="enemy">Enemy Side</option>
+                                  <option value="player">Party Side</option>
+                                </Select>
+                              </HStack>
+                            </VStack>
+                          </Box>
+                        );
+                      })}
+                    </VStack>
+                  </Box>
+                );
+                })}
+              </Grid>
+
+              <HStack justify="space-between" flexWrap="wrap">
+                <Button variant="outline" onClick={() => openGuidedSetup(PRE_BATTLE_STEPS.ROSTER)}>
+                  Back to Roster
+                </Button>
+                <HStack spacing={3}>
+                  <Button variant="outline" onClick={resetDeploymentPlanner}>
+                    Reset Deployment
+                  </Button>
+                  <Button
+                    colorScheme="purple"
+                    className={deploymentTutorialTarget === "continueReady" ? "tutorial-pulse" : ""}
+                    onClick={() => openGuidedSetup(PRE_BATTLE_STEPS.READY)}
+                    isDisabled={!bothDeploymentSidesLocked}
+                  >
+                    Continue to Ready
+                  </Button>
+                </HStack>
+              </HStack>
+            </VStack>
+          </Box>
+        </Box>
+      )}
+
+      {manualDeploymentOpen && !combatActive && (
+        <Box
+          position="fixed"
+          top="90px"
+          right="16px"
+          width="320px"
+          bg="white"
+          border="1px solid"
+          borderColor="gray.200"
+          borderRadius="lg"
+          boxShadow="xl"
+          p={4}
+          zIndex={1390}
+        >
+          <HStack justify="space-between" mb={3}>
+            <Text fontWeight="bold">Manual Deployment</Text>
+            <Button
+              size="xs"
+              variant="ghost"
+              onClick={() => setManualDeploymentOpen(false)}
+            >
+              Close
+            </Button>
+          </HStack>
+
+          <Text fontSize="sm" mb={3}>
+            Select a unit, then click a hex on the map.
+          </Text>
+
+          <Button
+            size="sm"
+            colorScheme="blue"
+            width="100%"
+            mb={2}
+            onClick={() => autoDeploySide("player")}
+          >
+            Auto Deploy Players Instead
+          </Button>
+
+          <Button
+            size="sm"
+            colorScheme="red"
+            width="100%"
+            mb={2}
+            onClick={() => autoDeploySide("enemy")}
+          >
+            Auto Deploy Enemies Instead
+          </Button>
+
+          <Button
+            size="sm"
+            colorScheme="green"
+            width="100%"
+            onClick={() => {
+              setManualDeploymentOpen(false);
+              setShowDeploymentModal(true);
+            }}
+          >
+            Back to Setup
+          </Button>
+        </Box>
+      )}
+
       <Phase0PreCombatModal
         isOpen={showPhase0Modal}
         onClose={() => {
@@ -19476,3 +25849,5 @@ export default function CombatPage({ characters = [] }) {
 CombatPage.propTypes = {
   characters: PropTypes.array,
 };
+
+export default CombatPage;
