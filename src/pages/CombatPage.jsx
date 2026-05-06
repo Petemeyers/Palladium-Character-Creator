@@ -3224,6 +3224,9 @@ function CombatPage({ characters = [] }) {
   const visibilityLogRef = useRef(new Set()); // Track visibility logs to prevent spam: Set of "playerId_turnCounter"
   const turnTimeoutRef = useRef(null); // Track scheduled end turn timeout
   const pendingTurnAdvanceRef = useRef(false); // ✅ Prevent AI re-entry while a turn advance is scheduled but not yet executed
+  const turnStartInFlightKeyRef = useRef(null); // Owns a turn start until its handler settles
+  const directTurnHandoffSnapshotRef = useRef(null); // Direct handoff owns this exact turn snapshot
+  const endTurnGenerationRef = useRef(0); // Invalidates stale delayed tryEndTurn callbacks
   const lastEndTurnAdvanceKeyRef = useRef(null); // Prevent duplicate endTurn() advances from delayed callbacks in one slice
   const allTimeoutsRef = useRef([]); // ✅ Track ALL timeouts so we can clear them on combat end
   const combatPausedRef = useRef(false); // Track paused state in async callbacks
@@ -3279,6 +3282,8 @@ function CombatPage({ characters = [] }) {
     }
     activePlayerAITurnKeysRef.current.clear();
     pendingTurnStartKeysRef.current.clear();
+    turnStartInFlightKeyRef.current = null;
+    directTurnHandoffSnapshotRef.current = null;
     playerAIActionScheduledRef.current = false;
     processingPlayerAIRef.current = false;
     if (aiImprovisedAmmoRef.current?.clear) aiImprovisedAmmoRef.current.clear();
@@ -3322,6 +3327,9 @@ function CombatPage({ characters = [] }) {
     currentTurnTokenRef.current = null;
     turnActionResolvingRef.current = false;
     pendingTurnAdvanceRef.current = false;
+    turnStartInFlightKeyRef.current = null;
+    directTurnHandoffSnapshotRef.current = null;
+    endTurnGenerationRef.current += 1;
     processingEnemyTurnRef.current = false;
     processingPlayerAIRef.current = false;
     playerAIActionScheduledRef.current = false;
@@ -6799,9 +6807,6 @@ function CombatPage({ characters = [] }) {
       return false;
     }
 
-    const turnToken = makeTurnToken(activeFighter);
-    currentTurnTokenRef.current = turnToken;
-
     if (fighter.type === "enemy" && processingEnemyTurnRef.current) {
       if (DEBUG_COMBAT) {
         console.warn("[ENEMY TURN SCHEDULE BLOCKED - already processing]", {
@@ -6812,9 +6817,31 @@ function CombatPage({ characters = [] }) {
       return false;
     }
 
+    if (turnStartInFlightKeyRef.current) {
+      if (DEBUG_COMBAT) {
+        addLog?.(
+          `🚫 turn start skipped while another start is in flight fighter=${fighter?.name} reason=${reason} key=${turnStartInFlightKeyRef.current}`,
+          "warning"
+        );
+      }
+      return false;
+    }
+
     const counter = turnCounterRef.current;
     const key = claimTurnStart(fighter, index, counter, reason);
     if (!key) return false;
+    turnStartInFlightKeyRef.current = key;
+    if (reason === "endTurn-direct" || reason === "new-melee-round-direct") {
+      directTurnHandoffSnapshotRef.current = {
+        meleeRound: meleeRoundRef.current,
+        turnCounter: turnCounterRef.current,
+        turnIndex: index,
+        fighterId: fighter.id,
+        source: reason,
+      };
+    }
+    const turnToken = makeTurnToken(activeFighter);
+    currentTurnTokenRef.current = turnToken;
 
     if (fighter.type === "enemy") {
       const token = ++enemyTurnTokenRef.current;
@@ -6824,6 +6851,9 @@ function CombatPage({ characters = [] }) {
         clearTimeout(playerAITimerRef.current);
         playerAITimerRef.current = null;
         releaseTurnStart(lastPlayerAIScheduleTurnKeyRef.current);
+        if (turnStartInFlightKeyRef.current === lastPlayerAIScheduleTurnKeyRef.current) {
+          turnStartInFlightKeyRef.current = null;
+        }
         lastPlayerAIScheduleTurnKeyRef.current = null;
       }
       playerAITurnTokenRef.current = (playerAITurnTokenRef.current || 0) + 1;
@@ -6832,12 +6862,27 @@ function CombatPage({ characters = [] }) {
         clearTimeout(enemyTurnTimerRef.current);
         enemyTurnTimerRef.current = null;
         releaseTurnStart(lastEnemyScheduleTurnKeyRef.current);
+        if (turnStartInFlightKeyRef.current === lastEnemyScheduleTurnKeyRef.current) {
+          turnStartInFlightKeyRef.current = null;
+        }
       }
       lastEnemyScheduleTurnKeyRef.current = key;
       enemyTurnTimerRef.current = setTimeout(() => {
+        const releaseStartedTurn = () => {
+          releaseTurnStart(key);
+          if (lastEnemyScheduleTurnKeyRef.current === key) {
+            lastEnemyScheduleTurnKeyRef.current = null;
+          }
+          if (turnStartInFlightKeyRef.current === key) {
+            turnStartInFlightKeyRef.current = null;
+          }
+        };
         try {
           enemyTurnTimerRef.current = null;
-          if (token !== enemyTurnTokenRef.current) return;
+          if (token !== enemyTurnTokenRef.current) {
+            releaseStartedTurn();
+            return;
+          }
           const liveFighters = fightersRef.current || fighters;
           const liveIndex = turnIndexRef.current;
           const latestFighter = liveFighters?.[liveIndex];
@@ -6852,12 +6897,17 @@ function CombatPage({ characters = [] }) {
                 reason,
               });
             }
+            releaseStartedTurn();
             return;
           }
           const latestKey = makeTurnStartKey(latestFighter, turnIndexRef.current, turnCounterRef.current);
-          if (latestKey !== key) return;
+          if (latestKey !== key) {
+            releaseStartedTurn();
+            return;
+          }
           if (blockStaleAction(latestFighter, turnToken, "scheduled enemy turn start")) {
             processingEnemyTurnRef.current = false;
+            releaseStartedTurn();
             return;
           }
           if (
@@ -6882,6 +6932,7 @@ function CombatPage({ characters = [] }) {
                 spellImpact: !!activeSpellImpactRef.current,
               });
             }
+            releaseStartedTurn();
             return;
           }
           if (
@@ -6890,14 +6941,14 @@ function CombatPage({ characters = [] }) {
             !canFighterAct(latestFighter)
           ) {
             processingEnemyTurnRef.current = false;
+            releaseStartedTurn();
             return;
           }
-          handleEnemyTurnRef.current?.(latestFighter, reason, { turnKey: key, token, turnToken });
-        } finally {
-          releaseTurnStart(key);
-          if (lastEnemyScheduleTurnKeyRef.current === key) {
-            lastEnemyScheduleTurnKeyRef.current = null;
-          }
+          Promise.resolve(
+            handleEnemyTurnRef.current?.(latestFighter, reason, { turnKey: key, token, turnToken })
+          ).finally(releaseStartedTurn);
+        } catch {
+          releaseStartedTurn();
         }
       }, 0);
       return true;
@@ -6910,6 +6961,9 @@ function CombatPage({ characters = [] }) {
           "info"
         );
         releaseTurnStart(key);
+        if (turnStartInFlightKeyRef.current === key) {
+          turnStartInFlightKeyRef.current = null;
+        }
         return false;
       }
 
@@ -6919,9 +6973,21 @@ function CombatPage({ characters = [] }) {
         clearTimeout(playerAITimerRef.current);
         playerAITimerRef.current = null;
         releaseTurnStart(lastPlayerAIScheduleTurnKeyRef.current);
+        if (turnStartInFlightKeyRef.current === lastPlayerAIScheduleTurnKeyRef.current) {
+          turnStartInFlightKeyRef.current = null;
+        }
       }
       lastPlayerAIScheduleTurnKeyRef.current = key;
       playerAITimerRef.current = setTimeout(() => {
+        const releaseStartedTurn = () => {
+          releaseTurnStart(key);
+          if (lastPlayerAIScheduleTurnKeyRef.current === key) {
+            lastPlayerAIScheduleTurnKeyRef.current = null;
+          }
+          if (turnStartInFlightKeyRef.current === key) {
+            turnStartInFlightKeyRef.current = null;
+          }
+        };
         try {
           playerAITimerRef.current = null;
           const liveFighters = fightersRef.current || fighters;
@@ -6938,12 +7004,17 @@ function CombatPage({ characters = [] }) {
                 reason,
               });
             }
+            releaseStartedTurn();
             return;
           }
           const latestKey = makeTurnStartKey(latestFighter, turnIndexRef.current, turnCounterRef.current);
-          if (latestKey !== key) return;
+          if (latestKey !== key) {
+            releaseStartedTurn();
+            return;
+          }
           if (blockStaleAction(latestFighter, turnToken, "scheduled player turn start")) {
             processingPlayerAIRef.current = false;
+            releaseStartedTurn();
             return;
           }
           if (
@@ -6968,6 +7039,7 @@ function CombatPage({ characters = [] }) {
                 spellImpact: !!activeSpellImpactRef.current,
               });
             }
+            releaseStartedTurn();
             return;
           }
           if (
@@ -6978,20 +7050,23 @@ function CombatPage({ characters = [] }) {
             !canFighterAct(latestFighter)
           ) {
             processingPlayerAIRef.current = false;
+            releaseStartedTurn();
             return;
           }
-          handlePlayerAITurnRef.current?.(latestFighter, { turnToken });
-        } finally {
-          releaseTurnStart(key);
-          if (lastPlayerAIScheduleTurnKeyRef.current === key) {
-            lastPlayerAIScheduleTurnKeyRef.current = null;
-          }
+          Promise.resolve(
+            handlePlayerAITurnRef.current?.(latestFighter, { turnToken })
+          ).finally(releaseStartedTurn);
+        } catch {
+          releaseStartedTurn();
         }
       }, 0);
       return true;
     }
 
     releaseTurnStart(key);
+    if (turnStartInFlightKeyRef.current === key) {
+      turnStartInFlightKeyRef.current = null;
+    }
     return false;
   }, [addLog, blockStaleAction, canFighterAct, claimTurnStart, isActionBusy, makeTurnStartKey, makeTurnToken, releaseTurnStart]);
 
@@ -7043,6 +7118,8 @@ function CombatPage({ characters = [] }) {
       return;
     }
     lastEndTurnAdvanceKeyRef.current = endTurnAdvanceKey;
+    endTurnGenerationRef.current += 1;
+    turnStartInFlightKeyRef.current = null;
 
     clearScheduledTurn();
 
@@ -7069,14 +7146,16 @@ function CombatPage({ characters = [] }) {
         return;
       }
 
-      addLog(`⏰ Melee Round ${meleeRoundNow} complete! Starting Round ${meleeRoundNow + 1}...`, "combat");
+      const nextMeleeRound = meleeRoundNow + 1;
+      const nextTurnCounter = turnCounterNow + 1;
+
+      addLog(`⏰ Melee Round ${meleeRoundNow} complete! Starting Round ${nextMeleeRound}...`, "combat");
 
       // ✅ Clear cast guard for new melee round (allows new casts in new round)
       combatCastGuardRef.current.clear();
       // ✅ Clear spell loop guard for new melee round (allows new spell casts)
       enemySpellLoopGuardRef.current.clear();
       pendingTurnStartKeysRef.current.clear();
-      lastEndTurnAdvanceKeyRef.current = null;
       // ✅ Reset "no actions remaining" pass-log guard each melee
       noActionsPassLogRef.current = new Set();
 
@@ -7085,96 +7164,94 @@ function CombatPage({ characters = [] }) {
 
       // Reset all fighters' actions for new melee round
       // Also reset the "no ranged options" log flag for each fighter
-      setFighters(prev => {
-        const updated = prev.map(f => {
-          // ✅ Tick down + clear status effects each melee
-          // (needed so temporary effects like SHAKEN expire correctly)
-          const withStatus = updateStatusEffects({ ...f }, meleeRoundNow + 1);
-          const withBleeding = tickBleeding(withStatus);
-          if (withBleeding !== withStatus) {
-            try {
-              if (
-                withStatus?.condition !== withBleeding?.condition &&
-                withBleeding?.condition === "dying"
-              ) {
-                addLog(`🩸 ${withBleeding.name} worsens to DYING from blood loss!`, "defeat");
-              } else if (
-                withStatus?.condition !== withBleeding?.condition &&
-                withBleeding?.condition === "dead"
-              ) {
-                addLog(`💀 ${withBleeding.name} bleeds out and dies!`, "defeat");
-              }
-            } catch {
-              // ignore
+      const updated = fightersNow.map(f => {
+        // ✅ Tick down + clear status effects each melee
+        // (needed so temporary effects like SHAKEN expire correctly)
+        const withStatus = updateStatusEffects({ ...f }, nextMeleeRound);
+        const withBleeding = tickBleeding(withStatus);
+        if (withBleeding !== withStatus) {
+          try {
+            if (
+              withStatus?.condition !== withBleeding?.condition &&
+              withBleeding?.condition === "dying"
+            ) {
+              addLog(`🩸 ${withBleeding.name} worsens to DYING from blood loss!`, "defeat");
+            } else if (
+              withStatus?.condition !== withBleeding?.condition &&
+              withBleeding?.condition === "dead"
+            ) {
+              addLog(`💀 ${withBleeding.name} bleeds out and dies!`, "defeat");
             }
-          }
-          // Fix: Use proper fallback for animals (attacksPerMelee ?? attacks ?? 2)
-          const apm =
-            withBleeding.attacksPerMelee ?? withBleeding.attacks ?? 2; // fallback for animals
-          const fighter = {
-            ...withBleeding,
-            remainingAttacks: canFighterAct(withBleeding) ? apm : 0,
-            spellsCastThisMelee: 0, // ✅ Reset spells cast counter for new melee round (RAW)
-            // if you track "hasActedThisRound" etc, reset it here too
-          };
-          // Clear the loggedNoRangedRound flag for new melee round
-          if (fighter.meta?.loggedNoRangedRound !== undefined) {
-            fighter.meta = {
-              ...fighter.meta,
-              loggedNoRangedRound: undefined,
-              loggedNoRangedOptions: false,
-            };
-          }
-          return fighter;
-        });
-
-        // Check for stalemate: if neither side can hit the other
-        const playerFighters = updated.filter(f => f.type === "player" && canFighterAct(f) && f.currentHP > 0);
-        const enemyFighters = updated.filter(f => f.type === "enemy" && canFighterAct(f) && f.currentHP > 0);
-
-        if (playerFighters.length > 0 && enemyFighters.length > 0) {
-          // Check if players have any valid offensive options
-          const playersCanAttack = playerFighters.some(player =>
-            hasAnyValidOffensiveOption(player, enemyFighters)
-          );
-
-          // Check if enemies have any valid offensive options
-          const enemiesCanAttack = enemyFighters.some(enemy =>
-            hasAnyValidOffensiveOption(enemy, playerFighters)
-          );
-
-          // If neither side can attack, end combat as stalemate
-          if (!playersCanAttack && !enemiesCanAttack) {
-            addLog("⚠️ Neither side can attack the other (stalemate). Combat ends.", "warning");
-            setCombatActive(false);
-            combatEndCheckRef.current = true;
-            return updated;
+          } catch {
+            // ignore
           }
         }
+        // Fix: Use proper fallback for animals (attacksPerMelee ?? attacks ?? 2)
+        const apm =
+          withBleeding.attacksPerMelee ?? withBleeding.attacks ?? 2; // fallback for animals
+        const fighter = {
+          ...withBleeding,
+          remainingAttacks: canFighterAct(withBleeding) ? apm : 0,
+          spellsCastThisMelee: 0, // ✅ Reset spells cast counter for new melee round (RAW)
+          // if you track "hasActedThisRound" etc, reset it here too
+        };
+        // Clear the loggedNoRangedRound flag for new melee round
+        if (fighter.meta?.loggedNoRangedRound !== undefined) {
+          fighter.meta = {
+            ...fighter.meta,
+            loggedNoRangedRound: undefined,
+            loggedNoRangedOptions: false,
+          };
+        }
+        return fighter;
+      });
 
-        // ✅ Start of new melee: apply courage/holy aura bonuses + fear dispel
-        processCourageAuras(updated, positions, addLog);
+      // Check for stalemate: if neither side can hit the other
+      const playerFighters = updated.filter(f => f.type === "player" && canFighterAct(f) && f.currentHP > 0);
+      const enemyFighters = updated.filter(f => f.type === "enemy" && canFighterAct(f) && f.currentHP > 0);
 
-        // ✅ Apply bio-regeneration for fighters with regeneration abilities
-        // Note: applyBioRegeneration mutates the fighter object, so we need to create new objects for React state
-        const currentMeleeRound = meleeRound; // Get current melee round for interval tracking
-        const updatedWithRegen = updated.map(fighter => {
-          const fighterCopy = { ...fighter };
-          const regenResult = applyBioRegeneration(fighterCopy, currentMeleeRound);
-          if (regenResult) {
-            addLog(regenResult.log, "healing");
-            // Return updated fighter with new HP and meta tracking
-            return {
-              ...fighterCopy,
-              currentHP: fighterCopy.currentHP,
-              hp: fighterCopy.currentHP,
-              meta: fighterCopy.meta, // Preserve bioRegenLastMelee tracking
-            };
-          }
-          return fighter;
-        });
+      if (playerFighters.length > 0 && enemyFighters.length > 0) {
+        // Check if players have any valid offensive options
+        const playersCanAttack = playerFighters.some(player =>
+          hasAnyValidOffensiveOption(player, enemyFighters)
+        );
 
-        return updatedWithRegen;
+        // Check if enemies have any valid offensive options
+        const enemiesCanAttack = enemyFighters.some(enemy =>
+          hasAnyValidOffensiveOption(enemy, playerFighters)
+        );
+
+        // If neither side can attack, end combat as stalemate
+        if (!playersCanAttack && !enemiesCanAttack) {
+          addLog("⚠️ Neither side can attack the other (stalemate). Combat ends.", "warning");
+          fightersRef.current = updated;
+          setFighters(updated);
+          setCombatActive(false);
+          combatEndCheckRef.current = true;
+          return;
+        }
+      }
+
+      // ✅ Start of new melee: apply courage/holy aura bonuses + fear dispel
+      processCourageAuras(updated, positions, addLog);
+
+      // ✅ Apply bio-regeneration for fighters with regeneration abilities
+      // Note: applyBioRegeneration mutates the fighter object, so we need to create new objects for React state
+      const currentMeleeRound = meleeRound; // Get current melee round for interval tracking
+      const resetFighters = updated.map(fighter => {
+        const fighterCopy = { ...fighter };
+        const regenResult = applyBioRegeneration(fighterCopy, currentMeleeRound);
+        if (regenResult) {
+          addLog(regenResult.log, "healing");
+          // Return updated fighter with new HP and meta tracking
+          return {
+            ...fighterCopy,
+            currentHP: fighterCopy.currentHP,
+            hp: fighterCopy.currentHP,
+            meta: fighterCopy.meta, // Preserve bioRegenLastMelee tracking
+          };
+        }
+        return fighter;
       });
 
       // Only continue if combat is still active
@@ -7182,9 +7259,14 @@ function CombatPage({ characters = [] }) {
         return;
       }
 
-      setMeleeRound(prev => prev + 1);
+      fightersRef.current = resetFighters;
+      meleeRoundRef.current = nextMeleeRound;
+      turnIndexRef.current = 0;
+      turnCounterRef.current = nextTurnCounter;
+      setFighters(resetFighters);
+      setMeleeRound(nextMeleeRound);
       setTurnIndex(0); // Start from highest initiative again
-      setTurnCounter(prev => prev + 1);
+      setTurnCounter(nextTurnCounter);
 
       // Clear processing flags for new round (only if combat is still active)
       if (combatActiveNow && !combatEndCheckRef.current) {
@@ -7194,6 +7276,7 @@ function CombatPage({ characters = [] }) {
         lastOpenedChoicesTurnRef.current = null;
       }
 
+      startTurnOnce(resetFighters[0], 0, "new-melee-round-direct");
       return;
     }
 
@@ -7233,14 +7316,21 @@ function CombatPage({ characters = [] }) {
 
       addLog(`⏰ All fighters out of actions - starting new melee round`, "combat");
       pendingTurnStartKeysRef.current.clear();
-      lastEndTurnAdvanceKeyRef.current = null;
-      setFighters(prev => prev.map(f => ({
+      const nextMeleeRound = meleeRoundNow + 1;
+      const nextTurnCounter = turnCounterNow + 1;
+      const resetFighters = fightersNow.map(f => ({
         ...f,
         remainingAttacks: f.attacksPerMelee || 2
-      })));
-      setMeleeRound(prev => prev + 1);
+      }));
+      fightersRef.current = resetFighters;
+      meleeRoundRef.current = nextMeleeRound;
+      turnIndexRef.current = 0;
+      turnCounterRef.current = nextTurnCounter;
+      setFighters(resetFighters);
+      setMeleeRound(nextMeleeRound);
       setTurnIndex(0);
-      setTurnCounter(prev => prev + 1);
+      setTurnCounter(nextTurnCounter);
+      startTurnOnce(resetFighters[0], 0, "new-melee-round-direct");
       return;
     }
 
@@ -8060,8 +8150,12 @@ function CombatPage({ characters = [] }) {
         return;
       }
 
+      const scheduledEndTurnGeneration = endTurnGenerationRef.current;
       let waitingOnSpellCastId = null;
       const tryEndTurn = () => {
+        if (scheduledEndTurnGeneration !== endTurnGenerationRef.current) {
+          return;
+        }
         if (combatOverRef.current || !combatActive || combatEndCheckRef.current) {
           pendingTurnAdvanceRef.current = false;
           return;
@@ -12991,6 +13085,62 @@ function CombatPage({ characters = [] }) {
     // New token per AI turn; delayed callbacks (and watchdog) must match this token or abort.
     const playerAITurnToken = (playerAITurnTokenRef.current || 0) + 1;
     playerAITurnTokenRef.current = playerAITurnToken;
+    const startActions = Number(latestPlayer.remainingAttacks ?? 0) || 0;
+    const startTurnIndex = turnIndexRef.current;
+    const startFighterId = latestPlayer.id;
+    const startMeleeRound = meleeRoundRef.current ?? meleeRound;
+    const startTurnCounter = turnCounterRef.current ?? turnCounter;
+    const capturedTurnToken = playerTurnToken;
+
+    const executePlayerAISpell = async (caster, target, spell, meta = {}) => {
+      const liveFighters = fightersRef.current || [];
+      const liveIndex = turnIndexRef.current;
+      const liveCaster = liveFighters.find((f) => f.id === caster?.id);
+      const activeFighter = liveFighters?.[liveIndex];
+      const isStale =
+        combatOverRef.current ||
+        combatEndCheckRef.current ||
+        !combatActiveRef.current ||
+        !!activeSpellImpactRef.current ||
+        playerAITurnTokenRef.current !== playerAITurnToken ||
+        currentTurnTokenRef.current !== capturedTurnToken ||
+        liveIndex !== startTurnIndex ||
+        activeFighter?.id !== startFighterId ||
+        (meleeRoundRef.current ?? meleeRound) !== startMeleeRound ||
+        (turnCounterRef.current ?? turnCounter) !== startTurnCounter ||
+        !liveCaster ||
+        (Number(liveCaster.remainingAttacks ?? 0) || 0) <= 0;
+
+      if (isStale) {
+        if (DEBUG_COMBAT) {
+          console.warn("[PLAYER AI SPELL BLOCKED - stale callback]", {
+            caster: caster?.name,
+            spell: spell?.name,
+            liveIndex,
+            startTurnIndex,
+            activeFighter: activeFighter?.name,
+            startFighterId,
+            playerAITurnToken,
+            currentPlayerAITurnToken: playerAITurnTokenRef.current,
+            capturedTurnToken,
+            currentTurnToken: currentTurnTokenRef.current,
+            activeSpellImpact: !!activeSpellImpactRef.current,
+            remainingAttacks: liveCaster?.remainingAttacks,
+          });
+        }
+        return false;
+      }
+
+      return executeSpellRef.current?.(liveCaster, target, spell, {
+        ...meta,
+        turnToken: capturedTurnToken,
+        playerAITurnToken,
+        turnIndex: startTurnIndex,
+        fighterId: startFighterId,
+        meleeRound: startMeleeRound,
+        turnCounter: startTurnCounter,
+      });
+    };
 
     const context = {
       fighters: liveFightersForPlayerAI,
@@ -13059,7 +13209,7 @@ function CombatPage({ characters = [] }) {
       parseRangeToFeet,
       getSpellRangeInFeet,
       spellCanAffectTarget,
-      executeSpell: executeSpellRef.current,
+      executeSpell: executePlayerAISpell,
       executePsionicPower: executePsionicPowerRef.current,
       activeSpellImpactRef,
       turnCounterRef,
@@ -13100,9 +13250,6 @@ function CombatPage({ characters = [] }) {
     // ✅ Invariant: player AI must spend an action OR end the turn.
     // This catches early returns that clear the processing flag or forget to advance,
     // and prevents the "enemy machine-gunning" feel even when initiative alternates.
-    const startActions = Number(latestPlayer.remainingAttacks ?? 0) || 0;
-    const startTurnIndex = turnIndexRef.current;
-    const startFighterId = latestPlayer.id;
     setTimeout(() => {
       if (blockStaleAction(latestPlayer, playerTurnToken, "player AI no-action watchdog", {
         debugOnly: true,
@@ -16980,6 +17127,10 @@ function CombatPage({ characters = [] }) {
       return;
     }
 
+    if (turnCounter !== turnCounterRef.current || meleeRound !== meleeRoundRef.current) {
+      return;
+    }
+
     const liveIndex = turnIndexRef.current;
     const liveFighters = fightersRef.current ?? fighters;
     const liveActiveFighter = liveFighters?.[liveIndex];
@@ -17011,6 +17162,27 @@ function CombatPage({ characters = [] }) {
 
     const currentFighter = liveActiveFighter;
 
+    const directTurnHandoffSnapshot = directTurnHandoffSnapshotRef.current;
+    if (directTurnHandoffSnapshot) {
+      const snapshotMatches =
+        directTurnHandoffSnapshot.meleeRound === meleeRoundRef.current &&
+        directTurnHandoffSnapshot.turnCounter === turnCounterRef.current &&
+        directTurnHandoffSnapshot.turnIndex === turnIndexRef.current &&
+        directTurnHandoffSnapshot.fighterId === currentFighter.id;
+
+      if (snapshotMatches) {
+        if (DEBUG_COMBAT) {
+          addLog?.(
+            `🚫 effect-turn-advance skipped; direct handoff owns ${currentFighter.name} source=${directTurnHandoffSnapshot.source}`,
+            "warning"
+          );
+        }
+        return;
+      }
+
+      directTurnHandoffSnapshotRef.current = null;
+    }
+
     // ✅ If the fighter has no actions left, don't re-run AI/menus repeatedly.
     // This can happen because endTurn() increments turnCounter before fighter state updates settle.
     if ((currentFighter.remainingAttacks ?? 0) <= 0) {
@@ -17035,7 +17207,7 @@ function CombatPage({ characters = [] }) {
     // Turn key must include turnCounter so the same fighter can act again after initiative wraps.
     const currentTurnKey = makeTurnStartKey(currentFighter, turnIndex, turnCounter);
 
-    if (playerAITimerRef.current || enemyTurnTimerRef.current) {
+    if (turnStartInFlightKeyRef.current || playerAITimerRef.current || enemyTurnTimerRef.current) {
       if (DEBUG_COMBAT) {
         addLog(
           "🚫 effect-turn-advance skipped because a direct turn start is already pending",
@@ -18690,7 +18862,7 @@ function CombatPage({ characters = [] }) {
   }, [turnCounter]);
 
 
-  async function executeSpell(caster, target, spell) {
+  async function executeSpell(caster, target, spell, meta = {}) {
     addLog?.(
       `🧪 executeSpell entered caster=${caster?.name} spell=${spell?.name}`,
       "info"
@@ -18726,7 +18898,7 @@ function CombatPage({ characters = [] }) {
       );
       return false;
     }
-    const spellActionToken = currentTurnTokenRef.current ?? makeTurnToken(caster);
+    const spellActionToken = meta?.turnToken ?? currentTurnTokenRef.current ?? makeTurnToken(caster);
     if (blockStaleAction(caster, spellActionToken, "spell cast")) {
       return false;
     }
@@ -18744,6 +18916,19 @@ function CombatPage({ characters = [] }) {
       "info"
     );
 
+    const liveCasterForSpellAction =
+      (fightersRef.current || fighters).find((f) => f.id === caster.id) || caster;
+    if ((Number(liveCasterForSpellAction.remainingAttacks ?? 0) || 0) <= 0) {
+      if (DEBUG_COMBAT) {
+        console.warn("[SPELL BLOCKED - no live actions]", {
+          caster: caster?.name,
+          spell: spell?.name,
+          remainingAttacks: liveCasterForSpellAction?.remainingAttacks,
+        });
+      }
+      return false;
+    }
+
     // ✅ DE-DUPE (FIXED): deterministic cast key per turn/action.
     // Old version used performance.now()+random which made every "duplicate" unique,
     // so it never prevented double-casts after lock recovery / rerenders.
@@ -18753,6 +18938,7 @@ function CombatPage({ characters = [] }) {
     // Use remainingAttacks as an action "slot" discriminator if available.
     // This prevents blocking legitimate future casts in the same melee/turn.
     const actionKey =
+      liveCasterForSpellAction?.remainingAttacks ??
       caster?.remainingAttacks ??
       caster?.actionsRemaining ??
       caster?.remainingActions ??
