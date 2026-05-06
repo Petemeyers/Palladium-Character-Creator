@@ -3226,6 +3226,8 @@ function CombatPage({ characters = [] }) {
   const pendingTurnAdvanceRef = useRef(false); // ✅ Prevent AI re-entry while a turn advance is scheduled but not yet executed
   const turnStartInFlightKeyRef = useRef(null); // Owns a turn start until its handler settles
   const directTurnHandoffSnapshotRef = useRef(null); // Direct handoff owns this exact turn snapshot
+  const endTurnScheduleIdRef = useRef(null); // Active scheduled end-turn callback owner
+  const endTurnScheduleSerialRef = useRef(0); // Monotonic id for scheduled end-turn ownership
   const endTurnGenerationRef = useRef(0); // Invalidates stale delayed tryEndTurn callbacks
   const lastEndTurnAdvanceKeyRef = useRef(null); // Prevent duplicate endTurn() advances from delayed callbacks in one slice
   const allTimeoutsRef = useRef([]); // ✅ Track ALL timeouts so we can clear them on combat end
@@ -5538,6 +5540,7 @@ function CombatPage({ characters = [] }) {
       clearTimeout(turnTimeoutRef.current);
       turnTimeoutRef.current = null;
     }
+    endTurnScheduleIdRef.current = null;
     pendingTurnAdvanceRef.current = false;
   }, []);
 
@@ -6879,7 +6882,26 @@ function CombatPage({ characters = [] }) {
         };
         try {
           enemyTurnTimerRef.current = null;
+          let debugTurnFlow = false;
+          try {
+            debugTurnFlow =
+              typeof window !== "undefined" &&
+              window?.localStorage?.getItem("debugTurnFlow") === "1";
+          } catch {
+            debugTurnFlow = false;
+          }
+          const logDebugTurnStartExit = (message, details = {}) => {
+            if (!DEBUG_COMBAT && !debugTurnFlow) return;
+            addLog?.(`🧪 ${message}`, "info");
+            if (DEBUG_COMBAT) {
+              console.warn(message, details);
+            }
+          };
           if (token !== enemyTurnTokenRef.current) {
+            logDebugTurnStartExit(
+              `Enemy turn start skipped: token mismatch for ${fighter?.name}`,
+              { fighter: fighter?.name, reason, token, currentToken: enemyTurnTokenRef.current }
+            );
             releaseStartedTurn();
             return;
           }
@@ -6887,6 +6909,17 @@ function CombatPage({ characters = [] }) {
           const liveIndex = turnIndexRef.current;
           const latestFighter = liveFighters?.[liveIndex];
           if (!latestFighter || latestFighter.id !== fighter.id) {
+            logDebugTurnStartExit(
+              `Enemy turn start skipped: stale fighter/index for ${fighter?.name}`,
+              {
+                scheduled: fighter?.name,
+                scheduledId: fighter?.id,
+                live: latestFighter?.name,
+                liveId: latestFighter?.id,
+                liveIndex,
+                reason,
+              }
+            );
             if (DEBUG_COMBAT) {
               console.warn("[TURN START BLOCKED - stale scheduled fighter]", {
                 scheduled: fighter?.name,
@@ -6902,6 +6935,10 @@ function CombatPage({ characters = [] }) {
           }
           const latestKey = makeTurnStartKey(latestFighter, turnIndexRef.current, turnCounterRef.current);
           if (latestKey !== key) {
+            logDebugTurnStartExit(
+              `Enemy turn start skipped: key mismatch for ${fighter?.name}`,
+              { fighter: fighter?.name, reason, key, latestKey }
+            );
             releaseStartedTurn();
             return;
           }
@@ -6940,6 +6977,16 @@ function CombatPage({ characters = [] }) {
             !combatActiveRef.current ||
             !canFighterAct(latestFighter)
           ) {
+            logDebugTurnStartExit(
+              `Enemy turn start skipped: combat paused/inactive/cannot act for ${latestFighter?.name ?? fighter?.name}`,
+              {
+                fighter: latestFighter?.name ?? fighter?.name,
+                reason,
+                combatPaused: combatPausedRef.current,
+                combatActive: combatActiveRef.current,
+                canAct: latestFighter ? canFighterAct(latestFighter) : false,
+              }
+            );
             processingEnemyTurnRef.current = false;
             releaseStartedTurn();
             return;
@@ -8151,13 +8198,25 @@ function CombatPage({ characters = [] }) {
       }
 
       const scheduledEndTurnGeneration = endTurnGenerationRef.current;
+      const scheduledEndTurnId = ++endTurnScheduleSerialRef.current;
+      const clearPendingIfOwned = () => {
+        if (endTurnScheduleIdRef.current !== scheduledEndTurnId) return false;
+        pendingTurnAdvanceRef.current = false;
+        endTurnScheduleIdRef.current = null;
+        if (turnTimeoutRef.current) {
+          clearTimeout(turnTimeoutRef.current);
+          turnTimeoutRef.current = null;
+        }
+        return true;
+      };
       let waitingOnSpellCastId = null;
       const tryEndTurn = () => {
         if (scheduledEndTurnGeneration !== endTurnGenerationRef.current) {
+          clearPendingIfOwned();
           return;
         }
         if (combatOverRef.current || !combatActive || combatEndCheckRef.current) {
-          pendingTurnAdvanceRef.current = false;
+          clearPendingIfOwned();
           return;
         }
         const busy = isActionBusy();
@@ -8195,7 +8254,8 @@ function CombatPage({ characters = [] }) {
           (Number(current?.remainingAttacks ?? 0) || 0) > 0 &&
           current?.status !== "defeated" &&
           current?.condition !== "dying";
-        if (manualPlayerWaiting) {
+        const allowManualNoActionEndTurn = source === "manual-no-action";
+        if (manualPlayerWaiting && !allowManualNoActionEndTurn) {
           if (DEBUG_COMBAT) {
             console.warn("[END TURN BLOCKED] manual player is waiting", {
               fighter: current?.name,
@@ -8218,20 +8278,25 @@ function CombatPage({ characters = [] }) {
         clearScheduledTurn();
         // Treat immediate end-turn as "pending" until tryEndTurn advances,
         // so effect-turn-advance cannot re-schedule the same fighter mid-slice.
+        endTurnScheduleIdRef.current = scheduledEndTurnId;
         pendingTurnAdvanceRef.current = true;
         // ✅ GUARD: Check combat state before ending turn (use ref for latest state)
-        if (combatOverRef.current || !combatActive || combatEndCheckRef.current) return;
+        if (combatOverRef.current || !combatActive || combatEndCheckRef.current) {
+          clearPendingIfOwned();
+          return;
+        }
         tryEndTurn();
         return;
       }
 
       clearScheduledTurn();
+      endTurnScheduleIdRef.current = scheduledEndTurnId;
       pendingTurnAdvanceRef.current = true;
       turnTimeoutRef.current = setTimeout(() => {
         turnTimeoutRef.current = null;
         // ✅ GUARD: Check combat state in delayed callback (use ref for latest state)
         if (combatOverRef.current || !combatActive || combatEndCheckRef.current) {
-          pendingTurnAdvanceRef.current = false;
+          clearPendingIfOwned();
           return;
         }
         tryEndTurn();
@@ -13170,6 +13235,211 @@ function CombatPage({ characters = [] }) {
       });
     };
 
+    const tryPlayerPreferredFlyerFallback = (playerForTurn) => {
+      const liveFighters = fightersRef.current ?? fighters;
+      const liveIndex = turnIndexRef.current;
+      const livePlayer = liveFighters.find((f) => f.id === playerForTurn?.id);
+      const activeFighter = liveFighters?.[liveIndex];
+      const liveRemaining = Number(livePlayer?.remainingAttacks ?? 0) || 0;
+      if (
+        combatOverRef.current ||
+        combatEndCheckRef.current ||
+        !combatActiveRef.current ||
+        playerAIActionScheduledRef.current ||
+        playerAITurnTokenRef.current !== playerAITurnToken ||
+        currentTurnTokenRef.current !== capturedTurnToken ||
+        liveIndex !== startTurnIndex ||
+        activeFighter?.id !== startFighterId ||
+        (meleeRoundRef.current ?? meleeRound) !== startMeleeRound ||
+        (turnCounterRef.current ?? turnCounter) !== startTurnCounter ||
+        !livePlayer ||
+        liveRemaining <= 0
+      ) {
+        return false;
+      }
+
+      const currentPositions = pickNonEmptyObject(positionsRef.current, positions);
+      const myPos = currentPositions?.[livePlayer.id];
+      if (!myPos) return false;
+
+      const targets = liveFighters
+        .filter((f) =>
+          f.type !== livePlayer.type &&
+          canFighterAct(f) &&
+          (Number(f.currentHP ?? f.HP ?? f.hp ?? 0) > 0) &&
+          currentPositions?.[f.id]
+        )
+        .map((target) => ({
+          target,
+          distance: calculateDistance(myPos, currentPositions[target.id]),
+        }))
+        .filter((entry) => Number.isFinite(entry.distance))
+        .sort((a, b) => a.distance - b.distance);
+
+      const target = targets[0]?.target ?? null;
+      const speciesProfileForPlayer = getSpeciesProfile(livePlayer);
+      const flightPreferenceName = String(livePlayer?.species || livePlayer?.name || "").toLowerCase();
+      const isBirdLikeFlyer =
+        flightPreferenceName.includes("hawk") ||
+        flightPreferenceName.includes("eagle") ||
+        flightPreferenceName.includes("falcon") ||
+        flightPreferenceName.includes("vulture") ||
+        flightPreferenceName.includes("owl");
+      const playerCanFlyForFallback = canFly(livePlayer) || canFighterFly(livePlayer);
+      const playerAltitude = getAltitude(livePlayer) || 0;
+      const playerIsFlyingForFallback = isFlying(livePlayer) || playerAltitude > 0;
+      const playerPrefersFlight =
+        playerCanFlyForFallback &&
+        (
+          getPreferredMovementModeForAI(livePlayer, target) === "flight" ||
+          livePlayer?.movementProfile?.preferFlight === true ||
+          speciesProfileForPlayer?.preferFlight === true ||
+          speciesProfileForPlayer?.poorGroundRunner === true ||
+          isBirdLikeFlyer
+        );
+
+      if (!playerPrefersFlight) return false;
+
+      const targetPos = target ? currentPositions[target.id] : null;
+      const occupiedByOther = (x, y) =>
+        Object.entries(currentPositions || {}).some(([id, pos]) => {
+          if (id === livePlayer.id) return false;
+          const fighterAtHex = liveFighters.find((f) => f.id === id);
+          return fighterAtHex?.status !== "defeated" && pos?.x === x && pos?.y === y;
+        });
+      const findImprovingGlideStep = (fromPos, towardPos) => {
+        if (!fromPos || !towardPos) return null;
+        let nextStep = { ...fromPos };
+        for (let i = 0; i < 3; i += 1) {
+          const neighbors = (getHexNeighbors(nextStep.x, nextStep.y) || [])
+            .filter((n) =>
+              isValidPosition(n.x, n.y) &&
+              !occupiedByOther(n.x, n.y)
+            )
+            .sort((a, b) => calculateDistance(a, towardPos) - calculateDistance(b, towardPos));
+          const best = neighbors[0];
+          if (!best || calculateDistance(best, towardPos) >= calculateDistance(nextStep, towardPos)) break;
+          nextStep = best;
+        }
+        return nextStep.x !== fromPos.x || nextStep.y !== fromPos.y ? nextStep : null;
+      };
+
+      const preferredFlightAltitude =
+        Number(
+          livePlayer?.aiFlightState?.cruiseAltitudeFeet ??
+          speciesProfileForPlayer?.cruiseAltitudeFeet ??
+          livePlayer?.movementProfile?.cruiseAltitudeFeet ??
+          20
+        ) || 20;
+
+      const spendPlayerFlightAction = (updater, logMessage, endTurnDelay = 0) => {
+        playerAIActionScheduledRef.current = true;
+        commitFighters((prev) =>
+          prev.map((f) => {
+            if (f.id !== livePlayer.id) return f;
+            const remaining = Number(f.remainingAttacks ?? liveRemaining) || 0;
+            return {
+              ...updater(f),
+              remainingAttacks: Math.max(0, remaining - 1),
+            };
+          })
+        );
+        addLog(logMessage, "info");
+        processingPlayerAIRef.current = false;
+        scheduleEndTurn(endTurnDelay);
+        return true;
+      };
+
+      if (!playerIsFlyingForFallback) {
+        const takeoffStep = findImprovingGlideStep(myPos, targetPos);
+        if (takeoffStep) {
+          const basePositions = { ...currentPositions, [livePlayer.id]: { ...takeoffStep } };
+          const syncedPositions = syncCombinedPositions(liveFighters, basePositions);
+          positionsRef.current = syncedPositions;
+          setPositions(syncedPositions);
+          const takeoffGlideDistance = calculateDistance(myPos, takeoffStep);
+          return spendPlayerFlightAction(
+            (f) => ({
+              ...f,
+              isFlying: true,
+              altitude: preferredFlightAltitude,
+              altitudeFeet: preferredFlightAltitude,
+              movementMode: "flight",
+              aiFlightState: {
+                ...(f.aiFlightState || {}),
+                mode: f.aiFlightState?.mode || "cruising",
+                cruiseAltitudeFeet: preferredFlightAltitude,
+              },
+            }),
+            `🪽 ${livePlayer.name} takes flight and glides toward ${target.name}.`,
+            getMoveDurationMs(takeoffGlideDistance)
+          );
+        }
+
+        return spendPlayerFlightAction(
+          (f) => ({
+            ...f,
+            isFlying: true,
+            altitude: preferredFlightAltitude,
+            altitudeFeet: preferredFlightAltitude,
+            movementMode: "flight",
+            aiFlightState: {
+              ...(f.aiFlightState || {}),
+              mode: f.aiFlightState?.mode || "cruising",
+              cruiseAltitudeFeet: preferredFlightAltitude,
+            },
+          }),
+          `🪽 ${livePlayer.name} takes flight.`
+        );
+      }
+
+      if (!target) return false;
+      if (!targetPos) return false;
+
+      const step = findImprovingGlideStep(myPos, targetPos);
+
+      if (!step) {
+        return spendPlayerFlightAction(
+          (f) => ({
+            ...f,
+            isFlying: true,
+            altitude: Number(f.altitudeFeet ?? f.altitude ?? playerAltitude ?? preferredFlightAltitude) || preferredFlightAltitude,
+            altitudeFeet: Number(f.altitudeFeet ?? f.altitude ?? playerAltitude ?? preferredFlightAltitude) || preferredFlightAltitude,
+            movementMode: "flight",
+            aiFlightState: {
+              ...(f.aiFlightState || {}),
+              mode: f.aiFlightState?.mode || "circling",
+              cruiseAltitudeFeet: Number(f.aiFlightState?.cruiseAltitudeFeet ?? preferredFlightAltitude) || preferredFlightAltitude,
+            },
+          }),
+          `🦅 ${livePlayer.name} glides in slow circles above ${target.name}.`,
+          getMoveDurationMs(5)
+        );
+      }
+
+      const basePositions = { ...currentPositions, [livePlayer.id]: { ...step } };
+      const syncedPositions = syncCombinedPositions(liveFighters, basePositions);
+      positionsRef.current = syncedPositions;
+      setPositions(syncedPositions);
+      const playerGlideDistance = calculateDistance(myPos, step);
+      return spendPlayerFlightAction(
+        (f) => ({
+          ...f,
+          isFlying: true,
+          altitude: Number(f.altitudeFeet ?? f.altitude ?? playerAltitude ?? preferredFlightAltitude) || preferredFlightAltitude,
+          altitudeFeet: Number(f.altitudeFeet ?? f.altitude ?? playerAltitude ?? preferredFlightAltitude) || preferredFlightAltitude,
+          movementMode: "flight",
+          aiFlightState: {
+            ...(f.aiFlightState || {}),
+            mode: f.aiFlightState?.mode || "cruising",
+            cruiseAltitudeFeet: Number(f.aiFlightState?.cruiseAltitudeFeet ?? preferredFlightAltitude) || preferredFlightAltitude,
+          },
+        }),
+        `🦅 ${livePlayer.name} glides toward ${target.name} from above.`,
+        getMoveDurationMs(playerGlideDistance)
+      );
+    };
+
     const context = {
       fighters: liveFightersForPlayerAI,
       positions: positionsForAI,
@@ -13273,6 +13543,9 @@ function CombatPage({ characters = [] }) {
 
     // Reset action-scheduled marker for this AI turn
     playerAIActionScheduledRef.current = false;
+    if (tryPlayerPreferredFlyerFallback(latestPlayer)) {
+      return;
+    }
     runPlayerTurnAI(latestPlayer, context);
 
     // ✅ Invariant: player AI must spend an action OR end the turn.
@@ -13392,6 +13665,7 @@ function CombatPage({ characters = [] }) {
     MIN_COMBAT_HP,
     getFighterHP,
     getFighterMaxHP,
+    getMoveDurationMs,
     getTargetsInLine,
     aiControlEnabled,
     markFighterFledOffMap,
@@ -14385,13 +14659,15 @@ function CombatPage({ characters = [] }) {
               positionsRef.current = syncedPos;
               setPositions(syncedPos);
               addLog(`🦅 ${liveEnemy.name} glides toward ${prey.name} from above.`, "info");
+              const distanceMoved = calculateDistance(myPos, step);
               // Spend an action for the glide
               commitFighters(prev => prev.map(f => {
                 if (f.id !== liveEnemy.id) return f;
                 const ra = Number(f.remainingAttacks ?? 0) || 0;
                 return { ...f, remainingAttacks: Math.max(0, ra - 1) };
               }));
-              scheduleEndTurn();
+              processingEnemyTurnRef.current = false;
+              scheduleEndTurn(getMoveDurationMs(distanceMoved));
               return;
             } else {
               // Couldn't improve horizontal distance this action (blocked / already optimal).
@@ -14402,7 +14678,8 @@ function CombatPage({ characters = [] }) {
                 const ra = Number(f.remainingAttacks ?? 0) || 0;
                 return { ...f, remainingAttacks: Math.max(0, ra - 1) };
               }));
-              scheduleEndTurn();
+              processingEnemyTurnRef.current = false;
+              scheduleEndTurn(getMoveDurationMs(5));
               return;
             }
           }
@@ -16519,17 +16796,81 @@ function CombatPage({ characters = [] }) {
         }
       }
 
-      // For very far distances, ensure we use RUN movement type
+      const speciesProfileForMovement = getSpeciesProfile(enemy);
+      const flightPreferenceName = String(enemy?.species || enemy?.name || "").toLowerCase();
+      const isFlyingPredatorForMovement =
+        isPredBird ||
+        flightPreferenceName.includes("hawk") ||
+        flightPreferenceName.includes("eagle") ||
+        flightPreferenceName.includes("falcon") ||
+        flightPreferenceName.includes("vulture") ||
+        flightPreferenceName.includes("owl");
+      const enemyCanFlyForMovement = canFly(enemy);
+      const enemyAltitudeForMovement = getAltitude(enemy) || 0;
+      const enemyIsFlyingForMovement = isFlying(enemy) || enemyAltitudeForMovement > 0;
+      const enemyPrefersFlightMovement =
+        enemyCanFlyForMovement &&
+        (
+          getPreferredMovementModeForAI(enemy, target) === "flight" ||
+          enemy?.movementProfile?.preferFlight === true ||
+          speciesProfileForMovement?.preferFlight === true ||
+          speciesProfileForMovement?.poorGroundRunner === true ||
+          isFlyingPredatorForMovement
+        );
+      const preferredFlightAltitude =
+        Number(
+          enemy?.aiFlightState?.cruiseAltitudeFeet ??
+          speciesProfileForMovement?.cruiseAltitudeFeet ??
+          enemy?.movementProfile?.cruiseAltitudeFeet ??
+          20
+        ) || 20;
+
+      if (enemyPrefersFlightMovement && !enemyIsFlyingForMovement) {
+        if (!commitEnemyAction("TAKE_FLIGHT")) return;
+        commitFighters(prev => prev.map(f => {
+          if (f.id !== enemy.id) return f;
+          return {
+            ...f,
+            isFlying: true,
+            altitude: preferredFlightAltitude,
+            altitudeFeet: preferredFlightAltitude,
+            movementMode: "flight",
+            aiFlightState: {
+              ...(f.aiFlightState || {}),
+              mode: f.aiFlightState?.mode || "cruising",
+              cruiseAltitudeFeet: preferredFlightAltitude,
+            },
+            remainingAttacks: Math.max(0, (f.remainingAttacks ?? 0) - 1),
+          };
+        }));
+        addLog(`🪽 ${enemy.name} takes flight.`, "info");
+        processingEnemyTurnRef.current = false;
+        scheduleEndTurn(0);
+        return;
+      }
+
+      // For very far distances, use full-speed ground run or flight.
       if (currentDistance > 20 * GRID_CONFIG.CELL_SIZE) {
-        // Far away - RUN (move at full speed)
-        movementType = MOVEMENT_ACTIONS.RUN.name;
-        movementDescription = 'runs';
+        // Far away - RUN or FLY at full speed
+        movementType = enemyPrefersFlightMovement && enemyIsFlyingForMovement ? "FLY" : MOVEMENT_ACTIONS.RUN.name;
+        movementDescription = movementType === "FLY" ? "flies" : "runs";
 
         // Use unified movement calculation
-        const maxMovementFeet = getMaxMoveFtThisAction(enemy, "Run");
+        const maxMovementFeet = getMaxMoveFtThisAction(enemy, movementType === "FLY" ? "FLY" : "Run");
         hexesToMove = Math.floor(maxMovementFeet / GRID_CONFIG.CELL_SIZE);
 
         addLog(`🏃 ${enemy.name} is very far away, ${movementDescription} at full speed (${Math.round(maxMovementFeet)}ft/action)`, "info");
+      }
+      else if (
+        enemyPrefersFlightMovement &&
+        enemyIsFlyingForMovement &&
+        movementType !== 'CHARGE'
+      ) {
+        movementType = "FLY";
+        movementDescription = "flies closer";
+        const flyCloserFeet = getMaxMoveFtThisAction(enemy, "FLY");
+        hexesToMove = Math.floor(flyCloserFeet / GRID_CONFIG.CELL_SIZE);
+        addLog(`🪽 ${enemy.name} flies closer (${aiDecision.reason})`, "info");
       }
       // else: close distance (1-3 hexes) - use default MOVE (1 hex)
 
@@ -16728,7 +17069,8 @@ function CombatPage({ characters = [] }) {
         }
       } else {
         // RUN/SPRINT: Move immediately (Palladium 1994 - no future movement)
-        if (!commitEnemyAction("RUN_TO_RANGE")) return;
+        const isFlightMovement = movementType === "FLY";
+        if (!commitEnemyAction(isFlightMovement ? "FLY_TO_RANGE" : "RUN_TO_RANGE")) return;
         const moveDistance = actualHexesToMove;
 
         // FIX: Prevent NaN by checking distance is valid
@@ -16858,15 +17200,36 @@ function CombatPage({ characters = [] }) {
 
         const distanceMoved = calculateDistance(currentPos, { x: targetX, y: targetY });
 
-        // 1994 Palladium format: RUN/SPRINT uses one action
-        const feetPerMelee = speed * 18; // Official formula
-        addLog(`🏃 ${enemy.name} uses one action to RUN (Speed ${speed} → ${feetPerMelee}ft/melee)`, "info");
-        addLog(`📍 Moves up to ${Math.round(distanceMoved)}ft toward ${target.name} → new position (${targetX},${targetY})`, "info");
+        if (isFlightMovement) {
+          const flightMove = calculateFlightMovement(enemy, enemy.attacksPerMelee || enemy.actionsPerMelee || 1);
+          const flightPerMelee = Math.round(flightMove?.feetPerMelee ?? getMaxMoveFtThisAction(enemy, "FLY"));
+          addLog(`🪽 ${enemy.name} uses one action to FLY (${flightPerMelee}ft/melee)`, "info");
+          addLog(`📍 Flies ${Math.round(distanceMoved)}ft toward ${target.name} → new position (${targetX},${targetY})`, "info");
+        } else {
+          // 1994 Palladium format: RUN/SPRINT uses one action
+          const feetPerMelee = speed * 18; // Official formula
+          addLog(`🏃 ${enemy.name} uses one action to RUN (Speed ${speed} → ${feetPerMelee}ft/melee)`, "info");
+          addLog(`📍 Moves up to ${Math.round(distanceMoved)}ft toward ${target.name} → new position (${targetX},${targetY})`, "info");
+        }
 
         // Deduct 1 action for movement
         commitFighters(prev => prev.map(f => {
           if (f.id === enemy.id) {
-            const updatedEnemy = { ...f, remainingAttacks: Math.max(0, f.remainingAttacks - 1) };
+            const preservedFlightAltitude =
+              Number(f.altitudeFeet ?? f.altitude ?? enemyAltitudeForMovement ?? preferredFlightAltitude) ||
+              preferredFlightAltitude;
+            const updatedEnemy = {
+              ...f,
+              ...(isFlightMovement
+                ? {
+                  isFlying: true,
+                  altitude: preservedFlightAltitude,
+                  altitudeFeet: preservedFlightAltitude,
+                  movementMode: "flight",
+                }
+                : {}),
+              remainingAttacks: Math.max(0, f.remainingAttacks - 1)
+            };
             addLog(`⏭️ ${enemy.name} has ${updatedEnemy.remainingAttacks} action(s) remaining this melee`, "info");
             return updatedEnemy;
           }
@@ -17210,6 +17573,22 @@ function CombatPage({ characters = [] }) {
         return;
       }
 
+      const snapshotDefinitelyPassed =
+        (Number(meleeRoundRef.current ?? meleeRound) || 0) >
+        (Number(directTurnHandoffSnapshot.meleeRound) || 0) ||
+        (Number(turnCounterRef.current ?? turnCounter) || 0) >
+        (Number(directTurnHandoffSnapshot.turnCounter) || 0);
+
+      if (!snapshotDefinitelyPassed) {
+        if (DEBUG_COMBAT) {
+          addLog?.(
+            `🚫 effect-turn-advance skipped; direct handoff snapshot still settling source=${directTurnHandoffSnapshot.source}`,
+            "warning"
+          );
+        }
+        return;
+      }
+
       directTurnHandoffSnapshotRef.current = null;
     }
 
@@ -17266,8 +17645,8 @@ function CombatPage({ characters = [] }) {
       return;
     }
 
-    // If AI is controlling this fighter, auto-select movement mode preference
-    // NOTE: We may also auto-takeoff for AI-controlled fliers (costs 1 action).
+    // If AI is controlling this fighter, auto-select movement mode preference.
+    // Actual flyer takeoff is handled inside handlePlayerAITurn so the action spend is guarded.
     let fighterForAITurn = currentFighter;
     if (aiControlEnabled && currentFighter) {
       // If there's an obvious current target, pass it so flight is preferred when target is airborne.
@@ -17289,35 +17668,6 @@ function CombatPage({ characters = [] }) {
         setPlayerMovementMode(preferred);
       }
 
-      // Optional/Recommended: If AI prefers flight, auto-takeoff immediately (spend 1 action),
-      // so the AI doesn't "stay grounded in flight mode" when it intends to solve an air problem.
-      if (
-        currentFighter.type === "player" &&
-        preferred === "flight" &&
-        canFighterFly(currentFighter) &&
-        !isFlying(currentFighter) &&
-        (getAltitude(currentFighter) || 0) <= 0 &&
-        (currentFighter.remainingAttacks ?? 0) > 0
-      ) {
-        try {
-          const takeoff = startFlying(currentFighter, { altitude: 20 });
-          if (takeoff?.success && takeoff.fighter) {
-            const spent = 1;
-            const nextFighter = {
-              ...takeoff.fighter,
-              remainingAttacks: Math.max(
-                0,
-                Number(takeoff.fighter.remainingAttacks ?? currentFighter.remainingAttacks ?? 0) - spent
-              ),
-            };
-            setFighters((prev) => prev.map((f) => (f.id === currentFighter.id ? nextFighter : f)));
-            addLog(`🪽 ${currentFighter.name} takes off to 20ft (AI auto-takeoff)`, "info");
-            fighterForAITurn = nextFighter;
-          }
-        } catch {
-          // ignore
-        }
-      }
     }
 
     if (currentFighter.type === "player") {
@@ -19310,6 +19660,22 @@ function CombatPage({ characters = [] }) {
         }
       }
       // Clear selections and close modal
+      const liveFightersForPass = fightersRef.current ?? fighters;
+      const livePassFighter = liveFightersForPass.find((f) => f.id === currentFighter.id) ?? currentFighter;
+      const liveRemaining = Number(livePassFighter?.remainingAttacks ?? 0) || 0;
+      if (liveRemaining > 0) {
+        commitFighters((prev) =>
+          prev.map((f) => {
+            if (f.id !== currentFighter.id) return f;
+            const remaining = Number(f.remainingAttacks ?? liveRemaining) || 0;
+            return {
+              ...f,
+              remainingAttacks: Math.max(0, remaining - 1),
+            };
+          })
+        );
+        addLog(`⏭️ ${livePassFighter.name ?? currentFighter.name} passes and spends 1 action.`, "info");
+      }
       setSelectedAction(null);
       setSelectedTarget(null);
       setSelectedAttackWeapon(null);
@@ -19317,7 +19683,7 @@ function CombatPage({ characters = [] }) {
       setShowCombatChoices(false);
       closeCombatChoices(); // Also close via disclosure hook
       setTargetingMode(null);
-      scheduleEndTurn(500);
+      scheduleEndTurn(500, "manual-no-action");
       return;
     }
 
@@ -21426,6 +21792,34 @@ function CombatPage({ characters = [] }) {
               setAiControlEnabled(newValue);
               if (newValue) {
                 addLog("🤖 AI Control ENABLED - Players will be controlled by AI", "info");
+                const liveFighters = fightersRef.current ?? fighters;
+                const liveIndex = turnIndexRef.current;
+                const currentFighter = liveFighters?.[liveIndex];
+                const canResumeCurrentPlayerTurn =
+                  combatActiveRef.current &&
+                  !combatEndCheckRef.current &&
+                  !combatPausedRef.current &&
+                  currentFighter &&
+                  currentFighter.type === "player" &&
+                  (Number(currentFighter.remainingAttacks ?? 0) || 0) > 0 &&
+                  canFighterAct(currentFighter) &&
+                  !playerAITimerRef.current &&
+                  !enemyTurnTimerRef.current &&
+                  !turnStartInFlightKeyRef.current &&
+                  !pendingTurnAdvanceRef.current &&
+                  !turnTimeoutRef.current &&
+                  !turnActionResolvingRef.current &&
+                  !activeSpellImpactRef.current &&
+                  !processingPlayerAIRef.current &&
+                  !processingEnemyTurnRef.current &&
+                  !isActionBusy();
+
+                if (canResumeCurrentPlayerTurn) {
+                  if (DEBUG_COMBAT) {
+                    addLog(`🧪 AI toggle resumes current player turn: ${currentFighter.name}`, "info");
+                  }
+                  startTurnOnce(currentFighter, liveIndex, "ai-toggle-resume");
+                }
               } else {
                 if (playerAITimerRef.current) {
                   clearTimeout(playerAITimerRef.current);
