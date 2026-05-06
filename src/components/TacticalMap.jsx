@@ -33,7 +33,9 @@ const TacticalMap = ({
   positions = {},
   currentTurn = null,
   flashingCombatants: externalFlashingCombatants = null,
+  impactReactions = {},
   movementMode = { active: false, isRunning: false },
+  validMoves: externalValidMoves = null, // Optional: engine-authoritative valid moves
   dangerHexes = [],
   allowEmptyHexSelection = false,
   terrain = null,
@@ -53,6 +55,11 @@ const TacticalMap = ({
   // Hex selection callbacks
   onHoveredCellChange = null, // Callback when cell is hovered
   onSelectedHexChange = null, // Callback when hex is selected for movement
+  // Path preview props
+  pathPreviewCells = null, // Array<{x:number,y:number}> | null
+  pathPreviewMode = null, // "LANDING" | "MOVE" | null
+  // new props
+  pathPreview = null, // shape: { cells: Array<{x:number,y:number}>, isValid?: boolean }
   // Editor/Combat mode
   mode = "COMBAT", // "MAP_EDITOR" | "COMBAT"
   mapDefinition = null, // Map definition for editor mode
@@ -72,6 +79,19 @@ const TacticalMap = ({
   // ✅ Use mapType from prop, fallback to terrain.mapType, then default to hex
   const effectiveMapType = mapType ?? terrain?.mapType ?? "hex";
 
+  // Hex grid constants for flat-top tessellation (moved here early)
+  const HEX_RADIUS = GRID_CONFIG.HEX_SIZE / 2;
+  const HEX_WIDTH = Math.sqrt(3) * HEX_RADIUS;
+  const HEX_VERTICAL_SPACING = (3 / 2) * HEX_RADIUS;
+
+  // Calculate hex pixel position (proper flat-top hex tessellation)
+  // Uses correct 2D version matching 3D world space math
+  // Moved here before getCellPixelPosition uses it
+  const getHexPixelPosition = useCallback((col, row) => {
+    const x = HEX_WIDTH * (col + 0.5 * (row & 1));
+    const y = HEX_VERTICAL_SPACING * row;
+    return { x, y };
+  }, [HEX_WIDTH, HEX_VERTICAL_SPACING]);
 
   const [selectedCombatant, setSelectedCombatant] = useState(null);
   const [hoveredCell, setHoveredCell] = useState(null);
@@ -146,10 +166,101 @@ const TacticalMap = ({
     );
   }, [dangerHexes]);
 
-  // Hex grid constants for flat-top tessellation
-  const HEX_RADIUS = GRID_CONFIG.HEX_SIZE / 2;
-  const HEX_WIDTH = Math.sqrt(3) * HEX_RADIUS;
-  const HEX_VERTICAL_SPACING = (3 / 2) * HEX_RADIUS;
+  // --- Path preview render helpers ---
+  const pathPolylineRef = useRef(null);
+  const [pathTotalLen, setPathTotalLen] = useState(0);
+
+  const actionCostToColor = useCallback((n) => {
+    if (n <= 1) return "#22c55e";  // green
+    if (n === 2) return "#eab308"; // yellow
+    if (n === 3) return "#fb923c"; // orange
+    return "#ef4444";             // red
+  }, []);
+
+  // Get pixel position based on map type (moved here before getCellCenter uses it)
+  // Note: getHexPixelPosition is declared above (after HEX constants)
+  const getCellPixelPosition = useCallback((col, row) => {
+    if (effectiveMapType === "square") {
+      const size = GRID_CONFIG.HEX_SIZE * 2;
+      const x = col * size;
+      const y = row * size;
+      return { x, y };
+    } else {
+      return getHexPixelPosition(col, row);
+    }
+  }, [effectiveMapType, getHexPixelPosition]);
+
+  const getCellCenter = useCallback((col, row) => {
+    const p = getCellPixelPosition(col, row);
+    if (effectiveMapType === "square") {
+      const squareSize = GRID_CONFIG.HEX_SIZE * 2; // matches your square math
+      return { cx: p.x + squareSize / 2, cy: p.y + squareSize / 2 };
+    }
+    // hex pixel position is already "center" in your render system
+    return { cx: p.x, cy: p.y };
+  }, [effectiveMapType, getCellPixelPosition]);
+
+  const pathPoints = useMemo(() => {
+    if (!Array.isArray(pathPreviewCells) || pathPreviewCells.length < 2) return "";
+    return pathPreviewCells
+      .map(({ x, y }) => {
+        const { cx, cy } = getCellCenter(x, y);
+        return `${cx},${cy}`;
+      })
+      .join(" ");
+  }, [pathPreviewCells, getCellCenter]);
+
+  const pathEnd = useMemo(() => {
+    if (!Array.isArray(pathPreviewCells) || pathPreviewCells.length === 0) return null;
+    const last = pathPreviewCells[pathPreviewCells.length - 1];
+    const { cx, cy } = getCellCenter(last.x, last.y);
+    return { ...last, cx, cy };
+  }, [pathPreviewCells, getCellCenter]);
+
+  // infer actionCost from validMoves destination
+  const previewActionCost = useMemo(() => {
+    if (!pathEnd) return 1;
+    const vm = validMoves?.find((m) => m.x === pathEnd.x && m.y === pathEnd.y);
+    return Number(vm?.actionCost ?? 1) || 1;
+  }, [validMoves, pathEnd]);
+
+  const previewStroke = useMemo(
+    () => actionCostToColor(previewActionCost),
+    [previewActionCost, actionCostToColor]
+  );
+
+  // "danger on path" using your existing dangerHexSet
+  const dangerCellsOnPath = useMemo(() => {
+    if (!Array.isArray(pathPreviewCells) || pathPreviewCells.length === 0) return [];
+    return pathPreviewCells.filter((c) => dangerHexSet.has(`${c.x},${c.y}`));
+  }, [pathPreviewCells, dangerHexSet]);
+
+  // "occupied on path" using your getCellContentRef pipeline
+  const occupiedCellsOnPath = useMemo(() => {
+    if (!Array.isArray(pathPreviewCells) || pathPreviewCells.length === 0) return [];
+    return pathPreviewCells.slice(1).filter((c) => Boolean(getCellContentRef.current?.(c.x, c.y)));
+  }, [pathPreviewCells]);
+
+  // Update polyline length for animation (request #1)
+  useEffect(() => {
+    if (!pathPoints) {
+      setPathTotalLen(0);
+      return;
+    }
+    // Defer until the polyline is in the DOM
+    requestAnimationFrame(() => {
+      const el = pathPolylineRef.current;
+      if (!el) return;
+      try {
+        const len = el.getTotalLength();
+        if (Number.isFinite(len)) setPathTotalLen(len);
+      } catch {
+        setPathTotalLen(0);
+      }
+    });
+  }, [pathPoints]);
+
+  // Hex grid constants and getHexPixelPosition moved to top (after effectiveMapType)
 
   // Editor terrain palette
   const editorTerrainPalette = useMemo(
@@ -194,6 +305,13 @@ const TacticalMap = ({
 
   // Calculate valid movement cells when movement mode is active
   useEffect(() => {
+    // If external validMoves are provided (engine-authoritative), use them
+    if (externalValidMoves && Array.isArray(externalValidMoves)) {
+      setValidMoves(externalValidMoves);
+      return;
+    }
+
+    // Otherwise, calculate internally (fallback)
     const positionsNow = positionsRef.current;
     const combatantsNow = combatantsRef.current;
     const selectedHexNow = selectedTargetHexRef.current;
@@ -239,7 +357,7 @@ const TacticalMap = ({
         setSelectedTargetHex(null);
       }
     }
-  }, [movementMode, currentTurn, getCombatantId]);
+  }, [movementMode, currentTurn, getCombatantId, externalValidMoves]);
 
   // Clear flashing state when turn changes (only if using internal state)
   useEffect(() => {
@@ -717,24 +835,72 @@ const TacticalMap = ({
     return exploredCellsLookup.has(`${x}-${y}`);
   }, [fogEnabled, exploredCellsLookup]);
 
-  // Get visibility range in hexes based on lighting and scene setup
-  const getVisibilityRangeHexes = useCallback(() => {
-    // If Phase0PreCombatModal passed a numeric range, use it directly
+  const getBaseVisibilityRangeFeet = useCallback(() => {
     if (visibilityRange && visibilityRange > 0 && !Number.isNaN(visibilityRange)) {
-      // Each hex = 5 feet (GRID_CONFIG.CELL_SIZE)
-      const cellSize = GRID_CONFIG?.CELL_SIZE || 5;
-      return Math.max(1, Math.floor(visibilityRange / cellSize));
+      return visibilityRange;
     }
 
-    // Fallback to lighting keyword estimation
     const lightingStr = terrain?.lighting ? String(terrain.lighting).toLowerCase() : "";
-    if (lightingStr.includes("darkness") || lightingStr.includes("dark")) return 1;
-    if (lightingStr.includes("torchlight") || lightingStr.includes("torch")) return 6;
-    if (lightingStr.includes("moonlight") || lightingStr.includes("moon")) return 9;
-    if (lightingStr.includes("bright") || lightingStr.includes("daylight")) return 999;
+    if (lightingStr.includes("darkness") || lightingStr.includes("dark")) return 5;
+    if (lightingStr.includes("torchlight") || lightingStr.includes("torch")) return 30;
+    if (lightingStr.includes("moonlight") || lightingStr.includes("moon")) return 45;
+    if (lightingStr.includes("bright") || lightingStr.includes("daylight")) return 999 * (GRID_CONFIG?.CELL_SIZE || 5);
 
-    return 6; // Default visibility range
+    return 30;
   }, [visibilityRange, terrain]);
+
+  // Get visibility range in hexes based on lighting and scene setup
+  const getVisibilityRangeHexes = useCallback(() => {
+    const cellSize = GRID_CONFIG?.CELL_SIZE || 5;
+    return Math.max(1, Math.floor(getBaseVisibilityRangeFeet() / cellSize));
+  }, [getBaseVisibilityRangeFeet]);
+
+  const getCombatantVisibilityRangeHexes = useCallback((combatant) => {
+    const cellSize = GRID_CONFIG?.CELL_SIZE || 5;
+    const baseFeet = getBaseVisibilityRangeFeet();
+    const enhancedFeet = Math.max(
+      baseFeet,
+      Number(combatant?.nightvisionRange) || 0,
+    );
+    return Math.max(1, Math.floor(enhancedFeet / cellSize));
+  }, [getBaseVisibilityRangeFeet]);
+
+  const canDetectEnemyBySound = useCallback((player, enemy, distanceInFeet) => {
+    const terrainType = String(
+      terrain?.terrain || terrain?.baseTerrain || ""
+    ).toUpperCase();
+    const playerME =
+      Number(player?.attributes?.ME) ||
+      Number(player?.ME) ||
+      Number(player?.me) ||
+      10;
+    const detectAmbushSkill = Number(player?.detectAmbushSkill) || 0;
+    const enemyProwling = Boolean(
+      enemy?.isProwling || enemy?.hidden || enemy?.prowlState?.hidden
+    );
+    const enemyProwlSkill = Number(enemy?.prowlSkill) || 0;
+
+    let soundRange = 25;
+    soundRange += Math.floor(Math.max(0, playerME - 10) / 4) * 5;
+    soundRange += Math.floor(detectAmbushSkill / 20) * 5;
+    if (player?.hasSpecialSenses) soundRange += 5;
+    if (!enemyProwling) soundRange += 10;
+    else soundRange -= Math.min(15, Math.floor(enemyProwlSkill / 20) * 5);
+
+    if (terrainType.includes("CAVE") || terrainType.includes("STONE")) {
+      soundRange += 15;
+    } else if (
+      terrainType.includes("SNOW") ||
+      terrainType.includes("MOSS")
+    ) {
+      soundRange -= 10;
+    } else if (terrainType.includes("FOREST")) {
+      soundRange -= 5;
+    }
+
+    soundRange = Math.max(10, Math.min(soundRange, 80));
+    return distanceInFeet <= soundRange;
+  }, [terrain]);
 
   // Calculate player visibility gradient
   // Returns 0 (at player position, transparent) to 1 (far away, full fog)
@@ -743,10 +909,10 @@ const TacticalMap = ({
     if (!fogEnabled || !combatants || !positions) return 1;
 
     // Get visibility range based on current lighting and scene setup
-    const maxDistance = getVisibilityRangeHexes();
+    const baseMaxDistance = getVisibilityRangeHexes();
 
     // Bright daylight = completely transparent everywhere
-    if (maxDistance >= 999) {
+    if (baseMaxDistance >= 999) {
       return 0; // Completely transparent in daylight
     }
 
@@ -764,17 +930,19 @@ const TacticalMap = ({
       const playerPos = positions[getCombatantId(player)];
       if (playerPos) {
         const distance = Math.max(Math.abs(x - playerPos.x), Math.abs(y - playerPos.y));
+        const playerRange = getCombatantVisibilityRangeHexes(player);
+        if (distance > playerRange) return;
         minDistance = Math.min(minDistance, distance);
       }
     });
 
     if (minDistance === 0) return 0; // At player position - fully transparent
-    if (minDistance > maxDistance) return 1; // Beyond gradient range - full fog
+    if (minDistance > baseMaxDistance) return 1; // Beyond gradient range - full fog
 
     // Linear gradient from transparent (0) to fog (1)
     // For darkness (maxDistance = 1), only adjacent hexes are visible
-    return Math.min(minDistance / maxDistance, 1);
-  }, [fogEnabled, combatants, positions, getCombatantId, getVisibilityRangeHexes]);
+    return Math.min(minDistance / baseMaxDistance, 1);
+  }, [fogEnabled, combatants, positions, getCombatantId, getVisibilityRangeHexes, getCombatantVisibilityRangeHexes]);
 
   // Check if a cell is within player visibility range (for enemy visibility)
   const isWithinPlayerVisibility = useCallback((x, y) => {
@@ -802,14 +970,15 @@ const TacticalMap = ({
       const playerPos = positions[getCombatantId(player)];
       if (playerPos) {
         const distance = Math.max(Math.abs(x - playerPos.x), Math.abs(y - playerPos.y));
-        if (distance <= maxDistance) {
+        const playerRange = getCombatantVisibilityRangeHexes(player);
+        if (distance <= playerRange) {
           return true; // Within range of at least one player
         }
       }
     }
 
     return false; // Beyond all player visibility ranges
-  }, [fogEnabled, combatants, positions, getCombatantId, getVisibilityRangeHexes, terrain]);
+  }, [fogEnabled, combatants, positions, getCombatantId, getVisibilityRangeHexes, getCombatantVisibilityRangeHexes, terrain]);
 
   // Get lighting bonus/penalty from terrain system
   const getLightingModifier = useCallback((lighting) => {
@@ -950,11 +1119,6 @@ const TacticalMap = ({
       return true;
     }
 
-    // Also check if enemy is within player visibility gradient range (visual fallback)
-    if (isWithinPlayerVisibility(x, y)) {
-      return true;
-    }
-
     // ✅ In pure darkness, check sound detection
     // Get current lighting to determine if we're in pure darkness (no light source)
     const currentLighting = terrain?.lighting || terrain?.lightingData?.name || "";
@@ -983,36 +1147,8 @@ const TacticalMap = ({
         const hexDistance = calculateDistance(playerPos, { x, y });
         const distanceInFeet = hexDistance * (GRID_CONFIG?.CELL_SIZE || 5);
 
-        // Sound detection range in darkness
-        // Default: 30-60 feet depending on terrain (echoing caves amplify, muffling terrain reduces)
-        // TODO: Use detectBySound() with actual sound detection rolls based on:
-        // - Player's hearing ability
-        // - Enemy's noise level (armor, movement, failed Prowl)
-        // - Environmental modifiers (terrain, weather)
-        // - Distance penalties
-        // For now, use a simple range check that can be heard in darkness
-
-        // Base sound detection range: 30-60 feet for most scenarios
-        // Amplifying terrain (caves, stone) increases range
-        // Muffling terrain (snow, moss) decreases range
-        let baseSoundRange = 40; // Default 40 feet (8 hexes)
-
-        // Adjust based on terrain type (simplified - can be enhanced with getSoundModifier)
-        const terrainType = terrain?.terrain || terrain?.baseTerrain || "";
-        const terrainUpper = terrainType.toUpperCase();
-        if (terrainUpper.includes("CAVE") || terrainUpper.includes("STONE")) {
-          baseSoundRange = 60; // Echoes amplify sound
-        } else if (terrainUpper.includes("SNOW") || terrainUpper.includes("MOSS")) {
-          baseSoundRange = 30; // Muffling terrain
-        } else if (terrainUpper.includes("FOREST")) {
-          baseSoundRange = 35; // Slight muffling
-        }
-
-        // If enemy is within sound detection range, they can be heard
         // In darkness, sound detection reveals the enemy icon but hex stays dark
-        if (distanceInFeet <= baseSoundRange) {
-          // TODO: Add actual sound detection roll here using detectBySound(player, enemy, terrain, { distance: distanceInFeet })
-          // For now, if within range and in darkness, enemy is detected by sound
+        if (canDetectEnemyBySound(player, combatant, distanceInFeet)) {
           return true; // Sound detection reveals enemy in darkness
         }
       }
@@ -1020,7 +1156,7 @@ const TacticalMap = ({
 
     // Not visible by any means
     return false;
-  }, [fogEnabled, isCellVisible, isWithinPlayerVisibility, terrain, combatants, positions, getCombatantId]);
+  }, [fogEnabled, isCellVisible, terrain, combatants, positions, getCombatantId, canDetectEnemyBySound]);
 
   // Calculate visibility gradient around a visible enemy
   // Returns a value from 0 (enemy position, white) to 1 (far away, grey)
@@ -1328,13 +1464,7 @@ const TacticalMap = ({
     return null;
   };
 
-  // Calculate hex pixel position (proper flat-top hex tessellation)
-  // Uses correct 2D version matching 3D world space math
-  const getHexPixelPosition = useCallback((col, row) => {
-    const x = HEX_WIDTH * (col + 0.5 * (row & 1));
-    const y = HEX_VERTICAL_SPACING * row;
-    return { x, y };
-  }, [HEX_WIDTH, HEX_VERTICAL_SPACING]);
+  // getHexPixelPosition moved to top (after HEX constants, before getCellPixelPosition)
 
   // Generate hex points for SVG polygon (flat-top orientation)
   // Exact flat-top hex shape matching 3D geometry
@@ -1372,17 +1502,8 @@ const TacticalMap = ({
     }
   }, [effectiveMapType, getHexPoints]);
 
-  // Get pixel position based on map type
-  const getCellPixelPosition = useCallback((col, row) => {
-    if (effectiveMapType === "square") {
-      const size = GRID_CONFIG.HEX_SIZE * 2;
-      const x = col * size;
-      const y = row * size;
-      return { x, y };
-    } else {
-      return getHexPixelPosition(col, row);
-    }
-  }, [effectiveMapType, getHexPixelPosition]);
+  // getCellPixelPosition moved to top (before getCellCenter) to fix initialization order
+
 
   // Generate terrain obstacles for LOS calculations
   const terrainObstacles = useMemo(() => {
@@ -1668,7 +1789,15 @@ const TacticalMap = ({
                       }
                       return true; // Always show player names
                     })
-                    .map(c => `${c.name} ${c.isEnemy ? '(Enemy)' : '(Ally)'}`).join(', ') ||
+                    .map(c => {
+                      const tags = [
+                        c.isEnemy ? "Enemy" : "Ally",
+                        c.prowlState?.hidden ? "Hidden" : null,
+                        c.hasInfravision ? `NV ${c.nightvisionRange || 90}ft` : null,
+                        c.hasSpecialSenses ? "Special Senses" : null,
+                      ].filter(Boolean);
+                      return `${c.name} (${tags.join(", ")})`;
+                    }).join(', ') ||
                   (terrainIcon
                     ? `${terrainIcon} Obstacle - Blocks Line of Sight`
                     : `(${col}, ${row}) - ${col * GRID_CONFIG.CELL_SIZE}ft, ${row * GRID_CONFIG.CELL_SIZE}ft`)
@@ -2042,10 +2171,19 @@ const TacticalMap = ({
                 if (selectedCombatantData && !selectedCombatantData.isEnemy) {
                   const selectedPos = positions[selectedCombatant];
                   const distance = calculateDistance(selectedPos, { x: col, y: row });
+                  const selectedVisibilityFeet = Math.max(
+                    visibilityRange || 0,
+                    Number(selectedCombatantData?.nightvisionRange) || 0
+                  );
 
-                  // Show LOS range indicator up to 60 feet (typical vision range)
+                  // Show LOS range indicator up to the selected character's current vision range
                   // Only show on empty hexes (no terrain icon already)
-                  if (distance > 0 && distance <= 60 && !terrainIcon && !combatantsAtPos[0]) {
+                  if (
+                    distance > 0 &&
+                    distance <= selectedVisibilityFeet &&
+                    !terrainIcon &&
+                    !combatantsAtPos[0]
+                  ) {
                     return (
                       <circle
                         cx={centerX}
@@ -2159,9 +2297,61 @@ const TacticalMap = ({
                     // Get creature size for body part rendering
                     const creatureSize = getCreatureSize(combatant);
                     const bodyPartsEnabled = creatureSize.width > 1;
+                    const reaction = impactReactions?.[getCombatantId(combatant)] || null;
+                    const shakeDurationSeconds = Math.max(
+                      0.12,
+                      (reaction?.durationMs || 220) / 1000
+                    );
+                    const shakeMagnitude =
+                      reaction?.intensity === "heavy"
+                        ? 16
+                        : reaction?.intensity === "light"
+                          ? 6
+                          : 12;
 
                     return (
-                      <g key={getCombatantId(combatant)} opacity={1} style={{ pointerEvents: 'none' }}>
+                      <motion.g
+                        key={`${getCombatantId(combatant)}:${reaction?.id || "idle"}`}
+                        opacity={1}
+                        style={{ pointerEvents: 'none' }}
+                        initial={false}
+                        animate={
+                          reaction
+                            ? {
+                                x: [
+                                  0,
+                                  -shakeMagnitude,
+                                  shakeMagnitude,
+                                  -shakeMagnitude * 0.9,
+                                  shakeMagnitude * 0.9,
+                                  -shakeMagnitude * 0.65,
+                                  shakeMagnitude * 0.45,
+                                  -shakeMagnitude * 0.22,
+                                  0,
+                                ],
+                                y: [
+                                  0,
+                                  shakeMagnitude * 0.28,
+                                  -shakeMagnitude * 0.22,
+                                  shakeMagnitude * 0.16,
+                                  -shakeMagnitude * 0.12,
+                                  shakeMagnitude * 0.06,
+                                  0,
+                                ],
+                                scale: [1, 1.18, 0.9, 1.12, 0.95, 1.04, 1],
+                              }
+                            : { x: 0, y: 0, scale: 1 }
+                        }
+                        transition={
+                          reaction
+                            ? {
+                                duration: shakeDurationSeconds,
+                                ease: "easeOut",
+                                times: [0, 0.1, 0.22, 0.36, 0.5, 0.66, 0.82, 0.92, 1],
+                              }
+                            : { duration: 0 }
+                        }
+                      >
                         {/* Head icon - main icon for all characters */}
                         {/* Add background circle for enemy sword to make it more visible over player shield */}
                         {/* Only show background circle if enemy is visible */}
@@ -2431,7 +2621,7 @@ const TacticalMap = ({
                           }
                           return null;
                         })()}
-                      </g>
+                      </motion.g>
                     );
                   }).filter(Boolean) // Remove null entries
               })()
@@ -2442,7 +2632,7 @@ const TacticalMap = ({
     }
 
     return cells;
-  }, [positions, combatants, hoveredCell, selectedCombatant, currentTurn, flashingCombatants, getCombatantsAtPosition, getCellColorCb, getCreaturePrimaryPositionCb, handleCellClick, terrain, effectiveMapType, getCellDataFromSceneCb, fogEnabled, isCellVisibleCb, isCellExploredCb, getFogOpacityCb, isEnemyVisibleCb, getCellPixelPositionCb, getCellPixelPosition, getCellShapeCb, HEX_WIDTH, activeCircles, dangerHexSet, featureColors, getCellFillCb, getTerrainIconCb, handleCellPointerDown, handleCellPointerOver, handleCellPointerUp, mode, onHoveredCellChange, selectedTargetHex, terrainColors, validMoves, getCombatantId]);
+  }, [positions, combatants, hoveredCell, selectedCombatant, currentTurn, flashingCombatants, impactReactions, getCombatantsAtPosition, getCellColorCb, getCreaturePrimaryPositionCb, handleCellClick, terrain, effectiveMapType, getCellDataFromSceneCb, fogEnabled, isCellVisibleCb, isCellExploredCb, getFogOpacityCb, isEnemyVisibleCb, getCellPixelPositionCb, getCellPixelPosition, getCellShapeCb, HEX_WIDTH, activeCircles, dangerHexSet, featureColors, getCellFillCb, getTerrainIconCb, handleCellPointerDown, handleCellPointerOver, handleCellPointerUp, mode, onHoveredCellChange, selectedTargetHex, terrainColors, validMoves, getCombatantId]);
 
   // Render grid using SVG (supports both hex and square)
   const renderGrid = () => {
@@ -2560,6 +2750,7 @@ const TacticalMap = ({
               {texturePatterns}
             </defs>
 
+
             {/* Animated Lighting filter overlay (if terrain has lighting info) - rendered FIRST so icons appear on top */}
             {terrain?.lighting && (() => {
               const lightingFilter = getLightingFilter(terrain.lighting);
@@ -2587,6 +2778,116 @@ const TacticalMap = ({
 
             {/* Render grid cells with terrain, features, and combatant icons - rendered AFTER lighting so icons are visible */}
             {renderGrid()}
+
+            {/* === Path Preview Overlay (1–4) === */}
+            {pathPoints && pathTotalLen > 0 && (
+              <g pointerEvents="none">
+                {/* dark underlay for readability */}
+                <motion.polyline
+                  points={pathPoints}
+                  fill="none"
+                  stroke="rgba(0,0,0,0.35)"
+                  strokeWidth={pathPreviewMode === "LANDING" ? 10 : 8}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ duration: 0.12 }}
+                />
+
+                {/* (1) animated draw-in */}
+                <motion.polyline
+                  ref={pathPolylineRef}
+                  points={pathPoints}
+                  fill="none"
+                  stroke={previewStroke}
+                  strokeWidth={pathPreviewMode === "LANDING" ? 5 : 4}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeDasharray={`${pathTotalLen} ${pathTotalLen}`}
+                  initial={{ strokeDashoffset: pathTotalLen }}
+                  animate={{ strokeDashoffset: 0 }}
+                  transition={{ duration: 0.22, ease: "easeOut" }}
+                  opacity={0.95}
+                />
+
+                {/* cost badge at endpoint */}
+                {pathEnd && (
+                  <g>
+                    <circle cx={pathEnd.cx} cy={pathEnd.cy} r={10} fill="rgba(255,255,255,0.85)" />
+                    <text
+                      x={pathEnd.cx}
+                      y={pathEnd.cy}
+                      textAnchor="middle"
+                      dominantBaseline="middle"
+                      fontSize="10"
+                      fontWeight="900"
+                      fill="#111827"
+                    >
+                      {previewActionCost}
+                    </text>
+                  </g>
+                )}
+
+                {/* (2) landing impact ring */}
+                {pathPreviewMode === "LANDING" && pathEnd && (
+                  <motion.circle
+                    cx={pathEnd.cx}
+                    cy={pathEnd.cy}
+                    r={8}
+                    fill="none"
+                    stroke={previewStroke}
+                    strokeWidth={3}
+                    initial={{ opacity: 0.9, r: 8 }}
+                    animate={{ opacity: [0.9, 0.0], r: [8, 28] }}
+                    transition={{ duration: 0.55, ease: "easeOut", repeat: Infinity, repeatDelay: 0.2 }}
+                  />
+                )}
+
+                {/* (4) danger markers */}
+                {dangerCellsOnPath.map((c, i) => {
+                  const { cx, cy } = getCellCenter(c.x, c.y);
+                  return (
+                    <g key={`danger-on-path-${c.x}-${c.y}-${i}`}>
+                      <circle cx={cx} cy={cy} r={6} fill="rgba(239,68,68,0.95)" />
+                      <text
+                        x={cx}
+                        y={cy}
+                        textAnchor="middle"
+                        dominantBaseline="middle"
+                        fontSize="10"
+                        fontWeight="900"
+                        fill="white"
+                      >
+                        !
+                      </text>
+                    </g>
+                  );
+                })}
+
+                {/* (4) occupancy markers */}
+                {occupiedCellsOnPath.map((c, i) => {
+                  const { cx, cy } = getCellCenter(c.x, c.y);
+                  return (
+                    <g key={`occ-on-path-${c.x}-${c.y}-${i}`}>
+                      <rect x={cx - 6} y={cy - 6} width={12} height={12} rx={2} fill="rgba(59,130,246,0.95)" />
+                      <text
+                        x={cx}
+                        y={cy}
+                        textAnchor="middle"
+                        dominantBaseline="middle"
+                        fontSize="9"
+                        fontWeight="900"
+                        fill="white"
+                      >
+                        X
+                      </text>
+                    </g>
+                  );
+                })}
+              </g>
+            )}
+            {/* === End Path Preview Overlay === */}
 
             {/* MAP_EDITOR mode: Editor overlay */}
             {mode === "MAP_EDITOR" && mapDefinition && (
@@ -2877,6 +3178,7 @@ TacticalMap.propTypes = {
   currentTurn: PropTypes.string,
   highlightMovement: PropTypes.bool,
   flashingCombatants: PropTypes.instanceOf(Set),
+  impactReactions: PropTypes.object,
   movementMode: PropTypes.shape({
     active: PropTypes.bool,
     isRunning: PropTypes.bool
@@ -2900,6 +3202,23 @@ TacticalMap.propTypes = {
   // Hex selection callbacks
   onHoveredCellChange: PropTypes.func,
   onSelectedHexChange: PropTypes.func,
+  // Path preview props
+  pathPreviewCells: PropTypes.arrayOf(
+    PropTypes.shape({
+      x: PropTypes.number.isRequired,
+      y: PropTypes.number.isRequired,
+    })
+  ),
+  pathPreviewMode: PropTypes.oneOf(["LANDING", "MOVE"]),
+  pathPreview: PropTypes.shape({
+    cells: PropTypes.arrayOf(
+      PropTypes.shape({
+        x: PropTypes.number.isRequired,
+        y: PropTypes.number.isRequired,
+      })
+    ).isRequired,
+    isValid: PropTypes.bool,
+  }),
   onMapCellsEdit: PropTypes.func,
   // Editor/Combat mode
   mode: PropTypes.oneOf(["MAP_EDITOR", "COMBAT"]),

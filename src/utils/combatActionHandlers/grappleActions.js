@@ -13,7 +13,25 @@ import {
 import { getCombinedGrappleModifiers } from "../sizeStrengthModifiers.js";
 
 // Debug flag for grapple system
-const DEBUG_GRAPPLE = process.env.NODE_ENV === 'development' && false;
+const DEBUG_GRAPPLE = false;
+
+function revealConcealment(fighter, reason = "movement") {
+  if (!fighter) return fighter;
+  const wasHidden = !!(fighter.hidden || fighter.isProwling || fighter.prowlState?.hidden);
+  if (!wasHidden) return fighter;
+
+  return {
+    ...fighter,
+    hidden: false,
+    isProwling: false,
+    prowlState: {
+      ...(fighter.prowlState || {}),
+      hidden: false,
+      prowlSuccess: false,
+      brokenBy: reason,
+    },
+  };
+}
 
 /**
  * Handle grapple actions
@@ -39,7 +57,6 @@ export function handleGrappleAction(actionType, attacker, defenderId, context) {
     positions,
     setFighters,
     setPositions,
-    clampHP,
     getFighterHP,
     applyHPToFighter,
   } = context;
@@ -169,6 +186,26 @@ export function handleGrappleAction(actionType, attacker, defenderId, context) {
   }
   
   if (result.success) {
+    const forcedMovementAction = new Set([
+      'grapple',
+      'takedown',
+      'grapplerPushOff',
+      'defenderPushBreak',
+      'defenderReversal',
+    ]);
+    const shouldRevealForMovement =
+      forcedMovementAction.has(actionType) ||
+      Boolean(result.attacker?.hex) ||
+      Boolean(result.defender?.hex);
+    const nextAttacker =
+      shouldRevealForMovement && result.attacker
+        ? revealConcealment(result.attacker)
+        : result.attacker;
+    const nextDefender =
+      shouldRevealForMovement && result.defender
+        ? revealConcealment(result.defender)
+        : result.defender;
+
     // Log dice rolls for grapple attempts
     if (result.attackRoll !== undefined && result.defendRoll !== undefined) {
       const attackRoll = result.attackRoll;
@@ -281,20 +318,20 @@ export function handleGrappleAction(actionType, attacker, defenderId, context) {
     
     // Update fighter states - handle new format with attacker/defender objects
     setFighters(prev => prev.map(f => {
-      if (result.attacker && f.id === result.attacker.id) {
+      if (nextAttacker && f.id === nextAttacker.id) {
         // Update position/hex if grapple pulled them together
-        const updated = { ...f, ...result.attacker };
-        if (result.attacker.hex) {
-          updated.hex = result.attacker.hex;
-          updated.position = result.attacker.position || result.attacker.hex;
+        const updated = { ...f, ...nextAttacker };
+        if (nextAttacker.hex) {
+          updated.hex = nextAttacker.hex;
+          updated.position = nextAttacker.position || nextAttacker.hex;
         }
         return updated;
       }
-      if (result.defender && f.id === result.defender.id) {
-        const updated = { ...f, ...result.defender };
-        if (result.defender.hex) {
-          updated.hex = result.defender.hex;
-          updated.position = result.defender.position || result.defender.hex;
+      if (nextDefender && f.id === nextDefender.id) {
+        const updated = { ...f, ...nextDefender };
+        if (nextDefender.hex) {
+          updated.hex = nextDefender.hex;
+          updated.position = nextDefender.position || nextDefender.hex;
         }
         return updated;
       }
@@ -305,20 +342,28 @@ export function handleGrappleAction(actionType, attacker, defenderId, context) {
     }));
     
     // Update positions if grapple pulled fighters together - both fighters should be in same hex
-    if (result.attacker && result.attacker.hex) {
-      const sharedHex = result.attacker.hex;
+    if (nextAttacker && nextAttacker.hex) {
+      const sharedHex = nextAttacker.hex;
       setPositions(prev => {
         const updated = { ...prev };
         // Move attacker to shared hex
-        updated[result.attacker.id] = sharedHex;
+        updated[nextAttacker.id] = sharedHex;
         // Move defender to same shared hex (both fighters grapple in same hex)
-        if (result.defender && result.defender.id) {
-          updated[result.defender.id] = sharedHex;
+        if (nextDefender && nextDefender.id) {
+          updated[nextDefender.id] = sharedHex;
         } else if (defenderId) {
           updated[defenderId] = sharedHex;
         }
         return updated;
       });
+    }
+    if (shouldRevealForMovement) {
+      if (result.attacker && nextAttacker !== result.attacker) {
+        addLog(`👁️ ${result.attacker.name} is revealed by the grapple movement!`, "info");
+      }
+      if (result.defender && nextDefender !== result.defender) {
+        addLog(`👁️ ${result.defender.name} is revealed by the grapple movement!`, "info");
+      }
     }
   } else {
     // Safeguard against undefined reason/message

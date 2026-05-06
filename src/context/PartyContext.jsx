@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import axiosInstance from '../utils/axios';
 
 const PartyContext = createContext();
@@ -16,9 +16,16 @@ export const PartyProvider = ({ children }) => {
   const [parties, setParties] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshInterval, setRefreshInterval] = useState(null);
+  const fetchInFlightRef = useRef(false); // Track if a request is already in flight
 
   const fetchActiveParty = useCallback(async () => {
+    // Deduplication: skip if a request is already in flight
+    if (fetchInFlightRef.current) {
+      return;
+    }
+
     try {
+      fetchInFlightRef.current = true;
       const token = localStorage.getItem('token');
       if (!token) {
         setActiveParty(null);
@@ -35,6 +42,7 @@ export const PartyProvider = ({ children }) => {
       setActiveParty(null);
     } finally {
       setLoading(false);
+      fetchInFlightRef.current = false;
     }
   }, []);
 

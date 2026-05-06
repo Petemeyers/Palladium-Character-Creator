@@ -3,128 +3,99 @@
  * Selects appropriate spells for AI casters based on combat situation
  */
 
-import { isCombatSupportedSpell, getSpellCost, isHealingSpell, hasSpellDamage, isSupportSpell } from "../spellUtils.js";
+import { getFighterSpells } from "../getFighterSpells.js";
 
-export function selectAISpell(caster, spellbook, fighters, positions, lastSpellMemory = {}) {
-  if (!spellbook || spellbook.length === 0) {
-    return null;
-  }
-
-  const enemies = fighters.filter(f => f.type !== caster.type && f.currentHP > 0);
-  const allies = fighters.filter(f => f.type === caster.type && f.currentHP > 0);
-  
-  // Get current PPE
-  const currentPPE = caster.currentPPE ?? caster.PPE ?? 0;
-  
-  // Filter to combat-supported spells that the caster can afford
-  let availableSpells = spellbook.filter(spell => {
-    // Must be combat-supported
-    if (!isCombatSupportedSpell(spell)) return false;
-    
-    // Must be affordable
-    const cost = getSpellCost(spell);
-    if (cost > currentPPE) return false;
-    
-    return true;
-  });
-  
-  // Avoid repeating the same spell 3 turns in a row
-  const lastSpellName = lastSpellMemory[caster.id];
-  if (lastSpellName) {
-    // Filter out spells that were cast in the last 2 turns
-    const recentSpells = lastSpellMemory[`${caster.id}_recent`] || [];
-    availableSpells = availableSpells.filter(spell => 
-      !recentSpells.includes(spell.name)
+export function selectAISpell(
+  caster,
+  spellbook,
+  fighters,
+  positions,
+  lastSpellMemory = {}
+) {
+  // ✅ Normalize object-form call
+  if (caster && typeof caster === "object" && caster.caster && !spellbook) {
+    const ctx = caster;
+    return selectAISpell(
+      ctx.caster,
+      getFighterSpells(ctx.caster) || [],
+      ctx.fighters || [],
+      ctx.positions || {},
+      lastSpellMemory || {}
     );
-    
-    // If we filtered everything out, allow repeats (better than no spell)
-    if (availableSpells.length === 0) {
-      availableSpells = spellbook.filter(spell => {
-        if (!isCombatSupportedSpell(spell)) return false;
-        const cost = getSpellCost(spell);
-        return cost <= currentPPE;
-      });
-    }
   }
 
-  // Priority 1: Healing - if any ally is below 50% HP
-  const woundedAllies = allies.filter(a => {
-    const maxHP = a.maxHP || a.HP || a.hitPoints || 100;
-    const currentHP = a.currentHP || a.hp || 0;
-    return currentHP < maxHP / 2;
+  if (!spellbook || spellbook.length === 0) return null;
+
+  const casterPos = positions[caster.id];
+  if (!casterPos) return null;
+
+  const casterSide = caster.side ?? caster.type;
+  const enemies = fighters.filter(
+    f => f.id !== caster.id && (f.side ?? f.type) !== casterSide
+  );
+  const allies = fighters.filter(
+    f => f.id !== caster.id && (f.side ?? f.type) === casterSide
+  );
+
+  // --- helpers ---
+  const parseRangeFeet = (spell) => {
+    if (typeof spell.range === "number") return spell.range;
+    if (typeof spell.rangeFeet === "number") return spell.rangeFeet;
+
+    const raw = spell.range || spell.rangeText || "";
+    if (typeof raw !== "string") return Infinity;
+
+    if (raw.toLowerCase().includes("touch")) return 5;
+
+    const match = raw.match(/(\d+)/);
+    return match ? Number(match[1]) : Infinity;
+  };
+
+  const distFeet = (a, b) => {
+    const dx = Math.abs(a.x - b.x);
+    const dy = Math.abs(a.y - b.y);
+    const dz = Math.abs(dx + dy);
+    return Math.max(dx, dy, dz) * 5;
+  };
+
+  const isInRange = (spell, from, targets) => {
+    const r = parseRangeFeet(spell);
+    return targets.some(t => {
+      const p = positions[t.id];
+      return p && distFeet(from, p) <= r;
+    });
+  };
+
+  // --- legality filter ---
+  const legalSpells = spellbook.filter(spell => {
+    if (!spell || !spell.name) return false;
+
+    if (spell.healing) {
+      const wounded = allies.filter(a => {
+        const hp = a.currentHP ?? a.hp ?? 0;
+        const maxHp = a.maxHP ?? a.maxHp ?? a.HP ?? 100;
+        return hp < maxHp;
+      });
+      return isInRange(spell, casterPos, wounded);
+    }
+
+    if (spell.support) {
+      return isInRange(spell, casterPos, allies.concat([caster]));
+    }
+
+    return isInRange(spell, casterPos, enemies);
   });
 
-  if (woundedAllies.length > 0) {
-    // Look for healing spells from available (combat-supported) spells
-    const healingSpells = availableSpells.filter(s => isHealingSpell(s));
+  if (legalSpells.length === 0) return null;
 
-    if (healingSpells.length > 0) {
-      return healingSpells[0]; // Return first healing spell found
-    }
-  }
+  // --- simple priority pick (parse "2d6" etc. for comparison) ---
+  const avgDamage = (d) => {
+    if (typeof d === "number") return d;
+    const m = String(d || "").match(/(\d+)d(\d+)([+-]\d+)?/);
+    if (!m) return 0;
+    return (parseInt(m[1], 10) * (parseInt(m[2], 10) + 1) / 2) + (m[3] ? parseInt(m[3], 10) : 0);
+  };
+  legalSpells.sort((a, b) => avgDamage(b.damage || b.combatDamage) - avgDamage(a.damage || a.combatDamage));
 
-  // Priority 2: Control/Debuff spells - if enemies are present
-  if (enemies.length > 0) {
-    const controlSpells = availableSpells.filter(s => {
-      const name = (s.name || "").toLowerCase();
-      const desc = (s.description || "").toLowerCase();
-      return name.includes("paralyze") || name.includes("sleep") || 
-             name.includes("charm") || name.includes("hold") ||
-             name.includes("blind") || name.includes("slow") ||
-             desc.includes("paralyze") || desc.includes("stun") ||
-             s.tags?.includes("control") || s.tags?.includes("debuff");
-    });
-
-    if (controlSpells.length > 0) {
-      return controlSpells[0]; // Return first control spell found
-    }
-  }
-
-  // Priority 3: Direct damage spells - if enemies are present
-  if (enemies.length > 0) {
-    const damageSpells = availableSpells.filter(s => hasSpellDamage(s) && !isHealingSpell(s));
-
-    if (damageSpells.length > 0) {
-      // Prefer higher damage spells if available
-      const sortedByDamage = damageSpells.sort((a, b) => {
-        const aDmg = parseDamage(a.damage || a.combatDamage || "0");
-        const bDmg = parseDamage(b.damage || b.combatDamage || "0");
-        return bDmg - aDmg;
-      });
-      return sortedByDamage[0];
-    }
-  }
-
-  // Fallback: Return random spell from available (combat-supported) spells
-  if (availableSpells.length > 0) {
-    return availableSpells[Math.floor(Math.random() * availableSpells.length)];
-  }
-  
-  // Last resort: return null if no combat-supported spells available
-  return null;
+  return legalSpells[0];
 }
-
-/**
- * Parse damage string to get average damage value for comparison
- * @param {string} damageStr - Damage string like "1d6+2" or "2d4"
- * @returns {number} Average damage value
- */
-function parseDamage(damageStr) {
-  if (!damageStr || typeof damageStr !== "string") return 0;
-  
-  try {
-    // Simple parser for dice expressions like "1d6+2" or "2d4"
-    const match = damageStr.match(/(\d+)d(\d+)([+-]\d+)?/);
-    if (match) {
-      const dice = parseInt(match[1], 10);
-      const sides = parseInt(match[2], 10);
-      const bonus = match[3] ? parseInt(match[3], 10) : 0;
-      return (dice * (sides + 1) / 2) + bonus;
-    }
-  } catch (e) {
-    // Ignore parse errors
-  }
-  
-  return 0;
-}
-

@@ -32,6 +32,17 @@ export function getWeaponType(weapon) {
   // Check weapon name for keywords
   const name = (weapon.name || "").toLowerCase();
 
+  // Ranged weapons (bow, crossbow, sling) - never classify as melee SHORT/LONG
+  if (
+    name.includes("bow") ||
+    name.includes("crossbow") ||
+    name.includes("sling") ||
+    weapon.type === "ranged" ||
+    (weapon.range && typeof weapon.range === "number" && weapon.range > 10)
+  ) {
+    return "RANGED";
+  }
+
   if (
     name.includes("dagger") ||
     name.includes("knife") ||
@@ -117,6 +128,10 @@ export function getWeaponLength(weapon, character = null) {
       case "HEAVY":
         baseLength = 5;
         break;
+      case "RANGED":
+        // Use weapon range for ranged weapons, not melee length
+        baseLength = weapon.range && typeof weapon.range === "number" ? weapon.range : 100;
+        break;
       default:
         baseLength = 3;
     }
@@ -190,8 +205,8 @@ export function getCombatModifiers(
     nearbyActors = nearbyActors.filter((a) => a.id !== attacker.id);
   }
 
-  // Restrict swing space - weapon too long for available width
-  if (weaponLength > width - 1) {
+  // Restrict swing space - weapon too long for available width (melee only)
+  if (weaponType !== "RANGED" && weaponLength > width - 1) {
     mods.strike -= 1;
     mods.notes.push(`Limited clearance (${width.toFixed(1)}ft width)`);
   }
@@ -281,12 +296,20 @@ export function getCombatModifiers(
  * @returns {Object} {canUse: boolean, reason: string}
  */
 export function canUseWeapon(weapon, terrain, actors = [], options = {}) {
+  const weaponType = getWeaponType(weapon);
+
+  // Ranged weapons (bows, crossbows, slings) are not restricted by corridor width -
+  // they use weapon.range (e.g. 640ft) for getWeaponLength, which would falsely fail
+  // the width check. Corridor clearance applies to melee swing space only.
+  if (weaponType === "RANGED") {
+    return { canUse: true, reason: "Ranged weapon usable in current terrain" };
+  }
+
   const width = getDynamicWidth(terrain, actors, options);
   const height = getDynamicHeight(terrain, actors);
-  const weaponType = getWeaponType(weapon);
   const weaponLength = getWeaponLength(weapon);
 
-  // Check width restriction
+  // Check width restriction (melee only)
   if (weaponLength > width) {
     return {
       canUse: false,

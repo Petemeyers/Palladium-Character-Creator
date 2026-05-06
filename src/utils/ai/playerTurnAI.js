@@ -8,6 +8,7 @@
 
 import { isBleeding } from "../bleedingSystem.js";
 import { canFly, isFlying, getAltitude } from "../abilitySystem";
+import { formatAttacksRemaining } from "../actionEconomy.js";
 import {
   canThreatenWithMelee,
   canThreatenWithMeleeWithWeapon,
@@ -71,6 +72,39 @@ function isUndeadCreature(fighter) {
   ];
 
   return undeadKeywords.some((k) => name.includes(k) || type.includes(k));
+}
+
+function isConcealedFighter(fighter) {
+  return Boolean(
+    fighter?.hidden || fighter?.isProwling || fighter?.prowlState?.hidden
+  );
+}
+
+function stripConcealment(fighter, reason = "movement") {
+  if (!fighter || !isConcealedFighter(fighter)) return fighter;
+  return {
+    ...fighter,
+    hidden: false,
+    isProwling: false,
+    prowlState: {
+      ...(fighter.prowlState || {}),
+      hidden: false,
+      prowlSuccess: false,
+      brokenBy: reason,
+    },
+  };
+}
+
+function revealAfterObviousMovement(fighter, setFighters, addLog, detail = "moving") {
+  if (!isConcealedFighter(fighter) || typeof setFighters !== "function") return false;
+  setFighters((prev) =>
+    prev.map((f) => (f.id === fighter.id ? stripConcealment(f, "movement") : f))
+  );
+  addLog?.(
+    `👁️ ${fighter.name} reveals ${fighter.type === "enemy" ? "its" : "their"} position by ${detail}.`,
+    "info"
+  );
+  return true;
 }
 
 // --- Alignment / archetype helpers for healer AI ---
@@ -339,7 +373,7 @@ function isPotentialEscapePsionic(power = {}) {
 }
 
 // Try to escape if a good healer is outmatched in melee
-function attemptEscapeIfOutmatched({
+async function attemptEscapeIfOutmatched({
   player,
   target,
   positions,
@@ -350,8 +384,8 @@ function attemptEscapeIfOutmatched({
   addLog,
   processingPlayerAIRef,
   calculateDistance,
-  executeSpell,
   executePsionicPower,
+  startSpellAttempt,
 }) {
   if (!player || !target) return false;
   if (!positions[player.id] || !positions[target.id]) return false;
@@ -402,8 +436,7 @@ function attemptEscapeIfOutmatched({
         `🔮 ${player.name} is outmatched in melee and tries to escape with spell ${spell.name}!`,
         "info"
       );
-      if (executeSpell(player, player, spell)) {
-        processingPlayerAIRef.current = false;
+      if (await startSpellAttempt?.({ spell, spellTarget: player })) {
         return true;
       }
     }
@@ -417,7 +450,7 @@ function attemptEscapeIfOutmatched({
  * @param {Object} player - The player fighter object
  * @param {Object} context - Context object containing all necessary dependencies
  */
-export function runPlayerTurnAI(player, context) {
+export async function runPlayerTurnAI(player, context) {
   const {
     fighters,
     positions,
@@ -432,7 +465,6 @@ export function runPlayerTurnAI(player, context) {
     getHPStatus,
     addLog,
     scheduleEndTurn,
-    endTurn,
     // Distance & movement
     calculateDistance,
     isTargetBlocked,
@@ -459,16 +491,23 @@ export function runPlayerTurnAI(player, context) {
     attack,
     setPositions,
     setFighters,
-    getActionDelay,
-    arenaSpeed,
     positionsRef,
     movementAttemptsRef,
     playerAIRecentlyUsedPsionicsRef,
+    fightersRef,
     processingPlayerAIRef,
     // Player AI async guardrails (optional, provided by CombatPage)
     playerAIActionScheduledRef,
     playerAITurnTokenRef,
     playerAITurnToken,
+    spellAttemptBudgetRef,
+    pendingTurnAdvanceRef,
+    turnActionResolvingRef,
+    aiControlEnabledRef,
+    activePlayerAITurnKeysRef,
+    combatActiveRef,
+    combatOverRef,
+    turnIndexRef,
     // Spell/power utilities
     isOffensiveSpell,
     isHealingSpell,
@@ -481,6 +520,8 @@ export function runPlayerTurnAI(player, context) {
     spellCanAffectTarget,
     executeSpell,
     executePsionicPower,
+    activeSpellImpactRef,
+    turnCounterRef,
     // Weapon utilities
     getWeaponRange,
     getWeaponType,
@@ -497,14 +538,192 @@ export function runPlayerTurnAI(player, context) {
     isValidPosition,
     findBeePath,
     getTargetsInLine,
+    onNoHostilesRemaining,
   } = context;
 
+  const isPlayerAiAllowed = () => {
+    if (aiControlEnabledRef && aiControlEnabledRef.current !== true) return false;
+    if (aiControlEnabled !== true) return false;
+    if (pendingTurnAdvanceRef?.current) return false;
+    if (!tokenStillValid()) return false;
+    return true;
+  };
   const tokenStillValid = () => {
     if (!playerAITurnTokenRef || !playerAITurnToken) return true;
     return playerAITurnTokenRef.current === playerAITurnToken;
   };
+
+  const canRunPlayerAICallback = ({ token, fighterId }) => {
+    if (combatOverRef?.current) return false;
+    if (combatActiveRef?.current === false) return false;
+    if (pendingTurnAdvanceRef?.current) return false;
+    if (playerAITurnTokenRef?.current != null && token != null && playerAITurnTokenRef.current !== token) return false;
+    const curIdx = turnIndexRef?.current;
+    const curFighterId = (fightersRef?.current || fighters)?.[curIdx]?.id;
+    if (curFighterId && fighterId && curFighterId !== fighterId) return false;
+    return true;
+  };
   const markActionScheduled = () => {
     if (playerAIActionScheduledRef) playerAIActionScheduledRef.current = true;
+  };
+  const getLatestPlayerState = () =>
+    fightersRef?.current?.find((f) => f.id === player.id) ||
+    fighters.find((f) => f.id === player.id) ||
+    player;
+  const getSpellAttemptKey = (fighterId) =>
+    `${fighterId}:${playerAITurnToken ?? turnCounter ?? 0}`;
+  const getAiActionLockKey = (fighter) =>
+    [
+      fighter?.id,
+      meleeRound ?? 0,
+      turnCounter ?? 0,
+      fighter?.remainingAttacks ?? 0,
+    ].join(":");
+  const tryLockAiAction = (fighter) => {
+    if (!activePlayerAITurnKeysRef?.current || !fighter) return true;
+    const key = getAiActionLockKey(fighter);
+    if (activePlayerAITurnKeysRef.current.has(key)) {
+      console.warn("[PLAYER AI TURN BLOCKED - duplicate]", key);
+      return false;
+    }
+    activePlayerAITurnKeysRef.current.add(key);
+    return key;
+  };
+  const unlockAiAction = (key) => {
+    if (!key || key === false) return;
+    activePlayerAITurnKeysRef?.current?.delete?.(key);
+  };
+  const canTrySpellThisTurn = (fighterId) => {
+    if (!spellAttemptBudgetRef?.current) return true;
+    const key = getSpellAttemptKey(fighterId);
+    const count = Number(spellAttemptBudgetRef.current.get(key) || 0);
+    return count < 2;
+  };
+  const noteSpellAttemptForTurn = (fighterId) => {
+    if (!spellAttemptBudgetRef?.current) return 1;
+    const key = getSpellAttemptKey(fighterId);
+    const next = Number(spellAttemptBudgetRef.current.get(key) || 0) + 1;
+    spellAttemptBudgetRef.current.set(key, next);
+    // Keep the budget map bounded to recent entries.
+    if (spellAttemptBudgetRef.current.size > 80) {
+      const entries = Array.from(spellAttemptBudgetRef.current.entries()).slice(-40);
+      spellAttemptBudgetRef.current = new Map(entries);
+    }
+    return next;
+  };
+  const startSpellAttempt = async ({
+    spell,
+    spellTarget,
+    announceLog = null,
+    precheckDistance = null,
+  }) => {
+    const latestPlayer = getLatestPlayerState();
+    if (!spell || !latestPlayer) return false;
+    if (!isPlayerAiAllowed()) return false;
+    if ((latestPlayer.remainingAttacks ?? 0) <= 0) return false;
+
+    // Respect the RAW limit (enforced again inside executeSpell).
+    if ((latestPlayer.spellsCastThisMelee || 0) >= 1) return false;
+
+    if (spellTarget && precheckDistance != null && precheckDistance !== Infinity) {
+      const rangeFeet = getSpellRangeInFeet(spell);
+      if (rangeFeet !== Infinity && precheckDistance > rangeFeet) return false;
+    }
+
+    if (!canTrySpellThisTurn(latestPlayer.id)) {
+      addLog?.(`ℹ️ ${latestPlayer.name} stops spell attempts (cap reached), switching to fallback.`, "info");
+      return false;
+    }
+
+    const actionLockKey = tryLockAiAction(latestPlayer);
+    if (!actionLockKey) return false;
+    noteSpellAttemptForTurn(latestPlayer.id);
+    if (announceLog) addLog?.(announceLog, "info");
+
+    markActionScheduled();
+    const playerId = latestPlayer.id;
+    addLog?.(
+      `🧪 startSpellAttempt begin caster=${latestPlayer?.name} spell=${spell?.name}`,
+      "info"
+    );
+
+    try {
+      const result = await executeSpell(latestPlayer, spellTarget ?? latestPlayer, spell);
+      const spellSucceeded = result === true || result?.ok === true;
+      addLog?.(
+        `🧪 startSpellAttempt result spellSucceeded=${spellSucceeded} raw=${String(result)}`,
+        "info"
+      );
+
+      if (!spellSucceeded && !canTrySpellThisTurn(playerId)) {
+        addLog?.(`ℹ️ ${latestPlayer.name} spell attempts exhausted; will fallback next decision.`, "info");
+      }
+
+      if (spellSucceeded) {
+        let after = null;
+        const liveFighters = fightersRef?.current ?? fighters ?? [];
+        const updated = liveFighters.map((f) => {
+          if (f.id !== playerId) return f;
+          after = {
+            ...f,
+            remainingAttacks: Math.max(0, (f.remainingAttacks ?? 0) - 1),
+          };
+          return after;
+        });
+        setFighters(updated);
+        if (after) {
+          const attacksLeft = formatAttacksRemaining(
+            after.remainingAttacks ?? 0,
+            after.attacksPerMelee ?? after.actionsPerMelee ?? 0
+          );
+          addLog?.(`${after.name} has ${attacksLeft} remaining`, "info");
+        }
+        const pending = activeSpellImpactRef?.current;
+        const spellOwnsTurnEnd =
+          pending &&
+          pending.turnCounter === (turnCounterRef?.current ?? turnCounter) &&
+          pending.casterId === playerId;
+        if (!spellOwnsTurnEnd) {
+          scheduleEndTurn(16, "player-ai-spell-no-impact");
+        }
+      } else if (result?.consumeAction === true) {
+        addLog?.(
+          `⚠️ ${latestPlayer?.name} failed to cast ${spell?.name}; consuming action per result.`,
+          "warning"
+        );
+        setFighters((prev) =>
+          prev.map((f) =>
+            f.id === playerId
+              ? {
+                  ...f,
+                  remainingAttacks: Math.max(0, (f.remainingAttacks ?? 0) - 1),
+                }
+              : f
+          )
+        );
+        scheduleEndTurn(16, "player-ai-spell-consume");
+      } else {
+        addLog?.(
+          `⚠️ ${latestPlayer?.name} failed to cast ${spell?.name}; no action spent.`,
+          "warning"
+        );
+        scheduleEndTurn(16, "player-ai-spell-fail");
+      }
+
+      return spellSucceeded;
+    } catch (err) {
+      addLog?.(
+        `⚠️ Player AI spell failed: ${err?.message || String(err)}`,
+        "warning"
+      );
+      if (turnActionResolvingRef) turnActionResolvingRef.current = false;
+      if (pendingTurnAdvanceRef) pendingTurnAdvanceRef.current = false;
+      scheduleEndTurn(16, "player-ai-spell-catch");
+      return false;
+    } finally {
+      if (processingPlayerAIRef) processingPlayerAIRef.current = false;
+      unlockAiAction(actionLockKey);
+    }
   };
 
   // Minimal, low-noise AI trace for Ariel (opt-in).
@@ -518,6 +737,22 @@ export function runPlayerTurnAI(player, context) {
   const trace = (msg) => {
     if (dbg) addLog?.(`🧠 ArielAI: ${msg}`, "info");
   };
+
+  if (!isPlayerAiAllowed()) {
+    if (processingPlayerAIRef) processingPlayerAIRef.current = false;
+    return;
+  }
+
+  // Low-noise AI debugging (opt-in).
+  // Usage: localStorage.debugCombatAI = "1"
+  const DEBUG_AI =
+    typeof window !== "undefined" &&
+    window?.localStorage?.getItem("debugCombatAI") === "1";
+
+  const dbgLog = (msg, level = "info") => {
+    if (DEBUG_AI) addLog?.(msg, level);
+  };
+
 
   trace(
     `start | remainingAttacks=${player?.remainingAttacks ?? "?"} | enemies=${
@@ -871,6 +1106,10 @@ export function runPlayerTurnAI(player, context) {
         `exit: no visible targets | allEnemies=${allEnemies.length} | filtered=0`
       );
     } else {
+      if (onNoHostilesRemaining?.("player-no-targets")) {
+        processingPlayerAIRef.current = false;
+        return;
+      }
       addLog(`${player.name} has no targets and defends.`, "info");
       trace(`exit: no targets (all enemies defeated/removed)`);
     }
@@ -885,10 +1124,11 @@ export function runPlayerTurnAI(player, context) {
     player.class ||
     ""
   ).toLowerCase();
-  const fighterSpells = getFighterSpells(player) || [];
-  const fighterPsionics = getFighterPsionicPowers(player);
-  const ppeAvailable = getFighterPPE(player);
-  const ispAvailable = getFighterISP(player);
+  const livePlayer = getLatestPlayerState();
+  const fighterSpells = getFighterSpells(livePlayer) || [];
+  const fighterPsionics = getFighterPsionicPowers(livePlayer);
+  const ppeAvailable = getFighterPPE(livePlayer);
+  const ispAvailable = getFighterISP(livePlayer);
 
   const hasSpells = Array.isArray(fighterSpells) && fighterSpells.length > 0;
 
@@ -1022,7 +1262,7 @@ export function runPlayerTurnAI(player, context) {
     return hp / max <= 0.6;
   });
 
-  const attemptHealing = (targetsToHeal) => {
+  const attemptHealing = async (targetsToHeal) => {
     // Track which powers we've already tried this turn to prevent loops
     const triedPowers = new Set();
 
@@ -1090,8 +1330,7 @@ export function runPlayerTurnAI(player, context) {
           `💚 ${player.name} uses ${spell.name} to aid ${candidate.name}.`,
           "info"
         );
-        if (executeSpell(player, candidate, spell)) {
-          processingPlayerAIRef.current = false;
+        if (await startSpellAttempt({ spell, spellTarget: candidate })) {
           return true;
         }
       }
@@ -1161,7 +1400,7 @@ export function runPlayerTurnAI(player, context) {
     );
 
     if (outmatched) {
-      const escaped = attemptEscapeIfOutmatched({
+      const escaped = await attemptEscapeIfOutmatched({
         player,
         target: nearestEnemy,
         positions,
@@ -1172,8 +1411,8 @@ export function runPlayerTurnAI(player, context) {
         addLog,
         processingPlayerAIRef,
         calculateDistance,
-        executeSpell,
         executePsionicPower,
+        startSpellAttempt,
       });
 
       if (escaped) {
@@ -1191,7 +1430,7 @@ export function runPlayerTurnAI(player, context) {
     healingTargets.length > 0 &&
     (healingSpells.length > 0 || healingPsionics.length > 0)
   ) {
-    if (attemptHealing(healingTargets)) {
+    if (await attemptHealing(healingTargets)) {
       return;
     }
   }
@@ -1322,6 +1561,12 @@ export function runPlayerTurnAI(player, context) {
             if (positionsRef) positionsRef.current = updated;
             return updated;
           });
+          revealAfterObviousMovement(
+            fighter,
+            setFighters,
+            addLog,
+            "retreating"
+          );
         }
 
         setFighters((prev) =>
@@ -2022,8 +2267,7 @@ export function runPlayerTurnAI(player, context) {
           `🔮 ${player.name} (healer) chooses to heal ${injuredAlly.name} with ${healSpell.name}`,
           "info"
         );
-        if (executeSpell(player, injuredAlly, healSpell)) {
-          processingPlayerAIRef.current = false;
+        if (await startSpellAttempt({ spell: healSpell, spellTarget: injuredAlly })) {
           return;
         }
       }
@@ -2062,8 +2306,7 @@ export function runPlayerTurnAI(player, context) {
           `🌀 ${player.name} (healer) uses escape spell ${escape.escapeSpell.name}`,
           "info"
         );
-        if (executeSpell(player, player, escape.escapeSpell)) {
-          processingPlayerAIRef.current = false;
+        if (await startSpellAttempt({ spell: escape.escapeSpell, spellTarget: player })) {
           return;
         }
       }
@@ -2147,8 +2390,7 @@ export function runPlayerTurnAI(player, context) {
         "info"
       );
       // Self-target escape
-      if (executeSpell(player, player, escapeSpell)) {
-        processingPlayerAIRef.current = false;
+      if (await startSpellAttempt({ spell: escapeSpell, spellTarget: player })) {
         return;
       }
     }
@@ -2172,8 +2414,7 @@ export function runPlayerTurnAI(player, context) {
         `${player.name} prioritizes healing ally ${allyToHeal.name} with ${healingSpell.name}`,
         "info"
       );
-      if (executeSpell(player, allyToHeal, healingSpell)) {
-        processingPlayerAIRef.current = false;
+      if (await startSpellAttempt({ spell: healingSpell, spellTarget: allyToHeal })) {
         return;
       }
     }
@@ -2233,32 +2474,13 @@ export function runPlayerTurnAI(player, context) {
     }
   }
 
-  const attemptOffensiveSpell = (spell) => {
-    const latestPlayer = fighters.find((f) => f.id === player.id) || player;
-
-    // Respect the RAW limit (enforced again inside executeSpell). Don't even log "unleashes" if blocked.
-    if ((latestPlayer.spellsCastThisMelee || 0) >= 1) return false;
-
-    // Avoid misleading logs for obviously out-of-range spells.
-    if (target && currentDistance !== Infinity) {
-      const rangeFeet = getSpellRangeInFeet(spell);
-      if (rangeFeet !== Infinity && currentDistance > rangeFeet) return false;
-    }
-
-    addLog(
-      `🔮 ${player.name} unleashes ${spell.name} at ${target.name}!`,
-      "info"
-    );
-    // Mark immediately so CombatPage watchdog/invariant doesn't end-turn while a spell action is executing.
-    markActionScheduled();
-    const result = executeSpell(player, target, spell);
-    if (result) {
-      processingPlayerAIRef.current = false;
-      return true;
-    }
-
-    // If the spell fails (resisted/invalid/etc.), fall through so the AI can try psionics, move, or melee.
-    return false;
+  const attemptOffensiveSpell = async (spell) => {
+    return startSpellAttempt({
+      spell,
+      spellTarget: target,
+      announceLog: `🔮 ${player.name} unleashes ${spell.name} at ${target.name}!`,
+      precheckDistance: currentDistance,
+    });
   };
 
   const attemptOffensivePsionic = (power) => {
@@ -2328,20 +2550,14 @@ export function runPlayerTurnAI(player, context) {
   // Debug logging for magic-focused classes
   if (isMagicFocused) {
     if (bestOffensiveSpell) {
-      addLog(
-        `🔮 ${player.name} is magic-focused - prioritizing spell: ${bestOffensiveSpell.name}`,
-        "info"
-      );
+      dbgLog(`🔮 ${player.name} is magic-focused - prioritizing spell: ${bestOffensiveSpell.name}`, "info");
     } else {
-      addLog(
-        `🔮 ${player.name} is magic-focused but has no offensive spells available`,
-        "info"
-      );
+      dbgLog(`🔮 ${player.name} is magic-focused but has no offensive spells available`, "info");
     }
   }
 
   if (shouldUseSpell && bestOffensiveSpell) {
-    if (attemptOffensiveSpell(bestOffensiveSpell)) {
+    if (await attemptOffensiveSpell(bestOffensiveSpell)) {
       return;
     }
   }
@@ -2353,23 +2569,17 @@ export function runPlayerTurnAI(player, context) {
     // If we tried to use magic but it failed (e.g., out of range), allow movement
     // But don't fall through to melee - magic classes should use magic, not melee
     if (currentDistance > 5.5) {
-      addLog(
-        `🔮 ${player.name} is magic-focused with magic available but out of range - will move to get in range`,
-        "info"
-      );
+      dbgLog(`🔮 ${player.name} is magic-focused with magic available but out of range - will move to get in range`, "info");
       // Allow movement to continue below
     } else {
       // In melee range but magic-focused - still prefer magic over melee
-      addLog(
-        `🔮 ${player.name} is magic-focused - skipping melee in favor of magic`,
-        "info"
-      );
+      dbgLog(`🔮 ${player.name} is magic-focused - skipping melee in favor of magic`, "info");
       processingPlayerAIRef.current = false;
       scheduleEndTurn();
       return;
     }
   }
-  addLog(`🔍 ${player.name} checking weapons...`, "info");
+  dbgLog(`🔍 ${player.name} checking weapons...`, "info");
   let selectedAttack = null;
   let attackName = "Unarmed Strike";
   let selectedWeapon = null;
@@ -2383,10 +2593,7 @@ export function runPlayerTurnAI(player, context) {
 
     // Check if player has weapons in inventory/wardrobe
     const inventory = player.wardrobe || player.inventory || [];
-    addLog(
-      `🔍 ${player.name}'s inventory has ${inventory.length} items`,
-      "info"
-    );
+    dbgLog(`🔍 ${player.name}'s inventory has ${inventory.length} items`, "info");
 
     const availableWeapons = inventory.filter(
       (item) =>
@@ -2398,7 +2605,7 @@ export function runPlayerTurnAI(player, context) {
         item.name?.toLowerCase().includes("dagger")
     );
 
-    addLog(`🔍 Found ${availableWeapons.length} weapons in inventory`, "info");
+    dbgLog(`🔍 Found ${availableWeapons.length} weapons in inventory`, "info");
 
     if (availableWeapons.length > 0) {
       // Use autoEquipWeapons to properly equip weapons from inventory
@@ -2465,6 +2672,29 @@ export function runPlayerTurnAI(player, context) {
     );
   }
 
+  const isRangedLikeAttack = (attack) => {
+    const name = String(attack?.name || "").toLowerCase();
+    const type = String(attack?.type || "").toLowerCase();
+    const range =
+      typeof attack?.range === "number" ? attack.range : Number(attack?.range);
+    const category = String(attack?.category || "").toLowerCase();
+    const weaponType = String(attack?.weaponType || "").toLowerCase();
+    const attackMode = String(attack?.attackMode || "").toLowerCase();
+    return (
+      type === "ranged" ||
+      attack?.isRanged === true ||
+      attack?.isThrown === true ||
+      weaponType === "thrown" ||
+      category === "thrown" ||
+      attackMode === "thrown" ||
+      name.includes("bow") ||
+      name.includes("crossbow") ||
+      name.includes("sling") ||
+      name.includes("thrown") ||
+      (Number.isFinite(range) && range > 10)
+    );
+  };
+
   if (equippedWeapons.length > 0) {
     // Smart weapon selection based on distance to target
     // Categorize weapons by range and type
@@ -2523,8 +2753,34 @@ export function runPlayerTurnAI(player, context) {
     const reachableMelee = meleeWeapons.filter(canReachTargetWithWeapon);
     const reachableRanged = rangedWeapons.filter(canReachTargetWithWeapon);
 
-    // Prefer a melee/reach weapon if it can already hit (e.g. Fire Whip at 15ft)
-    if (currentDistance <= 20 && reachableMelee.length > 0) {
+    const adjacentToTarget = Number(currentDistance) <= 5.5;
+
+    // If an archer is trapped in melee with no melee weapon, keep the turn resolvable.
+    if (adjacentToTarget && rangedWeapons.length > 0 && meleeWeapons.length === 0) {
+      selectedWeapon = {
+        id: "fallback_unarmed_strike",
+        name: "Unarmed Strike",
+        damage: "1d3",
+        damageDice: "1d3",
+        count: 1,
+        range: 5,
+        rangeFeet: 5,
+        reachFeet: 5,
+        attackType: "melee",
+        type: "melee",
+        weaponType: "melee",
+        category: "melee",
+        isMelee: true,
+        isWeapon: false,
+        isNaturalAttack: true,
+        isFallbackUnarmed: true,
+      };
+      addLog(
+        `✊ ${player.name} is too close for ${rangedWeapons[0]?.name || "a ranged weapon"} and switches to an unarmed strike.`,
+        "info"
+      );
+    } else if (currentDistance <= 20 && reachableMelee.length > 0) {
+      // Prefer a melee/reach weapon if it can already hit (e.g. Fire Whip at 15ft)
       reachableMelee.sort(
         (a, b) =>
           Number(getWeaponRange(b) || 0) - Number(getWeaponRange(a) || 0)
@@ -2619,12 +2875,45 @@ export function runPlayerTurnAI(player, context) {
       }
     }
 
+    const isTrueRangedSelectedWeapon = (weapon) => {
+      const name = String(weapon?.name || "").toLowerCase();
+      return (
+        weapon?.type === "ranged" ||
+        weapon?.isRanged === true ||
+        weapon?.weaponType === "thrown" ||
+        weapon?.category === "thrown" ||
+        weapon?.attackMode === "thrown" ||
+        weapon?.ammunition != null ||
+        weapon?.ammoType != null ||
+        name.includes("bow") ||
+        name.includes("crossbow") ||
+        name.includes("sling") ||
+        name.includes("thrown") ||
+        Number(getWeaponRange(weapon) || 0) > 10
+      );
+    };
+
     if (selectedWeapon) {
+      const weaponRange = getWeaponRange(selectedWeapon);
       selectedAttack = {
         name: selectedWeapon.name,
+        weapon: selectedWeapon,
         damage: selectedWeapon.damage || "1d3",
         count: 1,
-        range: getWeaponRange(selectedWeapon),
+        range: weaponRange,
+        type: isTrueRangedSelectedWeapon(selectedWeapon)
+          ? "ranged"
+          : selectedWeapon.type,
+        isRanged: isTrueRangedSelectedWeapon(selectedWeapon),
+        isThrown:
+          selectedWeapon?.isThrown === true ||
+          selectedWeapon?.weaponType === "thrown" ||
+          selectedWeapon?.category === "thrown",
+        weaponType: selectedWeapon?.weaponType,
+        category: selectedWeapon?.category,
+        attackMode: selectedWeapon?.attackMode,
+        ammunition: selectedWeapon?.ammunition,
+        ammoType: selectedWeapon?.ammoType,
       };
       attackName = selectedAttack.name;
       addLog(`✅ ${player.name} will attack with ${attackName}`, "info");
@@ -2638,6 +2927,7 @@ export function runPlayerTurnAI(player, context) {
       damage: "1d3",
       count: 1,
       range: 5.5,
+      type: "melee",
     };
   }
 
@@ -2902,6 +3192,9 @@ export function runPlayerTurnAI(player, context) {
 
             // Continue with attack after movement - use updated positions from state
             setTimeout(() => {
+              if (!tokenStillValid()) return;
+              if (pendingTurnAdvanceRef?.current) return;
+              if (!combatActive) return;
               // Re-read positions from state to ensure we have the latest
               setPositions((currentPositions) => {
                 positionsRef.current = currentPositions;
@@ -2916,6 +3209,10 @@ export function runPlayerTurnAI(player, context) {
 
                 // Check range after position update
                 setTimeout(() => {
+                  void (async () => {
+                  if (!tokenStillValid()) return;
+                  if (pendingTurnAdvanceRef?.current) return;
+                  if (!combatActive) return;
                   const rangeValidation = validateWeaponRange(
                     player,
                     target,
@@ -2943,29 +3240,52 @@ export function runPlayerTurnAI(player, context) {
                       selectedAttack: selectedAttack,
                     };
                     const bonuses = flankingBonus > 0 ? { flankingBonus } : {};
-                    attack(updatedPlayer, target.id, {
-                      ...bonuses,
-                      attackerPosOverride: actualFlankPos,
-                      defenderPosOverride: actualTargetPos,
-                      distanceOverride: newDistance,
-                    });
-
-                    processingPlayerAIRef.current = false;
-                    scheduleEndTurn();
+                    if (!tokenStillValid()) return;
+                    if (pendingTurnAdvanceRef?.current) return;
+                    if (!combatActive) return;
+                    if (turnActionResolvingRef) turnActionResolvingRef.current = true;
+                    try {
+                      await attack(updatedPlayer, target.id, {
+                        ...bonuses,
+                        attackDataOverride: selectedAttack,
+                        attackerPosOverride: actualFlankPos,
+                        defenderPosOverride: actualTargetPos,
+                        distanceOverride: newDistance,
+                      });
+                    } catch (err) {
+                      console.error("[playerTurnAI] flanking attack failed:", err);
+                      addLog(
+                        `⚠️ Player AI attack failed: ${err?.message || String(err)}`,
+                        "warning"
+                      );
+                      if (turnActionResolvingRef) turnActionResolvingRef.current = false;
+                      if (pendingTurnAdvanceRef) pendingTurnAdvanceRef.current = false;
+                      scheduleEndTurn(16, "player-ai-flank-attack-catch");
+                    } finally {
+                      processingPlayerAIRef.current = false;
+                    }
                   } else {
-                    addLog(
-                      `❌ ${player.name} cannot reach ${target.name} from flanking position (${rangeValidation.reason})`,
-                      "error"
-                    );
+                    const reasonLower = String(
+                      rangeValidation.reason || ""
+                    ).toLowerCase();
+                    const isMeleeSpecificError =
+                      reasonLower.includes("melee") ||
+                      reasonLower.includes("flying too high") ||
+                      reasonLower.includes("to be reached by melee");
+                    if (
+                      !(isRangedLikeAttack(selectedAttack) && isMeleeSpecificError)
+                    ) {
+                      addLog(
+                        `❌ ${player.name} cannot reach ${target.name} from flanking position (${rangeValidation.reason})`,
+                        "error"
+                      );
+                    }
 
                     // ✅ NEW: If "dive attack required" and player is flying, skip retry loop
                     const playerIsFlying =
                       player.isFlying || (player.altitudeFeet ?? 0) > 0;
                     const targetIsFlying =
                       target.isFlying || (target.altitudeFeet ?? 0) > 0;
-                    const reasonLower = (
-                      rangeValidation.reason || ""
-                    ).toLowerCase();
                     const requiresDive =
                       reasonLower.includes("dive attack required") ||
                       reasonLower.includes("too far below");
@@ -3038,13 +3358,11 @@ export function runPlayerTurnAI(player, context) {
                           "info"
                         );
                         processingPlayerAIRef.current = false;
-                        // Use setTimeout to ensure turn actually ends
-                        setTimeout(() => {
-                          endTurn();
-                        }, 1500);
+                        scheduleEndTurn(0);
                       }
                     }, 500);
                   }
+                })();
                 }, 100);
 
                 return currentPositions; // Return unchanged since we already updated it
@@ -3385,10 +3703,17 @@ export function runPlayerTurnAI(player, context) {
             return;
           }
 
-          addLog(
-            `❌ ${player.name} still cannot reach ${target.name} for attack! (${rangeValidation.reason})`,
-            "error"
-          );
+          const reasonLower = String(rangeValidation.reason || "").toLowerCase();
+          const isMeleeSpecificError =
+            reasonLower.includes("melee") ||
+            reasonLower.includes("flying too high") ||
+            reasonLower.includes("to be reached by melee");
+          if (!(isRangedLikeAttack(selectedAttack) && isMeleeSpecificError)) {
+            addLog(
+              `❌ ${player.name} still cannot reach ${target.name} for attack! (${rangeValidation.reason})`,
+              "error"
+            );
+          }
 
           if (
             movementTracker.count >= 3 ||
@@ -3544,7 +3869,11 @@ export function runPlayerTurnAI(player, context) {
   markActionScheduled();
 
   // Create updatedPlayer with selectedAttack
-  const updatedPlayer = { ...player, selectedAttack: selectedAttack };
+  const updatedPlayer = {
+    ...player,
+    aiControlled: true,
+    selectedAttack: selectedAttack,
+  };
 
   // Execute attack after ensuring position state is updated
   const executeAttack = (flankingBonus = 0) => {
@@ -3566,22 +3895,45 @@ export function runPlayerTurnAI(player, context) {
 
         // Execute area attack on all targets in line (one action, multiple targets)
         setTimeout(() => {
-          targetsInLine.forEach((lineTarget, index) => {
-            setTimeout(() => {
-              attack(updatedPlayer, lineTarget.id, { flankingBonus });
-            }, index * 500); // Stagger attacks slightly for visual effect
-          });
-
-          processingPlayerAIRef.current = false;
-          scheduleEndTurn();
-        }, 1500);
+          void (async () => {
+            if (!canRunPlayerAICallback({ token: playerAITurnToken, fighterId: player.id })) return;
+            if (turnActionResolvingRef) turnActionResolvingRef.current = true;
+            try {
+              for (let index = 0; index < targetsInLine.length; index += 1) {
+                if (!canRunPlayerAICallback({ token: playerAITurnToken, fighterId: player.id })) break;
+                if (index > 0) {
+                  await new Promise((r) => setTimeout(r, 500));
+                }
+                const lineTarget = targetsInLine[index];
+                await attack(updatedPlayer, lineTarget.id, {
+                  flankingBonus,
+                  attackDataOverride: selectedAttack,
+                  suppressEndTurn: true,
+                });
+              }
+              scheduleEndTurn(0, "player-ai-area-line-complete");
+            } catch (err) {
+              console.error("[playerTurnAI] area line attack failed:", err);
+              addLog(
+                `⚠️ Player AI area attack failed: ${err?.message || String(err)}`,
+                "warning"
+              );
+              if (turnActionResolvingRef) turnActionResolvingRef.current = false;
+              if (pendingTurnAdvanceRef) pendingTurnAdvanceRef.current = false;
+              scheduleEndTurn(16, "player-ai-area-line-catch");
+            } finally {
+              processingPlayerAIRef.current = false;
+            }
+          })();
+        }, Math.max(500, targetsInLine.length * 400));
         return;
       }
     }
 
     // Execute attack - only ONE attack per turn
     setTimeout(() => {
-      if (!tokenStillValid()) return;
+      void (async () => {
+      if (!canRunPlayerAICallback({ token: playerAITurnToken, fighterId: player.id })) return;
       // Get current fighter state to check remaining attacks before executing
       const currentFighterState = fighters.find((f) => f.id === player.id);
 
@@ -3589,8 +3941,7 @@ export function runPlayerTurnAI(player, context) {
       if (currentFighterState && currentFighterState.remainingAttacks <= 0) {
         addLog(`⚠️ ${player.name} is out of attacks this turn!`, "warning");
         processingPlayerAIRef.current = false;
-        // Respect CombatPage turn-advance lock
-        scheduleEndTurn(500);
+        scheduleEndTurn(0);
         return;
       }
 
@@ -3602,62 +3953,69 @@ export function runPlayerTurnAI(player, context) {
           ? calculateDistance(attackerPos, defenderPos)
           : undefined;
 
-      if (!tokenStillValid()) return;
-      attack(updatedPlayer, target.id, {
-        flankingBonus,
-        attackerPosOverride: attackerPos,
-        defenderPosOverride: defenderPos,
-        distanceOverride: latestDistance,
-        // If we're melee-only and currently airborne vs a grounded target, auto-descend before the strike.
-        ...(function () {
-          const atkName = String(selectedAttack?.name || "").toLowerCase();
-          const atkType = String(selectedAttack?.type || "").toLowerCase();
-          const atkRangeNum =
-            typeof selectedAttack?.range === "number"
-              ? selectedAttack.range
-              : Number(selectedAttack?.range);
-          const isRangedLike =
-            atkType === "ranged" ||
-            atkName.includes("bow") ||
-            atkName.includes("crossbow") ||
-            atkName.includes("sling") ||
-            atkName.includes("thrown") ||
-            (Number.isFinite(atkRangeNum) && atkRangeNum > 10);
-          const attackerAlt = getAltitude(player) || 0;
-          const targetAlt = getAltitude(target) || 0;
-          const targetIsAirborne = isFlying(target) && targetAlt > 0;
-          const shouldAutoDescendForMelee =
-            !hasRangedWeapon &&
-            !isRangedLike &&
-            attackerAlt > 0 &&
-            !targetIsAirborne &&
-            targetAlt <= 5;
-          if (!shouldAutoDescendForMelee) return {};
-          if (dbg) {
-            trace(
-              `action: auto-descend before melee strike | fromAlt=${attackerAlt}ft`
-            );
-          }
-          return {
-            attackerStatePatch: {
-              altitude: 0,
-              altitudeFeet: 0,
-              isFlying: false,
-            },
-          };
-        })(),
-      });
-
-      // Only one attack per tick. Clear processing flag and advance turn.
-      const actionDelay = getActionDelay(arenaSpeed);
-      setTimeout(() => {
-        if (!tokenStillValid()) return;
+      if (!canRunPlayerAICallback({ token: playerAITurnToken, fighterId: player.id })) return;
+      if (turnActionResolvingRef) turnActionResolvingRef.current = true;
+      try {
+        await attack(updatedPlayer, target.id, {
+          flankingBonus,
+          attackDataOverride: selectedAttack,
+          attackerPosOverride: attackerPos,
+          defenderPosOverride: defenderPos,
+          distanceOverride: latestDistance,
+          // If we're melee-only and currently airborne vs a grounded target, auto-descend before the strike.
+          ...(function () {
+            const atkName = String(selectedAttack?.name || "").toLowerCase();
+            const atkType = String(selectedAttack?.type || "").toLowerCase();
+            const atkRangeNum =
+              typeof selectedAttack?.range === "number"
+                ? selectedAttack.range
+                : Number(selectedAttack?.range);
+            const isRangedLike =
+              atkType === "ranged" ||
+              atkName.includes("bow") ||
+              atkName.includes("crossbow") ||
+              atkName.includes("sling") ||
+              atkName.includes("thrown") ||
+              (Number.isFinite(atkRangeNum) && atkRangeNum > 10);
+            const attackerAlt = getAltitude(player) || 0;
+            const targetAlt = getAltitude(target) || 0;
+            const targetIsAirborne = isFlying(target) && targetAlt > 0;
+            const shouldAutoDescendForMelee =
+              !hasRangedWeapon &&
+              !isRangedLike &&
+              attackerAlt > 0 &&
+              !targetIsAirborne &&
+              targetAlt <= 5;
+            if (!shouldAutoDescendForMelee) return {};
+            if (dbg) {
+              trace(
+                `action: auto-descend before melee strike | fromAlt=${attackerAlt}ft`
+              );
+            }
+            return {
+              attackerStatePatch: {
+                altitude: 0,
+                altitudeFeet: 0,
+                isFlying: false,
+              },
+            };
+          })(),
+        });
+      } catch (err) {
+        console.error("[playerTurnAI] attack failed:", err);
+        addLog(
+          `⚠️ Player AI attack failed: ${err?.message || String(err)}`,
+          "warning"
+        );
+        if (turnActionResolvingRef) turnActionResolvingRef.current = false;
+        if (pendingTurnAdvanceRef) pendingTurnAdvanceRef.current = false;
+        scheduleEndTurn(16, "player-ai-main-attack-catch");
+      } finally {
+        // attack() schedules endTurn on success; clear processing after await returns.
         processingPlayerAIRef.current = false;
-        if (combatActive) {
-          endTurn();
-        }
-      }, actionDelay);
-    }, 1500);
+      }
+      })();
+    }, 500);
   };
 
   // Use a longer delay to ensure position state is fully updated, then execute attack

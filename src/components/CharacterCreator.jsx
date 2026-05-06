@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import PropTypes from 'prop-types';
 import '../app.css';
@@ -38,6 +38,18 @@ import { getSkillBonusesAtLevel } from '../data/skillProgression';
 import { skillBonuses as staticSkillBonuses, calculateSkillBonuses } from '../data/skillBonuses';
 import { BASE_SAVES, OCC_SAVE_MODIFIERS, getLevelSaveBonus } from '../utils/savingThrowsSystem';
 import { OCCS, ELECTIVE_SKILLS, SECONDARY_SKILLS } from '../data/occData';
+import {
+  WIZARD_COMMON_SPELL_NAMES,
+  normalizeSpellName,
+  isWizardClassName,
+  getWizardSpellProgression,
+  getWizardEligibleSpells,
+  buildWizardSpellbookForLevel,
+  createDeterministicRng,
+  normalizePPEState,
+} from '../utils/spellUtils.js';
+import HumanPreviewPanel from './creator/HumanPreviewPanel.jsx';
+import { buildHumanVisualProfile } from '../utils/visuals/buildHumanVisualProfile.js';
 
 // Function to get Mind Mage psionics based on level and psionic type
 const getMindMagePsionics = async (psionicResult, level) => {
@@ -128,6 +140,33 @@ const CharacterCreator = ({ onCreateCharacter }) => {
     elective: { count: 0, selected: [] },
     secondary: { count: 0, selected: [] }
   });
+  const [, setVisualProfile] = useState(null);
+
+  const humanStatsForVisuals = useMemo(() => {
+    const ageNum = Number(age);
+    const normalizedAge = Number.isFinite(ageNum) ? ageNum : 25;
+
+    return {
+      PS: Number(attributes.PS) || 10,
+      PP: Number(attributes.PP) || 10,
+      PE: Number(attributes.PE) || 10,
+      PB: Number(attributes.PB) || 10,
+      MA: Number(attributes.MA) || 10,
+      ME: Number(attributes.ME) || 10,
+      Spd: Number(attributes.Spd) || 10,
+      age: normalizedAge,
+    };
+  }, [attributes.MA, attributes.ME, attributes.PB, attributes.PE, attributes.PP, attributes.PS, attributes.Spd, age]);
+
+  // ---------------------------
+  // STRICT Wizard spell selection (Palladium Fantasy style)
+  // ---------------------------
+
+  const isStrictWizard = (occName) => isWizardClassName(occName);
+
+  const [wizardSpellPicks, setWizardSpellPicks] = useState({ 1: [] });
+
+  const [wizardSpellSearch, setWizardSpellSearch] = useState('');
   
   // Level-based stats
   const [levelStats, setLevelStats] = useState({
@@ -250,6 +289,44 @@ const CharacterCreator = ({ onCreateCharacter }) => {
     }
   }, [level, occData, attributes, hp, psionics, occSkills, electiveSkills, secondarySkills, useDeterministicHP]);
 
+  useEffect(() => {
+    if (!isStrictWizard(characterClass)) {
+      setWizardSpellPicks({ 1: [] });
+      setWizardSpellSearch('');
+    }
+  }, [characterClass]);
+
+  useEffect(() => {
+    if (!isStrictWizard(characterClass)) return;
+    const all = getAllSpellsFromDataset();
+    const eligible = getWizardEligibleSpells(all, Number(level) || 1);
+    const eligibleNames = new Set(eligible.map((sp) => normalizeSpellName(sp?.name)));
+    const cap = getWizardSpellProgression(Number(level) || 1).requiredPickCount;
+
+    setWizardSpellPicks((prev) => {
+      const current = prev[1] || [];
+      const filtered = current
+        .filter((nm) => eligibleNames.has(normalizeSpellName(nm)))
+        .slice(0, cap);
+      if (filtered.length === current.length && filtered.every((nm, i) => nm === current[i])) {
+        return prev;
+      }
+      return { ...prev, 1: filtered };
+    });
+  }, [characterClass, level]);
+
+  useEffect(() => {
+    if (!isStrictWizard(characterClass)) return;
+    const all = getAllSpellsFromDataset();
+    const missing = WIZARD_COMMON_SPELL_NAMES.filter(
+      (nm) => !all.some((sp) => normalizeSpellName(sp?.name) === normalizeSpellName(nm))
+    );
+    if (missing.length) {
+      console.warn('⚠️ Wizard common spells missing from dataset keys:', missing);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [characterClass]);
+
   const handleAutoRoll = async () => {
     setIsAutoRolling(true);
     let currentTotal = 0;
@@ -332,13 +409,12 @@ const CharacterCreator = ({ onCreateCharacter }) => {
 
   const getHighlightColor = (attrValue, diceRoll) => {
     const [numDice] = diceRoll.split('d').map(Number);
-    if (diceRoll.startsWith('3d6') && attrValue >= 16 && attrValue <= 18) {
+    // Bonus die rule (Palladium): only 3d6 rolls of 17-18, or 2d6 rolls of 12.
+    // No bonus die for 4d6/5d6 attributes.
+    if (diceRoll.startsWith('3d6') && (attrValue === 17 || attrValue === 18)) {
       return 'green';
-    } else if (
-      (numDice === 4 && attrValue >= 18) ||
-      (numDice === 5 && attrValue >= 24)
-    ) {
-      return 'red';
+    } else if (diceRoll.startsWith('2d6') && attrValue === 12) {
+      return 'green';
     }
     return '';
   };
@@ -358,13 +434,12 @@ const CharacterCreator = ({ onCreateCharacter }) => {
       .filter(([key]) => !key.endsWith('_highlight') && key !== 'total')
       .forEach(([attr, value]) => {
         const diceRoll = speciesData[species][attr];
-        const [numDice] = diceRoll.split('d').map(Number);
         const highlight = attributes[`${attr}_highlight`];
         
         let newValue = value;
-        if (attr !== 'Spd' && 
-            ((highlight === 'green' && numDice <= 3) || 
-             (highlight === 'red' && numDice >= 4))) {
+        // Apply bonus die only when the base roll qualified (green highlight),
+        // and never for 4d6/5d6 attributes.
+        if (attr !== 'Spd' && highlight === 'green') {
           const bonusRoll = rollDice(6, 1, useCryptoRandom);
           newValue += bonusRoll;
           bonusesApplied++;
@@ -723,6 +798,14 @@ const CharacterCreator = ({ onCreateCharacter }) => {
       alert('Please select a character class');
       return;
     }
+
+    if (isStrictWizard(characterClass)) {
+      const v = validateWizardSpellSelections();
+      if (!v.ok) {
+        alert(v.message);
+        return;
+      }
+    }
     
     if (!socialBackground || !socialBackground.trim()) {
       alert('Please enter a social background');
@@ -798,6 +881,13 @@ const CharacterCreator = ({ onCreateCharacter }) => {
         PB: Number(attributes.PB) || 3,
         Spd: Number(attributes.Spd) || 3
       };
+
+      const ageNum = Number(age);
+      const normalizedAge = Number.isFinite(ageNum) ? ageNum : 25;
+      const computedVisualProfile =
+        species === 'HUMAN'
+          ? buildHumanVisualProfile({ ...validatedAttributes, age: normalizedAge })
+          : null;
       
       // Calculate the total HP for this level (same logic as levelStats)
       const peBonus = Math.floor((validatedAttributes.PE || 0) / 4);
@@ -847,6 +937,29 @@ const CharacterCreator = ({ onCreateCharacter }) => {
         characterISP = attributes.baseISP + ((Number(level) || 1) - 1) * 10;
       }
 
+      // HARD O.C.C. GATES (prevents illegal psionics/magic on Men of Arms)
+      const occCategory = String(occData?.category || "").toLowerCase();
+      const isMenOfArms =
+        occCategory.includes("men of arms") ||
+        occCategory.includes("man of arms") ||
+        occCategory.includes("men-of-arms");
+
+      if (isMenOfArms) {
+        characterISP = 0;
+      }
+
+      const allSpells = getAllSpellsFromDataset();
+      let selectedSpells = [];
+      if (isStrictWizard(characterClass)) {
+        const chosenNames = wizardSpellPicks[1] || [];
+        const wizardBuild = buildWizardSpellbookForLevel({
+          allSpells,
+          level: Number(level) || 1,
+          pickedSpellNames: chosenNames,
+        });
+        selectedSpells = wizardBuild.spellbook;
+      }
+
       const characterData = {
         name: characterName || "Unnamed Character",
         species,
@@ -856,21 +969,46 @@ const CharacterCreator = ({ onCreateCharacter }) => {
         hp: calculatedHP, // Use calculated total HP instead of base HP
         alignment: alignment || "Neutral",
         attributes: validatedAttributes,
-        age: age || 25, // Default to number if not provided
+        age: normalizedAge,
         socialBackground: socialBackground || "Unknown",
         disposition: disposition || "Unknown",
         hostility: hostility || "Unknown",
         origin: origin || "Unknown",
         gender: normalizedGender,
-        ISP: characterISP,
-        psionicPowers: psionicPowers || [],
+        ISP: isMenOfArms ? 0 : characterISP,
+        currentISP: isMenOfArms ? 0 : characterISP,
+        psionicPowers: isMenOfArms ? [] : (psionicPowers || []),
+        spells: selectedSpells,
+        magic: [],
         occSkills: occSkills || [],
         electiveSkills: electiveSkills || [],
         secondarySkills: secondarySkills || [],
+        visualProfile: computedVisualProfile,
         // Add starting equipment using modern system
         inventory: inventory || [],
         gold: gold || 100
       };
+
+      const normalizedPPE = normalizePPEState(
+        {
+          ...characterData,
+          occ: characterData.occ || characterData.class,
+          magic: characterData.spells,
+        },
+        {
+          rollMissingLevelGains: true,
+          rng: createDeterministicRng(
+            `${characterData.name || "character"}|create|${characterData.level || 1}`
+          ),
+        }
+      );
+      characterData.PPE = normalizedPPE.PPE;
+      characterData.maxPPE = normalizedPPE.maxPPE;
+      characterData.currentPPE = normalizedPPE.currentPPE;
+      characterData.ppeType = normalizedPPE.ppeType;
+      characterData.ppeBase = normalizedPPE.ppeBase;
+      characterData.ppeLevelGainsTotal = normalizedPPE.ppeLevelGainsTotal;
+      characterData.ppeLevelGainRolls = normalizedPPE.ppeLevelGainRolls;
 
       console.log('Submitting character data for validation:', characterData);
       console.log('occ field value:', characterData.occ);
@@ -1676,6 +1814,75 @@ const CharacterCreator = ({ onCreateCharacter }) => {
       .trim();
   };
 
+  const getAllSpellsFromDataset = () => {
+    const dict = palladiumData?.spells || {};
+    if (!dict || typeof dict !== 'object') return [];
+
+    return Object.entries(dict).map(([name, data]) => ({
+      name,
+      ...(data || {})
+    }));
+  };
+
+  const getWizardSpellsByLevel = () => {
+    const all = getAllSpellsFromDataset();
+    return getWizardEligibleSpells(all, Number(level) || 1);
+  };
+
+  const getWizardPickCount = () => Object.values(wizardSpellPicks).flat().length;
+
+  const toggleWizardPick = (_lvlIgnored, spellName) => {
+    const lvl = 1;
+    const progression = getWizardSpellProgression(Number(level) || 1);
+    setWizardSpellPicks((prev) => {
+      const current = prev[lvl] || [];
+      const exists = current.some((n) => normalizeSpellName(n) === normalizeSpellName(spellName));
+
+      if (exists) {
+        return { ...prev, [lvl]: current.filter((n) => normalizeSpellName(n) !== normalizeSpellName(spellName)) };
+      }
+
+      const cap = progression.requiredPickCount;
+      if (current.length >= cap) return prev;
+
+      return { ...prev, [lvl]: [...current, spellName] };
+    });
+  };
+
+  const validateWizardSpellSelections = () => {
+    const need = getWizardSpellProgression(Number(level) || 1).requiredPickCount;
+    const have = getWizardPickCount();
+    if (have !== need) {
+      return {
+        ok: false,
+        message: `Wizard spells: Select exactly ${need} spell(s) for level ${Number(level) || 1}. (Selected ${have})`
+      };
+    }
+    return { ok: true, message: '' };
+  };
+
+  const getFinalWizardSpellbookNames = () => {
+    const allSpells = getAllSpellsFromDataset();
+    const chosen = Object.values(wizardSpellPicks).flat();
+    const result = buildWizardSpellbookForLevel({
+      allSpells,
+      level: Number(level) || 1,
+      pickedSpellNames: chosen,
+    });
+    return result.spellbook.map((sp) => sp.name);
+  };
+
+  const getFinalWizardSpellbookObjects = () => {
+    const allSpells = getAllSpellsFromDataset();
+    const chosen = Object.values(wizardSpellPicks).flat();
+    const result = buildWizardSpellbookForLevel({
+      allSpells,
+      level: Number(level) || 1,
+      pickedSpellNames: chosen,
+    });
+    return result.spellbook;
+  };
+
   // Helper function to check if a skill is already in OCC skills
   const isSkillInOccSkills = (skillName, occSkillsList) => {
     const normalized = normalizeSkillName(skillName);
@@ -2027,6 +2234,16 @@ const CharacterCreator = ({ onCreateCharacter }) => {
         </tbody>
       </table>
 
+        {species === 'HUMAN' && (
+          <section className="creation-section">
+            <h2 className="section-title">🧍 Human Visual Profile (v1)</h2>
+            <HumanPreviewPanel
+              stats={humanStatsForVisuals}
+              onVisualProfileChange={setVisualProfile}
+            />
+          </section>
+        )}
+
 
         {/* Random Rolls Section */}
         <section className="creation-section">
@@ -2175,6 +2392,162 @@ const CharacterCreator = ({ onCreateCharacter }) => {
             </div>
           </div>
           
+          {/* STRICT Wizard Spell Selection */}
+        {isStrictWizard(characterClass) && (
+          <section className="creation-section">
+            <h2 className="section-title">🔮 Wizard Spellbook (Strict)</h2>
+
+            <div style={{ background: '#f7fafc', border: '1px solid #cbd5e0', borderRadius: 8, padding: 12 }}>
+              <h3 style={{ marginTop: 0 }}>Common Knowledge (Locked)</h3>
+              <ul style={{ marginTop: 6 }}>
+                {WIZARD_COMMON_SPELL_NAMES.map((n) => (
+                  <li key={n} style={{ opacity: 0.9 }}>
+                    ✅ {n}
+                  </li>
+                ))}
+              </ul>
+
+              <div style={{ marginTop: 12 }}>
+                <label style={{ fontWeight: 'bold' }}>Search spells:</label>
+                <input
+                  type="text"
+                  value={wizardSpellSearch}
+                  onChange={(e) => setWizardSpellSearch(e.target.value)}
+                  placeholder="Type to filter by name..."
+                  className="text-input"
+                  style={{ width: '100%', marginTop: 6 }}
+                />
+              </div>
+
+              {(() => {
+                const lvl = 1;
+                const progression = getWizardSpellProgression(Number(level) || 1);
+                const cap = progression.requiredPickCount;
+                const picked = wizardSpellPicks[lvl] || [];
+                const available = getWizardSpellsByLevel(lvl).filter(
+                  (sp) => !WIZARD_COMMON_SPELL_NAMES.some((n) => normalizeSpellName(n) === normalizeSpellName(sp?.name))
+                );
+
+                const filtered = available.filter((sp) =>
+                  normalizeSpellName(sp?.name).includes(normalizeSpellName(wizardSpellSearch))
+                );
+
+                return (
+                  <div key={lvl} style={{ marginTop: 16, paddingTop: 12, borderTop: '1px solid #e2e8f0' }}>
+                    <h3 style={{ margin: 0 }}>
+                      Wizard Spells (Levels 1-{progression.maxSpellLevel}) — Selected {picked.length}/{cap}
+                    </h3>
+
+                    {filtered.length === 0 ? (
+                      <p style={{ color: '#718096', marginTop: 8 }}>
+                        No Level 1 spells found in your dataset (or none match the search).
+                      </p>
+                    ) : (
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 8, marginTop: 10 }}>
+                        {filtered.map((sp) => {
+                          const name = sp?.name || 'Unnamed Spell';
+                          const isPicked = picked.some((n) => normalizeSpellName(n) === normalizeSpellName(name));
+                          const isDisabled = !isPicked && picked.length >= cap;
+
+                          return (
+                            <button
+                              key={name}
+                              type="button"
+                              onClick={() => toggleWizardPick(1, name)}
+                              disabled={isDisabled}
+                              style={{
+                                textAlign: 'left',
+                                padding: 10,
+                                borderRadius: 8,
+                                border: isPicked ? '2px solid #48bb78' : '1px solid #cbd5e0',
+                                background: isPicked ? '#f0fff4' : 'white',
+                                opacity: isDisabled ? 0.5 : 1,
+                                cursor: isDisabled ? 'not-allowed' : 'pointer'
+                              }}
+                              title={`${sp?.description || name}\n\nRange: ${sp?.range ?? '?'}\nDuration: ${sp?.duration ?? '?'}\nPPE: ${sp?.ppe ?? '?'}`}
+                            >
+                              <div style={{ fontWeight: 'bold' }}>
+                                {isPicked ? '✅ ' : ''}{name}
+                              </div>
+                              <div style={{ fontSize: 12, color: '#4a5568', marginTop: 4 }}>
+                                PPE: {sp?.ppe ?? '?'} • Range: {sp?.range ?? '?'} • Duration: {sp?.duration ?? '?'}
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
+              <div style={{ marginTop: 14, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  onClick={() => setWizardSpellPicks({ 1: [] })}
+                  style={{
+                    padding: '10px 14px',
+                    borderRadius: 8,
+                    border: '1px solid #cbd5e0',
+                    background: 'white',
+                    cursor: 'pointer',
+                    fontWeight: 'bold'
+                  }}
+                >
+                  Reset Picks
+                </button>
+
+                <div style={{ alignSelf: 'center', color: '#2d3748' }}>
+                  Required picks at level {Number(level) || 1}: {getWizardSpellProgression(Number(level) || 1).requiredPickCount}
+                </div>
+              </div>
+
+              {/* Spellbook Summary */}
+              <div style={{ marginTop: 16, padding: 12, borderRadius: 8, border: '1px solid #cbd5e0', background: 'white' }}>
+                <h3 style={{ marginTop: 0, marginBottom: 8 }}>📚 Final Spellbook Summary</h3>
+
+                {(() => {
+                  const v = validateWizardSpellSelections();
+                  return (
+                    <div style={{ marginBottom: 10, fontWeight: 'bold', color: v.ok ? '#2f855a' : '#c53030' }}>
+                      {v.ok ? '✅ Spell selections complete (Strict)' : `⛔ ${v.message}`}
+                    </div>
+                  );
+                })()}
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 10 }}>
+                  <div>
+                    <div style={{ fontWeight: 'bold', marginBottom: 6 }}>Locked Common Spells</div>
+                    <ul style={{ margin: 0, paddingLeft: 18 }}>
+                      {WIZARD_COMMON_SPELL_NAMES.map((n) => (
+                        <li key={n}>{n}</li>
+                      ))}
+                    </ul>
+                  </div>
+
+                  <div>
+                    <div style={{ fontWeight: 'bold', marginBottom: 6 }}>Chosen Level 1 Spells</div>
+                    <ul style={{ margin: 0, paddingLeft: 18 }}>
+                      {(wizardSpellPicks[1] || []).length === 0 ? (
+                        <li style={{ color: '#718096' }}>None yet</li>
+                      ) : (
+                        (wizardSpellPicks[1] || []).map((title) => (
+                          <li key={title}>{title}</li>
+                        ))
+                      )}
+                    </ul>
+                  </div>
+                </div>
+
+                <div style={{ marginTop: 10, color: '#4a5568', fontSize: 13 }}>
+                  Total spells: <strong>{WIZARD_COMMON_SPELL_NAMES.length + (wizardSpellPicks[1]?.length || 0)}</strong>
+                  {' '}({WIZARD_COMMON_SPELL_NAMES.length} common + {(wizardSpellPicks[1]?.length || 0)} chosen)
+                </div>
+              </div>
+            </div>
+          </section>
+        )}
+
           {/* Level Stats Display - Shows below both columns */}
               {occData && (
             <div className="level-stats" style={{

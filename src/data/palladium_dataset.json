@@ -823,13 +823,126 @@
     },
   
     "spells": {
+      "Decipher Magic": {
+        "class": "Wizard",
+        "level": 1,
+        "ppe": 5,
+        "range": "Touch",
+        "duration": "Permanent",
+        "description": "Read and understand magical writings, scrolls, and wards."
+      },
+      "Sense Magic": {
+        "class": "Wizard",
+        "level": 1,
+        "ppe": 4,
+        "range": "100 ft/level",
+        "duration": "2 minutes/level",
+        "description": "Detect the presence of magic and its general type."
+      },
+      "Blinding Flash": {
+        "class": "Wizard",
+        "level": 1,
+        "ppe": 2,
+        "range": "50 ft",
+        "duration": "Instant",
+        "description": "Creates a burst of light that blinds opponents."
+      },
+      "See Aura": {
+        "class": "Wizard",
+        "level": 1,
+        "ppe": 6,
+        "range": "100 ft",
+        "duration": "2 minutes/level",
+        "description": "See the supernatural aura of creatures and magical items."
+      },
+      "Sense Evil": {
+        "class": "Wizard",
+        "level": 1,
+        "ppe": 2,
+        "range": "60 ft",
+        "duration": "2 minutes/level",
+        "description": "Detect evil intent and supernatural evil presences."
+      },
+      "Cloud of Slumber": {
+        "class": "Wizard",
+        "level": 2,
+        "ppe": 6,
+        "range": "20 ft",
+        "duration": "1 minute/level",
+        "description": "Creates a cloud that puts creatures to sleep."
+      },
+      "Globe of Daylight": {
+        "class": "Wizard",
+        "level": 2,
+        "ppe": 2,
+        "range": "Touch",
+        "duration": "10 minutes/level",
+        "description": "Creates a sphere of magical light."
+      },
+      "Mystic Shield": {
+        "class": "Wizard",
+        "level": 2,
+        "ppe": 8,
+        "range": "Self",
+        "duration": "2 minutes/level",
+        "description": "Creates a magical barrier that blocks damage."
+      },
+      "Befuddle": {
+        "class": "Wizard",
+        "level": 2,
+        "ppe": 3,
+        "range": "30 ft",
+        "duration": "1 minute/level",
+        "description": "Confuses a target, making them lose track of actions."
+      },
+      "Tongues": {
+        "class": "Wizard",
+        "level": 3,
+        "ppe": 12,
+        "range": "Self",
+        "duration": "20 minutes/level",
+        "description": "Understand and speak any language."
+      },
       "Fireball": {
         "class": "Wizard",
         "level": 3,
+        "ppe": 10,
         "range": "100 ft",
         "duration": "Instant",
         "damage": "4d6",
         "description": "Launches a ball of fire at a target."
+      },
+      "Armor of Ithan": {
+        "class": "Wizard",
+        "level": 3,
+        "ppe": 10,
+        "range": "Self",
+        "duration": "1 minute/level",
+        "description": "Creates a protective force field around the caster."
+      },
+      "Enchanted Cauldron": {
+        "class": "Wizard",
+        "level": 4,
+        "ppe": 25,
+        "range": "Touch",
+        "duration": "Permanent",
+        "description": "Creates a cauldron that purifies water and can brew potions."
+      },
+      "Charm": {
+        "class": "Wizard",
+        "level": 4,
+        "ppe": 12,
+        "range": "30 ft",
+        "duration": "Varies",
+        "description": "Makes target friendly and suggestible to the caster."
+      },
+      "Breathe Without Air": {
+        "class": "Wizard",
+        "level": 4,
+        "ppe": 6,
+        "range": "Touch",
+        "duration": "5 minutes/level",
+        "description": "Allows the target to breathe in airless environments."
       },
       "Call Lightning": {
         "class": "Warlock (Air)",
@@ -838,13 +951,6 @@
         "duration": "Instant",
         "damage": "6d6",
         "description": "Summons a bolt of lightning from the sky."
-      },
-      "Mystic Shield": {
-        "class": "Wizard",
-        "level": 2,
-        "range": "Self",
-        "duration": "2 minutes/level",
-        "description": "Creates a magical barrier that blocks damage."
       },
       "Ward of Protection": {
         "class": "Diabolist",

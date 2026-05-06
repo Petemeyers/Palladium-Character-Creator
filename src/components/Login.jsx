@@ -70,6 +70,7 @@ const Login = () => {
               onChange={handleChange}
               required
               disabled={loading}
+              autoComplete="username"
             />
           </div>
 
@@ -84,6 +85,7 @@ const Login = () => {
                 onChange={handleChange}
                 required
                 disabled={loading}
+                autoComplete="email"
               />
             </div>
           )}
@@ -98,7 +100,7 @@ const Login = () => {
               onChange={handleChange}
               required
               disabled={loading}
-              autoComplete="current-password"
+              autoComplete={isLogin ? "current-password" : "new-password"}
             />
           </div>
 

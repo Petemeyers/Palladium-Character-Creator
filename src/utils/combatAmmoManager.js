@@ -3,7 +3,7 @@
  * Handles ammunition tracking during combat
  */
 
-import { getMissileWeapon, isMissileWeapon } from "../data/missileWeapons";
+import { getMissileWeapon } from "../data/missileWeapons";
 import { getWeaponByName } from "../data/weapons.js";
 
 // Inventory item name aliases for ammo types.
@@ -202,3 +202,105 @@ export default {
   calculateRangeModifier,
   getAmmoAliases,
 };
+
+// ---------------------------
+// Compatibility exports (used by InitiativeTracker.jsx)
+// Align to existing ammoCount shape:
+// ammoCount = { [characterId]: { [ammoType]: number } }
+// ---------------------------
+
+/**
+ * useAmmo has THREE modes for backward-compat:
+ *
+ * 1) Getter mode (preferred):
+ *    useAmmo(ammoCount, actorId, ammoType) -> number|null
+ *
+ * 2) Legacy helper mode (to tolerate existing InitiativeTracker call):
+ *    useAmmo(ammoCount, setAmmoCount, actorId, ammoType) -> { current, setCurrent, spend }
+ *
+ * 3) Consume mode (legacy InitiativeTracker pattern):
+ *    useAmmo(ammoCount, actorId, ammoType, amount) -> newAmmoCount (with amount consumed)
+ */
+export function useAmmo(ammoCount, a, b, c) {
+  // Legacy helper mode: (ammoCount, setAmmoCount, actorId, ammoType)
+  if (typeof a === "function") {
+    const setAmmoCount = a;
+    const actorId = b;
+    const ammoType = c;
+
+    const current = ammoCount?.[actorId]?.[ammoType] ?? 0;
+
+    return {
+      current,
+      setCurrent: (nextVal) =>
+        setAmmoCount((prev) => setAmmo(prev, actorId, ammoType, nextVal)),
+      spend: (n = 1) =>
+        setAmmoCount((prev) => {
+          const cur = prev?.[actorId]?.[ammoType] ?? 0;
+          return setAmmo(prev, actorId, ammoType, Math.max(0, cur - Math.max(1, n)));
+        }),
+    };
+  }
+
+  // Consume mode: (ammoCount, actorId, ammoType, amount) -> newAmmoCount
+  if (typeof c === "number" && c > 0) {
+    const actorId = a;
+    const ammoType = b;
+    const amount = c;
+    
+    if (!ammoCount || !actorId || !ammoType) return ammoCount || {};
+    
+    const current = ammoCount?.[actorId]?.[ammoType] ?? 0;
+    const newCount = Math.max(0, current - amount);
+    return setAmmo(ammoCount, actorId, ammoType, newCount);
+  }
+
+  // Getter mode: (ammoCount, actorId, ammoType)
+  const actorId = a;
+  const ammoType = b;
+  if (!ammoCount || !actorId || !ammoType) return null;
+  return ammoCount?.[actorId]?.[ammoType] ?? null;
+}
+
+/**
+ * Pure update: set ammo count for actor/ammoType. Returns NEW ammoCount object.
+ */
+export function setAmmo(ammoCount, actorId, ammoType, nextCount) {
+  if (!actorId || !ammoType) return ammoCount;
+
+  const prev = ammoCount || {};
+  const prevActor = prev[actorId] || {};
+
+  const value = Number.isFinite(nextCount) ? Math.max(0, Number(nextCount)) : 0;
+
+  return {
+    ...prev,
+    [actorId]: {
+      ...prevActor,
+      [ammoType]: value,
+    },
+  };
+}
+
+/**
+ * Rebuild ammo counts from inventory (recommended "replenish" behavior).
+ * Supports two call patterns:
+ * - replenishAllAmmo(characters) -> newAmmoCount (legacy)
+ * - replenishAllAmmo(ammoCount, characters) -> newAmmoCount (preferred)
+ *
+ * replenishAllAmmo(ammoCount, fighters) -> newAmmoCount
+ */
+export function replenishAllAmmo(ammoCount, characters = null) {
+  // Legacy pattern: first arg is characters array
+  if (Array.isArray(ammoCount)) {
+    return initializeAmmo(ammoCount);
+  }
+  
+  // Preferred pattern: second arg is characters array
+  if (Array.isArray(characters)) {
+    // Your existing initializeAmmo() already calculates ammo strictly from inventory
+    return initializeAmmo(characters);
+  }
+  
+  return ammoCount || {};
+}

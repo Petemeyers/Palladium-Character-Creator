@@ -2781,7 +2781,7 @@
           "PB": "5d6",
           "Spd": "3d6"
         },
-        "preferred_weapons": "Large swords, short swords, long bows, knives, and blunt weapons",
+        "preferred_weapons": "Large swords, short swords, knives, and blunt weapons",
         "attacks": [
           {
             "name": "Weapon (preferred)",
@@ -2795,6 +2795,16 @@
         "magic": "Wizard spells (L1\u20139, as approved)",
         "psionics": "None",
         "lifeSpan": "Varies by race",
+        "visual": {
+          "modelUrl": "/assets/models/characters/human_base_morph.glb",
+          "desiredHeightFt": 6,
+          "yawOffsetDeg": 0
+        },
+        "footprint": {
+          "feet": 5,
+          "hexes": 1,
+          "radiusHex": 0
+        },
         "sources": [
           {
             "race": "annotated_rulebook.json occLimitations/favoriteWeapons"

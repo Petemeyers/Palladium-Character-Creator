@@ -338,6 +338,54 @@
       "diveBonusToStrike": 4,
       "notes": "Dominant flying predator; rarely flees, circles high above the battlefield, dive-bombing large prey with devastating attacks. Huge, four-legged; iconic as both ground terrors and fliers."
     },
+    "thunder lizard": {
+      "canSurrender": false,
+      "surrenderBias": -4,
+      "neverFlee": true,
+      "poorGroundRunner": false,
+      "aiProfile": "territorial_behemoth",
+      "routingProfile": {
+        "id": "giant_predator",
+        "triggerStyle": "monster",
+        "exitMode": "safe_distance",
+        "pathStyle": "break_contact",
+        "safeDistanceFt": 120,
+        "regroupAfterRounds": 2,
+        "canRally": true,
+        "corneredBehavior": "berserk",
+        "ignoresFormation": true,
+        "ignoresLeaderAnchor": true,
+        "avoidCrowds": true,
+        "prefersCover": false
+      },
+      "avoidLargerEnemies": false,
+      "isScavenger": false,
+      "notes": "Colossal prehistoric predator-beast. Territorial and relentless; it should not rout from bow fire or surrender like a humanoid."
+    },
+    "thunder_lizard": {
+      "canSurrender": false,
+      "surrenderBias": -4,
+      "neverFlee": true,
+      "poorGroundRunner": false,
+      "aiProfile": "territorial_behemoth",
+      "routingProfile": {
+        "id": "giant_predator",
+        "triggerStyle": "monster",
+        "exitMode": "safe_distance",
+        "pathStyle": "break_contact",
+        "safeDistanceFt": 120,
+        "regroupAfterRounds": 2,
+        "canRally": true,
+        "corneredBehavior": "berserk",
+        "ignoresFormation": true,
+        "ignoresLeaderAnchor": true,
+        "avoidCrowds": true,
+        "prefersCover": false
+      },
+      "avoidLargerEnemies": false,
+      "isScavenger": false,
+      "notes": "Alternate key for Thunder Lizard data imports."
+    },
     "pegasus": {
       "canSurrender": true,
       "surrenderBias": 0,

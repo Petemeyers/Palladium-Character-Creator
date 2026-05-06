@@ -96,7 +96,7 @@ export const STARTER_TEMPLATES = {
     wardrobe: [],
     inventory: [
       "Backpack",
-      "Bow",
+      "Long Bow",
       "Arrows (20)",
       "Arrows (20)", // Extra quiver
       "Waterskin",

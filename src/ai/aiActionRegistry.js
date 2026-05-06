@@ -1,0 +1,61 @@
+export const ACTION_TYPES = {
+  MELEE_ATTACK: "MELEE_ATTACK",
+  RANGED_ATTACK: "RANGED_ATTACK",
+  CAST_SPELL: "CAST_SPELL",
+  USE_PSIONIC: "USE_PSIONIC",
+  USE_SKILL: "USE_SKILL",
+  MOVE_TO_TARGET: "MOVE_TO_TARGET",
+  HUNT_ENEMY: "HUNT_ENEMY",
+  HUNT_REVEALED_ENEMY: "HUNT_REVEALED_ENEMY",
+  PROWL_HIDE: "PROWL_HIDE",
+  GUARD: "GUARD",
+  WARN_ALLIES: "WARN_ALLIES",
+  RETREAT: "RETREAT",
+  HELP_ALLY: "HELP_ALLY",
+  AMBUSH_ATTACK: "AMBUSH_ATTACK",
+  WAIT: "WAIT",
+};
+
+export const ACTION_COST = {
+  ATTACK: "attack",
+  FULL_ACTION: "fullAction",
+  MOVEMENT: "movement",
+  FREE: "free",
+  REACTION: "reaction",
+};
+
+export function makeAction({
+  type,
+  name,
+  actorId,
+  targetId = null,
+  targetPos = null,
+  cost = ACTION_COST.FULL_ACTION,
+  requiresRoll = false,
+  rollType = null,
+  skillName = null,
+  spell = null,
+  psionic = null,
+  tags = [],
+  baseScore = 0,
+  reason = "",
+  executePayload = {},
+}) {
+  return {
+    type,
+    name,
+    actorId,
+    targetId,
+    targetPos,
+    cost,
+    requiresRoll,
+    rollType,
+    skillName,
+    spell,
+    psionic,
+    tags,
+    baseScore,
+    reason,
+    executePayload,
+  };
+}
