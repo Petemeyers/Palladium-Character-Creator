@@ -11082,7 +11082,7 @@ function CombatPage({ characters = [] }) {
             addLog(`✨ ${defender.name} successfully parries the attack!`, "success");
 
             // Deduct one attack for the parry
-            setFighters(prev => prev.map(f =>
+            commitFighters(prev => prev.map(f =>
               f.id === defender.id
                 ? { ...f, remainingAttacks: Math.max(0, (f.remainingAttacks || 0) - 1) }
                 : f
@@ -11091,7 +11091,7 @@ function CombatPage({ characters = [] }) {
             addLog(`❌ ${defender.name}'s parry fails (${defenseRoll} < ${attackRoll}) - attack hits!`, "warning");
 
             // Deduct one attack for the failed parry attempt
-            setFighters(prev => prev.map(f =>
+            commitFighters(prev => prev.map(f =>
               f.id === defender.id
                 ? { ...f, remainingAttacks: Math.max(0, (f.remainingAttacks || 0) - 1) }
                 : f
@@ -12138,7 +12138,39 @@ function CombatPage({ characters = [] }) {
         );
       }
 
-      commitFighters(updated);
+      const impactById = new Map((updated || []).map((f) => [f.id, f]));
+      const liveFightersForSuppress = fightersRef.current || fighters || updated || [];
+      const guardedSuppressCommit = liveFightersForSuppress.map((liveFighter) => {
+        const impactFighter = impactById.get(liveFighter.id);
+        if (!impactFighter) return liveFighter;
+
+        const merged = { ...liveFighter, ...impactFighter };
+        const liveRemaining = Number(liveFighter.remainingAttacks);
+        const impactRemaining = Number(impactFighter.remainingAttacks);
+
+        if (Number.isFinite(liveRemaining) && Number.isFinite(impactRemaining)) {
+          if (
+            impactRemaining > liveRemaining &&
+            (import.meta.env?.DEV || DEBUG_COMBAT)
+          ) {
+            addLog(
+              `🧪 blocked stale suppressActionSpend remainingAttacks restore for ${liveFighter.name}: ${liveRemaining} -> ${impactRemaining}`,
+              "debug"
+            );
+          }
+          return {
+            ...merged,
+            remainingAttacks: Math.min(liveRemaining, impactRemaining),
+          };
+        }
+
+        return {
+          ...merged,
+          remainingAttacks: liveFighter.remainingAttacks,
+        };
+      });
+
+      commitFighters(guardedSuppressCommit);
 
       // Do not clear turnActionResolvingRef here — multi-strike parent still owns the action
       // until all child strikes finish and parent finalize runs.
