@@ -7026,6 +7026,18 @@ function CombatPage({ characters = [] }) {
       }
       lastPlayerAIScheduleTurnKeyRef.current = key;
       playerAITimerRef.current = setTimeout(() => {
+        const clearMatchingDirectHandoffSnapshot = (latestFighter = fighter) => {
+          const snapshot = directTurnHandoffSnapshotRef.current;
+          if (
+            snapshot &&
+            snapshot.fighterId === (latestFighter?.id ?? fighter?.id) &&
+            snapshot.turnIndex === index &&
+            snapshot.meleeRound === meleeRoundRef.current &&
+            snapshot.turnCounter === turnCounterRef.current
+          ) {
+            directTurnHandoffSnapshotRef.current = null;
+          }
+        };
         const releaseStartedTurn = () => {
           releaseTurnStart(key);
           if (lastPlayerAIScheduleTurnKeyRef.current === key) {
@@ -7037,10 +7049,36 @@ function CombatPage({ characters = [] }) {
         };
         try {
           playerAITimerRef.current = null;
+          let debugTurnFlow = false;
+          try {
+            debugTurnFlow =
+              typeof window !== "undefined" &&
+              window?.localStorage?.getItem("debugTurnFlow") === "1";
+          } catch {
+            debugTurnFlow = false;
+          }
+          const logDebugTurnStartExit = (message, details = {}) => {
+            if (!DEBUG_COMBAT && !debugTurnFlow) return;
+            addLog?.(`🧪 ${message}`, "info");
+            if (DEBUG_COMBAT) {
+              console.warn(message, details);
+            }
+          };
           const liveFighters = fightersRef.current || fighters;
           const liveIndex = turnIndexRef.current;
           const latestFighter = liveFighters?.[liveIndex];
           if (!latestFighter || latestFighter.id !== fighter.id) {
+            logDebugTurnStartExit(
+              `Player turn start skipped: stale fighter/index for ${fighter?.name}`,
+              {
+                scheduled: fighter?.name,
+                scheduledId: fighter?.id,
+                live: latestFighter?.name,
+                liveId: latestFighter?.id,
+                liveIndex,
+                reason,
+              }
+            );
             if (DEBUG_COMBAT) {
               console.warn("[TURN START BLOCKED - stale scheduled fighter]", {
                 scheduled: fighter?.name,
@@ -7051,16 +7089,27 @@ function CombatPage({ characters = [] }) {
                 reason,
               });
             }
+            clearMatchingDirectHandoffSnapshot(latestFighter);
             releaseStartedTurn();
             return;
           }
           const latestKey = makeTurnStartKey(latestFighter, turnIndexRef.current, turnCounterRef.current);
           if (latestKey !== key) {
+            logDebugTurnStartExit(
+              `Player turn start skipped: key mismatch for ${fighter?.name}`,
+              { fighter: fighter?.name, reason, key, latestKey }
+            );
+            clearMatchingDirectHandoffSnapshot(latestFighter);
             releaseStartedTurn();
             return;
           }
           if (blockStaleAction(latestFighter, turnToken, "scheduled player turn start")) {
+            logDebugTurnStartExit(
+              `Player turn start skipped: stale token for ${latestFighter?.name ?? fighter?.name}`,
+              { fighter: latestFighter?.name ?? fighter?.name, reason, turnToken }
+            );
             processingPlayerAIRef.current = false;
+            clearMatchingDirectHandoffSnapshot(latestFighter);
             releaseStartedTurn();
             return;
           }
@@ -7096,7 +7145,20 @@ function CombatPage({ characters = [] }) {
             !combatActiveRef.current ||
             !canFighterAct(latestFighter)
           ) {
+            logDebugTurnStartExit(
+              `Player turn start skipped: AI disabled/paused/inactive/cannot act for ${latestFighter?.name ?? fighter?.name}`,
+              {
+                fighter: latestFighter?.name ?? fighter?.name,
+                reason,
+                aiControlEnabled: aiControlEnabledRef.current,
+                pendingTurnAdvance: pendingTurnAdvanceRef.current,
+                combatPaused: combatPausedRef.current,
+                combatActive: combatActiveRef.current,
+                canAct: latestFighter ? canFighterAct(latestFighter) : false,
+              }
+            );
             processingPlayerAIRef.current = false;
+            clearMatchingDirectHandoffSnapshot(latestFighter);
             releaseStartedTurn();
             return;
           }
@@ -7124,26 +7186,6 @@ function CombatPage({ characters = [] }) {
       return;
     }
     // ✅ Always release any AI "in progress" locks when a turn actually ends
-    pendingTurnAdvanceRef.current = false;
-    turnActionResolvingRef.current = false;
-    processingEnemyTurnRef.current = false;
-    pendingEnemyTurnRef.current = false;
-    processingPlayerAIRef.current = false;
-    playerTurnInFlightKeyRef.current = null;
-    playerSpellInFlightKeyRef.current = null;
-    currentTurnTokenRef.current = null;
-    // Invalidate any delayed player AI callbacks when turn ownership changes.
-    playerAITurnTokenRef.current = (playerAITurnTokenRef.current || 0) + 1;
-    // Cancel pending player AI timers (CombatPage-level scheduler).
-    if (playerAITimerRef.current) {
-      clearTimeout(playerAITimerRef.current);
-      playerAITimerRef.current = null;
-    }
-    // Reset enemy action lock on ownership change
-    enemyActionLockRef.current = null;
-    enemyActionCommittedThisSliceRef.current = false;
-    enemyActionCommittedSliceKeyRef.current = null;
-
     // Prefer ref snapshots so turn-advance never depends on React commit timing.
     const fightersNow = fightersRef.current ?? fighters;
     const turnIndexNow = turnIndexRef.current ?? turnIndex;
@@ -7165,6 +7207,27 @@ function CombatPage({ characters = [] }) {
       return;
     }
     lastEndTurnAdvanceKeyRef.current = endTurnAdvanceKey;
+    // Always release any AI "in progress" locks only after accepting a real turn advance.
+    pendingTurnAdvanceRef.current = false;
+    turnActionResolvingRef.current = false;
+    processingEnemyTurnRef.current = false;
+    pendingEnemyTurnRef.current = false;
+    processingPlayerAIRef.current = false;
+    playerTurnInFlightKeyRef.current = null;
+    playerSpellInFlightKeyRef.current = null;
+    currentTurnTokenRef.current = null;
+    // Invalidate any delayed player AI callbacks when turn ownership changes.
+    playerAITurnTokenRef.current = (playerAITurnTokenRef.current || 0) + 1;
+    // Cancel pending player AI timers (CombatPage-level scheduler).
+    if (playerAITimerRef.current) {
+      clearTimeout(playerAITimerRef.current);
+      playerAITimerRef.current = null;
+    }
+    // Reset enemy action lock on ownership change.
+    enemyActionLockRef.current = null;
+    enemyActionCommittedThisSliceRef.current = false;
+    enemyActionCommittedSliceKeyRef.current = null;
+
     endTurnGenerationRef.current += 1;
     turnStartInFlightKeyRef.current = null;
 
@@ -16845,7 +16908,7 @@ function CombatPage({ characters = [] }) {
         }));
         addLog(`🪽 ${enemy.name} takes flight.`, "info");
         processingEnemyTurnRef.current = false;
-        scheduleEndTurn(0);
+        scheduleEndTurn(getMoveDurationMs(5));
         return;
       }
 
