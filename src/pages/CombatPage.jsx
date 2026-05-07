@@ -1517,39 +1517,6 @@ function CombatPage({ characters = [] }) {
     return hpStatus.canAct && !blocksByStatus;
   }, [getHPStatus]);
 
-  // Helper to mark a fighter as fled off-map (soft swap: keep in fighters, remove from map)
-  const markFighterFledOffMap = useCallback((fighterId, nameForLog) => {
-    // 1) Keep them in fighters, but mark fled + no actions
-    setFighters((prev) =>
-      prev.map((f) =>
-        f.id === fighterId
-          ? {
-            ...f,
-            remainingAttacks: 0,
-            moraleState: {
-              ...(f.moraleState || {}),
-              status: "ROUTED", // or "FLED" if you want a distinct status
-              hasFled: true,
-            },
-            statusEffects: Array.isArray(f.statusEffects)
-              ? Array.from(new Set([...f.statusEffects, "FLED"]))
-              : ["FLED"],
-          }
-          : f
-      )
-    );
-
-    // 2) Remove them from the map so they disappear from grid
-    setPositions((prev) => {
-      const next = { ...prev };
-      delete next[fighterId];
-      positionsRef.current = next;
-      return next;
-    });
-
-    if (nameForLog) addLog(`🏃 ${nameForLog} flees off the battlefield!`, "warning");
-  }, [addLog]);
-
   // =========================
   // Predator/Prey visibility + panic helpers (Hawk ↔ Mouse)
   // =========================
@@ -2028,6 +1995,51 @@ function CombatPage({ characters = [] }) {
     setFighters(next);
   }, []);
 
+  // Helper to mark a fighter as fled off-map (soft swap: keep in fighters, remove from map)
+  const markFighterFledOffMap = useCallback((fighterId, nameForLog) => {
+    // 1) Keep them in fighters, but mark fled + no actions
+    commitFighters((prev) =>
+      prev.map((f) =>
+        f.id === fighterId
+          ? {
+            ...f,
+            remainingAttacks: 0,
+            moraleState: {
+              ...(f.moraleState || {}),
+              status: "ROUTED", // or "FLED" if you want a distinct status
+              hasFled: true,
+            },
+            statusEffects: Array.isArray(f.statusEffects)
+              ? Array.from(new Set([...f.statusEffects, "FLED"]))
+              : ["FLED"],
+          }
+          : f
+      )
+    );
+
+    // 2) Remove them from the map so they disappear from grid
+    setPositions((prev) => {
+      const next = { ...prev };
+      delete next[fighterId];
+      positionsRef.current = next;
+      return next;
+    });
+
+    if (nameForLog) addLog(`🏃 ${nameForLog} flees off the battlefield!`, "warning");
+  }, [addLog, commitFighters]);
+
+  const preserveMagicWithPPE = useCallback((magic, currentPPE, maxPPE) => {
+    if (Array.isArray(magic)) return magic;
+    if (magic && typeof magic === "object") {
+      return {
+        ...magic,
+        currentPPE,
+        maxPPE,
+      };
+    }
+    return magic;
+  }, []);
+
   /** When merging engine spell-impact patches, keep the caster's live PPE pool (stale patches often carry max PPE). */
   const preserveCasterPPE = useCallback((live, merged, casterId) => {
     if (!live || live.id !== casterId) return merged;
@@ -2059,15 +2071,15 @@ function CombatPage({ characters = [] }) {
             maxPPE: live.maxPPE ?? merged.derived.maxPPE ?? maxPPE,
           }
         : merged.derived,
-      magic: merged.magic
-        ? {
-            ...merged.magic,
-            currentPPE: liveCurrentPPE,
-            maxPPE: live.maxPPE ?? merged.magic.maxPPE ?? maxPPE,
-          }
-        : merged.magic,
+      magic: Array.isArray(live.magic)
+        ? live.magic
+        : preserveMagicWithPPE(
+            merged.magic,
+            liveCurrentPPE,
+            live.maxPPE ?? merged?.magic?.maxPPE ?? maxPPE
+          ),
     };
-  }, []);
+  }, [preserveMagicWithPPE]);
 
   const stabilizeTargetById = useCallback(
     (targetId, source = "First Aid") => {
@@ -2549,6 +2561,7 @@ function CombatPage({ characters = [] }) {
         activeSpellImpactRef.current = null;
         spellImpactTurnEndHandledRef.current = castId ?? pendingSpellImpact.castId;
         executingActionRef.current = false;
+        playerAITurnTokenRef.current = (playerAITurnTokenRef.current || 0) + 1;
         if (turnTimeoutRef.current) {
           clearTimeout(turnTimeoutRef.current);
           turnTimeoutRef.current = null;
@@ -2830,13 +2843,7 @@ function CombatPage({ characters = [] }) {
                 maxPPE,
               }
             : f.derived,
-          magic: f.magic
-            ? {
-                ...f.magic,
-                currentPPE: after,
-                maxPPE,
-              }
-            : f.magic,
+          magic: preserveMagicWithPPE(f.magic, after, maxPPE),
         };
       });
 
@@ -2922,7 +2929,7 @@ function CombatPage({ characters = [] }) {
       );
       return;
     }
-  }, [addLog, setFighters, setPositions, fighters, positions, turnCounter, setTemporaryHexSharing, activeCircles, getVisualDurationMs, preserveCasterPPE]);
+  }, [addLog, setFighters, setPositions, fighters, positions, turnCounter, setTemporaryHexSharing, activeCircles, getVisualDurationMs, preserveCasterPPE, preserveMagicWithPPE]);
 
   // Use ref to keep handleEngineEvent stable for event subscription
   const handleEngineEventRef = useRef(handleEngineEvent);
@@ -10006,6 +10013,64 @@ function CombatPage({ characters = [] }) {
           ? impactRaNum
           : Math.max(0, before - 1);
 
+      const preserveLivePPEAfterImpactMerge = (merged, liveFighter) => {
+        const livePPEValues = [
+          liveFighter.currentPPE,
+          liveFighter.PPE,
+          liveFighter.ppe,
+          liveFighter.derived?.currentPPE,
+          !Array.isArray(liveFighter.magic) ? liveFighter.magic?.currentPPE : undefined,
+        ]
+          .map((value) => Number(value))
+          .filter((value) => Number.isFinite(value));
+        const livePPECeiling = livePPEValues.length ? Math.min(...livePPEValues) : null;
+        const keepNonIncreasing = (liveValue, mergedValue) => {
+          const mergedNum = Number(mergedValue);
+          if (livePPECeiling !== null) {
+            return Number.isFinite(mergedNum) ? Math.min(livePPECeiling, mergedNum) : livePPECeiling;
+          }
+          const liveNum = Number(liveValue);
+          if (Number.isFinite(liveNum) && Number.isFinite(mergedNum)) {
+            return Math.min(liveNum, mergedNum);
+          }
+          return Number.isFinite(liveNum) ? liveValue : mergedValue;
+        };
+
+        const protectedMerged = { ...merged };
+        protectedMerged.currentPPE = keepNonIncreasing(liveFighter.currentPPE, merged.currentPPE);
+        protectedMerged.PPE = keepNonIncreasing(liveFighter.PPE, merged.PPE);
+        protectedMerged.ppe = keepNonIncreasing(liveFighter.ppe, merged.ppe);
+
+        const derivedCurrentPPE = keepNonIncreasing(
+          liveFighter.derived?.currentPPE,
+          merged.derived?.currentPPE
+        );
+        if (merged.derived || liveFighter.derived) {
+          protectedMerged.derived = {
+            ...(merged.derived || liveFighter.derived || {}),
+            currentPPE: derivedCurrentPPE,
+          };
+        }
+
+        const magicCurrentPPE = keepNonIncreasing(
+          liveFighter.magic?.currentPPE,
+          merged.magic?.currentPPE
+        );
+        if (Array.isArray(liveFighter.magic)) {
+          protectedMerged.magic = liveFighter.magic;
+        } else if (Array.isArray(merged.magic)) {
+          protectedMerged.magic = merged.magic;
+        } else if (merged.magic || liveFighter.magic) {
+          protectedMerged.magic = preserveMagicWithPPE(
+            merged.magic || liveFighter.magic,
+            magicCurrentPPE,
+            liveFighter.magic?.maxPPE ?? merged.magic?.maxPPE ?? protectedMerged.maxPPE
+          );
+        }
+
+        return protectedMerged;
+      };
+
       const committed = liveFighters.map((liveFighter) => {
         const impactFighter = impactById.get(liveFighter.id);
         const merged = impactFighter ? { ...liveFighter, ...impactFighter } : liveFighter;
@@ -10033,7 +10098,7 @@ function CombatPage({ characters = [] }) {
         }
 
         return {
-          ...merged,
+          ...preserveLivePPEAfterImpactMerge(merged, liveFighter),
           remainingAttacks: after,
         };
       });
@@ -10205,8 +10270,11 @@ function CombatPage({ characters = [] }) {
         addLog
       );
 
+      const attackerWasHorrorTarget =
+        hasHorrorFactor(defender) && !hasHorrorFactor(stateAttacker);
+
       // Use the updated fighters (may have horror/morale effects applied)
-      if (updatedAttacker.id === stateAttacker.id) {
+      if (attackerWasHorrorTarget && updatedAttacker.id === stateAttacker.id) {
         // Attacker was affected by horror (defender has HF)
         const attackerIdx = updated.findIndex(f => f.id === updatedAttacker.id);
         if (attackerIdx !== -1) {
@@ -10482,7 +10550,12 @@ function CombatPage({ characters = [] }) {
       executingActionRef.current = true;
       try {
         const beforeRA = attackerInArray.remainingAttacks ?? 0;
-        const spellSuccess = await executeSpellRef.current?.(attackerInArray, spellTarget, spellToCast);
+        const spellSuccess = await executeSpellRef.current?.(
+          attackerInArray,
+          spellTarget,
+          spellToCast,
+          bonusModifiers?.playerAITurnMeta || {}
+        );
         const afterRA = (fightersRef.current?.find(f => f.id === attacker.id)?.remainingAttacks) ?? beforeRA;
 
         if (spellSuccess) {
@@ -13280,6 +13353,7 @@ function CombatPage({ characters = [] }) {
             currentPlayerAITurnToken: playerAITurnTokenRef.current,
             capturedTurnToken,
             currentTurnToken: currentTurnTokenRef.current,
+            actionAlreadyScheduled: playerAIActionScheduledRef.current,
             activeSpellImpact: !!activeSpellImpactRef.current,
             remainingAttacks: liveCaster?.remainingAttacks,
           });
@@ -13291,11 +13365,133 @@ function CombatPage({ characters = [] }) {
         ...meta,
         turnToken: capturedTurnToken,
         playerAITurnToken,
-        turnIndex: startTurnIndex,
-        fighterId: startFighterId,
-        meleeRound: startMeleeRound,
-        turnCounter: startTurnCounter,
+        startTurnIndex,
+        startFighterId,
+        startMeleeRound,
+        startTurnCounter,
+        source: meta?.source || "player-ai-spell",
       });
+    };
+
+    const executePlayerAIAttack = async (...args) => {
+      const attackerArg = args[0];
+      const liveFighters = fightersRef.current || [];
+      const liveIndex = turnIndexRef.current;
+      const liveAttacker = liveFighters.find((f) => f.id === attackerArg?.id);
+      const activeFighter = liveFighters?.[liveIndex];
+      const isStale =
+        combatOverRef.current ||
+        combatEndCheckRef.current ||
+        !combatActiveRef.current ||
+        !!activeSpellImpactRef.current ||
+        playerAITurnTokenRef.current !== playerAITurnToken ||
+        currentTurnTokenRef.current !== capturedTurnToken ||
+        liveIndex !== startTurnIndex ||
+        activeFighter?.id !== startFighterId ||
+        (meleeRoundRef.current ?? meleeRound) !== startMeleeRound ||
+        (turnCounterRef.current ?? turnCounter) !== startTurnCounter ||
+        !liveAttacker ||
+        (Number(liveAttacker.remainingAttacks ?? 0) || 0) <= 0;
+
+      if (isStale) {
+        if (DEBUG_COMBAT) {
+          console.warn("[PLAYER AI ATTACK BLOCKED - stale callback]", {
+            attacker: attackerArg?.name,
+            liveIndex,
+            startTurnIndex,
+            activeFighter: activeFighter?.name,
+            startFighterId,
+            playerAITurnToken,
+            currentPlayerAITurnToken: playerAITurnTokenRef.current,
+            capturedTurnToken,
+            currentTurnToken: currentTurnTokenRef.current,
+            actionAlreadyScheduled: playerAIActionScheduledRef.current,
+            activeSpellImpact: !!activeSpellImpactRef.current,
+            remainingAttacks: liveAttacker?.remainingAttacks,
+          });
+        }
+        return false;
+      }
+
+      const playerAITurnMeta = {
+        turnToken: capturedTurnToken,
+        playerAITurnToken,
+        startTurnIndex,
+        startFighterId,
+        startMeleeRound,
+        startTurnCounter,
+        source: "player-ai-attack",
+      };
+      const attackArgs = args.slice(1);
+      const existingBonusModifiers = attackArgs[1];
+      attackArgs[1] =
+        existingBonusModifiers &&
+        typeof existingBonusModifiers === "object" &&
+        !Array.isArray(existingBonusModifiers)
+          ? {
+              ...existingBonusModifiers,
+              playerAITurnMeta,
+            }
+          : { playerAITurnMeta };
+
+      return attack(liveAttacker, ...attackArgs);
+    };
+
+    const clampAIPPERestore = (incoming, live) => {
+      if (!incoming || !live) return incoming;
+      const livePPEValues = [
+        live.currentPPE,
+        live.PPE,
+        live.ppe,
+        live.derived?.currentPPE,
+        !Array.isArray(live.magic) ? live.magic?.currentPPE : undefined,
+      ]
+        .map((value) => Number(value))
+        .filter((value) => Number.isFinite(value));
+      if (!livePPEValues.length) return incoming;
+      const livePPECeiling = Math.min(...livePPEValues);
+      const clampValue = (value) => {
+        const num = Number(value);
+        return Number.isFinite(num) ? Math.min(num, livePPECeiling) : livePPECeiling;
+      };
+      const next = {
+        ...incoming,
+        currentPPE: clampValue(incoming.currentPPE),
+        PPE: clampValue(incoming.PPE),
+        ppe: clampValue(incoming.ppe),
+      };
+      if (incoming.derived || live.derived) {
+        next.derived = {
+          ...(incoming.derived || live.derived || {}),
+          currentPPE: clampValue(incoming.derived?.currentPPE),
+        };
+      }
+      if (Array.isArray(live.magic)) {
+        next.magic = live.magic;
+      } else if (Array.isArray(incoming.magic)) {
+        next.magic = incoming.magic;
+      } else if (incoming.magic || live.magic) {
+        next.magic = preserveMagicWithPPE(
+          incoming.magic || live.magic,
+          clampValue(incoming.magic?.currentPPE),
+          live.magic?.maxPPE ?? incoming.magic?.maxPPE ?? next.maxPPE
+        );
+      }
+      return next;
+    };
+
+    const commitPlayerAIFighters = (updater) => {
+      const liveFighters = fightersRef.current ?? fighters;
+      const incoming =
+        typeof updater === "function" ? updater(liveFighters) : updater;
+      if (!Array.isArray(incoming)) return commitFighters(updater);
+      const incomingById = new Map(incoming.map((f) => [f.id, f]));
+      const guarded = liveFighters.map((live) => {
+        const next = incomingById.get(live.id);
+        if (!next) return live;
+        return clampAIPPERestore(next, live);
+      });
+      return commitFighters(guarded);
     };
 
     const tryPlayerPreferredFlyerFallback = (playerForTurn) => {
@@ -13551,9 +13747,9 @@ function CombatPage({ characters = [] }) {
       getFighterPPE,
       getFighterISP,
       // Attack & combat
-      attack,
+      attack: executePlayerAIAttack,
       setPositions,
-      setFighters: commitFighters,
+      setFighters: commitPlayerAIFighters,
       getActionDelay,
       arenaSpeed,
       positionsRef,
@@ -13692,6 +13888,7 @@ function CombatPage({ characters = [] }) {
     combatActive,
     canFighterAct,
     blockStaleAction,
+    commitFighters,
     getHPStatus,
     addLog,
     scheduleEndTurn,
@@ -13723,6 +13920,7 @@ function CombatPage({ characters = [] }) {
     movementAttemptsRef,
     playerAIRecentlyUsedPsionicsRef,
     processingPlayerAIRef,
+    preserveMagicWithPPE,
     getPsionicTargetCategory,
     executePsionicPowerRef,
     MIN_COMBAT_HP,
@@ -19354,11 +19552,6 @@ function CombatPage({ characters = [] }) {
       return false;
     }
 
-    addLog?.(
-      `🔥 SPELL DEBUG: ${spell?.name} | damage=${spell?.damage ?? spell?.combatDamage ?? "?"} | combatDamage=${spell?.combatDamage ?? "?"} | level=${spell?.level ?? "?"}`,
-      "info"
-    );
-
     const liveCasterForSpellAction =
       (fightersRef.current || fighters).find((f) => f.id === caster.id) || caster;
     if ((Number(liveCasterForSpellAction.remainingAttacks ?? 0) || 0) <= 0) {
@@ -19375,6 +19568,81 @@ function CombatPage({ characters = [] }) {
     // ✅ DE-DUPE (FIXED): deterministic cast key per turn/action.
     // Old version used performance.now()+random which made every "duplicate" unique,
     // so it never prevented double-casts after lock recovery / rerenders.
+    const isPlayerAISpell =
+      meta?.source === "player-ai-attack" ||
+      meta?.source === "player-ai-spell" ||
+      meta?.playerAITurnToken !== undefined ||
+      meta?.startFighterId !== undefined;
+    if (isPlayerAISpell) {
+      const liveFightersForAIMeta = fightersRef.current || fighters;
+      const metaTurnIndex = meta?.startTurnIndex;
+      const metaFighterId = meta?.startFighterId;
+      const liveIndex = turnIndexRef.current;
+      const activeFighter = liveFightersForAIMeta?.[metaTurnIndex];
+      const liveCaster = liveFightersForAIMeta.find((f) => f.id === caster.id);
+      const getPlayerAISpellMetaFailureReason = () => {
+        if (combatOverRef.current) return "combat over";
+        if (combatEndCheckRef.current) return "combat end check active";
+        if (!combatActiveRef.current) return "combat inactive";
+        if (playerAITurnTokenRef.current !== meta?.playerAITurnToken) {
+          return `playerAITurnToken mismatch ref=${playerAITurnTokenRef.current} meta=${meta?.playerAITurnToken}`;
+        }
+        if (currentTurnTokenRef.current !== meta?.turnToken) {
+          return `turnToken mismatch ref=${currentTurnTokenRef.current || "none"} meta=${meta?.turnToken || "none"}`;
+        }
+        if (liveIndex !== metaTurnIndex) {
+          return `turnIndex mismatch ref=${liveIndex} meta=${metaTurnIndex}`;
+        }
+        if (activeFighter?.id !== metaFighterId) {
+          return `fighter mismatch ref=${activeFighter?.id || "none"} meta=${metaFighterId || "none"}`;
+        }
+        const liveMeleeRound = meleeRoundRef.current ?? meleeRound;
+        if (liveMeleeRound !== meta?.startMeleeRound) {
+          return `meleeRound mismatch ref=${liveMeleeRound} meta=${meta?.startMeleeRound}`;
+        }
+        const liveTurnCounter = turnCounterRef.current ?? turnCounter;
+        if (liveTurnCounter !== meta?.startTurnCounter) {
+          return `turnCounter mismatch ref=${liveTurnCounter} meta=${meta?.startTurnCounter}`;
+        }
+        if (!liveCaster) return "no live fighter";
+        const liveRemaining = Number(liveCaster.remainingAttacks ?? 0) || 0;
+        if (liveRemaining <= 0) return `no remaining actions remaining=${liveRemaining}`;
+        return null;
+      };
+      const metaFailureReason = getPlayerAISpellMetaFailureReason();
+
+      if (metaFailureReason) {
+        addLog?.(
+          `ðŸš« Player AI spell blocked before castSpell: ${metaFailureReason}`,
+          "warning"
+        );
+        if (DEBUG_COMBAT) {
+          console.warn("[PLAYER AI SPELL BLOCKED - meta validation]", {
+            caster: caster?.name,
+            spell: spell?.name,
+            reason: metaFailureReason,
+            source: meta?.source,
+            liveIndex,
+            metaTurnIndex,
+            activeFighter: activeFighter?.name,
+            metaFighterId,
+            playerAITurnToken: meta?.playerAITurnToken,
+            currentPlayerAITurnToken: playerAITurnTokenRef.current,
+            turnToken: meta?.turnToken,
+            currentTurnToken: currentTurnTokenRef.current,
+            actionAlreadyScheduled: playerAIActionScheduledRef.current,
+            remainingAttacks: liveCaster?.remainingAttacks,
+          });
+        }
+        return false;
+      }
+    }
+
+    addLog?.(
+      `🔥 SPELL DEBUG: ${spell?.name} | damage=${spell?.damage ?? spell?.combatDamage ?? "?"} | combatDamage=${spell?.combatDamage ?? "?"} | level=${spell?.level ?? "?"}`,
+      "info"
+    );
+
     const spellKey = spell?.name || spell?.id || "spell";
     const targetKey = target?.id ?? target ?? "self";
 
@@ -19484,13 +19752,7 @@ function CombatPage({ characters = [] }) {
               }
             : f.derived,
 
-          magic: f.magic
-            ? {
-                ...f.magic,
-                currentPPE: after,
-                maxPPE,
-              }
-            : f.magic,
+          magic: preserveMagicWithPPE(f.magic, after, maxPPE),
         };
       });
 
@@ -19600,6 +19862,10 @@ function CombatPage({ characters = [] }) {
         playerSpellInFlightKeyRef.current = null;
         return false;
       }
+    }
+
+    if (isPlayerAISpell) {
+      playerAIActionScheduledRef.current = true;
     }
 
     const c = clockRef.current;
