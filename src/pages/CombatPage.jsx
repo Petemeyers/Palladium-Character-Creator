@@ -7142,6 +7142,7 @@ function CombatPage({ characters = [] }) {
                 spellImpact: !!activeSpellImpactRef.current,
               });
             }
+            clearMatchingDirectHandoffSnapshot(latestFighter);
             releaseStartedTurn();
             return;
           }
@@ -15185,7 +15186,8 @@ function CombatPage({ characters = [] }) {
 
       if (flyingHandled) {
         // Flying AI handled the turn, don't run normal ground AI
-        scheduleEndTurn(0);
+        processingEnemyTurnRef.current = false;
+        scheduleEndTurn(getMoveDurationMs(5));
         return;
       }
     }
