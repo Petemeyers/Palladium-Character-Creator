@@ -13700,6 +13700,32 @@ function CombatPage({ characters = [] }) {
       );
     };
 
+    const schedulePlayerAIEndTurn = (delayOverride = null, source = "player-ai") => {
+      const liveFighters = fightersRef.current ?? fighters;
+      const liveIndex = turnIndexRef.current;
+      const activeFighter = liveFighters?.[liveIndex];
+      const livePlayer = liveFighters.find((f) => f.id === startFighterId);
+      const liveRemaining = Number(livePlayer?.remainingAttacks ?? 0) || 0;
+      const sameTurn =
+        liveIndex === startTurnIndex &&
+        activeFighter?.id === startFighterId &&
+        (meleeRoundRef.current ?? meleeRound) === startMeleeRound &&
+        (turnCounterRef.current ?? turnCounter) === startTurnCounter;
+
+      if (
+        sameTurn &&
+        !playerAIActionScheduledRef.current &&
+        liveRemaining > 0 &&
+        liveRemaining === startActions
+      ) {
+        if (spendNoActionPassForFighter(startFighterId, source)) {
+          playerAIActionScheduledRef.current = true;
+        }
+      }
+      processingPlayerAIRef.current = false;
+      scheduleEndTurn(delayOverride, source);
+    };
+
     const context = {
       fighters: liveFightersForPlayerAI,
       positions: positionsForAI,
@@ -13724,7 +13750,7 @@ function CombatPage({ characters = [] }) {
       canFighterAct,
       getHPStatus,
       addLog,
-      scheduleEndTurn,
+      scheduleEndTurn: schedulePlayerAIEndTurn,
       endTurn,
       // Distance & movement
       calculateDistance,
