@@ -256,6 +256,7 @@ import {
   getReachAdvantage,
   applySizeModifiers,
   canCarryTarget,
+  canLiftAndThrow,
   SIZE_CATEGORIES,
   SIZE_DEFINITIONS,
 } from "../utils/sizeStrengthModifiers.js";
@@ -1537,6 +1538,8 @@ function CombatPage({ characters = [] }) {
     // Units that have fully fled the battlefield cannot act
     if (fighter.moraleState?.hasFled) return false;
     if (Array.isArray(fighter.statusEffects) && fighter.statusEffects.includes("FLED")) return false;
+    if (fighter.canAct === false) return false;
+    if (fighter.fatigueState?.status === "collapsed") return false;
 
     // NOTE: ROUTED units CAN act (they should spend actions fleeing).
     // Blocking ROUTED here causes freezes and premature "All players defeated" checks.
@@ -8129,9 +8132,15 @@ function CombatPage({ characters = [] }) {
 
   // Collapse-from-exhaustion check at the start of a fighter's turn
   useEffect(() => {
+    if (combatOverRef.current || combatEndCheckRef.current || !combatActiveRef.current) return;
     if (!fighters.length || turnIndex < 0) return;
 
-    const currentFighter = fighters[turnIndex];
+    const currentFighterSnapshot = fighters[turnIndex];
+    const liveFightersForFatigue = fightersRef.current ?? fighters;
+    const currentFighter =
+      liveFightersForFatigue.find((f) => f.id === currentFighterSnapshot?.id) ??
+      liveFightersForFatigue[turnIndex] ??
+      currentFighterSnapshot;
     if (!currentFighter || !currentFighter.fatigueState) return;
 
     // Skip collapse checks for creatures that can't fatigue
@@ -8145,11 +8154,12 @@ function CombatPage({ characters = [] }) {
 
       if (remaining > 0) {
         // Decrement remaining melees and keep them down
-        setFighters(prev =>
+        commitFighters(prev =>
           prev.map(f =>
             f.id === currentFighter.id
               ? {
                 ...f,
+                canAct: false,
                 fatigueState: {
                   ...f.fatigueState,
                   collapseRoundsRemaining: remaining - 1,
@@ -8171,11 +8181,12 @@ function CombatPage({ characters = [] }) {
 
       // They wake up this turn: switch them to "exhausted" with severe penalties
       // Stamina was already bumped to Severe threshold (-15) when they collapsed
-      setFighters(prev =>
+      commitFighters(prev =>
         prev.map(f => {
           if (f.id === currentFighter.id) {
             const updatedFighter = {
               ...f,
+              canAct: true,
               fatigueState: {
                 ...f.fatigueState,
                 status: "exhausted",
@@ -8209,11 +8220,12 @@ function CombatPage({ characters = [] }) {
 
       if (collapsed) {
         // Update fighter to fully collapsed
-        setFighters(prev =>
+        commitFighters(prev =>
           prev.map(f =>
             f.id === currentFighter.id
               ? {
                 ...f,
+                canAct: false,
                 fatigueState: {
                   ...f.fatigueState,
                   status: "collapsed",
@@ -8241,18 +8253,27 @@ function CombatPage({ characters = [] }) {
         onEndTurnFull(currentFighter?.id);
         return;
       } else {
+        const liveStillCollapsed =
+          currentFighter.canAct === false ||
+          currentFighter.fatigueState?.status === "collapsed";
+        if (liveStillCollapsed) {
+          return;
+        }
+
         // They stay up but are in bad shape; keep them in collapse_risk
-        setFighters(prev =>
+        commitFighters(prev =>
           prev.map(f =>
             f.id === currentFighter.id
-              ? {
-                ...f,
-                fatigueState: {
-                  ...f.fatigueState,
-                  status: "collapse_risk",
-                  currentStamina: newStamina,
-                },
-              }
+              ? f.canAct === false || f.fatigueState?.status === "collapsed"
+                ? f
+                : {
+                  ...f,
+                  fatigueState: {
+                    ...f.fatigueState,
+                    status: "collapse_risk",
+                    currentStamina: newStamina,
+                  },
+                }
               : f
           )
         );
@@ -8263,8 +8284,7 @@ function CombatPage({ characters = [] }) {
         );
       }
     }
-  }, [fighters, turnIndex, addLog, onEndTurnFull, endTurn]);
-
+  }, [fighters, turnIndex, addLog, onEndTurnFull, endTurn, commitFighters]);
   // Auto-set default movement mode when fighter or target changes
   useEffect(() => {
     if (!currentFighter || !selectedTarget) {
@@ -8413,6 +8433,119 @@ function CombatPage({ characters = [] }) {
   useEffect(() => {
     scheduleEndTurnRef.current = scheduleEndTurn;
   }, [scheduleEndTurn]);
+
+  const getFatigueAIState = useCallback((fighter) => {
+    if (!fighter) return "normal";
+    const fatigueState = fighter.fatigueState || {};
+    const status = String(fatigueState.status || "").toLowerCase();
+    const fatigueStatus = getFatigueStatus(fighter) || {};
+    const statusFromHelper = String(fatigueStatus.status || "").toLowerCase();
+    const stamina = Number(
+      fatigueStatus.stamina ??
+      fatigueState.currentStamina ??
+      fighter.currentStamina
+    );
+    const maxStamina = Number(
+      fatigueStatus.maxStamina ??
+      fatigueState.maxStamina ??
+      fighter.maxStamina
+    );
+    const strikePenalty = Number(
+      fatigueStatus.penalties?.strike ??
+      fatigueState.penalties?.strike ??
+      0
+    );
+    const staminaPercent =
+      Number.isFinite(stamina) && Number.isFinite(maxStamina) && maxStamina > 0
+        ? (stamina / maxStamina) * 100
+        : null;
+
+    if (status === "collapsed" || statusFromHelper === "collapsed" || fighter.canAct === false) {
+      return "collapsed";
+    }
+    if (
+      status === "collapse_risk" ||
+      statusFromHelper === "collapse_risk" ||
+      (Number.isFinite(stamina) && stamina <= -15) ||
+      strikePenalty <= -3
+    ) {
+      return "collapseRisk";
+    }
+    if (
+      status === "exhausted" ||
+      statusFromHelper === "exhausted" ||
+      (Number.isFinite(stamina) && stamina <= -10) ||
+      strikePenalty <= -2
+    ) {
+      return "exhausted";
+    }
+    if (
+      status === "fatigued" ||
+      statusFromHelper === "fatigued" ||
+      (Number.isFinite(stamina) && stamina <= 0) ||
+      (staminaPercent !== null && staminaPercent <= 25)
+    ) {
+      return "low";
+    }
+    return "normal";
+  }, []);
+
+  const spendRecoverAction = useCallback((fighterId, source = "ai-fatigue") => {
+    const liveFighters = fightersRef.current ?? fighters;
+    const liveFighter = liveFighters.find((f) => f.id === fighterId);
+    const remaining = Number(liveFighter?.remainingAttacks ?? 0) || 0;
+    if (!liveFighter || remaining <= 0) return false;
+
+    const currentStaminaRaw =
+      liveFighter.fatigueState?.currentStamina ??
+      liveFighter.currentStamina ??
+      0;
+    const maxStaminaRaw =
+      liveFighter.fatigueState?.maxStamina ??
+      liveFighter.maxStamina ??
+      liveFighter.fatigueState?.baseStamina ??
+      0;
+    const currentStamina = Number(currentStaminaRaw);
+    const maxStamina = Number(maxStaminaRaw);
+    const safeCurrent = Number.isFinite(currentStamina) ? currentStamina : 0;
+    const safeMax = Number.isFinite(maxStamina) && maxStamina > 0 ? maxStamina : 20;
+    const recoverAmount = Math.max(2, Math.ceil(safeMax * 0.1));
+    const nextStamina = Math.min(safeMax, safeCurrent + recoverAmount);
+
+    addLog(`😮‍💨 ${liveFighter.name} slows down to avoid collapse.`, "info");
+
+    commitFighters((prev) =>
+      prev.map((f) => {
+        if (f.id !== fighterId) return f;
+        const updated = {
+          ...f,
+          fatigueState: {
+            ...(f.fatigueState || liveFighter.fatigueState || {}),
+            currentStamina: nextStamina,
+            maxStamina: safeMax,
+          },
+          remainingAttacks: Math.max(0, (Number(f.remainingAttacks ?? remaining) || 0) - 1),
+        };
+        updateFatiguePenalties(updated);
+        return updated;
+      })
+    );
+
+    addLog(
+      `😮‍💨 ${liveFighter.name} catches their breath (+${recoverAmount} SP, ${safeCurrent.toFixed(1)} → ${nextStamina.toFixed(1)}).`,
+      "info"
+    );
+    scheduleEndTurn(0, source);
+    return true;
+  }, [addLog, commitFighters, fighters, scheduleEndTurn]);
+
+  const maybeSpendAIRecoverAction = useCallback((fighter, source = "ai-fatigue") => {
+    const state = getFatigueAIState(fighter);
+    if (state === "collapseRisk" || state === "exhausted") {
+      return spendRecoverAction(fighter.id, source);
+    }
+    return false;
+  }, [getFatigueAIState, spendRecoverAction]);
 
   const confirmOverwatchHex = useCallback(
     (hex) => {
@@ -10068,6 +10201,19 @@ function CombatPage({ characters = [] }) {
       const impactAttacker = impactById.get(attackerId);
       const impactRaNum = Number(impactAttacker?.remainingAttacks);
 
+      const preserveLiveActionBlock = (merged, liveFighter) => {
+        if (!liveFighter) return merged;
+        const liveBlocksAction =
+          liveFighter.canAct === false ||
+          liveFighter.fatigueState?.status === "collapsed";
+        if (!liveBlocksAction) return merged;
+        return {
+          ...merged,
+          canAct: liveFighter.canAct,
+          fatigueState: liveFighter.fatigueState,
+        };
+      };
+
       const canTrustUpdatedAlreadySpent = spendReason === "multi-strike-parent-complete";
 
       const after =
@@ -10155,16 +10301,16 @@ function CombatPage({ characters = [] }) {
             );
           }
 
-          return {
+          return preserveLiveActionBlock({
             ...merged,
             remainingAttacks: liveFighter.remainingAttacks,
-          };
+          }, liveFighter);
         }
 
-        return {
+        return preserveLiveActionBlock({
           ...preserveLivePPEAfterImpactMerge(merged, liveFighter),
           remainingAttacks: after,
-        };
+        }, liveFighter);
       });
 
       const attackerRowForLog =
@@ -10256,7 +10402,11 @@ function CombatPage({ characters = [] }) {
     // ✅ CRITICAL: Check if attacker can act (must be conscious, not dying/dead/unconscious)
     if (!canFighterAct(stateAttacker)) {
       const hpStatus = getHPStatus(stateAttacker.currentHP);
-      addLog(`❌ ${attacker.name} cannot attack (${hpStatus.description})!`, "error");
+      const fatigueReason =
+        stateAttacker.fatigueState?.status === "collapsed" || stateAttacker.canAct === false
+          ? "collapsed/exhausted and cannot act"
+          : hpStatus.description;
+      addLog(`❌ ${stateAttacker.name} cannot attack (${fatigueReason})!`, "error");
       scheduleEndTurn(0, "attack-guard-cannot-act");
       return;
     }
@@ -12535,6 +12685,17 @@ function CombatPage({ characters = [] }) {
         if (!impactFighter) return liveFighter;
 
         const merged = { ...liveFighter, ...impactFighter };
+        const liveBlocksAction =
+          liveFighter.canAct === false ||
+          liveFighter.fatigueState?.status === "collapsed";
+        const preserveLiveActionBlock = (next) =>
+          liveBlocksAction
+            ? {
+              ...next,
+              canAct: liveFighter.canAct,
+              fatigueState: liveFighter.fatigueState,
+            }
+            : next;
         const liveRemaining = Number(liveFighter.remainingAttacks);
         const impactRemaining = Number(impactFighter.remainingAttacks);
 
@@ -12548,16 +12709,16 @@ function CombatPage({ characters = [] }) {
               "debug"
             );
           }
-          return {
+          return preserveLiveActionBlock({
             ...merged,
             remainingAttacks: Math.min(liveRemaining, impactRemaining),
-          };
+          });
         }
 
-        return {
+        return preserveLiveActionBlock({
           ...merged,
           remainingAttacks: liveFighter.remainingAttacks,
-        };
+        });
       });
 
       commitFighters(guardedSuppressCommit);
@@ -13534,6 +13695,17 @@ function CombatPage({ characters = [] }) {
 
     const clampAIPPERestore = (incoming, live) => {
       if (!incoming || !live) return incoming;
+      const liveBlocksAction =
+        live.canAct === false ||
+        live.fatigueState?.status === "collapsed";
+      const preserveLiveActionBlock = (next) =>
+        liveBlocksAction
+          ? {
+              ...next,
+              canAct: live.canAct,
+              fatigueState: live.fatigueState,
+            }
+          : next;
       const livePPEValues = [
         live.currentPPE,
         live.PPE,
@@ -13543,7 +13715,7 @@ function CombatPage({ characters = [] }) {
       ]
         .map((value) => Number(value))
         .filter((value) => Number.isFinite(value));
-      if (!livePPEValues.length) return incoming;
+      if (!livePPEValues.length) return preserveLiveActionBlock(incoming);
       const livePPECeiling = Math.min(...livePPEValues);
       const clampValue = (value) => {
         const num = Number(value);
@@ -13572,7 +13744,7 @@ function CombatPage({ characters = [] }) {
           live.magic?.maxPPE ?? incoming.magic?.maxPPE ?? next.maxPPE
         );
       }
-      return next;
+      return preserveLiveActionBlock(next);
     };
 
     const commitPlayerAIFighters = (updater) => {
@@ -13834,7 +14006,13 @@ function CombatPage({ characters = [] }) {
         (turnCounterRef.current ?? turnCounter) === startTurnCounter;
 
       if (!combatActiveRef.current || combatOverRef.current || !sameTurn) return false;
-      if (!liveAttacker || !liveTarget || !canFighterAct(liveAttacker)) return false;
+      if (!liveAttacker || !liveTarget) return false;
+      if (!canFighterAct(liveAttacker)) {
+        addLog(`${liveAttacker.name} is collapsed/exhausted and cannot act.`, "warning");
+        processingPlayerAIRef.current = false;
+        scheduleEndTurn(0, "player-ai-grapple-cannot-act");
+        return false;
+      }
       if ((Number(liveAttacker.remainingAttacks ?? 0) || 0) <= 0) return false;
       if (getFighterHP(liveTarget) <= MIN_COMBAT_HP || liveTarget.status === "defeated") return false;
       const attackerPos = positionsRef.current?.[liveAttacker.id] || positions?.[liveAttacker.id];
@@ -13844,9 +14022,14 @@ function CombatPage({ characters = [] }) {
       if (!isAdjacentDistance(grappleDistance)) return false;
 
       const availableActions = getAvailableGrappleActions(liveAttacker, liveTarget);
+      const liftCheck = canLiftAndThrow(liveAttacker, liveTarget);
+      const canTakedown =
+        typeof liftCheck === "boolean"
+          ? liftCheck
+          : !!liftCheck?.canThrow;
       const preferredAction =
         requestedActionType ||
-        availableActions.find((action) => action.value === "takedown")?.value ||
+        (canTakedown ? availableActions.find((action) => action.value === "takedown")?.value : null) ||
         availableActions.find((action) => action.value === "maintain")?.value ||
         availableActions.find((action) => action.value === "groundStrike")?.value ||
         availableActions.find((action) => action.value === "defenderReversal")?.value ||
@@ -13968,6 +14151,11 @@ function CombatPage({ characters = [] }) {
 
     // Reset action-scheduled marker for this AI turn
     playerAIActionScheduledRef.current = false;
+    if (maybeSpendAIRecoverAction(latestPlayer, "player-ai-fatigue")) {
+      playerAIActionScheduledRef.current = true;
+      processingPlayerAIRef.current = false;
+      return;
+    }
     if (tryPlayerPreferredFlyerFallback(latestPlayer)) {
       return;
     }
@@ -14094,6 +14282,7 @@ function CombatPage({ characters = [] }) {
     getFighterHP,
     getFighterMaxHP,
     getMoveDurationMs,
+    maybeSpendAIRecoverAction,
     getTargetsInLine,
     getAvailableGrappleActions,
     aiControlEnabled,
@@ -14544,6 +14733,18 @@ function CombatPage({ characters = [] }) {
         "warning"
       );
       didCompleteTurn = false;
+      return;
+    }
+
+    if (!canFighterAct(liveEnemy)) {
+      addLog(`${liveEnemy.name} cannot act.`, "warning");
+      processingEnemyTurnRef.current = false;
+      scheduleEndTurn(0);
+      return;
+    }
+
+    if (maybeSpendAIRecoverAction(liveEnemy, "enemy-ai-fatigue")) {
+      processingEnemyTurnRef.current = false;
       return;
     }
 
@@ -17895,6 +18096,7 @@ function CombatPage({ characters = [] }) {
     combatTerrain,
     arenaEnvironment,
     scheduleEndTurn,
+    maybeSpendAIRecoverAction,
     settings,
     canFighterAct,
     getHPStatus,
