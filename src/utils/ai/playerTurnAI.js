@@ -489,6 +489,7 @@ export async function runPlayerTurnAI(player, context) {
     getFighterISP,
     // Attack & combat
     attack,
+    executeGrapple,
     setPositions,
     setFighters,
     positionsRef,
@@ -2672,6 +2673,73 @@ export async function runPlayerTurnAI(player, context) {
     );
   }
 
+  const isNeutralGrappleState = (fighter) => {
+    const state = String(fighter?.grappleState?.state || "neutral").toLowerCase();
+    return !state || state === "neutral";
+  };
+
+  const sameHexAsTarget =
+    !!target &&
+    !!positions[player.id] &&
+    !!positions[target.id] &&
+    positions[player.id].x === positions[target.id].x &&
+    positions[player.id].y === positions[target.id].y;
+  const inGrappleState =
+    !isNeutralGrappleState(player) || !isNeutralGrappleState(target);
+  const inGrappleRange =
+    !!target &&
+    (inGrappleState ||
+      sameHexAsTarget ||
+      (Number.isFinite(currentDistance) && currentDistance <= 0));
+
+  const shouldAttemptAdjacentGrapple = () => {
+    if (typeof executeGrapple !== "function" || !target) return false;
+    if (!inGrappleRange && (!Number.isFinite(currentDistance) || currentDistance > 5.5)) return false;
+    if ((Number(player.remainingAttacks ?? 0) || 0) <= 0) return false;
+    if (!inGrappleRange && (!isNeutralGrappleState(player) || !isNeutralGrappleState(target))) return false;
+
+    const occLabel = String(player.occ || player.OCC || player.className || "").toLowerCase();
+    const nameLabel = String(player.name || "").toLowerCase();
+    const sizeLabel = String(player.size || player.sizeCategory || "").toLowerCase();
+    const ps = Number(player.attributes?.PS ?? player.attributes?.ps ?? player.PS ?? player.ps ?? 0) || 0;
+    const isKnightly =
+      occLabel.includes("knight") ||
+      occLabel.includes("paladin") ||
+      nameLabel.includes("knight") ||
+      nameLabel.includes("paladin");
+    const isStrongMelee =
+      ps >= 18 ||
+      sizeLabel.includes("large") ||
+      sizeLabel.includes("giant") ||
+      sizeLabel.includes("huge");
+
+    if (isKnightly) {
+      return (Number(player.remainingAttacks ?? 0) || 0) > 1;
+    }
+    if (isStrongMelee) {
+      return ((turnCounter || 0) + String(player.id || "").length) % 3 === 0;
+    }
+    return false;
+  };
+
+  if (inGrappleState && typeof executeGrapple === "function") {
+    addLog(`${player.name} attempts a grapple follow-up.`, "info");
+    markActionScheduled();
+    if (executeGrapple(player, target)) {
+      return;
+    }
+    if (playerAIActionScheduledRef) playerAIActionScheduledRef.current = false;
+  }
+
+  if (shouldAttemptAdjacentGrapple()) {
+    addLog(`${player.name} attempts to grapple ${target.name}!`, "info");
+    markActionScheduled();
+    if (executeGrapple(player, target)) {
+      return;
+    }
+    if (playerAIActionScheduledRef) playerAIActionScheduledRef.current = false;
+  }
+
   const isRangedLikeAttack = (attack) => {
     const name = String(attack?.name || "").toLowerCase();
     const type = String(attack?.type || "").toLowerCase();
@@ -2723,6 +2791,10 @@ export async function runPlayerTurnAI(player, context) {
 
     const meleeWeapons = equippedWeapons.filter((w) => !isTrueRangedWeapon(w));
     const rangedWeapons = equippedWeapons.filter((w) => isTrueRangedWeapon(w));
+    const isKnifeOrDagger = (w) => {
+      const name = String(w?.name || "").toLowerCase();
+      return name.includes("knife") || name.includes("dagger");
+    };
 
     // Use getWeaponType and getWeaponLength for detailed weapon info
     const weaponTypeInfo = equippedWeapons
@@ -2755,8 +2827,40 @@ export async function runPlayerTurnAI(player, context) {
 
     const adjacentToTarget = Number(currentDistance) <= 5.5;
 
+    if (inGrappleRange) {
+      const grappleWeapon = meleeWeapons.find(isKnifeOrDagger);
+      if (grappleWeapon) {
+        selectedWeapon = grappleWeapon;
+        addLog(
+          `${player.name} switches to ${selectedWeapon.name} for grapple-range combat.`,
+          "info"
+        );
+      } else {
+        selectedWeapon = {
+          id: "fallback_grapple_unarmed_strike",
+          name: "Unarmed Strike",
+          damage: "1d3",
+          damageDice: "1d3",
+          count: 1,
+          range: 5,
+          rangeFeet: 5,
+          reachFeet: 5,
+          attackType: "melee",
+          type: "melee",
+          weaponType: "melee",
+          category: "melee",
+          isMelee: true,
+          isWeapon: false,
+          isNaturalAttack: true,
+          isFallbackUnarmed: true,
+        };
+        addLog(
+          `${player.name} switches to unarmed close combat in grapple range.`,
+          "info"
+        );
+      }
     // If an archer is trapped in melee with no melee weapon, keep the turn resolvable.
-    if (adjacentToTarget && rangedWeapons.length > 0 && meleeWeapons.length === 0) {
+    } else if (adjacentToTarget && rangedWeapons.length > 0 && meleeWeapons.length === 0) {
       selectedWeapon = {
         id: "fallback_unarmed_strike",
         name: "Unarmed Strike",

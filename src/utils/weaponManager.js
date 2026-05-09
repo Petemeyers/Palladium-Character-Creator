@@ -148,6 +148,73 @@ export function getAvailableWeapons(character) {
   return weapons;
 }
 
+function isKnightlyCharacter(character = {}) {
+  const occ = String(character.occ || character.OCC || character.class || "").toLowerCase();
+  const name = String(character.name || "").toLowerCase();
+  return occ.includes("knight") || occ.includes("paladin") || name.includes(" knight");
+}
+
+function isRangedWeapon(item = {}) {
+  const name = String(item.name || "").toLowerCase();
+  const category = String(item.category || "").toLowerCase();
+  const type = String(item.type || "").toLowerCase();
+  return (
+    name.includes("bow") ||
+    name.includes("crossbow") ||
+    name.includes("sling") ||
+    category.includes("bow") ||
+    category.includes("crossbow") ||
+    category.includes("ranged") ||
+    type.includes("ranged") ||
+    type.includes("missile")
+  );
+}
+
+function isKnifeOrDagger(item = {}) {
+  const name = String(item.name || "").toLowerCase();
+  return name.includes("knife") || name.includes("dagger");
+}
+
+function scoreKnightPrimaryWeapon(item = {}) {
+  if (!item || isRangedWeapon(item) || isKnifeOrDagger(item)) return -1;
+  const name = String(item.name || "").toLowerCase();
+  if (name.includes("lance")) return 100;
+  if (name.includes("long sword")) return 95;
+  if (name.includes("short sword")) return 90;
+  if (name.includes("spear")) return 85;
+  if (name.includes("sword")) return 80;
+  if (name.includes("mace") || name.includes("hammer") || name.includes("club")) return 70;
+  if (name.includes("axe")) return 60;
+  return item.damage ? 10 : 0;
+}
+
+function orderKnightWeaponsForAutoEquip(character, weapons = []) {
+  if (!isKnightlyCharacter(character) || weapons.length < 2) return weapons;
+
+  const remaining = [...weapons];
+  const takeWeapon = (predicate) => {
+    const index = remaining.findIndex(predicate);
+    if (index < 0) return null;
+    const [weapon] = remaining.splice(index, 1);
+    return weapon;
+  };
+
+  const scoredPrimary = remaining
+    .map((weapon, index) => ({ weapon, index, score: scoreKnightPrimaryWeapon(weapon) }))
+    .filter((entry) => entry.score >= 0)
+    .sort((a, b) => b.score - a.score || a.index - b.index)[0];
+
+  const primary = scoredPrimary ? takeWeapon((weapon) => weapon === scoredPrimary.weapon) : null;
+  const backup = takeWeapon(isKnifeOrDagger);
+
+  return [
+    ...(primary ? [primary] : []),
+    ...(backup ? [backup] : []),
+    ...remaining.filter((weapon) => !isRangedWeapon(weapon)),
+    ...remaining.filter((weapon) => isRangedWeapon(weapon)),
+  ];
+}
+
 /**
  * Equip a weapon to a character
  * @param {Object} character - Character object
@@ -371,7 +438,10 @@ export function autoEquipWeapons(character) {
   const currentRightWeapon = updatedCharacter.equippedWeapons[0];
   const currentLeftWeapon = updatedCharacter.equippedWeapons[1];
 
-  const availableWeapons = getAvailableWeapons(updatedCharacter);
+  const availableWeapons = orderKnightWeaponsForAutoEquip(
+    updatedCharacter,
+    getAvailableWeapons(updatedCharacter)
+  );
   console.log("🔍 autoEquipWeapons - Available weapons:", availableWeapons);
 
   // Handle inventory updates

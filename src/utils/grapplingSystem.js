@@ -158,16 +158,40 @@ export function attemptGrapple(attacker, defender, rollDice = null, attackerPos 
 
   // Roll opposed strike vs parry with size/strength modifiers
   const rollFn = rollDice || (() => Math.floor(Math.random() * 20) + 1);
+  const naturalAttackRoll = rollFn();
+  const naturalDefendRoll = rollFn();
+  const psStepMod = Number.isFinite(sizeModifiers.psModifier)
+    ? sizeModifiers.psModifier
+    : Math.trunc((sizeModifiers.psDiff || 0) / 5);
+  const attackerPSDiffBonus = Math.max(0, psStepMod);
+  const defenderPSDiffBonus = Math.max(0, -psStepMod);
+  const attackerSizeStrikeBonus = sizeModifiers.strikeBonus || 0;
+  const defenderSizeParryBonus = sizeModifiers.defenderParryPenalty || 0;
   const attackRoll =
-    rollFn() +
+    naturalAttackRoll +
     attackerPPBonus +
     attackerStrikeBonus +
-    (sizeModifiers.strikeBonus || 0);
+    attackerSizeStrikeBonus +
+    attackerPSDiffBonus;
   const defendRoll =
-    rollFn() +
+    naturalDefendRoll +
     defenderPPBonus +
     defenderParryBonus +
-    (sizeModifiers.defenderParryPenalty || 0);
+    defenderSizeParryBonus +
+    defenderPSDiffBonus;
+  const rollBreakdown = {
+    naturalAttackRoll,
+    naturalDefendRoll,
+    attackerPPBonus,
+    defenderPPBonus,
+    attackerStrikeBonus,
+    defenderParryBonus,
+    attackerSizeStrikeBonus,
+    defenderSizeParryBonus,
+    psStepMod,
+    attackerPSDiffBonus,
+    defenderPSDiffBonus,
+  };
 
   if (attackRoll > defendRoll) {
     // Successfully grappled - use initiateGrapple to pull into same hex
@@ -192,6 +216,7 @@ export function attemptGrapple(attacker, defender, rollDice = null, attackerPos 
         message: grappleResult.message, // Use message from initiateGrapple (no duplicate)
         attackRoll,
         defendRoll,
+        rollBreakdown,
         attacker: grappleResult.attacker,
         defender: grappleResult.defender,
         attackerState: grappleResult.attacker.grappleState,
@@ -205,6 +230,7 @@ export function attemptGrapple(attacker, defender, rollDice = null, attackerPos 
         reason: grappleResult.reason,
         attackRoll,
         defendRoll,
+        rollBreakdown,
       };
     }
   } else {
@@ -216,6 +242,7 @@ export function attemptGrapple(attacker, defender, rollDice = null, attackerPos 
       reason: `${attacker.name} fails to grapple ${defender.name} (${attackRoll} vs ${defendRoll})`,
       attackRoll,
       defendRoll,
+      rollBreakdown,
     };
   }
 }
@@ -329,17 +356,44 @@ export function performTakedown(attacker, defender, rollDice = null) {
 
   // Check if attacker can lift defender
   const liftCheck = canLiftAndThrow(attacker, defender);
-  if (!liftCheck.canThrow) {
+  const canThrow =
+    typeof liftCheck === "boolean"
+      ? liftCheck
+      : !!liftCheck?.canThrow;
+  if (!canThrow) {
     return {
       success: false,
-      reason: liftCheck.reason,
+      reason:
+        liftCheck?.reason ||
+        `${attacker.name} is not strong enough to take down ${defender.name}.`,
     };
   }
 
   // Roll for takedown (target 15+) with size modifiers
   const rollFn = rollDice || (() => Math.floor(Math.random() * 20) + 1);
+  const takedownModifier =
+    sizeModifiers.attackerStrikeBonus ??
+    sizeModifiers.strikeBonus ??
+    sizeModifiers.modifier ??
+    0;
+  const sizeModifier =
+    sizeModifiers.attackerStrikeBonus ??
+    sizeModifiers.strikeBonus ??
+    0;
+  const leverageModifier =
+    takedownModifier - sizeModifier;
+  const naturalRoll = rollFn();
   const takedownRoll =
-    rollFn() + attackerPSBonus + sizeModifiers.attackerStrikeBonus;
+    naturalRoll + attackerPSBonus + takedownModifier;
+  const takedownBreakdown = {
+    naturalRoll,
+    attackerPSBonus,
+    takedownModifier,
+    sizeModifier,
+    leverageModifier,
+    total: takedownRoll,
+    dc: 15,
+  };
 
   // Drain stamina
   drainStamina(attacker, STAMINA_COSTS.GRAPPLING, 1);
@@ -364,16 +418,18 @@ export function performTakedown(attacker, defender, rollDice = null) {
     return {
       success: true,
       message: `${attacker.name} throws ${defender.name} to the ground!`,
-      damage: throwDamage,
+      damage: typeof liftCheck === "object" ? throwDamage : 0,
       takedownRoll,
+      takedownBreakdown,
       attackerState: attacker.grappleState,
       defenderState: defender.grappleState,
     };
   } else {
     return {
       success: false,
-      reason: `${attacker.name} fails to complete the takedown (Roll: ${takedownRoll}, need 15+)`,
+      reason: `${attacker.name} fails to take down ${defender.name}.`,
       takedownRoll,
+      takedownBreakdown,
     };
   }
 }

@@ -25,6 +25,99 @@ const WEAPON_CATEGORY_MAP = {
   'giant-sized': ['giant', 'large', 'huge'], // For giant races
 };
 
+const KNIGHT_PRIMARY_WEAPON_PRIORITY = [
+  'lance',
+  'long sword',
+  'short sword',
+  'spear',
+  'mace',
+  'hammer',
+  'club',
+  'sword',
+  'axe',
+];
+
+function isKnightlyOCC(character = {}) {
+  const occ = String(character.occ || character.OCC || character.class || '').toLowerCase();
+  return occ.includes('knight') || occ.includes('paladin');
+}
+
+function isRangedWeaponName(weapon = {}) {
+  const name = String(weapon.name || '').toLowerCase();
+  const category = String(weapon.category || '').toLowerCase();
+  const type = String(weapon.type || '').toLowerCase();
+  return (
+    name.includes('bow') ||
+    name.includes('crossbow') ||
+    name.includes('sling') ||
+    category.includes('bow') ||
+    category.includes('crossbow') ||
+    category.includes('ranged') ||
+    type.includes('ranged') ||
+    type.includes('missile')
+  );
+}
+
+function isKnifeOrDagger(weapon = {}) {
+  const name = String(weapon.name || '').toLowerCase();
+  return name.includes('knife') || name.includes('dagger');
+}
+
+function scoreKnightPrimaryWeapon(weapon = {}) {
+  if (!weapon || isRangedWeaponName(weapon) || isKnifeOrDagger(weapon)) return -1;
+  const name = String(weapon.name || '').toLowerCase();
+  const priorityIndex = KNIGHT_PRIMARY_WEAPON_PRIORITY.findIndex((term) => name.includes(term));
+  if (priorityIndex >= 0) return 100 - priorityIndex;
+  return weapon.damage ? 10 : 0;
+}
+
+function pickBestKnightWeapon(weapons = []) {
+  return [...weapons]
+    .map((weapon) => ({ weapon, score: scoreKnightPrimaryWeapon(weapon) }))
+    .filter((entry) => entry.score >= 0)
+    .sort((a, b) => b.score - a.score)[0]?.weapon || null;
+}
+
+function pickKnightBackupWeapon(weapons = []) {
+  return weapons.find((weapon) => isKnifeOrDagger(weapon)) || null;
+}
+
+function equipSecondaryWeaponToEnemy(enemy, weapon) {
+  if (!enemy || !weapon) return enemy;
+  const formattedWeapon = formatWeaponForEnemy(weapon);
+
+  if (!enemy.equippedWeapons || !Array.isArray(enemy.equippedWeapons)) {
+    enemy.equippedWeapons = [
+      {
+        name: "Unarmed",
+        damage: "1d3",
+        type: "unarmed",
+        category: "unarmed",
+        slot: "Right Hand",
+      },
+      {
+        name: "Unarmed",
+        damage: "1d3",
+        type: "unarmed",
+        category: "unarmed",
+        slot: "Left Hand",
+      },
+    ];
+  }
+
+  enemy.equippedWeapons[1] = {
+    ...formattedWeapon,
+    slot: "Left Hand",
+  };
+
+  if (!enemy.equipped) {
+    enemy.equipped = {};
+  }
+  enemy.equipped.weaponSecondary = formattedWeapon;
+
+  return enemy;
+}
+
 /**
  * Parse favorite weapons string/array into searchable terms
  * @param {string|Array} favoriteWeapons - Favorite weapons description or array
@@ -462,6 +555,35 @@ export function assignRandomWeaponToEnemy(enemy, favoriteWeapons) {
       const name = (w.name || '').toLowerCase();
       return !name.includes('bow') && !name.includes('crossbow') && !name.includes('sling');
     });
+  }
+
+  if (isKnightlyOCC(enemy)) {
+    const knightPrimary =
+      pickBestKnightWeapon(matchingWeapons) ||
+      pickBestKnightWeapon(shopItems.filter(item =>
+        item.type === 'weapon' || item.damage || item.category === 'weapon' || item.category === 'Weapons'
+      ));
+
+    if (knightPrimary) {
+      const knightBackup =
+        pickKnightBackupWeapon(matchingWeapons) ||
+        pickKnightBackupWeapon(shopItems.filter(item =>
+          item.type === 'weapon' || item.damage || item.category === 'weapon' || item.category === 'Weapons'
+        ));
+      const preferredBow = matchingWeapons.find((weapon) => isRangedWeaponName(weapon));
+
+      enemy = equipWeaponToEnemy(enemy, knightPrimary);
+      enemy = addWeaponToInventory(enemy, knightPrimary);
+      if (knightBackup && knightBackup.name !== knightPrimary.name) {
+        enemy = equipSecondaryWeaponToEnemy(enemy, knightBackup);
+        enemy = addWeaponToInventory(enemy, knightBackup);
+      }
+      if (preferredBow) {
+        enemy = addWeaponToInventory(enemy, preferredBow);
+      }
+      console.log(`Assigned knight loadout to ${enemy.name}: ${knightPrimary.name}${knightBackup ? `, ${knightBackup.name}` : ''}`);
+      return enemy;
+    }
   }
 
   // Debug: log matched weapons for troubleshooting

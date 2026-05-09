@@ -254,7 +254,7 @@ export function getCombinedGrappleModifiers(attacker, defender) {
 
   // PS difference modifier (1 point per 5 PS difference)
   const psDiff = attackerPS - defenderPS;
-  const psModifier = Math.floor(psDiff / 5);
+  const psModifier = Math.trunc(psDiff / 5);
 
   // Combined modifier
   const totalModifier = sizeModifierDiff + psModifier;

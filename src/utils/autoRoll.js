@@ -129,6 +129,7 @@ function getClassHPBonus(occ) {
  */
 import { assignRandomWeaponToEnemy } from './enemyWeaponAssigner.js';
 import shopItems from '../data/shopItems.js';
+import armorShopData from '../data/armorShopData.js';
 import { getUnifiedAbilities } from './unifiedAbilities.js';
 import { convertUnifiedSpellToCombatSpell } from './getFighterSpells.js';
 import { getAllSpellsFromDB } from '../data/combatSpells.js';
@@ -151,19 +152,38 @@ export function createPlayableCharacterFighter(character, customName = null) {
 
   // Calculate AR (Armor Rating) - default if not specified
   let ar = character.AR || calculateDefaultAR(character, attributes);
+  let assignedArmor = null;
   
-  // Add armor for knights (chain mail, double mail, scale mail, splint, or plate)
-  if (character.occ === "Knight" || character.occ === "Paladin") {
-    const knightArmors = [
-      { name: "Chain Mail", AR: 13 },
-      { name: "Double Mail", AR: 14 },
-      { name: "Scale Mail", AR: 14 },
-      { name: "Splint Mail", AR: 15 },
-      { name: "Plate Armor", AR: 16 }
-    ];
-    const selectedArmor = knightArmors[Math.floor(Math.random() * knightArmors.length)];
-    ar = selectedArmor.AR;
-    console.log(`🛡️ ${character.name || 'Knight'} equipped with ${selectedArmor.name} (AR: ${ar})`);
+  // Knightly playable fighters should have real visible plate armor, not an AR-only value.
+  const occLabel = String(character.occ || character.OCC || character.className || "").toLowerCase();
+  const nameLabel = String(character.name || "").toLowerCase();
+  const isKnightlyPlayable =
+    occLabel.includes("knight") ||
+    occLabel.includes("paladin") ||
+    nameLabel.includes("knight") ||
+    nameLabel.includes("paladin");
+  if (isKnightlyPlayable) {
+    const heavyArmors = armorShopData?.heavyArmor || [];
+    const selectedArmor =
+      heavyArmors.find((armor) => armor.name === "Plate Mail") ||
+      heavyArmors.find((armor) => armor.name === "Field Plate") ||
+      heavyArmors.find((armor) => String(armor.name || "").toLowerCase().includes("plate")) ||
+      { name: "Plate Mail", type: "heavy", ar: 16, sdc: 80, weight: 50 };
+    assignedArmor = {
+      name: selectedArmor.name,
+      type: "armor",
+      category: selectedArmor.type || "heavy",
+      armorRating: Number(selectedArmor.ar ?? selectedArmor.AR ?? 16) || 16,
+      ar: Number(selectedArmor.ar ?? selectedArmor.AR ?? 16) || 16,
+      sdc: Number(selectedArmor.sdc ?? selectedArmor.SDC ?? 80) || 80,
+      currentSDC: Number(selectedArmor.currentSDC ?? selectedArmor.sdc ?? selectedArmor.SDC ?? 80) || 80,
+      maxSDC: Number(selectedArmor.sdc ?? selectedArmor.SDC ?? 80) || 80,
+      weight: selectedArmor.weight,
+      cost: selectedArmor.cost,
+      equipped: true,
+    };
+    ar = Math.max(ar, assignedArmor.armorRating);
+    console.log(`${character.name || 'Knight'} equipped with ${assignedArmor.name} (AR: ${ar})`);
   }
 
   // Calculate Speed
@@ -347,6 +367,8 @@ export function createPlayableCharacterFighter(character, customName = null) {
     currentHP: rolledHP,
     maxHP: rolledHP,
     AR: ar,
+    equippedArmor: assignedArmor?.name || character.equippedArmor || character.armorName || null,
+    armor: assignedArmor || character.armor || null,
     spd: speed,
 
     // Attributes (for reference)
@@ -375,6 +397,7 @@ export function createPlayableCharacterFighter(character, customName = null) {
     equipped: {
       weaponPrimary: derivedWeapons[0],
       weaponSecondary: derivedWeapons[1] || null,
+      ...(assignedArmor ? { chest: assignedArmor } : {}),
     },
 
     // Metadata

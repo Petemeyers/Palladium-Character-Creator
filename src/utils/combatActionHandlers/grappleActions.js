@@ -105,11 +105,21 @@ export function handleGrappleAction(actionType, attacker, defenderId, context) {
     case 'takedown':
       result = performTakedown(attacker, defender, rollDice);
       // Log dice roll for takedown
-      if (result && result.takedownRoll !== undefined) {
+      if (result?.takedownBreakdown) {
+        const b = result.takedownBreakdown;
+        addLog(
+          `${attacker.name} takedown roll: d20 ${b.naturalRoll} + PS ${b.attackerPSBonus} + size ${b.sizeModifier} + leverage ${b.leverageModifier} = ${b.total} vs DC ${b.dc}`,
+          "info"
+        );
+      } else if (result && result.takedownRoll !== undefined) {
         const attackerPS = attacker.attributes?.PS || attacker.PS || 10;
         const attackerPSBonus = Math.floor((attackerPS - 10) / 2);
         const sizeMod = getCombinedGrappleModifiers(attacker, defender);
-        const sizeBonus = sizeMod.attackerStrikeBonus || 0;
+        const sizeBonus =
+          sizeMod.attackerStrikeBonus ??
+          sizeMod.strikeBonus ??
+          sizeMod.modifier ??
+          0;
         const naturalRoll = result.takedownRoll - attackerPSBonus - sizeBonus;
         const bonusDisplay = (attackerPSBonus + sizeBonus) >= 0 ? `+${attackerPSBonus + sizeBonus}` : `${attackerPSBonus + sizeBonus}`;
         addLog(`🎲 ${attacker.name} takedown roll: ${naturalRoll} ${bonusDisplay} = ${result.takedownRoll} vs DC 15`, "info");
@@ -210,9 +220,27 @@ export function handleGrappleAction(actionType, attacker, defenderId, context) {
     if (result.attackRoll !== undefined && result.defendRoll !== undefined) {
       const attackRoll = result.attackRoll;
       const defendRoll = result.defendRoll;
-      const naturalAttack = attackRoll - (attacker.bonuses?.strike || 0) - Math.floor(((attacker.attributes?.PP || attacker.PP || 10) - 10) / 2);
-      const naturalDefend = defendRoll - (defender.bonuses?.parry || 0) - Math.floor(((defender.attributes?.PP || defender.PP || 10) - 10) / 2);
-      addLog(`🎲 ${attacker.name} grapple roll: ${naturalAttack} + bonuses = ${attackRoll} vs ${defender.name}'s parry: ${naturalDefend} + bonuses = ${defendRoll}`, "info");
+      const breakdown = result.rollBreakdown;
+      if (breakdown) {
+        const attackerPSLabel = breakdown.psStepMod > 0
+          ? ` + PS diff ${breakdown.attackerPSDiffBonus}`
+          : "";
+        const defenderPSLabel = breakdown.psStepMod < 0
+          ? ` + PS diff ${breakdown.defenderPSDiffBonus}`
+          : "";
+        addLog(
+          `${attacker.name} grapple roll: d20 ${breakdown.naturalAttackRoll} + PP ${breakdown.attackerPPBonus} + strike ${breakdown.attackerStrikeBonus} + size ${breakdown.attackerSizeStrikeBonus}${attackerPSLabel} = ${attackRoll}`,
+          "info"
+        );
+        addLog(
+          `${defender.name} parry roll: d20 ${breakdown.naturalDefendRoll} + PP ${breakdown.defenderPPBonus} + parry ${breakdown.defenderParryBonus} + size ${breakdown.defenderSizeParryBonus}${defenderPSLabel} = ${defendRoll}`,
+          "info"
+        );
+      } else {
+        const naturalAttack = attackRoll - (attacker.bonuses?.strike || 0) - Math.floor(((attacker.attributes?.PP || attacker.PP || 10) - 10) / 2);
+        const naturalDefend = defendRoll - (defender.bonuses?.parry || 0) - Math.floor(((defender.attributes?.PP || defender.PP || 10) - 10) / 2);
+        addLog(`🎲 ${attacker.name} grapple roll: ${naturalAttack} + bonuses = ${attackRoll} vs ${defender.name}'s parry: ${naturalDefend} + bonuses = ${defendRoll}`, "info");
+      }
     } else if (result.attackRoll !== undefined) {
       addLog(`🎲 ${attacker.name} grapple roll: ${result.attackRoll}`, "info");
     } else if (result.defendRoll !== undefined && result.defendRoll === 20) {
@@ -313,6 +341,10 @@ export function handleGrappleAction(actionType, attacker, defenderId, context) {
     const attackerIndex = updated.findIndex(f => f.id === attacker.id);
     if (attackerIndex !== -1) {
       updated[attackerIndex].remainingAttacks = Math.max(0, updated[attackerIndex].remainingAttacks - 1);
+      addLog(
+        `${updated[attackerIndex].name} has ${updated[attackerIndex].remainingAttacks}/${updated[attackerIndex].attacksPerMelee || updated[attackerIndex].actionsPerMelee || "?"} attacks remaining.`,
+        "info"
+      );
       setFighters(updated);
     }
     
@@ -376,6 +408,10 @@ export function handleGrappleAction(actionType, attacker, defenderId, context) {
       const attackerIndex = updated.findIndex(f => f.id === attacker.id);
       if (attackerIndex !== -1) {
         updated[attackerIndex].remainingAttacks = Math.max(0, updated[attackerIndex].remainingAttacks - 1);
+        addLog(
+          `${updated[attackerIndex].name} has ${updated[attackerIndex].remainingAttacks}/${updated[attackerIndex].attacksPerMelee || updated[attackerIndex].actionsPerMelee || "?"} attacks remaining.`,
+          "info"
+        );
         setFighters(updated);
       }
     }

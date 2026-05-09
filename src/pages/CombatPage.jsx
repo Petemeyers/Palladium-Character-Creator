@@ -777,6 +777,37 @@ function isRangedAttackData(attackData) {
   );
 }
 
+function isBowOrCrossbowAttackData(attackData) {
+  const name = String(attackData?.name || attackData?.weapon?.name || "").toLowerCase();
+  const ammo = String(attackData?.ammunition || attackData?.ammoType || "").toLowerCase();
+  return (
+    name.includes("bow") ||
+    name.includes("crossbow") ||
+    ammo.includes("arrow") ||
+    ammo.includes("bolt")
+  );
+}
+
+function getEquippedArmorName(fighter) {
+  const equippedArmor = fighter?.equippedArmor;
+  if (typeof equippedArmor === "string") return equippedArmor;
+  if (equippedArmor?.name) return equippedArmor.name;
+  if (fighter?.equipped?.chest?.name) return fighter.equipped.chest.name;
+  if (fighter?.armor?.name) return fighter.armor.name;
+  if (fighter?.wornArmor?.name) return fighter.wornArmor.name;
+  if (typeof fighter?.armorName === "string") return fighter.armorName;
+  return "";
+}
+
+function isPlateArmorEquipped(fighter) {
+  const armorName = getEquippedArmorName(fighter).toLowerCase();
+  return (
+    armorName.includes("plate") ||
+    armorName.includes("field plate") ||
+    armorName.includes("half plate")
+  );
+}
+
 function isAdjacentDistance(distanceFeet) {
   const d = Number(distanceFeet);
   return Number.isFinite(d) && d <= 5.5;
@@ -9643,6 +9674,7 @@ function CombatPage({ characters = [] }) {
       const beforeName = String(attackData?.name || "");
       const nameLower = beforeName.toLowerCase();
       const damageLower = String(attackData?.damage || "").toLowerCase();
+      const grappleRange = Boolean(opts.grappleRange);
 
       const looksGeneric =
         nameLower === "strike" ||
@@ -9664,7 +9696,7 @@ function CombatPage({ characters = [] }) {
         nameLower.includes("bow/longbow");
 
       // If the selected attack already looks like a real specific weapon (and not a placeholder), keep it.
-      if (!looksGeneric && !looksPlaceholderRanged) {
+      if (!grappleRange && !looksGeneric && !looksPlaceholderRanged) {
         return { attack: attackData, meta: { beforeName, afterName: beforeName, equippedName: null } };
       }
 
@@ -9682,8 +9714,39 @@ function CombatPage({ characters = [] }) {
         );
       };
 
-      const candidates = preferRanged ? equipped.filter(rangedLike) : equipped;
+      const shortGrappleWeapon = (w) => {
+        const n = String(w?.name || "").toLowerCase();
+        return n.includes("knife") || n.includes("dagger");
+      };
+      const candidates = grappleRange
+        ? equipped.filter(shortGrappleWeapon)
+        : preferRanged
+          ? equipped.filter(rangedLike)
+          : equipped;
+      if (grappleRange && candidates.length === 0) {
+        return {
+          attack: {
+            ...attackData,
+            name: "Unarmed Strike",
+            damage: attackData?.damage || "1d3",
+            damageDice: attackData?.damageDice || attackData?.damage || "1d3",
+            count: Number(attackData?.count ?? 1),
+            type: "melee",
+            attackType: "melee",
+            weaponType: "melee",
+            category: "melee",
+            range: 5,
+            rangeFeet: 5,
+            reachFeet: 5,
+            isRanged: false,
+            isMelee: true,
+            isFallbackUnarmed: true,
+          },
+          meta: { beforeName, afterName: "Unarmed Strike", equippedName: null },
+        };
+      }
       const chosen =
+        (grappleRange ? candidates[0] : null) ||
         (preferRanged
           ? [...candidates].sort((a, b) => (Number(b?.range) || 0) - (Number(a?.range) || 0))[0]
           : candidates[0]) ||
@@ -10479,8 +10542,25 @@ function CombatPage({ characters = [] }) {
       attacker?.type === "enemy" ||
       attacker?.aiControlled === true ||
       effectiveAttacker?.aiControlled === true;
+    const preResolveAttackDistance = (() => {
+      const attackerPos =
+        positionsRef.current?.[attacker?.id] ||
+        positions?.[attacker?.id];
+      const defenderPos =
+        positionsRef.current?.[defender?.id] ||
+        positions?.[defender?.id];
+      return attackerPos && defenderPos
+        ? calculateDistance(attackerPos, defenderPos)
+        : Number.POSITIVE_INFINITY;
+    })();
     if (isAIControlledAttacker) {
-      const resolved = resolveEnemyEffectiveAttack(effectiveAttacker, attackData, { preferRanged: true });
+      const resolved = resolveEnemyEffectiveAttack(effectiveAttacker, attackData, {
+        preferRanged: true,
+        grappleRange:
+          preResolveAttackDistance <= 0 ||
+          attackerGrappleStatus.state !== GRAPPLE_STATES.NEUTRAL ||
+          getGrappleStatus(defender).state !== GRAPPLE_STATES.NEUTRAL,
+      });
       attackData = resolved.attack;
     }
 
@@ -10491,6 +10571,20 @@ function CombatPage({ characters = [] }) {
         `DEBUG attackData final: attacker=${attacker.name} type=${attacker.type} ai=${attacker.aiControlled === true} attack=${attackData?.name} atkType=${attackData?.type} range=${attackData?.range ?? "none"}`,
         "info"
       );
+    }
+
+    if (
+      isAutomatedAttacker &&
+      isBowOrCrossbowAttackData(attackData) &&
+      isPlateArmorEquipped(effectiveAttacker)
+    ) {
+      const armorName = getEquippedArmorName(effectiveAttacker) || "plate armor";
+      addLog(
+        `🚫 ${effectiveAttacker?.name || attacker.name} cannot fire ${attackData?.name || "a bow"} while wearing ${armorName}.`,
+        "warning"
+      );
+      burnFailedAutomatedActionAndEnd(`${attackData?.name || "bow"} blocked by ${armorName}`);
+      return;
     }
 
     const adjacentAttackDistance = (() => {
@@ -13726,6 +13820,50 @@ function CombatPage({ characters = [] }) {
       scheduleEndTurn(delayOverride, source);
     };
 
+    const executePlayerAIGrapple = (attacker, target, requestedActionType = null) => {
+      const liveFighters = fightersRef.current ?? fighters;
+      const liveIndex = turnIndexRef.current;
+      const activeFighter = liveFighters?.[liveIndex];
+      const liveAttacker = liveFighters.find((f) => f.id === attacker?.id);
+      const liveTarget = liveFighters.find((f) => f.id === target?.id);
+      const sameTurn =
+        liveIndex === startTurnIndex &&
+        activeFighter?.id === startFighterId &&
+        liveAttacker?.id === startFighterId &&
+        (meleeRoundRef.current ?? meleeRound) === startMeleeRound &&
+        (turnCounterRef.current ?? turnCounter) === startTurnCounter;
+
+      if (!combatActiveRef.current || combatOverRef.current || !sameTurn) return false;
+      if (!liveAttacker || !liveTarget || !canFighterAct(liveAttacker)) return false;
+      if ((Number(liveAttacker.remainingAttacks ?? 0) || 0) <= 0) return false;
+      if (getFighterHP(liveTarget) <= MIN_COMBAT_HP || liveTarget.status === "defeated") return false;
+      const attackerPos = positionsRef.current?.[liveAttacker.id] || positions?.[liveAttacker.id];
+      const targetPos = positionsRef.current?.[liveTarget.id] || positions?.[liveTarget.id];
+      if (!attackerPos || !targetPos) return false;
+      const grappleDistance = calculateDistance(attackerPos, targetPos);
+      if (!isAdjacentDistance(grappleDistance)) return false;
+
+      const availableActions = getAvailableGrappleActions(liveAttacker, liveTarget);
+      const preferredAction =
+        requestedActionType ||
+        availableActions.find((action) => action.value === "takedown")?.value ||
+        availableActions.find((action) => action.value === "maintain")?.value ||
+        availableActions.find((action) => action.value === "groundStrike")?.value ||
+        availableActions.find((action) => action.value === "defenderReversal")?.value ||
+        availableActions.find((action) => action.value === "breakFree")?.value ||
+        availableActions.find((action) => action.value === "grapple")?.value ||
+        null;
+      if (!preferredAction || !availableActions.some((action) => action.value === preferredAction)) {
+        return false;
+      }
+
+      playerAIActionScheduledRef.current = true;
+      handleGrappleAction(preferredAction, liveAttacker, liveTarget.id);
+      processingPlayerAIRef.current = false;
+      scheduleEndTurn(50, "player-ai-grapple");
+      return true;
+    };
+
     const context = {
       fighters: liveFightersForPlayerAI,
       positions: positionsForAI,
@@ -13775,6 +13913,7 @@ function CombatPage({ characters = [] }) {
       getFighterISP,
       // Attack & combat
       attack: executePlayerAIAttack,
+      executeGrapple: executePlayerAIGrapple,
       setPositions,
       setFighters: commitPlayerAIFighters,
       getActionDelay,
@@ -13938,6 +14077,7 @@ function CombatPage({ characters = [] }) {
     getFighterPPE,
     getFighterISP,
     attack,
+    handleGrappleAction,
     setPositions,
     setFighters,
     getActionDelay,
@@ -13955,6 +14095,7 @@ function CombatPage({ characters = [] }) {
     getFighterMaxHP,
     getMoveDurationMs,
     getTargetsInLine,
+    getAvailableGrappleActions,
     aiControlEnabled,
     markFighterFledOffMap,
     isTinyPrey,
@@ -16310,7 +16451,12 @@ function CombatPage({ characters = [] }) {
     // BEFORE range validation / movement planning (shared with attack()).
     {
       const before = String(selectedAttack?.name || "");
-      const { attack: normalized, meta } = resolveEnemyEffectiveAttack(enemy, selectedAttack, { preferRanged: true });
+      const { attack: normalized, meta } = resolveEnemyEffectiveAttack(enemy, selectedAttack, {
+        preferRanged: true,
+        grappleRange:
+          getGrappleStatus(enemy).state !== GRAPPLE_STATES.NEUTRAL ||
+          getGrappleStatus(target).state !== GRAPPLE_STATES.NEUTRAL,
+      });
       selectedAttack = normalized;
       attackName = selectedAttack?.name || attackName;
 
@@ -16367,7 +16513,13 @@ function CombatPage({ characters = [] }) {
       // ✅ Guardrail (again, just in case): keep selectedAttack resolved before validating.
       // This uses the same resolver as attack() so planner/executor cannot diverge.
       if (enemy?.type === "enemy" && selectedAttack) {
-        const { attack: normalized } = resolveEnemyEffectiveAttack(enemy, selectedAttack, { preferRanged: true });
+        const { attack: normalized } = resolveEnemyEffectiveAttack(enemy, selectedAttack, {
+          preferRanged: true,
+          grappleRange:
+            getGrappleStatus(enemy).state !== GRAPPLE_STATES.NEUTRAL ||
+            getGrappleStatus(target).state !== GRAPPLE_STATES.NEUTRAL ||
+            currentDistance <= 0,
+        });
         selectedAttack = normalized;
         attackName = selectedAttack?.name || attackName;
       }
@@ -18425,6 +18577,14 @@ function CombatPage({ characters = [] }) {
         addLog(`   🎲 ${attr}: ${data.dice} = [${rollBreakdown}]${bonus} = ${data.value}`, "info");
       });
       addLog(`   HP: ${newFighter.currentHP}, AR: ${newFighter.AR}, Speed: ${newFighter.Spd || newFighter.spd || newFighter.attributes?.Spd || newFighter.attributes?.spd || 10}`, "info");
+      const equippedArmorName = getEquippedArmorName(newFighter);
+      const equippedArmorAR =
+        newFighter.equipped?.chest?.armorRating ||
+        newFighter.equipped?.chest?.ar ||
+        newFighter.AR;
+      if (equippedArmorName) {
+        addLog(`   ${newFighter.name} armor: ${equippedArmorName} (AR ${equippedArmorAR})`, "info");
+      }
       addLog(`   Bonuses: ${Object.entries(newFighter.bonuses).map(([key, val]) =>
         `${key}: +${val}`).join(", ")}`, "info");
       if (newFighter.equippedWeapons && newFighter.equippedWeapons.length > 0 && newFighter.equippedWeapons[0].name !== "Unarmed Strike") {
