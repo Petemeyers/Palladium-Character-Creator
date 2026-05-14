@@ -19755,13 +19755,60 @@ function CombatPage({ characters = [] }) {
         const occupant = isHexOccupied(newX, newY, enemy.id);
         let targetX = newX;
         let targetY = newY;
-        let closingIntoOpponent = false;
         let attackOfOpportunityAttacker = null;
+        let stoppedAdjacentToTarget = false;
+        const findAdjacentEngagementHex = (occupiedPos) => {
+          const neighbors = getHexNeighbors(occupiedPos.x, occupiedPos.y) || [];
+          const openAdjacent = neighbors
+            .filter((pos) => (
+              pos &&
+              pos.x >= 0 &&
+              pos.x < GRID_CONFIG.GRID_WIDTH &&
+              pos.y >= 0 &&
+              pos.y < GRID_CONFIG.GRID_HEIGHT &&
+              isValidPosition(pos.x, pos.y, combatTerrain) &&
+              !isHexOccupied(pos.x, pos.y, enemy.id)
+            ))
+            .sort((a, b) => {
+              const aFromStart = calculateDistance(currentPos, a);
+              const bFromStart = calculateDistance(currentPos, b);
+              if (aFromStart !== bFromStart) return aFromStart - bFromStart;
+              return calculateDistance(a, targetPos) - calculateDistance(b, targetPos);
+            });
+
+          if (openAdjacent.length > 0) return openAdjacent[0];
+
+          for (let step = Math.max(1, moveDistance - 1); step >= 1; step -= 1) {
+            const fallbackX = Math.round(currentPos.x + (dx / distance) * step);
+            const fallbackY = Math.round(currentPos.y + (dy / distance) * step);
+            if (
+              fallbackX >= 0 &&
+              fallbackX < GRID_CONFIG.GRID_WIDTH &&
+              fallbackY >= 0 &&
+              fallbackY < GRID_CONFIG.GRID_HEIGHT &&
+              isValidPosition(fallbackX, fallbackY, combatTerrain) &&
+              !isHexOccupied(fallbackX, fallbackY, enemy.id)
+            ) {
+              return { x: fallbackX, y: fallbackY };
+            }
+          }
+
+          return null;
+        };
         if (occupant) {
           const occupantIsAlly = isAllyOf(enemy, occupant, legacySceneContext);
 
           if (occupantIsAlly) {
-            addLog(`🏃 ${enemy.name} weaves past ${occupant.name} while running full tilt`, "info");
+            const adjacent = findAdjacentEngagementHex({ x: newX, y: newY });
+            if (!adjacent) {
+              addLog(`🚫 ${enemy.name} cannot find an open hex around ${occupant.name}`, "info");
+              addLog(`⏭️ ${enemy.name} ends turn (blocked)`, "info");
+              scheduleEndTurn();
+              return;
+            }
+            targetX = adjacent.x;
+            targetY = adjacent.y;
+            addLog(`🏃 ${enemy.name} weaves past ${occupant.name} to (${targetX}, ${targetY})`, "info");
           } else {
             let attackRange = 5.5;
             if (typeof selectedAttack?.range === "number") {
@@ -19774,9 +19821,18 @@ function CombatPage({ characters = [] }) {
             }
 
             if (attackRange <= 5.5) {
-              closingIntoOpponent = true;
               attackOfOpportunityAttacker = occupant;
-              addLog(`⚔️ ${enemy.name} barrels through to engage ${occupant.name}!`, "info");
+              const adjacent = findAdjacentEngagementHex({ x: newX, y: newY });
+              if (!adjacent) {
+                addLog(`🚫 ${enemy.name} cannot find an open hex adjacent to ${occupant.name}`, "info");
+                addLog(`⏭️ ${enemy.name} ends turn (blocked)`, "info");
+                scheduleEndTurn();
+                return;
+              }
+              targetX = adjacent.x;
+              targetY = adjacent.y;
+              stoppedAdjacentToTarget = true;
+              addLog(`⚔️ ${enemy.name} closes to engage ${occupant.name}.`, "info");
             } else {
               // Find nearest unoccupied hex toward target
               let foundAlternative = false;
@@ -19819,18 +19875,6 @@ function CombatPage({ characters = [] }) {
           }
         }
 
-        if (closingIntoOpponent) {
-          setTemporaryHexSharing((prev) => ({
-            ...prev,
-            [enemy.id]: {
-              originalPos: { ...currentPos },
-              targetHex: { x: targetX, y: targetY },
-              targetCharId: attackOfOpportunityAttacker?.id,
-              turnCreated: turnCounter,
-            },
-          }));
-        }
-
         // Update position immediately (no pending movement)
         setPositions(prev => {
           const updated = {
@@ -19841,7 +19885,7 @@ function CombatPage({ characters = [] }) {
           return updated;
         });
 
-        if (closingIntoOpponent && attackOfOpportunityAttacker) {
+        if (attackOfOpportunityAttacker) {
           addLog(`⚠️ ${attackOfOpportunityAttacker.name} gets an attack of opportunity against ${enemy.name}!`, "warning");
           const attackerForAoO = attackOfOpportunityAttacker;
           const targetForAoO = enemy.id;
@@ -19873,7 +19917,12 @@ function CombatPage({ characters = [] }) {
           // 1994 Palladium format: RUN/SPRINT uses one action
           const feetPerMelee = speed * 18; // Official formula
           addLog(`🏃 ${enemy.name} uses one action to RUN (Speed ${speed} → ${feetPerMelee}ft/melee)`, "info");
-          addLog(`📍 Moves up to ${Math.round(distanceMoved)}ft toward ${target.name} → new position (${targetX},${targetY})`, "info");
+          addLog(
+            stoppedAdjacentToTarget
+              ? `📍 Stops adjacent to ${target.name} at (${targetX},${targetY})`
+              : `📍 Moves up to ${Math.round(distanceMoved)}ft toward ${target.name} → new position (${targetX},${targetY})`,
+            "info"
+          );
         }
 
         // Deduct 1 action for movement
