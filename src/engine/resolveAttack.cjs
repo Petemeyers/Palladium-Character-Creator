@@ -11,6 +11,16 @@ const {
 } = require("./projectileMiss.cjs");
 const { rollInt } = require("./rng.cjs");
 
+let strikeConnectsVsTarget = null;
+let pickPrimaryArmorSlot = null;
+try {
+  const armorMod = require("../utils/resolveWeaponImpactVsArmor.cjs");
+  strikeConnectsVsTarget = armorMod.strikeConnectsVsTarget;
+  pickPrimaryArmorSlot = armorMod.pickPrimaryArmorSlot;
+} catch {
+  /* optional */
+}
+
 // Optional timing engine (distance+altitude aware). If missing, we fall back to old flightMs logic.
 let timingEngine = null;
 try {
@@ -108,15 +118,32 @@ function prepareProjectileAttackSnapshot({
   const alwaysMissOn = safeNum(attack.alwaysMissOn, 1);
   const isAlwaysMiss = isFumbleFromRuleset(ruleset, d20, alwaysMissOn);
   const isAlwaysHit = d20 === alwaysHitOn;
-  const isCrit = !isAlwaysMiss && isCritFromRuleset(ruleset, d20, attack.critOn ?? 20);
-  const hit = !isAlwaysMiss && (isAlwaysHit || totalToHit >= targetAR);
+  const isCritDice = !isAlwaysMiss && isCritFromRuleset(ruleset, d20, attack.critOn ?? 20);
+  const hitSlotProj =
+    attack.hitSlot ||
+    (typeof pickPrimaryArmorSlot === "function" ? pickPrimaryArmorSlot(targetF, null) : "chest");
+  let hit;
+  if (typeof strikeConnectsVsTarget === "function" && targetF) {
+    const sc = strikeConnectsVsTarget({
+      defender: targetF,
+      attackTotal: totalToHit,
+      d20,
+      slot: hitSlotProj,
+      ruleset,
+      critOn: attack.critOn ?? 20,
+      alwaysMissOn,
+    });
+    hit = !isAlwaysMiss && (isAlwaysHit || sc.connects);
+  } else {
+    hit = !isAlwaysMiss && (isAlwaysHit || totalToHit >= targetAR);
+  }
   const missMargin = hit ? 0 : Math.max(1, Math.ceil(targetAR - totalToHit));
 
   const snapshot = {
     d20,
     totalToHit,
     hit,
-    isCrit: hit && isCrit,
+    isCrit: isCritDice,
     targetAR,
     bonus: toHitBonus,
     baseStrike,
@@ -138,7 +165,7 @@ function prepareProjectileAttackSnapshot({
     total: totalToHit,
     targetAR,
     hit,
-    crit: hit && isCrit,
+    crit: isCritDice,
   };
 
   if (isAlwaysMiss) {

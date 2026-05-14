@@ -98,6 +98,7 @@ import {
   getHitLocationDescription,
 } from "./hitLocationSystem.js";
 import { calculateArmorDamage } from "./equipmentManager.js";
+import { strikeConnectsVsTarget } from "./resolveWeaponImpactVsArmor.js";
 import { getSizeScale, applySizeCombatModifiers } from "./sizeScaleSystem.js";
 import { getStatusCombatPenalties } from "./statusEffectSystem.js";
 import { autoCastFearProtection } from "./fearAIAutoCast.js";
@@ -705,8 +706,9 @@ export class CombatEngine {
       (attacker.bonuses?.permanentPenalties?.strike || 0);
 
     // Roll attack (apply fatigue, status, and limb penalties)
+    const d20 = CryptoSecureDice.rollD20();
     const attackRoll =
-      CryptoSecureDice.rollD20() +
+      d20 +
       strikeBonus -
       fatiguePenalty -
       statusStrikePenalty +
@@ -716,6 +718,15 @@ export class CombatEngine {
       `🎲 ${attacker.name} rolls attack with status penalties applied (strike bonus ${strikeBonus}, fatigue -${fatiguePenalty}, status ${statusStrikePenalty}, limb ${limbStrikePenalty}).`,
       "combat"
     );
+
+    if (d20 === 1) {
+      this.logCallback(
+        `${attacker.name} fumbles the attack against ${defender.name}!`,
+        "combat"
+      );
+      roundStats.attacks++;
+      return false;
+    }
 
     // Get defender's status penalties for parry/dodge
     // Note: Limb penalties (stored in defender.bonuses.tempPenalties) will be applied
@@ -740,130 +751,127 @@ export class CombatEngine {
       return false;
     }
 
-    // Check if attack hits
-    if (attackRoll >= defender.AR) {
-      // Calculate base damage (status effects may reduce damage)
-      const baseDamage = this.calculateDamage(attacker, weapon);
-      const attackerStatusPenalties = getStatusPenalties(attacker);
-      const rolledDamage = Math.max(
-        1,
-        baseDamage + (attackerStatusPenalties.damage || 0)
-      );
+    // Resolve damage and hit location, then strike vs armor / natural AR
+    const baseDamage = this.calculateDamage(attacker, weapon);
+    const attackerStatusPenalties = getStatusPenalties(attacker);
+    const rolledDamage = Math.max(
+      1,
+      baseDamage + (attackerStatusPenalties.damage || 0)
+    );
 
-      // Check for called shot (from weapon or action options)
-      const calledShotLocation = weapon?.calledShotLocation || null;
+    const calledShotLocation = weapon?.calledShotLocation || null;
 
-      // Resolve hit location (random or called shot)
-      const { finalDamage, hit, traumaTriggered, effects } = resolveHitLocation(
-        attacker,
-        defender,
-        rolledDamage,
-        this.useRandomHitLocations,
-        {
-          calledShotLocation: calledShotLocation,
-          knockbackFeet: 0, // Can be enhanced later with knockdown system integration
-          failedPEroll: false, // Can be enhanced later
-        }
-      );
-
-      // Apply armor damage calculation (checks if armor absorbs hit)
-      let damageToCharacter = finalDamage;
-      if (defender.equipped && typeof calculateArmorDamage === "function") {
-        try {
-          const armorResult = calculateArmorDamage(
-            defender,
-            attackRoll,
-            finalDamage,
-            hit.slot
-          );
-
-          if (armorResult.armorHit) {
-            // Armor absorbed the hit
-            damageToCharacter = 0;
-            this.logCallback(
-              `${attacker.name} hits ${defender.name}'s ${hit.location}, but armor absorbs the blow! (Armor: ${armorResult.damageToArmor} SDC damage)`,
-              "combat"
-            );
-
-            // Log broken armor
-            if (armorResult.brokenArmor.length > 0) {
-              armorResult.brokenArmor.forEach((broken) => {
-                this.logCallback(
-                  `💢 ${defender.name}'s ${broken.name} is destroyed!`,
-                  "combat"
-                );
-              });
-            }
-          } else {
-            // Armor didn't block, damage goes to character
-            damageToCharacter = armorResult.damageToCharacter || finalDamage;
-          }
-        } catch (error) {
-          // Armor system not available, proceed with normal damage
-          console.warn("Armor damage calculation failed:", error);
-        }
+    const { finalDamage, hit, traumaTriggered, effects } = resolveHitLocation(
+      attacker,
+      defender,
+      rolledDamage,
+      this.useRandomHitLocations,
+      {
+        calledShotLocation: calledShotLocation,
+        knockbackFeet: 0, // Can be enhanced later with knockdown system integration
+        failedPEroll: false, // Can be enhanced later
       }
+    );
 
-      // Apply damage to character HP
-      if (damageToCharacter > 0) {
-        defender.currentHP -= damageToCharacter;
-        roundStats.damageDealt += damageToCharacter;
-      }
+    const hitSlot = hit?.slot || "chest";
+    const connect = strikeConnectsVsTarget({
+      defender,
+      attackTotal: attackRoll,
+      d20,
+      slot: hitSlot,
+      ruleset: null,
+      critOn: 20,
+      alwaysMissOn: 1,
+    });
+
+    if (!connect.connects) {
+      this.logCallback(
+        `${attacker.name} attacks ${defender.name} but misses (total ${attackRoll}, d20 ${d20})`,
+        "combat"
+      );
       roundStats.attacks++;
-
-      // Log hit with location information
-      const locationDesc = getHitLocationDescription(
-        hit,
-        damageToCharacter || finalDamage
-      );
-      const damageNote =
-        damageToCharacter > 0
-          ? ` (${damageToCharacter} HP damage)`
-          : " (armor absorbed)";
-
-      this.logCallback(
-        `${attacker.name} hits ${defender.name}'s ${hit.location}${damageNote}! ${locationDesc} (HP: ${defender.currentHP}/${defender.maxHP})`,
-        "combat"
-      );
-
-      // Log head trauma if triggered
-      if (traumaTriggered) {
-        this.logCallback(
-          `⚠️ Head trauma check triggered for ${defender.name}!`,
-          "combat"
-        );
-      }
-
-      // Log limb-specific effects
-      if (effects && effects.length > 0) {
-        effects.forEach((effect) => {
-          this.logCallback(`⚠️ ${defender.name}: ${effect}`, "status");
-        });
-      }
-
-      // Check for critical hit (natural 18-20)
-      const attackD20 = attackRoll - strikeBonus + fatiguePenalty;
-      if (attackD20 >= 18) {
-        this.logCallback(`💥 Critical hit!`, "combat");
-        // Could add critical hit effects here
-      }
-
-      // Check if defender is defeated
-      if (defender.currentHP <= -21) {
-        defender.alive = false;
-        this.logCallback(`💀 ${defender.name} has been slain!`, "combat");
-      } else if (defender.currentHP <= 0) {
-        this.logCallback(`😵 ${defender.name} is unconscious!`, "combat");
-      }
-
-      return true;
-    } else {
-      this.logCallback(
-        `${attacker.name} attacks ${defender.name} but misses (rolled ${attackRoll} vs AR ${defender.AR})`,
-        "combat"
-      );
       return false;
     }
+
+    let damageToCharacter = finalDamage;
+    if (defender.equipped && typeof calculateArmorDamage === "function") {
+      try {
+        const armorResult = calculateArmorDamage(
+          defender,
+          attackRoll,
+          finalDamage,
+          hitSlot,
+          { isCrit: connect.isCrit, isFumble: false }
+        );
+
+        if (armorResult.armorHit) {
+          damageToCharacter = 0;
+          this.logCallback(
+            `${attacker.name} hits ${defender.name}'s ${hit.location}, but armor absorbs the blow! (Armor: ${armorResult.damageToArmor} SDC damage)`,
+            "combat"
+          );
+
+          if (armorResult.brokenArmor.length > 0) {
+            armorResult.brokenArmor.forEach((broken) => {
+              this.logCallback(
+                `💢 ${defender.name}'s ${broken.name} is destroyed!`,
+                "combat"
+              );
+            });
+          }
+        } else {
+          damageToCharacter = armorResult.damageToCharacter || finalDamage;
+        }
+      } catch (error) {
+        console.warn("Armor damage calculation failed:", error);
+      }
+    }
+
+    if (damageToCharacter > 0) {
+      defender.currentHP -= damageToCharacter;
+      roundStats.damageDealt += damageToCharacter;
+    }
+    roundStats.attacks++;
+
+    const locationDesc = getHitLocationDescription(
+      hit,
+      damageToCharacter || finalDamage
+    );
+    const damageNote =
+      damageToCharacter > 0
+        ? ` (${damageToCharacter} HP damage)`
+        : " (armor absorbed)";
+
+    this.logCallback(
+      `${attacker.name} hits ${defender.name}'s ${hit.location}${damageNote}! ${locationDesc} (HP: ${defender.currentHP}/${defender.maxHP})`,
+      "combat"
+    );
+
+    if (traumaTriggered) {
+      this.logCallback(
+        `⚠️ Head trauma check triggered for ${defender.name}!`,
+        "combat"
+      );
+    }
+
+    if (effects && effects.length > 0) {
+      effects.forEach((effect) => {
+        this.logCallback(`⚠️ ${defender.name}: ${effect}`, "status");
+      });
+    }
+
+    if (d20 >= 18) {
+      this.logCallback(`💥 Critical hit!`, "combat");
+    }
+
+    if (defender.currentHP <= -21) {
+      defender.alive = false;
+      this.logCallback(`💀 ${defender.name} has been slain!`, "combat");
+    } else if (defender.currentHP <= 0) {
+      this.logCallback(`😵 ${defender.name} is unconscious!`, "combat");
+    }
+
+    return true;
   }
 
   /**
@@ -1532,96 +1540,109 @@ function resolveAttack(attacker, defender, useRandomHitLocations = true) {
 
   const strikeBonus = getCombatBonus(attacker, "strike", attacker.weapon || attacker.weaponSlots?.rightHand || attacker.weaponSlots?.twoHanded || null) || (attacker.bonuses?.strike || 0);
   const fatiguePenalty = attacker.fatigueState?.penalties?.strike || 0;
-  const attackRoll = rollD20() + strikeBonus - fatiguePenalty;
+  const d20Atk = rollD20();
+  const attackRoll = d20Atk + strikeBonus - fatiguePenalty;
+
+  if (d20Atk === 1) {
+    return `${attacker.name} fumbles the attack against ${defender.name}!`;
+  }
 
   const parryBonus = getCombatBonus(defender, "parry", defender.weaponSlots?.leftHand || defender.weaponSlots?.rightHand || defender.weaponSlots?.twoHanded || null) || (defender.bonuses?.parry || 0);
 
   const parryRoll = rollD20() + parryBonus;
 
-  if (attackRoll >= defender.armorRating && attackRoll > parryRoll) {
-    // Calculate base damage
-    let baseDmg =
-      rollDice(attacker.weaponDamage || "1d8") +
-      Math.floor((attacker.PS || 10) / 5);
-
-    // Check damage resistance/immunity
-    const weaponIsMagic = attacker.weaponIsMagic || false; // Could be enhanced later
-    const damageType = weaponIsMagic ? "magic" : "normal";
-    const resistance = checkDamageResistance(
-      defender,
-      damageType,
-      weaponIsMagic
-    );
-
-    if (resistance.ignored) {
-      return `${attacker.name} attacks ${defender.name} but ${resistance.reason}!`;
-    }
-
-    // Apply resistance multiplier
-    baseDmg = Math.floor(baseDmg * resistance.multiplier);
-
-    if (baseDmg <= 0) {
-      return `${attacker.name} attacks ${defender.name} but ${resistance.reason}!`;
-    }
-
-    // Resolve hit location
-    const { finalDamage, hit, effects } = resolveHitLocation(
-      attacker,
-      defender,
-      baseDmg,
-      useRandomHitLocations,
-      {}
-    );
-
-    // Apply armor damage calculation if available
-    let damageToCharacter = finalDamage;
-    if (defender.equipped && typeof calculateArmorDamage === "function") {
-      try {
-        const armorResult = calculateArmorDamage(
-          defender,
-          attackRoll,
-          finalDamage,
-          hit.slot
-        );
-
-        if (armorResult.armorHit) {
-          damageToCharacter = 0;
-          return `${attacker.name} hits ${defender.name}'s ${hit.location}, but armor absorbs the blow!`;
-        } else {
-          damageToCharacter = armorResult.damageToCharacter || finalDamage;
-        }
-      } catch {
-        // Armor system not available, proceed with normal damage
-      }
-    }
-
-    defender.currentHP =
-      (defender.currentHP ?? defender.hp) - damageToCharacter;
-    defender.hp = defender.currentHP;
-
-    // Build result message with effects
-    let resultMessage = `${attacker.name} hits ${defender.name}'s ${hit.location} for ${damageToCharacter} damage`;
-    const resistanceNote =
-      resistance.multiplier !== 1 ? ` (${resistance.reason})` : "";
-    resultMessage += resistanceNote;
-
-    // Add effects to message
-    if (effects && effects.length > 0) {
-      resultMessage += ` — ${effects.join(", ")}`;
-    }
-
-    if (defender.currentHP <= 0) {
-      defender.currentHP = 0;
-      defender.hp = 0;
-      defender.alive = false;
-      return `💀 ${resultMessage} — ${defender.name} is slain!`;
-    }
-
-    resultMessage += `! (HP: ${defender.currentHP})`;
-    return resultMessage;
-  } else {
+  if (attackRoll <= parryRoll) {
     return `${attacker.name} attacks ${defender.name} but misses or is parried.`;
   }
+
+  let baseDmg =
+    rollDice(attacker.weaponDamage || "1d8") +
+    Math.floor((attacker.PS || 10) / 5);
+
+  const weaponIsMagic = attacker.weaponIsMagic || false;
+  const damageType = weaponIsMagic ? "magic" : "normal";
+  const resistance = checkDamageResistance(
+    defender,
+    damageType,
+    weaponIsMagic
+  );
+
+  if (resistance.ignored) {
+    return `${attacker.name} attacks ${defender.name} but ${resistance.reason}!`;
+  }
+
+  baseDmg = Math.floor(baseDmg * resistance.multiplier);
+
+  if (baseDmg <= 0) {
+    return `${attacker.name} attacks ${defender.name} but ${resistance.reason}!`;
+  }
+
+  const { finalDamage, hit, effects } = resolveHitLocation(
+    attacker,
+    defender,
+    baseDmg,
+    useRandomHitLocations,
+    {}
+  );
+
+  const connect = strikeConnectsVsTarget({
+    defender,
+    attackTotal: attackRoll,
+    d20: d20Atk,
+    slot: hit?.slot || "chest",
+    ruleset: null,
+    critOn: 20,
+    alwaysMissOn: 1,
+  });
+
+  if (!connect.connects) {
+    return `${attacker.name} attacks ${defender.name} but misses.`;
+  }
+
+  let damageToCharacter = finalDamage;
+  if (defender.equipped && typeof calculateArmorDamage === "function") {
+    try {
+      const armorResult = calculateArmorDamage(
+        defender,
+        attackRoll,
+        finalDamage,
+        hit.slot,
+        { isCrit: connect.isCrit, isFumble: false }
+      );
+
+      if (armorResult.armorHit) {
+        damageToCharacter = 0;
+        return `${attacker.name} hits ${defender.name}'s ${hit.location}, but armor absorbs the blow!`;
+      } else {
+        damageToCharacter = armorResult.damageToCharacter || finalDamage;
+      }
+    } catch {
+      // Armor system not available, proceed with normal damage
+    }
+  }
+
+  defender.currentHP =
+    (defender.currentHP ?? defender.hp) - damageToCharacter;
+  defender.hp = defender.currentHP;
+
+  let resultMessage = `${attacker.name} hits ${defender.name}'s ${hit.location} for ${damageToCharacter} damage`;
+  const resistanceNote =
+    resistance.multiplier !== 1 ? ` (${resistance.reason})` : "";
+  resultMessage += resistanceNote;
+
+  if (effects && effects.length > 0) {
+    resultMessage += ` — ${effects.join(", ")}`;
+  }
+
+  if (defender.currentHP <= 0) {
+    defender.currentHP = 0;
+    defender.hp = 0;
+    defender.alive = false;
+    return `💀 ${resultMessage} — ${defender.name} is slain!`;
+  }
+
+  resultMessage += `! (HP: ${defender.currentHP})`;
+  return resultMessage;
 }
 
 /**

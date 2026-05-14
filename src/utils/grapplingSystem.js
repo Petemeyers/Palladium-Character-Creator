@@ -839,11 +839,14 @@ export function applyDamageWithArmor(result, attacker, defender) {
 
   // 2) Normal hit: apply armor logic using existing calculateArmorDamage function
   try {
+    const nat = result.naturalRoll;
+    const atkTotal = result.attackRoll || result.naturalRoll || 12;
     const armorResult = calculateArmorDamage(
       defenderCopy,
-      result.attackRoll || result.naturalRoll || 12,
+      atkTotal,
       damage,
-      null // No specific slot targeted in grapple
+      null, // No specific slot targeted in grapple
+      { isCrit: nat === 20, isFumble: nat === 1 }
     );
 
     if (armorResult.armorHit) {

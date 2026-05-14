@@ -900,7 +900,7 @@ const CharacterCreator = ({ onCreateCharacter }) => {
       const { assignInitialEquipment } = await import('../utils/characterUtils');
       
       // Get initial equipment based on class and race (modern system)
-      const { inventory, gold } = await assignInitialEquipment(characterClass, species);
+      const { inventory, gold, equipment, equipped, equippedArmor, AR } = await assignInitialEquipment(characterClass, species);
 
       // Add psionics for Mind Mages
       let psionicPowers = [];
@@ -986,6 +986,10 @@ const CharacterCreator = ({ onCreateCharacter }) => {
         visualProfile: computedVisualProfile,
         // Add starting equipment using modern system
         inventory: inventory || [],
+        equipment: equipment || undefined,
+        equipped: equipped || undefined,
+        equippedArmor: equippedArmor || undefined,
+        AR: AR || undefined,
         gold: gold || 100
       };
 

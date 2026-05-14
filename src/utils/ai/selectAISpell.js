@@ -4,13 +4,15 @@
  */
 
 import { getFighterSpells } from "../getFighterSpells.js";
+import { canTargetForAction } from "../factionDisposition.js";
 
 export function selectAISpell(
   caster,
   spellbook,
   fighters,
   positions,
-  lastSpellMemory = {}
+  lastSpellMemory = {},
+  sceneContext = { sceneType: "combat", relations: {} }
 ) {
   // ✅ Normalize object-form call
   if (caster && typeof caster === "object" && caster.caster && !spellbook) {
@@ -20,7 +22,8 @@ export function selectAISpell(
       getFighterSpells(ctx.caster) || [],
       ctx.fighters || [],
       ctx.positions || {},
-      lastSpellMemory || {}
+      ctx.lastSpellMemory || lastSpellMemory || {},
+      ctx.sceneContext || sceneContext
     );
   }
 
@@ -29,12 +32,11 @@ export function selectAISpell(
   const casterPos = positions[caster.id];
   if (!casterPos) return null;
 
-  const casterSide = caster.side ?? caster.type;
   const enemies = fighters.filter(
-    f => f.id !== caster.id && (f.side ?? f.type) !== casterSide
+    f => canTargetForAction(caster, f, "spellHostile", sceneContext)
   );
   const allies = fighters.filter(
-    f => f.id !== caster.id && (f.side ?? f.type) === casterSide
+    f => canTargetForAction(caster, f, "buff", sceneContext)
   );
 
   // --- helpers ---

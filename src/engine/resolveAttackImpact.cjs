@@ -5,6 +5,18 @@
 
 const { rollInt } = require("./rng.cjs");
 
+let strikeConnectsVsTarget = null;
+let resolveWeaponImpactVsArmor = null;
+let pickPrimaryArmorSlot = null;
+try {
+  const armorMod = require("../utils/resolveWeaponImpactVsArmor.cjs");
+  strikeConnectsVsTarget = armorMod.strikeConnectsVsTarget;
+  resolveWeaponImpactVsArmor = armorMod.resolveWeaponImpactVsArmor;
+  pickPrimaryArmorSlot = armorMod.pickPrimaryArmorSlot;
+} catch {
+  /* optional */
+}
+
 // Optional core systems (present in your repo per the new architecture).
 // If any are missing at runtime, we fall back gracefully.
 let losElevationEngine = null;
@@ -324,7 +336,21 @@ module.exports = function resolveAttackImpact(payload = {}) {
     const isAlwaysHit = d20 === alwaysHitOn;
 
     isCrit = !isAlwaysMiss && isCritFromRuleset(ruleset, d20, attack.critOn ?? 20);
-    hit = !isAlwaysMiss && (isAlwaysHit || totalToHit >= targetAR);
+    const hitSlotRoll = attack.hitSlot || meta.hitSlot || (pickPrimaryArmorSlot ? pickPrimaryArmorSlot(targetF, null) : "chest");
+    if (strikeConnectsVsTarget && targetF) {
+      const sc = strikeConnectsVsTarget({
+        defender: targetF,
+        attackTotal: totalToHit,
+        d20,
+        slot: hitSlotRoll,
+        ruleset,
+        critOn: attack.critOn ?? 20,
+        alwaysMissOn,
+      });
+      hit = !isAlwaysMiss && (isAlwaysHit || sc.connects);
+    } else {
+      hit = !isAlwaysMiss && (isAlwaysHit || totalToHit >= targetAR);
+    }
 
     events.push({
       type: "ATTACK_ROLL",
@@ -381,8 +407,36 @@ module.exports = function resolveAttackImpact(payload = {}) {
 
   const strayTargetId = attackSnapshot?.strayTargetId || null;
   const effectiveTargetId = strayTargetId || targetId;
-  const hitForDamage = hit || !!strayTargetId;
-  const critForDamage = hit && isCrit && !strayTargetId;
+  const effDefender = findFighter(state, effectiveTargetId) || {};
+
+  const alwaysMissOnImp = safeNum(attack.alwaysMissOn, 1);
+  const critOnImp = attack.critOn ?? 20;
+  const isFumbleRoll = isFumbleFromRuleset(ruleset, d20, alwaysMissOnImp);
+  const isCritRoll = !isFumbleRoll && !strayTargetId && isCritFromRuleset(ruleset, d20, critOnImp);
+
+  const hitSlot =
+    attack.hitSlot ||
+    meta.hitSlot ||
+    (typeof pickPrimaryArmorSlot === "function" ? pickPrimaryArmorSlot(effDefender, null) : "chest");
+
+  let strikeConnects = !!strayTargetId;
+  if (!strayTargetId && typeof strikeConnectsVsTarget === "function") {
+    const sc = strikeConnectsVsTarget({
+      defender: effDefender,
+      attackTotal: totalToHit,
+      d20,
+      slot: hitSlot,
+      ruleset,
+      critOn: critOnImp,
+      alwaysMissOn: alwaysMissOnImp,
+    });
+    strikeConnects = sc.connects;
+  } else if (!strayTargetId) {
+    strikeConnects = !!hit;
+  }
+
+  const hitForDamage = strikeConnects;
+  const critForDamage = isCritRoll && hitForDamage;
 
   if (strayTargetId) {
     events.push({
@@ -421,58 +475,137 @@ module.exports = function resolveAttackImpact(payload = {}) {
       events.push({ type: "CRIT", attackerId, targetId: effectiveTargetId, mult: critMult });
     }
 
-    events.push({
-      type: "DAMAGE",
-      attackerId,
-      targetId: effectiveTargetId,
-      originalTargetId: strayTargetId ? targetId : undefined,
-      projectileId,
-      formula: dmg.formula,
-      rolls: dmg.rolls,
-      mod: dmg.mod,
-      amount: damageTotal,
-      stray: !!strayTargetId,
-    });
+    let impact;
+    if (typeof resolveWeaponImpactVsArmor === "function") {
+      impact = resolveWeaponImpactVsArmor({
+        defender: effDefender,
+        attackTotal: totalToHit,
+        damage: damageTotal,
+        slot: hitSlot,
+        isCrit: isCritRoll && !strayTargetId,
+        isFumble: isFumbleRoll,
+      });
+    } else {
+      impact = {
+        outcome: "hp",
+        damageToHP: damageTotal,
+        damageToArmor: 0,
+        armorBroken: false,
+      };
+    }
 
-    // Apply hp directly if worker is given hpById (existing behavior)
-    if (state.hpById && state.hpById[effectiveTargetId] !== undefined) {
-      const prevHP = Number(state.hpById[effectiveTargetId] ?? 0);
-      const nextHP = prevHP - damageTotal;
+    if (impact.outcome === "armor") {
+      events.push({
+        type: "DAMAGE",
+        attackerId,
+        targetId: effectiveTargetId,
+        originalTargetId: strayTargetId ? targetId : undefined,
+        projectileId,
+        formula: dmg.formula,
+        rolls: dmg.rolls,
+        mod: dmg.mod,
+        amount: impact.damageToArmor,
+        stray: !!strayTargetId,
+        vsArmor: true,
+      });
+      events.push({
+        type: "ARMOR_CHANGED",
+        targetId: effectiveTargetId,
+        slot: impact.slot,
+        prevSDC: impact.prevArmorSDC,
+        nextSDC: impact.nextArmorSDC,
+        broken: !!impact.armorBroken,
+        name: impact.armor?.name,
+      });
 
-      events.push({ type: "HP_CHANGED", targetId: effectiveTargetId, prevHP, nextHP });
-
-      // Attacks consumed (existing)
       const remainingAttacks = Number(attack.remainingAttacks ?? 1);
       const nextRemainingAttacks = Math.max(0, remainingAttacks - 1);
-
       events.push({ type: "ATTACKS_CONSUMED", attackerId, prev: remainingAttacks, next: nextRemainingAttacks });
-
       if (nextRemainingAttacks <= 0) {
         events.push({ type: "TURN_SHOULD_END", actorId: attackerId, reason: "No remaining attacks" });
       }
 
-      // Ammo (optional)
+      let ammoDeltaArmor = null;
       if (ammo && ammo.current !== undefined) {
-        ammoDelta = {
+        ammoDeltaArmor = {
           ownerId: ammo.ammoOwnerId,
           ammoType: ammo.ammoType,
           next: Math.max(0, Number(ammo.current) - Math.max(0, Number(ammo.spend ?? 1))),
         };
-        events.push({ type: "AMMO_SPENT", ...ammoDelta, spent: Number(ammo.spend ?? 1) });
+        events.push({ type: "AMMO_SPENT", ...ammoDeltaArmor, spent: Number(ammo.spend ?? 1) });
       }
-
-      const nextHpById = { ...state.hpById, [effectiveTargetId]: nextHP };
 
       return {
         ok: true,
         events,
         delta: {
-          hpById: nextHpById,
+          armorById: {
+            [effectiveTargetId]: {
+              slot: impact.slot,
+              currentSDC: impact.nextArmorSDC,
+              broken: !!impact.armorBroken,
+            },
+          },
           remainingAttacksById: { [attackerId]: nextRemainingAttacks },
-          ...(ammoDelta ? { ammo: ammoDelta } : {}),
+          ...(ammoDeltaArmor ? { ammo: ammoDeltaArmor } : {}),
           ...(rngState ? { rngState } : {}),
         },
       };
+    }
+
+    if (impact.outcome === "hp") {
+      const hpDmg = impact.damageToHP ?? damageTotal;
+      events.push({
+        type: "DAMAGE",
+        attackerId,
+        targetId: effectiveTargetId,
+        originalTargetId: strayTargetId ? targetId : undefined,
+        projectileId,
+        formula: dmg.formula,
+        rolls: dmg.rolls,
+        mod: dmg.mod,
+        amount: hpDmg,
+        stray: !!strayTargetId,
+      });
+
+      if (state.hpById && state.hpById[effectiveTargetId] !== undefined) {
+        const prevHP = Number(state.hpById[effectiveTargetId] ?? 0);
+        const nextHP = prevHP - hpDmg;
+
+        events.push({ type: "HP_CHANGED", targetId: effectiveTargetId, prevHP, nextHP });
+
+        const remainingAttacks = Number(attack.remainingAttacks ?? 1);
+        const nextRemainingAttacks = Math.max(0, remainingAttacks - 1);
+
+        events.push({ type: "ATTACKS_CONSUMED", attackerId, prev: remainingAttacks, next: nextRemainingAttacks });
+
+        if (nextRemainingAttacks <= 0) {
+          events.push({ type: "TURN_SHOULD_END", actorId: attackerId, reason: "No remaining attacks" });
+        }
+
+        let ammoDelta = null;
+        if (ammo && ammo.current !== undefined) {
+          ammoDelta = {
+            ownerId: ammo.ammoOwnerId,
+            ammoType: ammo.ammoType,
+            next: Math.max(0, Number(ammo.current) - Math.max(0, Number(ammo.spend ?? 1))),
+          };
+          events.push({ type: "AMMO_SPENT", ...ammoDelta, spent: Number(ammo.spend ?? 1) });
+        }
+
+        const nextHpById = { ...state.hpById, [effectiveTargetId]: nextHP };
+
+        return {
+          ok: true,
+          events,
+          delta: {
+            hpById: nextHpById,
+            remainingAttacksById: { [attackerId]: nextRemainingAttacks },
+            ...(ammoDelta ? { ammo: ammoDelta } : {}),
+            ...(rngState ? { rngState } : {}),
+          },
+        };
+      }
     }
   } else {
     events.push({

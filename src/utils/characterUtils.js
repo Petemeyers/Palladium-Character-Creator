@@ -1,3 +1,10 @@
+import {
+  createEmptyLayeredEquipment,
+  equipLayer,
+  normalizeEquipmentItem,
+  syncLegacyArmorFields,
+} from "./equipmentManager.js";
+
 // Helper function to ensure all inventory items have the correct type field
 const ensureItemTypes = (inventory) => {
   console.log("ensureItemTypes called with inventory:", inventory);
@@ -1091,6 +1098,28 @@ const defaultEquipment = {
   weaponChoice: true,
 };
 
+const buildLayeredEquipmentFromItems = (items = []) => {
+  const equipment = createEmptyLayeredEquipment();
+
+  items.forEach((item) => {
+    const normalized = normalizeEquipmentItem(item);
+    if (!normalized) return;
+
+    if (normalized.layer === "shield") {
+      equipment.held.shield = normalized;
+      equipment.held.offHand = equipment.held.offHand || normalized;
+      return;
+    }
+
+    const result = equipLayer(equipment.worn, normalized);
+    if (result.equipped) {
+      equipment.worn = result.worn;
+    }
+  });
+
+  return equipment;
+};
+
 export const assignInitialEquipment = async (
   characterClass,
   characterRace = "Human"
@@ -1220,6 +1249,12 @@ export const assignInitialEquipment = async (
 
   // Ensure all items have proper type and category fields after clothing replacement
   equipment.inventory = ensureItemTypes(equipment.inventory);
+
+  equipment.equipment = buildLayeredEquipmentFromItems(equipment.inventory);
+  const legacySync = syncLegacyArmorFields({ equipment: equipment.equipment });
+  equipment.equipped = legacySync.equipped || {};
+  equipment.equippedArmor = legacySync.equippedArmor || "";
+  equipment.AR = legacySync.AR;
 
   return equipment;
 };

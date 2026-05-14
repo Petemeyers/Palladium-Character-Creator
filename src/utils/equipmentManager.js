@@ -11,6 +11,321 @@ import { EQUIPMENT_SLOTS, CLOTHING_ITEMS } from "../data/equipmentSlots";
 import clothingEquipment from "../data/clothingEquipment.json";
 import { inferSlot } from "../data/shopItems";
 import axiosInstance from "./axios";
+import {
+  resolveWeaponImpactVsArmor,
+  pickPrimaryArmorSlot,
+} from "./resolveWeaponImpactVsArmor.js";
+
+export const ARMOR_BODY_SLOTS = ["head", "torso", "arms", "hands", "legs", "feet"];
+export const ARMOR_LAYERS = ["base", "padding", "mail", "plate", "outer"];
+
+const emptyLayerSet = () => ({
+  base: null,
+  padding: null,
+  mail: null,
+  plate: null,
+  outer: null,
+});
+
+export function createEmptyWornEquipment() {
+  return ARMOR_BODY_SLOTS.reduce((acc, slot) => {
+    acc[slot] = emptyLayerSet();
+    return acc;
+  }, {});
+}
+
+export function createEmptyLayeredEquipment() {
+  return {
+    worn: createEmptyWornEquipment(),
+    held: {
+      mainHand: null,
+      offHand: null,
+      shield: null,
+    },
+  };
+}
+
+const nameOf = (item) => String(item?.name || item || "").toLowerCase();
+
+export function inferEquipmentLayer(item) {
+  const name = nameOf(item);
+  const type = String(item?.type || item?.category || "").toLowerCase();
+
+  if (name.includes("shield") || type.includes("shield")) return "shield";
+  if (name.includes("surcoat") || name.includes("tabard") || name.includes("cloak") || name.includes("cape")) return "outer";
+  if (name.includes("gambeson") || name.includes("padded") || name.includes("arming doublet")) return "padding";
+  if (name.includes("plate mail") || name.includes("full plate") || name.includes("field plate") || name.includes("half plate")) return "plate";
+  if (name.includes("chain") || name.includes("mail") || name.includes("hauberk") || name.includes("coif") || name.includes("voider") || name.includes("chausses")) return "mail";
+  if (
+    name.includes("plate") ||
+    name.includes("breastplate") ||
+    name.includes("cuirass") ||
+    name.includes("greave") ||
+    name.includes("gauntlet") ||
+    name.includes("helm") ||
+    name.includes("helmet") ||
+    name.includes("sabatons")
+  ) {
+    return "plate";
+  }
+
+  return "base";
+}
+
+export function inferBodySlots(item) {
+  const name = nameOf(item);
+  const slot = String(item?.slot || "").toLowerCase();
+
+  if (item?.bodySlots && Array.isArray(item.bodySlots)) return item.bodySlots;
+  if (slot === "chest") return ["torso"];
+  if (ARMOR_BODY_SLOTS.includes(slot)) return [slot];
+
+  if (name.includes("shield")) return [];
+  if (name.includes("helm") || name.includes("helmet") || name.includes("coif") || name.includes("hood") || name.includes("hat") || name.includes("cap")) return ["head"];
+  if (name.includes("gauntlet") || name.includes("glove")) return ["hands"];
+  if (name.includes("vambrace") || name.includes("bracer") || name.includes("sleeve") || name.includes("voider")) return ["arms"];
+  if (name.includes("greave") || name.includes("chausses") || name.includes("pants") || name.includes("breeches") || name.includes("leggings") || name.includes("trousers")) return ["legs"];
+  if (name.includes("boot") || name.includes("shoe") || name.includes("sandal") || name.includes("sabatons") || name.includes("sock")) return ["feet"];
+  if (
+    name.includes("breastplate") ||
+    name.includes("cuirass") ||
+    name.includes("hauberk") ||
+    name.includes("chain mail") ||
+    name.includes("plate mail") ||
+    name.includes("armor") ||
+    name.includes("armour") ||
+    name.includes("gambeson") ||
+    name.includes("robe") ||
+    name.includes("shirt") ||
+    name.includes("tunic") ||
+    name.includes("dress") ||
+    name.includes("surcoat") ||
+    name.includes("tabard") ||
+    name.includes("cloak") ||
+    name.includes("cape")
+  ) {
+    return ["torso"];
+  }
+
+  return slot ? [slot] : ["torso"];
+}
+
+export function normalizeEquipmentItem(item) {
+  if (!item) return null;
+  const layer = item.layer || inferEquipmentLayer(item);
+  const bodySlots = layer === "shield" ? [] : inferBodySlots(item);
+  const armorRating = Number(item.armorRating ?? item.ar ?? item.AR ?? item.defense ?? 0) || 0;
+  const sdc = Number(item.sdc ?? item.SDC ?? item.maxSDC ?? item.currentSDC ?? 0) || 0;
+
+  return {
+    ...item,
+    name: item.name || "Unknown Equipment",
+    equipmentType: layer === "shield" ? "shield" : armorRating > 0 ? "armor" : "clothing",
+    layer,
+    bodySlots,
+    armorRating,
+    ar: armorRating,
+    sdc,
+    currentSDC: Number(item.currentSDC ?? sdc) || 0,
+    maxSDC: Number(item.maxSDC ?? sdc) || 0,
+    weight: Number(item.weight ?? 0) || 0,
+    price: Number(item.price ?? item.value ?? item.cost ?? 0) || 0,
+    penalties: {
+      speed: Number(item.penalties?.speed ?? item.speedPenalty ?? 0) || 0,
+      prowl: Number(item.penalties?.prowl ?? item.prowlPenalty ?? 0) || 0,
+      dodge: Number(item.penalties?.dodge ?? item.dodgePenalty ?? 0) || 0,
+    },
+  };
+}
+
+const getWornRoot = (wornEquipment) => wornEquipment?.worn || wornEquipment || createEmptyWornEquipment();
+
+export function canEquipLayer(wornEquipment, item) {
+  const normalized = normalizeEquipmentItem(item);
+  if (!normalized) return { ok: false, reason: "No item." };
+  if (normalized.layer === "shield") return { ok: true, reason: "Shield is held, not worn." };
+
+  const worn = getWornRoot(wornEquipment);
+  for (const bodySlot of normalized.bodySlots) {
+    const slotLayers = worn[bodySlot] || emptyLayerSet();
+    if (slotLayers[normalized.layer]) {
+      return { ok: false, reason: `${bodySlot} already has a ${normalized.layer} layer.` };
+    }
+    if (normalized.layer === "mail" && slotLayers.plate) {
+      return { ok: false, reason: "Mail cannot be worn over plate." };
+    }
+    if (normalized.layer === "plate" && slotLayers.plate) {
+      return { ok: false, reason: `${bodySlot} already has plate armor.` };
+    }
+  }
+
+  return { ok: true, reason: "OK" };
+}
+
+export function equipLayer(wornEquipment, item) {
+  const normalized = normalizeEquipmentItem(item);
+  const worn = JSON.parse(JSON.stringify(getWornRoot(wornEquipment)));
+  const check = canEquipLayer(worn, normalized);
+  if (!check.ok || normalized.layer === "shield") {
+    return { worn, equipped: false, reason: check.reason, item: normalized };
+  }
+
+  normalized.bodySlots.forEach((bodySlot) => {
+    if (!worn[bodySlot]) worn[bodySlot] = emptyLayerSet();
+    worn[bodySlot][normalized.layer] = normalized;
+  });
+
+  return { worn, equipped: true, reason: "OK", item: normalized };
+}
+
+export function removeLayer(wornEquipment, bodySlot, layer) {
+  const worn = JSON.parse(JSON.stringify(getWornRoot(wornEquipment)));
+  if (worn[bodySlot] && ARMOR_LAYERS.includes(layer)) {
+    worn[bodySlot][layer] = null;
+  }
+  return worn;
+}
+
+function getLegacyEquippedEntries(entity) {
+  const equipped = entity?.equipped || {};
+  return Object.entries(equipped)
+    .filter(([slot, item]) => item && !String(slot).toLowerCase().includes("weapon"))
+    .map(([slot, item]) => ({ ...item, slot: slot === "chest" ? "torso" : item.slot || slot }));
+}
+
+const isWornSlotName = (slot) => {
+  const normalizedSlot = String(slot || "").toLowerCase();
+  return normalizedSlot === "chest" || ARMOR_BODY_SLOTS.includes(normalizedSlot);
+};
+
+function getExplicitlyWornLegacyItems(items = []) {
+  if (!Array.isArray(items)) return [];
+
+  return items.filter((item) => {
+    if (!item || typeof item !== "object") return false;
+    const slot = item.slot || item.equipmentSlot || item.bodySlot;
+    const hasWornSlot = isWornSlotName(slot);
+    const explicitlyEquipped =
+      item.equipped === true ||
+      item.isEquipped === true ||
+      item.worn === true ||
+      (item.active === true && hasWornSlot);
+
+    return explicitlyEquipped && (hasWornSlot || inferEquipmentLayer(item) === "shield");
+  });
+}
+
+export function normalizeLegacyArmor(characterOrFighter) {
+  const entity = { ...(characterOrFighter || {}) };
+  const equipment = {
+    ...createEmptyLayeredEquipment(),
+    ...(entity.equipment || {}),
+    worn: {
+      ...createEmptyWornEquipment(),
+      ...(entity.equipment?.worn || {}),
+    },
+    held: {
+      mainHand: null,
+      offHand: null,
+      shield: null,
+      ...(entity.equipment?.held || {}),
+    },
+  };
+
+  const candidates = [
+    ...getLegacyEquippedEntries(entity),
+    entity.armor && typeof entity.armor === "object" ? entity.armor : null,
+    entity.equippedArmor && typeof entity.equippedArmor === "object" ? entity.equippedArmor : null,
+    ...getExplicitlyWornLegacyItems(entity.wardrobe),
+    ...getExplicitlyWornLegacyItems(entity.inventory),
+  ].filter(Boolean);
+
+  candidates.forEach((candidate) => {
+    const normalized = normalizeEquipmentItem(candidate);
+    if (!normalized) return;
+    if (normalized.layer === "shield") {
+      equipment.held.shield = normalized;
+      return;
+    }
+    const result = equipLayer(equipment.worn, normalized);
+    if (result.equipped) equipment.worn = result.worn;
+  });
+
+  entity.equipment = equipment;
+  return entity;
+}
+
+export function resolveArmorProfile(characterOrFighter) {
+  const normalizedEntity = normalizeLegacyArmor(characterOrFighter);
+  const worn = normalizedEntity.equipment?.worn || createEmptyWornEquipment();
+  const shield = normalizedEntity.equipment?.held?.shield || null;
+  const layers = {};
+  const coverageBySlot = ARMOR_BODY_SLOTS.reduce((acc, slot) => ({ ...acc, [slot]: false }), {});
+  const notes = [];
+  let strongest = null;
+  let totalArmorSDC = 0;
+  const penalties = { speed: 0, prowl: 0, dodge: 0 };
+
+  ARMOR_BODY_SLOTS.forEach((bodySlot) => {
+    layers[bodySlot] = { ...(worn[bodySlot] || emptyLayerSet()) };
+    ARMOR_LAYERS.forEach((layer) => {
+      const item = layers[bodySlot]?.[layer];
+      if (!item) return;
+      const armorRating = Number(item.armorRating ?? item.ar ?? 0) || 0;
+      const sdc = Number(item.currentSDC ?? item.sdc ?? 0) || 0;
+      if (armorRating > 0 || sdc > 0) coverageBySlot[bodySlot] = true;
+      totalArmorSDC += sdc;
+      penalties.speed += Number(item.penalties?.speed ?? item.speedPenalty ?? 0) || 0;
+      penalties.prowl += Number(item.penalties?.prowl ?? item.prowlPenalty ?? 0) || 0;
+      penalties.dodge += Number(item.penalties?.dodge ?? item.dodgePenalty ?? 0) || 0;
+      if (armorRating > 0 && (!strongest || armorRating > strongest.armorRating)) {
+        strongest = item;
+      }
+    });
+  });
+
+  const legacyAR = Number(characterOrFighter?.AR ?? characterOrFighter?.ar ?? 0) || 0;
+  const ar = Math.max(legacyAR, strongest?.armorRating || 0);
+  if (!strongest && legacyAR > 0) notes.push("Using legacy AR; no layered armor item found.");
+
+  return {
+    ar,
+    armorName: strongest?.name || (typeof characterOrFighter?.equippedArmor === "string" ? characterOrFighter.equippedArmor : ""),
+    totalArmorSDC,
+    coverageBySlot,
+    penalties,
+    shield,
+    layers,
+    notes,
+  };
+}
+
+export function syncLegacyArmorFields(characterOrFighter) {
+  const entity = normalizeLegacyArmor(characterOrFighter);
+  const armorProfile = resolveArmorProfile(entity);
+  const synced = {
+    ...entity,
+    armorProfile,
+    AR: armorProfile.ar || entity.AR || entity.ar || 10,
+    ar: armorProfile.ar || entity.ar || entity.AR || 10,
+  };
+
+  if (armorProfile.armorName) {
+    synced.equippedArmor = armorProfile.armorName;
+  }
+
+  const torsoLayers = armorProfile.layers?.torso || {};
+  const torsoArmor = torsoLayers.plate || torsoLayers.mail || torsoLayers.padding || torsoLayers.base || null;
+  if (torsoArmor) {
+    synced.equipped = {
+      ...(synced.equipped || {}),
+      chest: torsoArmor,
+      torso: synced.equipped?.torso || torsoArmor,
+    };
+  }
+
+  return synced;
+}
 
 /**
  * Check if an item is clothing/armor
@@ -406,17 +721,7 @@ export function getEquipmentDisplayInfo(character) {
  * @returns {Number} Total armor rating (highest A.R. from any piece, per Palladium rules)
  */
 export function getTotalArmorRating(character) {
-  const equipped = character.equipped || {};
-  // In Palladium, armor rating is the highest A.R. of any single piece, not cumulative
-  return Math.max(
-    ...Object.values(equipped).map((item) => {
-      if (item && item.armorRating && !item.broken) {
-        return item.armorRating;
-      }
-      return 0;
-    }),
-    0
-  );
+  return resolveArmorProfile(character).ar || 0;
 }
 
 /**
@@ -594,20 +899,21 @@ export function autoEquipClothing(character) {
 }
 
 /**
- * Calculate armor damage based on Palladium 1994 rules
+ * Calculate armor vs HP damage using centralized strike-vs-AR rules.
  * @param {Object} character - Character object
- * @param {number} attackRoll - The attack roll (1-20)
+ * @param {number} attackTotal - d20 + strike bonuses (same as engine "total to hit")
  * @param {number} damage - The damage dealt
- * @param {string} targetSlot - The armor slot being hit (optional)
- * @returns {Object} Damage calculation result
+ * @param {string|null} targetSlot - Armor slot under character.equipped (optional)
+ * @param {{ isCrit?: boolean, isFumble?: boolean }} [opts]
  */
 export function calculateArmorDamage(
   character,
-  attackRoll,
+  attackTotal,
   damage,
-  targetSlot = null
+  targetSlot = null,
+  opts = {}
 ) {
-  const equipped = character.equipped || {};
+  const { isCrit = false, isFumble = false } = opts;
   const result = {
     armorHit: false,
     armorDamaged: false,
@@ -617,34 +923,38 @@ export function calculateArmorDamage(
     brokenArmor: [],
   };
 
-  // If specific slot targeted, check only that slot
-  const slotsToCheck = targetSlot ? [targetSlot] : Object.keys(equipped);
+  const slot = pickPrimaryArmorSlot(
+    character,
+    typeof targetSlot === "string" && targetSlot ? targetSlot : null
+  );
+  const impact = resolveWeaponImpactVsArmor({
+    defender: character,
+    attackTotal,
+    damage,
+    slot,
+    isCrit,
+    isFumble,
+  });
 
-  for (const slot of slotsToCheck) {
-    const armor = equipped[slot];
-    if (!armor || !armor.armorRating || armor.broken) continue;
-
-    // Palladium rule: if attack roll < A.R., armor is hit
-    if (attackRoll < armor.armorRating) {
-      result.armorHit = true;
-      result.damageToArmor += damage;
-
-      // Reduce armor S.D.C.
-      armor.currentSDC = Math.max(0, armor.currentSDC - damage);
-
-      if (armor.currentSDC <= 0) {
-        armor.broken = true;
-        result.brokenArmor.push({ slot, name: armor.name });
-        result.armorDamaged = true;
-      }
-
-      return result; // Armor absorbed the hit
-    }
+  if (impact.outcome === "miss") {
+    return result;
   }
 
-  // If we get here, no armor blocked the attack
+  if (impact.outcome === "armor" && impact.armor) {
+    const piece = impact.armor;
+    piece.currentSDC = impact.nextArmorSDC;
+    if (impact.armorBroken) {
+      piece.broken = true;
+      result.brokenArmor.push({ slot: impact.slot, name: piece.name });
+      result.armorDamaged = true;
+    }
+    result.armorHit = true;
+    result.damageToArmor = impact.damageToArmor;
+    return result;
+  }
+
   result.characterDamaged = true;
-  result.damageToCharacter = damage;
+  result.damageToCharacter = impact.damageToHP ?? damage;
   return result;
 }
 

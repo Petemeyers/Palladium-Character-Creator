@@ -130,6 +130,12 @@ function getClassHPBonus(occ) {
 import { assignRandomWeaponToEnemy } from './enemyWeaponAssigner.js';
 import shopItems from '../data/shopItems.js';
 import armorShopData from '../data/armorShopData.js';
+import {
+  createEmptyLayeredEquipment,
+  equipLayer,
+  normalizeEquipmentItem,
+  syncLegacyArmorFields,
+} from './equipmentManager.js';
 import { getUnifiedAbilities } from './unifiedAbilities.js';
 import { convertUnifiedSpellToCombatSpell } from './getFighterSpells.js';
 import { getAllSpellsFromDB } from '../data/combatSpells.js';
@@ -331,6 +337,14 @@ export function createPlayableCharacterFighter(character, customName = null) {
 
   derivedWeapons.primary = derivedWeapons[0];
   derivedWeapons.secondary = derivedWeapons[1] || null;
+  const layeredEquipment = createEmptyLayeredEquipment();
+  layeredEquipment.held.mainHand = derivedWeapons[0] || null;
+  layeredEquipment.held.offHand = derivedWeapons[1] || null;
+  if (assignedArmor) {
+    const normalizedArmor = normalizeEquipmentItem({ ...assignedArmor, slot: "torso" });
+    const result = equipLayer(layeredEquipment.worn, normalizedArmor);
+    if (result.equipped) layeredEquipment.worn = result.worn;
+  }
 
   // Determine size category based on race (default to MEDIUM for humans/standard races)
   let sizeCategory = "MEDIUM";
@@ -394,6 +408,7 @@ export function createPlayableCharacterFighter(character, customName = null) {
     status: "active",
 
     equippedWeapons: derivedWeapons,
+    equipment: layeredEquipment,
     equipped: {
       weaponPrimary: derivedWeapons[0],
       weaponSecondary: derivedWeapons[1] || null,
@@ -429,6 +444,8 @@ export function createPlayableCharacterFighter(character, customName = null) {
   };
 
   // ✅ Normalize spells into a consistent combat-ready shape.
+  Object.assign(fighter, syncLegacyArmorFields(fighter));
+
   // Some flows (e.g. bestiary/autoRoll fighters) won't have spells in the same place as party fighters.
   try {
     const unified = getUnifiedAbilities(character);

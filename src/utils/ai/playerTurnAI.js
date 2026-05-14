@@ -25,6 +25,10 @@ import {
   chooseBestOffensivePsionic,
   chooseBestHealingPsionic,
 } from "../psionicDecisionHelpers";
+import {
+  canTargetForAction,
+  isAllyOf,
+} from "../factionDisposition.js";
 
 const UNDEAD_KEYWORDS = [
   "vampire",
@@ -246,12 +250,15 @@ function findAllyNeedingHealing(
   fighters,
   getFighterHP,
   getFighterMaxHP,
-  { criticalOnly = false } = {}
+  { criticalOnly = false, sceneContext = { sceneType: "combat", relations: {} } } = {}
 ) {
   // We consider "allies" to be other fighters on the same side.
   const allies = fighters.filter(
     (f) =>
-      f.id !== player.id && !f.isDead && !f.isDying && f.type === player.type // same type = same side
+      f.id !== player.id &&
+      !f.isDead &&
+      !f.isDying &&
+      isAllyOf(player, f, sceneContext)
   );
 
   let best = null;
@@ -540,7 +547,12 @@ export async function runPlayerTurnAI(player, context) {
     findBeePath,
     getTargetsInLine,
     onNoHostilesRemaining,
+    sceneContext = { sceneType: "combat", relations: {} },
   } = context;
+
+  const isHostileTarget = (target, actionKind = "attack") =>
+    canTargetForAction(player, target, actionKind, sceneContext);
+  const isAllyTarget = (target) => isAllyOf(player, target, sceneContext);
 
   const isPlayerAiAllowed = () => {
     if (aiControlEnabledRef && aiControlEnabledRef.current !== true) return false;
@@ -759,7 +771,7 @@ export async function runPlayerTurnAI(player, context) {
     `start | remainingAttacks=${player?.remainingAttacks ?? "?"} | enemies=${
       fighters.filter(
         (f) =>
-          f.type === "enemy" && canFighterAct(f) && (f.currentHP ?? 0) > -21
+          isHostileTarget(f) && canFighterAct(f) && (f.currentHP ?? 0) > -21
       ).length
     } | posKeys=${Object.keys(positions || {}).length}`
   );
@@ -838,7 +850,7 @@ export async function runPlayerTurnAI(player, context) {
     // Get active enemy fighters as threats
     const enemyFighters = fighters.filter(
       (f) =>
-        f.type === "enemy" &&
+        isHostileTarget(f) &&
         canFighterAct(f) &&
         f.currentHP > 0 &&
         f.currentHP > -21
@@ -968,7 +980,7 @@ export async function runPlayerTurnAI(player, context) {
   // Only target conscious enemies (HP > 0) - unconscious/dying enemies are already defeated
   const allEnemies = fighters.filter(
     (f) =>
-      f.type === "enemy" &&
+      isHostileTarget(f) &&
       canFighterAct(f) &&
       f.currentHP > 0 && // Only conscious enemies
       f.currentHP > -21 // Not dead
@@ -1249,7 +1261,7 @@ export async function runPlayerTurnAI(player, context) {
   const isGoodHealer = isGoodAlignment && isHealer;
 
   const healingCandidates = fighters
-    .filter((f) => f.type === "player" && f.currentHP > MIN_COMBAT_HP)
+    .filter((f) => isAllyTarget(f) && f.currentHP > MIN_COMBAT_HP)
     .filter((f) => getFighterHP(f) < getFighterMaxHP(f));
 
   const prioritizedHealingTargets = [...healingCandidates].sort(
@@ -1835,7 +1847,7 @@ export async function runPlayerTurnAI(player, context) {
   // If no enemies visible and player is a prey animal, use idle/forage behavior
   if (enemyTargets.length === 0 && isPreyAnimal(player)) {
     const playerAllies = fighters.filter(
-      (f) => f.type === "player" && f.id !== player.id
+      (f) => isAllyTarget(f) && f.id !== player.id
     );
     runPreyIdleTurn({
       fighter: player,
@@ -1957,7 +1969,7 @@ export async function runPlayerTurnAI(player, context) {
         // If this is a prey animal, use idle/forage behavior instead of defend/withdraw
         if (isPreyAnimal(player)) {
           const playerAllies = fighters.filter(
-            (f) => f.type === "player" && f.id !== player.id
+            (f) => isAllyTarget(f) && f.id !== player.id
           );
           runPreyIdleTurn({
             fighter: player,
@@ -2243,7 +2255,7 @@ export async function runPlayerTurnAI(player, context) {
   // Healer AI: heal allies first, escape if threatened, then attack
   const healer = isHealerOcc(player) && isGood(player);
   const playerAllies = fighters.filter(
-    (f) => f.type === "player" && f.id !== player.id
+    (f) => isAllyTarget(f) && f.id !== player.id
   );
   const threatened = isThreatenedInMelee(player, enemyTargets);
 
@@ -2404,6 +2416,7 @@ export async function runPlayerTurnAI(player, context) {
       getFighterMaxHP,
       {
         criticalOnly: true, // only heal when someone is pretty hurt
+        sceneContext,
       }
     );
 

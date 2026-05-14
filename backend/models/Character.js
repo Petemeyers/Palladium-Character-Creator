@@ -143,6 +143,10 @@ const characterSchema = new mongoose.Schema({
     of: mongoose.Schema.Types.Mixed,
     default: {},
   },
+  equipment: {
+    type: mongoose.Schema.Types.Mixed,
+    default: {},
+  },
   wardrobe: [
     {
       name: { type: String, required: true },

@@ -86,6 +86,7 @@ import armorShopData from "../data/armorShopData.js";
 import { initializeAmmo, setAmmo, canFireMissileWeapon, getInventoryAmmoCount, decrementInventoryAmmo } from "../utils/combatAmmoManager.js";
 import { getSpellsForLevel } from "../data/combatSpells.js";
 import { selectAISpell } from "../utils/ai/selectAISpell.js";
+import { canTargetForAction, getFactionId, isAllyOf, isHostileTo } from "../utils/factionDisposition.js";
 import { getSpellsForCreature, SPELL_ELEMENT_MAP } from "../utils/magicAbilitiesParser.js";
 import { updateStatusEffects } from "../utils/statusEffectSystem.js";
 import { createThreatProfile } from "../utils/ai/threatAnalysis.js";
@@ -182,6 +183,12 @@ import {
 import MovementRangeDisplay from "../components/MovementRangeDisplay.jsx";
 import RunActionLogger from "../components/RunActionLogger.jsx";
 import { autoEquipWeapons, getWeaponDisplayInfo } from "../utils/weaponManager.js";
+import {
+  createEmptyLayeredEquipment,
+  equipLayer,
+  normalizeEquipmentItem,
+  syncLegacyArmorFields,
+} from "../utils/equipmentManager.js";
 import {
   getCoverBonus,
   applyLightingEffects,
@@ -559,7 +566,292 @@ const DEPLOYMENT_FORMATIONS = {
   LINE_SPACED: "LINE_SPACED",
 };
 
-const DEPLOYMENT_SIDE_ORDER = ["player", "enemy"];
+const DEPLOYMENT_SIDE_ORDER = ["player", "enemy", "npc"];
+
+const SCENE_ROLE_PRESETS = {
+  enemy: {
+    label: "Enemy",
+    type: "enemy",
+    teamId: "enemy",
+    factionId: "enemy",
+    role: "enemy",
+    aggression: "hostile",
+    disposition: "hostile",
+  },
+  neutralMerchant: {
+    label: "Neutral Merchant",
+    type: "npc",
+    teamId: "neutral",
+    factionId: "merchants",
+    role: "merchant",
+    disposition: "neutral",
+    aggression: "neutral",
+    canDialogue: true,
+    nonCombatant: true,
+  },
+  guard: {
+    label: "Guard",
+    type: "npc",
+    teamId: "neutral",
+    factionId: "guards",
+    role: "guard",
+    disposition: "neutral",
+    aggression: "defensive",
+  },
+  civilian: {
+    label: "Civilian",
+    type: "npc",
+    teamId: "neutral",
+    factionId: "civilians",
+    role: "civilian",
+    disposition: "neutral",
+    aggression: "neutral",
+    canDialogue: true,
+    nonCombatant: true,
+  },
+  wildAnimal: {
+    label: "Wild Animal",
+    type: "npc",
+    teamId: "wildlife",
+    factionId: "wildlife",
+    role: "wildAnimal",
+    disposition: "neutral",
+    aggression: "neutral",
+  },
+  diabolic: {
+    label: "Diabolic / Attacks Everyone",
+    type: "enemy",
+    teamId: "enemy",
+    factionId: "diabolic",
+    role: "monster",
+    aggression: "diabolic",
+    disposition: "hostile",
+    attacksEveryone: true,
+  },
+  magicalDialogue: {
+    label: "Magical Dialogue Creature",
+    type: "npc",
+    teamId: "neutral",
+    factionId: "arcane",
+    role: "magicalDialogue",
+    disposition: "neutral",
+    aggression: "neutral",
+    canDialogue: true,
+  },
+  temporaryAlly: {
+    label: "Temporary Ally",
+    type: "npc",
+    teamId: "party",
+    factionId: "party",
+    role: "temporaryAlly",
+    disposition: "friendly",
+    aggression: "defensive",
+  },
+  hostileFaction: {
+    label: "Hostile Faction Member",
+    type: "npc",
+    teamId: "hostileFaction",
+    factionId: "hostileFaction",
+    role: "factionMember",
+    disposition: "hostile",
+    aggression: "hostile",
+  },
+};
+
+const ARMY_TYPE_PRESETS = {
+  playerParty: {
+    label: "Player Party",
+    type: "player",
+    teamId: "party",
+    factionId: "party",
+    role: "party",
+    defaultDisposition: "friendly",
+    disposition: "friendly",
+    aggression: "defensive",
+    isPlayerControlled: true,
+  },
+  enemyArmy: {
+    label: "Enemy Army",
+    type: "enemy",
+    teamId: "enemy",
+    factionId: "enemy",
+    role: "enemy",
+    defaultDisposition: "hostile",
+    disposition: "hostile",
+    aggression: "hostile",
+  },
+  neutralNpc: {
+    label: "Neutral NPC Army",
+    type: "npc",
+    teamId: "neutral",
+    factionId: "neutral",
+    role: "npc",
+    defaultDisposition: "neutral",
+    disposition: "neutral",
+    aggression: "neutral",
+  },
+  guard: {
+    label: "Guard Faction",
+    type: "npc",
+    teamId: "guards",
+    factionId: "guards",
+    role: "guard",
+    defaultDisposition: "neutral",
+    disposition: "neutral",
+    aggression: "defensive",
+  },
+  merchant: {
+    label: "Merchant Faction",
+    type: "npc",
+    teamId: "merchants",
+    factionId: "merchants",
+    role: "merchant",
+    defaultDisposition: "neutral",
+    disposition: "neutral",
+    aggression: "neutral",
+    canDialogue: true,
+    nonCombatant: true,
+  },
+  civilian: {
+    label: "Civilian Group",
+    type: "npc",
+    teamId: "civilians",
+    factionId: "civilians",
+    role: "civilian",
+    defaultDisposition: "neutral",
+    disposition: "neutral",
+    aggression: "neutral",
+    canDialogue: true,
+    nonCombatant: true,
+  },
+  wildAnimal: {
+    label: "Wild Animals",
+    type: "npc",
+    teamId: "wildlife",
+    factionId: "wildlife",
+    role: "wildAnimal",
+    defaultDisposition: "neutral",
+    disposition: "neutral",
+    aggression: "neutral",
+  },
+  diabolic: {
+    label: "Diabolic / Attacks Everyone",
+    type: "enemy",
+    teamId: "diabolic",
+    factionId: "diabolic",
+    role: "monster",
+    defaultDisposition: "hostile",
+    disposition: "hostile",
+    aggression: "diabolic",
+    attacksEveryone: true,
+  },
+  magicalDialogue: {
+    label: "Neutral Magical Creatures",
+    type: "npc",
+    teamId: "arcane",
+    factionId: "arcane",
+    role: "magicalDialogue",
+    defaultDisposition: "neutral",
+    disposition: "neutral",
+    aggression: "neutral",
+    canDialogue: true,
+  },
+  temporaryAlly: {
+    label: "Temporary Ally",
+    type: "npc",
+    teamId: "party",
+    factionId: "party",
+    role: "temporaryAlly",
+    defaultDisposition: "friendly",
+    disposition: "friendly",
+    aggression: "defensive",
+  },
+  hostileFaction: {
+    label: "Custom Hostile Faction",
+    type: "npc",
+    teamId: "hostileFaction",
+    factionId: "hostileFaction",
+    role: "factionMember",
+    defaultDisposition: "hostile",
+    disposition: "hostile",
+    aggression: "hostile",
+  },
+};
+
+const DEFAULT_ENCOUNTER_ARMIES = [
+  {
+    id: "party",
+    name: "Player Party",
+    presetKey: "playerParty",
+    ...ARMY_TYPE_PRESETS.playerParty,
+  },
+  {
+    id: "enemy",
+    name: "Enemies",
+    presetKey: "enemyArmy",
+    ...ARMY_TYPE_PRESETS.enemyArmy,
+  },
+];
+
+function getSceneRoleLabel(fighter) {
+  if (!fighter) return "Scene Actor";
+  if (fighter.sceneRoleKey && SCENE_ROLE_PRESETS[fighter.sceneRoleKey]) {
+    return SCENE_ROLE_PRESETS[fighter.sceneRoleKey].label;
+  }
+  if (fighter.role) return fighter.role;
+  if (fighter.type === "player") return "Party Side";
+  if (fighter.type === "enemy") return "Enemy";
+  if (fighter.type === "npc") return "Scene Actor";
+  return fighter.type || "Scene Actor";
+}
+
+function getDeploymentSideLabel(side) {
+  if (side === "player") return "Players";
+  if (side === "enemy") return "Enemies";
+  if (side === "npc") return "Scene Actors";
+  return side || "Units";
+}
+
+function getDeploymentSideHeading(side) {
+  if (side === "player") return "🛡️ Player Side";
+  if (side === "enemy") return "🗡️ Enemy Side";
+  if (side === "npc") return "🎭 Scene Actors";
+  return getDeploymentSideLabel(side);
+}
+
+function slugifyArmyId(value, fallback = "army") {
+  const slug = String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return slug || fallback;
+}
+
+function createEncounterArmyFromPreset({
+  id,
+  name,
+  presetKey = "neutralNpc",
+  preservePartyTeam = false,
+}) {
+  const preset = ARMY_TYPE_PRESETS[presetKey] || ARMY_TYPE_PRESETS.neutralNpc;
+  const baseId = id || slugifyArmyId(name, "army");
+  const partyAligned = preservePartyTeam || preset.teamId === "party" || preset.factionId === "party";
+  return {
+    id: baseId,
+    name,
+    presetKey,
+    ...preset,
+    teamId: partyAligned ? "party" : baseId,
+    factionId: partyAligned ? "party" : baseId,
+    defaultDisposition: preset.defaultDisposition || preset.disposition,
+    disposition: preset.disposition || preset.defaultDisposition,
+    attacksEveryone: preset.attacksEveryone === true,
+    canDialogue: preset.canDialogue === true,
+    nonCombatant: preset.nonCombatant === true,
+    isPlayerControlled: preset.isPlayerControlled === true,
+  };
+}
 
 function getRosterTutorialTarget({
   playerCount,
@@ -820,18 +1112,32 @@ function createEmptyDeploymentState() {
     selectionBySide: {
       player: [],
       enemy: [],
+      npc: [],
     },
     formationBySide: {
       player: DEPLOYMENT_FORMATIONS.SINGLE,
       enemy: DEPLOYMENT_FORMATIONS.SINGLE,
+      npc: DEPLOYMENT_FORMATIONS.SINGLE,
     },
     positionsBySide: {
       player: {},
       enemy: {},
+      npc: {},
+    },
+    manualPositionsBySide: {
+      player: {},
+      enemy: {},
+      npc: {},
+    },
+    selectedFighterBySide: {
+      player: null,
+      enemy: null,
+      npc: null,
     },
     lockedSides: {
       player: false,
       enemy: false,
+      npc: false,
     },
   };
 }
@@ -949,7 +1255,9 @@ function getSuggestedDeploymentAnchor(side, bounds) {
   const centerX = Math.floor(bounds.width / 2);
   const suggestedY = side === "enemy"
     ? Math.max(1, Math.floor(bounds.height * 0.2))
-    : Math.max(1, Math.floor(bounds.height * 0.8));
+    : side === "npc"
+      ? Math.max(1, Math.floor(bounds.height * 0.5))
+      : Math.max(1, Math.floor(bounds.height * 0.8));
 
   return clampDeploymentPoint({ x: centerX, y: suggestedY }, bounds);
 }
@@ -1804,6 +2112,11 @@ function CombatPage({ characters = [] }) {
   const [selectedArmor, setSelectedArmor] = useState("");
   const [selectedWeapon, setSelectedWeapon] = useState("");
   const [selectedAmmoCount, setSelectedAmmoCount] = useState(0);
+  const [armyCount, setArmyCount] = useState(2);
+  const [encounterArmies, setEncounterArmies] = useState(() => DEFAULT_ENCOUNTER_ARMIES);
+  const [selectedArmyId, setSelectedArmyId] = useState("enemy");
+  const [newArmyName, setNewArmyName] = useState("");
+  const [newArmyType, setNewArmyType] = useState("enemyArmy");
   const [selectedAttack, setSelectedAttack] = useState(0);
   const [selectedParty, setSelectedParty] = useState([]);
   const [selectedRosterPreviewId, setSelectedRosterPreviewId] = useState(null);
@@ -1853,6 +2166,7 @@ function CombatPage({ characters = [] }) {
   const prevPositionsRef = useRef(null);
   const suppressNextAnimationRef = useRef(new Set());
   const actionClockRef = useRef({ busy: false, endsAtMs: 0 });
+  const carryUpkeepTurnKeysRef = useRef(new Set());
   const timelineRef = useRef({ events: [], locked: false });
   const suppressEndTurnRef = useRef(false);
   useEffect(() => {
@@ -4048,6 +4362,7 @@ function CombatPage({ characters = [] }) {
   const [setupMode, setSetupMode] = useState("quick");
   const [quickChoicesOpen, setQuickChoicesOpen] = useState(false);
   const [manualDeploymentOpen, setManualDeploymentOpen] = useState(false);
+  const [combatControlsExpanded, setCombatControlsExpanded] = useState(false);
   const [preBattleStep, setPreBattleStep] = useState(PRE_BATTLE_STEPS.ROSTER);
   const [preBattleDeployment, setPreBattleDeployment] = useState(() => createEmptyDeploymentState());
   const [hasAutoOpenedPreBattleFlow, setHasAutoOpenedPreBattleFlow] = useState(false);
@@ -4084,6 +4399,567 @@ function CombatPage({ characters = [] }) {
       0
     );
   }, []);
+
+  const canFighterStartTurn = useCallback((fighter) => {
+    if (!canFighterAct(fighter)) return false;
+
+    const hp = Number(getFighterHP(fighter));
+    if (Number.isFinite(hp) && hp <= 0) return false;
+
+    const status = String(fighter?.status || "").toLowerCase();
+    const condition = String(fighter?.condition || "").toLowerCase();
+    const blockedStatuses = new Set(["defeated", "dead", "unconscious", "dying", "fled"]);
+    const blockedConditions = new Set([
+      "dead",
+      "unconscious",
+      "unconsciousbleeding",
+      "unconsciousstable",
+      "dying",
+    ]);
+
+    return !blockedStatuses.has(status) && !blockedConditions.has(condition);
+  }, [canFighterAct, getFighterHP]);
+
+  const getCannotStartTurnReason = useCallback((fighter) => {
+    if (!fighter) return "missing fighter";
+
+    const hp = Number(getFighterHP(fighter));
+    if (Number.isFinite(hp) && hp <= 0) {
+      return `HP ${hp}`;
+    }
+    if (fighter.canAct === false) return "canAct is false";
+    if (fighter.fatigueState?.status === "collapsed") return "collapsed from exhaustion";
+    if (fighter.moraleState?.hasFled) return "fled";
+    if (Array.isArray(fighter.statusEffects) && fighter.statusEffects.includes("FLED")) {
+      return "fled";
+    }
+    if (fighter.isCarried || fighter.carriedById || fighter.carriedBy || fighter.grappleState?.lifted) {
+      return "being carried";
+    }
+
+    const status = String(fighter.status || "").toLowerCase();
+    const condition = String(fighter.condition || "").toLowerCase();
+    if (["defeated", "dead", "unconscious", "dying", "fled"].includes(status)) {
+      return `status ${fighter.status}`;
+    }
+    if (["dead", "unconscious", "unconsciousbleeding", "unconsciousstable", "dying"].includes(condition)) {
+      return `condition ${fighter.condition}`;
+    }
+    if ((Number(fighter.remainingAttacks ?? 0) || 0) <= 0) return "no actions remaining";
+
+    return "blocked by turn-start eligibility";
+  }, [getFighterHP]);
+
+  const clampGrappleNumber = useCallback((value, min, max) => {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return min;
+    return Math.min(max, Math.max(min, n));
+  }, []);
+
+  const getAttributeValue = useCallback((fighter, attributeName, fallback = 10) => {
+    if (!fighter) return fallback;
+    const keys = [
+      attributeName,
+      attributeName.toLowerCase(),
+      attributeName.toUpperCase(),
+    ];
+    const containers = [
+      fighter,
+      fighter.attributes,
+      fighter.stats,
+      fighter.attributeBonuses,
+      fighter.derived,
+    ].filter(Boolean);
+
+    for (const container of containers) {
+      if (Array.isArray(container)) {
+        const found = container.find((entry) => {
+          const name = String(entry?.name || entry?.key || entry?.attribute || "").toLowerCase();
+          return name === attributeName.toLowerCase();
+        });
+        const value = Number(found?.value ?? found?.score ?? found?.total);
+        if (Number.isFinite(value)) return value;
+        continue;
+      }
+
+      for (const key of keys) {
+        const value = Number(container?.[key]);
+        if (Number.isFinite(value)) return value;
+      }
+    }
+
+    return fallback;
+  }, []);
+
+  const getGrappleAttributeModifiers = useCallback((fighter) => {
+    const PE = getAttributeValue(fighter, "PE", 10);
+    const PP = getAttributeValue(fighter, "PP", 10);
+    const Spd = getAttributeValue(fighter, "Spd", 10);
+
+    return {
+      PE,
+      PP,
+      Spd,
+      peDrainReduction: Math.max(0, Math.floor(PE / 8)),
+      peRecoveryBonus: Math.max(0, Math.floor(PE / 8)),
+      ppControlBonus: clampGrappleNumber(Math.floor((PP - 10) / 3), -2, 5),
+      ppEfficiencyReduction: Math.max(0, Math.floor(PP / 10)),
+      spdEntryBonus: Math.max(0, Math.min(4, Math.floor(Spd / 15))),
+      spdBreakawayBonus: Math.max(0, Math.min(4, Math.floor(Spd / 12))),
+    };
+  }, [clampGrappleNumber, getAttributeValue]);
+
+  const getFighterWeight = useCallback((fighter) => {
+    if (!fighter) return 170;
+
+    const parseWeight = (value) => {
+      if (value == null) return null;
+      if (typeof value === "number" && Number.isFinite(value) && value > 0) return value;
+      const text = String(value).toLowerCase().replace(/\u2013|\u2014/g, "-");
+      const range = text.match(/(\d+(?:\.\d+)?)\s*(?:-|to)\s*(\d+(?:\.\d+)?)\s*(?:pounds?|lbs?|lb)?/);
+      if (range) {
+        const a = Number(range[1]);
+        const b = Number(range[2]);
+        if (Number.isFinite(a) && Number.isFinite(b)) return (a + b) / 2;
+      }
+      const single = text.match(/(\d+(?:\.\d+)?)\s*(?:pounds?|lbs?|lb)\b/);
+      if (single) {
+        const n = Number(single[1]);
+        if (Number.isFinite(n) && n > 0) return n;
+      }
+      return null;
+    };
+
+    const directFields = [
+      fighter.weight,
+      fighter.weightLbs,
+      fighter.pounds,
+      fighter.lbs,
+      fighter.sizeWeight,
+      fighter.bodyWeight,
+      fighter.attributes?.weight,
+      fighter.attributes?.weightLbs,
+      fighter.stats?.weight,
+      fighter.stats?.weightLbs,
+      fighter.size,
+    ];
+
+    for (const value of directFields) {
+      const parsed = parseWeight(value);
+      if (parsed) return parsed;
+    }
+
+    const sizeCategory = String(getSizeCategory(fighter) || "").toLowerCase();
+    const descriptor = [
+      fighter.name,
+      fighter.species,
+      fighter.race,
+      fighter.category,
+      fighter.creatureCategory,
+      fighter.creatureType,
+      fighter.size,
+    ].filter(Boolean).join(" ").toLowerCase();
+
+    if (descriptor.includes("dragon") || descriptor.includes("huge monster")) return 3000;
+    if (descriptor.includes("giant")) return 1200;
+    if (descriptor.includes("horse")) return 1200;
+    if (descriptor.includes("ogre") || descriptor.includes("troll")) return 450;
+    if (descriptor.includes("dwarf")) return 150;
+    if (descriptor.includes("gnome") || descriptor.includes("kobold") || descriptor.includes("goblin")) return 80;
+    if (descriptor.includes("mouse") || descriptor.includes("faerie") || sizeCategory === "tiny") return 5;
+    if (descriptor.includes("human") || descriptor.includes("elf") || descriptor.includes("orc")) return 170;
+    if (sizeCategory === "small") return descriptor.includes("animal") ? 30 : 80;
+    if (sizeCategory === "large") return 600;
+    if (sizeCategory === "huge") return 2000;
+    if (sizeCategory === "giant") return 6000;
+
+    return 170;
+  }, []);
+
+  const getLiftProfile = useCallback((carrier, target, options = {}) => {
+    const carrierWeight = getFighterWeight(carrier);
+    const targetWeight = getFighterWeight(target);
+    const PS = getAttributeValue(carrier, "PS", 10);
+    const { peDrainReduction, ppEfficiencyReduction, ppControlBonus } =
+      getGrappleAttributeModifiers(carrier);
+    const airborne = options.requireFlying === true || isFlying(carrier);
+    const capacityMultiplier = options.capacityMultiplier ?? (airborne ? 10 : 15);
+    const carryCheck = canCarryTarget(carrier, target, {
+      capacityMultiplier,
+      sameSizePsMargin: options.sameSizePsMargin ?? 10,
+      minPsLeadForAdjacentSize: options.minPsLeadForAdjacentSize ?? 0,
+      ignoreWeight: options.ignoreWeight === true,
+    });
+    const maxLiftWeight = Number(carryCheck?.capacity ?? (PS * capacityMultiplier)) || 0;
+    const loadRatio = maxLiftWeight > 0 ? targetWeight / maxLiftWeight : Infinity;
+    const baseLiftCost = options.baseLiftCost ?? (airborne ? 3 : 2);
+    const rawCost = Math.ceil(baseLiftCost * Math.max(0.5, loadRatio));
+    const staminaReduction = Math.max(0, peDrainReduction + ppEfficiencyReduction);
+    const staminaCost = Math.max(1, rawCost - staminaReduction);
+    const controlPenalty =
+      loadRatio > 0.9 ? -3 :
+      loadRatio > 0.75 ? -2 :
+      loadRatio > 0.5 ? -1 :
+      Math.min(0, Math.floor(ppControlBonus / 2));
+    const canLift = Boolean(carryCheck?.canCarry) && targetWeight <= maxLiftWeight;
+
+    return {
+      carrierWeight,
+      targetWeight,
+      maxLiftWeight,
+      loadRatio,
+      canLift,
+      staminaCost,
+      controlPenalty,
+      reason: canLift
+        ? ""
+        : carryCheck?.reason || `${target?.name || "Target"} is too heavy.`,
+    };
+  }, [getAttributeValue, getFighterWeight, getGrappleAttributeModifiers]);
+
+  const canLiftTarget = useCallback((carrier, target, options = {}) => {
+    if (!carrier || !target) return { canLift: false, reason: "missing carrier or target" };
+    if (!canFighterStartTurn(carrier)) return { canLift: false, reason: "cannot act" };
+    if (options.requireFlying && !isFlying(carrier)) {
+      return { canLift: false, reason: "must be airborne to lift this target" };
+    }
+
+    const profile = getLiftProfile(carrier, target, options);
+    if (!profile.canLift) return { ...profile, canLift: false, reason: profile.reason || "too heavy" };
+
+    const carrierSize = String(getSizeCategory(carrier) || "").toLowerCase();
+    const targetLooksHumanoid = /human|elf|orc|dwarf|gnome|goblin|kobold|knight|paladin/.test(
+      [target.name, target.species, target.race, target.category, target.creatureType].filter(Boolean).join(" ").toLowerCase()
+    );
+    if (
+      carrierSize === "tiny" &&
+      targetLooksHumanoid &&
+      !options.allowTinyCarrier
+    ) {
+      return { ...profile, canLift: false, reason: "too small to lift a humanoid-sized target" };
+    }
+
+    const fatigue = getFatigueStatus(carrier);
+    if (
+      fatigue?.stamina != null &&
+      Number.isFinite(Number(fatigue.stamina)) &&
+      Number(fatigue.stamina) - profile.staminaCost < -20
+    ) {
+      return { ...profile, canLift: false, reason: "too exhausted to lift the target" };
+    }
+
+    return { ...profile, canLift: true, reason: "" };
+  }, [canFighterStartTurn, getLiftProfile]);
+
+  const applyLiftCarryStaminaCost = useCallback((carrier, target, mode = "lift", options = {}) => {
+    if (!carrier || !target) return carrier;
+    const profile = getLiftProfile(carrier, target, options);
+    const alreadySpent = Number(options.alreadySpent ?? 0) || 0;
+    const extraCost = Math.max(0, profile.staminaCost - alreadySpent);
+    if (extraCost > 0) {
+      drainStamina(carrier, extraCost, 1);
+    }
+    carrier.carrying = carrier.isCarrying
+      ? {
+          targetId: target.id,
+          mode: mode === "drop" ? "released" : "grappleLift",
+          targetWeight: profile.targetWeight,
+          staminaCostPerTurn: profile.staminaCost,
+          heightFt: carrier.altitudeFeet ?? carrier.altitude ?? 0,
+        }
+      : carrier.carrying;
+    return carrier;
+  }, [getLiftProfile]);
+
+  const liftGrappledTarget = useCallback((carrierId, targetId, options = {}) => {
+    const live = fightersRef.current ?? fighters;
+    const carrier = live.find((f) => f.id === carrierId);
+    const target = live.find((f) => f.id === targetId);
+    const liftCheck = canLiftTarget(carrier, target, options);
+
+    if (!liftCheck.canLift) {
+      addLog(`❌ ${carrier?.name || "Fighter"} cannot lift ${target?.name || "target"}; ${liftCheck.reason || "too heavy"}.`, "error");
+      commitFighters(prev => prev.map(f => {
+        if (f.id !== carrierId) return f;
+        const ra = Number(f.remainingAttacks ?? 0) || 0;
+        return { ...f, remainingAttacks: Math.max(0, ra - 1) };
+      }));
+      return { success: false, spentAction: true, reason: liftCheck.reason };
+    }
+
+    const result = liftAndCarry(carrier, target, { ...options, positions: options.positions ?? positionsRef.current });
+    if (!result.success) {
+      addLog(`❌ ${carrier.name} cannot lift ${target.name}; ${result.reason || "too heavy"}.`, "error");
+      commitFighters(prev => prev.map(f => {
+        if (f.id !== carrierId) return f;
+        const ra = Number(f.remainingAttacks ?? 0) || 0;
+        return { ...f, remainingAttacks: Math.max(0, ra - 1) };
+      }));
+      return { ...result, spentAction: true };
+    }
+
+    applyLiftCarryStaminaCost(result.carrier, result.carried, "lift", {
+      ...options,
+      alreadySpent: 1.5,
+    });
+
+    commitFighters(prev => prev.map(f => {
+      if (f.id === carrierId) {
+        const ra = Number(f.remainingAttacks ?? 0) || 0;
+        return { ...result.carrier, remainingAttacks: Math.max(0, ra - 1) };
+      }
+      if (f.id === targetId) {
+        return {
+          ...result.carried,
+          grappleState: {
+            ...(result.carried.grappleState || {}),
+            lifted: true,
+            carriedBy: carrierId,
+            carryMode: "grappleLift",
+            heightFt: result.carrier.altitudeFeet ?? result.carrier.altitude ?? 0,
+          },
+        };
+      }
+      return f;
+    }));
+
+    setPositions(prevPos => {
+      const base = { ...(pickNonEmptyObject(positionsRef.current, prevPos)) };
+      const carrierPos = base[carrierId];
+      if (carrierPos) base[targetId] = { ...carrierPos };
+      positionsRef.current = base;
+      return base;
+    });
+
+    const height = result.carrier.altitudeFeet ?? result.carrier.altitude ?? 0;
+    addLog(height > 0
+      ? `🦅 ${carrier.name} lifts ${target.name} into the air!`
+      : `🏋️ ${carrier.name} lifts ${target.name}!`, "warning");
+    if (liftCheck.loadRatio > 0.75) {
+      addLog(`💪 ${carrier.name} strains under ${target.name}'s weight.`, "info");
+    }
+    return { ...result, spentAction: true, profile: liftCheck };
+  }, [addLog, applyLiftCarryStaminaCost, canLiftTarget, commitFighters, fighters]);
+
+  const dropLiftedTarget = useCallback((carrierId, targetId, options = {}) => {
+    const live = fightersRef.current ?? fighters;
+    const carrier = live.find((f) => f.id === carrierId);
+    const target = live.find((f) => f.id === targetId);
+    if (!carrier || !target) {
+      addLog("❌ Cannot find carried target!", "error");
+      return { success: false, spentAction: false, reason: "missing carrier or target" };
+    }
+
+    const height = options.height ?? getAltitude(carrier) ?? carrier.altitudeFeet ?? carrier.altitude ?? 0;
+    const result = dropCarriedTarget(carrier, target, { ...options, height });
+    const carrierReferencesTarget = (f) =>
+      f?.carriedTargetId === targetId ||
+      f?.carrying?.targetId === targetId ||
+      f?.carriedTarget?.id === targetId ||
+      f?.carriedTarget === targetId;
+    const targetReferencesCarrier = (f) =>
+      f?.carriedById === carrierId ||
+      f?.carriedBy === carrierId ||
+      f?.grappleState?.carriedBy === carrierId ||
+      (f?.grappleState?.lifted && f?.grappleState?.opponent === carrierId);
+    let staleCarryCleanupApplied = false;
+    const clearStaleCarrierState = (f) => {
+      if (!carrierReferencesTarget(f)) return f;
+      staleCarryCleanupApplied = true;
+      const next = {
+        ...f,
+        isCarrying: false,
+        carriedTargetId: null,
+        carrying: null,
+        combinedMode: null,
+        combinedBody: null,
+      };
+      if ("hasCarriedTarget" in next) next.hasCarriedTarget = false;
+      return next;
+    };
+    const clearStaleTargetState = (f) => {
+      if (!targetReferencesCarrier(f)) return f;
+      staleCarryCleanupApplied = true;
+      const next = {
+        ...f,
+        isCarried: false,
+        carriedById: null,
+        carriedBy: null,
+        carried: false,
+        combinedMode: null,
+        combinedBody: null,
+        grappleState: {
+          ...(f.grappleState || {}),
+          lifted: false,
+          carriedBy: null,
+          carryMode: null,
+          heightFt: 0,
+        },
+      };
+      return next;
+    };
+    commitFighters(prev => prev.map(f => {
+      if (f.id === carrierId) {
+        const ra = Number(f.remainingAttacks ?? 0) || 0;
+        const shouldClearCarrier = result.success || carrierReferencesTarget(f);
+        const baseCarrier = result.success ? result.fighter : clearStaleCarrierState(f);
+        return {
+          ...f,
+          ...baseCarrier,
+          ...(shouldClearCarrier ? { carrying: null } : {}),
+          remainingAttacks: Math.max(0, ra - 1),
+        };
+      }
+      if (f.id === targetId) {
+        const shouldClearTarget = result.success || targetReferencesCarrier(f);
+        if (!shouldClearTarget) return f;
+        const baseTarget = result.success ? result.target : clearStaleTargetState(f);
+        return {
+          ...baseTarget,
+          grappleState: {
+            ...(baseTarget.grappleState || {}),
+            lifted: false,
+            carriedBy: null,
+            carryMode: null,
+            heightFt: 0,
+          },
+        };
+      }
+      return f;
+    }));
+
+    if (result.success) {
+      addLog(`⬇️ ${carrier.name} drops ${target.name} from ${height} ft!`, "warning");
+      if (result.fallDamage) {
+        addLog(`💥 ${target.name} takes fall damage!`, "combat");
+      }
+    } else {
+      addLog(`❌ ${carrier.name} failed to drop ${target.name}: ${result.reason}`, "error");
+      if (staleCarryCleanupApplied) {
+        addLog(`🧹 Cleared stale carry state for ${carrier.name} and ${target.name}.`, "info");
+      }
+    }
+
+    return { ...result, spentAction: true };
+  }, [addLog, commitFighters, fighters]);
+
+  const applyOngoingCarryStaminaDrain = useCallback((carrierId, source = "carry-upkeep") => {
+    const live = fightersRef.current ?? fighters;
+    const carrier = live.find((f) => f.id === carrierId);
+    const carriedId = carrier?.carriedTargetId ?? carrier?.carrying?.targetId;
+    if (!carrier || !carriedId) return { applied: false, forcedDrop: false };
+
+    const upkeepKey = [
+      carrierId,
+      carriedId,
+      meleeRoundRef.current ?? meleeRound,
+      turnCounterRef.current ?? turnCounter,
+    ].join(":");
+    if (carryUpkeepTurnKeysRef.current.has(upkeepKey)) {
+      return { applied: false, forcedDrop: false, skipped: true };
+    }
+    carryUpkeepTurnKeysRef.current.add(upkeepKey);
+    if (carryUpkeepTurnKeysRef.current.size > 200) {
+      carryUpkeepTurnKeysRef.current = new Set([upkeepKey]);
+    }
+
+    const carried = live.find((f) => f.id === carriedId);
+    if (!carried) {
+      commitFighters(prev => prev.map(f =>
+        f.id === carrierId
+          ? { ...f, isCarrying: false, carriedTargetId: null, carrying: null, combinedMode: null, combinedBody: null }
+          : f
+      ));
+      return { applied: true, forcedDrop: false };
+    }
+
+    const profile = getLiftProfile(carrier, carried, {
+      mode: carrier?.carrying?.mode || carried?.grappleState?.carryMode || "grappleLift",
+      ongoing: true,
+      requireFlying: Boolean(carrier.isFlying || (carrier.altitudeFeet ?? carrier.altitude ?? 0) > 0),
+      capacityMultiplier: carrier?.carrying?.capacityMultiplier,
+    });
+    const ongoingCost = Math.max(1, profile.staminaCost);
+    const fatigue = getFatigueStatus(carrier);
+    const stamina = Number(
+      fatigue?.stamina ??
+      carrier.fatigueState?.currentStamina ??
+      carrier.currentStamina
+    );
+    const cannotSustain =
+      !profile.canLift ||
+      (Number.isFinite(stamina) && stamina - ongoingCost < -20);
+
+    if (cannotSustain) {
+      const height = getAltitude(carrier) || carrier.altitudeFeet || carrier.altitude || 0;
+      const drop = dropCarriedTarget(carrier, carried, { height });
+      commitFighters(prev => prev.map(f => {
+        if (f.id === carrierId) {
+          return {
+            ...f,
+            ...(drop.success ? drop.fighter : {}),
+            isCarrying: false,
+            carriedTargetId: null,
+            carrying: null,
+            combinedMode: null,
+            combinedBody: null,
+          };
+        }
+        if (f.id === carriedId) {
+          const released = drop.success ? drop.target : f;
+          return {
+            ...released,
+            isCarried: false,
+            carriedById: null,
+            combinedMode: null,
+            combinedBody: null,
+            grappleState: {
+              ...(released.grappleState || {}),
+              lifted: false,
+              carriedBy: null,
+              carryMode: null,
+              heightFt: 0,
+            },
+          };
+        }
+        return f;
+      }));
+      addLog(`🏋️ ${carrier.name} loses grip on ${carried.name}!`, "warning");
+      if (drop.success && height > 0) {
+        addLog(`⬇️ ${carrier.name} drops ${carried.name} from ${height} ft!`, "warning");
+      }
+      return { applied: true, forcedDrop: true };
+    }
+
+    let updatedCarrier = null;
+    commitFighters(prev => prev.map(f => {
+      if (f.id !== carrierId) return f;
+      const next = { ...f };
+      drainStamina(next, ongoingCost, 1);
+      next.carrying = {
+        ...(next.carrying || {}),
+        targetId: carriedId,
+        mode: next.carrying?.mode || carried.grappleState?.carryMode || "grappleLift",
+        targetWeight: profile.targetWeight,
+        staminaCostPerTurn: ongoingCost,
+        heightFt: next.altitudeFeet ?? next.altitude ?? 0,
+      };
+      updatedCarrier = next;
+      return next;
+    }));
+
+    if (profile.loadRatio > 0.5 || ongoingCost > 1) {
+      addLog(`💪 ${carrier.name} strains under ${carried.name}'s weight.`, "info");
+    }
+
+    return {
+      applied: true,
+      forcedDrop: false,
+      carrier: updatedCarrier,
+      staminaCost: ongoingCost,
+      source,
+    };
+  }, [addLog, commitFighters, fighters, getLiftProfile, meleeRound, turnCounter]);
 
   const getFighterMaxHP = useCallback((fighter) => {
     if (!fighter || typeof fighter !== "object") return 9999;
@@ -4307,7 +5183,14 @@ function CombatPage({ characters = [] }) {
   const deploymentPreviewPositions = useMemo(() => ({
     ...(preBattleDeployment.positionsBySide?.player || {}),
     ...(preBattleDeployment.positionsBySide?.enemy || {}),
+    ...(preBattleDeployment.positionsBySide?.npc || {}),
   }), [preBattleDeployment.positionsBySide]);
+
+  const manualDeploymentPositions = useMemo(() => ({
+    ...(preBattleDeployment.manualPositionsBySide?.player || {}),
+    ...(preBattleDeployment.manualPositionsBySide?.enemy || {}),
+    ...(preBattleDeployment.manualPositionsBySide?.npc || {}),
+  }), [preBattleDeployment.manualPositionsBySide]);
 
   const tacticalMapPositions = useMemo(() => {
     if (!combatActive && Object.keys(deploymentPreviewPositions).length > 0) {
@@ -4382,6 +5265,24 @@ function CombatPage({ characters = [] }) {
     return sideIds.filter((fighterId) => selectedIds.includes(fighterId));
   }, [fighters, preBattleDeployment.selectionBySide]);
 
+  const getSideFighters = useCallback((side) => (
+    fighters.filter((fighter) => fighter.type === side)
+  ), [fighters]);
+
+  const getSelectedDeploymentFighterId = useCallback((side, deploymentState = preBattleDeployment) => {
+    const sideFighters = getSideFighters(side);
+    const sideIds = new Set(sideFighters.map((fighter) => fighter.id));
+    const explicit = deploymentState.selectedFighterBySide?.[side];
+    if (explicit && sideIds.has(explicit)) return explicit;
+
+    const selected = deploymentState.selectionBySide?.[side] || [];
+    const firstSelected = selected.find((fighterId) => sideIds.has(fighterId));
+    if (firstSelected) return firstSelected;
+
+    const sidePositions = deploymentState.positionsBySide?.[side] || {};
+    return sideFighters.find((fighter) => !sidePositions[fighter.id])?.id || sideFighters[0]?.id || null;
+  }, [getSideFighters, preBattleDeployment]);
+
   const setDeploymentSelectionForSide = useCallback((side, fighterId, shouldSelect) => {
     setPreBattleDeployment((prev) => {
       if (prev.lockedSides?.[side]) return prev;
@@ -4400,6 +5301,14 @@ function CombatPage({ characters = [] }) {
       return {
         ...prev,
         currentSide: side,
+        selectedFighterBySide: {
+          ...prev.selectedFighterBySide,
+          [side]: shouldSelect
+            ? fighterId
+            : prev.selectedFighterBySide?.[side] === fighterId
+              ? nextSelection[0] || null
+              : prev.selectedFighterBySide?.[side] || null,
+        },
         selectionBySide: {
           ...prev.selectionBySide,
           [side]: nextSelection,
@@ -4415,20 +5324,35 @@ function CombatPage({ characters = [] }) {
   }, []);
 
   const handleDeploymentPickerMouseDown = useCallback((side, fighterId) => {
-    if (preBattleDeployment.currentSide !== side || preBattleDeployment.lockedSides?.[side]) return;
-
-    const isSelected = (preBattleDeployment.selectionBySide?.[side] || []).includes(fighterId);
-    const shouldSelect = !isSelected;
+    if (preBattleDeployment.lockedSides?.[side]) return;
 
     deploymentDragStateRef.current = {
       active: true,
       side,
-      shouldSelect,
+      shouldSelect: true,
       touchedIds: new Set([fighterId]),
     };
 
-    setDeploymentSelectionForSide(side, fighterId, shouldSelect);
-  }, [preBattleDeployment.currentSide, preBattleDeployment.lockedSides, preBattleDeployment.selectionBySide, setDeploymentSelectionForSide]);
+    setPreBattleDeployment((prev) => {
+      if (prev.lockedSides?.[side]) return prev;
+      return {
+        ...prev,
+        currentSide: side,
+        selectedFighterBySide: {
+          ...prev.selectedFighterBySide,
+          [side]: fighterId,
+        },
+        selectionBySide: {
+          ...prev.selectionBySide,
+          [side]: [fighterId],
+        },
+        formationBySide: {
+          ...prev.formationBySide,
+          [side]: DEPLOYMENT_FORMATIONS.SINGLE,
+        },
+      };
+    });
+  }, [preBattleDeployment.lockedSides]);
 
   const handleDeploymentPickerMouseEnter = useCallback((side, fighterId) => {
     const dragState = deploymentDragStateRef.current;
@@ -4451,7 +5375,14 @@ function CombatPage({ characters = [] }) {
     const sideIds = fighters.filter((fighter) => fighter.type === side).map((fighter) => fighter.id);
     if (sideIds.length === 0) return;
 
-    const formation = sideIds.length <= 1
+    const existingSidePositions = preBattleDeployment.positionsBySide?.[side] || {};
+    const unplacedIds = sideIds.filter((fighterId) => !existingSidePositions[fighterId]);
+    if (unplacedIds.length === 0) {
+      addLog(`${getDeploymentSideLabel(side)} are already deployed.`, "info");
+      return;
+    }
+
+    const formation = unplacedIds.length <= 1
       ? DEPLOYMENT_FORMATIONS.SINGLE
       : DEPLOYMENT_FORMATIONS.LINE_CLOSE;
     const anchor = getSuggestedDeploymentAnchor(side, deploymentBounds);
@@ -4468,7 +5399,7 @@ function CombatPage({ characters = [] }) {
       });
 
       const nextPositions = buildDeploymentFormationPositions({
-        fighterIds: sideIds,
+        fighterIds: unplacedIds,
         anchor,
         formation,
         occupiedKeys,
@@ -4481,7 +5412,11 @@ function CombatPage({ characters = [] }) {
         currentSide: side,
         selectionBySide: {
           ...prev.selectionBySide,
-          [side]: sideIds,
+          [side]: unplacedIds,
+        },
+        selectedFighterBySide: {
+          ...prev.selectedFighterBySide,
+          [side]: unplacedIds[0] || sideIds[0] || null,
         },
         formationBySide: {
           ...prev.formationBySide,
@@ -4503,25 +5438,83 @@ function CombatPage({ characters = [] }) {
       };
     });
 
-    addLog(`🤖 ${side === "player" ? "Player" : "Enemy"} side auto-deployed.`, "info");
-  }, [fighters, deploymentBounds, addLog]);
+    addLog(`🤖 ${getDeploymentSideLabel(side)} auto-deployed.`, "info");
+  }, [fighters, preBattleDeployment.positionsBySide, deploymentBounds, addLog]);
 
   const handleDeploymentHexSelect = useCallback((x, y) => {
     const side = preBattleDeployment.currentSide || "player";
     if (preBattleDeployment.lockedSides?.[side]) {
-      addLog(`🔒 ${side === "player" ? "Player" : "Enemy"} side is locked. Unlock it to reposition.`, "warning");
+      addLog(`🔒 ${getDeploymentSideLabel(side)} are locked. Unlock them to reposition.`, "warning");
       return false;
     }
 
-    const orderedSelectedIds = getSideDeploymentIds(side);
+    if (
+      x < 0 ||
+      y < 0 ||
+      x >= deploymentBounds.width ||
+      y >= deploymentBounds.height
+    ) {
+      addLog("⚠️ Invalid deployment hex.", "warning");
+      return false;
+    }
+
+    const selectedFighterId = getSelectedDeploymentFighterId(side);
+    const orderedSelectedIds = selectedFighterId ? [selectedFighterId] : getSideDeploymentIds(side);
     if (orderedSelectedIds.length === 0) {
-      addLog(`🧭 Select one or more ${side === "player" ? "player" : "enemy"} units before placing them.`, "info");
+      addLog("⚠️ Select a fighter before manual placement.", "warning");
       return false;
     }
 
     const formation = orderedSelectedIds.length <= 1
       ? DEPLOYMENT_FORMATIONS.SINGLE
       : (preBattleDeployment.formationBySide?.[side] || DEPLOYMENT_FORMATIONS.LINE_CLOSE);
+
+    if (orderedSelectedIds.length === 1) {
+      const clickedKey = buildDeploymentCellKey(x, y);
+      const occupied = Object.entries(preBattleDeployment.positionsBySide || {}).some(([existingSide, sidePositions]) => (
+        Object.entries(sidePositions || {}).some(([fighterId, point]) => (
+          !(existingSide === side && fighterId === orderedSelectedIds[0]) &&
+          point &&
+          buildDeploymentCellKey(point.x, point.y) === clickedKey
+        ))
+      ));
+      if (occupied) {
+        addLog("⚠️ That hex is already occupied.", "warning");
+        return false;
+      }
+
+      setPreBattleDeployment((prev) => ({
+        ...prev,
+        currentSide: side,
+        selectionBySide: {
+          ...prev.selectionBySide,
+          [side]: [orderedSelectedIds[0]],
+        },
+        selectedFighterBySide: {
+          ...prev.selectedFighterBySide,
+          [side]: orderedSelectedIds[0],
+        },
+        positionsBySide: {
+          ...prev.positionsBySide,
+          [side]: {
+            ...(prev.positionsBySide?.[side] || {}),
+            [orderedSelectedIds[0]]: { x, y },
+          },
+        },
+        manualPositionsBySide: {
+          ...prev.manualPositionsBySide,
+          [side]: {
+            ...(prev.manualPositionsBySide?.[side] || {}),
+            [orderedSelectedIds[0]]: { x, y },
+          },
+        },
+      }));
+
+      const placedFighter = fighters.find((fighter) => fighter.id === orderedSelectedIds[0]);
+      setSelectedCombatantId(orderedSelectedIds[0]);
+      addLog(`🧭 ${placedFighter?.name || getDeploymentSideLabel(side)} placed at (${x}, ${y}).`, "info");
+      return true;
+    }
 
     setPreBattleDeployment((prev) => {
       const occupiedKeys = new Set();
@@ -4552,12 +5545,69 @@ function CombatPage({ characters = [] }) {
             ...nextPositions,
           },
         },
+        manualPositionsBySide: {
+          ...prev.manualPositionsBySide,
+          [side]: {
+            ...(prev.manualPositionsBySide?.[side] || {}),
+            ...nextPositions,
+          },
+        },
       };
     });
 
-    addLog(`🧭 ${side === "player" ? "Player" : "Enemy"} units placed at (${x}, ${y}).`, "info");
+    addLog(`🧭 ${getDeploymentSideLabel(side)} placed at (${x}, ${y}).`, "info");
     return true;
-  }, [preBattleDeployment.currentSide, preBattleDeployment.lockedSides, preBattleDeployment.formationBySide, getSideDeploymentIds, deploymentBounds, addLog]);
+  }, [preBattleDeployment, getSelectedDeploymentFighterId, getSideDeploymentIds, deploymentBounds, addLog, fighters]);
+
+  const startManualDeploymentForSide = useCallback((side) => {
+    const sideFighters = getSideFighters(side);
+    if (sideFighters.length === 0) {
+      addLog("⚠️ Select a fighter before manual placement.", "warning");
+      return;
+    }
+
+    const sidePositions = preBattleDeployment.positionsBySide?.[side] || {};
+    const nextSelectedId =
+      getSelectedDeploymentFighterId(side) ||
+      sideFighters.find((fighter) => !sidePositions[fighter.id])?.id ||
+      sideFighters[0]?.id ||
+      null;
+
+    if (!nextSelectedId) {
+      addLog("⚠️ Select a fighter before manual placement.", "warning");
+      return;
+    }
+
+    setPreBattleDeployment((prev) => {
+      if (prev.lockedSides?.[side]) return prev;
+
+      return {
+        ...prev,
+        currentSide: side,
+        selectedFighterBySide: {
+          ...prev.selectedFighterBySide,
+          [side]: nextSelectedId,
+        },
+        selectionBySide: {
+          ...prev.selectionBySide,
+          [side]: [nextSelectedId],
+        },
+        formationBySide: {
+          ...prev.formationBySide,
+          [side]: DEPLOYMENT_FORMATIONS.SINGLE,
+        },
+      };
+    });
+
+    setShowTacticalMap(true);
+    setShowDeploymentModal(false);
+    setManualDeploymentOpen(true);
+    setCombatControlsExpanded(false);
+    setSelectedCombatantId(nextSelectedId);
+
+    const selectedFighter = sideFighters.find((fighter) => fighter.id === nextSelectedId);
+    addLog(`🧭 Manual placement active for ${selectedFighter?.name || "selected fighter"}. Click a valid hex.`, "info");
+  }, [addLog, getSelectedDeploymentFighterId, getSideFighters, preBattleDeployment.positionsBySide]);
 
   const lockDeploymentSide = useCallback((side) => {
     const sideFighters = fighters.filter((fighter) => fighter.type === side);
@@ -4565,7 +5615,7 @@ function CombatPage({ characters = [] }) {
     const missingIds = sideFighters.filter((fighter) => !sidePositions[fighter.id]).map((fighter) => fighter.name);
 
     if (missingIds.length > 0) {
-      addLog(`⚠️ ${side === "player" ? "Player" : "Enemy"} side still needs: ${missingIds.join(", ")}`, "warning");
+      addLog(`⚠️ ${getDeploymentSideLabel(side)} still need: ${missingIds.join(", ")}`, "warning");
       return;
     }
 
@@ -4583,7 +5633,7 @@ function CombatPage({ characters = [] }) {
       };
     });
 
-    addLog(`✅ ${side === "player" ? "Player" : "Enemy"} side locked.`, "success");
+    addLog(`✅ ${getDeploymentSideLabel(side)} locked.`, "success");
   }, [fighters, preBattleDeployment.positionsBySide, addLog]);
 
   const unlockDeploymentSide = useCallback((side) => {
@@ -4805,6 +5855,14 @@ function CombatPage({ characters = [] }) {
       ),
       positionsBySide: Object.fromEntries(
         Object.entries(prev.positionsBySide || {}).map(([side, sidePositions]) => [
+          side,
+          Object.fromEntries(
+            Object.entries(sidePositions || {}).filter(([fighterId]) => validIds.has(fighterId))
+          ),
+        ])
+      ),
+      manualPositionsBySide: Object.fromEntries(
+        Object.entries(prev.manualPositionsBySide || {}).map(([side, sidePositions]) => [
           side,
           Object.fromEntries(
             Object.entries(sidePositions || {}).filter(([fighterId]) => validIds.has(fighterId))
@@ -5802,8 +6860,112 @@ function CombatPage({ characters = [] }) {
   const alivePlayers = fighters.filter(f => f.type === "player" && f.currentHP > -21);
   const aliveEnemies = fighters.filter(f => f.type === "enemy" && f.currentHP > -21);
   const totalEnemyCount = fighters.filter((f) => f.type === "enemy").length;
+  const victorySceneContext = { sceneType: "combat", relations: {} };
+  const getVictoryFighterId = useCallback((fighter) => fighter?.id ?? fighter?._id, []);
+  const isActiveForVictory = useCallback((fighter) => {
+    if (!fighter) return false;
+    const hp = Number(getFighterHP(fighter));
+    if (Number.isFinite(hp) && hp <= 0) return false;
+    const status = String(fighter.status || "").toLowerCase();
+    const condition = String(fighter.condition || "").toLowerCase();
+    if (["defeated", "dead", "unconscious", "dying", "fled"].includes(status)) return false;
+    if (["dead", "unconscious", "unconsciousbleeding", "unconsciousstable", "dying"].includes(condition)) return false;
+    if (fighter.moraleState?.hasFled) return false;
+    if (Array.isArray(fighter.statusEffects) && fighter.statusEffects.includes("FLED")) return false;
+    const carryState = String(
+      fighter.mountState?.state ||
+      fighter.mountState?.status ||
+      fighter.carryState?.state ||
+      fighter.carryState?.status ||
+      fighter.state ||
+      ""
+    ).toLowerCase();
+    if (
+      fighter.isCarried ||
+      fighter.carriedById ||
+      fighter.carriedBy ||
+      fighter.carried === true ||
+      fighter.grappleState?.lifted ||
+      fighter.grappleState?.carriedBy ||
+      fighter.grappleState?.carryMode === "grappleLift" ||
+      carryState === "carried"
+    ) return false;
+    return canFighterAct(fighter);
+  }, [canFighterAct, getFighterHP]);
+  const isPartyAlignedForVictory = useCallback((fighter) => {
+    if (!fighter) return false;
+    if (fighter.type === "player") return true;
+    const faction = String(getFactionId(fighter) || "").trim().toLowerCase();
+    const team = String(fighter.teamId || fighter.team || fighter.side || "").trim().toLowerCase();
+    return faction === "party" || team === "party";
+  }, []);
+  const isNeutralForVictory = useCallback((fighter, partyFighters, sceneContext = victorySceneContext) => {
+    if (!fighter || isPartyAlignedForVictory(fighter)) return false;
+    return !partyFighters.some((partyFighter) =>
+      isHostileTo(fighter, partyFighter, sceneContext) ||
+      isHostileTo(partyFighter, fighter, sceneContext)
+    );
+  }, [isPartyAlignedForVictory]);
+  const isHostileThreatToParty = useCallback((fighter, allFighters, sceneContext = victorySceneContext) => {
+    if (!isActiveForVictory(fighter) || isPartyAlignedForVictory(fighter)) return false;
+    const partyFighters = allFighters.filter(isPartyAlignedForVictory);
+    if (isNeutralForVictory(fighter, partyFighters, sceneContext)) return false;
+    return partyFighters.some((partyFighter) => isHostileTo(fighter, partyFighter, sceneContext));
+  }, [isActiveForVictory, isNeutralForVictory, isPartyAlignedForVictory]);
+  const getCombatVictoryState = useCallback((fighterList) => {
+    const sceneContext = victorySceneContext;
+    const active = (fighterList || []).filter(isActiveForVictory);
+    const partyFighters = (fighterList || []).filter(isPartyAlignedForVictory);
+    const activeParty = active.filter(isPartyAlignedForVictory);
+    const hostileThreats = active.filter((fighter) =>
+      isHostileThreatToParty(fighter, fighterList || [], sceneContext)
+    );
+    const activeNonParty = active.filter((fighter) => !isPartyAlignedForVictory(fighter));
+    const nonPartyHostileConflict = activeNonParty.some((actor, index) =>
+      activeNonParty.slice(index + 1).some((target) =>
+        getVictoryFighterId(actor) !== getVictoryFighterId(target) &&
+        (isHostileTo(actor, target, sceneContext) || isHostileTo(target, actor, sceneContext))
+      )
+    );
+
+    return {
+      activeParty,
+      hostileThreats,
+      partyFighters,
+      nonPartyHostileConflict,
+      partyDefeated: activeParty.length === 0 && partyFighters.length > 0 && hostileThreats.length > 0,
+      partyVictorious: activeParty.length > 0 && hostileThreats.length === 0 && !nonPartyHostileConflict,
+    };
+  }, [getVictoryFighterId, isActiveForVictory, isHostileThreatToParty, isPartyAlignedForVictory]);
+
+  const endCombatIfVictoryResolved = useCallback((fighterList) => {
+    if (combatEndCheckRef.current || combatOverRef.current) return true;
+
+    const combatVictoryState = getCombatVictoryState(fighterList);
+    if (combatVictoryState.partyDefeated) {
+      combatEndCheckRef.current = true;
+      combatOverRef.current = true;
+      clearCombatFlowLocks();
+      addLog("💀 All players are defeated! Enemies win!", "defeat");
+      addLog("🛑 Combat is over. No further attacks are scheduled.", "info");
+      setCombatActive(false);
+      return true;
+    }
+
+    if (combatVictoryState.partyVictorious) {
+      combatEndCheckRef.current = true;
+      combatOverRef.current = true;
+      clearCombatFlowLocks();
+      addLog("🎉 Victory! All enemies defeated!", "victory");
+      addLog("🛑 Combat is over. No further attacks are scheduled.", "info");
+      setCombatActive(false);
+      return true;
+    }
+
+    return false;
+  }, [addLog, getCombatVictoryState]);
   const rosterFighters = useMemo(
-    () => fighters.filter((fighter) => fighter.type === "player" || fighter.type === "enemy"),
+    () => fighters.filter((fighter) => fighter.type === "player" || fighter.type === "enemy" || fighter.type === "npc"),
     [fighters]
   );
   const rosterPreviewFighter = useMemo(
@@ -5839,6 +7001,258 @@ function CombatPage({ characters = [] }) {
       setSelectedRosterPreviewId(rosterFighters[0].id);
     }
   }, [rosterFighters, selectedRosterPreviewId]);
+
+  const getEncounterArmyById = useCallback((armyId) => (
+    encounterArmies.find((army) => army.id === armyId) ||
+    encounterArmies.find((army) => army.id === "enemy") ||
+    DEFAULT_ENCOUNTER_ARMIES[1]
+  ), [encounterArmies]);
+
+  const getFighterControlMode = useCallback((fighter) => {
+    if (!fighter) return "passive";
+
+    const explicitMode = String(fighter.controlMode || "").toLowerCase();
+    if (["player", "ai", "passive", "defensive"].includes(explicitMode)) {
+      return explicitMode;
+    }
+
+    const army = fighter.armyId
+      ? encounterArmies.find((entry) => entry.id === fighter.armyId)
+      : null;
+    const armyMode = String(army?.controlMode || "").toLowerCase();
+    if (["player", "ai", "passive", "defensive"].includes(armyMode)) {
+      return armyMode;
+    }
+
+    if (army?.isPlayerControlled === true || fighter.isPlayerControlled === true) {
+      return aiControlEnabledRef.current ? "ai" : "player";
+    }
+
+    const aggression = String(fighter.aggression || army?.aggression || "").toLowerCase();
+    const disposition = String(fighter.disposition || army?.disposition || army?.defaultDisposition || "").toLowerCase();
+    const type = String(fighter.type || army?.type || "").toLowerCase();
+    const hostileModes = new Set(["diabolic", "berserk", "hostile", "kill_on_sight"]);
+
+    if (fighter.attacksEveryone || army?.attacksEveryone || hostileModes.has(aggression) || hostileModes.has(disposition)) {
+      return "ai";
+    }
+    if (type === "enemy") return "ai";
+    if (type === "player") return aiControlEnabledRef.current ? "ai" : "player";
+    if (type === "npc") {
+      if (aggression === "defensive" || disposition === "defensive") return "defensive";
+      if (fighter.nonCombatant || army?.nonCombatant || fighter.canDialogue || army?.canDialogue || disposition === "neutral" || aggression === "neutral") {
+        return "passive";
+      }
+      return "passive";
+    }
+
+    return "passive";
+  }, [encounterArmies]);
+
+  const applyArmyToFighter = useCallback((fighter, armyId, { preservePlayerOverride = false } = {}) => {
+    const army = getEncounterArmyById(preservePlayerOverride ? "party" : armyId);
+    if (!fighter || !army) return fighter;
+    return {
+      ...fighter,
+      armyId: army.id,
+      armyName: army.name,
+      type: army.type || fighter.type,
+      teamId: army.teamId,
+      factionId: army.factionId,
+      role: army.role || fighter.role,
+      aggression: army.aggression,
+      disposition: army.disposition || army.defaultDisposition,
+      attacksEveryone: army.attacksEveryone === true,
+      canDialogue: army.canDialogue === true,
+      nonCombatant: army.nonCombatant === true,
+      isPlayerControlled: army.isPlayerControlled === true,
+    };
+  }, [getEncounterArmyById]);
+
+  const addEncounterArmy = useCallback(() => {
+    const preset = ARMY_TYPE_PRESETS[newArmyType] || ARMY_TYPE_PRESETS.enemyArmy;
+    const displayName = newArmyName.trim() || preset.label;
+    const baseId = slugifyArmyId(displayName, preset.factionId || "army");
+    let uniqueId = baseId;
+    let suffix = 2;
+    while (encounterArmies.some((army) => army.id === uniqueId)) {
+      uniqueId = `${baseId}-${suffix}`;
+      suffix += 1;
+    }
+    const army = createEncounterArmyFromPreset({
+      id: uniqueId,
+      name: displayName,
+      presetKey: newArmyType,
+    });
+    setEncounterArmies((prev) => [...prev, army]);
+    setArmyCount(encounterArmies.length + 1);
+    setSelectedArmyId(army.id);
+    setNewArmyName("");
+    addLog(`Added army/faction: ${army.name}.`, "info");
+  }, [addLog, encounterArmies, newArmyName, newArmyType]);
+
+  const handleArmyCountChange = useCallback((value) => {
+    const nextCount = Math.max(2, Math.min(8, Number(value) || 2));
+    if (nextCount === encounterArmies.length) {
+      setArmyCount(nextCount);
+      return;
+    }
+
+    if (nextCount < encounterArmies.length) {
+      const removedArmies = encounterArmies.slice(nextCount);
+      const hasAssignedFighters = removedArmies.some((army) => (
+        fighters.some((fighter) => {
+          if (fighter.armyId) return fighter.armyId === army.id;
+          if (army.id === "party") return fighter.type === "player";
+          if (army.id === "enemy") return fighter.type === "enemy";
+          return false;
+        })
+      ));
+      if (hasAssignedFighters) {
+        addLog("Cannot reduce army count while removed armies still have fighters assigned.", "warning");
+        setArmyCount(encounterArmies.length);
+        return;
+      }
+      setEncounterArmies((prev) => prev.slice(0, nextCount));
+      setArmyCount(nextCount);
+      if (!encounterArmies.slice(0, nextCount).some((army) => army.id === selectedArmyId)) {
+        setSelectedArmyId("enemy");
+      }
+      return;
+    }
+
+    setEncounterArmies((prev) => {
+      const next = [...prev];
+      for (let index = next.length; index < nextCount; index += 1) {
+        const displayName = `Army ${index + 1}`;
+        const baseId = slugifyArmyId(displayName, `army-${index + 1}`);
+        let uniqueId = baseId;
+        let suffix = 2;
+        while (next.some((army) => army.id === uniqueId)) {
+          uniqueId = `${baseId}-${suffix}`;
+          suffix += 1;
+        }
+        next.push(createEncounterArmyFromPreset({
+          id: uniqueId,
+          name: displayName,
+          presetKey: "neutralNpc",
+        }));
+      }
+      return next;
+    });
+    setArmyCount(nextCount);
+  }, [addLog, encounterArmies, fighters, selectedArmyId]);
+
+  const updateEncounterArmy = useCallback((armyId, updates) => {
+    setEncounterArmies((prev) => prev.map((army) => (
+      army.id === armyId ? { ...army, ...updates } : army
+    )));
+  }, []);
+
+  const updateEncounterArmyPreset = useCallback((armyId, presetKey) => {
+    setEncounterArmies((prev) => prev.map((army) => {
+      if (army.id !== armyId) return army;
+      const preset = ARMY_TYPE_PRESETS[presetKey] || ARMY_TYPE_PRESETS.neutralNpc;
+      const preservePartyTeam = army.id === "party" || preset.teamId === "party" || preset.factionId === "party";
+      return {
+        ...army,
+        presetKey,
+        ...preset,
+        id: army.id,
+        name: army.name,
+        teamId: preservePartyTeam ? "party" : (army.teamId || army.id),
+        factionId: preservePartyTeam ? "party" : (army.factionId || army.id),
+        defaultDisposition: preset.defaultDisposition || preset.disposition,
+        disposition: preset.disposition || preset.defaultDisposition,
+        attacksEveryone: preset.attacksEveryone === true,
+        canDialogue: preset.canDialogue === true,
+        nonCombatant: preset.nonCombatant === true,
+        isPlayerControlled: preset.isPlayerControlled === true,
+      };
+    }));
+  }, []);
+
+  const getFighterArmyId = useCallback((fighter) => {
+    if (!fighter) return "enemy";
+    if (fighter.armyId && encounterArmies.some((army) => army.id === fighter.armyId)) {
+      return fighter.armyId;
+    }
+    const factionMatch = encounterArmies.find((army) => (
+      fighter.factionId && army.factionId === fighter.factionId
+    ));
+    if (factionMatch) return factionMatch.id;
+    if (fighter.type === "player") return "party";
+    if (fighter.type === "enemy") return "enemy";
+    return encounterArmies.find((army) => army.type === "npc")?.id || "enemy";
+  }, [encounterArmies]);
+
+  const getArmyFighters = useCallback((army) => (
+    fighters.filter((fighter) => getFighterArmyId(fighter) === army.id)
+  ), [fighters, getFighterArmyId]);
+
+  const renderFighterArmySelector = (fighter, size = "xs") => (
+    <HStack spacing={2} align="center" onClick={(e) => e.stopPropagation()} w="100%">
+      <Text fontSize="xs" color="gray.600" fontWeight="bold" whiteSpace="nowrap">
+        Army / Faction
+      </Text>
+      <Select
+        size={size}
+        maxW="220px"
+        value={getFighterArmyId(fighter)}
+        onChange={(e) => changeFighterArmy(fighter.id, e.target.value)}
+      >
+        {encounterArmies.map((army) => (
+          <option key={army.id} value={army.id}>
+            {army.name}
+          </option>
+        ))}
+      </Select>
+    </HStack>
+  );
+
+  const renderCombatRoleBadges = (fighter) => {
+    if (!fighter) return null;
+    const aggression = String(fighter.aggression || "").toLowerCase();
+    const disposition = String(fighter.disposition || "").toLowerCase();
+    const isNpc = fighter.type === "npc";
+    const isSpecialThreat =
+      fighter.attacksEveryone ||
+      ["berserk", "diabolic", "kill_on_sight"].includes(aggression) ||
+      ["kill_on_sight"].includes(disposition) ||
+      (fighter.sceneRoleKey && fighter.sceneRoleKey !== "enemy" && fighter.type === "enemy");
+
+    if (!isNpc && !isSpecialThreat) return null;
+
+    return (
+      <HStack spacing={1} flexWrap="wrap">
+        {(isNpc || fighter.sceneRoleKey !== "enemy") && (
+          <Badge colorScheme={isNpc ? "purple" : "red"} size="sm">
+            {getSceneRoleLabel(fighter)}
+          </Badge>
+        )}
+        {fighter.factionId && (isNpc || fighter.factionId !== "enemy") && (
+          <Badge colorScheme="gray" size="sm">{fighter.factionId}</Badge>
+        )}
+        {fighter.disposition && (isNpc || disposition !== "hostile") && (
+          <Badge colorScheme="blue" size="sm">{fighter.disposition}</Badge>
+        )}
+        {fighter.aggression && (isNpc || aggression !== "hostile") && (
+          <Badge colorScheme={aggression === "diabolic" || aggression === "berserk" ? "red" : "orange"} size="sm">
+            {fighter.aggression}
+          </Badge>
+        )}
+        {fighter.attacksEveryone && (
+          <Badge colorScheme="red" size="sm">Attacks Everyone</Badge>
+        )}
+        {fighter.nonCombatant && (
+          <Badge colorScheme="green" size="sm">Noncombatant</Badge>
+        )}
+        {fighter.canDialogue && (
+          <Badge colorScheme="cyan" size="sm">Dialogue</Badge>
+        )}
+      </HStack>
+    );
+  };
 
   const shouldShowCombatOptions =
     fighters.length > 0 &&
@@ -6051,15 +7465,31 @@ function CombatPage({ characters = [] }) {
         baseOptions.push({ value: "Change Altitude", label: "⬆️⬇️ Change Altitude" });
         baseOptions.push({ value: "Dive Attack", label: "🦅 Dive Attack" });
 
-        // Add carry/drop if grappling or carrying
-        if (
+        // Add carry/drop only when this grapple can actually become a carry.
+        const grappleOpponent = currentFighter.grappleState?.opponent
+          ? fighters.find((f) => f.id === currentFighter.grappleState.opponent)
+          : null;
+        const canShowLiftCarry =
+          canFighterStartTurn(currentFighter) &&
+          !currentFighter.isCarrying &&
+          !currentFighter.carriedTargetId &&
+          !currentFighter.carrying?.targetId &&
+          grappleOpponent &&
+          !grappleOpponent.isCarried &&
+          !grappleOpponent.carriedById &&
+          !grappleOpponent.grappleState?.lifted &&
+          !grappleOpponent.grappleState?.carriedBy &&
           (currentFighter.grappleState?.state === GRAPPLE_STATES.GROUND ||
             currentFighter.grappleState?.state === GRAPPLE_STATES.CLINCH) &&
-          currentFighter.grappleState?.opponent
-        ) {
+          grappleOpponent.grappleState?.opponent === currentFighter.id &&
+          canLiftTarget(currentFighter, grappleOpponent, {
+            mode: "grappleLift",
+            requireFlying: true,
+          })?.canLift;
+        if (canShowLiftCarry) {
           baseOptions.push({ value: "Lift & Carry", label: "✈️ Lift & Carry" });
         }
-        if (currentFighter.isCarrying && currentFighter.carriedTargetId) {
+        if (currentFighter.isCarrying && (currentFighter.carriedTargetId || currentFighter.carrying?.targetId)) {
           baseOptions.push({ value: "Drop Target", label: "💥 Drop Target" });
         }
       }
@@ -6073,7 +7503,7 @@ function CombatPage({ characters = [] }) {
     }
 
     return baseOptions;
-  }, [availablePsionicPowers, availableSpells, currentFighter]);
+  }, [availablePsionicPowers, availableSpells, canFighterStartTurn, canLiftTarget, currentFighter, fighters]);
 
   useEffect(() => {
     if (
@@ -6126,34 +7556,25 @@ function CombatPage({ characters = [] }) {
   const getTargetOptionsForAction = useCallback(
     (actionName) => {
       if (!actionName || !currentFighter) return [];
+      const sceneContext = { sceneType: "combat", relations: {} };
+      const isViableTarget = (fighter) =>
+        fighter.status !== "defeated" && getFighterHP(fighter) > MIN_COMBAT_HP;
+      const canTarget = (fighter, actionKind) =>
+        isViableTarget(fighter) &&
+        canTargetForAction(currentFighter, fighter, actionKind, sceneContext);
       switch (actionName) {
         case "Strike":
         case "Combat Maneuvers":
         case "Dive Attack":
-          return fighters.filter(
-            (f) =>
-              f.type !== currentFighter.type &&
-              f.status !== "defeated" &&
-              getFighterHP(f) > MIN_COMBAT_HP
-          );
+          return fighters.filter((f) => canTarget(f, "strike"));
         case "Psionics": {
           if (!selectedPsionicPower) return [];
           const category = getPsionicTargetCategory(selectedPsionicPower);
           if (category === "self") return [currentFighter];
           if (category === "ally") {
-            return fighters.filter(
-              (f) =>
-                f.type === currentFighter.type &&
-                f.status !== "defeated" &&
-                getFighterHP(f) > MIN_COMBAT_HP
-            );
+            return fighters.filter((f) => canTarget(f, "assist"));
           }
-          return fighters.filter(
-            (f) =>
-              f.type !== currentFighter.type &&
-              f.status !== "defeated" &&
-              getFighterHP(f) > MIN_COMBAT_HP
-          );
+          return fighters.filter((f) => canTarget(f, "psionicHostile"));
         }
         case "Spells": {
           if (!selectedSpell || !spellRequiresTarget(selectedSpell)) return [];
@@ -6161,19 +7582,9 @@ function CombatPage({ characters = [] }) {
           const isSelf = range.includes("self");
           if (isSelf) return [currentFighter];
           if (range.includes("touch") || range.includes("ally")) {
-            return fighters.filter(
-              (f) =>
-                f.type === currentFighter.type &&
-                f.status !== "defeated" &&
-                getFighterHP(f) > MIN_COMBAT_HP
-            );
+            return fighters.filter((f) => canTarget(f, "buff"));
           }
-          return fighters.filter(
-            (f) =>
-              f.type !== currentFighter.type &&
-              f.status !== "defeated" &&
-              getFighterHP(f) > MIN_COMBAT_HP
-          );
+          return fighters.filter((f) => canTarget(f, "spellHostile"));
         }
         case "Clerical Abilities": {
           if (!selectedClericalAbility) return [];
@@ -6236,13 +7647,32 @@ function CombatPage({ characters = [] }) {
           const oppId = currentFighter?.grappleState?.opponent;
           if (!oppId) return [];
           const opp = fighters.find((f) => f.id === oppId);
-          return opp && opp.status !== "defeated" && getFighterHP(opp) > MIN_COMBAT_HP ? [opp] : [];
+          if (
+            !opp ||
+            opp.status === "defeated" ||
+            getFighterHP(opp) <= MIN_COMBAT_HP ||
+            currentFighter.isCarrying ||
+            currentFighter.carriedTargetId ||
+            currentFighter.carrying?.targetId ||
+            opp.isCarried ||
+            opp.carriedById ||
+            opp.grappleState?.lifted ||
+            opp.grappleState?.carriedBy ||
+            opp.grappleState?.opponent !== currentFighter.id ||
+            !canLiftTarget(currentFighter, opp, {
+              mode: "grappleLift",
+              requireFlying: true,
+            })?.canLift
+          ) {
+            return [];
+          }
+          return [opp];
         }
         default:
           return [];
       }
     },
-    [currentFighter, fighters, selectedPsionicPower, selectedSpell, selectedClericalAbility, positions, getPsionicTargetCategory, getFighterHP, MIN_COMBAT_HP]
+    [currentFighter, fighters, selectedPsionicPower, selectedSpell, selectedClericalAbility, positions, getPsionicTargetCategory, getFighterHP, MIN_COMBAT_HP, canLiftTarget]
   );
 
   useEffect(() => {
@@ -6851,7 +8281,11 @@ function CombatPage({ characters = [] }) {
       return false;
     }
 
-    if (fighter.type === "enemy" && processingEnemyTurnRef.current) {
+    const controlMode = getFighterControlMode(fighter);
+    const usesPlayerAIPath = controlMode === "ai" && fighter.type === "player";
+    const usesEnemyAIPath = controlMode === "ai" && !usesPlayerAIPath;
+
+    if (usesEnemyAIPath && processingEnemyTurnRef.current) {
       if (DEBUG_COMBAT) {
         console.warn("[ENEMY TURN SCHEDULE BLOCKED - already processing]", {
           fighter: fighter?.name,
@@ -6887,7 +8321,42 @@ function CombatPage({ characters = [] }) {
     const turnToken = makeTurnToken(activeFighter);
     currentTurnTokenRef.current = turnToken;
 
-    if (fighter.type === "enemy") {
+    if (controlMode === "passive" || controlMode === "defensive") {
+      const liveFighters = fightersRef.current || [];
+      const liveFighter = liveFighters.find((entry) => entry.id === fighter.id) || fighter;
+      const remainingBefore = Number(liveFighter.remainingAttacks ?? fighter.remainingAttacks ?? 0) || 0;
+      const remainingAfter = Math.max(0, remainingBefore - (remainingBefore > 0 ? 1 : 0));
+      if (remainingBefore > 0) {
+        setFighters((prev) => {
+          const next = prev.map((entry) => (
+            entry.id === fighter.id
+              ? { ...entry, remainingAttacks: remainingAfter }
+              : entry
+          ));
+          fightersRef.current = next;
+          return next;
+        });
+      }
+      addLog?.(
+        controlMode === "defensive"
+          ? `⏭️ ${fighter.name} holds position defensively.`
+          : `⏭️ ${fighter.name} remains neutral and does not act.`,
+        "info"
+      );
+      if (remainingBefore > 0) {
+        addLog?.(`⏭️ ${fighter.name} has ${remainingAfter} action(s) remaining this melee`, "info");
+      }
+      processingEnemyTurnRef.current = false;
+      processingPlayerAIRef.current = false;
+      releaseTurnStart(key);
+      if (turnStartInFlightKeyRef.current === key) {
+        turnStartInFlightKeyRef.current = null;
+      }
+      scheduleEndTurn(0, controlMode === "defensive" ? "defensive-army-turn" : "passive-army-turn");
+      return true;
+    }
+
+    if (usesEnemyAIPath) {
       const token = ++enemyTurnTokenRef.current;
       addLog?.(`🧪 scheduleEnemyTurnStart ${fighter.name} in 0ms (reason=${reason})`, "info");
 
@@ -6912,6 +8381,51 @@ function CombatPage({ characters = [] }) {
       }
       lastEnemyScheduleTurnKeyRef.current = key;
       enemyTurnTimerRef.current = setTimeout(() => {
+        const expected = {
+          fighterId: fighter?.id,
+          fighterName: fighter?.name,
+          key,
+          token,
+          turnToken,
+          reason,
+        };
+        const getLatestTurnSnapshot = () => {
+          const latestIndex = turnIndexRef.current;
+          const latestFighter = fightersRef.current?.[latestIndex] ?? null;
+          const latestKey = latestFighter
+            ? makeTurnStartKey(latestFighter, latestIndex, turnCounterRef.current)
+            : null;
+          return { latestIndex, latestFighter, latestKey };
+        };
+        const sameDirectHandoff = (snapshot) => {
+          if (!snapshot) return false;
+          const snapshotFighterId =
+            snapshot.fighterId ??
+            snapshot.id ??
+            snapshot.fighter?.id ??
+            snapshot.currentFighter?.id ??
+            null;
+          const snapshotKey = snapshot.turnKey ?? snapshot.key ?? null;
+          return (
+            (expected.fighterId && snapshotFighterId === expected.fighterId) ||
+            (expected.key && snapshotKey === expected.key) ||
+            (expected.token && snapshot.token === expected.token) ||
+            (expected.turnToken && snapshot.turnToken === expected.turnToken) ||
+            (
+              snapshotFighterId === expected.fighterId &&
+              snapshot.turnIndex === index &&
+              snapshot.meleeRound === meleeRoundRef.current &&
+              snapshot.turnCounter === turnCounterRef.current
+            )
+          );
+        };
+        const clearMatchingDirectHandoffSnapshot = () => {
+          if (sameDirectHandoff(directTurnHandoffSnapshotRef.current)) {
+            directTurnHandoffSnapshotRef.current = null;
+            return true;
+          }
+          return false;
+        };
         const releaseStartedTurn = () => {
           releaseTurnStart(key);
           if (lastEnemyScheduleTurnKeyRef.current === key) {
@@ -6920,6 +8434,60 @@ function CombatPage({ characters = [] }) {
           if (turnStartInFlightKeyRef.current === key) {
             turnStartInFlightKeyRef.current = null;
           }
+        };
+        const safeScheduleEndTurn = (delay, label) => {
+          try {
+            scheduleEndTurn(delay, label);
+          } catch {
+            scheduleEndTurn(delay);
+          }
+        };
+        const recoverEnemyTurnStart = (why, err = null) => {
+          const { latestIndex, latestFighter, latestKey } = getLatestTurnSnapshot();
+          const clearedSnapshot = clearMatchingDirectHandoffSnapshot();
+          const scheduledStillCurrent =
+            latestFighter?.id &&
+            expected.fighterId &&
+            latestFighter.id === expected.fighterId;
+          const errText = err
+            ? ` error=${err?.stack ?? err?.message ?? String(err)}`
+            : "";
+          addLog?.(
+            `⚠️ enemy turn-start aborted before handleEnemyTurn: ${why}; fighter=${expected.fighterName ?? latestFighter?.name ?? "unknown"}; fighterId=${expected.fighterId ?? "unknown"}; reason=${reason}; expectedKey=${expected.key ?? "unknown"}; latestIndex=${latestIndex}; latestKey=${latestKey ?? "none"}${errText}`,
+            "warning"
+          );
+          processingEnemyTurnRef.current = false;
+          releaseStartedTurn();
+          if (!scheduledStillCurrent && !clearedSnapshot) return;
+          if (enemyTurnTimerRef.current || processingEnemyTurnRef.current) return;
+          setTimeout(() => {
+            const nowIndex = turnIndexRef.current;
+            const nowFighter = fightersRef.current?.[nowIndex];
+            if (
+              !nowFighter ||
+              nowFighter.id !== expected.fighterId ||
+              combatPausedRef.current ||
+              !combatActiveRef.current ||
+              combatOverRef.current ||
+              combatEndCheckRef.current
+            ) {
+              return;
+            }
+            if (
+              pendingTurnAdvanceRef.current ||
+              turnTimeoutRef.current ||
+              isActionBusy() ||
+              turnActionResolvingRef.current ||
+              !!activeSpellImpactRef.current
+            ) {
+              return;
+            }
+            if (!canFighterStartTurn(nowFighter)) {
+              safeScheduleEndTurn(0, `enemy-turn-start-recover-cannot-act:${why}`);
+              return;
+            }
+            startTurnOnce(nowFighter, nowIndex, `enemy-turn-start-recover:${why}`);
+          }, 0);
         };
         try {
           enemyTurnTimerRef.current = null;
@@ -6943,6 +8511,11 @@ function CombatPage({ characters = [] }) {
               `Enemy turn start skipped: token mismatch for ${fighter?.name}`,
               { fighter: fighter?.name, reason, token, currentToken: enemyTurnTokenRef.current }
             );
+            if (reason === "endTurn-direct") {
+              recoverEnemyTurnStart("token-mismatch");
+              return;
+            }
+            clearMatchingDirectHandoffSnapshot(fighter);
             releaseStartedTurn();
             return;
           }
@@ -6971,6 +8544,11 @@ function CombatPage({ characters = [] }) {
                 reason,
               });
             }
+            if (reason === "endTurn-direct") {
+              recoverEnemyTurnStart("stale-fighter-or-index");
+              return;
+            }
+            clearMatchingDirectHandoffSnapshot(latestFighter);
             releaseStartedTurn();
             return;
           }
@@ -6980,11 +8558,21 @@ function CombatPage({ characters = [] }) {
               `Enemy turn start skipped: key mismatch for ${fighter?.name}`,
               { fighter: fighter?.name, reason, key, latestKey }
             );
+            if (reason === "endTurn-direct") {
+              recoverEnemyTurnStart("key-mismatch");
+              return;
+            }
+            clearMatchingDirectHandoffSnapshot(latestFighter);
             releaseStartedTurn();
             return;
           }
           if (blockStaleAction(latestFighter, turnToken, "scheduled enemy turn start")) {
             processingEnemyTurnRef.current = false;
+            if (reason === "endTurn-direct") {
+              recoverEnemyTurnStart("stale-action");
+              return;
+            }
+            clearMatchingDirectHandoffSnapshot(latestFighter);
             releaseStartedTurn();
             return;
           }
@@ -7010,13 +8598,14 @@ function CombatPage({ characters = [] }) {
                 spellImpact: !!activeSpellImpactRef.current,
               });
             }
+            clearMatchingDirectHandoffSnapshot(latestFighter);
             releaseStartedTurn();
             return;
           }
           if (
             combatPausedRef.current ||
             !combatActiveRef.current ||
-            !canFighterAct(latestFighter)
+            !canFighterStartTurn(latestFighter)
           ) {
             logDebugTurnStartExit(
               `Enemy turn start skipped: combat paused/inactive/cannot act for ${latestFighter?.name ?? fighter?.name}`,
@@ -7025,25 +8614,36 @@ function CombatPage({ characters = [] }) {
                 reason,
                 combatPaused: combatPausedRef.current,
                 combatActive: combatActiveRef.current,
-                canAct: latestFighter ? canFighterAct(latestFighter) : false,
+                canAct: latestFighter ? canFighterStartTurn(latestFighter) : false,
               }
             );
             processingEnemyTurnRef.current = false;
+            if (reason === "endTurn-direct") {
+              recoverEnemyTurnStart("paused-inactive-or-cannot-act");
+              return;
+            }
+            if (latestFighter && !canFighterStartTurn(latestFighter)) {
+              addLog?.(`⏭️ ${latestFighter.name} cannot act - skipping turn.`, "info");
+            }
+            clearMatchingDirectHandoffSnapshot(latestFighter);
             releaseStartedTurn();
+            if (latestFighter && !canFighterStartTurn(latestFighter)) {
+              scheduleEndTurn(0, "enemy-turn-start-cannot-act");
+            }
             return;
           }
           Promise.resolve(
             handleEnemyTurnRef.current?.(latestFighter, reason, { turnKey: key, token, turnToken })
           ).finally(releaseStartedTurn);
-        } catch {
-          releaseStartedTurn();
+        } catch (err) {
+          recoverEnemyTurnStart("exception", err);
         }
       }, 0);
       return true;
     }
 
-    if (fighter.type === "player") {
-      if (!aiControlEnabledRef.current) {
+    if (controlMode === "player" || usesPlayerAIPath) {
+      if (controlMode === "player") {
         addLog?.(
           `🎮 ${fighter.name} is waiting for manual player control`,
           "info"
@@ -7185,7 +8785,7 @@ function CombatPage({ characters = [] }) {
             pendingTurnAdvanceRef.current ||
             combatPausedRef.current ||
             !combatActiveRef.current ||
-            !canFighterAct(latestFighter)
+            !canFighterStartTurn(latestFighter)
           ) {
             logDebugTurnStartExit(
               `Player turn start skipped: AI disabled/paused/inactive/cannot act for ${latestFighter?.name ?? fighter?.name}`,
@@ -7196,7 +8796,7 @@ function CombatPage({ characters = [] }) {
                 pendingTurnAdvance: pendingTurnAdvanceRef.current,
                 combatPaused: combatPausedRef.current,
                 combatActive: combatActiveRef.current,
-                canAct: latestFighter ? canFighterAct(latestFighter) : false,
+                canAct: latestFighter ? canFighterStartTurn(latestFighter) : false,
               }
             );
             processingPlayerAIRef.current = false;
@@ -7219,7 +8819,7 @@ function CombatPage({ characters = [] }) {
       turnStartInFlightKeyRef.current = null;
     }
     return false;
-  }, [addLog, blockStaleAction, canFighterAct, claimTurnStart, isActionBusy, makeTurnStartKey, makeTurnToken, releaseTurnStart]);
+  }, [addLog, blockStaleAction, canFighterStartTurn, claimTurnStart, getFighterControlMode, isActionBusy, makeTurnStartKey, makeTurnToken, releaseTurnStart]);
 
   // Define endTurn function with useCallback - MUST be before handleMoveSelect
   // PALLADIUM RAW: Alternating actions per initiative
@@ -7286,9 +8886,12 @@ function CombatPage({ characters = [] }) {
     // Clear reachable hexes cache each turn
     reachableCacheRef.current.clear();
 
-    // PALLADIUM RAW: Check if all fighters are out of actions (melee round complete)
-    const fightersWithActions = fightersNow.filter(f =>
-      canFighterAct(f) && (f.remainingAttacks || 0) > 0
+    // PALLADIUM RAW: Check if all fighters are out of actions (melee round complete).
+    // Must match the "find next fighter" loop below (canFighterStartTurn + numeric attacks),
+    // otherwise we skip the new-melee reset while endlessly cycling 0-action fighters.
+    const fightersWithActions = fightersNow.filter(
+      (f) =>
+        canFighterStartTurn(f) && (Number(f.remainingAttacks ?? 0) || 0) > 0
     );
 
     if (fightersWithActions.length === 0) {
@@ -7343,7 +8946,7 @@ function CombatPage({ characters = [] }) {
           withBleeding.attacksPerMelee ?? withBleeding.attacks ?? 2; // fallback for animals
         const fighter = {
           ...withBleeding,
-          remainingAttacks: canFighterAct(withBleeding) ? apm : 0,
+          remainingAttacks: canFighterStartTurn(withBleeding) ? apm : 0,
           spellsCastThisMelee: 0, // ✅ Reset spells cast counter for new melee round (RAW)
           // if you track "hasActedThisRound" etc, reset it here too
         };
@@ -7411,13 +9014,17 @@ function CombatPage({ characters = [] }) {
         return;
       }
 
+      const firstEligibleIndex = resetFighters.findIndex(
+        f => canFighterStartTurn(f) && (Number(f.remainingAttacks ?? 0) || 0) > 0
+      );
+
       fightersRef.current = resetFighters;
       meleeRoundRef.current = nextMeleeRound;
-      turnIndexRef.current = 0;
+      turnIndexRef.current = firstEligibleIndex >= 0 ? firstEligibleIndex : 0;
       turnCounterRef.current = nextTurnCounter;
       setFighters(resetFighters);
       setMeleeRound(nextMeleeRound);
-      setTurnIndex(0); // Start from highest initiative again
+      setTurnIndex(firstEligibleIndex >= 0 ? firstEligibleIndex : 0); // Start from first eligible initiative slot
       setTurnCounter(nextTurnCounter);
 
       // Clear processing flags for new round (only if combat is still active)
@@ -7428,7 +9035,9 @@ function CombatPage({ characters = [] }) {
         lastOpenedChoicesTurnRef.current = null;
       }
 
-      startTurnOnce(resetFighters[0], 0, "new-melee-round-direct");
+      if (firstEligibleIndex >= 0) {
+        startTurnOnce(resetFighters[firstEligibleIndex], firstEligibleIndex, "new-melee-round-direct");
+      }
       return;
     }
 
@@ -7441,13 +9050,13 @@ function CombatPage({ characters = [] }) {
     // Loop through fighters in initiative order until we find one with actions
     while (attempts < fightersNow.length) {
       const nextFighter = fightersNow[nextIndex];
-      if (nextFighter && canFighterAct(nextFighter) && (nextFighter.remainingAttacks || 0) > 0) {
+      if (nextFighter && canFighterStartTurn(nextFighter) && (nextFighter.remainingAttacks || 0) > 0) {
         foundNext = true;
         break; // Found a fighter that can act and has actions
       }
       if (
         nextFighter &&
-        canFighterAct(nextFighter) &&
+        canFighterStartTurn(nextFighter) &&
         (Number(nextFighter.remainingAttacks ?? 0) || 0) <= 0
       ) {
         addLog(
@@ -7472,17 +9081,22 @@ function CombatPage({ characters = [] }) {
       const nextTurnCounter = turnCounterNow + 1;
       const resetFighters = fightersNow.map(f => ({
         ...f,
-        remainingAttacks: f.attacksPerMelee || 2
+        remainingAttacks: canFighterStartTurn(f) ? (f.attacksPerMelee || 2) : 0
       }));
+      const firstEligibleIndex = resetFighters.findIndex(
+        f => canFighterStartTurn(f) && (Number(f.remainingAttacks ?? 0) || 0) > 0
+      );
       fightersRef.current = resetFighters;
       meleeRoundRef.current = nextMeleeRound;
-      turnIndexRef.current = 0;
+      turnIndexRef.current = firstEligibleIndex >= 0 ? firstEligibleIndex : 0;
       turnCounterRef.current = nextTurnCounter;
       setFighters(resetFighters);
       setMeleeRound(nextMeleeRound);
-      setTurnIndex(0);
+      setTurnIndex(firstEligibleIndex >= 0 ? firstEligibleIndex : 0);
       setTurnCounter(nextTurnCounter);
-      startTurnOnce(resetFighters[0], 0, "new-melee-round-direct");
+      if (firstEligibleIndex >= 0) {
+        startTurnOnce(resetFighters[firstEligibleIndex], firstEligibleIndex, "new-melee-round-direct");
+      }
       return;
     }
 
@@ -7552,7 +9166,7 @@ function CombatPage({ characters = [] }) {
 
     startTurnOnce(fightersNow[nextIndex], nextIndex, "endTurn-direct");
     return;
-  }, [fighters, positions, turnIndex, temporaryHexSharing, addLog, meleeRound, turnCounter, clearScheduledTurn, canFighterAct, combatActive, tickBleeding, startTurnOnce, releaseTurnStart]);
+  }, [fighters, positions, turnIndex, temporaryHexSharing, addLog, meleeRound, turnCounter, clearScheduledTurn, canFighterAct, canFighterStartTurn, combatActive, tickBleeding, startTurnOnce, releaseTurnStart]);
 
   // Update endTurnRef when endTurn is defined
   useEffect(() => {
@@ -7581,7 +9195,13 @@ function CombatPage({ characters = [] }) {
       case "ATTACK_ROLL":
         return `🎲 ${nameOf(e.attackerId)} attacks ${nameOf(e.targetId)}: ${e.d20} + ${e.bonus} = ${e.total} vs AR ${e.targetAR} ${e.hit ? (e.crit ? "(CRIT!)" : "(HIT)") : "(MISS)"}`;
       case "DAMAGE":
-        return `🩸 ${nameOf(e.attackerId)} → ${nameOf(e.targetId)}: ${e.formula} = ${e.amount}`;
+        return e.vsArmor
+          ? `🛡️ ${nameOf(e.attackerId)} → ${nameOf(e.targetId)} armor: ${e.formula} = ${e.amount} S.D.C.`
+          : `🩸 ${nameOf(e.attackerId)} → ${nameOf(e.targetId)}: ${e.formula} = ${e.amount}`;
+      case "ARMOR_CHANGED": {
+        const nm = e.name ? ` (${e.name})` : "";
+        return `🛡️ ${nameOf(e.targetId)}${nm} armor [${e.slot ?? "?"}]: S.D.C. ${e.prevSDC} → ${e.nextSDC}${e.broken ? " — broken" : ""}`;
+      }
       case "AMMO_SPENT":
         return `🏹 Ammo: -${e.spent} ${e.ammoType} (now ${e.next})`;
       case "HP_CHANGED":
@@ -7615,12 +9235,33 @@ function CombatPage({ characters = [] }) {
     if (!delta) return;
     const { setAmmoCount } = opts;
 
-    if (delta.hpById) {
+    if (delta.hpById || delta.armorById) {
       setFighters((prev) =>
         prev.map((f) => {
           const id = f.id ?? f._id;
-          if (!id || delta.hpById[id] === undefined) return f;
-          return { ...f, currentHP: delta.hpById[id] };
+          if (!id) return f;
+          let next = f;
+          if (delta.hpById && delta.hpById[id] !== undefined) {
+            next = { ...next, currentHP: delta.hpById[id] };
+          }
+          if (delta.armorById && delta.armorById[id]) {
+            const patch = delta.armorById[id];
+            const slot = patch.slot || "chest";
+            if (next.equipped?.[slot]) {
+              next = {
+                ...next,
+                equipped: {
+                  ...next.equipped,
+                  [slot]: {
+                    ...next.equipped[slot],
+                    currentSDC: patch.currentSDC,
+                    broken: !!patch.broken,
+                  },
+                },
+              };
+            }
+          }
+          return next;
         })
       );
     }
@@ -7734,7 +9375,7 @@ function CombatPage({ characters = [] }) {
       processingPlayerAIRef.current = false;
       lastOpenedChoicesTurnRef.current = null;
     }
-  }, [addLog, meleeRound, fighters, positions, combatActive, canFighterAct]);
+  }, [addLog, meleeRound, fighters, positions, combatActive, canFighterAct, canFighterStartTurn]);
 
   // Helper to build lightweight position snapshot (reduces serialization cost)
   const buildPositionsLite = useCallback((posMap) => {
@@ -7783,6 +9424,8 @@ function CombatPage({ characters = [] }) {
         status: f?.status ?? "",
         remainingAttacks: Number(f?.remainingAttacks ?? 0),
         footprint: f?.footprint,
+        equipped: f?.equipped || null,
+        naturalAR: Number(f?.naturalAR ?? f?.baseAR ?? f?.nakedAR) || undefined,
 
         // control/team classification (adjust to your schema)
         isNPC: !!f?.isNPC,
@@ -8509,10 +10152,14 @@ function CombatPage({ characters = [] }) {
     const maxStamina = Number(maxStaminaRaw);
     const safeCurrent = Number.isFinite(currentStamina) ? currentStamina : 0;
     const safeMax = Number.isFinite(maxStamina) && maxStamina > 0 ? maxStamina : 20;
-    const recoverAmount = Math.max(2, Math.ceil(safeMax * 0.1));
+    const peRecoveryBonus = getGrappleAttributeModifiers(liveFighter).peRecoveryBonus;
+    const recoverAmount = Math.max(2, Math.ceil(safeMax * 0.1)) + peRecoveryBonus;
     const nextStamina = Math.min(safeMax, safeCurrent + recoverAmount);
 
     addLog(`😮‍💨 ${liveFighter.name} slows down to avoid collapse.`, "info");
+    if (peRecoveryBonus > 0) {
+      addLog(`💪 ${liveFighter.name}'s P.E. improves stamina recovery.`, "info");
+    }
 
     commitFighters((prev) =>
       prev.map((f) => {
@@ -8537,7 +10184,7 @@ function CombatPage({ characters = [] }) {
     );
     scheduleEndTurn(0, source);
     return true;
-  }, [addLog, commitFighters, fighters, scheduleEndTurn]);
+  }, [addLog, commitFighters, fighters, getGrappleAttributeModifiers, scheduleEndTurn]);
 
   const maybeSpendAIRecoverAction = useCallback((fighter, source = "ai-fatigue") => {
     const state = getFatigueAIState(fighter);
@@ -8811,6 +10458,11 @@ function CombatPage({ characters = [] }) {
 
   const handleSelectedHexChange = useCallback(
     (hex) => {
+      if (!combatActive && (showDeploymentModal || manualDeploymentOpen) && hex) {
+        handleDeploymentHexSelect(hex.x, hex.y);
+        return;
+      }
+
       if (targetingMode === "OVERWATCH_HEX" && hex) {
         setOverwatchTargetHex(hex);
         confirmOverwatchHex(hex);
@@ -8818,7 +10470,14 @@ function CombatPage({ characters = [] }) {
       }
       setSelectedHex(hex);
     },
-    [targetingMode, confirmOverwatchHex]
+    [
+      combatActive,
+      showDeploymentModal,
+      manualDeploymentOpen,
+      handleDeploymentHexSelect,
+      targetingMode,
+      confirmOverwatchHex,
+    ]
   );
 
   // Helper function for player flight movement
@@ -9625,18 +11284,152 @@ function CombatPage({ characters = [] }) {
     if (DEBUG_GRAPPLE && debugGrappleFns[actionType]) {
       addLog(`[DEBUG] Grapple action: ${actionType}`, "debug");
     }
-    handleGrappleActionHandler(actionType, attacker, defenderId, {
-      fighters,
+    const attackerMods = getGrappleAttributeModifiers(attacker);
+    const defender = fighters.find((f) => f.id === defenderId);
+    const defenderMods = getGrappleAttributeModifiers(defender);
+    const isEntryAction = actionType === "grapple" || actionType === "takedown";
+    const isBreakawayAction =
+      actionType === "breakFree" ||
+      actionType === "defenderPushBreak" ||
+      actionType === "defenderReversal" ||
+      actionType === "grapplerPushOff";
+    const attackerTechniqueBonus =
+      attackerMods.ppControlBonus +
+      (isEntryAction ? attackerMods.spdEntryBonus : 0) +
+      (isBreakawayAction ? attackerMods.spdBreakawayBonus : 0);
+    const defenderAvoidBonus =
+      defenderMods.ppControlBonus +
+      (actionType === "grapple" ? defenderMods.spdBreakawayBonus : 0);
+    const applyTechnique = (fighter, mods, techniqueBonus = 0, role = "attacker") => {
+      if (!fighter) return fighter;
+      const effectivePSBonusActions = new Set([
+        "maintain",
+        "breakFree",
+        "defenderPushBreak",
+        "defenderReversal",
+        "grapplerPushOff",
+      ]);
+      const psBoost = effectivePSBonusActions.has(actionType)
+        ? Math.max(0, techniqueBonus) * 2
+        : 0;
+      return {
+        ...fighter,
+        PS: Number(fighter.PS ?? fighter.ps ?? fighter.attributes?.PS ?? 10) + psBoost,
+        attributes: {
+          ...(fighter.attributes || {}),
+          PS: Number(fighter.attributes?.PS ?? fighter.PS ?? fighter.ps ?? 10) + psBoost,
+        },
+        bonuses: {
+          ...(fighter.bonuses || {}),
+          strike:
+            Number(fighter.bonuses?.strike ?? 0) +
+            (role === "attacker" ? Math.max(0, techniqueBonus) : 0),
+          parry:
+            Number(fighter.bonuses?.parry ?? 0) +
+            (role === "defender" ? Math.max(0, techniqueBonus) : 0),
+        },
+      };
+    };
+    const enhancedAttacker = applyTechnique(attacker, attackerMods, attackerTechniqueBonus, "attacker");
+    const enhancedDefender = applyTechnique(defender, defenderMods, defenderAvoidBonus, "defender");
+    const enhancedFighters = fighters.map((f) => {
+      if (f.id === attacker?.id) return enhancedAttacker;
+      if (f.id === defenderId) return enhancedDefender;
+      return f;
+    });
+    const baseAttackerStamina = Number(attacker?.fatigueState?.currentStamina);
+    const baseDefenderStamina = Number(defender?.fatigueState?.currentStamina);
+    const staminaRebateById = new Map([
+      [
+        attacker?.id,
+        Math.max(
+          0,
+          Math.min(
+            STAMINA_COSTS.GRAPPLING - 1,
+            attackerMods.peDrainReduction + attackerMods.ppEfficiencyReduction
+          )
+        ),
+      ],
+      [
+        defenderId,
+        Math.max(
+          0,
+          Math.min(
+            STAMINA_COSTS.GRAPPLING - 1,
+            defenderMods.peDrainReduction + defenderMods.ppEfficiencyReduction
+          )
+        ),
+      ],
+    ]);
+    const staminaBeforeById = new Map([
+      [attacker?.id, baseAttackerStamina],
+      [defenderId, baseDefenderStamina],
+    ]);
+    const rebateAppliedRef = { current: new Set() };
+    const applyGrappleStaminaRebate = (nextFighters) =>
+      nextFighters.map((f) => {
+        const rebate = staminaRebateById.get(f.id) || 0;
+        const before = staminaBeforeById.get(f.id);
+        const current = Number(f.fatigueState?.currentStamina);
+        if (
+          rebate <= 0 ||
+          rebateAppliedRef.current.has(f.id) ||
+          !Number.isFinite(before) ||
+          !Number.isFinite(current) ||
+          current >= before
+        ) {
+          return f;
+        }
+        rebateAppliedRef.current.add(f.id);
+        const maxStamina = Number(f.fatigueState?.maxStamina ?? f.maxStamina ?? before);
+        const nextStamina = Math.min(
+          Number.isFinite(maxStamina) ? maxStamina : before,
+          current + rebate
+        );
+        const updated = {
+          ...f,
+          fatigueState: {
+            ...(f.fatigueState || {}),
+            currentStamina: nextStamina,
+          },
+        };
+        updateFatiguePenalties(updated);
+        return updated;
+      });
+    const setGrappleFighters = (updater) => {
+      setFighters((prev) => {
+        const next =
+          typeof updater === "function"
+            ? updater(prev)
+            : Array.isArray(updater)
+              ? updater
+              : prev;
+        return applyGrappleStaminaRebate(next);
+      });
+    };
+
+    if (attackerMods.peDrainReduction > 0) {
+      addLog(`💪 ${attacker.name}'s P.E. reduces grapple fatigue.`, "info");
+    }
+    if (attackerMods.ppControlBonus > 0) {
+      addLog(`🤸 ${attacker.name}'s P.P. improves grapple control.`, "info");
+    }
+    if ((isEntryAction && attackerMods.spdEntryBonus > 0) || (isBreakawayAction && attackerMods.spdBreakawayBonus > 0)) {
+      addLog(`🏃 ${attacker.name}'s Spd helps with grapple footwork.`, "info");
+    }
+
+    handleGrappleActionHandler(actionType, enhancedAttacker, defenderId, {
+      fighters: enhancedFighters,
       combatActive,
       addLog,
       positions,
-      setFighters,
+      setFighters: setGrappleFighters,
       setPositions,
       clampHP,
       getFighterHP,
       applyHPToFighter,
     });
-  }, [fighters, combatActive, addLog, positions, setFighters, setPositions, clampHP, getFighterHP, applyHPToFighter]);
+  }, [fighters, combatActive, addLog, positions, setFighters, setPositions, clampHP, getFighterHP, applyHPToFighter, getGrappleAttributeModifiers]);
 
   const hashToIndex = (str, mod) => {
     let h = 2166136261; // FNV-1a
@@ -12234,6 +14027,39 @@ function CombatPage({ characters = [] }) {
 
         // Allow HP to go negative for coma rules
         const startingHP = getFighterHP(defender);
+        const isPredatorCaptureDive =
+          (bonusModifiers?.source === "DIVE_ATTACK" ||
+            bonusModifiers?.source === "DIVE" ||
+            bonusModifiers?.diveAttack === true) &&
+          (() => {
+            const nameStr = (attacker?.species || attacker?.name || "").toLowerCase();
+            const predatorBird =
+              nameStr.includes("hawk") ||
+              nameStr.includes("eagle") ||
+              nameStr.includes("falcon") ||
+              nameStr.includes("owl");
+            if (!predatorBird) return false;
+            const preyName = String(defender?.name || "").toLowerCase();
+            const preySize = String(defender?.sizeCategory || defender?.size || getSizeCategory(defender) || "").toLowerCase();
+            return (
+              preySize === "tiny" ||
+              preyName.includes("mouse") ||
+              preyName.includes("rat") ||
+              preyName.includes("squirrel")
+            );
+          })();
+        if (
+          isPredatorCaptureDive &&
+          Number.isFinite(Number(startingHP)) &&
+          startingHP > 0 &&
+          finalDamage >= startingHP
+        ) {
+          const cappedDamage = Math.max(0, startingHP - 1);
+          if (cappedDamage < finalDamage) {
+            finalDamage = cappedDamage;
+            addLog(`🦅 ${attacker.name} pulls the strike and seizes ${defender.name} alive!`, "combat");
+          }
+        }
         const newHP = clampHP(startingHP - finalDamage, defender);
         applyHPToFighter(defender, newHP);
 
@@ -12353,15 +14179,9 @@ function CombatPage({ characters = [] }) {
         // Use defenderAfterHit directly instead of reassigning const defender
 
         // ✅ CRITICAL: Check for victory condition AFTER damage is applied
-        if (defenderAfterHit.type === "enemy") {
-          // Defender already updated in array above
-
-          // Check if there are any conscious enemies remaining
-          const remainingConsciousEnemies = updated.filter(f => f.type === "enemy" && canFighterAct(f));
-
-          if (remainingConsciousEnemies.length === 0 && !combatEndCheckRef.current) {
-            // All enemies are defeated - end combat immediately
-            combatEndCheckRef.current = true;
+        if (getCombatVictoryState(updated).partyVictorious && !combatEndCheckRef.current) {
+          // All hostile threats are defeated - end combat immediately
+          combatEndCheckRef.current = true;
             combatOverRef.current = true; // ✅ AUTHORITATIVE: Set combat over flag
             clearCombatFlowLocks();
             addLog("🎉 Victory! All enemies defeated!", "victory");
@@ -12371,7 +14191,6 @@ function CombatPage({ characters = [] }) {
             // Update fighters state and return early to prevent further processing
             commitFighters(updated);
             return;
-          }
         }
 
         // Check for braced weapon counter-damage (spear/polearm vs charge on natural 18-20)
@@ -12480,13 +14299,10 @@ function CombatPage({ characters = [] }) {
           }
 
           // ✅ CRITICAL: Check for victory condition AFTER damage is applied
-          if (defenderAfterHit.type === "enemy") {
+          if (getCombatVictoryState(updated).partyVictorious && !combatEndCheckRef.current) {
             // Defender already updated in array above
 
             // Check if there are any conscious enemies remaining
-            const remainingConsciousEnemies = updated.filter(f => f.type === "enemy" && canFighterAct(f));
-
-            if (remainingConsciousEnemies.length === 0 && !combatEndCheckRef.current) {
               // All enemies are defeated - end combat immediately
               combatEndCheckRef.current = true;
               combatOverRef.current = true; // ✅ AUTHORITATIVE: Set combat over flag
@@ -12497,7 +14313,6 @@ function CombatPage({ characters = [] }) {
               // Update fighters state and return early to prevent further processing
               commitFighters(updated);
               return;
-            }
           }
 
           // Award XP if an enemy was defeated by players (only if dead, not just unconscious)
@@ -12537,10 +14352,9 @@ function CombatPage({ characters = [] }) {
           // ✅ FIX: Immediately check for combat end after each death (synchronous check)
           // Check combat end immediately to prevent further attacks
           if (!combatEndCheckRef.current) {
-            const consciousPlayers = updated.filter(f => f.type === "player" && canFighterAct(f));
-            const consciousEnemies = updated.filter(f => f.type === "enemy" && canFighterAct(f));
+            const combatVictoryState = getCombatVictoryState(updated);
 
-            if (consciousPlayers.length === 0) {
+            if (combatVictoryState.partyDefeated) {
               combatEndCheckRef.current = true;
               combatOverRef.current = true; // ✅ AUTHORITATIVE: Stop all further actions (defeat)
               clearCombatFlowLocks();
@@ -12551,7 +14365,7 @@ function CombatPage({ characters = [] }) {
               // Update fighters state immediately
               commitFighters(updated);
               return;
-            } else if (consciousEnemies.length === 0) {
+            } else if (combatVictoryState.partyVictorious) {
               combatEndCheckRef.current = true;
               combatOverRef.current = true; // ✅ AUTHORITATIVE: Set combat over flag
               clearCombatFlowLocks();
@@ -12766,6 +14580,7 @@ function CombatPage({ characters = [] }) {
     applyHPToFighter,
     clampHP,
     getFighterHP,
+    getCombatVictoryState,
     getHPStatus,
     getAlliesDownRatio,
     canFighterAct,
@@ -13306,6 +15121,15 @@ function CombatPage({ characters = [] }) {
       return;
     }
 
+    const carryUpkeep = applyOngoingCarryStaminaDrain(latestPlayer.id, "player-ai-carry-upkeep");
+    if (carryUpkeep.carrier) {
+      latestPlayer = carryUpkeep.carrier;
+    } else if (carryUpkeep.applied) {
+      latestPlayer =
+        (fightersRef.current ?? fighters).find((f) => f.id === latestPlayer.id) ||
+        latestPlayer;
+    }
+
     // 🐭 Predator panic: tiny prey ROUTES when a predator bird is nearby/visible.
     // This triggers the existing routed-flee logic immediately.
     if (settings.useMoraleRouting && isTinyPrey(latestPlayer)) {
@@ -13416,7 +15240,11 @@ function CombatPage({ characters = [] }) {
 
           if (threatPositions.length === 0) {
             // ✅ No threats to flee from, mark as fled
-                        markFighterFledOffMap(latestPlayer.id, latestPlayer.name);
+            markFighterFledOffMap(latestPlayer.id, latestPlayer.name);
+            if (endCombatIfVictoryResolved(fightersRef.current ?? fighters)) {
+              processingPlayerAIRef.current = false;
+              return;
+            }
             processingPlayerAIRef.current = false;
             scheduleEndTurn();
             return;
@@ -13443,6 +15271,10 @@ function CombatPage({ characters = [] }) {
 
               if (atEdge) {
                 markFighterFledOffMap(latestPlayer.id, latestPlayer.name);
+                if (endCombatIfVictoryResolved(fightersRef.current ?? fighters)) {
+                  processingPlayerAIRef.current = false;
+                  return;
+                }
                 processingPlayerAIRef.current = false;
                 scheduleEndTurn();
                 return;
@@ -13478,7 +15310,11 @@ function CombatPage({ characters = [] }) {
               }
             } else {
               // ✅ If routed player cannot find a safe path, mark them as fled (they're effectively out of combat)
-                            markFighterFledOffMap(latestPlayer.id, latestPlayer.name);
+              markFighterFledOffMap(latestPlayer.id, latestPlayer.name);
+              if (endCombatIfVictoryResolved(fightersRef.current ?? fighters)) {
+                processingPlayerAIRef.current = false;
+                return;
+              }
               processingPlayerAIRef.current = false;
               scheduleEndTurn();
               return;
@@ -13487,6 +15323,10 @@ function CombatPage({ characters = [] }) {
         } else {
           // ✅ No position, mark as fled
           markFighterFledOffMap(latestPlayer.id, latestPlayer.name);
+          if (endCombatIfVictoryResolved(fightersRef.current ?? fighters)) {
+            processingPlayerAIRef.current = false;
+            return;
+          }
           processingPlayerAIRef.current = false;
           scheduleEndTurn();
           return;
@@ -13790,7 +15630,7 @@ function CombatPage({ characters = [] }) {
 
       const targets = liveFighters
         .filter((f) =>
-          f.type !== livePlayer.type &&
+          canTargetForAction(livePlayer, f, "attack", { sceneType: "combat", relations: {} }) &&
           canFighterAct(f) &&
           (Number(f.currentHP ?? f.HP ?? f.hp ?? 0) > 0) &&
           currentPositions?.[f.id]
@@ -14135,6 +15975,7 @@ function CombatPage({ characters = [] }) {
       isValidPosition,
       findBeePath,
       getTargetsInLine,
+      sceneContext: { sceneType: "combat", relations: {} },
     };
 
     // Delegate to AI module - use latestPlayer to ensure we have persisted state
@@ -14282,11 +16123,13 @@ function CombatPage({ characters = [] }) {
     getFighterHP,
     getFighterMaxHP,
     getMoveDurationMs,
+    applyOngoingCarryStaminaDrain,
     maybeSpendAIRecoverAction,
     getTargetsInLine,
     getAvailableGrappleActions,
     aiControlEnabled,
     markFighterFledOffMap,
+    endCombatIfVictoryResolved,
     isTinyPrey,
     isPredatorBird,
     canAISeeTargetAsymmetric,
@@ -14736,11 +16579,20 @@ function CombatPage({ characters = [] }) {
       return;
     }
 
-    if (!canFighterAct(liveEnemy)) {
-      addLog(`${liveEnemy.name} cannot act.`, "warning");
+    if (!canFighterStartTurn(liveEnemy)) {
+      addLog(`⏭️ ${liveEnemy.name} cannot act - skipping turn.`, "info");
       processingEnemyTurnRef.current = false;
-      scheduleEndTurn(0);
+      scheduleEndTurn(0, "enemy-turn-start-cannot-act");
       return;
+    }
+
+    const carryUpkeep = applyOngoingCarryStaminaDrain(liveEnemy.id, "enemy-ai-carry-upkeep");
+    if (carryUpkeep.carrier) {
+      liveEnemy = carryUpkeep.carrier;
+    } else if (carryUpkeep.applied) {
+      liveEnemy =
+        (fightersRef.current ?? fighters).find((f) => f.id === liveEnemy.id) ||
+        liveEnemy;
     }
 
     if (maybeSpendAIRecoverAction(liveEnemy, "enemy-ai-fatigue")) {
@@ -14886,6 +16738,7 @@ function CombatPage({ characters = [] }) {
         isEnemyTurnStillCurrent: isEnemyTurnTokenStillCurrent,
         // Other
         getTargetsInLine,
+        sceneContext: { sceneType: "combat", relations: {} },
       });
       return;
     }
@@ -14893,6 +16746,13 @@ function CombatPage({ characters = [] }) {
     console.log('✅ Starting enemy turn for', enemy.name, 'at turn index', turnIndex);
 
     // ✅ CRITICAL: Check if enemy can act (conscious, not dying/dead/unconscious)
+    if (!canFighterStartTurn(liveEnemy)) {
+      addLog(`⏭️ ${liveEnemy.name} cannot act - skipping turn.`, "info");
+      processingEnemyTurnRef.current = false;
+      scheduleEndTurn(0, "enemy-turn-start-cannot-act");
+      return;
+    }
+
     if (!canFighterAct(enemy)) {
       const hpStatus = getHPStatus(enemy.currentHP);
       addLog(`⏭️ ${enemy.name} cannot act (${hpStatus.description}), skipping turn`, "info");
@@ -15016,7 +16876,7 @@ function CombatPage({ characters = [] }) {
       if (!carryState.movedAway && myPos) {
         // Find closest threat (exclude the carried prey)
         const threats = liveFighters.filter(f =>
-          f.type !== liveEnemy.type &&
+          canTargetForAction(liveEnemy, f, "attack", { sceneType: "combat", relations: {} }) &&
           canFighterAct(f) &&
           f.currentHP > 0 &&
           f.id !== carried.id &&
@@ -15145,6 +17005,118 @@ function CombatPage({ characters = [] }) {
         return n.includes("beak") || n.includes("talon") || n.includes("claw") || n.includes("bite");
       }) || (liveEnemy.attacks || [])[0];
 
+      const preyName = String(prey.name || "").toLowerCase();
+      const preySize = String(prey.sizeCategory || prey.size || getSizeCategory(prey) || "").toLowerCase();
+      const isTinyPredatorPrey =
+        preySize === "tiny" ||
+        preyName.includes("mouse") ||
+        preyName.includes("rat") ||
+        preyName.includes("squirrel");
+      const shouldPreferCarryPrey =
+        isTinyPredatorPrey &&
+        liveEnemy?.grappleState?.state === GRAPPLE_STATES.CLINCH &&
+        prey?.grappleState?.state === GRAPPLE_STATES.GRAPPLED &&
+        liveEnemy?.grappleState?.opponent === prey.id &&
+        prey?.grappleState?.opponent === liveEnemy.id;
+
+      const attemptPredatorLiftCarry = (preferCapture = false) => {
+        const carryFeasible = canLiftTarget(liveEnemy, prey, {
+          mode: "grappleLift",
+          capacityMultiplier: 10,
+          requireFlying: true,
+          allowTinyCarrier: true,
+        });
+        if (!carryFeasible?.canLift) return false;
+
+        const lift = liftAndCarry(liveEnemy, prey, { positions: livePositions });
+        let carrierAfterSpend = null;
+        if (lift.success) {
+          const carryHeight =
+            lift.carrier.altitudeFeet ??
+            lift.carrier.altitude ??
+            liveEnemy.altitudeFeet ??
+            liveEnemy.altitude ??
+            0;
+          applyLiftCarryStaminaCost(lift.carrier, lift.carried, "lift", {
+            capacityMultiplier: 10,
+            requireFlying: true,
+            allowTinyCarrier: true,
+            alreadySpent: 1.5,
+          });
+          commitFighters(prev => prev.map(f => {
+            if (f.id === liveEnemy.id) {
+              const ra = Number(f.remainingAttacks ?? 0) || 0;
+              carrierAfterSpend = {
+                ...lift.carrier,
+                isCarrying: true,
+                carriedTargetId: prey.id,
+                carrying: {
+                  ...(lift.carrier.carrying || {}),
+                  targetId: prey.id,
+                  mode: "grappleLift",
+                  heightFt: carryHeight,
+                },
+                remainingAttacks: Math.max(0, ra - 1),
+                aiPredatorCarry: { movedAway: false, desiredAlt: 40, safeDistanceFt: 60 },
+              };
+              return carrierAfterSpend;
+            }
+            if (f.id === prey.id) {
+              return {
+                ...lift.carried,
+                isCarried: true,
+                carriedById: liveEnemy.id,
+                grappleState: {
+                  ...(lift.carried.grappleState || {}),
+                  lifted: true,
+                  carriedBy: liveEnemy.id,
+                  carryMode: "grappleLift",
+                  heightFt: carryHeight,
+                },
+              };
+            }
+            return f;
+          }));
+          // Keep carried prey "stacked" on the carrier immediately (don't rely on stale fighters closure)
+          setPositions(prevPos => {
+            const base = { ...(pickNonEmptyObject(positionsRef.current, prevPos)) };
+            const carrierPos = base[lift.carrier.id] || base[liveEnemy.id];
+            if (carrierPos) base[lift.carried.id] = { ...carrierPos };
+            positionsRef.current = base;
+            return base;
+          });
+          addLog(
+            preferCapture
+              ? `🦅 ${liveEnemy.name} tightens its talons and lifts ${prey.name} away!`
+              : `🦅 ${liveEnemy.name} snatches ${prey.name} mid-air and begins to carry them!`,
+            "warning"
+          );
+          if (carrierAfterSpend) {
+            const attacksLeft = formatAttacksRemaining(
+              carrierAfterSpend.remainingAttacks ?? 0,
+              carrierAfterSpend.attacksPerMelee ?? carrierAfterSpend.actionsPerMelee ?? 0
+            );
+            addLog(`${carrierAfterSpend.name} has ${attacksLeft} remaining`, "info");
+          }
+        } else {
+          // Consume an action for the failed lift attempt
+          commitFighters(prev => prev.map(f => {
+            if (f.id !== liveEnemy.id) return f;
+            const ra = Number(f.remainingAttacks ?? 0) || 0;
+            return { ...f, remainingAttacks: Math.max(0, ra - 1) };
+          }));
+          addLog(`⚠️ ${liveEnemy.name} fails to get a clean lift: ${lift.reason}`, "info");
+        }
+
+        processingEnemyTurnRef.current = false;
+        scheduleEndTurn(0, "predator-lift-carry");
+        return true;
+      };
+
+      if (shouldPreferCarryPrey && attemptPredatorLiftCarry(true)) {
+        return;
+      }
+
       // A) If prey is weak, finish it.
       if (preyHP <= weakThreshold && finisher) {
         const updatedAttacker = { ...liveEnemy, selectedAttack: finisher };
@@ -15163,42 +17135,7 @@ function CombatPage({ characters = [] }) {
 
       // B) Otherwise, attempt to lift & carry ONLY if physically possible.
       // If the attempt fails, we don't "free follow-up" into an attack (that would be 2 actions).
-      const carryFeasible = canCarryTarget(liveEnemy, prey, { capacityMultiplier: 10 });
-      if (carryFeasible?.canCarry) {
-        const lift = liftAndCarry(liveEnemy, prey, { positions: livePositions });
-        if (lift.success) {
-          commitFighters(prev => prev.map(f => {
-            if (f.id === liveEnemy.id) {
-              const ra = Number(f.remainingAttacks ?? 0) || 0;
-              return {
-                ...lift.carrier,
-                remainingAttacks: Math.max(0, ra - 1),
-                aiPredatorCarry: { movedAway: false, desiredAlt: 40, safeDistanceFt: 60 },
-              };
-            }
-            if (f.id === prey.id) return lift.carried;
-            return f;
-          }));
-          // Keep carried prey "stacked" on the carrier immediately (don't rely on stale fighters closure)
-          setPositions(prevPos => {
-            const base = { ...(pickNonEmptyObject(positionsRef.current, prevPos)) };
-            const carrierPos = base[lift.carrier.id] || base[liveEnemy.id];
-            if (carrierPos) base[lift.carried.id] = { ...carrierPos };
-            positionsRef.current = base;
-            return base;
-          });
-          addLog(`🦅 ${liveEnemy.name} snatches ${prey.name} mid-air and begins to carry them!`, "warning");
-        } else {
-          // Consume an action for the failed lift attempt
-          commitFighters(prev => prev.map(f => {
-            if (f.id !== liveEnemy.id) return f;
-            const ra = Number(f.remainingAttacks ?? 0) || 0;
-            return { ...f, remainingAttacks: Math.max(0, ra - 1) };
-          }));
-          addLog(`⚠️ ${liveEnemy.name} fails to get a clean lift: ${lift.reason}`, "info");
-        }
-
-        scheduleEndTurn();
+      if (attemptPredatorLiftCarry(false)) {
         return;
       }
 
@@ -15230,7 +17167,7 @@ function CombatPage({ characters = [] }) {
 
       // Choose closest valid prey
       const candidates = liveFighters.filter(f =>
-        f.type !== liveEnemy.type &&
+        canTargetForAction(liveEnemy, f, "attack", { sceneType: "combat", relations: {} }) &&
         canFighterAct(f) &&
         (f.currentHP ?? 0) > 0 &&
         !f.isCarried
@@ -15254,26 +17191,45 @@ function CombatPage({ characters = [] }) {
           if (dist > 60) {
             const occ = (x, y) => isHexOccupied(x, y, liveEnemy.id);
 
-            // Soar higher and higher while gliding in to improve spotting and line up a dive.
-            // Each glide action: climb in steps (up to a cap). The dive will then start from whatever altitude we've built up.
+            // Tiny prey should trigger hunting behavior, not endless altitude-gain scouting.
+            // Once the predator reaches a useful hunting height, it prioritizes closing for a swoop.
             const MIN_SCOUT_ALT = 80;
             const CLIMB_PER_GLIDE = 40;
             const MAX_SCOUT_ALT = 300;
+            const PREDATOR_HUNT_ALT_FT = 80;
+            const preySize = String(prey.sizeCategory || prey.size || getSizeCategory(prey) || "").toLowerCase();
+            const preyName = String(prey.name || "").toLowerCase();
+            const isTinyPredatorPrey =
+              preySize === "tiny" ||
+              preyName.includes("mouse") ||
+              preyName.includes("rat") ||
+              preyName.includes("squirrel");
 
             let scoutAlt = Number(curAlt || 0) || 0;
-            if (scoutAlt < MIN_SCOUT_ALT) scoutAlt = MIN_SCOUT_ALT;
+            if (isTinyPredatorPrey) {
+              scoutAlt = scoutAlt < PREDATOR_HUNT_ALT_FT ? PREDATOR_HUNT_ALT_FT : scoutAlt;
+            } else if (scoutAlt < MIN_SCOUT_ALT) scoutAlt = MIN_SCOUT_ALT;
             else scoutAlt = Math.min(MAX_SCOUT_ALT, scoutAlt + CLIMB_PER_GLIDE);
 
             if ((curAlt || 0) < scoutAlt) {
               commitFighters(prev => prev.map(f => (
                 f.id === liveEnemy.id ? { ...f, isFlying: true, altitudeFeet: scoutAlt, altitude: scoutAlt } : f
               )));
-              addLog(`🦅 ${liveEnemy.name} climbs higher to scout (${Math.round(scoutAlt)}ft).`, "info");
+              addLog(
+                isTinyPredatorPrey && scoutAlt >= PREDATOR_HUNT_ALT_FT
+                  ? `🦅 ${liveEnemy.name} reaches hunting height and begins a swoop.`
+                  : `🦅 ${liveEnemy.name} climbs higher to scout (${Math.round(scoutAlt)}ft).`,
+                "info"
+              );
             }
 
-            // Step up to 3 hexes closer this action
+            // Step closer this action; predator birds close faster once at hunting height.
+            const closeSteps =
+              isTinyPredatorPrey && scoutAlt >= PREDATOR_HUNT_ALT_FT
+                ? 8
+                : 3;
             let step = { ...myPos };
-            for (let i = 0; i < 3; i++) {
+            for (let i = 0; i < closeSteps; i++) {
               const neighbors = (getHexNeighbors(step.x, step.y) || [])
                 .filter(n => isValidPosition(n.x, n.y) && !occ(n.x, n.y));
               if (!neighbors.length) break;
@@ -15288,7 +17244,12 @@ function CombatPage({ characters = [] }) {
               const syncedPos = syncCombinedPositions(liveFighters, basePos);
               positionsRef.current = syncedPos;
               setPositions(syncedPos);
-              addLog(`🦅 ${liveEnemy.name} glides toward ${prey.name} from above.`, "info");
+              addLog(
+                isTinyPredatorPrey && scoutAlt >= PREDATOR_HUNT_ALT_FT
+                  ? `🦅 ${liveEnemy.name} stoops toward ${prey.name} from above.`
+                  : `🦅 ${liveEnemy.name} glides toward ${prey.name} from above.`,
+                "info"
+              );
               const distanceMoved = calculateDistance(myPos, step);
               // Spend an action for the glide
               commitFighters(prev => prev.map(f => {
@@ -15393,7 +17354,11 @@ function CombatPage({ characters = [] }) {
       try {
         const preyKeywords = ["mouse", "rat", "rabbit", "squirrel", "songbird"];
         const hostiles = liveFighters.filter(
-          (f) => f && f.type !== liveEnemy.type && canFighterAct(f) && (f.currentHP ?? 0) > 0
+          (f) =>
+            f &&
+            canTargetForAction(liveEnemy, f, "attack", { sceneType: "combat", relations: {} }) &&
+            canFighterAct(f) &&
+            (f.currentHP ?? 0) > 0
         );
         return hostiles.some((f) => {
           const name = String(f.name || "").toLowerCase();
@@ -15439,7 +17404,7 @@ function CombatPage({ characters = [] }) {
         },
         getReachableEnemies: (flier, allFighters, allPositions) => {
           return allFighters.filter(f =>
-            f.type !== flier.type &&
+            canTargetForAction(flier, f, "attack", { sceneType: "combat", relations: {} }) &&
             canFighterAct(f) &&
             f.currentHP > 0 &&
             !isTargetBlocked(flier.id, f.id, allPositions)
@@ -15501,7 +17466,7 @@ function CombatPage({ characters = [] }) {
         getFlightFocusPoint: (flier) => {
           // Focus on the closest enemy or own position
           const reachable = fightersNow.filter(f =>
-            f.type !== flier.type &&
+            canTargetForAction(flier, f, "attack", { sceneType: "combat", relations: {} }) &&
             canFighterAct(f) &&
             f.currentHP > 0 &&
             !isTargetBlocked(flier.id, f.id, positionsNow)
@@ -15517,7 +17482,7 @@ function CombatPage({ characters = [] }) {
           if (!myPos) return null;
           // Find a hex away from enemies
           const nearbyEnemies = fightersNow.filter(f =>
-            f.type !== flier.type &&
+            canTargetForAction(flier, f, "attack", { sceneType: "combat", relations: {} }) &&
             canFighterAct(f) &&
             f.currentHP > 0 &&
             calculateDistance(myPos, positionsNow[f.id]) < 50
@@ -15550,6 +17515,7 @@ function CombatPage({ characters = [] }) {
         setPositions: setPositions,
         setFighters: commitFighters,
         calculateDistanceFn: calculateDistance,
+        sceneContext: { sceneType: "combat", relations: {} },
       });
 
       if (flyingHandled) {
@@ -15667,7 +17633,11 @@ function CombatPage({ characters = [] }) {
 
           if (threatPositions.length === 0) {
             // ✅ No threats to flee from, mark as fled
-                        markFighterFledOffMap(liveEnemy.id, liveEnemy.name);
+            markFighterFledOffMap(liveEnemy.id, liveEnemy.name);
+            if (endCombatIfVictoryResolved(fightersRef.current ?? fightersSnapshot)) {
+              processingEnemyTurnRef.current = false;
+              return;
+            }
             scheduleEndTurn();
             return;
           } else {
@@ -15693,6 +17663,10 @@ function CombatPage({ characters = [] }) {
 
               if (atEdge) {
                 markFighterFledOffMap(liveEnemy.id, liveEnemy.name);
+                if (endCombatIfVictoryResolved(fightersRef.current ?? fightersSnapshot)) {
+                  processingEnemyTurnRef.current = false;
+                  return;
+                }
                 scheduleEndTurn();
                 return;
               } else {
@@ -15726,7 +17700,11 @@ function CombatPage({ characters = [] }) {
               }
             } else {
               // ✅ If routed enemy cannot find a safe path, mark them as fled (they're effectively out of combat)
-                            markFighterFledOffMap(liveEnemy.id, liveEnemy.name);
+              markFighterFledOffMap(liveEnemy.id, liveEnemy.name);
+              if (endCombatIfVictoryResolved(fightersRef.current ?? fightersSnapshot)) {
+                processingEnemyTurnRef.current = false;
+                return;
+              }
               scheduleEndTurn();
               return;
             }
@@ -15734,6 +17712,10 @@ function CombatPage({ characters = [] }) {
         } else {
           // ✅ No position, mark as fled
           markFighterFledOffMap(liveEnemy.id, liveEnemy.name);
+          if (endCombatIfVictoryResolved(fightersRef.current ?? fightersSnapshot)) {
+            processingEnemyTurnRef.current = false;
+            return;
+          }
           scheduleEndTurn();
           return;
         }
@@ -15742,6 +17724,7 @@ function CombatPage({ characters = [] }) {
 
     // Update enemy reference for rest of function
     enemy = liveEnemy;
+    const legacySceneContext = { sceneType: "combat", relations: {} };
 
     // Check if enemy has actions remaining
     if (enemy.remainingAttacks <= 0) {
@@ -15755,7 +17738,7 @@ function CombatPage({ characters = [] }) {
     // ✅ FIX: Filter players by visibility AND exclude unconscious/dying/dead targets
     // Only target conscious players (HP > 0) - unconscious/dying players are already defeated
     const allPlayers = fighters.filter(f =>
-      f.type === "player" &&
+      canTargetForAction(liveEnemy, f, "attack", legacySceneContext) &&
       canFighterAct(f) &&
       f.currentHP > 0 &&  // Only conscious players
       f.currentHP > -21    // Not dead
@@ -15883,7 +17866,7 @@ function CombatPage({ characters = [] }) {
     if (healingSkills.length > 0 && !isEvil) {
       // Find injured allies (same type as enemy)
       const allies = fighters.filter(f =>
-        f.type === enemy.type &&
+        canTargetForAction(enemy, f, "assist", { sceneType: "combat", relations: {} }) &&
         f.id !== enemy.id &&
         f.currentHP > -21 &&
         (f.currentHP < f.maxHP * 0.5 || f.currentHP <= 0) // Injured or dying
@@ -15994,13 +17977,28 @@ function CombatPage({ characters = [] }) {
 
     const playerTargets = visiblePlayers;
     if (playerTargets.length === 0) {
+      if (endCombatIfVictoryResolved(fightersRef.current ?? fightersSnapshot)) {
+        processingEnemyTurnRef.current = false;
+        return;
+      }
+
       // Check if there are players but they're just not visible
       if (allPlayers.length > 0) {
         addLog(`👁️ ${enemy.name} cannot see any players (hidden/obscured).`, "info");
       } else {
         addLog(`${enemy.name} has no targets and defends.`, "info");
       }
-      scheduleEndTurn();
+      const remainingBefore = Number(enemy.remainingAttacks ?? 0) || 0;
+      const remainingAfter = Math.max(0, remainingBefore - (remainingBefore > 0 ? 1 : 0));
+      if (remainingBefore > 0) {
+        commitFighters(prev => prev.map(f =>
+          f.id === enemy.id
+            ? { ...f, remainingAttacks: remainingAfter }
+            : f
+        ));
+      }
+      processingEnemyTurnRef.current = false;
+      scheduleEndTurn(0, "enemy-no-targets");
       return;
     }
 
@@ -16597,7 +18595,8 @@ function CombatPage({ characters = [] }) {
         spellbook,
         fighters,
         positions,
-        lastSpellMemoryRef?.current || {}
+        lastSpellMemoryRef?.current || {},
+        { sceneType: "combat", relations: {} }
       );
 
       const chosenSpell =
@@ -17303,10 +19302,32 @@ function CombatPage({ characters = [] }) {
                   return;
                 }
 
-                // Continue with attack after movement
+                // Continue with attack after movement. Claim the action latch before
+                // the timeout so turn advancement cannot pass this fighter while the
+                // delayed strike is still pending.
+                turnActionResolvingRef.current = true;
+                pendingTurnAdvanceRef.current = false;
+                const clearDelayedFlankLatchIfCurrent = () => {
+                  const active = fightersRef.current?.[turnIndexRef.current];
+                  const stillSameTurn =
+                    active?.id === enemyTurnSliceToken.fighterId &&
+                    turnCounterRef.current === enemyTurnSliceToken.turnCounter &&
+                    turnIndexRef.current === enemyTurnSliceToken.turnIndex &&
+                    (meleeRoundRef.current ?? meleeRound) === enemyTurnSliceToken.meleeRound &&
+                    currentTurnTokenRef.current === enemyTurnActionToken;
+                  if (stillSameTurn) {
+                    turnActionResolvingRef.current = false;
+                  }
+                };
                 setTimeout(async () => {
-                  if (!combatActive || combatEndCheckRef.current) return;
-                  if (!guardEnemyStillActiveForAttack()) return;
+                  if (!combatActive || combatEndCheckRef.current) {
+                    clearDelayedFlankLatchIfCurrent();
+                    return;
+                  }
+                  if (!guardEnemyStillActiveForAttack()) {
+                    clearDelayedFlankLatchIfCurrent();
+                    return;
+                  }
 
                   const newDistance = calculateDistance(targetFlankPos, targetPos);
                   const rangeValidation = validateEnemyAttackRange(newDistance);
@@ -17320,7 +19341,7 @@ function CombatPage({ characters = [] }) {
                     // Execute attack with flanking bonus
                     const updatedEnemy = { ...enemy, selectedAttack: selectedAttack };
                     const bonuses = flankingBonus > 0 ? { flankingBonus } : {};
-                    attack(updatedEnemy, target.id, bonuses);
+                    await attack(updatedEnemy, target.id, bonuses);
                   } else {
                     if (rangeValidation.isUnreachable) {
                       addLog(
@@ -17339,6 +19360,7 @@ function CombatPage({ characters = [] }) {
                         "error"
                       );
                     }
+                    clearDelayedFlankLatchIfCurrent();
                     scheduleEndTurn();
                   }
                 }, 1000);
@@ -17736,7 +19758,7 @@ function CombatPage({ characters = [] }) {
         let closingIntoOpponent = false;
         let attackOfOpportunityAttacker = null;
         if (occupant) {
-          const occupantIsAlly = occupant.type === enemy.type;
+          const occupantIsAlly = isAllyOf(enemy, occupant, legacySceneContext);
 
           if (occupantIsAlly) {
             addLog(`🏃 ${enemy.name} weaves past ${occupant.name} while running full tilt`, "info");
@@ -17909,12 +19931,11 @@ function CombatPage({ characters = [] }) {
     // ✅ FIX: Don't allow attacking unconscious/dying targets if all players are already defeated
     // Exception: Evil alignments may finish off dying players (coup de grâce)
     if (target && target.currentHP <= 0 && target.currentHP > -21) {
-      // Check if there are any conscious players remaining
-      const consciousPlayers = fighters.filter(f => f.type === "player" && canFighterAct(f) && f.currentHP > 0);
+      const victoryState = getCombatVictoryState(fightersRef.current ?? fighters);
       const enemyAlignment = enemy.alignment || enemy.attributes?.alignment || "";
       const isEvil = isEvilAlignment(enemyAlignment);
 
-      if (consciousPlayers.length === 0) {
+      if (victoryState.partyDefeated) {
         // All players are defeated
         if (isEvil) {
           // Evil alignments may finish off dying players (coup de grâce)
@@ -18096,9 +20117,11 @@ function CombatPage({ characters = [] }) {
     combatTerrain,
     arenaEnvironment,
     scheduleEndTurn,
+    applyOngoingCarryStaminaDrain,
     maybeSpendAIRecoverAction,
     settings,
     canFighterAct,
+    canFighterStartTurn,
     getHPStatus,
     fogEnabled,
     visibleCells,
@@ -18120,6 +20143,7 @@ function CombatPage({ characters = [] }) {
     grantImprovisedAmmo,
     isTargetBlocked,
     markFighterFledOffMap,
+    endCombatIfVictoryResolved,
     maybeTriggerLowHpMorale,
     meleeRound,
     pickEnemySpellFromCatalog,
@@ -18237,10 +20261,12 @@ function CombatPage({ characters = [] }) {
 
     // ✅ If the fighter has no actions left, don't re-run AI/menus repeatedly.
     // This can happen because endTurn() increments turnCounter before fighter state updates settle.
+    // Dedupe by full turn slot (id + melee round + initiative index + turnCounter), not fighter id alone,
+    // so we do not treat each 0-action fighter in order as a "new" dedupe bucket and spam endTurn().
     if ((currentFighter.remainingAttacks ?? 0) <= 0) {
-      const noActionLoopKey = `NOA_${currentFighter.id}_${meleeRound}`;
-      if (lastNoActionTurnKeyRef.current === noActionLoopKey) return;
-      lastNoActionTurnKeyRef.current = noActionLoopKey;
+      const noActionTurnSlotKey = makeTurnStartKey(currentFighter, turnIndex, turnCounter);
+      if (lastNoActionTurnKeyRef.current === noActionTurnSlotKey) return;
+      lastNoActionTurnKeyRef.current = noActionTurnSlotKey;
 
       const passLogKey = `${currentFighter.id}:${meleeRound}`;
       if (!noActionsPassLogRef.current.has(passLogKey)) {
@@ -18281,10 +20307,10 @@ function CombatPage({ characters = [] }) {
     }
 
     // Skip fighters that can't act (unconscious, dying, dead)
-    if (!canFighterAct(currentFighter)) {
-      const hpStatus = getHPStatus(currentFighter.currentHP);
-      addLog(`⏭️ ${currentFighter.name} cannot act (${hpStatus.description}), skipping turn`, "info");
-      endTurn();
+    if (!canFighterStartTurn(currentFighter)) {
+      const reason = getCannotStartTurnReason(currentFighter);
+      addLog(`⏭️ ${currentFighter.name} cannot act - skipping turn. Reason: ${reason}`, "info");
+      scheduleEndTurn(0, "current-fighter-cannot-act");
       return;
     }
 
@@ -18296,12 +20322,10 @@ function CombatPage({ characters = [] }) {
       // This keeps Ariel airborne if she chose to fly and improves flier pursuit behavior.
       let targetForPreference = null;
       try {
-        if (currentFighter.type === "player") {
-          // players generally target nearest enemy for AI planning
-          targetForPreference = fighters.find((f) => f.type === "enemy" && f.currentHP > 0) || null;
-        } else {
-          targetForPreference = fighters.find((f) => f.type === "player" && f.currentHP > 0) || null;
-        }
+        targetForPreference = fighters.find((f) =>
+          canTargetForAction(currentFighter, f, "attack", { sceneType: "combat", relations: {} }) &&
+          f.currentHP > 0
+        ) || null;
       } catch { /* ignore */ }
 
       const preferred = getPreferredMovementModeForAI(currentFighter, targetForPreference);
@@ -18313,50 +20337,54 @@ function CombatPage({ characters = [] }) {
 
     }
 
-    if (currentFighter.type === "player") {
-      if (aiControlEnabled) {
-        // Handle player turn with AI - prevent duplicate calls
-        if (!processingPlayerAIRef.current) {
-          if (
-            pendingTurnAdvanceRef.current ||
-            turnTimeoutRef.current ||
-            isActionBusy() ||
-            turnActionResolvingRef.current ||
-            !!activeSpellImpactRef.current
-          ) {
-            if (DEBUG_COMBAT) {
-              console.warn("[TURN EFFECT BLOCKED - player AI start not safe yet]", {
-                fighter: fighterForAITurn?.name,
-                pendingTurnAdvance: pendingTurnAdvanceRef.current,
-                hasTurnTimeout: !!turnTimeoutRef.current,
-                actionBusy: isActionBusy(),
-                actionResolving: turnActionResolvingRef.current,
-                spellImpact: !!activeSpellImpactRef.current,
-              });
-            }
-            return;
+    const currentControlMode = getFighterControlMode(currentFighter);
+    const usesPlayerAIPath = currentControlMode === "ai" && currentFighter.type === "player";
+
+    if (currentControlMode === "player" || usesPlayerAIPath) {
+      if (usesPlayerAIPath) {
+      // Handle player turn with AI - prevent duplicate calls
+      if (!processingPlayerAIRef.current) {
+        if (
+          pendingTurnAdvanceRef.current ||
+          turnTimeoutRef.current ||
+          isActionBusy() ||
+          turnActionResolvingRef.current ||
+          !!activeSpellImpactRef.current
+        ) {
+          if (DEBUG_COMBAT) {
+            console.warn("[TURN EFFECT BLOCKED - player AI start not safe yet]", {
+              fighter: fighterForAITurn?.name,
+              pendingTurnAdvance: pendingTurnAdvanceRef.current,
+              hasTurnTimeout: !!turnTimeoutRef.current,
+              actionBusy: isActionBusy(),
+              actionResolving: turnActionResolvingRef.current,
+              spellImpact: !!activeSpellImpactRef.current,
+            });
           }
-          setShowCombatChoices(false);
-          startTurnOnce(fighterForAITurn, turnIndex, "effect-turn-advance");
+          return;
         }
-      } else {
-        // Manual control: open choices once per turn
-        if (lastOpenedChoicesTurnRef.current !== currentTurnKey) {
-          lastOpenedChoicesTurnRef.current = currentTurnKey;
-          if (!showCombatChoices) {
-            setShowCombatChoices(true);
-            openCombatChoices(); // Also open via disclosure hook
-          }
-          if (!selectedAction) {
-            setSelectedAction(null);
-            setSelectedTarget(null);
-            setSelectedAttackWeapon(null);
-            setSelectedManeuver(null);
-            setMovementMode(prev => (prev.active ? { active: false, isRunning: false } : prev));
-            setSelectedMovementFighter(null);
-          }
+        setShowCombatChoices(false);
+        startTurnOnce(fighterForAITurn, turnIndex, "effect-turn-advance");
+      }
+    } else {
+      // Manual control: open choices once per turn
+      if (lastOpenedChoicesTurnRef.current !== currentTurnKey) {
+        lastOpenedChoicesTurnRef.current = currentTurnKey;
+        applyOngoingCarryStaminaDrain(currentFighter.id, "manual-carry-upkeep");
+        if (!showCombatChoices) {
+          setShowCombatChoices(true);
+          openCombatChoices(); // Also open via disclosure hook
+        }
+        if (!selectedAction) {
+          setSelectedAction(null);
+          setSelectedTarget(null);
+          setSelectedAttackWeapon(null);
+          setSelectedManeuver(null);
+          setMovementMode(prev => (prev.active ? { active: false, isRunning: false } : prev));
+          setSelectedMovementFighter(null);
         }
       }
+    }
     } else {
       // Enemy turn (auto-run)
       setShowCombatChoices(false);
@@ -18408,15 +20436,20 @@ function CombatPage({ characters = [] }) {
     handlePlayerAITurn,
     handleEnemyTurn,
     canFighterAct,
+    canFighterStartTurn,
+    getCannotStartTurnReason,
     endTurn,
+    scheduleEndTurn,
     showCombatChoices,
     selectedAction,
     getPreferredMovementModeForAI,
     getFighterFlyFeetPerAction,
     getFighterGroundFeetPerAction,
     getFighterFlySpeedFeetPerMelee,
+    getFighterControlMode,
     playerMovementMode,
     addLog,
+    applyOngoingCarryStaminaDrain,
     openCombatChoices,
     closeCombatChoices,
     getHPStatus,
@@ -18554,34 +20587,51 @@ function CombatPage({ characters = [] }) {
       return fighter;
     }
 
-    // Initialize equipped object if needed
-    if (!fighter.equipped) {
-      fighter.equipped = {};
-    }
-
-    // Equip armor to chest slot (main armor piece)
-    fighter.equipped.chest = {
+    const normalizedArmor = normalizeEquipmentItem({
       name: armorData.name,
+      type: armorData.type === "shield" ? "shield" : "armor",
+      category: armorData.type || "armor",
+      layer: armorData.type === "shield" ? "shield" : undefined,
+      slot: armorData.type === "shield" ? "shield" : "torso",
+      ar: armorData.ar,
       armorRating: armorData.ar,
       sdc: armorData.sdc,
       currentSDC: armorData.sdc,
+      maxSDC: armorData.sdc,
       weight: armorData.weight || 0,
       price: armorData.cost || 0,
-      category: armorData.type || "armor",
-      type: "armor",
-      slot: "chest",
       broken: false,
+    });
+
+    const equipment = {
+      ...createEmptyLayeredEquipment(),
+      ...(fighter.equipment || {}),
+      worn: {
+        ...createEmptyLayeredEquipment().worn,
+        ...(fighter.equipment?.worn || {}),
+      },
+      held: {
+        ...createEmptyLayeredEquipment().held,
+        ...(fighter.equipment?.held || {}),
+      },
     };
 
-    // Update AR - use armor's AR if it's higher than base AR
-    const armorAR = armorData.ar || 0;
-    const baseAR = fighter.AR || 10;
-    fighter.AR = Math.max(baseAR, armorAR);
+    if (normalizedArmor.layer === "shield") {
+      equipment.held.shield = normalizedArmor;
+      equipment.held.offHand = equipment.held.offHand || normalizedArmor;
+      fighter.equipped = {
+        ...(fighter.equipped || {}),
+        shield: normalizedArmor,
+      };
+    } else {
+      const result = equipLayer(equipment.worn, normalizedArmor);
+      if (result.equipped) equipment.worn = result.worn;
+    }
 
-    // Also set equippedArmor for backwards compatibility
-    fighter.equippedArmor = armorData.name;
-
-    return fighter;
+    return syncLegacyArmorFields({
+      ...fighter,
+      equipment,
+    });
   }
 
   /**
@@ -18729,13 +20779,19 @@ function CombatPage({ characters = [] }) {
     return allAlignments[Math.floor(Math.random() * allAlignments.length)];
   }, [getRandomAlignmentFromBestiary]);
 
-  function addCreature(creatureData, customNameOverride = null, levelOverride = null, armorOverride = null, weaponOverride = null, ammoOverride = null, fighterTypeOverride = null) {
+  function addCreature(creatureData, customNameOverride = null, levelOverride = null, armorOverride = null, weaponOverride = null, ammoOverride = null, fighterTypeOverride = null, armyId = "enemy") {
     let newFighter;
     const nameToUse = customNameOverride || customEnemyName;
     const level = levelOverride || enemyLevel || 1;
     const armorToEquip = armorOverride || selectedArmor;
     const weaponToEquip = weaponOverride !== undefined ? weaponOverride : selectedWeapon;
     const ammoToGive = ammoOverride !== undefined ? ammoOverride : selectedAmmoCount;
+    const selectedArmy = fighterTypeOverride === "player"
+      ? getEncounterArmyById("party")
+      : getEncounterArmyById(armyId);
+    const normalizedSceneRoleKey = selectedArmy?.role === "enemy"
+      ? "enemy"
+      : (selectedArmy?.role && SCENE_ROLE_PRESETS[selectedArmy.role] ? selectedArmy.role : "enemy");
 
     // Check if this is a playable character
     if (creatureData.playable) {
@@ -18766,6 +20822,16 @@ function CombatPage({ characters = [] }) {
             addLog(`📦 ${newFighter.name} receives ${ammoToGive} ${weaponData.ammunition}`, "info");
           }
         }
+      }
+
+      if (armorToEquip && armorToEquip !== "None") {
+        const armorData = availableArmors.find(a => a.name === armorToEquip);
+        if (armorData) {
+          newFighter = equipArmorToEnemy(newFighter, armorData);
+          addLog(`🛡️ ${newFighter.name} wears ${armorData.name}`, "info");
+        }
+      } else {
+        newFighter = syncLegacyArmorFields(newFighter);
       }
 
       // Log detailed roll information with debug details
@@ -19074,11 +21140,24 @@ function CombatPage({ characters = [] }) {
       newFighter.id = (newFighter.id || "").replace(/^enemy-/, "player-").replace(/^playable-/, "player-");
     }
 
+    if (selectedArmy) {
+      newFighter = applyArmyToFighter(newFighter, selectedArmy.id, {
+        preservePlayerOverride: fighterTypeOverride === "player",
+      });
+      newFighter.sceneRoleKey = normalizedSceneRoleKey;
+      newFighter.sceneRoleLabel = selectedArmy.name;
+      if (selectedArmy.id !== "enemy") {
+        addLog(`🎭 Added ${newFighter.name} to ${selectedArmy.name}.`, "info");
+      }
+    }
+
     // Apply level-based stat adjustments for playable characters too
     if (level > 1) {
       newFighter = applyLevelToEnemy(newFighter, level);
       addLog(`📊 ${newFighter.name} adjusted to level ${level} (HP: ${newFighter.maxHP}, AR: ${newFighter.AR})`, "info");
     }
+
+    newFighter = syncLegacyArmorFields(newFighter);
 
     // Load spells if creature has magicAbilities or magic (bestiary uses "magic" for wizard spells)
     const magicAbilitiesStr = newFighter.magicAbilities ?? newFighter.magic;
@@ -19271,7 +21350,7 @@ function CombatPage({ characters = [] }) {
    * @param {string} weaponName - Weapon name to equip (optional)
    * @param {number} ammoCount - Ammo count to give (optional)
    */
-  function addMultipleEnemies(creatureData, count, level = 1, armorName = null, weaponName = null, ammoCount = null) {
+  function addMultipleEnemies(creatureData, count, level = 1, armorName = null, weaponName = null, ammoCount = null, armyId = "enemy") {
     if (!creatureData) {
       addLog(`❌ No creature selected`, "error");
       return;
@@ -19295,7 +21374,7 @@ function CombatPage({ characters = [] }) {
         ? `${customEnemyName || creatureData.name} #${i + 1}`
         : (customEnemyName || creatureData.name);
 
-      const newFighter = addCreature(creatureData, enemyName, level, armorName, weaponName, ammoCount);
+      const newFighter = addCreature(creatureData, enemyName, level, armorName, weaponName, ammoCount, null, armyId);
       if (newFighter) {
         newFighters.push(newFighter);
       }
@@ -19312,6 +21391,7 @@ function CombatPage({ characters = [] }) {
     setSelectedArmor(""); // Reset armor
     setSelectedWeapon(""); // Reset weapon
     setSelectedAmmoCount(0); // Reset ammo
+    setSelectedArmyId("enemy"); // Reset army
     onClose();
   }
 
@@ -19548,8 +21628,89 @@ function CombatPage({ characters = [] }) {
     setVisibleCells([]);
     setExploredCells(resetFogMemory());
 
+    const seenFighterIds = new Set();
+    const duplicateIds = new Set();
+    const nameBuckets = new Map();
+    const combatRoster = [];
+
+    fighters.forEach((fighter) => {
+      const fighterId = fighter?.id ?? fighter?._id;
+      if (fighterId) {
+        if (seenFighterIds.has(fighterId)) {
+          duplicateIds.add(fighterId);
+          return;
+        }
+        seenFighterIds.add(fighterId);
+      }
+      combatRoster.push(fighter);
+      const nameKey = String(fighter?.name || "").trim().toLowerCase();
+      if (nameKey) {
+        if (!nameBuckets.has(nameKey)) nameBuckets.set(nameKey, []);
+        nameBuckets.get(nameKey).push(fighter);
+      }
+    });
+
+    duplicateIds.forEach((fighterId) => {
+      addLog(`⚠️ Duplicate fighter id ${fighterId} found at combat start; keeping the first entry.`, "warning");
+    });
+    nameBuckets.forEach((entries) => {
+      const uniqueIds = new Set(entries.map((entry) => entry?.id ?? entry?._id).filter(Boolean));
+      if (entries.length > 1 && uniqueIds.size > 1) {
+        addLog(`⚠️ Multiple fighters share the name ${entries[0]?.name || "Unknown"}; treating them as separate fighters.`, "warning");
+      }
+    });
+
+    const sanitizeFighterForCombatStart = (fighter) => {
+      const sanitized = { ...fighter };
+      const hp = Number(getFighterHP(sanitized));
+      const hpEligible = !Number.isFinite(hp) || hp > 0;
+      const status = String(sanitized.status || "").toLowerCase();
+      const condition = String(sanitized.condition || "").toLowerCase();
+      const statusBlocksAction = ["defeated", "dead", "unconscious", "dying", "fled"].includes(status);
+      const conditionBlocksAction = ["dead", "unconscious", "unconsciousbleeding", "unconsciousstable", "dying"].includes(condition);
+
+      if (hpEligible && !statusBlocksAction && !conditionBlocksAction) {
+        sanitized.canAct = true;
+      }
+
+      sanitized.isCarried = false;
+      sanitized.carriedById = null;
+      sanitized.carriedBy = null;
+      sanitized.carried = false;
+      sanitized.isCarrying = false;
+      sanitized.carriedTargetId = null;
+      sanitized.carrying = null;
+
+      if (sanitized.grappleState) {
+        sanitized.grappleState = {
+          ...sanitized.grappleState,
+          lifted: false,
+          carriedBy: null,
+          carryMode: null,
+          heightFt: 0,
+        };
+      }
+
+      if (sanitized.moraleState) {
+        sanitized.moraleState = { ...sanitized.moraleState, hasFled: false };
+      }
+
+      if (Array.isArray(sanitized.statusEffects)) {
+        sanitized.statusEffects = sanitized.statusEffects.filter(
+          (effect) => String(effect).toUpperCase() !== "FLED"
+        );
+      }
+
+      if (sanitized.fatigueState?.status === "collapsed") {
+        sanitized.fatigueState = initializeCombatFatigue(sanitized);
+      }
+
+      return sanitized;
+    };
+
     // Roll initiative for all fighters (1994 Palladium rules: d20 + bonuses)
-    const updatedFighters = fighters.map(fighter => {
+    const updatedFighters = combatRoster.map(rawFighter => {
+      const fighter = sanitizeFighterForCombatStart(rawFighter);
       let d20 = CryptoSecureDice.rollD20();
 
       // Calculate initiative bonuses (Hand-to-Hand, P.P., situational)
@@ -19653,7 +21814,7 @@ function CombatPage({ characters = [] }) {
         delete fighterMeta.horrorFailedRound;
       }
 
-      const updatedFighter = {
+      const updatedFighter = syncLegacyArmorFields({
         ...fighter,
         initiative: initiativeTotal,
         attacksPerMelee: attacksPerMelee,
@@ -19664,7 +21825,7 @@ function CombatPage({ characters = [] }) {
         statusEffects: Array.isArray(fighter.statusEffects)
           ? fighter.statusEffects.filter(s => s !== "ROUTED" && s !== "FLED")
           : fighter.statusEffects,
-      };
+      });
 
       // Normalize IDs to ensure both id and _id exist for backwards compatibility
       return normalizeFighterId(updatedFighter);
@@ -19701,23 +21862,69 @@ function CombatPage({ characters = [] }) {
     setMeleeRound(1); // Start at melee round 1
 
     // Initialize positions ONLY when combat starts
-    const playerCount = fighters.filter(f => f.type === "player").length;
-    const enemyCount = fighters.filter(f => f.type === "enemy").length;
+    const playerCount = updatedFighters.filter(f => f.type === "player").length;
+    const enemyCount = updatedFighters.filter(f => f.type === "enemy").length;
 
     const positionMap = {};
-    const shouldUseDeploymentPositions =
+    const deploymentPositions = deploymentPreviewPositions || {};
+    const manualPositions = manualDeploymentPositions || {};
+    const hasDeploymentPositions =
       !skipDeployment &&
-      isDeploymentReady &&
-      Object.keys(deploymentPreviewPositions || {}).length > 0;
+      Object.keys(deploymentPositions).length > 0;
+    const hasManualDeploymentPositions =
+      !skipDeployment &&
+      Object.keys(manualPositions).length > 0;
 
-    if (shouldUseDeploymentPositions) {
+    if (hasDeploymentPositions) {
       updatedFighters.forEach((fighter) => {
-        const deployedPos = deploymentPreviewPositions[fighter.id];
+        const deployedPos = deploymentPositions[fighter.id];
         if (deployedPos) {
           positionMap[fighter.id] = deployedPos;
         }
       });
-      addLog("🧭 Using guided deployment positions.", "info");
+      const occupiedKeys = new Set(
+        Object.values(positionMap)
+          .filter(Boolean)
+          .map((point) => buildDeploymentCellKey(point.x, point.y))
+      );
+      let generatedMissingCount = 0;
+
+      DEPLOYMENT_SIDE_ORDER.forEach((side) => {
+        const missingIds = updatedFighters
+          .filter((fighter) => fighter.type === side && !positionMap[fighter.id])
+          .map((fighter) => fighter.id);
+
+        if (missingIds.length === 0) return;
+
+        const formation = missingIds.length <= 1
+          ? DEPLOYMENT_FORMATIONS.SINGLE
+          : DEPLOYMENT_FORMATIONS.LINE_CLOSE;
+        const generatedPositions = buildDeploymentFormationPositions({
+          fighterIds: missingIds,
+          anchor: getSuggestedDeploymentAnchor(side, deploymentBounds),
+          formation,
+          occupiedKeys,
+          bounds: deploymentBounds,
+          side,
+        });
+
+        Object.entries(generatedPositions).forEach(([fighterId, point]) => {
+          positionMap[fighterId] = point;
+          occupiedKeys.add(buildDeploymentCellKey(point.x, point.y));
+          generatedMissingCount += 1;
+        });
+      });
+
+      if (hasManualDeploymentPositions) {
+        addLog(
+          generatedMissingCount > 0
+            ? "🧭 Using mixed manual/guided deployment positions."
+            : "🧭 Using manual deployment positions.",
+          "info"
+        );
+      } else {
+        addLog("🧭 Using guided deployment positions.", "info");
+      }
     } else {
       const initialPositions = getInitialPositions(playerCount, enemyCount);
 
@@ -21338,26 +23545,16 @@ function CombatPage({ characters = [] }) {
           addLog(`❌ ${currentFighter.name} must select a grappled target to carry!`, "error");
           return;
         }
-        const result = liftAndCarry(currentFighter, targetToExecute, { positions });
-        if (result.success) {
-          setFighters(prev => prev.map(f => {
-            if (f.id === currentFighter.id) return result.carrier;
-            if (f.id === targetToExecute.id) return result.carried;
-            return f;
-          }));
-          // Sync positions
-          const newPositions = syncCombinedPositions(fighters, positions);
-          setPositions(newPositions);
-          addLog(result.message, "info");
-        } else {
-          addLog(`❌ ${result.reason}`, "error");
-        }
+        liftGrappledTarget(currentFighter.id, targetToExecute.id, {
+          positions,
+          requireFlying: true,
+        });
         scheduleEndTurn(500);
         return;
       }
 
       case "Drop Target": {
-        const carriedId = currentFighter.carriedTargetId;
+        const carriedId = currentFighter.carriedTargetId ?? currentFighter.carrying?.targetId;
         if (!carriedId) {
           addLog(`❌ ${currentFighter.name} is not carrying anyone!`, "error");
           return;
@@ -21367,20 +23564,7 @@ function CombatPage({ characters = [] }) {
           addLog(`❌ Cannot find carried target!`, "error");
           return;
         }
-        const result = dropCarriedTarget(currentFighter, carried, { height: getAltitude(currentFighter) || 0 });
-        if (result.success) {
-          setFighters(prev => prev.map(f => {
-            if (f.id === currentFighter.id) return result.fighter;
-            if (f.id === carried.id) return result.target;
-            return f;
-          }));
-          addLog(result.message, "warning");
-          if (result.fallDamage) {
-            addLog(`💥 ${carried.name} takes fall damage!`, "combat");
-          }
-        } else {
-          addLog(`❌ ${result.reason}`, "error");
-        }
+        dropLiftedTarget(currentFighter.id, carried.id, { height: getAltitude(currentFighter) || 0 });
         scheduleEndTurn(500);
         return;
       }
@@ -21726,6 +23910,20 @@ function CombatPage({ characters = [] }) {
     }
   }
 
+  function changeFighterArmy(fighterId, armyId) {
+    const army = getEncounterArmyById(armyId);
+    const fighter = fighters.find(f => f.id === fighterId);
+    if (!fighter || !army) return;
+
+    setFighters(prev => prev.map(f => (
+      f.id === fighterId ? applyArmyToFighter(f, army.id) : f
+    )));
+
+    if (fighter.armyId !== army.id) {
+      addLog(`🎭 ${fighter.name} assigned to ${army.name}.`, "info");
+    }
+  }
+
   const selectParty = useCallback((party) => {
     console.log(`[selectParty] Called with ${party.length} characters:`, party.map(c => c.name));
 
@@ -21917,6 +24115,14 @@ function CombatPage({ characters = [] }) {
         ...char,
         id: `player-${char._id}-${generateCryptoId()}`,
         type: "player", // Ensure type is explicitly set to "player" (overrides any type from char)
+        armyId: "party",
+        armyName: "Player Party",
+        teamId: "party",
+        factionId: "party",
+        role: "party",
+        disposition: "friendly",
+        aggression: "party",
+        isPlayerControlled: true,
         alignment: char.alignment ?? getRandomAlignmentForRace(char.race),
         currentHP: characterHP,
         maxHP: characterHP,
@@ -21964,15 +24170,15 @@ function CombatPage({ characters = [] }) {
       return normalizeFighterId(fighterWithSizeMods);
     });
 
-    // Replace existing player fighters with new party, keep enemies
+    // Replace existing player fighters with new party, keep setup actors already added.
     // CRITICAL: Use functional update to access current fighters state (prev)
     console.log(`[selectParty] About to setFighters with ${characterFighters.length} character fighters`);
     console.log(`[selectParty] Character fighters details:`,
       characterFighters.map(f => ({ name: f.name, type: f.type, id: f.id })));
 
     setFighters(prev => {
-      const existingEnemies = prev.filter(f => f.type === "enemy");
-      const newFighters = [...characterFighters, ...existingEnemies];
+      const existingSetupActors = prev.filter(f => f.type !== "player");
+      const newFighters = [...characterFighters, ...existingSetupActors];
 
       // Debug: Log fighter types to verify they're set correctly
       console.log(`[selectParty] setFighters callback - Added ${characterFighters.length} player fighters:`,
@@ -22020,11 +24226,9 @@ function CombatPage({ characters = [] }) {
         // Skip if already checked
         if (combatEndCheckRef.current || !combatActive) return;
 
-        // Use alivePlayers and aliveEnemies for combat end checks
-        const consciousPlayers = alivePlayers.filter(f => canFighterAct(f));
-        const consciousEnemies = aliveEnemies.filter(f => canFighterAct(f));
+        const combatVictoryState = getCombatVictoryState(fighters);
 
-        if (consciousPlayers.length === 0) {
+        if (combatVictoryState.partyDefeated) {
           // All players are either dead or unconscious - enemies win
           combatEndCheckRef.current = true;
           combatOverRef.current = true; // ✅ AUTHORITATIVE: Stop all further actions (defeat)
@@ -22032,7 +24236,7 @@ function CombatPage({ characters = [] }) {
           addLog("💀 All players are defeated! Enemies win!", "defeat");
           addLog("🛑 Combat is over. No further attacks are scheduled.", "info");
           setCombatActive(false);
-        } else if (consciousEnemies.length === 0) {
+        } else if (combatVictoryState.partyVictorious) {
           // All enemies are either dead or unconscious - players win
           combatEndCheckRef.current = true;
           combatOverRef.current = true; // ✅ AUTHORITATIVE: Set combat over flag
@@ -22046,7 +24250,7 @@ function CombatPage({ characters = [] }) {
       // Delay the check to allow for state updates to complete
       setTimeout(checkCombatEnd, 500);
     }
-  }, [fighters, combatActive, turnIndex, alivePlayers, aliveEnemies, canFighterAct, addLog, activeFighters.length]); // Check on turn changes
+  }, [fighters, combatActive, turnIndex, getCombatVictoryState, addLog, activeFighters.length]); // Check on turn changes
 
   // Update visible cells for fog of war (optimized for performance)
   // ✅ Enhanced to account for altitude when fog is enabled
@@ -22408,7 +24612,7 @@ function CombatPage({ characters = [] }) {
               onOpen();
             });
           }}>
-            Add Enemy
+            Add Creature / Combatant
           </Button>
           <Button colorScheme="red" onClick={() => {
             resetCombat();
@@ -22519,9 +24723,9 @@ function CombatPage({ characters = [] }) {
                   !combatEndCheckRef.current &&
                   !combatPausedRef.current &&
                   currentFighter &&
-                  currentFighter.type === "player" &&
+                  getFighterControlMode(currentFighter) === "ai" &&
                   (Number(currentFighter.remainingAttacks ?? 0) || 0) > 0 &&
-                  canFighterAct(currentFighter) &&
+                  canFighterStartTurn(currentFighter) &&
                   !playerAITimerRef.current &&
                   !enemyTurnTimerRef.current &&
                   !turnStartInFlightKeyRef.current &&
@@ -22898,6 +25102,7 @@ function CombatPage({ characters = [] }) {
                                 return null;
                               })()}
                             </HStack>
+                            {renderCombatRoleBadges(fighter)}
 
                             <HStack spacing={2} align="center">
                               <Text fontSize="xs" color="gray.600" fontWeight="bold">
@@ -24228,7 +26433,9 @@ function CombatPage({ characters = [] }) {
                         currentTurn={currentFighter?.id}
                         highlightMovement={combatActive}
                         flashingCombatants={flashingCombatants}
-                        movementMode={movementMode}
+                        movementMode={!combatActive && (showDeploymentModal || manualDeploymentOpen)
+                          ? { active: false, isRunning: false }
+                          : movementMode}
                         validMoves={engineValidMoves.length > 0 ? engineValidMoves : undefined} // Pass engine-authoritative valid moves
                         onMoveSelect={(x, y) => {
                           if (!combatActive && (showDeploymentModal || manualDeploymentOpen)) {
@@ -24251,12 +26458,15 @@ function CombatPage({ characters = [] }) {
                           setHoveredCell(hex);
                           setHoveredHex(hex);
                         }}
-                        allowEmptyHexSelection={targetingMode === "OVERWATCH_HEX"}
+                        allowEmptyHexSelection={
+                          (!combatActive && (showDeploymentModal || manualDeploymentOpen)) ||
+                          targetingMode === "OVERWATCH_HEX"
+                        }
                         onSelectedHexChange={handleSelectedHexChange}
                         terrain={mode === "MAP_EDITOR" ? mapDefinition : arenaEnvironment}
                         activeCircles={activeCircles}
                         mapType={currentMapType}
-                        mode={mode}
+                        mode={!combatActive && (showDeploymentModal || manualDeploymentOpen) ? "COMBAT" : mode}
                         mapDefinition={mapDefinition}
                         // ✅ editor paint wiring
                         selectedTerrainType={selectedTerrainType}
@@ -24330,7 +26540,25 @@ function CombatPage({ characters = [] }) {
               )}
 
               {/* Combat Arena - Controls Panel (2D map is shown via Show/Hide Map above) */}
-              {fighters.length > 0 && (
+              {fighters.length > 0 && !combatActive && (showDeploymentModal || manualDeploymentOpen) && !combatControlsExpanded ? (
+                <Box
+                  position="fixed"
+                  top="12px"
+                  left="50%"
+                  transform="translateX(-50%)"
+                  zIndex={1500}
+                  bg="white"
+                  borderWidth="1px"
+                  borderRadius="md"
+                  boxShadow="md"
+                  px={3}
+                  py={2}
+                >
+                  <Button size="sm" variant="ghost" onClick={() => setCombatControlsExpanded(true)}>
+                    Combat Arena Controls ▾
+                  </Button>
+                </Box>
+              ) : fighters.length > 0 && (
                 <Box w="100%" display="flex" justifyContent="center" mt={4} mb={4}>
                   <FloatingPanel
                     title={`⚔️ Combat Arena - Controls`}
@@ -24359,6 +26587,11 @@ function CombatPage({ characters = [] }) {
                           )}
                         </VStack>
                         <HStack spacing={2}>
+                          {!combatActive && (showDeploymentModal || manualDeploymentOpen) && (
+                            <Button size="sm" variant="outline" onClick={() => setCombatControlsExpanded(false)}>
+                              Minimize
+                            </Button>
+                          )}
                           <Button
                             size="sm"
                             colorScheme={mode === "MAP_EDITOR" ? "blue" : "gray"}
@@ -24824,10 +27057,10 @@ function CombatPage({ characters = [] }) {
                 {totalEnemyCount === 0 ? (
                   <Box color="gray.500" textAlign="center" py={8}>
                     <VStack spacing={3}>
-                      <Text fontWeight="bold">No enemies added</Text>
-                      <Text fontSize="sm">Click &apos;Add Enemy&apos; to add creatures from bestiary</Text>
+                      <Text fontWeight="bold">No combatants added</Text>
+                      <Text fontSize="sm">Click &apos;Add Creature / Combatant&apos; to add creatures from bestiary</Text>
                       <Button colorScheme="red" size="sm" onClick={onOpen}>
-                        Add Enemy
+                        Add Creature / Combatant
                       </Button>
                     </VStack>
                   </Box>
@@ -24894,6 +27127,7 @@ function CombatPage({ characters = [] }) {
                                     return null;
                                   })()}
                                 </HStack>
+                                {renderCombatRoleBadges(fighter)}
 
                                 <HStack spacing={2} align="center">
                                   <Text fontSize="xs" color="gray.600" fontWeight="bold">
@@ -25169,6 +27403,45 @@ function CombatPage({ characters = [] }) {
                   </Grid>
                 )}
               </Box>
+              {fighters.some((fighter) => fighter.type === "npc") && (
+                <>
+                  <Heading size="md" color="purple.600">🎭 Scene Actors ({fighters.filter(f => f.type === "npc").length})</Heading>
+                  <Box w="100%" maxH="220px" overflowY="auto" border="2px solid" borderColor="purple.300" p={4} borderRadius="md" bg="purple.50">
+                    <Grid templateColumns="repeat(auto-fill, minmax(260px, 1fr))" gap={3}>
+                      {fighters.filter(f => f.type === "npc").map((fighter) => (
+                        <GridItem key={fighter.id}>
+                          <Box
+                            p={3}
+                            border="2px solid"
+                            borderColor={fighter.id === currentFighter?.id ? "yellow.400" : "purple.300"}
+                            borderRadius="md"
+                            bg={fighter.id === currentFighter?.id ? "yellow.100" : "white"}
+                            shadow="sm"
+                          >
+                            <VStack align="start" spacing={2}>
+                              <HStack flexWrap="wrap" spacing={2}>
+                                <Text fontWeight="bold" color="purple.700" fontSize="md">
+                                  {fighter.name}
+                                </Text>
+                                {fighter.id === currentFighter?.id && <Badge colorScheme="yellow" size="md">Current Turn</Badge>}
+                              </HStack>
+                              {renderCombatRoleBadges(fighter)}
+                              <Text fontSize="sm" color="purple.800">
+                                HP: {fighter.currentHP}/{fighter.maxHP} | AR: {fighter.AR || 10} | Speed: {fighter.Spd || fighter.spd || fighter.attributes?.Spd || fighter.attributes?.spd || 10}
+                              </Text>
+                              {fighter.initiative > 0 && (
+                                <Badge colorScheme="purple" size="sm">
+                                  Initiative: {fighter.initiative}
+                                </Badge>
+                              )}
+                            </VStack>
+                          </Box>
+                        </GridItem>
+                      ))}
+                    </Grid>
+                  </Box>
+                </>
+              )}
               {/* Combat Info Panel */}
               <Box
                 w="100%"
@@ -25522,6 +27795,7 @@ function CombatPage({ characters = [] }) {
                           <Box>
                             <Text fontWeight="bold" fontSize="sm">Name:</Text>
                             <Text>{currentFighter.name}</Text>
+                            {renderCombatRoleBadges(currentFighter)}
                           </Box>
                           <Box>
                             <Text fontWeight="bold" fontSize="sm">HP:</Text>
@@ -25618,6 +27892,7 @@ function CombatPage({ characters = [] }) {
                                 {fighter.id === currentFighter?.id && (
                                   <Badge colorScheme="green" size="sm">Current Turn</Badge>
                                 )}
+                                {renderCombatRoleBadges(fighter)}
                               </HStack>
                               <HStack spacing={2} fontSize="xs">
                                 {pos && (
@@ -25901,6 +28176,106 @@ function CombatPage({ characters = [] }) {
                     </VStack>
                   ) : (
                   <Grid templateColumns={{ base: "1fr", xl: "minmax(0, 2fr) 340px" }} gap={4} alignItems="start">
+                    <GridItem colSpan={{ base: 1, xl: 2 }}>
+                      <Box borderWidth="1px" borderRadius="lg" p={4} bg="white">
+                        <HStack justify="space-between" mb={3} align="start" flexWrap="wrap">
+                          <Heading size="sm">Armies / Factions</Heading>
+                          <HStack spacing={2} flexWrap="wrap">
+                            <FormControl width={{ base: "100%", md: "140px" }}>
+                              <FormLabel fontSize="xs" mb={1}>Number of Armies</FormLabel>
+                              <Select
+                                size="sm"
+                                value={armyCount}
+                                onChange={(e) => handleArmyCountChange(e.target.value)}
+                              >
+                                {[2, 3, 4, 5, 6, 7, 8].map((count) => (
+                                  <option key={count} value={count}>{count}</option>
+                                ))}
+                              </Select>
+                            </FormControl>
+                            <Input
+                              size="sm"
+                              width={{ base: "100%", md: "180px" }}
+                              placeholder="Army name"
+                              value={newArmyName}
+                              onChange={(e) => setNewArmyName(e.target.value)}
+                            />
+                            <Select
+                              size="sm"
+                              width={{ base: "100%", md: "220px" }}
+                              value={newArmyType}
+                              onChange={(e) => setNewArmyType(e.target.value)}
+                            >
+                              {Object.entries(ARMY_TYPE_PRESETS).map(([key, preset]) => (
+                                <option key={key} value={key}>{preset.label}</option>
+                              ))}
+                            </Select>
+                            <Button size="sm" colorScheme="purple" onClick={addEncounterArmy}>
+                              Add Army
+                            </Button>
+                          </HStack>
+                        </HStack>
+                        <Grid templateColumns={{ base: "1fr", md: "repeat(2, minmax(0, 1fr))", xl: "repeat(3, minmax(0, 1fr))" }} gap={3}>
+                          {encounterArmies.map((army) => {
+                            const armyFighters = getArmyFighters(army);
+                            return (
+                              <Box key={army.id} borderWidth="1px" borderRadius="md" p={3} bg={selectedArmyId === army.id ? "purple.50" : "gray.50"} borderColor={selectedArmyId === army.id ? "purple.300" : "gray.200"}>
+                                <HStack justify="space-between" mb={2} align="start">
+                                  <VStack align="stretch" spacing={2} flex="1">
+                                    <Input
+                                      size="sm"
+                                      value={army.name}
+                                      onChange={(e) => updateEncounterArmy(army.id, {
+                                        name: e.target.value,
+                                      })}
+                                    />
+                                    <Input
+                                      size="sm"
+                                      value={army.factionId || ""}
+                                      placeholder="Faction ID"
+                                      onChange={(e) => updateEncounterArmy(army.id, {
+                                        factionId: e.target.value,
+                                      })}
+                                    />
+                                    <Select
+                                      size="sm"
+                                      value={army.presetKey || (army.id === "party" ? "playerParty" : army.id === "enemy" ? "enemyArmy" : "neutralNpc")}
+                                      onChange={(e) => updateEncounterArmyPreset(army.id, e.target.value)}
+                                    >
+                                      {Object.entries(ARMY_TYPE_PRESETS).map(([key, preset]) => (
+                                        <option key={key} value={key}>{preset.label}</option>
+                                      ))}
+                                    </Select>
+                                  </VStack>
+                                  <Badge colorScheme={army.type === "player" ? "blue" : army.type === "enemy" ? "red" : "purple"}>
+                                    {armyFighters.length}
+                                  </Badge>
+                                </HStack>
+                                <HStack spacing={1} flexWrap="wrap" mb={2}>
+                                  <Badge colorScheme="gray" size="xs">Faction: {army.factionId}</Badge>
+                                  <Badge colorScheme="gray" size="xs">Team: {army.teamId}</Badge>
+                                  {army.role && <Badge colorScheme="purple" size="xs">{army.role}</Badge>}
+                                  {(army.disposition || army.defaultDisposition) && <Badge colorScheme="blue" size="xs">{army.disposition || army.defaultDisposition}</Badge>}
+                                  {army.aggression && <Badge colorScheme="orange" size="xs">{army.aggression}</Badge>}
+                                  {army.attacksEveryone && <Badge colorScheme="red" size="xs">Attacks Everyone</Badge>}
+                                </HStack>
+                                <VStack align="stretch" spacing={0} maxH="72px" overflowY="auto">
+                                  {armyFighters.length > 0 ? (
+                                    armyFighters.map((fighter) => (
+                                      <Text key={fighter.id} fontSize="xs" color="gray.600">
+                                        - {fighter.name}
+                                      </Text>
+                                    ))
+                                  ) : (
+                                    <Text fontSize="xs" color="gray.500">No fighters assigned yet.</Text>
+                                  )}
+                                </VStack>
+                              </Box>
+                            );
+                          })}
+                        </Grid>
+                      </Box>
+                    </GridItem>
                     <GridItem>
                       <Grid templateColumns={{ base: "1fr", md: "1fr 1fr" }} gap={4}>
                         <Box borderWidth="1px" borderRadius="lg" p={4} bg="blue.50">
@@ -25937,20 +28312,7 @@ function CombatPage({ characters = [] }) {
                                   <HStack justify="space-between" align="start">
                                     <VStack align="start" spacing={1} flex="1">
                                       <Text fontSize="sm" fontWeight="semibold">{fighter.name}</Text>
-                                      <HStack spacing={2} align="center" onClick={(e) => e.stopPropagation()}>
-                                        <Text fontSize="xs" color="gray.600" fontWeight="bold">
-                                          Battle Side
-                                        </Text>
-                                        <Select
-                                          size="xs"
-                                          width="auto"
-                                          value={fighter.type}
-                                          onChange={(e) => changeFighterSide(fighter.id, e.target.value)}
-                                        >
-                                          <option value="enemy">Enemy Side</option>
-                                          <option value="player">Party Side</option>
-                                        </Select>
-                                      </HStack>
+                                      {renderFighterArmySelector(fighter)}
                                     </VStack>
                                     <HStack spacing={2} onClick={(e) => e.stopPropagation()}>
                                       <Badge colorScheme="blue">Ready</Badge>
@@ -25974,7 +28336,7 @@ function CombatPage({ characters = [] }) {
                         </Box>
 
                         <Box borderWidth="1px" borderRadius="lg" p={4} bg="red.50">
-                          <Heading size="sm" mb={2}>🗡️ Enemy Forces</Heading>
+                          <Heading size="sm" mb={2}>🗡️ Combatants / Forces</Heading>
                           <HStack mb={3} spacing={2} flexWrap="wrap">
                             <Button
                               colorScheme="orange"
@@ -25994,7 +28356,7 @@ function CombatPage({ characters = [] }) {
                                 onOpen();
                               }}
                             >
-                              Add Enemy
+                              Add Creature / Combatant
                             </Button>
                           </HStack>
                           <VStack align="stretch" spacing={2}>
@@ -26017,20 +28379,7 @@ function CombatPage({ characters = [] }) {
                                       <HStack justify="space-between" align="start">
                                         <VStack align="start" spacing={1} flex="1">
                                           <Text fontSize="sm" fontWeight="semibold">{fighter.name}</Text>
-                                          <HStack spacing={2} align="center" onClick={(e) => e.stopPropagation()}>
-                                            <Text fontSize="xs" color="gray.600" fontWeight="bold">
-                                              Battle Side
-                                            </Text>
-                                            <Select
-                                              size="xs"
-                                              width="auto"
-                                              value={fighter.type}
-                                              onChange={(e) => changeFighterSide(fighter.id, e.target.value)}
-                                            >
-                                              <option value="enemy">Enemy Side</option>
-                                              <option value="player">Party Side</option>
-                                            </Select>
-                                          </HStack>
+                                          {renderFighterArmySelector(fighter)}
                                         </VStack>
                                         <HStack spacing={2} onClick={(e) => e.stopPropagation()}>
                                           <Badge colorScheme="red">Ready</Badge>
@@ -26048,7 +28397,60 @@ function CombatPage({ characters = [] }) {
                                   );
                                 })
                             ) : (
-                              <Text fontSize="sm" color="gray.500">No enemies added yet.</Text>
+                              <Text fontSize="sm" color="gray.500">No combatants added yet.</Text>
+                            )}
+                          </VStack>
+                        </Box>
+
+                        <Box borderWidth="1px" borderRadius="lg" p={4} bg="purple.50">
+                          <Heading size="sm" mb={2}>🎭 Scene Actors</Heading>
+                          <VStack align="stretch" spacing={2}>
+                            {fighters.filter((fighter) => fighter.type === "npc").length > 0 ? (
+                              fighters
+                                .filter((fighter) => fighter.type === "npc")
+                                .map((fighter) => {
+                                  const isPreviewSelected = rosterPreviewFighter?.id === fighter.id;
+                                  return (
+                                    <Box
+                                      key={fighter.id}
+                                      borderWidth="1px"
+                                      borderColor={isPreviewSelected ? "purple.400" : "purple.200"}
+                                      borderRadius="md"
+                                      p={2}
+                                      bg={isPreviewSelected ? "purple.100" : "white"}
+                                      cursor="pointer"
+                                      onClick={() => setSelectedRosterPreviewId(fighter.id)}
+                                    >
+                                      <HStack justify="space-between" align="start">
+                                        <VStack align="start" spacing={1} flex="1">
+                                          <Text fontSize="sm" fontWeight="semibold">{fighter.name}</Text>
+                                          <HStack spacing={2} flexWrap="wrap">
+                                            <Badge colorScheme="purple">{getSceneRoleLabel(fighter)}</Badge>
+                                            {fighter.factionId && <Badge colorScheme="gray">{fighter.factionId}</Badge>}
+                                            {fighter.disposition && <Badge colorScheme="blue">{fighter.disposition}</Badge>}
+                                            {fighter.aggression && <Badge colorScheme="orange">{fighter.aggression}</Badge>}
+                                            {fighter.nonCombatant && <Badge colorScheme="green">Noncombatant</Badge>}
+                                            {fighter.canDialogue && <Badge colorScheme="cyan">Dialogue</Badge>}
+                                          </HStack>
+                                          {renderFighterArmySelector(fighter)}
+                                        </VStack>
+                                        <HStack spacing={2} onClick={(e) => e.stopPropagation()}>
+                                          <Badge colorScheme="purple">Scene</Badge>
+                                          <Button
+                                            size="xs"
+                                            colorScheme="red"
+                                            variant="ghost"
+                                            onClick={() => removeFighter(fighter.id)}
+                                          >
+                                            X
+                                          </Button>
+                                        </HStack>
+                                      </HStack>
+                                    </Box>
+                                  );
+                                })
+                            ) : (
+                              <Text fontSize="sm" color="gray.500">No scene actors added yet.</Text>
                             )}
                           </VStack>
                         </Box>
@@ -26080,8 +28482,8 @@ function CombatPage({ characters = [] }) {
                             <Box>
                               <Text fontWeight="bold" fontSize="lg">{rosterPreviewFighter.name}</Text>
                               <HStack mt={2} spacing={2} flexWrap="wrap">
-                                <Badge colorScheme={rosterPreviewFighter.type === "enemy" ? "red" : "blue"}>
-                                  {rosterPreviewFighter.type === "enemy" ? "Enemy Side" : "Party Side"}
+                                <Badge colorScheme={rosterPreviewFighter.type === "enemy" ? "red" : rosterPreviewFighter.type === "npc" ? "purple" : "blue"}>
+                                  {rosterPreviewFighter.type === "npc" ? getSceneRoleLabel(rosterPreviewFighter) : rosterPreviewFighter.type === "enemy" ? "Enemy Side" : "Party Side"}
                                 </Badge>
                                 {(rosterPreviewFighter.alignment || rosterPreviewFighter.alignmentName) && (
                                   <Badge colorScheme="gray">
@@ -26089,6 +28491,7 @@ function CombatPage({ characters = [] }) {
                                   </Badge>
                                 )}
                               </HStack>
+                              {renderFighterArmySelector(rosterPreviewFighter, "sm")}
                             </Box>
 
                             <Grid templateColumns="repeat(2, minmax(0, 1fr))" gap={3}>
@@ -26234,11 +28637,11 @@ function CombatPage({ characters = [] }) {
         </ModalContent>
       </Modal>
 
-      {/* Add Enemy Modal */}
+      {/* Add Creature / Combatant Modal */}
       <Modal isOpen={isOpen} onClose={onClose} size="xl" scrollBehavior="inside">
         <ModalOverlay />
         <ModalContent maxH="90vh">
-          <ModalHeader>Add Enemy to Combat</ModalHeader>
+          <ModalHeader>Add Creature / Combatant</ModalHeader>
           <ModalCloseButton />
           <ModalBody pb={6} overflowY="auto">
             <FormControl mb={4}>
@@ -26276,6 +28679,20 @@ function CombatPage({ characters = [] }) {
                 {sortedCreatures.map((creature) => (
                   <option key={creature.id} value={creature.id}>
                     {creature.name} ({formatCreatureCategory(creature.category)}){creature.playable ? " [PLAYABLE]" : ""}
+                  </option>
+                ))}
+              </Select>
+            </FormControl>
+
+            <FormControl mb={4}>
+              <FormLabel>Add To Army / Faction:</FormLabel>
+              <Select
+                value={selectedArmyId}
+                onChange={(e) => setSelectedArmyId(e.target.value)}
+              >
+                {encounterArmies.map((army) => (
+                  <option key={army.id} value={army.id}>
+                    {army.name}
                   </option>
                 ))}
               </Select>
@@ -26439,17 +28856,18 @@ function CombatPage({ characters = [] }) {
                   if (creature) {
                     if (enemyCount === 1) {
                       // Single enemy - use original function
-                      addCreature(creature, null, enemyLevel, selectedArmor, selectedWeapon, selectedAmmoCount);
+                      addCreature(creature, null, enemyLevel, selectedArmor, selectedWeapon, selectedAmmoCount, null, selectedArmyId);
                       setCustomEnemyName("");
                       setSelectedCreature("");
                       setEnemyLevel(1); // Reset level
                       setSelectedArmor(""); // Reset armor
                       setSelectedWeapon(""); // Reset weapon
                       setSelectedAmmoCount(0); // Reset ammo
+                      setSelectedArmyId("enemy"); // Reset army
                       onClose();
                     } else {
                       // Multiple enemies - use new function
-                      addMultipleEnemies(creature, enemyCount, enemyLevel, selectedArmor, selectedWeapon, selectedAmmoCount);
+                      addMultipleEnemies(creature, enemyCount, enemyLevel, selectedArmor, selectedWeapon, selectedAmmoCount, selectedArmyId);
                     }
                   }
                 }}
@@ -26708,8 +29126,8 @@ function CombatPage({ characters = [] }) {
               </Box>
 
               <HStack spacing={3} flexWrap="wrap">
-                <Badge colorScheme={preBattleDeployment.currentSide === "player" ? "blue" : "gray"} px={3} py={1}>
-                  Active Side: {preBattleDeployment.currentSide === "player" ? "Players" : "Enemies"}
+                <Badge colorScheme={preBattleDeployment.currentSide === "player" ? "blue" : preBattleDeployment.currentSide === "npc" ? "purple" : "gray"} px={3} py={1}>
+                  Active Side: {getDeploymentSideLabel(preBattleDeployment.currentSide)}
                 </Badge>
                 <Badge colorScheme={preBattleDeployment.lockedSides?.player ? "green" : "yellow"} px={3} py={1}>
                   Players: {preBattleDeployment.lockedSides?.player ? "Locked" : "Open"}
@@ -26717,6 +29135,11 @@ function CombatPage({ characters = [] }) {
                 <Badge colorScheme={preBattleDeployment.lockedSides?.enemy ? "green" : "yellow"} px={3} py={1}>
                   Enemies: {preBattleDeployment.lockedSides?.enemy ? "Locked" : "Open"}
                 </Badge>
+                {fighters.some((fighter) => fighter.type === "npc") && (
+                  <Badge colorScheme={preBattleDeployment.lockedSides?.npc ? "green" : "purple"} px={3} py={1}>
+                    Scene Actors: {preBattleDeployment.lockedSides?.npc ? "Locked" : "Optional"}
+                  </Badge>
+                )}
                 {isDeploymentReady && (
                   <Badge colorScheme="green" px={3} py={1}>
                     All Units Placed
@@ -26724,13 +29147,15 @@ function CombatPage({ characters = [] }) {
                 )}
               </HStack>
 
-              <Grid templateColumns={{ base: "1fr", xl: "1fr 1fr" }} gap={4}>
+              <Grid templateColumns={{ base: "1fr", xl: "repeat(3, minmax(0, 1fr))" }} gap={4}>
                 {DEPLOYMENT_SIDE_ORDER.map((side) => {
                 const sideFighters = fighters.filter((fighter) => fighter.type === side);
                 const selectedIds = preBattleDeployment.selectionBySide?.[side] || [];
                 const sidePositions = preBattleDeployment.positionsBySide?.[side] || {};
                 const placementCount = sideFighters.filter((fighter) => sidePositions[fighter.id]).length;
                 const canEditSide = preBattleDeployment.currentSide === side && !preBattleDeployment.lockedSides?.[side];
+                const selectedFighterId = getSelectedDeploymentFighterId(side);
+                const selectedFighter = sideFighters.find((fighter) => fighter.id === selectedFighterId);
                 const selectedCount = selectedIds.length;
                 const activeFormation = selectedCount <= 1
                   ? DEPLOYMENT_FORMATIONS.SINGLE
@@ -26740,7 +29165,7 @@ function CombatPage({ characters = [] }) {
                   <Box key={side} borderWidth="1px" borderRadius="lg" p={4} bg={canEditSide ? "blue.50" : "gray.50"}>
                     <HStack justify="space-between" mb={3}>
                       <Heading size="sm">
-                        {side === "player" ? "🛡️ Player Side" : "🗡️ Enemy Side"}
+                        {getDeploymentSideHeading(side)}
                       </Heading>
                       <Badge colorScheme={preBattleDeployment.lockedSides?.[side] ? "green" : canEditSide ? "blue" : "gray"}>
                         {placementCount}/{sideFighters.length} placed
@@ -26756,7 +29181,7 @@ function CombatPage({ characters = [] }) {
                           onClick={() => setPreBattleDeployment((prev) => ({ ...prev, currentSide: side }))}
                           isDisabled={preBattleDeployment.lockedSides?.[side]}
                         >
-                          Take Turn
+                          Select Group
                         </Button>
                       </WrapItem>
                       <WrapItem>
@@ -26781,12 +29206,9 @@ function CombatPage({ characters = [] }) {
                         <Button
                           size="sm"
                           variant="outline"
-                          onClick={() => {
-                            setShowDeploymentModal(false);
-                            setManualDeploymentOpen(true);
-                          }}
+                          onClick={() => startManualDeploymentForSide(side)}
                         >
-                          Manual Place on Map
+                          Manual Place on Map{selectedFighter ? `: ${selectedFighter.name}` : ""}
                         </Button>
                       </WrapItem>
                       <WrapItem>
@@ -26865,6 +29287,7 @@ function CombatPage({ characters = [] }) {
                     <VStack align="stretch" spacing={2}>
                       {sideFighters.map((fighter) => {
                         const isSelected = selectedIds.includes(fighter.id);
+                        const isActiveSelection = selectedFighterId === fighter.id;
                         const isPlaced = Boolean(sidePositions[fighter.id]);
 
                         return (
@@ -26874,8 +29297,8 @@ function CombatPage({ characters = [] }) {
                             py={2}
                             borderWidth="1px"
                             borderRadius="md"
-                            bg={isSelected ? "blue.100" : "white"}
-                            borderColor={isSelected ? "blue.400" : isPlaced ? "green.300" : "gray.200"}
+                            bg={isActiveSelection ? "blue.100" : "white"}
+                            borderColor={isActiveSelection ? "blue.500" : isPlaced ? "green.300" : "gray.200"}
                             cursor={canEditSide ? "pointer" : "default"}
                             onMouseDown={() => handleDeploymentPickerMouseDown(side, fighter.id)}
                             onMouseEnter={() => handleDeploymentPickerMouseEnter(side, fighter.id)}
@@ -26884,10 +29307,15 @@ function CombatPage({ characters = [] }) {
                               <HStack justify="space-between">
                                 <Text fontSize="sm" fontWeight="medium">{fighter.name}</Text>
                                 <HStack spacing={2}>
-                                  {isSelected && <Badge colorScheme="blue">Selected</Badge>}
+                                  {isActiveSelection && <Badge colorScheme="blue">Selected</Badge>}
                                   {isPlaced && <Badge colorScheme="green">Placed</Badge>}
                                 </HStack>
                               </HStack>
+                              {isPlaced && (
+                                <Text fontSize="xs" color="green.700">
+                                  ({sidePositions[fighter.id].x}, {sidePositions[fighter.id].y})
+                                </Text>
+                              )}
                               <HStack spacing={2} align="center" onMouseDown={(e) => e.stopPropagation()}>
                                 <Text fontSize="xs" color="gray.600" fontWeight="bold">
                                   Battle Side
@@ -26898,6 +29326,7 @@ function CombatPage({ characters = [] }) {
                                   value={fighter.type}
                                   onChange={(e) => changeFighterSide(fighter.id, e.target.value)}
                                 >
+                                  {fighter.type === "npc" && <option value="npc">Scene Actor</option>}
                                   <option value="enemy">Enemy Side</option>
                                   <option value="player">Party Side</option>
                                 </Select>
@@ -26961,8 +29390,21 @@ function CombatPage({ characters = [] }) {
           </HStack>
 
           <Text fontSize="sm" mb={3}>
-            Select a unit, then click a hex on the map.
+            Click a fighter card in deployment, then click a valid map hex.
           </Text>
+
+          {(() => {
+            const side = preBattleDeployment.currentSide || "player";
+            const selectedId = getSelectedDeploymentFighterId(side);
+            const selected = fighters.find((fighter) => fighter.id === selectedId);
+            return (
+              <Box mb={3} p={2} borderWidth="1px" borderRadius="md" bg="blue.50">
+                <Text fontSize="xs" color="gray.600" fontWeight="bold">Selected Fighter</Text>
+                <Text fontSize="sm">{selected?.name || "None selected"}</Text>
+                <Text fontSize="xs" color="gray.600">{getDeploymentSideLabel(side)}</Text>
+              </Box>
+            );
+          })()}
 
           <Button
             size="sm"

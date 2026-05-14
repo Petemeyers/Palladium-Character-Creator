@@ -22,6 +22,7 @@ import {
   scavengeCorpse,
 } from "../scavengingSystem";
 import { findFoodItem, consumeItem } from "../consumptionSystem";
+import { canTargetForAction } from "../factionDisposition.js";
 
 /**
  * Determine if a creature should be treated as a flying creature for AI purposes.
@@ -71,6 +72,7 @@ export function runFlyingTurn(flier, ctx) {
     setPositions,
     calculateDistanceFn,
     addLog,
+    sceneContext = { sceneType: "combat", relations: {} },
     // performDiveAttack, // currently unused here, but left in ctx for future expansion
   } = ctx;
 
@@ -248,7 +250,7 @@ export function runFlyingTurn(flier, ctx) {
   if (airborne && hasActions && Array.isArray(fighters) && positions && typeof calculateDistanceFn === "function") {
     // Find nearest target to circle around
     const targets = fighters.filter(
-      (f) => f.id !== flier.id && f.type === "player" && (f.currentHP ?? 0) > 0
+      (f) => canTargetForAction(flier, f, "attack", sceneContext) && (f.currentHP ?? 0) > 0
     );
 
     if (targets.length > 0 && positions[flier.id]) {
@@ -317,6 +319,7 @@ export function runFlyingTurn(flier, ctx) {
             const allFighters = ctx.fighters || [];
             const hasPrey = allFighters.some((f) => {
               if (!f || f.id === flier.id) return false;
+              if (!canTargetForAction(flier, f, "attack", sceneContext)) return false;
               const name = (f.name || "").toLowerCase();
               const size = (f.sizeCategory || f.size || "").toLowerCase();
               const isSmallBody = ["tiny", "small"].includes(size);

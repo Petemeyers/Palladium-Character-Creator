@@ -72,6 +72,10 @@ import {
   getRoutingProfile,
   hasSatisfiedRoutingExit,
 } from "../routingSystem.js";
+import {
+  canTargetForAction,
+  isAllyOf,
+} from "../factionDisposition.js";
 
 // -----------------------------------------------------------------------------
 // Weakness Memory Persistence (across encounters)
@@ -1062,13 +1066,14 @@ function getFullSpeedPerAction(creature, actionsPerMelee) {
  */
 function getFlightFocusPoint(flier, context) {
   const { positions, fighters, calculateDistance } = context;
+  const sceneContext = context.sceneContext || { sceneType: "combat", relations: {} };
 
   if (!positions[flier.id]) return null;
 
   // Find primary target (closest enemy)
   const enemies = fighters.filter(
     (f) =>
-      f.type !== flier.type &&
+      canTargetForAction(flier, f, "attack", sceneContext) &&
       f.id !== flier.id &&
       f.currentHP > -21 &&
       positions[f.id],
@@ -1182,6 +1187,7 @@ function handleFlyingIdleOrHarassAction(flier, context) {
     fighters,
     GRID_CONFIG,
   } = context;
+  const sceneContext = context.sceneContext || { sceneType: "combat", relations: {} };
 
   // Low-noise AI debugging (opt-in).
   // Usage: localStorage.debugCombatAI = "1"
@@ -1207,7 +1213,7 @@ function handleFlyingIdleOrHarassAction(flier, context) {
   const groundPrey = fighters.filter(
     (f) =>
       !f.isDead &&
-      f.type === "player" &&
+      canTargetForAction(flier, f, "attack", sceneContext) &&
       !isFlying(f) && // only stuff on the ground counts as hawk prey
       f.currentHP > 0 &&
       f.currentHP > -21,
@@ -1385,6 +1391,7 @@ function countArmedThreats(
   positions,
   calculateDistance,
   canFighterAct,
+  sceneContext = { sceneType: "combat", relations: {} },
 ) {
   if (!creature || !positions[creature.id]) return 0;
 
@@ -1393,7 +1400,12 @@ function countArmedThreats(
 
   allFighters.forEach((fighter) => {
     // Only count enemies (opposite type)
-    if (fighter.type === creature.type || fighter.id === creature.id) return;
+    if (
+      fighter.id === creature.id ||
+      !canTargetForAction(creature, fighter, "attack", sceneContext)
+    ) {
+      return;
+    }
     if (!canFighterAct(fighter)) return;
 
     // Check if armed
@@ -1440,6 +1452,7 @@ function attemptTacticalWithdraw({
   scheduleEndTurn,
   canFighterAct,
   GRID_CONFIG,
+  sceneContext = { sceneType: "combat", relations: {} },
 }) {
   try {
     const currentPos = positions[enemy.id];
@@ -1456,7 +1469,7 @@ function attemptTacticalWithdraw({
     // Get active player fighters as threats
     const playerFighters = fighters.filter(
       (f) =>
-        f.type === "player" &&
+        canTargetForAction(enemy, f, "attack", sceneContext) &&
         canFighterAct(f) &&
         f.currentHP > 0 &&
         f.currentHP > -21,
@@ -1622,6 +1635,7 @@ export function runEnemyTurnAI(enemy, context) {
     combatEndCheckRef,
     // Other
     getTargetsInLine,
+    sceneContext = { sceneType: "combat", relations: {} },
   } = context;
 
   const combatOverRef = context.combatOverRef;
@@ -1629,6 +1643,9 @@ export function runEnemyTurnAI(enemy, context) {
   const combatStateRef = context.combatStateRef;
   const commitEnemyTurnAction = context.commitEnemyTurnAction;
   const isEnemyTurnStillCurrent = context.isEnemyTurnStillCurrent;
+  const isHostileTarget = (target, actionKind = "attack") =>
+    canTargetForAction(enemy, target, actionKind, sceneContext);
+  const isAllyTarget = (target) => isAllyOf(enemy, target, sceneContext);
 
   /** One committed action per runEnemyTurnAI invocation (prevents move + attack fall-through). */
   let actionCommitted = false;
@@ -1694,7 +1711,7 @@ export function runEnemyTurnAI(enemy, context) {
   // ✅ Define allPlayers early so ROUTED logic and rest of AI can use it
   const allPlayers = fighters.filter(
     (f) =>
-      f.type === "player" &&
+      isHostileTarget(f) &&
       canFighterAct(f) &&
       f.currentHP > 0 && // conscious only
       f.currentHP > -21, // not dead
@@ -2054,6 +2071,7 @@ export function runEnemyTurnAI(enemy, context) {
         getEnemyAwarenessState: null, // Not used in runFlyingTurn currently
         setEnemyAwarenessState: null, // Not used in runFlyingTurn currently
         calculateDistanceFn: calculateDistance,
+        sceneContext,
         importMetaEnv: import.meta.env,
       });
 
@@ -2205,7 +2223,7 @@ export function runEnemyTurnAI(enemy, context) {
       // Find injured allies (same type as enemy)
       const allies = fighters.filter(
         (f) =>
-          f.type === enemy.type &&
+          isAllyTarget(f) &&
           f.id !== enemy.id &&
           f.currentHP > -21 &&
           (f.currentHP < f.maxHP * 0.5 || f.currentHP <= 0), // Injured or dying
@@ -2708,6 +2726,7 @@ export function runEnemyTurnAI(enemy, context) {
         combatTerrain?.terrain === "wilderness"
           ? "wilderness"
           : combatTerrain?.terrain,
+      sceneContext,
     };
     const utilityWorld = buildAiWorldState({
       actor: enemy,
@@ -2792,7 +2811,7 @@ export function runEnemyTurnAI(enemy, context) {
           const alliedIds = fighters
             .filter(
               (fighter) =>
-                fighter.type === enemy.type && fighter.id !== enemy.id,
+                isAllyTarget(fighter) && fighter.id !== enemy.id,
             )
             .map((fighter) => fighter.id);
           const focusTargetId =
@@ -2886,10 +2905,10 @@ export function runEnemyTurnAI(enemy, context) {
         // Check if this is a prey animal - if so, use idle/forage behavior instead of just defending
         if (isPreyAnimal(enemy)) {
           const playerEnemies = fighters.filter(
-            (f) => f.type === "player" && canFighterAct(f),
+            (f) => isHostileTarget(f) && canFighterAct(f),
           );
           const enemyAllies = fighters.filter(
-            (f) => f.type === "enemy" && f.id !== enemy.id,
+            (f) => isAllyTarget(f) && f.id !== enemy.id,
           );
           runPreyIdleTurn({
             fighter: enemy,
@@ -3041,7 +3060,7 @@ export function runEnemyTurnAI(enemy, context) {
         const result = resolveAiAction(utilityAction, enemy, utilityWorld);
         const alliedIds = fighters
           .filter(
-            (fighter) => fighter.type === enemy.type && fighter.id !== enemy.id,
+            (fighter) => isAllyTarget(fighter) && fighter.id !== enemy.id,
           )
           .map((fighter) => fighter.id);
         const focusTargetId =
@@ -3441,7 +3460,7 @@ export function runEnemyTurnAI(enemy, context) {
           // Find enemies nearby
           const nearbyEnemies = fighters
             .filter(
-              (f) => f.type === "player" && canFighterAct(f) && f.currentHP > 0,
+              (f) => isHostileTarget(f) && canFighterAct(f) && f.currentHP > 0,
             )
             .map((f) => ({
               fighter: f,
@@ -3679,6 +3698,7 @@ export function runEnemyTurnAI(enemy, context) {
           positions,
           calculateDistance,
           canFighterAct,
+          sceneContext,
         );
         const shouldFlee =
           hpPercent < fleeAtHpPercent ||
@@ -3884,10 +3904,10 @@ export function runEnemyTurnAI(enemy, context) {
               // If this is a prey animal, use prey idle behavior instead of withdraw
               if (isPreyAnimal(enemy)) {
                 const playerEnemies = fighters.filter(
-                  (f) => f.type === "player" && canFighterAct(f),
+                  (f) => isHostileTarget(f) && canFighterAct(f),
                 );
                 const enemyAllies = fighters.filter(
-                  (f) => f.type === "enemy" && f.id !== enemy.id,
+                  (f) => isAllyTarget(f) && f.id !== enemy.id,
                 );
                 runPreyIdleTurn({
                   fighter: enemy,
@@ -3948,6 +3968,7 @@ export function runEnemyTurnAI(enemy, context) {
                 scheduleEndTurn,
                 canFighterAct,
                 GRID_CONFIG,
+                sceneContext,
               });
 
               // If withdrawal failed, end turn (withdraw function already handled logging)
@@ -5662,7 +5683,7 @@ export function runEnemyTurnAI(enemy, context) {
         let closingIntoOpponent = false;
         let attackOfOpportunityAttacker = null;
         if (occupant) {
-          const occupantIsAlly = occupant.type === enemy.type;
+          const occupantIsAlly = isAllyTarget(occupant);
 
           if (occupantIsAlly) {
             addLog(
@@ -5988,7 +6009,7 @@ export function runEnemyTurnAI(enemy, context) {
     if (target && target.currentHP <= 0 && target.currentHP > -21) {
       // Check if there are any conscious players remaining
       const consciousPlayers = fighters.filter(
-        (f) => f.type === "player" && canFighterAct(f) && f.currentHP > 0,
+        (f) => isHostileTarget(f) && canFighterAct(f) && f.currentHP > 0,
       );
       const enemyAlignment =
         enemy.alignment || enemy.attributes?.alignment || "";

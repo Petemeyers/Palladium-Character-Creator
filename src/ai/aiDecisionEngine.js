@@ -7,6 +7,10 @@ import { classifySpellForAi } from "./aiSpellActions";
 import { scoreThreatTarget } from "./aiThreatAssessment";
 import { getActiveAiUnlocks, hasAiUnlock } from "./aiUnlocks";
 import { scoreAiAction } from "./aiScoring";
+import {
+  canTargetForAction,
+  isAllyOf,
+} from "../utils/factionDisposition.js";
 
 const idOf = (x) => x?.id ?? x?._id ?? x?.name;
 
@@ -74,31 +78,31 @@ function distanceBetween(a, b, world) {
   return Math.sqrt(dx * dx + dy * dy + dz * dz);
 }
 
-function getTeam(actor) {
-  return actor?.team ?? actor?.faction ?? actor?.side ?? actor?.type;
-}
-
 function isAlive(fighter) {
   if (!fighter) return false;
   if (fighter.isDead || fighter.dead) return false;
   return Number(fighter.currentHP ?? fighter.hp ?? fighter.HP ?? 1) > 0;
 }
 
+function getSceneContext(world) {
+  return world?.sceneContext || { sceneType: "combat", relations: world?.relations || {} };
+}
+
 function getEnemies(actor, world) {
-  const actorTeam = getTeam(actor);
+  const sceneContext = getSceneContext(world);
   return (world?.fighters ?? []).filter((f) => {
     if (idOf(f) === idOf(actor)) return false;
     if (!isAlive(f)) return false;
-    return getTeam(f) !== actorTeam;
+    return canTargetForAction(actor, f, "attack", sceneContext);
   });
 }
 
 function getAllies(actor, world) {
-  const actorTeam = getTeam(actor);
+  const sceneContext = getSceneContext(world);
   return (world?.fighters ?? []).filter((f) => {
     if (idOf(f) === idOf(actor)) return false;
     if (!isAlive(f)) return false;
-    return getTeam(f) === actorTeam;
+    return isAllyOf(actor, f, sceneContext);
   });
 }
 
