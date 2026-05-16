@@ -468,6 +468,31 @@ export function hasDeathBlow(attacker) {
   return false;
 }
 
+function hasEquippedArmor(fighter) {
+  if (!fighter) return false;
+  const armorName = String(
+    fighter.equippedArmor?.name ||
+      fighter.equipped?.chest?.name ||
+      fighter.armor?.name ||
+      fighter.wornArmor?.name ||
+      fighter.armorName ||
+      ""
+  ).toLowerCase();
+  const armorSDC = Number(
+    fighter.equippedArmor?.currentSDC ??
+      fighter.equippedArmor?.sdc ??
+      fighter.equipped?.chest?.currentSDC ??
+      fighter.equipped?.chest?.sdc ??
+      0
+  );
+  const armorAR = Number(fighter.AR ?? fighter.ar ?? fighter.armorRating ?? 0);
+  return (
+    armorSDC > 0 ||
+    armorAR > 10 ||
+    Boolean(armorName && armorName !== "none" && armorName !== "unarmored")
+  );
+}
+
 /**
  * Ground strike (dagger or unarmed attack while grappling)
  * Improved version with safer crit ranges and armor weak-point logic
@@ -517,16 +542,13 @@ export function groundStrike(
     };
   }
 
-  // Only short weapons (or unarmed) in a grapple
-  if (weapon) {
-    const weaponLength = weapon.length || weapon.range || 0;
-    if (weaponLength > 2) {
-      return {
-        success: false,
-        hit: false,
-        reason: `${weapon.name} is too long to use in a grapple! Use a dagger or unarmed attack.`,
-      };
-    }
+  // Only short weapons, natural weapons, or unarmed strikes work in a grapple.
+  if (weapon && !isWeaponGrappleSuitable(weapon)) {
+    return {
+      success: false,
+      hit: false,
+      reason: `${weapon.name} is too long to use in a grapple! Use a dagger or unarmed attack.`,
+    };
   }
 
   const attackerPP = attacker.attributes?.PP || attacker.PP || 10;
@@ -535,12 +557,24 @@ export function groundStrike(
   const strikeBonus =
     attacker.bonuses?.strike || attacker.handToHand?.strikeBonus || 0;
 
-  // Dagger is slightly better in a grapple, but not insane
-  const daggerBonus = weapon && weapon.type === "dagger" ? 1 : 0;
+  // Dagger/knife is slightly better in a grapple, but not insane.
+  const weaponName = String(weapon?.name || weapon?.type || "").toLowerCase();
+  const isCloseBlade =
+    weaponName.includes("dagger") ||
+    weaponName.includes("knife") ||
+    weaponName.includes("short blade");
+  const daggerBonus = isCloseBlade ? 1 : 0;
   const rollFn = rollDice || (() => Math.floor(Math.random() * 20) + 1);
   const naturalRoll = rollFn();
 
   const attackRoll = naturalRoll + attackerPPBonus + strikeBonus + daggerBonus;
+  const targetAR = Number(defender.AR ?? defender.ar ?? defender.armorRating ?? 12) || 12;
+  const hitMargin = attackRoll - targetAR;
+  const defenderHasArmor = hasEquippedArmor(defender);
+  const attackerHasControl =
+    attackerGrapple.hasGrappleAdvantage === true ||
+    attackerGrapple.state === GRAPPLE_STATES.GROUND ||
+    defenderGrapple.state === GRAPPLE_STATES.GRAPPLED;
 
   // Grappling is tiring, especially in armor
   drainStamina(attacker, STAMINA_COSTS.GRAPPLING, 1);
@@ -548,7 +582,7 @@ export function groundStrike(
   drainStamina(defender, STAMINA_COSTS.GRAPPLING, 0.5);
 
   // Dagger crit range: 19–20, otherwise 20
-  const daggerCritRange = weapon && weapon.type === "dagger" ? 19 : 20;
+  const daggerCritRange = isCloseBlade ? 19 : 20;
   const isCritical = naturalRoll >= daggerCritRange;
   const attackerHasDeathBlow = hasDeathBlow(attacker);
 
@@ -571,21 +605,33 @@ export function groundStrike(
     };
   }
 
-  // 2) Critical hit = "weak point in armor" strike
+  const canExploitWeakSpot =
+    defenderHasArmor &&
+    attackerHasControl &&
+    isCloseBlade &&
+    (naturalRoll === 20 || hitMargin >= 8);
+
+  // 2) Critical/high-margin close blade = "weak point in armor" strike
   if (isCritical) {
     const damageRoll = rollDamage(baseDamageFormula);
     const totalDamage = damageRoll * 2 + psBonus;
+    const criticalMessage = canExploitWeakSpot
+      ? `🗡️ ${attacker.name} slips inside the armor with ${weapon?.name || "a dagger"} for ${totalDamage} damage!`
+      : `${attacker.name} lands a close-quarters critical strike on ${defender.name} for ${totalDamage} damage!`;
 
     return {
       success: true,
       hit: true,
       critical: true,
       deathBlow: false,
-      message: `💥 CRITICAL STRIKE! ${attacker.name} drives a blow into a weak point in ${defender.name}'s armor for ${totalDamage} damage!`,
+      message: criticalMessage,
       damage: totalDamage,
       attackRoll,
       naturalRoll,
-      ignoresArmor: true, // this is your armor-gap mechanic
+      weaponName: weapon?.name || "unarmed strike",
+      ignoresArmor: !defenderHasArmor || canExploitWeakSpot,
+      weakSpot: canExploitWeakSpot,
+      armorBlockedWeakSpot: defenderHasArmor && !canExploitWeakSpot,
     };
   }
 
@@ -604,7 +650,10 @@ export function groundStrike(
       damage: totalDamage,
       attackRoll,
       naturalRoll,
-      ignoresArmor: false, // armor still applies
+      weaponName: weapon?.name || "unarmed strike",
+      ignoresArmor: canExploitWeakSpot,
+      weakSpot: canExploitWeakSpot,
+      armorBlockedWeakSpot: defenderHasArmor && isCloseBlade && attackerHasControl && !canExploitWeakSpot,
     };
   }
 
@@ -790,12 +839,95 @@ export function canUseWeaponInGrapple(character, weapon) {
   }
 
   if (!grappleStatus.canUseLongWeapons) {
-    // Only short weapons (daggers, knives) can be used
-    const weaponLength = weapon.length || weapon.range || 0;
-    return weaponLength <= 2; // 2 feet or less
+    return isWeaponGrappleSuitable(weapon);
   }
 
   return true;
+}
+
+export function isWeaponGrappleSuitable(weapon) {
+  if (!weapon) return true;
+
+  const name = String(weapon.name || weapon.type || weapon.weaponType || "").toLowerCase();
+  const type = String(weapon.type || weapon.weaponType || weapon.category || "").toLowerCase();
+  const rangeType = String(weapon.rangeType || weapon.attackType || "").toUpperCase();
+  const reachCategory = String(weapon.reachCategory || "").toUpperCase();
+  const weaponLength = Number(weapon.length ?? weapon.reachFeet ?? weapon.reach ?? weapon.range ?? 0);
+
+  if (weapon.isNaturalAttack || weapon.isFallbackUnarmed || name.includes("unarmed")) return true;
+  if (
+    name.includes("knife") ||
+    name.includes("dagger") ||
+    name.includes("short blade") ||
+    name.includes("claw") ||
+    type.includes("natural")
+  ) {
+    return true;
+  }
+
+  if (
+    weapon.requiresTwoHands ||
+    weapon.twoHanded ||
+    weapon.rangeType === "RANGED" ||
+    rangeType === "RANGED" ||
+    reachCategory === "LONG" ||
+    name.includes("bow") ||
+    name.includes("crossbow") ||
+    name.includes("longbow") ||
+    name.includes("lance") ||
+    name.includes("pike") ||
+    name.includes("polearm") ||
+    (name.includes("spear") && (weapon.requiresTwoHands || weapon.twoHanded || weaponLength > 6)) ||
+    name.includes("two-handed") ||
+    name.includes("two handed")
+  ) {
+    return Boolean(weapon.grappleCapable || weapon.grappleSuitable);
+  }
+
+  return !Number.isFinite(weaponLength) || weaponLength <= 2;
+}
+
+export function getPreferredEngagementRange(fighter, target) {
+  const weapons = [
+    fighter?.equippedWeapons?.primary,
+    fighter?.equippedWeapons?.secondary,
+    ...(Array.isArray(fighter?.equippedWeapons) ? fighter.equippedWeapons : []),
+    fighter?.equippedWeapon,
+    fighter?.weapon,
+  ].filter(Boolean);
+  const primary = weapons.find((w) => String(w?.name || "").toLowerCase() !== "unarmed") || weapons[0] || null;
+  const name = String(primary?.name || primary?.type || "").toLowerCase();
+  const rangeType = String(primary?.rangeType || primary?.attackType || "").toUpperCase();
+  const reachCategory = String(primary?.reachCategory || "").toUpperCase();
+  const reachFeet = Number(primary?.reachFeet ?? primary?.reach ?? primary?.range ?? 5);
+  const targetArmored = hasEquippedArmor(target);
+  const fighterArmored = hasEquippedArmor(fighter);
+  const fighterLooksLikeGrappler =
+    fighter?.grappleSpecialist ||
+    fighter?.grappler ||
+    String(fighter?.combatStyle || fighter?.role || "").toLowerCase().includes("grappl");
+
+  if (rangeType === "RANGED" || name.includes("bow") || name.includes("crossbow")) {
+    return { minHexes: 3, maxHexes: 8, reason: "ranged" };
+  }
+
+  if (name.includes("pike") || name.includes("polearm") || name.includes("lance") || reachCategory === "LONG") {
+    return { minHexes: 2, maxHexes: 2, reason: "reach" };
+  }
+
+  if (name.includes("spear") || reachFeet >= 10) {
+    return { minHexes: 1, maxHexes: 2, reason: "long-melee" };
+  }
+
+  if (fighterLooksLikeGrappler && targetArmored) {
+    return { minHexes: 0, maxHexes: 1, reason: "grapple-anti-armor" };
+  }
+
+  if (!fighterArmored && targetArmored) {
+    return { minHexes: 1, maxHexes: 2, reason: "avoid-armored-clinch" };
+  }
+
+  return { minHexes: 1, maxHexes: 1, reason: "melee" };
 }
 
 /**
@@ -1358,6 +1490,8 @@ export default {
   getGrappleStatus,
   resetGrapple,
   canUseWeaponInGrapple,
+  isWeaponGrappleSuitable,
+  getPreferredEngagementRange,
   hasDeathBlow,
   applyDamageWithArmor,
   initiateGrapple,

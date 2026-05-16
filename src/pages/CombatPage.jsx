@@ -248,6 +248,7 @@ import {
   getGrappleStatus,
   resetGrapple,
   canUseWeaponInGrapple,
+  getPreferredEngagementRange,
   applyDamageWithArmor,
   initiateGrapple,
   breakGrappleWithPush,
@@ -1104,6 +1105,58 @@ function isPlateArmorEquipped(fighter) {
 function isAdjacentDistance(distanceFeet) {
   const d = Number(distanceFeet);
   return Number.isFinite(d) && d <= 5.5;
+}
+
+function isPassiveNeutralSceneTarget(target) {
+  const type = String(target?.type || "").toLowerCase();
+  const role = String(target?.role || "").toLowerCase();
+  const name = String(target?.name || target?.displayName || "").toLowerCase();
+  const armyId = String(target?.armyId || "").toLowerCase();
+  const factionId = String(target?.factionId || target?.faction || "").toLowerCase();
+  const teamId = String(target?.teamId || target?.team || "").toLowerCase();
+  const controlMode = String(target?.controlMode || "").toLowerCase();
+  const disposition = String(target?.disposition || "").toLowerCase();
+  const aggression = String(target?.aggression || "").toLowerCase();
+  const hostileValues = new Set(["hostile", "kill_on_sight", "berserk", "diabolic"]);
+
+  if (hostileValues.has(disposition) || hostileValues.has(aggression) || target?.attacksEveryone === true) {
+    return false;
+  }
+
+  return (
+    target?.nonCombatant === true ||
+    target?.canDialogue === true ||
+    controlMode === "passive" ||
+    role === "merchant" ||
+    role === "civilian" ||
+    role === "magicaldialogue" ||
+    name.includes("merchant") ||
+    factionId === "merchants" ||
+    teamId === "merchants" ||
+    armyId === "merchant" ||
+    armyId === "merchants" ||
+    (
+      type === "npc" &&
+      ["", "neutral", "friendly", "suspicious"].includes(disposition) &&
+      ["", "neutral", "defensive"].includes(aggression)
+    )
+  );
+}
+
+function canSelectHostileCombatTarget(actor, target, sceneContext = { sceneType: "combat", relations: {} }) {
+  if (!canTargetForAction(actor, target, "attack", sceneContext)) return false;
+
+  const aggression = String(actor?.aggression || "").toLowerCase();
+  const disposition = String(actor?.disposition || "").toLowerCase();
+  const attacksAll =
+    actor?.attacksEveryone === true ||
+    aggression === "diabolic" ||
+    aggression === "berserk" ||
+    aggression === "kill_on_sight" ||
+    disposition === "kill_on_sight";
+
+  if (attacksAll) return true;
+  return !isPassiveNeutralSceneTarget(target);
 }
 
 function createEmptyDeploymentState() {
@@ -2511,6 +2564,7 @@ function CombatPage({ characters = [] }) {
   const combatOverRef = useRef(false); // ✅ AUTHORITATIVE: Combat is over (checked by all timeouts/actions)
   const combatSessionRef = useRef(0); // Bumps on combat start/reset so old async callbacks cannot re-enter.
   const currentTurnTokenRef = useRef(null); // Universal turn/action ownership token for delayed callbacks.
+  const activeGrappleActionIdRef = useRef(null); // Grapple action ownership token; stale helper continuations must match.
   const handlePlayerAITurnRef = useRef(null);
 
   // =========================
@@ -3658,6 +3712,7 @@ function CombatPage({ characters = [] }) {
     spellScheduleAuthorizedRef.current = false;
     playerSpellInFlightKeyRef.current = null;
     currentTurnTokenRef.current = null;
+    activeGrappleActionIdRef.current = null;
     spellImpactTurnEndHandledRef.current = null;
     lastSpellMemoryRef.current = {};
     noActionsPassLogRef.current = new Set();
@@ -3682,6 +3737,7 @@ function CombatPage({ characters = [] }) {
     spellScheduleAuthorizedRef.current = false;
     playerSpellInFlightKeyRef.current = null;
     currentTurnTokenRef.current = null;
+    activeGrappleActionIdRef.current = null;
     turnActionResolvingRef.current = false;
     pendingTurnAdvanceRef.current = false;
     turnStartInFlightKeyRef.current = null;
@@ -8320,39 +8376,40 @@ function CombatPage({ characters = [] }) {
     }
     const turnToken = makeTurnToken(activeFighter);
     currentTurnTokenRef.current = turnToken;
+    activeGrappleActionIdRef.current = null;
 
     if (controlMode === "passive" || controlMode === "defensive") {
-      const liveFighters = fightersRef.current || [];
+      const liveFighters = Array.isArray(fightersRef.current) ? fightersRef.current : [];
       const liveFighter = liveFighters.find((entry) => entry.id === fighter.id) || fighter;
-      const remainingBefore = Number(liveFighter.remainingAttacks ?? fighter.remainingAttacks ?? 0) || 0;
-      const remainingAfter = Math.max(0, remainingBefore - (remainingBefore > 0 ? 1 : 0));
-      if (remainingBefore > 0) {
-        setFighters((prev) => {
-          const next = prev.map((entry) => (
-            entry.id === fighter.id
-              ? { ...entry, remainingAttacks: remainingAfter }
-              : entry
-          ));
-          fightersRef.current = next;
-          return next;
-        });
-      }
+      const remainingBefore = Number(liveFighter.remainingAttacks ?? 0) || 0;
+      const remainingAfter = Math.max(0, remainingBefore - 1);
+      const committedFighters = liveFighters.map((entry) => (
+        entry.id === liveFighter.id
+          ? { ...entry, remainingAttacks: remainingAfter }
+          : entry
+      ));
+      fightersRef.current = committedFighters;
+      setFighters(committedFighters);
       addLog?.(
         controlMode === "defensive"
-          ? `⏭️ ${fighter.name} holds position defensively.`
-          : `⏭️ ${fighter.name} remains neutral and does not act.`,
+          ? `⏭️ ${liveFighter.name} holds position defensively.`
+          : `⏭️ ${liveFighter.name} remains neutral and does not act.`,
         "info"
       );
-      if (remainingBefore > 0) {
-        addLog?.(`⏭️ ${fighter.name} has ${remainingAfter} action(s) remaining this melee`, "info");
-      }
+      addLog?.(`⏭️ ${liveFighter.name} has ${remainingAfter} action(s) remaining this melee`, "info");
       processingEnemyTurnRef.current = false;
       processingPlayerAIRef.current = false;
+      turnActionResolvingRef.current = false;
+      executingActionRef.current = false;
       releaseTurnStart(key);
       if (turnStartInFlightKeyRef.current === key) {
         turnStartInFlightKeyRef.current = null;
       }
-      scheduleEndTurn(0, controlMode === "defensive" ? "defensive-army-turn" : "passive-army-turn");
+      const handoffSource = controlMode === "defensive" ? "defensive-army-turn" : "passive-army-turn";
+      addLog?.(`🧪 passive/defensive handoff scheduled for ${liveFighter.name}`, "info");
+      pendingTurnAdvanceRef.current = true;
+      const scheduleTurnEnd = scheduleEndTurnRef.current || scheduleEndTurn;
+      scheduleTurnEnd(0, handoffSource);
       return true;
     }
 
@@ -8858,6 +8915,7 @@ function CombatPage({ characters = [] }) {
     playerTurnInFlightKeyRef.current = null;
     playerSpellInFlightKeyRef.current = null;
     currentTurnTokenRef.current = null;
+    activeGrappleActionIdRef.current = null;
     // Invalidate any delayed player AI callbacks when turn ownership changes.
     playerAITurnTokenRef.current = (playerAITurnTokenRef.current || 0) + 1;
     // Cancel pending player AI timers (CombatPage-level scheduler).
@@ -11267,6 +11325,73 @@ function CombatPage({ characters = [] }) {
 
   // Grapple action handler
   const handleGrappleAction = useCallback((actionType, attacker, defenderId) => {
+    let grappleFighters = fightersRef.current ?? fighters;
+    let liveAttacker = grappleFighters.find((f) => f.id === attacker?.id) || attacker;
+    let liveDefender = grappleFighters.find((f) => f.id === defenderId);
+    const ownsActionLatch = !turnActionResolvingRef.current;
+    const clearOwnedActionLatch = () => {
+      if (ownsActionLatch) {
+        turnActionResolvingRef.current = false;
+      }
+    };
+    const grappleActionToken = currentTurnTokenRef.current;
+    const grappleTurnSnapshot = {
+      fighterId: liveAttacker?.id,
+      turnIndex: turnIndexRef.current,
+      turnCounter: turnCounterRef.current ?? turnCounter,
+      meleeRound: meleeRoundRef.current ?? meleeRound,
+    };
+    const grappleActionId = [
+      "grapple",
+      liveAttacker?.id ?? "unknown",
+      defenderId ?? "unknown",
+      grappleTurnSnapshot.meleeRound,
+      grappleTurnSnapshot.turnCounter,
+      grappleTurnSnapshot.turnIndex,
+      grappleActionToken ?? "no-token",
+      Date.now(),
+      Math.random().toString(36).slice(2),
+    ].join(":");
+    const clearOwnedGrappleActionId = (actionId = grappleActionId) => {
+      if (activeGrappleActionIdRef.current === actionId) {
+        activeGrappleActionIdRef.current = null;
+      }
+    };
+    const getStaleGrappleReason = (validationActionId = null) => {
+      const latestFighters = fightersRef.current ?? fighters;
+      const activeFighter = latestFighters?.[turnIndexRef.current];
+      const latestAttacker = latestFighters?.find((f) => f.id === liveAttacker?.id);
+      const latestDefender = latestFighters?.find((f) => f.id === defenderId);
+      const remaining = Number(latestAttacker?.remainingAttacks ?? 0) || 0;
+
+      if (validationActionId && activeGrappleActionIdRef.current !== validationActionId) return "action superseded";
+      if (!combatActiveRef.current || combatOverRef.current || combatEndCheckRef.current) return "combat over";
+      if (!latestAttacker) return "actor missing";
+      if (!latestDefender) return "target missing";
+      if (pendingTurnAdvanceRef.current || turnTimeoutRef.current) return "turn advance pending";
+      if (activeFighter?.id !== grappleTurnSnapshot.fighterId) return "turn changed";
+      if (turnIndexRef.current !== grappleTurnSnapshot.turnIndex) return "turn changed";
+      if ((turnCounterRef.current ?? turnCounter) !== grappleTurnSnapshot.turnCounter) return "turn changed";
+      if ((meleeRoundRef.current ?? meleeRound) !== grappleTurnSnapshot.meleeRound) return "round changed";
+      if (grappleActionToken && currentTurnTokenRef.current !== grappleActionToken) return "turn token changed";
+      if (turnActionResolvingRef.current && !ownsActionLatch) return "action already resolving";
+      if (remaining <= 0) return "no actions";
+      if (!canFighterStartTurn(latestAttacker)) return "cannot act";
+      return null;
+    };
+    const staleReason = getStaleGrappleReason();
+    if (staleReason) {
+      addLog(`🚫 stale grapple follow-up aborted: ${staleReason}`, "warning");
+      return false;
+    }
+    activeGrappleActionIdRef.current = grappleActionId;
+    if (ownsActionLatch) {
+      turnActionResolvingRef.current = true;
+      pendingTurnAdvanceRef.current = false;
+    }
+    grappleFighters = fightersRef.current ?? fighters;
+    liveAttacker = grappleFighters.find((f) => f.id === attacker?.id) || liveAttacker;
+    liveDefender = grappleFighters.find((f) => f.id === defenderId);
     const debugGrappleFns = {
       grapple: attemptGrapple,
       maintain: maintainGrapple,
@@ -11284,8 +11409,8 @@ function CombatPage({ characters = [] }) {
     if (DEBUG_GRAPPLE && debugGrappleFns[actionType]) {
       addLog(`[DEBUG] Grapple action: ${actionType}`, "debug");
     }
-    const attackerMods = getGrappleAttributeModifiers(attacker);
-    const defender = fighters.find((f) => f.id === defenderId);
+    const attackerMods = getGrappleAttributeModifiers(liveAttacker);
+    let defender = liveDefender;
     const defenderMods = getGrappleAttributeModifiers(defender);
     const isEntryAction = actionType === "grapple" || actionType === "takedown";
     const isBreakawayAction =
@@ -11300,6 +11425,138 @@ function CombatPage({ characters = [] }) {
     const defenderAvoidBonus =
       defenderMods.ppControlBonus +
       (actionType === "grapple" ? defenderMods.spdBreakawayBonus : 0);
+    if (!isEntryAction) {
+      const attackerState = liveAttacker?.grappleState;
+      const defenderState = defender?.grappleState;
+      const mutuallyLinked =
+        attackerState?.opponent === defender?.id &&
+        defenderState?.opponent === liveAttacker?.id &&
+        attackerState?.state !== GRAPPLE_STATES.NEUTRAL &&
+        defenderState?.state !== GRAPPLE_STATES.NEUTRAL;
+      const currentPositions = pickNonEmptyObject(positionsRef.current, positions);
+      const attackerPos = currentPositions?.[liveAttacker?.id] || liveAttacker?.hex || liveAttacker?.position;
+      const defenderPos = currentPositions?.[defender?.id] || defender?.hex || defender?.position;
+      const sharedHex = attackerState?.sharedHex || defenderState?.sharedHex;
+      const distance =
+        attackerPos && defenderPos
+          ? calculateDistance(attackerPos, defenderPos)
+          : Number.POSITIVE_INFINITY;
+
+      if (!mutuallyLinked) {
+        addLog(`⚠️ Grapple state cleared: fighters separated.`, "warning");
+        const next = grappleFighters.map((f) => (
+          f.id === liveAttacker?.id || f.id === defenderId
+            ? { ...f, grappleState: initializeGrappleState(f) }
+            : f
+        ));
+        fightersRef.current = next;
+        setFighters(next);
+        clearOwnedGrappleActionId();
+        clearOwnedActionLatch();
+        return false;
+      }
+
+      if (sharedHex && (
+        !isAdjacentDistance(distance) ||
+        attackerPos?.x !== sharedHex.x ||
+        attackerPos?.y !== sharedHex.y ||
+        defenderPos?.x !== sharedHex.x ||
+        defenderPos?.y !== sharedHex.y
+      )) {
+        const syncedPositions = {
+          ...currentPositions,
+          [liveAttacker.id]: sharedHex,
+          [defenderId]: sharedHex,
+        };
+        positionsRef.current = syncedPositions;
+        setPositions(syncedPositions);
+        const next = grappleFighters.map((f) => (
+          f.id === liveAttacker.id || f.id === defenderId
+            ? {
+                ...f,
+                hex: sharedHex,
+                position: sharedHex,
+                grappleState: {
+                  ...(f.grappleState || initializeGrappleState(f)),
+                  sharedHex,
+                },
+              }
+            : f
+        ));
+        fightersRef.current = next;
+        setFighters(next);
+        grappleFighters = next;
+        liveAttacker = next.find((f) => f.id === liveAttacker.id) || liveAttacker;
+        liveDefender = next.find((f) => f.id === defenderId) || liveDefender;
+        defender = liveDefender;
+      } else if (!isAdjacentDistance(distance)) {
+        addLog(`⚠️ Grapple state cleared: fighters separated.`, "warning");
+        const next = grappleFighters.map((f) => (
+          f.id === liveAttacker?.id || f.id === defenderId
+            ? { ...f, grappleState: initializeGrappleState(f) }
+            : f
+        ));
+        fightersRef.current = next;
+        setFighters(next);
+        clearOwnedGrappleActionId();
+        clearOwnedActionLatch();
+        return false;
+      }
+    }
+
+    const originalTechniqueFields = new Map(
+      [liveAttacker, defender].filter(Boolean).map((fighter) => [
+        fighter.id,
+        {
+          hasPS: Object.prototype.hasOwnProperty.call(fighter, "PS"),
+          PS: fighter.PS,
+          hasAttributes: !!fighter.attributes,
+          hasAttributePS: Object.prototype.hasOwnProperty.call(fighter.attributes || {}, "PS"),
+          attributePS: fighter.attributes?.PS,
+          hasBonuses: !!fighter.bonuses,
+          hasStrike: Object.prototype.hasOwnProperty.call(fighter.bonuses || {}, "strike"),
+          strike: fighter.bonuses?.strike,
+          hasParry: Object.prototype.hasOwnProperty.call(fighter.bonuses || {}, "parry"),
+          parry: fighter.bonuses?.parry,
+        },
+      ])
+    );
+    const restoreTechniqueFields = (fighter) => {
+      const original = originalTechniqueFields.get(fighter?.id);
+      if (!original) return fighter;
+
+      const restored = { ...fighter };
+      if (original.hasPS) {
+        restored.PS = original.PS;
+      } else {
+        delete restored.PS;
+      }
+
+      if (original.hasAttributes || restored.attributes) {
+        restored.attributes = { ...(restored.attributes || {}) };
+        if (original.hasAttributePS) {
+          restored.attributes.PS = original.attributePS;
+        } else {
+          delete restored.attributes.PS;
+        }
+      }
+
+      if (original.hasBonuses || restored.bonuses) {
+        restored.bonuses = { ...(restored.bonuses || {}) };
+        if (original.hasStrike) {
+          restored.bonuses.strike = original.strike;
+        } else {
+          delete restored.bonuses.strike;
+        }
+        if (original.hasParry) {
+          restored.bonuses.parry = original.parry;
+        } else {
+          delete restored.bonuses.parry;
+        }
+      }
+
+      return restored;
+    };
     const applyTechnique = (fighter, mods, techniqueBonus = 0, role = "attacker") => {
       if (!fighter) return fighter;
       const effectivePSBonusActions = new Set([
@@ -11330,18 +11587,18 @@ function CombatPage({ characters = [] }) {
         },
       };
     };
-    const enhancedAttacker = applyTechnique(attacker, attackerMods, attackerTechniqueBonus, "attacker");
+    const enhancedAttacker = applyTechnique(liveAttacker, attackerMods, attackerTechniqueBonus, "attacker");
     const enhancedDefender = applyTechnique(defender, defenderMods, defenderAvoidBonus, "defender");
-    const enhancedFighters = fighters.map((f) => {
-      if (f.id === attacker?.id) return enhancedAttacker;
+    const enhancedFighters = grappleFighters.map((f) => {
+      if (f.id === liveAttacker?.id) return enhancedAttacker;
       if (f.id === defenderId) return enhancedDefender;
       return f;
     });
-    const baseAttackerStamina = Number(attacker?.fatigueState?.currentStamina);
+    const baseAttackerStamina = Number(liveAttacker?.fatigueState?.currentStamina);
     const baseDefenderStamina = Number(defender?.fatigueState?.currentStamina);
     const staminaRebateById = new Map([
       [
-        attacker?.id,
+        liveAttacker?.id,
         Math.max(
           0,
           Math.min(
@@ -11362,7 +11619,7 @@ function CombatPage({ characters = [] }) {
       ],
     ]);
     const staminaBeforeById = new Map([
-      [attacker?.id, baseAttackerStamina],
+      [liveAttacker?.id, baseAttackerStamina],
       [defenderId, baseDefenderStamina],
     ]);
     const rebateAppliedRef = { current: new Set() };
@@ -11400,13 +11657,38 @@ function CombatPage({ characters = [] }) {
       setFighters((prev) => {
         const next =
           typeof updater === "function"
-            ? updater(prev)
+            ? updater(fightersRef.current ?? prev)
             : Array.isArray(updater)
               ? updater
               : prev;
-        return applyGrappleStaminaRebate(next);
+        const rebated = applyGrappleStaminaRebate(next);
+        const restored = rebated.map(restoreTechniqueFields);
+        fightersRef.current = restored;
+        return restored;
       });
     };
+    const setGrapplePositions = (updater) => {
+      setPositions((prev) => {
+        const next =
+          typeof updater === "function"
+            ? updater(prev)
+            : updater && typeof updater === "object"
+              ? updater
+              : prev;
+        positionsRef.current = next;
+        return next;
+      });
+    };
+    const validateGrappleResult = (_actionType, _result, validationActionId = grappleActionId) =>
+      getStaleGrappleReason(validationActionId);
+
+    const latestStaleReason = getStaleGrappleReason(grappleActionId);
+    if (latestStaleReason) {
+      addLog(`🚫 stale grapple follow-up aborted: ${latestStaleReason}`, "warning");
+      clearOwnedGrappleActionId();
+      clearOwnedActionLatch();
+      return false;
+    }
 
     if (attackerMods.peDrainReduction > 0) {
       addLog(`💪 ${attacker.name}'s P.E. reduces grapple fatigue.`, "info");
@@ -11422,14 +11704,22 @@ function CombatPage({ characters = [] }) {
       fighters: enhancedFighters,
       combatActive,
       addLog,
-      positions,
+      positions: positionsRef.current ?? positions,
       setFighters: setGrappleFighters,
-      setPositions,
+      setPositions: setGrapplePositions,
       clampHP,
       getFighterHP,
       applyHPToFighter,
+      validateGrappleResult,
+      grappleActionId,
+      onStaleGrappleAbort: (abortedActionId) => {
+        clearOwnedGrappleActionId(abortedActionId);
+        clearOwnedActionLatch();
+      },
     });
-  }, [fighters, combatActive, addLog, positions, setFighters, setPositions, clampHP, getFighterHP, applyHPToFighter, getGrappleAttributeModifiers]);
+    clearOwnedGrappleActionId();
+    return true;
+  }, [fighters, combatActive, addLog, positions, setFighters, setPositions, clampHP, getFighterHP, applyHPToFighter, getGrappleAttributeModifiers, canFighterStartTurn, meleeRound, turnCounter]);
 
   const hashToIndex = (str, mod) => {
     let h = 2166136261; // FNV-1a
@@ -15630,7 +15920,7 @@ function CombatPage({ characters = [] }) {
 
       const targets = liveFighters
         .filter((f) =>
-          canTargetForAction(livePlayer, f, "attack", { sceneType: "combat", relations: {} }) &&
+          canSelectHostileCombatTarget(livePlayer, f, { sceneType: "combat", relations: {} }) &&
           canFighterAct(f) &&
           (Number(f.currentHP ?? f.HP ?? f.hp ?? 0) > 0) &&
           currentPositions?.[f.id]
@@ -15832,6 +16122,21 @@ function CombatPage({ characters = [] }) {
       scheduleEndTurn(delayOverride, source);
     };
 
+    const clearSeparatedGrappleForPlayerAI = (actor, target) => {
+      const actorId = actor?.id;
+      const targetId = actor?.grappleState?.opponent || target?.id;
+      if (!actorId || !targetId) return false;
+      const next = (fightersRef.current ?? fighters).map((f) => (
+        f.id === actorId || f.id === targetId
+          ? { ...f, grappleState: initializeGrappleState(f) }
+          : f
+      ));
+      fightersRef.current = next;
+      setFighters(next);
+      addLog(`⚠️ Grapple state cleared: fighters separated.`, "warning");
+      return true;
+    };
+
     const executePlayerAIGrapple = (attacker, target, requestedActionType = null) => {
       const liveFighters = fightersRef.current ?? fighters;
       const liveIndex = turnIndexRef.current;
@@ -15862,13 +16167,35 @@ function CombatPage({ characters = [] }) {
       if (!isAdjacentDistance(grappleDistance)) return false;
 
       const availableActions = getAvailableGrappleActions(liveAttacker, liveTarget);
+      const attackerGrappleState = liveAttacker?.grappleState?.state;
+      const targetArmored = isPlateArmorEquipped(liveTarget) || Number(liveTarget?.AR ?? liveTarget?.ar ?? liveTarget?.armorRating ?? 0) > 10;
+      const preferredRange = getPreferredEngagementRange(liveAttacker, liveTarget);
+      const alreadyGrappling =
+        attackerGrappleState &&
+        attackerGrappleState !== GRAPPLE_STATES.NEUTRAL;
+      if (
+        !requestedActionType &&
+        !alreadyGrappling &&
+        targetArmored &&
+        preferredRange?.reason === "avoid-armored-clinch"
+      ) {
+        addLog(`📏 ${liveAttacker.name} avoids clinching ${liveTarget.name} and looks for reach instead.`, "info");
+        return false;
+      }
       const liftCheck = canLiftAndThrow(liveAttacker, liveTarget);
       const canTakedown =
         typeof liftCheck === "boolean"
           ? liftCheck
           : !!liftCheck?.canThrow;
+      const stamina = Number(liveAttacker?.fatigueState?.currentStamina ?? liveAttacker?.currentStamina ?? 0);
+      const maxStamina = Number(liveAttacker?.fatigueState?.maxStamina ?? liveAttacker?.maxStamina ?? 0);
+      const staminaLow = maxStamina > 0 && stamina <= maxStamina * 0.25;
+      const armoredGrappleFollowUp = alreadyGrappling && targetArmored;
       const preferredAction =
         requestedActionType ||
+        (staminaLow ? availableActions.find((action) => action.value === "defenderReversal")?.value : null) ||
+        (staminaLow ? availableActions.find((action) => action.value === "breakFree")?.value : null) ||
+        (armoredGrappleFollowUp ? availableActions.find((action) => action.value === "groundStrike")?.value : null) ||
         (canTakedown ? availableActions.find((action) => action.value === "takedown")?.value : null) ||
         availableActions.find((action) => action.value === "maintain")?.value ||
         availableActions.find((action) => action.value === "groundStrike")?.value ||
@@ -15881,7 +16208,14 @@ function CombatPage({ characters = [] }) {
       }
 
       playerAIActionScheduledRef.current = true;
-      handleGrappleAction(preferredAction, liveAttacker, liveTarget.id);
+      const launchedGrapple = handleGrappleAction(preferredAction, liveAttacker, liveTarget.id);
+      if (!launchedGrapple) {
+        playerAIActionScheduledRef.current = false;
+        processingPlayerAIRef.current = false;
+        scheduleEndTurn(0, "player-ai-grapple-aborted");
+        return true;
+      }
+      playerAITurnTokenRef.current = (playerAITurnTokenRef.current || 0) + 1;
       processingPlayerAIRef.current = false;
       scheduleEndTurn(50, "player-ai-grapple");
       return true;
@@ -15975,6 +16309,8 @@ function CombatPage({ characters = [] }) {
       isValidPosition,
       findBeePath,
       getTargetsInLine,
+      canSelectHostileTarget: canSelectHostileCombatTarget,
+      clearSeparatedGrapple: clearSeparatedGrappleForPlayerAI,
       sceneContext: { sceneType: "combat", relations: {} },
     };
 
@@ -16876,7 +17212,7 @@ function CombatPage({ characters = [] }) {
       if (!carryState.movedAway && myPos) {
         // Find closest threat (exclude the carried prey)
         const threats = liveFighters.filter(f =>
-          canTargetForAction(liveEnemy, f, "attack", { sceneType: "combat", relations: {} }) &&
+          canSelectHostileCombatTarget(liveEnemy, f, { sceneType: "combat", relations: {} }) &&
           canFighterAct(f) &&
           f.currentHP > 0 &&
           f.id !== carried.id &&
@@ -17167,7 +17503,7 @@ function CombatPage({ characters = [] }) {
 
       // Choose closest valid prey
       const candidates = liveFighters.filter(f =>
-        canTargetForAction(liveEnemy, f, "attack", { sceneType: "combat", relations: {} }) &&
+        canSelectHostileCombatTarget(liveEnemy, f, { sceneType: "combat", relations: {} }) &&
         canFighterAct(f) &&
         (f.currentHP ?? 0) > 0 &&
         !f.isCarried
@@ -17356,7 +17692,7 @@ function CombatPage({ characters = [] }) {
         const hostiles = liveFighters.filter(
           (f) =>
             f &&
-            canTargetForAction(liveEnemy, f, "attack", { sceneType: "combat", relations: {} }) &&
+            canSelectHostileCombatTarget(liveEnemy, f, { sceneType: "combat", relations: {} }) &&
             canFighterAct(f) &&
             (f.currentHP ?? 0) > 0
         );
@@ -17404,7 +17740,7 @@ function CombatPage({ characters = [] }) {
         },
         getReachableEnemies: (flier, allFighters, allPositions) => {
           return allFighters.filter(f =>
-            canTargetForAction(flier, f, "attack", { sceneType: "combat", relations: {} }) &&
+            canSelectHostileCombatTarget(flier, f, { sceneType: "combat", relations: {} }) &&
             canFighterAct(f) &&
             f.currentHP > 0 &&
             !isTargetBlocked(flier.id, f.id, allPositions)
@@ -17466,7 +17802,7 @@ function CombatPage({ characters = [] }) {
         getFlightFocusPoint: (flier) => {
           // Focus on the closest enemy or own position
           const reachable = fightersNow.filter(f =>
-            canTargetForAction(flier, f, "attack", { sceneType: "combat", relations: {} }) &&
+            canSelectHostileCombatTarget(flier, f, { sceneType: "combat", relations: {} }) &&
             canFighterAct(f) &&
             f.currentHP > 0 &&
             !isTargetBlocked(flier.id, f.id, positionsNow)
@@ -17482,7 +17818,7 @@ function CombatPage({ characters = [] }) {
           if (!myPos) return null;
           // Find a hex away from enemies
           const nearbyEnemies = fightersNow.filter(f =>
-            canTargetForAction(flier, f, "attack", { sceneType: "combat", relations: {} }) &&
+            canSelectHostileCombatTarget(flier, f, { sceneType: "combat", relations: {} }) &&
             canFighterAct(f) &&
             f.currentHP > 0 &&
             calculateDistance(myPos, positionsNow[f.id]) < 50
@@ -17725,6 +18061,75 @@ function CombatPage({ characters = [] }) {
     // Update enemy reference for rest of function
     enemy = liveEnemy;
     const legacySceneContext = { sceneType: "combat", relations: {} };
+    let activeGrappleTargetId = null;
+    if (enemy?.grappleState?.opponent && enemy.grappleState.state !== GRAPPLE_STATES.NEUTRAL) {
+      const opponent = liveFighters.find((f) => f.id === enemy.grappleState.opponent);
+      const opponentState = opponent?.grappleState;
+      const currentPositions = pickNonEmptyObject(positionsRef.current, positions);
+      const enemyPos = currentPositions?.[enemy.id] || enemy.hex || enemy.position;
+      const opponentPos = currentPositions?.[opponent?.id] || opponent?.hex || opponent?.position;
+      const sharedHex = enemy.grappleState?.sharedHex || opponentState?.sharedHex;
+      const mutualGrapple =
+        opponent &&
+        opponentState?.opponent === enemy.id &&
+        opponentState?.state !== GRAPPLE_STATES.NEUTRAL;
+      const grappleDistance =
+        enemyPos && opponentPos
+          ? calculateDistance(enemyPos, opponentPos)
+          : Number.POSITIVE_INFINITY;
+
+      if (!mutualGrapple) {
+        const next = liveFighters.map((f) => (
+          f.id === enemy.id || f.id === opponent?.id
+            ? { ...f, grappleState: initializeGrappleState(f) }
+            : f
+        ));
+        fightersRef.current = next;
+        setFighters(next);
+        addLog(`⚠️ Grapple state cleared: fighters separated.`, "warning");
+      } else if (sharedHex && (
+        !isAdjacentDistance(grappleDistance) ||
+        enemyPos?.x !== sharedHex.x ||
+        enemyPos?.y !== sharedHex.y ||
+        opponentPos?.x !== sharedHex.x ||
+        opponentPos?.y !== sharedHex.y
+      )) {
+        const syncedPositions = {
+          ...currentPositions,
+          [enemy.id]: sharedHex,
+          [opponent.id]: sharedHex,
+        };
+        positionsRef.current = syncedPositions;
+        setPositions(syncedPositions);
+        const next = liveFighters.map((f) => (
+          f.id === enemy.id || f.id === opponent.id
+            ? {
+                ...f,
+                hex: sharedHex,
+                position: sharedHex,
+                grappleState: {
+                  ...(f.grappleState || initializeGrappleState(f)),
+                  sharedHex,
+                },
+              }
+            : f
+        ));
+        fightersRef.current = next;
+        setFighters(next);
+        activeGrappleTargetId = opponent.id;
+      } else if (isAdjacentDistance(grappleDistance)) {
+        activeGrappleTargetId = opponent.id;
+      } else {
+        const next = liveFighters.map((f) => (
+          f.id === enemy.id || f.id === opponent.id
+            ? { ...f, grappleState: initializeGrappleState(f) }
+            : f
+        ));
+        fightersRef.current = next;
+        setFighters(next);
+        addLog(`⚠️ Grapple state cleared: fighters separated.`, "warning");
+      }
+    }
 
     // Check if enemy has actions remaining
     if (enemy.remainingAttacks <= 0) {
@@ -17738,7 +18143,8 @@ function CombatPage({ characters = [] }) {
     // ✅ FIX: Filter players by visibility AND exclude unconscious/dying/dead targets
     // Only target conscious players (HP > 0) - unconscious/dying players are already defeated
     const allPlayers = fighters.filter(f =>
-      canTargetForAction(liveEnemy, f, "attack", legacySceneContext) &&
+      (!activeGrappleTargetId || f.id === activeGrappleTargetId) &&
+      canSelectHostileCombatTarget(liveEnemy, f, legacySceneContext) &&
       canFighterAct(f) &&
       f.currentHP > 0 &&  // Only conscious players
       f.currentHP > -21    // Not dead
@@ -20372,7 +20778,7 @@ function CombatPage({ characters = [] }) {
       let targetForPreference = null;
       try {
         targetForPreference = fighters.find((f) =>
-          canTargetForAction(currentFighter, f, "attack", { sceneType: "combat", relations: {} }) &&
+          canSelectHostileCombatTarget(currentFighter, f, { sceneType: "combat", relations: {} }) &&
           f.currentHP > 0
         ) || null;
       } catch { /* ignore */ }
@@ -22472,7 +22878,7 @@ function CombatPage({ characters = [] }) {
     } catch (err) {
       activeCastIdsRef.current.delete(castId);
       turnActionResolvingRef.current = false;
-      playerSpellInFlightKeyRef.current = null;
+    playerSpellInFlightKeyRef.current = null;
       addLog?.(
         `❌ castSpell threw: ${err?.message ?? String(err)}`,
         "error"
@@ -22603,12 +23009,22 @@ function CombatPage({ characters = [] }) {
       return;
     }
 
+    if (
+      pendingTurnAdvanceRef.current ||
+      turnTimeoutRef.current ||
+      turnActionResolvingRef.current ||
+      activeSpellImpactRef.current
+    ) {
+      addLog("⚠️ Action already resolving.", "warning");
+      return;
+    }
+
     // Prevent multiple rapid action executions
     if (executingActionRef.current) {
       // Don't spam the log - only warn once per turn
       const lockKey = `lock_${currentFighter?.id}_${turnCounter}`;
       if (!lastProcessedTurnRef.current || lastProcessedTurnRef.current !== lockKey) {
-        addLog(`⏳ ${currentFighter?.name || 'Character'} is already executing an action, please wait...`, "warning");
+        addLog("⚠️ Action already resolving.", "warning");
         lastProcessedTurnRef.current = lockKey;
       }
       return;
@@ -22974,9 +23390,11 @@ function CombatPage({ characters = [] }) {
             }
 
             // Execute grapple action
-            handleGrappleAction(grappleAction, currentFighter, targetToExecute.id);
+            const launchedGrapple = handleGrappleAction(grappleAction, currentFighter, targetToExecute.id);
             setSelectedGrappleAction(null); // Clear selection after use
-            scheduleEndTurn(500);
+            if (launchedGrapple) {
+              scheduleEndTurn(500, "manual-grapple-follow-up");
+            }
             return;
           } else {
             // Not in grapple - use selected maneuver
@@ -22987,9 +23405,11 @@ function CombatPage({ characters = [] }) {
 
             if (selectedManeuver === "grapple") {
               // Use handleGrappleAction for grapple maneuver
-              handleGrappleAction('grapple', currentFighter, targetToExecute.id);
+              const launchedGrapple = handleGrappleAction('grapple', currentFighter, targetToExecute.id);
               setSelectedManeuver(null); // Clear selection after use
-              scheduleEndTurn(500);
+              if (launchedGrapple) {
+                scheduleEndTurn(500, "manual-grapple");
+              }
               return;
             } else if (selectedManeuver === "trip") {
               executeTripManeuver(currentFighter, targetToExecute);

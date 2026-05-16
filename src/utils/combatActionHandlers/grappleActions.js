@@ -9,6 +9,7 @@ import {
   defenderPushBreak,
   defenderReversal,
   applyDamageWithArmor,
+  isWeaponGrappleSuitable,
 } from "../grapplingSystem.js";
 import { getCombinedGrappleModifiers } from "../sizeStrengthModifiers.js";
 
@@ -59,6 +60,9 @@ export function handleGrappleAction(actionType, attacker, defenderId, context) {
     setPositions,
     getFighterHP,
     applyHPToFighter,
+    validateGrappleResult,
+    grappleActionId,
+    onStaleGrappleAbort,
   } = context;
 
   if (!combatActive) return;
@@ -77,6 +81,18 @@ export function handleGrappleAction(actionType, attacker, defenderId, context) {
     return;
   }
   
+  const getStaleGrappleReason = () =>
+    typeof validateGrappleResult === "function"
+      ? validateGrappleResult(actionType, null, grappleActionId)
+      : null;
+
+  const preActionStaleReason = getStaleGrappleReason();
+  if (preActionStaleReason) {
+    addLog(`🚫 stale grapple follow-up aborted: ${preActionStaleReason}`, "warning");
+    onStaleGrappleAbort?.(grappleActionId);
+    return;
+  }
+
   // Use CryptoSecureDice for rolling
   const rollDice = () => CryptoSecureDice.rollD20();
   
@@ -126,15 +142,29 @@ export function handleGrappleAction(actionType, attacker, defenderId, context) {
       }
       break;
     case 'groundStrike': {
-      // Get equipped weapon (prefer dagger)
-      const weapon = attacker.equippedWeapons?.primary || attacker.equippedWeapons?.secondary || null;
+      const equippedWeapons = [
+        attacker.equippedWeapons?.primary,
+        attacker.equippedWeapons?.secondary,
+        ...(Array.isArray(attacker.equippedWeapons) ? attacker.equippedWeapons : []),
+      ].filter(Boolean);
+      const currentWeapon = equippedWeapons[0] || null;
+      const weapon = equippedWeapons.find(isWeaponGrappleSuitable) || null;
+      if (currentWeapon && !isWeaponGrappleSuitable(currentWeapon)) {
+        addLog(`⚠️ ${attacker.name} cannot use ${currentWeapon.name} effectively in a grapple.`, "warning");
+      }
       result = groundStrike(attacker, defender, weapon, rollDice);
       
       // Log dice roll for ground strike
       if (result && result.attackRoll !== undefined && result.naturalRoll !== undefined) {
         const strikeBonus = attacker.bonuses?.strike || attacker.handToHand?.strikeBonus || 0;
         const ppBonus = Math.floor(((attacker.attributes?.PP || attacker.PP || 10) - 10) / 2);
-        const daggerBonus = weapon && weapon.type === "dagger" ? 1 : 0;
+        const weaponName = String(weapon?.name || weapon?.type || "").toLowerCase();
+        const daggerBonus =
+          weaponName.includes("dagger") ||
+          weaponName.includes("knife") ||
+          weaponName.includes("short blade")
+            ? 1
+            : 0;
         const totalBonus = ppBonus + strikeBonus + daggerBonus;
         const bonusDisplay = totalBonus >= 0 ? `+${totalBonus}` : `${totalBonus}`;
         
@@ -195,6 +225,13 @@ export function handleGrappleAction(actionType, attacker, defenderId, context) {
       return;
   }
   
+  const staleReason = getStaleGrappleReason();
+  if (staleReason) {
+    addLog(`🚫 stale grapple follow-up aborted: ${staleReason}`, "warning");
+    onStaleGrappleAbort?.(grappleActionId);
+    return;
+  }
+
   if (result.success) {
     const forcedMovementAction = new Set([
       'grapple',
@@ -250,6 +287,11 @@ export function handleGrappleAction(actionType, attacker, defenderId, context) {
     // Safeguard against undefined message
     if (result.message) {
       addLog(result.message, "info");
+    }
+    if (result.weakSpot) {
+      addLog(`🗡️ ${attacker.name} slips inside the armor with ${result.weaponName || "a dagger"}.`, "critical");
+    } else if (result.armorBlockedWeakSpot) {
+      addLog(`🛡️ ${defender.name}'s armor blocks the close-quarters strike.`, "info");
     }
     
     // Log size modifier information if present

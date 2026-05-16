@@ -29,6 +29,10 @@ import {
   canTargetForAction,
   isAllyOf,
 } from "../factionDisposition.js";
+import {
+  getPreferredEngagementRange,
+  isWeaponGrappleSuitable,
+} from "../grapplingSystem.js";
 
 const UNDEAD_KEYWORDS = [
   "vampire",
@@ -546,12 +550,16 @@ export async function runPlayerTurnAI(player, context) {
     isValidPosition,
     findBeePath,
     getTargetsInLine,
+    canSelectHostileTarget,
+    clearSeparatedGrapple,
     onNoHostilesRemaining,
     sceneContext = { sceneType: "combat", relations: {} },
   } = context;
 
   const isHostileTarget = (target, actionKind = "attack") =>
-    canTargetForAction(player, target, actionKind, sceneContext);
+    actionKind === "attack" && typeof canSelectHostileTarget === "function"
+      ? canSelectHostileTarget(player, target, sceneContext)
+      : canTargetForAction(player, target, actionKind, sceneContext);
   const isAllyTarget = (target) => isAllyOf(player, target, sceneContext);
 
   const isPlayerAiAllowed = () => {
@@ -2697,17 +2705,23 @@ export async function runPlayerTurnAI(player, context) {
     !!positions[target.id] &&
     positions[player.id].x === positions[target.id].x &&
     positions[player.id].y === positions[target.id].y;
+  const playerGrappleOpponent = player?.grappleState?.opponent;
+  const targetGrappleOpponent = target?.grappleState?.opponent;
+  const activeGrappleBetween =
+    !!target &&
+    !isNeutralGrappleState(player) &&
+    !isNeutralGrappleState(target) &&
+    playerGrappleOpponent === target.id &&
+    targetGrappleOpponent === player.id;
   const inGrappleState =
     !isNeutralGrappleState(player) || !isNeutralGrappleState(target);
   const inGrappleRange =
     !!target &&
-    (inGrappleState ||
-      sameHexAsTarget ||
-      (Number.isFinite(currentDistance) && currentDistance <= 0));
+    (sameHexAsTarget || activeGrappleBetween);
 
   const shouldAttemptAdjacentGrapple = () => {
     if (typeof executeGrapple !== "function" || !target) return false;
-    if (!inGrappleRange && (!Number.isFinite(currentDistance) || currentDistance > 5.5)) return false;
+    if (!sameHexAsTarget && (!Number.isFinite(currentDistance) || currentDistance > 5.5)) return false;
     if ((Number(player.remainingAttacks ?? 0) || 0) <= 0) return false;
     if (!inGrappleRange && (!isNeutralGrappleState(player) || !isNeutralGrappleState(target))) return false;
 
@@ -2735,7 +2749,9 @@ export async function runPlayerTurnAI(player, context) {
     return false;
   };
 
-  if (inGrappleState && typeof executeGrapple === "function") {
+  if (inGrappleState && !inGrappleRange) {
+    clearSeparatedGrapple?.(player, target);
+  } else if (inGrappleState && typeof executeGrapple === "function") {
     addLog(`${player.name} attempts a grapple follow-up.`, "info");
     markActionScheduled();
     if (executeGrapple(player, target)) {
@@ -2804,10 +2820,7 @@ export async function runPlayerTurnAI(player, context) {
 
     const meleeWeapons = equippedWeapons.filter((w) => !isTrueRangedWeapon(w));
     const rangedWeapons = equippedWeapons.filter((w) => isTrueRangedWeapon(w));
-    const isKnifeOrDagger = (w) => {
-      const name = String(w?.name || "").toLowerCase();
-      return name.includes("knife") || name.includes("dagger");
-    };
+    const isKnifeOrDagger = (w) => isWeaponGrappleSuitable(w);
 
     // Use getWeaponType and getWeaponLength for detailed weapon info
     const weaponTypeInfo = equippedWeapons
@@ -2842,6 +2855,13 @@ export async function runPlayerTurnAI(player, context) {
 
     if (inGrappleRange) {
       const grappleWeapon = meleeWeapons.find(isKnifeOrDagger);
+      const currentWeapon = equippedWeapons[0];
+      if (currentWeapon && !isWeaponGrappleSuitable(currentWeapon)) {
+        addLog(
+          `⚠️ ${player.name} cannot use ${currentWeapon.name} effectively in a grapple.`,
+          "warning"
+        );
+      }
       if (grappleWeapon) {
         selectedWeapon = grappleWeapon;
         addLog(
@@ -2898,11 +2918,19 @@ export async function runPlayerTurnAI(player, context) {
       );
     } else if (currentDistance <= 20 && reachableMelee.length > 0) {
       // Prefer a melee/reach weapon if it can already hit (e.g. Fire Whip at 15ft)
+      const preferredRange = getPreferredEngagementRange(player, target);
       reachableMelee.sort(
         (a, b) =>
           Number(getWeaponRange(b) || 0) - Number(getWeaponRange(a) || 0)
       );
       selectedWeapon = reachableMelee[0];
+      if (
+        preferredRange?.minHexes >= 2 &&
+        Number(getWeaponRange(selectedWeapon) || 0) >= 10 &&
+        currentDistance <= Number(getWeaponRange(selectedWeapon) || 0)
+      ) {
+        addLog(`📏 ${player.name} keeps distance with ${selectedWeapon.name}.`, "info");
+      }
       addLog(
         `🗡️ ${player.name} selects ${selectedWeapon.name} for melee combat`,
         "info"
