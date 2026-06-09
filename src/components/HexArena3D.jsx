@@ -21,6 +21,16 @@ const HexArena3D = forwardRef(function HexArena3D(
     dangerHexes,
     terrain,
     mode,
+    movementMode,
+    validMoves,
+    selectedMovementFighter,
+    onHexHover,
+    onHexSelect,
+    editorProps,
+    selectedEditorPropId,
+    onEditorPropGrab,
+    onEditorPropHover,
+    onEditorPropDrop,
     visible = false,
   },
   ref
@@ -41,6 +51,12 @@ const HexArena3D = forwardRef(function HexArena3D(
     },
     setTimeScale: (value) => {
       arenaRef.current?.setTimeScale?.(value);
+    },
+    setMapInteractionState: (value) => {
+      arenaRef.current?.setMapInteractionState?.(value);
+    },
+    syncEditorProps: (props, options = {}) => {
+      arenaRef.current?.syncEditorProps?.(props, options);
     },
   }));
 
@@ -77,6 +93,9 @@ const HexArena3D = forwardRef(function HexArena3D(
 
     if (mode === "MAP_EDITOR") {
       arenaRef.current.syncMapEditorState(mapDefinition);
+      arenaRef.current.syncEditorProps?.(editorProps || [], {
+        selectedPropId: selectedEditorPropId,
+      });
     }
 
     if (mode === "COMBAT") {
@@ -92,7 +111,27 @@ const HexArena3D = forwardRef(function HexArena3D(
         mapType: terrain?.mapType || "hex",
       });
     }
-  }, [mapDefinition, fighters, positions, renderPositions, projectiles, embeddedArrows, impactReactions, dangerHexes, terrain, mode]);
+  }, [mapDefinition, editorProps, selectedEditorPropId, fighters, positions, renderPositions, projectiles, embeddedArrows, impactReactions, dangerHexes, terrain, mode]);
+
+  useEffect(() => {
+    if (!arenaRef.current?.setMapInteractionState) return;
+    arenaRef.current.setMapInteractionState({
+      movementMode,
+      validMoves,
+      selectedMovementFighter,
+      onHexHover,
+      onHexSelect,
+    });
+  }, [isInitialized, movementMode, validMoves, selectedMovementFighter, onHexHover, onHexSelect]);
+
+  useEffect(() => {
+    if (!arenaRef.current?.setEditorPropInteractionState) return;
+    arenaRef.current.setEditorPropInteractionState({
+      onPropGrab: onEditorPropGrab,
+      onPropHover: onEditorPropHover,
+      onPropDrop: onEditorPropDrop,
+    });
+  }, [isInitialized, onEditorPropGrab, onEditorPropHover, onEditorPropDrop]);
 
   return (
     <Box
@@ -133,6 +172,16 @@ HexArena3D.propTypes = {
   dangerHexes: PropTypes.array,
   terrain: PropTypes.object,
   mode: PropTypes.string,
+  movementMode: PropTypes.object,
+  validMoves: PropTypes.array,
+  selectedMovementFighter: PropTypes.string,
+  onHexHover: PropTypes.func,
+  onHexSelect: PropTypes.func,
+  editorProps: PropTypes.array,
+  selectedEditorPropId: PropTypes.string,
+  onEditorPropGrab: PropTypes.func,
+  onEditorPropHover: PropTypes.func,
+  onEditorPropDrop: PropTypes.func,
   visible: PropTypes.bool,
 };
 

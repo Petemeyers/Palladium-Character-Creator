@@ -17,8 +17,48 @@ import TacticalMap from "../components/TacticalMap.jsx";
 import HexArena3D from "../components/HexArena3D.jsx";
 import { TERRAIN_TYPES, LIGHTING_CONDITIONS } from "../utils/terrainSystem";
 import { GRID_CONFIG } from "../data/movementRules";
+import { axialToOffset, offsetToAxial } from "../utils/hexGridMath";
 
 const STORAGE_KEY = "mapMaker.savedMaps.v1";
+const MIN_HEX_HEIGHT = 0;
+const MAX_HEX_HEIGHT = 10;
+const MAP_BUILDER_TERRAIN_OPTIONS = [
+  { key: "grass", label: "Grass" },
+  { key: "forest", label: "Forest" },
+  { key: "water", label: "Water" },
+  { key: "rock", label: "Rock / Stone" },
+  { key: "sand", label: "Sand / Dirt" },
+  { key: "road", label: "Road" },
+];
+const MAP_BUILDER_PROP_PALETTE = [
+  {
+    type: "tree",
+    name: "Tree",
+    modelUrl: null,
+    rotation: 0,
+    scale: 1,
+    blocksMovement: true,
+    blocksLineOfSight: true,
+  },
+  {
+    type: "boulder",
+    name: "Boulder",
+    modelUrl: null,
+    rotation: 0,
+    scale: 1,
+    blocksMovement: true,
+    blocksLineOfSight: true,
+  },
+  {
+    type: "crate",
+    name: "Crate",
+    modelUrl: null,
+    rotation: 0,
+    scale: 1,
+    blocksMovement: true,
+    blocksLineOfSight: false,
+  },
+];
 
 function safeJsonParse(value, fallback) {
   try {
@@ -53,12 +93,25 @@ function resizeGridKeepExisting(prevGrid, nextWidth, nextHeight, fillTerrainKey)
   return next;
 }
 
+function clampHexHeight(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return MIN_HEX_HEIGHT;
+  return Math.max(MIN_HEX_HEIGHT, Math.min(MAX_HEX_HEIGHT, numeric));
+}
+
 export default function MapMakerPage() {
   const toast = useToast();
   const arena3DRef = useRef(null);
 
   const [show3DView, setShow3DView] = useState(true);
   const [selectedTerrainType, setSelectedTerrainType] = useState("grass");
+  const [selectedHex, setSelectedHex] = useState(null);
+  const [selectedPropType, setSelectedPropType] = useState(MAP_BUILDER_PROP_PALETTE[0].type);
+  const [selectedPropId, setSelectedPropId] = useState(null);
+  const [draggingPropId, setDraggingPropId] = useState(null);
+  const [hoverHex, setHoverHex] = useState(null);
+  const [grabbedObject, setGrabbedObject] = useState(null);
+  const [mapProps, setMapProps] = useState([]);
 
   // Incremental 3D sync queue (same strategy as CombatPage)
   const pending3DChangesRef = useRef([]);
@@ -173,6 +226,181 @@ export default function MapMakerPage() {
       queue3DCellChanges(changes);
     },
     [queue3DCellChanges]
+  );
+
+  const handleSelectedHexChange = useCallback((hex) => {
+    if (!hex) {
+      setSelectedHex(null);
+      return;
+    }
+
+    const q = Number.isFinite(hex.q) ? hex.q : hex.x;
+    const r = Number.isFinite(hex.r) ? hex.r : hex.y;
+    setSelectedHex({ q, r });
+    console.log(`🧱 map builder selected hex: (${q},${r})`);
+  }, []);
+
+  const selectedHexCell = useMemo(() => {
+    if (!selectedHex) return null;
+    return mapDefinition?.grid?.[selectedHex.r]?.[selectedHex.q] || null;
+  }, [mapDefinition, selectedHex]);
+
+  const selectedHexHeight = useMemo(() => {
+    if (!selectedHexCell) return 0;
+    if (Number.isFinite(selectedHexCell.height)) return selectedHexCell.height;
+    if (Number.isFinite(selectedHexCell.elevation)) return selectedHexCell.elevation;
+    return 0;
+  }, [selectedHexCell]);
+
+  const selectedHexTerrain = selectedHexCell?.terrainType || selectedHexCell?.terrain || selectedTerrainType || "grass";
+  const selectedHexTexture = selectedHexCell?.textureId || "none";
+
+  const updateSelectedHexCell = useCallback(
+    (patch) => {
+      if (!selectedHex) return;
+
+      const q = selectedHex.q;
+      const r = selectedHex.r;
+      const prevCell = mapDefinition?.grid?.[r]?.[q] || {};
+      const nextHeight =
+        Object.prototype.hasOwnProperty.call(patch, "height")
+          ? clampHexHeight(patch.height)
+          : clampHexHeight(
+              Number.isFinite(prevCell.height)
+                ? prevCell.height
+                : Number.isFinite(prevCell.elevation)
+                  ? prevCell.elevation
+                  : 0
+            );
+      const nextTerrain = patch.terrainType || prevCell.terrainType || prevCell.terrain || selectedTerrainType || "grass";
+      const nextCell = {
+        ...prevCell,
+        terrain: nextTerrain,
+        terrainType: nextTerrain,
+        elevation: nextHeight,
+        height: nextHeight,
+      };
+
+      setMapDefinition((prev) => {
+        const updated = { ...(prev || {}) };
+        const nextGrid = Array.isArray(updated.grid)
+          ? updated.grid.map((row) => (Array.isArray(row) ? [...row] : []))
+          : [];
+        if (!nextGrid[r]) nextGrid[r] = [];
+        nextGrid[r][q] = nextCell;
+        updated.grid = nextGrid;
+        return updated;
+      });
+
+      queue3DCellChange(q, r, nextCell);
+      console.log(
+        `🧱 map builder updated hex: (${q},${r}) height=${nextHeight} terrain=${nextTerrain} texture=${nextCell.textureId || "none"}`
+      );
+    },
+    [mapDefinition, queue3DCellChange, selectedHex, selectedTerrainType]
+  );
+
+  const isHexInBounds = useCallback(
+    (hex) => {
+      if (!hex) return false;
+      const width = Number(gridWidth) || 0;
+      const height = Number(gridHeight) || 0;
+      const offset = Number.isFinite(hex.x) && Number.isFinite(hex.y)
+        ? { col: hex.x, row: hex.y }
+        : axialToOffset(Number(hex.q), Number(hex.r));
+      const col = Number(offset.col);
+      const row = Number(offset.row);
+      return Number.isInteger(col) && Number.isInteger(row) && col >= 0 && row >= 0 && col < width && row < height;
+    },
+    [gridHeight, gridWidth]
+  );
+
+  const hasBlockingPropAtHex = useCallback(
+    (hex, ignoredPropId = null) => {
+      if (!hex) return false;
+      return mapProps.some((prop) => (
+        prop.id !== ignoredPropId &&
+        prop.blocksMovement &&
+        prop.q === hex.q &&
+        prop.r === hex.r
+      ));
+    },
+    [mapProps]
+  );
+
+  const handlePlaceSelectedProp = useCallback(() => {
+    if (!selectedHex || !isHexInBounds(selectedHex)) return;
+    const template = MAP_BUILDER_PROP_PALETTE.find((prop) => prop.type === selectedPropType) || MAP_BUILDER_PROP_PALETTE[0];
+    const axialHex = offsetToAxial(selectedHex.q, selectedHex.r);
+    if (template.blocksMovement && hasBlockingPropAtHex(axialHex)) {
+      toast({
+        title: "Hex already blocked",
+        description: "Move the existing blocking prop before placing another one there.",
+        status: "warning",
+        duration: 1800,
+        isClosable: true,
+      });
+      return;
+    }
+
+    const id = `map-prop-${Date.now()}`;
+    const nextProp = {
+      id,
+      type: template.type,
+      name: template.name,
+      modelUrl: template.modelUrl,
+      q: axialHex.q,
+      r: axialHex.r,
+      rotation: template.rotation,
+      scale: template.scale,
+      blocksMovement: template.blocksMovement,
+      blocksLineOfSight: template.blocksLineOfSight,
+    };
+    setMapProps((prev) => [...prev, nextProp]);
+    setSelectedPropId(id);
+  }, [hasBlockingPropAtHex, isHexInBounds, selectedHex, selectedPropType, toast]);
+
+  const beginPropGrab = useCallback(({ grabbedObject: nextGrabbedObject, prop }) => {
+    setSelectedPropId(prop?.id || nextGrabbedObject?.id || null);
+    setDraggingPropId(prop?.id || nextGrabbedObject?.id || null);
+    setGrabbedObject(nextGrabbedObject || null);
+    console.log(`🧩 map prop grabbed: ${prop?.name || "Prop"}`);
+  }, []);
+
+  const updatePropGrabHover = useCallback(({ hoverHex: nextHoverHex, grabbedObject: nextGrabbedObject }) => {
+    setHoverHex(nextHoverHex || null);
+    setGrabbedObject(nextGrabbedObject || null);
+  }, []);
+
+  const completePropDrop = useCallback(
+    ({ prop, dropHex }) => {
+      if (!prop?.id || !dropHex || !isHexInBounds(dropHex)) {
+        setDraggingPropId(null);
+        setHoverHex(null);
+        setGrabbedObject(null);
+        return false;
+      }
+
+      if (prop.blocksMovement && hasBlockingPropAtHex(dropHex, prop.id)) {
+        setDraggingPropId(null);
+        setHoverHex(null);
+        setGrabbedObject(null);
+        return false;
+      }
+
+      setMapProps((prev) => prev.map((item) => (
+        item.id === prop.id
+          ? { ...item, q: dropHex.q, r: dropHex.r }
+          : item
+      )));
+      setSelectedPropId(prop.id);
+      setDraggingPropId(null);
+      setHoverHex(null);
+      setGrabbedObject(null);
+      console.log(`🧩 map prop dropped: ${prop.name || "Prop"} at (${dropHex.q},${dropHex.r})`);
+      return true;
+    },
+    [hasBlockingPropAtHex, isHexInBounds]
   );
 
   const heightTiles = useMemo(() => {
@@ -363,6 +591,104 @@ export default function MapMakerPage() {
 
               <Divider />
 
+              <Box borderWidth="1px" borderRadius="md" p={3} bg="gray.50">
+                <VStack align="stretch" spacing={3}>
+                  <Text fontSize="sm" fontWeight="bold">
+                    {selectedHex
+                      ? `Selected hex: ${selectedHex.q}, ${selectedHex.r}`
+                      : "No hex selected"}
+                  </Text>
+                  {selectedHex && (
+                    <>
+                      <HStack spacing={3} align="end" wrap="wrap">
+                        <FormControl>
+                          <FormLabel fontSize="sm">Height</FormLabel>
+                          <HStack>
+                            <Button
+                              size="sm"
+                              onClick={() => updateSelectedHexCell({ height: selectedHexHeight - 1 })}
+                              isDisabled={selectedHexHeight <= MIN_HEX_HEIGHT}
+                            >
+                              -
+                            </Button>
+                            <Input
+                              type="number"
+                              min={MIN_HEX_HEIGHT}
+                              max={MAX_HEX_HEIGHT}
+                              value={selectedHexHeight}
+                              onChange={(e) => updateSelectedHexCell({ height: e.target.value })}
+                            />
+                            <Button
+                              size="sm"
+                              onClick={() => updateSelectedHexCell({ height: selectedHexHeight + 1 })}
+                              isDisabled={selectedHexHeight >= MAX_HEX_HEIGHT}
+                            >
+                              +
+                            </Button>
+                          </HStack>
+                        </FormControl>
+                      </HStack>
+
+                      <FormControl>
+                        <FormLabel fontSize="sm">Terrain</FormLabel>
+                        <Select
+                          value={selectedHexTerrain}
+                          onChange={(e) => updateSelectedHexCell({ terrainType: e.target.value })}
+                        >
+                          {MAP_BUILDER_TERRAIN_OPTIONS.map((terrain) => (
+                            <option key={terrain.key} value={terrain.key}>
+                              {terrain.label}
+                            </option>
+                          ))}
+                        </Select>
+                      </FormControl>
+
+                      <Text fontSize="xs" color="gray.600">
+                        Texture/style: {selectedHexTexture === "none" ? "terrain material" : selectedHexTexture}
+                      </Text>
+                    </>
+                  )}
+                </VStack>
+              </Box>
+
+              <Divider />
+
+              <Box borderWidth="1px" borderRadius="md" p={3} bg="gray.50">
+                <VStack align="stretch" spacing={3}>
+                  <Text fontSize="sm" fontWeight="bold">Props</Text>
+                  <FormControl>
+                    <FormLabel fontSize="sm">Prop Palette</FormLabel>
+                    <Select value={selectedPropType} onChange={(e) => setSelectedPropType(e.target.value)}>
+                      {MAP_BUILDER_PROP_PALETTE.map((prop) => (
+                        <option key={prop.type} value={prop.type}>
+                          {prop.name}
+                        </option>
+                      ))}
+                    </Select>
+                  </FormControl>
+                  <Button
+                    size="sm"
+                    colorScheme="purple"
+                    onClick={handlePlaceSelectedProp}
+                    isDisabled={!selectedHex}
+                  >
+                    Place on Selected Hex
+                  </Button>
+                  <Text fontSize="xs" color="gray.600">
+                    {selectedPropId
+                      ? `Selected prop: ${mapProps.find((prop) => prop.id === selectedPropId)?.name || selectedPropId}`
+                      : "No prop selected"}
+                  </Text>
+                  <Text fontSize="xs" color="gray.600">
+                    {draggingPropId
+                      ? `Dragging over: ${hoverHex ? `${hoverHex.q}, ${hoverHex.r}` : "outside map"}`
+                      : `Placed props: ${mapProps.length}`}
+                  </Text>
+                </VStack>
+              </Box>
+
+              <Divider />
+
               <FormControl>
                 <FormLabel fontSize="sm">Saved Maps</FormLabel>
                 <HStack>
@@ -440,7 +766,7 @@ export default function MapMakerPage() {
                   onMoveSelect={() => {}}
                   onSelectedCombatantChange={() => {}}
                   onHoveredCellChange={() => {}}
-                  onSelectedHexChange={() => {}}
+                  onSelectedHexChange={handleSelectedHexChange}
                   terrain={mapDefinition}
                   mapType={mapType}
                   mode="MAP_EDITOR"
@@ -463,6 +789,11 @@ export default function MapMakerPage() {
                     terrain={mapDefinition}
                     mode="MAP_EDITOR"
                     visible={true}
+                    editorProps={mapProps}
+                    selectedEditorPropId={selectedPropId}
+                    onEditorPropGrab={beginPropGrab}
+                    onEditorPropHover={updatePropGrabHover}
+                    onEditorPropDrop={completePropDrop}
                   />
                 </Box>
               )}

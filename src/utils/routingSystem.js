@@ -116,6 +116,163 @@ export function isAtMapEdge(pos, gridWidth, gridHeight) {
   );
 }
 
+function normalizeBounds(mapBounds = {}) {
+  const width = Number(mapBounds.width ?? mapBounds.gridWidth ?? mapBounds.maxX) || 1;
+  const height = Number(mapBounds.height ?? mapBounds.gridHeight ?? mapBounds.maxY) || 1;
+  const minX = Number.isFinite(Number(mapBounds.minX)) ? Number(mapBounds.minX) : 0;
+  const minY = Number.isFinite(Number(mapBounds.minY)) ? Number(mapBounds.minY) : 0;
+  const maxX = Number.isFinite(Number(mapBounds.maxX)) ? Number(mapBounds.maxX) : minX + width - 1;
+  const maxY = Number.isFinite(Number(mapBounds.maxY)) ? Number(mapBounds.maxY) : minY + height - 1;
+  return { minX, minY, maxX, maxY, width: maxX - minX + 1, height: maxY - minY + 1 };
+}
+
+function getEdgeHexes(bounds) {
+  const out = [];
+  for (let x = bounds.minX; x <= bounds.maxX; x += 1) {
+    out.push({ x, y: bounds.minY });
+    if (bounds.maxY !== bounds.minY) out.push({ x, y: bounds.maxY });
+  }
+  for (let y = bounds.minY + 1; y <= bounds.maxY - 1; y += 1) {
+    out.push({ x: bounds.minX, y });
+    if (bounds.maxX !== bounds.minX) out.push({ x: bounds.maxX, y });
+  }
+  return out;
+}
+
+function keyOf(pos) {
+  return `${pos.x},${pos.y}`;
+}
+
+function defaultNeighbors(pos) {
+  const odd = Math.abs(pos.y % 2) === 1;
+  const deltas = odd
+    ? [[1, 0], [-1, 0], [0, -1], [1, -1], [0, 1], [1, 1]]
+    : [[1, 0], [-1, 0], [-1, -1], [0, -1], [-1, 1], [0, 1]];
+  return deltas.map(([dx, dy]) => ({ x: pos.x + dx, y: pos.y + dy }));
+}
+
+function isThreatAdjacent(pos, threats, calculateDistance) {
+  return threats.some((threat) => {
+    if (!threat) return false;
+    if (typeof calculateDistance === "function") return calculateDistance(pos, threat) <= 5.01;
+    return Math.max(Math.abs(pos.x - threat.x), Math.abs(pos.y - threat.y)) <= 1;
+  });
+}
+
+export function getClosestEscapeEdgeHex(router, threats = [], mapBounds = {}, occupiedHexes = {}, options = {}) {
+  const start = router?.position || router?.hex || router;
+  if (!start || !Number.isFinite(Number(start.x)) || !Number.isFinite(Number(start.y))) return null;
+
+  const bounds = normalizeBounds(mapBounds);
+  const threatPositions = (threats || []).map((t) => t?.position || t?.hex || t).filter(Boolean);
+  const occupiedSet = occupiedHexes instanceof Set
+    ? occupiedHexes
+    : new Set(
+        Array.isArray(occupiedHexes)
+          ? occupiedHexes.map(keyOf)
+          : Object.values(occupiedHexes || {}).filter(Boolean).map(keyOf)
+      );
+  const getNeighbors = options.getHexNeighbors || ((x, y) => defaultNeighbors({ x, y }));
+  const calculateDistance = options.calculateDistance;
+  const isInside = (p) => p.x >= bounds.minX && p.x <= bounds.maxX && p.y >= bounds.minY && p.y <= bounds.maxY;
+  const isBlocked = (p) => occupiedSet.has(keyOf(p)) && keyOf(p) !== keyOf(start);
+  const minThreatDistance = (p) => getMinimumThreatDistance(p, threatPositions, calculateDistance);
+  const startThreatDistance = minThreatDistance(start);
+  const edgeKeys = new Set(getEdgeHexes(bounds).map(keyOf));
+  const center = {
+    x: (bounds.minX + bounds.maxX) / 2,
+    y: (bounds.minY + bounds.maxY) / 2,
+  };
+  const nearestThreat = threatPositions
+    .slice()
+    .sort((a, b) => {
+      if (typeof calculateDistance === "function") {
+        return calculateDistance(start, a) - calculateDistance(start, b);
+      }
+      return Math.abs(Number(start.x) - Number(a.x)) + Math.abs(Number(start.y) - Number(a.y)) -
+        (Math.abs(Number(start.x) - Number(b.x)) + Math.abs(Number(start.y) - Number(b.y)));
+    })[0];
+  const awayScore = (p) => {
+    if (!nearestThreat) return 0;
+    const awayX = Number(start.x) - Number(nearestThreat.x);
+    const awayY = Number(start.y) - Number(nearestThreat.y);
+    const edgeX = Number(p.x) - center.x;
+    const edgeY = Number(p.y) - center.y;
+    return awayX * edgeX + awayY * edgeY;
+  };
+
+  const cameFrom = new Map();
+  const stepsByKey = new Map();
+  const queue = [{ x: Number(start.x), y: Number(start.y) }];
+  cameFrom.set(keyOf(start), null);
+  stepsByKey.set(keyOf(start), 0);
+
+  while (queue.length) {
+    const pos = queue.shift();
+    for (const next of getNeighbors(pos.x, pos.y)) {
+      if (!isInside(next) || isBlocked(next)) continue;
+      const key = keyOf(next);
+      if (cameFrom.has(key)) continue;
+      cameFrom.set(key, keyOf(pos));
+      stepsByKey.set(key, (stepsByKey.get(keyOf(pos)) || 0) + 1);
+      queue.push(next);
+    }
+  }
+
+  let best = null;
+  for (const edgeKey of edgeKeys) {
+    if (!cameFrom.has(edgeKey)) continue;
+    const [x, y] = edgeKey.split(",").map(Number);
+    const candidate = { x, y };
+    const steps = stepsByKey.get(edgeKey) || 0;
+    const safety = minThreatDistance(candidate);
+    const adjacentPenalty = isThreatAdjacent(candidate, threatPositions, calculateDistance) ? 1000 : 0;
+    const improvesSafety = safety > startThreatDistance ? 500 : 0;
+    const score = improvesSafety + safety + awayScore(candidate) * 0.25 - steps * 3 - adjacentPenalty;
+    if (!best || score > best.score) {
+      const path = [];
+      let cursor = edgeKey;
+      while (cursor) {
+        const [px, py] = cursor.split(",").map(Number);
+        path.unshift({ x: px, y: py });
+        cursor = cameFrom.get(cursor);
+      }
+      best = { position: candidate, path, stepsMoved: steps, safetyScore: safety, score, reachedEdge: true };
+    }
+  }
+
+  if (best) return best;
+
+  const leastBad = [...cameFrom.keys()]
+    .filter((k) => k !== keyOf(start))
+    .map((k) => {
+      const [x, y] = k.split(",").map(Number);
+      const pos = { x, y };
+      const path = [];
+      let cursor = k;
+      while (cursor) {
+        const [px, py] = cursor.split(",").map(Number);
+        path.unshift({ x: px, y: py });
+        cursor = cameFrom.get(cursor);
+      }
+      return {
+        position: pos,
+        path,
+        stepsMoved: stepsByKey.get(k) || 0,
+        safetyScore: minThreatDistance(pos),
+        reachedEdge: false,
+        score: minThreatDistance(pos) + awayScore(pos) * 0.25,
+      };
+    })
+    .sort((a, b) => b.score - a.score || b.safetyScore - a.safetyScore || b.stepsMoved - a.stepsMoved)[0];
+
+  return leastBad || null;
+}
+
+export function getBestEscapeEdgeHex(router, threats = [], mapBounds = {}, occupiedHexes = {}, options = {}) {
+  return getClosestEscapeEdgeHex(router, threats, mapBounds, occupiedHexes, options);
+}
+
 function getMinimumThreatDistance(position, threatPositions, calculateDistance) {
   if (
     !position ||

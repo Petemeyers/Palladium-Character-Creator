@@ -55,6 +55,7 @@ const TacticalMap = ({
   // Hex selection callbacks
   onHoveredCellChange = null, // Callback when cell is hovered
   onSelectedHexChange = null, // Callback when hex is selected for movement
+  onMoveSelect = null, // Callback when a valid movement hex is selected
   // Path preview props
   pathPreviewCells = null, // Array<{x:number,y:number}> | null
   pathPreviewMode = null, // "LANDING" | "MOVE" | null
@@ -535,6 +536,10 @@ const TacticalMap = ({
       requestAnimationFrame(() => {
         // MAP_EDITOR mode: paint terrain/elevation and notify parent
         if (mode === "MAP_EDITOR" && mapDefinition) {
+          setSelectedTargetHex({ x, y });
+          if (onSelectedHexChange) {
+            onSelectedHexChange({ x, y });
+          }
           applyMapEditorEdit(x, y);
           // Important: stop here—don't run movement/combatant selection logic in editor mode
           return;
@@ -550,6 +555,9 @@ const TacticalMap = ({
             setSelectedTargetHex({ x, y });
             if (onSelectedHexChange) {
               onSelectedHexChange({ x, y });
+            }
+            if (onMoveSelect) {
+              onMoveSelect(x, y);
             }
           } else {
             console.log("❌ Invalid move to hex:", x, y);
@@ -584,6 +592,7 @@ const TacticalMap = ({
       allowEmptyHexSelection,
       onSelectedCombatantChange,
       onSelectedHexChange,
+      onMoveSelect,
       validMoves,
     ]
   );
@@ -3202,6 +3211,7 @@ TacticalMap.propTypes = {
   // Hex selection callbacks
   onHoveredCellChange: PropTypes.func,
   onSelectedHexChange: PropTypes.func,
+  onMoveSelect: PropTypes.func,
   // Path preview props
   pathPreviewCells: PropTypes.arrayOf(
     PropTypes.shape({

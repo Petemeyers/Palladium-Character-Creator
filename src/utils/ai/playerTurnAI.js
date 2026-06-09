@@ -33,6 +33,7 @@ import {
   getPreferredEngagementRange,
   isWeaponGrappleSuitable,
 } from "../grapplingSystem.js";
+import { assessGrappleSizeOutcome } from "../sizeStrengthModifiers.js";
 
 const UNDEAD_KEYWORDS = [
   "vampire",
@@ -519,6 +520,10 @@ export async function runPlayerTurnAI(player, context) {
     activePlayerAITurnKeysRef,
     combatActiveRef,
     combatOverRef,
+    combatSessionRef,
+    combatSession,
+    currentTurnTokenRef,
+    currentTurnToken,
     turnIndexRef,
     // Spell/power utilities
     isOffensiveSpell,
@@ -571,21 +576,41 @@ export async function runPlayerTurnAI(player, context) {
   };
   const tokenStillValid = () => {
     if (!playerAITurnTokenRef || !playerAITurnToken) return true;
-    return playerAITurnTokenRef.current === playerAITurnToken;
+    if (playerAITurnTokenRef.current !== playerAITurnToken) return false;
+    if (combatSessionRef && combatSession != null && combatSessionRef.current !== combatSession) return false;
+    if (currentTurnTokenRef && currentTurnToken != null && currentTurnTokenRef.current !== currentTurnToken) return false;
+    return true;
   };
 
   const canRunPlayerAICallback = ({ token, fighterId }) => {
     if (combatOverRef?.current) return false;
     if (combatActiveRef?.current === false) return false;
     if (pendingTurnAdvanceRef?.current) return false;
+    if (combatSessionRef && combatSession != null && combatSessionRef.current !== combatSession) return false;
+    if (currentTurnTokenRef && currentTurnToken != null && currentTurnTokenRef.current !== currentTurnToken) return false;
     if (playerAITurnTokenRef?.current != null && token != null && playerAITurnTokenRef.current !== token) return false;
     const curIdx = turnIndexRef?.current;
-    const curFighterId = (fightersRef?.current || fighters)?.[curIdx]?.id;
+    const liveFighters = fightersRef?.current || fighters;
+    const curFighterId = liveFighters?.[curIdx]?.id;
     if (curFighterId && fighterId && curFighterId !== fighterId) return false;
+    const liveFighter = liveFighters?.find?.((f) => f.id === fighterId);
+    if (fighterId && (!liveFighter || (Number(liveFighter.remainingAttacks ?? 0) || 0) <= 0)) return false;
     return true;
   };
   const markActionScheduled = () => {
     if (playerAIActionScheduledRef) playerAIActionScheduledRef.current = true;
+  };
+  const finalizeApproachMoveOnly = (reason = "player-ai-approach-move-only") => {
+    addLog("🧪 approach post-move continuation: inRange=false", "debug");
+    addLog("🧪 finishAttackAfterImpact reason=approach-move-only", "debug");
+    addLog(`⏭️ ${player.name} used this action to move into position.`, "info");
+    addLog("🧪 approach move-only finalizing", "debug");
+    markActionScheduled();
+    if (turnActionResolvingRef) turnActionResolvingRef.current = false;
+    if (pendingTurnAdvanceRef) pendingTurnAdvanceRef.current = false;
+    processingPlayerAIRef.current = false;
+    addLog("🧪 approach move-only finalized; scheduling turn advance", "debug");
+    scheduleEndTurn(0, reason);
   };
   const getLatestPlayerState = () =>
     fightersRef?.current?.find((f) => f.id === player.id) ||
@@ -2605,6 +2630,7 @@ export async function runPlayerTurnAI(player, context) {
   let selectedAttack = null;
   let attackName = "Unarmed Strike";
   let selectedWeapon = null;
+  let grappleOriginalWeaponName = null;
 
   // If no weapons found, try to equip a basic weapon from inventory
   if (equippedWeapons.length === 0) {
@@ -2739,6 +2765,24 @@ export async function runPlayerTurnAI(player, context) {
       sizeLabel.includes("large") ||
       sizeLabel.includes("giant") ||
       sizeLabel.includes("huge");
+    const sizeOutcome = assessGrappleSizeOutcome(player, target);
+    const targetDisabled =
+      sizeOutcome.targetDisabled ||
+      target?.prone ||
+      target?.stunned ||
+      target?.restrained;
+
+    if (sizeOutcome.sizeDelta >= 2 && !sizeOutcome.hasSpecialAdvantage && !targetDisabled) {
+      return false;
+    }
+    if (
+      sizeOutcome.sizeDelta === 1 &&
+      !targetDisabled &&
+      !sizeOutcome.hasSpecialAdvantage &&
+      ps < sizeOutcome.targetPS - 2
+    ) {
+      return false;
+    }
 
     if (isKnightly) {
       return (Number(player.remainingAttacks ?? 0) || 0) > 1;
@@ -2857,6 +2901,7 @@ export async function runPlayerTurnAI(player, context) {
       const grappleWeapon = meleeWeapons.find(isKnifeOrDagger);
       const currentWeapon = equippedWeapons[0];
       if (currentWeapon && !isWeaponGrappleSuitable(currentWeapon)) {
+        grappleOriginalWeaponName = currentWeapon.name || "Unknown";
         addLog(
           `⚠️ ${player.name} cannot use ${currentWeapon.name} effectively in a grapple.`,
           "warning"
@@ -2865,7 +2910,7 @@ export async function runPlayerTurnAI(player, context) {
       if (grappleWeapon) {
         selectedWeapon = grappleWeapon;
         addLog(
-          `${player.name} switches to ${selectedWeapon.name} for grapple-range combat.`,
+          `${player.name} is in grapple range and switches to close-quarters combat.`,
           "info"
         );
       } else {
@@ -2888,7 +2933,7 @@ export async function runPlayerTurnAI(player, context) {
           isFallbackUnarmed: true,
         };
         addLog(
-          `${player.name} switches to unarmed close combat in grapple range.`,
+          `${player.name} is in grapple range and switches to close-quarters combat.`,
           "info"
         );
       }
@@ -3043,6 +3088,8 @@ export async function runPlayerTurnAI(player, context) {
       selectedAttack = {
         name: selectedWeapon.name,
         weapon: selectedWeapon,
+        grappleResolvedFromWeapon: grappleOriginalWeaponName || selectedWeapon.name,
+        grappleResolvedFinalWeapon: selectedWeapon.name,
         damage: selectedWeapon.damage || "1d3",
         count: 1,
         range: weaponRange,
@@ -3060,6 +3107,12 @@ export async function runPlayerTurnAI(player, context) {
         ammunition: selectedWeapon?.ammunition,
         ammoType: selectedWeapon?.ammoType,
       };
+      if (grappleOriginalWeaponName && grappleOriginalWeaponName !== selectedAttack.name) {
+        addLog(
+          `🧪 grapple weapon resolved: original=${grappleOriginalWeaponName}, final=${selectedAttack.name}`,
+          "debug"
+        );
+      }
       attackName = selectedAttack.name;
       addLog(`✅ ${player.name} will attack with ${attackName}`, "info");
     }
@@ -3334,6 +3387,10 @@ export async function runPlayerTurnAI(player, context) {
               `🎯 ${player.name} targets flanking position (${bestFlankPos.x}, ${bestFlankPos.y})`,
               "info"
             );
+            addLog(
+              `📍 ${player.name} moves ${Math.round(flankDistance)}ft to flanking position (${bestFlankPos.x}, ${bestFlankPos.y})`,
+              "info"
+            );
 
             // Continue with attack after movement - use updated positions from state
             setTimeout(() => {
@@ -3343,35 +3400,75 @@ export async function runPlayerTurnAI(player, context) {
               // Re-read positions from state to ensure we have the latest
               setPositions((currentPositions) => {
                 positionsRef.current = currentPositions;
-                const actualFlankPos =
-                  currentPositions[player.id] || bestFlankPos;
-                const actualTargetPos =
-                  currentPositions[target.id] || targetPos;
-                const newDistance = calculateDistance(
-                  actualFlankPos,
-                  actualTargetPos
-                );
-
                 // Check range after position update
                 setTimeout(() => {
                   void (async () => {
-                  if (!tokenStillValid()) return;
-                  if (pendingTurnAdvanceRef?.current) return;
-                  if (!combatActive) return;
-                  const rangeValidation = validateWeaponRange(
-                    player,
-                    target,
+                  const abortFlankingContinuation = (reason = "flanking continuation aborted") => {
+                    addLog("🚫 flanking continuation aborted safely", "warning");
+                    addLog(`🧪 ${reason}`, "debug");
+                    if (turnActionResolvingRef) turnActionResolvingRef.current = false;
+                    if (pendingTurnAdvanceRef) pendingTurnAdvanceRef.current = false;
+                    processingPlayerAIRef.current = false;
+                    scheduleEndTurn(0, "player-ai-flanking-continuation-abort");
+                  };
+
+                  try {
+                  if (!tokenStillValid()) {
+                    abortFlankingContinuation("stale token");
+                    return;
+                  }
+                  if (pendingTurnAdvanceRef?.current) {
+                    abortFlankingContinuation("turn advance pending");
+                    return;
+                  }
+                  if (!combatActive) {
+                    abortFlankingContinuation("combat inactive");
+                    return;
+                  }
+                  const continuationPositions = positionsRef.current || currentPositions;
+                  const actualFlankPos =
+                    continuationPositions[player.id] || bestFlankPos;
+                  const actualTargetPos =
+                    continuationPositions[target.id] || targetPos;
+                  const liveFighters = fightersRef?.current || fighters;
+                  const livePlayer =
+                    liveFighters.find((f) => f.id === player.id) || player;
+                  const liveTarget =
+                    liveFighters.find((f) => f.id === target.id) || target;
+                  const newDistance = calculateDistance(
+                    actualFlankPos,
+                    actualTargetPos
+                  );
+                  let rangeValidation;
+                  rangeValidation = validateWeaponRange(
+                    livePlayer,
+                    liveTarget,
                     selectedAttack,
                     newDistance
                   );
+                  addLog(
+                    `🧪 flanking post-move continuation: inRange=${!!rangeValidation.canAttack}`,
+                    "debug"
+                  );
 
                   if (rangeValidation.canAttack) {
-                    const flankingBonus = calculateFlankingBonus(
-                      actualFlankPos,
-                      actualTargetPos,
-                      currentPositions,
-                      player.id
+                    addLog(
+                      `📍 ${player.name} is now ${Math.round(newDistance)}ft from ${target.name}.`,
+                      "info"
                     );
+                    let flankingBonus = 0;
+                    try {
+                      flankingBonus = calculateFlankingBonus(
+                        actualFlankPos,
+                        actualTargetPos,
+                        continuationPositions,
+                        player.id
+                      );
+                    } catch (err) {
+                      console.error("[playerTurnAI] flanking bonus calculation failed:", err);
+                      abortFlankingContinuation(`flanking bonus failed: ${err?.message || String(err)}`);
+                      return;
+                    }
                     if (flankingBonus > 0) {
                       addLog(
                         `🎯 ${player.name} gains flanking bonus (+${flankingBonus} to hit)!`,
@@ -3381,24 +3478,59 @@ export async function runPlayerTurnAI(player, context) {
 
                     // Execute attack with flanking bonus
                     const updatedPlayer = {
-                      ...player,
+                      ...livePlayer,
                       selectedAttack: selectedAttack,
                     };
                     const bonuses = flankingBonus > 0 ? { flankingBonus } : {};
-                    if (!tokenStillValid()) return;
-                    if (pendingTurnAdvanceRef?.current) return;
-                    if (!combatActive) return;
+                    if (!tokenStillValid()) {
+                      abortFlankingContinuation("stale token before attack");
+                      return;
+                    }
+                    if (pendingTurnAdvanceRef?.current) {
+                      abortFlankingContinuation("turn advance pending before attack");
+                      return;
+                    }
+                    if (!combatActive) {
+                      abortFlankingContinuation("combat inactive before attack");
+                      return;
+                    }
                     if (turnActionResolvingRef) turnActionResolvingRef.current = true;
+                    let flankingAttackSettled = false;
+                    const flankingAttackWatchdog = setTimeout(() => {
+                      if (flankingAttackSettled) return;
+                      if (
+                        !pendingTurnAdvanceRef?.current &&
+                        turnActionResolvingRef?.current &&
+                        combatActiveRef?.current !== false &&
+                        !combatOverRef?.current &&
+                        tokenStillValid()
+                      ) {
+                        flankingAttackSettled = true;
+                        addLog("🚫 flanking continuation exception: attack did not settle", "warning");
+                        turnActionResolvingRef.current = false;
+                        processingPlayerAIRef.current = false;
+                        scheduleEndTurn(16, "player-ai-flank-attack-watchdog");
+                      }
+                    }, 5000);
                     try {
-                      await attack(updatedPlayer, target.id, {
+                      addLog("🧪 flanking continuation calling attack", "debug");
+                      await attack(updatedPlayer, liveTarget.id, {
                         ...bonuses,
                         attackDataOverride: selectedAttack,
                         attackerPosOverride: actualFlankPos,
                         defenderPosOverride: actualTargetPos,
                         distanceOverride: newDistance,
                       });
+                      flankingAttackSettled = true;
+                      clearTimeout(flankingAttackWatchdog);
                     } catch (err) {
+                      flankingAttackSettled = true;
+                      clearTimeout(flankingAttackWatchdog);
                       console.error("[playerTurnAI] flanking attack failed:", err);
+                      addLog(
+                        `🚫 flanking continuation exception: ${err?.message || String(err)}`,
+                        "warning"
+                      );
                       addLog(
                         `⚠️ Player AI attack failed: ${err?.message || String(err)}`,
                         "warning"
@@ -3447,6 +3579,9 @@ export async function runPlayerTurnAI(player, context) {
                       scheduleEndTurn();
                       return;
                     }
+
+                    finalizeApproachMoveOnly("player-ai-flanking-move-only");
+                    return;
 
                     // Check if we should continue trying to move closer - use closure variables
                     setTimeout(() => {
@@ -3506,6 +3641,14 @@ export async function runPlayerTurnAI(player, context) {
                         scheduleEndTurn(0);
                       }
                     }, 500);
+                  }
+                  } catch (err) {
+                    console.error("[playerTurnAI] flanking continuation failed:", err);
+                    addLog(
+                      `🚫 flanking continuation exception: ${err?.message || String(err)}`,
+                      "warning"
+                    );
+                    abortFlankingContinuation(`exception: ${err?.message || String(err)}`);
                   }
                 })();
                 }, 100);
@@ -3721,6 +3864,14 @@ export async function runPlayerTurnAI(player, context) {
             `🚫 ${player.name} cannot find path to target - no open hexes`,
             "warning"
           );
+          addLog(`⏭️ ${player.name} loses this action trying to find a path.`, "info");
+          setFighters((prev) =>
+            prev.map((f) =>
+              f.id === player.id
+                ? { ...f, remainingAttacks: Math.max(0, (Number(f.remainingAttacks ?? 0) || 0) - 1) }
+                : f
+            )
+          );
           processingPlayerAIRef.current = false;
           scheduleEndTurn();
           return;
@@ -3860,140 +4011,102 @@ export async function runPlayerTurnAI(player, context) {
             );
           }
 
-          if (
-            movementTracker.count >= 3 ||
-            (!improved && chosenMove.type !== "bee")
-          ) {
-            addLog(
-              `🚫 ${player.name} cannot reach target after ${movementTracker.count} attempt(s) - ending turn`,
-              "warning"
-            );
-            processingPlayerAIRef.current = false;
-            scheduleEndTurn();
-            return;
-          }
-
-          if (
-            player.remainingAttacks > 0 &&
-            movementTracker.count < 3 &&
-            combatActive
-          ) {
-            addLog(
-              `🏃 ${player.name} is still ${Math.round(
-                newDistance
-              )}ft away, attempting another move...`,
-              "info"
-            );
-            setTimeout(() => {
-              setPositions((currentPositions) => {
-                positionsRef.current = currentPositions;
-                const updatedPlayerState = fighters.find(
-                  (f) => f.id === player.id
-                );
-                if (
-                  updatedPlayerState &&
-                  updatedPlayerState.remainingAttacks > 0 &&
-                  combatActive &&
-                  !processingPlayerAIRef.current
-                ) {
-                  const latestTarget = fighters.find((f) => f.id === target.id);
-                  if (
-                    !latestTarget ||
-                    latestTarget.currentHP <= 0 ||
-                    latestTarget.currentHP <= -21
-                  ) {
-                    addLog(
-                      `⚠️ ${player.name}'s target is no longer valid, ending turn`,
-                      "info"
-                    );
-                    processingPlayerAIRef.current = false;
-                    scheduleEndTurn();
-                    return currentPositions;
-                  }
-
-                  const latestDistance = calculateDistance(
-                    currentPositions[player.id] || chosenMove.pos,
-                    targetPos
-                  );
-                  const latestRangeValidation = validateWeaponRange(
-                    (function () {
-                      const atkName = String(
-                        selectedAttack?.name || ""
-                      ).toLowerCase();
-                      const atkType = String(
-                        selectedAttack?.type || ""
-                      ).toLowerCase();
-                      const atkRangeNum =
-                        typeof selectedAttack?.range === "number"
-                          ? selectedAttack.range
-                          : Number(selectedAttack?.range);
-                      const isRangedLike =
-                        atkType === "ranged" ||
-                        atkName.includes("bow") ||
-                        atkName.includes("crossbow") ||
-                        atkName.includes("sling") ||
-                        atkName.includes("thrown") ||
-                        (Number.isFinite(atkRangeNum) && atkRangeNum > 10);
-                      const attackerAlt = getAltitude(player) || 0;
-                      const targetAlt = getAltitude(target) || 0;
-                      const targetIsAirborne =
-                        isFlying(target) && targetAlt > 0;
-                      const shouldAutoDescendForMelee =
-                        !hasRangedWeapon &&
-                        !isRangedLike &&
-                        attackerAlt > 0 &&
-                        !targetIsAirborne &&
-                        targetAlt <= 5;
-                      return shouldAutoDescendForMelee
-                        ? { ...player, altitude: 0, altitudeFeet: 0 }
-                        : player;
-                    })(),
-                    target,
-                    selectedAttack,
-                    latestDistance
-                  );
-
-                  if (
-                    !latestRangeValidation.canAttack &&
-                    latestDistance < (movementTracker.lastDistance ?? Infinity)
-                  ) {
-                    processingPlayerAIRef.current = true;
-                    setTimeout(() => {
-                      // Note: We can't recursively call runPlayerTurnAI here because we don't have access to the full context
-                      // Instead, we'll just schedule end turn and let the next turn handle it
-                      processingPlayerAIRef.current = false;
-                      scheduleEndTurn();
-                    }, 500);
-                  } else {
-                    processingPlayerAIRef.current = false;
-                    scheduleEndTurn();
-                  }
-                } else {
-                  processingPlayerAIRef.current = false;
-                  scheduleEndTurn();
-                }
-                return currentPositions;
-              });
-            }, 800);
-            return;
-          } else {
-            addLog(
-              `⏭️ ${player.name} cannot reach target (${
-                movementTracker.count
-              } attempts, ${Math.round(
-                newDistance
-              )}ft remaining) - ending turn`,
-              "info"
-            );
-            processingPlayerAIRef.current = false;
-            scheduleEndTurn();
-            return;
-          }
+          finalizeApproachMoveOnly("player-ai-approach-move-only");
+          return;
         } else {
+          const livePositionsNow = positionsRef.current || positions;
+          const liveFightersNow = fightersRef?.current || fighters;
+          const livePlayer =
+            liveFightersNow.find((f) => f.id === player.id) || player;
+          const liveTarget =
+            liveFightersNow.find((f) => f.id === target.id) || target;
+          const liveAttackerPos = livePositionsNow?.[player.id] || chosenMove.pos;
+          const liveTargetPos = livePositionsNow?.[target.id] || targetPos;
+          const liveDistance =
+            liveAttackerPos && liveTargetPos
+              ? calculateDistance(liveAttackerPos, liveTargetPos)
+              : newDistance;
+          let liveRangeValidation;
+          try {
+            liveRangeValidation = validateWeaponRange(
+              attackerForRangeCheck,
+              liveTarget,
+              selectedAttack,
+              liveDistance
+            );
+          } catch (err) {
+            console.error("[playerTurnAI] approach range validation failed:", err);
+            addLog("🚫 approach continuation aborted safely", "warning");
+            if (turnActionResolvingRef) turnActionResolvingRef.current = false;
+            if (pendingTurnAdvanceRef) pendingTurnAdvanceRef.current = false;
+            processingPlayerAIRef.current = false;
+            scheduleEndTurn(0, "player-ai-approach-continuation-abort");
+            return;
+          }
+
           addLog(
-            `✅ ${player.name} is now in range (${rangeValidation.reason})`,
+            `🧪 approach post-move continuation: inRange=${!!liveRangeValidation.canAttack}`,
+            "debug"
+          );
+
+          if (!liveRangeValidation.canAttack) {
+            finalizeApproachMoveOnly("player-ai-approach-move-only");
+            return;
+          }
+
+          addLog(
+            `✅ ${player.name} is now in range (${liveRangeValidation.reason})`,
             "info"
           );
+          addLog(
+            `🤖 ${player.name} attacking closest reachable target (${Math.round(liveDistance)}ft away) and attacks ${liveTarget.name} with ${attackName}!`,
+            "info"
+          );
+          markActionScheduled();
+          setTimeout(() => {
+            void (async () => {
+              if (!canRunPlayerAICallback({ token: playerAITurnToken, fighterId: player.id })) {
+                addLog("🚫 approach continuation aborted safely", "warning");
+                processingPlayerAIRef.current = false;
+                scheduleEndTurn(0, "player-ai-approach-stale");
+                return;
+              }
+              if (pendingTurnAdvanceRef?.current || !combatActive) {
+                addLog("🚫 approach continuation aborted safely", "warning");
+                if (turnActionResolvingRef) turnActionResolvingRef.current = false;
+                if (pendingTurnAdvanceRef) pendingTurnAdvanceRef.current = false;
+                processingPlayerAIRef.current = false;
+                scheduleEndTurn(0, "player-ai-approach-continuation-abort");
+                return;
+              }
+              if (turnActionResolvingRef) turnActionResolvingRef.current = true;
+              try {
+                await attack(
+                  { ...livePlayer, aiControlled: true, selectedAttack },
+                  liveTarget.id,
+                  {
+                    attackDataOverride: selectedAttack,
+                    attackerPosOverride: liveAttackerPos,
+                    defenderPosOverride: liveTargetPos,
+                    distanceOverride: liveDistance,
+                  }
+                );
+              } catch (err) {
+                console.error("[playerTurnAI] approach attack failed:", err);
+                addLog("🚫 approach continuation aborted safely", "warning");
+                addLog(
+                  `⚠️ Player AI approach attack failed: ${err?.message || String(err)}`,
+                  "warning"
+                );
+                if (turnActionResolvingRef) turnActionResolvingRef.current = false;
+                if (pendingTurnAdvanceRef) pendingTurnAdvanceRef.current = false;
+                scheduleEndTurn(16, "player-ai-approach-attack-catch");
+              } finally {
+                processingPlayerAIRef.current = false;
+              }
+            })();
+          }, 100);
+          return;
         }
       }
     } catch (error) {

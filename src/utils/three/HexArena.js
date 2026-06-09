@@ -619,6 +619,8 @@ export function initHexArena(containerElement) {
   let lastTerrainSig = null; // Cache terrain signature to prevent unnecessary rebuilds
   let characterGroup = null;
   let characterMeshes = new Map(); // Map of fighter ID to character mesh/group
+  let editorPropGroup = null;
+  let editorPropMeshes = new Map(); // Map of editor prop ID to mesh/group
   let projectileGroup = null;
   let projectileMeshes = new Map(); // Map of projectile ID to mesh
   let embeddedArrowGroup = null;
@@ -629,6 +631,23 @@ export function initHexArena(containerElement) {
   let sharedArrowAssets = null;
   let dangerRingGroup = null;
   let dangerRingMeshes = new Map(); // key: "x,y" -> mesh
+  const raycaster = new THREE.Raycaster();
+  const pointer = new THREE.Vector2();
+  let pointerDownAt = null;
+  let movementHighlightGroup = null;
+  let mapInteractionState = {
+    movementMode: { active: false, isRunning: false },
+    validMoves: [],
+    selectedMovementFighter: null,
+    onHexHover: null,
+    onHexSelect: null,
+  };
+  let editorPropInteractionState = {
+    onPropGrab: null,
+    onPropHover: null,
+    onPropDrop: null,
+  };
+  let editorPropGrab = null;
   let disposed = false;
   let timeScale = 1;
   let impactReactionsById = {};
@@ -644,6 +663,10 @@ export function initHexArena(containerElement) {
   characterGroup.name = "characters";
   scene.add(characterGroup);
 
+  editorPropGroup = new THREE.Group();
+  editorPropGroup.name = "editorProps";
+  scene.add(editorPropGroup);
+
   // Initialize projectile group
   projectileGroup = new THREE.Group();
   projectileGroup.name = "projectiles";
@@ -657,6 +680,10 @@ export function initHexArena(containerElement) {
   dangerRingGroup = new THREE.Group();
   dangerRingGroup.name = "dangerRings";
   scene.add(dangerRingGroup);
+
+  movementHighlightGroup = new THREE.Group();
+  movementHighlightGroup.name = "movementHighlights";
+  scene.add(movementHighlightGroup);
 
   function animate() {
     if (disposed) return;
@@ -772,6 +799,381 @@ export function initHexArena(containerElement) {
     renderer.setSize(width, height);
   }
   window.addEventListener("resize", resize);
+
+  function getOffsetHexFromTile(tileData) {
+    if (!tileData) return null;
+    const gridPos = tileData.gridPosition;
+    if (Number.isFinite(gridPos?.col) && Number.isFinite(gridPos?.row)) {
+      return {
+        x: gridPos.col,
+        y: gridPos.row,
+        q: tileData.q,
+        r: tileData.r,
+      };
+    }
+    if (Number.isFinite(tileData.q) && Number.isFinite(tileData.r)) {
+      const offset = axialToOffset(tileData.q, tileData.r);
+      return {
+        x: offset.col,
+        y: offset.row,
+        q: tileData.q,
+        r: tileData.r,
+      };
+    }
+    return null;
+  }
+
+  function getTileFromPointerEvent(event) {
+    if (!gridRoot || !renderer?.domElement) return null;
+    const rect = renderer.domElement.getBoundingClientRect();
+    if (!rect.width || !rect.height) return null;
+
+    pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+    raycaster.setFromCamera(pointer, camera);
+
+    const hits = raycaster.intersectObjects(gridRoot.children, true);
+    const hit = hits.find((entry) => entry?.object?.userData);
+    return hit?.object?.userData || null;
+  }
+
+  function getPropRootFromObject(object) {
+    let cursor = object;
+    while (cursor) {
+      if (cursor.userData?.editorPropId) return cursor;
+      cursor = cursor.parent;
+    }
+    return null;
+  }
+
+  function getPropFromPointerEvent(event) {
+    if (!editorPropGroup || !renderer?.domElement) return null;
+    const rect = renderer.domElement.getBoundingClientRect();
+    if (!rect.width || !rect.height) return null;
+
+    pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+    raycaster.setFromCamera(pointer, camera);
+
+    const hits = raycaster.intersectObjects(editorPropGroup.children, true);
+    const root = getPropRootFromObject(hits[0]?.object);
+    if (!root) return null;
+    return {
+      id: root.userData.editorPropId,
+      prop: root.userData.editorProp,
+      mesh: root,
+    };
+  }
+
+  function getTileSurfaceY(q, r) {
+    const tileMesh = tileMeshLookup.get(`${q},${r}`);
+    if (!tileMesh) return null;
+    const box = new THREE.Box3().setFromObject(tileMesh);
+    return Number.isFinite(box.max.y) ? box.max.y : tileMesh.position.y + HEX_TILE_THICKNESS;
+  }
+
+  function getPropWorldPosition(prop, hexOverride = null) {
+    const q = hexOverride?.q ?? prop?.q;
+    const r = hexOverride?.r ?? prop?.r;
+    if (!Number.isFinite(q) || !Number.isFinite(r)) return null;
+    const surfaceY = getTileSurfaceY(q, r);
+    if (!Number.isFinite(surfaceY)) return null;
+    return worldVectorFromEntity({ q, r, height: 0 }, HEX_RADIUS, HEX_TILE_THICKNESS)
+      .setY(surfaceY + 0.08);
+  }
+
+  function applyEditorPropSelection(mesh, selected) {
+    if (!mesh) return;
+    mesh.traverse((child) => {
+      if (!child.material) return;
+      const materials = Array.isArray(child.material) ? child.material : [child.material];
+      materials.forEach((mat) => {
+        if (!mat?.emissive) return;
+        mat.emissive.set(selected ? 0x3b82f6 : 0x000000);
+        mat.emissiveIntensity = selected ? 0.45 : 0;
+      });
+    });
+  }
+
+  function createEditorPropMesh(prop) {
+    const group = new THREE.Group();
+    group.name = `editor-prop-${prop?.id || "unknown"}`;
+
+    const type = prop?.type || "crate";
+    const scale = Number(prop?.scale) || 1;
+
+    if (type === "tree") {
+      const trunk = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.12, 0.16, 0.9, 8),
+        new THREE.MeshStandardMaterial({ color: 0x7a4a24, roughness: 0.8 }),
+      );
+      trunk.position.y = 0.45;
+      const crown = new THREE.Mesh(
+        new THREE.ConeGeometry(0.48, 1.15, 10),
+        new THREE.MeshStandardMaterial({ color: 0x166534, roughness: 0.9 }),
+      );
+      crown.position.y = 1.25;
+      group.add(trunk, crown);
+    } else if (type === "boulder") {
+      const rock = new THREE.Mesh(
+        new THREE.DodecahedronGeometry(0.42, 0),
+        new THREE.MeshStandardMaterial({ color: 0x737373, roughness: 0.95 }),
+      );
+      rock.position.y = 0.42;
+      rock.scale.set(1.15, 0.8, 0.95);
+      group.add(rock);
+    } else {
+      const crate = new THREE.Mesh(
+        new THREE.BoxGeometry(0.75, 0.75, 0.75),
+        new THREE.MeshStandardMaterial({ color: 0x9a6735, roughness: 0.85 }),
+      );
+      crate.position.y = 0.38;
+      group.add(crate);
+    }
+
+    group.scale.setScalar(scale);
+    group.rotation.y = degreesToRadians(prop?.rotation || 0);
+    group.traverse((child) => {
+      child.castShadow = true;
+      child.receiveShadow = true;
+      child.userData.editorPropId = prop?.id;
+    });
+    group.userData.editorPropId = prop?.id;
+    group.userData.editorProp = prop;
+    return group;
+  }
+
+  function disposeObject3D(root) {
+    if (!root) return;
+    root.traverse((child) => {
+      child.geometry?.dispose?.();
+      if (Array.isArray(child.material)) {
+        child.material.forEach((mat) => mat?.dispose?.());
+      } else {
+        child.material?.dispose?.();
+      }
+    });
+  }
+
+  function positionEditorPropMesh(mesh, prop, hexOverride = null) {
+    const pos = getPropWorldPosition(prop, hexOverride);
+    if (!pos) return false;
+    mesh.position.copy(pos);
+    mesh.userData.editorProp = prop;
+    return true;
+  }
+
+  function syncEditorProps(props = [], options = {}) {
+    if (!editorPropGroup) return;
+    const nextProps = Array.isArray(props) ? props : [];
+    const nextIds = new Set(nextProps.map((prop) => prop.id).filter(Boolean));
+
+    editorPropMeshes.forEach((mesh, id) => {
+      if (nextIds.has(id)) return;
+      editorPropGroup.remove(mesh);
+      disposeObject3D(mesh);
+      editorPropMeshes.delete(id);
+    });
+
+    nextProps.forEach((prop) => {
+      if (!prop?.id) return;
+      let mesh = editorPropMeshes.get(prop.id);
+      if (!mesh || mesh.userData?.editorProp?.type !== prop.type) {
+        if (mesh) {
+          editorPropGroup.remove(mesh);
+          disposeObject3D(mesh);
+        }
+        mesh = createEditorPropMesh(prop);
+        editorPropMeshes.set(prop.id, mesh);
+        editorPropGroup.add(mesh);
+      }
+      mesh.userData.editorProp = prop;
+      mesh.rotation.y = degreesToRadians(prop.rotation || 0);
+      mesh.scale.setScalar(Number(prop.scale) || 1);
+      if (editorPropGrab?.id !== prop.id) {
+        positionEditorPropMesh(mesh, prop);
+      }
+      applyEditorPropSelection(mesh, options.selectedPropId === prop.id);
+    });
+  }
+
+  function setEditorPropInteractionState(nextState = {}) {
+    editorPropInteractionState = {
+      ...editorPropInteractionState,
+      ...nextState,
+    };
+  }
+
+  function beginPropGrab(propHit, event) {
+    if (!propHit?.id || !propHit?.mesh) return false;
+    const prop = propHit.prop || propHit.mesh.userData.editorProp;
+    const startHex = { q: prop.q, r: prop.r };
+    editorPropGrab = {
+      id: propHit.id,
+      type: "prop",
+      source: event?.pointerType || "mouse",
+      startHex,
+      currentHex: startHex,
+    };
+    controls.enabled = false;
+    applyEditorPropSelection(propHit.mesh, true);
+    if (typeof editorPropInteractionState.onPropGrab === "function") {
+      editorPropInteractionState.onPropGrab({
+        grabbedObject: editorPropGrab,
+        prop,
+      });
+    }
+    return true;
+  }
+
+  function updatePropGrabHover(event) {
+    if (!editorPropGrab) return;
+    const tileData = getTileFromPointerEvent(event);
+    const hex = getOffsetHexFromTile(tileData);
+    const mesh = editorPropMeshes.get(editorPropGrab.id);
+    const prop = mesh?.userData?.editorProp;
+    if (hex && mesh && prop) {
+      editorPropGrab.currentHex = { q: hex.q, r: hex.r };
+      positionEditorPropMesh(mesh, prop, editorPropGrab.currentHex);
+    } else {
+      editorPropGrab.currentHex = null;
+    }
+    if (typeof editorPropInteractionState.onPropHover === "function") {
+      editorPropInteractionState.onPropHover({
+        grabbedObject: editorPropGrab,
+        hoverHex: hex ? { q: hex.q, r: hex.r } : null,
+        prop,
+      });
+    }
+  }
+
+  function completePropDrop(event) {
+    if (!editorPropGrab) return false;
+    updatePropGrabHover(event);
+    const mesh = editorPropMeshes.get(editorPropGrab.id);
+    const prop = mesh?.userData?.editorProp;
+    const dropHex = editorPropGrab.currentHex || null;
+    const payload = {
+      grabbedObject: editorPropGrab,
+      prop,
+      dropHex,
+    };
+    const accepted =
+      typeof editorPropInteractionState.onPropDrop === "function"
+        ? editorPropInteractionState.onPropDrop(payload) !== false
+        : false;
+    if (!accepted && mesh && prop) {
+      positionEditorPropMesh(mesh, prop, editorPropGrab.startHex);
+    }
+    editorPropGrab = null;
+    pointerDownAt = null;
+    controls.enabled = true;
+    return accepted;
+  }
+
+  function clearMovementHighlights() {
+    if (!movementHighlightGroup) return;
+    movementHighlightGroup.children.forEach((child) => {
+      child.geometry?.dispose?.();
+      if (Array.isArray(child.material)) {
+        child.material.forEach((mat) => mat?.dispose?.());
+      } else {
+        child.material?.dispose?.();
+      }
+    });
+    movementHighlightGroup.clear();
+  }
+
+  function syncMovementHighlights() {
+    clearMovementHighlights();
+    if (!movementHighlightGroup || !mapInteractionState?.movementMode?.active) {
+      return;
+    }
+
+    const validMoves = Array.isArray(mapInteractionState.validMoves)
+      ? mapInteractionState.validMoves
+      : [];
+    validMoves.forEach((move) => {
+      if (!Number.isFinite(move?.x) || !Number.isFinite(move?.y)) return;
+      const axial = offsetToAxial(move.x, move.y);
+      const tileMesh = tileMeshLookup.get(`${axial.q},${axial.r}`);
+      if (!tileMesh) return;
+
+      const box = new THREE.Box3().setFromObject(tileMesh);
+      const y = Number.isFinite(box.max.y)
+        ? box.max.y + 0.045
+        : tileMesh.position.y + 0.12;
+      const geometry = new THREE.CylinderGeometry(
+        HEX_RADIUS * 0.88,
+        HEX_RADIUS * 0.88,
+        0.035,
+        6,
+      );
+      const material = new THREE.MeshBasicMaterial({
+        color: mapInteractionState.movementMode?.isRunning ? 0xffb020 : 0x22c55e,
+        transparent: true,
+        opacity: 0.32,
+        depthWrite: false,
+      });
+      const marker = new THREE.Mesh(geometry, material);
+      marker.position.set(tileMesh.position.x, y, tileMesh.position.z);
+      marker.rotation.y = tileMesh.rotation?.y || Math.PI / 6;
+      marker.renderOrder = 20;
+      movementHighlightGroup.add(marker);
+    });
+  }
+
+  function setMapInteractionState(nextState = {}) {
+    mapInteractionState = {
+      ...mapInteractionState,
+      ...nextState,
+      movementMode: nextState.movementMode || { active: false, isRunning: false },
+      validMoves: Array.isArray(nextState.validMoves) ? nextState.validMoves : [],
+    };
+    syncMovementHighlights();
+  }
+
+  function handleArenaPointerDown(event) {
+    pointerDownAt = { x: event.clientX, y: event.clientY };
+    const propHit = getPropFromPointerEvent(event);
+    if (beginPropGrab(propHit, event)) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+  }
+
+  function handleArenaMouseMove(event) {
+    if (editorPropGrab) {
+      updatePropGrabHover(event);
+      return;
+    }
+    const hoverHandler = mapInteractionState?.onHexHover;
+    if (typeof hoverHandler !== "function") return;
+    const tileData = getTileFromPointerEvent(event);
+    hoverHandler(getOffsetHexFromTile(tileData));
+  }
+
+  function handleArenaClick(event) {
+    if (editorPropGrab) return;
+    if (pointerDownAt) {
+      const dx = event.clientX - pointerDownAt.x;
+      const dy = event.clientY - pointerDownAt.y;
+      pointerDownAt = null;
+      if (Math.sqrt(dx * dx + dy * dy) > 6) return;
+    }
+
+    const selectHandler = mapInteractionState?.onHexSelect;
+    if (typeof selectHandler !== "function") return;
+    const tileData = getTileFromPointerEvent(event);
+    const hex = getOffsetHexFromTile(tileData);
+    if (!hex) return;
+    selectHandler(hex);
+  }
+
+  renderer.domElement.addEventListener("mousedown", handleArenaPointerDown);
+  renderer.domElement.addEventListener("mousemove", handleArenaMouseMove);
+  renderer.domElement.addEventListener("mouseup", completePropDrop);
+  renderer.domElement.addEventListener("click", handleArenaClick);
 
   // Auto-center orbit target on the grid
   let hasFramedGridOnce = false;
@@ -905,6 +1307,7 @@ export function initHexArena(containerElement) {
       tileMeshLookup = lookup;
       scene.add(gridRoot);
       frameGrid();
+      syncMovementHighlights();
       if (DEBUG_COMBAT) {
         console.log(
           `[HexArena] Generated default grid: ${tiles.length} tiles (${defaultWidth}x${defaultHeight})`,
@@ -966,6 +1369,7 @@ export function initHexArena(containerElement) {
       tileMeshLookup = lookup;
       scene.add(gridRoot);
       frameGrid();
+      syncMovementHighlights();
       if (DEBUG_COMBAT) {
         console.log(
           `[HexArena] Generated grid: ${tiles.length} tiles (${width}x${height})`,
@@ -996,6 +1400,7 @@ export function initHexArena(containerElement) {
     tileMeshLookup = lookup;
     scene.add(gridRoot);
     frameGrid();
+    syncMovementHighlights();
     if (DEBUG_COMBAT) {
       console.log(
         `[HexArena] Grid synced: ${grid.length} tiles (radius ${radius})`,
@@ -2025,6 +2430,15 @@ export function initHexArena(containerElement) {
     disposed = true;
 
     window.removeEventListener("resize", resize);
+    renderer.domElement.removeEventListener("mousedown", handleArenaPointerDown);
+    renderer.domElement.removeEventListener("mousemove", handleArenaMouseMove);
+    renderer.domElement.removeEventListener("mouseup", completePropDrop);
+    renderer.domElement.removeEventListener("click", handleArenaClick);
+    clearMovementHighlights();
+    if (movementHighlightGroup) {
+      scene.remove(movementHighlightGroup);
+      movementHighlightGroup = null;
+    }
 
     // Safely remove renderer DOM element
     if (renderer && renderer.domElement) {
@@ -2060,6 +2474,16 @@ export function initHexArena(containerElement) {
       characterMeshes.clear();
       if (scene) scene.remove(characterGroup);
       characterGroup = null;
+    }
+
+    if (editorPropGroup) {
+      editorPropMeshes.forEach((mesh) => {
+        editorPropGroup.remove(mesh);
+        disposeObject3D(mesh);
+      });
+      editorPropMeshes.clear();
+      if (scene) scene.remove(editorPropGroup);
+      editorPropGroup = null;
     }
 
     if (projectileGroup) {
@@ -2121,6 +2545,9 @@ export function initHexArena(containerElement) {
     syncCombatState,
     dispose,
     setTimeScale,
+    setMapInteractionState,
+    setEditorPropInteractionState,
+    syncEditorProps,
     getOccupiedHexesForFighter,
     getOccupiedHexes, // Export for use in pathfinding/blocking logic
     getScaleForFootprint, // Export for use elsewhere if needed

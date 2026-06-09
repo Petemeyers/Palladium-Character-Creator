@@ -125,6 +125,46 @@ Examples of action branches:
 - lift/carry/drop
 - no-target defend/pass
 
+## Turn-start blocked recovery rule
+
+If `schedulePlayerTurnStart` or `scheduleEnemyTurnStart` is blocked because `busy=true`, the system must not rely on Manual/AI toggle to recover.
+
+A blocked turn start must either:
+
+1. Queue a retry after the previous action finalizer clears the latch.
+2. Detect that the previous action already finalized and clear the stale busy latch safely.
+3. Skip/pass once with a clear log if the turn cannot be recovered.
+
+Use logs like:
+
+- `🚫 start blocked but prior action finalized; retrying turn start`
+- `🚫 stale busy latch cleared after safe finalizer`
+- `🚫 unrecoverable blocked start; skipping once to avoid freeze`
+
+Do not let a fighter remain scheduled forever only because a stale busy/start latch was not released.
+
+## Enemy action lock rule
+
+Do not mark an enemy action as committed until the selected action actually begins resolving.
+
+If `commitOneEnemyAction(...)` or an enemy action mutex blocks an action before movement, attack, spell, grapple, or finalization occurs, it must release the lock or finalize safely.
+
+A blocked enemy action must not leave the actor stuck with:
+
+- action already committed
+- no movement applied
+- no attack roll
+- no damage/miss result
+- no `finishAttackAfterImpact`
+- no turn advance
+
+Use logs like:
+
+- `🚫 enemy action lock released after blocked pre-action`
+- `🧪 finishEnemyActionSafely reason=enemy-action-blocked-before-resolution`
+
+If an action lock blocks a duplicate action after a real action already resolved, the duplicate must abort stale without clearing the newer/valid turn state.
+
 ## Stale callback / delayed action rules
 
 Delayed or async actions must re-check live state immediately before applying results.
@@ -306,6 +346,40 @@ Neutral merchants/civilians/dialogue NPCs should not be selected for:
 unless they are explicitly hostile or the actor is diabolic/berserk/attacksEveryone.
 
 If no valid hostile targets exist, use the no-target pass/defend branch.
+
+## Hostile target selection after side normalization
+
+After combat roster normalization, targeting must never use id prefix as hostility.
+
+Use canonical hostility helpers only.
+
+Do not target same-side actors unless the actor is explicitly:
+
+- confused
+- charmed
+- berserk
+- diabolic
+- `attacksEveryone`
+- friendly-fire mode is intentionally enabled
+
+Enemy-side fighters with normalized `combatEnemy-*` ids must not treat other enemy-side fighters as valid hostile targets just because their old/original ids differ.
+
+Player-side fighters with normalized `playable-*` ids must not treat other party/player fighters as valid hostile targets unless explicit friendly-fire/confusion rules apply.
+
+Add or keep debug logs around target filtering:
+
+- `🧭 target filter: <actor> hostile candidates=<n> rejected allies=<n>`
+
+Audit these target paths when fixing targeting bugs:
+
+- closest target
+- ranged target
+- movement target
+- flanking target
+- fallback target
+- spell hostile target
+- psionic hostile target
+- no-target pass/defend branch
 
 ## Victory rules
 

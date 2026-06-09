@@ -294,6 +294,7 @@ export function resolveMoraleCheck(fighter, context = {}) {
     alliesDownRatio = 0,
     horrorFailed = false,
     bigPainHit = false,
+    damageDealt = 0,
   } = context;
 
   const baseState = ensureMoraleState(fighter);
@@ -301,13 +302,19 @@ export function resolveMoraleCheck(fighter, context = {}) {
 
   let target = baseMorale;
 
-  // Penalties based on situation
-  if (hpPercent <= 0.25) target -= 2;
-  if (hpPercent <= 0.1) target -= 2;
-  if (alliesDownRatio >= 0.5) target -= 2;
-  if (alliesDownRatio >= 0.75) target -= 2;
-  if (horrorFailed) target -= 2;
-  if (bigPainHit) target -= 1;
+  // Higher target is harder to pass because success is d20 >= target.
+  if (hpPercent <= 0.25) target += 2;
+  if (hpPercent <= 0.1) target += 2;
+  if (alliesDownRatio >= 0.5) target += 2;
+  if (alliesDownRatio >= 0.75) target += 2;
+  if (horrorFailed) target += 2;
+  if (bigPainHit) target += 1;
+  if (baseState.status === "SHAKEN") target += 1;
+
+  const damageNumber = Number(damageDealt) || 0;
+  if (reason === "damage" && damageNumber > 0 && damageNumber <= 2 && hpPercent > 0.5) {
+    target -= 3;
+  }
   
   // Phobia penalty: if reason is "horror" and fighter has a matching phobia, additional penalty
   if (reason === "horror" && fighter.mentalState?.disorders) {
@@ -316,13 +323,35 @@ export function resolveMoraleCheck(fighter, context = {}) {
     // For now, if they have any phobia and reason is horror, apply penalty
     const hasPhobia = disorders.some(d => d.type === "phobia");
     if (hasPhobia) {
-      target -= 2; // Additional -2 for phobia
+      target += 2; // Additional pressure for phobia
     }
   }
 
   // Bonuses – brave classes
   const occ = fighter.OCC || fighter.occ || "";
   if (/Knight|Paladin|Soldier|Men-at-Arms/i.test(occ)) {
+    target -= 2;
+  }
+  const creatureText = [
+    fighter.name,
+    fighter.race,
+    fighter.species,
+    fighter.category,
+    fighter.creatureType,
+    fighter.aiProfile,
+  ].join(" ").toLowerCase();
+  if (
+    fighter.horrorFactor ||
+    fighter.HF ||
+    fighter.brute ||
+    fighter.monster ||
+    creatureText.includes("minotaur") ||
+    creatureText.includes("monster") ||
+    creatureText.includes("brute")
+  ) {
+    target -= 3;
+  }
+  if (fighter.cowardly || fighter.moraleProfile === "cowardly" || creatureText.includes("coward")) {
     target += 2;
   }
 

@@ -49,6 +49,36 @@
   border-radius: 4px;
 }
 
+.success-message {
+  color: #155724;
+  text-align: center;
+  margin-bottom: 1rem;
+  padding: 0.5rem;
+  background-color: #d4edda;
+  border-radius: 4px;
+}
+
+.link-btn {
+  width: 100%;
+  padding: 8px 20px;
+  background: none;
+  border: none;
+  color: #007bff;
+  cursor: pointer;
+  margin-top: 10px;
+  text-decoration: underline;
+}
+
+.link-btn:hover:not(:disabled) {
+  color: #0056b3;
+}
+
+.link-btn:disabled {
+  color: #ccc;
+  cursor: not-allowed;
+  text-decoration: none;
+}
+
 .submit-btn {
   width: 100%;
   padding: 10px 20px;

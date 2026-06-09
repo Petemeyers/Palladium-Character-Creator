@@ -15,6 +15,7 @@ import { drainStamina, STAMINA_COSTS } from "./combatFatigueSystem.js";
 import {
   getCombinedGrappleModifiers,
   getSizeCategory,
+  assessGrappleSizeOutcome,
   canLiftAndThrow,
   getLeveragePenalty,
   canCarryTarget,
@@ -99,6 +100,16 @@ export function attemptGrapple(attacker, defender, rollDice = null, attackerPos 
 
   // Get size/strength modifiers
   const sizeModifiers = getCombinedGrappleModifiers(attacker, defender);
+  const preRollSizeOutcome = assessGrappleSizeOutcome(attacker, defender);
+
+  if (preRollSizeOutcome.outcome === "blocked") {
+    drainStamina(attacker, STAMINA_COSTS.NORMAL_COMBAT, 1);
+    return {
+      success: false,
+      reason: `${defender.name} is too large and powerful for ${attacker.name} to grapple effectively.`,
+      sizeOutcome: preRollSizeOutcome,
+    };
+  }
 
   // Check for automatic grapple (if PS difference is 10+)
   if (sizeModifiers.autoGrapple) {
@@ -194,18 +205,50 @@ export function attemptGrapple(attacker, defender, rollDice = null, attackerPos 
   };
 
   if (attackRoll > defendRoll) {
+    const rollMargin = attackRoll - defendRoll;
+    const sizeOutcome = assessGrappleSizeOutcome(attacker, defender, { rollMargin });
+
+    if (sizeOutcome.outcome === "blocked") {
+      drainStamina(attacker, STAMINA_COSTS.NORMAL_COMBAT, 1);
+      return {
+        success: false,
+        reason: `${defender.name} is too large and powerful for ${attacker.name} to grapple effectively.`,
+        attackRoll,
+        defendRoll,
+        rollBreakdown,
+        sizeOutcome,
+      };
+    }
+
     // Successfully grappled - use initiateGrapple to pull into same hex
     // Pass current positions if provided (from positions state)
     const grappleResult = initiateGrapple({ attacker, defender, attackerPos, defenderPos });
     
     if (grappleResult.success) {
       // Apply penalties to defender
-      grappleResult.defender.grappleState.penalties = {
-        strike: 0,
-        parry: -3,
-        dodge: -2,
-      };
-      grappleResult.defender.grappleState.canUseLongWeapons = false;
+      if (sizeOutcome.outcome === "limited") {
+        grappleResult.attacker.grappleState.limitedBySize = true;
+        grappleResult.attacker.grappleState.hasGrappleAdvantage = false;
+        grappleResult.attacker.grappleState.sizeDelta = sizeOutcome.sizeDelta;
+        grappleResult.attacker.grappleState.dangerReversalRisk = true;
+        grappleResult.defender.grappleState.limitedBySize = true;
+        grappleResult.defender.grappleState.hasGrappleAdvantage = false;
+        grappleResult.defender.grappleState.sizeDelta = sizeOutcome.sizeDelta;
+        grappleResult.defender.grappleState.dangerReversalRisk = true;
+        grappleResult.defender.grappleState.penalties = {
+          strike: 0,
+          parry: -1,
+          dodge: -1,
+        };
+        grappleResult.defender.grappleState.canUseLongWeapons = true;
+      } else {
+        grappleResult.defender.grappleState.penalties = {
+          strike: 0,
+          parry: -3,
+          dodge: -2,
+        };
+        grappleResult.defender.grappleState.canUseLongWeapons = false;
+      }
 
       // Drain stamina (grappling costs 2x)
       drainStamina(grappleResult.attacker, STAMINA_COSTS.GRAPPLING, 1);
@@ -213,10 +256,14 @@ export function attemptGrapple(attacker, defender, rollDice = null, attackerPos 
 
       return {
         success: true,
-        message: grappleResult.message, // Use message from initiateGrapple (no duplicate)
+        message:
+          sizeOutcome.outcome === "limited"
+            ? `${attacker.name} grabs ${defender.name}, but the size difference prevents full control.`
+            : grappleResult.message,
         attackRoll,
         defendRoll,
         rollBreakdown,
+        sizeOutcome,
         attacker: grappleResult.attacker,
         defender: grappleResult.defender,
         attackerState: grappleResult.attacker.grappleState,
@@ -548,6 +595,13 @@ export function groundStrike(
       success: false,
       hit: false,
       reason: `${weapon.name} is too long to use in a grapple! Use a dagger or unarmed attack.`,
+    };
+  }
+
+  if (attacker.grappleState.limitedBySize || defender.grappleState?.limitedBySize) {
+    return {
+      success: false,
+      reason: `${attacker.name} cannot take down ${defender.name}; the size difference prevents full control.`,
     };
   }
 
@@ -1112,7 +1166,7 @@ export function initiateGrapple({ attacker, defender, attackerPos = null, defend
     success: true,
     attacker: updatedAttacker,
     defender: updatedDefender,
-    message: `${attacker.name} tackles ${defender.name} and they grapple in the same hex!`,
+    message: `${attacker.name} grabs ${defender.name} and locks into a clinch.`,
   };
 }
 

@@ -14,6 +14,7 @@ import { CloseIcon } from '@chakra-ui/icons';
  * @param {number} props.minWidth - Minimum width
  * @param {number} props.minHeight - Minimum height
  * @param {string} props.bg - Background color (optional)
+ * @param {Function} props.onClose - Optional close handler
  * @param {React.ReactNode} props.children - Panel content
  */
 const FloatingPanel = ({
@@ -27,6 +28,7 @@ const FloatingPanel = ({
   minHeight = 150,
   bg = "white",
   center = false,
+  onClose = null,
   children
 }) => {
   const [position, setPosition] = useState({ x: initialX, y: initialY });
@@ -159,8 +161,11 @@ const FloatingPanel = ({
           cursor="pointer"
           onClick={(e) => {
             e.stopPropagation(); // Prevent triggering drag
-            // Optional: Add close handler if needed
-            console.log('Close panel');
+            if (typeof onClose === 'function') {
+              onClose();
+            } else {
+              console.log('Close panel');
+            }
           }}
           onMouseDown={(e) => {
             e.stopPropagation(); // Prevent drag when clicking close button

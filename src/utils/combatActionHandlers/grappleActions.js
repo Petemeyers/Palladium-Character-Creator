@@ -56,6 +56,7 @@ export function handleGrappleAction(actionType, attacker, defenderId, context) {
     combatActive,
     addLog,
     positions,
+    getFighters,
     setFighters,
     setPositions,
     getFighterHP,
@@ -67,8 +68,10 @@ export function handleGrappleAction(actionType, attacker, defenderId, context) {
 
   if (!combatActive) return;
   
-  const attackerInArray = fighters.find(f => f.id === attacker.id);
-  const defender = fighters.find(f => f.id === defenderId);
+  const initialLiveFighters =
+    typeof getFighters === "function" ? getFighters() : fighters;
+  const attackerInArray = initialLiveFighters.find(f => f.id === attacker.id);
+  const defender = initialLiveFighters.find(f => f.id === defenderId);
   
   if (!attackerInArray || !defender) {
     addLog(`Invalid target for grapple action!`, "error");
@@ -86,7 +89,19 @@ export function handleGrappleAction(actionType, attacker, defenderId, context) {
       ? validateGrappleResult(actionType, null, grappleActionId)
       : null;
 
+  const getLiveFighters = () =>
+    typeof getFighters === "function" ? getFighters() : fighters;
+  const abortStaleGrapple = (reason) => {
+    addLog(`🚫 stale grapple follow-up aborted: ${reason}`, "warning");
+    addLog("🚫 stale grapple callback ignored", "warning");
+    onStaleGrappleAbort?.(grappleActionId);
+  };
+
   const preActionStaleReason = getStaleGrappleReason();
+  if (preActionStaleReason) {
+    abortStaleGrapple(preActionStaleReason);
+    return;
+  }
   if (preActionStaleReason) {
     addLog(`🚫 stale grapple follow-up aborted: ${preActionStaleReason}`, "warning");
     onStaleGrappleAbort?.(grappleActionId);
@@ -227,6 +242,10 @@ export function handleGrappleAction(actionType, attacker, defenderId, context) {
   
   const staleReason = getStaleGrappleReason();
   if (staleReason) {
+    abortStaleGrapple(staleReason);
+    return;
+  }
+  if (staleReason) {
     addLog(`🚫 stale grapple follow-up aborted: ${staleReason}`, "warning");
     onStaleGrappleAbort?.(grappleActionId);
     return;
@@ -248,7 +267,7 @@ export function handleGrappleAction(actionType, attacker, defenderId, context) {
       shouldRevealForMovement && result.attacker
         ? revealConcealment(result.attacker)
         : result.attacker;
-    const nextDefender =
+    let nextDefender =
       shouldRevealForMovement && result.defender
         ? revealConcealment(result.defender)
         : result.defender;
@@ -304,7 +323,12 @@ export function handleGrappleAction(actionType, attacker, defenderId, context) {
     // For takedown, damage is always applied if result.damage exists (takedown doesn't use hit property)
     // For ground strikes, result.hit indicates if the strike connected
     if (result.damage && (actionType === 'takedown' || result.hit)) {
-      const updated = [...fighters];
+      const damageStaleReason = getStaleGrappleReason();
+      if (damageStaleReason) {
+        abortStaleGrapple(damageStaleReason);
+        return;
+      }
+      const updated = [...getLiveFighters()];
       const defenderIndex = updated.findIndex(f => f.id === defenderId);
       if (defenderIndex !== -1) {
         const defenderCopy = { ...updated[defenderIndex] };
@@ -371,6 +395,9 @@ export function handleGrappleAction(actionType, attacker, defenderId, context) {
         
         // Update fighter state
         updated[defenderIndex] = updatedDefender;
+        nextDefender = nextDefender
+          ? { ...nextDefender, ...updatedDefender }
+          : updatedDefender;
         setFighters(updated);
       }
     } else if (!result.hit && result.message && actionType !== 'takedown') {
@@ -379,7 +406,12 @@ export function handleGrappleAction(actionType, attacker, defenderId, context) {
     }
     
     // Deduct attack action
-    const updated = [...fighters];
+    const spendStaleReason = getStaleGrappleReason();
+    if (spendStaleReason) {
+      abortStaleGrapple(spendStaleReason);
+      return;
+    }
+    const updated = [...getLiveFighters()];
     const attackerIndex = updated.findIndex(f => f.id === attacker.id);
     if (attackerIndex !== -1) {
       updated[attackerIndex].remainingAttacks = Math.max(0, updated[attackerIndex].remainingAttacks - 1);
@@ -446,7 +478,12 @@ export function handleGrappleAction(actionType, attacker, defenderId, context) {
     
     // Still deduct attack if it was attempted
     if (actionType !== 'breakFree') {
-      const updated = [...fighters];
+      const failSpendStaleReason = getStaleGrappleReason();
+      if (failSpendStaleReason) {
+        abortStaleGrapple(failSpendStaleReason);
+        return;
+      }
+      const updated = [...getLiveFighters()];
       const attackerIndex = updated.findIndex(f => f.id === attacker.id);
       if (attackerIndex !== -1) {
         updated[attackerIndex].remainingAttacks = Math.max(0, updated[attackerIndex].remainingAttacks - 1);
@@ -457,6 +494,7 @@ export function handleGrappleAction(actionType, attacker, defenderId, context) {
         setFighters(updated);
       }
     }
+    onStaleGrappleAbort?.(grappleActionId);
   }
 }
 

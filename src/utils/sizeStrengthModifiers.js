@@ -76,6 +76,15 @@ export const SIZE_DEFINITIONS = {
   },
 };
 
+export const SIZE_RANKS = {
+  [SIZE_CATEGORIES.TINY]: 0,
+  [SIZE_CATEGORIES.SMALL]: 1,
+  [SIZE_CATEGORIES.MEDIUM]: 2,
+  [SIZE_CATEGORIES.LARGE]: 3,
+  [SIZE_CATEGORIES.HUGE]: 4,
+  [SIZE_CATEGORIES.GIANT]: 5,
+};
+
 /**
  * Get size category for a creature
  * @param {Object} creature - Creature object
@@ -214,7 +223,7 @@ export function getSizeCategory(creature) {
  * @param {Object} creature - Creature object
  * @returns {number} PS value
  */
-function getPhysicalStrength(creature) {
+export function getPhysicalStrength(creature) {
   if (!creature) return 10;
 
   // Check various PS property names
@@ -229,6 +238,148 @@ function getPhysicalStrength(creature) {
     creature.attributes?.strength ||
     10
   );
+}
+
+export function getSizeRank(creature) {
+  const explicit = Number(creature?.sizeRank ?? creature?.attributes?.sizeRank ?? creature?.stats?.sizeRank);
+  if (Number.isFinite(explicit)) return explicit;
+
+  const category = getSizeCategory(creature);
+  return SIZE_RANKS[category] ?? SIZE_RANKS[SIZE_CATEGORIES.MEDIUM];
+}
+
+function listHasKeyword(value, keywords) {
+  if (!value) return false;
+  if (Array.isArray(value)) {
+    return value.some((entry) => listHasKeyword(entry, keywords));
+  }
+  if (typeof value === "object") {
+    return listHasKeyword(
+      [
+        value.name,
+        value.type,
+        value.label,
+        value.description,
+        value.trait,
+        value.ability,
+      ],
+      keywords
+    );
+  }
+  const text = String(value).toLowerCase();
+  return keywords.some((keyword) => text.includes(keyword));
+}
+
+function hasLargeGrappleTrait(creature) {
+  if (!creature) return false;
+  if (
+    creature.giantStrength ||
+    creature.magicStrength ||
+    creature.supernaturalStrength ||
+    creature.canGrappleLarger ||
+    creature.grappleLargerTargets ||
+    creature.monsterGrappler ||
+    creature.grappleSpecialistLarge
+  ) {
+    return true;
+  }
+
+  return listHasKeyword(
+    [
+      creature.strengthType,
+      creature.PSType,
+      creature.psType,
+      creature.powerType,
+      creature.traits,
+      creature.specialTraits,
+      creature.special_abilities,
+      creature.abilities,
+      creature.features,
+    ],
+    [
+      "giant strength",
+      "magic strength",
+      "magical strength",
+      "supernatural strength",
+      "monster grappler",
+      "grapple larger",
+      "grapples larger",
+    ]
+  );
+}
+
+function isDisabledForSizeGrapple(target) {
+  if (!target) return false;
+  if (target.prone || target.isProne || target.stunned || target.isStunned || target.restrained || target.isRestrained) {
+    return true;
+  }
+  const status = String(target.status || target.condition || "").toLowerCase();
+  if (status.includes("prone") || status.includes("stunned") || status.includes("restrained")) {
+    return true;
+  }
+  return listHasKeyword(target.statusEffects || target.conditions || target.effects, [
+    "prone",
+    "stunned",
+    "restrained",
+  ]);
+}
+
+export function assessGrappleSizeOutcome(attacker, target, options = {}) {
+  const attackerSizeRank = getSizeRank(attacker);
+  const targetSizeRank = getSizeRank(target);
+  const sizeDelta = targetSizeRank - attackerSizeRank;
+  const attackerPS = getPhysicalStrength(attacker);
+  const targetPS = getPhysicalStrength(target);
+  const rollMargin = Number(options.rollMargin);
+  const hasSpecialAdvantage = hasLargeGrappleTrait(attacker);
+  const targetDisabled = isDisabledForSizeGrapple(target);
+
+  const base = {
+    outcome: "normal",
+    sizeDelta,
+    attackerSizeRank,
+    targetSizeRank,
+    attackerPS,
+    targetPS,
+    hasSpecialAdvantage,
+    targetDisabled,
+    dangerReversalRisk: false,
+  };
+
+  if (sizeDelta <= 0) return base;
+
+  if (sizeDelta === 1) {
+    const fullControl =
+      attackerPS >= targetPS - 2 ||
+      (Number.isFinite(rollMargin) && rollMargin >= 5) ||
+      hasSpecialAdvantage ||
+      targetDisabled;
+
+    return {
+      ...base,
+      outcome: fullControl ? "normal" : "limited",
+      dangerReversalRisk: true,
+      reason: fullControl
+        ? "larger-target-control-earned"
+        : "larger-target-limited-control",
+    };
+  }
+
+  if (hasSpecialAdvantage || targetDisabled) {
+    return {
+      ...base,
+      outcome: "normal",
+      dangerReversalRisk: true,
+      reason: "huge-target-exception",
+    };
+  }
+
+  return {
+    ...base,
+    outcome: "blocked",
+    dangerReversalRisk: true,
+    reason: "target-too-large",
+  };
 }
 
 /**
@@ -347,6 +498,7 @@ export function applySizeModifiers(creature, modifiers = null) {
   return {
     ...creature,
     sizeCategory,
+    sizeRank: getSizeRank({ ...creature, sizeCategory }),
     sizeModifiers: mods,
   };
 }
@@ -505,7 +657,11 @@ export function getLeveragePenalty(attacker, defender) {
 export default {
   SIZE_CATEGORIES,
   SIZE_DEFINITIONS,
+  SIZE_RANKS,
   getSizeCategory,
+  getSizeRank,
+  getPhysicalStrength,
+  assessGrappleSizeOutcome,
   getCombinedGrappleModifiers,
   getReachAdvantage,
   applySizeModifiers,
