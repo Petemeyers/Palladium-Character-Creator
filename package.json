@@ -8,6 +8,7 @@
     "proxy": "http://localhost:5000",
     "start": "node backend/server.js",
     "dev": "vite",
+    "dev:local": "node backend/scripts/startLocalServer.js",
     "server": "npm --prefix backend run dev",
     "electron:dev": "concurrently -k \"npm run dev\" \"npm run server\" \"wait-on http://localhost:5173 && electron .\"",
     "electron:start": "npm run build && electron .",

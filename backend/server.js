@@ -43,12 +43,30 @@ import { fileURLToPath } from "url";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const API_BASE_PATH = "/api/v1";
 
 // Load .env from project root (parent directory of backend)
 dotenv.config({ path: path.resolve(__dirname, "../.env") });
+if (process.env.LOCAL_GAME_SERVER === "true") {
+  dotenv.config({ path: path.resolve(__dirname, "../.env.local"), override: true });
+}
+
+function getDatabaseMode(uri = process.env.MONGODB_URI || "") {
+  if (
+    uri.startsWith("mongodb://127.0.0.1") ||
+    uri.startsWith("mongodb://localhost") ||
+    uri.startsWith("mongodb://0.0.0.0")
+  ) {
+    return "local";
+  }
+
+  return "cloud";
+}
 
 const app = express();
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const openai = process.env.OPENAI_API_KEY
+  ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+  : null;
 
 // Middleware
 app.use(
@@ -67,7 +85,12 @@ app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(specs));
 
 // Routes
 app.get("/api/v1/health", (_req, res) => {
-  res.json({ status: "ok", serverTime: new Date().toISOString() });
+  res.json({
+    ok: true,
+    mode: getDatabaseMode(),
+    apiBase: API_BASE_PATH,
+    time: new Date().toISOString(),
+  });
 });
 
 app.use("/api/v1/shop", shopRoutes);
@@ -96,6 +119,10 @@ console.log("✅ Weapon routes loaded at /api/v1/weapons");
 // GM-RAG routes
 app.post("/api/v1/gm", async (req, res) => {
   try {
+    if (!openai) {
+      return res.status(503).json({ error: "OpenAI API key is not configured" });
+    }
+
     const { prompt } = req.body ?? {};
 
     if (!prompt) {
@@ -193,7 +220,7 @@ app._router.stack.forEach((middleware) => {
 mongoose
   .connect(process.env.MONGODB_URI)
   .then(() => {
-    console.log("Connected to MongoDB");
+    console.log(`Connected to MongoDB (${getDatabaseMode()} mode)`);
     // Log available routes for debugging
     console.log("Available routes:");
     app._router.stack.forEach((r) => {
@@ -433,8 +460,9 @@ app.use(errorHandler);
 
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, "0.0.0.0", () => {
-  console.log(`API on ${PORT}`);
-  console.log(`Server is running on port ${PORT}`);
+  console.log(`Backend running on port ${PORT}`);
+  console.log(`API base path ${API_BASE_PATH}`);
+  console.log(`Database mode: ${getDatabaseMode()}`);
   console.log(`WebSocket server running on port ${PORT}`);
   console.log(
     `API Documentation available at http://localhost:${PORT}/api-docs`
