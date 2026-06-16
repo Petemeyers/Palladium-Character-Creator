@@ -648,6 +648,14 @@ export function initHexArena(containerElement) {
     onPropDrop: null,
   };
   let editorPropGrab = null;
+  let editorBrushInteractionState = {
+    mode: null,
+    onBrushStart: null,
+    onBrushPaint: null,
+    onBrushEnd: null,
+  };
+  let editorBrushStroke = null;
+  let editorBrushJustPainted = false;
   let disposed = false;
   let timeScale = 1;
   let impactReactionsById = {};
@@ -868,6 +876,9 @@ export function initHexArena(containerElement) {
   function getTileSurfaceY(q, r) {
     const tileMesh = tileMeshLookup.get(`${q},${r}`);
     if (!tileMesh) return null;
+    if (Number.isFinite(tileMesh.userData?.surfaceY)) {
+      return tileMesh.position.y + tileMesh.userData.surfaceY;
+    }
     const box = new THREE.Box3().setFromObject(tileMesh);
     return Number.isFinite(box.max.y) ? box.max.y : tileMesh.position.y + HEX_TILE_THICKNESS;
   }
@@ -1004,6 +1015,61 @@ export function initHexArena(containerElement) {
     };
   }
 
+  function setEditorBrushInteractionState(nextState = {}) {
+    editorBrushInteractionState = {
+      ...editorBrushInteractionState,
+      ...nextState,
+    };
+  }
+
+  function paintEditorBrushHex(hex, phase) {
+    if (!editorBrushStroke || !hex) return false;
+    const key = `${hex.x ?? hex.q},${hex.y ?? hex.r}`;
+    if (editorBrushStroke.paintedKeys.has(key)) return false;
+    editorBrushStroke.paintedKeys.add(key);
+    const handler =
+      phase === "start"
+        ? editorBrushInteractionState.onBrushStart
+        : editorBrushInteractionState.onBrushPaint;
+    if (typeof handler !== "function") return false;
+    handler(hex);
+    editorBrushJustPainted = true;
+    return true;
+  }
+
+  function beginEditorBrushStroke(event) {
+    if (typeof editorBrushInteractionState.onBrushStart !== "function") return false;
+    const tileData = getTileFromPointerEvent(event);
+    const hex = getOffsetHexFromTile(tileData);
+    if (!hex) return false;
+    editorBrushStroke = {
+      mode: editorBrushInteractionState.mode || "top-terrain",
+      paintedKeys: new Set(),
+    };
+    controls.enabled = false;
+    paintEditorBrushHex(hex, "start");
+    return true;
+  }
+
+  function updateEditorBrushStroke(event) {
+    if (!editorBrushStroke) return false;
+    const tileData = getTileFromPointerEvent(event);
+    const hex = getOffsetHexFromTile(tileData);
+    paintEditorBrushHex(hex, "paint");
+    return true;
+  }
+
+  function completeEditorBrushStroke() {
+    if (!editorBrushStroke) return false;
+    editorBrushStroke = null;
+    pointerDownAt = null;
+    controls.enabled = true;
+    if (typeof editorBrushInteractionState.onBrushEnd === "function") {
+      editorBrushInteractionState.onBrushEnd();
+    }
+    return true;
+  }
+
   function beginPropGrab(propHit, event) {
     if (!propHit?.id || !propHit?.mesh) return false;
     const prop = propHit.prop || propHit.mesh.userData.editorProp;
@@ -1135,8 +1201,14 @@ export function initHexArena(containerElement) {
 
   function handleArenaPointerDown(event) {
     pointerDownAt = { x: event.clientX, y: event.clientY };
+    editorBrushJustPainted = false;
     const propHit = getPropFromPointerEvent(event);
     if (beginPropGrab(propHit, event)) {
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+    if (beginEditorBrushStroke(event)) {
       event.preventDefault();
       event.stopPropagation();
     }
@@ -1147,6 +1219,10 @@ export function initHexArena(containerElement) {
       updatePropGrabHover(event);
       return;
     }
+    if (editorBrushStroke) {
+      updateEditorBrushStroke(event);
+      return;
+    }
     const hoverHandler = mapInteractionState?.onHexHover;
     if (typeof hoverHandler !== "function") return;
     const tileData = getTileFromPointerEvent(event);
@@ -1155,6 +1231,10 @@ export function initHexArena(containerElement) {
 
   function handleArenaClick(event) {
     if (editorPropGrab) return;
+    if (editorBrushJustPainted) {
+      editorBrushJustPainted = false;
+      return;
+    }
     if (pointerDownAt) {
       const dx = event.clientX - pointerDownAt.x;
       const dy = event.clientY - pointerDownAt.y;
@@ -1170,9 +1250,17 @@ export function initHexArena(containerElement) {
     selectHandler(hex);
   }
 
+  function handleArenaPointerUp(event) {
+    if (editorPropGrab) {
+      completePropDrop(event);
+      return;
+    }
+    completeEditorBrushStroke();
+  }
+
   renderer.domElement.addEventListener("mousedown", handleArenaPointerDown);
   renderer.domElement.addEventListener("mousemove", handleArenaMouseMove);
-  renderer.domElement.addEventListener("mouseup", completePropDrop);
+  renderer.domElement.addEventListener("mouseup", handleArenaPointerUp);
   renderer.domElement.addEventListener("click", handleArenaClick);
 
   // Auto-center orbit target on the grid
@@ -1295,7 +1383,7 @@ export function initHexArena(containerElement) {
       const lookup = new Map();
       const tiles = mapManager.getAllTiles();
       tiles.forEach((tile) => {
-        const mesh = createHexMesh(tile, HEX_RADIUS, 0.6);
+        const mesh = createHexMesh(tile, HEX_RADIUS);
         mesh.castShadow = true;
         mesh.receiveShadow = true;
         group.add(mesh);
@@ -1357,7 +1445,7 @@ export function initHexArena(containerElement) {
       const lookup = new Map();
       const tiles = mapManager.getAllTiles();
       tiles.forEach((tile) => {
-        const mesh = createHexMesh(tile, HEX_RADIUS, 0.6);
+        const mesh = createHexMesh(tile, HEX_RADIUS);
         mesh.castShadow = true;
         mesh.receiveShadow = true;
         group.add(mesh);
@@ -2432,7 +2520,7 @@ export function initHexArena(containerElement) {
     window.removeEventListener("resize", resize);
     renderer.domElement.removeEventListener("mousedown", handleArenaPointerDown);
     renderer.domElement.removeEventListener("mousemove", handleArenaMouseMove);
-    renderer.domElement.removeEventListener("mouseup", completePropDrop);
+    renderer.domElement.removeEventListener("mouseup", handleArenaPointerUp);
     renderer.domElement.removeEventListener("click", handleArenaClick);
     clearMovementHighlights();
     if (movementHighlightGroup) {
@@ -2547,6 +2635,7 @@ export function initHexArena(containerElement) {
     setTimeScale,
     setMapInteractionState,
     setEditorPropInteractionState,
+    setEditorBrushInteractionState,
     syncEditorProps,
     getOccupiedHexesForFighter,
     getOccupiedHexes, // Export for use in pathfinding/blocking logic

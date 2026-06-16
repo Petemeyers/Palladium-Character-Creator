@@ -31,6 +31,10 @@ const HexArena3D = forwardRef(function HexArena3D(
     onEditorPropGrab,
     onEditorPropHover,
     onEditorPropDrop,
+    editorBrushMode,
+    onEditorBrushStart,
+    onEditorBrushPaint,
+    onEditorBrushEnd,
     visible = false,
   },
   ref
@@ -57,6 +61,9 @@ const HexArena3D = forwardRef(function HexArena3D(
     },
     syncEditorProps: (props, options = {}) => {
       arenaRef.current?.syncEditorProps?.(props, options);
+    },
+    setEditorBrushInteractionState: (value) => {
+      arenaRef.current?.setEditorBrushInteractionState?.(value);
     },
   }));
 
@@ -133,6 +140,16 @@ const HexArena3D = forwardRef(function HexArena3D(
     });
   }, [isInitialized, onEditorPropGrab, onEditorPropHover, onEditorPropDrop]);
 
+  useEffect(() => {
+    if (!arenaRef.current?.setEditorBrushInteractionState) return;
+    arenaRef.current.setEditorBrushInteractionState({
+      mode: editorBrushMode,
+      onBrushStart: onEditorBrushStart,
+      onBrushPaint: onEditorBrushPaint,
+      onBrushEnd: onEditorBrushEnd,
+    });
+  }, [isInitialized, editorBrushMode, onEditorBrushStart, onEditorBrushPaint, onEditorBrushEnd]);
+
   return (
     <Box
       ref={containerRef}
@@ -182,6 +199,10 @@ HexArena3D.propTypes = {
   onEditorPropGrab: PropTypes.func,
   onEditorPropHover: PropTypes.func,
   onEditorPropDrop: PropTypes.func,
+  editorBrushMode: PropTypes.string,
+  onEditorBrushStart: PropTypes.func,
+  onEditorBrushPaint: PropTypes.func,
+  onEditorBrushEnd: PropTypes.func,
   visible: PropTypes.bool,
 };
 

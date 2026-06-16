@@ -5,7 +5,11 @@ import {
   axialToOffset,
   offsetToAxial,
 } from "../hexGridMath.js";
-import { tileSurfaceWorldY } from "../hexGridMath.js";
+import {
+  HEX_TILE_THICKNESS,
+  TILE_HEIGHT_UNIT_TO_WORLD_Y,
+} from "../hexGridMath.js";
+import { MAP_MIN_HEIGHT } from "../mapHeightConstants.js";
 
 const textureLoader = new THREE.TextureLoader();
 
@@ -26,7 +30,22 @@ const TERRAIN_COLOR = {
   sand: "#D8B56E",
   hill: "#6E8C3A",
   road: "#B2A07A",
+  dirt: "#7a5230",
+  stone: "#5A5A5A",
 };
+
+const WALL_KIND_COLOR = {
+  earthBank: "#7a5532",
+  shoreBank: "#8b6d45",
+  rockCliff: "#62666d",
+  waterfall: "#2f8fc7",
+};
+
+const TERRAIN_COLUMN_BOTTOM = MAP_MIN_HEIGHT;
+const TALL_COLUMN_SIDE_THRESHOLD_UNITS = 2; // 5ft at 2.5ft per height unit.
+
+const WALL_VERTICAL_EPSILON = 0.001;
+const DEBUG_TERRAIN_WALLS = false;
 
 export function randomTerrain(weights = {}) {
   const defaultWeights = {
@@ -275,66 +294,216 @@ function createTerrainTexture(terrainType) {
   return texture;
 }
 
-// Build a true hex-prism (better UVs than CylinderGeometry)
-function createHexColumnGeometry(radius, height) {
-  // 2D hex in XY, extruded along +Z, then rotated so extrusion becomes +Y.
-  const shape = new THREE.Shape();
-  for (let i = 0; i < 6; i++) {
-    const angle = (Math.PI / 3) * i;
-    const x = radius * Math.cos(angle);
-    const y = radius * Math.sin(angle);
-    if (i === 0) shape.moveTo(x, y);
-    else shape.lineTo(x, y);
-  }
-  shape.closePath();
-
-  const geom = new THREE.ExtrudeGeometry(shape, {
-    depth: height,
-    bevelEnabled: false,
-    steps: 1,
-  });
-
-  // ExtrudeGeometry goes from z=0..depth; rotate so that becomes y=0..height.
-  geom.rotateX(-Math.PI / 2);
-
-  // Ensure bottom sits at y=0 (after rotation, it already should, but keep it explicit)
-  geom.translate(0, 0, 0);
-
-  // Improve normals for lighting
-  geom.computeVertexNormals();
-
-  return geom;
+function editorTileSurfaceWorldY(tileHeightUnits = 0) {
+  const height = Number(tileHeightUnits);
+  if (!Number.isFinite(height) || height === 0) return HEX_TILE_THICKNESS;
+  return height * TILE_HEIGHT_UNIT_TO_WORLD_Y;
 }
 
-export function createHexMesh(tile, size = 1) {
+function getHexHeight(cell = {}) {
+  const height = Number(cell.height);
+  if (Number.isFinite(height)) return height;
+  const elevation = Number(cell.elevation);
+  if (Number.isFinite(elevation)) return elevation;
+  return 0;
+}
+
+function getTerrainKey(cellOrTerrainKey) {
+  if (typeof cellOrTerrainKey === "string") {
+    return normalizeTerrainName(cellOrTerrainKey);
+  }
+  return normalizeTerrainName(
+    cellOrTerrainKey?.terrain ||
+    cellOrTerrainKey?.terrainType ||
+    "grass"
+  );
+}
+
+function isWaterTerrain(cellOrTerrainKey) {
+  return getTerrainKey(cellOrTerrainKey) === "water";
+}
+
+function getHexTopTerrainType(cell = {}) {
+  return getTerrainKey(
+    cell?.textureId ||
+    cell?.terrain ||
+    cell?.terrainType ||
+    cell?.gridCell?.textureId ||
+    cell?.gridCell?.terrain ||
+    cell?.gridCell?.terrainType ||
+    "grass"
+  );
+}
+
+function getHexSideTerrainType(cell = {}) {
+  const wallTextureId = cell?.wallTextureId || cell?.gridCell?.wallTextureId;
+  const wallTerrainType = cell?.wallTerrainType || cell?.gridCell?.wallTerrainType;
+  if (wallTextureId) return getTerrainKey(wallTextureId);
+  if (wallTerrainType) return getTerrainKey(wallTerrainType);
+
+  const height = getHexHeight(cell);
+  if (height > TALL_COLUMN_SIDE_THRESHOLD_UNITS) return "dirt";
+  return getHexTopTerrainType(cell);
+}
+
+function getHexCornerPoint(radius, index, y) {
+  const angle = (Math.PI / 3) * index;
+  return [radius * Math.cos(angle), y, radius * Math.sin(angle)];
+}
+
+function getHexCornerPoints(radius, y) {
+  return Array.from({ length: 6 }, (_, index) => getHexCornerPoint(radius, index, y));
+}
+
+function addVertex(vertices, uvs, x, y, z, u = 0, v = 0) {
+  vertices.push(x, y, z);
+  uvs.push(u, v);
+  return vertices.length / 3 - 1;
+}
+
+function addWallQuad(vertices, uvs, indices, topA, topB, bottomA, bottomB) {
+  const indexStart = indices.length;
+  const heightSpan = Math.max(0.001, Math.abs(topA[1] - bottomA[1]));
+  const topAIndex = addVertex(vertices, uvs, ...topA, 0, 0);
+  const topBIndex = addVertex(vertices, uvs, ...topB, 1, 0);
+  const bottomAIndex = addVertex(vertices, uvs, ...bottomA, 0, heightSpan);
+  const bottomBIndex = addVertex(vertices, uvs, ...bottomB, 1, heightSpan);
+
+  indices.push(topAIndex, bottomAIndex, bottomBIndex);
+  indices.push(topAIndex, bottomBIndex, topBIndex);
+  return { start: indexStart, count: indices.length - indexStart };
+}
+
+function addBottomFace(vertices, uvs, indices, radius, bottomY) {
+  const bottomCenterIndex = vertices.length / 3;
+  vertices.push(0, bottomY, 0);
+  uvs.push(0.5, 0.5);
+
+  const bottomRingStart = vertices.length / 3;
+  const bottomCorners = getHexCornerPoints(radius, bottomY);
+  for (let i = 0; i < 6; i++) {
+    const [x, , z] = bottomCorners[i];
+    vertices.push(x, bottomY, z);
+    uvs.push((x / radius + 1) / 2, (z / radius + 1) / 2);
+  }
+
+  const indexStart = indices.length;
+  for (let i = 0; i < 6; i++) {
+    const next = (i + 1) % 6;
+    indices.push(bottomCenterIndex, bottomRingStart + i, bottomRingStart + next);
+  }
+  return { start: indexStart, count: indices.length - indexStart };
+}
+
+function getHexWallKind(cell = {}) {
+  if (cell?.wallTerrainType || cell?.wallTextureId) return "earthBank";
+  if (Math.abs(getHexHeight(cell)) <= TALL_COLUMN_SIDE_THRESHOLD_UNITS) return "earthBank";
+  if (isWaterTerrain(cell)) return "shoreBank";
+  const terrain = getHexSideTerrainType(cell);
+  return terrain === "rock" || terrain === "stone" ? "rockCliff" : "earthBank";
+}
+
+// Future wall painting can resolve cell.wallTextureId or cell.wallTerrainType here.
+function getHexWallMaterial(cell = {}) {
+  const wallTerrain = getHexSideTerrainType(cell);
+  return getTerrainWallMaterial(getHexWallKind(cell), wallTerrain);
+}
+
+// Build a closed editor terrain prism. The top uses terrain paint; every side
+// uses the current automatic wall material until per-edge wall painting exists.
+function createHexColumnGeometry(radius, tile) {
+  const currentHeight = getHexHeight(tile);
+  const topY = editorTileSurfaceWorldY(currentHeight);
+  const stableBottomY = editorTileSurfaceWorldY(TERRAIN_COLUMN_BOTTOM);
+  const bottomY =
+    Math.min(stableBottomY, topY - HEX_TILE_THICKNESS) - WALL_VERTICAL_EPSILON;
+  const vertices = [];
+  const uvs = [];
+  const indices = [];
+
+  const topCenterIndex = vertices.length / 3;
+  vertices.push(0, topY, 0);
+  uvs.push(0.5, 0.5);
+
+  const topRingStart = vertices.length / 3;
+  const topCorners = getHexCornerPoints(radius, topY);
+  for (let i = 0; i < 6; i++) {
+    const [x, , z] = topCorners[i];
+    vertices.push(x, topY, z);
+    uvs.push((x / radius + 1) / 2, (z / radius + 1) / 2);
+  }
+
+  const topIndexStart = indices.length;
+  for (let i = 0; i < 6; i++) {
+    const next = (i + 1) % 6;
+    indices.push(topCenterIndex, topRingStart + next, topRingStart + i);
+  }
+  const topIndexCount = indices.length - topIndexStart;
+  const wallIndexStart = indices.length;
+  const topWallCorners = getHexCornerPoints(radius, topY + WALL_VERTICAL_EPSILON);
+  const bottomWallCorners = getHexCornerPoints(radius, bottomY);
+
+  for (let i = 0; i < 6; i++) {
+    const next = (i + 1) % 6;
+    // Every wall edge uses corners[i] to corners[i + 1], same as the top mesh.
+    const upperA = topWallCorners[i];
+    const upperB = topWallCorners[next];
+    const lowerA = bottomWallCorners[i];
+    const lowerB = bottomWallCorners[next];
+    addWallQuad(vertices, uvs, indices, upperA, upperB, lowerA, lowerB);
+
+    if (DEBUG_TERRAIN_WALLS) {
+      console.debug(
+        `terrain column wall generated: (${tile.q},${tile.r}) edge=${i} cornerA=${upperA.join(",")} cornerB=${upperB.join(",")}`
+      );
+    }
+  }
+  const wallIndexCount = indices.length - wallIndexStart;
+  const bottomGroup = addBottomFace(vertices, uvs, indices, radius, bottomY);
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(vertices, 3));
+  geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
+  geometry.setIndex(indices);
+  geometry.clearGroups();
+  geometry.addGroup(topIndexStart, topIndexCount, 0);
+  geometry.addGroup(wallIndexStart, wallIndexCount, 1);
+  geometry.addGroup(bottomGroup.start, bottomGroup.count, 1);
+  geometry.computeVertexNormals();
+  return geometry;
+}
+
+export function createHexMesh(tile, size = 1, neighborData = new Map()) {
   const tileHeightUnits = Number.isFinite(tile?.height)
     ? tile.height
     : Number.isFinite(tile?.elevation)
     ? tile.elevation
     : 0;
 
-  // Solid cliffs: tile is a column from y=0 up to its top surface.
-  const topY = tileSurfaceWorldY(tileHeightUnits);
-  const geomHeight = Math.max(0.01, topY);
+  const surfaceY = editorTileSurfaceWorldY(tileHeightUnits);
 
-  const geometry = createHexColumnGeometry(size, geomHeight);
+  const geometry = createHexColumnGeometry(size, tile);
 
-  // Create material with texture
-  const texture = createTerrainTexture(tile.terrain || "grass");
-  const material = new THREE.MeshStandardMaterial({
+  // Top material = terrain surface; side material = automatic cliff/soil wall.
+  const texture = createTerrainTexture(getHexTopTerrainType(tile));
+  const topMaterial = new THREE.MeshStandardMaterial({
     map: texture,
     color: 0xffffff, // No fake tint - let lighting do the work
     roughness: 0.85, // Grass feels sunlit
     metalness: 0.0,
     flatShading: true,
   });
+  const materials = [
+    topMaterial,
+    getHexWallMaterial(tile),
+  ];
 
   // Physically correct texture color space
   if (texture) {
     texture.colorSpace = THREE.SRGBColorSpace;
   }
 
-  const mesh = new THREE.Mesh(geometry, material);
+  const mesh = new THREE.Mesh(geometry, materials);
   mesh.castShadow = true;
   mesh.receiveShadow = true;
 
@@ -344,11 +513,11 @@ export function createHexMesh(tile, size = 1) {
   const pos = worldVectorFromAxial(
     tile.q ?? 0,
     tile.r ?? 0,
-    geomHeight / 2, // bottom at y=0
+    0,
     size
   );
   mesh.position.copy(pos);
-  mesh.userData = tile;
+  mesh.userData = { ...tile, surfaceY };
   return mesh;
 }
 
@@ -384,6 +553,25 @@ export function terrainColor(terrain) {
   return TERRAIN_COLOR[terrain] || "#888888";
 }
 
+function getTerrainWallMaterial(wallKind, terrainType = null) {
+  const color = WALL_KIND_COLOR[wallKind] || WALL_KIND_COLOR.earthBank;
+  const texture = terrainType ? createTerrainTexture(terrainType) : null;
+  if (texture) {
+    texture.colorSpace = THREE.SRGBColorSpace;
+  }
+  const isWaterfall = wallKind === "waterfall";
+  return new THREE.MeshStandardMaterial({
+    map: texture,
+    color: texture ? 0xffffff : color,
+    roughness: isWaterfall ? 0.45 : 0.92,
+    metalness: 0.0,
+    emissive: color,
+    emissiveIntensity: texture ? 0.02 : isWaterfall ? 0.12 : 0.08,
+    flatShading: true,
+    side: THREE.DoubleSide,
+  });
+}
+
 /**
  * Normalize terrain names from various sources (hexGridGenerator, TacticalMap, etc.)
  * to the simple terrain keys expected by the 3D builder (grass, forest, rock, etc.)
@@ -392,7 +580,7 @@ function normalizeTerrainName(raw) {
   const t = String(raw || "grass").toLowerCase();
 
   // Already compatible
-  if (["grass", "forest", "rock", "water", "sand", "hill", "road"].includes(t))
+  if (["grass", "forest", "rock", "stone", "water", "sand", "dirt", "hill", "road"].includes(t))
     return t;
 
   // terrainKey-style inputs from hexGridGenerator (and similar)
@@ -402,6 +590,7 @@ function normalizeTerrainName(raw) {
   if (t.includes("swamp") || t.includes("marsh") || t.includes("water"))
     return "water";
   if (t.includes("desert") || t.includes("sand")) return "sand";
+  if (t.includes("dirt") || t.includes("mud")) return "dirt";
   if (t.includes("hill")) return "hill";
   if (t.includes("road")) return "road";
 
@@ -426,6 +615,7 @@ export function buildHexagon3DFromGrid(grid = [], hexRadius = 1) {
   // If the first element is an array, treat it as a 2D grid (rows/cols),
   // even if the first row happens to be empty.
   const is2D = Array.isArray(grid[0]);
+  const tileSpecs = [];
 
   if (is2D) {
     // 2D grid: array of rows
@@ -441,26 +631,18 @@ export function buildHexagon3DFromGrid(grid = [], hexRadius = 1) {
           ? cell.elevation
           : 0;
 
-        const tile = {
+        tileSpecs.push({
           q,
           r,
           height,
           terrain,
+          textureId: cell.textureId,
+          wallTerrainType: cell.wallTerrainType,
+          wallTextureId: cell.wallTextureId,
           features: cell.features || (cell.feature ? [cell.feature] : []),
-        };
-
-        const mesh = createHexMesh(tile, hexRadius, 0.6);
-        mesh.castShadow = true;
-        mesh.receiveShadow = true;
-        mesh.userData = {
-          ...tile,
           gridCell: cell,
           gridPosition: { col: colIndex, row: rowIndex },
-        };
-
-        group.add(mesh);
-        const key = `${q},${r}`;
-        tileMeshLookup.set(key, mesh);
+        });
       });
     });
   } else {
@@ -477,24 +659,33 @@ export function buildHexagon3DFromGrid(grid = [], hexRadius = 1) {
         ? cell.elevation
         : 0;
 
-      const tile = {
+      tileSpecs.push({
         q,
         r,
         height,
         terrain,
+        textureId: cell.textureId,
+        wallTerrainType: cell.wallTerrainType,
+        wallTextureId: cell.wallTextureId,
         features: cell.features || (cell.feature ? [cell.feature] : []),
-      };
-
-      const mesh = createHexMesh(tile, hexRadius, 0.6);
-      mesh.castShadow = true;
-      mesh.receiveShadow = true;
-      mesh.userData = { ...tile, gridCell: cell };
-
-      group.add(mesh);
-      const key = `${q},${r}`;
-      tileMeshLookup.set(key, mesh);
+        gridCell: cell,
+      });
     });
   }
+
+  const tileByKey = new Map(
+    tileSpecs.map((tile) => [makeTileKey(tile.q, tile.r), tile])
+  );
+
+  tileSpecs.forEach((tile) => {
+    const mesh = createHexMesh(tile, hexRadius, tileByKey);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    mesh.userData = { ...tile, surfaceY: editorTileSurfaceWorldY(tile.height) };
+
+    group.add(mesh);
+    tileMeshLookup.set(makeTileKey(tile.q, tile.r), mesh);
+  });
 
   return { group, tileMeshLookup };
 }
@@ -521,6 +712,9 @@ export function cellToTile(col, row, cell = {}) {
     r,
     height,
     terrain,
+    textureId: cell.textureId,
+    wallTerrainType: cell.wallTerrainType,
+    wallTextureId: cell.wallTextureId,
     features: cell.features || (cell.feature ? [cell.feature] : []),
     gridCell: cell,
     gridPosition: { col, row },
@@ -529,46 +723,65 @@ export function cellToTile(col, row, cell = {}) {
 
 /**
  * Update an existing hex mesh to match a grid cell (terrain/elevation).
- * Rebuilds geometry only if height changed.
+ * Rebuilds the solid column geometry after editor terrain or height changes.
  */
-export function updateHexMeshFromCell(mesh, col, row, cell, hexRadius = 1) {
+export function updateHexMeshFromCell(
+  mesh,
+  col,
+  row,
+  cell,
+  hexRadius = 1,
+  neighborData = new Map()
+) {
   if (!mesh) return false;
 
   const tile = cellToTile(col, row, cell);
 
   // Terrain color/material with texture
   const nextColor = terrainColor(tile.terrain);
-  const texture = createTerrainTexture(tile.terrain || "grass");
+  const texture = createTerrainTexture(getHexTopTerrainType(tile));
   if (mesh.material) {
     // Don't dispose cached textures (they're shared across tiles)
-    mesh.material.map = texture;
-    mesh.material.needsUpdate = true;
-    if (mesh.material.color) {
-      mesh.material.color.set(nextColor);
+    if (Array.isArray(mesh.material)) {
+      const [topMaterial] = mesh.material;
+      if (topMaterial) {
+        topMaterial.map = texture;
+        topMaterial.color?.set(0xffffff);
+        topMaterial.needsUpdate = true;
+      }
+      mesh.material = [
+        topMaterial,
+        getHexWallMaterial(tile),
+      ];
+    } else {
+      mesh.material.map = texture;
+      mesh.material.needsUpdate = true;
+      if (mesh.material.color) {
+        mesh.material.color.set(nextColor);
+      }
     }
   }
 
-  // Height (elevation) is represented by column height (solid cliffs).
+  // Height (elevation) is represented by a signed solid terrain column.
   const currentHeight = mesh.userData?.height ?? 0;
-  if (currentHeight !== tile.height) {
-    const topY = tileSurfaceWorldY(tile.height);
-    const geomHeight = Math.max(0.01, topY);
+  const surfaceY = editorTileSurfaceWorldY(tile.height);
 
-    // Rebuild geometry so the tile fills down to y=0.
-    if (mesh.geometry) mesh.geometry.dispose();
-    mesh.geometry = createHexColumnGeometry(hexRadius, geomHeight);
+  // Rebuild this tile's closed prism after height or terrain edits.
+  if (mesh.geometry) mesh.geometry.dispose();
+  mesh.geometry = createHexColumnGeometry(hexRadius, tile);
 
-    // ✅ Keep the same orientation after rebuild
-    mesh.rotation.y = Math.PI / 6; // 30 degrees
+  // ✅ Keep the same orientation after rebuild
+  mesh.rotation.y = Math.PI / 6; // 30 degrees
 
-    const pos = worldVectorFromAxial(tile.q, tile.r, geomHeight / 2, hexRadius);
-    mesh.position.copy(pos);
-  }
+  const pos = worldVectorFromAxial(tile.q, tile.r, 0, hexRadius);
+  mesh.position.copy(pos);
 
   // Update userData
   mesh.userData = {
     ...(mesh.userData || {}),
     ...tile,
+    previousHeight: currentHeight,
+    surfaceY,
   };
 
   return true;
@@ -597,6 +810,13 @@ export function syncGridDiffToGroup({
   let updated = 0;
   let added = 0;
   let missing = 0;
+  const changedByKey = new Map();
+  const tileByKey = new Map();
+  const affectedKeys = new Set();
+
+  tileMeshLookup.forEach((mesh, key) => {
+    tileByKey.set(key, mesh?.userData || {});
+  });
 
   for (const change of changedCells) {
     const col = change?.col;
@@ -607,20 +827,32 @@ export function syncGridDiffToGroup({
 
     const { q, r } = offsetToAxial(col, row);
     const key = makeTileKey(q, r);
+    const tile = cellToTile(col, row, cell);
+    changedByKey.set(key, { col, row, cell, tile });
+    tileByKey.set(key, tile);
+    affectedKeys.add(key);
+  }
 
+  for (const key of affectedKeys) {
     let mesh = tileMeshLookup.get(key);
+    const changed = changedByKey.get(key);
+    const tile = changed?.tile || mesh?.userData;
+    const gridPosition = changed
+      ? { col: changed.col, row: changed.row }
+      : mesh?.userData?.gridPosition;
+    const cell = changed?.cell || mesh?.userData?.gridCell || {};
 
     if (!mesh) {
-      if (createIfMissing && group) {
+      if (createIfMissing && group && changed) {
         // Create new mesh on demand
-        const tile = cellToTile(col, row, cell);
-        mesh = createHexMesh(tile, hexRadius, 0.6);
+        mesh = createHexMesh(tile, hexRadius, tileByKey);
         mesh.castShadow = true;
         mesh.receiveShadow = true;
         mesh.userData = {
           ...tile,
           gridCell: cell,
-          gridPosition: { col, row },
+          gridPosition,
+          surfaceY: editorTileSurfaceWorldY(tile.height),
         };
 
         group.add(mesh);
@@ -631,8 +863,12 @@ export function syncGridDiffToGroup({
         continue;
       }
     } else {
+      if (!gridPosition || !Number.isFinite(gridPosition.col) || !Number.isFinite(gridPosition.row)) {
+        missing++;
+        continue;
+      }
       // Update existing mesh
-      if (updateHexMeshFromCell(mesh, col, row, cell, hexRadius, 0.6)) {
+      if (updateHexMeshFromCell(mesh, gridPosition.col, gridPosition.row, cell, hexRadius, tileByKey)) {
         updated++;
       }
     }

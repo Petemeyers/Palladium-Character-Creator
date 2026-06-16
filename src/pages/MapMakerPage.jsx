@@ -18,10 +18,14 @@ import HexArena3D from "../components/HexArena3D.jsx";
 import { TERRAIN_TYPES, LIGHTING_CONDITIONS } from "../utils/terrainSystem";
 import { GRID_CONFIG } from "../data/movementRules";
 import { axialToOffset, offsetToAxial } from "../utils/hexGridMath";
+import { getHexesInRadius } from "../utils/mapBrush.js";
+import {
+  MAP_MIN_HEIGHT,
+  MAP_MAX_HEIGHT,
+  clampMapHeight,
+} from "../utils/mapHeightConstants.js";
 
 const STORAGE_KEY = "mapMaker.savedMaps.v1";
-const MIN_HEX_HEIGHT = 0;
-const MAX_HEX_HEIGHT = 10;
 const MAP_BUILDER_TERRAIN_OPTIONS = [
   { key: "grass", label: "Grass" },
   { key: "forest", label: "Forest" },
@@ -29,6 +33,12 @@ const MAP_BUILDER_TERRAIN_OPTIONS = [
   { key: "rock", label: "Rock / Stone" },
   { key: "sand", label: "Sand / Dirt" },
   { key: "road", label: "Road" },
+];
+const MAP_BUILDER_3D_BRUSH_MODES = [
+  { key: "top-terrain", label: "Top Terrain Paint" },
+  { key: "wall-terrain", label: "Wall Paint" },
+  { key: "height-raise", label: "Height Raise" },
+  { key: "height-lower", label: "Height Lower" },
 ];
 const MAP_BUILDER_PROP_PALETTE = [
   {
@@ -94,9 +104,115 @@ function resizeGridKeepExisting(prevGrid, nextWidth, nextHeight, fillTerrainKey)
 }
 
 function clampHexHeight(value) {
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric)) return MIN_HEX_HEIGHT;
-  return Math.max(MIN_HEX_HEIGHT, Math.min(MAX_HEX_HEIGHT, numeric));
+  return clampMapHeight(value);
+}
+
+function getMapSizeFromDefinition(mapDefinition, fallbackWidth, fallbackHeight) {
+  return {
+    width: Number(mapDefinition?.size?.width ?? mapDefinition?.mapSize?.width ?? mapDefinition?.width ?? fallbackWidth) || fallbackWidth,
+    height: Number(mapDefinition?.size?.height ?? mapDefinition?.mapSize?.height ?? mapDefinition?.height ?? fallbackHeight) || fallbackHeight,
+  };
+}
+
+function gridToSavedHexes(grid) {
+  if (!Array.isArray(grid)) return [];
+  const hexes = [];
+  grid.forEach((row, y) => {
+    if (!Array.isArray(row)) return;
+    row.forEach((cell, x) => {
+      const axial = offsetToAxial(x, y);
+      const height = Number.isFinite(cell?.height)
+        ? cell.height
+        : Number.isFinite(cell?.elevation)
+          ? cell.elevation
+          : 0;
+      hexes.push({
+        q: axial.q,
+        r: axial.r,
+        x,
+        y,
+        height,
+        elevation: height,
+        terrainType: cell?.terrainType || cell?.terrain || "OPEN_GROUND",
+        terrain: cell?.terrain || cell?.terrainType || "OPEN_GROUND",
+        textureId: cell?.textureId,
+        wallTerrainType: cell?.wallTerrainType,
+        wallTextureId: cell?.wallTextureId,
+        walkable: cell?.walkable !== false,
+        moveCost: Number.isFinite(cell?.moveCost) ? cell.moveCost : 1,
+        cover: Number.isFinite(cell?.cover) ? cell.cover : 0,
+        blocksLineOfSight: cell?.blocksLineOfSight === true,
+      });
+    });
+  });
+  return hexes;
+}
+
+function hexesToGrid(hexes, width, height, fallbackTerrain) {
+  const grid = createFilledGrid(width, height, fallbackTerrain || "OPEN_GROUND");
+  if (!Array.isArray(hexes)) return grid;
+  hexes.forEach((hex) => {
+    const offset = Number.isFinite(hex?.x) && Number.isFinite(hex?.y)
+      ? { col: hex.x, row: hex.y }
+      : axialToOffset(Number(hex?.q), Number(hex?.r));
+    const x = Number(offset.col);
+    const y = Number(offset.row);
+    if (!Number.isInteger(x) || !Number.isInteger(y) || x < 0 || y < 0 || x >= width || y >= height) return;
+    const heightValue = Number.isFinite(hex?.height)
+      ? hex.height
+      : Number.isFinite(hex?.elevation)
+        ? hex.elevation
+        : Number.isFinite(hex?.elev)
+          ? hex.elev
+          : 0;
+    const terrain = hex?.terrainType || hex?.terrain || fallbackTerrain || "OPEN_GROUND";
+    grid[y][x] = {
+      ...grid[y][x],
+      ...hex,
+      terrain,
+      terrainType: terrain,
+      height: heightValue,
+      elevation: heightValue,
+    };
+  });
+  return grid;
+}
+
+function normalizeGridHeights(grid) {
+  if (!Array.isArray(grid)) return [];
+  return grid.map((row) => {
+    if (!Array.isArray(row)) return [];
+    return row.map((cell = {}) => {
+      const heightValue = Number.isFinite(cell.height)
+        ? cell.height
+        : Number.isFinite(cell.elevation)
+          ? cell.elevation
+          : 0;
+      return {
+        ...cell,
+        height: heightValue,
+        elevation: heightValue,
+      };
+    });
+  });
+}
+
+function normalizeMapProps(props) {
+  if (!Array.isArray(props)) return [];
+  return props
+    .filter((prop) => prop && Number.isFinite(Number(prop.q)) && Number.isFinite(Number(prop.r)))
+    .map((prop) => ({
+      id: prop.id || `map-prop-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      type: prop.type || "crate",
+      name: prop.name || prop.type || "Prop",
+      modelUrl: prop.modelUrl || null,
+      q: Number(prop.q),
+      r: Number(prop.r),
+      rotation: Number(prop.rotation) || 0,
+      scale: Number(prop.scale) || 1,
+      blocksMovement: prop.blocksMovement !== false,
+      blocksLineOfSight: prop.blocksLineOfSight === true,
+    }));
 }
 
 export default function MapMakerPage() {
@@ -105,6 +221,9 @@ export default function MapMakerPage() {
 
   const [show3DView, setShow3DView] = useState(true);
   const [selectedTerrainType, setSelectedTerrainType] = useState("grass");
+  const [selectedWallTerrainType, setSelectedWallTerrainType] = useState("grass");
+  const [editor3DBrushMode, setEditor3DBrushMode] = useState("top-terrain");
+  const [brushRadius, setBrushRadius] = useState(0);
   const [selectedHex, setSelectedHex] = useState(null);
   const [selectedPropType, setSelectedPropType] = useState(MAP_BUILDER_PROP_PALETTE[0].type);
   const [selectedPropId, setSelectedPropId] = useState(null);
@@ -112,6 +231,7 @@ export default function MapMakerPage() {
   const [hoverHex, setHoverHex] = useState(null);
   const [grabbedObject, setGrabbedObject] = useState(null);
   const [mapProps, setMapProps] = useState([]);
+  const painted3DBrushHexesRef = useRef(new Set());
 
   // Incremental 3D sync queue (same strategy as CombatPage)
   const pending3DChangesRef = useRef([]);
@@ -141,6 +261,17 @@ export default function MapMakerPage() {
   useEffect(() => {
     mapDefinitionRef.current = mapDefinition;
   }, [mapDefinition]);
+
+  useEffect(() => {
+    console.log(`🖌️ map brush radius: ${brushRadius}`);
+  }, [brushRadius]);
+
+  useEffect(() => {
+    setMapDefinition((prev) => ({
+      ...(prev || {}),
+      props: mapProps,
+    }));
+  }, [mapProps]);
 
   // Keep GRID_CONFIG in sync so TacticalMap renders the right dimensions.
   useEffect(() => {
@@ -196,36 +327,47 @@ export default function MapMakerPage() {
 
   const handleMapCellEdit = useCallback(
     (x, y, cell) => {
+      const nextCell = {
+        ...(mapDefinition?.grid?.[y]?.[x] || {}),
+        ...cell,
+      };
       setMapDefinition((prev) => {
         const updated = { ...(prev || {}) };
         if (!updated.grid) updated.grid = [];
         if (!updated.grid[y]) updated.grid[y] = [];
-        updated.grid[y][x] = cell;
+        updated.grid[y][x] = nextCell;
         return updated;
       });
-      queue3DCellChange(x, y, cell);
+      queue3DCellChange(x, y, nextCell);
     },
-    [queue3DCellChange]
+    [mapDefinition, queue3DCellChange]
   );
 
   const handleMapCellsEdit = useCallback(
     (changes) => {
       if (!Array.isArray(changes) || changes.length === 0) return;
+      const mergedChanges = changes.map((c) => ({
+        ...c,
+        cell: {
+          ...(mapDefinition?.grid?.[c.y]?.[c.x] || {}),
+          ...c.cell,
+        },
+      }));
       setMapDefinition((prev) => {
         const updated = { ...(prev || {}) };
         const nextGrid = Array.isArray(updated.grid)
           ? updated.grid.map((row) => (Array.isArray(row) ? [...row] : []))
           : [];
-        changes.forEach((c) => {
+        mergedChanges.forEach((c) => {
           if (!nextGrid[c.y]) nextGrid[c.y] = [];
           nextGrid[c.y][c.x] = c.cell;
         });
         updated.grid = nextGrid;
         return updated;
       });
-      queue3DCellChanges(changes);
+      queue3DCellChanges(mergedChanges);
     },
-    [queue3DCellChanges]
+    [mapDefinition, queue3DCellChanges]
   );
 
   const handleSelectedHexChange = useCallback((hex) => {
@@ -254,6 +396,7 @@ export default function MapMakerPage() {
 
   const selectedHexTerrain = selectedHexCell?.terrainType || selectedHexCell?.terrain || selectedTerrainType || "grass";
   const selectedHexTexture = selectedHexCell?.textureId || "none";
+  const selectedHexWallTerrain = selectedHexCell?.wallTerrainType || "automatic";
 
   const updateSelectedHexCell = useCallback(
     (patch) => {
@@ -262,6 +405,9 @@ export default function MapMakerPage() {
       const q = selectedHex.q;
       const r = selectedHex.r;
       const prevCell = mapDefinition?.grid?.[r]?.[q] || {};
+      const requestedHeight = Object.prototype.hasOwnProperty.call(patch, "height")
+        ? Number(patch.height)
+        : null;
       const nextHeight =
         Object.prototype.hasOwnProperty.call(patch, "height")
           ? clampHexHeight(patch.height)
@@ -272,6 +418,9 @@ export default function MapMakerPage() {
                   ? prevCell.elevation
                   : 0
             );
+      if (requestedHeight !== null && Number.isFinite(requestedHeight) && requestedHeight !== nextHeight) {
+        console.log(`⛰️ map height clamped: requested=${requestedHeight} clamped=${nextHeight}`);
+      }
       const nextTerrain = patch.terrainType || prevCell.terrainType || prevCell.terrain || selectedTerrainType || "grass";
       const nextCell = {
         ...prevCell,
@@ -280,6 +429,12 @@ export default function MapMakerPage() {
         elevation: nextHeight,
         height: nextHeight,
       };
+      if (Object.prototype.hasOwnProperty.call(patch, "wallTerrainType")) {
+        nextCell.wallTerrainType = patch.wallTerrainType || undefined;
+      }
+      if (Object.prototype.hasOwnProperty.call(patch, "wallTextureId")) {
+        nextCell.wallTextureId = patch.wallTextureId || undefined;
+      }
 
       setMapDefinition((prev) => {
         const updated = { ...(prev || {}) };
@@ -293,12 +448,129 @@ export default function MapMakerPage() {
       });
 
       queue3DCellChange(q, r, nextCell);
+      console.log(`⛰️ map height updated: (${q},${r}) height=${nextHeight}`);
       console.log(
         `🧱 map builder updated hex: (${q},${r}) height=${nextHeight} terrain=${nextTerrain} texture=${nextCell.textureId || "none"}`
       );
     },
     [mapDefinition, queue3DCellChange, selectedHex, selectedTerrainType]
   );
+
+  const apply3DBrushToHex = useCallback(
+    (hex) => {
+      if (!hex) return false;
+      const centerX = Number.isFinite(hex.x) ? hex.x : hex.q;
+      const centerY = Number.isFinite(hex.y) ? hex.y : hex.r;
+      if (!Number.isInteger(centerX) || !Number.isInteger(centerY) || centerX < 0 || centerY < 0 || centerX >= Number(gridWidth) || centerY >= Number(gridHeight)) {
+        return false;
+      }
+      const affectedHexes = getHexesInRadius(centerX, centerY, brushRadius, {
+        width: Number(gridWidth),
+        height: Number(gridHeight),
+      }).filter((item) => !painted3DBrushHexesRef.current.has(`${item.x},${item.y}`));
+      if (!affectedHexes.length) return false;
+
+      let changed = false;
+      let changedCount = 0;
+      setSelectedHex({ q: centerX, r: centerY });
+      setMapDefinition((prev) => {
+        const updated = { ...(prev || {}) };
+        const nextGrid = Array.isArray(updated.grid)
+          ? updated.grid.map((row) => (Array.isArray(row) ? [...row] : []))
+          : [];
+        const changes = [];
+
+        affectedHexes.forEach((affected) => {
+          const x = affected.x;
+          const y = affected.y;
+          const prevCell = nextGrid?.[y]?.[x] || {};
+          const currentHeight = Number.isFinite(prevCell.height)
+            ? prevCell.height
+            : Number.isFinite(prevCell.elevation)
+              ? prevCell.elevation
+              : 0;
+          let nextCell = { ...prevCell };
+
+          if (editor3DBrushMode === "top-terrain") {
+            if (nextCell.terrain === selectedTerrainType && nextCell.terrainType === selectedTerrainType) return;
+            nextCell = {
+              ...nextCell,
+              terrain: selectedTerrainType,
+              terrainType: selectedTerrainType,
+            };
+          } else if (editor3DBrushMode === "wall-terrain") {
+            if (nextCell.wallTerrainType === selectedWallTerrainType) return;
+            nextCell = {
+              ...nextCell,
+              wallTerrainType: selectedWallTerrainType,
+            };
+          } else if (editor3DBrushMode === "height-raise" || editor3DBrushMode === "height-lower") {
+            const delta = editor3DBrushMode === "height-raise" ? 1 : -1;
+            const nextHeight = clampHexHeight(currentHeight + delta);
+            if (nextHeight === currentHeight) return;
+            nextCell = {
+              ...nextCell,
+              height: nextHeight,
+              elevation: nextHeight,
+            };
+          } else {
+            return;
+          }
+
+          if (!nextGrid[y]) nextGrid[y] = [];
+          nextGrid[y][x] = nextCell;
+          painted3DBrushHexesRef.current.add(`${x},${y}`);
+          changes.push({ x, y, cell: nextCell });
+        });
+
+        if (!changes.length) return prev;
+        updated.grid = nextGrid;
+        queue3DCellChanges(changes);
+        changedCount = changes.length;
+        changed = true;
+        return updated;
+      });
+      if (changedCount > 0) {
+        if (editor3DBrushMode === "top-terrain") {
+          console.log(`🖌️ terrain brush painted: center=(${centerX},${centerY}) radius=${brushRadius} count=${changedCount}`);
+        } else if (editor3DBrushMode === "wall-terrain") {
+          console.log(`🧱 wall brush painted: center=(${centerX},${centerY}) radius=${brushRadius} count=${changedCount}`);
+        } else if (editor3DBrushMode === "height-raise" || editor3DBrushMode === "height-lower") {
+          console.log(`⛰️ height brush painted: center=(${centerX},${centerY}) radius=${brushRadius} count=${changedCount}`);
+        }
+      }
+      return changed;
+    },
+    [
+      brushRadius,
+      editor3DBrushMode,
+      gridHeight,
+      gridWidth,
+      queue3DCellChanges,
+      selectedTerrainType,
+      selectedWallTerrainType,
+    ]
+  );
+
+  const begin3DBrushStroke = useCallback(
+    (hex) => {
+      painted3DBrushHexesRef.current.clear();
+      console.log(`🖌️ map brush radius: ${brushRadius}`);
+      console.log(`🖌️ 3D brush started: mode=${editor3DBrushMode}`);
+      return apply3DBrushToHex(hex);
+    },
+    [apply3DBrushToHex, brushRadius, editor3DBrushMode]
+  );
+
+  const update3DBrushStroke = useCallback(
+    (hex) => apply3DBrushToHex(hex),
+    [apply3DBrushToHex]
+  );
+
+  const end3DBrushStroke = useCallback(() => {
+    painted3DBrushHexesRef.current.clear();
+    console.log("🖌️ 3D brush ended");
+  }, []);
 
   const isHexInBounds = useCallback(
     (hex) => {
@@ -437,20 +709,92 @@ export default function MapMakerPage() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(maps));
   }, []);
 
+  const buildExportMap = useCallback(() => {
+    const size = getMapSizeFromDefinition(mapDefinition, Number(gridWidth) || 40, Number(gridHeight) || 30);
+    const props = normalizeMapProps(mapProps);
+    const grid = normalizeGridHeights(
+      Array.isArray(mapDefinition?.grid) ? mapDefinition.grid : createFilledGrid(size.width, size.height, baseTerrain)
+    );
+    return {
+      id: mapDefinition?.id || `map-${Date.now()}`,
+      name: mapName || mapDefinition?.name || mapDefinition?.description || "Untitled Map",
+      version: Number(mapDefinition?.version) || 1,
+      description: mapName || mapDefinition?.description || "Untitled Map",
+      mapType: mapType || mapDefinition?.mapType || "hex",
+      terrain: baseTerrain || mapDefinition?.terrain || "OPEN_GROUND",
+      lighting: mapDefinition?.lighting || lighting,
+      size,
+      mapSize: { width: size.width, height: size.height },
+      width: size.width,
+      height: size.height,
+      grid,
+      hexes: gridToSavedHexes(grid),
+      props,
+      spawnZones: Array.isArray(mapDefinition?.spawnZones) ? mapDefinition.spawnZones : [],
+      theme: mapDefinition?.theme || {
+        id: mapDefinition?.themeId || "map_builder_default",
+        defaultTextureId: mapDefinition?.defaultTextureId || null,
+      },
+      cameraDefaults: mapDefinition?.cameraDefaults || null,
+    };
+  }, [baseTerrain, gridHeight, gridWidth, lighting, mapDefinition, mapName, mapProps, mapType]);
+
+  const validateImportedMap = useCallback((parsed) => {
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return { ok: false, reason: "root is not an object" };
+    }
+    const hasGrid = Array.isArray(parsed.grid);
+    const hasHexes = Array.isArray(parsed.hexes);
+    if (!hasGrid && !hasHexes) {
+      return { ok: false, reason: "missing grid or hexes" };
+    }
+    const size = getMapSizeFromDefinition(parsed, GRID_CONFIG.GRID_WIDTH, GRID_CONFIG.GRID_HEIGHT);
+    if (!Number.isFinite(size.width) || !Number.isFinite(size.height) || size.width <= 0 || size.height <= 0) {
+      return { ok: false, reason: "invalid map size" };
+    }
+    if (hasGrid && !parsed.grid.every((row) => Array.isArray(row))) {
+      return { ok: false, reason: "grid rows must be arrays" };
+    }
+    return { ok: true, size };
+  }, []);
+
+  const clearTransientEditorState = useCallback((nextSize) => {
+    setSelectedPropId(null);
+    setDraggingPropId(null);
+    setHoverHex(null);
+    setGrabbedObject(null);
+    setSelectedHex((prev) => {
+      if (!prev) return null;
+      const q = Number(prev.q);
+      const r = Number(prev.r);
+      return (
+        Number.isInteger(q) &&
+        Number.isInteger(r) &&
+        q >= 0 &&
+        r >= 0 &&
+        q < nextSize.width &&
+        r < nextSize.height
+      )
+        ? prev
+        : null;
+    });
+  }, []);
+
   const handleSave = useCallback(() => {
     const id = `${Date.now()}`;
+    const exportMap = buildExportMap();
     const entry = {
       id,
       name: mapName || "Untitled Map",
       savedAt: new Date().toISOString(),
-      mapDefinition,
+      mapDefinition: exportMap,
     };
     const next = [entry, ...savedMaps];
     persistSavedMaps(next);
     setSelectedSavedId(id);
     toast({ title: "Map saved", status: "success", duration: 1600, isClosable: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mapName, mapDefinition, persistSavedMaps, toast]);
+  }, [buildExportMap, mapName, persistSavedMaps, toast]);
 
   const handleLoad = useCallback(() => {
     const entry = savedMaps.find((m) => m.id === selectedSavedId);
@@ -468,8 +812,10 @@ export default function MapMakerPage() {
     setGridHeight(height);
 
     setMapDefinition(def);
+    setMapProps(normalizeMapProps(def.props));
+    clearTransientEditorState({ width, height });
     toast({ title: "Map loaded", status: "info", duration: 1400, isClosable: true });
-  }, [savedMaps, selectedSavedId, toast]);
+  }, [clearTransientEditorState, savedMaps, selectedSavedId, toast]);
 
   const handleResizeGrid = useCallback(() => {
     const nextW = Math.max(5, Math.min(200, Number(gridWidth) || 40));
@@ -499,31 +845,67 @@ export default function MapMakerPage() {
   }, [baseTerrain, gridHeight, gridWidth, toast]);
 
   const handleExport = useCallback(() => {
-    const json = JSON.stringify(mapDefinition, null, 2);
+    const exportMap = buildExportMap();
+    const json = JSON.stringify(exportMap, null, 2);
     setImportExportJson(json);
-    toast({ title: "Export ready", description: "JSON placed in the text box.", status: "info", duration: 1600, isClosable: true });
-  }, [mapDefinition, toast]);
+    console.log(`🗺️ map builder exported: ${exportMap.name} props=${exportMap.props.length}`);
+    toast({ title: "Map exported", description: "JSON placed in the text box.", status: "info", duration: 1600, isClosable: true });
+  }, [buildExportMap, toast]);
 
   const handleImport = useCallback(() => {
     const parsed = safeJsonParse(importExportJson, null);
-    if (!parsed || typeof parsed !== "object") {
-      toast({ title: "Import failed", description: "Invalid JSON.", status: "error", duration: 2000, isClosable: true });
+    const validation = validateImportedMap(parsed);
+    if (!validation.ok) {
+      console.warn(`🚫 map builder import failed: ${validation.reason}`);
+      toast({ title: "Invalid map JSON", description: validation.reason, status: "error", duration: 2200, isClosable: true });
       return;
     }
 
-    setMapDefinition(parsed);
-    setMapName(parsed.description || "Imported Map");
-    setMapType(parsed.mapType || "hex");
-    setBaseTerrain(parsed.terrain || "OPEN_GROUND");
-    setLighting(parsed.lighting || "BRIGHT_DAYLIGHT");
+    const width = validation.size.width;
+    const height = validation.size.height;
+    const nextGrid = normalizeGridHeights(
+      Array.isArray(parsed.grid)
+        ? parsed.grid
+        : hexesToGrid(parsed.hexes, width, height, parsed.terrain || "OPEN_GROUND")
+    );
+    const nextProps = normalizeMapProps(parsed.props);
+    const nextName = parsed.name || parsed.description || "Imported Map";
+    const lightingValue =
+      typeof parsed.lighting === "string"
+        ? parsed.lighting
+        : parsed.lighting?.preset || "BRIGHT_DAYLIGHT";
+    const nextDefinition = {
+      ...parsed,
+      id: parsed.id || `map-${Date.now()}`,
+      name: nextName,
+      description: nextName,
+      version: Number(parsed.version) || 1,
+      mapType: parsed.mapType || "hex",
+      terrain: parsed.terrain || parsed.theme?.defaultTerrain || "OPEN_GROUND",
+      lighting: lightingValue,
+      size: { width, height },
+      mapSize: { width, height },
+      width,
+      height,
+      grid: nextGrid,
+      hexes: Array.isArray(parsed.hexes) ? parsed.hexes : gridToSavedHexes(nextGrid),
+      props: nextProps,
+      spawnZones: Array.isArray(parsed.spawnZones) ? parsed.spawnZones : [],
+    };
 
-    const width = parsed.mapSize?.width ?? parsed.width ?? GRID_CONFIG.GRID_WIDTH;
-    const height = parsed.mapSize?.height ?? parsed.height ?? GRID_CONFIG.GRID_HEIGHT;
+    setMapDefinition(nextDefinition);
+    setMapProps(nextProps);
+    clearTransientEditorState({ width, height });
+    setMapName(nextName);
+    setMapType(parsed.mapType || "hex");
+    setBaseTerrain(nextDefinition.terrain || "OPEN_GROUND");
+    setLighting(lightingValue);
     setGridWidth(width);
     setGridHeight(height);
 
-    toast({ title: "Map imported", status: "success", duration: 1600, isClosable: true });
-  }, [importExportJson, toast]);
+    console.log(`🗺️ map builder imported: ${nextName} props=${nextProps.length}`);
+    toast({ title: "Map imported", description: `${nextProps.length} props restored.`, status: "success", duration: 1800, isClosable: true });
+  }, [clearTransientEditorState, importExportJson, toast, validateImportedMap]);
 
   return (
     <Box p={4}>
@@ -607,21 +989,21 @@ export default function MapMakerPage() {
                             <Button
                               size="sm"
                               onClick={() => updateSelectedHexCell({ height: selectedHexHeight - 1 })}
-                              isDisabled={selectedHexHeight <= MIN_HEX_HEIGHT}
+                              isDisabled={selectedHexHeight <= MAP_MIN_HEIGHT}
                             >
                               -
                             </Button>
                             <Input
                               type="number"
-                              min={MIN_HEX_HEIGHT}
-                              max={MAX_HEX_HEIGHT}
+                              min={MAP_MIN_HEIGHT}
+                              max={MAP_MAX_HEIGHT}
                               value={selectedHexHeight}
                               onChange={(e) => updateSelectedHexCell({ height: e.target.value })}
                             />
                             <Button
                               size="sm"
                               onClick={() => updateSelectedHexCell({ height: selectedHexHeight + 1 })}
-                              isDisabled={selectedHexHeight >= MAX_HEX_HEIGHT}
+                              isDisabled={selectedHexHeight >= MAP_MAX_HEIGHT}
                             >
                               +
                             </Button>
@@ -646,8 +1028,62 @@ export default function MapMakerPage() {
                       <Text fontSize="xs" color="gray.600">
                         Texture/style: {selectedHexTexture === "none" ? "terrain material" : selectedHexTexture}
                       </Text>
+                      <Text fontSize="xs" color="gray.600">
+                        Wall texture: {selectedHexWallTerrain}
+                      </Text>
                     </>
                   )}
+                </VStack>
+              </Box>
+
+              <Divider />
+
+              <Box borderWidth="1px" borderRadius="md" p={3} bg="gray.50">
+                <VStack align="stretch" spacing={3}>
+                  <Text fontSize="sm" fontWeight="bold">3D Brush</Text>
+                  <FormControl>
+                    <FormLabel fontSize="sm">Brush Mode</FormLabel>
+                    <Select value={editor3DBrushMode} onChange={(e) => setEditor3DBrushMode(e.target.value)}>
+                      {MAP_BUILDER_3D_BRUSH_MODES.map((mode) => (
+                        <option key={mode.key} value={mode.key}>
+                          {mode.label}
+                        </option>
+                      ))}
+                    </Select>
+                  </FormControl>
+                  <FormControl>
+                    <FormLabel fontSize="sm">Brush Radius</FormLabel>
+                    <Select value={brushRadius} onChange={(e) => setBrushRadius(Number(e.target.value) || 0)}>
+                      {[0, 1, 2, 3].map((radius) => (
+                        <option key={radius} value={radius}>
+                          {radius}
+                        </option>
+                      ))}
+                    </Select>
+                  </FormControl>
+                  <FormControl>
+                    <FormLabel fontSize="sm">Top Terrain</FormLabel>
+                    <Select value={selectedTerrainType} onChange={(e) => setSelectedTerrainType(e.target.value)}>
+                      {MAP_BUILDER_TERRAIN_OPTIONS.map((terrain) => (
+                        <option key={terrain.key} value={terrain.key}>
+                          {terrain.label}
+                        </option>
+                      ))}
+                    </Select>
+                  </FormControl>
+                  <FormControl>
+                    <FormLabel fontSize="sm">Wall Terrain</FormLabel>
+                    <Select value={selectedWallTerrainType} onChange={(e) => setSelectedWallTerrainType(e.target.value)}>
+                      {MAP_BUILDER_TERRAIN_OPTIONS.map((terrain) => (
+                        <option key={terrain.key} value={terrain.key}>
+                          {terrain.label}
+                        </option>
+                      ))}
+                    </Select>
+                  </FormControl>
+                  <Text fontSize="xs" color="gray.600">
+                    Radius {brushRadius} paints {brushRadius === 0 ? "one hex" : "a hex area"}.
+                  </Text>
                 </VStack>
               </Box>
 
@@ -672,7 +1108,7 @@ export default function MapMakerPage() {
                     onClick={handlePlaceSelectedProp}
                     isDisabled={!selectedHex}
                   >
-                    Place on Selected Hex
+                    Place Prop
                   </Button>
                   <Text fontSize="xs" color="gray.600">
                     {selectedPropId
@@ -737,9 +1173,9 @@ export default function MapMakerPage() {
               <Divider />
 
               <HStack>
-                <Button size="sm" variant="outline" onClick={handleExport}>Export JSON</Button>
+                <Button size="sm" variant="outline" onClick={handleExport}>Export Map JSON</Button>
                 <Button size="sm" colorScheme="green" variant="outline" onClick={handleImport} isDisabled={!importExportJson.trim()}>
-                  Import JSON
+                  Import Map JSON
                 </Button>
               </HStack>
               <Textarea
@@ -772,6 +1208,7 @@ export default function MapMakerPage() {
                   mode="MAP_EDITOR"
                   mapDefinition={mapDefinition}
                   selectedTerrainType={selectedTerrainType}
+                  brushRadius={brushRadius}
                   onSelectedTerrainTypeChange={setSelectedTerrainType}
                   onMapCellEdit={handleMapCellEdit}
                   onMapCellsEdit={handleMapCellsEdit}
@@ -791,9 +1228,14 @@ export default function MapMakerPage() {
                     visible={true}
                     editorProps={mapProps}
                     selectedEditorPropId={selectedPropId}
+                    onHexSelect={handleSelectedHexChange}
                     onEditorPropGrab={beginPropGrab}
                     onEditorPropHover={updatePropGrabHover}
                     onEditorPropDrop={completePropDrop}
+                    editorBrushMode={editor3DBrushMode}
+                    onEditorBrushStart={begin3DBrushStroke}
+                    onEditorBrushPaint={update3DBrushStroke}
+                    onEditorBrushEnd={end3DBrushStroke}
                   />
                 </Box>
               )}

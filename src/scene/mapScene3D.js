@@ -45,6 +45,10 @@ import {
   canPerformRangedAttack,
   setLineOfSightResolver,
 } from "../game/rules/combatRules.js";
+import {
+  getTerrainFallbackColor,
+  getTerrainTexturePath,
+} from "../utils/terrainTextures.js";
 
 const HEX_DIRECTIONS = [
   { q: +1, r: 0 },
@@ -65,36 +69,11 @@ const TERRAIN_COVER = {
 };
 const TREE_COVER = 0.5;
 
-const TERRAIN_TEXTURES = {
-  DEFAULT: "/assets/textures/terrain/grassland.png",
-  OPEN_GROUND: "/assets/textures/terrain/grassland.png",
-  LIGHT_FOREST: "/assets/textures/terrain/light_forest.png",
-  DENSE_FOREST: "/assets/textures/terrain/dense_forest.png",
-  FOREST: "/assets/textures/terrain/light_forest.png",
-  ROCKY_TERRAIN: "/assets/textures/terrain/rocky.png",
-  ROCK: "/assets/textures/terrain/rocky.png",
-  HILL: "/assets/textures/terrain/rocky.png",
-  URBAN: "/assets/textures/terrain/urban.png",
-  SWAMP_MARSH: "/assets/textures/terrain/swamp.png",
-  WATER: "/assets/textures/terrain/water.png",
-  CAVE_INTERIOR: "/assets/textures/terrain/cave.png",
-  INTERIOR: "/assets/textures/terrain/interior.png",
-  SAND: "/assets/textures/terrain/grassland.png",
-};
-
 const textureLoader = new THREE.TextureLoader();
 const textureCache = new Map();
 
-function normalizeTerrainKey(key = "") {
-  return key
-    .toString()
-    .toUpperCase()
-    .replace(/[^A-Z0-9]+/g, "_");
-}
-
 function loadTerrainTexture(key) {
-  const normalized = normalizeTerrainKey(key);
-  const path = TERRAIN_TEXTURES[normalized] || TERRAIN_TEXTURES.DEFAULT;
+  const path = getTerrainTexturePath(key || "grass");
   if (!path) return null;
   if (textureCache.has(path)) return textureCache.get(path);
   const texture = textureLoader.load(path);
@@ -325,6 +304,7 @@ function colorForTerrain(baseTerrainKey = "OPEN_GROUND") {
   return (
     TERRAIN_FLAT_COLORS[baseTerrainKey] ||
     TERRAIN_FLAT_COLORS[baseTerrainKey.replace(/[-\s]+/g, "_").toUpperCase()] ||
+    getTerrainFallbackColor(baseTerrainKey) ||
     "#3A8D4F"
   );
 }

@@ -89,7 +89,7 @@ Narrow task:
 
 ## G. Add Combat Map Selection Later
 
-Status: future combat setup work.
+Status: first narrow path present.
 
 Narrow task:
 
@@ -98,6 +98,13 @@ Narrow task:
 - Apply spawn zones during deployment.
 - Start combat with the selected map as read-only terrain.
 - Do not allow terrain editing once combat has started.
+
+Current first path:
+
+- Combat setup lists maps saved by Map Maker under `mapMaker.savedMaps.v1`.
+- Combat start applies the selected map as read-only terrain before the fight begins.
+- Props remain metadata only and are not combat blockers yet.
+- Spawn zone application remains future work.
 
 ## Recommended First Implementation Patch
 
@@ -110,4 +117,3 @@ Why:
 - It stays outside combat.
 - It avoids turn timing, AI, attack code, and movement rules.
 - It keeps `HexArena3D` changes optional until 3D editor selection is clearly needed.
-

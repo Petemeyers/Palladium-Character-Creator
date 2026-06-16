@@ -20,6 +20,16 @@ import {
   getCreatureSize,
   getMovementRange
 } from "../data/movementRules";
+import {
+  getTerrainColorMap,
+  getTerrainTextureMap,
+  getTerrainTexturePath,
+  normalizeTerrainTextureKey,
+} from "../utils/terrainTextures.js";
+import {
+  clampMapHeight,
+} from "../utils/mapHeightConstants.js";
+import { getHexesInRadius } from "../utils/mapBrush.js";
 // Sound detection system - reserved for future full implementation
 // import { detectBySound, awarenessCheck } from "../utils/soundDetectionSystem";
 // Hex grid math - using direct flat-top hex formulas in getHexPixelPosition
@@ -66,6 +76,7 @@ const TacticalMap = ({
   mapDefinition = null, // Map definition for editor mode
   // MAP_EDITOR paint palette
   selectedTerrainType = "grass", // Editor: currently selected paint terrain
+  brushRadius = 0,
   onSelectedTerrainTypeChange = null, // Editor: (terrainKey) => void
   onMapCellEdit = null, // Editor: (col,row,cell) -> parent handles state + 3D sync
   onMapCellsEdit = null, // Editor: (changes: Array<{x,y,cell}>) -> bulk edit for bucket fill
@@ -142,18 +153,42 @@ const TacticalMap = ({
   const [editorHeightStep, setEditorHeightStep] = useState(1);
   const isPointerPaintingRef = useRef(false);
   const lastPaintedCellKeyRef = useRef(null);
+  const activeHeightStrokeRef = useRef(false);
+  const paintedHeightHexesThisStrokeRef = useRef(new Set());
 
   function normalizeEditorTerrainKey(raw) {
+    const registryKey = normalizeTerrainTextureKey(raw);
+    if (registryKey) return registryKey;
     const t = String(raw || "grass").toLowerCase();
-    if (["grass", "forest", "rock", "water", "sand", "hill", "road"].includes(t)) return t;
+    if (["grass", "forest", "rock", "stone", "water", "sand", "dirt", "hill", "road"].includes(t)) return t;
     if (t.includes("forest")) return "forest";
+    if (t.includes("stone")) return "stone";
     if (t.includes("rock") || t.includes("mountain") || t.includes("ruins") || t.includes("cave")) return "rock";
     if (t.includes("water") || t.includes("swamp") || t.includes("marsh")) return "water";
+    if (t.includes("dirt")) return "dirt";
     if (t.includes("sand") || t.includes("desert")) return "sand";
     if (t.includes("hill")) return "hill";
     if (t.includes("road") || t.includes("urban") || t.includes("city")) return "road";
     if (t.includes("open") || t.includes("field") || t.includes("plain") || t.includes("ground")) return "grass";
     return "grass";
+  }
+
+  function getTerrainRenderKey(cellData, fallbackTerrain) {
+    return normalizeEditorTerrainKey(
+      cellData?.terrainType ||
+      cellData?.terrain ||
+      fallbackTerrain ||
+      "grass"
+    );
+  }
+
+  function clampEditorHeight(value) {
+    const requested = Number(value);
+    const clamped = clampMapHeight(value);
+    if (Number.isFinite(requested) && requested !== clamped) {
+      console.log(`⛰️ map height clamped: requested=${requested} clamped=${clamped}`);
+    }
+    return clamped;
   }
 
   // Use external flashing state if provided, otherwise use internal
@@ -401,14 +436,25 @@ const TacticalMap = ({
         // Bucket is handled separately (flood fill) — do nothing here.
         return false;
       } else if (editorBrushMode === "raise" || editorBrushMode === "lower") {
+        const key = `${x},${y}`;
+        if (activeHeightStrokeRef.current && paintedHeightHexesThisStrokeRef.current.has(key)) {
+          console.log(`🚫 height paint duplicate skipped: (${x},${y})`);
+          return false;
+        }
+
         const step = Number(editorHeightStep) || 1;
         const delta = editorBrushMode === "raise" ? step : -step;
-        const nextElevation = prevElevation + delta;
+        const nextElevation = clampEditorHeight(prevElevation + delta);
         nextCell = {
           ...nextCell,
           elevation: nextElevation,
           height: nextElevation, // keep 3D builder compatibility
         };
+        if (activeHeightStrokeRef.current) {
+          paintedHeightHexesThisStrokeRef.current.add(key);
+        }
+        console.log(`⛰️ map height updated: (${x},${y}) height=${nextElevation}`);
+        console.log(`⛰️ height painted hex: (${x},${y}) height=${nextElevation}`);
       }
 
       if (typeof onMapCellEdit === "function") {
@@ -424,6 +470,92 @@ const TacticalMap = ({
       mapDefinition,
       mode,
       onMapCellEdit,
+      selectedTerrainType,
+    ]
+  );
+
+  const applyMapEditorBrushEdit = useCallback(
+    (x, y) => {
+      if (mode !== "MAP_EDITOR" || !mapDefinition) return false;
+      if (editorBrushMode === "bucket") return false;
+
+      const width = mapDefinition.grid?.[0]?.length ?? GRID_CONFIG.GRID_WIDTH;
+      const height = mapDefinition.grid?.length ?? GRID_CONFIG.GRID_HEIGHT;
+      const affectedHexes = getHexesInRadius(x, y, brushRadius, { width, height });
+      const changes = [];
+      const terrainKey = selectedTerrainType || "grass";
+      const step = Number(editorHeightStep) || 1;
+
+      if (editorBrushMode === "terrain") {
+        affectedHexes.forEach((hex) => {
+          const key = `${hex.x},${hex.y}`;
+          if (isPointerPaintingRef.current && paintedHeightHexesThisStrokeRef.current.has(key)) return;
+          const prevCell = mapDefinition.grid?.[hex.y]?.[hex.x] || {};
+          if (prevCell.terrain === terrainKey && prevCell.terrainType === terrainKey) return;
+          paintedHeightHexesThisStrokeRef.current.add(key);
+          changes.push({
+            x: hex.x,
+            y: hex.y,
+            cell: {
+              ...prevCell,
+              terrain: terrainKey,
+              terrainType: terrainKey,
+            },
+          });
+        });
+      } else if (editorBrushMode === "raise" || editorBrushMode === "lower") {
+        const delta = editorBrushMode === "raise" ? step : -step;
+        affectedHexes.forEach((hex) => {
+          const key = `${hex.x},${hex.y}`;
+          if (isPointerPaintingRef.current && paintedHeightHexesThisStrokeRef.current.has(key)) return;
+          const prevCell = mapDefinition.grid?.[hex.y]?.[hex.x] || {};
+          const prevElevationRaw =
+            Number.isFinite(prevCell.elevation)
+              ? prevCell.elevation
+              : Number.isFinite(prevCell.height)
+                ? prevCell.height
+                : 0;
+          const prevElevation = Number(prevElevationRaw) || 0;
+          const nextElevation = clampEditorHeight(prevElevation + delta);
+          if (nextElevation === prevElevation) return;
+          paintedHeightHexesThisStrokeRef.current.add(key);
+          changes.push({
+            x: hex.x,
+            y: hex.y,
+            cell: {
+              ...prevCell,
+              elevation: nextElevation,
+              height: nextElevation,
+            },
+          });
+        });
+      }
+
+      if (!changes.length) return false;
+
+      if (typeof onMapCellsEdit === "function") {
+        onMapCellsEdit(changes);
+      } else if (typeof onMapCellEdit === "function") {
+        changes.forEach((change) => onMapCellEdit(change.x, change.y, change.cell));
+      } else {
+        return false;
+      }
+
+      if (editorBrushMode === "terrain") {
+        console.log(`🖌️ terrain brush painted: center=(${x},${y}) radius=${brushRadius} count=${changes.length}`);
+      } else if (editorBrushMode === "raise" || editorBrushMode === "lower") {
+        console.log(`⛰️ height brush painted: center=(${x},${y}) radius=${brushRadius} count=${changes.length}`);
+      }
+      return true;
+    },
+    [
+      brushRadius,
+      editorBrushMode,
+      editorHeightStep,
+      mapDefinition,
+      mode,
+      onMapCellEdit,
+      onMapCellsEdit,
       selectedTerrainType,
     ]
   );
@@ -540,7 +672,8 @@ const TacticalMap = ({
           if (onSelectedHexChange) {
             onSelectedHexChange({ x, y });
           }
-          applyMapEditorEdit(x, y);
+          // Pointer-down/drag owns editor painting. Click is selection-only so
+          // mouse release does not apply the same height edit a second time.
           // Important: stop here—don't run movement/combatant selection logic in editor mode
           return;
         }
@@ -600,8 +733,13 @@ const TacticalMap = ({
   // Global pointer-up handler so dragging stops even if pointer leaves the SVG
   useEffect(() => {
     const stopPainting = () => {
+      if (activeHeightStrokeRef.current) {
+        console.log("⛰️ height paint stroke ended");
+      }
       isPointerPaintingRef.current = false;
       lastPaintedCellKeyRef.current = null;
+      activeHeightStrokeRef.current = false;
+      paintedHeightHexesThisStrokeRef.current.clear();
     };
     window.addEventListener("pointerup", stopPainting);
     window.addEventListener("pointercancel", stopPainting);
@@ -630,11 +768,19 @@ const TacticalMap = ({
 
       isPointerPaintingRef.current = true;
       lastPaintedCellKeyRef.current = null;
+      paintedHeightHexesThisStrokeRef.current.clear();
+      console.log(`🖌️ map brush radius: ${brushRadius}`);
+      if (editorBrushMode === "raise" || editorBrushMode === "lower") {
+        activeHeightStrokeRef.current = true;
+        console.log("⛰️ height paint stroke started");
+      } else {
+        activeHeightStrokeRef.current = false;
+      }
       const key = `${col},${row}`;
       lastPaintedCellKeyRef.current = key;
-      applyMapEditorEdit(col, row);
+      applyMapEditorBrushEdit(col, row);
     },
-    [applyMapEditorEdit, editorBrushMode, floodFillTerrain, mapDefinition, mode]
+    [applyMapEditorBrushEdit, brushRadius, editorBrushMode, floodFillTerrain, mapDefinition, mode]
   );
 
   const handleCellPointerOver = useCallback(
@@ -646,14 +792,19 @@ const TacticalMap = ({
       const key = `${col},${row}`;
       if (lastPaintedCellKeyRef.current === key) return;
       lastPaintedCellKeyRef.current = key;
-      applyMapEditorEdit(col, row);
+      applyMapEditorBrushEdit(col, row);
     },
-    [applyMapEditorEdit, mapDefinition, mode]
+    [applyMapEditorBrushEdit, mapDefinition, mode]
   );
 
   const handleCellPointerUp = useCallback(() => {
+    if (activeHeightStrokeRef.current) {
+      console.log("⛰️ height paint stroke ended");
+    }
     isPointerPaintingRef.current = false;
     lastPaintedCellKeyRef.current = null;
+    activeHeightStrokeRef.current = false;
+    paintedHeightHexesThisStrokeRef.current.clear();
   }, []);
 
   // Memoize combatants at position to avoid recalculating on every render
@@ -760,12 +911,7 @@ const TacticalMap = ({
     WATER: "#3ba4ff",            // light blue
     INTERIOR: "#666666",        // interior dungeon floor
     // Map-editor palette (lowercase) — keep in sync with editorTerrainPalette keys.
-    grass: "#9dd66b",
-    forest: "#58a65c",
-    rock: "#7d7d7d",
-    water: "#3ba4ff",
-    sand: "#d6b56b",
-    road: "#b9a57f",
+    ...getTerrainColorMap(),
     hill: "#7d7d7d",
   }), []);
 
@@ -773,22 +919,17 @@ const TacticalMap = ({
   // Set useTextures to true to enable texture rendering
   const useTextures = true;
   const terrainTextures = useMemo(() => ({
-    OPEN_GROUND: "/assets/textures/terrain/grassland.png",      // Grassland texture
-    LIGHT_FOREST: "/assets/textures/terrain/light_forest.png",  // Light forest texture
+    OPEN_GROUND: getTerrainTexturePath("grass"),
+    LIGHT_FOREST: getTerrainTexturePath("forest"),
     DENSE_FOREST: "/assets/textures/terrain/dense_forest.png",  // Dense forest texture
     ROCKY_TERRAIN: "/assets/textures/terrain/rocky.png",       // Rocky terrain texture
     URBAN: "/assets/textures/terrain/urban.png",               // Urban/cobblestone texture
     SWAMP_MARSH: "/assets/textures/terrain/swamp.png",           // Swamp texture
-    CAVE_INTERIOR: "/assets/textures/terrain/cave.png",         // Cave interior texture
-    WATER: "/assets/textures/terrain/water.png",                // Water texture
-    INTERIOR: "/assets/textures/terrain/interior.png",          // Interior floor texture
-    // Map-editor palette (lowercase) — map to the closest available texture set.
-    grass: "/assets/textures/terrain/grassland.png",
-    forest: "/assets/textures/terrain/light_forest.png",
-    rock: "/assets/textures/terrain/rocky.png",
-    water: "/assets/textures/terrain/water.png",
-    sand: "/assets/textures/terrain/grassland.png",
-    road: "/assets/textures/terrain/urban.png",
+    CAVE_INTERIOR: getTerrainTexturePath("stone"),
+    WATER: getTerrainTexturePath("water"),
+    INTERIOR: getTerrainTexturePath("stone"),
+    // Map-editor palette (lowercase) — every current key has a lightweight placeholder texture.
+    ...getTerrainTextureMap(),
     hill: "/assets/textures/terrain/rocky.png",
   }), []);
 
@@ -1640,18 +1781,19 @@ const TacticalMap = ({
 
   // Helper to get fill for cell (texture pattern or solid color)
   const getCellFill = useCallback((terrainType, fallbackColor) => {
+    const renderKey = normalizeEditorTerrainKey(terrainType);
     if (!useTextures || !terrainType) {
-      return fallbackColor || "#ffffff";
+      return terrainColors[renderKey] || fallbackColor || "#ffffff";
     }
 
-    const texturePath = terrainTextures[terrainType];
+    const texturePath = terrainTextures[terrainType] || terrainTextures[renderKey];
     if (texturePath) {
       // Return pattern URL - check if texture exists, fallback to color
-      const patternId = getTexturePatternId(terrainType);
+      const patternId = getTexturePatternId(terrainTextures[terrainType] ? terrainType : renderKey);
       return `url(#${patternId})`;
     }
 
-    return fallbackColor || terrainColors[terrainType] || "#ffffff";
+    return fallbackColor || terrainColors[renderKey] || terrainColors[terrainType] || "#ffffff";
   }, [useTextures, terrainTextures, terrainColors]);
 
   // Helper to check if a cell is inside map bounds (rectangular grid)
@@ -1703,19 +1845,31 @@ const TacticalMap = ({
 
         // ✅ Priority 0: Determine fill color from terrain grid data
         const cellData = getCellDataFromSceneCb(col, row);
+        const terrainRenderKey = getTerrainRenderKey(cellData, terrain?.baseTerrain);
+        const cellElevation = Number.isFinite(cellData?.height)
+          ? Number(cellData.height)
+          : Number.isFinite(cellData?.elevation)
+            ? Number(cellData.elevation)
+            : 0;
+        const hasSculptedHeight = mode === "MAP_EDITOR" && cellElevation !== 0;
+        const heightStrokeColor = cellElevation < 0 ? "#0284c7" : "#b45309";
+        const normalStrokeColor = hoveredCell?.x === col && hoveredCell?.y === row ? "#2563eb" : "#64748b";
         let baseTerrainColor;
         if (cellData) {
           // ✅ For dense forest, skip feature colors for trees (use terrain color instead)
           if (terrain?.baseTerrain === "DENSE_FOREST" &&
             (cellData.feature === "TREE" || cellData.feature === "TREE_LARGE")) {
             // Use terrain color, not tree feature color (to avoid dark green)
-            baseTerrainColor = terrainColors[cellData.terrainType] ||
+            baseTerrainColor = terrainColors[terrainRenderKey] ||
+              terrainColors[cellData.terrainType] ||
               terrainColors[terrain?.baseTerrain] ||
               "#e5e5e5";
           } else {
             // Normal logic: feature color > terrain type > base terrain
             baseTerrainColor = featureColors[cellData.feature] ||
+              terrainColors[terrainRenderKey] ||
               terrainColors[cellData.terrainType] ||
+              terrainColors[cellData.terrain] ||
               terrainColors[terrain?.baseTerrain] ||
               "#cccccc";
           }
@@ -1744,7 +1898,7 @@ const TacticalMap = ({
         const fogOpacity = getFogOpacityCb(col, row, terrain?.lighting);
 
         // Determine terrain type for texture selection (cellData already defined above)
-        const terrainType = cellData?.terrainType || terrain?.baseTerrain;
+        const terrainType = terrainRenderKey || cellData?.terrainType || cellData?.terrain || terrain?.baseTerrain;
 
         // Check if this is a movement color cell (valid move)
         const validMove = validMoves.find(move => move.x === col && move.y === row);
@@ -1824,9 +1978,9 @@ const TacticalMap = ({
                   width={GRID_CONFIG.HEX_SIZE * 2}
                   height={GRID_CONFIG.HEX_SIZE * 2}
                   fill={baseFillColor}
-                  fillOpacity={0.4} // Semi-transparent to show 3D background
-                  stroke={hoveredCell?.x === col && hoveredCell?.y === row ? "#2563eb" : "#64748b"}
-                  strokeWidth={hoveredCell?.x === col && hoveredCell?.y === row ? "3" : "1.5"}
+                  fillOpacity={mode === "MAP_EDITOR" ? 0.88 : 0.4} // Editor terrain must read clearly; combat stays translucent.
+                  stroke={hasSculptedHeight ? heightStrokeColor : normalStrokeColor}
+                  strokeWidth={hoveredCell?.x === col && hoveredCell?.y === row ? "3" : hasSculptedHeight ? "2.5" : "1.5"}
                   style={{ cursor: selectedCombatant ? "pointer" : "default" }}
                   onClick={() => handleCellClick(col, row)}
                   onPointerDown={(e) => handleCellPointerDown(col, row, e)}
@@ -1849,9 +2003,9 @@ const TacticalMap = ({
                 <polygon
                   points={cellPoints}
                   fill={baseFillColor}
-                  fillOpacity={0.4} // Semi-transparent to show 3D background
-                  stroke={hoveredCell?.x === col && hoveredCell?.y === row ? "#2563eb" : "#64748b"}
-                  strokeWidth={hoveredCell?.x === col && hoveredCell?.y === row ? "3" : "1.5"}
+                  fillOpacity={mode === "MAP_EDITOR" ? 0.88 : 0.4} // Editor terrain must read clearly; combat stays translucent.
+                  stroke={hasSculptedHeight ? heightStrokeColor : normalStrokeColor}
+                  strokeWidth={hoveredCell?.x === col && hoveredCell?.y === row ? "3" : hasSculptedHeight ? "2.5" : "1.5"}
                   style={{ cursor: selectedCombatant ? "pointer" : "default" }}
                   onClick={() => handleCellClick(col, row)}
                   onPointerDown={(e) => handleCellPointerDown(col, row, e)}
@@ -1872,6 +2026,23 @@ const TacticalMap = ({
                 />
               )}
             </Tooltip>
+
+            {hasSculptedHeight && (
+              <text
+                x={centerX}
+                y={centerY + 4}
+                textAnchor="middle"
+                fontSize="10"
+                fontWeight="800"
+                fill={cellElevation < 0 ? "#075985" : "#78350f"}
+                stroke="rgba(255,255,255,0.85)"
+                strokeWidth="3"
+                paintOrder="stroke"
+                style={{ pointerEvents: "none", userSelect: "none" }}
+              >
+                {cellElevation > 0 ? `+${cellElevation}` : cellElevation}
+              </text>
+            )}
 
             {/* Movement color overlay - rendered above texture layer */}
             {movementOverlayColor && (
@@ -3083,6 +3254,9 @@ const TacticalMap = ({
                             ? "Click-drag to raise tiles."
                             : "Click-drag to lower tiles."}
                     </div>
+                    <div style={{ marginTop: 6, fontSize: 11, color: "#111827", fontWeight: 700 }}>
+                      Radius: {brushRadius}
+                    </div>
                   </div>
                 </foreignObject>
               </g>
@@ -3234,6 +3408,7 @@ TacticalMap.propTypes = {
   mode: PropTypes.oneOf(["MAP_EDITOR", "COMBAT"]),
   mapDefinition: PropTypes.object,
   selectedTerrainType: PropTypes.string,
+  brushRadius: PropTypes.number,
   onSelectedTerrainTypeChange: PropTypes.func,
   onMapCellEdit: PropTypes.func,
 };

@@ -100,9 +100,15 @@ This document proposes the app-level map JSON shape for future save/load and pla
 
 `height`: Numeric elevation used by 3D column height and later movement/elevation rules. Current code also sees `elevation`; import/export should normalize both.
 
+Map Builder height may be negative for sculpting below the base plane. Current editor bounds are `-10` to `20` with `0` as base terrain. Missing legacy height values should normalize to `0`; negative imported values should be preserved.
+
 `terrainType`: Gameplay terrain key such as `OPEN_GROUND`, `LIGHT_FOREST`, or similar existing terrain-system values.
 
 `textureId`: Visual material key. This should be allowed to differ from `terrainType` so a road, grass, mud, or stone texture can be previewed without changing movement semantics.
+
+Current Map Builder terrain keys (`grass`, `forest`, `water`, `rock`, `stone`, `sand`, `dirt`, `road`) have lightweight placeholder texture assets for editor/shared map rendering. `terrainType` remains the semantic terrain choice; visual aliases such as `grass` and `grassland` can resolve to the same material. A later `textureId` may override only the visual material while preserving the terrain rules.
+
+In the 3D Map Builder preview, each hex renders as a solid signed-height column. The saved terrain/texture fields drive the top face. Optional `wallTerrainType` or `wallTextureId` fields drive side faces independently; if both are missing, side textures resolve automatically from the top terrain for short/normal columns, with raised columns over 5ft defaulting to dirt/cliff sides.
 
 `walkable`: Whether normal movement can enter this hex.
 
@@ -115,6 +121,21 @@ This document proposes the app-level map JSON shape for future save/load and pla
 `props`: Non-fighter objects placed on the map. Props should be separate from combat entities so the same saved map can be reused in multiple encounters.
 
 Prop placement should persist the snapped hex position in `q`/`r`. Editor-only grab state such as `selectedPropId`, `draggingPropId`, `hoverHex`, or `grabbedObject` should not be saved.
+
+Current first prototype behavior:
+
+- `MapMakerPage.jsx` stores placed props in `mapProps` and mirrors that array to `mapDefinition.props`.
+- Import/export round-trips the editor prop list with the existing map definition JSON.
+- Current testing exports include both the editor `grid` shape and normalized `hexes[]` so edited terrain can be reloaded immediately while later schema helpers are still developed.
+- Each prop stores `id`, `type`, `name`, `modelUrl`, `q`, `r`, `rotation`, `scale`, `blocksMovement`, and `blocksLineOfSight`.
+- Mouse grab/drop state remains transient editor UI state and is not saved.
+
+Future VR mapping should reuse the same editor actions:
+
+- mouse down on prop = VR trigger down / grab
+- mouse move raycast over map = controller ray or hand hover
+- mouse up = trigger release / drop
+- snap to hex = final placement written to `q`/`r`
 
 `spawnZones`: Named sets of hexes available during deployment. Combat should use these before turn zero.
 

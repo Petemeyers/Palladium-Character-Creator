@@ -114,6 +114,7 @@ import Phase0PreCombatModal from "../components/Phase0PreCombatModal.jsx";
 import ResizableLayout from "../components/ResizableLayout.jsx";
 import LootWindow from "../components/LootWindow.jsx";
 import { getInitialPositions, getEngagementRange, MOVEMENT_RATES, GRID_CONFIG, MOVEMENT_ACTIONS, calculateDistance, getMovementRange, getHexNeighbors, isValidPosition } from "../data/movementRules.js";
+import { axialToOffset } from "../utils/hexGridMath.js";
 import { getDistanceBetween } from "../utils/positionManager.js";
 import { resolvePhase0Encounter, preCombatSystem, executePreCombatAction, hasSpecialSenses } from "../utils/stealthSystem.js";
 import {
@@ -162,6 +163,144 @@ const DEBUG_GRAPPLE = true; // set to false in production
 const DEBUG_COMBAT =
   typeof window !== "undefined" &&
   window.localStorage?.getItem("debugCombat") === "true";
+const MAP_MAKER_STORAGE_KEY = "mapMaker.savedMaps.v1";
+
+function safeParseMapBuilderJson(value, fallback) {
+  try {
+    return JSON.parse(value);
+  } catch {
+    return fallback;
+  }
+}
+
+function loadSavedBattleMapsFromStorage() {
+  if (typeof window === "undefined") return [];
+  const parsed = safeParseMapBuilderJson(window.localStorage?.getItem(MAP_MAKER_STORAGE_KEY), []);
+  return Array.isArray(parsed)
+    ? parsed.filter((entry) => entry?.id && entry?.mapDefinition)
+    : [];
+}
+
+function getBattleMapSize(mapDefinition) {
+  return {
+    width: Number(mapDefinition?.size?.width ?? mapDefinition?.mapSize?.width ?? mapDefinition?.width ?? GRID_CONFIG.GRID_WIDTH) || GRID_CONFIG.GRID_WIDTH,
+    height: Number(mapDefinition?.size?.height ?? mapDefinition?.mapSize?.height ?? mapDefinition?.height ?? GRID_CONFIG.GRID_HEIGHT) || GRID_CONFIG.GRID_HEIGHT,
+  };
+}
+
+function battleMapHexesToGrid(hexes, width, height, fallbackTerrain) {
+  const grid = Array.from({ length: height }, () =>
+    Array.from({ length: width }, () => ({
+      terrain: fallbackTerrain || "OPEN_GROUND",
+      terrainType: fallbackTerrain || "OPEN_GROUND",
+      height: 0,
+      elevation: 0,
+    }))
+  );
+
+  if (!Array.isArray(hexes)) return grid;
+  hexes.forEach((hex) => {
+    const offset = Number.isFinite(hex?.x) && Number.isFinite(hex?.y)
+      ? { col: hex.x, row: hex.y }
+      : axialToOffset(Number(hex?.q), Number(hex?.r));
+    const x = Number(offset.col);
+    const y = Number(offset.row);
+    if (!Number.isInteger(x) || !Number.isInteger(y) || x < 0 || y < 0 || x >= width || y >= height) return;
+    const heightValue = Number.isFinite(hex?.height)
+      ? hex.height
+      : Number.isFinite(hex?.elevation)
+        ? hex.elevation
+        : Number.isFinite(hex?.elev)
+          ? hex.elev
+          : 0;
+    const terrain = hex?.terrainType || hex?.terrain || fallbackTerrain || "OPEN_GROUND";
+    grid[y][x] = {
+      ...hex,
+      terrain,
+      terrainType: terrain,
+      height: heightValue,
+      elevation: heightValue,
+    };
+  });
+  return grid;
+}
+
+function normalizeSavedBattleMapForCombat(entry) {
+  const mapDefinition = entry?.mapDefinition;
+  if (!mapDefinition || typeof mapDefinition !== "object") {
+    return { ok: false, reason: "missing map definition" };
+  }
+
+  const hasGrid = Array.isArray(mapDefinition.grid);
+  const hasHexes = Array.isArray(mapDefinition.hexes);
+  if (!hasGrid && !hasHexes) {
+    return { ok: false, reason: "missing grid or hexes" };
+  }
+
+  const size = getBattleMapSize(mapDefinition);
+  const terrainKey = mapDefinition.terrain || mapDefinition.theme?.defaultTerrain || "OPEN_GROUND";
+  const lighting =
+    typeof mapDefinition.lighting === "string"
+      ? mapDefinition.lighting
+      : mapDefinition.lighting?.preset || "BRIGHT_DAYLIGHT";
+  const grid = hasGrid
+    ? mapDefinition.grid
+    : battleMapHexesToGrid(mapDefinition.hexes, size.width, size.height, terrainKey);
+  const terrainData = TERRAIN_TYPES[terrainKey] || TERRAIN_TYPES.OPEN_GROUND;
+
+  return {
+    ok: true,
+    name: entry.name || mapDefinition.name || mapDefinition.description || "Saved Map",
+    terrain: {
+      ...mapDefinition,
+      id: mapDefinition.id || entry.id,
+      name: entry.name || mapDefinition.name || mapDefinition.description || "Saved Map",
+      description: mapDefinition.description || entry.name || "Saved battle map",
+      mapType: mapDefinition.mapType || "hex",
+      terrain: terrainKey,
+      terrainData,
+      lighting,
+      lightingData:
+        typeof mapDefinition.lighting === "object"
+          ? mapDefinition.lighting
+          : undefined,
+      mapSize: { width: size.width, height: size.height },
+      size: { width: size.width, height: size.height },
+      width: size.width,
+      height: size.height,
+      grid,
+      hexes: Array.isArray(mapDefinition.hexes) ? mapDefinition.hexes : [],
+      props: Array.isArray(mapDefinition.props) ? mapDefinition.props : [],
+      visibilityRange: mapDefinition.visibilityRange || getVisibilityRange(lighting, false, null),
+      obstacles: Array.isArray(mapDefinition.obstacles) ? mapDefinition.obstacles : [],
+      source: "map-builder",
+    },
+  };
+}
+
+function createDefaultCombatTerrain() {
+  return {
+    terrain: "OPEN_GROUND",
+    terrainData: {
+      name: "Open Ground",
+      movementModifier: 1.0,
+      visibilityModifier: 1.0,
+      cover: 0,
+      density: 0,
+    },
+    lighting: "BRIGHT_DAYLIGHT",
+    lightingData: {
+      name: "Bright Daylight",
+      visibilityBonus: 0,
+      prowlModifier: 0,
+    },
+    mapType: "hex",
+    visibilityRange: 120,
+    obstacles: [],
+    grid: null,
+    description: "Open combat arena - no obstructions",
+  };
+}
 import {
   getReachStrikeModifiers,
   getReachParryModifiers,
@@ -1360,10 +1499,21 @@ function CombatPage({ characters = [] }) {
   const [combatTerrain, setCombatTerrain] = useState(null); // Store terrain data for combat
   const [phase0Results, setPhase0Results] = useState(null); // Store Phase 0 scene setup (moved up for arenaEnvironment)
   const [mapDefinition, setMapDefinition] = useState(null); // Map definition for editor mode (moved up for arenaEnvironment)
+  const [savedBattleMaps, setSavedBattleMaps] = useState(() => loadSavedBattleMapsFromStorage());
+  const [selectedBattleMapId, setSelectedBattleMapId] = useState("default");
 
   useEffect(() => {
     routingChaseStateRef.current = routingChaseState;
   }, [routingChaseState]);
+
+  useEffect(() => {
+    const refreshSavedBattleMaps = () => {
+      setSavedBattleMaps(loadSavedBattleMapsFromStorage());
+    };
+    refreshSavedBattleMaps();
+    window.addEventListener("focus", refreshSavedBattleMaps);
+    return () => window.removeEventListener("focus", refreshSavedBattleMaps);
+  }, []);
 
   // ✅ arenaEnvironment MUST be declared early (before any hooks that reference it)
   // This prevents "Cannot access before initialization" errors
@@ -1587,6 +1737,16 @@ function CombatPage({ characters = [] }) {
       }, stepMs);
     }
   }, [generateCryptoId, scaleDelayMs]);
+
+  const handleBattleMapSelectionChange = useCallback((eventOrValue) => {
+    const nextId = typeof eventOrValue === "string" ? eventOrValue : eventOrValue?.target?.value || "default";
+    setSelectedBattleMapId(nextId);
+    const selectedMap = savedBattleMaps.find((entry) => entry.id === nextId);
+    const mapName = nextId === "default"
+      ? "Default Arena"
+      : selectedMap?.name || selectedMap?.mapDefinition?.name || "Unknown Map";
+    addLog(`🗺️ battle map selected: ${mapName}`, "info");
+  }, [addLog, savedBattleMaps]);
 
   // Helper to normalize fighter IDs - ensures both id and _id exist and point to the same value
   // This provides backwards compatibility for code that uses either id or _id
@@ -2130,6 +2290,29 @@ function CombatPage({ characters = [] }) {
 
     // Get latest horror target state to ensure we have persisted meta
     const latestHorrorTarget = fightersArray.find(f => f.id === horrorTarget.id) || horrorTarget;
+    const sourceId = scarySource.id || scarySource.name || "UNKNOWN_SOURCE";
+    const observerId = latestHorrorTarget.id || latestHorrorTarget.name || "UNKNOWN_OBSERVER";
+    const horrorGeneration = combatState?.generation ?? combatState?.combatGeneration ?? combatState?.combatSession ?? combatSessionRef.current;
+    const horrorMemoryKey = `${horrorGeneration}:${observerId}:${sourceId}`;
+    const previousHorrorMemory = horrorFactorMemoryRef.current.get(horrorMemoryKey);
+
+    if (previousHorrorMemory?.checked) {
+      log?.(`😱 Horror Factor already checked: ${latestHorrorTarget.name} vs ${scarySource.name}; skipping repeat`, "debug");
+      if (latestHorrorTarget.id === attacker.id) {
+        return {
+          attacker: latestHorrorTarget,
+          defender,
+          horrorFailed: false,
+          horrorAlreadyChecked: true,
+        };
+      }
+      return {
+        attacker,
+        defender: latestHorrorTarget,
+        horrorFailed: false,
+        horrorAlreadyChecked: true,
+      };
+    }
 
     // 1) Apply Horror Factor check once per pair
     const updatedHorrorTarget = resolveHorrorCheck({
@@ -2139,13 +2322,22 @@ function CombatPage({ characters = [] }) {
       log,
     });
 
-    const sourceId = scarySource.id || scarySource.name || "UNKNOWN_SOURCE";
     const horrorCheck = updatedHorrorTarget.meta?.horrorChecks?.[sourceId];
     const horrorFailed = horrorCheck?.result === "fail";
+    horrorFactorMemoryRef.current.set(horrorMemoryKey, {
+      checked: true,
+      success: !horrorFailed,
+      sourceId,
+      observerId,
+      generation: horrorGeneration,
+    });
 
     // 2) Feed into morale if enabled
     let finalTarget = updatedHorrorTarget;
     if (settings.useMoraleRouting && canFighterAct(updatedHorrorTarget)) {
+      const wasAlreadyRouting =
+        updatedHorrorTarget.moraleState?.status === "ROUTED" ||
+        updatedHorrorTarget.statusEffects?.includes("ROUTED");
       const maxHP = updatedHorrorTarget.maxHP ?? updatedHorrorTarget.hpMax ?? updatedHorrorTarget.totalHP ?? 1;
       const curHP = updatedHorrorTarget.currentHP ?? updatedHorrorTarget.HP ?? maxHP;
       const hpPercent = Math.max(0, curHP / maxHP);
@@ -2166,7 +2358,11 @@ function CombatPage({ characters = [] }) {
         moraleState: moraleResult.moraleState,
       };
       if (moraleResult.moraleState?.status === "ROUTED") {
-        log?.(`🏃 ${updatedHorrorTarget.name} breaks and ROUTES!`, "warning");
+        if (wasAlreadyRouting) {
+          log?.(`🏃 ${updatedHorrorTarget.name} is already routing; not reapplying route break`, "debug");
+        } else {
+          log?.(`🏃 ${updatedHorrorTarget.name} breaks and ROUTES!`, "warning");
+        }
       }
     }
 
@@ -2935,6 +3131,7 @@ function CombatPage({ characters = [] }) {
   const combatEndCheckRef = useRef(false); // Prevent duplicate combat end checks
   const combatOverRef = useRef(false); // ✅ AUTHORITATIVE: Combat is over (checked by all timeouts/actions)
   const combatSessionRef = useRef(0); // Bumps on combat start/reset so old async callbacks cannot re-enter.
+  const horrorFactorMemoryRef = useRef(new Map()); // key: `${generation}:${observerId}:${sourceId}`
   const combatRosterSnapshotRef = useRef(null); // Clean pre-combat roster for reset/restart.
   const currentTurnTokenRef = useRef(null); // Universal turn/action ownership token for delayed callbacks.
   const activeGrappleActionIdRef = useRef(null); // Grapple action ownership token; stale helper continuations must match.
@@ -10836,21 +11033,42 @@ function CombatPage({ characters = [] }) {
           clearPendingIfOwned();
           return;
         }
+        const current =
+          fightersRef.current?.[turnIndexRef.current] ||
+          fighters?.[turnIndexRef.current];
         const busy = isActionBusy();
         const pending = pendingTurnAdvanceRef.current;
+        const projectilePending = (projectilesRef.current?.length ?? 0) > 0;
+        const pendingSpell = activeSpellImpactRef.current;
+        const spellImpactPending = Boolean(pendingSpell);
+        const manualPlayerWaiting =
+          current?.type === "player" &&
+          !aiControlEnabledRef.current &&
+          (Number(current?.remainingAttacks ?? 0) || 0) > 0 &&
+          current?.status !== "defeated" &&
+          current?.condition !== "dying";
+        const allowManualNoActionEndTurn =
+          source === "manual-no-action" ||
+          source === "manual-attack-finalized" ||
+          source === "manual-move-finalized" ||
+          source === "horror-action-consumed";
+        const getBlockedTurnDebug = (reason) =>
+          `🧪 tryEndTurn blocked: reason=${reason} busy=${busy} pending=${pending} resolving=${turnActionResolvingRef.current} executing=${executingActionRef.current} projectile=${projectilePending} spellImpact=${spellImpactPending} manualWaiting=${manualPlayerWaiting} manualAllowed=${allowManualNoActionEndTurn} source=${source} fighter=${current?.name ?? "none"} fighterId=${current?.id ?? "none"} remaining=${current?.remainingAttacks ?? "n/a"} selectedAction=${selectedAction?.name ?? "none"} selectedTarget=${selectedTarget?.name ?? selectedTarget?.id ?? "none"} selectedWeapon=${selectedAttackWeapon?.name ?? "none"} selectedMovementMode=${selectedActionType ?? "none"} movementMode=${movementMode?.active ? (movementMode?.isRunning ? "run" : "move") : "inactive"} manualMovementMode=${playerMovementMode ?? "none"} selectedMovementFighter=${selectedMovementFighter ?? "none"} selectedMovementHex=${selectedMovementHex ? `${selectedMovementHex.x},${selectedMovementHex.y}` : "none"} selectedHex=${selectedHex ? `${selectedHex.x},${selectedHex.y}` : "none"} showMovementSelection=${showMovementSelection} validMoves=${engineValidMoves?.length ?? 0} pendingMoveCosts=${Object.keys(moveCostsByHex || {}).length} activeAttack=${activeAttackActionIdRef.current ?? "none"} activeGrapple=${activeGrappleActionIdRef.current ?? "none"} activeSpell=${pendingSpell?.castId ?? "none"} playerAIScheduled=${playerAIActionScheduledRef.current} processingPlayerAI=${processingPlayerAIRef.current} processingEnemy=${processingEnemyTurnRef.current} enemyActionCommitted=${enemyActionCommittedThisSliceRef.current}`;
+
         addLog(`🧪 tryEndTurn busy=${busy} pending=${pending}`, "info");
         if (busy) {
+          addLog(getBlockedTurnDebug("busy"), "info");
           requestAnimationFrame(tryEndTurn);
           return;
         }
 
-        const pendingSpell = activeSpellImpactRef.current;
         if (pendingSpell && pendingSpell.turnCounter === turnCounterRef.current) {
           waitingOnSpellCastId = pendingSpell.castId;
           addLog(
             `🧪 tryEndTurn blocked: spell impact pending castId=${pendingSpell.castId}`,
             "info"
           );
+          addLog(getBlockedTurnDebug("spell-impact"), "info");
           requestAnimationFrame(tryEndTurn);
           return;
         }
@@ -10862,17 +11080,8 @@ function CombatPage({ characters = [] }) {
           return;
         }
 
-        const current =
-          fightersRef.current?.[turnIndexRef.current] ||
-          fighters?.[turnIndexRef.current];
-        const manualPlayerWaiting =
-          current?.type === "player" &&
-          !aiControlEnabledRef.current &&
-          (Number(current?.remainingAttacks ?? 0) || 0) > 0 &&
-          current?.status !== "defeated" &&
-          current?.condition !== "dying";
-        const allowManualNoActionEndTurn = source === "manual-no-action";
         if (manualPlayerWaiting && !allowManualNoActionEndTurn) {
+          addLog(getBlockedTurnDebug("manual-player-waiting"), "info");
           if (DEBUG_COMBAT) {
             console.warn("[END TURN BLOCKED] manual player is waiting", {
               fighter: current?.name,
@@ -10926,7 +11135,28 @@ function CombatPage({ characters = [] }) {
       // ✅ Track this timeout so we can clear it on combat end
       allTimeoutsRef.current.push(turnTimeoutRef.current);
     },
-    [addLog, clearScheduledTurn, endTurn, combatActive, isActionBusy, isCurrentCombatSession, scaleDelayMs]
+    [
+      addLog,
+      clearScheduledTurn,
+      endTurn,
+      combatActive,
+      isActionBusy,
+      isCurrentCombatSession,
+      scaleDelayMs,
+      fighters,
+      selectedAction,
+      selectedTarget,
+      selectedAttackWeapon,
+      selectedActionType,
+      movementMode,
+      playerMovementMode,
+      selectedMovementFighter,
+      selectedMovementHex,
+      selectedHex,
+      showMovementSelection,
+      engineValidMoves,
+      moveCostsByHex,
+    ]
   );
 
   useEffect(() => {
@@ -11649,7 +11879,7 @@ function CombatPage({ characters = [] }) {
       const remainingAfter = combatant ? Math.max(0, (combatant.remainingAttacks ?? 0) - totalCost) : 0;
 
       if (combatant) {
-        setFighters(prev => {
+        commitFighters(prev => {
           const source = Array.isArray(fightersRef.current) ? fightersRef.current : prev;
           const updatedFighters = source.map(f => {
             if (f.id !== selectedMovementFighter) return f;
@@ -11664,7 +11894,6 @@ function CombatPage({ characters = [] }) {
 
             return updated;
           });
-          fightersRef.current = updatedFighters;
           return updatedFighters;
         });
 
@@ -11684,14 +11913,33 @@ function CombatPage({ characters = [] }) {
         }
       }
 
-      // Clear movement mode (keep your existing clears)
+      // Clear movement/action state only after a real movement action was committed.
       setMovementMode({ active: false, isRunning: false });
       setShowMovementSelection(false);
       setSelectedMovementHex(null);
       setSelectedMovementFighter(null);
+      setSelectedActionType(null);
+      setSelectedAction(null);
+      setSelectedTarget(null);
+      setSelectedAttackWeapon(null);
+      setSelectedManeuver(null);
+      setSelectedHex(null);
+      setHoveredHex(null);
+      setHoveredCell(null);
+      setEngineValidMoves([]);
+      setMoveCostsByHex({});
+      setTargetingMode(null);
+      turnActionResolvingRef.current = false;
+      executingActionRef.current = false;
+      if (actionLockTimeoutRef.current) {
+        clearTimeout(actionLockTimeoutRef.current);
+        actionLockTimeoutRef.current = null;
+      }
+      pendingTurnAdvanceRef.current = true;
+      addLog("🧪 manual move finalized; movement state cleared", "info");
 
-      // End turn (keep your existing schedule)
-      scheduleEndTurn(500);
+      // End turn after a committed manual movement action.
+      scheduleEndTurn(500, "manual-move-finalized");
     }
   }, [
     movementMode,
@@ -11701,6 +11949,7 @@ function CombatPage({ characters = [] }) {
     positions,
     addLog,
     fighters,
+    commitFighters,
     isHexOccupied,
     turnCounter,
     scheduleEndTurn,
@@ -11713,6 +11962,17 @@ function CombatPage({ characters = [] }) {
     showDeploymentModal,
     manualDeploymentOpen,
     handleDeploymentHexSelect,
+    setSelectedAction,
+    setSelectedTarget,
+    setSelectedAttackWeapon,
+    setSelectedManeuver,
+    setSelectedActionType,
+    setSelectedHex,
+    setHoveredHex,
+    setHoveredCell,
+    setEngineValidMoves,
+    setMoveCostsByHex,
+    setTargetingMode,
   ]);
 
   // Enhanced attack validation with distance-based combat system
@@ -13062,17 +13322,37 @@ function CombatPage({ characters = [] }) {
     if (bonusModifiers?.multiStrikeSubHit && bonusModifiers?.multiStrikeSequenceToken) {
       const t = bonusModifiers.multiStrikeSequenceToken;
       const activeFighter = fightersRef.current?.[turnIndexRef.current];
+      const liveAttackerForChild = fightersRef.current?.find((f) => f.id === attacker?.id);
+      const liveTargetForChild = fightersRef.current?.find((f) => f.id === defenderId);
+      const targetInvalidForChild =
+        !liveTargetForChild ||
+        liveTargetForChild.status === "defeated" ||
+        liveTargetForChild.condition === "dead" ||
+        Number(liveTargetForChild.currentHP ?? liveTargetForChild.hp ?? 1) <= -21;
       const stillSameAttackTurn =
         t.attackActionId === activeAttackActionIdRef.current &&
+        !t.finalized &&
         !combatOverRef.current &&
         !combatEndCheckRef.current &&
         (!t.turnToken || currentTurnTokenRef.current === t.turnToken) &&
         activeFighter?.id === t.fighterId &&
+        !!liveAttackerForChild &&
+        !!liveTargetForChild &&
+        !targetInvalidForChild &&
         turnIndexRef.current === t.turnIndex &&
         (meleeRoundRef.current ?? meleeRound) === t.meleeRound &&
         (turnCounterRef.current ?? turnCounter) === t.turnCounter;
 
       if (!stillSameAttackTurn) {
+        const staleReason =
+          t.finalized ? "parent finalized" :
+          activeAttackActionIdRef.current !== t.attackActionId ? "action superseded" :
+          targetInvalidForChild ? "target invalid" :
+          !liveAttackerForChild ? "attacker missing" :
+          !liveTargetForChild ? "target missing" :
+          combatOverRef.current || combatEndCheckRef.current ? "combat over" :
+          "turn changed";
+        addLog(`🚫 stale multi-strike child aborted: ${staleReason}`, "warning");
         addLog("🚫 stale multi-strike child ignored", "warning");
         addLog("🚫 stale delayed attack ignored.", "warning");
         if (DEBUG_COMBAT) {
@@ -13080,6 +13360,7 @@ function CombatPage({ characters = [] }) {
             attacker: attacker?.name,
             strikeIndex: bonusModifiers?.multiStrikeIndex,
             token: t,
+            staleReason,
             activeFighter: activeFighter?.name,
             liveTurnIndex: turnIndexRef.current,
             liveRound: meleeRoundRef.current,
@@ -13342,7 +13623,7 @@ function CombatPage({ characters = [] }) {
       const spendAttackStart =
         attackStartPass !== undefined ? attackStartPass : attackStartSnapshot;
 
-      return finalizeAttackSpend({
+      const finalized = finalizeAttackSpend({
         updated: upd,
         attackerInArray: attackerInArrayResolved,
         delayMs: endTurnDelayMs,
@@ -13351,6 +13632,32 @@ function CombatPage({ characters = [] }) {
         reason,
         attackStartRemainingAttacks: spendAttackStart,
       });
+
+      const isManualPlayerAttack =
+        finalized &&
+        attackerForLog?.type === "player" &&
+        !aiControlEnabledRef.current &&
+        !processingPlayerAIRef.current &&
+        !bonusModifiers?.multiStrikeSubHit &&
+        reason !== "spell-cast-complete";
+
+      if (isManualPlayerAttack) {
+        turnActionResolvingRef.current = false;
+        executingActionRef.current = false;
+        if (actionLockTimeoutRef.current) {
+          clearTimeout(actionLockTimeoutRef.current);
+          actionLockTimeoutRef.current = null;
+        }
+        if (activeAttackActionIdRef.current === attackActionId) {
+          activeAttackActionIdRef.current = null;
+        }
+        addLog("🧪 manual attack finalized; latches cleared", "info");
+        if (pendingTurnAdvanceRef.current && !suppressEndTurn) {
+          scheduleEndTurn(0, "manual-attack-finalized");
+        }
+      }
+
+      return finalized;
     };
 
     // ✅ Hard guard: never execute an attack with 0 actions remaining (prevents ghost actions/log spam)
@@ -13488,6 +13795,23 @@ function CombatPage({ characters = [] }) {
           playerAIActionScheduledRef.current = false;
           commitFighters(updated);
           addLog(`🧪 horror/rout action consumed; scheduling turn advance.`, "info");
+          if (
+            updatedAttacker?.type === "player" &&
+            !aiControlEnabledRef.current &&
+            activeAttackActionIdRef.current === attackActionId
+          ) {
+            activeAttackActionIdRef.current = null;
+            setSelectedAction(null);
+            setSelectedTarget(null);
+            setSelectedAttackWeapon(null);
+            setSelectedManeuver(null);
+            setSelectedAttack(0);
+            setSelectedMovementHex(null);
+            setTargetingMode(null);
+            setShowCombatChoices(false);
+            closeCombatChoices();
+          }
+          addLog("🧪 horror/rout action finalized; manual attack state cleared", "info");
           pendingTurnAdvanceRef.current = true;
           (scheduleEndTurnRef.current)?.(0, "horror-action-consumed");
           return;
@@ -14105,6 +14429,7 @@ function CombatPage({ characters = [] }) {
         turnIndex: turnIndexRef.current,
         meleeRound: meleeRoundRef.current ?? meleeRound,
         turnCounter: turnCounterRef.current ?? turnCounter,
+        finalized: false,
       };
 
       const mergedChildAttack = {
@@ -14118,6 +14443,11 @@ function CombatPage({ characters = [] }) {
         const strikeTotal = strikeCountRaw;
 
         const finishParentMultiStrike = () => {
+          if (strikeSequenceToken.finalized) {
+            resolve();
+            return;
+          }
+          strikeSequenceToken.finalized = true;
           if (resolvedStrikeCount <= 0) {
             if (DEBUG_COMBAT) {
               console.warn("[MULTI-STRIKE ENDED WITHOUT IMPACT - no spend]", {
@@ -14126,6 +14456,10 @@ function CombatPage({ characters = [] }) {
               });
             }
             scheduleEndTurn(16, "multi-strike-no-impact");
+            addLog(`🧪 multi-strike parent finalized: actionId=${strikeSequenceToken.attackActionId}`, "debug");
+            if (activeAttackActionIdRef.current === strikeSequenceToken.attackActionId) {
+              activeAttackActionIdRef.current = null;
+            }
             resolve();
             return;
           }
@@ -14148,6 +14482,10 @@ function CombatPage({ characters = [] }) {
             endTurnDelayMs: 16,
             logRemaining: Boolean(attackerRow),
           });
+          addLog(`🧪 multi-strike parent finalized: actionId=${strikeSequenceToken.attackActionId}`, "debug");
+          if (activeAttackActionIdRef.current === strikeSequenceToken.attackActionId) {
+            activeAttackActionIdRef.current = null;
+          }
           resolve();
         };
 
@@ -14159,18 +14497,40 @@ function CombatPage({ characters = [] }) {
               let strikeRan = false;
               try {
                 const activeFighter = fightersRef.current?.[turnIndexRef.current];
+                const liveAttacker =
+                  fightersRef.current?.find((f) => f.id === attacker.id) || null;
+                const liveTarget =
+                  fightersRef.current?.find((f) => f.id === defenderId) || null;
+                const targetInvalid =
+                  !liveTarget ||
+                  liveTarget.status === "defeated" ||
+                  liveTarget.condition === "dead" ||
+                  Number(liveTarget.currentHP ?? liveTarget.hp ?? 1) <= -21;
                 const stillSameAttackTurn =
                   strikeSequenceToken.combatSession === combatSessionRef.current &&
                   activeAttackActionIdRef.current === strikeSequenceToken.attackActionId &&
+                  !strikeSequenceToken.finalized &&
                   (!strikeSequenceToken.turnToken || currentTurnTokenRef.current === strikeSequenceToken.turnToken) &&
                   !combatOverRef.current &&
                   !combatEndCheckRef.current &&
+                  !!liveAttacker &&
+                  !!liveTarget &&
+                  !targetInvalid &&
                   activeFighter?.id === strikeSequenceToken.fighterId &&
                   turnIndexRef.current === strikeSequenceToken.turnIndex &&
                   (meleeRoundRef.current ?? meleeRound) === strikeSequenceToken.meleeRound &&
                   (turnCounterRef.current ?? turnCounter) === strikeSequenceToken.turnCounter;
 
                 if (!stillSameAttackTurn) {
+                  const staleReason =
+                    strikeSequenceToken.finalized ? "parent finalized" :
+                    activeAttackActionIdRef.current !== strikeSequenceToken.attackActionId ? "action superseded" :
+                    targetInvalid ? "target invalid" :
+                    !liveAttacker ? "attacker missing" :
+                    !liveTarget ? "target missing" :
+                    combatOverRef.current || combatEndCheckRef.current ? "combat over" :
+                    "turn changed";
+                  addLog(`🚫 stale multi-strike child aborted: ${staleReason}`, "warning");
                   addLog("🚫 stale multi-strike child ignored", "warning");
                   addLog("🚫 stale delayed attack ignored.", "warning");
                   if (DEBUG_COMBAT) {
@@ -14178,14 +14538,17 @@ function CombatPage({ characters = [] }) {
                       attacker: attacker?.name,
                       strikeIndex,
                       token: strikeSequenceToken,
+                      staleReason,
                       activeFighter: activeFighter?.name,
                     });
                   }
                   return;
                 }
 
-                const liveAttacker =
-                  fightersRef.current?.find((f) => f.id === attacker.id) || attacker;
+                addLog(
+                  `🧪 multi-strike child starting: index=${strikeIndex + 1}/${strikeTotal} actionId=${strikeSequenceToken.attackActionId}`,
+                  "debug"
+                );
                 await attack(liveAttacker, defenderId, {
                   ...bonusModifiers,
                   attackDataOverride: mergedChildAttack,
@@ -15456,6 +15819,10 @@ function CombatPage({ characters = [] }) {
           const horrorFailed = defenderAfterHit.meta?.horrorFailedRound === meleeRound ||
             defenderAfterHit.statusEffects?.includes("HORROR_SHOCKED");
 
+          const wasAlreadyRouting =
+            defenderAfterHit.moraleState?.status === "ROUTED" ||
+            defenderAfterHit.statusEffects?.includes("ROUTED");
+
           const moraleOutcome = resolveMoraleCheck(defenderAfterHit, {
             roundNumber: meleeRound || 0,
             reason: bigPainHit ? "pain_hit" : "damage",
@@ -15472,7 +15839,11 @@ function CombatPage({ characters = [] }) {
           };
 
           if (moraleOutcome.moraleState.status === "ROUTED") {
-            addLog(`🏃 ${defenderAfterHit.name} breaks and ROUTES!`, "warning");
+            if (wasAlreadyRouting) {
+              addLog(`🏃 ${defenderAfterHit.name} is already routing; not reapplying route break`, "debug");
+            } else {
+              addLog(`🏃 ${defenderAfterHit.name} breaks and ROUTES!`, "warning");
+            }
           } else if (
             moraleOutcome.moraleState.status === "SHAKEN" &&
             moraleOutcome.result &&
@@ -20386,6 +20757,55 @@ function CombatPage({ characters = [] }) {
       );
     };
 
+    const getAttackDisplayName = (attackOrWeapon) =>
+      attackOrWeapon?.name ||
+      attackOrWeapon?.weapon?.name ||
+      attackOrWeapon?.label ||
+      "attack";
+
+    const isChargeStyleAttack = (attackOrWeapon) => {
+      const name = String(getAttackDisplayName(attackOrWeapon)).toLowerCase();
+      const weaponName = String(attackOrWeapon?.weapon?.name || "").toLowerCase();
+      const tags = Array.isArray(attackOrWeapon?.tags)
+        ? attackOrWeapon.tags.map((tag) => String(tag).toLowerCase())
+        : [];
+      return (
+        String(attackOrWeapon?.type || "").toLowerCase() === "charge" ||
+        tags.includes("charge") ||
+        name.includes("charge") ||
+        weaponName.includes("charge")
+      );
+    };
+
+    const isAttackUsableAtCurrentRange = (actor, defenderF, attackOrWeapon, distanceFt, context = {}) => {
+      if (!isChargeStyleAttack(attackOrWeapon)) {
+        return { usable: true };
+      }
+
+      const tags = Array.isArray(attackOrWeapon?.tags)
+        ? attackOrWeapon.tags.map((tag) => String(tag).toLowerCase())
+        : [];
+      const usableAdjacent =
+        attackOrWeapon?.usableAdjacent === true ||
+        attackOrWeapon?.usableInCloseMelee === true ||
+        attackOrWeapon?.closeMelee === true ||
+        tags.includes("usable-adjacent") ||
+        tags.includes("close-melee");
+      const adjacentFt = context.adjacentFt ?? GRID_CONFIG.CELL_SIZE;
+
+      if (distanceFt <= adjacentFt + 0.01 && !usableAdjacent) {
+        return { usable: false, reason: "charge-adjacent" };
+      }
+
+      const actorPos = context.positions?.[actor?.id];
+      const targetPos = context.positions?.[defenderF?.id];
+      if (actorPos && targetPos && isTargetBlocked(actor.id, defenderF.id, context.positions)) {
+        return { usable: false, reason: "charge-path-blocked" };
+      }
+
+      return { usable: distanceFt > adjacentFt + 0.01 || usableAdjacent };
+    };
+
     const validateEnemyAttackRange = (distFt, atk = selectedAttack, attackerF = enemy, defenderF = target) => {
       const vSepFt = Math.abs((getAltitude(attackerF) || 0) - (getAltitude(defenderF) || 0));
       const d = isRangedLikeForEnemy(atk) ? Math.hypot(distFt, vSepFt) : distFt;
@@ -20415,6 +20835,37 @@ function CombatPage({ characters = [] }) {
         });
         selectedAttack = normalized;
         attackName = selectedAttack?.name || attackName;
+      }
+
+      const suitability = isAttackUsableAtCurrentRange(enemy, target, selectedAttack, currentDistance, {
+        positions,
+      });
+      if (!suitability.usable) {
+        if (suitability.reason === "charge-adjacent") {
+          addLog(`🚫 charge attack rejected at adjacent range: ${getAttackDisplayName(selectedAttack)}`, "info");
+        }
+
+        const closeRangeFallback =
+          availableAttacks.find((attackOption) =>
+            attackOption &&
+            attackOption.name !== selectedAttack?.name &&
+            attackOption.name !== "Spellcasting" &&
+            attackOption.damage !== "by spell" &&
+            !isRangedLikeForEnemy(attackOption) &&
+            isAttackUsableAtCurrentRange(enemy, target, attackOption, currentDistance, { positions }).usable
+          ) ||
+          { name: "Unarmed Strike", damage: enemy.unarmedDamage || "1d4", type: "melee", count: 1, usableAdjacent: true };
+
+        const { attack: normalizedFallback } = resolveEnemyEffectiveAttack(enemy, closeRangeFallback, {
+          preferRanged: false,
+          grappleRange:
+            getGrappleStatus(enemy).state !== GRAPPLE_STATES.NEUTRAL ||
+            getGrappleStatus(target).state !== GRAPPLE_STATES.NEUTRAL ||
+            currentDistance <= 0,
+        });
+        selectedAttack = normalizedFallback;
+        attackName = selectedAttack?.name || closeRangeFallback.name;
+        addLog(`🧠 enemy melee selected close-range attack: ${attackName}`, "info");
       }
 
       // Use proper weapon range validation (3D distance for ranged)
@@ -21298,6 +21749,74 @@ function CombatPage({ characters = [] }) {
 
       addLog(`🔍 ${enemy.name} movement debug: distance=${Math.round(currentDistance)}ft, hexDistance=${hexDistance}, hexesToMove=${hexesToMove}, maxThisAction=${Math.round(maxMoveFtThisAction)}ft (${maxHexesThisAction} hexes), movementType=${movementType}`, "info");
 
+      const getSelectedAttackRangeFt = () => {
+        if (typeof selectedAttack?.range === "number") return selectedAttack.range;
+        if (selectedAttack?.weapon) {
+          const derivedRange = getWeaponRange(selectedAttack.weapon);
+          if (typeof derivedRange === "number" && !Number.isNaN(derivedRange)) return derivedRange;
+        }
+        return GRID_CONFIG.CELL_SIZE + 0.5;
+      };
+      const findBestReachableClosingHex = (maxHexes) => {
+        const maxFt = Math.max(GRID_CONFIG.CELL_SIZE, maxHexes * GRID_CONFIG.CELL_SIZE);
+        const candidates = [];
+        for (let x = 0; x < GRID_CONFIG.GRID_WIDTH; x += 1) {
+          for (let y = 0; y < GRID_CONFIG.GRID_HEIGHT; y += 1) {
+            if (x === currentPos.x && y === currentPos.y) continue;
+            if (x === targetPos.x && y === targetPos.y) continue;
+            if (!isValidPosition(x, y, combatTerrain)) continue;
+            if (isHexOccupied(x, y, enemy.id)) continue;
+
+            const pos = { x, y };
+            const fromDistance = calculateDistance(currentPos, pos);
+            if (fromDistance > maxFt + 0.01) continue;
+
+            const targetDistance = calculateDistance(pos, targetPos);
+            if (targetDistance >= currentDistance - 0.01) continue;
+
+            candidates.push({ pos, fromDistance, targetDistance });
+          }
+        }
+
+        return candidates.sort((a, b) =>
+          a.targetDistance - b.targetDistance ||
+          b.fromDistance - a.fromDistance
+        )[0]?.pos || null;
+      };
+      const commitClosingMoveOrPass = (maxHexes, reason = "enemy-closing-move") => {
+        addLog(
+          "🧭 enemy closing move: target unreachable this action; choosing best reachable hex",
+          "info"
+        );
+        const closingHex = findBestReachableClosingHex(maxHexes);
+        if (!closingHex) {
+          addLog("🚫 enemy closing move failed: no reachable hex that improves distance", "warning");
+          consumeBlockedMovementAction(enemy, reason);
+          processingEnemyTurnRef.current = false;
+          scheduleEndTurn(0, reason);
+          return false;
+        }
+
+        const newDistance = calculateDistance(closingHex, targetPos);
+        handlePositionChange(enemy.id, closingHex, {
+          action: movementType,
+          actionCost: MOVEMENT_ACTIONS.MOVE.actionCost,
+          description: `Closing move to (${closingHex.x}, ${closingHex.y})`,
+        });
+        commitFighters(prev => prev.map(f =>
+          f.id === enemy.id
+            ? { ...f, remainingAttacks: Math.max(0, (Number(f.remainingAttacks ?? 0) || 0) - 1) }
+            : f
+        ));
+        addLog(
+          `📍 ${enemy.name} closes distance from ${Math.round(currentDistance)}ft to ${Math.round(newDistance)}ft → new position (${closingHex.x},${closingHex.y})`,
+          "info"
+        );
+        processingEnemyTurnRef.current = false;
+        scheduleEndTurn(getMoveDurationMs(calculateDistance(currentPos, closingHex)), reason);
+        return true;
+      };
+
       // Determine actual hexes to move (don't overshoot, but ensure at least 1 hex if far away)
       // Fix: Ensure we always make progress toward the target
       let actualHexesToMove;
@@ -21392,6 +21911,14 @@ function CombatPage({ characters = [] }) {
             addLog(`⚔️ ${enemy.name} is within range (${rangeValidation.reason}) and attacks`, "info");
             // Don't end turn, continue to attack below
           } else {
+            const targetReachableThisAction =
+              distanceFromCurrentPos <=
+              (hexesThisTurn * GRID_CONFIG.CELL_SIZE) + getSelectedAttackRangeFt() + 0.01;
+            if (!targetReachableThisAction) {
+              commitClosingMoveOrPass(hexesThisTurn, "enemy-closing-move");
+              return;
+            }
+
             addLog(`🚫 ${enemy.name} cannot find an open attack hex near ${target.name}.`, "info");
             let fallbackMove = null;
             for (let step = Math.max(1, hexesThisTurn - 1); step >= 1; step -= 1) {
@@ -21595,6 +22122,14 @@ function CombatPage({ characters = [] }) {
           return null;
         };
         const resolveBlockedApproach = (blockedTarget, reason = "blocked-approach") => {
+          const targetReachableThisAction =
+            currentDistance <=
+            (moveDistance * GRID_CONFIG.CELL_SIZE) + getSelectedAttackRangeFt() + 0.01;
+
+          if (!targetReachableThisAction) {
+            return commitClosingMoveOrPass(moveDistance, reason);
+          }
+
           const fallback = findFallbackApproachHex(enemy, currentPos, targetPos, moveDistance);
           addLog(`🚫 ${enemy.name} cannot find an open attack hex near ${blockedTarget?.name || target.name}.`, "info");
           if (fallback) {
@@ -21879,6 +22414,7 @@ function CombatPage({ characters = [] }) {
     }
 
     addLog(`🤖 ${enemy.name} ${reasoning} and attacks ${target.name} with ${attackName}!`, "info");
+    addLog("🧪 enemy melee branch reached after layered preference log", "debug");
 
     // Create updated enemy with selected attack (don't update state yet to prevent re-render loop)
     // Preserve selectedAttack from attacks array - don't let weapon selection override natural attacks
@@ -21911,10 +22447,66 @@ function CombatPage({ characters = [] }) {
       addLog(`🎯 ${enemy.name} gains +${attackFlankingBonus} flanking bonus!`, "info");
     }
 
+    const executeEnemyMeleeAttackOnce = async (label = `attack:${attackName}`) => {
+      if (!guardEnemyStillActiveForAttack(`${label}-pre-commit`)) {
+        addLog("🚫 enemy melee branch return before attack: pre-commit guard failed", "warning");
+        addLog("🚫 enemy melee execution blocked before attack; finalizing safely", "warning");
+        finishEnemyActionSafely("enemy-melee-blocked-before-attack");
+        return false;
+      }
+
+      const enemyMeleeCommitted = commitEnemyAction(label);
+      if (!enemyMeleeCommitted) {
+        addLog("🚫 enemy melee branch return before attack: action lock blocked", "warning");
+        addLog("🚫 enemy melee execution blocked before attack; finalizing safely", "warning");
+        return false;
+      }
+
+      try {
+        if (!guardEnemyStillActiveForAttack(`${label}-post-commit`)) {
+          addLog("🚫 enemy melee branch return before attack: post-commit guard failed", "warning");
+          addLog("🚫 enemy melee execution blocked before attack; finalizing safely", "warning");
+          finishEnemyActionSafely("enemy-melee-blocked-before-attack");
+          return false;
+        }
+
+        addLog(
+          `🧪 enemy melee execution starting: actor=${enemy.name} target=${target.name} weapon=${attackName}`,
+          "debug"
+        );
+        // Action committed; block effect-turn-advance until endTurn advances.
+        turnActionResolvingRef.current = true;
+        pendingTurnAdvanceRef.current = false;
+        await Promise.resolve(attack(updatedEnemy, target.id, allBonuses));
+        addLog(`🧪 enemy melee attack invoked; waiting for impact finalizer`, "debug");
+        enemyActionResolved = true;
+        addLog(`🧪 enemy melee execution promise resolved: actor=${enemy.name}`, "debug");
+        return true;
+      } catch (err) {
+        const message = err?.message || String(err);
+        addLog(`🚫 enemy melee execution exception: ${message}`, "warning");
+        turnActionResolvingRef.current = false;
+        pendingTurnAdvanceRef.current = false;
+        processingEnemyTurnRef.current = false;
+        scheduleEndTurn(0, "enemy-melee-exception");
+        return false;
+      }
+    };
+
     // Check if worker AI specified attackMode (ranged/melee)
     if (actionPlan?.attackMode) {
+      const actionPlanAttackMode = String(actionPlan.attackMode || "").toLowerCase();
+      if (!isRangedSelectedAttack && actionPlanAttackMode.includes("melee")) {
+        await executeEnemyMeleeAttackOnce("worker-ai-melee-attack");
+        processingEnemyTurnRef.current = false;
+        return;
+      }
+
       // Use worker AI adapter for attack execution
-      if (!guardEnemyStillActiveForAttack()) return;
+      if (!guardEnemyStillActiveForAttack()) {
+        addLog("🚫 enemy melee branch return before attack: worker attack guard failed", "warning");
+        return;
+      }
       await commitOneEnemyAction("worker-ai-attack", async () => {
         turnActionResolvingRef.current = true;
         pendingTurnAdvanceRef.current = false;
@@ -21928,13 +22520,7 @@ function CombatPage({ characters = [] }) {
       return;
     }
 
-    await commitOneEnemyAction(`attack:${attackName}`, async () => {
-      if (!guardEnemyStillActiveForAttack()) return;
-      // Action committed; block effect-turn-advance until endTurn advances.
-      turnActionResolvingRef.current = true;
-      pendingTurnAdvanceRef.current = false;
-      await attack(updatedEnemy, target.id, allBonuses);
-    });
+    await executeEnemyMeleeAttackOnce(`attack:${attackName}`);
     processingEnemyTurnRef.current = false;
     return;
     } finally {
@@ -23561,10 +24147,33 @@ function CombatPage({ characters = [] }) {
 
   function startCombat(skipPhase0 = false, options = {}) {
     const { skipDeployment = false } = options;
+    const selectedBattleMapEntry =
+      selectedBattleMapId !== "default"
+        ? savedBattleMaps.find((entry) => entry.id === selectedBattleMapId)
+        : null;
+    const selectedBattleMapResult = selectedBattleMapEntry
+      ? normalizeSavedBattleMapForCombat(selectedBattleMapEntry)
+      : null;
+    let battleMapStartLog = null;
+    let battleMapFailureLog = null;
 
     // Apply Phase 0 scene setup if it exists
     // ✅ Check if combatTerrain already exists (set from onComplete) - if so, use it instead of overwriting
-    if (!skipPhase0 && combatTerrain && combatTerrain.mapType) {
+    if (selectedBattleMapId !== "default") {
+      if (selectedBattleMapResult?.ok) {
+        setCombatTerrain(selectedBattleMapResult.terrain);
+        setMapDefinition(selectedBattleMapResult.terrain);
+        battleMapStartLog = {
+          name: selectedBattleMapResult.name,
+          hexes: selectedBattleMapResult.terrain.hexes?.length || selectedBattleMapResult.terrain.grid?.flat?.().length || 0,
+          props: selectedBattleMapResult.terrain.props?.length || 0,
+        };
+      } else {
+        battleMapFailureLog = selectedBattleMapResult?.reason || "selected map not found";
+        setCombatTerrain(createDefaultCombatTerrain());
+        setMapDefinition(null);
+      }
+    } else if (!skipPhase0 && combatTerrain && combatTerrain.mapType) {
       // ✅ combatTerrain was already set from onComplete, use it (preserves mapType)
       if (import.meta.env?.DEV || import.meta.env?.MODE === 'development') {
         console.log('[CombatPage] startCombat - Using existing combatTerrain with mapType:', combatTerrain.mapType);
@@ -23654,29 +24263,9 @@ function CombatPage({ characters = [] }) {
       // Initialize fog of war will be handled by useEffect when positions are set
     } else {
       // ✅ Default empty terrain: no obstructions, basic lighting, all characters visible within range
-      const defaultTerrain = {
-        terrain: "OPEN_GROUND",
-        terrainData: {
-          name: "Open Ground",
-          movementModifier: 1.0,
-          visibilityModifier: 1.0,
-          cover: 0,
-          density: 0,
-        },
-        lighting: "BRIGHT_DAYLIGHT",
-        lightingData: {
-          name: "Bright Daylight",
-          visibilityBonus: 0,
-          prowlModifier: 0,
-        },
-        mapType: "hex",
-        visibilityRange: 120, // Full visibility range for basic lighting
-        obstacles: [], // No obstructions
-        grid: null, // No grid-based obstacles
-        description: "Open combat arena - no obstructions",
-      };
+      const defaultTerrain = createDefaultCombatTerrain();
 
-      if (!combatTerrain) {
+      if (!combatTerrain || battleMapFailureLog) {
         setCombatTerrain(defaultTerrain);
         addLog("🌲 Default Arena: Open ground, bright lighting, no obstructions", "info");
       }
@@ -23684,9 +24273,20 @@ function CombatPage({ characters = [] }) {
 
     clearCombatFlowLocks();
     combatSessionRef.current += 1;
+    horrorFactorMemoryRef.current = new Map();
     const combatGeneration = combatSessionRef.current;
     setCombatPaused(false);
     setLog([]);
+    if (battleMapFailureLog) {
+      addLog(`🚫 failed to load battle map: ${battleMapFailureLog}`, "warning");
+      addLog("🌲 Default Arena: Open ground, bright lighting, no obstructions", "info");
+    }
+    if (battleMapStartLog) {
+      addLog(
+        `🗺️ loaded battle map: ${battleMapStartLog.name} hexes=${battleMapStartLog.hexes} props=${battleMapStartLog.props}`,
+        "info"
+      );
+    }
     addLog(`🧹 Combat reset: generation advanced to ${combatGeneration}`, "debug");
     setRevealedLogCount(0);
     activeSpellImpactRef.current = null;
@@ -25670,6 +26270,7 @@ function CombatPage({ characters = [] }) {
     try {
       clearCombatFlowLocks();
       combatSessionRef.current += 1;
+      horrorFactorMemoryRef.current = new Map();
       const combatGeneration = combatSessionRef.current;
       // ✅ Reset per-combat AI refs (prevents stale behavior after multiple resets)
       resetAITransientRefs();
@@ -26662,6 +27263,22 @@ function CombatPage({ characters = [] }) {
                   Scene Ready
                 </Badge>
               )}
+              <FormControl width={{ base: "100%", md: "220px" }}>
+                <FormLabel fontSize="xs" mb={1}>Battle Map</FormLabel>
+                <Select
+                  size="sm"
+                  value={selectedBattleMapId}
+                  onChange={handleBattleMapSelectionChange}
+                  isDisabled={combatActive}
+                >
+                  <option value="default">Default Arena</option>
+                  {savedBattleMaps.map((entry) => (
+                    <option key={entry.id} value={entry.id}>
+                      {entry.name || entry.mapDefinition?.name || "Saved Map"}
+                    </option>
+                  ))}
+                </Select>
+              </FormControl>
               <Button
                 colorScheme="blue"
                 variant={showDeploymentModal ? "solid" : "outline"}
@@ -30788,6 +31405,23 @@ function CombatPage({ characters = [] }) {
                           <Badge colorScheme="teal">Applied</Badge>
                         </HStack>
                       )}
+                      <FormControl>
+                        <FormLabel fontSize="sm">Battle Map</FormLabel>
+                        <Select
+                          value={selectedBattleMapId}
+                          onChange={handleBattleMapSelectionChange}
+                        >
+                          <option value="default">Default Arena</option>
+                          {savedBattleMaps.map((entry) => (
+                            <option key={entry.id} value={entry.id}>
+                              {entry.name || entry.mapDefinition?.name || "Saved Map"}
+                            </option>
+                          ))}
+                        </Select>
+                        <Text fontSize="xs" color="gray.600" mt={1}>
+                          Saved maps are loaded before combat starts; battle editing remains in Map Maker.
+                        </Text>
+                      </FormControl>
                     </VStack>
                   </Box>
 

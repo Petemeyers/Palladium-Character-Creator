@@ -35,6 +35,12 @@ The current Map Maker page already reuses the important rendering pieces:
 
 That is the right direction. The page should stay independent from `CombatPage.jsx`.
 
+Map Builder terrain uses semantic keys such as `grass`, `forest`, `water`, `rock`, `stone`, `sand`, `dirt`, and `road`. Each current key has a lightweight placeholder texture in `public/assets/textures/terrain/`, with solid color fallbacks preserved for failed or disabled texture rendering. Visual aliases such as `grass`, `grassland`, `open`, and `default` may resolve to the same grassland texture while preserving the saved semantic `terrainType`. Future `textureId` support can override visuals without changing the saved `terrainType` meaning.
+
+Editor height is a sculpting value, not a combat movement rule yet. The current editor range is `-10` to `20`, with `0` as the base plane, so maps can shape lowered rivers, basins, trenches, canyons, raised hills, and mountains before combat systems consume elevation deliberately.
+
+The 3D Map Builder preview renders each edited hex as a solid column down to the editor terrain bottom, like a simple Lego/Minecraft-style block. Terrain paint controls the top face material. Side faces resolve from `wallTerrainType` or `wallTextureId` when present; otherwise short/normal columns use the top terrain texture on all sides, and raised columns over 5ft default to a dirt/cliff side.
+
 ## Combat-Only Props To Remove Or Make Optional
 
 `HexArena3D` is shared by combat and map editing, so editor mode should not require combat-only concepts. These props should remain optional for preview-only mode:
@@ -132,6 +138,16 @@ Future VR mapping should reuse the same concept:
 
 For now, placed props are editor-only. They should not affect combat movement, line of sight, deployment, or targeting until saved-map combat integration deliberately consumes them.
 
+First prototype status:
+
+- `MapMakerPage.jsx` owns an in-memory `mapProps` list and mirrors it into `mapDefinition.props` for editor export/import.
+- The first palette uses simple editor placeholder props: tree, boulder, and crate.
+- `HexArena3D` passes editor props and prop interaction callbacks to the Three.js layer.
+- `HexArena.js` renders editor props in a separate `editorProps` group, raycasts placed props, previews the grabbed prop over hovered hexes, and snaps accepted drops to hex centers.
+- Blocking props cannot be stacked on the same hex in the editor prototype.
+
+The first prototype intentionally does not make props affect combat movement, line of sight, deployment, attack targeting, or AI pathing.
+
 ## Live 3D Preview Flow
 
 The existing live preview path is already close to the intended design:
@@ -146,6 +162,16 @@ The existing live preview path is already close to the intended design:
 This is the desired meaning of real-time editing: every editor change should update the local 3D preview immediately.
 
 Future height and texture controls should update the same `mapDefinition.grid[y][x]` cell shape, then call the same queued 3D sync path. Avoid a second live-preview mechanism.
+
+3D brush painting reuses the same path:
+
+- prop raycast/grab wins first
+- otherwise mouse down on a hex starts a brush stroke
+- mouse move paints each newly entered hex once per stroke
+- mouse up ends the stroke
+
+Current 3D brush modes are top terrain paint, wall paint, height raise, and height lower. Brush radius is `0` for this first pass.
+Brush radius now supports `0`, `1`, `2`, and `3`: radius `0` keeps single-hex painting, while larger values paint every valid hex within axial hex distance. The 2D editor applies radius to terrain and height painting; wall paint remains 3D-only for this slice. The 3D editor applies radius to top terrain, wall terrain, and height raise/lower.
 
 ## Saved Maps Feeding Combat Later
 
@@ -162,6 +188,14 @@ Saved maps should not be injected into active combat mid-battle. The safe path i
 5. Start combat with that map as the initial arena definition.
 
 Combat should treat the selected saved map as read-only terrain during a running fight. Any later "edit and replay" flow should leave combat, edit in Map Builder, then start a new combat from the updated map.
+
+First combat selection path status:
+
+- `CombatPage.jsx` reads Map Maker local saves from `mapMaker.savedMaps.v1`.
+- The pre-combat UI can choose either Default Arena or a saved Map Builder map.
+- On combat start, a selected saved map is normalized into the existing combat terrain shape with `grid`, `hexes`, `mapSize`, `mapType`, terrain, and lighting fields.
+- If no saved map is selected, Default Arena behavior remains unchanged.
+- Map props are preserved as terrain metadata only in this first path. They do not block combat movement, line of sight, deployment, targeting, or AI pathing yet.
 
 ## Current Compatibility Notes
 
