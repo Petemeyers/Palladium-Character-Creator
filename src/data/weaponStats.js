@@ -1,4 +1,4 @@
-export const PALLADIUM_WEAPON_STATS = {
+export const MCS_WEAPON_STATS = {
   "Short Bow": {
     type: "ranged",
     category: "bow",
@@ -56,7 +56,7 @@ export const PALLADIUM_WEAPON_STATS = {
 export function lookupWeaponStatsByName(name) {
   if (!name) return null;
   const normalized = name.trim().toLowerCase();
-  const entry = Object.entries(PALLADIUM_WEAPON_STATS).find(
+  const entry = Object.entries(MCS_WEAPON_STATS).find(
     ([weaponName]) => weaponName.toLowerCase() === normalized
   );
   return entry ? entry[1] : null;

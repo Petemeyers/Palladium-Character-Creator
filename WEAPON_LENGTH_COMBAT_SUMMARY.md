@@ -21,51 +21,51 @@ Weapon length/reach is **extensively implemented** in the combat system and affe
 
 ## How Weapon Length Affects Combat
 
-### 1. **Strike Modifiers** (`getReachStrikeModifiers`)
+### 1. **Attack Modifiers** (`getReachAttackModifiers`)
 
-#### First Strike Advantage
-- **Longer weapons get +1 strike on first melee round**
-- Applies when weapon length difference ≥ 2 feet
+#### First Attack Advantage
+- **Longer weapons get +1 attack on first combat round**
+- Applies when weapon length difference â‰¥ 2 feet
 - Location: `reachCombatRules.js:154-169`
 
 #### Reach Advantage Bonus
-- **+1 to +3 strike bonus** for longer weapons
+- **+1 to +3 attack bonus** for longer weapons
 - Based on reach difference (max +3)
 - Location: `weaponSystem.js:66-92`
 
 #### Close Combat Penalty
-- **Long weapons get -2 strike** when pressed <5ft
+- **Long weapons get -2 attack** when pressed <5ft
 - "Long weapon too close for full leverage"
 - Location: `reachCombatRules.js:497-506`
 
 #### Closing Distance Penalty
-- **Short weapons get -2 strike** before closing distance
+- **Short weapons get -2 attack** before closing distance
 - Applies when short weapon user hasn't closed yet
 - Location: `reachCombatRules.js:480-489`
 
 #### Terrain-Based Modifiers
-- **Dense Forest**: Flexible weapons (whips, flails) get -2 strike
-- **Low Ceilings (≤8ft)**: Long weapons get -1 strike on overhead attacks
-- **Cluttered Terrain**: Heavy weapons get -2 strike
+- **Dense Forest**: Flexible weapons (whips, flails) get -2 attack
+- **Low Ceilings (â‰¤8ft)**: Long weapons get -1 attack on overhead attacks
+- **Cluttered Terrain**: Heavy weapons get -2 attack
 - **Confined Spaces**: Short weapons excel (no penalty, may get bonus)
 
-### 2. **Parry Modifiers** (`getReachParryModifiers`)
+### 2. **Block Modifiers** (`getReachBlockModifiers`)
 
-#### Short Weapon Parrying Long Weapon
-- **-2 parry** for short weapons parrying long weapons before closing distance
-- "Short weapon cannot effectively parry long weapon until distance is closed"
+#### Short Weapon Blocking Long Weapon
+- **-2 block** for short weapons blocking long weapons before closing distance
+- "Short weapon cannot effectively block long weapon until distance is closed"
 - Location: `reachCombatRules.js:529-538`
 
 #### Long Weapon Flanking Penalty
-- **-2 parry** for long weapons against flanking attacks
+- **-2 block** for long weapons against flanking attacks
 - "Long weapon slower to turn for flanking attacks"
 - Location: `reachCombatRules.js:540-546`
 
-### 3. **Dodge Modifiers** (`getReachDodgeModifiers`)
+### 3. **Evade Modifiers** (`getReachEvadeModifiers`)
 
 #### Terrain Restrictions
-- Long weapons may have dodge penalties in tight spaces
-- Short weapons maintain dodge bonuses in confined areas
+- Long weapons may have evade penalties in tight spaces
+- Short weapons maintain evade bonuses in confined areas
 - Location: `reachCombatRules.js:551-582`
 
 ### 4. **Initiative Modifiers** (`getReachInitiativeModifier`)
@@ -77,19 +77,19 @@ Weapon length/reach is **extensively implemented** in the combat system and affe
 
 #### `attemptCloseDistance()`
 - Short weapon users can spend 1 action to close distance
-- Can use Prowl or Dodge to close (with skill checks)
+- Can use Prowl or Evade to close (with skill checks)
 - Location: `reachCombatRules.js:188-238`
 
 #### `needsToCloseDistance()`
-- Determines if short weapon user needs to close (≥2ft difference)
+- Determines if short weapon user needs to close (â‰¥2ft difference)
 - Location: `reachCombatRules.js:177-180`
 
 ### 6. **Reach Categories**
 
 Weapons are classified by reach:
-- **SHORT**: ≤1ft reach
+- **SHORT**: â‰¤1ft reach
 - **MEDIUM**: 2-7ft reach  
-- **LONG**: ≥8ft reach
+- **LONG**: â‰¥8ft reach
 
 Location: `weaponSystem.js:12-59`
 
@@ -105,13 +105,13 @@ Location: `combatEnvironmentLogic.js:85-112`
 ### 8. **Combat Integration Points**
 
 #### In CombatPage.jsx:
-- **Line 2308-2340**: Applies reach-based strike modifiers
-- **Line 2546-2565**: Applies reach-based parry modifiers  
-- **Line 2591-2594**: Applies reach-based dodge modifiers
+- **Line 2308-2340**: Applies reach-based attack modifiers
+- **Line 2546-2565**: Applies reach-based block modifiers  
+- **Line 2591-2594**: Applies reach-based evade modifiers
 - **Line 1840-1908**: Uses weapon length for range calculations
 
 #### In weaponSystem.js:
-- **`calculateReachAdvantage()`**: Calculates +1 to +3 strike bonus
+- **`calculateReachAdvantage()`**: Calculates +1 to +3 attack bonus
 - **`compareWeaponReach()`**: Compares two weapons' reach
 - **`getWeaponReachCategory()`**: Classifies weapon by reach
 
@@ -121,20 +121,20 @@ Location: `combatEnvironmentLogic.js:85-112`
 
 ### Scenario 1: Long Sword vs Dagger
 - **Long Sword** (6ft) vs **Dagger** (2ft)
-- Long sword gets **+1 strike** on first round
-- Long sword gets **+3 strike** (reach advantage: 6-2=4, capped at +3)
-- Dagger gets **-2 strike** until distance is closed
-- Dagger gets **-2 parry** until distance is closed
+- Long sword gets **+1 attack** on first round
+- Long sword gets **+3 attack** (reach advantage: 6-2=4, castaminad at +3)
+- Dagger gets **-2 attack** until distance is closed
+- Dagger gets **-2 block** until distance is closed
 
 ### Scenario 2: Spear vs Short Sword in Tight Corridor
 - **Spear** (8ft) vs **Short Sword** (3ft)
-- Spear gets **-1 strike** if overhead attack in low ceiling
+- Spear gets **-1 attack** if overhead attack in low ceiling
 - Short sword excels in tight space (no penalty)
-- Spear may get **-2 strike** if pressed <5ft
+- Spear may get **-2 attack** if pressed <5ft
 
 ### Scenario 3: Whip in Dense Forest
 - **Whip** (flexible weapon) in dense forest
-- Gets **-2 strike** (catches on trees)
+- Gets **-2 attack** (catches on trees)
 - Fumble chance on roll of 1-2
 
 ---
@@ -142,13 +142,13 @@ Location: `combatEnvironmentLogic.js:85-112`
 ## Summary
 
 **Weapon length/reach affects:**
-✅ Strike bonuses/penalties (+1 to +3, or -2 penalties)
-✅ Parry effectiveness (-2 penalties for mismatched reach)
-✅ Dodge capabilities (terrain-dependent)
-✅ Initiative (first round bonuses)
-✅ Distance closing mechanics (action costs)
-✅ Terrain interactions (overhead/lateral restrictions)
-✅ Close combat effectiveness (long weapons penalized <5ft)
+âœ… Attack bonuses/penalties (+1 to +3, or -2 penalties)
+âœ… Block effectiveness (-2 penalties for mismatched reach)
+âœ… Evade capabilities (terrain-dependent)
+âœ… Initiative (first round bonuses)
+âœ… Distance closing mechanics (action costs)
+âœ… Terrain interactions (overhead/lateral restrictions)
+âœ… Close combat effectiveness (long weapons penalized <5ft)
 
 **The system is fully implemented and integrated into the combat engine!**
 

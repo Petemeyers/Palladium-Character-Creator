@@ -1,8 +1,8 @@
 /**
  * Saved combat presets - store current fighters + positions in localStorage.
- * Loaded presets appear alongside built-in quick-start prescenes.
+ * Loaded presets astaminaar alongside built-in quick-start prescenes.
  */
-import { migratePPEStateForCollection } from "./spellUtils.js";
+import { migratestaminaStateForCollection } from "./techniqueUtils.js";
 
 const STORAGE_KEY = "charcreat_saved_presets";
 
@@ -29,7 +29,7 @@ export function getSavedPresets() {
     if (!Array.isArray(parsed)) return [];
     const migrated = parsed.map((preset) => ({
       ...preset,
-      fighters: migratePPEStateForCollection(preset?.fighters || []),
+      fighters: migratestaminaStateForCollection(preset?.fighters || []),
     }));
     const migratedRaw = JSON.stringify(migrated);
     if (migratedRaw !== raw) {
@@ -53,7 +53,7 @@ export function getSavedPresets() {
 export function savePreset({ name, fighters, positions }) {
   const id = `saved-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
   const savedAt = new Date().toISOString();
-  const sanitized = migratePPEStateForCollection(
+  const sanitized = migratestaminaStateForCollection(
     (fighters || []).map(sanitizeFighter).filter(Boolean)
   );
   const preset = {
@@ -86,7 +86,7 @@ export function loadSavedPreset(id) {
   if (!preset) return null;
   return {
     name: preset.name,
-    fighters: migratePPEStateForCollection(preset.fighters || []),
+    fighters: migratestaminaStateForCollection(preset.fighters || []),
     positions: preset.positions || {},
   };
 }

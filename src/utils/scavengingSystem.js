@@ -1,25 +1,25 @@
 /**
  * Scavenging System
  * 
- * Handles scavenger behavior for creatures (hawks, vultures, etc.)
+ * Handles scavenger behavior for combatants (hawks, vultures, etc.)
  * that seek out and consume corpses on the battlefield.
  */
 
 import { getSizeCategory, SIZE_CATEGORIES } from "./sizeStrengthModifiers.js";
 
 /**
- * Basic list of scavenging species. You can later move this to speciesBehavior.json.
+ * Basic list of scavenging species. You can later move this to combatantBehavior.json.
  */
 const DEFAULT_SCAVENGERS = ["hawk", "vulture", "crow", "raven", "hyena", "wolf"];
 
 /**
- * Check if a creature is a scavenger
- * @param {Object} creature - Creature object
- * @returns {boolean} True if creature is a scavenger
+ * Check if a combatant is a scavenger
+ * @param {Object} combatant - Combatant object
+ * @returns {boolean} True if combatant is a scavenger
  */
-export function isScavenger(creature) {
-  if (!creature) return false;
-  const name = (creature.species || creature.race || creature.name || "").toLowerCase();
+export function isScavenger(combatant) {
+  if (!combatant) return false;
+  const name = (combatant.species || combatant.race || combatant.name || "").toLowerCase();
   return DEFAULT_SCAVENGERS.some((tag) => name.includes(tag));
 }
 
@@ -94,7 +94,7 @@ export function scavengeCorpse(scavenger, corpse, log = () => {}) {
       break;
     case SIZE_CATEGORIES.LARGE:
     case SIZE_CATEGORIES.HUGE:
-    case SIZE_CATEGORIES.GIANT:
+    case SIZE_CATEGORIES.LARGE_HEAVY:
       baseRations = 6;
       break;
     default:
@@ -116,7 +116,7 @@ export function scavengeCorpse(scavenger, corpse, log = () => {}) {
   corpse.scavenged = true;
 
   log(
-    `🦅 ${scavenger.name} scavenges ${corpse.name || "a corpse"} and tears off some meat.`
+    `Ã°Å¸Â¦â€¦ ${scavenger.name} scavenges ${corpse.name || "a corpse"} and tears off some meat.`
   );
 
   return item;

@@ -2,7 +2,7 @@
 
 ## Overview
 
-The Enemy Weapon Assignment System automatically assigns random weapons to enemies in the combat arena based on their weapon preferences. This serves as a placeholder for the looting dynamic - weapons are added to enemy inventory and equipped, making them available for looting when enemies are defeated.
+The Enemy Weapon Assignment System automatically assigns random weapons to enemies in the combat arena based on their weapon preferences. This serves as a placeholder for the looting dynamic - weapons are added to enemy inventory and equistaminad, making them available for looting when enemies are defeated.
 
 ---
 
@@ -20,15 +20,15 @@ The Enemy Weapon Assignment System automatically assigns random weapons to enemi
   - Category keywords: `"blade"`, `"blunt"`, `"bow"`, etc.
 
 ### 3. **Race-Aware Selection**
-- Giant races (Troll, Ogre, Wolfen, etc.) prefer heavier weapons
+- Heavy races (Champion, Heavy Fighter, Wolf, etc.) prefer heavier weapons
 - Normal races get standard weapons
 - Small races get appropriately sized weapons
 
 ### 4. **Automatic Equipping**
-- Weapon is equipped to enemy's right hand (primary slot)
+- Weapon is equistaminad to enemy's right hand (primary slot)
 - Added to enemy inventory for looting
-- Updates `equippedWeapons` array
-- Updates legacy `equippedWeapon` property
+- Updates `equistaminadWeapons` array
+- Updates legacy `equistaminadWeapon` property
 
 ---
 
@@ -38,7 +38,7 @@ The Enemy Weapon Assignment System automatically assigns random weapons to enemi
 
 ```javascript
 const searchTerms = parseFavoriteWeapons(favoriteWeapons);
-// ["blade", "blunt (giant-sized)"]
+// ["blade", "blunt (heavy-sized)"]
 ```
 
 ### Step 2: Find Matching Weapons
@@ -81,7 +81,7 @@ The system maps preference keywords to weapon types:
 | `axe` | axes, battle axes, hand axes |
 | `polearm` | polearms, halberds, glaives |
 | `two-handed` | two-handed weapons, greatswords |
-| `giant-sized` | heavier weapons (for giant races) |
+| `heavy-sized` | heavier weapons (for heavy races) |
 
 ---
 
@@ -89,7 +89,7 @@ The system maps preference keywords to weapon types:
 
 ### 1. **CombatPage.jsx** (`addEnemyToCombat`)
 - Regular enemies get weapons assigned when added to combat
-- Uses `favorite_weapons` or `preferred_weapons` from bestiary data
+- Uses `favorite_weapons` or `preferred_weapons` from arenaRoster data
 - Logs weapon assignment to combat log
 
 ### 2. **autoRoll.js** (`createPlayableCharacterFighter`)
@@ -101,28 +101,28 @@ The system maps preference keywords to weapon types:
 
 ## Example Usage
 
-### Example 1: Troll with Favorite Weapons
+### Example 1: Champion with Favorite Weapons
 
-**Bestiary Data**:
+**Arena Roster Data**:
 ```json
 {
-  "name": "Troll",
-  "favorite_weapons": ["blade", "blunt (giant-sized)"]
+  "name": "Champion",
+  "favorite_weapons": ["blade", "blunt (heavy-sized)"]
 }
 ```
 
 **Result**:
 - System finds all blade and blunt weapons
-- Filters for heavier weapons (giant preference)
+- Filters for heavier weapons (heavy preference)
 - Randomly selects: "Long Sword" or "Warhammer"
 - Equips weapon and adds to inventory
 
-### Example 2: Goblin with Preferred Weapons
+### Example 2: Brigand with Preferred Weapons
 
-**Bestiary Data**:
+**Arena Roster Data**:
 ```json
 {
-  "name": "Goblin",
+  "name": "Brigand",
   "preferred_weapons": "Short swords, knives, and short bows"
 }
 ```
@@ -135,7 +135,7 @@ The system maps preference keywords to weapon types:
 
 ### Example 3: Enemy Without Preferences
 
-**Bestiary Data**:
+**Arena Roster Data**:
 ```json
 {
   "name": "Spectre",
@@ -211,7 +211,7 @@ Main function to assign weapon to single enemy.
 - `enemy`: Enemy character object
 - `favoriteWeapons`: String or array of weapon preferences
 
-**Returns**: Updated enemy with weapon equipped and in inventory
+**Returns**: Updated enemy with weapon equistaminad and in inventory
 
 ### `assignRandomWeaponsToEnemies(enemies)`
 Assigns weapons to multiple enemies.
@@ -236,7 +236,7 @@ Gets fallback weapon if no preferences match.
 ### Planned Features:
 1. **Weapon Quality Variation**: Assign different quality levels (poor, normal, good, excellent)
 2. **Weapon Condition**: Random wear/condition affecting effectiveness
-3. **Enchanted Weapons**: Rare chance for magical weapons
+3. **Enchanted Weapons**: Rare chance for exceptional weapons
 4. **Weapon Durability**: Track weapon condition/durability
 5. **Weapon Upgrades**: Allow enemies to have upgraded/modified weapons
 
@@ -245,13 +245,13 @@ Gets fallback weapon if no preferences match.
 ## Summary
 
 The Enemy Weapon Assignment System:
-- ✅ Assigns random weapons based on enemy preferences
-- ✅ Matches preferences to actual shop items
-- ✅ Equips weapons automatically
-- ✅ Adds weapons to inventory for looting
-- ✅ Supports multiple preference formats
-- ✅ Race-aware weapon selection
-- ✅ Integrated into combat arena
+- âœ… Assigns random weapons based on enemy preferences
+- âœ… Matches preferences to actual shop items
+- âœ… Equips weapons automatically
+- âœ… Adds weapons to inventory for looting
+- âœ… Supports multiple preference formats
+- âœ… Race-aware weapon selection
+- âœ… Integrated into combat arena
 
 Enemies now spawn with varied, preference-based weapons that can be looted!
 

@@ -50,8 +50,8 @@ function getReachableHexes({
       if (gridState.isBlocked(nb.x, nb.y, mover)) continue;
 
       // Occupancy check (can't enter occupied hexes, except for close-to-melee which is handled in MOVE)
-      const occ = gridState.getOccupant(nb.x, nb.y);
-      if (occ && occ !== moverId) continue;
+      const occupantId = gridState.getOccupant(nb.x, nb.y);
+      if (occupantId && occupantId !== moverId) continue;
 
       // Calculate cost to reach this neighbor
       const stepCost = gridState.terrainMoveCost(nb.x, nb.y, mover);

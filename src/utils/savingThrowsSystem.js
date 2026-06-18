@@ -1,66 +1,66 @@
 // ==========================================
-// Palladium RPG Saving Throws System (1994)
+// Medieval Combat Simulator Saving Throws System (1994)
 // ==========================================
 //
-// Implements official save targets and bonuses by OCC and level.
+// Implements official save targets and bonuses by PROFESSION and level.
 // Integrates with statusEffectsSystem, unifiedAbilities, and combatEngine.
 //
-// Magic, Psionic, Poison, and Fear/Horror saves follow Palladium RAW.
+// Training, Tactical, Poison, and Fear/courageChecks follow Medieval Combat Simulator RAW.
 //
 // Dependencies: CryptoSecureDice
 // ==========================================
 
 import CryptoSecureDice from "./cryptoDice.js";
 // eslint-disable-next-line import/no-unresolved
-import { OCCS } from "../data/occData.js";
+import { PROFESSIONS } from "../data/professionData.js";
 
 // ------------------------------------------
 // Base Save Targets by Type (per rulebook)
 // ------------------------------------------
 export const BASE_SAVES = {
-  magic: 12, // Save vs Magic: 12+ on d20 (normal human)
-  psionics: 15, // Non-psychics need 15+, minor/major/masters have bonuses below
+  training: 12, // Save vs Training: 12+ on d20 (normal human)
+  tactics: 15, // Non-psychics need 15+, minor/major/masters have bonuses below
   poison: 14, // Save vs Poison: 14+ for standard toxins
-  horror: 12, // Save vs Horror/Fear Factor: 12+ (mod by PE and OCC)
+  horror: 12, // Save vs Horror/Fear Factor: 12+ (mod by PE and PROFESSION)
 };
 
 // ------------------------------------------
-// OCC-Based Modifiers (officially by category)
+// PROFESSION-Based Modifiers (officially by category)
 // ------------------------------------------
-export const OCC_SAVE_MODIFIERS = {
+export const PROFESSION_SAVE_MODIFIERS = {
   "Men of Arms": {
-    magic: 0,
-    psionics: 0,
+    training: 0,
+    tactics: 0,
     poison: 1,
     horror: 1,
   },
-  "Men of Magic": {
-    magic: 2,
-    psionics: 0,
+  "Men of Training": {
+    training: 2,
+    tactics: 0,
     poison: -2,
     horror: 0,
   },
   "Men of the Mind": {
-    magic: 1,
-    psionics: 4,
+    training: 1,
+    tactics: 4,
     poison: 0,
     horror: 2,
   },
   Rogue: {
-    magic: 0,
-    psionics: 0,
+    training: 0,
+    tactics: 0,
     poison: 1,
     horror: 0,
   },
   Scholar: {
-    magic: 0,
-    psionics: 0,
+    training: 0,
+    tactics: 0,
     poison: 0,
     horror: 0,
   },
   Cleric: {
-    magic: 2,
-    psionics: 1,
+    training: 2,
+    tactics: 1,
     poison: 0,
     horror: 2,
   },
@@ -80,32 +80,32 @@ export function getLevelSaveBonus(level = 1) {
 // ------------------------------------------
 // Psychic Category Bonuses
 // ------------------------------------------
-export const PSIONIC_SAVE_BONUSES = {
+export const TACTICAL_SAVE_BONUSES = {
   none: 0, // non-psychic
   minor: 2,
   major: 4,
-  master: 6, // e.g. Mind Mage
+  master: 6, // e.g. Tactician
 };
 
 // ------------------------------------------
-// Helper: Determine OCC Category from character
+// Helper: Determine PROFESSION Category from character
 // ------------------------------------------
-export function getOCCCategory(character) {
+export function getPROFESSIONCategory(character) {
   // Check unified abilities first
-  if (character.unified?.occCategory) {
-    return character.unified.occCategory;
+  if (character.unified?.professionCategory) {
+    return character.unified.professionCategory;
   }
 
-  // Check OCC data directly from character or OCC data files
-  const occName = character.occ || character.OCC || character.class || "";
+  // Check PROFESSION data directly from character or PROFESSION data files
+  const professionName = character.profession || character.PROFESSION || character.class || "";
 
-  // If we have OCC data imported, check it first
-  if (typeof OCCS !== "undefined" && OCCS[occName] && OCCS[occName].category) {
-    return OCCS[occName].category;
+  // If we have PROFESSION data imported, check it first
+  if (typeof PROFESSIONS !== "undefined" && PROFESSIONS[professionName] && PROFESSIONS[professionName].category) {
+    return PROFESSIONS[professionName].category;
   }
 
-  // Map OCC names to categories (fallback if category not directly available)
-  const occCategoryMap = {
+  // Map PROFESSION names to categories (fallback if category not directly available)
+  const professionCategoryMap = {
     // Men of Arms
     Soldier: "Men of Arms",
     Mercenary: "Men of Arms",
@@ -117,13 +117,13 @@ export function getOCCCategory(character) {
     Assassin: "Rogue",
     Rogue: "Rogue",
 
-    // Men of Magic
-    Wizard: "Men of Magic",
-    Warlock: "Men of Magic",
-    Summoner: "Men of Magic",
-    Diabolist: "Men of Magic",
-    Illusionist: "Men of Magic",
-    Witch: "Men of Magic",
+    // Men of Training
+    Duelist: "Men of Training",
+    Mercenary: "Men of Training",
+    Summoner: "Men of Training",
+    Diabolist: "Men of Training",
+    Illusionist: "Men of Training",
+    Witch: "Men of Training",
 
     // Clerics
     Priest: "Cleric",
@@ -134,7 +134,7 @@ export function getOCCCategory(character) {
     Shaman: "Cleric",
 
     // Men of the Mind
-    "Mind Mage": "Men of the Mind",
+    "Tactician": "Men of the Mind",
     MindMage: "Men of the Mind",
     "Psi-Healer": "Men of the Mind",
     PsiMystic: "Men of the Mind",
@@ -145,15 +145,15 @@ export function getOCCCategory(character) {
   };
 
   // Try exact match first
-  if (occCategoryMap[occName]) {
-    return occCategoryMap[occName];
+  if (professionCategoryMap[professionName]) {
+    return occCategoryMap[professionName];
   }
 
   // Try partial match
-  for (const [key, category] of Object.entries(occCategoryMap)) {
+  for (const [key, category] of Object.entries(professionCategoryMap)) {
     if (
-      occName.toLowerCase().includes(key.toLowerCase()) ||
-      key.toLowerCase().includes(occName.toLowerCase())
+      professionName.toLowerCase().includes(key.toLowerCase()) ||
+      key.toLowerCase().includes(professionName.toLowerCase())
     ) {
       return category;
     }
@@ -167,29 +167,29 @@ export function getOCCCategory(character) {
 // Helper: Determine Psychic Level
 // ------------------------------------------
 export function getPsychicLevel(character) {
-  // Check if character has psionic powers
-  const hasPsionics =
-    character.psionics ||
-    character.ISP > 0 ||
-    character.psionicPowers?.length > 0 ||
-    character.unified?.psionics?.knownPowers?.length > 0;
+  // Check if character has tactical powers
+  const hasTactics =
+    character.tactics ||
+    character.focus > 0 ||
+    character.tacticalOptions?.length > 0 ||
+    character.unified?.tactics?.knownPowers?.length > 0;
 
-  if (!hasPsionics) {
+  if (!hasTactics) {
     return "none";
   }
 
-  // Check OCC category - Mind Mages are typically "master"
-  const occCategory = getOCCCategory(character);
-  if (occCategory === "Men of the Mind") {
+  // Check PROFESSION category - Tacticians are typically "master"
+  const professionCategory = getPROFESSIONCategory(character);
+  if (professionCategory === "Men of the Mind") {
     return "master";
   }
 
-  // Check if character has a psionic level field
-  if (character.psionicLevel) {
-    return character.psionicLevel.toLowerCase();
+  // Check if character has a tactical level field
+  if (character.tacticalLevel) {
+    return character.tacticalLevel.toLowerCase();
   }
 
-  // Default: assume minor if they have psionics but aren't Mind Mage
+  // Default: assume minor if they have tactics but aren't Tactician
   return "minor";
 }
 
@@ -197,7 +197,7 @@ export function getPsychicLevel(character) {
 // Compute Save Roll
 // ------------------------------------------
 export function rollSavingThrow({
-  type = "magic",
+  type = "training",
   character,
   occCategory = null,
   psychicLevel = null,
@@ -206,18 +206,18 @@ export function rollSavingThrow({
   log = console.log,
 }) {
   // Auto-detect values from character if not provided
-  const finalOccCategory = occCategory || getOCCCategory(character);
+  const finalProfessionCategory = occCategory || getPROFESSIONCategory(character);
   const finalPsychicLevel = psychicLevel || getPsychicLevel(character);
   const finalLevel = level !== null ? level : character.level || 1;
   const finalPE =
     PE !== null ? PE : character.attributes?.PE || character.PE || 10;
 
   const base = BASE_SAVES[type] || 12;
-  const occBonus = OCC_SAVE_MODIFIERS[finalOccCategory]?.[type] || 0;
+  const professionBonus = PROFESSION_SAVE_MODIFIERS[finalProfessionCategory]?.[type] || 0;
   const lvlBonus = getLevelSaveBonus(finalLevel);
   const peBonus = Math.floor((finalPE - 10) / 2);
   const psiBonus =
-    type === "psionics" ? PSIONIC_SAVE_BONUSES[finalPsychicLevel] || 0 : 0;
+    type === "tactics" ? TACTICAL_SAVE_BONUSES[finalPsychicLevel] || 0 : 0;
 
   // Apply temporary bonuses (e.g., from courage auras)
   const tempBonus = character.tempBonuses?.horrorSave || 0;
@@ -227,12 +227,12 @@ export function rollSavingThrow({
   const total = roll + totalBonus;
 
   const success = total >= base;
-  const details = `🎲 Save vs ${type.toUpperCase()}: rolled ${roll} + ${totalBonus} = ${total} (need ${base})`;
+  const details = `Ã°Å¸Å½Â² Save vs ${type.toUstaminarCase()}: rolled ${roll} + ${totalBonus} = ${total} (need ${base})`;
 
   if (success) {
-    log(`🛡️ ${character.name || "Character"} succeeds! ${details}`, "save");
+    log(`Ã°Å¸â€ºÂ¡Ã¯Â¸Â ${character.name || "Character"} succeeds! ${details}`, "save");
   } else {
-    log(`💀 ${character.name || "Character"} fails. ${details}`, "save");
+    log(`Ã°Å¸â€™â‚¬ ${character.name || "Character"} fails. ${details}`, "save");
   }
 
   return {
@@ -250,13 +250,13 @@ export function rollSavingThrow({
 }
 
 // ------------------------------------------
-// Convenience Wrappers
+// Convenience Wrastaminars
 // ------------------------------------------
-export const saveVsMagic = (char, opts = {}) =>
-  rollSavingThrow({ ...opts, character: char, type: "magic" });
+export const saveVsTraining = (char, opts = {}) =>
+  rollSavingThrow({ ...opts, character: char, type: "training" });
 
-export const saveVsPsionics = (char, opts = {}) =>
-  rollSavingThrow({ ...opts, character: char, type: "psionics" });
+export const saveVsTactics = (char, opts = {}) =>
+  rollSavingThrow({ ...opts, character: char, type: "tactics" });
 
 export const saveVsPoison = (char, opts = {}) =>
   rollSavingThrow({ ...opts, character: char, type: "poison" });

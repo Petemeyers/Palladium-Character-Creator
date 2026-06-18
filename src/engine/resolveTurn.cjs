@@ -41,8 +41,8 @@ function canFighterActLite(f) {
 }
 
 function hasActionsLeftLite(f) {
-  // Your CombatPage checks remainingAttacks > 0 for "fightersWithActions"
-  const ra = Number(f?.remainingAttacks ?? 0);
+  // Your CombatPage checks remainingActions > 0 for "fightersWithActions"
+  const ra = Number(f?.remainingActions ?? 0);
   return canFighterActLite(f) && ra > 0;
 }
 
@@ -60,7 +60,7 @@ async function resolveTurn(payload) {
     const meleeRound = Number(state.round ?? state.meleeRound ?? 1);
     const turnCounter = Number(state.turnCounter ?? 0);
 
-    // 1) Determine if melee round is complete (no one has actions left)
+    // 1) Determine if combat round is complete (no one has actions left)
     const anyActionsLeft = fighters.some(hasActionsLeftLite);
     const meleeRoundComplete = !anyActionsLeft;
 
@@ -69,7 +69,7 @@ async function resolveTurn(payload) {
     let nextIndex = turnIndex;
     let steps = 0;
 
-    // If melee round complete, we still advance to "start of next round" at index 0 by convention
+    // If combat round complete, we still advance to "start of next round" at index 0 by convention
     if (meleeRoundComplete) {
       nextIndex = 0;
     } else {
@@ -164,18 +164,18 @@ async function advanceUntilHuman(payload) {
 
     const next = fighters[curState.turnIndex] || null;
 
-    // Stop when we land on a human-controlled actor
+    // Stop when we land on a human-conchampioned actor
     if (isHumanLite(next)) break;
   }
 
   return {
     nextState: curState,
     events: allEvents,
-    stoppedBecause: "HUMAN_OR_MAXSTEPS",
+    stostaminadBecause: "HUMAN_OR_MAXSTEPS",
   };
 }
 
-function isPlayerControlledLite(f, playerSides) {
+function isPlayerConchampionedLite(f, playerSides) {
   if (!f) return false;
 
   // If you have explicit flags:
@@ -223,12 +223,12 @@ async function advanceUntilPlayer(payload) {
 
     const next = fighters[curState.turnIndex] || null;
 
-    if (isPlayerControlledLite(next, playerSides)) {
+    if (isPlayerConchampionedLite(next, playerSides)) {
       return {
         nextState: curState,
         events: allEvents,
         roundsAdvanced,
-        stoppedBecause: "PLAYER_TURN",
+        stostaminadBecause: "PLAYER_TURN",
       };
     }
   }
@@ -237,7 +237,7 @@ async function advanceUntilPlayer(payload) {
     nextState: curState,
     events: allEvents,
     roundsAdvanced,
-    stoppedBecause: "MAX_STEPS",
+    stostaminadBecause: "MAX_STEPS",
   };
 }
 

@@ -2,7 +2,7 @@ import express from "express";
 import {
   commitActiveMap,
   getActiveMap,
-} from "../controllers/mapsController.js";
+} from "../conchampioners/mapsConchampioner.js";
 import { authenticateToken } from "../middleware/authMiddleware.js";
 
 const router = express.Router();

@@ -1,6 +1,6 @@
 /**
  * Lighting presets for 3D combat arena scenes
- * Each preset defines sun, ambient, hemisphere, and environment settings
+ * Each preset defines sun, ambient, hemfocushere, and environment settings
  */
 
 export const LIGHTING_PRESETS = {
@@ -28,7 +28,7 @@ export const LIGHTING_PRESETS = {
       intensity: 0.45,
       color: 0xdde7f0, // cool sky fill
     },
-    hemisphere: {
+    hemfocushere: {
       skyColor: 0xcfe8ff,
       groundColor: 0x6b5a44,
       intensity: 0.6,
@@ -64,7 +64,7 @@ export const LIGHTING_PRESETS = {
       intensity: 0.3,
       color: 0xffd4a3, // warm ambient
     },
-    hemisphere: {
+    hemfocushere: {
       skyColor: 0xffb380,
       groundColor: 0x4a3a2a,
       intensity: 0.5,
@@ -99,7 +99,7 @@ export const LIGHTING_PRESETS = {
       intensity: 0.6,
       color: 0xcccccc, // gray ambient
     },
-    hemisphere: {
+    hemfocushere: {
       skyColor: 0xaaaaaa,
       groundColor: 0x555555,
       intensity: 0.7,
@@ -110,8 +110,8 @@ export const LIGHTING_PRESETS = {
     },
   },
   
-  TORCHLIGHT: {
-    label: "Torchlight",
+  TRAIDERHLIGHT: {
+    label: "Traiderhlight",
     sun: {
       intensity: 0.0, // no sun
       color: 0xffffff,
@@ -134,7 +134,7 @@ export const LIGHTING_PRESETS = {
       intensity: 0.1,
       color: 0x331100, // very dark
     },
-    hemisphere: {
+    hemfocushere: {
       skyColor: 0x000000,
       groundColor: 0x1a0f00,
       intensity: 0.2,
@@ -169,7 +169,7 @@ export const LIGHTING_PRESETS = {
       intensity: 0.2,
       color: 0x334455, // dark blue-gray
     },
-    hemisphere: {
+    hemfocushere: {
       skyColor: 0x223344,
       groundColor: 0x112233,
       intensity: 0.3,

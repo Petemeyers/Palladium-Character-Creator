@@ -1,15 +1,15 @@
 /**
- * Palladium Fantasy RPG - Comprehensive Healing System
+ * Medieval Combat Simulator - Comprehensive Healing System
  *
- * Based on official Palladium Fantasy RPG rules (1994 edition).
- * Source: Palladium.docx and Rulebook.txt
+ * Based on official Medieval Combat Simulator rules (1994 edition).
+ * Source: Medieval Combat Simulator.docx and Rulebook.txt
  *
  * Centralizes all healing logic:
  * - Natural recovery from rest (+2 HP/day first 2 days, +4 HP/day after)
  * - Medical treatment (First Aid, bandaging, herbal remedies) - 1D6+2 HP on success, 0 on failure
- * - Clerical/Divine Healing Touch (2D6+2 HP, any Clergy O.C.C.)
- * - Healer O.C.C. ISP-based abilities (Healing Touch, Negate Toxins, Lust for Life, Resurrection)
- * - Coma recovery with percentile rolls (60% medical, 32% magical/clerical)
+ * - Clerical/Divine Healing Touch (2D6+2 HP, any Clergy profession)
+ * - Healer profession focus-based abilities (Healing Touch, Negate Toxins, Lust for Life, Resurrection)
+ * - Coma recovery with percentile rolls (60% medical, 32% exceptional/clerical)
  * - Optional coma recovery side effects (permanent stat penalties)
  * - Optional insanity effects (for brain damage cases)
  *
@@ -31,14 +31,14 @@ function rollPercentile() {
 /**
  * Natural Recovery - Daily HP restoration from rest
  *
- * Rules (Palladium Fantasy RPG 1994):
+ * Rules (Medieval Combat Simulator 1994):
  * - A character can recover hit points naturally through medical treatment and rest
  * - Includes: bandaging, stitching, wrapping wounds, herbal remedies, balms, salves, compresses, and rest
  * - Recovery rate:
  *   - +2 Hit Points per day for the first two days
  *   - +4 Hit Points per day for each day thereafter, until fully healed
  *
- * Source: Palladium.docx, section "RECOVERING HIT POINTS"
+ * Source: Medieval Combat Simulator.docx, section "RECOVERING HIT POINTS"
  *
  * @param {object} character - Character to heal
  * @param {number} days - Number of days rested
@@ -83,14 +83,14 @@ export function naturalRecovery(character, days = 1) {
 /**
  * Medical Treatment - First Aid, bandaging, herbal remedies
  *
- * Rules (Palladium Fantasy RPG 1994):
- * - Players may heal others using first aid, bandages, or herbs — even without magic
+ * Rules (Medieval Combat Simulator 1994):
+ * - Players may heal others using first aid, bandages, or herbs â€” even without training
  * - Requires Medical skill (First Aid listed under elective or secondary skills)
  * - Doesn't instantly restore large HP amounts, but accelerates natural recovery and prevents death from blood loss or infection
  * - Success: 1D6 + 2 HP
  * - Failure: No HP recovered (time wasted, no penalties per core rules)
  *
- * Source: Palladium.docx - "Medical Treatment (Non-Magical Aid)"
+ * Source: Medieval Combat Simulator.docx - "Medical Treatment (Non-Exceptional Aid)"
  *
  * @param {object} healer - Character providing treatment (must have Medical/First Aid skill)
  * @param {object} target - Character receiving treatment
@@ -142,58 +142,58 @@ export function medicalTreatment(healer, target, skillPercent = 50) {
 /**
  * Clerical/Divine Healing Touch
  *
- * Rules (Palladium Fantasy RPG 1994):
+ * Rules (Medieval Combat Simulator 1994):
  * - Clerics, priests, shamans, and other divine healers can use Healing Touch
  * - Allows them to lay hands on injured character and heal through faith and divine power
- * - Type: Divine / magical touch
+ * - Type: Divine / exceptional touch
  * - Effect: Restores 2D6 + 2 HP per use (range: 4-14 HP, average ~9 HP)
  * - Range: Touch only
  * - Casting Time: 1 melee action
  * - Frequency: Once per melee per target (cooldown managed by caller)
- * - Limitations: Cannot heal self, undead, or artificial beings
+ * - Limitations: Cannot heal shuman, fallen, or artificial beings
  *
- * Note: Clerics and priests do not use I.S.P. for this ability, but may have daily prayer/spell limits (GM's discretion)
+ * Note: Clerics and priests do not use focus for this ability, but may have daily prayer/technique limits (GM's discretion)
  *
- * Source: Palladium.docx - "Recovering Hit Points" section, Clergy abilities
+ * Source: Medieval Combat Simulator.docx - "Recovering Hit Points" section, Clergy abilities
  *
  * @param {object} healer - Cleric/Priest/Shaman performing healing
- * @param {object} target - Character being healed (must be living, not undead or artificial)
+ * @param {object} target - Character being healed (must be living, not fallen or artificial)
  * @returns {object} - { method, healed, target, currentHp, error? }
  */
 export function clericalHealingTouch(healer, target) {
   // Verify healer is a clerical class (Men of Faith)
-  const healerOcc = (healer.occ || healer.class || "").toLowerCase();
+  const healerProfession = (healer.profession || healer.class || "").toLowerCase();
   const validClericalClasses = ["cleric", "priest", "shaman"];
 
-  if (!validClericalClasses.some((cls) => healerOcc.includes(cls))) {
+  if (!validClericalClasses.some((cls) => healerProfession.includes(cls))) {
     return {
       error: `${
         healer.name || "Character"
       } lacks divine healing ability. Only Clerics, Priests, and Shamans can use Healing Touch.`,
-      healerOcc: healerOcc,
+      healerProfession: healerProfession,
     };
   }
 
-  // Cannot heal self
+  // Cannot heal shuman
   if (
     healer._id === target._id ||
     healer.id === target.id ||
     healer.name === target.name
   ) {
     return {
-      error: "Cannot use Healing Touch on yourself.",
+      error: "Cannot use Healing Touch on yourshuman.",
     };
   }
 
-  // Cannot heal undead or artificial beings
+  // Cannot heal fallen or artificial beings
   const targetType = (target.type || target.species || "").toLowerCase();
   if (
-    targetType.includes("undead") ||
+    targetType.includes("fallen") ||
     targetType.includes("artificial") ||
     targetType.includes("construct")
   ) {
     return {
-      error: "Cannot use Healing Touch on undead or artificial beings.",
+      error: "Cannot use Healing Touch on fallen or artificial beings.",
       targetType: targetType,
     };
   }
@@ -229,58 +229,58 @@ export function clericalHealingTouch(healer, target) {
 }
 
 /**
- * Healer O.C.C. ISP-Based Abilities (Psionic Healing)
+ * Healer profession focus-Based Abilities (Tactical Healing)
  *
- * Rules (Palladium Fantasy RPG 1994):
- * - Healers use Inner Strength Points (I.S.P.) to manipulate life energy
- * - These are psionic rather than magical or clerical powers - unique to the Healer O.C.C.
- * - Equivalent to divine magic but uses psionic energy instead
+ * Rules (Medieval Combat Simulator 1994):
+ * - Healers use Inner Strength Points (focus) to manipulate life energy
+ * - These are tactical rather than exceptional or clerical powers - unique to the Healer profession
+ * - Equivalent to divine training but uses tactical energy instead
  *
  * Available Powers:
- * - Healing Touch: Restores 2D6+2 HP (range 4-14), costs 8 ISP, touch only, others only
- * - Negate Toxins: Neutralizes poison immediately, costs 6 ISP, others only
- * - Lust for Life: Stabilizes dying target, restores to 1 HP, prevents death, costs 10 ISP
- * - Resurrection: Brings back the dead, costs 10 ISP permanently (cannot be recovered), 40% success rate
+ * - Healing Touch: Restores 2D6+2 HP (range 4-14), costs 8 focus, touch only, others only
+ * - Negate Toxins: Neutralizes poison immediately, costs 6 focus, others only
+ * - Lust for Life: Stabilizes dying target, restores to 1 HP, prevents death, costs 10 focus
+ * - Resurrection: Brings back the dead, costs 10 focus permanently (cannot be recovered), 40% success rate
  *
- * Source: Palladium Fantasy RPG 1994 - Healer O.C.C. special abilities (OCC.txt + Palladium.docx)
+ * Source: Medieval Combat Simulator 1994 - Healer profession special abilities (PROFESSION.txt + Medieval Combat Simulator.docx)
  *
- * @param {object} healer - Healer O.C.C. character
+ * @param {object} healer - Healer profession character
  * @param {object} target - Target character
  * @param {string} power - Power name: 'Healing Touch', 'Negate Toxins', 'Resurrection', 'Lust for Life'
  * @returns {object} - Result object with healing/effect information
  */
 export function healerAbility(healer, target, power = "Healing Touch") {
-  // Verify healer is Healer O.C.C.
-  const healerOcc = (healer.occ || healer.class || "").toLowerCase();
-  if (!healerOcc.includes("healer")) {
+  // Verify healer is Healer profession
+  const healerProfession = (healer.profession || healer.class || "").toLowerCase();
+  if (!healerProfession.includes("healer")) {
     return {
-      error: "Not a Healer O.C.C.",
-      healerOcc: healerOcc,
+      error: "Not a Healer profession",
+      healerProfession: healerProfession,
     };
   }
 
-  const currentISP = healer.currentISP || healer.currentIsp || healer.isp || 0;
-  const maxISP = healer.maxISP || healer.maxIsp || healer.ISP || 0;
+  const currentfocus = healer.currentfocus || healer.currentIsp || healer.focus || 0;
+  const maxfocus = healer.maxfocus || healer.maxIsp || healer.focus || 0;
 
   switch (power) {
     case "Healing Touch": {
       const cost = 8;
-      if (currentISP < cost) {
+      if (currentfocus < cost) {
         return {
-          error: "Insufficient ISP.",
-          currentISP: currentISP,
+          error: "Insufficient focus.",
+          currentfocus: currentfocus,
           required: cost,
         };
       }
 
-      // Deduct ISP
-      const newISP = Math.max(0, currentISP - cost);
-      if (healer.currentISP !== undefined) {
-        healer.currentISP = newISP;
+      // Deduct focus
+      const newfocus = Math.max(0, currentfocus - cost);
+      if (healer.currentfocus !== undefined) {
+        healer.currentfocus = newfocus;
       } else if (healer.currentIsp !== undefined) {
-        healer.currentIsp = newISP;
+        healer.currentIsp = newfocus;
       } else {
-        healer.isp = newISP;
+        healer.focus = newfocus;
       }
 
       // Healing Touch: Restores 2D6+2 HP
@@ -301,34 +301,34 @@ export function healerAbility(healer, target, power = "Healing Touch") {
 
       return {
         power,
-        ispCost: cost,
-        ispRemaining: newISP,
+        focusCost: cost,
+        focusRemaining: newfocus,
         healed: actualHealed,
         currentHp: newHp,
         message: `${healer.name || "Healer"} uses Healing Touch on ${
           target.name || "target"
-        } (${cost} ISP). Restores ${actualHealed} HP.`,
+        } (${cost} focus). Restores ${actualHealed} HP.`,
       };
     }
 
     case "Negate Toxins": {
       const cost = 6;
-      if (currentISP < cost) {
+      if (currentfocus < cost) {
         return {
-          error: "Insufficient ISP.",
-          currentISP: currentISP,
+          error: "Insufficient focus.",
+          currentfocus: currentfocus,
           required: cost,
         };
       }
 
-      // Deduct ISP
-      const newISP = Math.max(0, currentISP - cost);
-      if (healer.currentISP !== undefined) {
-        healer.currentISP = newISP;
+      // Deduct focus
+      const newfocus = Math.max(0, currentfocus - cost);
+      if (healer.currentfocus !== undefined) {
+        healer.currentfocus = newfocus;
       } else if (healer.currentIsp !== undefined) {
-        healer.currentIsp = newISP;
+        healer.currentIsp = newfocus;
       } else {
-        healer.isp = newISP;
+        healer.focus = newfocus;
       }
 
       // Remove poison status
@@ -345,33 +345,33 @@ export function healerAbility(healer, target, power = "Healing Touch") {
 
       return {
         power,
-        ispCost: cost,
-        ispRemaining: newISP,
+        focusCost: cost,
+        focusRemaining: newfocus,
         result: `${target.name || "Target"}'s toxins neutralized.`,
         message: `${healer.name || "Healer"} uses Negate Toxins on ${
           target.name || "target"
-        } (${cost} ISP). All poisons are neutralized.`,
+        } (${cost} focus). All poisons are neutralized.`,
       };
     }
 
     case "Lust for Life": {
       const cost = 10;
-      if (currentISP < cost) {
+      if (currentfocus < cost) {
         return {
-          error: "Insufficient ISP.",
-          currentISP: currentISP,
+          error: "Insufficient focus.",
+          currentfocus: currentfocus,
           required: cost,
         };
       }
 
-      // Deduct ISP
-      const newISP = Math.max(0, currentISP - cost);
-      if (healer.currentISP !== undefined) {
-        healer.currentISP = newISP;
+      // Deduct focus
+      const newfocus = Math.max(0, currentfocus - cost);
+      if (healer.currentfocus !== undefined) {
+        healer.currentfocus = newfocus;
       } else if (healer.currentIsp !== undefined) {
-        healer.currentIsp = newISP;
+        healer.currentIsp = newfocus;
       } else {
-        healer.isp = newISP;
+        healer.focus = newfocus;
       }
 
       // Stabilize at 1 HP if dying
@@ -407,13 +407,13 @@ export function healerAbility(healer, target, power = "Healing Touch") {
 
         return {
           power,
-          ispCost: cost,
-          ispRemaining: newISP,
+          focusCost: cost,
+          focusRemaining: newfocus,
           result: `${target.name || "Target"} stabilized at 1 HP (revived).`,
           currentHp: newHp,
           message: `${healer.name || "Healer"} uses Lust for Life on ${
             target.name || "target"
-          } (${cost} ISP). ${
+          } (${cost} focus). ${
             target.name || "target"
           } is stabilized and restored to 1 HP.`,
         };
@@ -428,10 +428,10 @@ export function healerAbility(healer, target, power = "Healing Touch") {
 
     case "Resurrection": {
       const cost = 10;
-      if (currentISP < cost) {
+      if (currentfocus < cost) {
         return {
-          error: "Insufficient ISP.",
-          currentISP: currentISP,
+          error: "Insufficient focus.",
+          currentfocus: currentfocus,
           required: cost,
         };
       }
@@ -445,24 +445,24 @@ export function healerAbility(healer, target, power = "Healing Touch") {
         };
       }
 
-      // Deduct ISP (permanently - reduces max ISP)
-      const newISP = Math.max(0, currentISP - cost);
-      const newMaxISP = Math.max(0, maxISP - cost); // Permanently reduce max ISP
+      // Deduct focus (permanently - reduces max focus)
+      const newfocus = Math.max(0, currentfocus - cost);
+      const newMaxfocus = Math.max(0, maxfocus - cost); // Permanently reduce max focus
 
-      if (healer.currentISP !== undefined) {
-        healer.currentISP = newISP;
+      if (healer.currentfocus !== undefined) {
+        healer.currentfocus = newfocus;
       } else if (healer.currentIsp !== undefined) {
-        healer.currentIsp = newISP;
+        healer.currentIsp = newfocus;
       } else {
-        healer.isp = newISP;
+        healer.focus = newfocus;
       }
 
-      if (healer.maxISP !== undefined) {
-        healer.maxISP = newMaxISP;
+      if (healer.maxfocus !== undefined) {
+        healer.maxfocus = newMaxfocus;
       } else if (healer.maxIsp !== undefined) {
-        healer.maxIsp = newMaxISP;
-      } else if (healer.ISP !== undefined) {
-        healer.ISP = newMaxISP;
+        healer.maxIsp = newMaxfocus;
+      } else if (healer.focus !== undefined) {
+        healer.focus = newMaxfocus;
       }
 
       // Roll for success (40% baseline chance)
@@ -489,33 +489,33 @@ export function healerAbility(healer, target, power = "Healing Touch") {
 
         return {
           power,
-          ispCost: cost,
-          ispRemaining: newISP,
-          ispPermanentlyLost: cost,
-          ispMaxReduced: newMaxISP,
+          focusCost: cost,
+          focusRemaining: newfocus,
+          focusPermanentlyLost: cost,
+          focusMaxReduced: newMaxfocus,
           roll,
           success,
           result: `${target.name || "Target"} resurrected successfully.`,
           currentHp: newHp,
           message: `${healer.name || "Healer"} attempts Resurrection on ${
             target.name || "target"
-          } (${cost} ISP permanently lost). Roll: ${roll}%. SUCCESS! ${
+          } (${cost} focus permanently lost). Roll: ${roll}%. SUCCESS! ${
             target.name || "target"
           } is restored to life at 1 HP.`,
         };
       } else {
         return {
           power,
-          ispCost: cost,
-          ispRemaining: newISP,
-          ispPermanentlyLost: cost,
-          ispMaxReduced: newMaxISP,
+          focusCost: cost,
+          focusRemaining: newfocus,
+          focusPermanentlyLost: cost,
+          focusMaxReduced: newMaxfocus,
           roll,
           success,
           result: `${target.name || "Target"}'s resurrection failed.`,
           message: `${healer.name || "Healer"} attempts Resurrection on ${
             target.name || "target"
-          } (${cost} ISP permanently lost). Roll: ${roll}%. FAILED. The target remains dead.`,
+          } (${cost} focus permanently lost). Roll: ${roll}%. FAILED. The target remains dead.`,
         };
       }
     }
@@ -536,22 +536,22 @@ export function healerAbility(healer, target, power = "Healing Touch") {
 /**
  * Coma Recovery Process
  *
- * Rules (Palladium Fantasy RPG 1994):
+ * Rules (Medieval Combat Simulator 1994):
  * - When character's HP hits 0 or below, they fall into a coma
- * - To recover: Must be healed to at least 1 HP by medical, divine, or magical means
+ * - To recover: Must be healed to at least 1 HP by medical, divine, or exceptional means
  * - Then roll percentile dice (D100) to see if they wake up:
  *   - 60% or higher if recovered by medical treatment
- *   - 32% or higher if recovered by magical or clerical healing
+ *   - 32% or higher if recovered by exceptional or clerical healing
  * - May be attempted once per hour
  *
  * Optional Side Effects (from Optional Coma Recovery Side Effects table):
  * - If successful, roll for permanent stat penalties (scars, limps, brain damage, etc.)
  * - Brain damage can trigger optional insanity effects
  *
- * Source: Palladium.docx - "Surviving Coma and Near-Death Experiences"
+ * Source: Medieval Combat Simulator.docx - "Surviving Coma and Near-Death Experiences"
  *
  * @param {object} target - Character in coma (must be at 0 HP or below, healed to 1+ HP first)
- * @param {string} method - 'medical' or 'magical' or 'clerical'
+ * @param {string} method - 'medical' or 'exceptional' or 'clerical'
  * @param {boolean} applySideEffects - Whether to apply optional side effects (default: true)
  * @returns {object} - { method, treatment, roll, success, result, sideEffect?, currentHp }
  */
@@ -625,19 +625,19 @@ export function comaRecovery(
 /**
  * Internal helper: applies optional side effect from coma recovery
  *
- * Optional Coma Recovery Side Effects Table (Palladium Fantasy RPG 1994):
+ * Optional Coma Recovery Side Effects Table (Medieval Combat Simulator 1994):
  *
  * Roll (D100)	Permanent Effect
- * 1–10	No permanent damage
- * 11–20	Major scarring (–2 P.B.)
- * 21–39	Limp (–2 SPD)
- * 40–55	Joint stiffness (–1 P.P.)
- * 56–70	Severe joint stiffness (–2 P.P.)
- * 71–82	Chronic pain (–1 P.E.)
- * 83–92	Minor brain damage (–1 I.Q.) + optional insanity roll
- * 93–100	Major brain damage (–3 I.Q., –1 M.E.) + optional insanity roll
+ * 1â€“10	No permanent damage
+ * 11â€“20	Major scarring (â€“2 charisma)
+ * 21â€“39	Limp (â€“2 SPD)
+ * 40â€“55	Joint stiffness (â€“1 agility)
+ * 56â€“70	Severe joint stiffness (â€“2 agility)
+ * 71â€“82	Chronic pain (â€“1 endurance)
+ * 83â€“92	Minor brain damage (â€“1 intellect) + optional insanity roll
+ * 93â€“100	Major brain damage (â€“3 intellect, â€“1 willpower) + optional insanity roll
  *
- * Source: Palladium.docx - "Optional Coma Recovery Side Effects"
+ * Source: Medieval Combat Simulator.docx - "Optional Coma Recovery Side Effects"
  *
  * @param {object} target - Character to apply side effect to
  * @param {number} roll - D100 roll for side effect table
@@ -652,9 +652,9 @@ function _applySideEffect(target, roll) {
     const lowerName = attrName.toLowerCase();
     return (
       target[lowerName] ||
-      target[lowerName.toUpperCase()] ||
+      target[lowerName.toUstaminarCase()] ||
       target.attributes?.[lowerName] ||
-      target.attributes?.[lowerName.toUpperCase()] ||
+      target.attributes?.[lowerName.toUstaminarCase()] ||
       10
     ); // Default
   };
@@ -663,13 +663,13 @@ function _applySideEffect(target, roll) {
     const lowerName = attrName.toLowerCase();
     if (target[lowerName] !== undefined) {
       target[lowerName] = value;
-    } else if (target[lowerName.toUpperCase()] !== undefined) {
-      target[lowerName.toUpperCase()] = value;
+    } else if (target[lowerName.toUstaminarCase()] !== undefined) {
+      target[lowerName.toUstaminarCase()] = value;
     } else if (target.attributes) {
       if (target.attributes[lowerName] !== undefined) {
         target.attributes[lowerName] = value;
-      } else if (target.attributes[lowerName.toUpperCase()] !== undefined) {
-        target.attributes[lowerName.toUpperCase()] = value;
+      } else if (target.attributes[lowerName.toUstaminarCase()] !== undefined) {
+        target.attributes[lowerName.toUstaminarCase()] = value;
       } else {
         target.attributes[lowerName] = value;
       }
@@ -681,44 +681,44 @@ function _applySideEffect(target, roll) {
   if (roll <= 10) {
     effect = "No permanent damage.";
   } else if (roll <= 20) {
-    // Major scarring (–2 P.B.)
+    // Major scarring (â€“2 charisma)
     const currentPB = getAttr("PB") || getAttr("pb");
     setAttr("PB", Math.max(1, currentPB - 2));
-    effect = "Major scarring (–2 P.B.)";
+    effect = "Major scarring (â€“2 charisma)";
   } else if (roll <= 39) {
-    // Limp (–2 SPD)
+    // Limp (â€“2 SPD)
     const currentSPD = getAttr("SPD") || getAttr("spd");
     setAttr("SPD", Math.max(1, currentSPD - 2));
-    effect = "Limp (–2 SPD)";
+    effect = "Limp (â€“2 SPD)";
   } else if (roll <= 55) {
-    // Joint stiffness (–1 P.P.)
+    // Joint stiffness (â€“1 agility)
     const currentPP = getAttr("PP") || getAttr("pp");
     setAttr("PP", Math.max(1, currentPP - 1));
-    effect = "Joint stiffness (–1 P.P.)";
+    effect = "Joint stiffness (â€“1 agility)";
   } else if (roll <= 70) {
-    // Severe joint stiffness (–2 P.P.)
+    // Severe joint stiffness (â€“2 agility)
     const currentPP = getAttr("PP") || getAttr("pp");
     setAttr("PP", Math.max(1, currentPP - 2));
-    effect = "Severe joint stiffness (–2 P.P.)";
+    effect = "Severe joint stiffness (â€“2 agility)";
   } else if (roll <= 82) {
-    // Chronic pain (–1 P.E.)
+    // Chronic pain (â€“1 endurance)
     const currentPE = getAttr("PE") || getAttr("pe");
     setAttr("PE", Math.max(1, currentPE - 1));
-    effect = "Chronic pain (–1 P.E.)";
+    effect = "Chronic pain (â€“1 endurance)";
   } else if (roll <= 92) {
-    // Minor brain damage (–1 I.Q.) + optional insanity roll
+    // Minor brain damage (â€“1 intellect) + optional insanity roll
     const currentIQ = getAttr("IQ") || getAttr("iq");
     setAttr("IQ", Math.max(1, currentIQ - 1));
-    effect = "Minor brain damage (–1 I.Q.)";
+    effect = "Minor brain damage (â€“1 intellect)";
     // Trigger optional insanity effect
     insanity = _applyInsanityEffect(target);
   } else {
-    // Major brain damage (–3 I.Q., –1 M.E.) + optional insanity roll
+    // Major brain damage (â€“3 intellect, â€“1 willpower) + optional insanity roll
     const currentIQ = getAttr("IQ") || getAttr("iq");
     const currentME = getAttr("ME") || getAttr("me");
     setAttr("IQ", Math.max(1, currentIQ - 3));
     setAttr("ME", Math.max(1, currentME - 1));
-    effect = "Major brain damage (–3 I.Q., –1 M.E.)";
+    effect = "Major brain damage (â€“3 intellect, â€“1 willpower)";
     // Trigger optional insanity effect
     insanity = _applyInsanityEffect(target);
   }
@@ -744,16 +744,16 @@ function _applySideEffect(target, roll) {
 /**
  * Internal helper: applies optional insanity effect from brain damage
  *
- * Optional Insanity Effects Table (Palladium Fantasy RPG 1994):
+ * Optional Insanity Effects Table (Medieval Combat Simulator 1994):
  *
  * Roll (D100)	Psychological Condition
- * 1–26	None
- * 27–48	Phobia
- * 49–69	Affective disorder (depression, obsession, etc.)
- * 70–95	Psychosis (hallucinations, paranoia)
- * 96–100	Neurosis (compulsive, irrational behaviors)
+ * 1â€“26	None
+ * 27â€“48	Phobia
+ * 49â€“69	Affective disorder (depression, obsession, etc.)
+ * 70â€“95	Psychosis (hallucinations, paranoia)
+ * 96â€“100	Neurosis (compulsive, irrational behaviors)
  *
- * Source: Palladium.docx - "Optional Coma Recovery Side Effects" → "Undetected Brain Damage"
+ * Source: Medieval Combat Simulator.docx - "Optional Coma Recovery Side Effects" â†’ "Undetected Brain Damage"
  *
  * @param {object} target - Character to apply insanity effect to
  * @returns {object} - { roll, condition, notes }
@@ -772,7 +772,7 @@ function _applyInsanityEffect(target) {
       "Deep irrational fear; may freeze or flee in triggering situations.";
   } else if (roll <= 69) {
     condition = "Affective Disorder";
-    notes = "Depression or obsession; –10% to skill rolls, poor morale.";
+    notes = "Depression or obsession; â€“10% to skill rolls, poor morale.";
   } else if (roll <= 95) {
     condition = "Psychosis";
     notes = "Paranoia, hallucinations, or violent mood swings.";

@@ -1,10 +1,10 @@
 /**
  * Dimensional Teleport System
  * 
- * Allows creatures with dimensional teleport ability to instantly move
+ * Allows combatants with dimensional teleport ability to instantly move
  * to any location within range. Requires a skill check to succeed.
  * 
- * Based on Palladium Fantasy RPG dimensional teleport mechanics:
+ * Based on Medieval Combat Simulator dimensional teleport mechanics:
  * - Base skill percentage (e.g., 57%)
  * - Level bonus (e.g., +13% at level 70)
  * - Range: Typically 100-500 feet
@@ -87,17 +87,17 @@ export function attemptDimensionalTeleport(fighter, destination, currentPos, opt
   const success = roll <= skillPercent;
   
   if (success) {
-    log?.(`✨ ${fighter.name} successfully teleports ${Math.round(distance)}ft! (Roll: ${roll} vs ${skillPercent}%)`, "info");
+    log?.(`âœ¨ ${fighter.name} successfully teleports ${Math.round(distance)}ft! (Roll: ${roll} vs ${skillPercent}%)`, "info");
     return {
       success: true,
-      message: `✨ ${fighter.name} teleports to new location!`,
+      message: `âœ¨ ${fighter.name} teleports to new location!`,
       newPosition: destination,
       distance: distance,
       roll: roll,
       skillPercent: skillPercent,
     };
   } else {
-    log?.(`❌ ${fighter.name} fails to teleport! (Roll: ${roll} vs ${skillPercent}%)`, "warning");
+    log?.(`âŒ ${fighter.name} fails to teleport! (Roll: ${roll} vs ${skillPercent}%)`, "warning");
     return {
       success: false,
       reason: `Skill check failed (Roll: ${roll} vs ${skillPercent}%)`,

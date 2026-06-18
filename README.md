@@ -1,26 +1,26 @@
-# Palladium Fantasy Character Creator & Game Master
+# Medieval Combat Simulator Character Creator & Game Master
 
-A comprehensive full-stack RPG gaming platform inspired by the Palladium Fantasy RPG system. This application allows players to create characters, form parties, manage inventory, engage in combat, interact with NPCs, and play with an AI-powered Game Master.
+A comprehensive full-stack RPG gaming platform inspired by the Medieval Combat Simulator system. This application allows players to create characters, form parties, manage inventory, engage in combat, interact with NPCs, and play with an AI-powered Game Master.
 
-## 🎮 Features
+## ÃƒÂ°Ã…Â¸Ã…Â½Ã‚Â® Features
 
 ### Character Creation & Management
 
-- **Species Selection**: Choose from 15+ fantasy races including Humans, Elves, Dwarves, Wolfen, Trolls, Ogres, and more
+- **Species Selection**: Choose from 15+ fantasy races including Humans, Elves, Dwarves, Wolf, Champions, Heavy Fighters, and more
 - **Advanced Attribute Rolling**:
   - Species-specific dice rolls (3d6, 4d6, 5d6)
   - Bonus dice for exceptional rolls (highlighted attributes)
   - Auto-roll feature with minimum total targeting
   - Cryptographic randomness option for true RNG
-- **O.C.C. (Occupational Character Class) System**:
+- **profession (Occupational Character Class) System**:
   - Men of Arms: Soldier, Mercenary, Knight, Paladin, Ranger, Long Bowman, Thief, Assassin
-  - Men of Magic: Wizard, Warlock, Diabolist, Summoner, Illusionist, Witch
+  - Men of Training: Duelist, Mercenary, Diabolist, Summoner, Illusionist, Witch
   - Clergy: Priest of Light, Priest of Darkness, Druid, Shaman, Healer
-  - Psionic: Mind Mage
+  - Tactical: Tactician
   - Optional: Scholar, Merchant, Noble, Peasant, Squire
 - **Dynamic Class Filtering**: Automatic filtering based on race restrictions and attribute requirements
 - **Skill System**:
-  - O.C.C. Skills (automatic)
+  - profession Skills (automatic)
   - Elective Skills (class-specific choices)
   - Secondary Skills (general skills pool)
   - Level-based skill progression
@@ -33,9 +33,9 @@ A comprehensive full-stack RPG gaming platform inspired by the Palladium Fantasy
 - **Level Progression System (1-15)**:
   - HP progression by level
   - Attacks per melee increase
-  - Combat bonuses (strike, parry, dodge, damage)
+  - Combat bonuses (attack, block, evade, damage)
   - Saving throws improvements
-  - PPE/ISP growth for magic users
+  - stamina/focus growth for training users
   - Skill increases at specific levels
 - **Bulk Character Generation**: Create multiple NPCs or party members at once
 
@@ -51,12 +51,12 @@ A comprehensive full-stack RPG gaming platform inspired by the Palladium Fantasy
 
 - **Initiative Tracker**: Automated turn order based on character speed and bonuses
 - **Combat Actions**:
-  - Strike, Parry, Dodge mechanics
+  - Attack, Block, Evade mechanics
   - Critical hits and fumbles
   - Called shots
-  - Multiple attacks per melee round
+  - Multiple attacks per combat round
 - **Combat Panel**: Real-time combat management interface
-- **Combat Spells**: Integrated spell casting in combat
+- **Combat Techniques**: Integrated technique casting in combat
 - **Combat Logs**: Historical record of battles
 - **Damage Tracking**: Automatic HP management
 
@@ -73,18 +73,18 @@ A comprehensive full-stack RPG gaming platform inspired by the Palladium Fantasy
   - Item quality and condition
 - **Currency System**: Gold-based economy with class-specific starting funds
 
-### Magic & Psionics
+### Training & Tactics
 
-- **Spell System**:
-  - Multiple spell levels and types
-  - PPE (Potential Psychic Energy) tracking
-  - Spell casting interface
-  - Combat and utility spells
-- **Psionics System**:
-  - ISP (Inner Strength Points) tracking
-  - Psionic abilities
-  - Mind Mage powers
-  - IQ-based psionic potential rolls
+- **Technique System**:
+  - Multiple technique levels and types
+  - stamina (Potential Psychic Energy) tracking
+  - Technique casting interface
+  - Combat and utility techniques
+- **Tactics System**:
+  - focus (Inner Strength Points) tracking
+  - Tactical abilities
+  - Tactician powers
+  - IQ-based tactical potential rolls
 
 ### AI Game Master
 
@@ -104,7 +104,7 @@ A comprehensive full-stack RPG gaming platform inspired by the Palladium Fantasy
 - **Starting Locations**: Multiple campaign starting points
 - **Encounter System**: Random and scripted encounters
 - **Encounter Tables**: Level-appropriate challenges
-- **Bestiary**: Comprehensive monster database with stats
+- **Arena Roster**: Comprehensive opponent database with stats
 - **Time Tracking**: In-game time and calendar system
 - **Rest System**: Short and long rest mechanics
 
@@ -119,18 +119,18 @@ A comprehensive full-stack RPG gaming platform inspired by the Palladium Fantasy
 
 - **Comprehensive Rules Database**:
   - Race data with bonuses and abilities
-  - O.C.C. data with skills and progression
+  - profession data with skills and progression
   - Skills database with descriptions
   - Weapons and armor stats
   - Combat actions reference
   - Movement rules
-  - Spell compendium
-  - Bestiary (dragons, giants, monsters)
+  - Technique compendium
+  - Arena Roster (animals, heavys, opponents)
   - NPC archetypes and templates
 - **Preprocessed Datasets**: Optimized for AI queries (JSON, JSONL, TXT, MD formats)
 - **Cross-references**: Linked game rules and mechanics
 
-## 🛠️ Technology Stack
+## ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂºÃ‚Â ÃƒÂ¯Ã‚Â¸Ã‚Â Technology Stack
 
 ### Frontend
 
@@ -163,43 +163,43 @@ A comprehensive full-stack RPG gaming platform inspired by the Palladium Fantasy
 - **bcrypt**: Password hashing
 - **Express middleware**: Auth guards and validation
 
-## 📁 Project Structure
+## ÃƒÂ°Ã…Â¸Ã¢â‚¬Å“Ã‚Â Project Structure
 
 ```
 charcreat/
-├── backend/
-│   ├── config/          # Database configuration
-│   ├── controllers/     # Route controllers
-│   ├── data/            # Game data (JSON)
-│   ├── middleware/      # Auth, validation, error handling
-│   ├── models/          # Mongoose schemas
-│   ├── routes/          # API endpoints
-│   ├── scripts/         # Utility scripts (seeding, building indices)
-│   ├── server/
-│   │   ├── prompt/      # AI prompt templates
-│   │   ├── rag/         # RAG implementation
-│   │   └── tools/       # AI tools and functions
-│   ├── shared/          # Shared utilities
-│   └── server.js        # Entry point
-│
-├── src/
-│   ├── components/      # React components
-│   ├── context/         # React context providers
-│   ├── data/            # Frontend game data
-│   ├── engine/          # Game logic (encounters, etc.)
-│   ├── hooks/           # Custom React hooks
-│   ├── pages/           # Page components
-│   ├── services/        # API services
-│   ├── styles/          # CSS files
-│   ├── utils/           # Utility functions
-│   └── main.jsx         # React entry point
-│
-├── public/              # Static assets
-├── exports/             # Character exports
-└── scripts/             # Build scripts
+ÃƒÂ¢Ã¢â‚¬ÂÃ…â€œÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ backend/
+ÃƒÂ¢Ã¢â‚¬ÂÃ¢â‚¬Å¡   ÃƒÂ¢Ã¢â‚¬ÂÃ…â€œÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ config/          # Database configuration
+ÃƒÂ¢Ã¢â‚¬ÂÃ¢â‚¬Å¡   ÃƒÂ¢Ã¢â‚¬ÂÃ…â€œÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ conchampioners/     # Route conchampioners
+ÃƒÂ¢Ã¢â‚¬ÂÃ¢â‚¬Å¡   ÃƒÂ¢Ã¢â‚¬ÂÃ…â€œÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ data/            # Game data (JSON)
+ÃƒÂ¢Ã¢â‚¬ÂÃ¢â‚¬Å¡   ÃƒÂ¢Ã¢â‚¬ÂÃ…â€œÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ middleware/      # Auth, validation, error handling
+ÃƒÂ¢Ã¢â‚¬ÂÃ¢â‚¬Å¡   ÃƒÂ¢Ã¢â‚¬ÂÃ…â€œÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ models/          # Mongoose schemas
+ÃƒÂ¢Ã¢â‚¬ÂÃ¢â‚¬Å¡   ÃƒÂ¢Ã¢â‚¬ÂÃ…â€œÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ routes/          # API endpoints
+ÃƒÂ¢Ã¢â‚¬ÂÃ¢â‚¬Å¡   ÃƒÂ¢Ã¢â‚¬ÂÃ…â€œÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ scripts/         # Utility scripts (seeding, building indices)
+ÃƒÂ¢Ã¢â‚¬ÂÃ¢â‚¬Å¡   ÃƒÂ¢Ã¢â‚¬ÂÃ…â€œÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ server/
+ÃƒÂ¢Ã¢â‚¬ÂÃ¢â‚¬Å¡   ÃƒÂ¢Ã¢â‚¬ÂÃ¢â‚¬Å¡   ÃƒÂ¢Ã¢â‚¬ÂÃ…â€œÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ prompt/      # AI prompt templates
+ÃƒÂ¢Ã¢â‚¬ÂÃ¢â‚¬Å¡   ÃƒÂ¢Ã¢â‚¬ÂÃ¢â‚¬Å¡   ÃƒÂ¢Ã¢â‚¬ÂÃ…â€œÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ rag/         # RAG implementation
+ÃƒÂ¢Ã¢â‚¬ÂÃ¢â‚¬Å¡   ÃƒÂ¢Ã¢â‚¬ÂÃ¢â‚¬Å¡   ÃƒÂ¢Ã¢â‚¬ÂÃ¢â‚¬ÂÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ tools/       # AI tools and functions
+ÃƒÂ¢Ã¢â‚¬ÂÃ¢â‚¬Å¡   ÃƒÂ¢Ã¢â‚¬ÂÃ…â€œÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ shared/          # Shared utilities
+ÃƒÂ¢Ã¢â‚¬ÂÃ¢â‚¬Å¡   ÃƒÂ¢Ã¢â‚¬ÂÃ¢â‚¬ÂÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ server.js        # Entry point
+ÃƒÂ¢Ã¢â‚¬ÂÃ¢â‚¬Å¡
+ÃƒÂ¢Ã¢â‚¬ÂÃ…â€œÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ src/
+ÃƒÂ¢Ã¢â‚¬ÂÃ¢â‚¬Å¡   ÃƒÂ¢Ã¢â‚¬ÂÃ…â€œÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ components/      # React components
+ÃƒÂ¢Ã¢â‚¬ÂÃ¢â‚¬Å¡   ÃƒÂ¢Ã¢â‚¬ÂÃ…â€œÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ context/         # React context providers
+ÃƒÂ¢Ã¢â‚¬ÂÃ¢â‚¬Å¡   ÃƒÂ¢Ã¢â‚¬ÂÃ…â€œÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ data/            # Frontend game data
+ÃƒÂ¢Ã¢â‚¬ÂÃ¢â‚¬Å¡   ÃƒÂ¢Ã¢â‚¬ÂÃ…â€œÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ engine/          # Game logic (encounters, etc.)
+ÃƒÂ¢Ã¢â‚¬ÂÃ¢â‚¬Å¡   ÃƒÂ¢Ã¢â‚¬ÂÃ…â€œÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ hooks/           # Custom React hooks
+ÃƒÂ¢Ã¢â‚¬ÂÃ¢â‚¬Å¡   ÃƒÂ¢Ã¢â‚¬ÂÃ…â€œÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ pages/           # Page components
+ÃƒÂ¢Ã¢â‚¬ÂÃ¢â‚¬Å¡   ÃƒÂ¢Ã¢â‚¬ÂÃ…â€œÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ services/        # API services
+ÃƒÂ¢Ã¢â‚¬ÂÃ¢â‚¬Å¡   ÃƒÂ¢Ã¢â‚¬ÂÃ…â€œÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ styles/          # CSS files
+ÃƒÂ¢Ã¢â‚¬ÂÃ¢â‚¬Å¡   ÃƒÂ¢Ã¢â‚¬ÂÃ…â€œÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ utils/           # Utility functions
+ÃƒÂ¢Ã¢â‚¬ÂÃ¢â‚¬Å¡   ÃƒÂ¢Ã¢â‚¬ÂÃ¢â‚¬ÂÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ main.jsx         # React entry point
+ÃƒÂ¢Ã¢â‚¬ÂÃ¢â‚¬Å¡
+ÃƒÂ¢Ã¢â‚¬ÂÃ…â€œÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ public/              # Static assets
+ÃƒÂ¢Ã¢â‚¬ÂÃ…â€œÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ exports/             # Character exports
+ÃƒÂ¢Ã¢â‚¬ÂÃ¢â‚¬ÂÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ scripts/             # Build scripts
 ```
 
-## 🚀 Getting Started
+## ÃƒÂ°Ã…Â¸Ã…Â¡Ã¢â€šÂ¬ Getting Started
 
 ### Prerequisites
 
@@ -233,7 +233,7 @@ npm install
 Create a `.env` file in the `backend` directory:
 
 ```env
-MONGODB_URI=mongodb://localhost:27017/palladium
+MONGODB_URI=mongodb://localhost:27017/medieval_combat_simulator
 JWT_SECRET=your_jwt_secret_here
 OPENAI_API_KEY=your_openai_api_key_here
 PORT=5000
@@ -265,19 +265,19 @@ npm run dev
 
 Access the application at `http://localhost:5173`
 
-## 🎲 How to Play
+## ÃƒÂ°Ã…Â¸Ã…Â½Ã‚Â² How to Play
 
 ### Creating a Character
 
 1. Navigate to **Character Creation**
 2. Enter a character name and select gender
 3. Choose a **species** (each has unique attributes)
-4. Select **alignment** (Good, Selfish, or Evil)
+4. Select **alignment** (Good, Shumanish, or Evil)
 5. **Roll attributes** (or use auto-roll for minimum totals)
 6. **Roll bonus dice** for exceptional attributes
 7. Roll **background information** (age, social background, disposition, etc.)
-8. Roll for **psionics** (if applicable)
-9. Select an **O.C.C.** (filtered by race and attributes)
+8. Roll for **tactics** (if applicable)
+9. Select an **profession** (filtered by race and attributes)
 10. Choose **skills** (elective and secondary)
 11. Set your **character level** (1-15) to see projected stats
 12. **Create character** to save to database
@@ -313,17 +313,17 @@ Access the application at `http://localhost:5173`
 3. Purchase gear (checks gold and carry weight)
 4. Manage inventory in **Inventory Manager**
 
-## 🗺️ Game Features
+## ÃƒÂ°Ã…Â¸Ã¢â‚¬â€Ã‚ÂºÃƒÂ¯Ã‚Â¸Ã‚Â Game Features
 
 ### Races Available
 
-Human, Elf, Dwarf, Gnome, Wolfen, Kobold, Goblin, Hob-Goblin, Orc, Ogre, Troll, Troglodyte, Changeling, Faerie, Sprite
+Human, Human, Human, Human, Wolf, Brigand, Brigand, Hob-Brigand, Raider, Heavy Fighter, Champion, Cave Fighter, Duelist, Scout, Sprite
 
 ### Combat Mechanics
 
 - **Attacks per Melee**: Increases with level and skills
-- **Bonuses**: Strike, Parry, Dodge, Damage, Initiative
-- **Saving Throws**: vs Magic, Poison, Psionics, Horror
+- **Bonuses**: Attack, Block, Evade, Damage, Initiative
+- **Saving Throws**: vs Training, Poison, Tactics, Horror
 - **Critical Hits**: Natural 20 mechanics
 - **Called Shots**: Target specific body parts
 
@@ -333,10 +333,10 @@ Human, Elf, Dwarf, Gnome, Wolfen, Kobold, Goblin, Hob-Goblin, Orc, Ogre, Troll, 
 - **HP Growth**: Based on PE and level
 - **Skill Percentages**: Improve with IQ bonuses and level
 - **Combat Prowess**: More attacks and better bonuses
-- **Magic Power**: PPE increases for spellcasters
-- **Psionic Strength**: ISP grows for psychics
+- **Training Power**: stamina increases for techniquecasters
+- **Tactical Strength**: focus grows for psychics
 
-## 📚 API Documentation
+## ÃƒÂ°Ã…Â¸Ã¢â‚¬Å“Ã…Â¡ API Documentation
 
 API documentation is available via Swagger UI when the backend is running:
 
@@ -354,7 +354,7 @@ http://localhost:5000/api-docs
 - `/api/npc` - NPC interactions
 - `/api/combat` - Combat logging
 
-## 🧪 Scripts
+## ÃƒÂ°Ã…Â¸Ã‚Â§Ã‚Âª Scripts
 
 ### Backend Scripts
 
@@ -365,11 +365,11 @@ http://localhost:5000/api-docs
 - `seedItems.js` - Seed items database
 - `checkWeapons.js` - Validate weapon data
 
-## 🎨 UI Components
+## ÃƒÂ°Ã…Â¸Ã…Â½Ã‚Â¨ UI Components
 
 ### Core Components
 
-- **CharacterCreator** - Full character creation wizard
+- **CharacterCreator** - Full character creation duelist
 - **CharacterList** - Browse and manage characters
 - **PartyBuilder** - Create and manage parties
 - **GMAssistant** - AI Game Master interface
@@ -378,42 +378,42 @@ http://localhost:5000/api-docs
 - **WorldMap** - 3D interactive map
 - **NPCChat** - Talk to NPCs
 - **QuestTracker** - Track active quests
-- **BestiaryPanel** - Monster reference
+- **ArenaRosterPanel** - Opponent reference
 - **InitiativeTracker** - Turn order in combat
 
-## 🤝 Contributing
+## ÃƒÂ°Ã…Â¸Ã‚Â¤Ã‚Â Contributing
 
-This is a fan project based on Palladium Fantasy RPG rules. Contributions are welcome!
+This is a fan project based on Medieval Combat Simulator rules. Contributions are welcome!
 
-## ⚖️ Legal & Acknowledgments
+## ÃƒÂ¢Ã…Â¡Ã¢â‚¬â€œÃƒÂ¯Ã‚Â¸Ã‚Â Legal & Acknowledgments
 
 ### Disclaimers
 
-- This project is a **fan creation** and is **not affiliated with or endorsed by Palladium Books**.
-- Game mechanics, species attributes, and rules are based on the Palladium Fantasy RPG system published by Palladium Books.
-- All game rules and mechanics are property of Palladium Books.
+- This project is a **fan creation** and is **not affiliated with or endorsed by Original game content**.
+- Game mechanics, species attributes, and rules are based on the Medieval Combat Simulator system published by Original game content.
+- All game rules and mechanics are property of Original game content.
 - This project is for **educational and entertainment purposes only**.
 
 ### Credits
 
-- **Palladium Books** - Original RPG system and rules
+- **Original game content** - Original RPG system and rules
 - **OpenAI** - GPT models for AI Game Master
 - **ChatGPT** - Assisted in code generation and project structure
 - Community contributors and playtesters
 
-## 📄 License
+## ÃƒÂ°Ã…Â¸Ã¢â‚¬Å“Ã¢â‚¬Å¾ License
 
-This project is open-source and available under the MIT License for the code. Game content and rules remain property of Palladium Books.
+This project is open-source and available under the MIT License for the code. Game content and rules remain property of Original game content.
 
 ---
 
 **Version**: 2.0  
 **Last Updated**: 2025  
-**Game System**: Palladium Fantasy RPG (based on 1st/2nd Edition rules)
+**Game System**: Medieval Combat Simulator (based on 1st/2nd Edition rules)
 
-## 🧭 Appendix — System Diagrams
+## ÃƒÂ°Ã…Â¸Ã‚Â§Ã‚Â­ Astaminandix ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â System Diagrams
 
-### ⚙️ 1. Combat Round Flow Overview
+### ÃƒÂ¢Ã…Â¡Ã¢â€žÂ¢ÃƒÂ¯Ã‚Â¸Ã‚Â 1. Combat Round Flow Overview
 
 ```mermaid
 flowchart TD
@@ -426,18 +426,18 @@ flowchart TD
     Leadership --> Auras[Fear + Command Auras]
     Auras --> AuraConflict[Resolve Aura Conflicts]
     AuraConflict --> Actions[AI/Player Actions]
-    Actions --> EndRound[End Round → Tick Durations]
+    Actions --> EndRound[End Round ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ Tick Durations]
     EndRound --> Start
 ```
 
 ---
 
-### 👁️ 2. Line of Sight and Shared Vision
+### ÃƒÂ°Ã…Â¸Ã¢â‚¬ËœÃ‚ÂÃƒÂ¯Ã‚Â¸Ã‚Â 2. Line of Sight and Shared Vision
 
 ```mermaid
 graph LR
     subgraph Party Vision
-    A[Wizard] -->|sees| E[Enemy]
+    A[Duelist] -->|sees| E[Enemy]
     B[Archer] -->|shares vision| A
     C[Fighter] -->|linked| A
     end
@@ -452,7 +452,7 @@ Allies share any enemy detected by linked party members.
 
 ---
 
-### 💥 3. AoE Spell Propagation
+### ÃƒÂ°Ã…Â¸Ã¢â‚¬â„¢Ã‚Â¥ 3. AoE Technique Propagation
 
 ```mermaid
 graph TD
@@ -466,17 +466,17 @@ graph TD
     classDef rock fill:#555555,stroke:#222222,stroke-width:2px,color:#ffffff
 ```
 
-Propagation halts when it hits cover ≥ 0.8 (rock, cliff, etc.).
+Propagation halts when it hits cover ÃƒÂ¢Ã¢â‚¬Â°Ã‚Â¥ 0.8 (rock, cliff, etc.).
 
 ---
 
-### 🌋 4. Fire and Smoke Spread (per Turn)
+### ÃƒÂ°Ã…Â¸Ã…â€™Ã¢â‚¬Â¹ 4. Fire and Smoke Spread (per Turn)
 
 ```mermaid
 flowchart LR
-    FireTile((🔥)) -->|35% chance| Forest1🌲
-    FireTile -->|50% chance| Smoke1(🌫️)
-    Smoke1 -->|spread| Smoke2(🌫️)
+    FireTile((ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ‚Â¥)) -->|35% chance| Forest1ÃƒÂ°Ã…Â¸Ã…â€™Ã‚Â²
+    FireTile -->|50% chance| Smoke1(ÃƒÂ°Ã…Â¸Ã…â€™Ã‚Â«ÃƒÂ¯Ã‚Â¸Ã‚Â)
+    Smoke1 -->|spread| Smoke2(ÃƒÂ°Ã…Â¸Ã…â€™Ã‚Â«ÃƒÂ¯Ã‚Â¸Ã‚Â)
     FireTile -.blocked by water/rock.-> Stop
     style FireTile fill:#ff6600,stroke:#993300
 ```
@@ -485,13 +485,13 @@ Fire ignites adjacent flammables; smoke expands unless blocked. Wind/humidity mo
 
 ---
 
-### 🌬️ 5. Wind & Weather Influence
+### ÃƒÂ°Ã…Â¸Ã…â€™Ã‚Â¬ÃƒÂ¯Ã‚Â¸Ã‚Â 5. Wind & Weather Influence
 
 ```mermaid
 graph TD
-    WindDir((Wind Vector)) --> FireSpread[🔥 Fire Spread Direction]
-    WindDir --> SmokeDrift[🌫️ Smoke Drift]
-    Rain[☔ Rain / Humidity] -->|reduces| FireSpread
+    WindDir((Wind Vector)) --> FireSpread[ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ‚Â¥ Fire Spread Direction]
+    WindDir --> SmokeDrift[ÃƒÂ°Ã…Â¸Ã…â€™Ã‚Â«ÃƒÂ¯Ã‚Â¸Ã‚Â Smoke Drift]
+    Rain[ÃƒÂ¢Ã‹Å“Ã¢â‚¬Â Rain / Humidity] -->|reduces| FireSpread
     Rain -->|extinguish| FireTile
     style WindDir fill:#99ccff,stroke:#0066aa
     style Rain fill:#aaccee,stroke:#004477
@@ -499,7 +499,7 @@ graph TD
 
 ---
 
-### 🤖 6. AI Environmental Awareness
+### ÃƒÂ°Ã…Â¸Ã‚Â¤Ã¢â‚¬â€œ 6. AI Environmental Awareness
 
 ```mermaid
 stateDiagram-v2
@@ -510,7 +510,7 @@ stateDiagram-v2
     HazardCheck --> LowHP
     LowHP: Evaluate HP < 25%
     LowHP --> MoraleEval
-    MoraleEval: Roll Morale / Horror Factor
+    MoraleEval: Roll Morale / dreadRating
     MoraleEval --> Decision
     Decision --> Flee: if panic/break
     Decision --> Hide: if in smoke & unseen
@@ -524,31 +524,31 @@ stateDiagram-v2
 
 ---
 
-### 🧠 7. Morale & Leadership Flow
+### ÃƒÂ°Ã…Â¸Ã‚Â§Ã‚Â  7. Morale & Leadership Flow
 
 ```mermaid
 flowchart TD
-    Encounter[Sees Horror or Fire] --> HorrorRoll[Roll vs Horror Factor]
-    HorrorRoll -->|Fail| Panic[😱 Panic / Stunned]
+    Encounter[Sees Horror or Fire] --> HorrorRoll[Roll vs dreadRating]
+    HorrorRoll -->|Fail| Panic[ÃƒÂ°Ã…Â¸Ã‹Å“Ã‚Â± Panic / Stunned]
     HorrorRoll -->|Success| MoraleCheck[Morale Check]
-    MoraleCheck -->|Fail| Retreat[🚶 Retreat]
-    MoraleCheck -->|Success| Steady[🛡️ Hold Ground]
+    MoraleCheck -->|Fail| Retreat[ÃƒÂ°Ã…Â¸Ã…Â¡Ã‚Â¶ Retreat]
+    MoraleCheck -->|Success| Steady[ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂºÃ‚Â¡ÃƒÂ¯Ã‚Â¸Ã‚Â Hold Ground]
     Retreat --> RallyCheck[Nearby Leader?]
     Steady --> RallyCheck
-    RallyCheck -->|Yes| ReRoll[🗣️ Re-roll w/ Leadership Bonus]
+    RallyCheck -->|Yes| ReRoll[ÃƒÂ°Ã…Â¸Ã¢â‚¬â€Ã‚Â£ÃƒÂ¯Ã‚Â¸Ã‚Â Re-roll w/ Leadership Bonus]
     ReRoll --> NewState{Result}
-    NewState -->|Success| Rallied[✅ Rallied]
-    NewState -->|Fail| Broken[❌ Broken]
+    NewState -->|Success| Rallied[ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Rallied]
+    NewState -->|Fail| Broken[ÃƒÂ¢Ã‚ÂÃ…â€™ Broken]
 ```
 
 ---
 
-### 🏰 8. Chain of Command Influence
+### ÃƒÂ°Ã…Â¸Ã‚ÂÃ‚Â° 8. Chain of Command Influence
 
 ```mermaid
 graph TD
-    Commander[Orc Chieftain 🛡️] --> Sergeant[Orc Sergeant 📢]
-    Sergeant --> Troops[Orc Grunts ⚔️]
+    Commander[Raider Chieftain ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂºÃ‚Â¡ÃƒÂ¯Ã‚Â¸Ã‚Â] --> Sergeant[Raider Sergeant ÃƒÂ°Ã…Â¸Ã¢â‚¬Å“Ã‚Â¢]
+    Sergeant --> Troops[Raider Grunts ÃƒÂ¢Ã…Â¡Ã¢â‚¬ÂÃƒÂ¯Ã‚Â¸Ã‚Â]
     style Commander fill:#ff5555,stroke:#660000,stroke-width:2px
     style Sergeant fill:#ff9999,stroke:#660000,stroke-width:1.5px
     style Troops fill:#ffcccc,stroke:#660000
@@ -558,12 +558,12 @@ Leadership propagates morale bonuses through hierarchy; losing a leader breaks t
 
 ---
 
-### 😈 9. Fear & Command Aura Interaction
+### ÃƒÂ°Ã…Â¸Ã‹Å“Ã‹â€  9. Fear & Command Aura Interaction
 
 ```mermaid
 graph LR
-    Demon[(Demon HF16)]:::fear --> |terror| Human[(Human Soldier)]
-    EvilLeader[(Evil Commander)]:::command --> |intimidation| Orc[(Orc Grunt)]
+    Raider[(Raider dreadRating16)]:::fear --> |terror| Human[(Human Soldier)]
+    EvilLeader[(Evil Commander)]:::command --> |intimidation| Raider[(Raider Grunt)]
     Human --> Paladin[(Paladin)]:::leadership
     Paladin --> Human
     classDef fear fill:#aa00ff,stroke:#330033,color:#fff
@@ -575,20 +575,20 @@ Overlapping fear and leadership create contested morale checks.
 
 ---
 
-### ⚖️ 10. Aura Conflict Resolution Flow
+### ÃƒÂ¢Ã…Â¡Ã¢â‚¬â€œÃƒÂ¯Ã‚Â¸Ã‚Â 10. Aura Conflict Resolution Flow
 
 ```mermaid
 flowchart TD
     Detect[Detect Overlapping Auras] --> Calculate[Compute Fear + Command + Leadership Power]
-    Calculate --> Net[(net = courage − fear)]
-    Net -->|>3| Rallied[✅ Rallied]
-    Net -->|−3 ≤ net ≤ 3| Steady[🛡️ Steady]
-    Net -->|< −3| Terrified[😱 Terrified]
+    Calculate --> Net[(net = courage ÃƒÂ¢Ã‹â€ Ã¢â‚¬â„¢ fear)]
+    Net -->|>3| Rallied[ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Rallied]
+    Net -->|ÃƒÂ¢Ã‹â€ Ã¢â‚¬â„¢3 ÃƒÂ¢Ã¢â‚¬Â°Ã‚Â¤ net ÃƒÂ¢Ã¢â‚¬Â°Ã‚Â¤ 3| Steady[ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂºÃ‚Â¡ÃƒÂ¯Ã‚Â¸Ã‚Â Steady]
+    Net -->|< ÃƒÂ¢Ã‹â€ Ã¢â‚¬â„¢3| Terrified[ÃƒÂ°Ã…Â¸Ã‹Å“Ã‚Â± Terrified]
 ```
 
 ---
 
-### 🔄 11. Complete System Interplay
+### ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ¢â‚¬Å¾ 11. Complete System Interplay
 
 ```mermaid
 graph TD
@@ -617,7 +617,7 @@ graph TD
 
 ---
 
-### 💾 12. System Architecture Map
+### ÃƒÂ°Ã…Â¸Ã¢â‚¬â„¢Ã‚Â¾ 12. System Architecture Map
 
 ```mermaid
 graph TD
@@ -641,25 +641,25 @@ graph TD
 
 ---
 
-## ✅ Visual Legend
+## ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Visual Legend
 
 | Symbol | Meaning                     |
 | ------ | --------------------------- |
-| 🔥     | Fire tile / burning area    |
-| 🌫️     | Smoke / fog blocking LoS    |
-| ⚔️     | Combat / attack phase       |
-| 🧠     | Morale or AI reasoning step |
-| 🗣️     | Leadership or rally event   |
-| 😱     | Fear / Horror factor check  |
-| 🏰     | Chain-of-command effect     |
-| ⚖️     | Aura conflict resolution    |
-| 💨     | Wind / weather system       |
+| ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ‚Â¥     | Fire tile / burning area    |
+| ÃƒÂ°Ã…Â¸Ã…â€™Ã‚Â«ÃƒÂ¯Ã‚Â¸Ã‚Â     | Smoke / fog blocking LoS    |
+| ÃƒÂ¢Ã…Â¡Ã¢â‚¬ÂÃƒÂ¯Ã‚Â¸Ã‚Â     | Combat / attack phase       |
+| ÃƒÂ°Ã…Â¸Ã‚Â§Ã‚Â      | Morale or AI reasoning step |
+| ÃƒÂ°Ã…Â¸Ã¢â‚¬â€Ã‚Â£ÃƒÂ¯Ã‚Â¸Ã‚Â     | Leadership or rally event   |
+| ÃƒÂ°Ã…Â¸Ã‹Å“Ã‚Â±     | Fear / dread rating check  |
+| ÃƒÂ°Ã…Â¸Ã‚ÂÃ‚Â°     | Chain-of-command effect     |
+| ÃƒÂ¢Ã…Â¡Ã¢â‚¬â€œÃƒÂ¯Ã‚Â¸Ã‚Â     | Aura conflict resolution    |
+| ÃƒÂ°Ã…Â¸Ã¢â‚¬â„¢Ã‚Â¨     | Wind / weather system       |
 
 ---
 
-These diagrams supplement the main README, providing quick-reference visuals for the systems you can expect when piloting the Palladium Tactical Engine.
+These diagrams supplement the main README, providing quick-reference visuals for the systems you can expect when piloting the Medieval Combat Simulator Tactical Engine.
 
-## 📎 Appendix: Visual Diagrams
+## ÃƒÂ°Ã…Â¸Ã¢â‚¬Å“Ã…Â½ Astaminandix: Visual Diagrams
 
 The following SVG diagrams live under `docs/assets/` and can be embedded in documentation or rendered inline.
 
@@ -673,4 +673,4 @@ The following SVG diagrams live under `docs/assets/` and can be embedded in docu
 
 ![Legend Reference](docs/assets/legend_reference.svg)
 
-Each SVG is vector-scaled and can be customized (colors, labels) via any SVG editor. Aligning them with the 3D board is as simple as keeping the same flat-top hex proportions (≈30 px per hex edge).
+Each SVG is vector-scaled and can be customized (colors, labels) via any SVG editor. Aligning them with the 3D board is as simple as keeping the same flat-top hex proportions (ÃƒÂ¢Ã¢â‚¬Â°Ã‹â€ 30 px per hex edge).

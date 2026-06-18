@@ -23,7 +23,7 @@ const STATUS_RULES = {
     unique: true,
     stacking: "ignore",
     maxStacks: 1,
-    modifiers: { dodge: -2, strike: -2 },
+    modifiers: { evade: -2, attack: -2 },
   },
   Poisoned: {
     unique: true,

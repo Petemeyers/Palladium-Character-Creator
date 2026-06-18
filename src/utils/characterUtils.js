@@ -4,6 +4,7 @@ import {
   normalizeEquipmentItem,
   syncLegacyArmorFields,
 } from "./equipmentManager.js";
+import clothingEquipmentData from "../data/clothingEquipment.json";
 
 // Helper function to ensure all inventory items have the correct type field
 const ensureItemTypes = (inventory) => {
@@ -122,11 +123,11 @@ const ensureItemTypes = (inventory) => {
   });
 };
 
-// Define equipment and gold based on O.C.C. (Palladium Fantasy 1994 rulebook)
+// Define equipment and gold based on profession (Medieval Combat Simulator 1994 rulebook)
 // Note: clothingEquipmentData will be imported dynamically in assignInitialEquipment
 
 const equipmentByClass = {
-  // 🛡️ MEN OF ARMS O.C.C.s
+  // Ã°Å¸â€ºÂ¡Ã¯Â¸Â MEN OF ARMS professions
   "Mercenary Fighter": {
     inventory: [
       // Clothing, boots, belt
@@ -326,8 +327,8 @@ const equipmentByClass = {
     gold: 120,
     weaponChoice: false, // Paladins get specific weapons
   },
-  // 🔮 MEN OF MAGIC O.C.C.s
-  Wizard: {
+  // Ã°Å¸â€Â® MEN OF TRAINING professions
+  Duelist: {
     inventory: [
       // Clothing, boots, belt
       { name: "Set of clothes", type: "item", category: "Clothing", price: 0 },
@@ -348,16 +349,16 @@ const equipmentByClass = {
         category: "Containers",
         price: 0,
         weight: 0.5,
-        description: "Large sack for carrying magical components and supplies.",
+        description: "Large sack for carrying exceptional components and supplies.",
       },
-      // Magical equipment
+      // Exceptional equipment
       {
         name: "Unused notebook",
         type: "item",
         category: "Equipment",
         price: 10,
         weight: 1,
-        description: "Blank notebook for recording spells and notes.",
+        description: "Blank notebook for recording techniques and notes.",
       },
       {
         name: "Ink",
@@ -365,7 +366,7 @@ const equipmentByClass = {
         category: "Equipment",
         price: 8,
         weight: 0.5,
-        description: "Bottle of ink for writing spells.",
+        description: "Bottle of ink for writing techniques.",
       },
       {
         name: "Pens/Quills",
@@ -373,7 +374,7 @@ const equipmentByClass = {
         category: "Equipment",
         price: 2,
         weight: 0.1,
-        description: "Writing implements for spell notation.",
+        description: "Writing implements for technique notation.",
       },
       {
         name: "Chalk",
@@ -381,7 +382,7 @@ const equipmentByClass = {
         category: "Equipment",
         price: 1,
         weight: 0.1,
-        description: "Chalk for drawing magical circles and symbols.",
+        description: "Chalk for drawing exceptional circles and symbols.",
       },
       {
         name: "Candle",
@@ -389,7 +390,7 @@ const equipmentByClass = {
         category: "Equipment",
         price: 1,
         weight: 0.2,
-        description: "Candle for light and magical rituals.",
+        description: "Candle for light and exceptional rituals.",
       },
       {
         name: "Knife",
@@ -398,15 +399,15 @@ const equipmentByClass = {
         damage: "1d4",
         price: 2,
         weight: 1,
-        description: "Small knife for cutting components and self-defense.",
+        description: "Small knife for cutting components and shuman-defense.",
       },
     ],
     gold: 110,
-    weaponChoice: false, // Wizards get specific equipment
+    weaponChoice: false, // Duelists get specific equipment
   },
-  Warlock: {
+  Mercenary: {
     inventory: [
-      // Standard Men of Magic equipment
+      // Standard Men of Training equipment
       { name: "Set of clothes", type: "item", category: "Clothing", price: 0 },
       { name: "Boots", type: "item", category: "Clothing", price: 0 },
       {
@@ -424,7 +425,7 @@ const equipmentByClass = {
         category: "Containers",
         price: 0,
         weight: 0.5,
-        description: "Large sack for carrying magical components and supplies.",
+        description: "Large sack for carrying exceptional components and supplies.",
       },
       {
         name: "Unused notebook",
@@ -432,7 +433,7 @@ const equipmentByClass = {
         category: "Equipment",
         price: 10,
         weight: 1,
-        description: "Blank notebook for recording spells and notes.",
+        description: "Blank notebook for recording techniques and notes.",
       },
       {
         name: "Ink",
@@ -440,7 +441,7 @@ const equipmentByClass = {
         category: "Equipment",
         price: 8,
         weight: 0.5,
-        description: "Bottle of ink for writing spells.",
+        description: "Bottle of ink for writing techniques.",
       },
       {
         name: "Pens/Quills",
@@ -448,7 +449,7 @@ const equipmentByClass = {
         category: "Equipment",
         price: 2,
         weight: 0.1,
-        description: "Writing implements for spell notation.",
+        description: "Writing implements for technique notation.",
       },
       {
         name: "Chalk",
@@ -456,7 +457,7 @@ const equipmentByClass = {
         category: "Equipment",
         price: 1,
         weight: 0.1,
-        description: "Chalk for drawing magical circles and symbols.",
+        description: "Chalk for drawing exceptional circles and symbols.",
       },
       {
         name: "Candle",
@@ -464,7 +465,7 @@ const equipmentByClass = {
         category: "Equipment",
         price: 1,
         weight: 0.2,
-        description: "Candle for light and magical rituals.",
+        description: "Candle for light and exceptional rituals.",
       },
       {
         name: "Knife",
@@ -473,7 +474,7 @@ const equipmentByClass = {
         damage: "1d4",
         price: 2,
         weight: 1,
-        description: "Small knife for cutting components and self-defense.",
+        description: "Small knife for cutting components and shuman-defense.",
       },
     ],
     gold: 110,
@@ -481,7 +482,7 @@ const equipmentByClass = {
   },
   Diabolist: {
     inventory: [
-      // Standard Men of Magic equipment
+      // Standard Men of Training equipment
       { name: "Set of clothes", type: "item", category: "Clothing", price: 0 },
       { name: "Boots", type: "item", category: "Clothing", price: 0 },
       {
@@ -499,7 +500,7 @@ const equipmentByClass = {
         category: "Containers",
         price: 0,
         weight: 0.5,
-        description: "Large sack for carrying magical components and supplies.",
+        description: "Large sack for carrying exceptional components and supplies.",
       },
       {
         name: "Unused notebook",
@@ -507,7 +508,7 @@ const equipmentByClass = {
         category: "Equipment",
         price: 10,
         weight: 1,
-        description: "Blank notebook for recording spells and notes.",
+        description: "Blank notebook for recording techniques and notes.",
       },
       {
         name: "Ink",
@@ -515,7 +516,7 @@ const equipmentByClass = {
         category: "Equipment",
         price: 8,
         weight: 0.5,
-        description: "Bottle of ink for writing spells.",
+        description: "Bottle of ink for writing techniques.",
       },
       {
         name: "Pens/Quills",
@@ -523,7 +524,7 @@ const equipmentByClass = {
         category: "Equipment",
         price: 2,
         weight: 0.1,
-        description: "Writing implements for spell notation.",
+        description: "Writing implements for technique notation.",
       },
       {
         name: "Chalk",
@@ -531,7 +532,7 @@ const equipmentByClass = {
         category: "Equipment",
         price: 1,
         weight: 0.1,
-        description: "Chalk for drawing magical circles and symbols.",
+        description: "Chalk for drawing exceptional circles and symbols.",
       },
       {
         name: "Candle",
@@ -539,7 +540,7 @@ const equipmentByClass = {
         category: "Equipment",
         price: 1,
         weight: 0.2,
-        description: "Candle for light and magical rituals.",
+        description: "Candle for light and exceptional rituals.",
       },
       {
         name: "Knife",
@@ -548,15 +549,15 @@ const equipmentByClass = {
         damage: "1d4",
         price: 2,
         weight: 1,
-        description: "Small knife for cutting components and self-defense.",
+        description: "Small knife for cutting components and shuman-defense.",
       },
     ],
     gold: 110,
     weaponChoice: false,
   },
-  "Mind Mage": {
+  "Tactician": {
     inventory: [
-      // Standard Men of Magic equipment
+      // Standard Men of Training equipment
       { name: "Set of clothes", type: "item", category: "Clothing", price: 0 },
       { name: "Boots", type: "item", category: "Clothing", price: 0 },
       {
@@ -574,7 +575,7 @@ const equipmentByClass = {
         category: "Containers",
         price: 0,
         weight: 0.5,
-        description: "Large sack for carrying magical components and supplies.",
+        description: "Large sack for carrying exceptional components and supplies.",
       },
       {
         name: "Unused notebook",
@@ -582,7 +583,7 @@ const equipmentByClass = {
         category: "Equipment",
         price: 10,
         weight: 1,
-        description: "Blank notebook for recording spells and notes.",
+        description: "Blank notebook for recording techniques and notes.",
       },
       {
         name: "Ink",
@@ -590,7 +591,7 @@ const equipmentByClass = {
         category: "Equipment",
         price: 8,
         weight: 0.5,
-        description: "Bottle of ink for writing spells.",
+        description: "Bottle of ink for writing techniques.",
       },
       {
         name: "Pens/Quills",
@@ -598,7 +599,7 @@ const equipmentByClass = {
         category: "Equipment",
         price: 2,
         weight: 0.1,
-        description: "Writing implements for spell notation.",
+        description: "Writing implements for technique notation.",
       },
       {
         name: "Chalk",
@@ -606,7 +607,7 @@ const equipmentByClass = {
         category: "Equipment",
         price: 1,
         weight: 0.1,
-        description: "Chalk for drawing magical circles and symbols.",
+        description: "Chalk for drawing exceptional circles and symbols.",
       },
       {
         name: "Candle",
@@ -614,7 +615,7 @@ const equipmentByClass = {
         category: "Equipment",
         price: 1,
         weight: 0.2,
-        description: "Candle for light and magical rituals.",
+        description: "Candle for light and exceptional rituals.",
       },
       {
         name: "Knife",
@@ -623,13 +624,13 @@ const equipmentByClass = {
         damage: "1d4",
         price: 2,
         weight: 1,
-        description: "Small knife for cutting components and self-defense.",
+        description: "Small knife for cutting components and shuman-defense.",
       },
     ],
     gold: 110,
     weaponChoice: false,
   },
-  // ✝️ CLERGY O.C.C.s
+  // Ã¢Å“ÂÃ¯Â¸Â CLERGY professions
   Priest: {
     inventory: [
       // Clothing, boots, belt
@@ -693,7 +694,7 @@ const equipmentByClass = {
         damage: "1d4",
         price: 2,
         weight: 1,
-        description: "Small knife for cutting bandages and self-defense.",
+        description: "Small knife for cutting bandages and shuman-defense.",
       },
     ],
     gold: 105,
@@ -760,7 +761,7 @@ const equipmentByClass = {
         damage: "1d4",
         price: 2,
         weight: 1,
-        description: "Small knife for cutting bandages and self-defense.",
+        description: "Small knife for cutting bandages and shuman-defense.",
       },
     ],
     gold: 105,
@@ -827,13 +828,13 @@ const equipmentByClass = {
         damage: "1d4",
         price: 2,
         weight: 1,
-        description: "Small knife for cutting bandages and self-defense.",
+        description: "Small knife for cutting bandages and shuman-defense.",
       },
     ],
     gold: 105,
     weaponChoice: false,
   },
-  // ⚒️ OPTIONAL O.C.C.s
+  // Ã¢Å¡â€™Ã¯Â¸Â OPTIONAL professions
   Peasant: {
     inventory: [
       // Clothing, boots
@@ -855,7 +856,7 @@ const equipmentByClass = {
   },
   Merchant: {
     inventory: [
-      // Standard Optional O.C.C. equipment
+      // Standard Optional profession equipment
       { name: "Set of clothes", type: "item", category: "Clothing", price: 0 },
       { name: "Boots", type: "item", category: "Clothing", price: 0 },
       {
@@ -953,7 +954,7 @@ const equipmentByClass = {
   },
   Squire: {
     inventory: [
-      // Standard Optional O.C.C. equipment
+      // Standard Optional profession equipment
       { name: "Set of clothes", type: "item", category: "Clothing", price: 0 },
       { name: "Boots", type: "item", category: "Clothing", price: 0 },
       {
@@ -987,7 +988,7 @@ const equipmentByClass = {
   },
   Scholar: {
     inventory: [
-      // Standard Optional O.C.C. equipment
+      // Standard Optional profession equipment
       { name: "Set of clothes", type: "item", category: "Clothing", price: 0 },
       { name: "Boots", type: "item", category: "Clothing", price: 0 },
       {
@@ -1029,7 +1030,7 @@ const equipmentByClass = {
   },
 };
 
-// Low quality weapon options for new characters (Palladium Fantasy standard)
+// Low quality weapon options for new characters (Medieval Combat Simulator standard)
 const lowQualityWeapons = [
   {
     name: "Club",
@@ -1047,7 +1048,7 @@ const lowQualityWeapons = [
     damage: "1d6",
     price: 2,
     weight: 1,
-    description: "A basic dagger for self-defense.",
+    description: "A basic dagger for shuman-defense.",
   },
   {
     name: "Short Sword",
@@ -1079,7 +1080,7 @@ const lowQualityWeapons = [
   },
 ];
 
-// Default equipment for classes not specifically defined (Optional O.C.C. template)
+// Default equipment for classes not specifically defined (Optional profession template)
 const defaultEquipment = {
   inventory: [
     { name: "Set of clothes", type: "item", category: "Clothing", price: 0 },
@@ -1112,7 +1113,7 @@ const buildLayeredEquipmentFromItems = (items = []) => {
     }
 
     const result = equipLayer(equipment.worn, normalized);
-    if (result.equipped) {
+    if (result.equistaminad) {
       equipment.worn = result.worn;
     }
   });
@@ -1124,15 +1125,10 @@ export const assignInitialEquipment = async (
   characterClass,
   characterRace = "Human"
 ) => {
-  console.log("🚀 assignInitialEquipment called with:", {
+  console.log("Ã°Å¸Å¡â‚¬ assignInitialEquipment called with:", {
     characterClass,
     characterRace,
   });
-
-  // Import clothing data dynamically
-  const clothingEquipmentData = await import("../data/clothingEquipment.json", {
-    assert: { type: "json" },
-  }).then((m) => m.default);
 
   const baseEquipment = equipmentByClass[characterClass] || defaultEquipment;
 
@@ -1144,20 +1140,20 @@ export const assignInitialEquipment = async (
     const randomWeapon =
       lowQualityWeapons[Math.floor(Math.random() * lowQualityWeapons.length)];
     equipment.inventory.push(randomWeapon);
-    console.log("🎲 Random weapon selected:", randomWeapon.name);
+    console.log("Ã°Å¸Å½Â² Random weapon selected:", randomWeapon.name);
   }
 
   // Remove the weaponChoice flag from the final equipment
   delete equipment.weaponChoice;
 
-  console.log("📦 Base equipment:", equipment);
+  console.log("Ã°Å¸â€œÂ¦ Base equipment:", equipment);
 
   // Ensure all items have the correct type field
   equipment.inventory = ensureItemTypes(equipment.inventory);
 
   // Replace generic clothing with race-specific clothing
   const raceKey =
-    characterRace.charAt(0).toUpperCase() +
+    characterRace.charAt(0).toUstaminarCase() +
     characterRace.slice(1).toLowerCase();
   const raceClothing = clothingEquipmentData?.raceClothing?.[raceKey];
 
@@ -1252,9 +1248,9 @@ export const assignInitialEquipment = async (
 
   equipment.equipment = buildLayeredEquipmentFromItems(equipment.inventory);
   const legacySync = syncLegacyArmorFields({ equipment: equipment.equipment });
-  equipment.equipped = legacySync.equipped || {};
-  equipment.equippedArmor = legacySync.equippedArmor || "";
-  equipment.AR = legacySync.AR;
+  equipment.equistaminad = legacySync.equistaminad || {};
+  equipment.equistaminadArmor = legacySync.equistaminadArmor || "";
+  equipment.guardRating = legacySync.guardRating;
 
   return equipment;
 };

@@ -1,9 +1,9 @@
-// Dynamic encounter engine for Palladium RPG
-import bestiaryData from "../data/bestiary.json";
+// Dynamic encounter engine for Medieval Combat Simulator
+import arenaRosterData from "../data/arenaRoster.js";
 import npcArchetypesData from "../data/npc_archetypes.json";
 import encounterTablesData from "../data/encounter_tables.json";
 import { defaultMerchants } from "../components/data.jsx";
-import { getAllBestiaryEntries } from "../utils/bestiaryUtils.js";
+import { getAllArenaRosterEntries } from "../utils/arenaRosterUtils.js";
 
 // Utility function to roll dice
 const rollDice = (sides, count = 1) => {
@@ -48,7 +48,7 @@ const rollHP = (hpNotation) => {
   return 10; // Default fallback
 };
 
-// Convert bestiary/NPC data to combat-ready format
+// Convert arenaRoster/NPC data to combat-ready format
 const convertToCombatUnit = (entity, id) => {
   const hp = rollHP(entity.HP);
 
@@ -59,7 +59,7 @@ const convertToCombatUnit = (entity, id) => {
     maxHp: hp,
     weapon: entity.attacks?.[0]?.name || "Claw",
     damage: entity.attacks?.[0]?.damage || "1d6",
-    ar: entity.AR || 0,
+    guardRating: entity.guardRating || 0,
     bonuses: entity.bonuses || {},
     abilities: entity.abilities || [],
     category: entity.category,
@@ -69,13 +69,13 @@ const convertToCombatUnit = (entity, id) => {
   };
 };
 
-// Get entity from bestiary or NPC archetypes
+// Get entity from arenaRoster or NPC archetypes
 const getEntity = (entityId) => {
-  // Check bestiary first
-  const bestiaryEntity = getAllBestiaryEntries(bestiaryData).find(
+  // Check arenaRoster first
+  const arenaRosterEntity = getAllArenaRosterEntries(arenaRosterData).find(
     (e) => e.id === entityId
   );
-  if (bestiaryEntity) return bestiaryEntity;
+  if (arenaRosterEntity) return arenaRosterEntity;
 
   // Check NPC archetypes
   const npcEntity = npcArchetypesData.npcArchetypes.find(
@@ -207,7 +207,7 @@ export const getAvailableLocations = () => {
     if (!["daytime", "nighttime"].includes(key)) {
       locations.push({
         id: key,
-        name: key.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase()),
+        name: key.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUstaminarCase()),
       });
     }
   }
@@ -226,15 +226,15 @@ export const getEntityById = (entityId) => {
 export const getAllEntities = () => {
   const entities = [];
 
-  // Add bestiary entities (monsters including playable characters)
-  if (bestiaryData.bestiary) {
-    const bestiaryEntries = getAllBestiaryEntries(bestiaryData);
-    for (const entity of bestiaryEntries) {
+  // Add arenaRoster entities (opponents including playable characters)
+  if (arenaRosterData.arenaRoster) {
+    const arenaRosterEntries = getAllArenaRosterEntries(arenaRosterData);
+    for (const entity of arenaRosterEntries) {
       entities.push({
         id: entity.id,
         name: entity.name,
         category: entity.category,
-        type: "bestiary",
+        type: "arenaRoster",
         playable: entity.playable || false,
       });
     }
@@ -281,7 +281,7 @@ export const calculateEncounterDifficulty = (enemies) => {
 
   for (const enemy of enemies) {
     totalHP += enemy.hp || 10;
-    totalAR += enemy.ar || 0;
+    totalAR += enemy.guardRating || 0;
   }
 
   const avgHP = totalHP / enemies.length;

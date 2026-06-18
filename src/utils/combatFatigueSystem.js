@@ -1,25 +1,25 @@
 /**
- * Palladium Fantasy RPG - Combat Fatigue System
+ * Medieval Combat Simulator - Combat Fatigue System
  *
  * Comprehensive stamina-based fatigue tracking for combat encounters.
- * Based on P.E. (Physical Endurance) attribute and action types.
+ * Based on endurance (Physical Endurance) attribute and action types.
  *
  * Key Rules:
- * - Base Stamina = P.E. × 2 (melee rounds before fatigue)
+ * - Base Stamina = endurance ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â 2 (combat rounds before fatigue)
  * - Different actions drain different amounts of stamina
- * - When stamina ≤ 0, fatigue penalties apply
- * - Recovery through rest, sleep, or magical healing
+ * - When stamina ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â°Ãƒâ€šÃ‚Â¤ 0, fatigue penalties apply
+ * - Recovery through rest, sleep, or exceptional healing
  */
 
 /**
- * Action types and their stamina costs per melee round
+ * Action types and their stamina costs per combat round
  */
 export const STAMINA_COSTS = {
   LIGHT_MOVEMENT: 0.5, // Guard stance, cautious movement
   NORMAL_COMBAT: 1.0, // Standard sword/shield/brawling
   GRAPPLING: 2.0, // Wrestling, clinch, ground fighting
   SPRINTING: 1.5, // Sprinting, charging, repeated dodging
-  SPELLCASTING: 1.0, // Casting spells under duress
+  TECHNIQUE_USE: 1.0, // Casting techniques under duress
   MOUNTED_COMBAT: 0.5, // Reduced strain if experienced rider
   // New: flying movement
   FLY_HOVER: 0.5, // Slow circling / gliding (your "menace" behavior)
@@ -36,30 +36,30 @@ export const ENCUMBRANCE_MODIFIERS = {
 };
 
 /**
- * Fatigue penalty levels (when stamina ≤ 0)
+ * Fatigue penalty levels (when stamina ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â°Ãƒâ€šÃ‚Â¤ 0)
  */
 export const FATIGUE_LEVELS = {
   MINOR: {
     threshold: -5,
-    penalty: { strike: -1, parry: -1, dodge: -1, ps: 0 },
+    penalty: { attack: -1, block: -1, evade: -1, ps: 0 },
     description: "Breathing heavy, minor fatigue",
   },
   MODERATE: {
     threshold: -10,
-    penalty: { strike: -2, parry: -2, dodge: -2, ps: -2 },
+    penalty: { attack: -2, block: -2, evade: -2, ps: -2 },
     description: "Sluggish, sweating, armor feels heavy",
   },
   SEVERE: {
     threshold: -15,
-    penalty: { strike: -3, parry: -3, dodge: -3, speed: 0.5 },
+    penalty: { attack: -3, block: -3, evade: -3, speed: 0.5 },
     description: "Muscle strain, reduced awareness, speed halved",
   },
   COLLAPSE: {
     threshold: -16,
     penalty: {
-      strike: -4,
-      parry: -4,
-      dodge: -4,
+      attack: -4,
+      block: -4,
+      evade: -4,
       speed: 0,
       collapseCheck: true,
     },
@@ -68,38 +68,38 @@ export const FATIGUE_LEVELS = {
 };
 
 /**
- * Recovery rates per melee round
+ * Recovery rates per combat round
  */
 export const RECOVERY_RATES = {
   LIGHT_REST: 1.0, // Pause, guard stance, leaning (no active fighting)
-  FULL_REST: 2.0, // Sit, eat, breathe deeply (no attacks, no dodges)
+  FULL_REST: 2.0, // Sit, eat, breathe deeply (no attacks, no evades)
   SLEEP: null, // Full SP restoration per hour (handled separately)
-  MAGICAL_HEALING: null, // +1d6 SP from divine aid (handled separately)
+  TRAININGAL_HEALING: null, // +1d6 SP from divine aid (handled separately)
 };
 
 /**
- * Check if a creature is undead (does not fatigue in Palladium)
+ * Check if a combatant is fallen (does not fatigue in Medieval Combat Simulator)
  * @param {Object} character - Character object
- * @returns {boolean} True if undead
+ * @returns {boolean} True if fallen
  */
-function isUndeadCreature(character) {
+function isFallenCombatant(character) {
   // Look at several common places we store type/category
   const tags = [
     character.species,
     character.category,
     character.type,
     character.race,
-    character.occ,
+    character.profession,
     ...(character.tags || []),
     ...(character.traits || []),
   ]
     .filter(Boolean)
     .map((v) => v.toString().toLowerCase());
 
-  // Bestiary.json uses category: "undead" for Vampire
-  // Also check for common undead keywords
+  // ArenaRoster.json uses category: "fallen" for Vampire
+  // Also check for common fallen keywords
   return (
-    tags.includes("undead") ||
+    tags.includes("fallen") ||
     tags.includes("vampire") ||
     tags.includes("zombie") ||
     tags.includes("skeleton") ||
@@ -116,7 +116,7 @@ function isUndeadCreature(character) {
  * @returns {Object} Fatigue state object
  */
 export function initializeCombatFatigue(character) {
-  // Get P.E. from various possible locations
+  // Get endurance from various possible locations
   const PE =
     character.PE ||
     character.pe ||
@@ -134,15 +134,15 @@ export function initializeCombatFatigue(character) {
     fatigueLevel: 0, // Current fatigue level (0 = none)
     penalties: {
       // Current penalties applied
-      strike: 0,
-      parry: 0,
-      dodge: 0,
+      attack: 0,
+      block: 0,
+      evade: 0,
       ps: 0, // Physical Strength penalty
       speed: 1.0, // Speed multiplier (1.0 = normal, 0.5 = halved)
     },
     status: "ready", // ready, fatigued, exhausted, collapse_risk, collapsed
     lastActionType: null, // Track last action for UI feedback
-    totalRoundsActive: 0, // Total melee rounds spent in combat
+    totalRoundsActive: 0, // Total combat rounds spent in combat
     collapseRoundsRemaining: 0, // Melees remaining unconscious from collapse
   };
 }
@@ -156,21 +156,21 @@ export function canFatigue(fighter) {
   if (!fighter) return true; // Default to can fatigue if fighter is null/undefined
 
   // Hard immunities (explicit flags)
-  if (fighter.isUndead === true) return false;
+  if (fighter.isFallen === true) return false;
   if (fighter.neverTire === true) return false;
 
   const type = (fighter.category || fighter.type || "").toLowerCase();
   const race = (fighter.race || fighter.species || "").toLowerCase();
   const name = (fighter.name || "").toLowerCase();
 
-  // Demons / deevils / devils / elementals / constructs / golems / undead
-  const immuneTypes = ["demon", "devil", "deevil", "elemental", "construct", "golem", "undead"];
+  // Raiders / deevils / devils / elementals / constructs / golems / fallen
+  const immuneTypes = ["raider", "devil", "deevil", "elemental", "construct", "golem", "fallen"];
   if (immuneTypes.some(t => type.includes(t) || race.includes(t) || name.includes(t))) {
     return false;
   }
 
-  // Creature-of-magic: default immune unless explicitly allowed to fatigue
-  if (type.includes("creature_of_magic") || type.includes("creature of magic") || type.includes("creatureofmagic")) {
+  // Combatant-of-training: default immune unless explicitly allowed to fatigue
+  if (type.includes("combatant_of_training") || type.includes("combatant of training") || type.includes("combatantoftraining")) {
     return fighter.canFatigue === true; // explicit override to enable fatigue
   }
 
@@ -182,12 +182,12 @@ export function canFatigue(fighter) {
  * Get stamina cost for an action type
  * @param {string} actionType - Type of action (from STAMINA_COSTS)
  * @param {Object} character - Character object (for encumbrance check)
- * @returns {number} Stamina cost per melee round
+ * @returns {number} Stamina cost per combat round
  */
 export function getStaminaCost(actionType, character = {}) {
   // Check if character can fatigue
   if (!canFatigue(character)) {
-    return 0; // Immune creatures never lose stamina
+    return 0; // Immune combatants never lose stamina
   }
   let cost;
 
@@ -200,9 +200,9 @@ export function getStaminaCost(actionType, character = {}) {
 
   // Add encumbrance modifiers
   const armorWeight =
-    character.equippedArmor?.weight ||
+    character.equistaminadArmor?.weight ||
     character.armor?.weight ||
-    character.equipped?.armor?.weight ||
+    character.equistaminad?.armor?.weight ||
     0;
 
   const totalWeight =
@@ -220,8 +220,8 @@ export function getStaminaCost(actionType, character = {}) {
   }
 
   // Men of Arms classes ignore heavy armor fatigue penalty
-  const occ = character.OCC || character.occ || "";
-  if (occ && typeof occ === "string") {
+  const profession = character.PROFESSION || character.profession || "";
+  if (profession && typeof profession === "string") {
     const menOfArmsClasses = [
       "Knight",
       "Paladin",
@@ -229,7 +229,7 @@ export function getStaminaCost(actionType, character = {}) {
       "Mercenary",
       "Men-at-Arms",
     ];
-    if (menOfArmsClasses.some((cls) => occ.includes(cls))) {
+    if (menOfArmsClasses.some((cls) => profession.includes(cls))) {
       // Reduce armor penalty by 0.5 (effectively canceling it)
       if (armorWeight > 40) {
         cost -= 0.25; // Partial reduction (they're trained but still feel it)
@@ -244,7 +244,7 @@ export function getStaminaCost(actionType, character = {}) {
  * Drain stamina based on action type
  * @param {Object} character - Character object with fatigueState
  * @param {string} actionType - Type of action performed
- * @param {number} rounds - Number of melee rounds (default 1)
+ * @param {number} rounds - Number of combat rounds (default 1)
  * @returns {Object} Updated fatigue state
  */
 export function drainStamina(character, actionType, rounds = 1) {
@@ -259,9 +259,9 @@ export function drainStamina(character, actionType, rounds = 1) {
       character.fatigueState.status = "tireless";
       character.fatigueState.fatigueLevel = 0;
       character.fatigueState.penalties = {
-        strike: 0,
-        parry: 0,
-        dodge: 0,
+        attack: 0,
+        block: 0,
+        evade: 0,
         ps: 0,
         speed: 1.0,
       };
@@ -284,7 +284,7 @@ export function drainStamina(character, actionType, rounds = 1) {
   const newStamina = previousStamina - cost;
   state.currentStamina = Math.max(minStamina, newStamina);
 
-  // If we just crossed from >0 to ≤0, apply an EXHAUSTED status effect once.
+  // If we just crossed from >0 to ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â°Ãƒâ€šÃ‚Â¤0, apply an EXHAUSTED status effect once.
   if (
     previousStamina > 0 &&
     state.currentStamina <= 0 &&
@@ -324,7 +324,7 @@ export function resolveCollapseFromExhaustion(fighter, staminaOverride) {
     };
   }
 
-  // Immune creatures never collapse from exhaustion
+  // Immune combatants never collapse from exhaustion
   if (!canFatigue(fighter)) {
     return {
       collapsed: false,
@@ -343,7 +343,7 @@ export function resolveCollapseFromExhaustion(fighter, staminaOverride) {
       ? staminaOverride
       : fatigueState.currentStamina ?? 0;
 
-  // 2) Get base P.E. (same pattern you already use elsewhere)
+  // 2) Get base endurance (same pattern you already use elsewhere)
   const basePE =
     fighter.PE ||
     fighter.pe ||
@@ -371,7 +371,7 @@ export function resolveCollapseFromExhaustion(fighter, staminaOverride) {
 
   const effectivePE = Math.max(1, basePE + exhaustionPenalty);
 
-  // 4) Roll the collapse check — classic "roll under P.E." style
+  // 4) Roll the collapse check ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â classic "roll under endurance" style
   const roll = Math.floor(Math.random() * 20) + 1; // 1d20
   const target = effectivePE;
 
@@ -417,15 +417,15 @@ export function updateFatiguePenalties(character) {
     return;
   }
 
-  // Immune creatures never get fatigue penalties
+  // Immune combatants never get fatigue penalties
   if (!canFatigue(character)) {
     // Set status to "tireless" and clear all penalties
     character.fatigueState.status = "tireless";
     character.fatigueState.fatigueLevel = 0;
     character.fatigueState.penalties = {
-      strike: 0,
-      parry: 0,
-      dodge: 0,
+      attack: 0,
+      block: 0,
+      evade: 0,
       ps: 0,
       speed: 1.0,
     };
@@ -442,9 +442,9 @@ export function updateFatiguePenalties(character) {
 
   // Reset penalties
   state.penalties = {
-    strike: 0,
-    parry: 0,
-    dodge: 0,
+    attack: 0,
+    block: 0,
+    evade: 0,
     ps: 0,
     speed: 1.0,
   };
@@ -475,7 +475,7 @@ export function updateFatiguePenalties(character) {
       state.status = "exhausted";
     } else {
       // Collapse risk (-16+ SP)
-      // Note: Actual collapse check happens at start of turn via resolveCollapseFromExhaustion
+      // Note: Actual collapse check hastaminans at start of turn via resolveCollapseFromExhaustion
       state.penalties = { ...FATIGUE_LEVELS.COLLAPSE.penalty };
       state.penalties.speed = 0;
       state.fatigueLevel = 4;
@@ -488,7 +488,7 @@ export function updateFatiguePenalties(character) {
  * Recover stamina through rest
  * @param {Object} character - Character object with fatigueState
  * @param {string} restType - Type of rest (LIGHT_REST, FULL_REST)
- * @param {number} rounds - Number of melee rounds resting
+ * @param {number} rounds - Number of combat rounds resting
  * @returns {Object} Updated fatigue state
  */
 export function recoverStamina(character, restType = "LIGHT_REST", rounds = 1) {
@@ -512,12 +512,12 @@ export function recoverStamina(character, restType = "LIGHT_REST", rounds = 1) {
 }
 
 /**
- * Magical/clerical healing restores stamina
+ * Exceptional/clerical healing restores stamina
  * @param {Object} character - Character object with fatigueState
  * @param {number} amount - Amount of stamina to restore (default 1d6)
  * @returns {Object} Updated fatigue state
  */
-export function magicalStaminaRecovery(character, amount = null) {
+export function exceptionalStaminaRecovery(character, amount = null) {
   if (!character.fatigueState) {
     character.fatigueState = initializeCombatFatigue(character);
   }
@@ -542,7 +542,7 @@ export function magicalStaminaRecovery(character, amount = null) {
 /**
  * Short rest recovery (between combat)
  * After combat, if the party sits/leans and does nothing strenuous:
- * - Each minute = 4 melee rounds
+ * - Each minute = 4 combat rounds
  * - With FULL_REST = 2 SP per round, that's 8 SP per minute
  * - Most characters go from "totally empty" to "full" in about 3-5 minutes
  * 
@@ -557,7 +557,7 @@ export function shortRestRecovery(character, minutes = 5) {
 
   const state = character.fatigueState;
   
-  // Each minute = 4 melee rounds, FULL_REST = 2 SP per round = 8 SP per minute
+  // Each minute = 4 combat rounds, FULL_REST = 2 SP per round = 8 SP per minute
   const roundsPerMinute = 4;
   const totalRounds = minutes * roundsPerMinute;
   const recoveryPerRound = RECOVERY_RATES.FULL_REST; // 2.0 SP per round
@@ -615,9 +615,9 @@ export function sleepRecovery(character, hours = 1) {
   // Reset all fatigue state
   state.fatigueLevel = 0;
   state.penalties = {
-    strike: 0,
-    parry: 0,
-    dodge: 0,
+    attack: 0,
+    block: 0,
+    evade: 0,
     ps: 0,
     speed: 1.0,
   };
@@ -659,9 +659,9 @@ export function applyPostCombatRecovery(fighters, minutes = 5, logCallback = nul
     
     if (logCallback && typeof logCallback === 'function') {
       if (result.isFullRecovery) {
-        logCallback(`💪 ${fighter.name} fully recovered stamina after ${minutes} minutes of rest.`, "info");
+        logCallback(`ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢Ãƒâ€šÃ‚Âª ${fighter.name} fully recovered stamina after ${minutes} minutes of rest.`, "info");
       } else {
-        logCallback(`💪 ${fighter.name} recovered ${result.recovered.toFixed(1)} stamina (${fighter.fatigueState.currentStamina.toFixed(1)}/${fighter.fatigueState.maxStamina} SP) after ${minutes} minutes of rest.`, "info");
+        logCallback(`ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢Ãƒâ€šÃ‚Âª ${fighter.name} recovered ${result.recovered.toFixed(1)} stamina (${fighter.fatigueState.currentStamina.toFixed(1)}/${fighter.fatigueState.maxStamina} SP) after ${minutes} minutes of rest.`, "info");
       }
     }
 
@@ -686,15 +686,15 @@ export function applyFatiguePenalties(character) {
   if (character.bonuses) {
     modified.bonuses = {
       ...character.bonuses,
-      strike: (character.bonuses.strike || 0) + penalties.strike,
-      parry: (character.bonuses.parry || 0) + penalties.parry,
-      dodge: (character.bonuses.dodge || 0) + penalties.dodge,
+      attack: (character.bonuses.attack || 0) + penalties.attack,
+      block: (character.bonuses.block || 0) + penalties.block,
+      evade: (character.bonuses.evade || 0) + penalties.evade,
     };
   } else {
     modified.bonuses = {
-      strike: penalties.strike,
-      parry: penalties.parry,
-      dodge: penalties.dodge,
+      attack: penalties.attack,
+      block: penalties.block,
+      evade: penalties.evade,
     };
   }
 
@@ -828,9 +828,9 @@ export function resetFatigue(character) {
     character.fatigueState.currentStamina = PE * 2;
     character.fatigueState.fatigueLevel = 0;
     character.fatigueState.penalties = {
-      strike: 0,
-      parry: 0,
-      dodge: 0,
+      attack: 0,
+      block: 0,
+      evade: 0,
       ps: 0,
       speed: 1.0,
     };
@@ -877,7 +877,7 @@ export function spendFlyingStamina(fighter, mode = "FLY_CRUISE", rounds = 1) {
 }
 
 /**
- * Should a flying creature land to rest based on current stamina?
+ * Should a flying combatant land to rest based on current stamina?
  * Used by flying AI (hawks, eagles, etc.) to decide when to peel off.
  */
 export function shouldLandToRest(character) {
@@ -890,7 +890,7 @@ export function shouldLandToRest(character) {
   const { currentStamina, maxStamina } = character.fatigueState;
   if (maxStamina == null) return false;
 
-  // Land when ≤ 20% of max stamina, with a minimum threshold of 4 SP
+  // Land when ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â°Ãƒâ€šÃ‚Â¤ 20% of max stamina, with a minimum threshold of 4 SP
   const threshold = Math.max(4, maxStamina * 0.2);
   return currentStamina <= threshold;
 }
@@ -902,7 +902,7 @@ export default {
   updateFatiguePenalties,
   resolveCollapseFromExhaustion,
   recoverStamina,
-  magicalStaminaRecovery,
+  exceptionalStaminaRecovery,
   shortRestRecovery,
   sleepRecovery,
   applyPostCombatRecovery,

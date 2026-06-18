@@ -40,7 +40,7 @@ export function calculateMovementRange(character, startPosition, options = {}) {
  * @returns {number} Movement points available
  */
 export function getMovementPoints(speed, movementType = "walk") {
-  // TODO: Calculate movement points based on Palladium rules
+  // TODO: Calculate movement points based on Medieval Combat Simulator rules
   // Speed attribute determines base movement
   // Movement type modifies available points
   

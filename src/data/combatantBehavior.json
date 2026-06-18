@@ -1,0 +1,41 @@
+{
+  "combatants": {
+    "human": {
+      "morale": "steady",
+      "preferredRange": "weapon",
+      "canSurrender": true
+    },
+    "animal": {
+      "morale": "instinctive",
+      "preferredRange": "close",
+      "canSurrender": false
+    },
+    "defaultHumanoid": {
+      "morale": "steady",
+      "preferredRange": "weapon",
+      "canSurrender": true
+    }
+  },
+  "species": {
+    "human": {
+      "morale": "steady",
+      "preferredRange": "weapon",
+      "canSurrender": true
+    },
+    "animal": {
+      "morale": "instinctive",
+      "preferredRange": "close",
+      "canSurrender": false
+    },
+    "defaultHumanoid": {
+      "morale": "steady",
+      "preferredRange": "weapon",
+      "canSurrender": true
+    }
+  },
+  "disposition": {
+    "hostile": { "moraleModifier": 0 },
+    "neutral": { "moraleModifier": -1 },
+    "defensive": { "moraleModifier": 1 }
+  }
+}

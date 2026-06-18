@@ -1,6 +1,6 @@
 {
     "phase": "Pre-Combat / Encounter Phase",
-    "description": "Actions taken before initiative. Characters may prowl, observe, cast prep spells, or set ambushes while unseen.",
+    "description": "Actions taken before initiative. Characters may prowl, observe, cast prep techniques, or set ambushes while unseen.",
     "actions": [
       {
         "name": "Observe / Detect",
@@ -34,17 +34,17 @@
         "failureEffect": "N/A"
       },
       {
-        "name": "Cast Preparation Spell",
-        "skill": "Spell Skill / PPE",
-        "roll": "Spell succeeds if uninterrupted",
+        "name": "Cast Preparation Technique",
+        "skill": "Technique Skill / stamina",
+        "roll": "Technique succeeds if uninterrupted",
         "successEffect": "Buff active before initiative; duration starts now.",
-        "failureEffect": "Spell fizzles; PPE spent."
+        "failureEffect": "Technique fizzles; stamina spent."
       },
       {
         "name": "Set Ambush / Trap",
         "skill": ["Trap/Mine", "Detect Ambush"],
         "roll": "d100 <= skill%",
-        "successEffect": "Auto first strike if enemy enters trigger range.",
+        "successEffect": "Auto first attack if enemy enters trigger range.",
         "failureEffect": "Trap malfunctions or is obvious."
       },
       {
@@ -66,14 +66,14 @@
         "skill": ["Disguise", "Concealment"],
         "roll": "d100 <= skill%",
         "successEffect": "Enemies take -20% detect chance.",
-        "failureEffect": "Appearance unconvincing."
+        "failureEffect": "Astaminaarance unconvincing."
       },
       {
-        "name": "Psionic Prep",
+        "name": "Tactical Prep",
         "skill": ["Mind Block", "Sixth Sense", "See the Invisible"],
-        "roll": "d100 <= psionic activation%",
+        "roll": "d100 <= tactical activation%",
         "successEffect": "Power active; detect danger early.",
-        "failureEffect": "ISP spent; power fails."
+        "failureEffect": "focus spent; power fails."
       },
       {
         "name": "Diplomacy / Parley",
@@ -87,7 +87,7 @@
       "environment": {
         "daylight": 0,
         "dusk_or_dawn": -10,
-        "torchlight": -20,
+        "traiderhlight": -20,
         "moonlight": -30,
         "total_darkness": -50,
         "fog_or_smoke": -25
@@ -148,7 +148,7 @@
     "sampleProwlCheckFlow": {
       "playerRoll": "rollD100()",
       "enemyDetectRoll": "rollD100()",
-      "comparison": "If playerRoll <= Prowl% + modifiers and enemyDetectRoll > detectChance → hidden = true",
+      "comparison": "If playerRoll <= Prowl% + modifiers and enemyDetectRoll > detectChance â†’ hidden = true",
       "onSpotted": "Trigger enemyReaction() from alignment + intelligence table"
     },
     "alignmentAggressionModifiers": {
@@ -160,46 +160,46 @@
       "Aberrant": 15,
       "Diabolic": 25,
       "Good": -15,
-      "Selfish": 5,
+      "Shumanish": 5,
       "Evil": 25,
       "Neutral": 0
     },
-    "creatureTypeExamples": [
+    "combatantTypeExamples": [
       {
-        "creature": "Owl",
+        "combatant": "Owl",
         "intelligence": 2,
         "alignment": "Neutral",
         "typicalBehavior": "Stares, then flies away (no attack)"
       },
       {
-        "creature": "Wolf",
+        "combatant": "Wolf",
         "intelligence": 5,
         "alignment": "Neutral",
         "typicalBehavior": "Growls, circles, may retreat if outnumbered"
       },
       {
-        "creature": "Troll",
+        "combatant": "Champion",
         "intelligence": 6,
         "alignment": "Miscreant",
         "typicalBehavior": "Snarls, approaches slowly, attacks if threatened"
       },
       {
-        "creature": "Minotaur",
+        "combatant": "Arena Champion",
         "intelligence": 9,
         "alignment": "Diabolic",
         "typicalBehavior": "Immediately charges nearest enemy"
       },
       {
-        "creature": "Goblin",
+        "combatant": "Brigand",
         "intelligence": 7,
         "alignment": "Anarchist",
         "typicalBehavior": "Yells alarm, retreats or swarms if with allies"
       },
       {
-        "creature": "Wizard NPC",
+        "combatant": "Duelist NPC",
         "intelligence": 16,
         "alignment": "Principled",
-        "typicalBehavior": "May parley or cast detection spells first"
+        "typicalBehavior": "May parley or cast detection techniques first"
       }
     ]
   }

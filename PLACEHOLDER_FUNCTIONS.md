@@ -29,13 +29,13 @@ isProwling: false, // TODO: Check if player is successfully prowling
 
 ## In Imported Utility Files
 
-### 4. Psionic Effects System (`src/utils/psionicEffects.js`)
+### 4. Tactical Effects System (`src/utils/tacticalEffects.js`)
 **Status:** TODO - Mostly placeholder implementation
-- `usePsionic()` function has multiple TODOs:
-  - Get power data from psionics database
-  - Check ISP cost
+- `useTactical()` function has multiple TODOs:
+  - Get power data from tactics database
+  - Check focus cost
   - Apply power effects
-  - Deduct ISP
+  - Deduct focus
 
 ### 5. Skill System (`src/utils/skillSystem.js`)
 **Status:** TODO - Placeholder implementation
@@ -54,8 +54,8 @@ isProwling: false, // TODO: Check if player is successfully prowling
 ### 7. Unified Abilities System (`src/utils/unifiedAbilities.js`)
 **Status:** TODO - Placeholder implementation
 - `activateAbility()` function:
-  - Check resource cost (PPE, ISP, etc.)
-  - Apply ability based on type (magic, psionic, special)
+  - Check resource cost (stamina, focus, etc.)
+  - Apply ability based on type (training, tactical, special)
 
 ### 8. Combat Engine (`src/utils/combatEngine.js`)
 **Status:** TODO - Partial implementation
@@ -78,7 +78,7 @@ isProwling: false, // TODO: Check if player is successfully prowling
 **Priority Areas:**
 1. XP system (needs database integration)
 2. Visibility system (infravision, prowling)
-3. Psionic effects (full implementation needed)
+3. Tactical effects (full implementation needed)
 4. Skill system (actual skill value lookup)
 5. Movement range (pathfinding algorithm)
 

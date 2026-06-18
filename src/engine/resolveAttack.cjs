@@ -11,11 +11,11 @@ const {
 } = require("./projectileMiss.cjs");
 const { rollInt } = require("./rng.cjs");
 
-let strikeConnectsVsTarget = null;
+let attackConnectsVsTarget = null;
 let pickPrimaryArmorSlot = null;
 try {
   const armorMod = require("../utils/resolveWeaponImpactVsArmor.cjs");
-  strikeConnectsVsTarget = armorMod.strikeConnectsVsTarget;
+  attackConnectsVsTarget = armorMod.attackConnectsVsTarget;
   pickPrimaryArmorSlot = armorMod.pickPrimaryArmorSlot;
 } catch {
   /* optional */
@@ -54,12 +54,12 @@ function findFighter(state, id) {
 
 function getARFromRuleset(ruleset, defender) {
   if (ruleset?.getAR) return safeNum(ruleset.getAR(defender), 10);
-  return safeNum(defender?.AR ?? defender?.ar ?? defender?.armorRating, 10);
+  return safeNum(defender?.guardRating ?? defender?.guardRating ?? defender?.guardRating, 10);
 }
 
-function getStrikeFromRuleset(ruleset, attacker, kind) {
-  if (ruleset?.getStrikeBonus) return safeNum(ruleset.getStrikeBonus(attacker, kind), 0);
-  return safeNum(attacker?.bonuses?.strike ?? attacker?.bonuses?.strikeMelee ?? attacker?.bonuses?.strikeRanged, 0);
+function getAttackFromRuleset(ruleset, attacker, kind) {
+  if (ruleset?.getAttackBonus) return safeNum(ruleset.getAttackBonus(attacker, kind), 0);
+  return safeNum(attacker?.bonuses?.attack ?? attacker?.bonuses?.attackMelee ?? attacker?.bonuses?.attackRanged, 0);
 }
 
 function isCritFromRuleset(ruleset, d20, critOn) {
@@ -102,11 +102,11 @@ function prepareProjectileAttackSnapshot({
 
   const attackerF = findFighter(state, attackerId);
   const targetF = findFighter(state, targetId);
-  const baseStrike = attackerF ? getStrikeFromRuleset(ruleset, attackerF, "ranged") : 0;
+  const baseAttack = attackerF ? getAttackFromRuleset(ruleset, attackerF, "ranged") : 0;
   const payloadBonus = safeNum(attack.toHitBonus, 0);
-  const toHitBonus = baseStrike + payloadBonus;
-  const targetAR = targetF ? getARFromRuleset(ruleset, targetF) : safeNum(attack.targetAR, NaN);
-  if (!Number.isFinite(targetAR)) return null;
+  const toHitBonus = baseAttack + payloadBonus;
+  const targetGuardRating = targetF ? getARFromRuleset(ruleset, targetF) : safeNum(attack.targetGuardRating, NaN);
+  if (!Number.isFinite(targetGuardRating)) return null;
 
   let rngState = rngStateIn ?? null;
   const d20Roll = rollD20(rngState);
@@ -123,8 +123,8 @@ function prepareProjectileAttackSnapshot({
     attack.hitSlot ||
     (typeof pickPrimaryArmorSlot === "function" ? pickPrimaryArmorSlot(targetF, null) : "chest");
   let hit;
-  if (typeof strikeConnectsVsTarget === "function" && targetF) {
-    const sc = strikeConnectsVsTarget({
+  if (typeof attackConnectsVsTarget === "function" && targetF) {
+    const sc = attackConnectsVsTarget({
       defender: targetF,
       attackTotal: totalToHit,
       d20,
@@ -135,18 +135,18 @@ function prepareProjectileAttackSnapshot({
     });
     hit = !isAlwaysMiss && (isAlwaysHit || sc.connects);
   } else {
-    hit = !isAlwaysMiss && (isAlwaysHit || totalToHit >= targetAR);
+    hit = !isAlwaysMiss && (isAlwaysHit || totalToHit >= targetGuardRating);
   }
-  const missMargin = hit ? 0 : Math.max(1, Math.ceil(targetAR - totalToHit));
+  const missMargin = hit ? 0 : Math.max(1, Math.ceil(targetGuardRating - totalToHit));
 
   const snapshot = {
     d20,
     totalToHit,
     hit,
     isCrit: isCritDice,
-    targetAR,
+    targetGuardRating,
     bonus: toHitBonus,
-    baseStrike,
+    baseAttack,
     payloadBonus,
     coverPenalty: 0,
     projectileReleased: !isAlwaysMiss,
@@ -159,11 +159,11 @@ function prepareProjectileAttackSnapshot({
     targetId,
     d20,
     bonus: toHitBonus,
-    baseStrike,
+    baseAttack,
     payloadBonus,
     coverPenalty: 0,
     total: totalToHit,
-    targetAR,
+    targetGuardRating,
     hit,
     crit: isCritDice,
   };
@@ -230,7 +230,7 @@ function prepareProjectileAttackSnapshot({
  * @param {Object} payload
  * @param {string} payload.attackerId - Entity ID of attacker
  * @param {string} payload.targetId - Entity ID of target
- * @param {Object} payload.attack - Attack parameters (toHitBonus, targetAR, damageFormula, etc.)
+ * @param {Object} payload.attack - Attack parameters (toHitBonus, targetGuardRating, damageFormula, etc.)
  * @param {Object} payload.state - State snapshot (positions, hpById, fighters, map, etc.)
  * @param {Object} payload.engine - Engine helpers (hasLock, addLock, removeLock, timeScale)
  * @param {Object} payload.meta - Optional metadata (projectileKind, flightMs, attackSnapshot, etc.)
@@ -287,7 +287,7 @@ module.exports = function resolveAttack(payload = {}) {
     return { ok: false, error: { message: "Missing positions" }, events };
   }
 
-  // Create projectile descriptor (UI uses kind to choose model: arrow/bolt/stone/spell)
+  // Create projectile descriptor (UI uses kind to choose model: arrow/bolt/stone/technique)
   const projectileId = `proj:${Date.now()}:${Math.random().toString(16).slice(2)}`;
   const kind = meta?.projectileKind || attack?.projectileKind || "arrow";
   const prepared = meta?.attackSnapshot
@@ -395,7 +395,7 @@ module.exports = function resolveAttack(payload = {}) {
     projectile.meta.toAlt = targetAlt;
     
     // Optional: arrows arc, bolts flatter
-    if (kind === "bolt" || kind === "spellBolt") {
+    if (kind === "bolt" || kind === "techniqueBolt") {
       projectile.meta.useArc = false;
     }
     
@@ -421,7 +421,7 @@ module.exports = function resolveAttack(payload = {}) {
     projectile.meta.toAlt = targetAlt;
     
     // Optional: arrows arc, bolts flatter
-    if (kind === "bolt" || kind === "spellBolt") {
+    if (kind === "bolt" || kind === "techniqueBolt") {
       projectile.meta.useArc = false;
     }
   }

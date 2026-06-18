@@ -1,10 +1,10 @@
 {
     "movement": {
       "encumbrance": {
-        "lightLoad": "Up to 40% of P.S. in lbs → no penalties.",
-        "mediumLoad": "41–70% of P.S. → -10% Spd, -5% skills, -1 strike/dodge.",
-        "heavyLoad": "71–100% of P.S. → -30% Spd, -10% skills, -2 strike/dodge.",
-        "overMax": "Over P.S. limit → cannot move effectively; collapse after 1d4 melees."
+        "lightLoad": "Up to 40% of strength in lbs Ã¢â€ â€™ no penalties.",
+        "mediumLoad": "41Ã¢â‚¬â€œ70% of strength Ã¢â€ â€™ -10% Spd, -5% skills, -1 attack/evade.",
+        "heavyLoad": "71Ã¢â‚¬â€œ100% of strength Ã¢â€ â€™ -30% Spd, -10% skills, -2 attack/evade.",
+        "overMax": "Over strength limit Ã¢â€ â€™ cannot move effectively; collapse after 1d4 melees."
       },
       "armorPenalties": {
         "lightArmor": { "spdPenalty": -5, "skillPenalty": -5, "description": "Light armor penalties" },
@@ -14,24 +14,24 @@
       },
       "carryingCapacity": {
         "Human": 10,
-        "Elf": 8,
-        "Dwarf": 15,
-        "Wolfen": 20,
-        "Orc": 18,
-        "Troll": 25,
-        "Ogre": 22,
-        "Giant": 40,
-        "Changeling": 8,
-        "Pixie": 2,
-        "Gnome": 6,
-        "Kobold": 5,
-        "Goblin": 6
+        "Human": 8,
+        "Human": 15,
+        "Wolf": 20,
+        "Raider": 18,
+        "Champion": 25,
+        "Heavy Fighter": 22,
+        "Heavy": 40,
+        "Duelist": 8,
+        "Scout": 2,
+        "Human": 6,
+        "Brigand": 5,
+        "Brigand": 6
       },
       "mountMovement": {
         "lightHorse": { "spd": 44, "carryingCapacity": 200, "description": "Light riding horse" },
         "warHorse": { "spd": 38, "carryingCapacity": 300, "description": "Heavy war horse" },
         "pony": { "spd": 30, "carryingCapacity": 120, "description": "Small pony" },
-        "wolfMount": { "spd": 40, "carryingCapacity": 150, "description": "Wolfen mount" },
+        "wolfMount": { "spd": 40, "carryingCapacity": 150, "description": "Wolf mount" },
         "bardingPenalty": {
           "leather": -5,
           "chain": -15,

@@ -9,13 +9,13 @@ export const characterClassCategories = {
     "Thief",
     "Assassin",
   ],
-  MenOfMagic: [
-    "Wizard",
+  MenOfTraining: [
+    "Duelist",
     "Witch",
-    "Warlock",
+    "Mercenary",
     "Diabolist",
     "Summoner",
-    "Mind Mage",
+    "Tactician",
   ],
   Clergy: ["Priest", "Druid", "Shaman", "Healer"],
   Optional: ["Peasant", "Squire", "Scholar", "Merchant", "Noble"],

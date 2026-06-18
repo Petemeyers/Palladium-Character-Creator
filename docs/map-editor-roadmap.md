@@ -12,7 +12,7 @@ Goals:
 - Avoid movement, combat turn timing, and AI changes.
 - Make the visible UI state match `showTacticalMap` and `show3DView`.
 
-Deliverable: users can open and close either map view without feeling trapped.
+Deliverable: users can open and close either map view without feeling trastaminad.
 
 ## Phase 2: Unified Map Interaction State
 

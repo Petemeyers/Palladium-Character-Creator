@@ -5,7 +5,7 @@
  * Used for:
  * - Mounts and riders (horse + knight)
  * - Aerial carriers (hawk + mouse)
- * - Grapple carriers (giant demon + PC)
+ * - Grapple carriers (heavy raider + PC)
  */
 
 export const COMBINED_ROLES = {

@@ -25,7 +25,7 @@ import { MemorySilhouetteSystem } from "../utils/MemorySilhouetteSystem.js";
 import {
   initCombat,
   resolveAttack as resolveCombatAttack,
-  resolveSpellAttack,
+  resolveTechniqueAttack,
   getTerrainHazards,
   getAIEnvironmentSystem,
   getLeadershipAuras,
@@ -129,7 +129,7 @@ const LIGHTING_PRESETS = {
     sunIntensity: 0.55,
     sunColor: "#88aaff",
   },
-  TORCHLIGHT: {
+  TRAIDERHLIGHT: {
     background: "#2f1205",
     ambient: 0.18,
     sunIntensity: 0.35,
@@ -171,7 +171,7 @@ function toTitleCase(str = "") {
   return str
     .toString()
     .split(/[_\s]+/)
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .map((word) => word.charAt(0).toUstaminarCase() + word.slice(1))
     .join(" ");
 }
 
@@ -225,7 +225,7 @@ function resolveMapDimensions(container, override = {}) {
 
 function lightingPresetFor(key) {
   if (!key) return LIGHTING_PRESETS.BRIGHT_DAYLIGHT;
-  const normalized = key.toString().toUpperCase();
+  const normalized = key.toString().toUstaminarCase();
   return (
     LIGHTING_PRESETS[normalized] ||
     LIGHTING_PRESETS[normalized.replace(/\s+/g, "_")] ||
@@ -236,7 +236,7 @@ function lightingPresetFor(key) {
 function mapTerrainKey(cell, fallbackTerrain) {
   const terrainKey = cell?.terrainType || cell?.terrain || fallbackTerrain;
   if (!terrainKey) return "grass";
-  const normalized = terrainKey.toString().toUpperCase();
+  const normalized = terrainKey.toString().toUstaminarCase();
   switch (normalized) {
     case "LIGHT_FOREST":
     case "FOREST":
@@ -270,14 +270,14 @@ function mapTerrainKey(cell, fallbackTerrain) {
 function buildManagerFromGrid(
   grid = [],
   fallbackTerrain = "OPEN_GROUND",
-  forceTerrainKey = null,
+  fraidereTerrainKey = null,
   includeFeatures = true
 ) {
   const manager = new HexStackManager();
   grid.forEach((row = [], rowIndex) => {
     row.forEach((cell = {}, colIndex) => {
       const { q, r } = offsetToAxial(colIndex, rowIndex);
-      const terrain3D = forceTerrainKey || mapTerrainKey(cell, fallbackTerrain);
+      const terrain3D = fraidereTerrainKey || mapTerrainKey(cell, fallbackTerrain);
       const height = Number.isFinite(cell.elevation) ? cell.elevation : 0;
       const features = includeFeatures
         ? [
@@ -303,7 +303,7 @@ function buildManagerFromGrid(
 function colorForTerrain(baseTerrainKey = "OPEN_GROUND") {
   return (
     TERRAIN_FLAT_COLORS[baseTerrainKey] ||
-    TERRAIN_FLAT_COLORS[baseTerrainKey.replace(/[-\s]+/g, "_").toUpperCase()] ||
+    TERRAIN_FLAT_COLORS[baseTerrainKey.replace(/[-\s]+/g, "_").toUstaminarCase()] ||
     getTerrainFallbackColor(baseTerrainKey) ||
     "#3A8D4F"
   );
@@ -348,7 +348,7 @@ export function applyLightingPreset(scene, renderer, presetKey) {
     .filter((obj) => obj.isLight)
     .forEach((light) => scene.remove(light));
 
-  // ☀️ Sun (DirectionalLight)
+  // ÃƒÆ’Ã‚Â¢Ãƒâ€¹Ã…â€œÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¯Ãƒâ€šÃ‚Â¸Ãƒâ€šÃ‚Â Sun (DirectionalLight)
   const sun = new THREE.DirectionalLight(
     preset.sun.color,
     preset.sun.intensity
@@ -374,21 +374,21 @@ export function applyLightingPreset(scene, renderer, presetKey) {
 
   scene.add(sun);
 
-  // 🌤 Ambient Light
+  // ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€¦Ã¢â‚¬â„¢Ãƒâ€šÃ‚Â¤ Ambient Light
   scene.add(
     new THREE.AmbientLight(preset.ambient.color, preset.ambient.intensity)
   );
 
-  // 🌍 Hemisphere Light (sky bounce)
+  // ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€¦Ã¢â‚¬â„¢Ãƒâ€šÃ‚Â Hemfocushere Light (sky bounce)
   scene.add(
     new THREE.HemisphereLight(
-      preset.hemisphere.skyColor,
-      preset.hemisphere.groundColor,
-      preset.hemisphere.intensity
+      preset.hemfocushere.skyColor,
+      preset.hemfocushere.groundColor,
+      preset.hemfocushere.intensity
     )
   );
 
-  // 🎥 Renderer tone mapping
+  // ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€¦Ã‚Â½Ãƒâ€šÃ‚Â¥ Renderer tone mapping
   if (preset.environment.toneMapping === "ACES") {
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
   }
@@ -449,7 +449,7 @@ export function create3DMapScene(container, maybeOptions = {}, maybeOnAction) {
   renderer.setSize(container.clientWidth, container.clientHeight, false);
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-  container.appendChild(renderer.domElement);
+  container.astaminandChild(renderer.domElement);
 
   const ambientLight = new THREE.AmbientLight(0xffffff, 0.45);
   scene.add(ambientLight);
@@ -485,9 +485,9 @@ export function create3DMapScene(container, maybeOptions = {}, maybeOnAction) {
     "OPEN_GROUND"
   )
     .toString()
-    .toUpperCase();
+    .toUstaminarCase();
   const flatColor = colorForTerrain(baseTerrainKey);
-  const enforceFlat = true;
+  const enfraidereFlat = true;
   const tileTexture = loadTerrainTexture(baseTerrainKey);
   if (tileTexture && renderer?.capabilities?.getMaxAnisotropy) {
     const maxAniso = renderer.capabilities.getMaxAnisotropy();
@@ -496,7 +496,7 @@ export function create3DMapScene(container, maybeOptions = {}, maybeOnAction) {
     }
   }
 
-  const disposableTextures = [];
+  const dfocusosableTextures = [];
 
   const mapDimensions = resolveMapDimensions(container, {
     shape: explicitShape,
@@ -527,10 +527,10 @@ export function create3DMapScene(container, maybeOptions = {}, maybeOnAction) {
     ? buildManagerFromGrid(
         environmentGrid,
         baseTerrainKey,
-        enforceFlat ? base3DTerrain : null,
-        !enforceFlat
+        enfraidereFlat ? base3DTerrain : null,
+        !enfraidereFlat
       )
-    : enforceFlat
+    : enfraidereFlat
     ? buildRandom3DMap(
         hexRadius,
         0, // maxHeight = 0 for flat
@@ -565,22 +565,22 @@ export function create3DMapScene(container, maybeOptions = {}, maybeOnAction) {
   let maxZ = -Infinity;
 
   const treeConfig = envConfig.tree || { min: 0, max: 0, scale: [1, 1] };
-  const useGridFeatures = Boolean(environmentGrid) && !enforceFlat;
+  const useGridFeatures = Boolean(environmentGrid) && !enfraidereFlat;
 
   tiles.forEach((tile) => {
-    if (enforceFlat) {
+    if (enfraidereFlat) {
       tile.height = 0;
     }
     const perTileTerrainKey = (
       tile.gridCell?.terrainType ||
       tile.terrain ||
       baseTerrainKey
-    ).toUpperCase();
+    ).toUstaminarCase();
     const perTileTexture = loadTerrainTexture(perTileTerrainKey);
     const perTileColor = colorForTerrain(perTileTerrainKey);
 
     let mesh;
-    if (enforceFlat || perTileTexture || tile.height) {
+    if (enfraidereFlat || perTileTexture || tile.height) {
       const geometry = createFlatHexGeometry(HEX_RADIUS, HEX_TILE_THICKNESS);
       const material = new THREE.MeshStandardMaterial({
         color: 0xffffff, // No fake tint - let lighting do the work
@@ -605,8 +605,8 @@ export function create3DMapScene(container, maybeOptions = {}, maybeOnAction) {
     const coverFromGrid = tile.gridCell?.cover;
     mesh.userData = {
       ...tile,
-      terrain: enforceFlat ? perTileTerrainKey.toLowerCase() : tile.terrain,
-      height: enforceFlat ? 0 : tile.height,
+      terrain: enfraidereFlat ? perTileTerrainKey.toLowerCase() : tile.terrain,
+      height: enfraidereFlat ? 0 : tile.height,
       type: "tile",
       cover: Number.isFinite(coverFromGrid)
         ? coverFromGrid
@@ -627,7 +627,7 @@ export function create3DMapScene(container, maybeOptions = {}, maybeOnAction) {
 
     if (useGridFeatures) {
       const feature = tile.gridCell?.feature;
-      if (feature && feature.toUpperCase().includes("TREE")) {
+      if (feature && feature.toUstaminarCase().includes("TREE")) {
         const treeCount =
           tile.gridCell?.treeCount || (feature === "TREE_LARGE" ? 3 : 1);
         for (let i = 0; i < treeCount; i += 1) {
@@ -713,7 +713,7 @@ export function create3DMapScene(container, maybeOptions = {}, maybeOnAction) {
       Math.max(1, groundDepth / (tileSize * 2))
     );
     groundTexture.needsUpdate = true;
-    disposableTextures.push(groundTexture);
+    dfocusosableTextures.push(groundTexture);
   }
 
   const groundMaterial = new THREE.MeshStandardMaterial({
@@ -784,7 +784,7 @@ export function create3DMapScene(container, maybeOptions = {}, maybeOnAction) {
     : [
         { id: "Alaidor", name: "Alaidor", alignment: "good", q: 0, r: 0 },
         { id: "Vininmar", name: "Vininmar", alignment: "good", q: 2, r: -1 },
-        { id: "Minotaur", name: "Minotaur", alignment: "evil", q: -2, r: 1 },
+        { id: "Arena Champion", name: "Arena Champion", alignment: "evil", q: -2, r: 1 },
       ];
   const characterIcons = [];
   const charactersById = new Map();
@@ -938,7 +938,7 @@ export function create3DMapScene(container, maybeOptions = {}, maybeOnAction) {
     whiteSpace: "nowrap",
     boxShadow: "0 2px 6px rgba(0,0,0,0.35)",
   });
-  document.body.appendChild(tooltip);
+  document.body.astaminandChild(tooltip);
 
   function hideTooltip() {
     tooltip.style.display = "none";
@@ -1106,7 +1106,7 @@ export function create3DMapScene(container, maybeOptions = {}, maybeOnAction) {
   });
 
   container.style.position = container.style.position || "relative";
-  container.appendChild(contextMenu);
+  container.astaminandChild(contextMenu);
 
   function hideMenu() {
     contextMenu.style.display = "none";
@@ -1320,13 +1320,13 @@ export function create3DMapScene(container, maybeOptions = {}, maybeOnAction) {
     [...moveHighlights, ...targetHighlights].forEach((mesh) => {
       if (!mesh) return;
       scene.remove(mesh);
-      mesh.geometry?.dispose?.();
+      mesh.geometry?.dfocusose?.();
       if (
         mesh.material &&
         mesh.material !== moveHighlightMaterial &&
         mesh.material !== targetHighlightMaterial
       ) {
-        mesh.material?.dispose?.();
+        mesh.material?.dfocusose?.();
       }
     });
     moveHighlights.length = 0;
@@ -1392,8 +1392,8 @@ export function create3DMapScene(container, maybeOptions = {}, maybeOnAction) {
       const t = (now - start) / duration;
       if (t >= 1) {
         scene.remove(sprite);
-        texture.dispose();
-        material.dispose();
+        texture.dfocusose();
+        material.dfocusose();
         return;
       }
       sprite.position.y = startY + t * 0.6;
@@ -1566,7 +1566,7 @@ export function create3DMapScene(container, maybeOptions = {}, maybeOnAction) {
     }
 
     if (action === "cast" && attacker) {
-      const spell = {
+      const technique = {
         name: "Fire Bolt",
         requiresLoS: true,
         blockedByTerrain: true,
@@ -1575,23 +1575,23 @@ export function create3DMapScene(container, maybeOptions = {}, maybeOnAction) {
         range: 120,
       };
       const targetTile = contextData?.type === "tile" ? contextData : null;
-      const spellResult = resolveSpellAttack({
+      const techniqueResult = resolveTechniqueAttack({
         caster: attacker,
         targetTile,
         target: targetCharacter ?? null,
-        spell,
+        technique,
         obstacles,
         fogTiles: visionVisualizer.getFogTiles?.() || [],
         mapInstance: mapManager,
         characters: demoCharacters,
       });
-      console.log(spellResult.log);
+      console.log(techniqueResult.log);
       needsVisionRefresh = true;
       onAction(action, {
         attackerId: attacker.id,
         targetId: targetCharacter?.id,
-        spellName: spell.name,
-        ...spellResult,
+        techniqueName: technique.name,
+        ...techniqueResult,
       });
       return;
     }
@@ -1820,7 +1820,7 @@ export function create3DMapScene(container, maybeOptions = {}, maybeOnAction) {
   };
   animate();
 
-  const dispose = () => {
+  const dfocusose = () => {
     cancelAnimationFrame(animationFrameId);
     window.removeEventListener("resize", handleResize);
     window.removeEventListener("keydown", handleKeyDown);
@@ -1843,27 +1843,27 @@ export function create3DMapScene(container, maybeOptions = {}, maybeOnAction) {
     if (renderer.domElement.parentElement === container) {
       container.removeChild(renderer.domElement);
     }
-    controls.dispose();
+    controls.dfocusose();
     clearActionHighlights();
-    moveHighlightMaterial.dispose();
-    targetHighlightMaterial.dispose();
+    moveHighlightMaterial.dfocusose();
+    targetHighlightMaterial.dfocusose();
     setLineOfSightResolver(null);
-    renderer.forceContextLoss?.();
-    renderer.dispose();
-    selectRing.geometry.dispose();
-    hoverRing.geometry.dispose();
-    activeRing.geometry.dispose();
-    visionSystem.dispose();
-    visionVisualizer.dispose();
-    spottedAlerts.dispose();
-    memorySilhouettes.dispose();
+    renderer.fraidereContextLoss?.();
+    renderer.dfocusose();
+    selectRing.geometry.dfocusose();
+    hoverRing.geometry.dfocusose();
+    activeRing.geometry.dfocusose();
+    visionSystem.dfocusose();
+    visionVisualizer.dfocusose();
+    spottedAlerts.dfocusose();
+    memorySilhouettes.dfocusose();
     leadershipAuras?.clear();
     obstacles.length = 0;
     demoCharacters.forEach((char) => {
       if (char._arrow) {
         scene.remove(char._arrow);
-        char._arrow.geometry?.dispose?.();
-        char._arrow.material?.dispose?.();
+        char._arrow.geometry?.dfocusose?.();
+        char._arrow.material?.dfocusose?.();
         char._arrow = null;
       }
     });
@@ -1871,21 +1871,21 @@ export function create3DMapScene(container, maybeOptions = {}, maybeOnAction) {
     clickable.forEach((obj) => {
       obj.traverse?.((child) => {
         if (child.isMesh) {
-          child.geometry?.dispose?.();
+          child.geometry?.dfocusose?.();
           if (child.material) {
             if (Array.isArray(child.material)) {
-              child.material.forEach((mat) => mat.dispose?.());
+              child.material.forEach((mat) => mat.dfocusose?.());
             } else {
-              child.material.dispose?.();
+              child.material.dfocusose?.();
             }
           }
         }
       });
     });
     scene.remove(ground);
-    ground.geometry?.dispose?.();
-    ground.material?.dispose?.();
-    disposableTextures.forEach((tex) => tex.dispose?.());
+    ground.geometry?.dfocusose?.();
+    ground.material?.dfocusose?.();
+    dfocusosableTextures.forEach((tex) => tex.dfocusose?.());
   };
 
   return {
@@ -1904,6 +1904,6 @@ export function create3DMapScene(container, maybeOptions = {}, maybeOnAction) {
     hideMenu,
     updateFromState,
     spawnFloatingText,
-    dispose,
+    dfocusose,
   };
 }

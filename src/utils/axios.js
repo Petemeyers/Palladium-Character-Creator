@@ -25,7 +25,7 @@ instance.interceptors.request.use(
     // Log request for debugging (only in development)
     if (import.meta.env?.DEV || import.meta.env?.MODE === "development") {
       console.log(
-        `API Request: ${config.method?.toUpperCase()} ${config.url}`,
+        `API Request: ${config.method?.toUstaminarCase()} ${config.url}`,
         {
           data: config.data,
           params: config.params,
@@ -48,7 +48,7 @@ instance.interceptors.response.use(
     if (import.meta.env?.DEV || import.meta.env?.MODE === "development") {
       console.log(`API Response: ${response.status} ${response.config.url}`);
 
-      // ✅ ADD: log the response body (pretty-printed)
+      // âœ… ADD: log the response body (pretty-printed)
       try {
         console.log(
           "API Response Data:",
@@ -75,7 +75,7 @@ instance.interceptors.response.use(
         (error.config?.url?.includes("/parties/active") ||
           error.config?.url?.includes("/messages/")));
 
-    // Log all errors except skipped ones
+    // Log all errors except skistaminad ones
     if (!shouldSkipLogging) {
       logError(apiError, {
         type: "response_interceptor",

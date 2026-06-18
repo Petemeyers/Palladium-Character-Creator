@@ -64,7 +64,7 @@ const WeaponSlots = ({
           {/* Slot label */}
           <HStack justify="space-between">
             <Text fontSize="xs" fontWeight="bold" color="gray.600">
-              {slot === 'rightHand' ? '🤜 Right Hand' : '🤛 Left Hand'}
+              {slot === 'rightHand' ? 'Ã°Å¸Â¤Å“ Right Hand' : 'Ã°Å¸Â¤â€º Left Hand'}
             </Text>
             {isTwoHanded && (
               <Badge colorScheme="purple" fontSize="xs">
@@ -98,7 +98,7 @@ const WeaponSlots = ({
                     variant={usingTwoHanded ? 'solid' : 'outline'}
                     onClick={() => onToggleTwoHanded && onToggleTwoHanded()}
                   >
-                    {usingTwoHanded ? '✅ Two-Handed Grip' : 'Use Two Hands'}
+                    {usingTwoHanded ? 'Ã¢Å“â€¦ Two-Handed Grip' : 'Use Two Hands'}
                   </Button>
                 </Tooltip>
               )}
@@ -118,7 +118,7 @@ const WeaponSlots = ({
               onChange={(e) => onEquipWeapon(e.target.value, slot)}
               fontSize="xs"
             >
-              <option value="">— Empty —</option>
+              <option value="">Ã¢â‚¬â€ Empty Ã¢â‚¬â€</option>
               {availableWeapons.map((w, idx) => (
                 <option key={idx} value={w.name}>
                   {w.name} ({w.damage})
@@ -138,7 +138,7 @@ const WeaponSlots = ({
             fontSize="xl"
             color="purple.500"
           >
-            ⟷
+            Ã¢Å¸Â·
           </Box>
         )}
       </Box>
@@ -158,7 +158,7 @@ const WeaponSlots = ({
             borderWidth="1px"
             borderColor={rightWeapon ? 'blue.400' : 'gray.300'}
           >
-            🤜 {rightWeapon?.name?.substring(0, 8) || '—'}
+            Ã°Å¸Â¤Å“ {rightWeapon?.name?.substring(0, 8) || 'Ã¢â‚¬â€'}
           </Box>
         </Tooltip>
         
@@ -172,7 +172,7 @@ const WeaponSlots = ({
               borderWidth="1px"
               borderColor={leftWeapon ? 'green.400' : 'gray.300'}
             >
-              🤛 {leftWeapon?.name?.substring(0, 8) || '—'}
+              Ã°Å¸Â¤â€º {leftWeapon?.name?.substring(0, 8) || 'Ã¢â‚¬â€'}
             </Box>
           </Tooltip>
         )}
@@ -190,7 +190,7 @@ const WeaponSlots = ({
       <VStack align="stretch" spacing={3}>
         <HStack justify="space-between">
           <Text fontWeight="bold" fontSize="sm">
-            ⚔️ Equipped Weapons
+            Ã¢Å¡â€Ã¯Â¸Â Equistaminad Weapons
           </Text>
           {leftWeapon && rightWeapon && canDW && (
             <Tooltip label={dwPenalties?.description}>
@@ -236,13 +236,13 @@ const WeaponSlots = ({
 
               {leftWeapon && rightWeapon && !usingTwoHanded && (
                 <Text color="orange.600" fontWeight="bold">
-                  ⚠️ Dual wielding: {dwPenalties?.description || 'Not trained'}
+                  Ã¢Å¡Â Ã¯Â¸Â Dual wielding: {dwPenalties?.description || 'Not trained'}
                 </Text>
               )}
 
               {!canDW && leftWeapon && rightWeapon && (
                 <Text color="red.600" fontWeight="bold">
-                  ⚠️ Cannot dual wield (requires PP 16+ or dual wield ability)
+                  Ã¢Å¡Â Ã¯Â¸Â Cannot dual wield (requires PP 16+ or dual wield ability)
                 </Text>
               )}
             </VStack>

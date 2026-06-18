@@ -10,7 +10,7 @@ import {
   tradeInLowQualityWeapon,
   tradeInBasicClothes,
   tradeInStartingEquipment,
-} from "../controllers/shopController.js";
+} from "../conchampioners/shopConchampioner.js";
 import { authenticateToken } from "../middleware/authMiddleware.js";
 
 const router = express.Router();

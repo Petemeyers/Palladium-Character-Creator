@@ -1,22 +1,22 @@
 /**
- * Palladium Fantasy RPG - Combat Engine
+ * Medieval Combat Simulator - Combat Engine
  *
- * Production-ready alternating action combat loop that implements Palladium RAW:
+ * Production-ready alternating action combat loop that implements Medieval Combat Simulator RAW:
  * - Actions alternate in initiative order (one action per fighter, looping until all spent)
  * - Fatigue and stamina drain integration
  * - Grapple state management
- * - Dodge/parry reaction hooks
+ * - Evade/block reaction hooks
  * - Finishing "leftover-action" rounds for fast enemies
- * - Extendable hooks for spells, ranged attacks, and special abilities
+ * - Extendable hooks for techniques, ranged attacks, and special abilities
  *
- * Based on Palladium Fantasy RPG core rules (1994 edition)
+ * Based on Medieval Combat Simulator core rules (1994 edition)
  *
  * Dependencies:
  *   - src/utils/combatFatigueSystem.js
  *   - src/utils/grapplingSystem.js
- *   - src/utils/bestiaryLoader.js
- *   - src/utils/bestiaryValidator.js
- *   - src/data/bestiary.json
+ *   - src/utils/arenaRosterLoader.js
+ *   - src/utils/arenaRosterValidator.js
+ *   - src/data/arenaRoster.js
  */
 
 import { calculateDistance } from "../data/movementRules.js";
@@ -39,24 +39,24 @@ import {
   // eslint-disable-next-line no-unused-vars
   breakFree,
   // eslint-disable-next-line no-unused-vars
-  groundStrike,
+  groundAttack,
   GRAPPLE_STATES,
 } from "./grapplingSystem.js";
-// Note: maintainGrapple, breakFree, groundStrike are available for future use
+// Note: maintainGrapple, breakFree, groundAttack are available for future use
 
-// Import and re-export bestiary utilities for convenience
+// Import and re-export arenaRoster utilities for convenience
 // eslint-disable-next-line no-unused-vars
-import { loadCreature, loadCreatures } from "./bestiaryLoader.js";
+import { loadCombatant, loadCombatants } from "./arenaRosterLoader.js";
 // eslint-disable-next-line no-unused-vars
-import { validateBestiary } from "./bestiaryValidator.js";
+import { validateArenaRoster } from "./arenaRosterValidator.js";
 
-// Re-export bestiary utilities for convenience
-export { loadCreature, loadCreatures } from "./bestiaryLoader.js";
-export { validateBestiary } from "./bestiaryValidator.js";
+// Re-export arenaRoster utilities for convenience
+export { loadCombatant, loadCombatants } from "./arenaRosterLoader.js";
+export { validateArenaRoster } from "./arenaRosterValidator.js";
 
 // Import ability and skill systems
 import { parseAbilities, applyBioRegeneration } from "./abilitySystem.js";
-import { mapOCCSkillsToCombat, getAttacksPerMelee } from "./OCCSkillMapper.js";
+import { mapPROFESSIONSkillsToCombat, getAttacksPerMelee } from "./professionSkillMapper.js";
 // eslint-disable-next-line no-unused-vars
 import { getUnifiedAbilities, getCombatBonus } from "./unifiedAbilities.js";
 
@@ -77,7 +77,7 @@ import {
   // eslint-disable-next-line no-unused-vars
   resetHorrorChecks,
   hasHorrorFactor,
-} from "./horrorFactorSystem.js";
+} from "./dreadRatingSystem.js";
 import {
   processCourageAuras,
   clearCourageBonuses,
@@ -98,15 +98,15 @@ import {
   getHitLocationDescription,
 } from "./hitLocationSystem.js";
 import { calculateArmorDamage } from "./equipmentManager.js";
-import { strikeConnectsVsTarget } from "./resolveWeaponImpactVsArmor.js";
+import { attackConnectsVsTarget } from "./resolveWeaponImpactVsArmor.js";
 import { getSizeScale, applySizeCombatModifiers } from "./sizeScaleSystem.js";
 import { getStatusCombatPenalties } from "./statusEffectSystem.js";
 import { autoCastFearProtection } from "./fearAIAutoCast.js";
-import { castCourage, castRemoveFear } from "./fearSpellSystem.js";
+import { castCourage, castRemoveFear } from "./fearTechniqueSystem.js";
 
 /**
  * Combat Engine Class
- * Manages alternating action combat flow per Palladium RAW
+ * Manages alternating action combat flow per Medieval Combat Simulator RAW
  */
 export class CombatEngine {
   constructor(options = {}) {
@@ -156,7 +156,7 @@ export class CombatEngine {
     this.isActive = true;
 
     this.logCallback(
-      `⚔️ Combat Initialized - Melee Round ${this.meleeRound}`,
+      `ÃƒÂ¢Ã…Â¡Ã¢â‚¬ÂÃƒÂ¯Ã‚Â¸Ã‚Â Combat Initialized - Combat Round ${this.meleeRound}`,
       "combat"
     );
     this.logCallback(
@@ -172,17 +172,17 @@ export class CombatEngine {
 
     processCourageAuras(this.combatants, positions, this.logCallback);
 
-    // Trigger Horror Factor checks for creatures with HF
-    // This happens before the first melee round, when combatants first see each other
+    // Trigger dreadRating checks for combatants with dreadRating
+    // This hastaminans before the first combat round, when combatants first see each other
     // Only triggers for visible opponents (respects line-of-sight and lighting)
     // Courage bonuses from auras are already applied to tempBonuses.horrorSave
-    this.combatants.forEach((creature) => {
-      if (hasHorrorFactor(creature)) {
+    this.combatants.forEach((combatant) => {
+      if (hasHorrorFactor(combatant)) {
         const opponents = this.combatants.filter(
-          (t) => t !== creature && t.type !== creature.type
+          (t) => t !== combatant && t.type !== combatant.type
         );
         if (opponents.length > 0) {
-          triggerHorrorFactor(creature, opponents, terrain, this.logCallback, {
+          triggerHorrorFactor(combatant, opponents, terrain, this.logCallback, {
             positions: positions,
             currentRound: this.currentRound,
             meleeRound: this.currentRound,
@@ -205,15 +205,15 @@ export class CombatEngine {
     }
 
     if (fighter.__normalized) {
-      if (fighter.attacksPerMelee == null) {
-        fighter.attacksPerMelee =
+      if (fighter.actionsPerRound == null) {
+        fighter.actionsPerRound =
           getAttacksPerMelee(fighter) ||
           fighter.actions ||
-          fighter.remainingAttacks ||
+          fighter.remainingActions ||
           2;
       }
-      if (fighter.remainingAttacks == null) {
-        fighter.remainingAttacks = fighter.attacksPerMelee || 2;
+      if (fighter.remainingActions == null) {
+        fighter.remainingActions = fighter.actionsPerRound || 2;
       }
       return fighter;
     }
@@ -234,7 +234,7 @@ export class CombatEngine {
     target.abilitiesParsed = parsedAbilities;
     target.abilitiesRaw = rawAbilities;
 
-    const combatSkills = mapOCCSkillsToCombat(target);
+    const combatSkills = mapPROFESSIONSkillsToCombat(target);
 
     if (!parsedAbilities.skills) parsedAbilities.skills = {};
     if (combatSkills.prowl > 0 && !parsedAbilities.skills.prowl) {
@@ -262,12 +262,12 @@ export class CombatEngine {
       parsedAbilities.skills["scale walls"] = combatSkills.scaleWalls;
     }
 
-    const attacksPerMelee =
-      combatSkills.attacksPerMelee ||
+    const actionsPerRound =
+      combatSkills.actionsPerRound ||
       getAttacksPerMelee(target) ||
-      target.attacksPerMelee ||
+      target.actionsPerRound ||
       target.actions ||
-      target.remainingAttacks ||
+      target.remainingActions ||
       2;
 
     target.id =
@@ -275,12 +275,12 @@ export class CombatEngine {
     target.name = target.name || "Unknown Fighter";
     target.currentHP = target.currentHP ?? target.hp ?? target.maxHP ?? 20;
     target.maxHP = target.maxHP ?? target.hp ?? 20;
-    target.attacksPerMelee = attacksPerMelee;
-    target.remainingAttacks = target.remainingAttacks ?? attacksPerMelee ?? 2;
+    target.actionsPerRound = actionsPerRound;
+    target.remainingActions = target.remainingActions ?? actionsPerRound ?? 2;
     target.initiative = target.initiative ?? 0;
     target.attributes = target.attributes || {};
     target.bonuses = target.bonuses || {};
-    target.AR = target.AR ?? target.armorRating ?? 10;
+    target.guardRating = target.guardRating ?? target.guardRating ?? 10;
     target.alive =
       target.alive !== false &&
       (target.currentHP ?? target.hp ?? 20) > -21;
@@ -344,7 +344,7 @@ export class CombatEngine {
   }
 
   /**
-   * Resolve initiative ties (Palladium rules: reroll tied fighters)
+   * Resolve initiative ties (Medieval Combat Simulator rules: reroll tied fighters)
    */
   resolveInitiativeTies() {
     const initiativeGroups = {};
@@ -360,7 +360,7 @@ export class CombatEngine {
       const tiedFighters = initiativeGroups[initValue];
       if (tiedFighters.length > 1) {
         this.logCallback(
-          `🔄 Initiative tie at ${initValue}! Rerolling for: ${tiedFighters
+          `ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ¢â‚¬Å¾ Initiative tie at ${initValue}! Rerolling for: ${tiedFighters
             .map((f) => f.name)
             .join(", ")}`,
           "info"
@@ -370,7 +370,7 @@ export class CombatEngine {
           const tieBreaker = CryptoSecureDice.rollD20();
           fighter.initiative += tieBreaker;
           this.logCallback(
-            `${fighter.name} rerolls: ${tieBreaker} → new total: ${fighter.initiative}`,
+            `${fighter.name} rerolls: ${tieBreaker} ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ new total: ${fighter.initiative}`,
             "info"
           );
         });
@@ -393,9 +393,9 @@ export class CombatEngine {
       currentStamina: PE * 2,
       fatigueLevel: 0,
       penalties: {
-        strike: 0,
-        parry: 0,
-        dodge: 0,
+        attack: 0,
+        block: 0,
+        evade: 0,
         ps: 0,
         speed: 1.0,
       },
@@ -404,20 +404,20 @@ export class CombatEngine {
   }
 
   /**
-   * Execute one melee round (alternating actions until all fighters out of actions)
+   * Execute one combat round (alternating actions until all fighters out of actions)
    * @param {Function} actionSelector - Function that selects action for each fighter (fighter, availableTargets) => action
    * @returns {Object} Round result with stats
    */
   executeMeleeRound(actionSelector) {
     if (!this.isActive) {
-      this.logCallback("⚠️ Combat is not active", "error");
+      this.logCallback("ÃƒÂ¢Ã…Â¡Ã‚Â ÃƒÂ¯Ã‚Â¸Ã‚Â Combat is not active", "error");
       return null;
     }
 
-    this.logCallback(`\n⏰ Melee Round ${this.meleeRound} begins`, "combat");
+    this.logCallback(`\nÃƒÂ¢Ã‚ÂÃ‚Â° Combat Round ${this.meleeRound} begins`, "combat");
 
-    // Process courage auras at start of each melee round
-    // This applies bonuses and dispels fear before any actions
+    // Process courage auras at start of each combat round
+    // This applies bonuses and dfocusels fear before any actions
     const positions = this.combatants.reduce((acc, c) => {
       if (c.position || c.id) {
         acc[c.id] = c.position || { x: 0, y: 0 };
@@ -427,7 +427,7 @@ export class CombatEngine {
     processCourageAuras(this.combatants, positions, this.logCallback);
 
     // Process protection circles (wards and circles of protection)
-    // These also provide courage bonuses and repel evil creatures
+    // These also provide courage bonuses and repel evil combatants
     // Map-aware version handles both logic and visual updates
     this.activeCircles = updateProtectionCirclesOnMap({
       circles: this.activeCircles,
@@ -440,7 +440,7 @@ export class CombatEngine {
       actions: 0,
       attacks: 0,
       grapples: 0,
-      dodges: 0,
+      evades: 0,
       parries: 0,
       damageDealt: 0,
       fightersOutOfActions: [],
@@ -455,7 +455,7 @@ export class CombatEngine {
         }
 
         // Skip if fighter has no actions remaining
-        if (fighter.remainingAttacks <= 0) {
+        if (fighter.remainingActions <= 0) {
           continue;
         }
 
@@ -466,7 +466,7 @@ export class CombatEngine {
             `${fighter.name} has no targets and defends`,
             "info"
           );
-          fighter.remainingAttacks = Math.max(0, fighter.remainingAttacks - 1);
+          fighter.remainingActions = Math.max(0, fighter.remainingActions - 1);
           roundStats.actions++;
           continue;
         }
@@ -476,7 +476,7 @@ export class CombatEngine {
 
         if (!action) {
           this.logCallback(`${fighter.name} takes no action`, "info");
-          fighter.remainingAttacks = Math.max(0, fighter.remainingAttacks - 1);
+          fighter.remainingActions = Math.max(0, fighter.remainingActions - 1);
           roundStats.actions++;
           continue;
         }
@@ -488,7 +488,7 @@ export class CombatEngine {
         this.applyStaminaDrain(fighter, action.type);
 
         // Decrement actions
-        fighter.remainingAttacks = Math.max(0, fighter.remainingAttacks - 1);
+        fighter.remainingActions = Math.max(0, fighter.remainingActions - 1);
         roundStats.actions++;
 
         // Update combatant state
@@ -497,7 +497,7 @@ export class CombatEngine {
         // Check for combat end conditions
         if (!this.hasActiveFighters()) {
           this.logCallback(
-            "⚔️ Combat ended - no active fighters remaining",
+            "ÃƒÂ¢Ã…Â¡Ã¢â‚¬ÂÃƒÂ¯Ã‚Â¸Ã‚Â Combat ended - no active fighters remaining",
             "combat"
           );
           this.isActive = false;
@@ -508,13 +508,13 @@ export class CombatEngine {
 
     // Log fighters who ran out of actions
     this.combatants.forEach((fighter) => {
-      if (fighter.remainingAttacks <= 0 && this.canFighterAct(fighter)) {
+      if (fighter.remainingActions <= 0 && this.canFighterAct(fighter)) {
         roundStats.fightersOutOfActions.push(fighter.name);
       }
     });
 
     this.logCallback(
-      `⏰ Melee Round ${this.meleeRound} complete (${roundStats.actions} total actions)`,
+      `ÃƒÂ¢Ã‚ÂÃ‚Â° Combat Round ${this.meleeRound} complete (${roundStats.actions} total actions)`,
       "combat"
     );
 
@@ -523,10 +523,10 @@ export class CombatEngine {
 
     autoCastFearProtection(this.combatants, this.logCallback);
 
-    // Allow characters to attempt recovery from fear each melee round
+    // Allow characters to attempt recovery from fear each combat round
     attemptFearRecovery(this.combatants, this.logCallback);
 
-    // Reset all fighters' actions for next melee round
+    // Reset all fighters' actions for next combat round
     this.resetActionsForNewRound();
     this.meleeRound++;
 
@@ -541,7 +541,7 @@ export class CombatEngine {
    */
   hasActionsRemaining() {
     return this.combatants.some(
-      (fighter) => this.canFighterAct(fighter) && fighter.remainingAttacks > 0
+      (fighter) => this.canFighterAct(fighter) && fighter.remainingActions > 0
     );
   }
 
@@ -580,7 +580,7 @@ export class CombatEngine {
   /**
    * Execute an action for a fighter
    * @param {Object} fighter - Fighter performing action
-   * @param {Object} action - Action object {type, target, weapon?, spell?, psionic?}
+   * @param {Object} action - Action object {type, target, weapon?, technique?, tactical?}
    * @param {Object} roundStats - Round statistics object to update
    * @returns {Object} Action result
    */
@@ -592,9 +592,9 @@ export class CombatEngine {
     };
 
     switch (action.type) {
-      case "strike":
       case "attack":
-        result.success = this.performStrike(
+      case "attack":
+        result.success = this.performAttack(
           fighter,
           action.target,
           action.weapon,
@@ -610,31 +610,31 @@ export class CombatEngine {
         );
         break;
 
-      case "dodge":
-        result.success = this.performDodge(fighter, action.target);
+      case "evade":
+        result.success = this.performEvade(fighter, action.target);
         break;
 
-      case "parry":
-        result.success = this.performParry(fighter, action.target);
+      case "block":
+        result.success = this.performBlock(fighter, action.target);
         break;
 
       case "move":
         result.success = this.performMove(fighter, action.destination);
         break;
 
-      case "spell":
-        result.success = this.performSpell(
+      case "technique":
+        result.success = this.performTechnique(
           fighter,
           action.target,
-          action.spell
+          action.technique
         );
         break;
 
-      case "psionic":
-        result.success = this.performPsionic(
+      case "tactical":
+        result.success = this.performTactical(
           fighter,
           action.target,
-          action.psionic
+          action.tactical
         );
         break;
 
@@ -645,7 +645,7 @@ export class CombatEngine {
         break;
 
       default:
-        this.logCallback(`⚠️ Unknown action type: ${action.type}`, "error");
+        this.logCallback(`ÃƒÂ¢Ã…Â¡Ã‚Â ÃƒÂ¯Ã‚Â¸Ã‚Â Unknown action type: ${action.type}`, "error");
         result.success = false;
     }
 
@@ -653,14 +653,14 @@ export class CombatEngine {
   }
 
   /**
-   * Perform a strike/attack action
+   * Perform a attack/attack action
    * @param {Object} attacker - Attacking fighter
    * @param {Object} defender - Defending fighter
    * @param {Object} weapon - Weapon object (optional)
    * @param {Object} roundStats - Round statistics
    * @returns {boolean} Success
    */
-  performStrike(attacker, defender, weapon = null, roundStats = {}) {
+  performAttack(attacker, defender, weapon = null, roundStats = {}) {
     if (!this.canFighterAct(attacker) || !this.canFighterAct(defender)) {
       return false;
     }
@@ -672,50 +672,50 @@ export class CombatEngine {
 
     if (statusPenalties.skipTurn) {
       this.logCallback(
-        `🏃 ${attacker.name} is fleeing and cannot attack this round!`,
+        `ÃƒÂ°Ã…Â¸Ã‚ÂÃ†â€™ ${attacker.name} is fleeing and cannot attack this round!`,
         "combat"
       );
-      attacker.remainingAttacks = 0;
+      attacker.remainingActions = 0;
       return false;
     }
 
-    if (statusPenalties.loseAttack && attacker.remainingAttacks > 0) {
-      attacker.remainingAttacks = Math.max(0, attacker.remainingAttacks - 1);
+    if (statusPenalties.loseAttack && attacker.remainingActions > 0) {
+      attacker.remainingActions = Math.max(0, attacker.remainingActions - 1);
       this.logCallback(
-        `😰 ${attacker.name} hesitates in terror and loses an attack this melee.`,
+        `ÃƒÂ°Ã…Â¸Ã‹Å“Ã‚Â° ${attacker.name} hesitates in terror and loses an attack this melee.`,
         "combat"
       );
       return false;
     }
 
     // Get attack bonuses (use unified abilities system)
-    const strikeBonus =
-      getCombatBonus(attacker, "strike", weapon) ||
-      attacker.bonuses?.strike ||
-      attacker.handToHand?.strikeBonus ||
+    const attackBonus =
+      getCombatBonus(attacker, "attack", weapon) ||
+      attacker.bonuses?.attack ||
+      attacker.handToHand?.attackBonus ||
       0;
     const fatigueStatus = getFatigueStatus(attacker);
-    const fatiguePenalty = fatigueStatus.penalties?.strike || 0;
+    const fatiguePenalty = fatigueStatus.penalties?.attack || 0;
 
-    const statusStrikePenalty = statusPenalties.strike || 0;
+    const statusAttackPenalty = statusPenalties.attack || 0;
 
     // Get limb-specific penalties (from hit location system)
     // Include both temporary and permanent penalties
-    const limbStrikePenalty =
-      (attacker.bonuses?.tempPenalties?.strike || 0) +
-      (attacker.bonuses?.permanentPenalties?.strike || 0);
+    const limbAttackPenalty =
+      (attacker.bonuses?.tempPenalties?.attack || 0) +
+      (attacker.bonuses?.permanentPenalties?.attack || 0);
 
     // Roll attack (apply fatigue, status, and limb penalties)
     const d20 = CryptoSecureDice.rollD20();
     const attackRoll =
       d20 +
-      strikeBonus -
+      attackBonus -
       fatiguePenalty -
-      statusStrikePenalty +
-      limbStrikePenalty; // Note: limb penalties are already negative
+      statusAttackPenalty +
+      limbAttackPenalty; // Note: limb penalties are already negative
 
     this.logCallback(
-      `🎲 ${attacker.name} rolls attack with status penalties applied (strike bonus ${strikeBonus}, fatigue -${fatiguePenalty}, status ${statusStrikePenalty}, limb ${limbStrikePenalty}).`,
+      `ÃƒÂ°Ã…Â¸Ã…Â½Ã‚Â² ${attacker.name} rolls attack with status penalties applied (attack bonus ${attackBonus}, fatigue -${fatiguePenalty}, status ${statusAttackPenalty}, limb ${limbAttackPenalty}).`,
       "combat"
     );
 
@@ -728,12 +728,12 @@ export class CombatEngine {
       return false;
     }
 
-    // Get defender's status penalties for parry/dodge
+    // Get defender's status penalties for block/evade
     // Note: Limb penalties (stored in defender.bonuses.tempPenalties) will be applied
-    // when defender actually performs parry/dodge actions
+    // when defender actually performs block/evade actions
     const defenderStatusPenalties = getStatusPenalties(defender);
 
-    // Check for parry/dodge reactions (defender can react)
+    // Check for block/evade reactions (defender can react)
     const defenseResult = this.checkDefenseReactions(
       defender,
       attacker,
@@ -746,12 +746,12 @@ export class CombatEngine {
         `${attacker.name} attacks ${defender.name} but ${defenseResult.method}!`,
         "combat"
       );
-      roundStats.parries += defenseResult.method === "parry" ? 1 : 0;
-      roundStats.dodges += defenseResult.method === "dodge" ? 1 : 0;
+      roundStats.parries += defenseResult.method === "block" ? 1 : 0;
+      roundStats.evades += defenseResult.method === "evade" ? 1 : 0;
       return false;
     }
 
-    // Resolve damage and hit location, then strike vs armor / natural AR
+    // Resolve damage and hit location, then attack vs armor / natural guardRating
     const baseDamage = this.calculateDamage(attacker, weapon);
     const attackerStatusPenalties = getStatusPenalties(attacker);
     const rolledDamage = Math.max(
@@ -774,7 +774,7 @@ export class CombatEngine {
     );
 
     const hitSlot = hit?.slot || "chest";
-    const connect = strikeConnectsVsTarget({
+    const connect = attackConnectsVsTarget({
       defender,
       attackTotal: attackRoll,
       d20,
@@ -794,7 +794,7 @@ export class CombatEngine {
     }
 
     let damageToCharacter = finalDamage;
-    if (defender.equipped && typeof calculateArmorDamage === "function") {
+    if (defender.equistaminad && typeof calculateArmorDamage === "function") {
       try {
         const armorResult = calculateArmorDamage(
           defender,
@@ -807,14 +807,14 @@ export class CombatEngine {
         if (armorResult.armorHit) {
           damageToCharacter = 0;
           this.logCallback(
-            `${attacker.name} hits ${defender.name}'s ${hit.location}, but armor absorbs the blow! (Armor: ${armorResult.damageToArmor} SDC damage)`,
+            `${attacker.name} hits ${defender.name}'s ${hit.location}, but armor absorbs the blow! (Armor: ${armorResult.damageToArmor} armorDurability damage)`,
             "combat"
           );
 
           if (armorResult.brokenArmor.length > 0) {
             armorResult.brokenArmor.forEach((broken) => {
               this.logCallback(
-                `💢 ${defender.name}'s ${broken.name} is destroyed!`,
+                `ÃƒÂ°Ã…Â¸Ã¢â‚¬â„¢Ã‚Â¢ ${defender.name}'s ${broken.name} is destroyed!`,
                 "combat"
               );
             });
@@ -849,38 +849,38 @@ export class CombatEngine {
 
     if (traumaTriggered) {
       this.logCallback(
-        `⚠️ Head trauma check triggered for ${defender.name}!`,
+        `ÃƒÂ¢Ã…Â¡Ã‚Â ÃƒÂ¯Ã‚Â¸Ã‚Â Head trauma check triggered for ${defender.name}!`,
         "combat"
       );
     }
 
     if (effects && effects.length > 0) {
       effects.forEach((effect) => {
-        this.logCallback(`⚠️ ${defender.name}: ${effect}`, "status");
+        this.logCallback(`ÃƒÂ¢Ã…Â¡Ã‚Â ÃƒÂ¯Ã‚Â¸Ã‚Â ${defender.name}: ${effect}`, "status");
       });
     }
 
     if (d20 >= 18) {
-      this.logCallback(`💥 Critical hit!`, "combat");
+      this.logCallback(`ÃƒÂ°Ã…Â¸Ã¢â‚¬â„¢Ã‚Â¥ Critical hit!`, "combat");
     }
 
     if (defender.currentHP <= -21) {
       defender.alive = false;
-      this.logCallback(`💀 ${defender.name} has been slain!`, "combat");
+      this.logCallback(`ÃƒÂ°Ã…Â¸Ã¢â‚¬â„¢Ã¢â€šÂ¬ ${defender.name} has been slain!`, "combat");
     } else if (defender.currentHP <= 0) {
-      this.logCallback(`😵 ${defender.name} is unconscious!`, "combat");
+      this.logCallback(`ÃƒÂ°Ã…Â¸Ã‹Å“Ã‚Âµ ${defender.name} is unconscious!`, "combat");
     }
 
     return true;
   }
 
   /**
-   * Check if defender can react with dodge/parry
+   * Check if defender can react with evade/block
    * @param {Object} defender - Defending fighter
    * @param {Object} attacker - Attacking fighter
    * @param {number} attackRoll - Attack roll value
    * @param {Object} statusPenalties - Status effect penalties for defender
-   * @returns {Object} Defense result {defended: boolean, method: 'parry'|'dodge'|null}
+   * @returns {Object} Defense result {defended: boolean, method: 'block'|'evade'|null}
    */
   checkDefenseReactions(
     _defender,
@@ -909,7 +909,7 @@ export class CombatEngine {
       // Get race/species for weapon size adjustment
       const race = attacker.species || attacker.race || attacker.type;
       
-      // Apply weapon size modifiers (giant +1 die, gnome reduced damage)
+      // Apply weapon size modifiers (heavy +1 die, gnome reduced damage)
       damageFormula = getAdjustedWeaponDamage(weapon.damage, race);
       
       // Parse damage dice (e.g., "1d8", "2d6+3")
@@ -984,34 +984,34 @@ export class CombatEngine {
   }
 
   /**
-   * Perform dodge action
+   * Perform evade action
    * @param {Object} fighter - Dodging fighter
    * @param {Object} attacker - Attacking fighter (optional)
    * @returns {boolean} Success
    */
   // eslint-disable-next-line no-unused-vars
-  performDodge(fighter, _attacker = null) {
+  performEvade(fighter, _attacker = null) {
     this.logCallback(
-      `${fighter.name} prepares to dodge incoming attacks`,
+      `${fighter.name} prepares to evade incoming attacks`,
       "info"
     );
-    // Dodge is a defensive stance - actual dodge roll happens during defense reactions
+    // Evade is a defensive stance - actual evade roll hastaminans during defense reactions
     return true;
   }
 
   /**
-   * Perform parry action
-   * @param {Object} fighter - Parrying fighter
+   * Perform block action
+   * @param {Object} fighter - Blocking fighter
    * @param {Object} attacker - Attacking fighter (optional)
    * @returns {boolean} Success
    */
   // eslint-disable-next-line no-unused-vars
-  performParry(fighter, _attacker = null) {
+  performBlock(fighter, _attacker = null) {
     this.logCallback(
-      `${fighter.name} takes a defensive stance, preparing to parry`,
+      `${fighter.name} takes a defensive stance, preparing to block`,
       "info"
     );
-    // Parry is a defensive stance - actual parry roll happens during defense reactions
+    // Block is a defensive stance - actual block roll hastaminans during defense reactions
     return true;
   }
 
@@ -1032,7 +1032,7 @@ export class CombatEngine {
       );
 
       if (blockCheck.blocked) {
-        this.logCallback(`🚫 ${blockCheck.reason}`, "holy");
+        this.logCallback(`ÃƒÂ°Ã…Â¸Ã…Â¡Ã‚Â« ${blockCheck.reason}`, "holy");
         return false;
       }
 
@@ -1062,36 +1062,36 @@ export class CombatEngine {
   }
 
   /**
-   * Perform spell cast (hook for spell system)
+   * Perform technique cast (hook for technique system)
    * @param {Object} caster - Casting fighter
    * @param {Object} target - Target fighter
-   * @param {Object} spell - Spell object
+   * @param {Object} technique - Technique object
    * @returns {boolean} Success
    */
-  performSpell(caster, target, spell) {
-    // Check if this is a protection circle/ward spell
-    if (spell && spell.name && isProtectionCircle(spell.name)) {
+  performTechnique(caster, target, technique) {
+    // Check if this is a protection circle/ward technique
+    if (technique && technique.name && isProtectionCircle(technique.name)) {
       const casterPos = caster.position || { x: 0, y: 0 };
-      const circle = createProtectionCircle(caster, spell.name, casterPos);
+      const circle = createProtectionCircle(caster, technique.name, casterPos);
       this.activeCircles.push(circle);
-      this.logCallback(`🕯️ ${caster.name} draws ${spell.name}!`, "holy");
+      this.logCallback(`ÃƒÂ°Ã…Â¸Ã¢â‚¬Â¢Ã‚Â¯ÃƒÂ¯Ã‚Â¸Ã‚Â ${caster.name} draws ${technique.name}!`, "holy");
       this.logCallback(
-        `✨ The circle glows with divine light (radius ${circle.radius} ft, +${circle.bonus} vs Horror).`,
+        `ÃƒÂ¢Ã…â€œÃ‚Â¨ The circle glows with divine light (radius ${circle.radius} ft, +${circle.bonus} vs Horror).`,
         "holy"
       );
       return true;
     }
 
-    if (spell?.name) {
-      const spellName = spell.name.toLowerCase();
-      if (spellName === "courage") {
+    if (technique?.name) {
+      const techniqueName = technique.name.toLowerCase();
+      if (techniqueName === "courage") {
         return castCourage(caster, this.combatants, this.logCallback);
       }
-      if (spellName === "remove fear") {
+      if (techniqueName === "remove fear") {
         if (!target) {
           this.logCallback(
             `${caster.name} needs a target within reach to cast Remove Fear!`,
-            "spell"
+            "technique"
           );
           return false;
         }
@@ -1099,26 +1099,26 @@ export class CombatEngine {
       }
     }
 
-    // Hook for spell system integration
-    this.logCallback(`${caster.name} casts ${spell.name || "spell"}`, "combat");
-    // TODO: Integrate with spell system
+    // Hook for technique system integration
+    this.logCallback(`${caster.name} casts ${technique.name || "technique"}`, "combat");
+    // TODO: Integrate with technique system
     return true;
   }
 
   /**
-   * Perform psionic power (hook for psionic system)
+   * Perform tactical power (hook for tactical system)
    * @param {Object} user - Using fighter
    * @param {Object} target - Target fighter
-   * @param {Object} psionic - Psionic power object
+   * @param {Object} tactical - Tactical power object
    * @returns {boolean} Success
    */
-  performPsionic(user, target, psionic) {
-    // Hook for psionic system integration
+  performTactical(user, target, tactical) {
+    // Hook for tactical system integration
     this.logCallback(
-      `${user.name} uses ${psionic.name || "psionic power"}`,
+      `${user.name} uses ${tactical.name || "tactical power"}`,
       "combat"
     );
-    // TODO: Integrate with psionic system
+    // TODO: Integrate with tactical system
     return true;
   }
 
@@ -1141,7 +1141,7 @@ export class CombatEngine {
     const fatigueStatus = getFatigueStatus(fighter);
     if (fatigueStatus.status !== "ready") {
       this.logCallback(
-        `💪 ${fighter.name} fatigue: ${
+        `ÃƒÂ°Ã…Â¸Ã¢â‚¬â„¢Ã‚Âª ${fighter.name} fatigue: ${
           fatigueStatus.status
         } (Stamina: ${fatigueStatus.currentStamina.toFixed(1)}/${
           fatigueStatus.maxStamina
@@ -1152,7 +1152,7 @@ export class CombatEngine {
   }
 
   /**
-   * Reset all fighters' actions for new melee round
+   * Reset all fighters' actions for new combat round
    * Also applies bio-regeneration if applicable
    */
   resetActionsForNewRound() {
@@ -1167,7 +1167,7 @@ export class CombatEngine {
       // Check if fighter loses next action due to status effects
       if (statusUpdate.loseNextAction) {
         this.logCallback(
-          `😵 ${fighter.name} is stunned and loses their next action!`,
+          `ÃƒÂ°Ã…Â¸Ã‹Å“Ã‚Âµ ${fighter.name} is stunned and loses their next action!`,
           "combat"
         );
       }
@@ -1186,7 +1186,7 @@ export class CombatEngine {
       }
 
       if (this.canFighterAct(fighter) && !statusUpdate.loseNextAction) {
-        fighter.remainingAttacks = fighter.attacksPerMelee || 2;
+        fighter.remainingActions = fighter.actionsPerRound || 2;
       } else {
         // Clear loseNextAction flag after checking
         fighter.loseNextAction = false;
@@ -1220,7 +1220,7 @@ export class CombatEngine {
         id: f.id,
         name: f.name,
         currentHP: f.currentHP,
-        remainingAttacks: f.remainingAttacks,
+        remainingActions: f.remainingActions,
         initiative: f.initiative,
       })),
       isActive: this.isActive,
@@ -1232,12 +1232,12 @@ export class CombatEngine {
    */
   endCombat() {
     this.isActive = false;
-    this.logCallback("⚔️ Combat ended", "combat");
+    this.logCallback("ÃƒÂ¢Ã…Â¡Ã¢â‚¬ÂÃƒÂ¯Ã‚Â¸Ã‚Â Combat ended", "combat");
 
     if (Array.isArray(this.combatants)) {
       this.combatants.forEach((fighter) => {
         if (!fighter || typeof fighter !== "object") return;
-        fighter.remainingAttacks = fighter.attacksPerMelee ?? fighter.actions ?? 0;
+        fighter.remainingActions = fighter.actionsPerRound ?? fighter.actions ?? 0;
         fighter.grappleState = undefined;
         fighter.fatigueState = undefined;
       });
@@ -1261,8 +1261,8 @@ export function defaultActionSelector(fighter, targets) {
     return { type: "defend" };
   }
 
-  // Simple AI: randomly choose strike or grapple
-  const actionType = Math.random() < 0.9 ? "strike" : "grapple";
+  // Simple AI: randomly choose attack or grapple
+  const actionType = Math.random() < 0.9 ? "attack" : "grapple";
   const target = targets[Math.floor(Math.random() * targets.length)];
 
   return {
@@ -1312,9 +1312,9 @@ export function createAIActionSelector(engineContext = {}) {
 
     // Enhance with context-aware decisions
     const actionPlan = {
-      type: baseAction.type || "strike",
+      type: baseAction.type || "attack",
       target: baseAction.target || targets[0],
-      weapon: fighter.equippedWeapon || null,
+      weapon: fighter.equistaminadWeapon || null,
       position: positions[fighter.id] || fighter.position,
     };
 
@@ -1372,33 +1372,33 @@ export const rollDice = (formula) => {
 
 /**
  * Simplified combat round function (matches suggested API)
- * Works with bestiary.json structure and existing fatigue/grapple systems
+ * Works with arenaRoster.js structure and existing fatigue/grapple systems
  *
  * Usage examples:
- *   - combatRound(["human_knight", "troll"]) // Auto-loads from bestiary
- *   - combatRound([loadCreature("minotaur"), loadCreature("scarecrow")]) // Pre-loaded
- *   - validateBestiary() // Run on game start to check data integrity
+ *   - combatRound(["human_knight", "champion"]) // Auto-loads from arenaRoster
+ *   - combatRound([loadCombatant("arena-champion"), loadCombatant("scarecrow")]) // Pre-loaded
+ *   - validateArenaRoster() // Run on game start to check data integrity
  *
  * @param {Array} combatants - Array of fighter objects or string IDs (will be auto-loaded)
- * @param {Object} bestiaryData - Optional bestiary data (deprecated, use loadCreatures instead)
+ * @param {Object} arenaRosterData - Optional arenaRoster data (deprecated, use loadCombatants instead)
  * @returns {Promise<Object>} Round statistics
  */
 // eslint-disable-next-line no-unused-vars
-export async function combatRound(combatants, bestiaryData = null) {
-  // Normalize combatants - convert string IDs to full objects using bestiaryLoader
+export async function combatRound(combatants, arenaRosterData = null) {
+  // Normalize combatants - convert string IDs to full objects using arenaRosterLoader
   const normalizedCombatants = combatants.map((c) => {
     if (typeof c === "string") {
-      // Use bestiaryLoader to load creature by ID or name
+      // Use arenaRosterLoader to load combatant by ID or name
       try {
-        const loaded = loadCreature(c);
+        const loaded = loadCombatant(c);
         // Ensure compatibility with combat engine expectations
         return {
           ...loaded,
           maxHP: loaded.HP,
           hp: loaded.currentHP,
-          armorRating: loaded.AR,
-          attacksPerMelee: loaded.actions || 3,
-          remainingAttacks: loaded.actions || 3,
+          guardRating: loaded.guardRating,
+          actionsPerRound: loaded.actions || 3,
+          remainingActions: loaded.actions || 3,
           weaponDamage: loaded.attacks?.[0]?.damage || "1d8",
           PE: loaded.attributes?.PE || 10,
           PS: loaded.attributes?.PS || 10,
@@ -1408,7 +1408,7 @@ export async function combatRound(combatants, bestiaryData = null) {
           initiative: rollD20() + (loaded.bonuses?.initiative || 0),
         };
       } catch (e) {
-        console.warn(`Could not load creature "${c}":`, e.message);
+        console.warn(`Could not load combatant "${c}":`, e.message);
         // Fallback to basic fighter
         return {
           id: c,
@@ -1418,9 +1418,9 @@ export async function combatRound(combatants, bestiaryData = null) {
           currentHP: 20,
           maxHP: 20,
           actions: 2,
-          remainingAttacks: 2,
-          AR: 10,
-          armorRating: 10,
+          remainingActions: 2,
+          guardRating: 10,
+          guardRating: 10,
           initiative: rollD20(),
         };
       }
@@ -1432,16 +1432,16 @@ export async function combatRound(combatants, bestiaryData = null) {
       hp: c.hp ?? c.currentHP ?? c.HP ?? 20,
       currentHP: c.currentHP ?? c.hp ?? c.HP ?? 20,
       maxHP: c.maxHP ?? c.hp ?? c.HP ?? 20,
-      actions: c.actions ?? c.remainingAttacks ?? c.attacksPerMelee ?? 2,
-      remainingAttacks:
-        c.remainingAttacks ?? c.actions ?? c.attacksPerMelee ?? 2,
+      actions: c.actions ?? c.remainingActions ?? c.actionsPerRound ?? 2,
+      remainingActions:
+        c.remainingActions ?? c.actions ?? c.actionsPerRound ?? 2,
       initiative: c.initiative ?? rollD20(),
       PE: c.PE ?? c.attributes?.PE ?? 10,
       PS: c.PS ?? c.attributes?.PS ?? 10,
       PP: c.PP ?? c.attributes?.PP ?? 10,
       bonuses: c.bonuses || {},
-      AR: c.AR ?? c.armorRating ?? 10,
-      armorRating: c.AR ?? c.armorRating ?? 10,
+      guardRating: c.guardRating ?? c.guardRating ?? 10,
+      guardRating: c.guardRating ?? c.guardRating ?? 10,
       weaponDamage: c.weaponDamage || c.attacks?.[0]?.damage || "1d8",
       fatigueState: c.fatigueState || initializeCombatFatigue(c),
       grappleState: c.grappleState || initializeGrappleState(c),
@@ -1452,7 +1452,7 @@ export async function combatRound(combatants, bestiaryData = null) {
   // Sort by initiative (highest first)
   normalizedCombatants.sort((a, b) => b.initiative - a.initiative);
 
-  console.log("\n=== ⚔️ Combat Round Begins ===");
+  console.log("\n=== ÃƒÂ¢Ã…Â¡Ã¢â‚¬ÂÃƒÂ¯Ã‚Â¸Ã‚Â Combat Round Begins ===");
   console.table(
     normalizedCombatants.map((c) => ({
       Name: c.name,
@@ -1466,7 +1466,7 @@ export async function combatRound(combatants, bestiaryData = null) {
     actions: 0,
     attacks: 0,
     grapples: 0,
-    dodges: 0,
+    evades: 0,
     parries: 0,
     damageDealt: 0,
     fightersOutOfActions: [],
@@ -1485,7 +1485,7 @@ export async function combatRound(combatants, bestiaryData = null) {
 
       const target = targets[Math.floor(Math.random() * targets.length)];
 
-      // Randomly decide to grapple or strike (25% chance grapple)
+      // Randomly decide to grapple or attack (25% chance grapple)
       const useGrapple = Math.random() < 0.25;
 
       if (useGrapple) {
@@ -1524,12 +1524,12 @@ export async function combatRound(combatants, bestiaryData = null) {
     }
   });
 
-  console.log("=== 🏁 Combat Round Ends ===\n");
+  console.log("=== ÃƒÂ°Ã…Â¸Ã‚ÂÃ‚Â Combat Round Ends ===\n");
   return roundStats;
 }
 
 /**
- * Resolve a single attack (strike)
+ * Resolve a single attack (attack)
  * @param {Object} attacker - Attacking fighter
  * @param {Object} defender - Defending fighter
  * @param {boolean} useRandomHitLocations - Whether to use random hit locations (default: true)
@@ -1538,20 +1538,20 @@ export async function combatRound(combatants, bestiaryData = null) {
 function resolveAttack(attacker, defender, useRandomHitLocations = true) {
   if (!attacker.alive || !defender.alive) return "";
 
-  const strikeBonus = getCombatBonus(attacker, "strike", attacker.weapon || attacker.weaponSlots?.rightHand || attacker.weaponSlots?.twoHanded || null) || (attacker.bonuses?.strike || 0);
-  const fatiguePenalty = attacker.fatigueState?.penalties?.strike || 0;
+  const attackBonus = getCombatBonus(attacker, "attack", attacker.weapon || attacker.weaponSlots?.rightHand || attacker.weaponSlots?.twoHanded || null) || (attacker.bonuses?.attack || 0);
+  const fatiguePenalty = attacker.fatigueState?.penalties?.attack || 0;
   const d20Atk = rollD20();
-  const attackRoll = d20Atk + strikeBonus - fatiguePenalty;
+  const attackRoll = d20Atk + attackBonus - fatiguePenalty;
 
   if (d20Atk === 1) {
     return `${attacker.name} fumbles the attack against ${defender.name}!`;
   }
 
-  const parryBonus = getCombatBonus(defender, "parry", defender.weaponSlots?.leftHand || defender.weaponSlots?.rightHand || defender.weaponSlots?.twoHanded || null) || (defender.bonuses?.parry || 0);
+  const blockBonus = getCombatBonus(defender, "block", defender.weaponSlots?.leftHand || defender.weaponSlots?.rightHand || defender.weaponSlots?.twoHanded || null) || (defender.bonuses?.block || 0);
 
-  const parryRoll = rollD20() + parryBonus;
+  const blockRoll = rollD20() + blockBonus;
 
-  if (attackRoll <= parryRoll) {
+  if (attackRoll <= blockRoll) {
     return `${attacker.name} attacks ${defender.name} but misses or is parried.`;
   }
 
@@ -1559,12 +1559,12 @@ function resolveAttack(attacker, defender, useRandomHitLocations = true) {
     rollDice(attacker.weaponDamage || "1d8") +
     Math.floor((attacker.PS || 10) / 5);
 
-  const weaponIsMagic = attacker.weaponIsMagic || false;
-  const damageType = weaponIsMagic ? "magic" : "normal";
+  const weaponIsTraining = attacker.weaponIsTraining || false;
+  const damageType = weaponIsTraining ? "training" : "normal";
   const resistance = checkDamageResistance(
     defender,
     damageType,
-    weaponIsMagic
+    weaponIsTraining
   );
 
   if (resistance.ignored) {
@@ -1585,7 +1585,7 @@ function resolveAttack(attacker, defender, useRandomHitLocations = true) {
     {}
   );
 
-  const connect = strikeConnectsVsTarget({
+  const connect = attackConnectsVsTarget({
     defender,
     attackTotal: attackRoll,
     d20: d20Atk,
@@ -1600,7 +1600,7 @@ function resolveAttack(attacker, defender, useRandomHitLocations = true) {
   }
 
   let damageToCharacter = finalDamage;
-  if (defender.equipped && typeof calculateArmorDamage === "function") {
+  if (defender.equistaminad && typeof calculateArmorDamage === "function") {
     try {
       const armorResult = calculateArmorDamage(
         defender,
@@ -1631,14 +1631,14 @@ function resolveAttack(attacker, defender, useRandomHitLocations = true) {
   resultMessage += resistanceNote;
 
   if (effects && effects.length > 0) {
-    resultMessage += ` — ${effects.join(", ")}`;
+    resultMessage += ` ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â ${effects.join(", ")}`;
   }
 
   if (defender.currentHP <= 0) {
     defender.currentHP = 0;
     defender.hp = 0;
     defender.alive = false;
-    return `💀 ${resultMessage} — ${defender.name} is slain!`;
+    return `ÃƒÂ°Ã…Â¸Ã¢â‚¬â„¢Ã¢â€šÂ¬ ${resultMessage} ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â ${defender.name} is slain!`;
   }
 
   resultMessage += `! (HP: ${defender.currentHP})`;
@@ -1646,7 +1646,7 @@ function resolveAttack(attacker, defender, useRandomHitLocations = true) {
 }
 
 /**
- * Refresh all combatants for next melee round
+ * Refresh all combatants for next combat round
  * @param {Array} combatants - Array of fighter objects
  */
 export function refreshForNextMelee(combatants) {
@@ -1663,14 +1663,14 @@ export function refreshForNextMelee(combatants) {
  * @returns {number} Actions per melee
  */
 function calculateActions(c) {
-  // Check if character has attacksPerMelee already set
-  if (c.attacksPerMelee) return c.attacksPerMelee;
+  // Check if character has actionsPerRound already set
+  if (c.actionsPerRound) return c.actionsPerRound;
 
   // Simple lookup based on name/type
   const name = (c.name || "").toLowerCase();
-  if (name.includes("troll")) return 6;
+  if (name.includes("champion")) return 6;
   if (name.includes("knight")) return 4;
-  if (name.includes("ogre")) return 5;
+  if (name.includes("heavy fighter")) return 5;
 
   // Default
   return c.actions || 3;

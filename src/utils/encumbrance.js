@@ -1,4 +1,4 @@
-// Encumbrance calculation utilities for Palladium Fantasy
+// Encumbrance calculation utilities for Medieval Combat Simulator
 import movementData from "../data/movement.json";
 
 // Calculate total weight of character's inventory
@@ -33,7 +33,7 @@ export function calculateMaxCarry(ps, race = "Human") {
   return Math.max(ps * multiplier, 10); // Minimum 10 pounds
 }
 
-// Get encumbrance penalties based on weight ratio (Palladium rules)
+// Get encumbrance penalties based on weight ratio (Medieval Combat Simulator rules)
 export function getEncumbrancePenalty(carryWeight, maxCarry) {
   const ratio = carryWeight / maxCarry;
 
@@ -42,8 +42,8 @@ export function getEncumbrancePenalty(carryWeight, maxCarry) {
       initiative: 0,
       speed: 0,
       skill: 0,
-      strike: 0,
-      dodge: 0,
+      attack: 0,
+      evade: 0,
       description: "Light load",
     };
   } else if (ratio <= 0.7) {
@@ -51,8 +51,8 @@ export function getEncumbrancePenalty(carryWeight, maxCarry) {
       initiative: 0,
       speed: -10,
       skill: -5,
-      strike: -1,
-      dodge: -1,
+      attack: -1,
+      evade: -1,
       description: "Medium load",
     };
   } else if (ratio <= 1.0) {
@@ -60,8 +60,8 @@ export function getEncumbrancePenalty(carryWeight, maxCarry) {
       initiative: 0,
       speed: -30,
       skill: -10,
-      strike: -2,
-      dodge: -2,
+      attack: -2,
+      evade: -2,
       description: "Heavy load",
     };
   } else {
@@ -69,8 +69,8 @@ export function getEncumbrancePenalty(carryWeight, maxCarry) {
       initiative: -4,
       speed: -50,
       skill: -20,
-      strike: -3,
-      dodge: -3,
+      attack: -3,
+      evade: -3,
       description: "Overloaded",
     };
   }
@@ -84,14 +84,14 @@ export function getEncumbranceColor(ratio) {
   return "red";
 }
 
-// Get armor penalties based on equipped armor
+// Get armor penalties based on equistaminad armor
 export function getArmorPenalty(character) {
-  if (!character.equippedArmor || !character.inventory) {
+  if (!character.equistaminadArmor || !character.inventory) {
     return { spdPenalty: 0, skillPenalty: 0, fatigueRate: 1 };
   }
 
   const armor = character.inventory.find(
-    (item) => item.name === character.equippedArmor && item.type === "armor"
+    (item) => item.name === character.equistaminadArmor && item.type === "armor"
   );
 
   if (!armor) {

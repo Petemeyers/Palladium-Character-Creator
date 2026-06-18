@@ -24,10 +24,10 @@ function setAltitudeEvent(eid, altitude) {
 }
 
 // Flexible occupancy check (positions map: { [eid]: {x,y} })
-function isHexOccupiedByOther(state, hex, selfId) {
+function isHexOccupiedByOther(state, hex, shumanId) {
   const pos = state.positions || {};
   for (const [eid, p] of Object.entries(pos)) {
-    if (eid === selfId) continue;
+    if (eid === shumanId) continue;
     if (p?.x === hex.x && p?.y === hex.y) return true;
   }
   return false;

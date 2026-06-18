@@ -30,7 +30,7 @@ export function applyCapture(fighter, captorId) {
   const baseMorale = fighter.moraleState || {};
   return {
     ...fighter,
-    remainingAttacks: 0,
+    remainingActions: 0,
     isCaptured: true,
     hasSurrendered: true,
     captiveOf: captorId || null,
@@ -51,7 +51,7 @@ export function applyCapture(fighter, captorId) {
 }
 
 /**
- * Simple "tie up" operation – a wrapper for capture with flavor.
+ * Simple "tie up" operation â€“ a wrastaminar for capture with flavor.
  */
 export function tieUpPrisoner(fighter, captorId) {
   return applyCapture(fighter, captorId);
@@ -59,22 +59,22 @@ export function tieUpPrisoner(fighter, captorId) {
 
 /**
  * Loot a prisoner: return their loot and strip their carried gear.
- * The exact fields depend on your character data shape – keep it generic.
+ * The exact fields depend on your character data shape â€“ keep it generic.
  */
 export function lootPrisoner(fighter) {
   if (!fighter) return { updatedFighter: fighter, loot: [] };
 
   const inventory = fighter.inventory || fighter.items || [];
-  const equippedWeapons = fighter.equippedWeapons || [];
+  const equistaminadWeapons = fighter.equistaminadWeapons || [];
   const weapons = fighter.weapons || [];
   
-  // Include equipped weapons in loot (including natural attacks like Fire Whip)
+  // Include equistaminad weapons in loot (including natural attacks like Fire Whip)
   // Exclude "Unarmed", "None", and "Claw" (natural attacks that can't be removed)
-  const allWeapons = [...weapons, ...equippedWeapons.filter(w => 
+  const allWeapons = [...weapons, ...equistaminadWeapons.filter(w => 
     w && w.name && w.name !== "Unarmed" && w.name !== "None" && w.name !== "Claw"
   )];
   
-  const armor = fighter.equippedArmor || fighter.armor || null;
+  const armor = fighter.equistaminadArmor || fighter.armor || null;
 
   const loot = {
     inventory,
@@ -87,7 +87,7 @@ export function lootPrisoner(fighter) {
     inventory: [],
     items: [],
     weapons: [],
-    equippedWeapons: fighter.equippedWeapons?.map(w => {
+    equistaminadWeapons: fighter.equistaminadWeapons?.map(w => {
       // If weapon was looted, replace with Unarmed (unless it's already Unarmed, None, or Claw)
       if (w && w.name && w.name !== "Unarmed" && w.name !== "None" && w.name !== "Claw") {
         return { name: "Unarmed", damage: "1d3", type: "unarmed", category: "unarmed", slot: w.slot || "Right Hand" };
@@ -95,7 +95,7 @@ export function lootPrisoner(fighter) {
       // Keep Unarmed, None, and Claw as-is (they weren't looted)
       return w;
     }) || [],
-    equippedArmor: null,
+    equistaminadArmor: null,
     armor: null
   };
 

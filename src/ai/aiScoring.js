@@ -12,14 +12,14 @@ function hpPercent(actor) {
 }
 
 function resourcePercent(actor, kind) {
-  if (kind === "ppe") {
-    return Number(actor?.currentPPE ?? actor?.ppe ?? actor?.PPE ?? 0) /
-      Math.max(1, Number(actor?.maxPPE ?? actor?.ppe ?? actor?.PPE ?? 1));
+  if (kind === "stamina") {
+    return Number(actor?.currentstamina ?? actor?.stamina ?? actor?.stamina ?? 0) /
+      Math.max(1, Number(actor?.maxstamina ?? actor?.stamina ?? actor?.stamina ?? 1));
   }
 
-  if (kind === "isp") {
-    return Number(actor?.currentISP ?? actor?.isp ?? actor?.ISP ?? 0) /
-      Math.max(1, Number(actor?.maxISP ?? actor?.isp ?? actor?.ISP ?? 1));
+  if (kind === "focus") {
+    return Number(actor?.currentfocus ?? actor?.focus ?? actor?.focus ?? 0) /
+      Math.max(1, Number(actor?.maxfocus ?? actor?.focus ?? actor?.focus ?? 1));
   }
 
   return 1;
@@ -27,7 +27,7 @@ function resourcePercent(actor, kind) {
 
 function wasUsedRecently(action, actor, world) {
   const key = `${idOf(actor)}:${action.type}:${
-    action.spell?.name ?? action.psionic?.name ?? action.skillName ?? action.name
+    action.technique?.name ?? action.tactical?.name ?? action.skillName ?? action.name
   }`;
   const lastUsedRound = world?.aiMemory?.lastUsedRoundByKey?.[key];
   if (lastUsedRound == null) return false;
@@ -87,7 +87,7 @@ function applyTeamTacticsScore(score, action, actor, world) {
   }
 
   if (role === "CASTER") {
-    if (tags.includes("spell")) score += 10;
+    if (tags.includes("technique")) score += 10;
     if (tags.includes("control")) score += 15;
     if (tags.includes("melee")) score -= 20;
   }
@@ -173,16 +173,16 @@ export function scoreAiAction(action, actor, world = {}) {
     score += 10 * p.caution;
   }
 
-  if (action.spell) {
-    const ppePercent = resourcePercent(actor, "ppe");
-    score -= Number(action.spell.ppeCost ?? action.spell.PPE ?? 0) * (0.4 + p.resourceConservation);
-    if (ppePercent < 0.3) score -= 25;
+  if (action.technique) {
+    const staminaPercent = resourcePercent(actor, "stamina");
+    score -= Number(action.technique.staminaCost ?? action.technique.stamina ?? 0) * (0.4 + p.resourceConservation);
+    if (staminaPercent < 0.3) score -= 25;
   }
 
-  if (action.psionic) {
-    const ispPercent = resourcePercent(actor, "isp");
-    score -= Number(action.psionic.isp ?? action.psionic.ISP ?? 0) * (0.3 + p.resourceConservation);
-    if (ispPercent < 0.3) score -= 20;
+  if (action.tactical) {
+    const focusPercent = resourcePercent(actor, "focus");
+    score -= Number(action.tactical.focus ?? action.tactical.focus ?? 0) * (0.3 + p.resourceConservation);
+    if (focusPercent < 0.3) score -= 20;
   }
 
   if (action.requiresRoll) {
@@ -191,7 +191,7 @@ export function scoreAiAction(action, actor, world = {}) {
   }
 
   if (wasUsedRecently(action, actor, world)) {
-    if (tags.includes("spell") || tags.includes("psionic")) {
+    if (tags.includes("technique") || tags.includes("tactical")) {
       score -= 45;
     } else if (tags.includes("hunt") || tags.includes("search")) {
       score -= 25;

@@ -1,5 +1,5 @@
 /**
- * Dice rolling utilities for Palladium Fantasy RPG
+ * Dice rolling utilities for Medieval Combat Simulator
  */
 
 import CryptoSecureDice from "./cryptoDice.js";
@@ -55,7 +55,7 @@ export function rollDice(notation) {
 }
 
 /**
- * Roll HP for creatures with HP ranges
+ * Roll HP for combatants with HP ranges
  * @param {string|number} hpRange - HP range like "7-56" or "6d8" or single number
  * @returns {number} - Rolled HP value
  */
@@ -81,7 +81,7 @@ export function rollHP(hpRange) {
 
 /**
  * Roll initiative (Speed + d20)
- * @param {number} speed - Creature's speed
+ * @param {number} speed - Combatant's speed
  * @returns {number} - Initiative value
  */
 export function rollInitiative(speed = 10) {
@@ -89,12 +89,12 @@ export function rollInitiative(speed = 10) {
 }
 
 /**
- * Roll to hit (d20 + strike bonus)
- * @param {number} strikeBonus - Strike bonus from bonuses
+ * Roll to hit (d20 + attack bonus)
+ * @param {number} attackBonus - Attack bonus from bonuses
  * @returns {number} - To-hit roll result
  */
-export function rollToHit(strikeBonus = 0) {
-  return rollDice("1d20") + strikeBonus;
+export function rollToHit(attackBonus = 0) {
+  return rollDice("1d20") + attackBonus;
 }
 
 /**

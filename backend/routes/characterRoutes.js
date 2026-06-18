@@ -146,7 +146,7 @@ router.post("/", validate(characterValidation.create), async (req, res) => {
     console.log("=== Character Creation Route ===");
     console.log("Received req.body:", {
       name: req.body.name,
-      occSkills: req.body.occSkills,
+      professionSkills: req.body.professionSkills,
       electiveSkills: req.body.electiveSkills,
       secondarySkills: req.body.secondarySkills,
     });
@@ -169,7 +169,7 @@ router.post("/", validate(characterValidation.create), async (req, res) => {
 
     console.log("Character before save:", {
       name: newCharacter.name,
-      occSkills: newCharacter.occSkills,
+      professionSkills: newCharacter.professionSkills,
       electiveSkills: newCharacter.electiveSkills,
       secondarySkills: newCharacter.secondarySkills,
     });
@@ -179,7 +179,7 @@ router.post("/", validate(characterValidation.create), async (req, res) => {
 
     console.log("Character after save:", {
       name: savedCharacter.name,
-      occSkills: savedCharacter.occSkills,
+      professionSkills: savedCharacter.professionSkills,
       electiveSkills: savedCharacter.electiveSkills,
       secondarySkills: savedCharacter.secondarySkills,
     });
@@ -417,9 +417,9 @@ router.put("/:id", async (req, res) => {
       }));
     }
 
-    // Handle equipped items updates
-    if (updates.equipped) {
-      updateData.equipped = updates.equipped;
+    // Handle equistaminad items updates
+    if (updates.equistaminad) {
+      updateData.equistaminad = updates.equistaminad;
     }
 
     // Handle wardrobe updates
@@ -429,7 +429,7 @@ router.put("/:id", async (req, res) => {
 
     // Handle other updates
     Object.keys(updates).forEach((key) => {
-      if (key !== "inventory" && key !== "equipped" && key !== "wardrobe") {
+      if (key !== "inventory" && key !== "equistaminad" && key !== "wardrobe") {
         updateData[key] = updates[key];
       }
     });

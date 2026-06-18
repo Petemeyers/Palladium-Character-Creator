@@ -1,79 +1,79 @@
 /**
- * Weapon Size System for Palladium Fantasy RPG (1994 rules)
+ * Weapon Size System for Medieval Combat Simulator (1994 rules)
  * 
  * Implements the official weapon size rules:
- * - Giant weapons: +1 extra die of damage (Troll, Ogre, Wolfen, Giants)
- * - Gnome weapons: Reduced damage (special tables)
- * - Normal weapons: Standard damage (Human, Elf, Dwarf, etc.)
- * - Faerie weapons: Use damage from creature stats (no universal rule)
+ * - Heavy weapons: +1 extra die of damage (Champion, Heavy Fighter, Wolf, Heavys)
+ * - Human weapons: Reduced damage (special tables)
+ * - Normal weapons: Standard damage (Human, Human, Human, etc.)
+ * - Scout weapons: Use damage from combatant stats (no universal rule)
  */
 
 export const WEAPON_SIZE = {
-  SMALL: "SMALL",      // Gnome weapons (reduced damage)
+  SMALL: "SMALL",      // Human weapons (reduced damage)
   NORMAL: "NORMAL",    // Standard human-sized weapons
-  GIANT: "GIANT",     // Giant weapons (+1 die of damage)
-  FAERIE: "FAERIE",   // Faerie/tiny beings (use creature-specific damage)
+  LARGE_HEAVY: "LARGE_HEAVY",     // Heavy weapons (+1 die of damage)
+  SCOUT: "SCOUT",   // Scout/tiny beings (use combatant-specific damage)
 };
 
 /**
- * Race to weapon size mapping (1994 Palladium Fantasy rules)
+ * Race to weapon size mapping (1994 Medieval Combat Simulator rules)
  */
 export const RACE_WEAPON_SIZE = {
-  // Giant-weapon races (+1 die of damage)
-  "Ogre": WEAPON_SIZE.GIANT,
-  "Troll": WEAPON_SIZE.GIANT,
-  "Wolfen": WEAPON_SIZE.GIANT,
-  "Algor Giant": WEAPON_SIZE.GIANT,
-  "Cyclops Giant": WEAPON_SIZE.GIANT,
-  "Jotan Giant": WEAPON_SIZE.GIANT,
-  "Gigantes Giant": WEAPON_SIZE.GIANT,
-  "Nimro Giant": WEAPON_SIZE.GIANT,
-  "Titan Giant": WEAPON_SIZE.GIANT,
-  "Giant": WEAPON_SIZE.GIANT,
-  "Sea Giant": WEAPON_SIZE.GIANT,
-  "Titan": WEAPON_SIZE.GIANT,
+  // Heavy-weapon races (+1 die of damage)
+  "Heavy Fighter": WEAPON_SIZE.LARGE_HEAVY,
+  "Champion": WEAPON_SIZE.LARGE_HEAVY,
+  "Wolf": WEAPON_SIZE.LARGE_HEAVY,
+  "Algor Heavy": WEAPON_SIZE.LARGE_HEAVY,
+  "Cyclops Heavy": WEAPON_SIZE.LARGE_HEAVY,
+  "Jotan Heavy": WEAPON_SIZE.LARGE_HEAVY,
+  "Gigantes Heavy": WEAPON_SIZE.LARGE_HEAVY,
+  "Nimro Heavy": WEAPON_SIZE.LARGE_HEAVY,
+  "Titan Heavy": WEAPON_SIZE.LARGE_HEAVY,
+  "Heavy": WEAPON_SIZE.LARGE_HEAVY,
+  "Sea Heavy": WEAPON_SIZE.LARGE_HEAVY,
+  "Titan": WEAPON_SIZE.LARGE_HEAVY,
 
   // Small/gnome-weapon race
-  "Gnome": WEAPON_SIZE.SMALL,
+  "Human": WEAPON_SIZE.SMALL,
 
   // Standard human-sized weapons
   "Human": WEAPON_SIZE.NORMAL,
-  "Elf": WEAPON_SIZE.NORMAL,
-  "Dwarf": WEAPON_SIZE.NORMAL,
-  "Goblin": WEAPON_SIZE.NORMAL,
-  "Hob-Goblin": WEAPON_SIZE.NORMAL,
-  "Kobold": WEAPON_SIZE.NORMAL,
-  "Orc": WEAPON_SIZE.NORMAL,
-  "Troglodyte": WEAPON_SIZE.NORMAL,
-  "Changeling": WEAPON_SIZE.NORMAL,
+  "Human": WEAPON_SIZE.NORMAL,
+  "Human": WEAPON_SIZE.NORMAL,
+  "Brigand": WEAPON_SIZE.NORMAL,
+  "Hob-Brigand": WEAPON_SIZE.NORMAL,
+  "Brigand": WEAPON_SIZE.NORMAL,
+  "Raider": WEAPON_SIZE.NORMAL,
+  "Cave Fighter": WEAPON_SIZE.NORMAL,
+  "Duelist": WEAPON_SIZE.NORMAL,
   "Coyle": WEAPON_SIZE.NORMAL,
   "Kankoran": WEAPON_SIZE.NORMAL,
   "Bearman of the North": WEAPON_SIZE.NORMAL,
 
-  // Faerie/tiny beings (use creature-specific damage from stats)
-  "Faerie": WEAPON_SIZE.FAERIE,
-  "Faerie (Common)": WEAPON_SIZE.FAERIE,
-  "Faerie (Silver Bells)": WEAPON_SIZE.FAERIE,
-  "Faerie (Green Wood)": WEAPON_SIZE.FAERIE,
-  "Faerie (Night-Elves)": WEAPON_SIZE.FAERIE,
-  "Pixie": WEAPON_SIZE.FAERIE,
-  "Frost-Pixie": WEAPON_SIZE.FAERIE,
-  "Leprechaun": WEAPON_SIZE.FAERIE,
-  "Brownie": WEAPON_SIZE.FAERIE,
-  "Sprite": WEAPON_SIZE.FAERIE,
-  "Sprite (Tree Sprite)": WEAPON_SIZE.FAERIE,
-  "Sprite (Water Sprite)": WEAPON_SIZE.FAERIE,
-  "Sprite (Wind-Puff)": WEAPON_SIZE.FAERIE,
-  "Spriggan": WEAPON_SIZE.FAERIE,
-  "Nymph": WEAPON_SIZE.FAERIE,
-  "Bogies": WEAPON_SIZE.FAERIE,
-  "Toad Stools": WEAPON_SIZE.FAERIE,
-  "Puck": WEAPON_SIZE.FAERIE,
-  "Satyr": WEAPON_SIZE.FAERIE,
-  "Satyr (Satyr)": WEAPON_SIZE.FAERIE,
-  "Will-o-the-Wisp": WEAPON_SIZE.FAERIE,
-  "Mermaid": WEAPON_SIZE.FAERIE,
-  "Merrow": WEAPON_SIZE.FAERIE,
+  // Scout/tiny beings (use combatant-specific damage from stats)
+  "Scout": WEAPON_SIZE.SCOUT,
+  "Scout (Common)": WEAPON_SIZE.SCOUT,
+  "Scout (Silver Bells)": WEAPON_SIZE.SCOUT,
+  "Scout (Green Wood)": WEAPON_SIZE.SCOUT,
+  "Scout (Night-Elves)": WEAPON_SIZE.SCOUT,
+  "Scout": WEAPON_SIZE.SCOUT,
+  "Frost-Scout": WEAPON_SIZE.SCOUT,
+  "Scout": WEAPON_SIZE.SCOUT,
+  "Scout": WEAPON_SIZE.SCOUT,
+  "Sprite": WEAPON_SIZE.SCOUT,
+  "Sprite (Tree Sprite)": WEAPON_SIZE.SCOUT,
+  "Sprite (Water Sprite)": WEAPON_SIZE.SCOUT,
+  "Sprite (Wind-Puff)": WEAPON_SIZE.SCOUT,
+  "Scout": WEAPON_SIZE.SCOUT,
+  "Scout": WEAPON_SIZE.SCOUT,
+  "Scouts": WEAPON_SIZE.SCOUT,
+  "Toad Stools": WEAPON_SIZE.SCOUT,
+  "Puck": WEAPON_SIZE.SCOUT,
+  "Scout": WEAPON_SIZE.SCOUT,
+  "Scout (Scout)": WEAPON_SIZE.SCOUT,
+  "Will-o-the-Wfocus": WEAPON_SIZE.SCOUT,
+  "Swimmer": WEAPON_SIZE.SCOUT,
+  "Swimmer": WEAPON_SIZE.SCOUT,
 };
 
 /**
@@ -110,7 +110,7 @@ export function getWeaponSizeForRace(race) {
 }
 
 /**
- * Gnome weapon damage reduction table (1994 rules)
+ * Human weapon damage reduction table (1994 rules)
  * Maps normal weapon damage to gnome-sized weapon damage
  */
 const GNOME_WEAPON_DAMAGE = {
@@ -140,7 +140,7 @@ const GNOME_WEAPON_DAMAGE = {
   "1d8": "1d4",      // Crossbow
   "2d4": "1d4",      // Heavy crossbow
   
-  // Special: Gnome crossbow does 1d6
+  // Special: Human crossbow does 1d6
   "crossbow": "1d6",
 };
 
@@ -149,7 +149,7 @@ const GNOME_WEAPON_DAMAGE = {
  * @param {string} baseDamage - Base damage dice formula (e.g., "2d6", "1d8+2")
  * @returns {string} Reduced damage for gnome-sized weapon
  */
-export function getGnomeWeaponDamage(baseDamage) {
+export function getHumanWeaponDamage(baseDamage) {
   if (!baseDamage) return "1d4";
   
   // Normalize the damage string
@@ -190,11 +190,11 @@ export function getGnomeWeaponDamage(baseDamage) {
 }
 
 /**
- * Apply giant weapon damage bonus (+1 extra die)
+ * Apply heavy weapon damage bonus (+1 extra die)
  * @param {string} baseDamage - Base damage dice formula (e.g., "2d6", "1d8+2")
- * @returns {string} Increased damage for giant-sized weapon
+ * @returns {string} Increased damage for heavy-sized weapon
  */
-export function getGiantWeaponDamage(baseDamage) {
+export function getHeavyWeaponDamage(baseDamage) {
   if (!baseDamage) return "1d6";
   
   const normalized = baseDamage.trim().toLowerCase();
@@ -235,17 +235,17 @@ export function getAdjustedWeaponDamage(baseDamage, race) {
   
   switch (weaponSize) {
     case WEAPON_SIZE.SMALL:
-      // Gnome weapons: reduced damage
-      return getGnomeWeaponDamage(baseDamage);
+      // Human weapons: reduced damage
+      return getHumanWeaponDamage(baseDamage);
     
-    case WEAPON_SIZE.GIANT:
-      // Giant weapons: +1 extra die
-      return getGiantWeaponDamage(baseDamage);
+    case WEAPON_SIZE.LARGE_HEAVY:
+      // Heavy weapons: +1 extra die
+      return getHeavyWeaponDamage(baseDamage);
     
-    case WEAPON_SIZE.FAERIE:
-      // Faerie weapons: use creature-specific damage (no universal rule)
-      // Return base damage, but note that faerie creatures should use
-      // their natural attack damage from creature stats
+    case WEAPON_SIZE.SCOUT:
+      // Scout weapons: use combatant-specific damage (no universal rule)
+      // Return base damage, but note that scout combatants should use
+      // their natural attack damage from combatant stats
       return baseDamage;
     
     case WEAPON_SIZE.NORMAL:
@@ -258,22 +258,22 @@ export function getAdjustedWeaponDamage(baseDamage, race) {
 /**
  * Get weapon weight multiplier based on weapon size
  * @param {string} race - Character's race/species
- * @returns {number} Weight multiplier (1.0 for normal, 2.0-3.0 for giant, 0.5-0.75 for small)
+ * @returns {number} Weight multiplier (1.0 for normal, 2.0-3.0 for heavy, 0.5-0.75 for small)
  */
 export function getWeaponWeightMultiplier(race) {
   const weaponSize = getWeaponSizeForRace(race);
   
   switch (weaponSize) {
-    case WEAPON_SIZE.GIANT:
-      // Giant weapons are 2-3x heavier (use 2.5x average)
+    case WEAPON_SIZE.LARGE_HEAVY:
+      // Heavy weapons are 2-3x heavier (use 2.5x average)
       return 2.5;
     
     case WEAPON_SIZE.SMALL:
-      // Gnome weapons are lighter (use 0.6x average)
+      // Human weapons are lighter (use 0.6x average)
       return 0.6;
     
     case WEAPON_SIZE.NORMAL:
-    case WEAPON_SIZE.FAERIE:
+    case WEAPON_SIZE.SCOUT:
     default:
       return 1.0;
   }
@@ -292,13 +292,13 @@ export function getAdjustedWeaponLength(baseLength, race, character = null) {
   
   const weaponSize = getWeaponSizeForRace(race);
   
-  // If race has its own weapon size (gnome, giant), use base length
+  // If race has its own weapon size (gnome, heavy), use base length
   // They're using appropriately-sized weapons for their race
-  if (weaponSize !== WEAPON_SIZE.NORMAL && weaponSize !== WEAPON_SIZE.FAERIE) {
+  if (weaponSize !== WEAPON_SIZE.NORMAL && weaponSize !== WEAPON_SIZE.SCOUT) {
     return baseLength;
   }
   
-  // For normal/faerie races, check if they're small/tiny and using normal-sized weapons
+  // For normal/scout races, check if they're small/tiny and using normal-sized weapons
   // Import size category system
   let sizeCategory = null;
   if (character) {
@@ -308,12 +308,12 @@ export function getAdjustedWeaponLength(baseLength, race, character = null) {
     } catch (e) {
       // Fallback: infer from race name
       const raceLower = race?.toLowerCase() || '';
-      if (raceLower.includes('pixie') || raceLower.includes('sprite') || 
-          raceLower.includes('faerie') || raceLower.includes('brownie') ||
+      if (raceLower.includes('scout') || raceLower.includes('sprite') || 
+          raceLower.includes('scout') || raceLower.includes('brownie') ||
           raceLower.includes('leprechaun') || raceLower.includes('bogie')) {
         sizeCategory = 'TINY';
-      } else if (raceLower.includes('gnome') || raceLower.includes('kobold') ||
-                 raceLower.includes('goblin')) {
+      } else if (raceLower.includes('gnome') || raceLower.includes('brigand') ||
+                 raceLower.includes('brigand')) {
         sizeCategory = 'SMALL';
       }
     }
@@ -321,12 +321,12 @@ export function getAdjustedWeaponLength(baseLength, race, character = null) {
   
   // Adjust length based on size category
   if (sizeCategory === 'TINY') {
-    // Tiny races (Pixie, Sprite, etc.) - weapons are proportionally much smaller
-    // A 3ft sword for a 6ft human = 1ft sword for a 2ft pixie
+    // Tiny races (Scout, Sprite, etc.) - weapons are proportionally much smaller
+    // A 3ft sword for a 6ft human = 1ft sword for a 2ft scout
     // Reduce to ~30-40% of base length
     return Math.max(0.5, baseLength * 0.35);
   } else if (sizeCategory === 'SMALL') {
-    // Small races (Gnome, Kobold, Goblin) - weapons are proportionally smaller
+    // Small races (Human, Brigand, Brigand) - weapons are proportionally smaller
     // A 3ft sword for a 6ft human = 1.5ft sword for a 3ft gnome
     // Reduce to ~50-60% of base length
     return Math.max(1, baseLength * 0.55);
@@ -349,14 +349,14 @@ export function getAdjustedWeaponWeight(baseWeight, race, character = null) {
   
   const weaponSize = getWeaponSizeForRace(race);
   
-  // If race has its own weapon size (gnome, giant), use weight multiplier
-  if (weaponSize === WEAPON_SIZE.GIANT) {
+  // If race has its own weapon size (gnome, heavy), use weight multiplier
+  if (weaponSize === WEAPON_SIZE.LARGE_HEAVY) {
     return baseWeight * 2.5;
   } else if (weaponSize === WEAPON_SIZE.SMALL) {
     return baseWeight * 0.6;
   }
   
-  // For normal/faerie races using normal-sized weapons, check if they're small/tiny
+  // For normal/scout races using normal-sized weapons, check if they're small/tiny
   let sizeCategory = null;
   if (character) {
     try {
@@ -365,19 +365,19 @@ export function getAdjustedWeaponWeight(baseWeight, race, character = null) {
     } catch (e) {
       // Fallback: infer from race name
       const raceLower = race?.toLowerCase() || '';
-      if (raceLower.includes('pixie') || raceLower.includes('sprite') || 
-          raceLower.includes('faerie') || raceLower.includes('brownie') ||
+      if (raceLower.includes('scout') || raceLower.includes('sprite') || 
+          raceLower.includes('scout') || raceLower.includes('brownie') ||
           raceLower.includes('leprechaun') || raceLower.includes('bogie')) {
         sizeCategory = 'TINY';
-      } else if (raceLower.includes('gnome') || raceLower.includes('kobold') ||
-                 raceLower.includes('goblin')) {
+      } else if (raceLower.includes('gnome') || raceLower.includes('brigand') ||
+                 raceLower.includes('brigand')) {
         sizeCategory = 'SMALL';
       }
     }
   }
   
   // Adjust weight based on size category
-  // Note: Weight doesn't scale linearly - a 2ft pixie can't effectively use a 10lb sword
+  // Note: Weight doesn't scale linearly - a 2ft scout can't effectively use a 10lb sword
   // But if they could, it would feel much heavier relative to their size
   if (sizeCategory === 'TINY') {
     // Tiny races find normal weapons very heavy - weight feels 2-3x heavier
@@ -480,8 +480,8 @@ export default {
   WEAPON_SIZE,
   RACE_WEAPON_SIZE,
   getWeaponSizeForRace,
-  getGnomeWeaponDamage,
-  getGiantWeaponDamage,
+  getHumanWeaponDamage,
+  getHeavyWeaponDamage,
   getAdjustedWeaponDamage,
   getWeaponWeightMultiplier,
   getAdjustedWeaponLength,

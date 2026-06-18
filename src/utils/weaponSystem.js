@@ -1,5 +1,5 @@
 /**
- * Palladium RPG Weapon System Utilities
+ * Medieval Combat Simulator Weapon System Utilities
  *
  * Handles weapon reach, range, and combat mechanics
  */
@@ -74,7 +74,7 @@ export function calculateReachAdvantage(attackerWeapon, defenderWeapon) {
     return {
       hasAdvantage: true,
       bonus: bonus,
-      description: `+${bonus} to Strike (reach advantage)`,
+      description: `+${bonus} to Attack (reach advantage)`,
       attackerReach,
       defenderReach,
       advantage: advantage,
@@ -116,7 +116,7 @@ export function calculateRangePenalty(distance, weapon) {
     return {
       penalty: 2,
       category: "point-blank",
-      description: "+2 to Strike (point-blank)",
+      description: "+2 to Attack (point-blank)",
       canAttack: true,
       rangeInfo: `${distance}ft (point-blank)`,
     };
@@ -132,7 +132,7 @@ export function calculateRangePenalty(distance, weapon) {
     return {
       penalty: -1,
       category: "medium",
-      description: "-1 to Strike",
+      description: "-1 to Attack",
       canAttack: true,
       rangeInfo: `${distance}ft (medium range)`,
     };
@@ -140,7 +140,7 @@ export function calculateRangePenalty(distance, weapon) {
     return {
       penalty: -3,
       category: "long",
-      description: "-3 to Strike",
+      description: "-3 to Attack",
       canAttack: true,
       rangeInfo: `${distance}ft (long range)`,
     };
@@ -203,7 +203,7 @@ export function canUseWeapon(character, weapon) {
     return {
       canUse: false,
       penalty: penalty,
-      description: `-${penalty} to Strike (insufficient P.S.)`,
+      description: `-${penalty} to Attack (insufficient strength)`,
     };
   }
 }
@@ -269,9 +269,9 @@ export function calculateCombatModifiers(
   distance = 0
 ) {
   const modifiers = {
-    strikeBonus: 0,
-    parryBonus: 0,
-    dodgeBonus: 0,
+    attackBonus: 0,
+    blockBonus: 0,
+    evadeBonus: 0,
     damageBonus: 0,
     notes: [],
   };
@@ -282,7 +282,7 @@ export function calculateCombatModifiers(
     defenderWeapon
   );
   if (reachAdvantage.hasAdvantage) {
-    modifiers.strikeBonus += reachAdvantage.bonus;
+    modifiers.attackBonus += reachAdvantage.bonus;
     modifiers.notes.push(reachAdvantage.description);
   }
 
@@ -293,7 +293,7 @@ export function calculateCombatModifiers(
       modifiers.notes.push("Cannot attack - out of range");
       return modifiers;
     }
-    modifiers.strikeBonus += rangePenalty.penalty;
+    modifiers.attackBonus += rangePenalty.penalty;
     modifiers.notes.push(rangePenalty.description);
   }
 

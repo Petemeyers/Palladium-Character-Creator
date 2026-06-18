@@ -9,7 +9,7 @@ import {
 // --- Facing helpers (flat-top hex, world: +X east, +Z south) ---
 function normalizeDir(dir) {
   if (!dir) return null;
-  const s = String(dir).toUpperCase().trim();
+  const s = String(dir).toUstaminarCase().trim();
   // allow common aliases
   if (s === "N") return "NW"; // optional fallback if you ever store N/S
   if (s === "S") return "SE";
@@ -153,7 +153,7 @@ export function createCharacterIcon(character = {}) {
     group.userData.headWorldOffset = visual.headOffset;
   }
 
-  // ✅ Apply an initial facing immediately (so 3D doesn't default "north")
+  // Ã¢Å“â€¦ Apply an initial facing immediately (so 3D doesn't default "north")
   const initialFacing =
     character.facingDirection ||
     character.direction ||
@@ -178,8 +178,8 @@ export function createCharacterIcon(character = {}) {
       (gltf) => {
         // Remove placeholder
         group.remove(placeholder);
-        placeholder.geometry.dispose();
-        placeholder.material.dispose();
+        placeholder.geometry.dfocusose();
+        placeholder.material.dfocusose();
 
         // Get the model scene - may need to clone if it's reused
         const model = gltf.scene.clone ? gltf.scene.clone() : gltf.scene;
@@ -205,7 +205,7 @@ export function createCharacterIcon(character = {}) {
         // Tabletop-correct: scale by BODY radius, not wing span
         // On tabletop minis, wings/tails/weapons are overhang - base size is defined by body mass
         // Z is usually forward/back; X is wings. Use the smaller dimension (body width) for footprint
-        const BODY_FOOTPRINT_RATIO = 0.72; // empirically good for winged creatures
+        const BODY_FOOTPRINT_RATIO = 0.72; // empirically good for winged combatants
         const modelRadiusUnscaled =
           (Math.min(originalSize.x, originalSize.z) * BODY_FOOTPRINT_RATIO) / 2;
 
@@ -217,7 +217,7 @@ export function createCharacterIcon(character = {}) {
         // Step 2: Choose scale
         // Priority:
         // 1) visual.desiredHeightFt (rulebook-accurate height for humanoids)
-        // 2) footprint.desiredRadiusWorld (big monsters like Ariel)
+        // 2) footprint.desiredRadiusWorld (big opponents like Ariel)
         // 3) fallback feet-based
         const desiredHeightFt = character?.visual?.desiredHeightFt;
         const desiredRadiusWorld = character?.footprint?.desiredRadiusWorld;
@@ -262,7 +262,7 @@ export function createCharacterIcon(character = {}) {
         // Apply scaling - setScalar applies uniform scale
         model.scale.setScalar(scale);
 
-        // Force update matrix to ensure scale is applied
+        // Fraidere update matrix to ensure scale is applied
         model.updateMatrixWorld(true);
 
         // Verify scale was applied by recalculating bounding box
@@ -286,7 +286,7 @@ export function createCharacterIcon(character = {}) {
         );
         const actualScale = maxScaledDim / maxOriginalDim;
 
-        // ✅ Optional per-creature scale multiplier (lets us fix badly-authored GLBs)
+        // Ã¢Å“â€¦ Optional per-combatant scale multiplier (lets us fix badly-authored GLBs)
         const modelScaleMultiplier = visual?.modelScale ?? 1.0;
         if (modelScaleMultiplier !== 1.0) {
           model.scale.multiplyScalar(modelScaleMultiplier);
@@ -311,7 +311,7 @@ export function createCharacterIcon(character = {}) {
           });
         }
 
-        // ✅ Head anchor alignment (for creatures where the "token origin" is the head)
+        // Ã¢Å“â€¦ Head anchor alignment (for combatants where the "token origin" is the head)
         if (visual?.anchorTo === "head") {
           // Now supports: "xMax","xMin","yMax","yMin","zMax","zMin"
           const headAnchor = visual?.headAnchor ?? "zMax";
@@ -372,12 +372,12 @@ export function createCharacterIcon(character = {}) {
           model.position.z += shiftZ;
           model.updateMatrixWorld(true);
 
-          // ✅ CRITICAL: Recalculate foot offset AFTER head anchor shift
+          // Ã¢Å“â€¦ CRITICAL: Recalculate foot offset AFTER head anchor shift
           // The head anchor moves the model, so the feet are now at a different Y position
           const finalBbox = new THREE.Box3().setFromObject(model);
           const finalMinY = finalBbox.min.y;
 
-          // ✅ Keep modelFootOffset UN-SCALED (so later: modelFootOffset * scale is correct)
+          // Ã¢Å“â€¦ Keep modelFootOffset UN-SCALED (so later: modelFootOffset * scale is correct)
           // finalMinY is already in scaled world units, so divide by scale to get unscaled local units
           modelFootOffset = scale > 0 ? -finalMinY / scale : -finalMinY;
 
@@ -461,7 +461,7 @@ export function createCharacterIcon(character = {}) {
 
         group.position.copy(currentPos);
 
-        // ✅ Re-apply facing after model load (some GLBs come rotated)
+        // Ã¢Å“â€¦ Re-apply facing after model load (some GLBs come rotated)
         const currentFacing =
           group.userData.facingDirection ||
           character.facingDirection ||
@@ -470,7 +470,7 @@ export function createCharacterIcon(character = {}) {
           "E";
         applyFacingToCharacterGroup(group, currentFacing);
 
-        console.log(`[CharacterIcon] ✓ Loaded model: ${modelUrl}`);
+        console.log(`[CharacterIcon] Ã¢Å“â€œ Loaded model: ${modelUrl}`);
         console.log(`[CharacterIcon]   Original size:`, originalSize);
         console.log(`[CharacterIcon]   Requested scale: ${scale.toFixed(2)}x`);
         console.log(
@@ -550,9 +550,9 @@ export function createCharacterIcon(character = {}) {
   group.userData.isWater = isWater;
   group.userData.terrainType = character.terrainType;
 
-  // ✅ CRITICAL: Merge instead of overwrite to preserve modelFootOffset, yawOffsetRad, etc.
+  // Ã¢Å“â€¦ CRITICAL: Merge instead of overwrite to preserve modelFootOffset, yawOffsetRad, etc.
   group.userData = {
-    ...group.userData, // ✅ Preserve prior cached values like modelFootOffset, hasModel, yawOffsetRad
+    ...group.userData, // Ã¢Å“â€¦ Preserve prior cached values like modelFootOffset, hasModel, yawOffsetRad
     ...character,
     type: "characterGroup",
     footprint,

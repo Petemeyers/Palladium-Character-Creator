@@ -104,24 +104,24 @@ export const deleteShopItem = async (req, res) => {
 // Trade-in basic clothes for race-specific clothing
 export const tradeInBasicClothes = async (req, res) => {
   try {
-    console.log("🔄 DEBUG: Starting tradeInBasicClothes function");
-    console.log("🔄 DEBUG: Request body:", req.body);
+    console.log("ðŸ”„ DEBUG: Starting tradeInBasicClothes function");
+    console.log("ðŸ”„ DEBUG: Request body:", req.body);
 
     const { characterId, selectedClothing } = req.body;
-    console.log("🔄 DEBUG: Character ID:", characterId);
-    console.log("🔄 DEBUG: Selected clothing:", selectedClothing);
+    console.log("ðŸ”„ DEBUG: Character ID:", characterId);
+    console.log("ðŸ”„ DEBUG: Selected clothing:", selectedClothing);
 
     const character = await Character.findById(characterId);
-    console.log("🔄 DEBUG: Found character:", character);
+    console.log("ðŸ”„ DEBUG: Found character:", character);
 
     if (!character) {
-      console.log("❌ DEBUG: Character not found");
+      console.log("âŒ DEBUG: Character not found");
       return res.status(404).json({ message: "Character not found" });
     }
 
     // Ensure character has required fields
-    if (!character.occ) {
-      character.occ = character.class || "Adventurer";
+    if (!character.profession) {
+      character.profession = character.class || "Adventurer";
     }
 
     // Ensure other common required fields exist
@@ -196,9 +196,9 @@ export const tradeInBasicClothes = async (req, res) => {
       character.inventory = [];
     }
 
-    // Ensure equipped object exists
-    if (!character.equipped || typeof character.equipped !== "object") {
-      character.equipped = {};
+    // Ensure equistaminad object exists
+    if (!character.equistaminad || typeof character.equistaminad !== "object") {
+      character.equistaminad = {};
     }
 
     // Ensure wardrobe array exists
@@ -207,25 +207,25 @@ export const tradeInBasicClothes = async (req, res) => {
     }
 
     // Find basic clothes in inventory
-    console.log("🔄 DEBUG: Searching for basic clothes in inventory");
-    console.log("🔄 DEBUG: Character inventory:", character.inventory);
+    console.log("ðŸ”„ DEBUG: Searching for basic clothes in inventory");
+    console.log("ðŸ”„ DEBUG: Character inventory:", character.inventory);
 
     const basicClothesIndex = character.inventory.findIndex((item) => {
-      console.log("🔄 DEBUG: Checking inventory item:", item);
+      console.log("ðŸ”„ DEBUG: Checking inventory item:", item);
       const itemName = item.name?.toLowerCase() || "";
       const isBasic =
         item.name &&
         (itemName.includes("basic clothes") ||
           itemName.includes("basic set of clothes") ||
           itemName.includes("set of clothes"));
-      console.log("🔄 DEBUG: Item name:", item.name, "Is basic:", isBasic);
+      console.log("ðŸ”„ DEBUG: Item name:", item.name, "Is basic:", isBasic);
       return isBasic;
     });
 
-    console.log("🔄 DEBUG: Basic clothes index:", basicClothesIndex);
+    console.log("ðŸ”„ DEBUG: Basic clothes index:", basicClothesIndex);
 
     if (basicClothesIndex === -1) {
-      console.log("❌ DEBUG: No basic clothes found in inventory");
+      console.log("âŒ DEBUG: No basic clothes found in inventory");
       return res
         .status(400)
         .json({ message: "No basic clothes found in inventory" });
@@ -233,17 +233,17 @@ export const tradeInBasicClothes = async (req, res) => {
 
     // Remove the basic clothes
     console.log(
-      "🔄 DEBUG: Removing basic clothes at index:",
+      "ðŸ”„ DEBUG: Removing basic clothes at index:",
       basicClothesIndex
     );
     character.inventory.splice(basicClothesIndex, 1);
     console.log(
-      "🔄 DEBUG: Inventory after removing basic clothes:",
+      "ðŸ”„ DEBUG: Inventory after removing basic clothes:",
       character.inventory
     );
 
     // Add the selected race-specific clothing
-    console.log("🔄 DEBUG: Adding selected clothing:", selectedClothing);
+    console.log("ðŸ”„ DEBUG: Adding selected clothing:", selectedClothing);
     const raceClothingProperties = {
       "Cloth Hood": { slot: "head", type: "clothing", weight: 0.5, price: 5 },
       "Wool Tunic": { slot: "torso", type: "clothing", weight: 1, price: 10 },
@@ -387,14 +387,14 @@ export const tradeInBasicClothes = async (req, res) => {
     };
 
     console.log(
-      "🔄 DEBUG: Looking up clothing properties for:",
+      "ðŸ”„ DEBUG: Looking up clothing properties for:",
       selectedClothing
     );
     const clothingProps = raceClothingProperties[selectedClothing];
-    console.log("🔄 DEBUG: Found clothing properties:", clothingProps);
+    console.log("ðŸ”„ DEBUG: Found clothing properties:", clothingProps);
 
     if (!clothingProps) {
-      console.log("❌ DEBUG: Invalid clothing selection - no properties found");
+      console.log("âŒ DEBUG: Invalid clothing selection - no properties found");
       return res.status(400).json({ message: "Invalid clothing selection" });
     }
 
@@ -408,23 +408,23 @@ export const tradeInBasicClothes = async (req, res) => {
       description: `Traditional ${character.species.toLowerCase()} clothing`,
     };
 
-    console.log("🔄 DEBUG: Created new clothing item:", newClothing);
+    console.log("ðŸ”„ DEBUG: Created new clothing item:", newClothing);
 
     // Add to wardrobe instead of inventory for equipment system
-    console.log("🔄 DEBUG: Adding clothing to wardrobe");
-    console.log("🔄 DEBUG: Wardrobe before:", character.wardrobe);
+    console.log("ðŸ”„ DEBUG: Adding clothing to wardrobe");
+    console.log("ðŸ”„ DEBUG: Wardrobe before:", character.wardrobe);
     character.wardrobe.push(newClothing);
-    console.log("🔄 DEBUG: Wardrobe after:", character.wardrobe);
+    console.log("ðŸ”„ DEBUG: Wardrobe after:", character.wardrobe);
 
     // Validate character before saving
     try {
-      console.log("🔄 DEBUG: Saving character...");
+      console.log("ðŸ”„ DEBUG: Saving character...");
       await character.save();
-      console.log("✅ DEBUG: Character saved successfully");
+      console.log("âœ… DEBUG: Character saved successfully");
     } catch (validationError) {
-      console.error("❌ DEBUG: Character validation error:", validationError);
+      console.error("âŒ DEBUG: Character validation error:", validationError);
       console.error(
-        "❌ DEBUG: Character data:",
+        "âŒ DEBUG: Character data:",
         JSON.stringify(character, null, 2)
       );
       return res.status(400).json({
@@ -434,48 +434,48 @@ export const tradeInBasicClothes = async (req, res) => {
       });
     }
 
-    console.log("✅ DEBUG: Sending success response");
+    console.log("âœ… DEBUG: Sending success response");
     res.json({
       message: `Basic clothes traded in for ${selectedClothing}!`,
       character: character,
     });
   } catch (error) {
-    console.error("❌ DEBUG: Trade-in error:", error);
-    console.error("❌ DEBUG: Error message:", error.message);
-    console.error("❌ DEBUG: Error stack:", error.stack);
+    console.error("âŒ DEBUG: Trade-in error:", error);
+    console.error("âŒ DEBUG: Error message:", error.message);
+    console.error("âŒ DEBUG: Error stack:", error.stack);
     res.status(500).json({ message: "Internal server error" });
   }
 };
 
-// Trade-in starting equipment for OCC-specific gear
+// Trade-in starting equipment for PROFESSION-specific gear
 export const tradeInStartingEquipment = async (req, res) => {
   try {
-    console.log("🔄 DEBUG: Starting tradeInStartingEquipment function");
-    console.log("🔄 DEBUG: Request body:", req.body);
+    console.log("ðŸ”„ DEBUG: Starting tradeInStartingEquipment function");
+    console.log("ðŸ”„ DEBUG: Request body:", req.body);
 
     const { characterId, tradeInItems, selectedAlternatives } = req.body;
-    console.log("🔄 DEBUG: Character ID:", characterId);
-    console.log("🔄 DEBUG: Trade-in items:", tradeInItems);
-    console.log("🔄 DEBUG: Selected alternatives:", selectedAlternatives);
+    console.log("ðŸ”„ DEBUG: Character ID:", characterId);
+    console.log("ðŸ”„ DEBUG: Trade-in items:", tradeInItems);
+    console.log("ðŸ”„ DEBUG: Selected alternatives:", selectedAlternatives);
 
     const character = await Character.findById(characterId);
-    console.log("🔄 DEBUG: Found character:", character);
+    console.log("ðŸ”„ DEBUG: Found character:", character);
 
     if (!character) {
-      console.log("❌ DEBUG: Character not found");
+      console.log("âŒ DEBUG: Character not found");
       return res.status(404).json({ message: "Character not found" });
     }
 
-    if (!character.occ) {
-      console.log("❌ DEBUG: Character missing OCC");
+    if (!character.profession) {
+      console.log("âŒ DEBUG: Character missing PROFESSION");
       return res.status(400).json({
-        message: "Character must have an OCC to trade in starting equipment",
+        message: "Character must have an PROFESSION to trade in starting equipment",
       });
     }
 
     // Ensure character has required fields
-    if (!character.occ) {
-      character.occ = character.class || "Adventurer";
+    if (!character.profession) {
+      character.profession = character.class || "Adventurer";
     }
 
     // Ensure other common required fields exist
@@ -550,9 +550,9 @@ export const tradeInStartingEquipment = async (req, res) => {
       character.inventory = [];
     }
 
-    // Ensure equipped object exists
-    if (!character.equipped || typeof character.equipped !== "object") {
-      character.equipped = {};
+    // Ensure equistaminad object exists
+    if (!character.equistaminad || typeof character.equistaminad !== "object") {
+      character.equistaminad = {};
     }
 
     // Ensure wardrobe array exists
@@ -560,14 +560,14 @@ export const tradeInStartingEquipment = async (req, res) => {
       character.wardrobe = [];
     }
 
-    console.log("🔄 DEBUG: Processing trade-in items");
+    console.log("ðŸ”„ DEBUG: Processing trade-in items");
 
     // Calculate total trade-in value
     let totalTradeInValue = 0;
 
     // Remove trade-in items from inventory
     tradeInItems.forEach((tradeInItem) => {
-      console.log("🔄 DEBUG: Removing trade-in item:", tradeInItem);
+      console.log("ðŸ”„ DEBUG: Removing trade-in item:", tradeInItem);
 
       const itemIndex = character.inventory.findIndex(
         (item) => item.name === tradeInItem.name
@@ -579,11 +579,11 @@ export const tradeInStartingEquipment = async (req, res) => {
       }
     });
 
-    console.log("🔄 DEBUG: Total trade-in value:", totalTradeInValue);
+    console.log("ðŸ”„ DEBUG: Total trade-in value:", totalTradeInValue);
 
     // Add selected alternatives to character
     selectedAlternatives.forEach((alternative) => {
-      console.log("🔄 DEBUG: Adding alternative:", alternative);
+      console.log("ðŸ”„ DEBUG: Adding alternative:", alternative);
 
       const newItem = {
         name: alternative.name,
@@ -593,9 +593,9 @@ export const tradeInStartingEquipment = async (req, res) => {
         price: alternative.price || 0,
         description: alternative.description || "",
         slot: alternative.slot || "misc",
-        armorRating: alternative.armorRating || 0,
-        sdc: alternative.sdc || 0,
-        currentSDC: alternative.sdc || 0,
+        guardRating: alternative.guardRating || 0,
+        armorDurability: alternative.armorDurability || 0,
+        currentarmorDurability: alternative.armorDurability || 0,
         broken: false,
       };
 
@@ -613,13 +613,13 @@ export const tradeInStartingEquipment = async (req, res) => {
 
     // Validate character before saving
     try {
-      console.log("🔄 DEBUG: Saving character...");
+      console.log("ðŸ”„ DEBUG: Saving character...");
       await character.save();
-      console.log("✅ DEBUG: Character saved successfully");
+      console.log("âœ… DEBUG: Character saved successfully");
     } catch (validationError) {
-      console.error("❌ DEBUG: Character validation error:", validationError);
+      console.error("âŒ DEBUG: Character validation error:", validationError);
       console.error(
-        "❌ DEBUG: Character data:",
+        "âŒ DEBUG: Character data:",
         JSON.stringify(character, null, 2)
       );
       return res.status(400).json({
@@ -629,16 +629,16 @@ export const tradeInStartingEquipment = async (req, res) => {
       });
     }
 
-    console.log("✅ DEBUG: Sending success response");
+    console.log("âœ… DEBUG: Sending success response");
     res.json({
-      message: `Starting equipment traded in for ${selectedAlternatives.length} OCC-specific items! (+${totalTradeInValue} gold)`,
+      message: `Starting equipment traded in for ${selectedAlternatives.length} PROFESSION-specific items! (+${totalTradeInValue} gold)`,
       character: character,
       tradeInValue: totalTradeInValue,
     });
   } catch (error) {
-    console.error("❌ DEBUG: Starting equipment trade-in error:", error);
-    console.error("❌ DEBUG: Error message:", error.message);
-    console.error("❌ DEBUG: Error stack:", error.stack);
+    console.error("âŒ DEBUG: Starting equipment trade-in error:", error);
+    console.error("âŒ DEBUG: Error message:", error.message);
+    console.error("âŒ DEBUG: Error stack:", error.stack);
     res.status(500).json({ message: "Internal server error" });
   }
 };
@@ -675,8 +675,8 @@ export const tradeInLowQualityWeapon = async (req, res) => {
     }
 
     // Ensure character has required fields (fix for legacy characters)
-    if (!character.occ) {
-      character.occ = character.class || "Adventurer";
+    if (!character.profession) {
+      character.profession = character.class || "Adventurer";
     }
 
     // Ensure other common required fields exist
@@ -855,8 +855,8 @@ export const purchaseItem = async (req, res) => {
     }
 
     // Ensure character has required fields (fix for legacy characters)
-    if (!character.occ) {
-      character.occ = character.class || "Adventurer";
+    if (!character.profession) {
+      character.profession = character.class || "Adventurer";
       await character.save();
     }
 
@@ -910,9 +910,9 @@ export const purchaseItem = async (req, res) => {
     character.inventory.push(inventoryItem);
     character.gold -= item.price;
 
-    // If this is a weapon and character has no equipped weapon, auto-equip it
-    if (isWeapon && !character.equippedWeapon) {
-      character.equippedWeapon = item.name;
+    // If this is a weapon and character has no equistaminad weapon, auto-equip it
+    if (isWeapon && !character.equistaminadWeapon) {
+      character.equistaminadWeapon = item.name;
     }
 
     // Clean up existing inventory items - fix missing required fields and weights

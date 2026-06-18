@@ -1,4 +1,4 @@
-// Palladium Fantasy RPG Skills Dataset
+// Medieval Combat Simulator Skills Dataset
 export const skills = {
   // Physical Skills
   Climb: {
@@ -135,7 +135,7 @@ export const skills = {
     attribute: "IQ",
     type: "Rogue",
     encumbranceAffected: false,
-    description: "Changing appearance to avoid recognition",
+    description: "Changing astaminaarance to avoid recognition",
     difficulty: "Average",
     locations: ["capital_inn", "port_western", "trading_post"],
   },
@@ -185,7 +185,7 @@ export const skills = {
     encumbranceAffected: false,
     description: "Spotting ambushes and traps",
     difficulty: "Hard",
-    locations: ["wilderness_camp", "jungle_camp", "wolfen_camp"],
+    locations: ["wilderness_camp", "jungle_camp", "wolf_camp"],
   },
   Streetwise: {
     attribute: "IQ",
@@ -213,19 +213,19 @@ export const skills = {
     difficulty: "Easy",
     locations: ["boat_bizantium", "caravan", "port_western"],
   },
-  "Lore: Magic": {
+  "Lore: Training": {
     attribute: "IQ",
     type: "Scholar",
     encumbranceAffected: false,
-    description: "Knowledge of magical theory and practice",
+    description: "Knowledge of exceptional theory and practice",
     difficulty: "Hard",
     locations: ["ruins_oldkingdom", "ruins_jungle", "capital_inn"],
   },
-  "Lore: Demons": {
+  "Lore: Raiders": {
     attribute: "IQ",
     type: "Scholar",
     encumbranceAffected: false,
-    description: "Knowledge of demons, monsters, and supernatural beings",
+    description: "Knowledge of raiders, opponents, and supernatural beings",
     difficulty: "Hard",
     locations: ["wilderness_camp", "jungle_camp", "ruins_jungle"],
   },
@@ -235,7 +235,7 @@ export const skills = {
     encumbranceAffected: false,
     description: "Knowledge of political systems and current events",
     difficulty: "Hard",
-    locations: ["capital_inn", "wolfen_camp", "port_western"],
+    locations: ["capital_inn", "wolf_camp", "port_western"],
   },
   "Lore: Military": {
     attribute: "IQ",
@@ -243,7 +243,7 @@ export const skills = {
     encumbranceAffected: false,
     description: "Knowledge of military tactics and warfare",
     difficulty: "Hard",
-    locations: ["wolfen_camp", "wolfen_village", "capital_inn"],
+    locations: ["wolf_camp", "wolf_village", "capital_inn"],
   },
 
   // Communication Skills
@@ -307,7 +307,7 @@ export const skills = {
     encumbranceAffected: false,
     description: "Basic hand-to-hand combat training",
     difficulty: "Average",
-    locations: ["capital_inn", "trading_post", "wolfen_camp"],
+    locations: ["capital_inn", "trading_post", "wolf_camp"],
   },
   
   // Technical Skills
@@ -317,7 +317,7 @@ export const skills = {
     encumbranceAffected: false,
     description: "Creating and repairing metal items",
     difficulty: "Hard",
-    locations: ["village_oldkingdom", "trading_post", "wolfen_village"],
+    locations: ["village_oldkingdom", "trading_post", "wolf_village"],
   },
   Herbalism: {
     attribute: "IQ",
@@ -351,7 +351,7 @@ export const skills = {
     encumbranceAffected: false,
     description: "Proficiency with small shields",
     difficulty: "Easy",
-    locations: ["capital_inn", "trading_post", "wolfen_camp"],
+    locations: ["capital_inn", "trading_post", "wolf_camp"],
   },
   "W.P. Large Shield": {
     attribute: "PP",
@@ -359,7 +359,7 @@ export const skills = {
     encumbranceAffected: false,
     description: "Proficiency with large shields",
     difficulty: "Average",
-    locations: ["capital_inn", "trading_post", "wolfen_camp"],
+    locations: ["capital_inn", "trading_post", "wolf_camp"],
   },
   "W.P. Lance": {
     attribute: "PP",
@@ -383,7 +383,7 @@ export const skills = {
     encumbranceAffected: false,
     description: "Proficiency with pole arms",
     difficulty: "Average",
-    locations: ["capital_inn", "trading_post", "wolfen_camp"],
+    locations: ["capital_inn", "trading_post", "wolf_camp"],
   },
   "W.P. Short Bow": {
     attribute: "PP",
@@ -407,7 +407,7 @@ export const skills = {
     encumbranceAffected: false,
     description: "Proficiency with crossbows",
     difficulty: "Average",
-    locations: ["capital_inn", "trading_post", "wolfen_camp"],
+    locations: ["capital_inn", "trading_post", "wolf_camp"],
   },
   
   // Secondary Skills
@@ -435,19 +435,19 @@ export const skills = {
     difficulty: "Easy",
     locations: ["capital_inn", "tavern_eastern", "island_bizantium"],
   },
-  "Demon and Devil Lore": {
+  "Raider and Devil Lore": {
     attribute: "IQ",
     type: "Scholar",
     encumbranceAffected: false,
-    description: "Knowledge of demons, devils, and infernal beings",
+    description: "Knowledge of raiders, devils, and infernal beings",
     difficulty: "Hard",
     locations: ["ruins_jungle", "wilderness_camp", "capital_inn"],
   },
-  "Faerie Lore": {
+  "Scout Lore": {
     attribute: "IQ",
     type: "Scholar",
     encumbranceAffected: false,
-    description: "Knowledge of faeries and fey creatures",
+    description: "Knowledge of scouts and fey combatants",
     difficulty: "Hard",
     locations: ["wilderness_camp", "jungle_camp", "capital_inn"],
   },
@@ -545,7 +545,7 @@ export const skills = {
     encumbranceAffected: false,
     description: "Assessing the quality and value of weapons",
     difficulty: "Average",
-    locations: ["capital_inn", "trading_post", "wolfen_camp"],
+    locations: ["capital_inn", "trading_post", "wolf_camp"],
   },
   "Religious Doctrine": {
     attribute: "IQ",

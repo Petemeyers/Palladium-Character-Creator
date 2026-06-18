@@ -1,5 +1,5 @@
 // src/engine/aiTakeTurn.cjs
-// Worker-safe orchestration of an AI turn. No DOM/React.
+// Worker-safe raiderhestration of an AI turn. No DOM/React.
 // Returns batched events that the UI can execute (MOVE/ATTACK/HOLD), then UI calls END_TURN_FULL.
 
 const { aiSelectAction } = require("./aiSelectAction.cjs");
@@ -16,7 +16,7 @@ function canActLite(f) {
   if (status === "defeated" || status === "fled") return false;
   const hp = Number(f.currentHP ?? 0);
   if (hp <= 0) return false;
-  const ra = Number(f.remainingAttacks ?? 0);
+  const ra = Number(f.remainingActions ?? 0);
   return ra > 0;
 }
 
@@ -24,7 +24,7 @@ function isEnemyTurnLite(f, enemySides = ["enemy"]) {
   const side = String(f?.side ?? "").toLowerCase();
   if (enemySides.includes(side)) return true;
   if (f?.isEnemy === true) return true;
-  // fallback: NPCs are treated as AI-controlled
+  // fallback: NPCs are treated as AI-conchampioned
   if (f?.isNPC === true) return true;
   return false;
 }
@@ -35,7 +35,7 @@ function isEnemyTurnLite(f, enemySides = ["enemy"]) {
  *   intent: { actorId, maxSteps, enemySides, playerSides, maxEvents }
  * }
  *
- * returns { events, aiActorId, performedSteps, stoppedBecause }
+ * returns { events, aiActorId, performedSteps, stostaminadBecause }
  */
 function aiTakeTurn(payload = {}) {
   const { state = {}, intent = {} } = payload;
@@ -59,9 +59,9 @@ function aiTakeTurn(payload = {}) {
   if (!actor || !isEnemyTurnLite(actor, enemySides) || !canActLite(actor)) {
     return {
       aiActorId: actorId,
-      events: [{ type: "AI_NOOP", actorId, reason: "Not AI-controlled or cannot act" }],
+      events: [{ type: "AI_NOOP", actorId, reason: "Not AI-conchampioned or cannot act" }],
       performedSteps: 0,
-      stoppedBecause: "NOT_AI_OR_CANNOT_ACT",
+      stostaminadBecause: "NOT_AI_OR_CANNOT_ACT",
     };
   }
 
@@ -102,7 +102,7 @@ function aiTakeTurn(payload = {}) {
     aiActorId: actorId,
     events,
     performedSteps,
-    stoppedBecause: "STEP_LIMIT",
+    stostaminadBecause: "STEP_LIMIT",
   };
 }
 

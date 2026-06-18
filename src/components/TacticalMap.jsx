@@ -17,7 +17,7 @@ import { getCircleRenderData } from "../utils/protectionCircleMapSystem.js";
 import {
   GRID_CONFIG,
   calculateDistance,
-  getCreatureSize,
+  getCombatantSize,
   getMovementRange
 } from "../data/movementRules";
 import {
@@ -88,7 +88,7 @@ const TacticalMap = ({
     []
   );
 
-  // ✅ Use mapType from prop, fallback to terrain.mapType, then default to hex
+  // ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Use mapType from prop, fallback to terrain.mapType, then default to hex
   const effectiveMapType = mapType ?? terrain?.mapType ?? "hex";
 
   // Hex grid constants for flat-top tessellation (moved here early)
@@ -123,11 +123,11 @@ const TacticalMap = ({
     for (const [id, pos] of Object.entries(positions)) {
       const combatant = combatants.find(c => getCombatantId(c) === id);
       if (combatant) {
-        const creatureSize = getCreatureSize(combatant);
+        const combatantSize = getCombatantSize(combatant);
 
-        // ✅ Segmented occupancy: check each occupied segment hex
-        if (creatureSize.segmented && Array.isArray(creatureSize.segmentOffsets)) {
-          for (const seg of creatureSize.segmentOffsets) {
+        // ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Segmented occupancy: check each occupied segment hex
+        if (combatantSize.segmented && Array.isArray(combatantSize.segmentOffsets)) {
+          for (const seg of combatantSize.segmentOffsets) {
             const ox = pos.x + seg.dx;
             const oy = pos.y + seg.dy;
             if (x === ox && y === oy) return combatant;
@@ -136,7 +136,7 @@ const TacticalMap = ({
           // Legacy occupancy: width-only rectangle
           if (
             x >= pos.x &&
-            x < pos.x + creatureSize.width &&
+            x < pos.x + combatantSize.width &&
             y >= pos.y &&
             y < pos.y + 1
           ) {
@@ -186,7 +186,7 @@ const TacticalMap = ({
     const requested = Number(value);
     const clamped = clampMapHeight(value);
     if (Number.isFinite(requested) && requested !== clamped) {
-      console.log(`⛰️ map height clamped: requested=${requested} clamped=${clamped}`);
+      console.log(`ÃƒÂ¢Ã¢â‚¬ÂºÃ‚Â°ÃƒÂ¯Ã‚Â¸Ã‚Â map height clamped: requested=${requested} clamped=${clamped}`);
     }
     return clamped;
   }
@@ -301,12 +301,12 @@ const TacticalMap = ({
   // Editor terrain palette
   const editorTerrainPalette = useMemo(
     () => [
-      { key: "grass", label: "Grass", swatch: "#67a95b", icon: "🌿" },
-      { key: "forest", label: "Forest", swatch: "#2f6b3c", icon: "🌲" },
-      { key: "water", label: "Water", swatch: "#2b6cb0", icon: "💧" },
-      { key: "rock", label: "Rock", swatch: "#718096", icon: "🪨" },
-      { key: "sand", label: "Sand", swatch: "#d6b56b", icon: "🏜️" },
-      { key: "road", label: "Road", swatch: "#6b4f3a", icon: "🛣️" },
+      { key: "grass", label: "Grass", swatch: "#67a95b", icon: "ÃƒÂ°Ã…Â¸Ã…â€™Ã‚Â¿" },
+      { key: "forest", label: "Forest", swatch: "#2f6b3c", icon: "ÃƒÂ°Ã…Â¸Ã…â€™Ã‚Â²" },
+      { key: "water", label: "Water", swatch: "#2b6cb0", icon: "ÃƒÂ°Ã…Â¸Ã¢â‚¬â„¢Ã‚Â§" },
+      { key: "rock", label: "Rock", swatch: "#718096", icon: "ÃƒÂ°Ã…Â¸Ã‚ÂªÃ‚Â¨" },
+      { key: "sand", label: "Sand", swatch: "#d6b56b", icon: "ÃƒÂ°Ã…Â¸Ã‚ÂÃ…â€œÃƒÂ¯Ã‚Â¸Ã‚Â" },
+      { key: "road", label: "Road", swatch: "#6b4f3a", icon: "ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂºÃ‚Â£ÃƒÂ¯Ã‚Â¸Ã‚Â" },
     ],
     []
   );
@@ -321,7 +321,7 @@ const TacticalMap = ({
     }, 100);
 
     return () => clearTimeout(timer);
-  }, []); // ⬅ no deps: run once when TacticalMap mounts
+  }, []); // ÃƒÂ¢Ã‚Â¬Ã¢â‚¬Â¦ no deps: run once when TacticalMap mounts
 
   useEffect(() => {
     positionsRef.current = positions;
@@ -364,9 +364,9 @@ const TacticalMap = ({
       const combatant = combatantsNow.find(c => getCombatantId(c) === currentTurn);
       if (combatant) {
         const speed = combatant.Spd || combatant.spd || combatant.attributes?.Spd || combatant.attributes?.spd || 10;
-        const attacksPerMelee = combatant.attacksPerMelee || 1;
+        const actionsPerRound = combatant.actionsPerRound || 1;
         const position = positionsNow[currentTurn];
-        const validPositions = getMovementRange(position, speed, attacksPerMelee, {}, movementMode.isRunning);
+        const validPositions = getMovementRange(position, speed, actionsPerRound, {}, movementMode.isRunning);
 
         // Filter out positions occupied by other combatants
         const filteredMoves = validPositions.filter(move => {
@@ -378,11 +378,11 @@ const TacticalMap = ({
 
         // Only clear selection when movement mode is first activated or when turn changes
         if (movementModeChanged || currentTurnChanged) {
-          console.log('🔄 Clearing selection due to mode/turn change');
+          console.log('ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ¢â‚¬Å¾ Clearing selection due to mode/turn change');
           setSelectedTargetHex(null);
         } else if (selectedHexNow && !filteredMoves.some(move => move.x === selectedHexNow.x && move.y === selectedHexNow.y)) {
           // Clear selection if the selected hex is no longer valid
-          console.log('❌ Clearing selection - hex no longer valid');
+          console.log('ÃƒÂ¢Ã‚ÂÃ…â€™ Clearing selection - hex no longer valid');
           setSelectedTargetHex(null);
         }
       }
@@ -433,12 +433,12 @@ const TacticalMap = ({
           terrainType: terrainKey,
         };
       } else if (editorBrushMode === "bucket") {
-        // Bucket is handled separately (flood fill) — do nothing here.
+        // Bucket is handled separately (flood fill) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â do nothing here.
         return false;
       } else if (editorBrushMode === "raise" || editorBrushMode === "lower") {
         const key = `${x},${y}`;
         if (activeHeightStrokeRef.current && paintedHeightHexesThisStrokeRef.current.has(key)) {
-          console.log(`🚫 height paint duplicate skipped: (${x},${y})`);
+          console.log(`ÃƒÂ°Ã…Â¸Ã…Â¡Ã‚Â« height paint duplicate skistaminad: (${x},${y})`);
           return false;
         }
 
@@ -453,8 +453,8 @@ const TacticalMap = ({
         if (activeHeightStrokeRef.current) {
           paintedHeightHexesThisStrokeRef.current.add(key);
         }
-        console.log(`⛰️ map height updated: (${x},${y}) height=${nextElevation}`);
-        console.log(`⛰️ height painted hex: (${x},${y}) height=${nextElevation}`);
+        console.log(`ÃƒÂ¢Ã¢â‚¬ÂºÃ‚Â°ÃƒÂ¯Ã‚Â¸Ã‚Â map height updated: (${x},${y}) height=${nextElevation}`);
+        console.log(`ÃƒÂ¢Ã¢â‚¬ÂºÃ‚Â°ÃƒÂ¯Ã‚Â¸Ã‚Â height painted hex: (${x},${y}) height=${nextElevation}`);
       }
 
       if (typeof onMapCellEdit === "function") {
@@ -542,9 +542,9 @@ const TacticalMap = ({
       }
 
       if (editorBrushMode === "terrain") {
-        console.log(`🖌️ terrain brush painted: center=(${x},${y}) radius=${brushRadius} count=${changes.length}`);
+        console.log(`ÃƒÂ°Ã…Â¸Ã¢â‚¬â€œÃ…â€™ÃƒÂ¯Ã‚Â¸Ã‚Â terrain brush painted: center=(${x},${y}) radius=${brushRadius} count=${changes.length}`);
       } else if (editorBrushMode === "raise" || editorBrushMode === "lower") {
-        console.log(`⛰️ height brush painted: center=(${x},${y}) radius=${brushRadius} count=${changes.length}`);
+        console.log(`ÃƒÂ¢Ã¢â‚¬ÂºÃ‚Â°ÃƒÂ¯Ã‚Â¸Ã‚Â height brush painted: center=(${x},${y}) radius=${brushRadius} count=${changes.length}`);
       }
       return true;
     },
@@ -674,7 +674,7 @@ const TacticalMap = ({
           }
           // Pointer-down/drag owns editor painting. Click is selection-only so
           // mouse release does not apply the same height edit a second time.
-          // Important: stop here—don't run movement/combatant selection logic in editor mode
+          // Important: stop hereÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Âdon't run movement/combatant selection logic in editor mode
           return;
         }
 
@@ -684,7 +684,7 @@ const TacticalMap = ({
           // In movement mode, check if this is a valid move
           const isValidMove = validMoves.some((move) => move.x === x && move.y === y);
           if (isValidMove) {
-            console.log("🎯 Selecting hex:", x, y);
+            console.log("ÃƒÂ°Ã…Â¸Ã…Â½Ã‚Â¯ Selecting hex:", x, y);
             setSelectedTargetHex({ x, y });
             if (onSelectedHexChange) {
               onSelectedHexChange({ x, y });
@@ -693,7 +693,7 @@ const TacticalMap = ({
               onMoveSelect(x, y);
             }
           } else {
-            console.log("❌ Invalid move to hex:", x, y);
+            console.log("ÃƒÂ¢Ã‚ÂÃ…â€™ Invalid move to hex:", x, y);
           }
         } else if (allowEmptyHexSelection && onSelectedHexChange) {
           setSelectedTargetHex({ x, y });
@@ -734,7 +734,7 @@ const TacticalMap = ({
   useEffect(() => {
     const stopPainting = () => {
       if (activeHeightStrokeRef.current) {
-        console.log("⛰️ height paint stroke ended");
+        console.log("ÃƒÂ¢Ã¢â‚¬ÂºÃ‚Â°ÃƒÂ¯Ã‚Â¸Ã‚Â height paint stroke ended");
       }
       isPointerPaintingRef.current = false;
       lastPaintedCellKeyRef.current = null;
@@ -769,10 +769,10 @@ const TacticalMap = ({
       isPointerPaintingRef.current = true;
       lastPaintedCellKeyRef.current = null;
       paintedHeightHexesThisStrokeRef.current.clear();
-      console.log(`🖌️ map brush radius: ${brushRadius}`);
+      console.log(`ÃƒÂ°Ã…Â¸Ã¢â‚¬â€œÃ…â€™ÃƒÂ¯Ã‚Â¸Ã‚Â map brush radius: ${brushRadius}`);
       if (editorBrushMode === "raise" || editorBrushMode === "lower") {
         activeHeightStrokeRef.current = true;
-        console.log("⛰️ height paint stroke started");
+        console.log("ÃƒÂ¢Ã¢â‚¬ÂºÃ‚Â°ÃƒÂ¯Ã‚Â¸Ã‚Â height paint stroke started");
       } else {
         activeHeightStrokeRef.current = false;
       }
@@ -799,7 +799,7 @@ const TacticalMap = ({
 
   const handleCellPointerUp = useCallback(() => {
     if (activeHeightStrokeRef.current) {
-      console.log("⛰️ height paint stroke ended");
+      console.log("ÃƒÂ¢Ã¢â‚¬ÂºÃ‚Â°ÃƒÂ¯Ã‚Â¸Ã‚Â height paint stroke ended");
     }
     isPointerPaintingRef.current = false;
     lastPaintedCellKeyRef.current = null;
@@ -840,8 +840,8 @@ const TacticalMap = ({
     return result;
   }, [combatantsAtPosition]);
 
-  // Get creature's primary position (top-left corner)
-  const getCreaturePrimaryPosition = useCallback((combatant) => {
+  // Get combatant's primary position (top-left corner)
+  const getCombatantPrimaryPosition = useCallback((combatant) => {
     const key = getCombatantId(combatant);
     if (positions[key]) {
       return positions[key];
@@ -849,13 +849,13 @@ const TacticalMap = ({
     return null;
   }, [positions, getCombatantId]);
 
-  // Helper: build segment cells for segmented body creatures
+  // Helper: build segment cells for segmented body combatants
   // eslint-disable-next-line no-unused-vars
-  function buildSegmentedCells(headPos, creature) {
-    if (!headPos || !creature?.segmentedBody?.enabled) return [];
+  function buildSegmentedCells(headPos, combatant) {
+    if (!headPos || !combatant?.segmentedBody?.enabled) return [];
 
     const segments = [];
-    const defDir = creature.segmentedBody?.defaultDirection ?? "W";
+    const defDir = combatant.segmentedBody?.defaultDirection ?? "W";
 
     // Direction offsets for hex grid (odd-r horizontal layout)
     const dirOffsets = {
@@ -880,7 +880,7 @@ const TacticalMap = ({
       if (defDir === "SE") actualDir = parity === 0 ? { x: 0, y: 1 } : { x: 1, y: 1 };
     }
 
-    creature.segmentedBody.segments.forEach((seg) => {
+    combatant.segmentedBody.segments.forEach((seg) => {
       for (let i = 0; i < seg.hexes; i++) {
         segments.push({
           x: cursor.x,
@@ -903,14 +903,14 @@ const TacticalMap = ({
   const terrainColors = useMemo(() => ({
     OPEN_GROUND: "#9dd66b",      // bright green grass
     LIGHT_FOREST: "#58a65c",     // lighter forest green
-    DENSE_FOREST: "#e5e5e5",     // ✅ Grayscale for dense forest (light gray - will be affected by lighting)
+    DENSE_FOREST: "#e5e5e5",     // ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Grayscale for dense forest (light gray - will be affected by lighting)
     ROCKY_TERRAIN: "#7d7d7d",    // gray rock
     URBAN: "#b9a57f",            // tan stone/brick
     SWAMP_MARSH: "#476a4d",      // murky green-brown
     CAVE_INTERIOR: "#3b3b3b",    // dark gray
     WATER: "#3ba4ff",            // light blue
     INTERIOR: "#666666",        // interior dungeon floor
-    // Map-editor palette (lowercase) — keep in sync with editorTerrainPalette keys.
+    // Map-editor palette (lowercase) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â keep in sync with editorTerrainPalette keys.
     ...getTerrainColorMap(),
     hill: "#7d7d7d",
   }), []);
@@ -928,7 +928,7 @@ const TacticalMap = ({
     CAVE_INTERIOR: getTerrainTexturePath("stone"),
     WATER: getTerrainTexturePath("water"),
     INTERIOR: getTerrainTexturePath("stone"),
-    // Map-editor palette (lowercase) — every current key has a lightweight placeholder texture.
+    // Map-editor palette (lowercase) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â every current key has a lightweight placeholder texture.
     ...getTerrainTextureMap(),
     hill: "/assets/textures/terrain/rocky.png",
   }), []);
@@ -939,7 +939,7 @@ const TacticalMap = ({
   };
 
   // Feature overlay accent colors
-  // ✅ For DENSE_FOREST, trees should NOT use feature colors (use terrain grayscale instead)
+  // ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ For DENSE_FOREST, trees should NOT use feature colors (use terrain grayscale instead)
   const featureColors = useMemo(() => ({
     ROAD: "#d3c59b",
     TRAIL: "#a37a44",
@@ -992,7 +992,7 @@ const TacticalMap = ({
 
     const lightingStr = terrain?.lighting ? String(terrain.lighting).toLowerCase() : "";
     if (lightingStr.includes("darkness") || lightingStr.includes("dark")) return 5;
-    if (lightingStr.includes("torchlight") || lightingStr.includes("torch")) return 30;
+    if (lightingStr.includes("traiderhlight") || lightingStr.includes("traiderh")) return 30;
     if (lightingStr.includes("moonlight") || lightingStr.includes("moon")) return 45;
     if (lightingStr.includes("bright") || lightingStr.includes("daylight")) return 999 * (GRID_CONFIG?.CELL_SIZE || 5);
 
@@ -1018,7 +1018,7 @@ const TacticalMap = ({
   const canDetectEnemyBySound = useCallback((player, enemy, distanceInFeet) => {
     const terrainType = String(
       terrain?.terrain || terrain?.baseTerrain || ""
-    ).toUpperCase();
+    ).toUstaminarCase();
     const playerME =
       Number(player?.attributes?.ME) ||
       Number(player?.ME) ||
@@ -1139,12 +1139,12 @@ const TacticalMap = ({
 
     // Fallback: try to get from LIGHTING_CONDITIONS if we have lighting name
     if (lighting || terrain?.lighting) {
-      const lightingKey = String(lighting || terrain.lighting).toUpperCase().replace(/\s+/g, '_');
+      const lightingKey = String(lighting || terrain.lighting).toUstaminarCase().replace(/\s+/g, '_');
       // Import LIGHTING_CONDITIONS if available, otherwise use fallback values
       const lightingConditions = {
         BRIGHT_DAYLIGHT: { visibilityBonus: 0 },
         MOONLIGHT: { visibilityBonus: -10 },
-        TORCHLIGHT: { visibilityBonus: -15 },
+        TRAIDERHLIGHT: { visibilityBonus: -15 },
         DARKNESS: { visibilityBonus: -50 },
       };
 
@@ -1163,7 +1163,7 @@ const TacticalMap = ({
   const getFogOpacity = useCallback((col, row, lighting) => {
     if (!fogEnabled) return 0;
 
-    // ✅ Source of truth: isCellVisible uses visibleCells array from LOS calculation
+    // ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Source of truth: isCellVisible uses visibleCells array from LOS calculation
     const isVisible = isCellVisible(col, row);
     if (isVisible) return 0; // No fog on visible cells (LOS confirmed)
 
@@ -1269,13 +1269,13 @@ const TacticalMap = ({
       return true;
     }
 
-    // ✅ In pure darkness, check sound detection
+    // ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ In pure darkness, check sound detection
     // Get current lighting to determine if we're in pure darkness (no light source)
     const currentLighting = terrain?.lighting || terrain?.lightingData?.name || "";
     const lightingStr = currentLighting ? String(currentLighting).toLowerCase() : "";
     const isPureDarkness = (lightingStr.includes("darkness") || lightingStr.includes("dark")) &&
-      !lightingStr.includes("torchlight") &&
-      !lightingStr.includes("torch") &&
+      !lightingStr.includes("traiderhlight") &&
+      !lightingStr.includes("traiderh") &&
       !lightingStr.includes("moonlight") &&
       !lightingStr.includes("moon") &&
       !lightingStr.includes("bright") &&
@@ -1365,15 +1365,15 @@ const TacticalMap = ({
         const currentLighting = terrain?.lighting || terrain?.lightingData?.name || "";
         const lightingStr = currentLighting ? String(currentLighting).toLowerCase() : "";
         const isPureDarkness = (lightingStr.includes("darkness") || lightingStr.includes("dark")) &&
-          !lightingStr.includes("torchlight") &&
-          !lightingStr.includes("torch") &&
+          !lightingStr.includes("traiderhlight") &&
+          !lightingStr.includes("traiderh") &&
           !lightingStr.includes("moonlight") &&
           !lightingStr.includes("moon") &&
           !lightingStr.includes("bright") &&
           !lightingStr.includes("daylight");
 
         if (enemyVisible) {
-          // ✅ In pure darkness, enemies detected by sound should keep dark grey hex color
+          // ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ In pure darkness, enemies detected by sound should keep dark grey hex color
           // The icon will still be rendered (handled in rendering code), but hex stays dark
           if (isPureDarkness) {
             const wasExplored = isCellExplored(x, y);
@@ -1392,8 +1392,8 @@ const TacticalMap = ({
           if (lightingStr.includes("darkness") || lightingStr.includes("dark")) {
             // Darkness: darker grey (same as fog Priority 7)
             return wasExplored ? "#6b7280" : "#4b5563";
-          } else if (lightingStr.includes("torchlight") || lightingStr.includes("torch")) {
-            // Torchlight: medium grey
+          } else if (lightingStr.includes("traiderhlight") || lightingStr.includes("traiderh")) {
+            // Traiderhlight: medium grey
             return wasExplored ? "#9ca3af" : "#6b7280";
           } else if (lightingStr.includes("moonlight") || lightingStr.includes("moon")) {
             // Moonlight: lighter grey
@@ -1420,14 +1420,14 @@ const TacticalMap = ({
 
     // Priority 1.5: Apply enemy visibility gradient to empty cells near visible enemies
     // Only enemies within player visibility gradient are considered
-    // ✅ In pure darkness, don't apply gradient (enemies detected by sound keep dark hexes)
+    // ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ In pure darkness, don't apply gradient (enemies detected by sound keep dark hexes)
     if (fogEnabled && combatants) {
       // Get current lighting to check if we're in pure darkness
       const currentLighting = terrain?.lighting || terrain?.lightingData?.name || "";
       const lightingStr = currentLighting ? String(currentLighting).toLowerCase() : "";
       const isPureDarkness = (lightingStr.includes("darkness") || lightingStr.includes("dark")) &&
-        !lightingStr.includes("torchlight") &&
-        !lightingStr.includes("torch") &&
+        !lightingStr.includes("traiderhlight") &&
+        !lightingStr.includes("traiderh") &&
         !lightingStr.includes("moonlight") &&
         !lightingStr.includes("moon") &&
         !lightingStr.includes("bright") &&
@@ -1506,7 +1506,7 @@ const TacticalMap = ({
         // Fall through to Priority 7
       } else {
         // Visible cells or daylight: use terrain colors
-        // ✅ For dense forest, NEVER use feature colors for trees (always use terrain grayscale)
+        // ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ For dense forest, NEVER use feature colors for trees (always use terrain grayscale)
         if (terrain?.baseTerrain === "DENSE_FOREST" &&
           (cellData.feature === "TREE" || cellData.feature === "TREE_LARGE")) {
           // Skip feature color, use terrain color for dense forest trees
@@ -1544,14 +1544,14 @@ const TacticalMap = ({
       }
     }
 
-    // ✅ Priority 7: Fog of War - Grey ALL non-visible cells (regardless of lighting)
-    // ✅ CRITICAL: No white hexes beyond line of sight - ALL non-visible cells must be greyed
+    // ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Priority 7: Fog of War - Grey ALL non-visible cells (regardless of lighting)
+    // ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ CRITICAL: No white hexes beyond line of sight - ALL non-visible cells must be greyed
     // IMPORTANT: Uses isCellVisible() as source of truth (from LOS calculation)
     if (fogEnabled) {
-      // ✅ Source of truth: isCellVisible uses visibleCells array from LOS calculation
+      // ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Source of truth: isCellVisible uses visibleCells array from LOS calculation
       const isVisible = isCellVisible(x, y);
       if (!isVisible) {
-        // ✅ CRITICAL: ALL non-visible cells must be greyed, regardless of lighting
+        // ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ CRITICAL: ALL non-visible cells must be greyed, regardless of lighting
         // Even in bright daylight, cells beyond LOS should NOT be white
         const currentLighting = terrain?.lighting || terrain?.lightingData?.name || "";
         const lightingStr = currentLighting ? String(currentLighting).toLowerCase() : "";
@@ -1564,14 +1564,14 @@ const TacticalMap = ({
         if (lightingStr.includes("darkness") || lightingStr.includes("dark")) {
           // Darkness: darker grey
           greyColor = wasExplored ? "#6b7280" : "#4b5563"; // Darker grey for darkness
-        } else if (lightingStr.includes("torchlight") || lightingStr.includes("torch")) {
-          // Torchlight: medium grey
+        } else if (lightingStr.includes("traiderhlight") || lightingStr.includes("traiderh")) {
+          // Traiderhlight: medium grey
           greyColor = wasExplored ? "#9ca3af" : "#6b7280";
         } else if (lightingStr.includes("moonlight") || lightingStr.includes("moon")) {
           // Moonlight: lighter grey
           greyColor = wasExplored ? "#d1d5db" : "#9ca3af";
         } else if (isDaylight) {
-          // ✅ Bright daylight: very light grey (but NOT white) for non-visible cells
+          // ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Bright daylight: very light grey (but NOT white) for non-visible cells
           greyColor = wasExplored ? "#e5e7eb" : "#d1d5db"; // Very light grey, but still grey
         } else {
           // Default: medium grey for other conditions
@@ -1595,7 +1595,7 @@ const TacticalMap = ({
     if (lightingStr.includes("moonlight") || lightingStr.includes("moon")) {
       return { color: "rgba(0,0,80,0.6)", opacity: 0.3 };
     }
-    if (lightingStr.includes("torchlight") || lightingStr.includes("torch")) {
+    if (lightingStr.includes("traiderhlight") || lightingStr.includes("traiderh")) {
       return { color: "rgba(255,140,0,0.6)", opacity: 0.25 };
     }
     if (lightingStr.includes("darkness") || lightingStr.includes("dark")) {
@@ -1641,7 +1641,7 @@ const TacticalMap = ({
   // Returns string format for polygon points attribute
   const getCellShape = useCallback((centerX, centerY) => {
     if (effectiveMapType === "square") {
-      // ✅ Square cells: use HEX_SIZE * 2 as the cell size (matches getCellPixelPosition)
+      // ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Square cells: use HEX_SIZE * 2 as the cell size (matches getCellPixelPosition)
       const squareCellSize = GRID_CONFIG.HEX_SIZE * 2;
       const halfSize = squareCellSize / 2;
       // Return as string: "x1,y1 x2,y2 x3,y3 x4,y4" (clockwise from top-left)
@@ -1703,9 +1703,9 @@ const TacticalMap = ({
 
     switch (obstacle.type) {
       case 'tree':
-        return '🌲';
+        return 'ÃƒÂ°Ã…Â¸Ã…â€™Ã‚Â²';
       case 'rock':
-        return '🪨';
+        return 'ÃƒÂ°Ã…Â¸Ã‚ÂªÃ‚Â¨';
       default:
         return null;
     }
@@ -1826,9 +1826,9 @@ const TacticalMap = ({
   const isCellExploredCb = useCallback((...args) => isCellExplored(...args), [isCellExplored]);
   const getFogOpacityCb = useCallback((...args) => getFogOpacity(...args), [getFogOpacity]);
   const isEnemyVisibleCb = useCallback((...args) => isEnemyVisible(...args), [isEnemyVisible]);
-  const getCreaturePrimaryPositionCb = useCallback(
-    (...args) => getCreaturePrimaryPosition(...args),
-    [getCreaturePrimaryPosition]
+  const getCombatantPrimaryPositionCb = useCallback(
+    (...args) => getCombatantPrimaryPosition(...args),
+    [getCombatantPrimaryPosition]
   );
 
   // Memoize grid rendering to prevent unnecessary re-renders (supports both hex and square)
@@ -1843,7 +1843,7 @@ const TacticalMap = ({
 
         const combatantsAtPos = getCombatantsAtPosition(col, row);
 
-        // ✅ Priority 0: Determine fill color from terrain grid data
+        // ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Priority 0: Determine fill color from terrain grid data
         const cellData = getCellDataFromSceneCb(col, row);
         const terrainRenderKey = getTerrainRenderKey(cellData, terrain?.baseTerrain);
         const cellElevation = Number.isFinite(cellData?.height)
@@ -1856,7 +1856,7 @@ const TacticalMap = ({
         const normalStrokeColor = hoveredCell?.x === col && hoveredCell?.y === row ? "#2563eb" : "#64748b";
         let baseTerrainColor;
         if (cellData) {
-          // ✅ For dense forest, skip feature colors for trees (use terrain color instead)
+          // ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ For dense forest, skip feature colors for trees (use terrain color instead)
           if (terrain?.baseTerrain === "DENSE_FOREST" &&
             (cellData.feature === "TREE" || cellData.feature === "TREE_LARGE")) {
             // Use terrain color, not tree feature color (to avoid dark green)
@@ -1878,8 +1878,8 @@ const TacticalMap = ({
         }
 
         const { x, y } = getCellPixelPositionCb(col, row);
-        // ✅ For squares: x,y is top-left corner, center is x + cellWidth/2, y + cellHeight/2
-        // ✅ For hexes: x,y is already the center position (from getHexPixelPosition)
+        // ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ For squares: x,y is top-left corner, center is x + cellWidth/2, y + cellHeight/2
+        // ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ For hexes: x,y is already the center position (from getHexPixelPosition)
         const squareCellSize = GRID_CONFIG.HEX_SIZE * 2; // Square cells are HEX_SIZE * 2 pixels
         let centerX, centerY;
         if (effectiveMapType === "square") {
@@ -1970,7 +1970,7 @@ const TacticalMap = ({
               }
               placement="top"
             >
-              {/* ✅ Render cell based on mapType - Square uses rect, Hex uses polygon */}
+              {/* ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Render cell based on mapType - Square uses rect, Hex uses polygon */}
               {effectiveMapType === "square" ? (
                 <rect
                   x={x}
@@ -2094,8 +2094,8 @@ const TacticalMap = ({
 
             {/* Animated Fog of War / Memory Layer */}
             {/* Fog overlay - RENDER ON TOP of everything except combatants */}
-            {/* ✅ Render fog overlay for ALL non-visible cells (respects lighting opacity but always renders) */}
-            {/* ✅ Uses isCellVisible() as source of truth (from LOS calculation in visibleCells array) */}
+            {/* ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Render fog overlay for ALL non-visible cells (respects lighting opacity but always renders) */}
+            {/* ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Uses isCellVisible() as source of truth (from LOS calculation in visibleCells array) */}
             {fogEnabled && !isCellVisibleCb(col, row) && (() => {
               const wasExplored = isCellExploredCb(col, row);
 
@@ -2104,8 +2104,8 @@ const TacticalMap = ({
               const lightingStr = currentLighting ? String(currentLighting).toLowerCase() : "";
               const isDaylight = lightingStr.includes("bright") || lightingStr.includes("daylight");
 
-              // ✅ CRITICAL: Always render fog overlay for non-visible cells
-              // In bright daylight, use very low opacity (but still render to ensure grey appearance)
+              // ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ CRITICAL: Always render fog overlay for non-visible cells
+              // In bright daylight, use very low opacity (but still render to ensure grey astaminaarance)
               // In darkness, use higher opacity
 
               // Memory tint for explored but not visible cells (lighter gray)
@@ -2126,7 +2126,7 @@ const TacticalMap = ({
                 effectiveOpacity = fogOpacity > 0 ? fogOpacity : (wasExplored ? 0.3 : 0.7);
               }
 
-              // ✅ Render fog overlay with correct shape based on mapType
+              // ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Render fog overlay with correct shape based on mapType
               if (effectiveMapType === "square") {
                 return (
                   <motion.rect
@@ -2176,7 +2176,7 @@ const TacticalMap = ({
             })()}
 
             {/* Feature overlay (from generated scene) - rendered before combatants */}
-            {/* ✅ Render terrain features with Lucide icons or emoji fallback */}
+            {/* ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Render terrain features with Lucide icons or emoji fallback */}
             {(() => {
               const cellData = getCellDataFromSceneCb(col, row);
               const hasTreeFeature = cellData && (cellData.feature === "TREE_LARGE" || cellData.feature === "TREE");
@@ -2288,14 +2288,14 @@ const TacticalMap = ({
                     );
 
                   default: {
-                    // ✅ Fallback emoji icons for any other features
+                    // ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Fallback emoji icons for any other features
                     const emojiMap = {
-                      TREE_LARGE: "🌲",
-                      TREE: "🌲",
-                      BOULDER: "🪨",
-                      WATER: "💧",
-                      RIVER: "🌊",
-                      WATERFALL: "🌊",
+                      TREE_LARGE: "ÃƒÂ°Ã…Â¸Ã…â€™Ã‚Â²",
+                      TREE: "ÃƒÂ°Ã…Â¸Ã…â€™Ã‚Â²",
+                      BOULDER: "ÃƒÂ°Ã…Â¸Ã‚ÂªÃ‚Â¨",
+                      WATER: "ÃƒÂ°Ã…Â¸Ã¢â‚¬â„¢Ã‚Â§",
+                      RIVER: "ÃƒÂ°Ã…Â¸Ã…â€™Ã…Â ",
+                      WATERFALL: "ÃƒÂ°Ã…Â¸Ã…â€™Ã…Â ",
                     };
                     if (emojiMap[feature]) {
                       return (
@@ -2416,20 +2416,20 @@ const TacticalMap = ({
               (() => {
                 return combatantsAtPos
                   .sort((a, b) => {
-                    // Sort so enemies appear on top of players
+                    // Sort so enemies astaminaar on top of players
                     if (a.isEnemy && !b.isEnemy) return 1; // Enemy after player
                     if (!a.isEnemy && b.isEnemy) return -1; // Player before enemy
                     return 0; // Same type, maintain original order
                   })
                   .map((combatant, index) => {
                     // Get the combatant's primary position
-                    const primaryPos = getCreaturePrimaryPositionCb(combatant);
+                    const primaryPos = getCombatantPrimaryPositionCb(combatant);
                     if (!primaryPos) {
                       return null;
                     }
 
-                    // Only show icon on the primary position (top-left corner for large creatures)
-                    // For single-cell creatures, this will be their exact position
+                    // Only show icon on the primary position (top-left corner for large combatants)
+                    // For single-cell combatants, this will be their exact position
                     const isPrimaryPosition = primaryPos.x === col && primaryPos.y === row;
                     if (!isPrimaryPosition) {
                       // Debug: log only for specific cells in development (to avoid spam)
@@ -2441,14 +2441,14 @@ const TacticalMap = ({
 
                     // Debug: verify icon should render (only for specific cells in development)
                     if (import.meta.env.DEV && col === 15 && row === 14) {
-                      console.log(`[TacticalMap] ✅ Rendering icon for ${combatant.name} at (${col}, ${row}), isEnemy: ${combatant.isEnemy}, fogEnabled: ${fogEnabled}`);
+                      console.log(`[TacticalMap] ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Rendering icon for ${combatant.name} at (${col}, ${row}), isEnemy: ${combatant.isEnemy}, fogEnabled: ${fogEnabled}`);
                     }
 
-                    // ✅ Check enemy visibility for rendering
+                    // ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Check enemy visibility for rendering
                     // In darkness/fog, enemies should be completely invisible if not visible
                     const enemyVisible = combatant.isEnemy ? isEnemyVisibleCb(col, row, combatant) : true;
 
-                    // ✅ In darkness, completely hide unseen enemies (opacity 0, or don't render)
+                    // ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ In darkness, completely hide unseen enemies (opacity 0, or don't render)
                     // If fog is enabled and enemy is not visible, don't render the icon at all
                     // BUT always show player icons regardless of fog
                     if (combatant.isEnemy && fogEnabled && !enemyVisible) {
@@ -2459,24 +2459,24 @@ const TacticalMap = ({
                     const offsetX = combatantsAtPos.length > 1 ? (index - (combatantsAtPos.length - 1) / 2) * 8 : 0;
                     const offsetY = combatantsAtPos.length > 1 ? (index - (combatantsAtPos.length - 1) / 2) * 6 : 0;
 
-                    // Get token offset from bestiary configuration (for aligning icon with creature's head/front)
+                    // Get token offset from arenaRoster configuration (for aligning icon with combatant's head/front)
                     const tokenOffsetX = combatant.token?.iconOffsetX ?? 0;
                     const tokenOffsetY = combatant.token?.iconOffsetY ?? 0;
 
-                    // Calculate altitude offset for flying creatures (0.4 pixels per foot for visual scale)
+                    // Calculate altitude offset for flying combatants (0.4 pixels per foot for visual scale)
                     // This makes altitude visible: 5ft = 2px up, 20ft = 8px up, 80ft = 32px up, 120ft = 48px up
                     const altitude = combatant.altitudeFeet ?? combatant.altitude ?? 0;
                     const altitudeOffsetY = altitude > 0 ? -(altitude * 0.4) : 0;
 
                     // Base icon position (ground level)
                     const baseIconY = centerY + 6 + offsetY;
-                    // Icon position with altitude offset and token offset (moves up for flying creatures, adjusts for head alignment)
+                    // Icon position with altitude offset and token offset (moves up for flying combatants, adjusts for head alignment)
                     const iconX = centerX + offsetX + tokenOffsetX;
                     const iconY = baseIconY + altitudeOffsetY + tokenOffsetY;
 
-                    // Get creature size for body part rendering
-                    const creatureSize = getCreatureSize(combatant);
-                    const bodyPartsEnabled = creatureSize.width > 1;
+                    // Get combatant size for body part rendering
+                    const combatantSize = getCombatantSize(combatant);
+                    const bodyPartsEnabled = combatantSize.width > 1;
                     const reaction = impactReactions?.[getCombatantId(combatant)] || null;
                     const shakeDurationSeconds = Math.max(
                       0.12,
@@ -2579,14 +2579,14 @@ const TacticalMap = ({
                             fontWeight: 'normal'
                           }}
                         >
-                          {combatant.isEnemy ? "🗡️" : "🛡️"}
+                          {combatant.isEnemy ? "ÃƒÂ°Ã…Â¸Ã¢â‚¬â€Ã‚Â¡ÃƒÂ¯Ã‚Â¸Ã‚Â" : "ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂºÃ‚Â¡ÃƒÂ¯Ã‚Â¸Ã‚Â"}
                         </text>
 
-                        {/* Body part icons for creatures wider than 5 ft */}
+                        {/* Body part icons for combatants wider than 5 ft */}
                         {bodyPartsEnabled && (() => {
-                          // ✅ Prefer segmented offsets if available (true hex placement)
-                          if (creatureSize.segmented && Array.isArray(creatureSize.segmentOffsets)) {
-                            const parts = creatureSize.segmentOffsets;
+                          // ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Prefer segmented offsets if available (true hex placement)
+                          if (combatantSize.segmented && Array.isArray(combatantSize.segmentOffsets)) {
+                            const parts = combatantSize.segmentOffsets;
                             const icons = [];
 
                             // Debug logging for segment direction verification
@@ -2594,17 +2594,17 @@ const TacticalMap = ({
                               console.log("SEG DEBUG", {
                                 id: combatant.id,
                                 name: combatant.name,
-                                facing: creatureSize.facing,
-                                tailDir: creatureSize.tailDir,
-                                offsets: creatureSize.segmentOffsets,
+                                facing: combatantSize.facing,
+                                tailDir: combatantSize.tailDir,
+                                offsets: combatantSize.segmentOffsets,
                                 combatantFacing: combatant.facingDirection || combatant.facing || combatant.direction,
                                 defaultDirection: combatant.segmentedBody?.defaultDirection
                               });
                             }
 
                             // Use token-provided icons if available, otherwise fallback glyphs
-                            const bodyGlyph = combatant.token?.bodyIconGlyph ?? "⬛";
-                            const tailGlyph = combatant.token?.tailIconGlyph ?? "🔸";
+                            const bodyGlyph = combatant.token?.bodyIconGlyph ?? "ÃƒÂ¢Ã‚Â¬Ã¢â‚¬Âº";
+                            const tailGlyph = combatant.token?.tailIconGlyph ?? "ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ‚Â¸";
 
                             for (const seg of parts) {
                               if (seg.part === "head") continue; // head already rendered at iconX/iconY
@@ -2658,14 +2658,14 @@ const TacticalMap = ({
                             return icons;
                           }
 
-                          // ⬇️ Legacy fallback (non-segmented): keep your old behavior
+                          // ÃƒÂ¢Ã‚Â¬Ã¢â‚¬Â¡ÃƒÂ¯Ã‚Â¸Ã‚Â Legacy fallback (non-segmented): keep your old behavior
                           const bodyPartIcons = [];
-                          const numBodyParts = creatureSize.width - 1;
+                          const numBodyParts = combatantSize.width - 1;
                           for (let i = 1; i <= numBodyParts; i++) {
                             const bodyOffsetX = HEX_WIDTH * i;
                             const bodyPartX = iconX + bodyOffsetX;
                             const isTail = i === numBodyParts;
-                            const bodyPartIcon = isTail ? "🔸" : "⬛";
+                            const bodyPartIcon = isTail ? "ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ‚Â¸" : "ÃƒÂ¢Ã‚Â¬Ã¢â‚¬Âº";
 
                             bodyPartIcons.push(
                               <g key={`body-part-${i}`}>
@@ -2782,10 +2782,10 @@ const TacticalMap = ({
                           </foreignObject>
                         )}
 
-                        {/* Large creature size indicator */}
+                        {/* Large combatant size indicator */}
                         {(() => {
-                          const creatureSize = getCreatureSize(combatant);
-                          if (creatureSize.width > 1) {
+                          const combatantSize = getCombatantSize(combatant);
+                          if (combatantSize.width > 1) {
                             return (
                               <text
                                 x={iconX}
@@ -2795,7 +2795,7 @@ const TacticalMap = ({
                                 fill="#666"
                                 style={{ pointerEvents: 'none', userSelect: 'none' }}
                               >
-                                {creatureSize.width}×1
+                                {combatantSize.width}ÃƒÆ’Ã¢â‚¬â€1
                               </text>
                             );
                           }
@@ -2812,7 +2812,7 @@ const TacticalMap = ({
     }
 
     return cells;
-  }, [positions, combatants, hoveredCell, selectedCombatant, currentTurn, flashingCombatants, impactReactions, getCombatantsAtPosition, getCellColorCb, getCreaturePrimaryPositionCb, handleCellClick, terrain, effectiveMapType, getCellDataFromSceneCb, fogEnabled, isCellVisibleCb, isCellExploredCb, getFogOpacityCb, isEnemyVisibleCb, getCellPixelPositionCb, getCellPixelPosition, getCellShapeCb, HEX_WIDTH, activeCircles, dangerHexSet, featureColors, getCellFillCb, getTerrainIconCb, handleCellPointerDown, handleCellPointerOver, handleCellPointerUp, mode, onHoveredCellChange, selectedTargetHex, terrainColors, validMoves, getCombatantId]);
+  }, [positions, combatants, hoveredCell, selectedCombatant, currentTurn, flashingCombatants, impactReactions, getCombatantsAtPosition, getCellColorCb, getCombatantPrimaryPositionCb, handleCellClick, terrain, effectiveMapType, getCellDataFromSceneCb, fogEnabled, isCellVisibleCb, isCellExploredCb, getFogOpacityCb, isEnemyVisibleCb, getCellPixelPositionCb, getCellPixelPosition, getCellShapeCb, HEX_WIDTH, activeCircles, dangerHexSet, featureColors, getCellFillCb, getTerrainIconCb, handleCellPointerDown, handleCellPointerOver, handleCellPointerUp, mode, onHoveredCellChange, selectedTargetHex, terrainColors, validMoves, getCombatantId]);
 
   // Render grid using SVG (supports both hex and square)
   const renderGrid = () => {
@@ -2882,7 +2882,7 @@ const TacticalMap = ({
         sx={{
           // Smooth scrolling
           scrollBehavior: 'smooth',
-          // Force scrollbars to always be visible
+          // Fraidere scrollbars to always be visible
           '&::-webkit-scrollbar': {
             width: '16px',  // Increased from 12px for better visibility
             height: '16px', // Increased from 12px for better visibility
@@ -2931,7 +2931,7 @@ const TacticalMap = ({
             </defs>
 
 
-            {/* Animated Lighting filter overlay (if terrain has lighting info) - rendered FIRST so icons appear on top */}
+            {/* Animated Lighting filter overlay (if terrain has lighting info) - rendered FIRST so icons astaminaar on top */}
             {terrain?.lighting && (() => {
               const lightingFilter = getLightingFilter(terrain.lighting);
               if (lightingFilter.opacity > 0) {
@@ -2959,7 +2959,7 @@ const TacticalMap = ({
             {/* Render grid cells with terrain, features, and combatant icons - rendered AFTER lighting so icons are visible */}
             {renderGrid()}
 
-            {/* === Path Preview Overlay (1–4) === */}
+            {/* === Path Preview Overlay (1ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Å“4) === */}
             {pathPoints && pathTotalLen > 0 && (
               <g pointerEvents="none">
                 {/* dark underlay for readability */}
@@ -3049,7 +3049,7 @@ const TacticalMap = ({
                 {occupiedCellsOnPath.map((c, i) => {
                   const { cx, cy } = getCellCenter(c.x, c.y);
                   return (
-                    <g key={`occ-on-path-${c.x}-${c.y}-${i}`}>
+                    <g key={`occupied-on-path-${c.x}-${c.y}-${i}`}>
                       <rect x={cx - 6} y={cy - 6} width={12} height={12} rx={2} fill="rgba(59,130,246,0.95)" />
                       <text
                         x={cx}
@@ -3271,7 +3271,7 @@ const TacticalMap = ({
                     key="fog-drift"
                     mapWidth={svgDimensions.width}
                     mapHeight={svgDimensions.height}
-                    playerPosition={playerPosition || { x: 0, y: 0 }} // ✅ Provide default object instead of null
+                    playerPosition={playerPosition || { x: 0, y: 0 }} // ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Provide default object instead of null
                     lighting={terrain?.lighting || "Bright Daylight"}
                     enabled={fogEnabled}
                   />
@@ -3287,7 +3287,7 @@ const TacticalMap = ({
         )}
       </Box>
 
-      {/* ✅ Terrain Legend Overlay (top-right corner) */}
+      {/* ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Terrain Legend Overlay (top-right corner) */}
       {terrain?.baseTerrain && (
         <Box
           position="absolute"
@@ -3315,13 +3315,13 @@ const TacticalMap = ({
                   ));
               })
               .map(([key, color]) => {
-                const terrainName = key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-                const icon = key.includes("FOREST") ? "🌲" :
-                  key.includes("ROCKY") ? "🪨" :
-                    key === "WATER" ? "💧" :
-                      key === "URBAN" ? "🏙️" :
-                        key === "SWAMP" ? "🌿" :
-                          key === "CAVE" ? "🕳️" : "🟩";
+                const terrainName = key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUstaminarCase());
+                const icon = key.includes("FOREST") ? "ÃƒÂ°Ã…Â¸Ã…â€™Ã‚Â²" :
+                  key.includes("ROCKY") ? "ÃƒÂ°Ã…Â¸Ã‚ÂªÃ‚Â¨" :
+                    key === "WATER" ? "ÃƒÂ°Ã…Â¸Ã¢â‚¬â„¢Ã‚Â§" :
+                      key === "URBAN" ? "ÃƒÂ°Ã…Â¸Ã‚ÂÃ¢â€žÂ¢ÃƒÂ¯Ã‚Â¸Ã‚Â" :
+                        key === "SWAMP" ? "ÃƒÂ°Ã…Â¸Ã…â€™Ã‚Â¿" :
+                          key === "CAVE" ? "ÃƒÂ°Ã…Â¸Ã¢â‚¬Â¢Ã‚Â³ÃƒÂ¯Ã‚Â¸Ã‚Â" : "ÃƒÂ°Ã…Â¸Ã…Â¸Ã‚Â©";
                 return (
                   <HStack key={key} spacing={2}>
                     <Box

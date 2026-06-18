@@ -63,7 +63,7 @@ export function createTreeInstance(assetId, gridPosition, options = {}) {
 
     // Runtime state
     state: {
-      perchOccupants: {}, // keyed by perchId: creatureId
+      perchOccupants: {}, // keyed by perchId: combatantId
       destroyed: false,
       hp: null, // optional for future chop/burn mechanics
     },
@@ -76,28 +76,28 @@ export function createTreeInstance(assetId, gridPosition, options = {}) {
 }
 
 /**
- * Find available perches on a tree instance for a flying creature
+ * Find available perches on a tree instance for a flying combatant
  *
  * @param {Object} treeInstance - Tree instance from arenaEnvironment.objects
- * @param {Object} creature - Creature object with sizeCategory
+ * @param {Object} combatant - Combatant object with sizeCategory
  * @returns {Array} Array of available perches with world positions
  */
-export function findAvailablePerches(treeInstance, creature) {
+export function findAvailablePerches(treeInstance, combatant) {
   if (!treeInstance?.assetId || treeInstance.kind !== "TREE") return [];
 
   const asset = getTreeAsset(treeInstance.assetId);
   if (!asset?.perches) return [];
 
-  const creatureSize = creature.sizeCategory || "MEDIUM";
+  const combatantSize = combatant.sizeCategory || "MEDIUM";
   const sizeOrder = {
     TINY: 0,
     SMALL: 1,
     MEDIUM: 2,
     LARGE: 3,
     HUGE: 4,
-    GIANT: 5,
+    LARGE_HEAVY: 5,
   };
-  const creatureSizeValue = sizeOrder[creatureSize] ?? 2;
+  const combatantSizeValue = sizeOrder[combatantSize] ?? 2;
 
   // Get occupied perches
   const occupiedPerchIds = new Set(
@@ -110,8 +110,8 @@ export function findAvailablePerches(treeInstance, creature) {
       if (occupiedPerchIds.has(perch.id)) return false;
 
       // Check size compatibility
-      const perchMaxSize = sizeOrder[perch.maxCreatureSize] ?? 2;
-      if (creatureSizeValue > perchMaxSize) return false;
+      const perchMaxSize = sizeOrder[perch.maxCombatantSize] ?? 2;
+      if (combatantSizeValue > perchMaxSize) return false;
 
       // For now, we only track one occupant per perch (by perch ID)
       // If you need multiple occupants, you'd need to track arrays
@@ -150,7 +150,7 @@ export function findAvailablePerches(treeInstance, creature) {
             y: local.y, // This is the altitude in feet
             z: local.z,
           },
-          // Absolute altitude for the creature
+          // Absolute altitude for the combatant
           altitudeFeet: local.y,
         },
       };
@@ -158,14 +158,14 @@ export function findAvailablePerches(treeInstance, creature) {
 }
 
 /**
- * Reserve a perch for a creature
+ * Reserve a perch for a combatant
  *
  * @param {Object} treeInstance - Tree instance
  * @param {string} perchId - Perch ID to reserve
- * @param {string} creatureId - Creature ID reserving the perch
+ * @param {string} combatantId - Combatant ID reserving the perch
  * @returns {boolean} True if reservation succeeded
  */
-export function reservePerch(treeInstance, perchId, creatureId) {
+export function reservePerch(treeInstance, perchId, combatantId) {
   if (!treeInstance?.state) return false;
 
   const asset = getTreeAsset(treeInstance.assetId);
@@ -180,7 +180,7 @@ export function reservePerch(treeInstance, perchId, creatureId) {
   }
 
   // Reserve it
-  treeInstance.state.perchOccupants[perchId] = creatureId;
+  treeInstance.state.perchOccupants[perchId] = combatantId;
   return true;
 }
 
@@ -189,14 +189,14 @@ export function reservePerch(treeInstance, perchId, creatureId) {
  *
  * @param {Object} treeInstance - Tree instance
  * @param {string} perchId - Perch ID to release
- * @param {string} creatureId - Creature ID (for validation)
+ * @param {string} combatantId - Combatant ID (for validation)
  * @returns {boolean} True if release succeeded
  */
-export function releasePerch(treeInstance, perchId, creatureId) {
+export function releasePerch(treeInstance, perchId, combatantId) {
   if (!treeInstance?.state) return false;
 
-  // Validate that this creature owns the perch
-  if (treeInstance.state.perchOccupants[perchId] !== creatureId) {
+  // Validate that this combatant owns the perch
+  if (treeInstance.state.perchOccupants[perchId] !== combatantId) {
     return false;
   }
 
@@ -205,22 +205,22 @@ export function releasePerch(treeInstance, perchId, creatureId) {
 }
 
 /**
- * Find nearest tree with available perches for a flying creature
+ * Find nearest tree with available perches for a flying combatant
  * Searches through arenaEnvironment.objects
  *
- * @param {Object} creature - Flying creature
+ * @param {Object} combatant - Flying combatant
  * @param {Array} objects - Array from arenaEnvironment.objects
- * @param {Object} creaturePosition - Creature's current position {x, y}
+ * @param {Object} combatantPosition - Combatant's current position {x, y}
  * @param {number} maxRadiusHexes - Maximum search radius
  * @returns {Object|null} Nearest tree with available perches, or null
  */
 export function findNearestPerchableTree(
-  creature,
+  combatant,
   objects,
-  creaturePosition,
+  combatantPosition,
   maxRadiusHexes = 10
 ) {
-  if (!creature || !objects || !creaturePosition) return null;
+  if (!combatant || !objects || !combatantPosition) return null;
 
   // Filter to trees with perchable tag
   const trees = objects.filter(
@@ -233,12 +233,12 @@ export function findNearestPerchableTree(
   // Find trees with available perches
   const treesWithPerches = trees
     .map((tree) => {
-      const perches = findAvailablePerches(tree, creature);
+      const perches = findAvailablePerches(tree, combatant);
       if (!perches.length) return null;
 
       // Calculate distance
-      const dx = tree.grid.x - creaturePosition.x;
-      const dy = tree.grid.y - creaturePosition.y;
+      const dx = tree.grid.x - combatantPosition.x;
+      const dy = tree.grid.y - combatantPosition.y;
       const dist = Math.sqrt(dx * dx + dy * dy);
 
       if (dist > maxRadiusHexes) return null;
@@ -435,10 +435,10 @@ function clamp(value, min, max) {
 }
 
 /**
- * Pick the best perch for a flying creature based on intent and weighted factors
+ * Pick the best perch for a flying combatant based on intent and weighted factors
  *
  * @param {Object} params - Parameters
- * @param {Object} params.flyer - Flying creature object
+ * @param {Object} params.flyer - Flying combatant object
  * @param {Object} params.flyerGrid - Flyer's current grid position {x, y}
  * @param {Object} params.targetGrid - Target's grid position {x, y} (optional)
  * @param {Object} params.arenaEnvironment - Arena environment with objects array
@@ -531,7 +531,7 @@ export function pickBestPerchForFlyer({
       approach: 0.1,
     },
     STRIKE: {
-      height: 0.1, // Prefer lower perches for quick strikes
+      height: 0.1, // Prefer lower perches for quick attacks
       toFlyer: 0.2,
       toTarget: 0.4, // Very close to target
       idealTargetDist: 0.2,

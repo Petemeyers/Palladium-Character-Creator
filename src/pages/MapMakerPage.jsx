@@ -263,7 +263,7 @@ export default function MapMakerPage() {
   }, [mapDefinition]);
 
   useEffect(() => {
-    console.log(`🖌️ map brush radius: ${brushRadius}`);
+    console.log(`ðŸ–Œï¸ map brush radius: ${brushRadius}`);
   }, [brushRadius]);
 
   useEffect(() => {
@@ -379,7 +379,7 @@ export default function MapMakerPage() {
     const q = Number.isFinite(hex.q) ? hex.q : hex.x;
     const r = Number.isFinite(hex.r) ? hex.r : hex.y;
     setSelectedHex({ q, r });
-    console.log(`🧱 map builder selected hex: (${q},${r})`);
+    console.log(`ðŸ§± map builder selected hex: (${q},${r})`);
   }, []);
 
   const selectedHexCell = useMemo(() => {
@@ -419,7 +419,7 @@ export default function MapMakerPage() {
                   : 0
             );
       if (requestedHeight !== null && Number.isFinite(requestedHeight) && requestedHeight !== nextHeight) {
-        console.log(`⛰️ map height clamped: requested=${requestedHeight} clamped=${nextHeight}`);
+        console.log(`â›°ï¸ map height clamped: requested=${requestedHeight} clamped=${nextHeight}`);
       }
       const nextTerrain = patch.terrainType || prevCell.terrainType || prevCell.terrain || selectedTerrainType || "grass";
       const nextCell = {
@@ -448,9 +448,9 @@ export default function MapMakerPage() {
       });
 
       queue3DCellChange(q, r, nextCell);
-      console.log(`⛰️ map height updated: (${q},${r}) height=${nextHeight}`);
+      console.log(`â›°ï¸ map height updated: (${q},${r}) height=${nextHeight}`);
       console.log(
-        `🧱 map builder updated hex: (${q},${r}) height=${nextHeight} terrain=${nextTerrain} texture=${nextCell.textureId || "none"}`
+        `ðŸ§± map builder updated hex: (${q},${r}) height=${nextHeight} terrain=${nextTerrain} texture=${nextCell.textureId || "none"}`
       );
     },
     [mapDefinition, queue3DCellChange, selectedHex, selectedTerrainType]
@@ -532,11 +532,11 @@ export default function MapMakerPage() {
       });
       if (changedCount > 0) {
         if (editor3DBrushMode === "top-terrain") {
-          console.log(`🖌️ terrain brush painted: center=(${centerX},${centerY}) radius=${brushRadius} count=${changedCount}`);
+          console.log(`ðŸ–Œï¸ terrain brush painted: center=(${centerX},${centerY}) radius=${brushRadius} count=${changedCount}`);
         } else if (editor3DBrushMode === "wall-terrain") {
-          console.log(`🧱 wall brush painted: center=(${centerX},${centerY}) radius=${brushRadius} count=${changedCount}`);
+          console.log(`ðŸ§± wall brush painted: center=(${centerX},${centerY}) radius=${brushRadius} count=${changedCount}`);
         } else if (editor3DBrushMode === "height-raise" || editor3DBrushMode === "height-lower") {
-          console.log(`⛰️ height brush painted: center=(${centerX},${centerY}) radius=${brushRadius} count=${changedCount}`);
+          console.log(`â›°ï¸ height brush painted: center=(${centerX},${centerY}) radius=${brushRadius} count=${changedCount}`);
         }
       }
       return changed;
@@ -555,8 +555,8 @@ export default function MapMakerPage() {
   const begin3DBrushStroke = useCallback(
     (hex) => {
       painted3DBrushHexesRef.current.clear();
-      console.log(`🖌️ map brush radius: ${brushRadius}`);
-      console.log(`🖌️ 3D brush started: mode=${editor3DBrushMode}`);
+      console.log(`ðŸ–Œï¸ map brush radius: ${brushRadius}`);
+      console.log(`ðŸ–Œï¸ 3D brush started: mode=${editor3DBrushMode}`);
       return apply3DBrushToHex(hex);
     },
     [apply3DBrushToHex, brushRadius, editor3DBrushMode]
@@ -569,7 +569,7 @@ export default function MapMakerPage() {
 
   const end3DBrushStroke = useCallback(() => {
     painted3DBrushHexesRef.current.clear();
-    console.log("🖌️ 3D brush ended");
+    console.log("ðŸ–Œï¸ 3D brush ended");
   }, []);
 
   const isHexInBounds = useCallback(
@@ -636,7 +636,7 @@ export default function MapMakerPage() {
     setSelectedPropId(prop?.id || nextGrabbedObject?.id || null);
     setDraggingPropId(prop?.id || nextGrabbedObject?.id || null);
     setGrabbedObject(nextGrabbedObject || null);
-    console.log(`🧩 map prop grabbed: ${prop?.name || "Prop"}`);
+    console.log(`ðŸ§© map prop grabbed: ${prop?.name || "Prop"}`);
   }, []);
 
   const updatePropGrabHover = useCallback(({ hoverHex: nextHoverHex, grabbedObject: nextGrabbedObject }) => {
@@ -669,7 +669,7 @@ export default function MapMakerPage() {
       setDraggingPropId(null);
       setHoverHex(null);
       setGrabbedObject(null);
-      console.log(`🧩 map prop dropped: ${prop.name || "Prop"} at (${dropHex.q},${dropHex.r})`);
+      console.log(`ðŸ§© map prop drostaminad: ${prop.name || "Prop"} at (${dropHex.q},${dropHex.r})`);
       return true;
     },
     [hasBlockingPropAtHex, isHexInBounds]
@@ -832,7 +832,7 @@ export default function MapMakerPage() {
       return updated;
     });
 
-    // Force full rebuild in 3D for safety on resize
+    // Fraidere full rebuild in 3D for safety on resize
     if (arena3DRef.current?.rebuildEditor) {
       arena3DRef.current.rebuildEditor({
         ...mapDefinitionRef.current,
@@ -848,7 +848,7 @@ export default function MapMakerPage() {
     const exportMap = buildExportMap();
     const json = JSON.stringify(exportMap, null, 2);
     setImportExportJson(json);
-    console.log(`🗺️ map builder exported: ${exportMap.name} props=${exportMap.props.length}`);
+    console.log(`ðŸ—ºï¸ map builder exported: ${exportMap.name} props=${exportMap.props.length}`);
     toast({ title: "Map exported", description: "JSON placed in the text box.", status: "info", duration: 1600, isClosable: true });
   }, [buildExportMap, toast]);
 
@@ -856,7 +856,7 @@ export default function MapMakerPage() {
     const parsed = safeJsonParse(importExportJson, null);
     const validation = validateImportedMap(parsed);
     if (!validation.ok) {
-      console.warn(`🚫 map builder import failed: ${validation.reason}`);
+      console.warn(`ðŸš« map builder import failed: ${validation.reason}`);
       toast({ title: "Invalid map JSON", description: validation.reason, status: "error", duration: 2200, isClosable: true });
       return;
     }
@@ -903,7 +903,7 @@ export default function MapMakerPage() {
     setGridWidth(width);
     setGridHeight(height);
 
-    console.log(`🗺️ map builder imported: ${nextName} props=${nextProps.length}`);
+    console.log(`ðŸ—ºï¸ map builder imported: ${nextName} props=${nextProps.length}`);
     toast({ title: "Map imported", description: `${nextProps.length} props restored.`, status: "success", duration: 1800, isClosable: true });
   }, [clearTransientEditorState, importExportJson, toast, validateImportedMap]);
 
@@ -912,14 +912,14 @@ export default function MapMakerPage() {
       <VStack align="stretch" spacing={4}>
         <HStack justify="space-between" wrap="wrap">
           <VStack align="start" spacing={0}>
-            <Text fontSize="xl" fontWeight="bold">🗺️ Map Maker</Text>
+            <Text fontSize="xl" fontWeight="bold">ðŸ—ºï¸ Map Maker</Text>
             <Text fontSize="sm" color="gray.600">Same editor pipeline as Combat Arena (2D paint + optional 3D preview).</Text>
           </VStack>
           <HStack>
             <Button size="sm" colorScheme={show3DView ? "purple" : "gray"} variant={show3DView ? "solid" : "outline"} onClick={() => setShow3DView((v) => !v)}>
-              {show3DView ? "🎮 Hide 3D" : "🎮 Show 3D"}
+              {show3DView ? "ðŸŽ® Hide 3D" : "ðŸŽ® Show 3D"}
             </Button>
-            <Button size="sm" colorScheme="blue" onClick={handleSave}>💾 Save</Button>
+            <Button size="sm" colorScheme="blue" onClick={handleSave}>ðŸ’¾ Save</Button>
           </HStack>
         </HStack>
 
@@ -938,7 +938,7 @@ export default function MapMakerPage() {
                   <FormLabel fontSize="sm">Grid</FormLabel>
                   <HStack>
                     <Input type="number" value={gridWidth} onChange={(e) => setGridWidth(e.target.value)} />
-                    <Text>×</Text>
+                    <Text>Ã—</Text>
                     <Input type="number" value={gridHeight} onChange={(e) => setGridHeight(e.target.value)} />
                     <Button size="sm" onClick={handleResizeGrid}>Apply</Button>
                   </HStack>
@@ -949,8 +949,8 @@ export default function MapMakerPage() {
                 <FormControl>
                   <FormLabel fontSize="sm">Map Type</FormLabel>
                   <Select value={mapType} onChange={(e) => setMapType(e.target.value)}>
-                    <option value="hex">⬡ Hex</option>
-                    <option value="square">⬛ Square</option>
+                    <option value="hex">â¬¡ Hex</option>
+                    <option value="square">â¬› Square</option>
                   </Select>
                 </FormControl>
                 <FormControl>
@@ -1141,7 +1141,7 @@ export default function MapMakerPage() {
 
               <Box>
                 <HStack justify="space-between" align="center" mb={2}>
-                  <Text fontSize="sm" fontWeight="bold">⛰️ Height Tiles</Text>
+                  <Text fontSize="sm" fontWeight="bold">â›°ï¸ Height Tiles</Text>
                   <Text fontSize="xs" color="gray.600">
                     {heightTiles.length} non-flat
                   </Text>

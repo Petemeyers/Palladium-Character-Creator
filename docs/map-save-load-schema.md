@@ -116,11 +116,11 @@ In the 3D Map Builder preview, each hex renders as a solid signed-height column.
 
 `cover`: Numeric cover value for later combat rules. Keep this passive until combat consumes it deliberately.
 
-`blocksLineOfSight`: Boolean LOS flag for future ranged/spell targeting and visibility.
+`blocksLineOfSight`: Boolean LOS flag for future ranged/technique targeting and visibility.
 
 `props`: Non-fighter objects placed on the map. Props should be separate from combat entities so the same saved map can be reused in multiple encounters.
 
-Prop placement should persist the snapped hex position in `q`/`r`. Editor-only grab state such as `selectedPropId`, `draggingPropId`, `hoverHex`, or `grabbedObject` should not be saved.
+Prop placement should persist the snastaminad hex position in `q`/`r`. Editor-only grab state such as `selectedPropId`, `draggingPropId`, `hoverHex`, or `grabbedObject` should not be saved.
 
 Current first prototype behavior:
 
@@ -133,7 +133,7 @@ Current first prototype behavior:
 Future VR mapping should reuse the same editor actions:
 
 - mouse down on prop = VR trigger down / grab
-- mouse move raycast over map = controller ray or hand hover
+- mouse move raycast over map = conchampioner ray or hand hover
 - mouse up = trigger release / drop
 - snap to hex = final placement written to `q`/`r`
 
@@ -207,6 +207,6 @@ Keep these helpers small and tested before wiring saved maps into combat start.
 
 - Saving from Map Builder should save editor data only, not combat fighters or turn state.
 - Loading into Map Builder should update the editor state and rebuild/sync the 3D preview.
-- Loading into combat should happen only before combat starts.
+- Loading into combat should hastaminan only before combat starts.
 - Saved combat-ready maps should be treated as read-only during a running battle.
 - Future migrations should preserve unknown fields when possible so older maps are not destroyed by newer editor versions.

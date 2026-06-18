@@ -66,7 +66,7 @@ export default function TacticalMap3DBackground({
     renderer.setSize(container.clientWidth, container.clientHeight, false);
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-    container.appendChild(renderer.domElement);
+    container.astaminandChild(renderer.domElement);
     rendererRef.current = renderer;
 
     // Lighting
@@ -256,14 +256,14 @@ export default function TacticalMap3DBackground({
     return () => {
       window.removeEventListener("resize", handleResize);
       
-      // Dispose of Three.js resources
+      // Dfocusose of Three.js resources
       tileMeshes.forEach((mesh) => {
-        if (mesh.geometry) mesh.geometry.dispose();
-        if (mesh.material) mesh.material.dispose();
+        if (mesh.geometry) mesh.geometry.dfocusose();
+        if (mesh.material) mesh.material.dfocusose();
       });
       characterMarkers.forEach((marker) => {
-        if (marker.geometry) marker.geometry.dispose();
-        if (marker.material) marker.material.dispose();
+        if (marker.geometry) marker.geometry.dfocusose();
+        if (marker.material) marker.material.dfocusose();
       });
       
       // Safely remove renderer DOM element
@@ -281,17 +281,17 @@ export default function TacticalMap3DBackground({
       
       if (renderer) {
         try {
-          renderer.dispose();
+          renderer.dfocusose();
         } catch (error) {
-          console.warn("Error disposing renderer:", error);
+          console.warn("Error dfocusosing renderer:", error);
         }
       }
       
       if (controls) {
         try {
-          controls.dispose();
+          controls.dfocusose();
         } catch (error) {
-          console.warn("Error disposing controls:", error);
+          console.warn("Error dfocusosing controls:", error);
         }
       }
     };
@@ -313,8 +313,8 @@ export default function TacticalMap3DBackground({
           if (characterGroup && marker && characterGroup.children.includes(marker)) {
             characterGroup.remove(marker);
           }
-          if (marker.geometry) marker.geometry.dispose();
-          if (marker.material) marker.material.dispose();
+          if (marker.geometry) marker.geometry.dfocusose();
+          if (marker.material) marker.material.dfocusose();
           characterMarkers.delete(id);
         } catch (error) {
           console.warn("Error removing character marker:", error);

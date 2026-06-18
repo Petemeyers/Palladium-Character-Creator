@@ -65,7 +65,7 @@ const CombatPanel = () => {
         socket.emit("partyMessage", {
           partyId: activeParty._id,
           user: "System",
-          text: `📍 ${combatant.name} moved to position (${newPosition.x}, ${newPosition.y})`,
+          text: `Ã°Å¸â€œÂ ${combatant.name} moved to position (${newPosition.x}, ${newPosition.y})`,
           type: "system",
         });
       }
@@ -92,7 +92,7 @@ const CombatPanel = () => {
     const maxCarry = char.carryWeight?.maxWeight || (char.attributes?.PS || 10) * 10;
     const penalty = getEncumbrancePenalty(carry, maxCarry);
     
-    // Simple Palladium-style roll: 1d20 + attribute modifier
+    // Simple Medieval Combat Simulator-style roll: 1d20 + attribute modifier
     const roll = rollDice(20, 1);
     const attributeModifier = Math.floor((attrValue - 10) / 2);
     let total = roll + attributeModifier;
@@ -108,7 +108,7 @@ const CombatPanel = () => {
         socket.emit("partyMessage", {
           partyId: activeParty._id,
           user: "System",
-          text: `⚠️ ${char.name} is encumbered: ${penalty.skill} penalty applied to ${skillName} (Carrying ${carry}/${maxCarry})`,
+          text: `Ã¢Å¡Â Ã¯Â¸Â ${char.name} is encumbered: ${penalty.skill} penalty applied to ${skillName} (Carrying ${carry}/${maxCarry})`,
           type: "system",
         });
       }
@@ -137,7 +137,7 @@ const CombatPanel = () => {
       socket.emit("partyMessage", {
         partyId: activeParty._id,
         user: "System",
-        text: `📜 ${char.name} rolled ${total} on ${skillName} (d20=${roll}, attr=${skill.attribute})${encPenaltyText}`,
+        text: `Ã°Å¸â€œÅ“ ${char.name} rolled ${total} on ${skillName} (d20=${roll}, attr=${skill.attribute})${encPenaltyText}`,
         type: "system",
       });
     }
@@ -177,7 +177,7 @@ const CombatPanel = () => {
         <Box p={3} borderWidth="1px" borderRadius="md" bg="blue.50">
           <HStack justify="space-between" align="center">
             <VStack align="start" spacing={1}>
-              <Heading size="sm">🗺️ Combat Arena</Heading>
+              <Heading size="sm">Ã°Å¸â€”ÂºÃ¯Â¸Â Combat Arena</Heading>
               <Text fontSize="xs" color="gray.600">
                 Visual grid-based tactical positioning (40x30 grid, 200ft x 150ft)
               </Text>
@@ -188,7 +188,7 @@ const CombatPanel = () => {
               variant={showTacticalMap ? "solid" : "outline"}
               onClick={() => setShowTacticalMap(!showTacticalMap)}
             >
-              {showTacticalMap ? "✅ Hide Map" : "🗺️ Show Map"}
+              {showTacticalMap ? "Ã¢Å“â€¦ Hide Map" : "Ã°Å¸â€”ÂºÃ¯Â¸Â Show Map"}
             </Button>
           </HStack>
         </Box>
@@ -288,7 +288,7 @@ const CombatPanel = () => {
                   )}
                 </HStack>
                 <Text fontSize="sm" color="gray.600">
-                  {lastRoll.type} skill • {lastRoll.difficulty} difficulty
+                  {lastRoll.type} skill Ã¢â‚¬Â¢ {lastRoll.difficulty} difficulty
                 </Text>
               </VStack>
             </Alert>

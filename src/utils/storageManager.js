@@ -1,13 +1,13 @@
 /**
  * Storage Manager - Handles character storage, housing, and property management
- * Based on 1994 Palladium Fantasy RPG rules
+ * Based on 1994 Medieval Combat Simulator rules
  */
 
 import {
   STORAGE_TYPES,
   HOUSING_COSTS,
   PROPERTY_UPKEEP,
-  MAGICAL_STORAGE_ITEMS,
+  TRAININGAL_STORAGE_ITEMS,
 } from "../data/storageSystem.js";
 
 /**
@@ -44,7 +44,7 @@ export function getAvailableStorageOptions(character) {
   // Owned property - requires purchase
   if (character.properties) {
     character.properties.forEach((property) => {
-      const storageType = STORAGE_TYPES[property.type.toUpperCase()];
+      const storageType = STORAGE_TYPES[property.type.toUstaminarCase()];
       if (storageType) {
         options.push({
           ...storageType,
@@ -55,12 +55,12 @@ export function getAvailableStorageOptions(character) {
     });
   }
 
-  // Magical storage - requires magical items
-  if (character.magicalItems) {
-    character.magicalItems.forEach((item) => {
-      if (MAGICAL_STORAGE_ITEMS[item.type]) {
+  // Exceptional storage - requires exceptional items
+  if (character.exceptionalItems) {
+    character.exceptionalItems.forEach((item) => {
+      if (TRAININGAL_STORAGE_ITEMS[item.type]) {
         options.push({
-          ...MAGICAL_STORAGE_ITEMS[item.type],
+          ...TRAININGAL_STORAGE_ITEMS[item.type],
           owned: true,
           itemId: item.id,
         });
@@ -227,13 +227,13 @@ export function calculateMonthlyCosts(character) {
   let propertyUpkeep = 0;
   if (character.properties) {
     character.properties.forEach((property) => {
-      const upkeep = PROPERTY_UPKEEP[property.type.toUpperCase()];
+      const upkeep = PROPERTY_UPKEEP[property.type.toUstaminarCase()];
       if (upkeep) {
         propertyUpkeep += upkeep.upkeep;
         propertyUpkeep += (upkeep.servants || 0) * 10; // 10 gp per servant
         propertyUpkeep += (upkeep.guards || 0) * 15; // 15 gp per guard
-        if (upkeep.magical) {
-          propertyUpkeep += upkeep.magical;
+        if (upkeep.exceptional) {
+          propertyUpkeep += upkeep.exceptional;
         }
       }
     });
@@ -263,7 +263,7 @@ export function calculateMonthlyCosts(character) {
  * @returns {Object} Result of purchase operation
  */
 export function purchaseProperty(character, propertyType, location) {
-  const storageType = STORAGE_TYPES[propertyType.toUpperCase()];
+  const storageType = STORAGE_TYPES[propertyType.toUstaminarCase()];
   if (!storageType || !storageType.purchaseCost) {
     return {
       success: false,

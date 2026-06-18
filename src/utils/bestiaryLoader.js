@@ -1,13 +1,13 @@
 // ==========================================
-// Bestiary Loader
+// ArenaRoster Loader
 // ==========================================
-// Loads creature data from bestiary.json,
+// Loads combatant data from arenaRoster.js,
 // expands dice (e.g. "7d8" -> rolled HP),
 // and normalizes structure for Combat Engine.
 // ==========================================
 
-import bestiary from "../data/bestiary.json" assert { type: "json" };
-import { getAllBestiaryEntries } from "./bestiaryUtils.js";
+import arenaRoster from "../data/arenaRoster.js" assert { type: "json" };
+import { getAllArenaRosterEntries } from "./arenaRosterUtils.js";
 
 // ---- Utility Dice Roller ----
 function rollDice(formula) {
@@ -24,22 +24,22 @@ function rollDice(formula) {
   return total + modifier;
 }
 
-// ---- Normalize Creature Object ----
-export function loadCreature(idOrName) {
-  const entry = getAllBestiaryEntries(bestiary).find(
+// ---- Normalize Combatant Object ----
+export function loadCombatant(idOrName) {
+  const entry = getAllArenaRosterEntries(arenaRoster).find(
     (m) =>
       m.id?.toLowerCase() === idOrName.toLowerCase() ||
       m.name?.toLowerCase() === idOrName.toLowerCase()
   );
 
-  if (!entry) throw new Error(`Creature not found: ${idOrName}`);
+  if (!entry) throw new Error(`Combatant not found: ${idOrName}`);
 
   const hp = rollDice(entry.HP || entry.hp || "3d6");
   const normalized = {
     id: entry.id || idOrName,
     name: entry.name || idOrName,
     category: entry.category || "unknown",
-    AR: entry.AR ?? 10,
+    guardRating: entry.guardRating ?? 10,
     HP: hp,
     currentHP: hp,
     bonuses: entry.bonuses || {},
@@ -60,9 +60,9 @@ export function loadCreature(idOrName) {
 }
 
 // ---- Multi-Loader for Parties or Encounters ----
-export function loadCreatures(ids) {
-  if (!Array.isArray(ids)) throw new Error("loadCreatures expects an array");
-  return ids.map((id) => loadCreature(id));
+export function loadCombatants(ids) {
+  if (!Array.isArray(ids)) throw new Error("loadCombatants expects an array");
+  return ids.map((id) => loadCombatant(id));
 }
 
 // ---- Expose dice roller for other modules ----

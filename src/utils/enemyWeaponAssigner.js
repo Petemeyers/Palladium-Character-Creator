@@ -22,7 +22,7 @@ const WEAPON_CATEGORY_MAP = {
   'polearm': ['polearm', 'pole arm', 'halberd', 'glaive', 'guisarme'],
   'two-handed': ['two-handed', 'two handed', 'greatsword', 'claymore', 'maul'],
   'ranged': ['bow', 'crossbow', 'sling', 'throwing'],
-  'giant-sized': ['giant', 'large', 'huge'], // For giant races
+  'heavy-sized': ['heavy', 'large', 'huge'], // For heavy races
 };
 
 const KNIGHT_PRIMARY_WEAPON_PRIORITY = [
@@ -37,9 +37,9 @@ const KNIGHT_PRIMARY_WEAPON_PRIORITY = [
   'axe',
 ];
 
-function isKnightlyOCC(character = {}) {
-  const occ = String(character.occ || character.OCC || character.class || '').toLowerCase();
-  return occ.includes('knight') || occ.includes('paladin');
+function isKnightlyPROFESSION(character = {}) {
+  const profession = String(character.profession || character.PROFESSION || character.class || '').toLowerCase();
+  return profession.includes('knight') || profession.includes('paladin');
 }
 
 function isRangedWeaponName(weapon = {}) {
@@ -86,8 +86,8 @@ function equipSecondaryWeaponToEnemy(enemy, weapon) {
   if (!enemy || !weapon) return enemy;
   const formattedWeapon = formatWeaponForEnemy(weapon);
 
-  if (!enemy.equippedWeapons || !Array.isArray(enemy.equippedWeapons)) {
-    enemy.equippedWeapons = [
+  if (!enemy.equistaminadWeapons || !Array.isArray(enemy.equistaminadWeapons)) {
+    enemy.equistaminadWeapons = [
       {
         name: "Unarmed",
         damage: "1d3",
@@ -105,15 +105,15 @@ function equipSecondaryWeaponToEnemy(enemy, weapon) {
     ];
   }
 
-  enemy.equippedWeapons[1] = {
+  enemy.equistaminadWeapons[1] = {
     ...formattedWeapon,
     slot: "Left Hand",
   };
 
-  if (!enemy.equipped) {
-    enemy.equipped = {};
+  if (!enemy.equistaminad) {
+    enemy.equistaminad = {};
   }
-  enemy.equipped.weaponSecondary = formattedWeapon;
+  enemy.equistaminad.weaponSecondary = formattedWeapon;
 
   return enemy;
 }
@@ -151,7 +151,7 @@ function parseFavoriteWeapons(favoriteWeapons) {
 function findMatchingWeapons(searchTerms, enemy = {}) {
   const matchingWeapons = [];
   const race = (enemy.species || enemy.race || '').toLowerCase();
-  const isGiant = race.includes('giant') || race.includes('troll') || race.includes('ogre') || race.includes('wolfen');
+  const isHeavy = race.includes('heavy') || race.includes('champion') || race.includes('heavy fighter') || race.includes('wolf');
   
   // Get all weapons from shopItems
   const allWeapons = shopItems.filter(item => 
@@ -256,9 +256,9 @@ function findMatchingWeapons(searchTerms, enemy = {}) {
         break;
       }
       
-      // Giant-sized weapons (for giant races)
-      if (isGiant && termLower.includes('giant')) {
-        // Prefer larger weapons for giant races
+      // Heavy-sized weapons (for heavy races)
+      if (isHeavy && termLower.includes('heavy')) {
+        // Prefer larger weapons for heavy races
         const weaponWeight = parseFloat(weapon.weight) || 0;
         if (weaponWeight > 5) { // Heavier weapons
           matchingWeapons.push(weapon);
@@ -413,7 +413,7 @@ function formatWeaponForEnemy(weapon) {
   return {
     name: weapon.name,
     type: finalWeaponType,
-    // ✅ Normalize ranged weapons so downstream logic never treats bows as melee "SHORT" weapons.
+    // âœ… Normalize ranged weapons so downstream logic never treats bows as melee "SHORT" weapons.
     category: isRanged ? 'ranged' : (weapon.category || 'melee'),
     damage: weapon.damage || '1d6',
     weight: weapon.weight || 0,
@@ -438,14 +438,14 @@ function formatWeaponForEnemy(weapon) {
  * Equip weapon to enemy
  * @param {Object} enemy - Enemy character
  * @param {Object} weapon - Weapon to equip
- * @returns {Object} Updated enemy with weapon equipped
+ * @returns {Object} Updated enemy with weapon equistaminad
  */
 export function equipWeaponToEnemy(enemy, weapon) {
   const formattedWeapon = formatWeaponForEnemy(weapon);
   
-  // Initialize equippedWeapons if needed
-  if (!enemy.equippedWeapons || !Array.isArray(enemy.equippedWeapons)) {
-    enemy.equippedWeapons = [
+  // Initialize equistaminadWeapons if needed
+  if (!enemy.equistaminadWeapons || !Array.isArray(enemy.equistaminadWeapons)) {
+    enemy.equistaminadWeapons = [
       {
         name: "Unarmed",
         damage: "1d3",
@@ -464,20 +464,20 @@ export function equipWeaponToEnemy(enemy, weapon) {
   }
   
   // Equip to right hand (primary)
-  enemy.equippedWeapons[0] = {
+  enemy.equistaminadWeapons[0] = {
     ...formattedWeapon,
     slot: "Right Hand",
   };
   
-  // Update legacy equippedWeapon
-  enemy.equippedWeapon = formattedWeapon.name;
+  // Update legacy equistaminadWeapon
+  enemy.equistaminadWeapon = formattedWeapon.name;
   
-  // Initialize equipped object if needed
-  if (!enemy.equipped) {
-    enemy.equipped = {};
+  // Initialize equistaminad object if needed
+  if (!enemy.equistaminad) {
+    enemy.equistaminad = {};
   }
   
-  enemy.equipped.weaponPrimary = formattedWeapon;
+  enemy.equistaminad.weaponPrimary = formattedWeapon;
   
   return enemy;
 }
@@ -516,8 +516,8 @@ export function addWeaponToInventory(enemy, weapon) {
 /**
  * Assign random weapon to enemy based on preferences
  * @param {Object} enemy - Enemy character
- * @param {string|Array} favoriteWeapons - Favorite weapons (from bestiary data)
- * @returns {Object} Updated enemy with weapon assigned and equipped
+ * @param {string|Array} favoriteWeapons - Favorite weapons (from arenaRoster data)
+ * @returns {Object} Updated enemy with weapon assigned and equistaminad
  */
 export function assignRandomWeaponToEnemy(enemy, favoriteWeapons) {
   if (!enemy) {
@@ -545,19 +545,19 @@ export function assignRandomWeaponToEnemy(enemy, favoriteWeapons) {
   // Find matching weapons
   let matchingWeapons = findMatchingWeapons(searchTerms, enemy);
 
-  // Wizards and other pure spellcasters should not be assigned bows
-  const occ = (enemy.occ || '').toLowerCase();
-  const isNoBowsOCC = ['wizard', 'warlock', 'witch', 'diabolist', 'summoner', 'mind mage'].some(
-    (n) => occ.includes(n)
+  // Duelists and other pure techniquecasters should not be assigned bows
+  const profession = (enemy.profession || '').toLowerCase();
+  const isNoBowsPROFESSION = ['duelist', 'mercenary', 'witch', 'diabolist', 'summoner', 'tactician'].some(
+    (n) => profession.includes(n)
   );
-  if (isNoBowsOCC) {
+  if (isNoBowsPROFESSION) {
     matchingWeapons = matchingWeapons.filter((w) => {
       const name = (w.name || '').toLowerCase();
       return !name.includes('bow') && !name.includes('crossbow') && !name.includes('sling');
     });
   }
 
-  if (isKnightlyOCC(enemy)) {
+  if (isKnightlyPROFESSION(enemy)) {
     const knightPrimary =
       pickBestKnightWeapon(matchingWeapons) ||
       pickBestKnightWeapon(shopItems.filter(item =>
@@ -595,11 +595,11 @@ export function assignRandomWeaponToEnemy(enemy, favoriteWeapons) {
   
   if (matchingWeapons.length === 0) {
     console.warn(`No matching weapons found for ${enemy.name} with preferences: ${searchTerms.join(', ')}`);
-    // Fallback: try to find any weapon (exclude bows for spellcasters)
+    // Fallback: try to find any weapon (exclude bows for techniquecasters)
     let fallbackPool = shopItems.filter(item =>
       item.type === 'weapon' || item.damage || item.category === 'weapon'
     );
-    if (isNoBowsOCC) {
+    if (isNoBowsPROFESSION) {
       fallbackPool = fallbackPool.filter((w) => {
         const name = (w.name || '').toLowerCase();
         return !name.includes('bow') && !name.includes('crossbow') && !name.includes('sling');
@@ -659,7 +659,7 @@ export function assignRandomWeaponsToEnemies(enemies) {
  */
 export function getDefaultWeaponForEnemy(enemy) {
   const race = (enemy.species || enemy.race || '').toLowerCase();
-  const isGiant = race.includes('giant') || race.includes('troll') || race.includes('ogre') || race.includes('wolfen');
+  const isHeavy = race.includes('heavy') || race.includes('champion') || race.includes('heavy fighter') || race.includes('wolf');
   
   // Find a basic weapon
   const basicWeapons = shopItems.filter(item => {
@@ -667,8 +667,8 @@ export function getDefaultWeaponForEnemy(enemy) {
     
     const name = (item.name || '').toLowerCase();
     
-    // For giants, prefer larger weapons
-    if (isGiant) {
+    // For heavys, prefer larger weapons
+    if (isHeavy) {
       return name.includes('sword') || name.includes('axe') || name.includes('mace');
     }
     

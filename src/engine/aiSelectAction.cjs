@@ -9,7 +9,7 @@ function canActLite(f) {
   if (status === "defeated" || status === "fled") return false;
   const hp = Number(f.currentHP ?? 0);
   if (hp <= 0) return false;
-  const ra = Number(f.remainingAttacks ?? 0);
+  const ra = Number(f.remainingActions ?? 0);
   return ra > 0;
 }
 
@@ -106,7 +106,7 @@ function aiSelectAction(payload = {}) {
       type: "AI_INTENT",
       actorId: enemyId,
       intent: { kind: "MOVE", targetId: best.id, desiredRange, approach },
-      reason: `Reposition for ranged (d=${bestD}, want≈${desiredRange})`,
+      reason: `Reposition for ranged (d=${bestD}, wantâ‰ˆ${desiredRange})`,
     };
   }
 

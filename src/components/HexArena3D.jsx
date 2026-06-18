@@ -45,7 +45,7 @@ const HexArena3D = forwardRef(function HexArena3D(
   const initializationStarted = useRef(false);
   const isMountedRef = useRef(true);
 
-  // ✅ Expose a tiny API to parent (CombatPage)
+  // Ã¢Å“â€¦ Expose a tiny API to parent (CombatPage)
   useImperativeHandle(ref, () => ({
     syncMapEditorState: (terrainDef, changedCells = null) => {
       arenaRef.current?.syncMapEditorState?.(terrainDef, changedCells);
@@ -90,7 +90,7 @@ const HexArena3D = forwardRef(function HexArena3D(
 
     return () => {
       isMountedRef.current = false;
-      // arenaRef.current?.dispose();
+      // arenaRef.current?.dfocusose();
     };
   }, []);
 

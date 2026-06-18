@@ -1,9 +1,9 @@
-import { getAllSpellsFromDB } from "../data/combatSpells";
-import psionics from "../data/psionics.json";
-import { OCCS } from "../data/occData";
+import { getAllTechniquesFromDB } from "../data/combatTechniques";
+import tactics from "../data/tactics.json";
+import { PROFESSIONS } from "../data/professionData";
 import { ACTION_TYPES, ACTION_COST, makeAction } from "./aiActionRegistry";
 import { SKILL_ACTION_RULES } from "./aiSkillActions";
-import { classifySpellForAi } from "./aiSpellActions";
+import { classifyTechniqueForAi } from "./aiTechniqueActions";
 import { scoreThreatTarget } from "./aiThreatAssessment";
 import { getActiveAiUnlocks, hasAiUnlock } from "./aiUnlocks";
 import { scoreAiAction } from "./aiScoring";
@@ -26,29 +26,29 @@ export function normalizeSkillName(skill) {
     .trim();
 }
 
-function getActorOccData(actor) {
-  const occName = actor?.occ || actor?.OCC || actor?.occName || actor?.className || actor?.class;
-  return OCCS[occName] ?? null;
+function getActorProfessionData(actor) {
+  const professionName = actor?.profession || actor?.PROFESSION || actor?.professionName || actor?.className || actor?.class;
+  return PROFESSIONS[professionName] ?? null;
 }
 
 export function getAllActorSkills(actor) {
-  const occData = getActorOccData(actor);
+  const professionData = getActorProfessionData(actor);
 
   const fromActor = [
-    ...(actor?.occSkills ?? []),
+    ...(actor?.professionSkills ?? []),
     ...(actor?.electiveSkills ?? []),
     ...(actor?.secondarySkills ?? []),
     ...(actor?.skills ?? []),
   ];
 
-  const fromOcc = occData
+  const fromProfession = professionData
     ? [
-        ...(occData.occSkills ?? []),
-        ...(occData.electiveSkills?.list ?? []),
+        ...(professionData.professionSkills ?? []),
+        ...(professionData.electiveSkills?.list ?? []),
       ]
     : [];
 
-  return [...new Set([...fromActor, ...fromOcc].map(normalizeSkillName).filter(Boolean))];
+  return [...new Set([...fromActor, ...fromProfession].map(normalizeSkillName).filter(Boolean))];
 }
 
 function actorHasSkill(actor, skillName) {
@@ -132,38 +132,38 @@ function getVisibleEnemies(actor, world) {
   return getEnemies(actor, world).filter((enemy) => canSee(actor, enemy, world));
 }
 
-function getCurrentPPE(actor, world) {
-  if (typeof world?.getFighterPPE === "function") {
+function getCurrentstamina(actor, world) {
+  if (typeof world?.getFighterstamina === "function") {
     try {
-      return Number(world.getFighterPPE(actor));
+      return Number(world.getFighterstamina(actor));
     } catch {
       // Use actor fields below.
     }
   }
-  return Number(actor?.currentPPE ?? actor?.ppe ?? actor?.PPE ?? 0);
+  return Number(actor?.currentstamina ?? actor?.stamina ?? actor?.stamina ?? 0);
 }
 
-function getCurrentISP(actor, world) {
-  if (typeof world?.getFighterISP === "function") {
+function getCurrentfocus(actor, world) {
+  if (typeof world?.getFighterfocus === "function") {
     try {
-      return Number(world.getFighterISP(actor));
+      return Number(world.getFighterfocus(actor));
     } catch {
       // Use actor fields below.
     }
   }
-  return Number(actor?.currentISP ?? actor?.isp ?? actor?.ISP ?? 0);
+  return Number(actor?.currentfocus ?? actor?.focus ?? actor?.focus ?? 0);
 }
 
-function hasEnoughPPE(actor, spell, world) {
-  return getCurrentPPE(actor, world) >= Number(spell?.ppeCost ?? spell?.PPE ?? spell?.ppe ?? 0);
+function hasEnoughstamina(actor, technique, world) {
+  return getCurrentstamina(actor, world) >= Number(technique?.staminaCost ?? technique?.stamina ?? technique?.stamina ?? 0);
 }
 
-function hasEnoughISP(actor, power, world) {
-  return getCurrentISP(actor, world) >= Number(power?.isp ?? power?.ISP ?? 0);
+function hasEnoughfocus(actor, power, world) {
+  return getCurrentfocus(actor, world) >= Number(power?.focus ?? power?.focus ?? 0);
 }
 
-function estimateSpellHasDamage(spell) {
-  const dmg = spell?.combatDamage ?? spell?.damage;
+function estimateTechniqueHasDamage(technique) {
+  const dmg = technique?.combatDamage ?? technique?.damage;
   return dmg && String(dmg).trim() !== "" && String(dmg).trim() !== "0";
 }
 
@@ -172,36 +172,36 @@ function hpPercent(actor) {
     Math.max(1, Number(actor?.maxHP ?? actor?.maxHp ?? actor?.HP ?? 1));
 }
 
-function getActorSpellbook(actor, world) {
-  if (typeof world?.getFighterSpells === "function") {
+function getActorTechniqueBook(actor, world) {
+  if (typeof world?.getFighterTechniques === "function") {
     try {
-      const spells = world.getFighterSpells(actor);
-      if (Array.isArray(spells)) return spells;
+      const techniques = world.getFighterTechniques(actor);
+      if (Array.isArray(techniques)) return techniques;
     } catch {
       // Fall through to actor data.
     }
   }
 
-  const actorSpells = actor?.spellsKnown ?? actor?.spellbook ?? actor?.spells ?? actor?.magic;
-  if (Array.isArray(actorSpells) && actorSpells.length) return actorSpells;
+  const actorTechniques = actor?.techniquesKnown ?? actor?.techniqueBook ?? actor?.techniques ?? actor?.training;
+  if (Array.isArray(actorTechniques) && actorTechniques.length) return actorTechniques;
 
-  return actor?.magicAbilities || actor?.isWizard || actor?.isMage ? getAllSpellsFromDB() : [];
+  return actor?.trainingAbilities || actor?.isDuelist || actor?.isMage ? getAllTechniquesFromDB() : [];
 }
 
-function getActorPsionics(actor, world) {
-  if (typeof world?.getFighterPsionicPowers === "function") {
+function getActorTactics(actor, world) {
+  if (typeof world?.getFighterTacticalPowers === "function") {
     try {
-      const powers = world.getFighterPsionicPowers(actor);
+      const powers = world.getFighterTacticalPowers(actor);
       if (Array.isArray(powers)) return powers;
     } catch {
       // Fall through to actor data.
     }
   }
 
-  const known = actor?.psionicsKnown ?? actor?.psionicPowers ?? [];
+  const known = actor?.tacticsKnown ?? actor?.tacticalOptions ?? [];
   if (known.length && typeof known[0] === "object") return known;
 
-  return psionics.filter((power) => known.includes(power.name) || actor?.isMindMage);
+  return tactics.filter((power) => known.includes(power.name) || actor?.isMindMage);
 }
 
 function buildAttackActions(actor, world) {
@@ -232,8 +232,8 @@ function buildAttackActions(actor, world) {
 
     const hasRangedOption =
       actor?.rangedWeapon ||
-      actor?.equippedWeapons?.primary?.range ||
-      actor?.equippedWeapons?.secondary?.range ||
+      actor?.equistaminadWeapons?.primary?.range ||
+      actor?.equistaminadWeapons?.secondary?.range ||
       actorHasSkillMatching(actor, (skill) => skill.includes("w.p.") && (skill.includes("bow") || skill.includes("crossbow")));
 
     if (hasRangedOption && dist <= rangedRange) {
@@ -255,39 +255,39 @@ function buildAttackActions(actor, world) {
   return actions;
 }
 
-function buildSpellActions(actor, world) {
+function buildTechniqueActions(actor, world) {
   const actions = [];
   const visibleEnemies = getVisibleEnemies(actor, world);
   const allies = getAllies(actor, world);
-  const spells = getActorSpellbook(actor, world);
+  const techniques = getActorTechniqueBook(actor, world);
 
-  for (const spell of spells) {
-    if (!spell?.name || !hasEnoughPPE(actor, spell, world)) continue;
+  for (const technique of techniques) {
+    if (!technique?.name || !hasEnoughstamina(actor, technique, world)) continue;
 
-    const hasDamage = estimateSpellHasDamage(spell);
-    const ruleMatches = classifySpellForAi(spell);
+    const hasDamage = estimateTechniqueHasDamage(technique);
+    const ruleMatches = classifyTechniqueForAi(technique);
 
     if (hasDamage) {
       for (const enemy of visibleEnemies) {
         const targetScore = scoreThreatTarget(actor, enemy, world);
         actions.push(
           makeAction({
-            type: ACTION_TYPES.CAST_SPELL,
-            name: `Cast ${spell.name} on ${enemy.name}`,
+            type: ACTION_TYPES.USE_TECHNIQUE,
+            name: `Cast ${technique.name} on ${enemy.name}`,
             actorId: idOf(actor),
             targetId: idOf(enemy),
             cost: ACTION_COST.ATTACK,
-            spell,
-            tags: ["combat", "spell", "damage"],
+            technique,
+            tags: ["combat", "technique", "damage"],
             baseScore: 60 + targetScore,
-            reason: `Damaging spell against visible enemy. Target priority: ${targetScore}.`,
+            reason: `Damaging technique against visible enemy. Target priority: ${targetScore}.`,
           })
         );
       }
     }
 
     for (const rule of ruleMatches) {
-      if (!spellContextMatches(rule, actor, world, visibleEnemies, allies)) continue;
+      if (!techniqueContextMatches(rule, actor, world, visibleEnemies, allies)) continue;
 
       if (rule.tags.includes("healing")) {
         const woundedAllies = allies.filter((ally) => hpPercent(ally) < 0.45);
@@ -296,15 +296,15 @@ function buildSpellActions(actor, world) {
         for (const target of targets) {
           actions.push(
             makeAction({
-              type: ACTION_TYPES.CAST_SPELL,
-              name: `Cast ${spell.name} on ${idOf(target) === idOf(actor) ? "self" : "wounded ally"}`,
+              type: ACTION_TYPES.USE_TECHNIQUE,
+              name: `Cast ${technique.name} on ${idOf(target) === idOf(actor) ? "shuman" : "wounded ally"}`,
               actorId: idOf(actor),
               targetId: idOf(target),
               cost: ACTION_COST.ATTACK,
-              spell,
+              technique,
               tags: rule.tags,
               baseScore: rule.baseScore,
-              reason: "Healing spell matches a wounded target.",
+              reason: "Healing technique matches a wounded target.",
             })
           );
         }
@@ -317,15 +317,15 @@ function buildSpellActions(actor, world) {
           const targetScore = scoreThreatTarget(actor, enemy, world);
           actions.push(
             makeAction({
-              type: ACTION_TYPES.CAST_SPELL,
-              name: `Cast ${spell.name} on ${enemy.name}`,
+              type: ACTION_TYPES.USE_TECHNIQUE,
+              name: `Cast ${technique.name} on ${enemy.name}`,
               actorId: idOf(actor),
               targetId: idOf(enemy),
               cost: ACTION_COST.ATTACK,
-              spell,
+              technique,
               tags: rule.tags,
               baseScore: rule.baseScore + targetScore,
-              reason: `Non-damage spell can affect a visible enemy. Target priority: ${targetScore}.`,
+              reason: `Non-damage technique can affect a visible enemy. Target priority: ${targetScore}.`,
             })
           );
         }
@@ -335,15 +335,15 @@ function buildSpellActions(actor, world) {
 
       actions.push(
         makeAction({
-          type: ACTION_TYPES.CAST_SPELL,
-          name: `Cast ${spell.name}`,
+          type: ACTION_TYPES.USE_TECHNIQUE,
+          name: `Cast ${technique.name}`,
           actorId: idOf(actor),
           targetId: idOf(actor),
           cost: ACTION_COST.ATTACK,
-          spell,
+          technique,
           tags: rule.tags,
           baseScore: rule.baseScore,
-          reason: "Spell classification matches current tactical context.",
+          reason: "Technique classification matches current tactical context.",
         })
       );
     }
@@ -352,10 +352,10 @@ function buildSpellActions(actor, world) {
   return actions;
 }
 
-function spellContextMatches(rule, actor, world, visibleEnemies, allies) {
+function techniqueContextMatches(rule, actor, world, visibleEnemies, allies) {
   const actorPos = getPosition(actor, world);
   const context = {
-    selfThreatened: visibleEnemies.some(
+    shumanThreatened: visibleEnemies.some(
       (enemy) => distanceBetween(actorPos, getPosition(enemy, world), world) <= 15
     ),
     lowHp: hpPercent(actor) < 0.45,
@@ -365,7 +365,7 @@ function spellContextMatches(rule, actor, world, visibleEnemies, allies) {
     woundedAllyNearby: allies.some((ally) => {
       return hpPercent(ally) < 0.5 && distanceBetween(actorPos, getPosition(ally, world), world) <= 15;
     }),
-    selfWounded: hpPercent(actor) < 0.5,
+    shumanWounded: hpPercent(actor) < 0.5,
     darkness: Boolean(world?.flags?.darkness || world?.environmentType === "darkness"),
     noVisibleEnemy: visibleEnemies.length === 0,
     hiddenEnemySuspected: Boolean(
@@ -373,7 +373,7 @@ function spellContextMatches(rule, actor, world, visibleEnemies, allies) {
         world?.flags?.hiddenEnemySuspected ||
         (world?.hiddenActorIds ?? []).length
     ),
-    magicEffectVisible: Boolean(world?.flags?.magicEffectVisible),
+    trainingEffectVisible: Boolean(world?.flags?.trainingEffectVisible),
     needEscape: Boolean(world?.flags?.needEscape || actor?.moraleState?.status === "ROUTED"),
     chokePoint: Boolean(world?.flags?.chokePoint),
     protectAlly: actor?.aiGoal?.type === "PROTECT_ALLY",
@@ -384,62 +384,62 @@ function spellContextMatches(rule, actor, world, visibleEnemies, allies) {
   return (rule.context ?? []).some((key) => context[key]);
 }
 
-function buildPsionicActions(actor, world) {
+function buildTacticalActions(actor, world) {
   const actions = [];
   const visibleEnemies = getVisibleEnemies(actor, world);
   const allies = getAllies(actor, world);
-  const known = getActorPsionics(actor, world);
+  const known = getActorTactics(actor, world);
 
   for (const power of known) {
-    if (!power?.name || !hasEnoughISP(actor, power, world)) continue;
+    if (!power?.name || !hasEnoughfocus(actor, power, world)) continue;
 
     if (["ranged", "mental", "melee"].includes(power.attackType)) {
       for (const enemy of visibleEnemies) {
         actions.push(
           makeAction({
-            type: ACTION_TYPES.USE_PSIONIC,
+            type: ACTION_TYPES.USE_TACTICAL,
             name: `Use ${power.name} on ${enemy.name}`,
             actorId: idOf(actor),
             targetId: idOf(enemy),
             cost: ACTION_COST.ATTACK,
-            psionic: power,
-            tags: ["combat", "psionic", power.attackType, power.damage ? "damage" : "control"],
+            tactical: power,
+            tags: ["combat", "tactical", power.attackType, power.damage ? "damage" : "control"],
             baseScore: power.damage ? 58 : 48,
-            reason: "Offensive psionic option.",
+            reason: "Offensive tactical option.",
           })
         );
       }
     }
 
-    if (["buff", "defense", "self"].includes(power.attackType)) {
+    if (["buff", "defense", "shuman"].includes(power.attackType)) {
       actions.push(
         makeAction({
-          type: ACTION_TYPES.USE_PSIONIC,
+          type: ACTION_TYPES.USE_TACTICAL,
           name: `Use ${power.name}`,
           actorId: idOf(actor),
           targetId: idOf(actor),
           cost: ACTION_COST.ATTACK,
-          psionic: power,
-          tags: ["buff", "defense", "psionic"],
+          tactical: power,
+          tags: ["buff", "defense", "tactical"],
           baseScore: 42,
-          reason: "Self-buff or defense psionic option.",
+          reason: "Shuman-buff or defense tactical option.",
         })
       );
     }
 
     if (power.attackType === "healing") {
-      const woundedSelf = Number(actor.currentHP ?? 0) / Math.max(1, Number(actor.maxHP ?? actor.HP ?? 1)) < 0.5;
+      const woundedShuman = Number(actor.currentHP ?? 0) / Math.max(1, Number(actor.maxHP ?? actor.HP ?? 1)) < 0.5;
 
-      if (woundedSelf) {
+      if (woundedShuman) {
         actions.push(
           makeAction({
-            type: ACTION_TYPES.USE_PSIONIC,
+            type: ACTION_TYPES.USE_TACTICAL,
             name: `Use ${power.name} to recover`,
             actorId: idOf(actor),
             targetId: idOf(actor),
             cost: ACTION_COST.ATTACK,
-            psionic: power,
-            tags: ["healing", "psionic"],
+            tactical: power,
+            tags: ["healing", "tactical"],
             baseScore: 70,
             reason: "Actor is wounded.",
           })
@@ -452,13 +452,13 @@ function buildPsionicActions(actor, world) {
         if (hpPercent < 0.35) {
           actions.push(
             makeAction({
-              type: ACTION_TYPES.USE_PSIONIC,
+              type: ACTION_TYPES.USE_TACTICAL,
               name: `Use ${power.name} on ally`,
               actorId: idOf(actor),
               targetId: idOf(ally),
               cost: ACTION_COST.ATTACK,
-              psionic: power,
-              tags: ["healing", "support", "psionic"],
+              tactical: power,
+              tags: ["healing", "support", "tactical"],
               baseScore: 75,
               reason: "Ally is critically wounded.",
             })
@@ -470,15 +470,15 @@ function buildPsionicActions(actor, world) {
     if (["passive", "utility", "movement"].includes(power.attackType) && !visibleEnemies.length) {
       actions.push(
         makeAction({
-          type: ACTION_TYPES.USE_PSIONIC,
+          type: ACTION_TYPES.USE_TACTICAL,
           name: `Use ${power.name} for awareness or positioning`,
           actorId: idOf(actor),
           targetId: idOf(actor),
           cost: ACTION_COST.ATTACK,
-          psionic: power,
-          tags: ["utility", "search", "psionic"],
+          tactical: power,
+          tags: ["utility", "search", "tactical"],
           baseScore: 30,
-          reason: "No visible enemy; utility psionic may help.",
+          reason: "No visible enemy; utility tactical may help.",
         })
       );
     }
@@ -510,12 +510,12 @@ function contextMatches(rule, actor, world) {
         Math.max(1, Number(ally.maxHP ?? ally.maxHp ?? ally.HP ?? 1));
       return hpPercent < 0.25 && distanceBetween(actorPos, getPosition(ally, world), world) <= 10;
     }),
-    selfWounded: Number(actor?.currentHP ?? actor?.hp ?? 0) /
+    shumanWounded: Number(actor?.currentHP ?? actor?.hp ?? 0) /
       Math.max(1, Number(actor?.maxHP ?? actor?.maxHp ?? actor?.HP ?? 1)) < 0.5,
     lockedDoorNearby: Boolean(world?.flags?.lockedDoorNearby),
-    unknownMonsterVisible: Boolean(world?.flags?.unknownMonsterVisible),
-    magicEffectVisible: Boolean(world?.flags?.magicEffectVisible),
-    unknownSpellEffect: Boolean(world?.flags?.unknownSpellEffect),
+    unknownOpponentVisible: Boolean(world?.flags?.unknownOpponentVisible),
+    trainingEffectVisible: Boolean(world?.flags?.trainingEffectVisible),
+    unknownTechniqueEffect: Boolean(world?.flags?.unknownTechniqueEffect),
     enemyWeaponVisible: visibleEnemies.length > 0,
     tracksNearby: Boolean(world?.flags?.tracksNearby),
     wilderness: world?.environmentType === "wilderness",
@@ -534,7 +534,7 @@ function getSkillPercent(actor, skillName) {
   }
 
   const skillEntry = [
-    ...(actor?.occSkills ?? []),
+    ...(actor?.professionSkills ?? []),
     ...(actor?.electiveSkills ?? []),
     ...(actor?.secondarySkills ?? []),
     ...(actor?.skills ?? []),
@@ -718,8 +718,8 @@ export function buildAiActionCandidates(actor, world = {}) {
   return [
     ...buildUnlockedActions(actor, world),
     ...buildAttackActions(actor, world),
-    ...buildSpellActions(actor, world),
-    ...buildPsionicActions(actor, world),
+    ...buildTechniqueActions(actor, world),
+    ...buildTacticalActions(actor, world),
     ...buildSkillActions(actor, world),
     ...buildMovementActions(actor, world),
   ];

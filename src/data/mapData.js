@@ -1,4 +1,4 @@
-// World Map Data for Palladium Fantasy RPG
+// World Map Data for Medieval Combat Simulator
 export const LOCATIONS = [
   {
     name: "Greyford Village",
@@ -16,7 +16,7 @@ export const LOCATIONS = [
     description:
       "Ancient woodland filled with towering oaks and mysterious shadows",
     encounterChance: 35, // Higher danger in wilderness
-    population: "Wildlife, bandits, fey creatures",
+    population: "Wildlife, bandits, fey combatants",
     notable: "Old ruins, hidden glades, bandit camps",
   },
   {
@@ -25,7 +25,7 @@ export const LOCATIONS = [
     coords: [20, 25],
     description: "Crumbling fortress once held by the Ironfang clan",
     encounterChance: 50, // Very dangerous ruins
-    population: "Monsters, undead, treasure hunters",
+    population: "Opponents, fallen, treasure hunters",
     notable: "Ancient armory, cursed chambers, hidden vaults",
   },
   {
@@ -41,18 +41,18 @@ export const LOCATIONS = [
     name: "Frostfang Mountains",
     type: "mountains",
     coords: [40, 30],
-    description: "Treacherous peaks where dragons once nested",
+    description: "Treacherous peaks where animals once nested",
     encounterChance: 40, // Dangerous mountain terrain
-    population: "Mountain tribes, dragons, giants",
-    notable: "Ancient dragon lairs, mining camps, mountain passes",
+    population: "Mountain tribes, animals, heavys",
+    notable: "Ancient animal lairs, mining camps, mountain passes",
   },
   {
-    name: "Whispering Marsh",
+    name: "Whfocusering Marsh",
     type: "swamp",
     coords: [15, 35],
     description: "Misty wetlands where the dead are said to walk",
     encounterChance: 45, // Very dangerous swamp
-    population: "Undead, swamp creatures, witches",
+    population: "Fallen, swamp combatants, witches",
     notable: "Abandoned villages, witch huts, ancient burial mounds",
   },
   {
@@ -89,7 +89,7 @@ export const TRAVEL_ROUTES = {
   "Blackwood Forest": {
     "Greyford Village": { distance: 2, time: "4 hours", difficulty: "easy" },
     "Ironfang Keep": { distance: 3, time: "6 hours", difficulty: "moderate" },
-    "Whispering Marsh": { distance: 4, time: "8 hours", difficulty: "hard" },
+    "Whfocusering Marsh": { distance: 4, time: "8 hours", difficulty: "hard" },
   },
   "Ironfang Keep": {
     "Blackwood Forest": {
@@ -116,7 +116,7 @@ export const TRAVEL_ROUTES = {
     "Ironfang Keep": { distance: 5, time: "10 hours", difficulty: "hard" },
     "Crystal Caverns": { distance: 3, time: "6 hours", difficulty: "moderate" },
   },
-  "Whispering Marsh": {
+  "Whfocusering Marsh": {
     "Blackwood Forest": { distance: 4, time: "8 hours", difficulty: "hard" },
   },
   "Golden Plains": {
@@ -154,11 +154,11 @@ export const ENCOUNTER_TABLES = {
     { name: "Wild Boar", type: "hostile", chance: 15 },
     { name: "Ranger", type: "friendly", chance: 10 },
     { name: "Ancient Treant", type: "neutral", chance: 10 },
-    { name: "Goblin Scouts", type: "hostile", chance: 5 },
+    { name: "Brigand Scouts", type: "hostile", chance: 5 },
   ],
   ruins: [
     { name: "Skeleton Warriors", type: "hostile", chance: 30 },
-    { name: "Giant Rats", type: "hostile", chance: 20 },
+    { name: "Heavy Rats", type: "hostile", chance: 20 },
     { name: "Treasure Hunter", type: "neutral", chance: 15 },
     { name: "Ghost", type: "hostile", chance: 15 },
     { name: "Ancient Guardian", type: "hostile", chance: 10 },
@@ -168,7 +168,7 @@ export const ENCOUNTER_TABLES = {
     { name: "Merchant Ship", type: "friendly", chance: 25 },
     { name: "Fishermen", type: "friendly", chance: 20 },
     { name: "Smugglers", type: "neutral", chance: 15 },
-    { name: "Sea Monster", type: "hostile", chance: 10 },
+    { name: "Sea Opponent", type: "hostile", chance: 10 },
     { name: "Pirate Ship", type: "hostile", chance: 10 },
     { name: "Merfolk", type: "neutral", chance: 10 },
     { name: "Dock Workers", type: "neutral", chance: 10 },
@@ -176,21 +176,21 @@ export const ENCOUNTER_TABLES = {
   mountains: [
     { name: "Mountain Goat", type: "neutral", chance: 20 },
     { name: "Avalanche", type: "environmental", chance: 15 },
-    { name: "Mountain Troll", type: "hostile", chance: 15 },
+    { name: "Mountain Champion", type: "hostile", chance: 15 },
     { name: "Eagle", type: "neutral", chance: 15 },
     { name: "Mining Expedition", type: "friendly", chance: 10 },
-    { name: "Dragon", type: "hostile", chance: 10 },
-    { name: "Giant", type: "hostile", chance: 10 },
+    { name: "Animal", type: "hostile", chance: 10 },
+    { name: "Heavy", type: "hostile", chance: 10 },
     { name: "Mountain Storm", type: "environmental", chance: 5 },
   ],
   swamp: [
     { name: "Swamp Gas", type: "environmental", chance: 20 },
-    { name: "Giant Toad", type: "hostile", chance: 20 },
-    { name: "Will-o'-Wisp", type: "hostile", chance: 15 },
+    { name: "Heavy Toad", type: "hostile", chance: 20 },
+    { name: "Will-o'-Wfocus", type: "hostile", chance: 15 },
     { name: "Swamp Witch", type: "neutral", chance: 15 },
-    { name: "Undead", type: "hostile", chance: 15 },
+    { name: "Fallen", type: "hostile", chance: 15 },
     { name: "Quicksand", type: "environmental", chance: 10 },
-    { name: "Swamp Dragon", type: "hostile", chance: 5 },
+    { name: "Swamp Animal", type: "hostile", chance: 5 },
   ],
   plains: [
     { name: "Wild Horses", type: "neutral", chance: 25 },
@@ -203,11 +203,11 @@ export const ENCOUNTER_TABLES = {
   ],
   caves: [
     { name: "Cave Bear", type: "hostile", chance: 25 },
-    { name: "Giant Bats", type: "hostile", chance: 20 },
+    { name: "Heavy Bats", type: "hostile", chance: 20 },
     { name: "Crystal Elemental", type: "neutral", chance: 15 },
     { name: "Underground River", type: "environmental", chance: 15 },
     { name: "Mining Accident", type: "environmental", chance: 10 },
-    { name: "Deep Dwarf", type: "friendly", chance: 10 },
+    { name: "Deep Human", type: "friendly", chance: 10 },
     { name: "Cave-in", type: "environmental", chance: 5 },
   ],
 };

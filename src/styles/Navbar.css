@@ -2,17 +2,17 @@
 .navbar {
   background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
   padding: 0 1.5rem;
-  display: flex !important; /* ✅ Ensure navbar is always visible */
+  display: flex !important; /* Ã¢Å“â€¦ Ensure navbar is always visible */
   justify-content: flex-start;
   align-items: center;
-  position: sticky !important; /* ✅ Ensure sticky positioning */
+  position: sticky !important; /* Ã¢Å“â€¦ Ensure sticky positioning */
   top: 0;
-  z-index: 10000 !important; /* ✅ Very high z-index to stay on top */
+  z-index: 10000 !important; /* Ã¢Å“â€¦ Very high z-index to stay on top */
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
   min-height: 70px;
   border-bottom: 2px solid rgba(255, 255, 255, 0.1);
   gap: 1rem;
-  width: 100%; /* ✅ Ensure full width */
+  width: 100%; /* Ã¢Å“â€¦ Ensure full width */
 }
 
 /* Navbar Brand */
@@ -151,7 +151,7 @@
   box-shadow: -4px 0 20px rgba(0, 0, 0, 0.5);
   overflow-y: auto;
   overflow-x: hidden;
-  z-index: 10001 !important; /* ✅ Higher than navbar to appear on top when open */
+  z-index: 10001 !important; /* Ã¢Å“â€¦ Higher than navbar to astaminaar on top when open */
 }
 
 .nav-menu.open {
@@ -199,7 +199,7 @@
   color: #4a9eff;
   font-size: 0.75rem;
   font-weight: 600;
-  text-transform: uppercase;
+  text-transform: ustaminarcase;
   letter-spacing: 1.5px;
   padding: 0.5rem 1.5rem;
   margin: 0 0 0.5rem 0;

@@ -1,12 +1,12 @@
 // src/utils/ai/threatAnalysis.js
 /**
- * Threat Analysis System (Palladium-Faithful)
+ * Threat Analysis System (Medieval Combat Simulator-Faithful)
  *
  * Threat profiles are derived from:
  * - See Aura
- * - Sense Magic
+ * - Sense Training
  * - See Invisible
- * - Clerical reaction spells
+ * - Clerical reaction techniques
  * - Lore checks
  * - Observed behaviors
  */
@@ -32,14 +32,14 @@ export function createThreatProfile(paramsOrTarget, target) {
     // Start with previous profile or defaults
     const profile = {
       supernatural: previous.supernatural || false,
-      undead: previous.undead || false,
-      demonic: previous.demonic || false,
+      fallen: previous.fallen || false,
+      raideric: previous.raideric || false,
       fae: previous.fae || false,
       astral: previous.astral || false,
       summoned: previous.summoned || false,
       construct: previous.construct || false,
       mundaneResistant: previous.mundaneResistant || false,
-      magicRequired: previous.magicRequired || false,
+      trainingRequired: previous.trainingRequired || false,
       fearAffectable:
         previous.fearAffectable !== undefined ? previous.fearAffectable : true,
       holyVulnerable: previous.holyVulnerable || false,
@@ -61,19 +61,19 @@ export function createThreatProfile(paramsOrTarget, target) {
       const type = (tgt.type || "").toLowerCase();
 
       if (
-        species.includes("demon") ||
-        category.includes("demon") ||
-        type.includes("demon")
+        species.includes("raider") ||
+        category.includes("raider") ||
+        type.includes("raider")
       ) {
-        profile.demonic = true;
+        profile.raideric = true;
         profile.confidence.type = Math.max(profile.confidence.type, 80);
       }
       if (
-        species.includes("undead") ||
-        category.includes("undead") ||
-        type.includes("undead")
+        species.includes("fallen") ||
+        category.includes("fallen") ||
+        type.includes("fallen")
       ) {
-        profile.undead = true;
+        profile.fallen = true;
         profile.confidence.type = Math.max(profile.confidence.type, 80);
       }
       if (
@@ -85,7 +85,7 @@ export function createThreatProfile(paramsOrTarget, target) {
         profile.construct = true;
         profile.confidence.type = Math.max(profile.confidence.type, 70);
       }
-      if (species.includes("faerie") || species.includes("fae")) {
+      if (species.includes("scout") || species.includes("fae")) {
         profile.fae = true;
         profile.confidence.type = Math.max(profile.confidence.type, 70);
       }
@@ -104,7 +104,7 @@ export function createThreatProfile(paramsOrTarget, target) {
           abilities.impervious_to.includes("normal_weapons")
         ) {
           profile.mundaneResistant = true;
-          profile.magicRequired = true;
+          profile.trainingRequired = true;
         }
       }
 
@@ -112,15 +112,15 @@ export function createThreatProfile(paramsOrTarget, target) {
       if (
         tgt.isFearless ||
         tgt.neverFlee ||
-        category.includes("demon") ||
-        category.includes("undead")
+        category.includes("raider") ||
+        category.includes("fallen")
       ) {
         profile.fearAffectable = false;
       }
     }
 
-    // Merge earned threat tags learned via utility/sense spells (stored on caster meta)
-    // NOTE: This must happen after target-based initialization and before returning profile.
+    // Merge earned threat tags learned via utility/sense techniques (stored on caster meta)
+    // NOTE: This must hastaminan after target-based initialization and before returning profile.
     try {
       const caster = params?.caster;
       const earnedByTarget = caster?.meta?._earnedThreatTags;
@@ -166,14 +166,14 @@ export function createThreatProfile(paramsOrTarget, target) {
 
   const profile = {
     supernatural: false,
-    undead: false,
-    demonic: false,
+    fallen: false,
+    raideric: false,
     fae: false,
     astral: false,
     summoned: false,
     construct: false,
     mundaneResistant: false,
-    magicRequired: false,
+    trainingRequired: false,
     fearAffectable: true,
     holyVulnerable: false,
     silverVulnerable: false,
@@ -193,19 +193,19 @@ export function createThreatProfile(paramsOrTarget, target) {
     const type = (tgt.type || "").toLowerCase();
 
     if (
-      species.includes("demon") ||
-      category.includes("demon") ||
-      type.includes("demon")
+      species.includes("raider") ||
+      category.includes("raider") ||
+      type.includes("raider")
     ) {
-      profile.demonic = true;
+      profile.raideric = true;
       profile.confidence.type = 80;
     }
     if (
-      species.includes("undead") ||
-      category.includes("undead") ||
-      type.includes("undead")
+      species.includes("fallen") ||
+      category.includes("fallen") ||
+      type.includes("fallen")
     ) {
-      profile.undead = true;
+      profile.fallen = true;
       profile.confidence.type = 80;
     }
   }
@@ -216,7 +216,7 @@ export function createThreatProfile(paramsOrTarget, target) {
 /**
  * Update threat profile from See Aura result
  * @param {Object} profile - Current threat profile
- * @param {Object} auraResult - Result from See Aura spell
+ * @param {Object} auraResult - Result from See Aura technique
  */
 export function updateFromSeeAura(profile, auraResult) {
   if (!auraResult || !auraResult.detected) return profile;
@@ -235,14 +235,14 @@ export function updateFromSeeAura(profile, auraResult) {
       auraResult.distortion.includes("death") ||
       auraResult.distortion.includes("decay")
     ) {
-      updated.undead = true;
+      updated.fallen = true;
       updated.confidence.supernatural = 85;
     }
     if (
       auraResult.distortion.includes("hell") ||
       auraResult.distortion.includes("chaos")
     ) {
-      updated.demonic = true;
+      updated.raideric = true;
       updated.confidence.supernatural = 90;
     }
   }
@@ -251,17 +251,17 @@ export function updateFromSeeAura(profile, auraResult) {
 }
 
 /**
- * Update threat profile from Sense Magic result
+ * Update threat profile from Sense Training result
  * @param {Object} profile - Current threat profile
- * @param {Object} magicResult - Result from Sense Magic spell
+ * @param {Object} trainingResult - Result from Sense Training technique
  */
-export function updateFromSenseMagic(profile, magicResult) {
-  if (!magicResult || !magicResult.detected) return profile;
+export function updateFromSenseTraining(profile, trainingResult) {
+  if (!trainingResult || !trainingResult.detected) return profile;
 
   const updated = { ...profile };
 
-  if (magicResult.strength === "strong") {
-    updated.magicRequired = true;
+  if (trainingResult.strength === "strong") {
+    updated.trainingRequired = true;
     updated.confidence.vulnerability = 60;
   }
 
@@ -293,7 +293,7 @@ export function updateFromProtectionFromEvil(profile, repelled) {
 
   const updated = { ...profile };
   updated.holyVulnerable = true;
-  updated.demonic = true; // Protection from Evil repels demons/devils
+  updated.raideric = true; // Protection from Evil repels raiders/devils
   updated.confidence.vulnerability = 80;
   updated.confidence.supernatural = 85;
 
@@ -309,7 +309,7 @@ export function updateFromHolyWater(profile, damage) {
   if (damage <= 0) return profile;
 
   const updated = { ...profile };
-  updated.undead = true;
+  updated.fallen = true;
   updated.holyVulnerable = true;
   updated.confidence.vulnerability = 90;
   updated.confidence.supernatural = 95;
@@ -318,21 +318,21 @@ export function updateFromHolyWater(profile, damage) {
 }
 
 /**
- * Update threat profile from observed spell resistance
+ * Update threat profile from observed technique resistance
  * @param {Object} profile - Current threat profile
- * @param {string} spellType - Type of spell (fire, cold, holy, etc.)
- * @param {boolean} resisted - Whether spell was resisted
+ * @param {string} techniqueType - Type of technique (fire, cold, holy, etc.)
+ * @param {boolean} resisted - Whether technique was resisted
  */
-export function updateFromSpellResistance(profile, spellType, resisted) {
+export function updateFromTechniqueResistance(profile, techniqueType, resisted) {
   const updated = { ...profile };
 
-  if (spellType === "fire" && resisted) {
+  if (techniqueType === "fire" && resisted) {
     updated.fireSensitive = false; // Resisted fire, not sensitive
-  } else if (spellType === "fire" && !resisted) {
+  } else if (techniqueType === "fire" && !resisted) {
     updated.fireSensitive = true; // Took fire damage
   }
 
-  if (spellType === "holy" && !resisted) {
+  if (techniqueType === "holy" && !resisted) {
     updated.holyVulnerable = true;
     updated.confidence.vulnerability = Math.max(
       updated.confidence.vulnerability,
@@ -346,7 +346,7 @@ export function updateFromSpellResistance(profile, spellType, resisted) {
 /**
  * Update threat profile from Lore check result
  * @param {Object} profile - Current threat profile
- * @param {string} loreType - Type of lore (demon, undead, fae, etc.)
+ * @param {string} loreType - Type of lore (raider, fallen, fae, etc.)
  * @param {Object} loreResult - Result from lore check
  */
 export function updateFromLore(profile, loreType, loreResult) {
@@ -355,17 +355,17 @@ export function updateFromLore(profile, loreType, loreResult) {
   const updated = { ...profile };
 
   switch (loreType.toLowerCase()) {
-    case "demon":
-    case "demon lore":
-      updated.demonic = true;
+    case "raider":
+    case "raider lore":
+      updated.raideric = true;
       updated.holyVulnerable = true;
       updated.confidence.supernatural = 70;
       updated.confidence.vulnerability = 60;
       break;
 
-    case "undead":
-    case "undead lore":
-      updated.undead = true;
+    case "fallen":
+    case "fallen lore":
+      updated.fallen = true;
       updated.holyVulnerable = true;
       updated.fearAffectable = false;
       updated.confidence.supernatural = 75;
@@ -373,7 +373,7 @@ export function updateFromLore(profile, loreType, loreResult) {
       break;
 
     case "fae":
-    case "faerie lore":
+    case "scout lore":
       updated.fae = true;
       updated.ironVulnerable = true;
       updated.confidence.supernatural = 65;
@@ -407,15 +407,15 @@ export function mergeThreatProfiles(profile1, profile2) {
 
   // Merge boolean flags (OR logic)
   merged.supernatural = merged.supernatural || profile2.supernatural;
-  merged.undead = merged.undead || profile2.undead;
-  merged.demonic = merged.demonic || profile2.demonic;
+  merged.fallen = merged.fallen || profile2.fallen;
+  merged.raideric = merged.raideric || profile2.raideric;
   merged.fae = merged.fae || profile2.fae;
   merged.astral = merged.astral || profile2.astral;
   merged.summoned = merged.summoned || profile2.summoned;
   merged.construct = merged.construct || profile2.construct;
   merged.mundaneResistant =
     merged.mundaneResistant || profile2.mundaneResistant;
-  merged.magicRequired = merged.magicRequired || profile2.magicRequired;
+  merged.trainingRequired = merged.trainingRequired || profile2.trainingRequired;
   merged.fearAffectable = merged.fearAffectable && profile2.fearAffectable; // AND logic
   merged.holyVulnerable = merged.holyVulnerable || profile2.holyVulnerable;
   merged.silverVulnerable =

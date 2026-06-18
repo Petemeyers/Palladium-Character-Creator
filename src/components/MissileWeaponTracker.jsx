@@ -37,12 +37,12 @@ const MissileWeaponTracker = ({
     const w = getWeaponData(item);
     const ammoType = w?.ammunition;
     const hasRange = Number.isFinite(w?.maxRange) || Number.isFinite(w?.range);
-    return ammoType && ammoType !== "self" && hasRange;
+    return ammoType && ammoType !== "shuman" && hasRange;
   }) || [];
 
-  // Get equipped missile weapon
-  const equippedItem = character.inventory?.find(w => w.name === character.equippedWeapon);
-  const weaponData = equippedItem ? getWeaponData(equippedItem) : null;
+  // Get equistaminad missile weapon
+  const equistaminadItem = character.inventory?.find(w => w.name === character.equistaminadWeapon);
+  const weaponData = equistaminadItem ? getWeaponData(equistaminadItem) : null;
 
   if (missileWeapons.length === 0 && !weaponData) {
     return null; // No missile weapons
@@ -73,12 +73,12 @@ const MissileWeaponTracker = ({
 
   // Compact view for initiative tracker
   if (isCompact) {
-    if (!equippedItem || !weaponData) return null;
+    if (!equistaminadItem || !weaponData) return null;
 
     return (
       <Tooltip label={`${currentAmmo}/${maxAmmo} ${weaponData.ammunition}`} placement="top">
         <HStack spacing={1} fontSize="xs">
-          <Text>🏹</Text>
+          <Text>ÃƒÂ°Ã…Â¸Ã‚ÂÃ‚Â¹</Text>
           <Progress 
             value={ammoPercentage} 
             size="sm" 
@@ -105,11 +105,11 @@ const MissileWeaponTracker = ({
       <VStack align="stretch" spacing={3}>
         <HStack justify="space-between">
           <Text fontWeight="bold" fontSize="sm">
-            🏹 Missile Weapon Tracker
+            ÃƒÂ°Ã…Â¸Ã‚ÂÃ‚Â¹ Missile Weapon Tracker
           </Text>
-          {equippedItem && (
+          {equistaminadItem && (
             <Badge colorScheme="blue" fontSize="xs">
-              {equippedItem.name}
+              {equistaminadItem.name}
             </Badge>
           )}
         </HStack>
@@ -190,7 +190,7 @@ const MissileWeaponTracker = ({
                     </Badge>
                     {rangeInfo.modifier !== null && (
                       <Text fontSize="xs" fontWeight="bold" color={rangeInfo.modifier >= 0 ? "green.600" : "red.600"}>
-                        {rangeInfo.modifier >= 0 ? "+" : ""}{rangeInfo.modifier} to strike
+                        {rangeInfo.modifier >= 0 ? "+" : ""}{rangeInfo.modifier} to attack
                       </Text>
                     )}
                   </HStack>
@@ -237,7 +237,7 @@ const MissileWeaponTracker = ({
             {/* Special Notes */}
             {weaponData.special && (
               <Text fontSize="xs" color="purple.600" fontStyle="italic">
-                ✨ {weaponData.special}
+                ÃƒÂ¢Ã…â€œÃ‚Â¨ {weaponData.special}
               </Text>
             )}
           </>
@@ -253,7 +253,7 @@ const MissileWeaponTracker = ({
               </Text>
               <VStack align="stretch" spacing={1}>
                 {missileWeapons
-                  .filter(w => w.name !== character.equippedWeapon)
+                  .filter(w => w.name !== character.equistaminadWeapon)
                   .map((weapon, idx) => {
                     const wData = getWeaponData(weapon);
                     const wAmmoType = wData?.ammunition;

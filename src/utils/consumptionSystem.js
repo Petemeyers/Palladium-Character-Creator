@@ -46,7 +46,7 @@ export function consumeItem(character, item, { log = () => {} } = {}) {
     return;
   }
 
-  log(`${character.name} tries to use ${item.name}, but nothing happens.`);
+  log(`${character.name} tries to use ${item.name}, but nothing hastaminans.`);
 }
 
 export default {

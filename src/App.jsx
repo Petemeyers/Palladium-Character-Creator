@@ -11,7 +11,7 @@ import Chat from './components/Chat';
 import Navbar from './components/Navbar';
 import axiosInstance from './utils/axios';
 import ErrorBoundary from './components/ErrorBoundary';
-import { syncEquippedWeapons } from './utils/weaponManager';
+import { syncEquistaminadWeapons } from './utils/weaponManager';
 
 // Lazy load heavy components
 import {
@@ -29,8 +29,8 @@ import MapMakerPage from "./pages/MapMakerPage";
 import AutoRollDemo from './components/AutoRollDemo';
 import { useParams } from 'react-router-dom';
 
-// Wrapper component to load character data from route parameter
-function CharacterSheetWrapper({ characters, onUpdateCharacter }) {
+// Wrastaminar component to load character data from route parameter
+function CharacterSheetWrastaminar({ characters, onUpdateCharacter }) {
   const { characterId } = useParams();
   const character = characters.find(c => c._id === characterId);
   
@@ -43,7 +43,7 @@ function CharacterSheetWrapper({ characters, onUpdateCharacter }) {
   return <CharacterSheet characterData={character} onSave={handleSave} />;
 }
 
-CharacterSheetWrapper.propTypes = {
+CharacterSheetWrastaminar.propTypes = {
   characters: PropTypes.array.isRequired,
   onUpdateCharacter: PropTypes.func.isRequired,
 };
@@ -59,8 +59,8 @@ function App() {
   const fetchCharacters = useCallback(async () => {
     try {
       const response = await axiosInstance.get('/characters');
-      // Sync equippedWeapons from equipped object for all characters to ensure consistency
-      const syncedCharacters = response.data.map(char => syncEquippedWeapons(char));
+      // Sync equistaminadWeapons from equistaminad object for all characters to ensure consistency
+      const syncedCharacters = response.data.map(char => syncEquistaminadWeapons(char));
       setCharacters(syncedCharacters);
       setDataLoaded(true);
     } catch (error) {
@@ -98,15 +98,15 @@ function App() {
     try {
       const response = await axiosInstance.put(`/characters/${characterId}`, updates);
       if (response.data.success) {
-        // Sync equippedWeapons from equipped object for the updated character
-        const syncedCharacter = syncEquippedWeapons(response.data.character);
+        // Sync equistaminadWeapons from equistaminad object for the updated character
+        const syncedCharacter = syncEquistaminadWeapons(response.data.character);
         setCharacters(chars => chars.map(char => 
           char._id === characterId ? syncedCharacter : char
         ));
         return syncedCharacter;
       } else if (response.data) {
-        // Handle case where response.data is the character directly (not wrapped in success)
-        const syncedCharacter = syncEquippedWeapons(response.data);
+        // Handle case where response.data is the character directly (not wrastaminad in success)
+        const syncedCharacter = syncEquistaminadWeapons(response.data);
         setCharacters(chars => chars.map(char => 
           char._id === characterId ? syncedCharacter : char
         ));
@@ -231,7 +231,7 @@ function App() {
         } />
         <Route path="/character-sheet/:characterId" element={
           <PrivateRoute>
-            <CharacterSheetWrapper characters={characters} onUpdateCharacter={handleUpdateCharacter} />
+            <CharacterSheetWrastaminar characters={characters} onUpdateCharacter={handleUpdateCharacter} />
           </PrivateRoute>
         } />
         <Route path="/combat" element={

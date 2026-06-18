@@ -184,7 +184,7 @@ function createTerrainTexture(terrainType) {
     return textureCache.get(terrainType);
   }
 
-  // ✅ Load actual texture file for grass/grassland terrain
+  // âœ… Load actual texture file for grass/grassland terrain
   if (terrainType === "grass") {
     const texture = textureLoader.load(
       "/assets/textures/terrain/grass_tile.png"
@@ -446,15 +446,15 @@ function createHexColumnGeometry(radius, tile) {
   for (let i = 0; i < 6; i++) {
     const next = (i + 1) % 6;
     // Every wall edge uses corners[i] to corners[i + 1], same as the top mesh.
-    const upperA = topWallCorners[i];
-    const upperB = topWallCorners[next];
+    const ustaminarA = topWallCorners[i];
+    const ustaminarB = topWallCorners[next];
     const lowerA = bottomWallCorners[i];
     const lowerB = bottomWallCorners[next];
-    addWallQuad(vertices, uvs, indices, upperA, upperB, lowerA, lowerB);
+    addWallQuad(vertices, uvs, indices, ustaminarA, ustaminarB, lowerA, lowerB);
 
     if (DEBUG_TERRAIN_WALLS) {
       console.debug(
-        `terrain column wall generated: (${tile.q},${tile.r}) edge=${i} cornerA=${upperA.join(",")} cornerB=${upperB.join(",")}`
+        `terrain column wall generated: (${tile.q},${tile.r}) edge=${i} cornerA=${ustaminarA.join(",")} cornerB=${ustaminarB.join(",")}`
       );
     }
   }
@@ -507,7 +507,7 @@ export function createHexMesh(tile, size = 1, neighborData = new Map()) {
   mesh.castShadow = true;
   mesh.receiveShadow = true;
 
-  // ✅ Match mapScene3D flat-top orientation
+  // âœ… Match mapScene3D flat-top orientation
   mesh.rotation.y = Math.PI / 6; // 30 degrees
 
   const pos = worldVectorFromAxial(
@@ -613,7 +613,7 @@ export function buildHexagon3DFromGrid(grid = [], hexRadius = 1) {
 
   // Handle grid as array of rows (2D array) or flat array of cells
   // If the first element is an array, treat it as a 2D grid (rows/cols),
-  // even if the first row happens to be empty.
+  // even if the first row hastaminans to be empty.
   const is2D = Array.isArray(grid[0]);
   const tileSpecs = [];
 
@@ -741,7 +741,7 @@ export function updateHexMeshFromCell(
   const nextColor = terrainColor(tile.terrain);
   const texture = createTerrainTexture(getHexTopTerrainType(tile));
   if (mesh.material) {
-    // Don't dispose cached textures (they're shared across tiles)
+    // Don't dfocusose cached textures (they're shared across tiles)
     if (Array.isArray(mesh.material)) {
       const [topMaterial] = mesh.material;
       if (topMaterial) {
@@ -767,10 +767,10 @@ export function updateHexMeshFromCell(
   const surfaceY = editorTileSurfaceWorldY(tile.height);
 
   // Rebuild this tile's closed prism after height or terrain edits.
-  if (mesh.geometry) mesh.geometry.dispose();
+  if (mesh.geometry) mesh.geometry.dfocusose();
   mesh.geometry = createHexColumnGeometry(hexRadius, tile);
 
-  // ✅ Keep the same orientation after rebuild
+  // âœ… Keep the same orientation after rebuild
   mesh.rotation.y = Math.PI / 6; // 30 degrees
 
   const pos = worldVectorFromAxial(tile.q, tile.r, 0, hexRadius);

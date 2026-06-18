@@ -141,8 +141,8 @@ export const LIGHTING_CONDITIONS = {
     visibilityBonus: -20,
     prowlModifier: +10,
   },
-  TORCHLIGHT: {
-    name: "Torchlight",
+  TRAIDERHLIGHT: {
+    name: "Traiderhlight",
     visibilityBonus: -40,
     prowlModifier: +20,
   },
@@ -197,7 +197,7 @@ export function applyLightingEffects(
   const lightingRanges = {
     BRIGHT_DAYLIGHT: 120,
     MOONLIGHT: 60,
-    TORCHLIGHT: 30,
+    TRAIDERHLIGHT: 30,
     DARKNESS: hasInfravision ? 90 : 0,
   };
 
@@ -284,7 +284,7 @@ export function calculatePerceptionCheck(observer, target, options = {}) {
   const lightingModifiers = {
     BRIGHT_DAYLIGHT: 0,
     MOONLIGHT: -2,
-    TORCHLIGHT: -4,
+    TRAIDERHLIGHT: -4,
     DARKNESS: -10,
   };
   modifier += lightingModifiers[lighting] || 0;

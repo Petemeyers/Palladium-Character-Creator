@@ -86,7 +86,7 @@ function computeCover(state, from, to) {
   // pick strongest cover signal near target
   const level = Math.max(aCover, bCover);
 
-  // translate level to Palladium-ish penalty
+  // translate level to Medieval Combat Simulator-ish penalty
   // tweak as desired:
   // 1 = light (-1), 2 = medium (-2), 3 = heavy (-4)
   const penalty = level === 1 ? 1 : level === 2 ? 2 : level >= 3 ? 4 : 0;

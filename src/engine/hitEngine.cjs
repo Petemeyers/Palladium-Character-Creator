@@ -19,31 +19,31 @@ function clampInt(n) {
 
 function normalizeAttackKind(kind) {
   const s = String(kind || "melee").toLowerCase().trim();
-  if (["melee", "hand", "strike"].includes(s)) return "melee";
+  if (["melee", "hand", "attack"].includes(s)) return "melee";
   if (["ranged", "shoot", "projectile", "throw"].includes(s)) return "ranged";
-  if (["magic", "spell"].includes(s)) return "magic";
-  if (["psionic", "psi"].includes(s)) return "psionic";
+  if (["training", "technique"].includes(s)) return "training";
+  if (["tactical", "psi"].includes(s)) return "tactical";
   return s;
 }
 
 /**
- * Pull strike bonuses from fighter schema(s).
+ * Pull attack bonuses from fighter schema(s).
  * Uses ruleset if provided, otherwise falls back to hardcoded logic.
  */
-function getStrikeBonus(attacker, kind, ruleset) {
-  if (ruleset?.getStrikeBonus) {
-    return ruleset.getStrikeBonus(attacker, kind);
+function getAttackBonus(attacker, kind, ruleset) {
+  if (ruleset?.getAttackBonus) {
+    return ruleset.getAttackBonus(attacker, kind);
   }
   // Fallback to hardcoded logic
   const k = normalizeAttackKind(kind);
   const b = attacker?.bonuses || attacker?.stats?.bonuses || {};
 
   // common
-  if (k === "melee") return b.strikeMelee ?? b.meleeStrike ?? b.strike ?? 0;
-  if (k === "ranged") return b.strikeRanged ?? b.rangedStrike ?? b.strike ?? 0;
+  if (k === "melee") return b.attackMelee ?? b.meleeAttack ?? b.attack ?? 0;
+  if (k === "ranged") return b.attackRanged ?? b.rangedAttack ?? b.attack ?? 0;
 
   // fallback
-  return b.strike ?? 0;
+  return b.attack ?? 0;
 }
 
 function getAimBonus(meta) {
@@ -77,7 +77,7 @@ function getConcealPenalty(meta) {
 }
 
 /**
- * AR target number (Armor Rating). Higher strike must meet/exceed AR.
+ * guardRating target number (Armor Rating). Higher attack must meet/exceed guardRating.
  * Uses ruleset if provided, otherwise falls back to hardcoded logic.
  */
 function getAR(defender, ruleset) {
@@ -85,7 +85,7 @@ function getAR(defender, ruleset) {
     return ruleset.getAR(defender);
   }
   // Fallback to hardcoded logic
-  return clampInt(defender?.AR ?? defender?.armorRating ?? defender?.defense?.AR ?? 10);
+  return clampInt(defender?.guardRating ?? defender?.guardRating ?? defender?.defense?.guardRating ?? 10);
 }
 
 /**
@@ -104,13 +104,13 @@ function getCalledShotPenalty(meta) {
  * Inputs:
  *  attacker, defender
  *  kind: "melee"|"ranged"|...
- *  meta: { aimBonus, coverPenalty, concealPenalty, calledShotPenalty, forcedRoll, bonusOverride }
- *  ruleset: optional ruleset object (for getAR, getStrikeBonus, isCrit, isFumble)
+ *  meta: { aimBonus, coverPenalty, concealPenalty, calledShotPenalty, fraideredRoll, bonusOverride }
+ *  ruleset: optional ruleset object (for getAR, getAttackBonus, isCrit, isFumble)
  *
  * Returns:
  * {
  *   d20, bonus, total,
- *   targetAR,
+ *   targetGuardRating,
  *   hit, crit, fumble,
  *   breakdown: { ... }
  * }
@@ -118,7 +118,7 @@ function getCalledShotPenalty(meta) {
 function resolveHit({ attacker, defender, kind, meta, ruleset }) {
   const k = normalizeAttackKind(kind);
 
-  const d20 = Number.isFinite(meta?.forcedRoll) ? clampInt(meta.forcedRoll) : rollD20();
+  const d20 = Number.isFinite(meta?.fraideredRoll) ? clampInt(meta.fraideredRoll) : rollD20();
   const nat20 = d20 === 20;
   const nat1 = d20 === 1;
 
@@ -126,9 +126,9 @@ function resolveHit({ attacker, defender, kind, meta, ruleset }) {
   const isCritCheck = ruleset?.isCrit ? ruleset.isCrit(d20) : nat20;
   const isFumbleCheck = ruleset?.isFumble ? ruleset.isFumble(d20) : nat1;
 
-  const baseStrike = Number.isFinite(meta?.bonusOverride)
+  const baseAttack = Number.isFinite(meta?.bonusOverride)
     ? clampInt(meta.bonusOverride)
-    : getStrikeBonus(attacker, k, ruleset);
+    : getAttackBonus(attacker, k, ruleset);
 
   const aim = getAimBonus(meta);
   const cover = getCoverPenalty(meta);
@@ -136,10 +136,10 @@ function resolveHit({ attacker, defender, kind, meta, ruleset }) {
   const called = getCalledShotPenalty(meta);
 
   // NOTE: cover/conceal/called are penalties, so subtract them.
-  const bonus = baseStrike + aim - cover - conceal + called; // called likely negative
+  const bonus = baseAttack + aim - cover - conceal + called; // called likely negative
   const total = d20 + bonus;
 
-  const targetAR = getAR(defender, ruleset);
+  const targetGuardRating = getAR(defender, ruleset);
 
   // Use ruleset for crit/fumble logic if available
   let hit = false;
@@ -153,20 +153,20 @@ function resolveHit({ attacker, defender, kind, meta, ruleset }) {
     hit = false;
     fumble = true;
   } else {
-    hit = total >= targetAR;
+    hit = total >= targetGuardRating;
   }
 
   return {
     d20,
     bonus,
     total,
-    targetAR,
+    targetGuardRating,
     hit,
     crit,
     fumble,
     breakdown: {
       kind: k,
-      baseStrike,
+      baseAttack,
       aim,
       coverPenalty: cover,
       concealPenalty: conceal,

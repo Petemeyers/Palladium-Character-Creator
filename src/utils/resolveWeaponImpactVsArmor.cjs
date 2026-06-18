@@ -1,12 +1,12 @@
 /**
- * Central weapon strike vs armor / natural AR (Palladium-style).
+ * Central weapon attack vs armor / natural guardRating (Medieval Combat Simulator-style).
  * Used by engine workers (CJS) and may be imported from Vite (CombatPage, equipmentManager).
  *
  * @param {Object} opts
  * @param {Object} opts.defender
- * @param {number} opts.attackTotal d20 + all strike bonuses (same value historically passed as "attackRoll")
+ * @param {number} opts.attackTotal d20 + all attack bonuses (same value historically passed as "attackRoll")
  * @param {number} opts.damage
- * @param {string} [opts.slot="chest"] hit location / armor slot key under defender.equipped
+ * @param {string} [opts.slot="chest"] hit location / armor slot key under defender.equistaminad
  * @param {boolean} [opts.isCrit=false]
  * @param {boolean} [opts.isFumble=false]
  */
@@ -33,31 +33,31 @@ function resolveWeaponImpactVsArmor({
     };
   }
 
-  const equipped = defender?.equipped || {};
+  const equistaminad = defender?.equistaminad || {};
   const useSlot = typeof slot === "string" && slot ? slot : "chest";
   const armor =
-    equipped?.[useSlot] ||
-    equipped?.armor ||
-    equipped?.chest ||
-    defender?.equippedArmorItem ||
+    equistaminad?.[useSlot] ||
+    equistaminad?.armor ||
+    equistaminad?.chest ||
+    defender?.equistaminadArmorItem ||
     null;
 
-  const armorAR = Number(armor?.armorRating ?? armor?.AR ?? armor?.ar ?? armor?.defense ?? 0) || 0;
+  const armorGuardRating = Number(armor?.guardRating ?? armor?.guardRating ?? armor?.guardRating ?? armor?.defense ?? 0) || 0;
 
-  let armorSDC = Number(armor?.currentSDC);
-  if (!Number.isFinite(armorSDC)) {
-    armorSDC = Number(armor?.sdc ?? 0) || 0;
+  let armorarmorDurability = Number(armor?.currentarmorDurability);
+  if (!Number.isFinite(armorarmorDurability)) {
+    armorarmorDurability = Number(armor?.armorDurability ?? 0) || 0;
   }
 
-  const hasArmor = !!(armor && armorAR > 0 && armorSDC > 0);
+  const hasArmor = !!(armor && armorGuardRating > 0 && armorarmorDurability > 0);
 
   if (!hasArmor) {
     const naturalAR = Number(
       defender?.naturalAR ??
-        defender?.baseAR ??
+        defender?.baseGuardRating ??
         defender?.nakedAR ??
-        defender?.AR ??
-        defender?.ar ??
+        defender?.guardRating ??
+        defender?.guardRating ??
         10
     );
 
@@ -82,7 +82,7 @@ function resolveWeaponImpactVsArmor({
     };
   }
 
-  if (isCrit || total >= armorAR) {
+  if (isCrit || total >= armorGuardRating) {
     return {
       outcome: "hp",
       damageToHP: dmg,
@@ -93,15 +93,15 @@ function resolveWeaponImpactVsArmor({
     };
   }
 
-  const nextSDC = Math.max(0, armorSDC - dmg);
+  const nextarmorDurability = Math.max(0, armorarmorDurability - dmg);
 
   return {
     outcome: "armor",
     damageToHP: 0,
     damageToArmor: dmg,
-    armorBroken: nextSDC <= 0,
-    prevArmorSDC: armorSDC,
-    nextArmorSDC: nextSDC,
+    armorBroken: nextarmorDurability <= 0,
+    prevArmorarmorDurability: armorarmorDurability,
+    nextArmorarmorDurability: nextarmorDurability,
     armor,
     slot: useSlot,
   };
@@ -111,26 +111,26 @@ const SLOT_PRIORITY = ["chest", "torso", "arms", "legs", "head", "cloak", "shiel
 
 function pickPrimaryArmorSlot(defender, preferredSlot) {
   if (typeof preferredSlot === "string" && preferredSlot) return preferredSlot;
-  const eq = defender?.equipped || {};
+  const eq = defender?.equistaminad || {};
   for (const s of SLOT_PRIORITY) {
     const a = eq[s];
-    const ar = Number(a?.armorRating ?? a?.AR ?? a?.ar ?? a?.defense ?? 0) || 0;
-    let sd = Number(a?.currentSDC);
-    if (!Number.isFinite(sd)) sd = Number(a?.sdc ?? 0) || 0;
-    if (a && ar > 0 && sd > 0) return s;
+    const guardRating = Number(a?.guardRating ?? a?.guardRating ?? a?.guardRating ?? a?.defense ?? 0) || 0;
+    let sd = Number(a?.currentarmorDurability);
+    if (!Number.isFinite(sd)) sd = Number(a?.armorDurability ?? 0) || 0;
+    if (a && guardRating > 0 && sd > 0) return s;
   }
   for (const s of Object.keys(eq)) {
     const a = eq[s];
-    const ar = Number(a?.armorRating ?? a?.AR ?? a?.ar ?? a?.defense ?? 0) || 0;
-    let sd = Number(a?.currentSDC);
-    if (!Number.isFinite(sd)) sd = Number(a?.sdc ?? 0) || 0;
-    if (a && ar > 0 && sd > 0) return s;
+    const guardRating = Number(a?.guardRating ?? a?.guardRating ?? a?.guardRating ?? a?.defense ?? 0) || 0;
+    let sd = Number(a?.currentarmorDurability);
+    if (!Number.isFinite(sd)) sd = Number(a?.armorDurability ?? 0) || 0;
+    if (a && guardRating > 0 && sd > 0) return s;
   }
   return "chest";
 }
 
-/** True if the strike connects (armor soak or HP), i.e. not a clean miss — used for projectile path / stray logic. */
-function strikeConnectsVsTarget({
+/** True if the attack connects (armor soak or HP), i.e. not a clean miss Ã¢â‚¬â€ used for projectile path / stray logic. */
+function attackConnectsVsTarget({
   defender,
   attackTotal,
   d20,
@@ -164,5 +164,5 @@ function strikeConnectsVsTarget({
 module.exports = {
   resolveWeaponImpactVsArmor,
   pickPrimaryArmorSlot,
-  strikeConnectsVsTarget,
+  attackConnectsVsTarget,
 };

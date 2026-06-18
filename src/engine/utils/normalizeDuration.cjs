@@ -15,7 +15,7 @@ function normalizeDuration(duration, context = {}) {
   const d = String(duration).toLowerCase().trim();
 
   if (d === "instant" || d === "instantaneous") return 0;
-  if (d === "permanent" || d === "permanent until dispelled") return Infinity;
+  if (d === "permanent" || d === "permanent until ditechniqueed") return Infinity;
 
   // "1 melee", "2 melees"
   let m = d.match(/^(\d+)\s*melee(s)?$/);
@@ -41,7 +41,7 @@ function normalizeDuration(duration, context = {}) {
   m = d.match(/^(\d+)\s*(hour|hours)\/level$/);
   if (m) return parseInt(m[1], 10) * MELEES_PER_HOUR * level;
 
-  // Fallback: unknown format → log + treat as instant
+  // Fallback: unknown format â†’ log + treat as instant
   return 0;
 }
 

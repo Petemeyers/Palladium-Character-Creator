@@ -4,7 +4,7 @@ import PropTypes from 'prop-types';
 import '../app.css';
 import '../styles/CharacterCreation.css';
 import { Button } from '@chakra-ui/react';
-import psionics from '../data/psionics.json';
+import tactics from '../data/tactics.json';
 import {
   speciesData,
   socialBackgrounds,
@@ -24,77 +24,77 @@ import {
   evaluateDice,
   applyBonus,
 } from './util';
-import palladiumData from "../data/palladium_dataset.json";
+import gameData from "../data/originalGameData.js";
 import clothingEquipmentData from "../data/clothingEquipment.json";
 import traderEquipment from "../data/traderEquipment.js";
-import PsionicsRoll from './PsionicsRoll';
+import TacticsRoll from './TacticsRoll';
 import DiceLoadingSpinner from './DiceLoadingSpinner';
 // import D20LoadingSpinner from './D20LoadingSpinner'; // Temporarily disabled
 import { getStatsForLevel } from '../utils/levelProgression';
 import { getRandomName } from '../data/characterNames';
-import { occSkillTables } from '../utils/occSkills';
+import { professionSkillTables } from '../utils/professionSkills';
 import { lookupSkill, getSkillPercentage } from '../utils/skillSystem';
 import { getSkillBonusesAtLevel } from '../data/skillProgression';
 import { skillBonuses as staticSkillBonuses, calculateSkillBonuses } from '../data/skillBonuses';
-import { BASE_SAVES, OCC_SAVE_MODIFIERS, getLevelSaveBonus } from '../utils/savingThrowsSystem';
-import { OCCS, ELECTIVE_SKILLS, SECONDARY_SKILLS } from '../data/occData';
+import { BASE_SAVES, PROFESSION_SAVE_MODIFIERS, getLevelSaveBonus } from '../utils/savingThrowsSystem';
+import { PROFESSIONS, ELECTIVE_SKILLS, SECONDARY_SKILLS } from '../data/professionData';
 import {
-  WIZARD_COMMON_SPELL_NAMES,
-  normalizeSpellName,
-  isWizardClassName,
-  getWizardSpellProgression,
-  getWizardEligibleSpells,
-  buildWizardSpellbookForLevel,
+  DUELIST_COMMON_TECHNIQUE_NAMES,
+  normalizeTechniqueName,
+  isDuelistClassName,
+  getDuelistTechniqueProgression,
+  getDuelistEligibleTechniques,
+  buildDuelistTechniqueBookForLevel,
   createDeterministicRng,
-  normalizePPEState,
-} from '../utils/spellUtils.js';
+  normalizestaminaState,
+} from '../utils/techniqueUtils.js';
 import HumanPreviewPanel from './creator/HumanPreviewPanel.jsx';
 import { buildHumanVisualProfile } from '../utils/visuals/buildHumanVisualProfile.js';
 
-// Function to get Mind Mage psionics based on level and psionic type
-const getMindMagePsionics = async (psionicResult, level) => {
+// Function to get Tactician tactics based on level and tactical type
+const getMindMageTactics = async (tacticalResult, level) => {
   const powers = [];
   
-  // Master psionics get all powers, Major psionics limited to levels 1-3, Minor to level 1 only
-  const psionicLevel = psionicResult === "Master Psionic" ? "Master" : 
-                       psionicResult === "Major Psionic" ? "Major" : "Minor";
+  // Master tactics get all powers, Major tactics limited to levels 1-3, Minor to level 1 only
+  const tacticalLevel = tacticalResult === "Master Tactical" ? "Master" : 
+                       tacticalResult === "Major Tactical" ? "Major" : "Minor";
   
   // Level 1: 6 total powers (2 Physical + 2 Sensitive + 2 Healing)
   if (level >= 1) {
-    const physicalPowers = psionics.filter(p => p.category === "Physical").slice(0, 2);
-    const sensitivePowers = psionics.filter(p => p.category === "Sensitive").slice(0, 2);
-    const healingPowers = psionics.filter(p => p.category === "Healing").slice(0, 2);
+    const physicalPowers = tactics.filter(p => p.category === "Physical").slice(0, 2);
+    const sensitivePowers = tactics.filter(p => p.category === "Sensitive").slice(0, 2);
+    const healingPowers = tactics.filter(p => p.category === "Healing").slice(0, 2);
     
     powers.push(...physicalPowers, ...sensitivePowers, ...healingPowers);
   }
   
   // Level 2: +1 Physical + 1 Sensitive
-  if (level >= 2 && psionicLevel !== "Minor") {
-    const additionalPhysical = psionics.filter(p => p.category === "Physical")[2];
-    const additionalSensitive = psionics.filter(p => p.category === "Sensitive")[2];
+  if (level >= 2 && tacticalLevel !== "Minor") {
+    const additionalPhysical = tactics.filter(p => p.category === "Physical")[2];
+    const additionalSensitive = tactics.filter(p => p.category === "Sensitive")[2];
     if (additionalPhysical) powers.push(additionalPhysical);
     if (additionalSensitive) powers.push(additionalSensitive);
   }
   
   // Level 3: +1 Healing + 1 Super
-  if (level >= 3 && psionicLevel !== "Minor") {
-    const additionalHealing = psionics.filter(p => p.category === "Healing")[2];
-    const firstSuper = psionics.filter(p => p.category === "Super")[0];
+  if (level >= 3 && tacticalLevel !== "Minor") {
+    const additionalHealing = tactics.filter(p => p.category === "Healing")[2];
+    const firstSuper = tactics.filter(p => p.category === "Super")[0];
     if (additionalHealing) powers.push(additionalHealing);
     if (firstSuper) powers.push(firstSuper);
   }
   
   // Levels 4-5: +1 Super each level
-  if (level >= 4 && psionicLevel !== "Minor") {
-    const superPowers = psionics.filter(p => p.category === "Super");
+  if (level >= 4 && tacticalLevel !== "Minor") {
+    const superPowers = tactics.filter(p => p.category === "Super");
     for (let i = 1; i < Math.min(level - 2, superPowers.length); i++) {
       if (superPowers[i]) powers.push(superPowers[i]);
     }
   }
   
-  // Level 6+: Master psionics automatically know all remaining lower powers
-  if (level >= 6 && psionicLevel === "Master") {
-    const remainingPowers = psionics.filter(p => !powers.includes(p));
+  // Level 6+: Master tactics automatically know all remaining lower powers
+  if (level >= 6 && tacticalLevel === "Master") {
+    const remainingPowers = tactics.filter(p => !powers.includes(p));
     powers.push(...remainingPowers);
   }
   
@@ -119,8 +119,8 @@ const CharacterCreator = ({ onCreateCharacter }) => {
   const [characterClass, setCharacterClass] = useState('');
   const [availableClasses, setAvailableClasses] = useState([]);
   const [filteredClasses, setFilteredClasses] = useState([]);
-  const [psionics, setPsionics] = useState(null);
-  const [occSkills, setOccSkills] = useState([]);
+  const [tactics, setTactics] = useState(null);
+  const [professionSkills, setProfessionSkills] = useState([]);
   const [electiveSkills, setElectiveSkills] = useState([]);
   const [secondarySkills, setSecondarySkills] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -131,7 +131,7 @@ const CharacterCreator = ({ onCreateCharacter }) => {
   const [gender, setGender] = useState('Male');
   // const [isRolling, setIsRolling] = useState(false); // Temporarily disabled
   // const [rollType, setRollType] = useState(''); // Temporarily disabled
-  const [occData, setOccData] = useState(null);
+  const [professionData, setProfessionData] = useState(null);
   const [useDeterministicHP, setUseDeterministicHP] = useState(true);
   const [previousLevel, setPreviousLevel] = useState(1); // Track previous level for skill gains
   const [showSkillSelectionModal, setShowSkillSelectionModal] = useState(false);
@@ -159,39 +159,39 @@ const CharacterCreator = ({ onCreateCharacter }) => {
   }, [attributes.MA, attributes.ME, attributes.PB, attributes.PE, attributes.PP, attributes.PS, attributes.Spd, age]);
 
   // ---------------------------
-  // STRICT Wizard spell selection (Palladium Fantasy style)
+  // STRICT Duelist technique selection (Medieval Combat Simulator style)
   // ---------------------------
 
-  const isStrictWizard = (occName) => isWizardClassName(occName);
+  const isStrictDuelist = (professionName) => isDuelistClassName(professionName);
 
-  const [wizardSpellPicks, setWizardSpellPicks] = useState({ 1: [] });
+  const [duelistTechniquePicks, setDuelistTechniquePicks] = useState({ 1: [] });
 
-  const [wizardSpellSearch, setWizardSpellSearch] = useState('');
+  const [duelistTechniqueSearch, setDuelistTechniqueSearch] = useState('');
   
   // Level-based stats
   const [levelStats, setLevelStats] = useState({
     hp: null,
-    attacksPerMelee: 2,
-    saves: { vsMagic: 14, vsPoison: 14, vsPsionics: 15 },
-    combatBonuses: { strike: 0, parry: 0, dodge: 0, damage: 0 },
-    ppe: 0,
-    isp: 0,
+    actionsPerRound: 2,
+    saves: { vsTraining: 14, vsPoison: 14, vsTactics: 15 },
+    combatBonuses: { attack: 0, block: 0, evade: 0, damage: 0 },
+    stamina: 0,
+    focus: 0,
     skillIncreases: { elective: 0, secondary: 0 }
   });
 
   // Recalculate stats when level or class changes
   useEffect(() => {
-    // Calculate HP even if O.C.C. isn't selected yet (use defaults)
+    // Calculate HP even if profession isn't selected yet (use defaults)
     if (level && attributes.PE) {
       const peBonus = Math.floor((attributes.PE || 0) / 4);
       const currentLevel = parseInt(level) || 1;
       
       let calculatedHP = hp;
-      if (useDeterministicHP && occData) {
-        // Calculate deterministic HP for character creator (only if O.C.C. is selected)
+      if (useDeterministicHP && professionData) {
+        // Calculate deterministic HP for character creator (only if profession is selected)
         calculatedHP = calculateCreatorHP(currentLevel, peBonus, hp);
-      } else if (useDeterministicHP && !occData) {
-        // If no O.C.C. selected, use simple calculation: base HP + (level-1) * 8 + PE bonus
+      } else if (useDeterministicHP && !professionData) {
+        // If no profession selected, use simple calculation: base HP + (level-1) * 8 + PE bonus
         const baseHP = 20;
         const hpPerLevel = 8; // Default
         calculatedHP = baseHP + (currentLevel - 1) * hpPerLevel + (peBonus * currentLevel);
@@ -200,17 +200,17 @@ const CharacterCreator = ({ onCreateCharacter }) => {
         calculatedHP = hp || (20 + (currentLevel - 1) * 8 + (peBonus * currentLevel));
       }
       
-      // Only call getStatsForLevel if occData exists
+      // Only call getStatsForLevel if professionData exists
       let stats = {};
-      if (occData) {
+      if (professionData) {
         stats = getStatsForLevel(
-          occData,
+          professionData,
           currentLevel,
           attributes,
           calculatedHP,
-          psionics?.ppe || 0,
-          psionics?.isp || 0,
-          occSkills,
+          tactics?.stamina || 0,
+          tactics?.focus || 0,
+          professionSkills,
           electiveSkills,
           secondarySkills
         ) || {};
@@ -218,95 +218,86 @@ const CharacterCreator = ({ onCreateCharacter }) => {
       
       // Calculate skill bonuses
       const skillBonuses = calculateSkillBonuses(
-        occSkills || [],
+        professionSkills || [],
         electiveSkills || [],
         secondarySkills || [],
         currentLevel
       );
       
-      // Calculate Save vs Horror Factor
-      const occCategory = occData?.category || "Men of Arms";
+      // Calculate Save vs dreadRating
+      const professionCategory = professionData?.category || "Men of Arms";
       const baseHorrorSave = BASE_SAVES.horror || 12;
-      const occHorrorMod = OCC_SAVE_MODIFIERS[occCategory]?.horror || 0;
+      const professionHorrorMod = PROFESSION_SAVE_MODIFIERS[occCategory]?.horror || 0;
       const levelHorrorBonus = getLevelSaveBonus(currentLevel);
       const peHorrorBonus = Math.floor((attributes.PE || 0) / 2) - 5; // PE bonus: (PE-10)/2
-      const vsHorrorFactor = baseHorrorSave - occHorrorMod - levelHorrorBonus - peHorrorBonus;
+      const courageCheck = baseHorrorSave - occHorrorMod - levelHorrorBonus - peHorrorBonus;
       
-      // Get combat mods from race and OCC
-      const raceData = species ? (palladiumData.races?.[species] || null) : null;
+      // Get combat mods from race and PROFESSION
+      const raceData = species ? (gameData.races?.[species] || null) : null;
       const raceCombatMods = raceData?.combatMods || { damage: 0, initiative: 0, speedBonus: 0 };
-      const occCombatMods = occData?.combatMods || { damage: 0, initiative: 0, speedBonus: 0 };
-      const totalInitiativeBonus = (skillBonuses.initiative || 0) + (raceCombatMods.initiative || 0) + (occCombatMods.initiative || 0);
-      const totalSpeedBonus = (raceCombatMods.speedBonus || 0) + (occCombatMods.speedBonus || 0);
+      const professionCombatMods = professionData?.combatMods || { damage: 0, initiative: 0, speedBonus: 0 };
+      const totalInitiativeBonus = (skillBonuses.initiative || 0) + (raceCombatMods.initiative || 0) + (professionCombatMods.initiative || 0);
+      const totalSpeedBonus = (raceCombatMods.speedBonus || 0) + (professionCombatMods.speedBonus || 0);
       
       // Ensure all required properties exist by merging with defaults
       setLevelStats({
         // Defaults
-        hp: null,
-        attacksPerMelee: 2,
-        saves: { vsMagic: 14, vsPoison: 14, vsPsionics: 15, vsHorrorFactor: 12 },
-        combatBonuses: { strike: 0, parry: 0, dodge: 0, damage: 0 },
-        ppe: 0,
-        isp: 0,
+        actionsPerRound: 2,
+        combatBonuses: { attack: 0, block: 0, evade: 0, damage: 0 },
         skillIncreases: { elective: 0, secondary: 0 },
-        skillBonuses: { strike: 0, parry: 0, dodge: 0, damage: 0, initiative: 0, ispBonus: 0, ispRecovery: 1, attacksPerMelee: 0, weaponProficiencies: [] },
-        initiativeBonus: 0,
-        speedBonus: 0,
-        ispBonus: 0,
-        ispRecovery: 1,
         // Override with stats from getStatsForLevel
         ...stats,
         // Override with calculated values (these take precedence)
         hp: calculatedHP || stats?.hp || null,
         saves: {
-          ...(stats?.saves || { vsMagic: 14, vsPoison: 14, vsPsionics: 15 }),
-          vsHorrorFactor: vsHorrorFactor
+          ...(stats?.saves || { vsTraining: 14, vsPoison: 14, vsTactics: 15 }),
+          courageCheck: courageCheck
         },
         skillBonuses: skillBonuses,
         initiativeBonus: totalInitiativeBonus,
         speedBonus: totalSpeedBonus,
-        ispBonus: skillBonuses.ispBonus || 0,
-        ispRecovery: skillBonuses.ispRecovery || 1,
-        ppe: stats?.ppe || psionics?.ppe || 0,
-        isp: stats?.isp || psionics?.isp || 0,
+        focusBonus: skillBonuses.focusBonus || 0,
+        focusRecovery: skillBonuses.focusRecovery || 1,
+        stamina: stats?.stamina || tactics?.stamina || 0,
+        focus: stats?.focus || tactics?.focus || 0,
       });
     } else if (Object.keys(attributes).length === 0) {
       // Reset levelStats if no attributes are rolled yet
       setLevelStats({
         hp: null,
-        attacksPerMelee: 2,
-        saves: { vsMagic: 14, vsPoison: 14, vsPsionics: 15, vsHorrorFactor: 12 },
-        combatBonuses: { strike: 0, parry: 0, dodge: 0, damage: 0 },
-        ppe: 0,
-        isp: 0,
+        actionsPerRound: 2,
+        saves: { vsTraining: 14, vsPoison: 14, vsTactics: 15, courageCheck: 12 },
+        combatBonuses: { attack: 0, block: 0, evade: 0, damage: 0 },
+        stamina: 0,
+        focus: 0,
         skillIncreases: { elective: 0, secondary: 0 },
-        skillBonuses: { strike: 0, parry: 0, dodge: 0, damage: 0, initiative: 0, ispBonus: 0, ispRecovery: 1, attacksPerMelee: 0, weaponProficiencies: [] },
+        skillBonuses: { attack: 0, block: 0, evade: 0, damage: 0, initiative: 0, focusBonus: 0, focusRecovery: 1, actionsPerRound: 0, weaponProficiencies: [] },
         initiativeBonus: 0,
         speedBonus: 0,
-        ispBonus: 0,
-        ispRecovery: 1,
+        focusBonus: 0,
+        focusRecovery: 1,
       });
     }
-  }, [level, occData, attributes, hp, psionics, occSkills, electiveSkills, secondarySkills, useDeterministicHP]);
+  }, [level, professionData, attributes, hp, tactics, professionSkills, electiveSkills, secondarySkills, useDeterministicHP]);
 
   useEffect(() => {
-    if (!isStrictWizard(characterClass)) {
-      setWizardSpellPicks({ 1: [] });
-      setWizardSpellSearch('');
+    if (!isStrictDuelist(characterClass)) {
+      setDuelistTechniquePicks({ 1: [] });
+      setDuelistTechniqueSearch('');
     }
   }, [characterClass]);
 
   useEffect(() => {
-    if (!isStrictWizard(characterClass)) return;
-    const all = getAllSpellsFromDataset();
-    const eligible = getWizardEligibleSpells(all, Number(level) || 1);
-    const eligibleNames = new Set(eligible.map((sp) => normalizeSpellName(sp?.name)));
-    const cap = getWizardSpellProgression(Number(level) || 1).requiredPickCount;
+    if (!isStrictDuelist(characterClass)) return;
+    const all = getAllTechniquesFromDataset();
+    const eligible = getDuelistEligibleTechniques(all, Number(level) || 1);
+    const eligibleNames = new Set(eligible.map((sp) => normalizeTechniqueName(sp?.name)));
+    const cap = getDuelistTechniqueProgression(Number(level) || 1).requiredPickCount;
 
-    setWizardSpellPicks((prev) => {
+    setDuelistTechniquePicks((prev) => {
       const current = prev[1] || [];
       const filtered = current
-        .filter((nm) => eligibleNames.has(normalizeSpellName(nm)))
+        .filter((nm) => eligibleNames.has(normalizeTechniqueName(nm)))
         .slice(0, cap);
       if (filtered.length === current.length && filtered.every((nm, i) => nm === current[i])) {
         return prev;
@@ -316,13 +307,13 @@ const CharacterCreator = ({ onCreateCharacter }) => {
   }, [characterClass, level]);
 
   useEffect(() => {
-    if (!isStrictWizard(characterClass)) return;
-    const all = getAllSpellsFromDataset();
-    const missing = WIZARD_COMMON_SPELL_NAMES.filter(
-      (nm) => !all.some((sp) => normalizeSpellName(sp?.name) === normalizeSpellName(nm))
+    if (!isStrictDuelist(characterClass)) return;
+    const all = getAllTechniquesFromDataset();
+    const missing = DUELIST_COMMON_TECHNIQUE_NAMES.filter(
+      (nm) => !all.some((sp) => normalizeTechniqueName(sp?.name) === normalizeTechniqueName(nm))
     );
     if (missing.length) {
-      console.warn('⚠️ Wizard common spells missing from dataset keys:', missing);
+      console.warn('ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã‚Â¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¯Ãƒâ€šÃ‚Â¸Ãƒâ€šÃ‚Â Duelist common techniques missing from dataset keys:', missing);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [characterClass]);
@@ -409,7 +400,7 @@ const CharacterCreator = ({ onCreateCharacter }) => {
 
   const getHighlightColor = (attrValue, diceRoll) => {
     const [numDice] = diceRoll.split('d').map(Number);
-    // Bonus die rule (Palladium): only 3d6 rolls of 17-18, or 2d6 rolls of 12.
+    // Bonus die rule (Medieval Combat Simulator): only 3d6 rolls of 17-18, or 2d6 rolls of 12.
     // No bonus die for 4d6/5d6 attributes.
     if (diceRoll.startsWith('3d6') && (attrValue === 17 || attrValue === 18)) {
       return 'green';
@@ -443,7 +434,7 @@ const CharacterCreator = ({ onCreateCharacter }) => {
           const bonusRoll = rollDice(6, 1, useCryptoRandom);
           newValue += bonusRoll;
           bonusesApplied++;
-          console.log(`Bonus applied to ${attr}: +${bonusRoll} (${value} → ${newValue})`);
+          console.log(`Bonus applied to ${attr}: +${bonusRoll} (${value} ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ ${newValue})`);
           // Update the highlight based on new value
           updatedAttributes[attr] = newValue;
           updatedAttributes[`${attr}_highlight`] = getHighlightColor(
@@ -473,10 +464,10 @@ const CharacterCreator = ({ onCreateCharacter }) => {
 
   // Calculate HP for character creator (deterministic, not random)
   const calculateCreatorHP = (level, peBonus = 0, baseHP = null) => {
-    if (!occData) return baseHP || 10;
+    if (!professionData) return baseHP || 10;
     
-    const progression = occData.category ? 
-      palladiumData.levelProgression[occData.category] : null;
+    const progression = professionData.category ? 
+      gameData.levelProgression[professionData.category] : null;
     
     if (!progression) return baseHP || 10;
 
@@ -506,9 +497,9 @@ const CharacterCreator = ({ onCreateCharacter }) => {
     return numDice * averagePerDie;
   };
 
-  // Generate starting clothing based on race (1994 Palladium Fantasy RPG)
+  // Generate starting clothing based on race (1994 Medieval Combat Simulator)
   const generateStartingClothing = (race) => {
-    const raceKey = race.charAt(0).toUpperCase() + race.slice(1).toLowerCase();
+    const raceKey = race.charAt(0).toUstaminarCase() + race.slice(1).toLowerCase();
     const raceClothing = clothingEquipmentData.raceClothing[raceKey];
     
     // Use basic clothing items from traderEquipment for starting gear
@@ -650,59 +641,59 @@ const CharacterCreator = ({ onCreateCharacter }) => {
 
   // Initialize filtered classes when available classes change
   useEffect(() => {
-    filterAvailableOCCs(species);
+    filterAvailablePROFESSIONs(species);
   }, [availableClasses, species]);
 
-  // Handle OCC selection with automatic bonuses, PPE/ISP, and skills
-  const filterAvailableOCCs = (selectedSpecies) => {
+  // Handle PROFESSION selection with automatic bonuses, stamina/focus, and skills
+  const filterAvailablePROFESSIONs = (selectedSpecies) => {
     if (!selectedSpecies) {
       setFilteredClasses(availableClasses);
       return;
     }
 
-    const raceData = palladiumData.races[selectedSpecies];
+    const raceData = gameData.races[selectedSpecies];
     if (!raceData) {
       setFilteredClasses(availableClasses);
       return;
     }
 
-    // Get all O.C.C.s that are NOT restricted for this race
-    const allowedOCCs = availableClasses.filter(occName => {
-      const occData = palladiumData.occs[occName];
-      if (!occData) return true;
+    // Get all professions that are NOT restricted for this race
+    const allowedPROFESSIONs = availableClasses.filter(professionName => {
+      const professionData = gameData.professions[professionName];
+      if (!professionData) return true;
       
-      // Check if this O.C.C. is restricted for this race
-      return !occData.restrictedRaces.includes(selectedSpecies);
+      // Check if this profession is restricted for this race
+      return !professionData.restrictedRaces.includes(selectedSpecies);
     });
 
-    setFilteredClasses(allowedOCCs);
+    setFilteredClasses(allowedPROFESSIONs);
   };
 
-  const handleOccSelection = (selectedOcc) => {
-    setCharacterClass(selectedOcc);
+  const handleProfessionSelection = (selectedProfession) => {
+    setCharacterClass(selectedProfession);
     
-    if (!selectedOcc) {
-      setOccSkills([]);
+    if (!selectedProfession) {
+      setProfessionSkills([]);
       setElectiveSkills([]);
       setSecondarySkills([]);
       setPreviousLevel(1);
       return;
     }
     
-    // Try new OCCS first, fall back to old palladiumData for compatibility
-    const occData = OCCS[selectedOcc] || palladiumData.occs[selectedOcc];
-    if (!occData) return;
+    // Try new PROFESSIONS first, fall back to old gameData for compatibility
+    const professionData = PROFESSIONS[selectedProfession] || gameData.professions[selectedProfession];
+    if (!professionData) return;
     
-    // Reset previous level when OCC changes
+    // Reset previous level when PROFESSION changes
     const currentLevel = parseInt(level) || 1;
     setPreviousLevel(1);
     
     // Check if level > 1 and we need to prompt for skill selection
     if (currentLevel > 1) {
-      const skillGains = calculateSkillGains(occData, currentLevel, 1);
+      const skillGains = calculateSkillGains(professionData, currentLevel, 1);
       
       if (skillGains.elective > 0 || skillGains.secondary > 0) {
-        // Show skill selection modal after a brief delay to allow OCC data to be set
+        // Show skill selection modal after a brief delay to allow PROFESSION data to be set
         setTimeout(() => {
           setPendingLevelChange(level);
           setPendingSkillSelections({
@@ -716,56 +707,56 @@ const CharacterCreator = ({ onCreateCharacter }) => {
 
     // Apply attribute bonuses
     const updatedAttributes = { ...attributes };
-    for (const [attr, bonusExpr] of Object.entries(occData.bonuses || {})) {
+    for (const [attr, bonusExpr] of Object.entries(professionData.bonuses || {})) {
       updatedAttributes[attr] = applyBonus(updatedAttributes[attr] || 0, bonusExpr);
     }
     setAttributes(updatedAttributes);
 
-    // Roll PPE/ISP
-    let ppe = 0;
-    let isp = 0;
-    if (occData.PPE) ppe = evaluateDice(occData.PPE);
-    if (occData.ISP) isp = evaluateDice(occData.ISP);
+    // Roll stamina/focus
+    let stamina = 0;
+    let focus = 0;
+    if (professionData.stamina) stamina = evaluateDice(professionData.stamina);
+    if (professionData.focus) focus = evaluateDice(professionData.focus);
 
     // Apply racial modifiers
-    const raceData = palladiumData.races[species];
+    const raceData = gameData.races[species];
     if (raceData?.saveMods) {
       // Apply racial save modifiers (will be applied to character on creation)
       // This is handled in the character creation process
     }
 
-    // Auto-assign O.C.C. skills
-    setOccSkills(occData.occSkills || []);
+    // Auto-assign profession skills
+    setProfessionSkills(professionData.professionSkills || []);
     
     // Reset elective and secondary skills
     setElectiveSkills([]);
     setSecondarySkills([]);
 
-    // Store OCC data for character creation (include skill progression data)
-    setOccData({
-      name: selectedOcc,
-      category: occData.category,
-      ppe: ppe,
-      isp: isp,
-      notes: occData.notes,
-      electiveSkills: occData.electiveSkills,
-      secondarySkills: occData.secondarySkills,
-      saveMods: raceData?.saveMods || { vsMagic: 0, vsPsionics: 0 },
+    // Store PROFESSION data for character creation (include skill progression data)
+    setProfessionData({
+      name: selectedProfession,
+      category: professionData.category,
+      stamina: stamina,
+      focus: focus,
+      notes: professionData.notes,
+      electiveSkills: professionData.electiveSkills,
+      secondarySkills: professionData.secondarySkills,
+      saveMods: raceData?.saveMods || { vsTraining: 0, vsTactics: 0 },
       combatMods: raceData?.combatMods || { damage: 0, initiative: 0, speedBonus: 0 },
       abilities: raceData?.abilities || []
     });
   };
 
-  const handlePsionicsRoll = (psionicsData) => {
-    if (typeof psionicsData === 'string') {
+  const handleTacticsRoll = (tacticsData) => {
+    if (typeof tacticsData === 'string') {
       // Handle old format for backward compatibility
-      setPsionics(psionicsData);
+      setTactics(tacticsData);
     } else {
-      // Handle new format with ISP
-      setPsionics(psionicsData.result);
-      // Store ISP for character creation
-      if (psionicsData.isp > 0) {
-        setAttributes(prev => ({ ...prev, baseISP: psionicsData.isp }));
+      // Handle new format with focus
+      setTactics(tacticsData.result);
+      // Store focus for character creation
+      if (tacticsData.focus > 0) {
+        setAttributes(prev => ({ ...prev, basefocus: tacticsData.focus }));
       }
     }
   };
@@ -799,8 +790,8 @@ const CharacterCreator = ({ onCreateCharacter }) => {
       return;
     }
 
-    if (isStrictWizard(characterClass)) {
-      const v = validateWizardSpellSelections();
+    if (isStrictDuelist(characterClass)) {
+      const v = validateDuelistTechniqueSelections();
       if (!v.ok) {
         alert(v.message);
         return;
@@ -851,17 +842,17 @@ const CharacterCreator = ({ onCreateCharacter }) => {
       hostility,
       origin,
       gender,
-      occ: occData?.name || characterClass,
-      PPE: occData?.ppe || 0,
-      ISP: occData?.isp || 0,
+      profession: professionData?.name || characterClass,
+      stamina: professionData?.stamina || 0,
+      focus: professionData?.focus || 0,
       saves: {
-        vsMagic: 12 + (occData?.saveMods?.vsMagic || 0),
-        vsPsionics: 15 + (occData?.saveMods?.vsPsionics || 0),
+        vsTraining: 12 + (professionData?.saveMods?.vsTraining || 0),
+        vsTactics: 15 + (professionData?.saveMods?.vsTactics || 0),
         vsPoison: 14
       },
-      combatMods: occData?.combatMods || { damage: 0, initiative: 0, speedBonus: 0 },
-      abilities: occData?.abilities || [],
-      occSkills: occSkills,
+      combatMods: professionData?.combatMods || { damage: 0, initiative: 0, speedBonus: 0 },
+      abilities: professionData?.abilities || [],
+      professionSkills: professionSkills,
       electiveSkills: electiveSkills,
       secondarySkills: secondarySkills
     });
@@ -900,12 +891,12 @@ const CharacterCreator = ({ onCreateCharacter }) => {
       const { assignInitialEquipment } = await import('../utils/characterUtils');
       
       // Get initial equipment based on class and race (modern system)
-      const { inventory, gold, equipment, equipped, equippedArmor, AR } = await assignInitialEquipment(characterClass, species);
+      const { inventory, gold, equipment, equistaminad, equistaminadArmor, guardRating } = await assignInitialEquipment(characterClass, species);
 
-      // Add psionics for Mind Mages
-      let psionicPowers = [];
-      if (characterClass === "Mind Mage" && psionics) {
-        psionicPowers = await getMindMagePsionics(psionics, level);
+      // Add tactics for Tacticians
+      let tacticalOptions = [];
+      if (characterClass === "Tactician" && tactics) {
+        tacticalOptions = await getMindMageTactics(tactics, level);
       }
 
       // DEBUG: Test the inventory directly
@@ -925,46 +916,46 @@ const CharacterCreator = ({ onCreateCharacter }) => {
       });
 
       // DEBUG: Log the final inventory before sending to API
-      console.log('🔍 FINAL INVENTORY BEFORE API CALL:', inventory);
+      console.log('ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒâ€šÃ‚Â FINAL INVENTORY BEFORE API CALL:', inventory);
       inventory.forEach((item, index) => {
-        console.log(`🔍 Item ${index}:`, { name: item.name, type: item.type, category: item.category });
+        console.log(`ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒâ€šÃ‚Â Item ${index}:`, { name: item.name, type: item.type, category: item.category });
       });
 
-      // Calculate ISP for Mind Mages
-      let characterISP = 0;
-      if (characterClass === 'Mind Mage' && attributes.baseISP) {
-        // Base ISP + 10 per level (level 1 = base ISP)
-        characterISP = attributes.baseISP + ((Number(level) || 1) - 1) * 10;
+      // Calculate focus for Tacticians
+      let characterfocus = 0;
+      if (characterClass === 'Tactician' && attributes.basefocus) {
+        // Base focus + 10 per level (level 1 = base focus)
+        characterfocus = attributes.basefocus + ((Number(level) || 1) - 1) * 10;
       }
 
-      // HARD O.C.C. GATES (prevents illegal psionics/magic on Men of Arms)
-      const occCategory = String(occData?.category || "").toLowerCase();
+      // HARD profession GATES (prevents illegal tactics/training on Men of Arms)
+      const professionCategory = String(professionData?.category || "").toLowerCase();
       const isMenOfArms =
         occCategory.includes("men of arms") ||
         occCategory.includes("man of arms") ||
         occCategory.includes("men-of-arms");
 
       if (isMenOfArms) {
-        characterISP = 0;
+        characterfocus = 0;
       }
 
-      const allSpells = getAllSpellsFromDataset();
-      let selectedSpells = [];
-      if (isStrictWizard(characterClass)) {
-        const chosenNames = wizardSpellPicks[1] || [];
-        const wizardBuild = buildWizardSpellbookForLevel({
-          allSpells,
+      const allTechniques = getAllTechniquesFromDataset();
+      let selectedTechniques = [];
+      if (isStrictDuelist(characterClass)) {
+        const chosenNames = duelistTechniquePicks[1] || [];
+        const duelistBuild = buildDuelistTechniqueBookForLevel({
+          allTechniques,
           level: Number(level) || 1,
-          pickedSpellNames: chosenNames,
+          pickedTechniqueNames: chosenNames,
         });
-        selectedSpells = wizardBuild.spellbook;
+        selectedTechniques = duelistBuild.techniqueBook;
       }
 
       const characterData = {
         name: characterName || "Unnamed Character",
         species,
         class: characterClass,
-        occ: characterClass, // Set occ to same as class
+        profession: characterClass, // Set profession to same as class
         level: Number(level) || 1,
         hp: calculatedHP, // Use calculated total HP instead of base HP
         alignment: alignment || "Neutral",
@@ -975,29 +966,29 @@ const CharacterCreator = ({ onCreateCharacter }) => {
         hostility: hostility || "Unknown",
         origin: origin || "Unknown",
         gender: normalizedGender,
-        ISP: isMenOfArms ? 0 : characterISP,
-        currentISP: isMenOfArms ? 0 : characterISP,
-        psionicPowers: isMenOfArms ? [] : (psionicPowers || []),
-        spells: selectedSpells,
-        magic: [],
-        occSkills: occSkills || [],
+        focus: isMenOfArms ? 0 : characterfocus,
+        currentfocus: isMenOfArms ? 0 : characterfocus,
+        tacticalOptions: isMenOfArms ? [] : (tacticalOptions || []),
+        techniques: selectedTechniques,
+        training: [],
+        professionSkills: professionSkills || [],
         electiveSkills: electiveSkills || [],
         secondarySkills: secondarySkills || [],
         visualProfile: computedVisualProfile,
         // Add starting equipment using modern system
         inventory: inventory || [],
         equipment: equipment || undefined,
-        equipped: equipped || undefined,
-        equippedArmor: equippedArmor || undefined,
-        AR: AR || undefined,
+        equistaminad: equistaminad || undefined,
+        equistaminadArmor: equistaminadArmor || undefined,
+        guardRating: guardRating || undefined,
         gold: gold || 100
       };
 
-      const normalizedPPE = normalizePPEState(
+      const normalizedstamina = normalizestaminaState(
         {
           ...characterData,
-          occ: characterData.occ || characterData.class,
-          magic: characterData.spells,
+          profession: characterData.profession || characterData.class,
+          training: characterData.techniques,
         },
         {
           rollMissingLevelGains: true,
@@ -1006,16 +997,16 @@ const CharacterCreator = ({ onCreateCharacter }) => {
           ),
         }
       );
-      characterData.PPE = normalizedPPE.PPE;
-      characterData.maxPPE = normalizedPPE.maxPPE;
-      characterData.currentPPE = normalizedPPE.currentPPE;
-      characterData.ppeType = normalizedPPE.ppeType;
-      characterData.ppeBase = normalizedPPE.ppeBase;
-      characterData.ppeLevelGainsTotal = normalizedPPE.ppeLevelGainsTotal;
-      characterData.ppeLevelGainRolls = normalizedPPE.ppeLevelGainRolls;
+      characterData.stamina = normalizedstamina.stamina;
+      characterData.maxstamina = normalizedstamina.maxstamina;
+      characterData.currentstamina = normalizedstamina.currentstamina;
+      characterData.staminaType = normalizedstamina.staminaType;
+      characterData.staminaBase = normalizedstamina.staminaBase;
+      characterData.staminaLevelGainsTotal = normalizedstamina.staminaLevelGainsTotal;
+      characterData.staminaLevelGainRolls = normalizedstamina.staminaLevelGainRolls;
 
       console.log('Submitting character data for validation:', characterData);
-      console.log('occ field value:', characterData.occ);
+      console.log('profession field value:', characterData.profession);
       console.log('class field value:', characterData.class);
       console.log('level state:', level);
       console.log('level number:', Number(level));
@@ -1027,7 +1018,7 @@ const CharacterCreator = ({ onCreateCharacter }) => {
         currentLevel: currentLevel,
         useDeterministicHP: useDeterministicHP
       });
-      console.log('occSkills:', characterData.occSkills);
+      console.log('professionSkills:', characterData.professionSkills);
       console.log('electiveSkills:', characterData.electiveSkills);
       console.log('secondarySkills:', characterData.secondarySkills);
       
@@ -1066,25 +1057,25 @@ const CharacterCreator = ({ onCreateCharacter }) => {
     
     console.log('=== CLASS FILTERING DEBUG ===');
     console.log('Species:', species);
-    console.log('Psionics:', psionics);
+    console.log('Tactics:', tactics);
     console.log('IQ:', attributes.IQ);
     console.log('Available Classes:', availableClasses);
     console.log('Filtered Classes:', filteredClasses);
     console.log('Classes To Show:', classesToShow);
-    console.log('Has Mind Mage:', classesToShow.includes('Mind Mage'));
+    console.log('Has Tactician:', classesToShow.includes('Tactician'));
     console.log('================================');
     
     // Group available classes by category
     const groupedClasses = classesToShow.reduce((acc, className) => {
-      // Filter out Mind Mage if psionics isn't Major or Master AND IQ < 9
-      if (className === 'Mind Mage') {
-        const hasMajorOrMaster = psionics && 
-                                 (psionics.includes('Major') || psionics.includes('Master'));
+      // Filter out Tactician if tactics isn't Major or Master AND IQ < 9
+      if (className === 'Tactician') {
+        const hasMajorOrMaster = tactics && 
+                                 (tactics.includes('Major') || tactics.includes('Master'));
         const meetsIQRequirement = attributes.IQ >= 9;
         
-        console.log('Mind Mage eligibility check:', {
-          psionics,
-          psionicsType: typeof psionics,
+        console.log('Tactician eligibility check:', {
+          tactics,
+          tacticsType: typeof tactics,
           hasMajorOrMaster,
           IQ: attributes.IQ,
           meetsIQRequirement,
@@ -1110,7 +1101,7 @@ const CharacterCreator = ({ onCreateCharacter }) => {
         <select
           id="character-class"
           value={characterClass}
-          onChange={(e) => handleOccSelection(e.target.value)}
+          onChange={(e) => handleProfessionSelection(e.target.value)}
           disabled={availableClasses.length === 0}
         >
           <option value="">Select a class</option>
@@ -1133,8 +1124,8 @@ const CharacterCreator = ({ onCreateCharacter }) => {
               {Object.entries(characterClasses[characterClass].requirements).map(([attr, value]) => (
                 <li key={attr}>
                   {attr === 'alignment' && 'Alignment: Evil required'}
-                  {attr === 'psionics' && 'Must be Major (80-89%) or Master Psionic (90-100%)'}
-                  {attr !== 'alignment' && attr !== 'psionics' && `${attr}: ${value}`}
+                  {attr === 'tactics' && 'Must be Major (80-89%) or Master Tactical (90-100%)'}
+                  {attr !== 'alignment' && attr !== 'tactics' && `${attr}: ${value}`}
                 </li>
               ))}
             </ul>
@@ -1144,35 +1135,35 @@ const CharacterCreator = ({ onCreateCharacter }) => {
         {/* Display race restrictions info */}
         {species && (
           <div className="race-restrictions">
-            <h4>{species} O.C.C. Restrictions:</h4>
+            <h4>{species} profession Restrictions:</h4>
             {(() => {
-              const raceData = palladiumData.races[species];
-              if (!raceData || raceData.restrictedOCCs.length === 0) {
-                return <p>No O.C.C. restrictions for {species}.</p>;
+              const raceData = gameData.races[species];
+              if (!raceData || raceData.restrictedPROFESSIONs.length === 0) {
+                return <p>No profession restrictions for {species}.</p>;
               }
               return (
                 <div>
-                  <p><strong>Cannot be:</strong> {raceData.restrictedOCCs.join(', ')}</p>
-                  <p><em>Available O.C.C.s are filtered above based on race restrictions.</em></p>
+                  <p><strong>Cannot be:</strong> {raceData.restrictedPROFESSIONs.join(', ')}</p>
+                  <p><em>Available professions are filtered above based on race restrictions.</em></p>
                 </div>
               );
             })()}
           </div>
         )}
 
-        {/* Display OCC data when selected */}
-        {occData && (
-          <div className="occ-data">
-            <h4>OCC Information:</h4>
-            <p><strong>Class:</strong> {occData.name} ({occData.category})</p>
-            <p><strong>PPE:</strong> {occData.ppe}</p>
-            <p><strong>ISP:</strong> {occData.isp}</p>
-            <p><strong>Notes:</strong> {occData.notes}</p>
-            {occData.abilities.length > 0 && (
+        {/* Display PROFESSION data when selected */}
+        {professionData && (
+          <div className="profession-data">
+            <h4>PROFESSION Information:</h4>
+            <p><strong>Class:</strong> {professionData.name} ({professionData.category})</p>
+            <p><strong>stamina:</strong> {professionData.stamina}</p>
+            <p><strong>focus:</strong> {professionData.focus}</p>
+            <p><strong>Notes:</strong> {professionData.notes}</p>
+            {professionData.abilities.length > 0 && (
               <div>
                 <strong>Racial Abilities:</strong>
                 <ul>
-                  {occData.abilities.map((ability, idx) => (
+                  {professionData.abilities.map((ability, idx) => (
                     <li key={idx}>{ability}</li>
                   ))}
                 </ul>
@@ -1181,16 +1172,16 @@ const CharacterCreator = ({ onCreateCharacter }) => {
           </div>
         )}
 
-        {/* O.C.C. Skills Selection */}
-        {characterClass && (OCCS[characterClass] || palladiumData.occs[characterClass]) && (
-          <div className="occ-skills-selection">
-            <h4>O.C.C. Skills</h4>
+        {/* profession Skills Selection */}
+        {characterClass && (PROFESSIONS[characterClass] || gameData.professions[characterClass]) && (
+          <div className="profession-skills-selection">
+            <h4>profession Skills</h4>
             
-            {/* O.C.C. Skills (auto-assigned) */}
-            <div className="occ-skills">
-              <h5>O.C.C. Skills (Automatic):</h5>
+            {/* profession Skills (auto-assigned) */}
+            <div className="profession-skills">
+              <h5>profession Skills (Automatic):</h5>
               <ul>
-                {occSkills.map((skill, idx) => {
+                {professionSkills.map((skill, idx) => {
                   const formattedSkill = formatSkillWithPercent(skill, characterClass, parseInt(level) || 1);
                   return (
                     <li key={idx}>{formattedSkill}</li>
@@ -1201,13 +1192,13 @@ const CharacterCreator = ({ onCreateCharacter }) => {
 
             {/* Elective Skills */}
             {(() => {
-              const occData = OCCS[characterClass] || palladiumData.occs[characterClass];
-              const electiveCount = occData?.electiveSkills?.level1 || 0;
+              const professionData = PROFESSIONS[characterClass] || gameData.professions[characterClass];
+              const electiveCount = professionData?.electiveSkills?.level1 || 0;
               
               if (electiveCount > 0) {
-                // Use all ELECTIVE_SKILLS instead of just the OCC's specific list
+                // Use all ELECTIVE_SKILLS instead of just the PROFESSION's specific list
                 const availableElectiveSkills = ELECTIVE_SKILLS.filter(skill => 
-                  !isSkillInOccSkills(skill, occSkills)
+                  !isSkillInProfessionSkills(skill, professionSkills)
                 );
                 
                 return (
@@ -1225,7 +1216,7 @@ const CharacterCreator = ({ onCreateCharacter }) => {
                       }}
                     >
                       {availableElectiveSkills.map((skill, idx) => {
-                        const skillData = palladiumData.skills?.[skill];
+                        const skillData = gameData.skills?.[skill];
                         const formattedSkill = formatSkillWithPercent(skill, characterClass, parseInt(level) || 1);
                         return (
                           <option key={idx} value={skill} title={skillData?.description || skill}>
@@ -1243,14 +1234,14 @@ const CharacterCreator = ({ onCreateCharacter }) => {
 
             {/* Secondary Skills */}
             {(() => {
-              const occData = OCCS[characterClass] || palladiumData.occs[characterClass];
-              const secondaryCount = occData?.secondarySkills?.level1 || 0;
+              const professionData = PROFESSIONS[characterClass] || gameData.professions[characterClass];
+              const secondaryCount = professionData?.secondarySkills?.level1 || 0;
               
               if (secondaryCount > 0) {
                 return (
                   <div className="secondary-skills">
                     <h5>Secondary Skills (Choose {secondaryCount}):</h5>
-                    <p className="skill-hint">Basic/general skills only - no advanced or OCC-specific skills</p>
+                    <p className="skill-hint">Basic/general skills only - no advanced or PROFESSION-specific skills</p>
                     <select
                       multiple
                       size="8"
@@ -1262,8 +1253,8 @@ const CharacterCreator = ({ onCreateCharacter }) => {
                         }
                       }}
                     >
-                      {(SECONDARY_SKILLS || palladiumData.secondarySkills || [])
-                        .filter(skill => !isSkillInOccSkills(skill, occSkills)) // Filter out skills already in OCC skills
+                      {(SECONDARY_SKILLS || gameData.secondarySkills || [])
+                        .filter(skill => !isSkillInProfessionSkills(skill, professionSkills)) // Filter out skills already in PROFESSION skills
                         .map((skill, idx) => {
                           const formattedSkill = formatSkillWithPercent(skill, characterClass, parseInt(level) || 1);
                           return (
@@ -1280,14 +1271,14 @@ const CharacterCreator = ({ onCreateCharacter }) => {
               return null;
             })()}
 
-            {/* O.C.C. Special Notes */}
+            {/* profession Special Notes */}
             {(() => {
-              const occData = OCCS[characterClass] || palladiumData.occs[characterClass];
-              if (occData?.special) {
+              const professionData = PROFESSIONS[characterClass] || gameData.professions[characterClass];
+              if (professionData?.special) {
                 return (
-                  <div className="occ-special">
+                  <div className="profession-special">
                     <h5>Special:</h5>
-                    <p>{occData.special}</p>
+                    <p>{professionData.special}</p>
                   </div>
                 );
               }
@@ -1299,7 +1290,7 @@ const CharacterCreator = ({ onCreateCharacter }) => {
         {/* Display species class restrictions */}
         <div className="species-limitations">
           <h4>{species} Class Limitations:</h4>
-          <p>{speciesCharacteristics[species].occLimitations}</p>
+          <p>{speciesCharacteristics[species].professionLimitations}</p>
         </div>
       </div>
     );
@@ -1317,103 +1308,103 @@ const CharacterCreator = ({ onCreateCharacter }) => {
   };
 
   // Helper function to get skill base percentage for display
-  const getSkillBasePercent = (skillName, occName) => {
-    // Map skill names to occSkillTables keys - OCC-specific first
-    const occSpecificMap = {
+  const getSkillBasePercent = (skillName, professionName) => {
+    // Map skill names to professionSkillTables keys - PROFESSION-specific first
+    const professionSpecificMap = {
       "Language: Native Tongue (98%)": 98,
-      "Literacy (Own Language)": occSkillTables[occName]?.readWrite || occSkillTables[occName]?.literacy || 30,
+      "Literacy (Own Language)": professionSkillTables[professionName]?.readWrite || professionSkillTables[professionName]?.literacy || 30,
       "Literacy (Additional Language)": 25,
-      "Lore: Magic": occSkillTables[occName]?.loreMagic || 35,
-      "Lore: History": occSkillTables[occName]?.loreHistory || 20,
-      "Lore: Demons & Monsters": occSkillTables[occName]?.loreDemonic || occSkillTables[occName]?.loreMonsters || 25,
-      "Lore: Demon & Monster": occSkillTables[occName]?.loreDemonic || occSkillTables[occName]?.loreMonsters || 25,
-      "Lore: Religion": occSkillTables[occName]?.loreReligion || 30,
+      "Lore: Training": professionSkillTables[professionName]?.loreTraining || 35,
+      "Lore: History": professionSkillTables[professionName]?.loreHistory || 20,
+      "Lore: Raiders & Opponents": professionSkillTables[professionName]?.loreRaideric || professionSkillTables[professionName]?.loreOpponents || 25,
+      "Lore: Raider & Opponent": professionSkillTables[professionName]?.loreRaideric || professionSkillTables[professionName]?.loreOpponents || 25,
+      "Lore: Religion": professionSkillTables[professionName]?.loreReligion || 30,
       "Lore: Geography": 30,
       "Lore: Alchemy": 25,
       "Lore: Runes & Circles": 20,
       "Lore: Ancient": 20,
-      "Lore: Military": occSkillTables[occName]?.loreMilitary || 30,
+      "Lore: Military": professionSkillTables[professionName]?.loreMilitary || 30,
       "Lore: Heraldry": 25,
       "Lore: Local History": 20,
       "Lore: Spirits": 25,
-      "Lore: Psionics": occSkillTables[occName]?.lorePsionics || 40,
-      "Lore: Herbs": occSkillTables[occName]?.loreHerbs || 35,
-      "Identify Plants & Herbs": occSkillTables[occName]?.identifyPlants || 15,
-      "Identify Plants & Animals": occSkillTables[occName]?.identifyPlants || 15,
-      "Prowl": occSkillTables[occName]?.prowl || 10,
-      "Meditation": occSkillTables[occName]?.meditation || 40,
-      "Track": occSkillTables[occName]?.track || 25,
-      "Tracking": occSkillTables[occName]?.track || 25,
+      "Lore: Tactics": professionSkillTables[professionName]?.loreTactics || 40,
+      "Lore: Herbs": professionSkillTables[professionName]?.loreHerbs || 35,
+      "Identify Plants & Herbs": professionSkillTables[professionName]?.identifyPlants || 15,
+      "Identify Plants & Animals": professionSkillTables[professionName]?.identifyPlants || 15,
+      "Prowl": professionSkillTables[professionName]?.prowl || 10,
+      "Meditation": professionSkillTables[professionName]?.meditation || 40,
+      "Track": professionSkillTables[professionName]?.track || 25,
+      "Tracking": professionSkillTables[professionName]?.track || 25,
       "Track Animals": 25,
       "Track Humanoids": 25,
-      "Horsemanship": occSkillTables[occName]?.horsemanship || 30,
-      "Horsemanship (Basic)": occSkillTables[occName]?.horsemanship || 30,
-      "First Aid": occSkillTables[occName]?.medical || 30,
-      "Medical": occSkillTables[occName]?.medical || 30,
-      "Herbal Lore": occSkillTables[occName]?.loreHerbs || 35,
+      "Horsemanship": professionSkillTables[professionName]?.horsemanship || 30,
+      "Horsemanship (Basic)": professionSkillTables[professionName]?.horsemanship || 30,
+      "First Aid": professionSkillTables[professionName]?.medical || 30,
+      "Medical": professionSkillTables[professionName]?.medical || 30,
+      "Herbal Lore": professionSkillTables[professionName]?.loreHerbs || 35,
       "Holistic Medicine": 30,
       "Diagnose Illness": 25,
       "Healing Touch": 30,
-      "Pick Locks": occSkillTables[occName]?.pickLocks || 25,
-      "Pick Pockets": occSkillTables[occName]?.pickPockets || 25,
-      "Disguise": occSkillTables[occName]?.disguise || 25,
-      "Streetwise": occSkillTables[occName]?.streetwise || 25,
-      "Camouflage": occSkillTables[occName]?.camouflage || 20,
-      "Survival": occSkillTables[occName]?.survival || 30,
-      "Survival (Wilderness)": occSkillTables[occName]?.survival || 30,
+      "Pick Locks": professionSkillTables[professionName]?.pickLocks || 25,
+      "Pick Pockets": professionSkillTables[professionName]?.pickPockets || 25,
+      "Disguise": professionSkillTables[professionName]?.disguise || 25,
+      "Streetwise": professionSkillTables[professionName]?.streetwise || 25,
+      "Camouflage": professionSkillTables[professionName]?.camouflage || 20,
+      "Survival": professionSkillTables[professionName]?.survival || 30,
+      "Survival (Wilderness)": professionSkillTables[professionName]?.survival || 30,
       "Survival (Forest)": 30,
       "Survival (Plains)": 30,
       "Survival (Arctic)": 25,
       "Survival (Desert)": 25,
-      "Climb": 60, // Base percentage from skillSystem.js (Palladium rules)
+      "Climb": 60, // Base percentage from skillSystem.js (Medieval Combat Simulator rules)
       "Climbing": 60, // Base percentage from skillSystem.js
       "Scale Walls": 50, // Base percentage from skillSystem.js
-      "Swim": 50, // Base percentage from skillSystem.js (Palladium rules)
+      "Swim": 50, // Base percentage from skillSystem.js (Medieval Combat Simulator rules)
       "Swimming": 50, // Base percentage from skillSystem.js
       // Running is NOT a percentage skill - removed from map
       "Mathematics: Basic": 20,
       "Math (Basic)": 20,
       "Mathematics: Advanced": 25,
       "Math (Advanced)": 25,
-      "Intimidation": occSkillTables[occName]?.intimidation || 25,
-      "Hypnosis": occSkillTables[occName]?.hypnosis || 35,
-      "Detect Deception": occSkillTables[occName]?.detectDeception || 30,
-      "Weapon Maintenance": occSkillTables[occName]?.weaponMaintenance || 25,
-      "Weapon Smithing": occSkillTables[occName]?.weaponSmithing || 20,
-      "Heraldry": occSkillTables[occName]?.heraldry || 25,
-      "Brewing": occSkillTables[occName]?.brewing || 35,
-      "Poison Craft": occSkillTables[occName]?.poisonCraft || 35,
-      "Palming": occSkillTables[occName]?.palming || 30,
-      "Gambling": occSkillTables[occName]?.gamble || 30,
-      "Farming": occSkillTables[occName]?.farming || 40,
-      "Animal Husbandry": occSkillTables[occName]?.animalHusbandry || 30,
-      "Cooking": occSkillTables[occName]?.cooking || 30,
-      "Research": occSkillTables[occName]?.research || 25,
+      "Intimidation": professionSkillTables[professionName]?.intimidation || 25,
+      "Hypnosis": professionSkillTables[professionName]?.hypnosis || 35,
+      "Detect Deception": professionSkillTables[professionName]?.detectDeception || 30,
+      "Weapon Maintenance": professionSkillTables[professionName]?.weaponMaintenance || 25,
+      "Weapon Smithing": professionSkillTables[professionName]?.weaponSmithing || 20,
+      "Heraldry": professionSkillTables[professionName]?.heraldry || 25,
+      "Brewing": professionSkillTables[professionName]?.brewing || 35,
+      "Poison Craft": professionSkillTables[professionName]?.poisonCraft || 35,
+      "Palming": professionSkillTables[professionName]?.palming || 30,
+      "Gambling": professionSkillTables[professionName]?.gamble || 30,
+      "Farming": professionSkillTables[professionName]?.farming || 40,
+      "Animal Husbandry": professionSkillTables[professionName]?.animalHusbandry || 30,
+      "Cooking": professionSkillTables[professionName]?.cooking || 30,
+      "Research": professionSkillTables[professionName]?.research || 25,
     };
     
     // Check direct mapping first
-    if (occSpecificMap[skillName]) {
+    if (professionSpecificMap[skillName]) {
       return occSpecificMap[skillName];
     }
     
     // Try to match skill name patterns
     if (skillName.includes("Literacy") || skillName.includes("Read/Write")) {
-      return occSkillTables[occName]?.readWrite || 30;
+      return professionSkillTables[professionName]?.readWrite || 30;
     }
-    if (skillName.includes("Lore: Magic")) {
-      return occSkillTables[occName]?.loreMagic || 35;
+    if (skillName.includes("Lore: Training")) {
+      return professionSkillTables[professionName]?.loreTraining || 35;
     }
     if (skillName.includes("Lore: History")) {
-      return occSkillTables[occName]?.loreHistory || 20;
+      return professionSkillTables[professionName]?.loreHistory || 20;
     }
     if (skillName.includes("Identify Plants") || skillName.includes("Herbs")) {
-      return occSkillTables[occName]?.identifyPlants || 15;
+      return professionSkillTables[professionName]?.identifyPlants || 15;
     }
     if (skillName.includes("Prowl")) {
-      return occSkillTables[occName]?.prowl || 10;
+      return professionSkillTables[professionName]?.prowl || 10;
     }
     if (skillName.includes("Meditation")) {
-      return occSkillTables[occName]?.meditation || 40;
+      return professionSkillTables[professionName]?.meditation || 40;
     }
     if (skillName.includes("Mathematics: Basic") || skillName.includes("Math: Basic")) {
       return 20;
@@ -1430,7 +1421,7 @@ const CharacterCreator = ({ onCreateCharacter }) => {
     if (skillName.includes("Literacy") && skillName.includes("Additional")) {
       return 25;
     }
-    if (skillName.includes("Lore: Demons") || skillName.includes("Lore: Demon")) {
+    if (skillName.includes("Lore: Raiders") || skillName.includes("Lore: Raider")) {
       return 25;
     }
     if (skillName.includes("Lore: Religion")) {
@@ -1506,12 +1497,12 @@ const CharacterCreator = ({ onCreateCharacter }) => {
       return 25;
     }
     if (skillName.includes("Climb") && !skillName.includes("Scale Walls")) {
-      return 60; // Base percentage from Palladium rules (Climb: 60% base)
+      return 60; // Base percentage from Medieval Combat Simulator rules (Climb: 60% base)
     }
     if (skillName.includes("Swim") || skillName.includes("Swimming")) {
-      return 50; // Base percentage from Palladium rules (Swim: 50% base)
+      return 50; // Base percentage from Medieval Combat Simulator rules (Swim: 50% base)
     }
-    // Running is NOT a percentage skill - it provides static bonuses (+1 PE, +4D4 Spd, +1D6 SDC)
+    // Running is NOT a percentage skill - it provides static bonuses (+1 PE, +4D4 Spd, +1D6 armorDurability)
     // So we return null to indicate it shouldn't show a percentage
     if (skillName.includes("Running")) {
       return null;
@@ -1527,31 +1518,31 @@ const CharacterCreator = ({ onCreateCharacter }) => {
       return 30;
     }
     if (skillName.includes("First Aid")) {
-      return occSkillTables[occName]?.medical || 30;
+      return professionSkillTables[professionName]?.medical || 30;
     }
     if (skillName.includes("Medical")) {
-      return occSkillTables[occName]?.medical || 30;
+      return professionSkillTables[professionName]?.medical || 30;
     }
     if (skillName.includes("Track")) {
-      return occSkillTables[occName]?.track || 25;
+      return professionSkillTables[professionName]?.track || 25;
     }
     if (skillName.includes("Horsemanship")) {
-      return occSkillTables[occName]?.horsemanship || 30;
+      return professionSkillTables[professionName]?.horsemanship || 30;
     }
     if (skillName.includes("Pick Locks")) {
-      return occSkillTables[occName]?.pickLocks || 25;
+      return professionSkillTables[professionName]?.pickLocks || 25;
     }
     if (skillName.includes("Pick Pockets")) {
-      return occSkillTables[occName]?.pickPockets || 25;
+      return professionSkillTables[professionName]?.pickPockets || 25;
     }
     if (skillName.includes("Disguise")) {
-      return occSkillTables[occName]?.disguise || 25;
+      return professionSkillTables[professionName]?.disguise || 25;
     }
     if (skillName.includes("Streetwise")) {
-      return occSkillTables[occName]?.streetwise || 25;
+      return professionSkillTables[professionName]?.streetwise || 25;
     }
     if (skillName.includes("Camouflage")) {
-      return occSkillTables[occName]?.camouflage || 20;
+      return professionSkillTables[professionName]?.camouflage || 20;
     }
     if (skillName.includes("Detect Ambush")) {
       return 30;
@@ -1705,7 +1696,7 @@ const CharacterCreator = ({ onCreateCharacter }) => {
   };
 
   // Helper function to format skill name with percentage or bonuses
-  const formatSkillWithPercent = (skillName, occName, currentLevel = 1) => {
+  const formatSkillWithPercent = (skillName, professionName, currentLevel = 1) => {
     // Check if skill already has bonus notation like "(+10%)", "(+15%)", etc.
     // If it does, return as-is without adding percentage
     const bonusPattern = /\(\+\d+%\)/;
@@ -1728,9 +1719,9 @@ const CharacterCreator = ({ onCreateCharacter }) => {
       'Hand to Hand: Paladin', 'Hand to Hand: Ranger'
     ];
     
-    // Running is a bonus skill (provides +1 PE, +4D4 Spd, +1D6 SDC) - not percentage-based
+    // Running is a bonus skill (provides +1 PE, +4D4 Spd, +1D6 armorDurability) - not percentage-based
     if (skillName.includes("Running")) {
-      return `${skillName} (+1 PE, +4D4 Spd, +1D6 SDC)`;
+      return `${skillName} (+1 PE, +4D4 Spd, +1D6 armorDurability)`;
     }
     
     const isCombatSkill = combatSkills.some(cs => skillName.includes(cs));
@@ -1739,26 +1730,26 @@ const CharacterCreator = ({ onCreateCharacter }) => {
     if (isCombatSkill || isWeaponProficiency) {
       // Get bonuses for this skill at current level
       const skillBonuses = getSkillBonusesAtLevel(skillName, currentLevel);
-      const bonuses = skillBonuses.bonuses || { strike: 0, parry: 0, dodge: 0, damage: 0 };
+      const bonuses = skillBonuses.bonuses || { attack: 0, block: 0, evade: 0, damage: 0 };
       const attacks = skillBonuses.attacks || 0;
       
       // For W.P. skills not in progression, check static bonuses
-      if (isWeaponProficiency && bonuses.strike === 0 && bonuses.parry === 0 && bonuses.dodge === 0 && bonuses.damage === 0) {
+      if (isWeaponProficiency && bonuses.attack === 0 && bonuses.block === 0 && bonuses.evade === 0 && bonuses.damage === 0) {
         // Try to get base bonuses from skillBonuses.js
         const staticBonus = staticSkillBonuses[skillName];
         if (staticBonus) {
-          bonuses.strike = staticBonus.strike || 0;
-          bonuses.parry = staticBonus.parry || 0;
-          bonuses.dodge = staticBonus.dodge || 0;
+          bonuses.attack = staticBonus.attack || 0;
+          bonuses.block = staticBonus.block || 0;
+          bonuses.evade = staticBonus.evade || 0;
           bonuses.damage = staticBonus.damage || 0;
         }
       }
       
       // Build bonus string
       const bonusParts = [];
-      if (bonuses.strike > 0) bonusParts.push(`+${bonuses.strike} strike`);
-      if (bonuses.parry > 0) bonusParts.push(`+${bonuses.parry} parry`);
-      if (bonuses.dodge > 0) bonusParts.push(`+${bonuses.dodge} dodge`);
+      if (bonuses.attack > 0) bonusParts.push(`+${bonuses.attack} attack`);
+      if (bonuses.block > 0) bonusParts.push(`+${bonuses.block} block`);
+      if (bonuses.evade > 0) bonusParts.push(`+${bonuses.evade} evade`);
       if (bonuses.damage > 0) bonusParts.push(`+${bonuses.damage} damage`);
       if (attacks > 0) bonusParts.push(`+${attacks} attack/melee`);
       
@@ -1774,7 +1765,7 @@ const CharacterCreator = ({ onCreateCharacter }) => {
     }
     
     // For percentage-based skills, calculate and display percentage
-    const basePercent = getSkillBasePercent(skillName, occName);
+    const basePercent = getSkillBasePercent(skillName, professionName);
     
     if (basePercent === null) {
       return skillName; // Return as-is if no percentage found
@@ -1818,8 +1809,8 @@ const CharacterCreator = ({ onCreateCharacter }) => {
       .trim();
   };
 
-  const getAllSpellsFromDataset = () => {
-    const dict = palladiumData?.spells || {};
+  const getAllTechniquesFromDataset = () => {
+    const dict = gameData?.techniques || {};
     if (!dict || typeof dict !== 'object') return [];
 
     return Object.entries(dict).map(([name, data]) => ({
@@ -1828,80 +1819,80 @@ const CharacterCreator = ({ onCreateCharacter }) => {
     }));
   };
 
-  const getWizardSpellsByLevel = () => {
-    const all = getAllSpellsFromDataset();
-    return getWizardEligibleSpells(all, Number(level) || 1);
+  const getDuelistTechniquesByLevel = () => {
+    const all = getAllTechniquesFromDataset();
+    return getDuelistEligibleTechniques(all, Number(level) || 1);
   };
 
-  const getWizardPickCount = () => Object.values(wizardSpellPicks).flat().length;
+  const getDuelistPickCount = () => Object.values(duelistTechniquePicks).flat().length;
 
-  const toggleWizardPick = (_lvlIgnored, spellName) => {
+  const toggleDuelistPick = (_lvlIgnored, techniqueName) => {
     const lvl = 1;
-    const progression = getWizardSpellProgression(Number(level) || 1);
-    setWizardSpellPicks((prev) => {
+    const progression = getDuelistTechniqueProgression(Number(level) || 1);
+    setDuelistTechniquePicks((prev) => {
       const current = prev[lvl] || [];
-      const exists = current.some((n) => normalizeSpellName(n) === normalizeSpellName(spellName));
+      const exists = current.some((n) => normalizeTechniqueName(n) === normalizeTechniqueName(techniqueName));
 
       if (exists) {
-        return { ...prev, [lvl]: current.filter((n) => normalizeSpellName(n) !== normalizeSpellName(spellName)) };
+        return { ...prev, [lvl]: current.filter((n) => normalizeTechniqueName(n) !== normalizeTechniqueName(techniqueName)) };
       }
 
       const cap = progression.requiredPickCount;
       if (current.length >= cap) return prev;
 
-      return { ...prev, [lvl]: [...current, spellName] };
+      return { ...prev, [lvl]: [...current, techniqueName] };
     });
   };
 
-  const validateWizardSpellSelections = () => {
-    const need = getWizardSpellProgression(Number(level) || 1).requiredPickCount;
-    const have = getWizardPickCount();
+  const validateDuelistTechniqueSelections = () => {
+    const need = getDuelistTechniqueProgression(Number(level) || 1).requiredPickCount;
+    const have = getDuelistPickCount();
     if (have !== need) {
       return {
         ok: false,
-        message: `Wizard spells: Select exactly ${need} spell(s) for level ${Number(level) || 1}. (Selected ${have})`
+        message: `Duelist techniques: Select exactly ${need} technique(s) for level ${Number(level) || 1}. (Selected ${have})`
       };
     }
     return { ok: true, message: '' };
   };
 
-  const getFinalWizardSpellbookNames = () => {
-    const allSpells = getAllSpellsFromDataset();
-    const chosen = Object.values(wizardSpellPicks).flat();
-    const result = buildWizardSpellbookForLevel({
-      allSpells,
+  const getFinalDuelistTechniqueBookNames = () => {
+    const allTechniques = getAllTechniquesFromDataset();
+    const chosen = Object.values(duelistTechniquePicks).flat();
+    const result = buildDuelistTechniqueBookForLevel({
+      allTechniques,
       level: Number(level) || 1,
-      pickedSpellNames: chosen,
+      pickedTechniqueNames: chosen,
     });
-    return result.spellbook.map((sp) => sp.name);
+    return result.techniqueBook.map((sp) => sp.name);
   };
 
-  const getFinalWizardSpellbookObjects = () => {
-    const allSpells = getAllSpellsFromDataset();
-    const chosen = Object.values(wizardSpellPicks).flat();
-    const result = buildWizardSpellbookForLevel({
-      allSpells,
+  const getFinalDuelistTechniqueBookObjects = () => {
+    const allTechniques = getAllTechniquesFromDataset();
+    const chosen = Object.values(duelistTechniquePicks).flat();
+    const result = buildDuelistTechniqueBookForLevel({
+      allTechniques,
       level: Number(level) || 1,
-      pickedSpellNames: chosen,
+      pickedTechniqueNames: chosen,
     });
-    return result.spellbook;
+    return result.techniqueBook;
   };
 
-  // Helper function to check if a skill is already in OCC skills
-  const isSkillInOccSkills = (skillName, occSkillsList) => {
+  // Helper function to check if a skill is already in PROFESSION skills
+  const isSkillInProfessionSkills = (skillName, professionSkillsList) => {
     const normalized = normalizeSkillName(skillName);
-    return occSkillsList.some(occSkill => {
-      const normalizedOcc = normalizeSkillName(occSkill);
+    return professionSkillsList.some(professionSkill => {
+      const normalizedProfession = normalizeSkillName(professionSkill);
       // Check for exact match or if one contains the other
-      return normalizedOcc === normalized || 
-             normalizedOcc.includes(normalized) || 
-             normalized.includes(normalizedOcc);
+      return normalizedProfession === normalized || 
+             normalizedProfession.includes(normalized) || 
+             normalized.includes(normalizedProfession);
     });
   };
 
   // Calculate skill gains for level progression
-  const calculateSkillGains = (occData, currentLevel, previousLevel) => {
-    if (!occData || currentLevel <= previousLevel) {
+  const calculateSkillGains = (professionData, currentLevel, previousLevel) => {
+    if (!professionData || currentLevel <= previousLevel) {
       return { elective: 0, secondary: 0 };
     }
     
@@ -1909,29 +1900,29 @@ const CharacterCreator = ({ onCreateCharacter }) => {
     let secondaryGains = 0;
     
     // Check elective skill gains
-    if (occData.electiveSkills) {
-      const electiveLevels = Object.keys(occData.electiveSkills)
+    if (professionData.electiveSkills) {
+      const electiveLevels = Object.keys(professionData.electiveSkills)
         .filter(key => key.startsWith('level'))
         .map(key => parseInt(key.replace('level', '')))
         .sort((a, b) => a - b);
       
       electiveLevels.forEach(threshold => {
         if (currentLevel >= threshold && previousLevel < threshold) {
-          electiveGains += occData.electiveSkills[`level${threshold}`] || 0;
+          electiveGains += professionData.electiveSkills[`level${threshold}`] || 0;
         }
       });
     }
     
     // Check secondary skill gains
-    if (occData.secondarySkills) {
-      const secondaryLevels = Object.keys(occData.secondarySkills)
+    if (professionData.secondarySkills) {
+      const secondaryLevels = Object.keys(professionData.secondarySkills)
         .filter(key => key.startsWith('level'))
         .map(key => parseInt(key.replace('level', '')))
         .sort((a, b) => a - b);
       
       secondaryLevels.forEach(threshold => {
         if (currentLevel >= threshold && previousLevel < threshold) {
-          secondaryGains += occData.secondarySkills[`level${threshold}`] || 0;
+          secondaryGains += professionData.secondarySkills[`level${threshold}`] || 0;
         }
       });
     }
@@ -1946,9 +1937,9 @@ const CharacterCreator = ({ onCreateCharacter }) => {
       const newLevel = parseInt(value) || 1;
       const oldLevel = parseInt(level) || 1;
       
-      // If level increased and OCC is selected, check for skill gains
-      if (newLevel > oldLevel && occData) {
-        const skillGains = calculateSkillGains(occData, newLevel, oldLevel);
+      // If level increased and PROFESSION is selected, check for skill gains
+      if (newLevel > oldLevel && professionData) {
+        const skillGains = calculateSkillGains(professionData, newLevel, oldLevel);
         
         if (skillGains.elective > 0 || skillGains.secondary > 0) {
           // Store pending level change and show skill selection modal
@@ -2020,11 +2011,11 @@ const CharacterCreator = ({ onCreateCharacter }) => {
   return (
     <div className="character-creation-page">
       <div className="character-creation">
-        <h1 className="page-title">⚔️ Character Creator</h1>
+        <h1 className="page-title">ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã‚Â¡ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÆ’Ã‚Â¯Ãƒâ€šÃ‚Â¸Ãƒâ€šÃ‚Â Character Creator</h1>
         
         {/* Basic Information Section */}
         <section className="creation-section">
-          <h2 className="section-title">📝 Basic Information</h2>
+          <h2 className="section-title">ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒâ€šÃ‚Â Basic Information</h2>
           
           <div className="form-row">
             <div className="form-group">
@@ -2045,7 +2036,7 @@ const CharacterCreator = ({ onCreateCharacter }) => {
                   className="auto-name-button"
                   title="Generate random name"
                 >
-                  🎲 Random Name
+                  ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€¦Ã‚Â½Ãƒâ€šÃ‚Â² Random Name
                 </button>
               </div>
             </div>
@@ -2074,13 +2065,13 @@ const CharacterCreator = ({ onCreateCharacter }) => {
                 onChange={(e) => {
                   setSpecies(e.target.value);
                   setCharacterClass(''); // Reset class when species changes
-                  setOccData(null);
-                  setOccSkills([]);
+                  setProfessionData(null);
+                  setProfessionSkills([]);
                   setElectiveSkills([]);
                   setSecondarySkills([]);
                   
-                  // Filter available O.C.C.s based on race restrictions
-                  filterAvailableOCCs(e.target.value);
+                  // Filter available professions based on race restrictions
+                  filterAvailablePROFESSIONs(e.target.value);
                 }}
                 disabled={attributesRolled}
                 className={attributesRolled ? 'disabled-select' : 'select-input'}
@@ -2104,8 +2095,8 @@ const CharacterCreator = ({ onCreateCharacter }) => {
               >
                 <option value="Good: Principled">Good: Principled</option>
                 <option value="Good: Scrupulous">Good: Scrupulous</option>
-                <option value="Selfish: Unprincipled">Selfish: Unprincipled</option>
-                <option value="Selfish: Anarchist">Selfish: Anarchist</option>
+                <option value="Shumanish: Unprincipled">Shumanish: Unprincipled</option>
+                <option value="Shumanish: Anarchist">Shumanish: Anarchist</option>
                 <option value="Evil: Miscreant">Evil: Miscreant</option>
                 <option value="Evil: Aberrant">Evil: Aberrant</option>
                 <option value="Evil: Diabolic">Evil: Diabolic</option>
@@ -2122,14 +2113,14 @@ const CharacterCreator = ({ onCreateCharacter }) => {
                 onChange={(e) => setUseCryptoRandom(e.target.checked)}
                 className="checkbox-input"
               />
-              <span className="checkbox-text">Use Cryptographic Randomness 🎲</span>
+              <span className="checkbox-text">Use Cryptographic Randomness ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€¦Ã‚Â½Ãƒâ€šÃ‚Â²</span>
             </label>
           </div>
         </section>
 
         {/* Attributes Section */}
         <section className="creation-section">
-          <h2 className="section-title">🎲 Attributes & Level</h2>
+          <h2 className="section-title">ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€¦Ã‚Â½Ãƒâ€šÃ‚Â² Attributes & Level</h2>
           
           <div className="attributes-controls">
             <div className="checkbox-group">
@@ -2142,7 +2133,7 @@ const CharacterCreator = ({ onCreateCharacter }) => {
                   disabled={attributesRolled}
                   className="checkbox-input"
                 />
-                <span className="checkbox-text">Auto-roll until minimum total 🎯</span>
+                <span className="checkbox-text">Auto-roll until minimum total ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€¦Ã‚Â½Ãƒâ€šÃ‚Â¯</span>
               </label>
             </div>
             
@@ -2169,7 +2160,7 @@ const CharacterCreator = ({ onCreateCharacter }) => {
               disabled={isAutoRolling || attributesRolled}
               className="primary-button"
             >
-              {isAutoRolling ? '🎲 Auto-Rolling...' : attributesRolled ? '✅ Attributes Locked' : '🎲 Roll Attributes'}
+              {isAutoRolling ? 'ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€¦Ã‚Â½Ãƒâ€šÃ‚Â² Auto-Rolling...' : attributesRolled ? 'ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ Attributes Locked' : 'ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€¦Ã‚Â½Ãƒâ€šÃ‚Â² Roll Attributes'}
             </Button>
           </div>
 
@@ -2180,7 +2171,7 @@ const CharacterCreator = ({ onCreateCharacter }) => {
               disabled={hp !== null}
               className="secondary-button"
             >
-              {hp !== null ? `✓ HP: ${hp}` : '❤️ Roll HP'}
+              {hp !== null ? `ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ HP: ${hp}` : 'ÃƒÆ’Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒâ€šÃ‚Â¤ÃƒÆ’Ã‚Â¯Ãƒâ€šÃ‚Â¸Ãƒâ€šÃ‚Â Roll HP'}
             </Button>
             <Button 
               onClick={rollBonus} 
@@ -2192,7 +2183,7 @@ const CharacterCreator = ({ onCreateCharacter }) => {
                 cursor: bonusRolled ? 'not-allowed' : 'pointer'
               }}
             >
-              {bonusRolled ? '✓ Bonus Rolled' : '🎯 Roll Bonus'}
+              {bonusRolled ? 'ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ Bonus Rolled' : 'ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€¦Ã‚Â½Ãƒâ€šÃ‚Â¯ Roll Bonus'}
             </Button>
           </div>
         </section>
@@ -2240,7 +2231,7 @@ const CharacterCreator = ({ onCreateCharacter }) => {
 
         {species === 'HUMAN' && (
           <section className="creation-section">
-            <h2 className="section-title">🧍 Human Visual Profile (v1)</h2>
+            <h2 className="section-title">ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€šÃ‚Â§Ãƒâ€šÃ‚Â Human Visual Profile (v1)</h2>
             <HumanPreviewPanel
               stats={humanStatsForVisuals}
               onVisualProfileChange={setVisualProfile}
@@ -2251,7 +2242,7 @@ const CharacterCreator = ({ onCreateCharacter }) => {
 
         {/* Random Rolls Section */}
         <section className="creation-section">
-          <h2 className="section-title">🎯 Random Background Rolls</h2>
+          <h2 className="section-title">ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€¦Ã‚Â½Ãƒâ€šÃ‚Â¯ Random Background Rolls</h2>
           
           <div className="button-row">
             <Button 
@@ -2259,21 +2250,21 @@ const CharacterCreator = ({ onCreateCharacter }) => {
               disabled={age !== '' && age !== 'Unknown'}
               className="secondary-button"
             >
-              🎂 Roll Age
+              ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€¦Ã‚Â½ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ Roll Age
             </Button>
             <Button
               onClick={rollSocialBackground}
               disabled={socialBackground !== ''}
               className="secondary-button"
             >
-              🏛️ Roll Social Background
+              ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€šÃ‚ÂÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂºÃƒÆ’Ã‚Â¯Ãƒâ€šÃ‚Â¸Ãƒâ€šÃ‚Â Roll Social Background
             </Button>
             <Button 
               onClick={handleRollDisposition} 
               disabled={disposition !== ''}
               className="secondary-button"
             >
-              😊 Roll Disposition
+              ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€¹Ã…â€œÃƒâ€¦Ã‚Â  Roll Disposition
             </Button>
           </div>
           
@@ -2283,20 +2274,20 @@ const CharacterCreator = ({ onCreateCharacter }) => {
               disabled={hostility !== ''}
               className="secondary-button"
             >
-              😡 Roll Personal Hostility
+              ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€¹Ã…â€œÃƒâ€šÃ‚Â¡ Roll Personal Hostility
             </Button>
             <Button 
               onClick={handleRollOrigin} 
               disabled={origin !== ''}
               className="secondary-button"
             >
-              🌍 Roll Land of Origin
+              ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€¦Ã¢â‚¬â„¢Ãƒâ€šÃ‚Â Roll Land of Origin
             </Button>
           </div>
 
           {/* Background Information Display */}
           <div className="background-info">
-            <h3>📋 Background Information</h3>
+            <h3>ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¹ Background Information</h3>
             <div className="background-section">
               <div className="info-item">
                 <strong>Age:</strong> {age || "Not rolled"}
@@ -2317,22 +2308,22 @@ const CharacterCreator = ({ onCreateCharacter }) => {
           </div>
         </section>
 
-        {/* Psionics Section */}
+        {/* Tactics Section */}
         {attributes.IQ && species && (
           <section className="creation-section">
-            <h2 className="section-title">🧠 Psionics</h2>
-            <PsionicsRoll
+            <h2 className="section-title">ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€šÃ‚Â§Ãƒâ€šÃ‚Â  Tactics</h2>
+            <TacticsRoll
               IQ={attributes.IQ}
               mentalEndurance={attributes.ME || 0}
               species={species}
-              onRollPsionics={handlePsionicsRoll}
+              onRollTactics={handleTacticsRoll}
             />
           </section>
         )}
 
         {/* Class Selection & Level */}
         <section className="creation-section">
-          <h2 className="section-title">⚔️ Class Selection & Level</h2>
+          <h2 className="section-title">ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã‚Â¡ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÆ’Ã‚Â¯Ãƒâ€šÃ‚Â¸Ãƒâ€šÃ‚Â Class Selection & Level</h2>
           
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '20px' }}>
             {/* Class Selection Column */}
@@ -2360,8 +2351,8 @@ const CharacterCreator = ({ onCreateCharacter }) => {
                   </p>
                   
                   {/* Skill Gains Info */}
-                  {occData && parseInt(level) > 1 && (() => {
-                    const skillGains = calculateSkillGains(occData, parseInt(level), 1);
+                  {professionData && parseInt(level) > 1 && (() => {
+                    const skillGains = calculateSkillGains(professionData, parseInt(level), 1);
                     return (
                       <div style={{ 
                         backgroundColor: '#e6fffa', 
@@ -2371,16 +2362,16 @@ const CharacterCreator = ({ onCreateCharacter }) => {
                         border: '1px solid #81e6d9'
                       }}>
                         <p style={{ margin: '5px 0', fontSize: '14px', fontWeight: 'bold', color: '#234e52' }}>
-                          📚 Skills Available:
+                          ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒâ€¦Ã‚Â¡ Skills Available:
                         </p>
                         {skillGains.elective > 0 && (
                           <p style={{ margin: '3px 0', fontSize: '13px', color: '#2c7a7b' }}>
-                            • Elective: {skillGains.elective} skill(s)
+                            ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¢ Elective: {skillGains.elective} skill(s)
                           </p>
                         )}
                         {skillGains.secondary > 0 && (
                           <p style={{ margin: '3px 0', fontSize: '13px', color: '#2c7a7b' }}>
-                            • Secondary: {skillGains.secondary} skill(s)
+                            ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¢ Secondary: {skillGains.secondary} skill(s)
                           </p>
                         )}
                         {skillGains.elective === 0 && skillGains.secondary === 0 && (
@@ -2396,27 +2387,27 @@ const CharacterCreator = ({ onCreateCharacter }) => {
             </div>
           </div>
           
-          {/* STRICT Wizard Spell Selection */}
-        {isStrictWizard(characterClass) && (
+          {/* STRICT Duelist Technique Selection */}
+        {isStrictDuelist(characterClass) && (
           <section className="creation-section">
-            <h2 className="section-title">🔮 Wizard Spellbook (Strict)</h2>
+            <h2 className="section-title">ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒâ€šÃ‚Â® Duelist TechniqueBook (Strict)</h2>
 
             <div style={{ background: '#f7fafc', border: '1px solid #cbd5e0', borderRadius: 8, padding: 12 }}>
               <h3 style={{ marginTop: 0 }}>Common Knowledge (Locked)</h3>
               <ul style={{ marginTop: 6 }}>
-                {WIZARD_COMMON_SPELL_NAMES.map((n) => (
+                {DUELIST_COMMON_TECHNIQUE_NAMES.map((n) => (
                   <li key={n} style={{ opacity: 0.9 }}>
-                    ✅ {n}
+                    ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ {n}
                   </li>
                 ))}
               </ul>
 
               <div style={{ marginTop: 12 }}>
-                <label style={{ fontWeight: 'bold' }}>Search spells:</label>
+                <label style={{ fontWeight: 'bold' }}>Search techniques:</label>
                 <input
                   type="text"
-                  value={wizardSpellSearch}
-                  onChange={(e) => setWizardSpellSearch(e.target.value)}
+                  value={duelistTechniqueSearch}
+                  onChange={(e) => setDuelistTechniqueSearch(e.target.value)}
                   placeholder="Type to filter by name..."
                   className="text-input"
                   style={{ width: '100%', marginTop: 6 }}
@@ -2425,39 +2416,39 @@ const CharacterCreator = ({ onCreateCharacter }) => {
 
               {(() => {
                 const lvl = 1;
-                const progression = getWizardSpellProgression(Number(level) || 1);
+                const progression = getDuelistTechniqueProgression(Number(level) || 1);
                 const cap = progression.requiredPickCount;
-                const picked = wizardSpellPicks[lvl] || [];
-                const available = getWizardSpellsByLevel(lvl).filter(
-                  (sp) => !WIZARD_COMMON_SPELL_NAMES.some((n) => normalizeSpellName(n) === normalizeSpellName(sp?.name))
+                const picked = duelistTechniquePicks[lvl] || [];
+                const available = getDuelistTechniquesByLevel(lvl).filter(
+                  (sp) => !DUELIST_COMMON_TECHNIQUE_NAMES.some((n) => normalizeTechniqueName(n) === normalizeTechniqueName(sp?.name))
                 );
 
                 const filtered = available.filter((sp) =>
-                  normalizeSpellName(sp?.name).includes(normalizeSpellName(wizardSpellSearch))
+                  normalizeTechniqueName(sp?.name).includes(normalizeTechniqueName(duelistTechniqueSearch))
                 );
 
                 return (
                   <div key={lvl} style={{ marginTop: 16, paddingTop: 12, borderTop: '1px solid #e2e8f0' }}>
                     <h3 style={{ margin: 0 }}>
-                      Wizard Spells (Levels 1-{progression.maxSpellLevel}) — Selected {picked.length}/{cap}
+                      Duelist Techniques (Levels 1-{progression.maxTechniqueLevel}) ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â Selected {picked.length}/{cap}
                     </h3>
 
                     {filtered.length === 0 ? (
                       <p style={{ color: '#718096', marginTop: 8 }}>
-                        No Level 1 spells found in your dataset (or none match the search).
+                        No Level 1 techniques found in your dataset (or none match the search).
                       </p>
                     ) : (
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 8, marginTop: 10 }}>
                         {filtered.map((sp) => {
-                          const name = sp?.name || 'Unnamed Spell';
-                          const isPicked = picked.some((n) => normalizeSpellName(n) === normalizeSpellName(name));
+                          const name = sp?.name || 'Unnamed Technique';
+                          const isPicked = picked.some((n) => normalizeTechniqueName(n) === normalizeTechniqueName(name));
                           const isDisabled = !isPicked && picked.length >= cap;
 
                           return (
                             <button
                               key={name}
                               type="button"
-                              onClick={() => toggleWizardPick(1, name)}
+                              onClick={() => toggleDuelistPick(1, name)}
                               disabled={isDisabled}
                               style={{
                                 textAlign: 'left',
@@ -2468,13 +2459,13 @@ const CharacterCreator = ({ onCreateCharacter }) => {
                                 opacity: isDisabled ? 0.5 : 1,
                                 cursor: isDisabled ? 'not-allowed' : 'pointer'
                               }}
-                              title={`${sp?.description || name}\n\nRange: ${sp?.range ?? '?'}\nDuration: ${sp?.duration ?? '?'}\nPPE: ${sp?.ppe ?? '?'}`}
+                              title={`${sp?.description || name}\n\nRange: ${sp?.range ?? '?'}\nDuration: ${sp?.duration ?? '?'}\nstamina: ${sp?.stamina ?? '?'}`}
                             >
                               <div style={{ fontWeight: 'bold' }}>
-                                {isPicked ? '✅ ' : ''}{name}
+                                {isPicked ? 'ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ ' : ''}{name}
                               </div>
                               <div style={{ fontSize: 12, color: '#4a5568', marginTop: 4 }}>
-                                PPE: {sp?.ppe ?? '?'} • Range: {sp?.range ?? '?'} • Duration: {sp?.duration ?? '?'}
+                                stamina: {sp?.stamina ?? '?'} ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¢ Range: {sp?.range ?? '?'} ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¢ Duration: {sp?.duration ?? '?'}
                               </div>
                             </button>
                           );
@@ -2488,7 +2479,7 @@ const CharacterCreator = ({ onCreateCharacter }) => {
               <div style={{ marginTop: 14, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
                 <button
                   type="button"
-                  onClick={() => setWizardSpellPicks({ 1: [] })}
+                  onClick={() => setDuelistTechniquePicks({ 1: [] })}
                   style={{
                     padding: '10px 14px',
                     borderRadius: 8,
@@ -2501,41 +2492,41 @@ const CharacterCreator = ({ onCreateCharacter }) => {
                   Reset Picks
                 </button>
 
-                <div style={{ alignSelf: 'center', color: '#2d3748' }}>
-                  Required picks at level {Number(level) || 1}: {getWizardSpellProgression(Number(level) || 1).requiredPickCount}
+                <div style={{ alignShuman: 'center', color: '#2d3748' }}>
+                  Required picks at level {Number(level) || 1}: {getDuelistTechniqueProgression(Number(level) || 1).requiredPickCount}
                 </div>
               </div>
 
-              {/* Spellbook Summary */}
+              {/* TechniqueBook Summary */}
               <div style={{ marginTop: 16, padding: 12, borderRadius: 8, border: '1px solid #cbd5e0', background: 'white' }}>
-                <h3 style={{ marginTop: 0, marginBottom: 8 }}>📚 Final Spellbook Summary</h3>
+                <h3 style={{ marginTop: 0, marginBottom: 8 }}>ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒâ€¦Ã‚Â¡ Final TechniqueBook Summary</h3>
 
                 {(() => {
-                  const v = validateWizardSpellSelections();
+                  const v = validateDuelistTechniqueSelections();
                   return (
                     <div style={{ marginBottom: 10, fontWeight: 'bold', color: v.ok ? '#2f855a' : '#c53030' }}>
-                      {v.ok ? '✅ Spell selections complete (Strict)' : `⛔ ${v.message}`}
+                      {v.ok ? 'ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ Technique selections complete (Strict)' : `ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂºÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ${v.message}`}
                     </div>
                   );
                 })()}
 
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 10 }}>
                   <div>
-                    <div style={{ fontWeight: 'bold', marginBottom: 6 }}>Locked Common Spells</div>
+                    <div style={{ fontWeight: 'bold', marginBottom: 6 }}>Locked Common Techniques</div>
                     <ul style={{ margin: 0, paddingLeft: 18 }}>
-                      {WIZARD_COMMON_SPELL_NAMES.map((n) => (
+                      {DUELIST_COMMON_TECHNIQUE_NAMES.map((n) => (
                         <li key={n}>{n}</li>
                       ))}
                     </ul>
                   </div>
 
                   <div>
-                    <div style={{ fontWeight: 'bold', marginBottom: 6 }}>Chosen Level 1 Spells</div>
+                    <div style={{ fontWeight: 'bold', marginBottom: 6 }}>Chosen Level 1 Techniques</div>
                     <ul style={{ margin: 0, paddingLeft: 18 }}>
-                      {(wizardSpellPicks[1] || []).length === 0 ? (
+                      {(duelistTechniquePicks[1] || []).length === 0 ? (
                         <li style={{ color: '#718096' }}>None yet</li>
                       ) : (
-                        (wizardSpellPicks[1] || []).map((title) => (
+                        (duelistTechniquePicks[1] || []).map((title) => (
                           <li key={title}>{title}</li>
                         ))
                       )}
@@ -2544,8 +2535,8 @@ const CharacterCreator = ({ onCreateCharacter }) => {
                 </div>
 
                 <div style={{ marginTop: 10, color: '#4a5568', fontSize: 13 }}>
-                  Total spells: <strong>{WIZARD_COMMON_SPELL_NAMES.length + (wizardSpellPicks[1]?.length || 0)}</strong>
-                  {' '}({WIZARD_COMMON_SPELL_NAMES.length} common + {(wizardSpellPicks[1]?.length || 0)} chosen)
+                  Total techniques: <strong>{DUELIST_COMMON_TECHNIQUE_NAMES.length + (duelistTechniquePicks[1]?.length || 0)}</strong>
+                  {' '}({DUELIST_COMMON_TECHNIQUE_NAMES.length} common + {(duelistTechniquePicks[1]?.length || 0)} chosen)
                 </div>
               </div>
             </div>
@@ -2553,7 +2544,7 @@ const CharacterCreator = ({ onCreateCharacter }) => {
         )}
 
           {/* Level Stats Display - Shows below both columns */}
-              {occData && (
+              {professionData && (
             <div className="level-stats" style={{
               backgroundColor: '#f7fafc',
               padding: '20px',
@@ -2562,7 +2553,7 @@ const CharacterCreator = ({ onCreateCharacter }) => {
               marginTop: '20px'
             }}>
               <h3 style={{ marginTop: 0, color: '#2d3748', borderBottom: '2px solid #cbd5e0', paddingBottom: '10px' }}>
-                📊 Level {level} Statistics
+                ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒâ€¦Ã‚Â  Level {level} Statistics
               </h3>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '15px', marginTop: '15px' }}>
                 <div className="stat-row" style={{ 
@@ -2571,7 +2562,7 @@ const CharacterCreator = ({ onCreateCharacter }) => {
                   borderRadius: '5px',
                   border: '1px solid #e2e8f0'
                 }}>
-                  <span style={{ fontWeight: 'bold', color: '#4a5568' }}>❤️ HP:</span>
+                  <span style={{ fontWeight: 'bold', color: '#4a5568' }}>ÃƒÆ’Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒâ€šÃ‚Â¤ÃƒÆ’Ã‚Â¯Ãƒâ€šÃ‚Â¸Ãƒâ€šÃ‚Â HP:</span>
                   <strong style={{ color: '#e53e3e', fontSize: '18px' }}>{levelStats.hp || 'Roll attributes first'}</strong>
                     <button
                       onClick={() => setUseDeterministicHP(!useDeterministicHP)}
@@ -2579,7 +2570,7 @@ const CharacterCreator = ({ onCreateCharacter }) => {
                       title={useDeterministicHP ? 'Using average HP values (click to use random rolls)' : 'Using random HP rolls (click to use averages)'}
                     style={{ marginLeft: '10px', cursor: 'pointer' }}
                     >
-                      {useDeterministicHP ? '📊' : '🎲'}
+                      {useDeterministicHP ? 'ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒâ€¦Ã‚Â ' : 'ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€¦Ã‚Â½Ãƒâ€šÃ‚Â²'}
                     </button>
                   </div>
                 <div className="stat-row" style={{ 
@@ -2588,8 +2579,8 @@ const CharacterCreator = ({ onCreateCharacter }) => {
                   borderRadius: '5px',
                   border: '1px solid #e2e8f0'
                 }}>
-                  <span style={{ fontWeight: 'bold', color: '#4a5568' }}>⚔️ Attacks/Melee:</span>
-                  <strong style={{ color: '#2d3748', fontSize: '18px' }}>{levelStats.attacksPerMelee ?? 2}</strong>
+                  <span style={{ fontWeight: 'bold', color: '#4a5568' }}>ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã‚Â¡ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÆ’Ã‚Â¯Ãƒâ€šÃ‚Â¸Ãƒâ€šÃ‚Â Attacks/Melee:</span>
+                  <strong style={{ color: '#2d3748', fontSize: '18px' }}>{levelStats.actionsPerRound ?? 2}</strong>
                   </div>
                 <div className="stat-row" style={{ 
                   backgroundColor: 'white', 
@@ -2597,8 +2588,8 @@ const CharacterCreator = ({ onCreateCharacter }) => {
                   borderRadius: '5px',
                   border: '1px solid #e2e8f0'
                 }}>
-                  <span style={{ fontWeight: 'bold', color: '#4a5568' }}>🛡️ Save vs Magic:</span>
-                  <strong style={{ color: '#2d3748', fontSize: '18px' }}>{levelStats.saves?.vsMagic ?? 14}</strong>
+                  <span style={{ fontWeight: 'bold', color: '#4a5568' }}>ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂºÃƒâ€šÃ‚Â¡ÃƒÆ’Ã‚Â¯Ãƒâ€šÃ‚Â¸Ãƒâ€šÃ‚Â Save vs Training:</span>
+                  <strong style={{ color: '#2d3748', fontSize: '18px' }}>{levelStats.saves?.vsTraining ?? 14}</strong>
                   </div>
                 <div className="stat-row" style={{ 
                   backgroundColor: 'white', 
@@ -2606,7 +2597,7 @@ const CharacterCreator = ({ onCreateCharacter }) => {
                   borderRadius: '5px',
                   border: '1px solid #e2e8f0'
                 }}>
-                  <span style={{ fontWeight: 'bold', color: '#4a5568' }}>💀 Save vs Poison:</span>
+                  <span style={{ fontWeight: 'bold', color: '#4a5568' }}>ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ Save vs Poison:</span>
                   <strong style={{ color: '#2d3748', fontSize: '18px' }}>{levelStats.saves?.vsPoison ?? 14}</strong>
                   </div>
                 <div className="stat-row" style={{ 
@@ -2615,8 +2606,8 @@ const CharacterCreator = ({ onCreateCharacter }) => {
                   borderRadius: '5px',
                   border: '1px solid #e2e8f0'
                 }}>
-                  <span style={{ fontWeight: 'bold', color: '#4a5568' }}>🧠 Save vs Psionics:</span>
-                  <strong style={{ color: '#2d3748', fontSize: '18px' }}>{levelStats.saves?.vsPsionics ?? 15}</strong>
+                  <span style={{ fontWeight: 'bold', color: '#4a5568' }}>ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€šÃ‚Â§Ãƒâ€šÃ‚Â  Save vs Tactics:</span>
+                  <strong style={{ color: '#2d3748', fontSize: '18px' }}>{levelStats.saves?.vsTactics ?? 15}</strong>
                   </div>
                 <div className="stat-row" style={{ 
                   backgroundColor: 'white', 
@@ -2624,8 +2615,8 @@ const CharacterCreator = ({ onCreateCharacter }) => {
                   borderRadius: '5px',
                   border: '1px solid #e2e8f0'
                 }}>
-                  <span style={{ fontWeight: 'bold', color: '#4a5568' }}>🎯 Strike Bonus:</span>
-                  <strong style={{ color: '#38a169', fontSize: '18px' }}>+{levelStats.combatBonuses?.strike ?? 0}</strong>
+                  <span style={{ fontWeight: 'bold', color: '#4a5568' }}>ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€¦Ã‚Â½Ãƒâ€šÃ‚Â¯ Attack Bonus:</span>
+                  <strong style={{ color: '#38a169', fontSize: '18px' }}>+{levelStats.combatBonuses?.attack ?? 0}</strong>
                   </div>
                 <div className="stat-row" style={{ 
                   backgroundColor: 'white', 
@@ -2633,8 +2624,8 @@ const CharacterCreator = ({ onCreateCharacter }) => {
                   borderRadius: '5px',
                   border: '1px solid #e2e8f0'
                 }}>
-                  <span style={{ fontWeight: 'bold', color: '#4a5568' }}>🛡️ Parry Bonus:</span>
-                  <strong style={{ color: '#38a169', fontSize: '18px' }}>+{levelStats.combatBonuses?.parry ?? 0}</strong>
+                  <span style={{ fontWeight: 'bold', color: '#4a5568' }}>ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂºÃƒâ€šÃ‚Â¡ÃƒÆ’Ã‚Â¯Ãƒâ€šÃ‚Â¸Ãƒâ€šÃ‚Â Block Bonus:</span>
+                  <strong style={{ color: '#38a169', fontSize: '18px' }}>+{levelStats.combatBonuses?.block ?? 0}</strong>
                   </div>
                 <div className="stat-row" style={{ 
                   backgroundColor: 'white', 
@@ -2642,8 +2633,8 @@ const CharacterCreator = ({ onCreateCharacter }) => {
                   borderRadius: '5px',
                   border: '1px solid #e2e8f0'
                 }}>
-                  <span style={{ fontWeight: 'bold', color: '#4a5568' }}>🏃 Dodge Bonus:</span>
-                  <strong style={{ color: '#38a169', fontSize: '18px' }}>+{levelStats.combatBonuses?.dodge ?? 0}</strong>
+                  <span style={{ fontWeight: 'bold', color: '#4a5568' }}>ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€šÃ‚ÂÃƒâ€ Ã¢â‚¬â„¢ Evade Bonus:</span>
+                  <strong style={{ color: '#38a169', fontSize: '18px' }}>+{levelStats.combatBonuses?.evade ?? 0}</strong>
                   </div>
                 <div className="stat-row" style={{ 
                   backgroundColor: 'white', 
@@ -2651,7 +2642,7 @@ const CharacterCreator = ({ onCreateCharacter }) => {
                   borderRadius: '5px',
                   border: '1px solid #e2e8f0'
                 }}>
-                  <span style={{ fontWeight: 'bold', color: '#4a5568' }}>⚔️ Damage Bonus:</span>
+                  <span style={{ fontWeight: 'bold', color: '#4a5568' }}>ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã‚Â¡ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÆ’Ã‚Â¯Ãƒâ€šÃ‚Â¸Ãƒâ€šÃ‚Â Damage Bonus:</span>
                   <strong style={{ color: '#38a169', fontSize: '18px' }}>+{levelStats.combatBonuses?.damage ?? 0}</strong>
                   </div>
                 <div className="stat-row" style={{ 
@@ -2660,7 +2651,7 @@ const CharacterCreator = ({ onCreateCharacter }) => {
                   borderRadius: '5px',
                   border: '1px solid #e2e8f0'
                 }}>
-                  <span style={{ fontWeight: 'bold', color: '#4a5568' }}>⚡ Initiative Bonus:</span>
+                  <span style={{ fontWeight: 'bold', color: '#4a5568' }}>ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã‚Â¡Ãƒâ€šÃ‚Â¡ Initiative Bonus:</span>
                   <strong style={{ color: '#38a169', fontSize: '18px' }}>+{levelStats.initiativeBonus ?? 0}</strong>
                   </div>
                 {(levelStats.speedBonus ?? 0) !== 0 && (
@@ -2670,7 +2661,7 @@ const CharacterCreator = ({ onCreateCharacter }) => {
                   borderRadius: '5px',
                   border: '1px solid #e2e8f0'
                 }}>
-                  <span style={{ fontWeight: 'bold', color: '#4a5568' }}>🏃 Speed Bonus:</span>
+                  <span style={{ fontWeight: 'bold', color: '#4a5568' }}>ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€šÃ‚ÂÃƒâ€ Ã¢â‚¬â„¢ Speed Bonus:</span>
                   <strong style={{ color: '#38a169', fontSize: '18px' }}>+{levelStats.speedBonus ?? 0}</strong>
                   </div>
                 )}
@@ -2680,57 +2671,57 @@ const CharacterCreator = ({ onCreateCharacter }) => {
                   borderRadius: '5px',
                   border: '1px solid #e2e8f0'
                 }}>
-                  <span style={{ fontWeight: 'bold', color: '#4a5568' }}>😱 Save vs Horror Factor:</span>
-                  <strong style={{ color: '#2d3748', fontSize: '18px' }}>{levelStats.saves?.vsHorrorFactor ?? 12}</strong>
+                  <span style={{ fontWeight: 'bold', color: '#4a5568' }}>ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€¹Ã…â€œÃƒâ€šÃ‚Â± Save vs dreadRating:</span>
+                  <strong style={{ color: '#2d3748', fontSize: '18px' }}>{levelStats.saves?.courageCheck ?? 12}</strong>
                   </div>
-                  {levelStats.ppe > 0 && (
+                  {levelStats.stamina > 0 && (
                   <div className="stat-row" style={{ 
                     backgroundColor: 'white', 
                     padding: '10px', 
                     borderRadius: '5px',
                     border: '1px solid #e2e8f0'
                   }}>
-                    <span style={{ fontWeight: 'bold', color: '#4a5568' }}>🔮 PPE:</span>
-                    <strong style={{ color: '#805ad5', fontSize: '18px' }}>{levelStats.ppe}</strong>
+                    <span style={{ fontWeight: 'bold', color: '#4a5568' }}>ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒâ€šÃ‚Â® stamina:</span>
+                    <strong style={{ color: '#805ad5', fontSize: '18px' }}>{levelStats.stamina}</strong>
                     </div>
                   )}
-                  {levelStats.isp > 0 && (
+                  {levelStats.focus > 0 && (
                   <div className="stat-row" style={{ 
                     backgroundColor: 'white', 
                     padding: '10px', 
                     borderRadius: '5px',
                     border: '1px solid #e2e8f0'
                   }}>
-                    <span style={{ fontWeight: 'bold', color: '#4a5568' }}>🧠 ISP:</span>
-                    <strong style={{ color: '#805ad5', fontSize: '18px' }}>{levelStats.isp}</strong>
+                    <span style={{ fontWeight: 'bold', color: '#4a5568' }}>ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€šÃ‚Â§Ãƒâ€šÃ‚Â  focus:</span>
+                    <strong style={{ color: '#805ad5', fontSize: '18px' }}>{levelStats.focus}</strong>
                     </div>
                   )}
-                  {(levelStats.ispBonus ?? 0) > 0 && (
+                  {(levelStats.focusBonus ?? 0) > 0 && (
                   <div className="stat-row" style={{ 
                     backgroundColor: 'white', 
                     padding: '10px', 
                     borderRadius: '5px',
                     border: '1px solid #e2e8f0'
                   }}>
-                    <span style={{ fontWeight: 'bold', color: '#4a5568' }}>✨ ISP Bonus:</span>
-                    <strong style={{ color: '#805ad5', fontSize: '18px' }}>+{levelStats.ispBonus ?? 0}</strong>
+                    <span style={{ fontWeight: 'bold', color: '#4a5568' }}>ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“Ãƒâ€šÃ‚Â¨ focus Bonus:</span>
+                    <strong style={{ color: '#805ad5', fontSize: '18px' }}>+{levelStats.focusBonus ?? 0}</strong>
                     </div>
                   )}
-                  {(levelStats.ispRecovery ?? 1) > 1 && (
+                  {(levelStats.focusRecovery ?? 1) > 1 && (
                   <div className="stat-row" style={{ 
                     backgroundColor: 'white', 
                     padding: '10px', 
                     borderRadius: '5px',
                     border: '1px solid #e2e8f0'
                   }}>
-                    <span style={{ fontWeight: 'bold', color: '#4a5568' }}>🔄 ISP Recovery:</span>
-                    <strong style={{ color: '#805ad5', fontSize: '18px' }}>×{levelStats.ispRecovery ?? 1}</strong>
+                    <span style={{ fontWeight: 'bold', color: '#4a5568' }}>ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾ focus Recovery:</span>
+                    <strong style={{ color: '#805ad5', fontSize: '18px' }}>ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â{levelStats.focusRecovery ?? 1}</strong>
                     </div>
                   )}
                 </div>
               <div className="hp-info" style={{ marginTop: '15px', padding: '10px', backgroundColor: '#edf2f7', borderRadius: '5px' }}>
                 <small style={{ color: '#4a5568', fontStyle: 'italic', fontSize: '13px' }}>
-                  💾 Will save: {(() => {
+                  ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢Ãƒâ€šÃ‚Â¾ Will save: {(() => {
                     const peBonus = Math.floor((attributes.PE || 0) / 4);
                     const currentLevel = parseInt(level) || 1;
                     const calculatedHP = useDeterministicHP ? 
@@ -2742,33 +2733,33 @@ const CharacterCreator = ({ onCreateCharacter }) => {
               </div>
               
               {/* Skill Bonuses Section */}
-              {(occSkills.length > 0 || electiveSkills.length > 0 || secondarySkills.length > 0) && (
+              {(professionSkills.length > 0 || electiveSkills.length > 0 || secondarySkills.length > 0) && (
                 <div className="skill-bonuses-section" style={{ marginTop: '20px' }}>
                   {/* General Skill Bonuses */}
-                  {(levelStats.skillBonuses?.strike > 0 || 
-                    levelStats.skillBonuses?.parry > 0 || 
-                    levelStats.skillBonuses?.dodge > 0 || 
+                  {(levelStats.skillBonuses?.attack > 0 || 
+                    levelStats.skillBonuses?.block > 0 || 
+                    levelStats.skillBonuses?.evade > 0 || 
                     levelStats.skillBonuses?.damage > 0 ||
-                    levelStats.skillBonuses?.attacksPerMelee > 0) && (
+                    levelStats.skillBonuses?.actionsPerRound > 0) && (
                     <div className="general-skill-bonuses">
-                      <h4>🥊 Active Skill Bonuses (Always Applied):</h4>
+                      <h4>ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€šÃ‚Â¥Ãƒâ€¦Ã‚Â  Active Skill Bonuses (Always Applied):</h4>
                       <div className="bonus-grid">
-                        {levelStats.skillBonuses.strike > 0 && (
+                        {levelStats.skillBonuses.attack > 0 && (
                           <div className="bonus-item">
-                            <span className="bonus-label">Strike:</span>
-                            <span className="bonus-value">+{levelStats.skillBonuses.strike}</span>
+                            <span className="bonus-label">Attack:</span>
+                            <span className="bonus-value">+{levelStats.skillBonuses.attack}</span>
                           </div>
                         )}
-                        {levelStats.skillBonuses.parry > 0 && (
+                        {levelStats.skillBonuses.block > 0 && (
                           <div className="bonus-item">
-                            <span className="bonus-label">Parry:</span>
-                            <span className="bonus-value">+{levelStats.skillBonuses.parry}</span>
+                            <span className="bonus-label">Block:</span>
+                            <span className="bonus-value">+{levelStats.skillBonuses.block}</span>
                           </div>
                         )}
-                        {levelStats.skillBonuses.dodge > 0 && (
+                        {levelStats.skillBonuses.evade > 0 && (
                           <div className="bonus-item">
-                            <span className="bonus-label">Dodge:</span>
-                            <span className="bonus-value">+{levelStats.skillBonuses.dodge}</span>
+                            <span className="bonus-label">Evade:</span>
+                            <span className="bonus-value">+{levelStats.skillBonuses.evade}</span>
                           </div>
                         )}
                         {levelStats.skillBonuses.damage > 0 && (
@@ -2777,14 +2768,14 @@ const CharacterCreator = ({ onCreateCharacter }) => {
                             <span className="bonus-value">+{levelStats.skillBonuses.damage}</span>
                           </div>
                         )}
-                        {levelStats.skillBonuses.attacksPerMelee > 0 && (
+                        {levelStats.skillBonuses.actionsPerRound > 0 && (
                           <div className="bonus-item">
                             <span className="bonus-label">Attacks/Melee:</span>
-                            <span className="bonus-value">+{levelStats.skillBonuses.attacksPerMelee}</span>
+                            <span className="bonus-value">+{levelStats.skillBonuses.actionsPerRound}</span>
                           </div>
                         )}
                       </div>
-                      <p className="bonus-note">From: {[...occSkills, ...electiveSkills, ...secondarySkills]
+                      <p className="bonus-note">From: {[...professionSkills, ...electiveSkills, ...secondarySkills]
                         .filter(skill => !skill.startsWith('W.P.') && 
                           ['Hand to Hand: Basic', 'Hand to Hand: Expert', 'Hand to Hand: Mercenary', 
                            'Hand to Hand: Knight', 'Hand to Hand: Assassin', 'Hand to Hand: Martial Arts',
@@ -2796,22 +2787,22 @@ const CharacterCreator = ({ onCreateCharacter }) => {
                   {/* Weapon Proficiencies */}
                   {levelStats.skillBonuses?.weaponProficiencies?.length > 0 && (
                     <div className="weapon-proficiencies">
-                      <h4>⚔️ Weapon Proficiencies (Weapon-Specific):</h4>
+                      <h4>ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã‚Â¡ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÆ’Ã‚Â¯Ãƒâ€šÃ‚Â¸Ãƒâ€šÃ‚Â Weapon Proficiencies (Weapon-Specific):</h4>
                       <ul>
                         {levelStats.skillBonuses.weaponProficiencies.map((wp, index) => {
                           // Recalculate bonuses at current level to ensure they're up to date
                           const currentLevel = parseInt(level) || 1;
                           const levelBasedBonuses = getSkillBonusesAtLevel(wp.name, currentLevel);
-                          let bonuses = levelBasedBonuses.bonuses || { strike: 0, parry: 0, dodge: 0, damage: 0 };
+                          let bonuses = levelBasedBonuses.bonuses || { attack: 0, block: 0, evade: 0, damage: 0 };
                           
                           // If no progression found, fall back to static bonuses
-                          if (bonuses.strike === 0 && bonuses.parry === 0 && bonuses.dodge === 0 && bonuses.damage === 0) {
+                          if (bonuses.attack === 0 && bonuses.block === 0 && bonuses.evade === 0 && bonuses.damage === 0) {
                             const staticBonus = staticSkillBonuses[wp.name];
                             if (staticBonus) {
                               bonuses = {
-                                strike: staticBonus.strike || 0,
-                                parry: staticBonus.parry || 0,
-                                dodge: staticBonus.dodge || 0,
+                                attack: staticBonus.attack || 0,
+                                block: staticBonus.block || 0,
+                                evade: staticBonus.evade || 0,
                                 damage: staticBonus.damage || 0,
                               };
                             }
@@ -2820,9 +2811,9 @@ const CharacterCreator = ({ onCreateCharacter }) => {
                           return (
                             <li key={index}>
                               <strong>{wp.name.replace('W.P. ', '')}:</strong>
-                              {bonuses.strike > 0 && ` +${bonuses.strike} strike`}
-                              {bonuses.parry > 0 && ` +${bonuses.parry} parry`}
-                              {bonuses.dodge > 0 && ` +${bonuses.dodge} dodge`}
+                              {bonuses.attack > 0 && ` +${bonuses.attack} attack`}
+                              {bonuses.block > 0 && ` +${bonuses.block} block`}
+                              {bonuses.evade > 0 && ` +${bonuses.evade} evade`}
                               {bonuses.damage > 0 && ` +${bonuses.damage} damage`}
                               <span className="wp-level-note"> (at level {currentLevel})</span>
                             </li>
@@ -2836,7 +2827,7 @@ const CharacterCreator = ({ onCreateCharacter }) => {
               )}
               
               <p className="level-hint" style={{ marginTop: '15px', padding: '10px', backgroundColor: '#edf2f7', borderRadius: '5px', color: '#4a5568', fontSize: '14px' }}>
-                💡 Stats update automatically based on your level and class
+                ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢Ãƒâ€šÃ‚Â¡ Stats update automatically based on your level and class
               </p>
             </div>
           )}
@@ -2849,13 +2840,13 @@ const CharacterCreator = ({ onCreateCharacter }) => {
               onClick={handleSubmit} 
               className="create-button"
             >
-              ✨ Create Character
+              ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“Ãƒâ€šÃ‚Â¨ Create Character
             </Button>
             <button 
               onClick={() => navigate(-1)} 
               className="back-button"
             >
-              ← Back
+              ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â Ãƒâ€šÃ‚Â Back
             </button>
           </div>
         </section>
@@ -2878,7 +2869,7 @@ const CharacterCreator = ({ onCreateCharacter }) => {
       </div>
 
       {/* Skill Selection Modal for Level Up */}
-      {showSkillSelectionModal && occData && (
+      {showSkillSelectionModal && professionData && (
         <div className="modal-overlay" style={{
           position: 'fixed',
           top: 0,
@@ -2901,11 +2892,11 @@ const CharacterCreator = ({ onCreateCharacter }) => {
             boxShadow: '0 4px 20px rgba(0,0,0,0.3)'
           }}>
             <h2 style={{ marginTop: 0, color: '#333' }}>
-              ⬆️ Level Up: Select New Skills
+              ÃƒÆ’Ã‚Â¢Ãƒâ€šÃ‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¯Ãƒâ€šÃ‚Â¸Ãƒâ€šÃ‚Â Level Up: Select New Skills
             </h2>
             <p style={{ color: '#666', marginBottom: '20px' }}>
               You are leveling up from level {level} to level {pendingLevelChange}. 
-              Please select your new skills according to your O.C.C. progression.
+              Please select your new skills according to your profession progression.
             </p>
 
             {/* Elective Skills Selection */}
@@ -2941,15 +2932,15 @@ const CharacterCreator = ({ onCreateCharacter }) => {
                   }}
                 >
                   {(() => {
-                    // Use all ELECTIVE_SKILLS instead of just the OCC's specific list
+                    // Use all ELECTIVE_SKILLS instead of just the PROFESSION's specific list
                     const availableElectiveSkills = ELECTIVE_SKILLS.filter(skill => 
                       !electiveSkills.includes(skill) && 
-                      !isSkillInOccSkills(skill, occSkills)
+                      !isSkillInProfessionSkills(skill, professionSkills)
                     );
                     
                     return availableElectiveSkills.map((skill, idx) => {
-                      const skillData = palladiumData.skills?.[skill];
-                      const formattedSkill = formatSkillWithPercent(skill, occData.name, parseInt(pendingLevelChange) || parseInt(level) || 1);
+                      const skillData = gameData.skills?.[skill];
+                      const formattedSkill = formatSkillWithPercent(skill, professionData.name, parseInt(pendingLevelChange) || parseInt(level) || 1);
                       return (
                         <option key={idx} value={skill} title={skillData?.description || skill}>
                           {formattedSkill}
@@ -2974,7 +2965,7 @@ const CharacterCreator = ({ onCreateCharacter }) => {
                   Already selected: {secondarySkills.join(', ') || 'None'}
                 </p>
                 <p style={{ fontSize: '0.85em', color: '#888', fontStyle: 'italic', marginBottom: '10px' }}>
-                  Basic/general skills only - no advanced or OCC-specific skills
+                  Basic/general skills only - no advanced or PROFESSION-specific skills
                 </p>
                 <select
                   multiple
@@ -2999,10 +2990,10 @@ const CharacterCreator = ({ onCreateCharacter }) => {
                     fontSize: '14px'
                   }}
                 >
-                  {(SECONDARY_SKILLS || palladiumData.secondarySkills || [])
-                    ?.filter(skill => !secondarySkills.includes(skill) && !isSkillInOccSkills(skill, occSkills))
+                  {(SECONDARY_SKILLS || gameData.secondarySkills || [])
+                    ?.filter(skill => !secondarySkills.includes(skill) && !isSkillInProfessionSkills(skill, professionSkills))
                     .map((skill, idx) => {
-                      const formattedSkill = formatSkillWithPercent(skill, occData.name, parseInt(pendingLevelChange) || parseInt(level) || 1);
+                      const formattedSkill = formatSkillWithPercent(skill, professionData.name, parseInt(pendingLevelChange) || parseInt(level) || 1);
                       return (
                         <option key={idx} value={skill} title={`Basic skill: ${skill}`}>
                           {formattedSkill}

@@ -6,18 +6,18 @@
 import { TERRAIN_TYPES } from "./terrainSystem.js";
 
 /**
- * Get creature size category for width calculations
+ * Get combatant size category for width calculations
  * @param {Object} actor - Combatant object
  * @returns {string} Size category: "SMALL", "MEDIUM", "LARGE", "HUGE"
  */
-function getCreatureSizeCategory(actor) {
+function getCombatantSizeCategory(actor) {
   if (!actor) return "MEDIUM";
 
   // Check if actor has explicit size property
   if (actor.size) {
-    const sizeUpper = actor.size.toUpperCase();
-    if (["SMALL", "MEDIUM", "LARGE", "HUGE", "GIANT"].includes(sizeUpper)) {
-      return sizeUpper;
+    const sizeUstaminar = actor.size.toUstaminarCase();
+    if (["SMALL", "MEDIUM", "LARGE", "HUGE", "LARGE_HEAVY"].includes(sizeUstaminar)) {
+      return sizeUstaminar;
     }
   }
 
@@ -33,23 +33,23 @@ function getCreatureSizeCategory(actor) {
 }
 
 /**
- * Get width occupied by a creature based on size
+ * Get width occupied by a combatant based on size
  * @param {Object} actor - Combatant object
  * @returns {number} Width in feet
  */
-function getCreatureWidth(actor) {
-  const sizeCategory = getCreatureSizeCategory(actor);
+function getCombatantWidth(actor) {
+  const sizeCategory = getCombatantSizeCategory(actor);
 
   switch (sizeCategory) {
     case "SMALL":
-      return 1.5; // Halflings, goblins
+      return 1.5; // Halflings, brigands
     case "MEDIUM":
-      return 2; // Humans, elves, orcs
+      return 2; // Humans, elves, raiders
     case "LARGE":
-      return 3; // Ogres, trolls
+      return 3; // Heavy Fighters, champions
     case "HUGE":
-    case "GIANT":
-      return 4; // Giants, dragons
+    case "LARGE_HEAVY":
+      return 4; // Heavys, animals
     default:
       return 2;
   }
@@ -92,10 +92,10 @@ export function getDynamicWidth(terrain, actors = [], options = {}) {
     width -= crowdingPenalty;
   }
 
-  // If there are large creatures, they occupy more lateral space
+  // If there are large combatants, they occupy more lateral space
   const largeUnits = actors.filter((a) => {
-    const size = getCreatureSizeCategory(a);
-    return size === "LARGE" || size === "HUGE" || size === "GIANT";
+    const size = getCombatantSizeCategory(a);
+    return size === "LARGE" || size === "HUGE" || size === "LARGE_HEAVY";
   }).length;
 
   width -= largeUnits * 2;
@@ -136,10 +136,10 @@ export function getDynamicHeight(terrain, actors = []) {
   // Dense terrain reduces vertical clearance
   height -= density * 2;
 
-  // Large creatures may need more vertical space
+  // Large combatants may need more vertical space
   const tallUnits = actors.filter((a) => {
-    const size = getCreatureSizeCategory(a);
-    return size === "LARGE" || size === "HUGE" || size === "GIANT";
+    const size = getCombatantSizeCategory(a);
+    return size === "LARGE" || size === "HUGE" || size === "LARGE_HEAVY";
   }).length;
 
   height -= tallUnits * 1;

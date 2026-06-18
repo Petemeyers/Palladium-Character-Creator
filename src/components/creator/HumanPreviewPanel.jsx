@@ -35,7 +35,7 @@ export default function HumanPreviewPanel({ stats, onVisualProfileChange }) {
       </div>
 
       <div style={{ marginTop: "8px" }}>
-        <strong>P.S. Final:</strong> {visualProfile.armMorph.psTotal}
+        <strong>strength Final:</strong> {visualProfile.armMorph.psTotal}
       </div>
       <div>
         <strong>Arm Tier:</strong> {visualProfile.armMorphTier} ({visualProfile.armMorphLabel})

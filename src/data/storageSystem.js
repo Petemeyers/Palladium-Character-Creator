@@ -1,5 +1,5 @@
 /**
- * Storage and Housing System - Based on 1994 Palladium Fantasy RPG Rules
+ * Storage and Housing System - Based on 1994 Medieval Combat Simulator Rules
  * Handles character storage, housing costs, and property ownership
  */
 
@@ -101,14 +101,14 @@ export const STORAGE_TYPES = {
     description: "Luxurious manor with servants and guards.",
   },
 
-  WIZARD_TOWER: {
-    name: "Wizard Tower",
+  TRAINING_HALL: {
+    name: "Duelist Tower",
     capacity: 6000, // lbs
-    costPerMonth: 150, // gp (upkeep + magical maintenance)
+    costPerMonth: 150, // gp (upkeep + exceptional maintenance)
     purchaseCost: 8000, // gp
     risk: "low",
     type: "owned",
-    description: "Magical tower with enhanced security and storage.",
+    description: "Exceptional tower with enhanced security and storage.",
   },
 
   THIEF_SAFEHOUSE: {
@@ -121,25 +121,25 @@ export const STORAGE_TYPES = {
     description: "Hidden safehouse with secret entrances.",
   },
 
-  // Magical Storage (from Palladium rules)
+  // Exceptional Storage (from Medieval Combat Simulator rules)
   DIMENSIONAL_POCKET: {
     name: "Dimensional Pocket",
     capacity: 200, // lbs
     costPerMonth: 0,
-    purchaseCost: 5000, // gp (magical item)
+    purchaseCost: 5000, // gp (exceptional item)
     risk: "low",
-    type: "magical",
-    description: "Magical extradimensional space. Portable and secure.",
+    type: "exceptional",
+    description: "Exceptional extradimensional space. Portable and secure.",
   },
 
   WEIGHTLESS_SACK: {
     name: "Weightless Sack",
     capacity: 300, // lbs (weightless, but size limited)
     costPerMonth: 0,
-    purchaseCost: 3000, // gp (magical item)
+    purchaseCost: 3000, // gp (exceptional item)
     risk: "low",
-    type: "magical",
-    description: "Magical sack that makes contents weightless.",
+    type: "exceptional",
+    description: "Exceptional sack that makes contents weightless.",
   },
 
   // Hidden/Secret Storage
@@ -163,7 +163,7 @@ export const STORAGE_TYPES = {
 };
 
 export const HOUSING_COSTS = {
-  // Monthly living costs (from Palladium rules)
+  // Monthly living costs (from Medieval Combat Simulator rules)
   PEASANT: { cost: 10, description: "Peasant or beggar lifestyle" },
   TRADESMAN: { cost: 35, description: "Tradesman or soldier lifestyle" },
   MIDDLE_CLASS: { cost: 150, description: "Middle-class townhouse lifestyle" },
@@ -175,19 +175,19 @@ export const PROPERTY_UPKEEP = {
   SMALL_HOUSE: { upkeep: 50, servants: 0, guards: 0 },
   STONE_TOWNHOUSE: { upkeep: 100, servants: 2, guards: 1 },
   MANOR_HOUSE: { upkeep: 200, servants: 5, guards: 3 },
-  WIZARD_TOWER: { upkeep: 150, servants: 2, guards: 2, magical: 50 },
+  TRAINING_HALL: { upkeep: 150, servants: 2, guards: 2, exceptional: 50 },
   THIEF_SAFEHOUSE: { upkeep: 30, servants: 0, guards: 0 },
 };
 
-export const MAGICAL_STORAGE_ITEMS = {
+export const TRAININGAL_STORAGE_ITEMS = {
   DIMENSIONAL_POCKET: {
     name: "Dimensional Pocket",
     capacity: 200,
     weight: 0,
     price: 5000,
     description: "Creates a small extradimensional space for storage",
-    magical: true,
-    savingThrow: "vs Magic 16+ to survive destruction",
+    exceptional: true,
+    savingThrow: "vs Training 16+ to survive destruction",
   },
 
   WEIGHTLESS_SACK: {
@@ -196,8 +196,8 @@ export const MAGICAL_STORAGE_ITEMS = {
     weight: 1,
     price: 3000,
     description: "Makes all contents weightless but size-limited",
-    magical: true,
-    savingThrow: "vs Magic 14+ to survive destruction",
+    exceptional: true,
+    savingThrow: "vs Training 14+ to survive destruction",
   },
 
   BAG_OF_HOLDING: {
@@ -206,8 +206,8 @@ export const MAGICAL_STORAGE_ITEMS = {
     weight: 2,
     price: 8000,
     description: "Large extradimensional storage bag",
-    magical: true,
-    savingThrow: "vs Magic 18+ to survive destruction",
+    exceptional: true,
+    savingThrow: "vs Training 18+ to survive destruction",
   },
 };
 
@@ -215,5 +215,5 @@ export default {
   STORAGE_TYPES,
   HOUSING_COSTS,
   PROPERTY_UPKEEP,
-  MAGICAL_STORAGE_ITEMS,
+  TRAININGAL_STORAGE_ITEMS,
 };

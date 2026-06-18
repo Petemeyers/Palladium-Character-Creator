@@ -1,11 +1,11 @@
-// Armor shop data for Palladium Fantasy RPG
+// Armor shop data for Medieval Combat Simulator
 const armorShopData = {
   lightArmor: [
     {
       name: "Leather Armor",
       type: "light",
-      ar: 8,
-      sdc: 20,
+      guardRating: 8,
+      armorDurability: 20,
       weight: 8,
       cost: 50,
       description: "Basic leather protection",
@@ -13,8 +13,8 @@ const armorShopData = {
     {
       name: "Studded Leather",
       type: "light",
-      ar: 10,
-      sdc: 30,
+      guardRating: 10,
+      armorDurability: 30,
       weight: 12,
       cost: 80,
       description: "Leather with metal studs",
@@ -22,8 +22,8 @@ const armorShopData = {
     {
       name: "Hide Armor",
       type: "light",
-      ar: 9,
-      sdc: 25,
+      guardRating: 9,
+      armorDurability: 25,
       weight: 10,
       cost: 60,
       description: "Thick animal hide",
@@ -33,8 +33,8 @@ const armorShopData = {
     {
       name: "Chain Mail",
       type: "medium",
-      ar: 14,
-      sdc: 50,
+      guardRating: 14,
+      armorDurability: 50,
       weight: 25,
       cost: 200,
       description: "Interlocking metal rings",
@@ -42,8 +42,8 @@ const armorShopData = {
     {
       name: "Scale Mail",
       type: "medium",
-      ar: 13,
-      sdc: 45,
+      guardRating: 13,
+      armorDurability: 45,
       weight: 30,
       cost: 180,
       description: "Overlapping metal scales",
@@ -51,8 +51,8 @@ const armorShopData = {
     {
       name: "Brigandine",
       type: "medium",
-      ar: 12,
-      sdc: 40,
+      guardRating: 12,
+      armorDurability: 40,
       weight: 20,
       cost: 150,
       description: "Fabric with metal plates",
@@ -62,8 +62,8 @@ const armorShopData = {
     {
       name: "Plate Mail",
       type: "heavy",
-      ar: 18,
-      sdc: 80,
+      guardRating: 18,
+      armorDurability: 80,
       weight: 50,
       cost: 500,
       description: "Full plate armor",
@@ -71,8 +71,8 @@ const armorShopData = {
     {
       name: "Half Plate",
       type: "heavy",
-      ar: 16,
-      sdc: 65,
+      guardRating: 16,
+      armorDurability: 65,
       weight: 40,
       cost: 350,
       description: "Partial plate coverage",
@@ -80,8 +80,8 @@ const armorShopData = {
     {
       name: "Field Plate",
       type: "heavy",
-      ar: 17,
-      sdc: 70,
+      guardRating: 17,
+      armorDurability: 70,
       weight: 45,
       cost: 400,
       description: "Battle-ready plate",
@@ -91,8 +91,8 @@ const armorShopData = {
     {
       name: "Small Shield",
       type: "shield",
-      ar: 2,
-      sdc: 15,
+      guardRating: 2,
+      armorDurability: 15,
       weight: 5,
       cost: 25,
       description: "Light shield",
@@ -100,8 +100,8 @@ const armorShopData = {
     {
       name: "Medium Shield",
       type: "shield",
-      ar: 3,
-      sdc: 25,
+      guardRating: 3,
+      armorDurability: 25,
       weight: 8,
       cost: 40,
       description: "Standard shield",
@@ -109,8 +109,8 @@ const armorShopData = {
     {
       name: "Large Shield",
       type: "shield",
-      ar: 4,
-      sdc: 35,
+      guardRating: 4,
+      armorDurability: 35,
       weight: 12,
       cost: 60,
       description: "Heavy shield",

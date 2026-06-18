@@ -1,5 +1,5 @@
 /**
- * Palladium Fantasy RPG - Full Hit Location & Critical Injury System
+ * Medieval Combat Simulator - Full Hit Location & Critical Injury System
  * -----------------------------------------------------------------
  * Random hit location with limb-specific penalties, critical injuries,
  * and permanent trauma integration.
@@ -69,7 +69,7 @@ export function rollHitLocation() {
  * @param {Object} options - Additional options
  * @param {string} options.calledShotLocation - Override location if called shot used
  * @param {number} options.knockbackFeet - Knockback distance for trauma checks
- * @param {boolean} options.failedPEroll - Whether P.E. roll failed for trauma checks
+ * @param {boolean} options.failedPEroll - Whether endurance roll failed for trauma checks
  * @returns {{ finalDamage: number, hit: Object, traumaTriggered: boolean }}
  */
 export function resolveHitLocation(
@@ -109,7 +109,7 @@ export function resolveHitLocation(
   }
 
   // Integration: Head Trauma System
-  // Trigger conditions: 20+ damage to head/neck, or knockback > 30ft with failed P.E., or coma
+  // Trigger conditions: 20+ damage to head/neck, or knockback > 30ft with failed endurance, or coma
   if (hit.location === "Head" || hit.location === "Neck/Shoulders") {
     const impactDamage = finalDamage;
     // Check for coma: character has 0 HP or less
@@ -135,7 +135,7 @@ export function resolveHitLocation(
           }
         );
 
-        if (traumaResult.traumaOccurred) {
+        if (traumaResult.traumaProfessionurred) {
           traumaTriggered = true;
           effects.push("Head Trauma Risk");
           // Note: processHeadTrauma already modifies the character object
@@ -157,7 +157,7 @@ export function resolveHitLocation(
         });
 
         if (stunResult.success) {
-          // Override duration to 1 melee round for head hits
+          // Override duration to 1 combat round for head hits
           const stunnedEffect = target.statusEffects?.find(
             (e) => e.type === "STUNNED"
           );
@@ -169,14 +169,14 @@ export function resolveHitLocation(
           // Apply additional penalties for head stun
           if (!target.bonuses) target.bonuses = {};
           if (!target.bonuses.tempPenalties) target.bonuses.tempPenalties = {};
-          target.bonuses.tempPenalties.strike =
-            (target.bonuses.tempPenalties.strike || 0) - 3;
-          target.bonuses.tempPenalties.parry =
-            (target.bonuses.tempPenalties.parry || 0) - 3;
-          target.bonuses.tempPenalties.dodge =
-            (target.bonuses.tempPenalties.dodge || 0) - 3;
+          target.bonuses.tempPenalties.attack =
+            (target.bonuses.tempPenalties.attack || 0) - 3;
+          target.bonuses.tempPenalties.block =
+            (target.bonuses.tempPenalties.block || 0) - 3;
+          target.bonuses.tempPenalties.evade =
+            (target.bonuses.tempPenalties.evade || 0) - 3;
 
-          effects.push("Stunned 1 melee round (-3 to all rolls)");
+          effects.push("Stunned 1 combat round (-3 to all rolls)");
         }
       } catch (error) {
         // Status effect system may not be available
@@ -297,16 +297,16 @@ function applyLimbEffects(target, hit, damage, effects) {
         if (!target.bonuses.tempPenalties) target.bonuses.tempPenalties = {};
 
         // Apply combat penalties
-        target.bonuses.tempPenalties.strike =
-          (target.bonuses.tempPenalties.strike || 0) - 2;
-        target.bonuses.tempPenalties.parry =
-          (target.bonuses.tempPenalties.parry || 0) - 2;
+        target.bonuses.tempPenalties.attack =
+          (target.bonuses.tempPenalties.attack || 0) - 2;
+        target.bonuses.tempPenalties.block =
+          (target.bonuses.tempPenalties.block || 0) - 2;
 
         // Mark as unable to use 2-handed weapons
         target.cannotUseTwoHanded = true;
 
         effects.push(
-          `${hit.location} disabled (-2 strike, -2 parry, cannot use 2H weapons)`
+          `${hit.location} disabled (-2 attack, -2 block, cannot use 2H weapons)`
         );
       }
       break;
@@ -326,11 +326,11 @@ function applyLimbEffects(target, hit, damage, effects) {
         target.speedPenalty = Math.floor(baseSpeed / 2);
         target.speedMultiplier = 0.5; // Store multiplier for movement system
 
-        // Apply dodge penalty
-        target.bonuses.tempPenalties.dodge =
-          (target.bonuses.tempPenalties.dodge || 0) - 1;
+        // Apply evade penalty
+        target.bonuses.tempPenalties.evade =
+          (target.bonuses.tempPenalties.evade || 0) - 1;
 
-        effects.push(`${hit.location} injured (-50% speed, -1 dodge)`);
+        effects.push(`${hit.location} injured (-50% speed, -1 evade)`);
       }
       break;
 
@@ -377,7 +377,7 @@ function applyCriticalEffects(target, hit, damage, effects) {
       }
 
       effects.push(
-        "💀 Severe Head Trauma: Permanent memory loss (-2 I.Q., -1 M.E.)"
+        "ðŸ’€ Severe Head Trauma: Permanent memory loss (-2 intellect, -1 willpower)"
       );
     }
   }
@@ -401,15 +401,15 @@ function applyCriticalEffects(target, hit, damage, effects) {
       if (!target.bonuses) target.bonuses = {};
       if (!target.bonuses.permanentPenalties)
         target.bonuses.permanentPenalties = {};
-      target.bonuses.permanentPenalties.strike =
-        (target.bonuses.permanentPenalties.strike || 0) - 2;
-      target.bonuses.permanentPenalties.parry =
-        (target.bonuses.permanentPenalties.parry || 0) - 2;
+      target.bonuses.permanentPenalties.attack =
+        (target.bonuses.permanentPenalties.attack || 0) - 2;
+      target.bonuses.permanentPenalties.block =
+        (target.bonuses.permanentPenalties.block || 0) - 2;
 
       // Cannot use two-handed weapons
       target.cannotUseTwoHanded = true;
 
-      effects.push(`🩸 ${hit.location} destroyed (limb severed or crippled)`);
+      effects.push(`ðŸ©¸ ${hit.location} destroyed (limb severed or crippled)`);
     }
   }
 
@@ -443,7 +443,7 @@ function applyCriticalEffects(target, hit, damage, effects) {
       }
       target.permanentSpeedPenalty += speedLoss;
 
-      effects.push(`🩸 ${hit.location} crippled or lost (-6 SPD permanently)`);
+      effects.push(`ðŸ©¸ ${hit.location} crippled or lost (-6 SPD permanently)`);
     }
   }
 
@@ -471,7 +471,7 @@ function applyCriticalEffects(target, hit, damage, effects) {
         target.PP = Math.max(1, (target.PP || 10) - 1);
       }
 
-      effects.push("💔 Crushed chest or spine injury (-1 P.E., -1 P.P.)");
+      effects.push("ðŸ’” Crushed chest or spine injury (-1 endurance, -1 agility)");
     }
   }
 
@@ -480,7 +480,7 @@ function applyCriticalEffects(target, hit, damage, effects) {
     const scar = `${hit.location} scar (${Math.floor(damage)} dmg)`;
     if (!target.permanentTrauma.scars.includes(scar)) {
       target.permanentTrauma.scars.push(scar);
-      effects.push(`⚔️ ${scar} leaves a lasting mark`);
+      effects.push(`âš”ï¸ ${scar} leaves a lasting mark`);
     }
   }
 }
@@ -504,9 +504,9 @@ export function clearLimbEffects(target) {
 
   // Clear temporary penalties (but not permanent ones)
   if (target.bonuses?.tempPenalties) {
-    target.bonuses.tempPenalties.strike = 0;
-    target.bonuses.tempPenalties.parry = 0;
-    target.bonuses.tempPenalties.dodge = 0;
+    target.bonuses.tempPenalties.attack = 0;
+    target.bonuses.tempPenalties.block = 0;
+    target.bonuses.tempPenalties.evade = 0;
   }
 
   // Clear temporary movement penalties (but not permanent speed loss)
@@ -528,7 +528,7 @@ export function clearLimbEffects(target) {
 }
 
 /**
- * Removes permanent trauma (for magical or divine healing)
+ * Removes permanent trauma (for exceptional or divine healing)
  * Can restore lost limbs, stat loss, and remove scars
  * @param {Object} target - Character to restore
  * @param {Object} options - Restoration options
@@ -656,9 +656,9 @@ export function restorePermanentTrauma(target, options = {}) {
  * @returns {string} Formatted description
  */
 export function getHitLocationDescription(hit, damage) {
-  return `💥 ${hit.location} (${Math.round(
+  return `ðŸ’¥ ${hit.location} (${Math.round(
     damage
-  )} dmg ×${hit.damageMult.toFixed(2)})`;
+  )} dmg Ã—${hit.damageMult.toFixed(2)})`;
 }
 
 /**
@@ -671,14 +671,14 @@ export function getLimbStatusSummary(character) {
     disabledLimbs: [],
     lostLimbs: [],
     penalties: {
-      strike: 0,
-      parry: 0,
-      dodge: 0,
+      attack: 0,
+      block: 0,
+      evade: 0,
       speed: 0,
     },
     permanentPenalties: {
-      strike: 0,
-      parry: 0,
+      attack: 0,
+      block: 0,
       speed: 0,
     },
     cannotUseTwoHanded: false,
@@ -691,27 +691,27 @@ export function getLimbStatusSummary(character) {
   if (character.limbStatus) {
     if (character.limbStatus.rightArm === true) {
       summary.disabledLimbs.push("Right Arm");
-      summary.penalties.strike -= 2;
-      summary.penalties.parry -= 2;
+      summary.penalties.attack -= 2;
+      summary.penalties.block -= 2;
     } else if (character.limbStatus.rightArm === "severed") {
       summary.lostLimbs.push("Right Arm");
-      summary.permanentPenalties.strike -= 2;
-      summary.permanentPenalties.parry -= 2;
+      summary.permanentPenalties.attack -= 2;
+      summary.permanentPenalties.block -= 2;
     }
 
     if (character.limbStatus.leftArm === true) {
       summary.disabledLimbs.push("Left Arm");
-      summary.penalties.strike -= 2;
-      summary.penalties.parry -= 2;
+      summary.penalties.attack -= 2;
+      summary.penalties.block -= 2;
     } else if (character.limbStatus.leftArm === "severed") {
       summary.lostLimbs.push("Left Arm");
-      summary.permanentPenalties.strike -= 2;
-      summary.permanentPenalties.parry -= 2;
+      summary.permanentPenalties.attack -= 2;
+      summary.permanentPenalties.block -= 2;
     }
 
     if (character.limbStatus.rightLeg === true) {
       summary.disabledLimbs.push("Right Leg");
-      summary.penalties.dodge -= 1;
+      summary.penalties.evade -= 1;
     } else if (character.limbStatus.rightLeg === "crippled") {
       summary.lostLimbs.push("Right Leg");
       summary.permanentPenalties.speed -= 6;
@@ -719,7 +719,7 @@ export function getLimbStatusSummary(character) {
 
     if (character.limbStatus.leftLeg === true) {
       summary.disabledLimbs.push("Left Leg");
-      summary.penalties.dodge -= 1;
+      summary.penalties.evade -= 1;
     } else if (character.limbStatus.leftLeg === "crippled") {
       summary.lostLimbs.push("Left Leg");
       summary.permanentPenalties.speed -= 6;
@@ -728,22 +728,22 @@ export function getLimbStatusSummary(character) {
 
   // Add temporary penalties
   if (character.bonuses?.tempPenalties) {
-    summary.penalties.strike += character.bonuses.tempPenalties.strike || 0;
-    summary.penalties.parry += character.bonuses.tempPenalties.parry || 0;
-    summary.penalties.dodge += character.bonuses.tempPenalties.dodge || 0;
+    summary.penalties.attack += character.bonuses.tempPenalties.attack || 0;
+    summary.penalties.block += character.bonuses.tempPenalties.block || 0;
+    summary.penalties.evade += character.bonuses.tempPenalties.evade || 0;
   }
 
   // Add permanent penalties
   if (character.bonuses?.permanentPenalties) {
-    summary.permanentPenalties.strike +=
-      character.bonuses.permanentPenalties.strike || 0;
-    summary.permanentPenalties.parry +=
-      character.bonuses.permanentPenalties.parry || 0;
+    summary.permanentPenalties.attack +=
+      character.bonuses.permanentPenalties.attack || 0;
+    summary.permanentPenalties.block +=
+      character.bonuses.permanentPenalties.block || 0;
   }
 
   // Combine temporary and permanent penalties
-  summary.penalties.strike += summary.permanentPenalties.strike;
-  summary.penalties.parry += summary.permanentPenalties.parry;
+  summary.penalties.attack += summary.permanentPenalties.attack;
+  summary.penalties.block += summary.permanentPenalties.block;
 
   // Speed penalties
   summary.penalties.speed = character.speedPenalty || 0;

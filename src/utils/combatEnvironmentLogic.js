@@ -13,9 +13,9 @@ import {
   getActorsInProximity,
 } from "./environmentMetrics.js";
 import {
-  getReachStrikeModifiers,
-  getReachParryModifiers,
-  getReachDodgeModifiers,
+  getReachAttackModifiers,
+  getReachBlockModifiers,
+  getReachEvadeModifiers,
   getReachInitiativeModifier,
   canUseCalledShot,
   hasClosedDistance,
@@ -164,7 +164,7 @@ export function getWeaponLength(weapon, character = null) {
  * @param {Object} options - Additional options
  * @param {Object} attackerPos - Attacker's position {x, y}
  * @param {Object} positions - Position map {actorId: {x, y}}
- * @returns {Object} Combat modifiers {strike, dodge, parry, damage, notes}
+ * @returns {Object} Combat modifiers {attack, evade, block, damage, notes}
  */
 export function getCombatModifiers(
   weapon,
@@ -175,9 +175,9 @@ export function getCombatModifiers(
   options = {}
 ) {
   const mods = {
-    strike: 0,
-    dodge: 0,
-    parry: 0,
+    attack: 0,
+    evade: 0,
+    block: 0,
     damage: 0,
     notes: [],
   };
@@ -207,7 +207,7 @@ export function getCombatModifiers(
 
   // Restrict swing space - weapon too long for available width (melee only)
   if (weaponType !== "RANGED" && weaponLength > width - 1) {
-    mods.strike -= 1;
+    mods.attack -= 1;
     mods.notes.push(`Limited clearance (${width.toFixed(1)}ft width)`);
   }
 
@@ -215,71 +215,71 @@ export function getCombatModifiers(
   if (width <= 6) {
     // Short weapons gain advantage in tight spaces
     if (weaponType === "SHORT") {
-      mods.dodge += 1;
+      mods.evade += 1;
       mods.notes.push("Tight space favors short weapons");
     }
 
     // Long/heavy weapons penalized
     if (weaponType === "LONG" || weaponType === "HEAVY") {
-      mods.strike -= 1;
+      mods.attack -= 1;
       mods.notes.push("Long weapon restricted in tight space");
     }
 
     // Very tight spaces (width <= 4)
     if (width <= 4) {
       if (weaponType === "LONG") {
-        mods.strike -= 2;
+        mods.attack -= 2;
         mods.notes.push("Very tight space severely restricts long weapons");
       }
-      // Dodge becomes nearly impossible in very tight spaces
-      mods.dodge -= 1;
+      // Evade becomes nearly impossible in very tight spaces
+      mods.evade -= 1;
       mods.notes.push("Very tight space limits dodging");
     }
   }
 
   // Vertical clearance for overhead attacks
   if (height <= 6 && weaponType !== "SHORT") {
-    mods.strike -= 1;
+    mods.attack -= 1;
     mods.notes.push("Ceiling too low for full swing");
   }
 
   // Very low ceilings (height <= 4)
   if (height <= 4) {
     if (weaponType === "LONG" || weaponType === "HEAVY") {
-      mods.strike -= 2;
+      mods.attack -= 2;
       mods.notes.push("Very low ceiling prevents overhead attacks");
     }
-    // Cannot dodge while crouching
-    mods.dodge -= 2;
-    mods.notes.push("Must crouch - dodge severely limited");
+    // Cannot evade while crouching
+    mods.evade -= 2;
+    mods.notes.push("Must crouch - evade severely limited");
   }
 
   // Dense outdoor obstacles (trees, ruins)
   if (dense && weaponType === "HEAVY") {
-    mods.strike -= 2;
+    mods.attack -= 2;
     mods.notes.push("Dense terrain restricts heavy swing");
   }
 
   // Crowded conditions (many nearby actors - excludes attacker)
   // Triggers when 3+ OTHER combatants are within 2 hexes (radius)
   if (nearbyActors.length >= 3) {
-    mods.strike -= 1;
-    mods.dodge -= 1;
+    mods.attack -= 1;
+    mods.evade -= 1;
     mods.notes.push(
-      `🌲 Crowded conditions (${nearbyActors.length} nearby combatants)`
+      `ðŸŒ² Crowded conditions (${nearbyActors.length} nearby combatants)`
     );
   }
 
   // Urban narrow alleys
   if (terrain === "URBAN" && width <= 5) {
-    mods.strike -= 1;
+    mods.attack -= 1;
     mods.notes.push("Narrow alley restricts movement");
   }
 
   // Cave interior restrictions
   if (terrain === "CAVE_INTERIOR") {
     if (width <= 5 && weaponType === "LONG") {
-      mods.strike -= 2;
+      mods.attack -= 2;
       mods.notes.push("Tunnel too narrow for long weapons");
     }
   }

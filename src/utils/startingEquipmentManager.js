@@ -1,6 +1,6 @@
 /**
  * Starting Equipment Trade-In Manager
- * Handles trade-in of starting equipment for OCC-specific alternatives
+ * Handles trade-in of starting equipment for PROFESSION-specific alternatives
  */
 
 import STARTER_TEMPLATES from "../data/starterEquipmentTemplates.js";
@@ -57,7 +57,7 @@ export function getTradeableStartingEquipment(character) {
         ...item,
         canTradeIn: true,
         tradeInReason:
-          "Starting equipment - can be upgraded to OCC-specific gear",
+          "Starting equipment - can be upgraded to PROFESSION-specific gear",
       });
     }
   });
@@ -66,29 +66,29 @@ export function getTradeableStartingEquipment(character) {
 }
 
 /**
- * Get OCC-specific equipment alternatives for trade-in
- * @param {string} occ - Character's OCC/Class
+ * Get PROFESSION-specific equipment alternatives for trade-in
+ * @param {string} profession - Character's PROFESSION/Class
  * @returns {Array} Array of alternative equipment options
  */
-export function getOccEquipmentAlternatives(occ) {
-  const template = STARTER_TEMPLATES[occ];
+export function getProfessionEquipmentAlternatives(profession) {
+  const template = STARTER_TEMPLATES[profession];
   if (!template) {
-    console.warn(`No starting equipment template found for OCC: ${occ}`);
+    console.warn(`No starting equipment template found for PROFESSION: ${profession}`);
     return [];
   }
 
   const alternatives = [];
 
-  // Get equipped items alternatives
-  if (template.equipped) {
-    template.equipped.forEach((itemName) => {
+  // Get equistaminad items alternatives
+  if (template.equistaminad) {
+    template.equistaminad.forEach((itemName) => {
       const shopItem = shopItems.find((item) => item.name === itemName);
       if (shopItem) {
         alternatives.push({
           ...shopItem,
-          category: "equipped",
+          category: "equistaminad",
           slot: inferSlotFromName(itemName),
-          description: `Professional ${occ.toLowerCase()} equipment - ${
+          description: `Professional ${profession.toLowerCase()} equipment - ${
             shopItem.description || "Standard issue gear"
           }`,
         });
@@ -105,7 +105,7 @@ export function getOccEquipmentAlternatives(occ) {
           ...shopItem,
           category: "wardrobe",
           slot: inferSlotFromName(itemName),
-          description: `Professional ${occ.toLowerCase()} equipment - ${
+          description: `Professional ${profession.toLowerCase()} equipment - ${
             shopItem.description || "Standard issue gear"
           }`,
         });
@@ -122,7 +122,7 @@ export function getOccEquipmentAlternatives(occ) {
           ...shopItem,
           category: "inventory",
           slot: inferSlotFromName(itemName),
-          description: `Professional ${occ.toLowerCase()} equipment - ${
+          description: `Professional ${profession.toLowerCase()} equipment - ${
             shopItem.description || "Standard issue gear"
           }`,
         });
@@ -236,7 +236,7 @@ export function getStartingEquipmentTradeInValue(itemName) {
 
 export default {
   getTradeableStartingEquipment,
-  getOccEquipmentAlternatives,
+  getProfessionEquipmentAlternatives,
   hasTradeableStartingEquipment,
   getStartingEquipmentTradeInValue,
 };

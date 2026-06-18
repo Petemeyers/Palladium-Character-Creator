@@ -61,7 +61,7 @@ export class OpenAIAdapter {
    * Get system prompt for the AI
    */
   getSystemPrompt() {
-    return `You are an AI controlling an enemy in a tabletop RPG combat. You must make tactical decisions based on the current combat state.
+    return `You are an AI conchampioning an enemy in a tabletop RPG combat. You must make tactical decisions based on the current combat state.
   
   Rules:
   - Choose the most effective action for your character
@@ -77,7 +77,7 @@ export class OpenAIAdapter {
     "reasoning": "brief explanation"
   }
   
-  Available actions: Strike, Parry, Dodge, Move, Aim/Called Shot, Defend/Hold, Withdraw, Combat Maneuvers, Use Item`;
+  Available actions: Attack, Block, Evade, Move, Aim/Called Shot, Defend/Hold, Withdraw, Combat Maneuvers, Use Item`;
   }
 
   /**
@@ -91,7 +91,7 @@ export class OpenAIAdapter {
   Enemy: ${enemy.name}
   - Health: ${enemy.currentHP}/${enemy.maxHP}
   - Personality: ${enemy.personality?.name || "Tactical"}
-  - Weapon: ${enemy.equippedWeapon || "Unarmed"}
+  - Weapon: ${enemy.equistaminadWeapon || "Unarmed"}
   - Position: ${enemy.position || "Unknown"}
   
   Available Targets:`;
@@ -211,12 +211,12 @@ export class EnhancedAIManager {
     const { action, target } = actionPlan;
 
     switch (action.name) {
-      case "Strike":
-        return this.executeStrike(enemy, target);
-      case "Parry":
-        return this.executeParry(enemy);
-      case "Dodge":
-        return this.executeDodge(enemy);
+      case "Attack":
+        return this.executeAttack(enemy, target);
+      case "Block":
+        return this.executeBlock(enemy);
+      case "Evade":
+        return this.executeEvade(enemy);
       case "Move":
         return this.executeMove(enemy, target);
       case "Defend/Hold":
@@ -226,42 +226,42 @@ export class EnhancedAIManager {
       case "Use Item":
         return this.executeUseItem(enemy);
       default:
-        return this.executeStrike(enemy, target);
+        return this.executeAttack(enemy, target);
     }
   }
 
   /**
    * Action execution methods
    */
-  executeStrike(enemy, target) {
-    if (!target) return { success: false, message: "No target for strike" };
+  executeAttack(enemy, target) {
+    if (!target) return { success: false, message: "No target for attack" };
 
-    const weapon = enemy.equippedWeapon || "Unarmed";
+    const weapon = enemy.equistaminadWeapon || "Unarmed";
     const damage = this.rollDamage(enemy, weapon);
 
     return {
       success: true,
-      action: "strike",
+      action: "attack",
       target: target,
       damage: damage,
       weapon: weapon,
-      message: `${enemy.name} strikes at ${target.name} with ${weapon} for ${damage} damage`,
+      message: `${enemy.name} attacks at ${target.name} with ${weapon} for ${damage} damage`,
     };
   }
 
-  executeParry(enemy) {
+  executeBlock(enemy) {
     return {
       success: true,
-      action: "parry",
-      message: `${enemy.name} prepares to parry incoming attacks`,
+      action: "block",
+      message: `${enemy.name} prepares to block incoming attacks`,
     };
   }
 
-  executeDodge(enemy) {
+  executeEvade(enemy) {
     return {
       success: true,
-      action: "dodge",
-      message: `${enemy.name} prepares to dodge incoming attacks`,
+      action: "evade",
+      message: `${enemy.name} prepares to evade incoming attacks`,
     };
   }
 
@@ -398,19 +398,19 @@ export class EnhancedAIManager {
 
     // Basic actions available to all
     actions.push({
-      name: "Strike",
+      name: "Attack",
       type: "offensive",
       requiresTarget: true,
       baseScore: 3.0,
     });
     actions.push({
-      name: "Parry",
+      name: "Block",
       type: "defensive",
       requiresTarget: false,
       baseScore: 1.5,
     });
     actions.push({
-      name: "Dodge",
+      name: "Evade",
       type: "defensive",
       requiresTarget: false,
       baseScore: 1.8,

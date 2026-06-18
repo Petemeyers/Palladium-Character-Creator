@@ -72,12 +72,12 @@ function aStar({
       if (gridState.isBlocked(nb.x, nb.y, mover)) continue;
 
       // Check occupancy
-      const occ = gridState.getOccupant(nb.x, nb.y);
+      const occupantId = gridState.getOccupant(nb.x, nb.y);
       const isGoal = nb.x === goal.x && nb.y === goal.y;
       
       // Allow entering goal hex if occupied (for close-to-melee), otherwise block
-      if (occ && occ !== moverId) {
-        if (!isGoal || !canEnterOccupied || !canEnterOccupied(nb, occ)) {
+      if (occupantId && occupantId !== moverId) {
+        if (!isGoal || !canEnterOccupied || !canEnterOccupied(nb, occupantId)) {
           continue;
         }
       }

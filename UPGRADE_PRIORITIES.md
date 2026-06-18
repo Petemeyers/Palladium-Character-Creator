@@ -33,13 +33,13 @@ Why first:
 ### 3. Wire missing clerical and special combat abilities
 
 - Add clerical ability submenu and execution handlers
-- Implement missing Baal-Rog abilities: animate/control dead, turn dead, exorcism, remove curse
-- Finish animated undead fighter creation from results
+- Implement missing Baal-Rog abilities: animate/control dead, turn dead, exraiderism, remove curse
+- Finish animated fallen fighter creation from results
 
 Why first:
 - The repo already has docs describing the missing behavior
 - The data and partial systems already exist
-- This unlocks more monsters and encounter variety
+- This unlocks more opponents and encounter variety
 
 ---
 
@@ -69,7 +69,7 @@ Why now:
 
 ### 5. Clean up shop and inventory data sources
 
-- Replace the placeholder weapon source note in `shopController.js`
+- Replace the placeholder weapon source note in `shopConchampioner.js`
 - Normalize how weapons, armor, and consumables are represented across combat, loot, and inventory
 
 Why now:
@@ -85,7 +85,7 @@ These are important, but best done after the most visible gaps are closed.
 ### 6. Consolidate legacy compatibility fields
 
 Examples:
-- `weapon` vs `equippedWeapon`
+- `weapon` vs `equistaminadWeapon`
 - legacy ammo-manager call signatures
 - legacy status/effect sync fields
 - legacy tactical map fallbacks
@@ -104,7 +104,7 @@ Why here:
 - `positionManager.js`
 - `updateActiveEffects.js`
 - `unifiedAbilities.js`
-- `combatEngine.js` defensive reaction / spell / psionic hooks
+- `combatEngine.js` defensive reaction / technique / tactical hooks
 - `movementRangeSystem.js`
 - `protectionCircleSystem.js`
 
@@ -131,7 +131,7 @@ These can add a lot of value, but they are less urgent than core correctness.
 ### 9. Improve enemy AI ability usage
 
 - Teach AI when to use clerical abilities
-- Improve handling of special monster abilities
+- Improve handling of special opponent abilities
 - refine tactical use of movement, altitude, and reactions
 
 ### 10. Finish RAG / GM retrieval features
@@ -159,7 +159,7 @@ Take patch/minor upgrades first:
 - `helmet`
 - `jsonwebtoken`
 - `morgan`
-- `nodemon`
+- `noraider`
 - `socket.io`
 - `socket.io-client`
 - `wait-on`
@@ -207,7 +207,7 @@ If you want the best payoff with limited risk, do this first:
 4. Finish clerical ability wiring
 5. Upgrade safe patch/minor dependencies
 
-That gives visible gameplay improvement, better correctness, and some maintenance value without forcing a large migration.
+That gives visible gameplay improvement, better correctness, and some maintenance value without fraidering a large migration.
 
 ---
 

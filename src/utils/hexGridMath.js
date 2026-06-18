@@ -103,7 +103,7 @@ export function worldVectorFromEntity(
     0;
   const tileElevation = tileSurfaceWorldY(tileHeightUnits);
 
-  // Creature altitude is in FEET; convert using world Y scale (5ft = 1 world unit).
+  // Combatant altitude is in FEET; convert using world Y scale (5ft = 1 world unit).
   const altitudeFeet = toNumberOr(entity.altitudeFeet ?? entity.altitude ?? 0, 0);
   const altitudeWorld = altitudeFeet / FEET_PER_WORLD_Y_UNIT;
 
@@ -123,8 +123,8 @@ export function createFlatHexGeometry(
   // - Flat-edge width = sqrt(3) * R
   // - Point-to-point width = 2 * R
   //
-  // If spacing = sqrt(3)*R and flat-edge width = sqrt(3)*R, hexes touch at flat edges ✓
-  // If spacing = 2*R and point-to-point = 2*R, hexes touch at points ✗
+  // If spacing = sqrt(3)*R and flat-edge width = sqrt(3)*R, hexes touch at flat edges âœ“
+  // If spacing = 2*R and point-to-point = 2*R, hexes touch at points âœ—
   //
   // Since hexes are touching at points, the spacing might be 2*R instead of sqrt(3)*R.
   // OR the geometry circumradius needs to be smaller.
@@ -156,7 +156,7 @@ export function createFlatHexGeometry(
   // For flat edges to touch: hex flat-edge width must equal spacing
   // Hex flat-edge width = sqrt(3) * circumradius
   // So: sqrt(3) * circumradius = sqrt(3) * radius
-  // Therefore: circumradius = radius ✓
+  // Therefore: circumradius = radius âœ“
   //
   // However, if hexes are touching at points instead of sides, it means:
   // - Either spacing is actually 2*R (point-to-point) instead of sqrt(3)*R
@@ -206,7 +206,7 @@ export function createFlatHexGeometry(
   // to scale geometry. Let's try using the inradius instead:
   // - Inradius = R * sqrt(3) / 2
   // - Flat-edge width with inradius-based hex = 2 * inradius = sqrt(3) * R
-  // - This matches spacing, so flat edges touch ✓
+  // - This matches spacing, so flat edges touch âœ“
   //
   // Final solution: Scale geometry to ensure flat edges touch.
   // If hexes touch at points with spacing sqrt(3)*R, the geometry is too large.
@@ -218,8 +218,8 @@ export function createFlatHexGeometry(
   // So: circumradius = radius (current setup is correct)
   //
   // If still touching at points, try empirical scaling:
-  // Scale by sqrt(3)/2 ≈ 0.866 to reduce size so flat edges align better
-  const scaledRadius = radius * 0.866; // sqrt(3)/2 ≈ 0.866
+  // Scale by sqrt(3)/2 â‰ˆ 0.866 to reduce size so flat edges align better
+  const scaledRadius = radius * 0.866; // sqrt(3)/2 â‰ˆ 0.866
   return new THREE.CylinderGeometry(
     scaledRadius,
     scaledRadius,

@@ -29,7 +29,7 @@ export const LazyPartyChat = React.lazy(() => import('./PartyChat'));
 
 // HOC for lazy loading with error boundary and suspense
 export const withLazyLoading = (LazyComponent, loadingMessage) => {
-  return function LazyWrapper(props) {
+  return function LazyWrastaminar(props) {
     return (
       <ErrorBoundary>
         <Suspense fallback={<LoadingSpinner message={loadingMessage} />}>

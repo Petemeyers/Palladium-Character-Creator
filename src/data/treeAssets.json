@@ -33,7 +33,7 @@
           "localPosFt": { "x": 2.0, "y": 12.0, "z": 1.2 },
           "localFacingHint": { "x": 1, "y": 0, "z": 0 },
           "radiusFt": 1.0,
-          "maxCreatureSize": "SMALL",
+          "maxCombatantSize": "SMALL",
           "approach": "air_only",
           "perchHeightFt": 12,
           "occupancy": { "maxOccupants": 1 }
@@ -43,7 +43,7 @@
           "localPosFt": { "x": -2.5, "y": 22.0, "z": -1.0 },
           "localFacingHint": { "x": -1, "y": 0, "z": 0 },
           "radiusFt": 1.0,
-          "maxCreatureSize": "SMALL",
+          "maxCombatantSize": "SMALL",
           "approach": "air_only",
           "perchHeightFt": 22,
           "occupancy": { "maxOccupants": 1 }
@@ -94,7 +94,7 @@
           "localPosFt": { "x": 0.4, "y": 35.0, "z": 0.1 },
           "localFacingHint": { "x": 1, "y": 0, "z": 0 },
           "radiusFt": 1.0,
-          "maxCreatureSize": "SMALL",
+          "maxCombatantSize": "SMALL",
           "approach": "air_only",
           "perchHeightFt": 35,
           "occupancy": { "maxOccupants": 1 }
@@ -145,7 +145,7 @@
           "localPosFt": { "x": 1.2, "y": 18.0, "z": 0.6 },
           "localFacingHint": { "x": 1, "y": 0, "z": 0 },
           "radiusFt": 1.2,
-          "maxCreatureSize": "SMALL",
+          "maxCombatantSize": "SMALL",
           "approach": "air_only",
           "perchHeightFt": 18,
           "occupancy": { "maxOccupants": 1 }
@@ -155,7 +155,7 @@
           "localPosFt": { "x": -1.5, "y": 28.0, "z": -0.8 },
           "localFacingHint": { "x": -1, "y": 0, "z": 0 },
           "radiusFt": 1.2,
-          "maxCreatureSize": "MEDIUM",
+          "maxCombatantSize": "MEDIUM",
           "approach": "air_only",
           "perchHeightFt": 28,
           "occupancy": { "maxOccupants": 1 }
@@ -165,7 +165,7 @@
           "localPosFt": { "x": 0.6, "y": 38.0, "z": 0.3 },
           "localFacingHint": { "x": 1, "y": 0, "z": 0 },
           "radiusFt": 1.0,
-          "maxCreatureSize": "SMALL",
+          "maxCombatantSize": "SMALL",
           "approach": "air_only",
           "perchHeightFt": 38,
           "occupancy": { "maxOccupants": 1 }

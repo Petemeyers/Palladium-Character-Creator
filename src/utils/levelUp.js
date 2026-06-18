@@ -4,7 +4,7 @@
  */
 
 import { calculateTotalHP } from "./levelProgression.js";
-import { normalizePPEState, createDeterministicRng } from "./spellUtils.js";
+import { normalizestaminaState, createDeterministicRng } from "./techniqueUtils.js";
 
 /**
  * Level up a character
@@ -21,27 +21,27 @@ export function levelUp(character) {
     level: newLevel,
   };
 
-  // Calculate new HP based on OCC category
-  const occCategory = character.occCategory || character.OCC?.category || "Men of Arms";
+  // Calculate new HP based on PROFESSION category
+  const professionCategory = character.professionCategory || character.PROFESSION?.category || "Men of Arms";
   const peBonus = character.attributes?.PE?.bonus || character.PE?.bonus || 0;
   
-  updatedCharacter.hp = calculateTotalHP(occCategory, newLevel, peBonus);
+  updatedCharacter.hp = calculateTotalHP(professionCategory, newLevel, peBonus);
   updatedCharacter.maxHP = updatedCharacter.hp;
 
   // Increase skill percentages (if applicable)
   if (character.skills) {
-    // Skills typically increase by 5% per level in Palladium
+    // Skills typically increase by 5% per level in Medieval Combat Simulator
     // This is a simplified version - actual rules vary by skill
     updatedCharacter.skills = { ...character.skills };
     // Individual skill progression would be handled by skillSystem.js
   }
 
   // Increase attacks per melee (if applicable)
-  if (character.attacksPerMelee) {
+  if (character.actionsPerRound) {
     // Some classes gain additional attacks at certain levels
     // This is simplified - actual rules vary by class
-    const baseAttacks = character.baseAttacksPerMelee || character.attacksPerMelee;
-    updatedCharacter.attacksPerMelee = baseAttacks;
+    const baseAttacks = character.baseAttacksPerMelee || character.actionsPerRound;
+    updatedCharacter.actionsPerRound = baseAttacks;
   }
 
   // Add level up notification
@@ -53,29 +53,29 @@ export function levelUp(character) {
     timestamp: new Date().toISOString(),
   });
 
-  // Keep PPE progression deterministic and persistent on level up.
-  const ppeSeed = [
+  // Keep stamina progression deterministic and persistent on level up.
+  const staminaSeed = [
     updatedCharacter.id || updatedCharacter._id || updatedCharacter.name || "character",
-    "ppe-levelup",
+    "stamina-levelup",
     newLevel,
   ].join("|");
-  const normalizedPPE = normalizePPEState(updatedCharacter, {
+  const normalizedstamina = normalizestaminaState(updatedCharacter, {
     rollMissingLevelGains: true,
-    rng: createDeterministicRng(ppeSeed),
-    preserveExplicitPPEAsAuthority: true,
+    rng: createDeterministicRng(staminaSeed),
+    preserveExplicitstaminaAsAuthority: true,
   });
-  updatedCharacter.PPE = normalizedPPE.PPE;
-  updatedCharacter.maxPPE = normalizedPPE.maxPPE;
-  updatedCharacter.currentPPE =
-    character.currentPPE != null
-      ? Math.min(normalizedPPE.maxPPE, character.currentPPE)
-      : normalizedPPE.currentPPE;
-  updatedCharacter.ppeType = normalizedPPE.ppeType;
-  updatedCharacter.ppeAuthority = normalizedPPE.ppeAuthority;
-  updatedCharacter.ppeProgressionModel = normalizedPPE.ppeProgressionModel;
-  updatedCharacter.ppeBase = normalizedPPE.ppeBase;
-  updatedCharacter.ppeLevelGainsTotal = normalizedPPE.ppeLevelGainsTotal;
-  updatedCharacter.ppeLevelGainRolls = normalizedPPE.ppeLevelGainRolls;
+  updatedCharacter.stamina = normalizedstamina.stamina;
+  updatedCharacter.maxstamina = normalizedstamina.maxstamina;
+  updatedCharacter.currentstamina =
+    character.currentstamina != null
+      ? Math.min(normalizedstamina.maxstamina, character.currentstamina)
+      : normalizedstamina.currentstamina;
+  updatedCharacter.staminaType = normalizedstamina.staminaType;
+  updatedCharacter.staminaAuthority = normalizedstamina.staminaAuthority;
+  updatedCharacter.staminaProgressionModel = normalizedstamina.staminaProgressionModel;
+  updatedCharacter.staminaBase = normalizedstamina.staminaBase;
+  updatedCharacter.staminaLevelGainsTotal = normalizedstamina.staminaLevelGainsTotal;
+  updatedCharacter.staminaLevelGainRolls = normalizedstamina.staminaLevelGainRolls;
 
   return updatedCharacter;
 }

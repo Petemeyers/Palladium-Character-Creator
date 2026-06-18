@@ -10,7 +10,7 @@
         "colors": ["brown", "grey", "green", "blue", "off-white"],
         "style": "Practical and varied; style changes by region"
       },
-      "Wolfen": {
+      "Wolf": {
         "head": "Fur hood",
         "torso": "Hide tunic",
         "legs": "Leather breeches",
@@ -20,7 +20,7 @@
         "colors": ["grey", "black", "brown", "red"],
         "style": "Tribal; sleeveless or open garments over fur"
       },
-      "Elf": {
+      "Human": {
         "head": "Silk hood",
         "torso": "Silk tunic",
         "legs": "Fine breeches",
@@ -30,7 +30,7 @@
         "colors": ["silver", "green", "blue", "ivory", "black"],
         "style": "Elegant, flowing, and artistic"
       },
-      "Dwarf": {
+      "Human": {
         "head": "Wool cap",
         "torso": "Heavy tunic",
         "legs": "Wool breeches",
@@ -40,7 +40,7 @@
         "colors": ["brown", "grey", "rust", "muted red"],
         "style": "Durable and functional"
       },
-      "Gnome": {
+      "Human": {
         "head": "Colorful cap",
         "torso": "Fine tunic",
         "legs": "Light breeches",
@@ -50,7 +50,7 @@
         "colors": ["light green", "tan", "blue", "yellow", "white"],
         "style": "Decorative yet sturdy; colorful with intricate stitching"
       },
-      "Orc": {
+      "Raider": {
         "head": "Rough hood",
         "torso": "Coarse tunic",
         "legs": "Leather breeches",
@@ -60,7 +60,7 @@
         "colors": ["black", "grey", "dark red", "brown", "green"],
         "style": "Militaristic and rough; built for war"
       },
-      "Ogre": {
+      "Heavy Fighter": {
         "head": "Hide cap",
         "torso": "Hide tunic",
         "legs": "Hide breeches",
@@ -70,7 +70,7 @@
         "colors": ["brown", "black", "green"],
         "style": "Primitive and rugged"
       },
-      "Troll": {
+      "Champion": {
         "head": "Hide cap",
         "torso": "Hide tunic",
         "legs": "Hide breeches",
@@ -80,7 +80,7 @@
         "colors": ["brown", "grey", "green"],
         "style": "Simple and practical"
       },
-      "Troglodyte": {
+      "Cave Fighter": {
         "head": "Fungus hood",
         "torso": "Cave silk tunic",
         "legs": "Fungus breeches",
@@ -90,17 +90,17 @@
         "colors": ["pale grey", "ochre", "dark blue"],
         "style": "Subterranean style; lightweight, damp-resistant"
       },
-      "Kobold": {
+      "Brigand": {
         "head": "Metal cap",
         "torso": "Leather tunic",
         "legs": "Leather breeches",
         "feet": "Leather boots",
         "hands": "Metal bracers",
         "materials": ["leather", "woven metals", "mineral-dyed fabrics"],
-        "colors": ["bronze", "copper", "gold", "grey"],
+        "colors": ["bronze", "costaminar", "gold", "grey"],
         "style": "Functional but ornate; metal clasps and belts"
       },
-      "Goblin": {
+      "Brigand": {
         "head": "Patchwork cap",
         "torso": "Patchwork tunic",
         "legs": "Leather breeches",
@@ -110,7 +110,7 @@
         "colors": ["brown", "green", "red"],
         "style": "Patchwork and scavenged"
       },
-      "Hob-Goblin": {
+      "Hob-Brigand": {
         "head": "Military cap",
         "torso": "Military tunic",
         "legs": "Leather breeches",
@@ -120,7 +120,7 @@
         "colors": ["dark brown", "grey", "red"],
         "style": "Military-inspired but crude"
       },
-      "Changeling": {
+      "Duelist": {
         "head": "Adaptive hood",
         "torso": "Adaptive tunic",
         "legs": "Adaptive breeches",
@@ -128,7 +128,7 @@
         "hands": "Adaptive gloves",
         "materials": ["varies by disguise"],
         "colors": ["any"],
-        "style": "Adaptive — mimics local fashion perfectly"
+        "style": "Adaptive Ã¢â‚¬â€ mimics local fashion perfectly"
       }
     },
   
@@ -140,7 +140,7 @@
       },
       "torso": {
         "name": "Torso", 
-        "description": "Upper body clothing and armor",
+        "description": "Ustaminar body clothing and armor",
         "defaultItem": "None"
       },
       "legs": {
@@ -170,7 +170,7 @@
         {
           "name": "Cloth Hood",
           "type": "clothing",
-          "armorRating": 0,
+          "guardRating": 0,
           "weight": 0.5,
           "value": 5,
           "description": "A simple hood of wool or linen. Offers warmth but no protection.",
@@ -179,7 +179,7 @@
         {
           "name": "Wide-brim Hat",
           "type": "clothing", 
-          "armorRating": 0,
+          "guardRating": 0,
           "weight": 0.3,
           "value": 8,
           "description": "A wide-brimmed hat for sun protection and style.",
@@ -188,7 +188,7 @@
         {
           "name": "Bandana",
           "type": "clothing",
-          "armorRating": 0,
+          "guardRating": 0,
           "weight": 0.1,
           "value": 3,
           "description": "A simple cloth bandana for head protection.",
@@ -197,18 +197,18 @@
         {
           "name": "Metal Circlet",
           "type": "clothing",
-          "armorRating": 0,
+          "guardRating": 0,
           "weight": 0.5,
           "value": 50,
           "description": "An ornate metal circlet, often worn by nobles and mages.",
-          "raceRestrictions": ["Elf", "Human", "Gnome"]
+          "raceRestrictions": ["Human", "Human", "Human"]
         }
       ],
       "torso": [
         {
           "name": "Wool Tunic",
           "type": "clothing",
-          "armorRating": 0,
+          "guardRating": 0,
           "weight": 1,
           "value": 10,
           "description": "A warm wool tunic for daily wear. No defensive value.",
@@ -217,7 +217,7 @@
         {
           "name": "Linen Tunic", 
           "type": "clothing",
-          "armorRating": 0,
+          "guardRating": 0,
           "weight": 0.8,
           "value": 8,
           "description": "A light linen tunic, comfortable in warm weather.",
@@ -226,16 +226,16 @@
         {
           "name": "Silk Robe",
           "type": "clothing",
-          "armorRating": 0,
+          "guardRating": 0,
           "weight": 1.2,
           "value": 75,
           "description": "An elegant silk robe, favored by mages and nobles.",
-          "raceRestrictions": ["Elf", "Human", "Gnome"]
+          "raceRestrictions": ["Human", "Human", "Human"]
         },
         {
           "name": "Leather Jerkin",
           "type": "clothing",
-          "armorRating": 0,
+          "guardRating": 0,
           "weight": 2,
           "value": 25,
           "description": "A sturdy leather jerkin for outdoor work and travel.",
@@ -244,18 +244,18 @@
         {
           "name": "Noble's Coat",
           "type": "clothing",
-          "armorRating": 0,
+          "guardRating": 0,
           "weight": 1.5,
           "value": 100,
           "description": "A finely tailored coat with decorative trim and buttons.",
-          "raceRestrictions": ["Human", "Elf", "Dwarf"]
+          "raceRestrictions": ["Human", "Human", "Human"]
         }
       ],
       "legs": [
         {
           "name": "Cloth Breeches",
           "type": "clothing",
-          "armorRating": 0,
+          "guardRating": 0,
           "weight": 1,
           "value": 8,
           "description": "Simple linen or wool trousers, common for travelers.",
@@ -264,7 +264,7 @@
         {
           "name": "Leather Breeches",
           "type": "clothing",
-          "armorRating": 0,
+          "guardRating": 0,
           "weight": 1.5,
           "value": 15,
           "description": "Sturdy leather trousers, good for riding and outdoor work.",
@@ -273,27 +273,27 @@
         {
           "name": "Fur Leggings",
           "type": "clothing",
-          "armorRating": 0,
+          "guardRating": 0,
           "weight": 2,
           "value": 20,
           "description": "Warm fur leggings, ideal for cold climates.",
-          "raceRestrictions": ["Wolfen", "Ogre", "Troll", "Human"]
+          "raceRestrictions": ["Wolf", "Heavy Fighter", "Champion", "Human"]
         },
         {
           "name": "Silk Breeches",
           "type": "clothing",
-          "armorRating": 0,
+          "guardRating": 0,
           "weight": 0.8,
           "value": 50,
           "description": "Fine silk breeches, elegant and comfortable.",
-          "raceRestrictions": ["Elf", "Human", "Gnome"]
+          "raceRestrictions": ["Human", "Human", "Human"]
         }
       ],
       "feet": [
         {
           "name": "Leather Boots",
           "type": "clothing",
-          "armorRating": 0,
+          "guardRating": 0,
           "weight": 1,
           "value": 12,
           "description": "Sturdy traveling boots made of tanned hide.",
@@ -302,7 +302,7 @@
         {
           "name": "Cloth Shoes",
           "type": "clothing",
-          "armorRating": 0,
+          "guardRating": 0,
           "weight": 0.5,
           "value": 6,
           "description": "Simple cloth shoes, comfortable for indoor wear.",
@@ -311,27 +311,27 @@
         {
           "name": "Fur-lined Boots",
           "type": "clothing",
-          "armorRating": 0,
+          "guardRating": 0,
           "weight": 1.5,
           "value": 25,
           "description": "Warm boots lined with fur for cold weather.",
-          "raceRestrictions": ["Wolfen", "Human", "Dwarf", "Ogre", "Troll"]
+          "raceRestrictions": ["Wolf", "Human", "Human", "Heavy Fighter", "Champion"]
         },
         {
           "name": "Sandals",
           "type": "clothing",
-          "armorRating": 0,
+          "guardRating": 0,
           "weight": 0.3,
           "value": 4,
           "description": "Simple leather sandals for warm climates.",
-          "raceRestrictions": ["Human", "Elf", "Gnome"]
+          "raceRestrictions": ["Human", "Human", "Human"]
         }
       ],
       "hands": [
         {
           "name": "Linen Gloves",
           "type": "clothing",
-          "armorRating": 0,
+          "guardRating": 0,
           "weight": 0.3,
           "value": 5,
           "description": "Soft gloves providing warmth and cleanliness.",
@@ -340,7 +340,7 @@
         {
           "name": "Leather Gloves",
           "type": "clothing",
-          "armorRating": 0,
+          "guardRating": 0,
           "weight": 0.5,
           "value": 8,
           "description": "Sturdy leather gloves for work and travel.",
@@ -349,7 +349,7 @@
         {
           "name": "Fingerless Gloves",
           "type": "clothing",
-          "armorRating": 0,
+          "guardRating": 0,
           "weight": 0.4,
           "value": 6,
           "description": "Gloves with exposed fingertips for dexterity.",
@@ -358,11 +358,11 @@
         {
           "name": "Fur Wraps",
           "type": "clothing",
-          "armorRating": 0,
+          "guardRating": 0,
           "weight": 0.6,
           "value": 10,
           "description": "Warm fur wraps for hand protection.",
-          "raceRestrictions": ["Wolfen", "Ogre", "Troll"]
+          "raceRestrictions": ["Wolf", "Heavy Fighter", "Champion"]
         }
       ],
       "storage": [
@@ -410,8 +410,8 @@
         {
           "name": "Leather Cap",
           "type": "light armor",
-          "armorRating": 6,
-          "sdc": 20,
+          "guardRating": 6,
+          "armorDurability": 20,
           "weight": 1,
           "value": 20,
           "description": "Boiled leather headpiece, common among mercenaries and scouts.",
@@ -420,8 +420,8 @@
         {
           "name": "Chain Coif",
           "type": "medium armor",
-          "armorRating": 13,
-          "sdc": 45,
+          "guardRating": 13,
+          "armorDurability": 45,
           "weight": 2,
           "value": 60,
           "description": "Metal-linked hood offering decent protection for head and neck.",
@@ -430,8 +430,8 @@
         {
           "name": "Plate Helm",
           "type": "heavy armor",
-          "armorRating": 17,
-          "sdc": 90,
+          "guardRating": 17,
+          "armorDurability": 90,
           "weight": 3,
           "value": 120,
           "description": "Full metal helmet providing maximum defense; restricts hearing and vision slightly.",
@@ -442,8 +442,8 @@
         {
           "name": "Padded Armor",
           "type": "light armor",
-          "armorRating": 5,
-          "sdc": 15,
+          "guardRating": 5,
+          "armorDurability": 15,
           "weight": 10,
           "value": 40,
           "description": "Thick quilted cloth layers. Light, flexible, and inexpensive but poor protection.",
@@ -452,8 +452,8 @@
         {
           "name": "Soft Leather Armor",
           "type": "light armor",
-          "armorRating": 6,
-          "sdc": 20,
+          "guardRating": 6,
+          "armorDurability": 20,
           "weight": 12,
           "value": 60,
           "description": "Simple tanned hide suit. Comfortable and silent; minimal protection.",
@@ -462,8 +462,8 @@
         {
           "name": "Hard Leather Armor",
           "type": "light armor",
-          "armorRating": 8,
-          "sdc": 30,
+          "guardRating": 8,
+          "armorDurability": 30,
           "weight": 16,
           "value": 80,
           "description": "Boiled or layered leather plates. Common among scouts and rangers.",
@@ -472,18 +472,18 @@
         {
           "name": "Studded Leather Armor",
           "type": "light armor",
-          "armorRating": 10,
-          "sdc": 35,
+          "guardRating": 10,
+          "armorDurability": 35,
           "weight": 18,
           "value": 100,
-          "description": "Leather reinforced with metal studs or rivets. Popular with thieves and mercenaries.",
+          "description": "Leather reinfraidered with metal studs or rivets. Popular with thieves and mercenaries.",
           "raceRestrictions": []
         },
         {
           "name": "Ring Mail Armor",
           "type": "medium armor",
-          "armorRating": 12,
-          "sdc": 40,
+          "guardRating": 12,
+          "armorDurability": 40,
           "weight": 22,
           "value": 150,
           "description": "Metal rings affixed to leather backing. Cheaper than chain, moderate protection.",
@@ -492,8 +492,8 @@
         {
           "name": "Chain Mail Armor",
           "type": "medium armor",
-          "armorRating": 13,
-          "sdc": 45,
+          "guardRating": 13,
+          "armorDurability": 45,
           "weight": 25,
           "value": 175,
           "description": "Interlocking metal links forming a flexible shirt. Reliable mid-tier armor.",
@@ -502,8 +502,8 @@
         {
           "name": "Scale Mail Armor",
           "type": "medium armor",
-          "armorRating": 14,
-          "sdc": 55,
+          "guardRating": 14,
+          "armorDurability": 55,
           "weight": 28,
           "value": 200,
           "description": "Overlapping metal scales sewn onto leather. Durable, heavy, and noisy.",
@@ -512,8 +512,8 @@
         {
           "name": "Splint Mail Armor",
           "type": "medium armor",
-          "armorRating": 15,
-          "sdc": 60,
+          "guardRating": 15,
+          "armorDurability": 60,
           "weight": 32,
           "value": 225,
           "description": "Vertical metal strips riveted over leather. Good balance between weight and defense.",
@@ -522,8 +522,8 @@
         {
           "name": "Plate Mail Armor",
           "type": "heavy armor",
-          "armorRating": 16,
-          "sdc": 70,
+          "guardRating": 16,
+          "armorDurability": 70,
           "weight": 38,
           "value": 300,
           "description": "Interlocked steel plates over chain backing. Excellent protection; restricts movement.",
@@ -532,8 +532,8 @@
         {
           "name": "Full Plate Armor",
           "type": "heavy armor",
-          "armorRating": 17,
-          "sdc": 90,
+          "guardRating": 17,
+          "armorDurability": 90,
           "weight": 45,
           "value": 500,
           "description": "Complete articulated steel armor. Supreme defense but extremely heavy and loud.",
@@ -544,8 +544,8 @@
         {
           "name": "Leather Greaves",
           "type": "light armor",
-          "armorRating": 6,
-          "sdc": 20,
+          "guardRating": 6,
+          "armorDurability": 20,
           "weight": 3,
           "value": 40,
           "description": "Leather leggings protecting thighs and shins.",
@@ -554,8 +554,8 @@
         {
           "name": "Chain Leggings",
           "type": "medium armor",
-          "armorRating": 13,
-          "sdc": 45,
+          "guardRating": 13,
+          "armorDurability": 45,
           "weight": 6,
           "value": 100,
           "description": "Chain-linked metal leggings that match chain mail armor.",
@@ -564,8 +564,8 @@
         {
           "name": "Plate Leggings",
           "type": "heavy armor",
-          "armorRating": 17,
-          "sdc": 90,
+          "guardRating": 17,
+          "armorDurability": 90,
           "weight": 10,
           "value": 250,
           "description": "Steel leg plates offering full lower body defense.",
@@ -576,8 +576,8 @@
         {
           "name": "Leather Boots",
           "type": "light armor",
-          "armorRating": 6,
-          "sdc": 15,
+          "guardRating": 6,
+          "armorDurability": 15,
           "weight": 2,
           "value": 25,
           "description": "Sturdy leather boots with some protective value.",
@@ -586,18 +586,18 @@
         {
           "name": "Studded Boots",
           "type": "light armor",
-          "armorRating": 8,
-          "sdc": 25,
+          "guardRating": 8,
+          "armorDurability": 25,
           "weight": 3,
           "value": 40,
-          "description": "Leather boots reinforced with metal studs for better protection.",
+          "description": "Leather boots reinfraidered with metal studs for better protection.",
           "raceRestrictions": []
         },
         {
           "name": "Chain Sabatons",
           "type": "medium armor",
-          "armorRating": 13,
-          "sdc": 45,
+          "guardRating": 13,
+          "armorDurability": 45,
           "weight": 4,
           "value": 80,
           "description": "Chain mail boots for medium armor protection.",
@@ -606,8 +606,8 @@
         {
           "name": "Plate Sabatons",
           "type": "heavy armor",
-          "armorRating": 17,
-          "sdc": 90,
+          "guardRating": 17,
+          "armorDurability": 90,
           "weight": 5,
           "value": 120,
           "description": "Heavy steel boots, standard for knights and paladins.",
@@ -618,8 +618,8 @@
         {
           "name": "Leather Bracers",
           "type": "light armor",
-          "armorRating": 6,
-          "sdc": 15,
+          "guardRating": 6,
+          "armorDurability": 15,
           "weight": 1,
           "value": 25,
           "description": "Forearm guards made of boiled leather.",
@@ -628,8 +628,8 @@
         {
           "name": "Chain Gauntlets",
           "type": "medium armor",
-          "armorRating": 13,
-          "sdc": 45,
+          "guardRating": 13,
+          "armorDurability": 45,
           "weight": 2,
           "value": 75,
           "description": "Protective gloves of interlinked chain rings.",
@@ -638,8 +638,8 @@
         {
           "name": "Plate Gauntlets",
           "type": "heavy armor",
-          "armorRating": 17,
-          "sdc": 90,
+          "guardRating": 17,
+          "armorDurability": 90,
           "weight": 3,
           "value": 140,
           "description": "Fully plated gloves granting strong defense but limited dexterity.",
@@ -648,21 +648,21 @@
         {
           "name": "Shield, Small Wood",
           "type": "shield",
-          "armorRating": 10,
-          "sdc": 25,
+          "guardRating": 10,
+          "armorDurability": 25,
           "weight": 4,
           "value": 35,
-          "description": "Round wooden shield. Provides modest parry bonus; degrades quickly in battle.",
+          "description": "Round wooden shield. Provides modest block bonus; degrades quickly in battle.",
           "raceRestrictions": []
         },
         {
           "name": "Shield, Large Iron",
           "type": "shield",
-          "armorRating": 14,
-          "sdc": 50,
+          "guardRating": 14,
+          "armorDurability": 50,
           "weight": 8,
           "value": 100,
-          "description": "Heavy iron shield. High durability and excellent parry protection.",
+          "description": "Heavy iron shield. High durability and excellent block protection.",
           "raceRestrictions": []
         }
       ]

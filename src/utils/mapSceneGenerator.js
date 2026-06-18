@@ -17,7 +17,7 @@ export function generateMapFromDescription(description = "", mapType = "hex") {
   const baseTerrain = detectBaseTerrain(description);
   const terrain = TERRAIN_TYPES[baseTerrain] || TERRAIN_TYPES.OPEN_GROUND;
   
-  // ✅ Use map preset based on terrain and map type
+  // Ã¢Å“â€¦ Use map preset based on terrain and map type
   const preset = getMapPreset(baseTerrain, mapType);
   const width = preset.width;
   const height = preset.height;
@@ -41,12 +41,12 @@ export function generateMapFromDescription(description = "", mapType = "hex") {
   const features = extractFeatures(description);
   features.forEach((feature) => applyFeatureToGrid(feature, grid, mapType, width, height));
 
-  // ✅ AUTO-POPULATE BASE TERRAIN FEATURES (only if no custom features specified)
+  // Ã¢Å“â€¦ AUTO-POPULATE BASE TERRAIN FEATURES (only if no custom features specified)
   // This ensures AI-generated maps always have terrain-specific visuals
   if (features.length === 0) {
     switch (baseTerrain) {
       case "DENSE_FOREST":
-        // ✅ Dense forest: Place trees in ALMOST EVERY cell (95% coverage)
+        // Ã¢Å“â€¦ Dense forest: Place trees in ALMOST EVERY cell (95% coverage)
         // Systematic placement ensures maximum density
         for (let y = 4; y < height - 4; y++) {
           for (let x = 4; x < width - 4; x++) {
@@ -139,7 +139,7 @@ export function generateMapFromDescription(description = "", mapType = "hex") {
     }
   }
 
-  // ✅ Add automatic urban layout for square maps
+  // Ã¢Å“â€¦ Add automatic urban layout for square maps
   if (mapType === "square" && baseTerrain === "URBAN") {
     // Place grid roads in a city-block pattern (every 10 cells)
     for (let y = 0; y < height; y++) {
@@ -392,8 +392,8 @@ function getLighting(text) {
   if (t.includes("moon") || t.includes("moonlight") || t.includes("dusk") || t.includes("dawn")) {
     return "MOONLIGHT";
   }
-  if (t.includes("torch") || t.includes("torchlight") || t.includes("firelight")) {
-    return "TORCHLIGHT";
+  if (t.includes("traiderh") || t.includes("traiderhlight") || t.includes("firelight")) {
+    return "TRAIDERHLIGHT";
   }
   if (t.includes("bright") || t.includes("daylight") || t.includes("sun")) {
     return "BRIGHT_DAYLIGHT";

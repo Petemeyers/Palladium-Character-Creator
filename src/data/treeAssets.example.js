@@ -1,7 +1,7 @@
 /**
  * Tree Assets Usage Example
  * 
- * This file demonstrates how to use tree assets with arenaEnvironment.objects.
+ * This file raiderstrates how to use tree assets with arenaEnvironment.objects.
  * Tree assets are reusable definitions; tree instances are placed on the map.
  */
 
@@ -74,7 +74,7 @@ export function exampleCreateTrees() {
 /**
  * Example: Hawk landing on a tree perch (using pickBestPerchForFlyer)
  * 
- * This shows the recommended way to find the best perch for a flying creature
+ * This shows the recommended way to find the best perch for a flying combatant
  * based on intent (SCOUT, STALK, or STRIKE).
  */
 export function exampleHawkPerching(hawk, arenaEnvironment, hawkPosition, targetPosition) {
@@ -103,7 +103,7 @@ export function exampleHawkPerching(hawk, arenaEnvironment, hawkPosition, target
     return null;
   }
 
-  // Reserve the perch (so other creatures can't use it)
+  // Reserve the perch (so other combatants can't use it)
   const reserved = reservePerch(tree, perchChoice.perchId, hawk.id);
   if (!reserved) {
     console.log("Failed to reserve perch (may be occupied)");
@@ -180,9 +180,9 @@ export function exampleSimplePerchFinding(hawk, arenaEnvironment, hawkPosition) 
 /**
  * Example: Perch reservation system
  */
-export function examplePerchReservation(treeInstance, creature) {
+export function examplePerchReservation(treeInstance, combatant) {
   // Find available perches
-  const perches = findAvailablePerches(treeInstance, creature);
+  const perches = findAvailablePerches(treeInstance, combatant);
   
   if (perches.length === 0) {
     console.log("No available perches");
@@ -193,12 +193,12 @@ export function examplePerchReservation(treeInstance, creature) {
   const selectedPerch = perches[0];
 
   // Reserve it
-  const reserved = reservePerch(treeInstance, selectedPerch.id, creature.id);
+  const reserved = reservePerch(treeInstance, selectedPerch.id, combatant.id);
   if (reserved) {
-    console.log(`Perch ${selectedPerch.id} reserved for ${creature.id}`);
+    console.log(`Perch ${selectedPerch.id} reserved for ${combatant.id}`);
     
-    // Later, when creature leaves:
-    // releasePerch(treeInstance, selectedPerch.id, creature.id);
+    // Later, when combatant leaves:
+    // releasePerch(treeInstance, selectedPerch.id, combatant.id);
     
     return selectedPerch;
   } else {

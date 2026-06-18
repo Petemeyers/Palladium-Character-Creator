@@ -15,10 +15,10 @@ This document lists all third-party services that may incur costs when using thi
 |---------|----------|----------------------|
 | AI Game Master (GM) | Backend `server.js` | `OPENAI_API_KEY` |
 | GM model selection | Backend `server.js` | `GM_MODEL` (optional, defaults to `gpt-4o-mini`) |
-| Party Chat | `backend/controllers/chatController.js` | `OPENAI_API_KEY` |
+| Party Chat | `backend/conchampioners/chatConchampioner.js` | `OPENAI_API_KEY` |
 | Optional enemy combat AI | Frontend `src/utils/openaiAdapter.js` | User-entered API key (optional, in InitiativeTracker) |
-| GM World Map travel narration | `src/components/GMWorldMap.jsx` → `/api/openai/travel` | `OPENAI_API_KEY` |
-| GM Control Panel (narrate, quest, encounter, assist) | `src/components/GMControlPanel.jsx` → `/api/openai/*` | `OPENAI_API_KEY` |
+| GM World Map travel narration | `src/components/GMWorldMap.jsx` â†’ `/api/openai/travel` | `OPENAI_API_KEY` |
+| GM Control Panel (narrate, quest, encounter, assist) | `src/components/GMControlPanel.jsx` â†’ `/api/openai/*` | `OPENAI_API_KEY` |
 
 ### Models used
 
@@ -29,7 +29,7 @@ This document lists all third-party services that may incur costs when using thi
 
 - Backend GM and Chat features require a valid `OPENAI_API_KEY` in `.env`
 - The InitiativeTracker's optional "OpenAI for decisions" uses a key entered by the user; the app works without it (deterministic AI fallback)
-- Rate limiting applies (e.g. 10 chat requests per minute in `chatController.js`)
+- Rate limiting applies (e.g. 10 chat requests per minute in `chatConchampioner.js`)
 
 ---
 
@@ -56,9 +56,9 @@ This document lists all third-party services that may incur costs when using thi
 
 ### Where it's used
 
-- `/api/session/create` – creates session in this service
-- `/api/game/interact` – generates AI responses
-- `/api/dev/test-generate` – development testing
+- `/api/session/create` â€“ creates session in this service
+- `/api/game/interact` â€“ generates AI responses
+- `/api/dev/test-generate` â€“ development testing
 
 ### Notes
 
@@ -82,7 +82,7 @@ This document lists all third-party services that may incur costs when using thi
 
 ```env
 # Required for MongoDB (local or Atlas)
-MONGODB_URI=mongodb://localhost:27017/palladium
+MONGODB_URI=mongodb://localhost:27017/medieval_combat_simulator
 
 # Required for OpenAI-backed features (GM, Chat, etc.)
 OPENAI_API_KEY=your_openai_api_key_here

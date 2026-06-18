@@ -1,35 +1,35 @@
 /**
- * Palladium Fantasy Movement Rules
- * Based on OFFICIAL Palladium Fantasy RPG movement mechanics
+ * Medieval Combat Simulator Movement Rules
+ * Based on OFFICIAL Medieval Combat Simulator movement mechanics
  */
 
 import { offsetToAxial } from "../utils/hexGridMath";
 
 /**
- * OFFICIAL 1994 PALLADIUM FANTASY MOVEMENT SYSTEM:
- * - 1 melee round = 15 seconds
- * - Speed (SPD) × 6 = yards per melee round (running speed)
+ * Medieval Combat Simulator MOVEMENT SYSTEM:
+ * - 1 combat round = 15 seconds
+ * - Speed (SPD) ÃƒÆ’Ã¢â‚¬â€ 6 = yards per combat round (running speed)
  * - Walking speed = ~half of running speed
- * - Movement per action = (Speed × 6) ÷ Attacks per Melee
- * - Physical Endurance (P.E.) determines how long character can sustain maximum speed
+ * - Movement per action = (Speed ÃƒÆ’Ã¢â‚¬â€ 6) ÃƒÆ’Ã‚Â· Attacks per Melee
+ * - Physical Endurance (endurance) determines how long character can sustain maximum speed
  * - Encumbrance and armor reduce effective SPD
  * - Movement can be combined with combat actions (uses walking speed)
  * - Charging = move + attack with bonuses/penalties
  *
  * For grid-based tactical combat (using 5-foot cells):
- * - Convert yards to feet: yards × 3 = feet
+ * - Convert yards to feet: yards ÃƒÆ’Ã¢â‚¬â€ 3 = feet
  * - When character takes combat actions, use walking speed (~half running speed)
  */
 
-// Movement rates based on Speed attribute (OFFICIAL 1994 PALLADIUM RULES)
+// Movement rates based on Speed attribute (Medieval Combat Simulator RULES)
 export const MOVEMENT_RATES = {
   calculateMovement: (speedAttribute) => {
-    // OFFICIAL 1994 FORMULA: Speed × 18 = feet per melee (running speed)
+    // OFFICIAL 1994 FORMULA: Speed ÃƒÆ’Ã¢â‚¬â€ 18 = feet per melee (running speed)
     const feetPerMelee = speedAttribute * 18;
 
     return {
-      // Running speed (official Palladium)
-      running: feetPerMelee, // Speed × 18 feet per melee
+      // Running speed (official Medieval Combat Simulator)
+      running: feetPerMelee, // Speed ÃƒÆ’Ã¢â‚¬â€ 18 feet per melee
 
       // Walking speed (~half of running speed)
       walking: Math.floor(feetPerMelee / 2), // Half speed when walking/fighting
@@ -37,7 +37,7 @@ export const MOVEMENT_RATES = {
       // Crawling/stealth (significantly slower)
       crawling: Math.floor(speedAttribute * 3), // ~1 yard per melee
 
-      // Note: P.E. determines endurance, not listed here
+      // Note: endurance determines endurance, not listed here
       // Encumbrance penalties should reduce speedAttribute before calculation
     };
   },
@@ -103,10 +103,10 @@ export const MOVEMENT_ACTIONS = {
   CHARGE: {
     name: "Charge",
     actionCost: 1, // Costs 1 attack
-    description: "Move and attack with +2 strike, -2 parry/dodge",
+    description: "Move and attack with +2 attack, -2 block/evade",
     speedMultiplier: 2,
-    bonuses: { strike: +2 },
-    penalties: { parry: -2, dodge: -2 },
+    bonuses: { attack: +2 },
+    penalties: { block: -2, evade: -2 },
     requiresMinDistance: 10, // Must move at least 10 feet
   },
   WITHDRAW: {
@@ -117,11 +117,11 @@ export const MOVEMENT_ACTIONS = {
     special: "No opportunity attack",
   },
   DODGE: {
-    name: "Dodge",
+    name: "Evade",
     actionCost: 1,
-    description: "Move defensively (+bonus to dodge)",
+    description: "Move defensively (+bonus to evade)",
     speedMultiplier: 0.5,
-    bonuses: { dodge: +3 },
+    bonuses: { evade: +3 },
   },
   SPRINT: {
     name: "Sprint",
@@ -150,7 +150,7 @@ export const TACTICAL_ZONES = {
     name: "Support Zone",
     description: "Ranged support position",
     distance: 60,
-    effects: "Missile weapons, spells, cannot be targeted by melee",
+    effects: "Missile weapons, techniques, cannot be targeted by melee",
   },
   REAR: {
     name: "Rear Zone",
@@ -331,25 +331,25 @@ export function isValidPosition(
   return x >= 0 && x < gridWidth && y >= 0 && y < gridHeight;
 }
 
-// Calculate movement range from a position using Palladium movement system
+// Calculate movement range from a position using Medieval Combat Simulator movement system
 export function getMovementRange(
   position,
   speed,
-  attacksPerMelee = 1,
+  actionsPerRound = 1,
   terrain = {},
   isRunning = false
 ) {
-  // Use official 1994 Palladium movement: Speed × 18 feet per melee (running)
+  // Use official 1994 Medieval Combat Simulator movement: Speed ÃƒÆ’Ã¢â‚¬â€ 18 feet per melee (running)
   const feetPerMelee = speed * 18;
-  const feetPerAction = feetPerMelee / attacksPerMelee;
+  const feetPerAction = feetPerMelee / actionsPerRound;
 
   // Use walking speed (combat movement) for movement range calculation
   // Unless running mode is enabled, then use full running speed
-  // When running, can move at full speed (Speed × 18 feet per action)
+  // When running, can move at full speed (Speed ÃƒÆ’Ã¢â‚¬â€ 18 feet per action)
   // When walking (combat movement), moves at half speed to allow attacking
-  // Per Palladium rules:
+  // Per Medieval Combat Simulator rules:
   // - Walking (combat): ~1/2 speed (allows attacking while moving)
-  // - Running: Full speed (Speed × 18 feet per action) = 2x walking
+  // - Running: Full speed (Speed ÃƒÆ’Ã¢â‚¬â€ 18 feet per action) = 2x walking
   const movementFeetPerAction = isRunning
     ? feetPerAction // Running: full speed per action (2x walking speed)
     : Math.floor(feetPerAction * 0.5); // Walking: half speed for combat movement
@@ -359,7 +359,7 @@ export function getMovementRange(
   );
 
   // Debug logging to verify running mode
-  console.log("🏃 Movement calculation:", {
+  console.log("ÃƒÂ°Ã…Â¸Ã‚ÂÃ†â€™ Movement calculation:", {
     isRunning,
     speed,
     feetPerMelee,
@@ -381,7 +381,7 @@ export function getMovementRange(
     red: Math.floor(hexesCanMove * 4), // 4 actions (60 seconds)
   };
 
-  console.log("🎨 Movement ranges:", movementRanges);
+  console.log("ÃƒÂ°Ã…Â¸Ã…Â½Ã‚Â¨ Movement ranges:", movementRanges);
 
   if (GRID_CONFIG.USE_HEX_GRID) {
     // Use flood-fill algorithm for hex grid
@@ -478,7 +478,7 @@ export function getMovementRange(
   }
 
   console.log(
-    `✅ Generated ${validPositions.length} valid positions with colors:`,
+    `ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Generated ${validPositions.length} valid positions with colors:`,
     validPositions.map((p) => ({ x: p.x, y: p.y, color: p.color })).slice(0, 10)
   );
 
@@ -486,11 +486,11 @@ export function getMovementRange(
 }
 
 // ------------------------------------------------------------
-// Creature sizing + segmented bodies (head/body/tail)
+// Combatant sizing + segmented bodies (head/body/tail)
 // ------------------------------------------------------------
 
 function oppositeDir(dir) {
-  const d = (dir || "").toUpperCase();
+  const d = (dir || "").toUstaminarCase();
   const map = { E: "W", W: "E", NE: "SW", NW: "SE", SE: "NW", SW: "NE" };
   return map[d] || "W";
 }
@@ -498,7 +498,7 @@ function oppositeDir(dir) {
 // Flat-top, odd-r offset neighbors (row-based offset)
 function stepOddR(col, row, dir) {
   const odd = row % 2 === 1;
-  switch ((dir || "W").toUpperCase()) {
+  switch ((dir || "W").toUstaminarCase()) {
     case "E":
       return { x: col + 1, y: row };
     case "W":
@@ -532,28 +532,28 @@ function buildSegmentOffsets(totalHexes, tailDir) {
   return offsets;
 }
 
-// Calculate creature size in hexes
-export function getCreatureSize(creature) {
-  if (!creature) return { width: 1, length: 1 };
+// Calculate combatant size in hexes
+export function getCombatantSize(combatant) {
+  if (!combatant) return { width: 1, length: 1 };
 
-  // ✅ Segmented body support (preferred if present)
+  // ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Segmented body support (preferred if present)
   // Support both old format (segments array) and new format (headHexes/bodyHexes/tailHexes)
-  if (creature.segmentedBody) {
+  if (combatant.segmentedBody) {
     let headHexes = 1;
     let bodyHexes = 0;
     let tailHexes = 0;
 
-    if (creature.segmentedBody.headHexes !== undefined) {
+    if (combatant.segmentedBody.headHexes !== undefined) {
       // New format: headHexes, bodyHexes, tailHexes
-      headHexes = creature.segmentedBody.headHexes ?? 1;
-      bodyHexes = creature.segmentedBody.bodyHexes ?? 0;
-      tailHexes = creature.segmentedBody.tailHexes ?? 0;
+      headHexes = combatant.segmentedBody.headHexes ?? 1;
+      bodyHexes = combatant.segmentedBody.bodyHexes ?? 0;
+      tailHexes = combatant.segmentedBody.tailHexes ?? 0;
     } else if (
-      creature.segmentedBody.segments &&
-      Array.isArray(creature.segmentedBody.segments)
+      combatant.segmentedBody.segments &&
+      Array.isArray(combatant.segmentedBody.segments)
     ) {
       // Old format: segments array
-      creature.segmentedBody.segments.forEach((seg) => {
+      combatant.segmentedBody.segments.forEach((seg) => {
         if (seg.type === "head") headHexes = seg.hexes ?? 1;
         else if (seg.type === "body") bodyHexes += seg.hexes ?? 0;
         else if (seg.type === "tail") tailHexes += seg.hexes ?? 0;
@@ -563,10 +563,10 @@ export function getCreatureSize(creature) {
     const totalHexes = Math.max(1, headHexes + bodyHexes + tailHexes);
 
     const facing =
-      creature.facingDirection ??
-      creature.facing ??
-      creature.direction ??
-      creature.segmentedBody.defaultDirection ??
+      combatant.facingDirection ??
+      combatant.facing ??
+      combatant.direction ??
+      combatant.segmentedBody.defaultDirection ??
       "E";
 
     // Tail should extend BEHIND the head (opposite of facing)
@@ -592,9 +592,9 @@ export function getCreatureSize(creature) {
   }
 
   // Fallback: legacy size parsing
-  if (!creature.size) return { width: 1, length: 1 };
+  if (!combatant.size) return { width: 1, length: 1 };
 
-  const size = creature.size.toLowerCase();
+  const size = combatant.size.toLowerCase();
 
   // Extract dimensions from size string
   let length = 0;
@@ -793,7 +793,7 @@ export default {
   getEngagementRange,
   isValidPosition,
   getMovementRange,
-  getCreatureSize,
+  getCombatantSize,
   getInitialPositions,
   hasLineOfSight,
   findPath,

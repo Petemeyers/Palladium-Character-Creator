@@ -63,8 +63,8 @@ export default function Phase0PreCombatModal({
       terrain: newTerrain,
     }));
     
-    // ✅ Auto-suggest square map for urban/interior terrains
-    // But don't force it - allow user to manually override
+    // Ã¢Å“â€¦ Auto-suggest square map for urban/interior terrains
+    // But don't fraidere it - allow user to manually override
     if (["URBAN", "CAVE_INTERIOR"].includes(newTerrain) && mapType === "hex") {
       // Only auto-switch if user hasn't manually selected square
       // This is a suggestion, user can change it back if they want
@@ -88,34 +88,34 @@ export default function Phase0PreCombatModal({
     if (!sceneDescription.trim()) {
       return;
     }
-    // ✅ Always use current mapType selection when generating
+    // Ã¢Å“â€¦ Always use current mapType selection when generating
     const generated = generateMapFromDescription(sceneDescription, mapType);
     setGeneratedScene(generated);
     setTerrain(generated.baseTerrain);
     setLighting(generated.lighting);
     setUseAIGeneration(true);
     
-    // ✅ Auto-switch mapType if AI suggests urban/interior terrain
+    // Ã¢Å“â€¦ Auto-switch mapType if AI suggests urban/interior terrain
     // But only if user hasn't manually selected a different mapType recently
     // (This preserves user preference while allowing AI to suggest)
     if (["URBAN", "CAVE_INTERIOR"].includes(generated.baseTerrain) && mapType === "hex") {
-      // Suggest square for urban/interior, but don't force it
+      // Suggest square for urban/interior, but don't fraidere it
       // User can manually change back to hex if desired
-      console.log("💡 AI detected urban/interior terrain - consider switching to Square map");
+      console.log("Ã°Å¸â€™Â¡ AI detected urban/interior terrain - consider switching to Square map");
     }
   };
 
   const handleSceneSetup = () => {
-    // ✅ Debug: Log current state values
+    // Ã¢Å“â€¦ Debug: Log current state values
     console.log('[Phase0PreCombatModal] handleSceneSetup called - Current mapType state:', mapType);
     
-    // ✅ Apply map size preset based on terrain and map type
+    // Ã¢Å“â€¦ Apply map size preset based on terrain and map type
     const preset = getMapPreset(terrain, mapType);
     GRID_CONFIG.GRID_WIDTH = preset.width;
     GRID_CONFIG.GRID_HEIGHT = preset.height;
     console.log('[Phase0PreCombatModal] Applied map preset:', preset, `(${preset.width}x${preset.height} hexes)`, 'for terrain:', terrain, 'mapType:', mapType);
     
-    // ✅ Always generate a map grid, even for manual selections
+    // Ã¢Å“â€¦ Always generate a map grid, even for manual selections
     // This ensures terrain features (trees, boulders, water, etc.) are always populated
     let generated = null;
     
@@ -168,17 +168,17 @@ export default function Phase0PreCombatModal({
     const finalTerrainData = TERRAIN_TYPES[finalTerrain];
     const finalLightingData = LIGHTING_CONDITIONS[finalLighting];
     const sceneGrid = generated.grid;
-    let finalMapType = mapType; // ✅ Start with user's manual selection
+    let finalMapType = mapType; // Ã¢Å“â€¦ Start with user's manual selection
     
-    // ✅ Use AI-generated mapType if available, otherwise use manual selection
+    // Ã¢Å“â€¦ Use AI-generated mapType if available, otherwise use manual selection
     if (generated.mapType) {
       finalMapType = generated.mapType;
     }
     
-    // ✅ Debug: Verify finalMapType
+    // Ã¢Å“â€¦ Debug: Verify finalMapType
     console.log('[Phase0PreCombatModal] finalMapType set to:', finalMapType);
     
-    // ✅ Calculate visibility range for fog of war based on terrain and lighting
+    // Ã¢Å“â€¦ Calculate visibility range for fog of war based on terrain and lighting
     const baseVision = 60; // default visible radius in feet (typical human vision)
     const terrainVisibilityModifier = finalTerrainData?.visibilityModifier || 1.0;
     const lightingVisibilityBonus = finalLightingData?.visibilityBonus || 0;
@@ -192,7 +192,7 @@ export default function Phase0PreCombatModal({
       (1 + lightingVisibilityBonus / 100)
     ));
     
-    // ✅ Debug: Log what we're passing
+    // Ã¢Å“â€¦ Debug: Log what we're passing
     if (process.env.NODE_ENV === 'development') {
       console.log('[Phase0PreCombatModal] Final mapType:', finalMapType, '| state mapType:', mapType);
       console.log('[Phase0PreCombatModal] Environment object:', {
@@ -209,14 +209,14 @@ export default function Phase0PreCombatModal({
         terrain: finalTerrain,
         lighting: finalLighting,
         description: sceneDescription || `Generated ${finalTerrain} scene`,
-        mapType: finalMapType, // ✅ Use final mapType (manual selection or AI suggestion)
+        mapType: finalMapType, // Ã¢Å“â€¦ Use final mapType (manual selection or AI suggestion)
         terrainData: finalTerrainData,
         lightingData: finalLightingData,
-        mapSize: preset, // ✅ Include map size preset info
+        mapSize: preset, // Ã¢Å“â€¦ Include map size preset info
         density: generated?.density || finalTerrainData.density || 0.5,
-        grid: sceneGrid, // ✅ Grid with features (always populated now!)
+        grid: sceneGrid, // Ã¢Å“â€¦ Grid with features (always populated now!)
         features: generated?.features || [],
-        visibilityRange, // ✅ Pass computed visibility range for fog of war
+        visibilityRange, // Ã¢Å“â€¦ Pass computed visibility range for fog of war
       },
       readyForPrecombat: true,
     });
@@ -227,7 +227,7 @@ export default function Phase0PreCombatModal({
     <Modal isOpen={isOpen} onClose={onClose} size="xl" isCentered>
       <ModalOverlay />
       <ModalContent>
-        <ModalHeader>🌲 Phase 0: Scene Setup</ModalHeader>
+        <ModalHeader>Ã°Å¸Å’Â² Phase 0: Scene Setup</ModalHeader>
         <ModalCloseButton />
         <ModalBody>
           <VStack spacing={4} align="stretch">
@@ -235,7 +235,7 @@ export default function Phase0PreCombatModal({
             <Box>
               <HStack justify="space-between" align="center" mb={2}>
                 <Text fontWeight="bold">
-                  🗺️ Map Type
+                  Ã°Å¸â€”ÂºÃ¯Â¸Â Map Type
                 </Text>
                 <Button
                   size="sm"
@@ -265,7 +265,7 @@ export default function Phase0PreCombatModal({
                     }
                   }}
                 >
-                  {editorActive ? "✕ Close Editor" : "🎨 Open 3D Map Editor"}
+                  {editorActive ? "Ã¢Å“â€¢ Close Editor" : "Ã°Å¸Å½Â¨ Open 3D Map Editor"}
                 </Button>
               </HStack>
               <FormControl>
@@ -278,28 +278,28 @@ export default function Phase0PreCombatModal({
                     setMapType(newMapType);
                   }}
                 >
-                  <option value="hex">🌲 Hex Map - Wilderness/Outdoors (Recommended for forests, fields, swamps)</option>
-                  <option value="square">🏰 Square Map - Dungeons/Castles (Recommended for corridors, rooms, tight spaces)</option>
+                  <option value="hex">Ã°Å¸Å’Â² Hex Map - Wilderness/Outdoors (Recommended for forests, fields, swamps)</option>
+                  <option value="square">Ã°Å¸ÂÂ° Square Map - Dungeons/Castles (Recommended for corridors, rooms, tight spaces)</option>
                 </Select>
               </FormControl>
               {mapType === "hex" && (
                 <Box mt={2} p={2} bg="green.50" borderRadius="md">
                   <Text fontSize="xs">
-                    ⬡ Hexagonal grid - better for organic wilderness terrain
+                    Ã¢Â¬Â¡ Hexagonal grid - better for organic wilderness terrain
                   </Text>
                 </Box>
               )}
               {mapType === "square" && (
                 <Box mt={2} p={2} bg="gray.50" borderRadius="md">
                   <Text fontSize="xs">
-                    ⬛ Square grid - standard for dungeon corridors and rooms
+                    Ã¢Â¬â€º Square grid - standard for dungeon corridors and rooms
                   </Text>
                 </Box>
               )}
               {/* Map Size Display */}
               <Box mt={2} p={2} bg="purple.50" borderRadius="md" borderWidth="1px" borderColor="purple.200">
                 <Text fontSize="sm" fontWeight="semibold" mb={1}>
-                  📐 Map Size
+                  Ã°Å¸â€œÂ Map Size
                 </Text>
                 {(() => {
                   const preset = getMapPreset(terrain, mapType);
@@ -307,7 +307,7 @@ export default function Phase0PreCombatModal({
                   const heightFeet = preset.height * GRID_CONFIG.CELL_SIZE;
                   return (
                     <Text fontSize="xs">
-                      <strong>{preset.width} × {preset.height} hexes</strong> ({widthFeet} ft × {heightFeet} ft)
+                      <strong>{preset.width} Ãƒâ€” {preset.height} hexes</strong> ({widthFeet} ft Ãƒâ€” {heightFeet} ft)
                       <br />
                       {preset.width === 20 && preset.height === 15 && "Small indoor / dungeon room"}
                       {preset.width === 30 && preset.height === 20 && "Standard outdoor encounter"}
@@ -338,7 +338,7 @@ export default function Phase0PreCombatModal({
                   <Text fontSize="sm">
                     <strong>Effects:</strong> Movement {TERRAIN_TYPES[terrain].movementModifier * 100}%,
                     Visibility {TERRAIN_TYPES[terrain].visibilityModifier * 100}%,
-                    Cover Bonus: +{TERRAIN_TYPES[terrain].cover} AR
+                    Cover Bonus: +{TERRAIN_TYPES[terrain].cover} guardRating
                   </Text>
                 </Box>
               )}
@@ -372,7 +372,7 @@ export default function Phase0PreCombatModal({
             {/* Scene Description with AI Generation */}
             <Box>
               <Text fontWeight="bold" mb={2}>
-                🎨 Scene Description (AI Generation Available)
+                Ã°Å¸Å½Â¨ Scene Description (AI Generation Available)
               </Text>
               <VStack spacing={2} align="stretch">
                 <Textarea
@@ -389,10 +389,10 @@ export default function Phase0PreCombatModal({
                     onClick={handleGenerateFromDescription}
                     isDisabled={!sceneDescription.trim()}
                   >
-                    🧠 Generate Map from Description
+                    Ã°Å¸Â§Â  Generate Map from Description
                   </Button>
                   {generatedScene && (
-                    <Badge colorScheme="green">✓ Scene Generated</Badge>
+                    <Badge colorScheme="green">Ã¢Å“â€œ Scene Generated</Badge>
                   )}
                   <Box flex={1} />
                   {useAIGeneration && (
@@ -416,7 +416,7 @@ export default function Phase0PreCombatModal({
                       {" | "}
                       <strong>Lighting:</strong> {generatedScene.lighting}
                       {" | "}
-                      <strong>Map:</strong> {generatedScene.mapType === "square" ? "⬛ Square" : "⬡ Hex"}
+                      <strong>Map:</strong> {generatedScene.mapType === "square" ? "Ã¢Â¬â€º Square" : "Ã¢Â¬Â¡ Hex"}
                       {" | "}
                       <strong>Features:</strong> {generatedScene.features.length > 0 
                         ? generatedScene.features.map(f => f.type).join(", ") 
@@ -432,7 +432,7 @@ export default function Phase0PreCombatModal({
                 {useAIGeneration && (
                   <Box p={2} bg="blue.50" borderRadius="md">
                     <Text fontSize="xs">
-                      💡 AI generation will override manual terrain/lighting selection above.
+                      Ã°Å¸â€™Â¡ AI generation will override manual terrain/lighting selection above.
                     </Text>
                   </Box>
                 )}

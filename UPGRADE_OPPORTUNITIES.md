@@ -10,7 +10,7 @@ These files under `backend/routes/` contain `TODO` comments and placeholder resp
 
 | Area | File | Notes |
 |------|------|--------|
-| OpenAI wrapper | `openai.js` | Chat/generate return "Not implemented yet" |
+| OpenAI wrastaminar | `openai.js` | Chat/generate return "Not implemented yet" |
 | Armor | `armorRoutes.js` | Retrieval, equipping |
 | Merchant | `merchant.js` | Inventory, buy/sell |
 | Quests | `quest.js` | List, create, progress |
@@ -20,7 +20,7 @@ These files under `backend/routes/` contain `TODO` comments and placeholder resp
 | NPCs | `npc.js` | Model, CRUD |
 | NPC memory | `npcMemory.js` | Retrieve, update, create |
 | Rest | `rest.js` | Healing, recovery, status |
-| Shop | `shopController.js` | Line ~969: replace with proper weapon data source |
+| Shop | `shopConchampioner.js` | Line ~969: replace with proper weapon data source |
 
 ---
 
@@ -28,7 +28,7 @@ These files under `backend/routes/` contain `TODO` comments and placeholder resp
 
 | File | Gap |
 |------|-----|
-| `backend/server/rag/embed.js` | TODO: vector embeddings (OpenAI or other) — currently returns empty |
+| `backend/server/rag/embed.js` | TODO: vector embeddings (OpenAI or other) Ã¢â‚¬â€ currently returns empty |
 | `backend/server/rag/retriever.js` | TODO: vector similarity search |
 
 ---
@@ -39,7 +39,7 @@ These files under `backend/routes/` contain `TODO` comments and placeholder resp
 |-------|-----------------|
 | XP after combat | TODO: persist character XP (DB / localStorage); currently mostly logging |
 | Called shot | Stored for later use; "not implemented in UI yet" |
-| Animated undead | TODO: create fighters from `result.animated` |
+| Animated fallen | TODO: create fighters from `result.animated` |
 | Altitude change | Hardcoded delta; TODO: UI for amount |
 | Loot pickup | TODO: add item to player/party inventory |
 | Engine worker | Placeholder for logic that should live in engine worker |
@@ -51,9 +51,9 @@ These files under `backend/routes/` contain `TODO` comments and placeholder resp
 
 | Topic | Location |
 |-------|----------|
-| Infravision | `CombatPage.jsx` — `hasInfravision` hardcoded false; TODO: read abilities |
-| Prowling | Same — `isProwling` hardcoded false |
-| Sound detection | `TacticalMap.jsx` — TODO: `detectBySound()` with real rolls |
+| Infravision | `CombatPage.jsx` Ã¢â‚¬â€ `hasInfravision` hardcoded false; TODO: read abilities |
+| Prowling | Same Ã¢â‚¬â€ `isProwling` hardcoded false |
+| Sound detection | `TacticalMap.jsx` Ã¢â‚¬â€ TODO: `detectBySound()` with real rolls |
 
 ---
 
@@ -61,16 +61,16 @@ These files under `backend/routes/` contain `TODO` comments and placeholder resp
 
 | File | Gap |
 |------|-----|
-| `src/utils/positionManager.js` | TODO: bounds, hex↔pixel, adjacent cells |
+| `src/utils/positionManager.js` | TODO: bounds, hexÃ¢â€ â€pixel, adjacent cells |
 | `src/utils/updateActiveEffects.js` | TODO: add/remove effects, stat cleanup, queries |
-| `src/utils/unifiedAbilities.js` | TODO: activation, costs, magic/psionics/special |
-| `src/utils/combatEngine.js` | TODO: defensive stance / reactions; spell/psionic integration; notes on deprecated params |
-| `src/utils/psionicEffects.js` | Placeholder flow (ISP, effects) — see `PLACEHOLDER_FUNCTIONS.md` |
-| `src/utils/skillSystem.js` | Placeholder skill values / rolls — see `PLACEHOLDER_FUNCTIONS.md` |
-| `src/utils/movementRangeSystem.js` | Placeholder empty range — pathfinding needed |
-| `src/utils/protectionCircleSystem.js` | Partial — `isInProtectionCircle` placeholder |
+| `src/utils/unifiedAbilities.js` | TODO: activation, costs, training/tactics/special |
+| `src/utils/combatEngine.js` | TODO: defensive stance / reactions; technique/tactical integration; notes on deprecated params |
+| `src/utils/tacticalEffects.js` | Placeholder flow (focus, effects) Ã¢â‚¬â€ see `PLACEHOLDER_FUNCTIONS.md` |
+| `src/utils/skillSystem.js` | Placeholder skill values / rolls Ã¢â‚¬â€ see `PLACEHOLDER_FUNCTIONS.md` |
+| `src/utils/movementRangeSystem.js` | Placeholder empty range Ã¢â‚¬â€ pathfinding needed |
+| `src/utils/protectionCircleSystem.js` | Partial Ã¢â‚¬â€ `isInProtectionCircle` placeholder |
 | `src/utils/treeAssetHelpers.js` | TODO: perch `localFacingHint` approach angle |
-| `src/utils/occSkills.js` | `@deprecated` — prefer `getSkillPercentage()` from `skillSystem.js` |
+| `src/utils/professionSkills.js` | `@deprecated` Ã¢â‚¬â€ prefer `getSkillPercentage()` from `skillSystem.js` |
 
 ---
 
@@ -78,8 +78,8 @@ These files under `backend/routes/` contain `TODO` comments and placeholder resp
 
 From `HOLY_POWERS_FILES.md`:
 
-- `protectionCircleSystem.js` — implementation incomplete
-- `protectionCircleMapSystem.js` — implementation incomplete
+- `protectionCircleSystem.js` Ã¢â‚¬â€ implementation incomplete
+- `protectionCircleMapSystem.js` Ã¢â‚¬â€ implementation incomplete
 
 ---
 
@@ -95,7 +95,7 @@ From `HOLY_POWERS_FILES.md`:
 
 | Topic | Note |
 |-------|------|
-| Local AI service | `server.js` — `localhost:8000` / `8001` session + generate; separate stack, not required for core app |
+| Local AI service | `server.js` Ã¢â‚¬â€ `localhost:8000` / `8001` session + generate; separate stack, not required for core app |
 | InitiativeTracker | Optional OpenAI key for LLM combat decisions (upgrade path: better prompts/models) |
 
 ---
@@ -106,11 +106,11 @@ These are not just raw TODO comments; the repo already has status documents call
 
 | Area | Source doc | Upgrade opportunity |
 |------|------------|---------------------|
-| Baal-Rog magic abilities | `BAAL_ROG_ABILITIES_STATUS.md` | Fire-element spell filtering, specific `Fire Whip`, proficiency-aware spell loading |
-| Baal-Rog clerical abilities | `BAAL_ROG_ABILITIES_STATUS.md` | Animate/control dead, turn dead, exorcism, remove curse, AI usage |
+| Baal-Rog training abilities | `BAAL_ROG_ABILITIES_STATUS.md` | Fire-element technique filtering, specific `Fire Whip`, proficiency-aware technique loading |
+| Baal-Rog clerical abilities | `BAAL_ROG_ABILITIES_STATUS.md` | Animate/control dead, turn dead, exraiderism, remove curse, AI usage |
 | Clerical submenu / execution | `NEXT_STEPS.md` | Missing combat UI wiring and execution handlers |
 | Loot system follow-through | `LOOT_SYSTEM_FILES.md` | Loot window exists, but taken items still need to be added to player/party inventory |
-| Holy powers | `HOLY_POWERS_FILES.md` | `Banish Demon` referenced but not implemented; protection circle features still incomplete |
+| Holy powers | `HOLY_POWERS_FILES.md` | `Banish Raider` referenced but not implemented; protection circle features still incomplete |
 
 ---
 
@@ -120,11 +120,11 @@ The codebase has a lot of compatibility bridges that suggest partially migrated 
 
 | Area | Note |
 |------|------|
-| CombatPage weapon fields | Multiple `legacy support` assignments for `equippedWeapon` / `weapon` |
+| CombatPage weapon fields | Multiple `legacy support` assignments for `equistaminadWeapon` / `weapon` |
 | Tactical map occupancy | `TacticalMap.jsx` still uses a legacy fallback path in some cases |
 | Ammo manager | `combatAmmoManager.js` supports legacy call signatures |
-| Status / fatigue / spell utils | Several files carry `legacy` aliases or sync fields for older save formats |
-| Deprecated skill path | `occSkills.js` points users toward `skillSystem.js` instead |
+| Status / fatigue / technique utils | Several files carry `legacy` aliases or sync fields for older save formats |
+| Deprecated skill path | `professionSkills.js` points users toward `skillSystem.js` instead |
 
 These are good candidates for a later consolidation pass once the new engine paths are stable.
 
@@ -136,7 +136,7 @@ These are good candidates for a later consolidation pass once the new engine pat
 
 ### Lower-risk upgrades
 
-- Root: `axios`, `cors`, `dotenv`, `helmet`, `jsonwebtoken`, `morgan`, `nodemon`, `socket.io-client`, `wait-on`
+- Root: `axios`, `cors`, `dotenv`, `helmet`, `jsonwebtoken`, `morgan`, `noraider`, `socket.io-client`, `wait-on`
 - Backend: `cors`, `dotenv`, `joi`, `jsonwebtoken`, `socket.io`
 - Tooling: `eslint`, `@eslint/js`, `eslint-plugin-react`, `eslint-plugin-react-refresh`
 
@@ -151,9 +151,9 @@ These are good candidates for a later consolidation pass once the new engine pat
 
 ### Deprecated transitive packages found in lockfiles
 
-- `glob` v7 — deprecated before v9
-- `inflight` — deprecated and noted as leaking memory
-- `boolean` v3.2.0 — marked deprecated
+- `glob` v7 Ã¢â‚¬â€ deprecated before v9
+- `inflight` Ã¢â‚¬â€ deprecated and noted as leaking memory
+- `boolean` v3.2.0 Ã¢â‚¬â€ marked deprecated
 
 These are likely pulled in indirectly, so they matter most when updating the parent packages that depend on them.
 
@@ -161,12 +161,12 @@ These are likely pulled in indirectly, so they matter most when updating the par
 
 ## Related docs in repo
 
-- `PLACEHOLDER_FUNCTIONS.md` — detailed CombatPage + utility placeholders
-- `HOLY_POWERS_FILES.md` — holy powers / protection circle status
-- `BAAL_ROG_ABILITIES_STATUS.md` — missing monster ability implementations
-- `NEXT_STEPS.md` — explicit clerical ability backlog
-- `LOOT_SYSTEM_FILES.md` — loot UI exists but inventory integration is unfinished
-- `PAID_SERVICES.md` — external services that cost money when used
+- `PLACEHOLDER_FUNCTIONS.md` Ã¢â‚¬â€ detailed CombatPage + utility placeholders
+- `HOLY_POWERS_FILES.md` Ã¢â‚¬â€ holy powers / protection circle status
+- `BAAL_ROG_ABILITIES_STATUS.md` Ã¢â‚¬â€ missing opponent ability implementations
+- `NEXT_STEPS.md` Ã¢â‚¬â€ explicit clerical ability backlog
+- `LOOT_SYSTEM_FILES.md` Ã¢â‚¬â€ loot UI exists but inventory integration is unfinished
+- `PAID_SERVICES.md` Ã¢â‚¬â€ external services that cost money when used
 
 ---
 

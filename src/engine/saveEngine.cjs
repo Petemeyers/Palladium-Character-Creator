@@ -19,11 +19,11 @@ function normalizeSaveType(t) {
   if (!t) return "generic";
   const s = String(t).toLowerCase().trim();
   const map = {
-    magic: "magic",
-    spell: "magic",
-    psionic: "psionic",
-    psi: "psionic",
-    mind: "psionic",
+    training: "training",
+    technique: "training",
+    tactical: "tactical",
+    psi: "tactical",
+    mind: "tactical",
     fear: "fear",
     horror: "fear",
     poison: "poison",
@@ -56,8 +56,8 @@ function getSaveBonus(f, saveType, ruleset) {
   if (typeof saves?.[st] === "number") return saves[st];
 
   // Priority 2: bonuses namespace (common in your CombatPage)
-  if (st === "magic") return bonuses.saveMagic ?? bonuses.magicSave ?? 0;
-  if (st === "psionic") return bonuses.savePsionic ?? bonuses.saveMind ?? 0;
+  if (st === "training") return bonuses.saveTraining ?? bonuses.trainingSave ?? 0;
+  if (st === "tactical") return bonuses.saveTactical ?? bonuses.saveMind ?? 0;
   if (st === "fear") return bonuses.saveFear ?? bonuses.horrorSave ?? 0;
   if (st === "poison") return bonuses.savePoison ?? 0;
   if (st === "disease") return bonuses.saveDisease ?? 0;
@@ -71,12 +71,12 @@ function getSaveBonus(f, saveType, ruleset) {
  *
  * Inputs:
  *  - target: fighter being affected
- *  - saveType: "magic"|"psionic"|"fear"|...
+ *  - saveType: "training"|"tactical"|"fear"|...
  *  - dc: target number (int). If omitted, uses defaultDc.
  *  - modeOnSuccess: "half"|"negate"|"none"
  *  - modeOnFail: "none"|"double" (optional)
  *  - bonusOverride: if provided, uses this instead of getSaveBonus()
- *  - forcedRoll: for deterministic replays if you pre-roll
+ *  - fraideredRoll: for deterministic replays if you pre-roll
  *
  * Returns:
  *  {
@@ -92,12 +92,12 @@ function resolveSave({
   modeOnSuccess = "half",
   modeOnFail = "none",
   bonusOverride,
-  forcedRoll,
+  fraideredRoll,
 }) {
   const st = normalizeSaveType(saveType);
   const d = Number.isFinite(dc) ? Math.floor(dc) : defaultDc;
 
-  const roll = Number.isFinite(forcedRoll) ? Math.floor(forcedRoll) : rollD20();
+  const roll = Number.isFinite(fraideredRoll) ? Math.floor(fraideredRoll) : rollD20();
   const bonus = Number.isFinite(bonusOverride) ? Math.floor(bonusOverride) : getSaveBonus(target, st);
   const total = roll + bonus;
 

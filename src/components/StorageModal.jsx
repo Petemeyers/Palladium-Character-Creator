@@ -43,21 +43,21 @@ import {
 import { STORAGE_TYPES } from '../data/storageSystem.js';
 
 const storageIcons = {
-  BACKPACK: "🎒",
-  BELT_POUCH: "👝",
-  INN_ROOM: "🏨",
-  INN_LOCKER: "🔒",
-  GUILD_STORAGE: "🏛️",
-  TEMPLE_STORAGE: "⛪",
-  RENTED_WAREHOUSE: "🏬",
-  SMALL_HOUSE: "🏠",
-  STONE_TOWNHOUSE: "🏘️",
-  MANOR_HOUSE: "🏰",
-  WIZARD_TOWER: "🗼",
-  THIEF_SAFEHOUSE: "🕳️",
-  DIMENSIONAL_POCKET: "🌌",
-  WEIGHTLESS_SACK: "🎭",
-  HIDDEN_CACHE: "🗃️"
+  BACKPACK: "ÃƒÂ°Ã…Â¸Ã…Â½Ã¢â‚¬â„¢",
+  BELT_POUCH: "ÃƒÂ°Ã…Â¸Ã¢â‚¬ËœÃ‚Â",
+  INN_ROOM: "ÃƒÂ°Ã…Â¸Ã‚ÂÃ‚Â¨",
+  INN_LOCKER: "ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ¢â‚¬â„¢",
+  GUILD_STORAGE: "ÃƒÂ°Ã…Â¸Ã‚ÂÃ¢â‚¬ÂºÃƒÂ¯Ã‚Â¸Ã‚Â",
+  TEMPLE_STORAGE: "ÃƒÂ¢Ã¢â‚¬ÂºÃ‚Âª",
+  RENTED_WAREHOUSE: "ÃƒÂ°Ã…Â¸Ã‚ÂÃ‚Â¬",
+  SMALL_HOUSE: "ÃƒÂ°Ã…Â¸Ã‚ÂÃ‚Â ",
+  STONE_TOWNHOUSE: "ÃƒÂ°Ã…Â¸Ã‚ÂÃ‹Å“ÃƒÂ¯Ã‚Â¸Ã‚Â",
+  MANOR_HOUSE: "ÃƒÂ°Ã…Â¸Ã‚ÂÃ‚Â°",
+  TRAINING_HALL: "ÃƒÂ°Ã…Â¸Ã¢â‚¬â€Ã‚Â¼",
+  THIEF_SAFEHOUSE: "ÃƒÂ°Ã…Â¸Ã¢â‚¬Â¢Ã‚Â³ÃƒÂ¯Ã‚Â¸Ã‚Â",
+  DIMENSIONAL_POCKET: "ÃƒÂ°Ã…Â¸Ã…â€™Ã…â€™",
+  WEIGHTLESS_SACK: "ÃƒÂ°Ã…Â¸Ã…Â½Ã‚Â­",
+  HIDDEN_CACHE: "ÃƒÂ°Ã…Â¸Ã¢â‚¬â€Ã†â€™ÃƒÂ¯Ã‚Â¸Ã‚Â"
 };
 
 const StorageModal = ({ isOpen, onClose, character, onCharacterUpdate }) => {
@@ -186,7 +186,7 @@ const StorageModal = ({ isOpen, onClose, character, onCharacterUpdate }) => {
       <ModalContent bg="gray.800" color="white">
         <ModalHeader>
           <Heading size="lg" color="blue.300">
-            🏠 Storage & Housing System
+            ÃƒÂ°Ã…Â¸Ã‚ÂÃ‚Â  Storage & Housing System
           </Heading>
         </ModalHeader>
         <ModalCloseButton />
@@ -194,10 +194,10 @@ const StorageModal = ({ isOpen, onClose, character, onCharacterUpdate }) => {
         <ModalBody>
           <Tabs index={activeTab} onChange={setActiveTab}>
             <TabList>
-              <Tab>📦 Storage Overview</Tab>
-              <Tab>🎒 Store Items</Tab>
-              <Tab>🏠 Purchase Property</Tab>
-              <Tab>💰 Monthly Costs</Tab>
+              <Tab>ÃƒÂ°Ã…Â¸Ã¢â‚¬Å“Ã‚Â¦ Storage Overview</Tab>
+              <Tab>ÃƒÂ°Ã…Â¸Ã…Â½Ã¢â‚¬â„¢ Store Items</Tab>
+              <Tab>ÃƒÂ°Ã…Â¸Ã‚ÂÃ‚Â  Purchase Property</Tab>
+              <Tab>ÃƒÂ°Ã…Â¸Ã¢â‚¬â„¢Ã‚Â° Monthly Costs</Tab>
             </TabList>
 
             <TabPanels>
@@ -206,7 +206,7 @@ const StorageModal = ({ isOpen, onClose, character, onCharacterUpdate }) => {
                 <VStack spacing={4} align="stretch">
                   <Box>
                     <Heading size="md" mb={3} color="green.300">
-                      📊 Storage Capacity Summary
+                      ÃƒÂ°Ã…Â¸Ã¢â‚¬Å“Ã…Â  Storage Capacity Summary
                     </Heading>
                     <Grid templateColumns="repeat(2, 1fr)" gap={4}>
                       <Box bg="gray.700" p={3} borderRadius="md">
@@ -222,11 +222,11 @@ const StorageModal = ({ isOpen, onClose, character, onCharacterUpdate }) => {
 
                   <Box>
                     <Heading size="md" mb={3} color="purple.300">
-                      🏠 Available Storage Options
+                      ÃƒÂ°Ã…Â¸Ã‚ÂÃ‚Â  Available Storage Options
                     </Heading>
                     <Grid templateColumns="repeat(2, 1fr)" gap={3}>
                       {availableStorage.map((storage, index) => {
-                        const icon = storageIcons[Object.keys(STORAGE_TYPES).find(k => STORAGE_TYPES[k].name === storage.name)] || "📦";
+                        const icon = storageIcons[Object.keys(STORAGE_TYPES).find(k => STORAGE_TYPES[k].name === storage.name)] || "ÃƒÂ°Ã…Â¸Ã¢â‚¬Å“Ã‚Â¦";
                         const contents = storageContents[Object.keys(STORAGE_TYPES).find(k => STORAGE_TYPES[k].name === storage.name)] || [];
                         const usedCapacity = contents.reduce((total, item) => total + (item.weight || 0), 0);
                         const usagePercent = (usedCapacity / storage.capacity) * 100;
@@ -259,7 +259,7 @@ const StorageModal = ({ isOpen, onClose, character, onCharacterUpdate }) => {
                 <VStack spacing={4} align="stretch">
                   <Box>
                     <Heading size="md" mb={3} color="orange.300">
-                      🎒 Store Items from Inventory
+                      ÃƒÂ°Ã…Â¸Ã…Â½Ã¢â‚¬â„¢ Store Items from Inventory
                     </Heading>
                     
                     <Grid templateColumns="repeat(2, 1fr)" gap={4}>
@@ -291,7 +291,7 @@ const StorageModal = ({ isOpen, onClose, character, onCharacterUpdate }) => {
                         <Text fontWeight="bold" mb={2}>Storage Locations</Text>
                         <VStack spacing={2} maxH="300px" overflowY="auto">
                           {availableStorage.map((storage, index) => {
-                            const icon = storageIcons[Object.keys(STORAGE_TYPES).find(k => STORAGE_TYPES[k].name === storage.name)] || "📦";
+                            const icon = storageIcons[Object.keys(STORAGE_TYPES).find(k => STORAGE_TYPES[k].name === storage.name)] || "ÃƒÂ°Ã…Â¸Ã¢â‚¬Å“Ã‚Â¦";
                             const contents = storageContents[Object.keys(STORAGE_TYPES).find(k => STORAGE_TYPES[k].name === storage.name)] || [];
                             const usedCapacity = contents.reduce((total, item) => total + (item.weight || 0), 0);
                             const availableCapacity = storage.capacity - usedCapacity;
@@ -334,7 +334,7 @@ const StorageModal = ({ isOpen, onClose, character, onCharacterUpdate }) => {
                 <VStack spacing={4} align="stretch">
                   <Box>
                     <Heading size="md" mb={3} color="purple.300">
-                      🏠 Purchase Property
+                      ÃƒÂ°Ã…Â¸Ã‚ÂÃ‚Â  Purchase Property
                     </Heading>
                     <Text mb={4} color="gray.300">
                       Purchase permanent storage and housing. Properties provide secure storage and status benefits.
@@ -342,7 +342,7 @@ const StorageModal = ({ isOpen, onClose, character, onCharacterUpdate }) => {
                     
                     <Grid templateColumns="repeat(2, 1fr)" gap={4}>
                       {Object.entries(STORAGE_TYPES).filter(([key, storage]) => storage.purchaseCost).map(([key, storage]) => {
-                        const icon = storageIcons[key] || "🏠";
+                        const icon = storageIcons[key] || "ÃƒÂ°Ã…Â¸Ã‚ÂÃ‚Â ";
                         const canAfford = character.gold >= storage.purchaseCost;
                         
                         return (
@@ -379,7 +379,7 @@ const StorageModal = ({ isOpen, onClose, character, onCharacterUpdate }) => {
                 <VStack spacing={4} align="stretch">
                   <Box>
                     <Heading size="md" mb={3} color="yellow.300">
-                      💰 Monthly Living & Storage Costs
+                      ÃƒÂ°Ã…Â¸Ã¢â‚¬â„¢Ã‚Â° Monthly Living & Storage Costs
                     </Heading>
                     
                     <Grid templateColumns="repeat(2, 1fr)" gap={4}>

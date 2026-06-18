@@ -7,7 +7,7 @@
 import { getWeaponLength, getWeaponType } from './combatEnvironmentLogic.js';
 import { calculateReachAdvantage } from './weaponSystem.js';
 import { compareWeaponReach } from './reachCombatRules.js';
-import { getReachStrikeModifiers, needsToCloseDistance, attemptCloseDistance } from './reachCombatRules.js';
+import { getReachAttackModifiers, needsToCloseDistance, attemptCloseDistance } from './reachCombatRules.js';
 import { getWeaponBonuses } from './weaponSlotManager.js';
 import { getAdjustedWeaponDamage, getWeaponSizeForRace, WEAPON_SIZE } from './weaponSizeSystem.js';
 import { getSizeCategory, SIZE_CATEGORIES } from './sizeStrengthModifiers.js';
@@ -25,12 +25,12 @@ export function evaluateWeaponBonuses(weapon, attacker, defender, defenderWeapon
   if (!weapon || !attacker) {
     return {
       totalBonus: 0,
-      strikeBonus: 0,
-      parryBonus: 0,
+      attackBonus: 0,
+      blockBonus: 0,
       damageBonus: 0,
       reachBonus: 0,
       closeRangeBonus: 0,
-      firstStrikeBonus: 0,
+      firstAttackBonus: 0,
       twoHandedBonus: 0,
       weaponSizeBonus: 0,
       sizeCategoryBonus: 0,
@@ -55,12 +55,12 @@ export function evaluateWeaponBonuses(weapon, attacker, defender, defenderWeapon
 
   const evaluation = {
     totalBonus: 0,
-    strikeBonus: 0,
-    parryBonus: 0,
+    attackBonus: 0,
+    blockBonus: 0,
     damageBonus: 0,
     reachBonus: 0,
     closeRangeBonus: 0,
-    firstStrikeBonus: 0,
+    firstAttackBonus: 0,
     twoHandedBonus: 0,
     weaponSizeBonus: 0,
     sizeCategoryBonus: 0,
@@ -73,16 +73,16 @@ export function evaluateWeaponBonuses(weapon, attacker, defender, defenderWeapon
 
   // 1. Weapon-specific bonuses (from weapon.bonuses property)
   if (weapon.bonuses) {
-    evaluation.weaponSpecificBonus += weapon.bonuses.strike || 0;
-    evaluation.strikeBonus += weapon.bonuses.strike || 0;
-    evaluation.parryBonus += weapon.bonuses.parry || 0;
+    evaluation.weaponSpecificBonus += weapon.bonuses.attack || 0;
+    evaluation.attackBonus += weapon.bonuses.attack || 0;
+    evaluation.blockBonus += weapon.bonuses.block || 0;
     evaluation.damageBonus += weapon.bonuses.damage || 0;
     
-    if (weapon.bonuses.strike) {
-      evaluation.bonuses.push(`Weapon-specific strike bonus: +${weapon.bonuses.strike}`);
+    if (weapon.bonuses.attack) {
+      evaluation.bonuses.push(`Weapon-specific attack bonus: +${weapon.bonuses.attack}`);
     }
-    if (weapon.bonuses.parry) {
-      evaluation.bonuses.push(`Weapon-specific parry bonus: +${weapon.bonuses.parry}`);
+    if (weapon.bonuses.block) {
+      evaluation.bonuses.push(`Weapon-specific block bonus: +${weapon.bonuses.block}`);
     }
     if (weapon.bonuses.damage) {
       evaluation.bonuses.push(`Weapon-specific damage bonus: +${weapon.bonuses.damage}`);
@@ -90,13 +90,13 @@ export function evaluateWeaponBonuses(weapon, attacker, defender, defenderWeapon
   }
 
   // 2. Two-handed grip bonus
-  const attackerSlots = attacker.equippedWeapons || [];
+  const attackerSlots = attacker.equistaminadWeapons || [];
   const isTwoHanded = weapon.twoHanded || (attackerSlots.length > 0 && attackerSlots[0]?.name === weapon.name && attackerSlots[0]?.usingTwoHanded);
   if (isTwoHanded) {
-    evaluation.twoHandedBonus += 1; // +1 strike
-    evaluation.strikeBonus += 1;
+    evaluation.twoHandedBonus += 1; // +1 attack
+    evaluation.attackBonus += 1;
     evaluation.damageBonus += 2; // +2 damage
-    evaluation.bonuses.push("Two-handed grip: +1 strike, +2 damage");
+    evaluation.bonuses.push("Two-handed grip: +1 attack, +2 damage");
   }
 
   // 3. Reach advantage bonus (if defender has weapon)
@@ -104,20 +104,20 @@ export function evaluateWeaponBonuses(weapon, attacker, defender, defenderWeapon
     const reachAdvantage = calculateReachAdvantage(weapon, defenderWeapon);
     if (reachAdvantage.hasAdvantage) {
       evaluation.reachBonus = reachAdvantage.bonus;
-      evaluation.strikeBonus += reachAdvantage.bonus;
-      evaluation.bonuses.push(`Reach advantage: +${reachAdvantage.bonus} strike`);
+      evaluation.attackBonus += reachAdvantage.bonus;
+      evaluation.bonuses.push(`Reach advantage: +${reachAdvantage.bonus} attack`);
     } else if (defenderWeapon.reach > (weapon.reach || 0)) {
-      evaluation.penalties.push(`Reach disadvantage: -${Math.min(defenderWeapon.reach - (weapon.reach || 0), 3)} strike`);
+      evaluation.penalties.push(`Reach disadvantage: -${Math.min(defenderWeapon.reach - (weapon.reach || 0), 3)} attack`);
     }
   }
 
-  // 4. First strike bonus (longer weapons on first round)
+  // 4. First attack bonus (longer weapons on first round)
   if (isFirstMeleeRound && defenderWeapon) {
-    const firstStrikeAdvantage = calculateReachAdvantage(weapon, defenderWeapon);
-    if (firstStrikeAdvantage.hasAdvantage && firstStrikeAdvantage.advantage >= 2) {
-      evaluation.firstStrikeBonus = 1;
-      evaluation.strikeBonus += 1;
-      evaluation.bonuses.push("First strike advantage: +1 strike");
+    const firstAttackAdvantage = calculateReachAdvantage(weapon, defenderWeapon);
+    if (firstAttackAdvantage.hasAdvantage && firstAttackAdvantage.advantage >= 2) {
+      evaluation.firstAttackBonus = 1;
+      evaluation.attackBonus += 1;
+      evaluation.bonuses.push("First attack advantage: +1 attack");
     }
   }
 
@@ -129,60 +129,60 @@ export function evaluateWeaponBonuses(weapon, attacker, defender, defenderWeapon
     // Grapple range - short weapons excel
     if (weaponType === "SHORT" || weaponLength <= 2) {
       evaluation.closeRangeBonus = 2;
-      evaluation.strikeBonus += 2;
-      evaluation.bonuses.push("Close range: +2 strike (short weapon excels)");
+      evaluation.attackBonus += 2;
+      evaluation.bonuses.push("Close range: +2 attack (short weapon excels)");
     } else if (weaponType === "LONG" || weaponLength >= 6) {
-      evaluation.strikeBonus -= 3;
-      evaluation.penalties.push("Close range: -3 strike (long weapon ineffective)");
+      evaluation.attackBonus -= 3;
+      evaluation.penalties.push("Close range: -3 attack (long weapon ineffective)");
     }
   } else if (combatDistance < 5 && hasClosedDistance) {
     // Close combat - short weapons get bonus
     if (weaponType === "SHORT" || weaponLength <= 2) {
       evaluation.closeRangeBonus = 1;
-      evaluation.strikeBonus += 1;
-      evaluation.bonuses.push("Close combat: +1 strike");
+      evaluation.attackBonus += 1;
+      evaluation.bonuses.push("Close combat: +1 attack");
     }
   }
 
-  // 6. Weapon size bonus (giant races get +1 die)
+  // 6. Weapon size bonus (heavy races get +1 die)
   const race = attacker.species || attacker.race;
   if (race) {
     const weaponSize = getWeaponSizeForRace(race);
-    if (weaponSize === WEAPON_SIZE.GIANT) {
+    if (weaponSize === WEAPON_SIZE.LARGE_HEAVY) {
       evaluation.weaponSizeBonus = 1; // +1 die is significant
       evaluation.damageBonus += 1; // Counted as damage bonus
-      evaluation.bonuses.push("Giant weapon: +1 die damage");
+      evaluation.bonuses.push("Heavy weapon: +1 die damage");
     }
   }
 
-  // 7. Size category bonus (creature size affects strike)
+  // 7. Size category bonus (combatant size affects attack)
   if (defender) {
     const attackerSize = getSizeCategory(attacker);
     const defenderSize = getSizeCategory(defender);
     
     if (attackerSize === SIZE_CATEGORIES.LARGE && defenderSize === SIZE_CATEGORIES.MEDIUM) {
       evaluation.sizeCategoryBonus = 1;
-      evaluation.strikeBonus += 1;
-      evaluation.bonuses.push("Size advantage: +1 strike");
+      evaluation.attackBonus += 1;
+      evaluation.bonuses.push("Size advantage: +1 attack");
     } else if (attackerSize === SIZE_CATEGORIES.HUGE && defenderSize !== SIZE_CATEGORIES.HUGE) {
       evaluation.sizeCategoryBonus = 2;
-      evaluation.strikeBonus += 2;
-      evaluation.bonuses.push("Size advantage: +2 strike");
-    } else if (attackerSize === SIZE_CATEGORIES.GIANT) {
+      evaluation.attackBonus += 2;
+      evaluation.bonuses.push("Size advantage: +2 attack");
+    } else if (attackerSize === SIZE_CATEGORIES.LARGE_HEAVY) {
       evaluation.sizeCategoryBonus = 3;
-      evaluation.strikeBonus += 3;
-      evaluation.bonuses.push("Size advantage: +3 strike");
+      evaluation.attackBonus += 3;
+      evaluation.bonuses.push("Size advantage: +3 attack");
     }
   }
 
   // Calculate total bonus (weighted)
   evaluation.totalBonus = 
-    (evaluation.strikeBonus * 2) + // Strike bonuses are most valuable
+    (evaluation.attackBonus * 2) + // Attack bonuses are most valuable
     (evaluation.damageBonus * 1.5) + // Damage bonuses are valuable
-    (evaluation.parryBonus * 1) + // Parry bonuses are defensive
+    (evaluation.blockBonus * 1) + // Block bonuses are defensive
     (evaluation.reachBonus * 1.5) + // Reach is tactical advantage
     (evaluation.closeRangeBonus * 2) + // Close range is situational
-    (evaluation.firstStrikeBonus * 1) + // First strike is one-time
+    (evaluation.firstAttackBonus * 1) + // First attack is one-time
     (evaluation.weaponSizeBonus * 2) + // Weapon size is significant
     (evaluation.sizeCategoryBonus * 1); // Size is inherent
 
@@ -218,7 +218,7 @@ export function rankWeaponsByBonuses(availableWeapons, attacker, defender, comba
     return [];
   }
 
-  const defenderWeapon = defender?.equippedWeapons?.[0] || defender?.equippedWeapon || null;
+  const defenderWeapon = defender?.equistaminadWeapons?.[0] || defender?.equistaminadWeapon || null;
 
   const ranked = availableWeapons.map(weapon => {
     const evaluation = evaluateWeaponBonuses(weapon, attacker, defender, defenderWeapon, combatState);
@@ -227,7 +227,7 @@ export function rankWeaponsByBonuses(availableWeapons, attacker, defender, comba
       evaluation,
       score: evaluation.score,
       totalBonus: evaluation.totalBonus,
-      strikeBonus: evaluation.strikeBonus,
+      attackBonus: evaluation.attackBonus,
       damageBonus: evaluation.damageBonus,
     };
   });
@@ -266,7 +266,7 @@ export function analyzeClosingDistance(attacker, defender, attackerWeapon, comba
 
   const weaponLength = getWeaponLength(attackerWeapon, attacker);
   const weaponType = getWeaponType(attackerWeapon);
-  const defenderWeapon = defender?.equippedWeapons?.[0] || defender?.equippedWeapon || null;
+  const defenderWeapon = defender?.equistaminadWeapons?.[0] || defender?.equistaminadWeapon || null;
   const defenderWeaponLength = defenderWeapon ? getWeaponLength(defenderWeapon, defender) : 0;
 
   // Check if weapon would benefit from closing
@@ -277,17 +277,17 @@ export function analyzeClosingDistance(attacker, defender, attackerWeapon, comba
   // Short weapons benefit from closing distance
   if (isShortWeapon && combatDistance >= 3) {
     if (combatDistance >= 5) {
-      // Would get +2 strike bonus in grapple range
+      // Would get +2 attack bonus in grapple range
       analysis.shouldClose = true;
       analysis.benefit = 2;
-      analysis.bonuses.push("Close range: +2 strike (short weapon excels)");
-      analysis.reason = "Short weapon would gain +2 strike bonus in close range";
+      analysis.bonuses.push("Close range: +2 attack (short weapon excels)");
+      analysis.reason = "Short weapon would gain +2 attack bonus in close range";
     } else if (combatDistance >= 3) {
-      // Would get +1 strike bonus in close combat
+      // Would get +1 attack bonus in close combat
       analysis.shouldClose = true;
       analysis.benefit = 1;
-      analysis.bonuses.push("Close combat: +1 strike");
-      analysis.reason = "Short weapon would gain +1 strike bonus in close combat";
+      analysis.bonuses.push("Close combat: +1 attack");
+      analysis.reason = "Short weapon would gain +1 attack bonus in close combat";
     }
   }
 
@@ -408,9 +408,9 @@ export function makeWeaponBonusAIDecision(character, targets, combatState = {}) 
   // Get available weapons
   const availableWeapons = [];
   
-  // Check equipped weapons
-  if (character.equippedWeapons && character.equippedWeapons.length > 0) {
-    character.equippedWeapons.forEach(w => {
+  // Check equistaminad weapons
+  if (character.equistaminadWeapons && character.equistaminadWeapons.length > 0) {
+    character.equistaminadWeapons.forEach(w => {
       if (w && w.name && w.name !== "Unarmed") {
         availableWeapons.push(w);
       }

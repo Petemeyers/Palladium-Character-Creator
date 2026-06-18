@@ -1,17 +1,17 @@
 /**
  * Ability System (Universal)
  *
- * Parses both creature "abilities" from bestiary.json
- * and O.C.C. or secondary skills from Rulebook data
+ * Parses both combatant "abilities" from arenaRoster.js
+ * and profession or secondary skills from Rulebook data
  * into structured effects usable by the combat engine.
  *
  * Integrated with: nightvisionSystem.js, terrainSystem.js, skillSystem.js
  *
  * Converts ability strings like:
- * - "Night vision 60 ft" → { senses: { nightvision: { range: 60, active: true } } }
- * - "Bio-regeneration 1d8 every melee" → { healing: { type: "bio", rate: "1d8", interval: "per_melee" } }
- * - "Resistant to fire/cold (half damage)" → { resistances: { fire: 0.5, cold: 0.5 } }
- * - "Track: 74%" → { skills: { track: 74 } }
+ * - "Night vision 60 ft" Ã¢â€ â€™ { senses: { nightvision: { range: 60, active: true } } }
+ * - "Bio-regeneration 1d8 every melee" Ã¢â€ â€™ { healing: { type: "bio", rate: "1d8", interval: "per_melee" } }
+ * - "Resistant to fire/cold (half damage)" Ã¢â€ â€™ { resistances: { fire: 0.5, cold: 0.5 } }
+ * - "Track: 74%" Ã¢â€ â€™ { skills: { track: 74 } }
  *
  * These normalized abilities are then used by the combat engine for:
  * - Damage resistance/immunity checks
@@ -27,7 +27,7 @@ import { lookupSkill } from "./skillSystem.js";
 
 /**
  * Parse a single ability string into structured data
- * @param {string} abilityStr - Raw ability string from bestiary.json
+ * @param {string} abilityStr - Raw ability string from arenaRoster.js
  * @returns {Object} Normalized ability object
  */
 function parseAbility(abilityStr) {
@@ -102,12 +102,12 @@ function parseAbility(abilityStr) {
         result.resistances.fire = multiplier;
       if (type === "cold" || type.includes("cold"))
         result.resistances.cold = multiplier;
-      if (type === "magic" || type.includes("magic"))
-        result.resistances.magic = multiplier;
+      if (type === "training" || type.includes("training"))
+        result.resistances.training = multiplier;
       if (type === "poison" || type.includes("poison"))
         result.resistances.poison = multiplier;
-      if (type === "psionic" || type.includes("psionic"))
-        result.resistances.psionic = multiplier;
+      if (type === "tactical" || type.includes("tactical"))
+        result.resistances.tactical = multiplier;
     });
   }
 
@@ -126,8 +126,8 @@ function parseAbility(abilityStr) {
         result.immunities.push("fire");
       } else if (type.includes("cold")) {
         result.immunities.push("cold");
-      } else if (type.includes("magic")) {
-        result.immunities.push("magic");
+      } else if (type.includes("training")) {
+        result.immunities.push("training");
       } else if (type.includes("poison")) {
         result.immunities.push("poison");
       }
@@ -156,15 +156,15 @@ function parseAbility(abilityStr) {
   }
 
   // === Flight ===
-  // Parse flight abilities like "Flying (Spd ×8)", "Flight (Spd ×5)", "Fly 30 mph", etc.
+  // Parse flight abilities like "Flying (Spd Ãƒâ€”8)", "Flight (Spd Ãƒâ€”5)", "Fly 30 mph", etc.
   const flightMatch = str.match(
-    /(?:flying|flight)\s*(?:\(|:)?\s*(?:spd|speed)\s*×\s*(\d+)|fly\s+(\d+)\s*mph|flying\s+speed\s+(\d+)\s*mph/i
+    /(?:flying|flight)\s*(?:\(|:)?\s*(?:spd|speed)\s*Ãƒâ€”\s*(\d+)|fly\s+(\d+)\s*mph|flying\s+speed\s+(\d+)\s*mph/i
   );
   if (flightMatch) {
     let speedMultiplier = null;
     let mphSpeed = null;
     
-    // Check for Spd multiplier format: "Flying (Spd ×8)" or "Flight (Spd ×5)"
+    // Check for Spd multiplier format: "Flying (Spd Ãƒâ€”8)" or "Flight (Spd Ãƒâ€”5)"
     if (flightMatch[1]) {
       speedMultiplier = parseInt(flightMatch[1]);
     }
@@ -178,7 +178,7 @@ function parseAbility(abilityStr) {
     
     result.movement = result.movement || {};
     result.movement.flight = {
-      speedMultiplier: speedMultiplier, // e.g., 8 for "Spd ×8"
+      speedMultiplier: speedMultiplier, // e.g., 8 for "Spd Ãƒâ€”8"
       mphSpeed: mphSpeed, // e.g., 30 for "30 mph"
       mode: "air",
       active: true,
@@ -218,32 +218,32 @@ function parseAbility(abilityStr) {
     result.senses.empathy = true;
   }
 
-  // === Psionics ===
-  const psionicMatch = str.match(
-    /psionics?[:\s]+level[s]?\s*(\d+)[-\s]+(\d+)[,\s]+i\.?s\.?p\.?\s*(\d+)/i
+  // === Tactics ===
+  const tacticalMatch = str.match(
+    /tactics?[:\s]+level[s]?\s*(\d+)[-\s]+(\d+)[,\s]+i\.?s\.?p\.?\s*(\d+)/i
   );
-  if (psionicMatch) {
-    result.psionics = {
-      levels: [parseInt(psionicMatch[1]), parseInt(psionicMatch[2])],
-      isp: parseInt(psionicMatch[3]),
+  if (tacticalMatch) {
+    result.tactics = {
+      levels: [parseInt(tacticalMatch[1]), parseInt(tacticalMatch[2])],
+      focus: parseInt(tacticalMatch[3]),
       active: true,
     };
-  } else if (str.includes("psionic")) {
-    // General psionic flag
-    result.psionics = {
+  } else if (str.includes("tactical")) {
+    // General tactical flag
+    result.tactics = {
       active: true,
-      isp: 0, // Will be set from character data
+      focus: 0, // Will be set from character data
     };
   }
 
-  // === Magic User ===
+  // === Training User ===
   if (
-    str.includes("spell") ||
-    str.includes("wizard") ||
-    str.includes("magic") ||
-    str.includes("magic user")
+    str.includes("technique") ||
+    str.includes("duelist") ||
+    str.includes("training") ||
+    str.includes("training user")
   ) {
-    result.magic = {
+    result.training = {
       active: true,
     };
   }
@@ -262,7 +262,7 @@ function parseAbility(abilityStr) {
   }
 
   // === Skills (Track, Prowl, Climb, Swim, Horsemanship, etc.) ===
-  // Many monsters and OCCs list these explicitly (Track: 74%, Prowl: 66%, etc.)
+  // Many opponents and PROFESSIONs list these explicitly (Track: 74%, Prowl: 66%, etc.)
   const skillMatches = [
     "track",
     "prowl",
@@ -313,9 +313,9 @@ function parseAbility(abilityStr) {
 
 /**
  * Parse an array of ability strings into a normalized abilities object
- * Unified structure for both creatures and player characters
- * @param {Array<string>} abilities - Array of ability strings from bestiary.json or OCC data
- * @returns {Object} Normalized abilities object with senses, resistances, skills, psionics, magic, movement
+ * Unified structure for both combatants and player characters
+ * @param {Array<string>} abilities - Array of ability strings from arenaRoster.js or PROFESSION data
+ * @returns {Object} Normalized abilities object with senses, resistances, skills, tactics, training, movement
  */
 export function parseAbilities(abilities = []) {
   if (!Array.isArray(abilities) || abilities.length === 0) {
@@ -323,8 +323,8 @@ export function parseAbilities(abilities = []) {
       senses: {},
       resistances: {},
       skills: {},
-      psionics: {},
-      magic: {},
+      tactics: {},
+      training: {},
       movement: {},
       healing: null,
       impervious_to: [],
@@ -336,8 +336,8 @@ export function parseAbilities(abilities = []) {
     senses: {},
     resistances: {},
     skills: {},
-    psionics: {},
-    magic: {},
+    tactics: {},
+    training: {},
     movement: {},
     healing: null,
     impervious_to: [],
@@ -353,10 +353,10 @@ export function parseAbilities(abilities = []) {
       if (parsed.resistances)
         Object.assign(normalized.resistances, parsed.resistances);
       if (parsed.skills) Object.assign(normalized.skills, parsed.skills);
-      if (parsed.psionics)
-        normalized.psionics = { ...normalized.psionics, ...parsed.psionics };
-      if (parsed.magic)
-        normalized.magic = { ...normalized.magic, ...parsed.magic };
+      if (parsed.tactics)
+        normalized.tactics = { ...normalized.tactics, ...parsed.tactics };
+      if (parsed.training)
+        normalized.training = { ...normalized.training, ...parsed.training };
       if (parsed.movement) Object.assign(normalized.movement, parsed.movement);
       if (parsed.healing) normalized.healing = parsed.healing;
       if (parsed.immunities) {
@@ -378,8 +378,8 @@ export function parseAbilities(abilities = []) {
   if (Object.keys(normalized.resistances).length === 0)
     delete normalized.resistances;
   if (Object.keys(normalized.skills).length === 0) delete normalized.skills;
-  if (Object.keys(normalized.psionics).length === 0) delete normalized.psionics;
-  if (Object.keys(normalized.magic).length === 0) delete normalized.magic;
+  if (Object.keys(normalized.tactics).length === 0) delete normalized.tactics;
+  if (Object.keys(normalized.training).length === 0) delete normalized.training;
   if (Object.keys(normalized.movement).length === 0) delete normalized.movement;
   if (normalized.immunities && normalized.immunities.length === 0)
     delete normalized.immunities;
@@ -406,7 +406,7 @@ export function applyBioRegeneration(fighter, meleeRound = 1) {
   // Check interval: if intervalCount > 1, only regenerate every N melees
   const intervalCount = regen.intervalCount || 1;
   if (intervalCount > 1) {
-    // Track which melee rounds regeneration occurs on
+    // Track which combat rounds regeneration occurs on
     // Initialize tracking if needed
     if (!fighter.meta) fighter.meta = {};
     if (!fighter.meta.bioRegenLastMelee) {
@@ -446,14 +446,14 @@ export function applyBioRegeneration(fighter, meleeRound = 1) {
 /**
  * Check if damage type should be resisted or ignored
  * @param {Object} fighter - Fighter object with parsed abilities
- * @param {string} damageType - Type of damage ("fire", "cold", "magic", "normal", etc.)
- * @param {boolean} isMagicWeapon - Whether the weapon is magical
+ * @param {string} damageType - Type of damage ("fire", "cold", "training", "normal", etc.)
+ * @param {boolean} isTrainingWeapon - Whether the weapon is exceptional
  * @returns {Object} { multiplier: number, ignored: boolean, reason: string }
  */
 export function checkDamageResistance(
   fighter,
   damageType,
-  isMagicWeapon = false
+  isTrainingWeapon = false
 ) {
   const abilities = fighter.abilities || {};
 
@@ -464,18 +464,18 @@ export function checkDamageResistance(
 
   // Check impervious to normal weapons
   if (damageType === "normal" && abilities.impervious_to) {
-    if (abilities.impervious_to.includes("normal_weapons") && !isMagicWeapon) {
+    if (abilities.impervious_to.includes("normal_weapons") && !isTrainingWeapon) {
       return {
         multiplier: 0,
         ignored: true,
         reason: "Impervious to normal weapons",
       };
     }
-    if (abilities.impervious_to.includes("all") && !isMagicWeapon) {
+    if (abilities.impervious_to.includes("all") && !isTrainingWeapon) {
       return {
         multiplier: 0,
         ignored: true,
-        reason: "Impervious to all non-magical attacks",
+        reason: "Impervious to all non-exceptional attacks",
       };
     }
   }
@@ -486,11 +486,11 @@ export function checkDamageResistance(
       (type) =>
         damageType.includes(type) ||
         (damageType === "normal" &&
-          (type.includes("magic") || type.includes("psionic")))
+          (type.includes("training") || type.includes("tactical")))
     );
     if (
       !canBeAffected &&
-      (!isMagicWeapon || !abilities.only_affected_by.includes("magic"))
+      (!isTrainingWeapon || !abilities.only_affected_by.includes("training"))
     ) {
       return {
         multiplier: 0,
@@ -554,7 +554,7 @@ export function getNightVisionRange(abilities) {
 /**
  * Get resistance multiplier for a damage type
  * @param {Object} abilities - Parsed abilities object or character object
- * @param {string} type - Damage type ("fire", "cold", "magic", "poison")
+ * @param {string} type - Damage type ("fire", "cold", "training", "poison")
  * @returns {number} Resistance multiplier (0.5 = half damage, 1.0 = normal)
  */
 export function getResistance(abilities, type) {
@@ -649,7 +649,7 @@ export function setAltitude(fighter, altitudeFeet) {
 /**
  * Get flight speed multiplier from fighter's abilities
  * @param {Object} fighter - Fighter object
- * @returns {number|null} Flight speed multiplier (e.g., 8 for "Spd ×8") or null if not found
+ * @returns {number|null} Flight speed multiplier (e.g., 8 for "Spd Ãƒâ€”8") or null if not found
  */
 export function getFlightSpeedMultiplier(fighter) {
   if (!fighter) return null;
@@ -658,15 +658,15 @@ export function getFlightSpeedMultiplier(fighter) {
 }
 
 /**
- * Get ground movement speed for a flying creature when grounded
- * Flying creatures should have separate, slower ground speeds
+ * Get ground movement speed for a flying combatant when grounded
+ * Flying combatants should have separate, slower ground speeds
  * @param {Object} fighter - Fighter object with movementProfile or Spd
- * @returns {number|null} Ground speed attribute (for Spd × 18 calculation) or null if not applicable
+ * @returns {number|null} Ground speed attribute (for Spd Ãƒâ€” 18 calculation) or null if not applicable
  */
 export function getGroundSpeedForFlyer(fighter) {
   if (!fighter) return null;
   
-  // Check if creature can fly
+  // Check if combatant can fly
   if (!canFly(fighter)) return null;
   
   // If currently flying, return null (should use flight speed, not ground speed)
@@ -677,25 +677,25 @@ export function getGroundSpeedForFlyer(fighter) {
     return fighter.movementProfile.groundSpd;
   }
   
-  // Fallback: use a default slow ground speed for flying creatures
-  // Default: 4 for small flyers (birds, pixies), 6 for medium/large
+  // Fallback: use a default slow ground speed for flying combatants
+  // Default: 4 for small flyers (birds, scouts), 6 for medium/large
   const sizeCategory = fighter.sizeCategory || fighter.size || "MEDIUM";
-  const sizeOrder = { TINY: 0, SMALL: 1, MEDIUM: 2, LARGE: 3, HUGE: 4, GIANT: 5 };
+  const sizeOrder = { TINY: 0, SMALL: 1, MEDIUM: 2, LARGE: 3, HUGE: 4, LARGE_HEAVY: 5 };
   const sizeValue = sizeOrder[sizeCategory] ?? 2;
   
-  // Small flyers (hawks, pixies) get Spd 4 on ground
+  // Small flyers (hawks, scouts) get Spd 4 on ground
   // Medium+ flyers get Spd 6 on ground (still slower than flight)
   return sizeValue <= 1 ? 4 : 6;
 }
 
 /**
  * Calculate flight movement speed based on Spd and flight multiplier
- * Uses official Palladium rules: Flight speed = Spd × multiplier × 18 feet per melee
+ * Uses official Medieval Combat Simulator rules: Flight speed = Spd Ãƒâ€” multiplier Ãƒâ€” 18 feet per melee
  * @param {Object} fighter - Fighter object with Spd attribute and flight ability
- * @param {number} attacksPerMelee - Number of attacks per melee round
+ * @param {number} actionsPerRound - Number of attacks per combat round
  * @returns {Object} Flight movement calculations
  */
-export function calculateFlightMovement(fighter, attacksPerMelee = 1) {
+export function calculateFlightMovement(fighter, actionsPerRound = 1) {
   if (!fighter) return null;
   
   const speed = fighter.Spd || fighter.spd || fighter.attributes?.Spd || fighter.attributes?.spd || 10;
@@ -706,10 +706,10 @@ export function calculateFlightMovement(fighter, attacksPerMelee = 1) {
     const abilities = fighter.abilities || fighter;
     const mphSpeed = abilities?.movement?.flight?.mphSpeed;
     if (mphSpeed) {
-      // Convert mph to feet per melee: mph × 5280 ft/mile ÷ 3600 sec/hour × 15 sec/melee
-      // Simplified: mph × 22 = feet per melee (approximate)
+      // Convert mph to feet per melee: mph Ãƒâ€” 5280 ft/mile ÃƒÂ· 3600 sec/hour Ãƒâ€” 15 sec/melee
+      // Simplified: mph Ãƒâ€” 22 = feet per melee (approximate)
       const feetPerMelee = Math.round(mphSpeed * 22);
-      const feetPerAction = feetPerMelee / attacksPerMelee;
+      const feetPerAction = feetPerMelee / actionsPerRound;
       return {
         feetPerMelee,
         feetPerAction,
@@ -721,10 +721,10 @@ export function calculateFlightMovement(fighter, attacksPerMelee = 1) {
     return null;
   }
   
-  // Official Palladium: Flight speed = Spd × multiplier × 18 feet per melee
+  // Official Medieval Combat Simulator: Flight speed = Spd Ãƒâ€” multiplier Ãƒâ€” 18 feet per melee
   // (Same base formula as ground movement, but multiplied by flight multiplier)
   const feetPerMelee = speed * flightMultiplier * 18;
-  const feetPerAction = feetPerMelee / attacksPerMelee;
+  const feetPerAction = feetPerMelee / actionsPerRound;
   
   return {
     feetPerMelee,

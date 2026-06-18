@@ -1,6 +1,6 @@
 /**
  * Player Flight Actions System
- * Handles player-controlled flight actions: Fly, Land, Change Altitude, Dive Attack, Carry & Drop
+ * Handles player-conchampioned flight actions: Fly, Land, Change Altitude, Dive Attack, Carry & Drop
  */
 
 import { canFly, isFlying, getAltitude } from "./abilitySystem.js";
@@ -66,14 +66,14 @@ function performAerialPickup(carrier, carried, options = {}) {
   carried.carriedById = carrier.id;
   carried.combinedMode = COMBINED_MODES?.CARRIED || "carried";
 
-  // Being carried: cannot dodge/run; keep grapple penalties (or stronger)
+  // Being carried: cannot evade/run; keep grapple penalties (or stronger)
   carried.grappleState.state = GRAPPLE_STATES.GRAPPLED;
   carried.grappleState.opponent = carrier.id;
   carried.grappleState.canUseLongWeapons = false;
   carried.grappleState.penalties = {
-    strike: carried.grappleState.penalties?.strike ?? -2,
-    parry: carried.grappleState.penalties?.parry ?? -4,
-    dodge: carried.grappleState.penalties?.dodge ?? -4,
+    attack: carried.grappleState.penalties?.attack ?? -2,
+    block: carried.grappleState.penalties?.block ?? -4,
+    evade: carried.grappleState.penalties?.evade ?? -4,
   };
 
   // Carrier remains in control; treat as clinch hold while carrying
@@ -95,7 +95,7 @@ function performAerialPickup(carrier, carried, options = {}) {
 }
 
 /**
- * Check if a fighter can fly (natural ability or spell/psionic)
+ * Check if a fighter can fly (natural ability or technique/tactical)
  */
 export function canFighterFly(fighter) {
   if (!fighter) return false;
@@ -103,7 +103,7 @@ export function canFighterFly(fighter) {
   // Check natural flight ability
   if (canFly(fighter)) return true;
 
-  // Check for FLIGHT effect (spell/psionic)
+  // Check for FLIGHT effect (technique/tactical)
   const hasFlightEffect = (fighter.activeEffects || []).some(
     (e) =>
       e.type === "FLIGHT" &&
@@ -173,8 +173,8 @@ export function landFighter(fighter, options = {}) {
 
   const currentAltitude = getAltitude(fighter) || 0;
 
-  // If landing from height, apply fall damage if not controlled landing
-  if (currentAltitude > 5 && !options.controlledLanding) {
+  // If landing from height, apply fall damage if not conchampioned landing
+  if (currentAltitude > 5 && !options.conchampionedLanding) {
     const fallResult = applyFallDamage(fighter, currentAltitude);
     Object.assign(fighter, fallResult);
   }
@@ -196,7 +196,7 @@ export function landFighter(fighter, options = {}) {
           success: true,
           message: `${fighter.name} lands and drops ${carried.name} from ${currentAltitude}ft`,
           fighter,
-          dropped: dropResult,
+          drostaminad: dropResult,
         };
       }
     }
@@ -278,12 +278,12 @@ export function performDiveAttack(fighter, target, options = {}) {
   const offsetFeet = options.attackOffsetFeet ?? 5;
   const attackAltitude = Math.max(targetAltitude, 0) + offsetFeet;
 
-  // Guard: if already at contact altitude, treat as normal strike (no bogus 5→5 dive)
+  // Guard: if already at contact altitude, treat as normal attack (no bogus 5â†’5 dive)
   if (currentAltitude <= attackAltitude + 0.1) {
-    // Already at contact altitude: treat as normal strike.
+    // Already at contact altitude: treat as normal attack.
     return {
       success: true,
-      message: `${fighter.name} swoops low and strikes!`,
+      message: `${fighter.name} swoops low and attacks!`,
       fighter,
       attackBonus: 0,
       newAltitude: attackAltitude,
@@ -413,7 +413,7 @@ export function dropCarriedTarget(fighter, target, options = {}) {
   } catch (e) {
     // ignore
   }
-  // Apply fall damage to dropped target
+  // Apply fall damage to drostaminad target
   const afterFall = applyFallDamage(f2, dropHeight);
 
   return {

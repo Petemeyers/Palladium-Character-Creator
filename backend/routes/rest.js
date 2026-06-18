@@ -6,7 +6,7 @@ const router = express.Router();
 // Rest party/characters
 router.post("/", authenticateToken, async (req, res) => {
   try {
-    // TODO: Implement rest mechanics (healing, spell recovery, etc.)
+    // TODO: Implement rest mechanics (healing, technique recovery, etc.)
     res.json({ message: "Rest completed" });
   } catch (error) {
     res.status(400).json({ error: error.message });

@@ -21,7 +21,7 @@ import {
   Divider,
 } from '@chakra-ui/react';
 import axiosInstance from '../utils/axios';
-import { weapons } from '../data/weapons.js';
+import weapons from '../data/weapons.js';
 import { armors } from '../data/armor.js';
 
 const EquipmentShop = ({ onUpdateCharacter }) => {
@@ -68,9 +68,9 @@ const EquipmentShop = ({ onUpdateCharacter }) => {
       const updates = {
         inventory: updatedInventory,
         gold: selectedCharacter.gold - item.price,
-        // Auto-equip first weapon/armor if none equipped
-        equippedWeapon: type === 'weapon' && !selectedCharacter.equippedWeapon ? item.name : selectedCharacter.equippedWeapon,
-        equippedArmor: type === 'armor' && !selectedCharacter.equippedArmor ? item.name : selectedCharacter.equippedArmor
+        // Auto-equip first weapon/armor if none equistaminad
+        equistaminadWeapon: type === 'weapon' && !selectedCharacter.equistaminadWeapon ? item.name : selectedCharacter.equistaminadWeapon,
+        equistaminadArmor: type === 'armor' && !selectedCharacter.equistaminadArmor ? item.name : selectedCharacter.equistaminadArmor
       };
 
       const response = await axiosInstance.put(`/characters/${selectedCharacter._id}`, updates);

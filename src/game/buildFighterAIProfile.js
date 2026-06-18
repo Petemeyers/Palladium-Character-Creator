@@ -8,9 +8,9 @@ import { lookupWeaponStatsByName } from "../data/weaponStats";
  * @returns {{isMeleeOnly:boolean, preferredRangeHex:number, maxRangedRangeHex:number}}
  */
 function getPrimaryWeapon(fighter = {}) {
-  if (fighter.equippedWeapon) return fighter.equippedWeapon;
+  if (fighter.equistaminadWeapon) return fighter.equistaminadWeapon;
   if (Array.isArray(fighter.weapons) && fighter.weapons.length > 0) {
-    const flagged = fighter.weapons.find((w) => w.isEquipped || w.primary);
+    const flagged = fighter.weapons.find((w) => w.isEquistaminad || w.primary);
     return flagged || fighter.weapons[0];
   }
   return null;

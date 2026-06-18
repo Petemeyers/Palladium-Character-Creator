@@ -104,7 +104,7 @@ const PartyChat = ({ username = "GM" }) => {
       await axiosInstance.post(`/npc/reply/${activeParty._id}`, {
         npcName: selectedNpc || undefined,
         playerMessage,
-        // no context → backend will auto-pick from location
+        // no context Ã¢â€ â€™ backend will auto-pick from location
       });
     } catch (err) {
       console.error("Failed to get NPC reply:", err);
@@ -141,10 +141,10 @@ const PartyChat = ({ username = "GM" }) => {
       <VStack align="stretch" spacing={3}>
         <Box>
           <Heading size="md" mb={2}>
-            💬 Party Chat
+            Ã°Å¸â€™Â¬ Party Chat
           </Heading>
           <Text fontSize="sm" color="gray.600">
-            {activeParty.name} • {activeParty.members?.length || 0} members
+            {activeParty.name} Ã¢â‚¬Â¢ {activeParty.members?.length || 0} members
           </Text>
         </Box>
         
@@ -156,7 +156,7 @@ const PartyChat = ({ username = "GM" }) => {
           return npcOptions.length > 0 ? (
             <Box p={3} bg="purple.50" borderRadius="md" border="1px solid" borderColor="purple.200">
               <Text fontSize="sm" fontWeight="bold" color="purple.700" mb={2}>
-                🤖 Choose NPC to Reply:
+                Ã°Å¸Â¤â€“ Choose NPC to Reply:
               </Text>
               <Select
                 placeholder="Default NPC (first available)"
@@ -167,12 +167,12 @@ const PartyChat = ({ username = "GM" }) => {
               >
                 {npcOptions.map((npc) => (
                   <option key={npc.name} value={npc.name}>
-                    {npc.name} – {npc.role}
+                    {npc.name} Ã¢â‚¬â€œ {npc.role}
                   </option>
                 ))}
               </Select>
               <Text fontSize="xs" color="purple.600" mt={1}>
-                Selected NPC will respond to player messages when you click &quot;🤖 NPC Reply&quot;
+                Selected NPC will respond to player messages when you click &quot;Ã°Å¸Â¤â€“ NPC Reply&quot;
               </Text>
             </Box>
           ) : null;
@@ -200,7 +200,7 @@ const PartyChat = ({ username = "GM" }) => {
                   {msg.type === "system" ? (
                     <>
                       <Text as="span" color="gray.600" fontStyle="italic">
-                        📜 {msg.text}
+                        Ã°Å¸â€œÅ“ {msg.text}
                       </Text>
                     </>
                   ) : msg.type === "npc" ? (
@@ -237,7 +237,7 @@ const PartyChat = ({ username = "GM" }) => {
                       onClick={() => triggerNpcReply(msg.text)}
                       isDisabled={!activeParty?._id}
                     >
-                      🤖 NPC Reply
+                      Ã°Å¸Â¤â€“ NPC Reply
                     </Button>
                   </Box>
                 )}
@@ -269,7 +269,7 @@ const PartyChat = ({ username = "GM" }) => {
         {username === "GM" && (
           <Box display="flex" gap={2}>
             <Input
-              placeholder="📜 Type a system message (narration, events, etc.)..."
+              placeholder="Ã°Å¸â€œÅ“ Type a system message (narration, events, etc.)..."
               value={systemInput}
               onChange={(e) => setSystemInput(e.target.value)}
               onKeyDown={(e) => {
@@ -287,7 +287,7 @@ const PartyChat = ({ username = "GM" }) => {
               isDisabled={!systemInput.trim()}
               minW="80px"
             >
-              📜 System
+              Ã°Å¸â€œÅ“ System
             </Button>
           </Box>
         )}
@@ -296,7 +296,7 @@ const PartyChat = ({ username = "GM" }) => {
         {username === "GM" && (
           <Box p={3} bg="purple.50" borderRadius="md" border="1px solid" borderColor="purple.200">
             <Text fontSize="sm" fontWeight="bold" color="purple.700" mb={2}>
-              🤖 NPC Configuration
+              Ã°Å¸Â¤â€“ NPC Configuration
             </Text>
             
             {/* Show current location's default NPCs */}
@@ -309,7 +309,7 @@ const PartyChat = ({ username = "GM" }) => {
                   const location = startLocations.find(loc => loc.id === activeParty.startLocation.id);
                   return location?.npcs?.map((npc, i) => (
                     <Text key={i} fontSize="xs" color="purple.700" ml={2}>
-                      • {npc.name}: {npc.role}
+                      Ã¢â‚¬Â¢ {npc.name}: {npc.role}
                     </Text>
                   )) || <Text fontSize="xs" color="purple.600">No default NPCs available</Text>;
                 })()}
@@ -337,14 +337,14 @@ const PartyChat = ({ username = "GM" }) => {
               </FormControl>
             </HStack>
             <Text fontSize="xs" color="purple.600">
-              Click &quot;🤖 NPC Reply&quot; on player messages to generate AI responses
+              Click &quot;Ã°Å¸Â¤â€“ NPC Reply&quot; on player messages to generate AI responses
               {activeParty?.startLocation ? " (uses location defaults if no custom NPC)" : ""}
             </Text>
           </Box>
         )}
         
         <Text fontSize="xs" color="gray.500" textAlign="center">
-          Press Enter to send • Shift+Enter for new line
+          Press Enter to send Ã¢â‚¬Â¢ Shift+Enter for new line
         </Text>
       </VStack>
     </Box>

@@ -3,7 +3,7 @@
  * Handle equipping/unequipping clothing and armor items consistently across the application
  *
  * Exports:
- * - isItemEquipped: Check if an item is currently equipped
+ * - isItemEquistaminad: Check if an item is currently equistaminad
  * - calculateArmorPenalties: Calculate movement penalties from armor weight
  */
 
@@ -114,26 +114,26 @@ export function normalizeEquipmentItem(item) {
   if (!item) return null;
   const layer = item.layer || inferEquipmentLayer(item);
   const bodySlots = layer === "shield" ? [] : inferBodySlots(item);
-  const armorRating = Number(item.armorRating ?? item.ar ?? item.AR ?? item.defense ?? 0) || 0;
-  const sdc = Number(item.sdc ?? item.SDC ?? item.maxSDC ?? item.currentSDC ?? 0) || 0;
+  const guardRating = Number(item.guardRating ?? item.guardRating ?? item.guardRating ?? item.defense ?? 0) || 0;
+  const armorDurability = Number(item.armorDurability ?? item.armorDurability ?? item.maxarmorDurability ?? item.currentarmorDurability ?? 0) || 0;
 
   return {
     ...item,
     name: item.name || "Unknown Equipment",
-    equipmentType: layer === "shield" ? "shield" : armorRating > 0 ? "armor" : "clothing",
+    equipmentType: layer === "shield" ? "shield" : guardRating > 0 ? "armor" : "clothing",
     layer,
     bodySlots,
-    armorRating,
-    ar: armorRating,
-    sdc,
-    currentSDC: Number(item.currentSDC ?? sdc) || 0,
-    maxSDC: Number(item.maxSDC ?? sdc) || 0,
+    guardRating,
+    guardRating: guardRating,
+    armorDurability,
+    currentarmorDurability: Number(item.currentarmorDurability ?? armorDurability) || 0,
+    maxarmorDurability: Number(item.maxarmorDurability ?? armorDurability) || 0,
     weight: Number(item.weight ?? 0) || 0,
     price: Number(item.price ?? item.value ?? item.cost ?? 0) || 0,
     penalties: {
       speed: Number(item.penalties?.speed ?? item.speedPenalty ?? 0) || 0,
       prowl: Number(item.penalties?.prowl ?? item.prowlPenalty ?? 0) || 0,
-      dodge: Number(item.penalties?.dodge ?? item.dodgePenalty ?? 0) || 0,
+      evade: Number(item.penalties?.evade ?? item.evadePenalty ?? 0) || 0,
     },
   };
 }
@@ -167,7 +167,7 @@ export function equipLayer(wornEquipment, item) {
   const worn = JSON.parse(JSON.stringify(getWornRoot(wornEquipment)));
   const check = canEquipLayer(worn, normalized);
   if (!check.ok || normalized.layer === "shield") {
-    return { worn, equipped: false, reason: check.reason, item: normalized };
+    return { worn, equistaminad: false, reason: check.reason, item: normalized };
   }
 
   normalized.bodySlots.forEach((bodySlot) => {
@@ -175,7 +175,7 @@ export function equipLayer(wornEquipment, item) {
     worn[bodySlot][normalized.layer] = normalized;
   });
 
-  return { worn, equipped: true, reason: "OK", item: normalized };
+  return { worn, equistaminad: true, reason: "OK", item: normalized };
 }
 
 export function removeLayer(wornEquipment, bodySlot, layer) {
@@ -186,9 +186,9 @@ export function removeLayer(wornEquipment, bodySlot, layer) {
   return worn;
 }
 
-function getLegacyEquippedEntries(entity) {
-  const equipped = entity?.equipped || {};
-  return Object.entries(equipped)
+function getLegacyEquistaminadEntries(entity) {
+  const equistaminad = entity?.equistaminad || {};
+  return Object.entries(equistaminad)
     .filter(([slot, item]) => item && !String(slot).toLowerCase().includes("weapon"))
     .map(([slot, item]) => ({ ...item, slot: slot === "chest" ? "torso" : item.slot || slot }));
 }
@@ -205,13 +205,13 @@ function getExplicitlyWornLegacyItems(items = []) {
     if (!item || typeof item !== "object") return false;
     const slot = item.slot || item.equipmentSlot || item.bodySlot;
     const hasWornSlot = isWornSlotName(slot);
-    const explicitlyEquipped =
-      item.equipped === true ||
-      item.isEquipped === true ||
+    const explicitlyEquistaminad =
+      item.equistaminad === true ||
+      item.isEquistaminad === true ||
       item.worn === true ||
       (item.active === true && hasWornSlot);
 
-    return explicitlyEquipped && (hasWornSlot || inferEquipmentLayer(item) === "shield");
+    return explicitlyEquistaminad && (hasWornSlot || inferEquipmentLayer(item) === "shield");
   });
 }
 
@@ -233,9 +233,9 @@ export function normalizeLegacyArmor(characterOrFighter) {
   };
 
   const candidates = [
-    ...getLegacyEquippedEntries(entity),
+    ...getLegacyEquistaminadEntries(entity),
     entity.armor && typeof entity.armor === "object" ? entity.armor : null,
-    entity.equippedArmor && typeof entity.equippedArmor === "object" ? entity.equippedArmor : null,
+    entity.equistaminadArmor && typeof entity.equistaminadArmor === "object" ? entity.equistaminadArmor : null,
     ...getExplicitlyWornLegacyItems(entity.wardrobe),
     ...getExplicitlyWornLegacyItems(entity.inventory),
   ].filter(Boolean);
@@ -248,7 +248,7 @@ export function normalizeLegacyArmor(characterOrFighter) {
       return;
     }
     const result = equipLayer(equipment.worn, normalized);
-    if (result.equipped) equipment.worn = result.worn;
+    if (result.equistaminad) equipment.worn = result.worn;
   });
 
   entity.equipment = equipment;
@@ -263,35 +263,35 @@ export function resolveArmorProfile(characterOrFighter) {
   const coverageBySlot = ARMOR_BODY_SLOTS.reduce((acc, slot) => ({ ...acc, [slot]: false }), {});
   const notes = [];
   let strongest = null;
-  let totalArmorSDC = 0;
-  const penalties = { speed: 0, prowl: 0, dodge: 0 };
+  let totalArmorarmorDurability = 0;
+  const penalties = { speed: 0, prowl: 0, evade: 0 };
 
   ARMOR_BODY_SLOTS.forEach((bodySlot) => {
     layers[bodySlot] = { ...(worn[bodySlot] || emptyLayerSet()) };
     ARMOR_LAYERS.forEach((layer) => {
       const item = layers[bodySlot]?.[layer];
       if (!item) return;
-      const armorRating = Number(item.armorRating ?? item.ar ?? 0) || 0;
-      const sdc = Number(item.currentSDC ?? item.sdc ?? 0) || 0;
-      if (armorRating > 0 || sdc > 0) coverageBySlot[bodySlot] = true;
-      totalArmorSDC += sdc;
+      const guardRating = Number(item.guardRating ?? item.guardRating ?? 0) || 0;
+      const armorDurability = Number(item.currentarmorDurability ?? item.armorDurability ?? 0) || 0;
+      if (guardRating > 0 || armorDurability > 0) coverageBySlot[bodySlot] = true;
+      totalArmorarmorDurability += armorDurability;
       penalties.speed += Number(item.penalties?.speed ?? item.speedPenalty ?? 0) || 0;
       penalties.prowl += Number(item.penalties?.prowl ?? item.prowlPenalty ?? 0) || 0;
-      penalties.dodge += Number(item.penalties?.dodge ?? item.dodgePenalty ?? 0) || 0;
-      if (armorRating > 0 && (!strongest || armorRating > strongest.armorRating)) {
+      penalties.evade += Number(item.penalties?.evade ?? item.evadePenalty ?? 0) || 0;
+      if (guardRating > 0 && (!strongest || guardRating > strongest.guardRating)) {
         strongest = item;
       }
     });
   });
 
-  const legacyAR = Number(characterOrFighter?.AR ?? characterOrFighter?.ar ?? 0) || 0;
-  const ar = Math.max(legacyAR, strongest?.armorRating || 0);
-  if (!strongest && legacyAR > 0) notes.push("Using legacy AR; no layered armor item found.");
+  const legacyGuardRating = Number(characterOrFighter?.guardRating ?? characterOrFighter?.guardRating ?? 0) || 0;
+  const guardRating = Math.max(legacyGuardRating, strongest?.guardRating || 0);
+  if (!strongest && legacyGuardRating > 0) notes.push("Using legacy guardRating; no layered armor item found.");
 
   return {
-    ar,
-    armorName: strongest?.name || (typeof characterOrFighter?.equippedArmor === "string" ? characterOrFighter.equippedArmor : ""),
-    totalArmorSDC,
+    guardRating,
+    armorName: strongest?.name || (typeof characterOrFighter?.equistaminadArmor === "string" ? characterOrFighter.equistaminadArmor : ""),
+    totalArmorarmorDurability,
     coverageBySlot,
     penalties,
     shield,
@@ -306,21 +306,21 @@ export function syncLegacyArmorFields(characterOrFighter) {
   const synced = {
     ...entity,
     armorProfile,
-    AR: armorProfile.ar || entity.AR || entity.ar || 10,
-    ar: armorProfile.ar || entity.ar || entity.AR || 10,
+    guardRating: armorProfile.guardRating || entity.guardRating || entity.guardRating || 10,
+    guardRating: armorProfile.guardRating || entity.guardRating || entity.guardRating || 10,
   };
 
   if (armorProfile.armorName) {
-    synced.equippedArmor = armorProfile.armorName;
+    synced.equistaminadArmor = armorProfile.armorName;
   }
 
   const torsoLayers = armorProfile.layers?.torso || {};
   const torsoArmor = torsoLayers.plate || torsoLayers.mail || torsoLayers.padding || torsoLayers.base || null;
   if (torsoArmor) {
-    synced.equipped = {
-      ...(synced.equipped || {}),
+    synced.equistaminad = {
+      ...(synced.equistaminad || {}),
       chest: torsoArmor,
-      torso: synced.equipped?.torso || torsoArmor,
+      torso: synced.equistaminad?.torso || torsoArmor,
     };
   }
 
@@ -349,7 +349,7 @@ export function isClothingOrArmor(item) {
   }
 
   // Check for armor rating (indicates armor)
-  if (item.armorRating && item.armorRating > 0) {
+  if (item.guardRating && item.guardRating > 0) {
     return true;
   }
 
@@ -438,14 +438,14 @@ export function getAvailableClothing(character) {
  * @returns {Object} Character with initialized equipment slots
  */
 export function initializeEquipmentSlots(character) {
-  if (!character.equipped) {
-    character.equipped = {};
+  if (!character.equistaminad) {
+    character.equistaminad = {};
   }
 
   // Initialize equipment slots if they don't exist
   Object.values(EQUIPMENT_SLOTS).forEach((slot) => {
-    if (!character.equipped[slot]) {
-      character.equipped[slot] = null;
+    if (!character.equistaminad[slot]) {
+      character.equistaminad[slot] = null;
     }
   });
 
@@ -456,7 +456,7 @@ export function initializeEquipmentSlots(character) {
  * Look up armor rating from item name
  * Handles name variations and matches from multiple data sources
  * @param {string} itemName - The name of the item
- * @returns {Object} { armorRating: number, sdc: number } or null if not found
+ * @returns {Object} { guardRating: number, armorDurability: number } or null if not found
  */
 function lookupArmorRating(itemName) {
   if (!itemName) return null;
@@ -464,48 +464,48 @@ function lookupArmorRating(itemName) {
   // Normalize item name for matching (handle variations)
   const normalizedName = itemName.toLowerCase().trim();
 
-  // Armor rating lookup table (from Palladium rules and data files)
+  // Armor rating lookup table (from Medieval Combat Simulator rules and data files)
   // Handles name variations like "Gauntlets (Chain)" vs "Chain Gauntlets"
   const armorLookup = {
     // Gauntlets
-    "gauntlets (chain)": { armorRating: 12, sdc: 30 }, // traderEquipment.js says 12
-    "chain gauntlets": { armorRating: 12, sdc: 30 },
-    "gauntlets (leather)": { armorRating: 6, sdc: 15 },
-    "leather gauntlets": { armorRating: 6, sdc: 15 },
-    "leather bracers": { armorRating: 6, sdc: 15 },
-    "gauntlets (plate)": { armorRating: 16, sdc: 60 },
-    "plate gauntlets": { armorRating: 16, sdc: 60 },
+    "gauntlets (chain)": { guardRating: 12, armorDurability: 30 }, // traderEquipment.js says 12
+    "chain gauntlets": { guardRating: 12, armorDurability: 30 },
+    "gauntlets (leather)": { guardRating: 6, armorDurability: 15 },
+    "leather gauntlets": { guardRating: 6, armorDurability: 15 },
+    "leather bracers": { guardRating: 6, armorDurability: 15 },
+    "gauntlets (plate)": { guardRating: 16, armorDurability: 60 },
+    "plate gauntlets": { guardRating: 16, armorDurability: 60 },
 
     // Full armor sets
-    "padded armor": { armorRating: 5, sdc: 15 },
-    "soft leather armor": { armorRating: 6, sdc: 20 },
-    "hard leather armor": { armorRating: 8, sdc: 30 },
-    "studded leather armor": { armorRating: 10, sdc: 35 },
-    "ring mail armor": { armorRating: 12, sdc: 40 },
-    "chain mail armor": { armorRating: 13, sdc: 45 },
-    "chain armor": { armorRating: 13, sdc: 45 },
-    "scale mail armor": { armorRating: 14, sdc: 55 },
-    "splint mail armor": { armorRating: 15, sdc: 60 },
-    "plate mail armor": { armorRating: 16, sdc: 70 },
-    "plate armor": { armorRating: 16, sdc: 70 },
-    "full plate armor": { armorRating: 17, sdc: 90 },
+    "padded armor": { guardRating: 5, armorDurability: 15 },
+    "soft leather armor": { guardRating: 6, armorDurability: 20 },
+    "hard leather armor": { guardRating: 8, armorDurability: 30 },
+    "studded leather armor": { guardRating: 10, armorDurability: 35 },
+    "ring mail armor": { guardRating: 12, armorDurability: 40 },
+    "chain mail armor": { guardRating: 13, armorDurability: 45 },
+    "chain armor": { guardRating: 13, armorDurability: 45 },
+    "scale mail armor": { guardRating: 14, armorDurability: 55 },
+    "splint mail armor": { guardRating: 15, armorDurability: 60 },
+    "plate mail armor": { guardRating: 16, armorDurability: 70 },
+    "plate armor": { guardRating: 16, armorDurability: 70 },
+    "full plate armor": { guardRating: 17, armorDurability: 90 },
 
     // Helmets
-    "leather cap": { armorRating: 4, sdc: 10 },
-    "chain coif": { armorRating: 10, sdc: 25 },
-    "plate helm": { armorRating: 14, sdc: 40 },
+    "leather cap": { guardRating: 4, armorDurability: 10 },
+    "chain coif": { guardRating: 10, armorDurability: 25 },
+    "plate helm": { guardRating: 14, armorDurability: 40 },
 
     // Boots
-    "studded boots": { armorRating: 5, sdc: 15 },
-    "iron sabatons": { armorRating: 14, sdc: 40 },
-    "boots of swiftness": { armorRating: 8, sdc: 20 },
-    "boots, knee-high": { armorRating: 0, sdc: 0 }, // Regular boots, no armor
+    "studded boots": { guardRating: 5, armorDurability: 15 },
+    "iron sabatons": { guardRating: 14, armorDurability: 40 },
+    "boots of swiftness": { guardRating: 8, armorDurability: 20 },
+    "boots, knee-high": { guardRating: 0, armorDurability: 0 }, // Regular boots, no armor
 
     // Shields
-    "shield, small wood": { armorRating: 10, sdc: 25 },
-    "small shield": { armorRating: 10, sdc: 25 },
-    "shield, large iron": { armorRating: 14, sdc: 50 },
-    "large shield": { armorRating: 14, sdc: 50 },
+    "shield, small wood": { guardRating: 10, armorDurability: 25 },
+    "small shield": { guardRating: 10, armorDurability: 25 },
+    "shield, large iron": { guardRating: 14, armorDurability: 50 },
+    "large shield": { guardRating: 14, armorDurability: 50 },
   };
 
   // Try exact match first
@@ -539,12 +539,12 @@ export function equipItem(character, item) {
   }
 
   const slot = item.slot;
-  const equipped = { ...(character.equipped || {}) };
+  const equistaminad = { ...(character.equistaminad || {}) };
   const wardrobe = [...(character.wardrobe || [])];
   const inventory = [...(character.inventory || [])];
 
   // Check if slot already has an item
-  const currentItem = equipped[slot];
+  const currentItem = equistaminad[slot];
 
   // Unequip current item if exists and return it to wardrobe
   if (currentItem) {
@@ -560,36 +560,36 @@ export function equipItem(character, item) {
   );
 
   // Look up armor rating if not already set
-  let armorRating = item.armorRating || item.defense || 0;
-  let sdc = item.sdc || 0;
+  let guardRating = item.guardRating || item.defense || 0;
+  let armorDurability = item.armorDurability || 0;
 
   // If armor rating is 0 or missing, try to look it up from item name
-  if (!armorRating && item.name) {
+  if (!guardRating && item.name) {
     const armorData = lookupArmorRating(item.name);
     if (armorData) {
-      armorRating = armorData.armorRating;
-      sdc = armorData.sdc || sdc;
+      guardRating = armorData.guardRating;
+      armorDurability = armorData.armorDurability || armorDurability;
     }
   }
 
   // Equip the new item
-  equipped[slot] = {
+  equistaminad[slot] = {
     name: item.name,
     weight: item.weight || 0,
-    armorRating: armorRating,
-    sdc: sdc,
-    currentSDC: sdc, // Track current S.D.C. for damage
+    guardRating: guardRating,
+    armorDurability: armorDurability,
+    currentarmorDurability: armorDurability, // Track current armorDurability for damage
     price: item.price || item.value || 0,
     category: item.category || "Clothing",
     type: item.type || "clothing",
     description: item.description || "",
     slot: slot,
-    broken: false, // Track if armor is broken (S.D.C. = 0)
+    broken: false, // Track if armor is broken (armorDurability = 0)
   };
 
   // Return only the fields that changed
   return {
-    equipped,
+    equistaminad,
     wardrobe: newWardrobe,
     inventory: newInventory,
   };
@@ -602,47 +602,47 @@ export function equipItem(character, item) {
  * @returns {Object} Updates object with only changed fields
  */
 export function unequipItem(character, slot) {
-  const equipped = { ...(character.equipped || {}) };
+  const equistaminad = { ...(character.equistaminad || {}) };
   const wardrobe = [...(character.wardrobe || [])];
 
-  const item = equipped[slot];
+  const item = equistaminad[slot];
   if (item) {
     // Add item back to wardrobe
     wardrobe.push(item);
-    // Remove from equipped
-    equipped[slot] = null;
+    // Remove from equistaminad
+    equistaminad[slot] = null;
   }
 
   // Return only the fields that changed
   return {
-    equipped,
+    equistaminad,
     wardrobe,
   };
 }
 
 /**
- * Fix armor ratings for already-equipped items
- * This corrects items that were equipped without proper armor rating lookup
+ * Fix armor ratings for already-equistaminad items
+ * This corrects items that were equistaminad without proper armor rating lookup
  * @param {Object} character - Character object
  * @returns {Object} Updated character with corrected armor ratings
  */
-export function fixEquippedArmorRatings(character) {
+export function fixEquistaminadArmorRatings(character) {
   const updatedCharacter = { ...character };
-  const equipped = { ...(updatedCharacter.equipped || {}) };
+  const equistaminad = { ...(updatedCharacter.equistaminad || {}) };
   let needsUpdate = false;
 
-  Object.entries(equipped).forEach(([slot, item]) => {
+  Object.entries(equistaminad).forEach(([slot, item]) => {
     if (item && item.name) {
       // Check if armor rating is missing or 0 for armor items
       const armorData = lookupArmorRating(item.name);
-      if (armorData && armorData.armorRating > 0) {
-        // If current AR is 0 but should have AR, fix it
-        if (!item.armorRating || item.armorRating === 0) {
-          equipped[slot] = {
+      if (armorData && armorData.guardRating > 0) {
+        // If current guardRating is 0 but should have guardRating, fix it
+        if (!item.guardRating || item.guardRating === 0) {
+          equistaminad[slot] = {
             ...item,
-            armorRating: armorData.armorRating,
-            sdc: armorData.sdc || item.sdc || 0,
-            currentSDC: armorData.sdc || item.currentSDC || item.sdc || 0,
+            guardRating: armorData.guardRating,
+            armorDurability: armorData.armorDurability || item.armorDurability || 0,
+            currentarmorDurability: armorData.armorDurability || item.currentarmorDurability || item.armorDurability || 0,
           };
           needsUpdate = true;
         }
@@ -651,7 +651,7 @@ export function fixEquippedArmorRatings(character) {
   });
 
   if (needsUpdate) {
-    updatedCharacter.equipped = equipped;
+    updatedCharacter.equistaminad = equistaminad;
   }
 
   return updatedCharacter;
@@ -663,75 +663,75 @@ export function fixEquippedArmorRatings(character) {
  * @returns {Object} Equipment display info
  */
 export function getEquipmentDisplayInfo(character) {
-  const equipped = character.equipped || {};
+  const equistaminad = character.equistaminad || {};
 
   return {
-    head: equipped.head || {
+    head: equistaminad.head || {
       name: "None",
-      armorRating: 0,
-      currentSDC: 0,
+      guardRating: 0,
+      currentarmorDurability: 0,
       type: "none",
     },
-    torso: equipped.torso || {
+    torso: equistaminad.torso || {
       name: "None",
-      armorRating: 0,
-      currentSDC: 0,
+      guardRating: 0,
+      currentarmorDurability: 0,
       type: "none",
     },
-    legs: equipped.legs || {
+    legs: equistaminad.legs || {
       name: "None",
-      armorRating: 0,
-      currentSDC: 0,
+      guardRating: 0,
+      currentarmorDurability: 0,
       type: "none",
     },
-    feet: equipped.feet || {
+    feet: equistaminad.feet || {
       name: "None",
-      armorRating: 0,
-      currentSDC: 0,
+      guardRating: 0,
+      currentarmorDurability: 0,
       type: "none",
     },
-    hands: equipped.hands || {
+    hands: equistaminad.hands || {
       name: "None",
-      armorRating: 0,
-      currentSDC: 0,
+      guardRating: 0,
+      currentarmorDurability: 0,
       type: "none",
     },
-    back: equipped.back || {
+    back: equistaminad.back || {
       name: "None",
-      armorRating: 0,
-      currentSDC: 0,
+      guardRating: 0,
+      currentarmorDurability: 0,
       type: "none",
     },
-    waist: equipped.waist || {
+    waist: equistaminad.waist || {
       name: "None",
-      armorRating: 0,
-      currentSDC: 0,
+      guardRating: 0,
+      currentarmorDurability: 0,
       type: "none",
       capacity: 0,
     },
-    hasEquipment: Object.values(equipped).some(
+    hasEquipment: Object.values(equistaminad).some(
       (item) => item && item.name !== "None"
     ),
   };
 }
 
 /**
- * Get total armor rating from equipped items
+ * Get total armor rating from equistaminad items
  * @param {Object} character - Character object
- * @returns {Number} Total armor rating (highest A.R. from any piece, per Palladium rules)
+ * @returns {Number} Total armor rating (highest A.R. from any piece, per Medieval Combat Simulator rules)
  */
 export function getTotalArmorRating(character) {
-  return resolveArmorProfile(character).ar || 0;
+  return resolveArmorProfile(character).guardRating || 0;
 }
 
 /**
- * Get total weight from equipped items
+ * Get total weight from equistaminad items
  * @param {Object} character - Character object
  * @returns {Number} Total weight
  */
-export function getTotalEquippedWeight(character) {
-  const equipped = character.equipped || {};
-  return Object.values(equipped).reduce((total, item) => {
+export function getTotalEquistaminadWeight(character) {
+  const equistaminad = character.equistaminad || {};
+  return Object.values(equistaminad).reduce((total, item) => {
     if (item && item.weight) {
       return total + item.weight;
     }
@@ -740,48 +740,48 @@ export function getTotalEquippedWeight(character) {
 }
 
 /**
- * Calculate movement penalties from armor weight (Palladium 1994 rules)
+ * Calculate movement penalties from armor weight (Medieval Combat Simulator 1994 rules)
  * @param {Object} character - Character object
  * @returns {Object} Movement penalties
  */
 export function calculateArmorPenalties(character) {
-  const totalWeight = getTotalEquippedWeight(character);
-  const equipped = character.equipped || {};
+  const totalWeight = getTotalEquistaminadWeight(character);
+  const equistaminad = character.equistaminad || {};
 
-  // Palladium rule: -1 Speed per 10 lbs of armor
+  // Medieval Combat Simulator rule: -1 Speed per 10 lbs of armor
   const speedPenalty = Math.floor(totalWeight / 10);
 
   // Check for heavy armor penalties
-  const hasHeavyArmor = Object.values(equipped).some(
+  const hasHeavyArmor = Object.values(equistaminad).some(
     (item) => item && (item.type === "heavy" || item.type === "heavy armor")
   );
 
-  // Heavy armor may reduce Prowl/Dodge by 10% or more
+  // Heavy armor may reduce Prowl/Evade by 10% or more
   const prowlPenalty = hasHeavyArmor ? 10 : 0;
-  const dodgePenalty = hasHeavyArmor ? 10 : 0;
+  const evadePenalty = hasHeavyArmor ? 10 : 0;
 
   return {
     speedPenalty,
     prowlPenalty,
-    dodgePenalty,
+    evadePenalty,
     totalWeight,
   };
 }
 
 /**
- * Get carrying capacity bonus from equipped containers
+ * Get carrying capacity bonus from equistaminad containers
  * @param {Object} character - Character object
  * @returns {number} Carrying capacity bonus in pounds
  */
 export function getContainerCapacityBonus(character) {
-  if (!character.equipped || typeof character.equipped !== "object") {
+  if (!character.equistaminad || typeof character.equistaminad !== "object") {
     return 0;
   }
 
   let bonus = 0;
 
-  // Check each equipped item for container capacity bonuses
-  Object.values(character.equipped).forEach((item) => {
+  // Check each equistaminad item for container capacity bonuses
+  Object.values(character.equistaminad).forEach((item) => {
     if (item && (item.category === "Containers" || item.type === "storage")) {
       // Container capacity bonuses based on type
       const containerBonuses = {
@@ -799,7 +799,7 @@ export function getContainerCapacityBonus(character) {
         "Cloth handle bag": 25,
         "Leather handle bag": 30,
         "Water skin (2 pints)": 0,
-        "Water skin (½ gallon)": 0,
+        "Water skin (Ãƒâ€šÃ‚Â½ gallon)": 0,
         "Tobacco pouch": 1,
       };
 
@@ -808,7 +808,7 @@ export function getContainerCapacityBonus(character) {
   });
 
   // Check waist equipment for storage capacity (belts, sheaths, etc.)
-  const waistItem = character.equipped?.waist;
+  const waistItem = character.equistaminad?.waist;
   if (waistItem && waistItem.name !== "None") {
     // Check if it's a storage item (belt pouch, weapon belt, etc.)
     if (waistItem.capacity) {
@@ -874,18 +874,18 @@ export function autoEquipClothing(character) {
     if (items.length > 0) {
       // Sort by armor rating (defense), then by value
       const bestItem = items.sort((a, b) => {
-        const aDefense = a.defense || a.armorRating || 0;
-        const bDefense = b.defense || b.armorRating || 0;
+        const aDefense = a.defense || a.guardRating || 0;
+        const bDefense = b.defense || b.guardRating || 0;
         if (aDefense !== bDefense) {
           return bDefense - aDefense;
         }
         return (b.price || b.value || 0) - (a.price || a.value || 0);
       })[0];
 
-      updatedCharacter.equipped[slot] = {
+      updatedCharacter.equistaminad[slot] = {
         name: bestItem.name,
         weight: bestItem.weight || 0,
-        defense: bestItem.defense || bestItem.armorRating || 0,
+        defense: bestItem.defense || bestItem.guardRating || 0,
         price: bestItem.price || bestItem.value || 0,
         category: bestItem.category || "Clothing",
         type: bestItem.type || "clothing",
@@ -899,11 +899,11 @@ export function autoEquipClothing(character) {
 }
 
 /**
- * Calculate armor vs HP damage using centralized strike-vs-AR rules.
+ * Calculate armor vs HP damage using centralized attack-vs-guardRating rules.
  * @param {Object} character - Character object
- * @param {number} attackTotal - d20 + strike bonuses (same as engine "total to hit")
+ * @param {number} attackTotal - d20 + attack bonuses (same as engine "total to hit")
  * @param {number} damage - The damage dealt
- * @param {string|null} targetSlot - Armor slot under character.equipped (optional)
+ * @param {string|null} targetSlot - Armor slot under character.equistaminad (optional)
  * @param {{ isCrit?: boolean, isFumble?: boolean }} [opts]
  */
 export function calculateArmorDamage(
@@ -942,7 +942,7 @@ export function calculateArmorDamage(
 
   if (impact.outcome === "armor" && impact.armor) {
     const piece = impact.armor;
-    piece.currentSDC = impact.nextArmorSDC;
+    piece.currentarmorDurability = impact.nextArmorarmorDurability;
     if (impact.armorBroken) {
       piece.broken = true;
       result.brokenArmor.push({ slot: impact.slot, name: piece.name });
@@ -962,48 +962,48 @@ export function calculateArmorDamage(
  * Repair armor piece
  * @param {Object} character - Character object
  * @param {string} slot - The armor slot to repair
- * @param {number} repairAmount - Amount of S.D.C. to restore
+ * @param {number} repairAmount - Amount of armorDurability to restore
  * @returns {Object} Updated character
  */
 export function repairArmor(character, slot, repairAmount) {
   const updatedCharacter = { ...character };
-  const equipped = { ...updatedCharacter.equipped };
+  const equistaminad = { ...updatedCharacter.equistaminad };
 
-  if (equipped[slot] && equipped[slot].sdc) {
-    equipped[slot].currentSDC = Math.min(
-      equipped[slot].sdc,
-      equipped[slot].currentSDC + repairAmount
+  if (equistaminad[slot] && equistaminad[slot].armorDurability) {
+    equistaminad[slot].currentarmorDurability = Math.min(
+      equistaminad[slot].armorDurability,
+      equistaminad[slot].currentarmorDurability + repairAmount
     );
 
     // If fully repaired, mark as not broken
-    if (equipped[slot].currentSDC > 0) {
-      equipped[slot].broken = false;
+    if (equistaminad[slot].currentarmorDurability > 0) {
+      equistaminad[slot].broken = false;
     }
   }
 
-  updatedCharacter.equipped = equipped;
+  updatedCharacter.equistaminad = equistaminad;
   return updatedCharacter;
 }
 
 /**
- * Get total S.D.C. from all equipped armor
+ * Get total armorDurability from all equistaminad armor
  * @param {Object} character - Character object
- * @returns {Number} Total current S.D.C.
+ * @returns {Number} Total current armorDurability
  */
-export function getTotalArmorSDC(character) {
-  const equipped = character.equipped || {};
-  return Object.values(equipped).reduce((total, item) => {
-    if (item && item.currentSDC && !item.broken) {
-      return total + item.currentSDC;
+export function getTotalArmorarmorDurability(character) {
+  const equistaminad = character.equistaminad || {};
+  return Object.values(equistaminad).reduce((total, item) => {
+    if (item && item.currentarmorDurability && !item.broken) {
+      return total + item.currentarmorDurability;
     }
     return total;
   }, 0);
 }
 
 /**
- * Calculate repair cost for armor (Palladium 1994 rules)
+ * Calculate repair cost for armor (Medieval Combat Simulator 1994 rules)
  * @param {Object} armorItem - The armor item to repair
- * @param {number} repairAmount - Amount of S.D.C. to restore
+ * @param {number} repairAmount - Amount of armorDurability to restore
  * @returns {number} Repair cost in gold pieces
  */
 export function calculateRepairCost(armorItem, repairAmount) {
@@ -1011,11 +1011,11 @@ export function calculateRepairCost(armorItem, repairAmount) {
     return 0;
   }
 
-  // Palladium rule: 10-25% of item value per 10 S.D.C. repaired
+  // Medieval Combat Simulator rule: 10-25% of item value per 10 armorDurability repaired
   const repairRate = 0.15; // Use 15% as middle ground
-  const sdcUnits = Math.ceil(repairAmount / 10); // Round up to nearest 10 S.D.C.
+  const armorDurabilityUnits = Math.ceil(repairAmount / 10); // Round up to nearest 10 armorDurability
 
-  return Math.ceil(armorItem.price * repairRate * sdcUnits);
+  return Math.ceil(armorItem.price * repairRate * armorDurabilityUnits);
 }
 
 /**
@@ -1024,12 +1024,12 @@ export function calculateRepairCost(armorItem, repairAmount) {
  * @returns {Object} Repair costs by slot
  */
 export function getRepairCosts(character) {
-  const equipped = character.equipped || {};
+  const equistaminad = character.equistaminad || {};
   const repairCosts = {};
 
-  Object.entries(equipped).forEach(([slot, item]) => {
-    if (item && item.sdc && item.currentSDC < item.sdc) {
-      const damageAmount = item.sdc - item.currentSDC;
+  Object.entries(equistaminad).forEach(([slot, item]) => {
+    if (item && item.armorDurability && item.currentarmorDurability < item.armorDurability) {
+      const damageAmount = item.armorDurability - item.currentarmorDurability;
       repairCosts[slot] = {
         item: item.name,
         damageAmount,
@@ -1061,26 +1061,26 @@ export async function saveCharacterEquipment(characterId, updatedCharacter) {
 }
 
 /**
- * Check if an item is currently equipped
+ * Check if an item is currently equistaminad
  * @param {Object} character - Character object
  * @param {Object} item - Item to check
- * @returns {boolean} True if item is equipped
+ * @returns {boolean} True if item is equistaminad
  */
-export function isItemEquipped(character, item) {
-  if (!character || !item || !character.equipped) return false;
+export function isItemEquistaminad(character, item) {
+  if (!character || !item || !character.equistaminad) return false;
 
-  const equipped = character.equipped;
+  const equistaminad = character.equistaminad;
 
-  // Check if item is equipped in any equipment slot
-  for (const [slot, equippedItem] of Object.entries(equipped)) {
-    if (equippedItem && equippedItem.name === item.name) {
+  // Check if item is equistaminad in any equipment slot
+  for (const [slot, equistaminadItem] of Object.entries(equistaminad)) {
+    if (equistaminadItem && equistaminadItem.name === item.name) {
       return true;
     }
   }
 
-  // Check if item is equipped as a weapon
-  if (character.equippedWeapons && Array.isArray(character.equippedWeapons)) {
-    return character.equippedWeapons.some(
+  // Check if item is equistaminad as a weapon
+  if (character.equistaminadWeapons && Array.isArray(character.equistaminadWeapons)) {
+    return character.equistaminadWeapons.some(
       (weapon) => weapon.name === item.name
     );
   }

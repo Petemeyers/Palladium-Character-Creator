@@ -31,7 +31,7 @@ export default function WeaknessDebugHUD({ fighters = [] }) {
     return (
       <Box p={3} bg="gray.50" borderRadius="md" borderWidth="1px" borderColor="gray.200">
         <Text fontSize="xs" color="gray.600" fontStyle="italic">
-          No AI debug data available. AI spell selection debug info will appear here when enemies cast spells.
+          No AI debug data available. AI technique selection debug info will astaminaar here when enemies cast techniques.
         </Text>
       </Box>
     );
@@ -41,7 +41,7 @@ export default function WeaknessDebugHUD({ fighters = [] }) {
     <Box>
       <Divider my={2} />
       <Text fontSize="sm" fontWeight="bold" mb={2}>
-        🧠 AI Threat Analysis & Weakness Memory
+        Ã°Å¸Â§Â  AI Threat Analysis & Weakness Memory
       </Text>
       <Accordion allowToggle defaultIndex={[]} size="sm">
         {fightersWithDebug.map((fighter) => {
@@ -62,9 +62,9 @@ export default function WeaknessDebugHUD({ fighters = [] }) {
                         {debug.casterRole}
                       </Badge>
                     )}
-                    {debug.selectedSpell && (
+                    {debug.selectedTechnique && (
                       <Badge colorScheme="blue" size="xs">
-                        {debug.selectedSpell}
+                        {debug.selectedTechnique}
                       </Badge>
                     )}
                   </HStack>
@@ -76,7 +76,7 @@ export default function WeaknessDebugHUD({ fighters = [] }) {
                   {/* Caster Role */}
                   {debug.casterRole && (
                     <Box>
-                      <Text fontWeight="bold">🎭 Caster Role:</Text>
+                      <Text fontWeight="bold">Ã°Å¸Å½Â­ Caster Role:</Text>
                       <Badge colorScheme="purple" size="sm">
                         {debug.casterRole}
                       </Badge>
@@ -86,7 +86,7 @@ export default function WeaknessDebugHUD({ fighters = [] }) {
                   {/* Target Info */}
                   {debug.targetName && (
                     <Box>
-                      <Text fontWeight="bold">🎯 Target:</Text>
+                      <Text fontWeight="bold">Ã°Å¸Å½Â¯ Target:</Text>
                       <Text>{debug.targetName}</Text>
                       {debug.distanceFeet !== null && (
                         <Text color="gray.600">{debug.distanceFeet}ft away</Text>
@@ -94,24 +94,24 @@ export default function WeaknessDebugHUD({ fighters = [] }) {
                     </Box>
                   )}
 
-                  {/* Selected Spell */}
-                  {debug.selectedSpell && (
+                  {/* Selected Technique */}
+                  {debug.selectedTechnique && (
                     <Box>
-                      <Text fontWeight="bold">🔮 Selected Spell:</Text>
+                      <Text fontWeight="bold">Ã°Å¸â€Â® Selected Technique:</Text>
                       <Badge colorScheme="blue" size="sm">
-                        {debug.selectedSpell}
+                        {debug.selectedTechnique}
                       </Badge>
                     </Box>
                   )}
 
-                  {/* Avoided Recent Spells */}
+                  {/* Avoided Recent Techniques */}
                   {debug.avoidedRecent && debug.avoidedRecent.length > 0 && (
                     <Box>
-                      <Text fontWeight="bold">🚫 Avoided (Recent):</Text>
+                      <Text fontWeight="bold">Ã°Å¸Å¡Â« Avoided (Recent):</Text>
                       <HStack spacing={1} flexWrap="wrap">
-                        {debug.avoidedRecent.map((spell, idx) => (
+                        {debug.avoidedRecent.map((technique, idx) => (
                           <Badge key={idx} colorScheme="red" size="xs">
-                            {spell}
+                            {technique}
                           </Badge>
                         ))}
                       </HStack>
@@ -121,13 +121,13 @@ export default function WeaknessDebugHUD({ fighters = [] }) {
                   {/* Weakness Memory */}
                   {weaknessMemory && (
                     <Box>
-                      <Text fontWeight="bold">💡 Weakness Memory:</Text>
+                      <Text fontWeight="bold">Ã°Å¸â€™Â¡ Weakness Memory:</Text>
                       <VStack align="stretch" spacing={1} pl={2}>
                         {/* Confirmed Weaknesses */}
                         {weaknessMemory.confirmed && weaknessMemory.confirmed.length > 0 && (
                           <Box>
                             <Text fontSize="xs" fontWeight="semibold" color="green.600">
-                              ✅ Confirmed:
+                              Ã¢Å“â€¦ Confirmed:
                             </Text>
                             <HStack spacing={1} flexWrap="wrap">
                               {weaknessMemory.confirmed.map((weakness, idx) => (
@@ -143,7 +143,7 @@ export default function WeaknessDebugHUD({ fighters = [] }) {
                         {weaknessMemory.suspected && weaknessMemory.suspected.length > 0 && (
                           <Box>
                             <Text fontSize="xs" fontWeight="semibold" color="yellow.600">
-                              🟨 Suspected:
+                              Ã°Å¸Å¸Â¨ Suspected:
                             </Text>
                             <HStack spacing={1} flexWrap="wrap">
                               {weaknessMemory.suspected.map((weakness, idx) => (
@@ -155,14 +155,14 @@ export default function WeaknessDebugHUD({ fighters = [] }) {
                           </Box>
                         )}
 
-                        {/* Disproven Weaknesses */}
-                        {weaknessMemory.disproven && weaknessMemory.disproven.length > 0 && (
+                        {/* Dfocusroven Weaknesses */}
+                        {weaknessMemory.dfocusroven && weaknessMemory.dfocusroven.length > 0 && (
                           <Box>
                             <Text fontSize="xs" fontWeight="semibold" color="red.600">
-                              ❌ Disproven:
+                              Ã¢ÂÅ’ Dfocusroven:
                             </Text>
                             <HStack spacing={1} flexWrap="wrap">
-                              {weaknessMemory.disproven.map((weakness, idx) => (
+                              {weaknessMemory.dfocusroven.map((weakness, idx) => (
                                 <Badge key={idx} colorScheme="red" size="xs">
                                   {weakness}
                                 </Badge>
@@ -184,12 +184,12 @@ export default function WeaknessDebugHUD({ fighters = [] }) {
                   {/* Threat Profile */}
                   {threatProfile && (
                     <Box>
-                      <Text fontWeight="bold">🧬 Threat Profile:</Text>
+                      <Text fontWeight="bold">Ã°Å¸Â§Â¬ Threat Profile:</Text>
                       <VStack align="stretch" spacing={1} pl={2}>
                         {/* Supernatural Flags */}
                         {(threatProfile.supernatural ||
-                          threatProfile.undead ||
-                          threatProfile.demonic ||
+                          threatProfile.fallen ||
+                          threatProfile.raideric ||
                           threatProfile.fae ||
                           threatProfile.astral ||
                           threatProfile.summoned ||
@@ -200,11 +200,11 @@ export default function WeaknessDebugHUD({ fighters = [] }) {
                               {threatProfile.supernatural && (
                                 <Badge colorScheme="purple" size="xs">Supernatural</Badge>
                               )}
-                              {threatProfile.undead && (
-                                <Badge colorScheme="gray" size="xs">Undead</Badge>
+                              {threatProfile.fallen && (
+                                <Badge colorScheme="gray" size="xs">Fallen</Badge>
                               )}
-                              {threatProfile.demonic && (
-                                <Badge colorScheme="red" size="xs">Demonic</Badge>
+                              {threatProfile.raideric && (
+                                <Badge colorScheme="red" size="xs">Raideric</Badge>
                               )}
                               {threatProfile.fae && (
                                 <Badge colorScheme="green" size="xs">Fae</Badge>
@@ -247,15 +247,15 @@ export default function WeaknessDebugHUD({ fighters = [] }) {
                         )}
 
                         {/* Durability */}
-                        {(threatProfile.mundaneResistant || threatProfile.magicRequired) && (
+                        {(threatProfile.mundaneResistant || threatProfile.trainingRequired) && (
                           <Box>
                             <Text fontSize="xs" fontWeight="semibold">Durability:</Text>
                             <HStack spacing={1} flexWrap="wrap">
                               {threatProfile.mundaneResistant && (
                                 <Badge colorScheme="orange" size="xs">Mundane Resistant</Badge>
                               )}
-                              {threatProfile.magicRequired && (
-                                <Badge colorScheme="purple" size="xs">Magic Required</Badge>
+                              {threatProfile.trainingRequired && (
+                                <Badge colorScheme="purple" size="xs">Training Required</Badge>
                               )}
                             </HStack>
                           </Box>
@@ -286,7 +286,7 @@ export default function WeaknessDebugHUD({ fighters = [] }) {
                   {/* Last Resolution */}
                   {debug.lastResolution && (
                     <Box>
-                      <Text fontWeight="bold">📊 Last Resolution:</Text>
+                      <Text fontWeight="bold">Ã°Å¸â€œÅ  Last Resolution:</Text>
                       <VStack align="stretch" spacing={1} pl={2}>
                         <Text fontSize="xs">
                           Outcome:{" "}
@@ -294,7 +294,7 @@ export default function WeaknessDebugHUD({ fighters = [] }) {
                             colorScheme={
                               debug.lastResolution.outcome === "confirmed"
                                 ? "green"
-                                : debug.lastResolution.outcome === "disproven"
+                                : debug.lastResolution.outcome === "dfocusroven"
                                 ? "red"
                                 : "gray"
                             }
@@ -303,9 +303,9 @@ export default function WeaknessDebugHUD({ fighters = [] }) {
                             {debug.lastResolution.outcome}
                           </Badge>
                         </Text>
-                        {debug.lastResolution.spellName && (
+                        {debug.lastResolution.techniqueName && (
                           <Text fontSize="xs" color="gray.600">
-                            Spell: {debug.lastResolution.spellName}
+                            Technique: {debug.lastResolution.techniqueName}
                           </Text>
                         )}
                         {debug.lastResolution.notes && (

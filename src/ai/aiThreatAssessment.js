@@ -22,28 +22,28 @@ function distanceBetween(a, b) {
 }
 
 function isCaster(target) {
-  const occ = String(target?.occ ?? target?.className ?? "").toLowerCase();
+  const profession = String(target?.profession ?? target?.className ?? "").toLowerCase();
   return (
-    occ.includes("wizard") ||
-    occ.includes("warlock") ||
-    occ.includes("priest") ||
-    occ.includes("shaman") ||
-    occ.includes("druid") ||
-    occ.includes("mind")
+    profession.includes("duelist") ||
+    profession.includes("mercenary") ||
+    profession.includes("priest") ||
+    profession.includes("shaman") ||
+    profession.includes("druid") ||
+    profession.includes("mind")
   );
 }
 
 function isHealer(target) {
-  const occ = String(target?.occ ?? target?.className ?? "").toLowerCase();
+  const profession = String(target?.profession ?? target?.className ?? "").toLowerCase();
   const skills = [
     ...(target?.skills ?? []),
-    ...(target?.occSkills ?? []),
+    ...(target?.professionSkills ?? []),
     ...(target?.electiveSkills ?? []),
     ...(target?.secondarySkills ?? []),
   ].map((s) => String(s?.name ?? s).toLowerCase());
 
   return (
-    occ.includes("healer") ||
+    profession.includes("healer") ||
     skills.some((s) => s.includes("first aid") || s.includes("medical"))
   );
 }

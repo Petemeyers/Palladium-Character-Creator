@@ -1,128 +1,19 @@
-// Palladium Fantasy armor data with defense bonuses
 export const armors = [
-  // Light Armor
-  {
-    name: "Leather Armor",
-    defense: 2,
-    type: "armor",
-    category: "light",
-    weight: 15,
-    price: 25,
-    description: "Basic leather protection",
-  },
-  {
-    name: "Studded Leather",
-    defense: 3,
-    type: "armor",
-    category: "light",
-    weight: 20,
-    price: 45,
-    description: "Leather with metal studs for better protection",
-  },
-  {
-    name: "Padded Armor",
-    defense: 1,
-    type: "armor",
-    category: "light",
-    weight: 10,
-    price: 15,
-    description: "Quilted cloth padding",
-  },
-
-  // Medium Armor
-  {
-    name: "Chainmail",
-    defense: 4,
-    type: "armor",
-    category: "medium",
-    weight: 35,
-    price: 75,
-    description: "Interlocked metal rings",
-  },
-  {
-    name: "Scale Mail",
-    defense: 3,
-    type: "armor",
-    category: "medium",
-    weight: 30,
-    price: 60,
-    description: "Overlapping metal scales",
-  },
-  {
-    name: "Ring Mail",
-    defense: 2,
-    type: "armor",
-    category: "medium",
-    weight: 25,
-    price: 35,
-    description: "Leather with sewn metal rings",
-  },
-
-  // Heavy Armor
-  {
-    name: "Plate Armor",
-    defense: 6,
-    type: "armor",
-    category: "heavy",
-    weight: 50,
-    price: 150,
-    description: "Full metal plate protection",
-  },
-  {
-    name: "Splint Mail",
-    defense: 5,
-    type: "armor",
-    category: "heavy",
-    weight: 40,
-    price: 120,
-    description: "Leather with vertical metal strips",
-  },
-  {
-    name: "Banded Mail",
-    defense: 4,
-    type: "armor",
-    category: "heavy",
-    weight: 35,
-    price: 90,
-    description: "Leather with horizontal metal bands",
-  },
-
-  // Shields
-  {
-    name: "Small Shield",
-    defense: 1,
-    type: "armor",
-    category: "shield",
-    weight: 5,
-    price: 15,
-    description: "Light wooden shield",
-  },
-  {
-    name: "Large Shield",
-    defense: 2,
-    type: "armor",
-    category: "shield",
-    weight: 10,
-    price: 25,
-    description: "Heavy wooden or metal shield",
-  },
-  {
-    name: "Tower Shield",
-    defense: 3,
-    type: "armor",
-    category: "shield",
-    weight: 15,
-    price: 40,
-    description: "Massive protective shield",
-  },
+  { name: "Gambeson", guardRating: 11, armorDurability: 35, type: "armor", category: "light", weight: 10, price: 20, description: "Quilted textile armor." },
+  { name: "Leather Jack", guardRating: 12, armorDurability: 40, type: "armor", category: "light", weight: 12, price: 30, description: "Layered leather torso protection." },
+  { name: "Padded Jack", guardRating: 11, armorDurability: 30, type: "armor", category: "light", weight: 8, price: 18, description: "Light padded protection." },
+  { name: "Mail Shirt", guardRating: 13, armorDurability: 55, type: "armor", category: "medium", weight: 22, price: 80, description: "Interlinked iron rings covering the torso." },
+  { name: "Mail Hauberk", guardRating: 14, armorDurability: 70, type: "armor", category: "medium", weight: 32, price: 120, description: "Long mail coat for battlefield use." },
+  { name: "Brigandine", guardRating: 15, armorDurability: 75, type: "armor", category: "heavy", weight: 30, price: 140, description: "Riveted plates under a textile shell." },
+  { name: "Plate Harness", guardRating: 16, armorDurability: 95, type: "armor", category: "heavy", weight: 45, price: 250, description: "Full fitted plate armor." },
+  { name: "Mail and Plate", guardRating: 17, armorDurability: 110, type: "armor", category: "heavy", weight: 48, price: 300, description: "Layered plate with mail coverage." },
+  { name: "Buckler", guardRating: 1, armorDurability: 20, type: "shield", category: "shield", weight: 2, price: 12, description: "Small hand shield." },
+  { name: "Light Shield", guardRating: 2, armorDurability: 30, type: "shield", category: "shield", weight: 5, price: 20, description: "Light wooden shield." },
+  { name: "Heater Shield", guardRating: 3, armorDurability: 45, type: "shield", category: "shield", weight: 8, price: 35, description: "Kite-shaped shield for mounted or foot combat." },
+  { name: "Kite Shield", guardRating: 3, armorDurability: 50, type: "shield", category: "shield", weight: 10, price: 40, description: "Large shield with leg coverage." },
 ];
 
-// Helper function to find armor by name
-export const getArmorByName = (name) => {
-  return armors.find((armor) => armor.name === name);
-};
+export const getArmorByName = (name) => armors.find((armor) => armor.name === name);
+export const getArmorByCategory = (category) => armors.filter((armor) => armor.category === category);
 
-// Helper function to get armor by category
-export const getArmorByCategory = (category) => {
-  return armors.filter((armor) => armor.category === category);
-};
+export default armors;

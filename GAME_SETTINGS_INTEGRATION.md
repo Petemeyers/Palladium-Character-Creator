@@ -13,7 +13,7 @@ This document shows how to use the Game Settings toggles in your combat logic.
 
 - `usePainStagger` - Enable/disable pain stagger from heavy blunt weapons
 - `useMoraleRouting` - Enable/disable morale checks and routing behavior
-- `useInsanityTrauma` - Enable/disable horror factor checks and insanity accumulation
+- `useInsanityTrauma` - Enable/disable dread rating checks and insanity accumulation
 
 ## Usage Examples
 
@@ -73,7 +73,7 @@ if (settings.useMoraleRouting) {
   };
   
   if (moraleOutcome.moraleState.status === "ROUTED") {
-    addLog(`🏃 ${defenderAfterHit.name} breaks and ROUTES!`, "warning");
+    addLog(`Ã°Å¸ÂÆ’ ${defenderAfterHit.name} breaks and ROUTES!`, "warning");
   }
 }
 ```
@@ -128,7 +128,7 @@ function handleEnemyTurn(enemy) {
           f.id === enemy.id
             ? {
                 ...f,
-                remainingAttacks: 0,
+                remainingActions: 0,
                 moraleState: {
                   ...f.moraleState,
                   hasFled: hasFled,
@@ -138,7 +138,7 @@ function handleEnemyTurn(enemy) {
         )
       );
       
-      addLog(`🏃‍♂️ ${enemy.name} flees in panic!`, "warning");
+      addLog(`Ã°Å¸ÂÆ’Ã¢â‚¬ÂÃ¢â„¢â€šÃ¯Â¸Â ${enemy.name} flees in panic!`, "warning");
       return endTurn();
     }
   }
@@ -147,7 +147,7 @@ function handleEnemyTurn(enemy) {
 }
 ```
 
-### 4. Horror Factor & Insanity (on first sight)
+### 4. dreadRating & Insanity (on first sight)
 
 ```javascript
 import { resolveHorrorCheck } from "../utils/horrorSystem";
@@ -163,7 +163,7 @@ function checkHorrorFactor(viewer, horrorSource) {
       const updatedViewer = horrorResult.updatedViewer;
       
       addLog(
-        `😱 ${viewer.name} fails Horror Factor check vs ${horrorSource.name}! (+1 Insanity)`,
+        `Ã°Å¸ËœÂ± ${viewer.name} fails dreadRating check vs ${horrorSource.name}! (+1 Insanity)`,
         "warning"
       );
       
@@ -175,7 +175,7 @@ function checkHorrorFactor(viewer, horrorSource) {
       );
     }
   } else {
-    // Optional: Simple save vs HF without insanity tracking
+    // Optional: Simple save vs dreadRating without insanity tracking
     // (if you want some horror effect even when insanity is disabled)
   }
 }
@@ -186,6 +186,6 @@ function checkHorrorFactor(viewer, horrorSource) {
 - Settings are automatically saved to localStorage
 - Settings persist across page reloads
 - All settings default to `true` (enabled)
-- The settings panel is accessible via the "⚙️ Game Settings" button in CombatPage
+- The settings panel is accessible via the "Ã¢Å¡â„¢Ã¯Â¸Â Game Settings" button in CombatPage
 - Settings can be reset to defaults via the "Reset to Defaults" button
 

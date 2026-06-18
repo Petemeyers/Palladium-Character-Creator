@@ -12,7 +12,7 @@ class LocalChatModel {
         "The air grows tense as combat begins.",
       ],
       exploration: [
-        "You find yourself in a mysterious location. What do you wish to do?",
+        "You find yourshuman in a mysterious location. What do you wish to do?",
         "The path ahead holds many secrets. How do you proceed?",
         "Your surroundings hold both danger and opportunity.",
       ],

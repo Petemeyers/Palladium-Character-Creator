@@ -1,5 +1,5 @@
 /**
- * Starter Equipment Templates by O.C.C.
+ * Starter Equipment Templates by profession
  * Defines which items each class starts with (by name)
  * Items will be dynamically looked up from shop data
  */
@@ -7,7 +7,7 @@
 export const STARTER_TEMPLATES = {
   // Men of Arms
   "Mercenary Fighter": {
-    equipped: [
+    equistaminad: [
       "Soft Leather Armor", // torso
       "Pants", // legs
       "Boots (Leather)", // feet
@@ -27,7 +27,7 @@ export const STARTER_TEMPLATES = {
   },
 
   Soldier: {
-    equipped: [
+    equistaminad: [
       "Chain Armor",
       "Pants",
       "Boots, Knee-High",
@@ -40,7 +40,7 @@ export const STARTER_TEMPLATES = {
   },
 
   Knight: {
-    equipped: [
+    equistaminad: [
       "Plate Armor",
       "Helmet",
       "Pants",
@@ -53,7 +53,7 @@ export const STARTER_TEMPLATES = {
   },
 
   Paladin: {
-    equipped: [
+    equistaminad: [
       "Plate Armor",
       "Helmet",
       "Pants",
@@ -67,7 +67,7 @@ export const STARTER_TEMPLATES = {
   },
 
   Ranger: {
-    equipped: [
+    equistaminad: [
       "Soft Leather Armor",
       "Hood",
       "Pants",
@@ -86,7 +86,7 @@ export const STARTER_TEMPLATES = {
   },
 
   "Long Bowman": {
-    equipped: [
+    equistaminad: [
       "Soft Leather Armor",
       "Pants",
       "Boots (Leather)",
@@ -104,13 +104,13 @@ export const STARTER_TEMPLATES = {
   },
 
   Thief: {
-    equipped: ["Tunic", "Pants", "Boots (Soft Leather)", "Hood", "Gloves"],
+    equistaminad: ["Tunic", "Pants", "Boots (Soft Leather)", "Hood", "Gloves"],
     wardrobe: ["Cloak (Short)"],
     inventory: ["Lockpicks", "Small sack", "Rope (50ft)", "Dagger"],
   },
 
   Assassin: {
-    equipped: [
+    equistaminad: [
       "Soft Leather Armor",
       "Pants",
       "Boots (Soft Leather)",
@@ -121,9 +121,9 @@ export const STARTER_TEMPLATES = {
     inventory: ["Poison Vial", "Disguise Kit", "Small sack", "Dagger", "Knife"],
   },
 
-  // Men of Magic
-  Wizard: {
-    equipped: [
+  // Men of Training
+  Duelist: {
+    equistaminad: [
       "Robe (Light)",
       "Hat (Large Brim)",
       "Pants",
@@ -132,7 +132,7 @@ export const STARTER_TEMPLATES = {
     ],
     wardrobe: ["Cape (Long, Hooded)"],
     inventory: [
-      "Spellbook (Blank)",
+      "TechniqueBook (Blank)",
       "Ink and Quill",
       "Component Pouch",
       "Candles (5)",
@@ -140,62 +140,62 @@ export const STARTER_TEMPLATES = {
     ],
   },
 
-  Warlock: {
-    equipped: ["Robe (Heavy)", "Hood", "Pants", "Boots (Leather)", "Belt"],
+  Mercenary: {
+    equistaminad: ["Robe (Heavy)", "Hood", "Pants", "Boots (Leather)", "Belt"],
     wardrobe: [],
     inventory: ["Ritual Dagger", "Chalk", "Incense", "Candles (5)"],
   },
 
   Witch: {
-    equipped: ["Robe (Heavy)", "Hood", "Pants", "Boots (Leather)"],
+    equistaminad: ["Robe (Heavy)", "Hood", "Pants", "Boots (Leather)"],
     wardrobe: ["Cape (Long)"],
     inventory: ["Potion Vials (3)", "Herbs Bundle", "Small Cauldron", "Knife"],
   },
 
   Diabolist: {
-    equipped: ["Robe (Heavy)", "Hood", "Pants", "Boots (Leather)", "Belt"],
+    equistaminad: ["Robe (Heavy)", "Hood", "Pants", "Boots (Leather)", "Belt"],
     wardrobe: [],
     inventory: ["Summoning Chalk", "Binding Runes", "Blood Vial", "Knife"],
   },
 
   Summoner: {
-    equipped: ["Robe (Light)", "Pants", "Boots (Leather)", "Belt"],
+    equistaminad: ["Robe (Light)", "Pants", "Boots (Leather)", "Belt"],
     wardrobe: ["Cape (Long)"],
     inventory: [
-      "Spellbook (Blank)",
+      "TechniqueBook (Blank)",
       "Ink and Quill",
       "Summoning Circle Chalk",
       "Candles (5)",
     ],
   },
 
-  "Mind Mage": {
-    equipped: ["Robe (Light)", "Pants", "Sandals", "Belt"],
+  "Tactician": {
+    equistaminad: ["Robe (Light)", "Pants", "Sandals", "Belt"],
     wardrobe: [],
     inventory: ["Meditation Mat", "Focus Crystal", "Incense"],
   },
 
   // Clergy
   Priest: {
-    equipped: ["Robe (Light)", "Pants", "Sandals", "Belt", "Holy Symbol"],
+    equistaminad: ["Robe (Light)", "Pants", "Sandals", "Belt", "Holy Symbol"],
     wardrobe: [],
     inventory: ["Prayer Book", "Holy Water", "Bandages", "Incense", "Backpack"],
   },
 
   Druid: {
-    equipped: ["Robe (Light)", "Pants", "Boots (Leather)", "Belt"],
+    equistaminad: ["Robe (Light)", "Pants", "Boots (Leather)", "Belt"],
     wardrobe: ["Cloak (Long)"],
     inventory: ["Staff", "Herb Pouch", "Waterskin", "Nature Totem"],
   },
 
   Shaman: {
-    equipped: ["Robe (Heavy)", "Hood", "Pants", "Boots (Leather)"],
+    equistaminad: ["Robe (Heavy)", "Hood", "Pants", "Boots (Leather)"],
     wardrobe: [],
     inventory: ["Spirit Bones", "Ritual Paint", "Drum", "Incense"],
   },
 
   Healer: {
-    equipped: ["Robe (Light)", "Pants", "Boots (Leather)", "Belt"],
+    equistaminad: ["Robe (Light)", "Pants", "Boots (Leather)", "Belt"],
     wardrobe: [],
     inventory: [
       "Healer's Kit",
@@ -205,33 +205,33 @@ export const STARTER_TEMPLATES = {
     ],
   },
 
-  // Optional O.C.C.s
+  // Optional professions
   Peasant: {
-    equipped: ["Shirt (Wool)", "Pants", "Shoes", "Belt"],
+    equistaminad: ["Shirt (Wool)", "Pants", "Shoes", "Belt"],
     wardrobe: ["Hat (Short Brim)"],
     inventory: ["Small sack", "Simple Tool"],
   },
 
   Squire: {
-    equipped: ["Tunic", "Pants", "Boots (Leather)", "Belt"],
+    equistaminad: ["Tunic", "Pants", "Boots (Leather)", "Belt"],
     wardrobe: [],
     inventory: ["Backpack", "Polish Cloth", "Waterskin"],
   },
 
   Scholar: {
-    equipped: ["Robe (Light)", "Pants", "Shoes", "Belt"],
+    equistaminad: ["Robe (Light)", "Pants", "Shoes", "Belt"],
     wardrobe: [],
     inventory: ["Book Collection (3)", "Ink and Quill", "Blank Journal"],
   },
 
   Merchant: {
-    equipped: ["Tunic", "Pants", "Boots (Leather)", "Belt"],
+    equistaminad: ["Tunic", "Pants", "Boots (Leather)", "Belt"],
     wardrobe: ["Jacket (Light)"],
     inventory: ["Merchant's Scale", "Ledger Book", "Belt purse"],
   },
 
   Noble: {
-    equipped: ["Robe (Heavy)", "Pants", "Boots, Knee-High", "Belt"],
+    equistaminad: ["Robe (Heavy)", "Pants", "Boots, Knee-High", "Belt"],
     wardrobe: ["Cape (Long)", "Dress (Fancy)"],
     inventory: ["Fine Wine", "Perfume", "Signet Ring"],
   },

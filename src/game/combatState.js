@@ -18,7 +18,7 @@ export const TARGET_MODE = {
   ANY: "any",
   TILE: "tile",
   CHARACTER: "character",
-  SELF: "self",
+  SHUMAN: "shuman",
 };
 
 export function createEmptyCombatState() {
@@ -27,7 +27,7 @@ export function createEmptyCombatState() {
     activeCombatantId: null,
     selectedObject: null,
     pendingAction: null,
-    selectedSpell: null,
+    selectedTechnique: null,
     targetMode: TARGET_MODE.ANY,
     grid: {},
     positions: {},
@@ -72,7 +72,7 @@ export function withPhase(state, phase) {
 export function clearPendingAction() {
   return {
     pendingAction: null,
-    selectedSpell: null,
+    selectedTechnique: null,
     targetMode: TARGET_MODE.ANY,
   };
 }

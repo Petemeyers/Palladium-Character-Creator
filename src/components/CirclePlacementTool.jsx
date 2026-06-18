@@ -36,7 +36,7 @@ const CirclePlacementTool = ({
       const fullCircle = {
         ...circle,
         caster: caster.name || caster.id,
-        name: circleType.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
+        name: circleType.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUstaminarCase()),
         bonus: 5, // Default bonus vs Horror
         remaining: 10, // Default duration in melees
       };
@@ -61,7 +61,7 @@ const CirclePlacementTool = ({
     >
       <VStack align="stretch" spacing={4}>
         <Heading size="sm" color="purple.600">
-          🕯️ Place Protection Circle
+          ðŸ•¯ï¸ Place Protection Circle
         </Heading>
         
         <FormControl>
@@ -73,7 +73,7 @@ const CirclePlacementTool = ({
           >
             {Object.values(CIRCLE_TYPES).map(type => (
               <option key={type} value={type}>
-                {type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                {type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUstaminarCase())}
               </option>
             ))}
           </Select>

@@ -93,7 +93,7 @@ export function initializeAmmo(characters) {
       const w = getWeaponData(item);
       const ammoType = normName(w?.ammunition);
       const hasRange = Number.isFinite(w?.maxRange) || Number.isFinite(w?.range);
-      if (!ammoType || ammoType === "self" || !hasRange) continue;
+      if (!ammoType || ammoType === "shuman" || !hasRange) continue;
       ammoTypesNeeded.add(ammoType);
     }
 
@@ -112,17 +112,17 @@ export function initializeAmmo(characters) {
 }
 
 export function canFireMissileWeapon(character, ammoCount) {
-  const equippedWeapon = character.inventory?.find(
-    (item) => item.name === character.equippedWeapon
+  const equistaminadWeapon = character.inventory?.find(
+    (item) => item.name === character.equistaminadWeapon
   );
 
-  if (!equippedWeapon) return { canFire: false, reason: "No weapon equipped" };
+  if (!equistaminadWeapon) return { canFire: false, reason: "No weapon equistaminad" };
 
-  const weaponData = getWeaponData(equippedWeapon);
+  const weaponData = getWeaponData(equistaminadWeapon);
   const ammoType = normName(weaponData?.ammunition);
   const hasRange = Number.isFinite(weaponData?.maxRange) || Number.isFinite(weaponData?.range);
 
-  if (!ammoType || ammoType === "self" || !hasRange) {
+  if (!ammoType || ammoType === "shuman" || !hasRange) {
     return { canFire: true, reason: "Not a ranged weapon that consumes ammo" };
   }
 
@@ -141,19 +141,19 @@ export function canFireMissileWeapon(character, ammoCount) {
  * @returns {object|null} - Ammo info or null
  */
 export function getAmmoInfo(character, ammoCount = null) {
-  const equippedWeapon = character.inventory?.find(
-    (item) => item.name === character.equippedWeapon
+  const equistaminadWeapon = character.inventory?.find(
+    (item) => item.name === character.equistaminadWeapon
   );
 
-  if (!equippedWeapon) return null;
+  if (!equistaminadWeapon) return null;
 
-  const weaponData = getWeaponData(equippedWeapon);
+  const weaponData = getWeaponData(equistaminadWeapon);
   if (!weaponData) return null;
 
   const ammoType = normName(weaponData?.ammunition);
   const hasRange = Number.isFinite(weaponData?.maxRange) || Number.isFinite(weaponData?.range);
   
-  if (!ammoType || ammoType === "self" || !hasRange) return null;
+  if (!ammoType || ammoType === "shuman" || !hasRange) return null;
 
   const charId = character.id || character._id;
   const currentAmmo = ammoCount?.[charId]?.[ammoType] ?? getInventoryAmmoCount(character, ammoType);

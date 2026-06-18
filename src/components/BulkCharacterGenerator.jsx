@@ -22,8 +22,8 @@ const getRandomAlignment = () => {
   const alignments = [
     'Good: Principled',
     'Good: Scrupulous',
-    'Selfish: Unprincipled',
-    'Selfish: Anarchist',
+    'Shumanish: Unprincipled',
+    'Shumanish: Anarchist',
     'Evil: Miscreant',
     'Evil: Aberrant',
     'Evil: Diabolic'
@@ -143,7 +143,7 @@ const BulkCharacterGenerator = ({ onComplete }) => {
           socialBackground,
           isBulkCharacter: true,
           gender,
-          psionics: null
+          tactics: null
         };
       });
 

@@ -22,19 +22,19 @@ const AbilitiesPanel = () => {
   if (!activeParty) {
     return (
       <Box className="container" p={4}>
-        <Heading size="md" mb={4}>O.C.C. Abilities</Heading>
+        <Heading size="md" mb={4}>profession Abilities</Heading>
         <Text>Load a party first to access character abilities.</Text>
       </Box>
     );
   }
 
   const handleUseAbility = (char, ability) => {
-    let msg = `✨ ${char.name} uses ${ability.name}: ${ability.bonus}`;
+    let msg = `âœ¨ ${char.name} uses ${ability.name}: ${ability.bonus}`;
 
     // Check if ability has uses remaining
     if (ability.uses && ability.usesRemaining !== null) {
       if (ability.usesRemaining <= 0) {
-        msg = `❌ ${char.name} has no uses left for ${ability.name}`;
+        msg = `âŒ ${char.name} has no uses left for ${ability.name}`;
       } else {
         msg += ` (${ability.usesRemaining}/${ability.uses} uses)`;
       }
@@ -50,13 +50,13 @@ const AbilitiesPanel = () => {
 
   const getAbilityColorScheme = (abilityType) => {
     switch (abilityType) {
-      case "magic":
+      case "training":
         return "purple";
       case "combat":
         return "red";
       case "skill":
         return "blue";
-      case "psionic":
+      case "tactical":
         return "pink";
       default:
         return "gray";
@@ -70,7 +70,7 @@ const AbilitiesPanel = () => {
 
   return (
     <Box className="container" p={4}>
-      <Heading mb={4}>O.C.C. Abilities</Heading>
+      <Heading mb={4}>profession Abilities</Heading>
       
       {activeParty && (
         <Alert status="info" mb={4}>
@@ -88,7 +88,7 @@ const AbilitiesPanel = () => {
                 <VStack align="start" spacing={1}>
                   <Heading size="sm">{char.name}</Heading>
                   <Text fontSize="sm" color="gray.600">
-                    {char.species} {char.class} • O.C.C.: {char.occ || char.class}
+                    {char.species} {char.class} â€¢ profession: {char.profession || char.class}
                   </Text>
                 </VStack>
                 <Badge colorScheme="blue" size="lg">
@@ -143,7 +143,7 @@ const AbilitiesPanel = () => {
                 </VStack>
               ) : (
                 <Text color="gray.500" fontStyle="italic">
-                  No O.C.C. abilities assigned. This character may need to be updated.
+                  No profession abilities assigned. This character may need to be updated.
                 </Text>
               )}
             </VStack>
@@ -160,15 +160,15 @@ const AbilitiesPanel = () => {
             <Text fontSize="sm" color="gray.600">Attack, damage, and defense bonuses</Text>
           </HStack>
           <HStack justify="space-between">
-            <Badge colorScheme="purple" size="sm">Magic</Badge>
-            <Text fontSize="sm" color="gray.600">Spells and magical effects</Text>
+            <Badge colorScheme="purple" size="sm">Training</Badge>
+            <Text fontSize="sm" color="gray.600">Techniques and exceptional effects</Text>
           </HStack>
           <HStack justify="space-between">
             <Badge colorScheme="blue" size="sm">Skill</Badge>
             <Text fontSize="sm" color="gray.600">Skill bonuses and special abilities</Text>
           </HStack>
           <HStack justify="space-between">
-            <Badge colorScheme="pink" size="sm">Psionic</Badge>
+            <Badge colorScheme="pink" size="sm">Tactical</Badge>
             <Text fontSize="sm" color="gray.600">Mental powers and abilities</Text>
           </HStack>
         </VStack>

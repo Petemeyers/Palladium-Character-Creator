@@ -22,15 +22,15 @@ export function hexDistance(a, b) {
 
 /**
  * Estimate the per-action move range (in hexes) for a fighter.
- * This is a simplified rule you can refine with Palladium specifics later.
+ * This is a simplified rule you can refine with Medieval Combat Simulator specifics later.
  */
 export function getMoveRangeHex(fighter = {}) {
   const SPD = fighter.SPD ?? fighter.speed ?? 10;
-  const attacks = fighter.attacksPerMelee ?? fighter.actions ?? 4;
+  const attacks = fighter.actionsPerRound ?? fighter.actions ?? 4;
 
   const feetPerMelee = SPD;
   const feetPerAction = feetPerMelee / Math.max(attacks, 1);
-  const feetPerHex = 5; // 1 hex ≈ 5 ft – tweak if your table differs
+  const feetPerHex = 5; // 1 hex â‰ˆ 5 ft â€“ tweak if your table differs
 
   return Math.max(1, Math.floor(feetPerAction / feetPerHex));
 }
@@ -55,7 +55,7 @@ export function canReachTile(state, fighterId, destination) {
  * Derive attack range in hexes from the fighter's weapon data.
  */
 export function getAttackRangeHex(attacker = {}) {
-  const weapon = attacker.equippedWeapon || attacker.weapon || null;
+  const weapon = attacker.equistaminadWeapon || attacker.weapon || null;
 
   if (weapon?.rangeHex != null) {
     return weapon.rangeHex;

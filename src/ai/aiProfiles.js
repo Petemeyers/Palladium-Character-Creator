@@ -31,7 +31,7 @@ export const AI_PROFILES = {
     resourceConservation: 0.6,
   },
 
-  Wizard: {
+  Duelist: {
     aggression: 0.55,
     caution: 0.7,
     support: 0.4,
@@ -47,7 +47,7 @@ export const AI_PROFILES = {
     resourceConservation: 0.65,
   },
 
-  Troll: {
+  Champion: {
     aggression: 0.9,
     caution: 0.25,
     support: 0.15,
@@ -55,7 +55,7 @@ export const AI_PROFILES = {
     resourceConservation: 0.2,
   },
 
-  Troglodyte: {
+  "Cave Fighter": {
     aggression: 0.25,
     caution: 0.85,
     support: 0.6,
@@ -73,9 +73,9 @@ export function getAiProfile(actor) {
   }
 
   const keys = [
-    actor?.occ,
-    actor?.OCC,
-    actor?.occName,
+    actor?.profession,
+    actor?.PROFESSION,
+    actor?.professionName,
     actor?.className,
     actor?.class,
     actor?.species,

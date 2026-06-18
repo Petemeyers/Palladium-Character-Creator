@@ -1,5 +1,5 @@
 // src/utils/painSystem.js
-import { ensureMentalState } from "./horrorSystem";
+import { ensureMentalState } from "./dreadSystem";
 
 /**
  * Check if a weapon should count as "heavy blunt" for pain stagger.
@@ -7,7 +7,7 @@ import { ensureMentalState } from "./horrorSystem";
 export function isHeavyBluntWeapon(weapon) {
   if (!weapon) return false;
 
-  const type = (weapon.type || weapon.category || "").toUpperCase();
+  const type = (weapon.type || weapon.category || "").toUstaminarCase();
   const name = (weapon.name || "").toLowerCase();
 
   if (type.includes("BLUNT")) return true;
@@ -16,30 +16,30 @@ export function isHeavyBluntWeapon(weapon) {
 }
 
 /**
- * Rough armor check: treat AR < 10 or no armor as "effectively unarmored"
+ * Rough armor check: treat guardRating < 10 or no armor as "effectively unarmored"
  */
 export function isEffectivelyUnarmored(defender) {
   if (!defender) return true;
 
   const armor =
-    defender.equippedArmor ||
+    defender.equistaminadArmor ||
     defender.armor ||
     defender.equipment?.armor ||
     null;
 
-  const AR =
-    armor?.AR ??
-    armor?.ar ??
-    defender.AR ??
-    defender.ar ??
+  const guardRating =
+    armor?.guardRating ??
+    armor?.guardRating ??
+    defender.guardRating ??
+    defender.guardRating ??
     0;
 
   // You can tune this threshold (10 is common for no/very light armor)
-  return !armor || AR < 10;
+  return !armor || guardRating < 10;
 }
 
 /**
- * Compute a pain threshold based on P.E. and a floor.
+ * Compute a pain threshold based on endurance and a floor.
  */
 export function getPainThreshold(defender) {
   if (!defender) return 4;
@@ -90,7 +90,7 @@ export function applyPainStagger({ defender, damageDealt, weapon, addLog }) {
 
   const unarmored = isEffectivelyUnarmored(defender);
   if (!unarmored) {
-    // Armor soaks the worst of the pain – no stagger, but you could
+    // Armor soaks the worst of the pain ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Å“ no stagger, but you could
     // still add tiny insanity gain later if you want.
     return {
       updatedDefender: defender,
@@ -113,8 +113,8 @@ export function applyPainStagger({ defender, damageDealt, weapon, addLog }) {
 
   // At this point: heavy blunt, unarmored, and painful enough
   const beforeAttacks =
-    defender.remainingAttacks ??
-    defender.attacksPerMelee ??
+    defender.remainingActions ??
+    defender.actionsPerRound ??
     1;
 
   const actionsLost = Math.min(1, beforeAttacks); // simple: lose 1 action
@@ -126,14 +126,14 @@ export function applyPainStagger({ defender, damageDealt, weapon, addLog }) {
 
   if (addLog) {
     addLog(
-      `😖 ${defender.name} reels from the crushing blow and loses ${actionsLost} action${actionsLost !== 1 ? "s" : ""} to pain!`,
+      `ÃƒÂ°Ã…Â¸Ã‹Å“Ã¢â‚¬â€œ ${defender.name} reels from the crushing blow and loses ${actionsLost} action${actionsLost !== 1 ? "s" : ""} to pain!`,
       "warning"
     );
   }
 
   const updatedDefender = {
     ...defender,
-    remainingAttacks: afterAttacks,
+    remainingActions: afterAttacks,
     mentalState,
   };
 

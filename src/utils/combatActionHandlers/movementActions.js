@@ -2,7 +2,7 @@ import { findRetreatDestination } from "../distanceCombatSystem";
 
 /**
  * Handle movement selection from TacticalMap
- * Engine-authoritative: dispatches MOVE command, engine handles all legality/costs/state
+ * Engine-authoritative: dfocusatches MOVE command, engine handles all legality/costs/state
  * @param {number} x - Target x coordinate
  * @param {number} y - Target y coordinate
  * @param {Object} context - Context object containing:
@@ -14,7 +14,7 @@ import { findRetreatDestination } from "../distanceCombatSystem";
  *   - setShowMovementSelection: Function to show/hide movement selection
  *   - setSelectedMovementHex: Function to set selected movement hex
  *   - setSelectedMovementFighter: Function to set selected movement fighter
- *   - dispatchEngineCommand: Function to dispatch engine commands
+ *   - dfocusatchEngineCommand: Function to dfocusatch engine commands
  */
 export async function handleMoveSelect(x, y, context) {
   const {
@@ -26,18 +26,18 @@ export async function handleMoveSelect(x, y, context) {
     setShowMovementSelection,
     setSelectedMovementHex,
     setSelectedMovementFighter,
-    dispatchEngineCommand, // ✅ Engine dispatcher
+    dfocusatchEngineCommand, // âœ… Engine dfocusatcher
   } = context;
 
   if (movementMode.active && selectedMovementFighter && positions[selectedMovementFighter]) {
     // Engine handles ALL legality, costs, and state updates
-    // React just dispatches MOVE - engine decides everything
-    if (typeof dispatchEngineCommand !== "function") {
-      addLog("❌ Engine dispatch not available for MOVE.", "error");
+    // React just dfocusatches MOVE - engine decides everything
+    if (typeof dfocusatchEngineCommand !== "function") {
+      addLog("âŒ Engine dfocusatch not available for MOVE.", "error");
       return;
     }
 
-    const res = await dispatchEngineCommand({
+    const res = await dfocusatchEngineCommand({
       type: "MOVE",
       eid: selectedMovementFighter,
       to: { x, y },
@@ -48,15 +48,15 @@ export async function handleMoveSelect(x, y, context) {
       // Handle lock errors with friendly messages
       const errorMsg = res?.error?.message;
       if (errorMsg === "BUSY_MOVING" || errorMsg === "LOCKED_MOVING") {
-        addLog("⏳ Still animating the last move…", "info");
+        addLog("â³ Still animating the last moveâ€¦", "info");
         return;
       }
       if (errorMsg === "LOCKED_ACTING") {
-        addLog("⏳ Still performing an action…", "info");
+        addLog("â³ Still performing an actionâ€¦", "info");
         return;
       }
       addLog(
-        `❌ Move rejected by engine: ${errorMsg ?? "Unknown error"}`,
+        `âŒ Move rejected by engine: ${errorMsg ?? "Unknown error"}`,
         "error"
       );
       return;
@@ -72,7 +72,7 @@ export async function handleMoveSelect(x, y, context) {
 
 /**
  * Player-triggered Withdraw action.
- * Engine-authoritative: dispatches MOVE with mode WITHDRAW
+ * Engine-authoritative: dfocusatches MOVE with mode WITHDRAW
  */
 export function handleWithdrawAction(context) {
   const {
@@ -83,10 +83,10 @@ export function handleWithdrawAction(context) {
     gridWidth,
     gridHeight,
     maxWithdrawSteps = 3,
-    dispatchEngineCommand,
+    dfocusatchEngineCommand,
   } = context || {};
 
-  if (!currentFighter || !positions || typeof dispatchEngineCommand !== "function") {
+  if (!currentFighter || !positions || typeof dfocusatchEngineCommand !== "function") {
     console.warn("[handleWithdrawAction] Missing context data");
     return;
   }
@@ -95,7 +95,7 @@ export function handleWithdrawAction(context) {
   const myPos = positions[myId];
   if (!myPos) {
     addLog?.(
-      `⚠️ ${currentFighter.name} tries to withdraw, but has no known position.`,
+      `âš ï¸ ${currentFighter.name} tries to withdraw, but has no known position.`,
       "warning"
     );
     return;
@@ -128,14 +128,14 @@ export function handleWithdrawAction(context) {
 
   if (!retreatHex || (retreatHex.q === startHex.q && retreatHex.r === startHex.r)) {
     addLog?.(
-      `🛡️ ${currentFighter.name} withdraws defensively in place.`,
+      `ðŸ›¡ï¸ ${currentFighter.name} withdraws defensively in place.`,
       "info"
     );
     return;
   }
 
-  // Engine-authoritative withdraw: dispatch MOVE with mode WITHDRAW
-  dispatchEngineCommand({
+  // Engine-authoritative withdraw: dfocusatch MOVE with mode WITHDRAW
+  dfocusatchEngineCommand({
     type: "MOVE",
     eid: myId,
     to: { x: retreatHex.q, y: retreatHex.r },

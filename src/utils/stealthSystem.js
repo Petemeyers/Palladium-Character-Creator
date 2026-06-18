@@ -1,6 +1,6 @@
 /**
- * Palladium Fantasy Stealth & Detection System
- * Based on 1994 Palladium Fantasy RPG rules
+ * Medieval Combat Simulator Stealth & Detection System
+ * Based on 1994 Medieval Combat Simulator rules
  *
  * Handles:
  * - Prowl percentile skill checks
@@ -30,43 +30,43 @@ const ALIGNMENT_MODIFIERS = preCombatSystem.alignmentAggressionModifiers || {
 // Line of Vision modifiers from JSON
 const LO_V_MODIFIERS = preCombatSystem.lineOfVisionModifiers || {};
 
-// Species-specific reaction overrides (1994 Palladium bestiary behavior)
+// Species-specific reaction overrides (1994 Medieval Combat Simulator arenaRoster behavior)
 const SPECIES_REACTIONS = {
   Owl: ["stares silently", "takes flight to safety", "hoots alarm"],
   Wolf: ["growls low", "circles the group", "retreats if outnumbered"],
-  Troll: [
+  Champion: [
     "snarls and tightens grip on club",
     "advances with heavy steps",
     "bellows before striking",
   ],
-  Minotaur: [
+  "Arena Champion": [
     "lowers horns and charges full speed",
     "snorts and stamps the ground",
     "lets out a roar of challenge",
   ],
-  Goblin: ["shrieks for allies", "throws a dagger", "dives behind cover"],
-  Orc: [
+  Brigand: ["shrieks for allies", "throws a dagger", "dives behind cover"],
+  Raider: [
     "points weapon threateningly",
     "grins menacingly",
     "rushes forward with a war cry",
   ],
-  Ogre: [
+  "Heavy Fighter": [
     "grumbles angrily",
     "takes a cautious step",
     "hurls a rock before closing distance",
   ],
-  Dragon: ["unfurls wings", "studies intruders", "breathes elemental energy"],
-  Wizard: [
-    "murmurs a spell",
-    "raises magical barrier",
-    "casts an offensive spell immediately",
+  Animal: ["unfurls wings", "studies intruders", "breathes elemental energy"],
+  Duelist: [
+    "murmurs a technique",
+    "raises exceptional barrier",
+    "casts an offensive technique immediately",
   ],
   Bear: ["stands on hind legs", "growls deeply", "charges forward"],
   Deer: ["freezes in place", "snorts and flees", "bolts in random direction"],
-  Snake: ["hisses and coils", "rears back to strike", "retreats into grass"],
-  Kobold: ["yips in alarm", "scatters for cover", "throws crude spear"],
-  Hobgoblin: ["shouts orders", "forms rank", "advances in formation"],
-  Lizardman: [
+  Snake: ["hisses and coils", "rears back to attack", "retreats into grass"],
+  Brigand: ["yips in alarm", "scatters for cover", "throws crude spear"],
+  Hobbrigand: ["shouts orders", "forms rank", "advances in formation"],
+  Raider: [
     "hisses ancient curse",
     "brandishes spear",
     "attacks with primal fury",
@@ -77,12 +77,12 @@ const SPECIES_REACTIONS = {
 export function hasSpecialSenses(character) {
   if (!character) return false;
 
-  // Check for psionic powers
-  if (character.psionics || character.psionicPowers) {
-    const powers = Array.isArray(character.psionics)
-      ? character.psionics
-      : Array.isArray(character.psionicPowers)
-      ? character.psionicPowers
+  // Check for tactical powers
+  if (character.tactics || character.tacticalOptions) {
+    const powers = Array.isArray(character.tactics)
+      ? character.tactics
+      : Array.isArray(character.tacticalOptions)
+      ? character.tacticalOptions
       : [];
     if (
       powers.some(
@@ -95,15 +95,15 @@ export function hasSpecialSenses(character) {
     }
   }
 
-  // Check for spells
-  if (character.magic || character.spells) {
-    const spells = Array.isArray(character.magic)
-      ? character.magic
-      : Array.isArray(character.spells)
-      ? character.spells
+  // Check for techniques
+  if (character.training || character.techniques) {
+    const techniques = Array.isArray(character.training)
+      ? character.training
+      : Array.isArray(character.techniques)
+      ? character.techniques
       : [];
     if (
-      spells.some(
+      techniques.some(
         (s) =>
           s.name?.toLowerCase().includes("see invisible") ||
           s.name?.toLowerCase().includes("detect")
@@ -133,7 +133,7 @@ export function rollProwl(character, modifiers = {}) {
 
   // Apply bonuses (e.g., Assassin gets +20%)
   const bonusses =
-    (character.occBonuses?.Prowl || 0) +
+    (character.professionBonuses?.Prowl || 0) +
     (character.bonuses?.Prowl || 0) +
     (modifiers.bonus || 0);
   prowlPercent += bonusses;
@@ -153,7 +153,7 @@ export function rollProwl(character, modifiers = {}) {
 }
 
 // Calculate detection chance based on line of vision, invisibility, and special senses
-// ✅ Palladium 1994: All modifiers are direct percentage points (±), added to base chance
+// Ã¢Å“â€¦ Medieval Combat Simulator 1994: All modifiers are direct percentage points (Ã‚Â±), added to base chance
 export function calculateDetection(enemy, target, environment = {}) {
   if (!enemy) return { detected: false, chance: 0 };
 
@@ -229,7 +229,7 @@ export function calculateDetection(enemy, target, environment = {}) {
   };
 }
 
-// Enemy reaction based on INT and alignment (1994 Palladium style)
+// Enemy reaction based on INT and alignment (1994 Medieval Combat Simulator style)
 export function rollEnemyReaction(enemy, situation = "normal") {
   if (!enemy) return { action: "observe", hostility: 0 };
 
@@ -493,11 +493,11 @@ function applyEnvironmentModifiers(action, character, environment) {
  * Calculate total armor weight
  */
 function calculateArmorWeight(character) {
-  if (!character.equipped) return 0;
+  if (!character.equistaminad) return 0;
 
   let weight = 0;
-  for (const slot in character.equipped) {
-    const item = character.equipped[slot];
+  for (const slot in character.equistaminad) {
+    const item = character.equistaminad[slot];
     if (item && item.weight) {
       weight += parseFloat(item.weight) || 0;
     }
@@ -524,15 +524,15 @@ export function getEnemyInitialReaction(enemy) {
 
   // Species-specific reactions take priority
   if (SPECIES_REACTIONS[species]) {
-    const speciesBehaviors = SPECIES_REACTIONS[species];
+    const combatantBehaviors = SPECIES_REACTIONS[species];
     const randomBehavior =
-      speciesBehaviors[Math.floor(Math.random() * speciesBehaviors.length)];
+      combatantBehaviors[Math.floor(Math.random() * combatantBehaviors.length)];
 
     return {
       action:
         randomBehavior.toLowerCase().includes("attack") ||
         randomBehavior.toLowerCase().includes("charge") ||
-        randomBehavior.toLowerCase().includes("strike")
+        randomBehavior.toLowerCase().includes("attack")
           ? "attacks"
           : "cautious",
       behavior: [randomBehavior],

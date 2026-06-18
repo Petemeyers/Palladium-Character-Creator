@@ -4,7 +4,7 @@
 
 The Weapon Bonus AI system evaluates weapons for combat bonuses and makes intelligent decisions about:
 1. **Which weapon to use** (prefers weapons with bonuses)
-2. **When to close distance** (to gain close-range strike bonuses)
+2. **When to close distance** (to gain close-range attack bonuses)
 3. **How to maximize combat effectiveness** (by leveraging all available bonuses)
 
 ---
@@ -15,19 +15,19 @@ The Weapon Bonus AI system evaluates weapons for combat bonuses and makes intell
 
 The AI evaluates all available weapons and identifies bonuses including:
 
-- **Reach Advantage**: +1 to +3 strike bonus for longer weapons
-- **First Strike Bonus**: +1 strike on first melee round for longer weapons
-- **Close Range Bonus**: +2 strike for short weapons in grapple range (<3ft)
-- **Close Combat Bonus**: +1 strike for short weapons in close combat (<5ft)
-- **Weapon Size Bonus**: +1 die damage for giant races
-- **Size Category Bonus**: +1 to +3 strike based on creature size
-- **Two-Handed Bonus**: +1 strike, +2 damage for two-handed grip
+- **Reach Advantage**: +1 to +3 attack bonus for longer weapons
+- **First Attack Bonus**: +1 attack on first combat round for longer weapons
+- **Close Range Bonus**: +2 attack for short weapons in grapple range (<3ft)
+- **Close Combat Bonus**: +1 attack for short weapons in close combat (<5ft)
+- **Weapon Size Bonus**: +1 die damage for heavy races
+- **Size Category Bonus**: +1 to +3 attack based on combatant size
+- **Two-Handed Bonus**: +1 attack, +2 damage for two-handed grip
 - **Weapon-Specific Bonuses**: Bonuses from weapon.bonuses property
 
 ### 2. **Weapon Ranking**
 
 Weapons are ranked by a **bonus score** that considers:
-- Strike bonuses (weighted 2x)
+- Attack bonuses (weighted 2x)
 - Damage bonuses (weighted 1.5x)
 - Reach advantages (weighted 1.5x)
 - Close range bonuses (weighted 2x)
@@ -37,8 +37,8 @@ Weapons are ranked by a **bonus score** that considers:
 ### 3. **Distance Closing Analysis**
 
 The AI analyzes whether closing distance would provide bonuses:
-- **Short weapons** benefit from closing to grapple range (+2 strike)
-- **Long weapons** are penalized at close range (-3 strike)
+- **Short weapons** benefit from closing to grapple range (+2 attack)
+- **Long weapons** are penalized at close range (-3 attack)
 - Closing neutralizes defender's reach advantage
 
 ### 4. **Optimal Weapon Selection**
@@ -64,7 +64,7 @@ const rankedWeapons = rankWeaponsByBonuses(
 ```
 
 Each weapon is evaluated for:
-- Strike bonuses
+- Attack bonuses
 - Damage bonuses
 - Reach advantages
 - Close range benefits
@@ -136,39 +136,39 @@ The enemy AI system:
 
 ## Example Scenarios
 
-### Scenario 1: Troll with Long Sword vs Human with Dagger
+### Scenario 1: Champion with Long Sword vs Human with Dagger
 
-**Troll's Evaluation**:
-- Reach advantage: +2 strike (3ft vs 1ft)
-- First strike: +1 strike (first round)
-- Giant weapon: +1 die damage
-- Size category: +1 strike (Large vs Medium)
+**Champion's Evaluation**:
+- Reach advantage: +2 attack (3ft vs 1ft)
+- First attack: +1 attack (first round)
+- Heavy weapon: +1 die damage
+- Size category: +1 attack (Large vs Medium)
 - **Total Score**: High (multiple bonuses)
 
 **AI Decision**: Use Long Sword, attack immediately
 
-### Scenario 2: Human with Dagger vs Troll with Long Sword
+### Scenario 2: Human with Dagger vs Champion with Long Sword
 
 **Human's Evaluation**:
-- Reach disadvantage: -2 strike
+- Reach disadvantage: -2 attack
 - No bonuses at current distance
 
 **Close Distance Analysis**:
-- Closing to grapple range: +2 strike bonus
-- Neutralizes Troll's reach advantage
+- Closing to grapple range: +2 attack bonus
+- Neutralizes Champion's reach advantage
 - **Benefit**: High
 
 **AI Decision**: Close distance first, then attack
 
-### Scenario 3: Gnome with Short Sword vs Human with Long Sword
+### Scenario 3: Human with Short Sword vs Human with Long Sword
 
-**Gnome's Evaluation**:
-- Reach disadvantage: -2 strike
+**Human's Evaluation**:
+- Reach disadvantage: -2 attack
 - Small weapon: Reduced damage
-- Size category: -1 strike (Small vs Medium)
+- Size category: -1 attack (Small vs Medium)
 
 **Close Distance Analysis**:
-- Closing to grapple range: +2 strike bonus
+- Closing to grapple range: +2 attack bonus
 - Neutralizes Human's reach advantage
 - **Benefit**: Moderate
 
@@ -179,44 +179,44 @@ The enemy AI system:
 ## Bonuses Evaluated
 
 ### 1. **Reach Advantage** (`calculateReachAdvantage`)
-- **Bonus**: +1 to +3 strike
+- **Bonus**: +1 to +3 attack
 - **When**: Attacker's weapon is longer than defender's
 - **Max**: +3 (for 3+ foot difference)
 
-### 2. **First Strike** (`getFirstStrikeAdvantage`)
-- **Bonus**: +1 strike
-- **When**: Longer weapon on first melee round
+### 2. **First Attack** (`getFirstAttackAdvantage`)
+- **Bonus**: +1 attack
+- **When**: Longer weapon on first combat round
 - **Requirement**: 2+ foot reach difference
 
 ### 3. **Close Range** (Grapple Range <3ft)
-- **Bonus**: +2 strike for short weapons
-- **Penalty**: -3 strike for long weapons
+- **Bonus**: +2 attack for short weapons
+- **Penalty**: -3 attack for long weapons
 - **When**: Combat distance <3ft
 
 ### 4. **Close Combat** (<5ft)
-- **Bonus**: +1 strike for short weapons
-- **Penalty**: -2 strike for long weapons
+- **Bonus**: +1 attack for short weapons
+- **Penalty**: -2 attack for long weapons
 - **When**: Combat distance <5ft and distance closed
 
 ### 5. **Weapon Size** (`getWeaponSizeForRace`)
 - **Bonus**: +1 die damage
-- **When**: Giant race (Troll, Ogre, Wolfen, etc.)
-- **Effect**: 2d6 → 3d6
+- **When**: Heavy race (Champion, Heavy Fighter, Wolf, etc.)
+- **Effect**: 2d6 Ã¢â€ â€™ 3d6
 
 ### 6. **Size Category** (`getSizeCategory`)
-- **Bonus**: +1 to +3 strike
-- **When**: Larger creature vs smaller
-- **Examples**: Large +1, Huge +2, Giant +3
+- **Bonus**: +1 to +3 attack
+- **When**: Larger combatant vs smaller
+- **Examples**: Large +1, Huge +2, Heavy +3
 
 ### 7. **Two-Handed Grip**
-- **Bonus**: +1 strike, +2 damage
+- **Bonus**: +1 attack, +2 damage
 - **When**: Weapon used two-handed
 - **Requirement**: Weapon can be used two-handed
 
 ### 8. **Weapon-Specific Bonuses**
 - **Source**: `weapon.bonuses` property
-- **Types**: strike, parry, damage bonuses
-- **Example**: Magic weapon with +2 strike
+- **Types**: attack, block, damage bonuses
+- **Example**: Training weapon with +2 attack
 
 ---
 
@@ -257,13 +257,13 @@ console.log(`Reason: ${recommendation.reasoning}`);
 ## Summary
 
 The Weapon Bonus AI mechanic:
-- ✅ Evaluates all weapons for bonuses
-- ✅ Ranks weapons by bonus score
-- ✅ Analyzes distance closing benefits
-- ✅ Recommends optimal weapon and action
-- ✅ Integrated into enemy AI decision-making
-- ✅ Prefers weapons with bonuses
-- ✅ Favors closing distance for close-range bonuses
+- Ã¢Å“â€¦ Evaluates all weapons for bonuses
+- Ã¢Å“â€¦ Ranks weapons by bonus score
+- Ã¢Å“â€¦ Analyzes distance closing benefits
+- Ã¢Å“â€¦ Recommends optimal weapon and action
+- Ã¢Å“â€¦ Integrated into enemy AI decision-making
+- Ã¢Å“â€¦ Prefers weapons with bonuses
+- Ã¢Å“â€¦ Favors closing distance for close-range bonuses
 
 The AI will now intelligently select weapons and positions to maximize combat effectiveness!
 

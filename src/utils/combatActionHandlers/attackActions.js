@@ -68,17 +68,17 @@ export function handleChargeAttack(attacker, target, context) {
   // Check if charge is possible in terrain
   const chargeCheck = canChargeInTerrain(terrainDensity, hasObstructions, isMounted);
   if (!chargeCheck.canCharge && terrainDensity >= 0.8) {
-    addLog(`❌ ${chargeCheck.reason}`, "error");
+    addLog(`âŒ ${chargeCheck.reason}`, "error");
     return;
   }
   
-  // Check if this is a charge in a tight space (large creature charging)
+  // Check if this is a charge in a tight space (large combatant charging)
   const isChargeInTightSpace = chargeWidth <= 6 && attacker.weight > 200;
   
-  // Get charge momentum modifiers (for large creatures in tunnels)
+  // Get charge momentum modifiers (for large combatants in tunnels)
   let chargeMomentumMods = null;
   if (isChargeInTightSpace || chargeCheck.reason.includes("narrow")) {
-    const defenderWeapon = target.equippedWeapons?.primary || target.equippedWeapons?.secondary || null;
+    const defenderWeapon = target.equistaminadWeapons?.primary || target.equistaminadWeapons?.secondary || null;
     const isBrace = defenderWeapon && (defenderWeapon.name?.toLowerCase().includes("spear") || 
                                       defenderWeapon.name?.toLowerCase().includes("pike"));
     
@@ -111,7 +111,7 @@ export function handleChargeAttack(attacker, target, context) {
   );
   
   if (!chargeResult.success) {
-    addLog(`❌ ${chargeResult.reason}`, "error");
+    addLog(`âŒ ${chargeResult.reason}`, "error");
     return;
   }
   
@@ -125,32 +125,32 @@ export function handleChargeAttack(attacker, target, context) {
     return updated;
   });
   
-  addLog(`⚡ ${attacker.name} charges! ${chargeResult.description}`, "info");
+  addLog(`âš¡ ${attacker.name} charges! ${chargeResult.description}`, "info");
   
   if (chargeResult.terrainModifiers) {
-    addLog(`🌲 ${chargeResult.terrainModifiers}`, "info");
+    addLog(`ðŸŒ² ${chargeResult.terrainModifiers}`, "info");
   }
   
-  // Log charge momentum modifiers for large creatures in tight spaces
+  // Log charge momentum modifiers for large combatants in tight spaces
   if (chargeMomentumMods && chargeMomentumMods.notes.length > 0) {
     chargeMomentumMods.notes.forEach(note => {
-      addLog(`💥 ${note}`, "warning");
+      addLog(`ðŸ’¥ ${note}`, "warning");
     });
   }
   
   // Attack with charge bonuses (merge with momentum modifiers if applicable)
   setTimeout(() => {
-    // executeChargeAttack returns bonuses.strike and bonuses.damage
-    // attack() expects strikeBonus and damageMultiplier
-    const baseStrikeBonus = chargeResult.bonuses.strike || 0;
+    // executeChargeAttack returns bonuses.attack and bonuses.damage
+    // attack() expects attackBonus and damageMultiplier
+    const baseAttackBonus = chargeResult.bonuses.attack || 0;
     const baseDamageMultiplier = chargeResult.bonuses.damage || 1;
     
     // Apply momentum modifiers if applicable (momentum adds on top of base charge)
-    const momentumStrikeBonus = chargeMomentumMods ? chargeMomentumMods.strike - 2 : 0; // Base charge is +2, momentum adds more
+    const momentumAttackBonus = chargeMomentumMods ? chargeMomentumMods.attack - 2 : 0; // Base charge is +2, momentum adds more
     const momentumDamageMultiplier = chargeMomentumMods?.damageMultiplier || 1;
     
     const finalChargeBonuses = {
-      strikeBonus: baseStrikeBonus + momentumStrikeBonus,
+      attackBonus: baseAttackBonus + momentumAttackBonus,
       damageMultiplier: momentumDamageMultiplier > 1 ? momentumDamageMultiplier : baseDamageMultiplier
     };
     
@@ -161,18 +161,18 @@ export function handleChargeAttack(attacker, target, context) {
     if (chargeResult.penalties.loseNextAttack) {
       setFighters(prev => prev.map(f => {
         if (f.id === attacker.id) {
-          return { ...f, remainingAttacks: Math.max(0, f.remainingAttacks - 1) };
+          return { ...f, remainingActions: Math.max(0, f.remainingActions - 1) };
         }
         return f;
       }));
       
-      addLog(`⚠️ ${attacker.name} loses next attack due to charge recovery`, "info");
+      addLog(`âš ï¸ ${attacker.name} loses next attack due to charge recovery`, "info");
     }
   }, 500);
 }
 
 /**
- * Handle strike with movement (move then attack in one action)
+ * Handle attack with movement (move then attack in one action)
  * @param {Object} attacker - The attacker fighter object
  * @param {Object} movementHex - Target hex for movement
  * @param {Object} target - The target fighter object
@@ -187,7 +187,7 @@ export function handleChargeAttack(attacker, target, context) {
  *   - setShowMovementSelection: Function to hide movement selection
  *   - positionsRef: Ref to positions
  */
-export function handleStrikeWithMovement(attacker, movementHex, target, weapon, context) {
+export function handleAttackWithMovement(attacker, movementHex, target, weapon, context) {
   const {
     positions,
     selectedAttackWeapon,
@@ -212,7 +212,7 @@ export function handleStrikeWithMovement(attacker, movementHex, target, weapon, 
     });
     
     const distance = calculateDistance(positions[attacker.id] || { x: 0, y: 0 }, movementHex);
-    addLog(`🏃 ${attacker.name} moves ${Math.round(distance)}ft and attacks!`, "info");
+    addLog(`ðŸƒ ${attacker.name} moves ${Math.round(distance)}ft and attacks!`, "info");
   }
   
   // Then attack (this will deduct 1 attack automatically)

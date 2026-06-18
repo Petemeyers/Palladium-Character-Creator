@@ -17,7 +17,7 @@ function normalizeRange(range, context = {}) {
   const s = String(range).toLowerCase().trim();
 
   // special
-  if (s === "self" || s === "touch") return 0;
+  if (s === "shuman" || s === "touch") return 0;
   if (s === "line of sight" || s === "los") return Infinity;
 
   // "30 ft", "60 feet"

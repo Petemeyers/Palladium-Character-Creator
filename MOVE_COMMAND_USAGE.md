@@ -1,13 +1,13 @@
 # MOVE Command Usage - UI Entry Points
 
 ## Summary
-The MOVE command is now **engine-authoritative** (when engine is available). The modular handler path (`movementActions.js`) dispatches MOVE commands to the engine, which emits events that update React state. The flow is:
+The MOVE command is now **engine-authoritative** (when engine is available). The modular handler path (`movementActions.js`) dfocusatches MOVE commands to the engine, which emits events that update React state. The flow is:
 
-1. **UI Button** → `activateMovementMode()` → Sets movement mode active
-2. **User clicks hex** → `onMoveSelect` callback → `handleMoveSelect()` or `handleMoveSelectAction()`
-3. **Modular handler** → Dispatches `{type: "MOVE", eid, to, meta}` to engine via `dispatchEngineCommand()`
-4. **Engine processes** → Validates move, calculates cost, emits events
-5. **React state updates** → Engine events trigger `setPositions()`, `setFighters()`, `endTurn()` via event bridge
+1. **UI Button** â†’ `activateMovementMode()` â†’ Sets movement mode active
+2. **User clicks hex** â†’ `onMoveSelect` callback â†’ `handleMoveSelect()` or `handleMoveSelectAction()`
+3. **Modular handler** â†’ Dfocusatches `{type: "MOVE", eid, to, meta}` to engine via `dfocusatchEngineCommand()`
+4. **Engine processes** â†’ Validates move, calculates cost, emits events
+5. **React state updates** â†’ Engine events trigger `setPositions()`, `setFighters()`, `endTurn()` via event bridge
 
 **Fallback**: If engine is not available, falls back to UI-authoritative path (direct state updates).
 
@@ -27,7 +27,7 @@ The MOVE command is now **engine-authoritative** (when engine is available). The
   }}
   isDisabled={!currentFighter || currentFighter.type !== "player" || !showTacticalMap}
 >
-  🚶 Move
+  ðŸš¶ Move
 </Button>
 ```
 
@@ -55,7 +55,7 @@ const activateMovementMode = useCallback(() => {
     setMovementMode({ active: true, isRunning: false });
     setSelectedMovementFighter(currentFighter.id);
     setShowMovementSelection(true); // Show movement selection UI
-    addLog(`🚶 Select a highlighted hex to move ${currentFighter.name}`, "info");
+    addLog(`ðŸš¶ Select a highlighted hex to move ${currentFighter.name}`, "info");
   }
 }, [currentFighter, addLog]);
 ```
@@ -152,7 +152,7 @@ const handleMoveSelect = useCallback((x, y) => {
 
 ## Notes
 
-- **Engine-authoritative**: Movement dispatches `MOVE` commands to engine (when available)
+- **Engine-authoritative**: Movement dfocusatches `MOVE` commands to engine (when available)
 - **Event-driven updates**: Engine emits events that update React state (`positions`, `fighters`)
 - **Action cost**: Engine calculates and emits `AP_SPENT` / `ATTACKS_CONSUMED` events
 - **Turn ending**: Engine emits `TURN_ENDED` / `TURN_SHOULD_END` events
@@ -168,21 +168,21 @@ const handleMoveSelect = useCallback((x, y) => {
 - **Engine ref**: `engineRef` stores adapter instance
 - **Event subscribers**: `engineEventSubscribersRef` tracks event callbacks
 - **Adapter provides**:
-  - `dispatch(cmd)` - Sends commands to engine worker
+  - `dfocusatch(cmd)` - Sends commands to engine worker
   - `onEvent(callback)` - Subscribes to engine events
 - **Event bridge**: Processes engine events and updates React state:
-  - `HEX_MOVED` / `MOVED` → `setPositions()`
-  - `AP_SPENT` / `ATTACKS_CONSUMED` → `setFighters()`
-  - `TURN_ENDED` / `TURN_SHOULD_END` → `endTurn()`
-  - `LOG` → `addLog()`
+  - `HEX_MOVED` / `MOVED` â†’ `setPositions()`
+  - `AP_SPENT` / `ATTACKS_CONSUMED` â†’ `setFighters()`
+  - `TURN_ENDED` / `TURN_SHOULD_END` â†’ `endTurn()`
+  - `LOG` â†’ `addLog()`
 
-### Step B: Modular Handler Dispatches MOVE
+### Step B: Modular Handler Dfocusatches MOVE
 
 **Location:** `src/utils/combatActionHandlers/movementActions.js` (line ~147)
 
 - **Before**: Directly called `setPositions()`, `setFighters()`, `endTurn()`
-- **After**: Calls `dispatchEngineCommand({type: "MOVE", eid, to, meta})`
-- **Fallback**: If `dispatchEngineCommand` not available, uses UI-authoritative path
+- **After**: Calls `dfocusatchEngineCommand({type: "MOVE", eid, to, meta})`
+- **Fallback**: If `dfocusatchEngineCommand` not available, uses UI-authoritative path
 
 ### Step C: Required Engine Events
 
@@ -248,7 +248,7 @@ The `resolveMove` function (in `src/engine/resolveMove.cjs`) should:
 
 ## Related Functions
 
-- `handlePlayerFlightMove()` - Line 5062 (for flying creatures)
+- `handlePlayerFlightMove()` - Line 5062 (for flying combatants)
 - `handleWithdrawAction()` - Line 302 (withdraw action)
-- `handleStrikeWithMovement()` - For move+attack combos
+- `handleAttackWithMovement()` - For move+attack combos
 

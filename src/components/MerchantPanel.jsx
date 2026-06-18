@@ -98,7 +98,7 @@ const MerchantPanel = ({ characters = [], merchant = null }) => {
         socket.emit("partyMessage", {
           partyId: activeParty._id,
           user: "System",
-          text: `🛒 ${selectedMerchant.name} sold ${selectedItem.name} to ${selectedCharacter.name} for ${res.data.finalCost}g${haggledText} (${activeParty.gold - res.data.finalCost}g left)`,
+          text: `Ã°Å¸â€ºâ€™ ${selectedMerchant.name} sold ${selectedItem.name} to ${selectedCharacter.name} for ${res.data.finalCost}g${haggledText} (${activeParty.gold - res.data.finalCost}g left)`,
           type: "system",
         });
 
@@ -138,7 +138,7 @@ const MerchantPanel = ({ characters = [], merchant = null }) => {
         socket.emit("partyMessage", {
           partyId: activeParty._id,
           user: "System",
-          text: `🛒 ${selectedMerchant.name} bought ${selectedItem.name} from ${selectedCharacter.name} for ${res.data.finalPrice}g${haggledText} (${activeParty.gold + res.data.finalPrice}g total)`,
+          text: `Ã°Å¸â€ºâ€™ ${selectedMerchant.name} bought ${selectedItem.name} from ${selectedCharacter.name} for ${res.data.finalPrice}g${haggledText} (${activeParty.gold + res.data.finalPrice}g total)`,
           type: "system",
         });
 

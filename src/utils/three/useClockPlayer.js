@@ -19,7 +19,7 @@ const DEBUG_CLOCK =
  * - pause/resume
  * - live speed changes
  * - cancel schedule(s)
- * - ENGINE_CALL execution: runs engine calls, dispatches returned events, blocks schedule until done
+ * - ENGINE_CALL execution: runs engine calls, dfocusatches returned events, blocks schedule until done
  * - optional step forward/back debugging
  */
 export function useClockPlayer({ onEvent, replaceMode = true, onCancelSchedule, engineCall }) {
@@ -124,7 +124,7 @@ export function useClockPlayer({ onEvent, replaceMode = true, onCancelSchedule, 
     });
   }, [replaceMode, onCancelSchedule]);
 
-  const dispatch = useCallback((evt) => {
+  const dfocusatch = useCallback((evt) => {
     if (!evt) return;
     onEvent?.(evt);
 
@@ -137,10 +137,10 @@ export function useClockPlayer({ onEvent, replaceMode = true, onCancelSchedule, 
     }
   }, [onEvent]);
 
-  const dispatchRef = useRef(dispatch);
+  const dfocusatchRef = useRef(dfocusatch);
   useEffect(() => {
-    dispatchRef.current = dispatch;
-  }, [dispatch]);
+    dfocusatchRef.current = dfocusatch;
+  }, [dfocusatch]);
 
   const engineCallRef = useRef(engineCall ?? defaultEngineCall);
   useEffect(() => {
@@ -184,25 +184,25 @@ export function useClockPlayer({ onEvent, replaceMode = true, onCancelSchedule, 
           const castId = payload?.meta?.castId ?? "none";
           const caster = payload?.caster ?? "?";
           const target = typeof payload?.target === "string" ? payload.target : payload?.target?.id ?? "?";
-          dispatchRef.current?.({
+          dfocusatchRef.current?.({
             type: "LOG",
             level: "info",
-            message: `🧪 ENGINE_CALL ${method} castId=${castId} caster=${caster} target=${target}`,
+            message: `ðŸ§ª ENGINE_CALL ${method} castId=${castId} caster=${caster} target=${target}`,
           });
 
           engineCallRef.current(method, payload)
             .then((res) => {
               const out = res?.events ?? [];
               const types = out.map((x) => x?.type).filter(Boolean);
-              dispatchRef.current?.({
+              dfocusatchRef.current?.({
                 type: "LOG",
                 level: "info",
-                message: `🧪 ENGINE_CALL ${method} returned ${types.length} events: ${types.join(", ") || "(none)"}`,
+                message: `ðŸ§ª ENGINE_CALL ${method} returned ${types.length} events: ${types.join(", ") || "(none)"}`,
               });
-              for (const e of out) dispatchRef.current?.(e);
+              for (const e of out) dfocusatchRef.current?.(e);
             })
             .catch((err) => {
-              dispatchRef.current?.({
+              dfocusatchRef.current?.({
                 type: "LOG",
                 level: "error",
                 message: `ENGINE_CALL ${method} failed: ${err?.message ?? String(err)}`,
@@ -217,7 +217,7 @@ export function useClockPlayer({ onEvent, replaceMode = true, onCancelSchedule, 
           break; // Stop processing this schedule until ENGINE_CALL resolves
         }
 
-        dispatch(ev);
+        dfocusatch(ev);
         cursor++;
       }
 
@@ -231,7 +231,7 @@ export function useClockPlayer({ onEvent, replaceMode = true, onCancelSchedule, 
     }
 
     rafRef.current = requestAnimationFrame(tick);
-  }, [dispatch, isPaused, speed]);
+  }, [dfocusatch, isPaused, speed]);
 
   useEffect(() => {
     rafRef.current = requestAnimationFrame(tick);
@@ -261,10 +261,10 @@ export function useClockPlayer({ onEvent, replaceMode = true, onCancelSchedule, 
           engineCallRef.current(ev.method, ev.payload)
             .then((res) => {
               const out = res?.events ?? [];
-              for (const e of out) dispatchRef.current?.(e);
+              for (const e of out) dfocusatchRef.current?.(e);
             })
             .catch((err) => {
-              dispatchRef.current?.({
+              dfocusatchRef.current?.({
                 type: "LOG",
                 level: "error",
                 message: `ENGINE_CALL ${method} failed: ${err?.message ?? String(err)}`,
@@ -279,7 +279,7 @@ export function useClockPlayer({ onEvent, replaceMode = true, onCancelSchedule, 
             });
           break;
         }
-        dispatch(ev);
+        dfocusatch(ev);
         cursor++;
       }
 
@@ -289,7 +289,7 @@ export function useClockPlayer({ onEvent, replaceMode = true, onCancelSchedule, 
         scheduleMetaRef.current.delete(id);
       }
     }
-  }, [dispatch]);
+  }, [dfocusatch]);
 
   const stepBack = useCallback((ms = 120) => {
     // NOTE: stepping back requires state rewind support to be perfect.

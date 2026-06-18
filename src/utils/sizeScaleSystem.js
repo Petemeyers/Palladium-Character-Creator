@@ -12,43 +12,43 @@ const SIZE_CATEGORY_DATA = {
     category: "tiny",
     footprint: 1,
     reach: 3,
-    strikeBonus: -2,
-    dodgeModifier: 2,
+    attackBonus: -2,
+    evadeModifier: 2,
   },
   small: {
     category: "small",
     footprint: 1,
     reach: 4,
-    strikeBonus: -1,
-    dodgeModifier: 1,
+    attackBonus: -1,
+    evadeModifier: 1,
   },
   medium: {
     category: "medium",
     footprint: 1,
     reach: 5,
-    strikeBonus: 0,
-    dodgeModifier: 0,
+    attackBonus: 0,
+    evadeModifier: 0,
   },
   large: {
     category: "large",
     footprint: 2,
     reach: 10,
-    strikeBonus: 1,
-    dodgeModifier: -1,
+    attackBonus: 1,
+    evadeModifier: -1,
   },
   huge: {
     category: "huge",
     footprint: 3,
     reach: 15,
-    strikeBonus: 2,
-    dodgeModifier: -2,
+    attackBonus: 2,
+    evadeModifier: -2,
   },
   gargantuan: {
     category: "gargantuan",
     footprint: 4,
     reach: 20,
-    strikeBonus: 3,
-    dodgeModifier: -3,
+    attackBonus: 3,
+    evadeModifier: -3,
   },
 };
 
@@ -56,12 +56,12 @@ const KEYWORD_CATEGORY_OVERRIDES = [
   { keyword: "wyrm", category: "gargantuan" },
   { keyword: "titan", category: "gargantuan" },
   { keyword: "leviathan", category: "gargantuan" },
-  { keyword: "giant", category: "huge" },
+  { keyword: "heavy", category: "huge" },
   { keyword: "behemoth", category: "huge" },
   { keyword: "coloss", category: "gargantuan" }, // colossus / colossal
   { keyword: "golem", category: "large" },
   { keyword: "chimera", category: "huge" },
-  { keyword: "dragon", category: "gargantuan" },
+  { keyword: "animal", category: "gargantuan" },
   { keyword: "hydra", category: "gargantuan" },
 ];
 
@@ -142,18 +142,18 @@ function applyKeywordOverrides(text, initialCategory) {
 }
 
 /**
- * Determine the scale information for a creature based on its size text, name, or type.
- * @param {Object} creature
- * @returns {{category:string, footprint:number, reach:number, strikeBonus:number, dodgeModifier:number, rawFeet:number}|null}
+ * Determine the scale information for a combatant based on its size text, name, or type.
+ * @param {Object} combatant
+ * @returns {{category:string, footprint:number, reach:number, attackBonus:number, evadeModifier:number, rawFeet:number}|null}
  */
-export function getSizeScale(creature = {}) {
+export function getSizeScale(combatant = {}) {
   const sizeText =
-    creature.size || creature.dimensions || creature.description || "";
+    combatant.size || combatant.dimensions || combatant.description || "";
   const rawFeet = parseSizeFeet(sizeText);
 
   const baseCategory = determineCategoryFromFeet(rawFeet);
 
-  const descriptorText = `${creature.name || ""} ${creature.category || ""} ${
+  const descriptorText = `${combatant.name || ""} ${combatant.category || ""} ${
     sizeText || ""
   }`;
   const category = applyKeywordOverrides(descriptorText, baseCategory);
@@ -168,7 +168,7 @@ export function getSizeScale(creature = {}) {
 }
 
 /**
- * Apply the size-based combat modifiers to a fighter (strike/dodge bonuses and footprint).
+ * Apply the size-based combat modifiers to a fighter (attack/evade bonuses and footprint).
  * @param {Object} fighter
  * @param {Object} scaleInfo
  */
@@ -178,14 +178,14 @@ export function applySizeCombatModifiers(fighter, scaleInfo) {
 
   fighter.bonuses = fighter.bonuses || {};
 
-  if (scaleInfo.strikeBonus) {
-    fighter.bonuses.strike =
-      (fighter.bonuses.strike || 0) + scaleInfo.strikeBonus;
+  if (scaleInfo.attackBonus) {
+    fighter.bonuses.attack =
+      (fighter.bonuses.attack || 0) + scaleInfo.attackBonus;
   }
 
-  if (scaleInfo.dodgeModifier) {
-    fighter.bonuses.dodge =
-      (fighter.bonuses.dodge || 0) + scaleInfo.dodgeModifier;
+  if (scaleInfo.evadeModifier) {
+    fighter.bonuses.evade =
+      (fighter.bonuses.evade || 0) + scaleInfo.evadeModifier;
   }
 
   fighter.__sizeScaleApplied = true;

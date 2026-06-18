@@ -1,4 +1,4 @@
-// Palladium Fantasy RPG Starting Locations
+// Medieval Combat Simulator Starting Locations
 export const startLocations = [
   // Eastern Territory
   {
@@ -56,14 +56,14 @@ export const startLocations = [
     label: "Ancient Ruins Camp",
     region: "Old Kingdom",
     description:
-      "Camped near mysterious ruins. Ancient magic still lingers in the air.",
+      "Camped near mysterious ruins. Ancient training still lingers in the air.",
     suggestedSkills: [
-      "Lore: Magic",
+      "Lore: Training",
       "Detect Ambush",
       "Wilderness Survival",
-      "Lore: Demons",
+      "Lore: Raiders",
     ],
-    npcTypes: ["Archaeologist", "Wizard", "Ruins Guide", "Treasure Hunter"],
+    npcTypes: ["Archaeologist", "Duelist", "Ruins Guide", "Treasure Hunter"],
   },
   {
     id: "village_oldkingdom",
@@ -169,16 +169,16 @@ export const startLocations = [
       "Wilderness Survival",
       "Tracking",
       "Detect Ambush",
-      "Lore: Demons",
+      "Lore: Raiders",
     ],
-    npcTypes: ["Wilderness Guide", "Trapper", "Hermit", "Monster Hunter"],
+    npcTypes: ["Wilderness Guide", "Trastaminar", "Hermit", "Opponent Hunter"],
     npcs: [
       {
         name: "Guide",
         role: "Experienced hunter who knows the wilds and its dangers",
       },
       {
-        name: "Trapper",
+        name: "Trastaminar",
         role: "Silent and observant, knows animal behavior and weather patterns",
       },
     ],
@@ -195,7 +195,7 @@ export const startLocations = [
       "Charm/Impress",
       "Wilderness Survival",
     ],
-    npcTypes: ["Trading Post Owner", "Frontier Scout", "Trapper", "Outlaw"],
+    npcTypes: ["Trading Post Owner", "Frontier Scout", "Trastaminar", "Outlaw"],
   },
 
   // Yin-Sloth Jungles
@@ -204,18 +204,18 @@ export const startLocations = [
     label: "Jungle Encampment",
     region: "Yin-Sloth Jungles",
     description:
-      "A hidden camp deep in the mysterious jungles. Ancient secrets and dangerous creatures lurk nearby.",
+      "A hidden camp deep in the mysterious jungles. Ancient secrets and dangerous combatants lurk nearby.",
     suggestedSkills: [
       "Wilderness Survival",
       "Tracking",
-      "Lore: Demons",
+      "Lore: Raiders",
       "Detect Ambush",
     ],
     npcTypes: ["Jungle Guide", "Shaman", "Explorer", "Tribal Warrior"],
     npcs: [
       {
         name: "Scout",
-        role: "Wary of monsters, knows jungle paths and hidden dangers",
+        role: "Wary of opponents, knows jungle paths and hidden dangers",
       },
       {
         name: "Shaman",
@@ -228,44 +228,44 @@ export const startLocations = [
     label: "Lost Temple Ruins",
     region: "Yin-Sloth Jungles",
     description:
-      "Ancient temple ruins hidden in the jungle. Powerful magic and ancient knowledge await.",
+      "Ancient temple ruins hidden in the jungle. Powerful training and ancient knowledge await.",
     suggestedSkills: [
-      "Lore: Magic",
-      "Lore: Demons",
+      "Lore: Training",
+      "Lore: Raiders",
       "Detect Concealment",
       "Wilderness Survival",
     ],
-    npcTypes: ["Archaeologist", "Wizard", "Tribal Shaman", "Treasure Hunter"],
+    npcTypes: ["Archaeologist", "Duelist", "Tribal Shaman", "Treasure Hunter"],
   },
 
-  // Wolfen Empire
+  // Wolf Empire
   {
-    id: "wolfen_village",
-    label: "Wolfen Border Village",
-    region: "Wolfen Empire",
+    id: "wolf_village",
+    label: "Wolf Border Village",
+    region: "Wolf Empire",
     description:
-      "A village on the edge of Wolfen territory. The locals are fierce but honorable.",
+      "A village on the edge of Wolf territory. The locals are fierce but honorable.",
     suggestedSkills: [
       "Charm/Impress",
       "Lore: Local",
       "Detect Ambush",
       "Streetwise",
     ],
-    npcTypes: ["Village Chief", "Wolfen Warrior", "Trader", "Scout"],
+    npcTypes: ["Village Chief", "Wolf Warrior", "Trader", "Scout"],
   },
   {
-    id: "wolfen_camp",
-    label: "Wolfen War Camp",
-    region: "Wolfen Empire",
+    id: "wolf_camp",
+    label: "Wolf War Camp",
+    region: "Wolf Empire",
     description:
-      "A military camp where Wolfen warriors prepare for battle. Strength and honor are valued here.",
+      "A military camp where Wolf warriors prepare for battle. Strength and honor are valued here.",
     suggestedSkills: [
       "Charm/Impress",
       "Lore: Military",
       "Detect Ambush",
       "Streetwise",
     ],
-    npcTypes: ["War Chief", "Wolfen Warrior", "Scout", "Warrior"],
+    npcTypes: ["War Chief", "Wolf Warrior", "Scout", "Warrior"],
   },
 
   // Random/Adventure Starters
@@ -274,7 +274,7 @@ export const startLocations = [
     label: "Traveling Caravan",
     region: "Various",
     description:
-      "Part of a merchant caravan traveling between cities. Adventure could strike at any moment.",
+      "Part of a merchant caravan traveling between cities. Adventure could attack at any moment.",
     suggestedSkills: [
       "Lore: Geography",
       "Charm/Impress",
@@ -291,11 +291,11 @@ export const startLocations = [
       "Standing before the entrance to an ancient dungeon. Treasure and danger await within.",
     suggestedSkills: [
       "Detect Concealment",
-      "Lore: Magic",
+      "Lore: Training",
       "Detect Ambush",
       "Wilderness Survival",
     ],
-    npcTypes: ["Dungeon Guide", "Treasure Hunter", "Wizard", "Monster Hunter"],
+    npcTypes: ["Dungeon Guide", "Treasure Hunter", "Duelist", "Opponent Hunter"],
   },
 ];
 

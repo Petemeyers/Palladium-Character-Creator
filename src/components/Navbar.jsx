@@ -52,7 +52,7 @@ const Navbar = () => {
     <nav className="navbar">
       <div className="navbar-brand">
         <Link to="/" className="navbar-title" onClick={closeMenu}>
-          <span className="navbar-icon">⚔️</span>
+          <span className="navbar-icon">Ã¢Å¡â€Ã¯Â¸Â</span>
         </Link>
       </div>
 
@@ -60,10 +60,10 @@ const Navbar = () => {
       <div className="navbar-user-info">
         {activeParty && (
           <span className="active-party-badge">
-            👥 {activeParty.name}
+            Ã°Å¸â€˜Â¥ {activeParty.name}
           </span>
         )}
-        <span className="username-badge">🎭 {username}</span>
+        <span className="username-badge">Ã°Å¸Å½Â­ {username}</span>
       </div>
 
       {/* Hamburger Menu Button */}
@@ -88,13 +88,13 @@ const Navbar = () => {
           <div className="nav-section">
             <h3 className="nav-section-title">Main</h3>
             <Link to="/" className={`nav-link ${isActive('/')}`} onClick={closeMenu}>
-              🏠 Home
+              Ã°Å¸ÂÂ  Home
             </Link>
             <Link to="/gm-panel" className={`nav-link ${isActive('/gm-panel')}`} onClick={closeMenu}>
-              🎮 GM Control Panel
+              Ã°Å¸Å½Â® GM Control Panel
             </Link>
             <Link to="/auto-roll-demo" className={`nav-link ${isActive('/auto-roll-demo')}`} onClick={closeMenu}>
-              🎲 Auto-Roll Demo
+              Ã°Å¸Å½Â² Auto-Roll Demo
             </Link>
           </div>
 
@@ -102,10 +102,10 @@ const Navbar = () => {
           <div className="nav-section">
             <h3 className="nav-section-title">Characters</h3>
             <Link to="/character-creation" className={`nav-link ${isActive('/character-creation')}`} onClick={closeMenu}>
-              ✨ Create Character
+              Ã¢Å“Â¨ Create Character
             </Link>
             <Link to="/character-list" className={`nav-link ${isActive('/character-list')}`} onClick={closeMenu}>
-              👥 Character List
+              Ã°Å¸â€˜Â¥ Character List
             </Link>
           </div>
 
@@ -113,10 +113,10 @@ const Navbar = () => {
           <div className="nav-section">
             <h3 className="nav-section-title">Party</h3>
             <Link to="/party-builder" className={`nav-link ${isActive('/party-builder')}`} onClick={closeMenu}>
-              👫 Party Builder
+              Ã°Å¸â€˜Â« Party Builder
             </Link>
             <Link to="/party-list" className={`nav-link ${isActive('/party-list')}`} onClick={closeMenu}>
-              📋 Party List
+              Ã°Å¸â€œâ€¹ Party List
             </Link>
           </div>
 
@@ -124,10 +124,10 @@ const Navbar = () => {
           <div className="nav-section">
             <h3 className="nav-section-title">Combat</h3>
             <Link to="/combat" className={`nav-link ${isActive('/combat')}`} onClick={closeMenu}>
-              ⚔️ Combat Arena
+              Ã¢Å¡â€Ã¯Â¸Â Combat Arena
             </Link>
             <Link to="/map-maker" className={`nav-link ${isActive('/map-maker')}`} onClick={closeMenu}>
-              🗺️ Map Maker
+              Ã°Å¸â€”ÂºÃ¯Â¸Â Map Maker
             </Link>
           </div>
 
@@ -135,13 +135,13 @@ const Navbar = () => {
           <div className="nav-section">
             <h3 className="nav-section-title">Shopping</h3>
             <Link to="/trader-shop" className={`nav-link ${isActive('/trader-shop')}`} onClick={closeMenu}>
-              🛒 Trader Shop
+              Ã°Å¸â€ºâ€™ Trader Shop
             </Link>
             <Link to="/weapon-shop" className={`nav-link ${isActive('/weapon-shop')}`} onClick={closeMenu}>
-              🗡️ Weapon Shop
+              Ã°Å¸â€”Â¡Ã¯Â¸Â Weapon Shop
             </Link>
             <Link to="/armor-shop" className={`nav-link ${isActive('/armor-shop')}`} onClick={closeMenu}>
-              🛡️ Armor Shop
+              Ã°Å¸â€ºÂ¡Ã¯Â¸Â Armor Shop
             </Link>
           </div>
 
@@ -149,13 +149,13 @@ const Navbar = () => {
           <div className="nav-section">
             <h3 className="nav-section-title">Adventure</h3>
             <Link to="/chat" className={`nav-link ${isActive('/chat')}`} onClick={closeMenu}>
-              🎭 Begin Adventure
+              Ã°Å¸Å½Â­ Begin Adventure
             </Link>
             <Link to="/world-map" className={`nav-link ${isActive('/world-map')}`} onClick={closeMenu}>
-              🗺️ World Map
+              Ã°Å¸â€”ÂºÃ¯Â¸Â World Map
             </Link>
             <Link to="/npc-memory" className={`nav-link ${isActive('/npc-memory')}`} onClick={closeMenu}>
-              🧠 NPC Memory
+              Ã°Å¸Â§Â  NPC Memory
             </Link>
           </div>
 
@@ -165,7 +165,7 @@ const Navbar = () => {
               className="nav-link logout-btn" 
               onClick={handleLogout}
             >
-              🚪 Logout
+              Ã°Å¸Å¡Âª Logout
             </button>
           </div>
         </div>

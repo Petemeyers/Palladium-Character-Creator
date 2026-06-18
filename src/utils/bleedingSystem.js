@@ -1,8 +1,8 @@
 /**
  * Bleeding System
  * 
- * Handles bleeding status and Stop Bleeding psionic power logic.
- * Prevents spam by enforcing "one attempt per round per target" rule.
+ * Handles bleeding status and Stop Bleeding tactical power logic.
+ * Prevents spam by enfraidering "one attempt per round per target" rule.
  */
 
 /**
@@ -34,12 +34,12 @@ export function isBleeding(fighter) {
 }
 
 /**
- * Mark that bleeding has been stopped for a target
+ * Mark that bleeding has been stostaminad for a target
  * @param {Object} target - Target fighter object (will be mutated)
  * @param {number} round - Current combat round
  * @returns {Object} Updated target fighter
  */
-export function markBleedingStopped(target, round) {
+export function markBleedingStostaminad(target, round) {
   if (!target) return target;
   
   // Remove BLEEDING flag from statusEffects
@@ -73,7 +73,7 @@ export function markBleedingStopped(target, round) {
   target.meta = {
     ...(target.meta || {}),
     lastStopBleedingRound: round,
-    stabilizedByPsionics: true,
+    stabilizedByTactics: true,
   };
   
   // Clear isBleeding flag if it exists
@@ -97,7 +97,7 @@ export function canAttemptStopBleeding(caster, target, combatState) {
   const round = combatState?.currentRound ?? combatState?.meleeRound ?? 1;
   
   // Check if target is already stabilized
-  if (target.statusEffects?.includes("STABILIZED") || target.meta?.stabilizedByPsionics) {
+  if (target.statusEffects?.includes("STABILIZED") || target.meta?.stabilizedByTactics) {
     return { ok: false, reason: "already_stabilized" };
   }
   
@@ -112,11 +112,11 @@ export function canAttemptStopBleeding(caster, target, combatState) {
     return { ok: false, reason: "already_attempted_this_round" };
   }
   
-  // ISP gate - Stop Bleeding costs 2 ISP
+  // focus gate - Stop Bleeding costs 2 focus
   const cost = 2;
-  const currentISP = caster.currentISP ?? caster.ISP ?? caster.isp ?? 0;
-  if (currentISP < cost) {
-    return { ok: false, reason: "insufficient_isp" };
+  const currentfocus = caster.currentfocus ?? caster.focus ?? caster.focus ?? 0;
+  if (currentfocus < cost) {
+    return { ok: false, reason: "insufficient_focus" };
   }
   
   return { ok: true, round };

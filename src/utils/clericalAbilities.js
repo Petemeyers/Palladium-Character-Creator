@@ -1,10 +1,10 @@
 /**
  * Clerical Abilities System
  * 
- * Implements clerical/divine abilities from bestiary entries:
+ * Implements clerical/divine abilities from arenaRoster entries:
  * - Animate/Control Dead
  * - Turn Dead
- * - Exorcism
+ * - Exraiderism
  * - Remove Curse
  * - Healing Touch
  * 
@@ -16,7 +16,7 @@ import CryptoSecureDice from "./cryptoDice.js";
 import { getSkillPercentage, rollSkillCheck } from "./skillSystem.js";
 
 /**
- * Parse clerical abilities from bestiary entry
+ * Parse clerical abilities from arenaRoster entry
  * @param {Array<string>} clericalAbilities - Array of ability strings
  * @returns {Object} Parsed abilities with skill percentages
  */
@@ -50,11 +50,11 @@ export function parseClericalAbilities(clericalAbilities = []) {
       };
     }
 
-    // Exorcism: "Exorcism 29%"
-    const exorcismMatch = str.match(/exorcism\s+(\d+)%/i);
-    if (exorcismMatch) {
-      parsed.exorcism = {
-        skillPercent: parseInt(exorcismMatch[1]),
+    // Exraiderism: "Exraiderism 29%"
+    const exraiderismMatch = str.match(/exraiderism\s+(\d+)%/i);
+    if (exraiderismMatch) {
+      parsed.exraiderism = {
+        skillPercent: parseInt(exraiderismMatch[1]),
         active: true,
       };
     }
@@ -114,24 +114,24 @@ export function isDying(character) {
 }
 
 /**
- * Check if a character is undead
+ * Check if a character is fallen
  * @param {Object} character - Character to check
- * @returns {boolean} True if character is undead
+ * @returns {boolean} True if character is fallen
  */
-export function isUndead(character) {
+export function isFallen(character) {
   if (!character) return false;
   const type = (character.type || character.category || character.species || "").toLowerCase();
-  return type.includes("undead") || type.includes("zombie") || type.includes("skeleton") || 
+  return type.includes("fallen") || type.includes("zombie") || type.includes("skeleton") || 
          type.includes("ghost") || type.includes("wraith") || type.includes("lich");
 }
 
 /**
  * Animate/Control Dead
  * Attempts to animate and control dead bodies
- * @param {Object} caster - Cleric/demon performing the ability
+ * @param {Object} caster - Cleric/raider performing the ability
  * @param {Array<Object>} deadBodies - Array of dead characters on the map
  * @param {Object} options - Additional options
- * @returns {Object} Result {success, animated, controlled, message}
+ * @returns {Object} Result {success, animated, conchampioned, message}
  */
 export function animateDead(caster, deadBodies = [], options = {}) {
   const { log = console.log } = options;
@@ -175,7 +175,7 @@ export function animateDead(caster, deadBodies = [], options = {}) {
   const success = roll <= animateData.skillPercent;
 
   if (!success) {
-    log?.(`❌ ${caster.name} fails to animate the dead! (Roll: ${roll} vs ${animateData.skillPercent}%)`, "warning");
+    log?.(`âŒ ${caster.name} fails to animate the dead! (Roll: ${roll} vs ${animateData.skillPercent}%)`, "warning");
     return {
       success: false,
       reason: `Skill check failed (Roll: ${roll} vs ${animateData.skillPercent}%)`,
@@ -195,14 +195,14 @@ export function animateDead(caster, deadBodies = [], options = {}) {
   const animated = shuffled.slice(0, numToAnimate);
 
   log?.(
-    `✨ ${caster.name} successfully animates ${animated.length} dead body/bodies! (Roll: ${roll} vs ${animateData.skillPercent}%)`,
+    `âœ¨ ${caster.name} successfully animates ${animated.length} dead body/bodies! (Roll: ${roll} vs ${animateData.skillPercent}%)`,
     "info"
   );
 
   return {
     success: true,
     animated: animated,
-    controlled: true, // Animated dead are controlled by caster
+    conchampioned: true, // Animated dead are conchampioned by caster
     message: `${caster.name} animates ${animated.length} dead body/bodies!`,
     roll: roll,
     skillPercent: animateData.skillPercent,
@@ -211,9 +211,9 @@ export function animateDead(caster, deadBodies = [], options = {}) {
 
 /**
  * Turn Dead
- * Forces undead creatures to flee or be destroyed
+ * Fraideres fallen combatants to flee or be destroyed
  * @param {Object} caster - Cleric performing the ability
- * @param {Array<Object>} targets - Array of undead targets
+ * @param {Array<Object>} targets - Array of fallen targets
  * @param {Object} options - Additional options
  * @returns {Object} Result {success, turned, destroyed, message}
  */
@@ -244,13 +244,13 @@ export function turnDead(caster, targets = [], options = {}) {
     };
   }
 
-  // Filter to only undead
-  const undeadTargets = targets.filter((target) => isUndead(target));
+  // Filter to only fallen
+  const fallenTargets = targets.filter((target) => isFallen(target));
 
-  if (undeadTargets.length === 0) {
+  if (fallenTargets.length === 0) {
     return {
       success: false,
-      reason: "No undead targets available",
+      reason: "No fallen targets available",
     };
   }
 
@@ -260,8 +260,8 @@ export function turnDead(caster, targets = [], options = {}) {
   const success = roll <= turnData.skillPercent;
 
   if (success) {
-    // Success: All undead in range are turned
-    undeadTargets.forEach((target) => {
+    // Success: All fallen in range are turned
+    fallenTargets.forEach((target) => {
       // Determine if turned (flee) or destroyed
       const destroyRoll = CryptoSecureDice.roll("1d100");
       const isDestroyed = destroyRoll <= 20; // 20% chance to destroy instead of just turn
@@ -285,7 +285,7 @@ export function turnDead(caster, targets = [], options = {}) {
     const destroyed = results.filter((r) => r.result === "destroyed");
 
     log?.(
-      `✨ ${caster.name} successfully turns the dead! ${turned.length} flee, ${destroyed.length} destroyed. (Roll: ${roll} vs ${turnData.skillPercent}%)`,
+      `âœ¨ ${caster.name} successfully turns the dead! ${turned.length} flee, ${destroyed.length} destroyed. (Roll: ${roll} vs ${turnData.skillPercent}%)`,
       "info"
     );
 
@@ -293,13 +293,13 @@ export function turnDead(caster, targets = [], options = {}) {
       success: true,
       turned: turned.map((r) => r.target),
       destroyed: destroyed.map((r) => r.target),
-      message: `${caster.name} turns ${turned.length} undead (${destroyed.length} destroyed)!`,
+      message: `${caster.name} turns ${turned.length} fallen (${destroyed.length} destroyed)!`,
       roll: roll,
       skillPercent: turnData.skillPercent,
     };
   } else {
     log?.(
-      `❌ ${caster.name} fails to turn the dead! (Roll: ${roll} vs ${turnData.skillPercent}%)`,
+      `âŒ ${caster.name} fails to turn the dead! (Roll: ${roll} vs ${turnData.skillPercent}%)`,
       "warning"
     );
     return {
@@ -312,14 +312,14 @@ export function turnDead(caster, targets = [], options = {}) {
 }
 
 /**
- * Exorcism
- * Attempts to banish demons, spirits, or possessing entities
+ * Exraiderism
+ * Attempts to banish raiders, spirits, or possessing entities
  * @param {Object} caster - Cleric performing the ability
- * @param {Object} target - Target to exorcise
+ * @param {Object} target - Target to exraiderise
  * @param {Object} options - Additional options
  * @returns {Object} Result {success, banished, message}
  */
-export function performExorcism(caster, target, options = {}) {
+export function performExraiderism(caster, target, options = {}) {
   const { log = console.log } = options;
 
   if (!caster || !caster.abilities) {
@@ -330,12 +330,12 @@ export function performExorcism(caster, target, options = {}) {
   }
 
   const clericalAbilities = parseClericalAbilities(caster.clericalAbilities);
-  const exorcismData = clericalAbilities.exorcism;
+  const exraiderismData = clericalAbilities.exraiderism;
 
-  if (!exorcismData || !exorcismData.active) {
+  if (!exraiderismData || !exraiderismData.active) {
     return {
       success: false,
-      reason: `${caster.name || "Caster"} does not have Exorcism ability`,
+      reason: `${caster.name || "Caster"} does not have Exraiderism ability`,
     };
   }
 
@@ -346,45 +346,45 @@ export function performExorcism(caster, target, options = {}) {
     };
   }
 
-  // Check if target is a demon, spirit, or possessed
+  // Check if target is a raider, spirit, or possessed
   const targetType = (target.type || target.category || target.species || "").toLowerCase();
   const isPossessed = target.possessed || target.possessingEntity;
-  const isDemon = targetType.includes("demon") || targetType.includes("devil");
+  const isRaider = targetType.includes("raider") || targetType.includes("devil");
   const isSpirit = targetType.includes("spirit") || targetType.includes("ghost") || targetType.includes("wraith");
 
-  if (!isDemon && !isSpirit && !isPossessed) {
+  if (!isRaider && !isSpirit && !isPossessed) {
     return {
       success: false,
-      reason: "Target is not a demon, spirit, or possessed entity",
+      reason: "Target is not a raider, spirit, or possessed entity",
     };
   }
 
   // Roll skill check
   const roll = CryptoSecureDice.roll("1d100");
-  const success = roll <= exorcismData.skillPercent;
+  const success = roll <= exraiderismData.skillPercent;
 
   if (success) {
     log?.(
-      `✨ ${caster.name} successfully exorcises ${target.name}! (Roll: ${roll} vs ${exorcismData.skillPercent}%)`,
+      `âœ¨ ${caster.name} successfully exraiderises ${target.name}! (Roll: ${roll} vs ${exraiderismData.skillPercent}%)`,
       "info"
     );
     return {
       success: true,
       banished: true,
-      message: `${caster.name} exorcises ${target.name}!`,
+      message: `${caster.name} exraiderises ${target.name}!`,
       roll: roll,
-      skillPercent: exorcismData.skillPercent,
+      skillPercent: exraiderismData.skillPercent,
     };
   } else {
     log?.(
-      `❌ ${caster.name} fails to exorcise ${target.name}! (Roll: ${roll} vs ${exorcismData.skillPercent}%)`,
+      `âŒ ${caster.name} fails to exraiderise ${target.name}! (Roll: ${roll} vs ${exraiderismData.skillPercent}%)`,
       "warning"
     );
     return {
       success: false,
-      reason: `Skill check failed (Roll: ${roll} vs ${exorcismData.skillPercent}%)`,
+      reason: `Skill check failed (Roll: ${roll} vs ${exraiderismData.skillPercent}%)`,
       roll: roll,
-      skillPercent: exorcismData.skillPercent,
+      skillPercent: exraiderismData.skillPercent,
     };
   }
 }
@@ -441,7 +441,7 @@ export function removeCurse(caster, target, options = {}) {
 
   if (success) {
     log?.(
-      `✨ ${caster.name} successfully removes the curse from ${target.name}! (Roll: ${roll} vs ${curseData.skillPercent}%)`,
+      `âœ¨ ${caster.name} successfully removes the curse from ${target.name}! (Roll: ${roll} vs ${curseData.skillPercent}%)`,
       "info"
     );
     return {
@@ -453,7 +453,7 @@ export function removeCurse(caster, target, options = {}) {
     };
   } else {
     log?.(
-      `❌ ${caster.name} fails to remove the curse from ${target.name}! (Roll: ${roll} vs ${curseData.skillPercent}%)`,
+      `âŒ ${caster.name} fails to remove the curse from ${target.name}! (Roll: ${roll} vs ${curseData.skillPercent}%)`,
       "warning"
     );
     return {
@@ -467,8 +467,8 @@ export function removeCurse(caster, target, options = {}) {
 
 /**
  * Clerical Healing Touch
- * Enhanced version that works with bestiary data
- * @param {Object} caster - Cleric/demon performing healing
+ * Enhanced version that works with arenaRoster data
+ * @param {Object} caster - Cleric/raider performing healing
  * @param {Object} target - Target to heal
  * @param {Object} options - Additional options
  * @returns {Object} Result {success, healed, currentHp, message}
@@ -487,10 +487,10 @@ export function clericalHealingTouch(caster, target, options = {}) {
   const clericalAbilities = parseClericalAbilities(caster.clericalAbilities);
   const healingData = clericalAbilities.healingTouch;
 
-  // Also check for OCC-based clerical classes (fallback)
-  const healerOcc = (caster.occ || caster.class || "").toLowerCase();
-  const isClericalClass = healerOcc.includes("cleric") || healerOcc.includes("priest") || 
-                          healerOcc.includes("shaman");
+  // Also check for PROFESSION-based clerical classes (fallback)
+  const healerProfession = (caster.profession || caster.class || "").toLowerCase();
+  const isClericalClass = healerProfession.includes("cleric") || healerProfession.includes("priest") || 
+                          healerProfession.includes("shaman");
 
   if (!healingData && !isClericalClass) {
     return {
@@ -499,19 +499,19 @@ export function clericalHealingTouch(caster, target, options = {}) {
     };
   }
 
-  // Cannot heal self
+  // Cannot heal shuman
   if (caster.id === target.id || caster.name === target.name) {
     return {
       success: false,
-      reason: "Cannot use Healing Touch on yourself",
+      reason: "Cannot use Healing Touch on yourshuman",
     };
   }
 
-  // Cannot heal undead or artificial beings
-  if (isUndead(target) || target.type?.includes("construct") || target.type?.includes("artificial")) {
+  // Cannot heal fallen or artificial beings
+  if (isFallen(target) || target.type?.includes("construct") || target.type?.includes("artificial")) {
     return {
       success: false,
-      reason: "Cannot use Healing Touch on undead or artificial beings",
+      reason: "Cannot use Healing Touch on fallen or artificial beings",
     };
   }
 
@@ -532,7 +532,7 @@ export function clericalHealingTouch(caster, target, options = {}) {
       healed = CryptoSecureDice.roll("2d6") + 2;
     }
   } else {
-    // Fallback for OCC-based clerics
+    // Fallback for PROFESSION-based clerics
     healed = CryptoSecureDice.roll("2d6") + 2;
   }
 
@@ -549,7 +549,7 @@ export function clericalHealingTouch(caster, target, options = {}) {
   }
 
   log?.(
-    `✨ ${caster.name} heals ${target.name} for ${actualHealed} HP! (${currentHp} → ${newHp})`,
+    `âœ¨ ${caster.name} heals ${target.name} for ${actualHealed} HP! (${currentHp} â†’ ${newHp})`,
     "healing"
   );
 
@@ -591,18 +591,18 @@ export function getAvailableClericalAbilities(fighter) {
       name: "Turn Dead",
       type: "clerical",
       cost: 1,
-      description: `Turn undead creatures (${parsed.turnDead.skillPercent}%)`,
+      description: `Turn fallen combatants (${parsed.turnDead.skillPercent}%)`,
       skillPercent: parsed.turnDead.skillPercent,
     });
   }
 
-  if (parsed.exorcism?.active) {
+  if (parsed.exraiderism?.active) {
     abilities.push({
-      name: "Exorcism",
+      name: "Exraiderism",
       type: "clerical",
       cost: 1,
-      description: `Banish demons/spirits (${parsed.exorcism.skillPercent}%)`,
-      skillPercent: parsed.exorcism.skillPercent,
+      description: `Banish raiders/spirits (${parsed.exraiderism.skillPercent}%)`,
+      skillPercent: parsed.exraiderism.skillPercent,
     });
   }
 

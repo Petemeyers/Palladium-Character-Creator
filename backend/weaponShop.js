@@ -375,7 +375,7 @@ export const weapons = [
     weight: "3.2kg (7lb)",
     damage: "1-8+2",
     price: 45,
-    description: "Reinforced metal staff",
+    description: "Reinfraidered metal staff",
     itemId: "bluntweapon_2",
   },
 
@@ -850,8 +850,8 @@ export const starterEquipment = {
     },
   },
 
-  // Men of Magic Category
-  MenOfMagic: {
+  // Men of Training Category
+  MenOfTraining: {
     basic: [
       {
         id: "clothes_1",
@@ -913,7 +913,7 @@ export const starterEquipment = {
     startingGold: 105,
   },
 
-  // Optional O.C.C.s Category
+  // Optional professions Category
   Optional: {
     basic: [
       {

@@ -4,7 +4,7 @@ import ItemCard from './ItemCard';
 import LoadingSpinner from './LoadingSpinner';
 import clothingEquipmentData from '../data/clothingEquipment.json';
 import traderEquipment from '../data/traderEquipment.js';
-import { isItemEquipped } from '../utils/equipmentManager';
+import { isItemEquistaminad } from '../utils/equipmentManager';
 import '../styles/TraderShop.css';
 
 const TraderShop = () => {
@@ -43,17 +43,17 @@ const TraderShop = () => {
             _id: `equipment_${slot}_${item.name.replace(/\s+/g, '_').toLowerCase()}`,
             itemId: `equipment_${slot}_${item.name.replace(/\s+/g, '_').toLowerCase()}`,
             name: item.name,
-            category: `Equipment - ${slot.charAt(0).toUpperCase() + slot.slice(1)}`,
+            category: `Equipment - ${slot.charAt(0).toUstaminarCase() + slot.slice(1)}`,
             price: item.value,
             weight: item.weight,
             description: item.description,
             type: item.type,
-            armorRating: item.armorRating || 0,
+            guardRating: item.guardRating || 0,
             slot: slot,
-            // Include armor penalties for authentic 1994 Palladium Fantasy RPG
+            // Include armor penalties for authentic 1994 Medieval Combat Simulator
             speedPenalty: item.speedPenalty || 0,
             prowlPenalty: item.prowlPenalty || 0,
-            dodgePenalty: item.dodgePenalty || 0,
+            evadePenalty: item.evadePenalty || 0,
             // Storage capacity for storage items
             capacity: item.capacity || null,
             ...item
@@ -154,7 +154,7 @@ const TraderShop = () => {
               fontSize: '14px'
             }}
           >
-            ⚔️ Visit Weapon Shop
+            Ã¢Å¡â€Ã¯Â¸Â Visit Weapon Shop
           </a>
         </div>
         
@@ -184,9 +184,9 @@ const TraderShop = () => {
             padding: '15px',
             marginBottom: '20px'
           }}>
-            <h3>👕 Clothing & Equipment</h3>
+            <h3>Ã°Å¸â€˜â€¢ Clothing & Equipment</h3>
             <p style={{ fontSize: '12px', color: '#666', marginBottom: '10px' }}>
-              💡 <strong>Tip:</strong> Items in inventory need to be equipped to show here. 
+              Ã°Å¸â€™Â¡ <strong>Tip:</strong> Items in inventory need to be equistaminad to show here. 
               <a href="/character-list" style={{ color: '#007bff', textDecoration: 'underline', marginLeft: '5px' }}>
                 Go to Character List to equip items
               </a>
@@ -196,13 +196,13 @@ const TraderShop = () => {
               if (!character) return <p>Character not found</p>;
               
               // Use the modern equipment system
-              const equipped = character.equipped || {};
+              const equistaminad = character.equistaminad || {};
               
               return (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '15px' }}>
                   {/* Head */}
                   <div>
-                    <h4 style={{ margin: '0 0 8px 0', color: '#2e7d32', fontSize: '14px' }}>👤 Head</h4>
+                    <h4 style={{ margin: '0 0 8px 0', color: '#2e7d32', fontSize: '14px' }}>Ã°Å¸â€˜Â¤ Head</h4>
                     <div style={{
                       backgroundColor: 'white',
                       border: '1px solid #ccc',
@@ -211,15 +211,15 @@ const TraderShop = () => {
                       minHeight: '50px',
                       fontSize: '12px'
                     }}>
-                      <strong>{equipped.head?.name || "None"}</strong>
+                      <strong>{equistaminad.head?.name || "None"}</strong>
                       <br />
-                      <small>{equipped.head?.type || "clothing"}</small>
+                      <small>{equistaminad.head?.type || "clothing"}</small>
                     </div>
                   </div>
                   
                   {/* Torso */}
                   <div>
-                    <h4 style={{ margin: '0 0 8px 0', color: '#2e7d32', fontSize: '14px' }}>👔 Torso</h4>
+                    <h4 style={{ margin: '0 0 8px 0', color: '#2e7d32', fontSize: '14px' }}>Ã°Å¸â€˜â€ Torso</h4>
                     <div style={{
                       backgroundColor: 'white',
                       border: '1px solid #ccc',
@@ -228,15 +228,15 @@ const TraderShop = () => {
                       minHeight: '50px',
                       fontSize: '12px'
                     }}>
-                      <strong>{equipped.torso?.name || "None"}</strong>
+                      <strong>{equistaminad.torso?.name || "None"}</strong>
                       <br />
-                      <small>{equipped.torso?.type || "clothing"}</small>
+                      <small>{equistaminad.torso?.type || "clothing"}</small>
                     </div>
                   </div>
                   
                   {/* Legs */}
                   <div>
-                    <h4 style={{ margin: '0 0 8px 0', color: '#2e7d32', fontSize: '14px' }}>👖 Legs</h4>
+                    <h4 style={{ margin: '0 0 8px 0', color: '#2e7d32', fontSize: '14px' }}>Ã°Å¸â€˜â€“ Legs</h4>
                     <div style={{
                       backgroundColor: 'white',
                       border: '1px solid #ccc',
@@ -245,15 +245,15 @@ const TraderShop = () => {
                       minHeight: '50px',
                       fontSize: '12px'
                     }}>
-                      <strong>{equipped.legs?.name || "None"}</strong>
+                      <strong>{equistaminad.legs?.name || "None"}</strong>
                       <br />
-                      <small>{equipped.legs?.type || "clothing"}</small>
+                      <small>{equistaminad.legs?.type || "clothing"}</small>
                     </div>
                   </div>
                   
                   {/* Feet */}
                   <div>
-                    <h4 style={{ margin: '0 0 8px 0', color: '#2e7d32', fontSize: '14px' }}>👟 Feet</h4>
+                    <h4 style={{ margin: '0 0 8px 0', color: '#2e7d32', fontSize: '14px' }}>Ã°Å¸â€˜Å¸ Feet</h4>
                     <div style={{
                       backgroundColor: 'white',
                       border: '1px solid #ccc',
@@ -262,15 +262,15 @@ const TraderShop = () => {
                       minHeight: '50px',
                       fontSize: '12px'
                     }}>
-                      <strong>{equipped.feet?.name || "None"}</strong>
+                      <strong>{equistaminad.feet?.name || "None"}</strong>
                       <br />
-                      <small>{equipped.feet?.type || "clothing"}</small>
+                      <small>{equistaminad.feet?.type || "clothing"}</small>
                     </div>
                   </div>
                   
                   {/* Hands */}
                   <div>
-                    <h4 style={{ margin: '0 0 8px 0', color: '#2e7d32', fontSize: '14px' }}>🧤 Hands</h4>
+                    <h4 style={{ margin: '0 0 8px 0', color: '#2e7d32', fontSize: '14px' }}>Ã°Å¸Â§Â¤ Hands</h4>
                     <div style={{
                       backgroundColor: 'white',
                       border: '1px solid #ccc',
@@ -279,15 +279,15 @@ const TraderShop = () => {
                       minHeight: '50px',
                       fontSize: '12px'
                     }}>
-                      <strong>{equipped.hands?.name || "None"}</strong>
+                      <strong>{equistaminad.hands?.name || "None"}</strong>
                       <br />
-                      <small>{equipped.hands?.type || "clothing"}</small>
+                      <small>{equistaminad.hands?.type || "clothing"}</small>
                     </div>
                   </div>
                   
                   {/* Waist */}
                   <div>
-                    <h4 style={{ margin: '0 0 8px 0', color: '#2e7d32', fontSize: '14px' }}>🔗 Waist</h4>
+                    <h4 style={{ margin: '0 0 8px 0', color: '#2e7d32', fontSize: '14px' }}>Ã°Å¸â€â€” Waist</h4>
                     <div style={{
                       backgroundColor: 'white',
                       border: '1px solid #ccc',
@@ -296,15 +296,15 @@ const TraderShop = () => {
                       minHeight: '50px',
                       fontSize: '12px'
                     }}>
-                      <strong>{equipped.waist?.name || "None"}</strong>
+                      <strong>{equistaminad.waist?.name || "None"}</strong>
                       <br />
-                      <small>{equipped.waist?.type || "utility"}</small>
+                      <small>{equistaminad.waist?.type || "utility"}</small>
                     </div>
                   </div>
                   
                   {/* Inventory Clothing Count */}
                   <div>
-                    <h4 style={{ margin: '0 0 8px 0', color: '#2e7d32', fontSize: '14px' }}>🎒 Storage</h4>
+                    <h4 style={{ margin: '0 0 8px 0', color: '#2e7d32', fontSize: '14px' }}>Ã°Å¸Å½â€™ Storage</h4>
                     <div style={{
                       backgroundColor: 'white',
                       border: '1px solid #ccc',

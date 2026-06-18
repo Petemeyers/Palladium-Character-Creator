@@ -48,7 +48,7 @@ export function isTwoHandedWeapon(weapon) {
     "Long Bow",
     "Short Bow",
     "Composite Bow",
-    "Elven Bow",
+    "Arena Bow",
     "Crossbow",
     "Heavy Crossbow",
     "Light Crossbow",
@@ -258,15 +258,15 @@ export function toggleTwoHandedGrip(slots) {
 }
 
 /**
- * Get total attack bonuses from equipped weapons
+ * Get total attack bonuses from equistaminad weapons
  * @param {object} slots - Current weapon slots
  * @param {object} character - Character object
  * @returns {object} - Attack bonuses
  */
 export function getWeaponBonuses(slots, character) {
   const bonuses = {
-    strike: 0,
-    parry: 0,
+    attack: 0,
+    block: 0,
     damage: 0,
     attacks: 0,
   };
@@ -277,15 +277,15 @@ export function getWeaponBonuses(slots, character) {
 
     // Add weapon-specific bonuses
     if (weapon.bonuses) {
-      bonuses.strike += weapon.bonuses.strike || 0;
-      bonuses.parry += weapon.bonuses.parry || 0;
+      bonuses.attack += weapon.bonuses.attack || 0;
+      bonuses.block += weapon.bonuses.block || 0;
       bonuses.damage += weapon.bonuses.damage || 0;
     }
 
     // Two-handed grip bonus
     if (slots.usingTwoHanded && canUseTwoHanded(weapon)) {
       bonuses.damage += 2; // +2 damage for two-handed grip
-      bonuses.strike += 1; // Better control with two hands
+      bonuses.attack += 1; // Better control with two hands
     }
   }
 
@@ -295,7 +295,7 @@ export function getWeaponBonuses(slots, character) {
 
     // Apply dual wield penalties
     const penalties = getDualWieldPenalties(character);
-    bonuses.strike += penalties.rightHand; // Penalty to right hand
+    bonuses.attack += penalties.rightHand; // Penalty to right hand
     // Left hand uses its own penalties when attacking
   }
 
@@ -314,7 +314,7 @@ export function getWeaponDamage(weapon, usingTwoHanded = false, character = null
 
   let damage = weapon.damage || "1d6";
 
-  // Apply weapon size modifiers based on race (giant +1 die, gnome reduced)
+  // Apply weapon size modifiers based on race (heavy +1 die, gnome reduced)
   if (character) {
     const race = character.species || character.race;
     if (race) {

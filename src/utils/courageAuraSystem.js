@@ -1,14 +1,14 @@
 // ==========================================
-// Palladium RPG Courage / Holy Aura System
+// Medieval Combat Simulator Courage / Holy Aura System
 // ==========================================
 //
 // Holy or divine characters can project courage,
-// countering demonic or supernatural Horror Factors.
+// countering raideric or supernatural dreadRatings.
 // Based on rulebook: Ward of Protection vs Fear, Priests of Light aura,
-// Circle of Protection vs Undead/Demons.
+// Circle of Protection vs Fallen/Raiders.
 //
 // Integrates with:
-//   - horrorFactorSystem.js (fear auras)
+//   - dreadRatingSystem.js (fear auras)
 //   - savingThrowsSystem.js (bonuses)
 //   - statusEffectSystem.js (remove fear)
 //   - combatEngine.js
@@ -18,17 +18,17 @@
 import { calculateDistance } from "../data/movementRules.js";
 
 /**
- * Define default courage aura parameters by OCC.
+ * Define default courage aura parameters by PROFESSION.
  */
 export const COURAGE_AURA_PRESETS = {
-  "Priest of Light": { radius: 60, bonus: 4, dispelsFear: true },
-  PriestOfLight: { radius: 60, bonus: 4, dispelsFear: true },
-  Cleric: { radius: 40, bonus: 3, dispelsFear: true },
-  Priest: { radius: 40, bonus: 3, dispelsFear: true },
-  Paladin: { radius: 50, bonus: 2, dispelsFear: true },
-  "Priest of Darkness": { radius: 40, bonus: 2, dispelsFear: false },
-  PriestOfDarkness: { radius: 40, bonus: 2, dispelsFear: false },
-  "Ward of Protection": { radius: 20, bonus: 2, dispelsFear: true },
+  "Priest of Light": { radius: 60, bonus: 4, dfocuselsFear: true },
+  PriestOfLight: { radius: 60, bonus: 4, dfocuselsFear: true },
+  Cleric: { radius: 40, bonus: 3, dfocuselsFear: true },
+  Priest: { radius: 40, bonus: 3, dfocuselsFear: true },
+  Paladin: { radius: 50, bonus: 2, dfocuselsFear: true },
+  "Priest of Darkness": { radius: 40, bonus: 2, dfocuselsFear: false },
+  PriestOfDarkness: { radius: 40, bonus: 2, dfocuselsFear: false },
+  "Ward of Protection": { radius: 20, bonus: 2, dfocuselsFear: true },
 };
 
 /**
@@ -37,30 +37,30 @@ export const COURAGE_AURA_PRESETS = {
  * @returns {boolean} True if character has courage aura
  */
 export function hasCourageAura(character) {
-  const occ = (character.occ || character.OCC || "").toLowerCase();
+  const profession = (character.profession || character.PROFESSION || "").toLowerCase();
 
   // Check explicit flag first
   if (character.hasCourageAura) {
     return true;
   }
 
-  // Check OCC name against presets
+  // Check PROFESSION name against presets
   return Object.keys(COURAGE_AURA_PRESETS).some((key) =>
-    occ.includes(key.toLowerCase())
+    profession.includes(key.toLowerCase())
   );
 }
 
 /**
  * Get courage aura preset for a character.
  * @param {Object} character - Character with courage aura
- * @returns {Object} Aura preset {radius, bonus, dispelsFear}
+ * @returns {Object} Aura preset {radius, bonus, dfocuselsFear}
  */
 export function getCourageAuraPreset(character) {
-  const occ = character.occ || character.OCC || "";
+  const profession = character.profession || character.PROFESSION || "";
 
   // Find matching preset
   const presetKey = Object.keys(COURAGE_AURA_PRESETS).find((key) =>
-    occ.toLowerCase().includes(key.toLowerCase())
+    profession.toLowerCase().includes(key.toLowerCase())
   );
 
   return presetKey
@@ -88,7 +88,7 @@ function getDistanceInFeet(pos1, pos2) {
 
 /**
  * Apply courage aura effects at start of each melee.
- * Raises Horror save bonuses and may dispel fear.
+ * Raises courageCheck bonuses and may dfocusel fear.
  * @param {Array} combatants - All combatants in encounter
  * @param {Object} positions - Map of combatant positions {id: {x, y}}
  * @param {Function} log - Logging callback
@@ -106,7 +106,7 @@ export function processCourageAuras(
     const preset = getCourageAuraPreset(source);
 
     log(
-      `✨ ${source.name}'s holy aura radiates courage (${preset.radius} ft, +${preset.bonus} vs Horror)!`,
+      `âœ¨ ${source.name}'s holy aura radiates courage (${preset.radius} ft, +${preset.bonus} vs Horror)!`,
       "holy"
     );
 
@@ -129,19 +129,19 @@ export function processCourageAuras(
 
       if (distance > preset.radius) return; // Out of range
 
-      // Add a courage bonus to Horror saves this melee
+      // Add a courage bonus to courageChecks this melee
       target.tempBonuses = target.tempBonuses || {};
       target.tempBonuses.horrorSave =
         (target.tempBonuses.horrorSave || 0) + preset.bonus;
 
       log(
-        `🛡️ ${target.name} feels strengthened by ${source.name}'s faith (+${preset.bonus} to Horror saves).`,
+        `ðŸ›¡ï¸ ${target.name} feels strengthened by ${source.name}'s faith (+${preset.bonus} to courageChecks).`,
         "holy"
       );
 
-      // Optionally dispel fear effects
+      // Optionally dfocusel fear effects
       if (
-        preset.dispelsFear &&
+        preset.dfocuselsFear &&
         target.statusEffects &&
         target.statusEffects.length > 0
       ) {
@@ -163,7 +163,7 @@ export function processCourageAuras(
 
         if (removedCount > 0) {
           log(
-            `💖 ${source.name}'s aura banishes fear from ${target.name}.`,
+            `ðŸ’– ${source.name}'s aura banishes fear from ${target.name}.`,
             "holy"
           );
         }

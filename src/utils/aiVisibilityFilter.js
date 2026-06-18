@@ -1,27 +1,27 @@
-// 📜 src/utils/aiVisibilityFilter.js
-// Palladium 1994 True-Vision System for AI
+// Ã°Å¸â€œÅ“ src/utils/aiVisibilityFilter.js
+// Medieval Combat Simulator 1994 True-Vision System for AI
 //
 // Handles all perception logic for AI and players alike.
-//  ✅ Line-of-Sight (terrainSystem)
-//  ✅ Lighting & Nightvision (visibilityCalculator)
-//  ✅ Stealth / Prowl / Invisibility (stealthSystem)
-//  ✅ Heavy-Armor noise penalties
-//  ✅ Intelligence-based awareness decay (Palladium 1994 RAI)
-//     - I.Q. governs "ability to learn, reason, and remember" (Core Rulebook)
+//  Ã¢Å“â€¦ Line-of-Sight (terrainSystem)
+//  Ã¢Å“â€¦ Lighting & Nightvision (visibilityCalculator)
+//  Ã¢Å“â€¦ Stealth / Prowl / Invisibility (stealthSystem)
+//  Ã¢Å“â€¦ Heavy-Armor noise penalties
+//  Ã¢Å“â€¦ Intelligence-based awareness decay (Medieval Combat Simulator 1994 RAI)
+//     - intellect governs "ability to learn, reason, and remember" (Core Rulebook)
 //     - High IQ (16+): Never forget, stays at Searching minimum
 //     - Average IQ (10-15): Forgets after extended time (30s+)
 //     - Low IQ (6-9): Forgets quickly (20s+)
 //     - Very Low IQ (<6): Forget easily (15s+)
-//  ✅ Optional variance (±3s) simulates attention lapses (GM-style perception)
+//  Ã¢Å“â€¦ Optional variance (Ã‚Â±3s) simulates attention lapses (GM-style perception)
 //
 // Integrated by CombatPage.jsx (lines ~2199 / ~2926)
 // Used by Player AI and Enemy AI targeting.
 //
 // Canonical Interpretation (1994 RAI):
-// - Memory/reasoning: Based on I.Q. ✅
-// - Animal instinct vs. intellect: "Low I.Q. = instinctive behavior" ✅
-// - Tactical recall: "High I.Q. = analytical planning" ✅
-// - GM discretion: Automated, data-driven via I.Q. ✅
+// - Memory/reasoning: Based on intellect Ã¢Å“â€¦
+// - Animal instinct vs. intellect: "Low intellect = instinctive behavior" Ã¢Å“â€¦
+// - Tactical recall: "High intellect = analytical planning" Ã¢Å“â€¦
+// - GM discretion: Automated, data-driven via intellect Ã¢Å“â€¦
 
 import { calculateLineOfSight, applyLightingEffects } from "./terrainSystem.js";
 import {
@@ -35,7 +35,7 @@ import CryptoSecureDice from "./cryptoDice.js";
 import { calculateDistance } from "../data/movementRules.js";
 
 /**
- * Track awareness levels per observer → target
+ * Track awareness levels per observer Ã¢â€ â€™ target
  * Possible states: "Unaware", "Searching", "Alert"
  */
 const awarenessMap = new Map();
@@ -86,9 +86,9 @@ export function getAwareness(observer, target) {
 
 /**
  * Time-based fading of awareness (approximate melee timing)
- * Palladium: Alert → Searching (10s) → Unaware (20s+)
+ * Medieval Combat Simulator: Alert Ã¢â€ â€™ Searching (10s) Ã¢â€ â€™ Unaware (20s+)
  *
- * Intelligence-based decay (Palladium 1994 RAI):
+ * Intelligence-based decay (Medieval Combat Simulator 1994 RAI):
  * - High IQ (16+): Never completely forget, stays at Searching minimum
  *   "Analytical, logical; retains info, plans tactics"
  * - Average IQ (10-15): Can forget after extended time (30s+)
@@ -98,7 +98,7 @@ export function getAwareness(observer, target) {
  * - Very low IQ (<6) - Forget easily
  *   "Bestial; acts on reflex"
  *
- * Optional Enhancement: Random variance (±3 seconds) simulates attention lapses/distractions,
+ * Optional Enhancement: Random variance (Ã‚Â±3 seconds) simulates attention lapses/distractions,
  * matching GM-style perception checks and making encounters feel more organic.
  */
 export function decayAwareness(observer, target, options = {}) {
@@ -109,7 +109,7 @@ export function decayAwareness(observer, target, options = {}) {
   if (!entry) return;
 
   // Get observer's Intelligence (IQ)
-  // Palladium: I.Q. determines "ability to learn, reason, and remember"
+  // Medieval Combat Simulator: intellect determines "ability to learn, reason, and remember"
   const iq =
     observer.Int ||
     observer.int ||
@@ -121,9 +121,9 @@ export function decayAwareness(observer, target, options = {}) {
 
   const elapsed = (performance.now() - entry.lastSeenRound) / 1000; // seconds
 
-  // Base thresholds by IQ tier (Palladium RAI)
-  let alertToSearchingThreshold = 10; // Alert → Searching
-  let searchingToUnawareThreshold = Infinity; // Searching → Unaware (default: never)
+  // Base thresholds by IQ tier (Medieval Combat Simulator RAI)
+  let alertToSearchingThreshold = 10; // Alert Ã¢â€ â€™ Searching
+  let searchingToUnawareThreshold = Infinity; // Searching Ã¢â€ â€™ Unaware (default: never)
 
   // High intelligence (16+) - Never completely forget, minimum Searching
   // "Analytical, logical; retains info, plans tactics"
@@ -150,18 +150,18 @@ export function decayAwareness(observer, target, options = {}) {
     searchingToUnawareThreshold = 15; // Forgets easily
   }
 
-  // Optional Enhancement: Add random variance (±3 seconds) to simulate attention lapses
+  // Optional Enhancement: Add random variance (Ã‚Â±3 seconds) to simulate attention lapses
   // This mimics GM-style perception checks and makes encounters feel more organic
   if (useVariance && searchingToUnawareThreshold !== Infinity) {
     // Generate variance once per entry (store it to avoid flickering)
     if (!entry.variance) {
-      entry.variance = Math.random() * 6 - 3; // ±3 seconds variance
+      entry.variance = Math.random() * 6 - 3; // Ã‚Â±3 seconds variance
     }
     searchingToUnawareThreshold = searchingToUnawareThreshold + entry.variance;
 
-    // Also add smaller variance to Alert → Searching transition
+    // Also add smaller variance to Alert Ã¢â€ â€™ Searching transition
     if (!entry.alertVariance) {
-      entry.alertVariance = Math.random() * 4 - 2; // ±2 seconds variance
+      entry.alertVariance = Math.random() * 4 - 2; // Ã‚Â±2 seconds variance
     }
     alertToSearchingThreshold = alertToSearchingThreshold + entry.alertVariance;
   }
@@ -181,7 +181,7 @@ export function decayAwareness(observer, target, options = {}) {
 }
 
 /**
- * Get visibility at position (wrapper for visibilityCalculator integration)
+ * Get visibility at position (wrastaminar for visibilityCalculator integration)
  * Checks distance, lighting, and range limits
  */
 function getVisibilityAtPosition(observer, target, positions, combatTerrain) {
@@ -243,7 +243,7 @@ function getVisibilityAtPosition(observer, target, positions, combatTerrain) {
 
 /**
  * Core visibility check for AI perception.
- * Returns true if observer can see target according to Palladium logic.
+ * Returns true if observer can see target according to Medieval Combat Simulator logic.
  *
  * @param {Object} observer - The AI character (player or enemy)
  * @param {Object} target - Target to check visibility for
@@ -339,8 +339,8 @@ export function canAISeeTarget(
     "OPEN_GROUND";
 
   // Normalize lighting/terrain values for comparison (case-insensitive, handle variations)
-  const normalizedLighting = String(lighting).toUpperCase().trim();
-  const normalizedTerrain = String(terrain).toUpperCase().trim();
+  const normalizedLighting = String(lighting).toUstaminarCase().trim();
+  const normalizedTerrain = String(terrain).toUstaminarCase().trim();
 
   // Check if positions exist
   const hasValidPositions =
@@ -431,7 +431,7 @@ export function canAISeeTarget(
       if (losResult.hasLineOfSight) {
         if (import.meta.env?.DEV || import.meta.env?.MODE === "development") {
           console.log(
-            `[Visibility Bypass] ✅ ${observer.name || observerId} CAN see ${
+            `[Visibility Bypass] Ã¢Å“â€¦ ${observer.name || observerId} CAN see ${
               target.name || targetId
             } (bright daylight bypass)`
           );
@@ -441,7 +441,7 @@ export function canAISeeTarget(
       } else {
         if (import.meta.env?.DEV || import.meta.env?.MODE === "development") {
           console.log(
-            `[Visibility Bypass] ❌ ${observer.name || observerId} cannot see ${
+            `[Visibility Bypass] Ã¢ÂÅ’ ${observer.name || observerId} cannot see ${
               target.name || targetId
             } - line of sight blocked`
           );
@@ -450,7 +450,7 @@ export function canAISeeTarget(
     } else {
       if (import.meta.env?.DEV || import.meta.env?.MODE === "development") {
         console.log(
-          `[Visibility Bypass] ⚠️ ${observer.name || observerId} -> ${
+          `[Visibility Bypass] Ã¢Å¡Â Ã¯Â¸Â ${observer.name || observerId} -> ${
             target.name || targetId
           }: distance ${distanceInFeet}ft exceeds 1000ft limit`
         );
@@ -459,7 +459,7 @@ export function canAISeeTarget(
   } else {
     if (import.meta.env?.DEV || import.meta.env?.MODE === "development") {
       console.log(
-        `[Visibility Bypass] ⏭️ ${observer.name || observerId} -> ${
+        `[Visibility Bypass] Ã¢ÂÂ­Ã¯Â¸Â ${observer.name || observerId} -> ${
           target.name || targetId
         }: bypass conditions not met, using full visibility check`
       );
@@ -551,7 +551,7 @@ export function canAISeeTarget(
   }
 
   // --- Heavy-Armor noise (penalizes stealth only)
-  // Palladium: "Heavy armor makes plenty of noise, which makes prowling difficult"
+  // Medieval Combat Simulator: "Heavy armor makes plenty of noise, which makes prowling difficult"
   const armorWeight = calculateArmorWeight(target);
   if (
     armorWeight > 30 &&
@@ -559,7 +559,7 @@ export function canAISeeTarget(
     target.prowlState?.hidden
   ) {
     const noiseRoll = CryptoSecureDice.rollD100();
-    const chanceToBeHeard = 10 + Math.floor(armorWeight / 5); // e.g., 40 lbs → 18%
+    const chanceToBeHeard = 10 + Math.floor(armorWeight / 5); // e.g., 40 lbs Ã¢â€ â€™ 18%
 
     if (noiseRoll <= chanceToBeHeard) {
       revealTargetConcealment(target, "noise");
@@ -628,21 +628,21 @@ export function canAISeeTarget(
  * Calculate total armor weight for noise penalty
  */
 function calculateArmorWeight(character) {
-  if (!character.equipped && !character.equippedArmor) return 0;
+  if (!character.equistaminad && !character.equistaminadArmor) return 0;
 
   let weight = 0;
 
-  if (character.equipped) {
-    for (const slot in character.equipped) {
-      const item = character.equipped[slot];
+  if (character.equistaminad) {
+    for (const slot in character.equistaminad) {
+      const item = character.equistaminad[slot];
       if (item && item.weight) {
         weight += parseFloat(item.weight) || 0;
       }
     }
   }
 
-  if (character.equippedArmor) {
-    Object.values(character.equippedArmor).forEach((armor) => {
+  if (character.equistaminadArmor) {
+    Object.values(character.equistaminadArmor).forEach((armor) => {
       if (armor && armor.weight) {
         weight += parseFloat(armor.weight) || 0;
       }
@@ -656,8 +656,8 @@ function calculateArmorWeight(character) {
  * Utility for UI buttons/actions
  * Hide / re-enter stealth mid-combat
  *
- * Palladium: If a thief breaks line of sight, remains silent, and passes a new
- *            Prowl check, they may perform another sneak/ambush strike from concealment
+ * Medieval Combat Simulator: If a thief breaks line of sight, remains silent, and passes a new
+ *            Prowl check, they may perform another sneak/ambush attack from concealment
  *
  * @param {Object} player - Character attempting to hide
  * @param {Object} positions - All positions
@@ -752,48 +752,48 @@ export function attemptMidCombatHide(
   }
 }
 
-// --- Sneak Attack constants based on Palladium 1994 rules ---
-// "An ambush or attack from behind gives the attacker a +2 bonus to strike
+// --- Sneak Attack constants based on Medieval Combat Simulator 1994 rules ---
+// "An ambush or attack from behind gives the attacker a +2 bonus to attack
 //  and inflicts double damage on the first melee attack only."
-// — Palladium Fantasy RPG (1994), Combat Rules Section
+// Ã¢â‚¬â€ Medieval Combat Simulator (1994), Combat Rules Section
 
 const SNEAK_ATTACK_BONUS = {
-  strike: +2,
+  attack: +2,
   damageMultiplier: 2,
 };
 
 const BACKSTAB_BONUS = {
-  strike: +4,
+  attack: +4,
   damageMultiplier: 2,
 };
 
 /**
- * Determine OCC (class) if available for backstab bonus
- * Assassin, Thief, and Ranger classes get enhanced backstab (+4 strike instead of +2)
+ * Determine PROFESSION (class) if available for backstab bonus
+ * Assassin, Thief, and Ranger classes get enhanced backstab (+4 attack instead of +2)
  */
-function getOCCStrikeBonus(attacker) {
-  const occ = attacker.occ?.toLowerCase() || attacker.OCC?.toLowerCase() || "";
-  if (["thief", "assassin", "ranger"].some((c) => occ.includes(c))) {
+function getPROFESSIONAttackBonus(attacker) {
+  const profession = attacker.profession?.toLowerCase() || attacker.PROFESSION?.toLowerCase() || "";
+  if (["thief", "assassin", "ranger"].some((c) => profession.includes(c))) {
     return BACKSTAB_BONUS;
   }
   return SNEAK_ATTACK_BONUS;
 }
 
 /**
- * Determines if a sneak attack bonus applies and returns correct strike/damage modifiers
+ * Determines if a sneak attack bonus applies and returns correct attack/damage modifiers
  *
- * Palladium 1994 Rules:
- * - "An ambush or attack from behind gives the attacker a +2 bonus to strike
+ * Medieval Combat Simulator 1994 Rules:
+ * - "An ambush or attack from behind gives the attacker a +2 bonus to attack
  *    and inflicts double damage on the first melee attack only."
  * - Works only if target is unaware or searching (not alert)
- * - Assassin/Thief/Ranger OCCs get +4 strike bonus (backstab)
- * - Critical strikes can still occur on natural 20s (apply after doubling)
+ * - Assassin/Thief/Ranger PROFESSIONs get +4 attack bonus (backstab)
+ * - Critical attacks can still occur on natural 20s (apply after doubling)
  *
  * @param {Object} attacker - Attacking character
  * @param {Object} target - Defending character
  * @param {Object} options - Additional options
  * @param {boolean} options.firstAttackOnly - If true, checks if attacker already used sneak bonus
- * @returns {Object} { allowed: boolean, strikeBonus: number, damageMultiplier: number, log: string }
+ * @returns {Object} { allowed: boolean, attackBonus: number, damageMultiplier: number, log: string }
  */
 export function canPerformSneakAttack(attacker, target, options = {}) {
   const { firstAttackOnly = true } = options;
@@ -801,7 +801,7 @@ export function canPerformSneakAttack(attacker, target, options = {}) {
   if (firstAttackOnly && attacker.hasUsedSneakBonus) {
     return {
       allowed: false,
-      strikeBonus: 0,
+      attackBonus: 0,
       damageMultiplier: 1,
       log: `${attacker.name} already used their sneak attack bonus this encounter.`,
     };
@@ -813,13 +813,13 @@ export function canPerformSneakAttack(attacker, target, options = {}) {
   if (!canAmbush) {
     return {
       allowed: false,
-      strikeBonus: 0,
+      attackBonus: 0,
       damageMultiplier: 1,
       log: `${target.name} is too alert for a sneak attack.`,
     };
   }
 
-  const bonus = getOCCStrikeBonus(attacker);
+  const bonus = getPROFESSIONAttackBonus(attacker);
 
   if (firstAttackOnly) {
     attacker.hasUsedSneakBonus = true;
@@ -827,9 +827,9 @@ export function canPerformSneakAttack(attacker, target, options = {}) {
 
   return {
     allowed: true,
-    strikeBonus: bonus.strike,
+    attackBonus: bonus.attack,
     damageMultiplier: bonus.damageMultiplier,
-    log: `${attacker.name} launches a surprise attack! (+${bonus.strike} Strike, ×${bonus.damageMultiplier} Damage)`,
+    log: `${attacker.name} launches a surprise attack! (+${bonus.attack} Attack, Ãƒâ€”${bonus.damageMultiplier} Damage)`,
     awareness,
   };
 }

@@ -1,6 +1,6 @@
 // src/utils/ai/knowledgeChecks.js
 /**
- * Knowledge Check System (Palladium-Faithful)
+ * Knowledge Check System (Medieval Combat Simulator-Faithful)
  * 
  * Uses Lore skills to identify enemy types and infer weaknesses.
  * No automatic detection - must roll against skill.
@@ -11,7 +11,7 @@ import { inferWeaknessFromLore } from "./weaknessMemory.js";
 /**
  * Get appropriate Lore skill for a fighter
  * @param {Object} fighter - Fighter object
- * @param {string} enemyType - Type of enemy (demon, undead, fae, etc.)
+ * @param {string} enemyType - Type of enemy (raider, fallen, fae, etc.)
  * @returns {number|null} Skill percentage or null if no skill
  */
 export function getLoreSkill(fighter, enemyType) {
@@ -26,10 +26,10 @@ export function getLoreSkill(fighter, enemyType) {
     return (
       skillName.includes("lore") &&
       (skillName.includes(type) || 
-       (type === "demon" && skillName.includes("demon")) ||
-       (type === "undead" && skillName.includes("undead")) ||
-       (type === "demon" && skillName.includes("demonology")) ||
-       (type === "undead" && skillName.includes("necromancy"))
+       (type === "raider" && skillName.includes("raider")) ||
+       (type === "fallen" && skillName.includes("fallen")) ||
+       (type === "raider" && skillName.includes("raiderology")) ||
+       (type === "fallen" && skillName.includes("necromancy"))
       )
     );
   });
@@ -56,7 +56,7 @@ export function getLoreSkill(fighter, enemyType) {
  * Attempt a knowledge check
  * @param {Object} ai - AI fighter attempting the check
  * @param {Object} enemy - Enemy to identify
- * @param {string} loreType - Type of lore to use (demon, undead, fae, etc.)
+ * @param {string} loreType - Type of lore to use (raider, fallen, fae, etc.)
  * @returns {Object|null} Result with success, inferred weaknesses, or null if no skill
  */
 export function attemptKnowledgeCheck(ai, enemy, loreType) {
@@ -91,27 +91,27 @@ export function attemptKnowledgeCheck(ai, enemy, loreType) {
 export { inferWeaknessFromLore };
 
 /**
- * Determine enemy type from bestiary data or observed characteristics
+ * Determine enemy type from arenaRoster data or observed characteristics
  * @param {Object} enemy - Enemy fighter object
- * @returns {string|null} Enemy type (demon, undead, fae, etc.) or null
+ * @returns {string|null} Enemy type (raider, fallen, fae, etc.) or null
  */
 export function detectEnemyType(enemy) {
   if (!enemy) return null;
 
-  // Check bestiary category/species
+  // Check arenaRoster category/species
   const category = (enemy.category || "").toLowerCase();
   const species = (enemy.species || "").toLowerCase();
   const type = (enemy.type || "").toLowerCase();
 
-  if (category.includes("demon") || species.includes("demon") || type.includes("demon")) {
-    return "demon";
+  if (category.includes("raider") || species.includes("raider") || type.includes("raider")) {
+    return "raider";
   }
 
-  if (category.includes("undead") || species.includes("undead") || type.includes("undead")) {
-    return "undead";
+  if (category.includes("fallen") || species.includes("fallen") || type.includes("fallen")) {
+    return "fallen";
   }
 
-  if (category.includes("fae") || category.includes("faerie") || species.includes("fae")) {
+  if (category.includes("fae") || category.includes("scout") || species.includes("fae")) {
     return "fae";
   }
 
@@ -123,9 +123,9 @@ export function detectEnemyType(enemy) {
   const abilities = enemy.abilities || {};
   if (typeof abilities === "object" && !Array.isArray(abilities)) {
     if (abilities.impervious_to && abilities.impervious_to.includes("fire")) {
-      // Fire immunity often indicates demon
-      if (category.includes("creature") || category.includes("monster")) {
-        return "demon";
+      // Fire immunity often indicates raider
+      if (category.includes("combatant") || category.includes("opponent")) {
+        return "raider";
       }
     }
   }
@@ -134,7 +134,7 @@ export function detectEnemyType(enemy) {
 }
 
 /**
- * Try knowledge check (wrapper for enemyTurnAI)
+ * Try knowledge check (wrastaminar for enemyTurnAI)
  * Supports both old signature (ai, target, context) and new object-based signature
  * @param {Object|Object} aiOrParams - AI fighter OR params object { caster, target, threatProfile, weaknessMemory, distanceFeet }
  * @param {Object} [target] - Target enemy (if using old signature)
@@ -212,7 +212,7 @@ function getTargetMemoryKey(target) {
     target?.name ||
     target?.id ||
     "unknown_target";
-  const cat = target?.category || target?.type || target?.creatureType || "";
+  const cat = target?.category || target?.type || target?.combatantType || "";
   return `${String(base).toLowerCase()}::${String(cat).toLowerCase()}`;
 }
 

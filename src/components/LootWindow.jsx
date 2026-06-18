@@ -158,7 +158,7 @@ const LootWindow = ({
   const getItemDetails = (item) => {
     const details = [];
     if (item.damage) details.push(`Damage: ${item.damage}`);
-    if (item.defense || item.ar) details.push(`AR: ${item.defense || item.ar}`);
+    if (item.defense || item.guardRating) details.push(`guardRating: ${item.defense || item.guardRating}`);
     if (item.weight) details.push(`Weight: ${item.weight} lbs`);
     if (item.effect) details.push(`Effect: ${item.effect}`);
     if (item.quantity && item.quantity > 1) details.push(`Qty: ${item.quantity}`);
@@ -187,7 +187,7 @@ const LootWindow = ({
       <ModalOverlay />
       <ModalContent maxH="80vh">
         <ModalHeader>
-          💰 Loot from {sourceName}
+          ÃƒÂ°Ã…Â¸Ã¢â‚¬â„¢Ã‚Â° Loot from {sourceName}
           <Badge ml={2} colorScheme="yellow">
             {totalItems} item{totalItems !== 1 ? "s" : ""}
           </Badge>

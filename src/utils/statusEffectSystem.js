@@ -1,29 +1,29 @@
 /**
- * OCC Skill Mapper - Maps O.C.C. and skills to combat modifiers
+ * PROFESSION Skill Mastaminar - Maps profession and skills to combat modifiers
  *
- * Extracts combat-relevant skills from character OCC and skill data:
+ * Extracts combat-relevant skills from character PROFESSION and skill data:
  * - Prowl: Stealth checks (Phase 0 pre-combat)
  * - Track: Target detection by signs/smell
  * - Hand to Hand: Defines attacks per melee, critical range
  * - Horsemanship: Mounted bonuses
- * - Parry/Dodge/Strike: Combat bonuses (already built-in via bonuses object)
- * - Psionics/Magic: Mental/magical action hooks
+ * - Block/Evade/Attack: Combat bonuses (already built-in via bonuses object)
+ * - Tactics/Training: Mental/exceptional action hooks
  *
  * Returns normalized skill modifiers for use in combat engine.
  */
 
-import { OCCS } from "../data/occData.js";
-import { occSkillTables } from "./occSkills.js";
+import { PROFESSIONS } from "../data/professionData.js";
+import { professionSkillTables } from "./professionSkills.js";
 
 /**
- * Extract Hand to Hand type from OCC skills
- * @param {Object} occData - OCC data object
+ * Extract Hand to Hand type from PROFESSION skills
+ * @param {Object} professionData - PROFESSION data object
  * @returns {string|null} Hand to Hand type (e.g., "Basic", "Mercenary", "Knight")
  */
-function extractHandToHandType(occData) {
-  if (!occData || !occData.occSkills) return null;
+function extractHandToHandType(professionData) {
+  if (!professionData || !professionData.professionSkills) return null;
 
-  const handToHandSkill = occData.occSkills.find((skill) =>
+  const handToHandSkill = professionData.professionSkills.find((skill) =>
     skill.toLowerCase().includes("hand to hand")
   );
 
@@ -45,7 +45,7 @@ function getAttacksPerMeleeFromHandToHand(handToHandType) {
 
   const type = handToHandType.toLowerCase();
 
-  // Palladium 1994 Hand to Hand attacks per melee
+  // Medieval Combat Simulator 1994 Hand to Hand attacks per melee
   if (type.includes("basic")) return 2;
   if (type.includes("expert")) return 3;
   if (type.includes("martial arts")) return 4;
@@ -80,24 +80,24 @@ function getSkillPercentage(character, skillName) {
     }
   }
 
-  // Check OCC skill tables (base percentage)
-  const occName = character.occ || character.OCC;
-  if (occName && occSkillTables[occName]) {
-    const occSkills = occSkillTables[occName];
+  // Check PROFESSION skill tables (base percentage)
+  const professionName = character.profession || character.PROFESSION;
+  if (professionName && professionSkillTables[professionName]) {
+    const professionSkills = professionSkillTables[professionName];
     const skillKey = lowerSkillName.replace(/\s+/g, "");
 
     // Try direct match
-    if (occSkills[skillKey] !== undefined) {
-      return occSkills[skillKey];
+    if (professionSkills[skillKey] !== undefined) {
+      return professionSkills[skillKey];
     }
 
     // Try partial match
-    for (const key in occSkills) {
+    for (const key in professionSkills) {
       if (
         key.toLowerCase().includes(skillKey) ||
         skillKey.includes(key.toLowerCase())
       ) {
-        return occSkills[key];
+        return professionSkills[key];
       }
     }
   }
@@ -106,37 +106,37 @@ function getSkillPercentage(character, skillName) {
 }
 
 /**
- * Map OCC and skills to combat modifiers
- * @param {Object} character - Character object with occ, skills, etc.
+ * Map PROFESSION and skills to combat modifiers
+ * @param {Object} character - Character object with profession, skills, etc.
  * @returns {Object} Combat-relevant skill modifiers
  */
-export function mapOCCSkillsToCombat(character) {
+export function mapPROFESSIONSkillsToCombat(character) {
   const result = {
     prowl: 0,
     track: 0,
     handToHand: null,
-    attacksPerMelee: 2, // Default
+    actionsPerRound: 2, // Default
     horsemanship: 0,
-    psionics: false,
-    magicUser: false,
+    tactics: false,
+    trainingUser: false,
     detectAmbush: 0,
     scaleWalls: 0,
     other: {}, // Store other combat-relevant skills
   };
 
-  // Get OCC name
-  const occName = character.occ || character.OCC || character.occName;
-  if (!occName) return result;
+  // Get PROFESSION name
+  const professionName = character.profession || character.PROFESSION || character.professionName;
+  if (!professionName) return result;
 
-  // Get OCC data
-  const occData = OCCS[occName] || OCCS[character.occ] || null;
+  // Get PROFESSION data
+  const professionData = PROFESSIONS[professionName] || PROFESSIONS[character.profession] || null;
 
   // Extract Hand to Hand type
-  if (occData) {
-    const handToHandType = extractHandToHandType(occData);
+  if (professionData) {
+    const handToHandType = extractHandToHandType(professionData);
     if (handToHandType) {
       result.handToHand = handToHandType;
-      result.attacksPerMelee = getAttacksPerMeleeFromHandToHand(handToHandType);
+      result.actionsPerRound = getAttacksPerMeleeFromHandToHand(handToHandType);
     }
   }
 
@@ -147,19 +147,19 @@ export function mapOCCSkillsToCombat(character) {
   result.detectAmbush = getSkillPercentage(character, "Detect Ambush");
   result.scaleWalls = getSkillPercentage(character, "Scale Walls");
 
-  // Check for Psionics
+  // Check for Tactics
   if (
-    character.psionics ||
-    character.ISP > 0 ||
-    character.psionicPowers?.length > 0
+    character.tactics ||
+    character.focus > 0 ||
+    character.tacticalOptions?.length > 0
   ) {
-    result.psionics = true;
+    result.tactics = true;
   }
 
-  // Check for Magic User
-  const magicOCCs = [
-    "Wizard",
-    "Warlock",
+  // Check for Training User
+  const trainingPROFESSIONs = [
+    "Duelist",
+    "Mercenary",
     "Summoner",
     "Diabolist",
     "Illusionist",
@@ -169,11 +169,11 @@ export function mapOCCSkillsToCombat(character) {
     "Druid",
     "Shaman",
   ];
-  if (magicOCCs.some((occ) => occName.includes(occ) || occ.includes(occName))) {
-    result.magicUser = true;
+  if (trainingPROFESSIONs.some((profession) => professionName.includes(profession) || profession.includes(professionName))) {
+    result.trainingUser = true;
   }
-  if (character.magic || character.PPE > 0 || character.spells?.length > 0) {
-    result.magicUser = true;
+  if (character.training || character.stamina > 0 || character.techniques?.length > 0) {
+    result.trainingUser = true;
   }
 
   // Store other combat-relevant skills
@@ -216,18 +216,18 @@ export function hasHorsemanship(character) {
  * @returns {number} Attacks per melee
  */
 export function getAttacksPerMelee(character) {
-  const occName = character.occ || character.OCC || character.occName;
-  const occData = OCCS[occName] || OCCS[character.occ] || null;
+  const professionName = character.profession || character.PROFESSION || character.professionName;
+  const professionData = PROFESSIONS[professionName] || PROFESSIONS[character.profession] || null;
 
-  if (occData) {
-    const handToHandType = extractHandToHandType(occData);
+  if (professionData) {
+    const handToHandType = extractHandToHandType(professionData);
     if (handToHandType) {
       return getAttacksPerMeleeFromHandToHand(handToHandType);
     }
   }
 
-  // Fallback to character's existing attacksPerMelee or default
-  return character.attacksPerMelee || character.actions || 2;
+  // Fallback to character's existing actionsPerRound or default
+  return character.actionsPerRound || character.actions || 2;
 }
 
 // ==========================================
@@ -241,27 +241,27 @@ export const STATUS_EFFECTS = {
   SHAKEN: {
     name: "Shaken",
     duration: 1,
-    penalties: { strike: -1, parry: -1, dodge: -1 },
+    penalties: { attack: -1, block: -1, evade: -1 },
   },
   STUNNED: {
     name: "Stunned",
     duration: 1,
-    penalties: { strike: -3, parry: -3, dodge: -3 },
+    penalties: { attack: -3, block: -3, evade: -3 },
   },
   FEAR: {
     name: "Fear",
     duration: 3,
-    penalties: { strike: -2, parry: -2, dodge: -2 },
+    penalties: { attack: -2, block: -2, evade: -2 },
   },
   PARALYZED: {
     name: "Paralyzed",
     duration: 2,
-    penalties: { strike: -10, parry: -10, dodge: -10 },
+    penalties: { attack: -10, block: -10, evade: -10 },
   },
   POISONED: {
     name: "Poisoned",
     duration: 5,
-    penalties: { strike: -1, parry: -1, dodge: -1 },
+    penalties: { attack: -1, block: -1, evade: -1 },
   },
   BLEEDING: {
     name: "Bleeding",
@@ -348,7 +348,7 @@ export function applyStatusEffect(target, effectType, options = {}) {
 /**
  * Update status effects for a character (decrement duration, remove expired)
  * @param {Object} character - Character to update
- * @param {number} currentRound - Current melee round
+ * @param {number} currentRound - Current combat round
  * @returns {Object} Updated character
  */
 export function updateStatusEffects(character, currentRound = 1) {
@@ -430,7 +430,7 @@ export function getStatusPenalties(character) {
  * Get status combat penalties for a character (with logging support)
  * @param {Object} character - Character to check
  * @param {Function} logCallback - Optional logging callback
- * @returns {Object} Combat penalties object (strike, parry, dodge, etc.)
+ * @returns {Object} Combat penalties object (attack, block, evade, etc.)
  */
 export function getStatusCombatPenalties(character, logCallback = () => {}) {
   if (!character) {
@@ -517,7 +517,7 @@ export function attemptFearRecovery(combatants = [], logCallback = () => {}) {
 }
 
 export default {
-  mapOCCSkillsToCombat,
+  mapPROFESSIONSkillsToCombat,
   getProwlSkill,
   getTrackSkill,
   hasHorsemanship,

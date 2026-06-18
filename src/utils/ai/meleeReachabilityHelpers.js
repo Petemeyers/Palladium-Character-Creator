@@ -70,8 +70,8 @@ export function canThreatenWithMelee(attacker, target, weapon = null) {
     maxReachFeet = getWeaponLength(weapon, attacker) || 2;
   } else {
     const weapons = [
-      attacker.equippedWeapons?.primary,
-      attacker.equippedWeapons?.secondary,
+      attacker.equistaminadWeapons?.primary,
+      attacker.equistaminadWeapons?.secondary,
       ...(attacker.attacks || []),
     ].filter(Boolean);
 
@@ -196,9 +196,9 @@ export function hasAnyValidOffensiveOption(fighter, enemies) {
 
   if (meleeReachable) return true;
 
-  // Check if fighter has ranged weapons/spells/psionics
-  const hasRangedWeapon = fighter.equippedWeapons?.primary ||
-    fighter.equippedWeapons?.secondary ||
+  // Check if fighter has ranged weapons/techniques/tactics
+  const hasRangedWeapon = fighter.equistaminadWeapons?.primary ||
+    fighter.equistaminadWeapons?.secondary ||
     fighter.attacks?.some((a) => {
       const name = (a.name || "").toLowerCase();
       return (
@@ -212,37 +212,37 @@ export function hasAnyValidOffensiveOption(fighter, enemies) {
 
   if (hasRangedWeapon) return true;
 
-  // Check for spells (if fighter has spellcasting)
-  const hasSpells = fighter.spells?.length > 0 || 
-    fighter.knownSpells?.length > 0 ||
-    fighter.spellSlots?.length > 0;
+  // Check for techniques (if fighter has techniquecasting)
+  const hasTechniques = fighter.techniques?.length > 0 || 
+    fighter.knownTechniques?.length > 0 ||
+    fighter.techniqueSlots?.length > 0;
 
-  if (hasSpells) return true;
+  if (hasTechniques) return true;
 
-  // Check for psionics (if fighter has ISP)
-  const hasPsionics = (fighter.currentISP ?? fighter.ISP ?? fighter.isp ?? 0) > 0 &&
-    (fighter.psionics?.length > 0 || fighter.knownPsionics?.length > 0);
+  // Check for tactics (if fighter has focus)
+  const hasTactics = (fighter.currentfocus ?? fighter.focus ?? fighter.focus ?? 0) > 0 &&
+    (fighter.tactics?.length > 0 || fighter.knownTactics?.length > 0);
 
-  if (hasPsionics) return true;
+  if (hasTactics) return true;
 
   return false;
 }
 
 /**
- * Check if fighter has any ranged option (weapons, spells, psionics) that can hit flying enemies
- * This checks range, resources (PPE/ISP), and whether options are actually usable
+ * Check if fighter has any ranged option (weapons, techniques, tactics) that can hit flying enemies
+ * This checks range, resources (stamina/focus), and whether options are actually usable
  * @param {Object} fighter - Fighter to check
  * @param {Array} enemies - Array of enemy fighters
  * @param {Object} options - Options object
- * @param {Function} options.getFighterSpells - Function to get fighter's spells
- * @param {Function} options.getFighterPsionicPowers - Function to get fighter's psionic powers
- * @param {Function} options.getFighterPPE - Function to get fighter's current PPE
- * @param {Function} options.getFighterISP - Function to get fighter's current ISP
- * @param {Function} options.getSpellCost - Function to get spell cost
- * @param {Function} options.getPsionicCost - Function to get psionic cost
- * @param {Function} options.getSpellRangeInFeet - Function to get spell range in feet
+ * @param {Function} options.getFighterTechniques - Function to get fighter's techniques
+ * @param {Function} options.getFighterTacticalPowers - Function to get fighter's tactical powers
+ * @param {Function} options.getFighterstamina - Function to get fighter's current stamina
+ * @param {Function} options.getFighterfocus - Function to get fighter's current focus
+ * @param {Function} options.getTechniqueCost - Function to get technique cost
+ * @param {Function} options.getTacticalCost - Function to get tactical cost
+ * @param {Function} options.getTechniqueRangeInFeet - Function to get technique range in feet
  * @param {Function} options.parseRangeToFeet - Function to parse range string to feet
- * @param {Function} options.isOffensiveSpell - Function to check if spell is offensive
+ * @param {Function} options.isOffensiveTechnique - Function to check if technique is offensive
  * @param {Function} options.calculateDistance - Function to calculate distance between positions
  * @param {Object} options.positions - Positions map
  * @returns {boolean} True if fighter has at least one usable ranged option
@@ -251,15 +251,15 @@ export function hasAnyRangedOptionAgainstFlying(fighter, enemies, options = {}) 
   if (!fighter || !enemies || enemies.length === 0) return false;
 
   const {
-    getFighterSpells,
-    getFighterPsionicPowers,
-    getFighterPPE,
-    getFighterISP,
-    getSpellCost,
-    getPsionicCost,
-    getSpellRangeInFeet,
+    getFighterTechniques,
+    getFighterTacticalPowers,
+    getFighterstamina,
+    getFighterfocus,
+    getTechniqueCost,
+    getTacticalCost,
+    getTechniqueRangeInFeet,
     parseRangeToFeet,
-    isOffensiveSpell,
+    isOffensiveTechnique,
     calculateDistance,
     positions,
   } = options;
@@ -285,8 +285,8 @@ export function hasAnyRangedOptionAgainstFlying(fighter, enemies, options = {}) 
   const maxEnemyDistance = Math.max(...enemyDistances);
 
   // 1) Check ranged weapons
-  const hasRangedWeaponInRange = fighter.equippedWeapons?.primary ||
-    fighter.equippedWeapons?.secondary ||
+  const hasRangedWeaponInRange = fighter.equistaminadWeapons?.primary ||
+    fighter.equistaminadWeapons?.secondary ||
     fighter.attacks?.some((a) => {
       const name = (a.name || "").toLowerCase();
       const isRanged = name.includes("bow") ||
@@ -304,43 +304,43 @@ export function hasAnyRangedOptionAgainstFlying(fighter, enemies, options = {}) 
 
   if (hasRangedWeaponInRange) return true;
 
-  // 2) Check spells (if functions provided)
-  if (getFighterSpells && getFighterPPE && getSpellCost && getSpellRangeInFeet && isOffensiveSpell) {
-    const spells = getFighterSpells(fighter) || [];
-    const ppeAvailable = getFighterPPE(fighter) || 0;
+  // 2) Check techniques (if functions provided)
+  if (getFighterTechniques && getFighterstamina && getTechniqueCost && getTechniqueRangeInFeet && isOffensiveTechnique) {
+    const techniques = getFighterTechniques(fighter) || [];
+    const staminaAvailable = getFighterstamina(fighter) || 0;
     
-    const hasSpellInRange = spells.some(spell => {
-      if (!isOffensiveSpell(spell)) return false;
+    const hasTechniqueInRange = techniques.some(technique => {
+      if (!isOffensiveTechnique(technique)) return false;
       
-      const spellCost = getSpellCost(spell) || 0;
-      if (spellCost > ppeAvailable) return false;
+      const techniqueCost = getTechniqueCost(technique) || 0;
+      if (techniqueCost > staminaAvailable) return false;
       
-      const spellRange = getSpellRangeInFeet(spell) || 0;
-      if (spellRange <= 0) return false;
+      const techniqueRange = getTechniqueRangeInFeet(technique) || 0;
+      if (techniqueRange <= 0) return false;
       
-      return spellRange >= minEnemyDistance;
+      return techniqueRange >= minEnemyDistance;
     });
 
-    if (hasSpellInRange) return true;
+    if (hasTechniqueInRange) return true;
   }
 
-  // 3) Check psionics (if functions provided)
-  if (getFighterPsionicPowers && getFighterISP && getPsionicCost) {
-    const psionics = getFighterPsionicPowers(fighter) || [];
-    const ispAvailable = getFighterISP(fighter) || 0;
+  // 3) Check tactics (if functions provided)
+  if (getFighterTacticalPowers && getFighterfocus && getTacticalCost) {
+    const tactics = getFighterTacticalPowers(fighter) || [];
+    const focusAvailable = getFighterfocus(fighter) || 0;
     
-    const hasPsionicInRange = psionics.some(power => {
-      const cost = getPsionicCost(power) || 0;
-      if (cost > ispAvailable) return false;
+    const hasTacticalInRange = tactics.some(power => {
+      const cost = getTacticalCost(power) || 0;
+      if (cost > focusAvailable) return false;
       
-      // Check if psionic is offensive
+      // Check if tactical is offensive
       const category = power.targetCategory || power.category || "";
       if (category.toLowerCase() !== "enemy") return false;
       
-      // Check range (many psionics have range, some are touch/self)
+      // Check range (many tactics have range, some are touch/shuman)
       const powerRange = parseRangeToFeet ? parseRangeToFeet(power.range || "0ft") : 0;
       if (powerRange <= 0) {
-        // Some psionics might be touch range but still usable if we can get close
+        // Some tactics might be touch range but still usable if we can get close
         // For now, require explicit range
         return false;
       }
@@ -348,7 +348,7 @@ export function hasAnyRangedOptionAgainstFlying(fighter, enemies, options = {}) 
       return powerRange >= minEnemyDistance;
     });
 
-    if (hasPsionicInRange) return true;
+    if (hasTacticalInRange) return true;
   }
 
   return false;

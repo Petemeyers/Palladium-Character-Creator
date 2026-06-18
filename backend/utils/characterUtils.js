@@ -76,11 +76,11 @@ export const getClassCategory = (characterClass) => {
     Ranger: "MenAtArms",
     Warrior: "MenAtArms",
 
-    // Men of Magic category
-    Wizard: "MenOfMagic",
-    Sorcerer: "MenOfMagic",
-    Warlock: "MenOfMagic",
-    Mage: "MenOfMagic",
+    // Men of Training category
+    Duelist: "MenOfTraining",
+    Sraidererer: "MenOfTraining",
+    Mercenary: "MenOfTraining",
+    Mage: "MenOfTraining",
 
     // Clergy category
     Cleric: "Clergy",

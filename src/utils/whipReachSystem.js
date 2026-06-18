@@ -2,12 +2,12 @@
  * Fire Whip Reach System
  * 
  * Implements 3D reach calculation for flexible weapons like the Baal-Rog Fire Whip.
- * Based on Palladium Fantasy RPG 2nd Edition (1994) - 15ft reach with 3D space calculation.
+ * Based on Medieval Combat Simulator 2nd Edition (1994) - 15ft reach with 3D space calculation.
  */
 
 /**
  * Calculate 3D distance between two points (horizontal + vertical)
- * Uses true distance: sqrt(horizontal² + vertical²)
+ * Uses true distance: sqrt(horizontalÂ² + verticalÂ²)
  * 
  * @param {Object} attackerPos - Attacker position {x, y}
  * @param {Object} targetPos - Target position {x, y}
@@ -33,7 +33,7 @@ export function calculate3DDistance(attackerPos, targetPos, attackerAltitude = 0
 }
 
 /**
- * Simplified Palladium-style reach check
+ * Simplified Medieval Combat Simulator-style reach check
  * Uses separate horizontal and vertical limits (GM-friendly)
  * 
  * @param {Object} attackerPos - Attacker position
@@ -55,7 +55,7 @@ export function isWithinWhipReach(attackerPos, targetPos, attackerAltitude = 0, 
   const verticalFt = Math.abs(targetAltitude - attackerAltitude);
   
   // Simplified check: both horizontal AND vertical must be within reach
-  // This matches Palladium's "reach weapon in 3D space" intent
+  // This matches Medieval Combat Simulator's "reach weapon in 3D space" intent
   return horizontalFt <= maxReachFt && verticalFt <= maxReachFt;
 }
 
@@ -115,7 +115,7 @@ export function validateFlexibleWeaponReach(attacker, target, weapon, attackerPo
   const verticalFt = Math.abs(targetAltitude - attackerAltitude);
   const effectiveDistance = calculate3DDistance(attackerPos, targetPos, attackerAltitude, targetAltitude);
   
-  // Check if within reach (using simplified Palladium-style check)
+  // Check if within reach (using simplified Medieval Combat Simulator-style check)
   const withinReach = horizontalFt <= maxReachFt && verticalFt <= maxReachFt;
   
   let reason;

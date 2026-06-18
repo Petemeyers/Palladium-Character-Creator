@@ -1,0 +1,73 @@
+export const PROFESSIONS = {
+  Knight: {
+    name: "Knight",
+    category: "Human Arms",
+    professionSkills: ["Swordsmanship", "Shield Use", "Horsemanship", "Armor Training"],
+    electiveSkills: { level1: 2, list: ["Tactics", "Athletics", "Command"] },
+    secondarySkills: { level1: 1, list: ["Heraldry", "Maintenance"] },
+    bonuses: { strength: 1, endurance: 1 },
+    combatMods: { damage: 1, initiative: 0, speedBonus: 0 },
+    abilities: ["Mounted training", "Shield discipline"],
+    notes: "A trained armored fighter.",
+  },
+  Squire: {
+    name: "Squire",
+    category: "Human Arms",
+    professionSkills: ["Arming Sword", "Shield Use", "Stable Work", "Field Service"],
+    electiveSkills: { level1: 2, list: ["Athletics", "First Aid", "Maintenance"] },
+    secondarySkills: { level1: 1, list: ["Animal Handling", "Cooking"] },
+    bonuses: { agility: 1 },
+    combatMods: { damage: 0, initiative: 1, speedBonus: 0 },
+    abilities: ["Quick learner"],
+    notes: "A developing retinue fighter.",
+  },
+  "Man-at-Arms": {
+    name: "Man-at-Arms",
+    category: "Human Arms",
+    professionSkills: ["Mace", "Shield Use", "Formation Fighting", "Armor Training"],
+    electiveSkills: { level1: 2, list: ["Tactics", "Athletics", "Intimidation"] },
+    secondarySkills: { level1: 1, list: ["Maintenance", "Guard Duty"] },
+    bonuses: { strength: 1 },
+    combatMods: { damage: 1, initiative: 0, speedBonus: 0 },
+    abilities: ["Formation discipline"],
+    notes: "A professional infantry fighter.",
+  },
+  Spearman: {
+    name: "Spearman",
+    category: "Human Arms",
+    professionSkills: ["Spear", "Formation Fighting", "Footwork"],
+    electiveSkills: { level1: 2, list: ["Athletics", "Tactics", "Marching"] },
+    secondarySkills: { level1: 1, list: ["Camp Work", "Maintenance"] },
+    bonuses: { endurance: 1 },
+    combatMods: { damage: 0, initiative: 1, speedBonus: 0 },
+    abilities: ["Reach control"],
+    notes: "A disciplined line fighter.",
+  },
+  Longbowman: {
+    name: "Longbowman",
+    category: "Human Arms",
+    professionSkills: ["Longbow", "Knife", "Fieldcraft"],
+    electiveSkills: { level1: 2, list: ["Athletics", "Observation", "Fletching"] },
+    secondarySkills: { level1: 1, list: ["Hunting", "Camp Work"] },
+    bonuses: { agility: 1 },
+    combatMods: { damage: 0, initiative: 1, speedBonus: 0 },
+    abilities: ["Ranged pressure"],
+    notes: "A trained bow fighter.",
+  },
+  Brigand: {
+    name: "Brigand",
+    category: "Human Arms",
+    professionSkills: ["Axe", "Ambush", "Brawling"],
+    electiveSkills: { level1: 2, list: ["Stealth", "Athletics", "Intimidation"] },
+    secondarySkills: { level1: 1, list: ["Foraging", "Streetwise"] },
+    bonuses: { agility: 1 },
+    combatMods: { damage: 0, initiative: 1, speedBonus: 0 },
+    abilities: ["Ambush pressure"],
+    notes: "A rough close-quarters fighter.",
+  },
+};
+
+export const ELECTIVE_SKILLS = ["Athletics", "Tactics", "First Aid", "Observation", "Animal Handling", "Maintenance", "Stealth"];
+export const SECONDARY_SKILLS = ["Camp Work", "Foraging", "Cooking", "Hunting", "Guard Duty", "Heraldry"];
+
+export default PROFESSIONS;

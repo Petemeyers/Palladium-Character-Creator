@@ -4,11 +4,11 @@ This document lists all files associated with lighting in the combat arena 3D sc
 
 ## Primary Lighting Files
 
-### 1. `src/utils/three/HexArena.js` ⭐ **MAIN FILE**
+### 1. `src/utils/three/HexArena.js` â­ **MAIN FILE**
 **Status:** Active - Contains the main combat arena lighting setup
 
 **Lighting Components:**
-- **HemisphereLight** - Sky/ground color (sky blue top, ground brown bottom)
+- **HemfocushereLight** - Sky/ground color (sky blue top, ground brown bottom)
   - Sky color: `0x87ceeb`
   - Ground color: `0x8b7355`
   - Intensity: `0.6`
@@ -103,7 +103,7 @@ This document lists all files associated with lighting in the combat arena 3D sc
 ### 5. `src/components/CombatMap3D.jsx`
 **Status:** Active - React component that uses mapScene3D
 
-**Role:** Wrapper component that initializes the 3D map scene (which includes lighting)
+**Role:** Wrastaminar component that initializes the 3D map scene (which includes lighting)
 - Uses `create3DMapScene()` from `mapScene3D.js`
 - Does not directly configure lighting, but uses the scene that has lighting
 
@@ -118,7 +118,7 @@ This document lists all files associated with lighting in the combat arena 3D sc
 - Uses `HexArena3D` component (which uses `HexArena.js`)
 - Does not directly configure lighting, but is the entry point for combat arena
 
-**Note:** Contains references to lighting effects in spell/ability system, but not 3D scene lighting
+**Note:** Contains references to lighting effects in technique/ability system, but not 3D scene lighting
 
 ---
 
@@ -126,12 +126,12 @@ This document lists all files associated with lighting in the combat arena 3D sc
 
 ```
 CombatPage.jsx
-  └── HexArena3D.jsx
-      └── src/utils/three/HexArena.js ⭐ (Main lighting setup)
-          └── mapBuilder3D.js (Creates meshes with shadow properties)
+  â””â”€â”€ HexArena3D.jsx
+      â””â”€â”€ src/utils/three/HexArena.js â­ (Main lighting setup)
+          â””â”€â”€ mapBuilder3D.js (Creates meshes with shadow properties)
 
 CombatMap3D.jsx
-  └── mapScene3D.js (Alternative lighting setup)
+  â””â”€â”€ mapScene3D.js (Alternative lighting setup)
 ```
 
 ---
@@ -144,7 +144,7 @@ CombatMap3D.jsx
 - **Alternative Scene:** `src/scene/mapScene3D.js` - Used by CombatMap3D component
 
 **Total Files with Lighting Code:** 4
-1. `src/utils/three/HexArena.js` ⭐ (Main - daylight lighting)
+1. `src/utils/three/HexArena.js` â­ (Main - daylight lighting)
 2. `src/utils/HexArena.js` (Legacy - basic lighting)
 3. `src/scene/mapScene3D.js` (Alternative scene)
 4. `src/components/TacticalMap3DBackground.jsx` (3D background)

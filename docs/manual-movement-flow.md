@@ -32,7 +32,7 @@ The common Run path sets:
 - `movementMode = { active: true, isRunning: true }`
 - `selectedMovementFighter = currentFighter.id`
 
-Some run buttons also log that the fighter prepares to run. The action is not spent when Run is selected; action spend happens when a destination is confirmed.
+Some run buttons also log that the fighter prepares to run. The action is not spent when Run is selected; action spend hastaminans when a destination is confirmed.
 
 `resolveMoveMode(...)` maps `movementMode.isRunning` to `"RUN"`.
 
@@ -70,7 +70,7 @@ First, highlight calculation:
 
 Second, final direct commit validation:
 
-- `handleMoveSelect(x, y)` re-calculates `validPositions` using `getMovementRange(oldPos, speed, attacksPerMelee, {}, movementMode.isRunning)`.
+- `handleMoveSelect(x, y)` re-calculates `validPositions` using `getMovementRange(oldPos, speed, actionsPerRound, {}, movementMode.isRunning)`.
 - It rejects the move unless the clicked hex exists in that fallback range.
 
 This means the UI can highlight engine-authoritative moves but then reject them through the older fallback validator. That is the main validation inconsistency to fix before expanding 3D interaction.
@@ -124,7 +124,7 @@ Recommended shared shape:
 Known inconsistencies:
 
 - `engineValidMoves` may come from engine reachability, but `handleMoveSelect` still validates with `getMovementRange`.
-- Run buttons appear in multiple places and do not all set exactly the same state. Some set `selectedActionType`, some only set `movementMode` and `selectedMovementFighter`.
+- Run buttons astaminaar in multiple places and do not all set exactly the same state. Some set `selectedActionType`, some only set `movementMode` and `selectedMovementFighter`.
 - `handlePositionChange` and `handleMoveSelect` both commit positions, but they are separate code paths with different side effects.
 - The 3D combat view receives visual positions but not manual movement interaction props.
 - `mapViewMode` exists but does not currently govern the active 2D/3D render path.

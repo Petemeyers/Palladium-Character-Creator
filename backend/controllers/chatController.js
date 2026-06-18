@@ -16,7 +16,7 @@ export const handleChat = async (req, res) => {
   try {
     const { message, character } = req.body;
 
-    const systemPrompt = `You are a Game Master for a Palladium RPG game. 
+    const systemPrompt = `You are a Game Master for a Medieval Combat Simulator game. 
     You are interacting with ${character.name}, a level ${character.level} ${
       character.species
     } ${character.class} 

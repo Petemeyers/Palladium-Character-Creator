@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Box, VStack, HStack, Text, Button, Heading, Badge, FormControl, FormLabel, Select } from '@chakra-ui/react';
 
 /**
- * CircleRechargePanel - Panel for recharging protection circles with PPE
+ * CircleRechargePanel - Panel for recharging protection circles with stamina
  * @param {Object} props
  * @param {Object} props.caster - Character recharging the circle
  * @param {Array} props.circles - Array of active protection circles
@@ -14,25 +14,25 @@ const CircleRechargePanel = ({
   onRecharge
 }) => {
   const [selectedCircleId, setSelectedCircleId] = useState(null);
-  const [ppeCost, setPpeCost] = useState(10);
+  const [staminaCost, setPpeCost] = useState(10);
 
   if (!caster) {
     return null;
   }
 
   const selectedCircle = circles.find(c => c.id === selectedCircleId);
-  const casterPPE = caster.PPE || 0;
+  const casterstamina = caster.stamina || 0;
 
   const handleRecharge = () => {
     if (!selectedCircle || !onRecharge) return;
 
-    if (casterPPE < ppeCost) {
-      alert(`Not enough PPE! Need ${ppeCost}, have ${casterPPE}`);
+    if (casterstamina < staminaCost) {
+      alert(`Not enough stamina! Need ${staminaCost}, have ${casterstamina}`);
       return;
     }
 
-    // Calculate extension based on PPE cost (roughly 1 melee per 2 PPE)
-    const meleesExtended = Math.floor(ppeCost / 2);
+    // Calculate extension based on stamina cost (roughly 1 melee per 2 stamina)
+    const meleesExtended = Math.floor(staminaCost / 2);
     
     const updatedCircle = {
       ...selectedCircle,
@@ -41,7 +41,7 @@ const CircleRechargePanel = ({
 
     const updatedCaster = {
       ...caster,
-      PPE: casterPPE - ppeCost
+      stamina: casterstamina - staminaCost
     };
 
     onRecharge(updatedCircle, updatedCaster);
@@ -67,11 +67,11 @@ const CircleRechargePanel = ({
     >
       <VStack align="stretch" spacing={4}>
         <Heading size="sm" color="green.600">
-          ✨ Recharge Protection Circle
+          âœ¨ Recharge Protection Circle
         </Heading>
 
         <Text fontSize="sm">
-          Caster: <strong>{caster.name}</strong> (PPE: {casterPPE})
+          Caster: <strong>{caster.name}</strong> (stamina: {casterstamina})
         </Text>
 
         <FormControl>
@@ -102,16 +102,16 @@ const CircleRechargePanel = ({
             </Box>
 
             <FormControl>
-              <FormLabel fontSize="sm">PPE to Spend</FormLabel>
+              <FormLabel fontSize="sm">stamina to Spend</FormLabel>
               <Select
-                value={ppeCost}
+                value={staminaCost}
                 onChange={(e) => setPpeCost(Number(e.target.value))}
                 size="sm"
               >
-                <option value={5}>5 PPE (+2 melees)</option>
-                <option value={10}>10 PPE (+5 melees)</option>
-                <option value={20}>20 PPE (+10 melees)</option>
-                <option value={30}>30 PPE (+15 melees)</option>
+                <option value={5}>5 stamina (+2 melees)</option>
+                <option value={10}>10 stamina (+5 melees)</option>
+                <option value={20}>20 stamina (+10 melees)</option>
+                <option value={30}>30 stamina (+15 melees)</option>
               </Select>
             </FormControl>
 
@@ -120,9 +120,9 @@ const CircleRechargePanel = ({
                 colorScheme="green"
                 size="sm"
                 onClick={handleRecharge}
-                isDisabled={casterPPE < ppeCost}
+                isDisabled={casterstamina < staminaCost}
               >
-                Recharge ({ppeCost} PPE)
+                Recharge ({staminaCost} stamina)
               </Button>
               <Button
                 variant="outline"

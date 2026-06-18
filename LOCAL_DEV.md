@@ -1,6 +1,6 @@
 # Local PC Game Server
 
-Use this mode when testing the Palladium Unity VR client from a Quest or another device on your LAN.
+Use this mode when testing the Medieval Combat Simulator Unity VR client from a Quest or another device on your LAN.
 
 ## 1. Start Local MongoDB
 
@@ -15,7 +15,7 @@ net start MongoDB
 The local backend expects:
 
 ```text
-mongodb://127.0.0.1:27017/palladium_rpg_local
+mongodb://127.0.0.1:27017/medieval_combat_simulator_local
 ```
 
 ## 2. Create Local Env
@@ -24,7 +24,7 @@ Create `.env.local` from `.env.local.example` and keep credentials out of it:
 
 ```text
 PORT=5000
-MONGODB_URI=mongodb://127.0.0.1:27017/palladium_rpg_local
+MONGODB_URI=mongodb://127.0.0.1:27017/medieval_combat_simulator_local
 CLIENT_ORIGIN=http://localhost:5173
 ```
 
@@ -84,7 +84,7 @@ The Quest and PC must be on the same LAN.
 
 When Windows prompts for Node.js network access, allow it on Private networks.
 
-If no prompt appears, open Windows Defender Firewall and allow Node.js through the firewall, or add an inbound TCP rule for port `5000` on Private networks.
+If no prompt astaminaars, open Windows Defender Firewall and allow Node.js through the firewall, or add an inbound TCP rule for port `5000` on Private networks.
 
 ## Useful Endpoints
 

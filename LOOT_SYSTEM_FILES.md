@@ -10,7 +10,7 @@ A loot window system has been created that opens when clicking on defeated chara
 - **Features**:
   - Displays inventory, weapons, and armor from defeated characters
   - Allows selecting individual items or taking all items
-  - Shows item details (damage, AR, weight, effects, etc.)
+  - Shows item details (damage, guardRating, weight, effects, etc.)
   - Color-coded item types (weapons=red, armor=blue, consumables=green)
   - Toast notifications when items are taken
   - Auto-closes when all loot is taken
@@ -49,7 +49,7 @@ A loot window system has been created that opens when clicking on defeated chara
 ### 3. **`src/utils/captureSystem.js`** (EXISTING)
 - **Line 64-99**: `lootPrisoner()` function
   - Extracts inventory, weapons, and armor from fighter
-  - Includes equipped weapons (like Fire Whip)
+  - Includes equistaminad weapons (like Fire Whip)
   - Returns loot object and updated fighter
   - Used by both loot button and loot window
 
@@ -101,13 +101,13 @@ The `LootWindow` component can be used in quest scenes by:
 
 ## Current Status
 
-✅ **Loot Window Component Created** (`src/components/LootWindow.jsx`)
-✅ **Integrated into Combat Arena** (`src/pages/CombatPage.jsx`)
-✅ **Click Detection for Defeated Characters** (useEffect hook)
-✅ **Loot Extraction** (uses existing `lootPrisoner()` function)
-✅ **Item Selection and Taking** (individual and bulk)
-✅ **State Management** (removes items from defeated fighters)
-✅ **Combat Log Integration** (logs loot actions)
+Ã¢Å“â€¦ **Loot Window Component Created** (`src/components/LootWindow.jsx`)
+Ã¢Å“â€¦ **Integrated into Combat Arena** (`src/pages/CombatPage.jsx`)
+Ã¢Å“â€¦ **Click Detection for Defeated Characters** (useEffect hook)
+Ã¢Å“â€¦ **Loot Extraction** (uses existing `lootPrisoner()` function)
+Ã¢Å“â€¦ **Item Selection and Taking** (individual and bulk)
+Ã¢Å“â€¦ **State Management** (removes items from defeated fighters)
+Ã¢Å“â€¦ **Combat Log Integration** (logs loot actions)
 
 ## Future Enhancements
 

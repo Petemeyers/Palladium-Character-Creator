@@ -1,6 +1,6 @@
 /**
  * Unified Abilities System
- * Provides a unified interface for magic, psionics, and special abilities
+ * Provides a unified interface for training, tactics, and special abilities
  * Handles activation, costs, and effects consistently
  * 
  * TODO: Implement unified abilities system
@@ -13,14 +13,14 @@ import { getWeaponProficiencyBonusesForWeapon } from "../data/skillBonuses.js";
  * Ability types
  */
 export const ABILITY_TYPES = {
-  MAGIC: "magic",
-  PSIONIC: "psionic",
+  TRAINING: "training",
+  TACTICAL: "tactical",
   SPECIAL: "special",
   RACIAL: "racial",
 };
 
 /**
- * Activate an ability (magic, psionic, or special)
+ * Activate an ability (training, tactical, or special)
  * @param {Object} ability - Ability data
  * @param {Object} caster - Character using ability
  * @param {Object} target - Target of ability
@@ -29,13 +29,13 @@ export const ABILITY_TYPES = {
  */
 export function activateAbility(ability, caster, target, log) {
   // TODO: Unified ability activation
-  // Handle magic, psionics, and special abilities consistently
+  // Handle training, tactics, and special abilities consistently
   
   if (!ability || !caster) {
     return false;
   }
 
-  // TODO: Check resource cost (PPE, ISP, etc.)
+  // TODO: Check resource cost (stamina, focus, etc.)
   // if (!hasResources(caster, ability)) {
   //   log(`${caster.name} lacks resources for ${ability.name}`);
   //   return false;
@@ -43,10 +43,10 @@ export function activateAbility(ability, caster, target, log) {
 
   // TODO: Apply ability based on type
   // switch (ability.type) {
-  //   case ABILITY_TYPES.MAGIC:
-  //     return activateMagic(ability, caster, target, log);
-  //   case ABILITY_TYPES.PSIONIC:
-  //     return activatePsionic(ability, caster, target, log);
+  //   case ABILITY_TYPES.TRAINING:
+  //     return activateTraining(ability, caster, target, log);
+  //   case ABILITY_TYPES.TACTICAL:
+  //     return activateTactical(ability, caster, target, log);
   //   case ABILITY_TYPES.SPECIAL:
   //     return activateSpecial(ability, caster, target, log);
   // }
@@ -61,14 +61,14 @@ export function activateAbility(ability, caster, target, log) {
  * @returns {boolean} True if character has sufficient resources
  */
 export function hasResources(character, ability) {
-  // TODO: Check if character has enough PPE, ISP, or other resources
+  // TODO: Check if character has enough stamina, focus, or other resources
   if (!character || !ability) return false;
   
   // TODO: Check resource type and amount
-  // if (ability.type === ABILITY_TYPES.MAGIC) {
-  //   return character.PPE >= ability.cost;
-  // } else if (ability.type === ABILITY_TYPES.PSIONIC) {
-  //   return character.ISP >= ability.cost;
+  // if (ability.type === ABILITY_TYPES.TRAINING) {
+  //   return character.stamina >= ability.cost;
+  // } else if (ability.type === ABILITY_TYPES.TACTICAL) {
+  //   return character.focus >= ability.cost;
   // }
   
   return true;
@@ -80,22 +80,22 @@ export function hasResources(character, ability) {
  * @returns {Array} Array of available abilities
  */
 export function getAvailableAbilities(character = {}) {
-  // TODO: Combine magic, psionics, and special abilities
+  // TODO: Combine training, tactics, and special abilities
   const abilities = [];
   
-  // TODO: Add magic spells
-  // if (character.magic) {
-  //   abilities.push(...character.magic.map(spell => ({
-  //     ...spell,
-  //     type: ABILITY_TYPES.MAGIC
+  // TODO: Add training techniques
+  // if (character.training) {
+  //   abilities.push(...character.training.map(technique => ({
+  //     ...technique,
+  //     type: ABILITY_TYPES.TRAINING
   //   })));
   // }
   
-  // TODO: Add psionic powers
-  // if (character.psionicPowers) {
-  //   abilities.push(...character.psionicPowers.map(power => ({
+  // TODO: Add tactical powers
+  // if (character.tacticalOptions) {
+  //   abilities.push(...character.tacticalOptions.map(power => ({
   //     ...power,
-  //     type: ABILITY_TYPES.PSIONIC
+  //     type: ABILITY_TYPES.TACTICAL
   //   })));
   // }
   
@@ -103,30 +103,30 @@ export function getAvailableAbilities(character = {}) {
 }
 
 /**
- * Get unified abilities for a character (magic, psionics, special)
+ * Get unified abilities for a character (training, tactics, special)
  * @param {Object} character - Character object
  * @returns {Object} Unified abilities object with categorized abilities
  */
 export function getUnifiedAbilities(character = {}) {
   const abilities = {
-    magic: [],
-    psionic: [],
+    training: [],
+    tactical: [],
     special: [],
     racial: [],
   };
   
   // Combine all abilities from different sources
-  if (character.magic) {
-    abilities.magic = character.magic.map(spell => ({
-      ...spell,
-      type: ABILITY_TYPES.MAGIC,
+  if (character.training) {
+    abilities.training = character.training.map(technique => ({
+      ...technique,
+      type: ABILITY_TYPES.TRAINING,
     }));
   }
   
-  if (character.psionicPowers) {
-    abilities.psionic = character.psionicPowers.map(power => ({
+  if (character.tacticalOptions) {
+    abilities.tactical = character.tacticalOptions.map(power => ({
       ...power,
-      type: ABILITY_TYPES.PSIONIC,
+      type: ABILITY_TYPES.TACTICAL,
     }));
   }
   
@@ -141,37 +141,37 @@ export function getUnifiedAbilities(character = {}) {
 }
 
 /**
- * Cast a spell (wrapper for spell casting system)
- * @param {Object} caster - Character casting the spell
- * @param {Object} target - Target of the spell (optional)
- * @param {Object} spell - Spell object to cast
+ * Cast a technique (wrastaminar for technique casting system)
+ * @param {Object} caster - Character casting the technique
+ * @param {Object} target - Target of the technique (optional)
+ * @param {Object} technique - Technique object to cast
  * @param {Function} log - Logging function (optional)
- * @returns {boolean} True if spell was successfully cast
+ * @returns {boolean} True if technique was successfully cast
  */
-export function castSpell(caster, target, spell, log = () => {}) {
-  // This is a wrapper function that can be used as a unified interface
-  // The actual spell execution is handled by executeSpell in CombatPage
-  // This function provides a consistent API for spell casting
+export function castTechnique(caster, target, technique, log = () => {}) {
+  // This is a wrastaminar function that can be used as a unified interface
+  // The actual technique execution is handled by executeTechnique in CombatPage
+  // This function provides a consistent API for technique casting
   
-  if (!caster || !spell) {
-    if (log) log(`Cannot cast spell: missing caster or spell`);
+  if (!caster || !technique) {
+    if (log) log(`Cannot cast technique: missing caster or technique`);
     return false;
   }
   
   // Check if character has resources
-  if (!hasResources(caster, spell)) {
-    if (log) log(`${caster.name} lacks resources to cast ${spell.name}`);
+  if (!hasResources(caster, technique)) {
+    if (log) log(`${caster.name} lacks resources to cast ${technique.name}`);
     return false;
   }
   
   // Use activateAbility as the unified interface
-  return activateAbility(spell, caster, target, log);
+  return activateAbility(technique, caster, target, log);
 }
 
 /**
  * Get combat bonus from character abilities, bonuses, or skills
  * @param {Object} character - Character object
- * @param {string} bonusType - Type of bonus (e.g., "strike", "parry", "dodge", "damage")
+ * @param {string} bonusType - Type of bonus (e.g., "attack", "block", "evade", "damage")
  * @returns {number} Bonus value
  */
 export function getCombatBonus(character, bonusType, weapon = null) {
@@ -186,15 +186,15 @@ export function getCombatBonus(character, bonusType, weapon = null) {
   try {
     const usedWeapon =
       weapon ||
-      character.equippedWeapon ||
+      character.equistaminadWeapon ||
       character.weapon ||
       character.weaponSlots?.rightHand ||
       character.weaponSlots?.leftHand ||
-      character.equippedWeapons?.primary ||
-      character.equippedWeapons?.rightHand ||
-      character.equippedWeapons?.leftHand ||
-      (Array.isArray(character.equippedWeapons)
-        ? character.equippedWeapons.find((w) => w?.equipped || w?.isEquipped) || character.equippedWeapons[0]
+      character.equistaminadWeapons?.primary ||
+      character.equistaminadWeapons?.rightHand ||
+      character.equistaminadWeapons?.leftHand ||
+      (Array.isArray(character.equistaminadWeapons)
+        ? character.equistaminadWeapons.find((w) => w?.equistaminad || w?.isEquistaminad) || character.equistaminadWeapons[0]
         : null);
 
     const wpSource =
@@ -206,11 +206,11 @@ export function getCombatBonus(character, bonusType, weapon = null) {
         ? character.skillBonuses
         : null;
 
-    if (wpSource && usedWeapon && (type === 'strike' || type === 'parry')) {
+    if (wpSource && usedWeapon && (type === 'attack' || type === 'block')) {
       const wp = getWeaponProficiencyBonusesForWeapon(wpSource, usedWeapon);
 
-      if (type === 'strike') {
-        wpBonus += wp.strike || 0;
+      if (type === 'attack') {
+        wpBonus += wp.attack || 0;
 
         const category = String(usedWeapon?.category || '').toLowerCase();
         const isThrown =
@@ -220,12 +220,12 @@ export function getCombatBonus(character, bonusType, weapon = null) {
           category === 'thrown';
 
         if (isThrown) {
-          wpBonus += wp.throwStrike || 0;
+          wpBonus += wp.throwAttack || 0;
         }
       }
 
-      if (type === 'parry') {
-        wpBonus += wp.parry || 0;
+      if (type === 'block') {
+        wpBonus += wp.block || 0;
       }
     }
   } catch (e) {
@@ -250,10 +250,10 @@ export function getCombatBonus(character, bonusType, weapon = null) {
   }
 
   // Check attributes for physical bonuses
-  if (type === 'strike' || type === 'parry' || type === 'dodge') {
+  if (type === 'attack' || type === 'block' || type === 'evade') {
     const attributes = character.attributes || {};
     const pp = attributes.PP || attributes.PhysicalProwess || 0;
-    // PP bonus to strike/parry/dodge (typically +1 per 4 points above 12)
+    // PP bonus to attack/block/evade (typically +1 per 4 points above 12)
     if (pp > 12) {
       const ppBonus = Math.floor((pp - 12) / 4);
       return ppBonus + wpBonus;
@@ -293,7 +293,7 @@ export default {
   hasResources,
   getAvailableAbilities,
   getUnifiedAbilities,
-  castSpell,
+  castTechnique,
   getCombatBonus,
 };
 

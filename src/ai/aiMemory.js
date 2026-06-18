@@ -1,7 +1,7 @@
 const makeKey = (actorId, action) => {
   const actionName =
-    action.spell?.name ||
-    action.psionic?.name ||
+    action.technique?.name ||
+    action.tactical?.name ||
     action.skillName ||
     action.name ||
     action.type;

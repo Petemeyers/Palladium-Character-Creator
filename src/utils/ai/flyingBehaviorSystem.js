@@ -2,8 +2,8 @@
  * Generic Flying Behavior System
  *
  * Provides:
- * - isFlyingCreature: helper to decide if a creature should be treated as a flier
- * - runFlyingTurn: optional per-turn behavior for flying creatures
+ * - isFlyingCombatant: helper to decide if a combatant should be treated as a flier
+ * - runFlyingTurn: optional per-turn behavior for flying combatants
  *
  * IMPORTANT:
  * This module is intentionally pure JS (no JSX), so Vite's import analysis
@@ -25,22 +25,22 @@ import { findFoodItem, consumeItem } from "../consumptionSystem";
 import { canTargetForAction } from "../factionDisposition.js";
 
 /**
- * Determine if a creature should be treated as a flying creature for AI purposes.
- * @param {Object} creature
- * @param {Function} canFlyFn - function that checks if a creature can fly (from abilitySystem)
+ * Determine if a combatant should be treated as a flying combatant for AI purposes.
+ * @param {Object} combatant
+ * @param {Function} canFlyFn - function that checks if a combatant can fly (from abilitySystem)
  * @returns {boolean}
  */
-export function isFlyingCreature(creature, canFlyFn) {
-  if (!creature) return false;
+export function isFlyingCombatant(combatant, canFlyFn) {
+  if (!combatant) return false;
 
   // Use the canonical canFly check if provided
-  if (typeof canFlyFn === "function" && canFlyFn(creature)) {
+  if (typeof canFlyFn === "function" && canFlyFn(combatant)) {
     return true;
   }
 
   // Fallback on tags / metadata, just in case
-  const tags = Array.isArray(creature.tags)
-    ? creature.tags.map((t) => String(t).toLowerCase())
+  const tags = Array.isArray(combatant.tags)
+    ? combatant.tags.map((t) => String(t).toLowerCase())
     : [];
 
   if (tags.includes("flying") || tags.includes("flyer") || tags.includes("bird")) {
@@ -51,13 +51,13 @@ export function isFlyingCreature(creature, canFlyFn) {
 }
 
 /**
- * Run generic flying behavior for a creature.
+ * Run generic flying behavior for a combatant.
  *
  * This should ONLY return true if it actually spends an action
  * (landing, resting, scavenging, etc.). If it returns false, the main
  * enemy AI continues as normal.
  *
- * @param {Object} flier - the flying creature
+ * @param {Object} flier - the flying combatant
  * @param {Object} ctx - context from runEnemyTurnAI
  * @returns {boolean} true if this function handled the turn
  */
@@ -80,12 +80,12 @@ export function runFlyingTurn(flier, ctx) {
     typeof canFlyFn === "function" ? canFlyFn(flier) : false;
   const airborne = isFlying(flier);
 
-  // If this creature isn't a flier and isn't in the air, do nothing.
+  // If this combatant isn't a flier and isn't in the air, do nothing.
   if (!canFly && !airborne) return false;
 
-  const hasActions = (flier.remainingAttacks ?? 0) > 0;
+  const hasActions = (flier.remainingActions ?? 0) > 0;
 
-  // 1) Landing / resting logic – let fatigue system decide when to land
+  // 1) Landing / resting logic â€“ let fatigue system decide when to land
   if (airborne && shouldLandToRest(flier) && hasActions) {
     // Land in place (keep same x,y, set altitude to 0)
     setFighters((prev) =>
@@ -105,7 +105,7 @@ export function runFlyingTurn(flier, ctx) {
         f.id === flier.id
           ? {
               ...f,
-              remainingAttacks: Math.max(0, (f.remainingAttacks ?? 1) - 1),
+              remainingActions: Math.max(0, (f.remainingActions ?? 1) - 1),
             }
           : f
       )
@@ -113,14 +113,14 @@ export function runFlyingTurn(flier, ctx) {
 
     if (typeof addLog === "function") {
       addLog(
-        `🕊️ ${flier.name} lands to rest and recover stamina.`,
+        `ðŸ•Šï¸ ${flier.name} lands to rest and recover stamina.`,
         "info"
       );
     }
     return true;
   }
 
-  // 2) Grounded but exhausted – just rest to recover (no movement)
+  // 2) Grounded but exhausted â€“ just rest to recover (no movement)
   if (!airborne && shouldLandToRest(flier) && hasActions) {
     recoverStamina(flier, "FULL_REST", 1);
 
@@ -129,7 +129,7 @@ export function runFlyingTurn(flier, ctx) {
         f.id === flier.id
           ? {
               ...f,
-              remainingAttacks: Math.max(0, (f.remainingAttacks ?? 1) - 1),
+              remainingActions: Math.max(0, (f.remainingActions ?? 1) - 1),
             }
           : f
       )
@@ -137,7 +137,7 @@ export function runFlyingTurn(flier, ctx) {
 
     if (typeof addLog === "function") {
       addLog(
-        `🕊️ ${flier.name} rests and recovers stamina.`,
+        `ðŸ•Šï¸ ${flier.name} rests and recovers stamina.`,
         "info"
       );
     }
@@ -169,9 +169,9 @@ export function runFlyingTurn(flier, ctx) {
             f.id === flier.id
               ? {
                   ...f,
-                  remainingAttacks: Math.max(
+                  remainingActions: Math.max(
                     0,
-                    (f.remainingAttacks ?? 1) - 1
+                    (f.remainingActions ?? 1) - 1
                   ),
                 }
               : f
@@ -202,9 +202,9 @@ export function runFlyingTurn(flier, ctx) {
             f.id === flier.id
               ? {
                   ...f,
-                  remainingAttacks: Math.max(
+                  remainingActions: Math.max(
                     0,
-                    (f.remainingAttacks ?? 1) - 1
+                    (f.remainingActions ?? 1) - 1
                   ),
                 }
               : f
@@ -213,7 +213,7 @@ export function runFlyingTurn(flier, ctx) {
 
         if (typeof addLog === "function") {
           addLog(
-            `🕊️ ${flier.name} glides toward a corpse to scavenge.`,
+            `ðŸ•Šï¸ ${flier.name} glides toward a corpse to scavenge.`,
             "info"
           );
         }
@@ -222,7 +222,7 @@ export function runFlyingTurn(flier, ctx) {
     }
   }
 
-  // 4) Simple grounded eating behavior – only when not flying
+  // 4) Simple grounded eating behavior â€“ only when not flying
   if (!airborne && hasActions) {
     const foodItem = findFoodItem(flier);
     if (foodItem) {
@@ -233,9 +233,9 @@ export function runFlyingTurn(flier, ctx) {
           f.id === flier.id
             ? {
                 ...f,
-                remainingAttacks: Math.max(
+                remainingActions: Math.max(
                   0,
-                  (f.remainingAttacks ?? 1) - 1
+                  (f.remainingActions ?? 1) - 1
                 ),
               }
             : f
@@ -345,9 +345,9 @@ export function runFlyingTurn(flier, ctx) {
           
           if (typeof addLog === "function") {
             if (isBird) {
-              addLog(`🦅 ${flier.name} flies away from the battle.`, "info");
+              addLog(`ðŸ¦… ${flier.name} flies away from the battle.`, "info");
             } else {
-              addLog(`🏃 ${flier.name} has fled the battlefield!`, "warning");
+              addLog(`ðŸƒ ${flier.name} has fled the battlefield!`, "warning");
             }
           }
 
@@ -377,7 +377,7 @@ export function runFlyingTurn(flier, ctx) {
             f.id === flier.id
               ? {
                   ...f,
-                  remainingAttacks: Math.max(0, (f.remainingAttacks ?? 1) - 1),
+                  remainingActions: Math.max(0, (f.remainingActions ?? 1) - 1),
                 }
               : f
           )
@@ -385,7 +385,7 @@ export function runFlyingTurn(flier, ctx) {
 
         if (typeof addLog === "function") {
           addLog(
-            `🦅 ${flier.name} circles overhead, maintaining altitude.`,
+            `ðŸ¦… ${flier.name} circles overhead, maintaining altitude.`,
             "info"
           );
         }
@@ -400,17 +400,17 @@ export function runFlyingTurn(flier, ctx) {
 }
 
 /**
- * Move a flying creature through the air to a target hex.
- * This is a helper function used by CombatPage.jsx for player-controlled flight.
- * @param {Object} flier - The flying creature
+ * Move a flying combatant through the air to a target hex.
+ * This is a helper function used by CombatPage.jsx for player-conchampioned flight.
+ * @param {Object} flier - The flying combatant
  * @param {Object} targetHex - Target hex coordinates
- * @param {Object} context - Context with gameState, log, moveCreatureOnMap
+ * @param {Object} context - Context with gameState, log, moveCombatantOnMap
  * @param {Object} options - Optional movement options
  * @returns {boolean} true if movement was successful
  */
-export function moveFlyingCreature(flier, targetHex, context, options = {}) {
-  const { gameState, log, moveCreatureOnMap } = context;
-  if (!flier || !targetHex || !moveCreatureOnMap) return false;
+export function moveFlyingCombatant(flier, targetHex, context, options = {}) {
+  const { gameState, log, moveCombatantOnMap } = context;
+  if (!flier || !targetHex || !moveCombatantOnMap) return false;
 
   const positions = gameState?.positions || context.positions || {};
   const from = positions[flier.id];
@@ -426,7 +426,7 @@ export function moveFlyingCreature(flier, targetHex, context, options = {}) {
   }
 
   const movementType = options.movementType || "FLY";
-  moveCreatureOnMap(flier, targetHex, {
+  moveCombatantOnMap(flier, targetHex, {
     movementType,
     mode: "FLY",
     altitudeFeet: flier.altitudeFeet,
@@ -435,22 +435,22 @@ export function moveFlyingCreature(flier, targetHex, context, options = {}) {
   const distFt = options.distanceFt ?? 0;
   if (typeof log === "function") {
     log(
-      `🪽 ${flier.name} moves ${Math.round(distFt)}ft through the air (${movementType}) to (${targetHex.x || targetHex.q}, ${targetHex.y || targetHex.r}).`
+      `ðŸª½ ${flier.name} moves ${Math.round(distFt)}ft through the air (${movementType}) to (${targetHex.x || targetHex.q}, ${targetHex.y || targetHex.r}).`
     );
   }
   return true;
 }
 
 /**
- * Perform a dive attack for a flying creature.
- * This is a helper function used by CombatPage.jsx for player-controlled dive attacks.
- * @param {Object} flier - The flying creature
+ * Perform a dive attack for a flying combatant.
+ * This is a helper function used by CombatPage.jsx for player-conchampioned dive attacks.
+ * @param {Object} flier - The flying combatant
  * @param {Object} target - The target to attack
- * @param {Object} context - Context with gameState, log, moveCreatureOnMap, performMeleeAttack
+ * @param {Object} context - Context with gameState, log, moveCombatantOnMap, performMeleeAttack
  * @returns {boolean} true if dive attack was initiated
  */
 export function performDiveAttack(flier, target, context) {
-  const { gameState, log, moveCreatureOnMap, performMeleeAttack } = context;
+  const { gameState, log, moveCombatantOnMap, performMeleeAttack } = context;
   if (!flier || !target || !performMeleeAttack) return false;
 
   const positions = gameState?.positions || context.positions || {};
@@ -481,7 +481,7 @@ export function performDiveAttack(flier, target, context) {
 
   if (typeof log === "function") {
     log(
-      `🦅 ${flier.name} dives from ${previousAltitude || 0}ft to ${newAltitude}ft to attack ${target.name}.`
+      `ðŸ¦… ${flier.name} dives from ${previousAltitude || 0}ft to ${newAltitude}ft to attack ${target.name}.`
     );
   }
 
@@ -490,8 +490,8 @@ export function performDiveAttack(flier, target, context) {
   const distFt = calculateDistanceFn ? calculateDistanceFn(from, to) : 0;
   const isAdjacentOrSame = distFt <= 5.5 || (from.x === to.x && from.y === to.y);
 
-  if (!isAdjacentOrSame && moveCreatureOnMap) {
-    moveFlyingCreature(flier, to, { gameState, log, moveCreatureOnMap, positions }, {
+  if (!isAdjacentOrSame && moveCombatantOnMap) {
+    moveFlyingCombatant(flier, to, { gameState, log, moveCombatantOnMap, positions }, {
       movementType: "FLY_SPRINT",
       altitudeFeet: newAltitude,
       distanceFt: distFt,
@@ -499,9 +499,9 @@ export function performDiveAttack(flier, target, context) {
   }
 
   performMeleeAttack(flier, target, {
-    attackType: "Strike",
+    attackType: "Attack",
     source: "DIVE_ATTACK",
-    attackBonus: flier.diveBonusToStrike ?? 2,
+    attackBonus: flier.diveBonusToAttack ?? 2,
   });
   return true;
 }

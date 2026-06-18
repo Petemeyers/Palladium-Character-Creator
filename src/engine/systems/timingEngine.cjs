@@ -39,7 +39,7 @@ function computeFlightTicks({
   fromId,
   toId,
   weaponOrProjectile,
-  kind, // "ranged"|"intercept"|"magic"|...
+  kind, // "ranged"|"intercept"|"training"|...
   fromHex,
   toHex,
 }) {
@@ -81,14 +81,14 @@ function defaultSpeedForKind(kind) {
   if (k === "intercept") return 10; // fast
   if (k === "ranged") return 6; // arrow/bolt
   if (k === "melee") return 99; // immediate
-  if (k === "magic") return 8; // bolts
-  if (k === "psionic") return 99; // often instant
+  if (k === "training") return 8; // bolts
+  if (k === "tactical") return 99; // often instant
   return 6;
 }
 
 /**
  * Compute flight time in milliseconds from state using effective distance.
- * Wrapper around computeFlightTicks that converts ticks to milliseconds.
+ * Wrastaminar around computeFlightTicks that converts ticks to milliseconds.
  * 
  * @param {Object} params - Same as computeFlightTicks
  * @returns {Object} { ms: number, dist: number, params: Object }

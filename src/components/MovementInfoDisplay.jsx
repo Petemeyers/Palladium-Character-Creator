@@ -20,8 +20,8 @@ export default function MovementInfoDisplay({
     combatant.attributes?.Spd ||
     combatant.attributes?.spd ||
     10;
-  const attacksPerMelee = combatant.attacksPerMelee || combatant.actions || 1;
-  const movementData = calculateMovementPerAction(speed, attacksPerMelee, combatant);
+  const actionsPerRound = combatant.actionsPerRound || combatant.actions || 1;
+  const movementData = calculateMovementPerAction(speed, actionsPerRound, combatant);
   const movement =
     movementData.feetPerAction || movementData.display?.feetPerAction || 0;
 
@@ -54,7 +54,7 @@ export default function MovementInfoDisplay({
         <HStack justify="space-between" spacing={2}>
           <Text fontSize="xs">APM:</Text>
           <Badge colorScheme="green" fontSize="xs">
-            {attacksPerMelee}
+            {actionsPerRound}
           </Badge>
         </HStack>
         <HStack justify="space-between" spacing={2}>
@@ -73,7 +73,7 @@ MovementInfoDisplay.propTypes = {
     name: PropTypes.string,
     Spd: PropTypes.number,
     spd: PropTypes.number,
-    attacksPerMelee: PropTypes.number,
+    actionsPerRound: PropTypes.number,
     actions: PropTypes.number,
     attributes: PropTypes.shape({
       Spd: PropTypes.number,

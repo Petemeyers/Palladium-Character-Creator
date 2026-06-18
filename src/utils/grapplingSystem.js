@@ -1,5 +1,5 @@
 /**
- * Palladium Fantasy RPG - Grappling System
+ * Medieval Combat Simulator - Grappling System
  *
  * Comprehensive grappling and wrestling mechanics for close combat.
  * Integrates with Combat Fatigue System (grappling costs 2x stamina).
@@ -48,14 +48,14 @@ export function initializeGrappleState(character) {
     state: GRAPPLE_STATES.NEUTRAL,
     opponent: null, // ID of opponent being grappled with
     penalties: {
-      strike: 0,
-      parry: 0,
-      dodge: 0,
+      attack: 0,
+      block: 0,
+      evade: 0,
     },
     canUseLongWeapons: true, // Long weapons unusable when grappled
     roundsInGrapple: 0, // Consecutive rounds in grapple
     // Positional tracking for grapple
-    sharedHex: null, // hex where the clinch is happening
+    sharedHex: null, // hex where the clinch is hastaminaning
     attackerOriginHex: null, // where the grappler came from
     isAttacker: false, // true for the one who initiated the grapple
     hasGrappleAdvantage: false, // one-time bonus flag for reversal
@@ -85,7 +85,7 @@ export function attemptGrapple(attacker, defender, rollDice = null, attackerPos 
     };
   }
 
-  // Get P.P. bonuses for finesse
+  // Get agility bonuses for finesse
   const attackerPP = attacker.attributes?.PP || attacker.PP || 10;
   const defenderPP = defender.attributes?.PP || defender.PP || 10;
 
@@ -93,10 +93,10 @@ export function attemptGrapple(attacker, defender, rollDice = null, attackerPos 
   const defenderPPBonus = Math.floor((defenderPP - 10) / 2);
 
   // Get hand-to-hand bonuses
-  const attackerStrikeBonus =
-    attacker.bonuses?.strike || attacker.handToHand?.strikeBonus || 0;
-  const defenderParryBonus =
-    defender.bonuses?.parry || defender.handToHand?.parryBonus || 0;
+  const attackerAttackBonus =
+    attacker.bonuses?.attack || attacker.handToHand?.attackBonus || 0;
+  const defenderBlockBonus =
+    defender.bonuses?.block || defender.handToHand?.blockBonus || 0;
 
   // Get size/strength modifiers
   const sizeModifiers = getCombinedGrappleModifiers(attacker, defender);
@@ -134,9 +134,9 @@ export function attemptGrapple(attacker, defender, rollDice = null, attackerPos 
       if (grappleResult.success) {
         // Apply penalties to defender
         grappleResult.defender.grappleState.penalties = {
-          strike: 0,
-          parry: -3,
-          dodge: -2,
+          attack: 0,
+          block: -3,
+          evade: -2,
         };
         grappleResult.defender.grappleState.canUseLongWeapons = false;
 
@@ -167,7 +167,7 @@ export function attemptGrapple(attacker, defender, rollDice = null, attackerPos 
     }
   }
 
-  // Roll opposed strike vs parry with size/strength modifiers
+  // Roll opposed attack vs block with size/strength modifiers
   const rollFn = rollDice || (() => Math.floor(Math.random() * 20) + 1);
   const naturalAttackRoll = rollFn();
   const naturalDefendRoll = rollFn();
@@ -176,29 +176,29 @@ export function attemptGrapple(attacker, defender, rollDice = null, attackerPos 
     : Math.trunc((sizeModifiers.psDiff || 0) / 5);
   const attackerPSDiffBonus = Math.max(0, psStepMod);
   const defenderPSDiffBonus = Math.max(0, -psStepMod);
-  const attackerSizeStrikeBonus = sizeModifiers.strikeBonus || 0;
-  const defenderSizeParryBonus = sizeModifiers.defenderParryPenalty || 0;
+  const attackerSizeAttackBonus = sizeModifiers.attackBonus || 0;
+  const defenderSizeBlockBonus = sizeModifiers.defenderBlockPenalty || 0;
   const attackRoll =
     naturalAttackRoll +
     attackerPPBonus +
-    attackerStrikeBonus +
-    attackerSizeStrikeBonus +
+    attackerAttackBonus +
+    attackerSizeAttackBonus +
     attackerPSDiffBonus;
   const defendRoll =
     naturalDefendRoll +
     defenderPPBonus +
-    defenderParryBonus +
-    defenderSizeParryBonus +
+    defenderBlockBonus +
+    defenderSizeBlockBonus +
     defenderPSDiffBonus;
   const rollBreakdown = {
     naturalAttackRoll,
     naturalDefendRoll,
     attackerPPBonus,
     defenderPPBonus,
-    attackerStrikeBonus,
-    defenderParryBonus,
-    attackerSizeStrikeBonus,
-    defenderSizeParryBonus,
+    attackerAttackBonus,
+    defenderBlockBonus,
+    attackerSizeAttackBonus,
+    defenderSizeBlockBonus,
     psStepMod,
     attackerPSDiffBonus,
     defenderPSDiffBonus,
@@ -236,16 +236,16 @@ export function attemptGrapple(attacker, defender, rollDice = null, attackerPos 
         grappleResult.defender.grappleState.sizeDelta = sizeOutcome.sizeDelta;
         grappleResult.defender.grappleState.dangerReversalRisk = true;
         grappleResult.defender.grappleState.penalties = {
-          strike: 0,
-          parry: -1,
-          dodge: -1,
+          attack: 0,
+          block: -1,
+          evade: -1,
         };
         grappleResult.defender.grappleState.canUseLongWeapons = true;
       } else {
         grappleResult.defender.grappleState.penalties = {
-          strike: 0,
-          parry: -3,
-          dodge: -2,
+          attack: 0,
+          block: -3,
+          evade: -2,
         };
         grappleResult.defender.grappleState.canUseLongWeapons = false;
       }
@@ -357,7 +357,7 @@ export function maintainGrapple(attacker, defender, rollDice = null) {
     defender.grappleState.state = GRAPPLE_STATES.NEUTRAL;
     defender.grappleState.opponent = null;
     defender.grappleState.roundsInGrapple = 0;
-    defender.grappleState.penalties = { strike: 0, parry: 0, dodge: 0 };
+    defender.grappleState.penalties = { attack: 0, block: 0, evade: 0 };
     defender.grappleState.canUseLongWeapons = true;
 
     return {
@@ -419,13 +419,13 @@ export function performTakedown(attacker, defender, rollDice = null) {
   // Roll for takedown (target 15+) with size modifiers
   const rollFn = rollDice || (() => Math.floor(Math.random() * 20) + 1);
   const takedownModifier =
-    sizeModifiers.attackerStrikeBonus ??
-    sizeModifiers.strikeBonus ??
+    sizeModifiers.attackerAttackBonus ??
+    sizeModifiers.attackBonus ??
     sizeModifiers.modifier ??
     0;
   const sizeModifier =
-    sizeModifiers.attackerStrikeBonus ??
-    sizeModifiers.strikeBonus ??
+    sizeModifiers.attackerAttackBonus ??
+    sizeModifiers.attackBonus ??
     0;
   const leverageModifier =
     takedownModifier - sizeModifier;
@@ -453,9 +453,9 @@ export function performTakedown(attacker, defender, rollDice = null) {
 
     // Enhanced penalties for ground position
     defender.grappleState.penalties = {
-      strike: -2,
-      parry: -3,
-      dodge: -3,
+      attack: -2,
+      block: -3,
+      evade: -3,
     };
     defender.grappleState.canUseLongWeapons = false;
 
@@ -515,33 +515,33 @@ export function hasDeathBlow(attacker) {
   return false;
 }
 
-function hasEquippedArmor(fighter) {
+function hasEquistaminadArmor(fighter) {
   if (!fighter) return false;
   const armorName = String(
-    fighter.equippedArmor?.name ||
-      fighter.equipped?.chest?.name ||
+    fighter.equistaminadArmor?.name ||
+      fighter.equistaminad?.chest?.name ||
       fighter.armor?.name ||
       fighter.wornArmor?.name ||
       fighter.armorName ||
       ""
   ).toLowerCase();
-  const armorSDC = Number(
-    fighter.equippedArmor?.currentSDC ??
-      fighter.equippedArmor?.sdc ??
-      fighter.equipped?.chest?.currentSDC ??
-      fighter.equipped?.chest?.sdc ??
+  const armorarmorDurability = Number(
+    fighter.equistaminadArmor?.currentarmorDurability ??
+      fighter.equistaminadArmor?.armorDurability ??
+      fighter.equistaminad?.chest?.currentarmorDurability ??
+      fighter.equistaminad?.chest?.armorDurability ??
       0
   );
-  const armorAR = Number(fighter.AR ?? fighter.ar ?? fighter.armorRating ?? 0);
+  const armorGuardRating = Number(fighter.guardRating ?? fighter.guardRating ?? fighter.guardRating ?? 0);
   return (
-    armorSDC > 0 ||
-    armorAR > 10 ||
+    armorarmorDurability > 0 ||
+    armorGuardRating > 10 ||
     Boolean(armorName && armorName !== "none" && armorName !== "unarmored")
   );
 }
 
 /**
- * Ground strike (dagger or unarmed attack while grappling)
+ * Ground attack (dagger or unarmed attack while grappling)
  * Improved version with safer crit ranges and armor weak-point logic
  * @param {Object} attacker - Character attacking
  * @param {Object} defender - Character being attacked
@@ -549,7 +549,7 @@ function hasEquippedArmor(fighter) {
  * @param {Function} rollDice - Dice rolling function
  * @returns {Object} Result object with hit status and damage
  */
-export function groundStrike(
+export function groundAttack(
   attacker,
   defender,
   weapon = null,
@@ -559,7 +559,7 @@ export function groundStrike(
     return {
       success: false,
       hit: false,
-      reason: "Attacker or defender missing for ground strike.",
+      reason: "Attacker or defender missing for ground attack.",
     };
   }
 
@@ -585,11 +585,11 @@ export function groundStrike(
     return {
       success: false,
       hit: false,
-      reason: `${attacker.name} must be in a clinch or on the ground with ${defender.name} to attempt a ground strike.`,
+      reason: `${attacker.name} must be in a clinch or on the ground with ${defender.name} to attempt a ground attack.`,
     };
   }
 
-  // Only short weapons, natural weapons, or unarmed strikes work in a grapple.
+  // Only short weapons, natural weapons, or unarmed attacks work in a grapple.
   if (weapon && !isWeaponGrappleSuitable(weapon)) {
     return {
       success: false,
@@ -608,8 +608,8 @@ export function groundStrike(
   const attackerPP = attacker.attributes?.PP || attacker.PP || 10;
   const attackerPPBonus = Math.floor((attackerPP - 10) / 2);
 
-  const strikeBonus =
-    attacker.bonuses?.strike || attacker.handToHand?.strikeBonus || 0;
+  const attackBonus =
+    attacker.bonuses?.attack || attacker.handToHand?.attackBonus || 0;
 
   // Dagger/knife is slightly better in a grapple, but not insane.
   const weaponName = String(weapon?.name || weapon?.type || "").toLowerCase();
@@ -621,10 +621,10 @@ export function groundStrike(
   const rollFn = rollDice || (() => Math.floor(Math.random() * 20) + 1);
   const naturalRoll = rollFn();
 
-  const attackRoll = naturalRoll + attackerPPBonus + strikeBonus + daggerBonus;
-  const targetAR = Number(defender.AR ?? defender.ar ?? defender.armorRating ?? 12) || 12;
-  const hitMargin = attackRoll - targetAR;
-  const defenderHasArmor = hasEquippedArmor(defender);
+  const attackRoll = naturalRoll + attackerPPBonus + attackBonus + daggerBonus;
+  const targetGuardRating = Number(defender.guardRating ?? defender.guardRating ?? defender.guardRating ?? 12) || 12;
+  const hitMargin = attackRoll - targetGuardRating;
+  const defenderHasArmor = hasEquistaminadArmor(defender);
   const attackerHasControl =
     attackerGrapple.hasGrappleAdvantage === true ||
     attackerGrapple.state === GRAPPLE_STATES.GROUND ||
@@ -635,7 +635,7 @@ export function groundStrike(
   // Defender also struggles and loses a bit of stamina
   drainStamina(defender, STAMINA_COSTS.GRAPPLING, 0.5);
 
-  // Dagger crit range: 19–20, otherwise 20
+  // Dagger crit range: 19Ã¢â‚¬â€œ20, otherwise 20
   const daggerCritRange = isCloseBlade ? 19 : 20;
   const isCritical = naturalRoll >= daggerCritRange;
   const attackerHasDeathBlow = hasDeathBlow(attacker);
@@ -651,7 +651,7 @@ export function groundStrike(
       hit: true,
       critical: true,
       deathBlow: true,
-      message: `💀 DEATH BLOW! ${attacker.name} finds a fatal opening in ${defender.name}'s defenses!`,
+      message: `Ã°Å¸â€™â‚¬ DEATH BLOW! ${attacker.name} finds a fatal opening in ${defender.name}'s defenses!`,
       damage: defender.currentHP || defender.hp || 999,
       attackRoll,
       naturalRoll,
@@ -665,13 +665,13 @@ export function groundStrike(
     isCloseBlade &&
     (naturalRoll === 20 || hitMargin >= 8);
 
-  // 2) Critical/high-margin close blade = "weak point in armor" strike
+  // 2) Critical/high-margin close blade = "weak point in armor" attack
   if (isCritical) {
     const damageRoll = rollDamage(baseDamageFormula);
     const totalDamage = damageRoll * 2 + psBonus;
     const criticalMessage = canExploitWeakSpot
-      ? `🗡️ ${attacker.name} slips inside the armor with ${weapon?.name || "a dagger"} for ${totalDamage} damage!`
-      : `${attacker.name} lands a close-quarters critical strike on ${defender.name} for ${totalDamage} damage!`;
+      ? `Ã°Å¸â€”Â¡Ã¯Â¸Â ${attacker.name} slips inside the armor with ${weapon?.name || "a dagger"} for ${totalDamage} damage!`
+      : `${attacker.name} lands a close-quarters critical attack on ${defender.name} for ${totalDamage} damage!`;
 
     return {
       success: true,
@@ -682,7 +682,7 @@ export function groundStrike(
       damage: totalDamage,
       attackRoll,
       naturalRoll,
-      weaponName: weapon?.name || "unarmed strike",
+      weaponName: weapon?.name || "unarmed attack",
       ignoresArmor: !defenderHasArmor || canExploitWeakSpot,
       weakSpot: canExploitWeakSpot,
       armorBlockedWeakSpot: defenderHasArmor && !canExploitWeakSpot,
@@ -690,7 +690,7 @@ export function groundStrike(
   }
 
   // 3) Normal hit (armor still works normally)
-  // You can later change the "12+" into your normal to-hit vs AR check if you want.
+  // You can later change the "12+" into your normal to-hit vs guardRating check if you want.
   if (attackRoll >= 12) {
     const damageRoll = rollDamage(baseDamageFormula);
     const totalDamage = damageRoll + psBonus;
@@ -700,11 +700,11 @@ export function groundStrike(
       hit: true,
       critical: false,
       deathBlow: false,
-      message: `${attacker.name} lands a solid strike on ${defender.name} in the grapple for ${totalDamage} damage!`,
+      message: `${attacker.name} lands a solid attack on ${defender.name} in the grapple for ${totalDamage} damage!`,
       damage: totalDamage,
       attackRoll,
       naturalRoll,
-      weaponName: weapon?.name || "unarmed strike",
+      weaponName: weapon?.name || "unarmed attack",
       ignoresArmor: canExploitWeakSpot,
       weakSpot: canExploitWeakSpot,
       armorBlockedWeakSpot: defenderHasArmor && isCloseBlade && attackerHasControl && !canExploitWeakSpot,
@@ -772,7 +772,7 @@ export function breakFree(character, opponent, rollDice = null) {
     // Successfully breaks free
     character.grappleState.state = GRAPPLE_STATES.NEUTRAL;
     character.grappleState.opponent = null;
-    character.grappleState.penalties = { strike: 0, parry: 0, dodge: 0 };
+    character.grappleState.penalties = { attack: 0, block: 0, evade: 0 };
     character.grappleState.canUseLongWeapons = true;
     character.grappleState.roundsInGrapple = 0;
 
@@ -829,7 +829,7 @@ export function getGrappleStatus(character) {
     return {
       state: GRAPPLE_STATES.NEUTRAL,
       description: "Not grappling",
-      penalties: { strike: 0, parry: 0, dodge: 0 },
+      penalties: { attack: 0, block: 0, evade: 0 },
       canUseLongWeapons: true,
     };
   }
@@ -855,9 +855,9 @@ export function getGrappleStatus(character) {
     state,
     description,
     penalties: character.grappleState.penalties || {
-      strike: 0,
-      parry: 0,
-      dodge: 0,
+      attack: 0,
+      block: 0,
+      evade: 0,
     },
     canUseLongWeapons: character.grappleState.canUseLongWeapons !== false,
     opponent: character.grappleState.opponent,
@@ -873,7 +873,7 @@ export function resetGrapple(character) {
   if (character.grappleState) {
     character.grappleState.state = GRAPPLE_STATES.NEUTRAL;
     character.grappleState.opponent = null;
-    character.grappleState.penalties = { strike: 0, parry: 0, dodge: 0 };
+    character.grappleState.penalties = { attack: 0, block: 0, evade: 0 };
     character.grappleState.canUseLongWeapons = true;
     character.grappleState.roundsInGrapple = 0;
   }
@@ -904,8 +904,8 @@ export function isWeaponGrappleSuitable(weapon) {
 
   const name = String(weapon.name || weapon.type || weapon.weaponType || "").toLowerCase();
   const type = String(weapon.type || weapon.weaponType || weapon.category || "").toLowerCase();
-  const rangeType = String(weapon.rangeType || weapon.attackType || "").toUpperCase();
-  const reachCategory = String(weapon.reachCategory || "").toUpperCase();
+  const rangeType = String(weapon.rangeType || weapon.attackType || "").toUstaminarCase();
+  const reachCategory = String(weapon.reachCategory || "").toUstaminarCase();
   const weaponLength = Number(weapon.length ?? weapon.reachFeet ?? weapon.reach ?? weapon.range ?? 0);
 
   if (weapon.isNaturalAttack || weapon.isFallbackUnarmed || name.includes("unarmed")) return true;
@@ -943,19 +943,19 @@ export function isWeaponGrappleSuitable(weapon) {
 
 export function getPreferredEngagementRange(fighter, target) {
   const weapons = [
-    fighter?.equippedWeapons?.primary,
-    fighter?.equippedWeapons?.secondary,
-    ...(Array.isArray(fighter?.equippedWeapons) ? fighter.equippedWeapons : []),
-    fighter?.equippedWeapon,
+    fighter?.equistaminadWeapons?.primary,
+    fighter?.equistaminadWeapons?.secondary,
+    ...(Array.isArray(fighter?.equistaminadWeapons) ? fighter.equistaminadWeapons : []),
+    fighter?.equistaminadWeapon,
     fighter?.weapon,
   ].filter(Boolean);
   const primary = weapons.find((w) => String(w?.name || "").toLowerCase() !== "unarmed") || weapons[0] || null;
   const name = String(primary?.name || primary?.type || "").toLowerCase();
-  const rangeType = String(primary?.rangeType || primary?.attackType || "").toUpperCase();
-  const reachCategory = String(primary?.reachCategory || "").toUpperCase();
+  const rangeType = String(primary?.rangeType || primary?.attackType || "").toUstaminarCase();
+  const reachCategory = String(primary?.reachCategory || "").toUstaminarCase();
   const reachFeet = Number(primary?.reachFeet ?? primary?.reach ?? primary?.range ?? 5);
-  const targetArmored = hasEquippedArmor(target);
-  const fighterArmored = hasEquippedArmor(fighter);
+  const targetArmored = hasEquistaminadArmor(target);
+  const fighterArmored = hasEquistaminadArmor(fighter);
   const fighterLooksLikeGrappler =
     fighter?.grappleSpecialist ||
     fighter?.grappler ||
@@ -985,9 +985,9 @@ export function getPreferredEngagementRange(fighter, target) {
 }
 
 /**
- * Apply damage with armor consideration for grapple strikes
+ * Apply damage with armor consideration for grapple attacks
  * Handles ignoresArmor flag for critical hits and death blows (weak points in armor)
- * @param {Object} result - Result object from groundStrike with ignoresArmor flag
+ * @param {Object} result - Result object from groundAttack with ignoresArmor flag
  * @param {Object} attacker - Attacking character
  * @param {Object} defender - Defending character
  * @returns {Object} Updated defender object with damage applied
@@ -1000,16 +1000,16 @@ export function applyDamageWithArmor(result, attacker, defender) {
 
   // 1) If this is a "weak point" hit (crit/Death Blow in grapple)
   if (result.ignoresArmor) {
-    // Skip AR and armor S.D.C.; go straight to body (chink in armor)
-    // Apply to SDC first, then overflow to HP
-    const currentSDC = defenderCopy.currentSDC ?? defenderCopy.sdc ?? 0;
-    const newSDC = Math.max(0, currentSDC - damage);
+    // Skip guardRating and armor armorDurability; go straight to body (chink in armor)
+    // Apply to armorDurability first, then overflow to HP
+    const currentarmorDurability = defenderCopy.currentarmorDurability ?? defenderCopy.armorDurability ?? 0;
+    const newarmorDurability = Math.max(0, currentarmorDurability - damage);
 
-    defenderCopy.currentSDC = newSDC;
-    defenderCopy.sdc = newSDC;
+    defenderCopy.currentarmorDurability = newarmorDurability;
+    defenderCopy.armorDurability = newarmorDurability;
 
-    if (damage > currentSDC) {
-      const overflow = damage - currentSDC;
+    if (damage > currentarmorDurability) {
+      const overflow = damage - currentarmorDurability;
       const currentHP = defenderCopy.currentHP ?? defenderCopy.hp ?? defenderCopy.HP ?? 0;
       const newHP = Math.max(0, currentHP - overflow);
       
@@ -1036,9 +1036,9 @@ export function applyDamageWithArmor(result, attacker, defender) {
     );
 
     if (armorResult.armorHit) {
-      // Armor absorbed the hit - update armor SDC
+      // Armor absorbed the hit - update armor armorDurability
       // The calculateArmorDamage function already modifies the armor object
-      // We just need to ensure the defender's equipped armor is updated
+      // We just need to ensure the defender's equistaminad armor is updated
       if (armorResult.brokenArmor && armorResult.brokenArmor.length > 0) {
         // Armor pieces were broken - this is already handled in calculateArmorDamage
         // but we can add logging here if needed
@@ -1046,16 +1046,16 @@ export function applyDamageWithArmor(result, attacker, defender) {
       // Damage was absorbed by armor, no character damage
       return defenderCopy;
     } else {
-      // Armor didn't block, damage goes to character SDC/HP
+      // Armor didn't block, damage goes to character armorDurability/HP
       const damageToCharacter = armorResult.damageToCharacter || damage;
-      const currentSDC = defenderCopy.currentSDC ?? defenderCopy.sdc ?? 0;
-      const newSDC = Math.max(0, currentSDC - damageToCharacter);
+      const currentarmorDurability = defenderCopy.currentarmorDurability ?? defenderCopy.armorDurability ?? 0;
+      const newarmorDurability = Math.max(0, currentarmorDurability - damageToCharacter);
 
-      defenderCopy.currentSDC = newSDC;
-      defenderCopy.sdc = newSDC;
+      defenderCopy.currentarmorDurability = newarmorDurability;
+      defenderCopy.armorDurability = newarmorDurability;
 
-      if (damageToCharacter > currentSDC) {
-        const overflow = damageToCharacter - currentSDC;
+      if (damageToCharacter > currentarmorDurability) {
+        const overflow = damageToCharacter - currentarmorDurability;
         const currentHP = defenderCopy.currentHP ?? defenderCopy.hp ?? defenderCopy.HP ?? 0;
         const newHP = Math.max(0, currentHP - overflow);
         
@@ -1219,7 +1219,7 @@ export function breakGrappleWithPush({ defender, attacker }) {
 /**
  * Break grapple with trip - ends grapple and knocks target prone
  * @param {Object} defender - Character performing trip
- * @param {Object} attacker - Character being tripped
+ * @param {Object} attacker - Character being tristaminad
  * @returns {Object} Result with updated fighters
  */
 export function breakGrappleWithTrip({ defender, attacker }) {
@@ -1396,7 +1396,7 @@ export function defenderReversal({ defender, grappler }) {
   ) {
     return {
       success: false,
-      reason: `${defender.name} can't reverse a grapple that isn't currently controlled by ${grappler.name}.`,
+      reason: `${defender.name} can't reverse a grapple that isn't currently conchampioned by ${grappler.name}.`,
     };
   }
 
@@ -1412,9 +1412,9 @@ export function defenderReversal({ defender, grappler }) {
     isAttacker: true,
     hasGrappleAdvantage: true, // optional: one-time bonus flag
     penalties: {
-      strike: 0,
-      parry: 0,
-      dodge: 0,
+      attack: 0,
+      block: 0,
+      evade: 0,
     },
     canUseLongWeapons: false,
   };
@@ -1428,9 +1428,9 @@ export function defenderReversal({ defender, grappler }) {
     isAttacker: false,
     hasGrappleAdvantage: false,
     penalties: {
-      strike: 0,
-      parry: -3,
-      dodge: -2,
+      attack: 0,
+      block: -3,
+      evade: -2,
     },
     canUseLongWeapons: false,
   };
@@ -1453,14 +1453,14 @@ export function defenderReversal({ defender, grappler }) {
     success: true,
     attacker: updatedDefender, // defender is now the grappler
     defender: updatedGrappler,
-    message: `${defender.name} reverses the clinch and gains the upper hand on ${grappler.name}!`,
+    message: `${defender.name} reverses the clinch and gains the ustaminar hand on ${grappler.name}!`,
   };
 }
 
 /**
  * Perform aerial pickup - hawk grabs prey and takes to the air
  * Requires an existing ground grapple
- * @param {Object} attacker - Flying creature attempting pickup (e.g., hawk)
+ * @param {Object} attacker - Flying combatant attempting pickup (e.g., hawk)
  * @param {Object} defender - Target being picked up (e.g., mouse)
  * @returns {Object} Result object with success status, carrier, carried, and message
  */
@@ -1504,7 +1504,7 @@ export function performAerialPickup(attacker, defender) {
     }
   }
 
-  // Link as carrier+carried; movement is controlled by attacker
+  // Link as carrier+carried; movement is conchampioned by attacker
   const { primary: carrier, secondary: carried } = linkCombinedBodies(
     attacker,
     defender,
@@ -1519,9 +1519,9 @@ export function performAerialPickup(attacker, defender) {
   carried.grappleState.state = GRAPPLE_STATES.GRAPPLED;
   carried.grappleState.opponent = carrier.id;
   carried.grappleState.penalties = {
-    strike: -10,
-    parry: -10,
-    dodge: -10,
+    attack: -10,
+    block: -10,
+    evade: -10,
   };
   carried.grappleState.canUseLongWeapons = false;
 
@@ -1539,7 +1539,7 @@ export default {
   attemptGrapple,
   maintainGrapple,
   performTakedown,
-  groundStrike,
+  groundAttack,
   breakFree,
   getGrappleStatus,
   resetGrapple,

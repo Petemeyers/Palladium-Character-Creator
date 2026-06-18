@@ -29,7 +29,7 @@ import AbilitiesPanel from "./AbilitiesPanel";
 import TimeTracker from "./TimeTracker";
 import PartyInventory from "./PartyInventory";
 import MerchantPanel from "./MerchantPanel";
-import BestiaryPanel from "./BestiaryPanel";
+import ArenaRosterPanel from "./ArenaRosterPanel";
 import QuestTracker from "./QuestTracker";
 import NPCChat from "./NPCChat";
 import GMWorldMap from "./GMWorldMap";
@@ -66,7 +66,7 @@ const GMControlPanel = ({
       const link = document.createElement("a");
       link.href = url;
       link.setAttribute("download", `${activeParty.name}-log.${exportFormat}`);
-      document.body.appendChild(link);
+      document.body.astaminandChild(link);
       link.click();
       link.remove();
       window.URL.revokeObjectURL(url);
@@ -90,7 +90,7 @@ const GMControlPanel = ({
       const link = document.createElement("a");
       link.href = url;
       link.setAttribute("download", `${activeParty.name}-combat.${exportFormat}`);
-      document.body.appendChild(link);
+      document.body.astaminandChild(link);
       link.click();
       link.remove();
       window.URL.revokeObjectURL(url);
@@ -141,7 +141,7 @@ const GMControlPanel = ({
       socket.emit("partyMessage", {
         partyId: activeParty._id,
         user: "System",
-        text: `🌙 The party rests ${restHours} hours. Time is now ${new Date(
+        text: `Ã°Å¸Å’â„¢ The party rests ${restHours} hours. Time is now ${new Date(
           res.data.newTime
         ).toLocaleString()}. Abilities restored.`,
         type: "system",
@@ -236,30 +236,30 @@ const GMControlPanel = ({
           <Button
             colorScheme="purple"
             size="sm"
-            onClick={() => handleCombatNarration("Samuel the Wizard casts Fireball at an Orc, dealing 17 damage")}
+            onClick={() => handleCombatNarration("Samuel the Duelist casts Fireball at an Raider, dealing 17 damage")}
           >
-            🎭 Combat Narration
+            Ã°Å¸Å½Â­ Combat Narration
           </Button>
           <Button
             colorScheme="blue"
             size="sm"
             onClick={() => handleQuestGeneration("Merchant caravan encounter")}
           >
-            📜 Generate Quest
+            Ã°Å¸â€œÅ“ Generate Quest
           </Button>
           <Button
             colorScheme="green"
             size="sm"
             onClick={() => handleEncounterNarration("Three bandits ambush the party at night")}
           >
-            ⚔️ Encounter Narration
+            Ã¢Å¡â€Ã¯Â¸Â Encounter Narration
           </Button>
           <Button
             colorScheme="orange"
             size="sm"
             onClick={() => handleGMAssist("What's a fun complication if the party delays 3 days here?")}
           >
-            🧠 GM Assist
+            Ã°Å¸Â§Â  GM Assist
           </Button>
         </HStack>
       </Box>
@@ -280,9 +280,9 @@ const GMControlPanel = ({
               width="200px"
               size="md"
             >
-              <option value="txt">📄 Text (.txt)</option>
-              <option value="md">📝 Markdown (.md)</option>
-              <option value="pdf">📋 PDF (.pdf)</option>
+              <option value="txt">Ã°Å¸â€œâ€ž Text (.txt)</option>
+              <option value="md">Ã°Å¸â€œÂ Markdown (.md)</option>
+              <option value="pdf">Ã°Å¸â€œâ€¹ PDF (.pdf)</option>
             </Select>
             <Button 
               colorScheme="blue" 
@@ -296,14 +296,14 @@ const GMControlPanel = ({
               onClick={handleExportCombatLog}
               size="md"
             >
-              ⚔️ Export Combat Log
+              Ã¢Å¡â€Ã¯Â¸Â Export Combat Log
             </Button>
             <Button 
               colorScheme="red" 
               onClick={handleEndSession}
               size="md"
             >
-              🏁 End Session & Auto-Export
+              Ã°Å¸ÂÂ End Session & Auto-Export
             </Button>
           </HStack>
         </Box>
@@ -327,7 +327,7 @@ const GMControlPanel = ({
               onClick={handleRestParty}
               size="md"
             >
-              🌙 Rest & Reset Abilities
+              Ã°Å¸Å’â„¢ Rest & Reset Abilities
             </Button>
           </HStack>
         </Box>
@@ -369,11 +369,11 @@ const GMControlPanel = ({
           <Tab>GM Assistant</Tab>
           <Tab>Equipment Shop</Tab>
           <Tab>Inventory</Tab>
-          <Tab>O.C.C. Abilities</Tab>
+          <Tab>profession Abilities</Tab>
           <Tab>Time</Tab>
           <Tab>Party Inventory</Tab>
           <Tab>Merchant</Tab>
-          <Tab>Bestiary</Tab>
+          <Tab>ArenaRoster</Tab>
           <Tab>Quest Tracker</Tab>
           <Tab>NPC Chat</Tab>
           <Tab>World Map</Tab>
@@ -457,7 +457,7 @@ const GMControlPanel = ({
             )}
           </TabPanel>
 
-          {/* O.C.C. Abilities */}
+          {/* profession Abilities */}
           <TabPanel>
             <AbilitiesPanel />
           </TabPanel>
@@ -477,9 +477,9 @@ const GMControlPanel = ({
             <MerchantPanel characters={activeParty?.members || []} />
           </TabPanel>
 
-          {/* Bestiary */}
+          {/* ArenaRoster */}
           <TabPanel>
-            <BestiaryPanel />
+            <ArenaRosterPanel />
           </TabPanel>
 
           {/* Quest Tracker */}

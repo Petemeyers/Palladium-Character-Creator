@@ -129,7 +129,7 @@ export function canCharge(attacker, terrain) {
     (attacker.weight || 150) > 300
       ? 4
       : 2;
-  const requiredWidthTotal = requiredWidth * 2; // Need 2x creature width for charge
+  const requiredWidthTotal = requiredWidth * 2; // Need 2x combatant width for charge
   const requiredLength = 20; // feet needed for full charge (20ft minimum)
 
   if (t.clearance.width < requiredWidthTotal) {

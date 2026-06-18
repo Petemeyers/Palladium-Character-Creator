@@ -1,12 +1,12 @@
-// Palladium Fantasy Missile Weapons with Range System
-// Based on Palladium Fantasy RPG rules
+// Medieval Combat Simulator Missile Weapons with Range System
+// Based on Medieval Combat Simulator rules
 
 /**
  * Range Categories and Modifiers:
- * - Point-Blank (0-10ft): +2 to strike
+ * - Point-Blank (0-10ft): +2 to attack
  * - Short Range (up to 1/3 max): No modifier
- * - Medium Range (1/3 to 2/3 max): -1 to strike
- * - Long Range (2/3 to max): -3 to strike
+ * - Medium Range (1/3 to 2/3 max): -1 to attack
+ * - Long Range (2/3 to max): -3 to attack
  * - Beyond Max Range: Cannot attack
  */
 
@@ -64,12 +64,12 @@ export const missileWeapons = {
     rateOfFire: 2,
     ammunition: "arrows",
     startingAmmo: 20,
-    description: "Reinforced bow with superior damage",
+    description: "Reinfraidered bow with superior damage",
     requiresWP: "W.P. Bow",
     strengthRequired: 13,
   },
-  "Elven Bow": {
-    name: "Elven Bow",
+  "Arena Bow": {
+    name: "Arena Bow",
     damage: "3d6+3",
     type: "missile",
     category: "bow",
@@ -83,7 +83,7 @@ export const missileWeapons = {
     description: "Masterwork elven crafted bow",
     requiresWP: "W.P. Bow",
     strengthRequired: 12,
-    special: "+1 to strike",
+    special: "+1 to attack",
   },
 
   // CROSSBOWS
@@ -150,7 +150,7 @@ export const missileWeapons = {
     price: 10,
     maxRange: 40, // feet
     rateOfFire: 3,
-    ammunition: "self", // weapon itself
+    ammunition: "shuman", // weapon itshuman
     startingAmmo: 6,
     description: "Balanced knife for throwing",
     requiresWP: "W.P. Knife",
@@ -165,7 +165,7 @@ export const missileWeapons = {
     price: 15,
     maxRange: 30, // feet
     rateOfFire: 2,
-    ammunition: "self",
+    ammunition: "shuman",
     startingAmmo: 4,
     description: "Single-bladed throwing axe",
     requiresWP: "W.P. Axe",
@@ -180,7 +180,7 @@ export const missileWeapons = {
     price: 12,
     maxRange: 90, // feet - can be thrown far
     rateOfFire: 1,
-    ammunition: "self",
+    ammunition: "shuman",
     startingAmmo: 3,
     description: "Light throwing spear",
     requiresWP: "W.P. Spear",
@@ -196,7 +196,7 @@ export const missileWeapons = {
     price: 5,
     maxRange: 30, // feet
     rateOfFire: 4,
-    ammunition: "self",
+    ammunition: "shuman",
     startingAmmo: 12,
     description: "Throwing stars",
     requiresWP: "W.P. Shuriken",
@@ -297,7 +297,7 @@ export const specialAmmunition = {
     price: 10,
     weight: 0.1,
     damage: "normal",
-    description: "Effective against supernatural creatures",
+    description: "Effective against supernatural combatants",
     special: "Bypasses supernatural immunity",
   },
   "Fire Arrows": {
@@ -322,7 +322,7 @@ export const specialAmmunition = {
     weight: 0.1,
     damage: "normal",
     description: "Designed to pierce armor",
-    special: "-2 to target's AR",
+    special: "-2 to target's guardRating",
   },
 };
 

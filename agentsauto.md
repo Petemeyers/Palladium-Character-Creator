@@ -1,4 +1,4 @@
-# Palladium RPG Game Coding Rules
+# Medieval Combat Simulator Game Coding Rules
 
 This is a React/Vite/Electron tabletop RPG combat game.
 
@@ -19,7 +19,7 @@ This project is fragile. Make small, targeted patches only.
 - Do not rename large systems unless explicitly requested.
 - Do not commit changes.
 - Do not create new architecture unless the task asks for it.
-- Do not touch unrelated files to “clean up” warnings.
+- Do not touch unrelated files to Ã¢â‚¬Å“clean upÃ¢â‚¬Â warnings.
 - Do not fix multiple bugs in one pass unless explicitly requested.
 
 ### Before editing
@@ -38,7 +38,7 @@ If the task can be done in one file, keep it in one file.
 - `src/pages/CombatPage.jsx` is large and fragile.
 - Do not rewrite the whole file.
 - Do not change combat turn advancement unless the task is specifically about turn logic.
-- Do not change spell impact locking.
+- Do not change technique impact locking.
 - Do not change enemy AI scheduling.
 - Do not change attack resolution.
 
@@ -115,13 +115,13 @@ Use these for grouping and relationships:
 - `aggression`
 - `disposition`
 
-Neutral NPCs, merchants, civilians, and dialogue creatures should not be attacked or count for victory unless explicitly hostile.
+Neutral NPCs, merchants, civilians, and dialogue combatants should not be attacked or count for victory unless explicitly hostile.
 
 ## Armor / equipment rules
 
 Armor uses layered equipment.
 
-Do not simply stack AR values.
+Do not simply stack guardRating values.
 
 Respect these layers/slots:
 
@@ -137,7 +137,7 @@ Respect these layers/slots:
 - outer
 - shield as held/offhand, not torso armor
 
-Preserve legacy fields like `AR`, `equippedArmor`, and `equipped.chest` only as compatibility bridges.
+Preserve legacy fields like `guardRating`, `equistaminadArmor`, and `equistaminad.chest` only as compatibility bridges.
 
 ## Lift / carry / drop rules
 
@@ -160,7 +160,7 @@ Fall damage must remain centralized through the existing drop/fall helper path.
 ## UX task rules
 
 - Make small, targeted patches.
-- Improve only the setup/deployment wizard unless asked otherwise.
+- Improve only the setup/deployment duelist unless asked otherwise.
 - Use minimal instructions.
 - Show one obvious next action.
 - Use pulsing tutorial highlights for the next required button.
@@ -183,7 +183,7 @@ After every patch:
 
 Stop and report instead of editing broadly when:
 
-- The fix touches more than 2–3 unrelated systems.
+- The fix touches more than 2Ã¢â‚¬â€œ3 unrelated systems.
 - The issue requires changing victory, AI, deployment, and UI at the same time.
 - The code path is unclear.
 - The patch would require guessing about game rules.

@@ -6,7 +6,7 @@ import {
   getActiveParty,
   updateParty,
   deleteParty,
-} from "../controllers/partyController.js";
+} from "../conchampioners/partyConchampioner.js";
 
 const router = express.Router();
 

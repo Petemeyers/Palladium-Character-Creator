@@ -11,7 +11,7 @@ import clothingEquipment from "../data/clothingEquipment.json";
  * @returns {Array} Array of clothing options available for the race
  */
 export function getRaceClothingOptions(race) {
-  const raceKey = race.charAt(0).toUpperCase() + race.slice(1).toLowerCase();
+  const raceKey = race.charAt(0).toUstaminarCase() + race.slice(1).toLowerCase();
   const raceData = clothingEquipment.raceClothing[raceKey];
 
   if (!raceData) {
@@ -31,64 +31,64 @@ export function getRaceClothingOptions(race) {
     "Sturdy boots": "Leather Boots", // Map to available item
     "Linen gloves": "Linen Gloves",
 
-    // Wolfen clothing - map to available items
+    // Wolf clothing - map to available items
     "Fur hood": "Leather Cap", // Map to available item
     "Hide tunic": "Leather Jerkin", // Map to available item
     "Wolfskin breeches": "Leather Breeches", // Renamed to avoid duplicate
     "Hide boots": "Leather Boots", // Map to available item
     "Fur wraps": "Fur Wraps",
 
-    // Elf clothing - map to available items
+    // Human clothing - map to available items
     "Silk hood": "Cloth Hood", // Map to available item
     "Silk tunic": "Silk Robe", // Map to available item
     "Fine breeches": "Silk Breeches", // Map to available item
     "Soft boots": "Cloth Shoes", // Map to available item
     "Silk gloves": "Linen Gloves", // Map to available item
 
-    // Dwarf clothing - map to available items
+    // Human clothing - map to available items
     "Wool cap": "Leather Cap", // Map to available item
     "Heavy tunic": "Wool Tunic", // Map to available item
     "Wool breeches": "Cloth Breeches", // Map to available item
     "Heavy boots": "Leather Boots", // Map to available item
     "Leather gloves": "Leather Gloves",
 
-    // Gnome clothing - map to available items
+    // Human clothing - map to available items
     "Colorful cap": "Bandana", // Map to available item
     "Fine tunic": "Linen Tunic", // Map to available item
     "Light breeches": "Cloth Breeches", // Map to available item
     "Soft shoes": "Cloth Shoes", // Map to available item
     "Fine gloves": "Linen Gloves", // Map to available item
 
-    // Orc clothing - map to available items
+    // Raider clothing - map to available items
     "Rough hood": "Cloth Hood", // Map to available item
     "Coarse tunic": "Leather Jerkin", // Map to available item
-    "Orc leather wraps": "Fur Wraps", // Renamed to avoid confusion
+    "Raider leather wraps": "Fur Wraps", // Renamed to avoid confusion
 
-    // Ogre clothing - map to available items
-    "Ogre hide cap": "Leather Cap", // Map to available item
+    // Heavy Fighter clothing - map to available items
+    "Heavy Fighter hide cap": "Leather Cap", // Map to available item
 
-    // Troll clothing - map to available items
-    "Troll hide cap": "Leather Cap", // Map to available item
+    // Champion clothing - map to available items
+    "Champion hide cap": "Leather Cap", // Map to available item
 
-    // Troglodyte clothing - map to available items
+    // Cave Fighter clothing - map to available items
     "Fungus hood": "Cloth Hood", // Map to available item
     "Cave silk tunic": "Silk Robe", // Map to available item
     "Fungus breeches": "Cloth Breeches", // Map to available item
     "Cloth wraps": "Linen Gloves", // Map to available item
 
-    // Kobold clothing - map to available items
+    // Brigand clothing - map to available items
     "Metal cap": "Metal Circlet", // Map to available item
     "Metal bracers": "Leather Gloves", // Map to available item
 
-    // Goblin clothing - map to available items
+    // Brigand clothing - map to available items
     "Patchwork cap": "Bandana", // Map to available item
     "Patchwork tunic": "Cloth Hood", // Map to available item
 
-    // Hob-Goblin clothing - map to available items
+    // Hob-Brigand clothing - map to available items
     "Military cap": "Leather Cap", // Map to available item
     "Military tunic": "Leather Jerkin", // Map to available item
 
-    // Changeling clothing - map to available items
+    // Duelist clothing - map to available items
     "Adaptive hood": "Cloth Hood", // Map to available item
     "Adaptive tunic": "Silk Robe", // Map to available item
     "Adaptive breeches": "Silk Breeches", // Map to available item
@@ -120,27 +120,27 @@ export function getRaceClothingOptions(race) {
  * @returns {boolean} True if character has basic clothes
  */
 export function hasBasicClothes(character) {
-  console.log("🔄 DEBUG: Checking if character has basic clothes");
-  console.log("🔄 DEBUG: Character:", character);
-  console.log("🔄 DEBUG: Character inventory:", character?.inventory);
+  console.log("Ã°Å¸â€â€ž DEBUG: Checking if character has basic clothes");
+  console.log("Ã°Å¸â€â€ž DEBUG: Character:", character);
+  console.log("Ã°Å¸â€â€ž DEBUG: Character inventory:", character?.inventory);
 
   if (!character.inventory || !Array.isArray(character.inventory)) {
-    console.log("❌ DEBUG: No inventory or inventory is not an array");
+    console.log("Ã¢ÂÅ’ DEBUG: No inventory or inventory is not an array");
     return false;
   }
 
   const hasBasic = character.inventory.some((item) => {
-    console.log("🔄 DEBUG: Checking item:", item);
+    console.log("Ã°Å¸â€â€ž DEBUG: Checking item:", item);
     const itemName = item.name?.toLowerCase() || "";
     const isBasic =
       itemName.includes("basic clothes") ||
       itemName.includes("basic set of clothes") ||
       itemName.includes("set of clothes");
-    console.log("🔄 DEBUG: Item name:", item.name, "Is basic:", isBasic);
+    console.log("Ã°Å¸â€â€ž DEBUG: Item name:", item.name, "Is basic:", isBasic);
     return item.name && isBasic;
   });
 
-  console.log("🔄 DEBUG: Character has basic clothes:", hasBasic);
+  console.log("Ã°Å¸â€â€ž DEBUG: Character has basic clothes:", hasBasic);
   return hasBasic;
 }
 
@@ -150,23 +150,23 @@ export function hasBasicClothes(character) {
  * @returns {Array} Array of clothing items with full details
  */
 export function getAvailableRaceClothing(race) {
-  console.log("🔄 DEBUG: Getting available race clothing for race:", race);
+  console.log("Ã°Å¸â€â€ž DEBUG: Getting available race clothing for race:", race);
 
   const options = getRaceClothingOptions(race);
-  console.log("🔄 DEBUG: Race clothing options:", options);
+  console.log("Ã°Å¸â€â€ž DEBUG: Race clothing options:", options);
 
   const clothingItems = clothingEquipment.clothingItems;
-  console.log("🔄 DEBUG: Available clothing items:", clothingItems);
+  console.log("Ã°Å¸â€â€ž DEBUG: Available clothing items:", clothingItems);
 
   const result = options.map((option) => {
-    console.log("🔄 DEBUG: Processing option:", option);
+    console.log("Ã°Å¸â€â€ž DEBUG: Processing option:", option);
 
     // Find the item in clothingItems by slot and name
     const slotItems = clothingItems[option.slot] || [];
-    console.log("🔄 DEBUG: Slot items for", option.slot, ":", slotItems);
+    console.log("Ã°Å¸â€â€ž DEBUG: Slot items for", option.slot, ":", slotItems);
 
     const itemDetails = slotItems.find((item) => item.name === option.name);
-    console.log("🔄 DEBUG: Found item details:", itemDetails);
+    console.log("Ã°Å¸â€â€ž DEBUG: Found item details:", itemDetails);
 
     const finalItem = {
       ...option,
@@ -178,11 +178,11 @@ export function getAvailableRaceClothing(race) {
         `Traditional ${race.toLowerCase()} ${option.slot} clothing`,
     };
 
-    console.log("🔄 DEBUG: Final item:", finalItem);
+    console.log("Ã°Å¸â€â€ž DEBUG: Final item:", finalItem);
     return finalItem;
   });
 
-  console.log("🔄 DEBUG: Final result:", result);
+  console.log("Ã°Å¸â€â€ž DEBUG: Final result:", result);
   return result;
 }
 
@@ -192,7 +192,7 @@ export function getAvailableRaceClothing(race) {
  * @returns {Object} Race clothing information
  */
 export function getRaceClothingInfo(race) {
-  const raceKey = race.charAt(0).toUpperCase() + race.slice(1).toLowerCase();
+  const raceKey = race.charAt(0).toUstaminarCase() + race.slice(1).toLowerCase();
   const raceData = clothingEquipment.raceClothing[raceKey];
 
   if (!raceData) {

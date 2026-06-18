@@ -3,7 +3,7 @@
 // ==========================================
 //
 // React + SVG component for visualizing
-// magic and holy protection circles on 2D tactical maps.
+// training and holy protection circles on 2D tactical maps.
 //
 // Works with both hex and square grid maps.
 // Uses framer-motion for animations.
@@ -27,7 +27,7 @@ import { GRID_CONFIG } from "../data/movementRules.js";
  * @param {number} props.opacity - Fill opacity (0-1)
  * @param {number} props.strokeOpacity - Stroke opacity (0-1)
  * @param {string} props.name - Circle name for tooltip
- * @param {number} props.bonus - Horror save bonus
+ * @param {number} props.bonus - courageCheck bonus
  * @param {number} props.remaining - Rounds remaining
  * @param {string} props.mapType - "hex" or "square"
  * @param {Function} props.getCellPixelPosition - Function to get cell pixel position
@@ -205,7 +205,7 @@ export function ProtectionCircleHUD({ circles = [] }) {
       }}
     >
       <div style={{ fontWeight: "bold", marginBottom: "8px", fontSize: "16px" }}>
-        🕯️ Active Circles
+        Ã°Å¸â€¢Â¯Ã¯Â¸Â Active Circles
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
         {circles.map((circle) => (

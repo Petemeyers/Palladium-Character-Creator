@@ -1,4 +1,4 @@
-# Palladium RPG Game Coding Rules
+# Medieval Combat Simulator Game Coding Rules
 
 This is a React/Vite/Electron tabletop RPG combat game.
 
@@ -23,9 +23,9 @@ Codex may inspect and reason more deeply, but it must still patch narrowly. Curs
 - Do not rename large systems unless explicitly requested.
 - Do not commit changes.
 - Do not create new architecture unless the task asks for it.
-- Do not touch unrelated files to “clean up” warnings.
+- Do not touch unrelated files to Ã¢â‚¬Å“clean upÃ¢â‚¬Â warnings.
 - Do not fix multiple bugs in one pass unless explicitly requested.
-- If the user says “no review-only step,” inspect the relevant path and then implement the smallest safe patch.
+- If the user says Ã¢â‚¬Å“no review-only step,Ã¢â‚¬Â inspect the relevant path and then implement the smallest safe patch.
 - If the user asks for an audit, do not edit.
 
 ### Before editing
@@ -45,7 +45,7 @@ Always report:
 
 1. Changed files.
 2. Focused diff summary.
-3. Why the bug happened.
+3. Why the bug hastaminaned.
 4. How the patch fixes it.
 5. Whether `npm run build` passed.
 6. Existing unrelated warnings separately.
@@ -58,7 +58,7 @@ Do not commit unless the user explicitly asks.
 - `src/pages/CombatPage.jsx` is large and fragile.
 - Do not rewrite the whole file.
 - Do not change combat turn advancement unless the task is specifically about turn logic.
-- Do not change spell impact locking.
+- Do not change technique impact locking.
 - Do not change enemy AI scheduling.
 - Do not change attack resolution unless the task is specifically about attack resolution.
 - Do not mix deployment, AI, victory, grapple, and UI cleanup in one patch unless explicitly requested.
@@ -81,7 +81,7 @@ Do not broadly edit:
 - `turnActionResolvingRef`
 - `pendingTurnAdvanceRef`
 - enemy/player scheduled-start timers
-- spell impact locks
+- technique impact locks
 - active projectile/impact callbacks
 
 unless the task is specifically about turn flow.
@@ -114,8 +114,8 @@ Do not allow an action branch to fall through into a second action.
 Examples of action branches:
 
 - attack
-- spell
-- psionic
+- technique
+- tactical
 - grapple
 - movement used as action
 - passive skip
@@ -137,9 +137,9 @@ A blocked turn start must either:
 
 Use logs like:
 
-- `🚫 start blocked but prior action finalized; retrying turn start`
-- `🚫 stale busy latch cleared after safe finalizer`
-- `🚫 unrecoverable blocked start; skipping once to avoid freeze`
+- `Ã°Å¸Å¡Â« start blocked but prior action finalized; retrying turn start`
+- `Ã°Å¸Å¡Â« stale busy latch cleared after safe finalizer`
+- `Ã°Å¸Å¡Â« unrecoverable blocked start; skipping once to avoid freeze`
 
 Do not let a fighter remain scheduled forever only because a stale busy/start latch was not released.
 
@@ -147,7 +147,7 @@ Do not let a fighter remain scheduled forever only because a stale busy/start la
 
 Do not mark an enemy action as committed until the selected action actually begins resolving.
 
-If `commitOneEnemyAction(...)` or an enemy action mutex blocks an action before movement, attack, spell, grapple, or finalization occurs, it must release the lock or finalize safely.
+If `commitOneEnemyAction(...)` or an enemy action mutex blocks an action before movement, attack, technique, grapple, or finalization occurs, it must release the lock or finalize safely.
 
 A blocked enemy action must not leave the actor stuck with:
 
@@ -160,8 +160,8 @@ A blocked enemy action must not leave the actor stuck with:
 
 Use logs like:
 
-- `🚫 enemy action lock released after blocked pre-action`
-- `🧪 finishEnemyActionSafely reason=enemy-action-blocked-before-resolution`
+- `Ã°Å¸Å¡Â« enemy action lock released after blocked pre-action`
+- `Ã°Å¸Â§Âª finishEnemyActionSafely reason=enemy-action-blocked-before-resolution`
 
 If an action lock blocks a duplicate action after a real action already resolved, the duplicate must abort stale without clearing the newer/valid turn state.
 
@@ -169,39 +169,39 @@ If an action lock blocks a duplicate action after a real action already resolved
 
 Delayed or async actions must re-check live state immediately before applying results.
 
-Before applying delayed damage, grapple effects, movement effects, or spell impact:
+Before applying delayed damage, grapple effects, movement effects, or technique impact:
 
 - Re-resolve the actor from `fightersRef.current`.
 - Confirm the actor still exists.
 - Confirm combat is not over.
 - Confirm the actor still has the right turn token/key if available.
-- Confirm the actor has `remainingAttacks > 0` if the action spends an attack.
+- Confirm the actor has `remainingActions > 0` if the action spends an attack.
 - Confirm the actor can still act or continue the already-started action.
 - Confirm the target still exists and is valid.
 - Abort stale callbacks without applying damage.
 
 Use a log like:
 
-- `🚫 stale attack aborted: <reason>`
-- `🚫 stale grapple follow-up aborted: <reason>`
-- `🚫 stale spell impact aborted: <reason>`
+- `Ã°Å¸Å¡Â« stale attack aborted: <reason>`
+- `Ã°Å¸Å¡Â« stale grapple follow-up aborted: <reason>`
+- `Ã°Å¸Å¡Â« stale technique impact aborted: <reason>`
 
-Do not clear a newer turn’s latch from an older stale callback.
+Do not clear a newer turnÃ¢â‚¬â„¢s latch from an older stale callback.
 
 ## No-action / round exhaustion rules
 
-The “anyone still has actions?” check must match the same eligibility rule used by the next-fighter loop.
+The Ã¢â‚¬Å“anyone still has actions?Ã¢â‚¬Â check must match the same eligibility rule used by the next-fighter loop.
 
 Use:
 
 - `canFighterStartTurn(f)`
-- numeric `remainingAttacks > 0`
+- numeric `remainingActions > 0`
 
 Do not use a looser `canFighterAct(...)` check if the next-turn loop uses `canFighterStartTurn(...)`.
 
 If no eligible fighter has actions left:
 
-- log melee round completion once
+- log combat round completion once
 - reset remaining attacks for eligible fighters
 - keep defeated, fled, carried, unconscious, and cannot-act fighters at 0
 - start the first eligible fighter in the new round
@@ -216,7 +216,7 @@ Passive actors include:
 - neutral merchants
 - civilians
 - noncombatants
-- dialogue creatures
+- dialogue combatants
 
 Defensive actors include:
 
@@ -226,14 +226,14 @@ Defensive actors include:
 For passive/defensive turns:
 
 1. Resolve the live fighter from `fightersRef.current`.
-2. Decrement `remainingAttacks` exactly once if above 0.
+2. Decrement `remainingActions` exactly once if above 0.
 3. Commit the updated fighter to both `fightersRef.current` and `setFighters(...)`.
 4. Log the committed next action count.
 5. Clear relevant processing refs.
 6. Call `scheduleEndTurn(0, "passive-army-turn")` or `scheduleEndTurn(0, "defensive-army-turn")`.
 7. Return immediately.
 
-Do not let passive/defensive actors repeat the same “has 1 action remaining” forever.
+Do not let passive/defensive actors repeat the same Ã¢â‚¬Å“has 1 action remainingÃ¢â‚¬Â forever.
 
 ## Flee / no-target rules
 
@@ -243,7 +243,7 @@ When a fighter flees:
 - Commit the updated fighter state.
 - Run the existing faction-aware victory check immediately.
 - If combat is resolved, end combat once and return.
-- Do not schedule another enemy turn just so the enemy can log “has no targets and defends.”
+- Do not schedule another enemy turn just so the enemy can log Ã¢â‚¬Å“has no targets and defends.Ã¢â‚¬Â
 
 When an enemy or AI actor has no valid hostile targets:
 
@@ -287,7 +287,7 @@ Use these for grouping and relationships:
 - `canDialogue`
 - `nonCombatant`
 
-Neutral NPCs, merchants, civilians, and dialogue creatures should not be attacked or count for victory unless explicitly hostile.
+Neutral NPCs, merchants, civilians, and dialogue combatants should not be attacked or count for victory unless explicitly hostile.
 
 ## Army control-mode rules
 
@@ -309,7 +309,7 @@ Expected defaults:
 - Enemies: AI.
 - Hostile custom factions: AI.
 - Diabolic / berserk / attacksEveryone: AI.
-- Neutral merchants/civilians/dialogue creatures: passive.
+- Neutral merchants/civilians/dialogue combatants: passive.
 - Guards/defensive factions: defensive until smarter guard behavior is implemented.
 
 Non-party AI armies should not wait for manual player control.
@@ -318,7 +318,7 @@ Passive/defensive armies should never stall the turn. They should pass/spend saf
 
 ## Target selection rules
 
-All attack, movement, flanking, spell-hostile, and hostile psionic target selection must use faction-aware hostility.
+All attack, movement, flanking, technique-hostile, and hostile tactical target selection must use faction-aware hostility.
 
 Do not select targets using only:
 
@@ -331,7 +331,7 @@ Do not select targets using only:
 Use:
 
 - `canTargetForAction(actor, candidate, "attack", sceneContext)`
-- `canTargetForAction(actor, candidate, "spellHostile", sceneContext)`
+- `canTargetForAction(actor, candidate, "techniqueHostile", sceneContext)`
 - `isHostileTo(actor, candidate, sceneContext)`
 
 Neutral merchants/civilians/dialogue NPCs should not be selected for:
@@ -340,8 +340,8 @@ Neutral merchants/civilians/dialogue NPCs should not be selected for:
 - movement target
 - flanking target
 - fallback target
-- hostile spell target
-- hostile psionic target
+- hostile technique target
+- hostile tactical target
 
 unless they are explicitly hostile or the actor is diabolic/berserk/attacksEveryone.
 
@@ -368,7 +368,7 @@ Player-side fighters with normalized `playable-*` ids must not treat other party
 
 Add or keep debug logs around target filtering:
 
-- `🧭 target filter: <actor> hostile candidates=<n> rejected allies=<n>`
+- `Ã°Å¸Â§Â­ target filter: <actor> hostile candidates=<n> rejected allies=<n>`
 
 Audit these target paths when fixing targeting bugs:
 
@@ -377,8 +377,8 @@ Audit these target paths when fixing targeting bugs:
 - movement target
 - flanking target
 - fallback target
-- spell hostile target
-- psionic hostile target
+- technique hostile target
+- tactical hostile target
 - no-target pass/defend branch
 
 ## Victory rules
@@ -411,7 +411,7 @@ Manual deployment requires:
 1. User selects a fighter card.
 2. User clicks Manual Place on Map.
 3. User clicks a valid hex.
-4. The token appears immediately.
+4. The token astaminaars immediately.
 5. The fighter card shows PLACED and coordinates.
 6. Combat start uses that manual position.
 
@@ -453,7 +453,7 @@ Do not rewrite deployment broadly unless the task asks for it.
 
 ## Movement / occupancy rules
 
-Normal movement must not stack on the target’s occupied hex.
+Normal movement must not stack on the targetÃ¢â‚¬â„¢s occupied hex.
 
 Normal move-to-engage should:
 
@@ -473,11 +473,11 @@ Shared hex is allowed only for explicit mechanics:
 If a computed movement destination is occupied:
 
 1. Find a valid adjacent unoccupied hex near the target.
-2. Prefer the adjacent hex closest to the mover’s path/start.
+2. Prefer the adjacent hex closest to the moverÃ¢â‚¬â„¢s path/start.
 3. If no adjacent hex is available, stop at a safe pre-target hex.
 4. If no safe hex exists, refuse the move and log why.
 
-Do not log “barrels through” unless the action is truly trample/overrun or another explicit shared-hex mechanic.
+Do not log Ã¢â‚¬Å“barrels throughÃ¢â‚¬Â unless the action is truly trample/overrun or another explicit shared-hex mechanic.
 
 ## Grapple rules
 
@@ -511,7 +511,7 @@ Expected grapple roll shape:
 - skill bonus
 - fatigue modifier
 
-A grapple ground strike should not produce absurd bonuses like `+100`.
+A grapple ground attack should not produce absurd bonuses like `+100`.
 
 If a modifier reaches extreme values, inspect for:
 
@@ -538,7 +538,7 @@ If fighters are too far apart:
 
 - clear grappleState on both fighters
 - clear sharedHex/lifted/carried grapple metadata if relevant
-- log `⚠️ Grapple state cleared: fighters separated.`
+- log `Ã¢Å¡Â Ã¯Â¸Â Grapple state cleared: fighters separated.`
 - continue with normal non-grapple AI or end/pass safely
 
 Do not allow flanking or normal movement while a fighter is actively grappled unless the chosen action is:
@@ -547,7 +547,7 @@ Do not allow flanking or normal movement while a fighter is actively grappled un
 - push-off
 - reversal
 - valid grapple movement
-- forced movement
+- fraidered movement
 - carry/lift/drop
 
 ### Grapple timing rules
@@ -557,7 +557,7 @@ Grapple follow-up actions must obey action/turn locks.
 A grapple follow-up must only resolve if:
 
 - actor is still the current turn actor
-- actor has `remainingAttacks > 0`
+- actor has `remainingActions > 0`
 - actor can act or continue the already-started action
 - combat is not over
 - turn key/token still matches if available
@@ -574,9 +574,9 @@ Do not allow grapple damage after logs say all fighters have no actions remainin
 
 Use a stale abort log like:
 
-- `🚫 stale grapple follow-up aborted: no actions`
-- `🚫 stale grapple follow-up aborted: turn changed`
-- `🚫 stale grapple follow-up aborted: combat over`
+- `Ã°Å¸Å¡Â« stale grapple follow-up aborted: no actions`
+- `Ã°Å¸Å¡Â« stale grapple follow-up aborted: turn changed`
+- `Ã°Å¸Å¡Â« stale grapple follow-up aborted: combat over`
 
 ## Tactical grapple / reach-combat rules
 
@@ -596,16 +596,16 @@ When a fighter is grappling an armored target:
 
 - Prefer dagger, knife, short blade, unarmed, claw, or natural weapons.
 - Do not freely use long sword, lance, pike, bow, crossbow, polearm, or two-handed weapons inside a grapple.
-- Ground strikes inside grapple may target weak points in armor only when the attacker has control, advantage, a high roll, or a critical.
-- Do not make every grapple strike bypass armor.
-- Normal or weak grapple hits should still allow armor to absorb damage or take S.D.C. damage.
+- Ground attacks inside grapple may target weak points in armor only when the attacker has control, advantage, a high roll, or a critical.
+- Do not make every grapple attack bypass armor.
+- Normal or weak grapple hits should still allow armor to absorb damage or take armorDurability damage.
 
 Suggested balance:
 
-- Natural 20 or high-margin grapple strike: weak-point armor bypass.
-- Controlled dagger/knife strike: possible partial bypass or HP damage.
-- Normal grapple strike: armor absorbs or takes S.D.C. damage.
-- Failed grapple strike: no damage.
+- Natural 20 or high-margin grapple attack: weak-point armor bypass.
+- Conchampioned dagger/knife attack: possible partial bypass or HP damage.
+- Normal grapple attack: armor absorbs or takes armorDurability damage.
+- Failed grapple attack: no damage.
 
 Do not change the global armor system just to support grapple weak spots.
 Keep weak-spot logic local to grapple/close-quarters actions unless explicitly requested.
@@ -648,8 +648,8 @@ If a fighter enters grapple with a non-grapple-suitable weapon:
 - otherwise use unarmed/natural weapon
 - do not keep using the unsuitable weapon inside grapple
 - log clearly:
-  - `⚠️ <name> cannot use <weapon> effectively in a grapple.`
-  - `🗡️ <name> switches to <dagger/knife> for close-quarters fighting.`
+  - `Ã¢Å¡Â Ã¯Â¸Â <name> cannot use <weapon> effectively in a grapple.`
+  - `Ã°Å¸â€”Â¡Ã¯Â¸Â <name> switches to <dagger/knife> for close-quarters fighting.`
 
 Do not silently let a lance, bow, pike, or two-handed sword behave like a dagger in a grapple.
 
@@ -671,19 +671,19 @@ General expectations:
 Reach weapon AI should prefer to keep distance:
 
 - pike / polearm / lance: prefer 2 hexes when possible
-- spear / long weapon: prefer 1–2 hexes
+- spear / long weapon: prefer 1Ã¢â‚¬â€œ2 hexes
 - sword / axe / mace: prefer adjacent
 - dagger / knife / unarmed / grappler: prefer same hex or adjacent
 - bow / caster: prefer distance and avoid same hex
 
-A reach-weapon user should not intentionally move into the target’s hex unless the selected action is explicitly:
+A reach-weapon user should not intentionally move into the targetÃ¢â‚¬â„¢s hex unless the selected action is explicitly:
 
 - grapple
 - tackle
 - trample
 - overrun
 - charge-through
-- forced movement
+- fraidered movement
 
 Do not let normal move-to-engage collapse reach users into same-hex grapples.
 
@@ -716,9 +716,9 @@ An armored knight inside grapple should not behave like they are in open melee.
 If grappled:
 
 - switch to dagger/knife/unarmed if holding an unsuitable long/two-handed weapon
-- attempt reversal, break-free, shove-off, or dagger strike depending on stamina and advantage
+- attempt reversal, break-free, shove-off, or dagger attack depending on stamina and advantage
 - recover/defend if stamina is dangerously low
-- use ground strike/pin/control if the opponent is weak or tired
+- use ground attack/pin/control if the opponent is weak or tired
 
 A knight outside grapple may prefer sword/lance/open melee.
 A knight inside grapple should prefer close-quarters tools.
@@ -729,8 +729,8 @@ Do not implement advanced grapple strategy until correctness bugs are fixed.
 
 Future intended behavior:
 
-- If grappling and opponent stamina is low: use takedown, pin, control, choke, or ground strike.
-- If grappling and self stamina is low: defend, recover, stall, or break safely.
+- If grappling and opponent stamina is low: use takedown, pin, control, choke, or ground attack.
+- If grappling and shuman stamina is low: defend, recover, stall, or break safely.
 - If opponent recovers stamina: attempt reversal, break free, push-off, or regain position.
 - Fatigue should influence grapple choice, not just attack penalty.
 
@@ -740,7 +740,7 @@ Do not implement this unless the task specifically asks for grapple AI strategy.
 
 Armor uses layered equipment.
 
-Do not simply stack AR values.
+Do not simply stack guardRating values.
 
 Respect these layers/slots:
 
@@ -756,7 +756,7 @@ Respect these layers/slots:
 - outer
 - shield as held/offhand, not torso armor
 
-Preserve legacy fields like `AR`, `equippedArmor`, and `equipped.chest` only as compatibility bridges.
+Preserve legacy fields like `guardRating`, `equistaminadArmor`, and `equistaminad.chest` only as compatibility bridges.
 
 ## Lift / carry / drop rules
 
@@ -780,9 +780,9 @@ Carried/lifted targets should not count as active victory threats.
 
 Carrier actors still count as active unless otherwise defeated/incapacitated.
 
-## Ground items / dropped weapons / pickup rules
+## Ground items / drostaminad weapons / pickup rules
 
-The combat arena should support dropped weapons and battlefield items.
+The combat arena should support drostaminad weapons and battlefield items.
 
 Do not create a full loot/inventory rewrite for this.
 Add small local battlefield item support first.
@@ -798,9 +798,9 @@ groundItems = [
     item,
     name,
     sourceFighterId,
-    droppedByName,
+    drostaminadByName,
     position: { x, y },
-    roundDropped,
+    roundDrostaminad,
     createdAt,
   },
 ];

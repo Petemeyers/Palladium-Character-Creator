@@ -41,7 +41,7 @@ const TimeTracker = () => {
       socket.emit("partyMessage", {
         partyId: activeParty._id,
         user: "System",
-        text: `⏳ Time advanced ${advanceHours}h. It is now ${newT.toLocaleString()}.`,
+        text: `Ã¢ÂÂ³ Time advanced ${advanceHours}h. It is now ${newT.toLocaleString()}.`,
         type: "system",
       });
     } catch (err) {
@@ -66,7 +66,7 @@ const TimeTracker = () => {
       socket.emit("partyMessage", {
         partyId: activeParty._id,
         user: "System",
-        text: `🛒 Random Encounter: ${encounter.name} — ${encounter.description}. Merchant: ${encounter.merchant.name} (${encounter.merchant.race}, ${encounter.merchant.personality.attitude})`,
+        text: `Ã°Å¸â€ºâ€™ Random Encounter: ${encounter.name} Ã¢â‚¬â€ ${encounter.description}. Merchant: ${encounter.merchant.name} (${encounter.merchant.race}, ${encounter.merchant.personality.attitude})`,
         type: "system",
       });
 
@@ -80,7 +80,7 @@ const TimeTracker = () => {
       socket.emit("partyMessage", {
         partyId: activeParty._id,
         user: "System",
-        text: `🎲 Random Encounter: ${encounter.name} (${encounter.type}) — ${encounter.description}`,
+        text: `Ã°Å¸Å½Â² Random Encounter: ${encounter.name} (${encounter.type}) Ã¢â‚¬â€ ${encounter.description}`,
         type: "system",
       });
 
@@ -97,8 +97,8 @@ const TimeTracker = () => {
   const getDayNightSymbol = (date) => {
     if (!date) return "";
     const hour = date.getHours();
-    if (hour >= 6 && hour < 18) return "🌞 Daytime";
-    return "🌙 Nighttime";
+    if (hour >= 6 && hour < 18) return "Ã°Å¸Å’Å¾ Daytime";
+    return "Ã°Å¸Å’â„¢ Nighttime";
   };
 
   if (!activeParty) {
@@ -178,7 +178,7 @@ const TimeTracker = () => {
               ))}
             </Select>
             <Button colorScheme="red" onClick={handleEncounter}>
-              🎲 Roll Random Encounter
+              Ã°Å¸Å½Â² Roll Random Encounter
             </Button>
             <Text fontSize="sm" color="gray.600" textAlign="center">
               Encounters vary by location and time of day. Daytime encounters are generally safer, while nighttime brings more dangerous foes.
@@ -191,11 +191,11 @@ const TimeTracker = () => {
           <Heading size="sm" mb={3}>Time Reference</Heading>
           <VStack align="stretch" spacing={1}>
             <HStack justify="space-between">
-              <Text fontSize="sm">🌞 Daytime:</Text>
+              <Text fontSize="sm">Ã°Å¸Å’Å¾ Daytime:</Text>
               <Text fontSize="sm" color="gray.600">6:00 AM - 6:00 PM</Text>
             </HStack>
             <HStack justify="space-between">
-              <Text fontSize="sm">🌙 Nighttime:</Text>
+              <Text fontSize="sm">Ã°Å¸Å’â„¢ Nighttime:</Text>
               <Text fontSize="sm" color="gray.600">6:00 PM - 6:00 AM</Text>
             </HStack>
             <HStack justify="space-between">

@@ -68,7 +68,7 @@ export default function GameSettingsPanel({ isOpen, onClose }) {
               <VStack align="start" spacing={0}>
                 <Text fontWeight="medium">Use Insanity / Trauma</Text>
                 <Text fontSize="xs" color="gray.500">
-                  Horror Factor checks and long-term mental effects from trauma
+                  dreadRating checks and long-term mental effects from trauma
                 </Text>
               </VStack>
             </Checkbox>

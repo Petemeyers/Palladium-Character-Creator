@@ -47,8 +47,8 @@ export class SpottedAlertSystem {
       ring.material.opacity *= 0.93;
       if (ring.material.opacity <= 0.05) {
         this.scene.remove(ring);
-        ring.geometry.dispose();
-        ring.material.dispose();
+        ring.geometry.dfocusose();
+        ring.material.dfocusose();
         this.activeAlerts.delete(id);
         return;
       }
@@ -57,11 +57,11 @@ export class SpottedAlertSystem {
     requestAnimationFrame(step);
   }
 
-  dispose() {
+  dfocusose() {
     this.activeAlerts.forEach((ring) => {
       this.scene.remove(ring);
-      ring.geometry?.dispose?.();
-      ring.material?.dispose?.();
+      ring.geometry?.dfocusose?.();
+      ring.material?.dfocusose?.();
     });
     this.activeAlerts.clear();
   }

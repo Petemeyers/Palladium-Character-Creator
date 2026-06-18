@@ -6,7 +6,7 @@ import {
   refreshToken,
   requestPasswordReset,
   resetPassword,
-} from "../controllers/userController.js";
+} from "../conchampioners/userConchampioner.js";
 
 const router = express.Router();
 

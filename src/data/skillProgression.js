@@ -1,5 +1,5 @@
 /**
- * Skill progression by level for Palladium Fantasy RPG
+ * Skill progression by level for Medieval Combat Simulator
  * All bonuses scale with character level
  */
 
@@ -8,18 +8,18 @@ export const handToHandProgression = {
   "Hand to Hand (Soldier)": {
     attacks: { 2: 2, 5: 3, 9: 4, 14: 5 },
     bonuses: {
-      1: { strike: 0, parry: 0, dodge: 0, damage: 1 },
-      3: { strike: 0, parry: 3, dodge: 3, damage: 0 },
-      4: { strike: 0, parry: 0, dodge: 0, damage: 2 },
-      6: { strike: 0, parry: 0, dodge: 0, damage: 3 },
-      8: { strike: 0, parry: 0, dodge: 0, damage: 4 },
-      10: { strike: 0, parry: 0, dodge: 0, damage: 5 },
-      12: { strike: 0, parry: 4, dodge: 4, damage: 0 },
-      13: { strike: 0, parry: 0, dodge: 0, damage: 6 },
-      15: { strike: 0, parry: 5, dodge: 5, damage: 0 },
+      1: { attack: 0, block: 0, evade: 0, damage: 1 },
+      3: { attack: 0, block: 3, evade: 3, damage: 0 },
+      4: { attack: 0, block: 0, evade: 0, damage: 2 },
+      6: { attack: 0, block: 0, evade: 0, damage: 3 },
+      8: { attack: 0, block: 0, evade: 0, damage: 4 },
+      10: { attack: 0, block: 0, evade: 0, damage: 5 },
+      12: { attack: 0, block: 4, evade: 4, damage: 0 },
+      13: { attack: 0, block: 0, evade: 0, damage: 6 },
+      15: { attack: 0, block: 5, evade: 5, damage: 0 },
     },
     specials: {
-      7: { criticalStrike: "18-20" },
+      7: { criticalAttack: "18-20" },
       11: { stun: "18-20" },
     },
   },
@@ -28,18 +28,18 @@ export const handToHandProgression = {
   "Hand to Hand (Mercenary)": {
     attacks: { 3: 2, 6: 3, 9: 4, 12: 4, 15: 5 },
     bonuses: {
-      1: { strike: 0, parry: 0, dodge: 0, damage: 1 },
-      2: { strike: 0, parry: 2, dodge: 2, damage: 0 },
-      4: { strike: 0, parry: 0, dodge: 0, damage: 2 },
-      5: { strike: 0, parry: 3, dodge: 3, damage: 0 },
-      8: { strike: 0, parry: 0, dodge: 0, damage: 3 },
-      10: { strike: 0, parry: 0, dodge: 0, damage: 0 }, // Stun replaces damage
-      11: { strike: 0, parry: 0, dodge: 0, damage: 4 },
-      13: { strike: 0, parry: 0, dodge: 0, damage: 5 },
-      14: { strike: 0, parry: 4, dodge: 4, damage: 0 },
+      1: { attack: 0, block: 0, evade: 0, damage: 1 },
+      2: { attack: 0, block: 2, evade: 2, damage: 0 },
+      4: { attack: 0, block: 0, evade: 0, damage: 2 },
+      5: { attack: 0, block: 3, evade: 3, damage: 0 },
+      8: { attack: 0, block: 0, evade: 0, damage: 3 },
+      10: { attack: 0, block: 0, evade: 0, damage: 0 }, // Stun replaces damage
+      11: { attack: 0, block: 0, evade: 0, damage: 4 },
+      13: { attack: 0, block: 0, evade: 0, damage: 5 },
+      14: { attack: 0, block: 4, evade: 4, damage: 0 },
     },
     specials: {
-      7: { criticalStrike: "19-20" },
+      7: { criticalAttack: "19-20" },
       9: { kickDamage: "1D6" },
       10: { stun: "18-20" },
     },
@@ -49,21 +49,21 @@ export const handToHandProgression = {
   "Hand to Hand: Basic": {
     attacks: { 4: 2, 9: 3, 14: 4 },
     bonuses: {
-      1: { strike: 0, parry: 0, dodge: 2, damage: 0 },
-      2: { strike: 0, parry: 1, dodge: 0, damage: 0 },
-      3: { strike: 0, parry: 0, dodge: 0, damage: 2 },
-      7: { strike: 0, parry: 2, dodge: 0, damage: 0 },
-      8: { strike: 0, parry: 3, dodge: 3, damage: 0 },
-      10: { strike: 0, parry: 0, dodge: 0, damage: 3 },
-      11: { strike: 0, parry: 0, dodge: 0, damage: 0 }, // Crit replaces damage
-      12: { strike: 0, parry: 4, dodge: 4, damage: 0 },
-      13: { strike: 0, parry: 0, dodge: 0, damage: 4 },
-      15: { strike: 0, parry: 5, dodge: 5, damage: 0 },
+      1: { attack: 0, block: 0, evade: 2, damage: 0 },
+      2: { attack: 0, block: 1, evade: 0, damage: 0 },
+      3: { attack: 0, block: 0, evade: 0, damage: 2 },
+      7: { attack: 0, block: 2, evade: 0, damage: 0 },
+      8: { attack: 0, block: 3, evade: 3, damage: 0 },
+      10: { attack: 0, block: 0, evade: 0, damage: 3 },
+      11: { attack: 0, block: 0, evade: 0, damage: 0 }, // Crit replaces damage
+      12: { attack: 0, block: 4, evade: 4, damage: 0 },
+      13: { attack: 0, block: 0, evade: 0, damage: 4 },
+      15: { attack: 0, block: 5, evade: 5, damage: 0 },
     },
     specials: {
       5: { kickDamage: "1D6" },
-      6: { criticalStrike: "from behind" },
-      11: { criticalStrike: "19-20" },
+      6: { criticalAttack: "from behind" },
+      11: { criticalAttack: "19-20" },
     },
   },
 
@@ -71,19 +71,19 @@ export const handToHandProgression = {
   "Hand to Hand (Knight)": {
     attacks: { 2: 2, 5: 3, 9: 4, 13: 5 },
     bonuses: {
-      1: { strike: 0, parry: 0, dodge: 0, damage: 2 },
-      3: { strike: 0, parry: 0, dodge: 0, damage: 3 },
-      4: { strike: 0, parry: 3, dodge: 3, damage: 0 },
-      8: { strike: 0, parry: 0, dodge: 0, damage: 4 },
-      10: { strike: 0, parry: 0, dodge: 0, damage: 0 }, // Stun replaces damage
-      11: { strike: 0, parry: 4, dodge: 4, damage: 0 },
-      12: { strike: 0, parry: 0, dodge: 0, damage: 5 },
-      13: { strike: 2, parry: 0, dodge: 0, damage: 0 },
-      15: { strike: 0, parry: 5, dodge: 5, damage: 0 },
+      1: { attack: 0, block: 0, evade: 0, damage: 2 },
+      3: { attack: 0, block: 0, evade: 0, damage: 3 },
+      4: { attack: 0, block: 3, evade: 3, damage: 0 },
+      8: { attack: 0, block: 0, evade: 0, damage: 4 },
+      10: { attack: 0, block: 0, evade: 0, damage: 0 }, // Stun replaces damage
+      11: { attack: 0, block: 4, evade: 4, damage: 0 },
+      12: { attack: 0, block: 0, evade: 0, damage: 5 },
+      13: { attack: 2, block: 0, evade: 0, damage: 0 },
+      15: { attack: 0, block: 5, evade: 5, damage: 0 },
     },
     specials: {
       5: { kickDamage: "1D6" },
-      7: { criticalStrike: "18-20" },
+      7: { criticalAttack: "18-20" },
       10: { stun: "18-20" },
     },
   },
@@ -92,19 +92,19 @@ export const handToHandProgression = {
   "Hand to Hand (Paladin)": {
     attacks: { 2: 2, 5: 3, 9: 4, 13: 5 },
     bonuses: {
-      1: { strike: 0, parry: 0, dodge: 0, damage: 2 },
-      3: { strike: 0, parry: 2, dodge: 2, damage: 0 },
-      4: { strike: 0, parry: 0, dodge: 0, damage: 4 },
-      7: { strike: 0, parry: 0, dodge: 0, damage: 0 }, // Kick replaces damage
-      8: { strike: 0, parry: 0, dodge: 0, damage: 0 }, // Stun replaces damage
-      10: { strike: 0, parry: 0, dodge: 0, damage: 5 },
-      11: { strike: 0, parry: 3, dodge: 3, damage: 0 },
-      12: { strike: 2, parry: 0, dodge: 0, damage: 0 },
-      13: { strike: 0, parry: 0, dodge: 0, damage: 6 },
-      15: { strike: 0, parry: 4, dodge: 4, damage: 0 },
+      1: { attack: 0, block: 0, evade: 0, damage: 2 },
+      3: { attack: 0, block: 2, evade: 2, damage: 0 },
+      4: { attack: 0, block: 0, evade: 0, damage: 4 },
+      7: { attack: 0, block: 0, evade: 0, damage: 0 }, // Kick replaces damage
+      8: { attack: 0, block: 0, evade: 0, damage: 0 }, // Stun replaces damage
+      10: { attack: 0, block: 0, evade: 0, damage: 5 },
+      11: { attack: 0, block: 3, evade: 3, damage: 0 },
+      12: { attack: 2, block: 0, evade: 0, damage: 0 },
+      13: { attack: 0, block: 0, evade: 0, damage: 6 },
+      15: { attack: 0, block: 4, evade: 4, damage: 0 },
     },
     specials: {
-      6: { criticalStrike: "17-20" },
+      6: { criticalAttack: "17-20" },
       7: { kickDamage: "1D6" },
       8: { stun: "18-20" },
     },
@@ -114,20 +114,20 @@ export const handToHandProgression = {
   "Hand to Hand (Long Bowman)": {
     attacks: { 3: 2, 7: 3, 11: 4, 15: 5 },
     bonuses: {
-      1: { strike: 0, parry: 0, dodge: 2, damage: 0 },
-      2: { strike: 0, parry: 0, dodge: 0, damage: 1 },
-      4: { strike: 0, parry: 2, dodge: 0, damage: 0 },
-      6: { strike: 0, parry: 0, dodge: 0, damage: 0 }, // Crit replaces damage
-      8: { strike: 0, parry: 0, dodge: 0, damage: 3 },
-      9: { strike: 0, parry: 3, dodge: 3, damage: 0 },
-      10: { strike: 0, parry: 0, dodge: 0, damage: 4 },
-      12: { strike: 0, parry: 4, dodge: 4, damage: 0 },
-      13: { strike: 0, parry: 0, dodge: 0, damage: 4 },
-      14: { strike: 2, parry: 0, dodge: 0, damage: 0 },
+      1: { attack: 0, block: 0, evade: 2, damage: 0 },
+      2: { attack: 0, block: 0, evade: 0, damage: 1 },
+      4: { attack: 0, block: 2, evade: 0, damage: 0 },
+      6: { attack: 0, block: 0, evade: 0, damage: 0 }, // Crit replaces damage
+      8: { attack: 0, block: 0, evade: 0, damage: 3 },
+      9: { attack: 0, block: 3, evade: 3, damage: 0 },
+      10: { attack: 0, block: 0, evade: 0, damage: 4 },
+      12: { attack: 0, block: 4, evade: 4, damage: 0 },
+      13: { attack: 0, block: 0, evade: 0, damage: 4 },
+      14: { attack: 2, block: 0, evade: 0, damage: 0 },
     },
     specials: {
       5: { kickDamage: "1D6" },
-      6: { criticalStrike: "18-20 (with bow)" },
+      6: { criticalAttack: "18-20 (with bow)" },
     },
   },
 
@@ -135,21 +135,21 @@ export const handToHandProgression = {
   "Hand to Hand (Assassin)": {
     attacks: { 3: 2, 7: 3, 9: 4 },
     bonuses: {
-      1: { strike: 0, parry: 0, dodge: 0, damage: 2 },
-      2: { strike: 0, parry: 1, dodge: 0, damage: 0 },
-      4: { strike: 0, parry: 3, dodge: 3, damage: 0 },
-      5: { strike: 0, parry: 0, dodge: 0, damage: 3 },
-      7: { strike: 0, parry: 0, dodge: 0, damage: 0 }, // Kick replaces damage
-      8: { strike: 0, parry: 0, dodge: 0, damage: 3 },
-      10: { strike: 0, parry: 0, dodge: 0, damage: 4 },
-      11: { strike: 0, parry: 4, dodge: 4, damage: 0 },
-      12: { strike: 0, parry: 0, dodge: 0, damage: 4 },
-      13: { strike: 0, parry: 0, dodge: 0, damage: 4 },
-      14: { strike: 0, parry: 5, dodge: 5, damage: 0 },
-      15: { strike: 0, parry: 0, dodge: 0, damage: 5 },
+      1: { attack: 0, block: 0, evade: 0, damage: 2 },
+      2: { attack: 0, block: 1, evade: 0, damage: 0 },
+      4: { attack: 0, block: 3, evade: 3, damage: 0 },
+      5: { attack: 0, block: 0, evade: 0, damage: 3 },
+      7: { attack: 0, block: 0, evade: 0, damage: 0 }, // Kick replaces damage
+      8: { attack: 0, block: 0, evade: 0, damage: 3 },
+      10: { attack: 0, block: 0, evade: 0, damage: 4 },
+      11: { attack: 0, block: 4, evade: 4, damage: 0 },
+      12: { attack: 0, block: 0, evade: 0, damage: 4 },
+      13: { attack: 0, block: 0, evade: 0, damage: 4 },
+      14: { attack: 0, block: 5, evade: 5, damage: 0 },
+      15: { attack: 0, block: 0, evade: 0, damage: 5 },
     },
     specials: {
-      6: { criticalStrike: "18-20" },
+      6: { criticalAttack: "18-20" },
       7: { kickDamage: "1D6" },
     },
   },
@@ -158,19 +158,19 @@ export const handToHandProgression = {
   "Hand to Hand (Ranger)": {
     attacks: { 2: 2, 4: 3, 9: 4, 14: 5 },
     bonuses: {
-      1: { strike: 0, parry: 0, dodge: 0, damage: 1 },
-      3: { strike: 0, parry: 0, dodge: 0, damage: 2 },
-      4: { strike: 0, parry: 0, dodge: 0, damage: 3 },
-      6: { strike: 0, parry: 2, dodge: 0, damage: 0 },
-      8: { strike: 0, parry: 0, dodge: 0, damage: 4 },
-      10: { strike: 0, parry: 0, dodge: 0, damage: 0 }, // Stun replaces damage
-      11: { strike: 0, parry: 3, dodge: 3, damage: 0 },
-      12: { strike: 0, parry: 4, dodge: 4, damage: 0 },
-      13: { strike: 2, parry: 0, dodge: 0, damage: 0 },
-      15: { strike: 0, parry: 5, dodge: 5, damage: 0 },
+      1: { attack: 0, block: 0, evade: 0, damage: 1 },
+      3: { attack: 0, block: 0, evade: 0, damage: 2 },
+      4: { attack: 0, block: 0, evade: 0, damage: 3 },
+      6: { attack: 0, block: 2, evade: 0, damage: 0 },
+      8: { attack: 0, block: 0, evade: 0, damage: 4 },
+      10: { attack: 0, block: 0, evade: 0, damage: 0 }, // Stun replaces damage
+      11: { attack: 0, block: 3, evade: 3, damage: 0 },
+      12: { attack: 0, block: 4, evade: 4, damage: 0 },
+      13: { attack: 2, block: 0, evade: 0, damage: 0 },
+      15: { attack: 0, block: 5, evade: 5, damage: 0 },
     },
     specials: {
-      7: { criticalStrike: "19-20" },
+      7: { criticalAttack: "19-20" },
       10: { stun: "18-20" },
     },
   },
@@ -179,22 +179,22 @@ export const handToHandProgression = {
   "Hand to Hand (Thief)": {
     attacks: { 4: 2, 9: 3, 14: 4 },
     bonuses: {
-      1: { strike: 0, parry: 0, dodge: 2, damage: 0 },
-      2: { strike: 0, parry: 1, dodge: 0, damage: 0 },
-      3: { strike: 0, parry: 0, dodge: 0, damage: 2 },
-      6: { strike: 0, parry: 0, dodge: 0, damage: 0 }, // Crit replaces damage
-      7: { strike: 0, parry: 2, dodge: 0, damage: 0 },
-      8: { strike: 0, parry: 0, dodge: 0, damage: 3 },
-      10: { strike: 0, parry: 0, dodge: 0, damage: 3 },
-      11: { strike: 0, parry: 0, dodge: 0, damage: 0 }, // Crit replaces damage
-      12: { strike: 0, parry: 4, dodge: 4, damage: 0 },
-      13: { strike: 0, parry: 0, dodge: 0, damage: 4 },
-      14: { strike: 0, parry: 5, dodge: 5, damage: 0 },
-      15: { strike: 0, parry: 0, dodge: 0, damage: 5 },
+      1: { attack: 0, block: 0, evade: 2, damage: 0 },
+      2: { attack: 0, block: 1, evade: 0, damage: 0 },
+      3: { attack: 0, block: 0, evade: 0, damage: 2 },
+      6: { attack: 0, block: 0, evade: 0, damage: 0 }, // Crit replaces damage
+      7: { attack: 0, block: 2, evade: 0, damage: 0 },
+      8: { attack: 0, block: 0, evade: 0, damage: 3 },
+      10: { attack: 0, block: 0, evade: 0, damage: 3 },
+      11: { attack: 0, block: 0, evade: 0, damage: 0 }, // Crit replaces damage
+      12: { attack: 0, block: 4, evade: 4, damage: 0 },
+      13: { attack: 0, block: 0, evade: 0, damage: 4 },
+      14: { attack: 0, block: 5, evade: 5, damage: 0 },
+      15: { attack: 0, block: 0, evade: 0, damage: 5 },
     },
     specials: {
-      6: { criticalStrike: "from behind" },
-      11: { criticalStrike: "19-20" },
+      6: { criticalAttack: "from behind" },
+      11: { criticalAttack: "19-20" },
     },
   },
 
@@ -202,65 +202,65 @@ export const handToHandProgression = {
   "Hand to Hand: Expert": {
     attacks: { 1: 3, 3: 4, 6: 5, 9: 6, 12: 7, 15: 8 },
     bonuses: {
-      1: { strike: 1, parry: 3, dodge: 3, damage: 1 },
-      2: { strike: 0, parry: 0, dodge: 1, damage: 0 },
-      4: { strike: 1, parry: 0, dodge: 0, damage: 0 },
-      6: { strike: 0, parry: 1, dodge: 1, damage: 1 },
-      8: { strike: 1, parry: 0, dodge: 1, damage: 0 },
-      10: { strike: 0, parry: 1, dodge: 0, damage: 1 },
-      12: { strike: 1, parry: 0, dodge: 1, damage: 0 },
-      14: { strike: 0, parry: 1, dodge: 1, damage: 0 },
+      1: { attack: 1, block: 3, evade: 3, damage: 1 },
+      2: { attack: 0, block: 0, evade: 1, damage: 0 },
+      4: { attack: 1, block: 0, evade: 0, damage: 0 },
+      6: { attack: 0, block: 1, evade: 1, damage: 1 },
+      8: { attack: 1, block: 0, evade: 1, damage: 0 },
+      10: { attack: 0, block: 1, evade: 0, damage: 1 },
+      12: { attack: 1, block: 0, evade: 1, damage: 0 },
+      14: { attack: 0, block: 1, evade: 1, damage: 0 },
     },
   },
   "Hand to Hand: Martial Arts": {
     attacks: { 1: 4, 2: 5, 4: 6, 7: 7, 10: 8, 13: 9, 15: 10 },
     bonuses: {
-      1: { strike: 2, parry: 3, dodge: 3, damage: 2 },
-      2: { strike: 0, parry: 0, dodge: 1, damage: 0 },
-      3: { strike: 1, parry: 1, dodge: 0, damage: 0 },
-      5: { strike: 0, parry: 0, dodge: 1, damage: 1 },
-      7: { strike: 1, parry: 1, dodge: 1, damage: 0 },
-      9: { strike: 0, parry: 0, dodge: 1, damage: 1 },
-      11: { strike: 1, parry: 1, dodge: 0, damage: 0 },
-      13: { strike: 0, parry: 0, dodge: 1, damage: 1 },
-      15: { strike: 1, parry: 1, dodge: 1, damage: 0 },
+      1: { attack: 2, block: 3, evade: 3, damage: 2 },
+      2: { attack: 0, block: 0, evade: 1, damage: 0 },
+      3: { attack: 1, block: 1, evade: 0, damage: 0 },
+      5: { attack: 0, block: 0, evade: 1, damage: 1 },
+      7: { attack: 1, block: 1, evade: 1, damage: 0 },
+      9: { attack: 0, block: 0, evade: 1, damage: 1 },
+      11: { attack: 1, block: 1, evade: 0, damage: 0 },
+      13: { attack: 0, block: 0, evade: 1, damage: 1 },
+      15: { attack: 1, block: 1, evade: 1, damage: 0 },
     },
   },
   "Hand to Hand: Assassin": {
     attacks: { 1: 4, 3: 5, 6: 6, 9: 7, 12: 8, 15: 9 },
     bonuses: {
-      1: { strike: 2, parry: 2, dodge: 2, damage: 3 },
-      3: { strike: 1, parry: 0, dodge: 1, damage: 0 },
-      5: { strike: 0, parry: 1, dodge: 0, damage: 1 },
-      7: { strike: 1, parry: 0, dodge: 1, damage: 0 },
-      9: { strike: 0, parry: 1, dodge: 1, damage: 1 },
-      11: { strike: 1, parry: 0, dodge: 0, damage: 1 },
-      13: { strike: 0, parry: 1, dodge: 1, damage: 0 },
-      15: { strike: 1, parry: 0, dodge: 1, damage: 1 },
+      1: { attack: 2, block: 2, evade: 2, damage: 3 },
+      3: { attack: 1, block: 0, evade: 1, damage: 0 },
+      5: { attack: 0, block: 1, evade: 0, damage: 1 },
+      7: { attack: 1, block: 0, evade: 1, damage: 0 },
+      9: { attack: 0, block: 1, evade: 1, damage: 1 },
+      11: { attack: 1, block: 0, evade: 0, damage: 1 },
+      13: { attack: 0, block: 1, evade: 1, damage: 0 },
+      15: { attack: 1, block: 0, evade: 1, damage: 1 },
     },
   },
   "Hand to Hand: Mercenary": {
     attacks: { 1: 3, 3: 4, 6: 5, 9: 6, 12: 7, 15: 8 },
     bonuses: {
-      1: { strike: 1, parry: 2, dodge: 2, damage: 1 },
-      3: { strike: 1, parry: 0, dodge: 1, damage: 0 },
-      6: { strike: 0, parry: 1, dodge: 0, damage: 1 },
-      9: { strike: 1, parry: 1, dodge: 1, damage: 0 },
-      12: { strike: 0, parry: 0, dodge: 1, damage: 1 },
-      15: { strike: 1, parry: 1, dodge: 0, damage: 0 },
+      1: { attack: 1, block: 2, evade: 2, damage: 1 },
+      3: { attack: 1, block: 0, evade: 1, damage: 0 },
+      6: { attack: 0, block: 1, evade: 0, damage: 1 },
+      9: { attack: 1, block: 1, evade: 1, damage: 0 },
+      12: { attack: 0, block: 0, evade: 1, damage: 1 },
+      15: { attack: 1, block: 1, evade: 0, damage: 0 },
     },
   },
   "Hand to Hand: Knight": {
     attacks: { 1: 3, 3: 4, 6: 5, 9: 6, 12: 7, 15: 8 },
     bonuses: {
-      1: { strike: 1, parry: 3, dodge: 2, damage: 1 },
-      3: { strike: 0, parry: 1, dodge: 1, damage: 0 },
-      5: { strike: 1, parry: 0, dodge: 0, damage: 1 },
-      7: { strike: 0, parry: 1, dodge: 1, damage: 0 },
-      9: { strike: 1, parry: 0, dodge: 1, damage: 1 },
-      11: { strike: 0, parry: 1, dodge: 0, damage: 0 },
-      13: { strike: 1, parry: 1, dodge: 1, damage: 0 },
-      15: { strike: 0, parry: 0, dodge: 1, damage: 1 },
+      1: { attack: 1, block: 3, evade: 2, damage: 1 },
+      3: { attack: 0, block: 1, evade: 1, damage: 0 },
+      5: { attack: 1, block: 0, evade: 0, damage: 1 },
+      7: { attack: 0, block: 1, evade: 1, damage: 0 },
+      9: { attack: 1, block: 0, evade: 1, damage: 1 },
+      11: { attack: 0, block: 1, evade: 0, damage: 0 },
+      13: { attack: 1, block: 1, evade: 1, damage: 0 },
+      15: { attack: 0, block: 0, evade: 1, damage: 1 },
     },
   },
 };
@@ -269,54 +269,54 @@ export const physicalSkillProgression = {
   Boxing: {
     attacks: { 1: 1, 5: 0, 10: 1 }, // +1 attack at L1, +1 more at L10
     bonuses: {
-      1: { strike: 1, parry: 2, dodge: 2, damage: 0 },
-      3: { strike: 0, parry: 1, dodge: 0, damage: 0 },
-      6: { strike: 1, parry: 0, dodge: 1, damage: 0 },
-      9: { strike: 0, parry: 1, dodge: 1, damage: 0 },
-      12: { strike: 1, parry: 0, dodge: 0, damage: 0 },
+      1: { attack: 1, block: 2, evade: 2, damage: 0 },
+      3: { attack: 0, block: 1, evade: 0, damage: 0 },
+      6: { attack: 1, block: 0, evade: 1, damage: 0 },
+      9: { attack: 0, block: 1, evade: 1, damage: 0 },
+      12: { attack: 1, block: 0, evade: 0, damage: 0 },
     },
   },
   Wrestling: {
     attacks: { 1: 1, 7: 0, 13: 1 }, // +1 attack at L1, +1 more at L13
     bonuses: {
-      1: { strike: 0, parry: 0, dodge: 1, damage: 0 },
-      4: { strike: 0, parry: 0, dodge: 1, damage: 0 },
-      8: { strike: 0, parry: 1, dodge: 0, damage: 0 },
-      12: { strike: 0, parry: 0, dodge: 1, damage: 0 },
+      1: { attack: 0, block: 0, evade: 1, damage: 0 },
+      4: { attack: 0, block: 0, evade: 1, damage: 0 },
+      8: { attack: 0, block: 1, evade: 0, damage: 0 },
+      12: { attack: 0, block: 0, evade: 1, damage: 0 },
     },
   },
   // "Body Building": {  // Removed - not in 1994 rulebook, can add back later
   //   attacks: {},
   //   bonuses: {
-  //     1: { strike: 0, parry: 0, dodge: 0, damage: 2 },
-  //     5: { strike: 0, parry: 0, dodge: 0, damage: 1 },
-  //     10: { strike: 0, parry: 0, dodge: 0, damage: 1 },
-  //     15: { strike: 0, parry: 0, dodge: 0, damage: 1 },
+  //     1: { attack: 0, block: 0, evade: 0, damage: 2 },
+  //     5: { attack: 0, block: 0, evade: 0, damage: 1 },
+  //     10: { attack: 0, block: 0, evade: 0, damage: 1 },
+  //     15: { attack: 0, block: 0, evade: 0, damage: 1 },
   //   },
   // },
   Acrobatics: {
     attacks: {},
     bonuses: {
-      1: { strike: 0, parry: 1, dodge: 2, damage: 0 },
-      3: { strike: 0, parry: 0, dodge: 1, damage: 0 },
-      6: { strike: 0, parry: 1, dodge: 0, damage: 0 },
-      9: { strike: 0, parry: 0, dodge: 1, damage: 0 },
-      12: { strike: 0, parry: 1, dodge: 1, damage: 0 },
+      1: { attack: 0, block: 1, evade: 2, damage: 0 },
+      3: { attack: 0, block: 0, evade: 1, damage: 0 },
+      6: { attack: 0, block: 1, evade: 0, damage: 0 },
+      9: { attack: 0, block: 0, evade: 1, damage: 0 },
+      12: { attack: 0, block: 1, evade: 1, damage: 0 },
     },
   },
   Gymnastics: {
     attacks: {},
     bonuses: {
-      1: { strike: 0, parry: 1, dodge: 1, damage: 0 },
-      4: { strike: 0, parry: 0, dodge: 1, damage: 0 },
-      8: { strike: 0, parry: 1, dodge: 0, damage: 0 },
-      12: { strike: 0, parry: 0, dodge: 1, damage: 0 },
+      1: { attack: 0, block: 1, evade: 1, damage: 0 },
+      4: { attack: 0, block: 0, evade: 1, damage: 0 },
+      8: { attack: 0, block: 1, evade: 0, damage: 0 },
+      12: { attack: 0, block: 0, evade: 1, damage: 0 },
     },
   },
 };
 
 
-// ---- RULEBOOK-CORRECTED HAND TO HAND TABLE (Palladium 2nd ed 1994) ----
+// ---- RULEBOOK-CORRECTED HAND TO HAND TABLE (Medieval Combat Simulator 2nd ed 1994) ----
 Object.assign(handToHandProgression, {
   "Hand to Hand (Soldier)": {
     "mode": "state",
@@ -331,8 +331,8 @@ Object.assign(handToHandProgression, {
         "damage": 1
       },
       3: {
-        "parry": 3,
-        "dodge": 3
+        "block": 3,
+        "evade": 3
       },
       4: {
         "damage": 2
@@ -347,20 +347,20 @@ Object.assign(handToHandProgression, {
         "damage": 5
       },
       12: {
-        "parry": 4,
-        "dodge": 4
+        "block": 4,
+        "evade": 4
       },
       13: {
         "damage": 6
       },
       15: {
-        "parry": 5,
-        "dodge": 5
+        "block": 5,
+        "evade": 5
       }
     },
     "specials": {
       7: {
-        "criticalStrike": "18-20"
+        "criticalAttack": "18-20"
       },
       11: {
         "stun": "18-20"
@@ -380,15 +380,15 @@ Object.assign(handToHandProgression, {
         "damage": 1
       },
       2: {
-        "parry": 2,
-        "dodge": 2
+        "block": 2,
+        "evade": 2
       },
       4: {
         "damage": 2
       },
       5: {
-        "parry": 3,
-        "dodge": 3
+        "block": 3,
+        "evade": 3
       },
       8: {
         "damage": 3
@@ -400,13 +400,13 @@ Object.assign(handToHandProgression, {
         "damage": 5
       },
       14: {
-        "parry": 4,
-        "dodge": 4
+        "block": 4,
+        "evade": 4
       }
     },
     "specials": {
       7: {
-        "criticalStrike": "19-20"
+        "criticalAttack": "19-20"
       },
       9: {
         "kickDamage": "1-6"
@@ -425,34 +425,34 @@ Object.assign(handToHandProgression, {
     },
     "bonuses": {
       1: {
-        "dodge": 2
+        "evade": 2
       },
       2: {
-        "parry": 1
+        "block": 1
       },
       3: {
         "damage": 2
       },
       8: {
-        "parry": 3,
-        "dodge": 3
+        "block": 3,
+        "evade": 3
       },
       10: {
         "damage": 3
       },
       12: {
-        "parry": 4,
-        "dodge": 4
+        "block": 4,
+        "evade": 4
       },
       13: {
         "damage": 4
       },
       15: {
-        "parry": 5,
-        "dodge": 5
+        "block": 5,
+        "evade": 5
       },
       7: {
-        "parry": 2
+        "block": 2
       }
     },
     "specials": {
@@ -460,10 +460,10 @@ Object.assign(handToHandProgression, {
         "kickDamage": "1-6"
       },
       6: {
-        "criticalStrike": "from behind"
+        "criticalAttack": "from behind"
       },
       11: {
-        "criticalStrike": "19-20"
+        "criticalAttack": "19-20"
       }
     }
   }
@@ -473,184 +473,184 @@ export const weaponProficiencyProgression = {
   // Chart shows cumulative totals - converting to incremental bonuses
   "W.P. Axe": {
     bonuses: {
-      1: { strike: 1, parry: 0, dodge: 0, damage: 0 }, // Level 1: +1 strike (total +1)
-      2: { strike: 1, parry: 0, dodge: 0, damage: 0 }, // Level 2: +2 strike total (+1 more)
-      3: { strike: 0, parry: 2, dodge: 0, damage: 0 }, // Level 3: +2 parry (+2 new)
-      4: { strike: 1, parry: 0, dodge: 0, damage: 0 }, // Level 4: +3 strike total (+1 more)
-      5: { strike: 0, parry: 1, dodge: 0, damage: 0 }, // Level 5: +3 parry total (+1 more)
-      6: { strike: 1, parry: 0, dodge: 0, damage: 0 }, // Level 6: +4 strike total (+1 more)
-      7: { strike: 0, parry: 1, dodge: 0, damage: 0 }, // Level 7: +4 parry total (+1 more)
-      8: { strike: 1, parry: 0, dodge: 0, damage: 0 }, // Level 8: +5 strike total (+1 more)
-      9: { strike: 0, parry: 1, dodge: 0, damage: 0 }, // Level 9: +5 parry total (+1 more)
-      10: { strike: 1, parry: 0, dodge: 0, damage: 0 }, // Level 10+: +6 strike total (+1 more)
+      1: { attack: 1, block: 0, evade: 0, damage: 0 }, // Level 1: +1 attack (total +1)
+      2: { attack: 1, block: 0, evade: 0, damage: 0 }, // Level 2: +2 attack total (+1 more)
+      3: { attack: 0, block: 2, evade: 0, damage: 0 }, // Level 3: +2 block (+2 new)
+      4: { attack: 1, block: 0, evade: 0, damage: 0 }, // Level 4: +3 attack total (+1 more)
+      5: { attack: 0, block: 1, evade: 0, damage: 0 }, // Level 5: +3 block total (+1 more)
+      6: { attack: 1, block: 0, evade: 0, damage: 0 }, // Level 6: +4 attack total (+1 more)
+      7: { attack: 0, block: 1, evade: 0, damage: 0 }, // Level 7: +4 block total (+1 more)
+      8: { attack: 1, block: 0, evade: 0, damage: 0 }, // Level 8: +5 attack total (+1 more)
+      9: { attack: 0, block: 1, evade: 0, damage: 0 }, // Level 9: +5 block total (+1 more)
+      10: { attack: 1, block: 0, evade: 0, damage: 0 }, // Level 10+: +6 attack total (+1 more)
     },
   },
   "W.P. Blunt": {
     bonuses: {
-      1: { strike: 1, parry: 0, dodge: 0, damage: 0 },
-      2: { strike: 0, parry: 1, dodge: 0, damage: 0 },
-      3: { strike: 2, parry: 0, dodge: 0, damage: 0 },
-      4: { strike: 0, parry: 2, dodge: 0, damage: 0 },
-      5: { strike: 3, parry: 0, dodge: 0, damage: 0 },
-      6: { strike: 0, parry: 3, dodge: 0, damage: 0 },
-      7: { strike: 4, parry: 0, dodge: 0, damage: 0 },
-      8: { strike: 0, parry: 4, dodge: 0, damage: 0 },
-      9: { strike: 5, parry: 0, dodge: 0, damage: 0 },
-      10: { strike: 0, parry: 5, dodge: 0, damage: 0 },
+      1: { attack: 1, block: 0, evade: 0, damage: 0 },
+      2: { attack: 0, block: 1, evade: 0, damage: 0 },
+      3: { attack: 2, block: 0, evade: 0, damage: 0 },
+      4: { attack: 0, block: 2, evade: 0, damage: 0 },
+      5: { attack: 3, block: 0, evade: 0, damage: 0 },
+      6: { attack: 0, block: 3, evade: 0, damage: 0 },
+      7: { attack: 4, block: 0, evade: 0, damage: 0 },
+      8: { attack: 0, block: 4, evade: 0, damage: 0 },
+      9: { attack: 5, block: 0, evade: 0, damage: 0 },
+      10: { attack: 0, block: 5, evade: 0, damage: 0 },
     },
   },
   "W.P. Ball and Chain": {
     bonuses: {
-      1: { strike: 1, parry: 0, dodge: 0, damage: 0 },
-      2: { strike: 0, parry: 1, dodge: 0, damage: 0 },
-      3: { strike: 2, parry: 0, dodge: 0, damage: 0 },
-      4: { strike: 0, parry: 2, dodge: 0, damage: 0 },
-      5: { strike: 3, parry: 0, dodge: 0, damage: 0 },
-      6: { strike: 0, parry: 3, dodge: 0, damage: 0 },
-      7: { strike: 4, parry: 0, dodge: 0, damage: 0 },
-      8: { strike: 0, parry: 4, dodge: 0, damage: 0 },
-      9: { strike: 5, parry: 0, dodge: 0, damage: 0 },
-      10: { strike: 0, parry: 5, dodge: 0, damage: 0 },
+      1: { attack: 1, block: 0, evade: 0, damage: 0 },
+      2: { attack: 0, block: 1, evade: 0, damage: 0 },
+      3: { attack: 2, block: 0, evade: 0, damage: 0 },
+      4: { attack: 0, block: 2, evade: 0, damage: 0 },
+      5: { attack: 3, block: 0, evade: 0, damage: 0 },
+      6: { attack: 0, block: 3, evade: 0, damage: 0 },
+      7: { attack: 4, block: 0, evade: 0, damage: 0 },
+      8: { attack: 0, block: 4, evade: 0, damage: 0 },
+      9: { attack: 5, block: 0, evade: 0, damage: 0 },
+      10: { attack: 0, block: 5, evade: 0, damage: 0 },
     },
   },
   "W.P. Knife": {
     bonuses: {
-      1: { strike: 1, parry: 0, dodge: 0, damage: 0 },
-      2: { strike: 2, parry: 0, dodge: 0, damage: 0 },
-      3: { strike: 0, parry: 2, dodge: 0, damage: 0 },
-      4: { strike: 3, parry: 0, dodge: 0, damage: 0 },
-      5: { strike: 0, parry: 3, dodge: 0, damage: 0 },
-      6: { strike: 4, parry: 0, dodge: 0, damage: 0 },
-      7: { strike: 0, parry: 4, dodge: 0, damage: 0 },
-      8: { strike: 5, parry: 0, dodge: 0, damage: 0 },
-      9: { strike: 0, parry: 5, dodge: 0, damage: 0 },
-      10: { strike: 6, parry: 0, dodge: 0, damage: 0 },
+      1: { attack: 1, block: 0, evade: 0, damage: 0 },
+      2: { attack: 2, block: 0, evade: 0, damage: 0 },
+      3: { attack: 0, block: 2, evade: 0, damage: 0 },
+      4: { attack: 3, block: 0, evade: 0, damage: 0 },
+      5: { attack: 0, block: 3, evade: 0, damage: 0 },
+      6: { attack: 4, block: 0, evade: 0, damage: 0 },
+      7: { attack: 0, block: 4, evade: 0, damage: 0 },
+      8: { attack: 5, block: 0, evade: 0, damage: 0 },
+      9: { attack: 0, block: 5, evade: 0, damage: 0 },
+      10: { attack: 6, block: 0, evade: 0, damage: 0 },
     },
   },
   "W.P. Pole Arms": {
     bonuses: {
-      1: { strike: 1, parry: 0, dodge: 0, damage: 0 },
-      2: { strike: 2, parry: 0, dodge: 0, damage: 0 },
-      3: { strike: 0, parry: 2, dodge: 0, damage: 0 },
-      4: { strike: 3, parry: 0, dodge: 0, damage: 0 },
-      5: { strike: 0, parry: 3, dodge: 0, damage: 0 },
-      6: { strike: 4, parry: 0, dodge: 0, damage: 0 },
-      7: { strike: 0, parry: 4, dodge: 0, damage: 0 },
-      8: { strike: 5, parry: 0, dodge: 0, damage: 0 },
-      9: { strike: 0, parry: 5, dodge: 0, damage: 0 },
-      10: { strike: 6, parry: 0, dodge: 0, damage: 0 },
+      1: { attack: 1, block: 0, evade: 0, damage: 0 },
+      2: { attack: 2, block: 0, evade: 0, damage: 0 },
+      3: { attack: 0, block: 2, evade: 0, damage: 0 },
+      4: { attack: 3, block: 0, evade: 0, damage: 0 },
+      5: { attack: 0, block: 3, evade: 0, damage: 0 },
+      6: { attack: 4, block: 0, evade: 0, damage: 0 },
+      7: { attack: 0, block: 4, evade: 0, damage: 0 },
+      8: { attack: 5, block: 0, evade: 0, damage: 0 },
+      9: { attack: 0, block: 5, evade: 0, damage: 0 },
+      10: { attack: 6, block: 0, evade: 0, damage: 0 },
     },
   },
   "W.P. Spear": {
     bonuses: {
-      1: { strike: 1, parry: 0, dodge: 0, damage: 0 },
-      2: { strike: 2, parry: 0, dodge: 0, damage: 0 },
-      3: { strike: 0, parry: 2, dodge: 0, damage: 0 },
-      4: { strike: 3, parry: 0, dodge: 0, damage: 0 },
-      5: { strike: 0, parry: 3, dodge: 0, damage: 0 },
-      6: { strike: 4, parry: 0, dodge: 0, damage: 0 },
-      7: { strike: 0, parry: 4, dodge: 0, damage: 0 },
-      8: { strike: 5, parry: 0, dodge: 0, damage: 0 },
-      9: { strike: 0, parry: 5, dodge: 0, damage: 0 },
-      10: { strike: 6, parry: 0, dodge: 0, damage: 0 },
+      1: { attack: 1, block: 0, evade: 0, damage: 0 },
+      2: { attack: 2, block: 0, evade: 0, damage: 0 },
+      3: { attack: 0, block: 2, evade: 0, damage: 0 },
+      4: { attack: 3, block: 0, evade: 0, damage: 0 },
+      5: { attack: 0, block: 3, evade: 0, damage: 0 },
+      6: { attack: 4, block: 0, evade: 0, damage: 0 },
+      7: { attack: 0, block: 4, evade: 0, damage: 0 },
+      8: { attack: 5, block: 0, evade: 0, damage: 0 },
+      9: { attack: 0, block: 5, evade: 0, damage: 0 },
+      10: { attack: 6, block: 0, evade: 0, damage: 0 },
     },
   },
   "W.P. Short Sword": {
     bonuses: {
-      1: { strike: 1, parry: 0, dodge: 0, damage: 0 },
-      2: { strike: 0, parry: 1, dodge: 0, damage: 0 },
-      3: { strike: 2, parry: 0, dodge: 0, damage: 0 },
-      4: { strike: 0, parry: 2, dodge: 0, damage: 0 },
-      5: { strike: 3, parry: 0, dodge: 0, damage: 0 },
-      6: { strike: 0, parry: 3, dodge: 0, damage: 0 },
-      7: { strike: 4, parry: 0, dodge: 0, damage: 0 },
-      8: { strike: 0, parry: 4, dodge: 0, damage: 0 },
-      9: { strike: 5, parry: 0, dodge: 0, damage: 0 },
-      10: { strike: 0, parry: 5, dodge: 0, damage: 0 },
+      1: { attack: 1, block: 0, evade: 0, damage: 0 },
+      2: { attack: 0, block: 1, evade: 0, damage: 0 },
+      3: { attack: 2, block: 0, evade: 0, damage: 0 },
+      4: { attack: 0, block: 2, evade: 0, damage: 0 },
+      5: { attack: 3, block: 0, evade: 0, damage: 0 },
+      6: { attack: 0, block: 3, evade: 0, damage: 0 },
+      7: { attack: 4, block: 0, evade: 0, damage: 0 },
+      8: { attack: 0, block: 4, evade: 0, damage: 0 },
+      9: { attack: 5, block: 0, evade: 0, damage: 0 },
+      10: { attack: 0, block: 5, evade: 0, damage: 0 },
     },
   },
   "W.P. Sword": {
     bonuses: {
-      1: { strike: 1, parry: 0, dodge: 0, damage: 0 },
-      2: { strike: 0, parry: 1, dodge: 0, damage: 0 },
-      3: { strike: 2, parry: 0, dodge: 0, damage: 0 },
-      4: { strike: 0, parry: 2, dodge: 0, damage: 0 },
-      5: { strike: 3, parry: 0, dodge: 0, damage: 0 },
-      6: { strike: 0, parry: 3, dodge: 0, damage: 0 },
-      7: { strike: 4, parry: 0, dodge: 0, damage: 0 },
-      8: { strike: 0, parry: 4, dodge: 0, damage: 0 },
-      9: { strike: 5, parry: 0, dodge: 0, damage: 0 },
-      10: { strike: 0, parry: 5, dodge: 0, damage: 0 },
+      1: { attack: 1, block: 0, evade: 0, damage: 0 },
+      2: { attack: 0, block: 1, evade: 0, damage: 0 },
+      3: { attack: 2, block: 0, evade: 0, damage: 0 },
+      4: { attack: 0, block: 2, evade: 0, damage: 0 },
+      5: { attack: 3, block: 0, evade: 0, damage: 0 },
+      6: { attack: 0, block: 3, evade: 0, damage: 0 },
+      7: { attack: 4, block: 0, evade: 0, damage: 0 },
+      8: { attack: 0, block: 4, evade: 0, damage: 0 },
+      9: { attack: 5, block: 0, evade: 0, damage: 0 },
+      10: { attack: 0, block: 5, evade: 0, damage: 0 },
     },
   },
   "W.P. Staff": {
     bonuses: {
-      1: { strike: 1, parry: 0, dodge: 0, damage: 0 },
-      2: { strike: 0, parry: 2, dodge: 0, damage: 0 },
-      3: { strike: 2, parry: 0, dodge: 0, damage: 0 },
-      4: { strike: 0, parry: 3, dodge: 0, damage: 0 },
-      5: { strike: 3, parry: 0, dodge: 0, damage: 0 },
-      6: { strike: 0, parry: 4, dodge: 0, damage: 0 },
-      7: { strike: 4, parry: 0, dodge: 0, damage: 0 },
-      8: { strike: 0, parry: 5, dodge: 0, damage: 0 },
-      9: { strike: 5, parry: 0, dodge: 0, damage: 0 },
-      10: { strike: 0, parry: 5, dodge: 0, damage: 0 },
+      1: { attack: 1, block: 0, evade: 0, damage: 0 },
+      2: { attack: 0, block: 2, evade: 0, damage: 0 },
+      3: { attack: 2, block: 0, evade: 0, damage: 0 },
+      4: { attack: 0, block: 3, evade: 0, damage: 0 },
+      5: { attack: 3, block: 0, evade: 0, damage: 0 },
+      6: { attack: 0, block: 4, evade: 0, damage: 0 },
+      7: { attack: 4, block: 0, evade: 0, damage: 0 },
+      8: { attack: 0, block: 5, evade: 0, damage: 0 },
+      9: { attack: 5, block: 0, evade: 0, damage: 0 },
+      10: { attack: 0, block: 5, evade: 0, damage: 0 },
     },
   },
   "W.P. Small Shield": {
     bonuses: {
-      1: { strike: 0, parry: 1, dodge: 0, damage: 0 },
-      2: { strike: 0, parry: 2, dodge: 0, damage: 0 },
-      3: { strike: 0, parry: 3, dodge: 0, damage: 0 },
-      4: { strike: 0, parry: 4, dodge: 0, damage: 0 },
-      5: { strike: 0, parry: 5, dodge: 0, damage: 0 },
-      6: { strike: 0, parry: 5, dodge: 0, damage: 0 },
-      7: { strike: 0, parry: 6, dodge: 0, damage: 0 },
-      8: { strike: 0, parry: 6, dodge: 0, damage: 0 },
-      9: { strike: 0, parry: 7, dodge: 0, damage: 0 },
-      10: { strike: 0, parry: 7, dodge: 0, damage: 0 },
+      1: { attack: 0, block: 1, evade: 0, damage: 0 },
+      2: { attack: 0, block: 2, evade: 0, damage: 0 },
+      3: { attack: 0, block: 3, evade: 0, damage: 0 },
+      4: { attack: 0, block: 4, evade: 0, damage: 0 },
+      5: { attack: 0, block: 5, evade: 0, damage: 0 },
+      6: { attack: 0, block: 5, evade: 0, damage: 0 },
+      7: { attack: 0, block: 6, evade: 0, damage: 0 },
+      8: { attack: 0, block: 6, evade: 0, damage: 0 },
+      9: { attack: 0, block: 7, evade: 0, damage: 0 },
+      10: { attack: 0, block: 7, evade: 0, damage: 0 },
     },
   },
   "W.P. Large Shield": {
     bonuses: {
-      1: { strike: 0, parry: 1, dodge: 0, damage: 0 },
-      2: { strike: 0, parry: 2, dodge: 0, damage: 0 },
-      3: { strike: 0, parry: 3, dodge: 0, damage: 0 },
-      4: { strike: 0, parry: 4, dodge: 0, damage: 0 },
-      5: { strike: 0, parry: 5, dodge: 0, damage: 0 },
-      6: { strike: 0, parry: 5, dodge: 0, damage: 0 },
-      7: { strike: 0, parry: 6, dodge: 0, damage: 0 },
-      8: { strike: 0, parry: 6, dodge: 0, damage: 0 },
-      9: { strike: 0, parry: 7, dodge: 0, damage: 0 },
-      10: { strike: 0, parry: 7, dodge: 0, damage: 0 },
+      1: { attack: 0, block: 1, evade: 0, damage: 0 },
+      2: { attack: 0, block: 2, evade: 0, damage: 0 },
+      3: { attack: 0, block: 3, evade: 0, damage: 0 },
+      4: { attack: 0, block: 4, evade: 0, damage: 0 },
+      5: { attack: 0, block: 5, evade: 0, damage: 0 },
+      6: { attack: 0, block: 5, evade: 0, damage: 0 },
+      7: { attack: 0, block: 6, evade: 0, damage: 0 },
+      8: { attack: 0, block: 6, evade: 0, damage: 0 },
+      9: { attack: 0, block: 7, evade: 0, damage: 0 },
+      10: { attack: 0, block: 7, evade: 0, damage: 0 },
     },
   },
   "W.P. Shield": {
     bonuses: {
-      1: { strike: 0, parry: 1, dodge: 0, damage: 0 },
-      2: { strike: 0, parry: 2, dodge: 0, damage: 0 },
-      3: { strike: 0, parry: 3, dodge: 0, damage: 0 },
-      4: { strike: 0, parry: 4, dodge: 0, damage: 0 },
-      5: { strike: 0, parry: 5, dodge: 0, damage: 0 },
-      6: { strike: 0, parry: 5, dodge: 0, damage: 0 },
-      7: { strike: 0, parry: 6, dodge: 0, damage: 0 },
-      8: { strike: 0, parry: 6, dodge: 0, damage: 0 },
-      9: { strike: 0, parry: 7, dodge: 0, damage: 0 },
-      10: { strike: 0, parry: 7, dodge: 0, damage: 0 },
+      1: { attack: 0, block: 1, evade: 0, damage: 0 },
+      2: { attack: 0, block: 2, evade: 0, damage: 0 },
+      3: { attack: 0, block: 3, evade: 0, damage: 0 },
+      4: { attack: 0, block: 4, evade: 0, damage: 0 },
+      5: { attack: 0, block: 5, evade: 0, damage: 0 },
+      6: { attack: 0, block: 5, evade: 0, damage: 0 },
+      7: { attack: 0, block: 6, evade: 0, damage: 0 },
+      8: { attack: 0, block: 6, evade: 0, damage: 0 },
+      9: { attack: 0, block: 7, evade: 0, damage: 0 },
+      10: { attack: 0, block: 7, evade: 0, damage: 0 },
     },
   },
   "W.P. Lance": {
     bonuses: {
-      1: { strike: 1, parry: 0, dodge: 0, damage: 0 },
-      2: { strike: 2, parry: 0, dodge: 0, damage: 0 },
-      3: { strike: 3, parry: 0, dodge: 0, damage: 0 },
-      4: { strike: 4, parry: 0, dodge: 0, damage: 0 },
-      5: { strike: 5, parry: 0, dodge: 0, damage: 0 },
-      6: { strike: 5, parry: 0, dodge: 0, damage: 0 },
-      7: { strike: 6, parry: 0, dodge: 0, damage: 0 },
-      8: { strike: 6, parry: 0, dodge: 0, damage: 0 },
-      9: { strike: 7, parry: 0, dodge: 0, damage: 0 },
-      10: { strike: 7, parry: 0, dodge: 0, damage: 0 },
+      1: { attack: 1, block: 0, evade: 0, damage: 0 },
+      2: { attack: 2, block: 0, evade: 0, damage: 0 },
+      3: { attack: 3, block: 0, evade: 0, damage: 0 },
+      4: { attack: 4, block: 0, evade: 0, damage: 0 },
+      5: { attack: 5, block: 0, evade: 0, damage: 0 },
+      6: { attack: 5, block: 0, evade: 0, damage: 0 },
+      7: { attack: 6, block: 0, evade: 0, damage: 0 },
+      8: { attack: 6, block: 0, evade: 0, damage: 0 },
+      9: { attack: 7, block: 0, evade: 0, damage: 0 },
+      10: { attack: 7, block: 0, evade: 0, damage: 0 },
     },
     note: "Mounted use only (Knights & Paladins)",
   },
@@ -658,15 +658,15 @@ export const weaponProficiencyProgression = {
   // Missile Weapon Proficiencies
   "W.P. Sling": {
     bonuses: {
-      1: { strike: 0, parry: 0, dodge: 0, damage: 0 },
-      2: { strike: 1, parry: 0, dodge: 0, damage: 0 },
-      3: { strike: 0, parry: 0, dodge: 0, damage: 0 },
-      4: { strike: 2, parry: 0, dodge: 0, damage: 0 },
-      6: { strike: 3, parry: 0, dodge: 0, damage: 0 },
-      8: { strike: 4, parry: 0, dodge: 0, damage: 0 },
-      10: { strike: 5, parry: 0, dodge: 0, damage: 0 },
-      12: { strike: 6, parry: 0, dodge: 0, damage: 0 },
-      14: { strike: 7, parry: 0, dodge: 0, damage: 0 },
+      1: { attack: 0, block: 0, evade: 0, damage: 0 },
+      2: { attack: 1, block: 0, evade: 0, damage: 0 },
+      3: { attack: 0, block: 0, evade: 0, damage: 0 },
+      4: { attack: 2, block: 0, evade: 0, damage: 0 },
+      6: { attack: 3, block: 0, evade: 0, damage: 0 },
+      8: { attack: 4, block: 0, evade: 0, damage: 0 },
+      10: { attack: 5, block: 0, evade: 0, damage: 0 },
+      12: { attack: 6, block: 0, evade: 0, damage: 0 },
+      14: { attack: 7, block: 0, evade: 0, damage: 0 },
     },
     rateOfFire: {
       1: 2,
@@ -687,14 +687,14 @@ export const weaponProficiencyProgression = {
   },
   "W.P. Short Bow": {
     bonuses: {
-      1: { strike: 0, parry: 0, dodge: 0, damage: 0 },
-      2: { strike: 1, parry: 0, dodge: 0, damage: 0 },
-      4: { strike: 2, parry: 0, dodge: 0, damage: 0 },
-      6: { strike: 3, parry: 0, dodge: 0, damage: 0 },
-      8: { strike: 4, parry: 0, dodge: 0, damage: 0 },
-      10: { strike: 5, parry: 0, dodge: 0, damage: 0 },
-      13: { strike: 6, parry: 0, dodge: 0, damage: 0 },
-      15: { strike: 7, parry: 0, dodge: 0, damage: 0 },
+      1: { attack: 0, block: 0, evade: 0, damage: 0 },
+      2: { attack: 1, block: 0, evade: 0, damage: 0 },
+      4: { attack: 2, block: 0, evade: 0, damage: 0 },
+      6: { attack: 3, block: 0, evade: 0, damage: 0 },
+      8: { attack: 4, block: 0, evade: 0, damage: 0 },
+      10: { attack: 5, block: 0, evade: 0, damage: 0 },
+      13: { attack: 6, block: 0, evade: 0, damage: 0 },
+      15: { attack: 7, block: 0, evade: 0, damage: 0 },
     },
     rateOfFire: {
       1: 1,
@@ -711,13 +711,13 @@ export const weaponProficiencyProgression = {
   },
   "W.P. Crossbow": {
     bonuses: {
-      1: { strike: 0, parry: 0, dodge: 0, damage: 0 },
-      2: { strike: 1, parry: 0, dodge: 0, damage: 0 },
-      4: { strike: 2, parry: 0, dodge: 0, damage: 0 },
-      6: { strike: 3, parry: 0, dodge: 0, damage: 0 },
-      8: { strike: 4, parry: 0, dodge: 0, damage: 0 },
-      11: { strike: 5, parry: 0, dodge: 0, damage: 0 },
-      14: { strike: 6, parry: 0, dodge: 0, damage: 0 },
+      1: { attack: 0, block: 0, evade: 0, damage: 0 },
+      2: { attack: 1, block: 0, evade: 0, damage: 0 },
+      4: { attack: 2, block: 0, evade: 0, damage: 0 },
+      6: { attack: 3, block: 0, evade: 0, damage: 0 },
+      8: { attack: 4, block: 0, evade: 0, damage: 0 },
+      11: { attack: 5, block: 0, evade: 0, damage: 0 },
+      14: { attack: 6, block: 0, evade: 0, damage: 0 },
     },
     rateOfFire: {
       1: 1,
@@ -732,14 +732,14 @@ export const weaponProficiencyProgression = {
   },
   "W.P. Long Bow": {
     bonuses: {
-      1: { strike: 0, parry: 0, dodge: 0, damage: 0 },
-      2: { strike: 1, parry: 0, dodge: 0, damage: 0 },
-      3: { strike: 2, parry: 0, dodge: 0, damage: 0 },
-      4: { strike: 3, parry: 0, dodge: 0, damage: 0 },
-      6: { strike: 4, parry: 0, dodge: 0, damage: 0 },
-      8: { strike: 5, parry: 0, dodge: 0, damage: 0 },
-      11: { strike: 6, parry: 0, dodge: 0, damage: 0 },
-      14: { strike: 7, parry: 0, dodge: 0, damage: 0 },
+      1: { attack: 0, block: 0, evade: 0, damage: 0 },
+      2: { attack: 1, block: 0, evade: 0, damage: 0 },
+      3: { attack: 2, block: 0, evade: 0, damage: 0 },
+      4: { attack: 3, block: 0, evade: 0, damage: 0 },
+      6: { attack: 4, block: 0, evade: 0, damage: 0 },
+      8: { attack: 5, block: 0, evade: 0, damage: 0 },
+      11: { attack: 6, block: 0, evade: 0, damage: 0 },
+      14: { attack: 7, block: 0, evade: 0, damage: 0 },
     },
     rateOfFire: {
       1: 2,
@@ -753,18 +753,18 @@ export const weaponProficiencyProgression = {
       14: 9,
       15: 9,
     },
-    maxRange: 800, // feet (restricted to Long Bowman & Ranger O.C.C.)
+    maxRange: 800, // feet (restricted to Long Bowman & Ranger profession)
   },
   "W.P. Bow": {
     bonuses: {
-      1: { strike: 0, parry: 0, dodge: 0, damage: 0 },
-      2: { strike: 1, parry: 0, dodge: 0, damage: 0 },
-      4: { strike: 2, parry: 0, dodge: 0, damage: 0 },
-      6: { strike: 3, parry: 0, dodge: 0, damage: 0 },
-      8: { strike: 4, parry: 0, dodge: 0, damage: 0 },
-      10: { strike: 5, parry: 0, dodge: 0, damage: 0 },
-      13: { strike: 6, parry: 0, dodge: 0, damage: 0 },
-      15: { strike: 7, parry: 0, dodge: 0, damage: 0 },
+      1: { attack: 0, block: 0, evade: 0, damage: 0 },
+      2: { attack: 1, block: 0, evade: 0, damage: 0 },
+      4: { attack: 2, block: 0, evade: 0, damage: 0 },
+      6: { attack: 3, block: 0, evade: 0, damage: 0 },
+      8: { attack: 4, block: 0, evade: 0, damage: 0 },
+      10: { attack: 5, block: 0, evade: 0, damage: 0 },
+      13: { attack: 6, block: 0, evade: 0, damage: 0 },
+      15: { attack: 7, block: 0, evade: 0, damage: 0 },
     },
     rateOfFire: {
       1: 1,
@@ -781,51 +781,51 @@ export const weaponProficiencyProgression = {
   },
   "W.P. Garrote": {
     bonuses: {
-      1: { strike: 1, parry: 0, dodge: 0, damage: 0 },
-      5: { strike: 1, parry: 0, dodge: 0, damage: 1 },
-      10: { strike: 1, parry: 0, dodge: 0, damage: 1 },
+      1: { attack: 1, block: 0, evade: 0, damage: 0 },
+      5: { attack: 1, block: 0, evade: 0, damage: 1 },
+      10: { attack: 1, block: 0, evade: 0, damage: 1 },
     },
   },
   "W.P. Net": {
     bonuses: {
-      1: { strike: 1, parry: 0, dodge: 0, damage: 0 },
-      4: { strike: 1, parry: 0, dodge: 0, damage: 0 },
-      8: { strike: 1, parry: 0, dodge: 0, damage: 0 },
+      1: { attack: 1, block: 0, evade: 0, damage: 0 },
+      4: { attack: 1, block: 0, evade: 0, damage: 0 },
+      8: { attack: 1, block: 0, evade: 0, damage: 0 },
     },
   },
   "W.P. Cutlass": {
     bonuses: {
-      1: { strike: 1, parry: 1, dodge: 0, damage: 0 },
-      3: { strike: 1, parry: 0, dodge: 0, damage: 0 },
-      6: { strike: 0, parry: 1, dodge: 0, damage: 0 },
-      9: { strike: 1, parry: 1, dodge: 0, damage: 0 },
+      1: { attack: 1, block: 1, evade: 0, damage: 0 },
+      3: { attack: 1, block: 0, evade: 0, damage: 0 },
+      6: { attack: 0, block: 1, evade: 0, damage: 0 },
+      9: { attack: 1, block: 1, evade: 0, damage: 0 },
     },
   },
   "W.P. Harpoon": {
     bonuses: {
-      1: { strike: 1, parry: 0, dodge: 0, damage: 0 },
-      5: { strike: 1, parry: 0, dodge: 0, damage: 0 },
-      10: { strike: 1, parry: 0, dodge: 0, damage: 1 },
+      1: { attack: 1, block: 0, evade: 0, damage: 0 },
+      5: { attack: 1, block: 0, evade: 0, damage: 0 },
+      10: { attack: 1, block: 0, evade: 0, damage: 1 },
     },
   },
   "W.P. Pistol Crossbow": {
     bonuses: {
-      1: { strike: 1, parry: 0, dodge: 0, damage: 0 },
-      5: { strike: 1, parry: 0, dodge: 0, damage: 0 },
-      10: { strike: 1, parry: 0, dodge: 0, damage: 0 },
+      1: { attack: 1, block: 0, evade: 0, damage: 0 },
+      5: { attack: 1, block: 0, evade: 0, damage: 0 },
+      10: { attack: 1, block: 0, evade: 0, damage: 0 },
     },
   },
   "W.P. Club": {
     bonuses: {
-      1: { strike: 1, parry: 1, dodge: 0, damage: 0 },
-      4: { strike: 1, parry: 0, dodge: 0, damage: 0 },
-      8: { strike: 0, parry: 1, dodge: 0, damage: 0 },
-      12: { strike: 1, parry: 1, dodge: 0, damage: 0 },
+      1: { attack: 1, block: 1, evade: 0, damage: 0 },
+      4: { attack: 1, block: 0, evade: 0, damage: 0 },
+      8: { attack: 0, block: 1, evade: 0, damage: 0 },
+      12: { attack: 1, block: 1, evade: 0, damage: 0 },
     },
   },
 };
 
-// ========== ELECTIVE SKILL PERCENTAGE PROGRESSIONS ==========
+// ========== ELECTIVE SKILL PERCENTAGE PRHEAVY_FIGHTERSSIONS ==========
 
 export const electiveSkillPercentages = {
   "Pick Locks": {
@@ -927,51 +927,51 @@ export const electiveSkillPercentages = {
   },
 };
 
-// ---- RULEBOOK-CORRECTED W.P. TABLES (Palladium 2nd ed 1994) ----
+// ---- RULEBOOK-CORRECTED W.P. TABLES (Medieval Combat Simulator 2nd ed 1994) ----
 Object.assign(weaponProficiencyProgression, {
   "W.P. Short Sword": {
     "mode": "state",
     "bonuses": {
       1: {
-        "strike": 1,
-        "parry": 1
+        "attack": 1,
+        "block": 1
       },
       2: {
-        "throwStrike": 1
+        "throwAttack": 1
       },
       3: {
-        "strike": 2
+        "attack": 2
       },
       4: {
-        "parry": 2
+        "block": 2
       },
       6: {
-        "strike": 3,
-        "throwStrike": 2
+        "attack": 3,
+        "throwAttack": 2
       },
       7: {
-        "parry": 3
+        "block": 3
       },
       9: {
-        "strike": 4
+        "attack": 4
       },
       10: {
-        "throwStrike": 3
+        "throwAttack": 3
       },
       11: {
-        "parry": 4
+        "block": 4
       },
       12: {
-        "strike": 5
+        "attack": 5
       },
       13: {
-        "throwStrike": 4
+        "throwAttack": 4
       },
       14: {
-        "parry": 5
+        "block": 5
       },
       15: {
-        "strike": 6
+        "attack": 6
       }
     }
   },
@@ -979,46 +979,46 @@ Object.assign(weaponProficiencyProgression, {
     "mode": "state",
     "bonuses": {
       1: {
-        "strike": 1
+        "attack": 1
       },
       2: {
-        "parry": 1
+        "block": 1
       },
       3: {
-        "strike": 2,
-        "parry": 2
+        "attack": 2,
+        "block": 2
       },
       5: {
-        "parry": 3,
-        "throwStrike": 1
+        "block": 3,
+        "throwAttack": 1
       },
       6: {
-        "strike": 3
+        "attack": 3
       },
       7: {
-        "parry": 4
+        "block": 4
       },
       9: {
-        "strike": 4,
-        "parry": 5
+        "attack": 4,
+        "block": 5
       },
       10: {
-        "throwStrike": 2
+        "throwAttack": 2
       },
       11: {
-        "parry": 6
+        "block": 6
       },
       12: {
-        "strike": 5
+        "attack": 5
       },
       13: {
-        "throwStrike": 3
+        "throwAttack": 3
       },
       14: {
-        "parry": 7
+        "block": 7
       },
       15: {
-        "strike": 6
+        "attack": 6
       }
     }
   },
@@ -1026,48 +1026,48 @@ Object.assign(weaponProficiencyProgression, {
     "mode": "state",
     "bonuses": {
       1: {
-        "throwStrike": 1
+        "throwAttack": 1
       },
       2: {
-        "strike": 1
+        "attack": 1
       },
       3: {
-        "parry": 1,
-        "throwStrike": 2
+        "block": 1,
+        "throwAttack": 2
       },
       4: {
-        "strike": 2
+        "attack": 2
       },
       5: {
-        "throwStrike": 3
+        "throwAttack": 3
       },
       6: {
-        "parry": 2
+        "block": 2
       },
       7: {
-        "strike": 3,
-        "throwStrike": 4
+        "attack": 3,
+        "throwAttack": 4
       },
       9: {
-        "parry": 3,
-        "throwStrike": 5
+        "block": 3,
+        "throwAttack": 5
       },
       10: {
-        "strike": 4
+        "attack": 4
       },
       11: {
-        "throwStrike": 6
+        "throwAttack": 6
       },
       12: {
-        "parry": 4
+        "block": 4
       },
       13: {
-        "strike": 5,
-        "throwStrike": 7
+        "attack": 5,
+        "throwAttack": 7
       },
       15: {
-        "parry": 5,
-        "throwStrike": 8
+        "block": 5,
+        "throwAttack": 8
       }
     }
   },
@@ -1075,44 +1075,44 @@ Object.assign(weaponProficiencyProgression, {
     "mode": "state",
     "bonuses": {
       1: {
-        "throwStrike": 1
+        "throwAttack": 1
       },
       2: {
-        "strike": 1
+        "attack": 1
       },
       3: {
-        "throwStrike": 2
+        "throwAttack": 2
       },
       4: {
-        "strike": 2,
-        "parry": 1
+        "attack": 2,
+        "block": 1
       },
       5: {
-        "throwStrike": 3
+        "throwAttack": 3
       },
       6: {
-        "parry": 2
+        "block": 2
       },
       7: {
-        "strike": 3,
-        "throwStrike": 4
+        "attack": 3,
+        "throwAttack": 4
       },
       9: {
-        "parry": 3
+        "block": 3
       },
       10: {
-        "strike": 4,
-        "throwStrike": 5
+        "attack": 4,
+        "throwAttack": 5
       },
       12: {
-        "parry": 4
+        "block": 4
       },
       13: {
-        "strike": 5,
-        "throwStrike": 6
+        "attack": 5,
+        "throwAttack": 6
       },
       15: {
-        "parry": 5
+        "block": 5
       }
     }
   },
@@ -1120,50 +1120,50 @@ Object.assign(weaponProficiencyProgression, {
     "mode": "state",
     "bonuses": {
       1: {
-        "strike": 1
+        "attack": 1
       },
       2: {
-        "throwStrike": 1
+        "throwAttack": 1
       },
       3: {
-        "strike": 2,
-        "parry": 1
+        "attack": 2,
+        "block": 1
       },
       4: {
-        "throwStrike": 2
+        "throwAttack": 2
       },
       5: {
-        "strike": 3
+        "attack": 3
       },
       6: {
-        "parry": 2
+        "block": 2
       },
       7: {
-        "throwStrike": 3
+        "throwAttack": 3
       },
       8: {
-        "strike": 4
+        "attack": 4
       },
       9: {
-        "parry": 3
+        "block": 3
       },
       10: {
-        "throwStrike": 4
+        "throwAttack": 4
       },
       11: {
-        "strike": 5
+        "attack": 5
       },
       12: {
-        "parry": 4
+        "block": 4
       },
       13: {
-        "throwStrike": 5
+        "throwAttack": 5
       },
       14: {
-        "strike": 6
+        "attack": 6
       },
       15: {
-        "parry": 5
+        "block": 5
       }
     }
   },
@@ -1171,47 +1171,47 @@ Object.assign(weaponProficiencyProgression, {
     "mode": "state",
     "bonuses": {
       1: {
-        "strike": 1
+        "attack": 1
       },
       2: {
-        "strike": 2
+        "attack": 2
       },
       3: {
-        "parry": 1
+        "block": 1
       },
       4: {
-        "strike": 3,
-        "throwStrike": 1
+        "attack": 3,
+        "throwAttack": 1
       },
       6: {
-        "strike": 4,
-        "parry": 2
+        "attack": 4,
+        "block": 2
       },
       7: {
-        "throwStrike": 2
+        "throwAttack": 2
       },
       8: {
-        "strike": 5
+        "attack": 5
       },
       9: {
-        "parry": 3
+        "block": 3
       },
       10: {
-        "strike": 6,
-        "throwStrike": 3
+        "attack": 6,
+        "throwAttack": 3
       },
       12: {
-        "strike": 7,
-        "parry": 4
+        "attack": 7,
+        "block": 4
       },
       13: {
-        "throwStrike": 4
+        "throwAttack": 4
       },
       14: {
-        "strike": 8
+        "attack": 8
       },
       15: {
-        "parry": 5
+        "block": 5
       }
     }
   },
@@ -1219,45 +1219,45 @@ Object.assign(weaponProficiencyProgression, {
     "mode": "state",
     "bonuses": {
       1: {
-        "parry": 1
+        "block": 1
       },
       2: {
-        "parry": 2
+        "block": 2
       },
       3: {
-        "strike": 1,
-        "parry": 3,
-        "throwStrike": 1
+        "attack": 1,
+        "block": 3,
+        "throwAttack": 1
       },
       5: {
-        "strike": 2,
-        "parry": 4,
-        "throwStrike": 2
+        "attack": 2,
+        "block": 4,
+        "throwAttack": 2
       },
       7: {
-        "strike": 3,
-        "parry": 5,
-        "throwStrike": 3
+        "attack": 3,
+        "block": 5,
+        "throwAttack": 3
       },
       9: {
-        "strike": 4,
-        "parry": 6,
-        "throwStrike": 4
+        "attack": 4,
+        "block": 6,
+        "throwAttack": 4
       },
       11: {
-        "strike": 5,
-        "parry": 7,
-        "throwStrike": 5
+        "attack": 5,
+        "block": 7,
+        "throwAttack": 5
       },
       13: {
-        "strike": 6,
-        "parry": 8,
-        "throwStrike": 6
+        "attack": 6,
+        "block": 8,
+        "throwAttack": 6
       },
       15: {
-        "strike": 7,
-        "parry": 9,
-        "throwStrike": 7
+        "attack": 7,
+        "block": 9,
+        "throwAttack": 7
       }
     }
   },
@@ -1265,45 +1265,45 @@ Object.assign(weaponProficiencyProgression, {
     "mode": "state",
     "bonuses": {
       1: {
-        "parry": 2
+        "block": 2
       },
       3: {
-        "strike": 1,
-        "parry": 3
+        "attack": 1,
+        "block": 3
       },
       4: {
-        "parry": 4,
-        "throwStrike": 1
+        "block": 4,
+        "throwAttack": 1
       },
       5: {
-        "strike": 2,
-        "parry": 5
+        "attack": 2,
+        "block": 5
       },
       7: {
-        "strike": 3,
-        "parry": 6,
-        "throwStrike": 3
+        "attack": 3,
+        "block": 6,
+        "throwAttack": 3
       },
       9: {
-        "strike": 4,
-        "parry": 7
+        "attack": 4,
+        "block": 7
       },
       10: {
-        "throwStrike": 3
+        "throwAttack": 3
       },
       11: {
-        "strike": 5,
-        "parry": 8
+        "attack": 5,
+        "block": 8
       },
       13: {
-        "strike": 6,
-        "throwStrike": 4
+        "attack": 6,
+        "throwAttack": 4
       },
       14: {
-        "parry": 9
+        "block": 9
       },
       15: {
-        "strike": 7
+        "attack": 7
       }
     }
   },
@@ -1311,25 +1311,25 @@ Object.assign(weaponProficiencyProgression, {
     "mode": "state",
     "bonuses": {
       2: {
-        "strike": 1
+        "attack": 1
       },
       4: {
-        "strike": 2
+        "attack": 2
       },
       6: {
-        "strike": 3
+        "attack": 3
       },
       8: {
-        "strike": 4
+        "attack": 4
       },
       10: {
-        "strike": 5
+        "attack": 5
       },
       12: {
-        "strike": 6
+        "attack": 6
       },
       14: {
-        "strike": 7
+        "attack": 7
       }
     },
     "specials": {
@@ -1366,25 +1366,25 @@ Object.assign(weaponProficiencyProgression, {
     "mode": "state",
     "bonuses": {
       2: {
-        "strike": 1
+        "attack": 1
       },
       4: {
-        "strike": 2
+        "attack": 2
       },
       6: {
-        "strike": 3
+        "attack": 3
       },
       8: {
-        "strike": 4
+        "attack": 4
       },
       10: {
-        "strike": 5
+        "attack": 5
       },
       13: {
-        "strike": 6
+        "attack": 6
       },
       15: {
-        "strike": 7
+        "attack": 7
       }
     },
     "specials": {
@@ -1421,22 +1421,22 @@ Object.assign(weaponProficiencyProgression, {
     "mode": "state",
     "bonuses": {
       2: {
-        "strike": 1
+        "attack": 1
       },
       4: {
-        "strike": 2
+        "attack": 2
       },
       6: {
-        "strike": 3
+        "attack": 3
       },
       8: {
-        "strike": 4
+        "attack": 4
       },
       11: {
-        "strike": 5
+        "attack": 5
       },
       14: {
-        "strike": 6
+        "attack": 6
       }
     },
     "specials": {
@@ -1467,25 +1467,25 @@ Object.assign(weaponProficiencyProgression, {
     "mode": "state",
     "bonuses": {
       2: {
-        "strike": 1
+        "attack": 1
       },
       3: {
-        "strike": 2
+        "attack": 2
       },
       4: {
-        "strike": 3
+        "attack": 3
       },
       6: {
-        "strike": 4
+        "attack": 4
       },
       8: {
-        "strike": 5
+        "attack": 5
       },
       11: {
-        "strike": 6
+        "attack": 6
       },
       14: {
-        "strike": 7
+        "attack": 7
       }
     },
     "specials": {
@@ -1752,12 +1752,12 @@ export const identifyLocateMedicalPercentages = {
   },
 };
 
-// ========== SECONDARY SKILL O.C.C. BONUSES ==========
+// ========== SECONDARY SKILL profession BONUSES ==========
 // These bonuses apply when skills are chosen as Secondary Skills
 
 export const secondarySkillBonuses = {
   Carpentry: 10,
-  "Faerie Lore": 10,
+  "Scout Lore": 10,
   "Plant/Farm Lore": 12,
   "Preserve Food": 10,
   "Sense of Direction": 5,
@@ -1777,20 +1777,20 @@ export const secondarySkillBonuses = {
  * Calculate cumulative skill bonuses up to a given level
  * @param {Object} progression - Skill progression object (bonuses by level)
  * @param {number} level - Current character level
- * @returns {Object} - Cumulative bonuses { strike, parry, dodge, damage }
+ * @returns {Object} - Cumulative bonuses { attack, block, evade, damage }
  */
 function getCumulativeSkillBonuses(progression, level) {
   // "Cumulative" mode = treat each listed bonus as an increment and sum all thresholds <= level.
   if (!progression || !progression.bonuses) {
-    return { strike: 0, parry: 0, dodge: 0, damage: 0, throwStrike: 0 };
+    return { attack: 0, block: 0, evade: 0, damage: 0, throwAttack: 0 };
   }
 
   const cumulative = {
-    strike: 0,
-    parry: 0,
-    dodge: 0,
+    attack: 0,
+    block: 0,
+    evade: 0,
     damage: 0,
-    throwStrike: 0,
+    throwAttack: 0,
   };
 
   Object.keys(progression.bonuses).forEach((threshold) => {
@@ -1798,11 +1798,11 @@ function getCumulativeSkillBonuses(progression, level) {
     if (level >= thresholdLevel) {
       const bonusEntry = progression.bonuses[threshold];
 
-      cumulative.strike += bonusEntry.strike || 0;
-      cumulative.parry += bonusEntry.parry || 0;
-      cumulative.dodge += bonusEntry.dodge || 0;
+      cumulative.attack += bonusEntry.attack || 0;
+      cumulative.block += bonusEntry.block || 0;
+      cumulative.evade += bonusEntry.evade || 0;
       cumulative.damage += bonusEntry.damage || 0;
-      cumulative.throwStrike += bonusEntry.throwStrike || 0;
+      cumulative.throwAttack += bonusEntry.throwAttack || 0;
     }
   });
 
@@ -1813,15 +1813,15 @@ function getStateSkillBonuses(progression, level) {
   // "State" mode = tables list the *current total* at specific levels.
   // A 0 in a column means "no change" (carry forward previous total).
   if (!progression || !progression.bonuses) {
-    return { strike: 0, parry: 0, dodge: 0, damage: 0, throwStrike: 0 };
+    return { attack: 0, block: 0, evade: 0, damage: 0, throwAttack: 0 };
   }
 
   const totals = {
-    strike: 0,
-    parry: 0,
-    dodge: 0,
+    attack: 0,
+    block: 0,
+    evade: 0,
     damage: 0,
-    throwStrike: 0,
+    throwAttack: 0,
   };
 
   const levels = Object.keys(progression.bonuses)
@@ -1835,7 +1835,7 @@ function getStateSkillBonuses(progression, level) {
 
     for (const k of Object.keys(entry)) {
       const v = entry[k];
-      // In Palladium tables, 0 means "unchanged", so we only update on non-zero.
+      // In Medieval Combat Simulator tables, 0 means "unchanged", so we only update on non-zero.
       if (typeof v === 'number' && v !== 0) totals[k] = v;
     }
   }
@@ -1848,7 +1848,7 @@ function getCumulativeAttackBonus(progression, level, defaultAttacks = 1) {
     return defaultAttacks;
   }
 
-  // Attacks-per-melee tables in Palladium are "state" tables:
+  // Attacks-per-melee tables in Medieval Combat Simulator are "state" tables:
   // you use the highest threshold <= current level (not a sum).
   const applicableLevels = Object.keys(progression.attacks)
     .map(Number)
@@ -1867,7 +1867,7 @@ function getCumulativeAttackBonus(progression, level, defaultAttacks = 1) {
  * Get special abilities for a skill at a specific level
  * @param {Object} progression - Skill progression object
  * @param {number} level - Current character level
- * @returns {Object} - Special abilities { criticalStrike, stun, kickDamage }
+ * @returns {Object} - Special abilities { criticalAttack, stun, kickDamage }
  */
 function getSpecialAbilities(progression, level) {
   if (!progression || !progression.specials) {
@@ -1991,7 +1991,7 @@ export function getWeaponMaxRange(skillName) {
  * Get skill bonuses for a character at a specific level
  * @param {string} skillName - Name of the skill
  * @param {number} level - Character level
- * @returns {Object} - { bonuses: {strike, parry, dodge, damage}, attacks: number, specials: {} }
+ * @returns {Object} - { bonuses: {attack, block, evade, damage}, attacks: number, specials: {} }
  */
 export function getSkillBonusesAtLevel(skillName, level) {
   let progression = null;
@@ -2035,13 +2035,13 @@ export function getSkillBonusesAtLevel(skillName, level) {
     "W.P. Sword": "W.P. Large Sword",
     "W.P. Swords": "W.P. Large Sword",
 
-    // If your OCC data uses the generic "W.P. Axe", treat it like a Battle Axe by default.
+    // If your PROFESSION data uses the generic "W.P. Axe", treat it like a Battle Axe by default.
     // (We still keep "W.P. Throwing Axe" separate because the book gives different throw bonuses.)
     "W.P. Axe": "W.P. Battle Axe",
     "W.P. Battle Axe": "W.P. Battle Axe",
     "W.P. Throwing Axe": "W.P. Throwing Axe",
 
-    // Some OCCs list just "W.P. Bow"; we default it to Short Bow for progression lookups,
+    // Some PROFESSIONs list just "W.P. Bow"; we default it to Short Bow for progression lookups,
     // but weapon resolution should still allow it to count for both short/long bows.
     "W.P. Bow": "W.P. Short Bow",
   };
@@ -2067,7 +2067,7 @@ export function getSkillBonusesAtLevel(skillName, level) {
 
   if (!progression) {
     return {
-      bonuses: { strike: 0, parry: 0, dodge: 0, damage: 0, throwStrike: 0 },
+      bonuses: { attack: 0, block: 0, evade: 0, damage: 0, throwAttack: 0 },
       attacks: 0,
       specials: {},
     };

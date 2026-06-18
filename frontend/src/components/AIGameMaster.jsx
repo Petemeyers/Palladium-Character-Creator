@@ -15,7 +15,7 @@ const AIGameMaster = () => {
             setLoading(true);
             const result = await axios.post('/api/session/create', {
                 campaignSettings: {
-                    gameSystem: 'Palladium',
+                    gameSystem: 'Medieval Combat Simulator',
                     campaign: 'Default'
                 }
             });
@@ -63,7 +63,7 @@ const AIGameMaster = () => {
 
     return (
         <div className="ai-gamemaster-container">
-            <h2>Palladium RPG Game Master</h2>
+            <h2>Medieval Combat Simulator Game Master</h2>
             
             {/* Context Setting */}
             <div className="context-section">

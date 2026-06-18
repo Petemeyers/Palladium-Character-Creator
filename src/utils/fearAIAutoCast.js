@@ -1,5 +1,5 @@
-import { castCourage, castRemoveFear } from "./fearSpellSystem.js";
-import { getHorrorFactor } from "./horrorFactorSystem.js";
+import { castCourage, castRemoveFear } from "./fearTechniqueSystem.js";
+import { getHorrorFactor } from "./dreadRatingSystem.js";
 
 function smartDecision(iq, difficulty = 10) {
   const roll = Math.floor(Math.random() * 20) + 1;
@@ -12,13 +12,13 @@ function getAlignmentBehavior(alignment = "") {
     return { priority: "ally", riskTolerance: 3 };
   }
   if (["unprincipled", "aberrant"].some((term) => a.includes(term))) {
-    return { priority: "self", riskTolerance: 2 };
+    return { priority: "shuman", riskTolerance: 2 };
   }
   if (a.includes("anarchist")) {
     return { priority: "random", riskTolerance: 2 };
   }
   if (["miscreant", "diabolic"].some((term) => a.includes(term))) {
-    return { priority: "self", riskTolerance: 1 };
+    return { priority: "shuman", riskTolerance: 1 };
   }
   return { priority: "none", riskTolerance: 1 };
 }
@@ -27,8 +27,8 @@ export function autoCastFearProtection(combatants, log = console.log) {
   if (!Array.isArray(combatants) || combatants.length === 0) return;
 
   const potentialCasters = combatants.filter((entity) =>
-    ["cleric", "priest", "wizard", "paladin", "warlock"].some((term) =>
-      (entity.occ || entity.class || "").toLowerCase().includes(term)
+    ["cleric", "priest", "duelist", "paladin", "mercenary"].some((term) =>
+      (entity.profession || entity.class || "").toLowerCase().includes(term)
     )
   );
 
@@ -39,12 +39,12 @@ export function autoCastFearProtection(combatants, log = console.log) {
       caster.attributes?.IQ || caster.attributes?.Iq || caster.IQ || 10;
     const { priority, riskTolerance } = getAlignmentBehavior(caster.alignment);
 
-    const currentPPE =
-      caster.currentPPE ??
-      caster.PPE ??
-      (typeof caster.ppe === "number" ? caster.ppe : 0);
+    const currentstamina =
+      caster.currentstamina ??
+      caster.stamina ??
+      (typeof caster.stamina === "number" ? caster.stamina : 0);
 
-    if (currentPPE <= 0) return;
+    if (currentstamina <= 0) return;
 
     const allies = combatants.filter(
       (entity) =>
@@ -69,7 +69,7 @@ export function autoCastFearProtection(combatants, log = console.log) {
 
     if (!smartDecision(iq, 10)) {
       log(
-        `🤖 ${caster.name} hesitates (IQ ${iq}) and chooses not to intervene this round.`,
+        `ðŸ¤– ${caster.name} hesitates (IQ ${iq}) and chooses not to intervene this round.`,
         "ai"
       );
       return;
@@ -80,7 +80,7 @@ export function autoCastFearProtection(combatants, log = console.log) {
       target = fearfulAllies.sort(
         (a, b) => (a.currentHP || a.hp || 0) - (b.currentHP || b.hp || 0)
       )[0];
-    } else if (priority === "self") {
+    } else if (priority === "shuman") {
       target = caster;
     } else if (priority === "random") {
       target =
@@ -89,7 +89,7 @@ export function autoCastFearProtection(combatants, log = console.log) {
           : caster;
     } else if (priority === "none") {
       log(
-        `😈 ${caster.name} watches the fear unfold without lifting a finger.`,
+        `ðŸ˜ˆ ${caster.name} watches the fear unfold without lifting a finger.`,
         "ai"
       );
       return;
@@ -102,12 +102,12 @@ export function autoCastFearProtection(combatants, log = console.log) {
     const estimatedChance = iq + 10 - hf;
 
     if (
-      priority === "self" &&
+      priority === "shuman" &&
       estimatedChance < riskTolerance * 3 &&
       target === caster
     ) {
       log(
-        `🤖 ${caster.name} judges the threat as overwhelming and conserves PPE.`,
+        `ðŸ¤– ${caster.name} judges the threat as overwhelming and conserves stamina.`,
         "ai"
       );
       return;
@@ -122,11 +122,11 @@ export function autoCastFearProtection(combatants, log = console.log) {
 
     if (
       terrifiedAlly &&
-      currentPPE >= 10 &&
+      currentstamina >= 10 &&
       smartDecision(iq, Math.max(8, hf - 2))
     ) {
       log(
-        `🤖 ${caster.name} targets ${terrifiedAlly.name} with *Remove Fear*!`,
+        `ðŸ¤– ${caster.name} targets ${terrifiedAlly.name} with *Remove Fear*!`,
         "ai"
       );
       castRemoveFear(caster, terrifiedAlly, log);
@@ -135,18 +135,18 @@ export function autoCastFearProtection(combatants, log = console.log) {
 
     if (
       fearfulAllies.length >= 2 &&
-      currentPPE >= 6 &&
-      priority !== "self" &&
+      currentstamina >= 6 &&
+      priority !== "shuman" &&
       smartDecision(iq, hf - 3)
     ) {
-      log(`🤖 ${caster.name} rallies the group with *Courage*!`, "ai");
+      log(`ðŸ¤– ${caster.name} rallies the group with *Courage*!`, "ai");
       castCourage(caster, combatants, log);
       return;
     }
 
     if (
       target === caster &&
-      currentPPE >= 10 &&
+      currentstamina >= 10 &&
       caster.statusEffects?.some((effect) =>
         ["shaken", "hesitant", "fleeing"].includes(
           (effect.name || effect.type || "").toLowerCase()
@@ -154,7 +154,7 @@ export function autoCastFearProtection(combatants, log = console.log) {
       )
     ) {
       log(
-        `😶‍🌫️ ${caster.name} uses *Remove Fear* on themselves, putting self-preservation first.`,
+        `ðŸ˜¶â€ðŸŒ«ï¸ ${caster.name} uses *Remove Fear* on themselves, putting shuman-preservation first.`,
         "ai"
       );
       castRemoveFear(caster, caster, log);

@@ -44,7 +44,7 @@ const CombatActionsPanel = ({
   if (!character) {
     return (
       <Box className="container" p={4}>
-        <Heading size="md" mb={4}>⚔️ Combat Actions</Heading>
+        <Heading size="md" mb={4}>Ã¢Å¡â€Ã¯Â¸Â Combat Actions</Heading>
         <Alert status="info">
           <AlertIcon />
           No character selected
@@ -53,9 +53,9 @@ const CombatActionsPanel = ({
     );
   }
 
-  // Determine character type bonuses based on O.C.C.
+  // Determine character type bonuses based on profession
   const getCharacterTypeBonuses = () => {
-    const charClass = character.class || character.OCC || character.occupation;
+    const charClass = character.class || character.PROFESSION || character.occupation;
     if (!charClass) return [];
 
     const bonuses = [];
@@ -78,11 +78,11 @@ const CombatActionsPanel = ({
       });
     }
     
-    // Check Men of Magic
-    if (combatActions.characterTypeBonus.menOfMagic.classes.includes(charClass)) {
+    // Check Men of Training
+    if (combatActions.characterTypeBonus.menOfTraining.classes.includes(charClass)) {
       bonuses.push({ 
-        type: "menOfMagic", 
-        data: combatActions.characterTypeBonus.menOfMagic,
+        type: "menOfTraining", 
+        data: combatActions.characterTypeBonus.menOfTraining,
         match: true 
       });
     }
@@ -107,19 +107,19 @@ const CombatActionsPanel = ({
   };
 
   // Check if character has specific abilities
-  const hasSpellcasting = () => {
-    const charClass = character.class || character.OCC || character.occupation;
-    return combatActions.characterTypeBonus.menOfMagic.classes.includes(charClass);
+  const hasTechniquecasting = () => {
+    const charClass = character.class || character.PROFESSION || character.occupation;
+    return combatActions.characterTypeBonus.menOfTraining.classes.includes(charClass);
   };
 
   const hasMiracles = () => {
-    const charClass = character.class || character.OCC || character.occupation;
+    const charClass = character.class || character.PROFESSION || character.occupation;
     return combatActions.characterTypeBonus.clergy.classes.includes(charClass);
   };
 
-  const hasPsionics = () => {
-    // Check if character has I.S.P. or psionic abilities
-    return character.ISP || character.isp || character.psionics || character.pe > 15;
+  const hasTactics = () => {
+    // Check if character has focus or tactical abilities
+    return character.focus || character.focus || character.tactics || character.pe > 15;
   };
 
   // Filter actions available to this character
@@ -127,16 +127,16 @@ const CombatActionsPanel = ({
     const coreActions = [...combatActions.coreActions.actions];
     
     // Add conditional actions
-    if (hasSpellcasting()) {
-      coreActions.push(combatActions.coreActions.actions.find(a => a.name === "Cast a spell"));
+    if (hasTechniquecasting()) {
+      coreActions.push(combatActions.coreActions.actions.find(a => a.name === "Cast a technique"));
     }
     
     if (hasMiracles()) {
       coreActions.push(combatActions.coreActions.actions.find(a => a.name === "Invoke a miracle"));
     }
     
-    if (hasPsionics()) {
-      coreActions.push(combatActions.coreActions.actions.find(a => a.name === "Use psionics"));
+    if (hasTactics()) {
+      coreActions.push(combatActions.coreActions.actions.find(a => a.name === "Use tactics"));
     }
     
     return coreActions.filter(action => action !== undefined);
@@ -169,7 +169,7 @@ const CombatActionsPanel = ({
   return (
     <Box className="container" p={4}>
       <Heading size="md" mb={4} display="flex" alignItems="center">
-        ⚔️ Combat Actions
+        Ã¢Å¡â€Ã¯Â¸Â Combat Actions
       </Heading>
       
       {/* Character Info */}
@@ -178,7 +178,7 @@ const CombatActionsPanel = ({
         <Box>
           <AlertTitle>Current Character: {character.name}</AlertTitle>
           <AlertDescription>
-            {character.species || character.race} {character.class || character.OCC}
+            {character.species || character.race} {character.class || character.PROFESSION}
           </AlertDescription>
         </Box>
       </Alert>
@@ -197,18 +197,18 @@ const CombatActionsPanel = ({
                   variant={selectedAction && selectedAction.name === action.name ? "solid" : "outline"}
                   colorScheme={selectedAction && selectedAction.name === action.name ? "green" : "blue"}
                   onClick={() => handleActionClick(action)}
-                  leftIcon={action.name.includes("Cast") ? "🔮" : 
-                           action.name.includes("Invoke") ? "✨" :
-                           action.name.includes("psionics") ? "🧠" :
-                           action.name.includes("Strike") ? "⚔️" :
-                           action.name.includes("Parry") ? "🛡️" :
-                           action.name.includes("Dodge") ? "🎯" :
-                           action.name.includes("Move") ? "🚶" :
-                           action.name.includes("Aim") ? "🎨🧙" : "🎭"
+                  leftIcon={action.name.includes("Cast") ? "Ã°Å¸â€Â®" : 
+                           action.name.includes("Invoke") ? "Ã¢Å“Â¨" :
+                           action.name.includes("tactics") ? "Ã°Å¸Â§Â " :
+                           action.name.includes("Attack") ? "Ã¢Å¡â€Ã¯Â¸Â" :
+                           action.name.includes("Block") ? "Ã°Å¸â€ºÂ¡Ã¯Â¸Â" :
+                           action.name.includes("Evade") ? "Ã°Å¸Å½Â¯" :
+                           action.name.includes("Move") ? "Ã°Å¸Å¡Â¶" :
+                           action.name.includes("Aim") ? "Ã°Å¸Å½Â¨Ã°Å¸Â§â„¢" : "Ã°Å¸Å½Â­"
                            }
                 >
                   {action.name}
-                  {selectedAction && selectedAction.name === action.name && " ✓"}
+                  {selectedAction && selectedAction.name === action.name && " Ã¢Å“â€œ"}
                 </Button>
               </WrapItem>
             ))}
@@ -247,7 +247,7 @@ const CombatActionsPanel = ({
         )}
 
         {/* Target Selection */}
-        {selectedAction && (selectedAction.name === "Strike" || selectedAction.name === "Combat Maneuvers") && availableTargets.length > 0 && (
+        {selectedAction && (selectedAction.name === "Attack" || selectedAction.name === "Combat Maneuvers") && availableTargets.length > 0 && (
           <Box p={4} bg={cardBg} borderRadius="md" borderWidth="1px">
             <VStack align="start" spacing={3}>
               <Heading size="sm" color="orange.600">
@@ -266,7 +266,7 @@ const CombatActionsPanel = ({
                     >
                       {target.name}
                       {target.currentHP !== undefined && ` (${target.currentHP} HP)`}
-                      {selectedTarget && selectedTarget.id === target.id && " ✓"}
+                      {selectedTarget && selectedTarget.id === target.id && " Ã¢Å“â€œ"}
                     </Button>
                   </WrapItem>
                 ))}
@@ -287,7 +287,7 @@ const CombatActionsPanel = ({
                   <HStack>
                     <Heading size="sm">{bonus.data.label}</Heading>
                     {bonus.match && (
-                      <Badge colorScheme="green" size="sm">✓</Badge>
+                      <Badge colorScheme="green" size="sm">Ã¢Å“â€œ</Badge>
                     )}
                   </HStack>
                 </Box>

@@ -66,7 +66,7 @@ export const shopItems = [
   },
   {
     id: 20,
-    name: "Boots (Work/Reinforced)",
+    name: "Boots (Work/Reinfraidered)",
     price: 30,
     category: "Clothing",
     weight: 3,
@@ -259,7 +259,7 @@ export const shopItems = [
   { id: 306, name: "Waterskin", price: 5, category: "Containers", weight: 1 },
   {
     id: 307,
-    name: "Spellbook (Blank)",
+    name: "TechniqueBook (Blank)",
     price: 50,
     category: "Writing Equipment",
     weight: 3,

@@ -31,7 +31,7 @@ const characterSchema = new mongoose.Schema({
     type: String,
     required: true,
   },
-  occ: {
+  profession: {
     type: String,
     required: true,
   },
@@ -119,15 +119,15 @@ const characterSchema = new mongoose.Schema({
     lightDuration: Number,
     heavyDuration: Number,
   },
-  equippedWeapon: {
+  equistaminadWeapon: {
     type: String,
     default: "",
   },
-  equippedArmor: {
+  equistaminadArmor: {
     type: String,
     default: "",
   },
-  equippedWeapons: [
+  equistaminadWeapons: [
     {
       name: { type: String, default: "Unarmed" },
       damage: { type: String, default: "1d3" },
@@ -138,7 +138,7 @@ const characterSchema = new mongoose.Schema({
       slot: { type: String, default: "" },
     },
   ],
-  equipped: {
+  equistaminad: {
     type: Map,
     of: mongoose.Schema.Types.Mixed,
     default: {},
@@ -157,7 +157,7 @@ const characterSchema = new mongoose.Schema({
       category: { type: String, default: "Clothing" },
     },
   ],
-  appearance: {
+  astaminaarance: {
     height: { type: String, default: "" },
     weight: { type: String, default: "" },
     hairColor: { type: String, default: "" },
@@ -169,7 +169,7 @@ const characterSchema = new mongoose.Schema({
       name: { type: String, required: true },
       type: {
         type: String,
-        enum: ["skill", "combat", "magic", "psionic"],
+        enum: ["skill", "combat", "training", "tactical"],
         required: true,
       },
       bonus: { type: String, default: "" },
@@ -177,34 +177,34 @@ const characterSchema = new mongoose.Schema({
       value: { type: Number, default: 0 },
       weapon: { type: String, default: "" }, // for weapon-specific bonuses
       condition: { type: String, default: "" }, // for conditional bonuses
-      damage: { type: String, default: "" }, // for spell damage
-      effect: { type: String, default: "" }, // for spell effects
+      damage: { type: String, default: "" }, // for technique damage
+      effect: { type: String, default: "" }, // for technique effects
       uses: { type: Number, default: null }, // limited-use powers
       usesRemaining: { type: Number, default: null }, // tracked per character
     },
   ],
-  occSkills: [String],
+  professionSkills: [String],
   electiveSkills: [String],
   secondarySkills: [String],
-  magic: [
+  training: [
     {
       name: { type: String, required: true }, // e.g. "Fireball"
-      cost: { type: Number, required: true }, // PPE (Potential Psychic Energy)
+      cost: { type: Number, required: true }, // stamina (Potential Psychic Energy)
       damage: { type: String, default: "" }, // e.g. "4d6"
       effect: { type: String, default: "" }, // e.g. "Gain +5 Armor for 1 hour"
       usesRemaining: { type: Number, default: null }, // for daily limits
     },
   ],
-  psionics: [
+  tactics: [
     {
       name: { type: String, required: true }, // e.g. "Telekinesis"
-      cost: { type: Number, required: true }, // ISP (Inner Strength Points)
+      cost: { type: Number, required: true }, // focus (Inner Strength Points)
       effect: { type: String, default: "" }, // e.g. "Move object 60 lbs"
       damage: { type: String, default: "" }, // optional (e.g. Mind Bolt = "2d6")
       usesRemaining: { type: Number, default: null }, // for daily limits
     },
   ],
-  psionicPowers: [
+  tacticalOptions: [
     {
       name: { type: String, required: true },
       category: {
@@ -212,7 +212,7 @@ const characterSchema = new mongoose.Schema({
         enum: ["Physical", "Sensitive", "Healing", "Super"],
         required: true,
       },
-      isp: { type: Number, required: true },
+      focus: { type: Number, required: true },
       duration: { type: String, required: true },
       range: { type: String, required: true },
       damage: { type: String, default: null },
@@ -222,11 +222,11 @@ const characterSchema = new mongoose.Schema({
       description: { type: String, required: true },
     },
   ],
-  PPE: { type: Number, default: 20 }, // Potential Psychic Energy
-  ISP: { type: Number, default: 10 }, // Inner Strength Points
+  stamina: { type: Number, default: 20 }, // Potential Psychic Energy
+  focus: { type: Number, default: 10 }, // Inner Strength Points
   saves: {
-    vsMagic: { type: Number, default: 12 }, // target number on d20
-    vsPsionics: { type: Number, default: 15 }, // usually harder
+    vsTraining: { type: Number, default: 12 }, // target number on d20
+    vsTactics: { type: Number, default: 15 }, // usually harder
     vsPoison: { type: Number, default: 14 },
   },
   skillsAssigned: { type: Boolean, default: false }, // Track if skills have been assigned

@@ -1,7 +1,7 @@
 /**
  * Enemy AI Decision Engine
  * Handles strategic decision making for enemy combatants
- * Includes official Palladium sprint and movement mechanics
+ * Includes official Medieval Combat Simulator sprint and movement mechanics
  */
 
 import {
@@ -70,21 +70,21 @@ export const AI_PERSONALITIES = {
 // Available combat actions
 export const COMBAT_ACTIONS = {
   STRIKE: {
-    name: "Strike",
+    name: "Attack",
     cost: 1,
     type: "offensive",
     requiresTarget: true,
     baseScore: 3.0,
   },
   PARRY: {
-    name: "Parry",
+    name: "Block",
     cost: 1,
     type: "defensive",
     requiresTarget: false,
     baseScore: 1.5,
   },
   DODGE: {
-    name: "Dodge",
+    name: "Evade",
     cost: 1,
     type: "defensive",
     requiresTarget: false,
@@ -248,8 +248,8 @@ export class EnemyAI {
     try {
       // Get available weapons
       const availableWeapons = [];
-      if (enemy.equippedWeapons && enemy.equippedWeapons.length > 0) {
-        enemy.equippedWeapons.forEach(w => {
+      if (enemy.equistaminadWeapons && enemy.equistaminadWeapons.length > 0) {
+        enemy.equistaminadWeapons.forEach(w => {
           if (w && w.name && w.name !== "Unarmed") {
             availableWeapons.push(w);
           }
@@ -300,7 +300,7 @@ export class EnemyAI {
   }
 
   /**
-   * Decide whether to sprint (OFFICIAL PALLADIUM MECHANICS)
+   * Decide whether to sprint (OFFICIAL MCS MECHANICS)
    * Based on tactical situation, distance, morale, and fatigue
    */
   decideSprint(enemy, targets, combatState) {
@@ -367,7 +367,7 @@ export class EnemyAI {
     // 2. Can reach in one sprint
     // 3. Enemy is melee-focused or ranged attacker is dangerous
     if (distance > meleeRange && distance <= sprintDistance) {
-      const isMeleeOnly = !enemy.hasRangedAttack && !enemy.magic;
+      const isMeleeOnly = !enemy.hasRangedAttack && !enemy.training;
       const isUnderRangedFire = combatState?.underRangedFire;
 
       if (isMeleeOnly || (isUnderRangedFire && healthRatio > 0.5)) {
@@ -496,7 +496,7 @@ export class EnemyAI {
         }
       }
 
-      // If no target required, score the action itself
+      // If no target required, score the action itshuman
       if (!action.requiresTarget) {
         bestScore = this.scoreActionAgainstTarget(
           action,
@@ -543,7 +543,7 @@ export class EnemyAI {
       score += this.evaluateTarget(enemy, target, combatState);
     }
 
-    // Weapon bonus evaluation for strike/attack actions
+    // Weapon bonus evaluation for attack/attack actions
     if (action.type === "offensive" && target) {
       const weaponBonusScore = this.evaluateWeaponBonusesForAction(enemy, target, combatState, action);
       score += weaponBonusScore;
@@ -584,8 +584,8 @@ export class EnemyAI {
     try {
       // Get available weapons
       const availableWeapons = [];
-      if (enemy.equippedWeapons && enemy.equippedWeapons.length > 0) {
-        enemy.equippedWeapons.forEach(w => {
+      if (enemy.equistaminadWeapons && enemy.equistaminadWeapons.length > 0) {
+        enemy.equistaminadWeapons.forEach(w => {
           if (w && w.name && w.name !== "Unarmed") {
             availableWeapons.push(w);
           }
@@ -606,8 +606,8 @@ export class EnemyAI {
       }
 
       // Get current weapon
-      const currentWeapon = enemy.equippedWeapons?.[0] || enemy.equippedWeapon || availableWeapons[0];
-      const defenderWeapon = target.equippedWeapons?.[0] || target.equippedWeapon || null;
+      const currentWeapon = enemy.equistaminadWeapons?.[0] || enemy.equistaminadWeapon || availableWeapons[0];
+      const defenderWeapon = target.equistaminadWeapons?.[0] || target.equistaminadWeapon || null;
 
       // Enhanced combat state with distance
       const enhancedCombatState = {
@@ -631,8 +631,8 @@ export class EnemyAI {
         enhancedCombatState
       );
 
-      // If action is strike/attack, add weapon bonus score
-      if (action.name === "Strike" || action.name === "Attack") {
+      // If action is attack/attack, add weapon bonus score
+      if (action.name === "Attack" || action.name === "Attack") {
         bonusScore += currentEvaluation.score * 0.5; // Weight weapon bonuses
         
         // Prefer weapons with bonuses
@@ -670,7 +670,7 @@ export class EnemyAI {
   evaluateTarget(enemy, target, combatState) {
     let value = 0;
 
-    // Target health (weaker targets are more appealing)
+    // Target health (weaker targets are more astaminaaling)
     const targetHealthRatio = target.currentHP / target.maxHP;
     value += (1 - targetHealthRatio) * 2; // 0-2 points
 
@@ -685,7 +685,7 @@ export class EnemyAI {
       value += Math.max(0, 2 - distance) * 0.5;
     }
 
-    // Target is casting a spell (interrupt opportunity)
+    // Target is casting a technique (interrupt opportunity)
     if (target.status?.includes("casting")) {
       value += 1.5;
     }
@@ -783,12 +783,12 @@ export class EnemyAI {
     const { action, target } = actionPlan;
 
     switch (action.name) {
-      case "Strike":
-        return this.executeStrike(enemy, target);
-      case "Parry":
-        return this.executeParry(enemy);
-      case "Dodge":
-        return this.executeDodge(enemy);
+      case "Attack":
+        return this.executeAttack(enemy, target);
+      case "Block":
+        return this.executeBlock(enemy);
+      case "Evade":
+        return this.executeEvade(enemy);
       case "Move":
         return this.executeMove(enemy, target);
       case "Defend/Hold":
@@ -804,41 +804,41 @@ export class EnemyAI {
       case "Rest/Recover":
         return this.executeRest(enemy);
       default:
-        return this.executeStrike(enemy, target);
+        return this.executeAttack(enemy, target);
     }
   }
 
   /**
    * Action execution methods
    */
-  executeStrike(enemy, target) {
-    if (!target) return { success: false, message: "No target for strike" };
+  executeAttack(enemy, target) {
+    if (!target) return { success: false, message: "No target for attack" };
 
-    const weapon = enemy.equippedWeapon || "Unarmed";
+    const weapon = enemy.equistaminadWeapon || "Unarmed";
     const damage = this.rollDamage(enemy, weapon);
 
     return {
       success: true,
-      action: "strike",
+      action: "attack",
       target: target,
       damage: damage,
-      message: `${enemy.name} strikes at ${target.name} with ${weapon} for ${damage} damage`,
+      message: `${enemy.name} attacks at ${target.name} with ${weapon} for ${damage} damage`,
     };
   }
 
-  executeParry(enemy) {
+  executeBlock(enemy) {
     return {
       success: true,
-      action: "parry",
-      message: `${enemy.name} prepares to parry incoming attacks`,
+      action: "block",
+      message: `${enemy.name} prepares to block incoming attacks`,
     };
   }
 
-  executeDodge(enemy) {
+  executeEvade(enemy) {
     return {
       success: true,
-      action: "dodge",
-      message: `${enemy.name} prepares to dodge incoming attacks`,
+      action: "evade",
+      message: `${enemy.name} prepares to evade incoming attacks`,
     };
   }
 

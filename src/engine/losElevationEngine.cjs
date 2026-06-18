@@ -62,8 +62,8 @@ function getHexBlockHeight(state, h) {
 
 function getUnitBaseHeight(state, entityId) {
   const f = state.fighters?.find(x => x.id === entityId);
-  // "height" is the creature height in "levels" (not feet) for LOS purposes
-  // Defaults: man-sized = 1, large = 2, giant = 3+
+  // "height" is the combatant height in "levels" (not feet) for LOS purposes
+  // Defaults: man-sized = 1, large = 2, heavy = 3+
   return (f?.sizeHeight ?? f?.losHeight ?? 1);
 }
 

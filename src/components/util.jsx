@@ -25,46 +25,12 @@ export const determineCharacterAge = (species, roll) => {
   // Import ageTable dynamically to avoid circular dependency
   const ageTable = {
     HUMAN: [16, 19, 22, 24, 26, 28, 30, 34],
-    WOLFEN: [16, 19, 22, 24, 26, 28, 30, 34],
-    GOBLIN: [16, 19, 22, 24, 26, 28, 30, 34],
-    HOB_GOBLIN: [16, 19, 22, 24, 26, 28, 30, 34],
-    ORC: [16, 19, 22, 24, 26, 28, 30, 34],
-    OGRE: [18, 22, 26, 28, 30, 34, 38, 42],
-    TROLL: [18, 22, 26, 28, 30, 34, 38, 42],
-    TROGLODYTE: [18, 22, 26, 28, 30, 34, 38, 42],
-    DWARF: [20, 25, 30, 35, 40, 50, 60, 70],
-    KOBOLD: [20, 25, 30, 35, 40, 50, 60, 70],
-    GNOME: [20, 25, 30, 35, 40, 50, 60, 70],
-    ELF: [20, 24, 28, 30, 50, 80, 100, 200],
-    CHANGELING: [20, 24, 28, 30, 50, 80, 100, 200],
-    // Faerie Folk (very long-lived)
-    FAERIE: [50, 100, 200, 300, 500, 800, 1000, 1500],
-    SILVER_BELL: [50, 100, 200, 300, 500, 800, 1000, 1500],
-    GREEN_WOOD: [50, 100, 200, 300, 500, 800, 1000, 1500],
-    NIGHT_ELF: [50, 100, 200, 300, 500, 800, 1000, 1500],
-    PIXIE: [50, 100, 200, 300, 500, 800, 1000, 1500],
-    FROST_PIXIE: [50, 100, 200, 300, 500, 800, 1000, 1500],
-    LEPRECHAUN: [50, 100, 200, 300, 500, 800, 1000, 1500],
-    BROWNIE: [50, 100, 200, 300, 500, 800, 1000, 1500],
-    TREE_SPRITE: [50, 100, 200, 300, 500, 800, 1000, 1500],
-    WATER_SPRITE: [50, 100, 200, 300, 500, 800, 1000, 1500],
-    WIND_PUFF: [50, 100, 200, 300, 500, 800, 1000, 1500],
-    SPRIGGAN: [50, 100, 200, 300, 500, 800, 1000, 1500],
-    NYMPH: [50, 100, 200, 300, 500, 800, 1000, 1500],
-    BOGIE: [50, 100, 200, 300, 500, 800, 1000, 1500],
-    TOAD_STOOL: [50, 100, 200, 300, 500, 800, 1000, 1500],
-    PUCK: [50, 100, 200, 300, 500, 800, 1000, 1500],
-    SATYR: [50, 100, 200, 300, 500, 800, 1000, 1500],
-    WILL_O_WISP: [50, 100, 200, 300, 500, 800, 1000, 1500],
-    MERMAID: [50, 100, 200, 300, 500, 800, 1000, 1500],
-    MERROW: [50, 100, 200, 300, 500, 800, 1000, 1500],
-    // Giants (long-lived)
-    ALGOR: [30, 50, 80, 120, 180, 250, 300, 400],
-    CYCLOPS: [30, 50, 80, 120, 180, 250, 300, 400],
-    JOTAN: [30, 50, 80, 120, 180, 250, 300, 400],
-    GIGANTES: [30, 50, 80, 120, 180, 250, 300, 400],
-    NIMRO: [30, 50, 80, 120, 180, 250, 300, 400],
-    TITAN: [50, 100, 200, 300, 500, 800, 1000, 1200],
+    BRIGAND: [16, 19, 22, 24, 26, 28, 30, 34],
+    RAIDER: [16, 19, 22, 24, 26, 28, 30, 34],
+    HEAVY_FIGHTER: [18, 22, 26, 28, 30, 34, 38, 42],
+    CHAMPION: [18, 22, 26, 28, 30, 34, 38, 42],
+    CAVE_FIGHTER: [18, 22, 26, 28, 30, 34, 38, 42],
+    DUELIST: [20, 24, 28, 30, 50, 80, 100, 200],
   };
 
   const speciesAges = ageTable[species];
@@ -101,8 +67,8 @@ export const rollFromTable = (roll, table) => {
 export function getDayNightSymbol(date) {
   if (!date) return "";
   const hour = date.getHours();
-  if (hour >= 6 && hour < 18) return "🌞 Daytime";
-  return "🌙 Nighttime";
+  if (hour >= 6 && hour < 18) return "Ã°Å¸Å’Å¾ Daytime";
+  return "Ã°Å¸Å’â„¢ Nighttime";
 };
 
 // Utility function for saving throws
@@ -110,8 +76,8 @@ export function savingThrow(char, type) {
   const roll = rollDice(20, 1);
   let target = 20;
   
-  if (type === "magic") target = char.saves?.vsMagic || 12;
-  if (type === "psionics") target = char.saves?.vsPsionics || 15;
+  if (type === "training") target = char.saves?.vsTraining || 12;
+  if (type === "tactics") target = char.saves?.vsTactics || 15;
   if (type === "poison") target = char.saves?.vsPoison || 14;
 
   const success = roll >= target;
@@ -229,60 +195,60 @@ export function getRandomEncounter(locationType, encounterTables) {
   return table[0];
 }
 
-// Level up character with OCC progression
-export function levelUp(character, occData, magicSpells, psionicPowers) {
-  if (!occData) return character;
+// Level up character with PROFESSION progression
+export function levelUp(character, professionData, trainingTechniques, tacticalOptions) {
+  if (!professionData) return character;
 
   character.level += 1;
 
-  // PPE / ISP growth
-  if (occData.levelProgression?.PPE) {
-    character.PPE = (character.PPE || 0) + occData.levelProgression.PPE;
+  // stamina / focus growth
+  if (professionData.levelProgression?.stamina) {
+    character.stamina = (character.stamina || 0) + professionData.levelProgression.stamina;
   }
-  if (occData.levelProgression?.ISP) {
-    character.ISP = (character.ISP || 0) + occData.levelProgression.ISP;
+  if (professionData.levelProgression?.focus) {
+    character.focus = (character.focus || 0) + professionData.levelProgression.focus;
   }
 
-  // Spell unlocks
-  if (occData.spellUnlocks?.[character.level]) {
-    const newSpells = occData.spellUnlocks[character.level].map((spellName) => {
-      const spellData = magicSpells?.find(s => s.name === spellName);
-      return spellData || { name: spellName, cost: 5, effect: "Unknown spell" };
+  // Technique unlocks
+  if (professionData.techniqueUnlocks?.[character.level]) {
+    const newTechniques = professionData.techniqueUnlocks[character.level].map((techniqueName) => {
+      const techniqueData = trainingTechniques?.find(s => s.name === techniqueName);
+      return techniqueData || { name: techniqueName, cost: 5, effect: "Unknown technique" };
     });
     
-    character.magic = [
-      ...(character.magic || []),
-      ...newSpells,
+    character.training = [
+      ...(character.training || []),
+      ...newTechniques,
     ];
   }
 
-  // Psionic unlocks
-  if (occData.psionicUnlocks?.[character.level]) {
-    const newPsionics = occData.psionicUnlocks[character.level].map((powerName) => {
-      const powerData = psionicPowers?.find(p => p.name === powerName);
-      return powerData || { name: powerName, cost: 4, effect: "Unknown psionic power" };
+  // Tactical unlocks
+  if (professionData.tacticalUnlocks?.[character.level]) {
+    const newTactics = professionData.tacticalUnlocks[character.level].map((powerName) => {
+      const powerData = tacticalOptions?.find(p => p.name === powerName);
+      return powerData || { name: powerName, cost: 4, effect: "Unknown tactical power" };
     });
     
-    character.psionics = [
-      ...(character.psionics || []),
-      ...newPsionics,
+    character.tactics = [
+      ...(character.tactics || []),
+      ...newTactics,
     ];
   }
 
   // Save progression
-  if (occData.saveProgression) {
-    if (occData.saveProgression.vsMagic) {
+  if (professionData.saveProgression) {
+    if (professionData.saveProgression.vsTraining) {
       character.saves = character.saves || {};
-      character.saves.vsMagic = Math.max(
+      character.saves.vsTraining = Math.max(
         2,
-        (character.saves.vsMagic || 12) + occData.saveProgression.vsMagic
+        (character.saves.vsTraining || 12) + professionData.saveProgression.vsTraining
       );
     }
-    if (occData.saveProgression.vsPsionics) {
+    if (professionData.saveProgression.vsTactics) {
       character.saves = character.saves || {};
-      character.saves.vsPsionics = Math.max(
+      character.saves.vsTactics = Math.max(
         2,
-        (character.saves.vsPsionics || 15) + occData.saveProgression.vsPsionics
+        (character.saves.vsTactics || 15) + professionData.saveProgression.vsTactics
       );
     }
   }
@@ -299,17 +265,17 @@ export function getRandomEncounterByTime(date) {
     day: [
       { name: "Merchant Caravan", type: "NPC", description: "Travelers selling wares." },
       { name: "Village Patrol", type: "NPC", description: "Local guards questioning strangers." },
-      { name: "Wild Animals", type: "Monster", description: "A pack of wolves hunting." },
+      { name: "Wild Animals", type: "Opponent", description: "A pack of wolves hunting." },
       { name: "Traveling Bard", type: "NPC", description: "A minstrel sharing news and songs." },
       { name: "Farmer with Cart", type: "NPC", description: "A peasant transporting goods to market." },
       { name: "Ranger Scout", type: "NPC", description: "A wilderness guide offering directions." },
     ],
     night: [
       { name: "Bandits", type: "Enemy", description: "Ambushers looking for loot." },
-      { name: "Owlbear", type: "Monster", description: "A terrifying beast stalks the camp." },
-      { name: "Vampire", type: "Undead", description: "A shadowy figure emerges from the darkness." },
-      { name: "Wolves", type: "Monster", description: "A hungry pack circles the camp." },
-      { name: "Ghost", type: "Undead", description: "A spectral figure wails in the night." },
+      { name: "Owlbear", type: "Opponent", description: "A terrifying beast stalks the camp." },
+      { name: "Vampire", type: "Fallen", description: "A shadowy figure emerges from the darkness." },
+      { name: "Wolves", type: "Opponent", description: "A hungry pack circles the camp." },
+      { name: "Ghost", type: "Fallen", description: "A spectral figure wails in the night." },
       { name: "Thieves", type: "Enemy", description: "Sneaky criminals attempt to steal supplies." },
     ],
   };
@@ -326,7 +292,7 @@ export function rollLoot(table = "common") {
       { name: "Dagger", damage: "1d4", type: "weapon", weight: 2 },
       { name: "Healing Potion", effect: "heal-2d6", type: "consumable", weight: 1 },
       { name: "Rope (50ft)", type: "misc", weight: 10 },
-      { name: "Torch", type: "misc", weight: 1 },
+      { name: "Traiderh", type: "misc", weight: 1 },
       { name: "Rations (1 day)", type: "consumable", weight: 2 },
     ],
     rare: [
@@ -334,15 +300,15 @@ export function rollLoot(table = "common") {
       { name: "Chainmail", defense: 4, type: "armor", weight: 35 },
       { name: "Elixir of Strength", effect: "buff-attack+2", type: "consumable", weight: 1 },
       { name: "Silver Coins", quantity: "1d10", type: "misc", weight: 0.1 },
-      { name: "Magic Scroll", effect: "spell-cast", type: "consumable", weight: 0.5 },
+      { name: "Training Scroll", effect: "technique-cast", type: "consumable", weight: 0.5 },
       { name: "Leather Armor", defense: 2, type: "armor", weight: 15 },
     ],
     boss: [
-      { name: "Magic Staff", damage: "3d6", type: "weapon", weight: 8 },
+      { name: "Training Staff", damage: "3d6", type: "weapon", weight: 8 },
       { name: "Plate Armor", defense: 6, type: "armor", weight: 50 },
       { name: "Bag of Gems", quantity: "3d10", type: "misc", weight: 1 },
       { name: "Potion of Greater Healing", effect: "heal-4d6", type: "consumable", weight: 1 },
-      { name: "Magic Ring", effect: "buff-all+1", type: "misc", weight: 0.1 },
+      { name: "Training Ring", effect: "buff-all+1", type: "misc", weight: 0.1 },
       { name: "Ancient Tome", effect: "knowledge", type: "misc", weight: 5 },
     ],
   };

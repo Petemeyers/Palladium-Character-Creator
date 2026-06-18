@@ -9,7 +9,7 @@
  * 3. Unexplored - Never seen (full black fog)
  *
  * This system makes previously explored cells stay dimly visible even after
- * the player moves away or fog rolls back — similar to XCOM, Baldur's Gate 3,
+ * the player moves away or fog rolls back Ã¢â‚¬â€ similar to XCOM, Baldur's Gate 3,
  * or Darkest Dungeon.
  *
  * Example usage:
@@ -95,7 +95,7 @@ export function resetFogMemory() {
 }
 
 /**
- * Optional: Decay fog memory over time (for magical fog, storms, etc.)
+ * Optional: Decay fog memory over time (for exceptional fog, storms, etc.)
  * Fades old memory cells out gradually.
  *
  * @param {Array} memory - current explored memory cells [{x, y, lastSeen?}, ...]
@@ -184,7 +184,7 @@ export function getFogMemoryStats(exploredCells = [], visibleCells = []) {
   const exploredCount = exploredSet.size;
   const visibleCount = visibleSet.size;
 
-  // Cells that are visible but not in memory (shouldn't happen, but useful for debugging)
+  // Cells that are visible but not in memory (shouldn't hastaminan, but useful for debugging)
   const newCells = visibleCells.filter((cell) => {
     return !exploredSet.has(`${cell.x}-${cell.y}`);
   });

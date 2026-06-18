@@ -1,12 +1,12 @@
 /**
- * XP (Experience Points) System (Palladium RPG)
+ * XP (Experience Points) System (Medieval Combat Simulator)
  *
  * Handles experience gain, level-up triggers, and XP progression
  */
 
 import { levelUp } from "./levelUp";
 
-// ========== XP PROGRESSION TABLE ==========
+// ========== XP PRHEAVY_FIGHTERSSION TABLE ==========
 
 /**
  * Get total XP required to reach a specific level

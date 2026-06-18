@@ -103,10 +103,10 @@ const GMAssistant = () => {
 
   const quickPrompts = [
     "What armor should a Paladin pick at level 1?",
-    "Roll a Fireball at the troll.",
-    "We start on a boat—hook us.",
-    "Run an ambush with Wolfen scouts.",
-    "What weapons can a Wolfen ranger use?",
+    "Roll a Fireball at the champion.",
+    "We start on a boatÃ¢â‚¬â€hook us.",
+    "Run an ambush with Wolf scouts.",
+    "What weapons can a Wolf ranger use?",
     "Introduce the party arriving at a coastal village during a storm."
   ];
 
@@ -139,7 +139,7 @@ const GMAssistant = () => {
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
             onKeyPress={handleKeyPress}
-            placeholder="Ask the GM anything about rules, combat, spells, or request a scene..."
+            placeholder="Ask the GM anything about rules, combat, techniques, or request a scene..."
             rows={3}
             resize="vertical"
           />

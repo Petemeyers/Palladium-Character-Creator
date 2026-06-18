@@ -4,12 +4,12 @@
 
 ```
 src/
-├── pages/
-│   └── CombatPage.jsx (10,990 lines, ~500KB) ❌
-└── utils/
-    ├── grapplingSystem.js
-    ├── combatEngine.js
-    └── ... (other utils)
+Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ pages/
+Ã¢â€â€š   Ã¢â€â€Ã¢â€â‚¬Ã¢â€â‚¬ CombatPage.jsx (10,990 lines, ~500KB) Ã¢ÂÅ’
+Ã¢â€â€Ã¢â€â‚¬Ã¢â€â‚¬ utils/
+    Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ grapplingSystem.js
+    Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ combatEngine.js
+    Ã¢â€â€Ã¢â€â‚¬Ã¢â€â‚¬ ... (other utils)
 ```
 
 ---
@@ -18,41 +18,41 @@ src/
 
 ```
 src/
-├── pages/
-│   └── CombatPage.jsx (3,500 lines, ~150KB) ✅
-│
-├── components/
-│   └── combat/
-│       ├── CombatLogPanel.jsx (~200 lines)
-│       ├── FighterStatusPanel.jsx (~300 lines)
-│       ├── CombatActionButtons.jsx (~250 lines)
-│       ├── TurnDisplayPanel.jsx (~100 lines)
-│       ├── TargetSelectionUI.jsx (~150 lines)
-│       ├── AbilitySelectionUI.jsx (~200 lines)
-│       └── PositionDisplayPanel.jsx (~100 lines)
-│
-├── hooks/
-│   ├── useCombatState.js (~300 lines)
-│   ├── useCombatUIState.js (~200 lines)
-│   ├── useCombatLog.js (~150 lines)
-│   └── useCombatPositions.js (~200 lines)
-│
-├── utils/
-│   ├── combatActionHandlers/
-│   │   ├── attackActions.js (~500 lines)
-│   │   ├── maneuverActions.js (~400 lines)
-│   │   ├── grappleActions.js (~1400 lines) ⭐
-│   │   ├── movementActions.js (~400 lines)
-│   │   ├── aiTurnHandler.js (~1500 lines) ⭐
-│   │   └── actionOptionsBuilder.js (~400 lines)
-│   │
-│   ├── spellParsingUtils.js (~200 lines)
-│   ├── combatCalculations.js (~150 lines)
-│   └── aiMovementUtils.js (~100 lines)
-│
-└── data/
-    ├── combatConstants.js (~50 lines)
-    └── magicKeywords.js (~30 lines)
+Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ pages/
+Ã¢â€â€š   Ã¢â€â€Ã¢â€â‚¬Ã¢â€â‚¬ CombatPage.jsx (3,500 lines, ~150KB) Ã¢Å“â€¦
+Ã¢â€â€š
+Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ components/
+Ã¢â€â€š   Ã¢â€â€Ã¢â€â‚¬Ã¢â€â‚¬ combat/
+Ã¢â€â€š       Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ CombatLogPanel.jsx (~200 lines)
+Ã¢â€â€š       Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ FighterStatusPanel.jsx (~300 lines)
+Ã¢â€â€š       Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ CombatActionButtons.jsx (~250 lines)
+Ã¢â€â€š       Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ TurnDisplayPanel.jsx (~100 lines)
+Ã¢â€â€š       Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ TargetSelectionUI.jsx (~150 lines)
+Ã¢â€â€š       Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ AbilitySelectionUI.jsx (~200 lines)
+Ã¢â€â€š       Ã¢â€â€Ã¢â€â‚¬Ã¢â€â‚¬ PositionDisplayPanel.jsx (~100 lines)
+Ã¢â€â€š
+Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ hooks/
+Ã¢â€â€š   Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ useCombatState.js (~300 lines)
+Ã¢â€â€š   Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ useCombatUIState.js (~200 lines)
+Ã¢â€â€š   Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ useCombatLog.js (~150 lines)
+Ã¢â€â€š   Ã¢â€â€Ã¢â€â‚¬Ã¢â€â‚¬ useCombatPositions.js (~200 lines)
+Ã¢â€â€š
+Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ utils/
+Ã¢â€â€š   Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ combatActionHandlers/
+Ã¢â€â€š   Ã¢â€â€š   Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ attackActions.js (~500 lines)
+Ã¢â€â€š   Ã¢â€â€š   Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ maneuverActions.js (~400 lines)
+Ã¢â€â€š   Ã¢â€â€š   Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ grappleActions.js (~1400 lines) Ã¢Â­Â
+Ã¢â€â€š   Ã¢â€â€š   Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ movementActions.js (~400 lines)
+Ã¢â€â€š   Ã¢â€â€š   Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ aiTurnHandler.js (~1500 lines) Ã¢Â­Â
+Ã¢â€â€š   Ã¢â€â€š   Ã¢â€â€Ã¢â€â‚¬Ã¢â€â‚¬ actionOptionsBuilder.js (~400 lines)
+Ã¢â€â€š   Ã¢â€â€š
+Ã¢â€â€š   Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ techniqueParsingUtils.js (~200 lines)
+Ã¢â€â€š   Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ combatCalculations.js (~150 lines)
+Ã¢â€â€š   Ã¢â€â€Ã¢â€â‚¬Ã¢â€â‚¬ aiMovementUtils.js (~100 lines)
+Ã¢â€â€š
+Ã¢â€â€Ã¢â€â‚¬Ã¢â€â‚¬ data/
+    Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ combatConstants.js (~50 lines)
+    Ã¢â€â€Ã¢â€â‚¬Ã¢â€â‚¬ trainingKeywords.js (~30 lines)
 ```
 
 ---
@@ -86,26 +86,26 @@ src/
 
 ```
 CombatPage.jsx
-├── hooks/
-│   ├── useCombatState.js ──────┐
-│   ├── useCombatUIState.js ────┤
-│   ├── useCombatLog.js ────────┼─► CombatPage.jsx
-│   └── useCombatPositions.js ──┘
-│
-├── components/combat/
-│   ├── CombatLogPanel.jsx ──────► uses useCombatLog
-│   ├── FighterStatusPanel.jsx ──► uses useCombatState
-│   ├── CombatActionButtons.jsx ─► uses action handlers
-│   └── ...
-│
-├── utils/combatActionHandlers/
-│   ├── grappleActions.js ───────► uses grapplingSystem.js
-│   ├── aiTurnHandler.js ────────► uses combatEngine.js
-│   └── ... ─────────────────────► use hooks via props
-│
-└── utils/
-    ├── spellParsingUtils.js ────► pure functions
-    └── ...
+Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ hooks/
+Ã¢â€â€š   Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ useCombatState.js Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€Â
+Ã¢â€â€š   Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ useCombatUIState.js Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€Â¤
+Ã¢â€â€š   Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ useCombatLog.js Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€Â¼Ã¢â€â‚¬Ã¢â€“Âº CombatPage.jsx
+Ã¢â€â€š   Ã¢â€â€Ã¢â€â‚¬Ã¢â€â‚¬ useCombatPositions.js Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€Ëœ
+Ã¢â€â€š
+Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ components/combat/
+Ã¢â€â€š   Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ CombatLogPanel.jsx Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€“Âº uses useCombatLog
+Ã¢â€â€š   Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ FighterStatusPanel.jsx Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€“Âº uses useCombatState
+Ã¢â€â€š   Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ CombatActionButtons.jsx Ã¢â€â‚¬Ã¢â€“Âº uses action handlers
+Ã¢â€â€š   Ã¢â€â€Ã¢â€â‚¬Ã¢â€â‚¬ ...
+Ã¢â€â€š
+Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ utils/combatActionHandlers/
+Ã¢â€â€š   Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ grappleActions.js Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€“Âº uses grapplingSystem.js
+Ã¢â€â€š   Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ aiTurnHandler.js Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€“Âº uses combatEngine.js
+Ã¢â€â€š   Ã¢â€â€Ã¢â€â‚¬Ã¢â€â‚¬ ... Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€“Âº use hooks via props
+Ã¢â€â€š
+Ã¢â€â€Ã¢â€â‚¬Ã¢â€â‚¬ utils/
+    Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ techniqueParsingUtils.js Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€“Âº pure functions
+    Ã¢â€â€Ã¢â€â‚¬Ã¢â€â‚¬ ...
 ```
 
 ---
@@ -136,7 +136,7 @@ import TurnDisplayPanel from "../components/combat/TurnDisplayPanel";
 import { executeTripManeuver, executeShoveManeuver, executeDisarmManeuver } 
   from "../utils/combatActionHandlers/maneuverActions";
 import { handleGrappleAction } from "../utils/combatActionHandlers/grappleActions";
-import { handleChargeAttack, handleStrikeWithMovement } 
+import { handleChargeAttack, handleAttackWithMovement } 
   from "../utils/combatActionHandlers/attackActions";
 import { handleMoveSelect, handleRunActionUpdate } 
   from "../utils/combatActionHandlers/movementActions";
@@ -144,8 +144,8 @@ import { handleEnemyTurn, handlePlayerAITurn }
   from "../utils/combatActionHandlers/aiTurnHandler";
 
 // Utilities
-import { parseRangeToFeet, getSpellCost, ... } from "../utils/spellParsingUtils";
-import { getCasterSpellDC, calculateSpellSave, ... } from "../utils/combatCalculations";
+import { parseRangeToFeet, getTechniqueCost, ... } from "../utils/techniqueParsingUtils";
+import { getCasterTechniqueDC, calculateTechniqueSave, ... } from "../utils/combatCalculations";
 
 // Constants
 import { MIN_COMBAT_HP, ... } from "../data/combatConstants";
@@ -162,20 +162,20 @@ import { createAIActionSelector } from "../utils/combatEngine";
 
 ### Before:
 ```
-CombatPage.jsx: ████████████████████████████████████████████████████ 500KB
+CombatPage.jsx: Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë† 500KB
 ```
 
 ### After:
 ```
-CombatPage.jsx:        ████████████ 150KB
-├── grappleActions.js: ████████████ 70KB
-├── aiTurnHandler.js:  ███████████ 75KB
-├── UI Components:     ███████ 65KB
-├── Hooks:             ████ 42KB
-├── Other Handlers:    ██████ 65KB
-└── Utils/Data:        ████ 38KB
-────────────────────────────────────────
-Total:                 ████████████████████████████████████ 505KB
+CombatPage.jsx:        Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë† 150KB
+Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ grappleActions.js: Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë† 70KB
+Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ aiTurnHandler.js:  Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë† 75KB
+Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ UI Components:     Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë† 65KB
+Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ Hooks:             Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë† 42KB
+Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ Other Handlers:    Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë† 65KB
+Ã¢â€â€Ã¢â€â‚¬Ã¢â€â‚¬ Utils/Data:        Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë† 38KB
+Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+Total:                 Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë† 505KB
 (But split into 23 files!)
 ```
 
@@ -184,20 +184,20 @@ Total:                 ███████████████████
 ## Key Benefits Visualized
 
 ### Build Time:
-- **Before**: Babel disables optimizations ❌
-- **After**: Full Babel optimization ✅
+- **Before**: Babel disables optimizations Ã¢ÂÅ’
+- **After**: Full Babel optimization Ã¢Å“â€¦
 
 ### Code Navigation:
-- **Before**: Scroll through 10,990 lines 😵
-- **After**: Navigate focused 150-1500 line files 🎯
+- **Before**: Scroll through 10,990 lines Ã°Å¸ËœÂµ
+- **After**: Navigate focused 150-1500 line files Ã°Å¸Å½Â¯
 
 ### Testing:
-- **Before**: Test entire CombatPage.jsx as one unit 🧪
-- **After**: Test individual handlers/components independently ✅
+- **Before**: Test entire CombatPage.jsx as one unit Ã°Å¸Â§Âª
+- **After**: Test individual handlers/components independently Ã¢Å“â€¦
 
 ### Development:
-- **Before**: High merge conflict risk 🔴
-- **After**: Low conflict risk (work on separate files) 🟢
+- **Before**: High merge conflict risk Ã°Å¸â€Â´
+- **After**: Low conflict risk (work on separate files) Ã°Å¸Å¸Â¢
 
 ---
 
@@ -216,22 +216,22 @@ Total:                 ███████████████████
 
 ## Migration Checklist
 
-### Phase 1: Utils & Constants ✅
-- [ ] Create `utils/spellParsingUtils.js`
+### Phase 1: Utils & Constants Ã¢Å“â€¦
+- [ ] Create `utils/techniqueParsingUtils.js`
 - [ ] Create `utils/combatCalculations.js`
 - [ ] Create `utils/aiMovementUtils.js`
 - [ ] Create `data/combatConstants.js`
-- [ ] Create `data/magicKeywords.js`
+- [ ] Create `data/trainingKeywords.js`
 - [ ] Update imports in `CombatPage.jsx`
 
-### Phase 2: Hooks ✅
+### Phase 2: Hooks Ã¢Å“â€¦
 - [ ] Create `hooks/useCombatLog.js`
 - [ ] Create `hooks/useCombatPositions.js`
 - [ ] Create `hooks/useCombatState.js`
 - [ ] Create `hooks/useCombatUIState.js`
 - [ ] Update `CombatPage.jsx` to use hooks
 
-### Phase 3: Action Handlers ✅
+### Phase 3: Action Handlers Ã¢Å“â€¦
 - [ ] Create `utils/combatActionHandlers/maneuverActions.js`
 - [ ] Create `utils/combatActionHandlers/movementActions.js`
 - [ ] Create `utils/combatActionHandlers/attackActions.js`
@@ -239,7 +239,7 @@ Total:                 ███████████████████
 - [ ] Create `utils/combatActionHandlers/aiTurnHandler.js`
 - [ ] Create `utils/combatActionHandlers/actionOptionsBuilder.js`
 
-### Phase 4: UI Components ✅
+### Phase 4: UI Components Ã¢Å“â€¦
 - [ ] Create `components/combat/TurnDisplayPanel.jsx`
 - [ ] Create `components/combat/CombatActionButtons.jsx`
 - [ ] Create `components/combat/TargetSelectionUI.jsx`
@@ -248,7 +248,7 @@ Total:                 ███████████████████
 - [ ] Create `components/combat/FighterStatusPanel.jsx`
 - [ ] Create `components/combat/CombatLogPanel.jsx`
 
-### Final: Verification ✅
+### Final: Verification Ã¢Å“â€¦
 - [ ] All tests pass
 - [ ] Combat simulation works
 - [ ] File size under 200KB
@@ -261,5 +261,5 @@ Total:                 ███████████████████
 **Estimated Total Lines Extracted**: ~7,490 lines  
 **Estimated Files Created**: 22 files  
 **Estimated Size Reduction**: 65-70%  
-**Target File Size**: ~150-200KB ✅
+**Target File Size**: ~150-200KB Ã¢Å“â€¦
 

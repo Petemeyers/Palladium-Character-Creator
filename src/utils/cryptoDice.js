@@ -115,9 +115,9 @@ class CryptoSecureDice {
     return d20 + speedBonus;
   }
 
-  static rollAttack(strikeBonus = 0) {
+  static rollAttack(attackBonus = 0) {
     const d20 = this.rollD20();
-    return d20 + strikeBonus;
+    return d20 + attackBonus;
   }
 
   static rollDamage(formula, damageBonus = 0) {

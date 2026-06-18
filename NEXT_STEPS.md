@@ -1,21 +1,21 @@
 # Next Steps for Baal-Rog Abilities Implementation
 
-## ✅ Completed (All Core Systems)
+## Ã¢Å“â€¦ Completed (All Core Systems)
 
-1. ✅ **Magic Abilities Parser** - Handles complex strings, element filtering, specific spells
-2. ✅ **Dimensional Teleport** - Full implementation with skill checks
-3. ✅ **Clerical Abilities System** - All 5 abilities implemented and parsed
-4. ✅ **Fixed Import Error** - Removed duplicate `clericalHealingTouch` import
+1. Ã¢Å“â€¦ **Training Abilities Parser** - Handles complex strings, element filtering, specific techniques
+2. Ã¢Å“â€¦ **Dimensional Teleport** - Full implementation with skill checks
+3. Ã¢Å“â€¦ **Clerical Abilities System** - All 5 abilities implemented and parsed
+4. Ã¢Å“â€¦ **Fixed Import Error** - Removed duplicate `clericalHealingTouch` import
 
 ---
 
-## 🎯 Immediate Next Steps (Priority Order)
+## Ã°Å¸Å½Â¯ Immediate Next Steps (Priority Order)
 
 ### 1. **Add Clerical Abilities Submenu** (High Priority)
 **Status**: Partially done - action exists but no submenu
 
 **What's needed**:
-- Add `clericalAbilitiesMode` state (similar to `spellsMode` and `psionicsMode`)
+- Add `clericalAbilitiesMode` state (similar to `techniquesMode` and `tacticsMode`)
 - Create submenu UI in CombatActionsPanel showing available clerical abilities
 - Add ability selection state (`selectedClericalAbility`)
 - Wire up selection to show available abilities when "Clerical Abilities" is clicked
@@ -24,7 +24,7 @@
 - `src/pages/CombatPage.jsx` - Add state and mode handling
 - `src/components/CombatActionsPanel.jsx` - Add submenu UI (or add to CombatPage if it's inline)
 
-**Reference**: Look at how `spellsMode` and `psionicsMode` work (lines 11956-12368 in CombatPage.jsx)
+**Reference**: Look at how `techniquesMode` and `tacticsMode` work (lines 11956-12368 in CombatPage.jsx)
 
 ---
 
@@ -34,9 +34,9 @@
 **What's needed**:
 - Complete the "Clerical Abilities" case in `executeSelectedAction()`
 - Add handlers for each ability:
-  - **Animate Dead**: Find dead characters on map, execute `animateDead()`, create animated undead fighters
-  - **Turn Dead**: Find undead targets, execute `turnDead()`, apply flee/destroy effects
-  - **Exorcism**: Execute `performExorcism()` on selected target
+  - **Animate Dead**: Find dead characters on map, execute `animateDead()`, create animated fallen fighters
+  - **Turn Dead**: Find fallen targets, execute `turnDead()`, apply flee/destroy effects
+  - **Exraiderism**: Execute `performExraiderism()` on selected target
   - **Remove Curse**: Execute `removeCurse()` on selected target
   - **Healing Touch**: Execute `clericalHealingTouch()` on selected target (already partially working)
 
@@ -68,8 +68,8 @@
 - Baal-Rog should:
   - Use Healing Touch on injured allies
   - Use Animate Dead when dead bodies are available
-  - Use Turn Dead against undead enemies
-  - Use Exorcism against demons/spirits
+  - Use Turn Dead against fallen enemies
+  - Use Exraiderism against raiders/spirits
   - Use Remove Curse when allies are cursed
 
 **Files to modify**:
@@ -82,12 +82,12 @@
 **Status**: Needs testing
 
 **What's needed**:
-- Test magic abilities loading (verify fire spells are loaded for Baal-Rog)
+- Test training abilities loading (verify fire techniques are loaded for Baal-Rog)
 - Test dimensional teleport (skill check, movement)
 - Test each clerical ability:
   - Animate Dead with dead characters on map
-  - Turn Dead with undead enemies
-  - Exorcism with demon/spirit targets
+  - Turn Dead with fallen enemies
+  - Exraiderism with raider/spirit targets
   - Remove Curse with cursed characters
   - Healing Touch with injured allies
 - Verify Baal-Rog's fire immunity works
@@ -100,16 +100,16 @@
 
 **What's needed**:
 - Update `BAAL_ROG_ABILITIES_STATUS.md` to reflect completed work
-- Mark all implemented abilities as ✅
+- Mark all implemented abilities as Ã¢Å“â€¦
 - Update code locations
 
 ---
 
-## 🔧 Technical Implementation Details
+## Ã°Å¸â€Â§ Technical Implementation Details
 
 ### Clerical Abilities Submenu Pattern
 
-Follow the Spells/Psionics pattern:
+Follow the Techniques/Tactics pattern:
 
 ```javascript
 // State
@@ -122,7 +122,7 @@ if (actionName === "Clerical Abilities") {
   setSelectedClericalAbility(null);
 }
 
-// In UI (similar to spells/psionics)
+// In UI (similar to techniques/tactics)
 {selectedAction?.name === "Clerical Abilities" && clericalAbilitiesMode && (
   <Box>
     <Text>Select Clerical Ability:</Text>
@@ -149,7 +149,7 @@ case "Clerical Abilities": {
       const deadBodies = fighters.filter(f => isDead(f));
       const result = animateDead(currentFighter, deadBodies, { log: addLog });
       if (result.success) {
-        // Create animated undead fighters
+        // Create animated fallen fighters
         // Update state
       }
       break;
@@ -160,7 +160,7 @@ case "Clerical Abilities": {
 
 ---
 
-## 📋 Quick Start Checklist
+## Ã°Å¸â€œâ€¹ Quick Start Checklist
 
 - [ ] Add `clericalAbilitiesMode` state
 - [ ] Add `selectedClericalAbility` state  
@@ -174,7 +174,7 @@ case "Clerical Abilities": {
 
 ---
 
-## 🎯 Recommended Order
+## Ã°Å¸Å½Â¯ Recommended Order
 
 1. **Start with #1 (Submenu)** - Gets the UI working
 2. **Then #2 (Execution Handlers)** - Makes abilities actually work

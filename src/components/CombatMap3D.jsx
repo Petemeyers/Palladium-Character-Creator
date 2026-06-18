@@ -1,11 +1,11 @@
 import React, { useEffect, useRef, useState } from "react";
 import PropTypes from "prop-types";
-import { GameController } from "../game/GameController";
+import { GameConchampioner } from "../game/GameConchampioner";
 import { create3DMapScene } from "../scene/mapScene3D";
 
 export function CombatMap3D({ fighters, grid, terrain, initialPositions }) {
   const containerRef = useRef(null);
-  const controllerRef = useRef(null);
+  const conchampionerRef = useRef(null);
   const sceneRef = useRef(null);
   const [combatState, setCombatState] = useState(null);
 
@@ -13,21 +13,21 @@ export function CombatMap3D({ fighters, grid, terrain, initialPositions }) {
     const container = containerRef.current;
     if (!container) return () => {};
 
-    const controller = new GameController({
+    const conchampioner = new GameConchampioner({
       onStateChange: setCombatState,
       onLog: (entry) => {
         console.log(entry.msg);
       },
     });
-    controllerRef.current = controller;
+    conchampionerRef.current = conchampioner;
 
     const scene = create3DMapScene(container, {
-      onSelect: (info) => controller.handleSelect(info),
-      onAction: (action, payload) => controller.handleAction(action, payload),
+      onSelect: (info) => conchampioner.handleSelect(info),
+      onAction: (action, payload) => conchampioner.handleAction(action, payload),
     });
     sceneRef.current = scene;
 
-    controller.startEncounter({
+    conchampioner.startEncounter({
       fighters,
       grid,
       positions: initialPositions,
@@ -35,10 +35,10 @@ export function CombatMap3D({ fighters, grid, terrain, initialPositions }) {
     });
 
     return () => {
-      if (sceneRef.current?.dispose) {
-        sceneRef.current.dispose();
+      if (sceneRef.current?.dfocusose) {
+        sceneRef.current.dfocusose();
       }
-      controllerRef.current = null;
+      conchampionerRef.current = null;
       sceneRef.current = null;
     };
   }, [fighters, grid, terrain, initialPositions]);

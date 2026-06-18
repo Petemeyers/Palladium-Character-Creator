@@ -1,6 +1,6 @@
 /**
  * Protection Circle System
- * Manages magical protection circles and their effects
+ * Manages exceptional protection circles and their effects
  * Handles circle creation, activation, and effect application
  * 
  * TODO: Implement protection circle system
@@ -12,8 +12,8 @@
 export const CIRCLE_TYPES = {
   PROTECTION_FROM_EVIL: "protection_from_evil",
   PROTECTION_FROM_GOOD: "protection_from_good",
-  PROTECTION_FROM_MAGIC: "protection_from_magic",
-  PROTECTION_FROM_PSIONICS: "protection_from_psionics",
+  PROTECTION_FROM_TRAINING: "protection_from_training",
+  PROTECTION_FROM_TACTICALS: "protection_from_tactics",
   WARDING: "warding",
 };
 
@@ -53,8 +53,8 @@ function getCircleDuration(circleType) {
   const durations = {
     [CIRCLE_TYPES.PROTECTION_FROM_EVIL]: 24, // hours
     [CIRCLE_TYPES.PROTECTION_FROM_GOOD]: 24,
-    [CIRCLE_TYPES.PROTECTION_FROM_MAGIC]: 12,
-    [CIRCLE_TYPES.PROTECTION_FROM_PSIONICS]: 12,
+    [CIRCLE_TYPES.PROTECTION_FROM_TRAINING]: 12,
+    [CIRCLE_TYPES.PROTECTION_FROM_TACTICALS]: 12,
     [CIRCLE_TYPES.WARDING]: 48,
   };
   
@@ -62,15 +62,15 @@ function getCircleDuration(circleType) {
 }
 
 /**
- * Check if a spell name or object is a protection circle spell
- * @param {string|Object} spell - Spell name or spell object
- * @returns {boolean} True if spell is a protection circle
+ * Check if a technique name or object is a protection circle technique
+ * @param {string|Object} technique - Technique name or technique object
+ * @returns {boolean} True if technique is a protection circle
  */
-export function isProtectionCircle(spell) {
-  if (!spell) return false;
+export function isProtectionCircle(technique) {
+  if (!technique) return false;
   
-  const spellName = typeof spell === "string" ? spell : (spell.name || "");
-  const nameLower = spellName.toLowerCase();
+  const techniqueName = typeof technique === "string" ? technique : (technique.name || "");
+  const nameLower = techniqueName.toLowerCase();
   
   return (
     nameLower.includes("protection circle") ||
@@ -111,8 +111,8 @@ export function applyProtectionEffects(entity, circles = []) {
   const effects = {
     protectedFromEvil: false,
     protectedFromGood: false,
-    protectedFromMagic: false,
-    protectedFromPsionics: false,
+    protectedFromTraining: false,
+    protectedFromTactics: false,
     warded: false,
   };
 
@@ -135,7 +135,7 @@ export function applyProtectionEffects(entity, circles = []) {
  * @param {Array} circles - Array of protection circles
  * @param {Array} combatants - Array of combatants to check
  * @param {Object} positions - Map of combatant positions
- * @param {number} currentRound - Current melee round
+ * @param {number} currentRound - Current combat round
  * @param {Function} logCallback - Logging callback
  * @returns {Array} Updated array of active circles
  */

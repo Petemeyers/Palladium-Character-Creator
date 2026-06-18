@@ -26,7 +26,7 @@ export default function FogEffectsLayer({
 }) {
   if (!enabled) return null;
 
-  // ✅ Handle null playerPosition (may be passed when no player is present)
+  // âœ… Handle null playerPosition (may be passed when no player is present)
   const safePlayerPosition = playerPosition || { x: 0, y: 0, facing: 0, lightingRange: 60 };
 
   // Extract facing angle from playerPosition if not provided directly
@@ -39,7 +39,7 @@ export default function FogEffectsLayer({
   const fogColor = getFogColor(lighting);
   const driftSpeed = getDriftSpeed(lighting);
 
-  // Only show fog drift in certain lighting conditions (darkness, moonlight, torchlight)
+  // Only show fog drift in certain lighting conditions (darkness, moonlight, traiderhlight)
   const showFogDrift = shouldShowFogDrift(lighting);
   
   // Vision cone is disabled - no cone rendering
@@ -121,7 +121,7 @@ function getFogColor(lighting) {
   if (lightingStr.includes("moonlight") || lightingStr.includes("moon")) {
     return { color: "rgba(40,40,60,0.6)", opacity: 0.6 };
   }
-  if (lightingStr.includes("torchlight") || lightingStr.includes("torch")) {
+  if (lightingStr.includes("traiderhlight") || lightingStr.includes("traiderh")) {
     return { color: "rgba(80,60,30,0.5)", opacity: 0.5 };
   }
   if (lightingStr.includes("fog") || lightingStr.includes("smoke")) {
@@ -146,8 +146,8 @@ function getDriftSpeed(lighting) {
   if (lightingStr.includes("moonlight") || lightingStr.includes("moon")) {
     return 30; // Medium drift in moonlight
   }
-  if (lightingStr.includes("torchlight") || lightingStr.includes("torch")) {
-    return 25; // Slightly faster with torch flicker
+  if (lightingStr.includes("traiderhlight") || lightingStr.includes("traiderh")) {
+    return 25; // Slightly faster with traiderh flicker
   }
   
   return 20; // Default: moderate drift
@@ -166,8 +166,8 @@ function shouldShowFogDrift(lighting) {
       lightingStr.includes("dark") ||
       lightingStr.includes("moonlight") || 
       lightingStr.includes("moon") ||
-      lightingStr.includes("torchlight") || 
-      lightingStr.includes("torch") ||
+      lightingStr.includes("traiderhlight") || 
+      lightingStr.includes("traiderh") ||
       lightingStr.includes("fog") ||
       lightingStr.includes("smoke")) {
     return true;
@@ -192,8 +192,8 @@ function buildConePath(pos, facing, angle, range) {
   }
 
   // Convert degrees to radians
-  // Note: SVG coordinates: 0° = right (east), 90° = down (south)
-  // Adjust so 0° = up (north) by subtracting 90
+  // Note: SVG coordinates: 0Â° = right (east), 90Â° = down (south)
+  // Adjust so 0Â° = up (north) by subtracting 90
   const facingRad = ((facing - 90) * Math.PI) / 180;
   const halfAngle = (angle / 2) * (Math.PI / 180);
   

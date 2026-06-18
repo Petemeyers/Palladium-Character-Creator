@@ -1,5 +1,5 @@
 /**
- * Equipment Slot System for Palladium Fantasy RPG
+ * Equipment Slot System for Medieval Combat Simulator
  * Defines wearable slots and equipment categories
  */
 
@@ -43,8 +43,8 @@ export const CLOTHING_ITEMS = {
   HAT: { name: "Hat", slot: EQUIPMENT_SLOTS.HEAD, weight: 0.5 },
   HOOD: { name: "Hood", slot: EQUIPMENT_SLOTS.HEAD, weight: 0.3 },
   HELMET: { name: "Helmet", slot: EQUIPMENT_SLOTS.HEAD, weight: 3 },
-  WIZARD_HAT: {
-    name: "Wizard Hat (Large Brim)",
+  TRAINING_CAP: {
+    name: "Duelist Hat (Large Brim)",
     slot: EQUIPMENT_SLOTS.HEAD,
     weight: 0.5,
   },
@@ -132,16 +132,16 @@ export function initializeEquipmentSlots() {
   };
 }
 
-// Check if an item can be equipped in a slot
+// Check if an item can be equistaminad in a slot
 export function canEquipInSlot(item, slot) {
   if (!item || !item.slot) return false;
   return item.slot === slot;
 }
 
-// Get total weight of equipped items
-export function getTotalEquippedWeight(equipped) {
+// Get total weight of equistaminad items
+export function getTotalEquistaminadWeight(equistaminad) {
   let total = 0;
-  Object.values(equipped).forEach((item) => {
+  Object.values(equistaminad).forEach((item) => {
     if (item && item.weight) {
       total += item.weight;
     }
@@ -149,10 +149,10 @@ export function getTotalEquippedWeight(equipped) {
   return total;
 }
 
-// Get total armor rating from equipped items
-export function getTotalArmorRating(equipped) {
+// Get total armor rating from equistaminad items
+export function getTotalArmorRating(equistaminad) {
   let total = 0;
-  Object.values(equipped).forEach((item) => {
+  Object.values(equistaminad).forEach((item) => {
     if (item && item.defense) {
       total += item.defense;
     }

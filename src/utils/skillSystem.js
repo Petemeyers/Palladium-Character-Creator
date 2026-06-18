@@ -7,7 +7,7 @@
  * This module:
  * - Normalizes skill names
  * - Gets base percentages from skillProgression.js
- * - Extracts OCC bonuses from skill names (e.g., "+10%", "+15%")
+ * - Extracts PROFESSION bonuses from skill names (e.g., "+10%", "+15%")
  * - Applies special rules (Read/Write IQ bonus)
  * - Clamps to 98% maximum
  */
@@ -18,16 +18,16 @@ import {
 } from '../data/skillProgression';
 
 /**
- * Parse skill string to extract name, OCC bonus, and metadata
+ * Parse skill string to extract name, PROFESSION bonus, and metadata
  * Handles patterns like:
- * - "Read/Write (+50%)" → { name: "Read/Write", occBonus: 50, meta: {} }
- * - "Speak Additional Languages (Knows 2) (+30%)" → { name: "Speak Additional Language", meta: { knows: 2 }, occBonus: 30 }
- * - "Scale Walls (+10%)" → { name: "Scale Walls", occBonus: 10, meta: {} }
+ * - "Read/Write (+50%)" â†’ { name: "Read/Write", occBonus: 50, meta: {} }
+ * - "Speak Additional Languages (Knows 2) (+30%)" â†’ { name: "Speak Additional Language", meta: { knows: 2 }, occBonus: 30 }
+ * - "Scale Walls (+10%)" â†’ { name: "Scale Walls", occBonus: 10, meta: {} }
  * 
  * @param {string} skillName - Raw skill name (may include bonuses and metadata)
  * @returns {Object} - { normalizedName, occBonus, meta } where:
  *   - normalizedName: Clean skill name for lookup
- *   - occBonus: Extracted OCC percentage bonus (0 if none)
+ *   - occBonus: Extracted PROFESSION percentage bonus (0 if none)
  *   - meta: Object with metadata like { knows: 2 } for language skills
  */
 export function normalizeSkillName(skillName) {
@@ -44,11 +44,11 @@ export function normalizeSkillName(skillName) {
     workingName = workingName.replace(/\(Knows\s+\d+\)/gi, '').trim();
   }
   
-  // Extract OCC bonus from skill name (e.g., "Scale Walls (+10%)" or "Read/Write (+40%)")
+  // Extract PROFESSION bonus from skill name (e.g., "Scale Walls (+10%)" or "Read/Write (+40%)")
   // Matches patterns like: (+10%), (+15%), (+40%), (+ 50%), etc.
   // Handles spaces: "(+ 50%)" or "(+50%)"
   const bonusMatch = workingName.match(/\([\+\-]\s*(\d+)%\)/);
-  const occBonus = bonusMatch ? parseInt(bonusMatch[1]) : 0;
+  const professionBonus = bonusMatch ? parseInt(bonusMatch[1]) : 0;
   
   // Remove bonus notation from name (handles spaces)
   let normalizedName = workingName.replace(/\s*\([\+\-]\s*\d+%\)/g, '').trim();
@@ -99,8 +99,8 @@ export function normalizeSkillName(skillName) {
  * Uses skillProgression.js as the single source of truth.
  * 
  * @param {Object} character - Character object with level, IQ, etc.
- * @param {string} skillName - Name of skill (may include OCC bonuses like "+10%")
- * @param {string} skillType - Optional: 'occ', 'elective', or 'secondary' to determine bonuses
+ * @param {string} skillName - Name of skill (may include PROFESSION bonuses like "+10%")
+ * @param {string} skillType - Optional: 'profession', 'elective', or 'secondary' to determine bonuses
  * @returns {number} Skill percentage value (0-98), or 0 if skill has no percentage progression
  */
 export function getSkillPercentage(character, skillName, skillType = null) {
@@ -109,7 +109,7 @@ export function getSkillPercentage(character, skillName, skillType = null) {
   const level = character.level || 1;
   const iq = character.IQ || character.iq || 0;
   
-  // Normalize skill name and extract OCC bonus and metadata
+  // Normalize skill name and extract PROFESSION bonus and metadata
   const { normalizedName, occBonus, meta } = normalizeSkillName(skillName);
   
   // Get base percentage from skillProgression.js (single source of truth)
@@ -128,7 +128,7 @@ export function getSkillPercentage(character, skillName, skillType = null) {
     return 0;
   }
   
-  // Add OCC bonus (extracted from skill name like "Scale Walls (+10%)")
+  // Add PROFESSION bonus (extracted from skill name like "Scale Walls (+10%)")
   let total = basePercentage + occBonus;
   
   // Apply secondary skill bonus if this is a secondary skill
@@ -141,7 +141,7 @@ export function getSkillPercentage(character, skillName, skillType = null) {
   // Note: This is already handled in getSkillPercentageAtLevel, but we ensure it's applied
   // The function in skillProgression.js handles this internally
   
-  // Clamp to 98% maximum (Palladium rule)
+  // Clamp to 98% maximum (Medieval Combat Simulator rule)
   return Math.min(98, Math.max(0, total));
 }
 
@@ -166,9 +166,9 @@ export function hasSkill(character, skillName) {
   
   const normalized = normalizeSkillName(skillName).normalizedName;
   
-  // Check O.C.C., elective, and secondary skills
+  // Check profession, elective, and secondary skills
   const allSkills = [
-    ...(character.occSkills || []),
+    ...(character.professionSkills || []),
     ...(character.electiveSkills || []),
     ...(character.secondarySkills || [])
   ];
@@ -231,7 +231,7 @@ export function performSkillCheck(character, skillName, difficulty = 0, rollDie 
     ? rollDie(100) 
     : Math.floor(Math.random() * 100) + 1;
   
-  // In Palladium, roll UNDER skill percentage (lower is better)
+  // In Medieval Combat Simulator, roll UNDER skill percentage (lower is better)
   // Difficulty modifier is added to skill percentage (makes it easier)
   const target = skillValue + difficulty;
   const success = roll <= target;
@@ -270,7 +270,7 @@ export function rollSkillCheck(skillPercent, difficulty = 0, rollDie = null) {
     ? rollDie(100) 
     : Math.floor(Math.random() * 100) + 1;
 
-  // In Palladium, you need to roll UNDER your skill percentage
+  // In Medieval Combat Simulator, you need to roll UNDER your skill percentage
   // Lower is better (opposite of D&D)
   const target = skillPercent + difficulty;
   const success = roll <= target;

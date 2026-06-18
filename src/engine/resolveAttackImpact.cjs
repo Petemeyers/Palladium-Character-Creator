@@ -1,16 +1,16 @@
 // src/engine/resolveAttackImpact.cjs
 // Worker-safe attack impact resolution (IMPACT phase).
 // Now ruleset-aware + supports: elevation LOS, cover penalty, effective range w/ altitude.
-// Backward compatible: if fighters/map not provided in state snapshot, falls back to old AR/bonus inputs.
+// Backward compatible: if fighters/map not provided in state snapshot, falls back to old guardRating/bonus inputs.
 
 const { rollInt } = require("./rng.cjs");
 
-let strikeConnectsVsTarget = null;
+let attackConnectsVsTarget = null;
 let resolveWeaponImpactVsArmor = null;
 let pickPrimaryArmorSlot = null;
 try {
   const armorMod = require("../utils/resolveWeaponImpactVsArmor.cjs");
-  strikeConnectsVsTarget = armorMod.strikeConnectsVsTarget;
+  attackConnectsVsTarget = armorMod.attackConnectsVsTarget;
   resolveWeaponImpactVsArmor = armorMod.resolveWeaponImpactVsArmor;
   pickPrimaryArmorSlot = armorMod.pickPrimaryArmorSlot;
 } catch {
@@ -100,12 +100,12 @@ function getAltitudeSafe(state, eid) {
 
 function getARFromRuleset(ruleset, defender) {
   if (ruleset?.getAR) return safeNum(ruleset.getAR(defender), 10);
-  return safeNum(defender?.AR ?? defender?.armorRating, 10);
+  return safeNum(defender?.guardRating ?? defender?.guardRating, 10);
 }
 
-function getStrikeFromRuleset(ruleset, attacker, kind) {
-  if (ruleset?.getStrikeBonus) return safeNum(ruleset.getStrikeBonus(attacker, kind), 0);
-  return safeNum(attacker?.bonuses?.strike ?? attacker?.bonuses?.strikeMelee ?? attacker?.bonuses?.strikeRanged, 0);
+function getAttackFromRuleset(ruleset, attacker, kind) {
+  if (ruleset?.getAttackBonus) return safeNum(ruleset.getAttackBonus(attacker, kind), 0);
+  return safeNum(attacker?.bonuses?.attack ?? attacker?.bonuses?.attackMelee ?? attacker?.bonuses?.attackRanged, 0);
 }
 
 function isCritFromRuleset(ruleset, d20, critOn) {
@@ -126,7 +126,7 @@ function isFumbleFromRuleset(ruleset, d20, alwaysMissOn) {
  * @param {string} payload.attackerId
  * @param {string} payload.targetId
  * @param {string} payload.projectileId
- * @param {Object} payload.attack  - may include { toHitBonus, targetAR, damageFormula, critOn, critMult, rangeHex, requiresLos }
+ * @param {Object} payload.attack  - may include { toHitBonus, targetGuardRating, damageFormula, critOn, critMult, rangeHex, requiresLos }
  * @param {Object} payload.state   - snapshot; ideally includes { fighters, positions, map/cells } but may only include { hpById, positions }
  * @param {Object} payload.attackSnapshot - optional precomputed snapshot { d20, totalToHit, hit, isCrit }
  * @param {Object} payload.ammo
@@ -158,7 +158,7 @@ module.exports = function resolveAttackImpact(payload = {}) {
 
   const events = [];
 
-  // Fighters (optional but enables ruleset-based AR/bonuses, LOS/cover, range+altitude)
+  // Fighters (optional but enables ruleset-based guardRating/bonuses, LOS/cover, range+altitude)
   const attackerF = findFighter(state, attackerId);
   const targetF = findFighter(state, targetId);
 
@@ -193,7 +193,7 @@ module.exports = function resolveAttackImpact(payload = {}) {
         d20: attackSnapshot?.d20 ?? null,
         bonus: null,
         total: null,
-        targetAR: null,
+        targetGuardRating: null,
         hit: false,
         crit: false,
         reason: "OUT_OF_RANGE",
@@ -203,9 +203,9 @@ module.exports = function resolveAttackImpact(payload = {}) {
       events.push({ type: "MISS", attackerId, targetId, reason: "OUT_OF_RANGE" });
 
       // consume attacks & ammo same as normal resolution (keeps turn economy consistent)
-      const remainingAttacks = Number(attack.remainingAttacks ?? 1);
-      const nextRemainingAttacks = Math.max(0, remainingAttacks - 1);
-      events.push({ type: "ATTACKS_CONSUMED", attackerId, prev: remainingAttacks, next: nextRemainingAttacks });
+      const remainingActions = Number(attack.remainingActions ?? 1);
+      const nextRemainingAttacks = Math.max(0, remainingActions - 1);
+      events.push({ type: "ATTACKS_CONSUMED", attackerId, prev: remainingActions, next: nextRemainingAttacks });
       if (nextRemainingAttacks <= 0) {
         events.push({ type: "TURN_SHOULD_END", actorId: attackerId, reason: "No remaining attacks" });
       }
@@ -226,7 +226,7 @@ module.exports = function resolveAttackImpact(payload = {}) {
         events,
         delta: {
           ...(ammoDelta ? { ammo: ammoDelta } : {}),
-          remainingAttacksById: { [attackerId]: nextRemainingAttacks },
+          remainingActionsById: { [attackerId]: nextRemainingAttacks },
           ...(rngState ? { rngState } : {}),
         },
       };
@@ -248,7 +248,7 @@ module.exports = function resolveAttackImpact(payload = {}) {
           d20: attackSnapshot?.d20 ?? null,
           bonus: null,
           total: null,
-          targetAR: null,
+          targetGuardRating: null,
           hit: false,
           crit: false,
           reason: "NO_LOS",
@@ -256,9 +256,9 @@ module.exports = function resolveAttackImpact(payload = {}) {
         });
         events.push({ type: "MISS", attackerId, targetId, reason: "NO_LOS" });
 
-        const remainingAttacks = Number(attack.remainingAttacks ?? 1);
-        const nextRemainingAttacks = Math.max(0, remainingAttacks - 1);
-        events.push({ type: "ATTACKS_CONSUMED", attackerId, prev: remainingAttacks, next: nextRemainingAttacks });
+        const remainingActions = Number(attack.remainingActions ?? 1);
+        const nextRemainingAttacks = Math.max(0, remainingActions - 1);
+        events.push({ type: "ATTACKS_CONSUMED", attackerId, prev: remainingActions, next: nextRemainingAttacks });
         if (nextRemainingAttacks <= 0) {
           events.push({ type: "TURN_SHOULD_END", actorId: attackerId, reason: "No remaining attacks" });
         }
@@ -278,7 +278,7 @@ module.exports = function resolveAttackImpact(payload = {}) {
           events,
           delta: {
             ...(ammoDelta ? { ammo: ammoDelta } : {}),
-            remainingAttacksById: { [attackerId]: nextRemainingAttacks },
+            remainingActionsById: { [attackerId]: nextRemainingAttacks },
             ...(rngState ? { rngState } : {}),
           },
         };
@@ -305,18 +305,18 @@ module.exports = function resolveAttackImpact(payload = {}) {
     // (Optional) still emit roll event if caller didn't already.
     // We keep original behavior: only emitted when we roll here.
   } else {
-    // Determine kind for strike bonus
+    // Determine kind for attack bonus
     const kind = String(attack.kind || attack.attackKind || (attack.isMelee ? "melee" : "ranged")).toLowerCase();
 
     // Base bonuses from ruleset + payload (payload stays as additive override)
-    const baseStrike = attackerF ? getStrikeFromRuleset(ruleset, attackerF, kind) : 0;
+    const baseAttack = attackerF ? getAttackFromRuleset(ruleset, attackerF, kind) : 0;
     const payloadBonus = safeNum(attack.toHitBonus, 0);
-    const toHitBonus = baseStrike + payloadBonus - coverPenalty;
+    const toHitBonus = baseAttack + payloadBonus - coverPenalty;
 
-    // Target AR from ruleset if possible, else payload (back compat)
-    const targetAR = targetF ? getARFromRuleset(ruleset, targetF) : safeNum(attack.targetAR, NaN);
-    if (!Number.isFinite(targetAR)) {
-      return { ok: false, error: { message: "resolveAttackImpact: missing targetAR (and no defender/ruleset AR available)" }, events: [] };
+    // Target guardRating from ruleset if possible, else payload (back compat)
+    const targetGuardRating = targetF ? getARFromRuleset(ruleset, targetF) : safeNum(attack.targetGuardRating, NaN);
+    if (!Number.isFinite(targetGuardRating)) {
+      return { ok: false, error: { message: "resolveAttackImpact: missing targetGuardRating (and no defender/ruleset guardRating available)" }, events: [] };
     }
 
     // Roll d20
@@ -337,8 +337,8 @@ module.exports = function resolveAttackImpact(payload = {}) {
 
     isCrit = !isAlwaysMiss && isCritFromRuleset(ruleset, d20, attack.critOn ?? 20);
     const hitSlotRoll = attack.hitSlot || meta.hitSlot || (pickPrimaryArmorSlot ? pickPrimaryArmorSlot(targetF, null) : "chest");
-    if (strikeConnectsVsTarget && targetF) {
-      const sc = strikeConnectsVsTarget({
+    if (attackConnectsVsTarget && targetF) {
+      const sc = attackConnectsVsTarget({
         defender: targetF,
         attackTotal: totalToHit,
         d20,
@@ -349,7 +349,7 @@ module.exports = function resolveAttackImpact(payload = {}) {
       });
       hit = !isAlwaysMiss && (isAlwaysHit || sc.connects);
     } else {
-      hit = !isAlwaysMiss && (isAlwaysHit || totalToHit >= targetAR);
+      hit = !isAlwaysMiss && (isAlwaysHit || totalToHit >= targetGuardRating);
     }
 
     events.push({
@@ -358,11 +358,11 @@ module.exports = function resolveAttackImpact(payload = {}) {
       targetId,
       d20,
       bonus: toHitBonus,
-      baseStrike,
+      baseAttack,
       payloadBonus,
       coverPenalty,
       total: totalToHit,
-      targetAR,
+      targetGuardRating,
       hit,
       crit: hit && isCrit,
     });
@@ -388,9 +388,9 @@ module.exports = function resolveAttackImpact(payload = {}) {
       projectileReleased: false,
     });
 
-    const remainingAttacks = Number(attack.remainingAttacks ?? 1);
-    const nextRemainingAttacks = Math.max(0, remainingAttacks - 1);
-    events.push({ type: "ATTACKS_CONSUMED", attackerId, prev: remainingAttacks, next: nextRemainingAttacks });
+    const remainingActions = Number(attack.remainingActions ?? 1);
+    const nextRemainingAttacks = Math.max(0, remainingActions - 1);
+    events.push({ type: "ATTACKS_CONSUMED", attackerId, prev: remainingActions, next: nextRemainingAttacks });
     if (nextRemainingAttacks <= 0) {
       events.push({ type: "TURN_SHOULD_END", actorId: attackerId, reason: "No remaining attacks" });
     }
@@ -399,7 +399,7 @@ module.exports = function resolveAttackImpact(payload = {}) {
       ok: true,
       events,
       delta: {
-        remainingAttacksById: { [attackerId]: nextRemainingAttacks },
+        remainingActionsById: { [attackerId]: nextRemainingAttacks },
         ...(rngState ? { rngState } : {}),
       },
     };
@@ -419,9 +419,9 @@ module.exports = function resolveAttackImpact(payload = {}) {
     meta.hitSlot ||
     (typeof pickPrimaryArmorSlot === "function" ? pickPrimaryArmorSlot(effDefender, null) : "chest");
 
-  let strikeConnects = !!strayTargetId;
-  if (!strayTargetId && typeof strikeConnectsVsTarget === "function") {
-    const sc = strikeConnectsVsTarget({
+  let attackConnects = !!strayTargetId;
+  if (!strayTargetId && typeof attackConnectsVsTarget === "function") {
+    const sc = attackConnectsVsTarget({
       defender: effDefender,
       attackTotal: totalToHit,
       d20,
@@ -430,12 +430,12 @@ module.exports = function resolveAttackImpact(payload = {}) {
       critOn: critOnImp,
       alwaysMissOn: alwaysMissOnImp,
     });
-    strikeConnects = sc.connects;
+    attackConnects = sc.connects;
   } else if (!strayTargetId) {
-    strikeConnects = !!hit;
+    attackConnects = !!hit;
   }
 
-  const hitForDamage = strikeConnects;
+  const hitForDamage = attackConnects;
   const critForDamage = isCritRoll && hitForDamage;
 
   if (strayTargetId) {
@@ -512,15 +512,15 @@ module.exports = function resolveAttackImpact(payload = {}) {
         type: "ARMOR_CHANGED",
         targetId: effectiveTargetId,
         slot: impact.slot,
-        prevSDC: impact.prevArmorSDC,
-        nextSDC: impact.nextArmorSDC,
+        prevarmorDurability: impact.prevArmorarmorDurability,
+        nextarmorDurability: impact.nextArmorarmorDurability,
         broken: !!impact.armorBroken,
         name: impact.armor?.name,
       });
 
-      const remainingAttacks = Number(attack.remainingAttacks ?? 1);
-      const nextRemainingAttacks = Math.max(0, remainingAttacks - 1);
-      events.push({ type: "ATTACKS_CONSUMED", attackerId, prev: remainingAttacks, next: nextRemainingAttacks });
+      const remainingActions = Number(attack.remainingActions ?? 1);
+      const nextRemainingAttacks = Math.max(0, remainingActions - 1);
+      events.push({ type: "ATTACKS_CONSUMED", attackerId, prev: remainingActions, next: nextRemainingAttacks });
       if (nextRemainingAttacks <= 0) {
         events.push({ type: "TURN_SHOULD_END", actorId: attackerId, reason: "No remaining attacks" });
       }
@@ -542,11 +542,11 @@ module.exports = function resolveAttackImpact(payload = {}) {
           armorById: {
             [effectiveTargetId]: {
               slot: impact.slot,
-              currentSDC: impact.nextArmorSDC,
+              currentarmorDurability: impact.nextArmorarmorDurability,
               broken: !!impact.armorBroken,
             },
           },
-          remainingAttacksById: { [attackerId]: nextRemainingAttacks },
+          remainingActionsById: { [attackerId]: nextRemainingAttacks },
           ...(ammoDeltaArmor ? { ammo: ammoDeltaArmor } : {}),
           ...(rngState ? { rngState } : {}),
         },
@@ -574,10 +574,10 @@ module.exports = function resolveAttackImpact(payload = {}) {
 
         events.push({ type: "HP_CHANGED", targetId: effectiveTargetId, prevHP, nextHP });
 
-        const remainingAttacks = Number(attack.remainingAttacks ?? 1);
-        const nextRemainingAttacks = Math.max(0, remainingAttacks - 1);
+        const remainingActions = Number(attack.remainingActions ?? 1);
+        const nextRemainingAttacks = Math.max(0, remainingActions - 1);
 
-        events.push({ type: "ATTACKS_CONSUMED", attackerId, prev: remainingAttacks, next: nextRemainingAttacks });
+        events.push({ type: "ATTACKS_CONSUMED", attackerId, prev: remainingActions, next: nextRemainingAttacks });
 
         if (nextRemainingAttacks <= 0) {
           events.push({ type: "TURN_SHOULD_END", actorId: attackerId, reason: "No remaining attacks" });
@@ -600,7 +600,7 @@ module.exports = function resolveAttackImpact(payload = {}) {
           events,
           delta: {
             hpById: nextHpById,
-            remainingAttacksById: { [attackerId]: nextRemainingAttacks },
+            remainingActionsById: { [attackerId]: nextRemainingAttacks },
             ...(ammoDelta ? { ammo: ammoDelta } : {}),
             ...(rngState ? { rngState } : {}),
           },
@@ -618,7 +618,7 @@ module.exports = function resolveAttackImpact(payload = {}) {
     });
   }
 
-  // Ammo delta (optional) — existing behavior
+  // Ammo delta (optional) â€” existing behavior
   if (ammo && ammo.current !== undefined) {
     ammoDelta = {
       ownerId: ammo.ammoOwnerId,
@@ -629,10 +629,10 @@ module.exports = function resolveAttackImpact(payload = {}) {
   }
 
   // Attacks consumed (existing)
-  const remainingAttacks = Number(attack.remainingAttacks ?? 1);
-  const nextRemainingAttacks = Math.max(0, remainingAttacks - 1);
+  const remainingActions = Number(attack.remainingActions ?? 1);
+  const nextRemainingAttacks = Math.max(0, remainingActions - 1);
 
-  events.push({ type: "ATTACKS_CONSUMED", attackerId, prev: remainingAttacks, next: nextRemainingAttacks });
+  events.push({ type: "ATTACKS_CONSUMED", attackerId, prev: remainingActions, next: nextRemainingAttacks });
 
   if (nextRemainingAttacks <= 0) {
     events.push({ type: "TURN_SHOULD_END", actorId: attackerId, reason: "No remaining attacks" });
@@ -643,7 +643,7 @@ module.exports = function resolveAttackImpact(payload = {}) {
     events,
     delta: {
       ...(ammoDelta ? { ammo: ammoDelta } : {}),
-      remainingAttacksById: { [attackerId]: nextRemainingAttacks },
+      remainingActionsById: { [attackerId]: nextRemainingAttacks },
       ...(rngState ? { rngState } : {}),
     },
   };

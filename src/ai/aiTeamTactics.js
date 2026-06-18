@@ -18,30 +18,30 @@ function asSkillText(skill) {
 function getSkills(actor) {
   return [
     ...(actor?.skills ?? []),
-    ...(actor?.occSkills ?? []),
+    ...(actor?.professionSkills ?? []),
     ...(actor?.electiveSkills ?? []),
     ...(actor?.secondarySkills ?? []),
   ].map(asSkillText);
 }
 
 function isCaster(actor) {
-  const occ = String(actor?.occ ?? actor?.className ?? "").toLowerCase();
+  const profession = String(actor?.profession ?? actor?.className ?? "").toLowerCase();
   return (
-    occ.includes("wizard") ||
-    occ.includes("warlock") ||
-    occ.includes("priest") ||
-    occ.includes("shaman") ||
-    occ.includes("druid") ||
-    occ.includes("mind")
+    profession.includes("duelist") ||
+    profession.includes("mercenary") ||
+    profession.includes("priest") ||
+    profession.includes("shaman") ||
+    profession.includes("druid") ||
+    profession.includes("mind")
   );
 }
 
 function isHealer(actor) {
-  const occ = String(actor?.occ ?? actor?.className ?? "").toLowerCase();
+  const profession = String(actor?.profession ?? actor?.className ?? "").toLowerCase();
   const skills = getSkills(actor);
 
   return (
-    occ.includes("healer") ||
+    profession.includes("healer") ||
     skills.some((s) => s.includes("first aid") || s.includes("medical"))
   );
 }

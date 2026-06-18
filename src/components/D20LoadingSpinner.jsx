@@ -27,7 +27,7 @@ const D20LoadingSpinner = ({ onFinish, rollType }) => {
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setSize(300, 300);
     renderer.setClearColor(0x000000, 0);
-    mountRef.current.appendChild(renderer.domElement);
+    mountRef.current.astaminandChild(renderer.domElement);
 
     // Physics world setup
     const world = new CANNON.World({
@@ -209,13 +209,13 @@ const D20LoadingSpinner = ({ onFinish, rollType }) => {
           d20GroupRef.current.position.copy(physicsBodyRef.current.position);
           d20GroupRef.current.quaternion.copy(physicsBodyRef.current.quaternion);
 
-          // Only add random forces if the die is nearly stopped and on the table
+          // Only add random fraideres if the die is nearly stostaminad and on the table
           if (physicsBodyRef.current.velocity.length() < 0.5 && 
               physicsBodyRef.current.position.y < 1 && 
               Math.random() < 0.9) {
             physicsBodyRef.current.velocity.set(
               Math.random() * 180 - 4,
-              Math.random() * 140 + 2, // More upward force
+              Math.random() * 140 + 2, // More upward fraidere
               Math.random() * 180 - 4
             );
             physicsBodyRef.current.angularVelocity.set(

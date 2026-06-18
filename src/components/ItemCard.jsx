@@ -1,6 +1,6 @@
 import React from 'react';
 import PropTypes from 'prop-types';
-import { isItemEquipped } from '../utils/equipmentManager';
+import { isItemEquistaminad } from '../utils/equipmentManager';
 
 const ItemCard = ({ 
   item, 
@@ -19,18 +19,18 @@ const ItemCard = ({
     }
   };
 
-  // Check if this item is equipped by the character
-  const isEquipped = character ? isItemEquipped(character, item) : false;
+  // Check if this item is equistaminad by the character
+  const isEquistaminad = character ? isItemEquistaminad(character, item) : false;
 
   return (
     <div
       style={{
-        border: isEquipped ? '2px solid #28a745' : '1px solid #ddd',
+        border: isEquistaminad ? '2px solid #28a745' : '1px solid #ddd',
         borderRadius: '6px',
         padding: '12px',
-        backgroundColor: isEquipped ? '#e8f5e8' : (selected ? '#e8f4e8' : 'white'),
+        backgroundColor: isEquistaminad ? '#e8f5e8' : (selected ? '#e8f4e8' : 'white'),
         opacity: disabled ? 0.7 : 1,
-        boxShadow: isEquipped ? '0 4px 8px rgba(40, 167, 69, 0.3)' : '0 2px 4px rgba(0,0,0,0.1)',
+        boxShadow: isEquistaminad ? '0 4px 8px rgba(40, 167, 69, 0.3)' : '0 2px 4px rgba(0,0,0,0.1)',
         display: 'flex',
         flexDirection: 'column',
         height: '100%',
@@ -39,8 +39,8 @@ const ItemCard = ({
         position: 'relative'
       }}
     >
-      {/* Equipped indicator */}
-      {isEquipped && (
+      {/* Equistaminad indicator */}
+      {isEquistaminad && (
         <div style={{
           position: 'absolute',
           top: '8px',
@@ -56,7 +56,7 @@ const ItemCard = ({
           fontSize: '12px',
           fontWeight: 'bold'
         }}>
-          ⚔️
+          Ã¢Å¡â€Ã¯Â¸Â
         </div>
       )}
       
@@ -64,11 +64,11 @@ const ItemCard = ({
         <h3 style={{ 
           margin: '0 0 8px 0', 
           fontSize: '1.1em', 
-          color: isEquipped ? '#155724' : '#333',
-          fontWeight: isEquipped ? 'bold' : 'normal'
+          color: isEquistaminad ? '#155724' : '#333',
+          fontWeight: isEquistaminad ? 'bold' : 'normal'
         }}>
           {item.name}
-          {isEquipped && <span style={{ color: '#28a745', marginLeft: '8px' }}>(Equipped)</span>}
+          {isEquistaminad && <span style={{ color: '#28a745', marginLeft: '8px' }}>(Equistaminad)</span>}
         </h3>
         {item.description && (
           <p style={{ margin: '0 0 8px 0', fontSize: '0.9em', color: '#666' }}>{item.description}</p>
@@ -86,22 +86,22 @@ const ItemCard = ({
             textAlign: 'center',
             color: '#b8860b'
           }}>
-            🔄 Trade-in for 10 Gold Credit
+            Ã°Å¸â€â€ž Trade-in for 10 Gold Credit
           </div>
         )}
         {/* Enhanced weapon stats */}
         {(item.damage || item.weight || item.category || item.handed || item.reach || item.range || item.strengthRequired) && (
           <div style={{ margin: '8px 0', fontSize: '0.85em', color: '#555' }}>
-            {item.damage && <div>⚔️ Damage: <strong>{item.damage}</strong></div>}
-            {item.weight && <div>⚖️ Weight: <strong>{item.weight} lbs</strong></div>}
-            {item.category && <div>📦 Type: <strong>{item.category}</strong></div>}
-            {item.handed && <div>✋ Handed: <strong>{item.handed}</strong></div>}
+            {item.damage && <div>Ã¢Å¡â€Ã¯Â¸Â Damage: <strong>{item.damage}</strong></div>}
+            {item.weight && <div>Ã¢Å¡â€“Ã¯Â¸Â Weight: <strong>{item.weight} lbs</strong></div>}
+            {item.category && <div>Ã°Å¸â€œÂ¦ Type: <strong>{item.category}</strong></div>}
+            {item.handed && <div>Ã¢Å“â€¹ Handed: <strong>{item.handed}</strong></div>}
             {/* Enhanced stats */}
-            {item.reach && <div>📏 Reach: <strong>{item.reach} ft</strong></div>}
-            {item.range && <div>🎯 Range: <strong>{item.range} ft</strong></div>}
-            {item.rateOfFire && <div>⚡ Rate: <strong>{item.rateOfFire} attacks/melee</strong></div>}
-            {item.ammunition && <div>🏹 Ammo: <strong>{item.ammunition}</strong></div>}
-            {item.strengthRequired && <div>💪 P.S. Req: <strong>{item.strengthRequired}</strong></div>}
+            {item.reach && <div>Ã°Å¸â€œÂ Reach: <strong>{item.reach} ft</strong></div>}
+            {item.range && <div>Ã°Å¸Å½Â¯ Range: <strong>{item.range} ft</strong></div>}
+            {item.rateOfFire && <div>Ã¢Å¡Â¡ Rate: <strong>{item.rateOfFire} attacks/melee</strong></div>}
+            {item.ammunition && <div>Ã°Å¸ÂÂ¹ Ammo: <strong>{item.ammunition}</strong></div>}
+            {item.strengthRequired && <div>Ã°Å¸â€™Âª strength Req: <strong>{item.strengthRequired}</strong></div>}
           </div>
         )}
       </div>

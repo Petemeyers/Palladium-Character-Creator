@@ -252,7 +252,7 @@ const QuestTracker = () => {
               <FormControl>
                 <FormLabel>Rewards (one per line)</FormLabel>
                 <Textarea
-                  placeholder="100 gold&#10;Healing Potion x2&#10;Magic Sword"
+                  placeholder="100 gold&#10;Healing Potion x2&#10;Training Sword"
                   onChange={(e) => {
                     const rewards = e.target.value.split('\n').filter(line => line.trim());
                     setNewQuest({ ...newQuest, rewards });

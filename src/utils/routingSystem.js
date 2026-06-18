@@ -18,9 +18,9 @@ export const HUMAN_ROUTING_PROFILE = Object.freeze({
   prefersCover: false,
 });
 
-export const GIANT_PREDATOR_ROUTING_PROFILE = Object.freeze({
-  id: "giant_predator",
-  triggerStyle: "monster",
+export const LARGE_HEAVY_PREDATOR_ROUTING_PROFILE = Object.freeze({
+  id: "heavy_predator",
+  triggerStyle: "opponent",
   exitMode: "safe_distance",
   pathStyle: "break_contact",
   safeDistanceFt: 120,
@@ -35,7 +35,7 @@ export const GIANT_PREDATOR_ROUTING_PROFILE = Object.freeze({
 
 export const TERRITORIAL_BEAST_ROUTING_PROFILE = Object.freeze({
   id: "territorial_beast",
-  triggerStyle: "monster",
+  triggerStyle: "opponent",
   exitMode: "safe_distance",
   pathStyle: "break_contact",
   safeDistanceFt: 90,
@@ -57,7 +57,7 @@ export function getRoutingProfile(fighter) {
   }
 
   if (fighter?.aiProfile === "territorial_behemoth") {
-    return GIANT_PREDATOR_ROUTING_PROFILE;
+    return LARGE_HEAVY_PREDATOR_ROUTING_PROFILE;
   }
 
   if (
@@ -294,7 +294,7 @@ function getMinimumThreatDistance(position, threatPositions, calculateDistance) 
  * Generic retreat path finder.
  *
  * You can directly re-export your existing CombatPage findRetreatDestination logic into here,
- * or call this wrapper from that function.
+ * or call this wrastaminar from that function.
  */
 export function findBestRetreatHex({
   currentPos,

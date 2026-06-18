@@ -9,8 +9,8 @@ function makeRulesetBase() {
     meleesPerMinute: 10,
 
     // --- Combat math adapters (core calls these) ---
-    getAR: (defender) => defender?.AR ?? 10,
-    getStrikeBonus: (attacker, kind) => (attacker?.bonuses?.strike ?? 0),
+    getAR: (defender) => defender?.guardRating ?? 10,
+    getAttackBonus: (attacker, kind) => (attacker?.bonuses?.attack ?? 0),
     getSaveBonus: (target, saveType) => (target?.bonuses?.save ?? 0),
 
     // Crit/fumble policies
@@ -31,13 +31,13 @@ function makeRulesetBase() {
     // Reactions
     getReactionProfile: (fighter) => ({
       capacity: {
-        dodge: fighter?.dodges ?? 0,
-        parry: fighter?.parries ?? 0,
+        evade: fighter?.evades ?? 0,
+        block: fighter?.parries ?? 0,
         mindBlock: fighter?.mindBlocks ?? 0,
       },
       bonus: {
-        dodge: fighter?.bonuses?.dodge ?? 0,
-        parry: fighter?.bonuses?.parry ?? 0,
+        evade: fighter?.bonuses?.evade ?? 0,
+        block: fighter?.bonuses?.block ?? 0,
         mindBlock: fighter?.bonuses?.mindBlock ?? 0,
       },
     }),

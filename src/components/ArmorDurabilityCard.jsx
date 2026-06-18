@@ -12,16 +12,16 @@ import {
   useToast,
 } from "@chakra-ui/react";
 // Using text icons instead of react-icons to avoid dependency issues
-const FaShield = () => <span>🛡️</span>;
-const FaWrench = () => <span>🔧</span>;
-const FaRedo = () => <span>🔄</span>;
-const FaExclamationTriangle = () => <span>⚠️</span>;
+const FaShield = () => <span>ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂºÃ‚Â¡ÃƒÂ¯Ã‚Â¸Ã‚Â</span>;
+const FaWrench = () => <span>ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ‚Â§</span>;
+const FaRedo = () => <span>ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ¢â‚¬Å¾</span>;
+const FaExclamationTriangle = () => <span>ÃƒÂ¢Ã…Â¡Ã‚Â ÃƒÂ¯Ã‚Â¸Ã‚Â</span>;
 import useArmorDurability from "../hooks/useArmorDurability";
 
 /**
  * ArmorDurabilityCard
  * Displays armor durability with interactive damage/repair controls
- * Integrates with Palladium 1994 armor system
+ * Integrates with Medieval Combat Simulator 1994 armor system
  */
 export default function ArmorDurabilityCard({ 
   armorData, 
@@ -81,7 +81,7 @@ export default function ArmorDurabilityCard({
     if (result.success) {
       toast({
         title: "Armor Repaired",
-        description: `Restored ${repairAmount} S.D.C. for ${result.cost} gold`,
+        description: `Restored ${repairAmount} armorDurability for ${result.cost} gold`,
         status: "success",
         duration: 2000,
         isClosable: true,
@@ -144,7 +144,7 @@ export default function ArmorDurabilityCard({
         />
         
         <Text fontSize="xs" color="gray.400">
-          S.D.C.: {armor.currentSDC}/{armor.sdc} | A.R.: {armor.armorRating}
+          armorDurability: {armor.currentarmorDurability}/{armor.armorDurability} | A.R.: {armor.guardRating}
         </Text>
       </Box>
     );
@@ -197,7 +197,7 @@ export default function ArmorDurabilityCard({
         </Badge>
       </VStack>
 
-      {/* S.D.C. Progress */}
+      {/* armorDurability Progress */}
       <VStack spacing={2} mb={4}>
         <Progress
           value={remainingPercentage}
@@ -208,7 +208,7 @@ export default function ArmorDurabilityCard({
         />
         
         <Text fontSize="md" fontWeight="semibold">
-          S.D.C.: {armor.currentSDC}/{armor.sdc}
+          armorDurability: {armor.currentarmorDurability}/{armor.armorDurability}
         </Text>
         
         {armor.broken && (
@@ -229,7 +229,7 @@ export default function ArmorDurabilityCard({
         <HStack>
           <Text>Armor Rating:</Text>
           <Text fontWeight="bold" color={armor.broken ? "red.300" : "blue.300"}>
-            {armor.broken ? "0" : armor.armorRating}
+            {armor.broken ? "0" : armor.guardRating}
           </Text>
         </HStack>
         <HStack>
@@ -257,7 +257,7 @@ export default function ArmorDurabilityCard({
               onClick={() => handleApplyDamage(10)}
               disabled={armor.broken}
             >
-              -10 S.D.C.
+              -10 armorDurability
             </Button>
             
             <Button
@@ -266,7 +266,7 @@ export default function ArmorDurabilityCard({
               onClick={() => handleApplyDamage(5)}
               disabled={armor.broken}
             >
-              -5 S.D.C.
+              -5 armorDurability
             </Button>
           </HStack>
 
@@ -277,9 +277,9 @@ export default function ArmorDurabilityCard({
                 colorScheme="green"
                 leftIcon={<FaWrench />}
                 onClick={() => handleRepairArmor(10)}
-                disabled={armor.currentSDC >= armor.sdc}
+                disabled={armor.currentarmorDurability >= armor.armorDurability}
               >
-                +10 S.D.C.
+                +10 armorDurability
               </Button>
             </Tooltip>
             
@@ -288,9 +288,9 @@ export default function ArmorDurabilityCard({
                 size="sm"
                 colorScheme="teal"
                 onClick={() => handleRepairArmor(5)}
-                disabled={armor.currentSDC >= armor.sdc}
+                disabled={armor.currentarmorDurability >= armor.armorDurability}
               >
-                +5 S.D.C.
+                +5 armorDurability
               </Button>
             </Tooltip>
           </HStack>

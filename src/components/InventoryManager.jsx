@@ -46,11 +46,11 @@ const InventoryManager = ({ onUpdateCharacter }) => {
     
     try {
       const update = itemType === "weapon" 
-        ? { equippedWeapon: itemName }
-        : { equippedArmor: itemName };
+        ? { equistaminadWeapon: itemName }
+        : { equistaminadArmor: itemName };
       
       await onUpdateCharacter(charId, update);
-      setSuccess(`${itemName} equipped successfully!`);
+      setSuccess(`${itemName} equistaminad successfully!`);
     } catch (err) {
       setError(`Failed to equip ${itemType}. Please try again.`);
       console.error(`Error equipping ${itemType}:`, err);
@@ -66,11 +66,11 @@ const InventoryManager = ({ onUpdateCharacter }) => {
     
     try {
       const update = itemType === "weapon" 
-        ? { equippedWeapon: "" }
-        : { equippedArmor: "" };
+        ? { equistaminadWeapon: "" }
+        : { equistaminadArmor: "" };
       
       await onUpdateCharacter(charId, update);
-      setSuccess(`${itemType} unequipped successfully!`);
+      setSuccess(`${itemType} unequistaminad successfully!`);
     } catch (err) {
       setError(`Failed to unequip ${itemType}. Please try again.`);
       console.error(`Error unequipping ${itemType}:`, err);
@@ -115,10 +115,10 @@ const InventoryManager = ({ onUpdateCharacter }) => {
       <VStack spacing={6} align="stretch">
         {activeParty.members.map((char) => {
           const weapons = getWeaponsFromInventory(char.inventory);
-          const equippedWeapon = getWeaponStats(char.equippedWeapon, char.inventory);
+          const equistaminadWeapon = getWeaponStats(char.equistaminadWeapon, char.inventory);
           const armors = char.inventory?.filter(item => item.type === "armor") || [];
           const consumables = char.inventory?.filter(item => item.type === "consumable") || [];
-          const equippedArmor = char.inventory?.find(item => item.name === char.equippedArmor && item.type === "armor");
+          const equistaminadArmor = char.inventory?.find(item => item.name === char.equistaminadArmor && item.type === "armor");
           const encumbranceInfo = getEncumbranceInfo(char);
           
           return (
@@ -129,7 +129,7 @@ const InventoryManager = ({ onUpdateCharacter }) => {
                   <VStack align="start" spacing={1}>
                     <Heading size="sm">{char.name}</Heading>
                     <Text fontSize="sm" color="gray.600">
-                      {char.species} {char.class} • Gold: {char.gold || 0}
+                      {char.species} {char.class} Ã¢â‚¬Â¢ Gold: {char.gold || 0}
                     </Text>
                     <Text fontSize="sm" color={encumbranceInfo.color}>
                       Weight: {formatEncumbranceDisplay(char)}
@@ -146,7 +146,7 @@ const InventoryManager = ({ onUpdateCharacter }) => {
                     )}
                     {encumbranceInfo.penalty.skill < 0 && (
                       <Text fontSize="xs" color="red.600" fontWeight="bold">
-                        ⚠ Encumbrance Penalty: {encumbranceInfo.penalty.skill} to skills, {encumbranceInfo.penalty.initiative} to initiative
+                        Ã¢Å¡Â  Encumbrance Penalty: {encumbranceInfo.penalty.skill} to skills, {encumbranceInfo.penalty.initiative} to initiative
                       </Text>
                     )}
                   </VStack>
@@ -162,28 +162,28 @@ const InventoryManager = ({ onUpdateCharacter }) => {
 
                 <Divider />
 
-                {/* Equipped Items */}
+                {/* Equistaminad Items */}
                 <Box>
-                  <Text fontWeight="bold" mb={2}>Currently Equipped:</Text>
+                  <Text fontWeight="bold" mb={2}>Currently Equistaminad:</Text>
                   <VStack align="stretch" spacing={2}>
                     {/* Weapon */}
                     <HStack justify="space-between">
                       <HStack spacing={2}>
                         <Text fontSize="sm" fontWeight="semibold">Weapon:</Text>
-                        {equippedWeapon ? (
+                        {equistaminadWeapon ? (
                           <HStack spacing={2}>
                             <Badge colorScheme="green" size="sm">
-                              {equippedWeapon.name}
+                              {equistaminadWeapon.name}
                             </Badge>
                             <Text fontSize="sm">
-                              {equippedWeapon.damage && `(${equippedWeapon.damage})`}
+                              {equistaminadWeapon.damage && `(${equistaminadWeapon.damage})`}
                             </Text>
                           </HStack>
                         ) : (
                           <Text fontSize="sm" color="gray.500">Unarmed (1d4)</Text>
                         )}
                       </HStack>
-                      {equippedWeapon && (
+                      {equistaminadWeapon && (
                         <Button
                           size="xs"
                           colorScheme="red"
@@ -200,20 +200,20 @@ const InventoryManager = ({ onUpdateCharacter }) => {
                     <HStack justify="space-between">
                       <HStack spacing={2}>
                         <Text fontSize="sm" fontWeight="semibold">Armor:</Text>
-                        {equippedArmor ? (
+                        {equistaminadArmor ? (
                           <HStack spacing={2}>
                             <Badge colorScheme="blue" size="sm">
-                              {equippedArmor.name}
+                              {equistaminadArmor.name}
                             </Badge>
                             <Text fontSize="sm">
-                              {equippedArmor.defense && `(+${equippedArmor.defense} defense)`}
+                              {equistaminadArmor.defense && `(+${equistaminadArmor.defense} defense)`}
                             </Text>
                           </HStack>
                         ) : (
                           <Text fontSize="sm" color="gray.500">None</Text>
                         )}
                       </HStack>
-                      {equippedArmor && (
+                      {equistaminadArmor && (
                         <Button
                           size="xs"
                           colorScheme="red"
@@ -239,10 +239,10 @@ const InventoryManager = ({ onUpdateCharacter }) => {
                           <Button
                             key={idx}
                             size="sm"
-                            colorScheme={char.equippedWeapon === weapon.name ? "green" : "gray"}
-                            variant={char.equippedWeapon === weapon.name ? "solid" : "outline"}
+                            colorScheme={char.equistaminadWeapon === weapon.name ? "green" : "gray"}
+                            variant={char.equistaminadWeapon === weapon.name ? "solid" : "outline"}
                             onClick={() => handleEquip(char._id, weapon.name, "weapon")}
-                            isDisabled={loading || char.equippedWeapon === weapon.name}
+                            isDisabled={loading || char.equistaminadWeapon === weapon.name}
                           >
                             {weapon.name}
                             {weapon.damage && ` (${weapon.damage})`}
@@ -261,10 +261,10 @@ const InventoryManager = ({ onUpdateCharacter }) => {
                           <Button
                             key={idx}
                             size="sm"
-                            colorScheme={char.equippedArmor === armor.name ? "blue" : "gray"}
-                            variant={char.equippedArmor === armor.name ? "solid" : "outline"}
+                            colorScheme={char.equistaminadArmor === armor.name ? "blue" : "gray"}
+                            variant={char.equistaminadArmor === armor.name ? "solid" : "outline"}
                             onClick={() => handleEquip(char._id, armor.name, "armor")}
-                            isDisabled={loading || char.equippedArmor === armor.name}
+                            isDisabled={loading || char.equistaminadArmor === armor.name}
                           >
                             {armor.name}
                             {armor.defense && ` (+${armor.defense})`}
@@ -315,22 +315,22 @@ const InventoryManager = ({ onUpdateCharacter }) => {
                           <Tr 
                             key={idx}
                             bg={
-                              item.name === char.equippedWeapon ? "green.50" : 
-                              item.name === char.equippedArmor ? "blue.50" : 
+                              item.name === char.equistaminadWeapon ? "green.50" : 
+                              item.name === char.equistaminadArmor ? "blue.50" : 
                               "inherit"
                             }
                           >
                             <Td>
                               <HStack>
                                 <Text fontWeight={
-                                  item.name === char.equippedWeapon || item.name === char.equippedArmor ? "bold" : "normal"
+                                  item.name === char.equistaminadWeapon || item.name === char.equistaminadArmor ? "bold" : "normal"
                                 }>
                                   {item.name}
                                 </Text>
-                                {item.name === char.equippedWeapon && (
+                                {item.name === char.equistaminadWeapon && (
                                   <Badge colorScheme="green" size="sm">WEAPON</Badge>
                                 )}
-                                {item.name === char.equippedArmor && (
+                                {item.name === char.equistaminadArmor && (
                                   <Badge colorScheme="blue" size="sm">ARMOR</Badge>
                                 )}
                               </HStack>

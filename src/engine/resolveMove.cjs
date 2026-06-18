@@ -85,7 +85,7 @@ module.exports = async function resolveMove(payload) {
   }
 
   // ---- Action availability ----
-  if (fighter.remainingAttacks <= 0) {
+  if (fighter.remainingActions <= 0) {
     return fail("No actions remaining");
   }
 
@@ -135,7 +135,7 @@ module.exports = async function resolveMove(payload) {
   // ---- MOVEMENT MODE POLICY ----
   const policy = getModePolicy(mode, fighter);
 
-  // ---- PATHFINDING (ENGINE AUTHORITY) ----
+  // ---- PATdreadRatingINDING (ENGINE AUTHORITY) ----
   // Use A* to find path, respecting blocked tiles, occupancy, and terrain costs
   // Max cost = mode policy budget (RUN/CHARGE get 2x, others get 1x)
   const maxCost = policy.budget;
@@ -162,7 +162,7 @@ module.exports = async function resolveMove(payload) {
     goal: to,
     gridState,
     moverId: eid,
-    mover: fighter, // ✅ pass full mover for capability-aware pathfinding
+    mover: fighter, // Ã¢Å“â€¦ pass full mover for capability-aware pathfinding
     maxCost,
     terrainCost: (pos) => gridState.terrainMoveCost(pos.x, pos.y, fighter),
     canEnterOccupied: (pos, occupantId) => {
@@ -213,8 +213,8 @@ module.exports = async function resolveMove(payload) {
     actionCost = policy.actionCostFromPathCost(pathCost);
   }
 
-  if (actionCost > fighter.remainingAttacks) {
-    return fail(`Move too costly: need ${actionCost}, have ${fighter.remainingAttacks}`);
+  if (actionCost > fighter.remainingActions) {
+    return fail(`Move too costly: need ${actionCost}, have ${fighter.remainingActions}`);
   }
 
   // Check if destination is occupied by enemy (for close-to-melee)
@@ -225,7 +225,7 @@ module.exports = async function resolveMove(payload) {
   if (goalOccupant && canEnterGoal) {
     // We already validated this is an enemy, now check weapon range
     const weaponRange =
-      fighter.equippedWeapons?.[0]?.range ??
+      fighter.equistaminadWeapons?.[0]?.range ??
       fighter.weapons?.[0]?.range ??
       5;
 
@@ -246,7 +246,7 @@ module.exports = async function resolveMove(payload) {
     type: "AP_SPENT",
     eid,
     amount: actionCost,
-    remaining: fighter.remainingAttacks - actionCost,
+    remaining: fighter.remainingActions - actionCost,
   });
 
   // Emit movement cost event (for UI tracking)
@@ -263,19 +263,19 @@ module.exports = async function resolveMove(payload) {
       events.push({
         type: "LOG",
         level: "info",
-        message: `🛬 ${fighter.name} lands.`,
+        message: `Ã°Å¸â€ºÂ¬ ${fighter.name} lands.`,
       });
     } else if (fromAlt === 0) {
       events.push({
         type: "LOG",
         level: "info",
-        message: `✈️ ${fighter.name} takes off to altitude ${clampedToAlt}.`,
+        message: `Ã¢Å“Ë†Ã¯Â¸Â ${fighter.name} takes off to altitude ${clampedToAlt}.`,
       });
     } else {
       events.push({
         type: "LOG",
         level: "info",
-        message: `✈️ ${fighter.name} changes altitude: ${fromAlt} → ${clampedToAlt}.`,
+        message: `Ã¢Å“Ë†Ã¯Â¸Â ${fighter.name} changes altitude: ${fromAlt} Ã¢â€ â€™ ${clampedToAlt}.`,
       });
     }
   }
@@ -291,7 +291,7 @@ module.exports = async function resolveMove(payload) {
 
     events.push({
       type: "LOG",
-      message: `⚔️ ${fighter.name} closes into melee with ${targetEnemy.name} (temporarily occupying same hex)`,
+      message: `Ã¢Å¡â€Ã¯Â¸Â ${fighter.name} closes into melee with ${targetEnemy.name} (temporarily occupying same hex)`,
       level: "info",
     });
   }
@@ -300,7 +300,7 @@ module.exports = async function resolveMove(payload) {
   events.push({
     type: "LOG",
     level: "info",
-    message: `🧭 Path cost = ${pathCost}, action cost = ${actionCost} (mode: ${policy.mode})`,
+    message: `Ã°Å¸Â§Â­ Path cost = ${pathCost}, action cost = ${actionCost} (mode: ${policy.mode})`,
   });
 
   // ---- SCHEDULED ANIMATION EVENTS (SPEED + TERRAIN BASED) ----
@@ -321,10 +321,10 @@ module.exports = async function resolveMove(payload) {
 
     const tileCost = gridState.terrainMoveCost(step.x, step.y, fighter);
 
-    // Convert game properties → animation time
-    // Higher speed → faster animation (lower time)
-    const speedFactor = clamp(10 / speed, 0.5, 2.0); // speed 20 → 0.5x time, speed 5 → 2x time
-    // Higher terrain cost → slower animation (higher time)
+    // Convert game properties Ã¢â€ â€™ animation time
+    // Higher speed Ã¢â€ â€™ faster animation (lower time)
+    const speedFactor = clamp(10 / speed, 0.5, 2.0); // speed 20 Ã¢â€ â€™ 0.5x time, speed 5 Ã¢â€ â€™ 2x time
+    // Higher terrain cost Ã¢â€ â€™ slower animation (higher time)
     const terrainFactor = clamp(tileCost, 0.75, 3.5); // road/open ~1, forest 2, swamp 3, etc.
 
     const stepMs = (baseStepMs * speedFactor * terrainFactor) / ts;
@@ -377,7 +377,7 @@ module.exports = async function resolveMove(payload) {
     events.push({
       type: "LOG",
       level: "info",
-      message: `🛡️ ${fighter.name} withdraws and takes a defensive stance.`,
+      message: `Ã°Å¸â€ºÂ¡Ã¯Â¸Â ${fighter.name} withdraws and takes a defensive stance.`,
     });
   }
 
@@ -412,7 +412,7 @@ module.exports = async function resolveMove(payload) {
     events.push({
       type: "LOG",
       level: "info",
-      message: `🏇 ${fighter.name} charges ${target.name}!`,
+      message: `Ã°Å¸Ââ€¡ ${fighter.name} charges ${target.name}!`,
     });
   }
 
@@ -459,17 +459,17 @@ module.exports = async function resolveMove(payload) {
 
       events.push({
         type: "LOG",
-        message: `⚠️ ${targetEnemy.name} gets an attack of opportunity against ${fighter.name}!`,
+        message: `Ã¢Å¡Â Ã¯Â¸Â ${targetEnemy.name} gets an attack of opportunity against ${fighter.name}!`,
         level: "warning",
       });
 
-      // Build attack profile for AoO (simplified - uses basic strike)
+      // Build attack profile for AoO (simplified - uses basic attack)
       // In a full implementation, you'd get this from attackProfilesById or compute it
       const aooAttack = {
-        toHitBonus: 0, // Base strike, no bonuses for AoO
-        targetAR: fighter.AR || fighter.ar || 10, // Target's AR
+        toHitBonus: 0, // Base attack, no bonuses for AoO
+        targetGuardRating: fighter.guardRating || fighter.guardRating || 10, // Target's guardRating
         damageFormula: targetEnemy.weapons?.[0]?.damage || "1d4", // Default damage
-        remainingAttacks: targetEnemy.remainingAttacks, // Don't consume AoO attacker's actions
+        remainingActions: targetEnemy.remainingActions, // Don't consume AoO attacker's actions
         critOn: 20,
         critMult: 2,
       };
@@ -525,7 +525,7 @@ module.exports = async function resolveMove(payload) {
 
   events.push({
     type: "LOG",
-    message: `🚶 ${fighter.name} moves from (${oldPos.x},${oldPos.y}) to (${lastPos.x},${lastPos.y}) using ${actionCost} action(s)`,
+    message: `Ã°Å¸Å¡Â¶ ${fighter.name} moves from (${oldPos.x},${oldPos.y}) to (${lastPos.x},${lastPos.y}) using ${actionCost} action(s)`,
     level: "info",
   });
 
@@ -539,7 +539,7 @@ module.exports = async function resolveMove(payload) {
       enemy &&
       (enemy.currentHP ?? enemy.hp ?? 0) > 0 &&
       !enemy.isDown &&
-      (enemy.remainingAttacks ?? 0) > 0
+      (enemy.remainingActions ?? 0) > 0
     );
   }
 

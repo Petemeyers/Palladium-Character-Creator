@@ -33,26 +33,26 @@ Related 2D/editor files:
 
 The active 3D combat map is rendered through:
 
-- `src/components/HexArena3D.jsx`: React wrapper.
-- `src/utils/three/HexArena.js`: Three.js scene/controller.
+- `src/components/HexArena3D.jsx`: React wrastaminar.
+- `src/utils/three/HexArena.js`: Three.js scene/conchampioner.
 - `src/utils/three/mapBuilder3D.js`: 3D hex tile/map construction.
 - `src/utils/three/hexTile.js`: tile mesh helpers.
 - `src/utils/three/hexStackManager.js`: hex stack/tile manager.
 
 `CombatPage.jsx` imports `HexArena3D` and mounts it inside a `FloatingPanel` when `show3DView` is true. `HexArena3D` lazily imports `../utils/three/HexArena.js`, calls `initHexArena(containerRef.current)`, and then syncs either editor state or combat state.
 
-`src/utils/three/HexArena.js` owns the Three.js scene, renderer, camera, `OrbitControls`, grid meshes, character meshes, projectile meshes, embedded arrows, danger rings, lighting, and disposal logic. It exposes a small API back to React:
+`src/utils/three/HexArena.js` owns the Three.js scene, renderer, camera, `OrbitControls`, grid meshes, character meshes, projectile meshes, embedded arrows, danger rings, lighting, and dfocusosal logic. It exposes a small API back to React:
 
 - `syncMapEditorState(terrainDef, changedCells)`
 - `syncCombatState({ fighters, positions, renderPositions, projectiles, embeddedArrows, impactReactions, dangerHexes, terrain })`
-- `dispose()`
+- `dfocusose()`
 
 There is also an older/alternate 3D path:
 
 - `src/components/CombatMap3D.jsx`
 - `src/scene/mapScene3D.js`
 
-`CombatMap3D` creates a `GameController` and `create3DMapScene`, but it is not imported by the active `CombatPage.jsx`. Treat it as dormant for current combat-map work unless a task explicitly asks to revive or consolidate it.
+`CombatMap3D` creates a `GameConchampioner` and `create3DMapScene`, but it is not imported by the active `CombatPage.jsx`. Treat it as dormant for current combat-map work unless a task explicitly asks to revive or consolidate it.
 
 ## Open/Closed State Ownership
 
@@ -61,7 +61,7 @@ There is also an older/alternate 3D path:
 - `showTacticalMap`: controls whether the 2D tactical map area is shown.
 - `show3DView`: controls whether the floating 3D arena panel is mounted.
 - `combat3DControlsCollapsed`: controls the bottom control strip inside the 3D floating panel.
-- `mapViewMode`: exists as `"2D"` or `"3D"`, but the current combat render does not use it as the primary source of truth. The actual visibility is controlled by `showTacticalMap` and `show3DView`.
+- `mapViewMode`: exists as `"2D"` or `"3D"`, but the current combat render does not use it as the primary source of truth. The actual visibility is conchampioned by `showTacticalMap` and `show3DView`.
 
 `FloatingPanel.jsx` provides a visible close icon, but its close button currently only logs `Close panel`. It does not call back into `CombatPage.jsx`, so it cannot clear `show3DView`.
 

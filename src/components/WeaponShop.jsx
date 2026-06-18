@@ -2,12 +2,12 @@ import React, { useState, useEffect } from 'react';
 import axiosInstance from '../utils/axios';
 import ItemCard from './ItemCard';
 import Confetti from 'react-confetti';
-import { equipWeapon, getAvailableWeapons, getWeaponDisplayInfo, syncEquippedWeapons } from '../utils/weaponManager';
+import { equipWeapon, getAvailableWeapons, getWeaponDisplayInfo, syncEquistaminadWeapons } from '../utils/weaponManager';
 import { hasBasicClothes, getAvailableRaceClothing, getRaceClothingInfo } from '../utils/raceClothingManager';
 import { 
   hasTradeableStartingEquipment, 
   getTradeableStartingEquipment, 
-  getOccEquipmentAlternatives 
+  getProfessionEquipmentAlternatives 
 } from '../utils/startingEquipmentManager';
 import '../styles/WeaponShop.css';
 
@@ -51,7 +51,7 @@ const WeaponShop = () => {
       try {
         // Fetch weapons from the new database
         const weaponsResponse = await axiosInstance.get('/weapons');
-        console.log('🔍 Fetched weapons from database:', weaponsResponse.data);
+        console.log('Ã°Å¸â€Â Fetched weapons from database:', weaponsResponse.data);
         
         // Transform database weapons to match frontend format
         // Filter out special/unpurchasable weapons (price: 0, isSpecial: true, isSupernatural: true, purchasable: false)
@@ -60,7 +60,7 @@ const WeaponShop = () => {
             // Exclude special weapons that shouldn't be in the shop
             if (weapon.isSpecial === true || weapon.isSupernatural === true) return false;
             if (weapon.purchasable === false) return false;
-            if (weapon.price === 0 && weapon.isMagical === true) return false; // Magical weapons with 0 price are special
+            if (weapon.price === 0 && weapon.isExceptional === true) return false; // Exceptional weapons with 0 price are special
             return true;
           })
           .map((weapon) => ({
@@ -83,8 +83,8 @@ const WeaponShop = () => {
           }));
 
         const charactersResponse = await axiosInstance.get('/characters');
-        // Sync equippedWeapons from equipped object for all characters to ensure consistency
-        const syncedCharacters = charactersResponse.data.map(char => syncEquippedWeapons(char));
+        // Sync equistaminadWeapons from equistaminad object for all characters to ensure consistency
+        const syncedCharacters = charactersResponse.data.map(char => syncEquistaminadWeapons(char));
         setWeapons(enhancedWeapons);
         setCharacters(syncedCharacters);
       } catch (error) {
@@ -146,26 +146,26 @@ const WeaponShop = () => {
       // Auto-equip logic using combat system approach
       let updatedCharacter = { ...character };
       
-      // Initialize equipped object if not exists (like combat system)
-      if (!updatedCharacter.equipped) {
-        updatedCharacter.equipped = {};
+      // Initialize equistaminad object if not exists (like combat system)
+      if (!updatedCharacter.equistaminad) {
+        updatedCharacter.equistaminad = {};
       }
       
-      // Initialize equipped weapons array if not exists
-      if (!updatedCharacter.equippedWeapons) {
-        updatedCharacter.equippedWeapons = [
+      // Initialize equistaminad weapons array if not exists
+      if (!updatedCharacter.equistaminadWeapons) {
+        updatedCharacter.equistaminadWeapons = [
           { name: "Unarmed", damage: "1d3", type: "unarmed", category: "unarmed", slot: "Right Hand" },
           { name: "Unarmed", damage: "1d3", type: "unarmed", category: "unarmed", slot: "Left Hand" }
         ];
       }
       
-      // Count current equipped weapons (excluding unarmed)
-      const equippedWeaponCount = updatedCharacter.equippedWeapons.filter(w => w.name !== "Unarmed").length;
+      // Count current equistaminad weapons (excluding unarmed)
+      const equistaminadWeaponCount = updatedCharacter.equistaminadWeapons.filter(w => w.name !== "Unarmed").length;
       
       // Determine where to equip the new weapon using combat system approach
-      if (equippedWeaponCount === 0) {
+      if (equistaminadWeaponCount === 0) {
         // First weapon: equip in right hand (weaponPrimary)
-        updatedCharacter.equipped.weaponPrimary = {
+        updatedCharacter.equistaminad.weaponPrimary = {
           name: weaponItem.name,
           damage: weaponItem.damage || "1d6",
           range: weaponItem.range,
@@ -173,14 +173,14 @@ const WeaponShop = () => {
           category: weaponItem.category,
           type: weaponItem.type
         };
-        updatedCharacter.equippedWeapons[0] = {
+        updatedCharacter.equistaminadWeapons[0] = {
           ...weaponItem,
           slot: "Right Hand"
         };
-        updatedCharacter.equippedWeapon = weaponItem.name; // Legacy support
-      } else if (equippedWeaponCount === 1) {
+        updatedCharacter.equistaminadWeapon = weaponItem.name; // Legacy support
+      } else if (equistaminadWeaponCount === 1) {
         // Second weapon: equip in left hand (weaponSecondary)
-        updatedCharacter.equipped.weaponSecondary = {
+        updatedCharacter.equistaminad.weaponSecondary = {
           name: weaponItem.name,
           damage: weaponItem.damage || "1d6",
           range: weaponItem.range,
@@ -188,7 +188,7 @@ const WeaponShop = () => {
           category: weaponItem.category,
           type: weaponItem.type
         };
-        updatedCharacter.equippedWeapons[1] = {
+        updatedCharacter.equistaminadWeapons[1] = {
           ...weaponItem,
           slot: "Left Hand"
         };
@@ -209,17 +209,17 @@ const WeaponShop = () => {
       // Update character in database
       await axiosInstance.put(`/characters/${selectedCharacter}`, updatedCharacter);
       
-      // Update character list after purchase and sync equippedWeapons
+      // Update character list after purchase and sync equistaminadWeapons
       const updatedCharacters = await axiosInstance.get('/characters');
-      const syncedCharacters = updatedCharacters.data.map(char => syncEquippedWeapons(char));
+      const syncedCharacters = updatedCharacters.data.map(char => syncEquistaminadWeapons(char));
       setCharacters(syncedCharacters);
       
       // Show success modal and confetti with equip info
       let equipMessage = "";
-      if (equippedWeaponCount === 0) {
-        equipMessage = ` and auto-equipped in Right Hand!`;
-      } else if (equippedWeaponCount === 1) {
-        equipMessage = ` and auto-equipped in Left Hand!`;
+      if (equistaminadWeaponCount === 0) {
+        equipMessage = ` and auto-equistaminad in Right Hand!`;
+      } else if (equistaminadWeaponCount === 1) {
+        equipMessage = ` and auto-equistaminad in Left Hand!`;
       } else {
         equipMessage = ` and added to inventory!`;
       }
@@ -275,76 +275,76 @@ const WeaponShop = () => {
   };
 
   const handleTradeInBasicClothes = async () => {
-    console.log('🔄 DEBUG: Starting clothing trade-in process');
-    console.log('🔄 DEBUG: Selected character ID:', selectedCharacter);
+    console.log('Ã°Å¸â€â€ž DEBUG: Starting clothing trade-in process');
+    console.log('Ã°Å¸â€â€ž DEBUG: Selected character ID:', selectedCharacter);
     
     if (!selectedCharacter) {
-      console.log('❌ DEBUG: No character selected');
+      console.log('Ã¢ÂÅ’ DEBUG: No character selected');
       alert('Please select a character first');
       return;
     }
 
     const character = characters.find(char => char._id === selectedCharacter);
-    console.log('🔄 DEBUG: Found character:', character);
-    console.log('🔄 DEBUG: Character species:', character?.species);
-    console.log('🔄 DEBUG: Character inventory:', character?.inventory);
+    console.log('Ã°Å¸â€â€ž DEBUG: Found character:', character);
+    console.log('Ã°Å¸â€â€ž DEBUG: Character species:', character?.species);
+    console.log('Ã°Å¸â€â€ž DEBUG: Character inventory:', character?.inventory);
     
     if (!character || !character.species) {
-      console.log('❌ DEBUG: Character missing or no species');
+      console.log('Ã¢ÂÅ’ DEBUG: Character missing or no species');
       alert('Character must have a race to trade in basic clothes');
       return;
     }
 
     // Check if character has basic clothes
     const hasBasic = hasBasicClothes(character);
-    console.log('🔄 DEBUG: Character has basic clothes:', hasBasic);
+    console.log('Ã°Å¸â€â€ž DEBUG: Character has basic clothes:', hasBasic);
     
     if (!hasBasic) {
-      console.log('❌ DEBUG: Character does not have basic clothes');
+      console.log('Ã¢ÂÅ’ DEBUG: Character does not have basic clothes');
       alert('Character must have basic clothes to trade in');
       return;
     }
 
     // Get race-specific clothing options
-    console.log('🔄 DEBUG: Getting race clothing options for:', character.species);
+    console.log('Ã°Å¸â€â€ž DEBUG: Getting race clothing options for:', character.species);
     const options = getAvailableRaceClothing(character.species);
-    console.log('🔄 DEBUG: Available race clothing options:', options);
+    console.log('Ã°Å¸â€â€ž DEBUG: Available race clothing options:', options);
     
     if (options.length === 0) {
-      console.log('❌ DEBUG: No race-specific clothing available');
+      console.log('Ã¢ÂÅ’ DEBUG: No race-specific clothing available');
       alert(`No race-specific clothing available for ${character.species}`);
       return;
     }
 
-    console.log('✅ DEBUG: Setting race clothing options and showing selection modal');
+    console.log('Ã¢Å“â€¦ DEBUG: Setting race clothing options and showing selection modal');
     setRaceClothingOptions(options);
     setShowClothingSelection(true);
   };
 
   const handleClothingSelection = async () => {
-    console.log('🔄 DEBUG: Starting clothing selection process');
-    console.log('🔄 DEBUG: Selected clothing:', selectedClothing);
-    console.log('🔄 DEBUG: Character ID:', selectedCharacter);
+    console.log('Ã°Å¸â€â€ž DEBUG: Starting clothing selection process');
+    console.log('Ã°Å¸â€â€ž DEBUG: Selected clothing:', selectedClothing);
+    console.log('Ã°Å¸â€â€ž DEBUG: Character ID:', selectedCharacter);
     
     if (!selectedClothing) {
-      console.log('❌ DEBUG: No clothing selected');
+      console.log('Ã¢ÂÅ’ DEBUG: No clothing selected');
       alert('Please select a clothing item to trade for');
       return;
     }
 
     try {
-      console.log('🔄 DEBUG: Making API call to trade-in basic clothes');
+      console.log('Ã°Å¸â€â€ž DEBUG: Making API call to trade-in basic clothes');
       const requestData = {
         characterId: selectedCharacter,
         selectedClothing: selectedClothing
       };
-      console.log('🔄 DEBUG: Request data:', requestData);
+      console.log('Ã°Å¸â€â€ž DEBUG: Request data:', requestData);
       
       const response = await axiosInstance.post('/shop/trade-in-basic-clothes', requestData);
-      console.log('✅ DEBUG: API response:', response.data);
+      console.log('Ã¢Å“â€¦ DEBUG: API response:', response.data);
       
       // Update character list after trade-in
-      console.log('🔄 DEBUG: Fetching updated characters');
+      console.log('Ã°Å¸â€â€ž DEBUG: Fetching updated characters');
       const updatedCharacters = await axiosInstance.get('/characters');
       setCharacters(updatedCharacters.data);
       
@@ -361,10 +361,10 @@ const WeaponShop = () => {
         setShowPurchaseModal(false);
       }, 3000);
     } catch (error) {
-      console.error('❌ DEBUG: Clothing trade-in error:', error);
-      console.error('❌ DEBUG: Error response:', error.response?.data);
-      console.error('❌ DEBUG: Error status:', error.response?.status);
-      console.error('❌ DEBUG: Error message:', error.message);
+      console.error('Ã¢ÂÅ’ DEBUG: Clothing trade-in error:', error);
+      console.error('Ã¢ÂÅ’ DEBUG: Error response:', error.response?.data);
+      console.error('Ã¢ÂÅ’ DEBUG: Error status:', error.response?.status);
+      console.error('Ã¢ÂÅ’ DEBUG: Error message:', error.message);
       
       let errorMessage = error.response?.data?.message || 'Failed to trade in basic clothes';
       
@@ -383,58 +383,58 @@ const WeaponShop = () => {
   };
 
   const handleTradeInStartingEquipment = async () => {
-    console.log('🔄 DEBUG: Starting starting equipment trade-in process');
-    console.log('🔄 DEBUG: Selected character ID:', selectedCharacter);
+    console.log('Ã°Å¸â€â€ž DEBUG: Starting starting equipment trade-in process');
+    console.log('Ã°Å¸â€â€ž DEBUG: Selected character ID:', selectedCharacter);
     
     if (!selectedCharacter) {
-      console.log('❌ DEBUG: No character selected');
+      console.log('Ã¢ÂÅ’ DEBUG: No character selected');
       alert('Please select a character first');
       return;
     }
 
     const character = characters.find(char => char._id === selectedCharacter);
-    console.log('🔄 DEBUG: Found character:', character);
-    console.log('🔄 DEBUG: Character OCC:', character?.occ);
+    console.log('Ã°Å¸â€â€ž DEBUG: Found character:', character);
+    console.log('Ã°Å¸â€â€ž DEBUG: Character PROFESSION:', character?.profession);
     
-    if (!character || !character.occ) {
-      console.log('❌ DEBUG: Character missing or no OCC');
-      alert('Character must have an OCC to trade in starting equipment');
+    if (!character || !character.profession) {
+      console.log('Ã¢ÂÅ’ DEBUG: Character missing or no PROFESSION');
+      alert('Character must have an PROFESSION to trade in starting equipment');
       return;
     }
 
     // Get tradeable starting equipment
     const tradeableItems = getTradeableStartingEquipment(character);
-    console.log('🔄 DEBUG: Tradeable starting equipment:', tradeableItems);
+    console.log('Ã°Å¸â€â€ž DEBUG: Tradeable starting equipment:', tradeableItems);
     
     if (tradeableItems.length === 0) {
-      console.log('❌ DEBUG: No tradeable starting equipment found');
+      console.log('Ã¢ÂÅ’ DEBUG: No tradeable starting equipment found');
       alert('No tradeable starting equipment found');
       return;
     }
 
-    // Get OCC-specific alternatives
-    console.log('🔄 DEBUG: Getting OCC equipment alternatives for:', character.occ);
-    const alternatives = getOccEquipmentAlternatives(character.occ);
-    console.log('🔄 DEBUG: Available OCC alternatives:', alternatives);
+    // Get PROFESSION-specific alternatives
+    console.log('Ã°Å¸â€â€ž DEBUG: Getting PROFESSION equipment alternatives for:', character.profession);
+    const alternatives = getProfessionEquipmentAlternatives(character.profession);
+    console.log('Ã°Å¸â€â€ž DEBUG: Available PROFESSION alternatives:', alternatives);
     
     if (alternatives.length === 0) {
-      console.log('❌ DEBUG: No OCC-specific alternatives available');
-      alert(`No OCC-specific equipment alternatives available for ${character.occ}`);
+      console.log('Ã¢ÂÅ’ DEBUG: No PROFESSION-specific alternatives available');
+      alert(`No PROFESSION-specific equipment alternatives available for ${character.profession}`);
       return;
     }
 
-    console.log('✅ DEBUG: Setting starting equipment options and showing selection modal');
+    console.log('Ã¢Å“â€¦ DEBUG: Setting starting equipment options and showing selection modal');
     setStartingEquipmentOptions(alternatives);
     setShowStartingEquipmentSelection(true);
   };
 
   const handleStartingEquipmentSelection = async () => {
-    console.log('🔄 DEBUG: Starting starting equipment selection process');
-    console.log('🔄 DEBUG: Selected equipment:', selectedStartingEquipment);
-    console.log('🔄 DEBUG: Character ID:', selectedCharacter);
+    console.log('Ã°Å¸â€â€ž DEBUG: Starting starting equipment selection process');
+    console.log('Ã°Å¸â€â€ž DEBUG: Selected equipment:', selectedStartingEquipment);
+    console.log('Ã°Å¸â€â€ž DEBUG: Character ID:', selectedCharacter);
     
     if (!selectedStartingEquipment.length) {
-      console.log('❌ DEBUG: No equipment selected');
+      console.log('Ã¢ÂÅ’ DEBUG: No equipment selected');
       alert('Please select equipment to trade in for');
       return;
     }
@@ -443,19 +443,19 @@ const WeaponShop = () => {
     const tradeableItems = getTradeableStartingEquipment(character);
 
     try {
-      console.log('🔄 DEBUG: Making API call to trade-in starting equipment');
+      console.log('Ã°Å¸â€â€ž DEBUG: Making API call to trade-in starting equipment');
       const requestData = {
         characterId: selectedCharacter,
         tradeInItems: tradeableItems,
         selectedAlternatives: selectedStartingEquipment // Now contains full item objects instead of just names
       };
-      console.log('🔄 DEBUG: Request data:', requestData);
+      console.log('Ã°Å¸â€â€ž DEBUG: Request data:', requestData);
       
       const response = await axiosInstance.post('/shop/trade-in-starting-equipment', requestData);
-      console.log('✅ DEBUG: API response:', response.data);
+      console.log('Ã¢Å“â€¦ DEBUG: API response:', response.data);
       
       // Update character list after trade-in
-      console.log('🔄 DEBUG: Fetching updated characters');
+      console.log('Ã°Å¸â€â€ž DEBUG: Fetching updated characters');
       const updatedCharacters = await axiosInstance.get('/characters');
       setCharacters(updatedCharacters.data);
       
@@ -472,10 +472,10 @@ const WeaponShop = () => {
         setShowPurchaseModal(false);
       }, 3000);
     } catch (error) {
-      console.error('❌ DEBUG: Starting equipment trade-in error:', error);
-      console.error('❌ DEBUG: Error response:', error.response?.data);
-      console.error('❌ DEBUG: Error status:', error.response?.status);
-      console.error('❌ DEBUG: Error message:', error.message);
+      console.error('Ã¢ÂÅ’ DEBUG: Starting equipment trade-in error:', error);
+      console.error('Ã¢ÂÅ’ DEBUG: Error response:', error.response?.data);
+      console.error('Ã¢ÂÅ’ DEBUG: Error status:', error.response?.status);
+      console.error('Ã¢ÂÅ’ DEBUG: Error message:', error.message);
       
       let errorMessage = error.response?.data?.message || 'Failed to trade in starting equipment';
       
@@ -563,7 +563,7 @@ const WeaponShop = () => {
     ];
     const inventory = inventorySources.filter(Boolean);
     
-    console.log('🔍 Debug weapon slot click:', {
+    console.log('Ã°Å¸â€Â Debug weapon slot click:', {
       characterName: character.name,
       inventory: inventory,
       inventoryLength: inventory.length
@@ -602,13 +602,13 @@ const WeaponShop = () => {
       return hasWeaponKeyword && hasDamage;
     });
 
-    console.log('🔍 Found inventory weapons:', inventoryWeapons);
+    console.log('Ã°Å¸â€Â Found inventory weapons:', inventoryWeapons);
 
     // Only show actual weapons, not all items
     let weaponsToShow = inventoryWeapons;
 
-    // Add current equipped weapons to the list
-    const equippedWeapons = character.equippedWeapons || [
+    // Add current equistaminad weapons to the list
+    const equistaminadWeapons = character.equistaminadWeapons || [
       { name: "Unarmed", damage: "1d3", type: "unarmed", category: "unarmed", slot: "Right Hand" },
       { name: "Unarmed", damage: "1d3", type: "unarmed", category: "unarmed", slot: "Left Hand" }
     ];
@@ -617,12 +617,12 @@ const WeaponShop = () => {
     const unarmedOption = { name: "Unarmed", damage: "1d3", type: "unarmed", category: "unarmed" };
 
     // Combine all weapons and remove duplicates
-    const allWeapons = [...weaponsToShow, ...equippedWeapons, unarmedOption];
-    const uniqueWeapons = allWeapons.filter((weapon, index, self) => 
-      index === self.findIndex(w => w.name === weapon.name)
+    const allWeapons = [...weaponsToShow, ...equistaminadWeapons, unarmedOption];
+    const uniqueWeapons = allWeapons.filter((weapon, index, shuman) => 
+      index === shuman.findIndex(w => w.name === weapon.name)
     );
 
-    console.log('🔍 Available weapons for selection:', uniqueWeapons);
+    console.log('Ã°Å¸â€Â Available weapons for selection:', uniqueWeapons);
 
     // Always show the modal, even if no weapons found
     setAvailableWeapons(uniqueWeapons);
@@ -640,64 +640,64 @@ const WeaponShop = () => {
       const character = characters.find(c => c._id === selectedCharacter);
       if (!character) return;
 
-      // Initialize equipped object if not exists (like combat system)
-      if (!character.equipped) {
-        character.equipped = {};
+      // Initialize equistaminad object if not exists (like combat system)
+      if (!character.equistaminad) {
+        character.equistaminad = {};
       }
 
-      // Get current equipped weapons
-      let equippedWeapons = character.equippedWeapons || [
+      // Get current equistaminad weapons
+      let equistaminadWeapons = character.equistaminadWeapons || [
         { name: "Unarmed", damage: "1d3", type: "unarmed", category: "unarmed", slot: "Right Hand" },
         { name: "Unarmed", damage: "1d3", type: "unarmed", category: "unarmed", slot: "Left Hand" }
       ];
 
-      // Check equipped object (combat system approach)
-      if (character.equipped.weaponPrimary) {
-        equippedWeapons[0] = {
-          name: character.equipped.weaponPrimary.name,
-          damage: character.equipped.weaponPrimary.damage || "1d3",
-          type: character.equipped.weaponPrimary.type,
-          category: character.equipped.weaponPrimary.category,
+      // Check equistaminad object (combat system approach)
+      if (character.equistaminad.weaponPrimary) {
+        equistaminadWeapons[0] = {
+          name: character.equistaminad.weaponPrimary.name,
+          damage: character.equistaminad.weaponPrimary.damage || "1d3",
+          type: character.equistaminad.weaponPrimary.type,
+          category: character.equistaminad.weaponPrimary.category,
           slot: "Right Hand"
         };
       }
-      if (character.equipped.weaponSecondary) {
-        equippedWeapons[1] = {
-          name: character.equipped.weaponSecondary.name,
-          damage: character.equipped.weaponSecondary.damage || "1d3",
-          type: character.equipped.weaponSecondary.type,
-          category: character.equipped.weaponSecondary.category,
+      if (character.equistaminad.weaponSecondary) {
+        equistaminadWeapons[1] = {
+          name: character.equistaminad.weaponSecondary.name,
+          damage: character.equistaminad.weaponSecondary.damage || "1d3",
+          type: character.equistaminad.weaponSecondary.type,
+          category: character.equistaminad.weaponSecondary.category,
           slot: "Left Hand"
         };
       }
 
       const slotIndex = selectedSlot === 'right' ? 0 : 1;
       const otherSlotIndex = selectedSlot === 'right' ? 1 : 0;
-      const currentWeaponInSlot = equippedWeapons[slotIndex];
-      const currentWeaponInOtherSlot = equippedWeapons[otherSlotIndex];
+      const currentWeaponInSlot = equistaminadWeapons[slotIndex];
+      const currentWeaponInOtherSlot = equistaminadWeapons[otherSlotIndex];
 
-      // Check if the weapon being equipped is already in the other slot
+      // Check if the weapon being equistaminad is already in the other slot
       const isSwapping = currentWeaponInOtherSlot && 
                         currentWeaponInOtherSlot.name === weaponName && 
                         weaponName !== "Unarmed";
 
       // Check if the weapon is already in the current slot
-      const isAlreadyEquipped = currentWeaponInSlot && 
+      const isAlreadyEquistaminad = currentWeaponInSlot && 
                                 currentWeaponInSlot.name === weaponName && 
                                 weaponName !== "Unarmed";
 
       let weaponToEquip = null;
       let weaponToMoveToInventory = null;
 
-      if (isAlreadyEquipped) {
+      if (isAlreadyEquistaminad) {
         // Weapon is already in this slot, do nothing
-        alert(`${weaponName} is already equipped in ${selectedSlot === 'right' ? 'Right Hand' : 'Left Hand'}`);
+        alert(`${weaponName} is already equistaminad in ${selectedSlot === 'right' ? 'Right Hand' : 'Left Hand'}`);
         return;
       }
 
       if (isSwapping) {
         // Swap weapons between slots
-        console.log('🔄 Swapping weapons between slots');
+        console.log('Ã°Å¸â€â€ž Swapping weapons between slots');
         weaponToEquip = currentWeaponInOtherSlot;
         weaponToMoveToInventory = currentWeaponInSlot;
       } else {
@@ -754,16 +754,16 @@ const WeaponShop = () => {
         }
       }
 
-      // Update the equipped weapon using combat system approach
+      // Update the equistaminad weapon using combat system approach
       const slotKey = selectedSlot === 'right' ? 'weaponPrimary' : 'weaponSecondary';
       const otherSlotKey = selectedSlot === 'right' ? 'weaponSecondary' : 'weaponPrimary';
       
       // Update the selected slot
       if (weaponToEquip.name === "Unarmed") {
-        // Remove weapon from equipped object if unarmed
-        delete character.equipped[slotKey];
+        // Remove weapon from equistaminad object if unarmed
+        delete character.equistaminad[slotKey];
       } else {
-        character.equipped[slotKey] = {
+        character.equistaminad[slotKey] = {
           name: weaponToEquip.name,
           damage: weaponToEquip.damage || "1d3",
           range: weaponToEquip.range,
@@ -775,7 +775,7 @@ const WeaponShop = () => {
 
       // If swapping, update the other slot too
       if (isSwapping && weaponToMoveToInventory && weaponToMoveToInventory.name !== "Unarmed") {
-        character.equipped[otherSlotKey] = {
+        character.equistaminad[otherSlotKey] = {
           name: weaponToMoveToInventory.name,
           damage: weaponToMoveToInventory.damage || "1d3",
           range: weaponToMoveToInventory.range,
@@ -785,15 +785,15 @@ const WeaponShop = () => {
         };
       } else if (isSwapping && weaponToMoveToInventory && weaponToMoveToInventory.name === "Unarmed") {
         // If swapping to unarmed, clear the other slot
-        delete character.equipped[otherSlotKey];
+        delete character.equistaminad[otherSlotKey];
       }
       
       // If NOT swapping but the weapon was in the other slot, clear it from there
       if (!isSwapping && currentWeaponInOtherSlot && currentWeaponInOtherSlot.name === weaponName && weaponName !== "Unarmed") {
         // Weapon is being moved from other slot to this slot - clear the other slot
-        delete character.equipped[otherSlotKey];
-        // Also update the equippedWeapons array for the other slot
-        equippedWeapons[otherSlotIndex] = {
+        delete character.equistaminad[otherSlotKey];
+        // Also update the equistaminadWeapons array for the other slot
+        equistaminadWeapons[otherSlotIndex] = {
           name: "Unarmed",
           damage: "1d3",
           type: "unarmed",
@@ -802,15 +802,15 @@ const WeaponShop = () => {
         };
       }
 
-      // Update equippedWeapons array
-      equippedWeapons[slotIndex] = {
+      // Update equistaminadWeapons array
+      equistaminadWeapons[slotIndex] = {
         ...weaponToEquip,
         slot: selectedSlot === 'right' ? "Right Hand" : "Left Hand"
       };
 
       // If swapping, update the other slot in the array too
       if (isSwapping && weaponToMoveToInventory && weaponToMoveToInventory.name !== "Unarmed") {
-        equippedWeapons[otherSlotIndex] = {
+        equistaminadWeapons[otherSlotIndex] = {
           ...weaponToMoveToInventory,
           slot: selectedSlot === 'right' ? "Left Hand" : "Right Hand"
         };
@@ -819,7 +819,7 @@ const WeaponShop = () => {
       // Handle inventory updates
       let updatedInventory = [...(character.inventory || [])];
       
-      // Check if weapon was already equipped in the other slot (moving, not from inventory)
+      // Check if weapon was already equistaminad in the other slot (moving, not from inventory)
       const wasInOtherSlot = !isSwapping && currentWeaponInOtherSlot && 
                              currentWeaponInOtherSlot.name === weaponName && 
                              weaponName !== "Unarmed";
@@ -852,7 +852,7 @@ const WeaponShop = () => {
         }
       }
       
-      // If weapon was moved from other slot (not swapped), add the old weapon from that slot to inventory
+      // If weapon was moved from other slot (not swastaminad), add the old weapon from that slot to inventory
       if (wasInOtherSlot && currentWeaponInSlot && currentWeaponInSlot.name !== "Unarmed") {
         const alreadyInInventory = updatedInventory.some(item => 
           item.name === currentWeaponInSlot.name &&
@@ -869,18 +869,18 @@ const WeaponShop = () => {
       // Update character with both systems
       const updatedCharacter = {
         ...character,
-        equipped: character.equipped,
-        equippedWeapons: equippedWeapons,
+        equistaminad: character.equistaminad,
+        equistaminadWeapons: equistaminadWeapons,
         inventory: updatedInventory,
-        equippedWeapon: selectedSlot === 'right' ? weaponToEquip.name : character.equippedWeapon // Legacy support
+        equistaminadWeapon: selectedSlot === 'right' ? weaponToEquip.name : character.equistaminadWeapon // Legacy support
       };
 
       // Update character in database
       await axiosInstance.put(`/characters/${selectedCharacter}`, updatedCharacter);
       
-      // Update character list and sync equippedWeapons
+      // Update character list and sync equistaminadWeapons
       const updatedCharacters = await axiosInstance.get('/characters');
-      const syncedCharacters = updatedCharacters.data.map(char => syncEquippedWeapons(char));
+      const syncedCharacters = updatedCharacters.data.map(char => syncEquistaminadWeapons(char));
       setCharacters(syncedCharacters);
       
       // Close modal
@@ -890,9 +890,9 @@ const WeaponShop = () => {
 
       // Show success message
       if (isSwapping) {
-        alert(`Swapped weapons! ${weaponName} moved to ${selectedSlot === 'right' ? 'Right Hand' : 'Left Hand'}!`);
+        alert(`Swastaminad weapons! ${weaponName} moved to ${selectedSlot === 'right' ? 'Right Hand' : 'Left Hand'}!`);
       } else {
-        alert(`Equipped ${weaponName} in ${selectedSlot === 'right' ? 'Right Hand' : 'Left Hand'}!`);
+        alert(`Equistaminad ${weaponName} in ${selectedSlot === 'right' ? 'Right Hand' : 'Left Hand'}!`);
       }
       
     } catch (error) {
@@ -992,7 +992,7 @@ const WeaponShop = () => {
               fontSize: '13px'
             }}
           >
-            🛒 Visit Trader Shop
+            Ã°Å¸â€ºâ€™ Visit Trader Shop
           </a>
         </div>
         
@@ -1036,7 +1036,7 @@ const WeaponShop = () => {
                   fontSize: '16px',
                   boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
                 }}>
-                  💰 {character.gold || 0} Gold Available
+                  Ã°Å¸â€™Â° {character.gold || 0} Gold Available
                 </div>
               ) : null;
             })()}
@@ -1059,7 +1059,7 @@ const WeaponShop = () => {
                 fontWeight: 'bold'
               }}
             >
-              🔄 Trade-in Low Quality Weapon
+              Ã°Å¸â€â€ž Trade-in Low Quality Weapon
             </button>
           )}
           
@@ -1080,7 +1080,7 @@ const WeaponShop = () => {
                 fontWeight: 'bold'
               }}
             >
-              👕 Trade-in Basic Clothes
+              Ã°Å¸â€˜â€¢ Trade-in Basic Clothes
             </button>
           )}
           
@@ -1101,7 +1101,7 @@ const WeaponShop = () => {
                 fontWeight: 'bold'
               }}
             >
-              ⚔️ Trade-in Starting Equipment
+              Ã¢Å¡â€Ã¯Â¸Â Trade-in Starting Equipment
             </button>
           )}
         </div>
@@ -1115,49 +1115,49 @@ const WeaponShop = () => {
             padding: '15px',
             marginBottom: '20px'
           }}>
-            <h3>⚔️ Weapon Inventory</h3>
+            <h3>Ã¢Å¡â€Ã¯Â¸Â Weapon Inventory</h3>
             {(() => {
               const character = characters.find(c => c._id === selectedCharacter);
               if (!character) return <p>Character not found</p>;
               
-              // Use combat system logic to get equipped weapons
-              let equippedWeapons = [
+              // Use combat system logic to get equistaminad weapons
+              let equistaminadWeapons = [
                 { name: "Unarmed", damage: "1d3", type: "unarmed", category: "unarmed", slot: "Right Hand" },
                 { name: "Unarmed", damage: "1d3", type: "unarmed", category: "unarmed", slot: "Left Hand" }
               ];
 
-              // Check equipped object (combat system approach)
-              if (character.equipped) {
-                if (character.equipped.weaponPrimary) {
-                  equippedWeapons[0] = {
-                    name: character.equipped.weaponPrimary.name,
-                    damage: character.equipped.weaponPrimary.damage || "1d3",
-                    type: character.equipped.weaponPrimary.type,
-                    category: character.equipped.weaponPrimary.category,
+              // Check equistaminad object (combat system approach)
+              if (character.equistaminad) {
+                if (character.equistaminad.weaponPrimary) {
+                  equistaminadWeapons[0] = {
+                    name: character.equistaminad.weaponPrimary.name,
+                    damage: character.equistaminad.weaponPrimary.damage || "1d3",
+                    type: character.equistaminad.weaponPrimary.type,
+                    category: character.equistaminad.weaponPrimary.category,
                     slot: "Right Hand"
                   };
                 }
-                if (character.equipped.weaponSecondary) {
-                  equippedWeapons[1] = {
-                    name: character.equipped.weaponSecondary.name,
-                    damage: character.equipped.weaponSecondary.damage || "1d3",
-                    type: character.equipped.weaponSecondary.type,
-                    category: character.equipped.weaponSecondary.category,
+                if (character.equistaminad.weaponSecondary) {
+                  equistaminadWeapons[1] = {
+                    name: character.equistaminad.weaponSecondary.name,
+                    damage: character.equistaminad.weaponSecondary.damage || "1d3",
+                    type: character.equistaminad.weaponSecondary.type,
+                    category: character.equistaminad.weaponSecondary.category,
                     slot: "Left Hand"
                   };
                 }
               }
 
-              // Fallback to equippedWeapons array if equipped object doesn't exist
-              if (character.equippedWeapons && (!character.equipped || (!character.equipped.weaponPrimary && !character.equipped.weaponSecondary))) {
-                equippedWeapons = character.equippedWeapons;
+              // Fallback to equistaminadWeapons array if equistaminad object doesn't exist
+              if (character.equistaminadWeapons && (!character.equistaminad || (!character.equistaminad.weaponPrimary && !character.equistaminad.weaponSecondary))) {
+                equistaminadWeapons = character.equistaminadWeapons;
               }
               
               return (
                 <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
                   {/* Right Hand */}
                   <div style={{ flex: 1, minWidth: '200px' }}>
-                    <h4 style={{ margin: '0 0 10px 0', color: '#2e7d32' }}>🖐️ Right Hand</h4>
+                    <h4 style={{ margin: '0 0 10px 0', color: '#2e7d32' }}>Ã°Å¸â€“ÂÃ¯Â¸Â Right Hand</h4>
                     <div 
                       onClick={() => handleWeaponSlotClick('right')}
                       style={{
@@ -1179,11 +1179,11 @@ const WeaponShop = () => {
                         e.target.style.borderColor = '#4CAF50';
                       }}
                     >
-                      <strong>{equippedWeapons[0]?.name || "Unarmed"}</strong>
+                      <strong>{equistaminadWeapons[0]?.name || "Unarmed"}</strong>
                       <br />
-                      <small>Damage: {equippedWeapons[0]?.damage || "1d3"}</small>
+                      <small>Damage: {equistaminadWeapons[0]?.damage || "1d3"}</small>
                       <br />
-                      <small>Type: {equippedWeapons[0]?.category || "unarmed"}</small>
+                      <small>Type: {equistaminadWeapons[0]?.category || "unarmed"}</small>
                       <br />
                       <small style={{ color: '#666', fontStyle: 'italic' }}>Click to change</small>
                     </div>
@@ -1191,7 +1191,7 @@ const WeaponShop = () => {
                   
                   {/* Left Hand */}
                   <div style={{ flex: 1, minWidth: '200px' }}>
-                    <h4 style={{ margin: '0 0 10px 0', color: '#2e7d32' }}>🤚 Left Hand</h4>
+                    <h4 style={{ margin: '0 0 10px 0', color: '#2e7d32' }}>Ã°Å¸Â¤Å¡ Left Hand</h4>
                     <div 
                       onClick={() => handleWeaponSlotClick('left')}
                       style={{
@@ -1213,11 +1213,11 @@ const WeaponShop = () => {
                         e.target.style.borderColor = '#4CAF50';
                       }}
                     >
-                      <strong>{equippedWeapons[1]?.name || "Unarmed"}</strong>
+                      <strong>{equistaminadWeapons[1]?.name || "Unarmed"}</strong>
                       <br />
-                      <small>Damage: {equippedWeapons[1]?.damage || "1d3"}</small>
+                      <small>Damage: {equistaminadWeapons[1]?.damage || "1d3"}</small>
                       <br />
-                      <small>Type: {equippedWeapons[1]?.category || "unarmed"}</small>
+                      <small>Type: {equistaminadWeapons[1]?.category || "unarmed"}</small>
                       <br />
                       <small style={{ color: '#666', fontStyle: 'italic' }}>Click to change</small>
                     </div>
@@ -1225,7 +1225,7 @@ const WeaponShop = () => {
                   
                   {/* Inventory Weapons Count */}
                   <div style={{ flex: 1, minWidth: '200px' }}>
-                    <h4 style={{ margin: '0 0 10px 0', color: '#2e7d32' }}>🎒 Inventory</h4>
+                    <h4 style={{ margin: '0 0 10px 0', color: '#2e7d32' }}>Ã°Å¸Å½â€™ Inventory</h4>
                     <div style={{
                       backgroundColor: 'white',
                       border: '1px solid #ccc',
@@ -1265,7 +1265,7 @@ const WeaponShop = () => {
           <div style={{ flex: '1', minWidth: '200px' }}>
             <input
               type="text"
-              placeholder="🔍 Search weapons..."
+              placeholder="Ã°Å¸â€Â Search weapons..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               style={{
@@ -1314,7 +1314,7 @@ const WeaponShop = () => {
               }}
               title={`Sort ${sortOrder === 'asc' ? 'Ascending' : 'Descending'}`}
             >
-              {sortOrder === 'asc' ? '↑' : '↓'}
+              {sortOrder === 'asc' ? 'Ã¢â€ â€˜' : 'Ã¢â€ â€œ'}
             </button>
           </div>
           
@@ -1364,7 +1364,7 @@ const WeaponShop = () => {
             borderRadius: '8px',
             border: '2px dashed #ddd'
           }}>
-            <div style={{ fontSize: '3em', marginBottom: '15px' }}>🔍</div>
+            <div style={{ fontSize: '3em', marginBottom: '15px' }}>Ã°Å¸â€Â</div>
             <h3 style={{ color: '#6c757d', marginBottom: '10px' }}>No Weapons Found</h3>
             <p style={{ color: '#6c757d', margin: '0' }}>
               {searchQuery.trim() 
@@ -1527,7 +1527,7 @@ const WeaponShop = () => {
                             {weapon.range && <div>Range: {weapon.range}</div>}
                           </div>
                         </div>
-                        <div style={{ fontSize: '1.5em', opacity: 0.7 }}>⚔️</div>
+                        <div style={{ fontSize: '1.5em', opacity: 0.7 }}>Ã¢Å¡â€Ã¯Â¸Â</div>
                       </div>
                     </div>
                   ))}
@@ -1540,7 +1540,7 @@ const WeaponShop = () => {
                   borderRadius: '8px',
                   marginBottom: '20px'
                 }}>
-                  <div style={{ fontSize: '2em', marginBottom: '10px' }}>⚔️</div>
+                  <div style={{ fontSize: '2em', marginBottom: '10px' }}>Ã¢Å¡â€Ã¯Â¸Â</div>
                   <h4 style={{ color: '#6c757d', marginBottom: '10px' }}>No Weapons Found</h4>
                   <p style={{ color: '#6c757d', margin: '0' }}>
                     This character doesn&apos;t have any weapons in their inventory.

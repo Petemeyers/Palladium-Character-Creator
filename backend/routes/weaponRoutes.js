@@ -1,7 +1,7 @@
 import express from "express";
 import Weapon from "../models/Weapon.js";
 import auth from "../middleware/auth.js";
-import { palladiumWeapons } from "../../src/data/palladiumWeapons.js";
+import weapons from "../../src/data/weapons.js";
 
 const router = express.Router();
 
@@ -37,15 +37,15 @@ router.get("/", async (req, res) => {
 // POST route to populate weapons database
 router.post("/populate", async (req, res) => {
   try {
-    console.log("🚀 Starting weapon database population...");
-    console.log("📊 Palladium weapons count:", palladiumWeapons.length);
+    console.log("ðŸš€ Starting weapon database population...");
+    console.log("ðŸ“Š Medieval Combat Simulator weapons count:", weapons.length);
 
     // Clear existing weapons
     const deleteResult = await Weapon.deleteMany({});
-    console.log(`🗑️ Cleared ${deleteResult.deletedCount} existing weapons`);
+    console.log(`ðŸ—‘ï¸ Cleared ${deleteResult.deletedCount} existing weapons`);
 
-    // Add all Palladium weapons
-    const weaponsToAdd = palladiumWeapons.map((weapon, index) => ({
+    // Add all Medieval Combat Simulator weapons
+    const weaponsToAdd = weapons.map((weapon, index) => ({
       itemId: `weapon_${index + 1}`,
       name: weapon.name,
       type: weapon.type,
@@ -65,11 +65,11 @@ router.post("/populate", async (req, res) => {
     }));
 
     const result = await Weapon.insertMany(weaponsToAdd);
-    console.log(`✅ Added ${result.length} weapons to database`);
+    console.log(`âœ… Added ${result.length} weapons to database`);
 
     // Log categories
     const categories = [...new Set(result.map((w) => w.category))];
-    console.log(`📊 Categories: ${categories.join(", ")}`);
+    console.log(`ðŸ“Š Categories: ${categories.join(", ")}`);
 
     res.status(200).json({
       success: true,
@@ -78,7 +78,7 @@ router.post("/populate", async (req, res) => {
       weaponCount: result.length,
     });
   } catch (error) {
-    console.error("❌ Error populating weapons:", error);
+    console.error("âŒ Error populating weapons:", error);
     res.status(500).json({
       success: false,
       message: "Error populating weapons database",
@@ -90,9 +90,9 @@ router.post("/populate", async (req, res) => {
 // GET test endpoint (no auth required)
 router.get("/test", async (req, res) => {
   try {
-    console.log("🔍 Test endpoint called");
+    console.log("ðŸ” Test endpoint called");
     const weapons = await Weapon.find({});
-    console.log(`📊 Found ${weapons.length} weapons in database`);
+    console.log(`ðŸ“Š Found ${weapons.length} weapons in database`);
     res.status(200).json({
       success: true,
       count: weapons.length,
@@ -111,7 +111,7 @@ router.get("/test", async (req, res) => {
 
 // GET simple test endpoint
 router.get("/ping", (req, res) => {
-  console.log("🏓 Ping endpoint called");
+  console.log("ðŸ“ Ping endpoint called");
   res.status(200).json({
     message: "Weapon routes are working!",
     timestamp: new Date().toISOString(),

@@ -1,9 +1,9 @@
 /**
- * Reach-Based Combat Rules for Palladium Fantasy
+ * Reach-Based Combat Rules for Medieval Combat Simulator
  * House rules for tactical depth based on weapon reach
  *
  * REVISED VERSION: Distinguishes overhead swings from lateral swings
- * and incorporates charge/momentum rules for large creatures in tight spaces
+ * and incorporates charge/momentum rules for large combatants in tight spaces
  */
 
 import { getWeaponType, getWeaponLength } from "./combatEnvironmentLogic.js";
@@ -147,13 +147,13 @@ export function hasReachAdvantage(weapon1, weapon2) {
 }
 
 /**
- * Get first strike advantage bonus for longer weapons
+ * Get first attack advantage bonus for longer weapons
  * @param {Object} attackerWeapon - Attacker's weapon
  * @param {Object} defenderWeapon - Defender's weapon
- * @param {boolean} isFirstMeleeRound - Is this the first melee round?
- * @returns {number} Strike bonus (0 or +1)
+ * @param {boolean} isFirstMeleeRound - Is this the first combat round?
+ * @returns {number} Attack bonus (0 or +1)
  */
-export function getFirstStrikeAdvantage(
+export function getFirstAttackAdvantage(
   attackerWeapon,
   defenderWeapon,
   isFirstMeleeRound = false
@@ -162,7 +162,7 @@ export function getFirstStrikeAdvantage(
 
   const comparison = compareWeaponReach(attackerWeapon, defenderWeapon);
 
-  // Longer weapon gets +1 strike on first melee round
+  // Longer weapon gets +1 attack on first combat round
   if (comparison.longer === attackerWeapon && comparison.difference >= 2) {
     return 1;
   }
@@ -184,15 +184,15 @@ export function needsToCloseDistance(shortWeapon, longWeapon) {
 /**
  * Calculate closing distance check
  * @param {Object} character - Character attempting to close
- * @param {Object} options - Options {useProwl: boolean, useDodge: boolean}
+ * @param {Object} options - Options {useProwl: boolean, useEvade: boolean}
  * @returns {Object} {success: boolean, actionCost: number, reason: string}
  */
 export function attemptCloseDistance(character, options = {}) {
   const useProwl = options.useProwl || false;
-  const useDodge = options.useDodge || false;
+  const useEvade = options.useEvade || false;
 
   // Option 1: Spend 1 attack action (automatic but costs action)
-  if (!useProwl && !useDodge) {
+  if (!useProwl && !useEvade) {
     return {
       success: true,
       actionCost: 1,
@@ -217,18 +217,18 @@ export function attemptCloseDistance(character, options = {}) {
     };
   }
 
-  // Option 3: Pass Dodge roll (no action cost but requires skill)
-  if (useDodge) {
-    const dodgeBonus = character.bonuses?.dodge || 0;
-    const dodgeRoll = Math.floor(Math.random() * 20) + 1 + dodgeBonus;
-    const success = dodgeRoll >= 10; // DC 10 for basic dodge
+  // Option 3: Pass Evade roll (no action cost but requires skill)
+  if (useEvade) {
+    const evadeBonus = character.bonuses?.evade || 0;
+    const evadeRoll = Math.floor(Math.random() * 20) + 1 + evadeBonus;
+    const success = evadeRoll >= 10; // DC 10 for basic evade
 
     return {
       success: success,
       actionCost: success ? 0 : 1,
       reason: success
-        ? `Dodge roll succeeds (${dodgeRoll} >= 10) - closes distance without action cost`
-        : `Dodge roll fails (${dodgeRoll} < 10) - must spend action to close`,
+        ? `Evade roll succeeds (${evadeRoll} >= 10) - closes distance without action cost`
+        : `Evade roll fails (${evadeRoll} < 10) - must spend action to close`,
     };
   }
 
@@ -240,7 +240,7 @@ export function attemptCloseDistance(character, options = {}) {
 }
 
 /**
- * Get refined reach-based strike modifiers with overhead/lateral distinction
+ * Get refined reach-based attack modifiers with overhead/lateral distinction
  * @param {Object} attackerWeapon - Attacker's weapon
  * @param {Object} defenderWeapon - Defender's weapon
  * @param {string} terrain - Terrain type
@@ -248,13 +248,13 @@ export function attemptCloseDistance(character, options = {}) {
  * @param {number} terrainHeight - Ceiling height
  * @param {number} terrainDensity - Terrain density (0.0-1.0)
  * @param {boolean} hasObstructions - Are there trees/rocks/rubble?
- * @param {boolean} isFirstMeleeRound - Is this the first melee round?
+ * @param {boolean} isFirstMeleeRound - Is this the first combat round?
  * @param {boolean} hasClosedDistance - Has short weapon user closed distance?
  * @param {number} combatDistance - Distance between combatants in feet
  * @param {string} attackType - Attack type: "overhead", "thrust", "lateral", "auto"
- * @returns {Object} Modifiers {strike: number, notes: string[]}
+ * @returns {Object} Modifiers {attack: number, notes: string[]}
  */
-export function getReachStrikeModifiers(
+export function getReachAttackModifiers(
   attackerWeapon,
   defenderWeapon,
   terrain,
@@ -268,7 +268,7 @@ export function getReachStrikeModifiers(
   attackType = "auto",
   attacker = null
 ) {
-  const modifiers = { strike: 0, notes: [] };
+  const modifiers = { attack: 0, notes: [] };
   const weaponType = getWeaponType(attackerWeapon);
   const weaponLength = getWeaponLength(attackerWeapon, attacker);
   const resolvedAttackType = getAttackType(attackerWeapon, attackType);
@@ -279,52 +279,52 @@ export function getReachStrikeModifiers(
     hasObstructions
   );
 
-  // First Strike Advantage (longer weapons on first round)
+  // First Attack Advantage (longer weapons on first round)
   if (isFirstMeleeRound) {
-    const firstStrikeBonus = getFirstStrikeAdvantage(
+    const firstAttackBonus = getFirstAttackAdvantage(
       attackerWeapon,
       defenderWeapon,
       true
     );
-    if (firstStrikeBonus > 0) {
-      modifiers.strike += firstStrikeBonus;
-      modifiers.notes.push("Longer weapon gains +1 first strike advantage");
+    if (firstAttackBonus > 0) {
+      modifiers.attack += firstAttackBonus;
+      modifiers.notes.push("Longer weapon gains +1 first attack advantage");
     }
   }
 
   // Grapple Range (<3ft) - long weapons severely penalized
   if (combatDistance < 3) {
     if (weaponType === "LONG" || weaponLength >= 6) {
-      modifiers.strike -= 3;
+      modifiers.attack -= 3;
       modifiers.notes.push(
-        "Grapple range - long weapon ineffective (-3 strike)"
+        "Grapple range - long weapon ineffective (-3 attack)"
       );
     }
     if (weaponType === "SHORT" || weaponLength <= 2) {
-      modifiers.strike += 2;
-      modifiers.notes.push("Grapple range - short weapon excels (+2 strike)");
+      modifiers.attack += 2;
+      modifiers.notes.push("Grapple range - short weapon excels (+2 attack)");
     }
   }
 
   // Environmental clearance modifiers based on weapon type and attack type
   if (envCategory === "CONFINED_CAVE") {
-    // Confined cave (≤5ft tall) - must crouch
+    // Confined cave (â‰¤5ft tall) - must crouch
     if (weaponType === "SHORT" || weaponLength <= 2) {
-      modifiers.strike += 1;
+      modifiers.attack += 1;
       modifiers.notes.push(
-        "Short weapon favored in confined space (+1 strike)"
+        "Short weapon favored in confined space (+1 attack)"
       );
     }
     if (weaponType === "LONG" || weaponLength >= 6) {
-      modifiers.strike -= 2;
+      modifiers.attack -= 2;
       modifiers.notes.push(
-        "Long weapon severely restricted in confined cave (-2 strike)"
+        "Long weapon severely restricted in confined cave (-2 attack)"
       );
     }
     if (weaponType === "HEAVY") {
-      modifiers.strike -= 2;
+      modifiers.attack -= 2;
       modifiers.notes.push(
-        "Heavy weapon too cumbersome in confined cave (-2 strike)"
+        "Heavy weapon too cumbersome in confined cave (-2 attack)"
       );
     }
     // Flexible weapons unusable
@@ -334,30 +334,30 @@ export function getReachStrikeModifiers(
       name.includes("flail") ||
       name.includes("chain")
     ) {
-      modifiers.strike -= 3;
+      modifiers.attack -= 3;
       modifiers.notes.push("Flexible weapon unusable in confined cave");
     }
   } else if (envCategory === "TIGHT_CORRIDOR") {
-    // Tight corridor (≤6ft wide, 6-8ft tall) - overhead ok, lateral restricted
+    // Tight corridor (â‰¤6ft wide, 6-8ft tall) - overhead ok, lateral restricted
     if (resolvedAttackType === "overhead" || resolvedAttackType === "thrust") {
       // Overhead swings and thrusts allowed - minimal penalty
       if (weaponType === "LONG" || weaponLength >= 6) {
-        modifiers.strike -= 1;
+        modifiers.attack -= 1;
         modifiers.notes.push(
-          "Long weapon lateral arc restricted (-1 strike, overhead/thrust still possible)"
+          "Long weapon lateral arc restricted (-1 attack, overhead/thrust still possible)"
         );
       }
     } else if (resolvedAttackType === "lateral") {
       // Lateral swings penalized
       if (weaponType === "LONG" || weaponLength >= 6) {
-        modifiers.strike -= 1;
+        modifiers.attack -= 1;
         modifiers.notes.push(
-          "Lateral swing restricted in tight corridor (-1 strike)"
+          "Lateral swing restricted in tight corridor (-1 attack)"
         );
       }
       if (weaponType === "HEAVY") {
-        modifiers.strike -= 1;
-        modifiers.notes.push("Heavy weapon lateral arc restricted (-1 strike)");
+        modifiers.attack -= 1;
+        modifiers.notes.push("Heavy weapon lateral arc restricted (-1 attack)");
       }
     }
 
@@ -368,9 +368,9 @@ export function getReachStrikeModifiers(
       name.includes("flail") ||
       name.includes("chain")
     ) {
-      modifiers.strike -= 3;
+      modifiers.attack -= 3;
       modifiers.notes.push(
-        "Flexible weapon needs full clearance (-3 strike in tight corridor)"
+        "Flexible weapon needs full clearance (-3 attack in tight corridor)"
       );
     }
   } else if (envCategory === "NARROW_TRAIL") {
@@ -379,15 +379,15 @@ export function getReachStrikeModifiers(
       modifiers.notes.push("Short weapon agile in narrow trail");
     }
     if (weaponType === "LONG" || weaponLength >= 6) {
-      modifiers.strike -= 1;
+      modifiers.attack -= 1;
       modifiers.notes.push(
-        "Long weapon restricted in narrow trail (-1 strike)"
+        "Long weapon restricted in narrow trail (-1 attack)"
       );
     }
     if (weaponType === "HEAVY") {
-      modifiers.strike -= 1;
+      modifiers.attack -= 1;
       modifiers.notes.push(
-        "Heavy weapon restricted in narrow trail (-1 strike)"
+        "Heavy weapon restricted in narrow trail (-1 attack)"
       );
     }
   } else if (envCategory === "DENSE_FOREST") {
@@ -395,29 +395,29 @@ export function getReachStrikeModifiers(
     if (resolvedAttackType === "overhead" || resolvedAttackType === "thrust") {
       // Overhead swings still possible
       if (weaponType === "LONG" || weaponLength >= 6) {
-        modifiers.strike -= 1;
+        modifiers.attack -= 1;
         modifiers.notes.push(
-          "Long weapon arcs restricted by trees (-1 strike)"
+          "Long weapon arcs restricted by trees (-1 attack)"
         );
       }
       if (weaponType === "HEAVY") {
-        modifiers.strike -= 1;
+        modifiers.attack -= 1;
         modifiers.notes.push(
-          "Heavy weapon arcs restricted by trees (-1 strike)"
+          "Heavy weapon arcs restricted by trees (-1 attack)"
         );
       }
     } else if (resolvedAttackType === "lateral") {
       // Lateral swings hit trees
       if (weaponType === "LONG" || weaponLength >= 6) {
-        modifiers.strike -= 2;
+        modifiers.attack -= 2;
         modifiers.notes.push(
-          "Lateral swing likely to hit trees (-2 strike, fumble on 1-2)"
+          "Lateral swing likely to hit trees (-2 attack, fumble on 1-2)"
         );
       }
       if (weaponType === "HEAVY") {
-        modifiers.strike -= 2;
+        modifiers.attack -= 2;
         modifiers.notes.push(
-          "Lateral swing likely to hit trees (-2 strike, fumble on 1-2)"
+          "Lateral swing likely to hit trees (-2 attack, fumble on 1-2)"
         );
       }
     }
@@ -429,9 +429,9 @@ export function getReachStrikeModifiers(
       name.includes("flail") ||
       name.includes("chain")
     ) {
-      modifiers.strike -= 2;
+      modifiers.attack -= 2;
       modifiers.notes.push(
-        "Flexible weapon catches on trees (-2 strike, fumble on 1-2)"
+        "Flexible weapon catches on trees (-2 attack, fumble on 1-2)"
       );
     }
 
@@ -442,29 +442,29 @@ export function getReachStrikeModifiers(
   } else if (envCategory === "CLUTTERED") {
     // Cluttered/forested - obstacles restrict follow-through
     if (weaponType === "HEAVY") {
-      modifiers.strike -= 2;
+      modifiers.attack -= 2;
       modifiers.notes.push(
-        "Heavy weapon swing restricted by obstacles (-2 strike)"
+        "Heavy weapon swing restricted by obstacles (-2 attack)"
       );
     }
     if (
       weaponType === "FLEXIBLE" ||
       (attackerWeapon.name || "").toLowerCase().includes("flail")
     ) {
-      modifiers.strike -= 2;
-      modifiers.notes.push("Flexible weapon catches on obstacles (-2 strike)");
+      modifiers.attack -= 2;
+      modifiers.notes.push("Flexible weapon catches on obstacles (-2 attack)");
     }
   }
 
-  // Low branches (≤8ft height) - overhead limited
+  // Low branches (â‰¤8ft height) - overhead limited
   if (
     terrainHeight <= 8 &&
     terrainHeight > 6 &&
     (weaponType === "LONG" || weaponLength >= 6)
   ) {
     if (resolvedAttackType === "overhead") {
-      modifiers.strike -= 1;
-      modifiers.notes.push("Low branches limit overhead swing (-1 strike)");
+      modifiers.attack -= 1;
+      modifiers.notes.push("Low branches limit overhead swing (-1 attack)");
     }
   }
 
@@ -485,16 +485,16 @@ export function getReachStrikeModifiers(
     !hasClosedDistance &&
     needsToCloseDistance(attackerWeapon, defenderWeapon)
   ) {
-    modifiers.strike -= 2;
+    modifiers.attack -= 2;
     modifiers.notes.push(
-      "Short weapon user hasn't closed distance (-2 strike penalty)"
+      "Short weapon user hasn't closed distance (-2 attack penalty)"
     );
   }
 
   // First Round Long Weapon Bonus
   if (isFirstMeleeRound && (weaponType === "LONG" || weaponLength >= 6)) {
-    modifiers.strike += 1;
-    modifiers.notes.push("Long weapon +1 strike on first round");
+    modifiers.attack += 1;
+    modifiers.notes.push("Long weapon +1 attack on first round");
   }
 
   // Close combat penalty (long weapons when pressed <5ft)
@@ -504,47 +504,47 @@ export function getReachStrikeModifiers(
     defenderWeapon &&
     compareWeaponReach(attackerWeapon, defenderWeapon).longer === attackerWeapon
   ) {
-    modifiers.strike -= 2;
-    modifiers.notes.push("Long weapon too close for full leverage (-2 strike)");
+    modifiers.attack -= 2;
+    modifiers.notes.push("Long weapon too close for full leverage (-2 attack)");
   }
 
   return modifiers;
 }
 
 /**
- * Get reach-based parry modifiers
- * @param {Object} parryingWeapon - Weapon used for parry
+ * Get reach-based block modifiers
+ * @param {Object} blockingWeapon - Weapon used for block
  * @param {Object} attackingWeapon - Attacking weapon
  * @param {boolean} hasClosedDistance - Has short weapon user closed distance?
  * @param {boolean} isFlanking - Is attack from side/rear?
- * @returns {Object} Modifiers {parry: number, notes: string[]}
+ * @returns {Object} Modifiers {block: number, notes: string[]}
  */
-export function getReachParryModifiers(
-  parryingWeapon,
+export function getReachBlockModifiers(
+  blockingWeapon,
   attackingWeapon,
   hasClosedDistance = true,
   isFlanking = false
 ) {
-  const modifiers = { parry: 0, notes: [] };
-  const weaponType = getWeaponType(parryingWeapon);
-  const weaponLength = getWeaponLength(parryingWeapon);
+  const modifiers = { block: 0, notes: [] };
+  const weaponType = getWeaponType(blockingWeapon);
+  const weaponLength = getWeaponLength(blockingWeapon);
 
-  // Short weapon parrying long weapon before closing distance
+  // Short weapon blocking long weapon before closing distance
   if (
     !hasClosedDistance &&
-    needsToCloseDistance(parryingWeapon, attackingWeapon)
+    needsToCloseDistance(blockingWeapon, attackingWeapon)
   ) {
-    modifiers.parry -= 2;
+    modifiers.block -= 2;
     modifiers.notes.push(
-      "Short weapon cannot effectively parry long weapon until distance is closed (-2 parry)"
+      "Short weapon cannot effectively block long weapon until distance is closed (-2 block)"
     );
   }
 
-  // Long weapon parrying from side/rear (slower turning)
+  // Long weapon blocking from side/rear (slower turning)
   if (isFlanking && (weaponType === "LONG" || weaponLength >= 6)) {
-    modifiers.parry -= 2;
+    modifiers.block -= 2;
     modifiers.notes.push(
-      "Long weapon slower to turn for flanking attacks (-2 parry)"
+      "Long weapon slower to turn for flanking attacks (-2 block)"
     );
   }
 
@@ -552,31 +552,31 @@ export function getReachParryModifiers(
 }
 
 /**
- * Get reach-based dodge modifiers
+ * Get reach-based evade modifiers
  * @param {Object} weapon - Weapon wielder's weapon
  * @param {number} terrainWidth - Dynamic terrain width
  * @param {boolean} isTightCombat - Is combat in tight quarters?
- * @returns {Object} Modifiers {dodge: number, notes: string[]}
+ * @returns {Object} Modifiers {evade: number, notes: string[]}
  */
-export function getReachDodgeModifiers(
+export function getReachEvadeModifiers(
   weapon,
   terrainWidth,
   isTightCombat = false
 ) {
-  const modifiers = { dodge: 0, notes: [] };
+  const modifiers = { evade: 0, notes: [] };
   const weaponType = getWeaponType(weapon);
   const weaponLength = getWeaponLength(weapon);
 
-  // Short weapons grant +1 Dodge (faster reaction)
+  // Short weapons grant +1 Evade (faster reaction)
   if (weaponType === "SHORT" || weaponLength <= 2) {
-    modifiers.dodge += 1;
-    modifiers.notes.push("Short weapon grants +1 Dodge (faster reaction)");
+    modifiers.evade += 1;
+    modifiers.notes.push("Short weapon grants +1 Evade (faster reaction)");
   }
 
-  // Long weapons -1 Dodge in tight combat
+  // Long weapons -1 Evade in tight combat
   if (isTightCombat && (weaponType === "LONG" || weaponLength >= 6)) {
-    modifiers.dodge -= 1;
-    modifiers.notes.push("Long weapon -1 Dodge in tight combat");
+    modifiers.evade -= 1;
+    modifiers.notes.push("Long weapon -1 Evade in tight combat");
   }
 
   return modifiers;
@@ -603,7 +603,7 @@ export function getReachInitiativeModifier(weapon) {
  * Check if called shot is possible with weapon
  * @param {Object} weapon - Weapon attempting called shot
  * @param {number} distance - Distance to target in feet
- * @returns {Object} {canUse: boolean, reason: string, strikePenalty: number, damageMultiplier: number}
+ * @returns {Object} {canUse: boolean, reason: string, attackPenalty: number, damageMultiplier: number}
  */
 export function canUseCalledShot(weapon, distance) {
   const weaponType = getWeaponType(weapon);
@@ -614,7 +614,7 @@ export function canUseCalledShot(weapon, distance) {
     return {
       canUse: true,
       reason: "Short weapon can target weak points",
-      strikePenalty: -3,
+      attackPenalty: -3,
       damageMultiplier: 2,
     };
   }
@@ -624,7 +624,7 @@ export function canUseCalledShot(weapon, distance) {
     return {
       canUse: false,
       reason: "Long weapon too close (within 5ft) for called shot precision",
-      strikePenalty: 0,
+      attackPenalty: 0,
       damageMultiplier: 1,
     };
   }
@@ -633,7 +633,7 @@ export function canUseCalledShot(weapon, distance) {
   return {
     canUse: true,
     reason: "Long weapon can attempt called shot at range",
-    strikePenalty: -4, // Higher penalty for long weapons
+    attackPenalty: -4, // Higher penalty for long weapons
     damageMultiplier: 2,
   };
 }
@@ -675,20 +675,20 @@ export function resetClosedDistances(combatState = {}) {
 
 /**
  * CHARGE & MOMENTUM RULES
- * For large/dense creatures charging in tight spaces
+ * For large/dense combatants charging in tight spaces
  */
 
 /**
- * Check if defender can dodge a charge attack
+ * Check if defender can evade a charge attack
  * @param {Object} defender - Defending character
  * @param {Object} attacker - Charging attacker
  * @param {number} tunnelWidth - Width of tunnel/corridor
- * @returns {Object} {canDodge: boolean, reason: string}
+ * @returns {Object} {canEvade: boolean, reason: string}
  */
-export function canDodgeCharge(defender, attacker, tunnelWidth) {
+export function canEvadeCharge(defender, attacker, tunnelWidth) {
   // Estimate attacker shoulder width (rough approximation)
   const attackerSize = attacker.size || "MEDIUM";
-  let shoulderWidth = 2; // Default medium creature
+  let shoulderWidth = 2; // Default medium combatant
 
   if (attackerSize === "LARGE" || attacker.weight > 300) {
     shoulderWidth = 4;
@@ -696,10 +696,10 @@ export function canDodgeCharge(defender, attacker, tunnelWidth) {
     shoulderWidth = 6;
   }
 
-  // Cannot dodge if tunnel width < attacker shoulder width × 2
+  // Cannot evade if tunnel width < attacker shoulder width Ã— 2
   if (tunnelWidth < shoulderWidth * 2) {
     return {
-      canDodge: false,
+      canEvade: false,
       reason: `Tunnel too narrow (${tunnelWidth}ft) - attacker (${
         shoulderWidth * 2
       }ft clearance needed) blocks escape path`,
@@ -707,8 +707,8 @@ export function canDodgeCharge(defender, attacker, tunnelWidth) {
   }
 
   return {
-    canDodge: true,
-    reason: "Sufficient space to dodge",
+    canEvade: true,
+    reason: "Sufficient space to evade",
   };
 }
 
@@ -722,7 +722,7 @@ export function canDodgeCharge(defender, attacker, tunnelWidth) {
  * @param {boolean} hasObstructions - Are there trees/rocks?
  * @param {boolean} isBrace - Is defender braced (polearm, shield)?
  * @param {boolean} isMounted - Is attacker mounted?
- * @returns {Object} Modifiers {strike: number, damageMultiplier: number, notes: string[]}
+ * @returns {Object} Modifiers {attack: number, damageMultiplier: number, notes: string[]}
  */
 export function getChargeMomentumModifiers(
   attacker,
@@ -735,45 +735,45 @@ export function getChargeMomentumModifiers(
   isMounted = false
 ) {
   const modifiers = {
-    strike: 2, // Base charge bonus
+    attack: 2, // Base charge bonus
     damageMultiplier: 2, // Base charge damage multiplier
     notes: [],
   };
 
   // Mounted charge bonuses
   if (isMounted) {
-    modifiers.strike += 2; // +2 total (+4 combined)
+    modifiers.attack += 2; // +2 total (+4 combined)
     modifiers.damageMultiplier = 3; // Triple damage with lance/polearm
     modifiers.notes.push(
-      "Mounted charge: +2 strike, triple damage (critical on 19-20)"
+      "Mounted charge: +2 attack, triple damage (critical on 19-20)"
     );
   }
 
-  // Check if defender can dodge
+  // Check if defender can evade
   const envCategory = getEnvironmentCategory(
     tunnelWidth,
     10,
     terrainDensity,
     hasObstructions
   );
-  const dodgeCheck = canDodgeCharge(defender, attacker, tunnelWidth);
+  const evadeCheck = canEvadeCharge(defender, attacker, tunnelWidth);
 
-  if (!dodgeCheck.canDodge || envCategory === "NARROW_TRAIL") {
-    modifiers.notes.push(`⚠️ ${dodgeCheck.reason} - Defender cannot Dodge`);
+  if (!evadeCheck.canEvade || envCategory === "NARROW_TRAIL") {
+    modifiers.notes.push(`âš ï¸ ${evadeCheck.reason} - Defender cannot Evade`);
     modifiers.notes.push(
-      "Defender may only Parry (at -2) or Brace (if available)"
+      "Defender may only Block (at -2) or Brace (if available)"
     );
   }
 
   // Dense forest/overgrown ruins - no mounted charges
   if (hasObstructions && terrainDensity >= 0.7) {
     if (isMounted) {
-      modifiers.notes.push("⚠️ Dense forest prevents mounted charge");
-      modifiers.strike = 0;
+      modifiers.notes.push("âš ï¸ Dense forest prevents mounted charge");
+      modifiers.attack = 0;
       modifiers.damageMultiplier = 1;
     } else {
       modifiers.notes.push(
-        "⚠️ Dense terrain may cause large creatures to hit trees on natural 1-2"
+        "âš ï¸ Dense terrain may cause large combatants to hit trees on natural 1-2"
       );
     }
   }
@@ -786,26 +786,26 @@ export function getChargeMomentumModifiers(
       attackerSize === "HUGE" ||
       attacker.weight > 300
     ) {
-      modifiers.strike += 2; // Total +4 strike
+      modifiers.attack += 2; // Total +4 attack
       modifiers.notes.push(
-        "Large creature gains advantage in narrow trail (+2 additional strike)"
+        "Large combatant gains advantage in narrow trail (+2 additional attack)"
       );
     }
   }
 
   // Brace bonus (polearm set against charge)
   if (isBrace) {
-    modifiers.strike += 2; // +2 total strike bonus
+    modifiers.attack += 2; // +2 total attack bonus
     modifiers.damageMultiplier = 3; // Triple damage if braced
     modifiers.notes.push(
-      "Defender is braced - +2 strike, triple damage, attacker takes damage on natural 18-20"
+      "Defender is braced - +2 attack, triple damage, attacker takes damage on natural 18-20"
     );
   }
 
   // Wall crush damage (if walls behind defender)
   if (tunnelWidth <= 6 || envCategory === "NARROW_TRAIL") {
     modifiers.notes.push(
-      "⚠️ Narrow passage - if attack hits, add +1d6 damage (crushed against wall/tree)"
+      "âš ï¸ Narrow passage - if attack hits, add +1d6 damage (crushed against wall/tree)"
     );
   }
 
@@ -814,13 +814,13 @@ export function getChargeMomentumModifiers(
   const defenderWeight = defender.weight || 150;
   if (attackerWeight >= defenderWeight * 2) {
     modifiers.notes.push(
-      "⚠️ Massive attacker - failed Parry/Brace results in Knockdown check (roll vs P.E. or fall prone, lose 1 action)"
+      "âš ï¸ Massive attacker - failed Block/Brace results in Knockdown check (roll vs endurance or fall prone, lose 1 action)"
     );
   }
 
   // Failed charge (miss by >5) - attacker loses balance
   modifiers.notes.push(
-    "⚠️ If charge misses by >5, attacker loses balance (-2 to next melee)"
+    "âš ï¸ If charge misses by >5, attacker loses balance (-2 to next melee)"
   );
 
   return modifiers;
@@ -917,7 +917,7 @@ export function canChargeInTerrain(
     return {
       canCharge: true,
       reason:
-        "Rocky terrain - P.P. roll required on charge failure or fall prone",
+        "Rocky terrain - agility roll required on charge failure or fall prone",
     };
   }
 
@@ -930,7 +930,7 @@ export function canChargeInTerrain(
 /**
  * Check if heavy weapon recovery applies
  * @param {Object} weapon - Weapon that missed
- * @param {number} missMargin - By how much did the attack miss (attackRoll - targetAR)
+ * @param {number} missMargin - By how much did the attack miss (attackRoll - targetGuardRating)
  * @returns {Object} {requiresRecovery: boolean, actionCost: number, notes: string[]}
  */
 export function getHeavyWeaponRecovery(weapon, missMargin) {
@@ -957,7 +957,7 @@ export function getHeavyWeaponRecovery(weapon, missMargin) {
       actionCost: 1,
       notes: [
         "Heavy weapon missed by 5+ - requires 1 melee action to recover stance",
-        "If surrounded, suffers -1 Dodge until recovered",
+        "If surrounded, suffers -1 Evade until recovered",
       ],
     };
   }

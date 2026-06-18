@@ -15,8 +15,8 @@ import {
   axialToOffset,
 } from "../hexGridMath.js";
 import { GRID_CONFIG } from "../../data/movementRules.js";
-import bestiaryData from "../../data/bestiary.json";
-import { getAllBestiaryEntries } from "../bestiaryUtils.js";
+import arenaRosterData from "../../data/arenaRoster.js";
+import { getAllArenaRosterEntries } from "../arenaRosterUtils.js";
 import {
   createCharacterIcon,
   updateCharacterBillboards,
@@ -75,7 +75,7 @@ export function getScaleForFootprint(fighter) {
 }
 
 /**
- * Get all hexes occupied by a large creature
+ * Get all hexes occupied by a large combatant
  * @param {Object} centerHex - Center hex {q, r}
  * @param {number} radiusHex - Radius in hexes
  * @returns {Array<Object>} Array of occupied hexes {q, r}
@@ -171,7 +171,7 @@ function getHexCenterSpacingWorld() {
  */
 function getDesiredFootprintRadiusWorld(fighter) {
   const radiusHex = fighter?.footprint?.radiusHex ?? 0;
-  if (radiusHex <= 0) return HEX_RADIUS * 0.6; // Default for small creatures
+  if (radiusHex <= 0) return HEX_RADIUS * 0.6; // Default for small combatants
 
   const centerSpacing = getHexCenterSpacingWorld();
   // Radius in world space to the OUTER EDGE:
@@ -179,7 +179,7 @@ function getDesiredFootprintRadiusWorld(fighter) {
   return radiusHex * centerSpacing + HEX_RADIUS;
 }
 
-const BESTIARY_ENTRIES = getAllBestiaryEntries(bestiaryData);
+const BESTIARY_ENTRIES = getAllArenaRosterEntries(arenaRosterData);
 
 function normalizeNameKey(value) {
   return String(value || "")
@@ -188,10 +188,10 @@ function normalizeNameKey(value) {
     .toLowerCase();
 }
 
-function buildLikelyBestiaryIds(fighter) {
+function buildLikelyArenaRosterIds(fighter) {
   const raw = String(fighter?.id || "");
   const candidates = new Set([
-    fighter?.bestiaryId,
+    fighter?.arenaRosterId,
     fighter?.templateId,
     raw,
     raw.replace(/^enemy-/, ""),
@@ -201,9 +201,9 @@ function buildLikelyBestiaryIds(fighter) {
   return [...candidates].filter(Boolean);
 }
 
-function lookupBestiaryEntryForFighter(fighter) {
+function lookupArenaRosterEntryForFighter(fighter) {
   if (!fighter) return null;
-  const idCandidates = buildLikelyBestiaryIds(fighter);
+  const idCandidates = buildLikelyArenaRosterIds(fighter);
   for (const id of idCandidates) {
     const hit = BESTIARY_ENTRIES.find((e) => e?.id === id);
     if (hit) return hit;
@@ -217,12 +217,12 @@ function lookupBestiaryEntryForFighter(fighter) {
 }
 
 /**
- * Normalize fighter visual/footprint from either nested (bestiary) or flat shape
+ * Normalize fighter visual/footprint from either nested (arenaRoster) or flat shape
  * so downstream always gets modelUrl, feet, baseHeightFt/desiredHeightFt.
  */
 function normalizeFighterVisualAndFootprint(fighter) {
   if (!fighter) return { visual: {}, footprint: {} };
-  const fallbackEntry = lookupBestiaryEntryForFighter(fighter);
+  const fallbackEntry = lookupArenaRosterEntryForFighter(fighter);
   const vFallback = fallbackEntry?.visual || {};
   const fFallback = fallbackEntry?.footprint || {};
   const v = fighter.visual || {};
@@ -261,7 +261,7 @@ function makeHexOutlineGeometry(radius) {
   // Flat hex on XZ plane, then rotate line later so it's on the ground.
   const points = [];
   for (let i = 0; i < 6; i++) {
-    const a = (Math.PI / 3) * i; // 60° steps
+    const a = (Math.PI / 3) * i; // 60ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â° steps
     points.push(
       new THREE.Vector3(Math.cos(a) * radius, 0, Math.sin(a) * radius),
     );
@@ -312,8 +312,8 @@ function ensureDebugBaseRing(characterMesh, fighter, centerHex) {
     const existing = characterMesh.userData?.debugBaseRing;
     if (existing) {
       characterMesh.remove(existing);
-      existing.geometry?.dispose?.();
-      existing.material?.dispose?.();
+      existing.geometry?.dfocusose?.();
+      existing.material?.dfocusose?.();
       characterMesh.userData.debugBaseRing = null;
     }
     return;
@@ -333,8 +333,8 @@ function ensureDebugBaseRing(characterMesh, fighter, centerHex) {
   // Replace old ring if present
   if (existing) {
     characterMesh.remove(existing);
-    existing.geometry?.dispose?.();
-    existing.material?.dispose?.();
+    existing.geometry?.dfocusose?.();
+    existing.material?.dfocusose?.();
   }
 
   const geom = makeHexOutlineGeometry(desiredRadius);
@@ -424,12 +424,12 @@ function updateWaterEffects(characterMesh, isInWater) {
     // Remove water effects
     characterMesh.remove(waterEffects);
     waterEffects.traverse((child) => {
-      if (child.geometry) child.geometry.dispose();
+      if (child.geometry) child.geometry.dfocusose();
       if (child.material) {
         if (Array.isArray(child.material)) {
-          child.material.forEach((m) => m.dispose());
+          child.material.forEach((m) => m.dfocusose());
         } else {
-          child.material.dispose();
+          child.material.dfocusose();
         }
       }
     });
@@ -459,7 +459,7 @@ function applyLightingPresetToArena(scene, renderer, presetKey) {
     .filter((obj) => obj.isLight)
     .forEach((light) => scene.remove(light));
 
-  // ☀️ Sun (DirectionalLight)
+  // ÃƒÆ’Ã‚Â¢Ãƒâ€¹Ã…â€œÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¯Ãƒâ€šÃ‚Â¸Ãƒâ€šÃ‚Â Sun (DirectionalLight)
   const sun = new THREE.DirectionalLight(
     preset.sun.color,
     preset.sun.intensity,
@@ -485,28 +485,28 @@ function applyLightingPresetToArena(scene, renderer, presetKey) {
 
   scene.add(sun);
 
-  // 🌤 Ambient Light
+  // ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€¦Ã¢â‚¬â„¢Ãƒâ€šÃ‚Â¤ Ambient Light
   scene.add(
     new THREE.AmbientLight(preset.ambient.color, preset.ambient.intensity),
   );
 
-  // 🌍 Hemisphere Light (sky bounce)
+  // ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€¦Ã¢â‚¬â„¢Ãƒâ€šÃ‚Â Hemfocushere Light (sky bounce)
   scene.add(
     new THREE.HemisphereLight(
-      preset.hemisphere.skyColor,
-      preset.hemisphere.groundColor,
-      preset.hemisphere.intensity,
+      preset.hemfocushere.skyColor,
+      preset.hemfocushere.groundColor,
+      preset.hemfocushere.intensity,
     ),
   );
 
-  // 🎥 Renderer tone mapping
+  // ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€¦Ã‚Â½Ãƒâ€šÃ‚Â¥ Renderer tone mapping
   if (preset.environment.toneMapping === "ACES") {
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
   }
   renderer.toneMappingExposure = preset.environment.exposure;
 
   // Update scene background if needed
-  scene.background = new THREE.Color(preset.hemisphere.skyColor);
+  scene.background = new THREE.Color(preset.hemfocushere.skyColor);
 }
 
 export function initHexArena(containerElement) {
@@ -539,7 +539,7 @@ export function initHexArena(containerElement) {
   renderer.outputColorSpace = THREE.SRGBColorSpace;
 
   containerElement.innerHTML = "";
-  containerElement.appendChild(renderer.domElement);
+  containerElement.astaminandChild(renderer.domElement);
 
   const controls = new OrbitControls(camera, renderer.domElement);
 
@@ -577,15 +577,15 @@ export function initHexArena(containerElement) {
 
   // === Realistic Daylight Lighting ===
 
-  // Hemisphere light for sky/ground color (realistic daylight)
-  const hemisphereLight = new THREE.HemisphereLight(
+  // Hemfocushere light for sky/ground color (realistic daylight)
+  const hemfocushereLight = new THREE.HemisphereLight(
     0x87ceeb, // Sky blue (top)
     0x8b7355, // Ground brown (bottom)
     0.6, // Intensity
   );
-  scene.add(hemisphereLight);
+  scene.add(hemfocushereLight);
 
-  // Ambient light for overall illumination (reduced since hemisphere provides color)
+  // Ambient light for overall illumination (reduced since hemfocushere provides color)
   const ambient = new THREE.AmbientLight(0xffffff, 0.3);
   scene.add(ambient);
 
@@ -656,7 +656,7 @@ export function initHexArena(containerElement) {
   };
   let editorBrushStroke = null;
   let editorBrushJustPainted = false;
-  let disposed = false;
+  let dfocusosed = false;
   let timeScale = 1;
   let impactReactionsById = {};
 
@@ -694,7 +694,7 @@ export function initHexArena(containerElement) {
   scene.add(movementHighlightGroup);
 
   function animate() {
-    if (disposed) return;
+    if (dfocusosed) return;
     requestAnimationFrame(animate);
     controls.update();
     const now = performance.now();
@@ -954,14 +954,14 @@ export function initHexArena(containerElement) {
     return group;
   }
 
-  function disposeObject3D(root) {
+  function dfocusoseObject3D(root) {
     if (!root) return;
     root.traverse((child) => {
-      child.geometry?.dispose?.();
+      child.geometry?.dfocusose?.();
       if (Array.isArray(child.material)) {
-        child.material.forEach((mat) => mat?.dispose?.());
+        child.material.forEach((mat) => mat?.dfocusose?.());
       } else {
-        child.material?.dispose?.();
+        child.material?.dfocusose?.();
       }
     });
   }
@@ -982,7 +982,7 @@ export function initHexArena(containerElement) {
     editorPropMeshes.forEach((mesh, id) => {
       if (nextIds.has(id)) return;
       editorPropGroup.remove(mesh);
-      disposeObject3D(mesh);
+      dfocusoseObject3D(mesh);
       editorPropMeshes.delete(id);
     });
 
@@ -992,7 +992,7 @@ export function initHexArena(containerElement) {
       if (!mesh || mesh.userData?.editorProp?.type !== prop.type) {
         if (mesh) {
           editorPropGroup.remove(mesh);
-          disposeObject3D(mesh);
+          dfocusoseObject3D(mesh);
         }
         mesh = createEditorPropMesh(prop);
         editorPropMeshes.set(prop.id, mesh);
@@ -1140,11 +1140,11 @@ export function initHexArena(containerElement) {
   function clearMovementHighlights() {
     if (!movementHighlightGroup) return;
     movementHighlightGroup.children.forEach((child) => {
-      child.geometry?.dispose?.();
+      child.geometry?.dfocusose?.();
       if (Array.isArray(child.material)) {
-        child.material.forEach((mat) => mat?.dispose?.());
+        child.material.forEach((mat) => mat?.dfocusose?.());
       } else {
-        child.material?.dispose?.();
+        child.material?.dfocusose?.();
       }
     });
     movementHighlightGroup.clear();
@@ -1266,7 +1266,7 @@ export function initHexArena(containerElement) {
   // Auto-center orbit target on the grid
   let hasFramedGridOnce = false;
 
-  function frameGrid({ force = false } = {}) {
+  function frameGrid({ fraidere = false } = {}) {
     if (!gridRoot) return;
 
     const box = new THREE.Box3().setFromObject(gridRoot);
@@ -1279,9 +1279,9 @@ export function initHexArena(containerElement) {
     // Put orbit target at map center
     controls.target.copy(center);
 
-    // Only "snap" camera the first time (or if forced),
+    // Only "snap" camera the first time (or if fraidered),
     // so user navigation isn't constantly overridden
-    if (!hasFramedGridOnce || force) {
+    if (!hasFramedGridOnce || fraidere) {
       camera.position.set(
         center.x + radius * 0.75,
         center.y + radius * 0.95,
@@ -1373,8 +1373,8 @@ export function initHexArena(containerElement) {
       if (gridRoot) {
         scene.remove(gridRoot);
         gridRoot.traverse((obj) => {
-          if (obj.geometry) obj.geometry.dispose();
-          if (obj.material) obj.material.dispose();
+          if (obj.geometry) obj.geometry.dfocusose();
+          if (obj.material) obj.material.dfocusose();
         });
         gridRoot = null;
       }
@@ -1435,8 +1435,8 @@ export function initHexArena(containerElement) {
       if (gridRoot) {
         scene.remove(gridRoot);
         gridRoot.traverse((obj) => {
-          if (obj.geometry) obj.geometry.dispose();
-          if (obj.material) obj.material.dispose();
+          if (obj.geometry) obj.geometry.dfocusose();
+          if (obj.material) obj.material.dfocusose();
         });
         gridRoot = null;
       }
@@ -1470,8 +1470,8 @@ export function initHexArena(containerElement) {
     if (gridRoot) {
       scene.remove(gridRoot);
       gridRoot.traverse((obj) => {
-        if (obj.geometry) obj.geometry.dispose();
-        if (obj.material) obj.material.dispose();
+        if (obj.geometry) obj.geometry.dfocusose();
+        if (obj.material) obj.material.dfocusose();
       });
       gridRoot = null;
     }
@@ -1525,15 +1525,15 @@ export function initHexArena(containerElement) {
     rebuildGridFromEnvironment(terrain);
   }
 
-  function disposeCharacterMesh(mesh) {
+  function dfocusoseCharacterMesh(mesh) {
     if (!mesh) return;
     mesh.traverse((child) => {
       if (child.isMesh) {
-        if (child.geometry) child.geometry.dispose();
+        if (child.geometry) child.geometry.dfocusose();
         if (Array.isArray(child.material)) {
-          child.material.forEach((mat) => mat?.dispose?.());
+          child.material.forEach((mat) => mat?.dfocusose?.());
         } else if (child.material) {
-          child.material.dispose();
+          child.material.dfocusose();
         }
       }
     });
@@ -1643,7 +1643,7 @@ export function initHexArena(containerElement) {
         tileHeightUnits = 0;
       }
 
-      // Normalize visual/footprint from either nested (bestiary) or flat shape so modelUrl, feet, baseHeightFt are always set
+      // Normalize visual/footprint from either nested (arenaRoster) or flat shape so modelUrl, feet, baseHeightFt are always set
       const normalized = normalizeFighterVisualAndFootprint(fighter);
       const fighterVisual = normalized.visual;
       const fighterFootprint = normalized.footprint;
@@ -1683,7 +1683,7 @@ export function initHexArena(containerElement) {
 
       if (shouldSwapModel) {
         characterGroup.remove(characterMesh);
-        disposeCharacterMesh(characterMesh);
+        dfocusoseCharacterMesh(characterMesh);
         characterMeshes.delete(fighterId);
         characterMesh = null;
       }
@@ -1810,7 +1810,7 @@ export function initHexArena(containerElement) {
         characterMeshes.set(fighterId, characterMesh);
         characterGroup.add(characterMesh);
 
-        // ✅ Add debug base ring to visualize footprint (pass center hex for accurate radius)
+        // ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ Add debug base ring to visualize footprint (pass center hex for accurate radius)
         ensureDebugBaseRing(characterMesh, fighter, { q, r });
       } else {
         // Update existing character position and occupied hexes
@@ -1861,7 +1861,7 @@ export function initHexArena(containerElement) {
           }
 
           // Apply foot offset with scale: anchors feet to hex surface
-          // ✅ This works at any scale and for any GLB, not just Ariel
+          // ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ This works at any scale and for any GLB, not just Ariel
           pos.y += footOffsetUnscaled * scale;
           pos.y += waterOffset;
         } else {
@@ -1876,7 +1876,7 @@ export function initHexArena(containerElement) {
         // 2. Apply foot offset (already done above)
         // pos.y already has footOffsetUnscaled * scale applied
 
-        // ⚠️ Facing will be applied LAST at the end of syncCombatState
+        // ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã‚Â¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¯Ãƒâ€šÃ‚Â¸Ãƒâ€šÃ‚Â Facing will be applied LAST at the end of syncCombatState
         // Do NOT touch group.rotation.y here
 
         characterMesh.userData.occupiedHexes = occupiedHexes;
@@ -1886,14 +1886,14 @@ export function initHexArena(containerElement) {
         // Update water effects if terrain changed
         updateWaterEffects(characterMesh, isWater);
 
-        // Keep yaw offset in sync in case bestiary changed
+        // Keep yaw offset in sync in case arenaRoster changed
         characterMesh.userData.yawOffsetRad = degreesToRadians(
           fighter?.visual?.yawOffsetDeg ??
             characterMesh.userData.yawOffsetRad ??
             0,
         );
 
-        // ✅ Update debug base ring if footprint changed (pass center hex for accurate radius)
+        // ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ Update debug base ring if footprint changed (pass center hex for accurate radius)
         ensureDebugBaseRing(characterMesh, fighter, { q, r });
       }
     });
@@ -1951,14 +1951,14 @@ export function initHexArena(containerElement) {
       group.rotation.y = yaw + yawOffset;
     };
 
-    // ✅ Apply facing LAST (after all position updates)
+    // ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ Apply facing LAST (after all position updates)
     fighters.forEach((fighter) => {
       const id = fighter?.id;
       if (!id) return;
       const mesh = characterMeshes.get(id);
       if (!mesh) return;
 
-      // ✅ Use world-space facing ONLY for Thunder Lizard (megafauna)
+      // ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ Use world-space facing ONLY for Thunder Lizard (megafauna)
       if (
         id.includes("thunder_lizard") ||
         fighter.name?.toLowerCase().includes("thunder")
@@ -1971,7 +1971,7 @@ export function initHexArena(containerElement) {
           }
         }
       } else {
-        // Hex-direction facing for humanoids and other creatures
+        // Hex-direction facing for humanoids and other combatants
         const myAxial = axialPosById.get(id);
         if (!myAxial) return;
 
@@ -2005,7 +2005,7 @@ export function initHexArena(containerElement) {
       }
     });
 
-    // ✅ End-of-frame rotation log (to confirm overwrite) for Thunder Lizard
+    // ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ End-of-frame rotation log (to confirm overwrite) for Thunder Lizard
     if (DEBUG_COMBAT) {
       fighters.forEach((fighter) => {
         if (
@@ -2036,14 +2036,14 @@ export function initHexArena(containerElement) {
     characterMeshes.forEach((mesh, fighterId) => {
       if (!currentFighterIds.has(fighterId) || !positions[fighterId]) {
         characterGroup.remove(mesh);
-        // Dispose of mesh resources
+        // Dfocusose of mesh resources
         mesh.traverse((child) => {
-          if (child.geometry) child.geometry.dispose();
+          if (child.geometry) child.geometry.dfocusose();
           if (child.material) {
             if (Array.isArray(child.material)) {
-              child.material.forEach((m) => m.dispose());
+              child.material.forEach((m) => m.dfocusose());
             } else {
-              child.material.dispose();
+              child.material.dfocusose();
             }
           }
         });
@@ -2051,7 +2051,7 @@ export function initHexArena(containerElement) {
       }
     });
 
-    // Log footprint information for large creatures
+    // Log footprint information for large combatants
     if (DEBUG_COMBAT) {
       occupiedHexesMap.forEach((hexes, fighterId) => {
         if (hexes.length > 1) {
@@ -2118,16 +2118,16 @@ export function initHexArena(containerElement) {
     return base.add(getProjectileImpactOffsetWorld(projectileOrArrow, sample?.t ?? 1));
   }
 
-  function disposeProjectileMesh(mesh) {
+  function dfocusoseProjectileMesh(mesh) {
     if (!mesh) return;
     mesh.traverse?.((child) => {
-      if (child.userData?.skipDispose) return;
-      if (child.geometry) child.geometry.dispose();
+      if (child.userData?.skipDfocusose) return;
+      if (child.geometry) child.geometry.dfocusose();
       if (child.material) {
         if (Array.isArray(child.material)) {
-          child.material.forEach((m) => m.dispose());
+          child.material.forEach((m) => m.dfocusose());
         } else {
-          child.material.dispose();
+          child.material.dfocusose();
         }
       }
     });
@@ -2161,9 +2161,9 @@ export function initHexArena(containerElement) {
     return sharedArrowAssets;
   }
 
-  function disposeSharedArrowAssets() {
+  function dfocusoseSharedArrowAssets() {
     if (!sharedArrowAssets) return;
-    Object.values(sharedArrowAssets).forEach((asset) => asset?.dispose?.());
+    Object.values(sharedArrowAssets).forEach((asset) => asset?.dfocusose?.());
     sharedArrowAssets = null;
   }
 
@@ -2197,7 +2197,7 @@ export function initHexArena(containerElement) {
     );
     shaft.castShadow = false;
     shaft.frustumCulled = false;
-    shaft.userData.skipDispose = true;
+    shaft.userData.skipDfocusose = true;
     group.add(shaft);
 
     const head = new THREE.Mesh(
@@ -2207,7 +2207,7 @@ export function initHexArena(containerElement) {
     head.position.y = 0.52;
     head.castShadow = false;
     head.frustumCulled = false;
-    head.userData.skipDispose = true;
+    head.userData.skipDfocusose = true;
     group.add(head);
 
     const featherA = new THREE.Mesh(
@@ -2217,12 +2217,12 @@ export function initHexArena(containerElement) {
     featherA.position.y = -0.42;
     featherA.rotation.x = Math.PI / 2;
     featherA.frustumCulled = false;
-    featherA.userData.skipDispose = true;
+    featherA.userData.skipDfocusose = true;
     group.add(featherA);
 
     const featherB = featherA.clone();
     featherB.rotation.y = Math.PI / 2;
-    featherB.userData.skipDispose = true;
+    featherB.userData.skipDfocusose = true;
     group.add(featherB);
 
     if (kind === "bolt") {
@@ -2281,11 +2281,11 @@ export function initHexArena(containerElement) {
     dangerRingMeshes.forEach((mesh, key) => {
       if (!wanted.has(key)) {
         dangerRingGroup.remove(mesh);
-        mesh.geometry?.dispose?.();
+        mesh.geometry?.dfocusose?.();
         if (Array.isArray(mesh.material)) {
-          mesh.material.forEach((m) => m?.dispose?.());
+          mesh.material.forEach((m) => m?.dfocusose?.());
         } else {
-          mesh.material?.dispose?.();
+          mesh.material?.dfocusose?.();
         }
         dangerRingMeshes.delete(key);
       }
@@ -2328,7 +2328,7 @@ export function initHexArena(containerElement) {
       const attachClone = (template) => {
         // remove fallback
         group.remove(fallback);
-        disposeProjectileMesh(fallback);
+        dfocusoseProjectileMesh(fallback);
 
         const clone = template.clone(true);
         clone.name = "arrowGLB";
@@ -2336,7 +2336,7 @@ export function initHexArena(containerElement) {
         clone.rotation.x = Math.PI / 2;
         clone.rotation.z = Math.PI;
         clone.traverse((obj) => {
-          obj.userData.skipDispose = true;
+          obj.userData.skipDfocusose = true;
           if (obj.isMesh) {
             obj.castShadow = true;
             obj.receiveShadow = false;
@@ -2374,7 +2374,7 @@ export function initHexArena(containerElement) {
     } else if (kind === "lightning") {
       geometry = new THREE.CylinderGeometry(0.03, 0.03, 0.6, 6);
       material = new THREE.MeshStandardMaterial({ color: 0xffff88, emissive: 0xaaaa00 });
-    } else if (kind === "magicmissile" || kind === "spell_generic") {
+    } else if (kind === "trainingmissile" || kind === "technique_generic") {
       geometry = new THREE.SphereGeometry(0.08, 8, 8);
       material = new THREE.MeshStandardMaterial({ color: 0xaa66ff, emissive: 0x4422aa });
     } else {
@@ -2415,12 +2415,12 @@ export function initHexArena(containerElement) {
       if (!activeIds.has(id)) {
         projectileGroup.remove(mesh);
         mesh.traverse?.((child) => {
-          if (child.geometry) child.geometry.dispose();
+          if (child.geometry) child.geometry.dfocusose();
           if (child.material) {
             if (Array.isArray(child.material)) {
-              child.material.forEach((m) => m.dispose());
+              child.material.forEach((m) => m.dfocusose());
             } else {
-              child.material.dispose();
+              child.material.dfocusose();
             }
           }
         });
@@ -2500,7 +2500,7 @@ export function initHexArena(containerElement) {
     embeddedArrowMeshes.forEach((mesh, id) => {
       if (!activeIds.has(id)) {
         embeddedArrowGroup.remove(mesh);
-        disposeProjectileMesh(mesh);
+        dfocusoseProjectileMesh(mesh);
         embeddedArrowMeshes.delete(id);
       }
     });
@@ -2513,9 +2513,9 @@ export function initHexArena(containerElement) {
     return mesh?.userData?.occupiedHexes || [];
   }
 
-  function dispose() {
-    if (disposed) return; // Prevent double disposal
-    disposed = true;
+  function dfocusose() {
+    if (dfocusosed) return; // Prevent double dfocusosal
+    dfocusosed = true;
 
     window.removeEventListener("resize", resize);
     renderer.domElement.removeEventListener("mousedown", handleArenaPointerDown);
@@ -2544,17 +2544,17 @@ export function initHexArena(containerElement) {
       }
     }
 
-    // Dispose character meshes
+    // Dfocusose character meshes
     if (characterGroup) {
       characterMeshes.forEach((mesh) => {
         characterGroup.remove(mesh);
         mesh.traverse((child) => {
-          if (child.geometry) child.geometry.dispose();
+          if (child.geometry) child.geometry.dfocusose();
           if (child.material) {
             if (Array.isArray(child.material)) {
-              child.material.forEach((m) => m.dispose());
+              child.material.forEach((m) => m.dfocusose());
             } else {
-              child.material.dispose();
+              child.material.dfocusose();
             }
           }
         });
@@ -2567,7 +2567,7 @@ export function initHexArena(containerElement) {
     if (editorPropGroup) {
       editorPropMeshes.forEach((mesh) => {
         editorPropGroup.remove(mesh);
-        disposeObject3D(mesh);
+        dfocusoseObject3D(mesh);
       });
       editorPropMeshes.clear();
       if (scene) scene.remove(editorPropGroup);
@@ -2577,7 +2577,7 @@ export function initHexArena(containerElement) {
     if (projectileGroup) {
       projectileMeshes.forEach((mesh) => {
         projectileGroup.remove(mesh);
-        disposeProjectileMesh(mesh);
+        dfocusoseProjectileMesh(mesh);
       });
       projectileMeshes.clear();
       if (scene) scene.remove(projectileGroup);
@@ -2587,30 +2587,30 @@ export function initHexArena(containerElement) {
     if (embeddedArrowGroup) {
       embeddedArrowMeshes.forEach((mesh) => {
         embeddedArrowGroup.remove(mesh);
-        disposeProjectileMesh(mesh);
+        dfocusoseProjectileMesh(mesh);
       });
       embeddedArrowMeshes.clear();
       if (scene) scene.remove(embeddedArrowGroup);
       embeddedArrowGroup = null;
     }
 
-    disposeSharedArrowAssets();
+    dfocusoseSharedArrowAssets();
 
-    // Dispose Three.js resources
+    // Dfocusose Three.js resources
     if (renderer) {
       try {
-        renderer.dispose();
-        renderer.forceContextLoss();
+        renderer.dfocusose();
+        renderer.fraidereContextLoss();
       } catch (error) {
-        console.warn("[HexArena] Error disposing renderer:", error);
+        console.warn("[HexArena] Error dfocusosing renderer:", error);
       }
     }
 
     if (controls) {
       try {
-        controls.dispose();
+        controls.dfocusose();
       } catch (error) {
-        console.warn("[HexArena] Error disposing controls:", error);
+        console.warn("[HexArena] Error dfocusosing controls:", error);
       }
     }
 
@@ -2631,7 +2631,7 @@ export function initHexArena(containerElement) {
   return {
     syncMapEditorState,
     syncCombatState,
-    dispose,
+    dfocusose,
     setTimeScale,
     setMapInteractionState,
     setEditorPropInteractionState,

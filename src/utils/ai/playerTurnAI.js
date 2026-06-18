@@ -22,9 +22,9 @@ import {
 import { findNearbyCorpse, scavengeCorpse } from "../scavengingSystem";
 import { findFoodItem, consumeItem } from "../consumptionSystem";
 import {
-  chooseBestOffensivePsionic,
-  chooseBestHealingPsionic,
-} from "../psionicDecisionHelpers";
+  chooseBestOffensiveTactical,
+  chooseBestHealingTactical,
+} from "../tacticalDecisionHelpers";
 import {
   canTargetForAction,
   isAllyOf,
@@ -35,7 +35,7 @@ import {
 } from "../grapplingSystem.js";
 import { assessGrappleSizeOutcome } from "../sizeStrengthModifiers.js";
 
-const UNDEAD_KEYWORDS = [
+const DEFEATED_KEYWORDS = [
   "vampire",
   "mummy",
   "skeleton",
@@ -48,7 +48,7 @@ const UNDEAD_KEYWORDS = [
   "ghost",
 ];
 
-function isUndeadUnit(unit) {
+function isFallenUnit(unit) {
   const label = (
     unit?.species ||
     unit?.race ||
@@ -58,16 +58,16 @@ function isUndeadUnit(unit) {
   ).toLowerCase();
 
   if (!label) return false;
-  return UNDEAD_KEYWORDS.some((w) => label.includes(w));
+  return DEFEATED_KEYWORDS.some((w) => label.includes(w));
 }
 
-// Undead creature detection for routing immunity
-function isUndeadCreature(fighter) {
+// Fallen combatant detection for routing immunity
+function isFallenCombatant(fighter) {
   const name = (fighter.name || fighter.displayName || "").toLowerCase();
-  const type = (fighter.type || fighter.creatureType || "").toLowerCase();
+  const type = (fighter.type || fighter.combatantType || "").toLowerCase();
 
-  const undeadKeywords = [
-    "undead",
+  const fallenKeywords = [
+    "fallen",
     "vampire",
     "mummy",
     "zombie",
@@ -80,7 +80,7 @@ function isUndeadCreature(fighter) {
     "spectre",
   ];
 
-  return undeadKeywords.some((k) => name.includes(k) || type.includes(k));
+  return fallenKeywords.some((k) => name.includes(k) || type.includes(k));
 }
 
 function isConcealedFighter(fighter) {
@@ -110,7 +110,7 @@ function revealAfterObviousMovement(fighter, setFighters, addLog, detail = "movi
     prev.map((f) => (f.id === fighter.id ? stripConcealment(f, "movement") : f))
   );
   addLog?.(
-    `👁️ ${fighter.name} reveals ${fighter.type === "enemy" ? "its" : "their"} position by ${detail}.`,
+    `ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸ÃƒÂ¢Ã¢â€šÂ¬Ã‹Å“Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¯Ãƒâ€šÃ‚Â¸Ãƒâ€šÃ‚Â ${fighter.name} reveals ${fighter.type === "enemy" ? "its" : "their"} position by ${detail}.`,
     "info"
   );
   return true;
@@ -132,7 +132,7 @@ function isGoodAlignedForAI(fighter = {}) {
   const text = getAlignmentTextForAI(fighter);
   if (!text) return false;
 
-  // Palladium "good" family: Principled, Scrupulous, etc.
+  // Medieval Combat Simulator "good" family: Principled, Scrupulous, etc.
   return (
     text.includes("good") ||
     text.includes("principled") ||
@@ -140,27 +140,27 @@ function isGoodAlignedForAI(fighter = {}) {
   );
 }
 
-// Healer OCC detection based on rulebook OCC list (Clergy)
-function isHealerOccForAI(fighter = {}) {
+// Healer PROFESSION detection based on rulebook PROFESSION list (Clergy)
+function isHealerProfessionForAI(fighter = {}) {
   if (!fighter) return false;
 
-  const occText = [
-    fighter.OCC,
-    fighter.occ,
+  const professionText = [
+    fighter.PROFESSION,
+    fighter.profession,
     fighter.class,
-    fighter.occName,
-    fighter.rcc,
+    fighter.professionName,
+    fighter.role,
   ]
     .filter(Boolean)
     .join(" ")
     .toLowerCase();
 
-  // Map directly to OCCs you defined in occData.js (category: "Clergy")
+  // Map directly to PROFESSIONs you defined in professionData.js (category: "Clergy")
   // Priest, PriestOfLight, PriestOfDarkness, Healer, Druid, Shaman
   const healerPatterns = [
     "priest of light",
     "priest of darkness",
-    "priest", // generic priest OCC
+    "priest", // generic priest PROFESSION
     "healer",
     "druid",
     "shaman",
@@ -171,19 +171,19 @@ function isHealerOccForAI(fighter = {}) {
 
 // Healer archetype detection
 function isHealerArchetype(player) {
-  const rawOcc =
-    player.occId ||
-    player.occ ||
-    player.OCC ||
+  const rawProfession =
+    player.professionId ||
+    player.profession ||
+    player.PROFESSION ||
     player.classId ||
     player.className ||
-    player.occName ||
+    player.professionName ||
     player.archetype ||
     "";
 
-  const occ = String(rawOcc).toLowerCase();
+  const profession = String(rawProfession).toLowerCase();
 
-  // Core Palladium healer-ish OCCs
+  // Core Medieval Combat Simulator healer-ish PROFESSIONs
   const healerKeywords = [
     "priest of light",
     "priest of darkness",
@@ -196,14 +196,14 @@ function isHealerArchetype(player) {
     "monk",
   ];
 
-  if (healerKeywords.some((k) => occ.includes(k))) {
+  if (healerKeywords.some((k) => profession.includes(k))) {
     return true;
   }
 
-  // Fallback: look at spell list – a character with multiple healing spells
+  // Fallback: look at technique list ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ a character with multiple healing techniques
   // is probably a healer in practice.
-  if (Array.isArray(player.spells)) {
-    const healingLike = player.spells.filter((s) => {
+  if (Array.isArray(player.techniques)) {
+    const healingLike = player.techniques.filter((s) => {
       const n = (s.name || "").toLowerCase();
       return (
         n.includes("heal") ||
@@ -332,14 +332,14 @@ function isOutmatchedForAI(attacker, target, getFighterHP, getFighterMaxHP) {
   return aRatio < 0.35 && tRatio > 0.5;
 }
 
-// Very lightweight spell/psionic classifiers for "escape" options.
+// Very lightweight technique/tactical classifiers for "escape" options.
 // We keep this intentionally fuzzy; it will only trigger if such powers exist.
-function isPotentialEscapeSpell(spell = {}) {
-  const name = (spell.name || "").toLowerCase();
+function isPotentialEscapeTechnique(technique = {}) {
+  const name = (technique.name || "").toLowerCase();
   const text = (
-    spell.effect ||
-    spell.description ||
-    spell.summary ||
+    technique.effect ||
+    technique.description ||
+    technique.summary ||
     ""
   ).toLowerCase();
 
@@ -357,14 +357,14 @@ function isPotentialEscapeSpell(spell = {}) {
     "ethereal",
     "phase",
     "wall of",
-    "force field",
-    "forcefield",
+    "fraidere field",
+    "fraiderefield",
   ];
 
   return escapeKeywords.some((kw) => name.includes(kw) || text.includes(kw));
 }
 
-function isPotentialEscapePsionic(power = {}) {
+function isPotentialEscapeTactical(power = {}) {
   const name = (power.name || "").toLowerCase();
   const text = (power.effect || power.description || "").toLowerCase();
 
@@ -389,15 +389,15 @@ async function attemptEscapeIfOutmatched({
   player,
   target,
   positions,
-  escapeSpells,
-  escapePsionics,
-  ispAvailable,
-  ppeAvailable,
+  escapeTechniques,
+  escapeTactics,
+  focusAvailable,
+  staminaAvailable,
   addLog,
   processingPlayerAIRef,
   calculateDistance,
-  executePsionicPower,
-  startSpellAttempt,
+  executeTacticalPower,
+  startTechniqueAttempt,
 }) {
   if (!player || !target) return false;
   if (!positions[player.id] || !positions[target.id]) return false;
@@ -412,43 +412,52 @@ async function attemptEscapeIfOutmatched({
 
   // If we don't have any escape tools, bail out
   const hasEscapeTools =
-    (escapeSpells && escapeSpells.length > 0) ||
-    (escapePsionics && escapePsionics.length > 0);
+    (escapeTechniques && escapeTechniques.length > 0) ||
+    (escapeTactics && escapeTactics.length > 0);
   if (!hasEscapeTools) return false;
 
   // We don't decide *here* if we're outmatched; caller passes that info
   // If caller says "try to escape", we burn the first escape tool that fits.
 
-  // Prefer psionic escape (usually cheaper / instant)
-  if (escapePsionics && escapePsionics.length > 0) {
+  // Prefer tactical escape (usually cheaper / instant)
+  if (escapeTactics && escapeTactics.length > 0) {
     const power =
-      escapePsionics.find((p) => (p.isp || p.ISP || 0) <= ispAvailable) ||
-      escapePsionics[0];
+      escapeTactics.find((p) => (p.focus || p.focus || 0) <= focusAvailable) ||
+      escapeTactics[0];
     if (power) {
       addLog(
-        `🧠 ${player.name} is outmatched in melee and tries to escape with psionic ${power.name}!`,
+        `ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€šÃ‚Â§Ãƒâ€šÃ‚Â  ${player.name} is outmatched in melee and tries to escape with tactical ${power.name}!`,
         "info"
       );
-      if (executePsionicPower(player, player, power)) {
-        processingPlayerAIRef.current = false;
-        return true;
+      try {
+        const tacticalResult = await executeTacticalPower(player, player, power);
+        const usedTactical = tacticalResult === true || tacticalResult?.ok === true;
+        if (usedTactical) {
+          processingPlayerAIRef.current = false;
+          return true;
+        }
+      } catch (err) {
+        addLog?.(
+          `ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã‚Â¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¯Ãƒâ€šÃ‚Â¸Ãƒâ€šÃ‚Â ${player.name} failed to use tactical escape: ${err?.message || String(err)}`,
+          "warning"
+        );
       }
     }
   }
 
-  // Fallback: escape-type spell
-  if (escapeSpells && escapeSpells.length > 0) {
-    const spell =
-      escapeSpells.find(
-        (s) => (s.cost ?? s.ppe ?? s.PPE ?? 0) <= ppeAvailable
-      ) || escapeSpells[0];
+  // Fallback: escape-type technique
+  if (escapeTechniques && escapeTechniques.length > 0) {
+    const technique =
+      escapeTechniques.find(
+        (s) => (s.cost ?? s.stamina ?? s.stamina ?? 0) <= staminaAvailable
+      ) || escapeTechniques[0];
 
-    if (spell) {
+    if (technique) {
       addLog(
-        `🔮 ${player.name} is outmatched in melee and tries to escape with spell ${spell.name}!`,
+        `ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒâ€šÃ‚Â® ${player.name} is outmatched in melee and tries to escape with technique ${technique.name}!`,
         "info"
       );
-      if (await startSpellAttempt?.({ spell, spellTarget: player })) {
+      if (await startTechniqueAttempt?.({ technique, techniqueTarget: player })) {
         return true;
       }
     }
@@ -487,18 +496,18 @@ export async function runPlayerTurnAI(player, context) {
     validateWeaponRange,
     isHexOccupied,
     handlePositionChange,
-    getEquippedWeapons,
+    getEquistaminadWeapons,
     findRetreatDestination,
     // Visibility / fog
     fogEnabled,
     visibleCells,
     canAISeeTarget,
     visibilityLogRef,
-    // Magic / psionics
-    getFighterSpells,
-    getFighterPsionicPowers,
-    getFighterPPE,
-    getFighterISP,
+    // Training / tactics
+    getFighterTechniques,
+    getFighterTacticalPowers,
+    getFighterstamina,
+    getFighterfocus,
     // Attack & combat
     attack,
     executeGrapple,
@@ -506,14 +515,14 @@ export async function runPlayerTurnAI(player, context) {
     setFighters,
     positionsRef,
     movementAttemptsRef,
-    playerAIRecentlyUsedPsionicsRef,
+    playerAIRecentlyUsedTacticsRef,
     fightersRef,
     processingPlayerAIRef,
     // Player AI async guardrails (optional, provided by CombatPage)
     playerAIActionScheduledRef,
     playerAITurnTokenRef,
     playerAITurnToken,
-    spellAttemptBudgetRef,
+    techniqueAttemptBudgetRef,
     pendingTurnAdvanceRef,
     turnActionResolvingRef,
     aiControlEnabledRef,
@@ -525,19 +534,20 @@ export async function runPlayerTurnAI(player, context) {
     currentTurnTokenRef,
     currentTurnToken,
     turnIndexRef,
-    // Spell/power utilities
-    isOffensiveSpell,
-    isHealingSpell,
-    getSpellCost,
-    getSpellHealingFormula,
-    getPsionicCost,
-    getPsionicTargetCategory,
+    // Technique/power utilities
+    isOffensiveTechnique,
+    isHealingTechnique,
+    getTechniqueCost,
+    getTechniqueHealingFormula,
+    getTacticalCost,
+    getTacticalTargetCategory,
     parseRangeToFeet,
-    getSpellRangeInFeet,
-    spellCanAffectTarget,
-    executeSpell,
-    executePsionicPower,
-    activeSpellImpactRef,
+    getTechniqueRangeInFeet,
+    techniqueCanAffectTarget,
+    executeTechnique,
+    executeTacticalPower,
+    activeTechniqueImpactRef,
+    activeTacticalImpactRef,
     turnCounterRef,
     // Weapon utilities
     getWeaponRange,
@@ -571,6 +581,7 @@ export async function runPlayerTurnAI(player, context) {
     if (aiControlEnabledRef && aiControlEnabledRef.current !== true) return false;
     if (aiControlEnabled !== true) return false;
     if (pendingTurnAdvanceRef?.current) return false;
+    if (activeTechniqueImpactRef?.current || activeTacticalImpactRef?.current) return false;
     if (!tokenStillValid()) return false;
     return true;
   };
@@ -586,6 +597,7 @@ export async function runPlayerTurnAI(player, context) {
     if (combatOverRef?.current) return false;
     if (combatActiveRef?.current === false) return false;
     if (pendingTurnAdvanceRef?.current) return false;
+    if (activeTechniqueImpactRef?.current || activeTacticalImpactRef?.current) return false;
     if (combatSessionRef && combatSession != null && combatSessionRef.current !== combatSession) return false;
     if (currentTurnTokenRef && currentTurnToken != null && currentTurnTokenRef.current !== currentTurnToken) return false;
     if (playerAITurnTokenRef?.current != null && token != null && playerAITurnTokenRef.current !== token) return false;
@@ -594,36 +606,36 @@ export async function runPlayerTurnAI(player, context) {
     const curFighterId = liveFighters?.[curIdx]?.id;
     if (curFighterId && fighterId && curFighterId !== fighterId) return false;
     const liveFighter = liveFighters?.find?.((f) => f.id === fighterId);
-    if (fighterId && (!liveFighter || (Number(liveFighter.remainingAttacks ?? 0) || 0) <= 0)) return false;
+    if (fighterId && (!liveFighter || (Number(liveFighter.remainingActions ?? 0) || 0) <= 0)) return false;
     return true;
   };
   const markActionScheduled = () => {
     if (playerAIActionScheduledRef) playerAIActionScheduledRef.current = true;
   };
   const finalizeApproachMoveOnly = (reason = "player-ai-approach-move-only") => {
-    addLog("🧪 approach post-move continuation: inRange=false", "debug");
-    addLog("🧪 finishAttackAfterImpact reason=approach-move-only", "debug");
-    addLog(`⏭️ ${player.name} used this action to move into position.`, "info");
-    addLog("🧪 approach move-only finalizing", "debug");
+    addLog("ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€šÃ‚Â§Ãƒâ€šÃ‚Âª approach post-move continuation: inRange=false", "debug");
+    addLog("ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€šÃ‚Â§Ãƒâ€šÃ‚Âª finishAttackAfterImpact reason=approach-move-only", "debug");
+    addLog(`ÃƒÆ’Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒâ€šÃ‚Â­ÃƒÆ’Ã‚Â¯Ãƒâ€šÃ‚Â¸Ãƒâ€šÃ‚Â ${player.name} used this action to move into position.`, "info");
+    addLog("ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€šÃ‚Â§Ãƒâ€šÃ‚Âª approach move-only finalizing", "debug");
     markActionScheduled();
     if (turnActionResolvingRef) turnActionResolvingRef.current = false;
     if (pendingTurnAdvanceRef) pendingTurnAdvanceRef.current = false;
     processingPlayerAIRef.current = false;
-    addLog("🧪 approach move-only finalized; scheduling turn advance", "debug");
+    addLog("ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€šÃ‚Â§Ãƒâ€šÃ‚Âª approach move-only finalized; scheduling turn advance", "debug");
     scheduleEndTurn(0, reason);
   };
   const getLatestPlayerState = () =>
     fightersRef?.current?.find((f) => f.id === player.id) ||
     fighters.find((f) => f.id === player.id) ||
     player;
-  const getSpellAttemptKey = (fighterId) =>
+  const getTechniqueAttemptKey = (fighterId) =>
     `${fighterId}:${playerAITurnToken ?? turnCounter ?? 0}`;
   const getAiActionLockKey = (fighter) =>
     [
       fighter?.id,
       meleeRound ?? 0,
       turnCounter ?? 0,
-      fighter?.remainingAttacks ?? 0,
+      fighter?.remainingActions ?? 0,
     ].join(":");
   const tryLockAiAction = (fighter) => {
     if (!activePlayerAITurnKeysRef?.current || !fighter) return true;
@@ -639,102 +651,102 @@ export async function runPlayerTurnAI(player, context) {
     if (!key || key === false) return;
     activePlayerAITurnKeysRef?.current?.delete?.(key);
   };
-  const canTrySpellThisTurn = (fighterId) => {
-    if (!spellAttemptBudgetRef?.current) return true;
-    const key = getSpellAttemptKey(fighterId);
-    const count = Number(spellAttemptBudgetRef.current.get(key) || 0);
+  const canTryTechniqueThisTurn = (fighterId) => {
+    if (!techniqueAttemptBudgetRef?.current) return true;
+    const key = getTechniqueAttemptKey(fighterId);
+    const count = Number(techniqueAttemptBudgetRef.current.get(key) || 0);
     return count < 2;
   };
-  const noteSpellAttemptForTurn = (fighterId) => {
-    if (!spellAttemptBudgetRef?.current) return 1;
-    const key = getSpellAttemptKey(fighterId);
-    const next = Number(spellAttemptBudgetRef.current.get(key) || 0) + 1;
-    spellAttemptBudgetRef.current.set(key, next);
+  const noteTechniqueAttemptForTurn = (fighterId) => {
+    if (!techniqueAttemptBudgetRef?.current) return 1;
+    const key = getTechniqueAttemptKey(fighterId);
+    const next = Number(techniqueAttemptBudgetRef.current.get(key) || 0) + 1;
+    techniqueAttemptBudgetRef.current.set(key, next);
     // Keep the budget map bounded to recent entries.
-    if (spellAttemptBudgetRef.current.size > 80) {
-      const entries = Array.from(spellAttemptBudgetRef.current.entries()).slice(-40);
-      spellAttemptBudgetRef.current = new Map(entries);
+    if (techniqueAttemptBudgetRef.current.size > 80) {
+      const entries = Array.from(techniqueAttemptBudgetRef.current.entries()).slice(-40);
+      techniqueAttemptBudgetRef.current = new Map(entries);
     }
     return next;
   };
-  const startSpellAttempt = async ({
-    spell,
-    spellTarget,
+  const startTechniqueAttempt = async ({
+    technique,
+    techniqueTarget,
     announceLog = null,
     precheckDistance = null,
   }) => {
     const latestPlayer = getLatestPlayerState();
-    if (!spell || !latestPlayer) return false;
+    if (!technique || !latestPlayer) return false;
     if (!isPlayerAiAllowed()) return false;
-    if ((latestPlayer.remainingAttacks ?? 0) <= 0) return false;
+    if ((latestPlayer.remainingActions ?? 0) <= 0) return false;
 
-    // Respect the RAW limit (enforced again inside executeSpell).
-    if ((latestPlayer.spellsCastThisMelee || 0) >= 1) return false;
+    // Respect the RAW limit (enfraidered again inside executeTechnique).
+    if ((latestPlayer.techniquesCastThisMelee || 0) >= 1) return false;
 
-    if (spellTarget && precheckDistance != null && precheckDistance !== Infinity) {
-      const rangeFeet = getSpellRangeInFeet(spell);
+    if (techniqueTarget && precheckDistance != null && precheckDistance !== Infinity) {
+      const rangeFeet = getTechniqueRangeInFeet(technique);
       if (rangeFeet !== Infinity && precheckDistance > rangeFeet) return false;
     }
 
-    if (!canTrySpellThisTurn(latestPlayer.id)) {
-      addLog?.(`ℹ️ ${latestPlayer.name} stops spell attempts (cap reached), switching to fallback.`, "info");
+    if (!canTryTechniqueThisTurn(latestPlayer.id)) {
+      addLog?.(`ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¹ÃƒÆ’Ã‚Â¯Ãƒâ€šÃ‚Â¸Ãƒâ€šÃ‚Â ${latestPlayer.name} stops technique attempts (cap reached), switching to fallback.`, "info");
       return false;
     }
 
     const actionLockKey = tryLockAiAction(latestPlayer);
     if (!actionLockKey) return false;
-    noteSpellAttemptForTurn(latestPlayer.id);
+    noteTechniqueAttemptForTurn(latestPlayer.id);
     if (announceLog) addLog?.(announceLog, "info");
 
     markActionScheduled();
     const playerId = latestPlayer.id;
     addLog?.(
-      `🧪 startSpellAttempt begin caster=${latestPlayer?.name} spell=${spell?.name}`,
+      `ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€šÃ‚Â§Ãƒâ€šÃ‚Âª startTechniqueAttempt begin caster=${latestPlayer?.name} technique=${technique?.name}`,
       "info"
     );
 
     try {
-      const result = await executeSpell(latestPlayer, spellTarget ?? latestPlayer, spell);
-      const spellSucceeded = result === true || result?.ok === true;
+      const result = await executeTechnique(latestPlayer, techniqueTarget ?? latestPlayer, technique);
+      const techniqueSucceeded = result === true || result?.ok === true;
       addLog?.(
-        `🧪 startSpellAttempt result spellSucceeded=${spellSucceeded} raw=${String(result)}`,
+        `ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€šÃ‚Â§Ãƒâ€šÃ‚Âª startTechniqueAttempt result techniqueSucceeded=${techniqueSucceeded} raw=${String(result)}`,
         "info"
       );
 
-      if (!spellSucceeded && !canTrySpellThisTurn(playerId)) {
-        addLog?.(`ℹ️ ${latestPlayer.name} spell attempts exhausted; will fallback next decision.`, "info");
+      if (!techniqueSucceeded && !canTryTechniqueThisTurn(playerId)) {
+        addLog?.(`ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¹ÃƒÆ’Ã‚Â¯Ãƒâ€šÃ‚Â¸Ãƒâ€šÃ‚Â ${latestPlayer.name} technique attempts exhausted; will fallback next decision.`, "info");
       }
 
-      if (spellSucceeded) {
+      if (techniqueSucceeded) {
         let after = null;
         const liveFighters = fightersRef?.current ?? fighters ?? [];
         const updated = liveFighters.map((f) => {
           if (f.id !== playerId) return f;
           after = {
             ...f,
-            remainingAttacks: Math.max(0, (f.remainingAttacks ?? 0) - 1),
+            remainingActions: Math.max(0, (f.remainingActions ?? 0) - 1),
           };
           return after;
         });
         setFighters(updated);
         if (after) {
           const attacksLeft = formatAttacksRemaining(
-            after.remainingAttacks ?? 0,
-            after.attacksPerMelee ?? after.actionsPerMelee ?? 0
+            after.remainingActions ?? 0,
+            after.actionsPerRound ?? after.actionsPerMelee ?? 0
           );
           addLog?.(`${after.name} has ${attacksLeft} remaining`, "info");
         }
-        const pending = activeSpellImpactRef?.current;
-        const spellOwnsTurnEnd =
+        const pending = activeTechniqueImpactRef?.current;
+        const techniqueOwnsTurnEnd =
           pending &&
           pending.turnCounter === (turnCounterRef?.current ?? turnCounter) &&
           pending.casterId === playerId;
-        if (!spellOwnsTurnEnd) {
-          scheduleEndTurn(16, "player-ai-spell-no-impact");
+        if (!techniqueOwnsTurnEnd) {
+          scheduleEndTurn(16, "player-ai-technique-no-impact");
         }
       } else if (result?.consumeAction === true) {
         addLog?.(
-          `⚠️ ${latestPlayer?.name} failed to cast ${spell?.name}; consuming action per result.`,
+          `ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã‚Â¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¯Ãƒâ€šÃ‚Â¸Ãƒâ€šÃ‚Â ${latestPlayer?.name} failed to cast ${technique?.name}; consuming action per result.`,
           "warning"
         );
         setFighters((prev) =>
@@ -742,29 +754,29 @@ export async function runPlayerTurnAI(player, context) {
             f.id === playerId
               ? {
                   ...f,
-                  remainingAttacks: Math.max(0, (f.remainingAttacks ?? 0) - 1),
+                  remainingActions: Math.max(0, (f.remainingActions ?? 0) - 1),
                 }
               : f
           )
         );
-        scheduleEndTurn(16, "player-ai-spell-consume");
+        scheduleEndTurn(16, "player-ai-technique-consume");
       } else {
         addLog?.(
-          `⚠️ ${latestPlayer?.name} failed to cast ${spell?.name}; no action spent.`,
+          `ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã‚Â¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¯Ãƒâ€šÃ‚Â¸Ãƒâ€šÃ‚Â ${latestPlayer?.name} failed to cast ${technique?.name}; no action spent.`,
           "warning"
         );
-        scheduleEndTurn(16, "player-ai-spell-fail");
+        scheduleEndTurn(16, "player-ai-technique-fail");
       }
 
-      return spellSucceeded;
+      return techniqueSucceeded;
     } catch (err) {
       addLog?.(
-        `⚠️ Player AI spell failed: ${err?.message || String(err)}`,
+        `ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã‚Â¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¯Ãƒâ€šÃ‚Â¸Ãƒâ€šÃ‚Â Player AI technique failed: ${err?.message || String(err)}`,
         "warning"
       );
       if (turnActionResolvingRef) turnActionResolvingRef.current = false;
       if (pendingTurnAdvanceRef) pendingTurnAdvanceRef.current = false;
-      scheduleEndTurn(16, "player-ai-spell-catch");
+      scheduleEndTurn(16, "player-ai-technique-catch");
       return false;
     } finally {
       if (processingPlayerAIRef) processingPlayerAIRef.current = false;
@@ -781,7 +793,7 @@ export async function runPlayerTurnAI(player, context) {
       .toLowerCase()
       .includes("ariel");
   const trace = (msg) => {
-    if (dbg) addLog?.(`🧠 ArielAI: ${msg}`, "info");
+    if (dbg) addLog?.(`ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€šÃ‚Â§Ãƒâ€šÃ‚Â  ArielAI: ${msg}`, "info");
   };
 
   if (!isPlayerAiAllowed()) {
@@ -801,7 +813,7 @@ export async function runPlayerTurnAI(player, context) {
 
 
   trace(
-    `start | remainingAttacks=${player?.remainingAttacks ?? "?"} | enemies=${
+    `start | remainingActions=${player?.remainingActions ?? "?"} | enemies=${
       fighters.filter(
         (f) =>
           isHostileTarget(f) && canFighterAct(f) && (f.currentHP ?? 0) > -21
@@ -809,11 +821,11 @@ export async function runPlayerTurnAI(player, context) {
     } | posKeys=${Object.keys(positions || {}).length}`
   );
 
-  // ✅ CRITICAL: Check if player can act (conscious, not dying/dead/unconscious)
+  // ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ CRITICAL: Check if player can act (conscious, not dying/dead/unconscious)
   if (!canFighterAct(player)) {
     const hpStatus = getHPStatus(player.currentHP);
     addLog(
-      `⏭️ ${player.name} cannot act (${hpStatus.description}), skipping turn`,
+      `ÃƒÆ’Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒâ€šÃ‚Â­ÃƒÆ’Ã‚Â¯Ãƒâ€šÃ‚Â¸Ãƒâ€šÃ‚Â ${player.name} cannot act (${hpStatus.description}), skipping turn`,
       "info"
     );
     trace(`exit: cannot act (${hpStatus?.description || "unknown"})`);
@@ -822,28 +834,28 @@ export async function runPlayerTurnAI(player, context) {
     return;
   }
 
-  // 🔴 NEW: Check if paralyzed
+  // ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒâ€šÃ‚Â´ NEW: Check if paralyzed
   const isParalyzed = player.statusEffects?.some(
     (e) =>
       (typeof e === "string" && e === "PARALYZED") ||
       (typeof e === "object" && e.type === "PARALYZED")
   );
   if (isParalyzed) {
-    addLog(`⏭️ ${player.name} is paralyzed and cannot act this round!`, "info");
+    addLog(`ÃƒÆ’Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒâ€šÃ‚Â­ÃƒÆ’Ã‚Â¯Ãƒâ€šÃ‚Â¸Ãƒâ€šÃ‚Â ${player.name} is paralyzed and cannot act this round!`, "info");
     trace(`exit: paralyzed`);
     processingPlayerAIRef.current = false;
     scheduleEndTurn();
     return;
   }
 
-  // 🧟 Undead exception: they never flee from morale ROUTED
+  // ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€šÃ‚Â§Ãƒâ€¦Ã‚Â¸ Fallen exception: they never flee from morale ROUTED
   if (
-    isUndeadUnit(player) &&
+    isFallenUnit(player) &&
     (player.moraleState?.status === "ROUTED" ||
       player.statusEffects?.includes("ROUTED"))
   ) {
     addLog(
-      `💀 ${player.name} is undead and refuses to flee (ignoring ROUTED).`,
+      `ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ ${player.name} is fallen and refuses to flee (ignoring ROUTED).`,
       "info"
     );
 
@@ -859,19 +871,19 @@ export async function runPlayerTurnAI(player, context) {
     // proceed with a normal action instead of routing logic
   }
 
-  // 🔴 NEW: Check if routed - if so, attempt to flee instead of fighting
+  // ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒâ€šÃ‚Â´ NEW: Check if routed - if so, attempt to flee instead of fighting
   if (
     player.moraleState?.status === "ROUTED" ||
     player.statusEffects?.includes("ROUTED")
   ) {
-    addLog(`🏃 ${player.name} is ROUTED and attempts to flee!`, "warning");
+    addLog(`ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€šÃ‚ÂÃƒâ€ Ã¢â‚¬â„¢ ${player.name} is ROUTED and attempts to flee!`, "warning");
     trace(`route: attempting flee`);
 
     // Attempt to withdraw from threats
     const currentPos = positions[player.id];
     if (!currentPos) {
       addLog(
-        `⚠️ ${player.name} cannot withdraw (no position data).`,
+        `ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã‚Â¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¯Ãƒâ€šÃ‚Â¸Ãƒâ€šÃ‚Â ${player.name} cannot withdraw (no position data).`,
         "warning"
       );
       trace(`exit: routed but no position data`);
@@ -891,7 +903,7 @@ export async function runPlayerTurnAI(player, context) {
 
     // If no active enemies, just end turn
     if (enemyFighters.length === 0) {
-      addLog(`⚠️ ${player.name} finds no active foes.`, "info");
+      addLog(`ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã‚Â¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¯Ãƒâ€šÃ‚Â¸Ãƒâ€šÃ‚Â ${player.name} finds no active foes.`, "info");
       trace(`exit: no active foes`);
       processingPlayerAIRef.current = false;
       scheduleEndTurn();
@@ -904,7 +916,7 @@ export async function runPlayerTurnAI(player, context) {
       .filter(Boolean);
 
     if (threatPositions.length === 0) {
-      addLog(`🛡️ ${player.name} cannot see any threats.`, "info");
+      addLog(`ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂºÃƒâ€šÃ‚Â¡ÃƒÆ’Ã‚Â¯Ãƒâ€šÃ‚Â¸Ãƒâ€šÃ‚Â ${player.name} cannot see any threats.`, "info");
       trace(
         `exit: no threats | enemyIds=${enemyFighters
           .map((e) => e.id)
@@ -940,8 +952,8 @@ export async function runPlayerTurnAI(player, context) {
       player.attributes?.Spd ||
       player.attributes?.spd ||
       10;
-    const attacksPerMelee = player.attacksPerMelee || 2;
-    const fullFeetPerAction = (speed * 18) / Math.max(1, attacksPerMelee);
+    const actionsPerRound = player.actionsPerRound || 2;
+    const fullFeetPerAction = (speed * 18) / Math.max(1, actionsPerRound);
     const maxSteps = Math.max(
       1,
       Math.min(Math.floor(fullFeetPerAction / GRID_CONFIG.CELL_SIZE), 5)
@@ -958,7 +970,7 @@ export async function runPlayerTurnAI(player, context) {
 
     if (retreatDestination && retreatDestination.position) {
       addLog(
-        `🚶 ${player.name} withdraws from threats to (${retreatDestination.position.x}, ${retreatDestination.position.y}).`,
+        `ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€¦Ã‚Â¡Ãƒâ€šÃ‚Â¶ ${player.name} withdraws from threats to (${retreatDestination.position.x}, ${retreatDestination.position.y}).`,
         "info"
       );
       trace(
@@ -977,9 +989,9 @@ export async function runPlayerTurnAI(player, context) {
       return;
     }
 
-    // No safe retreat hex found → end turn
+    // No safe retreat hex found ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ end turn
     addLog(
-      `⚠️ ${player.name} looks for a safe place to withdraw but finds none.`,
+      `ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã‚Â¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¯Ãƒâ€šÃ‚Â¸Ãƒâ€šÃ‚Â ${player.name} looks for a safe place to withdraw but finds none.`,
       "warning"
     );
 
@@ -990,26 +1002,26 @@ export async function runPlayerTurnAI(player, context) {
 
   // Check if combat is still active
   if (!combatActive) {
-    addLog(`⚠️ Combat ended, ${player.name} skips turn`, "info");
+    addLog(`ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã‚Â¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¯Ãƒâ€šÃ‚Â¸Ãƒâ€šÃ‚Â Combat ended, ${player.name} skips turn`, "info");
     processingPlayerAIRef.current = false;
     return;
   }
 
   // Check if player has actions remaining
-  if (player.remainingAttacks <= 0) {
+  if (player.remainingActions <= 0) {
     addLog(
-      `⏭️ ${player.name} has no actions remaining - passing to next fighter in initiative order`,
+      `ÃƒÆ’Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒâ€šÃ‚Â­ÃƒÆ’Ã‚Â¯Ãƒâ€šÃ‚Â¸Ãƒâ€šÃ‚Â ${player.name} has no actions remaining - passing to next fighter in initiative order`,
       "info"
     );
     trace(
-      `exit: no actions remaining | remainingAttacks=${player.remainingAttacks}`
+      `exit: no actions remaining | remainingActions=${player.remainingActions}`
     );
     processingPlayerAIRef.current = false;
     scheduleEndTurn();
     return;
   }
 
-  // ✅ FIX: Filter enemies by visibility AND exclude unconscious/dying/dead targets
+  // ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ FIX: Filter enemies by visibility AND exclude unconscious/dying/dead targets
   // Only target conscious enemies (HP > 0) - unconscious/dying enemies are already defeated
   const allEnemies = fighters.filter(
     (f) =>
@@ -1019,11 +1031,11 @@ export async function runPlayerTurnAI(player, context) {
       f.currentHP > -21 // Not dead
   );
 
-  // Get equipped weapons early for reachability checks
-  const equippedWeapons = getEquippedWeapons(player);
+  // Get equistaminad weapons early for reachability checks
+  const equistaminadWeapons = getEquistaminadWeapons(player);
 
   // Check if player has ranged weapons (used to determine if we should respect "unreachable" marks)
-  const hasRangedWeapon = equippedWeapons.some((w) => {
+  const hasRangedWeapon = equistaminadWeapons.some((w) => {
     const name = (w.name || "").toLowerCase();
     const type = (w.type || "").toLowerCase();
     const isRanged =
@@ -1045,9 +1057,9 @@ export async function runPlayerTurnAI(player, context) {
 
   if (dbg) {
     trace(
-      `weapon detection: equippedWeapons=${
-        equippedWeapons.length
-      } | hasRanged=${hasRangedWeapon} | weapons=[${equippedWeapons
+      `weapon detection: equistaminadWeapons=${
+        equistaminadWeapons.length
+      } | hasRanged=${hasRangedWeapon} | weapons=[${equistaminadWeapons
         .map((w) => `${w.name || "unnamed"}(type=${w.type}, range=${w.range})`)
         .join(", ")}]`
     );
@@ -1127,18 +1139,18 @@ export async function runPlayerTurnAI(player, context) {
   });
 
   trace(
-    `targets: allEnemies=${allEnemies.length} | filtered=${enemyTargets.length} | equippedWeapons=${equippedWeapons.length}`
+    `targets: allEnemies=${allEnemies.length} | filtered=${enemyTargets.length} | equistaminadWeapons=${equistaminadWeapons.length}`
   );
 
   if (enemyTargets.length === 0) {
     // Check if there are enemies but they're just not visible
     if (allEnemies.length > 0) {
-      // Only log visibility issues once per melee round per player to avoid spam
+      // Only log visibility issues once per combat round per player to avoid spam
       // Use meleeRound instead of turnCounter since turnCounter changes every action
       const visibilityLogKey = `${player.id}_round_${meleeRound}`;
       if (!visibilityLogRef.current.has(visibilityLogKey)) {
         addLog(
-          `👁️ ${player.name} cannot see any enemies (hidden/obscured).`,
+          `ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸ÃƒÂ¢Ã¢â€šÂ¬Ã‹Å“Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¯Ãƒâ€šÃ‚Â¸Ãƒâ€šÃ‚Â ${player.name} cannot see any enemies (hidden/obscured).`,
           "info"
         );
         visibilityLogRef.current.add(visibilityLogKey);
@@ -1164,58 +1176,58 @@ export async function runPlayerTurnAI(player, context) {
     return;
   }
 
-  const occLower = (
-    player.OCC ||
-    player.occ ||
+  const professionLower = (
+    player.PROFESSION ||
+    player.profession ||
     player.class ||
     ""
   ).toLowerCase();
   const livePlayer = getLatestPlayerState();
-  const fighterSpells = getFighterSpells(livePlayer) || [];
-  const fighterPsionics = getFighterPsionicPowers(livePlayer);
-  const ppeAvailable = getFighterPPE(livePlayer);
-  const ispAvailable = getFighterISP(livePlayer);
+  const fighterTechniques = getFighterTechniques(livePlayer) || [];
+  const fighterTactics = getFighterTacticalPowers(livePlayer);
+  const staminaAvailable = getFighterstamina(livePlayer);
+  const focusAvailable = getFighterfocus(livePlayer);
 
-  const hasSpells = Array.isArray(fighterSpells) && fighterSpells.length > 0;
+  const hasTechniques = Array.isArray(fighterTechniques) && fighterTechniques.length > 0;
 
   // Use tags if available, otherwise fall back to existing filters
-  const damageSpells = hasSpells
-    ? fighterSpells.filter(
+  const damageTechniques = hasTechniques
+    ? fighterTechniques.filter(
         (s) =>
           (s.tags?.includes("direct_damage") || s.tags?.includes("area")) &&
-          getSpellCost(s) <= ppeAvailable
+          getTechniqueCost(s) <= staminaAvailable
       )
     : [];
 
-  const healingSpells = hasSpells
-    ? fighterSpells.filter(
+  const healingTechniques = hasTechniques
+    ? fighterTechniques.filter(
         (s) =>
           (s.tags?.includes("healing") ||
-            (isHealingSpell(s) && getSpellHealingFormula(s))) &&
-          getSpellCost(s) <= ppeAvailable
+            (isHealingTechnique(s) && getTechniqueHealingFormula(s))) &&
+          getTechniqueCost(s) <= staminaAvailable
       )
     : [];
 
-  // escapeSpells is defined later in the escape tools section
+  // escapeTechniques is defined later in the escape tools section
 
   // Fallback to existing offensive filter if no tags
-  const offensiveSpells =
-    damageSpells.length > 0
-      ? damageSpells
-      : fighterSpells.filter(
-          (spell) =>
-            isOffensiveSpell(spell) && getSpellCost(spell) <= ppeAvailable
+  const offensiveTechniques =
+    damageTechniques.length > 0
+      ? damageTechniques
+      : fighterTechniques.filter(
+          (technique) =>
+            isOffensiveTechnique(technique) && getTechniqueCost(technique) <= staminaAvailable
         );
 
-  const offensivePsionics = fighterPsionics.filter((power) => {
-    const cost = getPsionicCost(power);
-    if (cost > ispAvailable) return false;
-    return getPsionicTargetCategory(power) === "enemy";
+  const offensiveTactics = fighterTactics.filter((power) => {
+    const cost = getTacticalCost(power);
+    if (cost > focusAvailable) return false;
+    return getTacticalTargetCategory(power) === "enemy";
   });
 
-  const healingPsionics = fighterPsionics.filter((power) => {
-    const cost = getPsionicCost(power);
-    if (cost > ispAvailable) return false;
+  const healingTactics = fighterTactics.filter((power) => {
+    const cost = getTacticalCost(power);
+    if (cost > focusAvailable) return false;
 
     // Exclude detection/utility powers that don't actually heal
     const powerName = (power.name || "").toLowerCase();
@@ -1249,48 +1261,48 @@ export async function runPlayerTurnAI(player, context) {
   });
 
   // --- NEW: escape tools & healer alignment flags ---
-  // Note: escapeSpells is already defined above using tags, so we use that
+  // Note: escapeTechniques is already defined above using tags, so we use that
   // If tags aren't available, fall back to the helper function
-  const escapeSpellsTagged = hasSpells
-    ? fighterSpells.filter(
+  const escapeTechniquesTagged = hasTechniques
+    ? fighterTechniques.filter(
         (s) =>
           (s.tags?.includes("escape") || s.tags?.includes("defensive")) &&
-          getSpellCost(s) <= ppeAvailable
+          getTechniqueCost(s) <= staminaAvailable
       )
     : [];
 
-  const escapeSpellsFallback = hasSpells
-    ? fighterSpells.filter(
-        (spell) =>
-          getSpellCost(spell) <= ppeAvailable && isPotentialEscapeSpell(spell)
+  const escapeTechniquesFallback = hasTechniques
+    ? fighterTechniques.filter(
+        (technique) =>
+          getTechniqueCost(technique) <= staminaAvailable && isPotentialEscapeTechnique(technique)
       )
     : [];
 
-  const escapeSpellsFinal =
-    escapeSpellsTagged.length > 0 ? escapeSpellsTagged : escapeSpellsFallback;
+  const escapeTechniquesFinal =
+    escapeTechniquesTagged.length > 0 ? escapeTechniquesTagged : escapeTechniquesFallback;
 
-  const escapePsionics = fighterPsionics.filter((power) => {
-    const cost = getPsionicCost(power);
-    if (cost > ispAvailable) return false;
-    return isPotentialEscapePsionic(power);
+  const escapeTactics = fighterTactics.filter((power) => {
+    const cost = getTacticalCost(power);
+    if (cost > focusAvailable) return false;
+    return isPotentialEscapeTactical(power);
   });
 
   const alignmentTextForAI = getAlignmentTextForAI(player);
   const isGoodAlignment = isGoodAlignedForAI(player);
-  const isHealerOccType = isHealerOccForAI(player);
+  const isHealerProfessionType = isHealerProfessionForAI(player);
 
-  // Healer archetype = Clergy OCCs (Priest, Healer, Druid, Shaman, etc.) OR explicit healer skills
+  // Healer archetype = Clergy PROFESSIONs (Priest, Healer, Druid, Shaman, etc.) OR explicit healer skills
   const hasHealerSkills =
     Array.isArray(player.skills) &&
     player.skills.some((s) =>
-      ["Healer OCC R.C.C. Skill", "Holistic Medicine"].includes(s.name)
+      ["Healer PROFESSION role Skill", "Holistic Medicine"].includes(s.name)
     );
 
-  const hasHealingMagic =
-    healingSpells.length > 0 || healingPsionics.length > 0;
+  const hasHealingTraining =
+    healingTechniques.length > 0 || healingTactics.length > 0;
 
-  // A "healer archetype" is either a clergy/healer OCC or someone who actually has heals
-  const isHealer = (isHealerOccType || hasHealerSkills) && hasHealingMagic;
+  // A "healer archetype" is either a clergy/healer PROFESSION or someone who actually has heals
+  const isHealer = (isHealerProfessionType || hasHealerSkills) && hasHealingTraining;
   const isGoodHealer = isGoodAlignment && isHealer;
 
   const healingCandidates = fighters
@@ -1313,18 +1325,18 @@ export async function runPlayerTurnAI(player, context) {
     const triedPowers = new Set();
 
     for (const candidate of targetsToHeal) {
-      const isSelfTarget = candidate.id === player.id;
+      const isShumanTarget = candidate.id === player.id;
 
       // For Stop Bleeding specifically, only attempt on bleeding targets
       // and skip if already stabilized this round
-      const stopBleedingPower = healingPsionics.find(
+      const stopBleedingPower = healingTactics.find(
         (p) => p.name === "Stop Bleeding"
       );
       if (stopBleedingPower) {
         const candidateIsBleeding = isBleeding(candidate);
         const alreadyStabilized =
           candidate.statusEffects?.includes("STABILIZED") ||
-          (candidate.meta?.stabilizedByPsionics &&
+          (candidate.meta?.stabilizedByTactics &&
             candidate.meta?.lastStopBleedingRound >= meleeRound);
 
         if (!candidateIsBleeding || alreadyStabilized) {
@@ -1333,10 +1345,10 @@ export async function runPlayerTurnAI(player, context) {
           // Only try Stop Bleeding if target is bleeding and not already stabilized
           const canUseStopBleeding = !triedPowers.has("Stop Bleeding");
           if (canUseStopBleeding) {
-            const category = getPsionicTargetCategory(stopBleedingPower);
+            const category = getTacticalTargetCategory(stopBleedingPower);
             const canTarget =
-              (isSelfTarget && (category === "self" || category === "ally")) ||
-              (!isSelfTarget && category === "ally");
+              (isShumanTarget && (category === "shuman" || category === "ally")) ||
+              (!isShumanTarget && category === "ally");
 
             if (canTarget) {
               const rangeFeet = parseRangeToFeet(stopBleedingPower.range);
@@ -1352,12 +1364,21 @@ export async function runPlayerTurnAI(player, context) {
               if (inRange) {
                 triedPowers.add("Stop Bleeding");
                 addLog(
-                  `💚 ${player.name} channels Stop Bleeding to help ${candidate.name}.`,
+                  `ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢Ãƒâ€¦Ã‚Â¡ ${player.name} channels Stop Bleeding to help ${candidate.name}.`,
                   "info"
                 );
-                if (executePsionicPower(player, candidate, stopBleedingPower)) {
-                  processingPlayerAIRef.current = false;
-                  return true;
+                try {
+                  const tacticalResult = await executeTacticalPower(player, candidate, stopBleedingPower);
+                  const usedTactical = tacticalResult === true || tacticalResult?.ok === true;
+                  if (usedTactical) {
+                    processingPlayerAIRef.current = false;
+                    return true;
+                  }
+                } catch (err) {
+                  addLog?.(
+                    `ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã‚Â¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¯Ãƒâ€šÃ‚Â¸Ãƒâ€šÃ‚Â ${player.name} failed to use Stop Bleeding: ${err?.message || String(err)}`,
+                    "warning"
+                  );
                 }
                 // Continue to next target if Stop Bleeding failed
                 continue;
@@ -1367,30 +1388,30 @@ export async function runPlayerTurnAI(player, context) {
         }
       }
 
-      const spell = healingSpells.find((spellOption) =>
-        spellCanAffectTarget(spellOption, player, candidate)
+      const technique = healingTechniques.find((techniqueOption) =>
+        techniqueCanAffectTarget(techniqueOption, player, candidate)
       );
 
-      if (spell) {
+      if (technique) {
         addLog(
-          `💚 ${player.name} uses ${spell.name} to aid ${candidate.name}.`,
+          `ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢Ãƒâ€¦Ã‚Â¡ ${player.name} uses ${technique.name} to aid ${candidate.name}.`,
           "info"
         );
-        if (await startSpellAttempt({ spell, spellTarget: candidate })) {
+        if (await startTechniqueAttempt({ technique, techniqueTarget: candidate })) {
           return true;
         }
       }
 
-      // Try other healing psionics (excluding Stop Bleeding which we already handled)
-      const psionic = healingPsionics.find((power) => {
+      // Try other healing tactics (excluding Stop Bleeding which we already handled)
+      const tactical = healingTactics.find((power) => {
         // Skip Stop Bleeding (already handled above)
         if (power.name === "Stop Bleeding") return false;
         // Skip if we've already tried this power
         if (triedPowers.has(power.name)) return false;
 
-        const category = getPsionicTargetCategory(power);
-        if (isSelfTarget) {
-          return category === "self" || category === "ally";
+        const category = getTacticalTargetCategory(power);
+        if (isShumanTarget) {
+          return category === "shuman" || category === "ally";
         }
         if (category !== "ally") return false;
         if (!positions[player.id] || !positions[candidate.id]) return true;
@@ -1403,15 +1424,24 @@ export async function runPlayerTurnAI(player, context) {
         return distanceFeet <= rangeFeet;
       });
 
-      if (psionic) {
-        triedPowers.add(psionic.name); // Mark as tried
+      if (tactical) {
+        triedPowers.add(tactical.name); // Mark as tried
         addLog(
-          `💚 ${player.name} channels ${psionic.name} to help ${candidate.name}.`,
+          `ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢Ãƒâ€¦Ã‚Â¡ ${player.name} channels ${tactical.name} to help ${candidate.name}.`,
           "info"
         );
-        if (executePsionicPower(player, candidate, psionic)) {
-          processingPlayerAIRef.current = false;
-          return true;
+        try {
+          const tacticalResult = await executeTacticalPower(player, candidate, tactical);
+          const usedTactical = tacticalResult === true || tacticalResult?.ok === true;
+          if (usedTactical) {
+            processingPlayerAIRef.current = false;
+            return true;
+          }
+        } catch (err) {
+          addLog?.(
+            `ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã‚Â¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¯Ãƒâ€šÃ‚Â¸Ãƒâ€šÃ‚Â ${player.name} failed to use ${tactical.name}: ${err?.message || String(err)}`,
+            "warning"
+          );
         }
       }
     }
@@ -1450,19 +1480,19 @@ export async function runPlayerTurnAI(player, context) {
         player,
         target: nearestEnemy,
         positions,
-        escapeSpells: escapeSpellsFinal,
-        escapePsionics,
-        ispAvailable,
-        ppeAvailable,
+        escapeTechniques: escapeTechniquesFinal,
+        escapeTactics,
+        focusAvailable,
+        staminaAvailable,
         addLog,
         processingPlayerAIRef,
         calculateDistance,
-        executePsionicPower,
-        startSpellAttempt,
+        executeTacticalPower,
+        startTechniqueAttempt,
       });
 
       if (escaped) {
-        // Healer successfully bailed out – turn is done
+        // Healer successfully bailed out ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ turn is done
         return;
       }
       // If no escape option worked, we fall through to normal healing priority
@@ -1474,7 +1504,7 @@ export async function runPlayerTurnAI(player, context) {
   // but now good-aligned healers will bail out first if they're getting mauled.
   if (
     healingTargets.length > 0 &&
-    (healingSpells.length > 0 || healingPsionics.length > 0)
+    (healingTechniques.length > 0 || healingTactics.length > 0)
   ) {
     if (await attemptHealing(healingTargets)) {
       return;
@@ -1487,7 +1517,7 @@ export async function runPlayerTurnAI(player, context) {
 
     const name = (fighter.baseName || fighter.name || "").toLowerCase();
 
-    // Explicit: named prey creatures
+    // Explicit: named prey combatants
     if (
       name.includes("mouse") ||
       name.includes("rat") ||
@@ -1497,14 +1527,14 @@ export async function runPlayerTurnAI(player, context) {
       return true;
     }
 
-    // Fallback: tiny animals that are not monsters/undead
+    // Fallback: tiny animals that are not opponents/fallen
     // Note: getSizeCategory would need to be imported if available
     const sizeCat = fighter.sizeCategory || fighter.size || "";
     if (
       sizeCat === "Tiny" &&
-      !fighter.isUndead &&
-      !fighter.isDemon &&
-      !fighter.isMonster
+      !fighter.isFallen &&
+      !fighter.isRaider &&
+      !fighter.isOpponent
     ) {
       return true;
     }
@@ -1587,7 +1617,7 @@ export async function runPlayerTurnAI(player, context) {
 
       if (retreatDestination) {
         log(
-          `🐭 ${fighter.name} panics at the sight of ${nearestThreat.name} and scurries away!`,
+          `ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€šÃ‚ÂÃƒâ€šÃ‚Â­ ${fighter.name} panics at the sight of ${nearestThreat.name} and scurries away!`,
           "info"
         );
 
@@ -1621,7 +1651,7 @@ export async function runPlayerTurnAI(player, context) {
               ? {
                   ...f,
                   defensiveStance: "Retreat",
-                  remainingAttacks: Math.max(0, f.remainingAttacks - 1),
+                  remainingActions: Math.max(0, f.remainingActions - 1),
                 }
               : f
           )
@@ -1634,7 +1664,7 @@ export async function runPlayerTurnAI(player, context) {
 
       // If no retreat destination found, just cower / defend
       log(
-        `🐭 ${fighter.name} freezes in fear, unable to find a way to flee from ${nearestThreat.name}.`,
+        `ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€šÃ‚ÂÃƒâ€šÃ‚Â­ ${fighter.name} freezes in fear, unable to find a way to flee from ${nearestThreat.name}.`,
         "info"
       );
 
@@ -1643,7 +1673,7 @@ export async function runPlayerTurnAI(player, context) {
           f.id === fighter.id
             ? {
                 ...f,
-                remainingAttacks: Math.max(0, f.remainingAttacks - 1),
+                remainingActions: Math.max(0, f.remainingActions - 1),
                 defensiveStance: "Cower",
               }
             : f
@@ -1685,7 +1715,7 @@ export async function runPlayerTurnAI(player, context) {
           };
 
           log(
-            `🐭 ${fighter.name} cautiously noses toward a nearby corpse to scavenge.`,
+            `ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€šÃ‚ÂÃƒâ€šÃ‚Â­ ${fighter.name} cautiously noses toward a nearby corpse to scavenge.`,
             "info"
           );
 
@@ -1702,7 +1732,7 @@ export async function runPlayerTurnAI(player, context) {
               f.id === fighter.id
                 ? {
                     ...f,
-                    remainingAttacks: Math.max(0, f.remainingAttacks - 1),
+                    remainingActions: Math.max(0, f.remainingActions - 1),
                   }
                 : f
             )
@@ -1722,7 +1752,7 @@ export async function runPlayerTurnAI(player, context) {
             f.id === fighter.id
               ? {
                   ...f,
-                  remainingAttacks: Math.max(0, f.remainingAttacks - 1),
+                  remainingActions: Math.max(0, f.remainingActions - 1),
                   defensiveStance: "Idle/Forage",
                 }
               : f
@@ -1746,7 +1776,7 @@ export async function runPlayerTurnAI(player, context) {
           f.id === fighter.id
             ? {
                 ...f,
-                remainingAttacks: Math.max(0, f.remainingAttacks - 1),
+                remainingActions: Math.max(0, f.remainingActions - 1),
                 defensiveStance: "Idle/Forage",
               }
             : f
@@ -1784,7 +1814,7 @@ export async function runPlayerTurnAI(player, context) {
       setFighters((prev) =>
         prev.map((f) =>
           f.id === fighter.id
-            ? { ...f, remainingAttacks: Math.max(0, f.remainingAttacks - 1) }
+            ? { ...f, remainingActions: Math.max(0, f.remainingActions - 1) }
             : f
         )
       );
@@ -1832,14 +1862,14 @@ export async function runPlayerTurnAI(player, context) {
           [fighter.id]: { ...prev[fighter.id], x: nx, y: ny },
         }));
 
-        log(`🐾 ${fighter.name} wanders cautiously, sniffing the ground.`);
+        log(`ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€šÃ‚ÂÃƒâ€šÃ‚Â¾ ${fighter.name} wanders cautiously, sniffing the ground.`);
 
         setFighters((prev) =>
           prev.map((f) =>
             f.id === fighter.id
               ? {
                   ...f,
-                  remainingAttacks: Math.max(0, (f.remainingAttacks || 0) - 1),
+                  remainingActions: Math.max(0, (f.remainingActions || 0) - 1),
                   defensiveStance: "Idle/Alert",
                 }
               : f
@@ -1855,7 +1885,7 @@ export async function runPlayerTurnAI(player, context) {
     // No threats, no food, no clear hiding spot: pure idle flavor
     const idleLines = [
       `${fighter.name} sniffs the air nervously.`,
-      `${fighter.name} grooms itself and twitches its whiskers.`,
+      `${fighter.name} grooms itshuman and twitches its whiskers.`,
       `${fighter.name} pauses, listening for danger.`,
     ];
     const line = idleLines[Math.floor(Math.random() * idleLines.length)];
@@ -1866,7 +1896,7 @@ export async function runPlayerTurnAI(player, context) {
         f.id === fighter.id
           ? {
               ...f,
-              remainingAttacks: Math.max(0, f.remainingAttacks - 1),
+              remainingActions: Math.max(0, f.remainingActions - 1),
               defensiveStance: "Idle/Alert",
             }
           : f
@@ -1907,17 +1937,17 @@ export async function runPlayerTurnAI(player, context) {
   let target = null;
   let reasoning = "";
 
-  // equippedWeapons is already defined above for enemyTargets filtering
+  // equistaminadWeapons is already defined above for enemyTargets filtering
 
   // Debug: Show what we found (only log if not a prey animal to reduce spam)
   if (!isPreyAnimal(player)) {
     addLog(
-      `🔍 ${player.name} weapon check: ${equippedWeapons.length} equipped weapons found`,
+      `ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒâ€šÃ‚Â ${player.name} weapon check: ${equistaminadWeapons.length} equistaminad weapons found`,
       "info"
     );
-    if (equippedWeapons.length > 0) {
+    if (equistaminadWeapons.length > 0) {
       addLog(
-        `🔍 ${player.name} equipped weapons: ${equippedWeapons
+        `ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒâ€šÃ‚Â ${player.name} equistaminad weapons: ${equistaminadWeapons
           .map((w) => w.name)
           .join(", ")}`,
         "info"
@@ -1939,7 +1969,7 @@ export async function runPlayerTurnAI(player, context) {
       let isUnreachable = isTargetUnreachable(player, t);
       if (!isUnreachable) {
         // For melee-focused players without ranged weapons, check melee reachability
-        const hasRangedWeapon = equippedWeapons.some((w) => {
+        const hasRangedWeapon = equistaminadWeapons.some((w) => {
           const name = (w.name || "").toLowerCase();
           return (
             name.includes("bow") ||
@@ -1979,20 +2009,20 @@ export async function runPlayerTurnAI(player, context) {
     const allUnreachable = targetsWithDistance.every((t) => t.isUnreachable);
 
     if (allUnreachable) {
-      // Check if player has ranged options (weapons, spells, psionics) that can reach flying enemies
+      // Check if player has ranged options (weapons, techniques, tactics) that can reach flying enemies
       const hasRangedOptions = hasAnyRangedOptionAgainstFlying(
         player,
         enemyTargets,
         {
-          getFighterSpells,
-          getFighterPsionicPowers,
-          getFighterPPE,
-          getFighterISP,
-          getSpellCost,
-          getPsionicCost,
-          getSpellRangeInFeet,
+          getFighterTechniques,
+          getFighterTacticalPowers,
+          getFighterstamina,
+          getFighterfocus,
+          getTechniqueCost,
+          getTacticalCost,
+          getTechniqueRangeInFeet,
           parseRangeToFeet,
-          isOffensiveSpell,
+          isOffensiveTechnique,
           calculateDistance,
           positions,
         }
@@ -2025,7 +2055,7 @@ export async function runPlayerTurnAI(player, context) {
           return;
         }
 
-        // Spam control: only log once per melee round per player
+        // Spam control: only log once per combat round per player
         const shouldLog =
           !player.meta?.loggedNoRangedOptions ||
           player.meta?.loggedNoRangedRound !== meleeRound;
@@ -2039,7 +2069,7 @@ export async function runPlayerTurnAI(player, context) {
           if (aiControlEnabled) {
             // AI control: auto-defend/withdraw
             addLog(
-              `⚠️ ${player.name} has no way to hit flying enemies (no ranged weapons, spells, or psionics). Defaulting to defend/withdraw.`,
+              `ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã‚Â¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¯Ãƒâ€šÃ‚Â¸Ãƒâ€šÃ‚Â ${player.name} has no way to hit flying enemies (no ranged weapons, techniques, or tactics). Defaulting to defend/withdraw.`,
               "warning"
             );
             processingPlayerAIRef.current = false;
@@ -2048,7 +2078,7 @@ export async function runPlayerTurnAI(player, context) {
           } else {
             // Manual control: show hint but don't auto-end turn
             addLog(
-              `⚠️ All visible enemies are flying out of melee range. ${player.name} can choose a spell, psionic, missile weapon, or Hold Action.`,
+              `ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã‚Â¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¯Ãƒâ€šÃ‚Â¸Ãƒâ€šÃ‚Â All visible enemies are flying out of melee range. ${player.name} can choose a technique, tactical, missile weapon, or Hold Action.`,
               "info"
             );
             // Return without ending turn - let player make choice
@@ -2103,7 +2133,7 @@ export async function runPlayerTurnAI(player, context) {
     );
   }
 
-  const selectOffensiveSpell = (spellsList) => {
+  const selectOffensiveTechnique = (techniquesList) => {
     if (!target) return null;
 
     // Check target immunities
@@ -2114,18 +2144,18 @@ export async function runPlayerTurnAI(player, context) {
         )
       : false;
 
-    const viable = spellsList.filter((spell) => {
-      // Check if spell can affect target (friendly/enemy restrictions)
-      if (!spellCanAffectTarget(spell, player, target)) return false;
+    const viable = techniquesList.filter((technique) => {
+      // Check if technique can affect target (friendly/enemy restrictions)
+      if (!techniqueCanAffectTarget(technique, player, target)) return false;
 
-      // Filter out fire spells if target is fire-immune
+      // Filter out fire techniques if target is fire-immune
       if (isFireImmune) {
-        const spellName = (spell.name || "").toLowerCase();
-        const damageType = (spell.damageType || "").toLowerCase();
+        const techniqueName = (technique.name || "").toLowerCase();
+        const damageType = (technique.damageType || "").toLowerCase();
         if (
-          spellName.includes("fire") ||
-          spellName.includes("flame") ||
-          spellName.includes("burn") ||
+          techniqueName.includes("fire") ||
+          techniqueName.includes("flame") ||
+          techniqueName.includes("burn") ||
           damageType === "fire"
         ) {
           return false;
@@ -2135,47 +2165,47 @@ export async function runPlayerTurnAI(player, context) {
       return true;
     });
     if (viable.length === 0) return null;
-    const inRange = viable.filter((spell) => {
-      const rangeFeet = getSpellRangeInFeet(spell);
+    const inRange = viable.filter((technique) => {
+      const rangeFeet = getTechniqueRangeInFeet(technique);
       return (
         rangeFeet === Infinity ||
         currentDistance === Infinity ||
         currentDistance <= rangeFeet
       );
     });
-    // If nothing is in range, don't pick a "melee-range" spell at 120ft and waste the action.
+    // If nothing is in range, don't pick a "melee-range" technique at 120ft and waste the action.
     if (inRange.length === 0) return null;
 
-    // Prefer longer-range spells when multiple are viable (prevents picking Flame Lick over Fire Ball at distance).
-    const rangeVal = (spell) => {
-      const r = getSpellRangeInFeet(spell);
+    // Prefer longer-range techniques when multiple are viable (prevents picking Flame Lick over Fire Ball at distance).
+    const rangeVal = (technique) => {
+      const r = getTechniqueRangeInFeet(technique);
       return r === Infinity ? 1_000_000_000 : Number(r || 0);
     };
     inRange.sort((a, b) => rangeVal(b) - rangeVal(a));
     return inRange[0];
   };
 
-  // Track recently used psionics per fighter to prevent spamming
+  // Track recently used tactics per fighter to prevent spamming
   // Alignment and healer helpers
   const GOOD_ALIGNMENTS = ["principled", "scrupulous"];
   // Alignment constants (for future use)
   // const EVIL_ALIGNMENTS = ["diabolic", "miscreant"];
-  // const SELFISH_ALIGNMENTS = ["unprincipled", "anarchist"];
+  // const SHUMANISH_ALIGNMENTS = ["unprincipled", "anarchist"];
 
   const isGood = (fighter) => {
     const a = (fighter.alignment || "").toLowerCase();
     return GOOD_ALIGNMENTS.includes(a);
   };
 
-  const isHealerOcc = (fighter) => {
-    const occ = (fighter.occ || fighter.class || "").toLowerCase();
+  const isHealerProfession = (fighter) => {
+    const profession = (fighter.profession || fighter.class || "").toLowerCase();
     return (
-      occ.includes("healer") ||
-      occ.includes("priest of light") ||
-      occ.includes("priestess of light") ||
-      occ.includes("druid") ||
-      occ.includes("cleric") ||
-      occ.includes("priest")
+      profession.includes("healer") ||
+      profession.includes("priest of light") ||
+      profession.includes("priestess of light") ||
+      profession.includes("druid") ||
+      profession.includes("cleric") ||
+      profession.includes("priest")
     );
   };
 
@@ -2200,24 +2230,24 @@ export async function runPlayerTurnAI(player, context) {
     return null;
   };
 
-  const chooseBestHealingSpell = ({
+  const chooseBestHealingTechnique = ({
     fighter,
-    spells,
-    isHealingSpell,
+    techniques,
+    isHealingTechnique,
     distanceFeetToTarget,
   }) => {
-    const ppe = getFighterPPE(fighter);
-    if (!spells || !spells.length) return null;
+    const stamina = getFighterstamina(fighter);
+    if (!techniques || !techniques.length) return null;
 
-    const affordable = spells.filter((s) => {
-      const cost = getSpellCost(s);
-      return cost <= ppe && isHealingSpell(s);
+    const affordable = techniques.filter((s) => {
+      const cost = getTechniqueCost(s);
+      return cost <= stamina && isHealingTechnique(s);
     });
     if (!affordable.length) return null;
 
-    // Prefer spells that can reach (if they have range)
+    // Prefer techniques that can reach (if they have range)
     const inRange = affordable.filter((s) => {
-      const r = getSpellRangeInFeet(s);
+      const r = getTechniqueRangeInFeet(s);
       return r === Infinity || r === 0 || distanceFeetToTarget <= r;
     });
 
@@ -2225,9 +2255,9 @@ export async function runPlayerTurnAI(player, context) {
 
     // Simple: highest cost = strongest
     return pool.reduce((best, s) => {
-      const cost = getSpellCost(s);
+      const cost = getTechniqueCost(s);
       if (!best) return s;
-      const bestCost = getSpellCost(best);
+      const bestCost = getTechniqueCost(best);
       return cost > bestCost ? s : best;
     }, null);
   };
@@ -2243,7 +2273,7 @@ export async function runPlayerTurnAI(player, context) {
     });
   };
 
-  const chooseBestEscapeAbility = ({ fighter, spells, psionics }) => {
+  const chooseBestEscapeAbility = ({ fighter, techniques, tactics }) => {
     const nameMatchesEscape = (name) => {
       const n = (name || "").toLowerCase();
       return (
@@ -2256,37 +2286,37 @@ export async function runPlayerTurnAI(player, context) {
       );
     };
 
-    const ppe = getFighterPPE(fighter);
-    const isp = getFighterISP(fighter);
+    const stamina = getFighterstamina(fighter);
+    const focus = getFighterfocus(fighter);
 
-    let escapeSpell = null;
-    if (spells && spells.length) {
-      const candidates = spells.filter((s) => {
-        const cost = getSpellCost(s);
-        return cost <= ppe && nameMatchesEscape(s.name);
+    let escapeTechnique = null;
+    if (techniques && techniques.length) {
+      const candidates = techniques.filter((s) => {
+        const cost = getTechniqueCost(s);
+        return cost <= stamina && nameMatchesEscape(s.name);
       });
       if (candidates.length) {
-        escapeSpell = candidates[0];
+        escapeTechnique = candidates[0];
       }
     }
 
-    let escapePsionic = null;
-    if (psionics && psionics.length) {
-      const cand = psionics.filter((p) => {
-        const cost = getPsionicCost(p);
-        return cost <= isp && nameMatchesEscape(p.name);
+    let escapeTactical = null;
+    if (tactics && tactics.length) {
+      const cand = tactics.filter((p) => {
+        const cost = getTacticalCost(p);
+        return cost <= focus && nameMatchesEscape(p.name);
       });
-      if (cand.length) escapePsionic = cand[0];
+      if (cand.length) escapeTactical = cand[0];
     }
 
     return {
-      escapeSpell,
-      escapePsionic,
+      escapeTechnique,
+      escapeTactical,
     };
   };
 
   // Healer AI: heal allies first, escape if threatened, then attack
-  const healer = isHealerOcc(player) && isGood(player);
+  const healer = isHealerProfession(player) && isGood(player);
   const playerAllies = fighters.filter(
     (f) => isAllyTarget(f) && f.id !== player.id
   );
@@ -2301,40 +2331,49 @@ export async function runPlayerTurnAI(player, context) {
         positions[player.id] && positions[injuredAlly.id]
           ? calculateDistance(positions[player.id], positions[injuredAlly.id])
           : Infinity;
-      const healSpell = chooseBestHealingSpell({
+      const healTechnique = chooseBestHealingTechnique({
         fighter: player,
-        spells: fighterSpells,
-        isHealingSpell,
+        techniques: fighterTechniques,
+        isHealingTechnique,
         distanceFeetToTarget: dist,
       });
 
-      if (healSpell) {
+      if (healTechnique) {
         addLog(
-          `🔮 ${player.name} (healer) chooses to heal ${injuredAlly.name} with ${healSpell.name}`,
+          `ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒâ€šÃ‚Â® ${player.name} (healer) chooses to heal ${injuredAlly.name} with ${healTechnique.name}`,
           "info"
         );
-        if (await startSpellAttempt({ spell: healSpell, spellTarget: injuredAlly })) {
+        if (await startTechniqueAttempt({ technique: healTechnique, techniqueTarget: injuredAlly })) {
           return;
         }
       }
 
-      // Try healing psionic
-      const healPsionic = chooseBestHealingPsionic({
+      // Try healing tactical
+      const healTactical = chooseBestHealingTactical({
         caster: player,
-        psionicPowers: fighterPsionics,
+        tacticalOptions: fighterTactics,
         target: injuredAlly,
         distanceFeet: dist,
-        isp: ispAvailable,
+        focus: focusAvailable,
       });
 
-      if (healPsionic) {
+      if (healTactical) {
         addLog(
-          `🧠 ${player.name} (healer) chooses to heal ${injuredAlly.name} with ${healPsionic.name}`,
+          `ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€šÃ‚Â§Ãƒâ€šÃ‚Â  ${player.name} (healer) chooses to heal ${injuredAlly.name} with ${healTactical.name}`,
           "info"
         );
-        if (executePsionicPower(player, injuredAlly, healPsionic)) {
-          processingPlayerAIRef.current = false;
-          return;
+        try {
+          const tacticalResult = await executeTacticalPower(player, injuredAlly, healTactical);
+          const usedTactical = tacticalResult === true || tacticalResult?.ok === true;
+          if (usedTactical) {
+            processingPlayerAIRef.current = false;
+            return;
+          }
+        } catch (err) {
+          addLog?.(
+            `ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã‚Â¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¯Ãƒâ€šÃ‚Â¸Ãƒâ€šÃ‚Â ${player.name} failed to use ${healTactical.name}: ${err?.message || String(err)}`,
+            "warning"
+          );
         }
       }
     }
@@ -2343,59 +2382,68 @@ export async function runPlayerTurnAI(player, context) {
     if (threatened && target) {
       const escape = chooseBestEscapeAbility({
         fighter: player,
-        spells: fighterSpells,
-        psionics: fighterPsionics,
+        techniques: fighterTechniques,
+        tactics: fighterTactics,
       });
 
-      if (escape.escapeSpell) {
+      if (escape.escapeTechnique) {
         addLog(
-          `🌀 ${player.name} (healer) uses escape spell ${escape.escapeSpell.name}`,
+          `ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€¦Ã¢â‚¬â„¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ ${player.name} (healer) uses escape technique ${escape.escapeTechnique.name}`,
           "info"
         );
-        if (await startSpellAttempt({ spell: escape.escapeSpell, spellTarget: player })) {
+        if (await startTechniqueAttempt({ technique: escape.escapeTechnique, techniqueTarget: player })) {
           return;
         }
       }
 
-      if (escape.escapePsionic) {
+      if (escape.escapeTactical) {
         const recentlyUsed =
-          playerAIRecentlyUsedPsionicsRef.current.get(player.id) || [];
+          playerAIRecentlyUsedTacticsRef.current.get(player.id) || [];
         if (recentlyUsed.length === 0) {
           addLog(
-            `🧠 ${player.name} (healer) uses escape psionic ${escape.escapePsionic.name}`,
+            `ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€šÃ‚Â§Ãƒâ€šÃ‚Â  ${player.name} (healer) uses escape tactical ${escape.escapeTactical.name}`,
             "info"
           );
-          if (executePsionicPower(player, player, escape.escapePsionic)) {
-            processingPlayerAIRef.current = false;
-            return;
+          try {
+            const tacticalResult = await executeTacticalPower(player, player, escape.escapeTactical);
+            const usedTactical = tacticalResult === true || tacticalResult?.ok === true;
+            if (usedTactical) {
+              processingPlayerAIRef.current = false;
+              return;
+            }
+          } catch (err) {
+            addLog?.(
+              `ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã‚Â¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¯Ãƒâ€šÃ‚Â¸Ãƒâ€šÃ‚Â ${player.name} failed to use ${escape.escapeTactical.name}: ${err?.message || String(err)}`,
+              "warning"
+            );
           }
         }
       }
     }
   }
 
-  // ✅ CRITICAL: Only choose ONE psionic per action using the helper
+  // ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ CRITICAL: Only choose ONE tactical per action using the helper
   // This prevents spam by ensuring we pick one and execute it once
-  const bestOffensivePsionic =
-    target && offensivePsionics.length > 0
-      ? chooseBestOffensivePsionic({
+  const bestOffensiveTactical =
+    target && offensiveTactics.length > 0
+      ? chooseBestOffensiveTactical({
           caster: player,
-          psionicPowers: offensivePsionics,
+          tacticalOptions: offensiveTactics,
           target,
           distanceFeet: currentDistance,
-          isp: ispAvailable,
+          focus: focusAvailable,
           alignment: player.alignment,
         })
       : null;
 
-  const bestOffensiveSpell = selectOffensiveSpell(offensiveSpells);
+  const bestOffensiveTechnique = selectOffensiveTechnique(offensiveTechniques);
 
-  const magicKeywords = [
-    "wizard",
+  const trainingKeywords = [
+    "duelist",
     "mage",
-    "warlock",
+    "mercenary",
     "witch",
-    "sorcerer",
+    "sraidererer",
     "summoner",
     "diabolist",
     "cleric",
@@ -2403,24 +2451,24 @@ export async function runPlayerTurnAI(player, context) {
     "druid",
     "shaman",
   ];
-  const isMagicFocused = magicKeywords.some((keyword) =>
-    occLower.includes(keyword)
+  const isTrainingFocused = trainingKeywords.some((keyword) =>
+    professionLower.includes(keyword)
   );
   const isMindMage =
-    occLower.includes("mind mage") || occLower.includes("mindmage");
+    professionLower.includes("tactician") || professionLower.includes("mindmage");
 
-  // 🔹 GOOD HEALER LOGIC - Check before general magic-focused behavior
+  // ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒâ€šÃ‚Â¹ GOOD HEALER LOGIC - Check before general training-focused behavior
   const isHealerArchetypePlayer = isHealerArchetype(player);
   const goodHealer =
     isHealerArchetypePlayer && isGoodAlignmentForHealer(player);
 
-  if (isMagicFocused && goodHealer && isHealerArchetypePlayer) {
+  if (isTrainingFocused && goodHealer && isHealerArchetypePlayer) {
     addLog(
-      `${player.name} is magic-focused and a good-aligned healer - evaluating spells and psionics...`,
+      `${player.name} is training-focused and a good-aligned healer - evaluating techniques and tactics...`,
       "info"
     );
 
-    // 1) If badly outmatched in melee, prefer escape/defensive magic FOR SELF
+    // 1) If badly outmatched in melee, prefer escape/defensive training FOR SHUMAN
     const inSeriousTrouble = isInSeriousMeleeTrouble(
       player,
       enemyTargets,
@@ -2429,14 +2477,14 @@ export async function runPlayerTurnAI(player, context) {
       getFighterHP,
       getFighterMaxHP
     );
-    if (inSeriousTrouble && escapeSpellsFinal.length > 0) {
-      const escapeSpell = escapeSpellsFinal[0]; // later you can pick smarter
+    if (inSeriousTrouble && escapeTechniquesFinal.length > 0) {
+      const escapeTechnique = escapeTechniquesFinal[0]; // later you can pick smarter
       addLog(
-        `${player.name} is a good healer in serious melee trouble - using escape spell: ${escapeSpell.name}`,
+        `${player.name} is a good healer in serious melee trouble - using escape technique: ${escapeTechnique.name}`,
         "info"
       );
-      // Self-target escape
-      if (await startSpellAttempt({ spell: escapeSpell, spellTarget: player })) {
+      // Shuman-target escape
+      if (await startTechniqueAttempt({ technique: escapeTechnique, techniqueTarget: player })) {
         return;
       }
     }
@@ -2453,67 +2501,67 @@ export async function runPlayerTurnAI(player, context) {
       }
     );
 
-    if (allyToHeal && healingSpells.length > 0) {
-      // For now choose the first healing spell; later you can add a "selectBestHealingSpell" helper.
-      const healingSpell = healingSpells[0];
+    if (allyToHeal && healingTechniques.length > 0) {
+      // For now choose the first healing technique; later you can add a "selectBestHealingTechnique" helper.
+      const healingTechnique = healingTechniques[0];
 
       addLog(
-        `${player.name} prioritizes healing ally ${allyToHeal.name} with ${healingSpell.name}`,
+        `${player.name} prioritizes healing ally ${allyToHeal.name} with ${healingTechnique.name}`,
         "info"
       );
-      if (await startSpellAttempt({ spell: healingSpell, spellTarget: allyToHeal })) {
+      if (await startTechniqueAttempt({ technique: healingTechnique, techniqueTarget: allyToHeal })) {
         return;
       }
     }
   }
 
-  // Debug logging for magic-focused characters
-  if (isMagicFocused) {
+  // Debug logging for training-focused characters
+  if (isTrainingFocused) {
     addLog(
-      `🔮 ${player.name} spell check: Found ${fighterSpells.length} total spells, ${fighterPsionics.length} psionic powers`,
+      `ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒâ€šÃ‚Â® ${player.name} technique check: Found ${fighterTechniques.length} total techniques, ${fighterTactics.length} tactical powers`,
       "info"
     );
-    if (fighterSpells.length > 0) {
+    if (fighterTechniques.length > 0) {
       addLog(
-        `🔮 ${player.name} spells: ${fighterSpells
+        `ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒâ€šÃ‚Â® ${player.name} techniques: ${fighterTechniques
           .map((s) => s.name)
           .join(", ")}`,
         "info"
       );
     } else {
       addLog(
-        `🔮 ${
+        `ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒâ€šÃ‚Â® ${
           player.name
-        } has no spells found in: magic=${!!player.magic}, spells=${!!player.spells}, knownSpells=${!!player.knownSpells}, spellbook=${!!player.spellbook}, abilities=${!!player.abilities}`,
+        } has no techniques found in: training=${!!player.training}, techniques=${!!player.techniques}, knownTechniques=${!!player.knownTechniques}, techniqueBook=${!!player.techniqueBook}, abilities=${!!player.abilities}`,
         "warning"
       );
     }
     addLog(
-      `🔮 ${player.name} PPE: ${ppeAvailable}, ISP: ${ispAvailable}`,
+      `ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒâ€šÃ‚Â® ${player.name} stamina: ${staminaAvailable}, focus: ${focusAvailable}`,
       "info"
     );
   }
 
-  // Debug logging for mind mages
+  // Debug logging for tacticians
   if (isMindMage) {
     addLog(
-      `🧠 ${player.name} is a Mind Mage - checking psionic powers...`,
+      `ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€šÃ‚Â§Ãƒâ€šÃ‚Â  ${player.name} is a Tactician - checking tactical powers...`,
       "info"
     );
     addLog(
-      `🧠 Available psionic powers: ${fighterPsionics.length}, Offensive: ${offensivePsionics.length}, ISP: ${ispAvailable}`,
+      `ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€šÃ‚Â§Ãƒâ€šÃ‚Â  Available tactical powers: ${fighterTactics.length}, Offensive: ${offensiveTactics.length}, focus: ${focusAvailable}`,
       "info"
     );
-    if (bestOffensivePsionic) {
+    if (bestOffensiveTactical) {
       addLog(
-        `🧠 Best offensive psionic: ${
-          bestOffensivePsionic.name
-        } (cost: ${getPsionicCost(bestOffensivePsionic)} ISP)`,
+        `ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€šÃ‚Â§Ãƒâ€šÃ‚Â  Best offensive tactical: ${
+          bestOffensiveTactical.name
+        } (cost: ${getTacticalCost(bestOffensiveTactical)} focus)`,
         "info"
       );
     } else {
       addLog(
-        `🧠 No viable offensive psionic found (target: ${
+        `ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€šÃ‚Â§Ãƒâ€šÃ‚Â  No viable offensive tactical found (target: ${
           target?.name
         }, distance: ${Math.round(currentDistance)}ft)`,
         "info"
@@ -2521,127 +2569,137 @@ export async function runPlayerTurnAI(player, context) {
     }
   }
 
-  const attemptOffensiveSpell = async (spell) => {
-    return startSpellAttempt({
-      spell,
-      spellTarget: target,
-      announceLog: `🔮 ${player.name} unleashes ${spell.name} at ${target.name}!`,
+  const attemptOffensiveTechnique = async (technique) => {
+    return startTechniqueAttempt({
+      technique,
+      techniqueTarget: target,
+      announceLog: `ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒâ€šÃ‚Â® ${player.name} unleashes ${technique.name} at ${target.name}!`,
       precheckDistance: currentDistance,
     });
   };
 
-  const attemptOffensivePsionic = (power) => {
+  const attemptOffensiveTactical = async (power) => {
     addLog(
-      `🧠 ${player.name} focuses ${power.name} on ${target.name}!`,
+      `ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€šÃ‚Â§Ãƒâ€šÃ‚Â  ${player.name} focuses ${power.name} on ${target.name}!`,
       "info"
     );
-    // Mark immediately so CombatPage watchdog/invariant doesn't end-turn while a psionic action is executing.
+    // Mark immediately so CombatPage watchdog/invariant doesn't end-turn while a tactical action is executing.
     markActionScheduled();
-    if (executePsionicPower(player, target, power)) {
-      // Track this psionic as recently used to prevent spamming
-      const recentlyUsed =
-        playerAIRecentlyUsedPsionicsRef.current.get(player.id) || [];
-      recentlyUsed.push(power.name);
-      // Keep only last 3 used psionics per fighter
-      if (recentlyUsed.length > 3) {
-        recentlyUsed.shift();
-      }
-      playerAIRecentlyUsedPsionicsRef.current.set(player.id, recentlyUsed);
+    try {
+      const tacticalResult = await executeTacticalPower(player, target, power);
+      const usedTactical = tacticalResult === true || tacticalResult?.ok === true;
+      if (usedTactical) {
+        // Track this tactical as recently used to prevent spamming
+        const recentlyUsed =
+          playerAIRecentlyUsedTacticsRef.current.get(player.id) || [];
+        recentlyUsed.push(power.name);
+        // Keep only last 3 used tactics per fighter
+        if (recentlyUsed.length > 3) {
+          recentlyUsed.shift();
+        }
+        playerAIRecentlyUsedTacticsRef.current.set(player.id, recentlyUsed);
 
-      processingPlayerAIRef.current = false;
-      return true;
+        processingPlayerAIRef.current = false;
+        return true;
+      }
+    } catch (err) {
+      addLog?.(
+        `ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã‚Â¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¯Ãƒâ€šÃ‚Â¸Ãƒâ€šÃ‚Â ${player.name} failed to use ${power.name}: ${err?.message || String(err)}`,
+        "warning"
+      );
     }
+    if (playerAIActionScheduledRef) playerAIActionScheduledRef.current = false;
     return false;
   };
 
-  // For mind mages, prioritize psionics over weapons and spells
-  // For others, use psionics if no spell available or at long range
-  const shouldUsePsionics =
-    !!bestOffensivePsionic &&
+  // For tacticians, prioritize tactics over weapons and techniques
+  // For others, use tactics if no technique available or at long range
+  const shouldUseTactics =
+    !!bestOffensiveTactical &&
     (isMindMage ||
-      (!bestOffensiveSpell && currentDistance > 5.5) ||
+      (!bestOffensiveTechnique && currentDistance > 5.5) ||
       currentDistance > 20);
 
   if (isMindMage) {
     addLog(
-      `🧠 Mind Mage psionic decision: shouldUsePsionics=${shouldUsePsionics}, bestOffensivePsionic=${
-        bestOffensivePsionic?.name || "none"
+      `ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€šÃ‚Â§Ãƒâ€šÃ‚Â  Tactician tactical decision: shouldUseTactics=${shouldUseTactics}, bestOffensiveTactical=${
+        bestOffensiveTactical?.name || "none"
       }`,
       "info"
     );
   }
 
-  if (shouldUsePsionics && bestOffensivePsionic) {
-    const psionicResult = attemptOffensivePsionic(bestOffensivePsionic);
+  if (shouldUseTactics && bestOffensiveTactical) {
+    const tacticalResult = await attemptOffensiveTactical(bestOffensiveTactical);
     if (isMindMage) {
       addLog(
-        `🧠 Psionic execution result: ${psionicResult ? "SUCCESS" : "FAILED"}`,
-        psionicResult ? "info" : "error"
+        `ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€šÃ‚Â§Ãƒâ€šÃ‚Â  Tactical execution result: ${tacticalResult ? "SUCCESS" : "FAILED"}`,
+        tacticalResult ? "info" : "error"
       );
     }
-    if (psionicResult) {
+    if (tacticalResult) {
       return;
     }
   }
 
-  // Only use spells if not a mind mage (mind mages should prefer psionics)
-  // For magic-focused classes (wizard, etc.), ALWAYS prioritize spells over melee
-  // The spell range check happens in executeSpell, so we can try to use spells at any distance
-  const shouldUseSpell =
-    !!bestOffensiveSpell &&
+  // Only use techniques if not a tactician (tacticians should prefer tactics)
+  // For training-focused classes (duelist, etc.), ALWAYS prioritize techniques over melee
+  // The technique range check hastaminans in executeTechnique, so we can try to use techniques at any distance
+  const shouldUseTechnique =
+    !!bestOffensiveTechnique &&
     !isMindMage &&
-    (isMagicFocused || // Magic classes always prefer spells when available
+    (isTrainingFocused || // Training classes always prefer techniques when available
       currentDistance > 20 ||
-      !bestOffensivePsionic);
+      !bestOffensiveTactical);
 
-  // Debug logging for magic-focused classes
-  if (isMagicFocused) {
-    if (bestOffensiveSpell) {
-      dbgLog(`🔮 ${player.name} is magic-focused - prioritizing spell: ${bestOffensiveSpell.name}`, "info");
+  // Debug logging for training-focused classes
+  if (isTrainingFocused) {
+    if (bestOffensiveTechnique) {
+      dbgLog(`ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒâ€šÃ‚Â® ${player.name} is training-focused - prioritizing technique: ${bestOffensiveTechnique.name}`, "info");
     } else {
-      dbgLog(`🔮 ${player.name} is magic-focused but has no offensive spells available`, "info");
+      dbgLog(`ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒâ€šÃ‚Â® ${player.name} is training-focused but has no offensive techniques available`, "info");
     }
   }
 
-  if (shouldUseSpell && bestOffensiveSpell) {
-    if (await attemptOffensiveSpell(bestOffensiveSpell)) {
+  if (shouldUseTechnique && bestOffensiveTechnique) {
+    if (await attemptOffensiveTechnique(bestOffensiveTechnique)) {
       return;
     }
   }
 
-  // For magic-focused classes, if we have spells/psionics available, don't use melee
+  // For training-focused classes, if we have techniques/tactics available, don't use melee
   // Allow movement to get in range, but skip melee attacks
-  const hasMagicAvailable = bestOffensiveSpell || bestOffensivePsionic;
-  if (isMagicFocused && hasMagicAvailable) {
-    // If we tried to use magic but it failed (e.g., out of range), allow movement
-    // But don't fall through to melee - magic classes should use magic, not melee
+  const hasTrainingAvailable = bestOffensiveTechnique || bestOffensiveTactical;
+  if (isTrainingFocused && hasTrainingAvailable) {
+    // If we tried to use training but it failed (e.g., out of range), allow movement
+    // But don't fall through to melee - training classes should use training, not melee
     if (currentDistance > 5.5) {
-      dbgLog(`🔮 ${player.name} is magic-focused with magic available but out of range - will move to get in range`, "info");
+      dbgLog(`ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒâ€šÃ‚Â® ${player.name} is training-focused with training available but out of range - will move to get in range`, "info");
       // Allow movement to continue below
     } else {
-      // In melee range but magic-focused - still prefer magic over melee
-      dbgLog(`🔮 ${player.name} is magic-focused - skipping melee in favor of magic`, "info");
+      // In melee range but training-focused - still prefer training over melee
+      dbgLog(`ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒâ€šÃ‚Â® ${player.name} is training-focused - skipping melee in favor of training`, "info");
       processingPlayerAIRef.current = false;
       scheduleEndTurn();
       return;
     }
   }
-  dbgLog(`🔍 ${player.name} checking weapons...`, "info");
+  dbgLog(`ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒâ€šÃ‚Â ${player.name} checking weapons...`, "info");
   let selectedAttack = null;
-  let attackName = "Unarmed Strike";
+  let attackName = "Unarmed Attack";
   let selectedWeapon = null;
   let grappleOriginalWeaponName = null;
 
   // If no weapons found, try to equip a basic weapon from inventory
-  if (equippedWeapons.length === 0) {
+  if (equistaminadWeapons.length === 0) {
     addLog(
-      `⚠️ ${player.name} has no equipped weapons - checking inventory...`,
+      `ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã‚Â¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¯Ãƒâ€šÃ‚Â¸Ãƒâ€šÃ‚Â ${player.name} has no equistaminad weapons - checking inventory...`,
       "warning"
     );
 
     // Check if player has weapons in inventory/wardrobe
     const inventory = player.wardrobe || player.inventory || [];
-    dbgLog(`🔍 ${player.name}'s inventory has ${inventory.length} items`, "info");
+    dbgLog(`ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒâ€šÃ‚Â ${player.name}'s inventory has ${inventory.length} items`, "info");
 
     const availableWeapons = inventory.filter(
       (item) =>
@@ -2653,19 +2711,19 @@ export async function runPlayerTurnAI(player, context) {
         item.name?.toLowerCase().includes("dagger")
     );
 
-    dbgLog(`🔍 Found ${availableWeapons.length} weapons in inventory`, "info");
+    dbgLog(`ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒâ€šÃ‚Â Found ${availableWeapons.length} weapons in inventory`, "info");
 
     if (availableWeapons.length > 0) {
       // Use autoEquipWeapons to properly equip weapons from inventory
       const updatedPlayer = autoEquipWeapons(player);
 
-      // Update player's equipped weapons
+      // Update player's equistaminad weapons
       if (
-        updatedPlayer.equippedWeapons &&
-        updatedPlayer.equippedWeapons.length > 0
+        updatedPlayer.equistaminadWeapons &&
+        updatedPlayer.equistaminadWeapons.length > 0
       ) {
-        equippedWeapons.push(
-          ...updatedPlayer.equippedWeapons.filter((w) => w.name !== "Unarmed")
+        equistaminadWeapons.push(
+          ...updatedPlayer.equistaminadWeapons.filter((w) => w.name !== "Unarmed")
         );
 
         // Update the player object in fighters array
@@ -2674,33 +2732,33 @@ export async function runPlayerTurnAI(player, context) {
             f.id === player.id
               ? {
                   ...f,
-                  equippedWeapons: updatedPlayer.equippedWeapons,
-                  equipped: updatedPlayer.equipped,
-                  equippedWeapon: updatedPlayer.equippedWeapon,
+                  equistaminadWeapons: updatedPlayer.equistaminadWeapons,
+                  equistaminad: updatedPlayer.equistaminad,
+                  equistaminadWeapon: updatedPlayer.equistaminadWeapon,
                 }
               : f
           )
         );
 
-        const equippedWeaponNames = updatedPlayer.equippedWeapons
+        const equistaminadWeaponNames = updatedPlayer.equistaminadWeapons
           .filter((w) => w.name !== "Unarmed")
           .map((w) => w.name)
           .join(", ");
         addLog(
-          `⚔️ ${player.name} auto-equipped: ${
-            equippedWeaponNames || "No weapons"
+          `ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã‚Â¡ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÆ’Ã‚Â¯Ãƒâ€šÃ‚Â¸Ãƒâ€šÃ‚Â ${player.name} auto-equistaminad: ${
+            equistaminadWeaponNames || "No weapons"
           }`,
           "info"
         );
       } else {
         addLog(
-          `❌ ${player.name} has no weapons in inventory - using unarmed`,
+          `ÃƒÆ’Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒâ€¦Ã¢â‚¬â„¢ ${player.name} has no weapons in inventory - using unarmed`,
           "warning"
         );
       }
     } else {
       addLog(
-        `❌ ${player.name} has no weapons in inventory - using unarmed`,
+        `ÃƒÆ’Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒâ€¦Ã¢â‚¬â„¢ ${player.name} has no weapons in inventory - using unarmed`,
         "warning"
       );
     }
@@ -2713,7 +2771,7 @@ export async function runPlayerTurnAI(player, context) {
       positions[target.id]
     );
     addLog(
-      `📍 ${player.name} is ${Math.round(currentDistance)}ft from ${
+      `ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒâ€šÃ‚Â ${player.name} is ${Math.round(currentDistance)}ft from ${
         target.name
       }`,
       "info"
@@ -2748,22 +2806,22 @@ export async function runPlayerTurnAI(player, context) {
   const shouldAttemptAdjacentGrapple = () => {
     if (typeof executeGrapple !== "function" || !target) return false;
     if (!sameHexAsTarget && (!Number.isFinite(currentDistance) || currentDistance > 5.5)) return false;
-    if ((Number(player.remainingAttacks ?? 0) || 0) <= 0) return false;
+    if ((Number(player.remainingActions ?? 0) || 0) <= 0) return false;
     if (!inGrappleRange && (!isNeutralGrappleState(player) || !isNeutralGrappleState(target))) return false;
 
-    const occLabel = String(player.occ || player.OCC || player.className || "").toLowerCase();
+    const professionLabel = String(player.profession || player.PROFESSION || player.className || "").toLowerCase();
     const nameLabel = String(player.name || "").toLowerCase();
     const sizeLabel = String(player.size || player.sizeCategory || "").toLowerCase();
     const ps = Number(player.attributes?.PS ?? player.attributes?.ps ?? player.PS ?? player.ps ?? 0) || 0;
     const isKnightly =
-      occLabel.includes("knight") ||
-      occLabel.includes("paladin") ||
+      professionLabel.includes("knight") ||
+      professionLabel.includes("paladin") ||
       nameLabel.includes("knight") ||
       nameLabel.includes("paladin");
     const isStrongMelee =
       ps >= 18 ||
       sizeLabel.includes("large") ||
-      sizeLabel.includes("giant") ||
+      sizeLabel.includes("heavy") ||
       sizeLabel.includes("huge");
     const sizeOutcome = assessGrappleSizeOutcome(player, target);
     const targetDisabled =
@@ -2785,7 +2843,7 @@ export async function runPlayerTurnAI(player, context) {
     }
 
     if (isKnightly) {
-      return (Number(player.remainingAttacks ?? 0) || 0) > 1;
+      return (Number(player.remainingActions ?? 0) || 0) > 1;
     }
     if (isStrongMelee) {
       return ((turnCounter || 0) + String(player.id || "").length) % 3 === 0;
@@ -2836,7 +2894,7 @@ export async function runPlayerTurnAI(player, context) {
     );
   };
 
-  if (equippedWeapons.length > 0) {
+  if (equistaminadWeapons.length > 0) {
     // Smart weapon selection based on distance to target
     // Categorize weapons by range and type
     // IMPORTANT: treat "reach" weapons (e.g. 10-20ft) as MELEE, not ranged.
@@ -2862,12 +2920,12 @@ export async function runPlayerTurnAI(player, context) {
       return r > 30;
     };
 
-    const meleeWeapons = equippedWeapons.filter((w) => !isTrueRangedWeapon(w));
-    const rangedWeapons = equippedWeapons.filter((w) => isTrueRangedWeapon(w));
+    const meleeWeapons = equistaminadWeapons.filter((w) => !isTrueRangedWeapon(w));
+    const rangedWeapons = equistaminadWeapons.filter((w) => isTrueRangedWeapon(w));
     const isKnifeOrDagger = (w) => isWeaponGrappleSuitable(w);
 
     // Use getWeaponType and getWeaponLength for detailed weapon info
-    const weaponTypeInfo = equippedWeapons
+    const weaponTypeInfo = equistaminadWeapons
       .map((w) => {
         const type = getWeaponType(w);
         const length = getWeaponLength(w);
@@ -2876,11 +2934,11 @@ export async function runPlayerTurnAI(player, context) {
       .join(", ");
 
     addLog(
-      `🔍 ${player.name} has ${meleeWeapons.length} melee and ${rangedWeapons.length} ranged weapons`,
+      `ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒâ€šÃ‚Â ${player.name} has ${meleeWeapons.length} melee and ${rangedWeapons.length} ranged weapons`,
       "info"
     );
-    if (equippedWeapons.length > 0) {
-      addLog(`🔍 Weapon details: ${weaponTypeInfo}`, "info");
+    if (equistaminadWeapons.length > 0) {
+      addLog(`ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒâ€šÃ‚Â Weapon details: ${weaponTypeInfo}`, "info");
     }
 
     // Choose weapon based on distance (and *actual* reachability)
@@ -2899,11 +2957,11 @@ export async function runPlayerTurnAI(player, context) {
 
     if (inGrappleRange) {
       const grappleWeapon = meleeWeapons.find(isKnifeOrDagger);
-      const currentWeapon = equippedWeapons[0];
+      const currentWeapon = equistaminadWeapons[0];
       if (currentWeapon && !isWeaponGrappleSuitable(currentWeapon)) {
         grappleOriginalWeaponName = currentWeapon.name || "Unknown";
         addLog(
-          `⚠️ ${player.name} cannot use ${currentWeapon.name} effectively in a grapple.`,
+          `ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã‚Â¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¯Ãƒâ€šÃ‚Â¸Ãƒâ€šÃ‚Â ${player.name} cannot use ${currentWeapon.name} effectively in a grapple.`,
           "warning"
         );
       }
@@ -2915,8 +2973,8 @@ export async function runPlayerTurnAI(player, context) {
         );
       } else {
         selectedWeapon = {
-          id: "fallback_grapple_unarmed_strike",
-          name: "Unarmed Strike",
+          id: "fallback_grapple_unarmed_attack",
+          name: "Unarmed Attack",
           damage: "1d3",
           damageDice: "1d3",
           count: 1,
@@ -2937,11 +2995,11 @@ export async function runPlayerTurnAI(player, context) {
           "info"
         );
       }
-    // If an archer is trapped in melee with no melee weapon, keep the turn resolvable.
+    // If an archer is trastaminad in melee with no melee weapon, keep the turn resolvable.
     } else if (adjacentToTarget && rangedWeapons.length > 0 && meleeWeapons.length === 0) {
       selectedWeapon = {
-        id: "fallback_unarmed_strike",
-        name: "Unarmed Strike",
+        id: "fallback_unarmed_attack",
+        name: "Unarmed Attack",
         damage: "1d3",
         damageDice: "1d3",
         count: 1,
@@ -2958,7 +3016,7 @@ export async function runPlayerTurnAI(player, context) {
         isFallbackUnarmed: true,
       };
       addLog(
-        `✊ ${player.name} is too close for ${rangedWeapons[0]?.name || "a ranged weapon"} and switches to an unarmed strike.`,
+        `ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“Ãƒâ€¦Ã‚Â  ${player.name} is too close for ${rangedWeapons[0]?.name || "a ranged weapon"} and switches to an unarmed attack.`,
         "info"
       );
     } else if (currentDistance <= 20 && reachableMelee.length > 0) {
@@ -2974,10 +3032,10 @@ export async function runPlayerTurnAI(player, context) {
         Number(getWeaponRange(selectedWeapon) || 0) >= 10 &&
         currentDistance <= Number(getWeaponRange(selectedWeapon) || 0)
       ) {
-        addLog(`📏 ${player.name} keeps distance with ${selectedWeapon.name}.`, "info");
+        addLog(`ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒâ€šÃ‚Â ${player.name} keeps distance with ${selectedWeapon.name}.`, "info");
       }
       addLog(
-        `🗡️ ${player.name} selects ${selectedWeapon.name} for melee combat`,
+        `ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬ÂÃƒâ€šÃ‚Â¡ÃƒÆ’Ã‚Â¯Ãƒâ€šÃ‚Â¸Ãƒâ€šÃ‚Â ${player.name} selects ${selectedWeapon.name} for melee combat`,
         "info"
       );
     } else if (reachableRanged.length > 0) {
@@ -2988,7 +3046,7 @@ export async function runPlayerTurnAI(player, context) {
       );
       selectedWeapon = reachableRanged[0];
       addLog(
-        `🏹 ${player.name} selects ${
+        `ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€šÃ‚ÂÃƒâ€šÃ‚Â¹ ${player.name} selects ${
           selectedWeapon.name
         } for ranged combat (${Math.round(currentDistance)}ft away)`,
         "info"
@@ -2998,13 +3056,13 @@ export async function runPlayerTurnAI(player, context) {
       selectedWeapon =
         meleeWeapons[Math.floor(Math.random() * meleeWeapons.length)];
       addLog(
-        `🗡️ ${player.name} selects ${selectedWeapon.name} for melee combat`,
+        `ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬ÂÃƒâ€šÃ‚Â¡ÃƒÆ’Ã‚Â¯Ãƒâ€šÃ‚Â¸Ãƒâ€šÃ‚Â ${player.name} selects ${selectedWeapon.name} for melee combat`,
         "info"
       );
-    } else if (equippedWeapons.length > 0) {
-      // Fallback to any equipped weapon that can reach the target
+    } else if (equistaminadWeapons.length > 0) {
+      // Fallback to any equistaminad weapon that can reach the target
       // Before selecting fallback, check if any melee weapon can reach target
-      const meleeWeapons = equippedWeapons.filter((w) => {
+      const meleeWeapons = equistaminadWeapons.filter((w) => {
         const name = (w.name || "").toLowerCase();
         return (
           !name.includes("bow") &&
@@ -3022,7 +3080,7 @@ export async function runPlayerTurnAI(player, context) {
       if (reachableMeleeWeapon) {
         selectedWeapon = reachableMeleeWeapon;
         addLog(
-          `⚔️ ${player.name} selects ${selectedWeapon.name} (fallback)`,
+          `ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã‚Â¡ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÆ’Ã‚Â¯Ãƒâ€šÃ‚Â¸Ãƒâ€šÃ‚Â ${player.name} selects ${selectedWeapon.name} (fallback)`,
           "info"
         );
       } else if (
@@ -3031,13 +3089,13 @@ export async function runPlayerTurnAI(player, context) {
       ) {
         // No melee weapon can reach - don't choose knife, use ranged or defend
         addLog(
-          `⚠️ ${player.name} has no melee weapon that can reach ${target.name} (target too high)`,
+          `ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã‚Â¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¯Ãƒâ€šÃ‚Â¸Ãƒâ€šÃ‚Â ${player.name} has no melee weapon that can reach ${target.name} (target too high)`,
           "warning"
         );
         markTargetUnreachable(player, target);
         // Will fall through to check for ranged weapons or defensive actions
         // For now, select first ranged weapon if available, otherwise first weapon
-        const rangedWeapons = equippedWeapons.filter((w) => {
+        const rangedWeapons = equistaminadWeapons.filter((w) => {
           const name = (w.name || "").toLowerCase();
           return (
             name.includes("bow") ||
@@ -3047,19 +3105,19 @@ export async function runPlayerTurnAI(player, context) {
           );
         });
         selectedWeapon =
-          rangedWeapons.length > 0 ? rangedWeapons[0] : equippedWeapons[0];
+          rangedWeapons.length > 0 ? rangedWeapons[0] : equistaminadWeapons[0];
         if (selectedWeapon) {
           addLog(
-            `⚔️ ${player.name} selects ${selectedWeapon.name} (fallback - no reachable melee)`,
+            `ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã‚Â¡ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÆ’Ã‚Â¯Ãƒâ€šÃ‚Â¸Ãƒâ€šÃ‚Â ${player.name} selects ${selectedWeapon.name} (fallback - no reachable melee)`,
             "info"
           );
         }
       } else {
-        // Fallback to first equipped weapon
+        // Fallback to first equistaminad weapon
         selectedWeapon =
-          equippedWeapons[Math.floor(Math.random() * equippedWeapons.length)];
+          equistaminadWeapons[Math.floor(Math.random() * equistaminadWeapons.length)];
         addLog(
-          `⚔️ ${player.name} selects ${selectedWeapon.name} (fallback)`,
+          `ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã‚Â¡ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÆ’Ã‚Â¯Ãƒâ€šÃ‚Â¸Ãƒâ€šÃ‚Â ${player.name} selects ${selectedWeapon.name} (fallback)`,
           "info"
         );
       }
@@ -3109,19 +3167,19 @@ export async function runPlayerTurnAI(player, context) {
       };
       if (grappleOriginalWeaponName && grappleOriginalWeaponName !== selectedAttack.name) {
         addLog(
-          `🧪 grapple weapon resolved: original=${grappleOriginalWeaponName}, final=${selectedAttack.name}`,
+          `ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€šÃ‚Â§Ãƒâ€šÃ‚Âª grapple weapon resolved: original=${grappleOriginalWeaponName}, final=${selectedAttack.name}`,
           "debug"
         );
       }
       attackName = selectedAttack.name;
-      addLog(`✅ ${player.name} will attack with ${attackName}`, "info");
+      addLog(`ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ ${player.name} will attack with ${attackName}`, "info");
     }
   }
 
   // Fallback to unarmed if no weapon selected
   if (!selectedAttack) {
     selectedAttack = {
-      name: "Unarmed Strike",
+      name: "Unarmed Attack",
       damage: "1d3",
       count: 1,
       range: 5.5,
@@ -3139,8 +3197,8 @@ export async function runPlayerTurnAI(player, context) {
         positions[target.id]
       );
       // Use proper weapon range validation
-      // If this is a melee strike and the attacker is airborne but the target is grounded,
-      // treat the attacker as able to descend for the strike (prevents "hover forever" stalemates).
+      // If this is a melee attack and the attacker is airborne but the target is grounded,
+      // treat the attacker as able to descend for the attack (prevents "hover forever" stalemates).
       const atkName = String(selectedAttack?.name || "").toLowerCase();
       const atkType = String(selectedAttack?.type || "").toLowerCase();
       const atkRangeNum =
@@ -3221,7 +3279,7 @@ export async function runPlayerTurnAI(player, context) {
       // Prevent infinite loops: max 3 movement attempts per turn
       if (movementTracker.count >= 3) {
         addLog(
-          `🚫 ${player.name} has tried to move 3 times and cannot reach target - ending turn`,
+          `ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€¦Ã‚Â¡Ãƒâ€šÃ‚Â« ${player.name} has tried to move 3 times and cannot reach target - ending turn`,
           "error"
         );
         processingPlayerAIRef.current = false;
@@ -3229,10 +3287,10 @@ export async function runPlayerTurnAI(player, context) {
         return;
       }
 
-      // ✅ FIX: Check if distance actually improved from last attempt
+      // ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ FIX: Check if distance actually improved from last attempt
       // Also check if combat ended or target is no longer valid
       if (!combatActive) {
-        addLog(`⚠️ Combat ended, ${player.name} stops moving`, "info");
+        addLog(`ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã‚Â¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¯Ãƒâ€šÃ‚Â¸Ãƒâ€šÃ‚Â Combat ended, ${player.name} stops moving`, "info");
         processingPlayerAIRef.current = false;
         return;
       }
@@ -3240,7 +3298,7 @@ export async function runPlayerTurnAI(player, context) {
       // Check if target is still valid (conscious and alive)
       if (target && (target.currentHP <= 0 || target.currentHP <= -21)) {
         addLog(
-          `⚠️ ${player.name}'s target is no longer valid, ending turn`,
+          `ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã‚Â¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¯Ãƒâ€šÃ‚Â¸Ãƒâ€šÃ‚Â ${player.name}'s target is no longer valid, ending turn`,
           "info"
         );
         processingPlayerAIRef.current = false;
@@ -3253,7 +3311,7 @@ export async function runPlayerTurnAI(player, context) {
         currentDistance >= movementTracker.lastDistance
       ) {
         addLog(
-          `⚠️ ${player.name} movement not improving distance (${Math.round(
+          `ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã‚Â¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¯Ãƒâ€šÃ‚Â¸Ãƒâ€šÃ‚Â ${player.name} movement not improving distance (${Math.round(
             currentDistance
           )}ft >= ${Math.round(movementTracker.lastDistance)}ft) - ending turn`,
           "warning"
@@ -3282,7 +3340,7 @@ export async function runPlayerTurnAI(player, context) {
       // If we can flank, prioritize flanking positions
       // BUT: Check if target is reachable with melee first
       if (flankingPositions.length > 0 && currentFlankingBonus === 0) {
-        // ✅ FIX: Don't attempt ground flanking if target is flying and player isn't
+        // ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ FIX: Don't attempt ground flanking if target is flying and player isn't
         const targetIsFlying =
           target.isFlying || (target.altitudeFeet ?? target.altitude ?? 0) > 0;
         const playerIsFlying =
@@ -3290,20 +3348,20 @@ export async function runPlayerTurnAI(player, context) {
 
         if (targetIsFlying && !playerIsFlying) {
           addLog(
-            `❌ ${player.name} skips flanking ${target.name} (target is flying, player is grounded - use spells/ranged instead)`,
+            `ÃƒÆ’Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒâ€¦Ã¢â‚¬â„¢ ${player.name} skips flanking ${target.name} (target is flying, player is grounded - use techniques/ranged instead)`,
             "warning"
           );
           markTargetUnreachable(player, target);
           // Don't attempt flanking if target is flying and player isn't - skip to next action
         } else if (!canThreatenWithMelee(player, target)) {
           addLog(
-            `❌ ${player.name} skips flanking ${target.name} (target unreachable in melee)`,
+            `ÃƒÆ’Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒâ€¦Ã¢â‚¬â„¢ ${player.name} skips flanking ${target.name} (target unreachable in melee)`,
             "warning"
           );
           markTargetUnreachable(player, target);
           // Don't attempt flanking if target is unreachable - skip to next action
         } else {
-          // ✅ NEW: Check if melee requires dive attack (player flying, target on ground)
+          // ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ NEW: Check if melee requires dive attack (player flying, target on ground)
           const playerIsFlyingCheck =
             player.isFlying || (player.altitudeFeet ?? 0) > 0;
           const targetIsFlyingCheck =
@@ -3322,20 +3380,20 @@ export async function runPlayerTurnAI(player, context) {
               reasonLower.includes("too far below")
             ) {
               addLog(
-                `🦅 ${player.name} skips flanking ${target.name} (dive attack required - use spells or dive instead)`,
+                `ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€šÃ‚Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ ${player.name} skips flanking ${target.name} (dive attack required - use techniques or dive instead)`,
                 "ai"
               );
               markTargetUnreachable(player, target);
-              // Skip flanking, will fall through to spell selection
+              // Skip flanking, will fall through to technique selection
             } else {
               addLog(
-                `🎯 ${player.name} considers flanking ${target.name}`,
+                `ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€¦Ã‚Â½Ãƒâ€šÃ‚Â¯ ${player.name} considers flanking ${target.name}`,
                 "info"
               );
             }
           } else {
             addLog(
-              `🎯 ${player.name} considers flanking ${target.name}`,
+              `ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€¦Ã‚Â½Ãƒâ€šÃ‚Â¯ ${player.name} considers flanking ${target.name}`,
               "info"
             );
           }
@@ -3353,7 +3411,7 @@ export async function runPlayerTurnAI(player, context) {
 
           if (flankDistance <= maxMoveDistance) {
             addLog(
-              `🎯 ${player.name} attempts to flank ${target.name}`,
+              `ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€¦Ã‚Â½Ãƒâ€šÃ‚Â¯ ${player.name} attempts to flank ${target.name}`,
               "info"
             );
 
@@ -3374,9 +3432,9 @@ export async function runPlayerTurnAI(player, context) {
                 f.id === player.id
                   ? {
                       ...f,
-                      remainingAttacks: Math.max(
+                      remainingActions: Math.max(
                         0,
-                        f.remainingAttacks - movementCost
+                        f.remainingActions - movementCost
                       ),
                     }
                   : f
@@ -3384,11 +3442,11 @@ export async function runPlayerTurnAI(player, context) {
             );
 
             addLog(
-              `🎯 ${player.name} targets flanking position (${bestFlankPos.x}, ${bestFlankPos.y})`,
+              `ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€¦Ã‚Â½Ãƒâ€šÃ‚Â¯ ${player.name} targets flanking position (${bestFlankPos.x}, ${bestFlankPos.y})`,
               "info"
             );
             addLog(
-              `📍 ${player.name} moves ${Math.round(flankDistance)}ft to flanking position (${bestFlankPos.x}, ${bestFlankPos.y})`,
+              `ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒâ€šÃ‚Â ${player.name} moves ${Math.round(flankDistance)}ft to flanking position (${bestFlankPos.x}, ${bestFlankPos.y})`,
               "info"
             );
 
@@ -3404,8 +3462,8 @@ export async function runPlayerTurnAI(player, context) {
                 setTimeout(() => {
                   void (async () => {
                   const abortFlankingContinuation = (reason = "flanking continuation aborted") => {
-                    addLog("🚫 flanking continuation aborted safely", "warning");
-                    addLog(`🧪 ${reason}`, "debug");
+                    addLog("ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€¦Ã‚Â¡Ãƒâ€šÃ‚Â« flanking continuation aborted safely", "warning");
+                    addLog(`ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€šÃ‚Â§Ãƒâ€šÃ‚Âª ${reason}`, "debug");
                     if (turnActionResolvingRef) turnActionResolvingRef.current = false;
                     if (pendingTurnAdvanceRef) pendingTurnAdvanceRef.current = false;
                     processingPlayerAIRef.current = false;
@@ -3447,13 +3505,13 @@ export async function runPlayerTurnAI(player, context) {
                     newDistance
                   );
                   addLog(
-                    `🧪 flanking post-move continuation: inRange=${!!rangeValidation.canAttack}`,
+                    `ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€šÃ‚Â§Ãƒâ€šÃ‚Âª flanking post-move continuation: inRange=${!!rangeValidation.canAttack}`,
                     "debug"
                   );
 
                   if (rangeValidation.canAttack) {
                     addLog(
-                      `📍 ${player.name} is now ${Math.round(newDistance)}ft from ${target.name}.`,
+                      `ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒâ€šÃ‚Â ${player.name} is now ${Math.round(newDistance)}ft from ${target.name}.`,
                       "info"
                     );
                     let flankingBonus = 0;
@@ -3471,7 +3529,7 @@ export async function runPlayerTurnAI(player, context) {
                     }
                     if (flankingBonus > 0) {
                       addLog(
-                        `🎯 ${player.name} gains flanking bonus (+${flankingBonus} to hit)!`,
+                        `ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€¦Ã‚Â½Ãƒâ€šÃ‚Â¯ ${player.name} gains flanking bonus (+${flankingBonus} to hit)!`,
                         "info"
                       );
                     }
@@ -3506,14 +3564,14 @@ export async function runPlayerTurnAI(player, context) {
                         tokenStillValid()
                       ) {
                         flankingAttackSettled = true;
-                        addLog("🚫 flanking continuation exception: attack did not settle", "warning");
+                        addLog("ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€¦Ã‚Â¡Ãƒâ€šÃ‚Â« flanking continuation exception: attack did not settle", "warning");
                         turnActionResolvingRef.current = false;
                         processingPlayerAIRef.current = false;
                         scheduleEndTurn(16, "player-ai-flank-attack-watchdog");
                       }
                     }, 5000);
                     try {
-                      addLog("🧪 flanking continuation calling attack", "debug");
+                      addLog("ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€šÃ‚Â§Ãƒâ€šÃ‚Âª flanking continuation calling attack", "debug");
                       await attack(updatedPlayer, liveTarget.id, {
                         ...bonuses,
                         attackDataOverride: selectedAttack,
@@ -3528,11 +3586,11 @@ export async function runPlayerTurnAI(player, context) {
                       clearTimeout(flankingAttackWatchdog);
                       console.error("[playerTurnAI] flanking attack failed:", err);
                       addLog(
-                        `🚫 flanking continuation exception: ${err?.message || String(err)}`,
+                        `ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€¦Ã‚Â¡Ãƒâ€šÃ‚Â« flanking continuation exception: ${err?.message || String(err)}`,
                         "warning"
                       );
                       addLog(
-                        `⚠️ Player AI attack failed: ${err?.message || String(err)}`,
+                        `ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã‚Â¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¯Ãƒâ€šÃ‚Â¸Ãƒâ€šÃ‚Â Player AI attack failed: ${err?.message || String(err)}`,
                         "warning"
                       );
                       if (turnActionResolvingRef) turnActionResolvingRef.current = false;
@@ -3553,12 +3611,12 @@ export async function runPlayerTurnAI(player, context) {
                       !(isRangedLikeAttack(selectedAttack) && isMeleeSpecificError)
                     ) {
                       addLog(
-                        `❌ ${player.name} cannot reach ${target.name} from flanking position (${rangeValidation.reason})`,
+                        `ÃƒÆ’Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒâ€¦Ã¢â‚¬â„¢ ${player.name} cannot reach ${target.name} from flanking position (${rangeValidation.reason})`,
                         "error"
                       );
                     }
 
-                    // ✅ NEW: If "dive attack required" and player is flying, skip retry loop
+                    // ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ NEW: If "dive attack required" and player is flying, skip retry loop
                     const playerIsFlying =
                       player.isFlying || (player.altitudeFeet ?? 0) > 0;
                     const targetIsFlying =
@@ -3569,9 +3627,9 @@ export async function runPlayerTurnAI(player, context) {
 
                     if (playerIsFlying && !targetIsFlying && requiresDive) {
                       // Player is flying, target is on ground, melee requires dive
-                      // Skip the retry loop - either dive or use spells
+                      // Skip the retry loop - either dive or use techniques
                       addLog(
-                        `🦅 ${player.name} is flying too high for melee - will use spells or dive attack instead`,
+                        `ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€šÃ‚Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ ${player.name} is flying too high for melee - will use techniques or dive attack instead`,
                         "ai"
                       );
                       markTargetUnreachable(player, target);
@@ -3594,14 +3652,14 @@ export async function runPlayerTurnAI(player, context) {
 
                       if (
                         updatedPlayerState &&
-                        updatedPlayerState.remainingAttacks > 0 &&
+                        updatedPlayerState.remainingActions > 0 &&
                         currentTracker &&
                         currentTracker.count < 3 &&
                         newDistance < currentDistance
                       ) {
                         // Distance improved, continue trying to move closer
                         addLog(
-                          `🏃 ${player.name} continues moving towards ${
+                          `ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€šÃ‚ÂÃƒâ€ Ã¢â‚¬â„¢ ${player.name} continues moving towards ${
                             target.name
                           } (${Math.round(newDistance)}ft, attempt ${
                             currentTracker.count + 1
@@ -3628,7 +3686,7 @@ export async function runPlayerTurnAI(player, context) {
                       } else {
                         // Can't continue - end turn
                         addLog(
-                          `⏭️ ${
+                          `ÃƒÆ’Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒâ€šÃ‚Â­ÃƒÆ’Ã‚Â¯Ãƒâ€šÃ‚Â¸Ãƒâ€šÃ‚Â ${
                             player.name
                           } cannot continue moving (attempts: ${
                             currentTracker?.count || 0
@@ -3645,7 +3703,7 @@ export async function runPlayerTurnAI(player, context) {
                   } catch (err) {
                     console.error("[playerTurnAI] flanking continuation failed:", err);
                     addLog(
-                      `🚫 flanking continuation exception: ${err?.message || String(err)}`,
+                      `ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€¦Ã‚Â¡Ãƒâ€šÃ‚Â« flanking continuation exception: ${err?.message || String(err)}`,
                       "warning"
                     );
                     abortFlankingContinuation(`exception: ${err?.message || String(err)}`);
@@ -3676,7 +3734,7 @@ export async function runPlayerTurnAI(player, context) {
       // Calculate movement per action using MOVEMENT_RATES
       const movementRates = MOVEMENT_RATES.calculateMovement(speed);
       const movementPerAction =
-        movementRates.walking / (player.attacksPerMelee || 1);
+        movementRates.walking / (player.actionsPerRound || 1);
       const moveDistance = Math.min(distanceNeeded, movementPerAction);
       let hexesToMove = Math.max(
         1,
@@ -3817,7 +3875,7 @@ export async function runPlayerTurnAI(player, context) {
           if (!isHexOccupied(directX, directY, player.id)) {
             pushCandidateMove(
               { x: directX, y: directY },
-              `🤖 ${player.name} moves to position (${directX}, ${directY})`,
+              `ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€šÃ‚Â¤ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Å“ ${player.name} moves to position (${directX}, ${directY})`,
               "direct",
               { via: "direct" }
             );
@@ -3835,7 +3893,7 @@ export async function runPlayerTurnAI(player, context) {
                 if (isHexOccupied(testPos.x, testPos.y, player.id)) return;
                 pushCandidateMove(
                   testPos,
-                  `🤖 ${player.name} sidesteps to (${testPos.x}, ${testPos.y})`,
+                  `ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€šÃ‚Â¤ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Å“ ${player.name} sidesteps to (${testPos.x}, ${testPos.y})`,
                   "sidestep",
                   { via: "sidestep" }
                 );
@@ -3853,7 +3911,7 @@ export async function runPlayerTurnAI(player, context) {
         if (beeDetour) {
           pushCandidateMove(
             beeDetour.destination,
-            `🐝 ${player.name} reroutes via BeeLine to (${beeDetour.destination.x}, ${beeDetour.destination.y})`,
+            `ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€šÃ‚ÂÃƒâ€šÃ‚Â ${player.name} reroutes via BeeLine to (${beeDetour.destination.x}, ${beeDetour.destination.y})`,
             "bee",
             beeDetour
           );
@@ -3861,14 +3919,14 @@ export async function runPlayerTurnAI(player, context) {
 
         if (candidateMoves.length === 0) {
           addLog(
-            `🚫 ${player.name} cannot find path to target - no open hexes`,
+            `ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€¦Ã‚Â¡Ãƒâ€šÃ‚Â« ${player.name} cannot find path to target - no open hexes`,
             "warning"
           );
-          addLog(`⏭️ ${player.name} loses this action trying to find a path.`, "info");
+          addLog(`ÃƒÆ’Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒâ€šÃ‚Â­ÃƒÆ’Ã‚Â¯Ãƒâ€šÃ‚Â¸Ãƒâ€šÃ‚Â ${player.name} loses this action trying to find a path.`, "info");
           setFighters((prev) =>
             prev.map((f) =>
               f.id === player.id
-                ? { ...f, remainingAttacks: Math.max(0, (Number(f.remainingAttacks ?? 0) || 0) - 1) }
+                ? { ...f, remainingActions: Math.max(0, (Number(f.remainingActions ?? 0) || 0) - 1) }
                 : f
             )
           );
@@ -3897,7 +3955,7 @@ export async function runPlayerTurnAI(player, context) {
             chosenMove.pos.y === currentPos.y)
         ) {
           addLog(
-            `🚫 ${player.name} cannot advance toward ${target.name} - blocked`,
+            `ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€¦Ã‚Â¡Ãƒâ€šÃ‚Â« ${player.name} cannot advance toward ${target.name} - blocked`,
             "info"
           );
           processingPlayerAIRef.current = false;
@@ -3918,7 +3976,7 @@ export async function runPlayerTurnAI(player, context) {
           const stepsTaken = chosenMove.meta?.stepsTaken ?? 1;
           const goalRing = chosenMove.meta?.goalRing ?? 1;
           addLog(
-            `🐝 ${player.name} follows BeeLine path (${stepsTaken} hex${
+            `ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€šÃ‚ÂÃƒâ€šÃ‚Â ${player.name} follows BeeLine path (${stepsTaken} hex${
               stepsTaken > 1 ? "es" : ""
             }, ring ${goalRing})`,
             "info"
@@ -3970,7 +4028,7 @@ export async function runPlayerTurnAI(player, context) {
             if (f.id === player.id) {
               return {
                 ...f,
-                remainingAttacks: Math.max(0, (f.remainingAttacks || 0) - 1),
+                remainingActions: Math.max(0, (f.remainingActions || 0) - 1),
               };
             }
             return f;
@@ -3979,7 +4037,7 @@ export async function runPlayerTurnAI(player, context) {
 
         if (!rangeValidation.canAttack) {
           if (!combatActive) {
-            addLog(`⚠️ Combat ended, ${player.name} stops moving`, "info");
+            addLog(`ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã‚Â¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¯Ãƒâ€šÃ‚Â¸Ãƒâ€šÃ‚Â Combat ended, ${player.name} stops moving`, "info");
             processingPlayerAIRef.current = false;
             return;
           }
@@ -3991,7 +4049,7 @@ export async function runPlayerTurnAI(player, context) {
             updatedTargetState.currentHP <= -21
           ) {
             addLog(
-              `⚠️ ${player.name}'s target is no longer valid, ending turn`,
+              `ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã‚Â¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¯Ãƒâ€šÃ‚Â¸Ãƒâ€šÃ‚Â ${player.name}'s target is no longer valid, ending turn`,
               "info"
             );
             processingPlayerAIRef.current = false;
@@ -4006,7 +4064,7 @@ export async function runPlayerTurnAI(player, context) {
             reasonLower.includes("to be reached by melee");
           if (!(isRangedLikeAttack(selectedAttack) && isMeleeSpecificError)) {
             addLog(
-              `❌ ${player.name} still cannot reach ${target.name} for attack! (${rangeValidation.reason})`,
+              `ÃƒÆ’Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒâ€¦Ã¢â‚¬â„¢ ${player.name} still cannot reach ${target.name} for attack! (${rangeValidation.reason})`,
               "error"
             );
           }
@@ -4036,7 +4094,7 @@ export async function runPlayerTurnAI(player, context) {
             );
           } catch (err) {
             console.error("[playerTurnAI] approach range validation failed:", err);
-            addLog("🚫 approach continuation aborted safely", "warning");
+            addLog("ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€¦Ã‚Â¡Ãƒâ€šÃ‚Â« approach continuation aborted safely", "warning");
             if (turnActionResolvingRef) turnActionResolvingRef.current = false;
             if (pendingTurnAdvanceRef) pendingTurnAdvanceRef.current = false;
             processingPlayerAIRef.current = false;
@@ -4045,7 +4103,7 @@ export async function runPlayerTurnAI(player, context) {
           }
 
           addLog(
-            `🧪 approach post-move continuation: inRange=${!!liveRangeValidation.canAttack}`,
+            `ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€šÃ‚Â§Ãƒâ€šÃ‚Âª approach post-move continuation: inRange=${!!liveRangeValidation.canAttack}`,
             "debug"
           );
 
@@ -4055,24 +4113,24 @@ export async function runPlayerTurnAI(player, context) {
           }
 
           addLog(
-            `✅ ${player.name} is now in range (${liveRangeValidation.reason})`,
+            `ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ ${player.name} is now in range (${liveRangeValidation.reason})`,
             "info"
           );
           addLog(
-            `🤖 ${player.name} attacking closest reachable target (${Math.round(liveDistance)}ft away) and attacks ${liveTarget.name} with ${attackName}!`,
+            `ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€šÃ‚Â¤ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Å“ ${player.name} attacking closest reachable target (${Math.round(liveDistance)}ft away) and attacks ${liveTarget.name} with ${attackName}!`,
             "info"
           );
           markActionScheduled();
           setTimeout(() => {
             void (async () => {
               if (!canRunPlayerAICallback({ token: playerAITurnToken, fighterId: player.id })) {
-                addLog("🚫 approach continuation aborted safely", "warning");
+                addLog("ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€¦Ã‚Â¡Ãƒâ€šÃ‚Â« approach continuation aborted safely", "warning");
                 processingPlayerAIRef.current = false;
                 scheduleEndTurn(0, "player-ai-approach-stale");
                 return;
               }
               if (pendingTurnAdvanceRef?.current || !combatActive) {
-                addLog("🚫 approach continuation aborted safely", "warning");
+                addLog("ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€¦Ã‚Â¡Ãƒâ€šÃ‚Â« approach continuation aborted safely", "warning");
                 if (turnActionResolvingRef) turnActionResolvingRef.current = false;
                 if (pendingTurnAdvanceRef) pendingTurnAdvanceRef.current = false;
                 processingPlayerAIRef.current = false;
@@ -4082,7 +4140,7 @@ export async function runPlayerTurnAI(player, context) {
               if (turnActionResolvingRef) turnActionResolvingRef.current = true;
               try {
                 await attack(
-                  { ...livePlayer, aiControlled: true, selectedAttack },
+                  { ...livePlayer, aiConchampioned: true, selectedAttack },
                   liveTarget.id,
                   {
                     attackDataOverride: selectedAttack,
@@ -4093,9 +4151,9 @@ export async function runPlayerTurnAI(player, context) {
                 );
               } catch (err) {
                 console.error("[playerTurnAI] approach attack failed:", err);
-                addLog("🚫 approach continuation aborted safely", "warning");
+                addLog("ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€¦Ã‚Â¡Ãƒâ€šÃ‚Â« approach continuation aborted safely", "warning");
                 addLog(
-                  `⚠️ Player AI approach attack failed: ${err?.message || String(err)}`,
+                  `ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã‚Â¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¯Ãƒâ€šÃ‚Â¸Ãƒâ€šÃ‚Â Player AI approach attack failed: ${err?.message || String(err)}`,
                   "warning"
                 );
                 if (turnActionResolvingRef) turnActionResolvingRef.current = false;
@@ -4111,7 +4169,7 @@ export async function runPlayerTurnAI(player, context) {
       }
     } catch (error) {
       console.error("Error in movement logic:", error);
-      addLog(`❌ ${player.name} movement failed: ${error.message}`, "error");
+      addLog(`ÃƒÆ’Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒâ€¦Ã¢â‚¬â„¢ ${player.name} movement failed: ${error.message}`, "error");
       processingPlayerAIRef.current = false;
       scheduleEndTurn();
       return;
@@ -4120,16 +4178,16 @@ export async function runPlayerTurnAI(player, context) {
 
   // Execute attack
   addLog(
-    `🤖 ${player.name} ${reasoning} and attacks ${target.name} with ${attackName}!`,
+    `ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€šÃ‚Â¤ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Å“ ${player.name} ${reasoning} and attacks ${target.name} with ${attackName}!`,
     "info"
   );
-  // Mark immediately so CombatPage's invariant doesn't end-turn before delayed execution happens.
+  // Mark immediately so CombatPage's invariant doesn't end-turn before delayed execution hastaminans.
   markActionScheduled();
 
   // Create updatedPlayer with selectedAttack
   const updatedPlayer = {
     ...player,
-    aiControlled: true,
+    aiConchampioned: true,
     selectedAttack: selectedAttack,
   };
 
@@ -4147,7 +4205,7 @@ export async function runPlayerTurnAI(player, context) {
 
       if (targetsInLine.length > 0) {
         addLog(
-          `⚡ ${player.name} uses ${attackName} - area attack hitting ${targetsInLine.length} target(s)!`,
+          `ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã‚Â¡Ãƒâ€šÃ‚Â¡ ${player.name} uses ${attackName} - area attack hitting ${targetsInLine.length} target(s)!`,
           "info"
         );
 
@@ -4173,7 +4231,7 @@ export async function runPlayerTurnAI(player, context) {
             } catch (err) {
               console.error("[playerTurnAI] area line attack failed:", err);
               addLog(
-                `⚠️ Player AI area attack failed: ${err?.message || String(err)}`,
+                `ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã‚Â¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¯Ãƒâ€šÃ‚Â¸Ãƒâ€šÃ‚Â Player AI area attack failed: ${err?.message || String(err)}`,
                 "warning"
               );
               if (turnActionResolvingRef) turnActionResolvingRef.current = false;
@@ -4196,8 +4254,8 @@ export async function runPlayerTurnAI(player, context) {
       const currentFighterState = fighters.find((f) => f.id === player.id);
 
       // Check if fighter has attacks remaining before executing
-      if (currentFighterState && currentFighterState.remainingAttacks <= 0) {
-        addLog(`⚠️ ${player.name} is out of attacks this turn!`, "warning");
+      if (currentFighterState && currentFighterState.remainingActions <= 0) {
+        addLog(`ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã‚Â¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¯Ãƒâ€šÃ‚Â¸Ãƒâ€šÃ‚Â ${player.name} is out of attacks this turn!`, "warning");
         processingPlayerAIRef.current = false;
         scheduleEndTurn(0);
         return;
@@ -4220,7 +4278,7 @@ export async function runPlayerTurnAI(player, context) {
           attackerPosOverride: attackerPos,
           defenderPosOverride: defenderPos,
           distanceOverride: latestDistance,
-          // If we're melee-only and currently airborne vs a grounded target, auto-descend before the strike.
+          // If we're melee-only and currently airborne vs a grounded target, auto-descend before the attack.
           ...(function () {
             const atkName = String(selectedAttack?.name || "").toLowerCase();
             const atkType = String(selectedAttack?.type || "").toLowerCase();
@@ -4247,7 +4305,7 @@ export async function runPlayerTurnAI(player, context) {
             if (!shouldAutoDescendForMelee) return {};
             if (dbg) {
               trace(
-                `action: auto-descend before melee strike | fromAlt=${attackerAlt}ft`
+                `action: auto-descend before melee attack | fromAlt=${attackerAlt}ft`
               );
             }
             return {
@@ -4262,7 +4320,7 @@ export async function runPlayerTurnAI(player, context) {
       } catch (err) {
         console.error("[playerTurnAI] attack failed:", err);
         addLog(
-          `⚠️ Player AI attack failed: ${err?.message || String(err)}`,
+          `ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã‚Â¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¯Ãƒâ€šÃ‚Â¸Ãƒâ€šÃ‚Â Player AI attack failed: ${err?.message || String(err)}`,
           "warning"
         );
         if (turnActionResolvingRef) turnActionResolvingRef.current = false;

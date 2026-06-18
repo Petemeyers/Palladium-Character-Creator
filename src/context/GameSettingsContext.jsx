@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
 
-const STORAGE_KEY = "palladiumGameSettings";
+const STORAGE_KEY = "medievalCombatSimulatorSettings";
 
 const defaultSettings = {
   usePainStagger: true,

@@ -16,7 +16,7 @@ const weaponSchema = new mongoose.Schema({
   range: Number, // Range in feet for ranged weapons
   rateOfFire: Number, // Attacks per melee for ranged weapons
   ammunition: String, // Type of ammunition required
-  strengthRequired: Number, // Minimum P.S. required
+  strengthRequired: Number, // Minimum strength required
   notes: String, // Special properties and usage notes
 });
 

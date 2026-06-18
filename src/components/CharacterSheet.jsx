@@ -18,7 +18,7 @@ import axiosInstance from '../utils/axios';
 
 /**
  * CharacterSheet Component
- * Editable Palladium Fantasy RPG Character Sheet (1994 edition)
+ * Editable Medieval Combat Simulator Character Sheet (1994 edition)
  * Allows editing character data and exporting to JSON or PDF
  */
 export default function CharacterSheet({ characterData = null, onSave = null }) {
@@ -27,7 +27,7 @@ export default function CharacterSheet({ characterData = null, onSave = null }) 
   const [character, setCharacter] = useState({
     name: '',
     race: '',
-    occ: '',
+    profession: '',
     alignment: '',
     level: 1,
     iq: '',
@@ -39,9 +39,9 @@ export default function CharacterSheet({ characterData = null, onSave = null }) 
     pb: '',
     spd: '',
     hitPoints: '',
-    sdc: '',
-    ppe: '',
-    isp: '',
+    armorDurability: '',
+    stamina: '',
+    focus: '',
     skills: '',
     weapons: '',
     gear: '',
@@ -54,7 +54,7 @@ export default function CharacterSheet({ characterData = null, onSave = null }) 
       setCharacter({
         name: characterData.name || '',
         race: characterData.species || characterData.race || '',
-        occ: characterData.class || characterData.occ || '',
+        profession: characterData.class || characterData.profession || '',
         alignment: characterData.alignment || '',
         level: characterData.level || 1,
         iq: characterData.attributes?.iq || '',
@@ -66,9 +66,9 @@ export default function CharacterSheet({ characterData = null, onSave = null }) 
         pb: characterData.attributes?.pb || '',
         spd: characterData.attributes?.spd || '',
         hitPoints: characterData.hp || characterData.hitPoints || '',
-        sdc: characterData.sdc || '',
-        ppe: characterData.ppe || '',
-        isp: characterData.isp || '',
+        armorDurability: characterData.armorDurability || '',
+        stamina: characterData.stamina || '',
+        focus: characterData.focus || '',
         skills: formatSkills(characterData),
         weapons: formatWeapons(characterData),
         gear: formatGear(characterData),
@@ -81,9 +81,9 @@ export default function CharacterSheet({ characterData = null, onSave = null }) 
   const formatSkills = (char) => {
     if (!char) return '';
     const skills = [];
-    if (char.occSkills?.length) {
-      skills.push('O.C.C. Skills:');
-      char.occSkills.forEach(skill => {
+    if (char.professionSkills?.length) {
+      skills.push('profession Skills:');
+      char.professionSkills.forEach(skill => {
         skills.push(`  ${skill.name || skill}: ${skill.percentage || skill.percent || ''}%`);
       });
     }
@@ -291,7 +291,7 @@ export default function CharacterSheet({ characterData = null, onSave = null }) 
     setCharacter({
       name: '',
       race: '',
-      occ: '',
+      profession: '',
       alignment: '',
       level: 1,
       iq: '',
@@ -303,9 +303,9 @@ export default function CharacterSheet({ characterData = null, onSave = null }) 
       pb: '',
       spd: '',
       hitPoints: '',
-      sdc: '',
-      ppe: '',
-      isp: '',
+      armorDurability: '',
+      stamina: '',
+      focus: '',
       skills: '',
       weapons: '',
       gear: '',
@@ -322,13 +322,13 @@ export default function CharacterSheet({ characterData = null, onSave = null }) 
   };
 
   const attributeFields = [
-    { key: 'iq', label: 'I.Q.' },
-    { key: 'me', label: 'M.E.' },
-    { key: 'ma', label: 'M.A.' },
-    { key: 'ps', label: 'P.S.' },
-    { key: 'pp', label: 'P.P.' },
-    { key: 'pe', label: 'P.E.' },
-    { key: 'pb', label: 'P.B.' },
+    { key: 'iq', label: 'intellect' },
+    { key: 'me', label: 'willpower' },
+    { key: 'ma', label: 'presence' },
+    { key: 'ps', label: 'strength' },
+    { key: 'pp', label: 'agility' },
+    { key: 'pe', label: 'endurance' },
+    { key: 'pb', label: 'charisma' },
     { key: 'spd', label: 'Spd' },
   ];
 
@@ -338,7 +338,7 @@ export default function CharacterSheet({ characterData = null, onSave = null }) 
         {/* Header */}
         <Box textAlign="center" pb={4}>
           <Heading size="lg" mb={2}>
-            Palladium Fantasy RPG Character Sheet
+            Medieval Combat Simulator Character Sheet
           </Heading>
           <Text fontSize="sm" color="gray.600">
             (1994 Edition)
@@ -369,9 +369,9 @@ export default function CharacterSheet({ characterData = null, onSave = null }) 
           </GridItem>
           <GridItem>
             <Input
-              name="occ"
-              placeholder="O.C.C."
-              value={character.occ}
+              name="profession"
+              placeholder="profession"
+              value={character.profession}
               onChange={handleChange}
               size="md"
             />
@@ -434,23 +434,23 @@ export default function CharacterSheet({ characterData = null, onSave = null }) 
               size="md"
             />
             <Input
-              name="sdc"
-              placeholder="S.D.C."
-              value={character.sdc}
+              name="armorDurability"
+              placeholder="armorDurability"
+              value={character.armorDurability}
               onChange={handleChange}
               size="md"
             />
             <Input
-              name="ppe"
-              placeholder="P.P.E."
-              value={character.ppe}
+              name="stamina"
+              placeholder="stamina"
+              value={character.stamina}
               onChange={handleChange}
               size="md"
             />
             <Input
-              name="isp"
-              placeholder="I.S.P."
-              value={character.isp}
+              name="focus"
+              placeholder="focus"
+              value={character.focus}
               onChange={handleChange}
               size="md"
             />
@@ -528,7 +528,7 @@ export default function CharacterSheet({ characterData = null, onSave = null }) 
             onClick={saveToBackend}
             size="md"
           >
-            💾 Save Character
+            ðŸ’¾ Save Character
           </Button>
           <HStack spacing={2}>
             <Button
@@ -536,14 +536,14 @@ export default function CharacterSheet({ characterData = null, onSave = null }) 
               onClick={exportToJSON}
               size="md"
             >
-              📄 Export JSON
+              ðŸ“„ Export JSON
             </Button>
             <Button
               variant="outline"
               onClick={exportToPDF}
               size="md"
             >
-              📑 Export PDF
+              ðŸ“‘ Export PDF
             </Button>
             <Button
               variant="ghost"

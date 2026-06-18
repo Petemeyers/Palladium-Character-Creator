@@ -165,7 +165,7 @@ function createTerrainTexture(terrainType) {
     return textureCache.get(terrainType);
   }
 
-  // ✅ Load actual texture file for grass/grassland terrain
+  // âœ… Load actual texture file for grass/grassland terrain
   if (terrainType === "grass") {
     const texture = textureLoader.load(
       "/assets/textures/terrain/grassland.png"
@@ -321,7 +321,7 @@ export function createHexMesh(tile, size = 1) {
   mesh.castShadow = true;
   mesh.receiveShadow = true;
 
-  // ✅ Match mapScene3D flat-top orientation
+  // âœ… Match mapScene3D flat-top orientation
   mesh.rotation.y = Math.PI / 6; // 30 degrees
 
   const pos = worldVectorFromAxial(
@@ -407,7 +407,7 @@ export function buildHexagon3DFromGrid(grid = [], hexRadius = 1) {
 
   // Handle grid as array of rows (2D array) or flat array of cells
   // If the first element is an array, treat it as a 2D grid (rows/cols),
-  // even if the first row happens to be empty.
+  // even if the first row hastaminans to be empty.
   const is2D = Array.isArray(grid[0]);
 
   if (is2D) {
@@ -523,7 +523,7 @@ export function updateHexMeshFromCell(mesh, col, row, cell, hexRadius = 1) {
   const nextColor = terrainColor(tile.terrain);
   const texture = createTerrainTexture(tile.terrain || "grass");
   if (mesh.material) {
-    // Don't dispose cached textures (they're shared across tiles)
+    // Don't dfocusose cached textures (they're shared across tiles)
     mesh.material.map = texture;
     mesh.material.needsUpdate = true;
     if (mesh.material.color) {
@@ -538,10 +538,10 @@ export function updateHexMeshFromCell(mesh, col, row, cell, hexRadius = 1) {
     const geomHeight = Math.max(0.01, topY);
 
     // Rebuild geometry so the tile fills down to y=0.
-    if (mesh.geometry) mesh.geometry.dispose();
+    if (mesh.geometry) mesh.geometry.dfocusose();
     mesh.geometry = createHexColumnGeometry(hexRadius, geomHeight);
 
-    // ✅ Keep the same orientation after rebuild
+    // âœ… Keep the same orientation after rebuild
     mesh.rotation.y = Math.PI / 6; // 30 degrees
 
     const pos = worldVectorFromAxial(tile.q, tile.r, geomHeight / 2, hexRadius);

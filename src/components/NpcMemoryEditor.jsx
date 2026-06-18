@@ -156,7 +156,7 @@ const NpcMemoryEditor = () => {
             >
               {(Array.isArray(memories) ? memories : []).map((memory) => (
                 <option key={memory.npcName} value={memory.npcName}>
-                  {memory.npcName} {memory.locked && "🔒"}
+                  {memory.npcName} {memory.locked && "Ã°Å¸â€â€™"}
                 </option>
               ))}
             </Select>
@@ -195,8 +195,8 @@ const NpcMemoryEditor = () => {
 
             <Text fontSize="sm" color="gray.600" mb={3}>
               {memories.find((m) => m.npcName === selectedNpc)?.locked
-                ? "🔒 Locked memories won't be auto-updated by AI conversations"
-                : "🔄 Unlocked memories will evolve automatically after NPC conversations"}
+                ? "Ã°Å¸â€â€™ Locked memories won't be auto-updated by AI conversations"
+                : "Ã°Å¸â€â€ž Unlocked memories will evolve automatically after NPC conversations"}
             </Text>
 
             <HStack spacing={2}>
@@ -243,7 +243,7 @@ const NpcMemoryEditor = () => {
                   <HStack justify="space-between">
                     <Text fontWeight="bold">{memory.npcName}</Text>
                     <HStack>
-                      {memory.locked && <Badge colorScheme="red">🔒 Locked</Badge>}
+                      {memory.locked && <Badge colorScheme="red">Ã°Å¸â€â€™ Locked</Badge>}
                       <Text fontSize="sm" color="gray.500">
                         {new Date(memory.updatedAt).toLocaleDateString()}
                       </Text>

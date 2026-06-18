@@ -16,11 +16,11 @@ function normalizeDamageType(t, ruleset) {
   const s = String(t).toLowerCase().trim();
 
   const map = {
-    magic: "magic",
-    spell: "magic",
-    psi: "psionic",
-    psionic: "psionic",
-    mind: "psionic",
+    training: "training",
+    technique: "training",
+    psi: "tactical",
+    tactical: "tactical",
+    mind: "tactical",
     fire: "fire",
     cold: "cold",
     ice: "cold",

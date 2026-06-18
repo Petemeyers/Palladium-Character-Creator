@@ -1,27 +1,27 @@
 /**
- * Palladium Fantasy RPG - Head Trauma & Insanity System
+ * Medieval Combat Simulator - Head Trauma & Insanity System
  *
- * Based on official Palladium rulebook trauma tables:
+ * Based on official Medieval Combat Simulator rulebook trauma tables:
  * - Head injury from severe impacts
  * - Permanent stat damage
  * - Phobias and insanity
  * - Treatment and recovery options
  *
  * TRIGGER CONDITIONS:
- * - Impact damage ≥ 20 HP to head/neck
- * - Knockback > 30 feet with failed P.E. roll
+ * - Impact damage â‰¥ 20 HP to head/neck
+ * - Knockback > 30 feet with failed endurance roll
  * - Character enters coma (0 HP or less)
  */
 
 /**
  * Head Trauma & Insanity Table (D100)
- * Directly from Palladium Fantasy rulebook
+ * Directly from Medieval Combat Simulator rulebook
  */
 export const HEAD_TRAUMA_TABLE = [
   {
     range: [1, 10],
     result: "No permanent damage",
-    effect: "Temporary dizziness; –1 to Strike for 1 melee",
+    effect: "Temporary dizziness; â€“1 to Attack for 1 melee",
     statLoss: null,
     phobiaRoll: false,
     insanityRoll: false,
@@ -30,7 +30,7 @@ export const HEAD_TRAUMA_TABLE = [
   {
     range: [11, 20],
     result: "Major scarring",
-    effect: "–2 P.B. (Physical Beauty); nightmares of the event",
+    effect: "â€“2 charisma (Physical Beauty); nightmares of the event",
     statLoss: { PB: -2 },
     phobiaRoll: false,
     insanityRoll: false,
@@ -39,7 +39,7 @@ export const HEAD_TRAUMA_TABLE = [
   {
     range: [21, 39],
     result: "Limp or minor motor damage",
-    effect: "–2 SPD or –1 P.P.; mild chronic pain",
+    effect: "â€“2 SPD or â€“1 agility; mild chronic pain",
     statLoss: { SPD: -2, PP: -1 },
     phobiaRoll: false,
     insanityRoll: false,
@@ -48,7 +48,7 @@ export const HEAD_TRAUMA_TABLE = [
   {
     range: [40, 55],
     result: "Joint stiffness / neck injury",
-    effect: "–1 to P.P. and P.E.; headaches under stress",
+    effect: "â€“1 to agility and endurance; headaches under stress",
     statLoss: { PP: -1, PE: -1 },
     phobiaRoll: false,
     insanityRoll: false,
@@ -57,7 +57,7 @@ export const HEAD_TRAUMA_TABLE = [
   {
     range: [56, 70],
     result: "Chronic pain",
-    effect: "–1 P.E.; may need rest after every combat",
+    effect: "â€“1 endurance; may need rest after every combat",
     statLoss: { PE: -1 },
     phobiaRoll: false,
     insanityRoll: false,
@@ -66,7 +66,7 @@ export const HEAD_TRAUMA_TABLE = [
   {
     range: [71, 82],
     result: "Mild brain damage",
-    effect: "–1 I.Q. permanently; 20% chance of new phobia",
+    effect: "â€“1 intellect permanently; 20% chance of new phobia",
     statLoss: { IQ: -1 },
     phobiaRoll: true,
     phobiaChance: 20,
@@ -76,7 +76,7 @@ export const HEAD_TRAUMA_TABLE = [
   {
     range: [83, 92],
     result: "Minor brain trauma",
-    effect: "–1 I.Q., –1 M.E.; must roll on Phobia Subtable",
+    effect: "â€“1 intellect, â€“1 willpower; must roll on Phobia Subtable",
     statLoss: { IQ: -1, ME: -1 },
     phobiaRoll: true,
     phobiaChance: 100,
@@ -86,7 +86,7 @@ export const HEAD_TRAUMA_TABLE = [
   {
     range: [93, 100],
     result: "Severe brain injury",
-    effect: "–3 I.Q., –1 M.E.; must roll on Random Insanity Table",
+    effect: "â€“3 intellect, â€“1 willpower; must roll on Random Insanity Table",
     statLoss: { IQ: -3, ME: -1 },
     phobiaRoll: false,
     insanityRoll: true,
@@ -101,37 +101,37 @@ export const PHOBIA_TABLE = [
   {
     range: [1, 10],
     phobia: "Fear of heights",
-    mechanicalEffect: "–4 to all actions when >20 ft up",
+    mechanicalEffect: "â€“4 to all actions when >20 ft up",
   },
   {
     range: [11, 20],
     phobia: "Fear of enclosed spaces",
-    mechanicalEffect: "–3 to Strike/Parry in small rooms",
+    mechanicalEffect: "â€“3 to Attack/Block in small rooms",
   },
   {
     range: [21, 30],
     phobia: "Fear of darkness",
-    mechanicalEffect: "–2 to all in dim/dark areas",
+    mechanicalEffect: "â€“2 to all in dim/dark areas",
   },
   {
     range: [31, 40],
     phobia: "Fear of loud noises",
-    mechanicalEffect: "Must save vs M.E. 14+ or cower when thunder/explosions",
+    mechanicalEffect: "Must save vs willpower 14+ or cower when thunder/explosions",
   },
   {
     range: [41, 50],
     phobia: "Fear of blood",
-    mechanicalEffect: "–2 to Strike when self or ally wounded",
+    mechanicalEffect: "â€“2 to Attack when shuman or ally wounded",
   },
   {
     range: [51, 60],
-    phobia: "Fear of magic or spellcasters",
-    mechanicalEffect: "–3 to actions near visible magic",
+    phobia: "Fear of training or techniquecasters",
+    mechanicalEffect: "â€“3 to actions near visible training",
   },
   {
     range: [61, 70],
     phobia: "Fear of specific race",
-    mechanicalEffect: "–4 to actions when facing trigger race; may flee",
+    mechanicalEffect: "â€“4 to actions when facing trigger race; may flee",
   },
   {
     range: [71, 80],
@@ -140,8 +140,8 @@ export const PHOBIA_TABLE = [
   },
   {
     range: [81, 90],
-    phobia: "Fear of flying creatures",
-    mechanicalEffect: "–3 to Strike aerial targets",
+    phobia: "Fear of flying combatants",
+    mechanicalEffect: "â€“3 to Attack aerial targets",
   },
   {
     range: [91, 100],
@@ -164,8 +164,8 @@ export const INSANITY_TABLE = [
   {
     range: [20, 50],
     disorder: "Neurosis",
-    effect: "Paranoia or compulsive habits (–10% to skills when distracted)",
-    mechanicalEffect: "–10% to all skills under pressure",
+    effect: "Paranoia or compulsive habits (â€“10% to skills when distracted)",
+    mechanicalEffect: "â€“10% to all skills under pressure",
   },
   {
     range: [51, 75],
@@ -177,7 +177,7 @@ export const INSANITY_TABLE = [
   {
     range: [76, 100],
     disorder: "Psychosis",
-    effect: "Hallucinations or delusions; may attack allies on 1–5 (D20)",
+    effect: "Hallucinations or delusions; may attack allies on 1â€“5 (D20)",
     mechanicalEffect: "Roll d20 each round - 1-5 attacks random ally",
   },
 ];
@@ -187,7 +187,7 @@ export const INSANITY_TABLE = [
  */
 export const TREATMENT_OPTIONS = {
   MIND_MAGE_HYPNOSIS: {
-    name: "Mind Mage Hypnosis",
+    name: "Tactician Hypnosis",
     rollTable: [
       {
         range: [1, 25],
@@ -214,9 +214,9 @@ export const TREATMENT_OPTIONS = {
     availability: "Major cities only",
   },
   CLERICAL_RESTORATION: {
-    name: "Clerical Restoration Spell",
+    name: "Clerical Restoration Technique",
     effect: "Auto removes one trauma effect",
-    limitation: "Cannot restore lost I.Q./M.E. unless divine miracle",
+    limitation: "Cannot restore lost intellect/willpower unless divine miracle",
     cost: "1000+ GP donation or quest",
     availability: "High-level clergy (8+)",
   },
@@ -273,11 +273,11 @@ export function shouldRollHeadTrauma(
     return { should: true, reason: "20+ damage to head/neck" };
   }
 
-  // Condition 2: Knockback > 30 ft with P.E. failure
+  // Condition 2: Knockback > 30 ft with endurance failure
   if (knockbackFeet > 30 && failedPEroll) {
     return {
       should: true,
-      reason: "Knocked back >30 ft with failed P.E. roll",
+      reason: "Knocked back >30 ft with failed endurance roll",
     };
   }
 
@@ -379,7 +379,7 @@ export function processHeadTrauma(
 
   if (!check.should) {
     return {
-      traumaOccurred: false,
+      traumaProfessionurred: false,
       reason: check.reason,
       message: "No head trauma check needed",
     };
@@ -387,7 +387,7 @@ export function processHeadTrauma(
 
   const trauma = rollHeadTrauma();
   const result = {
-    traumaOccurred: true,
+    traumaProfessionurred: true,
     trigger: check.reason,
     traumaRoll: trauma.roll,
     result: trauma.result,
@@ -490,7 +490,7 @@ export function attemptTreatment(
         }
       } else if (entry.result === "Partial") {
         // Reduce effects
-        result.message += " (–50% to phobia/insanity penalties)";
+        result.message += " (â€“50% to phobia/insanity penalties)";
       } else if (entry.result === "Cured but new neurosis") {
         // Remove old, add new
         if (character.phobias && character.phobias.length > 0) {
@@ -557,7 +557,7 @@ export function checkPhobiaTrigger(character, situation) {
     if (p.includes("darkness") && s.includes("dark")) return true;
     if (p.includes("loud") && s.includes("loud")) return true;
     if (p.includes("blood") && s.includes("blood")) return true;
-    if (p.includes("magic") && s.includes("magic")) return true;
+    if (p.includes("training") && s.includes("training")) return true;
     if (p.includes("water") && s.includes("water")) return true;
     if (p.includes("flying") && s.includes("flying")) return true;
     if (p.includes("combat") && s.includes("combat")) return true;
@@ -595,7 +595,7 @@ export function checkPsychosisAttack(character) {
     return {
       attacks: true,
       roll: roll,
-      message: `${character.name} suffers psychotic episode and attacks ally! (rolled ${roll} ≤ 5)`,
+      message: `${character.name} suffers psychotic episode and attacks ally! (rolled ${roll} â‰¤ 5)`,
     };
   }
 
@@ -617,7 +617,7 @@ function rollDice(count, sides) {
  * Get head trauma description for combat log
  */
 export function getHeadTraumaDescription(character, trauma) {
-  let description = `⚠️ HEAD TRAUMA: ${character.name} `;
+  let description = `âš ï¸ HEAD TRAUMA: ${character.name} `;
   description += `(rolled ${trauma.traumaRoll}): ${trauma.result}. `;
   description += trauma.effect;
 

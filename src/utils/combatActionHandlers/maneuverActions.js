@@ -45,8 +45,8 @@ export function executeTripManeuver(attacker, defender, context) {
   }
   
   // Check if attacker can act
-  if (attackerInArray.remainingAttacks <= 0) {
-    addLog(`⚠️ ${attacker.name} is out of attacks this turn!`, "error");
+  if (attackerInArray.remainingActions <= 0) {
+    addLog(`âš ï¸ ${attacker.name} is out of attacks this turn!`, "error");
     return;
   }
   
@@ -91,13 +91,13 @@ export function executeTripManeuver(attacker, defender, context) {
         }));
       }
       if (movedAttacker !== result.attacker) {
-        addLog(`👁️ ${result.attacker.name} is revealed after being thrown off balance!`, "info");
+        addLog(`ðŸ‘ï¸ ${result.attacker.name} is revealed after being thrown off balance!`, "info");
       }
       
       // Deduct action
       setFighters(prev => prev.map(f => 
         f.id === attacker.id 
-          ? { ...f, remainingAttacks: Math.max(0, f.remainingAttacks - 1) }
+          ? { ...f, remainingActions: Math.max(0, f.remainingActions - 1) }
           : f
       ));
     } else {
@@ -107,7 +107,7 @@ export function executeTripManeuver(attacker, defender, context) {
   }
   
   // Not in grapple - contested roll
-  // Get P.P. bonuses
+  // Get agility bonuses
   const attackerPP = attacker.attributes?.PP || attacker.PP || 10;
   const defenderPP = defender.attributes?.PP || defender.PP || 10;
   
@@ -115,44 +115,44 @@ export function executeTripManeuver(attacker, defender, context) {
   const defenderPPBonus = Math.floor((defenderPP - 10) / 2);
   
   // Get hand-to-hand bonuses
-  const attackerStrikeBonus = attacker.bonuses?.strike || attacker.handToHand?.strikeBonus || 0;
-  const defenderParryBonus = defender.bonuses?.parry || defender.handToHand?.parryBonus || 0;
-  const defenderDodgeBonus = defender.bonuses?.dodge || defender.handToHand?.dodgeBonus || 0;
+  const attackerAttackBonus = attacker.bonuses?.attack || attacker.handToHand?.attackBonus || 0;
+  const defenderBlockBonus = defender.bonuses?.block || defender.handToHand?.blockBonus || 0;
+  const defenderEvadeBonus = defender.bonuses?.evade || defender.handToHand?.evadeBonus || 0;
   
-  // Attacker rolls strike
+  // Attacker rolls attack
   const attackerRoll = CryptoSecureDice.rollD20();
-  const attackerTotal = attackerRoll + attackerStrikeBonus + attackerPPBonus;
+  const attackerTotal = attackerRoll + attackerAttackBonus + attackerPPBonus;
   
-  // Defender can parry or dodge (use the higher of the two)
+  // Defender can block or evade (use the higher of the two)
   const defenderRoll = CryptoSecureDice.rollD20();
-  const defenderParryTotal = defenderRoll + defenderParryBonus + defenderPPBonus;
-  const defenderDodgeTotal = defenderRoll + defenderDodgeBonus + defenderPPBonus;
-  const defenderTotal = Math.max(defenderParryTotal, defenderDodgeTotal);
+  const defenderBlockTotal = defenderRoll + defenderBlockBonus + defenderPPBonus;
+  const defenderEvadeTotal = defenderRoll + defenderEvadeBonus + defenderPPBonus;
+  const defenderTotal = Math.max(defenderBlockTotal, defenderEvadeTotal);
   
-  addLog(`🎲 ${attacker.name} attempts trip: ${attackerRoll} + ${attackerStrikeBonus} (strike) + ${attackerPPBonus} (PP) = ${attackerTotal}`, "info");
-  addLog(`🎲 ${defender.name} defends: ${defenderRoll} + ${Math.max(defenderParryBonus, defenderDodgeBonus)} (parry/dodge) + ${defenderPPBonus} (PP) = ${defenderTotal}`, "info");
+  addLog(`ðŸŽ² ${attacker.name} attempts trip: ${attackerRoll} + ${attackerAttackBonus} (attack) + ${attackerPPBonus} (PP) = ${attackerTotal}`, "info");
+  addLog(`ðŸŽ² ${defender.name} defends: ${defenderRoll} + ${Math.max(defenderBlockBonus, defenderEvadeBonus)} (block/evade) + ${defenderPPBonus} (PP) = ${defenderTotal}`, "info");
   
   if (attackerTotal > defenderTotal) {
     // Trip successful!
-    addLog(`✅ ${attacker.name} successfully trips ${defender.name}!`, "success");
+    addLog(`âœ… ${attacker.name} successfully trips ${defender.name}!`, "success");
     
     // Knockdown effect: defender loses 1 action to recover and is prone
     setFighters(prev => prev.map(f => 
       f.id === defender.id 
-        ? { ...f, remainingAttacks: Math.max(0, (f.remainingAttacks || 0) - 1), isProne: true }
+        ? { ...f, remainingActions: Math.max(0, (f.remainingActions || 0) - 1), isProne: true }
         : f
     ));
     
-    addLog(`💥 ${defender.name} is knocked down! Loses 1 action to recover.`, "warning");
+    addLog(`ðŸ’¥ ${defender.name} is knocked down! Loses 1 action to recover.`, "warning");
   } else {
     // Trip failed
-    addLog(`❌ ${defender.name} avoids the trip!`, "info");
+    addLog(`âŒ ${defender.name} avoids the trip!`, "info");
   }
   
   // Deduct attacker's action
   setFighters(prev => prev.map(f => 
     f.id === attacker.id 
-      ? { ...f, remainingAttacks: Math.max(0, f.remainingAttacks - 1) }
+      ? { ...f, remainingActions: Math.max(0, f.remainingActions - 1) }
       : f
   ));
 }
@@ -183,8 +183,8 @@ export function executeShoveManeuver(attacker, defender, context) {
   }
   
   // Check if attacker can act
-  if (attackerInArray.remainingAttacks <= 0) {
-    addLog(`⚠️ ${attacker.name} is out of attacks this turn!`, "error");
+  if (attackerInArray.remainingActions <= 0) {
+    addLog(`âš ï¸ ${attacker.name} is out of attacks this turn!`, "error");
     return;
   }
   
@@ -230,7 +230,7 @@ export function executeShoveManeuver(attacker, defender, context) {
       // Deduct action
       setFighters(prev => prev.map(f => 
         f.id === attacker.id 
-          ? { ...f, remainingAttacks: Math.max(0, f.remainingAttacks - 1) }
+          ? { ...f, remainingActions: Math.max(0, f.remainingActions - 1) }
           : f
       ));
     } else {
@@ -254,12 +254,12 @@ export function executeShoveManeuver(attacker, defender, context) {
   const defenderRoll = CryptoSecureDice.rollD20();
   const defenderTotal = defenderRoll + defenderPSBonus;
   
-  addLog(`🎲 ${attacker.name} attempts shove: ${attackerRoll} + ${attackerPSBonus} (PS) = ${attackerTotal}`, "info");
-  addLog(`🎲 ${defender.name} resists: ${defenderRoll} + ${defenderPSBonus} (PS) = ${defenderTotal}`, "info");
+  addLog(`ðŸŽ² ${attacker.name} attempts shove: ${attackerRoll} + ${attackerPSBonus} (PS) = ${attackerTotal}`, "info");
+  addLog(`ðŸŽ² ${defender.name} resists: ${defenderRoll} + ${defenderPSBonus} (PS) = ${defenderTotal}`, "info");
   
   if (attackerTotal > defenderTotal) {
     // Shove successful - push defender back 1 hex
-    addLog(`✅ ${attacker.name} successfully shoves ${defender.name}!`, "success");
+    addLog(`âœ… ${attacker.name} successfully shoves ${defender.name}!`, "success");
     
     // Move defender back 1 hex (simplified - could be enhanced with direction)
     const defenderPos = positions[defender.id] || { x: 0, y: 0 };
@@ -279,23 +279,23 @@ export function executeShoveManeuver(attacker, defender, context) {
         [defender.id]: { x: newX, y: newY },
       }));
       
-      addLog(`💥 ${defender.name} is pushed back!`, "warning");
+      addLog(`ðŸ’¥ ${defender.name} is pushed back!`, "warning");
       if (defender.hidden || defender.isProwling || defender.prowlState?.hidden) {
         setFighters(prev =>
           prev.map(f => (f.id === defender.id ? revealConcealment(f) : f))
         );
-        addLog(`👁️ ${defender.name} is revealed after being shoved out of position!`, "info");
+        addLog(`ðŸ‘ï¸ ${defender.name} is revealed after being shoved out of position!`, "info");
       }
     }
   } else {
     // Shove failed
-    addLog(`❌ ${defender.name} resists the shove!`, "info");
+    addLog(`âŒ ${defender.name} resists the shove!`, "info");
   }
   
   // Deduct attacker's action
   setFighters(prev => prev.map(f => 
     f.id === attacker.id 
-      ? { ...f, remainingAttacks: Math.max(0, f.remainingAttacks - 1) }
+      ? { ...f, remainingActions: Math.max(0, f.remainingActions - 1) }
       : f
   ));
 }
@@ -325,8 +325,8 @@ export function executeDisarmManeuver(attacker, defender, context) {
   }
   
   // Check if attacker can act
-  if (attackerInArray.remainingAttacks <= 0) {
-    addLog(`⚠️ ${attacker.name} is out of attacks this turn!`, "error");
+  if (attackerInArray.remainingActions <= 0) {
+    addLog(`âš ï¸ ${attacker.name} is out of attacks this turn!`, "error");
     return;
   }
   
@@ -335,9 +335,9 @@ export function executeDisarmManeuver(attacker, defender, context) {
   let weaponIndex = -1;
   
   // Try array format first (most common)
-  if (Array.isArray(defenderInArray.equippedWeapons)) {
-    for (let i = 0; i < defenderInArray.equippedWeapons.length; i++) {
-      const weapon = defenderInArray.equippedWeapons[i];
+  if (Array.isArray(defenderInArray.equistaminadWeapons)) {
+    for (let i = 0; i < defenderInArray.equistaminadWeapons.length; i++) {
+      const weapon = defenderInArray.equistaminadWeapons[i];
       if (weapon && weapon.name && weapon.name !== "Unarmed" && weapon.type !== "unarmed") {
         defenderWeapon = weapon;
         weaponIndex = i;
@@ -347,9 +347,9 @@ export function executeDisarmManeuver(attacker, defender, context) {
   }
   
   // Try object format with primary/secondary
-  if (!defenderWeapon && defenderInArray.equippedWeapons) {
-    const primary = defenderInArray.equippedWeapons.primary;
-    const secondary = defenderInArray.equippedWeapons.secondary;
+  if (!defenderWeapon && defenderInArray.equistaminadWeapons) {
+    const primary = defenderInArray.equistaminadWeapons.primary;
+    const secondary = defenderInArray.equistaminadWeapons.secondary;
     
     if (primary && primary.name && primary.name !== "Unarmed" && primary.type !== "unarmed") {
       defenderWeapon = primary;
@@ -358,9 +358,9 @@ export function executeDisarmManeuver(attacker, defender, context) {
     }
   }
   
-  // Try checking if equippedWeapons is an object with array-like properties
-  if (!defenderWeapon && defenderInArray.equippedWeapons) {
-    const weapons = defenderInArray.equippedWeapons;
+  // Try checking if equistaminadWeapons is an object with array-like properties
+  if (!defenderWeapon && defenderInArray.equistaminadWeapons) {
+    const weapons = defenderInArray.equistaminadWeapons;
     if (weapons[0] && weapons[0].name && weapons[0].name !== "Unarmed" && weapons[0].type !== "unarmed") {
       defenderWeapon = weapons[0];
       weaponIndex = 0;
@@ -368,34 +368,34 @@ export function executeDisarmManeuver(attacker, defender, context) {
   }
   
   if (!defenderWeapon || defenderWeapon.name === "Unarmed" || defenderWeapon.type === "unarmed") {
-    addLog(`❌ ${defender.name} has no weapon to disarm!`, "error");
+    addLog(`âŒ ${defender.name} has no weapon to disarm!`, "error");
     return;
   }
   
-  // Contested roll: attacker's strike vs defender's parry
+  // Contested roll: attacker's attack vs defender's block
   const attackerPP = attacker.attributes?.PP || attacker.PP || 10;
   const defenderPP = defender.attributes?.PP || defender.PP || 10;
   
   const attackerPPBonus = Math.floor((attackerPP - 10) / 2);
   const defenderPPBonus = Math.floor((defenderPP - 10) / 2);
   
-  const attackerStrikeBonus = attacker.bonuses?.strike || attacker.handToHand?.strikeBonus || 0;
-  const defenderParryBonus = defender.bonuses?.parry || defender.handToHand?.parryBonus || 0;
+  const attackerAttackBonus = attacker.bonuses?.attack || attacker.handToHand?.attackBonus || 0;
+  const defenderBlockBonus = defender.bonuses?.block || defender.handToHand?.blockBonus || 0;
   
-  // Attacker rolls strike
+  // Attacker rolls attack
   const attackerRoll = CryptoSecureDice.rollD20();
-  const attackerTotal = attackerRoll + attackerStrikeBonus + attackerPPBonus;
+  const attackerTotal = attackerRoll + attackerAttackBonus + attackerPPBonus;
   
-  // Defender rolls parry
+  // Defender rolls block
   const defenderRoll = CryptoSecureDice.rollD20();
-  const defenderTotal = defenderRoll + defenderParryBonus + defenderPPBonus;
+  const defenderTotal = defenderRoll + defenderBlockBonus + defenderPPBonus;
   
-  addLog(`🎲 ${attacker.name} attempts disarm: ${attackerRoll} + ${attackerStrikeBonus} (strike) + ${attackerPPBonus} (PP) = ${attackerTotal}`, "info");
-  addLog(`🎲 ${defender.name} defends: ${defenderRoll} + ${defenderParryBonus} (parry) + ${defenderPPBonus} (PP) = ${defenderTotal}`, "info");
+  addLog(`ðŸŽ² ${attacker.name} attempts disarm: ${attackerRoll} + ${attackerAttackBonus} (attack) + ${attackerPPBonus} (PP) = ${attackerTotal}`, "info");
+  addLog(`ðŸŽ² ${defender.name} defends: ${defenderRoll} + ${defenderBlockBonus} (block) + ${defenderPPBonus} (PP) = ${defenderTotal}`, "info");
   
   if (attackerTotal > defenderTotal) {
     // Disarm successful!
-    addLog(`✅ ${attacker.name} successfully disarms ${defender.name}!`, "success");
+    addLog(`âœ… ${attacker.name} successfully disarms ${defender.name}!`, "success");
     
     // Get defender's position
     const defenderPos = positions[defender.id] || defender.hex || defender.position || { x: 0, y: 0 };
@@ -425,8 +425,8 @@ export function executeDisarmManeuver(attacker, defender, context) {
         const updated = { ...f };
         
         // Handle array format
-        if (Array.isArray(updated.equippedWeapons) && weaponIndex >= 0) {
-          const newWeapons = [...updated.equippedWeapons];
+        if (Array.isArray(updated.equistaminadWeapons) && weaponIndex >= 0) {
+          const newWeapons = [...updated.equistaminadWeapons];
           newWeapons[weaponIndex] = {
             name: "Unarmed",
             damage: "1d3",
@@ -434,10 +434,10 @@ export function executeDisarmManeuver(attacker, defender, context) {
             category: "unarmed",
             slot: newWeapons[weaponIndex]?.slot || "Right Hand",
           };
-          updated.equippedWeapons = newWeapons;
+          updated.equistaminadWeapons = newWeapons;
         } 
         // Handle object format with primary/secondary
-        else if (updated.equippedWeapons && typeof updated.equippedWeapons === 'object') {
+        else if (updated.equistaminadWeapons && typeof updated.equistaminadWeapons === 'object') {
           const unarmedWeapon = { 
             name: "Unarmed", 
             damage: "1d3", 
@@ -446,20 +446,20 @@ export function executeDisarmManeuver(attacker, defender, context) {
             slot: defenderWeapon.slot || "Right Hand",
           };
           
-          if (updated.equippedWeapons.primary?.name === defenderWeapon.name || 
-              (updated.equippedWeapons.primary && !Array.isArray(updated.equippedWeapons))) {
-            updated.equippedWeapons = {
-              ...updated.equippedWeapons,
+          if (updated.equistaminadWeapons.primary?.name === defenderWeapon.name || 
+              (updated.equistaminadWeapons.primary && !Array.isArray(updated.equistaminadWeapons))) {
+            updated.equistaminadWeapons = {
+              ...updated.equistaminadWeapons,
               primary: unarmedWeapon,
             };
-          } else if (updated.equippedWeapons.secondary?.name === defenderWeapon.name) {
-            updated.equippedWeapons = {
-              ...updated.equippedWeapons,
+          } else if (updated.equistaminadWeapons.secondary?.name === defenderWeapon.name) {
+            updated.equistaminadWeapons = {
+              ...updated.equistaminadWeapons,
               secondary: unarmedWeapon,
             };
-          } else if (updated.equippedWeapons[0] && updated.equippedWeapons[0].name === defenderWeapon.name) {
+          } else if (updated.equistaminadWeapons[0] && updated.equistaminadWeapons[0].name === defenderWeapon.name) {
             // Handle object with indexed properties
-            updated.equippedWeapons[0] = unarmedWeapon;
+            updated.equistaminadWeapons[0] = unarmedWeapon;
           }
         }
         
@@ -468,17 +468,17 @@ export function executeDisarmManeuver(attacker, defender, context) {
       return f;
     }));
     
-    addLog(`💥 ${defender.name} drops ${defenderWeapon.name} at hex (${Math.round(dropHex.x)}, ${Math.round(dropHex.y)})!`, "warning");
-    addLog(`🗡️ ${defenderWeapon.name} is now on the ground and can be picked up.`, "info");
+    addLog(`ðŸ’¥ ${defender.name} drops ${defenderWeapon.name} at hex (${Math.round(dropHex.x)}, ${Math.round(dropHex.y)})!`, "warning");
+    addLog(`ðŸ—¡ï¸ ${defenderWeapon.name} is now on the ground and can be picked up.`, "info");
   } else {
     // Disarm failed
-    addLog(`❌ ${defender.name} maintains grip on ${defenderWeapon.name}!`, "info");
+    addLog(`âŒ ${defender.name} maintains grip on ${defenderWeapon.name}!`, "info");
   }
   
   // Deduct attacker's action
   setFighters(prev => prev.map(f => 
     f.id === attacker.id 
-      ? { ...f, remainingAttacks: Math.max(0, f.remainingAttacks - 1) }
+      ? { ...f, remainingActions: Math.max(0, f.remainingActions - 1) }
       : f
   ));
 }

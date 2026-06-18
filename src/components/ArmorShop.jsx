@@ -69,11 +69,11 @@ const ArmorShop = ({ characters = [], onUpdateCharacters }) => {
 
   const filteredArmor = armorItems.filter(item => {
     if (filter === 'all') return true;
-    if (filter === 'light') return item.type === 'light' || item.armorRating <= 10;
-    if (filter === 'medium') return item.type === 'medium' || (item.armorRating > 10 && item.armorRating <= 15);
-    if (filter === 'heavy') return item.type === 'heavy' || item.armorRating > 15;
+    if (filter === 'light') return item.type === 'light' || item.guardRating <= 10;
+    if (filter === 'medium') return item.type === 'medium' || (item.guardRating > 10 && item.guardRating <= 15);
+    if (filter === 'heavy') return item.type === 'heavy' || item.guardRating > 15;
     if (filter === 'shields') return item.type === 'shield';
-    if (filter === 'clothing') return item.category === 'Clothing' && item.armorRating > 0;
+    if (filter === 'clothing') return item.category === 'Clothing' && item.guardRating > 0;
     return true;
   });
 
@@ -114,26 +114,26 @@ const ArmorShop = ({ characters = [], onUpdateCharacters }) => {
   };
 
   const getArmorTypeColor = (item) => {
-    if (item.type === 'light' || item.armorRating <= 10) return 'green';
-    if (item.type === 'medium' || (item.armorRating > 10 && item.armorRating <= 15)) return 'yellow';
-    if (item.type === 'heavy' || item.armorRating > 15) return 'red';
+    if (item.type === 'light' || item.guardRating <= 10) return 'green';
+    if (item.type === 'medium' || (item.guardRating > 10 && item.guardRating <= 15)) return 'yellow';
+    if (item.type === 'heavy' || item.guardRating > 15) return 'red';
     if (item.type === 'shield') return 'blue';
     return 'gray';
   };
 
   const getArmorTypeIcon = (item) => {
-    if (item.type === 'light' || item.armorRating <= 10) return '🟢';
-    if (item.type === 'medium' || (item.armorRating > 10 && item.armorRating <= 15)) return '🟡';
-    if (item.type === 'heavy' || item.armorRating > 15) return '🔴';
-    if (item.type === 'shield') return '🛡️';
-    return '⚔️';
+    if (item.type === 'light' || item.guardRating <= 10) return 'Ã°Å¸Å¸Â¢';
+    if (item.type === 'medium' || (item.guardRating > 10 && item.guardRating <= 15)) return 'Ã°Å¸Å¸Â¡';
+    if (item.type === 'heavy' || item.guardRating > 15) return 'Ã°Å¸â€Â´';
+    if (item.type === 'shield') return 'Ã°Å¸â€ºÂ¡Ã¯Â¸Â';
+    return 'Ã¢Å¡â€Ã¯Â¸Â';
   };
 
   return (
     <Box bg="gray.800" color="white" p={6} borderRadius="xl" shadow="xl">
       <style>{dropdownStyle}</style>
       <Heading size="lg" mb={6} color="blue.300" textAlign="center">
-        🛡️ Armor & Protection Shop
+        Ã°Å¸â€ºÂ¡Ã¯Â¸Â Armor & Protection Shop
       </Heading>
 
       {/* Character Selection */}
@@ -213,9 +213,9 @@ const ArmorShop = ({ characters = [], onUpdateCharacters }) => {
           }}
         >
           <option value="all" style={{ backgroundColor: '#2D3748', color: '#FFFFFF' }}>All Armor</option>
-          <option value="light" style={{ backgroundColor: '#2D3748', color: '#FFFFFF' }}>Light Armor (AR ≤ 10)</option>
-          <option value="medium" style={{ backgroundColor: '#2D3748', color: '#FFFFFF' }}>Medium Armor (AR 11-15)</option>
-          <option value="heavy" style={{ backgroundColor: '#2D3748', color: '#FFFFFF' }}>Heavy Armor (AR &gt; 15)</option>
+          <option value="light" style={{ backgroundColor: '#2D3748', color: '#FFFFFF' }}>Light Armor (guardRating Ã¢â€°Â¤ 10)</option>
+          <option value="medium" style={{ backgroundColor: '#2D3748', color: '#FFFFFF' }}>Medium Armor (guardRating 11-15)</option>
+          <option value="heavy" style={{ backgroundColor: '#2D3748', color: '#FFFFFF' }}>Heavy Armor (guardRating &gt; 15)</option>
           <option value="shields" style={{ backgroundColor: '#2D3748', color: '#FFFFFF' }}>Shields</option>
           <option value="clothing" style={{ backgroundColor: '#2D3748', color: '#FFFFFF' }}>Protective Clothing</option>
         </Select>
@@ -252,14 +252,14 @@ const ArmorShop = ({ characters = [], onUpdateCharacters }) => {
                 <Flex justify="space-between">
                   <Text fontSize="sm" color="gray.300">Armor Rating:</Text>
                   <Text fontSize="sm" fontWeight="bold" color="blue.300">
-                    {armor.armorRating}
+                    {armor.guardRating}
                   </Text>
                 </Flex>
 
                 <Flex justify="space-between">
-                  <Text fontSize="sm" color="gray.300">S.D.C.:</Text>
+                  <Text fontSize="sm" color="gray.300">armorDurability:</Text>
                   <Text fontSize="sm" fontWeight="bold" color="green.300">
-                    {armor.sdc}
+                    {armor.armorDurability}
                   </Text>
                 </Flex>
 
@@ -323,13 +323,13 @@ const ArmorShop = ({ characters = [], onUpdateCharacters }) => {
                     <Flex justify="space-between">
                       <Text fontSize="sm">Armor Rating:</Text>
                       <Text fontSize="sm" fontWeight="bold" color="blue.300">
-                        {selectedArmor.armorRating}
+                        {selectedArmor.guardRating}
                       </Text>
                     </Flex>
                     <Flex justify="space-between">
-                      <Text fontSize="sm">S.D.C.:</Text>
+                      <Text fontSize="sm">armorDurability:</Text>
                       <Text fontSize="sm" fontWeight="bold" color="green.300">
-                        {selectedArmor.sdc}
+                        {selectedArmor.armorDurability}
                       </Text>
                     </Flex>
                     <Flex justify="space-between">

@@ -12,7 +12,7 @@ const SKIP_PATTERNS = [
   "ENGINE_CALL",
   "turn effect",
   "Schedule canceled",
-  "remainingAttacks",
+  "remainingActions",
   "Weapon details",
   "has 0 melee",
   "has 0 ranged",
@@ -20,7 +20,7 @@ const SKIP_PATTERNS = [
 
 function cleanMessage(message = "") {
   return String(message)
-    .replace(/[🧪✅🔍📍⚔️🎲💥🏃🚫➡️🟦🤖]/g, "")
+    .replace(/[ðŸ§ªâœ…ðŸ”ðŸ“âš”ï¸ðŸŽ²ðŸ’¥ðŸƒðŸš«âž¡ï¸ðŸŸ¦ðŸ¤–]/g, "")
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -70,7 +70,7 @@ export function buildNarrationContext({
     maxHP: f.maxHP,
     status: f.status,
     condition: f.condition,
-    remainingAttacks: f.remainingAttacks,
+    remainingActions: f.remainingActions,
   }));
 
   return {
@@ -114,7 +114,7 @@ export function templateCombatNarration(context) {
   }
 
   if (lower.includes("critical")) {
-    return `A brutal opening appears in the chaos. ${message}`;
+    return `A brutal opening astaminaars in the chaos. ${message}`;
   }
 
   if (lower.includes("miss")) {
@@ -122,15 +122,15 @@ export function templateCombatNarration(context) {
   }
 
   if (lower.includes("hit") || lower.includes("damage")) {
-    return `The blow lands with force, changing the rhythm of the fight. ${message}`;
+    return `The blow lands with fraidere, changing the rhythm of the fight. ${message}`;
   }
 
   if (lower.includes("casts")) {
-    return `Power gathers in the arena as magic is called into the battle. ${message}`;
+    return `Power gathers in the arena as training is called into the battle. ${message}`;
   }
 
   if (lower.includes("attacks")) {
-    return `The combatant commits to the strike, pressing the attack in the heat of battle. ${message}`;
+    return `The combatant commits to the attack, pressing the attack in the heat of battle. ${message}`;
   }
 
   if (lower.includes("flee") || lower.includes("routes")) {
@@ -152,10 +152,10 @@ export async function narrateCombatEntry(context, options = {}) {
   }
 
   const prompt = `
-You are a tabletop fantasy GM narrating a Palladium-style combat scene.
+You are a tabletop fantasy GM narrating a Medieval Combat Simulator-style combat scene.
 
 Rules:
-- Narrate only what already happened.
+- Narrate only what already hastaminaned.
 - Do not invent new attacks.
 - Do not invent damage.
 - Do not change HP.

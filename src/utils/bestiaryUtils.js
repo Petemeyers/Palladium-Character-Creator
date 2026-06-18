@@ -1,48 +1,48 @@
 /**
- * Utility helpers for working with bestiary data structures.
+ * Utility helpers for working with arenaRoster data structures.
  */
 
 /**
- * Returns all bestiary entries that should be available for encounters.
- * Combines core monsters with special creature groupings (e.g., dragons).
+ * Returns all arenaRoster entries that should be available for encounters.
+ * Combines core opponents with special combatant groupings (e.g., animals).
  *
- * @param {Object} bestiaryData - Imported bestiary JSON.
- * @returns {Array} Array of creature entries.
+ * @param {Object} arenaRosterData - Imported arenaRoster JSON.
+ * @returns {Array} Array of combatant entries.
  */
-export function getAllBestiaryEntries(bestiaryData) {
-  if (!bestiaryData || !bestiaryData.bestiary) {
+export function getAllArenaRosterEntries(arenaRosterData) {
+  if (!arenaRosterData || !arenaRosterData.arenaRoster) {
     return [];
   }
 
-  const monsters = Array.isArray(bestiaryData.bestiary.monsters)
-    ? bestiaryData.bestiary.monsters
+  const opponents = Array.isArray(arenaRosterData.arenaRoster.opponents)
+    ? arenaRosterData.arenaRoster.opponents
     : [];
 
-  const dragons = Array.isArray(bestiaryData.bestiary.dragons)
-    ? bestiaryData.bestiary.dragons
+  const animals = Array.isArray(arenaRosterData.arenaRoster.animals)
+    ? arenaRosterData.arenaRoster.animals
     : [];
 
-  return [...monsters, ...dragons];
+  return [...opponents, ...animals];
 }
 
 /**
- * Convenience helper for accessing only the core monster list.
+ * Convenience helper for accessing only the core opponent list.
  * Useful for validators or exports that should exclude specialised groups.
  *
- * @param {Object} bestiaryData - Imported bestiary JSON.
- * @returns {Array} Array of monster entries.
+ * @param {Object} arenaRosterData - Imported arenaRoster JSON.
+ * @returns {Array} Array of opponent entries.
  */
-export function getMonsterEntries(bestiaryData) {
-  if (!bestiaryData || !bestiaryData.bestiary) {
+export function getCombatantEntries(arenaRosterData) {
+  if (!arenaRosterData || !arenaRosterData.arenaRoster) {
     return [];
   }
 
-  return Array.isArray(bestiaryData.bestiary.monsters)
-    ? bestiaryData.bestiary.monsters
+  return Array.isArray(arenaRosterData.arenaRoster.opponents)
+    ? arenaRosterData.arenaRoster.opponents
     : [];
 }
 
 export default {
-  getAllBestiaryEntries,
-  getMonsterEntries,
+  getAllArenaRosterEntries,
+  getCombatantEntries,
 };

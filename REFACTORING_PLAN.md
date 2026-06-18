@@ -8,7 +8,7 @@ CombatPage.jsx is over 500KB, causing Babel to disable optimizations. This plan 
 ### File Size: ~500KB+ (~10,990+ lines)
 ### Major Sections:
 1. **Imports** (lines 1-172) - 53 imports
-2. **Helper Functions** (lines 174-680) - Spell/power parsing, AI utilities
+2. **Helper Functions** (lines 174-680) - Technique/power parsing, AI utilities
 3. **Component Definition** (lines 681-8892) - Main component with:
    - State declarations (50+ useState hooks)
    - Callbacks/handlers (100+ useCallback functions)
@@ -22,16 +22,16 @@ CombatPage.jsx is over 500KB, causing Babel to disable optimizations. This plan 
 
 ### Phase 1: Extract Utility Functions (No breaking changes)
 
-#### 1.1 Spell/Power Parsing Utilities
-**New File**: `src/utils/spellParsingUtils.js`
+#### 1.1 Technique/Power Parsing Utilities
+**New File**: `src/utils/techniqueParsingUtils.js`
 - `parseRangeToFeet()` (line ~300)
-- `getSpellCost()` (line ~320)
-- `getPsionicCost()` (line ~347)
+- `getTechniqueCost()` (line ~320)
+- `getTacticalCost()` (line ~347)
 - `extractHealingFormulaFromText()` (line ~364)
 - `extractDamageFormulaFromText()` (line ~412)
-- `findSpellInUnifiedAbilities()` (line ~464)
-- `getSpellRangeInFeet()` (line ~485)
-- `getPsionicRangeInFeet()` (line ~501)
+- `findTechniqueInUnifiedAbilities()` (line ~464)
+- `getTechniqueRangeInFeet()` (line ~485)
+- `getTacticalRangeInFeet()` (line ~501)
 - Constants: `HEAL_KEYWORDS`, `TOUCH_RANGE_HINTS`, `SUPPORT_KEYWORDS`, `HARMFUL_KEYWORDS`
 
 **Impact**: ~200 lines moved, pure functions, easy to test
@@ -40,10 +40,10 @@ CombatPage.jsx is over 500KB, causing Babel to disable optimizations. This plan 
 
 #### 1.2 Combat Calculation Utilities
 **New File**: `src/utils/combatCalculations.js`
-- `getCasterSpellDC()` (line ~581)
-- `calculateSpellSave()` (line ~598)
+- `getCasterTechniqueDC()` (line ~581)
+- `calculateTechniqueSave()` (line ~598)
 - `gatherSavingThrowBonuses()` (line ~552)
-- `getPEMagicBonus()` / `getMEMagicBonus()` (if exists inline)
+- `getPETrainingBonus()` / `getMETrainingBonus()` (if exists inline)
 - `parseDamageRoll()` - extract damage parsing logic
 - `parseHealingRoll()` - extract healing parsing logic
 
@@ -98,7 +98,7 @@ CombatPage.jsx is over 500KB, causing Babel to disable optimizations. This plan 
 **Extract**:
 - UI toggles: `showTacticalMap`, `show3DView`, `showPhase0Modal`, etc.
 - Modal states
-- Selection states: `selectedTarget`, `selectedWeaponSlot`, `selectedSpell`, etc.
+- Selection states: `selectedTarget`, `selectedWeaponSlot`, `selectedTechnique`, etc.
 - Mode states: `mode`, `mapViewMode`, `movementMode`, etc.
 
 **Impact**: ~200 lines moved
@@ -151,7 +151,7 @@ CombatPage.jsx is over 500KB, causing Babel to disable optimizations. This plan 
 **New File**: `src/utils/combatActionHandlers/attackActions.js`
 **Extract**:
 - `handleChargeAttack()` (line ~3853)
-- `handleStrikeWithMovement()` (line ~3985)
+- `handleAttackWithMovement()` (line ~3985)
 - Attack resolution logic
 - Damage calculation flow
 
@@ -240,7 +240,7 @@ CombatPage.jsx is over 500KB, causing Babel to disable optimizations. This plan 
 #### 4.2 Fighter Status Panel
 **New File**: `src/components/combat/FighterStatusPanel.jsx`
 **Extract JSX** (lines ~11171-11450):
-- HP/SDC display
+- HP/armorDurability display
 - Stamina/Fatigue display
 - Status effects display
 - Initiative display
@@ -335,25 +335,25 @@ CombatPage.jsx is over 500KB, causing Babel to disable optimizations. This plan 
 
 ---
 
-#### 4.6 Spell/Psionic Selection UI
+#### 4.6 Technique/Tactical Selection UI
 **New File**: `src/components/combat/AbilitySelectionUI.jsx`
 **Extract JSX**:
-- Spell selection modal/panel
-- Psionic power selection
+- Technique selection modal/panel
+- Tactical power selection
 - Ability cost display
 - Range indicators
 
 **Props**:
 ```javascript
 {
-  getFighterSpells,
-  getFighterPsionicPowers,
-  selectedSpell,
-  setSelectedSpell,
-  selectedPsionicPower,
-  setSelectedPsionicPower,
-  executeSpellCast,
-  executePsionicUse
+  getFighterTechniques,
+  getFighterTacticalPowers,
+  selectedTechnique,
+  setSelectedTechnique,
+  selectedTacticalPower,
+  setSelectedTacticalPower,
+  executeTechniqueCast,
+  executeTacticalUse
 }
 ```
 
@@ -395,14 +395,14 @@ CombatPage.jsx is over 500KB, causing Babel to disable optimizations. This plan 
 
 ---
 
-#### 5.2 Spell/Power Keywords
-**New File**: `src/data/magicKeywords.js`
+#### 5.2 Technique/Power Keywords
+**New File**: `src/data/trainingKeywords.js`
 **Extract** (already identified in Phase 1.1):
 - `HEAL_KEYWORDS`
 - `SUPPORT_KEYWORDS`
 - `HARMFUL_KEYWORDS`
 - `TOUCH_RANGE_HINTS`
-- `SELF_ONLY_HINTS`
+- `SHUMAN_ONLY_HINTS`
 
 **Impact**: ~30 lines moved
 
@@ -416,9 +416,9 @@ CombatPage.jsx is over 500KB, causing Babel to disable optimizations. This plan 
 - `getTargetOptionsForAction()` (line ~1320)
 - `getAvailableSkills()` (line ~1030)
 - `getAvailableGrappleActions()` (line ~1430)
-- `getFighterSpells()` (line ~1181)
-- `getFighterPsionicPowers()` (line ~1176)
-- `getEquippedWeapons()` (line ~4380)
+- `getFighterTechniques()` (line ~1181)
+- `getFighterTacticalPowers()` (line ~1176)
+- `getEquistaminadWeapons()` (line ~4380)
 
 **Impact**: ~400 lines moved
 
@@ -434,14 +434,14 @@ CombatPage.jsx is over 500KB, causing Babel to disable optimizations. This plan 
 ### New Files Created
 
 #### Utils (Pure Functions):
-1. `spellParsingUtils.js` - ~200 lines
+1. `techniqueParsingUtils.js` - ~200 lines
 2. `combatCalculations.js` - ~150 lines
 3. `aiMovementUtils.js` - ~100 lines
 4. `combatActionHandlers/attackActions.js` - ~500 lines
 5. `combatActionHandlers/maneuverActions.js` - ~400 lines
-6. `combatActionHandlers/grappleActions.js` - ~1400 lines ⭐
+6. `combatActionHandlers/grappleActions.js` - ~1400 lines ÃƒÂ¢Ã‚Â­Ã‚Â
 7. `combatActionHandlers/movementActions.js` - ~400 lines
-8. `combatActionHandlers/aiTurnHandler.js` - ~1500 lines ⭐
+8. `combatActionHandlers/aiTurnHandler.js` - ~1500 lines ÃƒÂ¢Ã‚Â­Ã‚Â
 9. `combatActionHandlers/actionOptionsBuilder.js` - ~400 lines
 
 #### Hooks:
@@ -461,54 +461,54 @@ CombatPage.jsx is over 500KB, causing Babel to disable optimizations. This plan 
 
 #### Data:
 21. `data/combatConstants.js` - ~50 lines
-22. `data/magicKeywords.js` - ~30 lines
+22. `data/trainingKeywords.js` - ~30 lines
 
 ---
 
 ## Implementation Order (Recommended)
 
 ### Week 1: Utilities & Constants (Low Risk)
-1. ✅ Extract spell/power parsing utils (Phase 1.1)
-2. ✅ Extract combat calculation utils (Phase 1.2)
-3. ✅ Extract AI movement utils (Phase 1.3)
-4. ✅ Extract constants (Phase 5)
+1. ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Extract technique/power parsing utils (Phase 1.1)
+2. ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Extract combat calculation utils (Phase 1.2)
+3. ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Extract AI movement utils (Phase 1.3)
+4. ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Extract constants (Phase 5)
 
 **Result**: CombatPage.jsx down to ~10,500 lines
 
 ---
 
 ### Week 2: Custom Hooks (Medium Risk)
-5. ✅ Extract combat log hook (Phase 2.3)
-6. ✅ Extract position management hook (Phase 2.4)
-7. ✅ Extract combat state hook (Phase 2.1)
-8. ✅ Extract UI state hook (Phase 2.2)
+5. ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Extract combat log hook (Phase 2.3)
+6. ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Extract position management hook (Phase 2.4)
+7. ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Extract combat state hook (Phase 2.1)
+8. ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Extract UI state hook (Phase 2.2)
 
 **Result**: CombatPage.jsx down to ~9,500 lines
 
 ---
 
 ### Week 3: Action Handlers (Higher Risk - Test Thoroughly)
-9. ✅ Extract maneuver actions (Phase 3.2) - **Start here, smallest**
-10. ✅ Extract movement actions (Phase 3.4)
-11. ✅ Extract attack actions (Phase 3.1)
-12. ✅ Extract grapple actions (Phase 3.3) - **Biggest, most complex**
-13. ✅ Extract AI turn handler (Phase 3.5) - **Second biggest**
+9. ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Extract maneuver actions (Phase 3.2) - **Start here, smallest**
+10. ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Extract movement actions (Phase 3.4)
+11. ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Extract attack actions (Phase 3.1)
+12. ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Extract grapple actions (Phase 3.3) - **Biggest, most complex**
+13. ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Extract AI turn handler (Phase 3.5) - **Second biggest**
 
 **Result**: CombatPage.jsx down to ~6,000 lines
 
 ---
 
 ### Week 4: UI Components (Lower Risk - Mostly Presentation)
-14. ✅ Extract turn display panel (Phase 4.4)
-15. ✅ Extract combat action buttons (Phase 4.3)
-16. ✅ Extract target selection UI (Phase 4.5)
-17. ✅ Extract ability selection UI (Phase 4.6)
-18. ✅ Extract position display panel (Phase 4.7)
-19. ✅ Extract fighter status panel (Phase 4.2)
-20. ✅ Extract combat log panel (Phase 4.1)
-21. ✅ Extract action options builder (Phase 6.1)
+14. ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Extract turn display panel (Phase 4.4)
+15. ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Extract combat action buttons (Phase 4.3)
+16. ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Extract target selection UI (Phase 4.5)
+17. ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Extract ability selection UI (Phase 4.6)
+18. ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Extract position display panel (Phase 4.7)
+19. ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Extract fighter status panel (Phase 4.2)
+20. ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Extract combat log panel (Phase 4.1)
+21. ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Extract action options builder (Phase 6.1)
 
-**Result**: CombatPage.jsx down to ~3,500 lines ✅
+**Result**: CombatPage.jsx down to ~3,500 lines ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦
 
 ---
 
@@ -518,37 +518,37 @@ CombatPage.jsx is over 500KB, causing Babel to disable optimizations. This plan 
 1. Run full combat simulation
 2. Test all action types (attack, maneuver, grapple, movement)
 3. Test AI turns (enemy and player AI)
-4. Test spell/psionic casting
+4. Test technique/tactical casting
 5. Test position updates
 6. Verify log messages
 7. Check for console errors/warnings
 
 ### Critical Test Cases:
-- ✅ Grapple system (all actions)
-- ✅ Maneuvers (trip, shove, disarm)
-- ✅ Movement + attack combinations
-- ✅ Charge attacks
-- ✅ AI decision making
-- ✅ Position synchronization
-- ✅ Spell/psionic targeting
-- ✅ Turn order and initiative
+- ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Grapple system (all actions)
+- ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Maneuvers (trip, shove, disarm)
+- ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Movement + attack combinations
+- ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Charge attacks
+- ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ AI decision making
+- ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Position synchronization
+- ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Technique/tactical targeting
+- ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Turn order and initiative
 
 ---
 
 ## Benefits
 
 ### Immediate:
-- ✅ Babel warnings eliminated
-- ✅ Faster build times
-- ✅ Better code organization
+- ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Babel warnings eliminated
+- ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Faster build times
+- ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Better code organization
 
 ### Long-term:
-- ✅ Easier to test individual pieces
-- ✅ Easier to add new features
-- ✅ Better developer experience
-- ✅ Smaller bundle chunks (can code-split)
-- ✅ Easier code reviews
-- ✅ Reduced merge conflicts
+- ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Easier to test individual pieces
+- ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Easier to add new features
+- ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Better developer experience
+- ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Smaller bundle chunks (can code-split)
+- ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Easier code reviews
+- ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Reduced merge conflicts
 
 ---
 
@@ -588,10 +588,10 @@ Get-ChildItem -Recurse src/utils/combatActionHandlers, src/hooks, src/components
 ## Priority Actions (If Time-Limited)
 
 **Must Do** (Biggest impact):
-1. Extract grapple actions handler (~1400 lines) ⭐⭐⭐
-2. Extract AI turn handler (~1500 lines) ⭐⭐⭐
-3. Extract combat log hook (~150 lines) ⭐⭐
-4. Extract position management hook (~200 lines) ⭐⭐
+1. Extract grapple actions handler (~1400 lines) ÃƒÂ¢Ã‚Â­Ã‚ÂÃƒÂ¢Ã‚Â­Ã‚ÂÃƒÂ¢Ã‚Â­Ã‚Â
+2. Extract AI turn handler (~1500 lines) ÃƒÂ¢Ã‚Â­Ã‚ÂÃƒÂ¢Ã‚Â­Ã‚ÂÃƒÂ¢Ã‚Â­Ã‚Â
+3. Extract combat log hook (~150 lines) ÃƒÂ¢Ã‚Â­Ã‚ÂÃƒÂ¢Ã‚Â­Ã‚Â
+4. Extract position management hook (~200 lines) ÃƒÂ¢Ã‚Â­Ã‚ÂÃƒÂ¢Ã‚Â­Ã‚Â
 
 **Should Do**:
 5. Extract maneuver actions (~400 lines)

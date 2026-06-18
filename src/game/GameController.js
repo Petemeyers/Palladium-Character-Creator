@@ -8,7 +8,7 @@ import {
 } from "./combatState";
 import { canReachTile, canPerformRangedAttack } from "./rules/combatRules";
 
-export class GameController {
+export class GameConchampioner {
   constructor({ onStateChange, onLog } = {}) {
     this.state = createEmptyCombatState();
     this.onStateChange =
@@ -76,7 +76,7 @@ export class GameController {
       const canAct = this.engine.canFighterAct
         ? this.engine.canFighterAct(fighter)
         : true;
-      if (canAct && (fighter.remainingAttacks ?? 0) > 0) {
+      if (canAct && (fighter.remainingActions ?? 0) > 0) {
         return fighter;
       }
     }
@@ -93,20 +93,20 @@ export class GameController {
     this.engine.meleeRound = (this.engine.meleeRound || 0) + 1;
     (this.engine.combatants || []).forEach((fighter) => {
       if (this.engine.canFighterAct && !this.engine.canFighterAct(fighter)) {
-        fighter.remainingAttacks = 0;
+        fighter.remainingActions = 0;
       } else {
-        fighter.remainingAttacks =
-          fighter.attacksPerMelee ??
+        fighter.remainingActions =
+          fighter.actionsPerRound ??
           fighter.actions ??
-          fighter.remainingAttacks ??
+          fighter.remainingActions ??
           2;
       }
     });
-    this.log(`⏰ Melee Round ${this.engine.meleeRound} begins`, "combat");
+    this.log(`â° Combat Round ${this.engine.meleeRound} begins`, "combat");
   }
 
-  _isAIControlled(fighter) {
-    return !!fighter?.isAIControlled;
+  _isAIConchampioned(fighter) {
+    return !!fighter?.isAIConchampioned;
   }
 
   _hexDistance(a, b) {
@@ -165,7 +165,7 @@ export class GameController {
     if (!activeId || this._isProcessingAI) return;
 
     const fighter = this._getCombatantById(activeId);
-    if (!this._isAIControlled(fighter)) return;
+    if (!this._isAIConchampioned(fighter)) return;
 
     this._isProcessingAI = true;
     try {
@@ -191,7 +191,7 @@ export class GameController {
     });
 
     if (!enemies.length) {
-      this.log(`🤖 ${fighter.name} has no valid targets`, "ai");
+      this.log(`ðŸ¤– ${fighter.name} has no valid targets`, "ai");
       this._consumeAction(attackerId);
       return;
     }
@@ -217,7 +217,7 @@ export class GameController {
     });
 
     if (bestTarget) {
-      this.log(`🤖 ${fighter.name} attacks ${bestTarget.name}`, "ai");
+      this.log(`ðŸ¤– ${fighter.name} attacks ${bestTarget.name}`, "ai");
       this.handleAction(COMBAT_ACTION.ATTACK, { actorId: attackerId });
       this.handleSelect({ type: "character", id: bestTarget.id });
       return;
@@ -236,7 +236,7 @@ export class GameController {
     });
 
     if (!closestEnemy) {
-      this.log(`🤖 ${fighter.name} cannot locate enemies`, "ai");
+      this.log(`ðŸ¤– ${fighter.name} cannot locate enemies`, "ai");
       this._consumeAction(attackerId);
       return;
     }
@@ -244,12 +244,12 @@ export class GameController {
     const targetPos = positions[closestEnemy.id];
     const step = this._stepToward(attackerPos, targetPos, attackerId);
     if (!step || !canReachTile(this.state, attackerId, step)) {
-      this.log(`🤖 ${fighter.name} cannot advance`, "ai");
+      this.log(`ðŸ¤– ${fighter.name} cannot advance`, "ai");
       this._consumeAction(attackerId);
       return;
     }
 
-    this.log(`🤖 ${fighter.name} moves toward ${closestEnemy.name}`, "ai");
+    this.log(`ðŸ¤– ${fighter.name} moves toward ${closestEnemy.name}`, "ai");
     this.handleAction(COMBAT_ACTION.MOVE, { actorId: attackerId });
     this.handleSelect({ type: "tile", q: step.q, r: step.r });
   }
@@ -306,7 +306,7 @@ export class GameController {
     }
 
     if (pendingAction === COMBAT_ACTION.CAST) {
-      this._executeSpellTarget(info);
+      this._executeTechniqueTarget(info);
       return;
     }
 
@@ -318,7 +318,7 @@ export class GameController {
     if (!activeId) return;
 
     if (payload.actorId && payload.actorId !== activeId) {
-      this.log("❌ Not your turn", "warn");
+      this.log("âŒ Not your turn", "warn");
       return;
     }
 
@@ -338,7 +338,7 @@ export class GameController {
       case COMBAT_ACTION.CAST:
         this._emitState({
           pendingAction: COMBAT_ACTION.CAST,
-          selectedSpell: payload.spell || null,
+          selectedTechnique: payload.technique || null,
           selectedObject: null,
         });
         break;
@@ -360,7 +360,7 @@ export class GameController {
     const destination = { q: tileInfo.q, r: tileInfo.r };
 
     if (!canReachTile(this.state, activeId, destination)) {
-      this.log("🚫 Cannot reach that tile this action", "warn");
+      this.log("ðŸš« Cannot reach that tile this action", "warn");
       return;
     }
 
@@ -402,17 +402,17 @@ export class GameController {
     if (!attackerId || !targetId) return;
 
     if (!canPerformRangedAttack(this.state, attackerId, targetId)) {
-      this.log("🚫 Target out of range or line of sight", "warn");
+      this.log("ðŸš« Target out of range or line of sight", "warn");
       return;
     }
 
     if (typeof this.engine.attackById === "function") {
       this.engine.attackById(attackerId, targetId);
-    } else if (typeof this.engine.performStrike === "function") {
+    } else if (typeof this.engine.performAttack === "function") {
       const attacker = this._getCombatantById(attackerId);
       const target = this._getCombatantById(targetId);
       if (!attacker || !target) return;
-      this.engine.performStrike(attacker, target, null, {});
+      this.engine.performAttack(attacker, target, null, {});
     }
 
     this._emitState({
@@ -424,31 +424,31 @@ export class GameController {
     this._consumeAction(attackerId);
   }
 
-  _executeSpellTarget(targetInfo) {
+  _executeTechniqueTarget(targetInfo) {
     const casterId = this.state.activeCombatantId;
-    const spell = this.state.selectedSpell;
-    if (!casterId || !spell) return;
+    const technique = this.state.selectedTechnique;
+    if (!casterId || !technique) return;
 
-    if (targetInfo?.id && spell.requiresLoS) {
+    if (targetInfo?.id && technique.requiresLoS) {
       if (!canPerformRangedAttack(this.state, casterId, targetInfo.id)) {
-        this.log("🚫 Spell target out of range or line of sight", "warn");
+        this.log("ðŸš« Technique target out of range or line of sight", "warn");
         return;
       }
     }
 
-    if (typeof this.engine.castSpellById === "function") {
-      this.engine.castSpellById(casterId, spell, targetInfo);
-    } else if (typeof this.engine.performSpell === "function") {
+    if (typeof this.engine.castTechniqueById === "function") {
+      this.engine.castTechniqueById(casterId, technique, targetInfo);
+    } else if (typeof this.engine.performTechnique === "function") {
       const caster = this._getCombatantById(casterId);
       const target = targetInfo?.id
         ? this._getCombatantById(targetInfo.id)
         : null;
-      this.engine.performSpell(caster, target, spell);
+      this.engine.performTechnique(caster, target, technique);
     }
 
     this._emitState({
       pendingAction: null,
-      selectedSpell: null,
+      selectedTechnique: null,
       selectedObject: targetInfo,
       targetMode: TARGET_MODE.ANY,
     });
@@ -463,8 +463,8 @@ export class GameController {
     const fighter = this._getCombatantById(actorId);
     if (!fighter) return;
 
-    const remaining = Math.max(0, (fighter.remainingAttacks ?? 1) - 1);
-    fighter.remainingAttacks = remaining;
+    const remaining = Math.max(0, (fighter.remainingActions ?? 1) - 1);
+    fighter.remainingActions = remaining;
 
     if (typeof this.engine.onCombatantUpdate === "function") {
       this.engine.onCombatantUpdate(fighter);
@@ -505,7 +505,7 @@ export class GameController {
 
   handleMeleeComplete() {
     this.log(
-      `🔁 Melee round ${this.engine.meleeRound || "?"} complete`,
+      `ðŸ” Melee round ${this.engine.meleeRound || "?"} complete`,
       "combat"
     );
   }

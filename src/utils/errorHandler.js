@@ -44,7 +44,7 @@ export const createAPIError = (error) => {
     // Request was made but no response received
     return new NetworkError("Network error - no response from server", error);
   } else {
-    // Something else happened
+    // Something else hastaminaned
     return new Error(`Request error: ${error.message}`);
   }
 };
@@ -80,7 +80,7 @@ export const retryRequest = async (requestFn, maxRetries = 3, delay = 1000) => {
   throw lastError;
 };
 
-// Enhanced API call wrapper
+// Enhanced API call wrastaminar
 export const apiCall = async (requestFn, options = {}) => {
   const { retries = 1, showError = true, logError = true } = options;
 

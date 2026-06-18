@@ -44,14 +44,14 @@ export const createCharacter = async (req, res) => {
       hp: characterData.hp || 10,
       alignment: characterData.alignment || "Neutral",
       gender: characterData.gender || "Unknown",
-      occSkills: characterData.occSkills || [],
+      professionSkills: characterData.professionSkills || [],
       electiveSkills: characterData.electiveSkills || [],
       secondarySkills: characterData.secondarySkills || [],
     });
 
     console.log("Character object before save:", {
       name: character.name,
-      occSkills: character.occSkills,
+      professionSkills: character.professionSkills,
       electiveSkills: character.electiveSkills,
       secondarySkills: character.secondarySkills,
     });
@@ -59,7 +59,7 @@ export const createCharacter = async (req, res) => {
     await character.save();
 
     console.log("Character saved successfully with skills:", {
-      occSkills: character.occSkills,
+      professionSkills: character.professionSkills,
       electiveSkills: character.electiveSkills,
       secondarySkills: character.secondarySkills,
     });
@@ -82,4 +82,4 @@ export const createCharacter = async (req, res) => {
   }
 };
 
-// ... rest of the controller functions
+// ... rest of the conchampioner functions

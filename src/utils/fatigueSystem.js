@@ -1,21 +1,21 @@
 /**
- * Palladium Fantasy RPG - Fatigue & Stamina System
+ * Medieval Combat Simulator - Fatigue & Stamina System
  *
  * Based on official rules:
- * - Characters can sprint at SPD × 20 yards per melee for P.E. minutes
- * - After P.E. limit, penalties apply: -1 SPD, -1 Strike/Parry/Dodge per minute over
- * - At +5 minutes over P.E., character collapses
+ * - Characters can sprint at SPD Ã— 20 yards per melee for endurance minutes
+ * - After endurance limit, penalties apply: -1 SPD, -1 Attack/Block/Evade per minute over
+ * - At +5 minutes over endurance, character collapses
  * - Recovery requires rest for half the sprint duration
  */
 
 /**
- * Initialize fatigue state for a character/creature
+ * Initialize fatigue state for a character/combatant
  */
 export function initializeFatigueState(character) {
   return {
     sprintTimer: 0, // Minutes spent sprinting
     restTimer: 0, // Minutes spent resting
-    fatigueLevel: 0, // How many minutes over P.E. limit
+    fatigueLevel: 0, // How many minutes over endurance limit
     baseSPD:
       character.Spd ||
       character.spd ||
@@ -24,7 +24,7 @@ export function initializeFatigueState(character) {
       10,
     basePE: character.PE || character.pe || 10,
     status: "ready", // ready, fatigued, collapsed
-    combatPenalty: 0, // Penalty to Strike/Parry/Dodge
+    combatPenalty: 0, // Penalty to Attack/Block/Evade
   };
 }
 
@@ -40,7 +40,7 @@ export function updateSprintFatigue(character, deltaMinutes = 1) {
   state.sprintTimer += deltaMinutes;
   state.restTimer = 0; // Reset rest timer when sprinting
 
-  // Check if over P.E. limit
+  // Check if over endurance limit
   if (state.sprintTimer > state.basePE) {
     state.fatigueLevel = Math.floor(state.sprintTimer - state.basePE);
 
@@ -51,7 +51,7 @@ export function updateSprintFatigue(character, deltaMinutes = 1) {
       state.combatPenalty = -state.fatigueLevel;
       state.status = "fatigued";
     } else if (state.fatigueLevel === 4) {
-      // SPD halved, cannot dodge ranged
+      // SPD halved, cannot evade ranged
       character.spd = Math.max(Math.floor(state.baseSPD / 2), 1);
       state.combatPenalty = -4;
       state.status = "gasping";
@@ -62,7 +62,7 @@ export function updateSprintFatigue(character, deltaMinutes = 1) {
       state.status = "collapsed";
     }
   } else {
-    // Within P.E. limit, no penalties
+    // Within endurance limit, no penalties
     character.spd = state.baseSPD;
     state.combatPenalty = 0;
     state.fatigueLevel = 0;
@@ -177,9 +177,9 @@ export function getFatigueStatus(character) {
  * Calculate sprint distance in feet based on SPD
  */
 export function getSprintDistanceFeet(speedAttribute) {
-  // Official Palladium: SPD × 20 yards per melee
+  // Official Medieval Combat Simulator: SPD Ã— 20 yards per melee
   // Convert to feet: 1 yard = 3 feet
-  return speedAttribute * 20 * 3; // SPD × 60 feet
+  return speedAttribute * 20 * 3; // SPD Ã— 60 feet
 }
 
 /**
@@ -194,7 +194,7 @@ export function getSprintDistanceCells(speedAttribute) {
  * Get maximum sustainable sprint distance before fatigue
  */
 export function getMaxSprintDistance(speedAttribute, peAttribute) {
-  // SPD × 20 yards per minute × P.E. minutes
+  // SPD Ã— 20 yards per minute Ã— endurance minutes
   const yardsPerMinute = speedAttribute * 20;
   const totalYards = yardsPerMinute * peAttribute;
   return {
@@ -221,21 +221,21 @@ export function applyFatiguePenalties(character) {
   if (character.bonuses) {
     modified.bonuses = {
       ...character.bonuses,
-      strike: (character.bonuses.strike || 0) + penalty,
-      parry: (character.bonuses.parry || 0) + penalty,
-      dodge: (character.bonuses.dodge || 0) + penalty,
+      attack: (character.bonuses.attack || 0) + penalty,
+      block: (character.bonuses.block || 0) + penalty,
+      evade: (character.bonuses.evade || 0) + penalty,
     };
   } else {
     modified.bonuses = {
-      strike: penalty,
-      parry: penalty,
-      dodge: penalty,
+      attack: penalty,
+      block: penalty,
+      evade: penalty,
     };
   }
 
-  // At "gasping" level, cannot dodge ranged attacks
+  // At "gasping" level, cannot evade ranged attacks
   if (character.fatigueState.status === "gasping") {
-    modified.canDodgeRanged = false;
+    modified.canEvadeRanged = false;
   }
 
   // At "collapsed", cannot take actions

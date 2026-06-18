@@ -31,8 +31,8 @@ import {
   unequipItem, 
   getEquipmentDisplayInfo,
   getTotalArmorRating,
-  getTotalEquippedWeight,
-  getTotalArmorSDC,
+  getTotalEquistaminadWeight,
+  getTotalArmorarmorDurability,
   calculateArmorPenalties,
   getContainerCapacityBonus,
   getTotalCarryingCapacity
@@ -42,12 +42,12 @@ import { SLOT_NAMES } from '../data/equipmentSlots';
 import clothingEquipment from '../data/clothingEquipment.json';
 
 const slotIcons = {
-  head: "👤",
-  torso: "👔", 
-  legs: "👖",
-  feet: "👟",
-  hands: "🧤",
-  back: "🧥"
+  head: "Ã°Å¸â€˜Â¤",
+  torso: "Ã°Å¸â€˜â€", 
+  legs: "Ã°Å¸â€˜â€“",
+  feet: "Ã°Å¸â€˜Å¸",
+  hands: "Ã°Å¸Â§Â¤",
+  back: "Ã°Å¸Â§Â¥"
 };
 
 export default function EquipmentModal({ 
@@ -64,8 +64,8 @@ export default function EquipmentModal({
   const availableClothing = getAvailableClothing(character);
   const equipmentDisplayInfo = getEquipmentDisplayInfo(character);
   const totalArmorRating = getTotalArmorRating(character);
-  const totalWeight = getTotalEquippedWeight(character);
-  const totalArmorSDC = getTotalArmorSDC(character);
+  const totalWeight = getTotalEquistaminadWeight(character);
+  const totalArmorarmorDurability = getTotalArmorarmorDurability(character);
   const armorPenalties = calculateArmorPenalties(character);
   const containerBonus = getContainerCapacityBonus(character);
   const totalCarryingCapacity = getTotalCarryingCapacity(character);
@@ -94,8 +94,8 @@ export default function EquipmentModal({
       await onUpdateCharacter(character._id, updates);
       
       toast({
-        title: "Item Equipped",
-        description: `${item.name} equipped to ${SLOT_NAMES[slot]}`,
+        title: "Item Equistaminad",
+        description: `${item.name} equistaminad to ${SLOT_NAMES[slot]}`,
         status: "success",
         duration: 2000,
         isClosable: true,
@@ -121,7 +121,7 @@ export default function EquipmentModal({
       await onUpdateCharacter(character._id, updates);
       
       toast({
-        title: "Item Unequipped",
+        title: "Item Unequistaminad",
         description: `Item removed from ${SLOT_NAMES[slot]}`,
         status: "success",
         duration: 2000,
@@ -154,7 +154,7 @@ export default function EquipmentModal({
     <Modal isOpen={isOpen} onClose={onClose} size="xl">
       <ModalOverlay />
       <ModalContent bg="gray.900" color="gray.100" maxH="90vh">
-        <ModalHeader>👕 Equip Clothing & Armor - {character.name}</ModalHeader>
+        <ModalHeader>Ã°Å¸â€˜â€¢ Equip Clothing & Armor - {character.name}</ModalHeader>
         <ModalCloseButton />
         <ModalBody>
           <VStack spacing={4} align="stretch">
@@ -180,14 +180,14 @@ export default function EquipmentModal({
                             {slotIcons[slot]} {SLOT_NAMES[slot] || slot}
                           </Text>
                           <Text fontWeight="bold" fontSize="sm">{item.name}</Text>
-                          {item.armorRating > 0 && (
+                          {item.guardRating > 0 && (
                             <Text fontSize="xs" color="blue.300">
-                              A.R.: {item.armorRating}
+                              A.R.: {item.guardRating}
                             </Text>
                           )}
-                          {item.currentSDC > 0 && (
+                          {item.currentarmorDurability > 0 && (
                             <Text fontSize="xs" color="green.300">
-                              S.D.C.: {item.currentSDC}/{item.sdc || item.currentSDC}
+                              armorDurability: {item.currentarmorDurability}/{item.armorDurability || item.currentarmorDurability}
                             </Text>
                           )}
                           {item.broken && (
@@ -233,33 +233,33 @@ export default function EquipmentModal({
               <VStack spacing={2}>
                 <Flex justify="space-around" w="100%">
                   <Badge colorScheme="blue" p={2} borderRadius="md">
-                    🛡️ Armor Rating: {totalArmorRating}
+                    Ã°Å¸â€ºÂ¡Ã¯Â¸Â Armor Rating: {totalArmorRating}
                   </Badge>
                   <Badge colorScheme="green" p={2} borderRadius="md">
-                    💪 Total S.D.C.: {totalArmorSDC}
+                    Ã°Å¸â€™Âª Total armorDurability: {totalArmorarmorDurability}
                   </Badge>
                   <Badge colorScheme="yellow" p={2} borderRadius="md">
-                    ⚖️ Weight: {totalWeight.toFixed(1)} lbs
+                    Ã¢Å¡â€“Ã¯Â¸Â Weight: {totalWeight.toFixed(1)} lbs
                   </Badge>
                   <Badge colorScheme="blue" p={2} borderRadius="md">
-                    🎒 Capacity: {character.carryWeight?.maxWeight || 0} + {containerBonus} = {totalCarryingCapacity} lbs
+                    Ã°Å¸Å½â€™ Capacity: {character.carryWeight?.maxWeight || 0} + {containerBonus} = {totalCarryingCapacity} lbs
                   </Badge>
                 </Flex>
-                {(armorPenalties.speedPenalty > 0 || armorPenalties.prowlPenalty > 0 || armorPenalties.dodgePenalty > 0) && (
+                {(armorPenalties.speedPenalty > 0 || armorPenalties.prowlPenalty > 0 || armorPenalties.evadePenalty > 0) && (
                   <Flex justify="space-around" w="100%">
                     {armorPenalties.speedPenalty > 0 && (
                       <Badge colorScheme="red" p={1} borderRadius="md">
-                        🏃 Speed: -{armorPenalties.speedPenalty}
+                        Ã°Å¸ÂÆ’ Speed: -{armorPenalties.speedPenalty}
                       </Badge>
                     )}
                     {armorPenalties.prowlPenalty > 0 && (
                       <Badge colorScheme="orange" p={1} borderRadius="md">
-                        🕵️ Prowl: -{armorPenalties.prowlPenalty}%
+                        Ã°Å¸â€¢ÂµÃ¯Â¸Â Prowl: -{armorPenalties.prowlPenalty}%
                       </Badge>
                     )}
-                    {armorPenalties.dodgePenalty > 0 && (
+                    {armorPenalties.evadePenalty > 0 && (
                       <Badge colorScheme="purple" p={1} borderRadius="md">
-                        🤺 Dodge: -{armorPenalties.dodgePenalty}%
+                        Ã°Å¸Â¤Âº Evade: -{armorPenalties.evadePenalty}%
                       </Badge>
                     )}
                   </Flex>
@@ -273,11 +273,11 @@ export default function EquipmentModal({
             {equipmentDisplayInfo.hasEquipment && (
               <Box>
                 <Heading size="md" mb={4} color="blue.300">
-                  🛡️ Armor Durability
+                  Ã°Å¸â€ºÂ¡Ã¯Â¸Â Armor Durability
                 </Heading>
                 <Flex wrap="wrap" gap={4} justify="center">
                   {Object.entries(equipmentDisplayInfo).map(([slot, item]) => {
-                    if (slot === 'hasEquipment' || !item || item.name === "None" || !item.armorRating) {
+                    if (slot === 'hasEquipment' || !item || item.name === "None" || !item.guardRating) {
                       return null;
                     }
                     return (
@@ -327,16 +327,16 @@ export default function EquipmentModal({
                                 <VStack align="start" spacing={1}>
                                   <Text fontWeight="bold">{item.name}</Text>
                                   <Text fontSize="sm" color="gray.300">
-                                    {item.type} • Weight: {item.weight || 0} lbs
+                                    {item.type} Ã¢â‚¬Â¢ Weight: {item.weight || 0} lbs
                                   </Text>
-                                  {item.armorRating > 0 && (
+                                  {item.guardRating > 0 && (
                                     <Text fontSize="sm" color="blue.300">
-                                      A.R.: {item.armorRating}
+                                      A.R.: {item.guardRating}
                                     </Text>
                                   )}
-                                  {item.sdc > 0 && (
+                                  {item.armorDurability > 0 && (
                                     <Text fontSize="sm" color="green.300">
-                                      S.D.C.: {item.sdc}
+                                      armorDurability: {item.armorDurability}
                                     </Text>
                                   )}
                                   {item.description && (
@@ -380,16 +380,16 @@ export default function EquipmentModal({
                               <VStack align="start" spacing={1}>
                                 <Text fontWeight="bold">{item.name}</Text>
                                 <Text fontSize="sm" color="gray.300">
-                                  {item.type} • Weight: {item.weight || 0} lbs • Price: {item.value || 0} gp
+                                  {item.type} Ã¢â‚¬Â¢ Weight: {item.weight || 0} lbs Ã¢â‚¬Â¢ Price: {item.value || 0} gp
                                 </Text>
-                                {item.armorRating > 0 && (
+                                {item.guardRating > 0 && (
                                   <Text fontSize="sm" color="blue.300">
-                                    A.R.: {item.armorRating}
+                                    A.R.: {item.guardRating}
                                   </Text>
                                 )}
-                                {item.sdc > 0 && (
+                                {item.armorDurability > 0 && (
                                   <Text fontSize="sm" color="green.300">
-                                    S.D.C.: {item.sdc}
+                                    armorDurability: {item.armorDurability}
                                   </Text>
                                 )}
                                 {item.description && (

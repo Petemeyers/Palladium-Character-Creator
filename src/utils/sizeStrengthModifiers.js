@@ -1,11 +1,11 @@
 /**
  * Size and Strength Modifiers System
- * Calculates combat modifiers based on creature size and physical strength
+ * Calculates combat modifiers based on combatant size and physical strength
  * Handles size categories, grapple modifiers, reach advantages, and size-based combat bonuses
  */
 
 /**
- * Size categories for creatures
+ * Size categories for combatants
  */
 export const SIZE_CATEGORIES = {
   TINY: "TINY",
@@ -13,7 +13,7 @@ export const SIZE_CATEGORIES = {
   MEDIUM: "MEDIUM",
   LARGE: "LARGE",
   HUGE: "HUGE",
-  GIANT: "GIANT",
+  LARGE_HEAVY: "LARGE_HEAVY",
 };
 
 /**
@@ -24,54 +24,54 @@ export const SIZE_DEFINITIONS = {
     description: "Tiny (under 2ft)",
     heightRange: [0, 2],
     grappleModifier: -4,
-    strikeModifier: -2,
-    parryModifier: -2,
-    dodgeModifier: +2,
+    attackModifier: -2,
+    blockModifier: -2,
+    evadeModifier: +2,
     damageModifier: -2,
   },
   [SIZE_CATEGORIES.SMALL]: {
     description: "Small (2-4ft)",
     heightRange: [2, 4],
     grappleModifier: -2,
-    strikeModifier: -1,
-    parryModifier: -1,
-    dodgeModifier: +1,
+    attackModifier: -1,
+    blockModifier: -1,
+    evadeModifier: +1,
     damageModifier: -1,
   },
   [SIZE_CATEGORIES.MEDIUM]: {
     description: "Medium (4-7ft)",
     heightRange: [4, 7],
     grappleModifier: 0,
-    strikeModifier: 0,
-    parryModifier: 0,
-    dodgeModifier: 0,
+    attackModifier: 0,
+    blockModifier: 0,
+    evadeModifier: 0,
     damageModifier: 0,
   },
   [SIZE_CATEGORIES.LARGE]: {
     description: "Large (7-12ft)",
     heightRange: [7, 12],
     grappleModifier: +2,
-    strikeModifier: +1,
-    parryModifier: +1,
-    dodgeModifier: -1,
+    attackModifier: +1,
+    blockModifier: +1,
+    evadeModifier: -1,
     damageModifier: +1,
   },
   [SIZE_CATEGORIES.HUGE]: {
     description: "Huge (12-20ft)",
     heightRange: [12, 20],
     grappleModifier: +4,
-    strikeModifier: +2,
-    parryModifier: +2,
-    dodgeModifier: -2,
+    attackModifier: +2,
+    blockModifier: +2,
+    evadeModifier: -2,
     damageModifier: +2,
   },
-  [SIZE_CATEGORIES.GIANT]: {
-    description: "Giant (20ft+)",
+  [SIZE_CATEGORIES.LARGE_HEAVY]: {
+    description: "Heavy (20ft+)",
     heightRange: [20, Infinity],
     grappleModifier: +6,
-    strikeModifier: +3,
-    parryModifier: +3,
-    dodgeModifier: -3,
+    attackModifier: +3,
+    blockModifier: +3,
+    evadeModifier: -3,
     damageModifier: +3,
   },
 };
@@ -82,30 +82,30 @@ export const SIZE_RANKS = {
   [SIZE_CATEGORIES.MEDIUM]: 2,
   [SIZE_CATEGORIES.LARGE]: 3,
   [SIZE_CATEGORIES.HUGE]: 4,
-  [SIZE_CATEGORIES.GIANT]: 5,
+  [SIZE_CATEGORIES.LARGE_HEAVY]: 5,
 };
 
 /**
- * Get size category for a creature
- * @param {Object} creature - Creature object
+ * Get size category for a combatant
+ * @param {Object} combatant - Combatant object
  * @returns {string} Size category constant
  */
-export function getSizeCategory(creature) {
-  if (!creature) return SIZE_CATEGORIES.MEDIUM;
+export function getSizeCategory(combatant) {
+  if (!combatant) return SIZE_CATEGORIES.MEDIUM;
 
   // 1) Explicit size category fields
-  if (creature.sizeCategory) {
-    const sizeUpper = String(creature.sizeCategory).toUpperCase();
-    if (Object.values(SIZE_CATEGORIES).includes(sizeUpper)) {
-      return sizeUpper;
+  if (combatant.sizeCategory) {
+    const sizeUstaminar = String(combatant.sizeCategory).toUstaminarCase();
+    if (Object.values(SIZE_CATEGORIES).includes(sizeUstaminar)) {
+      return sizeUstaminar;
     }
   }
 
   // 2) Explicit size field that may already be a category enum
-  if (creature.size && typeof creature.size === "string") {
-    const sizeUpper = creature.size.toUpperCase();
-    if (Object.values(SIZE_CATEGORIES).includes(sizeUpper)) {
-      return sizeUpper;
+  if (combatant.size && typeof combatant.size === "string") {
+    const sizeUstaminar = combatant.size.toUstaminarCase();
+    if (Object.values(SIZE_CATEGORIES).includes(sizeUstaminar)) {
+      return sizeUstaminar;
     }
   }
 
@@ -155,14 +155,14 @@ export function getSizeCategory(creature) {
 
   // 4) Numeric height/weight, with safe fallbacks
   let height =
-    creature.height ??
-    creature.attributes?.height ??
-    creature.stats?.height ??
+    combatant.height ??
+    combatant.attributes?.height ??
+    combatant.stats?.height ??
     null;
   let weight =
-    creature.weight ??
-    creature.attributes?.weight ??
-    creature.stats?.weight ??
+    combatant.weight ??
+    combatant.attributes?.weight ??
+    combatant.stats?.weight ??
     null;
 
   // Some data sources store these as strings
@@ -175,21 +175,21 @@ export function getSizeCategory(creature) {
     weight = parsed.weightLb ?? null;
   }
 
-  const parsedFromSize = parseSizeText(creature.size);
+  const parsedFromSize = parseSizeText(combatant.size);
   if ((height == null || height === 0) && parsedFromSize.heightFt != null)
     height = parsedFromSize.heightFt;
   if ((weight == null || weight === 0) && parsedFromSize.weightLb != null)
     weight = parsedFromSize.weightLb;
 
   const categoryText = String(
-    creature.category ||
-      creature.creatureCategory ||
-      creature.creatureType ||
+    combatant.category ||
+      combatant.combatantCategory ||
+      combatant.combatantType ||
       ""
   ).toLowerCase();
   const isAnimal = categoryText.includes("animal");
 
-  // If we truly have no measurements, do NOT default to Tiny (this broke humanoids like Elf).
+  // If we truly have no measurements, do NOT default to Tiny (this broke humanoids like Human).
   if ((height == null || height === 0) && (weight == null || weight === 0)) {
     // Unknown animals tend to be SMALL-ish; unknown humanoids default to MEDIUM.
     return isAnimal ? SIZE_CATEGORIES.SMALL : SIZE_CATEGORIES.MEDIUM;
@@ -197,7 +197,7 @@ export function getSizeCategory(creature) {
 
   // Prefer height-based categorization when height is known.
   if (height != null && height > 0) {
-    if (height >= 20) return SIZE_CATEGORIES.GIANT;
+    if (height >= 20) return SIZE_CATEGORIES.LARGE_HEAVY;
     if (height >= 12) return SIZE_CATEGORIES.HUGE;
     if (height >= 7) return SIZE_CATEGORIES.LARGE;
     if (height < 2) return SIZE_CATEGORIES.TINY;
@@ -207,7 +207,7 @@ export function getSizeCategory(creature) {
 
   // Weight-only fallback
   if (weight != null) {
-    if (weight >= 5000) return SIZE_CATEGORIES.GIANT;
+    if (weight >= 5000) return SIZE_CATEGORIES.LARGE_HEAVY;
     if (weight >= 2000) return SIZE_CATEGORIES.HUGE;
     if (weight >= 500) return SIZE_CATEGORIES.LARGE;
     if (weight >= 100) return SIZE_CATEGORIES.MEDIUM;
@@ -219,32 +219,32 @@ export function getSizeCategory(creature) {
 }
 
 /**
- * Get Physical Strength (PS) value for a creature
- * @param {Object} creature - Creature object
+ * Get Physical Strength (PS) value for a combatant
+ * @param {Object} combatant - Combatant object
  * @returns {number} PS value
  */
-export function getPhysicalStrength(creature) {
-  if (!creature) return 10;
+export function getPhysicalStrength(combatant) {
+  if (!combatant) return 10;
 
   // Check various PS property names
   return (
-    creature.PS ||
-    creature.ps ||
-    creature.attributes?.PS ||
-    creature.attributes?.ps ||
-    creature.stats?.PS ||
-    creature.stats?.ps ||
-    creature.strength ||
-    creature.attributes?.strength ||
+    combatant.PS ||
+    combatant.ps ||
+    combatant.attributes?.PS ||
+    combatant.attributes?.ps ||
+    combatant.stats?.PS ||
+    combatant.stats?.ps ||
+    combatant.strength ||
+    combatant.attributes?.strength ||
     10
   );
 }
 
-export function getSizeRank(creature) {
-  const explicit = Number(creature?.sizeRank ?? creature?.attributes?.sizeRank ?? creature?.stats?.sizeRank);
+export function getSizeRank(combatant) {
+  const explicit = Number(combatant?.sizeRank ?? combatant?.attributes?.sizeRank ?? combatant?.stats?.sizeRank);
   if (Number.isFinite(explicit)) return explicit;
 
-  const category = getSizeCategory(creature);
+  const category = getSizeCategory(combatant);
   return SIZE_RANKS[category] ?? SIZE_RANKS[SIZE_CATEGORIES.MEDIUM];
 }
 
@@ -270,38 +270,38 @@ function listHasKeyword(value, keywords) {
   return keywords.some((keyword) => text.includes(keyword));
 }
 
-function hasLargeGrappleTrait(creature) {
-  if (!creature) return false;
+function hasLargeGrappleTrait(combatant) {
+  if (!combatant) return false;
   if (
-    creature.giantStrength ||
-    creature.magicStrength ||
-    creature.supernaturalStrength ||
-    creature.canGrappleLarger ||
-    creature.grappleLargerTargets ||
-    creature.monsterGrappler ||
-    creature.grappleSpecialistLarge
+    combatant.heavyStrength ||
+    combatant.trainingStrength ||
+    combatant.supernaturalStrength ||
+    combatant.canGrappleLarger ||
+    combatant.grappleLargerTargets ||
+    combatant.opponentGrappler ||
+    combatant.grappleSpecialistLarge
   ) {
     return true;
   }
 
   return listHasKeyword(
     [
-      creature.strengthType,
-      creature.PSType,
-      creature.psType,
-      creature.powerType,
-      creature.traits,
-      creature.specialTraits,
-      creature.special_abilities,
-      creature.abilities,
-      creature.features,
+      combatant.strengthType,
+      combatant.PSType,
+      combatant.psType,
+      combatant.powerType,
+      combatant.traits,
+      combatant.specialTraits,
+      combatant.special_abilities,
+      combatant.abilities,
+      combatant.features,
     ],
     [
-      "giant strength",
-      "magic strength",
-      "magical strength",
+      "heavy strength",
+      "training strength",
+      "exceptional strength",
       "supernatural strength",
-      "monster grappler",
+      "opponent grappler",
       "grapple larger",
       "grapples larger",
     ]
@@ -384,9 +384,9 @@ export function assessGrappleSizeOutcome(attacker, target, options = {}) {
 
 /**
  * Get combined grapple modifiers based on size and strength difference
- * @param {Object} attacker - Attacking creature
- * @param {Object} defender - Defending creature
- * @returns {Object} Modifiers object with strikeBonus, description, autoGrapple, etc.
+ * @param {Object} attacker - Attacking combatant
+ * @param {Object} defender - Defending combatant
+ * @returns {Object} Modifiers object with attackBonus, description, autoGrapple, etc.
  */
 export function getCombinedGrappleModifiers(attacker, defender) {
   const attackerSize = getSizeCategory(attacker);
@@ -410,7 +410,7 @@ export function getCombinedGrappleModifiers(attacker, defender) {
   // Combined modifier
   const totalModifier = sizeModifierDiff + psModifier;
 
-  // Auto-grapple if PS difference is 10+ (Palladium rules)
+  // Auto-grapple if PS difference is 10+ (Medieval Combat Simulator rules)
   const autoGrapple = psDiff >= 10;
 
   // Determine description
@@ -427,17 +427,17 @@ export function getCombinedGrappleModifiers(attacker, defender) {
 
   return {
     modifier: totalModifier,
-    strikeBonus:
-      attackerSizeDef.strikeModifier - defenderSizeDef.strikeModifier,
-    parryBonus: attackerSizeDef.parryModifier - defenderSizeDef.parryModifier,
-    dodgeBonus: defenderSizeDef.dodgeModifier - attackerSizeDef.dodgeModifier,
+    attackBonus:
+      attackerSizeDef.attackModifier - defenderSizeDef.attackModifier,
+    blockBonus: attackerSizeDef.blockModifier - defenderSizeDef.blockModifier,
+    evadeBonus: defenderSizeDef.evadeModifier - attackerSizeDef.evadeModifier,
     damageBonus:
       attackerSizeDef.damageModifier - defenderSizeDef.damageModifier,
     // Defender penalties (negative values for smaller defenders)
-    defenderParryPenalty:
-      defenderSizeDef.parryModifier - attackerSizeDef.parryModifier,
-    defenderDodgePenalty:
-      defenderSizeDef.dodgeModifier - attackerSizeDef.dodgeModifier,
+    defenderBlockPenalty:
+      defenderSizeDef.blockModifier - attackerSizeDef.blockModifier,
+    defenderEvadePenalty:
+      defenderSizeDef.evadeModifier - attackerSizeDef.evadeModifier,
     autoGrapple,
     psDiff,
     sizeModifierDiff,
@@ -448,8 +448,8 @@ export function getCombinedGrappleModifiers(attacker, defender) {
 
 /**
  * Get reach advantage modifiers (for non-grapple combat)
- * @param {Object} attacker - Attacking creature
- * @param {Object} defender - Defending creature
+ * @param {Object} attacker - Attacking combatant
+ * @param {Object} defender - Defending combatant
  * @returns {Object} Reach advantage modifiers
  */
 export function getReachAdvantage(attacker, defender) {
@@ -461,13 +461,13 @@ export function getReachAdvantage(attacker, defender) {
   const defenderSizeDef =
     SIZE_DEFINITIONS[defenderSize] || SIZE_DEFINITIONS[SIZE_CATEGORIES.MEDIUM];
 
-  // Larger creatures have reach advantage
+  // Larger combatants have reach advantage
   const sizeDiff =
-    attackerSizeDef.strikeModifier - defenderSizeDef.strikeModifier;
+    attackerSizeDef.attackModifier - defenderSizeDef.attackModifier;
 
   return {
-    strikeBonus: sizeDiff > 0 ? sizeDiff : 0,
-    parryBonus: sizeDiff > 0 ? sizeDiff : 0,
+    attackBonus: sizeDiff > 0 ? sizeDiff : 0,
+    blockBonus: sizeDiff > 0 ? sizeDiff : 0,
     reachAdvantage: sizeDiff > 0,
     description:
       sizeDiff > 0 ? `Reach advantage: +${sizeDiff}` : "No reach advantage",
@@ -475,53 +475,53 @@ export function getReachAdvantage(attacker, defender) {
 }
 
 /**
- * Apply size modifiers to a creature's combat stats
- * @param {Object} creature - Creature object
+ * Apply size modifiers to a combatant's combat stats
+ * @param {Object} combatant - Combatant object
  * @param {Object} modifiers - Optional modifiers object to apply
- * @returns {Object} Creature with size modifiers applied
+ * @returns {Object} Combatant with size modifiers applied
  */
-export function applySizeModifiers(creature, modifiers = null) {
-  if (!creature) return creature;
+export function applySizeModifiers(combatant, modifiers = null) {
+  if (!combatant) return combatant;
 
-  const sizeCategory = getSizeCategory(creature);
+  const sizeCategory = getSizeCategory(combatant);
   const sizeDef =
     SIZE_DEFINITIONS[sizeCategory] || SIZE_DEFINITIONS[SIZE_CATEGORIES.MEDIUM];
 
   // If modifiers provided, use those; otherwise use size category defaults
   const mods = modifiers || {
-    strike: sizeDef.strikeModifier,
-    parry: sizeDef.parryModifier,
-    dodge: sizeDef.dodgeModifier,
+    attack: sizeDef.attackModifier,
+    block: sizeDef.blockModifier,
+    evade: sizeDef.evadeModifier,
     damage: sizeDef.damageModifier,
   };
 
   return {
-    ...creature,
+    ...combatant,
     sizeCategory,
-    sizeRank: getSizeRank({ ...creature, sizeCategory }),
+    sizeRank: getSizeRank({ ...combatant, sizeCategory }),
     sizeModifiers: mods,
   };
 }
 
 /**
  * Check if attacker can lift and throw defender
- * @param {Object} attacker - Attacking creature
- * @param {Object} defender - Defending creature
+ * @param {Object} attacker - Attacking combatant
+ * @param {Object} defender - Defending combatant
  * @returns {boolean} True if attacker can lift defender
  */
 export function canLiftAndThrow(attacker, defender) {
   const attackerPS = getPhysicalStrength(attacker);
   const defenderWeight = defender.weight || defender.attributes?.weight || 150;
 
-  // Can lift if PS is at least 2x the weight (Palladium rules)
+  // Can lift if PS is at least 2x the weight (Medieval Combat Simulator rules)
   return attackerPS >= defenderWeight * 2;
 }
 
 /**
- * Check if a creature can carry another creature while flying (or otherwise).
+ * Check if a combatant can carry another combatant while flying (or otherwise).
  * Tuned for "hawk mid-air grab" (size-first, weight as a guardrail).
- * @param {Object} carrier - The creature attempting to carry
- * @param {Object} target - The creature to be carried
+ * @param {Object} carrier - The combatant attempting to carry
+ * @param {Object} target - The combatant to be carried
  * @param {Object} options - Optional configuration
  * @returns {Object} Result with canCarry boolean and reason
  */
@@ -538,7 +538,7 @@ export function canCarryTarget(carrier, target, options = {}) {
     [SIZE_CATEGORIES.MEDIUM]: 2,
     [SIZE_CATEGORIES.LARGE]: 3,
     [SIZE_CATEGORIES.HUGE]: 4,
-    [SIZE_CATEGORIES.GIANT]: 5,
+    [SIZE_CATEGORIES.LARGE_HEAVY]: 5,
   };
 
   const cIdx = sizeOrder[carrierSize] ?? 2;
@@ -580,7 +580,7 @@ export function canCarryTarget(carrier, target, options = {}) {
     [SIZE_CATEGORIES.MEDIUM]: 150,
     [SIZE_CATEGORIES.LARGE]: 600,
     [SIZE_CATEGORIES.HUGE]: 2000,
-    [SIZE_CATEGORIES.GIANT]: 6000,
+    [SIZE_CATEGORIES.LARGE_HEAVY]: 6000,
   };
 
   const targetWeight =
@@ -629,26 +629,26 @@ export function canCarryTarget(carrier, target, options = {}) {
 
 /**
  * Get leverage penalty for ground combat
- * @param {Object} attacker - Attacking creature
- * @param {Object} defender - Defending creature
+ * @param {Object} attacker - Attacking combatant
+ * @param {Object} defender - Defending combatant
  * @returns {number} Leverage penalty modifier
  */
 export function getLeveragePenalty(attacker, defender) {
   const attackerSize = getSizeCategory(attacker);
   const defenderSize = getSizeCategory(defender);
 
-  // Smaller creatures on ground have leverage advantage
+  // Smaller combatants on ground have leverage advantage
   if (
     attackerSize === SIZE_CATEGORIES.TINY &&
     defenderSize !== SIZE_CATEGORIES.TINY
   ) {
-    return -2; // Tiny creature gets -2 penalty
+    return -2; // Tiny combatant gets -2 penalty
   }
   if (
     attackerSize === SIZE_CATEGORIES.SMALL &&
     defenderSize >= SIZE_CATEGORIES.LARGE
   ) {
-    return -1; // Small creature gets -1 penalty
+    return -1; // Small combatant gets -1 penalty
   }
 
   return 0;

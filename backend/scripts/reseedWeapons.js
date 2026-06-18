@@ -2,7 +2,7 @@ import mongoose from "mongoose";
 import dotenv from "dotenv";
 import process from "process";
 import Weapon from "../models/Weapon.js";
-import { weapons } from "../weaponShop.js";
+import weapons from "../weaponShop.js";
 
 dotenv.config();
 

@@ -9,24 +9,24 @@ import axiosInstance from "./axios";
  * @returns {Object} Character with initialized weapon slots
  */
 export function initializeWeaponSlots(character) {
-  console.log("🔍 initializeWeaponSlots - Input character:", character.name);
+  console.log("Ã°Å¸â€Â initializeWeaponSlots - Input character:", character.name);
   console.log(
-    "🔍 initializeWeaponSlots - equippedWeapons before:",
-    character.equippedWeapons
+    "Ã°Å¸â€Â initializeWeaponSlots - equistaminadWeapons before:",
+    character.equistaminadWeapons
   );
 
-  if (!character.equipped) {
-    character.equipped = {};
+  if (!character.equistaminad) {
+    character.equistaminad = {};
   }
 
-  // Only initialize if equippedWeapons doesn't exist or is empty
+  // Only initialize if equistaminadWeapons doesn't exist or is empty
   if (
-    !character.equippedWeapons ||
-    !Array.isArray(character.equippedWeapons) ||
-    character.equippedWeapons.length === 0
+    !character.equistaminadWeapons ||
+    !Array.isArray(character.equistaminadWeapons) ||
+    character.equistaminadWeapons.length === 0
   ) {
-    console.log("🔍 initializeWeaponSlots - Initializing weapon slots");
-    character.equippedWeapons = [
+    console.log("Ã°Å¸â€Â initializeWeaponSlots - Initializing weapon slots");
+    character.equistaminadWeapons = [
       {
         name: "Unarmed",
         damage: "1d3",
@@ -44,13 +44,13 @@ export function initializeWeaponSlots(character) {
     ];
   } else {
     console.log(
-      "🔍 initializeWeaponSlots - Weapon slots already exist, skipping initialization"
+      "Ã°Å¸â€Â initializeWeaponSlots - Weapon slots already exist, skipping initialization"
     );
   }
 
   console.log(
-    "🔍 initializeWeaponSlots - equippedWeapons after:",
-    character.equippedWeapons
+    "Ã°Å¸â€Â initializeWeaponSlots - equistaminadWeapons after:",
+    character.equistaminadWeapons
   );
   return character;
 }
@@ -149,9 +149,9 @@ export function getAvailableWeapons(character) {
 }
 
 function isKnightlyCharacter(character = {}) {
-  const occ = String(character.occ || character.OCC || character.class || "").toLowerCase();
+  const profession = String(character.profession || character.PROFESSION || character.class || "").toLowerCase();
   const name = String(character.name || "").toLowerCase();
-  return occ.includes("knight") || occ.includes("paladin") || name.includes(" knight");
+  return profession.includes("knight") || profession.includes("paladin") || name.includes(" knight");
 }
 
 function isRangedWeapon(item = {}) {
@@ -225,15 +225,15 @@ function orderKnightWeaponsForAutoEquip(character, weapons = []) {
 export function equipWeapon(character, weapon, slot = "right") {
   const updatedCharacter = { ...character };
 
-  // Initialize equipped object if not exists
-  if (!updatedCharacter.equipped) {
-    updatedCharacter.equipped = {};
+  // Initialize equistaminad object if not exists
+  if (!updatedCharacter.equistaminad) {
+    updatedCharacter.equistaminad = {};
   }
 
   // Initialize weapon slots only if they don't exist
   if (
-    !updatedCharacter.equippedWeapons ||
-    !Array.isArray(updatedCharacter.equippedWeapons)
+    !updatedCharacter.equistaminadWeapons ||
+    !Array.isArray(updatedCharacter.equistaminadWeapons)
   ) {
     initializeWeaponSlots(updatedCharacter);
   }
@@ -244,10 +244,10 @@ export function equipWeapon(character, weapon, slot = "right") {
   const otherSlotIndex = slot === "right" ? 1 : 0;
 
   // Get current weapons in both slots
-  const currentWeaponInSlot = updatedCharacter.equippedWeapons[slotIndex];
-  const currentWeaponInOtherSlot = updatedCharacter.equippedWeapons[otherSlotIndex];
+  const currentWeaponInSlot = updatedCharacter.equistaminadWeapons[slotIndex];
+  const currentWeaponInOtherSlot = updatedCharacter.equistaminadWeapons[otherSlotIndex];
 
-  // Check if the weapon being equipped is already in the other slot (swapping)
+  // Check if the weapon being equistaminad is already in the other slot (swapping)
   const isSwapping = currentWeaponInOtherSlot && 
                       currentWeaponInOtherSlot.name === weapon.name && 
                       weapon.name !== "Unarmed";
@@ -262,8 +262,8 @@ export function equipWeapon(character, weapon, slot = "right") {
     weaponToMoveToInventory = currentWeaponInSlot;
   }
 
-  // Update equipped object
-  updatedCharacter.equipped[slotKey] = {
+  // Update equistaminad object
+  updatedCharacter.equistaminad[slotKey] = {
     name: weapon.name,
     damage: weapon.damage || "1d6",
     range: weapon.range,
@@ -274,7 +274,7 @@ export function equipWeapon(character, weapon, slot = "right") {
 
   // If swapping, update the other slot too
   if (isSwapping && weaponToMoveToInventory && weaponToMoveToInventory.name !== "Unarmed") {
-    updatedCharacter.equipped[otherSlotKey] = {
+    updatedCharacter.equistaminad[otherSlotKey] = {
       name: weaponToMoveToInventory.name,
       damage: weaponToMoveToInventory.damage || "1d3",
       range: weaponToMoveToInventory.range,
@@ -284,15 +284,15 @@ export function equipWeapon(character, weapon, slot = "right") {
     };
   }
 
-  // Update equippedWeapons array
-  updatedCharacter.equippedWeapons[slotIndex] = {
+  // Update equistaminadWeapons array
+  updatedCharacter.equistaminadWeapons[slotIndex] = {
     ...weapon,
     slot: slot === "right" ? "Right Hand" : "Left Hand",
   };
 
   // If swapping, update the other slot in the array too
   if (isSwapping && weaponToMoveToInventory && weaponToMoveToInventory.name !== "Unarmed") {
-    updatedCharacter.equippedWeapons[otherSlotIndex] = {
+    updatedCharacter.equistaminadWeapons[otherSlotIndex] = {
       ...weaponToMoveToInventory,
       slot: slot === "right" ? "Left Hand" : "Right Hand",
     };
@@ -332,9 +332,9 @@ export function equipWeapon(character, weapon, slot = "right") {
   // Update inventory
   updatedCharacter.inventory = updatedInventory;
 
-  // Update legacy equippedWeapon for compatibility
+  // Update legacy equistaminadWeapon for compatibility
   if (slot === "right") {
-    updatedCharacter.equippedWeapon = weapon.name;
+    updatedCharacter.equistaminadWeapon = weapon.name;
   }
 
   return updatedCharacter;
@@ -349,15 +349,15 @@ export function equipWeapon(character, weapon, slot = "right") {
 export function unequipWeapon(character, slot = "right") {
   const updatedCharacter = { ...character };
 
-  // Initialize equipped object if not exists
-  if (!updatedCharacter.equipped) {
-    updatedCharacter.equipped = {};
+  // Initialize equistaminad object if not exists
+  if (!updatedCharacter.equistaminad) {
+    updatedCharacter.equistaminad = {};
   }
 
   // Initialize weapon slots only if they don't exist
   if (
-    !updatedCharacter.equippedWeapons ||
-    !Array.isArray(updatedCharacter.equippedWeapons)
+    !updatedCharacter.equistaminadWeapons ||
+    !Array.isArray(updatedCharacter.equistaminadWeapons)
   ) {
     initializeWeaponSlots(updatedCharacter);
   }
@@ -365,14 +365,14 @@ export function unequipWeapon(character, slot = "right") {
   const slotKey = slot === "right" ? "weaponPrimary" : "weaponSecondary";
   const slotIndex = slot === "right" ? 0 : 1;
 
-  // Get the weapon that's currently equipped
-  const currentWeapon = updatedCharacter.equippedWeapons[slotIndex];
+  // Get the weapon that's currently equistaminad
+  const currentWeapon = updatedCharacter.equistaminadWeapons[slotIndex];
 
-  // Remove from equipped object
-  delete updatedCharacter.equipped[slotKey];
+  // Remove from equistaminad object
+  delete updatedCharacter.equistaminad[slotKey];
 
-  // Reset equippedWeapons array slot
-  updatedCharacter.equippedWeapons[slotIndex] = {
+  // Reset equistaminadWeapons array slot
+  updatedCharacter.equistaminadWeapons[slotIndex] = {
     name: "Unarmed",
     damage: "1d3",
     type: "unarmed",
@@ -380,7 +380,7 @@ export function unequipWeapon(character, slot = "right") {
     slot: slot === "right" ? "Right Hand" : "Left Hand",
   };
 
-  // Add the unequipped weapon back to inventory (if it's not Unarmed)
+  // Add the unequistaminad weapon back to inventory (if it's not Unarmed)
   if (currentWeapon && currentWeapon.name !== "Unarmed") {
     let updatedInventory = [...(updatedCharacter.inventory || [])];
     
@@ -398,9 +398,9 @@ export function unequipWeapon(character, slot = "right") {
     }
   }
 
-  // Update legacy equippedWeapon for compatibility
+  // Update legacy equistaminadWeapon for compatibility
   if (slot === "right") {
-    updatedCharacter.equippedWeapon = "Unarmed";
+    updatedCharacter.equistaminadWeapon = "Unarmed";
   }
 
   return updatedCharacter;
@@ -412,37 +412,37 @@ export function unequipWeapon(character, slot = "right") {
  * @returns {Object} Updated character
  */
 export function autoEquipWeapons(character) {
-  console.log("🔍 autoEquipWeapons - Input character:", character.name);
+  console.log("Ã°Å¸â€Â autoEquipWeapons - Input character:", character.name);
   console.log(
-    "🔍 autoEquipWeapons - equippedWeapons before:",
-    character.equippedWeapons
+    "Ã°Å¸â€Â autoEquipWeapons - equistaminadWeapons before:",
+    character.equistaminadWeapons
   );
 
   const updatedCharacter = { ...character };
 
-  // Initialize equipped object if not exists
-  if (!updatedCharacter.equipped) {
-    updatedCharacter.equipped = {};
+  // Initialize equistaminad object if not exists
+  if (!updatedCharacter.equistaminad) {
+    updatedCharacter.equistaminad = {};
   }
 
   // Initialize weapon slots only if they don't exist
   if (
-    !updatedCharacter.equippedWeapons ||
-    !Array.isArray(updatedCharacter.equippedWeapons)
+    !updatedCharacter.equistaminadWeapons ||
+    !Array.isArray(updatedCharacter.equistaminadWeapons)
   ) {
-    console.log("🔍 autoEquipWeapons - Initializing weapon slots");
+    console.log("Ã°Å¸â€Â autoEquipWeapons - Initializing weapon slots");
     initializeWeaponSlots(updatedCharacter);
   }
 
-  // Get currently equipped weapons (to return to inventory)
-  const currentRightWeapon = updatedCharacter.equippedWeapons[0];
-  const currentLeftWeapon = updatedCharacter.equippedWeapons[1];
+  // Get currently equistaminad weapons (to return to inventory)
+  const currentRightWeapon = updatedCharacter.equistaminadWeapons[0];
+  const currentLeftWeapon = updatedCharacter.equistaminadWeapons[1];
 
   const availableWeapons = orderKnightWeaponsForAutoEquip(
     updatedCharacter,
     getAvailableWeapons(updatedCharacter)
   );
-  console.log("🔍 autoEquipWeapons - Available weapons:", availableWeapons);
+  console.log("Ã°Å¸â€Â autoEquipWeapons - Available weapons:", availableWeapons);
 
   // Handle inventory updates
   let updatedInventory = [...(updatedCharacter.inventory || [])];
@@ -450,7 +450,7 @@ export function autoEquipWeapons(character) {
   if (availableWeapons.length > 0) {
     // Equip first weapon to right hand
     const firstWeapon = availableWeapons[0];
-    console.log("🔍 autoEquipWeapons - First weapon:", firstWeapon);
+    console.log("Ã°Å¸â€Â autoEquipWeapons - First weapon:", firstWeapon);
     
     // Remove first weapon from inventory
     const firstWeaponIndex = updatedInventory.findIndex(item => 
@@ -476,7 +476,7 @@ export function autoEquipWeapons(character) {
       }
     }
 
-    updatedCharacter.equipped.weaponPrimary = {
+    updatedCharacter.equistaminad.weaponPrimary = {
       name: firstWeapon.name,
       damage: firstWeapon.damage || "1d6",
       range: firstWeapon.range,
@@ -485,7 +485,7 @@ export function autoEquipWeapons(character) {
       type: firstWeapon.type || "weapon",
     };
 
-    updatedCharacter.equippedWeapons[0] = {
+    updatedCharacter.equistaminadWeapons[0] = {
       name: firstWeapon.name,
       damage: firstWeapon.damage || "1d6",
       range: firstWeapon.range,
@@ -495,7 +495,7 @@ export function autoEquipWeapons(character) {
       slot: "Right Hand",
     };
 
-    updatedCharacter.equippedWeapon = firstWeapon.name;
+    updatedCharacter.equistaminadWeapon = firstWeapon.name;
 
     // Equip second weapon to left hand if available
     if (availableWeapons.length > 1) {
@@ -525,7 +525,7 @@ export function autoEquipWeapons(character) {
         }
       }
 
-      updatedCharacter.equipped.weaponSecondary = {
+      updatedCharacter.equistaminad.weaponSecondary = {
         name: secondWeapon.name,
         damage: secondWeapon.damage || "1d6",
         range: secondWeapon.range,
@@ -534,7 +534,7 @@ export function autoEquipWeapons(character) {
         type: secondWeapon.type || "weapon",
       };
 
-      updatedCharacter.equippedWeapons[1] = {
+      updatedCharacter.equistaminadWeapons[1] = {
         name: secondWeapon.name,
         damage: secondWeapon.damage || "1d6",
         range: secondWeapon.range,
@@ -562,16 +562,16 @@ export function autoEquipWeapons(character) {
     updatedCharacter.inventory = updatedInventory;
 
     console.log(
-      "🔍 autoEquipWeapons - Final equippedWeapons:",
-      updatedCharacter.equippedWeapons
+      "Ã°Å¸â€Â autoEquipWeapons - Final equistaminadWeapons:",
+      updatedCharacter.equistaminadWeapons
     );
     console.log(
-      "🔍 autoEquipWeapons - Right hand weapon name:",
-      updatedCharacter.equippedWeapons[0]?.name || "None"
+      "Ã°Å¸â€Â autoEquipWeapons - Right hand weapon name:",
+      updatedCharacter.equistaminadWeapons[0]?.name || "None"
     );
     console.log(
-      "🔍 autoEquipWeapons - Left hand weapon name:",
-      updatedCharacter.equippedWeapons[1]?.name || "None"
+      "Ã°Å¸â€Â autoEquipWeapons - Left hand weapon name:",
+      updatedCharacter.equistaminadWeapons[1]?.name || "None"
     );
   }
 
@@ -598,53 +598,53 @@ export async function saveCharacterWeapons(characterId, updatedCharacter) {
 }
 
 /**
- * Sync equippedWeapons array from equipped object
+ * Sync equistaminadWeapons array from equistaminad object
  * Ensures both weapon storage systems are in sync
  * @param {Object} character - Character object
- * @returns {Object} Character with synced equippedWeapons
+ * @returns {Object} Character with synced equistaminadWeapons
  */
-export function syncEquippedWeapons(character) {
+export function syncEquistaminadWeapons(character) {
   const updatedCharacter = { ...character };
 
-  // Initialize equipped object if not exists
-  if (!updatedCharacter.equipped) {
-    updatedCharacter.equipped = {};
+  // Initialize equistaminad object if not exists
+  if (!updatedCharacter.equistaminad) {
+    updatedCharacter.equistaminad = {};
   }
 
-  // Initialize equippedWeapons array if not exists
+  // Initialize equistaminadWeapons array if not exists
   if (
-    !updatedCharacter.equippedWeapons ||
-    !Array.isArray(updatedCharacter.equippedWeapons) ||
-    updatedCharacter.equippedWeapons.length === 0
+    !updatedCharacter.equistaminadWeapons ||
+    !Array.isArray(updatedCharacter.equistaminadWeapons) ||
+    updatedCharacter.equistaminadWeapons.length === 0
   ) {
-    updatedCharacter.equippedWeapons = [
+    updatedCharacter.equistaminadWeapons = [
       { name: "Unarmed", damage: "1d3", type: "unarmed", category: "unarmed", slot: "Right Hand" },
       { name: "Unarmed", damage: "1d3", type: "unarmed", category: "unarmed", slot: "Left Hand" }
     ];
   }
 
-  // Sync from equipped.weaponPrimary to equippedWeapons[0]
-  if (updatedCharacter.equipped.weaponPrimary) {
-    updatedCharacter.equippedWeapons[0] = {
-      name: updatedCharacter.equipped.weaponPrimary.name,
-      damage: updatedCharacter.equipped.weaponPrimary.damage || "1d3",
-      type: updatedCharacter.equipped.weaponPrimary.type || "unarmed",
-      category: updatedCharacter.equipped.weaponPrimary.category || "unarmed",
-      range: updatedCharacter.equipped.weaponPrimary.range,
-      reach: updatedCharacter.equipped.weaponPrimary.reach,
+  // Sync from equistaminad.weaponPrimary to equistaminadWeapons[0]
+  if (updatedCharacter.equistaminad.weaponPrimary) {
+    updatedCharacter.equistaminadWeapons[0] = {
+      name: updatedCharacter.equistaminad.weaponPrimary.name,
+      damage: updatedCharacter.equistaminad.weaponPrimary.damage || "1d3",
+      type: updatedCharacter.equistaminad.weaponPrimary.type || "unarmed",
+      category: updatedCharacter.equistaminad.weaponPrimary.category || "unarmed",
+      range: updatedCharacter.equistaminad.weaponPrimary.range,
+      reach: updatedCharacter.equistaminad.weaponPrimary.reach,
       slot: "Right Hand"
     };
   }
 
-  // Sync from equipped.weaponSecondary to equippedWeapons[1]
-  if (updatedCharacter.equipped.weaponSecondary) {
-    updatedCharacter.equippedWeapons[1] = {
-      name: updatedCharacter.equipped.weaponSecondary.name,
-      damage: updatedCharacter.equipped.weaponSecondary.damage || "1d3",
-      type: updatedCharacter.equipped.weaponSecondary.type || "unarmed",
-      category: updatedCharacter.equipped.weaponSecondary.category || "unarmed",
-      range: updatedCharacter.equipped.weaponSecondary.range,
-      reach: updatedCharacter.equipped.weaponSecondary.reach,
+  // Sync from equistaminad.weaponSecondary to equistaminadWeapons[1]
+  if (updatedCharacter.equistaminad.weaponSecondary) {
+    updatedCharacter.equistaminadWeapons[1] = {
+      name: updatedCharacter.equistaminad.weaponSecondary.name,
+      damage: updatedCharacter.equistaminad.weaponSecondary.damage || "1d3",
+      type: updatedCharacter.equistaminad.weaponSecondary.type || "unarmed",
+      category: updatedCharacter.equistaminad.weaponSecondary.category || "unarmed",
+      range: updatedCharacter.equistaminad.weaponSecondary.range,
+      reach: updatedCharacter.equistaminad.weaponSecondary.reach,
       slot: "Left Hand"
     };
   }
@@ -658,51 +658,51 @@ export function syncEquippedWeapons(character) {
  * @returns {Object} Weapon display info
  */
 export function getWeaponDisplayInfo(character) {
-  // Always prefer equipped object (combat system) as source of truth
+  // Always prefer equistaminad object (combat system) as source of truth
   // This ensures consistency across WeaponShop, CharacterList, and CombatPage
   let rightWeapon = { name: "Unarmed", damage: "1d3", type: "unarmed" };
   let leftWeapon = { name: "Unarmed", damage: "1d3", type: "unarmed" };
 
-  // First priority: Use equipped object (combat system) if it exists
-  if (character.equipped) {
-    // Get from equipped.weaponPrimary (right hand)
-    if (character.equipped.weaponPrimary) {
+  // First priority: Use equistaminad object (combat system) if it exists
+  if (character.equistaminad) {
+    // Get from equistaminad.weaponPrimary (right hand)
+    if (character.equistaminad.weaponPrimary) {
       rightWeapon = {
-        name: character.equipped.weaponPrimary.name || "Unarmed",
-        damage: character.equipped.weaponPrimary.damage || "1d3",
-        type: character.equipped.weaponPrimary.type || "unarmed",
-        category: character.equipped.weaponPrimary.category,
-        range: character.equipped.weaponPrimary.range,
-        reach: character.equipped.weaponPrimary.reach,
+        name: character.equistaminad.weaponPrimary.name || "Unarmed",
+        damage: character.equistaminad.weaponPrimary.damage || "1d3",
+        type: character.equistaminad.weaponPrimary.type || "unarmed",
+        category: character.equistaminad.weaponPrimary.category,
+        range: character.equistaminad.weaponPrimary.range,
+        reach: character.equistaminad.weaponPrimary.reach,
       };
     }
 
-    // Get from equipped.weaponSecondary (left hand)
-    if (character.equipped.weaponSecondary) {
+    // Get from equistaminad.weaponSecondary (left hand)
+    if (character.equistaminad.weaponSecondary) {
       leftWeapon = {
-        name: character.equipped.weaponSecondary.name || "Unarmed",
-        damage: character.equipped.weaponSecondary.damage || "1d3",
-        type: character.equipped.weaponSecondary.type || "unarmed",
-        category: character.equipped.weaponSecondary.category,
-        range: character.equipped.weaponSecondary.range,
-        reach: character.equipped.weaponSecondary.reach,
+        name: character.equistaminad.weaponSecondary.name || "Unarmed",
+        damage: character.equistaminad.weaponSecondary.damage || "1d3",
+        type: character.equistaminad.weaponSecondary.type || "unarmed",
+        category: character.equistaminad.weaponSecondary.category,
+        range: character.equistaminad.weaponSecondary.range,
+        reach: character.equistaminad.weaponSecondary.reach,
       };
     }
   }
 
-  // Fallback: If equipped object doesn't have weapons, try equippedWeapons array
+  // Fallback: If equistaminad object doesn't have weapons, try equistaminadWeapons array
   if (
-    (!character.equipped || 
-     (!character.equipped.weaponPrimary && !character.equipped.weaponSecondary)) &&
-    character.equippedWeapons &&
-    Array.isArray(character.equippedWeapons) &&
-    character.equippedWeapons.length > 0
+    (!character.equistaminad || 
+     (!character.equistaminad.weaponPrimary && !character.equistaminad.weaponSecondary)) &&
+    character.equistaminadWeapons &&
+    Array.isArray(character.equistaminadWeapons) &&
+    character.equistaminadWeapons.length > 0
   ) {
-    if (character.equippedWeapons[0] && rightWeapon.name === "Unarmed") {
-      rightWeapon = character.equippedWeapons[0];
+    if (character.equistaminadWeapons[0] && rightWeapon.name === "Unarmed") {
+      rightWeapon = character.equistaminadWeapons[0];
     }
-    if (character.equippedWeapons[1] && leftWeapon.name === "Unarmed") {
-      leftWeapon = character.equippedWeapons[1];
+    if (character.equistaminadWeapons[1] && leftWeapon.name === "Unarmed") {
+      leftWeapon = character.equistaminadWeapons[1];
     }
   }
 

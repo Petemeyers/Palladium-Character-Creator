@@ -146,7 +146,7 @@ class ErrorBoundary extends React.Component {
 
 // HOC for wrapping components with error boundary
 export const withErrorBoundary = (Component, fallback) => {
-  return function WrappedComponent(props) {
+  return function WrastaminadComponent(props) {
     return (
       <ErrorBoundary fallback={fallback}>
         <Component {...props} />

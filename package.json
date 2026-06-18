@@ -19,7 +19,7 @@
     "serve": "vite preview",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
-    "test:ppe": "node scripts/test-ppe.mjs",
+    "test:stamina": "node scripts/test-stamina.mjs",
     "preview": "vite preview",
     "clear-shop": "node backend/scripts/clearShop.js",
     "clear-weapons": "node backend/scripts/clearWeapons.js",

@@ -17,7 +17,7 @@ function canActLite(f) {
   if (status === "defeated" || status === "fled") return false;
   const hp = Number(f.currentHP ?? 0);
   if (hp <= 0) return false;
-  const ra = Number(f.remainingAttacks ?? 0);
+  const ra = Number(f.remainingActions ?? 0);
   return ra > 0;
 }
 
@@ -37,7 +37,7 @@ function updateFightersLite(fightersLite, patchById) {
 /**
  * payload = {
  *   state: {
- *     fightersLite: [{id, side, isEnemy, isNPC, currentHP, remainingAttacks, ...}],
+ *     fightersLite: [{id, side, isEnemy, isNPC, currentHP, remainingActions, ...}],
  *     positionsLite: { [id]: {x,y} },
  *     ammoCountLite?: { [id]: { [ammoType]: number } }  // optional but enables ammo spend in worker
  *   },
@@ -113,11 +113,11 @@ function aiExecuteStep(payload = {}) {
 
   // Helper: consume actions on actor
   function consumeActions(cost) {
-    const prev = Number(actor.remainingAttacks ?? 0);
+    const prev = Number(actor.remainingActions ?? 0);
     const next = Math.max(0, prev - Math.max(0, cost));
     events.push({ type: "ATTACKS_CONSUMED", attackerId: actorId, prev, next });
 
-    const patchById = { [actorId]: { remainingAttacks: next } };
+    const patchById = { [actorId]: { remainingActions: next } };
 
     if (next <= 0) {
       events.push({ type: "TURN_SHOULD_END", actorId, reason: "No remaining attacks" });
@@ -164,8 +164,8 @@ function aiExecuteStep(payload = {}) {
       };
     }
 
-    const toHitBonus = Number(override?.toHitBonus ?? attackerProfile.baseStrikeBonus ?? 0);
-    const targetAR = Number(override?.targetAR ?? targetProfile.baseAR ?? target.AR ?? 10);
+    const toHitBonus = Number(override?.toHitBonus ?? attackerProfile.baseAttackBonus ?? 0);
+    const targetGuardRating = Number(override?.targetGuardRating ?? targetProfile.baseGuardRating ?? target.guardRating ?? 10);
     const damageFormula = String(override?.damageFormula ?? attackerProfile.damageFormula ?? "1d6");
 
     const critOn = Number(override?.critOn ?? intent.critOn ?? 20);
@@ -193,11 +193,11 @@ function aiExecuteStep(payload = {}) {
       targetId,
       attack: {
         toHitBonus,
-        targetAR,
+        targetGuardRating,
         damageFormula,
         critOn,
         critMult,
-        remainingAttacks: Number(actor.remainingAttacks ?? 1),
+        remainingActions: Number(actor.remainingActions ?? 1),
       },
       state: { hpById, positions: positionsLite, fighters: fightersLite },
       ...(ammoPayload ? { ammo: ammoPayload } : {}),
@@ -207,7 +207,7 @@ function aiExecuteStep(payload = {}) {
     // Merge events
     (attackRes?.events || []).forEach((e) => events.push(e));
 
-    // Convert hp delta → fightersLite patches
+    // Convert hp delta â†’ fightersLite patches
     const patchById = {};
 
     const hpDelta = attackRes?.delta?.hpById || null;
@@ -217,10 +217,10 @@ function aiExecuteStep(payload = {}) {
       }
     }
 
-    // If resolveAttack already returns remainingAttacksById (Patch 11), prefer that.
-    const raDelta = attackRes?.delta?.remainingAttacksById || null;
+    // If resolveAttack already returns remainingActionsById (Patch 11), prefer that.
+    const raDelta = attackRes?.delta?.remainingActionsById || null;
     if (raDelta && raDelta[actorId] !== undefined) {
-      patchById[actorId] = { ...(patchById[actorId] || {}), remainingAttacks: raDelta[actorId] };
+      patchById[actorId] = { ...(patchById[actorId] || {}), remainingActions: raDelta[actorId] };
       if (Number(raDelta[actorId]) <= 0) {
         events.push({ type: "TURN_SHOULD_END", actorId, reason: "No remaining attacks" });
       }

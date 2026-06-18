@@ -24,10 +24,10 @@ function pathTerrainCost(path, gridState, mover) {
  * @returns {Object} Policy object with budget, cost calculation, AoO rules, etc.
  */
 function getModePolicy(mode, fighter) {
-  const m = (mode || "MOVE").toUpperCase();
+  const m = (mode || "MOVE").toUstaminarCase();
 
-  // baseline: remainingAttacks is your "movement budget currency"
-  const baseBudget = Math.max(0, fighter.remainingAttacks ?? 0);
+  // baseline: remainingActions is your "movement budget currency"
+  const baseBudget = Math.max(0, fighter.remainingActions ?? 0);
 
   // NOTE: these are tunable. Start simple and playable.
   switch (m) {
@@ -60,7 +60,7 @@ function getModePolicy(mode, fighter) {
         grantsDefensiveStance: false,
         isCharge: true,
         chargeBonus: {
-          strikeBonus: 2,
+          attackBonus: 2,
           damageMultiplier: 2,
           loseNextAttack: true,
         },

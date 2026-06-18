@@ -46,7 +46,7 @@ export const SKILL_ACTION_RULES = {
 
   "First Aid": {
     tags: ["healing", "ally-support"],
-    context: ["woundedAllyNearby", "selfWounded"],
+    context: ["woundedAllyNearby", "shumanWounded"],
     rollType: "percentile",
     actionName: "Use First Aid",
     successEvent: "FIRST_AID_SUCCESS",
@@ -62,22 +62,22 @@ export const SKILL_ACTION_RULES = {
     failureEvent: "MEDICAL_FAILED",
   },
 
-  "Lore: Demon & Monster": {
-    tags: ["knowledge", "identify", "monster-weakness"],
-    context: ["unknownMonsterVisible"],
+  "Lore: Raider & Opponent": {
+    tags: ["knowledge", "identify", "opponent-weakness"],
+    context: ["unknownOpponentVisible"],
     rollType: "percentile",
-    actionName: "Identify monster weakness",
+    actionName: "Identify opponent weakness",
     successEvent: "MONSTER_IDENTIFIED",
     failureEvent: "MONSTER_UNKNOWN",
   },
 
-  "Lore: Magic": {
-    tags: ["knowledge", "magic", "identify"],
-    context: ["magicEffectVisible", "unknownSpellEffect"],
+  "Lore: Training": {
+    tags: ["knowledge", "training", "identify"],
+    context: ["trainingEffectVisible", "unknownTechniqueEffect"],
     rollType: "percentile",
-    actionName: "Analyze magic",
-    successEvent: "MAGIC_IDENTIFIED",
-    failureEvent: "MAGIC_UNKNOWN",
+    actionName: "Analyze training",
+    successEvent: "TRAINING_IDENTIFIED",
+    failureEvent: "TRAINING_UNKNOWN",
   },
 
   Navigation: {

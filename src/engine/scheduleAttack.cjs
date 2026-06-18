@@ -114,7 +114,7 @@ function scheduleAttack({ attackerId, projectile, flightMs, timeScale }) {
   const arcHeight = useArc ? computeArcHeight({ projectile }) : 0;
 
   // If you want "flat bolts" but arcing arrows:
-  // set projectile.meta.useArc=false for bolts/spells, or set arcHeight=0.
+  // set projectile.meta.useArc=false for bolts/techniques, or set arcHeight=0.
 
   if (from && to) {
     for (let i = 1; i <= steps; i++) {

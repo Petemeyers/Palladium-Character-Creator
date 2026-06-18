@@ -1,27 +1,27 @@
 /**
  * Prescene battles - predefined combat setups for quick starting.
  * Each prescene defines players (friendly side) and enemies.
- * Players use bestiary playable characters; enemies use bestiary monsters.
+ * Players use arenaRoster playable characters; enemies use arenaRoster opponents.
  */
 
 export const presceneBattles = [
   {
-    id: "elf-vs-minotaur",
-    name: "Elf Long Bowman vs Minotaur",
+    id: "human-vs-arena-champion",
+    name: "Human Long Bowman vs Arena Champion",
     description:
-      "Single Elf Long Bowman (50 arrows, Long Bow) vs Minotaur. Classic ranged vs melee matchup.",
+      "Single Human Long Bowman (50 arrows, Long Bow) vs Arena Champion. Classic ranged vs melee matchup.",
     players: [
       {
-        bestiaryId: "elf_long_bowman",
+        arenaRosterId: "human_long_bowman",
         weaponName: "Long Bow",
         ammoCount: 50,
-        name: "Elf Long Bowman",
+        name: "Human Long Bowman",
       },
     ],
     enemies: [
       {
-        bestiaryId: "minotaur",
-        name: "Minotaur",
+        arenaRosterId: "arena-champion",
+        name: "Arena Champion",
       },
     ],
   },

@@ -1,9 +1,9 @@
 // src/utils/moraleSystem.js
 import CryptoSecureDice from "./cryptoDice";
-import speciesBehaviorData from "../data/speciesBehavior.json";
+import combatantBehaviorData from "../data/combatantBehavior.json";
 
-// 🔹 Simple undead detector by name/species
-const UNDEAD_KEYWORDS = [
+// Ã°Å¸â€Â¹ Simple fallen detector by name/species
+const DEFEATED_KEYWORDS = [
   "vampire",
   "mummy",
   "skeleton",
@@ -16,9 +16,9 @@ const UNDEAD_KEYWORDS = [
   "ghost",
 ];
 
-// 🔹 Simple demon detector by name/species
-const DEMON_KEYWORDS = [
-  "demon",
+// Ã°Å¸â€Â¹ Simple raider detector by name/species
+const RAIDER_KEYWORDS = [
+  "raider",
   "devil",
   "fiend",
   "baal-rog",
@@ -28,7 +28,7 @@ const DEMON_KEYWORDS = [
   "hellspawn",
 ];
 
-export function isUndeadFighter(fighter) {
+export function isFallenFighter(fighter) {
   const label = (
     fighter?.species ||
     fighter?.race ||
@@ -38,11 +38,11 @@ export function isUndeadFighter(fighter) {
   ).toLowerCase();
 
   if (!label) return false;
-  return UNDEAD_KEYWORDS.some((word) => label.includes(word));
+  return DEFEATED_KEYWORDS.some((word) => label.includes(word));
 }
 
-export function isDemonFighter(fighter) {
-  if (fighter?.isDemon === true) return true;
+export function isRaiderFighter(fighter) {
+  if (fighter?.isRaider === true) return true;
   
   const label = (
     fighter?.species ||
@@ -54,12 +54,12 @@ export function isDemonFighter(fighter) {
   ).toLowerCase();
 
   if (!label) return false;
-  return DEMON_KEYWORDS.some((word) => label.includes(word));
+  return RAIDER_KEYWORDS.some((word) => label.includes(word));
 }
 
 /**
  * Centralized fear immunity check used by Horror System, Morale System, and Routing logic.
- * Returns true if the fighter is immune to fear effects (Horror Factor, morale routing, etc.)
+ * Returns true if the fighter is immune to fear effects (dreadRating, morale routing, etc.)
  * 
  * @param {Object} fighter - Fighter object to check
  * @returns {boolean} True if fighter is immune to fear
@@ -72,11 +72,11 @@ export function isFearImmune(fighter) {
     fighter.fearless ||
     fighter.immuneToHorror ||
     fighter.neverFlee ||
-    fighter.type === "demon" ||
+    fighter.type === "raider" ||
     fighter.type === "devil" ||
-    fighter.type === "undead" ||
-    isUndeadFighter(fighter) ||
-    isDemonFighter(fighter)
+    fighter.type === "fallen" ||
+    isFallenFighter(fighter) ||
+    isRaiderFighter(fighter)
   );
 }
 
@@ -104,7 +104,7 @@ export function getBaseMorale(fighter) {
 
 /**
  * Determine surrender behavior based on species/race and alignment.
- * Uses data-driven speciesBehavior.json for configuration.
+ * Uses data-driven combatantBehavior.json for configuration.
  */
 export function getSurrenderProfile(fighter) {
   if (!fighter) {
@@ -114,7 +114,7 @@ export function getSurrenderProfile(fighter) {
   const rawSpecies =
     fighter.species ||
     fighter.race ||
-    fighter.creatureType ||
+    fighter.combatantType ||
     fighter.type ||
     fighter.name ||
     "";
@@ -127,8 +127,8 @@ export function getSurrenderProfile(fighter) {
     "";
   const alignmentKey = String(rawAlignment).toLowerCase().trim();
 
-  const speciesMap = speciesBehaviorData.species || {};
-  const alignmentMap = speciesBehaviorData.alignment || {};
+  const speciesMap = combatantBehaviorData.species || {};
+  const alignmentMap = combatantBehaviorData.alignment || {};
 
   // Try exact species match first
   let speciesProfile =
@@ -137,46 +137,46 @@ export function getSurrenderProfile(fighter) {
 
   // If not found, try some simple normalization / fallback
   if (!speciesProfile) {
-    // Undead variants
+    // Fallen variants
     if (
-      speciesKey.includes("undead") ||
+      speciesKey.includes("fallen") ||
       speciesKey.includes("skeleton") ||
       speciesKey.includes("zombie") ||
       speciesKey.includes("mummy") ||
       speciesKey.includes("scarecrow")
     ) {
-      // Try specific undead first, then generic
+      // Try specific fallen first, then generic
       if (speciesKey.includes("mummy")) speciesProfile = speciesMap["mummy"];
       else if (speciesKey.includes("scarecrow")) speciesProfile = speciesMap["scarecrow"];
       else if (speciesKey.includes("ghost")) speciesProfile = speciesMap["ghost"];
       else if (speciesKey.includes("spectre")) speciesProfile = speciesMap["spectre"];
-      else speciesProfile = speciesMap["undead"];
+      else speciesProfile = speciesMap["fallen"];
     }
     // Shape-shifters
     else if (speciesKey.includes("werewolf")) speciesProfile = speciesMap["werewolf"];
     else if (speciesKey.includes("weretiger")) speciesProfile = speciesMap["weretiger"];
     else if (speciesKey.includes("werepanther")) speciesProfile = speciesMap["werepanther"];
     else if (speciesKey.includes("werebear")) speciesProfile = speciesMap["werebear"];
-    // Magical creatures
+    // Exceptional combatants
     else if (speciesKey.includes("unicorn")) speciesProfile = speciesMap["unicorn"];
     else if (speciesKey.includes("pegasus")) speciesProfile = speciesMap["pegasus"];
     else if (speciesKey.includes("gryphon") || speciesKey.includes("griffin")) speciesProfile = speciesMap["gryphon"];
     else if (speciesKey.includes("sphinx")) speciesProfile = speciesMap["sphinx"];
     else if (speciesKey.includes("chimera")) speciesProfile = speciesMap["chimera"];
-    else if (speciesKey.includes("minotaur")) speciesProfile = speciesMap["minotaur"];
+    else if (speciesKey.includes("arena-champion")) speciesProfile = speciesMap["arena-champion"];
     // Other common species
-    else if (speciesKey.includes("goblin")) speciesProfile = speciesMap["goblin"];
-    else if (speciesKey.includes("kobold")) speciesProfile = speciesMap["kobold"];
-    else if (speciesKey.includes("orc")) speciesProfile = speciesMap["orc"];
-    else if (speciesKey.includes("troll")) speciesProfile = speciesMap["troll"];
-    else if (speciesKey.includes("ogre")) speciesProfile = speciesMap["ogre"];
+    else if (speciesKey.includes("brigand")) speciesProfile = speciesMap["brigand"];
+    else if (speciesKey.includes("brigand")) speciesProfile = speciesMap["brigand"];
+    else if (speciesKey.includes("raider")) speciesProfile = speciesMap["raider"];
+    else if (speciesKey.includes("champion")) speciesProfile = speciesMap["champion"];
+    else if (speciesKey.includes("heavy fighter")) speciesProfile = speciesMap["heavy fighter"];
     else if (speciesKey.includes("harpy")) speciesProfile = speciesMap["harpy"];
     else if (speciesKey.includes("bugbear") || speciesKey.includes("bug bear")) speciesProfile = speciesMap["bugBear"];
     else if (speciesKey.includes("human")) speciesProfile = speciesMap["human"];
-    else if (speciesKey.includes("elf")) speciesProfile = speciesMap["elf"];
-    else if (speciesKey.includes("dwarf")) speciesProfile = speciesMap["dwarf"];
+    else if (speciesKey.includes("human")) speciesProfile = speciesMap["human"];
+    else if (speciesKey.includes("human")) speciesProfile = speciesMap["human"];
     else if (speciesKey.includes("golem")) speciesProfile = speciesMap["golem"];
-    else if (speciesKey.includes("demon")) speciesProfile = speciesMap["demon"];
+    else if (speciesKey.includes("raider")) speciesProfile = speciesMap["raider"];
   }
 
   if (!speciesProfile) {
@@ -190,7 +190,7 @@ export function getSurrenderProfile(fighter) {
   // Map broad categories to specific alignments for better matching
   const alignmentCategoryMap = {
     "good": "principled",      // Good aligns with principled/scrupulous
-    "selfish": "unprincipled",  // Selfish aligns with unprincipled/anarchist
+    "selfish": "unprincipled",  // Shumanish aligns with unprincipled/anarchist
     "evil": "miscreant",        // Evil aligns with miscreant/aberrant/diabolic
     "neutral": "default"
   };
@@ -244,12 +244,12 @@ export function ensureMoraleState(fighter) {
  * Resolve a morale check.
  *
  * context:
- *   roundNumber        – current round (for throttling checks)
- *   reason             – "pain_hit" | "damage" | "ally_down" | "horror" | etc
- *   hpPercent          – 0–1 fraction
- *   alliesDownRatio    – 0–1 fraction
- *   horrorFailed       – bool
- *   bigPainHit         – bool
+ *   roundNumber        Ã¢â‚¬â€œ current round (for throttling checks)
+ *   reason             Ã¢â‚¬â€œ "pain_hit" | "damage" | "ally_down" | "horror" | etc
+ *   hpPercent          Ã¢â‚¬â€œ 0Ã¢â‚¬â€œ1 fraction
+ *   alliesDownRatio    Ã¢â‚¬â€œ 0Ã¢â‚¬â€œ1 fraction
+ *   horrorFailed       Ã¢â‚¬â€œ bool
+ *   bigPainHit         Ã¢â‚¬â€œ bool
  */
 export function resolveMoraleCheck(fighter, context = {}) {
   if (!fighter) {
@@ -260,14 +260,14 @@ export function resolveMoraleCheck(fighter, context = {}) {
     };
   }
 
-  // 🛡️ Fear-immune creatures never fail morale checks (no ROUTED/SURRENDER)
+  // Ã°Å¸â€ºÂ¡Ã¯Â¸Â Fear-immune combatants never fail morale checks (no ROUTED/SURRENDER)
   if (isFearImmune(fighter)) {
     const previous = fighter.moraleState || {};
     const logger = context.logger || context.log || (() => {});
 
     const moraleState = {
       ...previous,
-      status: "STEADY", // Force to STEADY (rule-accurate)
+      status: "STEADY", // Fraidere to STEADY (rule-accurate)
       failedChecks: 0, // Reset failed checks
       lastCheckRound:
         context.roundNumber ?? previous.lastCheckRound ?? null,
@@ -276,7 +276,7 @@ export function resolveMoraleCheck(fighter, context = {}) {
 
     if (logger) {
       logger(
-        `🛡️ ${fighter.name} is immune to fear and ignores morale checks (never flees).`
+        `Ã°Å¸â€ºÂ¡Ã¯Â¸Â ${fighter.name} is immune to fear and ignores morale checks (never flees).`
       );
     }
 
@@ -319,7 +319,7 @@ export function resolveMoraleCheck(fighter, context = {}) {
   // Phobia penalty: if reason is "horror" and fighter has a matching phobia, additional penalty
   if (reason === "horror" && fighter.mentalState?.disorders) {
     const disorders = fighter.mentalState.disorders || [];
-    // Check if any phobia matches (we'll need to pass creature info in context for exact match)
+    // Check if any phobia matches (we'll need to pass combatant info in context for exact match)
     // For now, if they have any phobia and reason is horror, apply penalty
     const hasPhobia = disorders.some(d => d.type === "phobia");
     if (hasPhobia) {
@@ -327,31 +327,31 @@ export function resolveMoraleCheck(fighter, context = {}) {
     }
   }
 
-  // Bonuses – brave classes
-  const occ = fighter.OCC || fighter.occ || "";
-  if (/Knight|Paladin|Soldier|Men-at-Arms/i.test(occ)) {
+  // Bonuses Ã¢â‚¬â€œ brave classes
+  const profession = fighter.PROFESSION || fighter.profession || "";
+  if (/Knight|Paladin|Soldier|Men-at-Arms/i.test(profession)) {
     target -= 2;
   }
-  const creatureText = [
+  const combatantText = [
     fighter.name,
     fighter.race,
     fighter.species,
     fighter.category,
-    fighter.creatureType,
+    fighter.combatantType,
     fighter.aiProfile,
   ].join(" ").toLowerCase();
   if (
-    fighter.horrorFactor ||
-    fighter.HF ||
+    fighter.dreadRating ||
+    fighter.dreadRating ||
     fighter.brute ||
-    fighter.monster ||
-    creatureText.includes("minotaur") ||
-    creatureText.includes("monster") ||
-    creatureText.includes("brute")
+    fighter.opponent ||
+    combatantText.includes("arena-champion") ||
+    combatantText.includes("opponent") ||
+    combatantText.includes("brute")
   ) {
     target -= 3;
   }
-  if (fighter.cowardly || fighter.moraleProfile === "cowardly" || creatureText.includes("coward")) {
+  if (fighter.cowardly || fighter.moraleProfile === "cowardly" || combatantText.includes("coward")) {
     target += 2;
   }
 
@@ -381,7 +381,7 @@ export function resolveMoraleCheck(fighter, context = {}) {
         const surrenderScore = panicMargin + surrenderBias;
         
         // Tune this threshold to taste:
-        //  - Cowardly goblins: high bias, small failure => surrender
+        //  - Cowardly brigands: high bias, small failure => surrender
         //  - Brave knights: need a huge failure to surrender
         if (surrenderScore >= 3) {
           newStatus = "SURRENDERED";

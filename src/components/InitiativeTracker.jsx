@@ -141,7 +141,7 @@ const InitiativeTracker = () => {
         });
 
         // Check if enemy has melee weapons and is out of range
-        const weapon = enemy.equippedWeapon || enemy.weapon || "Unarmed";
+        const weapon = enemy.equistaminadWeapon || enemy.weapon || "Unarmed";
         const isMeleeWeapon = !weapon.toLowerCase().includes('bow') &&
           !weapon.toLowerCase().includes('crossbow') &&
           !weapon.toLowerCase().includes('sling') &&
@@ -150,7 +150,7 @@ const InitiativeTracker = () => {
 
         if (isMeleeWeapon && closestDistance > 5) {
           needsToMoveCloser = true;
-          logCombatEvent(`📍 ${enemy.name} is ${Math.round(closestDistance)}ft from ${closestTarget.name} (melee range: ≤5ft)`);
+          logCombatEvent(`Ã°Å¸â€œÂ ${enemy.name} is ${Math.round(closestDistance)}ft from ${closestTarget.name} (melee range: Ã¢â€°Â¤5ft)`);
         }
       }
 
@@ -167,7 +167,7 @@ const InitiativeTracker = () => {
         const distance = Math.sqrt(dx * dx + dy * dy);
 
         // Move towards target
-        // FIX: Use fullSpeed (official Palladium) instead of deprecated running
+        // FIX: Use fullSpeed (official Medieval Combat Simulator) instead of deprecated running
         const moveDistance = Math.min((movement.fullSpeed || movement.running || speed * 60) / GRID_CONFIG.CELL_SIZE, distance - 1); // Stop 1 cell away (5ft)
         const ratio = moveDistance / distance;
 
@@ -183,12 +183,12 @@ const InitiativeTracker = () => {
           closestTarget._id
         );
 
-        logCombatEvent(`🏃 ${enemy.name} moves closer to ${closestTarget.name} (${Math.round(closestDistance)}ft → ${Math.round(newDistance)}ft)`);
+        logCombatEvent(`Ã°Å¸ÂÆ’ ${enemy.name} moves closer to ${closestTarget.name} (${Math.round(closestDistance)}ft Ã¢â€ â€™ ${Math.round(newDistance)}ft)`);
 
         socket.emit("partyMessage", {
           partyId: activeParty._id,
           user: "System",
-          text: `🏃 ${enemy.name} moves from (${currentPos.x},${currentPos.y}) to (${newX},${newY}) - closing distance to ${closestTarget.name}`,
+          text: `Ã°Å¸ÂÆ’ ${enemy.name} moves from (${currentPos.x},${currentPos.y}) to (${newX},${newY}) - closing distance to ${closestTarget.name}`,
           type: "system",
         });
 
@@ -201,10 +201,10 @@ const InitiativeTracker = () => {
 
         // If now in range, continue with attack, otherwise end turn
         if (newDistance <= 5) {
-          logCombatEvent(`✅ ${enemy.name} is now in melee range!`);
+          logCombatEvent(`Ã¢Å“â€¦ ${enemy.name} is now in melee range!`);
           // Continue to attack below
         } else {
-          logCombatEvent(`⏭️ ${enemy.name} used movement action, ending turn`);
+          logCombatEvent(`Ã¢ÂÂ­Ã¯Â¸Â ${enemy.name} used movement action, ending turn`);
           setTimeout(nextTurn, 2000);
           return;
         }
@@ -233,13 +233,13 @@ const InitiativeTracker = () => {
       );
 
       if (!decision) {
-        logCombatEvent(`❌ AI failed to make decision for ${enemy.name}`);
+        logCombatEvent(`Ã¢ÂÅ’ AI failed to make decision for ${enemy.name}`);
         setTimeout(nextTurn, 1000);
         return;
       }
 
       // Log the AI decision
-      logCombatEvent(`🤖 ${enemy.name} (${personality.name}) chooses: ${decision.action.name} - ${decision.reasoning}`);
+      logCombatEvent(`Ã°Å¸Â¤â€“ ${enemy.name} (${personality.name}) chooses: ${decision.action.name} - ${decision.reasoning}`);
 
       // Execute the action using enhanced manager
       const result = enhancedAIManager.executeAction(enemy._id, decision, enemy, combatState);
@@ -252,15 +252,15 @@ const InitiativeTracker = () => {
             newSet.add(enemy._id);
             return newSet;
           });
-          logCombatEvent(`💫 ${enemy.name} icon will flash until their next turn`);
+          logCombatEvent(`Ã°Å¸â€™Â« ${enemy.name} icon will flash until their next turn`);
         }
 
         // Validate attack range before applying damage
-        if (result.action === "strike" && result.target && result.damage) {
+        if (result.action === "attack" && result.target && result.damage) {
           const targetId = result.target._id;
 
           // Check if this is a melee attack and validate range
-          const weapon = result.weapon || enemy.equippedWeapon || "Unarmed";
+          const weapon = result.weapon || enemy.equistaminadWeapon || "Unarmed";
           const isMeleeWeapon = !weapon.toLowerCase().includes('bow') &&
             !weapon.toLowerCase().includes('crossbow') &&
             !weapon.toLowerCase().includes('sling') &&
@@ -275,18 +275,18 @@ const InitiativeTracker = () => {
 
             if (!engagementRange.canMeleeAttack) {
               attackAllowed = false;
-              logCombatEvent(`❌ ${enemy.name} cannot reach ${result.target.name} for melee attack! (Distance: ${Math.round(distance)}ft, needs ≤5ft)`);
-              logCombatEvent(`💡 ${enemy.name} must move closer first`);
+              logCombatEvent(`Ã¢ÂÅ’ ${enemy.name} cannot reach ${result.target.name} for melee attack! (Distance: ${Math.round(distance)}ft, needs Ã¢â€°Â¤5ft)`);
+              logCombatEvent(`Ã°Å¸â€™Â¡ ${enemy.name} must move closer first`);
 
               // Log to party chat
               socket.emit("partyMessage", {
                 partyId: activeParty._id,
                 user: "System",
-                text: `❌ ${enemy.name} attempted melee attack from ${Math.round(distance)}ft away but is out of range (max 5ft for melee)`,
+                text: `Ã¢ÂÅ’ ${enemy.name} attempted melee attack from ${Math.round(distance)}ft away but is out of range (max 5ft for melee)`,
                 type: "system",
               });
             } else {
-              logCombatEvent(`✅ ${enemy.name} is in melee range of ${result.target.name} (${Math.round(distance)}ft)`);
+              logCombatEvent(`Ã¢Å“â€¦ ${enemy.name} is in melee range of ${result.target.name} (${Math.round(distance)}ft)`);
             }
           }
 
@@ -299,7 +299,7 @@ const InitiativeTracker = () => {
             setHp(prev => ({ ...prev, [targetId]: newHp }));
 
             if (newHp <= 0) {
-              logCombatEvent(`💀 ${result.target.name} has been defeated!`);
+              logCombatEvent(`Ã°Å¸â€™â‚¬ ${result.target.name} has been defeated!`);
               setStatus(prev => ({ ...prev, [targetId]: "KO" }));
             }
           }
@@ -309,7 +309,7 @@ const InitiativeTracker = () => {
 
         // Handle other action results
         if (result.action === "maneuver" && result.maneuver) {
-          logCombatEvent(`⚔️ ${enemy.name} attempts to ${result.maneuver} ${result.target.name}`);
+          logCombatEvent(`Ã¢Å¡â€Ã¯Â¸Â ${enemy.name} attempts to ${result.maneuver} ${result.target.name}`);
           // You could add maneuver resolution logic here
         }
       }
@@ -319,7 +319,7 @@ const InitiativeTracker = () => {
 
     } catch (error) {
       console.error("AI decision error:", error);
-      logCombatEvent(`❌ AI error for ${enemy.name}, skipping turn`);
+      logCombatEvent(`Ã¢ÂÅ’ AI error for ${enemy.name}, skipping turn`);
       setTimeout(nextTurn, 1000);
     }
   };
@@ -337,7 +337,7 @@ const InitiativeTracker = () => {
     socket.emit("partyMessage", {
       partyId: activeParty._id,
       user: "System",
-      text: `🎁 Loot Found: ${loot.name} ${loot.quantity ? `x${loot.quantity}` : ""} (added to Party Inventory)`,
+      text: `Ã°Å¸Å½Â Loot Found: ${loot.name} ${loot.quantity ? `x${loot.quantity}` : ""} (added to Party Inventory)`,
       type: "system",
     });
   };
@@ -389,7 +389,7 @@ const InitiativeTracker = () => {
     setNewEnemyName("");
 
     // Log enemy addition
-    logCombatEvent(`🆕 Added enemy: ${enemy.name} (HP: 20)`);
+    logCombatEvent(`Ã°Å¸â€ â€¢ Added enemy: ${enemy.name} (HP: 20)`);
   };
 
   // Roll initiative for party + enemies
@@ -408,7 +408,7 @@ const InitiativeTracker = () => {
           socket.emit("partyMessage", {
             partyId: activeParty._id,
             user: "System",
-            text: `⚠️ ${char.name} suffers encumbrance penalty: ${encumbrancePenalty} to initiative, ${encumbranceInfo.penalty.skill} to skills (Carrying ${encumbranceInfo.currentWeight}/${encumbranceInfo.maxWeight})`,
+            text: `Ã¢Å¡Â Ã¯Â¸Â ${char.name} suffers encumbrance penalty: ${encumbrancePenalty} to initiative, ${encumbranceInfo.penalty.skill} to skills (Carrying ${encumbranceInfo.currentWeight}/${encumbranceInfo.maxWeight})`,
             type: "system",
           });
         }
@@ -447,11 +447,11 @@ const InitiativeTracker = () => {
     const initialAmmo = initializeAmmo(allCharacters);
     setAmmoCount(initialAmmo);
 
-    // Initialize weapon slots for all combatants (start unequipped)
+    // Initialize weapon slots for all combatants (start unequistaminad)
     const initialSlots = {};
     allCharacters.forEach(char => {
       initialSlots[char._id] = initializeWeaponSlots(char);
-      // Characters start unequipped - they can equip weapons during combat
+      // Characters start unequistaminad - they can equip weapons during combat
     });
     setWeaponSlots(initialSlots);
 
@@ -476,7 +476,7 @@ const InitiativeTracker = () => {
         })
         .join(", ");
 
-      const logText = `🎲 **Round 1 - Initiative Rolled!** Order: ${initiativeText}`;
+      const logText = `Ã°Å¸Å½Â² **Round 1 - Initiative Rolled!** Order: ${initiativeText}`;
 
       socket.emit("partyMessage", {
         partyId: activeParty._id,
@@ -486,7 +486,7 @@ const InitiativeTracker = () => {
       });
 
       logCombatEvent(logText);
-      logCombatEvent("🏹 Missile weapon ammunition initialized");
+      logCombatEvent("Ã°Å¸ÂÂ¹ Missile weapon ammunition initialized");
     }
   };
 
@@ -501,7 +501,7 @@ const InitiativeTracker = () => {
       setRoundNumber(newRound);
 
       if (activeParty._id) {
-        const logText = `🔄 Round ${newRound} begins!`;
+        const logText = `Ã°Å¸â€â€ž Round ${newRound} begins!`;
 
         socket.emit("partyMessage", {
           partyId: activeParty._id,
@@ -515,7 +515,7 @@ const InitiativeTracker = () => {
     }
   };
 
-  // Attack roll with O.C.C. bonuses, criticals, and fumbles
+  // Attack roll with profession bonuses, criticals, and fumbles
   const handleAttack = (char) => {
     // Get weapon from weapon slots (prioritize right hand)
     const charSlots = weaponSlots[char._id] || initializeWeaponSlots(char);
@@ -527,7 +527,7 @@ const InitiativeTracker = () => {
     if (missileWeapon) {
       const canFire = canFireMissileWeapon(char, ammoCount);
       if (!canFire.canFire) {
-        const logText = `❌ ${char.name} cannot fire ${missileWeapon.name}: ${canFire.reason}`;
+        const logText = `Ã¢ÂÅ’ ${char.name} cannot fire ${missileWeapon.name}: ${canFire.reason}`;
         socket.emit("partyMessage", {
           partyId: activeParty._id,
           user: "System",
@@ -546,7 +546,7 @@ const InitiativeTracker = () => {
         return setAmmo(prev, char._id, missileWeapon.ammunition, remainingCount);
       });
 
-      logCombatEvent(`🏹 ${char.name} fires ${missileWeapon.name} (${remainingCount} ${missileWeapon.ammunition} remaining)`);
+      logCombatEvent(`Ã°Å¸ÂÂ¹ ${char.name} fires ${missileWeapon.name} (${remainingCount} ${missileWeapon.ammunition} remaining)`);
     }
 
     // Use new attackRoll system for criticals/fumbles
@@ -555,15 +555,15 @@ const InitiativeTracker = () => {
     let bonus = 0;
     let bonusText = "";
 
-    // Apply O.C.C. attack bonuses
+    // Apply profession attack bonuses
     char.abilities?.forEach((ability) => {
       if (ability.type === "combat" && ability.bonusType === "attack") {
         // Check weapon-specific bonuses
         if (ability.weapon) {
-          const equippedWeapon = char.inventory?.find(item =>
-            item.name === char.equippedWeapon && item.type === "Weapon"
+          const equistaminadWeapon = char.inventory?.find(item =>
+            item.name === char.equistaminadWeapon && item.type === "Weapon"
           );
-          if (equippedWeapon && equippedWeapon.name.toLowerCase().includes(ability.weapon.toLowerCase())) {
+          if (equistaminadWeapon && equistaminadWeapon.name.toLowerCase().includes(ability.weapon.toLowerCase())) {
             bonus += ability.value;
             bonusText += ` +${ability.value} (${ability.name})`;
           }
@@ -585,7 +585,7 @@ const InitiativeTracker = () => {
         rangeText = ` ${rangeInfo.description}`;
         bonus += rangeModifier;
       } else {
-        const logText = `❌ ${char.name} cannot hit target: ${rangeInfo.description}`;
+        const logText = `Ã¢ÂÅ’ ${char.name} cannot hit target: ${rangeInfo.description}`;
         socket.emit("partyMessage", {
           partyId: activeParty._id,
           user: "System",
@@ -601,23 +601,23 @@ const InitiativeTracker = () => {
     const hitThreshold = 12; // Example: 12+ to hit
     const hit = total >= hitThreshold;
 
-    let emoji = missileWeapon ? "🏹" : "⚔️";
+    let emoji = missileWeapon ? "Ã°Å¸ÂÂ¹" : "Ã¢Å¡â€Ã¯Â¸Â";
     let resultText = "HIT!";
 
     if (attackResult.result === "critical") {
-      emoji = "💥";
+      emoji = "Ã°Å¸â€™Â¥";
       resultText = attackResult.message;
     } else if (attackResult.result === "fumble") {
-      emoji = "💀";
+      emoji = "Ã°Å¸â€™â‚¬";
       resultText = attackResult.message;
     } else if (!hit) {
-      emoji = "💨";
+      emoji = "Ã°Å¸â€™Â¨";
       resultText = "MISS!";
     }
 
     const weaponDisplayName = weapon.name || "unarmed";
     const twoHandedIndicator = usingTwoHanded ? ' (2H)' : (isTwoHandedWeapon(weapon) ? ' (Two-Handed)' : '');
-    const logText = `${emoji} ${char.name} attacks with ${weaponDisplayName}${twoHandedIndicator}${rangeText}! Roll = ${attackResult.roll}${bonusText} → Total ${total} - ${resultText} (Needs ${hitThreshold}+)`;
+    const logText = `${emoji} ${char.name} attacks with ${weaponDisplayName}${twoHandedIndicator}${rangeText}! Roll = ${attackResult.roll}${bonusText} Ã¢â€ â€™ Total ${total} - ${resultText} (Needs ${hitThreshold}+)`;
 
     if (activeParty._id) {
       socket.emit("partyMessage", {
@@ -641,7 +641,7 @@ const InitiativeTracker = () => {
         socket.emit("partyMessage", {
           partyId: activeParty._id,
           user: "System",
-          text: `🎲 ${randomEnemy.char.name} morale check → ${moraleResult.roll} vs ${moraleResult.target} (${moraleResult.message})`,
+          text: `Ã°Å¸Å½Â² ${randomEnemy.char.name} morale check Ã¢â€ â€™ ${moraleResult.roll} vs ${moraleResult.target} (${moraleResult.message})`,
           type: "system",
         });
 
@@ -654,11 +654,11 @@ const InitiativeTracker = () => {
   };
 
   // Defense roll with armor bonus and penalties
-  const handleDefense = (char, type = "Parry") => {
+  const handleDefense = (char, type = "Block") => {
     const baseRoll = rollDice(20, 1);
 
     // Get armor defense bonus
-    const armor = char.inventory?.find(item => item.name === char.equippedArmor && item.type === "armor");
+    const armor = char.inventory?.find(item => item.name === char.equistaminadArmor && item.type === "armor");
     const armorBonus = armor?.defense || 0;
 
     // Get armor penalties
@@ -670,7 +670,7 @@ const InitiativeTracker = () => {
     const totalRoll = baseRoll + armorBonus + totalPenalty;
     const successThreshold = 10; // Example: 10+ for successful defense
     const success = totalRoll >= successThreshold;
-    const emoji = success ? "🛡️" : "💥";
+    const emoji = success ? "Ã°Å¸â€ºÂ¡Ã¯Â¸Â" : "Ã°Å¸â€™Â¥";
     const resultText = success ? "SUCCESS!" : "FAILED!";
 
     const penaltyText = totalPenalty !== 0 ? ` + penalties (${totalPenalty})` : "";
@@ -688,37 +688,37 @@ const InitiativeTracker = () => {
     }
   };
 
-  // Magic spell casting with saving throws
-  const handleMagic = (caster, spell, target = null) => {
-    if (caster.PPE < spell.cost) {
+  // Training technique casting with saving throws
+  const handleTraining = (caster, technique, target = null) => {
+    if (caster.stamina < technique.cost) {
       socket.emit("partyMessage", {
         partyId: activeParty._id,
         user: "System",
-        text: `❌ ${caster.name} does not have enough PPE to cast ${spell.name}`,
+        text: `Ã¢ÂÅ’ ${caster.name} does not have enough stamina to cast ${technique.name}`,
         type: "system",
       });
       return;
     }
 
-    caster.PPE -= spell.cost;
+    caster.stamina -= technique.cost;
 
     // Saving throw for target if applicable
     if (target) {
-      const save = savingThrow(target, "magic");
+      const save = savingThrow(target, "training");
       if (save.success) {
         socket.emit("partyMessage", {
           partyId: activeParty._id,
           user: "System",
-          text: `✨ ${caster.name} casts ${spell.name} on ${target.name}, but ${target.name} RESISTS! (Roll ${save.roll} vs ${save.target})`,
+          text: `Ã¢Å“Â¨ ${caster.name} casts ${technique.name} on ${target.name}, but ${target.name} RESISTS! (Roll ${save.roll} vs ${save.target})`,
           type: "system",
         });
         return;
       }
     }
 
-    let msg = `✨ ${caster.name} casts ${spell.name}`;
-    if (spell.damage) {
-      const [num, sides] = spell.damage.split("d").map(Number);
+    let msg = `Ã¢Å“Â¨ ${caster.name} casts ${technique.name}`;
+    if (technique.damage) {
+      const [num, sides] = technique.damage.split("d").map(Number);
       let total = 0;
       for (let i = 0; i < num; i++) total += rollDice(sides, 1);
 
@@ -730,9 +730,9 @@ const InitiativeTracker = () => {
         });
       }
 
-      msg += ` → ${total} damage (${spell.damage})`;
-    } else if (spell.effect) {
-      msg += ` → ${spell.effect}`;
+      msg += ` Ã¢â€ â€™ ${total} damage (${technique.damage})`;
+    } else if (technique.effect) {
+      msg += ` Ã¢â€ â€™ ${technique.effect}`;
     }
 
     socket.emit("partyMessage", {
@@ -743,35 +743,35 @@ const InitiativeTracker = () => {
     });
   };
 
-  // Psionic power use with saving throws
-  const handlePsionic = (user, power, target = null) => {
-    if (user.ISP < power.cost) {
+  // Tactical power use with saving throws
+  const handleTactical = (user, power, target = null) => {
+    if (user.focus < power.cost) {
       socket.emit("partyMessage", {
         partyId: activeParty._id,
         user: "System",
-        text: `❌ ${user.name} does not have enough ISP to use ${power.name}`,
+        text: `Ã¢ÂÅ’ ${user.name} does not have enough focus to use ${power.name}`,
         type: "system",
       });
       return;
     }
 
-    user.ISP -= power.cost;
+    user.focus -= power.cost;
 
     // Saving throw for target if applicable
     if (target) {
-      const save = savingThrow(target, "psionics");
+      const save = savingThrow(target, "tactics");
       if (save.success) {
         socket.emit("partyMessage", {
           partyId: activeParty._id,
           user: "System",
-          text: `🧠 ${user.name} uses ${power.name} on ${target.name}, but ${target.name} RESISTS! (Roll ${save.roll} vs ${save.target})`,
+          text: `Ã°Å¸Â§Â  ${user.name} uses ${power.name} on ${target.name}, but ${target.name} RESISTS! (Roll ${save.roll} vs ${save.target})`,
           type: "system",
         });
         return;
       }
     }
 
-    let msg = `🧠 ${user.name} uses ${power.name}`;
+    let msg = `Ã°Å¸Â§Â  ${user.name} uses ${power.name}`;
     if (power.damage) {
       const [num, sides] = power.damage.split("d").map(Number);
       let total = 0;
@@ -785,9 +785,9 @@ const InitiativeTracker = () => {
         });
       }
 
-      msg += ` → ${total} damage (${power.damage})`;
+      msg += ` Ã¢â€ â€™ ${total} damage (${power.damage})`;
     } else if (power.effect) {
-      msg += ` → ${power.effect}`;
+      msg += ` Ã¢â€ â€™ ${power.effect}`;
     }
 
     socket.emit("partyMessage", {
@@ -798,12 +798,12 @@ const InitiativeTracker = () => {
     });
   };
 
-  // Damage roll with O.C.C. bonuses and spell damage
+  // Damage roll with profession bonuses and technique damage
   const handleDamage = (char, dice = null) => {
     let weaponName = "fists";
     let damageDice = "1d4"; // default unarmed damage
-    let isSpellDamage = false;
-    let spellUsed = null;
+    let isTechniqueDamage = false;
+    let techniqueUsed = null;
 
     // Get weapon from weapon slots
     const charSlots = weaponSlots[char._id] || initializeWeaponSlots(char);
@@ -819,18 +819,18 @@ const InitiativeTracker = () => {
       damageDice = dice;
     }
 
-    // Check for spell damage from O.C.C. abilities
+    // Check for technique damage from profession abilities
     char.abilities?.forEach((ability, idx) => {
-      if (ability.type === "magic" && ability.damage) {
-        // Check if spell has uses remaining
+      if (ability.type === "training" && ability.damage) {
+        // Check if technique has uses remaining
         if (ability.usesRemaining !== null && ability.usesRemaining <= 0) {
-          return; // Skip this spell, no uses left
+          return; // Skip this technique, no uses left
         }
 
         damageDice = ability.damage;
         weaponName = ability.name;
-        isSpellDamage = true;
-        spellUsed = idx;
+        isTechniqueDamage = true;
+        techniqueUsed = idx;
       }
     });
 
@@ -843,7 +843,7 @@ const InitiativeTracker = () => {
       rolls.push(roll);
     }
 
-    // Apply O.C.C. damage bonuses
+    // Apply profession damage bonuses
     let bonus = 0;
     let bonusText = "";
     char.abilities?.forEach((ability) => {
@@ -856,9 +856,9 @@ const InitiativeTracker = () => {
 
     total += bonus;
 
-    // Decrement spell use if cast
-    if (spellUsed !== null && char.abilities[spellUsed]) {
-      const ability = char.abilities[spellUsed];
+    // Decrement technique use if cast
+    if (techniqueUsed !== null && char.abilities[techniqueUsed]) {
+      const ability = char.abilities[techniqueUsed];
       if (ability.usesRemaining !== null) {
         ability.usesRemaining = Math.max(0, ability.usesRemaining - 1);
         bonusText += ` (${ability.usesRemaining}/${ability.uses} uses left)`;
@@ -872,9 +872,9 @@ const InitiativeTracker = () => {
       return { ...prev, [char._id]: newHp };
     });
 
-    const damageSource = isSpellDamage ? `via ${weaponName}` : `with ${weaponName}`;
+    const damageSource = isTechniqueDamage ? `via ${weaponName}` : `with ${weaponName}`;
     const twoHandedText = usingTwoHanded && weapon ? ' (Two-Handed)' : '';
-    const logText = `💥 ${char.name} deals ${total} damage ${damageSource}${twoHandedText}${bonusText} (${damageDice} = ${rolls.join("+")}${bonus > 0 ? ` + ${bonus}` : ""}). HP now ${Math.max((hp[char._id] ?? 20) - total, 0)}`;
+    const logText = `Ã°Å¸â€™Â¥ ${char.name} deals ${total} damage ${damageSource}${twoHandedText}${bonusText} (${damageDice} = ${rolls.join("+")}${bonus > 0 ? ` + ${bonus}` : ""}). HP now ${Math.max((hp[char._id] ?? 20) - total, 0)}`;
 
     if (activeParty._id) {
       socket.emit("partyMessage", {
@@ -918,13 +918,13 @@ const InitiativeTracker = () => {
         return { ...prev, [char._id]: newHp };
       });
 
-      message = `🧪 ${char.name} uses ${consumable.name} → heals ${heal} HP (${diceStr} = ${rolls.join("+")}${bonus > 0 ? `+${bonus}` : ""})`;
+      message = `Ã°Å¸Â§Âª ${char.name} uses ${consumable.name} Ã¢â€ â€™ heals ${heal} HP (${diceStr} = ${rolls.join("+")}${bonus > 0 ? `+${bonus}` : ""})`;
     } else if (effect.type === "buff") {
-      message = `💪 ${char.name} uses ${consumable.name} → ${effect.buff}`;
+      message = `Ã°Å¸â€™Âª ${char.name} uses ${consumable.name} Ã¢â€ â€™ ${effect.buff}`;
     } else if (effect.type === "damage") {
-      message = `💥 ${char.name} uses ${consumable.name} → ${effect.damage} damage`;
+      message = `Ã°Å¸â€™Â¥ ${char.name} uses ${consumable.name} Ã¢â€ â€™ ${effect.damage} damage`;
     } else {
-      message = `✨ ${char.name} uses ${consumable.name} → ${consumable.effect}`;
+      message = `Ã¢Å“Â¨ ${char.name} uses ${consumable.name} Ã¢â€ â€™ ${consumable.effect}`;
     }
 
     if (activeParty._id) {
@@ -948,7 +948,7 @@ const InitiativeTracker = () => {
     const allCombatants = [...activeParty.members, ...enemies];
     const combatant = allCombatants.find(c => c._id === id);
     if (combatant && activeParty._id) {
-      logCombatEvent(`❤️ ${combatant.name} HP set to ${newHp}`);
+      logCombatEvent(`Ã¢ÂÂ¤Ã¯Â¸Â ${combatant.name} HP set to ${newHp}`);
     }
   };
 
@@ -960,7 +960,7 @@ const InitiativeTracker = () => {
     const allCombatants = [...activeParty.members, ...enemies];
     const combatant = allCombatants.find(c => c._id === id);
     if (combatant && activeParty._id) {
-      logCombatEvent(`📋 ${combatant.name} status changed to: ${newStatus}`);
+      logCombatEvent(`Ã°Å¸â€œâ€¹ ${combatant.name} status changed to: ${newStatus}`);
     }
   };
 
@@ -973,7 +973,7 @@ const InitiativeTracker = () => {
     const allCombatants = [...activeParty.members, ...enemies];
     const combatant = allCombatants.find(c => c._id === characterId);
     if (combatant && activeParty._id) {
-      logCombatEvent(`🏹 ${combatant.name} ${ammoType}: ${newCount}`);
+      logCombatEvent(`Ã°Å¸ÂÂ¹ ${combatant.name} ${ammoType}: ${newCount}`);
     }
   };
 
@@ -996,7 +996,7 @@ const InitiativeTracker = () => {
     setWeaponSlots(prev => ({ ...prev, [characterId]: newSlots }));
 
     if (activeParty._id) {
-      logCombatEvent(`⚔️ ${character.name} equipped ${weaponName || 'nothing'} in ${slot === 'rightHand' ? 'right hand' : 'left hand'}`);
+      logCombatEvent(`Ã¢Å¡â€Ã¯Â¸Â ${character.name} equistaminad ${weaponName || 'nothing'} in ${slot === 'rightHand' ? 'right hand' : 'left hand'}`);
     }
   };
 
@@ -1011,7 +1011,7 @@ const InitiativeTracker = () => {
     const character = [...activeParty.members, ...enemies].find(c => c._id === characterId);
     if (character && activeParty._id) {
       const action = newSlots.usingTwoHanded ? 'now using two-handed grip' : 'released two-handed grip';
-      logCombatEvent(`⚔️ ${character.name} ${action}`);
+      logCombatEvent(`Ã¢Å¡â€Ã¯Â¸Â ${character.name} ${action}`);
     }
   };
 
@@ -1022,7 +1022,7 @@ const InitiativeTracker = () => {
 
     const character = [...activeParty.members, ...enemies].find(c => c._id === characterId);
     if (character && activeParty._id) {
-      logCombatEvent(`🏃 ${character.name} moved to (${newPosition.x}, ${newPosition.y})`);
+      logCombatEvent(`Ã°Å¸ÂÆ’ ${character.name} moved to (${newPosition.x}, ${newPosition.y})`);
     }
   };
 
@@ -1036,7 +1036,7 @@ const InitiativeTracker = () => {
         socket.emit("partyMessage", {
           partyId: activeParty._id,
           user: "System",
-          text: `🏃 ${currentCharacter.name} moved to (${targetHex.x}, ${targetHex.y})`,
+          text: `Ã°Å¸ÂÆ’ ${currentCharacter.name} moved to (${targetHex.x}, ${targetHex.y})`,
           type: "system",
         });
       }
@@ -1063,13 +1063,13 @@ const InitiativeTracker = () => {
     setSprintingEnemies(new Set());
     setMovementMode(false);
 
-    logCombatEvent("🏁 Combat ended - All ammunition replenished");
+    logCombatEvent("Ã°Å¸ÂÂ Combat ended - All ammunition replenished");
 
     if (activeParty._id) {
       socket.emit("partyMessage", {
         partyId: activeParty._id,
         user: "System",
-        text: "🏁 Combat ended - All ammunition replenished",
+        text: "Ã°Å¸ÂÂ Combat ended - All ammunition replenished",
         type: "system",
       });
     }
@@ -1094,7 +1094,7 @@ const InitiativeTracker = () => {
           <Heading size="sm" mb={2}>Add Enemy</Heading>
           <HStack>
             <Input
-              placeholder="Enemy name (e.g., Orc, Goblin, Bandit)"
+              placeholder="Enemy name (e.g., Raider, Brigand, Bandit)"
               value={newEnemyName}
               onChange={(e) => setNewEnemyName(e.target.value)}
               width="250px"
@@ -1114,11 +1114,11 @@ const InitiativeTracker = () => {
               onClick={rollInitiative}
               isDisabled={activeParty.members.length === 0 && enemies.length === 0}
             >
-              🎲 Roll Initiative
+              Ã°Å¸Å½Â² Roll Initiative
             </Button>
             {order.length > 0 && (
               <Button onClick={nextTurn} colorScheme="green">
-                Next Turn →
+                Next Turn Ã¢â€ â€™
               </Button>
             )}
             {order.length > 0 && (
@@ -1135,7 +1135,7 @@ const InitiativeTracker = () => {
 
         {/* AI Controls */}
         <Box>
-          <Heading size="sm" mb={2}>🤖 AI Enemy Control</Heading>
+          <Heading size="sm" mb={2}>Ã°Å¸Â¤â€“ AI Enemy Control</Heading>
           <VStack spacing={3} align="stretch" mb={4}>
             <HStack spacing={4}>
               <Button
@@ -1144,7 +1144,7 @@ const InitiativeTracker = () => {
                 onClick={() => setAiEnabled(!aiEnabled)}
                 size="sm"
               >
-                {aiEnabled ? "✅ AI Enabled" : "❌ AI Disabled"}
+                {aiEnabled ? "Ã¢Å“â€¦ AI Enabled" : "Ã¢ÂÅ’ AI Disabled"}
               </Button>
               <Select
                 value={aiDifficulty}
@@ -1180,7 +1180,7 @@ const InitiativeTracker = () => {
                 size="sm"
                 isDisabled={!openaiKey}
               >
-                {useLLM ? "🧠 LLM Enabled" : "🤖 Deterministic AI"}
+                {useLLM ? "Ã°Å¸Â§Â  LLM Enabled" : "Ã°Å¸Â¤â€“ Deterministic AI"}
               </Button>
               <Input
                 placeholder="OpenAI API Key (optional)"
@@ -1207,7 +1207,7 @@ const InitiativeTracker = () => {
                 variant={showTacticalMap ? "solid" : "outline"}
                 onClick={() => setShowTacticalMap(!showTacticalMap)}
               >
-                {showTacticalMap ? "✅ Hide Tactical Map" : "🗺️ Show Tactical Map"}
+                {showTacticalMap ? "Ã¢Å“â€¦ Hide Tactical Map" : "Ã°Å¸â€”ÂºÃ¯Â¸Â Show Tactical Map"}
               </Button>
 
               {/* Movement Mode Button - only show for current character's turn */}
@@ -1218,7 +1218,7 @@ const InitiativeTracker = () => {
                   variant={movementMode ? "solid" : "outline"}
                   onClick={() => setMovementMode(!movementMode)}
                 >
-                  {movementMode ? "✓ Movement Mode Active" : "🏃 Choose Movement"}
+                  {movementMode ? "Ã¢Å“â€œ Movement Mode Active" : "Ã°Å¸ÂÆ’ Choose Movement"}
                 </Button>
               )}
 
@@ -1246,7 +1246,7 @@ const InitiativeTracker = () => {
         {/* Range Input for Missile Weapons */}
         {order.length > 0 && (
           <Box>
-            <Heading size="sm" mb={2}>🎯 Target Distance</Heading>
+            <Heading size="sm" mb={2}>Ã°Å¸Å½Â¯ Target Distance</Heading>
             <HStack spacing={4}>
               <Input
                 type="number"
@@ -1294,7 +1294,7 @@ const InitiativeTracker = () => {
               </Text>
               {currentCharacter && !order[turnIndex]?.isEnemy && (
                 <Text fontSize="sm" color="blue.600" fontWeight="bold">
-                  🎯 Combat choices available below
+                  Ã°Å¸Å½Â¯ Combat choices available below
                 </Text>
               )}
               {/* Show Combat Choices Button for Player Characters */}
@@ -1328,7 +1328,7 @@ const InitiativeTracker = () => {
               boxShadow="sm"
             >
               <Heading size="sm" mb={3} color="blue.600" _dark={{ color: "blue.300" }}>
-                🎯 Combat Options for {currentCharacter.name}
+                Ã°Å¸Å½Â¯ Combat Options for {currentCharacter.name}
               </Heading>
               <CombatActionsPanel
                 character={currentCharacter}
@@ -1415,14 +1415,14 @@ const InitiativeTracker = () => {
                         <Text fontSize="sm" color="gray.600">
                           {entry.char.species} {entry.char.class}
                         </Text>
-                        {/* PPE and ISP display */}
+                        {/* stamina and focus display */}
                         {!entry.isEnemy && (
                           <HStack spacing={2} fontSize="xs">
-                            {entry.char.PPE !== undefined && (
-                              <Text color="purple.600">PPE: {entry.char.PPE}</Text>
+                            {entry.char.stamina !== undefined && (
+                              <Text color="purple.600">stamina: {entry.char.stamina}</Text>
                             )}
-                            {entry.char.ISP !== undefined && (
-                              <Text color="blue.600">ISP: {entry.char.ISP}</Text>
+                            {entry.char.focus !== undefined && (
+                              <Text color="blue.600">focus: {entry.char.focus}</Text>
                             )}
                           </HStack>
                         )}
@@ -1472,7 +1472,7 @@ const InitiativeTracker = () => {
                           const closest = distances.find(d => d.character.isEnemy !== entry.isEnemy);
 
                           if (!closest) {
-                            return <Text fontSize="xs" color="gray.500">—</Text>;
+                            return <Text fontSize="xs" color="gray.500">Ã¢â‚¬â€</Text>;
                           }
 
                           return (
@@ -1551,57 +1551,57 @@ const InitiativeTracker = () => {
                           colorScheme="red"
                           onClick={() => handleAttack(entry.char)}
                         >
-                          ⚔️ Attack
+                          Ã¢Å¡â€Ã¯Â¸Â Attack
                         </Button>
                         <Button
                           size="xs"
                           colorScheme="blue"
-                          onClick={() => handleDefense(entry.char, "Parry")}
+                          onClick={() => handleDefense(entry.char, "Block")}
                         >
-                          🛡️ Parry
+                          Ã°Å¸â€ºÂ¡Ã¯Â¸Â Block
                         </Button>
 
-                        {/* Magic Spells */}
-                        {entry.char.magic?.length > 0 && (
+                        {/* Training Techniques */}
+                        {entry.char.training?.length > 0 && (
                           <Select
                             size="xs"
-                            placeholder="Cast Spell"
+                            placeholder="Cast Technique"
                             width="120px"
                             onChange={(e) => {
-                              const spell = entry.char.magic.find((s) => s.name === e.target.value);
-                              if (spell) {
+                              const technique = entry.char.training.find((s) => s.name === e.target.value);
+                              if (technique) {
                                 // For now, target the first enemy or character
                                 const target = order.find((o) => o.char._id !== entry.char._id)?.char;
-                                handleMagic(entry.char, spell, target);
+                                handleTraining(entry.char, technique, target);
                               }
                             }}
                           >
-                            {entry.char.magic.map((s, idx) => (
+                            {entry.char.training.map((s, idx) => (
                               <option key={idx} value={s.name}>
-                                {s.name} ({s.cost} PPE)
+                                {s.name} ({s.cost} stamina)
                               </option>
                             ))}
                           </Select>
                         )}
 
-                        {/* Psionic Powers */}
-                        {entry.char.psionics?.length > 0 && (
+                        {/* Tactical Powers */}
+                        {entry.char.tactics?.length > 0 && (
                           <Select
                             size="xs"
-                            placeholder="Use Psionic"
+                            placeholder="Use Tactical"
                             width="120px"
                             onChange={(e) => {
-                              const power = entry.char.psionics.find((p) => p.name === e.target.value);
+                              const power = entry.char.tactics.find((p) => p.name === e.target.value);
                               if (power) {
                                 // For now, target the first enemy or character
                                 const target = order.find((o) => o.char._id !== entry.char._id)?.char;
-                                handlePsionic(entry.char, power, target);
+                                handleTactical(entry.char, power, target);
                               }
                             }}
                           >
-                            {entry.char.psionics.map((p, idx) => (
+                            {entry.char.tactics.map((p, idx) => (
                               <option key={idx} value={p.name}>
-                                {p.name} ({p.cost} ISP)
+                                {p.name} ({p.cost} focus)
                               </option>
                             ))}
                           </Select>
@@ -1609,17 +1609,17 @@ const InitiativeTracker = () => {
                         <Button
                           size="xs"
                           colorScheme="teal"
-                          onClick={() => handleDefense(entry.char, "Dodge")}
+                          onClick={() => handleDefense(entry.char, "Evade")}
                         >
-                          💨 Dodge
+                          Ã°Å¸â€™Â¨ Evade
                         </Button>
                         <Button
                           size="xs"
                           colorScheme="orange"
                           onClick={() => handleDamage(entry.char)}
-                          title={entry.isEnemy ? "Manual damage" : "Use equipped weapon"}
+                          title={entry.isEnemy ? "Manual damage" : "Use equistaminad weapon"}
                         >
-                          💥 {entry.isEnemy ? "Damage" : "Weapon"}
+                          Ã°Å¸â€™Â¥ {entry.isEnemy ? "Damage" : "Weapon"}
                         </Button>
                         {entry.isEnemy && (
                           <>
@@ -1628,14 +1628,14 @@ const InitiativeTracker = () => {
                               colorScheme="purple"
                               onClick={() => handleDamage(entry.char, "2d6")}
                             >
-                              💥 2d6
+                              Ã°Å¸â€™Â¥ 2d6
                             </Button>
                             <Button
                               size="xs"
                               colorScheme="yellow"
                               onClick={() => handleDamage(entry.char, "1d8")}
                             >
-                              💥 1d8
+                              Ã°Å¸â€™Â¥ 1d8
                             </Button>
                           </>
                         )}
@@ -1701,7 +1701,7 @@ const InitiativeTracker = () => {
               <strong>Attack Roll:</strong> d20, 12+ to hit (basic)
             </Text>
             <Text fontSize="sm">
-              <strong>Defense:</strong> Parry (with weapon/shield) or Dodge (-1 action)
+              <strong>Defense:</strong> Block (with weapon/shield) or Evade (-1 action)
             </Text>
             <Text fontSize="sm">
               <strong>Initiative:</strong> d20 + DEX modifier
@@ -1710,7 +1710,7 @@ const InitiativeTracker = () => {
               <strong>Damage:</strong> Weapon dice + STR modifier
             </Text>
             <Text fontSize="sm">
-              <strong>Status:</strong> OK → Wounded → KO → Dead
+              <strong>Status:</strong> OK Ã¢â€ â€™ Wounded Ã¢â€ â€™ KO Ã¢â€ â€™ Dead
             </Text>
           </VStack>
         </Box>

@@ -3,7 +3,7 @@ import {
   attemptGrapple,
   maintainGrapple,
   performTakedown,
-  groundStrike,
+  groundAttack,
   breakFree,
   grapplerPushOff,
   defenderPushBreak,
@@ -36,7 +36,7 @@ function revealConcealment(fighter, reason = "movement") {
 
 /**
  * Handle grapple actions
- * @param {string} actionType - Type of grapple action ('grapple', 'maintain', 'takedown', 'groundStrike', 'breakFree', etc.)
+ * @param {string} actionType - Type of grapple action ('grapple', 'maintain', 'takedown', 'groundAttack', 'breakFree', etc.)
  * @param {Object} attacker - The attacker fighter object
  * @param {string} defenderId - ID of the defender fighter
  * @param {Object} context - Context object containing:
@@ -79,8 +79,8 @@ export function handleGrappleAction(actionType, attacker, defenderId, context) {
   }
   
   // Check if attacker can act
-  if (attackerInArray.remainingAttacks <= 0) {
-    addLog(`⚠️ ${attacker.name} is out of attacks this turn!`, "error");
+  if (attackerInArray.remainingActions <= 0) {
+    addLog(`Ã¢Å¡Â Ã¯Â¸Â ${attacker.name} is out of attacks this turn!`, "error");
     return;
   }
   
@@ -92,8 +92,8 @@ export function handleGrappleAction(actionType, attacker, defenderId, context) {
   const getLiveFighters = () =>
     typeof getFighters === "function" ? getFighters() : fighters;
   const abortStaleGrapple = (reason) => {
-    addLog(`🚫 stale grapple follow-up aborted: ${reason}`, "warning");
-    addLog("🚫 stale grapple callback ignored", "warning");
+    addLog(`Ã°Å¸Å¡Â« stale grapple follow-up aborted: ${reason}`, "warning");
+    addLog("Ã°Å¸Å¡Â« stale grapple callback ignored", "warning");
     onStaleGrappleAbort?.(grappleActionId);
   };
 
@@ -103,7 +103,7 @@ export function handleGrappleAction(actionType, attacker, defenderId, context) {
     return;
   }
   if (preActionStaleReason) {
-    addLog(`🚫 stale grapple follow-up aborted: ${preActionStaleReason}`, "warning");
+    addLog(`Ã°Å¸Å¡Â« stale grapple follow-up aborted: ${preActionStaleReason}`, "warning");
     onStaleGrappleAbort?.(grappleActionId);
     return;
   }
@@ -130,7 +130,7 @@ export function handleGrappleAction(actionType, attacker, defenderId, context) {
         const defenderPSBonus = Math.floor((defenderPS - 10) / 2);
         const naturalAttacker = result.attackerRoll - attackerPSBonus;
         const naturalDefender = result.defenderRoll - defenderPSBonus;
-        addLog(`🎲 ${attacker.name} maintain roll: ${naturalAttacker} + ${attackerPSBonus} = ${result.attackerRoll} vs ${defender.name}: ${naturalDefender} + ${defenderPSBonus} = ${result.defenderRoll}`, "info");
+        addLog(`Ã°Å¸Å½Â² ${attacker.name} maintain roll: ${naturalAttacker} + ${attackerPSBonus} = ${result.attackerRoll} vs ${defender.name}: ${naturalDefender} + ${defenderPSBonus} = ${result.defenderRoll}`, "info");
       }
       break;
     case 'takedown':
@@ -147,31 +147,31 @@ export function handleGrappleAction(actionType, attacker, defenderId, context) {
         const attackerPSBonus = Math.floor((attackerPS - 10) / 2);
         const sizeMod = getCombinedGrappleModifiers(attacker, defender);
         const sizeBonus =
-          sizeMod.attackerStrikeBonus ??
-          sizeMod.strikeBonus ??
+          sizeMod.attackerAttackBonus ??
+          sizeMod.attackBonus ??
           sizeMod.modifier ??
           0;
         const naturalRoll = result.takedownRoll - attackerPSBonus - sizeBonus;
         const bonusDisplay = (attackerPSBonus + sizeBonus) >= 0 ? `+${attackerPSBonus + sizeBonus}` : `${attackerPSBonus + sizeBonus}`;
-        addLog(`🎲 ${attacker.name} takedown roll: ${naturalRoll} ${bonusDisplay} = ${result.takedownRoll} vs DC 15`, "info");
+        addLog(`Ã°Å¸Å½Â² ${attacker.name} takedown roll: ${naturalRoll} ${bonusDisplay} = ${result.takedownRoll} vs DC 15`, "info");
       }
       break;
-    case 'groundStrike': {
-      const equippedWeapons = [
-        attacker.equippedWeapons?.primary,
-        attacker.equippedWeapons?.secondary,
-        ...(Array.isArray(attacker.equippedWeapons) ? attacker.equippedWeapons : []),
+    case 'groundAttack': {
+      const equistaminadWeapons = [
+        attacker.equistaminadWeapons?.primary,
+        attacker.equistaminadWeapons?.secondary,
+        ...(Array.isArray(attacker.equistaminadWeapons) ? attacker.equistaminadWeapons : []),
       ].filter(Boolean);
-      const currentWeapon = equippedWeapons[0] || null;
-      const weapon = equippedWeapons.find(isWeaponGrappleSuitable) || null;
+      const currentWeapon = equistaminadWeapons[0] || null;
+      const weapon = equistaminadWeapons.find(isWeaponGrappleSuitable) || null;
       if (currentWeapon && !isWeaponGrappleSuitable(currentWeapon)) {
-        addLog(`⚠️ ${attacker.name} cannot use ${currentWeapon.name} effectively in a grapple.`, "warning");
+        addLog(`Ã¢Å¡Â Ã¯Â¸Â ${attacker.name} cannot use ${currentWeapon.name} effectively in a grapple.`, "warning");
       }
-      result = groundStrike(attacker, defender, weapon, rollDice);
+      result = groundAttack(attacker, defender, weapon, rollDice);
       
-      // Log dice roll for ground strike
+      // Log dice roll for ground attack
       if (result && result.attackRoll !== undefined && result.naturalRoll !== undefined) {
-        const strikeBonus = attacker.bonuses?.strike || attacker.handToHand?.strikeBonus || 0;
+        const attackBonus = attacker.bonuses?.attack || attacker.handToHand?.attackBonus || 0;
         const ppBonus = Math.floor(((attacker.attributes?.PP || attacker.PP || 10) - 10) / 2);
         const weaponName = String(weapon?.name || weapon?.type || "").toLowerCase();
         const daggerBonus =
@@ -180,15 +180,15 @@ export function handleGrappleAction(actionType, attacker, defenderId, context) {
           weaponName.includes("short blade")
             ? 1
             : 0;
-        const totalBonus = ppBonus + strikeBonus + daggerBonus;
+        const totalBonus = ppBonus + attackBonus + daggerBonus;
         const bonusDisplay = totalBonus >= 0 ? `+${totalBonus}` : `${totalBonus}`;
         
         if (result.critical) {
-          addLog(`🎲 ${attacker.name} rolls NATURAL ${result.naturalRoll}! Critical ground strike! (Total: ${result.attackRoll} vs AR 12)`, "critical");
+          addLog(`Ã°Å¸Å½Â² ${attacker.name} rolls NATURAL ${result.naturalRoll}! Critical ground attack! (Total: ${result.attackRoll} vs guardRating 12)`, "critical");
         } else if (result.deathBlow) {
-          addLog(`🎲 ${attacker.name} rolls NATURAL 20! DEATH BLOW! (Total: ${result.attackRoll})`, "critical");
+          addLog(`Ã°Å¸Å½Â² ${attacker.name} rolls NATURAL 20! DEATH BLOW! (Total: ${result.attackRoll})`, "critical");
         } else {
-          addLog(`🎲 ${attacker.name} ground strike roll: ${result.naturalRoll} ${bonusDisplay} = ${result.attackRoll} vs AR 12`, "info");
+          addLog(`Ã°Å¸Å½Â² ${attacker.name} ground attack roll: ${result.naturalRoll} ${bonusDisplay} = ${result.attackRoll} vs guardRating 12`, "info");
         }
       }
       
@@ -220,7 +220,7 @@ export function handleGrappleAction(actionType, attacker, defenderId, context) {
         // Note: breakFree adds leverage penalty to characterRoll, so we need to account for that
         const naturalCharacter = result.characterRoll - characterPSBonus; // Approximate (leverage penalty not shown separately)
         const naturalOpponent = result.opponentRoll - opponentPSBonus;
-        addLog(`🎲 ${attacker.name} break free roll: ${naturalCharacter} + ${characterPSBonus} = ${result.characterRoll} vs ${defender.name}: ${naturalOpponent} + ${opponentPSBonus} = ${result.opponentRoll}`, "info");
+        addLog(`Ã°Å¸Å½Â² ${attacker.name} break free roll: ${naturalCharacter} + ${characterPSBonus} = ${result.characterRoll} vs ${defender.name}: ${naturalOpponent} + ${opponentPSBonus} = ${result.opponentRoll}`, "info");
       }
       break;
     case 'grapplerPushOff': {
@@ -246,13 +246,13 @@ export function handleGrappleAction(actionType, attacker, defenderId, context) {
     return;
   }
   if (staleReason) {
-    addLog(`🚫 stale grapple follow-up aborted: ${staleReason}`, "warning");
+    addLog(`Ã°Å¸Å¡Â« stale grapple follow-up aborted: ${staleReason}`, "warning");
     onStaleGrappleAbort?.(grappleActionId);
     return;
   }
 
   if (result.success) {
-    const forcedMovementAction = new Set([
+    const fraideredMovementAction = new Set([
       'grapple',
       'takedown',
       'grapplerPushOff',
@@ -260,7 +260,7 @@ export function handleGrappleAction(actionType, attacker, defenderId, context) {
       'defenderReversal',
     ]);
     const shouldRevealForMovement =
-      forcedMovementAction.has(actionType) ||
+      fraideredMovementAction.has(actionType) ||
       Boolean(result.attacker?.hex) ||
       Boolean(result.defender?.hex);
     const nextAttacker =
@@ -285,22 +285,22 @@ export function handleGrappleAction(actionType, attacker, defenderId, context) {
           ? ` + PS diff ${breakdown.defenderPSDiffBonus}`
           : "";
         addLog(
-          `${attacker.name} grapple roll: d20 ${breakdown.naturalAttackRoll} + PP ${breakdown.attackerPPBonus} + strike ${breakdown.attackerStrikeBonus} + size ${breakdown.attackerSizeStrikeBonus}${attackerPSLabel} = ${attackRoll}`,
+          `${attacker.name} grapple roll: d20 ${breakdown.naturalAttackRoll} + PP ${breakdown.attackerPPBonus} + attack ${breakdown.attackerAttackBonus} + size ${breakdown.attackerSizeAttackBonus}${attackerPSLabel} = ${attackRoll}`,
           "info"
         );
         addLog(
-          `${defender.name} parry roll: d20 ${breakdown.naturalDefendRoll} + PP ${breakdown.defenderPPBonus} + parry ${breakdown.defenderParryBonus} + size ${breakdown.defenderSizeParryBonus}${defenderPSLabel} = ${defendRoll}`,
+          `${defender.name} block roll: d20 ${breakdown.naturalDefendRoll} + PP ${breakdown.defenderPPBonus} + block ${breakdown.defenderBlockBonus} + size ${breakdown.defenderSizeBlockBonus}${defenderPSLabel} = ${defendRoll}`,
           "info"
         );
       } else {
-        const naturalAttack = attackRoll - (attacker.bonuses?.strike || 0) - Math.floor(((attacker.attributes?.PP || attacker.PP || 10) - 10) / 2);
-        const naturalDefend = defendRoll - (defender.bonuses?.parry || 0) - Math.floor(((defender.attributes?.PP || defender.PP || 10) - 10) / 2);
-        addLog(`🎲 ${attacker.name} grapple roll: ${naturalAttack} + bonuses = ${attackRoll} vs ${defender.name}'s parry: ${naturalDefend} + bonuses = ${defendRoll}`, "info");
+        const naturalAttack = attackRoll - (attacker.bonuses?.attack || 0) - Math.floor(((attacker.attributes?.PP || attacker.PP || 10) - 10) / 2);
+        const naturalDefend = defendRoll - (defender.bonuses?.block || 0) - Math.floor(((defender.attributes?.PP || defender.PP || 10) - 10) / 2);
+        addLog(`Ã°Å¸Å½Â² ${attacker.name} grapple roll: ${naturalAttack} + bonuses = ${attackRoll} vs ${defender.name}'s block: ${naturalDefend} + bonuses = ${defendRoll}`, "info");
       }
     } else if (result.attackRoll !== undefined) {
-      addLog(`🎲 ${attacker.name} grapple roll: ${result.attackRoll}`, "info");
+      addLog(`Ã°Å¸Å½Â² ${attacker.name} grapple roll: ${result.attackRoll}`, "info");
     } else if (result.defendRoll !== undefined && result.defendRoll === 20) {
-      addLog(`🎲 ${defender.name} escapes with NATURAL 20!`, "critical");
+      addLog(`Ã°Å¸Å½Â² ${defender.name} escapes with NATURAL 20!`, "critical");
     }
     
     // Safeguard against undefined message
@@ -308,20 +308,20 @@ export function handleGrappleAction(actionType, attacker, defenderId, context) {
       addLog(result.message, "info");
     }
     if (result.weakSpot) {
-      addLog(`🗡️ ${attacker.name} slips inside the armor with ${result.weaponName || "a dagger"}.`, "critical");
+      addLog(`Ã°Å¸â€”Â¡Ã¯Â¸Â ${attacker.name} slips inside the armor with ${result.weaponName || "a dagger"}.`, "critical");
     } else if (result.armorBlockedWeakSpot) {
-      addLog(`🛡️ ${defender.name}'s armor blocks the close-quarters strike.`, "info");
+      addLog(`Ã°Å¸â€ºÂ¡Ã¯Â¸Â ${defender.name}'s armor blocks the close-quarters attack.`, "info");
     }
     
     // Log size modifier information if present
     if (result.autoGrapple) {
       const sizeMod = getCombinedGrappleModifiers(attacker, defender);
-      addLog(`💪 ${sizeMod.description}`, "info");
+      addLog(`Ã°Å¸â€™Âª ${sizeMod.description}`, "info");
     }
     
     // Apply damage if any
     // For takedown, damage is always applied if result.damage exists (takedown doesn't use hit property)
-    // For ground strikes, result.hit indicates if the strike connected
+    // For ground attacks, result.hit indicates if the attack connected
     if (result.damage && (actionType === 'takedown' || result.hit)) {
       const damageStaleReason = getStaleGrappleReason();
       if (damageStaleReason) {
@@ -340,9 +340,9 @@ export function handleGrappleAction(actionType, attacker, defenderId, context) {
           console.log(
             `[GRAPPLE DEBUG] Post-damage: ` +
               `${defender.name} HP=${updatedDefender.currentHP ?? updatedDefender.hp} ` +
-              `SDC=${updatedDefender.currentSDC ?? updatedDefender.sdc} ` +
-              (updatedDefender.equippedArmor
-                ? `ArmorSDC=${updatedDefender.equippedArmor.currentSDC ?? updatedDefender.equippedArmor.sdc}`
+              `armorDurability=${updatedDefender.currentarmorDurability ?? updatedDefender.armorDurability} ` +
+              (updatedDefender.equistaminadArmor
+                ? `ArmorarmorDurability=${updatedDefender.equistaminadArmor.currentarmorDurability ?? updatedDefender.equistaminadArmor.armorDurability}`
                 : `No armor`)
           );
         }
@@ -355,18 +355,18 @@ export function handleGrappleAction(actionType, attacker, defenderId, context) {
         if (result.ignoresArmor) {
           // Critical hit or death blow - bypasses armor (chink in armor)
           addLog(
-            `💥 ${defender.name} takes ${result.damage} damage (armor bypassed - weak point struck)! (HP: ${finalHP}/${maxHP})`,
+            `Ã°Å¸â€™Â¥ ${defender.name} takes ${result.damage} damage (armor bypassed - weak point struck)! (HP: ${finalHP}/${maxHP})`,
             result.critical ? "critical" : "warning"
           );
           
           // Log broken armor if any (from calculateArmorDamage)
-          if (updatedDefender.equipped) {
-            const brokenArmor = Object.values(updatedDefender.equipped)
-              .filter(armor => armor && armor.broken && armor.currentSDC <= 0)
+          if (updatedDefender.equistaminad) {
+            const brokenArmor = Object.values(updatedDefender.equistaminad)
+              .filter(armor => armor && armor.broken && armor.currentarmorDurability <= 0)
               .map(armor => armor.name);
             if (brokenArmor.length > 0) {
               brokenArmor.forEach(name => {
-                addLog(`💢 ${defender.name}'s ${name} is destroyed!`, "warning");
+                addLog(`Ã°Å¸â€™Â¢ ${defender.name}'s ${name} is destroyed!`, "warning");
               });
             }
           }
@@ -375,12 +375,12 @@ export function handleGrappleAction(actionType, attacker, defenderId, context) {
           const damageTaken = (getFighterHP(defenderCopy) - finalHP);
           if (damageTaken > 0) {
             addLog(
-              `💥 ${defender.name} takes ${damageTaken} damage! (HP: ${finalHP}/${maxHP})`,
+              `Ã°Å¸â€™Â¥ ${defender.name} takes ${damageTaken} damage! (HP: ${finalHP}/${maxHP})`,
               "warning"
             );
           } else {
             addLog(
-              `🛡️ ${defender.name}'s armor absorbs the blow! (Armor SDC damaged: ${result.damage})`,
+              `Ã°Å¸â€ºÂ¡Ã¯Â¸Â ${defender.name}'s armor absorbs the blow! (Armor armorDurability damaged: ${result.damage})`,
               "info"
             );
           }
@@ -390,7 +390,7 @@ export function handleGrappleAction(actionType, attacker, defenderId, context) {
         if (result.deathBlow) {
           applyHPToFighter(updatedDefender, -999);
           updatedDefender.isDead = true;
-          addLog(`💀 ${defender.name} is slain by death blow!`, "error");
+          addLog(`Ã°Å¸â€™â‚¬ ${defender.name} is slain by death blow!`, "error");
         }
         
         // Update fighter state
@@ -414,9 +414,9 @@ export function handleGrappleAction(actionType, attacker, defenderId, context) {
     const updated = [...getLiveFighters()];
     const attackerIndex = updated.findIndex(f => f.id === attacker.id);
     if (attackerIndex !== -1) {
-      updated[attackerIndex].remainingAttacks = Math.max(0, updated[attackerIndex].remainingAttacks - 1);
+      updated[attackerIndex].remainingActions = Math.max(0, updated[attackerIndex].remainingActions - 1);
       addLog(
-        `${updated[attackerIndex].name} has ${updated[attackerIndex].remainingAttacks}/${updated[attackerIndex].attacksPerMelee || updated[attackerIndex].actionsPerMelee || "?"} attacks remaining.`,
+        `${updated[attackerIndex].name} has ${updated[attackerIndex].remainingActions}/${updated[attackerIndex].actionsPerRound || updated[attackerIndex].actionsPerMelee || "?"} attacks remaining.`,
         "info"
       );
       setFighters(updated);
@@ -465,10 +465,10 @@ export function handleGrappleAction(actionType, attacker, defenderId, context) {
     }
     if (shouldRevealForMovement) {
       if (result.attacker && nextAttacker !== result.attacker) {
-        addLog(`👁️ ${result.attacker.name} is revealed by the grapple movement!`, "info");
+        addLog(`Ã°Å¸â€˜ÂÃ¯Â¸Â ${result.attacker.name} is revealed by the grapple movement!`, "info");
       }
       if (result.defender && nextDefender !== result.defender) {
-        addLog(`👁️ ${result.defender.name} is revealed by the grapple movement!`, "info");
+        addLog(`Ã°Å¸â€˜ÂÃ¯Â¸Â ${result.defender.name} is revealed by the grapple movement!`, "info");
       }
     }
   } else {
@@ -486,9 +486,9 @@ export function handleGrappleAction(actionType, attacker, defenderId, context) {
       const updated = [...getLiveFighters()];
       const attackerIndex = updated.findIndex(f => f.id === attacker.id);
       if (attackerIndex !== -1) {
-        updated[attackerIndex].remainingAttacks = Math.max(0, updated[attackerIndex].remainingAttacks - 1);
+        updated[attackerIndex].remainingActions = Math.max(0, updated[attackerIndex].remainingActions - 1);
         addLog(
-          `${updated[attackerIndex].name} has ${updated[attackerIndex].remainingAttacks}/${updated[attackerIndex].attacksPerMelee || updated[attackerIndex].actionsPerMelee || "?"} attacks remaining.`,
+          `${updated[attackerIndex].name} has ${updated[attackerIndex].remainingActions}/${updated[attackerIndex].actionsPerRound || updated[attackerIndex].actionsPerMelee || "?"} attacks remaining.`,
           "info"
         );
         setFighters(updated);

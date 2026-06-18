@@ -27,7 +27,7 @@ router.get("/:id", authenticateToken, async (req, res) => {
 router.post("/:id/equip", authenticateToken, async (req, res) => {
   try {
     // TODO: Implement armor equipping
-    res.json({ message: "Armor equipped" });
+    res.json({ message: "Armor equistaminad" });
   } catch (error) {
     res.status(400).json({ error: error.message });
   }

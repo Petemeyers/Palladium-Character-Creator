@@ -33,7 +33,7 @@ export function rollCharacterAttributes(character) {
       // rollDiceDetailed returns { total, rolls: number[], notation }
       const rollBreakdown = rollResult.rolls?.join(' + ') || rollResult.total;
       const bonus = rollResult.bonus ? ` + ${rollResult.bonus}` : '';
-      console.log(`🎲 ${character.name || 'Character'} ${attr}: ${diceNotation} = [${rollBreakdown}]${bonus} = ${attributes[attr]}`);
+      console.log(`ÃƒÂ°Ã…Â¸Ã…Â½Ã‚Â² ${character.name || 'Character'} ${attr}: ${diceNotation} = [${rollBreakdown}]${bonus} = ${attributes[attr]}`);
     }
   });
 
@@ -62,9 +62,9 @@ export function calculateCombatBonuses(attributes, character) {
 
   if (attributes.PP) {
     // Physical Prowess bonuses
-    if (attributes.PP >= 16) bonuses.strike = (bonuses.strike || 0) + 1;
-    if (attributes.PP >= 20) bonuses.parry = (bonuses.parry || 0) + 1;
-    if (attributes.PP >= 24) bonuses.dodge = (bonuses.dodge || 0) + 1;
+    if (attributes.PP >= 16) bonuses.attack = (bonuses.attack || 0) + 1;
+    if (attributes.PP >= 20) bonuses.block = (bonuses.block || 0) + 1;
+    if (attributes.PP >= 24) bonuses.evade = (bonuses.evade || 0) + 1;
   }
 
   return bonuses;
@@ -84,17 +84,17 @@ export function rollPlayableCharacterHP(character, attributes) {
 
   // Calculate HP based on PE (Physical Endurance)
   const baseHP = attributes.PE || 10;
-  const classBonus = getClassHPBonus(character.occ);
+  const classBonus = getClassHPBonus(character.profession);
 
   return Math.max(1, baseHP + classBonus);
 }
 
 /**
  * Get HP bonus based on character class
- * @param {string} occ - Occupational Character Class
+ * @param {string} profession - profession
  * @returns {number} - HP bonus
  */
-function getClassHPBonus(occ) {
+function getClassHPBonus(profession) {
   const classBonuses = {
     "Mercenary Fighter": 8,
     Soldier: 10,
@@ -104,12 +104,12 @@ function getClassHPBonus(occ) {
     Ranger: 10,
     Thief: 6,
     Assassin: 8,
-    Wizard: 4,
+    Duelist: 4,
     Witch: 6,
-    Warlock: 8,
+    Mercenary: 8,
     Diabolist: 6,
     Summoner: 8,
-    "Mind Mage": 6,
+    "Tactician": 6,
     Priest: 10,
     Druid: 8,
     Shaman: 12,
@@ -118,12 +118,12 @@ function getClassHPBonus(occ) {
     Scholar: 4,
   };
 
-  return classBonuses[occ] || 6;
+  return classBonuses[profession] || 6;
 }
 
 /**
  * Convert a playable character to a combat-ready fighter
- * @param {Object} character - Character data from bestiary
+ * @param {Object} character - Character data from arenaRoster
  * @param {string} customName - Optional custom name
  * @returns {Object} - Combat-ready fighter object
  */
@@ -137,14 +137,14 @@ import {
   syncLegacyArmorFields,
 } from './equipmentManager.js';
 import { getUnifiedAbilities } from './unifiedAbilities.js';
-import { convertUnifiedSpellToCombatSpell } from './getFighterSpells.js';
-import { getAllSpellsFromDB } from '../data/combatSpells.js';
+import { convertTechniqueToCombatTechnique } from './getFighterTechniques.js';
+import { getAllTechniquesFromDB } from '../data/combatTechniques.js';
 import {
-  isWizardClassName,
-  buildWizardSpellbookForLevel,
+  isDuelistClassName,
+  buildDuelistTechniqueBookForLevel,
   createDeterministicRng,
-  normalizePPEState,
-} from './spellUtils.js';
+  normalizestaminaState,
+} from './techniqueUtils.js';
 
 export function createPlayableCharacterFighter(character, customName = null) {
   // Roll attributes
@@ -156,16 +156,16 @@ export function createPlayableCharacterFighter(character, customName = null) {
   // Roll HP
   const rolledHP = rollPlayableCharacterHP(character, attributes);
 
-  // Calculate AR (Armor Rating) - default if not specified
-  let ar = character.AR || calculateDefaultAR(character, attributes);
+  // Calculate guardRating (Armor Rating) - default if not specified
+  let guardRating = character.guardRating || calculateDefaultAR(character, attributes);
   let assignedArmor = null;
   
-  // Knightly playable fighters should have real visible plate armor, not an AR-only value.
-  const occLabel = String(character.occ || character.OCC || character.className || "").toLowerCase();
+  // Knightly playable fighters should have real visible plate armor, not an guardRating-only value.
+  const professionLabel = String(character.profession || character.PROFESSION || character.className || "").toLowerCase();
   const nameLabel = String(character.name || "").toLowerCase();
   const isKnightlyPlayable =
-    occLabel.includes("knight") ||
-    occLabel.includes("paladin") ||
+    professionLabel.includes("knight") ||
+    professionLabel.includes("paladin") ||
     nameLabel.includes("knight") ||
     nameLabel.includes("paladin");
   if (isKnightlyPlayable) {
@@ -174,22 +174,22 @@ export function createPlayableCharacterFighter(character, customName = null) {
       heavyArmors.find((armor) => armor.name === "Plate Mail") ||
       heavyArmors.find((armor) => armor.name === "Field Plate") ||
       heavyArmors.find((armor) => String(armor.name || "").toLowerCase().includes("plate")) ||
-      { name: "Plate Mail", type: "heavy", ar: 16, sdc: 80, weight: 50 };
+      { name: "Plate Mail", type: "heavy", guardRating: 16, armorDurability: 80, weight: 50 };
     assignedArmor = {
       name: selectedArmor.name,
       type: "armor",
       category: selectedArmor.type || "heavy",
-      armorRating: Number(selectedArmor.ar ?? selectedArmor.AR ?? 16) || 16,
-      ar: Number(selectedArmor.ar ?? selectedArmor.AR ?? 16) || 16,
-      sdc: Number(selectedArmor.sdc ?? selectedArmor.SDC ?? 80) || 80,
-      currentSDC: Number(selectedArmor.currentSDC ?? selectedArmor.sdc ?? selectedArmor.SDC ?? 80) || 80,
-      maxSDC: Number(selectedArmor.sdc ?? selectedArmor.SDC ?? 80) || 80,
+      guardRating: Number(selectedArmor.guardRating ?? selectedArmor.guardRating ?? 16) || 16,
+      guardRating: Number(selectedArmor.guardRating ?? selectedArmor.guardRating ?? 16) || 16,
+      armorDurability: Number(selectedArmor.armorDurability ?? selectedArmor.armorDurability ?? 80) || 80,
+      currentarmorDurability: Number(selectedArmor.currentarmorDurability ?? selectedArmor.armorDurability ?? selectedArmor.armorDurability ?? 80) || 80,
+      maxarmorDurability: Number(selectedArmor.armorDurability ?? selectedArmor.armorDurability ?? 80) || 80,
       weight: selectedArmor.weight,
       cost: selectedArmor.cost,
-      equipped: true,
+      equistaminad: true,
     };
-    ar = Math.max(ar, assignedArmor.armorRating);
-    console.log(`${character.name || 'Knight'} equipped with ${assignedArmor.name} (AR: ${ar})`);
+    guardRating = Math.max(guardRating, assignedArmor.guardRating);
+    console.log(`${character.name || 'Knight'} equistaminad with ${assignedArmor.name} (guardRating: ${guardRating})`);
   }
 
   // Calculate Speed
@@ -199,11 +199,11 @@ export function createPlayableCharacterFighter(character, customName = null) {
   // Assign weapons from rulebook/preferred_weapons
   let assignedWeapons = [];
   if (character.preferred_weapons) {
-    const tempFighter = { name: character.name, race: character.race, species: character.race, occ: character.occ };
+    const tempFighter = { name: character.name, race: character.race, species: character.race, profession: character.profession };
     const weaponAssigned = assignRandomWeaponToEnemy(tempFighter, character.preferred_weapons);
-    if (weaponAssigned.equippedWeapons && weaponAssigned.equippedWeapons.length > 0) {
-      assignedWeapons = weaponAssigned.equippedWeapons.filter(w => w.name !== "Unarmed");
-      console.log(`⚔️ ${character.name || 'Character'} assigned weapon: ${assignedWeapons.map(w => w.name).join(', ')}`);
+    if (weaponAssigned.equistaminadWeapons && weaponAssigned.equistaminadWeapons.length > 0) {
+      assignedWeapons = weaponAssigned.equistaminadWeapons.filter(w => w.name !== "Unarmed");
+      console.log(`ÃƒÂ¢Ã…Â¡Ã¢â‚¬ÂÃƒÂ¯Ã‚Â¸Ã‚Â ${character.name || 'Character'} assigned weapon: ${assignedWeapons.map(w => w.name).join(', ')}`);
     }
   }
 
@@ -218,13 +218,13 @@ export function createPlayableCharacterFighter(character, customName = null) {
           if (
             attack.damage &&
             (String(attack.damage).includes("by weapon") ||
-              attack.damage === "by spell" ||
+              attack.damage === "by technique" ||
               attack.damage === "variable")
           ) {
             const attackName = String(attack.name || "");
             const attackNorm = normalizeName(attackName);
 
-            // ✅ Prefer an assigned weapon for "by weapon" attacks.
+            // ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Prefer an assigned weapon for "by weapon" attacks.
             // Handle name mismatches like "Longbow" vs "Long Bow" and "Bow/Long Bow" slashes.
             let assignedWeapon =
               assignedWeapons.find((w) => {
@@ -252,7 +252,7 @@ export function createPlayableCharacterFighter(character, customName = null) {
 
             const defaultDamage = getDefaultWeaponDamage(character.preferred_weapons);
 
-            if (attack.damage === "by spell") {
+            if (attack.damage === "by technique") {
               return { ...attack, damage: "2d6" };
             }
 
@@ -268,7 +268,7 @@ export function createPlayableCharacterFighter(character, customName = null) {
           damage: w.damage || "1d6",
           count: 1,
         }))
-      : [{ name: "Unarmed Strike", damage: "1d4", count: 1 }];
+      : [{ name: "Unarmed Attack", damage: "1d4", count: 1 }];
 
   // Use assigned weapons if available, otherwise derive from attacks
   let derivedWeapons = [];
@@ -298,7 +298,7 @@ export function createPlayableCharacterFighter(character, customName = null) {
       .filter(
         (attack) =>
           typeof attack.damage === "string" &&
-          attack.damage.toLowerCase() !== "by spell" &&
+          attack.damage.toLowerCase() !== "by technique" &&
           attack.name
       )
       .map((attack, index) => {
@@ -325,7 +325,7 @@ export function createPlayableCharacterFighter(character, customName = null) {
 
   if (derivedWeapons.length === 0) {
     derivedWeapons.push({
-      name: "Unarmed Strike",
+      name: "Unarmed Attack",
       damage: "1d4",
       slot: "Right Hand",
       type: "melee",
@@ -343,17 +343,17 @@ export function createPlayableCharacterFighter(character, customName = null) {
   if (assignedArmor) {
     const normalizedArmor = normalizeEquipmentItem({ ...assignedArmor, slot: "torso" });
     const result = equipLayer(layeredEquipment.worn, normalizedArmor);
-    if (result.equipped) layeredEquipment.worn = result.worn;
+    if (result.equistaminad) layeredEquipment.worn = result.worn;
   }
 
   // Determine size category based on race (default to MEDIUM for humans/standard races)
   let sizeCategory = "MEDIUM";
   const raceLower = (character.race || "").toLowerCase();
-  if (raceLower.includes("giant") || raceLower.includes("troll") || raceLower.includes("ogre")) {
+  if (raceLower.includes("heavy") || raceLower.includes("champion") || raceLower.includes("heavy fighter")) {
     sizeCategory = "LARGE";
-  } else if (raceLower.includes("dwarf") || raceLower.includes("halfling") || raceLower.includes("gnome")) {
+  } else if (raceLower.includes("human") || raceLower.includes("halfling") || raceLower.includes("gnome")) {
     sizeCategory = "SMALL";
-  } else if (raceLower.includes("elf") || raceLower.includes("human") || raceLower.includes("knight")) {
+  } else if (raceLower.includes("human") || raceLower.includes("human") || raceLower.includes("knight")) {
     sizeCategory = "MEDIUM";
   }
   
@@ -369,7 +369,7 @@ export function createPlayableCharacterFighter(character, customName = null) {
     category: character.category,
     playable: true,
     race: character.race,
-    occ: character.occ,
+    profession: character.profession,
     alignment: character.alignment_options?.[0] || "unaligned",
     size: character.size || sizeCategory,
     sizeCategory: sizeCategory,
@@ -380,8 +380,8 @@ export function createPlayableCharacterFighter(character, customName = null) {
     HP: character.HP,
     currentHP: rolledHP,
     maxHP: rolledHP,
-    AR: ar,
-    equippedArmor: assignedArmor?.name || character.equippedArmor || character.armorName || null,
+    guardRating: guardRating,
+    equistaminadArmor: assignedArmor?.name || character.equistaminadArmor || character.armorName || null,
     armor: assignedArmor || character.armor || null,
     spd: speed,
 
@@ -396,20 +396,20 @@ export function createPlayableCharacterFighter(character, customName = null) {
 
     // Special abilities
     abilities: character.special_abilities || [],
-    magic: character.magic || [],
-    psionics: character.psionics,
-    psionicPowers: character.psionicPowers || [],
-    ISP: character.ISP || 0,
-    currentISP: typeof character.currentISP === "number" ? character.currentISP : (character.ISP || 0), // Initialize currentISP from ISP
-    PPE: character.PPE || 0,
+    training: character.training || [],
+    tactics: character.tactics,
+    tacticalOptions: character.tacticalOptions || [],
+    focus: character.focus || 0,
+    currentfocus: typeof character.currentfocus === "number" ? character.currentfocus : (character.focus || 0), // Initialize currentfocus from focus
+    stamina: character.stamina || 0,
 
     // Combat state
     initiative: 0,
     status: "active",
 
-    equippedWeapons: derivedWeapons,
+    equistaminadWeapons: derivedWeapons,
     equipment: layeredEquipment,
-    equipped: {
+    equistaminad: {
       weaponPrimary: derivedWeapons[0],
       weaponSecondary: derivedWeapons[1] || null,
       ...(assignedArmor ? { chest: assignedArmor } : {}),
@@ -419,12 +419,12 @@ export function createPlayableCharacterFighter(character, customName = null) {
     description: character.description,
     lifeSpan: character.lifeSpan,
     
-    // Initialize altitude for flying creatures (starts at 0 = grounded)
+    // Initialize altitude for flying combatants (starts at 0 = grounded)
     // Altitude is tracked in 5ft increments, similar to hex distances
     altitude: 0,
     altitudeFeet: 0,
 
-    // Preserve visual and footprint for 3D rendering (explicit copy so nested bestiary shape is kept)
+    // Preserve visual and footprint for 3D rendering (explicit copy so nested arenaRoster shape is kept)
     visual: character.visual
       ? {
           ...character.visual,
@@ -443,49 +443,49 @@ export function createPlayableCharacterFighter(character, customName = null) {
       : {},
   };
 
-  // ✅ Normalize spells into a consistent combat-ready shape.
+  // ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Normalize techniques into a consistent combat-ready shape.
   Object.assign(fighter, syncLegacyArmorFields(fighter));
 
-  // Some flows (e.g. bestiary/autoRoll fighters) won't have spells in the same place as party fighters.
+  // Some flows (e.g. arenaRoster/autoRoll fighters) won't have techniques in the same place as party fighters.
   try {
     const unified = getUnifiedAbilities(character);
-    const unifiedSpells =
-      unified?.spells ||
-      unified?.magic?.spells ||
-      unified?.magic ||
-      character?.knownSpells ||
-      character?.spellbook ||
-      character?.spells ||
+    const unifiedTechniques =
+      unified?.techniques ||
+      unified?.training?.techniques ||
+      unified?.training ||
+      character?.knownTechniques ||
+      character?.techniqueBook ||
+      character?.techniques ||
       [];
-    const rawCombatSpells = Array.isArray(unifiedSpells)
-      ? unifiedSpells.map(convertUnifiedSpellToCombatSpell).filter(Boolean)
+    const rawCombatTechniques = Array.isArray(unifiedTechniques)
+      ? unifiedTechniques.map(convertTechniqueToCombatTechnique).filter(Boolean)
       : [];
 
-    const occOrClass = character?.occ || character?.class || fighter?.occ || "";
+    const professionOrClass = character?.profession || character?.class || fighter?.profession || "";
     const fighterLevel = Number(character?.level ?? character?.Level ?? 1) || 1;
-    let combatSpells = rawCombatSpells;
+    let combatTechniques = rawCombatTechniques;
 
-    // Enforce wizard progression for playable wizard PCs so level 1 does not get endgame spellbooks.
-    if (isWizardClassName(occOrClass)) {
-      const spellPool = combatSpells.length > 0 ? combatSpells : getAllSpellsFromDB();
-      const bounded = buildWizardSpellbookForLevel({
-        allSpells: spellPool,
+    // Enfraidere duelist progression for playable duelist PCs so level 1 does not get endgame techniqueBooks.
+    if (isDuelistClassName(professionOrClass)) {
+      const techniquePool = combatTechniques.length > 0 ? combatTechniques : getAllTechniquesFromDB();
+      const bounded = buildDuelistTechniqueBookForLevel({
+        allTechniques: techniquePool,
         level: fighterLevel,
       });
-      combatSpells = bounded.spellbook.map(convertUnifiedSpellToCombatSpell).filter(Boolean);
+      combatTechniques = bounded.techniqueBook.map(convertTechniqueToCombatTechnique).filter(Boolean);
     }
 
-    fighter.knownSpells = combatSpells;
-    fighter.spells = combatSpells;
-    // keep a simple "has magic" signal for AI heuristics
-    fighter.magic = (combatSpells.length > 0) ? true : fighter.magic;
+    fighter.knownTechniques = combatTechniques;
+    fighter.techniques = combatTechniques;
+    // keep a simple "has training" signal for AI heuristics
+    fighter.training = (combatTechniques.length > 0) ? true : fighter.training;
     fighter.abilities = fighter.abilities || {};
-    if (combatSpells.length > 0) fighter.abilities.magic = combatSpells;
+    if (combatTechniques.length > 0) fighter.abilities.training = combatTechniques;
   } catch (_err) {
-    // fail silently; spells are optional for many fighters
+    // fail silently; techniques are optional for many fighters
   }
 
-  const normalizedPPE = normalizePPEState(
+  const normalizedstamina = normalizestaminaState(
     {
       ...fighter,
       level: Number(character?.level ?? character?.Level ?? 1) || 1,
@@ -497,13 +497,13 @@ export function createPlayableCharacterFighter(character, customName = null) {
       ),
     }
   );
-  fighter.PPE = normalizedPPE.PPE;
-  fighter.maxPPE = normalizedPPE.maxPPE;
-  fighter.currentPPE = normalizedPPE.currentPPE;
-  fighter.ppeType = normalizedPPE.ppeType;
-  fighter.ppeBase = normalizedPPE.ppeBase;
-  fighter.ppeLevelGainsTotal = normalizedPPE.ppeLevelGainsTotal;
-  fighter.ppeLevelGainRolls = normalizedPPE.ppeLevelGainRolls;
+  fighter.stamina = normalizedstamina.stamina;
+  fighter.maxstamina = normalizedstamina.maxstamina;
+  fighter.currentstamina = normalizedstamina.currentstamina;
+  fighter.staminaType = normalizedstamina.staminaType;
+  fighter.staminaBase = normalizedstamina.staminaBase;
+  fighter.staminaLevelGainsTotal = normalizedstamina.staminaLevelGainsTotal;
+  fighter.staminaLevelGainRolls = normalizedstamina.staminaLevelGainRolls;
 
   return fighter;
 }
@@ -567,16 +567,16 @@ function getDefaultWeaponDamage(preferredWeapons) {
 }
 
 /**
- * Calculate default AR based on character attributes and class
+ * Calculate default guardRating based on character attributes and class
  * @param {Object} character - Character data
  * @param {Object} attributes - Rolled attribute values
- * @returns {number} - Default AR
+ * @returns {number} - Default guardRating
  */
 function calculateDefaultAR(character, attributes) {
-  let baseAR = 8; // Default AR
+  let baseGuardRating = 8; // Default guardRating
 
   // Adjust based on class
-  if (character.occ) {
+  if (character.profession) {
     const classARBonuses = {
       Knight: 4,
       Paladin: 4,
@@ -585,21 +585,21 @@ function calculateDefaultAR(character, attributes) {
       Ranger: 2,
       Thief: 1,
       Assassin: 1,
-      Wizard: -1,
+      Duelist: -1,
       Priest: 2,
       Healer: 1,
     };
 
-    baseAR += classARBonuses[character.occ] || 0;
+    baseGuardRating += classARBonuses[character.profession] || 0;
   }
 
   // Adjust based on PE (Physical Endurance)
   if (attributes.PE) {
-    if (attributes.PE >= 16) baseAR += 1;
-    if (attributes.PE >= 20) baseAR += 1;
+    if (attributes.PE >= 16) baseGuardRating += 1;
+    if (attributes.PE >= 20) baseGuardRating += 1;
   }
 
-  return Math.max(1, baseAR);
+  return Math.max(1, baseGuardRating);
 }
 
 /**
@@ -648,8 +648,8 @@ export function getPlayableCharacterRollDetails(character, attributes) {
 
   // Combat stats
   details.combatStats.HP = rollPlayableCharacterHP(character, attributes);
-  details.combatStats.AR =
-    character.AR || calculateDefaultAR(character, attributes);
+  details.combatStats.guardRating =
+    character.guardRating || calculateDefaultAR(character, attributes);
   details.combatStats.bonuses = calculateCombatBonuses(attributes, character);
 
   return details;

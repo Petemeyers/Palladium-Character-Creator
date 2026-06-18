@@ -2,7 +2,7 @@ import express from "express";
 import {
   getCombatState,
   moveCombatFighter,
-} from "../controllers/combatController.js";
+} from "../conchampioners/combatConchampioner.js";
 import { authenticateToken } from "../middleware/authMiddleware.js";
 
 const router = express.Router();

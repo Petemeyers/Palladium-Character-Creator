@@ -69,21 +69,21 @@ function makeRulesetSdi() {
   r.feetPerHex = 5280; // 1 mile per hex feel (optional)
   r.meleesPerMinute = 60; // "ticks" can be seconds-ish (optional)
 
-  // --- Target numbers (AR equivalent) ---
-  // For SDI, "AR" is more like "intercept difficulty" (signature/stealth/speed).
+  // --- Target numbers (guardRating equivalent) ---
+  // For SDI, "guardRating" is more like "intercept difficulty" (signature/stealth/speed).
   // hitEngine asks ruleset.getAR(defender).
   r.getAR = (defender) => {
     if (!defender) return 14;
 
     // Threats are "hard to hit" based on speed/stealth; defaults feel good:
     // base 14, +speedFactor, +stealthFactor, -bigSignature
-    const base = clampInt(defender.interceptAR ?? defender.AR ?? 14, 5, 30);
+    const base = clampInt(defender.interceptAR ?? defender.guardRating ?? 14, 5, 30);
 
     const speed = clampInt(defender.speedHexPerTick ?? defender.speed ?? 0, 0, 20);
     const stealth = clamp01(defender.stealth ?? defender.signatureStealth ?? 0); // 0..1
     const sig = clamp01(defender.signature?.radar ?? defender.signature?.ir ?? defender.signature ?? 0.7);
 
-    // Higher signature should make it easier (lower AR)
+    // Higher signature should make it easier (lower guardRating)
     const speedAdj = speed >= 6 ? 4 : speed >= 4 ? 2 : speed >= 2 ? 1 : 0;
     const stealthAdj = stealth >= 0.8 ? 4 : stealth >= 0.5 ? 2 : stealth >= 0.3 ? 1 : 0;
     const sigAdj = sig >= 0.9 ? -2 : sig >= 0.7 ? -1 : sig <= 0.3 ? +2 : 0;
@@ -91,9 +91,9 @@ function makeRulesetSdi() {
     return clampInt(base + speedAdj + stealthAdj + sigAdj, 5, 30);
   };
 
-  // --- Strike bonus (intercept guidance + fire control quality) ---
-  // hitEngine asks ruleset.getStrikeBonus(attacker, kind)
-  r.getStrikeBonus = (attacker, kind) => {
+  // --- Attack bonus (intercept guidance + fire control quality) ---
+  // hitEngine asks ruleset.getAttackBonus(attacker, kind)
+  r.getAttackBonus = (attacker, kind) => {
     const k = normType(kind);
     if (!attacker) return 0;
 
@@ -167,28 +167,28 @@ function makeRulesetSdi() {
   r.getReactionProfile = (fighter) => {
     if (!fighter) {
       return {
-        capacity: { dodge: 0, parry: 0, autoDodge: 0, mindBlock: 0 },
-        bonus: { dodge: 0, parry: 0, mindBlock: 0 },
+        capacity: { evade: 0, block: 0, autoEvade: 0, mindBlock: 0 },
+        bonus: { evade: 0, block: 0, mindBlock: 0 },
       };
     }
 
     // Threats "react" via evasive maneuvers and ECM bursts.
-    // We map those to dodge/mindBlock to reuse reactionEngine cleanly.
+    // We map those to evade/mindBlock to reuse reactionEngine cleanly.
     if (isThreat(fighter)) {
       const evasion = clamp01(fighter.evasion ?? fighter.maneuverability ?? 0.5); // 0..1
       const { jamming, decoys } = getECM(fighter);
 
       return {
         capacity: {
-          dodge: clampInt(fighter.reactions?.evades ?? fighter.evades ?? 1, 0, 10),
-          parry: 0,
-          autoDodge: 0,
+          evade: clampInt(fighter.reactions?.evades ?? fighter.evades ?? 1, 0, 10),
+          block: 0,
+          autoEvade: 0,
           mindBlock: clampInt(fighter.reactions?.ecmBursts ?? fighter.ecmBursts ?? 1, 0, 10),
         },
         bonus: {
           // evasion 0..1 => +0..+6
-          dodge: Math.floor(evasion * 6),
-          parry: 0,
+          evade: Math.floor(evasion * 6),
+          block: 0,
           // ECM burst bonus from jamming/decoys
           mindBlock: Math.floor(jamming * 6) + Math.min(3, decoys),
         },
@@ -198,14 +198,14 @@ function makeRulesetSdi() {
     // Defenders rarely "react" in this sense (unless you model point-defense).
     return {
       capacity: {
-        dodge: clampInt(fighter.dodges ?? 0, 0, 10),
-        parry: clampInt(fighter.parries ?? 0, 0, 10),
-        autoDodge: 0,
+        evade: clampInt(fighter.evades ?? 0, 0, 10),
+        block: clampInt(fighter.parries ?? 0, 0, 10),
+        autoEvade: 0,
         mindBlock: 0,
       },
       bonus: {
-        dodge: clampInt(fighter.bonuses?.dodge ?? 0, -10, 20),
-        parry: clampInt(fighter.bonuses?.parry ?? 0, -10, 20),
+        evade: clampInt(fighter.bonuses?.evade ?? 0, -10, 20),
+        block: clampInt(fighter.bonuses?.block ?? 0, -10, 20),
         mindBlock: 0,
       },
     };
@@ -273,7 +273,7 @@ function makeRulesetSdi() {
       events.push({
         type: "LOG",
         level: "combat",
-        message: `🛰️ ${attacker.name || attacker.id} launches interceptor.`,
+        message: `ðŸ›°ï¸ ${attacker.name || attacker.id} launches interceptor.`,
       });
     }
   };

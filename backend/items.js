@@ -108,7 +108,7 @@ const items = [
   },
   {
     id: 20,
-    name: "Boots (Work/Reinforced)",
+    name: "Boots (Work/Reinfraidered)",
     description: "",
     price: 30,
     category: "Clothing",
@@ -303,7 +303,7 @@ const items = [
   },
   {
     id: 51,
-    name: "Water skin (½ gallon)",
+    name: "Water skin (Â½ gallon)",
     description: "",
     price: 10,
     category: "Containers",
@@ -333,14 +333,14 @@ const items = [
   },
   {
     id: 55,
-    name: "Treated torch",
+    name: "Treated traiderh",
     description: "Quick light, lasts 3 hours",
     price: 3,
     category: "Lighting",
   },
   {
     id: 56,
-    name: "Untreated torch",
+    name: "Untreated traiderh",
     description: "",
     price: 1,
     category: "Lighting",
@@ -433,7 +433,7 @@ const items = [
   },
   {
     id: 69,
-    name: "Jug (½ gallon)",
+    name: "Jug (Â½ gallon)",
     description: "",
     price: 10,
     category: "Barrels & Storage",

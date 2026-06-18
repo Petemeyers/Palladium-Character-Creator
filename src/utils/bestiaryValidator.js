@@ -1,28 +1,28 @@
 // ==========================================
-// Bestiary Validator
+// ArenaRoster Validator
 // ==========================================
-// Validates bestiary.json structure
-// to ensure every monster has required fields
-// and valid data types (AR, HP, attacks, etc.)
+// Validates arenaRoster.js structure
+// to ensure every opponent has required fields
+// and valid data types (guardRating, HP, attacks, etc.)
 // ==========================================
 
-import bestiary from "../data/bestiary.json" assert { type: "json" };
-import { getAllBestiaryEntries } from "./bestiaryUtils.js";
+import arenaRoster from "../data/arenaRoster.js" assert { type: "json" };
+import { getAllArenaRosterEntries } from "./arenaRosterUtils.js";
 
-const REQUIRED_FIELDS = ["id", "name", "AR", "HP", "attacks", "description"];
+const REQUIRED_FIELDS = ["id", "name", "guardRating", "HP", "attacks", "description"];
 
 function isDiceFormula(str) {
   return /^\d+d\d+([+\-]\d+)?$/.test(str);
 }
 
-export function validateBestiary(verbose = true) {
-  const monsters = getAllBestiaryEntries(bestiary);
+export function validateArenaRoster(verbose = true) {
+  const opponents = getAllArenaRosterEntries(arenaRoster);
   const errors = [];
 
-  monsters.forEach((m) => {
+  opponents.forEach((m) => {
     if (!m) {
       errors.push(
-        "[Unknown] Encountered malformed creature entry (null/undefined)."
+        "[Unknown] Encountered malformed combatant entry (null/undefined)."
       );
       return;
     }
@@ -34,8 +34,8 @@ export function validateBestiary(verbose = true) {
       }
     });
 
-    if (typeof m.AR !== "number") {
-      errors.push(`[${id}] AR should be a number`);
+    if (typeof m.guardRating !== "number") {
+      errors.push(`[${id}] guardRating should be a number`);
     }
 
     if (typeof m.HP !== "string" && typeof m.HP !== "number") {
@@ -57,9 +57,9 @@ export function validateBestiary(verbose = true) {
 
   if (verbose) {
     if (errors.length === 0) {
-      console.log(`✅ Bestiary validation passed (${monsters.length} entries)`);
+      console.log(`Ã¢Å“â€¦ ArenaRoster validation passed (${opponents.length} entries)`);
     } else {
-      console.warn(`⚠️ Bestiary validation found ${errors.length} issues:`);
+      console.warn(`Ã¢Å¡Â Ã¯Â¸Â ArenaRoster validation found ${errors.length} issues:`);
       errors.forEach((e) => console.warn(" - " + e));
     }
   }
@@ -69,5 +69,5 @@ export function validateBestiary(verbose = true) {
 
 // ---- Optional CLI run ----
 if (import.meta.url === process?.argv?.[1]) {
-  validateBestiary(true);
+  validateArenaRoster(true);
 }

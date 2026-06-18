@@ -1,16 +1,16 @@
 /**
  * Action Economy System
- * Manages attacks per melee round based on Palladium Fantasy rules
+ * Manages attacks per combat round based on Medieval Combat Simulator rules
  */
 
 /**
- * Get number of attacks per melee round based on level and class
+ * Get number of attacks per combat round based on level and class
  * @param {number} level - Character level
- * @param {string} occ - Occupational Character Class
- * @returns {number} - Number of attacks per melee round
+ * @param {string} profession - profession
+ * @returns {number} - Number of attacks per combat round
  */
-export function getAttacksPerMelee(level = 1, occ = "") {
-  const occLower = (occ || "").toLowerCase();
+export function getAttacksPerMelee(level = 1, profession = "") {
+  const professionLower = (profession || "").toLowerCase();
 
   // Men of Arms (Soldier, Mercenary, Knight, Paladin, Long Bowman, Ranger)
   const menOfArms = [
@@ -24,12 +24,12 @@ export function getAttacksPerMelee(level = 1, occ = "") {
     "thief",
   ];
 
-  // Men of Magic (Wizard, Diabolist, Alchemist, Warlock)
-  const menOfMagic = [
-    "wizard",
+  // Men of Training (Duelist, Diabolist, Alchemist, Mercenary)
+  const menOfTraining = [
+    "duelist",
     "diabolist",
     "alchemist",
-    "warlock",
+    "mercenary",
     "summoner",
     "necromancer",
     "illusionist",
@@ -38,9 +38,9 @@ export function getAttacksPerMelee(level = 1, occ = "") {
   // Clergy (Priest, Druid, Shaman)
   const clergy = ["priest", "druid", "shaman", "cleric", "healer"];
 
-  const isMenOfArms = menOfArms.some((c) => occLower.includes(c));
-  const isMenOfMagic = menOfMagic.some((c) => occLower.includes(c));
-  const isClergy = clergy.some((c) => occLower.includes(c));
+  const isMenOfArms = menOfArms.some((c) => professionLower.includes(c));
+  const isMenOfTraining = menOfTraining.some((c) => professionLower.includes(c));
+  const isClergy = clergy.some((c) => professionLower.includes(c));
 
   // Men of Arms - Most attacks
   if (isMenOfArms) {
@@ -52,8 +52,8 @@ export function getAttacksPerMelee(level = 1, occ = "") {
     return 8; // Level 14+
   }
 
-  // Men of Magic - Fewer attacks
-  if (isMenOfMagic) {
+  // Men of Training - Fewer attacks
+  if (isMenOfTraining) {
     if (level <= 3) return 2;
     if (level <= 7) return 3;
     if (level <= 12) return 4;
@@ -76,29 +76,29 @@ export function getAttacksPerMelee(level = 1, occ = "") {
 }
 
 /**
- * Get attacks per melee for monsters/creatures
- * @param {object} creature - Creature data from bestiary
- * @returns {number} - Number of attacks per melee round
+ * Get attacks per melee for opponents/combatants
+ * @param {object} combatant - Combatant data from arenaRoster
+ * @returns {number} - Number of attacks per combat round
  */
-export function getCreatureAttacksPerMelee(creature) {
-  // If explicitly defined in creature data
-  if (creature.attacksPerMelee) {
-    return creature.attacksPerMelee;
+export function getCombatantAttacksPerMelee(combatant) {
+  // If explicitly defined in combatant data
+  if (combatant.actionsPerRound) {
+    return combatant.actionsPerRound;
   }
 
   // Calculate based on total attack counts
-  if (creature.attacks && Array.isArray(creature.attacks)) {
+  if (combatant.attacks && Array.isArray(combatant.attacks)) {
     // Sum up all attack counts
-    const totalAttacks = creature.attacks.reduce((sum, attack) => {
+    const totalAttacks = combatant.attacks.reduce((sum, attack) => {
       return sum + (attack.count || 1);
     }, 0);
 
-    // Monsters typically get their attack count as attacks per melee
+    // Opponents typically get their attack count as attacks per melee
     // But clamp to reasonable range (2-8)
     return Math.max(2, Math.min(8, totalAttacks));
   }
 
-  // Default for unknown creatures
+  // Default for unknown combatants
   return 2;
 }
 
@@ -131,7 +131,7 @@ export function getActionCost(actionType) {
     OVERWATCH_SHOT: 1,
 
     // Variable cost actions
-    CAST_SPELL: 1, // Minimum, varies by spell
+    USE_TECHNIQUE: 1, // Minimum, varies by technique
     INVOKE_POWER: 1, // Minimum, varies by power
 
     // Special actions
@@ -150,23 +150,23 @@ export function getActionCost(actionType) {
  */
 export function formatAttacksRemaining(remaining, total) {
   if (remaining <= 0) {
-    return `⚠️ 0/${total} attacks (OUT OF ACTIONS!)`;
+    return `ÃƒÂ¢Ã…Â¡Ã‚Â ÃƒÂ¯Ã‚Â¸Ã‚Â 0/${total} attacks (OUT OF ACTIONS!)`;
   }
 
   if (remaining === total) {
-    return `⚔️ ${remaining}/${total} attacks (Full)`;
+    return `ÃƒÂ¢Ã…Â¡Ã¢â‚¬ÂÃƒÂ¯Ã‚Â¸Ã‚Â ${remaining}/${total} attacks (Full)`;
   }
 
   if (remaining === 1) {
-    return `⚠️ ${remaining}/${total} attacks (Last action!)`;
+    return `ÃƒÂ¢Ã…Â¡Ã‚Â ÃƒÂ¯Ã‚Â¸Ã‚Â ${remaining}/${total} attacks (Last action!)`;
   }
 
-  return `⚔️ ${remaining}/${total} attacks`;
+  return `ÃƒÂ¢Ã…Â¡Ã¢â‚¬ÂÃƒÂ¯Ã‚Â¸Ã‚Â ${remaining}/${total} attacks`;
 }
 
 export default {
   getAttacksPerMelee,
-  getCreatureAttacksPerMelee,
+  getCombatantAttacksPerMelee,
   getActionCost,
   formatAttacksRemaining,
 };

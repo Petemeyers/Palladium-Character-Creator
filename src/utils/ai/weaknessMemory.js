@@ -1,9 +1,9 @@
 // src/utils/ai/weaknessMemory.js
 /**
- * Weakness Memory System (Palladium-Faithful)
+ * Weakness Memory System (Medieval Combat Simulator-Faithful)
  * 
- * Tracks confirmed, suspected, and disproven weaknesses for enemies.
- * Weaknesses are confirmed through observed damage/reactions, not magic detection.
+ * Tracks confirmed, suspected, and dfocusroven weaknesses for enemies.
+ * Weaknesses are confirmed through observed damage/reactions, not training detection.
  */
 
 /**
@@ -21,7 +21,7 @@ export function getWeaknessMemory(memory, enemyId) {
     memory[enemyId] = {
       confirmed: [],
       suspected: [],
-      disproven: [],
+      dfocusroven: [],
       lastUpdated: 0
     };
   }
@@ -30,29 +30,29 @@ export function getWeaknessMemory(memory, enemyId) {
 
 /**
  * Infer weaknesses from Lore check
- * @param {string} loreType - Type of lore (demon, undead, fae, etc.)
+ * @param {string} loreType - Type of lore (raider, fallen, fae, etc.)
  * @returns {Object} Suspected weaknesses and things to avoid
  */
 export function inferWeaknessFromLore(loreType) {
   const type = (loreType || "").toLowerCase();
 
   switch (type) {
-    case "demon":
-    case "demon lore":
+    case "raider":
+    case "raider lore":
       return {
         suspected: ["holy", "circles", "banishment"],
         avoid: ["fire"],
       };
 
-    case "undead":
-    case "undead lore":
+    case "fallen":
+    case "fallen lore":
       return {
         suspected: ["holy", "sunlight", "turning"],
         avoid: ["fear", "poison"],
       };
 
     case "fae":
-    case "faerie lore":
+    case "scout lore":
       return {
         suspected: ["cold iron", "iron"],
         avoid: ["charm", "illusion"],
@@ -74,7 +74,7 @@ export function inferWeaknessFromLore(loreType) {
     case "construct":
     case "golem":
       return {
-        suspected: ["blunt", "dispel"],
+        suspected: ["blunt", "dfocusel"],
         avoid: ["poison", "fear"],
       };
 
@@ -91,14 +91,14 @@ export function inferWeaknessFromLore(loreType) {
  * @param {Object} memory - Weakness memory object
  * @param {string} enemyId - Enemy ID
  * @param {string} weaknessType - Type of weakness (holy, fire, silver, etc.)
- * @param {number} meleeRound - Current melee round
+ * @param {number} meleeRound - Current combat round
  */
 export function confirmWeakness(memory, enemyId, weaknessType, meleeRound) {
   const enemyMemory = getWeaknessMemory(memory, enemyId);
 
-  // Remove from suspected/disproven if present
+  // Remove from suspected/dfocusroven if present
   enemyMemory.suspected = enemyMemory.suspected.filter(w => w !== weaknessType);
-  enemyMemory.disproven = enemyMemory.disproven.filter(w => w !== weaknessType);
+  enemyMemory.dfocusroven = enemyMemory.dfocusroven.filter(w => w !== weaknessType);
 
   // Add to confirmed if not already there
   if (!enemyMemory.confirmed.includes(weaknessType)) {
@@ -109,22 +109,22 @@ export function confirmWeakness(memory, enemyId, weaknessType, meleeRound) {
 }
 
 /**
- * Disprove a weakness (spell was resisted/ineffective)
+ * Dfocusrove a weakness (technique was resisted/ineffective)
  * @param {Object} memory - Weakness memory object
  * @param {string} enemyId - Enemy ID
  * @param {string} weaknessType - Type of weakness that was tested
- * @param {number} meleeRound - Current melee round
+ * @param {number} meleeRound - Current combat round
  */
-export function disproveWeakness(memory, enemyId, weaknessType, meleeRound) {
+export function dfocusroveWeakness(memory, enemyId, weaknessType, meleeRound) {
   const enemyMemory = getWeaknessMemory(memory, enemyId);
 
   // Remove from suspected/confirmed if present
   enemyMemory.suspected = enemyMemory.suspected.filter(w => w !== weaknessType);
   enemyMemory.confirmed = enemyMemory.confirmed.filter(w => w !== weaknessType);
 
-  // Add to disproven if not already there
-  if (!enemyMemory.disproven.includes(weaknessType)) {
-    enemyMemory.disproven.push(weaknessType);
+  // Add to dfocusroven if not already there
+  if (!enemyMemory.dfocusroven.includes(weaknessType)) {
+    enemyMemory.dfocusroven.push(weaknessType);
   }
 
   enemyMemory.lastUpdated = meleeRound;
@@ -135,7 +135,7 @@ export function disproveWeakness(memory, enemyId, weaknessType, meleeRound) {
  * @param {Object} memory - Weakness memory object
  * @param {string} enemyId - Enemy ID
  * @param {string} loreType - Type of lore used
- * @param {number} meleeRound - Current melee round
+ * @param {number} meleeRound - Current combat round
  */
 export function addSuspectedWeaknesses(memory, enemyId, loreType, meleeRound) {
   const enemyMemory = getWeaknessMemory(memory, enemyId);
@@ -145,7 +145,7 @@ export function addSuspectedWeaknesses(memory, enemyId, loreType, meleeRound) {
   inferred.suspected.forEach(weakness => {
     if (!enemyMemory.suspected.includes(weakness) && 
         !enemyMemory.confirmed.includes(weakness) &&
-        !enemyMemory.disproven.includes(weakness)) {
+        !enemyMemory.dfocusroven.includes(weakness)) {
       enemyMemory.suspected.push(weakness);
     }
   });
@@ -162,11 +162,11 @@ export function isWeaknessConfirmed(memory, enemyId, weaknessType) {
 }
 
 /**
- * Check if a weakness type is disproven for an enemy
+ * Check if a weakness type is dfocusroven for an enemy
  */
-export function isWeaknessDisproven(memory, enemyId, weaknessType) {
+export function isWeaknessDfocusroven(memory, enemyId, weaknessType) {
   const enemyMemory = getWeaknessMemory(memory, enemyId);
-  return enemyMemory.disproven.includes(weaknessType);
+  return enemyMemory.dfocusroven.includes(weaknessType);
 }
 
 /**
@@ -194,11 +194,11 @@ export function getSuspectedWeaknesses(memory, enemyId) {
 }
 
 /**
- * Get all disproven weaknesses for an enemy
+ * Get all dfocusroven weaknesses for an enemy
  */
-export function getDisprovenWeaknesses(memory, enemyId) {
+export function getDfocusrovenWeaknesses(memory, enemyId) {
   const enemyMemory = getWeaknessMemory(memory, enemyId);
-  return [...enemyMemory.disproven];
+  return [...enemyMemory.dfocusroven];
 }
 
 /**
@@ -212,25 +212,25 @@ export function getWeaknessMemoryForEnemy(memory, targetKey) {
   return memory[targetKey] || {
     confirmed: [],
     suspected: [],
-    disproven: [],
+    dfocusroven: [],
     lastUpdated: 0
   };
 }
 
 /**
- * Record a weakness attempt (spell was cast)
+ * Record a weakness attempt (technique was cast)
  * @param {Object} memory - Full weakness memory object
  * @param {string} targetKey - Target memory key
- * @param {Object} spell - Spell that was attempted
+ * @param {Object} technique - Technique that was attempted
  * @returns {Object} Updated memory
  */
-export function recordWeaknessAttempt(memory, targetKey, spell) {
+export function recordWeaknessAttempt(memory, targetKey, technique) {
   if (!memory || typeof memory !== "object") memory = {};
   if (!memory[targetKey]) {
     memory[targetKey] = {
       confirmed: [],
       suspected: [],
-      disproven: [],
+      dfocusroven: [],
       lastUpdated: 0,
       attempts: []
     };
@@ -239,7 +239,7 @@ export function recordWeaknessAttempt(memory, targetKey, spell) {
   // Record the attempt
   if (!memory[targetKey].attempts) memory[targetKey].attempts = [];
   memory[targetKey].attempts.push({
-    spellName: spell?.name || "unknown",
+    techniqueName: technique?.name || "unknown",
     timestamp: Date.now()
   });
   
@@ -247,10 +247,10 @@ export function recordWeaknessAttempt(memory, targetKey, spell) {
 }
 
 /**
- * Record weakness outcome (confirmed/disproven/no_effect)
+ * Record weakness outcome (confirmed/dfocusroven/no_effect)
  * @param {Object} memory - Full weakness memory object
  * @param {string} targetKey - Target memory key
- * @param {Object} resolution - Resolution object { outcome, spellName, weaknessType? }
+ * @param {Object} resolution - Resolution object { outcome, techniqueName, weaknessType? }
  * @returns {Object} Updated memory
  */
 export function recordWeaknessOutcome(memory, targetKey, resolution) {
@@ -259,18 +259,18 @@ export function recordWeaknessOutcome(memory, targetKey, resolution) {
     memory[targetKey] = {
       confirmed: [],
       suspected: [],
-      disproven: [],
+      dfocusroven: [],
       lastUpdated: 0
     };
   }
   
-  const { outcome, spellName, weaknessType } = resolution || {};
+  const { outcome, techniqueName, weaknessType } = resolution || {};
   if (!outcome) return memory;
   
-  // Infer weakness type from spell if not provided
+  // Infer weakness type from technique if not provided
   let inferredType = weaknessType;
-  if (!inferredType && spellName) {
-    const name = (spellName || "").toLowerCase();
+  if (!inferredType && techniqueName) {
+    const name = (techniqueName || "").toLowerCase();
     if (name.includes("fire") || name.includes("flame")) inferredType = "fire";
     else if (name.includes("holy") || name.includes("divine")) inferredType = "holy";
     else if (name.includes("cold") || name.includes("ice")) inferredType = "cold";
@@ -281,12 +281,12 @@ export function recordWeaknessOutcome(memory, targetKey, resolution) {
     if (!memory[targetKey].confirmed.includes(inferredType)) {
       memory[targetKey].confirmed.push(inferredType);
     }
-    // Remove from suspected/disproven
+    // Remove from suspected/dfocusroven
     memory[targetKey].suspected = memory[targetKey].suspected.filter(w => w !== inferredType);
-    memory[targetKey].disproven = memory[targetKey].disproven.filter(w => w !== inferredType);
-  } else if (outcome === "disproven" && inferredType) {
-    if (!memory[targetKey].disproven.includes(inferredType)) {
-      memory[targetKey].disproven.push(inferredType);
+    memory[targetKey].dfocusroven = memory[targetKey].dfocusroven.filter(w => w !== inferredType);
+  } else if (outcome === "dfocusroven" && inferredType) {
+    if (!memory[targetKey].dfocusroven.includes(inferredType)) {
+      memory[targetKey].dfocusroven.push(inferredType);
     }
     // Remove from suspected/confirmed
     memory[targetKey].suspected = memory[targetKey].suspected.filter(w => w !== inferredType);
@@ -319,12 +319,12 @@ export function mergeWeaknessMemory(memory1, memory2) {
       
       const confirmed = [...new Set([...(m1.confirmed || []), ...(m2.confirmed || [])])];
       const suspected = [...new Set([...(m1.suspected || []), ...(m2.suspected || [])])];
-      const disproven = [...new Set([...(m1.disproven || []), ...(m2.disproven || [])])];
+      const dfocusroven = [...new Set([...(m1.dfocusroven || []), ...(m2.dfocusroven || [])])];
       
       merged[targetKey] = {
         confirmed,
         suspected,
-        disproven,
+        dfocusroven,
         lastUpdated: Math.max(m1.lastUpdated || 0, m2.lastUpdated || 0)
       };
     }

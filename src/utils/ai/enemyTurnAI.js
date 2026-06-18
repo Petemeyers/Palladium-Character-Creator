@@ -7,8 +7,8 @@
  */
 
 import CryptoSecureDice from "../cryptoDice";
-import { getRandomCombatSpell } from "../../data/combatSpells";
-import { getFighterSpells } from "../getFighterSpells.js";
+import { getRandomCombatTechnique } from "../../data/combatTechniques";
+import { getFighterTechniques } from "../getFighterTechniques.js";
 import {
   ACTION_TYPES,
   addAiClaimToPatch,
@@ -28,7 +28,7 @@ import {
   mergeWeaknessMemory,
 } from "./weaknessMemory";
 import { tryKnowledgeCheck } from "./knowledgeChecks";
-import { selectSpellForRole } from "./unifiedSpellSelection";
+import { selectTechniqueForRole } from "./unifiedTechniqueSelection";
 import {
   decayAwareness,
   updateAwareness,
@@ -41,7 +41,7 @@ import { getWeaponRange } from "../distanceCombatSystem";
 import { canFly, isFlying, getAltitude } from "../abilitySystem";
 import { getSizeCategory, SIZE_CATEGORIES } from "../sizeStrengthModifiers";
 import { getWeaponSizeForRace, WEAPON_SIZE } from "../weaponSizeSystem";
-import speciesBehaviorData from "../../data/speciesBehavior.json";
+import combatantBehaviorData from "../../data/combatantBehavior.json";
 import {
   spendFlyingStamina,
   shouldLandToRest,
@@ -83,7 +83,7 @@ import {
 // - If localStorage is unavailable, it gracefully degrades to in-memory only.
 // -----------------------------------------------------------------------------
 
-const AI_WEAKNESS_STORE_KEY = "palladium_ai_weakness_memory_v1";
+const AI_WEAKNESS_STORE_KEY = "mcs_ai_weakness_memory_v1";
 const _inMemoryWeaknessStore = new Map(); // fallback if localStorage fails
 
 function safeReadWeaknessStore() {
@@ -166,8 +166,8 @@ function getEnemyMemoryKey(enemy) {
     enemy?.name ||
     enemy?.id ||
     "unknown_enemy";
-  const occ = enemy?.OCC || enemy?.occ || enemy?.class || "";
-  return `${String(base).toLowerCase()}::${String(occ).toLowerCase()}`;
+  const profession = enemy?.PROFESSION || enemy?.profession || enemy?.class || "";
+  return `${String(base).toLowerCase()}::${String(profession).toLowerCase()}`;
 }
 
 function getTargetMemoryKey(target) {
@@ -178,7 +178,7 @@ function getTargetMemoryKey(target) {
     target?.name ||
     target?.id ||
     "unknown_target";
-  const cat = target?.category || target?.type || target?.creatureType || "";
+  const cat = target?.category || target?.type || target?.combatantType || "";
   return `${String(base).toLowerCase()}::${String(cat).toLowerCase()}`;
 }
 
@@ -217,7 +217,7 @@ function revealAfterObviousMovement(
     ),
   );
   addLog?.(
-    `👁️ ${fighter.name} reveals ${fighter.type === "enemy" ? "its" : "their"} position by ${detail}.`,
+    `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¹Ãƒâ€¦Ã¢â‚¬Å“ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¯ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ${fighter.name} reveals ${fighter.type === "enemy" ? "its" : "their"} position by ${detail}.`,
     "info",
   );
   return true;
@@ -280,7 +280,7 @@ function storeUtilityAiClaim({ enemy, action, utilityWorld, setFighters }) {
   );
 }
 
-function dispatchUtilityCombatEvent(event, addLog) {
+function dfocusatchUtilityCombatEvent(event, addLog) {
   if (!event) return;
   if (event.type === "LOG") {
     addLog?.(event.message, event.level || "info");
@@ -288,7 +288,7 @@ function dispatchUtilityCombatEvent(event, addLog) {
   }
 
   if (event.type === "AI_SKILL_ROLL") {
-    addLog?.(`🎲 ${event.message}`, event.success ? "success" : "info");
+    addLog?.(`ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â½ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â² ${event.message}`, event.success ? "success" : "info");
     return;
   }
 
@@ -443,64 +443,64 @@ function inferCasterRole(enemy) {
   const cat = (
     enemy?.category ||
     enemy?.type ||
-    enemy?.creatureType ||
+    enemy?.combatantType ||
     ""
   ).toLowerCase();
-  const occ = (
-    enemy?.OCC ||
-    enemy?.occ ||
+  const profession = (
+    enemy?.PROFESSION ||
+    enemy?.profession ||
     enemy?.class ||
-    enemy?.occName ||
-    enemy?.rcc ||
+    enemy?.professionName ||
+    enemy?.role ||
     ""
   ).toLowerCase();
 
-  // Angel / Demon shortcuts
+  // Angel / Raider shortcuts
   if (name.includes("ariel") || cat.includes("angel")) return "angel";
   if (
-    cat.includes("demon") ||
+    cat.includes("raider") ||
     name.includes("baal-rog") ||
     name.includes("baalrog")
   )
-    return "demon";
+    return "raider";
 
-  // Wizard / mage-ish
+  // Duelist / mage-ish
   if (
-    occ.includes("wizard") ||
-    occ.includes("warlock") ||
-    occ.includes("mage") ||
-    cat.includes("wizard")
+    profession.includes("duelist") ||
+    profession.includes("mercenary") ||
+    profession.includes("mage") ||
+    cat.includes("duelist")
   )
-    return "wizard";
+    return "duelist";
 
-  // Default: treat as wizard if it has spells
-  return "wizard";
+  // Default: treat as duelist if it has techniques
+  return "duelist";
 }
 
-function getEnemySpellCatalog(enemy) {
-  // Keep this permissive: your CombatPage may store spells differently per creature.
-  // The unified selector can accept an array of spell objects.
+function getEnemyTechniqueCatalog(enemy) {
+  // Keep this permissive: your CombatPage may store techniques differently per combatant.
+  // The unified selector can accept an array of technique objects.
   if (!enemy) return [];
 
-  // Check spellbook first (used by Ariel and other unrestricted casters)
-  if (Array.isArray(enemy.spellbook) && enemy.spellbook.length > 0) {
-    return enemy.spellbook;
+  // Check techniqueBook first (used by Ariel and other unrestricted casters)
+  if (Array.isArray(enemy.techniqueBook) && enemy.techniqueBook.length > 0) {
+    return enemy.techniqueBook;
   }
 
   const direct =
-    enemy.spells ||
-    enemy.combatSpells ||
-    enemy.magic ||
-    enemy.magicSpells ||
-    enemy.magicAbilities?.spells ||
-    enemy.magicAbilities?.spellList ||
+    enemy.techniques ||
+    enemy.combatTechniques ||
+    enemy.training ||
+    enemy.trainingTechniques ||
+    enemy.trainingAbilities?.techniques ||
+    enemy.trainingAbilities?.techniqueList ||
     [];
 
   if (Array.isArray(direct)) return direct;
-  if (Array.isArray(direct?.spells)) return direct.spells;
+  if (Array.isArray(direct?.techniques)) return direct.techniques;
 
-  // ✅ FALLBACK — critical for modular AI
-  const fallback = getFighterSpells?.(enemy) || [];
+  // ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ FALLBACK ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â critical for modular AI
+  const fallback = getFighterTechniques?.(enemy) || [];
   if (Array.isArray(fallback) && fallback.length > 0) return fallback;
 
   return [];
@@ -527,7 +527,7 @@ function setEnemyAIDebug(setFighters, enemyId, debugPatch) {
   );
 }
 
-const UNDEAD_KEYWORDS = [
+const DEFEATED_KEYWORDS = [
   "vampire",
   "mummy",
   "skeleton",
@@ -540,7 +540,7 @@ const UNDEAD_KEYWORDS = [
   "ghost",
 ];
 
-function isUndeadUnit(unit) {
+function isFallenUnit(unit) {
   const label = (
     unit?.species ||
     unit?.race ||
@@ -550,16 +550,16 @@ function isUndeadUnit(unit) {
   ).toLowerCase();
 
   if (!label) return false;
-  return UNDEAD_KEYWORDS.some((w) => label.includes(w));
+  return DEFEATED_KEYWORDS.some((w) => label.includes(w));
 }
 
-// Undead creature detection for routing immunity
-function isUndeadCreature(fighter) {
+// Fallen combatant detection for routing immunity
+function isFallenCombatant(fighter) {
   const name = (fighter.name || fighter.displayName || "").toLowerCase();
-  const type = (fighter.type || fighter.creatureType || "").toLowerCase();
+  const type = (fighter.type || fighter.combatantType || "").toLowerCase();
 
-  const undeadKeywords = [
-    "undead",
+  const fallenKeywords = [
+    "fallen",
     "vampire",
     "mummy",
     "zombie",
@@ -572,20 +572,20 @@ function isUndeadCreature(fighter) {
     "spectre",
   ];
 
-  return undeadKeywords.some((k) => name.includes(k) || type.includes(k));
+  return fallenKeywords.some((k) => name.includes(k) || type.includes(k));
 }
 
-// Demon creature detection for routing immunity
-function isDemonCreature(fighter) {
-  if (fighter?.isDemon === true) return true;
+// Raider combatant detection for routing immunity
+function isRaiderCombatant(fighter) {
+  if (fighter?.isRaider === true) return true;
 
   const name = (fighter.name || fighter.displayName || "").toLowerCase();
-  const type = (fighter.type || fighter.creatureType || "").toLowerCase();
+  const type = (fighter.type || fighter.combatantType || "").toLowerCase();
   const category = (fighter.category || "").toLowerCase();
   const species = (fighter.species || fighter.race || "").toLowerCase();
 
-  const demonKeywords = [
-    "demon",
+  const raiderKeywords = [
+    "raider",
     "devil",
     "fiend",
     "baal-rog",
@@ -596,30 +596,30 @@ function isDemonCreature(fighter) {
   ];
 
   const label = `${name} ${type} ${category} ${species}`;
-  return demonKeywords.some((k) => label.includes(k));
+  return raiderKeywords.some((k) => label.includes(k));
 }
 
-// Healer OCC detection based on rulebook OCC list (Clergy)
-function isHealerOccForAI(fighter) {
+// Healer PROFESSION detection based on rulebook PROFESSION list (Clergy)
+function isHealerProfessionForAI(fighter) {
   if (!fighter) return false;
 
-  const occText = [
-    fighter.OCC,
-    fighter.occ,
+  const professionText = [
+    fighter.PROFESSION,
+    fighter.profession,
     fighter.class,
-    fighter.occName,
-    fighter.rcc,
+    fighter.professionName,
+    fighter.role,
   ]
     .filter(Boolean)
     .join(" ")
     .toLowerCase();
 
-  // Map directly to OCCs you defined in occData.js (category: "Clergy")
+  // Map directly to PROFESSIONs you defined in professionData.js (category: "Clergy")
   // Priest, PriestOfLight, PriestOfDarkness, Healer, Druid, Shaman
   const healerPatterns = [
     "priest of light",
     "priest of darkness",
-    "priest", // generic priest OCC
+    "priest", // generic priest PROFESSION
     "healer",
     "druid",
     "shaman",
@@ -630,7 +630,7 @@ function isHealerOccForAI(fighter) {
 
 /**
  * Hawk AI Helper Functions
- * Determines if a creature is a hawk and identifies preferred prey (tiny/small creatures)
+ * Determines if a combatant is a hawk and identifies preferred prey (tiny/small combatants)
  */
 
 const SIZE_ORDER = [
@@ -639,21 +639,21 @@ const SIZE_ORDER = [
   SIZE_CATEGORIES.MEDIUM,
   SIZE_CATEGORIES.LARGE,
   SIZE_CATEGORIES.HUGE,
-  SIZE_CATEGORIES.GIANT,
+  SIZE_CATEGORIES.LARGE_HEAVY,
 ];
 
 /**
- * Check if a creature is a hawk
- * @param {Object} creature - Creature object
- * @returns {boolean} True if creature is a hawk
+ * Check if a combatant is a hawk
+ * @param {Object} combatant - Combatant object
+ * @returns {boolean} True if combatant is a hawk
  */
-function isHawk(creature) {
-  if (!creature) return false;
+function isHawk(combatant) {
+  if (!combatant) return false;
   const id = (
-    creature.id ||
-    creature.type ||
-    creature.name ||
-    creature.species ||
+    combatant.id ||
+    combatant.type ||
+    combatant.name ||
+    combatant.species ||
     ""
   ).toLowerCase();
   return id.includes("hawk");
@@ -661,7 +661,7 @@ function isHawk(creature) {
 
 /**
  * Check if target is an animal
- * @param {Object} target - Target creature
+ * @param {Object} target - Target combatant
  * @returns {boolean} True if target is an animal
  */
 function isAnimal(target) {
@@ -676,7 +676,7 @@ function isAnimal(target) {
 
 /**
  * Check if target is a tiny or small animal (prey for hawks)
- * @param {Object} target - Target creature
+ * @param {Object} target - Target combatant
  * @returns {boolean} True if target is tiny/small animal
  */
 function isTinyOrSmallAnimal(target) {
@@ -687,11 +687,11 @@ function isTinyOrSmallAnimal(target) {
 }
 
 /**
- * Check if target is faerie-sized (Fairy, Pixie, Sprite, etc.)
- * @param {Object} target - Target creature
- * @returns {boolean} True if target is faerie-sized
+ * Check if target is scout-sized (Fairy, Scout, Sprite, etc.)
+ * @param {Object} target - Target combatant
+ * @returns {boolean} True if target is scout-sized
  */
-function isFaerieSizedTarget(target) {
+function isScoutSizedTarget(target) {
   if (!target) return false;
 
   const race =
@@ -699,13 +699,13 @@ function isFaerieSizedTarget(target) {
   if (!race) return false;
 
   const weaponSize = getWeaponSizeForRace(race);
-  return weaponSize === WEAPON_SIZE.FAERIE;
+  return weaponSize === WEAPON_SIZE.SCOUT;
 }
 
 /**
- * Check if target is preferred hawk prey (tiny/small animals or faerie folk)
- * @param {Object} attacker - Attacking creature (should be hawk)
- * @param {Object} target - Target creature
+ * Check if target is preferred hawk prey (tiny/small animals or scout folk)
+ * @param {Object} attacker - Attacking combatant (should be hawk)
+ * @param {Object} target - Target combatant
  * @returns {boolean} True if target is preferred prey
  */
 function isPreferredHawkPrey(attacker, target) {
@@ -715,8 +715,8 @@ function isPreferredHawkPrey(attacker, target) {
   // Tiny/small animals: mice, small birds, etc.
   if (isTinyOrSmallAnimal(target)) return true;
 
-  // Tiny faerie folk: Fairy, Pixie, Sprite, Brownie, etc.
-  if (isFaerieSizedTarget(target)) return true;
+  // Tiny scout folk: Fairy, Scout, Sprite, Scout, etc.
+  if (isScoutSizedTarget(target)) return true;
 
   // Also check if target is explicitly TINY by size category
   const targetSize = getSizeCategory(target);
@@ -727,8 +727,8 @@ function isPreferredHawkPrey(attacker, target) {
 
 /**
  * Check if target is bigger and dangerous to hawk
- * @param {Object} attacker - Attacking creature (should be hawk)
- * @param {Object} target - Target creature
+ * @param {Object} attacker - Attacking combatant (should be hawk)
+ * @param {Object} target - Target combatant
  * @returns {boolean} True if target is larger and threatening
  */
 function isBiggerThreat(attacker, target) {
@@ -850,9 +850,9 @@ const HAWK_DESCENT_STEP_FT = 20;
 
 /**
  * Adjust a flying hunter's altitude while it's circling.
- * - If there is NO visible prey: climb toward a random high scouting altitude (60–100ft).
- * - If there IS visible prey: stay in a lower hunting band (25–60ft).
- * @param {Object} flier - Flying creature
+ * - If there is NO visible prey: climb toward a random high scouting altitude (60ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ100ft).
+ * - If there IS visible prey: stay in a lower hunting band (25ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ60ft).
+ * @param {Object} flier - Flying combatant
  * @param {boolean} hasVisiblePrey - Whether there are visible ground targets
  * @param {Function} addLog - Logging function
  * @param {Function} setFighters - Function to update fighters state
@@ -919,7 +919,7 @@ function updateCirclingHunterAltitude(
       );
 
       addLog(
-        `🦅 ${flier.name} climbs to ${nextAlt}ft, scanning for prey.`,
+        `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ ${flier.name} climbs to ${nextAlt}ft, scanning for prey.`,
         "info",
       );
     }
@@ -929,7 +929,7 @@ function updateCirclingHunterAltitude(
   }
 
   // If there IS visible prey: stay in a lower hunting band
-  // (don't sit forever at 80–100ft when there are targets on the ground)
+  // (don't sit forever at 80ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ100ft when there are targets on the ground)
   const SOAR_MAX_ALT_FT = 300;
   let targetAlt = Math.min(SOAR_MAX_ALT_FT, currentAlt + HAWK_CLIMB_STEP_FT);
   if (targetAlt < HAWK_HUNT_ALT_MIN_FT) targetAlt = HAWK_HUNT_ALT_MIN_FT;
@@ -955,22 +955,22 @@ function updateCirclingHunterAltitude(
     );
 
     addLog(
-      `🦅 ${flier.name} adjusts altitude to ${nextAlt}ft while circling above prey.`,
+      `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ ${flier.name} adjusts altitude to ${nextAlt}ft while circling above prey.`,
       "info",
     );
   }
 }
 
 /**
- * Get species behavior profile for a creature
- * @param {Object} creature - Creature object
+ * Get species behavior profile for a combatant
+ * @param {Object} combatant - Combatant object
  * @returns {Object} Behavior profile or null
  */
-function getSpeciesBehaviorProfile(creature) {
-  if (!creature) return null;
+function getSpeciesBehaviorProfile(combatant) {
+  if (!combatant) return null;
 
-  const species = creature.species || creature.race || creature.type || "";
-  const speciesMap = speciesBehaviorData.species || {};
+  const species = combatant.species || combatant.race || combatant.type || "";
+  const speciesMap = combatantBehaviorData.species || {};
 
   // Try exact match first
   if (speciesMap[species]) {
@@ -986,7 +986,7 @@ function getSpeciesBehaviorProfile(creature) {
     return speciesMap[matchingKey];
   }
 
-  // Try partial match (e.g., "hawk" in "Hawk" or "Hawk (Giant)")
+  // Try partial match (e.g., "hawk" in "Hawk" or "Hawk (Heavy)")
   for (const [key, profile] of Object.entries(speciesMap)) {
     if (
       speciesLower.includes(key.toLowerCase()) ||
@@ -1000,35 +1000,35 @@ function getSpeciesBehaviorProfile(creature) {
 }
 
 /**
- * Get flight style for a creature
- * @param {Object} creature - Creature object
+ * Get flight style for a combatant
+ * @param {Object} combatant - Combatant object
  * @returns {string} Flight style: "circling", "hover", or "none"
  */
-function getFlightStyle(creature) {
-  if (!creature) return "none";
-  const profile = getSpeciesBehaviorProfile(creature);
+function getFlightStyle(combatant) {
+  if (!combatant) return "none";
+  const profile = getSpeciesBehaviorProfile(combatant);
   return profile?.flightStyle || "none";
 }
 
 /**
  * Get cruise fraction (glide speed as fraction of full speed)
- * @param {Object} creature - Creature object
+ * @param {Object} combatant - Combatant object
  * @returns {number} Cruise fraction (default 0.25 = 25%)
  */
-function getCruiseFraction(creature) {
-  if (!creature) return 0.25;
-  const profile = getSpeciesBehaviorProfile(creature);
+function getCruiseFraction(combatant) {
+  if (!combatant) return 0.25;
+  const profile = getSpeciesBehaviorProfile(combatant);
   return profile?.cruiseFraction ?? 0.25;
 }
 
 /**
- * Get circle preferences for a flying creature
- * @param {Object} creature - Creature object
+ * Get circle preferences for a flying combatant
+ * @param {Object} combatant - Combatant object
  * @returns {Object} Circle preferences with radiusFt and toleranceFt
  */
-function getCirclePrefs(creature) {
-  if (!creature) return { radiusFt: 30, toleranceFt: 10 };
-  const profile = getSpeciesBehaviorProfile(creature);
+function getCirclePrefs(combatant) {
+  if (!combatant) return { radiusFt: 30, toleranceFt: 10 };
+  const profile = getSpeciesBehaviorProfile(combatant);
   return {
     radiusFt: profile?.circleRadiusFeet ?? 30,
     toleranceFt: profile?.circleRadiusToleranceFeet ?? 10,
@@ -1036,31 +1036,31 @@ function getCirclePrefs(creature) {
 }
 
 /**
- * Get full speed per action for a creature
- * @param {Object} creature - Creature object
- * @param {number} actionsPerMelee - Actions per melee round
+ * Get full speed per action for a combatant
+ * @param {Object} combatant - Combatant object
+ * @param {number} actionsPerMelee - Actions per combat round
  * @returns {number} Full speed per action in feet
  */
-function getFullSpeedPerAction(creature, actionsPerMelee) {
-  if (!creature || !actionsPerMelee || actionsPerMelee <= 0) return 5;
+function getFullSpeedPerAction(combatant, actionsPerMelee) {
+  if (!combatant || !actionsPerMelee || actionsPerMelee <= 0) return 5;
 
   // Use flying speed if available, otherwise use ground speed
   const speed =
-    creature.flySpeedFt ||
-    creature.Spd ||
-    creature.spd ||
-    creature.attributes?.Spd ||
-    creature.attributes?.spd ||
+    combatant.flySpeedFt ||
+    combatant.Spd ||
+    combatant.spd ||
+    combatant.attributes?.Spd ||
+    combatant.attributes?.spd ||
     10;
 
-  // Convert speed to feet per melee (Palladium: Speed × 18 = feet per melee)
+  // Convert speed to feet per melee (Medieval Combat Simulator: Speed ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â 18 = feet per melee)
   const speedFtPerMelee = speed * 18;
   return speedFtPerMelee / Math.max(actionsPerMelee, 1);
 }
 
 /**
  * Get flight focus point (target or enemy cluster center)
- * @param {Object} flier - Flying creature
+ * @param {Object} flier - Flying combatant
  * @param {Object} context - AI context
  * @returns {Object} Focus point {x, y} or null
  */
@@ -1103,8 +1103,8 @@ function getFlightFocusPoint(flier, context) {
 }
 
 /**
- * Pick a circling hex for a flying creature
- * @param {Object} flier - Flying creature
+ * Pick a circling hex for a flying combatant
+ * @param {Object} flier - Flying combatant
  * @param {Object} focusPoint - Focus point to circle around
  * @param {Object} context - AI context
  * @returns {Object} Next hex position {x, y} or null
@@ -1172,7 +1172,7 @@ function pickCirclingHex(flier, focusPoint, context) {
 
 /**
  * Handle flying idle or harass action - circling behavior
- * @param {Object} flier - Flying creature
+ * @param {Object} flier - Flying combatant
  * @param {Object} context - AI context
  * @returns {boolean} True if movement was performed
  */
@@ -1203,7 +1203,7 @@ function handleFlyingIdleOrHarassAction(flier, context) {
 
   const flightStyle = getFlightStyle(flier);
 
-  // Hovering creatures can stay put (magical flight, hummingbirds, etc.)
+  // Hovering combatants can stay put (exceptional flight, hummingbirds, etc.)
   if (flightStyle === "hover") return false;
 
   // Must be circling style
@@ -1230,7 +1230,7 @@ function handleFlyingIdleOrHarassAction(flier, context) {
     fighters,
   );
 
-  const actionsPerMelee = flier.attacksPerMelee || flier.remainingAttacks || 4;
+  const actionsPerMelee = flier.actionsPerRound || flier.remainingActions || 4;
   const fullPerAction = getFullSpeedPerAction(flier, actionsPerMelee);
   const cruiseFraction = getCruiseFraction(flier);
   const glideFt = Math.max(5, fullPerAction * cruiseFraction); // At least 1 hex (5ft)
@@ -1269,7 +1269,7 @@ function handleFlyingIdleOrHarassAction(flier, context) {
     revealAfterObviousMovement(flier, setFighters, addLog, "circling overhead");
 
     addLog(
-      `🦅 ${flier.name} drifts to maintain circling pattern (${fallbackHex.x}, ${fallbackHex.y})`,
+      `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ ${flier.name} drifts to maintain circling pattern (${fallbackHex.x}, ${fallbackHex.y})`,
       "info",
     );
     return true;
@@ -1299,7 +1299,7 @@ function handleFlyingIdleOrHarassAction(flier, context) {
     spendFlyingStamina(flier, "FLY_HOVER", 1);
 
     addLog(
-      `🦅 ${flier.name} circles overhead, gliding to maintain position (${partialHex.x}, ${partialHex.y})`,
+      `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ ${flier.name} circles overhead, gliding to maintain position (${partialHex.x}, ${partialHex.y})`,
       "info",
     );
     return true;
@@ -1318,7 +1318,7 @@ function handleFlyingIdleOrHarassAction(flier, context) {
 
   const distFromFocus = calculateDistance(nextHex, focusPoint);
   addLog(
-    `🦅 ${flier.name} circles overhead, gliding to new position (${
+    `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ ${flier.name} circles overhead, gliding to new position (${
       nextHex.x
     }, ${nextHex.y}) - maintaining ~${Math.round(distFromFocus)}ft radius`,
     "info",
@@ -1328,7 +1328,7 @@ function handleFlyingIdleOrHarassAction(flier, context) {
   setFighters((prev) =>
     prev.map((f) =>
       f.id === flier.id
-        ? { ...f, remainingAttacks: Math.max(0, f.remainingAttacks - 1) }
+        ? { ...f, remainingActions: Math.max(0, f.remainingActions - 1) }
         : f,
     ),
   );
@@ -1337,25 +1337,25 @@ function handleFlyingIdleOrHarassAction(flier, context) {
 }
 
 /**
- * Check if creature has skittish_flying_predator AI profile
- * @param {Object} creature - Creature object
- * @returns {boolean} True if creature has this profile
+ * Check if combatant has skittish_flying_predator AI profile
+ * @param {Object} combatant - Combatant object
+ * @returns {boolean} True if combatant has this profile
  */
-function hasSkittishFlyingPredatorProfile(creature) {
-  const profile = getSpeciesBehaviorProfile(creature);
+function hasSkittishFlyingPredatorProfile(combatant) {
+  const profile = getSpeciesBehaviorProfile(combatant);
   return profile?.aiProfile === "skittish_flying_predator";
 }
 
 /**
  * Check if target has weapons (armed threat)
- * @param {Object} target - Target creature
+ * @param {Object} target - Target combatant
  * @returns {boolean} True if target is armed
  */
 function isArmedThreat(target) {
   if (!target) return false;
 
-  // Check for equipped weapons
-  if (target.equippedWeapons?.primary || target.equippedWeapons?.secondary) {
+  // Check for equistaminad weapons
+  if (target.equistaminadWeapons?.primary || target.equistaminadWeapons?.secondary) {
     return true;
   }
 
@@ -1377,8 +1377,8 @@ function isArmedThreat(target) {
 }
 
 /**
- * Count how many armed enemies are threatening the creature
- * @param {Object} creature - Creature to check
+ * Count how many armed enemies are threatening the combatant
+ * @param {Object} combatant - Combatant to check
  * @param {Array} allFighters - All fighters in combat
  * @param {Object} positions - Position map
  * @param {Function} calculateDistance - Distance calculation function
@@ -1386,23 +1386,23 @@ function isArmedThreat(target) {
  * @returns {number} Count of armed threats within 30ft
  */
 function countArmedThreats(
-  creature,
+  combatant,
   allFighters,
   positions,
   calculateDistance,
   canFighterAct,
   sceneContext = { sceneType: "combat", relations: {} },
 ) {
-  if (!creature || !positions[creature.id]) return 0;
+  if (!combatant || !positions[combatant.id]) return 0;
 
-  const creaturePos = positions[creature.id];
+  const combatantPos = positions[combatant.id];
   let threatCount = 0;
 
   allFighters.forEach((fighter) => {
     // Only count enemies (opposite type)
     if (
-      fighter.id === creature.id ||
-      !canTargetForAction(creature, fighter, "attack", sceneContext)
+      fighter.id === combatant.id ||
+      !canTargetForAction(combatant, fighter, "attack", sceneContext)
     ) {
       return;
     }
@@ -1413,7 +1413,7 @@ function countArmedThreats(
 
     // Check if within threat range (30ft)
     if (positions[fighter.id]) {
-      const dist = calculateDistance(creaturePos, positions[fighter.id]);
+      const dist = calculateDistance(combatantPos, positions[fighter.id]);
       if (dist <= 30) {
         threatCount++;
       }
@@ -1458,7 +1458,7 @@ function attemptTacticalWithdraw({
     const currentPos = positions[enemy.id];
     if (!currentPos) {
       addLog(
-        `⚠️ ${enemy.name} cannot withdraw (no position data). Holding position defensively.`,
+        `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¯ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ${enemy.name} cannot withdraw (no position data). Holding position defensively.`,
         "warning",
       );
       setDefensiveStance((prev) => ({ ...prev, [enemy.id]: "Defend" }));
@@ -1478,7 +1478,7 @@ function attemptTacticalWithdraw({
     // If no active enemies, just end turn
     if (playerFighters.length === 0) {
       addLog(
-        `⚠️ ${enemy.name} finds no active foes and cautiously lowers their guard.`,
+        `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¯ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ${enemy.name} finds no active foes and cautiously lowers their guard.`,
         "info",
       );
       setDefensiveStance((prev) => ({ ...prev, [enemy.id]: "Defend" }));
@@ -1493,7 +1493,7 @@ function attemptTacticalWithdraw({
 
     if (threatPositions.length === 0) {
       addLog(
-        `🛡️ ${enemy.name} cannot see any threats. Holding position defensively.`,
+        `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂºÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¯ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ${enemy.name} cannot see any threats. Holding position defensively.`,
         "info",
       );
       setDefensiveStance((prev) => ({ ...prev, [enemy.id]: "Defend" }));
@@ -1508,8 +1508,8 @@ function attemptTacticalWithdraw({
       enemy.attributes?.Spd ||
       enemy.attributes?.spd ||
       10;
-    const attacksPerMelee = enemy.attacksPerMelee || 2;
-    const fullFeetPerAction = (speed * 18) / Math.max(1, attacksPerMelee);
+    const actionsPerRound = enemy.actionsPerRound || 2;
+    const fullFeetPerAction = (speed * 18) / Math.max(1, actionsPerRound);
     const maxSteps = Math.max(
       1,
       Math.min(Math.floor(fullFeetPerAction / GRID_CONFIG.CELL_SIZE), 5),
@@ -1526,7 +1526,7 @@ function attemptTacticalWithdraw({
 
     if (retreatDestination && retreatDestination.position) {
       addLog(
-        `🚶 ${enemy.name} withdraws from unreachable foes to (${retreatDestination.position.x}, ${retreatDestination.position.y}).`,
+        `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¶ ${enemy.name} withdraws from unreachable foes to (${retreatDestination.position.x}, ${retreatDestination.position.y}).`,
         "info",
       );
 
@@ -1544,9 +1544,9 @@ function attemptTacticalWithdraw({
       return true;
     }
 
-    // No safe retreat hex found → defend in place
+    // No safe retreat hex found ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ defend in place
     addLog(
-      `⚠️ ${enemy.name} looks for a safe place to withdraw but finds none; defending in place.`,
+      `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¯ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ${enemy.name} looks for a safe place to withdraw but finds none; defending in place.`,
       "warning",
     );
 
@@ -1556,7 +1556,7 @@ function attemptTacticalWithdraw({
   } catch (err) {
     console.error("Error during tactical withdraw:", err);
     addLog(
-      `⚠️ ${enemy.name} tries to withdraw but something goes wrong; they hold position defensively.`,
+      `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¯ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ${enemy.name} tries to withdraw but something goes wrong; they hold position defensively.`,
       "warning",
     );
     setDefensiveStance((prev) => ({ ...prev, [enemy.id]: "Defend" }));
@@ -1605,10 +1605,10 @@ export function runEnemyTurnAI(enemy, context) {
     healerAbility,
     clericalHealingTouch,
     medicalTreatment,
-    getFighterSpells: getFighterSpellsFromContext,
-    getFighterPsionicPowers,
-    getFighterPPE,
-    getFighterISP,
+    getFighterTechniques: getFighterTechniquesFromContext,
+    getFighterTacticalPowers,
+    getFighterstamina,
+    getFighterfocus,
     // AI engine
     createAIActionSelector,
     GRID_CONFIG,
@@ -1683,11 +1683,11 @@ export function runEnemyTurnAI(enemy, context) {
     );
   }
 
-  // ✅ CRITICAL: Check if enemy can act (conscious, not dying/dead/unconscious)
+  // ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ CRITICAL: Check if enemy can act (conscious, not dying/dead/unconscious)
   if (!canFighterAct(enemy)) {
     const hpStatus = getHPStatus(enemy.currentHP);
     addLog(
-      `⏭️ ${enemy.name} cannot act (${hpStatus.description}), skipping turn`,
+      `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â­ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¯ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ${enemy.name} cannot act (${hpStatus.description}), skipping turn`,
       "info",
     );
     processingEnemyTurnRef.current = false;
@@ -1695,20 +1695,20 @@ export function runEnemyTurnAI(enemy, context) {
     return;
   }
 
-  // 🔴 NEW: Check if paralyzed
+  // ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â´ NEW: Check if paralyzed
   const isParalyzed = enemy.statusEffects?.some(
     (e) =>
       (typeof e === "string" && e === "PARALYZED") ||
       (typeof e === "object" && e.type === "PARALYZED"),
   );
   if (isParalyzed) {
-    addLog(`⏭️ ${enemy.name} is paralyzed and cannot act this round!`, "info");
+    addLog(`ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â­ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¯ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ${enemy.name} is paralyzed and cannot act this round!`, "info");
     processingEnemyTurnRef.current = false;
     scheduleEndTurn();
     return;
   }
 
-  // ✅ Define allPlayers early so ROUTED logic and rest of AI can use it
+  // ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ Define allPlayers early so ROUTED logic and rest of AI can use it
   const allPlayers = fighters.filter(
     (f) =>
       isHostileTarget(f) &&
@@ -1717,15 +1717,15 @@ export function runEnemyTurnAI(enemy, context) {
       f.currentHP > -21, // not dead
   );
 
-  // 🔴 NEW: Check if routed - if so, attempt to flee instead of fighting
+  // ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â´ NEW: Check if routed - if so, attempt to flee instead of fighting
   if (
     enemy.moraleState?.status === "ROUTED" ||
     enemy.statusEffects?.includes("ROUTED")
   ) {
-    if (isUndeadCreature(enemy)) {
-      // 🧟 Undead: clear ROUTED and stand ground
+    if (isFallenCombatant(enemy)) {
+      // ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ Fallen: clear ROUTED and stand ground
       addLog(
-        `💀 ${enemy.name} is undead and refuses to flee (ignoring ROUTED).`,
+        `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ ${enemy.name} is fallen and refuses to flee (ignoring ROUTED).`,
         "info",
       );
 
@@ -1739,10 +1739,10 @@ export function runEnemyTurnAI(enemy, context) {
       }
 
       // fall through to normal action selection instead of flee
-    } else if (isDemonCreature(enemy)) {
-      // 😈 Demon: clear ROUTED and stand ground (demons are fearless)
+    } else if (isRaiderCombatant(enemy)) {
+      // ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¹ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¹ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â  Raider: clear ROUTED and stand ground (raiders are fearless)
       addLog(
-        `😈 ${enemy.name} is a demon and refuses to flee (ignoring ROUTED).`,
+        `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¹ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¹ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â  ${enemy.name} is a raider and refuses to flee (ignoring ROUTED).`,
         "info",
       );
 
@@ -1756,21 +1756,21 @@ export function runEnemyTurnAI(enemy, context) {
       }
 
       // fall through to normal action selection instead of flee
-    } else if (!isUndeadCreature(enemy) && !isDemonCreature(enemy)) {
+    } else if (!isFallenCombatant(enemy) && !isRaiderCombatant(enemy)) {
       const routingProfile = getRoutingProfile(enemy);
-      const usesMonsterRouting = routingProfile.pathStyle !== "panic";
+      const usesOpponentRouting = routingProfile.pathStyle !== "panic";
       const currentPos = (positionsRef?.current || positions)?.[enemy.id];
 
       addLog(
-        usesMonsterRouting
-          ? `🦖 ${enemy.name} breaks and tries to withdraw from the fight!`
-          : `🏃 ${enemy.name} is ROUTED and attempts to flee!`,
-        usesMonsterRouting ? "info" : "warning",
+        usesOpponentRouting
+          ? `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ ${enemy.name} breaks and tries to withdraw from the fight!`
+          : `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ ${enemy.name} is ROUTED and attempts to flee!`,
+        usesOpponentRouting ? "info" : "warning",
       );
 
       if (!currentPos) {
         addLog(
-          `⚠️ ${enemy.name} cannot ${usesMonsterRouting ? "withdraw" : "flee"} (no position data).`,
+          `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¯ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ${enemy.name} cannot ${usesOpponentRouting ? "withdraw" : "flee"} (no position data).`,
           "warning",
         );
         processingEnemyTurnRef.current = false;
@@ -1782,7 +1782,7 @@ export function runEnemyTurnAI(enemy, context) {
         .map((f) => positions[f.id])
         .filter(Boolean);
       if (threatPositions.length === 0) {
-        if (usesMonsterRouting && routingProfile.canRally) {
+        if (usesOpponentRouting && routingProfile.canRally) {
           enemy.moraleState = {
             ...(enemy.moraleState || {}),
             status: "STEADY",
@@ -1806,7 +1806,7 @@ export function runEnemyTurnAI(enemy, context) {
             ),
           );
           addLog(
-            `🦖 ${enemy.name} regains its nerve when no foe presses the attack.`,
+            `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ ${enemy.name} regains its nerve when no foe presses the attack.`,
             "info",
           );
           processingEnemyTurnRef.current = false;
@@ -1819,7 +1819,7 @@ export function runEnemyTurnAI(enemy, context) {
             f.id === enemy.id
               ? {
                   ...f,
-                  remainingAttacks: 0,
+                  remainingActions: 0,
                   moraleState: {
                     ...(f.moraleState || {}),
                     status: "ROUTED",
@@ -1838,7 +1838,7 @@ export function runEnemyTurnAI(enemy, context) {
           if (positionsRef) positionsRef.current = next;
           return next;
         });
-        addLog(`🏃 ${enemy.name} flees off the battlefield!`, "warning");
+        addLog(`ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ ${enemy.name} flees off the battlefield!`, "warning");
         processingEnemyTurnRef.current = false;
         scheduleEndTurn();
         return;
@@ -1850,8 +1850,8 @@ export function runEnemyTurnAI(enemy, context) {
         enemy.attributes?.Spd ||
         enemy.attributes?.spd ||
         10;
-      const attacksPerMelee = enemy.attacksPerMelee || 2;
-      const fullFeetPerAction = (speed * 18) / Math.max(1, attacksPerMelee);
+      const actionsPerRound = enemy.actionsPerRound || 2;
+      const fullFeetPerAction = (speed * 18) / Math.max(1, actionsPerRound);
       const maxSteps = Math.max(
         1,
         Math.min(Math.floor(fullFeetPerAction / GRID_CONFIG.CELL_SIZE), 5),
@@ -1899,7 +1899,7 @@ export function runEnemyTurnAI(enemy, context) {
               f.id === enemy.id
                 ? {
                     ...f,
-                    remainingAttacks: 0,
+                    remainingActions: 0,
                     moraleState: {
                       ...(f.moraleState || {}),
                       status: "ROUTED",
@@ -1918,15 +1918,15 @@ export function runEnemyTurnAI(enemy, context) {
             if (positionsRef) positionsRef.current = next;
             return next;
           });
-          addLog(`🏃 ${enemy.name} flees off the battlefield!`, "warning");
+          addLog(`ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ ${enemy.name} flees off the battlefield!`, "warning");
           processingEnemyTurnRef.current = false;
           scheduleEndTurn();
           return;
         }
 
         handlePositionChange(enemy.id, retreatDestination.position, {
-          movementType: usesMonsterRouting ? "break_contact" : "withdraw",
-          source: usesMonsterRouting ? "AI_MONSTER_ROUTING" : "AI_ROUTING",
+          movementType: usesOpponentRouting ? "break_contact" : "withdraw",
+          source: usesOpponentRouting ? "AI_MONSTER_ROUTING" : "AI_ROUTING",
           threatPositions,
         });
         setDefensiveStance((prev) => ({ ...prev, [enemy.id]: "Retreat" }));
@@ -1935,12 +1935,12 @@ export function runEnemyTurnAI(enemy, context) {
             f.id === enemy.id
               ? {
                   ...f,
-                  remainingAttacks: 0,
+                  remainingActions: 0,
                   moraleState: {
                     ...(f.moraleState || {}),
                     status: "ROUTED",
                     hasFled: false,
-                    lastReason: usesMonsterRouting
+                    lastReason: usesOpponentRouting
                       ? "break_contact_withdrawal"
                       : f.moraleState?.lastReason,
                   },
@@ -1949,10 +1949,10 @@ export function runEnemyTurnAI(enemy, context) {
           ),
         );
         addLog(
-          usesMonsterRouting
-            ? `🦖 ${enemy.name} breaks contact and withdraws to (${retreatDestination.position.x}, ${retreatDestination.position.y}).`
-            : `🏃 ${enemy.name} flees to (${retreatDestination.position.x}, ${retreatDestination.position.y})!`,
-          usesMonsterRouting ? "info" : "warning",
+          usesOpponentRouting
+            ? `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ ${enemy.name} breaks contact and withdraws to (${retreatDestination.position.x}, ${retreatDestination.position.y}).`
+            : `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ ${enemy.name} flees to (${retreatDestination.position.x}, ${retreatDestination.position.y})!`,
+          usesOpponentRouting ? "info" : "warning",
         );
         processingEnemyTurnRef.current = false;
         scheduleEndTurn();
@@ -1960,7 +1960,7 @@ export function runEnemyTurnAI(enemy, context) {
       }
 
       if (
-        usesMonsterRouting &&
+        usesOpponentRouting &&
         (routingProfile.corneredBehavior === "berserk" ||
           routingProfile.corneredBehavior === "fight" ||
           routingProfile.corneredBehavior === "push_through")
@@ -1988,12 +1988,12 @@ export function runEnemyTurnAI(enemy, context) {
           ),
         );
         addLog(
-          `🦖 ${enemy.name} is cornered and lashes out instead of running!`,
+          `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ ${enemy.name} is cornered and lashes out instead of running!`,
           "warning",
         );
       } else {
         addLog(
-          `⚠️ ${enemy.name} cannot find a safe escape route and hesitates.`,
+          `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¯ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ${enemy.name} cannot find a safe escape route and hesitates.`,
           "warning",
         );
         processingEnemyTurnRef.current = false;
@@ -2004,15 +2004,15 @@ export function runEnemyTurnAI(enemy, context) {
 
     // Check if combat is still active
     if (!combatActive) {
-      addLog(`⚠️ Combat ended, ${enemy.name} skips turn`, "info");
+      addLog(`ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¯ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â Combat ended, ${enemy.name} skips turn`, "info");
       processingEnemyTurnRef.current = false;
       return;
     }
 
     // Check if enemy has actions remaining
-    if (enemy.remainingAttacks <= 0) {
+    if (enemy.remainingActions <= 0) {
       addLog(
-        `⏭️ ${enemy.name} has no actions remaining - passing to next fighter in initiative order`,
+        `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â­ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¯ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ${enemy.name} has no actions remaining - passing to next fighter in initiative order`,
         "info",
       );
       processingEnemyTurnRef.current = false;
@@ -2027,7 +2027,7 @@ export function runEnemyTurnAI(enemy, context) {
       decayAwareness(enemy, target);
     });
 
-    // 🦅 Flying Enemy Behavior Integration
+    // ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ Flying Enemy Behavior Integration
     const enemyCanFly = canFly(enemy);
     const enemyIsFlying = isFlying(enemy);
 
@@ -2037,7 +2037,7 @@ export function runEnemyTurnAI(enemy, context) {
     // Note: We check enemyIsFlying first (must be actually flying), then enemyCanFly (must have flight ability)
     if (enemyIsFlying && enemyCanFly && !isFlyingHunter(enemy)) {
       addLog(
-        `🦅 ${enemy.name} is airborne at ${
+        `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ ${enemy.name} is airborne at ${
           enemy.altitudeFeet ?? enemy.altitude ?? 0
         }ft - using flying behavior`,
         "info",
@@ -2075,13 +2075,13 @@ export function runEnemyTurnAI(enemy, context) {
         importMetaEnv: import.meta.env,
       });
 
-      // ✅ Do NOT fall through to ground AI when flying
+      // ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ Do NOT fall through to ground AI when flying
       processingEnemyTurnRef.current = false;
       scheduleEndTurn();
       return;
     }
 
-    // 🕊️ FLIGHT AI: If enemy can fly but is currently grounded, check if threatened by melee-only enemies
+    // ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¯ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â FLIGHT AI: If enemy can fly but is currently grounded, check if threatened by melee-only enemies
     if (enemyCanFly && !enemyIsFlying && allPlayers.length > 0) {
       // Check if any nearby players are melee-only threats
       const threateningMeleeEnemies = allPlayers.filter((player) => {
@@ -2094,8 +2094,8 @@ export function runEnemyTurnAI(enemy, context) {
 
         // Check if player has ranged weapons
         const playerHasRanged =
-          player.equippedWeapons?.primary ||
-          player.equippedWeapons?.secondary ||
+          player.equistaminadWeapons?.primary ||
+          player.equistaminadWeapons?.secondary ||
           player.attacks?.some((a) => {
             const name = a.name?.toLowerCase() || "";
             return (
@@ -2124,14 +2124,14 @@ export function runEnemyTurnAI(enemy, context) {
           ),
         );
         addLog(
-          `🕊️ ${enemy.name} takes to the air (altitude: ${newAltitude}ft) to escape melee attackers!`,
+          `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¯ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ${enemy.name} takes to the air (altitude: ${newAltitude}ft) to escape melee attackers!`,
           "info",
         );
         // Deduct one action for taking off
         setFighters((prev) =>
           prev.map((f) =>
             f.id === enemy.id
-              ? { ...f, remainingAttacks: Math.max(0, f.remainingAttacks - 1) }
+              ? { ...f, remainingActions: Math.max(0, f.remainingActions - 1) }
               : f,
           ),
         );
@@ -2200,14 +2200,14 @@ export function runEnemyTurnAI(enemy, context) {
         skill.type === "medical_skill",
     );
 
-    // Healer archetype = Clergy OCCs (Priest, Healer, Druid, Shaman, etc.) OR explicit healer skills
+    // Healer archetype = Clergy PROFESSIONs (Priest, Healer, Druid, Shaman, etc.) OR explicit healer skills
     const hasHealerSkills =
       Array.isArray(enemy.skills) &&
       enemy.skills.some((s) =>
-        ["Healer OCC R.C.C. Skill", "Holistic Medicine"].includes(s.name),
+        ["Healer PROFESSION role Skill", "Holistic Medicine"].includes(s.name),
       );
 
-    const isHealer = isHealerOccForAI(enemy) || hasHealerSkills;
+    const isHealer = isHealerProfessionForAI(enemy) || hasHealerSkills;
 
     // Check for allies that need healing (only for non-evil alignments)
     const enemyAlignment = enemy.alignment || enemy.attributes?.alignment || "";
@@ -2261,15 +2261,15 @@ export function runEnemyTurnAI(enemy, context) {
           if (selectedHealingSkill) {
             // Check if enemy has enough resources
             let canUse = true;
-            if (selectedHealingSkill.costType === "ISP") {
-              const currentISP =
-                enemy.currentISP || enemy.currentIsp || enemy.ISP || 0;
-              canUse = currentISP >= selectedHealingSkill.cost;
+            if (selectedHealingSkill.costType === "focus") {
+              const currentfocus =
+                enemy.currentfocus || enemy.currentIsp || enemy.focus || 0;
+              canUse = currentfocus >= selectedHealingSkill.cost;
             }
 
             if (canUse) {
               addLog(
-                `🤖 ${enemy.name} uses ${selectedHealingSkill.name} on ${targetAlly.name}!`,
+                `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¤ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ ${enemy.name} uses ${selectedHealingSkill.name} on ${targetAlly.name}!`,
                 "info",
               );
 
@@ -2284,14 +2284,14 @@ export function runEnemyTurnAI(enemy, context) {
                 skillResult = healerAbility(enemy, targetAlly, powerName);
 
                 if (!skillResult.error) {
-                  // Update enemy ISP
+                  // Update enemy focus
                   setFighters((prev) =>
                     prev.map((f) =>
                       f.id === enemy.id
                         ? {
                             ...f,
-                            currentISP: skillResult.ispRemaining,
-                            ISP: skillResult.ispRemaining,
+                            currentfocus: skillResult.focusRemaining,
+                            focus: skillResult.focusRemaining,
                           }
                         : f,
                     ),
@@ -2351,9 +2351,9 @@ export function runEnemyTurnAI(enemy, context) {
                   f.id === enemy.id
                     ? {
                         ...f,
-                        remainingAttacks: Math.max(
+                        remainingActions: Math.max(
                           0,
-                          f.remainingAttacks - selectedHealingSkill.cost,
+                          f.remainingActions - selectedHealingSkill.cost,
                         ),
                       }
                     : f,
@@ -2443,7 +2443,7 @@ export function runEnemyTurnAI(enemy, context) {
 
         if (retreatDestination) {
           log(
-            `🐭 ${fighter.name} panics at the sight of ${nearestThreat.name} and scurries away!`,
+            `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â­ ${fighter.name} panics at the sight of ${nearestThreat.name} and scurries away!`,
             "info",
           );
 
@@ -2477,7 +2477,7 @@ export function runEnemyTurnAI(enemy, context) {
                 ? {
                     ...f,
                     defensiveStance: "Retreat",
-                    remainingAttacks: Math.max(0, f.remainingAttacks - 1),
+                    remainingActions: Math.max(0, f.remainingActions - 1),
                   }
                 : f,
             ),
@@ -2490,7 +2490,7 @@ export function runEnemyTurnAI(enemy, context) {
 
         // If no retreat destination found, just cower / defend
         log(
-          `🐭 ${fighter.name} freezes in fear, unable to find a way to flee from ${nearestThreat.name}.`,
+          `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â­ ${fighter.name} freezes in fear, unable to find a way to flee from ${nearestThreat.name}.`,
           "info",
         );
 
@@ -2499,7 +2499,7 @@ export function runEnemyTurnAI(enemy, context) {
             f.id === fighter.id
               ? {
                   ...f,
-                  remainingAttacks: Math.max(0, f.remainingAttacks - 1),
+                  remainingActions: Math.max(0, f.remainingActions - 1),
                   defensiveStance: "Cower",
                 }
               : f,
@@ -2542,7 +2542,7 @@ export function runEnemyTurnAI(enemy, context) {
             };
 
             log(
-              `🐭 ${fighter.name} cautiously noses toward a nearby corpse to scavenge.`,
+              `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â­ ${fighter.name} cautiously noses toward a nearby corpse to scavenge.`,
               "info",
             );
 
@@ -2559,7 +2559,7 @@ export function runEnemyTurnAI(enemy, context) {
                 f.id === fighter.id
                   ? {
                       ...f,
-                      remainingAttacks: Math.max(0, f.remainingAttacks - 1),
+                      remainingActions: Math.max(0, f.remainingActions - 1),
                     }
                   : f,
               ),
@@ -2579,7 +2579,7 @@ export function runEnemyTurnAI(enemy, context) {
               f.id === fighter.id
                 ? {
                     ...f,
-                    remainingAttacks: Math.max(0, f.remainingAttacks - 1),
+                    remainingActions: Math.max(0, f.remainingActions - 1),
                     defensiveStance: "Idle/Forage",
                   }
                 : f,
@@ -2603,7 +2603,7 @@ export function runEnemyTurnAI(enemy, context) {
             f.id === fighter.id
               ? {
                   ...f,
-                  remainingAttacks: Math.max(0, f.remainingAttacks - 1),
+                  remainingActions: Math.max(0, f.remainingActions - 1),
                   defensiveStance: "Idle/Forage",
                 }
               : f,
@@ -2645,7 +2645,7 @@ export function runEnemyTurnAI(enemy, context) {
         setFighters((prev) =>
           prev.map((f) =>
             f.id === fighter.id
-              ? { ...f, remainingAttacks: Math.max(0, f.remainingAttacks - 1) }
+              ? { ...f, remainingActions: Math.max(0, f.remainingActions - 1) }
               : f,
           ),
         );
@@ -2658,7 +2658,7 @@ export function runEnemyTurnAI(enemy, context) {
       // No threats, no food, no clear hiding spot: pure idle flavor
       const idleLines = [
         `${fighter.name} sniffs the air nervously.`,
-        `${fighter.name} grooms itself and twitches its whiskers.`,
+        `${fighter.name} grooms itshuman and twitches its whiskers.`,
         `${fighter.name} pauses, listening for danger.`,
       ];
       const line = idleLines[Math.floor(Math.random() * idleLines.length)];
@@ -2669,7 +2669,7 @@ export function runEnemyTurnAI(enemy, context) {
           f.id === fighter.id
             ? {
                 ...f,
-                remainingAttacks: Math.max(0, f.remainingAttacks - 1),
+                remainingActions: Math.max(0, f.remainingActions - 1),
                 defensiveStance: "Idle/Alert",
               }
             : f,
@@ -2689,10 +2689,10 @@ export function runEnemyTurnAI(enemy, context) {
       positions,
       turnCounter,
       calculateDistance,
-      getFighterSpells: getFighterSpellsFromContext || getFighterSpells,
-      getFighterPsionicPowers,
-      getFighterPPE,
-      getFighterISP,
+      getFighterTechniques: getFighterTechniquesFromContext || getFighterTechniques,
+      getFighterTacticalPowers,
+      getFighterstamina,
+      getFighterfocus,
       visibilityByActorId: {
         [enemy.id]: visiblePlayers.map((target) => target.id),
       },
@@ -2769,7 +2769,7 @@ export function runEnemyTurnAI(enemy, context) {
             setFighters,
           });
           for (const event of applied.events) {
-            dispatchUtilityCombatEvent(event, addLog);
+            dfocusatchUtilityCombatEvent(event, addLog);
           }
           persistUtilityAiMemory({
             enemy,
@@ -2877,9 +2877,9 @@ export function runEnemyTurnAI(enemy, context) {
             fighter.id === enemy.id
               ? {
                   ...fighter,
-                  remainingAttacks: Math.max(
+                  remainingActions: Math.max(
                     0,
-                    (fighter.remainingAttacks ?? enemy.remainingAttacks ?? 1) -
+                    (fighter.remainingActions ?? enemy.remainingActions ?? 1) -
                       1,
                   ),
                 }
@@ -2894,7 +2894,7 @@ export function runEnemyTurnAI(enemy, context) {
       // Check if there are players but they're just not visible
       if (allPlayers.length > 0) {
         addLog(
-          `👁️ ${enemy.name} cannot see any players (hidden/obscured).`,
+          `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¹Ãƒâ€¦Ã¢â‚¬Å“ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¯ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ${enemy.name} cannot see any players (hidden/obscured).`,
           "info",
         );
       } else {
@@ -2992,7 +2992,7 @@ export function runEnemyTurnAI(enemy, context) {
     } catch (error) {
       console.error("[AI] Failed to evaluate layered combat action", error);
       addLog(
-        `⚠️ ${enemy.name} hesitates (AI error: ${error.message})`,
+        `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¯ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ${enemy.name} hesitates (AI error: ${error.message})`,
         "error",
       );
     }
@@ -3007,7 +3007,7 @@ export function runEnemyTurnAI(enemy, context) {
         ACTION_TYPES.MELEE_ATTACK,
         ACTION_TYPES.RANGED_ATTACK,
         ACTION_TYPES.AMBUSH_ATTACK,
-        ACTION_TYPES.CAST_SPELL,
+        ACTION_TYPES.USE_TECHNIQUE,
         ACTION_TYPES.USE_SKILL,
         ACTION_TYPES.WARN_ALLIES,
       ].includes(utilityAction.type)
@@ -3028,7 +3028,7 @@ export function runEnemyTurnAI(enemy, context) {
           setFighters,
         });
         for (const event of applied.events) {
-          dispatchUtilityCombatEvent(event, addLog);
+          dfocusatchUtilityCombatEvent(event, addLog);
         }
         persistUtilityAiMemory({
           enemy,
@@ -3042,9 +3042,9 @@ export function runEnemyTurnAI(enemy, context) {
             fighter.id === enemy.id
               ? {
                   ...fighter,
-                  remainingAttacks: Math.max(
+                  remainingActions: Math.max(
                     0,
-                    (fighter.remainingAttacks ?? enemy.remainingAttacks ?? 1) -
+                    (fighter.remainingActions ?? enemy.remainingActions ?? 1) -
                       1,
                   ),
                 }
@@ -3080,9 +3080,9 @@ export function runEnemyTurnAI(enemy, context) {
             fighter.id === enemy.id
               ? {
                   ...fighter,
-                  remainingAttacks: Math.max(
+                  remainingActions: Math.max(
                     0,
-                    (fighter.remainingAttacks ?? enemy.remainingAttacks ?? 1) -
+                    (fighter.remainingActions ?? enemy.remainingActions ?? 1) -
                       1,
                   ),
                   meta: {
@@ -3129,13 +3129,13 @@ export function runEnemyTurnAI(enemy, context) {
           ...(actionPlan || {}),
           type: "attack",
           aiAction:
-            utilityAction.type === ACTION_TYPES.CAST_SPELL
-              ? "spell"
+            utilityAction.type === ACTION_TYPES.USE_TECHNIQUE
+              ? "technique"
               : utilityAction.type === ACTION_TYPES.RANGED_ATTACK
                 ? "ranged attack"
                 : "melee attack",
           target: utilityTarget,
-          spell: utilityAction.spell,
+          technique: utilityAction.technique,
           utilityAction,
         };
       }
@@ -3155,9 +3155,9 @@ export function runEnemyTurnAI(enemy, context) {
             f.id === enemy.id
               ? {
                   ...f,
-                  remainingAttacks: Math.max(
+                  remainingActions: Math.max(
                     0,
-                    (f.remainingAttacks ?? enemy.remainingAttacks ?? 1) - 1,
+                    (f.remainingActions ?? enemy.remainingActions ?? 1) - 1,
                   ),
                 }
               : f,
@@ -3168,13 +3168,13 @@ export function runEnemyTurnAI(enemy, context) {
         return;
       }
 
-      if (aiType === "defend" || aiType === "dodge") {
+      if (aiType === "defend" || aiType === "evade") {
         const stance =
           actionPlan.stance === "retreat"
             ? "Retreat"
-            : actionPlan.defend === "parry"
-              ? "Parry"
-              : "Dodge";
+            : actionPlan.defend === "block"
+              ? "Block"
+              : "Evade";
 
         if (stance === "Retreat") {
           const currentPositions = positionsRef.current || positions;
@@ -3189,17 +3189,17 @@ export function runEnemyTurnAI(enemy, context) {
             enemy.attributes?.Spd ||
             enemy.attributes?.spd ||
             10;
-          const attacksPerMelee =
-            enemy.attacksPerMelee || enemy.remainingAttacks || 1;
+          const actionsPerRound =
+            enemy.actionsPerRound || enemy.remainingActions || 1;
           const movementStats = calculateMovementPerAction(
             speed,
-            Math.max(1, attacksPerMelee),
+            Math.max(1, actionsPerRound),
             enemy,
           );
           const fullFeetPerAction =
             movementStats.fullMovementPerAction ||
             movementStats.feetPerAction ||
-            (speed * 18) / Math.max(1, attacksPerMelee);
+            (speed * 18) / Math.max(1, actionsPerRound);
           const retreatSteps = Math.max(
             1,
             Math.min(Math.floor(fullFeetPerAction / GRID_CONFIG.CELL_SIZE), 5),
@@ -3258,7 +3258,7 @@ export function runEnemyTurnAI(enemy, context) {
 
           const currentEnemyState = fighters.find((f) => f.id === enemy.id);
           const remainingBefore =
-            currentEnemyState?.remainingAttacks ?? enemy.remainingAttacks ?? 1;
+            currentEnemyState?.remainingActions ?? enemy.remainingActions ?? 1;
           const remainingAfter = Math.max(0, remainingBefore - 1);
 
           setFighters((prev) =>
@@ -3266,16 +3266,16 @@ export function runEnemyTurnAI(enemy, context) {
               f.id === enemy.id
                 ? {
                     ...f,
-                    remainingAttacks: Math.max(
+                    remainingActions: Math.max(
                       0,
-                      (f.remainingAttacks ?? remainingBefore) - 1,
+                      (f.remainingActions ?? remainingBefore) - 1,
                     ),
                   }
                 : f,
             ),
           );
           addLog(
-            `⏭️ ${enemy.name} has ${remainingAfter} action(s) remaining this melee`,
+            `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â­ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¯ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ${enemy.name} has ${remainingAfter} action(s) remaining this melee`,
             "info",
           );
 
@@ -3289,7 +3289,7 @@ export function runEnemyTurnAI(enemy, context) {
             } prepares to ${stance.toLowerCase()} (+defense).`,
             "ai",
           );
-          if (stance === "Parry" || stance === "Dodge") {
+          if (stance === "Block" || stance === "Evade") {
             setDefensiveStance((prev) => ({ ...prev, [enemy.id]: stance }));
           }
         }
@@ -3299,9 +3299,9 @@ export function runEnemyTurnAI(enemy, context) {
             f.id === enemy.id
               ? {
                   ...f,
-                  remainingAttacks: Math.max(
+                  remainingActions: Math.max(
                     0,
-                    (f.remainingAttacks ?? enemy.remainingAttacks ?? 1) - 1,
+                    (f.remainingActions ?? enemy.remainingActions ?? 1) - 1,
                   ),
                 }
               : f,
@@ -3313,7 +3313,7 @@ export function runEnemyTurnAI(enemy, context) {
       }
     }
 
-    // Enhanced enemy AI with strategic reasoning (fallback/augment for strikes and specials)
+    // Enhanced enemy AI with strategic reasoning (fallback/augment for attacks and specials)
     let target = actionPlan?.target || null;
     let reasoning = actionPlan?.aiAction
       ? `layered AI preference: ${actionPlan.aiAction}`
@@ -3327,11 +3327,11 @@ export function runEnemyTurnAI(enemy, context) {
         return currentHPPct < weakestHPPct ? current : weakest;
       });
 
-      // Strategy 2: Target players with lowest AR (easiest to hit)
+      // Strategy 2: Target players with lowest guardRating (easiest to hit)
       const easyTarget = playerTargets.reduce((easiest, current) => {
-        const currentAR = current.AR || current.ar || 10;
-        const easiestAR = easiest.AR || easiest.ar || 10;
-        return currentAR < easiestAR ? current : easiest;
+        const currentGuardRating = current.guardRating || current.guardRating || 10;
+        const easiestGuardRating = easiest.guardRating || easiest.guardRating || 10;
+        return currentGuardRating < easiestGuardRating ? current : easiest;
       });
 
       // Strategy 3: Target players who are currently taking their turn (aggressive)
@@ -3344,8 +3344,8 @@ export function runEnemyTurnAI(enemy, context) {
       // Calculate distances to all targets and check if they're reachable
       // Note: enemyCanFly and enemyIsFlying are declared earlier in function (line 684-685)
       const enemyHasRangedWeapon =
-        enemy.equippedWeapons?.primary ||
-        enemy.equippedWeapons?.secondary ||
+        enemy.equistaminadWeapons?.primary ||
+        enemy.equistaminadWeapons?.secondary ||
         enemy.attacks?.some((a) => {
           const name = a.name?.toLowerCase() || "";
           return (
@@ -3399,11 +3399,11 @@ export function runEnemyTurnAI(enemy, context) {
         (t) => t.distance <= 100 && !t.isUnreachable,
       );
 
-      // 🛡️ SUPPRESSION AWARENESS: prefer cover when under visible threat
+      // ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂºÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¯ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â SUPPRESSION AWARENESS: prefer cover when under visible threat
       if (
         enemy.suppression?.isSuppressed &&
         enemy.suppression?.visibleThreat &&
-        enemy.remainingAttacks > 0
+        enemy.remainingActions > 0
       ) {
         const rawObjects = arenaEnvironment?.objects || [];
         const coverObjects = rawObjects
@@ -3429,13 +3429,13 @@ export function runEnemyTurnAI(enemy, context) {
               f.id === enemy.id
                 ? {
                     ...f,
-                    remainingAttacks: Math.max(0, f.remainingAttacks - 1),
+                    remainingActions: Math.max(0, f.remainingActions - 1),
                   }
                 : f,
             ),
           );
 
-          addLog(`🛡️ ${enemy.name} seeks cover under incoming fire.`, "info");
+          addLog(`ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂºÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¯ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ${enemy.name} seeks cover under incoming fire.`, "info");
 
           processingEnemyTurnRef.current = false;
           scheduleEndTurn();
@@ -3443,7 +3443,7 @@ export function runEnemyTurnAI(enemy, context) {
         }
       }
 
-      // 🦅 HAWK AI: Special behaviors (landing, scavenging, hunting, circling, eating)
+      // ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ HAWK AI: Special behaviors (landing, scavenging, hunting, circling, eating)
       // Note: enemyCanFly and enemyIsFlying are declared earlier in function (line 684-685)
       const isSkittishFlyingPredator =
         isHawk(enemy) || hasSkittishFlyingPredatorProfile(enemy);
@@ -3452,7 +3452,7 @@ export function runEnemyTurnAI(enemy, context) {
       if (
         enemyIsFlying &&
         shouldLandToRest(enemy) &&
-        enemy.remainingAttacks > 0
+        enemy.remainingActions > 0
       ) {
         // Find safe landing hex (away from enemies)
         const myPos = positions[enemy.id];
@@ -3504,7 +3504,7 @@ export function runEnemyTurnAI(enemy, context) {
             spendFlyingStamina(enemy, "FLY_SPRINT", 1);
 
             addLog(
-              `🦅 ${enemy.name} is exhausted and flies to a safer location to rest.`,
+              `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ ${enemy.name} is exhausted and flies to a safer location to rest.`,
               "info",
             );
           }
@@ -3559,7 +3559,7 @@ export function runEnemyTurnAI(enemy, context) {
                 ),
               );
 
-              addLog(`🦅 ${enemy.name} lands on a branch to rest.`, "info");
+              addLog(`ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ ${enemy.name} lands on a branch to rest.`, "info");
             } else {
               setFighters((prev) =>
                 prev.map((f) =>
@@ -3568,7 +3568,7 @@ export function runEnemyTurnAI(enemy, context) {
                     : f,
                 ),
               );
-              addLog(`🦅 ${enemy.name} lands on the ground to rest.`, "info");
+              addLog(`ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ ${enemy.name} lands on the ground to rest.`, "info");
             }
           } else {
             setFighters((prev) =>
@@ -3578,7 +3578,7 @@ export function runEnemyTurnAI(enemy, context) {
                   : f,
               ),
             );
-            addLog(`🦅 ${enemy.name} lands on the ground to rest.`, "info");
+            addLog(`ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ ${enemy.name} lands on the ground to rest.`, "info");
           }
 
           // Rest this action (recover stamina)
@@ -3590,7 +3590,7 @@ export function runEnemyTurnAI(enemy, context) {
               f.id === enemy.id
                 ? {
                     ...f,
-                    remainingAttacks: Math.max(0, f.remainingAttacks - 1),
+                    remainingActions: Math.max(0, f.remainingActions - 1),
                   }
                 : f,
             ),
@@ -3603,7 +3603,7 @@ export function runEnemyTurnAI(enemy, context) {
       }
 
       // 2. SCAVENGING: If hawk is a scavenger and there's a corpse nearby, go eat it
-      if (isScavenger(enemy) && enemy.remainingAttacks > 0) {
+      if (isScavenger(enemy) && enemy.remainingActions > 0) {
         const corpse = findNearbyCorpse(enemy, fighters, positions, 8); // 8 hex radius
         if (corpse) {
           const myPos = positions[enemy.id];
@@ -3636,7 +3636,7 @@ export function runEnemyTurnAI(enemy, context) {
               }
 
               addLog(
-                `🦅 ${enemy.name} moves toward ${
+                `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ ${enemy.name} moves toward ${
                   corpse.name || "a corpse"
                 } to scavenge.`,
                 "info",
@@ -3648,7 +3648,7 @@ export function runEnemyTurnAI(enemy, context) {
                   f.id === enemy.id
                     ? {
                         ...f,
-                        remainingAttacks: Math.max(0, f.remainingAttacks - 1),
+                        remainingActions: Math.max(0, f.remainingActions - 1),
                       }
                     : f,
                 ),
@@ -3667,7 +3667,7 @@ export function runEnemyTurnAI(enemy, context) {
                   f.id === enemy.id
                     ? {
                         ...f,
-                        remainingAttacks: Math.max(0, f.remainingAttacks - 1),
+                        remainingActions: Math.max(0, f.remainingActions - 1),
                       }
                     : f,
                 ),
@@ -3706,7 +3706,7 @@ export function runEnemyTurnAI(enemy, context) {
 
         if (shouldFlee) {
           addLog(
-            `🦅 ${enemy.name} is ${
+            `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ ${enemy.name} is ${
               hpPercent < fleeAtHpPercent ? "badly hurt" : "outnumbered"
             } and breaks off to escape!`,
             "info",
@@ -3722,7 +3722,7 @@ export function runEnemyTurnAI(enemy, context) {
               ),
             );
             addLog(
-              `🦅 ${enemy.name} takes to the air (altitude: ${newAltitude}ft)`,
+              `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ ${enemy.name} takes to the air (altitude: ${newAltitude}ft)`,
               "info",
             );
           }
@@ -3746,7 +3746,7 @@ export function runEnemyTurnAI(enemy, context) {
                 positionsRef.current = updated;
                 return updated;
               });
-              addLog(`🦅 ${enemy.name} flees to safety`, "info");
+              addLog(`ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ ${enemy.name} flees to safety`, "info");
             }
           }
           processingEnemyTurnRef.current = false;
@@ -3754,7 +3754,7 @@ export function runEnemyTurnAI(enemy, context) {
           return;
         }
 
-        // 1) Prefer tiny prey (faeries + tiny/small animals)
+        // 1) Prefer tiny prey (scouts + tiny/small animals)
         const preyTargets = targetsInRange.filter((t) =>
           isPreferredHawkPrey(enemy, t.target),
         );
@@ -3764,16 +3764,16 @@ export function runEnemyTurnAI(enemy, context) {
           preyTargets.sort((a, b) => a.distance - b.distance);
           const bestPrey = preyTargets[0];
           target = bestPrey.target;
-          const preyType = isFaerieSizedTarget(bestPrey.target)
-            ? "faerie"
+          const preyType = isScoutSizedTarget(bestPrey.target)
+            ? "scout"
             : "small animal";
-          reasoning = `🦅 ${
+          reasoning = `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ ${
             enemy.name
           } spots ${preyType} prey and dives to attack (${Math.round(
             bestPrey.distance,
           )}ft away)`;
         } else {
-          // 2) No good prey — check for larger armed enemies
+          // 2) No good prey ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â check for larger armed enemies
           const dangerousArmed = targetsInRange.filter(
             (t) => isBiggerThreat(enemy, t.target) && isArmedThreat(t.target),
           );
@@ -3804,7 +3804,7 @@ export function runEnemyTurnAI(enemy, context) {
                 return updated;
               });
               addLog(
-                `🦅 ${enemy.name} maintains distance from larger threats (staying ${stayAtRangeFeet}ft away)`,
+                `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ ${enemy.name} maintains distance from larger threats (staying ${stayAtRangeFeet}ft away)`,
                 "info",
               );
               // Ensure flying
@@ -3828,7 +3828,7 @@ export function runEnemyTurnAI(enemy, context) {
             } else {
               // Already at safe distance - circle overhead
               addLog(
-                `🦅 ${enemy.name} circles overhead, avoiding larger armed threats`,
+                `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ ${enemy.name} circles overhead, avoiding larger armed threats`,
                 "info",
               );
               if (!enemyIsFlying) {
@@ -3845,7 +3845,7 @@ export function runEnemyTurnAI(enemy, context) {
                   ),
                 );
                 addLog(
-                  `🦅 ${enemy.name} takes to the air (altitude: ${newAltitude}ft)`,
+                  `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ ${enemy.name} takes to the air (altitude: ${newAltitude}ft)`,
                   "info",
                 );
               }
@@ -3862,7 +3862,7 @@ export function runEnemyTurnAI(enemy, context) {
             if (safeTargets.length > 0) {
               safeTargets.sort((a, b) => a.distance - b.distance);
               target = safeTargets[0].target;
-              reasoning = `🦅 ${
+              reasoning = `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ ${
                 enemy.name
               } targets closest manageable foe (${Math.round(
                 safeTargets[0].distance,
@@ -3870,7 +3870,7 @@ export function runEnemyTurnAI(enemy, context) {
             } else {
               // Fallback to closest
               target = targetsInRange[0].target;
-              reasoning = `🦅 ${
+              reasoning = `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ ${
                 enemy.name
               } cautiously approaches closest target (${Math.round(
                 targetsInRange[0].distance,
@@ -3879,7 +3879,7 @@ export function runEnemyTurnAI(enemy, context) {
           } else {
             // No targets in range
             addLog(
-              `🦅 ${enemy.name} circles overhead, no suitable targets in range`,
+              `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ ${enemy.name} circles overhead, no suitable targets in range`,
               "info",
             );
             processingEnemyTurnRef.current = false;
@@ -3895,7 +3895,7 @@ export function runEnemyTurnAI(enemy, context) {
             (t) => t.isUnreachable,
           );
           if (allUnreachable) {
-            // Check if enemy has any way to attack (ranged, spells, psionics)
+            // Check if enemy has any way to attack (ranged, techniques, tactics)
             if (!hasAnyValidOffensiveOption(enemy, playerTargets)) {
               // Does this enemy behave like a flying predator and are there any prey at all?
               const hasPreyTargets =
@@ -3943,7 +3943,7 @@ export function runEnemyTurnAI(enemy, context) {
               // Only log this once per combat for this fighter (spam control)
               if (!enemy._noOffenseLogged) {
                 addLog(
-                  `⚠️ ${enemy.name} has no way to hit any enemies (flight/range). Attempting to withdraw to safety.`,
+                  `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¯ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ${enemy.name} has no way to hit any enemies (flight/range). Attempting to withdraw to safety.`,
                   "warning",
                 );
                 // Mark that we've logged this for this fighter
@@ -3980,7 +3980,7 @@ export function runEnemyTurnAI(enemy, context) {
               return;
             } else {
               addLog(
-                `🚫 ${enemy.name} cannot reach any targets with melee - all enemies are flying!`,
+                `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â« ${enemy.name} cannot reach any targets with melee - all enemies are flying!`,
                 "warning",
               );
               // Enemy has ranged options, so continue (they'll use ranged attacks)
@@ -3995,10 +3995,10 @@ export function runEnemyTurnAI(enemy, context) {
             reasoning = `targeting the weakest foe (${Math.round(
               (weakestTarget.currentHP / weakestTarget.maxHP) * 100,
             )}% HP)`;
-          } else if (easyTarget && (easyTarget.AR || easyTarget.ar) < 10) {
+          } else if (easyTarget && (easyTarget.guardRating || easyTarget.guardRating) < 10) {
             target = easyTarget;
-            reasoning = `targeting easiest to hit (AR ${
-              easyTarget.AR || easyTarget.ar
+            reasoning = `targeting easiest to hit (guardRating ${
+              easyTarget.guardRating || easyTarget.guardRating
             })`;
           } else if (currentPlayerTarget) {
             target = currentPlayerTarget;
@@ -4040,7 +4040,7 @@ export function runEnemyTurnAI(enemy, context) {
 
     if (!reasoning) {
       reasoning = `following layered AI plan: ${
-        actionPlan?.aiAction || "Strike"
+        actionPlan?.aiAction || "Attack"
       }`;
     }
 
@@ -4048,7 +4048,7 @@ export function runEnemyTurnAI(enemy, context) {
     let needsToMoveCloser = false;
     let currentDistance = Infinity;
 
-    // Select which attack to use (if creature has multiple attacks)
+    // Select which attack to use (if combatant has multiple attacks)
     const availableAttacks = enemy.attacks || [
       { name: "Claw", damage: "1d6", count: 1 },
     ];
@@ -4056,18 +4056,18 @@ export function runEnemyTurnAI(enemy, context) {
     let isChargingAttack = false; // Track if this will be a charge attack
 
     if (availableAttacks.length > 1) {
-      // Check if creature has magic/spell attacks (prioritize when magicAbilities exists)
-      const magicAttacks = availableAttacks.filter(
+      // Check if combatant has training/technique attacks (prioritize when trainingAbilities exists)
+      const trainingAttacks = availableAttacks.filter(
         (a) =>
-          a.name.toLowerCase() === "magic" ||
-          a.name.toLowerCase() === "spellcasting" ||
-          a.damage === "by spell" ||
-          (enemy.magicAbilities &&
-            (a.name.toLowerCase().includes("spell") ||
-              a.name.toLowerCase().includes("magic"))),
+          a.name.toLowerCase() === "training" ||
+          a.name.toLowerCase() === "techniquecasting" ||
+          a.damage === "by technique" ||
+          (enemy.trainingAbilities &&
+            (a.name.toLowerCase().includes("technique") ||
+              a.name.toLowerCase().includes("training"))),
       );
 
-      // Check if creature has charge-type attacks (Horn Charge, Gore, Ram, etc.)
+      // Check if combatant has charge-type attacks (Horn Charge, Gore, Ram, etc.)
       const chargeAttacks = availableAttacks.filter(
         (a) =>
           a.name.toLowerCase().includes("charge") ||
@@ -4076,17 +4076,17 @@ export function runEnemyTurnAI(enemy, context) {
           a.name.toLowerCase().includes("trample"),
       );
 
-      // Prioritize magic attacks if creature has magicAbilities or spells available
+      // Prioritize training attacks if combatant has trainingAbilities or techniques available
       if (
-        magicAttacks.length > 0 &&
-        (enemy.magicAbilities || (enemy.magic && enemy.magic.length > 0))
+        trainingAttacks.length > 0 &&
+        (enemy.trainingAbilities || (enemy.training && enemy.training.length > 0))
       ) {
-        // Has magic - prefer magic attacks (70% chance) but allow other attacks (30%)
+        // Has training - prefer training attacks (70% chance) but allow other attacks (30%)
         const allAttacks = [
-          ...magicAttacks,
-          ...magicAttacks, // Double weight for magic
-          ...magicAttacks, // Triple weight for magic
-          ...availableAttacks.filter((a) => !magicAttacks.includes(a)),
+          ...trainingAttacks,
+          ...trainingAttacks, // Double weight for training
+          ...trainingAttacks, // Triple weight for training
+          ...availableAttacks.filter((a) => !trainingAttacks.includes(a)),
         ];
         try {
           const attackRoll = CryptoSecureDice.parseAndRoll(
@@ -4098,11 +4098,11 @@ export function runEnemyTurnAI(enemy, context) {
             import.meta.env.DEV || import.meta.env.MODE === "development";
           if (isDev) {
             console.warn(
-              "[runEnemyTurnAI] Error rolling for magic attack selection:",
+              "[runEnemyTurnAI] Error rolling for training attack selection:",
               error,
             );
           }
-          selectedAttack = magicAttacks[0] || availableAttacks[0];
+          selectedAttack = trainingAttacks[0] || availableAttacks[0];
         }
       } else if (chargeAttacks.length > 0) {
         // Has charge attack - choose randomly between charge and other attacks
@@ -4154,28 +4154,28 @@ export function runEnemyTurnAI(enemy, context) {
       );
       if (directMatch) {
         selectedAttack = directMatch;
-      } else if (aiActionName.includes("spell") && actionPlan.spell) {
-        const spellAttack = {
-          name: actionPlan.spell.name,
-          damage: actionPlan.spell.damage || "by spell",
-          type: "spell",
-          spell: actionPlan.spell,
+      } else if (aiActionName.includes("technique") && actionPlan.technique) {
+        const techniqueAttack = {
+          name: actionPlan.technique.name,
+          damage: actionPlan.technique.damage || "by technique",
+          type: "technique",
+          technique: actionPlan.technique,
         };
-        enemy.selectedAttack = spellAttack;
-        selectedAttack = spellAttack;
+        enemy.selectedAttack = techniqueAttack;
+        selectedAttack = techniqueAttack;
       }
     }
 
-    // If attack is Spellcasting, choose a specific spell
+    // If attack is Techniquecasting, choose a specific technique
     let attackName = selectedAttack.name;
     if (
-      selectedAttack.name === "Spellcasting" ||
-      selectedAttack.damage === "by spell"
+      selectedAttack.name === "Techniquecasting" ||
+      selectedAttack.damage === "by technique"
     ) {
       // -----------------------------------------------------------------------
-      // Threat-aware + memory-aware spell selection
+      // Threat-aware + memory-aware technique selection
       // - Threat profile tags start false (must be earned)
-      // - Weakness memory tracks suspected/confirmed/disproven
+      // - Weakness memory tracks suspected/confirmed/dfocusroven
       // - Debug HUD shows inferred vs confirmed via meta.aiDebug
       // -----------------------------------------------------------------------
 
@@ -4184,7 +4184,7 @@ export function runEnemyTurnAI(enemy, context) {
       if (!enemy.meta._threatProfiles) enemy.meta._threatProfiles = {};
 
       const role = inferCasterRole(enemy);
-      const catalog = getEnemySpellCatalog(enemy);
+      const catalog = getEnemyTechniqueCatalog(enemy);
       const targetKey = target ? getTargetMemoryKey(target) : "no_target";
 
       const enemyPos = positions?.[enemy.id];
@@ -4199,10 +4199,10 @@ export function runEnemyTurnAI(enemy, context) {
       const inEncounter = enemy.meta._weaknessMemory || {};
       const mergedMemory = mergeWeaknessMemory(persisted, inEncounter);
 
-      // 1a) Apply any deferred outcomes (optional hook set by spell resolver)
+      // 1a) Apply any deferred outcomes (optional hook set by technique resolver)
       // Expected shape (recommended):
-      // enemy.meta.lastSpellOutcome = { targetKey, spellName, element, outcome, notes }
-      const lastOutcome = enemy.meta.lastSpellOutcome;
+      // enemy.meta.lastTechniqueOutcome = { targetKey, techniqueName, element, outcome, notes }
+      const lastOutcome = enemy.meta.lastTechniqueOutcome;
       if (lastOutcome && typeof lastOutcome === "object") {
         try {
           const tk = lastOutcome.targetKey || targetKey;
@@ -4210,7 +4210,7 @@ export function runEnemyTurnAI(enemy, context) {
         } catch {
           // ignore
         }
-        enemy.meta.lastSpellOutcome = null;
+        enemy.meta.lastTechniqueOutcome = null;
       }
 
       enemy.meta._weaknessMemory = mergedMemory;
@@ -4259,10 +4259,10 @@ export function runEnemyTurnAI(enemy, context) {
         // ignore
       }
 
-      // 4) Spam guard: avoid repeating last 2 spells unless we learned something new
-      const recentSpells = enemy.meta._recentSpells || [];
-      const avoidSpellNames = new Set(
-        recentSpells
+      // 4) Spam guard: avoid repeating last 2 techniques unless we learned something new
+      const recentTechniques = enemy.meta._recentTechniques || [];
+      const avoidTechniqueNames = new Set(
+        recentTechniques
           .slice(-2)
           .map((s) => String(s?.name || "").toLowerCase())
           .filter(Boolean),
@@ -4271,7 +4271,7 @@ export function runEnemyTurnAI(enemy, context) {
       let chosen = null;
       if (Array.isArray(catalog) && catalog.length > 0 && target) {
         try {
-          chosen = selectSpellForRole({
+          chosen = selectTechniqueForRole({
             role,
             caster: enemy,
             target,
@@ -4279,7 +4279,7 @@ export function runEnemyTurnAI(enemy, context) {
             catalog,
             threatProfile,
             weaknessMemory: enemy.meta._weaknessMemory?.[targetKey] || null,
-            avoidSpellNames,
+            avoidTechniqueNames,
           });
         } catch {
           chosen = null;
@@ -4287,25 +4287,25 @@ export function runEnemyTurnAI(enemy, context) {
       }
 
       // Fallback to old random system if we can't pick from catalog
-      const spell = chosen || getRandomCombatSpell(enemy.level || 3);
+      const technique = chosen || getRandomCombatTechnique(enemy.level || 3);
 
-      // 5) Record attempt (confirmation/disproof comes from resolution hooks)
+      // 5) Record attempt (confirmation/dfocusroof comes from resolution hooks)
       if (target) {
         try {
           enemy.meta._weaknessMemory = recordWeaknessAttempt(
             enemy.meta._weaknessMemory || {},
             targetKey,
-            spell,
+            technique,
           );
         } catch {
           // ignore
         }
       }
 
-      // 6) Update recent-spell history (spam prevention)
-      enemy.meta._recentSpells = [
-        ...recentSpells,
-        { name: spell?.name, t: Date.now() },
+      // 6) Update recent-technique history (spam prevention)
+      enemy.meta._recentTechniques = [
+        ...recentTechniques,
+        { name: technique?.name, t: Date.now() },
       ].slice(-6);
 
       // 7) Persist memory across encounters
@@ -4319,26 +4319,26 @@ export function runEnemyTurnAI(enemy, context) {
         targetId: target?.id,
         targetName: target?.name,
         distanceFeet: Number.isFinite(distFt) ? Math.round(distFt) : null,
-        selectedSpell: spell?.name,
-        avoidedRecent: Array.from(avoidSpellNames),
+        selectedTechnique: technique?.name,
+        avoidedRecent: Array.from(avoidTechniqueNames),
         threatProfile: threatProfile || null,
         weaknesses: {
           inferred: mem?.suspected || null,
           confirmed: mem?.confirmed || null,
-          disproven: mem?.disproven || null,
+          dfocusroven: mem?.dfocusroven || null,
         },
       });
 
-      attackName = spell?.name
-        ? `${spell.name}${spell.damageType ? ` (${spell.damageType})` : ""}`
-        : "Spell";
+      attackName = technique?.name
+        ? `${technique.name}${technique.damageType ? ` (${technique.damageType})` : ""}`
+        : "Technique";
 
       selectedAttack = {
         ...selectedAttack,
-        damage: spell?.damage || selectedAttack.damage,
+        damage: technique?.damage || selectedAttack.damage,
         name: attackName,
-        spell,
-        type: "spell",
+        technique,
+        type: "technique",
       };
     }
 
@@ -4352,7 +4352,7 @@ export function runEnemyTurnAI(enemy, context) {
       currentDistance = calculateDistance(enemyCurrentPos, targetCurrentPos);
 
       addLog(
-        `📍 ${enemy.name} is at (${enemyCurrentPos.x}, ${enemyCurrentPos.y}), ${
+        `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ${enemy.name} is at (${enemyCurrentPos.x}, ${enemyCurrentPos.y}), ${
           target.name
         } is at (${targetCurrentPos.x}, ${
           targetCurrentPos.y
@@ -4392,10 +4392,10 @@ export function runEnemyTurnAI(enemy, context) {
         }
       }
 
-      // Check if target is unreachable (flying target for ground creature)
+      // Check if target is unreachable (flying target for ground combatant)
       if (rangeValidation.isUnreachable) {
         addLog(
-          `🚫 ${enemy.name} cannot reach ${target.name} - ${target.name} is flying and ${enemy.name} cannot fly!`,
+          `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â« ${enemy.name} cannot reach ${target.name} - ${target.name} is flying and ${enemy.name} cannot fly!`,
           "warning",
         );
         // Skip this target and try another one, or do nothing this turn
@@ -4407,29 +4407,29 @@ export function runEnemyTurnAI(enemy, context) {
       if (!rangeValidation.canAttack) {
         needsToMoveCloser = true;
         addLog(
-          `📍 ${enemy.name} is ${Math.round(currentDistance)}ft from ${
+          `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ${enemy.name} is ${Math.round(currentDistance)}ft from ${
             target.name
           } (${rangeValidation.reason})`,
           "info",
         );
       } else {
         addLog(
-          `✅ ${enemy.name} is in range (${rangeValidation.reason})`,
+          `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ ${enemy.name} is in range (${rangeValidation.reason})`,
           "info",
         );
         if (rangeValidation.rangeInfo) {
           addLog(
-            `📍 ${enemy.name} attacking at ${rangeValidation.rangeInfo}`,
+            `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ${enemy.name} attacking at ${rangeValidation.rangeInfo}`,
             "info",
           );
         }
       }
     }
 
-    // 🦅 HAWK PERCHING BEHAVIOR: perch when idle/scouting and not attacking
+    // ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ HAWK PERCHING BEHAVIOR: perch when idle/scouting and not attacking
     if (
       isFlying(enemy) &&
-      enemy.remainingAttacks > 0 &&
+      enemy.remainingActions > 0 &&
       isSkittishFlyingPredatorCheck &&
       !enemy.perchedOn &&
       positions[enemy.id] &&
@@ -4490,14 +4490,14 @@ export function runEnemyTurnAI(enemy, context) {
                       altitude: perchChoice.altitudeFeet,
                       altitudeFeet: perchChoice.altitudeFeet,
                       perchOffsetFeet: perchChoice.localOffsetFeet,
-                      remainingAttacks: Math.max(0, f.remainingAttacks - 1),
+                      remainingActions: Math.max(0, f.remainingActions - 1),
                     }
                   : f,
               ),
             );
 
             addLog(
-              `🦅 ${enemy.name} perches on a nearby tree to observe the area.`,
+              `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ ${enemy.name} perches on a nearby tree to observe the area.`,
               "info",
             );
 
@@ -4509,8 +4509,8 @@ export function runEnemyTurnAI(enemy, context) {
       }
     }
 
-    // 🦅 FLYING CIRCLING BEHAVIOR: If flying creature is not actively attacking, make it circle
-    // This happens BEFORE dive attacks or other movement, but only if no immediate action is needed
+    // ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ FLYING CIRCLING BEHAVIOR: If flying combatant is not actively attacking, make it circle
+    // This hastaminans BEFORE dive attacks or other movement, but only if no immediate action is needed
     const flightStyle = getFlightStyle(enemy);
     const isSkittishFlyingPredatorCheck =
       isHawk(enemy) || hasSkittishFlyingPredatorProfile(enemy);
@@ -4520,7 +4520,7 @@ export function runEnemyTurnAI(enemy, context) {
     if (
       isFlying(enemy) &&
       flightStyle === "circling" &&
-      enemy.remainingAttacks > 0
+      enemy.remainingActions > 0
     ) {
       // Only circle if:
       // 1. No target selected, OR
@@ -4544,7 +4544,7 @@ export function runEnemyTurnAI(enemy, context) {
       }
     }
 
-    // 🦅 HAWK DIVE ATTACK: If hawk is hunting prey, perform dive attack
+    // ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ HAWK DIVE ATTACK: If hawk is hunting prey, perform dive attack
     if (
       isHawk(enemy) &&
       target &&
@@ -4601,7 +4601,7 @@ export function runEnemyTurnAI(enemy, context) {
         spendFlyingStamina(enemy, "FLY_SPRINT", 1);
 
         addLog(
-          `🦅 ${enemy.name} dives from ${currentAltitude}ft to ${diveAltitude}ft to strike ${target.name}!`,
+          `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ ${enemy.name} dives from ${currentAltitude}ft to ${diveAltitude}ft to attack ${target.name}!`,
           "info",
         );
 
@@ -4609,7 +4609,7 @@ export function runEnemyTurnAI(enemy, context) {
         setFighters((prev) =>
           prev.map((f) =>
             f.id === enemy.id
-              ? { ...f, remainingAttacks: Math.max(0, f.remainingAttacks - 1) }
+              ? { ...f, remainingActions: Math.max(0, f.remainingActions - 1) }
               : f,
           ),
         );
@@ -4633,7 +4633,7 @@ export function runEnemyTurnAI(enemy, context) {
           );
 
           if (rangeValidation.canAttack) {
-            addLog(`🦅 ${enemy.name} strikes with talons!`, "info");
+            addLog(`ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ ${enemy.name} attacks with talons!`, "info");
             if (attackRef.current) {
               attackRef.current(enemy, target.id, {});
             }
@@ -4664,7 +4664,7 @@ export function runEnemyTurnAI(enemy, context) {
                 ),
               );
               addLog(
-                `🦅 ${enemy.name} climbs back to ${cruiseAltitude}ft altitude`,
+                `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ ${enemy.name} climbs back to ${cruiseAltitude}ft altitude`,
                 "info",
               );
 
@@ -4690,13 +4690,13 @@ export function runEnemyTurnAI(enemy, context) {
                   "breaking away after the attack",
                 );
                 addLog(
-                  `🦅 ${enemy.name} breaks away after the attack (hit-and-run)`,
+                  `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ ${enemy.name} breaks away after the attack (hit-and-run)`,
                   "info",
                 );
               }
             }, 500);
           } else {
-            addLog(`🦅 ${enemy.name} misses the dive attack`, "info");
+            addLog(`ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ ${enemy.name} misses the dive attack`, "info");
             // Still fly back up
             setFighters((prev) =>
               prev.map((f) =>
@@ -4727,14 +4727,14 @@ export function runEnemyTurnAI(enemy, context) {
           ),
         );
         addLog(
-          `🦅 ${enemy.name} takes to the air (altitude: ${takeOffAltitude}ft) to hunt ${target.name}`,
+          `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ ${enemy.name} takes to the air (altitude: ${takeOffAltitude}ft) to hunt ${target.name}`,
           "info",
         );
 
         setFighters((prev) =>
           prev.map((f) =>
             f.id === enemy.id
-              ? { ...f, remainingAttacks: Math.max(0, f.remainingAttacks - 1) }
+              ? { ...f, remainingActions: Math.max(0, f.remainingActions - 1) }
               : f,
           ),
         );
@@ -4751,7 +4751,7 @@ export function runEnemyTurnAI(enemy, context) {
       isHawk(enemy) || hasSkittishFlyingPredatorProfile(enemy);
     if (
       enemyIsFlying &&
-      enemy.remainingAttacks > 0 &&
+      enemy.remainingActions > 0 &&
       isSkittishFlyingPredatorForCircling
     ) {
       const flightStyle = getFlightStyle(enemy);
@@ -4782,7 +4782,7 @@ export function runEnemyTurnAI(enemy, context) {
       isHawk(enemy) || hasSkittishFlyingPredatorProfile(enemy);
     if (
       !enemyIsFlying &&
-      enemy.remainingAttacks > 0 &&
+      enemy.remainingActions > 0 &&
       isSkittishFlyingPredatorForEating
     ) {
       const foodItem = findFoodItem(enemy);
@@ -4793,7 +4793,7 @@ export function runEnemyTurnAI(enemy, context) {
         setFighters((prev) =>
           prev.map((f) =>
             f.id === enemy.id
-              ? { ...f, remainingAttacks: Math.max(0, f.remainingAttacks - 1) }
+              ? { ...f, remainingActions: Math.max(0, f.remainingActions - 1) }
               : f,
           ),
         );
@@ -4818,8 +4818,8 @@ export function runEnemyTurnAI(enemy, context) {
       if (!canThreatenWithMelee(enemy, target)) {
         // Check if enemy has ranged weapons - if so, they can still attack
         const enemyHasRangedWeapon =
-          enemy.equippedWeapons?.primary ||
-          enemy.equippedWeapons?.secondary ||
+          enemy.equistaminadWeapons?.primary ||
+          enemy.equistaminadWeapons?.secondary ||
           enemy.attacks?.some((a) => {
             const name = a.name?.toLowerCase() || "";
             return (
@@ -4834,7 +4834,7 @@ export function runEnemyTurnAI(enemy, context) {
         if (!enemyHasRangedWeapon) {
           const targetAltitude = getAltitude(target) || 0;
           addLog(
-            `🚫 ${enemy.name} cannot reach ${target.name} with melee - ${target.name} is flying (${targetAltitude}ft) and ${enemy.name} has no ranged weapons!`,
+            `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â« ${enemy.name} cannot reach ${target.name} with melee - ${target.name} is flying (${targetAltitude}ft) and ${enemy.name} has no ranged weapons!`,
             "warning",
           );
           markTargetUnreachable(enemy, target);
@@ -4846,25 +4846,25 @@ export function runEnemyTurnAI(enemy, context) {
       }
 
       // Use analyzeMovementAndAttack to determine best movement strategy
-      const equippedWeapon =
-        enemy.equippedWeapons?.primary ||
-        enemy.equippedWeapons?.secondary ||
+      const equistaminadWeapon =
+        enemy.equistaminadWeapons?.primary ||
+        enemy.equistaminadWeapons?.secondary ||
         enemy.attacks?.[0] ||
         null;
-      if (equippedWeapon) {
+      if (equistaminadWeapon) {
         const movementAnalysis = analyzeMovementAndAttack(
           enemy,
           target,
           currentPos,
           targetPos,
-          equippedWeapon,
+          equistaminadWeapon,
         );
         // NEW: Double-check with full range logic (including altitude) before trusting inRange
         const currentDistance = calculateDistance(currentPos, targetPos);
         const rangeValidation = validateWeaponRange(
           enemy,
           target,
-          equippedWeapon,
+          equistaminadWeapon,
           currentDistance,
         );
 
@@ -4879,12 +4879,12 @@ export function runEnemyTurnAI(enemy, context) {
           if (movementAnalysis.inRange && !rangeValidation.canAttack) {
             // Movement analysis says "in range" but altitude check says "unreachable"
             dbgLog(
-              `🔍 ${enemy.name} analyzes movement: ${movementAnalysis.distance}ft away, but ${rangeValidation.reason}`,
+              `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ${enemy.name} analyzes movement: ${movementAnalysis.distance}ft away, but ${rangeValidation.reason}`,
               "info",
             );
           } else {
             dbgLog(
-              `🔍 ${enemy.name} analyzes movement: ${
+              `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ${enemy.name} analyzes movement: ${
                 movementAnalysis.distance
               }ft away, ${actuallyInRange ? "in range" : "needs to move"}`,
               "info",
@@ -4907,7 +4907,7 @@ export function runEnemyTurnAI(enemy, context) {
           const enemyAltFeet = enemy?.altitudeFeet ?? enemy?.altitude ?? 0;
 
           if (enemyCanFlyNow) {
-            // Climb/descend in 20ft steps per action (keeps it Palladium-ish and avoids "teleport to altitude").
+            // Climb/descend in 20ft steps per action (keeps it Medieval Combat Simulator-ish and avoids "teleport to altitude").
             const ALT_STEP_FT = 20;
             const desiredAlt = Math.max(0, targetAltFeet);
             let nextAlt = enemyAltFeet;
@@ -4922,7 +4922,7 @@ export function runEnemyTurnAI(enemy, context) {
             }
 
             // Spend 1 action to change altitude / take off
-            const enemyHasActions = (enemy.remainingAttacks ?? 0) > 0;
+            const enemyHasActions = (enemy.remainingActions ?? 0) > 0;
 
             if (enemyHasActions) {
               const updatedMeta = { ...(enemy.meta || {}) };
@@ -4938,7 +4938,7 @@ export function runEnemyTurnAI(enemy, context) {
               };
 
               addLog(
-                `🦅 ${enemy.name} takes to the air to pursue ${target.name} (${enemyAltFeet}ft → ${nextAlt}ft)`,
+                `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ ${enemy.name} takes to the air to pursue ${target.name} (${enemyAltFeet}ft ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ ${nextAlt}ft)`,
                 "info",
               );
 
@@ -4951,9 +4951,9 @@ export function runEnemyTurnAI(enemy, context) {
                     altitudeFeet: nextAlt,
                     altitude: nextAlt,
                     meta: updatedMeta,
-                    remainingAttacks: Math.max(
+                    remainingActions: Math.max(
                       0,
-                      (f.remainingAttacks ?? 0) - 1,
+                      (f.remainingActions ?? 0) - 1,
                     ),
                   };
                 }),
@@ -4968,7 +4968,7 @@ export function runEnemyTurnAI(enemy, context) {
           // Target is flying too high and we can't (or can't act) -> mark as unreachable and end turn immediately
           markTargetUnreachable(enemy, target);
           addLog(
-            `❌ ${enemy.name} realizes ${target.name} is unreachable (${rangeValidation.reason}).`,
+            `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ ${enemy.name} realizes ${target.name} is unreachable (${rangeValidation.reason}).`,
             "warning",
           );
           // Mark target as unreachable for this round to prevent spam
@@ -5018,13 +5018,13 @@ export function runEnemyTurnAI(enemy, context) {
         // Check if target is reachable with melee before attempting to flank
         if (!canThreatenWithMelee(enemy, target)) {
           addLog(
-            `❌ ${enemy.name} skips flanking ${target.name} (target unreachable in melee)`,
+            `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ ${enemy.name} skips flanking ${target.name} (target unreachable in melee)`,
             "warning",
           );
           markTargetUnreachable(enemy, target);
           // Don't attempt flanking if target is unreachable - skip to next action
         } else {
-          dbgLog(`🎯 ${enemy.name} considers flanking ${target.name}`, "info");
+          dbgLog(`ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â½ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¯ ${enemy.name} considers flanking ${target.name}`, "info");
 
           // Find the best flanking position (closest to current position AND within attack range)
           const speed =
@@ -5034,20 +5034,20 @@ export function runEnemyTurnAI(enemy, context) {
             enemy.attributes?.spd ||
             10;
 
-          // For flying creatures, movement is not limited by ground speed
+          // For flying combatants, movement is not limited by ground speed
           // They can use flight movement which may allow longer distances
           // For now, we'll use a more generous movement allowance for fliers
           const enemyIsFlying = isFlying(enemy);
           const enemyCanFly = canFly(enemy);
           const maxMoveDistance =
             enemyCanFly || enemyIsFlying
-              ? speed * 10 // Flying creatures can move further (10ft per speed point)
+              ? speed * 10 // Flying combatants can move further (10ft per speed point)
               : speed * 5; // Ground movement: 5 feet per hex
 
           // Log movement type for debugging
           if (enemyCanFly || enemyIsFlying) {
             addLog(
-              `🦅 ${enemy.name} uses flight movement (max ${maxMoveDistance}ft)`,
+              `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ ${enemy.name} uses flight movement (max ${maxMoveDistance}ft)`,
               "info",
             );
           }
@@ -5087,7 +5087,7 @@ export function runEnemyTurnAI(enemy, context) {
 
             const flankDistance = calculateDistance(currentPos, bestFlankPos);
 
-            dbgLog(`🎯 ${enemy.name} attempts to flank ${target.name}`, "info");
+            dbgLog(`ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â½ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¯ ${enemy.name} attempts to flank ${target.name}`, "info");
 
             if (!commitEnemyAction("FLANKING_MOVE")) {
               processingEnemyTurnRef.current = false;
@@ -5111,9 +5111,9 @@ export function runEnemyTurnAI(enemy, context) {
                 f.id === enemy.id
                   ? {
                       ...f,
-                      remainingAttacks: Math.max(
+                      remainingActions: Math.max(
                         0,
-                        f.remainingAttacks - movementCost,
+                        f.remainingActions - movementCost,
                       ),
                     }
                   : f,
@@ -5121,11 +5121,11 @@ export function runEnemyTurnAI(enemy, context) {
             );
 
             dbgLog(
-              `🎯 ${enemy.name} targets flanking position (${bestFlankPos.x}, ${bestFlankPos.y})`,
+              `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â½ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¯ ${enemy.name} targets flanking position (${bestFlankPos.x}, ${bestFlankPos.y})`,
               "info",
             );
 
-            // Flanking reposition only this slice (same rule as RUN/MOVE — no move+attack here).
+            // Flanking reposition only this slice (same rule as RUN/MOVE ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â no move+attack here).
             setTimeout(() => {
               if (
                 combatOverRef?.current ||
@@ -5155,7 +5155,7 @@ export function runEnemyTurnAI(enemy, context) {
             // No valid flanking positions (either can't reach them or they're out of attack range)
             // Fall through to normal movement logic
             dbgLog(
-              `🎯 ${enemy.name} cannot reach a valid flanking position - will move directly toward ${target.name}`,
+              `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â½ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¯ ${enemy.name} cannot reach a valid flanking position - will move directly toward ${target.name}`,
               "info",
             );
           }
@@ -5185,7 +5185,7 @@ export function runEnemyTurnAI(enemy, context) {
           );
           isChargingAttack = true;
           addLog(
-            `⚡ ${enemy.name} decides to charge! (${aiDecision.reason})`,
+            `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ ${enemy.name} decides to charge! (${aiDecision.reason})`,
             "info",
           );
           break;
@@ -5193,9 +5193,9 @@ export function runEnemyTurnAI(enemy, context) {
         case "move_and_attack": {
           movementType = "MOVE";
           movementDescription = "moves closer";
-          // Use Palladium movement calculation: Speed × 18 ÷ attacks per melee = feet per action
+          // Use Medieval Combat Simulator movement calculation: Speed ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â 18 ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· attacks per melee = feet per action
           const moveAndAttackFeetPerAction =
-            (speed * 18) / (enemy.attacksPerMelee || 1);
+            (speed * 18) / (enemy.actionsPerRound || 1);
           const moveAndAttackWalkingSpeed = Math.floor(
             moveAndAttackFeetPerAction * 0.5,
           ); // Walking speed
@@ -5203,7 +5203,7 @@ export function runEnemyTurnAI(enemy, context) {
             moveAndAttackWalkingSpeed / GRID_CONFIG.CELL_SIZE,
           );
           addLog(
-            `🏃 ${enemy.name} moves closer to attack (${aiDecision.reason})`,
+            `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ ${enemy.name} moves closer to attack (${aiDecision.reason})`,
             "info",
           );
           break;
@@ -5212,13 +5212,13 @@ export function runEnemyTurnAI(enemy, context) {
         case "move_closer": {
           movementType = "RUN";
           movementDescription = "runs closer";
-          // Use Palladium movement calculation: Speed × 18 ÷ attacks per melee = feet per action
+          // Use Medieval Combat Simulator movement calculation: Speed ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â 18 ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· attacks per melee = feet per action
           const moveCloserFeetPerAction =
-            (speed * 18) / (enemy.attacksPerMelee || 1);
+            (speed * 18) / (enemy.actionsPerRound || 1);
           hexesToMove = Math.floor(
             moveCloserFeetPerAction / GRID_CONFIG.CELL_SIZE,
           );
-          addLog(`🏃 ${enemy.name} runs closer (${aiDecision.reason})`, "info");
+          addLog(`ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ ${enemy.name} runs closer (${aiDecision.reason})`, "info");
           break;
         }
 
@@ -5229,7 +5229,7 @@ export function runEnemyTurnAI(enemy, context) {
           );
           if (rangedAttack) {
             addLog(
-              `🏹 ${enemy.name} uses ranged attack instead of moving (${aiDecision.reason})`,
+              `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¹ ${enemy.name} uses ranged attack instead of moving (${aiDecision.reason})`,
               "info",
             );
             if (!commitEnemyAction("USE_RANGED_INSTEAD")) {
@@ -5267,10 +5267,10 @@ export function runEnemyTurnAI(enemy, context) {
           // Fall back to movement if no ranged attack
           movementType = MOVEMENT_ACTIONS.RUN.name;
           movementDescription = "runs closer";
-          // Use MOVEMENT_RATES for Palladium movement calculation
+          // Use MOVEMENT_RATES for Medieval Combat Simulator movement calculation
           const movementRates = MOVEMENT_RATES.calculateMovement(speed);
           const fallbackFeetPerAction =
-            movementRates.running / (enemy.attacksPerMelee || 1);
+            movementRates.running / (enemy.actionsPerRound || 1);
           hexesToMove = Math.floor(
             fallbackFeetPerAction / GRID_CONFIG.CELL_SIZE,
           );
@@ -5283,33 +5283,33 @@ export function runEnemyTurnAI(enemy, context) {
           hexesToMove = 1;
       }
 
-      // Legacy fallback for very far distances - use Palladium movement
+      // Legacy fallback for very far distances - use Medieval Combat Simulator movement
       if (currentDistance > 20 * GRID_CONFIG.CELL_SIZE) {
-        // Far away - RUN (move at full speed using Palladium formula)
+        // Far away - RUN (move at full speed using Medieval Combat Simulator formula)
         movementType = MOVEMENT_ACTIONS.RUN.name;
         movementDescription = "runs";
 
-        // Use MOVEMENT_RATES for official Palladium movement
+        // Use MOVEMENT_RATES for official Medieval Combat Simulator movement
         const movementRates = MOVEMENT_RATES.calculateMovement(speed);
         const maxMovementFeet =
-          movementRates.running / (enemy.attacksPerMelee || 1); // Use feet per action
+          movementRates.running / (enemy.actionsPerRound || 1); // Use feet per action
         hexesToMove = Math.floor(maxMovementFeet / GRID_CONFIG.CELL_SIZE);
 
         addLog(
-          `🏃 ${enemy.name} is very far away, ${movementDescription} at full speed (${maxMovementFeet}ft/action)`,
+          `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ ${enemy.name} is very far away, ${movementDescription} at full speed (${maxMovementFeet}ft/action)`,
           "info",
         );
       }
       // else: close distance (1-3 hexes) - use default MOVE (1 hex)
 
-      // AI switch uses "MOVE"/"RUN"/"CHARGE" while MOVEMENT_ACTIONS uses Title Case — normalize.
+      // AI switch uses "MOVE"/"RUN"/"CHARGE" while MOVEMENT_ACTIONS uses Title Case ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â normalize.
       const mtNorm = String(movementType || "").trim();
-      const mtUpper = mtNorm.toUpperCase();
+      const mtUstaminar = mtNorm.toUstaminarCase();
       const isChargeMovement =
-        mtNorm === MOVEMENT_ACTIONS.CHARGE.name || mtUpper === "CHARGE";
+        mtNorm === MOVEMENT_ACTIONS.CHARGE.name || mtUstaminar === "CHARGE";
       const isWalkOrMoveMovement =
         mtNorm === MOVEMENT_ACTIONS.MOVE.name ||
-        ["MOVE", "WALK"].includes(mtUpper);
+        ["MOVE", "WALK"].includes(mtUstaminar);
 
       // If we decided to CHARGE, make sure we're using a charge-type attack!
       if (isChargeMovement && isChargingAttack) {
@@ -5323,7 +5323,7 @@ export function runEnemyTurnAI(enemy, context) {
         if (chargeAttacks.length > 0) {
           selectedAttack = chargeAttacks[0]; // Use Horn Charge, Gore, etc.
           addLog(
-            `⚡ ${enemy.name} selects ${selectedAttack.name} for the charge!`,
+            `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ ${enemy.name} selects ${selectedAttack.name} for the charge!`,
             "combat",
           );
         }
@@ -5338,7 +5338,7 @@ export function runEnemyTurnAI(enemy, context) {
       if (distance < 0.01) {
         // Already at target position, no movement needed
         addLog(
-          `📍 ${enemy.name} is already at target position, skipping movement`,
+          `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ${enemy.name} is already at target position, skipping movement`,
           "info",
         );
         // Continue to attack if in range
@@ -5352,13 +5352,13 @@ export function runEnemyTurnAI(enemy, context) {
 
         if (rangeValidation.canAttack) {
           addLog(
-            `⚔️ ${enemy.name} attacks from current position (${rangeValidation.reason})`,
+            `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¯ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ${enemy.name} attacks from current position (${rangeValidation.reason})`,
             "info",
           );
           // Continue to attack below (don't return)
         } else {
           addLog(
-            `⚔️ ${enemy.name} cannot reach target (${rangeValidation.reason}) and ends turn`,
+            `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¯ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ${enemy.name} cannot reach target (${rangeValidation.reason}) and ends turn`,
             "info",
           );
           processingEnemyTurnRef.current = false;
@@ -5371,7 +5371,7 @@ export function runEnemyTurnAI(enemy, context) {
       const hexDistance = Math.round(currentDistance / GRID_CONFIG.CELL_SIZE);
 
       dbgLog(
-        `🔍 ${enemy.name} movement debug: distance=${Math.round(
+        `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ${enemy.name} movement debug: distance=${Math.round(
           currentDistance,
         )}ft, hexDistance=${hexDistance}, hexesToMove=${hexesToMove}, movementType=${movementType}`,
         "info",
@@ -5389,7 +5389,7 @@ export function runEnemyTurnAI(enemy, context) {
         );
         actualHexesToMove = Math.max(5, actualHexesToMove); // Minimum 5 hexes for far distances
         dbgLog(
-          `🔍 ${enemy.name} far away (${Math.round(
+          `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ${enemy.name} far away (${Math.round(
             currentDistance,
           )}ft), using aggressive movement: ${actualHexesToMove} hexes`,
           "info",
@@ -5434,7 +5434,7 @@ export function runEnemyTurnAI(enemy, context) {
         newY = isNaN(newY) ? currentPos.y : newY;
 
         dbgLog(
-          `🔍 ${enemy.name} calculated movement: from (${currentPos.x}, ${currentPos.y}) to (${newX}, ${newY}), hexesThisTurn=${hexesThisTurn}`,
+          `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ${enemy.name} calculated movement: from (${currentPos.x}, ${currentPos.y}) to (${newX}, ${newY}), hexesThisTurn=${hexesThisTurn}`,
           "info",
         );
 
@@ -5442,7 +5442,7 @@ export function runEnemyTurnAI(enemy, context) {
         const occupant = isHexOccupied(newX, newY, enemy.id);
         if (occupant) {
           addLog(
-            `🚫 ${enemy.name} cannot move to (${newX}, ${newY}) - occupied by ${occupant.name}`,
+            `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â« ${enemy.name} cannot move to (${newX}, ${newY}) - occupied by ${occupant.name}`,
             "info",
           );
 
@@ -5462,7 +5462,7 @@ export function runEnemyTurnAI(enemy, context) {
 
           if (rangeValidation.canAttack) {
             addLog(
-              `⚔️ ${enemy.name} is within range (${rangeValidation.reason}) and attacks`,
+              `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¯ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ${enemy.name} is within range (${rangeValidation.reason}) and attacks`,
               "info",
             );
             // Don't end turn, continue to attack below
@@ -5478,7 +5478,7 @@ export function runEnemyTurnAI(enemy, context) {
               // Target is flying too high - mark as unreachable and end turn immediately
               markTargetUnreachable(enemy, target);
               addLog(
-                `❌ ${enemy.name} realizes ${target.name} is unreachable (${rangeValidation.reason}).`,
+                `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ ${enemy.name} realizes ${target.name} is unreachable (${rangeValidation.reason}).`,
                 "warning",
               );
               // Mark target as unreachable for this round to prevent spam
@@ -5502,7 +5502,7 @@ export function runEnemyTurnAI(enemy, context) {
             // Cannot attack from current position - try to find alternative path
             // If no alternative found, end turn
             addLog(
-              `⚠️ ${enemy.name} cannot get any closer to ${target.name} and is out of melee range (path blocked).`,
+              `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¯ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ${enemy.name} cannot get any closer to ${target.name} and is out of melee range (path blocked).`,
               "warning",
             );
 
@@ -5538,7 +5538,7 @@ export function runEnemyTurnAI(enemy, context) {
                       newY = testPos.y;
                       foundAlternative = true;
                       addLog(
-                        `📍 ${enemy.name} adjusts path to avoid ${occupant.name}, moving to (${newX}, ${newY})`,
+                        `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ${enemy.name} adjusts path to avoid ${occupant.name}, moving to (${newX}, ${newY})`,
                         "info",
                       );
                       break;
@@ -5550,7 +5550,7 @@ export function runEnemyTurnAI(enemy, context) {
 
             if (!foundAlternative) {
               addLog(
-                `⚔️ ${enemy.name} cannot reach target (${rangeValidation.reason}) and ends turn`,
+                `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¯ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ${enemy.name} cannot reach target (${rangeValidation.reason}) and ends turn`,
                 "info",
               );
               processingEnemyTurnRef.current = false;
@@ -5582,17 +5582,17 @@ export function runEnemyTurnAI(enemy, context) {
           const distanceMoved = hexesThisTurn * GRID_CONFIG.CELL_SIZE;
           const actionVerb = isChargeMovement ? "charges" : "moves";
 
-          // Use MOVEMENT_RATES for 1994 Palladium format
+          // Use MOVEMENT_RATES for 1994 Medieval Combat Simulator format
           const movementRates = MOVEMENT_RATES.calculateMovement(speed);
           const runAction = MOVEMENT_ACTIONS.RUN;
           addLog(
-            `🏃 ${enemy.name} uses ${runAction.actionCost} action(s) to ${runAction.name} (Speed ${speed} → ${movementRates.running}ft/melee)`,
+            `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ ${enemy.name} uses ${runAction.actionCost} action(s) to ${runAction.name} (Speed ${speed} ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ ${movementRates.running}ft/melee)`,
             "info",
           );
           addLog(
-            `📍 ${enemy.name} ${actionVerb} ${Math.round(
+            `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ${enemy.name} ${actionVerb} ${Math.round(
               distanceMoved,
-            )}ft toward ${target.name} → new position (${newX},${newY})`,
+            )}ft toward ${target.name} ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ new position (${newX},${newY})`,
             "info",
           );
 
@@ -5602,10 +5602,10 @@ export function runEnemyTurnAI(enemy, context) {
               if (f.id === enemy.id) {
                 const updatedEnemy = {
                   ...f,
-                  remainingAttacks: Math.max(0, f.remainingAttacks - 1),
+                  remainingActions: Math.max(0, f.remainingActions - 1),
                 };
                 addLog(
-                  `⏭️ ${enemy.name} has ${updatedEnemy.remainingAttacks} action(s) remaining this melee`,
+                  `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â­ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¯ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ${enemy.name} has ${updatedEnemy.remainingActions} action(s) remaining this melee`,
                   "info",
                 );
                 return updatedEnemy;
@@ -5634,7 +5634,7 @@ export function runEnemyTurnAI(enemy, context) {
           const remainingDistance = Math.round(newDistanceAfterMove);
           if (remainingDistance > 5) {
             addLog(
-              `📍 ${enemy.name} still ${remainingDistance}ft out of melee range - ending turn`,
+              `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ${enemy.name} still ${remainingDistance}ft out of melee range - ending turn`,
               "info",
             );
           }
@@ -5643,7 +5643,7 @@ export function runEnemyTurnAI(enemy, context) {
           return;
         }
       } else {
-        // RUN/SPRINT/CLOSE: Move immediately (Palladium 1994 — move only this slice, no deferred attack)
+        // RUN/SPRINT/CLOSE: Move immediately (Medieval Combat Simulator 1994 ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â move only this slice, no deferred attack)
         if (!commitEnemyAction("RUN_TO_RANGE")) {
           processingEnemyTurnRef.current = false;
           return;
@@ -5687,7 +5687,7 @@ export function runEnemyTurnAI(enemy, context) {
 
           if (occupantIsAlly) {
             addLog(
-              `🏃 ${enemy.name} weaves past ${occupant.name} while running full tilt`,
+              `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ ${enemy.name} weaves past ${occupant.name} while running full tilt`,
               "info",
             );
           } else {
@@ -5728,7 +5728,7 @@ export function runEnemyTurnAI(enemy, context) {
                 // Target is flying too high - mark as unreachable and end turn immediately
                 markTargetUnreachable(enemy, occupant);
                 addLog(
-                  `❌ ${enemy.name} realizes ${occupant.name} is unreachable (${rangeValidation.reason}).`,
+                  `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ ${enemy.name} realizes ${occupant.name} is unreachable (${rangeValidation.reason}).`,
                   "warning",
                 );
                 // Mark target as unreachable for this round to prevent spam
@@ -5755,7 +5755,7 @@ export function runEnemyTurnAI(enemy, context) {
               closingIntoOpponent = true;
               attackOfOpportunityAttacker = occupant;
               addLog(
-                `⚔️ ${enemy.name} barrels through to engage ${occupant.name}!`,
+                `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¯ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ${enemy.name} barrels through to engage ${occupant.name}!`,
                 "info",
               );
             } else {
@@ -5784,7 +5784,7 @@ export function runEnemyTurnAI(enemy, context) {
                       targetY = testPos.y;
                       foundAlternative = true;
                       addLog(
-                        `📍 ${enemy.name} adjusts path to avoid ${occupant.name}, moving to (${targetX}, ${targetY})`,
+                        `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ${enemy.name} adjusts path to avoid ${occupant.name}, moving to (${targetX}, ${targetY})`,
                         "info",
                       );
                       break;
@@ -5795,7 +5795,7 @@ export function runEnemyTurnAI(enemy, context) {
 
               if (!foundAlternative) {
                 addLog(
-                  `🚫 ${enemy.name} cannot find path to target - all hexes occupied`,
+                  `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â« ${enemy.name} cannot find path to target - all hexes occupied`,
                   "info",
                 );
 
@@ -5822,7 +5822,7 @@ export function runEnemyTurnAI(enemy, context) {
                   // Target is flying too high - mark as unreachable and end turn immediately
                   markTargetUnreachable(enemy, target);
                   addLog(
-                    `❌ ${enemy.name} realizes ${target.name} is unreachable (${rangeValidation.reason}).`,
+                    `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ ${enemy.name} realizes ${target.name} is unreachable (${rangeValidation.reason}).`,
                     "warning",
                   );
                   // Mark target as unreachable for this round to prevent spam
@@ -5847,7 +5847,7 @@ export function runEnemyTurnAI(enemy, context) {
 
                 if (!rangeValidation.canAttack) {
                   addLog(
-                    `⚠️ ${enemy.name} cannot get any closer to ${target.name} and is out of melee range (path blocked). Ending turn.`,
+                    `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¯ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ${enemy.name} cannot get any closer to ${target.name} and is out of melee range (path blocked). Ending turn.`,
                     "warning",
                   );
                   processingEnemyTurnRef.current = false;
@@ -5857,7 +5857,7 @@ export function runEnemyTurnAI(enemy, context) {
 
                 // Can attack from current position - continue to attack below
                 addLog(
-                  `⚔️ ${enemy.name} is within range from current position (${rangeValidation.reason}) and attacks`,
+                  `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¯ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ${enemy.name} is within range from current position (${rangeValidation.reason}) and attacks`,
                   "info",
                 );
                 // Don't end turn, continue to attack section below
@@ -5891,7 +5891,7 @@ export function runEnemyTurnAI(enemy, context) {
 
         if (closingIntoOpponent && attackOfOpportunityAttacker) {
           addLog(
-            `⚠️ ${attackOfOpportunityAttacker.name} gets an attack of opportunity against ${enemy.name}!`,
+            `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¯ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ${attackOfOpportunityAttacker.name} gets an attack of opportunity against ${enemy.name}!`,
             "warning",
           );
           const attackerForAoO = attackOfOpportunityAttacker;
@@ -5909,7 +5909,7 @@ export function runEnemyTurnAI(enemy, context) {
               attackRef.current(attackerForAoO, targetForAoO, {});
             } else {
               addLog(
-                `⚠️ Attack of opportunity delayed - attack system not ready`,
+                `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¯ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â Attack of opportunity delayed - attack system not ready`,
                 "info",
               );
               setTimeout(() => {
@@ -5933,16 +5933,16 @@ export function runEnemyTurnAI(enemy, context) {
           y: targetY,
         });
 
-        // 1994 Palladium format: RUN/SPRINT uses one action
+        // 1994 Medieval Combat Simulator format: RUN/SPRINT uses one action
         const feetPerMelee = speed * 18; // Official formula
         addLog(
-          `🏃 ${enemy.name} uses one action to RUN (Speed ${speed} → ${feetPerMelee}ft/melee)`,
+          `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ ${enemy.name} uses one action to RUN (Speed ${speed} ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ ${feetPerMelee}ft/melee)`,
           "info",
         );
         addLog(
-          `📍 Moves up to ${Math.round(distanceMoved)}ft toward ${
+          `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â Moves up to ${Math.round(distanceMoved)}ft toward ${
             target.name
-          } → new position (${targetX},${targetY})`,
+          } ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ new position (${targetX},${targetY})`,
           "info",
         );
 
@@ -5952,10 +5952,10 @@ export function runEnemyTurnAI(enemy, context) {
             if (f.id === enemy.id) {
               const updatedEnemy = {
                 ...f,
-                remainingAttacks: Math.max(0, f.remainingAttacks - 1),
+                remainingActions: Math.max(0, f.remainingActions - 1),
               };
               addLog(
-                `⏭️ ${enemy.name} has ${updatedEnemy.remainingAttacks} action(s) remaining this melee`,
+                `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â­ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¯ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ${enemy.name} has ${updatedEnemy.remainingActions} action(s) remaining this melee`,
                 "info",
               );
               return updatedEnemy;
@@ -5986,9 +5986,9 @@ export function runEnemyTurnAI(enemy, context) {
       }
     }
 
-    // ✅ FIX: Final validation: make sure target can still be attacked and combat is active
+    // ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ FIX: Final validation: make sure target can still be attacked and combat is active
     if (!combatActive) {
-      addLog(`⚠️ Combat ended, ${enemy.name} stops attacking`, "info");
+      addLog(`ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¯ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â Combat ended, ${enemy.name} stops attacking`, "info");
       processingEnemyTurnRef.current = false;
       return;
     }
@@ -5998,14 +5998,14 @@ export function runEnemyTurnAI(enemy, context) {
     }
 
     if (!target || target.currentHP <= -21) {
-      addLog(`⚠️ ${enemy.name}'s target is dead, ending turn`, "info");
+      addLog(`ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¯ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ${enemy.name}'s target is dead, ending turn`, "info");
       processingEnemyTurnRef.current = false;
       scheduleEndTurn();
       return;
     }
 
-    // ✅ FIX: Don't allow attacking unconscious/dying targets if all players are already defeated
-    // Exception: Evil alignments may finish off dying players (coup de grâce)
+    // ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ FIX: Don't allow attacking unconscious/dying targets if all players are already defeated
+    // Exception: Evil alignments may finish off dying players (coup de grÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ce)
     if (target && target.currentHP <= 0 && target.currentHP > -21) {
       // Check if there are any conscious players remaining
       const consciousPlayers = fighters.filter(
@@ -6018,21 +6018,21 @@ export function runEnemyTurnAI(enemy, context) {
       if (consciousPlayers.length === 0) {
         // All players are defeated
         if (isEvil) {
-          // Evil alignments may finish off dying players (coup de grâce)
+          // Evil alignments may finish off dying players (coup de grÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ce)
           const hpStatus = getHPStatus(target.currentHP);
           addLog(
-            `😈 ${enemy.name} (${enemyAlignment}) finishes off dying ${target.name} (${hpStatus.description})!`,
+            `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¹ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¹ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â  ${enemy.name} (${enemyAlignment}) finishes off dying ${target.name} (${hpStatus.description})!`,
             "warning",
           );
         } else {
           // Good/neutral alignments show mercy - don't attack unconscious players
           addLog(
-            `⚠️ All players are defeated! ${enemy.name} shows mercy and stops attacking.`,
+            `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¯ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â All players are defeated! ${enemy.name} shows mercy and stops attacking.`,
             "info",
           );
           if (!combatEndCheckRef.current) {
             combatEndCheckRef.current = true;
-            addLog("💀 All players are defeated! Enemies win!", "defeat");
+            addLog("ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ All players are defeated! Enemies win!", "defeat");
             setCombatActive(false);
           }
           processingEnemyTurnRef.current = false;
@@ -6043,12 +6043,12 @@ export function runEnemyTurnAI(enemy, context) {
         const hpStatus = getHPStatus(target.currentHP);
         if (isEvil) {
           addLog(
-            `😈 ${enemy.name} (${enemyAlignment}) attacks dying ${target.name} (${hpStatus.description})!`,
+            `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¹ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¹ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â  ${enemy.name} (${enemyAlignment}) attacks dying ${target.name} (${hpStatus.description})!`,
             "warning",
           );
         } else {
           addLog(
-            `⚠️ ${enemy.name} targeting ${target.name} who is ${hpStatus.description}`,
+            `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¯ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ${enemy.name} targeting ${target.name} who is ${hpStatus.description}`,
             "warning",
           );
         }
@@ -6071,12 +6071,12 @@ export function runEnemyTurnAI(enemy, context) {
           return;
         }
         addLog(
-          `⚡ ${enemy.name} uses ${attackName} - area attack hitting ${targetsInLine.length} target(s)!`,
+          `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ ${enemy.name} uses ${attackName} - area attack hitting ${targetsInLine.length} target(s)!`,
           "info",
         );
 
         // Execute area attack on all targets in line (one action, multiple targets)
-        const chargeBonus = isChargingAttack ? { strikeBonus: +2 } : {};
+        const chargeBonus = isChargingAttack ? { attackBonus: +2 } : {};
 
         // Attack all targets in line, but this is still ONE action
         targetsInLine.forEach((lineTarget) => {
@@ -6104,7 +6104,7 @@ export function runEnemyTurnAI(enemy, context) {
     }
 
     addLog(
-      `🤖 ${enemy.name} ${reasoning} and attacks ${target.name} with ${attackName}!`,
+      `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¤ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ ${enemy.name} ${reasoning} and attacks ${target.name} with ${attackName}!`,
       "info",
     );
 
@@ -6112,7 +6112,7 @@ export function runEnemyTurnAI(enemy, context) {
     const updatedEnemy = { ...enemy, selectedAttack: selectedAttack };
 
     // Determine if this is a charging attack (for bonuses)
-    const chargeBonus = isChargingAttack ? { strikeBonus: +2 } : {};
+    const chargeBonus = isChargingAttack ? { attackBonus: +2 } : {};
 
     // Check for flanking bonus
     const currentFlankingBonus = calculateFlankingBonus(
@@ -6127,11 +6127,11 @@ export function runEnemyTurnAI(enemy, context) {
     const isAmbushUtilityAttack =
       actionPlan?.utilityAction?.type === ACTION_TYPES.AMBUSH_ATTACK;
     const ambushBonus = isAmbushUtilityAttack
-      ? { strikeBonus: 2, source: "AMBUSH_ATTACK" }
+      ? { attackBonus: 2, source: "AMBUSH_ATTACK" }
       : {};
 
     if (isAmbushUtilityAttack) {
-      addLog?.(`${enemy.name} strikes from hiding!`, "info");
+      addLog?.(`${enemy.name} attacks from hiding!`, "info");
       consumeUtilityAiUnlock({
         enemy,
         unlockType: "AMBUSH_ATTACK",
@@ -6150,7 +6150,7 @@ export function runEnemyTurnAI(enemy, context) {
 
     if (flankingBonus.flankingBonus > 0) {
       dbgLog(
-        `🎯 ${enemy.name} gains +${flankingBonus.flankingBonus} flanking bonus!`,
+        `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â½ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¯ ${enemy.name} gains +${flankingBonus.flankingBonus} flanking bonus!`,
         "info",
       );
     }
@@ -6174,13 +6174,13 @@ export function runEnemyTurnAI(enemy, context) {
     // -----------------------------------------------------------------------
     // OPTIONAL: Weakness outcome feedback hook (if your combat engine provides it)
     // If context exposes `onAICombatResolution`, it can call back with:
-    // { casterId, targetId, spellName, outcome: "confirmed"|"disproven"|"no_effect", notes }
+    // { casterId, targetId, techniqueName, outcome: "confirmed"|"dfocusroven"|"no_effect", notes }
     // This keeps enemyTurnAI.js signature unchanged.
     // -----------------------------------------------------------------------
     const maybeResolutionHook = context?.onAICombatResolution;
     if (
       typeof maybeResolutionHook === "function" &&
-      updatedEnemy?.selectedAttack?.spell &&
+      updatedEnemy?.selectedAttack?.technique &&
       target?.id
     ) {
       try {
@@ -6188,7 +6188,7 @@ export function runEnemyTurnAI(enemy, context) {
         maybeResolutionHook({
           casterId: enemy.id,
           targetId: target.id,
-          spellName: updatedEnemy.selectedAttack.spell.name,
+          techniqueName: updatedEnemy.selectedAttack.technique.name,
           onResolved: (resolution) => {
             try {
               const targetKey = getTargetMemoryKey(target);
@@ -6216,7 +6216,7 @@ export function runEnemyTurnAI(enemy, context) {
       }
     }
 
-    // Multi-strike (count > 1): attack() schedules sub-strikes and logs once.
+    // Multi-attack (count > 1): attack() schedules sub-attacks and logs once.
     attack(updatedEnemy, target.id, allBonuses);
     processingEnemyTurnRef.current = false;
     return;

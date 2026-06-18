@@ -19,7 +19,7 @@ export const initialEquipment = {
       },
     },
   },
-  MenOfMagic: {
+  MenOfTraining: {
     basic: [
       { name: "Set of clothes", category: "Clothing", price: 0 },
       { name: "Boots", category: "Clothing", price: 0 },

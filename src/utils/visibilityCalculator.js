@@ -34,8 +34,8 @@ export function calculateVisibleCells(
     isProwling = false,
     terrainObstacles = [],
     mapType = "hex",
-    observerAltitude = 0, // ✅ Observer's altitude in feet
-    fighterPositions = null, // ✅ Map of fighter positions with altitude {fighterId: {x, y, altitude}}
+    observerAltitude = 0, // Ã¢Å“â€¦ Observer's altitude in feet
+    fighterPositions = null, // Ã¢Å“â€¦ Map of fighter positions with altitude {fighterId: {x, y, altitude}}
   } = options;
 
   if (!observerPos || !observerPos.x || !observerPos.y) {
@@ -82,10 +82,10 @@ export function calculateVisibleCells(
       }
 
       // Calculate actual distance only for cells that might be in range
-      // calculateDistance already returns feet (hex dist × CELL_SIZE)
+      // calculateDistance already returns feet (hex dist Ãƒâ€” CELL_SIZE)
       const distanceInFeet = calculateDistance(observerPos, cellPos);
 
-      // ✅ Check altitude difference if fog is enabled and fighter positions are provided
+      // Ã¢Å“â€¦ Check altitude difference if fog is enabled and fighter positions are provided
       let altitudeBlocked = false;
       if (fighterPositions && fighterPositions instanceof Map) {
         // Check if there's a fighter at this cell position
@@ -94,7 +94,7 @@ export function calculateVisibleCells(
             const fighterAltitude = fighterPos.altitude || 0;
             const altitudeDiff = Math.abs(observerAltitude - fighterAltitude);
             
-            // ✅ Fog obscures based on 3D distance (horizontal + vertical)
+            // Ã¢Å“â€¦ Fog obscures based on 3D distance (horizontal + vertical)
             // If altitude difference is significant, it affects visibility range
             const total3DDistance = Math.sqrt(
               distanceInFeet * distanceInFeet + 
@@ -125,7 +125,7 @@ export function calculateVisibleCells(
         continue; // Too dark or too far
       }
 
-      // ✅ Check line of sight (check for obstacles blocking path)
+      // Ã¢Å“â€¦ Check line of sight (check for obstacles blocking path)
       // Default to true for empty terrain (no obstructions)
       let hasLOS = true;
 
@@ -144,7 +144,7 @@ export function calculateVisibleCells(
         );
         hasLOS = losResult.hasLineOfSight;
       }
-      // ✅ If no obstacles specified, LOS is always true (open arena)
+      // Ã¢Å“â€¦ If no obstacles specified, LOS is always true (open arena)
 
       // If we have LOS and lighting allows, cell is visible
       if (hasLOS && lightingResult.canSee) {
@@ -227,7 +227,7 @@ export function calculateVisibleCellsMultiple(
   observers.forEach((observerPos) => {
     if (!observerPos || !observerPos.x || !observerPos.y) return;
 
-    // ✅ Pass observer altitude if available
+    // Ã¢Å“â€¦ Pass observer altitude if available
     const observerOptions = {
       ...options,
       observerAltitude: observerPos.altitude || options.observerAltitude || 0,
@@ -266,7 +266,7 @@ export function getVisibilityRange(
   const baseRanges = {
     BRIGHT_DAYLIGHT: 120, // Can see far in daylight
     MOONLIGHT: 60, // Moonlight visibility
-    TORCHLIGHT: 30, // Torch radius
+    TRAIDERHLIGHT: 30, // Traiderh radius
     DARKNESS: hasInfravision ? 90 : 0, // Only infravision can see in darkness
   };
 

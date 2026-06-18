@@ -58,7 +58,7 @@ export function applyFallDamage(character, heightFeet, logCallback = null) {
 
   if (logCallback) {
     logCallback(
-      `💥 ${character.name} takes ${fallDamage} damage from falling ${heightFeet}ft!`,
+      `ðŸ’¥ ${character.name} takes ${fallDamage} damage from falling ${heightFeet}ft!`,
       "combat"
     );
   }
@@ -69,7 +69,7 @@ export function applyFallDamage(character, heightFeet, logCallback = null) {
 /**
  * Update active effects for a character
  * @param {Object} character - Character with active effects
- * @param {number} currentRound - Current melee round
+ * @param {number} currentRound - Current combat round
  * @param {Function} logCallback - Optional logging function
  * @param {Function} applyFallDamageFn - Optional fall damage function
  * @returns {Object} Updated character with effects updated
@@ -115,7 +115,7 @@ export function updateActiveEffects(character, currentRound = 1, logCallback = n
           if (wasFlying && alt > 0) {
             if (logCallback) {
               logCallback(
-                `💥 ${updatedCharacter.name}'s ${effect.name || "flight"} ends and they plummet ${alt}ft to the ground!`,
+                `ðŸ’¥ ${updatedCharacter.name}'s ${effect.name || "flight"} ends and they plummet ${alt}ft to the ground!`,
                 "warning"
               );
             }

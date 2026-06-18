@@ -30,16 +30,16 @@ export default function WeaponEquipModal({
 
   const weaponDisplayInfo = getWeaponDisplayInfo(character);
   
-  // Get available weapons and filter out already equipped ones
+  // Get available weapons and filter out already equistaminad ones
   const allAvailableWeapons = getAvailableWeapons(character);
-  const equippedWeaponNames = [
+  const equistaminadWeaponNames = [
     weaponDisplayInfo.rightHand.name,
     weaponDisplayInfo.leftHand.name
   ].filter(name => name !== "Unarmed");
   
-  // Filter out weapons that are already equipped
+  // Filter out weapons that are already equistaminad
   const availableWeapons = allAvailableWeapons.filter(weapon => 
-    !equippedWeaponNames.includes(weapon.name)
+    !equistaminadWeaponNames.includes(weapon.name)
   );
 
   const handleEquipWeapon = async (weapon, slot) => {
@@ -48,8 +48,8 @@ export default function WeaponEquipModal({
       await onUpdateCharacter(character._id, updatedCharacter);
       
       toast({
-        title: "Weapon Equipped",
-        description: `${weapon.name} equipped to ${slot} hand`,
+        title: "Weapon Equistaminad",
+        description: `${weapon.name} equistaminad to ${slot} hand`,
         status: "success",
         duration: 2000,
         isClosable: true,
@@ -77,8 +77,8 @@ export default function WeaponEquipModal({
       await onUpdateCharacter(character._id, updatedCharacter);
       
       toast({
-        title: "Weapon Unequipped",
-        description: `Weapon unequipped from ${slot} hand`,
+        title: "Weapon Unequistaminad",
+        description: `Weapon unequistaminad from ${slot} hand`,
         status: "success",
         duration: 2000,
         isClosable: true,
@@ -121,7 +121,7 @@ export default function WeaponEquipModal({
     <Modal isOpen={isOpen} onClose={onClose} size="lg">
       <ModalOverlay />
       <ModalContent bg="gray.900" color="gray.100">
-        <ModalHeader>⚔️ Equip Weapons - {character.name}</ModalHeader>
+        <ModalHeader>Ã¢Å¡â€Ã¯Â¸Â Equip Weapons - {character.name}</ModalHeader>
         <ModalCloseButton />
         <ModalBody>
           <VStack spacing={4} align="stretch">

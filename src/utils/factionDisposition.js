@@ -15,12 +15,12 @@ const LEGACY_COMBAT_SIDES = new Set(["player", "enemy"]);
 
 const RACE_RELATIONS = {
   human: {
-    allies: ["elf", "dwarf", "gnome"],
-    enemies: ["wolfen", "goblin", "hob-goblin", "orc", "kobold", "ogre", "troll", "changeling"],
+    allies: ["human", "human", "gnome"],
+    enemies: ["wolf", "brigand", "hob-brigand", "raider", "brigand", "heavy fighter", "champion", "duelist"],
   },
-  elf: {
-    allies: ["human", "faerie"],
-    enemies: ["dwarf", "troll", "ogre", "goblin", "hob-goblin", "orc", "gnome"],
+  human: {
+    allies: ["human", "scout"],
+    enemies: ["human", "champion", "heavy fighter", "brigand", "hob-brigand", "raider", "gnome"],
   },
 };
 
@@ -46,7 +46,7 @@ function getRaceKey(fighter) {
   return normalizeKey(
     fighter?.race ||
       fighter?.species ||
-      fighter?.creatureRace ||
+      fighter?.combatantRace ||
       fighter?.ancestry ||
       fighter?.name
   );
@@ -175,12 +175,12 @@ export function canDialogueWith(actor, target, sceneContext = {}) {
 export function canTargetForAction(actor, target, actionKind = "attack", sceneContext = {}) {
   if (!actor || !target) return false;
   if ((actor.id || actor._id) && (actor.id || actor._id) === (target.id || target._id)) {
-    const selfKind = normalizeKey(actionKind);
-    return ["self", "heal", "buff", "assist"].includes(selfKind);
+    const shumanKind = normalizeKey(actionKind);
+    return ["shuman", "heal", "buff", "assist"].includes(shumanKind);
   }
 
   const kind = normalizeKey(actionKind);
-  if (["attack", "strike", "grapple", "spellhostile", "psionichostile"].includes(kind)) {
+  if (["attack", "attack", "grapple", "techniquehostile", "tacticalhostile"].includes(kind)) {
     return isHostileTo(actor, target, sceneContext);
   }
   if (["heal", "buff", "assist"].includes(kind)) {

@@ -115,7 +115,7 @@ export * from "./aiMemory";
 export * from "./aiProfiles";
 export * from "./aiScoring";
 export * from "./aiSkillActions";
-export * from "./aiSpellActions";
+export * from "./aiTechniqueActions";
 export * from "./aiTeamTactics";
 export * from "./aiThreatAssessment";
 export * from "./aiUnlocks";

@@ -1,18 +1,18 @@
 /**
  * Distance-Based Combat System
- * Implements Palladium Fantasy RPG distance mechanics for tactical combat
+ * Implements Medieval Combat Simulator distance mechanics for tactical combat
  *
- * OFFICIAL 1994 PALLADIUM FANTASY RULES:
- * - One melee round = 15 seconds
- * - Speed (Spd) × 6 = yards per melee (running speed)
+ * Medieval Combat Simulator RULES:
+ * - One combat round = 15 seconds
+ * - Speed (Spd) ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â 6 = yards per melee (running speed)
  * - Walking speed = ~half of running speed
- * - Movement per action = (Speed × 6) ÷ Attacks per Melee
- * - Convert yards to feet: yards × 3 = feet
+ * - Movement per action = (Speed ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â 6) ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â· Attacks per Melee
+ * - Convert yards to feet: yards ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â 3 = feet
  *
  * Key Rules:
  * - Must be within weapon range to attack
  * - Can move and attack in same action (reduced movement)
- * - Charge attacks: +2 strike, double damage, lose next attack
+ * - Charge attacks: +2 attack, double damage, lose next attack
  */
 
 import { calculateDistance, ENGAGEMENT_RANGES } from "../data/movementRules.js";
@@ -31,26 +31,26 @@ import { getWeaponLength } from "./combatEnvironmentLogic.js";
 
 /**
  * Calculate movement per action based on Speed and attacks per melee
- * OFFICIAL 1994 PALLADIUM FANTASY FORMULA:
- * - Speed × 18 = feet per melee (running speed)
- * - Movement per action = (Speed × 18) ÷ Attacks per Melee
+ * Medieval Combat Simulator FORMULA:
+ * - Speed ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â 18 = feet per melee (running speed)
+ * - Movement per action = (Speed ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â 18) ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â· Attacks per Melee
  * - Walking speed = ~half of running speed
- * - Flight speed = Speed × multiplier × 18 feet per melee (e.g., Spd ×8)
+ * - Flight speed = Speed ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â multiplier ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â 18 feet per melee (e.g., Spd ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â8)
  *
  * @param {number} speed - Character's Speed attribute
- * @param {number} attacksPerMelee - Number of attacks per melee round
+ * @param {number} actionsPerRound - Number of attacks per combat round
  * @param {Object} fighter - Optional fighter object (for flight speed calculation)
  * @returns {Object} Movement calculations
  */
 export function calculateMovementPerAction(
   speed,
-  attacksPerMelee,
+  actionsPerRound,
   fighter = null
 ) {
   // Check if fighter is flying and has flight speed multiplier
   const isCurrentlyFlying = fighter && isFlying(fighter);
   if (isCurrentlyFlying) {
-    const flightMovement = calculateFlightMovement(fighter, attacksPerMelee);
+    const flightMovement = calculateFlightMovement(fighter, actionsPerRound);
     if (flightMovement) {
       return {
         ...flightMovement,
@@ -63,15 +63,15 @@ export function calculateMovementPerAction(
     }
   }
 
-  // Check if this is a flying creature on the ground (use slower ground speed)
+  // Check if this is a flying combatant on the ground (use slower ground speed)
   const groundSpeed = fighter ? getGroundSpeedForFlyer(fighter) : null;
   const effectiveSpeed = groundSpeed !== null ? groundSpeed : speed;
 
-  // Ground movement: OFFICIAL 1994 PALLADIUM FORMULA: Speed × 18 = feet per melee (running)
+  // Ground movement: Medieval Combat Simulator FORMULA: Speed ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â 18 = feet per melee (running)
   const feetPerMelee = effectiveSpeed * 18;
-  const feetPerAction = feetPerMelee / attacksPerMelee;
+  const feetPerAction = feetPerMelee / actionsPerRound;
 
-  // Walking speed is ~half of running speed (Palladium rule)
+  // Walking speed is ~half of running speed (Medieval Combat Simulator rule)
   const walkingFeetPerAction = Math.floor(feetPerAction * 0.5);
 
   return {
@@ -115,9 +115,9 @@ export function analyzeMovementAndAttack(
     attacker.attributes?.Spd ||
     attacker.attributes?.spd ||
     10;
-  const attacksPerMelee = attacker.attacksPerMelee || 1;
+  const actionsPerRound = attacker.actionsPerRound || 1;
 
-  const movement = calculateMovementPerAction(speed, attacksPerMelee, attacker);
+  const movement = calculateMovementPerAction(speed, actionsPerRound, attacker);
   const weaponRange = getWeaponRange(weapon);
 
   // Check if already in range
@@ -159,7 +159,7 @@ export function analyzeMovementAndAttack(
  * @param {Object} weapon - Weapon object
  * @returns {number} Range in feet
  */
-/** Known ranges for named ranged weapons when DB lookup has no range (e.g. "Bow/Long Bow" from bestiary) */
+/** Known ranges for named ranged weapons when DB lookup has no range (e.g. "Bow/Long Bow" from arenaRoster) */
 const NAMED_RANGED_WEAPON_RANGES = {
   "long bow": 640,
   "longbow": 640,
@@ -178,7 +178,7 @@ export function getWeaponRange(weapon) {
     return weapon.range;
   }
 
-  // Name-based fallback for ranged weapons (e.g. bestiary "Bow/Long Bow" has no range field)
+  // Name-based fallback for ranged weapons (e.g. arenaRoster "Bow/Long Bow" has no range field)
   const name = (weapon.name || "").toLowerCase().trim();
   const knownRange = NAMED_RANGED_WEAPON_RANGES[name];
   if (knownRange) return knownRange;
@@ -233,7 +233,7 @@ function generateMovementRecommendations(
   } else if (canCharge) {
     recommendations.push({
       action: "Charge attack",
-      description: "Charge for +2 strike, double damage, but lose next attack",
+      description: "Charge for +2 attack, double damage, but lose next attack",
       priority: "medium",
     });
   } else if (distance <= movement.fullMovementPerAction + weaponRange) {
@@ -283,9 +283,9 @@ export function executeChargeAttack(
     attacker.attributes?.Spd ||
     attacker.attributes?.spd ||
     10;
-  const attacksPerMelee = attacker.attacksPerMelee || 1;
+  const actionsPerRound = attacker.actionsPerRound || 1;
 
-  const movement = calculateMovementPerAction(speed, attacksPerMelee, attacker);
+  const movement = calculateMovementPerAction(speed, actionsPerRound, attacker);
   const weaponRange = getWeaponRange(weapon);
 
   // Charge requirements
@@ -310,7 +310,7 @@ export function executeChargeAttack(
   });
 
   // Check if path is wide enough for charge
-  const attackerWidth = options.attackerWidth || 2; // Default medium creature width
+  const attackerWidth = options.attackerWidth || 2; // Default medium combatant width
   const openPath = distance >= 20 && chargeWidth >= attackerWidth * 2;
 
   if (!openPath) {
@@ -343,11 +343,11 @@ export function executeChargeAttack(
     positions,
   });
 
-  let strikeBonus = 2; // Base charge bonus
+  let attackBonus = 2; // Base charge bonus
   let damageMultiplier = 2; // Base charge damage multiplier
 
   if (isTight) {
-    strikeBonus = 1; // Reduced bonus in tight spaces
+    attackBonus = 1; // Reduced bonus in tight spaces
     damageMultiplier = 1.5; // Reduced damage multiplier
   }
 
@@ -364,13 +364,13 @@ export function executeChargeAttack(
     success: true,
     newPosition: { x: newX, y: newY },
     bonuses: {
-      strike: strikeBonus, // Dynamic based on terrain
+      attack: attackBonus, // Dynamic based on terrain
       damage: damageMultiplier, // Dynamic based on terrain
     },
     penalties: {
       loseNextAttack: true, // Lose next attack due to recovery
     },
-    description: `Charge attack: +${strikeBonus} strike, ${damageMultiplier}x damage, lose next attack`,
+    description: `Charge attack: +${attackBonus} attack, ${damageMultiplier}x damage, lose next attack`,
     terrainModifiers: isTight
       ? "Tight terrain reduces charge effectiveness"
       : null,
@@ -447,7 +447,7 @@ export function validateAttackRange(
     (getAltitude(attacker) || 0) - (getAltitude(target) || 0)
   );
 
-  // ✅ Use 3D distance for ranged attacks so planner/AI/executor agree.
+  // ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ Use 3D distance for ranged attacks so planner/AI/executor agree.
   const distance =
     isNameRanged || (weapon?.range && weapon.range > 10)
       ? Math.hypot(horizontalDistance, verticalDistance)
@@ -566,7 +566,7 @@ export function validateAttackRange(
     }
     canAttack = false;
   } else if (distance <= weaponRange) {
-    reason = `Within range (${Math.round(distance)}ft ≤ ${weaponRange}ft)`;
+    reason = `Within range (${Math.round(distance)}ft ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â°Ãƒâ€šÃ‚Â¤ ${weaponRange}ft)`;
   } else {
     reason = `Out of range (${Math.round(distance)}ft > ${weaponRange}ft)`;
   }
@@ -598,15 +598,15 @@ function generateMovementSuggestions(distance, weaponRange, attacker) {
     attacker.attributes?.Spd ||
     attacker.attributes?.spd ||
     10;
-  const attacksPerMelee = attacker.attacksPerMelee || 1;
-  const movement = calculateMovementPerAction(speed, attacksPerMelee, attacker);
+  const actionsPerRound = attacker.actionsPerRound || 1;
+  const movement = calculateMovementPerAction(speed, actionsPerRound, attacker);
 
   const suggestions = [];
 
   if (distance <= movement.combatMovementPerAction + weaponRange) {
     suggestions.push("Move closer and attack in same action");
   } else if (distance >= 20 && distance <= 60 && weaponRange <= 5) {
-    suggestions.push("Use charge attack for +2 strike and double damage");
+    suggestions.push("Use charge attack for +2 attack and double damage");
   } else if (distance <= movement.fullMovementPerAction + weaponRange) {
     suggestions.push("Run closer and attack (uses full movement)");
   } else {
@@ -615,7 +615,7 @@ function generateMovementSuggestions(distance, weaponRange, attacker) {
 
   // Add ranged weapon suggestions
   suggestions.push("Switch to ranged weapon if available");
-  suggestions.push("Cast ranged spell if possible");
+  suggestions.push("Cast ranged technique if possible");
   suggestions.push("Hold action and wait for enemy to approach");
 
   return suggestions;

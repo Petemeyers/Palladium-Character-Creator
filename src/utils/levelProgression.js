@@ -7,8 +7,8 @@
  */
 
 /**
- * Calculate total HP based on level and O.C.C. category
- * @param {string} occCategory - O.C.C. category (Men of Arms, Men of Magic, etc.)
+ * Calculate total HP based on level and profession category
+ * @param {string} occCategory - profession category (Men of Arms, Men of Training, etc.)
  * @param {number} level - Character level
  * @param {number} peBonus - Physical Endurance bonus
  * @returns {number} Total hit points
@@ -18,25 +18,25 @@ export function calculateTotalHP(
   level = 1,
   peBonus = 0
 ) {
-  // TODO: Implement HP calculation based on Palladium rules
-  // Different O.C.C. categories have different HP per level
+  // TODO: Implement HP calculation based on Medieval Combat Simulator rules
+  // Different profession categories have different HP per level
 
   const baseHP = 20; // Default base HP
-  const hpPerLevel = getHPPerLevel(occCategory);
+  const hpPerLevel = getHPPerLevel(professionCategory);
 
   return baseHP + (level - 1) * hpPerLevel + peBonus;
 }
 
 /**
- * Get HP per level based on O.C.C. category
- * @param {string} occCategory - O.C.C. category
+ * Get HP per level based on profession category
+ * @param {string} occCategory - profession category
  * @returns {number} HP gained per level
  */
-function getHPPerLevel(occCategory) {
+function getHPPerLevel(professionCategory) {
   // TODO: Return appropriate HP per level based on category
   const hpTable = {
     "Men of Arms": 10,
-    "Men of Magic": 4,
+    "Men of Training": 4,
     Clergy: 6,
     Optional: 8,
   };
@@ -51,18 +51,18 @@ function getHPPerLevel(occCategory) {
  */
 export function getXPForNextLevel(currentLevel = 1) {
   // TODO: Implement XP calculation
-  // Palladium Fantasy uses different XP tables per O.C.C.
+  // Medieval Combat Simulator uses different XP tables per profession
   return currentLevel * 1000; // Placeholder
 }
 
 /**
  * Calculate level from total experience
  * @param {number} totalXP - Total experience points
- * @param {string} occCategory - O.C.C. category
+ * @param {string} occCategory - profession category
  * @returns {number} Character level
  */
 export function calculateLevelFromXP(totalXP = 0, occCategory = "Men of Arms") {
-  // TODO: Calculate level based on XP and O.C.C. category
+  // TODO: Calculate level based on XP and profession category
   let level = 1;
   let xpNeeded = 0;
 
@@ -82,18 +82,18 @@ export function calculateLevelFromXP(totalXP = 0, occCategory = "Men of Arms") {
  */
 export function getSkillBonus(level = 1, skillName = "") {
   // TODO: Calculate skill bonuses based on level
-  // Many skills gain +5% per level in Palladium
+  // Many skills gain +5% per level in Medieval Combat Simulator
   return (level - 1) * 5; // Placeholder: +5% per level
 }
 
 /**
  * Get stats for a specific level
  * @param {number} level - Character level
- * @param {string} occCategory - O.C.C. category
+ * @param {string} occCategory - profession category
  * @returns {Object} Stats for the level (HP, bonuses, etc.)
  */
 export function getStatsForLevel(level = 1, occCategory = "Men of Arms") {
-  const hpPerLevel = getHPPerLevel(occCategory);
+  const hpPerLevel = getHPPerLevel(professionCategory);
   const baseHP = 20;
   const totalHP = baseHP + (level - 1) * hpPerLevel;
   

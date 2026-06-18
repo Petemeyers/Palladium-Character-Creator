@@ -4,7 +4,7 @@ import { calculateMovementPerAction } from '../utils/distanceCombatSystem.js';
 
 /**
  * Movement Range Display Component
- * Shows official 1994 Palladium Fantasy movement calculations
+ * Shows official 1994 Medieval Combat Simulator movement calculations
  * 
  * Displays:
  * - Walking speed (combat movement)
@@ -22,8 +22,8 @@ const MovementRangeDisplay = ({
   if (!combatant || !position) return null;
 
   const speed = combatant.Spd || combatant.spd || combatant.attributes?.Spd || combatant.attributes?.spd || 10;
-  const attacksPerMelee = combatant.attacksPerMelee || 1;
-  const movement = calculateMovementPerAction(speed, attacksPerMelee, combatant);
+  const actionsPerRound = combatant.actionsPerRound || 1;
+  const movement = calculateMovementPerAction(speed, actionsPerRound, combatant);
 
   return (
     <VStack spacing={2} align="stretch">
@@ -31,7 +31,7 @@ const MovementRangeDisplay = ({
       <Box bg="blue.50" p={3} borderRadius="md" border="1px solid" borderColor="blue.200">
         <VStack spacing={2} align="stretch">
           <Text fontSize="sm" fontWeight="bold" color="blue.800">
-            📊 {combatant.name} - Palladium Movement
+            Ã°Å¸â€œÅ  {combatant.name} - Medieval Combat Simulator Movement
           </Text>
           
           <HStack spacing={2} fontSize="xs" wrap="wrap">
@@ -47,7 +47,7 @@ const MovementRangeDisplay = ({
           </HStack>
           
           <Text fontSize="xs" color="gray.600" fontStyle="italic">
-            ⚡ Official 1994: Spd {speed} × 6 ÷ {attacksPerMelee} attacks = {movement.display.yardsPerAction}yds/action
+            Ã¢Å¡Â¡ Official 1994: Spd {speed} Ãƒâ€” 6 ÃƒÂ· {actionsPerRound} attacks = {movement.display.yardsPerAction}yds/action
           </Text>
         </VStack>
       </Box>

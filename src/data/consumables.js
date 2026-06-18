@@ -1,4 +1,4 @@
-// Palladium Fantasy consumable items with effects
+// Medieval Combat Simulator consumable items with effects
 export const consumables = [
   // Healing Items
   {
@@ -8,7 +8,7 @@ export const consumables = [
     category: "healing",
     weight: 1,
     price: 50,
-    description: "Magical potion that restores health",
+    description: "Exceptional potion that restores health",
   },
   {
     name: "Greater Healing Potion",
@@ -126,12 +126,12 @@ export const consumables = [
   },
   {
     name: "Holy Water",
-    effect: "damage-undead-2d6",
+    effect: "damage-fallen-2d6",
     type: "consumable",
     category: "combat",
     weight: 1,
     price: 50,
-    description: "Sacred water that harms undead",
+    description: "Sacred water that harms fallen",
   },
 ];
 

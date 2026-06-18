@@ -60,7 +60,7 @@ module.exports = function advanceThreats({ state, ruleset }) {
     const finalDist = hexDistanceAxial(cur, t.targetHex);
     if (finalDist === 0) {
       events.push({
-        type: "IMPACT_OCCURRED",
+        type: "IMPACT_PROFESSIONURRED",
         threatId: t.id,
         at: cur,
         targetHex: t.targetHex,
