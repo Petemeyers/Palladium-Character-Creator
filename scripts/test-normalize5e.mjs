@@ -99,6 +99,57 @@ function testActionEconomyExports() {
   assert.equal(typeof actionEconomy.formatAttacksRemaining, "function");
 }
 
+function testLegacyFighterPassthrough() {
+  const position = { x: 2, y: 3 };
+  const normalized = normalize5eCombatant({
+    id: "fighter-1",
+    _id: "fighter-1",
+    name: "Arena Guard",
+    type: "enemy",
+    teamId: "red",
+    side: "opponents",
+    factionId: "town-watch",
+    position,
+    PS: 15,
+    PP: 13,
+    PE: 12,
+    IQ: 11,
+    ME: 10,
+    MA: 9,
+    guardRating: 14,
+    currentHP: 9,
+    maxHP: 12,
+    actionsPerRound: 2,
+    remainingActions: 2,
+    legacyFlag: "kept",
+  });
+
+  assert.equal(normalized.id, "fighter-1");
+  assert.equal(normalized.name, "Arena Guard");
+  assert.equal(normalized.type, "enemy");
+  assert.equal(normalized.teamId, "red");
+  assert.equal(normalized.side, "opponents");
+  assert.equal(normalized.factionId, "town-watch");
+  assert.deepEqual(normalized.position, position);
+  assert.equal(normalized.actionsPerRound, 2);
+  assert.equal(normalized.remainingActions, 2);
+  assert.equal(normalized.legacyFlag, "kept");
+  assert.deepEqual(normalized.abilityScores, {
+    str: 15,
+    dex: 13,
+    con: 12,
+    int: 11,
+    wis: 10,
+    cha: 9,
+  });
+  assert.equal(normalized.abilityMods.str, 2);
+  assert.equal(normalized.ac, 14);
+  assert.equal(normalized.hp, 9);
+  assert.equal(normalized.maxHp, 12);
+  assert.equal(normalized.speed, 30);
+  assert.equal(normalized.actionEconomy.movement, 30);
+}
+
 function run() {
   testLegacyAbilityMapping();
   testModernAbilityPreference();
@@ -106,6 +157,7 @@ function run() {
   testProficiencyProgression();
   testHelpers();
   testActionEconomyExports();
+  testLegacyFighterPassthrough();
   console.log("5E normalization tests passed.");
 }
 

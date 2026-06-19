@@ -129,6 +129,7 @@ import {
 import { calculateVisibleCells, calculateVisibleCellsMultiple, getVisibilityRange } from "../utils/visibilityCalculator.js";
 import { updateFogMemory, resetFogMemory } from "../utils/fogMemorySystem.js";
 import { getAttacksPerMelee, getCombatantAttacksPerMelee, getActionCost, formatAttacksRemaining } from "../utils/actionEconomy.js";
+import { normalize5eCombatant } from "../utils/normalize5eCombatant.js";
 import { calculateTotalHP } from "../utils/levelProgression.js";
 import { grantXPFromEnemy, getOpponentByName, calculateOpponentXP } from "../utils/enemyXP.js";
 import { weapons, getWeaponByName, arenaWhip } from "../data/weapons.js";
@@ -1797,6 +1798,11 @@ function CombatPage({ characters = [] }) {
 
     return fighter;
   }, [normalizeFighterId]);
+
+  const normalizeCombatantForBattle = useCallback((combatant) => {
+    if (!combatant) return combatant;
+    return normalizeFighter(normalize5eCombatant(combatant));
+  }, [normalizeFighter]);
 
   // Helper function to determine HP status based on Medieval Combat Simulator coma rules
   const getHPStatus = useCallback((currentHP) => {
@@ -23948,8 +23954,8 @@ function CombatPage({ characters = [] }) {
       newFighter.altitudeFeet = 0;
     }
 
-    // Normalize fighter to ensure IDs, moraleState, and mentalState exist
-    newFighter = normalizeFighter(newFighter);
+    // Normalize fighter to ensure IDs, moraleState, mentalState, and 5E-shaped adapter fields exist
+    newFighter = normalizeCombatantForBattle(newFighter);
 
     // Initialize ammo for ranged weapons
     const equistaminadWeapon = newFighter.equistaminadWeapons?.[0];
@@ -24099,7 +24105,7 @@ function CombatPage({ characters = [] }) {
     resetAITransientRefs();
     combatRosterSnapshotRef.current = null;
     setCombatActive(false);
-    setFighters(data.fighters);
+    setFighters(data.fighters.map(normalizeCombatantForBattle));
     setPositions(data.positions || {});
     setRenderPositions(data.positions || {});
     setPhase0Results(null);
@@ -24240,7 +24246,7 @@ function CombatPage({ characters = [] }) {
     copy.fatigueState = initializeCombatFatigue(copy);
     resetFatigue(copy);
 
-    return syncLegacyArmorFields(normalizeFighterId(copy));
+    return normalizeCombatantForBattle(syncLegacyArmorFields(normalizeFighterId(copy)));
   };
 
   function startCombat(skipPhase0 = false, options = {}) {
@@ -24568,7 +24574,7 @@ function CombatPage({ characters = [] }) {
     });
 
     updatedFighters = updatedFighters.map((fighter) =>
-      normalizeFighterSideId(fighter, { log: true })
+      normalizeCombatantForBattle(normalizeFighterSideId(fighter, { log: true }))
     );
 
     // Resolve initiative ties (1994 Medieval Combat Simulator rules)
@@ -27031,7 +27037,7 @@ function CombatPage({ characters = [] }) {
       }
 
       // Normalize IDs to ensure both id and _id exist for backwards compatibility
-      return normalizeFighterId(fighterWithSizeMods);
+      return normalizeCombatantForBattle(fighterWithSizeMods);
     });
 
     // Replace existing player fighters with new party, keep setup actors already added.
@@ -27077,7 +27083,7 @@ function CombatPage({ characters = [] }) {
         addLog(`${fighter.name} has no weapons - using unarmed attacks`, "warning");
       }
     });
-  }, [onPartyClose, addLog, generateCryptoId, setFighters, setSelectedParty, normalizeFighterId, getRandomAlignmentForRace]);
+  }, [onPartyClose, addLog, generateCryptoId, setFighters, setSelectedParty, normalizeCombatantForBattle, getRandomAlignmentForRace]);
 
   // Initialize positions ONLY when combat starts (after startCombat is called)
   // Positions are NOT set until combat begins to prevent showing fighters on map prematurely
