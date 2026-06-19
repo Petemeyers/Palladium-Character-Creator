@@ -329,7 +329,7 @@ export default function CharacterSheet({ characterData = null, onSave = null }) 
     { key: 'pp', label: 'agility' },
     { key: 'pe', label: 'endurance' },
     { key: 'pb', label: 'charisma' },
-    { key: 'spd', label: 'Spd' },
+    { key: 'spd', label: 'Speed' },
   ];
 
   return (
@@ -341,7 +341,7 @@ export default function CharacterSheet({ characterData = null, onSave = null }) 
             Medieval Combat Simulator Character Sheet
           </Heading>
           <Text fontSize="sm" color="gray.600">
-            (1994 Edition)
+            Current Edition
           </Text>
         </Box>
 
@@ -361,7 +361,7 @@ export default function CharacterSheet({ characterData = null, onSave = null }) 
           <GridItem>
             <Input
               name="race"
-              placeholder="Race / Species"
+              placeholder="Category"
               value={character.race}
               onChange={handleChange}
               size="md"
@@ -370,7 +370,7 @@ export default function CharacterSheet({ characterData = null, onSave = null }) 
           <GridItem>
             <Input
               name="profession"
-              placeholder="profession"
+              placeholder="Class"
               value={character.profession}
               onChange={handleChange}
               size="md"

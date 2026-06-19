@@ -22,19 +22,19 @@ const AbilitiesPanel = () => {
   if (!activeParty) {
     return (
       <Box className="container" p={4}>
-        <Heading size="md" mb={4}>profession Abilities</Heading>
+        <Heading size="md" mb={4}>Class Abilities</Heading>
         <Text>Load a party first to access character abilities.</Text>
       </Box>
     );
   }
 
   const handleUseAbility = (char, ability) => {
-    let msg = `âœ¨ ${char.name} uses ${ability.name}: ${ability.bonus}`;
+    let msg = `${char.name} uses ${ability.name}: ${ability.bonus}`;
 
     // Check if ability has uses remaining
     if (ability.uses && ability.usesRemaining !== null) {
       if (ability.usesRemaining <= 0) {
-        msg = `âŒ ${char.name} has no uses left for ${ability.name}`;
+        msg = `${char.name} has no uses left for ${ability.name}`;
       } else {
         msg += ` (${ability.usesRemaining}/${ability.uses} uses)`;
       }
@@ -70,7 +70,7 @@ const AbilitiesPanel = () => {
 
   return (
     <Box className="container" p={4}>
-      <Heading mb={4}>profession Abilities</Heading>
+      <Heading mb={4}>Class Abilities</Heading>
       
       {activeParty && (
         <Alert status="info" mb={4}>
@@ -88,7 +88,7 @@ const AbilitiesPanel = () => {
                 <VStack align="start" spacing={1}>
                   <Heading size="sm">{char.name}</Heading>
                   <Text fontSize="sm" color="gray.600">
-                    {char.species} {char.class} â€¢ profession: {char.profession || char.class}
+                    {char.species} {char.class} - Class: {char.profession || char.class}
                   </Text>
                 </VStack>
                 <Badge colorScheme="blue" size="lg">
@@ -143,7 +143,7 @@ const AbilitiesPanel = () => {
                 </VStack>
               ) : (
                 <Text color="gray.500" fontStyle="italic">
-                  No profession abilities assigned. This character may need to be updated.
+                  No class abilities assigned. This character may need to be updated.
                 </Text>
               )}
             </VStack>
@@ -169,7 +169,7 @@ const AbilitiesPanel = () => {
           </HStack>
           <HStack justify="space-between">
             <Badge colorScheme="pink" size="sm">Tactical</Badge>
-            <Text fontSize="sm" color="gray.600">Mental powers and abilities</Text>
+            <Text fontSize="sm" color="gray.600">Tactical options and special abilities</Text>
           </HStack>
         </VStack>
       </Box>

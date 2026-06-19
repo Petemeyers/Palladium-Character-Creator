@@ -511,7 +511,7 @@ const CharacterList = ({
                       <span className="stat-value">{character.derived?.hitPoints || character.hp}</span>
                     </div>
                     <div className="stat-item">
-                      <span className="stat-label">guardRating</span>
+                      <span className="stat-label">AC</span>
                       <span className="stat-value">{getTotalArmorRating(character) || 0}</span>
                     </div>
                     {(() => {
@@ -645,7 +645,7 @@ const CharacterList = ({
                       
                       return (
                         <div className="equipment-display">
-                          <h4>Equipment {totalArmor > 0 && <span className="armor-rating">(Guard Rating: {totalArmor})</span>}</h4>
+                          <h4>Equipment {totalArmor > 0 && <span className="armor-rating">(AC: {totalArmor})</span>}</h4>
                           <div className="storage-info" style={{ fontSize: '0.8em', color: '#888', marginBottom: '8px' }}>
                             Capacity: {character.carryWeight?.maxWeight || 0} + {containerBonus} = {totalCapacity} lbs
                             {storageCapacity.totalCapacity > 0 && (
@@ -660,7 +660,7 @@ const CharacterList = ({
                                 <span className="equipment-slot-label">{slot.charAt(0).toUpperCase() + slot.slice(1)}:</span>
                                 <span className="equipment-name">{item.name}</span>
                                 {item.guardRating > 0 && (
-                                  <span className="equipment-defense">(Guard Rating: {item.guardRating})</span>
+                                  <span className="equipment-defense">(AC: {item.guardRating})</span>
                                 )}
                                 {item.capacity && item.capacity > 0 && (
                                   <span className="equipment-capacity" style={{ fontSize: '0.85em', color: '#4CAF50' }}>
@@ -746,7 +746,7 @@ const CharacterList = ({
                       <div className="skills-container">
                         {character.professionSkills && character.professionSkills.length > 0 && (
                           <div className="skill-category">
-                            <h5>PROFESSION Skills ({character.professionSkills.length})</h5>
+                            <h5>Class Skills ({character.professionSkills.length})</h5>
                             <div className="skills-list-scrollable">
                               {character.professionSkills.map((skill, idx) => (
                                 <div key={idx} className="skill-item profession-skill">

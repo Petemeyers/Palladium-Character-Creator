@@ -57,7 +57,7 @@ const MovementPanel = ({
       <VStack align="stretch" spacing={3}>
         <HStack justify="space-between">
           <Text fontWeight="bold" fontSize="sm">
-            Ã°Å¸ÂÆ’ Movement Options
+            Movement Options
           </Text>
           <Badge colorScheme="cyan">
             Speed: {speed}
@@ -76,7 +76,7 @@ const MovementPanel = ({
               <Badge colorScheme="orange">{movement.fullSpeed || movement.running || "N/A"} ft</Badge>
             </HStack>
             <HStack justify="space-between">
-              <Text fontSize="xs" color="gray.500">(Official Medieval Combat Simulator: SPD Ãƒâ€” 60 feet)</Text>
+              <Text fontSize="xs" color="gray.500">Movement uses the current tactical speed system.</Text>
             </HStack>
           </VStack>
         </Box>
@@ -184,7 +184,7 @@ const MovementPanel = ({
         {/* Movement Instructions */}
         <Box p={2} bg="gray.100" borderRadius="md" fontSize="xs" color="gray.600">
           <Text>
-            <strong>Ã°Å¸â€™Â¡ How to Move:</strong> Click "Show Tactical Map" above, select your character, 
+            <strong>How to Move:</strong> Click "Show Tactical Map" above, select your character, 
             then click a highlighted cell to move. Your movement range is based on your Speed attribute.
           </Text>
         </Box>

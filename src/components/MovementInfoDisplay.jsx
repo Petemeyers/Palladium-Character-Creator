@@ -46,13 +46,13 @@ export default function MovementInfoDisplay({
           {combatant.name || "Unknown"}
         </Text>
         <HStack justify="space-between" spacing={2}>
-          <Text fontSize="xs">SPD:</Text>
+          <Text fontSize="xs">Speed:</Text>
           <Badge colorScheme="blue" fontSize="xs">
             {speed}
           </Badge>
         </HStack>
         <HStack justify="space-between" spacing={2}>
-          <Text fontSize="xs">APM:</Text>
+          <Text fontSize="xs">Actions:</Text>
           <Badge colorScheme="green" fontSize="xs">
             {actionsPerRound}
           </Badge>

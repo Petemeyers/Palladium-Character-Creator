@@ -78,7 +78,7 @@ const MissileWeaponTracker = ({
     return (
       <Tooltip label={`${currentAmmo}/${maxAmmo} ${weaponData.ammunition}`} placement="top">
         <HStack spacing={1} fontSize="xs">
-          <Text>ÃƒÂ°Ã…Â¸Ã‚ÂÃ‚Â¹</Text>
+          <Text>Ranged</Text>
           <Progress 
             value={ammoPercentage} 
             size="sm" 
@@ -105,7 +105,7 @@ const MissileWeaponTracker = ({
       <VStack align="stretch" spacing={3}>
         <HStack justify="space-between">
           <Text fontWeight="bold" fontSize="sm">
-            ÃƒÂ°Ã…Â¸Ã‚ÂÃ‚Â¹ Missile Weapon Tracker
+            Missile Weapon Tracker
           </Text>
           {equistaminadItem && (
             <Badge colorScheme="blue" fontSize="xs">
@@ -161,7 +161,7 @@ const MissileWeaponTracker = ({
               </GridItem>
               <GridItem>
                 <Text color="gray.600">Rate of Fire:</Text>
-                <Text fontWeight="bold">{weaponData.rateOfFire}/melee</Text>
+                <Text fontWeight="bold">{weaponData.rateOfFire}/round</Text>
               </GridItem>
               <GridItem>
                 <Text color="gray.600">Category:</Text>
@@ -237,7 +237,7 @@ const MissileWeaponTracker = ({
             {/* Special Notes */}
             {weaponData.special && (
               <Text fontSize="xs" color="purple.600" fontStyle="italic">
-                ÃƒÂ¢Ã…â€œÃ‚Â¨ {weaponData.special}
+                Special: {weaponData.special}
               </Text>
             )}
           </>

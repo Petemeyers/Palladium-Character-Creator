@@ -144,7 +144,7 @@ export default function ArmorDurabilityCard({
         />
         
         <Text fontSize="xs" color="gray.400">
-          Armor Durability: {armor.currentarmorDurability}/{armor.armorDurability} | Guard Rating: {armor.guardRating}
+          Armor Durability: {armor.currentarmorDurability}/{armor.armorDurability} | AC: {armor.guardRating}
         </Text>
       </Box>
     );
@@ -208,7 +208,7 @@ export default function ArmorDurabilityCard({
         />
         
         <Text fontSize="md" fontWeight="semibold">
-          armorDurability: {armor.currentarmorDurability}/{armor.armorDurability}
+          Armor Durability: {armor.currentarmorDurability}/{armor.armorDurability}
         </Text>
         
         {armor.broken && (
@@ -227,7 +227,7 @@ export default function ArmorDurabilityCard({
       {/* Armor stats */}
       <VStack spacing={1} mb={4} fontSize="sm" color="gray.300">
         <HStack>
-          <Text>Guard Rating:</Text>
+          <Text>AC:</Text>
           <Text fontWeight="bold" color={armor.broken ? "red.300" : "blue.300"}>
             {armor.broken ? "0" : armor.guardRating}
           </Text>

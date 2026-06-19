@@ -46,7 +46,7 @@ const AutoRollDemo = () => {
     <Box p={6} maxW="1200px" mx="auto">
       <VStack spacing={6} align="stretch">
         <Box>
-          <Heading size="lg" mb={2}>ðŸŽ² Auto-Roll Demo for Playable Characters</Heading>
+          <Heading size="lg" mb={2}>Auto-Roll Demo for Playable Characters</Heading>
           <Text color="gray.600">
             Click any playable character below to automatically roll their attributes, 
             calculate combat stats, and generate a ready-to-use fighter for combat!
@@ -56,9 +56,7 @@ const AutoRollDemo = () => {
         <Alert status="info">
           <AlertIcon />
           <Text fontSize="sm">
-            <strong>Auto-Roll Features:</strong> Attributes are rolled using the character&apos;s dice notation, 
-            HP is calculated based on PE + class bonus, guardRating is determined by class and PE, 
-            and combat bonuses are applied based on PS and PP attributes.
+            <strong>Auto-Roll Features:</strong> HP, AC, Speed, and abilities are shown using the current 5E compatibility layer.
           </Text>
         </Alert>
 
@@ -159,7 +157,7 @@ const AutoRollDemo = () => {
                             <Text fontSize="xs" fontWeight="bold">{character.currentHP}</Text>
                           </HStack>
                           <HStack spacing={2}>
-                            <Text fontSize="xs" minW="30px">guardRating:</Text>
+                            <Text fontSize="xs" minW="30px">AC:</Text>
                             <Text fontSize="xs" fontWeight="bold">{character.guardRating}</Text>
                           </HStack>
                           <HStack spacing={2}>

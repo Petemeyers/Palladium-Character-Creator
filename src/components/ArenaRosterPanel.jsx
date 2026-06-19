@@ -223,7 +223,7 @@ const EntityDetails = ({ entityId }) => {
       
       <HStack spacing={4} wrap="wrap">
         <Text fontSize="sm"><strong>Size:</strong> {entity.size}</Text>
-        <Text fontSize="sm"><strong>Guard Rating:</strong> {entity.guardRating}</Text>
+        <Text fontSize="sm"><strong>AC:</strong> {entity.guardRating}</Text>
         <Text fontSize="sm"><strong>HP:</strong> {entity.HP}</Text>
         {entity.spd && <Text fontSize="sm"><strong>Speed:</strong> {entity.spd}</Text>}
         {entity.lifeSpan && <Text fontSize="sm"><strong>Lifespan:</strong> {entity.lifeSpan}</Text>}

@@ -122,18 +122,18 @@ const ArmorShop = ({ characters = [], onUpdateCharacters }) => {
   };
 
   const getArmorTypeIcon = (item) => {
-    if (item.type === 'light' || item.guardRating <= 10) return 'Ã°Å¸Å¸Â¢';
-    if (item.type === 'medium' || (item.guardRating > 10 && item.guardRating <= 15)) return 'Ã°Å¸Å¸Â¡';
-    if (item.type === 'heavy' || item.guardRating > 15) return 'Ã°Å¸â€Â´';
-    if (item.type === 'shield') return 'Ã°Å¸â€ºÂ¡Ã¯Â¸Â';
-    return 'Ã¢Å¡â€Ã¯Â¸Â';
+    if (item.type === 'light' || item.guardRating <= 10) return 'Light';
+    if (item.type === 'medium' || (item.guardRating > 10 && item.guardRating <= 15)) return 'Medium';
+    if (item.type === 'heavy' || item.guardRating > 15) return 'Heavy';
+    if (item.type === 'shield') return 'Shield';
+    return 'Armor';
   };
 
   return (
     <Box bg="gray.800" color="white" p={6} borderRadius="xl" shadow="xl">
       <style>{dropdownStyle}</style>
       <Heading size="lg" mb={6} color="blue.300" textAlign="center">
-        Ã°Å¸â€ºÂ¡Ã¯Â¸Â Armor & Protection Shop
+        Armor & Protection Shop
       </Heading>
 
       {/* Character Selection */}
@@ -213,9 +213,9 @@ const ArmorShop = ({ characters = [], onUpdateCharacters }) => {
           }}
         >
           <option value="all" style={{ backgroundColor: '#2D3748', color: '#FFFFFF' }}>All Armor</option>
-          <option value="light" style={{ backgroundColor: '#2D3748', color: '#FFFFFF' }}>Light Armor (guardRating Ã¢â€°Â¤ 10)</option>
-          <option value="medium" style={{ backgroundColor: '#2D3748', color: '#FFFFFF' }}>Medium Armor (guardRating 11-15)</option>
-          <option value="heavy" style={{ backgroundColor: '#2D3748', color: '#FFFFFF' }}>Heavy Armor (guardRating &gt; 15)</option>
+          <option value="light" style={{ backgroundColor: '#2D3748', color: '#FFFFFF' }}>Light Armor (AC up to 10)</option>
+          <option value="medium" style={{ backgroundColor: '#2D3748', color: '#FFFFFF' }}>Medium Armor (AC 11-15)</option>
+          <option value="heavy" style={{ backgroundColor: '#2D3748', color: '#FFFFFF' }}>Heavy Armor (AC above 15)</option>
           <option value="shields" style={{ backgroundColor: '#2D3748', color: '#FFFFFF' }}>Shields</option>
           <option value="clothing" style={{ backgroundColor: '#2D3748', color: '#FFFFFF' }}>Protective Clothing</option>
         </Select>
@@ -241,7 +241,7 @@ const ArmorShop = ({ characters = [], onUpdateCharacters }) => {
             >
               <Flex justify="space-between" align="center" mb={2}>
                 <Text fontWeight="bold" fontSize="lg">
-                  {getArmorTypeIcon(armor)} {armor.name}
+                  {armor.name}
                 </Text>
                 <Badge colorScheme={getArmorTypeColor(armor)}>
                   {armor.price} gp
@@ -250,14 +250,14 @@ const ArmorShop = ({ characters = [], onUpdateCharacters }) => {
 
               <VStack spacing={2} align="stretch">
                 <Flex justify="space-between">
-                  <Text fontSize="sm" color="gray.300">Armor Rating:</Text>
+                  <Text fontSize="sm" color="gray.300">AC:</Text>
                   <Text fontSize="sm" fontWeight="bold" color="blue.300">
                     {armor.guardRating}
                   </Text>
                 </Flex>
 
                 <Flex justify="space-between">
-                  <Text fontSize="sm" color="gray.300">armorDurability:</Text>
+                  <Text fontSize="sm" color="gray.300">Armor Durability:</Text>
                   <Text fontSize="sm" fontWeight="bold" color="green.300">
                     {armor.armorDurability}
                   </Text>
@@ -310,7 +310,7 @@ const ArmorShop = ({ characters = [], onUpdateCharacters }) => {
               <VStack spacing={4} align="stretch">
                 <Box>
                   <Text fontWeight="bold" fontSize="lg" mb={2}>
-                    {getArmorTypeIcon(selectedArmor)} {selectedArmor.name}
+                    {selectedArmor.name}
                   </Text>
                   <Text color="gray.300" mb={3}>{selectedArmor.description}</Text>
                 </Box>
@@ -321,13 +321,13 @@ const ArmorShop = ({ characters = [], onUpdateCharacters }) => {
                   <Text fontWeight="bold" mb={2}>Armor Statistics:</Text>
                   <Grid templateColumns="repeat(2, 1fr)" gap={2}>
                     <Flex justify="space-between">
-                      <Text fontSize="sm">Armor Rating:</Text>
+                      <Text fontSize="sm">AC:</Text>
                       <Text fontSize="sm" fontWeight="bold" color="blue.300">
                         {selectedArmor.guardRating}
                       </Text>
                     </Flex>
                     <Flex justify="space-between">
-                      <Text fontSize="sm">armorDurability:</Text>
+                      <Text fontSize="sm">Armor Durability:</Text>
                       <Text fontSize="sm" fontWeight="bold" color="green.300">
                         {selectedArmor.armorDurability}
                       </Text>
@@ -402,3 +402,4 @@ const ArmorShop = ({ characters = [], onUpdateCharacters }) => {
 };
 
 export default ArmorShop;
+
