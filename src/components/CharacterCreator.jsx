@@ -786,7 +786,7 @@ const CharacterCreator = ({ onCreateCharacter }) => {
     }
     
     if (!characterClass) {
-      alert('Please select a profession');
+      alert('Please select a class');
       return;
     }
 
@@ -1114,14 +1114,14 @@ const CharacterCreator = ({ onCreateCharacter }) => {
 
     return (
       <div className="class-selection">
-        <label htmlFor="character-class">Profession:</label>
+        <label htmlFor="character-class">Class:</label>
         <select
           id="character-class"
           value={characterClass}
           onChange={(e) => handleProfessionSelection(e.target.value)}
           disabled={availableClasses.length === 0}
         >
-          <option value="">Select a profession</option>
+          <option value="">Select a class</option>
           {Object.entries(groupedClasses).map(([category, classes]) => (
             <optgroup key={category} label={category}>
               {classes.map(className => (
@@ -1142,7 +1142,7 @@ const CharacterCreator = ({ onCreateCharacter }) => {
                 <li key={attr}>
                   {attr === 'alignment' && 'Alignment: Evil required'}
                   {attr === 'tactics' && 'Must be Major (80-89%) or Master Tactical (90-100%)'}
-                  {attr !== 'alignment' && attr !== 'tactics' && `${attr}: ${value}`}
+                  {attr !== 'alignment' && attr !== 'tactics' && `${formatAttributeLabel(attr)}: ${value}`}
                 </li>
               ))}
             </ul>
@@ -1152,16 +1152,16 @@ const CharacterCreator = ({ onCreateCharacter }) => {
         {/* Display category restrictions info */}
         {species && (
           <div className="race-restrictions">
-            <h4>{species} Profession Restrictions:</h4>
+            <h4>{species} Class Restrictions:</h4>
             {(() => {
               const raceData = gameData.races[species];
               if (!raceData || (raceData.restrictedprofessions || []).length === 0) {
-                return <p>No profession restrictions for {species}.</p>;
+                return <p>No class restrictions for {species}.</p>;
               }
               return (
                 <div>
                   <p><strong>Cannot be:</strong> {raceData.restrictedprofessions.join(', ')}</p>
-                  <p><em>Available professions are filtered above based on race restrictions.</em></p>
+                  <p><em>Available classes are filtered above based on category restrictions.</em></p>
                 </div>
               );
             })()}
@@ -1171,11 +1171,11 @@ const CharacterCreator = ({ onCreateCharacter }) => {
         {/* Display profession data when selected */}
         {professionData && (
           <div className="profession-data">
-            <h4>Profession Information:</h4>
-            <p><strong>Profession:</strong> {professionData.name} ({professionData.category || "General"})</p>
+            <h4>Class Information:</h4>
+            <p><strong>Class:</strong> {professionData.name} ({professionData.category || "General"})</p>
             <p><strong>Stamina:</strong> {professionData.stamina}</p>
             <p><strong>Focus:</strong> {professionData.focus}</p>
-            <p><strong>Notes:</strong> {professionData.notes}</p>
+            <p><strong>Notes:</strong> {formatPublicCreatorText(professionData.notes)}</p>
             {(professionData.abilities || []).length > 0 && (
               <div>
                 <strong>Abilities:</strong>
@@ -1189,14 +1189,14 @@ const CharacterCreator = ({ onCreateCharacter }) => {
           </div>
         )}
 
-        {/* Profession Skills Selection */}
+        {/* Class Skills Selection */}
         {characterClass && (PROFESSIONS[characterClass] || gameData.professions[characterClass]) && (
           <div className="profession-skills-selection">
-            <h4>Profession Skills</h4>
+            <h4>Class Skills</h4>
             
-            {/* Profession Skills (auto-assigned) */}
+            {/* Class Skills (auto-assigned) */}
             <div className="profession-skills">
-              <h5>Profession Skills (Automatic):</h5>
+              <h5>Class Skills (Automatic):</h5>
               <ul>
                 {professionSkills.map((skill, idx) => {
                   const formattedSkill = formatSkillWithPercent(skill, characterClass, parseInt(level) || 1);
@@ -1258,7 +1258,7 @@ const CharacterCreator = ({ onCreateCharacter }) => {
                 return (
                   <div className="secondary-skills">
                     <h5>Secondary Skills (Choose {secondaryCount}):</h5>
-                    <p className="skill-hint">Basic/general skills only - no advanced or profession-specific skills</p>
+                    <p className="skill-hint">Basic/general skills only - no advanced or class-specific skills</p>
                     <select
                       multiple
                       size="8"
@@ -1288,14 +1288,14 @@ const CharacterCreator = ({ onCreateCharacter }) => {
               return null;
             })()}
 
-            {/* profession Special Notes */}
+            {/* Class Special Notes */}
             {(() => {
               const professionData = PROFESSIONS[characterClass] || gameData.professions[characterClass];
               if (professionData?.special) {
                 return (
                   <div className="profession-special">
                     <h5>Special:</h5>
-                    <p>{professionData.special}</p>
+                    <p>{formatPublicCreatorText(professionData.special)}</p>
                   </div>
                 );
               }
@@ -1304,10 +1304,10 @@ const CharacterCreator = ({ onCreateCharacter }) => {
           </div>
         )}
 
-        {/* Display category profession restrictions */}
+        {/* Display category class restrictions */}
         <div className="species-limitations">
-          <h4>{species} Profession Limitations:</h4>
-          <p>{speciesCharacteristics[species].professionLimitations}</p>
+          <h4>{species} Class Limitations:</h4>
+          <p>{formatPublicCreatorText(speciesCharacteristics[species].professionLimitations)}</p>
         </div>
       </div>
     );
@@ -1323,6 +1323,41 @@ const CharacterCreator = ({ onCreateCharacter }) => {
         return {};
     }
   };
+
+  const formatAttributeLabel = (attr) => ({
+    PS: 'STR',
+    PP: 'DEX',
+    PE: 'CON',
+    IQ: 'INT',
+    ME: 'WIS',
+    MA: 'CHA',
+    PB: 'Appearance',
+    Spd: 'Speed',
+    ps: 'STR',
+    pp: 'DEX',
+    pe: 'CON',
+    iq: 'INT',
+    me: 'WIS',
+    ma: 'CHA',
+    pb: 'Appearance',
+    spd: 'Speed',
+  }[attr] || attr);
+
+  const formatAttributeBonusText = (text) => String(text || '')
+    .replace(/\bPS\b/g, 'STR')
+    .replace(/\bPP\b/g, 'DEX')
+    .replace(/\bPE\b/g, 'CON')
+    .replace(/\bIQ\b/g, 'INT')
+    .replace(/\bME\b/g, 'WIS')
+    .replace(/\bMA\b/g, 'CHA')
+    .replace(/\bPB\b/g, 'Appearance')
+    .replace(/\bSpd\b/g, 'Speed');
+
+  const formatPublicCreatorText = (text) => formatAttributeBonusText(text)
+    .replace(/\bprofessions\b/gi, 'classes')
+    .replace(/\bprofession\b/gi, 'class')
+    .replace(/\braces\b/gi, 'categories')
+    .replace(/\brace\b/gi, 'category');
 
   // Helper function to get skill base percentage for display
   const getSkillBasePercent = (skillName, professionName) => {
@@ -2232,9 +2267,9 @@ const CharacterCreator = ({ onCreateCharacter }) => {
                   key={key}
                   style={getHighlightStyle(attributes[`${key}_highlight`])}
                 >
-                  <td>{key}</td>
+                  <td>{formatAttributeLabel(key)}</td>
                   <td>{value}</td>
-                  <td>{bonusDisplay}</td>
+                  <td>{formatAttributeBonusText(bonusDisplay)}</td>
                 </tr>
               );
             })}
@@ -2340,7 +2375,7 @@ const CharacterCreator = ({ onCreateCharacter }) => {
 
         {/* Class Selection & Level */}
         <section className="creation-section">
-          <h2 className="section-title">Profession Selection & Level</h2>
+          <h2 className="section-title">Class Selection & Level</h2>
           
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '20px' }}>
             {/* Class Selection Column */}
@@ -2844,7 +2879,7 @@ const CharacterCreator = ({ onCreateCharacter }) => {
               )}
               
               <p className="level-hint" style={{ marginTop: '15px', padding: '10px', backgroundColor: '#edf2f7', borderRadius: '5px', color: '#4a5568', fontSize: '14px' }}>
-                Stats update automatically based on your level and profession
+                Stats update automatically based on your level and class
               </p>
             </div>
           )}
@@ -2913,7 +2948,7 @@ const CharacterCreator = ({ onCreateCharacter }) => {
             </h2>
             <p style={{ color: '#666', marginBottom: '20px' }}>
               You are leveling up from level {level} to level {pendingLevelChange}. 
-              Please select your new skills according to your profession progression.
+              Please select your new skills according to your class progression.
             </p>
 
             {/* Elective Skills Selection */}
@@ -2982,7 +3017,7 @@ const CharacterCreator = ({ onCreateCharacter }) => {
                   Already selected: {secondarySkills.join(', ') || 'None'}
                 </p>
                 <p style={{ fontSize: '0.85em', color: '#888', fontStyle: 'italic', marginBottom: '10px' }}>
-                  Basic/general skills only - no advanced or profession-specific skills
+                  Basic/general skills only - no advanced or class-specific skills
                 </p>
                 <select
                   multiple
