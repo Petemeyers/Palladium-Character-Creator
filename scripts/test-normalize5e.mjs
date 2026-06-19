@@ -63,7 +63,8 @@ function testModernAbilityPreference() {
 }
 
 function testArmorClassPrecedence() {
-  assert.equal(getArmorClass({ ac: 16, armorClass: 17, guardRating: 13 }), 17);
+  assert.equal(getArmorClass({ ac: 16, armorClass: 17, guardRating: 13 }), 16);
+  assert.equal(getArmorClass({ armorClass: 17, guardRating: 13 }), 17);
   assert.equal(getArmorClass({ ac: 16, guardRating: 13 }), 16);
   assert.equal(getArmorClass({ guardRating: 13 }), 13);
   assert.equal(getArmorClass({}), 10);

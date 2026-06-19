@@ -129,7 +129,7 @@ import {
 import { calculateVisibleCells, calculateVisibleCellsMultiple, getVisibilityRange } from "../utils/visibilityCalculator.js";
 import { updateFogMemory, resetFogMemory } from "../utils/fogMemorySystem.js";
 import { getAttacksPerMelee, getCombatantAttacksPerMelee, getActionCost, formatAttacksRemaining } from "../utils/actionEconomy.js";
-import { normalize5eCombatant } from "../utils/normalize5eCombatant.js";
+import { getArmorClass, normalize5eCombatant } from "../utils/normalize5eCombatant.js";
 import { rollInitiative5e } from "../utils/initiative5e.js";
 import { calculateTotalHP } from "../utils/levelProgression.js";
 import { grantXPFromEnemy, getOpponentByName, calculateOpponentXP } from "../utils/enemyXP.js";
@@ -1803,6 +1803,8 @@ function CombatPage({ characters = [] }) {
     if (!combatant) return combatant;
     return normalizeFighter(normalize5eCombatant(combatant));
   }, [normalizeFighter]);
+
+  const getCombatantAC = useCallback((combatant) => getArmorClass(combatant), []);
 
   // Helper function to determine HP status based on Medieval Combat Simulator coma rules
   const getHPStatus = useCallback((currentHP) => {
@@ -7016,7 +7018,7 @@ function CombatPage({ characters = [] }) {
         }
 
         for (const target of candidates) {
-          const targetGuardRating = target.guardRating || target.guardRating || 10;
+          const targetGuardRating = getCombatantAC(target);
           // Use a non-crit-miss snapshot for resolution (scatter removes crit miss)
           const resolvedSnapshot = snapshot.isCriticalMiss
             ? { ...snapshot, isCriticalMiss: false }
@@ -7059,7 +7061,7 @@ function CombatPage({ characters = [] }) {
         );
       }
     },
-    [addLog]
+    [addLog, getCombatantAC]
   );
 
   const handleTimelineEvent = useCallback(
@@ -10343,7 +10345,7 @@ function CombatPage({ characters = [] }) {
       case "ROUND_STARTED": return `Round ${e.round} started`;
       case "MELEE_ROUND_ENDED": return `Combat Round ${e.round} complete!`;
       case "ATTACK_ROLL":
-        return `${nameOf(e.attackerId)} attacks ${nameOf(e.targetId)}: ${e.d20} + ${e.bonus} = ${e.total} vs guardRating ${e.targetGuardRating} ${e.hit ? (e.crit ? "(CRIT!)" : "(HIT)") : "(MISS)"}`;
+        return `${nameOf(e.attackerId)} attacks ${nameOf(e.targetId)}: ${e.d20} + ${e.bonus} = ${e.total} vs AC ${e.targetGuardRating} ${e.hit ? (e.crit ? "(CRIT!)" : "(HIT)") : "(MISS)"}`;
       case "DAMAGE":
         return e.vsArmor
           ? `${nameOf(e.attackerId)} ${nameOf(e.targetId)} armor: ${e.formula} = ${e.amount} armorDurability`
@@ -10568,7 +10570,7 @@ function CombatPage({ characters = [] }) {
         id,
         name: f?.name ?? f?.characterName ?? id,
         currentHP: Number(f?.currentHP ?? f?.hp ?? 0),
-        guardRating: Number(f?.guardRating ?? f?.guardRating ?? f?.guardRating ?? 10),
+        guardRating: getCombatantAC(f),
         isDead: !!f?.isDead,
         isKO: !!f?.isKO,
         status: f?.status ?? "",
@@ -10588,7 +10590,7 @@ function CombatPage({ characters = [] }) {
         preferredRange: rangedRange > 0 ? Math.min(8, Math.max(3, Math.floor(rangedRange / 2))) : 1,
       };
     });
-  }, []);
+  }, [getCombatantAC]);
 
   const pickEquistaminadWeapon = useCallback((f) => {
     return (
@@ -10636,7 +10638,7 @@ function CombatPage({ characters = [] }) {
           0
         ) || 0;
 
-      const baseGuardRating = Number(f?.guardRating ?? f?.guardRating ?? 10) || 10;
+      const baseGuardRating = getCombatantAC(f);
 
       profiles[id] = {
         baseAttackBonus,
@@ -10648,7 +10650,7 @@ function CombatPage({ characters = [] }) {
       };
     }
     return profiles;
-  }, [pickEquistaminadWeapon]);
+  }, [getCombatantAC, pickEquistaminadWeapon]);
 
   const computeAttackOverride = useCallback((attacker, defender, attackMode) => {
     if (!attacker || !defender) return null;
@@ -10684,7 +10686,7 @@ function CombatPage({ characters = [] }) {
       if (maxRangeFeet > 0 && distFeet > maxRangeFeet) return null;
     }
 
-    let targetGuardRating = Number(defender?.guardRating ?? defender?.guardRating ?? 10) || 10;
+    let targetGuardRating = getCombatantAC(defender);
 
     if (combatTerrain && defenderId && positions[defenderId]) {
       const coverBonus = getCoverBonus(
@@ -10751,6 +10753,7 @@ function CombatPage({ characters = [] }) {
     };
   }, [
     combatTerrain,
+    getCombatantAC,
     pickEquistaminadWeapon,
     tempModifiers,
     positionsRef,
@@ -14995,7 +14998,7 @@ function CombatPage({ characters = [] }) {
         isCriticalMiss = attackDiceRoll === 1; // Natural 1 = critical miss
       }
 
-      let targetGuardRating = defender.guardRating || defender.guardRating || 10;
+      let targetGuardRating = getCombatantAC(defender);
 
       // Apply cover bonus from terrain
       if (combatTerrain && positions && positions[defender.id]) {
@@ -15005,7 +15008,7 @@ function CombatPage({ characters = [] }) {
         );
         if (coverBonus > 0) {
           targetGuardRating += coverBonus;
-          addLog(`${defender.name} gains +${coverBonus} guardRating from terrain cover!`, "info");
+          addLog(`${defender.name} gains +${coverBonus} AC from terrain cover!`, "info");
         }
       }
 
@@ -15048,13 +15051,13 @@ function CombatPage({ characters = [] }) {
         timestamp: new Date().toLocaleTimeString()
       }]);
       if (isCriticalHit) {
-        addLog(`${attacker.name} rolls NATURAL 20! Critical Hit! Raw 20, modified total ${attackRoll} vs guardRating ${targetGuardRating}`, "critical");
+        addLog(`${attacker.name} rolls NATURAL 20! Critical Hit! Raw 20, modified total ${attackRoll} vs AC ${targetGuardRating}`, "critical");
       } else if (isCriticalMiss) {
         addLog(`${attacker.name} rolls NATURAL 1! Critical Miss!`, "miss");
       } else {
         // Format attack bonus display (show negative clearly)
         const bonusDisplay = attackBonus >= 0 ? `+${attackBonus}` : `${attackBonus}`;
-        addLog(`${attacker.name} rolls ${attackDiceRoll} ${bonusDisplay} = ${attackRoll} vs guardRating ${targetGuardRating}`, "info");
+        addLog(`${attacker.name} rolls ${attackDiceRoll} ${bonusDisplay} = ${attackRoll} vs AC ${targetGuardRating}`, "info");
       }
 
       const isRangedAttack =
@@ -15450,19 +15453,19 @@ function CombatPage({ characters = [] }) {
         }
       }
 
-      // Projectile hit/miss logs (polar miss math uses final total vs target guardRating)
+      // Projectile hit/miss logs (polar miss math uses final total vs target AC)
       if (isProjectileAttack) {
         const seed = `${attacker.id}|${defenderId}|${attackDiceRoll}|${attackRoll}|${targetGuardRating}`;
         const clock = rollDeterministicClock12(seed);
         if (didHit) {
           addLog(
-           `[PROJECTILE HIT] attacker=${attacker.name} roll=${attackDiceRoll} total=${attackRoll} target=${targetGuardRating} clock=${clock}`,
+           `[PROJECTILE HIT] attacker=${attacker.name} roll=${attackDiceRoll} total=${attackRoll} targetAC=${targetGuardRating} clock=${clock}`,
             "info"
           );
         } else {
           const missMargin = Math.max(1, Math.ceil(targetGuardRating - attackRoll));
           addLog(
-           `[PROJECTILE MISS] attacker=${attacker.name} roll=${attackDiceRoll} total=${attackRoll} target=${targetGuardRating} margin=${missMargin} clock=${clock}`,
+           `[PROJECTILE MISS] attacker=${attacker.name} roll=${attackDiceRoll} total=${attackRoll} targetAC=${targetGuardRating} margin=${missMargin} clock=${clock}`,
             "info"
           );
         }
@@ -15519,7 +15522,7 @@ function CombatPage({ characters = [] }) {
             .sort(sortByOrder);
 
           for (const t of candidates) {
-            let tGuardRating = t.guardRating || t.guardRating || 10;
+            let tGuardRating = getCombatantAC(t);
             if (combatTerrain && positions && positions[t.id]) {
               const coverBonus = getCoverBonus(
                 { x: positions[t.id].x, y: positions[t.id].y },
@@ -15569,7 +15572,7 @@ function CombatPage({ characters = [] }) {
         deferMultiAttackHitEnd();
         return;
       }
-      // Critical hit auto-succeeds, normal hit requires beating guardRating
+      // Critical hit auto-succeeds, normal hit requires beating AC
       if (didHit) {
         // Hit! Crypto secure damage roll
         const damageBonus = attacker.bonuses?.damage || 0;
@@ -16371,6 +16374,7 @@ function CombatPage({ characters = [] }) {
     getFighterHP,
     getCombatVictoryState,
     getHPStatus,
+    getCombatantAC,
     getAlliesDownRatio,
     canFighterAct,
     runHorrorAndMorale,
@@ -18135,7 +18139,7 @@ function CombatPage({ characters = [] }) {
     if (!attackerId || !targetId) return;
 
     const toHitBonus = Number(attacker?.bonuses?.attack ?? attacker?.attackBonus ?? attacker?.toHitBonus ?? 0);
-    const targetGuardRating = Number(target?.guardRating ?? target?.guardRating ?? target?.guardRating ?? 10);
+    const targetGuardRating = getCombatantAC(target);
 
     const availableAttacks = attacker.attacks || [];
     let selectedAttack = availableAttacks[0] || { damage: "1d6" };
@@ -18224,6 +18228,7 @@ function CombatPage({ characters = [] }) {
     buildPositionsLite,
     buildFightersLite,
     pickNonEmptyObject,
+    getCombatantAC,
   ]);
 
   // AI execution adapters (wrastaminars for worker AI_INTENT)

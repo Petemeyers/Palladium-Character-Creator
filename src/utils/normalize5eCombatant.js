@@ -63,9 +63,9 @@ export function getHitPoints(combatant = {}) {
 export function getArmorClass(combatant = {}) {
   return (
     firstNumber(
-      combatant.armorClass,
       combatant.ac,
       combatant.AC,
+      combatant.armorClass,
       combatant.guardRating,
       combatant.baseGuardRating
     ) ?? DEFAULT_ARMOR_CLASS
