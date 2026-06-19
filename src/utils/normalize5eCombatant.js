@@ -163,9 +163,7 @@ export function normalize5eCombatant(input = {}) {
     tempHp: firstNumber(combatant.tempHp, combatant.temporaryHp, combatant.tempHP) ?? 0,
     speed,
     proficiencyBonus,
-    initiativeBonus:
-      firstNumber(combatant.initiativeBonus, combatant.initiative) ??
-      abilityMods.dex,
+    initiativeBonus: firstNumber(combatant.initiativeBonus) ?? 0,
     actions: actionEconomy.action,
     bonusAction: actionEconomy.bonusAction,
     reaction: actionEconomy.reaction,

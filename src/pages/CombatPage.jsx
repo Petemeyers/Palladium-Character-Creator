@@ -130,6 +130,7 @@ import { calculateVisibleCells, calculateVisibleCellsMultiple, getVisibilityRang
 import { updateFogMemory, resetFogMemory } from "../utils/fogMemorySystem.js";
 import { getAttacksPerMelee, getCombatantAttacksPerMelee, getActionCost, formatAttacksRemaining } from "../utils/actionEconomy.js";
 import { normalize5eCombatant } from "../utils/normalize5eCombatant.js";
+import { rollInitiative5e } from "../utils/initiative5e.js";
 import { calculateTotalHP } from "../utils/levelProgression.js";
 import { grantXPFromEnemy, getOpponentByName, calculateOpponentXP } from "../utils/enemyXP.js";
 import { weapons, getWeaponByName, arenaWhip } from "../data/weapons.js";
@@ -306,7 +307,6 @@ import {
   getReachAttackModifiers,
   getReachBlockModifiers,
   getReachEvadeModifiers,
-  getReachInitiativeModifier,
   canUseCalledShot,
   hasClosedDistance,
   markDistanceClosed,
@@ -24450,28 +24450,15 @@ function CombatPage({ characters = [] }) {
       return cleanFighterForNewCombat(fighter);
     };
 
-    // Roll initiative for all fighters (1994 Medieval Combat Simulator rules: d20 + bonuses)
+    // Roll initiative for all fighters: d20 + DEX modifier + explicit initiative bonus
     let updatedFighters = combatRoster.map(rawFighter => {
       const fighter = sanitizeFighterForCombatStart(rawFighter);
-      let d20 = CryptoSecureDice.rollD20();
-
-      // Calculate initiative bonuses (Hand-to-Hand, agility, situational)
-      const handToHandBonus = fighter.handToHand?.initiativeBonus || 0;
-      const ppBonus = fighter.attributes?.PP ? Math.floor((fighter.attributes.PP - 10) / 2) : 0;
-
-      // Apply reach-based initiative modifier (short weapons +1 Initiative)
-      const equistaminadWeapon = getEquistaminadWeapons(fighter)?.primary || getEquistaminadWeapons(fighter)?.secondary || null;
-      const reachInitiativeMod = equistaminadWeapon ? getReachInitiativeModifier(equistaminadWeapon) : 0;
-
-      // Apply dread rating initiative penalty (if they failed horror this round)
-      const horrorInitPenalty = fighter.meta?.horrorInitPenalty ?? 0;
-
-      const totalBonus = handToHandBonus + ppBonus + reachInitiativeMod + horrorInitPenalty;
-      let initiativeTotal = d20 + totalBonus;
-
-      if (horrorInitPenalty < 0) {
-        addLog(`${fighter.name} suffers ${Math.abs(horrorInitPenalty)} initiative penalty from horror!`, "info");
-      }
+      const initiativeRoll = rollInitiative5e(fighter, {
+        d20Roll: CryptoSecureDice.rollD20(),
+      });
+      const d20 = initiativeRoll.d20Roll;
+      const totalBonus = initiativeRoll.totalModifier;
+      let initiativeTotal = initiativeRoll.total;
 
       // Store initial roll for tie resolution
       fighter._initialInitiativeRoll = initiativeTotal;
@@ -24482,15 +24469,19 @@ function CombatPage({ characters = [] }) {
         action: "Initiative",
         rollDetails: {
           d20Roll: d20,
-          handToHandBonus: handToHandBonus,
-          ppBonus: ppBonus,
+          dexModifier: initiativeRoll.dexModifier,
+          initiativeBonus: initiativeRoll.initiativeBonus,
           totalBonus: totalBonus,
           total: initiativeTotal
         }
       };
 
-      const bonusText = totalBonus > 0 ? ` + bonus:${totalBonus}${reachInitiativeMod > 0 ? ` (${reachInitiativeMod} from weapon reach)` : ""}` : "";
-      addLog(`${fighter.name} rolled initiative: ${initiativeTotal} (d20:${d20}${bonusText})`, "initiative", rollInfo);
+      const modifierText = totalBonus >= 0 ? `+${totalBonus}` : `${totalBonus}`;
+      addLog(
+        `${fighter.name} rolled Initiative: ${initiativeTotal} (d20:${d20} ${modifierText}; DEX modifier:${initiativeRoll.dexModifier}, initiative bonus:${initiativeRoll.initiativeBonus})`,
+        "initiative",
+        rollInfo
+      );
 
       // Calculate actions per round for this fighter
       let actionsPerRound;
@@ -24527,7 +24518,7 @@ function CombatPage({ characters = [] }) {
         addLog(`${fighter.name} size category: ${sizeDesc}`, "info");
       }
 
-      // Clear horror initiative penalty after applying it (only applies to this combat round)
+      // Clear encounter-scoped initiative metadata before the new combat begins.
       const fighterMeta = { ...(fighter.meta || {}) };
       if (fighterMeta.horrorInitPenalty !== undefined) {
         delete fighterMeta.horrorInitPenalty;

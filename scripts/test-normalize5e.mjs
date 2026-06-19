@@ -11,6 +11,10 @@ import {
   normalize5eCombatant,
 } from "../src/utils/normalize5eCombatant.js";
 import * as actionEconomy from "../src/utils/actionEconomy.js";
+import {
+  getInitiativeModifier,
+  rollInitiative5e,
+} from "../src/utils/initiative5e.js";
 
 function testLegacyAbilityMapping() {
   const normalized = normalize5eCombatant({
@@ -150,6 +154,21 @@ function testLegacyFighterPassthrough() {
   assert.equal(normalized.actionEconomy.movement, 30);
 }
 
+function testInitiative5e() {
+  assert.equal(getInitiativeModifier({ dex: 10 }).totalModifier, 0);
+  assert.equal(getInitiativeModifier({ dex: 14 }).totalModifier, 2);
+  assert.equal(getInitiativeModifier({ PP: 14 }).totalModifier, 2);
+  assert.equal(getInitiativeModifier({ dex: 14, initiativeBonus: 3 }).totalModifier, 5);
+  assert.equal(getInitiativeModifier({ dex: 10, initiative: 19 }).totalModifier, 0);
+
+  const rolled = rollInitiative5e({ dex: 14, initiativeBonus: 3 }, { d20Roll: 10 });
+  assert.equal(rolled.d20Roll, 10);
+  assert.equal(rolled.dexModifier, 2);
+  assert.equal(rolled.initiativeBonus, 3);
+  assert.equal(rolled.totalModifier, 5);
+  assert.equal(rolled.total, 15);
+}
+
 function run() {
   testLegacyAbilityMapping();
   testModernAbilityPreference();
@@ -158,6 +177,7 @@ function run() {
   testHelpers();
   testActionEconomyExports();
   testLegacyFighterPassthrough();
+  testInitiative5e();
   console.log("5E normalization tests passed.");
 }
 
