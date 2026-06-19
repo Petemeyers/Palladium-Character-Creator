@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useParty } from '../context/PartyContext';
+import RulesReferenceButton from './RulesReferenceButton';
 import '../styles/Navbar.css';
 
 const Navbar = () => {
@@ -96,6 +97,7 @@ const Navbar = () => {
             <Link to="/auto-roll-demo" className={`nav-link ${isActive('/auto-roll-demo')}`} onClick={closeMenu}>
               Auto-Roll Demo
             </Link>
+            <RulesReferenceButton className="nav-link rules-reference-nav-button" />
           </div>
 
           {/* Character Section */}
