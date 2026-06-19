@@ -9261,7 +9261,7 @@ function CombatPage({ characters = [] }) {
           : `${liveFighter.name} remains neutral and does not act.`,
         "info"
       );
-      addLog(`${liveFighter.name} has ${remainingAfter} action(s) remaining this melee`, "info");
+      addLog(`${liveFighter.name} has ${remainingAfter} action(s) remaining this round`, "info");
       processingEnemyTurnRef.current = false;
       processingPlayerAIRef.current = false;
       turnActionResolvingRef.current = false;
@@ -9850,7 +9850,7 @@ function CombatPage({ characters = [] }) {
               clearMatchingDirectHandoffSnapshot(latestFighter);
               releaseStartedTurn();
               if (endCombatIfVictoryResolved(fightersRef.current ?? liveFighters)) return;
-              addLog(`horror/rout action consumed; scheduling turn advance.`, "info");
+              addLog(`Dread response consumes the action; scheduling turn advance.`, "info");
               pendingTurnAdvanceRef.current = true;
               (scheduleEndTurnRef.current)?.(0, "horror-action-consumed");
               return;
@@ -9921,7 +9921,7 @@ function CombatPage({ characters = [] }) {
                     return f;
                   });
                   commitFighters(nextFighters);
-                  addLog(`${checkedActor.name} loses this action to dreadRating before acting.`, "warning");
+                  addLog(`${checkedActor.name} loses this action to dread before acting.`, "warning");
                   markTurnResolvedByStatus(checkedActor, "horror");
                   processingPlayerAIRef.current = false;
                   playerAIActionScheduledRef.current = false;
@@ -9930,7 +9930,7 @@ function CombatPage({ characters = [] }) {
                   executingActionRef.current = false;
                   clearMatchingDirectHandoffSnapshot(liveActorForHorror);
                   releaseStartedTurn();
-                  addLog(`horror/rout action consumed; scheduling turn advance.`, "info");
+                  addLog(`Dread response consumes the action; scheduling turn advance.`, "info");
                   pendingTurnAdvanceRef.current = true;
                   (scheduleEndTurnRef.current)?.(0, "horror-action-consumed");
                   return;
@@ -12885,7 +12885,7 @@ function CombatPage({ characters = [] }) {
       addLog(`${attacker.name}'s agility improves grapple control.`, "info");
     }
     if ((isEntryAction && attackerMods.spdEntryBonus > 0) || (isBreakawayAction && attackerMods.spdBreakawayBonus > 0)) {
-      addLog(`${attacker.name}'s Spd helps with grapple footwork.`, "info");
+      addLog(`${attacker.name}'s speed helps with grapple footwork.`, "info");
     }
 
     handleGrappleActionHandler(actionType, enhancedAttacker, defenderId, {
@@ -13890,7 +13890,7 @@ function CombatPage({ characters = [] }) {
               },
             };
           }
-          addLog(`${updatedAttacker.name} loses this action to dreadRating before acting.`, "warning");
+          addLog(`${updatedAttacker.name} loses this action to dread before acting.`, "warning");
           markTurnResolvedByStatus(updatedAttacker, "horror");
           turnActionResolvingRef.current = false;
           processingPlayerAIRef.current = false;
@@ -13898,7 +13898,7 @@ function CombatPage({ characters = [] }) {
           executingActionRef.current = false;
           playerAIActionScheduledRef.current = false;
           commitFighters(updated);
-          addLog(`horror/rout action consumed; scheduling turn advance.`, "info");
+          addLog(`Dread response consumes the action; scheduling turn advance.`, "info");
           if (
             updatedAttacker?.type === "player" &&
             !aiControlEnabledRef.current &&
@@ -13915,7 +13915,7 @@ function CombatPage({ characters = [] }) {
             setShowCombatChoices(false);
             closeCombatChoices();
           }
-          addLog("horror/rout action finalized; manual attack state cleared", "info");
+          addLog("Dread response action finalized; manual attack state cleared", "info");
           pendingTurnAdvanceRef.current = true;
           (scheduleEndTurnRef.current)?.(0, "horror-action-consumed");
           return;
@@ -14006,7 +14006,7 @@ function CombatPage({ characters = [] }) {
     if (attackerInArray && attackerInArray.type === "player") {
       // Check if player has attacks remaining
       if (attackerInArray.remainingActions <= 0) {
-        addLog(`${attacker.name} is out of attacks this turn!`, "error");
+        addLog(`${attacker.name} is out of actions this turn!`, "error");
         return;
       }
       if (!bonusModifiers?.multiAttackSubHit) {
@@ -14146,7 +14146,7 @@ function CombatPage({ characters = [] }) {
 
     if (!attackData) {
       attackDataForFinish = null;
-      addLog(`${attacker.name} has no attacks available!`, "error");
+      addLog(`${attacker.name} has no actions available!`, "error");
       return;
     }
 
@@ -15158,11 +15158,11 @@ function CombatPage({ characters = [] }) {
             timestamp: new Date().toLocaleTimeString()
           }]);
 
-          addLog(`${defender.name} parries! Rolls ${defenseDiceRoll} + ${defenseBonus} = ${defenseRoll}`, "info");
+          addLog(`${defender.name} blocks! Rolls ${defenseDiceRoll} + ${defenseBonus} = ${defenseRoll}`, "info");
 
           if (defenseRoll >= attackRoll) {
             defenseSuccess = true;
-            addLog(`${defender.name} successfully parries the attack!`, "success");
+            addLog(`${defender.name} successfully blocks the attack!`, "success");
 
             // Deduct one attack for the block
             commitFighters(prev => prev.map(f =>
@@ -15219,7 +15219,7 @@ function CombatPage({ characters = [] }) {
       if (defenseType && attackRoll >= targetGuardRating && !autoBlockUsed) {
         // Check if defender has attacks remaining to block/evade
         if (defender.remainingActions <= 0) {
-          addLog(`${defender.name} is out of attacks and cannot ${defenseType.toLowerCase()}!`, "error");
+          addLog(`${defender.name} is out of actions and cannot ${defenseType.toLowerCase()}!`, "error");
         } else {
           // Defender is using block, evade, or move - roll defense!
           // Apply fatigue penalties to defense rolls
@@ -15380,7 +15380,7 @@ function CombatPage({ characters = [] }) {
 
           // Deduct 1 attack for defensive action
           updated[defenderIndex].remainingActions = Math.max(0, (updated[defenderIndex].remainingActions || 0) - 1);
-          addLog(`${defender.name} used 1 attack to defend (${updated[defenderIndex].remainingActions}/${defender.actionsPerRound} remaining)`, "info");
+          addLog(`${defender.name} used 1 action to defend (${updated[defenderIndex].remainingActions}/${defender.actionsPerRound} remaining)`, "info");
         }
 
         // Clear defensive stance after it's used (one-time use per turn)
@@ -17008,7 +17008,7 @@ function CombatPage({ characters = [] }) {
         turnActionResolvingRef.current = false;
         executingActionRef.current = false;
         if (endCombatIfVictoryResolved(fightersRef.current ?? fighters)) return;
-        addLog(`horror/rout action consumed; scheduling turn advance.`, "info");
+        addLog(`Dread response consumes the action; scheduling turn advance.`, "info");
         pendingTurnAdvanceRef.current = true;
         (scheduleEndTurnRef.current)?.(0, "horror-action-consumed");
         return;
@@ -19641,7 +19641,7 @@ function CombatPage({ characters = [] }) {
         executingActionRef.current = false;
         playerAIActionScheduledRef.current = false;
         if (endCombatIfVictoryResolved(fightersRef.current ?? fightersSnapshot)) return;
-        addLog(`horror/rout action consumed; scheduling turn advance.`, "info");
+        addLog(`Dread response consumes the action; scheduling turn advance.`, "info");
         pendingTurnAdvanceRef.current = true;
         (scheduleEndTurnRef.current)?.(0, "horror-action-consumed");
         return;
@@ -20447,7 +20447,7 @@ function CombatPage({ characters = [] }) {
             )
           );
           addLog(
-           `${enemy.name} has ${remainingAfter} action(s) remaining this melee`,
+           `${enemy.name} has ${remainingAfter} action(s) remaining this round`,
             "info"
           );
 
@@ -20543,7 +20543,7 @@ function CombatPage({ characters = [] }) {
           reasoning = `targeting the weakest foe (${Math.round((weakestTarget.currentHP / weakestTarget.maxHP) * 100)}% HP)`;
         } else if (easyTarget && (easyTarget.guardRating || easyTarget.guardRating) < 10) {
           target = easyTarget;
-          reasoning = `targeting easiest to hit (guardRating ${easyTarget.guardRating || easyTarget.guardRating})`;
+          reasoning = `targeting easiest to hit (AC ${easyTarget.guardRating || easyTarget.guardRating})`;
         } else if (currentPlayerTarget) {
           target = currentPlayerTarget;
           reasoning = `targeting player currently taking turn (aggressive)`;
@@ -22086,14 +22086,14 @@ function CombatPage({ characters = [] }) {
           // Use MOVEMENT_RATES for 1994 Medieval Combat Simulator format
           const movementRates = MOVEMENT_RATES.calculateMovement(speed);
           const runAction = MOVEMENT_ACTIONS.RUN;
-          addLog(`${enemy.name} uses ${runAction.actionCost} action(s) to ${runAction.name} (Speed ${speed} ${movementRates.running}ft/melee)`, "info");
+          addLog(`${enemy.name} uses ${runAction.actionCost} action(s) to ${runAction.name} (Speed ${speed} ${movementRates.running}ft/round)`, "info");
           addLog(`${enemy.name} ${actionVerb} ${Math.round(distanceMoved)}ft toward ${target.name} new position (${newX},${newY})`, "info");
 
           // Deduct 1 action for movement
           commitFighters(prev => prev.map(f => {
             if (f.id === enemy.id) {
               const updatedEnemy = { ...f, remainingActions: Math.max(0, f.remainingActions - 1) };
-              addLog(`${enemy.name} has ${updatedEnemy.remainingActions} action(s) remaining this melee`, "info");
+              addLog(`${enemy.name} has ${updatedEnemy.remainingActions} action(s) remaining this round`, "info");
               return updatedEnemy;
             }
             return f;
@@ -22370,12 +22370,12 @@ function CombatPage({ characters = [] }) {
         if (isFlightMovement) {
           const flightMove = calculateFlightMovement(enemy, enemy.actionsPerRound || enemy.actionsPerMelee || 1);
           const flightPerMelee = Math.round(flightMove?.feetPerMelee ?? getMaxMoveFtThisAction(enemy, "FLY"));
-          addLog(`${enemy.name} uses one action to FLY (${flightPerMelee}ft/melee)`, "info");
+          addLog(`${enemy.name} uses one action to FLY (${flightPerMelee}ft/round)`, "info");
           addLog(`Flies ${Math.round(distanceMoved)}ft toward ${target.name} new position (${targetX},${targetY})`, "info");
         } else {
           // 1994 Medieval Combat Simulator format: RUN/SPRINT uses one action
           const feetPerMelee = speed * 18; // Official formula
-          addLog(`${enemy.name} uses one action to RUN (Speed ${speed} ${feetPerMelee}ft/melee)`, "info");
+          addLog(`${enemy.name} uses one action to RUN (Speed ${speed} ${feetPerMelee}ft/round)`, "info");
           addLog(
             stostaminadAdjacentToTarget
               ? `Stops adjacent to ${target.name} at (${targetX},${targetY})`
@@ -22402,7 +22402,7 @@ function CombatPage({ characters = [] }) {
                 : {}),
               remainingActions: Math.max(0, f.remainingActions - 1)
             };
-            addLog(`${enemy.name} has ${updatedEnemy.remainingActions} action(s) remaining this melee`, "info");
+            addLog(`${enemy.name} has ${updatedEnemy.remainingActions} action(s) remaining this round`, "info");
             return updatedEnemy;
           }
           return f;
@@ -22822,7 +22822,7 @@ function CombatPage({ characters = [] }) {
           if (horrorRoutEffectAdvanceIgnoredKeyRef.current !== ignoreKey) {
             horrorRoutEffectAdvanceIgnoredKeyRef.current = ignoreKey;
             addLog?.(
-              "effect-turn-advance ignored: action already resolved by horror/rout; turn advance already pending.",
+              "effect-turn-advance ignored: action already resolved by dread response; turn advance already pending.",
               "warning"
             );
           }
@@ -23483,14 +23483,14 @@ function CombatPage({ characters = [] }) {
         const bonus = data.roll?.bonus ? ` + ${data.roll.bonus}` : '';
         addLog(`   ${attr}: ${data.dice} = [${rollBreakdown}]${bonus} = ${data.value}`, "info");
       });
-      addLog(`   HP: ${newFighter.currentHP}, guardRating: ${newFighter.guardRating}, Speed: ${newFighter.Spd || newFighter.spd || newFighter.attributes?.Spd || newFighter.attributes?.spd || 10}`, "info");
+      addLog(`   HP: ${newFighter.currentHP}, AC: ${newFighter.guardRating}, Speed: ${newFighter.Spd || newFighter.spd || newFighter.attributes?.Spd || newFighter.attributes?.spd || 10}`, "info");
       const equistaminadArmorName = getEquistaminadArmorName(newFighter);
       const equistaminadArmorAR =
         newFighter.equistaminad?.chest?.guardRating ||
         newFighter.equistaminad?.chest?.guardRating ||
         newFighter.guardRating;
       if (equistaminadArmorName) {
-        addLog(`   ${newFighter.name} armor: ${equistaminadArmorName} (guardRating ${equistaminadArmorAR})`, "info");
+        addLog(`   ${newFighter.name} armor: ${equistaminadArmorName} (AC ${equistaminadArmorAR})`, "info");
       }
       addLog(`   Bonuses: ${Object.entries(newFighter.bonuses).map(([key, val]) =>
         `${key}: +${val}`).join(", ")}`, "info");
@@ -23757,7 +23757,7 @@ function CombatPage({ characters = [] }) {
       // Apply level-based stat adjustments
       if (level > 1) {
         newFighter = applyLevelToEnemy(newFighter, level);
-        addLog(`${newFighter.name} adjusted to level ${level} (HP: ${newFighter.maxHP}, guardRating: ${newFighter.guardRating})`, "info");
+        addLog(`${newFighter.name} adjusted to level ${level} (HP: ${newFighter.maxHP}, AC: ${newFighter.guardRating})`, "info");
       }
 
       // Equip armor for humanoids (after level adjustments so guardRating is calculated correctly)
@@ -23765,7 +23765,7 @@ function CombatPage({ characters = [] }) {
         const armorData = availableArmors.find(a => a.name === armorToEquip);
         if (armorData) {
           newFighter = equipArmorToEnemy(newFighter, armorData);
-          addLog(`${newFighter.name} equistaminad with ${armorData.name} (guardRating: ${armorData.guardRating})`, "info");
+          addLog(`${newFighter.name} equistaminad with ${armorData.name} (AC: ${armorData.guardRating})`, "info");
         }
       }
     }
@@ -23793,7 +23793,7 @@ function CombatPage({ characters = [] }) {
     // Apply level-based stat adjustments for playable characters too
     if (level > 1) {
       newFighter = applyLevelToEnemy(newFighter, level);
-      addLog(`${newFighter.name} adjusted to level ${level} (HP: ${newFighter.maxHP}, guardRating: ${newFighter.guardRating})`, "info");
+      addLog(`${newFighter.name} adjusted to level ${level} (HP: ${newFighter.maxHP}, AC: ${newFighter.guardRating})`, "info");
     }
 
     newFighter = syncLegacyArmorFields(newFighter);
@@ -24350,7 +24350,7 @@ function CombatPage({ characters = [] }) {
 
       // Apply terrain modifiers
       if (env.terrainData) {
-        addLog(`Movement: ${env.terrainData.movementModifier * 100}%, Visibility: ${env.terrainData.visibilityModifier * 100}%, Cover: +${env.terrainData.cover} guardRating`, "info");
+        addLog(`Movement: ${env.terrainData.movementModifier * 100}%, Visibility: ${env.terrainData.visibilityModifier * 100}%, Cover: +${env.terrainData.cover} AC`, "info");
       }
 
       // Log visibility range if computed
@@ -28014,7 +28014,7 @@ function CombatPage({ characters = [] }) {
                             </HStack>
 
                             <Text fontSize="sm" color="blue.700">
-                              HP: {getCombatantHP(fighter)}/{getCombatantMaxHP(fighter)} | Guard Rating: {fighter.guardRating || 10} | Speed: {fighter.Spd || fighter.spd || fighter.attributes?.Spd || fighter.attributes?.spd || 10}
+                              HP: {getCombatantHP(fighter)}/{getCombatantMaxHP(fighter)} | AC: {fighter.guardRating || 10} | Speed: {fighter.Spd || fighter.spd || fighter.attributes?.Spd || fighter.attributes?.spd || 10}
                               {getCombatantTempHP(fighter) > 0 && ` | Temp HP: ${getCombatantTempHP(fighter)}`}
                               {fighter.focus !== undefined && ` | focus: ${fighter.focus}`}
                               {formatFighterstamina(fighter)}
@@ -28032,7 +28032,7 @@ function CombatPage({ characters = [] }) {
                                   {fighter.attributes.PP && <Text>PP: {fighter.attributes.PP}</Text>}
                                   {fighter.attributes.PE && <Text>PE: {fighter.attributes.PE}</Text>}
                                   {fighter.attributes.PB && <Text>PB: {fighter.attributes.PB}</Text>}
-                                  {fighter.attributes.Spd && <Text>Spd: {fighter.attributes.Spd}</Text>}
+                                  {fighter.attributes.Spd && <Text>Speed: {fighter.attributes.Spd}</Text>}
                                 </HStack>
                               </Box>
                             )}
@@ -28181,9 +28181,9 @@ function CombatPage({ characters = [] }) {
                                         <Box>
                                           <Text fontWeight="medium">Armor:</Text>
                                           {fighter.equistaminadArmor ? (
-                                                <Text pl={2}>{fighter.equistaminadArmor.name || fighter.equistaminadArmor} (Guard Rating: {fighter.guardRating || 10})</Text>
+                                                <Text pl={2}>{fighter.equistaminadArmor.name || fighter.equistaminadArmor} (AC: {fighter.guardRating || 10})</Text>
                                           ) : (
-                                                <Text pl={2}>Guard Rating: {fighter.guardRating || 10}</Text>
+                                                <Text pl={2}>AC: {fighter.guardRating || 10}</Text>
                                           )}
                                         </Box>
                                       )}
@@ -30137,7 +30137,7 @@ function CombatPage({ characters = [] }) {
                                 </HStack>
 
                                 <Box fontSize="sm">
-                                  HP: {getCombatantHP(fighter)}/{getCombatantMaxHP(fighter)} | Guard Rating: {fighter.guardRating || 10} | Speed: {fighter.Spd || fighter.spd || fighter.attributes?.Spd || fighter.attributes?.spd || 10}
+                                  HP: {getCombatantHP(fighter)}/{getCombatantMaxHP(fighter)} | AC: {fighter.guardRating || 10} | Speed: {fighter.Spd || fighter.spd || fighter.attributes?.Spd || fighter.attributes?.spd || 10}
                                   {getCombatantTempHP(fighter) > 0 && ` | Temp HP: ${getCombatantTempHP(fighter)}`}
                                   {fighter.focus !== undefined && ` | focus: ${fighter.focus}`}
                                   {formatFighterstamina(fighter)}
@@ -30155,7 +30155,7 @@ function CombatPage({ characters = [] }) {
                                       {fighter.attributes.PP && <Text>PP: {fighter.attributes.PP}</Text>}
                                       {fighter.attributes.PE && <Text>PE: {fighter.attributes.PE}</Text>}
                                       {fighter.attributes.PB && <Text>PB: {fighter.attributes.PB}</Text>}
-                                      {fighter.attributes.Spd && <Text>Spd: {fighter.attributes.Spd}</Text>}
+                                      {fighter.attributes.Spd && <Text>Speed: {fighter.attributes.Spd}</Text>}
                                     </HStack>
                                   </Box>
                                 )}
@@ -30304,9 +30304,9 @@ function CombatPage({ characters = [] }) {
                                             <Box>
                                               <Text fontWeight="medium">Armor:</Text>
                                               {fighter.equistaminadArmor ? (
-                                                <Text pl={2}>{fighter.equistaminadArmor.name || fighter.equistaminadArmor} (Guard Rating: {fighter.guardRating || 10})</Text>
+                                                <Text pl={2}>{fighter.equistaminadArmor.name || fighter.equistaminadArmor} (AC: {fighter.guardRating || 10})</Text>
                                               ) : (
-                                                <Text pl={2}>Guard Rating: {fighter.guardRating || 10}</Text>
+                                                <Text pl={2}>AC: {fighter.guardRating || 10}</Text>
                                               )}
                                             </Box>
                                           )}
@@ -30394,7 +30394,7 @@ function CombatPage({ characters = [] }) {
                               </HStack>
                               {renderCombatRoleBadges(fighter)}
                               <Text fontSize="sm" color="purple.800">
-                                HP: {getCombatantHP(fighter)}/{getCombatantMaxHP(fighter)} | Guard Rating: {fighter.guardRating || 10} | Speed: {fighter.Spd || fighter.spd || fighter.attributes?.Spd || fighter.attributes?.spd || 10}
+                                HP: {getCombatantHP(fighter)}/{getCombatantMaxHP(fighter)} | AC: {fighter.guardRating || 10} | Speed: {fighter.Spd || fighter.spd || fighter.attributes?.Spd || fighter.attributes?.spd || 10}
                                 {getCombatantTempHP(fighter) > 0 && ` | Temp HP: ${getCombatantTempHP(fighter)}`}
                               </Text>
                               {fighter.initiative > 0 && (
@@ -30880,7 +30880,7 @@ function CombatPage({ characters = [] }) {
                                   </>
                                 )}
                                 <Badge colorScheme="cyan">
-                                  Spd: {speed}
+                                  Speed: {speed}
                                 </Badge>
                               </HStack>
                             </HStack>
@@ -31472,7 +31472,7 @@ function CombatPage({ characters = [] }) {
                                 </Text>
                               </Box>
                               <Box>
-                                <Text fontSize="xs" color="gray.500" textTransform="ustaminarcase">Guard Rating</Text>
+                                <Text fontSize="xs" color="gray.500" textTransform="ustaminarcase">AC</Text>
                                 <Text fontWeight="semibold">{rosterPreviewFighter.guardRating || rosterPreviewFighter.guardRating || "?"}</Text>
                               </Box>
                               <Box>
@@ -31707,7 +31707,7 @@ function CombatPage({ characters = [] }) {
                 placeholder="1"
               />
               <Text fontSize="xs" color="gray.500" mt={1}>
-                Level affects HP (+10% per level), Guard Rating (+1 per 3 levels), and combat bonuses (+1 per 2 levels).
+                Level affects HP (+10% per level), AC (+1 per 3 levels), and combat bonuses (+1 per 2 levels).
               </Text>
             </FormControl>
 
@@ -31722,12 +31722,12 @@ function CombatPage({ characters = [] }) {
                 >
                   {availableArmors.map((armor) => (
                     <option key={armor.name} value={armor.name}>
-                      {armor.name} {armor.name !== "None" ? `(Guard Rating: ${armor.guardRating}, Armor Durability: ${armor.armorDurability})` : ""}
+                      {armor.name} {armor.name !== "None" ? `(AC: ${armor.guardRating}, Armor Durability: ${armor.armorDurability})` : ""}
                     </option>
                   ))}
                 </Select>
                 <Text fontSize="xs" color="gray.500" mt={1}>
-                  Select armor to equip. Armor Guard Rating replaces base Guard Rating if higher.
+                  Select armor to equip. Armor AC replaces base AC if higher.
                 </Text>
               </FormControl>
             )}
@@ -31813,7 +31813,7 @@ function CombatPage({ characters = [] }) {
                           <Text fontSize="sm">Profession: {combatant.profession || "N/A"}</Text>
                           <Text fontSize="sm">Attributes: {Object.entries(combatant.attribute_dice || {}).map(([attr, dice]) => `${attr}: ${dice}`).join(", ")}</Text>
                           <Text fontSize="sm">HP: {combatant.HP || "Variable"}</Text>
-                          <Text fontSize="sm">Guard Rating: {combatant.guardRating || "Variable"}</Text>
+                          <Text fontSize="sm">AC: {combatant.guardRating || "Variable"}</Text>
                           <Text fontSize="sm">Speed: {combatant.spd || "Variable"}</Text>
                           <Text fontSize="sm">Category: {formatCombatantCategory(combatant.category)}</Text>
                           <Text fontSize="sm">Training: {combatant.training || "None"}</Text>
@@ -31823,7 +31823,7 @@ function CombatPage({ characters = [] }) {
                         <>
                           <Text fontSize="sm">Category: {formatCombatantCategory(combatant.category)}</Text>
                           <Text fontSize="sm">HP: {getCombatantHP(combatant)} / {getCombatantMaxHP(combatant)}</Text>
-                          <Text fontSize="sm">Guard Rating: {combatant.guardRating}</Text>
+                          <Text fontSize="sm">AC: {combatant.guardRating}</Text>
                           <Text fontSize="sm">Speed: {combatant.spd}</Text>
                           <Text fontSize="sm">Attacks: {combatant.attacks?.map(a => a.name).join(", ")}</Text>
                         </>
@@ -31909,7 +31909,7 @@ function CombatPage({ characters = [] }) {
                         <Text fontWeight="bold">{character.name}</Text>
                         <Text fontSize="sm" color="gray.600">
                           {character.profession || "Fighter"} | Level {character.level || 1} | HP: {character.derived?.hitPoints || character.hp || character.HP || 20}
-                          | Guard Rating: {character.guardRating || 10} | Speed: {character.Spd || character.spd || character.attributes?.Spd || character.attributes?.spd || 10}
+                          | AC: {character.guardRating || 10} | Speed: {character.Spd || character.spd || character.attributes?.Spd || character.attributes?.spd || 10}
                         </Text>
                         {character.attributes && Object.entries(character.attributes).slice(0, 4).map(([attr, value]) => (
                           <Badge key={attr} size="sm" colorScheme="blue">
