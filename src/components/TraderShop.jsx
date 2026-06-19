@@ -43,7 +43,7 @@ const TraderShop = () => {
             _id: `equipment_${slot}_${item.name.replace(/\s+/g, '_').toLowerCase()}`,
             itemId: `equipment_${slot}_${item.name.replace(/\s+/g, '_').toLowerCase()}`,
             name: item.name,
-            category: `Equipment - ${slot.charAt(0).toUstaminarCase() + slot.slice(1)}`,
+            category: `Equipment - ${slot.charAt(0).toUpperCase() + slot.slice(1)}`,
             price: item.value,
             weight: item.weight,
             description: item.description,

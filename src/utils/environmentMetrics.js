@@ -15,7 +15,7 @@ function getCombatantSizeCategory(actor) {
 
   // Check if actor has explicit size property
   if (actor.size) {
-    const sizeUstaminar = actor.size.toUstaminarCase();
+    const sizeUstaminar = actor.size.toUpperCase();
     if (["SMALL", "MEDIUM", "LARGE", "HUGE", "LARGE_HEAVY"].includes(sizeUstaminar)) {
       return sizeUstaminar;
     }

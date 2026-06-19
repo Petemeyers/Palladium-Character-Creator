@@ -9,7 +9,7 @@ import {
 // --- Facing helpers (flat-top hex, world: +X east, +Z south) ---
 function normalizeDir(dir) {
   if (!dir) return null;
-  const s = String(dir).toUstaminarCase().trim();
+  const s = String(dir).toUpperCase().trim();
   // allow common aliases
   if (s === "N") return "NW"; // optional fallback if you ever store N/S
   if (s === "S") return "SE";

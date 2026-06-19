@@ -1,10 +1,10 @@
-/**
+﻿/**
  * PROFESSION Skill Mastaminar - Maps profession and skills to combat modifiers
  *
  * Extracts combat-relevant skills from character PROFESSION and skill data:
  * - Prowl: Stealth checks (Phase 0 pre-combat)
  * - Track: Target detection by signs/smell
- * - Hand to Hand: Defines attacks per melee, critical range
+ * - Hand to Hand: Defines actions per round, critical range
  * - Horsemanship: Mounted bonuses
  * - Block/Evade/Attack: Combat bonuses (already built-in via bonuses object)
  * - Tactics/Training: Mental/exceptional action hooks
@@ -36,16 +36,16 @@ function extractHandToHandType(professionData) {
 }
 
 /**
- * Get attacks per melee based on Hand to Hand type
+ * Get actions per round based on Hand to Hand type
  * @param {string} handToHandType - Hand to Hand type
- * @returns {number} Attacks per melee
+ * @returns {number} Actions per round
  */
 function getAttacksPerMeleeFromHandToHand(handToHandType) {
   if (!handToHandType) return 2; // Default
 
   const type = handToHandType.toLowerCase();
 
-  // Medieval Combat Simulator 1994 Hand to Hand attacks per melee
+  // Medieval Combat Simulator original hand-to-hand actions per round
   if (type.includes("basic")) return 2;
   if (type.includes("expert")) return 3;
   if (type.includes("martial arts")) return 4;
@@ -211,9 +211,9 @@ export function hasHorsemanship(character) {
 }
 
 /**
- * Get attacks per melee from Hand to Hand skill
+ * Get actions per round from Hand to Hand skill
  * @param {Object} character - Character object
- * @returns {number} Attacks per melee
+ * @returns {number} Actions per round
  */
 export function getAttacksPerMelee(character) {
   const professionName = character.profession || character.PROFESSION || character.professionName;
@@ -530,3 +530,4 @@ export default {
   attemptFearRecovery,
   STATUS_EFFECTS,
 };
+

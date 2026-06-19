@@ -1,4 +1,4 @@
-// Medieval Combat Simulator Missile Weapons with Range System
+﻿// Medieval Combat Simulator Missile Weapons with Range System
 // Based on Medieval Combat Simulator rules
 
 /**
@@ -29,11 +29,11 @@ export const missileWeapons = {
     weight: 2,
     price: 30,
     maxRange: 360, // feet
-    rateOfFire: 2, // attacks per melee
+    rateOfFire: 2, // actions per round
     ammunition: "arrows",
     startingAmmo: 20,
     description: "Light bow for quick shots",
-    requiresWP: "W.P. Bow",
+    requiresWP: "Weapon Training: Bow",
     strengthRequired: 10, // PS requirement
   },
   "Long Bow": {
@@ -49,7 +49,7 @@ export const missileWeapons = {
     ammunition: "arrows",
     startingAmmo: 24,
     description: "Powerful bow with long range",
-    requiresWP: "W.P. Long Bow",
+    requiresWP: "Weapon Training: Long Bow",
     strengthRequired: 12,
   },
   "Composite Bow": {
@@ -65,7 +65,7 @@ export const missileWeapons = {
     ammunition: "arrows",
     startingAmmo: 20,
     description: "Reinfraidered bow with superior damage",
-    requiresWP: "W.P. Bow",
+    requiresWP: "Weapon Training: Bow",
     strengthRequired: 13,
   },
   "Arena Bow": {
@@ -81,7 +81,7 @@ export const missileWeapons = {
     ammunition: "arrows",
     startingAmmo: 30,
     description: "Masterwork elven crafted bow",
-    requiresWP: "W.P. Bow",
+    requiresWP: "Weapon Training: Bow",
     strengthRequired: 12,
     special: "+1 to attack",
   },
@@ -100,7 +100,7 @@ export const missileWeapons = {
     ammunition: "bolts",
     startingAmmo: 20,
     description: "Easy to use crossbow",
-    requiresWP: "W.P. Crossbow",
+    requiresWP: "Weapon Training: Crossbow",
     strengthRequired: 8,
     reloadTime: "1 action",
   },
@@ -117,7 +117,7 @@ export const missileWeapons = {
     ammunition: "bolts",
     startingAmmo: 15,
     description: "Powerful but slow to reload",
-    requiresWP: "W.P. Crossbow",
+    requiresWP: "Weapon Training: Crossbow",
     strengthRequired: 12,
     reloadTime: "2 actions",
   },
@@ -135,7 +135,7 @@ export const missileWeapons = {
     startingAmmo: 12, // magazine capacity
     magazineSize: 12,
     description: "Rapid-fire crossbow with magazine",
-    requiresWP: "W.P. Crossbow",
+    requiresWP: "Weapon Training: Crossbow",
     strengthRequired: 10,
     reloadTime: "1 action to reload magazine",
   },
@@ -153,7 +153,7 @@ export const missileWeapons = {
     ammunition: "shuman", // weapon itshuman
     startingAmmo: 6,
     description: "Balanced knife for throwing",
-    requiresWP: "W.P. Knife",
+    requiresWP: "Weapon Training: Knife",
     strengthRequired: 6,
   },
   "Throwing Axe": {
@@ -168,7 +168,7 @@ export const missileWeapons = {
     ammunition: "shuman",
     startingAmmo: 4,
     description: "Single-bladed throwing axe",
-    requiresWP: "W.P. Axe",
+    requiresWP: "Weapon Training: Axe",
     strengthRequired: 8,
   },
   Javelin: {
@@ -183,7 +183,7 @@ export const missileWeapons = {
     ammunition: "shuman",
     startingAmmo: 3,
     description: "Light throwing spear",
-    requiresWP: "W.P. Spear",
+    requiresWP: "Weapon Training: Spear",
     strengthRequired: 10,
     special: "Add PS damage bonus",
   },
@@ -199,7 +199,7 @@ export const missileWeapons = {
     ammunition: "shuman",
     startingAmmo: 12,
     description: "Throwing stars",
-    requiresWP: "W.P. Shuriken",
+    requiresWP: "Weapon Training: Throwing Star",
     strengthRequired: 5,
   },
 
@@ -216,7 +216,7 @@ export const missileWeapons = {
     ammunition: "sling stones",
     startingAmmo: 30,
     description: "Simple leather sling",
-    requiresWP: "W.P. Sling",
+    requiresWP: "Weapon Training: Sling",
     strengthRequired: 6,
   },
   "Staff Sling": {
@@ -231,7 +231,7 @@ export const missileWeapons = {
     ammunition: "sling stones",
     startingAmmo: 20,
     description: "Sling mounted on a staff for more power",
-    requiresWP: "W.P. Sling",
+    requiresWP: "Weapon Training: Sling",
     strengthRequired: 10,
   },
 
@@ -248,7 +248,7 @@ export const missileWeapons = {
     ammunition: "darts",
     startingAmmo: 20,
     description: "Silent weapon, often poisoned",
-    requiresWP: "W.P. Blowgun",
+    requiresWP: "Weapon Training: Blowgun",
     strengthRequired: 5,
     special: "Silent, can apply poison",
   },
@@ -377,3 +377,4 @@ export function getMissileWeapon(weaponName) {
 }
 
 export default missileWeapons;
+

@@ -12,6 +12,8 @@ import Navbar from './components/Navbar';
 import axiosInstance from './utils/axios';
 import ErrorBoundary from './components/ErrorBoundary';
 import { syncEquistaminadWeapons } from './utils/weaponManager';
+import ArenaRosterPanel from './components/ArenaRosterPanel';
+import { isBackendOfflineError, markBackendOffline } from './utils/backendStatus';
 
 // Lazy load heavy components
 import {
@@ -64,7 +66,14 @@ function App() {
       setCharacters(syncedCharacters);
       setDataLoaded(true);
     } catch (error) {
+      if (isBackendOfflineError(error)) {
+        markBackendOffline();
+        setCharacters([]);
+        setDataLoaded(true);
+        return;
+      }
       console.error('Error fetching characters:', error);
+      setDataLoaded(true);
     }
   }, []);
 
@@ -77,6 +86,11 @@ function App() {
         setParties(response.data);
       }
     } catch (error) {
+      if (isBackendOfflineError(error)) {
+        markBackendOffline();
+        setParties([]);
+        return;
+      }
       console.error('Error fetching parties:', error);
     }
   }, []);
@@ -212,6 +226,7 @@ function App() {
         }} /></PrivateRoute>} />
         <Route path="/npc-memory" element={<PrivateRoute><NpcMemoryEditor /></PrivateRoute>} />
         <Route path="/gm-panel" element={<PrivateRoute><GMControlPanel parties={parties} onDeleteParty={handleDeleteParty} onLoadParty={handleLoadParty} onUpdateCharacter={handleUpdateCharacter} /></PrivateRoute>} />
+        <Route path="/arena-roster" element={<PrivateRoute><ArenaRosterPanel /></PrivateRoute>} />
         <Route path="/character-creation" element={<PrivateRoute><CharacterCreator onCreateCharacter={handleCreateCharacter} /></PrivateRoute>} />
         <Route path="/character-list" element={
           <PrivateRoute>

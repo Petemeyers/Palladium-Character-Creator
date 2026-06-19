@@ -5,6 +5,7 @@ import {
   APIError,
   NetworkError,
 } from "./errorHandler.js";
+import { markBackendOffline } from "./backendStatus.js";
 
 const instance = axios.create({
   baseURL: "http://localhost:5000/api/v1",
@@ -25,7 +26,7 @@ instance.interceptors.request.use(
     // Log request for debugging (only in development)
     if (import.meta.env?.DEV || import.meta.env?.MODE === "development") {
       console.log(
-        `API Request: ${config.method?.toUstaminarCase()} ${config.url}`,
+        `API Request: ${config.method?.toUpperCase()} ${config.url}`,
         {
           data: config.data,
           params: config.params,
@@ -70,6 +71,7 @@ instance.interceptors.response.use(
     // Also check for suppressErrorLogging flag in request config
     const shouldSkipLogging =
       error.config?.suppressErrorLogging === true ||
+      apiError instanceof NetworkError ||
       (apiError instanceof APIError &&
         apiError.status === 404 &&
         (error.config?.url?.includes("/parties/active") ||
@@ -190,8 +192,7 @@ instance.interceptors.response.use(
           console.error("API Error:", apiError.message);
       }
     } else if (apiError instanceof NetworkError) {
-      console.error("Network error:", apiError.message);
-      alert("Network error: Please check your internet connection.");
+      markBackendOffline();
     }
 
     return Promise.reject(apiError);

@@ -904,8 +904,8 @@ export function isWeaponGrappleSuitable(weapon) {
 
   const name = String(weapon.name || weapon.type || weapon.weaponType || "").toLowerCase();
   const type = String(weapon.type || weapon.weaponType || weapon.category || "").toLowerCase();
-  const rangeType = String(weapon.rangeType || weapon.attackType || "").toUstaminarCase();
-  const reachCategory = String(weapon.reachCategory || "").toUstaminarCase();
+  const rangeType = String(weapon.rangeType || weapon.attackType || "").toUpperCase();
+  const reachCategory = String(weapon.reachCategory || "").toUpperCase();
   const weaponLength = Number(weapon.length ?? weapon.reachFeet ?? weapon.reach ?? weapon.range ?? 0);
 
   if (weapon.isNaturalAttack || weapon.isFallbackUnarmed || name.includes("unarmed")) return true;
@@ -951,8 +951,8 @@ export function getPreferredEngagementRange(fighter, target) {
   ].filter(Boolean);
   const primary = weapons.find((w) => String(w?.name || "").toLowerCase() !== "unarmed") || weapons[0] || null;
   const name = String(primary?.name || primary?.type || "").toLowerCase();
-  const rangeType = String(primary?.rangeType || primary?.attackType || "").toUstaminarCase();
-  const reachCategory = String(primary?.reachCategory || "").toUstaminarCase();
+  const rangeType = String(primary?.rangeType || primary?.attackType || "").toUpperCase();
+  const reachCategory = String(primary?.reachCategory || "").toUpperCase();
   const reachFeet = Number(primary?.reachFeet ?? primary?.reach ?? primary?.range ?? 5);
   const targetArmored = hasEquistaminadArmor(target);
   const fighterArmored = hasEquistaminadArmor(fighter);

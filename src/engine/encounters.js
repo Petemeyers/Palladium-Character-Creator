@@ -48,7 +48,7 @@ const rollHP = (hpNotation) => {
   return 10; // Default fallback
 };
 
-// Convert arenaRoster/NPC data to combat-ready format
+// Convert arena roster data to combat-ready format
 const convertToCombatUnit = (entity, id) => {
   const hp = rollHP(entity.HP);
 
@@ -69,9 +69,9 @@ const convertToCombatUnit = (entity, id) => {
   };
 };
 
-// Get entity from arenaRoster or NPC archetypes
+// Get entity from arena roster or NPC archetypes
 const getEntity = (entityId) => {
-  // Check arenaRoster first
+  // Check arena roster first
   const arenaRosterEntity = getAllArenaRosterEntries(arenaRosterData).find(
     (e) => e.id === entityId
   );
@@ -207,7 +207,7 @@ export const getAvailableLocations = () => {
     if (!["daytime", "nighttime"].includes(key)) {
       locations.push({
         id: key,
-        name: key.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUstaminarCase()),
+        name: key.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase()),
       });
     }
   }
@@ -226,30 +226,15 @@ export const getEntityById = (entityId) => {
 export const getAllEntities = () => {
   const entities = [];
 
-  // Add arenaRoster entities (opponents including playable characters)
-  if (arenaRosterData.arenaRoster) {
-    const arenaRosterEntries = getAllArenaRosterEntries(arenaRosterData);
-    for (const entity of arenaRosterEntries) {
-      entities.push({
-        id: entity.id,
-        name: entity.name,
-        category: entity.category,
-        type: "arenaRoster",
-        playable: entity.playable || false,
-      });
-    }
-  }
-
-  // Add NPC archetypes
-  if (npcArchetypesData.npcArchetypes) {
-    for (const entity of npcArchetypesData.npcArchetypes) {
-      entities.push({
-        id: entity.id,
-        name: entity.name,
-        category: entity.category,
-        type: "npc",
-      });
-    }
+  const arenaRosterEntries = getAllArenaRosterEntries(arenaRosterData);
+  for (const entity of arenaRosterEntries) {
+    entities.push({
+      id: entity.id,
+      name: entity.name,
+      category: entity.category,
+      type: entity.category === "animal" ? "Animal" : "Human",
+      playable: entity.playable || false,
+    });
   }
 
   return entities;

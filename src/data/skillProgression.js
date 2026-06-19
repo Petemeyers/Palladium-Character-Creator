@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Skill progression by level for Medieval Combat Simulator
  * All bonuses scale with character level
  */
@@ -469,9 +469,9 @@ Object.assign(handToHandProgression, {
   }
 });
 export const weaponProficiencyProgression = {
-  // Melee Weapon Proficiencies
+  // Melee Weapon Training
   // Chart shows cumulative totals - converting to incremental bonuses
-  "W.P. Axe": {
+  "Weapon Training: Axe": {
     bonuses: {
       1: { attack: 1, block: 0, evade: 0, damage: 0 }, // Level 1: +1 attack (total +1)
       2: { attack: 1, block: 0, evade: 0, damage: 0 }, // Level 2: +2 attack total (+1 more)
@@ -485,7 +485,7 @@ export const weaponProficiencyProgression = {
       10: { attack: 1, block: 0, evade: 0, damage: 0 }, // Level 10+: +6 attack total (+1 more)
     },
   },
-  "W.P. Blunt": {
+  "Weapon Training: Blunt Weapons": {
     bonuses: {
       1: { attack: 1, block: 0, evade: 0, damage: 0 },
       2: { attack: 0, block: 1, evade: 0, damage: 0 },
@@ -499,7 +499,7 @@ export const weaponProficiencyProgression = {
       10: { attack: 0, block: 5, evade: 0, damage: 0 },
     },
   },
-  "W.P. Ball and Chain": {
+  "Weapon Training: Chain Weapons": {
     bonuses: {
       1: { attack: 1, block: 0, evade: 0, damage: 0 },
       2: { attack: 0, block: 1, evade: 0, damage: 0 },
@@ -513,7 +513,7 @@ export const weaponProficiencyProgression = {
       10: { attack: 0, block: 5, evade: 0, damage: 0 },
     },
   },
-  "W.P. Knife": {
+  "Weapon Training: Knife": {
     bonuses: {
       1: { attack: 1, block: 0, evade: 0, damage: 0 },
       2: { attack: 2, block: 0, evade: 0, damage: 0 },
@@ -527,7 +527,7 @@ export const weaponProficiencyProgression = {
       10: { attack: 6, block: 0, evade: 0, damage: 0 },
     },
   },
-  "W.P. Pole Arms": {
+  "Weapon Training: Polearms": {
     bonuses: {
       1: { attack: 1, block: 0, evade: 0, damage: 0 },
       2: { attack: 2, block: 0, evade: 0, damage: 0 },
@@ -541,7 +541,7 @@ export const weaponProficiencyProgression = {
       10: { attack: 6, block: 0, evade: 0, damage: 0 },
     },
   },
-  "W.P. Spear": {
+  "Weapon Training: Spear": {
     bonuses: {
       1: { attack: 1, block: 0, evade: 0, damage: 0 },
       2: { attack: 2, block: 0, evade: 0, damage: 0 },
@@ -555,7 +555,7 @@ export const weaponProficiencyProgression = {
       10: { attack: 6, block: 0, evade: 0, damage: 0 },
     },
   },
-  "W.P. Short Sword": {
+  "Weapon Training: Short Sword": {
     bonuses: {
       1: { attack: 1, block: 0, evade: 0, damage: 0 },
       2: { attack: 0, block: 1, evade: 0, damage: 0 },
@@ -569,7 +569,7 @@ export const weaponProficiencyProgression = {
       10: { attack: 0, block: 5, evade: 0, damage: 0 },
     },
   },
-  "W.P. Sword": {
+  "Weapon Training: Sword": {
     bonuses: {
       1: { attack: 1, block: 0, evade: 0, damage: 0 },
       2: { attack: 0, block: 1, evade: 0, damage: 0 },
@@ -583,7 +583,7 @@ export const weaponProficiencyProgression = {
       10: { attack: 0, block: 5, evade: 0, damage: 0 },
     },
   },
-  "W.P. Staff": {
+  "Weapon Training: Staff": {
     bonuses: {
       1: { attack: 1, block: 0, evade: 0, damage: 0 },
       2: { attack: 0, block: 2, evade: 0, damage: 0 },
@@ -597,7 +597,7 @@ export const weaponProficiencyProgression = {
       10: { attack: 0, block: 5, evade: 0, damage: 0 },
     },
   },
-  "W.P. Small Shield": {
+  "Weapon Training: Small Shield": {
     bonuses: {
       1: { attack: 0, block: 1, evade: 0, damage: 0 },
       2: { attack: 0, block: 2, evade: 0, damage: 0 },
@@ -611,7 +611,7 @@ export const weaponProficiencyProgression = {
       10: { attack: 0, block: 7, evade: 0, damage: 0 },
     },
   },
-  "W.P. Large Shield": {
+  "Weapon Training: Large Shield": {
     bonuses: {
       1: { attack: 0, block: 1, evade: 0, damage: 0 },
       2: { attack: 0, block: 2, evade: 0, damage: 0 },
@@ -625,7 +625,7 @@ export const weaponProficiencyProgression = {
       10: { attack: 0, block: 7, evade: 0, damage: 0 },
     },
   },
-  "W.P. Shield": {
+  "Weapon Training: Shield": {
     bonuses: {
       1: { attack: 0, block: 1, evade: 0, damage: 0 },
       2: { attack: 0, block: 2, evade: 0, damage: 0 },
@@ -639,7 +639,7 @@ export const weaponProficiencyProgression = {
       10: { attack: 0, block: 7, evade: 0, damage: 0 },
     },
   },
-  "W.P. Lance": {
+  "Weapon Training: Lance": {
     bonuses: {
       1: { attack: 1, block: 0, evade: 0, damage: 0 },
       2: { attack: 2, block: 0, evade: 0, damage: 0 },
@@ -655,8 +655,8 @@ export const weaponProficiencyProgression = {
     note: "Mounted use only (Knights & Paladins)",
   },
 
-  // Missile Weapon Proficiencies
-  "W.P. Sling": {
+  // Missile Weapon Training
+  "Weapon Training: Sling": {
     bonuses: {
       1: { attack: 0, block: 0, evade: 0, damage: 0 },
       2: { attack: 1, block: 0, evade: 0, damage: 0 },
@@ -685,7 +685,7 @@ export const weaponProficiencyProgression = {
     },
     maxRange: 300, // feet
   },
-  "W.P. Short Bow": {
+  "Weapon Training: Short Bow": {
     bonuses: {
       1: { attack: 0, block: 0, evade: 0, damage: 0 },
       2: { attack: 1, block: 0, evade: 0, damage: 0 },
@@ -709,7 +709,7 @@ export const weaponProficiencyProgression = {
     },
     maxRange: 480, // feet
   },
-  "W.P. Crossbow": {
+  "Weapon Training: Crossbow": {
     bonuses: {
       1: { attack: 0, block: 0, evade: 0, damage: 0 },
       2: { attack: 1, block: 0, evade: 0, damage: 0 },
@@ -730,7 +730,7 @@ export const weaponProficiencyProgression = {
     },
     maxRange: 700, // feet
   },
-  "W.P. Long Bow": {
+  "Weapon Training: Long Bow": {
     bonuses: {
       1: { attack: 0, block: 0, evade: 0, damage: 0 },
       2: { attack: 1, block: 0, evade: 0, damage: 0 },
@@ -755,7 +755,7 @@ export const weaponProficiencyProgression = {
     },
     maxRange: 800, // feet (restricted to Long Bowman & Ranger profession)
   },
-  "W.P. Bow": {
+  "Weapon Training: Bow": {
     bonuses: {
       1: { attack: 0, block: 0, evade: 0, damage: 0 },
       2: { attack: 1, block: 0, evade: 0, damage: 0 },
@@ -779,21 +779,21 @@ export const weaponProficiencyProgression = {
     },
     maxRange: 480, // feet (defaults to Short Bow range)
   },
-  "W.P. Garrote": {
+  "Weapon Training: Garrote": {
     bonuses: {
       1: { attack: 1, block: 0, evade: 0, damage: 0 },
       5: { attack: 1, block: 0, evade: 0, damage: 1 },
       10: { attack: 1, block: 0, evade: 0, damage: 1 },
     },
   },
-  "W.P. Net": {
+  "Weapon Training: Net": {
     bonuses: {
       1: { attack: 1, block: 0, evade: 0, damage: 0 },
       4: { attack: 1, block: 0, evade: 0, damage: 0 },
       8: { attack: 1, block: 0, evade: 0, damage: 0 },
     },
   },
-  "W.P. Cutlass": {
+  "Weapon Training: Cutlass": {
     bonuses: {
       1: { attack: 1, block: 1, evade: 0, damage: 0 },
       3: { attack: 1, block: 0, evade: 0, damage: 0 },
@@ -801,21 +801,21 @@ export const weaponProficiencyProgression = {
       9: { attack: 1, block: 1, evade: 0, damage: 0 },
     },
   },
-  "W.P. Harpoon": {
+  "Weapon Training: Harpoon": {
     bonuses: {
       1: { attack: 1, block: 0, evade: 0, damage: 0 },
       5: { attack: 1, block: 0, evade: 0, damage: 0 },
       10: { attack: 1, block: 0, evade: 0, damage: 1 },
     },
   },
-  "W.P. Pistol Crossbow": {
+  "Weapon Training: Pistol Crossbow": {
     bonuses: {
       1: { attack: 1, block: 0, evade: 0, damage: 0 },
       5: { attack: 1, block: 0, evade: 0, damage: 0 },
       10: { attack: 1, block: 0, evade: 0, damage: 0 },
     },
   },
-  "W.P. Club": {
+  "Weapon Training: Club": {
     bonuses: {
       1: { attack: 1, block: 1, evade: 0, damage: 0 },
       4: { attack: 1, block: 0, evade: 0, damage: 0 },
@@ -927,9 +927,9 @@ export const electiveSkillPercentages = {
   },
 };
 
-// ---- RULEBOOK-CORRECTED W.P. TABLES (Medieval Combat Simulator 2nd ed 1994) ----
+// ---- Original weapon training progression tables ----
 Object.assign(weaponProficiencyProgression, {
-  "W.P. Short Sword": {
+  "Weapon Training: Short Sword": {
     "mode": "state",
     "bonuses": {
       1: {
@@ -975,7 +975,7 @@ Object.assign(weaponProficiencyProgression, {
       }
     }
   },
-  "W.P. Large Sword": {
+  "Weapon Training: Long Sword": {
     "mode": "state",
     "bonuses": {
       1: {
@@ -1022,7 +1022,7 @@ Object.assign(weaponProficiencyProgression, {
       }
     }
   },
-  "W.P. Knives": {
+  "Weapon Training: Knives": {
     "mode": "state",
     "bonuses": {
       1: {
@@ -1071,7 +1071,7 @@ Object.assign(weaponProficiencyProgression, {
       }
     }
   },
-  "W.P. Throwing Axe": {
+  "Weapon Training: Throwing Axe": {
     "mode": "state",
     "bonuses": {
       1: {
@@ -1116,7 +1116,7 @@ Object.assign(weaponProficiencyProgression, {
       }
     }
   },
-  "W.P. Battle Axe": {
+  "Weapon Training: Battle Axe": {
     "mode": "state",
     "bonuses": {
       1: {
@@ -1167,7 +1167,7 @@ Object.assign(weaponProficiencyProgression, {
       }
     }
   },
-  "W.P. Lance": {
+  "Weapon Training: Lance": {
     "mode": "state",
     "bonuses": {
       1: {
@@ -1215,7 +1215,7 @@ Object.assign(weaponProficiencyProgression, {
       }
     }
   },
-  "W.P. Small Shield": {
+  "Weapon Training: Small Shield": {
     "mode": "state",
     "bonuses": {
       1: {
@@ -1261,7 +1261,7 @@ Object.assign(weaponProficiencyProgression, {
       }
     }
   },
-  "W.P. Large Shield": {
+  "Weapon Training: Large Shield": {
     "mode": "state",
     "bonuses": {
       1: {
@@ -1307,7 +1307,7 @@ Object.assign(weaponProficiencyProgression, {
       }
     }
   },
-  "W.P. Sling": {
+  "Weapon Training: Sling": {
     "mode": "state",
     "bonuses": {
       2: {
@@ -1362,7 +1362,7 @@ Object.assign(weaponProficiencyProgression, {
       }
     }
   },
-  "W.P. Short Bow": {
+  "Weapon Training: Short Bow": {
     "mode": "state",
     "bonuses": {
       2: {
@@ -1417,7 +1417,7 @@ Object.assign(weaponProficiencyProgression, {
       }
     }
   },
-  "W.P. Crossbow": {
+  "Weapon Training: Crossbow": {
     "mode": "state",
     "bonuses": {
       2: {
@@ -1463,7 +1463,7 @@ Object.assign(weaponProficiencyProgression, {
       }
     }
   },
-  "W.P. Long Bow": {
+  "Weapon Training: Long Bow": {
     "mode": "state",
     "bonuses": {
       2: {
@@ -1848,7 +1848,7 @@ function getCumulativeAttackBonus(progression, level, defaultAttacks = 1) {
     return defaultAttacks;
   }
 
-  // Attacks-per-melee tables in Medieval Combat Simulator are "state" tables:
+  // Actions-per-round tables in Medieval Combat Simulator are "state" tables:
   // you use the highest threshold <= current level (not a sum).
   const applicableLevels = Object.keys(progression.attacks)
     .map(Number)
@@ -1958,7 +1958,7 @@ export function getSecondarySkillBonus(skillName) {
  * Get weapon proficiency rate of fire at a specific level
  * @param {string} skillName - Name of the weapon proficiency
  * @param {number} level - Character level
- * @returns {number} - Rate of fire (attacks per melee)
+ * @returns {number} - Rate of fire (actions per round)
  */
 export function getWeaponRateOfFire(skillName, level) {
   const progression = weaponProficiencyProgression[skillName];
@@ -2014,36 +2014,36 @@ export function getSkillBonusesAtLevel(skillName, level) {
   // Map weapon proficiency aliases to canonical names
   const wpAliases = {
     // plural/singular/typos
-    "W.P. Knife": "W.P. Knives",
-    "W.P. Knives": "W.P. Knives",
-    "W.P. Dagger": "W.P. Knives",
+    "Weapon Training: Knife": "Weapon Training: Knives",
+    "Weapon Training: Knives": "Weapon Training: Knives",
+    "Weapon Training: Dagger": "Weapon Training: Knives",
 
-    "W.P. Staff": "W.P. Staves",
-    "W.P. Stave": "W.P. Staves",
-    "W.P. Staves": "W.P. Staves",
+    "Weapon Training: Staff": "Weapon Training: Staves",
+    "Weapon Training: Stave": "Weapon Training: Staves",
+    "Weapon Training: Staves": "Weapon Training: Staves",
 
-    "W.P. Spear": "W.P. Spears/Forks",
-    "W.P. Spear/Fork": "W.P. Spears/Forks",
-    "W.P. Spears": "W.P. Spears/Forks",
-    "W.P. Spears/Forks": "W.P. Spears/Forks",
+    "Weapon Training: Spear": "Weapon Training: Spears",
+    "Weapon Training: Spear": "Weapon Training: Spears",
+    "Weapon Training: Spears": "Weapon Training: Spears",
+    "Weapon Training: Spears": "Weapon Training: Spears",
 
-    "W.P. Short Swords": "W.P. Short Sword",
-    "W.P. Short Sword": "W.P. Short Sword",
+    "Weapon Training: Short Swords": "Weapon Training: Short Sword",
+    "Weapon Training: Short Sword": "Weapon Training: Short Sword",
 
-    "W.P. Large Swords": "W.P. Large Sword",
-    "W.P. Large Sword": "W.P. Large Sword",
-    "W.P. Sword": "W.P. Large Sword",
-    "W.P. Swords": "W.P. Large Sword",
+    "Weapon Training: Long Swords": "Weapon Training: Long Sword",
+    "Weapon Training: Long Sword": "Weapon Training: Long Sword",
+    "Weapon Training: Sword": "Weapon Training: Long Sword",
+    "Weapon Training: Swords": "Weapon Training: Long Sword",
 
-    // If your PROFESSION data uses the generic "W.P. Axe", treat it like a Battle Axe by default.
-    // (We still keep "W.P. Throwing Axe" separate because the book gives different throw bonuses.)
-    "W.P. Axe": "W.P. Battle Axe",
-    "W.P. Battle Axe": "W.P. Battle Axe",
-    "W.P. Throwing Axe": "W.P. Throwing Axe",
+    // If your profession data uses the generic "Weapon Training: Axe", treat it like a Battle Axe by default.
+    // (We still keep "Weapon Training: Throwing Axe" separate because the throwing weapons use different bonuses.)
+    "Weapon Training: Axe": "Weapon Training: Battle Axe",
+    "Weapon Training: Battle Axe": "Weapon Training: Battle Axe",
+    "Weapon Training: Throwing Axe": "Weapon Training: Throwing Axe",
 
-    // Some PROFESSIONs list just "W.P. Bow"; we default it to Short Bow for progression lookups,
+    // Some professions list just "Weapon Training: Bow"; we default it to Short Bow for progression lookups,
     // but weapon resolution should still allow it to count for both short/long bows.
-    "W.P. Bow": "W.P. Short Bow",
+    "Weapon Training: Bow": "Weapon Training: Short Bow",
   };
 
   const canonicalSkillName = wpAliases[skillName] || skillName;
@@ -2058,11 +2058,11 @@ export function getSkillBonusesAtLevel(skillName, level) {
   } else if (weaponProficiencyProgression[canonicalSkillName]) {
     progression = weaponProficiencyProgression[canonicalSkillName];
   } else if (
-    skillName === "W.P. Dagger" ||
-    canonicalSkillName === "W.P. Dagger"
+    skillName === "Weapon Training: Dagger" ||
+    canonicalSkillName === "Weapon Training: Dagger"
   ) {
-    // W.P. Dagger uses the same progression as W.P. Knife
-    progression = weaponProficiencyProgression["W.P. Knife"];
+    // Weapon Training: Dagger uses the same progression as Weapon Training: Knife
+    progression = weaponProficiencyProgression["Weapon Training: Knife"];
   }
 
   if (!progression) {
@@ -2094,3 +2094,5 @@ export default {
   getWeaponRateOfFire,
   getWeaponMaxRange,
 };
+
+

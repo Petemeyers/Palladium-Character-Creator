@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Equipment Management Utilities
  * Handle equipping/unequipping clothing and armor items consistently across the application
  *
@@ -348,7 +348,7 @@ export function isClothingOrArmor(item) {
     return true;
   }
 
-  // Check for armor rating (indicates armor)
+  // Check for guard rating (indicates armor)
   if (item.guardRating && item.guardRating > 0) {
     return true;
   }
@@ -453,7 +453,7 @@ export function initializeEquipmentSlots(character) {
 }
 
 /**
- * Look up armor rating from item name
+ * Look up guard rating from item name
  * Handles name variations and matches from multiple data sources
  * @param {string} itemName - The name of the item
  * @returns {Object} { guardRating: number, armorDurability: number } or null if not found
@@ -559,11 +559,11 @@ export function equipItem(character, item) {
     (i) => !(i.name === item.name && i.slot === item.slot)
   );
 
-  // Look up armor rating if not already set
+  // Look up guard rating if not already set
   let guardRating = item.guardRating || item.defense || 0;
   let armorDurability = item.armorDurability || 0;
 
-  // If armor rating is 0 or missing, try to look it up from item name
+  // If guard rating is 0 or missing, try to look it up from item name
   if (!guardRating && item.name) {
     const armorData = lookupArmorRating(item.name);
     if (armorData) {
@@ -621,10 +621,10 @@ export function unequipItem(character, slot) {
 }
 
 /**
- * Fix armor ratings for already-equistaminad items
- * This corrects items that were equistaminad without proper armor rating lookup
+ * Fix guard ratings for already-equistaminad items
+ * This corrects items that were equistaminad without proper guard rating lookup
  * @param {Object} character - Character object
- * @returns {Object} Updated character with corrected armor ratings
+ * @returns {Object} Updated character with corrected guard ratings
  */
 export function fixEquistaminadArmorRatings(character) {
   const updatedCharacter = { ...character };
@@ -633,7 +633,7 @@ export function fixEquistaminadArmorRatings(character) {
 
   Object.entries(equistaminad).forEach(([slot, item]) => {
     if (item && item.name) {
-      // Check if armor rating is missing or 0 for armor items
+      // Check if guard rating is missing or 0 for armor items
       const armorData = lookupArmorRating(item.name);
       if (armorData && armorData.guardRating > 0) {
         // If current guardRating is 0 but should have guardRating, fix it
@@ -716,9 +716,9 @@ export function getEquipmentDisplayInfo(character) {
 }
 
 /**
- * Get total armor rating from equistaminad items
+ * Get total guard rating from equistaminad items
  * @param {Object} character - Character object
- * @returns {Number} Total armor rating (highest A.R. from any piece, per Medieval Combat Simulator rules)
+ * @returns {Number} Total guard rating (highest Guard Rating from any piece, for this armor system)
  */
 export function getTotalArmorRating(character) {
   return resolveArmorProfile(character).guardRating || 0;
@@ -799,7 +799,7 @@ export function getContainerCapacityBonus(character) {
         "Cloth handle bag": 25,
         "Leather handle bag": 30,
         "Water skin (2 pints)": 0,
-        "Water skin (Ãƒâ€šÃ‚Â½ gallon)": 0,
+        "Water skin (ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â½ gallon)": 0,
         "Tobacco pouch": 1,
       };
 
@@ -872,7 +872,7 @@ export function autoEquipClothing(character) {
   // Auto-equip the best item for each slot
   Object.entries(itemsBySlot).forEach(([slot, items]) => {
     if (items.length > 0) {
-      // Sort by armor rating (defense), then by value
+      // Sort by guard rating (defense), then by value
       const bestItem = items.sort((a, b) => {
         const aDefense = a.defense || a.guardRating || 0;
         const bDefense = b.defense || b.guardRating || 0;
@@ -1087,3 +1087,4 @@ export function isItemEquistaminad(character, item) {
 
   return false;
 }
+

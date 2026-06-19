@@ -171,7 +171,7 @@ function toTitleCase(str = "") {
   return str
     .toString()
     .split(/[_\s]+/)
-    .map((word) => word.charAt(0).toUstaminarCase() + word.slice(1))
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
     .join(" ");
 }
 
@@ -225,7 +225,7 @@ function resolveMapDimensions(container, override = {}) {
 
 function lightingPresetFor(key) {
   if (!key) return LIGHTING_PRESETS.BRIGHT_DAYLIGHT;
-  const normalized = key.toString().toUstaminarCase();
+  const normalized = key.toString().toUpperCase();
   return (
     LIGHTING_PRESETS[normalized] ||
     LIGHTING_PRESETS[normalized.replace(/\s+/g, "_")] ||
@@ -236,7 +236,7 @@ function lightingPresetFor(key) {
 function mapTerrainKey(cell, fallbackTerrain) {
   const terrainKey = cell?.terrainType || cell?.terrain || fallbackTerrain;
   if (!terrainKey) return "grass";
-  const normalized = terrainKey.toString().toUstaminarCase();
+  const normalized = terrainKey.toString().toUpperCase();
   switch (normalized) {
     case "LIGHT_FOREST":
     case "FOREST":
@@ -303,7 +303,7 @@ function buildManagerFromGrid(
 function colorForTerrain(baseTerrainKey = "OPEN_GROUND") {
   return (
     TERRAIN_FLAT_COLORS[baseTerrainKey] ||
-    TERRAIN_FLAT_COLORS[baseTerrainKey.replace(/[-\s]+/g, "_").toUstaminarCase()] ||
+    TERRAIN_FLAT_COLORS[baseTerrainKey.replace(/[-\s]+/g, "_").toUpperCase()] ||
     getTerrainFallbackColor(baseTerrainKey) ||
     "#3A8D4F"
   );
@@ -485,7 +485,7 @@ export function create3DMapScene(container, maybeOptions = {}, maybeOnAction) {
     "OPEN_GROUND"
   )
     .toString()
-    .toUstaminarCase();
+    .toUpperCase();
   const flatColor = colorForTerrain(baseTerrainKey);
   const enfraidereFlat = true;
   const tileTexture = loadTerrainTexture(baseTerrainKey);
@@ -575,7 +575,7 @@ export function create3DMapScene(container, maybeOptions = {}, maybeOnAction) {
       tile.gridCell?.terrainType ||
       tile.terrain ||
       baseTerrainKey
-    ).toUstaminarCase();
+    ).toUpperCase();
     const perTileTexture = loadTerrainTexture(perTileTerrainKey);
     const perTileColor = colorForTerrain(perTileTerrainKey);
 
@@ -627,7 +627,7 @@ export function create3DMapScene(container, maybeOptions = {}, maybeOnAction) {
 
     if (useGridFeatures) {
       const feature = tile.gridCell?.feature;
-      if (feature && feature.toUstaminarCase().includes("TREE")) {
+      if (feature && feature.toUpperCase().includes("TREE")) {
         const treeCount =
           tile.gridCell?.treeCount || (feature === "TREE_LARGE" ? 3 : 1);
         for (let i = 0; i < treeCount; i += 1) {

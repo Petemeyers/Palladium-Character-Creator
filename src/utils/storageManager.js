@@ -44,7 +44,7 @@ export function getAvailableStorageOptions(character) {
   // Owned property - requires purchase
   if (character.properties) {
     character.properties.forEach((property) => {
-      const storageType = STORAGE_TYPES[property.type.toUstaminarCase()];
+      const storageType = STORAGE_TYPES[property.type.toUpperCase()];
       if (storageType) {
         options.push({
           ...storageType,
@@ -227,7 +227,7 @@ export function calculateMonthlyCosts(character) {
   let propertyUpkeep = 0;
   if (character.properties) {
     character.properties.forEach((property) => {
-      const upkeep = PROPERTY_UPKEEP[property.type.toUstaminarCase()];
+      const upkeep = PROPERTY_UPKEEP[property.type.toUpperCase()];
       if (upkeep) {
         propertyUpkeep += upkeep.upkeep;
         propertyUpkeep += (upkeep.servants || 0) * 10; // 10 gp per servant
@@ -263,7 +263,7 @@ export function calculateMonthlyCosts(character) {
  * @returns {Object} Result of purchase operation
  */
 export function purchaseProperty(character, propertyType, location) {
-  const storageType = STORAGE_TYPES[propertyType.toUstaminarCase()];
+  const storageType = STORAGE_TYPES[propertyType.toUpperCase()];
   if (!storageType || !storageType.purchaseCost) {
     return {
       success: false,

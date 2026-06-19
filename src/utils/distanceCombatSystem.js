@@ -4,10 +4,10 @@
  *
  * Medieval Combat Simulator RULES:
  * - One combat round = 15 seconds
- * - Speed (Spd) ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â 6 = yards per melee (running speed)
+ * - Speed divided by 6 = yards per combat round (running speed)
  * - Walking speed = ~half of running speed
- * - Movement per action = (Speed ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â 6) ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â· Attacks per Melee
- * - Convert yards to feet: yards ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â 3 = feet
+ * - Movement per action = Speed divided into actions per round
+ * - Convert yards to feet: yards multiplied by 3 = feet
  *
  * Key Rules:
  * - Must be within weapon range to attack
@@ -30,12 +30,12 @@ import {
 import { getWeaponLength } from "./combatEnvironmentLogic.js";
 
 /**
- * Calculate movement per action based on Speed and attacks per melee
+ * Calculate movement per action based on Speed and actions per round
  * Medieval Combat Simulator FORMULA:
- * - Speed ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â 18 = feet per melee (running speed)
- * - Movement per action = (Speed ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â 18) ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â· Attacks per Melee
+ * - Speed multiplied by 18 = feet per combat round (running speed)
+ * - Movement per action = Speed divided into actions per round
  * - Walking speed = ~half of running speed
- * - Flight speed = Speed ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â multiplier ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â 18 feet per melee (e.g., Spd ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â8)
+ * - Flight speed = speed multiplier times 18 feet per combat round
  *
  * @param {number} speed - Character's Speed attribute
  * @param {number} actionsPerRound - Number of attacks per combat round
@@ -67,7 +67,7 @@ export function calculateMovementPerAction(
   const groundSpeed = fighter ? getGroundSpeedForFlyer(fighter) : null;
   const effectiveSpeed = groundSpeed !== null ? groundSpeed : speed;
 
-  // Ground movement: Medieval Combat Simulator FORMULA: Speed ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â 18 = feet per melee (running)
+  // Ground movement: Speed multiplied by 18 = feet per combat round (running).
   const feetPerMelee = effectiveSpeed * 18;
   const feetPerAction = feetPerMelee / actionsPerRound;
 
@@ -447,7 +447,7 @@ export function validateAttackRange(
     (getAltitude(attacker) || 0) - (getAltitude(target) || 0)
   );
 
-  // ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ Use 3D distance for ranged attacks so planner/AI/executor agree.
+  // Use 3D distance for ranged attacks so planner, AI, and executor agree.
   const distance =
     isNameRanged || (weapon?.range && weapon.range > 10)
       ? Math.hypot(horizontalDistance, verticalDistance)
@@ -566,7 +566,7 @@ export function validateAttackRange(
     }
     canAttack = false;
   } else if (distance <= weaponRange) {
-    reason = `Within range (${Math.round(distance)}ft ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â°Ãƒâ€šÃ‚Â¤ ${weaponRange}ft)`;
+    reason = `Within range (${Math.round(distance)}ft <= ${weaponRange}ft)`;
   } else {
     reason = `Out of range (${Math.round(distance)}ft > ${weaponRange}ft)`;
   }
@@ -780,3 +780,4 @@ export function findRetreatDestination({
 
   return bestHex;
 }
+

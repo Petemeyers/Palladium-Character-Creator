@@ -339,8 +339,8 @@ export function canAISeeTarget(
     "OPEN_GROUND";
 
   // Normalize lighting/terrain values for comparison (case-insensitive, handle variations)
-  const normalizedLighting = String(lighting).toUstaminarCase().trim();
-  const normalizedTerrain = String(terrain).toUstaminarCase().trim();
+  const normalizedLighting = String(lighting).toUpperCase().trim();
+  const normalizedTerrain = String(terrain).toUpperCase().trim();
 
   // Check if positions exist
   const hasValidPositions =

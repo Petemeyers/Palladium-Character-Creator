@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+﻿import React, { useState, useRef } from 'react';
 import PropTypes from 'prop-types';
 import { useNavigate, Link } from 'react-router-dom';
 import CopyCharactersButton from './CopyCharactersButton';
@@ -342,11 +342,11 @@ const CharacterList = ({
 
   const handleAutoEquipWeapons = async (character) => {
     try {
-      console.log('Ã°Å¸â€Â Auto-equip clicked for:', character.name);
-      console.log('Ã°Å¸â€Â Character inventory:', character.inventory);
+      console.log('Auto-equip clicked for:', character.name);
+      console.log('Character inventory:', character.inventory);
       
       const availableWeapons = getAvailableWeapons(character);
-      console.log('Ã°Å¸â€Â Available weapons found:', availableWeapons);
+      console.log('Available weapons found:', availableWeapons);
       
       if (availableWeapons.length === 0) {
         const hasInventory = character.inventory && character.inventory.length > 0;
@@ -378,7 +378,7 @@ const CharacterList = ({
             className="back-button" 
             onClick={onBack || (() => navigate(-1))}
           >
-            Ã¢â€ Â Back
+            Back
           </button>
           
           <BulkCharacterGenerator 
@@ -431,7 +431,7 @@ const CharacterList = ({
                 onClick={() => requestSort(sortField)}
                 className="sort-direction-btn"
               >
-                {sortDirection === 'asc' ? 'Ã¢â€ â€˜' : 'Ã¢â€ â€œ'}
+                {sortDirection === 'asc' ? 'Up' : 'Down'}
               </button>
             </div>
           </div>
@@ -470,13 +470,13 @@ const CharacterList = ({
                             onClick={() => handleNameChange(character._id)}
                             className="save-btn"
                           >
-                            Ã¢Å“â€œ
+                            Save
                           </button>
                           <button 
                             onClick={cancelEditing}
                             className="cancel-btn"
                           >
-                            Ã¢Å“â€”
+                            Cancel
                           </button>
                         </div>
                       </div>
@@ -488,7 +488,7 @@ const CharacterList = ({
                           className="edit-name-btn"
                           title="Edit name"
                         >
-                          Ã¢Å“ÂÃ¯Â¸Â
+                          Edit
                         </button>
                       </div>
                     )}
@@ -560,7 +560,7 @@ const CharacterList = ({
                               title={isEquistaminad ? 'Currently equistaminad' : ''}
                             >
                               {item.name}
-                              {isEquistaminad && <span className="equistaminad-indicator"> Ã¢Å¡â€Ã¯Â¸Â</span>}
+                              {isEquistaminad && <span className="equistaminad-indicator"> Equipped</span>}
                             </div>
                           );
                         })}
@@ -580,7 +580,7 @@ const CharacterList = ({
                             className={`assign-skills-btn ${character.skillsAssigned ? 'disabled' : ''}`}
                             disabled={character.skillsAssigned}
                           >
-                            {character.skillsAssigned ? 'Skills Ã¢Å“â€œ' : 'Assign Skills'}
+                            {character.skillsAssigned ? 'Skills Assigned' : 'Assign Skills'}
                           </button>
                         </div>
                       </div>
@@ -589,16 +589,16 @@ const CharacterList = ({
 
                   {/* Weapons Section */}
                   <div className="weapons-section">
-                    <h4>Ã¢Å¡â€Ã¯Â¸Â Weapons</h4>
+                    <h4>Weapons</h4>
                     {(() => {
-                      console.log('Ã°Å¸â€Â Displaying weapons for:', character.name);
-                      console.log('Ã°Å¸â€Â Character equistaminadWeapons:', character.equistaminadWeapons);
+                      console.log('Displaying weapons for:', character.name);
+                      console.log('Character equippedWeapons:', character.equistaminadWeapons);
                       if (character.equistaminadWeapons && character.equistaminadWeapons.length > 0) {
-                        console.log('Ã°Å¸â€Â Right hand weapon:', character.equistaminadWeapons[0]);
-                        console.log('Ã°Å¸â€Â Left hand weapon:', character.equistaminadWeapons[1]);
+                        console.log('Right hand weapon:', character.equistaminadWeapons[0]);
+                        console.log('Left hand weapon:', character.equistaminadWeapons[1]);
                       }
                       const weaponInfo = getWeaponDisplayInfo(character);
-                      console.log('Ã°Å¸â€Â Weapon display info:', weaponInfo);
+                      console.log('Weapon display info:', weaponInfo);
                       
                       return (
                         <div className="weapons-display">
@@ -645,11 +645,11 @@ const CharacterList = ({
                       
                       return (
                         <div className="equipment-display">
-                          <h4>Equipment {totalArmor > 0 && <span className="armor-rating">(guardRating: {totalArmor})</span>}</h4>
+                          <h4>Equipment {totalArmor > 0 && <span className="armor-rating">(Guard Rating: {totalArmor})</span>}</h4>
                           <div className="storage-info" style={{ fontSize: '0.8em', color: '#888', marginBottom: '8px' }}>
-                            Ã°Å¸Å½â€™ Capacity: {character.carryWeight?.maxWeight || 0} + {containerBonus} = {totalCapacity} lbs
+                            Capacity: {character.carryWeight?.maxWeight || 0} + {containerBonus} = {totalCapacity} lbs
                             {storageCapacity.totalCapacity > 0 && (
-                              <span> | Ã°Å¸ÂÂ  Storage: {storageCapacity.totalCapacity} lbs ({monthlyCosts.totalMonthlyCost} gp/month)</span>
+                              <span> | Storage: {storageCapacity.totalCapacity} lbs ({monthlyCosts.totalMonthlyCost} gp/month)</span>
                             )}
                           </div>
                           <div className="equipment-slots">
@@ -657,10 +657,10 @@ const CharacterList = ({
                               .filter(([slot]) => slot !== 'hasEquipment') // Exclude boolean flag
                               .map(([slot, item]) => (
                               <div key={slot} className="equipment-slot">
-                                <span className="equipment-slot-label">{slot.charAt(0).toUstaminarCase() + slot.slice(1)}:</span>
+                                <span className="equipment-slot-label">{slot.charAt(0).toUpperCase() + slot.slice(1)}:</span>
                                 <span className="equipment-name">{item.name}</span>
                                 {item.guardRating > 0 && (
-                                  <span className="equipment-defense">(A.R.: {item.guardRating})</span>
+                                  <span className="equipment-defense">(Guard Rating: {item.guardRating})</span>
                                 )}
                                 {item.capacity && item.capacity > 0 && (
                                   <span className="equipment-capacity" style={{ fontSize: '0.85em', color: '#4CAF50' }}>
@@ -685,7 +685,7 @@ const CharacterList = ({
                               className="equip-equipment-btn"
                               style={{ backgroundColor: '#9C27B0', marginTop: '8px' }}
                             >
-                              Ã°Å¸ÂÂ  Storage & Housing
+                              Storage & Housing
                             </button>
                           </div>
                         </div>
@@ -704,7 +704,7 @@ const CharacterList = ({
                     
                     return (
                       <div className="durability-section">
-                        <h4>Ã°Å¸â€ºÂ¡Ã¯Â¸Â Armor Durability</h4>
+                        <h4>Armor Durability</h4>
                         <div className="durability-display">
                           {Object.entries(equipmentInfo).map(([slot, item]) => {
                             if (!item || item.name === "None" || !item.guardRating) return null;
@@ -813,7 +813,7 @@ const CharacterList = ({
                       className="delete-btn"
                       title="Delete character"
                     >
-                      Ã°Å¸â€”â€˜Ã¯Â¸Â Delete
+                      Delete
                     </button>
                     <CopyCharactersButton characters={[character]} />
                   </div>
@@ -879,3 +879,4 @@ CharacterList.propTypes = {
 };
 
 export default CharacterList;
+

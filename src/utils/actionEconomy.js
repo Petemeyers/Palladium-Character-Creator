@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Action Economy System
  * Manages attacks per combat round based on Medieval Combat Simulator rules
  */
@@ -76,7 +76,7 @@ export function getAttacksPerMelee(level = 1, profession = "") {
 }
 
 /**
- * Get attacks per melee for opponents/combatants
+ * Get actions per round for opponents/combatants
  * @param {object} combatant - Combatant data from arenaRoster
  * @returns {number} - Number of attacks per combat round
  */
@@ -93,7 +93,7 @@ export function getCombatantAttacksPerMelee(combatant) {
       return sum + (attack.count || 1);
     }, 0);
 
-    // Opponents typically get their attack count as attacks per melee
+    // Opponents typically get their attack count as actions per round
     // But clamp to reasonable range (2-8)
     return Math.max(2, Math.min(8, totalAttacks));
   }
@@ -145,23 +145,23 @@ export function getActionCost(actionType) {
 /**
  * Format attacks remaining display
  * @param {number} remaining - Attacks remaining
- * @param {number} total - Total attacks per melee
+ * @param {number} total - Total actions per round
  * @returns {string} - Formatted string
  */
 export function formatAttacksRemaining(remaining, total) {
   if (remaining <= 0) {
-    return `ÃƒÂ¢Ã…Â¡Ã‚Â ÃƒÂ¯Ã‚Â¸Ã‚Â 0/${total} attacks (OUT OF ACTIONS!)`;
+    return `ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã‚Â¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¯Ãƒâ€šÃ‚Â¸Ãƒâ€šÃ‚Â 0/${total} attacks (OUT OF ACTIONS!)`;
   }
 
   if (remaining === total) {
-    return `ÃƒÂ¢Ã…Â¡Ã¢â‚¬ÂÃƒÂ¯Ã‚Â¸Ã‚Â ${remaining}/${total} attacks (Full)`;
+    return `ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã‚Â¡ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÆ’Ã‚Â¯Ãƒâ€šÃ‚Â¸Ãƒâ€šÃ‚Â ${remaining}/${total} attacks (Full)`;
   }
 
   if (remaining === 1) {
-    return `ÃƒÂ¢Ã…Â¡Ã‚Â ÃƒÂ¯Ã‚Â¸Ã‚Â ${remaining}/${total} attacks (Last action!)`;
+    return `ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã‚Â¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¯Ãƒâ€šÃ‚Â¸Ãƒâ€šÃ‚Â ${remaining}/${total} attacks (Last action!)`;
   }
 
-  return `ÃƒÂ¢Ã…Â¡Ã¢â‚¬ÂÃƒÂ¯Ã‚Â¸Ã‚Â ${remaining}/${total} attacks`;
+  return `ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã‚Â¡ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÆ’Ã‚Â¯Ãƒâ€šÃ‚Â¸Ãƒâ€šÃ‚Â ${remaining}/${total} attacks`;
 }
 
 export default {
@@ -170,3 +170,4 @@ export default {
   getActionCost,
   formatAttacksRemaining,
 };
+

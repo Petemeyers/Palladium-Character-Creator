@@ -4,21 +4,51 @@
  */
 
 import { io } from "socket.io-client";
+import { isBackendOffline, markBackendOffline } from "./backendStatus.js";
 
 let socketInstance = null;
+
+function createOfflineSocket() {
+  return {
+    connected: false,
+    emit() {
+      return this;
+    },
+    on() {
+      return this;
+    },
+    off() {
+      return this;
+    },
+    disconnect() {
+      return this;
+    },
+    connect() {
+      if (!isBackendOffline()) {
+        return getSocket({ forceConnect: true });
+      }
+      return this;
+    },
+  };
+}
 
 /**
  * Get or create a Socket.IO connection
  * Automatically handles connection errors gracefully
  */
-export function getSocket() {
+export function getSocket(options = {}) {
   if (socketInstance) {
+    return socketInstance;
+  }
+
+  if (isBackendOffline() && !options.forceConnect) {
+    socketInstance = createOfflineSocket();
     return socketInstance;
   }
 
   // Create socket with graceful error handling
   socketInstance = io("http://localhost:5000", {
-    autoConnect: true,
+    autoConnect: false,
     reconnection: false, // Disable auto-reconnection to reduce console spam
     reconnectionAttempts: 0, // Don't attempt reconnection
     reconnectionDelay: 0,
@@ -28,17 +58,8 @@ export function getSocket() {
 
   // Suppress connection errors completely - backend may not be running
   // This prevents console spam when the backend server is not started
-  socketInstance.on("connect_error", (error) => {
-    // Silently ignore - backend may not be running
-    // Socket.IO will still function for emit calls, they just won't be sent
-    if (import.meta.env?.DEV || import.meta.env?.MODE === "development") {
-      // Only log once, using debug level
-      console.debug(
-        "Socket.IO: Backend not available (backend may not be running)"
-      );
-    }
-    // Prevent the error from propagating to console.error
-    error.preventDefault?.();
+  socketInstance.on("connect_error", () => {
+    markBackendOffline();
   });
 
   socketInstance.on("connect", () => {
@@ -57,10 +78,6 @@ export function getSocket() {
   const originalEmit = socketInstance.emit.bind(socketInstance);
   socketInstance.emit = function (...args) {
     if (!socketInstance.connected) {
-      // Silently ignore emit calls when not connected
-      if (import.meta.env?.DEV || import.meta.env?.MODE === "development") {
-        console.debug("Socket.IO: Skipping emit (not connected):", args[0]);
-      }
       return socketInstance;
     }
     return originalEmit(...args);

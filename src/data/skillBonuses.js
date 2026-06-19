@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Skill bonuses for Medieval Combat Simulator
  * These bonuses stack with level-based bonuses
  * Import level-based progression
@@ -44,13 +44,13 @@ export const skillBonuses = {
     description: "+1 block, +1 evade, +1 roll with impact",
   },
 
-  // Hand to Hand Combat Styles (PROFESSION Skills)
+  // Hand to Hand Combat Styles (profession Skills)
   "Hand to Hand: Basic": {
     attack: 0,
     block: 2,
     evade: 2,
     damage: 0,
-    description: "2 attacks per melee, +2 block, +2 evade at level 1",
+    description: "2 actions per round, +2 block, +2 evade at level 1",
   },
   "Hand to Hand: Expert": {
     attack: 1,
@@ -58,7 +58,7 @@ export const skillBonuses = {
     evade: 3,
     damage: 1,
     description:
-      "3 attacks per melee, +1 attack, +3 block, +3 evade, +1 damage at level 1",
+      "3 actions per round, +1 attack, +3 block, +3 evade, +1 damage at level 1",
   },
   "Hand to Hand: Martial Arts": {
     attack: 2,
@@ -66,7 +66,7 @@ export const skillBonuses = {
     evade: 3,
     damage: 2,
     description:
-      "4 attacks per melee, +2 attack, +3 block, +3 evade, +2 damage at level 1",
+      "4 actions per round, +2 attack, +3 block, +3 evade, +2 damage at level 1",
   },
   "Hand to Hand: Assassin": {
     attack: 2,
@@ -74,7 +74,7 @@ export const skillBonuses = {
     evade: 2,
     damage: 3,
     description:
-      "4 attacks per melee, +2 attack, +2 block, +2 evade, +3 damage at level 1",
+      "4 actions per round, +2 attack, +2 block, +2 evade, +3 damage at level 1",
   },
   "Hand to Hand: Mercenary": {
     attack: 1,
@@ -82,7 +82,7 @@ export const skillBonuses = {
     evade: 2,
     damage: 1,
     description:
-      "3 attacks per melee, +1 attack, +2 block, +2 evade, +1 damage at level 1",
+      "3 actions per round, +1 attack, +2 block, +2 evade, +1 damage at level 1",
   },
   "Hand to Hand: Knight": {
     attack: 1,
@@ -90,60 +90,60 @@ export const skillBonuses = {
     evade: 2,
     damage: 1,
     description:
-      "3 attacks per melee, +1 attack, +3 block, +2 evade, +1 damage at level 1",
+      "3 actions per round, +1 attack, +3 block, +2 evade, +1 damage at level 1",
   },
 
-  // Weapon Proficiencies (give attack/block bonuses)
-  "W.P. Sword": {
+  // Weapon Training (give attack/block bonuses)
+  "Weapon Training: Sword": {
     attack: 1,
     block: 1,
     evade: 0,
     damage: 0,
     description: "+1 attack, +1 block with swords",
   },
-  "W.P. Bow": {
+  "Weapon Training: Bow": {
     attack: 2,
     block: 0,
     evade: 0,
     damage: 0,
     description: "+2 attack with bows",
   },
-  "W.P. Crossbow": {
+  "Weapon Training: Crossbow": {
     attack: 1,
     block: 0,
     evade: 0,
     damage: 0,
     description: "+1 attack with crossbows",
   },
-  "W.P. Shield": {
+  "Weapon Training: Shield": {
     attack: 0,
     block: 2,
     evade: 0,
     damage: 0,
     description: "+2 block with shield",
   },
-  "W.P. Spear": {
+  "Weapon Training: Spear": {
     attack: 1,
     block: 1,
     evade: 0,
     damage: 0,
     description: "+1 attack, +1 block with spears",
   },
-  "W.P. Staff": {
+  "Weapon Training: Staff": {
     attack: 1,
     block: 2,
     evade: 0,
     damage: 0,
     description: "+1 attack, +2 block with staff",
   },
-  "W.P. Axe": {
+  "Weapon Training: Axe": {
     attack: 1,
     block: 0,
     evade: 0,
     damage: 0,
     description: "+1 attack with axes",
   },
-  "W.P. Knife": {
+  "Weapon Training: Knife": {
     attack: 1,
     block: 1,
     evade: 0,
@@ -197,8 +197,8 @@ export const skillBonuses = {
 /**
  * Calculate total skill bonuses from a character's skills at a specific level
  * Only includes GENERAL bonuses (Hand to Hand, Physical Skills)
- * W.P. bonuses are weapon-specific and tracked separately
- * @param {Array} professionSkills - PROFESSION skills list
+ * Weapon Training: bonuses are weapon-specific and tracked separately
+ * @param {Array} professionSkills - profession skills list
  * @param {Array} electiveSkills - Elective skills list
  * @param {Array} secondarySkills - Secondary skills list
  * @param {number} level - Character level for progression calculation
@@ -219,7 +219,7 @@ export function calculateSkillBonuses(
     focusBonus: 0,
     focusRecovery: 1, // Base recovery rate
     actionsPerRound: 0,
-    weaponProficiencies: [], // Track W.P. skills separately
+    weaponProficiencies: [], // Track Weapon Training: skills separately
   };
 
   const allSkills = [...professionSkills, ...electiveSkills, ...secondarySkills];
@@ -228,8 +228,8 @@ export function calculateSkillBonuses(
     // Try to get level-based progression first
     const levelBasedBonuses = getSkillBonusesAtLevel(skill, level);
 
-    // Check if it's a Weapon Proficiency (W.P.)
-    if (skill.startsWith("W.P.")) {
+    // Check if it's a Weapon Training
+    if (skill.startsWith("Weapon Training:")) {
       // Don't add to general bonuses, just track it
       totals.weaponProficiencies.push({
         name: skill,
@@ -278,7 +278,7 @@ export default {
 };
 
 
-// Resolve which W.P. applies to a weapon object (best-effort inference from name/category).
+// Resolve which Weapon Training: applies to a weapon object (best-effort inference from name/category).
 // NOTE: Prefer adding an explicit `wp` field to weapons in your weapons dataset for perfect accuracy.
 export function inferWeaponProficiencyName(weapon) {
   if (!weapon) return null;
@@ -291,18 +291,18 @@ export function inferWeaponProficiencyName(weapon) {
 
   // Missile weapon categories
   if (category === "bow") {
-    if (name.includes("long")) return "W.P. Long bow";
-    return "W.P. Short bow";
+    if (name.includes("long")) return "Weapon Training: Long bow";
+    return "Weapon Training: Short bow";
   }
-  if (category === "crossbow") return "W.P. Cross bow";
-  if (name === "sling" || category === "sling") return "W.P. Sling";
+  if (category === "crossbow") return "Weapon Training: Crossbow";
+  if (name === "sling" || category === "sling") return "Weapon Training: Sling";
 
   // Melee categories by name
   if (name.includes("shield")) {
-    return name.includes("large") ? "W.P. Large shield" : "W.P. Small shield";
+    return name.includes("large") ? "Weapon Training: Large shield" : "Weapon Training: Small shield";
   }
   if (name.includes("short sword") || name.includes("sabre") || name.includes("scimitar") || name.includes("cutlass"))
-    return "W.P. Short swords";
+    return "Weapon Training: Short swords";
   if (
     name.includes("bastard") ||
     name.includes("broadsword") ||
@@ -311,16 +311,16 @@ export function inferWeaponProficiencyName(weapon) {
     name.includes("flamberge") ||
     name.includes("espandon")
   ) {
-    return "W.P. Large sword";
+    return "Weapon Training: Large sword";
   }
-  if (name.includes("dagger") || name.includes("knife")) return "W.P. Knives";
-  if (name.includes("throwing axe")) return "W.P. Throwing axe";
+  if (name.includes("dagger") || name.includes("knife")) return "Weapon Training: Knives";
+  if (name.includes("throwing axe")) return "Weapon Training: Throwing axe";
   if (name.includes("battle axe") || name.includes("axe") || name.includes("bipennis") || name.includes("pick"))
-    return "W.P. Battle Axe";
-  if (name.includes("lance")) return "W.P. Lance";
+    return "Weapon Training: Battle Axe";
+  if (name.includes("lance")) return "Weapon Training: Lance";
   if (name.includes("spear") || name.includes("fork") || name.includes("trident") || name.includes("javelin"))
-    return "W.P. Spears/Forks";
-  if (name.includes("staff") || name.includes("stave")) return "W.P. Staves";
+    return "Weapon Training: Spears";
+  if (name.includes("staff") || name.includes("stave")) return "Weapon Training: Staves";
   if (
     name.includes("pole") ||
     name.includes("halberd") ||
@@ -330,8 +330,8 @@ export function inferWeaponProficiencyName(weapon) {
     name.includes("voulge") ||
     name.includes("berdiche")
   )
-    return "W.P. Pole arms";
-  if (name.includes("ball") && name.includes("chain")) return "W.P. Ball and Chain";
+    return "Weapon Training: Pole arms";
+  if (name.includes("ball") && name.includes("chain")) return "Weapon Training: Chain Weapons";
   if (
     name.includes("mace") ||
     name.includes("club") ||
@@ -339,12 +339,12 @@ export function inferWeaponProficiencyName(weapon) {
     name.includes("flail") ||
     name.includes("morning star")
   )
-    return "W.P. Blunt";
+    return "Weapon Training: Blunt Weapons";
 
   return null;
 }
 
-// Returns W.P. bonuses for the currently-used weapon.
+// Returns Weapon Training: bonuses for the currently-used weapon.
 // If the character is untrained, bonuses are 0; for bows/crossbows/slings, rateOfFire falls back to 1.
 export function getWeaponProficiencyBonusesForWeapon(combatBonuses, weapon) {
   const rawWpName = inferWeaponProficiencyName(weapon);
@@ -364,7 +364,7 @@ export function getWeaponProficiencyBonusesForWeapon(combatBonuses, weapon) {
 
   const n = normalize(rawWpName);
 
-  // Expand a few common equivalents so "W.P. Cross bow" == "W.P. Crossbow", etc.
+  // Expand a few common equivalents so "Weapon Training: Crossbow" == "Weapon Training: Crossbow", etc.
   const candidates = new Set([n]);
 
   if (n === "wp short sword" || n === "wp short swords") {
@@ -432,4 +432,6 @@ export function getWeaponProficiencyBonusesForWeapon(combatBonuses, weapon) {
     proficient: true,
   };
 }
+
+
 

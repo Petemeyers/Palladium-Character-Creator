@@ -1,276 +1,192 @@
 {
-    "coreActions": {
-      "label": "Core Combat Options (Any Playable Character)",
-      "description": "These actions are available to all characters during combat",
-      "actions": [
-        {
-          "name": "Attack",
-          "types": ["melee", "ranged"],
-          "description": "Make an attack with a weapon or natural attack",
-          "cost": "1 attack",
-          "mechanic": "Roll to hit vs target guardRating"
-        },
-        {
-          "name": "Overwatch Shot",
-          "types": ["ranged", "thrown"],
-          "description": "Fire at a chosen hex; shot resolves on impact",
-          "cost": "1 attack",
-          "mechanic": "Delayed ranged attack at a target hex"
-        },
-        {
-          "name": "Block",
-          "types": ["weapon", "shield"],
-          "description": "Block a melee attack you can see coming",
-          "cost": "1 attack",
-          "mechanic": "Roll block vs incoming attack"
-        },
-        {
-          "name": "Evade",
-          "description": "Avoid an incoming attack by movingâ€”works vs melee or missiles",
-          "cost": "1 attack",
-          "mechanic": "Roll evade vs incoming attack"
-        },
-        {
-          "name": "Move / Reposition",
-          "description": "Step, sprint, vault cover, change elevation, close or open distance",
-          "cost": "1 attack",
-          "mechanic": "Movement based on Speed"
-        }, {
-          "name": "Draw / Ready / Reload",
-          "description": "Swap weapons, ready an item, string an arrow, crank a crossbow, etc.",
-          "cost": "1 attack",
-          "mechanic": "Item interaction"
-        },
-        {
-          "name": "Aim / Called shot",
-          "description": "Spend an action to line up a careful hit (trade speed for precision/location)",
-          "cost": "1 attack",
-          "mechanic": "+2 to hit, choose specific target"
-        },
-        {
-          "name": "Defend / Hold action",
-          "description": "Delay an attack to react later in the round",
-          "cost": "1 attack",
-          "mechanic": "Set trigger condition, execute when triggered"
-        },
-        {
-          "name": "Disengage / Withdraw",
-          "description": "Back out of melee to avoid free shots",
-          "cost": "1 attack",
-          "mechanic": "Opposed check to avoid opportunity attacks"
-        },
-        {
-          "name": "Combat Maneuvers",
-          "options": ["Shove", "Trip", "Tackle", "Disarm"],
-          "description": "Simple maneuvers to break guard, knock prone, or bat a weapon away",
-          "cost": "1 attack",
-          "mechanic": "Opposed rolls; GM adjudicates"
-        },
-        {
-          "name": "Use a skill in combat",
-          "description": "Prowl to slip away, Climb to gain height, First Aid under fire, etc.",
-          "cost": "1 attack",
-          "mechanic": "Skill roll with combat modifiers"
-        },
-        {
-          "name": "Use an item",
-          "description": "Drink a potion, throw oil, drop caltrops, light a traiderh, use a scroll",
-          "cost": "1 attack",
-          "mechanic": "Item-specific mechanics"
-        },
-        {
-          "name": "Cast a technique",
-          "description": "Pick a known technique, pay its cost/time, and resolve its effect",
-          "cost": "1+ attacks (varies by technique)",
-          "mechanic": "Technique-specific mechanics",
-          "requires": "Men of Training"
-        },
-        {
-          "name": "Invoke a miracle",
-          "description": "Use your class's healing/banishing/blessing powers as allowed",
-          "cost": "1+ attacks (varies by miracle)",
-          "mechanic": "Miracle-specific mechanics",
-          "requires": "Clergy"
-        },
-        {
-          "name": "Use tactics",
-          "description": "Spend focus to activate a psychic power and resolve it",
-          "cost": "Variable focus + actions",
-          "mechanic": "Tactical power mechanics",
-          "requires": "Tactical abilities"
-        }
-      ]
-    },
-    "characterTypeBonus": {
-      "menOfArms": {
-        "classes": ["Soldier", "Mercenary", "Knight", "Paladin", "Long Bowman"],
-        "label": "Men of Arms",
-        "bonuses": [
-          {
-            "name": "Multiple Attacks",
-            "description": "More attacks per melee as you level (you can do more of the core options each round)",
-            "mechanic": "Gain additional attacks per combat round at higher levels"
-          },
-          {
-            "name": "Combat Bonuses",
-            "description": "Bigger combat bonuses (to attack, block, evade, damage)",
-            "mechanic": "Higher bonuses to all combat rolls"
-          },
-          {
-            "name": "Special Moves",
-            "description": "Unlocked by level: kick attacks, stun results on high natural rolls, and critical attacks on wider ranges",
-            "mechanic": "Class-specific combat abilities"
-          },
-          {
-            "name": "Shield Mastery",
-            "description": "Better parries and the option to bash or throw a shield",
-            "mechanic": "Improved shield AC, shield bash attack"
-          },
-          {
-            "name": "Weapon Proficiencies",
-            "description": "Accuracy/rate-of-fire boosts; melee profs add attack/block; missile profs add shots/round",
-            "mechanic": "Weapon-specific bonuses"
-          },
-          {
-            "name": "Mounted Combat",
-            "description": "Lance charges, extra damage while riding, better block/evade on horseback",
-            "mechanic": "Charging mechanics, mounted combat bonuses",
-            "classes": ["Knight", "Paladin"]
-          }
-        ]
+  "coreActions": {
+    "label": "Core Combat Options",
+    "description": "These actions are available to fighters during combat.",
+    "actions": [
+      {
+        "name": "Attack",
+        "types": ["melee", "ranged"],
+        "description": "Make a weapon or natural attack.",
+        "cost": "1 action",
+        "mechanic": "d20-style attack check vs Guard Rating"
       },
-      "stealthSkirmish": {
-        "classes": ["Thief", "Assassin", "Ranger"],
-        "label": "Stealth & Skirmishers",
-        "bonuses": [
-          {
-            "name": "Positioning Advantage",
-            "description": "Big upsides for attacking from behind (sneak/ambush), and some classes expand 'critical from behind' multipliers as they level",
-            "mechanic": "Backstab damage bonuses, expanded critical ranges"
-          },
-          {
-            "name": "Control Tools",
-            "description": "Trips, dirty tricks, garrotes, poison use (where allowed by class/alignment)",
-            "mechanic": "Special combat maneuvers, dirty fighting techniques"
-          },
-          {
-            "name": "Ranged Superiority",
-            "description": "Higher rates of fire, better aimed shots, and class-specific crit improvements with bows",
-            "mechanic": "Multiple shots per round, improved ranged attack bonuses",
-            "classes": ["Ranger", "Long Bowman", "Assassin"]
-          }
-        ]
+      {
+        "name": "Overwatch Shot",
+        "types": ["ranged", "thrown"],
+        "description": "Aim at a chosen hex; the shot resolves when the trigger happens.",
+        "cost": "1 action",
+        "mechanic": "Delayed ranged attack at a target hex"
       },
-      "menOfTraining": {
-        "classes": ["Duelist", "Diabolist", "Alchemist"],
-        "label": "Men of Training",
-        "bonuses": [
-          {
-            "name": "Techniquecasting Categories",
-            "options": [
-              {
-                "name": "Offense",
-                "description": "Bolts, blasts",
-                "mechanic": "Direct damage techniques"
-              },
-              {
-                "name": "Control",
-                "description": "Holds, walls, illusions",
-                "mechanic": "Battlefield control techniques"
-              },
-              {
-                "name": "Defense",
-                "description": "Shields, counter-training",
-                "mechanic": "Protective techniques"
-              },
-              {
-                "name": "Utility",
-                "description": "Invisibility, flight, mobility",
-                "mechanic": "Strategic positioning techniques"
-              }
-            ]
-          },
-          {
-            "name": "Action Economy Management",
-            "description": "Some techniques are fast 'combat actions'; others take longerâ€”plan your round around casting times",
-            "mechanic": "Variable casting times affect combat strategy"
-          }
-        ]
+      {
+        "name": "Block",
+        "types": ["weapon", "shield"],
+        "description": "Block a close attack you can see coming.",
+        "cost": "1 action",
+        "mechanic": "Opposed block check vs incoming attack"
       },
-      "clergy": {
-        "classes": ["Priest", "Shaman", "Healer"],
-        "label": "Clergy",
-        "bonuses": [
-          {
-            "name": "Healing and Buffs",
-            "description": "Lay on hands/heal, remove conditions, bless allies, turn/banish fallen or raiders when applicable",
-            "mechanic": "Healing, condition removal, buff techniques"
-          },
-          {
-            "name": "Protective Actions",
-            "description": "Wards, sanctify areas, bolster saves",
-            "mechanic": "Area protection, saving throw bonuses"
-          },
-          {
-            "name": "Turning",
-            "description": "Turn/banish fallen or raiders",
-            "mechanic": "Specific combatant type mechanics",
-            "requirements": "Target combatant type"
-          }
-        ]
+      {
+        "name": "Evade",
+        "description": "Avoid an incoming attack by footwork, cover, or a quick shift of position.",
+        "cost": "1 action",
+        "mechanic": "Opposed evade check vs incoming attack"
       },
-      "naturalSpecial": {
-        "label": "Natural & Special Cases (Racial or PROFESSION features)",
-        "bonuses": [
-          {
-            "name": "Natural Weapons",
-            "description": "Claws/bites/gore attacks for those who have them",
-            "mechanic": "Additional attack options"
-          },
-          {
-            "name": "Enhanced Senses & Mobility",
-            "description": "Nightvision, tracking, climbing/flying/sprintingâ€”use these to control range and advantage",
-            "mechanic": "Environmental advantages, movement options"
-          },
-          {
-            "name": "Resistances/Saves",
-            "description": "Some races/classes halve fire/cold, ignore mundane weapons, or get better savesâ€”lean into those when choosing tactics",
-            "mechanic": "Damage reduction, improved saving throws"
-          }
-        ]
+      {
+        "name": "Move / Reposition",
+        "description": "Step, sprint, vault cover, change elevation, close distance, or open distance.",
+        "cost": "1 action",
+        "mechanic": "Movement based on speed, terrain, and stamina"
+      },
+      {
+        "name": "Draw / Ready / Reload",
+        "description": "Swap weapons, ready gear, string an arrow, crank a crossbow, or prepare an item.",
+        "cost": "1 action",
+        "mechanic": "Item interaction"
+      },
+      {
+        "name": "Aim / Called Shot",
+        "description": "Spend time lining up a careful hit.",
+        "cost": "1 action",
+        "mechanic": "+2 attack check, choose a specific target area"
+      },
+      {
+        "name": "Defend / Hold Action",
+        "description": "Delay an action to react later in the round.",
+        "cost": "1 action",
+        "mechanic": "Set a trigger condition and act when it happens"
+      },
+      {
+        "name": "Disengage / Withdraw",
+        "description": "Back out of close fighting while protecting yourself.",
+        "cost": "1 action",
+        "mechanic": "Check to avoid a free attack while leaving reach"
+      },
+      {
+        "name": "Combat Technique",
+        "options": ["Shove", "Trip", "Tackle", "Disarm", "Feint", "Bind"],
+        "description": "Use a trained mundane maneuver to break guard, knock a foe prone, or control a weapon.",
+        "cost": "1+ actions, depending on technique",
+        "mechanic": "Technique-specific attack or resistance check"
+      },
+      {
+        "name": "Use a Skill",
+        "description": "Climb, hide, give first aid, track, rally, or perform another practical task under pressure.",
+        "cost": "1 action",
+        "mechanic": "d20-style skill check with ability modifier and trainingBonus"
+      },
+      {
+        "name": "Use an Item",
+        "description": "Bandage a wound, throw oil, drop caltrops, light a torch, or use carried gear.",
+        "cost": "1 action",
+        "mechanic": "Item-specific check or effect"
       }
-    },
-    "turnFlow": {
-      "label": "How a Turn Typically Flows",
-      "steps": [
+    ]
+  },
+  "characterTypeBonus": {
+    "menOfArms": {
+      "classes": ["Knight", "Man-at-Arms", "Mercenary", "Longbowman", "Crossbowman"],
+      "label": "Men-at-Arms",
+      "bonuses": [
         {
-          "step": 1,
-          "description": "Pick a target or position goal"
+          "name": "Actions per Round",
+          "description": "Experienced fighters can do more in a combat round.",
+          "mechanic": "Additional actions at higher levels"
         },
         {
-          "step": 2,
-          "description": "Spend one of your attacks per melee to do one thing (attack, cast, move+attack, block/evade as needed, etc.)"
+          "name": "Combat Bonuses",
+          "description": "Training improves attack, block, evade, damage, and initiative checks.",
+          "mechanic": "Higher bonuses to combat checks"
         },
         {
-          "step": 3,
-          "description": "Repeat until you're out of attacks. Defensive parries/evades also cost attacks, so budget!"
+          "name": "Weapon Training",
+          "description": "Training improves accuracy, blocks, handling, and ranged timing with specific weapons.",
+          "mechanic": "Weapon-specific bonuses"
+        },
+        {
+          "name": "Mounted Combat",
+          "description": "Mounted fighters can use speed, reach, and impact when conditions allow.",
+          "mechanic": "Mounted positioning and charge checks",
+          "classes": ["Knight", "Squire"]
         }
-      ],
-      "tips": [
-        "Budget your attacksâ€”parries and evades also consume them",
-        "Positioning and timing win fights",
-        "Plan around technique casting times",
-        "Use environmental advantages",
-        "Coordinate with party members"
       ]
     },
-    "quickReferenceTips": {
-      "budgeting": "Every character has a limited number of attacks per combat round - use them wisely",
-      "positioning": "Get behind enemies for backstab bonuses, use cover, control elevation",
-      "timing": "Hold actions for perfect moments, interrupt enemy techniques, coordinate attacks",
-      "resourceManagement": "Track focus, technique slots, daily abilities, and consumables",
-      "environmental": "Use oil, caltrops, lighting, and terrain to your advantage",
-      "teamwork": "Coordinate defensive positioning, healing, and combo attacks"
+    "skirmishers": {
+      "classes": ["Duelist", "Brigand", "Raider", "Noble Duelist"],
+      "label": "Skirmishers",
+      "bonuses": [
+        {
+          "name": "Positioning Edge",
+          "description": "Good footwork, cover, and timing can create stronger attacks.",
+          "mechanic": "Position-based attack bonuses"
+        },
+        {
+          "name": "Control Tools",
+          "description": "Trips, binds, feints, shoves, and disarms can change the fight without extra damage.",
+          "mechanic": "Opposed checks and conditions"
+        }
+      ]
+    },
+    "support": {
+      "classes": ["Guard", "Shield Bearer", "Squire"],
+      "label": "Support Fighters",
+      "bonuses": [
+        {
+          "name": "First Aid and Rallying",
+          "description": "Stabilize allies, stop bleeding when possible, and help fighters recover composure.",
+          "mechanic": "Healing, stamina, or courage checks"
+        },
+        {
+          "name": "Protective Positioning",
+          "description": "Hold chokepoints, screen wounded allies, and maintain a defensive line.",
+          "mechanic": "Guard actions and positioning checks"
+        }
+      ]
+    },
+    "animals": {
+      "label": "Animals",
+      "bonuses": [
+        {
+          "name": "Natural Attacks",
+          "description": "Bites, tusks, horns, hooves, and claws for realistic animals that have them.",
+          "mechanic": "Animal-specific attack profiles"
+        },
+        {
+          "name": "Instinctive Movement",
+          "description": "Animals may sprint, charge, circle, or retreat based on training and temperament.",
+          "mechanic": "Movement and courage checks"
+        }
+      ]
     }
+  },
+  "turnFlow": {
+    "label": "How a Turn Typically Flows",
+    "steps": [
+      {
+        "step": 1,
+        "description": "Pick a target or position goal."
+      },
+      {
+        "step": 2,
+        "description": "Spend one action to attack, move, block, evade, ready gear, or use a combat technique."
+      },
+      {
+        "step": 3,
+        "description": "Continue until the fighter is out of actions or chooses to hold position."
+      }
+    ],
+    "tips": [
+      "Budget actions; blocks and evades can consume them.",
+      "Positioning and timing win fights.",
+      "Plan around technique setup time.",
+      "Use terrain, cover, and allies.",
+      "Track stamina and injuries."
+    ]
+  },
+  "quickReferenceTips": {
+    "budgeting": "Every fighter has a limited number of actions per combat round.",
+    "positioning": "Use cover, reach, elevation, and flanks.",
+    "timing": "Hold actions for useful moments and interrupt enemy setup.",
+    "resourceManagement": "Track stamina, gear, and limited-use combat techniques.",
+    "environmental": "Use lighting, footing, obstacles, and terrain to your advantage.",
+    "teamwork": "Coordinate defense, first aid, and focused attacks."
   }
-  
+}

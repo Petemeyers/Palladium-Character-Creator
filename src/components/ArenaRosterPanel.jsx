@@ -28,7 +28,7 @@ const ArenaRosterPanel = () => {
   const [spawnCount, setSpawnCount] = useState(1);
 
   const allEntities = getAllEntities();
-  const categories = ["all", "opponent", "animal", "fallen", "npc", "scout_playable", "pc_playable"];
+  const categories = ["all", "human", "animal"];
 
   const filteredEntities = selectedCategory === "all" 
     ? allEntities 
@@ -46,7 +46,7 @@ const ArenaRosterPanel = () => {
     }
 
     if (enemies.length > 0) {
-      // Add enemies to combat tracker
+      // Add combatants to combat tracker
       socket.emit("addEnemies", {
         partyId: activeParty._id,
         enemies: enemies,
@@ -54,13 +54,12 @@ const ArenaRosterPanel = () => {
 
       // Announce to PartyChat
       const isPlayable = selectedEntity.playable || selectedEntity.category?.includes('playable');
-      const emoji = isPlayable ? "ÃƒÂ°Ã…Â¸Ã…Â½Ã‚Â²" : "ÃƒÂ°Ã…Â¸Ã¢â‚¬ËœÃ‚Â¹";
       const playableText = isPlayable ? " (auto-rolled attributes)" : "";
       
       socket.emit("partyMessage", {
         partyId: activeParty._id,
         user: "System",
-        text: `${emoji} GM spawned ${spawnCount}x ${selectedEntity.name}${spawnCount > 1 ? 's' : ''}${playableText}`,
+        text: `GM added ${spawnCount}x ${selectedEntity.name}${spawnCount > 1 ? 's' : ''}${playableText}`,
         type: "system",
       });
     }
@@ -68,19 +67,22 @@ const ArenaRosterPanel = () => {
 
   const getCategoryColor = (category) => {
     switch (category) {
-      case "opponent": return "red";
+      case "human": return "blue";
       case "animal": return "green";
-      case "fallen": return "purple";
-      case "npc": return "blue";
-      case "scout_playable": return "pink";
-      case "pc_playable": return "cyan";
       default: return "gray";
     }
   };
 
+  const formatCategory = (category) => {
+    if (category === "all") return "All";
+    if (category === "human") return "Human";
+    if (category === "animal") return "Animal";
+    return String(category || "Unknown").replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+  };
+
   return (
     <Box className="container" p={4}>
-      <Heading mb={4}>ArenaRoster</Heading>
+      <Heading mb={4}>Arena Roster</Heading>
       
       <VStack align="stretch" spacing={4}>
         {/* Filters and Controls */}
@@ -95,14 +97,14 @@ const ArenaRosterPanel = () => {
             >
               {categories.map((category) => (
                 <option key={category} value={category}>
-                  {category.charAt(0).toUstaminarCase() + category.slice(1)}
+                  {formatCategory(category)}
                 </option>
               ))}
             </Select>
           </Box>
           
           <Box>
-            <Text fontSize="sm" mb={1}>Entity:</Text>
+            <Text fontSize="sm" mb={1}>Fighter:</Text>
             <Select
               value={selectedEntity?.id || ""}
               onChange={(e) => {
@@ -112,7 +114,7 @@ const ArenaRosterPanel = () => {
               width="200px"
               size="sm"
             >
-              <option value="">Select Entity</option>
+              <option value="">Select Fighter</option>
               {filteredEntities.map((entity) => (
                 <option key={entity.id} value={entity.id}>
                   {entity.name}
@@ -143,21 +145,21 @@ const ArenaRosterPanel = () => {
             isDisabled={!selectedEntity || !activeParty}
             size="sm"
           >
-            Spawn Entity
+            Add Fighter
           </Button>
         </HStack>
 
-        {/* Entity Details */}
+        {/* Combatant Details */}
         {selectedEntity && (
           <Box p={4} border="1px solid" borderColor="gray.200" borderRadius="md">
             <EntityDetails entityId={selectedEntity.id} />
           </Box>
         )}
 
-        {/* Entity List */}
+        {/* Combatant List */}
         <Box>
           <Heading size="sm" mb={3}>
-            Available Entities ({filteredEntities.length})
+            Available Fighters ({filteredEntities.length})
           </Heading>
           <Table variant="simple" size="sm">
             <Thead>
@@ -174,7 +176,7 @@ const ArenaRosterPanel = () => {
                   <Td>{entity.name}</Td>
                   <Td>
                     <Badge colorScheme={getCategoryColor(entity.category)}>
-                      {entity.category}
+                      {formatCategory(entity.category)}
                     </Badge>
                   </Td>
                   <Td>{entity.type}</Td>
@@ -197,7 +199,7 @@ const ArenaRosterPanel = () => {
   );
 };
 
-// Component to display entity details
+// Component to display combatant details
 const EntityDetails = ({ entityId }) => {
   const [entity, setEntity] = useState(null);
 
@@ -212,8 +214,8 @@ const EntityDetails = ({ entityId }) => {
     <VStack align="stretch" spacing={3}>
       <HStack justify="space-between">
         <Heading size="md">{entity.name}</Heading>
-        <Badge colorScheme={entity.category === 'opponent' ? 'red' : entity.category === 'animal' ? 'green' : entity.category === 'fallen' ? 'purple' : 'blue'}>
-          {entity.category}
+        <Badge colorScheme={entity.category === 'animal' ? 'green' : 'blue'}>
+          {entity.category === "animal" ? "Animal" : "Human"}
         </Badge>
       </HStack>
       
@@ -221,7 +223,7 @@ const EntityDetails = ({ entityId }) => {
       
       <HStack spacing={4} wrap="wrap">
         <Text fontSize="sm"><strong>Size:</strong> {entity.size}</Text>
-        <Text fontSize="sm"><strong>guardRating:</strong> {entity.guardRating}</Text>
+        <Text fontSize="sm"><strong>Guard Rating:</strong> {entity.guardRating}</Text>
         <Text fontSize="sm"><strong>HP:</strong> {entity.HP}</Text>
         {entity.spd && <Text fontSize="sm"><strong>Speed:</strong> {entity.spd}</Text>}
         {entity.lifeSpan && <Text fontSize="sm"><strong>Lifespan:</strong> {entity.lifeSpan}</Text>}
@@ -275,7 +277,7 @@ const EntityDetails = ({ entityId }) => {
           <VStack align="stretch" spacing={1}>
             {entity.abilities.map((ability, idx) => (
               <Text key={idx} fontSize="sm" color="gray.600">
-                ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ {ability}
+                {ability}
               </Text>
             ))}
           </VStack>

@@ -24,7 +24,7 @@ function pathTerrainCost(path, gridState, mover) {
  * @returns {Object} Policy object with budget, cost calculation, AoO rules, etc.
  */
 function getModePolicy(mode, fighter) {
-  const m = (mode || "MOVE").toUstaminarCase();
+  const m = (mode || "MOVE").toUpperCase();
 
   // baseline: remainingActions is your "movement budget currency"
   const baseBudget = Math.max(0, fighter.remainingActions ?? 0);

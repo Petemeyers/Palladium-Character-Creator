@@ -54,7 +54,7 @@ export function assertArenaRosterIsSafe(entries) {
 }
 
 export const arenaRoster = {
-  title: "ArenaRoster",
+  title: "Arena Roster",
   combatants: assertArenaRosterIsSafe([...humanFighters, ...animals]),
 };
 

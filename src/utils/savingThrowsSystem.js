@@ -227,7 +227,7 @@ export function rollSavingThrow({
   const total = roll + totalBonus;
 
   const success = total >= base;
-  const details = `Ã°Å¸Å½Â² Save vs ${type.toUstaminarCase()}: rolled ${roll} + ${totalBonus} = ${total} (need ${base})`;
+  const details = `Ã°Å¸Å½Â² Save vs ${type.toUpperCase()}: rolled ${roll} + ${totalBonus} = ${total} (need ${base})`;
 
   if (success) {
     log(`Ã°Å¸â€ºÂ¡Ã¯Â¸Â ${character.name || "Character"} succeeds! ${details}`, "save");

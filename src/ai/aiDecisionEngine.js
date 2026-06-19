@@ -234,7 +234,7 @@ function buildAttackActions(actor, world) {
       actor?.rangedWeapon ||
       actor?.equistaminadWeapons?.primary?.range ||
       actor?.equistaminadWeapons?.secondary?.range ||
-      actorHasSkillMatching(actor, (skill) => skill.includes("w.p.") && (skill.includes("bow") || skill.includes("crossbow")));
+      actorHasSkillMatching(actor, (skill) => skill.includes("weapon training") && (skill.includes("bow") || skill.includes("crossbow")));
 
     if (hasRangedOption && dist <= rangedRange) {
       actions.push(

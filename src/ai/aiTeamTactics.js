@@ -53,9 +53,9 @@ function isRanged(actor) {
     actor?.rangedWeapon ||
     skills.some(
       (s) =>
-        s.includes("w.p. bow") ||
-        s.includes("w.p. crossbow") ||
-        s.includes("w.p. sling")
+        s.includes("weapon training: bow") ||
+        s.includes("weapon training: crossbow") ||
+        s.includes("weapon training: sling")
     )
   );
 }

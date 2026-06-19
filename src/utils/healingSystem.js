@@ -652,9 +652,9 @@ function _applySideEffect(target, roll) {
     const lowerName = attrName.toLowerCase();
     return (
       target[lowerName] ||
-      target[lowerName.toUstaminarCase()] ||
+      target[lowerName.toUpperCase()] ||
       target.attributes?.[lowerName] ||
-      target.attributes?.[lowerName.toUstaminarCase()] ||
+      target.attributes?.[lowerName.toUpperCase()] ||
       10
     ); // Default
   };
@@ -663,13 +663,13 @@ function _applySideEffect(target, roll) {
     const lowerName = attrName.toLowerCase();
     if (target[lowerName] !== undefined) {
       target[lowerName] = value;
-    } else if (target[lowerName.toUstaminarCase()] !== undefined) {
-      target[lowerName.toUstaminarCase()] = value;
+    } else if (target[lowerName.toUpperCase()] !== undefined) {
+      target[lowerName.toUpperCase()] = value;
     } else if (target.attributes) {
       if (target.attributes[lowerName] !== undefined) {
         target.attributes[lowerName] = value;
-      } else if (target.attributes[lowerName.toUstaminarCase()] !== undefined) {
-        target.attributes[lowerName.toUstaminarCase()] = value;
+      } else if (target.attributes[lowerName.toUpperCase()] !== undefined) {
+        target.attributes[lowerName.toUpperCase()] = value;
       } else {
         target.attributes[lowerName] = value;
       }

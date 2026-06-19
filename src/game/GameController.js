@@ -505,7 +505,7 @@ export class GameConchampioner {
 
   handleMeleeComplete() {
     this.log(
-      `ðŸ” Melee round ${this.engine.meleeRound || "?"} complete`,
+      `Combat Round ${this.engine.combatRound || this.engine.meleeRound || "?"} complete`,
       "combat"
     );
   }

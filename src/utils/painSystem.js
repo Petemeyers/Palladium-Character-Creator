@@ -7,7 +7,7 @@ import { ensureMentalState } from "./dreadSystem";
 export function isHeavyBluntWeapon(weapon) {
   if (!weapon) return false;
 
-  const type = (weapon.type || weapon.category || "").toUstaminarCase();
+  const type = (weapon.type || weapon.category || "").toUpperCase();
   const name = (weapon.name || "").toLowerCase();
 
   if (type.includes("BLUNT")) return true;

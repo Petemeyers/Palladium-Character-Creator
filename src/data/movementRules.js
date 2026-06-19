@@ -8,28 +8,28 @@ import { offsetToAxial } from "../utils/hexGridMath";
 /**
  * Medieval Combat Simulator MOVEMENT SYSTEM:
  * - 1 combat round = 15 seconds
- * - Speed (SPD) ÃƒÆ’Ã¢â‚¬â€ 6 = yards per combat round (running speed)
+ * - Speed divided by 6 = yards per combat round (running speed)
  * - Walking speed = ~half of running speed
- * - Movement per action = (Speed ÃƒÆ’Ã¢â‚¬â€ 6) ÃƒÆ’Ã‚Â· Attacks per Melee
+ * - Movement per action = Speed divided into actions per round
  * - Physical Endurance (endurance) determines how long character can sustain maximum speed
  * - Encumbrance and armor reduce effective SPD
  * - Movement can be combined with combat actions (uses walking speed)
  * - Charging = move + attack with bonuses/penalties
  *
  * For grid-based tactical combat (using 5-foot cells):
- * - Convert yards to feet: yards ÃƒÆ’Ã¢â‚¬â€ 3 = feet
+ * - Convert yards to feet: yards multiplied by 3 = feet
  * - When character takes combat actions, use walking speed (~half running speed)
  */
 
 // Movement rates based on Speed attribute (Medieval Combat Simulator RULES)
 export const MOVEMENT_RATES = {
   calculateMovement: (speedAttribute) => {
-    // OFFICIAL 1994 FORMULA: Speed ÃƒÆ’Ã¢â‚¬â€ 18 = feet per melee (running speed)
+    // Running movement: Speed multiplied by 18 = feet per combat round.
     const feetPerMelee = speedAttribute * 18;
 
     return {
       // Running speed (official Medieval Combat Simulator)
-      running: feetPerMelee, // Speed ÃƒÆ’Ã¢â‚¬â€ 18 feet per melee
+      running: feetPerMelee, // Speed multiplied by 18 feet per combat round.
 
       // Walking speed (~half of running speed)
       walking: Math.floor(feetPerMelee / 2), // Half speed when walking/fighting
@@ -339,17 +339,17 @@ export function getMovementRange(
   terrain = {},
   isRunning = false
 ) {
-  // Use official 1994 Medieval Combat Simulator movement: Speed ÃƒÆ’Ã¢â‚¬â€ 18 feet per melee (running)
+  // Movement: Speed multiplied by 18 feet per combat round (running).
   const feetPerMelee = speed * 18;
   const feetPerAction = feetPerMelee / actionsPerRound;
 
   // Use walking speed (combat movement) for movement range calculation
   // Unless running mode is enabled, then use full running speed
-  // When running, can move at full speed (Speed ÃƒÆ’Ã¢â‚¬â€ 18 feet per action)
+  // When running, can move at full speed (Speed multiplied by 18 feet per action).
   // When walking (combat movement), moves at half speed to allow attacking
   // Per Medieval Combat Simulator rules:
   // - Walking (combat): ~1/2 speed (allows attacking while moving)
-  // - Running: Full speed (Speed ÃƒÆ’Ã¢â‚¬â€ 18 feet per action) = 2x walking
+  // - Running: Full speed (Speed multiplied by 18 feet per action) = 2x walking.
   const movementFeetPerAction = isRunning
     ? feetPerAction // Running: full speed per action (2x walking speed)
     : Math.floor(feetPerAction * 0.5); // Walking: half speed for combat movement
@@ -359,7 +359,7 @@ export function getMovementRange(
   );
 
   // Debug logging to verify running mode
-  console.log("ÃƒÂ°Ã…Â¸Ã‚ÂÃ†â€™ Movement calculation:", {
+  console.log("Movement calculation:", {
     isRunning,
     speed,
     feetPerMelee,
@@ -381,7 +381,7 @@ export function getMovementRange(
     red: Math.floor(hexesCanMove * 4), // 4 actions (60 seconds)
   };
 
-  console.log("ÃƒÂ°Ã…Â¸Ã…Â½Ã‚Â¨ Movement ranges:", movementRanges);
+  console.log("Movement ranges:", movementRanges);
 
   if (GRID_CONFIG.USE_HEX_GRID) {
     // Use flood-fill algorithm for hex grid
@@ -478,7 +478,7 @@ export function getMovementRange(
   }
 
   console.log(
-    `ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Generated ${validPositions.length} valid positions with colors:`,
+    `Generated ${validPositions.length} valid positions with colors:`,
     validPositions.map((p) => ({ x: p.x, y: p.y, color: p.color })).slice(0, 10)
   );
 
@@ -490,7 +490,7 @@ export function getMovementRange(
 // ------------------------------------------------------------
 
 function oppositeDir(dir) {
-  const d = (dir || "").toUstaminarCase();
+  const d = (dir || "").toUpperCase();
   const map = { E: "W", W: "E", NE: "SW", NW: "SE", SE: "NW", SW: "NE" };
   return map[d] || "W";
 }
@@ -498,7 +498,7 @@ function oppositeDir(dir) {
 // Flat-top, odd-r offset neighbors (row-based offset)
 function stepOddR(col, row, dir) {
   const odd = row % 2 === 1;
-  switch ((dir || "W").toUstaminarCase()) {
+  switch ((dir || "W").toUpperCase()) {
     case "E":
       return { x: col + 1, y: row };
     case "W":
@@ -536,7 +536,7 @@ function buildSegmentOffsets(totalHexes, tailDir) {
 export function getCombatantSize(combatant) {
   if (!combatant) return { width: 1, length: 1 };
 
-  // ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Segmented body support (preferred if present)
+  // Segmented body support (preferred if present)
   // Support both old format (segments array) and new format (headHexes/bodyHexes/tailHexes)
   if (combatant.segmentedBody) {
     let headHexes = 1;

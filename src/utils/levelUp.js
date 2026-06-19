@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Level Up System
  * Handles character level progression when XP threshold is met
  */
@@ -36,7 +36,7 @@ export function levelUp(character) {
     // Individual skill progression would be handled by skillSystem.js
   }
 
-  // Increase attacks per melee (if applicable)
+  // Increase actions per round (if applicable)
   if (character.actionsPerRound) {
     // Some classes gain additional attacks at certain levels
     // This is simplified - actual rules vary by class
@@ -81,4 +81,5 @@ export function levelUp(character) {
 }
 
 export default { levelUp };
+
 

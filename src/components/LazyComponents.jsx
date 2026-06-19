@@ -25,7 +25,6 @@ export const LazyInventoryManager = React.lazy(() => import('./InventoryManager'
 export const LazyEquipmentShop = React.lazy(() => import('./EquipmentShop'));
 export const LazyNpcMemoryEditor = React.lazy(() => import('./NpcMemoryEditor'));
 export const LazyWorldMap = React.lazy(() => import('./WorldMap'));
-export const LazyPartyChat = React.lazy(() => import('./PartyChat'));
 
 // HOC for lazy loading with error boundary and suspense
 export const withLazyLoading = (LazyComponent, loadingMessage) => {
@@ -99,11 +98,6 @@ export const NpcMemoryEditor = withLazyLoading(
 export const WorldMap = withLazyLoading(
   LazyWorldMap, 
   "Loading world map..."
-);
-
-export const PartyChat = withLazyLoading(
-  LazyPartyChat, 
-  "Loading party chat..."
 );
 
 // Utility for preloading components (for better UX)

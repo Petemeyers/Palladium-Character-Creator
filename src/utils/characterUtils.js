@@ -1153,7 +1153,7 @@ export const assignInitialEquipment = async (
 
   // Replace generic clothing with race-specific clothing
   const raceKey =
-    characterRace.charAt(0).toUstaminarCase() +
+    characterRace.charAt(0).toUpperCase() +
     characterRace.slice(1).toLowerCase();
   const raceClothing = clothingEquipmentData?.raceClothing?.[raceKey];
 

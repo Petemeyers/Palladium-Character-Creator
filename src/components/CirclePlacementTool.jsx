@@ -36,7 +36,7 @@ const CirclePlacementTool = ({
       const fullCircle = {
         ...circle,
         caster: caster.name || caster.id,
-        name: circleType.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUstaminarCase()),
+        name: circleType.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
         bonus: 5, // Default bonus vs Horror
         remaining: 10, // Default duration in melees
       };
@@ -73,7 +73,7 @@ const CirclePlacementTool = ({
           >
             {Object.values(CIRCLE_TYPES).map(type => (
               <option key={type} value={type}>
-                {type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUstaminarCase())}
+                {type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
               </option>
             ))}
           </Select>

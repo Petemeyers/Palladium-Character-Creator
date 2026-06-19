@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import axiosInstance from '../utils/axios';
+import { isBackendOffline, isBackendOfflineError, markBackendOffline } from '../utils/backendStatus';
 
 const PartyContext = createContext();
 
@@ -17,6 +18,7 @@ export const PartyProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
   const [refreshInterval, setRefreshInterval] = useState(null);
   const fetchInFlightRef = useRef(false); // Track if a request is already in flight
+  const backendOfflineRef = useRef(false);
 
   const fetchActiveParty = useCallback(async () => {
     // Deduplication: skip if a request is already in flight
@@ -26,20 +28,34 @@ export const PartyProvider = ({ children }) => {
 
     try {
       fetchInFlightRef.current = true;
+      if (backendOfflineRef.current || isBackendOffline()) {
+        setActiveParty(null);
+        setLoading(false);
+        return 'offline';
+      }
+
       const token = localStorage.getItem('token');
       if (!token) {
         setActiveParty(null);
         setLoading(false);
-        return;
+        return 'no-token';
       }
 
       const response = await axiosInstance.get('/parties/active');
       // Backend now returns null instead of 404 when no party exists
       setActiveParty(response.data || null);
+      return 'ok';
     } catch (error) {
+      if (isBackendOfflineError(error)) {
+        backendOfflineRef.current = true;
+        markBackendOffline();
+        setActiveParty(null);
+        return 'offline';
+      }
       // Only log unexpected errors (not 404s since backend now returns 200 with null)
       console.error('Error fetching active party:', error);
       setActiveParty(null);
+      return 'error';
     } finally {
       setLoading(false);
       fetchInFlightRef.current = false;
@@ -55,13 +71,16 @@ export const PartyProvider = ({ children }) => {
   }, []);
 
   useEffect(() => {
-    fetchActiveParty();
+    let interval = null;
+    fetchActiveParty().then((status) => {
+      if (status === 'offline') return;
 
-    // Set up refresh interval (every 30 seconds)
-    const interval = setInterval(() => {
-      fetchActiveParty();
-    }, 30000);
-    setRefreshInterval(interval);
+      // Set up refresh interval (every 30 seconds)
+      interval = setInterval(() => {
+        fetchActiveParty();
+      }, 30000);
+      setRefreshInterval(interval);
+    });
 
     return () => {
       if (interval) {

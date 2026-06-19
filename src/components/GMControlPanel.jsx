@@ -141,7 +141,7 @@ const GMControlPanel = ({
       socket.emit("partyMessage", {
         partyId: activeParty._id,
         user: "System",
-        text: `Ã°Å¸Å’â„¢ The party rests ${restHours} hours. Time is now ${new Date(
+        text: `The party rests ${restHours} hours. Time is now ${new Date(
           res.data.newTime
         ).toLocaleString()}. Abilities restored.`,
         type: "system",
@@ -236,30 +236,30 @@ const GMControlPanel = ({
           <Button
             colorScheme="purple"
             size="sm"
-            onClick={() => handleCombatNarration("Samuel the Duelist casts Fireball at an Raider, dealing 17 damage")}
+            onClick={() => handleCombatNarration("Samuel the Duelist strikes a raider, dealing 17 damage")}
           >
-            Ã°Å¸Å½Â­ Combat Narration
+            Combat Narration
           </Button>
           <Button
             colorScheme="blue"
             size="sm"
             onClick={() => handleQuestGeneration("Merchant caravan encounter")}
           >
-            Ã°Å¸â€œÅ“ Generate Quest
+            Generate Quest
           </Button>
           <Button
             colorScheme="green"
             size="sm"
             onClick={() => handleEncounterNarration("Three bandits ambush the party at night")}
           >
-            Ã¢Å¡â€Ã¯Â¸Â Encounter Narration
+            Encounter Narration
           </Button>
           <Button
             colorScheme="orange"
             size="sm"
             onClick={() => handleGMAssist("What's a fun complication if the party delays 3 days here?")}
           >
-            Ã°Å¸Â§Â  GM Assist
+            GM Assist
           </Button>
         </HStack>
       </Box>
@@ -280,9 +280,9 @@ const GMControlPanel = ({
               width="200px"
               size="md"
             >
-              <option value="txt">Ã°Å¸â€œâ€ž Text (.txt)</option>
-              <option value="md">Ã°Å¸â€œÂ Markdown (.md)</option>
-              <option value="pdf">Ã°Å¸â€œâ€¹ PDF (.pdf)</option>
+              <option value="txt">Text (.txt)</option>
+              <option value="md">Markdown (.md)</option>
+              <option value="pdf">PDF (.pdf)</option>
             </Select>
             <Button 
               colorScheme="blue" 
@@ -296,14 +296,14 @@ const GMControlPanel = ({
               onClick={handleExportCombatLog}
               size="md"
             >
-              Ã¢Å¡â€Ã¯Â¸Â Export Combat Log
+              Export Combat Log
             </Button>
             <Button 
               colorScheme="red" 
               onClick={handleEndSession}
               size="md"
             >
-              Ã°Å¸ÂÂ End Session & Auto-Export
+              End Session & Auto-Export
             </Button>
           </HStack>
         </Box>
@@ -327,7 +327,7 @@ const GMControlPanel = ({
               onClick={handleRestParty}
               size="md"
             >
-              Ã°Å¸Å’â„¢ Rest & Reset Abilities
+              Rest & Reset Abilities
             </Button>
           </HStack>
         </Box>
@@ -373,7 +373,7 @@ const GMControlPanel = ({
           <Tab>Time</Tab>
           <Tab>Party Inventory</Tab>
           <Tab>Merchant</Tab>
-          <Tab>ArenaRoster</Tab>
+          <Tab>Arena Roster</Tab>
           <Tab>Quest Tracker</Tab>
           <Tab>NPC Chat</Tab>
           <Tab>World Map</Tab>
@@ -477,7 +477,7 @@ const GMControlPanel = ({
             <MerchantPanel characters={activeParty?.members || []} />
           </TabPanel>
 
-          {/* ArenaRoster */}
+          {/* Arena Roster */}
           <TabPanel>
             <ArenaRosterPanel />
           </TabPanel>

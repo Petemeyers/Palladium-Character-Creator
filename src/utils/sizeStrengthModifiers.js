@@ -95,7 +95,7 @@ export function getSizeCategory(combatant) {
 
   // 1) Explicit size category fields
   if (combatant.sizeCategory) {
-    const sizeUstaminar = String(combatant.sizeCategory).toUstaminarCase();
+    const sizeUstaminar = String(combatant.sizeCategory).toUpperCase();
     if (Object.values(SIZE_CATEGORIES).includes(sizeUstaminar)) {
       return sizeUstaminar;
     }
@@ -103,7 +103,7 @@ export function getSizeCategory(combatant) {
 
   // 2) Explicit size field that may already be a category enum
   if (combatant.size && typeof combatant.size === "string") {
-    const sizeUstaminar = combatant.size.toUstaminarCase();
+    const sizeUstaminar = combatant.size.toUpperCase();
     if (Object.values(SIZE_CATEGORIES).includes(sizeUstaminar)) {
       return sizeUstaminar;
     }

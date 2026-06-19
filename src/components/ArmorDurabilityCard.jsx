@@ -1,4 +1,4 @@
-import React from "react";
+﻿import React from "react";
 import {
   Box,
   Text,
@@ -12,10 +12,10 @@ import {
   useToast,
 } from "@chakra-ui/react";
 // Using text icons instead of react-icons to avoid dependency issues
-const FaShield = () => <span>ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂºÃ‚Â¡ÃƒÂ¯Ã‚Â¸Ã‚Â</span>;
-const FaWrench = () => <span>ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ‚Â§</span>;
-const FaRedo = () => <span>ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ¢â‚¬Å¾</span>;
-const FaExclamationTriangle = () => <span>ÃƒÂ¢Ã…Â¡Ã‚Â ÃƒÂ¯Ã‚Â¸Ã‚Â</span>;
+const FaShield = () => <span>Shield</span>;
+const FaWrench = () => <span>Repair</span>;
+const FaRedo = () => <span>Reset</span>;
+const FaExclamationTriangle = () => <span>Warning</span>;
 import useArmorDurability from "../hooks/useArmorDurability";
 
 /**
@@ -81,7 +81,7 @@ export default function ArmorDurabilityCard({
     if (result.success) {
       toast({
         title: "Armor Repaired",
-        description: `Restored ${repairAmount} armorDurability for ${result.cost} gold`,
+        description: `Restored ${repairAmount} Armor Durability for ${result.cost} gold`,
         status: "success",
         duration: 2000,
         isClosable: true,
@@ -144,7 +144,7 @@ export default function ArmorDurabilityCard({
         />
         
         <Text fontSize="xs" color="gray.400">
-          armorDurability: {armor.currentarmorDurability}/{armor.armorDurability} | A.R.: {armor.guardRating}
+          Armor Durability: {armor.currentarmorDurability}/{armor.armorDurability} | Guard Rating: {armor.guardRating}
         </Text>
       </Box>
     );
@@ -227,7 +227,7 @@ export default function ArmorDurabilityCard({
       {/* Armor stats */}
       <VStack spacing={1} mb={4} fontSize="sm" color="gray.300">
         <HStack>
-          <Text>Armor Rating:</Text>
+          <Text>Guard Rating:</Text>
           <Text fontWeight="bold" color={armor.broken ? "red.300" : "blue.300"}>
             {armor.broken ? "0" : armor.guardRating}
           </Text>
@@ -309,3 +309,4 @@ export default function ArmorDurabilityCard({
     </Box>
   );
 }
+

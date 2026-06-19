@@ -8,6 +8,7 @@ import React, {
 
 import { Box, Text } from "@chakra-ui/react";
 import PropTypes from "prop-types";
+import { initHexArena } from "../utils/three/HexArena.js";
 
 const HexArena3D = forwardRef(function HexArena3D(
   {
@@ -73,20 +74,17 @@ const HexArena3D = forwardRef(function HexArena3D(
     initializationStarted.current = true;
     isMountedRef.current = true;
 
-    (async () => {
-      try {
-        const mod = await import("../utils/three/HexArena.js");
-        arenaRef.current = mod.initHexArena(containerRef.current);
+    try {
+      arenaRef.current = initHexArena(containerRef.current);
 
-        if (!arenaRef.current) {
-          console.error("Failed to initialize 3D arena");
-        } else {
-          if (isMountedRef.current) setIsInitialized(true);
-        }
-      } catch (error) {
-        console.error("Error initializing 3D arena:", error);
+      if (!arenaRef.current) {
+        console.error("Failed to initialize 3D arena");
+      } else {
+        if (isMountedRef.current) setIsInitialized(true);
       }
-    })();
+    } catch (error) {
+      console.error("Error initializing 3D arena:", error);
+    }
 
     return () => {
       isMountedRef.current = false;

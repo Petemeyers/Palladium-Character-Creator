@@ -1,4 +1,4 @@
-// Medieval Combat Simulator Skills Dataset
+﻿// Medieval Combat Simulator Skills Dataset
 export const skills = {
   // Physical Skills
   Climb: {
@@ -328,82 +328,82 @@ export const skills = {
     locations: ["jungle_camp", "wilderness_camp", "village_oldkingdom"],
   },
   
-  // Weapon Proficiencies (W.P.) - These are combat skills but tracked separately
-  "W.P. Ball and Chain": {
+  // Weapon Training - These are combat skills but tracked separately
+  "Weapon Training: Chain Weapons": {
     attribute: "PP",
-    type: "Weapon Proficiency",
+    type: "Weapon Training",
     encumbranceAffected: false,
     description: "Proficiency with ball and chain weapons",
     difficulty: "Hard",
     locations: ["capital_inn", "trading_post"],
   },
-  "W.P. Blunt": {
+  "Weapon Training: Blunt Weapons": {
     attribute: "PP",
-    type: "Weapon Proficiency",
+    type: "Weapon Training",
     encumbranceAffected: false,
     description: "Proficiency with blunt weapons",
     difficulty: "Average",
     locations: ["capital_inn", "trading_post"],
   },
-  "W.P. Small Shield": {
+  "Weapon Training: Small Shield": {
     attribute: "PP",
-    type: "Weapon Proficiency",
+    type: "Weapon Training",
     encumbranceAffected: false,
     description: "Proficiency with small shields",
     difficulty: "Easy",
     locations: ["capital_inn", "trading_post", "wolf_camp"],
   },
-  "W.P. Large Shield": {
+  "Weapon Training: Large Shield": {
     attribute: "PP",
-    type: "Weapon Proficiency",
+    type: "Weapon Training",
     encumbranceAffected: false,
     description: "Proficiency with large shields",
     difficulty: "Average",
     locations: ["capital_inn", "trading_post", "wolf_camp"],
   },
-  "W.P. Lance": {
+  "Weapon Training: Lance": {
     attribute: "PP",
-    type: "Weapon Proficiency",
+    type: "Weapon Training",
     encumbranceAffected: false,
     description: "Proficiency with lances, especially mounted",
     difficulty: "Hard",
     locations: ["capital_inn", "trading_post"],
   },
-  "W.P. Sling": {
+  "Weapon Training: Sling": {
     attribute: "PP",
-    type: "Weapon Proficiency",
+    type: "Weapon Training",
     encumbranceAffected: false,
     description: "Proficiency with slings",
     difficulty: "Average",
     locations: ["capital_inn", "trading_post", "village_oldkingdom"],
   },
-  "W.P. Pole Arms": {
+  "Weapon Training: Polearms": {
     attribute: "PP",
-    type: "Weapon Proficiency",
+    type: "Weapon Training",
     encumbranceAffected: false,
     description: "Proficiency with pole arms",
     difficulty: "Average",
     locations: ["capital_inn", "trading_post", "wolf_camp"],
   },
-  "W.P. Short Bow": {
+  "Weapon Training: Short Bow": {
     attribute: "PP",
-    type: "Weapon Proficiency",
+    type: "Weapon Training",
     encumbranceAffected: false,
     description: "Proficiency with short bows",
     difficulty: "Average",
     locations: ["capital_inn", "trading_post", "wilderness_camp"],
   },
-  "W.P. Long Bow": {
+  "Weapon Training: Long Bow": {
     attribute: "PP",
-    type: "Weapon Proficiency",
+    type: "Weapon Training",
     encumbranceAffected: false,
     description: "Proficiency with long bows",
     difficulty: "Hard",
     locations: ["capital_inn", "trading_post", "wilderness_camp"],
   },
-  "W.P. Crossbow": {
+  "Weapon Training: Crossbow": {
     attribute: "PP",
-    type: "Weapon Proficiency",
+    type: "Weapon Training",
     encumbranceAffected: false,
     description: "Proficiency with crossbows",
     difficulty: "Average",
@@ -630,3 +630,5 @@ export const getSkillsForLocation = (locationId) => {
 export const getSkillByName = (skillName) => {
   return skills[skillName] ? { name: skillName, ...skills[skillName] } : null;
 };
+
+

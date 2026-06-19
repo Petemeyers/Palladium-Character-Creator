@@ -11,7 +11,7 @@ import clothingEquipment from "../data/clothingEquipment.json";
  * @returns {Array} Array of clothing options available for the race
  */
 export function getRaceClothingOptions(race) {
-  const raceKey = race.charAt(0).toUstaminarCase() + race.slice(1).toLowerCase();
+  const raceKey = race.charAt(0).toUpperCase() + race.slice(1).toLowerCase();
   const raceData = clothingEquipment.raceClothing[raceKey];
 
   if (!raceData) {
@@ -192,7 +192,7 @@ export function getAvailableRaceClothing(race) {
  * @returns {Object} Race clothing information
  */
 export function getRaceClothingInfo(race) {
-  const raceKey = race.charAt(0).toUstaminarCase() + race.slice(1).toLowerCase();
+  const raceKey = race.charAt(0).toUpperCase() + race.slice(1).toLowerCase();
   const raceData = clothingEquipment.raceClothing[raceKey];
 
   if (!raceData) {

@@ -1018,7 +1018,7 @@ const TacticalMap = ({
   const canDetectEnemyBySound = useCallback((player, enemy, distanceInFeet) => {
     const terrainType = String(
       terrain?.terrain || terrain?.baseTerrain || ""
-    ).toUstaminarCase();
+    ).toUpperCase();
     const playerME =
       Number(player?.attributes?.ME) ||
       Number(player?.ME) ||
@@ -1139,7 +1139,7 @@ const TacticalMap = ({
 
     // Fallback: try to get from LIGHTING_CONDITIONS if we have lighting name
     if (lighting || terrain?.lighting) {
-      const lightingKey = String(lighting || terrain.lighting).toUstaminarCase().replace(/\s+/g, '_');
+      const lightingKey = String(lighting || terrain.lighting).toUpperCase().replace(/\s+/g, '_');
       // Import LIGHTING_CONDITIONS if available, otherwise use fallback values
       const lightingConditions = {
         BRIGHT_DAYLIGHT: { visibilityBonus: 0 },
@@ -3315,7 +3315,7 @@ const TacticalMap = ({
                   ));
               })
               .map(([key, color]) => {
-                const terrainName = key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUstaminarCase());
+                const terrainName = key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
                 const icon = key.includes("FOREST") ? "ÃƒÂ°Ã…Â¸Ã…â€™Ã‚Â²" :
                   key.includes("ROCKY") ? "ÃƒÂ°Ã…Â¸Ã‚ÂªÃ‚Â¨" :
                     key === "WATER" ? "ÃƒÂ°Ã…Â¸Ã¢â‚¬â„¢Ã‚Â§" :
