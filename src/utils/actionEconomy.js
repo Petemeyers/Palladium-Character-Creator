@@ -3,6 +3,49 @@
  * Manages attacks per combat round based on Medieval Combat Simulator rules
  */
 
+export function create5eActionEconomy(overrides = {}) {
+  return {
+    action: overrides.action ?? true,
+    bonusAction: overrides.bonusAction ?? true,
+    reaction: overrides.reaction ?? true,
+    movement: overrides.movement ?? 30,
+  };
+}
+
+export function getActionsPerTurn(combatant = {}) {
+  const explicitActions = Number(combatant.actions ?? combatant.actionCount);
+  if (Number.isFinite(explicitActions) && explicitActions > 0) return explicitActions;
+  return 1;
+}
+
+export function hasAction(actionEconomy = {}) {
+  return Boolean(actionEconomy.action);
+}
+
+export function hasBonusAction(actionEconomy = {}) {
+  return Boolean(actionEconomy.bonusAction);
+}
+
+export function hasReaction(actionEconomy = {}) {
+  return Boolean(actionEconomy.reaction);
+}
+
+export function spendAction(actionEconomy = {}) {
+  return { ...create5eActionEconomy(actionEconomy), action: false };
+}
+
+export function spendBonusAction(actionEconomy = {}) {
+  return { ...create5eActionEconomy(actionEconomy), bonusAction: false };
+}
+
+export function spendReaction(actionEconomy = {}) {
+  return { ...create5eActionEconomy(actionEconomy), reaction: false };
+}
+
+export function resetTurnActions(actionEconomy = {}) {
+  return create5eActionEconomy(actionEconomy);
+}
+
 /**
  * Get number of attacks per combat round based on level and class
  * @param {number} level - Character level
@@ -150,21 +193,30 @@ export function getActionCost(actionType) {
  */
 export function formatAttacksRemaining(remaining, total) {
   if (remaining <= 0) {
-    return `ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã‚Â¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¯Ãƒâ€šÃ‚Â¸Ãƒâ€šÃ‚Â 0/${total} attacks (OUT OF ACTIONS!)`;
+    return `0/${total} actions (OUT OF ACTIONS!)`;
   }
 
   if (remaining === total) {
-    return `ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã‚Â¡ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÆ’Ã‚Â¯Ãƒâ€šÃ‚Â¸Ãƒâ€šÃ‚Â ${remaining}/${total} attacks (Full)`;
+    return `${remaining}/${total} actions (Full)`;
   }
 
   if (remaining === 1) {
-    return `ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã‚Â¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¯Ãƒâ€šÃ‚Â¸Ãƒâ€šÃ‚Â ${remaining}/${total} attacks (Last action!)`;
+    return `${remaining}/${total} actions (Last action!)`;
   }
 
-  return `ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã‚Â¡ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÆ’Ã‚Â¯Ãƒâ€šÃ‚Â¸Ãƒâ€šÃ‚Â ${remaining}/${total} attacks`;
+  return `${remaining}/${total} actions`;
 }
 
 export default {
+  create5eActionEconomy,
+  getActionsPerTurn,
+  hasAction,
+  hasBonusAction,
+  hasReaction,
+  spendAction,
+  spendBonusAction,
+  spendReaction,
+  resetTurnActions,
   getAttacksPerMelee,
   getCombatantAttacksPerMelee,
   getActionCost,
