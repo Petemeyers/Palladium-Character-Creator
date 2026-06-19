@@ -5,9 +5,11 @@ import {
   getConModifier,
   getDexModifier,
   getHitPoints,
+  getMaxHitPoints,
   getProficiencyBonus,
   getSpeed,
   getStrModifier,
+  getTemporaryHitPoints,
   normalize5eCombatant,
 } from "../src/utils/normalize5eCombatant.js";
 import * as actionEconomy from "../src/utils/actionEconomy.js";
@@ -86,6 +88,43 @@ function testHelpers() {
   assert.equal(getConModifier(combatant), 1);
   assert.equal(getHitPoints(combatant), 22);
   assert.equal(getSpeed(combatant), 30);
+}
+
+function testHitPointPrecedence() {
+  assert.equal(getHitPoints({
+    hp: 8,
+    currentHp: 7,
+    currentHitPoints: 6,
+    hitPoints: 5,
+    health: 4,
+  }), 8);
+  assert.equal(getHitPoints({ currentHp: 7 }), 7);
+  assert.equal(getHitPoints({ currentHitPoints: 6 }), 6);
+  assert.equal(getHitPoints({ hitPoints: 5 }), 5);
+  assert.equal(getHitPoints({ health: 4 }), 4);
+  assert.equal(getHitPoints({}), 10);
+
+  assert.equal(getMaxHitPoints({ maxHp: 20, maxHitPoints: 19, hitPoints: 18, hp: 17 }), 20);
+  assert.equal(getMaxHitPoints({ maxHitPoints: 19, hitPoints: 18, hp: 17 }), 19);
+  assert.equal(getMaxHitPoints({ hitPoints: 18, hp: 17 }), 18);
+  assert.equal(getMaxHitPoints({ hp: 17 }), 17);
+  assert.equal(getMaxHitPoints({}), 10);
+
+  assert.equal(getTemporaryHitPoints({}), 0);
+  assert.equal(getTemporaryHitPoints({ temporaryHitPoints: 3 }), 3);
+
+  const normalized = normalize5eCombatant({
+    hp: 8,
+    currentHp: 7,
+    maxHp: 20,
+    temporaryHitPoints: 3,
+    hitPoints: 18,
+  });
+  assert.equal(normalized.hp, 8);
+  assert.equal(normalized.currentHp, 7);
+  assert.equal(normalized.maxHp, 20);
+  assert.equal(normalized.tempHp, 3);
+  assert.equal(normalized.hitPoints, 18);
 }
 
 function testActionEconomyExports() {
@@ -176,6 +215,7 @@ function run() {
   testArmorClassPrecedence();
   testProficiencyProgression();
   testHelpers();
+  testHitPointPrecedence();
   testActionEconomyExports();
   testLegacyFighterPassthrough();
   testInitiative5e();

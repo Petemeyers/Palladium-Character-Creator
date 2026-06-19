@@ -49,14 +49,40 @@ export function getProficiencyBonus(level = 1) {
 export function getHitPoints(combatant = {}) {
   return (
     firstNumber(
+      combatant.hp,
       combatant.currentHp,
       combatant.currentHP,
+      combatant.currentHitPoints,
+      combatant.hitPoints,
+      combatant.HP,
+      combatant.health
+    ) ?? DEFAULT_HIT_POINTS
+  );
+}
+
+export function getMaxHitPoints(combatant = {}) {
+  return (
+    firstNumber(
+      combatant.maxHp,
+      combatant.maxHP,
+      combatant.maxHitPoints,
+      combatant.maximumHitPoints,
       combatant.hitPoints,
       combatant.hp,
       combatant.HP,
-      combatant.maxHp,
-      combatant.maxHP
+      combatant.health
     ) ?? DEFAULT_HIT_POINTS
+  );
+}
+
+export function getTemporaryHitPoints(combatant = {}) {
+  return (
+    firstNumber(
+      combatant.tempHp,
+      combatant.temporaryHitPoints,
+      combatant.temporaryHp,
+      combatant.tempHP
+    ) ?? 0
   );
 }
 
@@ -120,16 +146,7 @@ export function normalize5eCombatant(input = {}) {
   const wis = getAbilityScore(combatant, "wis", "ME");
   const cha = getAbilityScore(combatant, "cha", "MA");
   const hp = getHitPoints(combatant);
-  const maxHp =
-    firstNumber(
-      combatant.maxHp,
-      combatant.maxHP,
-      combatant.hitPoints,
-      combatant.hp,
-      combatant.HP,
-      combatant.currentHp,
-      combatant.currentHP
-    ) ?? hp;
+  const maxHp = getMaxHitPoints(combatant);
   const speed = getSpeed(combatant);
   const level = firstNumber(combatant.level, combatant.cr, combatant.challengeRating) ?? 1;
   const proficiencyBonus =
@@ -160,7 +177,7 @@ export function normalize5eCombatant(input = {}) {
     hp,
     maxHp,
     ac: getArmorClass(combatant),
-    tempHp: firstNumber(combatant.tempHp, combatant.temporaryHp, combatant.tempHP) ?? 0,
+    tempHp: getTemporaryHitPoints(combatant),
     speed,
     proficiencyBonus,
     initiativeBonus: firstNumber(combatant.initiativeBonus) ?? 0,

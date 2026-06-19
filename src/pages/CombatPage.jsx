@@ -129,7 +129,13 @@ import {
 import { calculateVisibleCells, calculateVisibleCellsMultiple, getVisibilityRange } from "../utils/visibilityCalculator.js";
 import { updateFogMemory, resetFogMemory } from "../utils/fogMemorySystem.js";
 import { getAttacksPerMelee, getCombatantAttacksPerMelee, getActionCost, formatAttacksRemaining } from "../utils/actionEconomy.js";
-import { getArmorClass, normalize5eCombatant } from "../utils/normalize5eCombatant.js";
+import {
+  getArmorClass,
+  getHitPoints,
+  getMaxHitPoints,
+  getTemporaryHitPoints,
+  normalize5eCombatant,
+} from "../utils/normalize5eCombatant.js";
 import { rollInitiative5e } from "../utils/initiative5e.js";
 import { calculateTotalHP } from "../utils/levelProgression.js";
 import { grantXPFromEnemy, getOpponentByName, calculateOpponentXP } from "../utils/enemyXP.js";
@@ -1805,6 +1811,9 @@ function CombatPage({ characters = [] }) {
   }, [normalizeFighter]);
 
   const getCombatantAC = useCallback((combatant) => getArmorClass(combatant), []);
+  const getCombatantHP = useCallback((combatant) => getHitPoints(combatant), []);
+  const getCombatantMaxHP = useCallback((combatant) => getMaxHitPoints(combatant), []);
+  const getCombatantTempHP = useCallback((combatant) => getTemporaryHitPoints(combatant), []);
 
   // Helper function to determine HP status based on Medieval Combat Simulator coma rules
   const getHPStatus = useCallback((currentHP) => {
@@ -1868,7 +1877,7 @@ function CombatPage({ characters = [] }) {
 
   const applyIncapacitationCondition = useCallback(
     ({ fighter, attackData, isCriticalHit, overkill = 0 }) => {
-      const hp = Number(fighter?.currentHP ?? 0) || 0;
+      const hp = Number(getCombatantHP(fighter)) || 0;
       const woundType = getAttackWoundType(attackData);
 
       if (hp <= -21) {
@@ -1935,7 +1944,7 @@ function CombatPage({ characters = [] }) {
         bleeding: { active: false, stabilized: false, roundsRemaining: null },
       };
     },
-    [getAttackWoundType, rollBleedRounds]
+    [getAttackWoundType, getCombatantHP, rollBleedRounds]
   );
 
   const tickBleeding = useCallback(
@@ -1997,9 +2006,8 @@ function CombatPage({ characters = [] }) {
 
   const applyHealingToFighter = useCallback((fighter, amount, source = "healing") => {
     if (!fighter) return fighter;
-    const maxHP =
-      fighter.maxHP ?? fighter.hpMax ?? fighter.hitPoints ?? fighter.totalHP ?? 999;
-    const nextHP = Math.min(maxHP, (fighter.currentHP ?? 0) + (Number(amount) || 0));
+    const maxHP = getCombatantMaxHP(fighter);
+    const nextHP = Math.min(maxHP, getCombatantHP(fighter) + (Number(amount) || 0));
 
     if (nextHP > 0) {
       const stabilized = stabilizeBleeding(fighter, source);
@@ -2019,7 +2027,7 @@ function CombatPage({ characters = [] }) {
       currentHP: nextHP,
       hp: nextHP,
     };
-  }, [stabilizeBleeding]);
+  }, [getCombatantHP, getCombatantMaxHP, stabilizeBleeding]);
 
   // FNV-1a 32-bit hash for deterministic scatter
   const hash32 = useCallback((str) => {
@@ -2091,13 +2099,13 @@ function CombatPage({ characters = [] }) {
 
     // NOTE: ROUTED units CAN act (they should spend actions fleeing).
     // Blocking ROUTED here causes freezes and premature "All players defeated" checks.
-    const hpStatus = getHPStatus(fighter.currentHP);
+    const hpStatus = getHPStatus(getCombatantHP(fighter));
     // A fighter can be "Conscious" but still have a stale/incorrect status label.
     // Only treat "defeated" as blocking if they are actually incapacitated by HP.
     const statusLower = String(fighter.status ?? "").toLowerCase();
     const blocksByStatus = statusLower === "defeated" && !hpStatus.canAct;
     return hpStatus.canAct && !blocksByStatus;
-  }, [getHPStatus]);
+  }, [getCombatantHP, getHPStatus]);
 
   // =========================
   // Predator/Prey visibility + panic helpers (Hawk Mouse)
@@ -5177,14 +5185,8 @@ function CombatPage({ characters = [] }) {
   const MIN_COMBAT_HP = -100;
 
   const getFighterHP = useCallback((fighter) => {
-    return (
-      fighter.currentHP ??
-      fighter.hp ??
-      fighter.HP ??
-      fighter.derived?.currentHP ??
-      0
-    );
-  }, []);
+    return getCombatantHP(fighter);
+  }, [getCombatantHP]);
 
   const canFighterStartTurn = useCallback((fighter) => {
     if (!canFighterAct(fighter)) return false;
@@ -5752,15 +5754,8 @@ function CombatPage({ characters = [] }) {
 
   const getFighterMaxHP = useCallback((fighter) => {
     if (!fighter || typeof fighter !== "object") return 9999;
-    return (
-      fighter.maxHP ??
-      fighter.derived?.maxHP ??
-      fighter.baseHP ??
-      fighter.initialHP ??
-      fighter.derived?.hitPoints ??
-      9999
-    );
-  }, []);
+    return getCombatantMaxHP(fighter);
+  }, [getCombatantMaxHP]);
 
   const clampHP = useCallback((value, fighter) => {
     const max = getFighterMaxHP(fighter);
@@ -5768,7 +5763,7 @@ function CombatPage({ characters = [] }) {
   }, [getFighterMaxHP, MIN_COMBAT_HP]);
 
   const applyHPToFighter = useCallback((fighter, newHP) => {
-    const wasConscious = (fighter.currentHP ?? fighter.hp ?? fighter.HP ?? 0) > 0;
+    const wasConscious = getCombatantHP(fighter) > 0;
     const isNowUnconscious = newHP <= 0;
     const wasFlying = isFlying(fighter);
     const currentAltitude = wasFlying ? (getAltitude(fighter) || 0) : 0;
@@ -5808,7 +5803,7 @@ function CombatPage({ characters = [] }) {
         aiFlightState: null,
       });
       // Update HP status after fall damage
-      const hpAfterFall = fighter.currentHP ?? fighter.hp ?? fighter.HP ?? 0;
+      const hpAfterFall = getCombatantHP(fighter);
       if (hpAfterFall <= MIN_COMBAT_HP) {
         fighter.status = "defeated";
         fighter.isDead = true;
@@ -5825,7 +5820,7 @@ function CombatPage({ characters = [] }) {
         fighter.isDead = true;
       }
     }
-  }, [addLog, MIN_COMBAT_HP]);
+  }, [addLog, getCombatantHP, MIN_COMBAT_HP]);
 
   const [combatantTypeFilter, setCombatantTypeFilter] = useState("all"); // Filter arenaRoster by category
   const collator = useMemo(() => new Intl.Collator(undefined, { sensitivity: "base" }), []);
@@ -7651,8 +7646,8 @@ function CombatPage({ characters = [] }) {
   // Get current fighter (needed early for callbacks)
   const currentFighter = fighters[turnIndex];
   const activeFighters = fighters.filter(f => f.status === "active");
-  const alivePlayers = fighters.filter(f => f.type === "player" && f.currentHP > -21);
-  const aliveEnemies = fighters.filter(f => f.type === "enemy" && f.currentHP > -21);
+  const alivePlayers = fighters.filter(f => f.type === "player" && getCombatantHP(f) > -21);
+  const aliveEnemies = fighters.filter(f => f.type === "enemy" && getCombatantHP(f) > -21);
   const totalEnemyCount = fighters.filter((f) => f.type === "enemy").length;
   const victorySceneContext = { sceneType: "combat", relations: {} };
   const getVictoryFighterId = useCallback((fighter) => fighter?.id ?? fighter?._id, []);
@@ -8786,7 +8781,7 @@ function CombatPage({ characters = [] }) {
         const isDefeated =
           selectedFighter.isDead ||
           selectedFighter.isKO ||
-          (selectedFighter.currentHP ?? 0) <= 0 ||
+          getCombatantHP(selectedFighter) <= 0 ||
           selectedFighter.status === "defeated";
 
         if (isDefeated) {
@@ -10569,7 +10564,7 @@ function CombatPage({ characters = [] }) {
       return {
         id,
         name: f?.name ?? f?.characterName ?? id,
-        currentHP: Number(f?.currentHP ?? f?.hp ?? 0),
+        currentHP: getCombatantHP(f),
         guardRating: getCombatantAC(f),
         isDead: !!f?.isDead,
         isKO: !!f?.isKO,
@@ -10590,7 +10585,7 @@ function CombatPage({ characters = [] }) {
         preferredRange: rangedRange > 0 ? Math.min(8, Math.max(3, Math.floor(rangedRange / 2))) : 1,
       };
     });
-  }, [getCombatantAC]);
+  }, [getCombatantAC, getCombatantHP]);
 
   const pickEquistaminadWeapon = useCallback((f) => {
     return (
@@ -18171,7 +18166,7 @@ function CombatPage({ characters = [] }) {
     const hpById = {};
     for (const f of fightersArr) {
       const id = f.id ?? f._id;
-      if (id) hpById[id] = Number(f.currentHP ?? f.hp ?? 0);
+      if (id) hpById[id] = getCombatantHP(f);
     }
     const positionsLite = buildPositionsLite(positionsRef.current ?? positions ?? {});
     const fightersLite = buildFightersLite(fightersArr);
@@ -18229,6 +18224,7 @@ function CombatPage({ characters = [] }) {
     buildFightersLite,
     pickNonEmptyObject,
     getCombatantAC,
+    getCombatantHP,
   ]);
 
   // AI execution adapters (wrastaminars for worker AI_INTENT)
@@ -24132,13 +24128,7 @@ function CombatPage({ characters = [] }) {
 
   const getMaxFighterHP = (fighter) => {
     const value = Number(
-      fighter?.maxHP ??
-      fighter?.hpMax ??
-      fighter?.totalHP ??
-      fighter?.HP ??
-      fighter?.hp ??
-      fighter?.currentHP ??
-      30
+      getCombatantMaxHP(fighter)
     );
     return Number.isFinite(value) && value > 0 ? value : 30;
   };
@@ -27787,7 +27777,7 @@ function CombatPage({ characters = [] }) {
                           {selectedFighter.type === "enemy" ? "Enemy" : "Player"}
                         </Text>
                         <Text fontSize="xs" color="gray.600">
-                          HP: {selectedFighter.currentHP}/{selectedFighter.maxHP || "?"}
+                          HP: {getCombatantHP(selectedFighter)}/{getCombatantMaxHP(selectedFighter) || "?"}
                         </Text>
                       </VStack>
                     </>
@@ -27942,18 +27932,18 @@ function CombatPage({ characters = [] }) {
                         mb={2}
                         border="2px solid"
                         borderColor={
-                          fighter.currentHP <= -21 ? "black" :
-                            fighter.currentHP <= -11 ? "purple.400" :
-                              fighter.currentHP <= -1 ? "orange.400" :
-                                fighter.currentHP === 0 ? "yellow.400" :
+                          getCombatantHP(fighter) <= -21 ? "black" :
+                            getCombatantHP(fighter) <= -11 ? "purple.400" :
+                              getCombatantHP(fighter) <= -1 ? "orange.400" :
+                                getCombatantHP(fighter) === 0 ? "yellow.400" :
                                   fighter.id === currentFighter?.id ? "yellow.400" : "blue.400"
                         }
                         borderRadius="md"
                         bg={
-                          fighter.currentHP <= -21 ? "gray.800" :
-                            fighter.currentHP <= -11 ? "purple.100" :
-                              fighter.currentHP <= -1 ? "orange.100" :
-                                fighter.currentHP === 0 ? "yellow.100" :
+                          getCombatantHP(fighter) <= -21 ? "gray.800" :
+                            getCombatantHP(fighter) <= -11 ? "purple.100" :
+                              getCombatantHP(fighter) <= -1 ? "orange.100" :
+                                getCombatantHP(fighter) === 0 ? "yellow.100" :
                                   fighter.id === currentFighter?.id ? "yellow.100" : "white"
                         }
                         shadow="sm"
@@ -27973,7 +27963,7 @@ function CombatPage({ characters = [] }) {
                                   </Badge>
                                 )}
                               {(() => {
-                                const hpStatus = getHPStatus(fighter.currentHP);
+                                const hpStatus = getHPStatus(getCombatantHP(fighter));
                                 // Use hpStatus for consistent status display
                                 if (hpStatus.status === "dead") {
                                   return <Badge colorScheme="black" size="md">DEAD</Badge>;
@@ -28024,7 +28014,8 @@ function CombatPage({ characters = [] }) {
                             </HStack>
 
                             <Text fontSize="sm" color="blue.700">
-                              HP: {fighter.currentHP}/{fighter.maxHP} | Guard Rating: {fighter.guardRating || 10} | Speed: {fighter.Spd || fighter.spd || fighter.attributes?.Spd || fighter.attributes?.spd || 10}
+                              HP: {getCombatantHP(fighter)}/{getCombatantMaxHP(fighter)} | Guard Rating: {fighter.guardRating || 10} | Speed: {fighter.Spd || fighter.spd || fighter.attributes?.Spd || fighter.attributes?.spd || 10}
+                              {getCombatantTempHP(fighter) > 0 && ` | Temp HP: ${getCombatantTempHP(fighter)}`}
                               {fighter.focus !== undefined && ` | focus: ${fighter.focus}`}
                               {formatFighterstamina(fighter)}
                             </Text>
@@ -30044,10 +30035,10 @@ function CombatPage({ characters = [] }) {
                   <Grid templateColumns="repeat(auto-fill, minmax(280px, 1fr))" gap={3}>
                     {fighters.filter(f => f.type === "enemy").map((fighter, index, array) => {
                       // Check if there are multiple enemies with the same name
-                      const sameNameCount = array.filter(f => f.name === fighter.name && f.currentHP > 0).length;
+                      const sameNameCount = array.filter(f => f.name === fighter.name && getCombatantHP(f) > 0).length;
                       // Display with index number if duplicates exist
                       const displayName = sameNameCount > 1
-                        ? `${fighter.name} (#${array.filter(f => f.type === "enemy" && f.name === fighter.name && f.currentHP > 0).indexOf(fighter) + 1})`
+                        ? `${fighter.name} (#${array.filter(f => f.type === "enemy" && f.name === fighter.name && getCombatantHP(f) > 0).indexOf(fighter) + 1})`
                         : fighter.name;
 
                       return (
@@ -30058,18 +30049,18 @@ function CombatPage({ characters = [] }) {
                             mb={2}
                             border="2px solid"
                             borderColor={
-                              fighter.currentHP <= -21 ? "black" :
-                                fighter.currentHP <= -11 ? "purple.400" :
-                                  fighter.currentHP <= -1 ? "orange.400" :
-                                    fighter.currentHP === 0 ? "yellow.400" :
+                              getCombatantHP(fighter) <= -21 ? "black" :
+                                getCombatantHP(fighter) <= -11 ? "purple.400" :
+                                  getCombatantHP(fighter) <= -1 ? "orange.400" :
+                                    getCombatantHP(fighter) === 0 ? "yellow.400" :
                                       fighter.id === currentFighter?.id ? "yellow.400" : "red.400"
                             }
                             borderRadius="md"
                             bg={
-                              fighter.currentHP <= -21 ? "gray.800" :
-                                fighter.currentHP <= -11 ? "purple.100" :
-                                  fighter.currentHP <= -1 ? "orange.100" :
-                                    fighter.currentHP === 0 ? "yellow.100" :
+                              getCombatantHP(fighter) <= -21 ? "gray.800" :
+                                getCombatantHP(fighter) <= -11 ? "purple.100" :
+                                  getCombatantHP(fighter) <= -1 ? "orange.100" :
+                                    getCombatantHP(fighter) === 0 ? "yellow.100" :
                                       fighter.id === currentFighter?.id ? "yellow.100" : "white"
                             }
                             shadow="sm"
@@ -30089,7 +30080,7 @@ function CombatPage({ characters = [] }) {
                                       </Badge>
                                     )}
                                   {(() => {
-                                    const hpStatus = getHPStatus(fighter.currentHP);
+                                    const hpStatus = getHPStatus(getCombatantHP(fighter));
                                     // Use hpStatus for consistent status display
                                     if (hpStatus.status === "dead") {
                                       return <Badge colorScheme="black" size="md">DEAD</Badge>;
@@ -30146,7 +30137,8 @@ function CombatPage({ characters = [] }) {
                                 </HStack>
 
                                 <Box fontSize="sm">
-                                  HP: {fighter.currentHP}/{fighter.maxHP} | Guard Rating: {fighter.guardRating || 10} | Speed: {fighter.Spd || fighter.spd || fighter.attributes?.Spd || fighter.attributes?.spd || 10}
+                                  HP: {getCombatantHP(fighter)}/{getCombatantMaxHP(fighter)} | Guard Rating: {fighter.guardRating || 10} | Speed: {fighter.Spd || fighter.spd || fighter.attributes?.Spd || fighter.attributes?.spd || 10}
+                                  {getCombatantTempHP(fighter) > 0 && ` | Temp HP: ${getCombatantTempHP(fighter)}`}
                                   {fighter.focus !== undefined && ` | focus: ${fighter.focus}`}
                                   {formatFighterstamina(fighter)}
                                 </Box>
@@ -30402,7 +30394,8 @@ function CombatPage({ characters = [] }) {
                               </HStack>
                               {renderCombatRoleBadges(fighter)}
                               <Text fontSize="sm" color="purple.800">
-                                HP: {fighter.currentHP}/{fighter.maxHP} | Guard Rating: {fighter.guardRating || 10} | Speed: {fighter.Spd || fighter.spd || fighter.attributes?.Spd || fighter.attributes?.spd || 10}
+                                HP: {getCombatantHP(fighter)}/{getCombatantMaxHP(fighter)} | Guard Rating: {fighter.guardRating || 10} | Speed: {fighter.Spd || fighter.spd || fighter.attributes?.Spd || fighter.attributes?.spd || 10}
+                                {getCombatantTempHP(fighter) > 0 && ` | Temp HP: ${getCombatantTempHP(fighter)}`}
                               </Text>
                               {fighter.initiative > 0 && (
                                 <Badge colorScheme="purple" size="sm">
@@ -30775,7 +30768,8 @@ function CombatPage({ characters = [] }) {
                           <Box>
                             <Text fontWeight="bold" fontSize="sm">HP:</Text>
                             <Text>
-                              {currentFighter.currentHP} / {currentFighter.maxHP || "?"}
+                              {getCombatantHP(currentFighter)} / {getCombatantMaxHP(currentFighter) || "?"}
+                              {getCombatantTempHP(currentFighter) > 0 && ` (+${getCombatantTempHP(currentFighter)} temp)`}
                             </Text>
                           </Box>
                           {currentFighter.type && (
@@ -31472,8 +31466,9 @@ function CombatPage({ characters = [] }) {
                               <Box>
                                 <Text fontSize="xs" color="gray.500" textTransform="ustaminarcase">HP</Text>
                                 <Text fontWeight="semibold">
-                                  {rosterPreviewFighter.currentHP ?? rosterPreviewFighter.hp ?? "?"}
-                                  {rosterPreviewFighter.maxHP ? ` / ${rosterPreviewFighter.maxHP}` : ""}
+                                  {getCombatantHP(rosterPreviewFighter)}
+                                  {` / ${getCombatantMaxHP(rosterPreviewFighter)}`}
+                                  {getCombatantTempHP(rosterPreviewFighter) > 0 && ` (+${getCombatantTempHP(rosterPreviewFighter)} temp)`}
                                 </Text>
                               </Box>
                               <Box>
@@ -31827,7 +31822,7 @@ function CombatPage({ characters = [] }) {
                       ) : (
                         <>
                           <Text fontSize="sm">Category: {formatCombatantCategory(combatant.category)}</Text>
-                          <Text fontSize="sm">HP: {combatant.HP}</Text>
+                          <Text fontSize="sm">HP: {getCombatantHP(combatant)} / {getCombatantMaxHP(combatant)}</Text>
                           <Text fontSize="sm">Guard Rating: {combatant.guardRating}</Text>
                           <Text fontSize="sm">Speed: {combatant.spd}</Text>
                           <Text fontSize="sm">Attacks: {combatant.attacks?.map(a => a.name).join(", ")}</Text>
