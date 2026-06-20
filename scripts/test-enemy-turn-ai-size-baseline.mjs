@@ -74,7 +74,9 @@ const canTargetForAction = (actor, target) => actor?.id !== target?.id && target
 const isAllyOf = (actor, target) => actor?.type === target?.type;
 `;
 
-  const moduleUrl = `data:text/javascript;base64,${Buffer.from(prelude + source).toString("base64")}`;
+  const moduleUrl = `data:text/javascript;base64,${Buffer.from(
+    `${prelude}${source}\nexport { isScoutSizedTarget };\n`
+  ).toString("base64")}`;
   return import(moduleUrl);
 }
 
@@ -246,11 +248,38 @@ function logText(harness) {
   return harness.logs.map((entry) => entry.message).join("\n");
 }
 
-const { runEnemyTurnAI } = await loadEnemyTurnAI();
+const { isScoutSizedTarget, runEnemyTurnAI } = await loadEnemyTurnAI();
 const branchNotes = [];
 
 function noteIfUnobserved(condition, message) {
   if (condition) branchNotes.push(message);
+}
+
+function testScoutSizedPolicyGate() {
+  assert.equal(isScoutSizedTarget({ race: "Scout" }), true);
+  assert.equal(
+    isScoutSizedTarget({ race: "Scout", sizePolicy: "legacy-compatible" }),
+    true
+  );
+  assert.equal(
+    isScoutSizedTarget({ race: "Scout", sizePolicy: "unknown-policy" }),
+    true
+  );
+  assert.equal(isScoutSizedTarget({ sizePolicy: "5e-neutral", size: "Small" }), true);
+  assert.equal(isScoutSizedTarget({ sizePolicy: "5e-neutral", size: "Tiny" }), true);
+  assert.equal(isScoutSizedTarget({ sizePolicy: "5e-neutral", size: "Medium" }), false);
+  assert.equal(
+    isScoutSizedTarget({
+      race: "Scout",
+      species: "Scout",
+      name: "Scout",
+      size: "Medium",
+      sizePolicy: "5e-neutral",
+    }),
+    false
+  );
+  assert.equal(isScoutSizedTarget({ sizePolicy: "5e-neutral" }), false);
+  assert.equal(isScoutSizedTarget(null), false);
 }
 
 function testScoutSizedPreyBranch() {
@@ -359,6 +388,7 @@ function testUnknownTargetFallbackNoThrow() {
 }
 
 function run() {
+  testScoutSizedPolicyGate();
   testScoutSizedPreyBranch();
   testTinySmallAnimalPreyBranch();
   testLargerArmedTargetAvoidanceBranch();

@@ -708,7 +708,12 @@ function isScoutSizedTarget(target) {
   if (!target) return false;
 
   const sizeContext = getEnemyAISizeContext(target);
-  void sizeContext;
+  if (target.sizePolicy === "5e-neutral") {
+    return (
+      sizeContext.creatureSize === "Tiny" ||
+      sizeContext.creatureSize === "Small"
+    );
+  }
 
   const race =
     target.race || target.species || target.type || target.name || "";
