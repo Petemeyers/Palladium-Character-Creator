@@ -25,7 +25,7 @@ async function loadCombatEngine() {
 
   const prelude = `
 import { getAdjustedWeaponDamage } from ${JSON.stringify(weaponSizeModuleUrl)};
-import { getCreatureSize5e, getCreatureSizeRank5e, getLegacyWeaponSizeCompatibility } from ${JSON.stringify(size5eAdapterModuleUrl)};
+import { getAdjustedWeaponDamage5e, getCreatureSize5e, getCreatureSizeRank5e, getLegacyWeaponSizeCompatibility } from ${JSON.stringify(size5eAdapterModuleUrl)};
 const CryptoSecureDice = {
   parseAndRoll(formula) {
     const match = String(formula).trim().match(/^(\\d+)d(\\d+)(?:\\+(\\d+))?$/);
@@ -196,6 +196,36 @@ function testLegacyHeavyWeaponDamageBaseline() {
   assert.equal(engine.calculateDamage({ race: "Heavy Fighter" }, PIKE), 18);
 }
 
+function testDamagePolicyGate() {
+  const engine = createEngine();
+
+  assert.equal(
+    engine.calculateDamage({ species: "Heavy Fighter" }, LONGSWORD),
+    16,
+  );
+  assert.equal(
+    engine.calculateDamage(
+      { species: "Heavy Fighter", sizePolicy: "legacy-compatible" },
+      LONGSWORD,
+    ),
+    16,
+  );
+  assert.equal(
+    engine.calculateDamage(
+      { species: "Heavy Fighter", sizePolicy: "unknown-policy" },
+      LONGSWORD,
+    ),
+    16,
+  );
+  assert.equal(
+    engine.calculateDamage(
+      { species: "Heavy Fighter", sizePolicy: "5e-neutral" },
+      LONGSWORD,
+    ),
+    8,
+  );
+}
+
 function testScoutWeaponDamageBaseline() {
   const engine = createEngine();
 
@@ -229,6 +259,7 @@ function run() {
   testHumanMediumNormalWeaponDamage();
   testSpeciesRaceSafety();
   testLegacyHeavyWeaponDamageBaseline();
+  testDamagePolicyGate();
   testScoutWeaponDamageBaseline();
   testDamageBonusAndMinimumShape();
   testMissingMalformedWeaponFallbacks();

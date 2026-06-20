@@ -31,6 +31,7 @@ import {
 
 import { getAdjustedWeaponDamage } from "./weaponSizeSystem.js";
 import {
+  getAdjustedWeaponDamage5e,
   getCreatureSize5e,
   getCreatureSizeRank5e,
   getLegacyWeaponSizeCompatibility,
@@ -925,7 +926,10 @@ export class CombatEngine {
       void sizeContext;
       
       // Apply weapon size modifiers (heavy +1 die, gnome reduced damage)
-      damageFormula = getAdjustedWeaponDamage(weapon.damage, race);
+      damageFormula =
+        attacker?.sizePolicy === "5e-neutral"
+          ? getAdjustedWeaponDamage5e(weapon.damage, attacker)
+          : getAdjustedWeaponDamage(weapon.damage, race);
       
       // Parse damage dice (e.g., "1d8", "2d6+3")
       baseDamage = this.rollDamageDice(damageFormula);
