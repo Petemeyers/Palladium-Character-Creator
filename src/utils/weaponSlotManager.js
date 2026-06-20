@@ -4,6 +4,11 @@
  */
 
 import { getAdjustedWeaponDamage } from './weaponSizeSystem.js';
+import {
+  getCreatureSize5e,
+  getCreatureSizeRank5e,
+  getLegacyWeaponSizeCompatibility,
+} from "./size5eAdapter.js";
 
 /**
  * Weapon slot types
@@ -13,6 +18,14 @@ export const WEAPON_SLOTS = {
   LEFT_HAND: "leftHand",
   TWO_HANDED: "twoHanded",
 };
+
+export function getWeaponSlotSizeContext(character) {
+  return {
+    creatureSize: getCreatureSize5e(character),
+    sizeRank: getCreatureSizeRank5e(character),
+    legacySizeContext: getLegacyWeaponSizeCompatibility(character),
+  };
+}
 
 /**
  * Determine if weapon is two-handed
@@ -313,6 +326,9 @@ export function getWeaponDamage(weapon, usingTwoHanded = false, character = null
   if (!weapon) return "1d4"; // Unarmed
 
   let damage = weapon.damage || "1d6";
+  if (character) {
+    getWeaponSlotSizeContext(character);
+  }
 
   // Apply weapon size modifiers based on race (heavy +1 die, gnome reduced)
   if (character) {
@@ -360,6 +376,7 @@ export function validateWeaponSlots(slots) {
 
 export default {
   WEAPON_SLOTS,
+  getWeaponSlotSizeContext,
   isTwoHandedWeapon,
   canUseTwoHanded,
   getTwoHandedBonus,
