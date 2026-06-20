@@ -13,10 +13,12 @@ async function loadEnemyTurnAI() {
 
   const sizeModuleUrl = pathToFileURL(resolve(repoRoot, "src/utils/sizeStrengthModifiers.js")).href;
   const weaponSizeModuleUrl = pathToFileURL(resolve(repoRoot, "src/utils/weaponSizeSystem.js")).href;
+  const size5eAdapterModuleUrl = pathToFileURL(resolve(repoRoot, "src/utils/size5eAdapter.js")).href;
 
   const prelude = `
 import { getSizeCategory, SIZE_CATEGORIES } from ${JSON.stringify(sizeModuleUrl)};
 import { getWeaponSizeForRace, WEAPON_SIZE } from ${JSON.stringify(weaponSizeModuleUrl)};
+import { getCreatureSize5e, getCreatureSizeRank5e, getLegacyWeaponSizeCompatibility } from ${JSON.stringify(size5eAdapterModuleUrl)};
 const CryptoSecureDice = { parseAndRoll: () => ({ totalWithBonus: 1 }), rollDice: () => ({ total: 1, totalWithBonus: 1 }) };
 const getRandomCombatTechnique = () => ({ name: "Test Technique", damage: "1d4" });
 const getFighterTechniques = () => [];

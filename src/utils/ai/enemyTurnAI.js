@@ -41,6 +41,11 @@ import { getWeaponRange } from "../distanceCombatSystem";
 import { canFly, isFlying, getAltitude } from "../abilitySystem";
 import { getSizeCategory, SIZE_CATEGORIES } from "../sizeStrengthModifiers";
 import { getWeaponSizeForRace, WEAPON_SIZE } from "../weaponSizeSystem";
+import {
+  getCreatureSize5e,
+  getCreatureSizeRank5e,
+  getLegacyWeaponSizeCompatibility,
+} from "../size5eAdapter";
 import combatantBehaviorData from "../../data/combatantBehavior.json";
 import {
   spendFlyingStamina,
@@ -686,6 +691,14 @@ function isTinyOrSmallAnimal(target) {
   return sizeCat === SIZE_CATEGORIES.TINY || sizeCat === SIZE_CATEGORIES.SMALL;
 }
 
+function getEnemyAISizeContext(combatant) {
+  return {
+    creatureSize: getCreatureSize5e(combatant),
+    sizeRank: getCreatureSizeRank5e(combatant),
+    legacySizeContext: getLegacyWeaponSizeCompatibility(combatant),
+  };
+}
+
 /**
  * Check if target is scout-sized (Fairy, Scout, Sprite, etc.)
  * @param {Object} target - Target combatant
@@ -693,6 +706,9 @@ function isTinyOrSmallAnimal(target) {
  */
 function isScoutSizedTarget(target) {
   if (!target) return false;
+
+  const sizeContext = getEnemyAISizeContext(target);
+  void sizeContext;
 
   const race =
     target.race || target.species || target.type || target.name || "";
