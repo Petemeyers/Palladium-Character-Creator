@@ -10,7 +10,20 @@ import { compareWeaponReach } from './reachCombatRules.js';
 import { getReachAttackModifiers, needsToCloseDistance, attemptCloseDistance } from './reachCombatRules.js';
 import { getWeaponBonuses } from './weaponSlotManager.js';
 import { getAdjustedWeaponDamage, getWeaponSizeForRace, WEAPON_SIZE } from './weaponSizeSystem.js';
+import {
+  getCreatureSize5e,
+  getCreatureSizeRank5e,
+  getLegacyWeaponSizeCompatibility,
+} from "./size5eAdapter.js";
 import { getSizeCategory, SIZE_CATEGORIES } from './sizeStrengthModifiers.js';
+
+export function getWeaponBonusAISizeContext(combatant) {
+  return {
+    creatureSize: getCreatureSize5e(combatant),
+    sizeRank: getCreatureSizeRank5e(combatant),
+    legacySizeContext: getLegacyWeaponSizeCompatibility(combatant),
+  };
+}
 
 /**
  * Evaluate all bonuses for a weapon in a combat situation
@@ -146,6 +159,7 @@ export function evaluateWeaponBonuses(weapon, attacker, defender, defenderWeapon
 
   // 6. Weapon size bonus (heavy races get +1 die)
   const race = attacker.species || attacker.race;
+  getWeaponBonusAISizeContext(attacker);
   if (race) {
     const weaponSize = getWeaponSizeForRace(race);
     if (weaponSize === WEAPON_SIZE.LARGE_HEAVY) {
@@ -464,6 +478,7 @@ export function makeWeaponBonusAIDecision(character, targets, combatState = {}) 
 }
 
 export default {
+  getWeaponBonusAISizeContext,
   evaluateWeaponBonuses,
   rankWeaponsByBonuses,
   analyzeClosingDistance,
