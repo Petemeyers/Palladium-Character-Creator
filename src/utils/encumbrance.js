@@ -1,5 +1,19 @@
 // Encumbrance calculation utilities for Medieval Combat Simulator
 import movementData from "../data/movement.json";
+import {
+  getCreatureSize5e,
+  getLegacyWeaponSizeCompatibility,
+} from "./size5eAdapter.js";
+
+function getEncumbranceSizeContext(character) {
+  const creatureSize = getCreatureSize5e(character);
+  const legacySizeContext = getLegacyWeaponSizeCompatibility(character);
+
+  return {
+    creatureSize,
+    legacySizeContext,
+  };
+}
 
 // Calculate total weight of character's inventory
 // @param {Array} inventory - Character's inventory array
@@ -122,6 +136,7 @@ export function getArmorPenalty(character) {
 
 // Calculate encumbrance info for a character
 export function getEncumbranceInfo(character) {
+  const sizeContext = getEncumbranceSizeContext(character);
   const currentWeight = calculateEncumbrance(character.inventory, character);
   const maxWeight =
     character.carryWeight?.maxWeight ||
@@ -140,6 +155,8 @@ export function getEncumbranceInfo(character) {
     isOverloaded: ratio > 1.0,
     totalSpeedPenalty: penalty.speed + armorPenalty.spdPenalty,
     totalSkillPenalty: penalty.skill + armorPenalty.skillPenalty,
+    creatureSize: sizeContext.creatureSize,
+    sizeRank: sizeContext.legacySizeContext.sizeRank,
   };
 }
 
