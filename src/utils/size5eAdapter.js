@@ -117,6 +117,74 @@ export function getLegacyWeaponSizeCompatibility(input) {
   };
 }
 
+export function getWeaponScale5e(combatantOrSize) {
+  return {
+    creatureSize: getCreatureSize5e(combatantOrSize),
+    sizeRank: getCreatureSizeRank5e(combatantOrSize),
+    damageScale: 1,
+    weightMultiplier: 1,
+    lengthMultiplier: 1,
+    reachModifier: 0,
+  };
+}
+
+export function getAdjustedWeaponDamage5e(baseDamage, _combatant) {
+  return baseDamage;
+}
+
+export function getAdjustedWeaponWeight5e(baseWeight, _combatant) {
+  return baseWeight;
+}
+
+export function getAdjustedWeaponLength5e(baseLength, _combatant) {
+  return baseLength;
+}
+
+function getNormalizedAllowedSizes(allowedSizes) {
+  if (!Array.isArray(allowedSizes)) return null;
+  return allowedSizes.map((size) => getCreatureSize5e(size));
+}
+
+export function canUseWeaponBySize5e(weapon, combatant) {
+  if (!weapon || typeof weapon !== "object") return true;
+
+  const creatureSize = getCreatureSize5e(combatant);
+  const sizeRank = getCreatureSizeRank5e(combatant);
+  const allowedSizes = getNormalizedAllowedSizes(weapon.allowedSizes);
+
+  if (allowedSizes && !allowedSizes.includes(creatureSize)) {
+    return false;
+  }
+
+  if (weapon.minSize) {
+    const minRank = getCreatureSizeRank5e(weapon.minSize);
+    if (sizeRank < minRank) return false;
+  }
+
+  if (weapon.maxSize) {
+    const maxRank = getCreatureSizeRank5e(weapon.maxSize);
+    if (sizeRank > maxRank) return false;
+  }
+
+  return true;
+}
+
+export function getWeaponSizePolicy5e(weapon, combatant) {
+  const scale = getWeaponScale5e(combatant);
+
+  return {
+    creatureSize: scale.creatureSize,
+    sizeRank: scale.sizeRank,
+    weaponName: weapon?.name || "",
+    canUse: canUseWeaponBySize5e(weapon, combatant),
+    damageScale: scale.damageScale,
+    weightMultiplier: scale.weightMultiplier,
+    lengthMultiplier: scale.lengthMultiplier,
+    reachModifier: scale.reachModifier,
+    policy: "5e-neutral",
+  };
+}
+
 export default {
   CREATURE_SIZE_5E,
   getCreatureSize5e,
@@ -129,4 +197,10 @@ export default {
   getCreatureSizeRank5e,
   getCreatureSizeLabel5e,
   getLegacyWeaponSizeCompatibility,
+  getWeaponScale5e,
+  getAdjustedWeaponDamage5e,
+  getAdjustedWeaponWeight5e,
+  getAdjustedWeaponLength5e,
+  canUseWeaponBySize5e,
+  getWeaponSizePolicy5e,
 };

@@ -1,10 +1,17 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import {
   CREATURE_SIZE_5E,
+  canUseWeaponBySize5e,
+  getAdjustedWeaponDamage5e,
+  getAdjustedWeaponLength5e,
+  getAdjustedWeaponWeight5e,
   getCreatureSize5e,
   getCreatureSizeLabel5e,
   getCreatureSizeRank5e,
   getLegacyWeaponSizeCompatibility,
+  getWeaponScale5e,
+  getWeaponSizePolicy5e,
   isGargantuan5e,
   isHuge5e,
   isLarge5e,
@@ -95,7 +102,74 @@ function testCompatibilityBridge() {
   });
 }
 
-function run() {
+function testNeutralWeaponScale() {
+  for (const size of Object.values(CREATURE_SIZE_5E)) {
+    assert.deepEqual(getWeaponScale5e(size), {
+      creatureSize: size,
+      sizeRank: getCreatureSizeRank5e(size),
+      damageScale: 1,
+      weightMultiplier: 1,
+      lengthMultiplier: 1,
+      reachModifier: 0,
+    });
+  }
+}
+
+function testNeutralWeaponAdjustments() {
+  assert.equal(getAdjustedWeaponDamage5e("1d8", { size: "Large" }), "1d8");
+  assert.equal(getAdjustedWeaponDamage5e("2d6", { size: "Small" }), "2d6");
+  assert.equal(getAdjustedWeaponWeight5e(10, { size: "Large" }), 10);
+  assert.equal(getAdjustedWeaponLength5e(6, { size: "Small" }), 6);
+  assert.equal(getAdjustedWeaponDamage5e(null, { size: "Huge" }), null);
+}
+
+function testCanUseWeaponBySize() {
+  assert.equal(canUseWeaponBySize5e({ name: "Sword" }, { size: "Tiny" }), true);
+  assert.equal(canUseWeaponBySize5e(null, { size: "Tiny" }), true);
+  assert.equal(canUseWeaponBySize5e({ allowedSizes: ["Small", "Medium"] }, { size: "Small" }), true);
+  assert.equal(canUseWeaponBySize5e({ allowedSizes: ["Small", "Medium"] }, { size: "Large" }), false);
+  assert.equal(canUseWeaponBySize5e({ minSize: "Medium" }, { size: "Small" }), false);
+  assert.equal(canUseWeaponBySize5e({ minSize: "Medium" }, { size: "Large" }), true);
+  assert.equal(canUseWeaponBySize5e({ maxSize: "Large" }, { size: "Huge" }), false);
+  assert.equal(canUseWeaponBySize5e({ maxSize: "Large" }, { size: "Medium" }), true);
+  assert.equal(
+    canUseWeaponBySize5e({ minSize: "Small", maxSize: "Huge" }, { size: "Gargantuan" }),
+    false,
+  );
+}
+
+function testWeaponSizePolicy() {
+  assert.deepEqual(getWeaponSizePolicy5e({ name: "Pike", minSize: "Medium" }, { size: "Large" }), {
+    creatureSize: CREATURE_SIZE_5E.LARGE,
+    sizeRank: 4,
+    weaponName: "Pike",
+    canUse: true,
+    damageScale: 1,
+    weightMultiplier: 1,
+    lengthMultiplier: 1,
+    reachModifier: 0,
+    policy: "5e-neutral",
+  });
+
+  assert.deepEqual(getWeaponSizePolicy5e(null, null), {
+    creatureSize: CREATURE_SIZE_5E.MEDIUM,
+    sizeRank: 3,
+    weaponName: "",
+    canUse: true,
+    damageScale: 1,
+    weightMultiplier: 1,
+    lengthMultiplier: 1,
+    reachModifier: 0,
+    policy: "5e-neutral",
+  });
+}
+
+async function testNoWeaponSizeSystemImport() {
+  const source = await readFile(new URL("../src/utils/size5eAdapter.js", import.meta.url), "utf8");
+  assert.equal(source.includes("weaponSizeSystem"), false);
+}
+
+async function run() {
   testExplicitSizes();
   testCaseAndPhraseNormalization();
   testFieldPrecedence();
@@ -103,6 +177,11 @@ function run() {
   testRanks();
   testPredicates();
   testCompatibilityBridge();
+  testNeutralWeaponScale();
+  testNeutralWeaponAdjustments();
+  testCanUseWeaponBySize();
+  testWeaponSizePolicy();
+  await testNoWeaponSizeSystemImport();
 
   console.log("size5e adapter tests passed");
 }
