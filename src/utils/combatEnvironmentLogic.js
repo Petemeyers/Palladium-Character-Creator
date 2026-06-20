@@ -20,6 +20,19 @@ import {
   canUseCalledShot,
   hasClosedDistance,
 } from "./reachCombatRules.js";
+import {
+  getCreatureSize5e,
+  getCreatureSizeRank5e,
+  getLegacyWeaponSizeCompatibility,
+} from "./size5eAdapter.js";
+
+export function getCombatEnvironmentSizeContext(character) {
+  return {
+    creatureSize: getCreatureSize5e(character),
+    sizeRank: getCreatureSizeRank5e(character),
+    legacySizeContext: getLegacyWeaponSizeCompatibility(character),
+  };
+}
 
 /**
  * Get weapon type category
@@ -142,6 +155,8 @@ export function getWeaponLength(weapon, character = null) {
     try {
       const { getAdjustedWeaponLength } = require('./weaponSizeSystem.js');
       const race = character.species || character.race;
+      const sizeContext = getCombatEnvironmentSizeContext(character);
+      void sizeContext;
       if (race) {
         return getAdjustedWeaponLength(baseLength, race, character);
       }

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import {
   canUseWeapon,
+  getCombatEnvironmentSizeContext,
   getCombatModifiers,
   getWeaponLength,
   getWeaponType,
@@ -17,6 +18,43 @@ function testExports() {
   assert.equal(typeof getWeaponLength, "function");
   assert.equal(typeof getCombatModifiers, "function");
   assert.equal(typeof canUseWeapon, "function");
+  assert.equal(typeof getCombatEnvironmentSizeContext, "function");
+}
+
+function testCombatEnvironmentSizeContextMetadata() {
+  assert.deepEqual(getCombatEnvironmentSizeContext({ size: "Small" }), {
+    creatureSize: "Small",
+    sizeRank: 2,
+    legacySizeContext: {
+      creatureSize: "Small",
+      sizeRank: 2,
+      isLegacyBridge: true,
+    },
+  });
+  assert.deepEqual(getCombatEnvironmentSizeContext({ sizeCategory: "Large" }), {
+    creatureSize: "Large",
+    sizeRank: 4,
+    legacySizeContext: {
+      creatureSize: "Large",
+      sizeRank: 4,
+      isLegacyBridge: true,
+    },
+  });
+  assert.equal(
+    getCombatEnvironmentSizeContext({ creatureSize: "Tiny" }).creatureSize,
+    "Tiny",
+  );
+  assert.equal(
+    getCombatEnvironmentSizeContext({ species: "human" }).creatureSize,
+    "Medium",
+  );
+  assert.equal(
+    getCombatEnvironmentSizeContext({
+      species: "unknown",
+      race: "unknown",
+    }).creatureSize,
+    "Medium",
+  );
 }
 
 function testHumanMediumNormalWeaponLength() {
@@ -80,6 +118,7 @@ function testReachEnvironmentOutputShapes() {
 
 function run() {
   testExports();
+  testCombatEnvironmentSizeContextMetadata();
   testHumanMediumNormalWeaponLength();
   testSpeciesRaceSafety();
   testLegacySizeInputsPreserveCurrentLength();
