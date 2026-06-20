@@ -79,6 +79,37 @@ function testLegacySizeInputsPreserveCurrentLength() {
   assert.equal(getWeaponLength(SPEAR, { race: "Scout" }), 6);
 }
 
+function testLengthPolicyGatePreservesCurrentLength() {
+  const defaultPolicy = { species: "Heavy Fighter", race: "Heavy Fighter" };
+  const legacyPolicy = {
+    species: "Heavy Fighter",
+    race: "Heavy Fighter",
+    sizePolicy: "legacy-compatible",
+  };
+  const unknownPolicy = {
+    species: "Heavy Fighter",
+    race: "Heavy Fighter",
+    sizePolicy: "unknown-policy",
+  };
+  const neutralPolicy = {
+    species: "Heavy Fighter",
+    race: "Heavy Fighter",
+    sizePolicy: "5e-neutral",
+  };
+
+  assert.equal(getWeaponLength(SPEAR, defaultPolicy), 6);
+  assert.equal(getWeaponLength(SPEAR, legacyPolicy), 6);
+  assert.equal(getWeaponLength(SPEAR, unknownPolicy), 6);
+  assert.equal(getWeaponLength(SPEAR, neutralPolicy), 6);
+
+  assert.equal(getWeaponLength({ name: "Custom Pole", length: 9 }, neutralPolicy), 9);
+  assert.equal(getWeaponLength({ name: "Short Blade", reach: 1 }, neutralPolicy), 1);
+  assert.equal(getWeaponLength(DAGGER, neutralPolicy), 2);
+  assert.equal(getWeaponLength(PIKE, neutralPolicy), 6);
+  assert.equal(getWeaponLength(LONGBOW, neutralPolicy), 150);
+  assert.equal(getWeaponLength(null, neutralPolicy), 3);
+}
+
 function testExplicitAndFallbackWeaponLength() {
   assert.equal(getWeaponLength({ name: "Custom Pole", length: 9 }), 9);
   assert.equal(getWeaponLength({ name: "Short Blade", reach: 1 }), 1);
@@ -122,6 +153,7 @@ function run() {
   testHumanMediumNormalWeaponLength();
   testSpeciesRaceSafety();
   testLegacySizeInputsPreserveCurrentLength();
+  testLengthPolicyGatePreservesCurrentLength();
   testExplicitAndFallbackWeaponLength();
   testWeaponTypeBaseline();
   testReachEnvironmentOutputShapes();
