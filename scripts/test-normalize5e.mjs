@@ -80,6 +80,35 @@ function testProficiencyProgression() {
   assert.equal(getProficiencyBonus(17), 6);
 }
 
+function testPolicyMetadataDefaults() {
+  const normalized = normalize5eCombatant({});
+  assert.equal(normalized.ruleset, "5e-compatible");
+  assert.equal(normalized.sizePolicy, "legacy-compatible");
+  assert.equal(normalized.legacyCompatibility, true);
+}
+
+function testPolicyMetadataPreservation() {
+  const normalized = normalize5eCombatant({
+    ruleset: "custom-ruleset",
+    sizePolicy: "5e-neutral",
+    legacyCompatibility: false,
+  });
+  assert.equal(normalized.ruleset, "custom-ruleset");
+  assert.equal(normalized.sizePolicy, "5e-neutral");
+  assert.equal(normalized.legacyCompatibility, false);
+}
+
+function testPolicyMetadataFallbacks() {
+  assert.equal(
+    normalize5eCombatant({ legacyCompatibility: "false" }).legacyCompatibility,
+    true
+  );
+  assert.equal(
+    normalize5eCombatant({ legacyCompatibility: null }).legacyCompatibility,
+    true
+  );
+}
+
 function testHelpers() {
   const combatant = { str: 16, dex: 14, con: 12, hp: 22, Spd: 10 };
   assert.equal(getAbilityModifier(18), 4);
@@ -214,6 +243,9 @@ function run() {
   testModernAbilityPreference();
   testArmorClassPrecedence();
   testProficiencyProgression();
+  testPolicyMetadataDefaults();
+  testPolicyMetadataPreservation();
+  testPolicyMetadataFallbacks();
   testHelpers();
   testHitPointPrecedence();
   testActionEconomyExports();

@@ -166,6 +166,12 @@ export function normalize5eCombatant(input = {}) {
 
   return {
     ...combatant,
+    ruleset: combatant.ruleset !== undefined ? combatant.ruleset : "5e-compatible",
+    sizePolicy: combatant.sizePolicy !== undefined ? combatant.sizePolicy : "legacy-compatible",
+    legacyCompatibility:
+      typeof combatant.legacyCompatibility === "boolean"
+        ? combatant.legacyCompatibility
+        : true,
     str,
     dex,
     con,
