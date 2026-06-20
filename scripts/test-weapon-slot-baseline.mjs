@@ -181,6 +181,27 @@ function testLegacyWeaponSizeDamageBaseline() {
   assert.equal(getWeaponDamage(LONGSWORD, false, { species: "Scout" }), "1d8");
 }
 
+function testWeaponDamagePolicyGate() {
+  assert.equal(
+    getWeaponDamage(LONGSWORD, false, { species: "Heavy Fighter" }),
+    "2d8"
+  );
+  assert.equal(
+    getWeaponDamage(LONGSWORD, false, {
+      species: "Heavy Fighter",
+      sizePolicy: "legacy-compatible",
+    }),
+    "2d8"
+  );
+  assert.equal(
+    getWeaponDamage(LONGSWORD, false, {
+      species: "Heavy Fighter",
+      sizePolicy: "5e-neutral",
+    }),
+    "1d8"
+  );
+}
+
 function testValidationAndCompatibilityShapes() {
   assert.equal(isTwoHandedWeapon(PIKE), true);
   assert.equal(isTwoHandedWeapon({ name: "Long Bow", damage: "1d8" }), true);
@@ -221,6 +242,7 @@ function run() {
   testTwoHandedGripBehavior();
   testUnequipBehavior();
   testLegacyWeaponSizeDamageBaseline();
+  testWeaponDamagePolicyGate();
   testValidationAndCompatibilityShapes();
 
   console.log("weapon slot baseline tests passed");

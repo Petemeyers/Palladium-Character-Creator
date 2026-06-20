@@ -5,6 +5,7 @@
 
 import { getAdjustedWeaponDamage } from './weaponSizeSystem.js';
 import {
+  getAdjustedWeaponDamage5e,
   getCreatureSize5e,
   getCreatureSizeRank5e,
   getLegacyWeaponSizeCompatibility,
@@ -332,9 +333,13 @@ export function getWeaponDamage(weapon, usingTwoHanded = false, character = null
 
   // Apply weapon size modifiers based on race (heavy +1 die, gnome reduced)
   if (character) {
-    const race = character.species || character.race;
-    if (race) {
-      damage = getAdjustedWeaponDamage(damage, race);
+    if (character.sizePolicy === "5e-neutral") {
+      damage = getAdjustedWeaponDamage5e(damage, character);
+    } else {
+      const race = character.species || character.race;
+      if (race) {
+        damage = getAdjustedWeaponDamage(damage, race);
+      }
     }
   }
 
