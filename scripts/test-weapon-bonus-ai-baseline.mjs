@@ -169,6 +169,73 @@ function testLegacyWeaponSizeScoring() {
   assert.equal(scoutEvaluation.damageBonus, 0);
 }
 
+function testWeaponSizePolicyGate() {
+  const defaultPolicy = evaluateWeaponBonuses(
+    DAGGER,
+    { species: "Heavy Fighter", race: "Heavy Fighter", size: "Medium" },
+    MEDIUM_DEFENDER,
+    null,
+    { combatDistance: 5 }
+  );
+  const legacyPolicy = evaluateWeaponBonuses(
+    DAGGER,
+    {
+      species: "Heavy Fighter",
+      race: "Heavy Fighter",
+      size: "Medium",
+      sizePolicy: "legacy-compatible",
+    },
+    MEDIUM_DEFENDER,
+    null,
+    { combatDistance: 5 }
+  );
+  const unknownPolicy = evaluateWeaponBonuses(
+    DAGGER,
+    {
+      species: "Heavy Fighter",
+      race: "Heavy Fighter",
+      size: "Medium",
+      sizePolicy: "unknown-policy",
+    },
+    MEDIUM_DEFENDER,
+    null,
+    { combatDistance: 5 }
+  );
+  const neutralPolicy = evaluateWeaponBonuses(
+    DAGGER,
+    {
+      species: "Heavy Fighter",
+      race: "Heavy Fighter",
+      size: "Medium",
+      sizePolicy: "5e-neutral",
+    },
+    MEDIUM_DEFENDER,
+    null,
+    { combatDistance: 5 }
+  );
+
+  assertBaseEvaluationShape(defaultPolicy);
+  assertBaseEvaluationShape(legacyPolicy);
+  assertBaseEvaluationShape(unknownPolicy);
+  assertBaseEvaluationShape(neutralPolicy);
+
+  assert.equal(defaultPolicy.weaponSizeBonus, 1);
+  assert.equal(defaultPolicy.damageBonus, 1);
+  assert.equal(defaultPolicy.score, 3.5);
+  assert.equal(legacyPolicy.weaponSizeBonus, 1);
+  assert.equal(legacyPolicy.damageBonus, 1);
+  assert.equal(legacyPolicy.score, 3.5);
+  assert.equal(unknownPolicy.weaponSizeBonus, 1);
+  assert.equal(unknownPolicy.damageBonus, 1);
+  assert.equal(unknownPolicy.score, 3.5);
+
+  assert.equal(neutralPolicy.weaponSizeBonus, 0);
+  assert.equal(neutralPolicy.damageBonus, 0);
+  assert.equal(neutralPolicy.score, 0);
+  assert.deepEqual(neutralPolicy.bonuses, []);
+  assert.equal(neutralPolicy.reasoning, "No significant bonuses or penalties");
+}
+
 function testLargeAndHeavyWeaponScoring() {
   const closePikeEvaluation = evaluateWeaponBonuses(
     PIKE,
@@ -341,6 +408,7 @@ function run() {
   testSpeciesRaceSafety();
   testWeaponBonusAISizeContextMetadata();
   testLegacyWeaponSizeScoring();
+  testWeaponSizePolicyGate();
   testLargeAndHeavyWeaponScoring();
   testMissingAndMalformedWeaponDefaults();
   testRankingAndRecommendationShape();
