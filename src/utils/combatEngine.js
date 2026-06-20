@@ -30,6 +30,11 @@ import {
 } from "./combatFatigueSystem.js";
 
 import { getAdjustedWeaponDamage } from "./weaponSizeSystem.js";
+import {
+  getCreatureSize5e,
+  getCreatureSizeRank5e,
+  getLegacyWeaponSizeCompatibility,
+} from "./size5eAdapter.js";
 
 import {
   initializeGrappleState,
@@ -103,6 +108,14 @@ import { getSizeScale, applySizeCombatModifiers } from "./sizeScaleSystem.js";
 import { getStatusCombatPenalties } from "./statusEffectSystem.js";
 import { autoCastFearProtection } from "./fearAIAutoCast.js";
 import { castCourage, castRemoveFear } from "./fearTechniqueSystem.js";
+
+export function getCombatEngineSizeContext(combatant) {
+  return {
+    creatureSize: getCreatureSize5e(combatant),
+    sizeRank: getCreatureSizeRank5e(combatant),
+    legacySizeContext: getLegacyWeaponSizeCompatibility(combatant),
+  };
+}
 
 /**
  * Combat Engine Class
@@ -908,6 +921,8 @@ export class CombatEngine {
     if (weapon && weapon.damage) {
       // Get race/species for weapon size adjustment
       const race = attacker.species || attacker.race || attacker.type;
+      const sizeContext = getCombatEngineSizeContext(attacker);
+      void sizeContext;
       
       // Apply weapon size modifiers (heavy +1 die, gnome reduced damage)
       damageFormula = getAdjustedWeaponDamage(weapon.damage, race);

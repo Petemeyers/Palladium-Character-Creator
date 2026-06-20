@@ -19,9 +19,13 @@ async function loadCombatEngine() {
   const weaponSizeModuleUrl = pathToFileURL(
     resolve(repoRoot, "src/utils/weaponSizeSystem.js"),
   ).href;
+  const size5eAdapterModuleUrl = pathToFileURL(
+    resolve(repoRoot, "src/utils/size5eAdapter.js"),
+  ).href;
 
   const prelude = `
 import { getAdjustedWeaponDamage } from ${JSON.stringify(weaponSizeModuleUrl)};
+import { getCreatureSize5e, getCreatureSizeRank5e, getLegacyWeaponSizeCompatibility } from ${JSON.stringify(size5eAdapterModuleUrl)};
 const CryptoSecureDice = {
   parseAndRoll(formula) {
     const match = String(formula).trim().match(/^(\\d+)d(\\d+)(?:\\+(\\d+))?$/);
@@ -95,7 +99,11 @@ const castRemoveFear = () => ({});
   return import(moduleUrl);
 }
 
-const { CombatEngine, createCombatEngine } = await loadCombatEngine();
+const {
+  CombatEngine,
+  createCombatEngine,
+  getCombatEngineSizeContext,
+} = await loadCombatEngine();
 
 const LONGSWORD = {
   name: "Long Sword",
@@ -119,7 +127,35 @@ function createEngine() {
 function testExports() {
   assert.equal(typeof CombatEngine, "function");
   assert.equal(typeof createCombatEngine, "function");
+  assert.equal(typeof getCombatEngineSizeContext, "function");
   assert.equal(createCombatEngine({ logCallback: () => {} }) instanceof CombatEngine, true);
+}
+
+function testCombatEngineSizeContextMetadata() {
+  assert.deepEqual(getCombatEngineSizeContext({ size: "Small" }), {
+    creatureSize: "Small",
+    sizeRank: 2,
+    legacySizeContext: {
+      creatureSize: "Small",
+      sizeRank: 2,
+      isLegacyBridge: true,
+    },
+  });
+  assert.deepEqual(getCombatEngineSizeContext({ sizeCategory: "Large" }), {
+    creatureSize: "Large",
+    sizeRank: 4,
+    legacySizeContext: {
+      creatureSize: "Large",
+      sizeRank: 4,
+      isLegacyBridge: true,
+    },
+  });
+  assert.equal(getCombatEngineSizeContext({ creatureSize: "Tiny" }).creatureSize, "Tiny");
+  assert.equal(getCombatEngineSizeContext({ species: "human" }).creatureSize, "Medium");
+  assert.equal(
+    getCombatEngineSizeContext({ species: "unknown", race: "unknown" }).creatureSize,
+    "Medium",
+  );
 }
 
 function testHumanMediumNormalWeaponDamage() {
@@ -189,6 +225,7 @@ function testMissingMalformedWeaponFallbacks() {
 
 function run() {
   testExports();
+  testCombatEngineSizeContextMetadata();
   testHumanMediumNormalWeaponDamage();
   testSpeciesRaceSafety();
   testLegacyHeavyWeaponDamageBaseline();
