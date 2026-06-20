@@ -17,11 +17,15 @@ async function loadEncumbranceModule() {
   const transformedSource = source
     .replace(
       'import movementData from "../data/movement.json";',
-      `const movementData = ${JSON.stringify(movementData)};`
+      `import { getAdjustedWeaponWeight as __legacyGetAdjustedWeaponWeight } from ${JSON.stringify(pathToFileURL(resolve(repoRoot, "src/utils/weaponSizeSystem.js")).href)};\nconst movementData = ${JSON.stringify(movementData)};`
     )
     .replace(
-      /import\s+\{\s*getCreatureSize5e,\s*getLegacyWeaponSizeCompatibility,\s*\}\s+from\s+"\.\/size5eAdapter\.js";/,
-      `import { getCreatureSize5e, getLegacyWeaponSizeCompatibility } from ${JSON.stringify(pathToFileURL(resolve(repoRoot, "src/utils/size5eAdapter.js")).href)};`
+      /import\s+\{\s*getAdjustedWeaponWeight5e,\s*getCreatureSize5e,\s*getLegacyWeaponSizeCompatibility,\s*\}\s+from\s+"\.\/size5eAdapter\.js";/,
+      `import { getAdjustedWeaponWeight5e, getCreatureSize5e, getLegacyWeaponSizeCompatibility } from ${JSON.stringify(pathToFileURL(resolve(repoRoot, "src/utils/size5eAdapter.js")).href)};`
+    )
+    .replace(
+      "const { getAdjustedWeaponWeight } = require('./weaponSizeSystem.js');",
+      "const getAdjustedWeaponWeight = __legacyGetAdjustedWeaponWeight;"
     );
   const moduleUrl = `data:text/javascript;base64,${Buffer.from(transformedSource).toString("base64")}`;
   return import(moduleUrl);
@@ -135,8 +139,40 @@ function testLegacyWeaponSizeTriggerKeepsCurrentResult() {
   };
   const inventory = [{ name: "Legacy Sword", type: "weapon", damage: "1d8", weight: 4 }];
 
-  assert.equal(calculateEncumbrance(inventory, heavyLegacyCharacter), 4);
-  assert.equal(calculateEncumbrance(inventory, scoutLegacyCharacter), 4);
+  assert.equal(calculateEncumbrance(inventory, heavyLegacyCharacter), 10);
+  assert.equal(calculateEncumbrance(inventory, scoutLegacyCharacter), 10);
+}
+
+function testWeaponWeightPolicyGate() {
+  const inventory = [{ name: "Legacy Sword", type: "weapon", damage: "1d8", weight: 4 }];
+  const defaultPolicy = {
+    species: "Heavy Fighter",
+    race: "Heavy Fighter",
+    attributes: { PS: 10 },
+    inventory,
+  };
+  const legacyPolicy = {
+    ...defaultPolicy,
+    sizePolicy: "legacy-compatible",
+  };
+  const unknownPolicy = {
+    ...defaultPolicy,
+    sizePolicy: "unknown-policy",
+  };
+  const neutralPolicy = {
+    ...defaultPolicy,
+    sizePolicy: "5e-neutral",
+  };
+
+  assert.equal(calculateEncumbrance(inventory, defaultPolicy), 10);
+  assert.equal(calculateEncumbrance(inventory, legacyPolicy), 10);
+  assert.equal(calculateEncumbrance(inventory, unknownPolicy), 10);
+  assert.equal(calculateEncumbrance(inventory, neutralPolicy), 4);
+
+  const info = getEncumbranceInfo(neutralPolicy);
+  assert.equal(info.currentWeight, 4);
+  assert.equal(info.creatureSize, "Medium");
+  assert.equal(info.sizeRank, 3);
 }
 
 function testPenaltyAndColorThresholds() {
@@ -241,6 +277,7 @@ function run() {
   testNoEquipmentSafeDefaults();
   testMultipleItemsStableTotalWeight();
   testLegacyWeaponSizeTriggerKeepsCurrentResult();
+  testWeaponWeightPolicyGate();
   testPenaltyAndColorThresholds();
   testArmorPenaltyShape();
   testMalformedEquipmentAlreadyTolerated();

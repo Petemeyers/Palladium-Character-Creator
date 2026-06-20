@@ -1,6 +1,7 @@
 // Encumbrance calculation utilities for Medieval Combat Simulator
 import movementData from "../data/movement.json";
 import {
+  getAdjustedWeaponWeight5e,
   getCreatureSize5e,
   getLegacyWeaponSizeCompatibility,
 } from "./size5eAdapter.js";
@@ -26,6 +27,11 @@ export function calculateEncumbrance(inventory, character = null) {
     
     // Apply size-based weight adjustments for weapons if character provided
     if (character && item.type && (item.type.toLowerCase() === 'weapon' || item.damage)) {
+      if (character.sizePolicy === "5e-neutral") {
+        itemWeight = getAdjustedWeaponWeight5e(itemWeight, character);
+        return total + itemWeight;
+      }
+
       try {
         const { getAdjustedWeaponWeight } = require('./weaponSizeSystem.js');
         const race = character.species || character.race;
