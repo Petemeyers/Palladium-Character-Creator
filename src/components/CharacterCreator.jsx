@@ -46,6 +46,13 @@ import {
   getPublicSkillById,
 } from '../utils/publicClassAdapter.js';
 import {
+  getPublicAlignments,
+  getPublicLanguageById,
+  getPublicLanguages,
+  getPublicSpecies,
+  getPublicSpeciesById,
+} from '../utils/publicSpeciesAdapter.js';
+import {
   DUELIST_COMMON_TECHNIQUE_NAMES,
   normalizeTechniqueName,
   isDuelistClassName,
@@ -66,6 +73,18 @@ const PUBLIC_CLASS_COMPATIBILITY_KEYS = {
   ranger: "Longbowman",
   guardian: "Man-at-Arms",
   adept: "Spearman",
+};
+
+const PUBLIC_SPECIES_COMPATIBILITY_KEYS = {
+  dragonborn: "HUMAN",
+  dwarf: "HUMAN",
+  elf: "HUMAN",
+  gnome: "HUMAN",
+  goliath: "HUMAN",
+  halfling: "HUMAN",
+  human: "HUMAN",
+  orc: "HUMAN",
+  tiefling: "HUMAN",
 };
 
 // Function to get Tactician tactics based on level and tactical type
@@ -121,10 +140,11 @@ const getMindMageTactics = async (tacticalResult, level) => {
 const CharacterCreator = ({ onCreateCharacter }) => {
   const navigate = useNavigate();
   const [species, setSpecies] = useState('HUMAN');
+  const [publicSpeciesId, setPublicSpeciesId] = useState('human');
   const [attributes, setAttributes] = useState({});
   const [level, setLevel] = useState('1');
   const [hp, setHp] = useState(null);
-  const [alignment, setAlignment] = useState('Good: Principled');
+  const [alignment, setAlignment] = useState('');
   const [characterName, setCharacterName] = useState('');
   const [age, setAge] = useState('');
   const [socialBackground, setSocialBackground] = useState('');
@@ -137,6 +157,7 @@ const CharacterCreator = ({ onCreateCharacter }) => {
   const [characterClass, setCharacterClass] = useState('');
   const [publicClassId, setPublicClassId] = useState('');
   const [selectedPublicSkillIds, setSelectedPublicSkillIds] = useState([]);
+  const [selectedPublicLanguageIds, setSelectedPublicLanguageIds] = useState([]);
   const [availableClasses, setAvailableClasses] = useState([]);
   const [filteredClasses, setFilteredClasses] = useState([]);
   const [tactics, setTactics] = useState(null);
@@ -161,6 +182,21 @@ const CharacterCreator = ({ onCreateCharacter }) => {
     secondary: { count: 0, selected: [] }
   });
   const [, setVisualProfile] = useState(null);
+  const publicSpeciesOptions = useMemo(() => getPublicSpecies(), []);
+  const publicAlignmentOptions = useMemo(() => getPublicAlignments(), []);
+  const publicLanguageOptions = useMemo(() => getPublicLanguages(), []);
+  const selectedPublicSpecies = useMemo(
+    () => getPublicSpeciesById(publicSpeciesId) || getPublicSpeciesById('human'),
+    [publicSpeciesId]
+  );
+  const selectedPublicLanguages = useMemo(() => {
+    const common = getPublicLanguageById('common');
+    const choices = selectedPublicLanguageIds
+      .map((languageId) => getPublicLanguageById(languageId))
+      .filter(Boolean);
+
+    return [common, ...choices].filter(Boolean);
+  }, [selectedPublicLanguageIds]);
   const publicClasses = useMemo(() => getPublicClasses(), []);
   const selectedPublicClass = useMemo(
     () => getPublicClassById(publicClassId),
@@ -679,28 +715,8 @@ const CharacterCreator = ({ onCreateCharacter }) => {
     }
   };
 
-  // const handleRollFinish = (result) => {
-  //   const roll = result * 5; // Convert d20 to d100 range
-  //   switch (rollType) {
-  //     case 'Social Background':
-  //       setSocialBackground(rollFromTable(roll, socialBackgrounds));
-  //       break;
-  //     case 'Disposition':
-  //       setDisposition(rollFromTable(roll, dispositions));
-  //       break;
-  //     case 'Personal Hostility':
-  //       setHostility(rollFromTable(roll, hostilities));
-  //       break;
-  //     case 'Land of Origin':
-  //       setOrigin(rollFromTable(roll, landsOfOrigin));
-  //       break;
-  //   }
-  //   setIsRolling(false);
-  //   setRollType('');
-  // };
-
   const updateAvailableClasses = () => {
-    if (species && alignment) {
+    if (species) {
       const classes = publicClasses.map((entry) => entry.id);
       setAvailableClasses(classes);
       
@@ -715,7 +731,7 @@ const CharacterCreator = ({ onCreateCharacter }) => {
   // Add useEffect to update available classes when relevant data changes
   useEffect(() => {
     updateAvailableClasses();
-  }, [species, attributes, alignment, publicClasses, publicClassId]);
+  }, [species, attributes, publicClasses, publicClassId]);
 
   // Initialize filtered classes when available classes change
   useEffect(() => {
@@ -742,6 +758,38 @@ const CharacterCreator = ({ onCreateCharacter }) => {
     });
 
     setFilteredClasses(allowedClasses);
+  };
+
+  const togglePublicLanguageChoice = (languageId) => {
+    if (languageId === 'common') {
+      return;
+    }
+
+    setSelectedPublicLanguageIds((current) => {
+      if (current.includes(languageId)) {
+        return current.filter((id) => id !== languageId);
+      }
+
+      if (current.length >= 2) {
+        return current;
+      }
+
+      return [...current, languageId];
+    });
+  };
+
+  const handlePublicSpeciesSelection = (selectedSpeciesId) => {
+    const publicSpecies = getPublicSpeciesById(selectedSpeciesId) || getPublicSpeciesById('human');
+    const compatibilitySpecies = PUBLIC_SPECIES_COMPATIBILITY_KEYS[publicSpecies?.id] || 'HUMAN';
+
+    setPublicSpeciesId(publicSpecies?.id || 'human');
+    setSpecies(compatibilitySpecies);
+    setCharacterClass('');
+    setProfessionData(null);
+    setProfessionSkills([]);
+    setElectiveSkills([]);
+    setSecondarySkills([]);
+    filterAvailableprofessions(compatibilitySpecies);
   };
 
   const handleProfessionSelection = (selectedClassId) => {
@@ -897,6 +945,10 @@ const CharacterCreator = ({ onCreateCharacter }) => {
       console.log('Submitting character data:', {
         name: characterName,
         species,
+        publicSpeciesId,
+        publicSpeciesName: selectedPublicSpecies?.name,
+        creatureType: selectedPublicSpecies?.creatureType || "Humanoid",
+        publicLanguages: selectedPublicLanguages.map((language) => language.name),
         class: characterClass,
         publicClassId,
         publicClassName: professionData?.publicClassName,
@@ -948,7 +1000,7 @@ const CharacterCreator = ({ onCreateCharacter }) => {
       const ageNum = Number(age);
       const normalizedAge = Number.isFinite(ageNum) ? ageNum : 25;
       const computedVisualProfile =
-        species === 'HUMAN'
+        selectedPublicSpecies?.id === 'human'
           ? buildHumanVisualProfile({ ...validatedAttributes, age: normalizedAge })
           : null;
       
@@ -1034,12 +1086,20 @@ const CharacterCreator = ({ onCreateCharacter }) => {
         publicBackgroundName: selectedPublicBackground?.name || undefined,
         publicSkillProficiencies: publicSkillMetadata.proficiencies,
         publicSkillChoices: publicSkillMetadata.choices,
+        publicSpeciesId: selectedPublicSpecies?.id || publicSpeciesId || "human",
+        publicSpeciesName: selectedPublicSpecies?.name || "Human",
+        creatureType: selectedPublicSpecies?.creatureType || "Humanoid",
+        size: selectedPublicSpecies?.sizeOptions?.[0] || "Medium",
+        speed: selectedPublicSpecies?.speed ?? 30,
+        publicLanguages: selectedPublicLanguages.map((language) => language.name),
         species,
+        race: species,
+        category: species,
         class: characterClass,
         profession: characterClass, // Set profession to same as class
         level: Number(level) || 1,
         hp: calculatedHP, // Use calculated total HP instead of base HP
-        alignment: alignment || "Neutral",
+        alignment: alignment || "",
         attributes: validatedAttributes,
         age: normalizedAge,
         socialBackground: socialBackground || "Unknown",
@@ -1360,31 +1420,31 @@ const CharacterCreator = ({ onCreateCharacter }) => {
   };
 
   const formatAttributeLabel = (attr) => ({
-    PS: 'STR',
-    PP: 'DEX',
-    PE: 'CON',
-    IQ: 'INT',
-    ME: 'WIS',
-    MA: 'CHA',
+    PS: 'Strength',
+    PP: 'Dexterity',
+    PE: 'Constitution',
+    IQ: 'Intelligence',
+    ME: 'Wisdom',
+    MA: 'Charisma',
     PB: 'Appearance',
     Spd: 'Speed',
-    ps: 'STR',
-    pp: 'DEX',
-    pe: 'CON',
-    iq: 'INT',
-    me: 'WIS',
-    ma: 'CHA',
+    ps: 'Strength',
+    pp: 'Dexterity',
+    pe: 'Constitution',
+    iq: 'Intelligence',
+    me: 'Wisdom',
+    ma: 'Charisma',
     pb: 'Appearance',
     spd: 'Speed',
   }[attr] || attr);
 
   const formatAttributeBonusText = (text) => String(text || '')
-    .replace(/\bPS\b/g, 'STR')
-    .replace(/\bPP\b/g, 'DEX')
-    .replace(/\bPE\b/g, 'CON')
-    .replace(/\bIQ\b/g, 'INT')
-    .replace(/\bME\b/g, 'WIS')
-    .replace(/\bMA\b/g, 'CHA')
+    .replace(/\bPS\b/g, 'Strength')
+    .replace(/\bPP\b/g, 'Dexterity')
+    .replace(/\bPE\b/g, 'Constitution')
+    .replace(/\bIQ\b/g, 'Intelligence')
+    .replace(/\bME\b/g, 'Wisdom')
+    .replace(/\bMA\b/g, 'Charisma')
     .replace(/\bPB\b/g, 'Appearance')
     .replace(/\bSpd\b/g, 'Speed');
 
@@ -1775,10 +1835,13 @@ const CharacterCreator = ({ onCreateCharacter }) => {
       return 0; // Combat skills start at 0
     }
     
-    // Try lookupSkill for other skills
-    const skillData = lookupSkill(skillName);
-    if (skillData && skillData.base !== undefined) {
-      return skillData.base;
+    try {
+      const skillData = lookupSkill(skillName);
+      if (skillData && skillData.basePercentage !== undefined) {
+        return skillData.basePercentage;
+      }
+    } catch (error) {
+      console.warn('Legacy skill lookup failed in Character Creator:', skillName, error);
     }
     
     return null; // No percentage found
@@ -1853,8 +1916,13 @@ const CharacterCreator = ({ onCreateCharacter }) => {
       }
     }
     
-    // For percentage-based skills, calculate and display percentage
-    const basePercent = getSkillBasePercent(skillName, professionName);
+    let basePercent = null;
+    try {
+      basePercent = getSkillBasePercent(skillName, professionName);
+    } catch (error) {
+      console.warn('Legacy skill formatting failed in Character Creator:', skillName, error);
+      return skillName;
+    }
     
     if (basePercent === null) {
       return skillName; // Return as-is if no percentage found
@@ -2102,8 +2170,8 @@ const CharacterCreator = ({ onCreateCharacter }) => {
       <div className="character-creation" style={{ display: 'flex', flexDirection: 'column' }}>
         <h1 className="page-title">Character Creator</h1>
         
-        <section className="creation-section" style={{ order: 1 }}>
-          <h2 className="section-title">Identity</h2>
+        <section className="creation-section" style={{ order: 9 }}>
+          <h2 className="section-title">Fill in Details</h2>
           
           <div className="form-row">
             <div className="form-group">
@@ -2144,27 +2212,6 @@ const CharacterCreator = ({ onCreateCharacter }) => {
             </div>
           </div>
 
-          <div className="form-row">
-            <div className="form-group">
-              <label htmlFor="alignment-select">Alignment</label>
-              <select
-                id="alignment-select"
-                value={alignment}
-                onChange={(e) => setAlignment(e.target.value)}
-                disabled={attributesRolled}
-                className={attributesRolled ? 'disabled-select' : 'select-input'}
-              >
-                <option value="Good: Principled">Good: Principled</option>
-                <option value="Good: Scrupulous">Good: Scrupulous</option>
-                <option value="Shumanish: Unprincipled">Shumanish: Unprincipled</option>
-                <option value="Shumanish: Anarchist">Shumanish: Anarchist</option>
-                <option value="Evil: Miscreant">Evil: Miscreant</option>
-                <option value="Evil: Aberrant">Evil: Aberrant</option>
-                <option value="Evil: Diabolic">Evil: Diabolic</option>
-              </select>
-            </div>
-          </div>
-
           <div className="checkbox-group">
             <label htmlFor="useCryptoRandom" className="checkbox-label">
               <input
@@ -2179,8 +2226,22 @@ const CharacterCreator = ({ onCreateCharacter }) => {
           </div>
         </section>
 
-        <section className="creation-section" style={{ order: 4 }}>
-          <h2 className="section-title">Ability Scores</h2>
+        <section className="creation-section" style={{ order: 7 }}>
+          <h2 className="section-title">Determine Ability Scores</h2>
+          
+          <div className="background-info">
+            <div className="background-section">
+              <div className="info-item">
+                <strong>Standard Array:</strong> 15, 14, 13, 12, 10, 8
+              </div>
+              <div className="info-item">
+                <strong>Random Generation:</strong> Roll four d6 and keep the highest three, six times.
+              </div>
+              <div className="info-item">
+                <strong>Point Cost:</strong> 27 points, coming soon.
+              </div>
+            </div>
+          </div>
           
           <div className="attributes-controls">
             <div className="checkbox-group">
@@ -2220,7 +2281,7 @@ const CharacterCreator = ({ onCreateCharacter }) => {
               disabled={isAutoRolling || attributesRolled}
               className="primary-button"
             >
-              {isAutoRolling ? 'Auto-Rolling...' : attributesRolled ? 'Attributes Locked' : 'Roll Attributes'}
+              {isAutoRolling ? 'Auto-Rolling...' : attributesRolled ? 'Ability Scores Locked' : 'Random Generation'}
             </Button>
           </div>
 
@@ -2248,10 +2309,10 @@ const CharacterCreator = ({ onCreateCharacter }) => {
           </div>
         </section>
 
-      <table id="attributes-table" style={{ order: 4 }}>
+      <table id="attributes-table" style={{ order: 7 }}>
         <thead>
           <tr>
-            <th>Attribute</th>
+            <th>Ability</th>
             <th>Value</th>
             <th>Bonus</th>
           </tr>
@@ -2281,44 +2342,95 @@ const CharacterCreator = ({ onCreateCharacter }) => {
                 </tr>
               );
             })}
-          {/* Add sum total row */}
           <tr>
-            <td colSpan="2">Total of All Attributes:</td>
+            <td colSpan="2">Total of All Ability Scores:</td>
             <td>{attributes.total || '-'}</td>
           </tr>
         </tbody>
       </table>
 
-        <section className="creation-section" style={{ order: 5 }}>
-          <h2 className="section-title">Species / Category</h2>
+        <section className="creation-section" style={{ order: 4 }}>
+          <h2 className="section-title">Determine Origin: Species</h2>
           <div className="form-group">
-            <label htmlFor="species">Category</label>
+            <label htmlFor="public-species">Species</label>
             <select
-              id="species"
-              value={species}
-              onChange={(e) => {
-                setSpecies(e.target.value);
-                setCharacterClass('');
-                setProfessionData(null);
-                setProfessionSkills([]);
-                setElectiveSkills([]);
-                setSecondarySkills([]);
-                filterAvailableprofessions(e.target.value);
-              }}
+              id="public-species"
+              value={publicSpeciesId}
+              onChange={(e) => handlePublicSpeciesSelection(e.target.value)}
               disabled={attributesRolled}
               className={attributesRolled ? 'disabled-select' : 'select-input'}
             >
-              {Object.keys(speciesData).map((spec) => (
-                <option key={spec} value={spec}>
-                  {spec}
+              {publicSpeciesOptions.map((option) => (
+                <option key={option.id} value={option.id}>
+                  {option.name}
                 </option>
               ))}
             </select>
           </div>
+          {selectedPublicSpecies && (
+            <div className="background-info">
+              <div className="background-section">
+                <div className="info-item">
+                  <strong>Description:</strong> {selectedPublicSpecies.description}
+                </div>
+                <div className="info-item">
+                  <strong>Creature Type:</strong> {selectedPublicSpecies.creatureType}
+                </div>
+                <div className="info-item">
+                  <strong>Size:</strong> {selectedPublicSpecies.sizeOptions.join(', ')}
+                </div>
+                <div className="info-item">
+                  <strong>Speed:</strong> {selectedPublicSpecies.speed} ft.
+                </div>
+                <div className="info-item">
+                  <strong>Traits:</strong> {selectedPublicSpecies.traits.join(', ')}
+                </div>
+              </div>
+            </div>
+          )}
+        </section>
+
+        <section className="creation-section" style={{ order: 5 }}>
+          <h2 className="section-title">Determine Origin: Languages</h2>
+          <div className="background-info">
+            <div className="background-section">
+              <div className="info-item">
+                <strong>Included:</strong> Common
+              </div>
+              <div className="info-item">
+                <strong>Additional Languages:</strong> Choose two.
+              </div>
+              <div>
+                {publicLanguageOptions
+                  .filter((language) => language.id !== 'common')
+                  .map((language) => (
+                    <label
+                      key={language.id}
+                      style={{ display: 'block', marginBottom: '8px' }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedPublicLanguageIds.includes(language.id)}
+                        disabled={
+                          !selectedPublicLanguageIds.includes(language.id) &&
+                          selectedPublicLanguageIds.length >= 2
+                        }
+                        onChange={() => togglePublicLanguageChoice(language.id)}
+                      />
+                      {' '}
+                      {language.name}
+                    </label>
+                  ))}
+              </div>
+              <div className="info-item">
+                <strong>Selected:</strong> {selectedPublicLanguages.map((language) => language.name).join(', ')}
+              </div>
+            </div>
+          </div>
         </section>
 
         {(selectedPublicClass || selectedPublicBackground) && (
-          <section className="creation-section" style={{ order: 6 }}>
+          <section className="creation-section" style={{ order: 2 }}>
             <h2 className="section-title">Proficiencies</h2>
             {(publicSkillSuggestions.fixed.length > 0 || publicSkillSuggestions.background.length > 0) && (
               <div className="background-info">
@@ -2372,8 +2484,8 @@ const CharacterCreator = ({ onCreateCharacter }) => {
           </section>
         )}
 
-        {species === 'HUMAN' && (
-          <section className="creation-section" style={{ order: 5 }}>
+        {selectedPublicSpecies?.id === 'human' && (
+          <section className="creation-section" style={{ order: 4 }}>
             <h2 className="section-title">Human Visual Profile (v1)</h2>
             <HumanPreviewPanel
               stats={humanStatsForVisuals}
@@ -2384,7 +2496,7 @@ const CharacterCreator = ({ onCreateCharacter }) => {
 
 
         <section className="creation-section" style={{ order: 3 }}>
-          <h2 className="section-title">Background</h2>
+          <h2 className="section-title">Determine Origin: Background</h2>
 
           <div className="form-group">
             <label htmlFor="public-background">Background:</label>
@@ -2402,47 +2514,6 @@ const CharacterCreator = ({ onCreateCharacter }) => {
             </select>
           </div>
           
-          <div className="button-row">
-            <Button 
-              onClick={rollAge} 
-              disabled={age !== '' && age !== 'Unknown'}
-              className="secondary-button"
-            >
-              Roll Age
-            </Button>
-            <Button
-              onClick={rollSocialBackground}
-              disabled={socialBackground !== ''}
-              className="secondary-button"
-            >
-              Roll Personal History
-            </Button>
-            <Button 
-              onClick={handleRollDisposition} 
-              disabled={disposition !== ''}
-              className="secondary-button"
-            >
-              Roll Disposition
-            </Button>
-          </div>
-          
-          <div className="button-row">
-            <Button 
-              onClick={handleRollHostility} 
-              disabled={hostility !== ''}
-              className="secondary-button"
-            >
-              Roll Personal Hostility
-            </Button>
-            <Button 
-              onClick={handleRollOrigin} 
-              disabled={origin !== ''}
-              className="secondary-button"
-            >
-              Roll Land of Origin
-            </Button>
-          </div>
-
           <div className="background-info">
             <h3>Background Information</h3>
             {selectedPublicBackground && (
@@ -2456,6 +2527,16 @@ const CharacterCreator = ({ onCreateCharacter }) => {
                 <div className="info-item">
                   <strong>Feature:</strong> {selectedPublicBackground.feature}
                 </div>
+                {(selectedPublicBackground.abilityScoreOptions || []).length > 0 && (
+                  <div className="info-item">
+                    <strong>Ability Score Options:</strong> {selectedPublicBackground.abilityScoreOptions.map(formatAttributeLabel).join(', ')}
+                  </div>
+                )}
+                {selectedPublicBackground.originFeat && (
+                  <div className="info-item">
+                    <strong>Origin Feat:</strong> {selectedPublicBackground.originFeat}
+                  </div>
+                )}
                 <div className="info-item">
                 <strong>Proficiencies:</strong> {publicSkillSuggestions.background.map((skill) => skill.name).join(', ')}
                 </div>
@@ -2471,28 +2552,11 @@ const CharacterCreator = ({ onCreateCharacter }) => {
                 )}
               </div>
             )}
-            <div className="background-section">
-              <div className="info-item">
-                <strong>Age:</strong> {age || "Not rolled"}
-              </div>
-              <div className="info-item">
-                <strong>Personal History:</strong> {socialBackground || "Not rolled"}
-              </div>
-              <div className="info-item">
-                <strong>Disposition:</strong> {disposition || "Not rolled"}
-              </div>
-              <div className="info-item">
-                <strong>Personal Hostility:</strong> {hostility || "Not rolled"}
-              </div>
-              <div className="info-item">
-                <strong>Land of Origin:</strong> {origin || "Not rolled"}
-              </div>
-            </div>
           </div>
         </section>
 
         {attributes.IQ && species && (
-          <section className="creation-section" style={{ order: 9 }}>
+          <section className="creation-section" style={{ order: 11 }}>
             <h2 className="section-title">Tactics</h2>
             <TacticsRoll
               IQ={attributes.IQ}
@@ -2503,8 +2567,8 @@ const CharacterCreator = ({ onCreateCharacter }) => {
           </section>
         )}
 
-        <section className="creation-section" style={{ order: 2 }}>
-          <h2 className="section-title">Class</h2>
+        <section className="creation-section" style={{ order: 1 }}>
+          <h2 className="section-title">Choose Class</h2>
           
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '20px' }}>
             {/* Class Selection Column */}
@@ -3015,8 +3079,55 @@ const CharacterCreator = ({ onCreateCharacter }) => {
           )}
         </section>
 
-        <section className="creation-section action-section" style={{ order: 8 }}>
+        <section className="creation-section" style={{ order: 8 }}>
+          <h2 className="section-title">Choose Alignment</h2>
+          <div className="form-group">
+            <label htmlFor="alignment-outlook">Alignment</label>
+            <select
+              id="alignment-outlook"
+              value={alignment}
+              onChange={(e) => setAlignment(e.target.value)}
+              className="select-input"
+            >
+              {publicAlignmentOptions.map((option) => (
+                <option key={option.id} value={option.value}>
+                  {option.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        </section>
+
+        <section className="creation-section action-section" style={{ order: 10 }}>
           <h2 className="section-title">Review / Create</h2>
+          <div className="background-info">
+            <div className="background-section">
+              <div className="info-item">
+                <strong>Class:</strong> {selectedPublicClass?.name || 'Not selected'}
+              </div>
+              <div className="info-item">
+                <strong>Background:</strong> {selectedPublicBackground?.name || 'Not selected'}
+              </div>
+              <div className="info-item">
+                <strong>Species:</strong> {selectedPublicSpecies?.name || 'Human'}
+              </div>
+              <div className="info-item">
+                <strong>Languages:</strong> {selectedPublicLanguages.map((language) => language.name).join(', ')}
+              </div>
+              <div className="info-item">
+                <strong>Alignment:</strong> {alignment || 'Unselected'}
+              </div>
+              <div className="info-item">
+                <strong>Proficiencies:</strong> {publicSkillMetadata.proficiencies.join(', ') || 'None selected'}
+              </div>
+              <div className="info-item">
+                <strong>Equipment Tags:</strong> {[
+                  ...(selectedPublicClass?.equipmentTags || []),
+                  ...(selectedPublicBackground?.equipmentTags || []),
+                ].join(', ') || 'None'}
+              </div>
+            </div>
+          </div>
           <div className="button-row">
             <Button 
               onClick={handleSubmit} 
@@ -3032,22 +3143,35 @@ const CharacterCreator = ({ onCreateCharacter }) => {
             </button>
           </div>
         </section>
-      {/* Temporarily disabled D20 spinner for background rolls */}
-      {/* {isRolling && (
-        <D20LoadingSpinner 
-          onFinish={handleRollFinish}
-          rollType={rollType}
-        />
-      )} */}
-
-      {attributes.PS && (
-        <div className="carry-weight-section" style={{ order: 7 }}>
-          <h3>Equipment</h3>
-          <p>Maximum Carry Weight: {attributes.PS * 10} lbs</p>
-          <p>Light Activity Duration: {attributes.PE * 2} minutes</p>
-          <p>Heavy Activity Duration: {attributes.PE} minutes</p>
-        </div>
-        )}
+        <section className="creation-section" style={{ order: 6 }}>
+          <h2 className="section-title">Determine Origin: Starting Equipment</h2>
+          <div className="background-info">
+            <div className="background-section">
+              <div className="info-item">
+                <strong>Class Equipment Tags:</strong> {(selectedPublicClass?.equipmentTags || []).join(', ') || 'Select a class'}
+              </div>
+              <div className="info-item">
+                <strong>Background Equipment Tags:</strong> {(selectedPublicBackground?.equipmentTags || []).join(', ') || 'Select a background'}
+              </div>
+              <div className="info-item">
+                <strong>Equipment Mechanics:</strong> Existing starting equipment rules are unchanged.
+              </div>
+              {attributes.PS && (
+                <>
+                  <div className="info-item">
+                    <strong>Maximum Carry Weight:</strong> {attributes.PS * 10} lbs
+                  </div>
+                  <div className="info-item">
+                    <strong>Light Activity Duration:</strong> {attributes.PE * 2} minutes
+                  </div>
+                  <div className="info-item">
+                    <strong>Heavy Activity Duration:</strong> {attributes.PE} minutes
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </section>
       </div>
 
       {/* Skill Selection Modal for Level Up */}
