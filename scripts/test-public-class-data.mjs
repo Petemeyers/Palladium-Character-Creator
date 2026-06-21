@@ -54,6 +54,13 @@ function assertClassShape(entry) {
   assert.equal(typeof entry.hitDie, "string");
   assert.equal(Array.isArray(entry.primaryAbilities), true);
   assert.equal(Array.isArray(entry.savingThrowProficiencies), true);
+  assert.equal(typeof entry.skillChoices, "object");
+  assert.equal(Array.isArray(entry.fixedSkills), true);
+  assert.equal(Array.isArray(entry.weaponProficiencies), true);
+  assert.equal(Array.isArray(entry.armorTraining), true);
+  assert.equal(Array.isArray(entry.toolProficiencies), true);
+  assert.equal(Array.isArray(entry.startingEquipmentTags), true);
+  assert.equal(Array.isArray(entry.levelOneFeatures), true);
   assert.equal(entry.ruleset, "core-d20");
 }
 
@@ -92,16 +99,30 @@ async function assertNoBlockedTermsOrLegacyImports() {
 }
 
 function testPublicClasses() {
-  assert.equal(PUBLIC_CLASSES.length, 7);
-  assert.deepEqual(PUBLIC_CLASSES.map((entry) => entry.name), [
+  const expectedClasses = [
+    "Barbarian",
+    "Bard",
+    "Cleric",
+    "Druid",
     "Fighter",
-    "Rogue",
-    "Scholar",
-    "Healer",
+    "Monk",
+    "Paladin",
     "Ranger",
-    "Guardian",
-    "Adept",
-  ]);
+    "Rogue",
+    "Sorcerer",
+    "Warlock",
+    "Wizard",
+  ];
+  assert.equal(PUBLIC_CLASSES.length, 12);
+  assert.deepEqual(PUBLIC_CLASSES.map((entry) => entry.name), expectedClasses);
+  assert.equal(new Set(PUBLIC_CLASSES.map((entry) => entry.id)).size, PUBLIC_CLASSES.length);
+  for (const removedName of ["Scholar", "Healer", "Guardian", "Adept"]) {
+    assert.equal(
+      PUBLIC_CLASSES.some((entry) => entry.name === removedName),
+      false,
+      `${removedName} should not be a public class option`,
+    );
+  }
   PUBLIC_CLASSES.forEach(assertClassShape);
 }
 
@@ -117,11 +138,13 @@ function testPublicBackgrounds() {
 }
 
 function testAdapterLookups() {
-  assert.equal(getPublicClasses().length, 7);
+  assert.equal(getPublicClasses().length, 12);
   assert.equal(getPublicSkills().length, 14);
   assert.equal(getPublicBackgrounds().length, 8);
   assert.equal(getPublicClassById("fighter").name, "Fighter");
+  assert.equal(getPublicClassById("wizard").name, "Wizard");
   assert.equal(getPublicClassByName("Fighter").id, "fighter");
+  assert.equal(getPublicClassByName("Barbarian").id, "barbarian");
   assert.equal(getPublicClassById("missing"), null);
   assert.equal(getPublicBackgroundById("soldier").name, "Soldier");
   assert.equal(getPublicBackgroundById("missing"), null);

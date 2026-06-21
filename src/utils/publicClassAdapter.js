@@ -39,6 +39,8 @@ export function getPublicBackgroundById(id) {
 export function createPublicCharacterDefaults(classId, backgroundId) {
   const classEntry = getPublicClassById(classId);
   const backgroundEntry = getPublicBackgroundById(backgroundId);
+  const classFeatures = classEntry?.levelOneFeatures || classEntry?.classFeatures || [];
+  const classEquipmentTags = classEntry?.startingEquipmentTags || classEntry?.equipmentTags || [];
   const skillSet = new Set([
     ...(classEntry?.fixedSkills || []),
     ...(backgroundEntry?.skillProficiencies || []),
@@ -56,11 +58,11 @@ export function createPublicCharacterDefaults(classId, backgroundId) {
     savingThrowProficiencies: classEntry?.savingThrowProficiencies ? [...classEntry.savingThrowProficiencies] : [],
     hitDie: classEntry?.hitDie || null,
     features: [
-      ...(classEntry?.classFeatures || []),
+      ...classFeatures,
       ...(backgroundEntry?.feature ? [backgroundEntry.feature] : []),
     ],
     equipmentTags: [
-      ...(classEntry?.equipmentTags || []),
+      ...classEquipmentTags,
       ...(backgroundEntry?.equipmentTags || []),
     ],
   };

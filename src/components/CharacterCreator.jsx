@@ -66,13 +66,18 @@ import HumanPreviewPanel from './creator/HumanPreviewPanel.jsx';
 import { buildHumanVisualProfile } from '../utils/visuals/buildHumanVisualProfile.js';
 
 const PUBLIC_CLASS_COMPATIBILITY_KEYS = {
+  barbarian: "Brigand",
+  bard: "Squire",
+  cleric: "Squire",
+  druid: "Longbowman",
   fighter: "Knight",
-  rogue: "Brigand",
-  scholar: "Squire",
-  healer: "Squire",
+  monk: "Brigand",
+  paladin: "Man-at-Arms",
   ranger: "Longbowman",
-  guardian: "Man-at-Arms",
-  adept: "Spearman",
+  rogue: "Brigand",
+  sorcerer: "Squire",
+  warlock: "Squire",
+  wizard: "Squire",
 };
 
 const PUBLIC_SPECIES_COMPATIBILITY_KEYS = {
