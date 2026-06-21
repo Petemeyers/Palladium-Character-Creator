@@ -39,6 +39,17 @@ import { skillBonuses as staticSkillBonuses, calculateSkillBonuses } from '../da
 import { BASE_SAVES, PROFESSION_SAVE_MODIFIERS, getLevelSaveBonus } from '../utils/savingThrowsSystem';
 import { PROFESSIONS, ELECTIVE_SKILLS, SECONDARY_SKILLS } from '../data/professionData';
 import {
+  calculateAbilityModifier,
+  calculateBackgroundAbilityBonuses,
+  calculateFinalAbilityScores,
+  convertPublicScoresToLegacyAttributes,
+  getPointCostTotal,
+  POINT_COSTS,
+  PUBLIC_ABILITIES,
+  rollRandomAbilityScores,
+  STANDARD_ARRAY_SCORES,
+} from '../utils/publicAbilityScores.js';
+import {
   getPublicBackgroundById,
   getPublicBackgrounds,
   getPublicClassById,
@@ -163,6 +174,12 @@ const CharacterCreator = ({ onCreateCharacter }) => {
   const [publicClassId, setPublicClassId] = useState('');
   const [selectedPublicSkillIds, setSelectedPublicSkillIds] = useState([]);
   const [selectedPublicLanguageIds, setSelectedPublicLanguageIds] = useState([]);
+  const [abilityScoreMethod, setAbilityScoreMethod] = useState('standard-array');
+  const [generatedAbilityScores, setGeneratedAbilityScores] = useState(STANDARD_ARRAY_SCORES);
+  const [abilityAssignments, setAbilityAssignments] = useState({});
+  const [backgroundAbilityMode, setBackgroundAbilityMode] = useState('split');
+  const [backgroundPlusTwoAbility, setBackgroundPlusTwoAbility] = useState('');
+  const [backgroundPlusOneAbility, setBackgroundPlusOneAbility] = useState('');
   const [availableClasses, setAvailableClasses] = useState([]);
   const [filteredClasses, setFilteredClasses] = useState([]);
   const [tactics, setTactics] = useState(null);
@@ -245,12 +262,72 @@ const CharacterCreator = ({ onCreateCharacter }) => {
       choices: [...new Set(validSelectedChoices)],
     };
   }, [publicSkillSuggestions.choiceIds, publicSkillSuggestions.proficiencyIds, selectedPublicSkillIds]);
+  const backgroundAbilityOptions = selectedPublicBackground?.abilityScoreOptions || [];
+  const assignedScoreIndexes = useMemo(
+    () => new Set(Object.values(abilityAssignments).filter((value) => value !== '')),
+    [abilityAssignments]
+  );
+  const baseAbilityScores = useMemo(() => {
+    return PUBLIC_ABILITIES.reduce((acc, ability) => {
+      const scoreIndex = abilityAssignments[ability.id];
+      const score = generatedAbilityScores[Number(scoreIndex)];
+      if (score !== undefined) {
+        acc[ability.id] = score;
+      }
+      return acc;
+    }, {});
+  }, [abilityAssignments, generatedAbilityScores]);
+  const backgroundAbilityBonuses = useMemo(
+    () => calculateBackgroundAbilityBonuses({
+      mode: backgroundAbilityMode,
+      options: backgroundAbilityOptions,
+      plusTwoAbility: backgroundPlusTwoAbility,
+      plusOneAbility: backgroundPlusOneAbility,
+    }),
+    [backgroundAbilityMode, backgroundAbilityOptions, backgroundPlusOneAbility, backgroundPlusTwoAbility]
+  );
+  const finalAbilityScores = useMemo(
+    () => calculateFinalAbilityScores(baseAbilityScores, backgroundAbilityBonuses),
+    [backgroundAbilityBonuses, baseAbilityScores]
+  );
+  const abilityModifiers = useMemo(() => {
+    return PUBLIC_ABILITIES.reduce((acc, ability) => {
+      if (finalAbilityScores[ability.id] !== undefined) {
+        acc[ability.id] = calculateAbilityModifier(finalAbilityScores[ability.id]);
+      }
+      return acc;
+    }, {});
+  }, [finalAbilityScores]);
+  const allPublicAbilitiesAssigned = PUBLIC_ABILITIES.every((ability) => baseAbilityScores[ability.id] !== undefined);
+  const pointCostTotal = getPointCostTotal(baseAbilityScores);
 
   useEffect(() => {
     setSelectedPublicSkillIds((current) =>
       current.filter((skillId) => publicSkillSuggestions.choiceIds.includes(skillId))
     );
   }, [publicSkillSuggestions.choiceIds]);
+
+  useEffect(() => {
+    setBackgroundPlusTwoAbility((current) =>
+      backgroundAbilityOptions.includes(current) ? current : ''
+    );
+    setBackgroundPlusOneAbility((current) =>
+      backgroundAbilityOptions.includes(current) ? current : ''
+    );
+  }, [backgroundAbilityOptions]);
+
+  useEffect(() => {
+    if (!allPublicAbilitiesAssigned) {
+      setAttributes({});
+      setAttributesRolled(false);
+      setHp(null);
+      return;
+    }
+
+    setAttributes(convertPublicScoresToLegacyAttributes(finalAbilityScores));
+    setAttributesRolled(true);
+    setBonusRolled(false);
+  }, [allPublicAbilitiesAssigned, finalAbilityScores]);
 
   const togglePublicSkillChoice = (skillId) => {
     setSelectedPublicSkillIds((current) => {
@@ -783,6 +860,46 @@ const CharacterCreator = ({ onCreateCharacter }) => {
     });
   };
 
+  const resetAbilityAssignmentState = (scores) => {
+    setGeneratedAbilityScores(scores);
+    setAbilityAssignments({});
+    setHp(null);
+    setBonusRolled(false);
+  };
+
+  const handleAbilityScoreMethodChange = (method) => {
+    if (method === 'point-cost') {
+      return;
+    }
+
+    setAbilityScoreMethod(method);
+    if (method === 'standard-array') {
+      resetAbilityAssignmentState(STANDARD_ARRAY_SCORES);
+      return;
+    }
+
+    resetAbilityAssignmentState([]);
+  };
+
+  const handleGenerateRandomAbilityScores = () => {
+    const rollDie = () => rollDice(6, 1, useCryptoRandom);
+    setAbilityScoreMethod('random-generation');
+    resetAbilityAssignmentState(rollRandomAbilityScores({ rollDie }));
+  };
+
+  const handleAbilityAssignmentChange = (abilityId, scoreIndex) => {
+    setAbilityAssignments((current) => {
+      const next = { ...current };
+      if (scoreIndex === '') {
+        delete next[abilityId];
+      } else {
+        next[abilityId] = scoreIndex;
+      }
+      return next;
+    });
+    setHp(null);
+  };
+
   const handlePublicSpeciesSelection = (selectedSpeciesId) => {
     const publicSpecies = getPublicSpeciesById(selectedSpeciesId) || getPublicSpeciesById('human');
     const compatibilitySpecies = PUBLIC_SPECIES_COMPATIBILITY_KEYS[publicSpecies?.id] || 'HUMAN';
@@ -929,6 +1046,20 @@ const CharacterCreator = ({ onCreateCharacter }) => {
       return;
     }
 
+    if (!allPublicAbilitiesAssigned) {
+      alert('Please assign all six ability scores before creating character');
+      return;
+    }
+
+    if (
+      backgroundAbilityMode === 'split' &&
+      backgroundAbilityOptions.length >= 3 &&
+      (!backgroundPlusTwoAbility || !backgroundPlusOneAbility || backgroundPlusTwoAbility === backgroundPlusOneAbility)
+    ) {
+      alert('Please choose different background abilities for the +2 and +1 increases');
+      return;
+    }
+
     if (isStrictDuelist(characterClass)) {
       const v = validateDuelistTechniqueSelections();
       if (!v.ok) {
@@ -964,6 +1095,11 @@ const CharacterCreator = ({ onCreateCharacter }) => {
         level: Number(level) || 1, // Use actual level state
       hp: Number(hp),
       alignment,
+      abilityScoreMethod,
+      baseAbilityScores,
+      backgroundAbilityBonuses,
+      finalAbilityScores,
+      abilityModifiers,
       attributes,
       age,
       socialBackground,
@@ -1105,6 +1241,11 @@ const CharacterCreator = ({ onCreateCharacter }) => {
         level: Number(level) || 1,
         hp: calculatedHP, // Use calculated total HP instead of base HP
         alignment: alignment || "",
+        abilityScoreMethod,
+        baseAbilityScores,
+        backgroundAbilityBonuses,
+        finalAbilityScores,
+        abilityModifiers,
         attributes: validatedAttributes,
         age: normalizedAge,
         socialBackground: socialBackground || "Unknown",
@@ -2243,116 +2384,175 @@ const CharacterCreator = ({ onCreateCharacter }) => {
                 <strong>Random Generation:</strong> Roll four d6 and keep the highest three, six times.
               </div>
               <div className="info-item">
-                <strong>Point Cost:</strong> 27 points, coming soon.
+                <strong>Point Cost:</strong> 27 points. Placeholder only in this pass.
               </div>
             </div>
           </div>
-          
-          <div className="attributes-controls">
-            <div className="checkbox-group">
-              <label htmlFor="autoRollEnabled" className="checkbox-label">
-                <input
-                  type="checkbox"
-                  id="autoRollEnabled"
-                  checked={autoRollEnabled}
-                  onChange={(e) => setAutoRollEnabled(e.target.checked)}
-                  disabled={attributesRolled}
-                  className="checkbox-input"
-                />
-                <span className="checkbox-text">Auto-roll until minimum total</span>
-              </label>
-            </div>
-            
-            {autoRollEnabled && (
-              <div className="form-group">
-                <label htmlFor="minTotalValue">Minimum Total:</label>
-                <input
-                  type="number"
-                  id="minTotalValue"
-                  value={minTotalValue}
-                  onChange={(e) => setMinTotalValue(parseInt(e.target.value, 10))}
-                  min="0"
-                  max="200"
-                  disabled={attributesRolled || isAutoRolling}
-                  className="number-input"
-                />
-              </div>
+
+          <div className="button-row">
+            <button
+              type="button"
+              onClick={() => handleAbilityScoreMethodChange('standard-array')}
+              className={abilityScoreMethod === 'standard-array' ? 'primary-button' : 'secondary-button'}
+            >
+              Standard Array
+            </button>
+            <button
+              type="button"
+              onClick={handleGenerateRandomAbilityScores}
+              className={abilityScoreMethod === 'random-generation' ? 'primary-button' : 'secondary-button'}
+            >
+              Random Generation
+            </button>
+            <button
+              type="button"
+              disabled
+              className="secondary-button disabled-button"
+              title={`Point Cost table: ${Object.entries(POINT_COSTS).map(([score, cost]) => `${score}=${cost}`).join(', ')}`}
+            >
+              Point Cost
+            </button>
+          </div>
+
+          <div className="background-info">
+            <h3>Generated Scores</h3>
+            <p>{generatedAbilityScores.length > 0 ? generatedAbilityScores.join(', ') : 'Choose Random Generation to roll scores.'}</p>
+            {abilityScoreMethod === 'point-cost' && (
+              <p>Point Cost total: {pointCostTotal}/27</p>
             )}
           </div>
 
-          <div className="button-row">
-            <Button 
-              onClick={regenerateAttributes}
-              disabled={isAutoRolling || attributesRolled}
-              className="primary-button"
-            >
-              {isAutoRolling ? 'Auto-Rolling...' : attributesRolled ? 'Ability Scores Locked' : 'Random Generation'}
-            </Button>
+          <div className="background-info">
+            <h3>Assign Scores</h3>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
+              {PUBLIC_ABILITIES.map((ability) => (
+                <div key={ability.id} className="form-group">
+                  <label htmlFor={`ability-${ability.id}`}>{ability.name}</label>
+                  <select
+                    id={`ability-${ability.id}`}
+                    value={abilityAssignments[ability.id] ?? ''}
+                    onChange={(event) => handleAbilityAssignmentChange(ability.id, event.target.value)}
+                    className="select-input"
+                    disabled={generatedAbilityScores.length !== 6}
+                  >
+                    <option value="">Assign score</option>
+                    {generatedAbilityScores.map((score, index) => {
+                      const value = String(index);
+                      const isAssignedElsewhere = assignedScoreIndexes.has(value) && abilityAssignments[ability.id] !== value;
+                      return (
+                        <option key={`${score}-${index}`} value={value} disabled={isAssignedElsewhere}>
+                          {score}
+                        </option>
+                      );
+                    })}
+                  </select>
+                </div>
+              ))}
+            </div>
           </div>
 
-          <div className="button-row">
+          <div className="background-info">
+            <h3>Background Ability Increases</h3>
+            {(backgroundAbilityOptions || []).length >= 3 ? (
+              <>
+                <div className="button-row">
+                  <button
+                    type="button"
+                    onClick={() => setBackgroundAbilityMode('split')}
+                    className={backgroundAbilityMode === 'split' ? 'primary-button' : 'secondary-button'}
+                  >
+                    +2 / +1
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setBackgroundAbilityMode('all')}
+                    className={backgroundAbilityMode === 'all' ? 'primary-button' : 'secondary-button'}
+                  >
+                    +1 / +1 / +1
+                  </button>
+                </div>
+                {backgroundAbilityMode === 'split' && (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
+                    <div className="form-group">
+                      <label htmlFor="background-plus-two">Increase by +2</label>
+                      <select
+                        id="background-plus-two"
+                        value={backgroundPlusTwoAbility}
+                        onChange={(event) => setBackgroundPlusTwoAbility(event.target.value)}
+                        className="select-input"
+                      >
+                        <option value="">Choose ability</option>
+                        {backgroundAbilityOptions.map((abilityId) => (
+                          <option key={abilityId} value={abilityId} disabled={abilityId === backgroundPlusOneAbility}>
+                            {formatAttributeLabel(abilityId)}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="form-group">
+                      <label htmlFor="background-plus-one">Increase by +1</label>
+                      <select
+                        id="background-plus-one"
+                        value={backgroundPlusOneAbility}
+                        onChange={(event) => setBackgroundPlusOneAbility(event.target.value)}
+                        className="select-input"
+                      >
+                        <option value="">Choose ability</option>
+                        {backgroundAbilityOptions.map((abilityId) => (
+                          <option key={abilityId} value={abilityId} disabled={abilityId === backgroundPlusTwoAbility}>
+                            {formatAttributeLabel(abilityId)}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                )}
+                {backgroundAbilityMode === 'all' && (
+                  <p>Increasing {backgroundAbilityOptions.map(formatAttributeLabel).join(', ')} by +1.</p>
+                )}
+              </>
+            ) : (
+              <p>Choose a background to apply ability increases.</p>
+            )}
+          </div>
 
-            <Button 
-              onClick={rollHP} 
-              disabled={hp !== null}
+          <table id="attributes-table">
+            <thead>
+              <tr>
+                <th>Ability</th>
+                <th>Base Score</th>
+                <th>Background Bonus</th>
+                <th>Final Score</th>
+                <th>Modifier</th>
+              </tr>
+            </thead>
+            <tbody>
+              {PUBLIC_ABILITIES.map((ability) => (
+                <tr key={ability.id}>
+                  <td>{ability.name}</td>
+                  <td>{baseAbilityScores[ability.id] ?? '-'}</td>
+                  <td>+{backgroundAbilityBonuses[ability.id] || 0}</td>
+                  <td>{finalAbilityScores[ability.id] ?? '-'}</td>
+                  <td>
+                    {abilityModifiers[ability.id] !== undefined
+                      ? `${abilityModifiers[ability.id] >= 0 ? '+' : ''}${abilityModifiers[ability.id]}`
+                      : '-'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          <div className="button-row">
+            <Button
+              onClick={rollHP}
+              disabled={hp !== null || !allPublicAbilitiesAssigned}
               className="secondary-button"
             >
               {hp !== null ? `HP: ${hp}` : 'Roll HP'}
             </Button>
-            <Button 
-              onClick={rollBonus} 
-              disabled={bonusRolled}
-              className={`secondary-button ${bonusRolled ? 'disabled-button' : ''}`}
-              title={`Bonus rolled: ${bonusRolled}`}
-              style={{
-                opacity: bonusRolled ? 0.6 : 1,
-                cursor: bonusRolled ? 'not-allowed' : 'pointer'
-              }}
-            >
-              {bonusRolled ? 'Bonus Rolled' : 'Roll Bonus'}
-            </Button>
           </div>
         </section>
-
-      <table id="attributes-table" style={{ order: 7 }}>
-        <thead>
-          <tr>
-            <th>Ability</th>
-            <th>Value</th>
-            <th>Bonus</th>
-          </tr>
-        </thead>
-        <tbody>
-          {Object.entries(attributes)
-            .filter(([key]) => !key.endsWith('_highlight') && !key.endsWith('_total') && key !== 'total')
-            .map(([key, value]) => {
-              const bonusData = getBonus(key, value);
-              let bonusDisplay = 'None';
-              if (bonusData) {
-                if (typeof bonusData === 'string') {
-                  bonusDisplay = bonusData;
-                } else if (bonusData.description) {
-                  bonusDisplay = bonusData.description;
-                }
-              }
-
-              return (
-                <tr
-                  key={key}
-                  style={getHighlightStyle(attributes[`${key}_highlight`])}
-                >
-                  <td>{formatAttributeLabel(key)}</td>
-                  <td>{value}</td>
-                  <td>{formatAttributeBonusText(bonusDisplay)}</td>
-                </tr>
-              );
-            })}
-          <tr>
-            <td colSpan="2">Total of All Ability Scores:</td>
-            <td>{attributes.total || '-'}</td>
-          </tr>
-        </tbody>
-      </table>
 
         <section className="creation-section" style={{ order: 4 }}>
           <h2 className="section-title">Determine Origin: Species</h2>
