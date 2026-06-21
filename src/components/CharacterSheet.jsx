@@ -29,6 +29,8 @@ const getDisplayPublicSkillNames = (character) =>
     return skill?.name || String(skillId);
   });
 
+const formatClassSkillLabel = () => 'Class Skills:';
+
 /**
  * CharacterSheet Component
  * Editable Medieval Combat Simulator Character Sheet (1994 edition)
@@ -95,7 +97,7 @@ export default function CharacterSheet({ characterData = null, onSave = null }) 
     if (!char) return '';
     const skills = [];
     if (char.professionSkills?.length) {
-      skills.push('profession Skills:');
+      skills.push(formatClassSkillLabel());
       char.professionSkills.forEach(skill => {
         skills.push(`  ${skill.name || skill}: ${skill.percentage || skill.percent || ''}%`);
       });
