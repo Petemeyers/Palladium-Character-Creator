@@ -39,6 +39,12 @@ import { skillBonuses as staticSkillBonuses, calculateSkillBonuses } from '../da
 import { BASE_SAVES, PROFESSION_SAVE_MODIFIERS, getLevelSaveBonus } from '../utils/savingThrowsSystem';
 import { PROFESSIONS, ELECTIVE_SKILLS, SECONDARY_SKILLS } from '../data/professionData';
 import {
+  getPublicBackgroundById,
+  getPublicBackgrounds,
+  getPublicClassById,
+  getPublicClasses,
+} from '../utils/publicClassAdapter.js';
+import {
   DUELIST_COMMON_TECHNIQUE_NAMES,
   normalizeTechniqueName,
   isDuelistClassName,
@@ -50,6 +56,16 @@ import {
 } from '../utils/techniqueUtils.js';
 import HumanPreviewPanel from './creator/HumanPreviewPanel.jsx';
 import { buildHumanVisualProfile } from '../utils/visuals/buildHumanVisualProfile.js';
+
+const PUBLIC_CLASS_COMPATIBILITY_KEYS = {
+  fighter: "Knight",
+  rogue: "Brigand",
+  scholar: "Squire",
+  healer: "Squire",
+  ranger: "Longbowman",
+  guardian: "Man-at-Arms",
+  adept: "Spearman",
+};
 
 // Function to get Tactician tactics based on level and tactical type
 const getMindMageTactics = async (tacticalResult, level) => {
@@ -111,12 +127,14 @@ const CharacterCreator = ({ onCreateCharacter }) => {
   const [characterName, setCharacterName] = useState('');
   const [age, setAge] = useState('');
   const [socialBackground, setSocialBackground] = useState('');
+  const [publicBackgroundId, setPublicBackgroundId] = useState('soldier');
   const [disposition, setDisposition] = useState('');
   const [hostility, setHostility] = useState('');
   const [origin, setOrigin] = useState('');
   const [bonusRolled, setBonusRolled] = useState(false);
   const [useCryptoRandom, setUseCryptoRandom] = useState(false);
   const [characterClass, setCharacterClass] = useState('');
+  const [publicClassId, setPublicClassId] = useState('');
   const [availableClasses, setAvailableClasses] = useState([]);
   const [filteredClasses, setFilteredClasses] = useState([]);
   const [tactics, setTactics] = useState(null);
@@ -141,6 +159,12 @@ const CharacterCreator = ({ onCreateCharacter }) => {
     secondary: { count: 0, selected: [] }
   });
   const [, setVisualProfile] = useState(null);
+  const publicClasses = useMemo(() => getPublicClasses(), []);
+  const publicBackgrounds = useMemo(() => getPublicBackgrounds(), []);
+  const selectedPublicBackground = useMemo(
+    () => getPublicBackgroundById(publicBackgroundId) || getPublicBackgroundById('soldier'),
+    [publicBackgroundId]
+  );
 
   const humanStatsForVisuals = useMemo(() => {
     const ageNum = Number(age);
@@ -624,11 +648,12 @@ const CharacterCreator = ({ onCreateCharacter }) => {
         ),
         alignment
       };
-      const classes = getAvailableClasses(character);
+      const classes = publicClasses.map((entry) => entry.id);
       setAvailableClasses(classes);
       
       // Reset character class if current selection is no longer valid
-      if (characterClass && !classes.includes(characterClass)) {
+      if (publicClassId && !classes.includes(publicClassId)) {
+        setPublicClassId('');
         setCharacterClass('');
       }
     }
@@ -637,7 +662,7 @@ const CharacterCreator = ({ onCreateCharacter }) => {
   // Add useEffect to update available classes when relevant data changes
   useEffect(() => {
     updateAvailableClasses();
-  }, [species, attributes, alignment]);
+  }, [species, attributes, alignment, publicClasses, publicClassId]);
 
   // Initialize filtered classes when available classes change
   useEffect(() => {
@@ -657,31 +682,35 @@ const CharacterCreator = ({ onCreateCharacter }) => {
       return;
     }
 
-    // Get all professions that are NOT restricted for this race
-    const allowedprofessions = availableClasses.filter(professionName => {
-      const professionData = gameData.professions[professionName];
-      if (!professionData) return true;
-      
-      // Check if this profession is restricted for this race
-      return !professionData.restrictedRaces.includes(selectedSpecies);
+    // Keep public class options visible while legacy compatibility data remains in place.
+    const allowedClasses = availableClasses.filter((classId) => {
+      const publicClass = getPublicClassById(classId);
+      return Boolean(publicClass);
     });
 
-    setFilteredClasses(allowedprofessions);
+    setFilteredClasses(allowedClasses);
   };
 
-  const handleProfessionSelection = (selectedProfession) => {
-    setCharacterClass(selectedProfession);
+  const handleProfessionSelection = (selectedClassId) => {
+    const publicClass = getPublicClassById(selectedClassId);
+    const compatibilityClass = publicClass
+      ? PUBLIC_CLASS_COMPATIBILITY_KEYS[publicClass.id] || publicClass.name
+      : '';
+
+    setPublicClassId(publicClass?.id || '');
+    setCharacterClass(compatibilityClass);
     
-    if (!selectedProfession) {
+    if (!publicClass || !compatibilityClass) {
       setProfessionSkills([]);
       setElectiveSkills([]);
       setSecondarySkills([]);
       setPreviousLevel(1);
+      setProfessionData(null);
       return;
     }
     
     // Try clean profession data first, fall back to old gameData for compatibility
-    const professionData = PROFESSIONS[selectedProfession] || gameData.professions[selectedProfession];
+    const professionData = PROFESSIONS[compatibilityClass] || gameData.professions[compatibilityClass];
     if (!professionData) return;
     
     // Reset previous level when profession changes
@@ -734,7 +763,11 @@ const CharacterCreator = ({ onCreateCharacter }) => {
 
     // Store profession data for character creation (include skill progression data)
     setProfessionData({
-      name: selectedProfession,
+      name: publicClass.name,
+      compatibilityClass,
+      publicClassId: publicClass.id,
+      publicClassName: publicClass.name,
+      publicDescription: publicClass.description,
       category: professionData.category,
       stamina: stamina,
       focus: focus,
@@ -828,11 +861,15 @@ const CharacterCreator = ({ onCreateCharacter }) => {
       return;
     }
 
-    console.log('Submitting character data:', {
-      name: characterName,
-      species,
-      class: characterClass,
-      level: Number(level) || 1, // Use actual level state
+      console.log('Submitting character data:', {
+        name: characterName,
+        species,
+        class: characterClass,
+        publicClassId,
+        publicClassName: professionData?.publicClassName,
+        publicBackgroundId,
+        publicBackgroundName: selectedPublicBackground?.name,
+        level: Number(level) || 1, // Use actual level state
       hp: Number(hp),
       alignment,
       attributes,
@@ -953,6 +990,13 @@ const CharacterCreator = ({ onCreateCharacter }) => {
 
       const characterData = {
         name: characterName || "Unnamed Character",
+        ruleset: "core-d20",
+        sizePolicy: "legacy-compatible",
+        legacyCompatibility: true,
+        publicClassId: professionData?.publicClassId || publicClassId || undefined,
+        publicClassName: professionData?.publicClassName || undefined,
+        publicBackgroundId: selectedPublicBackground?.id || publicBackgroundId || undefined,
+        publicBackgroundName: selectedPublicBackground?.name || undefined,
         species,
         class: characterClass,
         profession: characterClass, // Set profession to same as class
@@ -1052,63 +1096,38 @@ const CharacterCreator = ({ onCreateCharacter }) => {
   };
 
   const renderClassSelection = () => {
-    // Use filtered professions (based on category restrictions) instead of all available professions.
+    // Use public classes for display while preserving the existing compatibility class key internally.
     const classesToShow = filteredClasses.length > 0 ? filteredClasses : availableClasses;
     
-    console.log('=== PROFESSION FILTERING DEBUG ===');
+    console.log('=== CLASS FILTERING DEBUG ===');
     console.log('Species:', species);
     console.log('Tactics:', tactics);
     console.log('IQ:', attributes.IQ);
-    console.log('Available Professions:', availableClasses);
-    console.log('Filtered Professions:', filteredClasses);
-    console.log('Professions To Show:', classesToShow);
-    console.log('Has Tactician:', classesToShow.includes('Tactician'));
+    console.log('Available Classes:', availableClasses);
+    console.log('Filtered Classes:', filteredClasses);
+    console.log('Classes To Show:', classesToShow);
     console.log('================================');
     
-    const validProfessionNames = classesToShow.filter((professionName) => {
-      const professionEntry =
-        typeof professionName === 'string'
-          ? characterClasses[professionName] || PROFESSIONS[professionName] || gameData.professions[professionName]
-          : null;
-
-      if (!professionName || !professionEntry) {
-        if (import.meta.env?.DEV || import.meta.env?.MODE === 'development') {
-          console.warn('Invalid profession entry skipped in Character Creator:', professionName);
+    const validPublicClasses = classesToShow
+      .map((classId) => getPublicClassById(classId))
+      .filter((publicClass) => {
+        if (!publicClass) {
+          if (import.meta.env?.DEV || import.meta.env?.MODE === 'development') {
+            console.warn('Invalid public class entry skipped in Character Creator');
+          }
+          return false;
         }
-        return false;
-      }
 
-      return true;
-    });
+        return true;
+      });
 
-    // Group available professions by category.
-    const groupedClasses = validProfessionNames.reduce((acc, className) => {
-      // Filter out Tactician if tactics isn't Major or Master AND IQ < 9
-      if (className === 'Tactician') {
-        const hasMajorOrMaster = tactics && 
-                                 (tactics.includes('Major') || tactics.includes('Master'));
-        const meetsIQRequirement = attributes.IQ >= 9;
-        
-        console.log('Tactician eligibility check:', {
-          tactics,
-          tacticsType: typeof tactics,
-          hasMajorOrMaster,
-          IQ: attributes.IQ,
-          meetsIQRequirement,
-          eligible: hasMajorOrMaster && meetsIQRequirement
-        });
-        
-        if (!hasMajorOrMaster || !meetsIQRequirement) {
-          return acc;
-        }
-      }
-      
-      const professionEntry = characterClasses[className] || PROFESSIONS[className] || gameData.professions[className];
-      const category = professionEntry?.category || "General";
+    // Group public classes by ruleset for display.
+    const groupedClasses = validPublicClasses.reduce((acc, publicClass) => {
+      const category = publicClass.ruleset === "core-d20" ? "Core d20" : "General";
       if (!acc[category]) {
         acc[category] = [];
       }
-      acc[category].push(className);
+      acc[category].push(publicClass);
       return acc;
     }, {});
 
@@ -1117,16 +1136,16 @@ const CharacterCreator = ({ onCreateCharacter }) => {
         <label htmlFor="character-class">Class:</label>
         <select
           id="character-class"
-          value={characterClass}
+          value={publicClassId}
           onChange={(e) => handleProfessionSelection(e.target.value)}
           disabled={availableClasses.length === 0}
         >
           <option value="">Select a class</option>
           {Object.entries(groupedClasses).map(([category, classes]) => (
             <optgroup key={category} label={category}>
-              {classes.map(className => (
-                <option key={className} value={className}>
-                  {className}
+              {classes.map(publicClass => (
+                <option key={publicClass.id} value={publicClass.id}>
+                  {publicClass.name}
                 </option>
               ))}
             </optgroup>
@@ -1173,6 +1192,9 @@ const CharacterCreator = ({ onCreateCharacter }) => {
           <div className="profession-data">
             <h4>Class Information:</h4>
             <p><strong>Class:</strong> {professionData.name} ({professionData.category || "General"})</p>
+            {professionData.publicDescription && (
+              <p><strong>Description:</strong> {professionData.publicDescription}</p>
+            )}
             <p><strong>Stamina:</strong> {professionData.stamina}</p>
             <p><strong>Focus:</strong> {professionData.focus}</p>
             <p><strong>Notes:</strong> {formatPublicCreatorText(professionData.notes)}</p>
@@ -2337,9 +2359,51 @@ const CharacterCreator = ({ onCreateCharacter }) => {
             </Button>
           </div>
 
+          <div className="form-group">
+            <label htmlFor="public-background">Background:</label>
+            <select
+              id="public-background"
+              value={publicBackgroundId}
+              onChange={(event) => setPublicBackgroundId(event.target.value)}
+              className="select-input"
+            >
+              {publicBackgrounds.map((background) => (
+                <option key={background.id} value={background.id}>
+                  {background.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
           {/* Background Information Display */}
           <div className="background-info">
             <h3>Background Information</h3>
+            {selectedPublicBackground && (
+              <div className="background-section">
+                <div className="info-item">
+                  <strong>Background:</strong> {selectedPublicBackground.name}
+                </div>
+                <div className="info-item">
+                  <strong>Description:</strong> {selectedPublicBackground.description}
+                </div>
+                <div className="info-item">
+                  <strong>Feature:</strong> {selectedPublicBackground.feature}
+                </div>
+                <div className="info-item">
+                  <strong>Skill Proficiencies:</strong> {selectedPublicBackground.skillProficiencies.join(', ')}
+                </div>
+                {(selectedPublicBackground.toolProficiencies || []).length > 0 && (
+                  <div className="info-item">
+                    <strong>Tool Proficiencies:</strong> {selectedPublicBackground.toolProficiencies.join(', ')}
+                  </div>
+                )}
+                {(selectedPublicBackground.equipmentTags || []).length > 0 && (
+                  <div className="info-item">
+                    <strong>Equipment Tags:</strong> {selectedPublicBackground.equipmentTags.join(', ')}
+                  </div>
+                )}
+              </div>
+            )}
             <div className="background-section">
               <div className="info-item">
                 <strong>Age:</strong> {age || "Not rolled"}
