@@ -955,6 +955,23 @@ function getSceneRoleLabel(fighter) {
   return fighter.type || "Scene Actor";
 }
 
+function getDisplayClassName(fighter) {
+  return fighter?.publicClassName || fighter?.class || fighter?.profession || fighter?.PROFESSION || "";
+}
+
+function getDisplayBackgroundName(fighter) {
+  return fighter?.publicBackgroundName || fighter?.background || fighter?.socialBackground || "";
+}
+
+function getDisplayRoleLine(fighter) {
+  const className = getDisplayClassName(fighter);
+  const backgroundName = getDisplayBackgroundName(fighter);
+  if (className && backgroundName) return `${className} | Background: ${backgroundName}`;
+  if (className) return className;
+  if (backgroundName) return `Background: ${backgroundName}`;
+  return "";
+}
+
 function getDeploymentSideLabel(side) {
   if (side === "player") return "Players";
   if (side === "enemy") return "Enemies";
@@ -27994,16 +28011,16 @@ function CombatPage({ characters = [] }) {
                               </Select>
                             </HStack>
 
-                            {/* Category and profession */}
+                            {/* Category and class */}
                             <HStack spacing={2} flexWrap="wrap">
                               {fighter.species && (
                                 <Badge colorScheme="cyan" size="sm">Category: {fighter.species}</Badge>
                               )}
-                              {fighter.PROFESSION && (
-                                <Badge colorScheme="purple" size="sm">Profession: {fighter.PROFESSION}</Badge>
+                              {getDisplayClassName(fighter) && (
+                                <Badge colorScheme="purple" size="sm">Class: {getDisplayClassName(fighter)}</Badge>
                               )}
-                              {fighter.class && !fighter.PROFESSION && (
-                                <Badge colorScheme="purple" size="sm">Profession: {fighter.class}</Badge>
+                              {getDisplayBackgroundName(fighter) && (
+                                <Badge colorScheme="teal" size="sm">Background: {getDisplayBackgroundName(fighter)}</Badge>
                               )}
                               {/* Alignment Display */}
                               {(fighter.alignment || fighter.alignmentName || fighter.alignmentText) && (
@@ -30111,7 +30128,7 @@ function CombatPage({ characters = [] }) {
                                   </Select>
                                 </HStack>
 
-                                {/* Category and profession */}
+                                {/* Category and class */}
                                 <HStack spacing={2} flexWrap="wrap">
                                   {fighter.species && (
                                     <Badge colorScheme="cyan" size="sm">Category: {fighter.species}</Badge>
@@ -30122,11 +30139,11 @@ function CombatPage({ characters = [] }) {
                                   {fighter.category && (
                                     <Badge colorScheme="orange" size="sm">{fighter.category}</Badge>
                                   )}
-                                  {fighter.PROFESSION && (
-                                    <Badge colorScheme="purple" size="sm">Profession: {fighter.PROFESSION}</Badge>
+                                  {getDisplayClassName(fighter) && (
+                                    <Badge colorScheme="purple" size="sm">Class: {getDisplayClassName(fighter)}</Badge>
                                   )}
-                                  {fighter.class && !fighter.PROFESSION && (
-                                    <Badge colorScheme="purple" size="sm">Profession: {fighter.class}</Badge>
+                                  {getDisplayBackgroundName(fighter) && (
+                                    <Badge colorScheme="teal" size="sm">Background: {getDisplayBackgroundName(fighter)}</Badge>
                                   )}
                                   {/* Alignment Display */}
                                   {(fighter.alignment || fighter.alignmentName || fighter.alignmentText) && (
@@ -31490,9 +31507,15 @@ function CombatPage({ characters = [] }) {
                                 <Text fontWeight="semibold">{rosterPreviewFighter.species || rosterPreviewFighter.race || rosterPreviewFighter.combatantType || "Unknown"}</Text>
                               </Box>
                               <Box>
-                                <Text fontSize="xs" color="gray.500" textTransform="ustaminarcase">Profession</Text>
-                                <Text fontWeight="semibold">{rosterPreviewFighter.PROFESSION || rosterPreviewFighter.profession || rosterPreviewFighter.class || "None"}</Text>
+                                <Text fontSize="xs" color="gray.500" textTransform="ustaminarcase">Class</Text>
+                                <Text fontWeight="semibold">{getDisplayClassName(rosterPreviewFighter) || "None"}</Text>
                               </Box>
+                              {getDisplayBackgroundName(rosterPreviewFighter) && (
+                              <Box>
+                                <Text fontSize="xs" color="gray.500" textTransform="ustaminarcase">Background</Text>
+                                <Text fontWeight="semibold">{getDisplayBackgroundName(rosterPreviewFighter)}</Text>
+                              </Box>
+                              )}
                               {(rosterPreviewFighter.stamina !== undefined || rosterPreviewFighter.currentstamina !== undefined) && (
                                 <Box>
                                   <Text fontSize="xs" color="gray.500" textTransform="ustaminarcase">stamina</Text>
@@ -31810,7 +31833,10 @@ function CombatPage({ characters = [] }) {
                         <>
                           <Text fontSize="sm" color="blue.500">Playable human fighter - auto-rolls attributes.</Text>
                           <Text fontSize="sm">Category: {formatCombatantCategory(combatant.category || combatant.race || "human")}</Text>
-                          <Text fontSize="sm">Profession: {combatant.profession || "N/A"}</Text>
+                          <Text fontSize="sm">Class: {getDisplayClassName(combatant) || "N/A"}</Text>
+                          {getDisplayBackgroundName(combatant) && (
+                            <Text fontSize="sm">Background: {getDisplayBackgroundName(combatant)}</Text>
+                          )}
                           <Text fontSize="sm">Attributes: {Object.entries(combatant.attribute_dice || {}).map(([attr, dice]) => `${attr}: ${dice}`).join(", ")}</Text>
                           <Text fontSize="sm">HP: {combatant.HP || "Variable"}</Text>
                           <Text fontSize="sm">AC: {combatant.guardRating || "Variable"}</Text>
@@ -31908,7 +31934,7 @@ function CombatPage({ characters = [] }) {
                       <VStack align="start" spacing={1}>
                         <Text fontWeight="bold">{character.name}</Text>
                         <Text fontSize="sm" color="gray.600">
-                          {character.profession || "Fighter"} | Level {character.level || 1} | HP: {character.derived?.hitPoints || character.hp || character.HP || 20}
+                          {getDisplayRoleLine(character) || "Fighter"} | Level {character.level || 1} | HP: {character.derived?.hitPoints || character.hp || character.HP || 20}
                           | AC: {character.guardRating || 10} | Speed: {character.Spd || character.spd || character.attributes?.Spd || character.attributes?.spd || 10}
                         </Text>
                         {character.attributes && Object.entries(character.attributes).slice(0, 4).map(([attr, value]) => (
