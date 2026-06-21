@@ -15,6 +15,19 @@ import {
   useToast,
 } from '@chakra-ui/react';
 import axiosInstance from '../utils/axios';
+import { getPublicSkillById } from '../utils/publicClassAdapter.js';
+
+const getDisplayClassName = (character) =>
+  character?.publicClassName || character?.class || character?.profession || '';
+
+const getDisplayBackgroundName = (character) =>
+  character?.publicBackgroundName || character?.background || character?.socialBackground || '';
+
+const getDisplayPublicSkillNames = (character) =>
+  [...new Set(character?.publicSkillProficiencies || [])].map((skillId) => {
+    const skill = getPublicSkillById(skillId);
+    return skill?.name || String(skillId);
+  });
 
 /**
  * CharacterSheet Component
@@ -54,7 +67,7 @@ export default function CharacterSheet({ characterData = null, onSave = null }) 
       setCharacter({
         name: characterData.name || '',
         race: characterData.species || characterData.race || '',
-        profession: characterData.class || characterData.profession || '',
+        profession: getDisplayClassName(characterData),
         alignment: characterData.alignment || '',
         level: characterData.level || 1,
         iq: characterData.attributes?.iq || '',
@@ -331,6 +344,8 @@ export default function CharacterSheet({ characterData = null, onSave = null }) 
     { key: 'pb', label: 'charisma' },
     { key: 'spd', label: 'Speed' },
   ];
+  const displayBackgroundName = getDisplayBackgroundName(characterData);
+  const publicSkillNames = getDisplayPublicSkillNames(characterData);
 
   return (
     <Box className="character-sheet" maxW="4xl" mx="auto" p={4} bg="white" borderRadius="md" boxShadow="lg">
@@ -396,6 +411,30 @@ export default function CharacterSheet({ characterData = null, onSave = null }) 
             />
           </GridItem>
         </Grid>
+
+        {(displayBackgroundName || publicSkillNames.length > 0) && (
+          <Box>
+            <Text fontWeight="bold" mb={2} fontSize="sm" color="gray.700">
+              Public Character Metadata
+            </Text>
+            <Grid templateColumns={{ base: '1fr', md: 'repeat(2, 1fr)' }} gap={3}>
+              {displayBackgroundName && (
+                <GridItem>
+                  <Text fontSize="sm">
+                    <strong>Background:</strong> {displayBackgroundName}
+                  </Text>
+                </GridItem>
+              )}
+              {publicSkillNames.length > 0 && (
+                <GridItem>
+                  <Text fontSize="sm">
+                    <strong>Public Proficiencies:</strong> {publicSkillNames.join(', ')}
+                  </Text>
+                </GridItem>
+              )}
+            </Grid>
+          </Box>
+        )}
 
         <Divider />
 

@@ -16,6 +16,9 @@ import getSocket from "../utils/socket";
 
 const socket = getSocket(); // Use centralized socket manager
 
+const getDisplayClassName = (character) =>
+  character?.publicClassName || character?.profession || character?.class || '';
+
 const AbilitiesPanel = () => {
   const { activeParty } = useParty();
 
@@ -88,7 +91,7 @@ const AbilitiesPanel = () => {
                 <VStack align="start" spacing={1}>
                   <Heading size="sm">{char.name}</Heading>
                   <Text fontSize="sm" color="gray.600">
-                    {char.species} {char.class} - Class: {char.profession || char.class}
+                    {char.species} {getDisplayClassName(char)} - Class: {getDisplayClassName(char)}
                   </Text>
                 </VStack>
                 <Badge colorScheme="blue" size="lg">

@@ -15,6 +15,12 @@ import { getUnifiedAbilities } from '../utils/unifiedAbilities';
 import axiosInstance from '../utils/axiosConfig';
 import '../styles/CharacterList.css';
 
+const getDisplayClassName = (character) =>
+  character?.publicClassName || character?.class || character?.profession || '';
+
+const getDisplayBackgroundName = (character) =>
+  character?.publicBackgroundName || character?.background || character?.socialBackground || '';
+
 const characterNames = [
   'Alaalwen', 'Baar', 'Alaamar', 'Bada', 'Alaamra', 'Bago',
   // ... rest of the names
@@ -136,11 +142,14 @@ const CharacterList = ({
           return sortConfig.direction === 'ascending' ? aTotal - bTotal : bTotal - aTotal;
         }
 
+        const aValue = sortConfig.key === 'class' ? getDisplayClassName(a) : a[sortConfig.key];
+        const bValue = sortConfig.key === 'class' ? getDisplayClassName(b) : b[sortConfig.key];
+
         // Handle regular properties
-        if (a[sortConfig.key] < b[sortConfig.key]) {
+        if (aValue < bValue) {
           return sortConfig.direction === 'ascending' ? -1 : 1;
         }
-        if (a[sortConfig.key] > b[sortConfig.key]) {
+        if (aValue > bValue) {
           return sortConfig.direction === 'ascending' ? 1 : -1;
         }
         return 0;
@@ -493,8 +502,13 @@ const CharacterList = ({
                       </div>
                     )}
                        <div className="character-title">
-                         Level {character.level} {character.species} {character.class}
+                         Level {character.level} {character.species} {getDisplayClassName(character)}
                        </div>
+                       {getDisplayBackgroundName(character) && (
+                         <div className="character-xp">
+                           Background: {getDisplayBackgroundName(character)}
+                         </div>
+                       )}
                        {character.experiencePoints && (
                          <div className="character-xp">
                            XP: {character.experiencePoints.toLocaleString()}
