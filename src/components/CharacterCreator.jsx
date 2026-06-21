@@ -311,10 +311,10 @@ const CharacterCreator = ({ onCreateCharacter }) => {
       // Calculate Save vs dreadRating
       const professionCategory = professionData?.category || "Men of Arms";
       const baseHorrorSave = BASE_SAVES.horror || 12;
-      const professionHorrorMod = PROFESSION_SAVE_MODIFIERS[occCategory]?.horror || 0;
+      const professionHorrorMod = PROFESSION_SAVE_MODIFIERS[professionCategory]?.horror || 0;
       const levelHorrorBonus = getLevelSaveBonus(currentLevel);
       const peHorrorBonus = Math.floor((attributes.PE || 0) / 2) - 5; // PE bonus: (PE-10)/2
-      const courageCheck = baseHorrorSave - occHorrorMod - levelHorrorBonus - peHorrorBonus;
+      const courageCheck = baseHorrorSave - professionHorrorMod - levelHorrorBonus - peHorrorBonus;
       
       // Get combat mods from race and profession
       const raceData = species ? (gameData.races?.[species] || null) : null;
@@ -700,14 +700,7 @@ const CharacterCreator = ({ onCreateCharacter }) => {
   // };
 
   const updateAvailableClasses = () => {
-    if (species && Object.keys(attributes).length > 0 && alignment) {
-      const character = {
-        species,
-        attributes: Object.fromEntries(
-          Object.entries(attributes).filter(([key]) => !key.endsWith('_highlight'))
-        ),
-        alignment
-      };
+    if (species && alignment) {
       const classes = publicClasses.map((entry) => entry.id);
       setAvailableClasses(classes);
       
@@ -891,26 +884,6 @@ const CharacterCreator = ({ onCreateCharacter }) => {
       }
     }
     
-    if (!socialBackground || !socialBackground.trim()) {
-      alert('Please enter a social background');
-      return;
-    }
-    
-    if (!disposition || !disposition.trim()) {
-      alert('Please enter a disposition');
-      return;
-    }
-    
-    if (!hostility || !hostility.trim()) {
-      alert('Please enter a hostility level');
-      return;
-    }
-    
-    if (!origin || !origin.trim()) {
-      alert('Please enter an origin');
-      return;
-    }
-    
     // Validate attributes are present
     const hasAllAttributes = ['IQ', 'ME', 'MA', 'PS', 'PP', 'PE', 'PB', 'Spd'].every(attr => 
       attributes[attr] !== undefined && attributes[attr] !== null
@@ -1030,9 +1003,9 @@ const CharacterCreator = ({ onCreateCharacter }) => {
       // HARD profession GATES (prevents illegal tactics/training on Men of Arms)
       const professionCategory = String(professionData?.category || "").toLowerCase();
       const isMenOfArms =
-        occCategory.includes("men of arms") ||
-        occCategory.includes("man of arms") ||
-        occCategory.includes("men-of-arms");
+        professionCategory.includes("men of arms") ||
+        professionCategory.includes("man of arms") ||
+        professionCategory.includes("men-of-arms");
 
       if (isMenOfArms) {
         characterfocus = 0;
@@ -1056,7 +1029,7 @@ const CharacterCreator = ({ onCreateCharacter }) => {
         sizePolicy: "legacy-compatible",
         legacyCompatibility: true,
         publicClassId: professionData?.publicClassId || publicClassId || undefined,
-        publicClassName: professionData?.publicClassName || undefined,
+        publicClassName: professionData?.publicClassName || selectedPublicClass?.name || undefined,
         publicBackgroundId: selectedPublicBackground?.id || publicBackgroundId || undefined,
         publicBackgroundName: selectedPublicBackground?.name || undefined,
         publicSkillProficiencies: publicSkillMetadata.proficiencies,
@@ -1216,7 +1189,7 @@ const CharacterCreator = ({ onCreateCharacter }) => {
           ))}
         </select>
 
-        {/* Display profession requirements when a profession is selected */}
+        {/* Display class requirements when a class is selected */}
         {characterClass && characterClasses[characterClass]?.requirements && (
           <div className="class-requirements">
             <h4>{characterClass} Requirements:</h4>
@@ -1232,26 +1205,7 @@ const CharacterCreator = ({ onCreateCharacter }) => {
           </div>
         )}
 
-        {/* Display category restrictions info */}
-        {species && (
-          <div className="race-restrictions">
-            <h4>{species} Class Restrictions:</h4>
-            {(() => {
-              const raceData = gameData.races[species];
-              if (!raceData || (raceData.restrictedprofessions || []).length === 0) {
-                return <p>No class restrictions for {species}.</p>;
-              }
-              return (
-                <div>
-                  <p><strong>Cannot be:</strong> {raceData.restrictedprofessions.join(', ')}</p>
-                  <p><em>Available classes are filtered above based on category restrictions.</em></p>
-                </div>
-              );
-            })()}
-          </div>
-        )}
-
-        {/* Display profession data when selected */}
+        {/* Display class data when selected */}
         {professionData && (
           <div className="profession-data">
             <h4>Class Information:</h4>
@@ -1275,72 +1229,17 @@ const CharacterCreator = ({ onCreateCharacter }) => {
           </div>
         )}
 
-        {(selectedPublicClass || selectedPublicBackground) && (
-          <div className="profession-data">
-            <h4>Suggested Proficiencies</h4>
-            {(publicSkillSuggestions.fixed.length > 0 || publicSkillSuggestions.background.length > 0) && (
-              <div>
-                <strong>Fixed Proficiencies:</strong>
-                <ul>
-                  {publicSkillSuggestions.fixed.map((skill) => (
-                    <li key={`fixed-${skill.id}`}>
-                      {skill.name}{skill.ability ? ` (${skill.ability.toUpperCase()})` : ''}
-                      {skill.description ? ` - ${skill.description}` : ''}
-                    </li>
-                  ))}
-                  {publicSkillSuggestions.background.map((skill) => (
-                    <li key={`background-${skill.id}`}>
-                      {skill.name}{skill.ability ? ` (${skill.ability.toUpperCase()})` : ''}
-                      {skill.description ? ` - ${skill.description}` : ''}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-            {publicSkillSuggestions.choices.length > 0 && (
-              <div>
-                <strong>Choose Additional Proficiencies:</strong>
-                <p>
-                  Selected {publicSkillMetadata.choices.length}/{publicSkillSuggestions.choiceCount}
-                </p>
-                <div>
-                  {publicSkillSuggestions.choices.map((skill) => (
-                    <label
-                      key={`choice-${skill.id}`}
-                      style={{ display: 'block', marginBottom: '8px' }}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={selectedPublicSkillIds.includes(skill.id)}
-                        disabled={
-                          !selectedPublicSkillIds.includes(skill.id) &&
-                          publicSkillSuggestions.choiceCount > 0 &&
-                          publicSkillMetadata.choices.length >= publicSkillSuggestions.choiceCount
-                        }
-                        onChange={() => togglePublicSkillChoice(skill.id)}
-                      />
-                      {' '}
-                      {skill.name}{skill.ability ? ` (${skill.ability.toUpperCase()})` : ''}
-                      {skill.description ? ` - ${skill.description}` : ''}
-                    </label>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
         {/* Class Skills Selection */}
         {characterClass && (PROFESSIONS[characterClass] || gameData.professions[characterClass]) && (
-          <div className="profession-skills-selection">
-            <h4>Class Skills</h4>
+          <details className="profession-skills-selection">
+            <summary style={{ fontWeight: 'bold', cursor: 'pointer' }}>Compatibility Details</summary>
             
             {/* Class Skills (auto-assigned) */}
             <div className="profession-skills">
               <h5>Class Skills (Automatic):</h5>
               <ul>
                 {professionSkills.map((skill, idx) => {
-                  const formattedSkill = formatSkillWithPercent(skill, characterClass, parseInt(level) || 1);
+                  const formattedSkill = formatPublicCreatorText(formatSkillWithPercent(skill, characterClass, parseInt(level) || 1));
                   return (
                     <li key={idx}>{formattedSkill}</li>
                   );
@@ -1375,7 +1274,7 @@ const CharacterCreator = ({ onCreateCharacter }) => {
                     >
                       {availableElectiveSkills.map((skill, idx) => {
                         const skillData = gameData.skills?.[skill];
-                        const formattedSkill = formatSkillWithPercent(skill, characterClass, parseInt(level) || 1);
+                        const formattedSkill = formatPublicCreatorText(formatSkillWithPercent(skill, characterClass, parseInt(level) || 1));
                         return (
                           <option key={idx} value={skill} title={skillData?.description || skill}>
                             {formattedSkill}
@@ -1414,7 +1313,7 @@ const CharacterCreator = ({ onCreateCharacter }) => {
                       {(SECONDARY_SKILLS || gameData.secondarySkills || [])
                         .filter(skill => !isSkillInProfessionSkills(skill, professionSkills)) // Filter out skills already in profession skills
                         .map((skill, idx) => {
-                          const formattedSkill = formatSkillWithPercent(skill, characterClass, parseInt(level) || 1);
+                          const formattedSkill = formatPublicCreatorText(formatSkillWithPercent(skill, characterClass, parseInt(level) || 1));
                           return (
                             <option key={idx} value={skill} title={`Basic skill: ${skill}`}>
                               {formattedSkill}
@@ -1442,14 +1341,9 @@ const CharacterCreator = ({ onCreateCharacter }) => {
               }
               return null;
             })()}
-          </div>
+          </details>
         )}
 
-        {/* Display category class restrictions */}
-        <div className="species-limitations">
-          <h4>{species} Class Limitations:</h4>
-          <p>{formatPublicCreatorText(speciesCharacteristics[species].professionLimitations)}</p>
-        </div>
       </div>
     );
   };
@@ -1498,7 +1392,9 @@ const CharacterCreator = ({ onCreateCharacter }) => {
     .replace(/\bprofessions\b/gi, 'classes')
     .replace(/\bprofession\b/gi, 'class')
     .replace(/\braces\b/gi, 'categories')
-    .replace(/\brace\b/gi, 'category');
+    .replace(/\brace\b/gi, 'category')
+    .replace(/\bHand to Hand\b/gi, 'Close Combat')
+    .replace(/\bW\.P\.\b/g, 'Weapon Training');
 
   // Helper function to get skill base percentage for display
   const getSkillBasePercent = (skillName, professionName) => {
@@ -2203,12 +2099,11 @@ const CharacterCreator = ({ onCreateCharacter }) => {
 
   return (
     <div className="character-creation-page">
-      <div className="character-creation">
+      <div className="character-creation" style={{ display: 'flex', flexDirection: 'column' }}>
         <h1 className="page-title">Character Creator</h1>
         
-        {/* Basic Information Section */}
-        <section className="creation-section">
-          <h2 className="section-title">Basic Information</h2>
+        <section className="creation-section" style={{ order: 1 }}>
+          <h2 className="section-title">Identity</h2>
           
           <div className="form-row">
             <div className="form-group">
@@ -2251,33 +2146,6 @@ const CharacterCreator = ({ onCreateCharacter }) => {
 
           <div className="form-row">
             <div className="form-group">
-              <label htmlFor="species">Category</label>
-              <select
-                id="species"
-                value={species}
-                onChange={(e) => {
-                  setSpecies(e.target.value);
-                  setCharacterClass(''); // Reset class when species changes
-                  setProfessionData(null);
-                  setProfessionSkills([]);
-                  setElectiveSkills([]);
-                  setSecondarySkills([]);
-                  
-                  // Filter available professions based on race restrictions
-                  filterAvailableprofessions(e.target.value);
-                }}
-                disabled={attributesRolled}
-                className={attributesRolled ? 'disabled-select' : 'select-input'}
-              >
-                {Object.keys(speciesData).map((spec) => (
-                  <option key={spec} value={spec}>
-                    {spec}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="form-group">
               <label htmlFor="alignment-select">Alignment</label>
               <select
                 id="alignment-select"
@@ -2311,9 +2179,8 @@ const CharacterCreator = ({ onCreateCharacter }) => {
           </div>
         </section>
 
-        {/* Attributes Section */}
-        <section className="creation-section">
-          <h2 className="section-title">Attributes & Level</h2>
+        <section className="creation-section" style={{ order: 4 }}>
+          <h2 className="section-title">Ability Scores</h2>
           
           <div className="attributes-controls">
             <div className="checkbox-group">
@@ -2381,7 +2248,7 @@ const CharacterCreator = ({ onCreateCharacter }) => {
           </div>
         </section>
 
-      <table id="attributes-table">
+      <table id="attributes-table" style={{ order: 4 }}>
         <thead>
           <tr>
             <th>Attribute</th>
@@ -2422,8 +2289,91 @@ const CharacterCreator = ({ onCreateCharacter }) => {
         </tbody>
       </table>
 
+        <section className="creation-section" style={{ order: 5 }}>
+          <h2 className="section-title">Species / Category</h2>
+          <div className="form-group">
+            <label htmlFor="species">Category</label>
+            <select
+              id="species"
+              value={species}
+              onChange={(e) => {
+                setSpecies(e.target.value);
+                setCharacterClass('');
+                setProfessionData(null);
+                setProfessionSkills([]);
+                setElectiveSkills([]);
+                setSecondarySkills([]);
+                filterAvailableprofessions(e.target.value);
+              }}
+              disabled={attributesRolled}
+              className={attributesRolled ? 'disabled-select' : 'select-input'}
+            >
+              {Object.keys(speciesData).map((spec) => (
+                <option key={spec} value={spec}>
+                  {spec}
+                </option>
+              ))}
+            </select>
+          </div>
+        </section>
+
+        {(selectedPublicClass || selectedPublicBackground) && (
+          <section className="creation-section" style={{ order: 6 }}>
+            <h2 className="section-title">Proficiencies</h2>
+            {(publicSkillSuggestions.fixed.length > 0 || publicSkillSuggestions.background.length > 0) && (
+              <div className="background-info">
+                <h3>Suggested Proficiencies</h3>
+                <ul>
+                  {publicSkillSuggestions.fixed.map((skill) => (
+                    <li key={`fixed-${skill.id}`}>
+                      {skill.name}{skill.ability ? ` (${skill.ability.toUpperCase()})` : ''}
+                      {skill.description ? ` - ${skill.description}` : ''}
+                    </li>
+                  ))}
+                  {publicSkillSuggestions.background.map((skill) => (
+                    <li key={`background-${skill.id}`}>
+                      {skill.name}{skill.ability ? ` (${skill.ability.toUpperCase()})` : ''}
+                      {skill.description ? ` - ${skill.description}` : ''}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {publicSkillSuggestions.choices.length > 0 && (
+              <div className="background-info">
+                <h3>Selected Proficiencies</h3>
+                <p>
+                  Selected {publicSkillMetadata.choices.length}/{publicSkillSuggestions.choiceCount}
+                </p>
+                <div>
+                  {publicSkillSuggestions.choices.map((skill) => (
+                    <label
+                      key={`choice-${skill.id}`}
+                      style={{ display: 'block', marginBottom: '8px' }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedPublicSkillIds.includes(skill.id)}
+                        disabled={
+                          !selectedPublicSkillIds.includes(skill.id) &&
+                          publicSkillSuggestions.choiceCount > 0 &&
+                          publicSkillMetadata.choices.length >= publicSkillSuggestions.choiceCount
+                        }
+                        onChange={() => togglePublicSkillChoice(skill.id)}
+                      />
+                      {' '}
+                      {skill.name}{skill.ability ? ` (${skill.ability.toUpperCase()})` : ''}
+                      {skill.description ? ` - ${skill.description}` : ''}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+          </section>
+        )}
+
         {species === 'HUMAN' && (
-          <section className="creation-section">
+          <section className="creation-section" style={{ order: 5 }}>
             <h2 className="section-title">Human Visual Profile (v1)</h2>
             <HumanPreviewPanel
               stats={humanStatsForVisuals}
@@ -2433,9 +2383,24 @@ const CharacterCreator = ({ onCreateCharacter }) => {
         )}
 
 
-        {/* Random Rolls Section */}
-        <section className="creation-section">
-          <h2 className="section-title">Random Background Rolls</h2>
+        <section className="creation-section" style={{ order: 3 }}>
+          <h2 className="section-title">Background</h2>
+
+          <div className="form-group">
+            <label htmlFor="public-background">Background:</label>
+            <select
+              id="public-background"
+              value={publicBackgroundId}
+              onChange={(event) => setPublicBackgroundId(event.target.value)}
+              className="select-input"
+            >
+              {publicBackgrounds.map((background) => (
+                <option key={background.id} value={background.id}>
+                  {background.name}
+                </option>
+              ))}
+            </select>
+          </div>
           
           <div className="button-row">
             <Button 
@@ -2450,7 +2415,7 @@ const CharacterCreator = ({ onCreateCharacter }) => {
               disabled={socialBackground !== ''}
               className="secondary-button"
             >
-              Roll Social Background
+              Roll Personal History
             </Button>
             <Button 
               onClick={handleRollDisposition} 
@@ -2478,23 +2443,6 @@ const CharacterCreator = ({ onCreateCharacter }) => {
             </Button>
           </div>
 
-          <div className="form-group">
-            <label htmlFor="public-background">Background:</label>
-            <select
-              id="public-background"
-              value={publicBackgroundId}
-              onChange={(event) => setPublicBackgroundId(event.target.value)}
-              className="select-input"
-            >
-              {publicBackgrounds.map((background) => (
-                <option key={background.id} value={background.id}>
-                  {background.name}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Background Information Display */}
           <div className="background-info">
             <h3>Background Information</h3>
             {selectedPublicBackground && (
@@ -2509,11 +2457,11 @@ const CharacterCreator = ({ onCreateCharacter }) => {
                   <strong>Feature:</strong> {selectedPublicBackground.feature}
                 </div>
                 <div className="info-item">
-                  <strong>Skill Proficiencies:</strong> {selectedPublicBackground.skillProficiencies.join(', ')}
+                <strong>Proficiencies:</strong> {publicSkillSuggestions.background.map((skill) => skill.name).join(', ')}
                 </div>
                 {(selectedPublicBackground.toolProficiencies || []).length > 0 && (
                   <div className="info-item">
-                    <strong>Tool Proficiencies:</strong> {selectedPublicBackground.toolProficiencies.join(', ')}
+                <strong>Tool Proficiencies:</strong> {selectedPublicBackground.toolProficiencies.join(', ')}
                   </div>
                 )}
                 {(selectedPublicBackground.equipmentTags || []).length > 0 && (
@@ -2528,7 +2476,7 @@ const CharacterCreator = ({ onCreateCharacter }) => {
                 <strong>Age:</strong> {age || "Not rolled"}
               </div>
               <div className="info-item">
-                <strong>Social Background:</strong> {socialBackground || "Not rolled"}
+                <strong>Personal History:</strong> {socialBackground || "Not rolled"}
               </div>
               <div className="info-item">
                 <strong>Disposition:</strong> {disposition || "Not rolled"}
@@ -2543,9 +2491,8 @@ const CharacterCreator = ({ onCreateCharacter }) => {
           </div>
         </section>
 
-        {/* Tactics Section */}
         {attributes.IQ && species && (
-          <section className="creation-section">
+          <section className="creation-section" style={{ order: 9 }}>
             <h2 className="section-title">Tactics</h2>
             <TacticsRoll
               IQ={attributes.IQ}
@@ -2556,9 +2503,8 @@ const CharacterCreator = ({ onCreateCharacter }) => {
           </section>
         )}
 
-        {/* Class Selection & Level */}
-        <section className="creation-section">
-          <h2 className="section-title">Class Selection & Level</h2>
+        <section className="creation-section" style={{ order: 2 }}>
+          <h2 className="section-title">Class</h2>
           
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '20px' }}>
             {/* Class Selection Column */}
@@ -3015,6 +2961,7 @@ const CharacterCreator = ({ onCreateCharacter }) => {
                           ['Hand to Hand: Basic', 'Hand to Hand: Expert', 'Hand to Hand: Mercenary', 
                            'Hand to Hand: Knight', 'Hand to Hand: Assassin', 'Hand to Hand: Martial Arts',
                            'Boxing', 'Wrestling', 'Acrobatics', 'Gymnastics'].includes(skill))
+                        .map((skill) => formatPublicCreatorText(skill))
                         .join(', ') || 'Your combat skills'}</p>
                     </div>
                   )}
@@ -3068,8 +3015,8 @@ const CharacterCreator = ({ onCreateCharacter }) => {
           )}
         </section>
 
-        {/* Action Buttons */}
-        <section className="creation-section action-section">
+        <section className="creation-section action-section" style={{ order: 8 }}>
+          <h2 className="section-title">Review / Create</h2>
           <div className="button-row">
             <Button 
               onClick={handleSubmit} 
@@ -3094,8 +3041,8 @@ const CharacterCreator = ({ onCreateCharacter }) => {
       )} */}
 
       {attributes.PS && (
-        <div className="carry-weight-section">
-          <h3>Carry Weight Calculations</h3>
+        <div className="carry-weight-section" style={{ order: 7 }}>
+          <h3>Equipment</h3>
           <p>Maximum Carry Weight: {attributes.PS * 10} lbs</p>
           <p>Light Activity Duration: {attributes.PE * 2} minutes</p>
           <p>Heavy Activity Duration: {attributes.PE} minutes</p>
@@ -3175,7 +3122,7 @@ const CharacterCreator = ({ onCreateCharacter }) => {
                     
                     return availableElectiveSkills.map((skill, idx) => {
                       const skillData = gameData.skills?.[skill];
-                      const formattedSkill = formatSkillWithPercent(skill, professionData.name, parseInt(pendingLevelChange) || parseInt(level) || 1);
+                      const formattedSkill = formatPublicCreatorText(formatSkillWithPercent(skill, professionData.name, parseInt(pendingLevelChange) || parseInt(level) || 1));
                       return (
                         <option key={idx} value={skill} title={skillData?.description || skill}>
                           {formattedSkill}
@@ -3228,7 +3175,7 @@ const CharacterCreator = ({ onCreateCharacter }) => {
                   {(SECONDARY_SKILLS || gameData.secondarySkills || [])
                     ?.filter(skill => !secondarySkills.includes(skill) && !isSkillInProfessionSkills(skill, professionSkills))
                     .map((skill, idx) => {
-                      const formattedSkill = formatSkillWithPercent(skill, professionData.name, parseInt(pendingLevelChange) || parseInt(level) || 1);
+                      const formattedSkill = formatPublicCreatorText(formatSkillWithPercent(skill, professionData.name, parseInt(pendingLevelChange) || parseInt(level) || 1));
                       return (
                         <option key={idx} value={skill} title={`Basic skill: ${skill}`}>
                           {formattedSkill}
