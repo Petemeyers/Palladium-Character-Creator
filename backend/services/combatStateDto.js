@@ -10,6 +10,24 @@ function getEntityTeam(entity) {
   return entity?.meta?.team || entity?.meta?.teamId || null;
 }
 
+function getPublicMetadata(source) {
+  const metadata = {};
+  [
+    "ruleset",
+    "sizePolicy",
+    "legacyCompatibility",
+    "publicClassId",
+    "publicClassName",
+    "publicBackgroundId",
+    "publicBackgroundName",
+    "publicSkillProficiencies",
+    "publicSkillChoices",
+  ].forEach((key) => {
+    if (source?.[key] !== undefined) metadata[key] = source[key];
+  });
+  return metadata;
+}
+
 function isFighterEntity(entity) {
   if (!entity?.id) return false;
   if (entity?.meta?.isFighter === false) return false;
@@ -119,6 +137,7 @@ export function buildCombatStateDto({ party, map, characters = [] }) {
         source?.species ||
         entity?.kind?.toLowerCase?.() ||
         "default",
+      ...getPublicMetadata(source),
     };
   }
 

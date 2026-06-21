@@ -35,6 +35,36 @@ const characterSchema = new mongoose.Schema({
     type: String,
     required: true,
   },
+  ruleset: {
+    type: String,
+    required: false,
+  },
+  sizePolicy: {
+    type: String,
+    required: false,
+  },
+  legacyCompatibility: {
+    type: Boolean,
+    required: false,
+  },
+  publicClassId: {
+    type: String,
+    required: false,
+  },
+  publicClassName: {
+    type: String,
+    required: false,
+  },
+  publicBackgroundId: {
+    type: String,
+    required: false,
+  },
+  publicBackgroundName: {
+    type: String,
+    required: false,
+  },
+  publicSkillProficiencies: [String],
+  publicSkillChoices: [String],
   attributes: {
     type: Map,
     of: mongoose.Schema.Types.Mixed,
