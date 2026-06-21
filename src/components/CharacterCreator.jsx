@@ -43,6 +43,7 @@ import {
   getPublicBackgrounds,
   getPublicClassById,
   getPublicClasses,
+  getPublicSkillById,
 } from '../utils/publicClassAdapter.js';
 import {
   DUELIST_COMMON_TECHNIQUE_NAMES,
@@ -135,6 +136,7 @@ const CharacterCreator = ({ onCreateCharacter }) => {
   const [useCryptoRandom, setUseCryptoRandom] = useState(false);
   const [characterClass, setCharacterClass] = useState('');
   const [publicClassId, setPublicClassId] = useState('');
+  const [selectedPublicSkillIds, setSelectedPublicSkillIds] = useState([]);
   const [availableClasses, setAvailableClasses] = useState([]);
   const [filteredClasses, setFilteredClasses] = useState([]);
   const [tactics, setTactics] = useState(null);
@@ -160,11 +162,69 @@ const CharacterCreator = ({ onCreateCharacter }) => {
   });
   const [, setVisualProfile] = useState(null);
   const publicClasses = useMemo(() => getPublicClasses(), []);
+  const selectedPublicClass = useMemo(
+    () => getPublicClassById(publicClassId),
+    [publicClassId]
+  );
   const publicBackgrounds = useMemo(() => getPublicBackgrounds(), []);
   const selectedPublicBackground = useMemo(
     () => getPublicBackgroundById(publicBackgroundId) || getPublicBackgroundById('soldier'),
     [publicBackgroundId]
   );
+  const publicSkillSuggestions = useMemo(() => {
+    const fixedSkillIds = selectedPublicClass?.fixedSkills || [];
+    const choiceSkillIds = selectedPublicClass?.skillChoices?.from || [];
+    const backgroundSkillIds = selectedPublicBackground?.skillProficiencies || [];
+    const formatSkill = (skillId) => {
+      const skill = getPublicSkillById(skillId);
+      return {
+        id: skillId,
+        name: skill?.name || skillId,
+        ability: skill?.ability || '',
+        description: skill?.description || '',
+      };
+    };
+
+    return {
+      fixed: fixedSkillIds.map(formatSkill),
+      choices: choiceSkillIds.map(formatSkill),
+      choiceCount: selectedPublicClass?.skillChoices?.choose || 0,
+      background: backgroundSkillIds.map(formatSkill),
+      proficiencyIds: [...new Set([...fixedSkillIds, ...backgroundSkillIds])],
+      choiceIds: [...new Set(choiceSkillIds)],
+    };
+  }, [selectedPublicClass, selectedPublicBackground]);
+  const publicSkillMetadata = useMemo(() => {
+    const validSelectedChoices = selectedPublicSkillIds.filter((skillId) =>
+      publicSkillSuggestions.choiceIds.includes(skillId)
+    );
+
+    return {
+      proficiencies: [...new Set([...publicSkillSuggestions.proficiencyIds, ...validSelectedChoices])],
+      choices: [...new Set(validSelectedChoices)],
+    };
+  }, [publicSkillSuggestions.choiceIds, publicSkillSuggestions.proficiencyIds, selectedPublicSkillIds]);
+
+  useEffect(() => {
+    setSelectedPublicSkillIds((current) =>
+      current.filter((skillId) => publicSkillSuggestions.choiceIds.includes(skillId))
+    );
+  }, [publicSkillSuggestions.choiceIds]);
+
+  const togglePublicSkillChoice = (skillId) => {
+    setSelectedPublicSkillIds((current) => {
+      if (current.includes(skillId)) {
+        return current.filter((id) => id !== skillId);
+      }
+
+      const choiceLimit = publicSkillSuggestions.choiceCount;
+      if (choiceLimit > 0 && current.length >= choiceLimit) {
+        return current;
+      }
+
+      return [...current, skillId];
+    });
+  };
 
   const humanStatsForVisuals = useMemo(() => {
     const ageNum = Number(age);
@@ -869,6 +929,8 @@ const CharacterCreator = ({ onCreateCharacter }) => {
         publicClassName: professionData?.publicClassName,
         publicBackgroundId,
         publicBackgroundName: selectedPublicBackground?.name,
+        publicSkillProficiencies: publicSkillMetadata.proficiencies,
+        publicSkillChoices: publicSkillMetadata.choices,
         level: Number(level) || 1, // Use actual level state
       hp: Number(hp),
       alignment,
@@ -997,6 +1059,8 @@ const CharacterCreator = ({ onCreateCharacter }) => {
         publicClassName: professionData?.publicClassName || undefined,
         publicBackgroundId: selectedPublicBackground?.id || publicBackgroundId || undefined,
         publicBackgroundName: selectedPublicBackground?.name || undefined,
+        publicSkillProficiencies: publicSkillMetadata.proficiencies,
+        publicSkillChoices: publicSkillMetadata.choices,
         species,
         class: characterClass,
         profession: characterClass, // Set profession to same as class
@@ -1206,6 +1270,61 @@ const CharacterCreator = ({ onCreateCharacter }) => {
                     <li key={idx}>{ability}</li>
                   ))}
                 </ul>
+              </div>
+            )}
+          </div>
+        )}
+
+        {(selectedPublicClass || selectedPublicBackground) && (
+          <div className="profession-data">
+            <h4>Suggested Proficiencies</h4>
+            {(publicSkillSuggestions.fixed.length > 0 || publicSkillSuggestions.background.length > 0) && (
+              <div>
+                <strong>Fixed Proficiencies:</strong>
+                <ul>
+                  {publicSkillSuggestions.fixed.map((skill) => (
+                    <li key={`fixed-${skill.id}`}>
+                      {skill.name}{skill.ability ? ` (${skill.ability.toUpperCase()})` : ''}
+                      {skill.description ? ` - ${skill.description}` : ''}
+                    </li>
+                  ))}
+                  {publicSkillSuggestions.background.map((skill) => (
+                    <li key={`background-${skill.id}`}>
+                      {skill.name}{skill.ability ? ` (${skill.ability.toUpperCase()})` : ''}
+                      {skill.description ? ` - ${skill.description}` : ''}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {publicSkillSuggestions.choices.length > 0 && (
+              <div>
+                <strong>Choose Additional Proficiencies:</strong>
+                <p>
+                  Selected {publicSkillMetadata.choices.length}/{publicSkillSuggestions.choiceCount}
+                </p>
+                <div>
+                  {publicSkillSuggestions.choices.map((skill) => (
+                    <label
+                      key={`choice-${skill.id}`}
+                      style={{ display: 'block', marginBottom: '8px' }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedPublicSkillIds.includes(skill.id)}
+                        disabled={
+                          !selectedPublicSkillIds.includes(skill.id) &&
+                          publicSkillSuggestions.choiceCount > 0 &&
+                          publicSkillMetadata.choices.length >= publicSkillSuggestions.choiceCount
+                        }
+                        onChange={() => togglePublicSkillChoice(skill.id)}
+                      />
+                      {' '}
+                      {skill.name}{skill.ability ? ` (${skill.ability.toUpperCase()})` : ''}
+                      {skill.description ? ` - ${skill.description}` : ''}
+                    </label>
+                  ))}
+                </div>
               </div>
             )}
           </div>
