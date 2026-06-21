@@ -14,6 +14,7 @@ import ErrorBoundary from './components/ErrorBoundary';
 import { syncEquistaminadWeapons } from './utils/weaponManager';
 import ArenaRosterPanel from './components/ArenaRosterPanel';
 import { isBackendOfflineError, markBackendOffline } from './utils/backendStatus';
+import { DEV_AUTH_BYPASS_USER, isDevAuthBypassEnabled } from './utils/devAuthBypass';
 
 // Lazy load heavy components
 import {
@@ -51,6 +52,7 @@ CharacterSheetWrastaminar.propTypes = {
 };
 
 function App() {
+  const devAuthBypassEnabled = isDevAuthBypassEnabled();
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [loading, setLoading] = useState(true);
   const [characters, setCharacters] = useState([]);
@@ -96,17 +98,29 @@ function App() {
   }, []);
 
   useEffect(() => {
+    if (devAuthBypassEnabled) {
+      localStorage.setItem('user', JSON.stringify(DEV_AUTH_BYPASS_USER));
+      setIsAuthenticated(true);
+      setLoading(false);
+      return;
+    }
+
     const token = localStorage.getItem('token');
     setIsAuthenticated(!!token);
     setLoading(false);
-  }, []);
+  }, [devAuthBypassEnabled]);
 
   useEffect(() => {
+    if (devAuthBypassEnabled && !dataLoaded) {
+      setDataLoaded(true);
+      return;
+    }
+
     if (isAuthenticated && !dataLoaded) {
       fetchCharacters();
       fetchParties();
     }
-  }, [isAuthenticated, dataLoaded, fetchCharacters, fetchParties]);
+  }, [devAuthBypassEnabled, isAuthenticated, dataLoaded, fetchCharacters, fetchParties]);
 
   const handleUpdateCharacter = useCallback(async (characterId, updates) => {
     try {
@@ -209,6 +223,20 @@ function App() {
   return (
     <ErrorBoundary>
       {showNavbar && <Navbar />}
+      {devAuthBypassEnabled && (
+        <div
+          style={{
+            background: '#fff3cd',
+            borderBottom: '1px solid #f6c343',
+            color: '#5c4500',
+            fontWeight: 700,
+            padding: '8px 16px',
+            textAlign: 'center',
+          }}
+        >
+          Dev auth bypass enabled
+        </div>
+      )}
       <Routes>
         <Route path="/login" element={isAuthenticated ? <Navigate to="/" /> : <Login />} />
         <Route path="/" element={<PrivateRoute><HomePage /></PrivateRoute>} />
