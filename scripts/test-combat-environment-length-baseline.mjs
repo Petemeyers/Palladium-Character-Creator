@@ -94,7 +94,7 @@ function testLengthPolicyGatePreservesCurrentLength() {
   const neutralPolicy = {
     species: "Heavy Fighter",
     race: "Heavy Fighter",
-    sizePolicy: "5e-neutral",
+    sizePolicy: "neutral-size",
   };
 
   assert.equal(getWeaponLength(SPEAR, defaultPolicy), 6);

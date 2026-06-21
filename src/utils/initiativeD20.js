@@ -1,4 +1,4 @@
-import { getDexModifier, normalize5eCombatant } from "./normalize5eCombatant.js";
+import { getDexModifier, normalizeCombatant } from "./normalizeCombatant.js";
 
 function firstNumber(...values) {
   for (const value of values) {
@@ -9,7 +9,7 @@ function firstNumber(...values) {
 }
 
 export function getInitiativeModifier(combatant = {}) {
-  const normalized = normalize5eCombatant(combatant);
+  const normalized = normalizeCombatant(combatant);
   const dexModifier = firstNumber(normalized.abilityMods?.dex) ?? getDexModifier(normalized);
   const initiativeBonus = firstNumber(combatant?.initiativeBonus) ?? 0;
 
@@ -20,7 +20,7 @@ export function getInitiativeModifier(combatant = {}) {
   };
 }
 
-export function rollInitiative5e(combatant = {}, options = {}) {
+export function rollInitiativeD20(combatant = {}, options = {}) {
   const d20Roll = firstNumber(options.d20Roll, options.roll) ?? 1;
   const { dexModifier, initiativeBonus, totalModifier } = getInitiativeModifier(combatant);
 

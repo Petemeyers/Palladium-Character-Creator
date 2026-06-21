@@ -5,11 +5,11 @@
 
 import { getAdjustedWeaponDamage } from './weaponSizeSystem.js';
 import {
-  getAdjustedWeaponDamage5e,
-  getCreatureSize5e,
-  getCreatureSizeRank5e,
+  getNeutralWeaponDamage,
+  getCreatureSize,
+  getCreatureSizeRank,
   getLegacyWeaponSizeCompatibility,
-} from "./size5eAdapter.js";
+} from "./publicRulesAdapter.js";
 
 /**
  * Weapon slot types
@@ -22,8 +22,8 @@ export const WEAPON_SLOTS = {
 
 export function getWeaponSlotSizeContext(character) {
   return {
-    creatureSize: getCreatureSize5e(character),
-    sizeRank: getCreatureSizeRank5e(character),
+    creatureSize: getCreatureSize(character),
+    sizeRank: getCreatureSizeRank(character),
     legacySizeContext: getLegacyWeaponSizeCompatibility(character),
   };
 }
@@ -333,8 +333,8 @@ export function getWeaponDamage(weapon, usingTwoHanded = false, character = null
 
   // Apply weapon size modifiers based on race (heavy +1 die, gnome reduced)
   if (character) {
-    if (character.sizePolicy === "5e-neutral") {
-      damage = getAdjustedWeaponDamage5e(damage, character);
+    if (character.sizePolicy === "neutral-size") {
+      damage = getNeutralWeaponDamage(damage, character);
     } else {
       const race = character.species || character.race;
       if (race) {

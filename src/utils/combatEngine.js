@@ -31,11 +31,11 @@ import {
 
 import { getAdjustedWeaponDamage } from "./weaponSizeSystem.js";
 import {
-  getAdjustedWeaponDamage5e,
-  getCreatureSize5e,
-  getCreatureSizeRank5e,
+  getNeutralWeaponDamage,
+  getCreatureSize,
+  getCreatureSizeRank,
   getLegacyWeaponSizeCompatibility,
-} from "./size5eAdapter.js";
+} from "./publicRulesAdapter.js";
 
 import {
   initializeGrappleState,
@@ -112,8 +112,8 @@ import { castCourage, castRemoveFear } from "./fearTechniqueSystem.js";
 
 export function getCombatEngineSizeContext(combatant) {
   return {
-    creatureSize: getCreatureSize5e(combatant),
-    sizeRank: getCreatureSizeRank5e(combatant),
+    creatureSize: getCreatureSize(combatant),
+    sizeRank: getCreatureSizeRank(combatant),
     legacySizeContext: getLegacyWeaponSizeCompatibility(combatant),
   };
 }
@@ -927,8 +927,8 @@ export class CombatEngine {
       
       // Apply weapon size modifiers (heavy +1 die, gnome reduced damage)
       damageFormula =
-        attacker?.sizePolicy === "5e-neutral"
-          ? getAdjustedWeaponDamage5e(weapon.damage, attacker)
+        attacker?.sizePolicy === "neutral-size"
+          ? getNeutralWeaponDamage(weapon.damage, attacker)
           : getAdjustedWeaponDamage(weapon.damage, race);
       
       // Parse damage dice (e.g., "1d8", "2d6+3")

@@ -11,17 +11,17 @@ import { getReachAttackModifiers, needsToCloseDistance, attemptCloseDistance } f
 import { getWeaponBonuses } from './weaponSlotManager.js';
 import { getAdjustedWeaponDamage, getWeaponSizeForRace, WEAPON_SIZE } from './weaponSizeSystem.js';
 import {
-  getCreatureSize5e,
-  getCreatureSizeRank5e,
+  getCreatureSize,
+  getCreatureSizeRank,
   getLegacyWeaponSizeCompatibility,
-  getWeaponSizePolicy5e,
-} from "./size5eAdapter.js";
+  getWeaponSizePolicy,
+} from "./publicRulesAdapter.js";
 import { getSizeCategory, SIZE_CATEGORIES } from './sizeStrengthModifiers.js';
 
 export function getWeaponBonusAISizeContext(combatant) {
   return {
-    creatureSize: getCreatureSize5e(combatant),
-    sizeRank: getCreatureSizeRank5e(combatant),
+    creatureSize: getCreatureSize(combatant),
+    sizeRank: getCreatureSizeRank(combatant),
     legacySizeContext: getLegacyWeaponSizeCompatibility(combatant),
   };
 }
@@ -161,8 +161,8 @@ export function evaluateWeaponBonuses(weapon, attacker, defender, defenderWeapon
   // 6. Weapon size bonus (heavy races get +1 die)
   const race = attacker.species || attacker.race;
   getWeaponBonusAISizeContext(attacker);
-  if (attacker.sizePolicy === "5e-neutral") {
-    getWeaponSizePolicy5e(weapon, attacker);
+  if (attacker.sizePolicy === "neutral-size") {
+    getWeaponSizePolicy(weapon, attacker);
   } else if (race) {
     const weaponSize = getWeaponSizeForRace(race);
     if (weaponSize === WEAPON_SIZE.LARGE_HEAVY) {

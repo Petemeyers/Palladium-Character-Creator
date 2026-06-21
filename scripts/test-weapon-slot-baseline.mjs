@@ -196,7 +196,7 @@ function testWeaponDamagePolicyGate() {
   assert.equal(
     getWeaponDamage(LONGSWORD, false, {
       species: "Heavy Fighter",
-      sizePolicy: "5e-neutral",
+      sizePolicy: "neutral-size",
     }),
     "1d8"
   );

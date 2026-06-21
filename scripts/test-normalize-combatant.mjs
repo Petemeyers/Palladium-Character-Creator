@@ -10,16 +10,16 @@ import {
   getSpeed,
   getStrModifier,
   getTemporaryHitPoints,
-  normalize5eCombatant,
-} from "../src/utils/normalize5eCombatant.js";
+  normalizeCombatant,
+} from "../src/utils/normalizeCombatant.js";
 import * as actionEconomy from "../src/utils/actionEconomy.js";
 import {
   getInitiativeModifier,
-  rollInitiative5e,
-} from "../src/utils/initiative5e.js";
+  rollInitiativeD20,
+} from "../src/utils/initiativeD20.js";
 
 function testLegacyAbilityMapping() {
-  const normalized = normalize5eCombatant({
+  const normalized = normalizeCombatant({
     PS: 16,
     PP: 14,
     PE: 12,
@@ -41,7 +41,7 @@ function testLegacyAbilityMapping() {
 }
 
 function testModernAbilityPreference() {
-  const normalized = normalize5eCombatant({
+  const normalized = normalizeCombatant({
     str: 18,
     dex: 17,
     con: 16,
@@ -81,30 +81,30 @@ function testProficiencyProgression() {
 }
 
 function testPolicyMetadataDefaults() {
-  const normalized = normalize5eCombatant({});
-  assert.equal(normalized.ruleset, "5e-compatible");
+  const normalized = normalizeCombatant({});
+  assert.equal(normalized.ruleset, "core-d20");
   assert.equal(normalized.sizePolicy, "legacy-compatible");
   assert.equal(normalized.legacyCompatibility, true);
 }
 
 function testPolicyMetadataPreservation() {
-  const normalized = normalize5eCombatant({
+  const normalized = normalizeCombatant({
     ruleset: "custom-ruleset",
-    sizePolicy: "5e-neutral",
+    sizePolicy: "neutral-size",
     legacyCompatibility: false,
   });
   assert.equal(normalized.ruleset, "custom-ruleset");
-  assert.equal(normalized.sizePolicy, "5e-neutral");
+  assert.equal(normalized.sizePolicy, "neutral-size");
   assert.equal(normalized.legacyCompatibility, false);
 }
 
 function testPolicyMetadataFallbacks() {
   assert.equal(
-    normalize5eCombatant({ legacyCompatibility: "false" }).legacyCompatibility,
+    normalizeCombatant({ legacyCompatibility: "false" }).legacyCompatibility,
     true
   );
   assert.equal(
-    normalize5eCombatant({ legacyCompatibility: null }).legacyCompatibility,
+    normalizeCombatant({ legacyCompatibility: null }).legacyCompatibility,
     true
   );
 }
@@ -142,7 +142,7 @@ function testHitPointPrecedence() {
   assert.equal(getTemporaryHitPoints({}), 0);
   assert.equal(getTemporaryHitPoints({ temporaryHitPoints: 3 }), 3);
 
-  const normalized = normalize5eCombatant({
+  const normalized = normalizeCombatant({
     hp: 8,
     currentHp: 7,
     maxHp: 20,
@@ -157,7 +157,7 @@ function testHitPointPrecedence() {
 }
 
 function testActionEconomyExports() {
-  const economy = actionEconomy.create5eActionEconomy({ movement: 25 });
+  const economy = actionEconomy.createActionEconomy({ movement: 25 });
   assert.equal(actionEconomy.getActionsPerTurn(), 1);
   assert.equal(actionEconomy.hasAction(economy), true);
   assert.equal(actionEconomy.hasBonusAction(economy), true);
@@ -174,7 +174,7 @@ function testActionEconomyExports() {
 
 function testLegacyFighterPassthrough() {
   const position = { x: 2, y: 3 };
-  const normalized = normalize5eCombatant({
+  const normalized = normalizeCombatant({
     id: "fighter-1",
     _id: "fighter-1",
     name: "Arena Guard",
@@ -223,14 +223,14 @@ function testLegacyFighterPassthrough() {
   assert.equal(normalized.actionEconomy.movement, 30);
 }
 
-function testInitiative5e() {
+function testInitiativeD20() {
   assert.equal(getInitiativeModifier({ dex: 10 }).totalModifier, 0);
   assert.equal(getInitiativeModifier({ dex: 14 }).totalModifier, 2);
   assert.equal(getInitiativeModifier({ PP: 14 }).totalModifier, 2);
   assert.equal(getInitiativeModifier({ dex: 14, initiativeBonus: 3 }).totalModifier, 5);
   assert.equal(getInitiativeModifier({ dex: 10, initiative: 19 }).totalModifier, 0);
 
-  const rolled = rollInitiative5e({ dex: 14, initiativeBonus: 3 }, { d20Roll: 10 });
+  const rolled = rollInitiativeD20({ dex: 14, initiativeBonus: 3 }, { d20Roll: 10 });
   assert.equal(rolled.d20Roll, 10);
   assert.equal(rolled.dexModifier, 2);
   assert.equal(rolled.initiativeBonus, 3);
@@ -250,8 +250,8 @@ function run() {
   testHitPointPrecedence();
   testActionEconomyExports();
   testLegacyFighterPassthrough();
-  testInitiative5e();
-  console.log("5E normalization tests passed.");
+  testInitiativeD20();
+  console.log("combatant normalization tests passed.");
 }
 
 run();

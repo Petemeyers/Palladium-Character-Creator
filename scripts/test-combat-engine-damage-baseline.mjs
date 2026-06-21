@@ -19,13 +19,13 @@ async function loadCombatEngine() {
   const weaponSizeModuleUrl = pathToFileURL(
     resolve(repoRoot, "src/utils/weaponSizeSystem.js"),
   ).href;
-  const size5eAdapterModuleUrl = pathToFileURL(
-    resolve(repoRoot, "src/utils/size5eAdapter.js"),
+  const publicRulesAdapterModuleUrl = pathToFileURL(
+    resolve(repoRoot, "src/utils/publicRulesAdapter.js"),
   ).href;
 
   const prelude = `
 import { getAdjustedWeaponDamage } from ${JSON.stringify(weaponSizeModuleUrl)};
-import { getAdjustedWeaponDamage5e, getCreatureSize5e, getCreatureSizeRank5e, getLegacyWeaponSizeCompatibility } from ${JSON.stringify(size5eAdapterModuleUrl)};
+import { getNeutralWeaponDamage, getCreatureSize, getCreatureSizeRank, getLegacyWeaponSizeCompatibility } from ${JSON.stringify(publicRulesAdapterModuleUrl)};
 const CryptoSecureDice = {
   parseAndRoll(formula) {
     const match = String(formula).trim().match(/^(\\d+)d(\\d+)(?:\\+(\\d+))?$/);
@@ -219,7 +219,7 @@ function testDamagePolicyGate() {
   );
   assert.equal(
     engine.calculateDamage(
-      { species: "Heavy Fighter", sizePolicy: "5e-neutral" },
+      { species: "Heavy Fighter", sizePolicy: "neutral-size" },
       LONGSWORD,
     ),
     8,

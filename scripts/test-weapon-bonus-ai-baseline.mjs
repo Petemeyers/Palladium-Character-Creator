@@ -207,7 +207,7 @@ function testWeaponSizePolicyGate() {
       species: "Heavy Fighter",
       race: "Heavy Fighter",
       size: "Medium",
-      sizePolicy: "5e-neutral",
+      sizePolicy: "neutral-size",
     },
     MEDIUM_DEFENDER,
     null,

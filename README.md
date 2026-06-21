@@ -1,6 +1,6 @@
 # Medieval Combat Simulator
 
-Medieval Combat Simulator is a 5E-compatible tactical combat simulator with original hex movement, advanced grappling, precision targeting, projectile impact mapping, terrain, fog of war, morale, routing, fatigue, and animated combat playback.
+Medieval Combat Simulator is a core d20-compatible tactical combat simulator with original hex movement, advanced grappling, precision targeting, projectile impact mapping, terrain, fog of war, morale, routing, fatigue, and animated combat playback.
 
 The active game identity is original:
 

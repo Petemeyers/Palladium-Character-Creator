@@ -56,7 +56,7 @@ const AutoRollDemo = () => {
         <Alert status="info">
           <AlertIcon />
           <Text fontSize="sm">
-            <strong>Auto-Roll Features:</strong> HP, AC, Speed, and abilities are shown using the current 5E compatibility layer.
+            <strong>Auto-Roll Features:</strong> HP, AC, Speed, and abilities are shown using the current core d20 compatibility layer.
           </Text>
         </Alert>
 

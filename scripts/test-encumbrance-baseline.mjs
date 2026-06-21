@@ -20,8 +20,8 @@ async function loadEncumbranceModule() {
       `import { getAdjustedWeaponWeight as __legacyGetAdjustedWeaponWeight } from ${JSON.stringify(pathToFileURL(resolve(repoRoot, "src/utils/weaponSizeSystem.js")).href)};\nconst movementData = ${JSON.stringify(movementData)};`
     )
     .replace(
-      /import\s+\{\s*getAdjustedWeaponWeight5e,\s*getCreatureSize5e,\s*getLegacyWeaponSizeCompatibility,\s*\}\s+from\s+"\.\/size5eAdapter\.js";/,
-      `import { getAdjustedWeaponWeight5e, getCreatureSize5e, getLegacyWeaponSizeCompatibility } from ${JSON.stringify(pathToFileURL(resolve(repoRoot, "src/utils/size5eAdapter.js")).href)};`
+      /import\s+\{\s*getNeutralWeaponWeight,\s*getCreatureSize,\s*getLegacyWeaponSizeCompatibility,\s*\}\s+from\s+"\.\/publicRulesAdapter\.js";/,
+      `import { getNeutralWeaponWeight, getCreatureSize, getLegacyWeaponSizeCompatibility } from ${JSON.stringify(pathToFileURL(resolve(repoRoot, "src/utils/publicRulesAdapter.js")).href)};`
     )
     .replace(
       "const { getAdjustedWeaponWeight } = require('./weaponSizeSystem.js');",
@@ -161,7 +161,7 @@ function testWeaponWeightPolicyGate() {
   };
   const neutralPolicy = {
     ...defaultPolicy,
-    sizePolicy: "5e-neutral",
+    sizePolicy: "neutral-size",
   };
 
   assert.equal(calculateEncumbrance(inventory, defaultPolicy), 10);

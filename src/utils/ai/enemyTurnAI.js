@@ -42,10 +42,10 @@ import { canFly, isFlying, getAltitude } from "../abilitySystem";
 import { getSizeCategory, SIZE_CATEGORIES } from "../sizeStrengthModifiers";
 import { getWeaponSizeForRace, WEAPON_SIZE } from "../weaponSizeSystem";
 import {
-  getCreatureSize5e,
-  getCreatureSizeRank5e,
+  getCreatureSize,
+  getCreatureSizeRank,
   getLegacyWeaponSizeCompatibility,
-} from "../size5eAdapter";
+} from "../publicRulesAdapter";
 import combatantBehaviorData from "../../data/combatantBehavior.json";
 import {
   spendFlyingStamina,
@@ -693,8 +693,8 @@ function isTinyOrSmallAnimal(target) {
 
 function getEnemyAISizeContext(combatant) {
   return {
-    creatureSize: getCreatureSize5e(combatant),
-    sizeRank: getCreatureSizeRank5e(combatant),
+    creatureSize: getCreatureSize(combatant),
+    sizeRank: getCreatureSizeRank(combatant),
     legacySizeContext: getLegacyWeaponSizeCompatibility(combatant),
   };
 }
@@ -708,7 +708,7 @@ function isScoutSizedTarget(target) {
   if (!target) return false;
 
   const sizeContext = getEnemyAISizeContext(target);
-  if (target.sizePolicy === "5e-neutral") {
+  if (target.sizePolicy === "neutral-size") {
     return (
       sizeContext.creatureSize === "Tiny" ||
       sizeContext.creatureSize === "Small"

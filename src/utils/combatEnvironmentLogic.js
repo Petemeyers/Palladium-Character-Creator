@@ -21,16 +21,16 @@ import {
   hasClosedDistance,
 } from "./reachCombatRules.js";
 import {
-  getAdjustedWeaponLength5e,
-  getCreatureSize5e,
-  getCreatureSizeRank5e,
+  getNeutralWeaponLength,
+  getCreatureSize,
+  getCreatureSizeRank,
   getLegacyWeaponSizeCompatibility,
-} from "./size5eAdapter.js";
+} from "./publicRulesAdapter.js";
 
 export function getCombatEnvironmentSizeContext(character) {
   return {
-    creatureSize: getCreatureSize5e(character),
-    sizeRank: getCreatureSizeRank5e(character),
+    creatureSize: getCreatureSize(character),
+    sizeRank: getCreatureSizeRank(character),
     legacySizeContext: getLegacyWeaponSizeCompatibility(character),
   };
 }
@@ -153,8 +153,8 @@ export function getWeaponLength(weapon, character = null) {
 
   // Apply size adjustments for small/tiny races using normal-sized weapons
   if (character) {
-    if (character.sizePolicy === "5e-neutral") {
-      return getAdjustedWeaponLength5e(baseLength, character);
+    if (character.sizePolicy === "neutral-size") {
+      return getNeutralWeaponLength(baseLength, character);
     }
 
     try {

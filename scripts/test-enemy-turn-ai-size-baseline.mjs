@@ -13,12 +13,12 @@ async function loadEnemyTurnAI() {
 
   const sizeModuleUrl = pathToFileURL(resolve(repoRoot, "src/utils/sizeStrengthModifiers.js")).href;
   const weaponSizeModuleUrl = pathToFileURL(resolve(repoRoot, "src/utils/weaponSizeSystem.js")).href;
-  const size5eAdapterModuleUrl = pathToFileURL(resolve(repoRoot, "src/utils/size5eAdapter.js")).href;
+  const publicRulesAdapterModuleUrl = pathToFileURL(resolve(repoRoot, "src/utils/publicRulesAdapter.js")).href;
 
   const prelude = `
 import { getSizeCategory, SIZE_CATEGORIES } from ${JSON.stringify(sizeModuleUrl)};
 import { getWeaponSizeForRace, WEAPON_SIZE } from ${JSON.stringify(weaponSizeModuleUrl)};
-import { getCreatureSize5e, getCreatureSizeRank5e, getLegacyWeaponSizeCompatibility } from ${JSON.stringify(size5eAdapterModuleUrl)};
+import { getCreatureSize, getCreatureSizeRank, getLegacyWeaponSizeCompatibility } from ${JSON.stringify(publicRulesAdapterModuleUrl)};
 const CryptoSecureDice = { parseAndRoll: () => ({ totalWithBonus: 1 }), rollDice: () => ({ total: 1, totalWithBonus: 1 }) };
 const getRandomCombatTechnique = () => ({ name: "Test Technique", damage: "1d4" });
 const getFighterTechniques = () => [];
@@ -265,20 +265,20 @@ function testScoutSizedPolicyGate() {
     isScoutSizedTarget({ race: "Scout", sizePolicy: "unknown-policy" }),
     true
   );
-  assert.equal(isScoutSizedTarget({ sizePolicy: "5e-neutral", size: "Small" }), true);
-  assert.equal(isScoutSizedTarget({ sizePolicy: "5e-neutral", size: "Tiny" }), true);
-  assert.equal(isScoutSizedTarget({ sizePolicy: "5e-neutral", size: "Medium" }), false);
+  assert.equal(isScoutSizedTarget({ sizePolicy: "neutral-size", size: "Small" }), true);
+  assert.equal(isScoutSizedTarget({ sizePolicy: "neutral-size", size: "Tiny" }), true);
+  assert.equal(isScoutSizedTarget({ sizePolicy: "neutral-size", size: "Medium" }), false);
   assert.equal(
     isScoutSizedTarget({
       race: "Scout",
       species: "Scout",
       name: "Scout",
       size: "Medium",
-      sizePolicy: "5e-neutral",
+      sizePolicy: "neutral-size",
     }),
     false
   );
-  assert.equal(isScoutSizedTarget({ sizePolicy: "5e-neutral" }), false);
+  assert.equal(isScoutSizedTarget({ sizePolicy: "neutral-size" }), false);
   assert.equal(isScoutSizedTarget(null), false);
 }
 

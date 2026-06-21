@@ -134,9 +134,9 @@ import {
   getHitPoints,
   getMaxHitPoints,
   getTemporaryHitPoints,
-  normalize5eCombatant,
-} from "../utils/normalize5eCombatant.js";
-import { rollInitiative5e } from "../utils/initiative5e.js";
+  normalizeCombatant,
+} from "../utils/normalizeCombatant.js";
+import { rollInitiativeD20 } from "../utils/initiativeD20.js";
 import { calculateTotalHP } from "../utils/levelProgression.js";
 import { grantXPFromEnemy, getOpponentByName, calculateOpponentXP } from "../utils/enemyXP.js";
 import { weapons, getWeaponByName, arenaWhip } from "../data/weapons.js";
@@ -1807,7 +1807,7 @@ function CombatPage({ characters = [] }) {
 
   const normalizeCombatantForBattle = useCallback((combatant) => {
     if (!combatant) return combatant;
-    return normalizeFighter(normalize5eCombatant(combatant));
+    return normalizeFighter(normalizeCombatant(combatant));
   }, [normalizeFighter]);
 
   const getCombatantAC = useCallback((combatant) => getArmorClass(combatant), []);
@@ -23955,7 +23955,7 @@ function CombatPage({ characters = [] }) {
       newFighter.altitudeFeet = 0;
     }
 
-    // Normalize fighter to ensure IDs, moraleState, mentalState, and 5E-shaped adapter fields exist
+    // Normalize fighter to ensure IDs, moraleState, mentalState, and core d20 adapter fields exist
     newFighter = normalizeCombatantForBattle(newFighter);
 
     // Initialize ammo for ranged weapons
@@ -24448,7 +24448,7 @@ function CombatPage({ characters = [] }) {
     // Roll initiative for all fighters: d20 + DEX modifier + explicit initiative bonus
     let updatedFighters = combatRoster.map(rawFighter => {
       const fighter = sanitizeFighterForCombatStart(rawFighter);
-      const initiativeRoll = rollInitiative5e(fighter, {
+      const initiativeRoll = rollInitiativeD20(fighter, {
         d20Roll: CryptoSecureDice.rollD20(),
       });
       const d20 = initiativeRoll.d20Roll;

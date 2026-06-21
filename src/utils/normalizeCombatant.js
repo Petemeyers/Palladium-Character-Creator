@@ -137,7 +137,7 @@ export function getConModifier(combatant = {}) {
   return getAbilityModifier(getAbilityScore(combatant, "con", "PE"));
 }
 
-export function normalize5eCombatant(input = {}) {
+export function normalizeCombatant(input = {}) {
   const combatant = input || {};
   const str = getAbilityScore(combatant, "str", "PS");
   const dex = getAbilityScore(combatant, "dex", "PP");
@@ -166,7 +166,7 @@ export function normalize5eCombatant(input = {}) {
 
   return {
     ...combatant,
-    ruleset: combatant.ruleset !== undefined ? combatant.ruleset : "5e-compatible",
+    ruleset: combatant.ruleset !== undefined ? combatant.ruleset : "core-d20",
     sizePolicy: combatant.sizePolicy !== undefined ? combatant.sizePolicy : "legacy-compatible",
     legacyCompatibility:
       typeof combatant.legacyCompatibility === "boolean"
@@ -195,4 +195,4 @@ export function normalize5eCombatant(input = {}) {
   };
 }
 
-export default normalize5eCombatant;
+export default normalizeCombatant;

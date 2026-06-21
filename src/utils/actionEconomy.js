@@ -3,7 +3,7 @@
  * Manages attacks per combat round based on Medieval Combat Simulator rules
  */
 
-export function create5eActionEconomy(overrides = {}) {
+export function createActionEconomy(overrides = {}) {
   return {
     action: overrides.action ?? true,
     bonusAction: overrides.bonusAction ?? true,
@@ -31,19 +31,19 @@ export function hasReaction(actionEconomy = {}) {
 }
 
 export function spendAction(actionEconomy = {}) {
-  return { ...create5eActionEconomy(actionEconomy), action: false };
+  return { ...createActionEconomy(actionEconomy), action: false };
 }
 
 export function spendBonusAction(actionEconomy = {}) {
-  return { ...create5eActionEconomy(actionEconomy), bonusAction: false };
+  return { ...createActionEconomy(actionEconomy), bonusAction: false };
 }
 
 export function spendReaction(actionEconomy = {}) {
-  return { ...create5eActionEconomy(actionEconomy), reaction: false };
+  return { ...createActionEconomy(actionEconomy), reaction: false };
 }
 
 export function resetTurnActions(actionEconomy = {}) {
-  return create5eActionEconomy(actionEconomy);
+  return createActionEconomy(actionEconomy);
 }
 
 /**
@@ -208,7 +208,7 @@ export function formatAttacksRemaining(remaining, total) {
 }
 
 export default {
-  create5eActionEconomy,
+  createActionEconomy,
   getActionsPerTurn,
   hasAction,
   hasBonusAction,
