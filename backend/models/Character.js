@@ -123,6 +123,10 @@ const characterSchema = new mongoose.Schema({
     type: Number,
     required: false,
   },
+  publicDerivedStats: {
+    type: mongoose.Schema.Types.Mixed,
+    required: false,
+  },
   attributes: {
     type: Map,
     of: mongoose.Schema.Types.Mixed,

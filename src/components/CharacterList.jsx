@@ -12,6 +12,7 @@ import { getWeaponDisplayInfo, autoEquipWeapons, getAvailableWeapons, isWeapon }
 import { getEquipmentDisplayInfo, getTotalArmorRating, getTotalCarryingCapacity, getContainerCapacityBonus, isItemEquistaminad } from '../utils/equipmentManager';
 import { calculateStorageCapacity, calculateMonthlyCosts } from '../utils/storageManager';
 import { getUnifiedAbilities } from '../utils/unifiedAbilities';
+import { formatSignedModifier, getPublicDerivedStatsForCharacter } from '../utils/publicDerivedStats.js';
 import axiosInstance from '../utils/axiosConfig';
 import '../styles/CharacterList.css';
 
@@ -67,9 +68,11 @@ const getDisplayAbilityScores = (character) => {
     .filter(Boolean);
 };
 
-const getArmorDisplayValue = (character) => {
+const getArmorDisplayValue = (character, publicDerivedStats) => {
   const armorRating = getTotalArmorRating(character);
-  return armorRating > 0 ? armorRating : 'Not calculated';
+  if (armorRating > 0) return armorRating;
+  if (publicDerivedStats?.baseArmorClass) return publicDerivedStats.baseArmorClass;
+  return 'Not calculated';
 };
 
 const characterNames = [
@@ -540,6 +543,11 @@ const CharacterList = ({
               const displaySpecies = getDisplaySpeciesName(character);
               const displayAge = getDisplayAge(character);
               const publicAbilityScores = getDisplayAbilityScores(character);
+              const publicDerivedStats = getPublicDerivedStatsForCharacter(character);
+              const displayHitPoints =
+                publicDerivedStats?.hitPoints !== undefined && publicDerivedStats?.hitPoints !== null
+                  ? publicDerivedStats.hitPoints
+                  : character.derived?.hitPoints || character.hp;
               const displayLanguages = Array.isArray(character.publicLanguages)
                 ? character.publicLanguages.filter(Boolean).join(', ')
                 : '';
@@ -624,12 +632,28 @@ const CharacterList = ({
                   <div className="stats-grid">
                     <div className="stat-item">
                       <span className="stat-label">HP</span>
-                      <span className="stat-value">{character.derived?.hitPoints || character.hp}</span>
+                      <span className="stat-value">{displayHitPoints}</span>
                     </div>
                     <div className="stat-item">
-                      <span className="stat-label">AC</span>
-                      <span className="stat-value">{getArmorDisplayValue(character)}</span>
+                      <span className="stat-label">{getTotalArmorRating(character) > 0 || !publicDerivedStats ? 'AC' : 'Base AC'}</span>
+                      <span className="stat-value">{getArmorDisplayValue(character, publicDerivedStats)}</span>
                     </div>
+                    {publicDerivedStats && (
+                      <>
+                        <div className="stat-item">
+                          <span className="stat-label">Proficiency</span>
+                          <span className="stat-value">{formatSignedModifier(publicDerivedStats.proficiencyBonus)}</span>
+                        </div>
+                        <div className="stat-item">
+                          <span className="stat-label">Initiative</span>
+                          <span className="stat-value">{formatSignedModifier(publicDerivedStats.initiative)}</span>
+                        </div>
+                        <div className="stat-item">
+                          <span className="stat-label">Passive Perception</span>
+                          <span className="stat-value">{publicDerivedStats.passivePerception}</span>
+                        </div>
+                      </>
+                    )}
                     {(() => {
                       const unified = getUnifiedAbilities(character);
                       const focus = unified?.tactics?.currentfocus ?? unified?.energy?.focus ?? character.focus ?? 0;
@@ -679,6 +703,32 @@ const CharacterList = ({
                           </div>
                         ))}
                       </div>
+                    </div>
+                  )}
+
+                  {publicDerivedStats && (
+                    <div className="skills-section">
+                      <h4>Public Derived Numbers</h4>
+                      <details>
+                        <summary>Saving Throws</summary>
+                        <div className="skills-list-scrollable">
+                          {Object.entries(publicDerivedStats.savingThrows || {}).map(([abilityId, save]) => (
+                            <div key={abilityId} className="skill-item">
+                              {save.label}: {formatSignedModifier(save.total)}{save.proficient ? ' proficient' : ''}
+                            </div>
+                          ))}
+                        </div>
+                      </details>
+                      <details>
+                        <summary>Skills</summary>
+                        <div className="skills-list-scrollable">
+                          {(publicDerivedStats.skills || []).map((skill) => (
+                            <div key={skill.id} className="skill-item">
+                              {skill.name}: {formatSignedModifier(skill.total)}{skill.proficient ? ' proficient' : ''}
+                            </div>
+                          ))}
+                        </div>
+                      </details>
                     </div>
                   )}
 

@@ -16,6 +16,7 @@ import {
 } from '@chakra-ui/react';
 import axiosInstance from '../utils/axios';
 import { getPublicSkillById } from '../utils/publicClassAdapter.js';
+import { formatSignedModifier, getPublicDerivedStatsForCharacter } from '../utils/publicDerivedStats.js';
 
 const getDisplayClassName = (character) =>
   character?.publicClassName || character?.class || character?.profession || '';
@@ -401,6 +402,7 @@ export default function CharacterSheet({ characterData = null, onSave = null }) 
     ? characterData.publicLanguages.filter(Boolean).join(', ')
     : '';
   const publicSkillNames = getDisplayPublicSkillNames(characterData);
+  const publicDerivedStats = getPublicDerivedStatsForCharacter(characterData || {});
 
   return (
     <Box className="character-sheet" maxW="4xl" mx="auto" p={4} bg="white" borderRadius="md" boxShadow="lg">
@@ -467,7 +469,7 @@ export default function CharacterSheet({ characterData = null, onSave = null }) 
           </GridItem>
         </Grid>
 
-        {(displayClassName || displayBackgroundName || displaySpeciesName || displayLanguages || displayAge || displayAbilityScores.length > 0 || publicSkillNames.length > 0) && (
+        {(displayClassName || displayBackgroundName || displaySpeciesName || displayLanguages || displayAge || displayAbilityScores.length > 0 || publicSkillNames.length > 0 || publicDerivedStats) && (
           <Box>
             <Text fontWeight="bold" mb={2} fontSize="sm" color="gray.700">
               Public Character Summary
@@ -533,6 +535,61 @@ export default function CharacterSheet({ characterData = null, onSave = null }) 
                   </GridItem>
                 ))}
               </Grid>
+            )}
+            {publicDerivedStats && (
+              <Box mt={3}>
+                <Text fontWeight="bold" mb={2} fontSize="sm" color="gray.700">
+                  Public Derived Numbers
+                </Text>
+                <Grid templateColumns={{ base: 'repeat(2, 1fr)', md: 'repeat(3, 1fr)' }} gap={3}>
+                  <GridItem>
+                    <Text fontSize="sm"><strong>Proficiency Bonus:</strong> {formatSignedModifier(publicDerivedStats.proficiencyBonus)}</Text>
+                  </GridItem>
+                  <GridItem>
+                    <Text fontSize="sm"><strong>Hit Points:</strong> {publicDerivedStats.hitPoints}</Text>
+                  </GridItem>
+                  <GridItem>
+                    <Text fontSize="sm"><strong>Hit Die:</strong> {publicDerivedStats.hitDie}</Text>
+                  </GridItem>
+                  <GridItem>
+                    <Text fontSize="sm"><strong>Initiative:</strong> {formatSignedModifier(publicDerivedStats.initiative)}</Text>
+                  </GridItem>
+                  <GridItem>
+                    <Text fontSize="sm"><strong>Base AC:</strong> {publicDerivedStats.baseArmorClass}</Text>
+                  </GridItem>
+                  <GridItem>
+                    <Text fontSize="sm"><strong>Passive Perception:</strong> {publicDerivedStats.passivePerception}</Text>
+                  </GridItem>
+                </Grid>
+                <Box as="details" mt={3}>
+                  <Box as="summary" fontWeight="bold" fontSize="sm" color="gray.700">
+                    Saving Throws
+                  </Box>
+                  <Grid templateColumns={{ base: 'repeat(2, 1fr)', md: 'repeat(3, 1fr)' }} gap={2} mt={2}>
+                    {Object.entries(publicDerivedStats.savingThrows || {}).map(([abilityId, save]) => (
+                      <GridItem key={abilityId}>
+                        <Text fontSize="sm">
+                          <strong>{save.label}:</strong> {formatSignedModifier(save.total)}{save.proficient ? ' proficient' : ''}
+                        </Text>
+                      </GridItem>
+                    ))}
+                  </Grid>
+                </Box>
+                <Box as="details" mt={3}>
+                  <Box as="summary" fontWeight="bold" fontSize="sm" color="gray.700">
+                    Skills
+                  </Box>
+                  <Grid templateColumns={{ base: 'repeat(2, 1fr)', md: 'repeat(3, 1fr)' }} gap={2} mt={2}>
+                    {(publicDerivedStats.skills || []).map((skill) => (
+                      <GridItem key={skill.id}>
+                        <Text fontSize="sm">
+                          <strong>{skill.name}:</strong> {formatSignedModifier(skill.total)}{skill.proficient ? ' proficient' : ''}
+                        </Text>
+                      </GridItem>
+                    ))}
+                  </Grid>
+                </Box>
+              </Box>
             )}
           </Box>
         )}

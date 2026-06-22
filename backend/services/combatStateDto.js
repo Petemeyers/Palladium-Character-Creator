@@ -38,6 +38,7 @@ function getPublicMetadata(source) {
     "selectedClassEquipmentOptionId",
     "backgroundEquipmentTags",
     "startingGold",
+    "publicDerivedStats",
   ].forEach((key) => {
     if (source?.[key] !== undefined) metadata[key] = source[key];
   });

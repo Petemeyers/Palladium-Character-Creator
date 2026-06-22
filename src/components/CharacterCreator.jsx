@@ -63,6 +63,7 @@ import {
   getPublicSpecies,
   getPublicSpeciesById,
 } from '../utils/publicSpeciesAdapter.js';
+import { calculatePublicDerivedStats, formatSignedModifier } from '../utils/publicDerivedStats.js';
 import {
   DUELIST_COMMON_TECHNIQUE_NAMES,
   normalizeTechniqueName,
@@ -327,6 +328,17 @@ const CharacterCreator = ({ onCreateCharacter }) => {
       return acc;
     }, {});
   }, [finalAbilityScores]);
+  const publicDerivedStats = useMemo(
+    () => calculatePublicDerivedStats({
+      level,
+      publicClassId,
+      publicClassName: selectedPublicClass?.name,
+      finalAbilityScores,
+      abilityModifiers,
+      publicSkillProficiencies: publicSkillMetadata.proficiencies,
+    }),
+    [abilityModifiers, finalAbilityScores, level, publicClassId, publicSkillMetadata.proficiencies, selectedPublicClass]
+  );
   const allPublicAbilitiesAssigned = PUBLIC_ABILITIES.every((ability) => baseAbilityScores[ability.id] !== undefined);
   const pointCostTotal = getPointCostTotal(baseAbilityScores);
 
@@ -1138,6 +1150,7 @@ const CharacterCreator = ({ onCreateCharacter }) => {
       backgroundAbilityBonuses,
       finalAbilityScores,
       abilityModifiers,
+      publicDerivedStats,
       attributes,
       age,
       socialBackground,
@@ -1286,6 +1299,7 @@ const CharacterCreator = ({ onCreateCharacter }) => {
         backgroundAbilityBonuses,
         finalAbilityScores,
         abilityModifiers,
+        publicDerivedStats,
         publicStartingEquipment,
         selectedClassEquipmentOptionId: selectedClassEquipmentOption?.id || selectedClassEquipmentOptionId || undefined,
         backgroundEquipmentTags,
@@ -3393,6 +3407,44 @@ const CharacterCreator = ({ onCreateCharacter }) => {
               <div className="info-item">
                 <strong>Starting Gold Metadata:</strong> {startingGold} gp
               </div>
+              <div className="info-item">
+                <strong>Proficiency Bonus:</strong> {formatSignedModifier(publicDerivedStats.proficiencyBonus)}
+              </div>
+              <div className="info-item">
+                <strong>Hit Points:</strong> {publicDerivedStats.hitPoints}
+              </div>
+              <div className="info-item">
+                <strong>Hit Die:</strong> {publicDerivedStats.hitDie}
+              </div>
+              <div className="info-item">
+                <strong>Initiative:</strong> {formatSignedModifier(publicDerivedStats.initiative)}
+              </div>
+              <div className="info-item">
+                <strong>Base AC:</strong> {publicDerivedStats.baseArmorClass}
+              </div>
+              <div className="info-item">
+                <strong>Passive Perception:</strong> {publicDerivedStats.passivePerception}
+              </div>
+              <details className="info-item">
+                <summary><strong>Saving Throws</strong></summary>
+                <div className="skill-list">
+                  {Object.entries(publicDerivedStats.savingThrows).map(([abilityId, save]) => (
+                    <div key={abilityId}>
+                      {save.label}: {formatSignedModifier(save.total)}{save.proficient ? ' proficient' : ''}
+                    </div>
+                  ))}
+                </div>
+              </details>
+              <details className="info-item">
+                <summary><strong>Skills</strong></summary>
+                <div className="skill-list">
+                  {publicDerivedStats.skills.map((skill) => (
+                    <div key={skill.id}>
+                      {skill.name}: {formatSignedModifier(skill.total)}{skill.proficient ? ' proficient' : ''}
+                    </div>
+                  ))}
+                </div>
+              </details>
             </div>
           </div>
           <div className="button-row">
