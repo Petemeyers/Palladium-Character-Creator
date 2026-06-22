@@ -9,6 +9,7 @@ export const PUBLIC_BACKGROUNDS = [
     toolProficiency: "gaming-set",
     toolProficiencies: ["gaming-set", "vehicles-land"],
     equipmentTags: ["uniform", "trophy", "travel-gear"],
+    startingEquipmentTags: ["uniform", "trophy", "travel-gear"],
     feature: "Military Bearing",
   },
   {
@@ -21,6 +22,7 @@ export const PUBLIC_BACKGROUNDS = [
     toolProficiency: "cartographer-tools",
     toolProficiencies: ["cartographer-tools"],
     equipmentTags: ["travel-gear", "map-case"],
+    startingEquipmentTags: ["travel-gear", "map-case"],
     feature: "Trail Report",
   },
   {
@@ -33,6 +35,7 @@ export const PUBLIC_BACKGROUNDS = [
     toolProficiency: "scribe-tools",
     toolProficiencies: ["scribe-tools"],
     equipmentTags: ["vestments", "writing-kit"],
+    startingEquipmentTags: ["vestments", "writing-kit"],
     feature: "Shelter of Service",
   },
   {
@@ -45,6 +48,7 @@ export const PUBLIC_BACKGROUNDS = [
     toolProficiency: "artisan-tools",
     toolProficiencies: ["artisan-tools"],
     equipmentTags: ["tool-kit", "work-clothes"],
+    startingEquipmentTags: ["tool-kit", "work-clothes"],
     feature: "Trade Contact",
   },
   {
@@ -57,6 +61,7 @@ export const PUBLIC_BACKGROUNDS = [
     toolProficiency: "scribe-tools",
     toolProficiencies: ["scribe-tools"],
     equipmentTags: ["books", "writing-kit"],
+    startingEquipmentTags: ["books", "writing-kit"],
     feature: "Research Access",
   },
   {
@@ -69,6 +74,7 @@ export const PUBLIC_BACKGROUNDS = [
     toolProficiency: "musical-instrument",
     toolProficiencies: ["musical-instrument"],
     equipmentTags: ["travel-gear", "hunting-trap"],
+    startingEquipmentTags: ["travel-gear", "hunting-trap"],
     feature: "Wilderness Memory",
   },
   {
@@ -81,6 +87,7 @@ export const PUBLIC_BACKGROUNDS = [
     toolProficiency: "merchant-tools",
     toolProficiencies: ["merchant-tools"],
     equipmentTags: ["ledger", "travel-clothes"],
+    startingEquipmentTags: ["ledger", "travel-clothes"],
     feature: "Market Network",
   },
   {
@@ -93,6 +100,7 @@ export const PUBLIC_BACKGROUNDS = [
     toolProficiency: "artisan-tools",
     toolProficiencies: ["artisan-tools", "vehicles-land"],
     equipmentTags: ["keepsake", "common-clothes"],
+    startingEquipmentTags: ["keepsake", "common-clothes"],
     feature: "Local Welcome",
   },
 ];

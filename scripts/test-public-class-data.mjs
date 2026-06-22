@@ -59,6 +59,22 @@ function assertClassShape(entry) {
   assert.equal(Array.isArray(entry.weaponProficiencies), true);
   assert.equal(Array.isArray(entry.armorTraining), true);
   assert.equal(Array.isArray(entry.toolProficiencies), true);
+  assert.equal(Array.isArray(entry.startingEquipmentOptions), true);
+  assert.ok(entry.startingEquipmentOptions.length > 0, `${entry.name} must have starting equipment options`);
+  assert.equal(
+    new Set(entry.startingEquipmentOptions.map((option) => option.id)).size,
+    entry.startingEquipmentOptions.length,
+    `${entry.name} equipment option ids must be unique`,
+  );
+  for (const option of entry.startingEquipmentOptions) {
+    assert.equal(typeof option.id, "string");
+    assert.equal(typeof option.label, "string");
+    assert.equal(Array.isArray(option.items), true);
+    assert.equal(typeof option.gold, "number");
+    for (const item of option.items) {
+      assert.equal(typeof item, "string");
+    }
+  }
   assert.equal(Array.isArray(entry.startingEquipmentTags), true);
   assert.equal(Array.isArray(entry.levelOneFeatures), true);
   assert.equal(entry.ruleset, "core-d20");
@@ -135,6 +151,10 @@ function testPublicSkills() {
 function testPublicBackgrounds() {
   assert.equal(PUBLIC_BACKGROUNDS.length, 8);
   PUBLIC_BACKGROUNDS.forEach(assertBackgroundShape);
+  for (const background of PUBLIC_BACKGROUNDS) {
+    assert.equal(Array.isArray(background.equipmentTags), true);
+    assert.ok(background.equipmentTags.length > 0, `${background.name} must have equipment tags`);
+  }
 }
 
 function testAdapterLookups() {

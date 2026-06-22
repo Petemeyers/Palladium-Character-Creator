@@ -34,6 +34,10 @@ function getPublicMetadata(source) {
     "backgroundAbilityBonuses",
     "finalAbilityScores",
     "abilityModifiers",
+    "publicStartingEquipment",
+    "selectedClassEquipmentOptionId",
+    "backgroundEquipmentTags",
+    "startingGold",
   ].forEach((key) => {
     if (source?.[key] !== undefined) metadata[key] = source[key];
   });

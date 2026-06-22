@@ -110,6 +110,19 @@ const characterSchema = new mongoose.Schema({
     of: mongoose.Schema.Types.Mixed,
     required: false,
   },
+  publicStartingEquipment: {
+    type: mongoose.Schema.Types.Mixed,
+    required: false,
+  },
+  selectedClassEquipmentOptionId: {
+    type: String,
+    required: false,
+  },
+  backgroundEquipmentTags: [String],
+  startingGold: {
+    type: Number,
+    required: false,
+  },
   attributes: {
     type: Map,
     of: mongoose.Schema.Types.Mixed,

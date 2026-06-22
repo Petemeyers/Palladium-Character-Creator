@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PUBLIC_ALIGNMENTS } from "../src/data/publicAlignment.js";
+import { PUBLIC_BACKGROUNDS } from "../src/data/publicBackgrounds.js";
 import { PUBLIC_LANGUAGES } from "../src/data/publicLanguages.js";
 import { PUBLIC_SPECIES } from "../src/data/publicSpecies.js";
 import {
@@ -126,6 +127,28 @@ function testPublicAlignment() {
   assert.equal(getPublicAlignments()[0].value, "");
 }
 
+function testPublicBackgroundEquipmentTags() {
+  assert.equal(PUBLIC_BACKGROUNDS.length, 8);
+  assertUnique(PUBLIC_BACKGROUNDS.map((entry) => entry.id), "public background ids");
+
+  for (const background of PUBLIC_BACKGROUNDS) {
+    const tags = background.startingEquipmentTags || background.equipmentTags;
+    assert.equal(Array.isArray(tags), true);
+    assert.ok(tags.length > 0, `${background.name} must have starting equipment tags`);
+    assert.equal(Array.isArray(background.equipmentTags), true);
+    assert.ok(background.equipmentTags.length > 0, `${background.name} must keep equipment tags`);
+    for (const tag of [...tags, ...background.equipmentTags]) {
+      for (const term of blockedTerms) {
+        assert.equal(
+          containsBlockedTerm(String(tag), term),
+          false,
+          `${background.name} equipment tag contains blocked public option term ${term}`,
+        );
+      }
+    }
+  }
+}
+
 async function assertNoBlockedTerms() {
   for (const file of checkedFiles) {
     const text = await readFile(resolve(repoRoot, file), "utf8");
@@ -143,6 +166,7 @@ async function run() {
   testPublicSpecies();
   testPublicLanguages();
   testPublicAlignment();
+  testPublicBackgroundEquipmentTags();
   await assertNoBlockedTerms();
 
   console.log("public character option tests passed");

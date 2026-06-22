@@ -172,6 +172,7 @@ const CharacterCreator = ({ onCreateCharacter }) => {
   const [useCryptoRandom, setUseCryptoRandom] = useState(false);
   const [characterClass, setCharacterClass] = useState('');
   const [publicClassId, setPublicClassId] = useState('');
+  const [selectedClassEquipmentOptionId, setSelectedClassEquipmentOptionId] = useState('');
   const [selectedPublicSkillIds, setSelectedPublicSkillIds] = useState([]);
   const [selectedPublicLanguageIds, setSelectedPublicLanguageIds] = useState([]);
   const [abilityScoreMethod, setAbilityScoreMethod] = useState('standard-array');
@@ -228,6 +229,34 @@ const CharacterCreator = ({ onCreateCharacter }) => {
   const selectedPublicBackground = useMemo(
     () => getPublicBackgroundById(publicBackgroundId) || getPublicBackgroundById('soldier'),
     [publicBackgroundId]
+  );
+  const classEquipmentOptions = selectedPublicClass?.startingEquipmentOptions || [];
+  const selectedClassEquipmentOption = useMemo(() => {
+    return (
+      classEquipmentOptions.find((option) => option.id === selectedClassEquipmentOptionId) ||
+      classEquipmentOptions[0] ||
+      null
+    );
+  }, [classEquipmentOptions, selectedClassEquipmentOptionId]);
+  const backgroundEquipmentTags = useMemo(
+    () => selectedPublicBackground?.startingEquipmentTags || selectedPublicBackground?.equipmentTags || [],
+    [selectedPublicBackground]
+  );
+  const startingGold = selectedClassEquipmentOption?.gold || 0;
+  const publicStartingEquipment = useMemo(
+    () => ({
+      classOption: selectedClassEquipmentOption
+        ? {
+            id: selectedClassEquipmentOption.id,
+            label: selectedClassEquipmentOption.label,
+            items: selectedClassEquipmentOption.items || [],
+            gold: selectedClassEquipmentOption.gold || 0,
+          }
+        : null,
+      backgroundTags: backgroundEquipmentTags,
+      startingGold,
+    }),
+    [backgroundEquipmentTags, selectedClassEquipmentOption, startingGold]
   );
   const publicSkillSuggestions = useMemo(() => {
     const fixedSkillIds = selectedPublicClass?.fixedSkills || [];
@@ -306,6 +335,15 @@ const CharacterCreator = ({ onCreateCharacter }) => {
       current.filter((skillId) => publicSkillSuggestions.choiceIds.includes(skillId))
     );
   }, [publicSkillSuggestions.choiceIds]);
+
+  useEffect(() => {
+    setSelectedClassEquipmentOptionId((current) => {
+      if (classEquipmentOptions.some((option) => option.id === current)) {
+        return current;
+      }
+      return classEquipmentOptions[0]?.id || '';
+    });
+  }, [classEquipmentOptions]);
 
   useEffect(() => {
     setBackgroundPlusTwoAbility((current) =>
@@ -1248,6 +1286,10 @@ const CharacterCreator = ({ onCreateCharacter }) => {
         backgroundAbilityBonuses,
         finalAbilityScores,
         abilityModifiers,
+        publicStartingEquipment,
+        selectedClassEquipmentOptionId: selectedClassEquipmentOption?.id || selectedClassEquipmentOptionId || undefined,
+        backgroundEquipmentTags,
+        startingGold,
         attributes: validatedAttributes,
         age: normalizedAge ?? "Not set",
         socialBackground: socialBackground || "Unknown",
@@ -3341,10 +3383,15 @@ const CharacterCreator = ({ onCreateCharacter }) => {
                 <strong>Proficiencies:</strong> {publicSkillMetadata.proficiencies.join(', ') || 'None selected'}
               </div>
               <div className="info-item">
-                <strong>Equipment Tags:</strong> {[
-                  ...(selectedPublicClass?.equipmentTags || []),
-                  ...(selectedPublicBackground?.equipmentTags || []),
-                ].join(', ') || 'None'}
+                <strong>Class Equipment:</strong> {selectedClassEquipmentOption
+                  ? `${selectedClassEquipmentOption.label} - ${(selectedClassEquipmentOption.items || []).join(', ') || 'Starting gold'}`
+                  : 'None selected'}
+              </div>
+              <div className="info-item">
+                <strong>Background Equipment Tags:</strong> {backgroundEquipmentTags.join(', ') || 'None'}
+              </div>
+              <div className="info-item">
+                <strong>Starting Gold Metadata:</strong> {startingGold} gp
               </div>
             </div>
           </div>
@@ -3368,13 +3415,44 @@ const CharacterCreator = ({ onCreateCharacter }) => {
           <div className="background-info">
             <div className="background-section">
               <div className="info-item">
-                <strong>Class Equipment Tags:</strong> {(selectedPublicClass?.equipmentTags || []).join(', ') || 'Select a class'}
+                <strong>Class Equipment Options:</strong> {selectedPublicClass?.name || 'Select a class'}
+              </div>
+              <div>
+                {classEquipmentOptions.length > 0 ? (
+                  classEquipmentOptions.map((option) => (
+                    <label
+                      key={option.id}
+                      style={{ display: 'block', marginBottom: '10px' }}
+                    >
+                      <input
+                        type="radio"
+                        name="class-starting-equipment"
+                        value={option.id}
+                        checked={selectedClassEquipmentOption?.id === option.id}
+                        onChange={() => setSelectedClassEquipmentOptionId(option.id)}
+                      />
+                      {' '}
+                      <strong>{option.label}:</strong> {(option.items || []).join(', ') || 'Starting gold'}
+                      {(option.gold || 0) > 0 ? ` (${option.gold} gp)` : ''}
+                    </label>
+                  ))
+                ) : (
+                  <p>Select a class to choose starting equipment.</p>
+                )}
               </div>
               <div className="info-item">
-                <strong>Background Equipment Tags:</strong> {(selectedPublicBackground?.equipmentTags || []).join(', ') || 'Select a background'}
+                <strong>Background Equipment Tags:</strong> {backgroundEquipmentTags.join(', ') || 'Select a background'}
               </div>
               <div className="info-item">
-                <strong>Equipment Mechanics:</strong> Existing starting equipment rules are unchanged.
+                <strong>Selected Class Equipment:</strong> {selectedClassEquipmentOption
+                  ? `${selectedClassEquipmentOption.label} - ${(selectedClassEquipmentOption.items || []).join(', ') || 'Starting gold'}`
+                  : 'None selected'}
+              </div>
+              <div className="info-item">
+                <strong>Starting Gold Metadata:</strong> {startingGold} gp
+              </div>
+              <div className="info-item">
+                <strong>Equipment Mechanics:</strong> Existing inventory, equipment, and combat slot rules are unchanged.
               </div>
               {attributes.PS && (
                 <>
