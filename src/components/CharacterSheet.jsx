@@ -23,6 +23,52 @@ const getDisplayClassName = (character) =>
 const getDisplayBackgroundName = (character) =>
   character?.publicBackgroundName || character?.background || character?.socialBackground || '';
 
+const getDisplaySpeciesName = (character) =>
+  character?.publicSpeciesName || character?.species || character?.race || character?.category || '';
+
+const getDisplayAge = (character) => {
+  const value = character?.age;
+  if (value === undefined || value === null || value === '' || value === 0 || value === '0' || value === 'Not set') {
+    return '';
+  }
+  return value;
+};
+
+const PUBLIC_ABILITY_LABELS = {
+  str: 'Strength',
+  dex: 'Dexterity',
+  con: 'Constitution',
+  int: 'Intelligence',
+  wis: 'Wisdom',
+  cha: 'Charisma',
+};
+
+const getDisplayAbilityScores = (character) => {
+  if (!character?.finalAbilityScores) {
+    return [];
+  }
+
+  return Object.entries(PUBLIC_ABILITY_LABELS)
+    .map(([key, label]) => {
+      const score = character.finalAbilityScores?.[key];
+      if (score === undefined || score === null || score === '') {
+        return null;
+      }
+
+      const modifier = character.abilityModifiers?.[key];
+      return {
+        key,
+        label,
+        score,
+        modifier:
+          modifier === undefined || modifier === null
+            ? ''
+            : `${modifier >= 0 ? '+' : ''}${modifier}`,
+      };
+    })
+    .filter(Boolean);
+};
+
 const getDisplayPublicSkillNames = (character) =>
   [...new Set(character?.publicSkillProficiencies || [])].map((skillId) => {
     const skill = getPublicSkillById(skillId);
@@ -68,7 +114,7 @@ export default function CharacterSheet({ characterData = null, onSave = null }) 
     if (characterData) {
       setCharacter({
         name: characterData.name || '',
-        race: characterData.species || characterData.race || '',
+        race: getDisplaySpeciesName(characterData),
         profession: getDisplayClassName(characterData),
         alignment: characterData.alignment || '',
         level: characterData.level || 1,
@@ -346,7 +392,14 @@ export default function CharacterSheet({ characterData = null, onSave = null }) 
     { key: 'pb', label: 'charisma' },
     { key: 'spd', label: 'Speed' },
   ];
+  const displayClassName = getDisplayClassName(characterData);
   const displayBackgroundName = getDisplayBackgroundName(characterData);
+  const displaySpeciesName = getDisplaySpeciesName(characterData);
+  const displayAge = getDisplayAge(characterData);
+  const displayAbilityScores = getDisplayAbilityScores(characterData);
+  const displayLanguages = Array.isArray(characterData?.publicLanguages)
+    ? characterData.publicLanguages.filter(Boolean).join(', ')
+    : '';
   const publicSkillNames = getDisplayPublicSkillNames(characterData);
 
   return (
@@ -414,16 +467,51 @@ export default function CharacterSheet({ characterData = null, onSave = null }) 
           </GridItem>
         </Grid>
 
-        {(displayBackgroundName || publicSkillNames.length > 0) && (
+        {(displayClassName || displayBackgroundName || displaySpeciesName || displayLanguages || displayAge || displayAbilityScores.length > 0 || publicSkillNames.length > 0) && (
           <Box>
             <Text fontWeight="bold" mb={2} fontSize="sm" color="gray.700">
-              Public Character Metadata
+              Public Character Summary
             </Text>
             <Grid templateColumns={{ base: '1fr', md: 'repeat(2, 1fr)' }} gap={3}>
+              {displayClassName && (
+                <GridItem>
+                  <Text fontSize="sm">
+                    <strong>Class:</strong> {displayClassName}
+                  </Text>
+                </GridItem>
+              )}
               {displayBackgroundName && (
                 <GridItem>
                   <Text fontSize="sm">
                     <strong>Background:</strong> {displayBackgroundName}
+                  </Text>
+                </GridItem>
+              )}
+              {displaySpeciesName && (
+                <GridItem>
+                  <Text fontSize="sm">
+                    <strong>Species:</strong> {displaySpeciesName}
+                  </Text>
+                </GridItem>
+              )}
+              {displayLanguages && (
+                <GridItem>
+                  <Text fontSize="sm">
+                    <strong>Languages:</strong> {displayLanguages}
+                  </Text>
+                </GridItem>
+              )}
+              {displayAge && (
+                <GridItem>
+                  <Text fontSize="sm">
+                    <strong>Age:</strong> {displayAge}
+                  </Text>
+                </GridItem>
+              )}
+              {characterData?.alignment && (
+                <GridItem>
+                  <Text fontSize="sm">
+                    <strong>Alignment:</strong> {characterData.alignment}
                   </Text>
                 </GridItem>
               )}
@@ -435,29 +523,60 @@ export default function CharacterSheet({ characterData = null, onSave = null }) 
                 </GridItem>
               )}
             </Grid>
+            {displayAbilityScores.length > 0 && (
+              <Grid templateColumns={{ base: 'repeat(2, 1fr)', md: 'repeat(3, 1fr)' }} gap={3} mt={3}>
+                {displayAbilityScores.map((ability) => (
+                  <GridItem key={ability.key}>
+                    <Text fontSize="sm">
+                      <strong>{ability.label}:</strong> {ability.score}{ability.modifier ? ` (${ability.modifier})` : ''}
+                    </Text>
+                  </GridItem>
+                ))}
+              </Grid>
+            )}
           </Box>
         )}
 
         <Divider />
 
         {/* Attributes */}
-        <Box>
-          <Text fontWeight="bold" mb={2} fontSize="sm" color="gray.700">
-            Attributes
-          </Text>
-          <Grid templateColumns={{ base: 'repeat(2, 1fr)', md: 'repeat(4, 1fr)' }} gap={3}>
-            {attributeFields.map(({ key, label }) => (
-              <Input
-                key={key}
-                name={key}
-                placeholder={label}
-                value={character[key]}
-                onChange={handleChange}
-                size="md"
-              />
-            ))}
-          </Grid>
-        </Box>
+        {displayAbilityScores.length > 0 ? (
+          <Box as="details">
+            <Box as="summary" fontWeight="bold" mb={2} fontSize="sm" color="gray.700">
+              Compatibility Details
+            </Box>
+            <Grid templateColumns={{ base: 'repeat(2, 1fr)', md: 'repeat(4, 1fr)' }} gap={3}>
+              {attributeFields.map(({ key, label }) => (
+                <Input
+                  key={key}
+                  name={key}
+                  placeholder={label}
+                  value={character[key]}
+                  onChange={handleChange}
+                  size="md"
+                />
+              ))}
+            </Grid>
+          </Box>
+        ) : (
+          <Box>
+            <Text fontWeight="bold" mb={2} fontSize="sm" color="gray.700">
+              Attributes
+            </Text>
+            <Grid templateColumns={{ base: 'repeat(2, 1fr)', md: 'repeat(4, 1fr)' }} gap={3}>
+              {attributeFields.map(({ key, label }) => (
+                <Input
+                  key={key}
+                  name={key}
+                  placeholder={label}
+                  value={character[key]}
+                  onChange={handleChange}
+                  size="md"
+                />
+              ))}
+            </Grid>
+          </Box>
+        )}
 
         <Divider />
 

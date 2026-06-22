@@ -1139,10 +1139,12 @@ const CharacterCreator = ({ onCreateCharacter }) => {
       };
 
       const ageNum = Number(age);
-      const normalizedAge = Number.isFinite(ageNum) ? ageNum : 25;
+      const hasEnteredAge = String(age).trim() !== '' && Number.isFinite(ageNum);
+      const normalizedAge = hasEnteredAge ? ageNum : undefined;
+      const visualAge = hasEnteredAge ? ageNum : 25;
       const computedVisualProfile =
         selectedPublicSpecies?.id === 'human'
-          ? buildHumanVisualProfile({ ...validatedAttributes, age: normalizedAge })
+          ? buildHumanVisualProfile({ ...validatedAttributes, age: visualAge })
           : null;
       
       // Calculate the total HP for this level (same logic as levelStats)
@@ -1247,7 +1249,7 @@ const CharacterCreator = ({ onCreateCharacter }) => {
         finalAbilityScores,
         abilityModifiers,
         attributes: validatedAttributes,
-        age: normalizedAge,
+        age: normalizedAge ?? "Not set",
         socialBackground: socialBackground || "Unknown",
         disposition: disposition || "Unknown",
         hostility: hostility || "Unknown",
@@ -2316,8 +2318,8 @@ const CharacterCreator = ({ onCreateCharacter }) => {
       <div className="character-creation" style={{ display: 'flex', flexDirection: 'column' }}>
         <h1 className="page-title">Character Creator</h1>
         
-        <section className="creation-section" style={{ order: 9 }}>
-          <h2 className="section-title">Fill in Details</h2>
+        <section className="creation-section" style={{ order: 0 }}>
+          <h2 className="section-title">Character Identity</h2>
           
           <div className="form-row">
             <div className="form-group">
@@ -2355,6 +2357,19 @@ const CharacterCreator = ({ onCreateCharacter }) => {
                 <option value="Male">Male</option>
                 <option value="Female">Female</option>
               </select>
+            </div>
+
+            <div className="form-group">
+              <label htmlFor="character-age">Age</label>
+              <input
+                type="number"
+                id="character-age"
+                min="1"
+                value={age}
+                onChange={(e) => setAge(e.target.value)}
+                placeholder="Enter age..."
+                className="number-input"
+              />
             </div>
           </div>
 

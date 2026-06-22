@@ -21,6 +21,57 @@ const getDisplayClassName = (character) =>
 const getDisplayBackgroundName = (character) =>
   character?.publicBackgroundName || character?.background || character?.socialBackground || '';
 
+const getDisplaySpeciesName = (character) =>
+  character?.publicSpeciesName || character?.species || character?.race || character?.category || '';
+
+const getDisplayAge = (character) => {
+  const value = character?.age;
+  if (value === undefined || value === null || value === '' || value === 0 || value === '0' || value === 'Not set') {
+    return '';
+  }
+  return value;
+};
+
+const PUBLIC_ABILITY_LABELS = {
+  str: 'Strength',
+  dex: 'Dexterity',
+  con: 'Constitution',
+  int: 'Intelligence',
+  wis: 'Wisdom',
+  cha: 'Charisma',
+};
+
+const getDisplayAbilityScores = (character) => {
+  if (!character?.finalAbilityScores) {
+    return [];
+  }
+
+  return Object.entries(PUBLIC_ABILITY_LABELS)
+    .map(([key, label]) => {
+      const score = character.finalAbilityScores?.[key];
+      if (score === undefined || score === null || score === '') {
+        return null;
+      }
+
+      const modifier = character.abilityModifiers?.[key];
+      return {
+        key,
+        label,
+        score,
+        modifier:
+          modifier === undefined || modifier === null
+            ? ''
+            : `${modifier >= 0 ? '+' : ''}${modifier}`,
+      };
+    })
+    .filter(Boolean);
+};
+
+const getArmorDisplayValue = (character) => {
+  const armorRating = getTotalArmorRating(character);
+  return armorRating > 0 ? armorRating : 'Not calculated';
+};
+
 const characterNames = [
   'Alaalwen', 'Baar', 'Alaamar', 'Bada', 'Alaamra', 'Bago',
   // ... rest of the names
@@ -121,6 +172,37 @@ const CharacterList = ({
   const [selectedCharacterForStorage, setSelectedCharacterForStorage] = useState(null);
   const [selectedForDelete, setSelectedForDelete] = useState([]);
   const [selectAll, setSelectAll] = useState(false);
+  const [loadedCharacters, setLoadedCharacters] = useState([]);
+  const displayCharacters = characters.length > 0 ? characters : loadedCharacters;
+
+  React.useEffect(() => {
+    if (characters.length > 0) {
+      setLoadedCharacters([]);
+      return;
+    }
+
+    let cancelled = false;
+    const loadCharacters = async () => {
+      try {
+        const response = await axiosInstance.get('/characters');
+        const fetchedCharacters = Array.isArray(response.data)
+          ? response.data
+          : response.data?.data || response.data?.characters || [];
+        if (!cancelled) {
+          setLoadedCharacters(fetchedCharacters);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          console.error('Error loading characters:', error);
+        }
+      }
+    };
+
+    loadCharacters();
+    return () => {
+      cancelled = true;
+    };
+  }, [characters]);
   
   // Derived sorting variables for the new UI
   const sortField = sortConfig.key || 'name';
@@ -128,7 +210,7 @@ const CharacterList = ({
 
   // Sorting function
   const sortedCharacters = React.useMemo(() => {
-    let sortableItems = [...characters];
+    let sortableItems = [...displayCharacters];
     if (sortConfig.key !== null) {
       sortableItems.sort((a, b) => {
         // Handle nested attributes object
@@ -142,8 +224,13 @@ const CharacterList = ({
           return sortConfig.direction === 'ascending' ? aTotal - bTotal : bTotal - aTotal;
         }
 
-        const aValue = sortConfig.key === 'class' ? getDisplayClassName(a) : a[sortConfig.key];
-        const bValue = sortConfig.key === 'class' ? getDisplayClassName(b) : b[sortConfig.key];
+        const getSortValue = (character) => {
+          if (sortConfig.key === 'class') return getDisplayClassName(character);
+          if (sortConfig.key === 'species') return getDisplaySpeciesName(character);
+          return character[sortConfig.key];
+        };
+        const aValue = getSortValue(a);
+        const bValue = getSortValue(b);
 
         // Handle regular properties
         if (aValue < bValue) {
@@ -156,7 +243,7 @@ const CharacterList = ({
       });
     }
     return sortableItems;
-  }, [characters, sortConfig]);
+  }, [displayCharacters, sortConfig]);
 
   const requestSort = (key) => {
     let direction = 'ascending';
@@ -228,7 +315,7 @@ const CharacterList = ({
     setSelectAll(checked);
     if (checked) {
       // Select all characters
-      setSelectedForDelete(characters.map(char => char._id));
+      setSelectedForDelete(displayCharacters.map(char => char._id));
     } else {
       // Deselect all characters
       setSelectedForDelete([]);
@@ -447,7 +534,17 @@ const CharacterList = ({
 
           {/* Character Cards */}
           <div className="character-cards">
-            {sortedCharacters.map((character, index) => (
+            {sortedCharacters.map((character, index) => {
+              const displayClass = getDisplayClassName(character);
+              const displayBackground = getDisplayBackgroundName(character);
+              const displaySpecies = getDisplaySpeciesName(character);
+              const displayAge = getDisplayAge(character);
+              const publicAbilityScores = getDisplayAbilityScores(character);
+              const displayLanguages = Array.isArray(character.publicLanguages)
+                ? character.publicLanguages.filter(Boolean).join(', ')
+                : '';
+
+              return (
               <div key={index} className="character-card">
                 {/* Card Header */}
                 <div className="card-header">
@@ -502,11 +599,16 @@ const CharacterList = ({
                       </div>
                     )}
                        <div className="character-title">
-                         Level {character.level} {character.species} {getDisplayClassName(character)}
+                         Level {character.level || 1} {displayClass}
                        </div>
-                       {getDisplayBackgroundName(character) && (
+                       {displayBackground && (
                          <div className="character-xp">
-                           Background: {getDisplayBackgroundName(character)}
+                           Background: {displayBackground}
+                         </div>
+                       )}
+                       {displaySpecies && (
+                         <div className="character-xp">
+                           Species: {displaySpecies}
                          </div>
                        )}
                        {character.experiencePoints && (
@@ -526,7 +628,7 @@ const CharacterList = ({
                     </div>
                     <div className="stat-item">
                       <span className="stat-label">AC</span>
-                      <span className="stat-value">{getTotalArmorRating(character) || 0}</span>
+                      <span className="stat-value">{getArmorDisplayValue(character)}</span>
                     </div>
                     {(() => {
                       const unified = getUnifiedAbilities(character);
@@ -544,21 +646,41 @@ const CharacterList = ({
                     </div>
                     <div className="stat-item">
                       <span className="stat-label">Gender</span>
-                      <span className="stat-value">{character.gender}</span>
+                      <span className="stat-value">{character.gender || 'Not set'}</span>
                     </div>
-                    <div className="stat-item">
-                      <span className="stat-label">Age</span>
-                      <span className="stat-value">{character.age}</span>
-                    </div>
+                    {displayAge && (
+                      <div className="stat-item">
+                        <span className="stat-label">Age</span>
+                        <span className="stat-value">{displayAge}</span>
+                      </div>
+                    )}
                     <div className="stat-item">
                       <span className="stat-label">Alignment</span>
-                      <span className="stat-value">{character.alignment}</span>
+                      <span className="stat-value">{character.alignment || 'Not set'}</span>
                     </div>
-                    <div className="stat-item">
-                      <span className="stat-label">Origin</span>
-                      <span className="stat-value">{character.origin}</span>
-                    </div>
+                    {displayLanguages && (
+                      <div className="stat-item">
+                        <span className="stat-label">Languages</span>
+                        <span className="stat-value">{displayLanguages}</span>
+                      </div>
+                    )}
                   </div>
+
+                  {publicAbilityScores.length > 0 && (
+                    <div className="attributes-section">
+                      <h4>Ability Scores</h4>
+                      <div className="attributes-grid-scrollable">
+                        {publicAbilityScores.map((ability) => (
+                          <div key={ability.key} className="attribute-item">
+                            <span className="attr-name">{ability.label}</span>
+                            <span className="attr-value">
+                              {ability.score}{ability.modifier ? ` (${ability.modifier})` : ''}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
                   {/* Inventory Section */}
                   <div className="inventory-section">
@@ -738,19 +860,35 @@ const CharacterList = ({
 
                   {/* Attributes Section */}
                   {character.attributes && (
-                    <div className="attributes-section">
-                      <h4>Attributes ({Object.keys(character.attributes).filter(key => !key.endsWith('_highlight') && key !== 'total').length})</h4>
-                      <div className="attributes-grid-scrollable">
-                        {Object.entries(character.attributes)
-                          .filter(([key]) => !key.endsWith('_highlight') && key !== 'total')
-                          .map(([key, value]) => (
-                            <div key={key} className="attribute-item">
-                              <span className="attr-name">{key}</span>
-                              <span className="attr-value">{value}</span>
-                            </div>
-                          ))}
+                    publicAbilityScores.length > 0 ? (
+                      <details className="attributes-section">
+                        <summary>Compatibility Details</summary>
+                        <div className="attributes-grid-scrollable">
+                          {Object.entries(character.attributes)
+                            .filter(([key]) => !key.endsWith('_highlight') && key !== 'total')
+                            .map(([key, value]) => (
+                              <div key={key} className="attribute-item">
+                                <span className="attr-name">{key}</span>
+                                <span className="attr-value">{value}</span>
+                              </div>
+                            ))}
+                        </div>
+                      </details>
+                    ) : (
+                      <div className="attributes-section">
+                        <h4>Attributes ({Object.keys(character.attributes).filter(key => !key.endsWith('_highlight') && key !== 'total').length})</h4>
+                        <div className="attributes-grid-scrollable">
+                          {Object.entries(character.attributes)
+                            .filter(([key]) => !key.endsWith('_highlight') && key !== 'total')
+                            .map(([key, value]) => (
+                              <div key={key} className="attribute-item">
+                                <span className="attr-name">{key}</span>
+                                <span className="attr-value">{value}</span>
+                              </div>
+                            ))}
+                        </div>
                       </div>
-                    </div>
+                    )
                   )}
 
                   {/* Skills Section */}
@@ -833,7 +971,8 @@ const CharacterList = ({
                   </div>
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       </div>
