@@ -18,6 +18,7 @@ import arenaRoster from "../data/arenaRoster.js";
 import { getAllArenaRosterEntries } from "../utils/arenaRosterUtils.js";
 import axiosInstance from "../utils/axiosConfig.js";
 import { getPublicDerivedStatsForCharacter, formatSignedModifier } from "../utils/publicDerivedStats.js";
+import { adaptPublicCharacterForAutoRoll } from "../utils/publicCharacterCombatAdapter.js";
 
 const PUBLIC_ABILITY_LABELS = {
   str: "Strength",
@@ -30,6 +31,10 @@ const PUBLIC_ABILITY_LABELS = {
 
 const hasLegacyRollTemplate = (character) =>
   character?.attribute_dice && Object.keys(character.attribute_dice).length > 0;
+
+const getAutoRollReady = (character) => Boolean(character?.autoRollReady || hasLegacyRollTemplate(character));
+
+const getAutoRollInput = (character) => character?.autoRollCharacter || character;
 
 const hasPublicOrCompatibilitySheetData = (character) => {
   const hasClass = Boolean(character?.publicClassName || character?.class || character?.profession);
@@ -66,7 +71,13 @@ const AutoRollDemo = () => {
   const rosterCharacters = useMemo(
     () => getAllArenaRosterEntries(arenaRoster)
       .filter((combatant) => combatant.playable)
-      .map((character) => ({ ...character, autoRollSource: "Roster" })),
+      .map((character) => ({
+        ...character,
+        autoRollSource: "Roster",
+        autoRollReady: hasLegacyRollTemplate(character),
+        autoRollMissingFields: [],
+        autoRollCharacter: character,
+      })),
     []
   );
   const playableCharacters = useMemo(
@@ -74,7 +85,16 @@ const AutoRollDemo = () => {
       ...rosterCharacters,
       ...savedCharacters
         .filter(hasPublicOrCompatibilitySheetData)
-        .map((character) => ({ ...character, autoRollSource: "Saved Character" })),
+        .map((character) => {
+          const adaptation = adaptPublicCharacterForAutoRoll(character);
+          return {
+            ...character,
+            autoRollSource: "Saved Character",
+            autoRollReady: adaptation.ready,
+            autoRollMissingFields: adaptation.missingRequiredFields,
+            autoRollCharacter: adaptation.combatCharacter,
+          };
+        }),
     ],
     [rosterCharacters, savedCharacters]
   );
@@ -115,9 +135,10 @@ const AutoRollDemo = () => {
   }, []);
 
   const rollCharacter = (characterData) => {
-    if (!hasLegacyRollTemplate(characterData)) return;
-    const fighter = createPlayableCharacterFighter(characterData);
-    const rollDetails = getPlayableCharacterRollDetails(characterData, fighter.attributes);
+    if (!getAutoRollReady(characterData)) return;
+    const autoRollInput = getAutoRollInput(characterData);
+    const fighter = createPlayableCharacterFighter(autoRollInput);
+    const rollDetails = getPlayableCharacterRollDetails(autoRollInput, fighter.attributes);
     
     const rolledCharacter = {
       ...fighter,
@@ -175,8 +196,8 @@ const AutoRollDemo = () => {
                   border="1px solid" 
                   borderColor="gray.200" 
                   borderRadius="md"
-                  bg={hasLegacyRollTemplate(character) ? "white" : "gray.50"}
-                  _hover={{ borderColor: hasLegacyRollTemplate(character) ? "blue.300" : "gray.300", cursor: hasLegacyRollTemplate(character) ? "pointer" : "default" }}
+                  bg={getAutoRollReady(character) ? "white" : "gray.50"}
+                  _hover={{ borderColor: getAutoRollReady(character) ? "blue.300" : "gray.300", cursor: getAutoRollReady(character) ? "pointer" : "default" }}
                   onClick={() => rollCharacter(character)}
                 >
                   <VStack align="start" spacing={2}>
@@ -184,6 +205,9 @@ const AutoRollDemo = () => {
                       <Text fontWeight="bold">{character.name}</Text>
                       <Badge colorScheme={character.autoRollSource === "Saved Character" ? "green" : "cyan"}>
                         {character.autoRollSource}
+                      </Badge>
+                      <Badge colorScheme={getAutoRollReady(character) ? "blue" : "orange"}>
+                        {getAutoRollReady(character) ? "Ready for auto-roll" : "Needs combat conversion"}
                       </Badge>
                     </HStack>
                     
@@ -222,10 +246,15 @@ const AutoRollDemo = () => {
                       <strong>Training:</strong> {character.training || "None"} | 
                       <strong> Tactics:</strong> {character.tactics || "None"}
                     </Text>
-                    {!hasLegacyRollTemplate(character) && (
+                    {!getAutoRollReady(character) && (
                       <Alert status="info" borderRadius="md">
                         <AlertIcon />
-                        <Text fontSize="xs">This character needs combat conversion before auto-roll.</Text>
+                        <Text fontSize="xs">
+                          This character needs combat conversion before auto-roll
+                          {character.autoRollMissingFields?.length
+                            ? `: missing ${character.autoRollMissingFields.join(", ")}.`
+                            : "."}
+                        </Text>
                       </Alert>
                     )}
                   </VStack>
