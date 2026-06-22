@@ -420,6 +420,14 @@ export default function CharacterSheet({ characterData = null, onSave = null }) 
         <Divider />
 
         {/* Basic Information */}
+        <Box>
+          <Text fontWeight="bold" mb={1} fontSize="sm" color="gray.700">
+            Compatibility Character Entry
+          </Text>
+          <Text fontSize="sm" color="gray.600">
+            For SRD/public characters, use Character Creator.
+          </Text>
+        </Box>
         <Grid templateColumns={{ base: '1fr', md: 'repeat(2, 1fr)', lg: 'repeat(4, 1fr)' }} gap={4}>
           <GridItem>
             <Input
@@ -640,33 +648,33 @@ export default function CharacterSheet({ characterData = null, onSave = null }) 
         {/* Combat Stats */}
         <Box>
           <Text fontWeight="bold" mb={2} fontSize="sm" color="gray.700">
-            Combat Statistics
+            Compatibility Combat Values
           </Text>
           <Grid templateColumns={{ base: 'repeat(2, 1fr)', md: 'repeat(4, 1fr)' }} gap={3}>
             <Input
               name="hitPoints"
-              placeholder="Hit Points (HP)"
+              placeholder="Hit Points"
               value={character.hitPoints}
               onChange={handleChange}
               size="md"
             />
             <Input
               name="armorDurability"
-              placeholder="armorDurability"
+              placeholder="Armor Durability"
               value={character.armorDurability}
               onChange={handleChange}
               size="md"
             />
             <Input
               name="stamina"
-              placeholder="stamina"
+              placeholder="Stamina"
               value={character.stamina}
               onChange={handleChange}
               size="md"
             />
             <Input
               name="focus"
-              placeholder="focus"
+              placeholder="Focus"
               value={character.focus}
               onChange={handleChange}
               size="md"
@@ -679,11 +687,11 @@ export default function CharacterSheet({ characterData = null, onSave = null }) 
         {/* Skills */}
         <Box>
           <Text fontWeight="bold" mb={2} fontSize="sm" color="gray.700">
-            Skills / Percentages
+            Compatibility Skills
           </Text>
           <Textarea
             name="skills"
-            placeholder="List skills and their percentages (e.g., Climbing 60%, Swimming 55%)"
+            placeholder="List compatibility skills and values"
             value={character.skills}
             onChange={handleChange}
             rows={6}
@@ -694,11 +702,11 @@ export default function CharacterSheet({ characterData = null, onSave = null }) 
         {/* Weapons */}
         <Box>
           <Text fontWeight="bold" mb={2} fontSize="sm" color="gray.700">
-            Weapons / Proficiencies
+            Compatibility Weapons
           </Text>
           <Textarea
             name="weapons"
-            placeholder="List weapons and proficiencies (e.g., Longsword 85%, Shortbow 70%)"
+            placeholder="List compatibility weapons and values"
             value={character.weapons}
             onChange={handleChange}
             rows={4}
@@ -745,7 +753,7 @@ export default function CharacterSheet({ characterData = null, onSave = null }) 
             onClick={saveToBackend}
             size="md"
           >
-            ðŸ’¾ Save Character
+            Save Character
           </Button>
           <HStack spacing={2}>
             <Button
@@ -753,14 +761,14 @@ export default function CharacterSheet({ characterData = null, onSave = null }) 
               onClick={exportToJSON}
               size="md"
             >
-              ðŸ“„ Export JSON
+              Export JSON
             </Button>
             <Button
               variant="outline"
               onClick={exportToPDF}
               size="md"
             >
-              ðŸ“‘ Export PDF
+              Export PDF
             </Button>
             <Button
               variant="ghost"

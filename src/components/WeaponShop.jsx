@@ -394,11 +394,11 @@ const WeaponShop = () => {
 
     const character = characters.find(char => char._id === selectedCharacter);
     console.log('Ã°Å¸â€â€ž DEBUG: Found character:', character);
-    console.log('Ã°Å¸â€â€ž DEBUG: Character PROFESSION:', character?.profession);
+    console.log('Ã°Å¸â€â€ž DEBUG: Character Class:', character?.profession);
     
     if (!character || !character.profession) {
-      console.log('Ã¢ÂÅ’ DEBUG: Character missing or no PROFESSION');
-      alert('Character must have an PROFESSION to trade in starting equipment');
+      console.log('Ã¢ÂÅ’ DEBUG: Character missing or no Class');
+      alert('Character must have a Class to trade in starting equipment');
       return;
     }
 
@@ -412,14 +412,14 @@ const WeaponShop = () => {
       return;
     }
 
-    // Get PROFESSION-specific alternatives
-    console.log('Ã°Å¸â€â€ž DEBUG: Getting PROFESSION equipment alternatives for:', character.profession);
+    // Get Class-specific alternatives
+    console.log('Ã°Å¸â€â€ž DEBUG: Getting Class equipment alternatives for:', character.profession);
     const alternatives = getProfessionEquipmentAlternatives(character.profession);
-    console.log('Ã°Å¸â€â€ž DEBUG: Available PROFESSION alternatives:', alternatives);
+    console.log('Ã°Å¸â€â€ž DEBUG: Available Class alternatives:', alternatives);
     
     if (alternatives.length === 0) {
-      console.log('Ã¢ÂÅ’ DEBUG: No PROFESSION-specific alternatives available');
-      alert(`No PROFESSION-specific equipment alternatives available for ${character.profession}`);
+      console.log('Ã¢ÂÅ’ DEBUG: No Class-specific alternatives available');
+      alert(`No Class-specific equipment alternatives available for ${character.profession}`);
       return;
     }
 
@@ -992,7 +992,7 @@ const WeaponShop = () => {
               fontSize: '13px'
             }}
           >
-            Ã°Å¸â€ºâ€™ Visit Trader Shop
+            Visit Trader Shop
           </a>
         </div>
         
@@ -1036,7 +1036,7 @@ const WeaponShop = () => {
                   fontSize: '16px',
                   boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
                 }}>
-                  Ã°Å¸â€™Â° {character.gold || 0} Gold Available
+                  {character.gold || 0} Gold Available
                 </div>
               ) : null;
             })()}
@@ -1059,7 +1059,7 @@ const WeaponShop = () => {
                 fontWeight: 'bold'
               }}
             >
-              Ã°Å¸â€â€ž Trade-in Low Quality Weapon
+              Trade-in Low Quality Weapon
             </button>
           )}
           
@@ -1080,7 +1080,7 @@ const WeaponShop = () => {
                 fontWeight: 'bold'
               }}
             >
-              Ã°Å¸â€˜â€¢ Trade-in Basic Clothes
+              Trade-in Basic Clothes
             </button>
           )}
           
@@ -1101,7 +1101,7 @@ const WeaponShop = () => {
                 fontWeight: 'bold'
               }}
             >
-              Ã¢Å¡â€Ã¯Â¸Â Trade-in Starting Equipment
+              Trade-in Starting Equipment
             </button>
           )}
         </div>
@@ -1115,7 +1115,7 @@ const WeaponShop = () => {
             padding: '15px',
             marginBottom: '20px'
           }}>
-            <h3>Ã¢Å¡â€Ã¯Â¸Â Weapon Inventory</h3>
+            <h3>Weapon Inventory</h3>
             {(() => {
               const character = characters.find(c => c._id === selectedCharacter);
               if (!character) return <p>Character not found</p>;
@@ -1157,7 +1157,7 @@ const WeaponShop = () => {
                 <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
                   {/* Right Hand */}
                   <div style={{ flex: 1, minWidth: '200px' }}>
-                    <h4 style={{ margin: '0 0 10px 0', color: '#2e7d32' }}>Ã°Å¸â€“ÂÃ¯Â¸Â Right Hand</h4>
+                    <h4 style={{ margin: '0 0 10px 0', color: '#2e7d32' }}>Right Hand</h4>
                     <div 
                       onClick={() => handleWeaponSlotClick('right')}
                       style={{
@@ -1191,7 +1191,7 @@ const WeaponShop = () => {
                   
                   {/* Left Hand */}
                   <div style={{ flex: 1, minWidth: '200px' }}>
-                    <h4 style={{ margin: '0 0 10px 0', color: '#2e7d32' }}>Ã°Å¸Â¤Å¡ Left Hand</h4>
+                    <h4 style={{ margin: '0 0 10px 0', color: '#2e7d32' }}>Left Hand</h4>
                     <div 
                       onClick={() => handleWeaponSlotClick('left')}
                       style={{
@@ -1225,7 +1225,7 @@ const WeaponShop = () => {
                   
                   {/* Inventory Weapons Count */}
                   <div style={{ flex: 1, minWidth: '200px' }}>
-                    <h4 style={{ margin: '0 0 10px 0', color: '#2e7d32' }}>Ã°Å¸Å½â€™ Inventory</h4>
+                    <h4 style={{ margin: '0 0 10px 0', color: '#2e7d32' }}>Inventory</h4>
                     <div style={{
                       backgroundColor: 'white',
                       border: '1px solid #ccc',
@@ -1265,7 +1265,7 @@ const WeaponShop = () => {
           <div style={{ flex: '1', minWidth: '200px' }}>
             <input
               type="text"
-              placeholder="Ã°Å¸â€Â Search weapons..."
+              placeholder="Search weapons..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               style={{
@@ -1314,7 +1314,7 @@ const WeaponShop = () => {
               }}
               title={`Sort ${sortOrder === 'asc' ? 'Ascending' : 'Descending'}`}
             >
-              {sortOrder === 'asc' ? 'Ã¢â€ â€˜' : 'Ã¢â€ â€œ'}
+              {sortOrder === 'asc' ? 'Ascending' : 'Descending'}
             </button>
           </div>
           
@@ -1364,7 +1364,7 @@ const WeaponShop = () => {
             borderRadius: '8px',
             border: '2px dashed #ddd'
           }}>
-            <div style={{ fontSize: '3em', marginBottom: '15px' }}>Ã°Å¸â€Â</div>
+            <div style={{ fontSize: '3em', marginBottom: '15px' }}>Search</div>
             <h3 style={{ color: '#6c757d', marginBottom: '10px' }}>No Weapons Found</h3>
             <p style={{ color: '#6c757d', margin: '0' }}>
               {searchQuery.trim() 
@@ -1527,7 +1527,7 @@ const WeaponShop = () => {
                             {weapon.range && <div>Range: {weapon.range}</div>}
                           </div>
                         </div>
-                        <div style={{ fontSize: '1.5em', opacity: 0.7 }}>Ã¢Å¡â€Ã¯Â¸Â</div>
+                        <div style={{ fontSize: '1.5em', opacity: 0.7 }}>Weapon</div>
                       </div>
                     </div>
                   ))}
@@ -1540,7 +1540,7 @@ const WeaponShop = () => {
                   borderRadius: '8px',
                   marginBottom: '20px'
                 }}>
-                  <div style={{ fontSize: '2em', marginBottom: '10px' }}>Ã¢Å¡â€Ã¯Â¸Â</div>
+                  <div style={{ fontSize: '2em', marginBottom: '10px' }}>Weapons</div>
                   <h4 style={{ color: '#6c757d', marginBottom: '10px' }}>No Weapons Found</h4>
                   <p style={{ color: '#6c757d', margin: '0' }}>
                     This character doesn&apos;t have any weapons in their inventory.

@@ -24,6 +24,10 @@ const AutoRollDemo = () => {
   const playableCharacters = getAllArenaRosterEntries(arenaRoster).filter(
     (combatant) => combatant.playable
   );
+  const getDisplayClassName = (character) =>
+    character.publicClassName || character.class || character.profession || "Class not set";
+  const getDisplaySpeciesName = (character) =>
+    character.publicSpeciesName || character.species || character.race || "Species not set";
 
   const rollCharacter = (characterData) => {
     const fighter = createPlayableCharacterFighter(characterData);
@@ -89,7 +93,7 @@ const AutoRollDemo = () => {
                     </HStack>
                     
                     <Text fontSize="sm" color="gray.600">
-                      {character.race} {character.profession}
+                      {getDisplaySpeciesName(character)} {getDisplayClassName(character)}
                     </Text>
                     
                     <Text fontSize="xs" color="gray.500">
@@ -109,6 +113,14 @@ const AutoRollDemo = () => {
               </GridItem>
             ))}
           </Grid>
+          {playableCharacters.length === 0 && (
+            <Alert status="warning" mt={4}>
+              <AlertIcon />
+              <Text fontSize="sm">
+                No playable roster entries are currently marked available for auto-roll. Saved SRD/public characters are not wired into this demo yet.
+              </Text>
+            </Alert>
+          )}
         </Box>
 
         {rolledCharacters.length > 0 && (
@@ -128,7 +140,7 @@ const AutoRollDemo = () => {
                     <HStack justify="space-between" w="full">
                       <HStack>
                         <Text fontWeight="bold" color="blue.700">{character.name}</Text>
-                        <Badge colorScheme="blue">{character.race} {character.profession}</Badge>
+                        <Badge colorScheme="blue">{getDisplaySpeciesName(character)} {getDisplayClassName(character)}</Badge>
                       </HStack>
                       <Text fontSize="xs" color="gray.500">{character.timestamp}</Text>
                     </HStack>

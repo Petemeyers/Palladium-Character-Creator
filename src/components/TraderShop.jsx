@@ -154,7 +154,7 @@ const TraderShop = () => {
               fontSize: '14px'
             }}
           >
-            Ã¢Å¡â€Ã¯Â¸Â Visit Weapon Shop
+            Visit Weapon Shop
           </a>
         </div>
         
@@ -184,9 +184,9 @@ const TraderShop = () => {
             padding: '15px',
             marginBottom: '20px'
           }}>
-            <h3>Ã°Å¸â€˜â€¢ Clothing & Equipment</h3>
+            <h3>Clothing & Equipment</h3>
             <p style={{ fontSize: '12px', color: '#666', marginBottom: '10px' }}>
-              Ã°Å¸â€™Â¡ <strong>Tip:</strong> Items in inventory need to be equistaminad to show here. 
+              <strong>Tip:</strong> Items in inventory need to be equipped to show here.
               <a href="/character-list" style={{ color: '#007bff', textDecoration: 'underline', marginLeft: '5px' }}>
                 Go to Character List to equip items
               </a>
@@ -202,7 +202,7 @@ const TraderShop = () => {
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '15px' }}>
                   {/* Head */}
                   <div>
-                    <h4 style={{ margin: '0 0 8px 0', color: '#2e7d32', fontSize: '14px' }}>Ã°Å¸â€˜Â¤ Head</h4>
+                    <h4 style={{ margin: '0 0 8px 0', color: '#2e7d32', fontSize: '14px' }}>Head</h4>
                     <div style={{
                       backgroundColor: 'white',
                       border: '1px solid #ccc',
@@ -219,7 +219,7 @@ const TraderShop = () => {
                   
                   {/* Torso */}
                   <div>
-                    <h4 style={{ margin: '0 0 8px 0', color: '#2e7d32', fontSize: '14px' }}>Ã°Å¸â€˜â€ Torso</h4>
+                    <h4 style={{ margin: '0 0 8px 0', color: '#2e7d32', fontSize: '14px' }}>Torso</h4>
                     <div style={{
                       backgroundColor: 'white',
                       border: '1px solid #ccc',
@@ -236,7 +236,7 @@ const TraderShop = () => {
                   
                   {/* Legs */}
                   <div>
-                    <h4 style={{ margin: '0 0 8px 0', color: '#2e7d32', fontSize: '14px' }}>Ã°Å¸â€˜â€“ Legs</h4>
+                    <h4 style={{ margin: '0 0 8px 0', color: '#2e7d32', fontSize: '14px' }}>Legs</h4>
                     <div style={{
                       backgroundColor: 'white',
                       border: '1px solid #ccc',
@@ -253,7 +253,7 @@ const TraderShop = () => {
                   
                   {/* Feet */}
                   <div>
-                    <h4 style={{ margin: '0 0 8px 0', color: '#2e7d32', fontSize: '14px' }}>Ã°Å¸â€˜Å¸ Feet</h4>
+                    <h4 style={{ margin: '0 0 8px 0', color: '#2e7d32', fontSize: '14px' }}>Feet</h4>
                     <div style={{
                       backgroundColor: 'white',
                       border: '1px solid #ccc',
@@ -270,7 +270,7 @@ const TraderShop = () => {
                   
                   {/* Hands */}
                   <div>
-                    <h4 style={{ margin: '0 0 8px 0', color: '#2e7d32', fontSize: '14px' }}>Ã°Å¸Â§Â¤ Hands</h4>
+                    <h4 style={{ margin: '0 0 8px 0', color: '#2e7d32', fontSize: '14px' }}>Hands</h4>
                     <div style={{
                       backgroundColor: 'white',
                       border: '1px solid #ccc',
@@ -287,7 +287,7 @@ const TraderShop = () => {
                   
                   {/* Waist */}
                   <div>
-                    <h4 style={{ margin: '0 0 8px 0', color: '#2e7d32', fontSize: '14px' }}>Ã°Å¸â€â€” Waist</h4>
+                    <h4 style={{ margin: '0 0 8px 0', color: '#2e7d32', fontSize: '14px' }}>Waist</h4>
                     <div style={{
                       backgroundColor: 'white',
                       border: '1px solid #ccc',
@@ -304,7 +304,7 @@ const TraderShop = () => {
                   
                   {/* Inventory Clothing Count */}
                   <div>
-                    <h4 style={{ margin: '0 0 8px 0', color: '#2e7d32', fontSize: '14px' }}>Ã°Å¸Å½â€™ Storage</h4>
+                    <h4 style={{ margin: '0 0 8px 0', color: '#2e7d32', fontSize: '14px' }}>Storage</h4>
                     <div style={{
                       backgroundColor: 'white',
                       border: '1px solid #ccc',
