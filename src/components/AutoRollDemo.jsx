@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Box,
   Button,
@@ -16,20 +16,106 @@ import {
 import { createPlayableCharacterFighter, getPlayableCharacterRollDetails } from "../utils/autoRoll";
 import arenaRoster from "../data/arenaRoster.js";
 import { getAllArenaRosterEntries } from "../utils/arenaRosterUtils.js";
+import axiosInstance from "../utils/axiosConfig.js";
+import { getPublicDerivedStatsForCharacter, formatSignedModifier } from "../utils/publicDerivedStats.js";
+
+const PUBLIC_ABILITY_LABELS = {
+  str: "Strength",
+  dex: "Dexterity",
+  con: "Constitution",
+  int: "Intelligence",
+  wis: "Wisdom",
+  cha: "Charisma",
+};
+
+const hasLegacyRollTemplate = (character) =>
+  character?.attribute_dice && Object.keys(character.attribute_dice).length > 0;
+
+const hasPublicOrCompatibilitySheetData = (character) => {
+  const hasClass = Boolean(character?.publicClassName || character?.class || character?.profession);
+  const hasSpecies = Boolean(character?.publicSpeciesName || character?.species || character?.race || character?.category);
+  const hasScores = Boolean(character?.finalAbilityScores || character?.attributes);
+  const hasDerived = Boolean(
+    character?.publicDerivedStats ||
+    (character?.finalAbilityScores && (character?.publicClassName || character?.publicClassId))
+  );
+  return hasClass && hasSpecies && hasScores && hasDerived;
+};
+
+const formatPublicAbilityScores = (character) => {
+  if (!character?.finalAbilityScores) return "";
+
+  return Object.entries(PUBLIC_ABILITY_LABELS)
+    .map(([key, label]) => {
+      const score = character.finalAbilityScores?.[key];
+      if (score === undefined || score === null || score === "") return null;
+      const modifier = character.abilityModifiers?.[key];
+      const modifierText = modifier === undefined || modifier === null ? "" : ` (${formatSignedModifier(modifier)})`;
+      return `${label}: ${score}${modifierText}`;
+    })
+    .filter(Boolean)
+    .join(", ");
+};
 
 const AutoRollDemo = () => {
   const [rolledCharacters, setRolledCharacters] = useState([]);
+  const [savedCharacters, setSavedCharacters] = useState([]);
+  const [loadingSavedCharacters, setLoadingSavedCharacters] = useState(false);
+  const [savedCharacterError, setSavedCharacterError] = useState("");
 
-  // Get playable characters from arenaRoster
-  const playableCharacters = getAllArenaRosterEntries(arenaRoster).filter(
-    (combatant) => combatant.playable
+  const rosterCharacters = useMemo(
+    () => getAllArenaRosterEntries(arenaRoster)
+      .filter((combatant) => combatant.playable)
+      .map((character) => ({ ...character, autoRollSource: "Roster" })),
+    []
   );
+  const playableCharacters = useMemo(
+    () => [
+      ...rosterCharacters,
+      ...savedCharacters
+        .filter(hasPublicOrCompatibilitySheetData)
+        .map((character) => ({ ...character, autoRollSource: "Saved Character" })),
+    ],
+    [rosterCharacters, savedCharacters]
+  );
+
   const getDisplayClassName = (character) =>
     character.publicClassName || character.class || character.profession || "Class not set";
   const getDisplaySpeciesName = (character) =>
-    character.publicSpeciesName || character.species || character.race || "Species not set";
+    character.publicSpeciesName || character.species || character.race || character.category || "Species not set";
+  const getDisplayBackgroundName = (character) =>
+    character.publicBackgroundName || character.background || character.socialBackground || "";
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadSavedCharacters() {
+      setLoadingSavedCharacters(true);
+      setSavedCharacterError("");
+      try {
+        const response = await axiosInstance.get("/characters");
+        if (!cancelled) {
+          setSavedCharacters(Array.isArray(response.data) ? response.data : []);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setSavedCharacterError(error?.response?.data?.message || error.message || "Unable to load saved characters.");
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingSavedCharacters(false);
+        }
+      }
+    }
+
+    loadSavedCharacters();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const rollCharacter = (characterData) => {
+    if (!hasLegacyRollTemplate(characterData)) return;
     const fighter = createPlayableCharacterFighter(characterData);
     const rollDetails = getPlayableCharacterRollDetails(characterData, fighter.attributes);
     
@@ -63,6 +149,12 @@ const AutoRollDemo = () => {
             <strong>Auto-Roll Features:</strong> HP, AC, Speed, and abilities are shown using the current core d20 compatibility layer.
           </Text>
         </Alert>
+        {savedCharacterError && (
+          <Alert status="warning">
+            <AlertIcon />
+            <Text fontSize="sm">{savedCharacterError}</Text>
+          </Alert>
+        )}
 
         <Box>
           <HStack justify="space-between" mb={4}>
@@ -71,43 +163,71 @@ const AutoRollDemo = () => {
               Clear Rolls
             </Button>
           </HStack>
+          {loadingSavedCharacters && (
+            <Text fontSize="sm" color="gray.500" mb={3}>Loading saved characters...</Text>
+          )}
           
           <Grid templateColumns="repeat(auto-fit, minmax(300px, 1fr))" gap={4}>
             {playableCharacters.map((character) => (
-              <GridItem key={character.id}>
+              <GridItem key={character._id || character.id}>
                 <Box 
                   p={4} 
                   border="1px solid" 
                   borderColor="gray.200" 
                   borderRadius="md"
-                  bg="white"
-                  _hover={{ borderColor: "blue.300", cursor: "pointer" }}
+                  bg={hasLegacyRollTemplate(character) ? "white" : "gray.50"}
+                  _hover={{ borderColor: hasLegacyRollTemplate(character) ? "blue.300" : "gray.300", cursor: hasLegacyRollTemplate(character) ? "pointer" : "default" }}
                   onClick={() => rollCharacter(character)}
                 >
                   <VStack align="start" spacing={2}>
                     <HStack>
                       <Text fontWeight="bold">{character.name}</Text>
-                      <Badge colorScheme={character.category === 'scout_playable' ? 'pink' : 'cyan'}>
-                        {character.category}
+                      <Badge colorScheme={character.autoRollSource === "Saved Character" ? "green" : "cyan"}>
+                        {character.autoRollSource}
                       </Badge>
                     </HStack>
                     
                     <Text fontSize="sm" color="gray.600">
                       {getDisplaySpeciesName(character)} {getDisplayClassName(character)}
                     </Text>
+                    {getDisplayBackgroundName(character) && (
+                      <Text fontSize="xs" color="gray.500">
+                        <strong>Background:</strong> {getDisplayBackgroundName(character)}
+                      </Text>
+                    )}
                     
-                    <Text fontSize="xs" color="gray.500">
-                      <strong>Attributes:</strong> {Object.entries(character.attribute_dice || {})
-                        .slice(0, 4)
-                        .map(([attr, dice]) => `${attr}: ${dice}`)
-                        .join(", ")}
-                      {Object.keys(character.attribute_dice || {}).length > 4 ? "..." : ""}
-                    </Text>
+                    {character.finalAbilityScores ? (
+                      <Text fontSize="xs" color="gray.500">
+                        <strong>Ability Scores:</strong> {formatPublicAbilityScores(character)}
+                      </Text>
+                    ) : (
+                      <Text fontSize="xs" color="gray.500">
+                        <strong>Attributes:</strong> {Object.entries(character.attribute_dice || character.attributes || {})
+                          .slice(0, 4)
+                          .map(([attr, value]) => `${attr}: ${value}`)
+                          .join(", ")}
+                        {Object.keys(character.attribute_dice || character.attributes || {}).length > 4 ? "..." : ""}
+                      </Text>
+                    )}
+                    {(() => {
+                      const derived = getPublicDerivedStatsForCharacter(character);
+                      return derived ? (
+                        <Text fontSize="xs" color="gray.500">
+                          <strong>Derived:</strong> HP {derived.hitPoints}, Hit Die {derived.hitDie}, Base AC {derived.baseArmorClass}, Initiative {formatSignedModifier(derived.initiative)}
+                        </Text>
+                      ) : null;
+                    })()}
                     
                     <Text fontSize="xs" color="gray.500">
                       <strong>Training:</strong> {character.training || "None"} | 
                       <strong> Tactics:</strong> {character.tactics || "None"}
                     </Text>
+                    {!hasLegacyRollTemplate(character) && (
+                      <Alert status="info" borderRadius="md">
+                        <AlertIcon />
+                        <Text fontSize="xs">This character needs combat conversion before auto-roll.</Text>
+                      </Alert>
+                    )}
                   </VStack>
                 </Box>
               </GridItem>
@@ -117,7 +237,7 @@ const AutoRollDemo = () => {
             <Alert status="warning" mt={4}>
               <AlertIcon />
               <Text fontSize="sm">
-                No playable roster entries are currently marked available for auto-roll. Saved SRD/public characters are not wired into this demo yet.
+                No playable characters found. Create one in Character Creator.
               </Text>
             </Alert>
           )}
