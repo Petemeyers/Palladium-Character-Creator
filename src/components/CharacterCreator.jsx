@@ -1679,7 +1679,7 @@ const CharacterCreator = ({ onCreateCharacter }) => {
     
     // Check direct mapping first
     if (PROFESSIONSpecificMap[skillName]) {
-      return occSpecificMap[skillName];
+      return PROFESSIONSpecificMap[skillName];
     }
     
     // Try to match skill name patterns
