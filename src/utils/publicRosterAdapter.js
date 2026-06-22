@@ -1,6 +1,11 @@
 import { adaptPublicCharacterForAutoRoll } from "./publicCharacterCombatAdapter.js";
-
-export const PUBLIC_ARENA_ROSTER_STORAGE_KEY = "publicArenaRosterEntries";
+export {
+  PUBLIC_ARENA_ROSTER_STORAGE_KEY,
+  clearPublicArenaRosterEntries,
+  loadPublicArenaRosterEntries,
+  savePublicArenaRosterEntries,
+  upsertPublicArenaRosterEntry,
+} from "./publicStagedRosterStorage.js";
 
 const clonePlain = (value) => {
   if (value === undefined) return undefined;
@@ -34,38 +39,6 @@ export function adaptPublicCharacterToRosterEntry(character = {}) {
   };
 }
 
-export function loadPublicArenaRosterEntries() {
-  if (typeof window === "undefined" || !window.localStorage) return [];
-  try {
-    const stored = window.localStorage.getItem(PUBLIC_ARENA_ROSTER_STORAGE_KEY);
-    const parsed = stored ? JSON.parse(stored) : [];
-    return Array.isArray(parsed) ? parsed : [];
-  } catch (_error) {
-    return [];
-  }
-}
-
-export function savePublicArenaRosterEntries(entries = []) {
-  if (typeof window === "undefined" || !window.localStorage) return [];
-  const safeEntries = Array.isArray(entries) ? entries : [];
-  window.localStorage.setItem(PUBLIC_ARENA_ROSTER_STORAGE_KEY, JSON.stringify(safeEntries));
-  return safeEntries;
-}
-
-export function upsertPublicArenaRosterEntry(entry) {
-  if (!entry?.id) return loadPublicArenaRosterEntries();
-  const entries = loadPublicArenaRosterEntries();
-  const nextEntries = [
-    entry,
-    ...entries.filter((existing) => existing.id !== entry.id || existing.side !== entry.side),
-  ];
-  return savePublicArenaRosterEntries(nextEntries);
-}
-
 export default {
-  PUBLIC_ARENA_ROSTER_STORAGE_KEY,
   adaptPublicCharacterToRosterEntry,
-  loadPublicArenaRosterEntries,
-  savePublicArenaRosterEntries,
-  upsertPublicArenaRosterEntry,
 };

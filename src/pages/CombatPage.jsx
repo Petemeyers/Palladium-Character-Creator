@@ -165,6 +165,15 @@ import {
   dropCarriedTarget,
 } from "../utils/flightActions.js";
 import { getDefaultMovementMode, getSpeciesProfile } from "../utils/ai/movementModeHelpers.js";
+import {
+  clearPublicArenaRosterEntries,
+  loadPublicArenaRosterEntries,
+} from "../utils/publicStagedRosterStorage.js";
+import {
+  checkPublicEnemyCombatReadiness,
+  checkPublicPlayerCombatReadiness,
+} from "../utils/publicCombatReadiness.js";
+import { adaptPublicEnemyToCombatant } from "../utils/publicEnemyCombatAdapter.js";
 
 // Debug toggle for grapple system
 const DEBUG_GRAPPLE = true; // set to false in production
@@ -2424,6 +2433,8 @@ function CombatPage({ characters = [] }) {
   const [selectedAttack, setSelectedAttack] = useState(0);
   const [selectedParty, setSelectedParty] = useState([]);
   const [selectedRosterPreviewId, setSelectedRosterPreviewId] = useState(null);
+  const [stagedRosterEntries, setStagedRosterEntries] = useState(() => loadPublicArenaRosterEntries());
+  const [stagedRosterImportMessages, setStagedRosterImportMessages] = useState([]);
   const [showPartySelector, setShowPartySelector] = useState(false);
   const [diceRolls, setDiceRolls] = useState([]);
   const [showRollDetails, setShowRollDetails] = useState(false);
@@ -2443,6 +2454,17 @@ function CombatPage({ characters = [] }) {
   const [targetingMode, setTargetingMode] = useState(null); // null | "OVERWATCH_HEX"
   const [overwatchTargetHex, setOverwatchTargetHex] = useState(null);
   const [techniqueSearch, setTechniqueSearch] = useState("");
+
+  useEffect(() => {
+    const refreshStagedRoster = () => setStagedRosterEntries(loadPublicArenaRosterEntries());
+    refreshStagedRoster();
+    window.addEventListener("storage", refreshStagedRoster);
+    window.addEventListener("focus", refreshStagedRoster);
+    return () => {
+      window.removeEventListener("storage", refreshStagedRoster);
+      window.removeEventListener("focus", refreshStagedRoster);
+    };
+  }, []);
   const [techniqueLevelFilter, setTechniqueLevelFilter] = useState("all");
   const [defensiveStance, setDefensiveStance] = useState({}); // Track defensive actions by fighter ID
   const [activeCircles, setActiveCircles] = useState([]); // Track active protection circles
@@ -24051,6 +24073,82 @@ function CombatPage({ characters = [] }) {
     onClose();
   }
 
+  function getStagedRosterReadiness(entry) {
+    if (entry?.side === "player") {
+      return checkPublicPlayerCombatReadiness(entry);
+    }
+    if (entry?.side === "enemy") {
+      return checkPublicEnemyCombatReadiness(entry);
+    }
+    return {
+      ready: false,
+      missing: ["side"],
+      missingArenaShape: [],
+      warnings: [],
+    };
+  }
+
+  function importReadyStagedRoster() {
+    const entries = loadPublicArenaRosterEntries();
+    setStagedRosterEntries(entries);
+
+    if (entries.length === 0) {
+      setStagedRosterImportMessages(["No staged roster entries found."]);
+      return;
+    }
+
+    const messages = [];
+    let importedCount = 0;
+
+    entries.forEach((entry) => {
+      if (entry.side === "player") {
+        const readiness = checkPublicPlayerCombatReadiness(entry);
+        if (!readiness.ready) {
+          messages.push(`${entry.name || "Staged player"} skipped: missing ${readiness.missing.join(", ")}`);
+          return;
+        }
+
+        addCombatant(entry.autoRollCharacter, entry.name, 1, null, "None", 0, "player", "party");
+        importedCount += 1;
+        messages.push(`${entry.name} imported as a player.`);
+        return;
+      }
+
+      if (entry.side === "enemy") {
+        const readiness = checkPublicEnemyCombatReadiness(entry);
+        if (!readiness.ready) {
+          const missing = [...(readiness.missing || []), ...(readiness.missingArenaShape || [])];
+          messages.push(`${entry.name || "Staged enemy"} skipped: missing ${missing.join(", ")}`);
+          return;
+        }
+
+        const conversion = adaptPublicEnemyToCombatant(entry);
+        if (!conversion.ok) {
+          messages.push(`${entry.name || "Staged enemy"} skipped: missing ${conversion.missingFields.join(", ")}`);
+          return;
+        }
+
+        addCombatant(conversion.combatant, entry.name, 1, null, "None", 0, null, "enemy");
+        importedCount += 1;
+        messages.push(`${entry.name} imported as an enemy.`);
+        return;
+      }
+
+      messages.push(`${entry?.name || "Staged entry"} skipped: missing side.`);
+    });
+
+    if (importedCount > 0) {
+      addLog(`Imported ${importedCount} staged roster entr${importedCount === 1 ? "y" : "ies"}.`, "success");
+    }
+    setStagedRosterImportMessages(messages);
+  }
+
+  function clearStagedRoster() {
+    clearPublicArenaRosterEntries();
+    setStagedRosterEntries([]);
+    setStagedRosterImportMessages(["Staged roster cleared."]);
+  }
+
   /**
    * Load a prescene battle - predefined fighters for quick combat start.
    * Clears current fighters and loads the preset (players + enemies).
@@ -31653,6 +31751,88 @@ function CombatPage({ characters = [] }) {
           <ModalHeader>Add Fighter</ModalHeader>
           <ModalCloseButton />
           <ModalBody pb={6} overflowY="auto">
+            <Box mb={4} p={3} border="1px solid" borderColor="purple.200" borderRadius="md" bg="purple.50">
+              <HStack justify="space-between" mb={3} align="center">
+                <Heading size="sm">Staged SRD Roster</Heading>
+                <HStack>
+                  <Button
+                    size="xs"
+                    colorScheme="purple"
+                    onClick={importReadyStagedRoster}
+                    isDisabled={stagedRosterEntries.length === 0}
+                  >
+                    Import Ready Staged Roster
+                  </Button>
+                  <Button
+                    size="xs"
+                    variant="outline"
+                    onClick={clearStagedRoster}
+                    isDisabled={stagedRosterEntries.length === 0}
+                  >
+                    Clear Staged Roster
+                  </Button>
+                </HStack>
+              </HStack>
+
+              {stagedRosterEntries.length === 0 ? (
+                <Text fontSize="sm" color="gray.600">
+                  No staged entries. Add public characters or enemies from AutoRollDemo first.
+                </Text>
+              ) : (
+                <Table variant="simple" size="sm">
+                  <Thead>
+                    <Tr>
+                      <Th>Name</Th>
+                      <Th>Side</Th>
+                      <Th>Details</Th>
+                      <Th>Readiness</Th>
+                    </Tr>
+                  </Thead>
+                  <Tbody>
+                    {stagedRosterEntries.map((entry) => {
+                      const readiness = getStagedRosterReadiness(entry);
+                      const missing = [...(readiness.missing || []), ...(readiness.missingArenaShape || [])];
+                      return (
+                        <Tr key={`${entry.side || "unknown"}-${entry.id || entry.name}`}>
+                          <Td>{entry.name || "Unnamed"}</Td>
+                          <Td>
+                            <Badge colorScheme={entry.side === "player" ? "blue" : "red"}>
+                              {entry.side === "player" ? "Player" : entry.side === "enemy" ? "Enemy" : "Unknown"}
+                            </Badge>
+                          </Td>
+                          <Td>
+                            {entry.side === "player"
+                              ? `${entry.publicSpeciesName || "Species not set"} ${entry.publicClassName || "Class not set"}`
+                              : `${entry.size || "Size not set"} ${entry.creatureType || "Type not set"} | HP ${entry.hitPoints ?? "?"} | AC ${entry.armorClass ?? "?"}`}
+                          </Td>
+                          <Td>
+                            <VStack align="start" spacing={1}>
+                              <Badge colorScheme={readiness.ready ? "green" : "orange"}>
+                                {readiness.ready ? "Ready" : "Missing Fields"}
+                              </Badge>
+                              {!readiness.ready && missing.length > 0 && (
+                                <Text fontSize="xs" color="gray.600">{missing.join(", ")}</Text>
+                              )}
+                            </VStack>
+                          </Td>
+                        </Tr>
+                      );
+                    })}
+                  </Tbody>
+                </Table>
+              )}
+
+              {stagedRosterImportMessages.length > 0 && (
+                <VStack align="stretch" spacing={1} mt={3}>
+                  {stagedRosterImportMessages.map((message, index) => (
+                    <Text key={`${message}-${index}`} fontSize="xs" color="gray.700">
+                      {message}
+                    </Text>
+                  ))}
+                </VStack>
+              )}
+            </Box>
+
             <FormControl mb={4}>
               <FormLabel>Filter by Type:</FormLabel>
               <Select

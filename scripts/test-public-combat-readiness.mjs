@@ -59,11 +59,9 @@ const enemySnapshot = JSON.stringify(enemyEntry);
 const enemyReadiness = checkPublicEnemyCombatReadiness(enemyEntry);
 
 assert.equal(enemyReadiness.metadataReady, true, "Public enemy metadata should be complete");
-assert.equal(enemyReadiness.ready, false, "Public enemy should still need arena-shape mapping before live combat");
+assert.equal(enemyReadiness.ready, true, "Public enemy should be ready after arena-shape mapping");
 assert.deepEqual(enemyReadiness.missing, [], "Public enemy metadata should not be missing required public fields");
-assert.ok(enemyReadiness.missingArenaShape.includes("HP"), "Missing arena HP field should be reported");
-assert.ok(enemyReadiness.missingArenaShape.includes("guardRating"), "Missing arena armor field should be reported");
-assert.ok(enemyReadiness.missingArenaShape.includes("attacks"), "Missing arena attacks field should be reported");
+assert.deepEqual(enemyReadiness.missingArenaShape, [], "Public enemy arena-shape mapping should be complete");
 assert.equal(JSON.stringify(enemyEntry), enemySnapshot, "Enemy readiness check should not mutate the entry");
 
 console.log("Public combat readiness tests passed.");

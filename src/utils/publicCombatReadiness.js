@@ -1,3 +1,5 @@
+import { adaptPublicEnemyToCombatant } from "./publicEnemyCombatAdapter.js";
+
 const REQUIRED_COMPATIBILITY_ATTRIBUTES = ["IQ", "ME", "MA", "PS", "PP", "PE", "PB", "Spd"];
 const REQUIRED_PUBLIC_ABILITIES = ["str", "dex", "con", "int", "wis", "cha"];
 
@@ -43,6 +45,7 @@ export function checkPublicPlayerCombatReadiness(entry = {}) {
 
 export function checkPublicEnemyCombatReadiness(entry = {}) {
   const missing = [];
+  const conversion = adaptPublicEnemyToCombatant(entry);
 
   pushMissing(missing, entry.side === "enemy", "side: enemy");
   pushMissing(missing, hasValue(entry.id), "id");
@@ -55,17 +58,14 @@ export function checkPublicEnemyCombatReadiness(entry = {}) {
   pushMissing(missing, entry.abilityScores && REQUIRED_PUBLIC_ABILITIES.every((ability) => hasValue(entry.abilityScores[ability])), "abilityScores");
   pushMissing(missing, Array.isArray(entry.actions) && entry.actions.length > 0, "actions");
 
-  const missingArenaShape = [];
-  pushMissing(missingArenaShape, hasValue(entry.HP), "HP");
-  pushMissing(missingArenaShape, hasValue(entry.guardRating), "guardRating");
-  pushMissing(missingArenaShape, Array.isArray(entry.attacks) && entry.attacks.length > 0, "attacks");
-  pushMissing(missingArenaShape, hasValue(entry.category), "category");
+  const missingArenaShape = conversion.ok ? [] : [...conversion.missingFields];
 
   return {
     metadataReady: missing.length === 0,
     ready: missing.length === 0 && missingArenaShape.length === 0,
     missing,
     missingArenaShape,
+    warnings: conversion.warnings,
     recommendedPath: "Map public enemy metadata to the existing arena roster enemy shape before calling live combat add paths.",
   };
 }
