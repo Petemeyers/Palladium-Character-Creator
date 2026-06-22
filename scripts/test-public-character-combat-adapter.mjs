@@ -62,6 +62,27 @@ assert.equal(adaptation.combatCharacter.guardRating, 12, "Public base AC should 
 assert.equal(adaptation.combatCharacter.Spd, 30, "Public speed should be preserved");
 assert.equal(adaptation.combatCharacter.publicClassName, "Barbarian", "Public class display data should be preserved");
 assert.equal(adaptation.combatCharacter.publicSpeciesName, "Human", "Public species display data should be preserved");
+assert.deepEqual(
+  adaptation.combatCharacter.finalAbilityScores,
+  sampleCharacter.finalAbilityScores,
+  "Public ability scores should be preserved"
+);
+assert.deepEqual(
+  adaptation.combatCharacter.abilityModifiers,
+  sampleCharacter.abilityModifiers,
+  "Public ability modifiers should be preserved"
+);
+assert.deepEqual(
+  adaptation.combatCharacter.publicAbilityScores,
+  sampleCharacter.finalAbilityScores,
+  "Display metadata should keep public scores separate from compatibility attributes"
+);
+assert.deepEqual(
+  adaptation.combatCharacter.publicAbilityModifiers,
+  sampleCharacter.abilityModifiers,
+  "Display metadata should keep public modifiers separate from compatibility attributes"
+);
+assert.equal(adaptation.combatCharacter.publicDisplaySource, "saved-character", "Public display source should be marked");
 assert.equal(adaptation.combatCharacter.class, "Barbarian", "Class compatibility field should be set at the adapter boundary");
 assert.deepEqual(sampleCharacter, originalSnapshot, "Adapter should not mutate the original character");
 

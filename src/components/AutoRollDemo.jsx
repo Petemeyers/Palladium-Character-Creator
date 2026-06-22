@@ -50,6 +50,10 @@ const getCompatibilityAttributeEntries = (attributeObject = {}) =>
     .filter((key) => attributeObject[key] !== undefined && attributeObject[key] !== null)
     .map((key) => [key, attributeObject[key]]);
 
+const getPublicAbilityScores = (character) => character?.finalAbilityScores || character?.publicAbilityScores || null;
+
+const getPublicAbilityModifiers = (character) => character?.abilityModifiers || character?.publicAbilityModifiers || {};
+
 const hasLegacyRollTemplate = (character) =>
   character?.attribute_dice && Object.keys(character.attribute_dice).length > 0;
 
@@ -69,13 +73,15 @@ const hasPublicOrCompatibilitySheetData = (character) => {
 };
 
 const formatPublicAbilityScores = (character) => {
-  if (!character?.finalAbilityScores) return "";
+  const publicScores = getPublicAbilityScores(character);
+  const publicModifiers = getPublicAbilityModifiers(character);
+  if (!publicScores) return "";
 
   return Object.entries(PUBLIC_ABILITY_LABELS)
     .map(([key, label]) => {
-      const score = character.finalAbilityScores?.[key];
+      const score = publicScores?.[key];
       if (score === undefined || score === null || score === "") return null;
-      const modifier = character.abilityModifiers?.[key];
+      const modifier = publicModifiers?.[key];
       const modifierText = modifier === undefined || modifier === null ? "" : ` (${formatSignedModifier(modifier)})`;
       return `${label}: ${score}${modifierText}`;
     })
@@ -181,6 +187,15 @@ const AutoRollDemo = () => {
     const rolledCharacter = {
       ...fighter,
       rollDetails,
+      finalAbilityScores: autoRollInput.finalAbilityScores || characterData.finalAbilityScores,
+      abilityModifiers: autoRollInput.abilityModifiers || characterData.abilityModifiers,
+      publicAbilityScores: autoRollInput.publicAbilityScores || characterData.publicAbilityScores,
+      publicAbilityModifiers: autoRollInput.publicAbilityModifiers || characterData.publicAbilityModifiers,
+      publicClassName: autoRollInput.publicClassName || characterData.publicClassName,
+      publicSpeciesName: autoRollInput.publicSpeciesName || characterData.publicSpeciesName,
+      publicBackgroundName: autoRollInput.publicBackgroundName || characterData.publicBackgroundName,
+      publicDerivedStats: autoRollInput.publicDerivedStats || characterData.publicDerivedStats,
+      publicDisplaySource: autoRollInput.publicDisplaySource || characterData.publicDisplaySource,
       timestamp: new Date().toLocaleTimeString()
     };
     
@@ -197,15 +212,14 @@ const AutoRollDemo = () => {
         <Box>
           <Heading size="lg" mb={2}>Auto-Roll Demo for Playable Characters</Heading>
           <Text color="gray.600">
-            Click any playable character below to automatically roll their attributes, 
-            calculate combat stats, and generate a ready-to-use fighter for combat!
+            Select any playable character below to generate a combat preview using the current auto-roll compatibility layer.
           </Text>
         </Box>
 
         <Alert status="info">
           <AlertIcon />
           <Text fontSize="sm">
-            <strong>Auto-Roll Features:</strong> HP, AC, Speed, and abilities are shown using the current core d20 compatibility layer.
+            <strong>Combat Preview:</strong> HP, AC, Speed, and abilities are shown using the current core d20 compatibility layer.
           </Text>
         </Alert>
         {savedCharacterError && (
@@ -219,7 +233,7 @@ const AutoRollDemo = () => {
           <HStack justify="space-between" mb={4}>
             <Heading size="md">Available Playable Characters</Heading>
             <Button size="sm" colorScheme="red" variant="outline" onClick={clearRolls}>
-              Clear Rolls
+              Clear Previews
             </Button>
           </HStack>
           {loadingSavedCharacters && (
@@ -258,7 +272,7 @@ const AutoRollDemo = () => {
                       </Text>
                     )}
                     
-                    {character.finalAbilityScores ? (
+                    {getPublicAbilityScores(character) ? (
                       <Text fontSize="xs" color="gray.500">
                         <strong>Ability Scores:</strong> {formatPublicAbilityScores(character)}
                       </Text>
@@ -313,7 +327,7 @@ const AutoRollDemo = () => {
 
         {rolledCharacters.length > 0 && (
           <Box>
-            <Heading size="md" mb={4}>Recent Auto-Rolls</Heading>
+            <Heading size="md" mb={4}>Recent Combat Previews</Heading>
             <VStack spacing={4} align="stretch">
               {rolledCharacters.map((character, index) => (
                 <Box 
@@ -335,18 +349,27 @@ const AutoRollDemo = () => {
                     
                     <Grid templateColumns="repeat(auto-fit, minmax(200px, 1fr))" gap={4} w="full">
                       <GridItem>
-                        <Text fontSize="sm" fontWeight="semibold" color="gray.700">Rolled Attributes:</Text>
-                        <VStack align="start" spacing={1}>
-                          {getCompatibilityAttributeEntries(character.attributes).map(([attr, value]) => (
-                            <HStack key={attr} spacing={2}>
-                              <Text fontSize="xs" minW="20px">{attr}:</Text>
-                              <Text fontSize="xs" fontWeight="bold">{formatDisplayValue(value)}</Text>
-                              <Text fontSize="xs" color="gray.500">
-                                ({formatDisplayValue(character.rollDetails.attributes[attr]?.dice)})
-                              </Text>
-                            </HStack>
-                          ))}
-                        </VStack>
+                        {getPublicAbilityScores(character) ? (
+                          <>
+                            <Text fontSize="sm" fontWeight="semibold" color="gray.700">Public Ability Scores:</Text>
+                            <Text fontSize="xs" color="gray.600">{formatPublicAbilityScores(character)}</Text>
+                          </>
+                        ) : (
+                          <>
+                            <Text fontSize="sm" fontWeight="semibold" color="gray.700">Compatibility Attributes:</Text>
+                            <VStack align="start" spacing={1}>
+                              {getCompatibilityAttributeEntries(character.attributes).map(([attr, value]) => (
+                                <HStack key={attr} spacing={2}>
+                                  <Text fontSize="xs" minW="20px">{attr}:</Text>
+                                  <Text fontSize="xs" fontWeight="bold">{formatDisplayValue(value)}</Text>
+                                  <Text fontSize="xs" color="gray.500">
+                                    ({formatDisplayValue(character.rollDetails.attributes[attr]?.dice)})
+                                  </Text>
+                                </HStack>
+                              ))}
+                            </VStack>
+                          </>
+                        )}
                       </GridItem>
                       
                       <GridItem>
