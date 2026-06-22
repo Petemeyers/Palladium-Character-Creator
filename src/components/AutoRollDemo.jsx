@@ -19,6 +19,13 @@ import { getAllArenaRosterEntries } from "../utils/arenaRosterUtils.js";
 import axiosInstance from "../utils/axiosConfig.js";
 import { getPublicDerivedStatsForCharacter, formatSignedModifier } from "../utils/publicDerivedStats.js";
 import { adaptPublicCharacterForAutoRoll } from "../utils/publicCharacterCombatAdapter.js";
+import PUBLIC_ENEMIES from "../data/publicEnemies.js";
+import { adaptPublicEnemyToRosterEntry } from "../utils/publicEnemyRosterAdapter.js";
+import {
+  adaptPublicCharacterToRosterEntry,
+  loadPublicArenaRosterEntries,
+  upsertPublicArenaRosterEntry,
+} from "../utils/publicRosterAdapter.js";
 
 const PUBLIC_ABILITY_LABELS = {
   str: "Strength",
@@ -94,6 +101,7 @@ const AutoRollDemo = () => {
   const [savedCharacters, setSavedCharacters] = useState([]);
   const [loadingSavedCharacters, setLoadingSavedCharacters] = useState(false);
   const [savedCharacterError, setSavedCharacterError] = useState("");
+  const [stagedRosterEntries, setStagedRosterEntries] = useState(() => loadPublicArenaRosterEntries());
 
   const rosterCharacters = useMemo(
     () => getAllArenaRosterEntries(arenaRoster)
@@ -206,6 +214,17 @@ const AutoRollDemo = () => {
     setRolledCharacters([]);
   };
 
+  const addCharacterToArenaRoster = (event, character) => {
+    event.stopPropagation();
+    const rosterEntry = adaptPublicCharacterToRosterEntry(character);
+    setStagedRosterEntries(upsertPublicArenaRosterEntry(rosterEntry));
+  };
+
+  const addEnemyToArenaRoster = (enemy) => {
+    const rosterEntry = adaptPublicEnemyToRosterEntry(enemy);
+    setStagedRosterEntries(upsertPublicArenaRosterEntry(rosterEntry));
+  };
+
   return (
     <Box p={6} maxW="1200px" mx="auto">
       <VStack spacing={6} align="stretch">
@@ -310,6 +329,14 @@ const AutoRollDemo = () => {
                         </Text>
                       </Alert>
                     )}
+                    <Button
+                      size="xs"
+                      colorScheme="purple"
+                      variant="outline"
+                      onClick={(event) => addCharacterToArenaRoster(event, character)}
+                    >
+                      Add to Arena Roster
+                    </Button>
                   </VStack>
                 </Box>
               </GridItem>
@@ -323,6 +350,64 @@ const AutoRollDemo = () => {
               </Text>
             </Alert>
           )}
+        </Box>
+
+        <Box>
+          <Heading size="md" mb={4}>Arena Roster Staging</Heading>
+          {stagedRosterEntries.length > 0 ? (
+            <Grid templateColumns="repeat(auto-fit, minmax(240px, 1fr))" gap={3}>
+              {stagedRosterEntries.map((entry) => (
+                <Box key={`${entry.side}-${entry.id}`} p={3} border="1px solid" borderColor="gray.200" borderRadius="md">
+                  <HStack justify="space-between" align="start">
+                    <Box>
+                      <Text fontWeight="bold">{entry.name}</Text>
+                      <Text fontSize="xs" color="gray.500">
+                        {entry.side === "player"
+                          ? `${entry.publicSpeciesName || "Species not set"} ${entry.publicClassName || "Class not set"}`
+                          : `${entry.size || "Size not set"} ${entry.creatureType || "Creature"}`}
+                      </Text>
+                    </Box>
+                    <Badge colorScheme={entry.side === "player" ? "blue" : "red"}>
+                      {entry.side === "player" ? "Player" : "Enemy"}
+                    </Badge>
+                  </HStack>
+                </Box>
+              ))}
+            </Grid>
+          ) : (
+            <Alert status="info">
+              <AlertIcon />
+              <Text fontSize="sm">No staged roster entries yet.</Text>
+            </Alert>
+          )}
+        </Box>
+
+        <Box>
+          <Heading size="md" mb={4}>SRD Enemies</Heading>
+          <Grid templateColumns="repeat(auto-fit, minmax(260px, 1fr))" gap={4}>
+            {PUBLIC_ENEMIES.map((enemy) => (
+              <Box key={enemy.id} p={4} border="1px solid" borderColor="gray.200" borderRadius="md">
+                <VStack align="start" spacing={2}>
+                  <HStack justify="space-between" w="full">
+                    <Text fontWeight="bold">{enemy.name}</Text>
+                    <Badge colorScheme="red">{enemy.challengeRating || "CR -"}</Badge>
+                  </HStack>
+                  <Text fontSize="xs" color="gray.500">
+                    {enemy.size} {enemy.creatureType}
+                  </Text>
+                  <Text fontSize="xs" color="gray.600">
+                    AC {enemy.armorClass} | HP {enemy.hitPoints} | Speed {enemy.speed}
+                  </Text>
+                  <Button size="xs" colorScheme="red" variant="outline" onClick={() => addEnemyToArenaRoster(enemy)}>
+                    Add Enemy to Arena Roster
+                  </Button>
+                  <Text fontSize="xs" color="gray.500">
+                    Enemy roster integration is metadata-only in this panel.
+                  </Text>
+                </VStack>
+              </Box>
+            ))}
+          </Grid>
         </Box>
 
         {rolledCharacters.length > 0 && (

@@ -18,6 +18,7 @@ import {
 import { useParty } from "../context/PartyContext";
 import getSocket from "../utils/socket";
 import { getAllEntities, getEntityDetails, getEntityById } from "../engine/encounters";
+import { loadPublicArenaRosterEntries } from "../utils/publicRosterAdapter.js";
 
 const socket = getSocket(); // Use centralized socket manager
 
@@ -26,6 +27,7 @@ const ArenaRosterPanel = () => {
   const [selectedCategory, setSelectedCategory] = useState("all");
   const [selectedEntity, setSelectedEntity] = useState(null);
   const [spawnCount, setSpawnCount] = useState(1);
+  const [publicRosterEntries, setPublicRosterEntries] = useState(() => loadPublicArenaRosterEntries());
 
   const allEntities = getAllEntities();
   const categories = ["all", "human", "animal"];
@@ -33,6 +35,17 @@ const ArenaRosterPanel = () => {
   const filteredEntities = selectedCategory === "all" 
     ? allEntities 
     : allEntities.filter(entity => entity.category === selectedCategory);
+
+  React.useEffect(() => {
+    const refreshPublicRoster = () => setPublicRosterEntries(loadPublicArenaRosterEntries());
+    refreshPublicRoster();
+    window.addEventListener("storage", refreshPublicRoster);
+    window.addEventListener("focus", refreshPublicRoster);
+    return () => {
+      window.removeEventListener("storage", refreshPublicRoster);
+      window.removeEventListener("focus", refreshPublicRoster);
+    };
+  }, []);
 
   const handleSpawnEntity = () => {
     if (!selectedEntity || !activeParty?._id) return;
@@ -85,6 +98,42 @@ const ArenaRosterPanel = () => {
       <Heading mb={4}>Arena Roster</Heading>
       
       <VStack align="stretch" spacing={4}>
+        {publicRosterEntries.length > 0 && (
+          <Box>
+            <Heading size="sm" mb={3}>Public Roster Staging</Heading>
+            <Table variant="simple" size="sm">
+              <Thead>
+                <Tr>
+                  <Th>Name</Th>
+                  <Th>Side</Th>
+                  <Th>Public Details</Th>
+                  <Th>Status</Th>
+                </Tr>
+              </Thead>
+              <Tbody>
+                {publicRosterEntries.map((entry) => (
+                  <Tr key={`${entry.side}-${entry.id}`}>
+                    <Td>{entry.name}</Td>
+                    <Td>
+                      <Badge colorScheme={entry.side === "player" ? "blue" : "red"}>
+                        {entry.side === "player" ? "Player" : "Enemy"}
+                      </Badge>
+                    </Td>
+                    <Td>
+                      {entry.side === "player"
+                        ? `${entry.publicSpeciesName || "Species not set"} ${entry.publicClassName || "Class not set"}`
+                        : `${entry.size || "Size not set"} ${entry.creatureType || "Creature"}`}
+                    </Td>
+                    <Td>
+                      <Text fontSize="xs" color="gray.500">Metadata staged from AutoRollDemo</Text>
+                    </Td>
+                  </Tr>
+                ))}
+              </Tbody>
+            </Table>
+          </Box>
+        )}
+
         {/* Filters and Controls */}
         <HStack spacing={4} align="end">
           <Box>
