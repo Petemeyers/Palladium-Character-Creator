@@ -65,6 +65,51 @@ const characterSchema = new mongoose.Schema({
   },
   publicSkillProficiencies: [String],
   publicSkillChoices: [String],
+  publicSpeciesId: {
+    type: String,
+    required: false,
+  },
+  publicSpeciesName: {
+    type: String,
+    required: false,
+  },
+  creatureType: {
+    type: String,
+    required: false,
+  },
+  publicLanguages: [String],
+  size: {
+    type: String,
+    required: false,
+  },
+  speed: {
+    type: Number,
+    required: false,
+  },
+  abilityScoreMethod: {
+    type: String,
+    required: false,
+  },
+  baseAbilityScores: {
+    type: Map,
+    of: mongoose.Schema.Types.Mixed,
+    required: false,
+  },
+  backgroundAbilityBonuses: {
+    type: Map,
+    of: mongoose.Schema.Types.Mixed,
+    required: false,
+  },
+  finalAbilityScores: {
+    type: Map,
+    of: mongoose.Schema.Types.Mixed,
+    required: false,
+  },
+  abilityModifiers: {
+    type: Map,
+    of: mongoose.Schema.Types.Mixed,
+    required: false,
+  },
   attributes: {
     type: Map,
     of: mongoose.Schema.Types.Mixed,
@@ -81,7 +126,7 @@ const characterSchema = new mongoose.Schema({
   },
   alignment: {
     type: String,
-    required: true,
+    required: false,
   },
   origin: {
     type: String,

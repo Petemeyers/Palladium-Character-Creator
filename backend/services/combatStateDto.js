@@ -22,6 +22,18 @@ function getPublicMetadata(source) {
     "publicBackgroundName",
     "publicSkillProficiencies",
     "publicSkillChoices",
+    "publicSpeciesId",
+    "publicSpeciesName",
+    "creatureType",
+    "publicLanguages",
+    "alignment",
+    "size",
+    "speed",
+    "abilityScoreMethod",
+    "baseAbilityScores",
+    "backgroundAbilityBonuses",
+    "finalAbilityScores",
+    "abilityModifiers",
   ].forEach((key) => {
     if (source?.[key] !== undefined) metadata[key] = source[key];
   });
