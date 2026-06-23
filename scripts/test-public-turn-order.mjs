@@ -32,6 +32,11 @@ assert.equal(ordered[0].id, "enemy-1", "Enemy should sort first with higher tota
 assert.equal(ordered[0].initiativeRoll, 15, "Injected enemy roll should be used");
 assert.equal(ordered[0].initiativeBonus, 1, "Enemy Dexterity 12 should give +1");
 assert.equal(ordered[0].totalInitiative, 16, "Enemy total should include roll and bonus");
+assert.equal(ordered[0].maxActions, 1, "Turn rows should default to 1 max action");
+assert.equal(ordered[0].remainingActions, 1, "Turn rows should start with 1 remaining action");
+assert.equal(ordered[0].maxStamina, 10, "Turn rows should initialize combat stamina");
+assert.equal(ordered[0].currentStamina, 10, "Turn rows should start with full stamina");
+assert.equal(ordered[0].fatigueLabel, "Fresh", "Turn rows should start Fresh");
 assert.equal(ordered[1].id, "player-1", "Player should sort second");
 assert.equal(ordered[1].initiativeBonus, 2, "Player Dexterity 14 should give +2");
 assert.equal(ordered[1].totalInitiative, 10, "Player total should include roll and bonus");
@@ -52,7 +57,7 @@ assert.equal(advanced.currentIndex, 1, "End turn should advance to the next comb
 assert.equal(advanced.round, 1, "Round should not increment before wrapping");
 
 const wrapped = advancePublicTurnOrder({
-  turnOrder: ordered,
+  turnOrder: ordered.map((row, index) => index === 0 ? { ...row, remainingActions: 0 } : row),
   currentIndex: 1,
   round: 1,
   combatants: [player, enemy],
@@ -60,6 +65,8 @@ const wrapped = advancePublicTurnOrder({
 assert.equal(wrapped.currentIndex, 0, "End turn from final row should wrap to the first row");
 assert.equal(wrapped.round, 2, "Wrapping should increment the round");
 assert.equal(wrapped.wrapped, true, "Wrap should be reported");
+assert.equal(wrapped.current.remainingActions, 1, "Next current combatant should reset to max actions");
+assert.equal(wrapped.turnOrder[0].remainingActions, 1, "Turn order should store the reset action budget");
 
 const skipped = advancePublicTurnOrder({
   turnOrder: ordered,

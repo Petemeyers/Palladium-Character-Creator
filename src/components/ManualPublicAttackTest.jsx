@@ -19,7 +19,14 @@ import { getPublicCombatHpInfo } from "../utils/publicCombatHp.js";
 const getId = (combatant, index) =>
   String(combatant?.id || combatant?._id || combatant?.name || index);
 
-const ManualPublicAttackTest = ({ combatants = [], onApplyDamage, preferredAttackerId = "" }) => {
+const ManualPublicAttackTest = ({
+  combatants = [],
+  onApplyDamage,
+  preferredAttackerId = "",
+  currentTurnId = "",
+  currentTurnActions = null,
+  currentTurnStamina = null,
+}) => {
   const [attackerId, setAttackerId] = useState("");
   const [targetId, setTargetId] = useState("");
   const [attackIndex, setAttackIndex] = useState("0");
@@ -45,11 +52,23 @@ const ManualPublicAttackTest = ({ combatants = [], onApplyDamage, preferredAttac
   const attacks = attackerRow?.summary.actionPreviews || [];
   const selectedAttack = attacks[Number(attackIndex)] || null;
   const targetHpInfo = getPublicCombatHpInfo(targetRow?.combatant || {});
+  const selectedAttackerIsCurrentTurn = currentTurnId && attackerId === String(currentTurnId);
+  const currentTurnHasNoActions =
+    selectedAttackerIsCurrentTurn &&
+    currentTurnActions &&
+    Number(currentTurnActions.remainingActions) <= 0;
+  const staminaCost = 1;
+  const currentTurnHasNoStamina =
+    selectedAttackerIsCurrentTurn &&
+    currentTurnStamina &&
+    Number(currentTurnStamina.currentStamina) <= 0;
   const canApplyDamage =
     typeof onApplyDamage === "function" &&
     result?.hit === true &&
     Number.isFinite(Number(result.damageTotal)) &&
     targetHpInfo.ok &&
+    !currentTurnHasNoActions &&
+    !currentTurnHasNoStamina &&
     result.applied !== true;
 
   const handleAttackerChange = (value) => {
@@ -83,6 +102,7 @@ const ManualPublicAttackTest = ({ combatants = [], onApplyDamage, preferredAttac
   const handleApplyDamage = () => {
     if (!canApplyDamage) return;
     const applyResult = onApplyDamage({
+      attackerId,
       targetId,
       damageTotal: result.damageTotal,
       result,
@@ -105,6 +125,12 @@ const ManualPublicAttackTest = ({ combatants = [], onApplyDamage, preferredAttac
           <Text fontWeight="bold">Manual Public Attack Test</Text>
           <Badge colorScheme="gray">Dry Run</Badge>
         </HStack>
+
+        {currentTurnId && attackerId && !selectedAttackerIsCurrentTurn && (
+          <Text fontSize="xs" color="orange.700">
+            Manual override/test mode: selected attacker is not the current turn combatant.
+          </Text>
+        )}
 
         <HStack align="end" spacing={3} wrap="wrap">
           <FormControl maxW="260px">
@@ -176,6 +202,12 @@ const ManualPublicAttackTest = ({ combatants = [], onApplyDamage, preferredAttac
           </Text>
         )}
 
+        {attackerRow && (
+          <Text fontSize="xs" color="gray.600">
+            Stamina cost: {staminaCost}
+          </Text>
+        )}
+
         {result && (
           <Alert status={result.ok ? (result.hit ? "success" : "info") : "warning"} borderRadius="md">
             <AlertIcon />
@@ -208,6 +240,16 @@ const ManualPublicAttackTest = ({ combatants = [], onApplyDamage, preferredAttac
                   {!targetHpInfo.ok && (
                     <Text fontSize="xs" color="orange.700">
                       Missing: {targetHpInfo.missingFields.join(", ")}
+                    </Text>
+                  )}
+                  {currentTurnHasNoActions && (
+                    <Text fontSize="xs" color="orange.700">
+                      No actions remaining. End Turn manually.
+                    </Text>
+                  )}
+                  {currentTurnHasNoStamina && (
+                    <Text fontSize="xs" color="orange.700">
+                      No stamina remaining. End Turn manually.
                     </Text>
                   )}
                   {result.applied && (

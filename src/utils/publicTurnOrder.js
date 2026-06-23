@@ -1,5 +1,10 @@
 import { buildPublicInitiativePreviewRows } from "./publicInitiativePreview.js";
 import { getPublicCombatHpInfo } from "./publicCombatHp.js";
+import {
+  initializeActionBudget,
+  resetActionBudgetForTurn,
+} from "./publicActionBudget.js";
+import { initializeStamina } from "./combatStamina.js";
 
 const toNumber = (value) => {
   const number = Number(value);
@@ -27,6 +32,9 @@ export function buildPublicTurnOrderRows(combatants = [], options = {}) {
         ? null
         : initiativeRoll + initiativeBonus;
 
+      const actionBudget = initializeActionBudget(list[index]);
+      const stamina = initializeStamina(list[index]);
+
       return {
         id: preview.id,
         name: preview.name,
@@ -38,6 +46,11 @@ export function buildPublicTurnOrderRows(combatants = [], options = {}) {
         sourceLabel: preview.sourceLabel,
         ready,
         missingFields,
+        maxActions: actionBudget.maxActions,
+        remainingActions: actionBudget.remainingActions,
+        maxStamina: stamina.maxStamina,
+        currentStamina: stamina.currentStamina,
+        fatigueLabel: stamina.fatigueLabel,
         originalIndex: index,
       };
     })
@@ -81,7 +94,7 @@ export function advancePublicTurnOrder({
 } = {}) {
   const rows = Array.isArray(turnOrder) ? turnOrder : [];
   if (rows.length === 0) {
-    return { currentIndex: 0, round, current: null, wrapped: false };
+    return { currentIndex: 0, round, current: null, turnOrder: [], wrapped: false };
   }
 
   for (let offset = 1; offset <= rows.length; offset += 1) {
@@ -89,10 +102,12 @@ export function advancePublicTurnOrder({
     const wrapped = currentIndex + offset >= rows.length;
     const candidate = rows[nextIndex];
     if (!skipZeroHp || isPublicTurnCombatantActive(candidate, combatants)) {
+      const nextCurrent = resetActionBudgetForTurn(candidate);
       return {
         currentIndex: nextIndex,
         round: wrapped ? round + 1 : round,
-        current: candidate,
+        current: nextCurrent,
+        turnOrder: rows.map((row, index) => (index === nextIndex ? nextCurrent : row)),
         wrapped,
       };
     }
@@ -102,6 +117,7 @@ export function advancePublicTurnOrder({
     currentIndex,
     round,
     current: rows[currentIndex] || null,
+    turnOrder: rows,
     wrapped: false,
   };
 }

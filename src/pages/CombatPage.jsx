@@ -89,6 +89,8 @@ import {
   buildPublicTurnOrderRows,
   canStartPublicTurnOrder,
 } from "../utils/publicTurnOrder.js";
+import { spendAction } from "../utils/publicActionBudget.js";
+import { spendStamina } from "../utils/combatStamina.js";
 import { createPlayableCharacterFighter, getPlayableCharacterRollDetails } from "../utils/autoRoll.js";
 import { assignRandomWeaponToEnemy, getDefaultWeaponForEnemy, equipWeaponToEnemy, addWeaponToInventory } from "../utils/enemyWeaponAssigner.js";
 import armorShopData from "../data/armorShopData.js";
@@ -24190,6 +24192,7 @@ function CombatPage({ characters = [] }) {
       skipZeroHp: true,
     });
 
+    setManualPublicTurnOrder(nextTurn.turnOrder || manualPublicTurnOrder);
     setManualPublicTurnIndex(nextTurn.currentIndex);
     setManualPublicTurnRound(nextTurn.round);
     if (nextTurn.current) {
@@ -24200,7 +24203,7 @@ function CombatPage({ characters = [] }) {
     }
   }
 
-  function applyManualPublicAttackDamage({ targetId, damageTotal, result } = {}) {
+  function applyManualPublicAttackDamage({ attackerId, targetId, damageTotal, result } = {}) {
     const sourceFighters = Array.isArray(fightersRef.current) && fightersRef.current.length > 0
       ? fightersRef.current
       : fighters;
@@ -24222,6 +24225,39 @@ function CombatPage({ characters = [] }) {
 
     if (!applyResult.ok) return applyResult;
 
+    let actionMessage = "";
+    let actionSpent = false;
+    let staminaMessage = "";
+    let staminaSpent = false;
+    let nextManualTurnOrder = manualPublicTurnOrder;
+    const currentManualTurn = manualPublicTurnOrder[manualPublicTurnIndex] || null;
+    if (currentManualTurn && String(attackerId) === String(currentManualTurn.id)) {
+      const spendResult = spendAction(currentManualTurn, 1);
+      if (!spendResult.ok) {
+        return {
+          ok: false,
+          missingFields: ["remainingActions"],
+          message: "No actions remaining. End Turn manually.",
+        };
+      }
+      const staminaResult = spendStamina(spendResult.updated, 1);
+      if (!staminaResult.ok) {
+        return {
+          ok: false,
+          missingFields: ["currentStamina"],
+          message: "No stamina remaining. End Turn manually.",
+        };
+      }
+      actionSpent = true;
+      staminaSpent = true;
+      nextManualTurnOrder = manualPublicTurnOrder.map((row, index) =>
+        index === manualPublicTurnIndex ? staminaResult.updated : row
+      );
+      setManualPublicTurnOrder(nextManualTurnOrder);
+      actionMessage = ` Action spent: ${spendResult.remainingActions}/${spendResult.maxActions} remaining.`;
+      staminaMessage = ` Stamina spent: ${staminaResult.currentStamina}/${staminaResult.maxStamina} remaining.`;
+    }
+
     const nextFighters = sourceFighters.map((fighter, index) =>
       index === targetIndex ? applyResult.updatedTarget : fighter
     );
@@ -24232,12 +24268,16 @@ function CombatPage({ characters = [] }) {
       `${result?.attackerName || "Attacker"} hits ${result?.targetName || applyResult.updatedTarget.name || "Target"} ` +
       `with ${result?.attackName || "Basic Attack"} for ${applyResult.damageTotal} damage. ` +
       `${applyResult.updatedTarget.name || "Target"} HP: ${applyResult.oldHp} -> ${applyResult.newHp}.` +
-      (applyResult.newHp === 0 ? ` ${applyResult.updatedTarget.name || "Target"} is at 0 HP.` : "");
+      (applyResult.newHp === 0 ? ` ${applyResult.updatedTarget.name || "Target"} is at 0 HP.` : "") +
+      actionMessage +
+      staminaMessage;
 
     addLog(message, applyResult.newHp === 0 ? "warning" : "combat");
 
     return {
       ...applyResult,
+      actionSpent,
+      staminaSpent,
       message,
     };
   }
@@ -29829,6 +29869,12 @@ function CombatPage({ characters = [] }) {
                                         <Text fontSize="sm">
                                           HP {manualPublicCurrentHp.ok ? manualPublicCurrentHp.hp : "Missing"}
                                         </Text>
+                                        <Text fontSize="sm">
+                                          Actions {manualPublicCurrentTurn.remainingActions}/{manualPublicCurrentTurn.maxActions}
+                                        </Text>
+                                        <Text fontSize="sm">
+                                          Stamina {manualPublicCurrentTurn.currentStamina}/{manualPublicCurrentTurn.maxStamina} {manualPublicCurrentTurn.fatigueLabel}
+                                        </Text>
                                         <Badge colorScheme="green">active</Badge>
                                       </HStack>
                                     </Box>
@@ -29845,6 +29891,8 @@ function CombatPage({ characters = [] }) {
                                             <Th>Roll</Th>
                                             <Th>Bonus</Th>
                                             <Th>Total</Th>
+                                            <Th>Actions</Th>
+                                            <Th>Stamina</Th>
                                             <Th>Status</Th>
                                           </Tr>
                                         </Thead>
@@ -29863,6 +29911,8 @@ function CombatPage({ characters = [] }) {
                                                 <Td>{row.initiativeRoll ?? "Missing"}</Td>
                                                 <Td>{row.initiativeBonus >= 0 ? `+${row.initiativeBonus}` : row.initiativeBonus}</Td>
                                                 <Td>{row.totalInitiative ?? "Missing"}</Td>
+                                                <Td>{row.remainingActions}/{row.maxActions}</Td>
+                                                <Td>{row.currentStamina}/{row.maxStamina} {row.fatigueLabel}</Td>
                                                 <Td>
                                                   <Badge colorScheme={active ? "green" : "gray"}>
                                                     {active ? "Current" : "Waiting"}
@@ -29884,6 +29934,20 @@ function CombatPage({ characters = [] }) {
                             combatants={fighters}
                             onApplyDamage={applyManualPublicAttackDamage}
                             preferredAttackerId={manualPublicCurrentTurn?.id || ""}
+                            currentTurnId={manualPublicCurrentTurn?.id || ""}
+                            currentTurnActions={manualPublicCurrentTurn
+                              ? {
+                                  remainingActions: manualPublicCurrentTurn.remainingActions,
+                                  maxActions: manualPublicCurrentTurn.maxActions,
+                                }
+                              : null}
+                            currentTurnStamina={manualPublicCurrentTurn
+                              ? {
+                                  currentStamina: manualPublicCurrentTurn.currentStamina,
+                                  maxStamina: manualPublicCurrentTurn.maxStamina,
+                                  fatigueLabel: manualPublicCurrentTurn.fatigueLabel,
+                                }
+                              : null}
                           />
                         </VStack>
                       </Box>
