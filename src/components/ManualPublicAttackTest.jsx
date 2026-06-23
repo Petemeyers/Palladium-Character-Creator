@@ -15,6 +15,7 @@ import {
 import { getEncounterReadinessSummary } from "../utils/publicCombatReadiness.js";
 import { resolvePublicBasicAttack } from "../utils/publicBasicAttackResolver.js";
 import { getPublicCombatHpInfo } from "../utils/publicCombatHp.js";
+import { applyArmorMitigation, getArmorProfile } from "../utils/combatArmor.js";
 
 const getId = (combatant, index) =>
   String(combatant?.id || combatant?._id || combatant?.name || index);
@@ -52,6 +53,7 @@ const ManualPublicAttackTest = ({
   const attacks = attackerRow?.summary.actionPreviews || [];
   const selectedAttack = attacks[Number(attackIndex)] || null;
   const targetHpInfo = getPublicCombatHpInfo(targetRow?.combatant || {});
+  const targetArmorProfile = getArmorProfile(targetRow?.combatant || {});
   const selectedAttackerIsCurrentTurn = currentTurnId && attackerId === String(currentTurnId);
   const currentTurnHasNoActions =
     selectedAttackerIsCurrentTurn &&
@@ -96,7 +98,19 @@ const ManualPublicAttackTest = ({
       target: targetRow?.combatant,
       attack: selectedAttack,
     });
-    setResult(nextResult);
+    const armorMitigation = nextResult.hit
+      ? applyArmorMitigation({
+          target: targetRow?.combatant,
+          attack: selectedAttack,
+          rawDamage: nextResult.damageTotal,
+        })
+      : null;
+
+    setResult({
+      ...nextResult,
+      armorMitigation,
+      finalDamage: armorMitigation?.finalDamage ?? nextResult.damageTotal,
+    });
   };
 
   const handleApplyDamage = () => {
@@ -104,7 +118,7 @@ const ManualPublicAttackTest = ({
     const applyResult = onApplyDamage({
       attackerId,
       targetId,
-      damageTotal: result.damageTotal,
+      damageTotal: result.finalDamage ?? result.damageTotal,
       result,
     });
 
@@ -208,6 +222,12 @@ const ManualPublicAttackTest = ({
           </Text>
         )}
 
+        {targetRow && (
+          <Text fontSize="xs" color="gray.600">
+            Armor reduction: {targetArmorProfile.reduction} ({targetArmorProfile.source})
+          </Text>
+        )}
+
         {result && (
           <Alert status={result.ok ? (result.hit ? "success" : "info") : "warning"} borderRadius="md">
             <AlertIcon />
@@ -219,7 +239,13 @@ const ManualPublicAttackTest = ({
               {result.ok && (
                 <Text fontSize="xs">
                   Roll {result.d20Roll} + {result.attackBonus} = {result.totalToHit}; AC/Guard {result.targetArmor}
-                  {result.hit && result.damageTotal !== null ? `; Damage ${result.damageTotal}${result.damageType ? ` ${result.damageType}` : ""}` : ""}
+                  {result.hit && result.damageTotal !== null ? `; Raw damage ${result.damageTotal}${result.damageType ? ` ${result.damageType}` : ""}` : ""}
+                </Text>
+              )}
+              {result.hit && result.armorMitigation && (
+                <Text fontSize="xs">
+                  Raw damage {result.armorMitigation.rawDamage}; Armor reduction {result.armorMitigation.armorReduction}; Final damage {result.armorMitigation.finalDamage}
+                  {result.armorMitigation.finalDamage === 0 ? "; Armor absorbed the blow." : ""}
                 </Text>
               )}
               {!result.ok && result.missingFields.length > 0 && (

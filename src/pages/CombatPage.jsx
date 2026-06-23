@@ -24264,10 +24264,15 @@ function CombatPage({ characters = [] }) {
     fightersRef.current = nextFighters;
     setFighters(nextFighters);
 
+    const rawDamage = result?.armorMitigation?.rawDamage ?? applyResult.damageTotal;
+    const armorReduction = result?.armorMitigation?.armorReduction ?? 0;
+    const finalDamage = result?.armorMitigation?.finalDamage ?? applyResult.damageTotal;
     const message =
       `${result?.attackerName || "Attacker"} hits ${result?.targetName || applyResult.updatedTarget.name || "Target"} ` +
-      `with ${result?.attackName || "Basic Attack"} for ${applyResult.damageTotal} damage. ` +
+      `with ${result?.attackName || "Basic Attack"}. ` +
+      `Raw damage: ${rawDamage}. Armor reduction: ${armorReduction}. Final damage: ${finalDamage}. ` +
       `${applyResult.updatedTarget.name || "Target"} HP: ${applyResult.oldHp} -> ${applyResult.newHp}.` +
+      (finalDamage === 0 ? " Armor absorbed the blow." : "") +
       (applyResult.newHp === 0 ? ` ${applyResult.updatedTarget.name || "Target"} is at 0 HP.` : "") +
       actionMessage +
       staminaMessage;
