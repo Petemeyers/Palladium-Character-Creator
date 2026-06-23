@@ -2460,6 +2460,17 @@ function CombatPage({ characters = [] }) {
     ) || null;
   }, [fighters, manualPublicCurrentTurn]);
   const manualPublicCurrentHp = getPublicCombatHpInfo(manualPublicCurrentCombatant || {});
+  const manualPublicCatalogTargets = useMemo(() => {
+    if (!manualPublicCurrentCombatant) return [];
+    const currentId = String(manualPublicCurrentTurn?.id || "");
+    const currentSide = manualPublicCurrentCombatant.side || manualPublicCurrentCombatant.type;
+    return fighters.filter((fighter, index) => {
+      const fighterId = String(fighter?.id || fighter?._id || fighter?.name || index);
+      if (fighterId === currentId) return false;
+      const fighterSide = fighter?.side || fighter?.type;
+      return !currentSide || !fighterSide || fighterSide !== currentSide;
+    });
+  }, [fighters, manualPublicCurrentCombatant, manualPublicCurrentTurn]);
   const [showPartySelector, setShowPartySelector] = useState(false);
   const [diceRolls, setDiceRolls] = useState([]);
   const [showRollDetails, setShowRollDetails] = useState(false);
@@ -2467,6 +2478,7 @@ function CombatPage({ characters = [] }) {
   const [aiControlEnabled, setAiControlEnabled] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [selectedAction, setSelectedAction] = useState(null);
+  const [selectedCombatAction, setSelectedCombatAction] = useState(null);
   const [selectedGrappleAction, setSelectedGrappleAction] = useState(null);
   const [selectedManeuver, setSelectedManeuver] = useState(null);
   const [selectedTarget, setSelectedTarget] = useState(null);
@@ -8438,6 +8450,10 @@ function CombatPage({ characters = [] }) {
 
     return baseOptions;
   }, [availableTacticalPowers, availableTechniques, canFighterStartTurn, canLiftTarget, currentFighter, fighters]);
+
+  useEffect(() => {
+    setSelectedCombatAction(null);
+  }, [manualPublicCurrentTurn?.id]);
 
   useEffect(() => {
     if (
@@ -29973,21 +29989,20 @@ function CombatPage({ characters = [] }) {
 
                           <CombatActionCatalogPanel
                             actor={manualPublicCurrentCombatant}
-                            targets={manualPublicCurrentCombatant
-                              ? fighters.filter((fighter, index) =>
-                                  String(fighter?.id || fighter?._id || fighter?.name || index) !== String(manualPublicCurrentTurn?.id)
-                                )
-                              : []}
+                            targets={manualPublicCatalogTargets}
                             currentTurnEntry={manualPublicCurrentTurn}
-                            selectedTarget={selectedTarget}
+                            selectedTarget={selectedTarget || manualPublicCatalogTargets[0] || null}
                             equippedWeapons={manualPublicCurrentCombatant ? getEquistaminadWeapons(manualPublicCurrentCombatant) : []}
                             inventory={manualPublicCurrentCombatant?.inventory || manualPublicCurrentCombatant?.items || []}
                             compatibilityActions={actionOptions}
+                            selectedCombatAction={selectedCombatAction}
+                            onSelectCombatAction={setSelectedCombatAction}
                           />
 
                           <ManualPublicAttackTest
                             combatants={fighters}
                             onApplyDamage={applyManualPublicAttackDamage}
+                            selectedCombatAction={selectedCombatAction}
                             preferredAttackerId={manualPublicCurrentTurn?.id || ""}
                             currentTurnId={manualPublicCurrentTurn?.id || ""}
                             currentTurnActions={manualPublicCurrentTurn

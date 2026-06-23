@@ -443,6 +443,8 @@ export function buildCombatActionCatalog({
     id: action.id || `action-${index}`,
     metadata: sanitizeMetadata({
       ...action.metadata,
+      actorId: getEntryId(actor),
+      actorName: actor.name,
       targetCount: toArray(targets).length,
     }),
   }));

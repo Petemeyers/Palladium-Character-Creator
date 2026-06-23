@@ -29,12 +29,14 @@ const ManualPublicAttackTest = ({
   currentTurnId = "",
   currentTurnActions = null,
   currentTurnStamina = null,
+  selectedCombatAction = null,
 }) => {
   const [attackerId, setAttackerId] = useState("");
   const [targetId, setTargetId] = useState("");
   const [attackIndex, setAttackIndex] = useState("0");
   const [result, setResult] = useState(null);
   const lastPreferredAttackerId = useRef("");
+  const lastSelectedCombatActionId = useRef("");
 
   const rows = useMemo(() => (
     (Array.isArray(combatants) ? combatants : []).map((combatant, index) => {
@@ -83,6 +85,13 @@ const ManualPublicAttackTest = ({
     setResult(null);
   };
 
+  const normalizeActionName = (value) =>
+    String(value || "")
+      .toLowerCase()
+      .replace(/^attack with\s+/, "")
+      .replace(/\s+\([^)]*\)$/, "")
+      .replace(/[^a-z0-9]+/g, "");
+
   useEffect(() => {
     if (!preferredAttackerId) return;
     if (lastPreferredAttackerId.current === String(preferredAttackerId)) return;
@@ -94,6 +103,41 @@ const ManualPublicAttackTest = ({
     setAttackIndex("0");
     setResult(null);
   }, [preferredAttackerId, rows]);
+
+  useEffect(() => {
+    if (!selectedCombatAction || selectedCombatAction.type !== "attack") return;
+    if (!selectedCombatAction.id || lastSelectedCombatActionId.current === selectedCombatAction.id) return;
+
+    const actorId = String(selectedCombatAction.metadata?.actorId || preferredAttackerId || currentTurnId || "");
+    const nextAttackerRow =
+      rows.find((row) => row.id === actorId) ||
+      rows.find((row) => row.id === String(preferredAttackerId)) ||
+      rows.find((row) => row.id === String(currentTurnId));
+    if (!nextAttackerRow) return;
+
+    const nextAttacks = nextAttackerRow.summary.actionPreviews || [];
+    const catalogAttackName =
+      selectedCombatAction.metadata?.attackName ||
+      selectedCombatAction.name;
+    const normalizedCatalogAttack = normalizeActionName(catalogAttackName);
+    const nextAttackIndex = nextAttacks.findIndex((attack) =>
+      normalizeActionName(attack?.name || attack?.attackName) === normalizedCatalogAttack
+    );
+    if (nextAttackIndex < 0) return;
+
+    const nextTargets = rows.filter((row) =>
+      row.id !== nextAttackerRow.id && row.summary.side !== nextAttackerRow.summary.side
+    );
+    const nextTarget = selectedCombatAction.targetId
+      ? nextTargets.find((row) => row.id === String(selectedCombatAction.targetId))
+      : null;
+
+    lastSelectedCombatActionId.current = selectedCombatAction.id;
+    setAttackerId(nextAttackerRow.id);
+    if (nextTarget) setTargetId(nextTarget.id);
+    setAttackIndex(String(nextAttackIndex));
+    setResult(null);
+  }, [currentTurnId, preferredAttackerId, rows, selectedCombatAction]);
 
   const handleResolve = () => {
     const nextResult = resolvePublicBasicAttack({
@@ -156,6 +200,12 @@ const ManualPublicAttackTest = ({
         {currentTurnId && attackerId && !selectedAttackerIsCurrentTurn && (
           <Text fontSize="xs" color="orange.700">
             Manual override/test mode: selected attacker is not the current turn combatant.
+          </Text>
+        )}
+
+        {selectedCombatAction?.type === "attack" && (
+          <Text fontSize="xs" color="purple.700">
+            Selected from Combat Action Catalog.
           </Text>
         )}
 

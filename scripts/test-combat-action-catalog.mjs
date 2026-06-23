@@ -62,9 +62,12 @@ assert.equal(catalog.some(hasFunction), false, "catalog actions contain no funct
 
 const enabledAttack = catalog.find((action) => action.name === "Attack with Shortsword");
 assert.equal(enabledAttack.enabled, true, "numeric remaining actions and stamina allow weapon attack");
+assert.equal(enabledAttack.id, "equipped-weapon-shortsword-0", "attack action id is stable enough for selection");
 assert.equal(enabledAttack.costActions, 1);
 assert.equal(enabledAttack.costStamina, 1);
 assert.equal(enabledAttack.targetId, "target-1");
+assert.equal(enabledAttack.metadata.actorId, "fighter-1", "attack metadata includes actor id");
+assert.equal(enabledAttack.metadata.attackName, "Shortsword", "attack metadata includes attack name");
 
 const noWeaponCatalog = buildCombatActionCatalog({
   actor: { id: "fighter-2", name: "Unarmed Fighter", remainingActions: 1, currentStamina: 1 },

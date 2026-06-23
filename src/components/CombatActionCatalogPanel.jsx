@@ -2,6 +2,7 @@ import React, { useMemo } from "react";
 import {
   Badge,
   Box,
+  Button,
   HStack,
   Table,
   Tbody,
@@ -32,6 +33,8 @@ const CombatActionCatalogPanel = ({
   equippedWeapons = [],
   inventory = [],
   compatibilityActions = [],
+  selectedCombatAction = null,
+  onSelectCombatAction,
 }) => {
   const actions = useMemo(() => buildCombatActionCatalog({
     actor,
@@ -52,6 +55,8 @@ const CombatActionCatalogPanel = ({
   ]);
 
   if (!actor) return null;
+  const selectedId = selectedCombatAction?.id || "";
+  const selectedAction = actions.find((action) => action.id === selectedId) || null;
 
   return (
     <Box borderWidth="1px" borderRadius="md" p={3} bg="white">
@@ -60,11 +65,17 @@ const CombatActionCatalogPanel = ({
           <Box>
             <Text fontWeight="bold">Combat Action Catalog</Text>
             <Text fontSize="xs" color="gray.600">
-              Display-only command list for {actor.name || "current combatant"}.
+              Command list for {actor.name || "current combatant"}.
             </Text>
           </Box>
           <Badge colorScheme="purple">{actions.length} action{actions.length === 1 ? "" : "s"}</Badge>
         </HStack>
+
+        {selectedAction && selectedAction.type !== "attack" && (
+          <Text fontSize="xs" color="gray.600">
+            Manual handler pending for this action.
+          </Text>
+        )}
 
         {actions.length === 0 ? (
           <Text fontSize="xs" color="gray.600">No catalog actions available.</Text>
@@ -78,15 +89,19 @@ const CombatActionCatalogPanel = ({
                   <Th>Cost</Th>
                   <Th>Status</Th>
                   <Th>Preview</Th>
+                  <Th>Select</Th>
                 </Tr>
               </Thead>
               <Tbody>
-                {actions.map((action) => (
-                  <Tr key={action.id}>
+                {actions.map((action) => {
+                  const isSelected = action.id === selectedId;
+                  return (
+                  <Tr key={action.id} bg={isSelected ? "purple.50" : undefined}>
                     <Td>
                       <VStack align="start" spacing={0}>
                         <Text fontSize="sm" fontWeight="semibold">{action.name}</Text>
                         <Text fontSize="xs" color="gray.500">{action.source}</Text>
+                        {isSelected && <Badge colorScheme="purple">Selected</Badge>}
                       </VStack>
                     </Td>
                     <Td>
@@ -116,8 +131,24 @@ const CombatActionCatalogPanel = ({
                         {action.previewSummary || "Preview pending."}
                       </Text>
                     </Td>
+                    <Td>
+                      <Button
+                        size="xs"
+                        colorScheme={isSelected ? "purple" : "gray"}
+                        variant={isSelected ? "solid" : "outline"}
+                        onClick={() => {
+                          if (!action.enabled || typeof onSelectCombatAction !== "function") return;
+                          onSelectCombatAction(action);
+                        }}
+                        isDisabled={!action.enabled}
+                        title={action.disabledReason || `Select ${action.name}`}
+                      >
+                        Select
+                      </Button>
+                    </Td>
                   </Tr>
-                ))}
+                  );
+                })}
               </Tbody>
             </Table>
           </Box>
