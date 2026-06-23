@@ -84,6 +84,7 @@ import EncounterReadinessPanel from "../components/EncounterReadinessPanel.jsx";
 import InitiativeSetupPreview from "../components/InitiativeSetupPreview.jsx";
 import ManualPublicAttackTest from "../components/ManualPublicAttackTest.jsx";
 import { applyPublicCombatDamage, getPublicCombatHpInfo } from "../utils/publicCombatHp.js";
+import { addWoundRecord, createWoundRecord } from "../utils/combatWoundRecords.js";
 import {
   advancePublicTurnOrder,
   buildPublicTurnOrderRows,
@@ -24258,27 +24259,51 @@ function CombatPage({ characters = [] }) {
       staminaMessage = ` Stamina spent: ${staminaResult.currentStamina}/${staminaResult.maxStamina} remaining.`;
     }
 
+    const rawDamage = result?.armorMitigation?.rawDamage ?? applyResult.damageTotal;
+    const armorReduction = result?.armorMitigation?.armorReduction ?? 0;
+    const finalDamage = result?.armorMitigation?.finalDamage ?? applyResult.damageTotal;
+    const attacker =
+      sourceFighters.find((fighter, index) =>
+        String(fighter?.id || fighter?._id || fighter?.name || index) === String(attackerId)
+      ) || { name: result?.attackerName };
+    const woundRecord = result?.woundPreview && Number(finalDamage) > 0
+      ? createWoundRecord({
+          attacker,
+          target: applyResult.updatedTarget,
+          attack: { name: result?.attackName || "Basic Attack" },
+          woundPreview: result.woundPreview,
+          rawDamage,
+          armorReduction,
+          finalDamage,
+        })
+      : null;
+    const updatedTarget = woundRecord
+      ? addWoundRecord(applyResult.updatedTarget, woundRecord)
+      : applyResult.updatedTarget;
     const nextFighters = sourceFighters.map((fighter, index) =>
-      index === targetIndex ? applyResult.updatedTarget : fighter
+      index === targetIndex ? updatedTarget : fighter
     );
     fightersRef.current = nextFighters;
     setFighters(nextFighters);
 
-    const rawDamage = result?.armorMitigation?.rawDamage ?? applyResult.damageTotal;
-    const armorReduction = result?.armorMitigation?.armorReduction ?? 0;
-    const finalDamage = result?.armorMitigation?.finalDamage ?? applyResult.damageTotal;
     const woundMessage = result?.woundPreview
       ? ` Struck location: ${result.woundPreview.location}. Wound severity: ${result.woundPreview.severity}.` +
         (result.woundPreview.note ? ` ${result.woundPreview.note}` : "")
       : "";
+    const woundRecordMessage = woundRecord
+      ? ` Wound recorded: ${woundRecord.severity} to ${woundRecord.location}.`
+      : Number(finalDamage) === 0
+        ? " No wound recorded."
+        : "";
     const message =
       `${result?.attackerName || "Attacker"} hits ${result?.targetName || applyResult.updatedTarget.name || "Target"} ` +
       `with ${result?.attackName || "Basic Attack"}. ` +
       `Raw damage: ${rawDamage}. Armor reduction: ${armorReduction}. Final damage: ${finalDamage}. ` +
-      `${applyResult.updatedTarget.name || "Target"} HP: ${applyResult.oldHp} -> ${applyResult.newHp}.` +
+      `${updatedTarget.name || "Target"} HP: ${applyResult.oldHp} -> ${applyResult.newHp}.` +
       woundMessage +
+      woundRecordMessage +
       (finalDamage === 0 && !result?.woundPreview?.note ? " Armor absorbed the blow." : "") +
-      (applyResult.newHp === 0 ? ` ${applyResult.updatedTarget.name || "Target"} is at 0 HP.` : "") +
+      (applyResult.newHp === 0 ? ` ${updatedTarget.name || "Target"} is at 0 HP.` : "") +
       actionMessage +
       staminaMessage;
 
@@ -24288,6 +24313,8 @@ function CombatPage({ characters = [] }) {
       ...applyResult,
       actionSpent,
       staminaSpent,
+      woundRecord,
+      woundRecorded: Boolean(woundRecord),
       message,
     };
   }

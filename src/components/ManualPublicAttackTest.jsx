@@ -17,6 +17,7 @@ import { resolvePublicBasicAttack } from "../utils/publicBasicAttackResolver.js"
 import { getPublicCombatHpInfo } from "../utils/publicCombatHp.js";
 import { applyArmorMitigation, getArmorProfile } from "../utils/combatArmor.js";
 import { previewWound } from "../utils/combatWounds.js";
+import { getWoundRecords } from "../utils/combatWoundRecords.js";
 
 const getId = (combatant, index) =>
   String(combatant?.id || combatant?._id || combatant?.name || index);
@@ -55,6 +56,7 @@ const ManualPublicAttackTest = ({
   const selectedAttack = attacks[Number(attackIndex)] || null;
   const targetHpInfo = getPublicCombatHpInfo(targetRow?.combatant || {});
   const targetArmorProfile = getArmorProfile(targetRow?.combatant || {});
+  const targetWoundRecords = getWoundRecords(targetRow?.combatant || {});
   const selectedAttackerIsCurrentTurn = currentTurnId && attackerId === String(currentTurnId);
   const currentTurnHasNoActions =
     selectedAttackerIsCurrentTurn &&
@@ -237,6 +239,21 @@ const ManualPublicAttackTest = ({
           <Text fontSize="xs" color="gray.600">
             Armor reduction: {targetArmorProfile.reduction} ({targetArmorProfile.source})
           </Text>
+        )}
+
+        {targetRow && targetWoundRecords.length > 0 && (
+          <Box borderWidth="1px" borderRadius="md" p={2} bg="gray.50">
+            <VStack align="stretch" spacing={1}>
+              <Text fontSize="xs" fontWeight="bold">
+                Wounds
+              </Text>
+              {targetWoundRecords.map((wound, index) => (
+                <Text key={wound.id || index} fontSize="xs" color="gray.700">
+                  {wound.severity} - {wound.location} - {wound.finalDamage} final damage
+                </Text>
+              ))}
+            </VStack>
+          </Box>
         )}
 
         {result && (
