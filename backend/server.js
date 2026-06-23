@@ -51,7 +51,48 @@ if (process.env.LOCAL_GAME_SERVER === "true") {
   dotenv.config({ path: path.resolve(__dirname, "../.env.local"), override: true });
 }
 
-function getDatabaseMode(uri = process.env.MONGODB_URI || "") {
+const MONGO_URI_ENV_KEYS = ["MONGODB_URI", "MONGO_URI", "DATABASE_URL", "DB_URI"];
+
+function getMongoUriConfig(env = process.env) {
+  for (const key of MONGO_URI_ENV_KEYS) {
+    const uri = env[key];
+    if (uri && String(uri).trim()) {
+      return { key, uri: String(uri).trim() };
+    }
+  }
+
+  return { key: null, uri: "" };
+}
+
+const mongoUriConfig = getMongoUriConfig();
+
+function getMongoTargetSummary(uri = "") {
+  if (!uri) {
+    return "not configured";
+  }
+
+  try {
+    const parsed = new URL(uri);
+    const database = parsed.pathname ? parsed.pathname.replace(/^\/+/, "") : "";
+    return `${parsed.protocol}//${parsed.host}${database ? `/${database}` : ""}`;
+  } catch {
+    return "configured but not parseable";
+  }
+}
+
+function logMongoStartupDiagnostic() {
+  if (process.env.NODE_ENV === "production") {
+    return;
+  }
+
+  console.log(
+    `Mongo URI ${mongoUriConfig.uri ? "found" : "missing"}${
+      mongoUriConfig.key ? ` via ${mongoUriConfig.key}` : ""
+    }; target: ${getMongoTargetSummary(mongoUriConfig.uri)}`
+  );
+}
+
+function getDatabaseMode(uri = mongoUriConfig.uri || "") {
   if (
     uri.startsWith("mongodb://127.0.0.1") ||
     uri.startsWith("mongodb://localhost") ||
@@ -217,8 +258,9 @@ app._router.stack.forEach((middleware) => {
 });
 
 // MongoDB connection
+logMongoStartupDiagnostic();
 mongoose
-  .connect(process.env.MONGODB_URI)
+  .connect(mongoUriConfig.uri)
   .then(() => {
     console.log(`Connected to MongoDB (${getDatabaseMode()} mode)`);
     // Log available routes for debugging
