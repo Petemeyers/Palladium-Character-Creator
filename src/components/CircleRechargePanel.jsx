@@ -31,12 +31,12 @@ const CircleRechargePanel = ({
       return;
     }
 
-    // Calculate extension based on stamina cost (roughly 1 melee per 2 stamina)
-    const meleesExtended = Math.floor(staminaCost / 2);
+    // Calculate extension based on stamina cost (roughly 1 round per 2 stamina)
+    const roundsExtended = Math.floor(staminaCost / 2);
     
     const updatedCircle = {
       ...selectedCircle,
-      remaining: (selectedCircle.remaining || 0) + meleesExtended
+      remaining: (selectedCircle.remaining || 0) + roundsExtended
     };
 
     const updatedCaster = {
@@ -84,7 +84,7 @@ const CircleRechargePanel = ({
           >
             {casterCircles.map(circle => (
               <option key={circle.id} value={circle.id}>
-                {circle.name || circle.type} - {circle.remaining || 0} melees remaining
+                {circle.name || circle.type} - {circle.remaining || 0} rounds remaining
               </option>
             ))}
           </Select>
@@ -94,7 +94,7 @@ const CircleRechargePanel = ({
           <>
             <Box p={2} bg="gray.50" borderRadius="md">
               <Text fontSize="xs" color="gray.600">
-                Current: {selectedCircle.remaining || 0} melees
+                Current: {selectedCircle.remaining || 0} rounds
               </Text>
               <Text fontSize="xs" color="gray.600">
                 Position: ({selectedCircle.position?.x || '?'}, {selectedCircle.position?.y || '?'})
@@ -108,10 +108,10 @@ const CircleRechargePanel = ({
                 onChange={(e) => setPpeCost(Number(e.target.value))}
                 size="sm"
               >
-                <option value={5}>5 stamina (+2 melees)</option>
-                <option value={10}>10 stamina (+5 melees)</option>
-                <option value={20}>20 stamina (+10 melees)</option>
-                <option value={30}>30 stamina (+15 melees)</option>
+                <option value={5}>5 stamina (+2 rounds)</option>
+                <option value={10}>10 stamina (+5 rounds)</option>
+                <option value={20}>20 stamina (+10 rounds)</option>
+                <option value={30}>30 stamina (+15 rounds)</option>
               </Select>
             </FormControl>
 

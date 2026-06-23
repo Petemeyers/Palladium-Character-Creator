@@ -17,11 +17,11 @@ const CircleManagerPanel = ({
   isGM = false,
   onClose
 }) => {
-  const handleExtend = (circle, melees = 5) => {
+  const handleExtend = (circle, rounds = 5) => {
     if (onUpdate) {
       onUpdate({
         ...circle,
-        remaining: (circle.remaining || 0) + melees
+        remaining: (circle.remaining || 0) + rounds
       });
     }
   };
@@ -73,7 +73,7 @@ const CircleManagerPanel = ({
                     {circle.name || circle.type}
                   </Text>
                   <Badge colorScheme={circle.remaining > 5 ? "green" : circle.remaining > 0 ? "yellow" : "red"}>
-                    {circle.remaining || 0} melees
+                    {circle.remaining || 0} rounds
                   </Badge>
                 </HStack>
 
@@ -95,14 +95,14 @@ const CircleManagerPanel = ({
                     colorScheme="green"
                     onClick={() => handleExtend(circle, 5)}
                   >
-                    +5 Melees
+                    +5 Rounds
                   </Button>
                   <Button
                     size="xs"
                     colorScheme="yellow"
                     onClick={() => handleExtend(circle, 1)}
                   >
-                    +1 Melee
+                    +1 Round
                   </Button>
                   <Button
                     size="xs"

@@ -9,7 +9,7 @@ import { calculateMovementPerAction } from '../utils/distanceCombatSystem.js';
  * Displays:
  * - Walking speed (combat movement)
  * - Running speed (full movement)
- * - Total movement per melee
+ * - Total movement per round
  * - Visual rings on tactical map
  */
 
@@ -42,12 +42,12 @@ const MovementRangeDisplay = ({
               Running: {movement.display.feetPerAction}ft/action
             </Badge>
             <Badge colorScheme="purple" size="sm">
-              Total: {movement.display.feetPerMelee}ft/melee
+              Total: {movement.display.feetPerMelee}ft/round
             </Badge>
           </HStack>
           
           <Text fontSize="xs" color="gray.600" fontStyle="italic">
-            Ã¢Å¡Â¡ Official 1994: Spd {speed} Ãƒâ€” 6 ÃƒÂ· {actionsPerRound} attacks = {movement.display.yardsPerAction}yds/action
+            Ã¢Å¡Â¡ Official 1994: Spd {speed} Ãƒâ€” 6 ÃƒÂ· {actionsPerRound} actions = {movement.display.yardsPerAction}yds/action
           </Text>
         </VStack>
       </Box>

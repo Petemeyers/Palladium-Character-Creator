@@ -99,7 +99,7 @@ const ItemCard = ({
             {/* Enhanced stats */}
             {item.reach && <div>Ã°Å¸â€œÂ Reach: <strong>{item.reach} ft</strong></div>}
             {item.range && <div>Ã°Å¸Å½Â¯ Range: <strong>{item.range} ft</strong></div>}
-            {item.rateOfFire && <div>Ã¢Å¡Â¡ Rate: <strong>{item.rateOfFire} attacks/melee</strong></div>}
+            {item.rateOfFire && <div>Ã¢Å¡Â¡ Rate: <strong>{item.rateOfFire} actions/round</strong></div>}
             {item.ammunition && <div>Ã°Å¸ÂÂ¹ Ammo: <strong>{item.ammunition}</strong></div>}
             {item.strengthRequired && <div>Ã°Å¸â€™Âª strength Req: <strong>{item.strengthRequired}</strong></div>}
           </div>

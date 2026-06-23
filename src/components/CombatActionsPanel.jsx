@@ -178,7 +178,7 @@ const CombatActionsPanel = ({
         <Box>
           <AlertTitle>Current Character: {character.name}</AlertTitle>
           <AlertDescription>
-            {character.species || character.race} {character.class || character.PROFESSION}
+            {character.species || character.race} <strong>Class:</strong> {character.class || character.PROFESSION}
           </AlertDescription>
         </Box>
       </Alert>

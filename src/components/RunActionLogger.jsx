@@ -85,12 +85,12 @@ export default function RunActionLogger({ attacker, target, onUpdate, disabled =
     const newActions = attacker.remainingActions - 1;
 
     const log = [
-      `ðŸƒ ${attacker.name} uses one action to RUN (Speed ${speed} â†’ ${runPerMelee}ft/melee)`,
+      `ðŸƒ ${attacker.name} uses one action to RUN (Speed ${speed} â†’ ${runPerMelee}ft/round)`,
       `ðŸ“ Moves ${Math.round(moveDistance)}ft toward ${target.name} â†’ new position ${coordsToString(newPos)}`,
       stillOutOfRange
         ? `ðŸ“ Still ${Math.round(distance - moveDistance)}ft out of melee range`
         : `âš”ï¸ Now within melee range!`,
-      `â­ï¸ ${attacker.name} has ${newActions} action(s) remaining this melee.`,
+      `â­ï¸ ${attacker.name} has ${newActions} action(s) remaining this round.`,
     ];
 
     updateLog(log, newPos, newActions);
@@ -139,7 +139,7 @@ export default function RunActionLogger({ attacker, target, onUpdate, disabled =
         </HStack>
         
         <Text fontSize="xs" color="gray.600">
-          Speed {speed} Ã— 18 = {runPerMelee}ft/melee Ã· {actionsPerRound} = {Math.round(movePerAction)}ft/action
+          Speed {speed} Ã— 18 = {runPerMelee}ft/round Ã· {actionsPerRound} = {Math.round(movePerAction)}ft/action
         </Text>
         
         <Text fontSize="xs" color="gray.600">
