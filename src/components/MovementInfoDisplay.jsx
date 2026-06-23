@@ -3,6 +3,11 @@ import PropTypes from "prop-types";
 import { Box, Text, VStack, HStack, Badge } from "@chakra-ui/react";
 import { calculateMovementPerAction } from "../utils/distanceCombatSystem.js";
 
+const toPositiveNumber = (value) => {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : null;
+};
+
 /**
  * Movement Info Display Component
  * Shows movement information for a combatant on the tactical map.
@@ -20,7 +25,12 @@ export default function MovementInfoDisplay({
     combatant.attributes?.Spd ||
     combatant.attributes?.spd ||
     10;
-  const actionsPerRound = combatant.actionsPerRound || combatant.actions || 1;
+  const actionsPerRound =
+    toPositiveNumber(combatant.actionsPerRound) ||
+    toPositiveNumber(combatant.actions) ||
+    toPositiveNumber(combatant.maxActions) ||
+    toPositiveNumber(combatant.remainingActions) ||
+    1;
   const movementData = calculateMovementPerAction(speed, actionsPerRound, combatant);
   const movement =
     movementData.feetPerAction || movementData.display?.feetPerAction || 0;
@@ -74,7 +84,9 @@ MovementInfoDisplay.propTypes = {
     Spd: PropTypes.number,
     spd: PropTypes.number,
     actionsPerRound: PropTypes.number,
-    actions: PropTypes.number,
+    actions: PropTypes.any,
+    maxActions: PropTypes.number,
+    remainingActions: PropTypes.number,
     attributes: PropTypes.shape({
       Spd: PropTypes.number,
       spd: PropTypes.number,

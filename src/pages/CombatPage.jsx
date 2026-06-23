@@ -82,6 +82,7 @@ import { getAllArenaRosterEntries } from "../utils/arenaRosterUtils.js";
 import CombatActionsPanel from "../components/CombatActionsPanel.jsx";
 import EncounterReadinessPanel from "../components/EncounterReadinessPanel.jsx";
 import InitiativeSetupPreview from "../components/InitiativeSetupPreview.jsx";
+import ManualPublicAttackTest from "../components/ManualPublicAttackTest.jsx";
 import { createPlayableCharacterFighter, getPlayableCharacterRollDetails } from "../utils/autoRoll.js";
 import { assignRandomWeaponToEnemy, getDefaultWeaponForEnemy, equipWeaponToEnemy, addWeaponToInventory } from "../utils/enemyWeaponAssigner.js";
 import armorShopData from "../data/armorShopData.js";
@@ -29176,7 +29177,6 @@ function CombatPage({ characters = [] }) {
                       isDisabled={!selectedAction}
                       width="full"
                       maxWidth="300px"
-                      alignShuman="center"
                     >
                       {selectedAction
                         ? `Execute ${selectedAction.name}`
@@ -29630,17 +29630,78 @@ function CombatPage({ characters = [] }) {
                         </HStack>
                       </HStack>
 
-                      <EncounterReadinessPanel
-                        combatants={fighters}
-                        stagedEntries={stagedRosterEntries}
-                      />
+                      <Box borderWidth="2px" borderColor="purple.200" borderRadius="md" p={3} bg="purple.50">
+                        <VStack align="stretch" spacing={3}>
+                          <HStack justify="space-between" align="center" wrap="wrap">
+                            <Box>
+                              <Heading size="sm">Combat Command Center</Heading>
+                              <Text fontSize="sm" color="gray.700">
+                                Import roster, check readiness, preview initiative, and test one manual public attack.
+                              </Text>
+                            </Box>
+                            <Badge colorScheme="purple">Preparation</Badge>
+                          </HStack>
 
-                      <InitiativeSetupPreview
-                        combatants={fighters}
-                        stagedEntries={stagedRosterEntries}
-                      />
+                          <Box borderWidth="1px" borderColor="purple.100" borderRadius="md" p={3} bg="white">
+                            <VStack align="stretch" spacing={3}>
+                              <HStack justify="space-between" align="center" wrap="wrap">
+                                <Box>
+                                  <Text fontWeight="bold">Encounter Setup</Text>
+                                  <Text fontSize="xs" color="gray.600">
+                                    {stagedRosterEntries.length} staged public roster entr{stagedRosterEntries.length === 1 ? "y" : "ies"}
+                                  </Text>
+                                </Box>
+                                <HStack spacing={2}>
+                                  <Button
+                                    size="xs"
+                                    colorScheme="purple"
+                                    onClick={importReadyStagedRoster}
+                                    isDisabled={stagedRosterEntries.length === 0}
+                                  >
+                                    Import Ready Staged Roster
+                                  </Button>
+                                  <Button
+                                    size="xs"
+                                    variant="outline"
+                                    onClick={clearStagedRoster}
+                                    isDisabled={stagedRosterEntries.length === 0}
+                                  >
+                                    Clear Staged Roster
+                                  </Button>
+                                </HStack>
+                              </HStack>
 
-                      <Box p={2} borderWidth="1px" borderRadius="md">
+                              {stagedRosterImportMessages.length > 0 && (
+                                <VStack align="stretch" spacing={1}>
+                                  {stagedRosterImportMessages.map((message, index) => (
+                                    <Text key={`${message}-${index}`} fontSize="xs" color="gray.700">
+                                      {message}
+                                    </Text>
+                                  ))}
+                                </VStack>
+                              )}
+
+                              <EncounterReadinessPanel
+                                combatants={fighters}
+                                stagedEntries={stagedRosterEntries}
+                              />
+
+                              <InitiativeSetupPreview
+                                combatants={fighters}
+                                stagedEntries={stagedRosterEntries}
+                              />
+                            </VStack>
+                          </Box>
+
+                          <ManualPublicAttackTest combatants={fighters} />
+                        </VStack>
+                      </Box>
+
+                      <Box p={2} borderWidth="1px" borderRadius="md" bg="gray.50" borderColor="gray.200">
+                        <Text fontWeight="bold">Compatibility Controls</Text>
+                        <Text fontSize="xs" color="gray.600" mb={2}>
+                          Existing live combat controls remain available for the current engine.
+                        </Text>
                         <Text>Time</Text>
                         <HStack spacing={3} align="center">
                           <input
@@ -31766,25 +31827,13 @@ function CombatPage({ characters = [] }) {
             <Box mb={4} p={3} border="1px solid" borderColor="purple.200" borderRadius="md" bg="purple.50">
               <HStack justify="space-between" mb={3} align="center">
                 <Heading size="sm">Staged Public Roster</Heading>
-                <HStack>
-                  <Button
-                    size="xs"
-                    colorScheme="purple"
-                    onClick={importReadyStagedRoster}
-                    isDisabled={stagedRosterEntries.length === 0}
-                  >
-                    Import Ready Staged Roster
-                  </Button>
-                  <Button
-                    size="xs"
-                    variant="outline"
-                    onClick={clearStagedRoster}
-                    isDisabled={stagedRosterEntries.length === 0}
-                  >
-                    Clear Staged Roster
-                  </Button>
-                </HStack>
+                <Badge colorScheme="purple">
+                  {stagedRosterEntries.length} staged
+                </Badge>
               </HStack>
+              <Text fontSize="xs" color="gray.600" mb={3}>
+                Use Combat Command Center to import or clear staged roster entries.
+              </Text>
 
               {stagedRosterEntries.length === 0 ? (
                 <Text fontSize="sm" color="gray.600">
