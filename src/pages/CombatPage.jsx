@@ -83,7 +83,12 @@ import CombatActionsPanel from "../components/CombatActionsPanel.jsx";
 import EncounterReadinessPanel from "../components/EncounterReadinessPanel.jsx";
 import InitiativeSetupPreview from "../components/InitiativeSetupPreview.jsx";
 import ManualPublicAttackTest from "../components/ManualPublicAttackTest.jsx";
-import { applyPublicCombatDamage } from "../utils/publicCombatHp.js";
+import { applyPublicCombatDamage, getPublicCombatHpInfo } from "../utils/publicCombatHp.js";
+import {
+  advancePublicTurnOrder,
+  buildPublicTurnOrderRows,
+  canStartPublicTurnOrder,
+} from "../utils/publicTurnOrder.js";
 import { createPlayableCharacterFighter, getPlayableCharacterRollDetails } from "../utils/autoRoll.js";
 import { assignRandomWeaponToEnemy, getDefaultWeaponForEnemy, equipWeaponToEnemy, addWeaponToInventory } from "../utils/enemyWeaponAssigner.js";
 import armorShopData from "../data/armorShopData.js";
@@ -1513,6 +1518,9 @@ function CombatPage({ characters = [] }) {
   const gmNarrationBusyRef = useRef(false);
 
   const [fighters, setFighters] = useState([]);
+  const [manualPublicTurnOrder, setManualPublicTurnOrder] = useState([]);
+  const [manualPublicTurnIndex, setManualPublicTurnIndex] = useState(0);
+  const [manualPublicTurnRound, setManualPublicTurnRound] = useState(1);
   const [turnIndex, setTurnIndex] = useState(0);
   const [positions, setPositions] = useState({}); // Combatant positions on tactical map
   const [renderPositions, setRenderPositions] = useState({}); // Render-only positions (visual pose)
@@ -2439,6 +2447,15 @@ function CombatPage({ characters = [] }) {
   const [selectedRosterPreviewId, setSelectedRosterPreviewId] = useState(null);
   const [stagedRosterEntries, setStagedRosterEntries] = useState(() => loadPublicArenaRosterEntries());
   const [stagedRosterImportMessages, setStagedRosterImportMessages] = useState([]);
+  const canStartManualPublicTurns = useMemo(() => canStartPublicTurnOrder(fighters), [fighters]);
+  const manualPublicCurrentTurn = manualPublicTurnOrder[manualPublicTurnIndex] || null;
+  const manualPublicCurrentCombatant = useMemo(() => {
+    if (!manualPublicCurrentTurn) return null;
+    return fighters.find((fighter, index) =>
+      String(fighter?.id || fighter?._id || fighter?.name || index) === String(manualPublicCurrentTurn.id)
+    ) || null;
+  }, [fighters, manualPublicCurrentTurn]);
+  const manualPublicCurrentHp = getPublicCombatHpInfo(manualPublicCurrentCombatant || {});
   const [showPartySelector, setShowPartySelector] = useState(false);
   const [diceRolls, setDiceRolls] = useState([]);
   const [showRollDetails, setShowRollDetails] = useState(false);
@@ -24153,6 +24170,36 @@ function CombatPage({ characters = [] }) {
     setStagedRosterImportMessages(["Staged roster cleared."]);
   }
 
+  function startManualPublicTurnOrder() {
+    const rows = buildPublicTurnOrderRows(fighters).filter((row) => row.ready);
+    setManualPublicTurnOrder(rows);
+    setManualPublicTurnIndex(0);
+    setManualPublicTurnRound(1);
+
+    if (rows.length > 0) {
+      addLog(`Manual turn order started. Current turn: ${rows[0].name}.`, "info");
+    }
+  }
+
+  function endManualPublicTurn() {
+    const nextTurn = advancePublicTurnOrder({
+      turnOrder: manualPublicTurnOrder,
+      currentIndex: manualPublicTurnIndex,
+      round: manualPublicTurnRound,
+      combatants: fighters,
+      skipZeroHp: true,
+    });
+
+    setManualPublicTurnIndex(nextTurn.currentIndex);
+    setManualPublicTurnRound(nextTurn.round);
+    if (nextTurn.current) {
+      addLog(
+        `Manual turn advanced to ${nextTurn.current.name}${nextTurn.wrapped ? ` (round ${nextTurn.round})` : ""}.`,
+        "info"
+      );
+    }
+  }
+
   function applyManualPublicAttackDamage({ targetId, damageTotal, result } = {}) {
     const sourceFighters = Array.isArray(fightersRef.current) && fightersRef.current.length > 0
       ? fightersRef.current
@@ -29733,12 +29780,110 @@ function CombatPage({ characters = [] }) {
                                 combatants={fighters}
                                 stagedEntries={stagedRosterEntries}
                               />
+
+                              <Box borderWidth="1px" borderRadius="md" p={3} bg="white">
+                                <VStack align="stretch" spacing={3}>
+                                  <HStack justify="space-between" align="center" wrap="wrap">
+                                    <Box>
+                                      <Text fontWeight="bold">Manual Turn Order</Text>
+                                      <Text fontSize="xs" color="gray.600">
+                                        Manual initiative only. No AI, attacks, or actions run automatically.
+                                      </Text>
+                                    </Box>
+                                    <HStack spacing={2}>
+                                      <Badge colorScheme="purple">Round {manualPublicTurnRound}</Badge>
+                                      <Button
+                                        size="xs"
+                                        colorScheme="purple"
+                                        onClick={startManualPublicTurnOrder}
+                                        isDisabled={!canStartManualPublicTurns}
+                                      >
+                                        Start Manual Turn Order
+                                      </Button>
+                                      <Button
+                                        size="xs"
+                                        variant="outline"
+                                        onClick={endManualPublicTurn}
+                                        isDisabled={manualPublicTurnOrder.length === 0}
+                                      >
+                                        End Turn
+                                      </Button>
+                                    </HStack>
+                                  </HStack>
+
+                                  {!canStartManualPublicTurns && (
+                                    <Text fontSize="xs" color="gray.600">
+                                      Add at least one ready player and one ready enemy to start manual turn order.
+                                    </Text>
+                                  )}
+
+                                  {manualPublicCurrentTurn && (
+                                    <Box borderWidth="1px" borderRadius="md" p={2} bg="purple.50" borderColor="purple.200">
+                                      <HStack spacing={3} wrap="wrap">
+                                        <Text fontSize="sm" fontWeight="bold">Current Turn</Text>
+                                        <Badge colorScheme={manualPublicCurrentTurn.side === "player" ? "blue" : "red"}>
+                                          {manualPublicCurrentTurn.side === "player" ? "Player" : "Enemy"}
+                                        </Badge>
+                                        <Text fontSize="sm">{manualPublicCurrentTurn.name}</Text>
+                                        <Text fontSize="sm">Initiative {manualPublicCurrentTurn.totalInitiative}</Text>
+                                        <Text fontSize="sm">
+                                          HP {manualPublicCurrentHp.ok ? manualPublicCurrentHp.hp : "Missing"}
+                                        </Text>
+                                        <Badge colorScheme="green">active</Badge>
+                                      </HStack>
+                                    </Box>
+                                  )}
+
+                                  {manualPublicTurnOrder.length > 0 && (
+                                    <Box overflowX="auto">
+                                      <Table size="sm" variant="simple">
+                                        <Thead>
+                                          <Tr>
+                                            <Th>Turn</Th>
+                                            <Th>Name</Th>
+                                            <Th>Side</Th>
+                                            <Th>Roll</Th>
+                                            <Th>Bonus</Th>
+                                            <Th>Total</Th>
+                                            <Th>Status</Th>
+                                          </Tr>
+                                        </Thead>
+                                        <Tbody>
+                                          {manualPublicTurnOrder.map((row, index) => {
+                                            const active = index === manualPublicTurnIndex;
+                                            return (
+                                              <Tr key={row.id} bg={active ? "purple.50" : undefined}>
+                                                <Td>{index + 1}</Td>
+                                                <Td fontWeight={active ? "bold" : "normal"}>{row.name}</Td>
+                                                <Td>
+                                                  <Badge colorScheme={row.side === "player" ? "blue" : "red"}>
+                                                    {row.side === "player" ? "Player" : "Enemy"}
+                                                  </Badge>
+                                                </Td>
+                                                <Td>{row.initiativeRoll ?? "Missing"}</Td>
+                                                <Td>{row.initiativeBonus >= 0 ? `+${row.initiativeBonus}` : row.initiativeBonus}</Td>
+                                                <Td>{row.totalInitiative ?? "Missing"}</Td>
+                                                <Td>
+                                                  <Badge colorScheme={active ? "green" : "gray"}>
+                                                    {active ? "Current" : "Waiting"}
+                                                  </Badge>
+                                                </Td>
+                                              </Tr>
+                                            );
+                                          })}
+                                        </Tbody>
+                                      </Table>
+                                    </Box>
+                                  )}
+                                </VStack>
+                              </Box>
                             </VStack>
                           </Box>
 
                           <ManualPublicAttackTest
                             combatants={fighters}
                             onApplyDamage={applyManualPublicAttackDamage}
+                            preferredAttackerId={manualPublicCurrentTurn?.id || ""}
                           />
                         </VStack>
                       </Box>

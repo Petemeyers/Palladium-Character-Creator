@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   AlertIcon,
@@ -19,11 +19,12 @@ import { getPublicCombatHpInfo } from "../utils/publicCombatHp.js";
 const getId = (combatant, index) =>
   String(combatant?.id || combatant?._id || combatant?.name || index);
 
-const ManualPublicAttackTest = ({ combatants = [], onApplyDamage }) => {
+const ManualPublicAttackTest = ({ combatants = [], onApplyDamage, preferredAttackerId = "" }) => {
   const [attackerId, setAttackerId] = useState("");
   const [targetId, setTargetId] = useState("");
   const [attackIndex, setAttackIndex] = useState("0");
   const [result, setResult] = useState(null);
+  const lastPreferredAttackerId = useRef("");
 
   const rows = useMemo(() => (
     (Array.isArray(combatants) ? combatants : []).map((combatant, index) => {
@@ -57,6 +58,18 @@ const ManualPublicAttackTest = ({ combatants = [], onApplyDamage }) => {
     setAttackIndex("0");
     setResult(null);
   };
+
+  useEffect(() => {
+    if (!preferredAttackerId) return;
+    if (lastPreferredAttackerId.current === String(preferredAttackerId)) return;
+    const hasPreferredAttacker = rows.some((row) => row.id === String(preferredAttackerId));
+    if (!hasPreferredAttacker) return;
+    lastPreferredAttackerId.current = String(preferredAttackerId);
+    setAttackerId(String(preferredAttackerId));
+    setTargetId("");
+    setAttackIndex("0");
+    setResult(null);
+  }, [preferredAttackerId, rows]);
 
   const handleResolve = () => {
     const nextResult = resolvePublicBasicAttack({
