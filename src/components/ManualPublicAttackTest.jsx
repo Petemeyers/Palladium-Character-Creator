@@ -16,6 +16,7 @@ import { getEncounterReadinessSummary } from "../utils/publicCombatReadiness.js"
 import { resolvePublicBasicAttack } from "../utils/publicBasicAttackResolver.js";
 import { getPublicCombatHpInfo } from "../utils/publicCombatHp.js";
 import { applyArmorMitigation, getArmorProfile } from "../utils/combatArmor.js";
+import { previewWound } from "../utils/combatWounds.js";
 
 const getId = (combatant, index) =>
   String(combatant?.id || combatant?._id || combatant?.name || index);
@@ -105,10 +106,20 @@ const ManualPublicAttackTest = ({
           rawDamage: nextResult.damageTotal,
         })
       : null;
+    const woundPreview = armorMitigation
+      ? previewWound({
+          attack: selectedAttack,
+          target: targetRow?.combatant,
+          rawDamage: armorMitigation.rawDamage,
+          armorReduction: armorMitigation.armorReduction,
+          finalDamage: armorMitigation.finalDamage,
+        })
+      : null;
 
     setResult({
       ...nextResult,
       armorMitigation,
+      woundPreview,
       finalDamage: armorMitigation?.finalDamage ?? nextResult.damageTotal,
     });
   };
@@ -246,6 +257,12 @@ const ManualPublicAttackTest = ({
                 <Text fontSize="xs">
                   Raw damage {result.armorMitigation.rawDamage}; Armor reduction {result.armorMitigation.armorReduction}; Final damage {result.armorMitigation.finalDamage}
                   {result.armorMitigation.finalDamage === 0 ? "; Armor absorbed the blow." : ""}
+                </Text>
+              )}
+              {result.hit && result.woundPreview && (
+                <Text fontSize="xs">
+                  Struck location: {result.woundPreview.location}; Wound severity: {result.woundPreview.severity}
+                  {result.woundPreview.note ? `; ${result.woundPreview.note}` : ""}
                 </Text>
               )}
               {!result.ok && result.missingFields.length > 0 && (
