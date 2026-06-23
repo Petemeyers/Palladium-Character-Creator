@@ -4,7 +4,7 @@ import { calculateMovementPerAction } from '../utils/distanceCombatSystem.js';
 
 /**
  * Movement Range Display Component
- * Shows official 1994 Medieval Combat Simulator movement calculations
+ * Shows Medieval Combat Simulator movement calculations
  * 
  * Displays:
  * - Walking speed (combat movement)
@@ -31,7 +31,7 @@ const MovementRangeDisplay = ({
       <Box bg="blue.50" p={3} borderRadius="md" border="1px solid" borderColor="blue.200">
         <VStack spacing={2} align="stretch">
           <Text fontSize="sm" fontWeight="bold" color="blue.800">
-            Ã°Å¸â€œÅ  {combatant.name} - Medieval Combat Simulator Movement
+            {combatant.name} - Medieval Combat Simulator Movement
           </Text>
           
           <HStack spacing={2} fontSize="xs" wrap="wrap">
@@ -47,7 +47,7 @@ const MovementRangeDisplay = ({
           </HStack>
           
           <Text fontSize="xs" color="gray.600" fontStyle="italic">
-            Ã¢Å¡Â¡ Official 1994: Spd {speed} Ãƒâ€” 6 ÃƒÂ· {actionsPerRound} actions = {movement.display.yardsPerAction}yds/action
+            Movement formula: Spd {speed} x 6 / {actionsPerRound} actions = {movement.display.yardsPerAction}yds/action
           </Text>
         </VStack>
       </Box>

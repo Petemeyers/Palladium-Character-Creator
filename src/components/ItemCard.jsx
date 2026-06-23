@@ -56,7 +56,7 @@ const ItemCard = ({
           fontSize: '12px',
           fontWeight: 'bold'
         }}>
-          Ã¢Å¡â€Ã¯Â¸Â
+          Eq
         </div>
       )}
       
@@ -68,7 +68,7 @@ const ItemCard = ({
           fontWeight: isEquistaminad ? 'bold' : 'normal'
         }}>
           {item.name}
-          {isEquistaminad && <span style={{ color: '#28a745', marginLeft: '8px' }}>(Equistaminad)</span>}
+          {isEquistaminad && <span style={{ color: '#28a745', marginLeft: '8px' }}>(Equipped)</span>}
         </h3>
         {item.description && (
           <p style={{ margin: '0 0 8px 0', fontSize: '0.9em', color: '#666' }}>{item.description}</p>
@@ -86,22 +86,22 @@ const ItemCard = ({
             textAlign: 'center',
             color: '#b8860b'
           }}>
-            Ã°Å¸â€â€ž Trade-in for 10 Gold Credit
+            Trade-in for 10 Gold Credit
           </div>
         )}
         {/* Enhanced weapon stats */}
         {(item.damage || item.weight || item.category || item.handed || item.reach || item.range || item.strengthRequired) && (
           <div style={{ margin: '8px 0', fontSize: '0.85em', color: '#555' }}>
-            {item.damage && <div>Ã¢Å¡â€Ã¯Â¸Â Damage: <strong>{item.damage}</strong></div>}
-            {item.weight && <div>Ã¢Å¡â€“Ã¯Â¸Â Weight: <strong>{item.weight} lbs</strong></div>}
-            {item.category && <div>Ã°Å¸â€œÂ¦ Type: <strong>{item.category}</strong></div>}
-            {item.handed && <div>Ã¢Å“â€¹ Handed: <strong>{item.handed}</strong></div>}
+            {item.damage && <div>Damage: <strong>{item.damage}</strong></div>}
+            {item.weight && <div>Weight: <strong>{item.weight} lbs</strong></div>}
+            {item.category && <div>Type: <strong>{item.category}</strong></div>}
+            {item.handed && <div>Handed: <strong>{item.handed}</strong></div>}
             {/* Enhanced stats */}
-            {item.reach && <div>Ã°Å¸â€œÂ Reach: <strong>{item.reach} ft</strong></div>}
-            {item.range && <div>Ã°Å¸Å½Â¯ Range: <strong>{item.range} ft</strong></div>}
-            {item.rateOfFire && <div>Ã¢Å¡Â¡ Rate: <strong>{item.rateOfFire} actions/round</strong></div>}
-            {item.ammunition && <div>Ã°Å¸ÂÂ¹ Ammo: <strong>{item.ammunition}</strong></div>}
-            {item.strengthRequired && <div>Ã°Å¸â€™Âª strength Req: <strong>{item.strengthRequired}</strong></div>}
+            {item.reach && <div>Reach: <strong>{item.reach} ft</strong></div>}
+            {item.range && <div>Range: <strong>{item.range} ft</strong></div>}
+            {item.rateOfFire && <div>Rate: <strong>{item.rateOfFire} actions/round</strong></div>}
+            {item.ammunition && <div>Ammo: <strong>{item.ammunition}</strong></div>}
+            {item.strengthRequired && <div>Strength Required: <strong>{item.strengthRequired}</strong></div>}
           </div>
         )}
       </div>

@@ -50,7 +50,7 @@ const CircleManagerPanel = ({
     >
       <VStack align="stretch" spacing={3}>
         <Heading size="sm" color="blue.600">
-          🕯️ Protection Circle Manager
+          Protection Circle Manager
         </Heading>
 
         {circles.length === 0 ? (

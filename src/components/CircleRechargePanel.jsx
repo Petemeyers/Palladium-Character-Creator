@@ -67,7 +67,7 @@ const CircleRechargePanel = ({
     >
       <VStack align="stretch" spacing={4}>
         <Heading size="sm" color="green.600">
-          âœ¨ Recharge Protection Circle
+          Recharge Protection Circle
         </Heading>
 
         <Text fontSize="sm">

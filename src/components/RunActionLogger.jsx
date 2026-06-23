@@ -56,8 +56,8 @@ export default function RunActionLogger({ attacker, target, onUpdate, disabled =
   // --- Movement setup ---
   const speed = attacker.Spd || attacker.spd || attacker.attributes?.Spd || attacker.attributes?.spd || 10;
   const actionsPerRound = attacker.actionsPerRound || 1;
-  const runPerMelee = speed * 18; // Medieval Combat Simulator 1994: Speed Ã— 6 yards = Speed Ã— 18 ft
-  const movePerAction = runPerMelee / actionsPerRound;
+  const runPerRound = speed * 18; // Speed x 6 yards = Speed x 18 ft
+  const movePerAction = runPerRound / actionsPerRound;
   const distance = getDistance(attacker.position, target.position);
   const weaponRange = attacker.weapon?.range || 5;
 
@@ -85,12 +85,12 @@ export default function RunActionLogger({ attacker, target, onUpdate, disabled =
     const newActions = attacker.remainingActions - 1;
 
     const log = [
-      `ðŸƒ ${attacker.name} uses one action to RUN (Speed ${speed} â†’ ${runPerMelee}ft/round)`,
-      `ðŸ“ Moves ${Math.round(moveDistance)}ft toward ${target.name} â†’ new position ${coordsToString(newPos)}`,
+      `${attacker.name} uses one action to run (Speed ${speed} to ${runPerRound}ft/round)`,
+      `Moves ${Math.round(moveDistance)}ft toward ${target.name} to new position ${coordsToString(newPos)}`,
       stillOutOfRange
-        ? `ðŸ“ Still ${Math.round(distance - moveDistance)}ft out of melee range`
-        : `âš”ï¸ Now within melee range!`,
-      `â­ï¸ ${attacker.name} has ${newActions} action(s) remaining this round.`,
+        ? `Still ${Math.round(distance - moveDistance)}ft out of melee range`
+        : `Now within melee range.`,
+      `${attacker.name} has ${newActions} action(s) remaining this round.`,
     ];
 
     updateLog(log, newPos, newActions);
@@ -100,7 +100,7 @@ export default function RunActionLogger({ attacker, target, onUpdate, disabled =
   const handleCharge = () => {
     if (attacker.remainingActions <= 1) return; // need 2 actions (attack + recovery)
     if (distance < 20 || distance > 60) {
-      const msg = `âš ï¸ ${attacker.name} needs 20â€“60ft to charge (currently ${Math.round(distance)}ft).`;
+      const msg = `${attacker.name} needs 20-60ft to charge (currently ${Math.round(distance)}ft).`;
       updateLog([msg], attacker.position, attacker.remainingActions);
       return;
     }
@@ -112,12 +112,12 @@ export default function RunActionLogger({ attacker, target, onUpdate, disabled =
     const damageRoll = rollDice(damageDie) * 2; // double damage
 
     const log = [
-      `âš¡ ${attacker.name} performs a CHARGE ATTACK!`,
-      `ðŸ‡ Distance covered: ${Math.round(distance)}ft (Speed ${speed})`,
-      `ðŸŽ¯ Attack Roll: ${attackRoll} (+2 for charge)`,
-      `ðŸ’¥ Damage: ${damageRoll} (double for charge)`,
-      `âš”ï¸ ${attacker.name} slams into ${target.name}!`,
-      `â­ï¸ ${attacker.name} loses next action (now ${newActions} remaining).`,
+      `${attacker.name} performs a charge attack.`,
+      `Distance covered: ${Math.round(distance)}ft (Speed ${speed})`,
+      `Attack Roll: ${attackRoll} (+2 for charge)`,
+      `Damage: ${damageRoll} (double for charge)`,
+      `${attacker.name} slams into ${target.name}.`,
+      `${attacker.name} loses next action (now ${newActions} remaining).`,
     ];
 
     updateLog(log, newPos, newActions);
@@ -131,7 +131,7 @@ export default function RunActionLogger({ attacker, target, onUpdate, disabled =
       <VStack spacing={3} align="stretch">
         <HStack justify="space-between">
           <Text fontSize="sm" fontWeight="bold" color="blue.700">
-            ðŸƒ Movement Actions
+            Movement Actions
           </Text>
           <Badge colorScheme={canRun ? "green" : "red"}>
             {Math.round(movePerAction)}ft
@@ -139,7 +139,7 @@ export default function RunActionLogger({ attacker, target, onUpdate, disabled =
         </HStack>
         
         <Text fontSize="xs" color="gray.600">
-          Speed {speed} Ã— 18 = {runPerMelee}ft/round Ã· {actionsPerRound} = {Math.round(movePerAction)}ft/action
+          Speed {speed} x 18 = {runPerRound}ft/round / {actionsPerRound} = {Math.round(movePerAction)}ft/action
         </Text>
         
         <Text fontSize="xs" color="gray.600">
@@ -170,7 +170,7 @@ export default function RunActionLogger({ attacker, target, onUpdate, disabled =
             variant={canRun ? "solid" : "outline"}
             flex={1}
           >
-            ðŸƒ Run ({Math.round(movePerAction)}ft)
+            Run ({Math.round(movePerAction)}ft)
           </Button>
 
           <Button
@@ -181,7 +181,7 @@ export default function RunActionLogger({ attacker, target, onUpdate, disabled =
             variant={canCharge ? "solid" : "outline"}
             flex={1}
           >
-            âš¡ Charge (+2 attack)
+            Charge (+2 attack)
           </Button>
         </HStack>
         

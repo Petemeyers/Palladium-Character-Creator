@@ -44,7 +44,7 @@ const CombatActionsPanel = ({
   if (!character) {
     return (
       <Box className="container" p={4}>
-        <Heading size="md" mb={4}>Ã¢Å¡â€Ã¯Â¸Â Combat Actions</Heading>
+        <Heading size="md" mb={4}>Combat Actions</Heading>
         <Alert status="info">
           <AlertIcon />
           No character selected
@@ -169,7 +169,7 @@ const CombatActionsPanel = ({
   return (
     <Box className="container" p={4}>
       <Heading size="md" mb={4} display="flex" alignItems="center">
-        Ã¢Å¡â€Ã¯Â¸Â Combat Actions
+        Combat Actions
       </Heading>
       
       {/* Character Info */}
@@ -178,7 +178,7 @@ const CombatActionsPanel = ({
         <Box>
           <AlertTitle>Current Character: {character.name}</AlertTitle>
           <AlertDescription>
-            {character.species || character.race} <strong>Class:</strong> {character.class || character.PROFESSION}
+            <strong>Species:</strong> {character.species || character.race || "Unknown"} <strong>Class:</strong> {character.class || character.PROFESSION || "Unknown"}
           </AlertDescription>
         </Box>
       </Alert>
@@ -197,18 +197,9 @@ const CombatActionsPanel = ({
                   variant={selectedAction && selectedAction.name === action.name ? "solid" : "outline"}
                   colorScheme={selectedAction && selectedAction.name === action.name ? "green" : "blue"}
                   onClick={() => handleActionClick(action)}
-                  leftIcon={action.name.includes("Cast") ? "Ã°Å¸â€Â®" : 
-                           action.name.includes("Invoke") ? "Ã¢Å“Â¨" :
-                           action.name.includes("tactics") ? "Ã°Å¸Â§Â " :
-                           action.name.includes("Attack") ? "Ã¢Å¡â€Ã¯Â¸Â" :
-                           action.name.includes("Block") ? "Ã°Å¸â€ºÂ¡Ã¯Â¸Â" :
-                           action.name.includes("Evade") ? "Ã°Å¸Å½Â¯" :
-                           action.name.includes("Move") ? "Ã°Å¸Å¡Â¶" :
-                           action.name.includes("Aim") ? "Ã°Å¸Å½Â¨Ã°Å¸Â§â„¢" : "Ã°Å¸Å½Â­"
-                           }
                 >
                   {action.name}
-                  {selectedAction && selectedAction.name === action.name && " Ã¢Å“â€œ"}
+                  {selectedAction && selectedAction.name === action.name && " Selected"}
                 </Button>
               </WrapItem>
             ))}
@@ -266,7 +257,7 @@ const CombatActionsPanel = ({
                     >
                       {target.name}
                       {target.currentHP !== undefined && ` (${target.currentHP} HP)`}
-                      {selectedTarget && selectedTarget.id === target.id && " Ã¢Å“â€œ"}
+                      {selectedTarget && selectedTarget.id === target.id && " Selected"}
                     </Button>
                   </WrapItem>
                 ))}
@@ -287,7 +278,7 @@ const CombatActionsPanel = ({
                   <HStack>
                     <Heading size="sm">{bonus.data.label}</Heading>
                     {bonus.match && (
-                      <Badge colorScheme="green" size="sm">Ã¢Å“â€œ</Badge>
+                      <Badge colorScheme="green" size="sm">Match</Badge>
                     )}
                   </HStack>
                 </Box>
