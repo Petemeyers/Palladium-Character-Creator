@@ -1,5 +1,45 @@
 const hasValue = (value) => value !== undefined && value !== null && value !== "";
 
+const toDisplayText = (value) => {
+  if (!hasValue(value)) return undefined;
+  if (Array.isArray(value)) {
+    const rendered = value.map(toDisplayText).filter(Boolean).join(", ");
+    return rendered || undefined;
+  }
+  if (typeof value === "object") {
+    if (hasValue(value.name)) return String(value.name);
+    if (hasValue(value.label)) return String(value.label);
+    if (hasValue(value.type)) return String(value.type);
+    return undefined;
+  }
+  return String(value);
+};
+
+const getSaveDisplay = (action = {}) => {
+  const save = action.save || action.savingThrow;
+  const dc = action.dc ?? action.saveDC ?? action.saveDc ?? save?.dc ?? save?.DC;
+  const ability = action.saveAbility || action.ability || save?.ability || save?.type;
+
+  if (!hasValue(dc) && !hasValue(ability)) return undefined;
+  if (hasValue(dc) && hasValue(ability)) return `DC ${dc} ${ability}`;
+  if (hasValue(dc)) return `DC ${dc}`;
+  return toDisplayText(ability);
+};
+
+export function buildPublicEnemyActionPreview(action = {}) {
+  return {
+    name: toDisplayText(action.name) || "Unnamed action",
+    attackType: toDisplayText(action.attackType || action.actionType || action.type),
+    reach: toDisplayText(action.reach),
+    range: toDisplayText(action.range),
+    hitBonus: toDisplayText(action.hitBonus ?? action.attackBonus),
+    damage: toDisplayText(action.damage || action.damageExpression),
+    damageType: toDisplayText(action.damageType),
+    save: getSaveDisplay(action),
+    notes: toDisplayText(action.notes || action.note || action.description),
+  };
+}
+
 function convertPublicEnemyAction(action = {}) {
   const missingFields = [];
   if (!hasValue(action.name)) missingFields.push("action.name");
@@ -10,6 +50,7 @@ function convertPublicEnemyAction(action = {}) {
       ok: false,
       missingFields,
       metadata: { ...action },
+      preview: buildPublicEnemyActionPreview(action),
     };
   }
 
@@ -21,7 +62,9 @@ function convertPublicEnemyAction(action = {}) {
       damageType: action.damageType,
       attackBonus: action.attackBonus,
       count: action.count || 1,
+      actionPreview: buildPublicEnemyActionPreview(action),
     },
+    preview: buildPublicEnemyActionPreview(action),
   };
 }
 
@@ -45,6 +88,7 @@ export function adaptPublicEnemyToCombatant(enemy = {}) {
   const attacks = convertedActions
     .filter((result) => result.ok)
     .map((result) => result.attack);
+  const actionPreviews = convertedActions.map((result) => result.preview);
 
   convertedActions
     .filter((result) => !result.ok)
@@ -89,6 +133,7 @@ export function adaptPublicEnemyToCombatant(enemy = {}) {
         proficiencyBonus: enemy.proficiencyBonus,
         source: enemy.originalSource || enemy.source,
         ruleset: enemy.ruleset,
+        actions: actionPreviews,
       },
       source: "public-enemy",
       ruleset: enemy.ruleset || "core-d20",
@@ -101,4 +146,5 @@ export function adaptPublicEnemyToCombatant(enemy = {}) {
 
 export default {
   adaptPublicEnemyToCombatant,
+  buildPublicEnemyActionPreview,
 };

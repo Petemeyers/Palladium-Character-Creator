@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import PUBLIC_ENEMIES from "../src/data/publicEnemies.js";
-import { adaptPublicEnemyToCombatant } from "../src/utils/publicEnemyCombatAdapter.js";
+import {
+  adaptPublicEnemyToCombatant,
+  buildPublicEnemyActionPreview,
+} from "../src/utils/publicEnemyCombatAdapter.js";
 import {
   clearPublicArenaRosterEntries,
   loadPublicArenaRosterEntries,
@@ -17,7 +20,7 @@ global.window = {
   },
 };
 
-["goblin-warrior", "wolf", "brown-bear"].forEach((id) => {
+["goblin-warrior", "wolf", "skeleton", "brown-bear"].forEach((id) => {
   const enemy = PUBLIC_ENEMIES.find((entry) => entry.id === id);
   const snapshot = JSON.stringify(enemy);
   const conversion = adaptPublicEnemyToCombatant(enemy);
@@ -29,8 +32,36 @@ global.window = {
   assert.equal(conversion.combatant.category, enemy.creatureType, `${id} should map creatureType to category`);
   assert.ok(Array.isArray(conversion.combatant.attacks), `${id} should include attacks`);
   assert.ok(conversion.combatant.attacks.length > 0, `${id} should include at least one attack`);
+  assert.ok(
+    Array.isArray(conversion.combatant.publicEnemyMetadata.actions),
+    `${id} should include display action metadata`
+  );
+  assert.ok(
+    conversion.combatant.publicEnemyMetadata.actions.length > 0,
+    `${id} should include at least one displayable action`
+  );
+  assert.equal(
+    typeof conversion.combatant.publicEnemyMetadata.actions[0].name,
+    "string",
+    `${id} display action name should be readable text`
+  );
   assert.equal(JSON.stringify(enemy), snapshot, `${id} conversion should not mutate source`);
 });
+
+const malformedActionSource = {
+  name: "Odd Action",
+  attackBonus: { bonus: 4 },
+  damage: { dice: "1d4" },
+  save: { dc: 12, ability: "Dex" },
+  notes: { text: "Object note should not render raw" },
+};
+const malformedSnapshot = JSON.stringify(malformedActionSource);
+const malformedPreview = buildPublicEnemyActionPreview(malformedActionSource);
+assert.equal(malformedPreview.name, "Odd Action", "Malformed action should preserve readable name");
+assert.equal(malformedPreview.save, "DC 12 Dex", "Malformed action should render save metadata");
+assert.equal(malformedPreview.hitBonus, undefined, "Object hit bonus should not render raw");
+assert.equal(malformedPreview.damage, undefined, "Object damage should not render raw");
+assert.equal(JSON.stringify(malformedActionSource), malformedSnapshot, "Action preview should not mutate source action");
 
 const missingConversion = adaptPublicEnemyToCombatant({
   id: "incomplete",

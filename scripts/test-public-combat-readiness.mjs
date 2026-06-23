@@ -79,12 +79,16 @@ const goblinEncounterReadiness = getEncounterReadinessSummary(goblinConversion.c
 assert.equal(goblinEncounterReadiness.ready, true, "Converted Goblin Warrior should be encounter-ready");
 assert.equal(goblinEncounterReadiness.side, "Enemy", "Converted Goblin Warrior should display on the enemy side");
 assert.equal(goblinEncounterReadiness.enemyCreatureType, "Humanoid", "Converted Goblin Warrior creature type should display");
+assert.ok(goblinEncounterReadiness.actionPreviews.length > 0, "Converted Goblin Warrior should show action previews");
+assert.equal(goblinEncounterReadiness.actionPreviews[0].name, "Scimitar", "Converted Goblin Warrior action name should display");
 
 const wolfConversion = adaptPublicEnemyToCombatant(wolf);
 assert.equal(wolfConversion.ok, true, "Wolf should convert to a combatant");
 const wolfEncounterReadiness = getEncounterReadinessSummary(wolfConversion.combatant);
 assert.equal(wolfEncounterReadiness.ready, true, "Converted Wolf should be encounter-ready");
 assert.equal(wolfEncounterReadiness.enemyCreatureType, "Beast", "Converted Wolf creature type should display");
+assert.ok(wolfEncounterReadiness.actionPreviews.length > 0, "Converted Wolf should show action previews");
+assert.equal(wolfEncounterReadiness.actionPreviews[0].name, "Bite", "Converted Wolf action name should display");
 
 const incompleteEnemy = { side: "enemy", name: "Incomplete Enemy", hitPoints: 4 };
 const incompleteSnapshot = JSON.stringify(incompleteEnemy);

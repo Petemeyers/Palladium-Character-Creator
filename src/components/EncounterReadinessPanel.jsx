@@ -14,6 +14,7 @@ import {
   Wrap,
   WrapItem,
 } from "@chakra-ui/react";
+import EnemyActionPreview from "./EnemyActionPreview.jsx";
 import { getEncounterReadinessSummary } from "../utils/publicCombatReadiness.js";
 
 const getEntryKey = (entry, prefix, index) =>
@@ -65,6 +66,7 @@ const EncounterReadinessPanel = ({ combatants = [], stagedEntries = [] }) => {
                 <Th>Source</Th>
                 <Th>Core Fields</Th>
                 <Th>Public Details</Th>
+                <Th>Attack Preview</Th>
                 <Th>Status</Th>
               </Tr>
             </Thead>
@@ -97,6 +99,15 @@ const EncounterReadinessPanel = ({ combatants = [], stagedEntries = [] }) => {
                         summary.enemyCreatureType && <Text fontSize="xs">Creature Type: {summary.enemyCreatureType}</Text>
                       )}
                     </VStack>
+                  </Td>
+                  <Td minW="220px">
+                    {summary.side === "Enemy" ? (
+                      <EnemyActionPreview actions={summary.actionPreviews} />
+                    ) : summary.actionPreviews.length > 0 ? (
+                      <EnemyActionPreview actions={summary.actionPreviews} />
+                    ) : (
+                      <Text fontSize="xs" color="gray.500">Player attack summary pending</Text>
+                    )}
                   </Td>
                   <Td>
                     <VStack align="start" spacing={1}>

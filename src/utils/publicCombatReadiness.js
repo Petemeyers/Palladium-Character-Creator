@@ -1,4 +1,7 @@
-import { adaptPublicEnemyToCombatant } from "./publicEnemyCombatAdapter.js";
+import {
+  adaptPublicEnemyToCombatant,
+  buildPublicEnemyActionPreview,
+} from "./publicEnemyCombatAdapter.js";
 
 const REQUIRED_COMPATIBILITY_ATTRIBUTES = ["IQ", "ME", "MA", "PS", "PP", "PE", "PB", "Spd"];
 const REQUIRED_PUBLIC_ABILITIES = ["str", "dex", "con", "int", "wis", "cha"];
@@ -55,6 +58,31 @@ const formatValue = (value, fallback = "Missing") => {
     return fallback;
   }
   return String(value);
+};
+
+const getActionPreviews = (entry = {}) => {
+  const publicEnemyActions = entry.publicEnemyMetadata?.actions;
+  if (hasArrayValue(publicEnemyActions)) {
+    return publicEnemyActions.map(buildPublicEnemyActionPreview);
+  }
+
+  if (hasArrayValue(entry.actions)) {
+    return entry.actions.map(buildPublicEnemyActionPreview);
+  }
+
+  if (hasArrayValue(entry.attacks)) {
+    return entry.attacks.map((attack) => (
+      attack?.actionPreview
+        ? buildPublicEnemyActionPreview(attack.actionPreview)
+        : buildPublicEnemyActionPreview(attack)
+    ));
+  }
+
+  if (hasArrayValue(entry.autoRollCharacter?.attacks)) {
+    return entry.autoRollCharacter.attacks.map(buildPublicEnemyActionPreview);
+  }
+
+  return [];
 };
 
 export function getEncounterCombatantSource(entry = {}) {
@@ -239,6 +267,7 @@ export function getEncounterReadinessSummary(entry = {}) {
     publicBackgroundName: formatValue(firstValue(entry.publicBackgroundName, entry.autoRollCharacter?.publicBackgroundName, entry.background, entry.socialBackground), ""),
     enemyCreatureType: formatValue(firstValue(entry.creatureType, publicEnemyMetadata.creatureType, entry.category), ""),
     proficiencyBonus: formatValue(firstValue(derivedStats.proficiencyBonus, entry.proficiencyBonus, publicEnemyMetadata.proficiencyBonus), ""),
+    actionPreviews: getActionPreviews(entry),
     ready: readiness.ready,
     missing: readiness.missing,
   };
