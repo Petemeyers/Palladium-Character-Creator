@@ -26,10 +26,11 @@ const EnemyActionPreview = ({ actions = [], emptyText = "No action preview avail
           </Text>
           <Wrap spacing={1}>
             {field("Type", action?.attackType)}
+            {field("Ability", action?.abilityUsed)}
             {field("Reach", action?.reach)}
             {field("Range", action?.range)}
             {field("Hit", action?.hitBonus)}
-            {field("Damage", action?.damage)}
+            {field("Damage", action?.damageExpression || action?.damage)}
             {field("Damage Type", action?.damageType)}
             {field("Save", action?.save)}
             {field("Notes", action?.notes)}

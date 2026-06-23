@@ -2,6 +2,7 @@ import {
   adaptPublicEnemyToCombatant,
   buildPublicEnemyActionPreview,
 } from "./publicEnemyCombatAdapter.js";
+import { buildPublicPlayerAttackPreviews } from "./publicPlayerAttackPreview.js";
 
 const REQUIRED_COMPATIBILITY_ATTRIBUTES = ["IQ", "ME", "MA", "PS", "PP", "PE", "PB", "Spd"];
 const REQUIRED_PUBLIC_ABILITIES = ["str", "dex", "con", "int", "wis", "cha"];
@@ -60,7 +61,13 @@ const formatValue = (value, fallback = "Missing") => {
   return String(value);
 };
 
-const getActionPreviews = (entry = {}) => {
+const getActionPreviews = (entry = {}, side = "") => {
+  if (side === "player") {
+    if (hasArrayValue(entry.publicAttackPreviews)) return entry.publicAttackPreviews;
+    if (hasArrayValue(entry.autoRollCharacter?.publicAttackPreviews)) return entry.autoRollCharacter.publicAttackPreviews;
+    return buildPublicPlayerAttackPreviews(entry);
+  }
+
   const publicEnemyActions = entry.publicEnemyMetadata?.actions;
   if (hasArrayValue(publicEnemyActions)) {
     return publicEnemyActions.map(buildPublicEnemyActionPreview);
@@ -267,7 +274,7 @@ export function getEncounterReadinessSummary(entry = {}) {
     publicBackgroundName: formatValue(firstValue(entry.publicBackgroundName, entry.autoRollCharacter?.publicBackgroundName, entry.background, entry.socialBackground), ""),
     enemyCreatureType: formatValue(firstValue(entry.creatureType, publicEnemyMetadata.creatureType, entry.category), ""),
     proficiencyBonus: formatValue(firstValue(derivedStats.proficiencyBonus, entry.proficiencyBonus, publicEnemyMetadata.proficiencyBonus), ""),
-    actionPreviews: getActionPreviews(entry),
+    actionPreviews: getActionPreviews(entry, side),
     ready: readiness.ready,
     missing: readiness.missing,
   };

@@ -1,4 +1,5 @@
 import { getPublicDerivedStatsForCharacter } from "./publicDerivedStats.js";
+import { buildPublicPlayerAttackPreviews } from "./publicPlayerAttackPreview.js";
 
 const PUBLIC_TO_COMPATIBILITY_ATTRIBUTES = {
   str: "PS",
@@ -76,6 +77,10 @@ export function adaptPublicCharacterForAutoRoll(character = {}) {
     toFiniteNumber(character.guardRating, toFiniteNumber(character.ac, 10))
   );
   const speed = toFiniteNumber(character.speed, toFiniteNumber(attributes.Spd, 10));
+  const publicAttackPreviews = buildPublicPlayerAttackPreviews({
+    ...character,
+    publicDerivedStats: derivedStats,
+  });
 
   return {
     ready: true,
@@ -106,6 +111,7 @@ export function adaptPublicCharacterForAutoRoll(character = {}) {
       publicLanguages: character.publicLanguages || [],
       publicSkillProficiencies: character.publicSkillProficiencies || [],
       publicStartingEquipment: character.publicStartingEquipment,
+      publicAttackPreviews,
       attacks: character.attacks || [{ name: "Unarmed Attack", damage: "1d4", count: 1 }],
       bonuses: character.bonuses || {},
       special_abilities: character.special_abilities || [],
