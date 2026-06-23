@@ -2,6 +2,27 @@
 
 This is a React/Vite/Electron tabletop RPG combat game.
 
+## Project Vision Reference
+
+Before making feature, architecture, combat, content, character, enemy, or rules changes, read the root `game.md` file.
+
+`game.md` defines the long-term direction for Chronicles of Iron and Legend:
+
+- Historical realism first.
+- Mythology second.
+- Fantasy third.
+- Unified simulation rules for humans, beasts, giants, spirits, and armies.
+- Public mechanics are a temporary legal/public baseline, not the final game identity.
+- Future combat should move toward stamina, morale, armor, wounds, reach, positioning, fatigue, and historically grounded fighting methods.
+
+When implementing new mechanics:
+
+- Prefer project-specific historical-mythic simulation language over modern tabletop RPG assumptions.
+- Keep public compatibility where already built, but do not expand public baseline mechanics as the final design unless explicitly requested.
+- Keep compatibility/legacy systems isolated when possible.
+- Do not use the old shorthand term in filenames, variables, comments, or visible UI.
+- Avoid private/proprietary rulebook language in public-facing systems.
+
 ## Most Important Rule
 
 Patch one bug or one feature slice at a time. Do not perform broad cleanup, refactors, or opportunistic fixes.
