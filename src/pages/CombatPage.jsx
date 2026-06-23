@@ -80,6 +80,7 @@ import CryptoSecureDice from "../utils/cryptoDice.js";
 import arenaRoster from "../data/arenaRoster.js";
 import { getAllArenaRosterEntries } from "../utils/arenaRosterUtils.js";
 import CombatActionsPanel from "../components/CombatActionsPanel.jsx";
+import EncounterReadinessPanel from "../components/EncounterReadinessPanel.jsx";
 import { createPlayableCharacterFighter, getPlayableCharacterRollDetails } from "../utils/autoRoll.js";
 import { assignRandomWeaponToEnemy, getDefaultWeaponForEnemy, equipWeaponToEnemy, addWeaponToInventory } from "../utils/enemyWeaponAssigner.js";
 import armorShopData from "../data/armorShopData.js";
@@ -29628,6 +29629,11 @@ function CombatPage({ characters = [] }) {
                         </HStack>
                       </HStack>
 
+                      <EncounterReadinessPanel
+                        combatants={fighters}
+                        stagedEntries={stagedRosterEntries}
+                      />
+
                       <Box p={2} borderWidth="1px" borderRadius="md">
                         <Text>Time</Text>
                         <HStack spacing={3} align="center">
@@ -31753,7 +31759,7 @@ function CombatPage({ characters = [] }) {
           <ModalBody pb={6} overflowY="auto">
             <Box mb={4} p={3} border="1px solid" borderColor="purple.200" borderRadius="md" bg="purple.50">
               <HStack justify="space-between" mb={3} align="center">
-                <Heading size="sm">Staged SRD Roster</Heading>
+                <Heading size="sm">Staged Public Roster</Heading>
                 <HStack>
                   <Button
                     size="xs"
