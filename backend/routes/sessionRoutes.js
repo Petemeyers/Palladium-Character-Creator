@@ -1,5 +1,5 @@
 import express from "express";
-import { getActiveSession } from "../conchampioners/sessionConchampioner.js";
+import { getActiveSession } from "../controllers/sessionController.js";
 import { authenticateToken } from "../middleware/authMiddleware.js";
 
 const router = express.Router();

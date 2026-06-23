@@ -10,7 +10,7 @@ import {
   characterValidation,
   sanitizeInput,
 } from "../middleware/validation.js";
-import { io } from "../server.js";
+import { getIo } from "../socket.js";
 
 const router = express.Router();
 
@@ -450,8 +450,9 @@ router.put("/:id", async (req, res) => {
     // Find parties this character belongs to and emit updates
     try {
       const parties = await Party.find({ members: id }).populate("members");
+      const io = getIo();
       parties.forEach((party) => {
-        io.to(party._id.toString()).emit("partyUpdated", party);
+        if (io) io.to(party._id.toString()).emit("partyUpdated", party);
       });
     } catch (wsError) {
       console.error("Error emitting party updates:", wsError);
@@ -508,8 +509,9 @@ router.put("/:id/party-status", async (req, res) => {
       const parties = await Party.find({ members: req.params.id }).populate(
         "members"
       );
+      const io = getIo();
       parties.forEach((party) => {
-        io.to(party._id.toString()).emit("partyUpdated", party);
+        if (io) io.to(party._id.toString()).emit("partyUpdated", party);
       });
     } catch (wsError) {
       console.error("Error emitting party updates:", wsError);

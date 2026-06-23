@@ -1,6 +1,6 @@
 import Party from "../models/Party.js";
 import Map from "../models/Map.js";
-import { io } from "../server.js";
+import { safeEmit } from "../socket.js";
 import { applyMapPatch } from "../services/applyMapPatch.js";
 import { ensureActiveMapForParty } from "../services/ensureActiveMap.js";
 
@@ -75,7 +75,7 @@ export async function commitActiveMap(req, res) {
       version: mapDoc.version,
     };
 
-    io.emit("MAP_PATCH", payload);
+    safeEmit("MAP_PATCH", payload);
 
     return res.json({
       success: true,

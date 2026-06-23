@@ -1,6 +1,6 @@
 import Party from "../models/Party.js";
 import Character from "../models/Character.js";
-import { io } from "../server.js";
+import { getIo } from "../socket.js";
 
 export const createParty = async (req, res) => {
   try {
@@ -108,7 +108,8 @@ export const createParty = async (req, res) => {
 
     // Emit party update via WebSocket
     try {
-      io.to(populatedParty._id.toString()).emit("partyUpdated", populatedParty);
+      const io = getIo();
+      if (io) io.to(populatedParty._id.toString()).emit("partyUpdated", populatedParty);
     } catch (wsError) {
       console.error("Error emitting party update:", wsError);
     }
@@ -253,7 +254,8 @@ export const updateParty = async (req, res) => {
 
     // Emit party update via WebSocket
     try {
-      io.to(updatedParty._id.toString()).emit("partyUpdated", updatedParty);
+      const io = getIo();
+      if (io) io.to(updatedParty._id.toString()).emit("partyUpdated", updatedParty);
     } catch (wsError) {
       console.error("Error emitting party update:", wsError);
     }
@@ -297,7 +299,8 @@ export const deleteParty = async (req, res) => {
 
     // Emit party deletion via WebSocket
     try {
-      io.to(id.toString()).emit("partyDeleted", { id: id });
+      const io = getIo();
+      if (io) io.to(id.toString()).emit("partyDeleted", { id: id });
     } catch (wsError) {
       console.error("Error emitting party deletion:", wsError);
     }

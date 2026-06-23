@@ -40,6 +40,7 @@ import Message from "./models/Message.js";
 import OpenAI from "openai";
 import path from "path";
 import { fileURLToPath } from "url";
+import { setIo } from "./socket.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -423,6 +424,7 @@ const io = new Server(server, {
     methods: ["GET", "POST"],
   },
 });
+setIo(io);
 
 // Helper function to broadcast system messages
 export function broadcastSystemMessage(
