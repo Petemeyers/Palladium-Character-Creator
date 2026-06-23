@@ -82,6 +82,7 @@ import { getAllArenaRosterEntries } from "../utils/arenaRosterUtils.js";
 import CombatActionsPanel from "../components/CombatActionsPanel.jsx";
 import EncounterReadinessPanel from "../components/EncounterReadinessPanel.jsx";
 import InitiativeSetupPreview from "../components/InitiativeSetupPreview.jsx";
+import CombatActionCatalogPanel from "../components/CombatActionCatalogPanel.jsx";
 import ManualPublicAttackTest from "../components/ManualPublicAttackTest.jsx";
 import { applyPublicCombatDamage, getPublicCombatHpInfo } from "../utils/publicCombatHp.js";
 import { addWoundRecord, createWoundRecord } from "../utils/combatWoundRecords.js";
@@ -28642,10 +28643,10 @@ function CombatPage({ characters = [] }) {
               </Box>
             )}
 
-            {/* Combat Options - Moved here to astaminaar under Equistaminad Weapons */}
+            {/* Compatibility controls remain below equipment. */}
             {shouldShowCombatOptions && !isArielTurn && (
               <Box w="100%" mt={4}>
-                <Heading size="sm" color="green.600">Combat Options for {currentFighter.name}</Heading>
+                <Heading size="sm" color="green.600">Compatibility Controls for {currentFighter.name}</Heading>
                 <Box
                   w="100%"
                   maxH="600px"
@@ -28657,6 +28658,9 @@ function CombatPage({ characters = [] }) {
                   bg="green.50"
                 >
                   <VStack spacing={3} align="stretch">
+                    <Text fontSize="xs" color="gray.600">
+                      Primary manual testing is moving to the Combat Command Center. These controls remain available for the current compatibility engine.
+                    </Text>
                     {/* Movement Mode Toggle - only show if fighter can fly */}
                     {currentFighter && currentFighter.type === "player" && canFlyNow && (
                       <Box>
@@ -28684,7 +28688,7 @@ function CombatPage({ characters = [] }) {
                     )}
                     {/* Action Buttons */}
                     <Box>
-                      <Text fontSize="sm" fontWeight="bold" mb={2}>Select Action:</Text>
+                      <Text fontSize="sm" fontWeight="bold" mb={2}>Select Compatibility Action:</Text>
                       <Wrap spacing={2}>
                         {actionOptions.map((option) => (
                           <WrapItem key={option.value}>
@@ -29966,6 +29970,20 @@ function CombatPage({ characters = [] }) {
                               </Box>
                             </VStack>
                           </Box>
+
+                          <CombatActionCatalogPanel
+                            actor={manualPublicCurrentCombatant}
+                            targets={manualPublicCurrentCombatant
+                              ? fighters.filter((fighter, index) =>
+                                  String(fighter?.id || fighter?._id || fighter?.name || index) !== String(manualPublicCurrentTurn?.id)
+                                )
+                              : []}
+                            currentTurnEntry={manualPublicCurrentTurn}
+                            selectedTarget={selectedTarget}
+                            equippedWeapons={manualPublicCurrentCombatant ? getEquistaminadWeapons(manualPublicCurrentCombatant) : []}
+                            inventory={manualPublicCurrentCombatant?.inventory || manualPublicCurrentCombatant?.items || []}
+                            compatibilityActions={actionOptions}
+                          />
 
                           <ManualPublicAttackTest
                             combatants={fighters}
