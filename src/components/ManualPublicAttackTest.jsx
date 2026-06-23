@@ -14,11 +14,12 @@ import {
 } from "@chakra-ui/react";
 import { getEncounterReadinessSummary } from "../utils/publicCombatReadiness.js";
 import { resolvePublicBasicAttack } from "../utils/publicBasicAttackResolver.js";
+import { getPublicCombatHpInfo } from "../utils/publicCombatHp.js";
 
 const getId = (combatant, index) =>
   String(combatant?.id || combatant?._id || combatant?.name || index);
 
-const ManualPublicAttackTest = ({ combatants = [] }) => {
+const ManualPublicAttackTest = ({ combatants = [], onApplyDamage }) => {
   const [attackerId, setAttackerId] = useState("");
   const [targetId, setTargetId] = useState("");
   const [attackIndex, setAttackIndex] = useState("0");
@@ -42,6 +43,13 @@ const ManualPublicAttackTest = ({ combatants = [] }) => {
   const targetRow = availableTargets.find((row) => row.id === targetId) || null;
   const attacks = attackerRow?.summary.actionPreviews || [];
   const selectedAttack = attacks[Number(attackIndex)] || null;
+  const targetHpInfo = getPublicCombatHpInfo(targetRow?.combatant || {});
+  const canApplyDamage =
+    typeof onApplyDamage === "function" &&
+    result?.hit === true &&
+    Number.isFinite(Number(result.damageTotal)) &&
+    targetHpInfo.ok &&
+    result.applied !== true;
 
   const handleAttackerChange = (value) => {
     setAttackerId(value);
@@ -57,6 +65,22 @@ const ManualPublicAttackTest = ({ combatants = [] }) => {
       attack: selectedAttack,
     });
     setResult(nextResult);
+  };
+
+  const handleApplyDamage = () => {
+    if (!canApplyDamage) return;
+    const applyResult = onApplyDamage({
+      targetId,
+      damageTotal: result.damageTotal,
+      result,
+    });
+
+    setResult({
+      ...result,
+      applied: applyResult?.ok === true,
+      applyMessage: applyResult?.message || "Damage application did not complete.",
+      applyMissingFields: applyResult?.missingFields || [],
+    });
   };
 
   if (rows.length === 0) return null;
@@ -158,8 +182,33 @@ const ManualPublicAttackTest = ({ combatants = [] }) => {
                   Missing: {result.missingFields.join(", ")}
                 </Text>
               )}
+              {result.hit && Number.isFinite(Number(result.damageTotal)) && (
+                <HStack spacing={2} wrap="wrap">
+                  <Button
+                    size="xs"
+                    colorScheme="red"
+                    onClick={handleApplyDamage}
+                    isDisabled={!canApplyDamage}
+                  >
+                    Apply Damage
+                  </Button>
+                  {!targetHpInfo.ok && (
+                    <Text fontSize="xs" color="orange.700">
+                      Missing: {targetHpInfo.missingFields.join(", ")}
+                    </Text>
+                  )}
+                  {result.applied && (
+                    <Badge colorScheme="green">Applied</Badge>
+                  )}
+                </HStack>
+              )}
+              {result.applyMessage && (
+                <Text fontSize="xs" color={result.applied ? "green.700" : "orange.700"}>
+                  {result.applyMessage}
+                </Text>
+              )}
               <Text fontSize="xs" color="gray.600">
-                Preview only. HP is not changed.
+                Resolve is a preview. HP changes only after Apply Damage.
               </Text>
             </VStack>
           </Alert>

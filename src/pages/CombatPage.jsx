@@ -83,6 +83,7 @@ import CombatActionsPanel from "../components/CombatActionsPanel.jsx";
 import EncounterReadinessPanel from "../components/EncounterReadinessPanel.jsx";
 import InitiativeSetupPreview from "../components/InitiativeSetupPreview.jsx";
 import ManualPublicAttackTest from "../components/ManualPublicAttackTest.jsx";
+import { applyPublicCombatDamage } from "../utils/publicCombatHp.js";
 import { createPlayableCharacterFighter, getPlayableCharacterRollDetails } from "../utils/autoRoll.js";
 import { assignRandomWeaponToEnemy, getDefaultWeaponForEnemy, equipWeaponToEnemy, addWeaponToInventory } from "../utils/enemyWeaponAssigner.js";
 import armorShopData from "../data/armorShopData.js";
@@ -24152,6 +24153,48 @@ function CombatPage({ characters = [] }) {
     setStagedRosterImportMessages(["Staged roster cleared."]);
   }
 
+  function applyManualPublicAttackDamage({ targetId, damageTotal, result } = {}) {
+    const sourceFighters = Array.isArray(fightersRef.current) && fightersRef.current.length > 0
+      ? fightersRef.current
+      : fighters;
+    const targetIndex = sourceFighters.findIndex((fighter, index) =>
+      String(fighter?.id || fighter?._id || fighter?.name || index) === String(targetId)
+    );
+
+    if (targetIndex < 0) {
+      return {
+        ok: false,
+        missingFields: ["target"],
+        message: "Cannot apply damage: target was not found.",
+      };
+    }
+
+    const applyResult = applyPublicCombatDamage(sourceFighters[targetIndex], damageTotal, {
+      applied: result?.applied === true,
+    });
+
+    if (!applyResult.ok) return applyResult;
+
+    const nextFighters = sourceFighters.map((fighter, index) =>
+      index === targetIndex ? applyResult.updatedTarget : fighter
+    );
+    fightersRef.current = nextFighters;
+    setFighters(nextFighters);
+
+    const message =
+      `${result?.attackerName || "Attacker"} hits ${result?.targetName || applyResult.updatedTarget.name || "Target"} ` +
+      `with ${result?.attackName || "Basic Attack"} for ${applyResult.damageTotal} damage. ` +
+      `${applyResult.updatedTarget.name || "Target"} HP: ${applyResult.oldHp} -> ${applyResult.newHp}.` +
+      (applyResult.newHp === 0 ? ` ${applyResult.updatedTarget.name || "Target"} is at 0 HP.` : "");
+
+    addLog(message, applyResult.newHp === 0 ? "warning" : "combat");
+
+    return {
+      ...applyResult,
+      message,
+    };
+  }
+
   /**
    * Load a prescene battle - predefined fighters for quick combat start.
    * Clears current fighters and loads the preset (players + enemies).
@@ -29693,7 +29736,10 @@ function CombatPage({ characters = [] }) {
                             </VStack>
                           </Box>
 
-                          <ManualPublicAttackTest combatants={fighters} />
+                          <ManualPublicAttackTest
+                            combatants={fighters}
+                            onApplyDamage={applyManualPublicAttackDamage}
+                          />
                         </VStack>
                       </Box>
 
