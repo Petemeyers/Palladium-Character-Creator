@@ -159,25 +159,27 @@ function testSkillSystemBehavior() {
     occBonus: 0,
     meta: {},
   });
-  assert.throws(() => skillSystem.normalizeSkillName("Scale Walls (+10%)"), ReferenceError);
-  assert.throws(
-    () => skillSystem.normalizeSkillName("Speak Additional Languages (Knows 2) (+30%)"),
-    ReferenceError,
-  );
-  assert.throws(() => skillSystem.lookupSkill("Prowl", 1, 10), ReferenceError);
-  assert.throws(
-    () => skillSystem.getSkillPercentage({ level: 1, IQ: 12 }, "Scale Walls (+10%)"),
-    ReferenceError,
-  );
+  assert.deepEqual(skillSystem.normalizeSkillName("Scale Walls (+10%)"), {
+    normalizedName: "Scale Walls",
+    occBonus: 10,
+    meta: {},
+  });
+  assert.deepEqual(skillSystem.normalizeSkillName("Speak Additional Languages (Knows 2) (+30%)"), {
+    normalizedName: "Speak Additional Language",
+    occBonus: 30,
+    meta: { knows: 2 },
+  });
+  assert.equal(skillSystem.lookupSkill("Prowl", 1, 10)?.basePercentage, 18);
+  assert.equal(skillSystem.lookupSkill("Unknown Legacy Skill", 1, 10), null);
+  assert.equal(skillSystem.getSkillPercentage({ level: 1, IQ: 12 }, "Scale Walls (+10%)"), 0);
   assert.equal(skillSystem.getSkillPercentage({ level: 1, IQ: 12 }, ""), 0);
   assert.equal(skillSystem.hasSkill(null, "Prowl"), false);
-  assert.throws(
-    () =>
-      skillSystem.hasSkill(
-        { professionSkills: ["Prowl"], electiveSkills: [], secondarySkills: [] },
-        "Prowl",
-      ),
-    ReferenceError,
+  assert.equal(
+    skillSystem.hasSkill(
+      { professionSkills: ["Prowl"], electiveSkills: [], secondarySkills: [] },
+      "Prowl",
+    ),
+    true,
   );
   assert.deepEqual(
     skillSystem.performSkillCheck(null, "Prowl", 0, () => 10),
@@ -198,9 +200,7 @@ function testSkillSystemBehavior() {
     difficulty: 0,
     message: "Failure! Rolled 41 (needed 40 or less)",
   });
-  notes.push(
-    "skillSystem normalize/lookup/percentage paths currently hit a stale occBonus ReferenceError; baseline records the throw.",
-  );
+  notes.push("skillSystem normalize/lookup/percentage paths no longer throw on stale occBonus.");
 }
 
 function testSkillProgressionAndBonuses() {
@@ -260,10 +260,10 @@ function testProfessionSkillsTables() {
   assert.equal(professionSkills.ppBonus(20), 7);
   assert.equal(professionSkills.meBonus(16), 5);
 
-  assert.throws(() => professionSkills.buildSkillSet("Knight", 16, 12, 12, 1), ReferenceError);
-  notes.push(
-    "professionSkills.buildSkillSet delegates to skillSystem and currently inherits the occBonus ReferenceError.",
-  );
+  const knightSkills = professionSkills.buildSkillSet("Knight", 16, 12, 12, 1);
+  assert.equal(typeof knightSkills, "object");
+  assert.equal(Object.keys(knightSkills).length > 0, true);
+  notes.push("professionSkills.buildSkillSet no longer inherits the stale occBonus ReferenceError.");
 }
 
 function testSavingThrowsBehavior() {

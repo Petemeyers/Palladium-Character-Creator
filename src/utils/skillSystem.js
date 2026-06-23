@@ -89,7 +89,7 @@ export function normalizeSkillName(skillName) {
   // Apply variation mapping
   const finalName = variations[normalizedName] || normalizedName;
   
-  return { normalizedName: finalName, occBonus, meta };
+  return { normalizedName: finalName, occBonus: professionBonus, meta };
 }
 
 /**
