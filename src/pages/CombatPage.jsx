@@ -81,6 +81,7 @@ import arenaRoster from "../data/arenaRoster.js";
 import { getAllArenaRosterEntries } from "../utils/arenaRosterUtils.js";
 import CombatActionsPanel from "../components/CombatActionsPanel.jsx";
 import EncounterReadinessPanel from "../components/EncounterReadinessPanel.jsx";
+import InitiativeSetupPreview from "../components/InitiativeSetupPreview.jsx";
 import { createPlayableCharacterFighter, getPlayableCharacterRollDetails } from "../utils/autoRoll.js";
 import { assignRandomWeaponToEnemy, getDefaultWeaponForEnemy, equipWeaponToEnemy, addWeaponToInventory } from "../utils/enemyWeaponAssigner.js";
 import armorShopData from "../data/armorShopData.js";
@@ -29630,6 +29631,11 @@ function CombatPage({ characters = [] }) {
                       </HStack>
 
                       <EncounterReadinessPanel
+                        combatants={fighters}
+                        stagedEntries={stagedRosterEntries}
+                      />
+
+                      <InitiativeSetupPreview
                         combatants={fighters}
                         stagedEntries={stagedRosterEntries}
                       />
