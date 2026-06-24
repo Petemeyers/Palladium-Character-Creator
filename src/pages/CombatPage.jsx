@@ -88,6 +88,7 @@ import ManualPublicAttackTest from "../components/ManualPublicAttackTest.jsx";
 import RecoverActionHandler from "../components/RecoverActionHandler.jsx";
 import DefendActionHandler from "../components/DefendActionHandler.jsx";
 import MovementActionHandler from "../components/MovementActionHandler.jsx";
+import UseItemActionHandler from "../components/UseItemActionHandler.jsx";
 import { canExecuteMovementCommand } from "../utils/combatMovementCommand.js";
 import { applyPublicCombatDamage, getPublicCombatHpInfo } from "../utils/publicCombatHp.js";
 import { addWoundRecord, createWoundRecord } from "../utils/combatWoundRecords.js";
@@ -30418,6 +30419,13 @@ function CombatPage({ characters = [] }) {
                                 }
                                 movementResult={selectedMovementCommandResult}
                                 onExecute={activateSelectedMovementTargeting}
+                              />
+                            )}
+                            {selectedCombatAction?.type === "use-item" && (
+                              <UseItemActionHandler
+                                actor={manualPublicCurrentCombatant}
+                                currentTurnEntry={manualPublicCurrentTurn}
+                                selectedCombatAction={selectedCombatAction}
                               />
                             )}
                           </SelectedCombatActionPanel>

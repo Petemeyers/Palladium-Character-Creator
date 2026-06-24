@@ -337,19 +337,27 @@ const buildItemActions = ({ actor, currentTurnEntry, inventory }) =>
     .filter((item) => item && typeof item !== "function")
     .map((item, index) => {
       const itemName = normalizeText(typeof item === "string" ? item : item.name || item.label || item.type, "Item");
+      const itemId = normalizeText(typeof item === "object" ? item.id || item._id || item.itemId : "", "");
+      const itemCategory = normalizeText(typeof item === "object" ? item.category || item.type || item.subtype : "", "");
+      const itemSource = normalizeText(typeof item === "object" ? item.source || item.container : "", "inventory");
       return makeAction({
         actor,
         currentTurnEntry,
-        id: `use-item-${itemName}-${index}`,
+        id: `use-item-${itemId || itemName}-${index}`,
         name: `Use Item: ${itemName}`,
         type: "use-item",
-        source: "inventory",
-        category: "Item",
+        source: itemSource,
+        category: itemCategory || "Item",
         costActions: 1,
-        previewSummary: "Item use pending manual handler.",
+        previewSummary: "Item effect handler pending.",
         metadata: {
+          actorId: getEntryId(actor),
+          actorName: actor?.name,
           itemName,
-          itemType: typeof item === "object" ? item.type || item.category : "",
+          itemId,
+          itemSource,
+          itemCategory,
+          itemType: itemCategory,
         },
       });
     });
