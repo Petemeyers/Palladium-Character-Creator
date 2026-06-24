@@ -292,7 +292,7 @@ const buildDefensiveRecoveryActions = ({ actor, currentTurnEntry }) => [
     source: "manual catalog",
     category: "Defense",
     costActions: 1,
-    previewSummary: "Preview only. Compatibility handler pending.",
+    previewSummary: "Enter defensive posture until this combatant's next turn.",
   }),
   makeAction({
     actor,

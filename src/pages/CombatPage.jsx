@@ -86,6 +86,7 @@ import CombatActionCatalogPanel from "../components/CombatActionCatalogPanel.jsx
 import SelectedCombatActionPanel from "../components/SelectedCombatActionPanel.jsx";
 import ManualPublicAttackTest from "../components/ManualPublicAttackTest.jsx";
 import RecoverActionHandler from "../components/RecoverActionHandler.jsx";
+import DefendActionHandler from "../components/DefendActionHandler.jsx";
 import { applyPublicCombatDamage, getPublicCombatHpInfo } from "../utils/publicCombatHp.js";
 import { addWoundRecord, createWoundRecord } from "../utils/combatWoundRecords.js";
 import {
@@ -96,6 +97,12 @@ import {
 import { spendAction } from "../utils/publicActionBudget.js";
 import { spendStamina } from "../utils/combatStamina.js";
 import { applyStaminaRecovery, getRecoveryAmount } from "../utils/combatRecovery.js";
+import {
+  applyDefensivePosture,
+  clearExpiredPostures,
+  createDefensivePosture,
+  getCombatPosture,
+} from "../utils/combatPosture.js";
 import { createPlayableCharacterFighter, getPlayableCharacterRollDetails } from "../utils/autoRoll.js";
 import { assignRandomWeaponToEnemy, getDefaultWeaponForEnemy, equipWeaponToEnemy, addWeaponToInventory } from "../utils/enemyWeaponAssigner.js";
 import armorShopData from "../data/armorShopData.js";
@@ -24213,12 +24220,31 @@ function CombatPage({ characters = [] }) {
       skipZeroHp: true,
     });
 
-    setManualPublicTurnOrder(nextTurn.turnOrder || manualPublicTurnOrder);
+    const nextTurnOrder = nextTurn.turnOrder || manualPublicTurnOrder;
+    const currentAfterExpiration = nextTurn.current
+      ? clearExpiredPostures(nextTurn.current, nextTurn.round, nextTurn.currentIndex)
+      : null;
+    const finalTurnOrder = currentAfterExpiration
+      ? nextTurnOrder.map((row, index) => index === nextTurn.currentIndex ? currentAfterExpiration : row)
+      : nextTurnOrder;
+    setManualPublicTurnOrder(finalTurnOrder);
     setManualPublicTurnIndex(nextTurn.currentIndex);
     setManualPublicTurnRound(nextTurn.round);
-    if (nextTurn.current) {
+    if (currentAfterExpiration) {
+      const currentId = String(currentAfterExpiration.id || "");
+      const sourceFighters = Array.isArray(fightersRef.current) && fightersRef.current.length > 0
+        ? fightersRef.current
+        : fighters;
+      const nextFighters = sourceFighters.map((fighter, index) => {
+        const fighterId = String(fighter?.id || fighter?._id || fighter?.name || index);
+        return fighterId === currentId
+          ? clearExpiredPostures(fighter, nextTurn.round, nextTurn.currentIndex)
+          : fighter;
+      });
+      fightersRef.current = nextFighters;
+      setFighters(nextFighters);
       addLog(
-        `Manual turn advanced to ${nextTurn.current.name}${nextTurn.wrapped ? ` (round ${nextTurn.round})` : ""}.`,
+        `Manual turn advanced to ${currentAfterExpiration.name}${nextTurn.wrapped ? ` (round ${nextTurn.round})` : ""}.`,
         "info"
       );
     }
@@ -24405,6 +24431,75 @@ function CombatPage({ characters = [] }) {
       newStamina: recoveryResult.newStamina,
       maxStamina: recoveryResult.maxStamina,
       recovered: recoveryResult.recovered,
+      spent: spendResult.spent,
+      remainingActions: spendResult.remainingActions,
+      maxActions: spendResult.maxActions,
+      missingFields: [],
+      message,
+    };
+  }
+
+  function applyManualPublicDefend({ actorId } = {}) {
+    const currentManualTurn = manualPublicTurnOrder[manualPublicTurnIndex] || null;
+    if (!currentManualTurn || String(actorId) !== String(currentManualTurn.id)) {
+      return {
+        ok: false,
+        missingFields: ["currentTurn"],
+        message: "Defend can only be used by the current turn combatant.",
+      };
+    }
+
+    if (getCombatPosture(currentManualTurn)?.type === "defending") {
+      return {
+        ok: false,
+        missingFields: [],
+        message: "Already defending.",
+      };
+    }
+
+    const spendResult = spendAction(currentManualTurn, 1);
+    if (!spendResult.ok) {
+      return {
+        ok: false,
+        missingFields: ["remainingActions"],
+        message: "No actions remaining. End Turn manually.",
+      };
+    }
+
+    const posture = createDefensivePosture({
+      round: manualPublicTurnRound,
+      turnIndex: manualPublicTurnIndex,
+    });
+    const nextTurnEntry = applyDefensivePosture(spendResult.updated, posture);
+    const nextManualTurnOrder = manualPublicTurnOrder.map((row, index) =>
+      index === manualPublicTurnIndex ? nextTurnEntry : row
+    );
+    setManualPublicTurnOrder(nextManualTurnOrder);
+
+    const sourceFighters = Array.isArray(fightersRef.current) && fightersRef.current.length > 0
+      ? fightersRef.current
+      : fighters;
+    const nextFighters = sourceFighters.map((fighter, index) => {
+      const fighterId = String(fighter?.id || fighter?._id || fighter?.name || index);
+      if (fighterId !== String(actorId)) return fighter;
+      return {
+        ...applyDefensivePosture(fighter, posture),
+        remainingActions: spendResult.remainingActions,
+      };
+    });
+    fightersRef.current = nextFighters;
+    setFighters(nextFighters);
+
+    const name = nextTurnEntry.name || currentManualTurn.name || "Combatant";
+    const message =
+      `${name} enters a defensive posture. ` +
+      `Action spent: ${spendResult.remainingActions}/${spendResult.maxActions} remaining.`;
+    addLog(message, "info");
+
+    return {
+      ok: true,
+      updated: nextTurnEntry,
+      posture,
       spent: spendResult.spent,
       remainingActions: spendResult.remainingActions,
       maxActions: spendResult.maxActions,
@@ -30009,6 +30104,11 @@ function CombatPage({ characters = [] }) {
                                         <Text fontSize="sm">
                                           Stamina {manualPublicCurrentTurn.currentStamina}/{manualPublicCurrentTurn.maxStamina} {manualPublicCurrentTurn.fatigueLabel}
                                         </Text>
+                                        {getCombatPosture(manualPublicCurrentTurn)?.label && (
+                                          <Badge colorScheme="green">
+                                            Posture: {getCombatPosture(manualPublicCurrentTurn).label}
+                                          </Badge>
+                                        )}
                                         <Badge colorScheme="green">active</Badge>
                                       </HStack>
                                     </Box>
@@ -30048,9 +30148,16 @@ function CombatPage({ characters = [] }) {
                                                 <Td>{row.remainingActions}/{row.maxActions}</Td>
                                                 <Td>{row.currentStamina}/{row.maxStamina} {row.fatigueLabel}</Td>
                                                 <Td>
-                                                  <Badge colorScheme={active ? "green" : "gray"}>
-                                                    {active ? "Current" : "Waiting"}
-                                                  </Badge>
+                                                  <HStack spacing={1} wrap="wrap">
+                                                    <Badge colorScheme={active ? "green" : "gray"}>
+                                                      {active ? "Current" : "Waiting"}
+                                                    </Badge>
+                                                    {getCombatPosture(row)?.label && (
+                                                      <Badge colorScheme="green">
+                                                        {getCombatPosture(row).label}
+                                                      </Badge>
+                                                    )}
+                                                  </HStack>
                                                 </Td>
                                               </Tr>
                                             );
@@ -30110,6 +30217,15 @@ function CombatPage({ characters = [] }) {
                                 selectedCombatAction={selectedCombatAction}
                                 manualTurnActive={manualPublicTurnOrder.length > 0}
                                 onRecover={applyManualPublicRecovery}
+                              />
+                            )}
+                            {selectedCombatAction?.type === "defend" && (
+                              <DefendActionHandler
+                                actor={manualPublicCurrentCombatant}
+                                currentTurnEntry={manualPublicCurrentTurn}
+                                selectedCombatAction={selectedCombatAction}
+                                manualTurnActive={manualPublicTurnOrder.length > 0}
+                                onDefend={applyManualPublicDefend}
                               />
                             )}
                           </SelectedCombatActionPanel>
