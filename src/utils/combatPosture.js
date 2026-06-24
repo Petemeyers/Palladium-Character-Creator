@@ -1,8 +1,22 @@
-const DEFENSIVE_POSTURE = {
-  type: "defending",
-  label: "Defending",
-  expires: "next-turn",
-  note: "Defensive posture active until this combatant's next turn.",
+const POSTURE_DEFINITIONS = {
+  defending: {
+    type: "defending",
+    label: "Defending",
+    expires: "next-turn",
+    note: "Defensive posture active until this combatant's next turn.",
+  },
+  blocking: {
+    type: "blocking",
+    label: "Blocking",
+    expires: "next-turn",
+    note: "Blocking posture active until this combatant's next turn. No block math applied yet.",
+  },
+  evading: {
+    type: "evading",
+    label: "Evading",
+    expires: "next-turn",
+    note: "Evading posture active until this combatant's next turn. No evade math applied yet.",
+  },
 };
 
 const toSafeIndex = (value, fallback = 0) => {
@@ -22,8 +36,13 @@ const isPlainPosture = (value) =>
   typeof value.type === "string";
 
 export function createDefensivePosture({ round = 1, turnIndex = 0 } = {}) {
+  return createCombatPosture({ type: "defending", round, turnIndex });
+}
+
+export function createCombatPosture({ type = "defending", round = 1, turnIndex = 0 } = {}) {
+  const definition = POSTURE_DEFINITIONS[type] || POSTURE_DEFINITIONS.defending;
   return {
-    ...DEFENSIVE_POSTURE,
+    ...definition,
     createdRound: toSafeRound(round),
     createdTurnIndex: toSafeIndex(turnIndex),
   };
@@ -44,9 +63,13 @@ export function getCombatPosture(combatantOrTurnEntry = {}) {
 }
 
 export function applyDefensivePosture(combatantOrTurnEntry = {}, posture = createDefensivePosture()) {
+  return applyCombatPosture(combatantOrTurnEntry, posture);
+}
+
+export function applyCombatPosture(combatantOrTurnEntry = {}, posture = createCombatPosture()) {
   return {
     ...combatantOrTurnEntry,
-    combatPosture: getCombatPosture({ combatPosture: posture }) || createDefensivePosture(),
+    combatPosture: getCombatPosture({ combatPosture: posture }) || createCombatPosture(),
   };
 }
 
@@ -56,7 +79,8 @@ export function clearExpiredPostures(combatantOrTurnEntry = {}, currentRound = 1
 
   const sameTurnSlot = posture.createdTurnIndex === toSafeIndex(currentTurnIndex);
   const laterRound = toSafeRound(currentRound) > posture.createdRound;
-  if (posture.type === "defending" && posture.expires === "next-turn" && sameTurnSlot && laterRound) {
+  const supportedPosture = Boolean(POSTURE_DEFINITIONS[posture.type]);
+  if (supportedPosture && posture.expires === "next-turn" && sameTurnSlot && laterRound) {
     const { combatPosture: _combatPosture, ...rest } = combatantOrTurnEntry || {};
     return rest;
   }
@@ -65,8 +89,10 @@ export function clearExpiredPostures(combatantOrTurnEntry = {}, currentRound = 1
 }
 
 export default {
+  applyCombatPosture,
   applyDefensivePosture,
   clearExpiredPostures,
+  createCombatPosture,
   createDefensivePosture,
   getCombatPosture,
 };

@@ -87,6 +87,7 @@ import SelectedCombatActionPanel from "../components/SelectedCombatActionPanel.j
 import ManualPublicAttackTest from "../components/ManualPublicAttackTest.jsx";
 import RecoverActionHandler from "../components/RecoverActionHandler.jsx";
 import DefendActionHandler from "../components/DefendActionHandler.jsx";
+import GuardActionHandler from "../components/GuardActionHandler.jsx";
 import MovementActionHandler from "../components/MovementActionHandler.jsx";
 import UseItemActionHandler from "../components/UseItemActionHandler.jsx";
 import { canExecuteMovementCommand } from "../utils/combatMovementCommand.js";
@@ -101,8 +102,10 @@ import { spendAction } from "../utils/publicActionBudget.js";
 import { spendStamina } from "../utils/combatStamina.js";
 import { applyStaminaRecovery, getRecoveryAmount } from "../utils/combatRecovery.js";
 import {
+  applyCombatPosture,
   applyDefensivePosture,
   clearExpiredPostures,
+  createCombatPosture,
   createDefensivePosture,
   getCombatPosture,
 } from "../utils/combatPosture.js";
@@ -24677,6 +24680,78 @@ function CombatPage({ characters = [] }) {
     };
   }
 
+  function applyManualPublicGuardPosture({ actorId, postureType } = {}) {
+    const currentManualTurn = manualPublicTurnOrder[manualPublicTurnIndex] || null;
+    const normalizedPostureType = postureType === "evading" ? "evading" : "blocking";
+    const postureLabel = normalizedPostureType === "evading" ? "evading" : "blocking";
+    if (!currentManualTurn || String(actorId) !== String(currentManualTurn.id)) {
+      return {
+        ok: false,
+        missingFields: ["currentTurn"],
+        message: "This action can only be used by the current turn combatant.",
+      };
+    }
+
+    if (getCombatPosture(currentManualTurn)?.type === normalizedPostureType) {
+      return {
+        ok: false,
+        missingFields: [],
+        message: normalizedPostureType === "evading" ? "Already evading." : "Already blocking.",
+      };
+    }
+
+    const spendResult = spendAction(currentManualTurn, 1);
+    if (!spendResult.ok) {
+      return {
+        ok: false,
+        missingFields: ["remainingActions"],
+        message: "No actions remaining. End Turn manually.",
+      };
+    }
+
+    const posture = createCombatPosture({
+      type: normalizedPostureType,
+      round: manualPublicTurnRound,
+      turnIndex: manualPublicTurnIndex,
+    });
+    const nextTurnEntry = applyCombatPosture(spendResult.updated, posture);
+    const nextManualTurnOrder = manualPublicTurnOrder.map((row, index) =>
+      index === manualPublicTurnIndex ? nextTurnEntry : row
+    );
+    setManualPublicTurnOrder(nextManualTurnOrder);
+
+    const sourceFighters = Array.isArray(fightersRef.current) && fightersRef.current.length > 0
+      ? fightersRef.current
+      : fighters;
+    const nextFighters = sourceFighters.map((fighter, index) => {
+      const fighterId = String(fighter?.id || fighter?._id || fighter?.name || index);
+      if (fighterId !== String(actorId)) return fighter;
+      return {
+        ...applyCombatPosture(fighter, posture),
+        remainingActions: spendResult.remainingActions,
+      };
+    });
+    fightersRef.current = nextFighters;
+    setFighters(nextFighters);
+
+    const name = nextTurnEntry.name || currentManualTurn.name || "Combatant";
+    const message =
+      `${name} enters a ${postureLabel} posture. ` +
+      `Action spent: ${spendResult.remainingActions}/${spendResult.maxActions} remaining.`;
+    addLog(message, "info");
+
+    return {
+      ok: true,
+      updated: nextTurnEntry,
+      posture,
+      spent: spendResult.spent,
+      remainingActions: spendResult.remainingActions,
+      maxActions: spendResult.maxActions,
+      missingFields: [],
+      message,
+    };
+  }
+
   /**
    * Load a prescene battle - predefined fighters for quick combat start.
    * Clears current fighters and loads the preset (players + enemies).
@@ -30401,6 +30476,15 @@ function CombatPage({ characters = [] }) {
                                 selectedCombatAction={selectedCombatAction}
                                 manualTurnActive={manualPublicTurnOrder.length > 0}
                                 onDefend={applyManualPublicDefend}
+                              />
+                            )}
+                            {(selectedCombatAction?.type === "block" || selectedCombatAction?.type === "evade") && (
+                              <GuardActionHandler
+                                actor={manualPublicCurrentCombatant}
+                                currentTurnEntry={manualPublicCurrentTurn}
+                                selectedCombatAction={selectedCombatAction}
+                                manualTurnActive={manualPublicTurnOrder.length > 0}
+                                onApplyPosture={applyManualPublicGuardPosture}
                               />
                             )}
                             {(selectedCombatAction?.type === "move" ||
