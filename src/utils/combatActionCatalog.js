@@ -252,7 +252,7 @@ const buildMovementActions = ({ actor, currentTurnEntry, targetId }) => [
     category: "Movement",
     costActions: 1,
     costStamina: 0,
-    previewSummary: "Use existing movement controls and range rules.",
+    previewSummary: "Standard movement command.",
   }),
   makeAction({
     actor,
@@ -264,7 +264,7 @@ const buildMovementActions = ({ actor, currentTurnEntry, targetId }) => [
     category: "Movement",
     costActions: 1,
     costStamina: 1,
-    previewSummary: "Faster movement using existing movement controls.",
+    previewSummary: "Fast movement command.",
   }),
   makeAction({
     actor,
@@ -278,7 +278,7 @@ const buildMovementActions = ({ actor, currentTurnEntry, targetId }) => [
     costStamina: 1,
     targetRequired: true,
     targetId,
-    previewSummary: "Charge path preview only; existing combat controls still resolve it.",
+    previewSummary: "Fast advance; attack follow-through pending.",
   }),
 ];
 

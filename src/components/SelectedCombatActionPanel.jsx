@@ -23,9 +23,9 @@ const handlerStatusFor = (action) => {
   const type = action?.type;
   if (!action) return "Select an action from the Combat Action Catalog.";
   if (type === "attack") return "Attack resolver ready.";
-  if (type === "move") return "Movement handler pending.";
-  if (type === "run") return "Run handler pending.";
-  if (type === "charge") return "Charge handler pending.";
+  if (type === "move") return "Movement handler ready; execution not wired yet.";
+  if (type === "run") return "Run handler ready; execution not wired yet.";
+  if (type === "charge") return "Charge handler ready; execution not wired yet.";
   if (type === "defend") return "Defend handler ready.";
   if (type === "block") return "Block handler pending.";
   if (type === "evade") return "Evade handler pending.";
@@ -98,13 +98,13 @@ const SelectedCombatActionPanel = ({
               </Text>
             </VStack>
 
-            {action.type !== "attack" && action.type !== "recover" && action.type !== "defend" && (
+            {action.type !== "attack" && action.type !== "recover" && action.type !== "defend" && action.type !== "move" && action.type !== "run" && action.type !== "charge" && (
               <Box borderWidth="1px" borderRadius="md" p={2} bg="gray.50">
                 <Text fontSize="xs" color="gray.700">{handlerStatusFor(action)}</Text>
               </Box>
             )}
 
-            {(action.type === "attack" || action.type === "recover" || action.type === "defend") && children}
+            {(action.type === "attack" || action.type === "recover" || action.type === "defend" || action.type === "move" || action.type === "run" || action.type === "charge") && children}
           </>
         )}
       </VStack>
