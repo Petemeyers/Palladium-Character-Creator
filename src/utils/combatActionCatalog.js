@@ -1,3 +1,5 @@
+import { validateAttackRange } from "./combatRangeValidation.js";
+
 const hasValue = (value) => value !== undefined && value !== null && value !== "";
 
 const toNumber = (value) => {
@@ -222,7 +224,7 @@ const buildAttackSummary = (entry = {}) => {
   ].filter(Boolean).join(", ");
 };
 
-const buildAttackAction = ({ actor, currentTurnEntry, entry, index, targetId, source }) => {
+const buildAttackAction = ({ actor, currentTurnEntry, entry, index, targetId, selectedTarget, source }) => {
   const name = normalizeText(entry.name || entry.label || entry.attackName, "Unnamed attack");
   const slot = normalizeText(entry.slot || entry.hand || entry.position, "");
   const actionName = source === "equipped weapon" && slot
@@ -230,6 +232,11 @@ const buildAttackAction = ({ actor, currentTurnEntry, entry, index, targetId, so
     : `Attack with ${name}`;
   const reachFt = parseFeet(entry.reachFt ?? entry.reach);
   const rangeFt = parseFeet(entry.rangeFt ?? entry.range);
+  const rangeValidation = validateAttackRange({ attacker: actor, target: selectedTarget, attack: entry });
+  const outOfRange = rangeValidation.inRange === false;
+  const rangeSummary = rangeValidation.message && rangeValidation.message !== "Range unknown."
+    ? rangeValidation.message
+    : "";
   return makeAction({
     actor,
     currentTurnEntry,
@@ -244,18 +251,30 @@ const buildAttackAction = ({ actor, currentTurnEntry, entry, index, targetId, so
     targetId,
     reachFt,
     rangeFt,
-    previewSummary: buildAttackSummary(entry) || "Attack preview pending.",
+    enabled: !outOfRange,
+    disabledReason: outOfRange ? rangeValidation.message : "",
+    previewSummary: [
+      buildAttackSummary(entry) || "Attack preview pending.",
+      rangeSummary,
+    ].filter(Boolean).join(" "),
     metadata: {
       attackName: name,
       attackType: entry.attackType || entry.type,
       damageType: entry.damageType,
       slot,
+      distanceFt: rangeValidation.distanceFt,
+      rangeType: rangeValidation.rangeType,
+      rangeMessage: rangeValidation.message,
+      suggestedAction: rangeValidation.suggestedAction,
     },
   });
 };
 
-const buildUnarmedAction = ({ actor, currentTurnEntry, targetId }) =>
-  makeAction({
+const buildUnarmedAction = ({ actor, currentTurnEntry, targetId, selectedTarget }) => {
+  const unarmedAttack = { name: "Unarmed Strike", attackType: "close", reachFt: 5 };
+  const rangeValidation = validateAttackRange({ attacker: actor, target: selectedTarget, attack: unarmedAttack });
+  const outOfRange = rangeValidation.inRange === false;
+  return makeAction({
     actor,
     currentTurnEntry,
     id: "unarmed-strike",
@@ -268,12 +287,22 @@ const buildUnarmedAction = ({ actor, currentTurnEntry, targetId }) =>
     targetRequired: true,
     targetId,
     reachFt: 5,
-    previewSummary: "Basic close attack, reach 5 ft.",
+    enabled: !outOfRange,
+    disabledReason: outOfRange ? rangeValidation.message : "",
+    previewSummary: [
+      "Basic close attack, reach 5 ft.",
+      outOfRange ? rangeValidation.message : "",
+    ].filter(Boolean).join(" "),
     metadata: {
       attackName: "Unarmed Strike",
       attackType: "close",
+      distanceFt: rangeValidation.distanceFt,
+      rangeType: rangeValidation.rangeType,
+      rangeMessage: rangeValidation.message,
+      suggestedAction: rangeValidation.suggestedAction,
     },
   });
+};
 
 const addUnique = (actions, action) => {
   if (!action) return;
@@ -506,6 +535,7 @@ export function buildCombatActionCatalog({
       entry,
       index,
       targetId,
+      selectedTarget,
       source: "attack preview",
     }));
   });
@@ -518,12 +548,13 @@ export function buildCombatActionCatalog({
       entry: weapon,
       index,
       targetId,
+      selectedTarget,
       source: "equipped weapon",
     }));
   });
 
   if (!actions.some((action) => action.type === "attack")) {
-    addUnique(actions, buildUnarmedAction({ actor, currentTurnEntry, targetId }));
+    addUnique(actions, buildUnarmedAction({ actor, currentTurnEntry, targetId, selectedTarget }));
   }
 
   buildMovementActions({ actor, currentTurnEntry, targetId }).forEach((action) => addUnique(actions, action));

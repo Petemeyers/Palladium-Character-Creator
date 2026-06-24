@@ -18,6 +18,7 @@ import { getPublicCombatHpInfo } from "../utils/publicCombatHp.js";
 import { applyArmorMitigation, getArmorProfile } from "../utils/combatArmor.js";
 import { previewWound } from "../utils/combatWounds.js";
 import { getWoundRecords } from "../utils/combatWoundRecords.js";
+import { validateAttackRange } from "../utils/combatRangeValidation.js";
 
 const getId = (combatant, index) =>
   String(combatant?.id || combatant?._id || combatant?.name || index);
@@ -56,6 +57,12 @@ const ManualPublicAttackTest = ({
   const targetRow = availableTargets.find((row) => row.id === targetId) || null;
   const attacks = attackerRow?.summary.actionPreviews || [];
   const selectedAttack = attacks[Number(attackIndex)] || null;
+  const rangeValidation = validateAttackRange({
+    attacker: attackerRow?.combatant,
+    target: targetRow?.combatant,
+    attack: selectedAttack,
+  });
+  const attackOutOfRange = rangeValidation.inRange === false;
   const targetHpInfo = getPublicCombatHpInfo(targetRow?.combatant || {});
   const targetArmorProfile = getArmorProfile(targetRow?.combatant || {});
   const targetWoundRecords = getWoundRecords(targetRow?.combatant || {});
@@ -140,6 +147,7 @@ const ManualPublicAttackTest = ({
   }, [currentTurnId, preferredAttackerId, rows, selectedCombatAction]);
 
   const handleResolve = () => {
+    if (attackOutOfRange) return;
     const nextResult = resolvePublicBasicAttack({
       attacker: attackerRow?.combatant,
       target: targetRow?.combatant,
@@ -267,11 +275,44 @@ const ManualPublicAttackTest = ({
             size="sm"
             colorScheme="purple"
             onClick={handleResolve}
-            isDisabled={!attackerRow || !targetRow || !selectedAttack}
+            isDisabled={!attackerRow || !targetRow || !selectedAttack || attackOutOfRange}
           >
             Resolve Basic Attack
           </Button>
         </HStack>
+
+        {selectedAttack && (
+          <Box borderWidth="1px" borderRadius="md" p={2} bg={attackOutOfRange ? "orange.50" : "gray.50"}>
+            <VStack align="stretch" spacing={1}>
+              <HStack spacing={2} wrap="wrap">
+                <Badge colorScheme={rangeValidation.rangeType === "ranged" ? "blue" : rangeValidation.rangeType === "melee" ? "purple" : "gray"}>
+                  {rangeValidation.rangeType === "unknown" ? "Range unknown" : rangeValidation.rangeType}
+                </Badge>
+                <Text fontSize="xs" color="gray.700">
+                  Distance: {rangeValidation.distanceFt !== null ? `${rangeValidation.distanceFt} ft` : "unknown"}
+                </Text>
+                {rangeValidation.reachFt !== null && (
+                  <Text fontSize="xs" color="gray.700">
+                    Reach: {rangeValidation.reachFt} ft
+                  </Text>
+                )}
+                {rangeValidation.rangeFt !== null && (
+                  <Text fontSize="xs" color="gray.700">
+                    Range: {rangeValidation.rangeFt} ft
+                  </Text>
+                )}
+              </HStack>
+              <Text fontSize="xs" color={attackOutOfRange ? "orange.700" : "gray.600"}>
+                {rangeValidation.message}
+              </Text>
+              {attackOutOfRange && rangeValidation.suggestedAction && (
+                <Text fontSize="xs" color="orange.700">
+                  Suggestion: {rangeValidation.suggestedAction}
+                </Text>
+              )}
+            </VStack>
+          </Box>
+        )}
 
         {attackerRow && attacks.length === 0 && (
           <Text fontSize="xs" color="gray.600">

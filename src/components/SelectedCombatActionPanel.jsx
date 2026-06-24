@@ -35,6 +35,8 @@ const handlerStatusFor = (action) => {
   return "Compatibility handler pending.";
 };
 
+const hasValue = (value) => value !== undefined && value !== null && value !== "";
+
 const SelectedCombatActionPanel = ({
   selectedCombatAction = null,
   actor = null,
@@ -86,6 +88,23 @@ const SelectedCombatActionPanel = ({
                 <WrapItem><Badge>{action.targetRequired ? "Target Required" : "No Target Required"}</Badge></WrapItem>
                 {targetName && <WrapItem><Badge>Target {targetName}</Badge></WrapItem>}
               </Wrap>
+
+              {action.type === "attack" && (
+                <Wrap spacing={2}>
+                  {hasValue(action.metadata?.distanceFt) && (
+                    <WrapItem><Badge colorScheme="gray">Distance {action.metadata.distanceFt} ft</Badge></WrapItem>
+                  )}
+                  {hasValue(action.reachFt) && (
+                    <WrapItem><Badge colorScheme="purple">Reach {action.reachFt} ft</Badge></WrapItem>
+                  )}
+                  {hasValue(action.rangeFt) && (
+                    <WrapItem><Badge colorScheme="blue">Range {action.rangeFt} ft</Badge></WrapItem>
+                  )}
+                  {action.metadata?.rangeType && action.metadata.rangeType !== "unknown" && (
+                    <WrapItem><Badge colorScheme="gray">{action.metadata.rangeType}</Badge></WrapItem>
+                  )}
+                </Wrap>
+              )}
 
               {action.disabledReason && (
                 <Text fontSize="xs" color="orange.700">{action.disabledReason}</Text>
