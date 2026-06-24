@@ -163,6 +163,46 @@ const getInventoryCandidates = ({ actor = {}, inventory = [] }) => [
   ...toArray(actor.items),
 ];
 
+const skillCandidateFromEntry = (entry, source, index) => {
+  if (!entry || typeof entry === "function") return null;
+  if (typeof entry === "string" || typeof entry === "number") {
+    const name = normalizeText(entry, "");
+    return name ? { id: "", name, category: "", source, index } : null;
+  }
+  if (Array.isArray(entry)) {
+    const [name, data] = entry;
+    const skillName = normalizeText(name, "");
+    if (!skillName) return null;
+    return {
+      id: normalizeText(data?.id || data?._id || data?.skillId, ""),
+      name: skillName,
+      category: normalizeText(data?.category || data?.type, ""),
+      source,
+      index,
+    };
+  }
+  if (typeof entry === "object") {
+    const name = normalizeText(entry.name || entry.label || entry.skillName || entry.type, "");
+    if (!name) return null;
+    return {
+      id: normalizeText(entry.id || entry._id || entry.skillId, ""),
+      name,
+      category: normalizeText(entry.category || entry.type, ""),
+      source: normalizeText(entry.source || entry.origin, source),
+      index,
+    };
+  }
+  return null;
+};
+
+const getSkillCandidates = ({ actor = {} }) => [
+  ...toArray(actor.skills).map((entry, index) => skillCandidateFromEntry(entry, "skills", index)),
+  ...Object.entries(actor.professionSkills || {}).map((entry, index) => skillCandidateFromEntry(entry, "profession skills", index)),
+  ...toArray(actor.electiveSkills).map((entry, index) => skillCandidateFromEntry(entry, "elective skills", index)),
+  ...toArray(actor.autoRollCharacter?.skills).map((entry, index) => skillCandidateFromEntry(entry, "public skills", index)),
+  ...Object.entries(actor.autoRollCharacter?.professionSkills || {}).map((entry, index) => skillCandidateFromEntry(entry, "public profession skills", index)),
+].filter(Boolean);
+
 const isUnarmedWeapon = (weapon) => {
   const name = normalizeText(weapon?.name || weapon?.label, "").toLowerCase();
   return !name || name === "unarmed" || name === "unarmed strike";
@@ -362,6 +402,36 @@ const buildItemActions = ({ actor, currentTurnEntry, inventory }) =>
       });
     });
 
+const buildSkillActions = ({ actor, currentTurnEntry }) =>
+  getSkillCandidates({ actor })
+    .map((skill, index) => {
+      const skillName = normalizeText(skill.name, "Skill");
+      const skillId = normalizeText(skill.id, "");
+      const skillSource = normalizeText(skill.source, "skill");
+      const skillCategory = normalizeText(skill.category, "");
+      return makeAction({
+        actor,
+        currentTurnEntry,
+        id: `use-skill-${skillId || skillName}-${index}`,
+        name: `Use Skill: ${skillName}`,
+        type: "use-skill",
+        source: skillSource,
+        category: skillCategory || "Skill",
+        costActions: 1,
+        previewSummary: "Skill handler pending.",
+        metadata: {
+          actorId: getEntryId(actor),
+          actorName: actor?.name,
+          skillName,
+          actionName: skillName,
+          skillId,
+          skillSource,
+          skillCategory,
+          skillType: skillCategory,
+        },
+      });
+    });
+
 const compatibilityTypeFor = (label) => {
   const normalized = label.toLowerCase();
   if (normalized.includes("skill") || normalized.includes("hide") || normalized.includes("prowl")) return "use-skill";
@@ -386,6 +456,9 @@ const buildCompatibilityActions = ({ actor, currentTurnEntry, compatibilityActio
   return entries.map((entry, index) => {
     const label = normalizeText(entry?.label || entry?.name || entry?.value || entry, "Compatibility Action");
     const type = compatibilityTypeFor(label);
+    const skillName = type === "use-skill"
+      ? normalizeText(entry?.skillName || entry?.name || entry?.label || entry?.value || entry, "Use Skill")
+      : "";
     return makeAction({
       actor,
       currentTurnEntry,
@@ -395,9 +468,18 @@ const buildCompatibilityActions = ({ actor, currentTurnEntry, compatibilityActio
       source: "compatibility controls",
       category: type === "use-skill" ? "Skill" : "Compatibility",
       costActions: 1,
-      previewSummary: "Compatibility control remains available outside this catalog.",
+      previewSummary: type === "use-skill"
+        ? "Skill handler pending."
+        : "Compatibility control remains available outside this catalog.",
       metadata: {
+        actorId: getEntryId(actor),
+        actorName: actor?.name,
         compatibilityValue: normalizeText(entry?.value || label, label),
+        skillName,
+        actionName: skillName,
+        skillId: normalizeText(entry?.id || entry?._id || entry?.skillId, ""),
+        skillSource: type === "use-skill" ? "compatibility controls" : "",
+        skillCategory: type === "use-skill" ? "Skill" : "",
       },
     });
   });
@@ -447,6 +529,7 @@ export function buildCombatActionCatalog({
   buildMovementActions({ actor, currentTurnEntry, targetId }).forEach((action) => addUnique(actions, action));
   buildDefensiveRecoveryActions({ actor, currentTurnEntry }).forEach((action) => addUnique(actions, action));
   buildItemActions({ actor, currentTurnEntry, inventory }).forEach((action) => addUnique(actions, action));
+  buildSkillActions({ actor, currentTurnEntry }).forEach((action) => addUnique(actions, action));
   buildCompatibilityActions({ actor, currentTurnEntry, compatibilityActions }).forEach((action) => addUnique(actions, action));
 
   return actions.map((action, index) => ({

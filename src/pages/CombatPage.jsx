@@ -90,6 +90,7 @@ import DefendActionHandler from "../components/DefendActionHandler.jsx";
 import GuardActionHandler from "../components/GuardActionHandler.jsx";
 import MovementActionHandler from "../components/MovementActionHandler.jsx";
 import UseItemActionHandler from "../components/UseItemActionHandler.jsx";
+import UseSkillActionHandler from "../components/UseSkillActionHandler.jsx";
 import { canExecuteMovementCommand } from "../utils/combatMovementCommand.js";
 import { applyPublicCombatDamage, getPublicCombatHpInfo } from "../utils/publicCombatHp.js";
 import { addWoundRecord, createWoundRecord } from "../utils/combatWoundRecords.js";
@@ -30507,6 +30508,13 @@ function CombatPage({ characters = [] }) {
                             )}
                             {selectedCombatAction?.type === "use-item" && (
                               <UseItemActionHandler
+                                actor={manualPublicCurrentCombatant}
+                                currentTurnEntry={manualPublicCurrentTurn}
+                                selectedCombatAction={selectedCombatAction}
+                              />
+                            )}
+                            {selectedCombatAction?.type === "use-skill" && (
+                              <UseSkillActionHandler
                                 actor={manualPublicCurrentCombatant}
                                 currentTurnEntry={manualPublicCurrentTurn}
                                 selectedCombatAction={selectedCombatAction}

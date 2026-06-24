@@ -98,13 +98,13 @@ const SelectedCombatActionPanel = ({
               </Text>
             </VStack>
 
-            {action.type !== "attack" && action.type !== "recover" && action.type !== "defend" && action.type !== "block" && action.type !== "evade" && action.type !== "move" && action.type !== "run" && action.type !== "charge" && action.type !== "use-item" && (
+            {action.type !== "attack" && action.type !== "recover" && action.type !== "defend" && action.type !== "block" && action.type !== "evade" && action.type !== "move" && action.type !== "run" && action.type !== "charge" && action.type !== "use-item" && action.type !== "use-skill" && (
               <Box borderWidth="1px" borderRadius="md" p={2} bg="gray.50">
                 <Text fontSize="xs" color="gray.700">{handlerStatusFor(action)}</Text>
               </Box>
             )}
 
-            {(action.type === "attack" || action.type === "recover" || action.type === "defend" || action.type === "block" || action.type === "evade" || action.type === "move" || action.type === "run" || action.type === "charge" || action.type === "use-item") && children}
+            {(action.type === "attack" || action.type === "recover" || action.type === "defend" || action.type === "block" || action.type === "evade" || action.type === "move" || action.type === "run" || action.type === "charge" || action.type === "use-item" || action.type === "use-skill") && children}
           </>
         )}
       </VStack>
