@@ -56,7 +56,6 @@ const CombatActionCatalogPanel = ({
 
   if (!actor) return null;
   const selectedId = selectedCombatAction?.id || "";
-  const selectedAction = actions.find((action) => action.id === selectedId) || null;
 
   return (
     <Box borderWidth="1px" borderRadius="md" p={3} bg="white">
@@ -70,12 +69,6 @@ const CombatActionCatalogPanel = ({
           </Box>
           <Badge colorScheme="purple">{actions.length} action{actions.length === 1 ? "" : "s"}</Badge>
         </HStack>
-
-        {selectedAction && selectedAction.type !== "attack" && (
-          <Text fontSize="xs" color="gray.600">
-            Manual handler pending for this action.
-          </Text>
-        )}
 
         {actions.length === 0 ? (
           <Text fontSize="xs" color="gray.600">No catalog actions available.</Text>

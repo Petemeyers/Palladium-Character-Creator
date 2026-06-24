@@ -83,6 +83,7 @@ import CombatActionsPanel from "../components/CombatActionsPanel.jsx";
 import EncounterReadinessPanel from "../components/EncounterReadinessPanel.jsx";
 import InitiativeSetupPreview from "../components/InitiativeSetupPreview.jsx";
 import CombatActionCatalogPanel from "../components/CombatActionCatalogPanel.jsx";
+import SelectedCombatActionPanel from "../components/SelectedCombatActionPanel.jsx";
 import ManualPublicAttackTest from "../components/ManualPublicAttackTest.jsx";
 import { applyPublicCombatDamage, getPublicCombatHpInfo } from "../utils/publicCombatHp.js";
 import { addWoundRecord, createWoundRecord } from "../utils/combatWoundRecords.js";
@@ -29999,26 +30000,32 @@ function CombatPage({ characters = [] }) {
                             onSelectCombatAction={setSelectedCombatAction}
                           />
 
-                          <ManualPublicAttackTest
-                            combatants={fighters}
-                            onApplyDamage={applyManualPublicAttackDamage}
+                          <SelectedCombatActionPanel
                             selectedCombatAction={selectedCombatAction}
-                            preferredAttackerId={manualPublicCurrentTurn?.id || ""}
-                            currentTurnId={manualPublicCurrentTurn?.id || ""}
-                            currentTurnActions={manualPublicCurrentTurn
-                              ? {
-                                  remainingActions: manualPublicCurrentTurn.remainingActions,
-                                  maxActions: manualPublicCurrentTurn.maxActions,
-                                }
-                              : null}
-                            currentTurnStamina={manualPublicCurrentTurn
-                              ? {
-                                  currentStamina: manualPublicCurrentTurn.currentStamina,
-                                  maxStamina: manualPublicCurrentTurn.maxStamina,
-                                  fatigueLabel: manualPublicCurrentTurn.fatigueLabel,
-                                }
-                              : null}
-                          />
+                            actor={manualPublicCurrentCombatant}
+                            selectedTarget={selectedTarget || manualPublicCatalogTargets[0] || null}
+                          >
+                            <ManualPublicAttackTest
+                              combatants={fighters}
+                              onApplyDamage={applyManualPublicAttackDamage}
+                              selectedCombatAction={selectedCombatAction}
+                              preferredAttackerId={manualPublicCurrentTurn?.id || ""}
+                              currentTurnId={manualPublicCurrentTurn?.id || ""}
+                              currentTurnActions={manualPublicCurrentTurn
+                                ? {
+                                    remainingActions: manualPublicCurrentTurn.remainingActions,
+                                    maxActions: manualPublicCurrentTurn.maxActions,
+                                  }
+                                : null}
+                              currentTurnStamina={manualPublicCurrentTurn
+                                ? {
+                                    currentStamina: manualPublicCurrentTurn.currentStamina,
+                                    maxStamina: manualPublicCurrentTurn.maxStamina,
+                                    fatigueLabel: manualPublicCurrentTurn.fatigueLabel,
+                                  }
+                                : null}
+                            />
+                          </SelectedCombatActionPanel>
                         </VStack>
                       </Box>
 

@@ -193,8 +193,8 @@ const ManualPublicAttackTest = ({
     <Box borderWidth="1px" borderRadius="md" p={3} bg="white">
       <VStack align="stretch" spacing={3}>
         <HStack justify="space-between" align="center" wrap="wrap">
-          <Text fontWeight="bold">Manual Public Attack Test</Text>
-          <Badge colorScheme="gray">Dry Run</Badge>
+          <Text fontWeight="bold">Manual Attack Resolver</Text>
+          <Badge colorScheme="gray">Preview</Badge>
         </HStack>
 
         {currentTurnId && attackerId && !selectedAttackerIsCurrentTurn && (
