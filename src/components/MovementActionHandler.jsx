@@ -9,6 +9,7 @@ import {
 } from "@chakra-ui/react";
 import {
   canExecuteMovementCommand,
+  getMovementTargetingButtonState,
   getMovementCommandPreview,
 } from "../utils/combatMovementCommand.js";
 
@@ -17,7 +18,10 @@ const MovementActionHandler = ({
   currentTurnEntry = null,
   selectedCombatAction = null,
   selectedTarget = null,
+  manualTurnActive = true,
   executionAvailable = false,
+  movementActive = false,
+  movementResult = null,
   onExecute,
 }) => {
   const preview = getMovementCommandPreview({
@@ -30,14 +34,22 @@ const MovementActionHandler = ({
     action: selectedCombatAction,
     currentTurnEntry,
     selectedTarget,
+    manualTurnActive,
     executionAvailable,
   });
-  const buttonLabel =
-    preview.movementMode === "run"
-      ? "Execute Run"
-      : preview.movementMode === "charge"
-        ? "Execute Charge"
-        : "Execute Move";
+  const buttonState = getMovementTargetingButtonState({
+    actor,
+    action: selectedCombatAction,
+    currentTurnEntry,
+    selectedTarget,
+    manualTurnActive,
+    executionAvailable,
+  });
+  const currentMode = movementResult?.status === "moved"
+    ? "moved"
+    : movementActive
+      ? "choosing destination"
+      : "inactive";
   const canExecute = guard.ok && typeof onExecute === "function";
 
   return (
@@ -52,6 +64,7 @@ const MovementActionHandler = ({
           <Badge>Actor {preview.actorName}</Badge>
           <Badge>Actions {preview.actionCost}</Badge>
           <Badge>Stamina {preview.staminaCost}</Badge>
+          <Badge>Mode {currentMode}</Badge>
           {preview.targetName && <Badge>Target {preview.targetName}</Badge>}
           {preview.distanceFeet !== null && <Badge>Distance {preview.distanceFeet} ft</Badge>}
         </HStack>
@@ -62,6 +75,16 @@ const MovementActionHandler = ({
         {preview.movementMode === "charge" && (
           <Text fontSize="xs" color="gray.600">
             Charge attack follow-through pending.
+          </Text>
+        )}
+        {movementActive && (
+          <Text fontSize="xs" color="blue.700">
+            Select a destination hex on the map.
+          </Text>
+        )}
+        {movementResult?.message && (
+          <Text fontSize="xs" color={movementResult.ok === false ? "orange.700" : "green.700"}>
+            {movementResult.message}
           </Text>
         )}
 
@@ -78,7 +101,7 @@ const MovementActionHandler = ({
           }}
           isDisabled={!canExecute}
         >
-          {buttonLabel}
+          {buttonState.label}
         </Button>
       </VStack>
     </Box>

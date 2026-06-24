@@ -23,9 +23,9 @@ const handlerStatusFor = (action) => {
   const type = action?.type;
   if (!action) return "Select an action from the Combat Action Catalog.";
   if (type === "attack") return "Attack resolver ready.";
-  if (type === "move") return "Movement handler ready; execution not wired yet.";
-  if (type === "run") return "Run handler ready; execution not wired yet.";
-  if (type === "charge") return "Charge handler ready; execution not wired yet.";
+  if (type === "move") return "Movement targeting ready.";
+  if (type === "run") return "Run targeting ready.";
+  if (type === "charge") return "Charge targeting ready; attack follow-through pending.";
   if (type === "defend") return "Defend handler ready.";
   if (type === "block") return "Block handler pending.";
   if (type === "evade") return "Evade handler pending.";

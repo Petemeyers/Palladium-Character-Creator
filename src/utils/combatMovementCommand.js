@@ -72,6 +72,7 @@ export function canExecuteMovementCommand({
   action,
   currentTurnEntry,
   selectedTarget,
+  manualTurnActive = true,
   executionAvailable = false,
 } = {}) {
   const actorId = getId(actor);
@@ -82,8 +83,11 @@ export function canExecuteMovementCommand({
   const actionCost = toNumber(action?.costActions) ?? 1;
   const staminaCost = toNumber(action?.costStamina) ?? 0;
 
+  if (!manualTurnActive) {
+    return { ok: false, reason: "Movement mode is unavailable." };
+  }
   if (!actorId || !turnId || actorId !== turnId || (actionActorId && actionActorId !== turnId)) {
-    return { ok: false, reason: "Selected actor is not the current turn combatant." };
+    return { ok: false, reason: "Movement can only be used by the current turn combatant." };
   }
   if (!action?.enabled) {
     return { ok: false, reason: cleanText(action?.disabledReason, "Movement action is disabled.") };
@@ -98,10 +102,28 @@ export function canExecuteMovementCommand({
     return { ok: false, reason: "Movement target or destination required." };
   }
   if (!executionAvailable) {
-    return { ok: false, reason: "Movement execution not wired yet." };
+    return { ok: false, reason: "Movement mode is unavailable." };
   }
 
   return { ok: true, reason: "" };
+}
+
+export function getMovementTargetingButtonState(options = {}) {
+  const preview = getMovementCommandPreview(options);
+  const guard = canExecuteMovementCommand(options);
+  const label =
+    preview.movementMode === "run"
+      ? "Begin Run Targeting"
+      : preview.movementMode === "charge"
+        ? "Begin Charge Targeting"
+        : "Begin Move Targeting";
+
+  return {
+    enabled: guard.ok,
+    label,
+    reason: guard.reason,
+    movementMode: preview.movementMode,
+  };
 }
 
 export function buildMovementCommandResult({ actor, action, selectedTarget, executionAvailable = false } = {}) {
@@ -124,5 +146,6 @@ export function buildMovementCommandResult({ actor, action, selectedTarget, exec
 export default {
   buildMovementCommandResult,
   canExecuteMovementCommand,
+  getMovementTargetingButtonState,
   getMovementCommandPreview,
 };

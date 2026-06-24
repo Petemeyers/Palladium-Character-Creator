@@ -88,6 +88,7 @@ import ManualPublicAttackTest from "../components/ManualPublicAttackTest.jsx";
 import RecoverActionHandler from "../components/RecoverActionHandler.jsx";
 import DefendActionHandler from "../components/DefendActionHandler.jsx";
 import MovementActionHandler from "../components/MovementActionHandler.jsx";
+import { canExecuteMovementCommand } from "../utils/combatMovementCommand.js";
 import { applyPublicCombatDamage, getPublicCombatHpInfo } from "../utils/publicCombatHp.js";
 import { addWoundRecord, createWoundRecord } from "../utils/combatWoundRecords.js";
 import {
@@ -2524,6 +2525,8 @@ function CombatPage({ characters = [] }) {
   const [showCircleRecharge, setShowCircleRecharge] = useState(false); // Show circle recharge panel
   const [selectedMovementHex, setSelectedMovementHex] = useState(null); // Track movement hex for attack+movement
   const [showMovementSelection, setShowMovementSelection] = useState(false); // Show movement selection UI
+  const pendingSelectedMovementCommandRef = useRef(null);
+  const [selectedMovementCommandResult, setSelectedMovementCommandResult] = useState(null);
   const [tempModifiers, setTempModifiers] = useState({}); // Track temporary bonuses/penalties (e.g., charge)
 
   // --- Altitude UI (feet) ---
@@ -8911,6 +8914,159 @@ function CombatPage({ characters = [] }) {
     }
   }, [currentFighter, addLog]);
 
+  const activateSelectedMovementTargeting = useCallback(({ action } = {}) => {
+    const actor = manualPublicCurrentCombatant;
+    const currentTurnEntry = manualPublicCurrentTurn;
+    const guard = canExecuteMovementCommand({
+      actor,
+      action,
+      currentTurnEntry,
+      selectedTarget: selectedTarget || manualPublicCatalogTargets[0] || null,
+      manualTurnActive: manualPublicTurnOrder.length > 0,
+      executionAvailable: showTacticalMap,
+    });
+
+    if (!guard.ok) {
+      const message = guard.reason || "Movement mode is unavailable.";
+      setSelectedMovementCommandResult({ ok: false, status: "inactive", message });
+      addLog(message, "warning");
+      return { ok: false, message };
+    }
+
+    const mode = action?.type === "run" || action?.type === "charge" ? action.type : "move";
+    pendingSelectedMovementCommandRef.current = {
+      actorId: actor.id,
+      actionName: action?.name || (mode === "run" ? "Run" : mode === "charge" ? "Charge" : "Move"),
+      actionType: mode,
+      actionCost: Number(action?.costActions ?? 1) || 1,
+      staminaCost: Number(action?.costStamina ?? 0) || 0,
+    };
+    setSelectedMovementCommandResult({
+      ok: true,
+      status: "choosing destination",
+      message: "Select a destination hex on the map.",
+    });
+    setSelectedMovementFighter(actor.id);
+    setSelectedActionType(mode === "charge" ? "charge" : "move");
+    setMovementMode({ active: true, isRunning: mode === "run" || mode === "charge" });
+    setShowMovementSelection(true);
+    setSelectedHex(null);
+    setSelectedMovementHex(null);
+    addLog(
+      `${actor.name || "Combatant"} begins ${mode === "run" ? "run" : mode === "charge" ? "charge" : "move"} targeting. Select a destination hex.`,
+      "info"
+    );
+    if (mode === "charge") {
+      addLog("Charge attack follow-through pending.", "info");
+    }
+    return { ok: true };
+  }, [
+    addLog,
+    manualPublicCatalogTargets,
+    manualPublicCurrentCombatant,
+    manualPublicCurrentTurn,
+    manualPublicTurnOrder.length,
+    selectedTarget,
+    showTacticalMap,
+  ]);
+
+  const syncSelectedMovementCommandCost = useCallback(({ actorId, destinationHex } = {}) => {
+    const pending = pendingSelectedMovementCommandRef.current;
+    if (!pending || String(pending.actorId) !== String(actorId)) return null;
+
+    const currentManualTurn = manualPublicTurnOrder[manualPublicTurnIndex] || null;
+    if (!currentManualTurn || String(currentManualTurn.id) !== String(actorId)) {
+      const message = "Movement completed, but manual turn order was not active for this combatant.";
+      pendingSelectedMovementCommandRef.current = null;
+      setSelectedMovementCommandResult({ ok: false, status: "moved", message });
+      addLog(message, "warning");
+      return { ok: false, message };
+    }
+
+    const actionCost = Math.max(0, Number(pending.actionCost ?? 1) || 0);
+    const staminaCost = Math.max(0, Number(pending.staminaCost ?? 0) || 0);
+    const actionResult = actionCost > 0
+      ? spendAction(currentManualTurn, actionCost)
+      : {
+          ok: true,
+          updated: currentManualTurn,
+          spent: 0,
+          maxActions: currentManualTurn.maxActions,
+          remainingActions: currentManualTurn.remainingActions,
+        };
+
+    if (!actionResult.ok) {
+      const message = "Movement completed, but no manual action was available to spend.";
+      pendingSelectedMovementCommandRef.current = null;
+      setSelectedMovementCommandResult({ ok: false, status: "moved", message });
+      addLog(message, "warning");
+      return { ok: false, message };
+    }
+
+    const staminaResult = staminaCost > 0
+      ? spendStamina(actionResult.updated, staminaCost)
+      : {
+          ok: true,
+          updated: actionResult.updated,
+          spent: 0,
+          maxStamina: actionResult.updated.maxStamina,
+          currentStamina: actionResult.updated.currentStamina,
+          fatigueLabel: actionResult.updated.fatigueLabel,
+        };
+
+    if (!staminaResult.ok) {
+      const message = "Movement completed, but no stamina was available to spend.";
+      pendingSelectedMovementCommandRef.current = null;
+      setSelectedMovementCommandResult({ ok: false, status: "moved", message });
+      addLog(message, "warning");
+      return { ok: false, message };
+    }
+
+    const nextTurnEntry = staminaResult.updated;
+    const nextManualTurnOrder = manualPublicTurnOrder.map((row, index) =>
+      index === manualPublicTurnIndex ? nextTurnEntry : row
+    );
+    setManualPublicTurnOrder(nextManualTurnOrder);
+
+    if (staminaCost > 0) {
+      commitFighters((prev) => {
+        const source = Array.isArray(fightersRef.current) ? fightersRef.current : prev;
+        return source.map((fighter, index) => {
+          const fighterId = String(fighter?.id || fighter?._id || fighter?.name || index);
+          if (fighterId !== String(actorId)) return fighter;
+          return {
+            ...fighter,
+            maxStamina: staminaResult.maxStamina,
+            currentStamina: staminaResult.currentStamina,
+            fatigueLabel: staminaResult.fatigueLabel,
+          };
+        });
+      });
+    }
+
+    const destinationText = destinationHex
+      ? ` Destination: (${destinationHex.x}, ${destinationHex.y}).`
+      : "";
+    const staminaText = staminaCost > 0
+      ? ` Stamina spent: ${staminaResult.currentStamina}/${staminaResult.maxStamina} remaining.`
+      : "";
+    const message =
+      `${pending.actionName} movement completed.${destinationText} ` +
+      `Action spent: ${actionResult.remainingActions}/${actionResult.maxActions} remaining.` +
+      staminaText;
+
+    pendingSelectedMovementCommandRef.current = null;
+    setSelectedMovementCommandResult({ ok: true, status: "moved", message });
+    addLog(message, "info");
+    return { ok: true, message };
+  }, [
+    addLog,
+    commitFighters,
+    manualPublicTurnIndex,
+    manualPublicTurnOrder,
+    setManualPublicTurnOrder,
+  ]);
+
   /**
    * Resolve movement mode from UI state
    */
@@ -12108,6 +12264,11 @@ function CombatPage({ characters = [] }) {
         }
       }
 
+      syncSelectedMovementCommandCost({
+        actorId: selectedMovementFighter,
+        destinationHex: { x, y },
+      });
+
       // Clear movement/action state only after a real movement action was committed.
       setMovementMode({ active: false, isRunning: false });
       setShowMovementSelection(false);
@@ -12145,6 +12306,7 @@ function CombatPage({ characters = [] }) {
     addLog,
     fighters,
     commitFighters,
+    syncSelectedMovementCommandCost,
     isHexOccupied,
     turnCounter,
     scheduleEndTurn,
@@ -16631,8 +16793,12 @@ function CombatPage({ characters = [] }) {
         return;
       }
 
-      if (settings?.useModularMovementHandlers && currentFighter) {
-        handleMoveSelectAction(currentFighter, normalizedHex);
+      const movementActor =
+        fighters.find((fighter) => String(fighter?.id) === String(selectedMovementFighter)) ||
+        currentFighter;
+
+      if (settings?.useModularMovementHandlers && movementActor) {
+        handleMoveSelectAction(movementActor, normalizedHex);
         return;
       }
 
@@ -16642,6 +16808,7 @@ function CombatPage({ characters = [] }) {
       addLog,
       combatActive,
       currentFighter,
+      fighters,
       handleDeploymentHexSelect,
       handleMoveSelect,
       handleMoveSelectAction,
@@ -30181,7 +30348,13 @@ function CombatPage({ characters = [] }) {
                             inventory={manualPublicCurrentCombatant?.inventory || manualPublicCurrentCombatant?.items || []}
                             compatibilityActions={actionOptions}
                             selectedCombatAction={selectedCombatAction}
-                            onSelectCombatAction={setSelectedCombatAction}
+                            onSelectCombatAction={(action) => {
+                              setSelectedCombatAction(action);
+                              setSelectedMovementCommandResult(null);
+                              if (action?.type !== "move" && action?.type !== "run" && action?.type !== "charge") {
+                                pendingSelectedMovementCommandRef.current = null;
+                              }
+                            }}
                           />
 
                           <SelectedCombatActionPanel
@@ -30237,7 +30410,14 @@ function CombatPage({ characters = [] }) {
                                 currentTurnEntry={manualPublicCurrentTurn}
                                 selectedCombatAction={selectedCombatAction}
                                 selectedTarget={selectedTarget || manualPublicCatalogTargets[0] || null}
-                                executionAvailable={false}
+                                manualTurnActive={manualPublicTurnOrder.length > 0}
+                                executionAvailable={showTacticalMap}
+                                movementActive={
+                                  movementMode.active &&
+                                  String(selectedMovementFighter || "") === String(manualPublicCurrentTurn?.id || "")
+                                }
+                                movementResult={selectedMovementCommandResult}
+                                onExecute={activateSelectedMovementTargeting}
                               />
                             )}
                           </SelectedCombatActionPanel>

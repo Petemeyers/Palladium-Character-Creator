@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   buildMovementCommandResult,
   canExecuteMovementCommand,
+  getMovementTargetingButtonState,
   getMovementCommandPreview,
 } from "../src/utils/combatMovementCommand.js";
 
@@ -65,14 +66,47 @@ assert.equal(movePreview.distanceFeet, 10);
 assert.equal(hasFunction(movePreview), false, "move preview contains no functions");
 assert.equal(hasRawObjectInPreview(movePreview), false, "move preview contains no raw objects");
 
+const moveButton = getMovementTargetingButtonState({
+  actor,
+  action: moveAction,
+  currentTurnEntry: actor,
+  selectedTarget: target,
+  manualTurnActive: true,
+  executionAvailable: true,
+});
+assert.equal(moveButton.enabled, true);
+assert.equal(moveButton.label, "Begin Move Targeting");
+
 const runPreview = getMovementCommandPreview({ actor, action: runAction, selectedTarget: target });
 assert.equal(runPreview.movementMode, "run");
 assert.equal(runPreview.previewSummary, "Fast movement command.");
 assert.equal(hasFunction(runPreview), false, "run preview contains no functions");
 
+const runButton = getMovementTargetingButtonState({
+  actor,
+  action: runAction,
+  currentTurnEntry: actor,
+  selectedTarget: target,
+  manualTurnActive: true,
+  executionAvailable: true,
+});
+assert.equal(runButton.enabled, true);
+assert.equal(runButton.label, "Begin Run Targeting");
+
 const chargePreview = getMovementCommandPreview({ actor, action: chargeAction, selectedTarget: target });
 assert.equal(chargePreview.movementMode, "charge");
 assert.ok(chargePreview.previewSummary.includes("Charge attack follow-through pending."), "charge preview includes follow-through pending note");
+
+const chargeButton = getMovementTargetingButtonState({
+  actor,
+  action: chargeAction,
+  currentTurnEntry: actor,
+  selectedTarget: target,
+  manualTurnActive: true,
+  executionAvailable: true,
+});
+assert.equal(chargeButton.enabled, true);
+assert.equal(chargeButton.label, "Begin Charge Targeting");
 
 assert.doesNotThrow(() => getMovementCommandPreview({ actor: null, action: null, selectedTarget: { bad: true } }));
 assert.doesNotThrow(() => canExecuteMovementCommand({ actor: null, action: null, currentTurnEntry: null }));
@@ -105,7 +139,18 @@ const wrongActor = canExecuteMovementCommand({
   executionAvailable: true,
 });
 assert.equal(wrongActor.ok, false);
-assert.equal(wrongActor.reason, "Selected actor is not the current turn combatant.");
+assert.equal(wrongActor.reason, "Movement can only be used by the current turn combatant.");
+
+const manualInactive = canExecuteMovementCommand({
+  actor,
+  action: moveAction,
+  currentTurnEntry: actor,
+  selectedTarget: target,
+  manualTurnActive: false,
+  executionAvailable: true,
+});
+assert.equal(manualInactive.ok, false);
+assert.equal(manualInactive.reason, "Movement mode is unavailable.");
 
 const missingTarget = canExecuteMovementCommand({
   actor,
@@ -125,11 +170,11 @@ const notWired = canExecuteMovementCommand({
   executionAvailable: false,
 });
 assert.equal(notWired.ok, false);
-assert.equal(notWired.reason, "Movement execution not wired yet.");
+assert.equal(notWired.reason, "Movement mode is unavailable.");
 
 const result = buildMovementCommandResult({ actor, action: moveAction, selectedTarget: target });
 assert.equal(result.ok, false);
-assert.equal(result.message, "Movement execution not wired yet.");
+assert.equal(result.message, "Movement mode is unavailable.");
 assert.equal(hasFunction(result), false, "movement result contains no functions");
 
 assert.equal(JSON.stringify(actor), actorSnapshot, "movement helper does not mutate actor");
