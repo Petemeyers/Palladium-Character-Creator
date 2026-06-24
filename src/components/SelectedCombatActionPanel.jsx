@@ -29,7 +29,7 @@ const handlerStatusFor = (action) => {
   if (type === "defend") return "Defend handler pending.";
   if (type === "block") return "Block handler pending.";
   if (type === "evade") return "Evade handler pending.";
-  if (type === "recover") return "Recover handler pending.";
+  if (type === "recover") return "Recover handler ready.";
   if (type === "use-item") return "Item handler pending.";
   if (type === "use-skill") return "Skill handler pending.";
   return "Compatibility handler pending.";
@@ -98,13 +98,13 @@ const SelectedCombatActionPanel = ({
               </Text>
             </VStack>
 
-            {action.type !== "attack" && (
+            {action.type !== "attack" && action.type !== "recover" && (
               <Box borderWidth="1px" borderRadius="md" p={2} bg="gray.50">
                 <Text fontSize="xs" color="gray.700">{handlerStatusFor(action)}</Text>
               </Box>
             )}
 
-            {action.type === "attack" && children}
+            {(action.type === "attack" || action.type === "recover") && children}
           </>
         )}
       </VStack>

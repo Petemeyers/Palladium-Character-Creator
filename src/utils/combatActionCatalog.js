@@ -325,7 +325,10 @@ const buildDefensiveRecoveryActions = ({ actor, currentTurnEntry }) => [
     source: "manual catalog",
     category: "Recovery",
     costActions: 1,
-    previewSummary: "Preview only. Recovery handler pending for this catalog.",
+    previewSummary: "Restore 2 stamina.",
+    metadata: {
+      recoveryAmount: 2,
+    },
   }),
 ];
 

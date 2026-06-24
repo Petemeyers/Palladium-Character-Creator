@@ -85,6 +85,7 @@ import InitiativeSetupPreview from "../components/InitiativeSetupPreview.jsx";
 import CombatActionCatalogPanel from "../components/CombatActionCatalogPanel.jsx";
 import SelectedCombatActionPanel from "../components/SelectedCombatActionPanel.jsx";
 import ManualPublicAttackTest from "../components/ManualPublicAttackTest.jsx";
+import RecoverActionHandler from "../components/RecoverActionHandler.jsx";
 import { applyPublicCombatDamage, getPublicCombatHpInfo } from "../utils/publicCombatHp.js";
 import { addWoundRecord, createWoundRecord } from "../utils/combatWoundRecords.js";
 import {
@@ -94,6 +95,7 @@ import {
 } from "../utils/publicTurnOrder.js";
 import { spendAction } from "../utils/publicActionBudget.js";
 import { spendStamina } from "../utils/combatStamina.js";
+import { applyStaminaRecovery, getRecoveryAmount } from "../utils/combatRecovery.js";
 import { createPlayableCharacterFighter, getPlayableCharacterRollDetails } from "../utils/autoRoll.js";
 import { assignRandomWeaponToEnemy, getDefaultWeaponForEnemy, equipWeaponToEnemy, addWeaponToInventory } from "../utils/enemyWeaponAssigner.js";
 import armorShopData from "../data/armorShopData.js";
@@ -24337,6 +24339,80 @@ function CombatPage({ characters = [] }) {
     };
   }
 
+  function applyManualPublicRecovery({ actorId, action, recoveryAmount } = {}) {
+    const currentManualTurn = manualPublicTurnOrder[manualPublicTurnIndex] || null;
+    if (!currentManualTurn || String(actorId) !== String(currentManualTurn.id)) {
+      return {
+        ok: false,
+        missingFields: ["currentTurn"],
+        message: "Recover can only be used by the current turn combatant.",
+      };
+    }
+
+    const amount = recoveryAmount ?? getRecoveryAmount(currentManualTurn, action);
+    const recoveryResult = applyStaminaRecovery(currentManualTurn, amount);
+    if (!recoveryResult.ok) {
+      return recoveryResult.message === "Stamina already full."
+        ? { ...recoveryResult, message: "Stamina already full." }
+        : {
+            ...recoveryResult,
+            message: recoveryResult.message || "Cannot recover stamina.",
+          };
+    }
+
+    const spendResult = spendAction(recoveryResult.updated, 1);
+    if (!spendResult.ok) {
+      return {
+        ok: false,
+        missingFields: ["remainingActions"],
+        message: "No actions remaining. End Turn manually.",
+      };
+    }
+
+    const nextTurnEntry = spendResult.updated;
+    const nextManualTurnOrder = manualPublicTurnOrder.map((row, index) =>
+      index === manualPublicTurnIndex ? nextTurnEntry : row
+    );
+    setManualPublicTurnOrder(nextManualTurnOrder);
+
+    const sourceFighters = Array.isArray(fightersRef.current) && fightersRef.current.length > 0
+      ? fightersRef.current
+      : fighters;
+    const nextFighters = sourceFighters.map((fighter, index) => {
+      const fighterId = String(fighter?.id || fighter?._id || fighter?.name || index);
+      if (fighterId !== String(actorId)) return fighter;
+      const fighterRecovery = applyStaminaRecovery(fighter, amount);
+      const recoveredFighter = fighterRecovery.ok ? fighterRecovery.updated : fighter;
+      return {
+        ...recoveredFighter,
+        remainingActions: spendResult.remainingActions,
+      };
+    });
+    fightersRef.current = nextFighters;
+    setFighters(nextFighters);
+
+    const name = nextTurnEntry.name || currentManualTurn.name || "Combatant";
+    const message =
+      `${name} catches breath: stamina ${recoveryResult.oldStamina}/${recoveryResult.maxStamina} -> ` +
+      `${recoveryResult.newStamina}/${recoveryResult.maxStamina}. ` +
+      `Action spent: ${spendResult.remainingActions}/${spendResult.maxActions} remaining.`;
+    addLog(message, "info");
+
+    return {
+      ok: true,
+      updated: nextTurnEntry,
+      oldStamina: recoveryResult.oldStamina,
+      newStamina: recoveryResult.newStamina,
+      maxStamina: recoveryResult.maxStamina,
+      recovered: recoveryResult.recovered,
+      spent: spendResult.spent,
+      remainingActions: spendResult.remainingActions,
+      maxActions: spendResult.maxActions,
+      missingFields: [],
+      message,
+    };
+  }
+
   /**
    * Load a prescene battle - predefined fighters for quick combat start.
    * Clears current fighters and loads the preset (players + enemies).
@@ -30005,26 +30081,37 @@ function CombatPage({ characters = [] }) {
                             actor={manualPublicCurrentCombatant}
                             selectedTarget={selectedTarget || manualPublicCatalogTargets[0] || null}
                           >
-                            <ManualPublicAttackTest
-                              combatants={fighters}
-                              onApplyDamage={applyManualPublicAttackDamage}
-                              selectedCombatAction={selectedCombatAction}
-                              preferredAttackerId={manualPublicCurrentTurn?.id || ""}
-                              currentTurnId={manualPublicCurrentTurn?.id || ""}
-                              currentTurnActions={manualPublicCurrentTurn
-                                ? {
-                                    remainingActions: manualPublicCurrentTurn.remainingActions,
-                                    maxActions: manualPublicCurrentTurn.maxActions,
-                                  }
-                                : null}
-                              currentTurnStamina={manualPublicCurrentTurn
-                                ? {
-                                    currentStamina: manualPublicCurrentTurn.currentStamina,
-                                    maxStamina: manualPublicCurrentTurn.maxStamina,
-                                    fatigueLabel: manualPublicCurrentTurn.fatigueLabel,
-                                  }
-                                : null}
-                            />
+                            {selectedCombatAction?.type === "attack" && (
+                              <ManualPublicAttackTest
+                                combatants={fighters}
+                                onApplyDamage={applyManualPublicAttackDamage}
+                                selectedCombatAction={selectedCombatAction}
+                                preferredAttackerId={manualPublicCurrentTurn?.id || ""}
+                                currentTurnId={manualPublicCurrentTurn?.id || ""}
+                                currentTurnActions={manualPublicCurrentTurn
+                                  ? {
+                                      remainingActions: manualPublicCurrentTurn.remainingActions,
+                                      maxActions: manualPublicCurrentTurn.maxActions,
+                                    }
+                                  : null}
+                                currentTurnStamina={manualPublicCurrentTurn
+                                  ? {
+                                      currentStamina: manualPublicCurrentTurn.currentStamina,
+                                      maxStamina: manualPublicCurrentTurn.maxStamina,
+                                      fatigueLabel: manualPublicCurrentTurn.fatigueLabel,
+                                    }
+                                  : null}
+                              />
+                            )}
+                            {selectedCombatAction?.type === "recover" && (
+                              <RecoverActionHandler
+                                actor={manualPublicCurrentCombatant}
+                                currentTurnEntry={manualPublicCurrentTurn}
+                                selectedCombatAction={selectedCombatAction}
+                                manualTurnActive={manualPublicTurnOrder.length > 0}
+                                onRecover={applyManualPublicRecovery}
+                              />
+                            )}
                           </SelectedCombatActionPanel>
                         </VStack>
                       </Box>
