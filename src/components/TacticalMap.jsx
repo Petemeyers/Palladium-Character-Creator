@@ -10,10 +10,13 @@ import {
   Text,
   Tooltip
 } from "@chakra-ui/react";
-import MovementInfoDisplay from "./MovementInfoDisplay.jsx";
 import FogEffectsLayer from "./FogEffectsLayer.jsx";
 import ProtectionCircle, { ProtectionCircleHUD } from "./ProtectionCircle.jsx";
 import { getCircleRenderData } from "../utils/protectionCircleMapSystem.js";
+import {
+  getMapCombatantTokenLabel,
+  getMapCombatantTooltip,
+} from "../utils/mapCombatantLabels.js";
 import {
   GRID_CONFIG,
   calculateDistance,
@@ -2441,14 +2444,14 @@ const TacticalMap = ({
 
                     // Debug: verify icon should render (only for specific cells in development)
                     if (import.meta.env.DEV && col === 15 && row === 14) {
-                      console.log(`[TacticalMap] ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Rendering icon for ${combatant.name} at (${col}, ${row}), isEnemy: ${combatant.isEnemy}, fogEnabled: ${fogEnabled}`);
+                      console.log(`[TacticalMap] Rendering token for ${combatant.name} at (${col}, ${row}), isEnemy: ${combatant.isEnemy}, fogEnabled: ${fogEnabled}`);
                     }
 
-                    // ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Check enemy visibility for rendering
+                    // Check enemy visibility for rendering.
                     // In darkness/fog, enemies should be completely invisible if not visible
                     const enemyVisible = combatant.isEnemy ? isEnemyVisibleCb(col, row, combatant) : true;
 
-                    // ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ In darkness, completely hide unseen enemies (opacity 0, or don't render)
+                    // In darkness, completely hide unseen enemies.
                     // If fog is enabled and enemy is not visible, don't render the icon at all
                     // BUT always show player icons regardless of fog
                     if (combatant.isEnemy && fogEnabled && !enemyVisible) {
@@ -2477,7 +2480,18 @@ const TacticalMap = ({
                     // Get combatant size for body part rendering
                     const combatantSize = getCombatantSize(combatant);
                     const bodyPartsEnabled = combatantSize.width > 1;
-                    const reaction = impactReactions?.[getCombatantId(combatant)] || null;
+                    const combatantId = getCombatantId(combatant);
+                    const isCurrentCombatant = combatantId === currentTurn;
+                    const isSelectedCombatant = combatantId === selectedCombatant;
+                    const isHoveredCombatant = hoveredCell?.x === col && hoveredCell?.y === row;
+                    const tokenLabel = getMapCombatantTokenLabel({
+                      combatant,
+                      isCurrent: isCurrentCombatant,
+                      isSelected: isSelectedCombatant,
+                      isHovered: isHoveredCombatant,
+                    });
+                    const tokenTooltip = getMapCombatantTooltip(combatant);
+                    const reaction = impactReactions?.[combatantId] || null;
                     const shakeDurationSeconds = Math.max(
                       0.12,
                       (reaction?.durationMs || 220) / 1000
@@ -2547,44 +2561,26 @@ const TacticalMap = ({
                           />
                         )}
 
-                        {/* Fallback colored circle - always visible even if emoji doesn't render */}
+                        {tokenTooltip && <title>{tokenTooltip}</title>}
+
+                        {/* Combatant marker */}
                         <circle
                           cx={iconX}
                           cy={iconY - 2}
-                          r="8"
+                          r={isSelectedCombatant ? "10" : "8"}
                           fill={combatant.isEnemy ? "#dc2626" : "#2563eb"}
-                          stroke={combatant.isEnemy ? "#991b1b" : "#1e40af"}
-                          strokeWidth="2"
+                          stroke={isSelectedCombatant ? "#facc15" : combatant.isEnemy ? "#991b1b" : "#1e40af"}
+                          strokeWidth={isSelectedCombatant ? "3" : "2"}
                           opacity="0.9"
-                          style={{ pointerEvents: 'none' }}
-                        />
-
-                        {/* Emoji icon on top of fallback circle */}
-                        <text
-                          x={iconX}
-                          y={iconY}
-                          textAnchor="middle"
-                          fontSize="20"
-                          fill={combatant.isEnemy ? "#ffffff" : "#ffffff"}
-                          stroke={combatant.isEnemy ? "#991b1b" : "#1e40af"}
-                          strokeWidth="0.5"
-                          dominantBaseline="middle"
                           style={{
                             pointerEvents: 'none',
-                            userSelect: 'none',
-                            opacity: flashingCombatants.has(getCombatantId(combatant)) ? undefined : 1,
-                            animation: flashingCombatants.has(getCombatantId(combatant)) ? 'flash-slow 0.5s ease-in-out infinite' : 'none',
-                            zIndex: 10, // Ensure icons are above other elements
-                            fontFamily: 'Apple Color Emoji, Segoe UI Emoji, Segoe UI Symbol, Noto Color Emoji, emoji, Arial, sans-serif', // Enhanced emoji font support
-                            fontWeight: 'normal'
+                            opacity: flashingCombatants.has(combatantId) ? undefined : 0.9,
+                            animation: flashingCombatants.has(combatantId) ? 'flash-slow 0.5s ease-in-out infinite' : 'none',
                           }}
-                        >
-                          {combatant.isEnemy ? "ÃƒÂ°Ã…Â¸Ã¢â‚¬â€Ã‚Â¡ÃƒÂ¯Ã‚Â¸Ã‚Â" : "ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂºÃ‚Â¡ÃƒÂ¯Ã‚Â¸Ã‚Â"}
-                        </text>
-
+                        />
                         {/* Body part icons for combatants wider than 5 ft */}
                         {bodyPartsEnabled && (() => {
-                          // ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Prefer segmented offsets if available (true hex placement)
+                          // Prefer segmented offsets if available.
                           if (combatantSize.segmented && Array.isArray(combatantSize.segmentOffsets)) {
                             const parts = combatantSize.segmentOffsets;
                             const icons = [];
@@ -2602,10 +2598,6 @@ const TacticalMap = ({
                               });
                             }
 
-                            // Use token-provided icons if available, otherwise fallback glyphs
-                            const bodyGlyph = combatant.token?.bodyIconGlyph ?? "ÃƒÂ¢Ã‚Â¬Ã¢â‚¬Âº";
-                            const tailGlyph = combatant.token?.tailIconGlyph ?? "ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ‚Â¸";
-
                             for (const seg of parts) {
                               if (seg.part === "head") continue; // head already rendered at iconX/iconY
 
@@ -2620,8 +2612,6 @@ const TacticalMap = ({
                               const sx = p.x + offsetX + tokenOffsetX;
                               const sy = (p.y + 6 + offsetY) + altitudeOffsetY + tokenOffsetY;
 
-                              const glyph = seg.part === "tail" ? tailGlyph : bodyGlyph;
-
                               icons.push(
                                 <g key={`seg-${seg.part}-${seg.index}-${absCol}-${absRow}`}>
                                   <circle
@@ -2634,23 +2624,6 @@ const TacticalMap = ({
                                     opacity="0.8"
                                     style={{ pointerEvents: "none" }}
                                   />
-                                  <text
-                                    x={sx}
-                                    y={sy}
-                                    textAnchor="middle"
-                                    fontSize="12"
-                                    fill="#ffffff"
-                                    dominantBaseline="middle"
-                                    style={{
-                                      pointerEvents: "none",
-                                      userSelect: "none",
-                                      fontFamily:
-                                        "Apple Color Emoji, Segoe UI Emoji, Segoe UI Symbol, Noto Color Emoji, emoji, Arial, sans-serif",
-                                      fontWeight: "normal",
-                                    }}
-                                  >
-                                    {glyph}
-                                  </text>
                                 </g>
                               );
                             }
@@ -2658,14 +2631,12 @@ const TacticalMap = ({
                             return icons;
                           }
 
-                          // ÃƒÂ¢Ã‚Â¬Ã¢â‚¬Â¡ÃƒÂ¯Ã‚Â¸Ã‚Â Legacy fallback (non-segmented): keep your old behavior
+                          // Legacy fallback for non-segmented wide combatants.
                           const bodyPartIcons = [];
                           const numBodyParts = combatantSize.width - 1;
                           for (let i = 1; i <= numBodyParts; i++) {
                             const bodyOffsetX = HEX_WIDTH * i;
                             const bodyPartX = iconX + bodyOffsetX;
-                            const isTail = i === numBodyParts;
-                            const bodyPartIcon = isTail ? "ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ‚Â¸" : "ÃƒÂ¢Ã‚Â¬Ã¢â‚¬Âº";
 
                             bodyPartIcons.push(
                               <g key={`body-part-${i}`}>
@@ -2679,23 +2650,6 @@ const TacticalMap = ({
                                   opacity="0.8"
                                   style={{ pointerEvents: "none" }}
                                 />
-                                <text
-                                  x={bodyPartX}
-                                  y={iconY}
-                                  textAnchor="middle"
-                                  fontSize="12"
-                                  fill="#ffffff"
-                                  dominantBaseline="middle"
-                                  style={{
-                                    pointerEvents: "none",
-                                    userSelect: "none",
-                                    fontFamily:
-                                      "Apple Color Emoji, Segoe UI Emoji, Segoe UI Symbol, Noto Color Emoji, emoji, Arial, sans-serif",
-                                    fontWeight: "normal",
-                                  }}
-                                >
-                                  {bodyPartIcon}
-                                </text>
                               </g>
                             );
                           }
@@ -2753,7 +2707,7 @@ const TacticalMap = ({
                         })()}
 
                         {/* Current turn indicator */}
-                        {getCombatantId(combatant) === currentTurn && (
+                        {isCurrentCombatant && (
                           <circle
                             cx={iconX + size * 0.4}
                             cy={iconY - size * 0.4}
@@ -2765,21 +2719,35 @@ const TacticalMap = ({
                           />
                         )}
 
-                        {/* Movement Info Display - only show for the first combatant to avoid clutter */}
-                        {index === 0 && (
-                          <foreignObject
-                            x={centerX - 60}
-                            y={centerY + 20}
-                            width="120"
-                            height="60"
-                            style={{ pointerEvents: 'none' }}
-                          >
-                            <MovementInfoDisplay
-                              combatant={combatant}
-                              position={{ x: centerX, y: centerY }}
-                              scale={1}
+                        {tokenLabel && (
+                          <g style={{ pointerEvents: "none" }}>
+                            <rect
+                              x={iconX - 54}
+                              y={iconY - 31}
+                              width="108"
+                              height="15"
+                              rx="3"
+                              fill="rgba(15, 23, 42, 0.82)"
+                              stroke={isCurrentCombatant ? "#f6ad55" : "rgba(255, 255, 255, 0.55)"}
+                              strokeWidth="1"
                             />
-                          </foreignObject>
+                            <text
+                              x={iconX}
+                              y={iconY - 20}
+                              textAnchor="middle"
+                              fontSize="10"
+                              fill="#ffffff"
+                              dominantBaseline="middle"
+                              style={{
+                                pointerEvents: "none",
+                                userSelect: "none",
+                                fontFamily: "Arial, sans-serif",
+                                fontWeight: 700,
+                              }}
+                            >
+                              {tokenLabel}
+                            </text>
+                          </g>
                         )}
 
                         {/* Large combatant size indicator */}
@@ -2795,7 +2763,7 @@ const TacticalMap = ({
                                 fill="#666"
                                 style={{ pointerEvents: 'none', userSelect: 'none' }}
                               >
-                                {combatantSize.width}ÃƒÆ’Ã¢â‚¬â€1
+                                {combatantSize.width}x1
                               </text>
                             );
                           }
