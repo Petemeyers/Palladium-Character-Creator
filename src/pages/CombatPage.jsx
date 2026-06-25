@@ -91,6 +91,11 @@ import GuardActionHandler from "../components/GuardActionHandler.jsx";
 import MovementActionHandler from "../components/MovementActionHandler.jsx";
 import UseItemActionHandler from "../components/UseItemActionHandler.jsx";
 import UseSkillActionHandler from "../components/UseSkillActionHandler.jsx";
+import {
+  buildClearedAttackAbortState,
+  buildClearedMovementState,
+  canStartManualMovementTargeting,
+} from "../utils/combatCommandStateCleanup.js";
 import { canExecuteMovementCommand } from "../utils/combatMovementCommand.js";
 import { applyPublicCombatDamage, getPublicCombatHpInfo } from "../utils/publicCombatHp.js";
 import { addWoundRecord, createWoundRecord } from "../utils/combatWoundRecords.js";
@@ -2531,6 +2536,8 @@ function CombatPage({ characters = [] }) {
   const [selectedMovementHex, setSelectedMovementHex] = useState(null); // Track movement hex for attack+movement
   const [showMovementSelection, setShowMovementSelection] = useState(false); // Show movement selection UI
   const pendingSelectedMovementCommandRef = useRef(null);
+  const manualMovementRequestActiveRef = useRef(false);
+  const manualMovementRequestIdRef = useRef(0);
   const [selectedMovementCommandResult, setSelectedMovementCommandResult] = useState(null);
   const [tempModifiers, setTempModifiers] = useState({}); // Track temporary bonuses/penalties (e.g., charge)
 
@@ -8910,14 +8917,16 @@ function CombatPage({ characters = [] }) {
 
   // Handler for enabling movement mode
   const activateMovementMode = useCallback(() => {
-    if (currentFighter && currentFighter.type === "player") {
+    if (currentFighter && currentFighter.type === "player" && combatActive && !combatOverRef.current) {
+      manualMovementRequestActiveRef.current = true;
+      manualMovementRequestIdRef.current += 1;
       setMovementMode({ active: true, isRunning: false });
       setSelectedMovementFighter(currentFighter.id);
       setSelectedActionType("move");
       setShowMovementSelection(true); // Show movement selection UI
       addLog(`Select a highlighted hex to move ${currentFighter.name}`, "info");
     }
-  }, [currentFighter, addLog]);
+  }, [combatActive, currentFighter, addLog]);
 
   const activateSelectedMovementTargeting = useCallback(({ action } = {}) => {
     const actor = manualPublicCurrentCombatant;
@@ -8939,6 +8948,26 @@ function CombatPage({ characters = [] }) {
     }
 
     const mode = action?.type === "run" || action?.type === "charge" ? action.type : "move";
+    const movementAllowed = canStartManualMovementTargeting({
+      combatActive,
+      combatOver: combatOverRef.current || combatEndCheckRef.current,
+      currentFighter: actor,
+      currentTurnEntry,
+      selectedMovementFighter: actor?.id,
+      selectedMovementMode: mode,
+      selectedAction: action,
+      explicitMovementRequest: true,
+    });
+    if (!movementAllowed) {
+      const message = "Manual movement is only available for the current player turn.";
+      pendingSelectedMovementCommandRef.current = null;
+      manualMovementRequestActiveRef.current = false;
+      manualMovementRequestIdRef.current += 1;
+      setSelectedMovementCommandResult({ ok: false, status: "inactive", message });
+      addLog(message, "warning");
+      return { ok: false, message };
+    }
+
     pendingSelectedMovementCommandRef.current = {
       actorId: actor.id,
       actionName: action?.name || (mode === "run" ? "Run" : mode === "charge" ? "Charge" : "Move"),
@@ -8946,6 +8975,8 @@ function CombatPage({ characters = [] }) {
       actionCost: Number(action?.costActions ?? 1) || 1,
       staminaCost: Number(action?.costStamina ?? 0) || 0,
     };
+    manualMovementRequestActiveRef.current = true;
+    manualMovementRequestIdRef.current += 1;
     setSelectedMovementCommandResult({
       ok: true,
       status: "choosing destination",
@@ -8971,6 +9002,7 @@ function CombatPage({ characters = [] }) {
     manualPublicCurrentCombatant,
     manualPublicCurrentTurn,
     manualPublicTurnOrder.length,
+    combatActive,
     selectedTarget,
     showTacticalMap,
   ]);
@@ -9139,7 +9171,29 @@ function CombatPage({ characters = [] }) {
 
   // Fetch reachable hexes when movement mode activates
   useEffect(() => {
-    if (!movementMode.active || !selectedMovementFighter) {
+    const currentTurnEntry = manualPublicTurnOrder.length > 0 ? manualPublicCurrentTurn : currentFighter;
+    const selectedMovementMode = selectedActionType || (movementMode?.isRunning ? "run" : "move");
+    const canStartMovement = canStartManualMovementTargeting({
+      combatActive,
+      combatOver: combatOverRef.current || combatEndCheckRef.current,
+      currentFighter,
+      currentTurnEntry,
+      selectedMovementFighter,
+      selectedMovementMode,
+      selectedAction: selectedCombatAction || selectedAction,
+      explicitMovementRequest: manualMovementRequestActiveRef.current,
+    });
+
+    if (!movementMode.active || !selectedMovementFighter || !canStartMovement) {
+      if (movementMode.active || selectedMovementFighter || engineValidMoves.length > 0 || Object.keys(moveCostsByHex || {}).length > 0) {
+        setMovementMode({ active: false, isRunning: false });
+        setShowMovementSelection(false);
+        setSelectedMovementFighter(null);
+        setSelectedMovementHex(null);
+        setSelectedHex(null);
+        manualMovementRequestActiveRef.current = false;
+        manualMovementRequestIdRef.current += 1;
+      }
       setEngineValidMoves([]);
       setMoveCostsByHex({});
       return;
@@ -9147,10 +9201,21 @@ function CombatPage({ characters = [] }) {
 
     const eid = selectedMovementFighter;
     const mode = resolveMoveMode({ movementMode, selectedActionType });
+    const requestId = manualMovementRequestIdRef.current;
     addLog(`manual movement mode: ${mode === "RUN" ? "RUN" : "WALK"}`, "info");
 
     // ENGINE AUTHORITATIVE
     fetchReachableHexes({ eid, mode }).then((reachable) => {
+      if (
+        !manualMovementRequestActiveRef.current ||
+        manualMovementRequestIdRef.current !== requestId ||
+        !movementMode.active ||
+        String(selectedMovementFighter || "") !== String(eid) ||
+        combatOverRef.current ||
+        combatEndCheckRef.current
+      ) {
+        return;
+      }
       if (reachable) {
         // Highlight list for UI
         const highlight = reachable.hexes
@@ -9192,7 +9257,24 @@ function CombatPage({ characters = [] }) {
         }
       }
     });
-  }, [movementMode, selectedMovementFighter, selectedActionType, resolveMoveMode, fetchReachableHexes, fighters, positions, addLog, turnCounter, isHexOccupied]);
+  }, [
+    movementMode,
+    selectedMovementFighter,
+    selectedActionType,
+    selectedAction,
+    selectedCombatAction,
+    currentFighter,
+    manualPublicCurrentTurn,
+    manualPublicTurnOrder.length,
+    combatActive,
+    resolveMoveMode,
+    fetchReachableHexes,
+    fighters,
+    positions,
+    addLog,
+    turnCounter,
+    isHexOccupied,
+  ]);
 
   // Compute landing preview path when conditions are met
   const landingPreviewPath = useMemo(() => {
@@ -12005,6 +12087,32 @@ function CombatPage({ characters = [] }) {
     }));
   }, [fighters, positions, setFighters, setPositions, addLog, enqueueMoveAnimation, getMoveDurationMs]);
 
+  const clearManualMovementCommandState = useCallback(() => {
+    const cleared = buildClearedMovementState();
+    setMovementMode(cleared.movementMode);
+    setShowMovementSelection(cleared.showMovementSelection);
+    setSelectedMovementHex(cleared.selectedMovementHex);
+    setSelectedMovementFighter(cleared.selectedMovementFighter);
+    setSelectedActionType(cleared.selectedMovementMode);
+    setSelectedHex(cleared.selectedHex);
+    setHoveredHex(cleared.hoveredHex);
+    setHoveredCell(cleared.hoveredCell);
+    setEngineValidMoves(cleared.engineValidMoves);
+    setMoveCostsByHex(cleared.moveCostsByHex);
+    setTargetingMode(cleared.targetingMode);
+    pendingSelectedMovementCommandRef.current = null;
+    manualMovementRequestActiveRef.current = false;
+    manualMovementRequestIdRef.current += 1;
+  }, [
+    setEngineValidMoves,
+    setHoveredCell,
+    setHoveredHex,
+    setMoveCostsByHex,
+    setSelectedActionType,
+    setSelectedHex,
+    setTargetingMode,
+  ]);
+
   // Handler for movement selection from TacticalMap
   const handleMoveSelect = useCallback((x, y) => {
     if (!combatActive && (showDeploymentModal || manualDeploymentOpen)) {
@@ -12275,21 +12383,12 @@ function CombatPage({ characters = [] }) {
       });
 
       // Clear movement/action state only after a real movement action was committed.
-      setMovementMode({ active: false, isRunning: false });
-      setShowMovementSelection(false);
-      setSelectedMovementHex(null);
-      setSelectedMovementFighter(null);
+      clearManualMovementCommandState();
       setSelectedActionType(null);
       setSelectedAction(null);
       setSelectedTarget(null);
       setSelectedAttackWeapon(null);
       setSelectedManeuver(null);
-      setSelectedHex(null);
-      setHoveredHex(null);
-      setHoveredCell(null);
-      setEngineValidMoves([]);
-      setMoveCostsByHex({});
-      setTargetingMode(null);
       turnActionResolvingRef.current = false;
       executingActionRef.current = false;
       if (actionLockTimeoutRef.current) {
@@ -12316,6 +12415,7 @@ function CombatPage({ characters = [] }) {
     turnCounter,
     scheduleEndTurn,
     handlePlayerFlightMove,
+    clearManualMovementCommandState,
     playerMovementMode,
     altitudeTargetFeet,
     isLandingCellAllowed,
@@ -12329,12 +12429,6 @@ function CombatPage({ characters = [] }) {
     setSelectedAttackWeapon,
     setSelectedManeuver,
     setSelectedActionType,
-    setSelectedHex,
-    setHoveredHex,
-    setHoveredCell,
-    setEngineValidMoves,
-    setMoveCostsByHex,
-    setTargetingMode,
   ]);
 
   // Enhanced attack validation with distance-based combat system
@@ -12730,6 +12824,36 @@ function CombatPage({ characters = [] }) {
       };
     }
   }, [positions, combatTerrain, addLog]);
+
+  const clearManualAttackAbortState = useCallback(({ clearSelectedTarget = false } = {}) => {
+    const cleared = buildClearedAttackAbortState({}, { clearSelectedTarget });
+    activeAttackActionIdRef.current = cleared.activeAttackActionId;
+    turnActionResolvingRef.current = cleared.turnActionResolving;
+    executingActionRef.current = cleared.executingAction;
+    pendingTurnAdvanceRef.current = cleared.pendingTurnAdvance;
+    if (actionLockTimeoutRef.current) {
+      clearTimeout(actionLockTimeoutRef.current);
+      actionLockTimeoutRef.current = null;
+    }
+    setSelectedAction(cleared.selectedAction);
+    setSelectedAttackWeapon(cleared.selectedAttackWeapon);
+    setSelectedManeuver(cleared.selectedManeuver);
+    setSelectedAttack(0);
+    setSelectedMovementHex(cleared.selectedMovementHex);
+    setTargetingMode(cleared.targetingMode);
+    setShowCombatChoices(cleared.showCombatChoices);
+    if (clearSelectedTarget) {
+      setSelectedTarget(cleared.selectedTarget);
+    }
+    closeCombatChoices();
+  }, [
+    closeCombatChoices,
+    setSelectedAction,
+    setSelectedAttackWeapon,
+    setSelectedManeuver,
+    setSelectedTarget,
+    setTargetingMode,
+  ]);
 
   // Trip maneuver handler
   const executeTripManeuver = useCallback((attacker, defender) => {
@@ -14055,6 +14179,11 @@ function CombatPage({ characters = [] }) {
     let defenderIndex = updated.findIndex(f => f.id === defenderId);
     if (defenderIndex === -1) {
       addLog(`Invalid target! Target with ID ${defenderId} not found`, "error");
+      if (stateAttacker?.type === "player" && !aiControlEnabledRef.current && !processingPlayerAIRef.current) {
+        clearManualAttackAbortState({ clearSelectedTarget: true });
+        addLog("manual attack aborted; command state cleared", "info");
+        return;
+      }
       scheduleEndTurn(0, "attack-invalid-target");
       return;
     }
@@ -14747,7 +14876,11 @@ function CombatPage({ characters = [] }) {
         }
 
         if (rangeValidation.shouldEndTurn) {
-          burnFailedAutomatedActionAndEnd(rangeValidation.reason || "invalid range");
+          const automatedActionBurned = burnFailedAutomatedActionAndEnd(rangeValidation.reason || "invalid range");
+          if (!automatedActionBurned && effectiveAttackerType === "player" && !aiControlEnabledRef.current && !processingPlayerAIRef.current) {
+            clearManualAttackAbortState({ clearSelectedTarget: false });
+            addLog("manual attack aborted; command state cleared", "info");
+          }
         }
 
         return;
@@ -16622,6 +16755,7 @@ function CombatPage({ characters = [] }) {
     isPredatorBird,
     spawnProjectile,
     validateWeaponRange,
+    clearManualAttackAbortState,
     applyHPToFighter,
     clampHP,
     getFighterHP,
@@ -26314,8 +26448,10 @@ function CombatPage({ characters = [] }) {
       case "Run":
         // Run action - activate movement mode with running speed
         // Movement mode activates - action will be deducted when movement is confirmed
-        if (currentFighter.type === "player") {
+        if (currentFighter.type === "player" && combatActive && !combatOverRef.current) {
           // Set running mode flag for movement calculations
+          manualMovementRequestActiveRef.current = true;
+          manualMovementRequestIdRef.current += 1;
           setSelectedActionType("move");
           setMovementMode({ active: true, isRunning: true });
           setSelectedMovementFighter(currentFighter.id);
@@ -29212,7 +29348,9 @@ function CombatPage({ characters = [] }) {
                       <Button
                         colorScheme="orange"
                         onClick={() => {
-                          if (currentFighter && currentFighter.type === "player") {
+                          if (currentFighter && currentFighter.type === "player" && combatActive && !combatOverRef.current) {
+                            manualMovementRequestActiveRef.current = true;
+                            manualMovementRequestIdRef.current += 1;
                             setSelectedActionType("move");
                             setMovementMode({ active: true, isRunning: true });
                             setSelectedMovementFighter(currentFighter.id);
@@ -30829,7 +30967,10 @@ function CombatPage({ characters = [] }) {
                                     <Button
                                       colorScheme="orange"
                                       onClick={() => {
-                                        if (currentFighter && currentFighter.type === "player") {
+                                        if (currentFighter && currentFighter.type === "player" && combatActive && !combatOverRef.current) {
+                                          manualMovementRequestActiveRef.current = true;
+                                          manualMovementRequestIdRef.current += 1;
+                                          setSelectedActionType("move");
                                           setMovementMode({ active: true, isRunning: true });
                                           setSelectedMovementFighter(currentFighter.id);
                                           addLog(`${currentFighter.name} prepares to run (full speed movement)`, "info");
@@ -30995,7 +31136,10 @@ function CombatPage({ characters = [] }) {
                                 {moveLabel}
                               </Button>
                               <Button size="sm" colorScheme="orange" onClick={() => {
-                                if (currentFighter && currentFighter.type === "player") {
+                                if (currentFighter && currentFighter.type === "player" && combatActive && !combatOverRef.current) {
+                                  manualMovementRequestActiveRef.current = true;
+                                  manualMovementRequestIdRef.current += 1;
+                                  setSelectedActionType("move");
                                   setMovementMode({ active: true, isRunning: true });
                                   setSelectedMovementFighter(currentFighter.id);
                                   addLog(`${currentFighter.name} prepares to run (full speed movement)`, "info");
@@ -33643,7 +33787,10 @@ function CombatPage({ characters = [] }) {
                   <Button
                     colorScheme="orange"
                     onClick={() => {
-                      if (currentFighter && currentFighter.type === "player") {
+                      if (currentFighter && currentFighter.type === "player" && combatActive && !combatOverRef.current) {
+                        manualMovementRequestActiveRef.current = true;
+                        manualMovementRequestIdRef.current += 1;
+                        setSelectedActionType("move");
                         setMovementMode({ active: true, isRunning: true });
                         setSelectedMovementFighter(currentFighter.id);
                         addLog(`${currentFighter.name} prepares to run (full speed movement)`, "info");
