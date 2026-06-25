@@ -54,9 +54,9 @@ const SelectedCombatActionPanel = ({
       <VStack align="stretch" spacing={3}>
         <HStack justify="space-between" align="center" wrap="wrap">
           <Box>
-            <Text fontWeight="bold">Selected Combat Action / Command Resolver</Text>
+            <Text fontWeight="bold">Selected Combat Action</Text>
             <Text fontSize="xs" color="gray.600">
-              {actor?.name ? `Current combatant: ${actor.name}` : "No current combatant."}
+              {actor?.name ? `Command Resolver for ${actor.name}` : "Command Resolver: no current combatant."}
             </Text>
           </Box>
           <Badge colorScheme={action ? typeColor(action.type) : "gray"}>

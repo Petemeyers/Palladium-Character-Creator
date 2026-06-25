@@ -84,6 +84,7 @@ import EncounterReadinessPanel from "../components/EncounterReadinessPanel.jsx";
 import InitiativeSetupPreview from "../components/InitiativeSetupPreview.jsx";
 import CombatActionCatalogPanel from "../components/CombatActionCatalogPanel.jsx";
 import SelectedCombatActionPanel from "../components/SelectedCombatActionPanel.jsx";
+import CompatibilityCombatControlsPanel from "../components/CompatibilityCombatControlsPanel.jsx";
 import ManualPublicAttackTest from "../components/ManualPublicAttackTest.jsx";
 import RecoverActionHandler from "../components/RecoverActionHandler.jsx";
 import DefendActionHandler from "../components/DefendActionHandler.jsx";
@@ -29214,8 +29215,10 @@ function CombatPage({ characters = [] }) {
 
             {/* Compatibility controls remain below equipment. */}
             {shouldShowCombatOptions && !isArielTurn && (
-              <Box w="100%" mt={4}>
-                <Heading size="sm" color="green.600">Compatibility Controls for {currentFighter.name}</Heading>
+              <CompatibilityCombatControlsPanel
+                currentActionName={selectedAction?.name}
+                currentFighterName={currentFighter?.name}
+              >
                 <Box
                   w="100%"
                   maxH="600px"
@@ -29967,7 +29970,7 @@ function CombatPage({ characters = [] }) {
                     )}
                   </VStack>
                 </Box>
-              </Box>
+              </CompatibilityCombatControlsPanel>
             )}
 
             {/* Quick Add Buttons */}
@@ -30378,10 +30381,10 @@ function CombatPage({ characters = [] }) {
                             <Box>
                               <Heading size="sm">Combat Command Center</Heading>
                               <Text fontSize="sm" color="gray.700">
-                                Import roster, check readiness, preview initiative, and test one manual public attack.
+                                Primary Manual Controls: import combatants, check readiness, choose catalog actions, and resolve the selected command.
                               </Text>
                             </Box>
-                            <Badge colorScheme="purple">Preparation</Badge>
+                            <Badge colorScheme="purple">Primary Manual Controls</Badge>
                           </HStack>
 
                           <Box borderWidth="1px" borderColor="purple.100" borderRadius="md" p={3} bg="white">
@@ -30662,8 +30665,12 @@ function CombatPage({ characters = [] }) {
                         </VStack>
                       </Box>
 
+                      <CompatibilityCombatControlsPanel
+                        currentActionName={selectedAction?.name}
+                        currentFighterName={currentFighter?.name}
+                      >
                       <Box p={2} borderWidth="1px" borderRadius="md" bg="gray.50" borderColor="gray.200">
-                        <Text fontWeight="bold">Compatibility Controls</Text>
+                        <Text fontWeight="bold">Compatibility Timing Controls</Text>
                         <Text fontSize="xs" color="gray.600" mb={2}>
                           Existing live combat controls remain available for the current engine.
                         </Text>
@@ -31013,6 +31020,7 @@ function CombatPage({ characters = [] }) {
                           </Box>
                         )}
                       </Flex>
+                      </CompatibilityCombatControlsPanel>
                     </VStack>
                   </FloatingPanel>
                 </Box>
