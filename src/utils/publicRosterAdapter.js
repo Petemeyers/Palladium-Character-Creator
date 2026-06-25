@@ -2,8 +2,15 @@ import { adaptPublicCharacterForAutoRoll } from "./publicCharacterCombatAdapter.
 export {
   PUBLIC_ARENA_ROSTER_STORAGE_KEY,
   clearPublicArenaRosterEntries,
+  clearStagedRosterEntries,
+  getMissingSavedCharacterStagedEntries,
+  getStagedRosterEntries,
   loadPublicArenaRosterEntries,
+  pruneStagedRosterEntriesAgainstSavedCharacters,
+  removeStagedRosterEntriesByCharacterId,
+  removeStagedRosterEntry,
   savePublicArenaRosterEntries,
+  saveStagedRosterEntries,
   upsertPublicArenaRosterEntry,
 } from "./publicStagedRosterStorage.js";
 

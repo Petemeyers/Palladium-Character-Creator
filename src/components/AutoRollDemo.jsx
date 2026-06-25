@@ -23,7 +23,11 @@ import PUBLIC_ENEMIES from "../data/publicEnemies.js";
 import { adaptPublicEnemyToRosterEntry } from "../utils/publicEnemyRosterAdapter.js";
 import {
   adaptPublicCharacterToRosterEntry,
+  clearStagedRosterEntries,
+  getMissingSavedCharacterStagedEntries,
   loadPublicArenaRosterEntries,
+  pruneStagedRosterEntriesAgainstSavedCharacters,
+  removeStagedRosterEntry,
   upsertPublicArenaRosterEntry,
 } from "../utils/publicRosterAdapter.js";
 
@@ -133,6 +137,10 @@ const AutoRollDemo = () => {
     ],
     [rosterCharacters, savedCharacters]
   );
+  const missingStagedSavedCharacters = useMemo(
+    () => getMissingSavedCharacterStagedEntries(stagedRosterEntries, savedCharacters),
+    [savedCharacters, stagedRosterEntries]
+  );
 
   const getDisplayClassName = (character) =>
     character.publicClassName || character.class || character.profession || "Class not set";
@@ -223,6 +231,18 @@ const AutoRollDemo = () => {
   const addEnemyToArenaRoster = (enemy) => {
     const rosterEntry = adaptPublicEnemyToRosterEntry(enemy);
     setStagedRosterEntries(upsertPublicArenaRosterEntry(rosterEntry));
+  };
+
+  const removeStagedEntry = (entry) => {
+    setStagedRosterEntries(removeStagedRosterEntry(entry?.stagedEntryId || entry?.entryId || entry?.id));
+  };
+
+  const clearStagedRoster = () => {
+    setStagedRosterEntries(clearStagedRosterEntries());
+  };
+
+  const removeMissingStagedCharacters = () => {
+    setStagedRosterEntries(pruneStagedRosterEntriesAgainstSavedCharacters(savedCharacters));
   };
 
   return (
@@ -353,24 +373,50 @@ const AutoRollDemo = () => {
         </Box>
 
         <Box>
-          <Heading size="md" mb={4}>Arena Roster Staging</Heading>
+          <HStack justify="space-between" align="center" mb={4} wrap="wrap">
+            <Heading size="md">Arena Roster Staging</Heading>
+            <HStack spacing={2}>
+              {missingStagedSavedCharacters.length > 0 && (
+                <Button size="xs" colorScheme="orange" variant="outline" onClick={removeMissingStagedCharacters}>
+                  Remove Missing Characters
+                </Button>
+              )}
+              <Button size="xs" colorScheme="red" variant="outline" onClick={clearStagedRoster} isDisabled={stagedRosterEntries.length === 0}>
+                Clear Staged Roster
+              </Button>
+            </HStack>
+          </HStack>
+          {missingStagedSavedCharacters.length > 0 && (
+            <Alert status="warning" mb={3}>
+              <AlertIcon />
+              <Text fontSize="sm">Some staged characters no longer exist in Character List.</Text>
+            </Alert>
+          )}
           {stagedRosterEntries.length > 0 ? (
             <Grid templateColumns="repeat(auto-fit, minmax(240px, 1fr))" gap={3}>
               {stagedRosterEntries.map((entry) => (
                 <Box key={`${entry.side}-${entry.id}`} p={3} border="1px solid" borderColor="gray.200" borderRadius="md">
-                  <HStack justify="space-between" align="start">
-                    <Box>
-                      <Text fontWeight="bold">{entry.name}</Text>
-                      <Text fontSize="xs" color="gray.500">
-                        {entry.side === "player"
-                          ? `${entry.publicSpeciesName || "Species not set"} ${entry.publicClassName || "Class not set"}`
-                          : `${entry.size || "Size not set"} ${entry.creatureType || "Creature"}`}
-                      </Text>
-                    </Box>
-                    <Badge colorScheme={entry.side === "player" ? "blue" : "red"}>
-                      {entry.side === "player" ? "Player" : "Enemy"}
-                    </Badge>
-                  </HStack>
+                  <VStack align="stretch" spacing={2}>
+                    <HStack justify="space-between" align="start">
+                      <Box>
+                        <Text fontWeight="bold">{entry.name}</Text>
+                        <Text fontSize="xs" color="gray.500">
+                          {entry.side === "player"
+                            ? `${entry.publicSpeciesName || "Species not set"} ${entry.publicClassName || "Class not set"}`
+                            : `${entry.size || "Size not set"} ${entry.creatureType || "Creature"}`}
+                        </Text>
+                      </Box>
+                      <Badge colorScheme={entry.side === "player" ? "blue" : "red"}>
+                        {entry.side === "player" ? "Player" : "Enemy"}
+                      </Badge>
+                    </HStack>
+                    {missingStagedSavedCharacters.some((missing) => missing.id === entry.id && missing.side === entry.side) && (
+                      <Badge alignSelf="start" colorScheme="orange">Missing saved character</Badge>
+                    )}
+                    <Button size="xs" variant="outline" colorScheme="red" alignSelf="start" onClick={() => removeStagedEntry(entry)}>
+                      Remove from Staged Roster
+                    </Button>
+                  </VStack>
                 </Box>
               ))}
             </Grid>

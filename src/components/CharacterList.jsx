@@ -13,6 +13,7 @@ import { getEquipmentDisplayInfo, getTotalArmorRating, getTotalCarryingCapacity,
 import { calculateStorageCapacity, calculateMonthlyCosts } from '../utils/storageManager';
 import { getUnifiedAbilities } from '../utils/unifiedAbilities';
 import { formatSignedModifier, getPublicDerivedStatsForCharacter } from '../utils/publicDerivedStats.js';
+import { removeStagedRosterEntriesByCharacterId } from '../utils/publicStagedRosterStorage.js';
 import axiosInstance from '../utils/axiosConfig';
 import '../styles/CharacterList.css';
 
@@ -298,6 +299,8 @@ const CharacterList = ({
     if (confirmDelete) {
       try {
         await onBulkDelete(selectedForDelete);
+        selectedForDelete.forEach((characterId) => removeStagedRosterEntriesByCharacterId(characterId));
+        alert('Removed deleted characters from staged roster.');
         setSelectedForDelete([]); // Clear selection after deletion
       } catch (error) {
         console.error('Error deleting characters:', error);
@@ -403,6 +406,8 @@ const CharacterList = ({
   const handleDelete = async (characterId) => {
     try {
       await onDeleteCharacter(characterId);
+      removeStagedRosterEntriesByCharacterId(characterId);
+      alert('Removed deleted character from staged roster.');
     } catch (error) {
       console.error('Error deleting character:', error);
       alert('Failed to delete character');

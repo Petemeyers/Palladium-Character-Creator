@@ -208,7 +208,10 @@ import {
 import { getDefaultMovementMode, getSpeciesProfile } from "../utils/ai/movementModeHelpers.js";
 import {
   clearPublicArenaRosterEntries,
+  getMissingSavedCharacterStagedEntries,
   loadPublicArenaRosterEntries,
+  pruneStagedRosterEntriesAgainstSavedCharacters,
+  removeStagedRosterEntry,
 } from "../utils/publicStagedRosterStorage.js";
 import {
   checkPublicEnemyCombatReadiness,
@@ -2479,6 +2482,10 @@ function CombatPage({ characters = [] }) {
   const [selectedRosterPreviewId, setSelectedRosterPreviewId] = useState(null);
   const [stagedRosterEntries, setStagedRosterEntries] = useState(() => loadPublicArenaRosterEntries());
   const [stagedRosterImportMessages, setStagedRosterImportMessages] = useState([]);
+  const missingSavedStagedRosterEntries = useMemo(
+    () => getMissingSavedCharacterStagedEntries(stagedRosterEntries, characters),
+    [characters, stagedRosterEntries]
+  );
   const canStartManualPublicTurns = useMemo(() => canStartPublicTurnOrder(fighters), [fighters]);
   const manualPublicCurrentTurn = manualPublicTurnOrder[manualPublicTurnIndex] || null;
   const manualPublicCurrentCombatant = useMemo(() => {
@@ -24630,6 +24637,9 @@ function CombatPage({ characters = [] }) {
 
   function importReadyStagedRoster() {
     const entries = loadPublicArenaRosterEntries();
+    const staleIds = new Set(
+      getMissingSavedCharacterStagedEntries(entries, characters).map((entry) => `${entry.side || ""}:${entry.id || ""}`)
+    );
     setStagedRosterEntries(entries);
 
     if (entries.length === 0) {
@@ -24641,6 +24651,11 @@ function CombatPage({ characters = [] }) {
     let importedCount = 0;
 
     entries.forEach((entry) => {
+      if (staleIds.has(`${entry.side || ""}:${entry.id || ""}`)) {
+        messages.push(`${entry.name || "Staged character"} skipped: saved character no longer exists.`);
+        return;
+      }
+
       if (entry.side === "player") {
         const readiness = checkPublicPlayerCombatReadiness(entry);
         if (!readiness.ready) {
@@ -24687,6 +24702,18 @@ function CombatPage({ characters = [] }) {
     clearPublicArenaRosterEntries();
     setStagedRosterEntries([]);
     setStagedRosterImportMessages(["Staged roster cleared."]);
+  }
+
+  function removeMissingStagedRosterCharacters() {
+    const nextEntries = pruneStagedRosterEntriesAgainstSavedCharacters(characters);
+    setStagedRosterEntries(nextEntries);
+    setStagedRosterImportMessages(["Missing saved characters removed from staged roster."]);
+  }
+
+  function removeOneStagedRosterEntry(entry) {
+    const nextEntries = removeStagedRosterEntry(entry?.stagedEntryId || entry?.entryId || entry?.id);
+    setStagedRosterEntries(nextEntries);
+    setStagedRosterImportMessages([`${entry?.name || "Staged entry"} removed from staged roster.`]);
   }
 
   function startManualPublicTurnOrder() {
@@ -30628,8 +30655,25 @@ function CombatPage({ characters = [] }) {
                                   >
                                     Clear Staged Roster
                                   </Button>
+                                  {missingSavedStagedRosterEntries.length > 0 && (
+                                    <Button
+                                      size="xs"
+                                      colorScheme="orange"
+                                      variant="outline"
+                                      onClick={removeMissingStagedRosterCharacters}
+                                    >
+                                      Remove Missing Characters
+                                    </Button>
+                                  )}
                                 </HStack>
                               </HStack>
+
+                              {missingSavedStagedRosterEntries.length > 0 && (
+                                <Alert status="warning" borderRadius="md">
+                                  <AlertIcon />
+                                  <Text fontSize="sm">Some staged characters no longer exist in Character List.</Text>
+                                </Alert>
+                              )}
 
                               {stagedRosterImportMessages.length > 0 && (
                                 <VStack align="stretch" spacing={1}>
@@ -33053,13 +33097,29 @@ function CombatPage({ characters = [] }) {
             <Box mb={4} p={3} border="1px solid" borderColor="purple.200" borderRadius="md" bg="purple.50">
               <HStack justify="space-between" mb={3} align="center">
                 <Heading size="sm">Staged Public Roster</Heading>
-                <Badge colorScheme="purple">
-                  {stagedRosterEntries.length} staged
-                </Badge>
+                <HStack spacing={2}>
+                  <Badge colorScheme="purple">
+                    {stagedRosterEntries.length} staged
+                  </Badge>
+                  {missingSavedStagedRosterEntries.length > 0 && (
+                    <Button size="xs" colorScheme="orange" variant="outline" onClick={removeMissingStagedRosterCharacters}>
+                      Remove Missing Characters
+                    </Button>
+                  )}
+                  <Button size="xs" colorScheme="red" variant="outline" onClick={clearStagedRoster} isDisabled={stagedRosterEntries.length === 0}>
+                    Clear Staged Roster
+                  </Button>
+                </HStack>
               </HStack>
               <Text fontSize="xs" color="gray.600" mb={3}>
                 Use Combat Command Center to import or clear staged roster entries.
               </Text>
+              {missingSavedStagedRosterEntries.length > 0 && (
+                <Alert status="warning" borderRadius="md" mb={3}>
+                  <AlertIcon />
+                  <Text fontSize="sm">Some staged characters no longer exist in Character List.</Text>
+                </Alert>
+              )}
 
               {stagedRosterEntries.length === 0 ? (
                 <Text fontSize="sm" color="gray.600">
@@ -33073,6 +33133,7 @@ function CombatPage({ characters = [] }) {
                       <Th>Side</Th>
                       <Th>Details</Th>
                       <Th>Readiness</Th>
+                      <Th>Actions</Th>
                     </Tr>
                   </Thead>
                   <Tbody>
@@ -33097,10 +33158,18 @@ function CombatPage({ characters = [] }) {
                               <Badge colorScheme={readiness.ready ? "green" : "orange"}>
                                 {readiness.ready ? "Ready" : "Missing Fields"}
                               </Badge>
+                              {missingSavedStagedRosterEntries.some((missing) => missing.id === entry.id && missing.side === entry.side) && (
+                                <Badge colorScheme="orange">Missing saved character</Badge>
+                              )}
                               {!readiness.ready && missing.length > 0 && (
                                 <Text fontSize="xs" color="gray.600">{missing.join(", ")}</Text>
                               )}
                             </VStack>
+                          </Td>
+                          <Td>
+                            <Button size="xs" colorScheme="red" variant="outline" onClick={() => removeOneStagedRosterEntry(entry)}>
+                              Remove from Staged Roster
+                            </Button>
                           </Td>
                         </Tr>
                       );
