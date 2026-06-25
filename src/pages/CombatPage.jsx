@@ -98,6 +98,10 @@ import {
   buildClearedMovementState,
   canStartManualMovementTargeting,
 } from "../utils/combatCommandStateCleanup.js";
+import {
+  buildCombatCommandTurnBridge,
+  selectedActionMatchesCommandTurn,
+} from "../utils/combatCommandTurnBridge.js";
 import { canExecuteMovementCommand } from "../utils/combatMovementCommand.js";
 import { applyPublicCombatDamage, getPublicCombatHpInfo } from "../utils/publicCombatHp.js";
 import { addWoundRecord, createWoundRecord } from "../utils/combatWoundRecords.js";
@@ -7749,6 +7753,55 @@ function CombatPage({ characters = [] }) {
 
   // Get current fighter (needed early for callbacks)
   const currentFighter = fighters[turnIndex];
+  const commandTurnBridge = useMemo(() => buildCombatCommandTurnBridge({
+    combatActive,
+    combatOver: combatOverRef.current || combatEndCheckRef.current,
+    liveActor: currentFighter,
+    liveInitiativeIndex: turnIndex,
+    liveRound: meleeRound,
+    manualTurnEntry: manualPublicCurrentTurn,
+    manualTurnOrderActive: manualPublicTurnOrder.length > 0,
+    manualRound: manualPublicTurnRound,
+    aiControlEnabled,
+  }), [
+    aiControlEnabled,
+    combatActive,
+    currentFighter,
+    manualPublicCurrentTurn,
+    manualPublicTurnOrder.length,
+    manualPublicTurnRound,
+    meleeRound,
+    turnIndex,
+  ]);
+  const commandTurnEntry = commandTurnBridge.turnEntry;
+  const commandActor = useMemo(() => {
+    if (!commandTurnBridge.activeActorId) return null;
+    return fighters.find((fighter, index) =>
+      String(fighter?.id || fighter?._id || fighter?.name || index) === String(commandTurnBridge.activeActorId)
+    ) || null;
+  }, [commandTurnBridge.activeActorId, fighters]);
+  const commandCatalogTargets = useMemo(() => {
+    if (!commandActor) return [];
+    const currentId = String(commandTurnBridge.activeActorId || "");
+    const currentSide = commandActor.side || commandActor.type;
+    return fighters.filter((fighter, index) => {
+      const fighterId = String(fighter?.id || fighter?._id || fighter?.name || index);
+      if (fighterId === currentId) return false;
+      const fighterSide = fighter?.side || fighter?.type;
+      return !currentSide || !fighterSide || fighterSide !== currentSide;
+    });
+  }, [commandActor, commandTurnBridge.activeActorId, fighters]);
+  const selectedCombatActionTurnMatch = selectedActionMatchesCommandTurn(selectedCombatAction, commandTurnBridge);
+  const activeSelectedCombatAction = selectedCombatAction && !selectedCombatActionTurnMatch.ok
+    ? {
+        ...selectedCombatAction,
+        enabled: false,
+        disabledReason: selectedCombatActionTurnMatch.reason,
+      }
+    : selectedCombatAction;
+  const commandManualTurnActive = Boolean(commandTurnBridge.activeActorId && commandTurnBridge.isPlayerControlled);
+  const commandCenterDisabledReason = commandTurnBridge.warning ||
+    (commandTurnBridge.isEnemyControlled ? "Waiting for enemy turn." : "");
   const activeFighters = fighters.filter(f => f.status === "active");
   const alivePlayers = fighters.filter(f => f.type === "player" && getCombatantHP(f) > -21);
   const aliveEnemies = fighters.filter(f => f.type === "enemy" && getCombatantHP(f) > -21);
@@ -8480,8 +8533,12 @@ function CombatPage({ characters = [] }) {
   }, [availableTacticalPowers, availableTechniques, canFighterStartTurn, canLiftTarget, currentFighter, fighters]);
 
   useEffect(() => {
-    setSelectedCombatAction(null);
-  }, [manualPublicCurrentTurn?.id]);
+    if (!selectedCombatAction) return;
+    const match = selectedActionMatchesCommandTurn(selectedCombatAction, commandTurnBridge);
+    if (!match.ok) {
+      setSelectedCombatAction(null);
+    }
+  }, [commandTurnBridge, selectedCombatAction]);
 
   useEffect(() => {
     if (
@@ -8931,14 +8988,14 @@ function CombatPage({ characters = [] }) {
   }, [combatActive, currentFighter, addLog]);
 
   const activateSelectedMovementTargeting = useCallback(({ action } = {}) => {
-    const actor = manualPublicCurrentCombatant;
-    const currentTurnEntry = manualPublicCurrentTurn;
+    const actor = commandActor;
+    const currentTurnEntry = commandTurnEntry;
     const guard = canExecuteMovementCommand({
       actor,
       action,
       currentTurnEntry,
-      selectedTarget: selectedTarget || manualPublicCatalogTargets[0] || null,
-      manualTurnActive: manualPublicTurnOrder.length > 0,
+      selectedTarget: selectedTarget || commandCatalogTargets[0] || null,
+      manualTurnActive: commandManualTurnActive,
       executionAvailable: showTacticalMap,
     });
 
@@ -9000,10 +9057,10 @@ function CombatPage({ characters = [] }) {
     return { ok: true };
   }, [
     addLog,
-    manualPublicCatalogTargets,
-    manualPublicCurrentCombatant,
-    manualPublicCurrentTurn,
-    manualPublicTurnOrder.length,
+    commandActor,
+    commandCatalogTargets,
+    commandManualTurnActive,
+    commandTurnEntry,
     combatActive,
     selectedTarget,
     showTacticalMap,
@@ -9012,6 +9069,78 @@ function CombatPage({ characters = [] }) {
   const syncSelectedMovementCommandCost = useCallback(({ actorId, destinationHex } = {}) => {
     const pending = pendingSelectedMovementCommandRef.current;
     if (!pending || String(pending.actorId) !== String(actorId)) return null;
+    const actionCost = Math.max(0, Number(pending.actionCost ?? 1) || 0);
+    const staminaCost = Math.max(0, Number(pending.staminaCost ?? 0) || 0);
+
+    if (commandTurnBridge.source === "live-initiative") {
+      const sourceFighters = Array.isArray(fightersRef.current) && fightersRef.current.length > 0
+        ? fightersRef.current
+        : fighters;
+      const liveFighter = sourceFighters.find((fighter, index) =>
+        String(fighter?.id || fighter?._id || fighter?.name || index) === String(actorId)
+      );
+      if (!liveFighter) {
+        const message = "Movement completed, but the live turn combatant was not found.";
+        pendingSelectedMovementCommandRef.current = null;
+        setSelectedMovementCommandResult({ ok: false, status: "moved", message });
+        addLog(message, "warning");
+        return { ok: false, message };
+      }
+
+      let staminaResult = {
+        ok: true,
+        updated: liveFighter,
+        spent: 0,
+        maxStamina: liveFighter.maxStamina,
+        currentStamina: liveFighter.currentStamina,
+        fatigueLabel: liveFighter.fatigueLabel,
+      };
+      if (staminaCost > 0) {
+        staminaResult = spendStamina(liveFighter, staminaCost);
+        if (!staminaResult.ok) {
+          const message = "Movement completed, but no stamina was available to spend.";
+          pendingSelectedMovementCommandRef.current = null;
+          setSelectedMovementCommandResult({ ok: false, status: "moved", message });
+          addLog(message, "warning");
+          return { ok: false, message };
+        }
+        commitFighters((prev) => {
+          const source = Array.isArray(fightersRef.current) ? fightersRef.current : prev;
+          return source.map((fighter, index) => {
+            const fighterId = String(fighter?.id || fighter?._id || fighter?.name || index);
+            return fighterId === String(actorId)
+              ? {
+                  ...fighter,
+                  maxStamina: staminaResult.maxStamina,
+                  currentStamina: staminaResult.currentStamina,
+                  fatigueLabel: staminaResult.fatigueLabel,
+                }
+              : fighter;
+          });
+        });
+      }
+
+      const updatedFighter = (fightersRef.current || []).find((fighter, index) =>
+        String(fighter?.id || fighter?._id || fighter?.name || index) === String(actorId)
+      ) || liveFighter;
+      const remainingActions = Number(updatedFighter.remainingActions ?? 0) || 0;
+      const maxActions = Number(updatedFighter.actionsPerRound ?? updatedFighter.maxActions ?? 1) || 1;
+      const destinationText = destinationHex
+        ? ` Destination: (${destinationHex.x}, ${destinationHex.y}).`
+        : "";
+      const staminaText = staminaCost > 0
+        ? ` Stamina spent: ${staminaResult.currentStamina}/${staminaResult.maxStamina} remaining.`
+        : "";
+      const message =
+        `${pending.actionName} movement completed.${destinationText} ` +
+        `Action spent: ${remainingActions}/${maxActions} remaining.` +
+        staminaText;
+
+      pendingSelectedMovementCommandRef.current = null;
+      setSelectedMovementCommandResult({ ok: true, status: "moved", message });
+      addLog(message, "info");
+      return { ok: true, message, actionCost };
+    }
 
     const currentManualTurn = manualPublicTurnOrder[manualPublicTurnIndex] || null;
     if (!currentManualTurn || String(currentManualTurn.id) !== String(actorId)) {
@@ -9022,8 +9151,6 @@ function CombatPage({ characters = [] }) {
       return { ok: false, message };
     }
 
-    const actionCost = Math.max(0, Number(pending.actionCost ?? 1) || 0);
-    const staminaCost = Math.max(0, Number(pending.staminaCost ?? 0) || 0);
     const actionResult = actionCost > 0
       ? spendAction(currentManualTurn, actionCost)
       : {
@@ -9100,7 +9227,9 @@ function CombatPage({ characters = [] }) {
     return { ok: true, message };
   }, [
     addLog,
+    commandTurnBridge.source,
     commitFighters,
+    fighters,
     manualPublicTurnIndex,
     manualPublicTurnOrder,
     setManualPublicTurnOrder,
@@ -9173,12 +9302,13 @@ function CombatPage({ characters = [] }) {
 
   // Fetch reachable hexes when movement mode activates
   useEffect(() => {
-    const currentTurnEntry = manualPublicTurnOrder.length > 0 ? manualPublicCurrentTurn : currentFighter;
+    const currentTurnEntry = commandTurnEntry || currentFighter;
+    const movementCurrentFighter = commandActor || currentFighter;
     const selectedMovementMode = selectedActionType || (movementMode?.isRunning ? "run" : "move");
     const canStartMovement = canStartManualMovementTargeting({
       combatActive,
       combatOver: combatOverRef.current || combatEndCheckRef.current,
-      currentFighter,
+      currentFighter: movementCurrentFighter,
       currentTurnEntry,
       selectedMovementFighter,
       selectedMovementMode,
@@ -9266,8 +9396,8 @@ function CombatPage({ characters = [] }) {
     selectedAction,
     selectedCombatAction,
     currentFighter,
-    manualPublicCurrentTurn,
-    manualPublicTurnOrder.length,
+    commandActor,
+    commandTurnEntry,
     combatActive,
     resolveMoveMode,
     fetchReachableHexes,
@@ -24636,9 +24766,10 @@ function CombatPage({ characters = [] }) {
     let staminaMessage = "";
     let staminaSpent = false;
     let nextManualTurnOrder = manualPublicTurnOrder;
-    const currentManualTurn = manualPublicTurnOrder[manualPublicTurnIndex] || null;
-    if (currentManualTurn && String(attackerId) === String(currentManualTurn.id)) {
-      const spendResult = spendAction(currentManualTurn, 1);
+    let spentTurnEntry = null;
+    const currentCommandTurn = commandTurnEntry || manualPublicTurnOrder[manualPublicTurnIndex] || null;
+    if (currentCommandTurn && String(attackerId) === String(currentCommandTurn.id)) {
+      const spendResult = spendAction(currentCommandTurn, 1);
       if (!spendResult.ok) {
         return {
           ok: false,
@@ -24656,10 +24787,13 @@ function CombatPage({ characters = [] }) {
       }
       actionSpent = true;
       staminaSpent = true;
-      nextManualTurnOrder = manualPublicTurnOrder.map((row, index) =>
-        index === manualPublicTurnIndex ? staminaResult.updated : row
-      );
-      setManualPublicTurnOrder(nextManualTurnOrder);
+      spentTurnEntry = staminaResult.updated;
+      if (commandTurnBridge.source === "manual-public-turn-order") {
+        nextManualTurnOrder = manualPublicTurnOrder.map((row, index) =>
+          index === manualPublicTurnIndex ? staminaResult.updated : row
+        );
+        setManualPublicTurnOrder(nextManualTurnOrder);
+      }
       actionMessage = ` Action spent: ${spendResult.remainingActions}/${spendResult.maxActions} remaining.`;
       staminaMessage = ` Stamina spent: ${staminaResult.currentStamina}/${staminaResult.maxStamina} remaining.`;
     }
@@ -24685,9 +24819,21 @@ function CombatPage({ characters = [] }) {
     const updatedTarget = woundRecord
       ? addWoundRecord(applyResult.updatedTarget, woundRecord)
       : applyResult.updatedTarget;
-    const nextFighters = sourceFighters.map((fighter, index) =>
-      index === targetIndex ? updatedTarget : fighter
-    );
+    const nextFighters = sourceFighters.map((fighter, index) => {
+      const fighterId = String(fighter?.id || fighter?._id || fighter?.name || index);
+      if (index === targetIndex) return updatedTarget;
+      if (spentTurnEntry && fighterId === String(attackerId)) {
+        return {
+          ...fighter,
+          remainingActions: spentTurnEntry.remainingActions,
+          maxActions: spentTurnEntry.maxActions,
+          currentStamina: spentTurnEntry.currentStamina,
+          maxStamina: spentTurnEntry.maxStamina,
+          fatigueLabel: spentTurnEntry.fatigueLabel,
+        };
+      }
+      return fighter;
+    });
     fightersRef.current = nextFighters;
     setFighters(nextFighters);
 
@@ -24725,8 +24871,8 @@ function CombatPage({ characters = [] }) {
   }
 
   function applyManualPublicRecovery({ actorId, action, recoveryAmount } = {}) {
-    const currentManualTurn = manualPublicTurnOrder[manualPublicTurnIndex] || null;
-    if (!currentManualTurn || String(actorId) !== String(currentManualTurn.id)) {
+    const currentCommandTurn = commandTurnEntry || manualPublicTurnOrder[manualPublicTurnIndex] || null;
+    if (!currentCommandTurn || String(actorId) !== String(currentCommandTurn.id)) {
       return {
         ok: false,
         missingFields: ["currentTurn"],
@@ -24734,8 +24880,8 @@ function CombatPage({ characters = [] }) {
       };
     }
 
-    const amount = recoveryAmount ?? getRecoveryAmount(currentManualTurn, action);
-    const recoveryResult = applyStaminaRecovery(currentManualTurn, amount);
+    const amount = recoveryAmount ?? getRecoveryAmount(currentCommandTurn, action);
+    const recoveryResult = applyStaminaRecovery(currentCommandTurn, amount);
     if (!recoveryResult.ok) {
       return recoveryResult.message === "Stamina already full."
         ? { ...recoveryResult, message: "Stamina already full." }
@@ -24755,10 +24901,12 @@ function CombatPage({ characters = [] }) {
     }
 
     const nextTurnEntry = spendResult.updated;
-    const nextManualTurnOrder = manualPublicTurnOrder.map((row, index) =>
-      index === manualPublicTurnIndex ? nextTurnEntry : row
-    );
-    setManualPublicTurnOrder(nextManualTurnOrder);
+    if (commandTurnBridge.source === "manual-public-turn-order") {
+      const nextManualTurnOrder = manualPublicTurnOrder.map((row, index) =>
+        index === manualPublicTurnIndex ? nextTurnEntry : row
+      );
+      setManualPublicTurnOrder(nextManualTurnOrder);
+    }
 
     const sourceFighters = Array.isArray(fightersRef.current) && fightersRef.current.length > 0
       ? fightersRef.current
@@ -24776,7 +24924,7 @@ function CombatPage({ characters = [] }) {
     fightersRef.current = nextFighters;
     setFighters(nextFighters);
 
-    const name = nextTurnEntry.name || currentManualTurn.name || "Combatant";
+    const name = nextTurnEntry.name || currentCommandTurn.name || "Combatant";
     const message =
       `${name} catches breath: stamina ${recoveryResult.oldStamina}/${recoveryResult.maxStamina} -> ` +
       `${recoveryResult.newStamina}/${recoveryResult.maxStamina}. ` +
@@ -24799,8 +24947,8 @@ function CombatPage({ characters = [] }) {
   }
 
   function applyManualPublicDefend({ actorId } = {}) {
-    const currentManualTurn = manualPublicTurnOrder[manualPublicTurnIndex] || null;
-    if (!currentManualTurn || String(actorId) !== String(currentManualTurn.id)) {
+    const currentCommandTurn = commandTurnEntry || manualPublicTurnOrder[manualPublicTurnIndex] || null;
+    if (!currentCommandTurn || String(actorId) !== String(currentCommandTurn.id)) {
       return {
         ok: false,
         missingFields: ["currentTurn"],
@@ -24808,7 +24956,7 @@ function CombatPage({ characters = [] }) {
       };
     }
 
-    if (getCombatPosture(currentManualTurn)?.type === "defending") {
+    if (getCombatPosture(currentCommandTurn)?.type === "defending") {
       return {
         ok: false,
         missingFields: [],
@@ -24816,7 +24964,7 @@ function CombatPage({ characters = [] }) {
       };
     }
 
-    const spendResult = spendAction(currentManualTurn, 1);
+    const spendResult = spendAction(currentCommandTurn, 1);
     if (!spendResult.ok) {
       return {
         ok: false,
@@ -24826,14 +24974,16 @@ function CombatPage({ characters = [] }) {
     }
 
     const posture = createDefensivePosture({
-      round: manualPublicTurnRound,
-      turnIndex: manualPublicTurnIndex,
+      round: commandTurnBridge.round || manualPublicTurnRound,
+      turnIndex: commandTurnBridge.initiativeIndex ?? manualPublicTurnIndex,
     });
     const nextTurnEntry = applyDefensivePosture(spendResult.updated, posture);
-    const nextManualTurnOrder = manualPublicTurnOrder.map((row, index) =>
-      index === manualPublicTurnIndex ? nextTurnEntry : row
-    );
-    setManualPublicTurnOrder(nextManualTurnOrder);
+    if (commandTurnBridge.source === "manual-public-turn-order") {
+      const nextManualTurnOrder = manualPublicTurnOrder.map((row, index) =>
+        index === manualPublicTurnIndex ? nextTurnEntry : row
+      );
+      setManualPublicTurnOrder(nextManualTurnOrder);
+    }
 
     const sourceFighters = Array.isArray(fightersRef.current) && fightersRef.current.length > 0
       ? fightersRef.current
@@ -24849,7 +24999,7 @@ function CombatPage({ characters = [] }) {
     fightersRef.current = nextFighters;
     setFighters(nextFighters);
 
-    const name = nextTurnEntry.name || currentManualTurn.name || "Combatant";
+    const name = nextTurnEntry.name || currentCommandTurn.name || "Combatant";
     const message =
       `${name} enters a defensive posture. ` +
       `Action spent: ${spendResult.remainingActions}/${spendResult.maxActions} remaining.`;
@@ -24868,10 +25018,10 @@ function CombatPage({ characters = [] }) {
   }
 
   function applyManualPublicGuardPosture({ actorId, postureType } = {}) {
-    const currentManualTurn = manualPublicTurnOrder[manualPublicTurnIndex] || null;
+    const currentCommandTurn = commandTurnEntry || manualPublicTurnOrder[manualPublicTurnIndex] || null;
     const normalizedPostureType = postureType === "evading" ? "evading" : "blocking";
     const postureLabel = normalizedPostureType === "evading" ? "evading" : "blocking";
-    if (!currentManualTurn || String(actorId) !== String(currentManualTurn.id)) {
+    if (!currentCommandTurn || String(actorId) !== String(currentCommandTurn.id)) {
       return {
         ok: false,
         missingFields: ["currentTurn"],
@@ -24879,7 +25029,7 @@ function CombatPage({ characters = [] }) {
       };
     }
 
-    if (getCombatPosture(currentManualTurn)?.type === normalizedPostureType) {
+    if (getCombatPosture(currentCommandTurn)?.type === normalizedPostureType) {
       return {
         ok: false,
         missingFields: [],
@@ -24887,7 +25037,7 @@ function CombatPage({ characters = [] }) {
       };
     }
 
-    const spendResult = spendAction(currentManualTurn, 1);
+    const spendResult = spendAction(currentCommandTurn, 1);
     if (!spendResult.ok) {
       return {
         ok: false,
@@ -24898,14 +25048,16 @@ function CombatPage({ characters = [] }) {
 
     const posture = createCombatPosture({
       type: normalizedPostureType,
-      round: manualPublicTurnRound,
-      turnIndex: manualPublicTurnIndex,
+      round: commandTurnBridge.round || manualPublicTurnRound,
+      turnIndex: commandTurnBridge.initiativeIndex ?? manualPublicTurnIndex,
     });
     const nextTurnEntry = applyCombatPosture(spendResult.updated, posture);
-    const nextManualTurnOrder = manualPublicTurnOrder.map((row, index) =>
-      index === manualPublicTurnIndex ? nextTurnEntry : row
-    );
-    setManualPublicTurnOrder(nextManualTurnOrder);
+    if (commandTurnBridge.source === "manual-public-turn-order") {
+      const nextManualTurnOrder = manualPublicTurnOrder.map((row, index) =>
+        index === manualPublicTurnIndex ? nextTurnEntry : row
+      );
+      setManualPublicTurnOrder(nextManualTurnOrder);
+    }
 
     const sourceFighters = Array.isArray(fightersRef.current) && fightersRef.current.length > 0
       ? fightersRef.current
@@ -24921,7 +25073,7 @@ function CombatPage({ characters = [] }) {
     fightersRef.current = nextFighters;
     setFighters(nextFighters);
 
-    const name = nextTurnEntry.name || currentManualTurn.name || "Combatant";
+    const name = nextTurnEntry.name || currentCommandTurn.name || "Combatant";
     const message =
       `${name} enters a ${postureLabel} posture. ` +
       `Action spent: ${spendResult.remainingActions}/${spendResult.maxActions} remaining.`;
@@ -30499,6 +30651,37 @@ function CombatPage({ characters = [] }) {
                                 stagedEntries={stagedRosterEntries}
                               />
 
+                              <Box borderWidth="1px" borderRadius="md" p={3} bg="purple.50" borderColor="purple.200">
+                                <VStack align="stretch" spacing={2}>
+                                  <HStack spacing={3} wrap="wrap">
+                                    <Text fontSize="sm" fontWeight="bold">
+                                      Current Turn: {commandTurnBridge.activeActorName || "No active combatant"}
+                                    </Text>
+                                    <Badge colorScheme={commandTurnBridge.source === "live-initiative" ? "green" : "purple"}>
+                                      Source: {commandTurnBridge.source === "live-initiative" ? "Live initiative" : commandTurnBridge.source === "manual-public-turn-order" ? "Manual turn order" : "None"}
+                                    </Badge>
+                                    {commandTurnBridge.activeActorTeam && (
+                                      <Badge colorScheme={commandTurnBridge.isEnemyControlled ? "red" : "blue"}>
+                                        {commandTurnBridge.isEnemyControlled ? "Enemy" : "Player"}
+                                      </Badge>
+                                    )}
+                                    {commandTurnBridge.remainingActions !== null && (
+                                      <Text fontSize="sm">
+                                        Actions: {commandTurnBridge.remainingActions}/{commandTurnBridge.maxActions}
+                                      </Text>
+                                    )}
+                                  </HStack>
+                                  <Text fontSize="xs" color={commandTurnBridge.isEnemyControlled || commandTurnBridge.warning ? "orange.700" : "gray.700"}>
+                                    {commandTurnBridge.warning ||
+                                      (commandTurnBridge.isEnemyControlled
+                                        ? "Waiting for enemy action."
+                                        : commandTurnBridge.isPlayerControlled
+                                          ? "Waiting for player command."
+                                          : "Waiting for command.")}
+                                  </Text>
+                                </VStack>
+                              </Box>
+
                               <Box borderWidth="1px" borderRadius="md" p={3} bg="white">
                                 <VStack align="stretch" spacing={3}>
                                   <HStack justify="space-between" align="center" wrap="wrap">
@@ -30621,14 +30804,15 @@ function CombatPage({ characters = [] }) {
                           </Box>
 
                           <CombatActionCatalogPanel
-                            actor={manualPublicCurrentCombatant}
-                            targets={manualPublicCatalogTargets}
-                            currentTurnEntry={manualPublicCurrentTurn}
-                            selectedTarget={selectedTarget || manualPublicCatalogTargets[0] || null}
-                            equippedWeapons={manualPublicCurrentCombatant ? getEquistaminadWeapons(manualPublicCurrentCombatant) : []}
-                            inventory={manualPublicCurrentCombatant?.inventory || manualPublicCurrentCombatant?.items || []}
+                            actor={commandActor}
+                            targets={commandCatalogTargets}
+                            currentTurnEntry={commandTurnEntry}
+                            selectedTarget={selectedTarget || commandCatalogTargets[0] || null}
+                            equippedWeapons={commandActor ? getEquistaminadWeapons(commandActor) : []}
+                            inventory={commandActor?.inventory || commandActor?.items || []}
                             compatibilityActions={actionOptions}
-                            selectedCombatAction={selectedCombatAction}
+                            selectedCombatAction={activeSelectedCombatAction}
+                            disabledReason={commandCenterDisabledReason}
                             onSelectCombatAction={(action) => {
                               setSelectedCombatAction(action);
                               setSelectedMovementCommandResult(null);
@@ -30639,89 +30823,89 @@ function CombatPage({ characters = [] }) {
                           />
 
                           <SelectedCombatActionPanel
-                            selectedCombatAction={selectedCombatAction}
-                            actor={manualPublicCurrentCombatant}
-                            selectedTarget={selectedTarget || manualPublicCatalogTargets[0] || null}
+                            selectedCombatAction={activeSelectedCombatAction}
+                            actor={commandActor}
+                            selectedTarget={selectedTarget || commandCatalogTargets[0] || null}
                           >
-                            {selectedCombatAction?.type === "attack" && (
+                            {activeSelectedCombatAction?.type === "attack" && (
                               <ManualPublicAttackTest
                                 combatants={fighters}
                                 onApplyDamage={applyManualPublicAttackDamage}
-                                selectedCombatAction={selectedCombatAction}
-                                preferredAttackerId={manualPublicCurrentTurn?.id || ""}
-                                currentTurnId={manualPublicCurrentTurn?.id || ""}
-                                currentTurnActions={manualPublicCurrentTurn
+                                selectedCombatAction={activeSelectedCombatAction}
+                                preferredAttackerId={commandTurnEntry?.id || ""}
+                                currentTurnId={commandTurnEntry?.id || ""}
+                                currentTurnActions={commandTurnEntry
                                   ? {
-                                      remainingActions: manualPublicCurrentTurn.remainingActions,
-                                      maxActions: manualPublicCurrentTurn.maxActions,
+                                      remainingActions: commandTurnEntry.remainingActions,
+                                      maxActions: commandTurnEntry.maxActions,
                                     }
                                   : null}
-                                currentTurnStamina={manualPublicCurrentTurn
+                                currentTurnStamina={commandTurnEntry
                                   ? {
-                                      currentStamina: manualPublicCurrentTurn.currentStamina,
-                                      maxStamina: manualPublicCurrentTurn.maxStamina,
-                                      fatigueLabel: manualPublicCurrentTurn.fatigueLabel,
+                                      currentStamina: commandTurnEntry.currentStamina,
+                                      maxStamina: commandTurnEntry.maxStamina,
+                                      fatigueLabel: commandTurnEntry.fatigueLabel,
                                     }
                                   : null}
                               />
                             )}
-                            {selectedCombatAction?.type === "recover" && (
+                            {activeSelectedCombatAction?.type === "recover" && (
                               <RecoverActionHandler
-                                actor={manualPublicCurrentCombatant}
-                                currentTurnEntry={manualPublicCurrentTurn}
-                                selectedCombatAction={selectedCombatAction}
-                                manualTurnActive={manualPublicTurnOrder.length > 0}
+                                actor={commandActor}
+                                currentTurnEntry={commandTurnEntry}
+                                selectedCombatAction={activeSelectedCombatAction}
+                                manualTurnActive={commandManualTurnActive}
                                 onRecover={applyManualPublicRecovery}
                               />
                             )}
-                            {selectedCombatAction?.type === "defend" && (
+                            {activeSelectedCombatAction?.type === "defend" && (
                               <DefendActionHandler
-                                actor={manualPublicCurrentCombatant}
-                                currentTurnEntry={manualPublicCurrentTurn}
-                                selectedCombatAction={selectedCombatAction}
-                                manualTurnActive={manualPublicTurnOrder.length > 0}
+                                actor={commandActor}
+                                currentTurnEntry={commandTurnEntry}
+                                selectedCombatAction={activeSelectedCombatAction}
+                                manualTurnActive={commandManualTurnActive}
                                 onDefend={applyManualPublicDefend}
                               />
                             )}
-                            {(selectedCombatAction?.type === "block" || selectedCombatAction?.type === "evade") && (
+                            {(activeSelectedCombatAction?.type === "block" || activeSelectedCombatAction?.type === "evade") && (
                               <GuardActionHandler
-                                actor={manualPublicCurrentCombatant}
-                                currentTurnEntry={manualPublicCurrentTurn}
-                                selectedCombatAction={selectedCombatAction}
-                                manualTurnActive={manualPublicTurnOrder.length > 0}
+                                actor={commandActor}
+                                currentTurnEntry={commandTurnEntry}
+                                selectedCombatAction={activeSelectedCombatAction}
+                                manualTurnActive={commandManualTurnActive}
                                 onApplyPosture={applyManualPublicGuardPosture}
                               />
                             )}
-                            {(selectedCombatAction?.type === "move" ||
-                              selectedCombatAction?.type === "run" ||
-                              selectedCombatAction?.type === "charge") && (
+                            {(activeSelectedCombatAction?.type === "move" ||
+                              activeSelectedCombatAction?.type === "run" ||
+                              activeSelectedCombatAction?.type === "charge") && (
                               <MovementActionHandler
-                                actor={manualPublicCurrentCombatant}
-                                currentTurnEntry={manualPublicCurrentTurn}
-                                selectedCombatAction={selectedCombatAction}
-                                selectedTarget={selectedTarget || manualPublicCatalogTargets[0] || null}
-                                manualTurnActive={manualPublicTurnOrder.length > 0}
+                                actor={commandActor}
+                                currentTurnEntry={commandTurnEntry}
+                                selectedCombatAction={activeSelectedCombatAction}
+                                selectedTarget={selectedTarget || commandCatalogTargets[0] || null}
+                                manualTurnActive={commandManualTurnActive}
                                 executionAvailable={showTacticalMap}
                                 movementActive={
                                   movementMode.active &&
-                                  String(selectedMovementFighter || "") === String(manualPublicCurrentTurn?.id || "")
+                                  String(selectedMovementFighter || "") === String(commandTurnEntry?.id || "")
                                 }
                                 movementResult={selectedMovementCommandResult}
                                 onExecute={activateSelectedMovementTargeting}
                               />
                             )}
-                            {selectedCombatAction?.type === "use-item" && (
+                            {activeSelectedCombatAction?.type === "use-item" && (
                               <UseItemActionHandler
-                                actor={manualPublicCurrentCombatant}
-                                currentTurnEntry={manualPublicCurrentTurn}
-                                selectedCombatAction={selectedCombatAction}
+                                actor={commandActor}
+                                currentTurnEntry={commandTurnEntry}
+                                selectedCombatAction={activeSelectedCombatAction}
                               />
                             )}
-                            {selectedCombatAction?.type === "use-skill" && (
+                            {activeSelectedCombatAction?.type === "use-skill" && (
                               <UseSkillActionHandler
-                                actor={manualPublicCurrentCombatant}
-                                currentTurnEntry={manualPublicCurrentTurn}
-                                selectedCombatAction={selectedCombatAction}
+                                actor={commandActor}
+                                currentTurnEntry={commandTurnEntry}
+                                selectedCombatAction={activeSelectedCombatAction}
                               />
                             )}
                           </SelectedCombatActionPanel>

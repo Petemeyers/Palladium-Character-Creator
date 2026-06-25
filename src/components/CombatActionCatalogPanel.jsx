@@ -34,9 +34,11 @@ const CombatActionCatalogPanel = ({
   inventory = [],
   compatibilityActions = [],
   selectedCombatAction = null,
+  disabledReason = "",
   onSelectCombatAction,
 }) => {
-  const actions = useMemo(() => buildCombatActionCatalog({
+  const actions = useMemo(() => {
+    const built = buildCombatActionCatalog({
     actor,
     targets,
     currentTurnEntry,
@@ -44,7 +46,14 @@ const CombatActionCatalogPanel = ({
     equippedWeapons,
     inventory,
     compatibilityActions,
-  }), [
+    });
+    if (!disabledReason) return built;
+    return built.map((action) => ({
+      ...action,
+      enabled: false,
+      disabledReason,
+    }));
+  }, [
     actor,
     targets,
     currentTurnEntry,
@@ -52,6 +61,7 @@ const CombatActionCatalogPanel = ({
     equippedWeapons,
     inventory,
     compatibilityActions,
+    disabledReason,
   ]);
 
   if (!actor) return null;
@@ -66,6 +76,11 @@ const CombatActionCatalogPanel = ({
             <Text fontSize="xs" color="gray.600">
               Command list for {actor.name || "current combatant"}.
             </Text>
+            {disabledReason && (
+              <Text fontSize="xs" color="orange.700">
+                {disabledReason}
+              </Text>
+            )}
           </Box>
           <Badge colorScheme="purple">{actions.length} action{actions.length === 1 ? "" : "s"}</Badge>
         </HStack>

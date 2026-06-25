@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 
 import { buildCombatActionCatalog } from "../src/utils/combatActionCatalog.js";
+import { buildCombatCommandTurnBridge } from "../src/utils/combatCommandTurnBridge.js";
 
 const hasFunction = (value) => {
   if (typeof value === "function") return true;
@@ -97,6 +98,20 @@ assert.equal(noStaminaAttack.enabled, false, "0 stamina disables stamina-cost en
 assert.equal(noStaminaAttack.disabledReason, "No stamina remaining.");
 const noStaminaDefend = noStaminaCatalog.find((action) => action.name === "Defend");
 assert.equal(noStaminaDefend.enabled, true, "0 stamina does not disable zero-stamina display entries");
+
+const bridgedTurn = buildCombatCommandTurnBridge({
+  combatActive: true,
+  liveActor: { ...actor, remainingActions: 1 },
+  liveInitiativeIndex: 2,
+});
+const bridgedCatalog = buildCombatActionCatalog({
+  actor,
+  currentTurnEntry: bridgedTurn.turnEntry,
+  targets: [target],
+  selectedTarget: target,
+  equippedWeapons: [weapon],
+});
+assert.equal(bridgedCatalog.find((action) => action.name === "Attack with Shortsword").enabled, true, "catalog accepts bridged live turn entry");
 
 assert.deepEqual(buildCombatActionCatalog(), [], "missing input does not throw");
 assert.doesNotThrow(() => buildCombatActionCatalog({ actor: {}, targets: "bad", inventory: true, equippedWeapons: false }));
