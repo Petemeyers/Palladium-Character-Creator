@@ -12,6 +12,7 @@ import {
   getMovementTargetingButtonState,
   getMovementCommandPreview,
 } from "../utils/combatMovementCommand.js";
+import { commandBlockedLog } from "../utils/combatCommandLog.js";
 
 const MovementActionHandler = ({
   actor = null,
@@ -23,6 +24,7 @@ const MovementActionHandler = ({
   movementActive = false,
   movementResult = null,
   onExecute,
+  onCommandLog,
 }) => {
   const preview = getMovementCommandPreview({
     actor,
@@ -97,9 +99,19 @@ const MovementActionHandler = ({
           colorScheme="blue"
           alignSelf="start"
           onClick={() => {
-            if (canExecute) onExecute({ action: selectedCombatAction, preview });
+            if (!canExecute) {
+              onCommandLog?.(
+                commandBlockedLog({
+                  action: selectedCombatAction || preview.actionName,
+                  reason: guard.reason || "movement targeting unavailable.",
+                }),
+                "warning"
+              );
+              return;
+            }
+            onExecute({ action: selectedCombatAction, preview });
           }}
-          isDisabled={!canExecute}
+          isDisabled={typeof onExecute !== "function"}
         >
           {buttonState.label}
         </Button>

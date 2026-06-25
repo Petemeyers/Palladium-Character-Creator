@@ -103,6 +103,14 @@ import {
   selectedActionMatchesCommandTurn,
 } from "../utils/combatCommandTurnBridge.js";
 import { canExecuteMovementCommand } from "../utils/combatMovementCommand.js";
+import {
+  commandBlockedLog,
+  commandCompletedLog,
+  commandSelectedLog,
+  movementTargetingCommandLog,
+  postureCommandLog,
+  recoveryCommandLog,
+} from "../utils/combatCommandLog.js";
 import { applyPublicCombatDamage, getPublicCombatHpInfo } from "../utils/publicCombatHp.js";
 import { addWoundRecord, createWoundRecord } from "../utils/combatWoundRecords.js";
 import {
@@ -9009,7 +9017,7 @@ function CombatPage({ characters = [] }) {
     if (!guard.ok) {
       const message = guard.reason || "Movement mode is unavailable.";
       setSelectedMovementCommandResult({ ok: false, status: "inactive", message });
-      addLog(message, "warning");
+      addLog(commandBlockedLog({ action, reason: message }), "warning");
       return { ok: false, message };
     }
 
@@ -9030,7 +9038,7 @@ function CombatPage({ characters = [] }) {
       manualMovementRequestActiveRef.current = false;
       manualMovementRequestIdRef.current += 1;
       setSelectedMovementCommandResult({ ok: false, status: "inactive", message });
-      addLog(message, "warning");
+      addLog(commandBlockedLog({ action, reason: message }), "warning");
       return { ok: false, message };
     }
 
@@ -9054,13 +9062,7 @@ function CombatPage({ characters = [] }) {
     setShowMovementSelection(true);
     setSelectedHex(null);
     setSelectedMovementHex(null);
-    addLog(
-      `${actor.name || "Combatant"} begins ${mode === "run" ? "run" : mode === "charge" ? "charge" : "move"} targeting. Select a destination hex.`,
-      "info"
-    );
-    if (mode === "charge") {
-      addLog("Charge attack follow-through pending.", "info");
-    }
+    addLog(movementTargetingCommandLog({ actor, actionType: mode }), "info");
     return { ok: true };
   }, [
     addLog,
@@ -9090,7 +9092,7 @@ function CombatPage({ characters = [] }) {
         const message = "Movement completed, but the live turn combatant was not found.";
         pendingSelectedMovementCommandRef.current = null;
         setSelectedMovementCommandResult({ ok: false, status: "moved", message });
-        addLog(message, "warning");
+        addLog(commandBlockedLog({ action: pending.actionName, reason: message }), "warning");
         return { ok: false, message };
       }
 
@@ -9108,7 +9110,7 @@ function CombatPage({ characters = [] }) {
           const message = "Movement completed, but no stamina was available to spend.";
           pendingSelectedMovementCommandRef.current = null;
           setSelectedMovementCommandResult({ ok: false, status: "moved", message });
-          addLog(message, "warning");
+          addLog(commandBlockedLog({ action: pending.actionName, reason: message }), "warning");
           return { ok: false, message };
         }
         commitFighters((prev) => {
@@ -9145,7 +9147,7 @@ function CombatPage({ characters = [] }) {
 
       pendingSelectedMovementCommandRef.current = null;
       setSelectedMovementCommandResult({ ok: true, status: "moved", message });
-      addLog(message, "info");
+      addLog(commandCompletedLog({ actor: updatedFighter, action: pending.actionName, detail: message }), "info");
       return { ok: true, message, actionCost };
     }
 
@@ -9154,7 +9156,7 @@ function CombatPage({ characters = [] }) {
       const message = "Movement completed, but manual turn order was not active for this combatant.";
       pendingSelectedMovementCommandRef.current = null;
       setSelectedMovementCommandResult({ ok: false, status: "moved", message });
-      addLog(message, "warning");
+      addLog(commandBlockedLog({ action: pending.actionName, reason: message }), "warning");
       return { ok: false, message };
     }
 
@@ -9172,7 +9174,7 @@ function CombatPage({ characters = [] }) {
       const message = "Movement completed, but no manual action was available to spend.";
       pendingSelectedMovementCommandRef.current = null;
       setSelectedMovementCommandResult({ ok: false, status: "moved", message });
-      addLog(message, "warning");
+      addLog(commandBlockedLog({ action: pending.actionName, reason: message }), "warning");
       return { ok: false, message };
     }
 
@@ -9191,7 +9193,7 @@ function CombatPage({ characters = [] }) {
       const message = "Movement completed, but no stamina was available to spend.";
       pendingSelectedMovementCommandRef.current = null;
       setSelectedMovementCommandResult({ ok: false, status: "moved", message });
-      addLog(message, "warning");
+      addLog(commandBlockedLog({ action: pending.actionName, reason: message }), "warning");
       return { ok: false, message };
     }
 
@@ -9230,7 +9232,7 @@ function CombatPage({ characters = [] }) {
 
     pendingSelectedMovementCommandRef.current = null;
     setSelectedMovementCommandResult({ ok: true, status: "moved", message });
-    addLog(message, "info");
+    addLog(commandCompletedLog({ actor: nextTurnEntry, action: pending.actionName, detail: message }), "info");
     return { ok: true, message };
   }, [
     addLog,
@@ -24775,6 +24777,7 @@ function CombatPage({ characters = [] }) {
     );
 
     if (targetIndex < 0) {
+      addLog(commandBlockedLog({ action: "Attack", reason: "target was not found." }), "warning");
       return {
         ok: false,
         missingFields: ["target"],
@@ -24798,6 +24801,7 @@ function CombatPage({ characters = [] }) {
     if (currentCommandTurn && String(attackerId) === String(currentCommandTurn.id)) {
       const spendResult = spendAction(currentCommandTurn, 1);
       if (!spendResult.ok) {
+        addLog(commandBlockedLog({ action: "Attack", reason: "No actions remaining." }), "warning");
         return {
           ok: false,
           missingFields: ["remainingActions"],
@@ -24806,6 +24810,7 @@ function CombatPage({ characters = [] }) {
       }
       const staminaResult = spendStamina(spendResult.updated, 1);
       if (!staminaResult.ok) {
+        addLog(commandBlockedLog({ action: "Attack", reason: "No stamina remaining." }), "warning");
         return {
           ok: false,
           missingFields: ["currentStamina"],
@@ -24885,7 +24890,18 @@ function CombatPage({ characters = [] }) {
       actionMessage +
       staminaMessage;
 
-    addLog(message, applyResult.newHp === 0 ? "warning" : "combat");
+    const commandLogDetail =
+      `hits ${result?.targetName || applyResult.updatedTarget.name || "Target"} ` +
+      `with ${result?.attackName || "Basic Attack"}. ` +
+      `Raw damage: ${rawDamage}. Armor reduction: ${armorReduction}. Final damage: ${finalDamage}. ` +
+      `${updatedTarget.name || "Target"} HP: ${applyResult.oldHp} -> ${applyResult.newHp}.` +
+      woundMessage +
+      woundRecordMessage +
+      (finalDamage === 0 && !result?.woundPreview?.note ? " Armor absorbed the blow." : "") +
+      (applyResult.newHp === 0 ? ` ${updatedTarget.name || "Target"} is at 0 HP.` : "") +
+      actionMessage +
+      staminaMessage;
+    addLog(commandCompletedLog({ actor: attacker, action: result?.attackName || "Attack", detail: commandLogDetail }), applyResult.newHp === 0 ? "warning" : "combat");
 
     return {
       ...applyResult,
@@ -24900,6 +24916,7 @@ function CombatPage({ characters = [] }) {
   function applyManualPublicRecovery({ actorId, action, recoveryAmount } = {}) {
     const currentCommandTurn = commandTurnEntry || manualPublicTurnOrder[manualPublicTurnIndex] || null;
     if (!currentCommandTurn || String(actorId) !== String(currentCommandTurn.id)) {
+      addLog(commandBlockedLog({ action: action || "Recover", reason: "Recover can only be used by the current turn combatant." }), "warning");
       return {
         ok: false,
         missingFields: ["currentTurn"],
@@ -24910,6 +24927,7 @@ function CombatPage({ characters = [] }) {
     const amount = recoveryAmount ?? getRecoveryAmount(currentCommandTurn, action);
     const recoveryResult = applyStaminaRecovery(currentCommandTurn, amount);
     if (!recoveryResult.ok) {
+      addLog(commandBlockedLog({ action: action || "Recover", reason: recoveryResult.message || "Cannot recover stamina." }), "warning");
       return recoveryResult.message === "Stamina already full."
         ? { ...recoveryResult, message: "Stamina already full." }
         : {
@@ -24920,6 +24938,7 @@ function CombatPage({ characters = [] }) {
 
     const spendResult = spendAction(recoveryResult.updated, 1);
     if (!spendResult.ok) {
+      addLog(commandBlockedLog({ action: action || "Recover", reason: "No actions remaining." }), "warning");
       return {
         ok: false,
         missingFields: ["remainingActions"],
@@ -24956,7 +24975,13 @@ function CombatPage({ characters = [] }) {
       `${name} catches breath: stamina ${recoveryResult.oldStamina}/${recoveryResult.maxStamina} -> ` +
       `${recoveryResult.newStamina}/${recoveryResult.maxStamina}. ` +
       `Action spent: ${spendResult.remainingActions}/${spendResult.maxActions} remaining.`;
-    addLog(message, "info");
+    addLog(
+      `${recoveryCommandLog({ actor: nextTurnEntry, recovered: recoveryResult.recovered })} ` +
+      `Stamina ${recoveryResult.oldStamina}/${recoveryResult.maxStamina} -> ` +
+      `${recoveryResult.newStamina}/${recoveryResult.maxStamina}. ` +
+      `Action spent: ${spendResult.remainingActions}/${spendResult.maxActions} remaining.`,
+      "info"
+    );
 
     return {
       ok: true,
@@ -24976,6 +25001,7 @@ function CombatPage({ characters = [] }) {
   function applyManualPublicDefend({ actorId } = {}) {
     const currentCommandTurn = commandTurnEntry || manualPublicTurnOrder[manualPublicTurnIndex] || null;
     if (!currentCommandTurn || String(actorId) !== String(currentCommandTurn.id)) {
+      addLog(commandBlockedLog({ action: "Defend", reason: "Defend can only be used by the current turn combatant." }), "warning");
       return {
         ok: false,
         missingFields: ["currentTurn"],
@@ -24984,6 +25010,7 @@ function CombatPage({ characters = [] }) {
     }
 
     if (getCombatPosture(currentCommandTurn)?.type === "defending") {
+      addLog(commandBlockedLog({ action: "Defend", reason: "Already defending." }), "warning");
       return {
         ok: false,
         missingFields: [],
@@ -24993,6 +25020,7 @@ function CombatPage({ characters = [] }) {
 
     const spendResult = spendAction(currentCommandTurn, 1);
     if (!spendResult.ok) {
+      addLog(commandBlockedLog({ action: "Defend", reason: "No actions remaining." }), "warning");
       return {
         ok: false,
         missingFields: ["remainingActions"],
@@ -25030,7 +25058,11 @@ function CombatPage({ characters = [] }) {
     const message =
       `${name} enters a defensive posture. ` +
       `Action spent: ${spendResult.remainingActions}/${spendResult.maxActions} remaining.`;
-    addLog(message, "info");
+    addLog(
+      `${postureCommandLog({ actor: nextTurnEntry, postureLabel: "Defensive" })} ` +
+      `Action spent: ${spendResult.remainingActions}/${spendResult.maxActions} remaining.`,
+      "info"
+    );
 
     return {
       ok: true,
@@ -25049,6 +25081,7 @@ function CombatPage({ characters = [] }) {
     const normalizedPostureType = postureType === "evading" ? "evading" : "blocking";
     const postureLabel = normalizedPostureType === "evading" ? "evading" : "blocking";
     if (!currentCommandTurn || String(actorId) !== String(currentCommandTurn.id)) {
+      addLog(commandBlockedLog({ action: normalizedPostureType === "evading" ? "Evade" : "Block", reason: "This action can only be used by the current turn combatant." }), "warning");
       return {
         ok: false,
         missingFields: ["currentTurn"],
@@ -25057,6 +25090,7 @@ function CombatPage({ characters = [] }) {
     }
 
     if (getCombatPosture(currentCommandTurn)?.type === normalizedPostureType) {
+      addLog(commandBlockedLog({ action: normalizedPostureType === "evading" ? "Evade" : "Block", reason: normalizedPostureType === "evading" ? "Already evading." : "Already blocking." }), "warning");
       return {
         ok: false,
         missingFields: [],
@@ -25066,6 +25100,7 @@ function CombatPage({ characters = [] }) {
 
     const spendResult = spendAction(currentCommandTurn, 1);
     if (!spendResult.ok) {
+      addLog(commandBlockedLog({ action: normalizedPostureType === "evading" ? "Evade" : "Block", reason: "No actions remaining." }), "warning");
       return {
         ok: false,
         missingFields: ["remainingActions"],
@@ -25104,7 +25139,11 @@ function CombatPage({ characters = [] }) {
     const message =
       `${name} enters a ${postureLabel} posture. ` +
       `Action spent: ${spendResult.remainingActions}/${spendResult.maxActions} remaining.`;
-    addLog(message, "info");
+    addLog(
+      `${postureCommandLog({ actor: nextTurnEntry, postureLabel: normalizedPostureType === "evading" ? "Evading" : "Blocking" })} ` +
+      `Action spent: ${spendResult.remainingActions}/${spendResult.maxActions} remaining.`,
+      "info"
+    );
 
     return {
       ok: true,
@@ -30858,6 +30897,9 @@ function CombatPage({ characters = [] }) {
                             selectedCombatAction={activeSelectedCombatAction}
                             disabledReason={commandCenterDisabledReason}
                             onSelectCombatAction={(action) => {
+                              if (action?.id && action.id !== activeSelectedCombatAction?.id) {
+                                addLog(commandSelectedLog({ actor: commandActor, action }), "info");
+                              }
                               setSelectedCombatAction(action);
                               setSelectedMovementCommandResult(null);
                               if (action?.type !== "move" && action?.type !== "run" && action?.type !== "charge") {
@@ -30891,6 +30933,7 @@ function CombatPage({ characters = [] }) {
                                       fatigueLabel: commandTurnEntry.fatigueLabel,
                                     }
                                   : null}
+                                onCommandLog={addLog}
                               />
                             )}
                             {activeSelectedCombatAction?.type === "recover" && (
@@ -30900,6 +30943,7 @@ function CombatPage({ characters = [] }) {
                                 selectedCombatAction={activeSelectedCombatAction}
                                 manualTurnActive={commandManualTurnActive}
                                 onRecover={applyManualPublicRecovery}
+                                onCommandLog={addLog}
                               />
                             )}
                             {activeSelectedCombatAction?.type === "defend" && (
@@ -30909,6 +30953,7 @@ function CombatPage({ characters = [] }) {
                                 selectedCombatAction={activeSelectedCombatAction}
                                 manualTurnActive={commandManualTurnActive}
                                 onDefend={applyManualPublicDefend}
+                                onCommandLog={addLog}
                               />
                             )}
                             {(activeSelectedCombatAction?.type === "block" || activeSelectedCombatAction?.type === "evade") && (
@@ -30918,6 +30963,7 @@ function CombatPage({ characters = [] }) {
                                 selectedCombatAction={activeSelectedCombatAction}
                                 manualTurnActive={commandManualTurnActive}
                                 onApplyPosture={applyManualPublicGuardPosture}
+                                onCommandLog={addLog}
                               />
                             )}
                             {(activeSelectedCombatAction?.type === "move" ||
@@ -30936,6 +30982,7 @@ function CombatPage({ characters = [] }) {
                                 }
                                 movementResult={selectedMovementCommandResult}
                                 onExecute={activateSelectedMovementTargeting}
+                                onCommandLog={addLog}
                               />
                             )}
                             {activeSelectedCombatAction?.type === "use-item" && (
@@ -30943,6 +30990,7 @@ function CombatPage({ characters = [] }) {
                                 actor={commandActor}
                                 currentTurnEntry={commandTurnEntry}
                                 selectedCombatAction={activeSelectedCombatAction}
+                                onCommandLog={addLog}
                               />
                             )}
                             {activeSelectedCombatAction?.type === "use-skill" && (
@@ -30950,6 +30998,7 @@ function CombatPage({ characters = [] }) {
                                 actor={commandActor}
                                 currentTurnEntry={commandTurnEntry}
                                 selectedCombatAction={activeSelectedCombatAction}
+                                onCommandLog={addLog}
                               />
                             )}
                           </SelectedCombatActionPanel>

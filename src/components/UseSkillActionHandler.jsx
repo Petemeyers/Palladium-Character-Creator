@@ -11,11 +11,13 @@ import {
   canUseSkillCommand,
   getSkillCommandPreview,
 } from "../utils/combatSkillCommand.js";
+import { commandBlockedLog } from "../utils/combatCommandLog.js";
 
 const UseSkillActionHandler = ({
   actor = null,
   currentTurnEntry = null,
   selectedCombatAction = null,
+  onCommandLog,
 }) => {
   const preview = getSkillCommandPreview({
     actor,
@@ -50,7 +52,20 @@ const UseSkillActionHandler = ({
           {guard.reason || preview.handlerStatus}
         </Text>
 
-        <Button size="sm" colorScheme="purple" alignSelf="start" isDisabled>
+        <Button
+          size="sm"
+          colorScheme="purple"
+          alignSelf="start"
+          onClick={() => {
+            onCommandLog?.(
+              commandBlockedLog({
+                action: selectedCombatAction || "Use Skill",
+                reason: guard.reason || "skill handler pending.",
+              }),
+              "warning"
+            );
+          }}
+        >
           Use Skill Pending
         </Button>
       </VStack>

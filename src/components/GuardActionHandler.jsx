@@ -10,6 +10,7 @@ import {
   VStack,
 } from "@chakra-ui/react";
 import { getCombatPosture } from "../utils/combatPosture.js";
+import { commandBlockedLog } from "../utils/combatCommandLog.js";
 
 const getId = (combatant) =>
   String(combatant?.id || combatant?._id || combatant?.fighterId || combatant?.characterId || "");
@@ -66,6 +67,7 @@ const GuardActionHandler = ({
   selectedCombatAction = null,
   manualTurnActive = false,
   onApplyPosture,
+  onCommandLog,
 }) => {
   const [result, setResult] = useState(null);
   const actionType = selectedCombatAction?.type === "evade" ? "evade" : "block";
@@ -82,7 +84,15 @@ const GuardActionHandler = ({
   const canApply = !guardMessage && typeof onApplyPosture === "function";
 
   const handleApply = () => {
-    if (!canApply) return;
+    if (!canApply) {
+      const message = commandBlockedLog({
+        action: selectedCombatAction || postureConfig.label,
+        reason: guardMessage || `${postureConfig.label} unavailable.`,
+      });
+      onCommandLog?.(message, "warning");
+      setResult({ ok: false, message });
+      return;
+    }
     const nextResult = onApplyPosture({
       actorId: currentTurnEntry?.id || getId(actor),
       action: selectedCombatAction,
@@ -122,7 +132,7 @@ const GuardActionHandler = ({
           colorScheme="green"
           alignSelf="start"
           onClick={handleApply}
-          isDisabled={!canApply}
+          isDisabled={typeof onApplyPosture !== "function"}
         >
           {postureConfig.button}
         </Button>

@@ -11,11 +11,13 @@ import {
   canUseItemCommand,
   getItemCommandPreview,
 } from "../utils/combatItemCommand.js";
+import { commandBlockedLog } from "../utils/combatCommandLog.js";
 
 const UseItemActionHandler = ({
   actor = null,
   currentTurnEntry = null,
   selectedCombatAction = null,
+  onCommandLog,
 }) => {
   const preview = getItemCommandPreview({
     actor,
@@ -50,7 +52,20 @@ const UseItemActionHandler = ({
           {guard.reason || preview.handlerStatus}
         </Text>
 
-        <Button size="sm" colorScheme="orange" alignSelf="start" isDisabled>
+        <Button
+          size="sm"
+          colorScheme="orange"
+          alignSelf="start"
+          onClick={() => {
+            onCommandLog?.(
+              commandBlockedLog({
+                action: selectedCombatAction || "Use Item",
+                reason: guard.reason || "item effect handler pending.",
+              }),
+              "warning"
+            );
+          }}
+        >
           Use Item Pending
         </Button>
       </VStack>

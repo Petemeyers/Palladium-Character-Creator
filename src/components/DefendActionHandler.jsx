@@ -10,6 +10,7 @@ import {
   VStack,
 } from "@chakra-ui/react";
 import { getCombatPosture } from "../utils/combatPosture.js";
+import { commandBlockedLog } from "../utils/combatCommandLog.js";
 
 const getId = (combatant) =>
   String(combatant?.id || combatant?._id || combatant?.fighterId || combatant?.characterId || "");
@@ -48,6 +49,7 @@ const DefendActionHandler = ({
   selectedCombatAction = null,
   manualTurnActive = false,
   onDefend,
+  onCommandLog,
 }) => {
   const [result, setResult] = useState(null);
   const posture = getCombatPosture(currentTurnEntry || actor || {});
@@ -61,7 +63,15 @@ const DefendActionHandler = ({
   const canDefend = !guardMessage && typeof onDefend === "function";
 
   const handleDefend = () => {
-    if (!canDefend) return;
+    if (!canDefend) {
+      const message = commandBlockedLog({
+        action: selectedCombatAction || "Defend",
+        reason: guardMessage || "defend unavailable.",
+      });
+      onCommandLog?.(message, "warning");
+      setResult({ ok: false, message });
+      return;
+    }
     const nextResult = onDefend({
       actorId: currentTurnEntry?.id || getId(actor),
       action: selectedCombatAction,
@@ -100,7 +110,7 @@ const DefendActionHandler = ({
           colorScheme="green"
           alignSelf="start"
           onClick={handleDefend}
-          isDisabled={!canDefend}
+          isDisabled={typeof onDefend !== "function"}
         >
           Enter Defensive Posture
         </Button>

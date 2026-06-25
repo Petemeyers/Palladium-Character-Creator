@@ -10,6 +10,7 @@ import {
   VStack,
 } from "@chakra-ui/react";
 import { applyStaminaRecovery, getRecoveryAmount } from "../utils/combatRecovery.js";
+import { commandBlockedLog } from "../utils/combatCommandLog.js";
 
 const getId = (combatant) =>
   String(combatant?.id || combatant?._id || combatant?.fighterId || combatant?.characterId || "");
@@ -51,6 +52,7 @@ const RecoverActionHandler = ({
   selectedCombatAction = null,
   manualTurnActive = false,
   onRecover,
+  onCommandLog,
 }) => {
   const [result, setResult] = useState(null);
   const recoveryAmount = getRecoveryAmount(currentTurnEntry || actor || {}, selectedCombatAction || {});
@@ -70,7 +72,15 @@ const RecoverActionHandler = ({
   const canRecover = !guardMessage && typeof onRecover === "function";
 
   const handleRecover = () => {
-    if (!canRecover) return;
+    if (!canRecover) {
+      const message = commandBlockedLog({
+        action: selectedCombatAction || "Recover",
+        reason: guardMessage || "recovery unavailable.",
+      });
+      onCommandLog?.(message, "warning");
+      setResult({ ok: false, message });
+      return;
+    }
     const nextResult = onRecover({
       actorId: currentTurnEntry?.id || getId(actor),
       action: selectedCombatAction,
@@ -109,7 +119,7 @@ const RecoverActionHandler = ({
           colorScheme="teal"
           alignSelf="start"
           onClick={handleRecover}
-          isDisabled={!canRecover}
+          isDisabled={typeof onRecover !== "function"}
         >
           Recover Stamina
         </Button>

@@ -23,6 +23,7 @@ import {
 import { previewWound } from "../utils/combatWounds.js";
 import { getWoundRecords } from "../utils/combatWoundRecords.js";
 import { validateAttackRange } from "../utils/combatRangeValidation.js";
+import { commandBlockedLog } from "../utils/combatCommandLog.js";
 
 const getId = (combatant, index) =>
   String(combatant?.id || combatant?._id || combatant?.name || index);
@@ -35,6 +36,7 @@ const ManualPublicAttackTest = ({
   currentTurnActions = null,
   currentTurnStamina = null,
   selectedCombatAction = null,
+  onCommandLog,
 }) => {
   const [attackerId, setAttackerId] = useState("");
   const [targetId, setTargetId] = useState("");
@@ -152,7 +154,26 @@ const ManualPublicAttackTest = ({
   }, [currentTurnId, preferredAttackerId, rows, selectedCombatAction]);
 
   const handleResolve = () => {
-    if (attackOutOfRange) return;
+    if (!attackerRow || !targetRow || !selectedAttack) {
+      onCommandLog?.(
+        commandBlockedLog({
+          action: selectedCombatAction || "Attack",
+          reason: "attacker, target, or attack is missing.",
+        }),
+        "warning"
+      );
+      return;
+    }
+    if (attackOutOfRange) {
+      onCommandLog?.(
+        commandBlockedLog({
+          action: selectedCombatAction || "Attack",
+          reason: rangeValidation.message || "target out of reach.",
+        }),
+        "warning"
+      );
+      return;
+    }
     const nextResult = resolvePublicBasicAttack({
       attacker: attackerRow?.combatant,
       target: targetRow?.combatant,
@@ -289,7 +310,6 @@ const ManualPublicAttackTest = ({
             size="sm"
             colorScheme="purple"
             onClick={handleResolve}
-            isDisabled={!attackerRow || !targetRow || !selectedAttack || attackOutOfRange}
           >
             Resolve Basic Attack
           </Button>
