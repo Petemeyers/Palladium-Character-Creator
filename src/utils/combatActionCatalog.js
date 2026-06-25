@@ -372,7 +372,7 @@ const buildDefensiveRecoveryActions = ({ actor, currentTurnEntry }) => [
     source: "manual catalog",
     category: "Defense",
     costActions: 1,
-    previewSummary: "Enter blocking posture until this combatant's next turn. No block math applied yet.",
+    previewSummary: "Enter blocking posture until this combatant's next turn.",
   }),
   makeAction({
     actor,
@@ -383,7 +383,7 @@ const buildDefensiveRecoveryActions = ({ actor, currentTurnEntry }) => [
     source: "manual catalog",
     category: "Defense",
     costActions: 1,
-    previewSummary: "Enter evading posture until this combatant's next turn. No evade math applied yet.",
+    previewSummary: "Enter evading posture until this combatant's next turn.",
   }),
   makeAction({
     actor,

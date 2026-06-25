@@ -48,7 +48,7 @@ assert.deepEqual(blocking, {
   createdRound: 2,
   createdTurnIndex: 3,
   expires: "next-turn",
-  note: "Blocking posture active until this combatant's next turn. No block math applied yet.",
+  note: "Blocking posture active until this combatant's next turn.",
 });
 assert.equal(hasFunction(blocking), false, "blocking posture contains no functions");
 assert.equal(Object.values(blocking).some((value) => value && typeof value === "object"), false, "blocking posture stores no raw objects");
@@ -60,7 +60,7 @@ assert.deepEqual(evading, {
   createdRound: 2,
   createdTurnIndex: 3,
   expires: "next-turn",
-  note: "Evading posture active until this combatant's next turn. No evade math applied yet.",
+  note: "Evading posture active until this combatant's next turn.",
 });
 assert.equal(hasFunction(evading), false, "evading posture contains no functions");
 assert.equal(Object.values(evading).some((value) => value && typeof value === "object"), false, "evading posture stores no raw objects");

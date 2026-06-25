@@ -88,7 +88,7 @@ const DefendActionHandler = ({
           Enter defensive posture until this combatant&apos;s next turn.
         </Text>
         <Text fontSize="xs" color="gray.600">
-          No defensive math is applied yet.
+          Manual attack defense bonus applies while this posture is active.
         </Text>
 
         {guardMessage && (

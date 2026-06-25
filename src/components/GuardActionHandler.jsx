@@ -26,14 +26,14 @@ const POSTURE_BY_ACTION = {
     label: "Blocking",
     button: "Enter Blocking Posture",
     already: "Already blocking.",
-    note: "No block math is applied yet.",
+    note: "Manual attack damage reduction applies while this posture is active.",
   },
   evade: {
     type: "evading",
     label: "Evading",
     button: "Enter Evading Posture",
     already: "Already evading.",
-    note: "No evade math is applied yet.",
+    note: "Manual attack defense bonus applies while this posture is active.",
   },
 };
 

@@ -9,13 +9,13 @@ const POSTURE_DEFINITIONS = {
     type: "blocking",
     label: "Blocking",
     expires: "next-turn",
-    note: "Blocking posture active until this combatant's next turn. No block math applied yet.",
+    note: "Blocking posture active until this combatant's next turn.",
   },
   evading: {
     type: "evading",
     label: "Evading",
     expires: "next-turn",
-    note: "Evading posture active until this combatant's next turn. No evade math applied yet.",
+    note: "Evading posture active until this combatant's next turn.",
   },
 };
 

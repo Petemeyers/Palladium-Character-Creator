@@ -16,6 +16,10 @@ import { getEncounterReadinessSummary } from "../utils/publicCombatReadiness.js"
 import { resolvePublicBasicAttack } from "../utils/publicBasicAttackResolver.js";
 import { getPublicCombatHpInfo } from "../utils/publicCombatHp.js";
 import { applyArmorMitigation, getArmorProfile } from "../utils/combatArmor.js";
+import {
+  applyPostureEffectsToDamage,
+  getPostureEffect,
+} from "../utils/combatPostureEffects.js";
 import { previewWound } from "../utils/combatWounds.js";
 import { getWoundRecords } from "../utils/combatWoundRecords.js";
 import { validateAttackRange } from "../utils/combatRangeValidation.js";
@@ -65,6 +69,7 @@ const ManualPublicAttackTest = ({
   const attackOutOfRange = rangeValidation.inRange === false;
   const targetHpInfo = getPublicCombatHpInfo(targetRow?.combatant || {});
   const targetArmorProfile = getArmorProfile(targetRow?.combatant || {});
+  const targetPostureEffect = getPostureEffect(targetRow?.combatant || {});
   const targetWoundRecords = getWoundRecords(targetRow?.combatant || {});
   const selectedAttackerIsCurrentTurn = currentTurnId && attackerId === String(currentTurnId);
   const currentTurnHasNoActions =
@@ -160,21 +165,30 @@ const ManualPublicAttackTest = ({
           rawDamage: nextResult.damageTotal,
         })
       : null;
-    const woundPreview = armorMitigation
-      ? previewWound({
-          attack: selectedAttack,
+    const postureDamage = armorMitigation
+      ? applyPostureEffectsToDamage({
           target: targetRow?.combatant,
           rawDamage: armorMitigation.rawDamage,
           armorReduction: armorMitigation.armorReduction,
           finalDamage: armorMitigation.finalDamage,
         })
       : null;
+    const woundPreview = armorMitigation
+      ? previewWound({
+          attack: selectedAttack,
+          target: targetRow?.combatant,
+          rawDamage: postureDamage.rawDamage,
+          armorReduction: postureDamage.armorReduction,
+          finalDamage: postureDamage.finalDamage,
+        })
+      : null;
 
     setResult({
       ...nextResult,
       armorMitigation,
+      postureDamage,
       woundPreview,
-      finalDamage: armorMitigation?.finalDamage ?? nextResult.damageTotal,
+      finalDamage: postureDamage?.finalDamage ?? armorMitigation?.finalDamage ?? nextResult.damageTotal,
     });
   };
 
@@ -327,9 +341,18 @@ const ManualPublicAttackTest = ({
         )}
 
         {targetRow && (
-          <Text fontSize="xs" color="gray.600">
-            Armor reduction: {targetArmorProfile.reduction} ({targetArmorProfile.source})
-          </Text>
+          <VStack align="stretch" spacing={1}>
+            <Text fontSize="xs" color="gray.600">
+              Armor reduction: {targetArmorProfile.reduction} ({targetArmorProfile.source})
+            </Text>
+            {targetPostureEffect.postureLabel && (
+              <Text fontSize="xs" color="blue.700">
+                Active target posture: {targetPostureEffect.postureLabel}
+                {targetPostureEffect.defenseModifier > 0 ? `; Defense +${targetPostureEffect.defenseModifier}` : ""}
+                {targetPostureEffect.damageReduction > 0 ? `; Final damage -${targetPostureEffect.damageReduction}` : ""}
+              </Text>
+            )}
+          </VStack>
         )}
 
         {targetRow && targetWoundRecords.length > 0 && (
@@ -358,13 +381,24 @@ const ManualPublicAttackTest = ({
               {result.ok && (
                 <Text fontSize="xs">
                   Roll {result.d20Roll} + {result.attackBonus} = {result.totalToHit}; AC/Guard {result.targetArmor}
+                  {result.postureEffect?.defenseModifier > 0 && result.baseTargetArmor !== result.targetArmor ? ` (base ${result.baseTargetArmor} + posture ${result.postureEffect.defenseModifier})` : ""}
                   {result.hit && result.damageTotal !== null ? `; Raw damage ${result.damageTotal}${result.damageType ? ` ${result.damageType}` : ""}` : ""}
+                </Text>
+              )}
+              {result.postureEffect?.message && (
+                <Text fontSize="xs" color="blue.700">
+                  {result.postureEffect.message}
                 </Text>
               )}
               {result.hit && result.armorMitigation && (
                 <Text fontSize="xs">
-                  Raw damage {result.armorMitigation.rawDamage}; Armor reduction {result.armorMitigation.armorReduction}; Final damage {result.armorMitigation.finalDamage}
+                  Raw damage {result.armorMitigation.rawDamage}; Armor reduction {result.armorMitigation.armorReduction}; Final damage after armor {result.armorMitigation.finalDamage}; Final damage {result.finalDamage}
                   {result.armorMitigation.finalDamage === 0 ? "; Armor absorbed the blow." : ""}
+                </Text>
+              )}
+              {result.hit && result.postureDamage?.postureDamageReduction > 0 && (
+                <Text fontSize="xs" color="blue.700">
+                  {result.postureDamage.message} Final damage after armor and posture: {result.postureDamage.finalDamage}
                 </Text>
               )}
               {result.hit && result.woundPreview && (

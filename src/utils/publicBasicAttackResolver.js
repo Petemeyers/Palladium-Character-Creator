@@ -1,3 +1,5 @@
+import { applyPostureEffectsToAttackPreview } from "./combatPostureEffects.js";
+
 const hasValue = (value) => value !== undefined && value !== null && value !== "";
 
 const toNumber = (value) => {
@@ -98,6 +100,12 @@ export function resolvePublicBasicAttack({
   const attackName = String(firstValue(attack?.name, "Basic Attack"));
   const attackBonus = getAttackBonus(attack);
   const targetArmor = getTargetArmor(target);
+  const posturePreview = applyPostureEffectsToAttackPreview({
+    target,
+    attackPreview: { targetArmor },
+  });
+  const finalTargetArmor = posturePreview.finalTargetArmor;
+  const postureEffect = posturePreview.postureEffect;
   const damageExpression = getDamageExpression(attack);
   const damage = parsePublicDamageExpression(damageExpression);
 
@@ -117,7 +125,10 @@ export function resolvePublicBasicAttack({
       d20Roll: null,
       attackBonus,
       totalToHit: null,
-      targetArmor,
+      targetArmor: finalTargetArmor,
+      baseTargetArmor: targetArmor,
+      finalTargetArmor,
+      postureEffect,
       hit: false,
       damageRoll: null,
       damageTotal: null,
@@ -142,7 +153,10 @@ export function resolvePublicBasicAttack({
       d20Roll: null,
       attackBonus,
       totalToHit: null,
-      targetArmor,
+      targetArmor: finalTargetArmor,
+      baseTargetArmor: targetArmor,
+      finalTargetArmor,
+      postureEffect,
       hit: false,
       damageRoll: null,
       damageTotal: null,
@@ -154,7 +168,7 @@ export function resolvePublicBasicAttack({
   }
 
   const totalToHit = d20Roll + attackBonus;
-  const hit = totalToHit >= targetArmor;
+  const hit = totalToHit >= finalTargetArmor;
 
   if (!hit) {
     return {
@@ -165,12 +179,15 @@ export function resolvePublicBasicAttack({
       d20Roll,
       attackBonus,
       totalToHit,
-      targetArmor,
+      targetArmor: finalTargetArmor,
+      baseTargetArmor: targetArmor,
+      finalTargetArmor,
+      postureEffect,
       hit: false,
       damageRoll: null,
       damageTotal: null,
       damageType: attack?.damageType,
-      message: `${attackerName} misses ${targetName} with ${attackName}: d20 ${d20Roll} ${formatBonus(attackBonus)} = ${totalToHit} vs AC/Guard ${targetArmor}.`,
+      message: `${attackerName} misses ${targetName} with ${attackName}: d20 ${d20Roll} ${formatBonus(attackBonus)} = ${totalToHit} vs AC/Guard ${finalTargetArmor}.${postureEffect.message ? ` ${postureEffect.message}` : ""}`,
       missingFields,
       warnings,
     };
@@ -188,12 +205,15 @@ export function resolvePublicBasicAttack({
     d20Roll,
     attackBonus,
     totalToHit,
-    targetArmor,
+    targetArmor: finalTargetArmor,
+    baseTargetArmor: targetArmor,
+    finalTargetArmor,
+    postureEffect,
     hit: true,
     damageRoll,
     damageTotal,
     damageType,
-    message: `${attackerName} hits ${targetName} with ${attackName}: d20 ${d20Roll} ${formatBonus(attackBonus)} = ${totalToHit} vs AC/Guard ${targetArmor}. Damage: ${damageTotal}${damageType ? ` ${damageType}` : ""}.`,
+    message: `${attackerName} hits ${targetName} with ${attackName}: d20 ${d20Roll} ${formatBonus(attackBonus)} = ${totalToHit} vs AC/Guard ${finalTargetArmor}.${postureEffect.message ? ` ${postureEffect.message}` : ""} Damage: ${damageTotal}${damageType ? ` ${damageType}` : ""}.`,
     missingFields,
     warnings,
   };

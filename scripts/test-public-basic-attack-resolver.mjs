@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import PUBLIC_ENEMIES from "../src/data/publicEnemies.js";
+import { createCombatPosture } from "../src/utils/combatPosture.js";
 import { adaptPublicEnemyToCombatant } from "../src/utils/publicEnemyCombatAdapter.js";
 import { buildPublicPlayerAttackPreviews } from "../src/utils/publicPlayerAttackPreview.js";
 import {
@@ -57,6 +58,25 @@ assert.equal(miss.ok, true, "Miss should still resolve");
 assert.equal(miss.hit, false, "d20 9 plus +5 should miss AC 15");
 assert.equal(miss.totalToHit, 14, "Miss total should be 14");
 assert.equal(miss.damageTotal, null, "Miss should not roll damage");
+
+const defendedMiss = resolvePublicBasicAttack({
+  attacker: fighter,
+  target: {
+    ...target,
+    combatPosture: createCombatPosture({ type: "defending", round: 1, turnIndex: 0 }),
+  },
+  attack: longsword,
+  rollD20: () => 10,
+  rollDamage: () => {
+    throw new Error("Damage should not roll when posture turns a hit into a miss");
+  },
+});
+
+assert.equal(defendedMiss.ok, true, "Defended target attack should resolve");
+assert.equal(defendedMiss.hit, false, "Defending should turn total 15 against base AC 15 into a miss against 17");
+assert.equal(defendedMiss.baseTargetArmor, 15, "Base target number should be preserved");
+assert.equal(defendedMiss.targetArmor, 17, "Defending should raise target number by 2");
+assert.equal(defendedMiss.postureEffect.message, "Target is Defending: +2 defense.");
 
 const goblin = PUBLIC_ENEMIES.find((enemy) => enemy.id === "goblin-warrior");
 const goblinCombatant = adaptPublicEnemyToCombatant(goblin).combatant;
