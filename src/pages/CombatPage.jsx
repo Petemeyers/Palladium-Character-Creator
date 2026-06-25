@@ -94,6 +94,7 @@ import UseItemActionHandler from "../components/UseItemActionHandler.jsx";
 import UseSkillActionHandler from "../components/UseSkillActionHandler.jsx";
 import {
   buildClearedAttackAbortState,
+  buildClearedLegacyDefensiveActionState,
   buildClearedMovementState,
   canStartManualMovementTargeting,
 } from "../utils/combatCommandStateCleanup.js";
@@ -12852,6 +12853,56 @@ function CombatPage({ characters = [] }) {
     setSelectedAction,
     setSelectedAttackWeapon,
     setSelectedManeuver,
+    setSelectedTarget,
+    setTargetingMode,
+  ]);
+
+  const clearLegacyDefensiveActionState = useCallback((actionName = "") => {
+    const cleared = buildClearedLegacyDefensiveActionState({
+      selectedAction: { name: actionName },
+      selectedTarget,
+      selectedAttackWeapon,
+      selectedMovementMode: selectedActionType,
+      selectedMovementFighter,
+      selectedMovementHex,
+    });
+
+    activeAttackActionIdRef.current = cleared.activeAttackActionId;
+    turnActionResolvingRef.current = cleared.turnActionResolving;
+    executingActionRef.current = cleared.executingAction;
+    pendingTurnAdvanceRef.current = cleared.pendingTurnAdvance;
+    manualMovementRequestActiveRef.current = false;
+    manualMovementRequestIdRef.current += 1;
+
+    if (actionLockTimeoutRef.current) {
+      clearTimeout(actionLockTimeoutRef.current);
+      actionLockTimeoutRef.current = null;
+    }
+
+    setSelectedAction(cleared.selectedAction);
+    setSelectedTarget(cleared.selectedTarget);
+    setSelectedAttackWeapon(cleared.selectedAttackWeapon);
+    setSelectedActionType(cleared.selectedMovementMode);
+    setSelectedMovementFighter(cleared.selectedMovementFighter);
+    setSelectedMovementHex(cleared.selectedMovementHex);
+    setMovementMode(cleared.movementMode);
+    setShowMovementSelection(cleared.showMovementSelection);
+    setTargetingMode(cleared.targetingMode);
+    setEngineValidMoves([]);
+    setMoveCostsByHex({});
+    closeCombatChoices();
+  }, [
+    closeCombatChoices,
+    selectedActionType,
+    selectedAttackWeapon,
+    selectedMovementFighter,
+    selectedMovementHex,
+    selectedTarget,
+    setSelectedAction,
+    setSelectedActionType,
+    setSelectedAttackWeapon,
+    setSelectedMovementFighter,
+    setSelectedMovementHex,
     setSelectedTarget,
     setTargetingMode,
   ]);
@@ -26370,12 +26421,17 @@ function CombatPage({ characters = [] }) {
         addLog(`${currentFighter.name} takes a defensive stance, preparing to block incoming attacks.`, "info");
         // Deduct action cost using standardized function
         const blockCost = getActionCost("PARRY");
-        setFighters(prev => prev.map(f =>
-          f.id === currentFighter.id
-            ? { ...f, remainingActions: Math.max(0, f.remainingActions - (blockCost === "all" ? f.remainingActions : blockCost)) }
-            : f
-        ));
-        scheduleEndTurn(500);
+        let remainingAfterBlock = 0;
+        commitFighters(prev => prev.map(f => {
+          if (f.id !== currentFighter.id) return f;
+          const cost = blockCost === "all" ? f.remainingActions : blockCost;
+          remainingAfterBlock = Math.max(0, f.remainingActions - cost);
+          return { ...f, remainingActions: remainingAfterBlock };
+        }));
+        clearLegacyDefensiveActionState("Block");
+        if (remainingAfterBlock <= 0) {
+          scheduleEndTurn(500, "manual-defensive-finalized");
+        }
         return;
       }
 
@@ -26385,14 +26441,17 @@ function CombatPage({ characters = [] }) {
         addLog(`${currentFighter.name} prepares to evade incoming attacks.`, "info");
         // Deduct action cost using standardized function
         const evadeCost = getActionCost("DODGE");
-        setFighters(prev => prev.map(f =>
-          f.id === currentFighter.id
-            ? { ...f, remainingActions: Math.max(0, f.remainingActions - (evadeCost === "all" ? f.remainingActions : evadeCost)) }
-            : f
-        ));
-        executingActionRef.current = false;
-        clearTimeout(lockTimeout);
-        scheduleEndTurn(500);
+        let remainingAfterEvade = 0;
+        commitFighters(prev => prev.map(f => {
+          if (f.id !== currentFighter.id) return f;
+          const cost = evadeCost === "all" ? f.remainingActions : evadeCost;
+          remainingAfterEvade = Math.max(0, f.remainingActions - cost);
+          return { ...f, remainingActions: remainingAfterEvade };
+        }));
+        clearLegacyDefensiveActionState("Evade");
+        if (remainingAfterEvade <= 0) {
+          scheduleEndTurn(500, "manual-defensive-finalized");
+        }
         return;
 
       }
@@ -26492,12 +26551,16 @@ function CombatPage({ characters = [] }) {
       case "Defend/Hold":
         addLog(`${currentFighter.name} takes a defensive stance and holds their ground.`, "info");
         // Decrement action and end turn
-        setFighters(prev => prev.map(f =>
-          f.id === currentFighter.id
-            ? { ...f, remainingActions: Math.max(0, f.remainingActions - 1) }
-            : f
-        ));
-        scheduleEndTurn(500);
+        let remainingAfterDefend = 0;
+        commitFighters(prev => prev.map(f => {
+          if (f.id !== currentFighter.id) return f;
+          remainingAfterDefend = Math.max(0, f.remainingActions - 1);
+          return { ...f, remainingActions: remainingAfterDefend };
+        }));
+        clearLegacyDefensiveActionState("Defend/Hold");
+        if (remainingAfterDefend <= 0) {
+          scheduleEndTurn(500, "manual-defensive-finalized");
+        }
         return;
 
       case "Light Rest": {

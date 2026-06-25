@@ -2,6 +2,7 @@ const cloneArray = (value) => (Array.isArray(value) ? [] : []);
 
 const MOVEMENT_TYPES = new Set(["move", "run", "charge", "withdraw"]);
 const NON_MOVEMENT_ACTIONS = new Set(["attack", "evade", "defend", "defend/hold", "block", "use item", "use-item", "use skill", "use-skill"]);
+const LEGACY_DEFENSIVE_ACTIONS = new Set(["defend", "defend/hold", "evade", "block"]);
 
 const getId = (value) => {
   if (!value || typeof value !== "object") return value ? String(value) : "";
@@ -9,6 +10,19 @@ const getId = (value) => {
 };
 
 const normalizeText = (value) => String(value || "").trim().toLowerCase();
+
+const getActionName = (action) => {
+  if (!action || typeof action !== "object") return action;
+  return action.name || action.label || action.type || "";
+};
+
+export function isLegacyDefensiveAction(actionName) {
+  return LEGACY_DEFENSIVE_ACTIONS.has(normalizeText(getActionName(actionName)));
+}
+
+export function shouldClearLegacySelectedAction(actionName) {
+  return isLegacyDefensiveAction(actionName);
+}
 
 export function canStartManualMovementTargeting({
   combatActive = false,
@@ -100,6 +114,50 @@ export function buildClearedAttackAbortState(state = {}, options = {}) {
   return next;
 }
 
+export function buildClearedLegacyDefensiveActionState(state = {}, options = {}) {
+  const source = state && typeof state === "object" ? state : {};
+  const shouldClearSelection =
+    options.clearSelectedAction === true ||
+    shouldClearLegacySelectedAction(source.selectedAction);
+  const next = {
+    ...source,
+    activeAttack: null,
+    activeAttackActionId: null,
+    activeGrappleActionId: null,
+    activeTechnique: null,
+    turnActionResolving: false,
+    executingAction: false,
+    pendingTurnAdvance: false,
+    targetingMode: null,
+    selectedMovementMode: null,
+    selectedMovementFighter: null,
+    selectedMovementHex: null,
+    showMovementSelection: false,
+    movementMode: { active: false, isRunning: false },
+    explicitMovementRequest: false,
+    manualMovementRequestActive: false,
+  };
+
+  if (shouldClearSelection) {
+    next.selectedAction = null;
+  }
+
+  if (options.clearSelectedTarget !== false) {
+    next.selectedTarget = null;
+  }
+
+  if (options.clearSelectedWeapon !== false) {
+    next.selectedWeapon = null;
+    next.selectedAttackWeapon = null;
+  }
+
+  if (options.clearSelectedCombatAction === true) {
+    next.selectedCombatAction = null;
+  }
+
+  return next;
+}
+
 export function sanitizeBusyStateAfterAbort(state = {}) {
   const source = state && typeof state === "object" ? state : {};
   return {
@@ -113,8 +171,11 @@ export function sanitizeBusyStateAfterAbort(state = {}) {
 }
 
 export default {
+  buildClearedLegacyDefensiveActionState,
   buildClearedAttackAbortState,
   buildClearedMovementState,
   canStartManualMovementTargeting,
+  isLegacyDefensiveAction,
   sanitizeBusyStateAfterAbort,
+  shouldClearLegacySelectedAction,
 };
