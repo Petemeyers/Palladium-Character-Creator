@@ -24,9 +24,13 @@ import { adaptPublicEnemyToRosterEntry } from "../utils/publicEnemyRosterAdapter
 import {
   adaptPublicCharacterToRosterEntry,
   clearStagedRosterEntries,
+  getDuplicateStagedSavedCharacters,
   getMissingSavedCharacterStagedEntries,
+  getStagedSavedCharacterId,
+  hasStagedSavedCharacter,
   loadPublicArenaRosterEntries,
   pruneStagedRosterEntriesAgainstSavedCharacters,
+  removeDuplicateSavedCharacterEntriesFromStorage,
   removeStagedRosterEntry,
   upsertPublicArenaRosterEntry,
 } from "../utils/publicRosterAdapter.js";
@@ -106,6 +110,7 @@ const AutoRollDemo = () => {
   const [loadingSavedCharacters, setLoadingSavedCharacters] = useState(false);
   const [savedCharacterError, setSavedCharacterError] = useState("");
   const [stagedRosterEntries, setStagedRosterEntries] = useState(() => loadPublicArenaRosterEntries());
+  const [stagedRosterMessage, setStagedRosterMessage] = useState("");
 
   const rosterCharacters = useMemo(
     () => getAllArenaRosterEntries(arenaRoster)
@@ -140,6 +145,10 @@ const AutoRollDemo = () => {
   const missingStagedSavedCharacters = useMemo(
     () => getMissingSavedCharacterStagedEntries(stagedRosterEntries, savedCharacters),
     [savedCharacters, stagedRosterEntries]
+  );
+  const duplicateStagedSavedCharacters = useMemo(
+    () => getDuplicateStagedSavedCharacters(stagedRosterEntries),
+    [stagedRosterEntries]
   );
 
   const getDisplayClassName = (character) =>
@@ -225,24 +234,39 @@ const AutoRollDemo = () => {
   const addCharacterToArenaRoster = (event, character) => {
     event.stopPropagation();
     const rosterEntry = adaptPublicCharacterToRosterEntry(character);
+    const characterId = getStagedSavedCharacterId(rosterEntry);
+    if (hasStagedSavedCharacter(stagedRosterEntries, characterId)) {
+      setStagedRosterMessage("Character is already staged.");
+      return;
+    }
     setStagedRosterEntries(upsertPublicArenaRosterEntry(rosterEntry));
+    setStagedRosterMessage(`${rosterEntry.name || "Character"} staged for arena roster.`);
   };
 
   const addEnemyToArenaRoster = (enemy) => {
     const rosterEntry = adaptPublicEnemyToRosterEntry(enemy);
     setStagedRosterEntries(upsertPublicArenaRosterEntry(rosterEntry));
+    setStagedRosterMessage(`${rosterEntry.name || "Enemy"} staged for arena roster.`);
   };
 
   const removeStagedEntry = (entry) => {
     setStagedRosterEntries(removeStagedRosterEntry(entry?.stagedEntryId || entry?.entryId || entry?.id));
+    setStagedRosterMessage(`${entry?.name || "Staged entry"} removed from staged roster.`);
   };
 
   const clearStagedRoster = () => {
     setStagedRosterEntries(clearStagedRosterEntries());
+    setStagedRosterMessage("Staged roster cleared.");
   };
 
   const removeMissingStagedCharacters = () => {
     setStagedRosterEntries(pruneStagedRosterEntriesAgainstSavedCharacters(savedCharacters));
+    setStagedRosterMessage("Missing saved characters removed from staged roster.");
+  };
+
+  const removeDuplicateStagedCharacters = () => {
+    setStagedRosterEntries(removeDuplicateSavedCharacterEntriesFromStorage());
+    setStagedRosterMessage("Duplicate staged characters removed.");
   };
 
   return (
@@ -376,6 +400,11 @@ const AutoRollDemo = () => {
           <HStack justify="space-between" align="center" mb={4} wrap="wrap">
             <Heading size="md">Arena Roster Staging</Heading>
             <HStack spacing={2}>
+              {duplicateStagedSavedCharacters.length > 0 && (
+                <Button size="xs" colorScheme="orange" variant="outline" onClick={removeDuplicateStagedCharacters}>
+                  Remove Duplicate Characters
+                </Button>
+              )}
               {missingStagedSavedCharacters.length > 0 && (
                 <Button size="xs" colorScheme="orange" variant="outline" onClick={removeMissingStagedCharacters}>
                   Remove Missing Characters
@@ -390,6 +419,18 @@ const AutoRollDemo = () => {
             <Alert status="warning" mb={3}>
               <AlertIcon />
               <Text fontSize="sm">Some staged characters no longer exist in Character List.</Text>
+            </Alert>
+          )}
+          {duplicateStagedSavedCharacters.length > 0 && (
+            <Alert status="warning" mb={3}>
+              <AlertIcon />
+              <Text fontSize="sm">Duplicate staged characters found.</Text>
+            </Alert>
+          )}
+          {stagedRosterMessage && (
+            <Alert status={stagedRosterMessage === "Character is already staged." ? "warning" : "info"} mb={3}>
+              <AlertIcon />
+              <Text fontSize="sm">{stagedRosterMessage}</Text>
             </Alert>
           )}
           {stagedRosterEntries.length > 0 ? (

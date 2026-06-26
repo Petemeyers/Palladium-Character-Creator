@@ -70,7 +70,58 @@ const getSavedCharacterId = (character) =>
   String(character?.id || character?._id || character?.characterId || "");
 
 const isSavedCharacterEntry = (entry) =>
-  entry?.source === "saved-character" || entry?.side === "player" && Boolean(entry?.autoRollCharacter);
+  entry?.source === "saved-character" || (entry?.side === "player" && Boolean(entry?.autoRollCharacter));
+
+export const getStagedSavedCharacterId = (entry) =>
+  isSavedCharacterEntry(entry) ? getCharacterId(entry) : "";
+
+export function hasStagedSavedCharacter(entries = [], characterId = "") {
+  const targetId = String(characterId || "");
+  if (!targetId || !Array.isArray(entries)) return false;
+  return entries.some((entry) => getStagedSavedCharacterId(entry) === targetId);
+}
+
+export function getDuplicateStagedSavedCharacters(entries = []) {
+  if (!Array.isArray(entries)) return [];
+  const seen = new Set();
+  const duplicates = [];
+
+  entries.forEach((entry) => {
+    const characterId = getStagedSavedCharacterId(entry);
+    if (!characterId) return;
+    if (seen.has(characterId)) {
+      duplicates.push({ ...toSafeEntries([entry])[0], duplicateCharacterId: characterId });
+      return;
+    }
+    seen.add(characterId);
+  });
+
+  return duplicates;
+}
+
+export function removeDuplicateSavedCharacterEntries(entries = []) {
+  if (!Array.isArray(entries)) return [];
+  const seen = new Set();
+  const nextEntries = [];
+
+  entries.forEach((entry) => {
+    const characterId = getStagedSavedCharacterId(entry);
+    if (!characterId) {
+      nextEntries.push(entry);
+      return;
+    }
+    if (seen.has(characterId)) return;
+    seen.add(characterId);
+    nextEntries.push(entry);
+  });
+
+  return toSafeEntries(nextEntries);
+}
+
+export function removeDuplicateSavedCharacterEntriesFromStorage() {
+  const entries = loadPublicArenaRosterEntries();
+  return savePublicArenaRosterEntries(removeDuplicateSavedCharacterEntries(entries));
+}
 
 export function removeStagedRosterEntry(entryId) {
   const targetId = String(entryId || "");
@@ -121,6 +172,10 @@ export function getMissingSavedCharacterStagedEntries(entries = [], savedCharact
 export function upsertPublicArenaRosterEntry(entry) {
   if (!entry?.id) return loadPublicArenaRosterEntries();
   const entries = loadPublicArenaRosterEntries();
+  const characterId = getStagedSavedCharacterId(entry);
+  if (characterId && hasStagedSavedCharacter(entries, characterId)) {
+    return entries;
+  }
   const nextEntries = [
     entry,
     ...entries.filter((existing) => existing.id !== entry.id || existing.side !== entry.side),
@@ -132,10 +187,15 @@ export default {
   PUBLIC_ARENA_ROSTER_STORAGE_KEY,
   clearPublicArenaRosterEntries,
   clearStagedRosterEntries,
+  getDuplicateStagedSavedCharacters,
   getMissingSavedCharacterStagedEntries,
+  getStagedSavedCharacterId,
   getStagedRosterEntries,
+  hasStagedSavedCharacter,
   loadPublicArenaRosterEntries,
   pruneStagedRosterEntriesAgainstSavedCharacters,
+  removeDuplicateSavedCharacterEntries,
+  removeDuplicateSavedCharacterEntriesFromStorage,
   removeStagedRosterEntriesByCharacterId,
   removeStagedRosterEntry,
   savePublicArenaRosterEntries,

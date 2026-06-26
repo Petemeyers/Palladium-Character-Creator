@@ -221,9 +221,12 @@ import {
 import { getDefaultMovementMode, getSpeciesProfile } from "../utils/ai/movementModeHelpers.js";
 import {
   clearPublicArenaRosterEntries,
+  getDuplicateStagedSavedCharacters,
   getMissingSavedCharacterStagedEntries,
+  getStagedSavedCharacterId,
   loadPublicArenaRosterEntries,
   pruneStagedRosterEntriesAgainstSavedCharacters,
+  removeDuplicateSavedCharacterEntriesFromStorage,
   removeStagedRosterEntry,
 } from "../utils/publicStagedRosterStorage.js";
 import {
@@ -2498,6 +2501,10 @@ function CombatPage({ characters = [] }) {
   const missingSavedStagedRosterEntries = useMemo(
     () => getMissingSavedCharacterStagedEntries(stagedRosterEntries, characters),
     [characters, stagedRosterEntries]
+  );
+  const duplicateSavedStagedRosterEntries = useMemo(
+    () => getDuplicateStagedSavedCharacters(stagedRosterEntries),
+    [stagedRosterEntries]
   );
   const canStartManualPublicTurns = useMemo(() => canStartPublicTurnOrder(fighters), [fighters]);
   const manualPublicCurrentTurn = manualPublicTurnOrder[manualPublicTurnIndex] || null;
@@ -24674,7 +24681,11 @@ function CombatPage({ characters = [] }) {
   }
 
   function importReadyStagedRoster() {
-    const entries = loadPublicArenaRosterEntries();
+    const loadedEntries = loadPublicArenaRosterEntries();
+    const duplicateEntries = getDuplicateStagedSavedCharacters(loadedEntries);
+    const entries = duplicateEntries.length > 0
+      ? removeDuplicateSavedCharacterEntriesFromStorage()
+      : loadedEntries;
     const staleIds = new Set(
       getMissingSavedCharacterStagedEntries(entries, characters).map((entry) => `${entry.side || ""}:${entry.id || ""}`)
     );
@@ -24687,6 +24698,11 @@ function CombatPage({ characters = [] }) {
 
     const messages = [];
     let importedCount = 0;
+    duplicateEntries.forEach((entry) => {
+      const message = `Duplicate staged character skipped: ${entry?.name || "Staged character"}`;
+      messages.push(message);
+      addLog(message, "warning");
+    });
 
     entries.forEach((entry) => {
       if (staleIds.has(`${entry.side || ""}:${entry.id || ""}`)) {
@@ -24746,6 +24762,12 @@ function CombatPage({ characters = [] }) {
     const nextEntries = pruneStagedRosterEntriesAgainstSavedCharacters(characters);
     setStagedRosterEntries(nextEntries);
     setStagedRosterImportMessages(["Missing saved characters removed from staged roster."]);
+  }
+
+  function removeDuplicateStagedRosterCharacters() {
+    const nextEntries = removeDuplicateSavedCharacterEntriesFromStorage();
+    setStagedRosterEntries(nextEntries);
+    setStagedRosterImportMessages(["Duplicate staged characters removed."]);
   }
 
   function removeOneStagedRosterEntry(entry) {
@@ -30824,6 +30846,16 @@ function CombatPage({ characters = [] }) {
                                   >
                                     Clear Staged Roster
                                   </Button>
+                                  {duplicateSavedStagedRosterEntries.length > 0 && (
+                                    <Button
+                                      size="xs"
+                                      colorScheme="orange"
+                                      variant="outline"
+                                      onClick={removeDuplicateStagedRosterCharacters}
+                                    >
+                                      Remove Duplicate Characters
+                                    </Button>
+                                  )}
                                   {missingSavedStagedRosterEntries.length > 0 && (
                                     <Button
                                       size="xs"
@@ -30841,6 +30873,13 @@ function CombatPage({ characters = [] }) {
                                 <Alert status="warning" borderRadius="md">
                                   <AlertIcon />
                                   <Text fontSize="sm">Some staged characters no longer exist in Character List.</Text>
+                                </Alert>
+                              )}
+
+                              {duplicateSavedStagedRosterEntries.length > 0 && (
+                                <Alert status="warning" borderRadius="md">
+                                  <AlertIcon />
+                                  <Text fontSize="sm">Duplicate staged characters found.</Text>
                                 </Alert>
                               )}
 
@@ -33280,6 +33319,11 @@ function CombatPage({ characters = [] }) {
                   <Badge colorScheme="purple">
                     {stagedRosterEntries.length} staged
                   </Badge>
+                  {duplicateSavedStagedRosterEntries.length > 0 && (
+                    <Button size="xs" colorScheme="orange" variant="outline" onClick={removeDuplicateStagedRosterCharacters}>
+                      Remove Duplicate Characters
+                    </Button>
+                  )}
                   {missingSavedStagedRosterEntries.length > 0 && (
                     <Button size="xs" colorScheme="orange" variant="outline" onClick={removeMissingStagedRosterCharacters}>
                       Remove Missing Characters
@@ -33297,6 +33341,12 @@ function CombatPage({ characters = [] }) {
                 <Alert status="warning" borderRadius="md" mb={3}>
                   <AlertIcon />
                   <Text fontSize="sm">Some staged characters no longer exist in Character List.</Text>
+                </Alert>
+              )}
+              {duplicateSavedStagedRosterEntries.length > 0 && (
+                <Alert status="warning" borderRadius="md" mb={3}>
+                  <AlertIcon />
+                  <Text fontSize="sm">Duplicate staged characters found.</Text>
                 </Alert>
               )}
 
@@ -33339,6 +33389,13 @@ function CombatPage({ characters = [] }) {
                               </Badge>
                               {missingSavedStagedRosterEntries.some((missing) => missing.id === entry.id && missing.side === entry.side) && (
                                 <Badge colorScheme="orange">Missing saved character</Badge>
+                              )}
+                              {duplicateSavedStagedRosterEntries.some((duplicate) =>
+                                getStagedSavedCharacterId(duplicate) === getStagedSavedCharacterId(entry) &&
+                                (duplicate.stagedEntryId || duplicate.entryId || duplicate.id || duplicate.name) ===
+                                  (entry.stagedEntryId || entry.entryId || entry.id || entry.name)
+                              ) && (
+                                <Badge colorScheme="orange">Duplicate saved character</Badge>
                               )}
                               {!readiness.ready && missing.length > 0 && (
                                 <Text fontSize="xs" color="gray.600">{missing.join(", ")}</Text>
