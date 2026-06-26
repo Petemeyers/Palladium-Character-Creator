@@ -3,6 +3,12 @@ const cloneArray = (value) => (Array.isArray(value) ? [] : []);
 const MOVEMENT_TYPES = new Set(["move", "run", "charge", "withdraw"]);
 const NON_MOVEMENT_ACTIONS = new Set(["attack", "evade", "defend", "defend/hold", "block", "use item", "use-item", "use skill", "use-skill"]);
 const LEGACY_DEFENSIVE_ACTIONS = new Set(["defend", "defend/hold", "evade", "block"]);
+const LEGACY_DEFENSIVE_POSTURE_BY_ACTION = {
+  defend: "Defend",
+  "defend/hold": "Defend",
+  block: "Block",
+  evade: "Evade",
+};
 
 const getId = (value) => {
   if (!value || typeof value !== "object") return value ? String(value) : "";
@@ -10,6 +16,10 @@ const getId = (value) => {
 };
 
 const normalizeText = (value) => String(value || "").trim().toLowerCase();
+const toDisplayName = (value) => {
+  const text = String(value || "").trim();
+  return text || "Combatant";
+};
 
 const getActionName = (action) => {
   if (!action || typeof action !== "object") return action;
@@ -18,6 +28,31 @@ const getActionName = (action) => {
 
 export function isLegacyDefensiveAction(actionName) {
   return LEGACY_DEFENSIVE_ACTIONS.has(normalizeText(getActionName(actionName)));
+}
+
+export function getLegacyDefensivePosture(actionName) {
+  return LEGACY_DEFENSIVE_POSTURE_BY_ACTION[normalizeText(getActionName(actionName))] || "";
+}
+
+export function isDuplicateLegacyDefensiveAction(options = {}) {
+  const source = options && typeof options === "object" ? options : {};
+  const { actionName, currentPosture } = source;
+  const nextPosture = getLegacyDefensivePosture(actionName);
+  return Boolean(nextPosture && normalizeText(nextPosture) === normalizeText(currentPosture));
+}
+
+export function getLegacyDefensiveDuplicateMessage({ actorName, actionName } = {}) {
+  const name = toDisplayName(actorName);
+  const posture = getLegacyDefensivePosture(actionName);
+  const label = posture === "Block" ? "blocking" : posture === "Evade" ? "evading" : "defending";
+  return `Already ${label}. Choose another action or End Turn.`;
+}
+
+export function getLegacyDefensiveRemainingActionMessage({ actorName, remainingActions } = {}) {
+  const name = toDisplayName(actorName);
+  const remaining = Math.max(0, Number(remainingActions) || 0);
+  const noun = remaining === 1 ? "action" : "actions";
+  return `${name} has ${remaining} ${noun} remaining. Choose another action or End Turn.`;
 }
 
 export function shouldClearLegacySelectedAction(actionName) {
@@ -175,6 +210,10 @@ export default {
   buildClearedAttackAbortState,
   buildClearedMovementState,
   canStartManualMovementTargeting,
+  getLegacyDefensiveDuplicateMessage,
+  getLegacyDefensivePosture,
+  getLegacyDefensiveRemainingActionMessage,
+  isDuplicateLegacyDefensiveAction,
   isLegacyDefensiveAction,
   sanitizeBusyStateAfterAbort,
   shouldClearLegacySelectedAction,

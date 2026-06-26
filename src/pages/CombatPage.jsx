@@ -97,6 +97,11 @@ import {
   buildClearedLegacyDefensiveActionState,
   buildClearedMovementState,
   canStartManualMovementTargeting,
+  getLegacyDefensiveDuplicateMessage,
+  getLegacyDefensiveRemainingActionMessage,
+  getLegacyDefensivePosture,
+  isDuplicateLegacyDefensiveAction,
+  isLegacyDefensiveAction,
 } from "../utils/combatCommandStateCleanup.js";
 import {
   buildCombatCommandTurnBridge,
@@ -8546,6 +8551,22 @@ function CombatPage({ characters = [] }) {
 
     return baseOptions;
   }, [availableTacticalPowers, availableTechniques, canFighterStartTurn, canLiftTarget, currentFighter, fighters]);
+  const legacyDefensivePosture = currentFighter ? defensiveStance[currentFighter.id] || "" : "";
+  const legacyDefensiveRemainingActions = Math.max(0, Number(currentFighter?.remainingActions ?? 0) || 0);
+  const canEndCompatibilityTurn =
+    combatActive &&
+    !combatOverRef.current &&
+    currentFighter?.type === "player" &&
+    legacyDefensiveRemainingActions > 0;
+  const legacyDefensiveFlowHint =
+    currentFighter?.type === "player" &&
+    legacyDefensivePosture &&
+    legacyDefensiveRemainingActions > 0
+      ? getLegacyDefensiveRemainingActionMessage({
+          actorName: currentFighter.name,
+          remainingActions: legacyDefensiveRemainingActions,
+        })
+      : "";
 
   useEffect(() => {
     if (!selectedCombatAction) return;
@@ -13044,6 +13065,21 @@ function CombatPage({ characters = [] }) {
     setSelectedMovementHex,
     setSelectedTarget,
     setTargetingMode,
+  ]);
+
+  const endCompatibilityCombatTurn = useCallback(() => {
+    const liveFighters = fightersRef.current ?? fighters;
+    const liveFighter = liveFighters?.[turnIndexRef.current ?? turnIndex] || currentFighter;
+    clearLegacyDefensiveActionState("Defend/Hold");
+    addLog(`${liveFighter?.name || "Combatant"} ends their turn.`, "info");
+    scheduleEndTurn(0, "legacy-compatibility-end-turn");
+  }, [
+    addLog,
+    clearLegacyDefensiveActionState,
+    currentFighter,
+    fighters,
+    scheduleEndTurn,
+    turnIndex,
   ]);
 
   // Trip maneuver handler
@@ -26634,6 +26670,17 @@ function CombatPage({ characters = [] }) {
         return;
 
       case "Block": {
+        if (isDuplicateLegacyDefensiveAction({
+          actionName: actionToExecute.name,
+          currentPosture: defensiveStance[currentFighter.id],
+        })) {
+          addLog(getLegacyDefensiveDuplicateMessage({
+            actorName: currentFighter.name,
+            actionName: actionToExecute.name,
+          }), "info");
+          clearLegacyDefensiveActionState("Block");
+          return;
+        }
         // Set defensive stance for this fighter
         setDefensiveStance(prev => ({ ...prev, [currentFighter.id]: "Block" }));
         addLog(`${currentFighter.name} takes a defensive stance, preparing to block incoming attacks.`, "info");
@@ -26649,11 +26696,27 @@ function CombatPage({ characters = [] }) {
         clearLegacyDefensiveActionState("Block");
         if (remainingAfterBlock <= 0) {
           scheduleEndTurn(500, "manual-defensive-finalized");
+        } else {
+          addLog(getLegacyDefensiveRemainingActionMessage({
+            actorName: currentFighter.name,
+            remainingActions: remainingAfterBlock,
+          }), "info");
         }
         return;
       }
 
       case "Evade": {
+        if (isDuplicateLegacyDefensiveAction({
+          actionName: actionToExecute.name,
+          currentPosture: defensiveStance[currentFighter.id],
+        })) {
+          addLog(getLegacyDefensiveDuplicateMessage({
+            actorName: currentFighter.name,
+            actionName: actionToExecute.name,
+          }), "info");
+          clearLegacyDefensiveActionState("Evade");
+          return;
+        }
         // Set defensive stance for this fighter
         setDefensiveStance(prev => ({ ...prev, [currentFighter.id]: "Evade" }));
         addLog(`${currentFighter.name} prepares to evade incoming attacks.`, "info");
@@ -26669,6 +26732,11 @@ function CombatPage({ characters = [] }) {
         clearLegacyDefensiveActionState("Evade");
         if (remainingAfterEvade <= 0) {
           scheduleEndTurn(500, "manual-defensive-finalized");
+        } else {
+          addLog(getLegacyDefensiveRemainingActionMessage({
+            actorName: currentFighter.name,
+            remainingActions: remainingAfterEvade,
+          }), "info");
         }
         return;
 
@@ -26767,6 +26835,18 @@ function CombatPage({ characters = [] }) {
         return;
 
       case "Defend/Hold":
+        if (isDuplicateLegacyDefensiveAction({
+          actionName: actionToExecute.name,
+          currentPosture: defensiveStance[currentFighter.id],
+        })) {
+          addLog(getLegacyDefensiveDuplicateMessage({
+            actorName: currentFighter.name,
+            actionName: actionToExecute.name,
+          }), "info");
+          clearLegacyDefensiveActionState("Defend/Hold");
+          return;
+        }
+        setDefensiveStance(prev => ({ ...prev, [currentFighter.id]: "Defend" }));
         addLog(`${currentFighter.name} takes a defensive stance and holds their ground.`, "info");
         // Decrement action and end turn
         let remainingAfterDefend = 0;
@@ -26778,6 +26858,11 @@ function CombatPage({ characters = [] }) {
         clearLegacyDefensiveActionState("Defend/Hold");
         if (remainingAfterDefend <= 0) {
           scheduleEndTurn(500, "manual-defensive-finalized");
+        } else {
+          addLog(getLegacyDefensiveRemainingActionMessage({
+            actorName: currentFighter.name,
+            remainingActions: remainingAfterDefend,
+          }), "info");
         }
         return;
 
@@ -29543,7 +29628,12 @@ function CombatPage({ characters = [] }) {
                     <Box>
                       <Text fontSize="sm" fontWeight="bold" mb={2}>Select Compatibility Action:</Text>
                       <Wrap spacing={2}>
-                        {actionOptions.map((option) => (
+                        {actionOptions.map((option) => {
+                          const isDuplicateDefensiveChoice = isDuplicateLegacyDefensiveAction({
+                            actionName: option.value,
+                            currentPosture: defensiveStance[currentFighter?.id],
+                          });
+                          return (
                           <WrapItem key={option.value}>
                             <Button
                               size="sm"
@@ -29552,6 +29642,18 @@ function CombatPage({ characters = [] }) {
                               onClick={() => {
                                 const actionName = option.value;
                                 if (actionName) {
+                                  if (isDuplicateLegacyDefensiveAction({
+                                    actionName,
+                                    currentPosture: defensiveStance[currentFighter?.id],
+                                  })) {
+                                    const message = getLegacyDefensiveDuplicateMessage({
+                                      actorName: currentFighter?.name,
+                                      actionName,
+                                    });
+                                    addLog(message, "info");
+                                    clearLegacyDefensiveActionState(actionName);
+                                    return;
+                                  }
                                   // Create a simple action object
                                   const action = { name: actionName };
                                   setSelectedAction(action);
@@ -29582,13 +29684,41 @@ function CombatPage({ characters = [] }) {
                                   setSelectedClericalAbility(null);
                                 }
                               }}
+                              isDisabled={isDuplicateDefensiveChoice}
+                              title={isDuplicateDefensiveChoice
+                                ? getLegacyDefensiveDuplicateMessage({
+                                    actorName: currentFighter?.name,
+                                    actionName: option.value,
+                                  })
+                                : undefined}
                             >
                               {option.label}
                             </Button>
                           </WrapItem>
-                        ))}
+                          );
+                        })}
                       </Wrap>
                     </Box>
+
+                    {canEndCompatibilityTurn && (
+                      <Box borderWidth="1px" borderRadius="md" borderColor="orange.300" bg="orange.50" p={3}>
+                        <HStack spacing={3} justify="space-between" align="center" flexWrap="wrap">
+                          <Text fontSize="sm" color="orange.800" fontWeight="semibold">
+                            {legacyDefensiveFlowHint || getLegacyDefensiveRemainingActionMessage({
+                              actorName: currentFighter?.name,
+                              remainingActions: legacyDefensiveRemainingActions,
+                            })}
+                          </Text>
+                          <Button
+                            size="sm"
+                            colorScheme="orange"
+                            onClick={endCompatibilityCombatTurn}
+                          >
+                            End Turn
+                          </Button>
+                        </HStack>
+                      </Box>
+                    )}
 
                     <HStack spacing={4} align="center" justify="center" flexWrap="wrap">
                       {/* Movement Mode Toggle (only for flyers) */}
