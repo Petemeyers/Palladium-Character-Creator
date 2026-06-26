@@ -34,6 +34,13 @@ const POSTURE_TYPE_BY_RESERVE = {
   defend: "defending",
 };
 
+const PENDING_DEFENSE_BY_ACTION = {
+  block: { reserveType: "block", postureType: "blocking", stance: "Block" },
+  evade: { reserveType: "evade", postureType: "evading", stance: "Evade" },
+  defend: { reserveType: "defend", postureType: "defending", stance: "Defend" },
+  "defend/hold": { reserveType: "defend", postureType: "defending", stance: "Defend" },
+};
+
 const toSafeIndex = (value, fallback = 0) => {
   const number = Number(value);
   return Number.isInteger(number) && number >= 0 ? number : fallback;
@@ -52,6 +59,60 @@ const isPlainPosture = (value) =>
 
 export function normalizeDefensiveReserveType(value = "") {
   return RESERVE_TYPE_BY_POSTURE[String(value || "").trim().toLowerCase()] || "";
+}
+
+export function getPendingDefensiveSelection(selectedCombatAction = null, selectedLegacyAction = null) {
+  const commandName = String(selectedCombatAction?.type || selectedCombatAction?.id || selectedCombatAction?.name || "")
+    .trim()
+    .toLowerCase();
+  const legacyName = String(selectedLegacyAction?.name || selectedLegacyAction?.type || selectedLegacyAction || "")
+    .trim()
+    .toLowerCase();
+  const selectedName = selectedCombatAction
+    ? (PENDING_DEFENSE_BY_ACTION[commandName] ? commandName : "")
+    : legacyName;
+  const definition = PENDING_DEFENSE_BY_ACTION[selectedName];
+  if (!definition) return null;
+  return {
+    ...definition,
+    actionName: selectedName === "defend/hold" ? "Defend/Hold" : definition.stance,
+    actionCost: Math.max(1, Number(selectedCombatAction?.costActions) || 1),
+  };
+}
+
+export function applyPendingDefensiveSelection(
+  combatantOrTurnEntry = {},
+  { selectedCombatAction = null, selectedLegacyAction = null, round = 1, turnIndex = 0, actionCost = null } = {}
+) {
+  const selection = getPendingDefensiveSelection(selectedCombatAction, selectedLegacyAction);
+  if (!selection) return { ok: true, applied: false, updated: combatantOrTurnEntry, selection: null };
+
+  const existingReserve = getDefensiveReserve(combatantOrTurnEntry);
+  if (existingReserve.active && existingReserve.type === selection.reserveType) {
+    return { ok: true, applied: false, updated: combatantOrTurnEntry, selection };
+  }
+
+  if (selectedCombatAction?.enabled === false) {
+    return { ok: false, applied: false, updated: combatantOrTurnEntry, selection };
+  }
+
+  const remainingActions = Math.max(0, Number(combatantOrTurnEntry?.remainingActions) || 0);
+  const cost = Math.max(1, Number(actionCost ?? selection.actionCost) || 1);
+  if (remainingActions < cost) {
+    return { ok: false, applied: false, updated: combatantOrTurnEntry, selection };
+  }
+
+  const posture = createCombatPosture({
+    type: selection.postureType,
+    round,
+    turnIndex,
+  });
+  const updated = applyDefensiveReserve({
+    ...applyCombatPosture(combatantOrTurnEntry, posture),
+    remainingActions: Math.max(0, remainingActions - cost),
+  }, selection.reserveType, 1);
+
+  return { ok: true, applied: true, updated, posture, selection };
 }
 
 export function createDefensivePosture({ round = 1, turnIndex = 0 } = {}) {
@@ -207,6 +268,7 @@ export function clearExpiredPostures(combatantOrTurnEntry = {}, currentRound = 1
 }
 
 export default {
+  applyPendingDefensiveSelection,
   applyDefensiveReserve,
   applyCombatPosture,
   applyDefensivePosture,
@@ -218,5 +280,6 @@ export default {
   createDefensivePosture,
   getDefensiveReserve,
   getCombatPosture,
+  getPendingDefensiveSelection,
   normalizeDefensiveReserveType,
 };

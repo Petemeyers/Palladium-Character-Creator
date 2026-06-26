@@ -1,4 +1,5 @@
 import { getCombatPosture } from "./combatPosture.js";
+import { getCombatantSide } from "./combatantSide.js";
 
 const toPlainText = (value, fallback = "") => {
   if (value === undefined || value === null || typeof value === "function") return fallback;
@@ -22,6 +23,11 @@ const sourceLabelFor = (source) => {
 };
 
 const teamLabelFor = (commandTurn = {}, activeActor = {}) => {
+  const canonicalSide = getCombatantSide(activeActor, commandTurn.turnEntry || {
+    side: commandTurn.activeActorTeam,
+  });
+  if (canonicalSide === "enemy") return "Enemy";
+  if (canonicalSide === "player") return "Player";
   const raw = toPlainText(commandTurn.activeActorTeam || commandTurn.turnEntry?.side || activeActor?.side || activeActor?.type, "");
   const lower = raw.toLowerCase();
   if (lower === "enemy" || lower === "enemyarmy" || activeActor?.aiControlled === true) return "Enemy";

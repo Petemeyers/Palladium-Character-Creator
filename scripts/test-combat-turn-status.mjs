@@ -71,6 +71,18 @@ assert.equal(enemyTurn.nextStepMessage, "Waiting for enemy action.");
 assert.equal(enemyTurn.showEndTurnButton, false);
 assert.equal(enemyTurn.endTurnAvailable, false);
 
+const enemyTeamPlayerType = buildCombatTurnStatus({
+  commandTurn: {
+    ...playerTurn,
+    activeActorTeam: "enemy",
+    isPlayerControlled: false,
+    isEnemyControlled: true,
+  },
+  activeActor: { id: "playable-champion", team: "enemy", type: "player" },
+});
+assert.equal(enemyTeamPlayerType.teamLabel, "Enemy");
+assert.equal(enemyTeamPlayerType.showEndTurnButton, false);
+
 const busyEndTurn = buildCombatTurnStatus({
   commandTurn: playerTurn,
   activeActor: actor,

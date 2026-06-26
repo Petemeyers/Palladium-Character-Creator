@@ -1,3 +1,9 @@
+import {
+  getCombatantSide,
+  isEnemyCombatant,
+  isPartyCombatant,
+} from "./combatantSide.js";
+
 const hasValue = (value) => value !== undefined && value !== null && value !== "";
 
 const toNumber = (value) => {
@@ -18,8 +24,10 @@ const cleanText = (value, fallback = "") => {
 const getId = (value, fallback = "") =>
   cleanText(value?.id || value?._id || value?.fighterId || value?.characterId || value?.name, fallback);
 
-const getSide = (actor = {}, turnEntry = {}) =>
-  cleanText(turnEntry.side || actor.side || actor.type || actor.team || actor.role, "");
+const getSide = (actor = {}, turnEntry = {}) => {
+  const side = getCombatantSide(actor, turnEntry);
+  return side === "unknown" ? cleanText(turnEntry.side || actor.side || actor.type || actor.team || actor.role, "") : side;
+};
 
 const getMaxActions = (actor = {}, turnEntry = {}) =>
   toNumber(turnEntry.maxActions) ??
@@ -35,13 +43,11 @@ const getRemainingActions = (actor = {}, turnEntry = {}) =>
   getMaxActions(actor, turnEntry);
 
 const isEnemySide = (actor = {}, turnEntry = {}) => {
-  const side = getSide(actor, turnEntry).toLowerCase();
-  return side === "enemy" || side === "enemyarmy" || actor.aiControlled === true;
+  return isEnemyCombatant(actor, turnEntry) || actor.aiControlled === true;
 };
 
 const isPlayerSide = (actor = {}, turnEntry = {}) => {
-  const side = getSide(actor, turnEntry).toLowerCase();
-  return side === "player" || side === "party" || side === "playerparty";
+  return isPartyCombatant(actor, turnEntry);
 };
 
 const buildTurnEntry = ({ actor, sourceRow, round, initiativeIndex }) => {

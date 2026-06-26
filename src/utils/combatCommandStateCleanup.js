@@ -1,3 +1,5 @@
+import { isEnemyCombatant, isManualPlayerCombatant } from "./combatantSide.js";
+
 const cloneArray = (value) => (Array.isArray(value) ? [] : []);
 
 const MOVEMENT_TYPES = new Set(["move", "run", "charge", "withdraw"]);
@@ -76,15 +78,16 @@ export function canUseManualEndTurn(options = {}) {
     aiControlEnabled = false,
   } = safeOptions;
   if (!isExplicitManualEndTurnSource(source)) return false;
-  const side = normalizeText(commandTurn?.activeActorTeam || commandTurn?.turnEntry?.side || currentFighter?.side || currentFighter?.type);
   const isEnemy =
-    side === "enemy" ||
+    isEnemyCombatant(currentFighter, commandTurn?.turnEntry || { side: commandTurn?.activeActorTeam }) ||
     commandTurn?.isEnemyControlled === true ||
     currentFighter?.aiControlled === true;
   if (isEnemy) return false;
   if (commandTurn?.isPlayerControlled === false) return false;
-  if (aiControlEnabled) return false;
-  return Boolean(currentFighter);
+  return isManualPlayerCombatant(currentFighter, {
+    related: commandTurn?.turnEntry || { side: commandTurn?.activeActorTeam },
+    aiControlEnabled,
+  });
 }
 
 export function endManualTurnActions(fighters = [], currentFighter = null) {
@@ -119,9 +122,8 @@ export function canStartManualMovementTargeting({
   if (!currentFighterId || !currentTurnId || !movementFighterId) return false;
   if (movementFighterId !== currentFighterId || movementFighterId !== currentTurnId) return false;
 
-  const side = normalizeText(currentTurnEntry?.side || currentFighter?.side || currentFighter?.type);
   const control = normalizeText(currentFighter?.controlMode || currentFighter?.controller || currentFighter?.type);
-  if (side === "enemy" || control === "enemy" || currentFighter?.aiControlled === true) return false;
+  if (isEnemyCombatant(currentFighter, currentTurnEntry) || control === "enemy" || currentFighter?.aiControlled === true) return false;
 
   const mode = normalizeText(selectedMovementMode);
   if (!MOVEMENT_TYPES.has(mode)) return false;

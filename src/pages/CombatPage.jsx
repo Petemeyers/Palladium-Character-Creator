@@ -131,6 +131,7 @@ import { spendAction } from "../utils/publicActionBudget.js";
 import { spendStamina } from "../utils/combatStamina.js";
 import { applyStaminaRecovery, getRecoveryAmount } from "../utils/combatRecovery.js";
 import {
+  applyPendingDefensiveSelection,
   applyCombatPosture,
   applyDefensivePosture,
   applyDefensiveReserve,
@@ -141,7 +142,12 @@ import {
   createDefensivePosture,
   getDefensiveReserve,
   getCombatPosture,
+  getPendingDefensiveSelection,
 } from "../utils/combatPosture.js";
+import {
+  getCombatantSide,
+  isManualPlayerCombatant,
+} from "../utils/combatantSide.js";
 import { createPlayableCharacterFighter, getPlayableCharacterRollDetails } from "../utils/autoRoll.js";
 import { assignRandomWeaponToEnemy, getDefaultWeaponForEnemy, equipWeaponToEnemy, addWeaponToInventory } from "../utils/enemyWeaponAssigner.js";
 import armorShopData from "../data/armorShopData.js";
@@ -8080,25 +8086,7 @@ function CombatPage({ characters = [] }) {
     const army = fighter.armyId
       ? encounterArmies.find((entry) => entry.id === fighter.armyId)
       : null;
-    const normalize = (value) => String(value || "").trim().toLowerCase();
-    const values = [
-      fighter.team,
-      fighter.teamId,
-      fighter.armyId,
-      fighter.armyName,
-      fighter.factionId,
-      fighter.type,
-      army?.id,
-      army?.name,
-      army?.team,
-      army?.teamId,
-      army?.type,
-    ].map(normalize).filter(Boolean);
-    const enemyLabels = new Set(["enemy", "enemies", "hostile", "opponents", "opponents"]);
-    const playerLabels = new Set(["player", "players", "party", "player party", "heroes"]);
-    if (values.some((value) => enemyLabels.has(value) || value.includes("enemy"))) return "enemy";
-    if (values.some((value) => playerLabels.has(value))) return "player";
-    return "unknown";
+    return getCombatantSide(fighter, army);
   }, [encounterArmies]);
 
   const normalizeFighterSideId = useCallback((fighter, { log = false } = {}) => {
@@ -8151,13 +8139,11 @@ function CombatPage({ characters = [] }) {
       return explicitMode;
     }
 
-    const id = String(fighter.id || "").toLowerCase();
     const isPlayable =
+      schedulerTeam === "player" ||
       fighter.playable === true ||
       fighter.isPlayable === true ||
       fighter.isPlayerConchampioned === true ||
-      id.startsWith("playable-") ||
-      id.startsWith("player-") ||
       String(fighter.teamId || "").toLowerCase() === "players" ||
       String(fighter.armyId || "").toLowerCase() === "party";
     if (isPlayable) {
@@ -8657,10 +8643,10 @@ function CombatPage({ characters = [] }) {
   const canEndCompatibilityTurn =
     combatActive &&
     !combatOverRef.current &&
-    currentFighter?.type === "player" &&
+    isManualPlayerCombatant(currentFighter, { aiControlEnabled }) &&
     legacyDefensiveRemainingActions > 0;
   const legacyDefensiveFlowHint =
-    currentFighter?.type === "player" &&
+    isManualPlayerCombatant(currentFighter, { aiControlEnabled }) &&
     legacyDefensivePosture &&
     legacyDefensiveRemainingActions > 0
       ? getLegacyDefensiveRemainingActionMessage({
@@ -9781,18 +9767,7 @@ function CombatPage({ characters = [] }) {
 
     const liveScheduledFighter = activeFighter || fighter;
     const schedulerTeam = getFighterSchedulerTeam(liveScheduledFighter);
-    const isPlayableTurnFighter =
-      schedulerTeam !== "enemy" && (
-        liveScheduledFighter?.playable === true ||
-        liveScheduledFighter?.isPlayable === true ||
-        liveScheduledFighter?.isPlayerConchampioned === true ||
-        String(liveScheduledFighter?.id || "").toLowerCase().startsWith("playable-") ||
-        String(liveScheduledFighter?.id || "").toLowerCase().startsWith("player-") ||
-        schedulerTeam === "player" ||
-        String(liveScheduledFighter?.teamId || "").toLowerCase() === "players" ||
-        String(liveScheduledFighter?.armyId || "").toLowerCase() === "party" ||
-        String(liveScheduledFighter?.type || "").toLowerCase() === "player"
-      );
+    const isPlayableTurnFighter = schedulerTeam === "player";
     const controlMode = getFighterControlMode(liveScheduledFighter);
     const usesPlayerAIPath = controlMode === "ai" && isPlayableTurnFighter;
     const usesEnemyAIPath = controlMode === "ai" && !isPlayableTurnFighter;
@@ -10101,21 +10076,8 @@ function CombatPage({ characters = [] }) {
           }
           const latestControlMode = getFighterControlMode(latestFighter);
           const latestSchedulerTeam = getFighterSchedulerTeam(latestFighter);
-          const latestIsEnemySide =
-            latestSchedulerTeam === "enemy" ||
-            String(latestFighter?.type || "").toLowerCase() === "enemy";
-          const latestPlayable =
-            latestSchedulerTeam !== "enemy" && (
-              latestFighter?.playable === true ||
-              latestFighter?.isPlayable === true ||
-              latestFighter?.isPlayerConchampioned === true ||
-              String(latestFighter?.id || "").toLowerCase().startsWith("playable-") ||
-              String(latestFighter?.id || "").toLowerCase().startsWith("player-") ||
-              latestSchedulerTeam === "player" ||
-              String(latestFighter?.teamId || "").toLowerCase() === "players" ||
-              String(latestFighter?.armyId || "").toLowerCase() === "party" ||
-              String(latestFighter?.type || "").toLowerCase() === "player"
-            );
+          const latestIsEnemySide = latestSchedulerTeam === "enemy";
+          const latestPlayable = latestSchedulerTeam === "player";
           if ((latestPlayable || latestControlMode === "player") && !latestIsEnemySide) {
             if (String(reason || "").includes("reroute")) {
               addLog("side mismatch unresolved; skipping once to avoid freeze.", "warning");
@@ -11784,8 +11746,7 @@ function CombatPage({ characters = [] }) {
         const pendingTechnique = activeTechniqueImpactRef.current;
         const techniqueImpactPending = Boolean(pendingTechnique);
         const manualPlayerWaiting =
-          current?.type === "player" &&
-          !aiControlEnabledRef.current &&
+          isManualPlayerCombatant(current, { aiControlEnabled: aiControlEnabledRef.current }) &&
           (Number(current?.remainingActions ?? 0) || 0) > 0 &&
           current?.status !== "defeated" &&
           current?.condition !== "dying";
@@ -13213,7 +13174,7 @@ function CombatPage({ characters = [] }) {
 
   const endManualPlayerTurn = useCallback(({ source, logType = "command" } = {}) => {
     const liveFighters = fightersRef.current ?? fighters;
-    const liveFighter = liveFighters?.[turnIndexRef.current ?? turnIndex] || currentFighter;
+    let liveFighter = liveFighters?.[turnIndexRef.current ?? turnIndex] || currentFighter;
     const activeActorId = String(commandTurnBridge.activeActorId || "");
     const liveFighterId = String(liveFighter?.id || liveFighter?._id || "");
     const isCommandCenterSource = source === "command-center-end-turn";
@@ -13258,13 +13219,59 @@ function CombatPage({ characters = [] }) {
       return;
     }
 
+    const pendingDefense = getPendingDefensiveSelection(selectedCombatAction, selectedAction);
+    let fightersReadyToEnd = liveFighters;
+    if (pendingDefense) {
+      const legacyActionCost = !selectedCombatAction && pendingDefense.reserveType === "block"
+        ? getActionCost("PARRY")
+        : !selectedCombatAction && pendingDefense.reserveType === "evade"
+          ? getActionCost("DODGE")
+          : pendingDefense.actionCost;
+      const defenseResult = applyPendingDefensiveSelection(liveFighter, {
+        selectedCombatAction,
+        selectedLegacyAction: selectedAction,
+        round: meleeRoundRef.current || meleeRound,
+        turnIndex: turnIndexRef.current ?? turnIndex,
+        actionCost: legacyActionCost === "all"
+          ? Math.max(1, Number(liveFighter?.remainingActions) || 1)
+          : legacyActionCost,
+      });
+
+      if (!defenseResult.ok) {
+        addLog(commandBlockedLog({
+          action: "End Turn",
+          reason: "Resolve selected defense before ending turn.",
+        }), "warning");
+        return;
+      }
+
+      if (defenseResult.applied) {
+        liveFighter = defenseResult.updated;
+        fightersReadyToEnd = liveFighters.map((fighter) =>
+          String(fighter?.id || fighter?._id || "") === liveFighterId
+            ? defenseResult.updated
+            : fighter
+        );
+        setDefensiveStance((prev) => ({
+          ...prev,
+          [liveFighterId]: pendingDefense.stance,
+        }));
+        const postureMessage = pendingDefense.reserveType === "evade"
+          ? `${liveFighter.name} prepares to evade incoming attacks.`
+          : pendingDefense.reserveType === "block"
+            ? `${liveFighter.name} takes a defensive stance, preparing to block incoming attacks.`
+            : `${liveFighter.name} takes a defensive stance and holds their ground.`;
+        addLog(postureMessage, "info");
+      }
+    }
+
     pendingTurnAdvanceRef.current = false;
     clearLegacyDefensiveActionState("Defend/Hold");
     setSelectedCombatAction(null);
     setSelectedMovementCommandResult(null);
     pendingSelectedMovementCommandRef.current = null;
 
-    const endedFighters = endManualTurnActions(liveFighters, liveFighter);
+    const endedFighters = endManualTurnActions(fightersReadyToEnd, liveFighter);
     fightersRef.current = endedFighters;
     setFighters(endedFighters);
 
@@ -13283,8 +13290,11 @@ function CombatPage({ characters = [] }) {
     endManualTurnActions,
     fighters,
     isActionBusy,
+    meleeRound,
     movementMode.active,
     scheduleEndTurn,
+    selectedAction,
+    selectedCombatAction,
     selectedMovementFighter,
     turnIndex,
   ]);
@@ -19293,21 +19303,8 @@ function CombatPage({ characters = [] }) {
     }
     const liveEnemyControlMode = getFighterControlMode(liveTurnFighter);
     const liveEnemySchedulerTeam = getFighterSchedulerTeam(liveTurnFighter);
-    const liveEnemyIsEnemySide =
-      liveEnemySchedulerTeam === "enemy" ||
-      String(liveTurnFighter?.type || "").toLowerCase() === "enemy";
-    const liveEnemyPlayable =
-      !liveEnemyIsEnemySide && (
-        liveTurnFighter?.playable === true ||
-        liveTurnFighter?.isPlayable === true ||
-        liveTurnFighter?.isPlayerConchampioned === true ||
-        String(liveTurnFighter?.id || "").toLowerCase().startsWith("playable-") ||
-        String(liveTurnFighter?.id || "").toLowerCase().startsWith("player-") ||
-        liveEnemySchedulerTeam === "player" ||
-        String(liveTurnFighter?.teamId || "").toLowerCase() === "players" ||
-        String(liveTurnFighter?.armyId || "").toLowerCase() === "party" ||
-        String(liveTurnFighter?.type || "").toLowerCase() === "player"
-      );
+    const liveEnemyIsEnemySide = liveEnemySchedulerTeam === "enemy";
+    const liveEnemyPlayable = liveEnemySchedulerTeam === "player";
     if ((liveEnemyPlayable || liveEnemyControlMode === "player") && !liveEnemyIsEnemySide) {
       if (String(source || "").includes("reroute")) {
         addLog("side mismatch unresolved; skipping once to avoid freeze.", "warning");
@@ -23873,18 +23870,7 @@ function CombatPage({ characters = [] }) {
 
     const currentControlMode = getFighterControlMode(currentFighter);
     const currentSchedulerTeam = getFighterSchedulerTeam(currentFighter);
-    const currentIsPlayable =
-      currentSchedulerTeam !== "enemy" && (
-        currentFighter?.playable === true ||
-        currentFighter?.isPlayable === true ||
-        currentFighter?.isPlayerConchampioned === true ||
-        String(currentFighter?.id || "").toLowerCase().startsWith("playable-") ||
-        String(currentFighter?.id || "").toLowerCase().startsWith("player-") ||
-        currentSchedulerTeam === "player" ||
-        String(currentFighter?.teamId || "").toLowerCase() === "players" ||
-        String(currentFighter?.armyId || "").toLowerCase() === "party" ||
-        String(currentFighter?.type || "").toLowerCase() === "player"
-      );
+    const currentIsPlayable = currentSchedulerTeam === "player";
     const usesPlayerAIPath = currentControlMode === "ai" && currentIsPlayable;
     addLog?.(
      `turn scheduler classified ${currentFighter.name} as ${usesPlayerAIPath || currentControlMode === "player" ? "player" : "enemy"} team=${currentFighter.team ?? currentFighter.teamId ?? currentFighter.armyId ?? currentSchedulerTeam ?? "unknown"} type=${currentFighter.type ?? "unknown"}`,
