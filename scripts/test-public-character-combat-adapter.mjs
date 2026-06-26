@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import {
   adaptPublicCharacterForAutoRoll,
   buildCompatibilityAttributesFromPublicCharacter,
+  getPlayableCharacterImportLogLines,
+  isSavedCharacterCombatData,
 } from "../src/utils/publicCharacterCombatAdapter.js";
 
 const sampleCharacter = {
@@ -83,8 +85,45 @@ assert.deepEqual(
   "Display metadata should keep public modifiers separate from compatibility attributes"
 );
 assert.equal(adaptation.combatCharacter.publicDisplaySource, "saved-character", "Public display source should be marked");
+assert.equal(adaptation.combatCharacter.source, "saved-character", "Combat character should mark saved character source");
+assert.equal(adaptation.combatCharacter.sourceCharacterId, "sample-public-character", "Combat character should preserve saved character id");
+assert.equal(adaptation.combatCharacter.generated, false, "Saved character combat data should not be marked generated");
 assert.equal(adaptation.combatCharacter.class, "Barbarian", "Class compatibility field should be set at the adapter boundary");
+assert.equal(isSavedCharacterCombatData(adaptation.combatCharacter), true, "Saved combat data should be detected");
+assert.deepEqual(
+  getPlayableCharacterImportLogLines(adaptation.combatCharacter, "Ada"),
+  ["Loaded saved character Ada.", "Loaded saved character attributes from Character List."],
+  "Saved character import log wording should not say Auto-rolled"
+);
 assert.deepEqual(sampleCharacter, originalSnapshot, "Adapter should not mutate the original character");
+
+const publicScoresFallback = adaptPublicCharacterForAutoRoll({
+  name: "Fallback",
+  publicClassName: "Fighter",
+  publicSpeciesName: "Human",
+  publicAbilityScores: {
+    str: 18,
+    dex: 13,
+    con: 12,
+    int: 10,
+    wis: 9,
+    cha: 8,
+  },
+  publicDerivedStats: {
+    hitPoints: 10,
+    baseArmorClass: 11,
+  },
+  speed: 25,
+});
+assert.equal(publicScoresFallback.ready, true, "publicAbilityScores fallback should produce ready combat data");
+assert.equal(publicScoresFallback.combatCharacter.attributes.PS, 18, "publicAbilityScores should map to compatibility attributes");
+assert.equal(publicScoresFallback.combatCharacter.Spd, 25, "saved speed should map to combat speed");
+
+assert.equal(
+  getPlayableCharacterImportLogLines({ source: "autoroll", generated: true }, "New Fighter")[0],
+  "Auto-rolled New Fighter:",
+  "Generated characters keep AutoRoll wording"
+);
 
 const incompleteAdaptation = adaptPublicCharacterForAutoRoll({
   name: "Incomplete",

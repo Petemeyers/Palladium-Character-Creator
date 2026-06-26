@@ -5,6 +5,9 @@ import {
   buildClearedLegacyDefensiveActionState,
   buildClearedMovementState,
   canStartManualMovementTargeting,
+  canUseManualEndTurn,
+  endManualTurnActions,
+  isExplicitManualEndTurnSource,
   isLegacyDefensiveAction,
   sanitizeBusyStateAfterAbort,
   shouldClearLegacySelectedAction,
@@ -43,6 +46,31 @@ assert.equal(JSON.stringify(movementState), movementSnapshot, "movement cleanup 
 
 const playerFighter = { id: "fighter-1", name: "Mimi", type: "player" };
 const playerTurn = { id: "fighter-1", side: "player" };
+assert.equal(isExplicitManualEndTurnSource("command-center-end-turn"), true, "command center End Turn source is explicit");
+assert.equal(isExplicitManualEndTurnSource("legacy-compatibility-end-turn"), true, "compatibility End Turn source is explicit");
+assert.equal(
+  canUseManualEndTurn({
+    source: "command-center-end-turn",
+    currentFighter: playerFighter,
+    commandTurn: { activeActorTeam: "player", isPlayerControlled: true },
+  }),
+  true,
+  "manual player can explicitly end turn"
+);
+assert.equal(
+  canUseManualEndTurn({
+    source: "command-center-end-turn",
+    currentFighter: { id: "enemy-1", name: "Goblin", type: "enemy" },
+    commandTurn: { activeActorTeam: "enemy", isEnemyControlled: true },
+  }),
+  false,
+  "enemy cannot explicitly use manual End Turn"
+);
+assert.equal(
+  endManualTurnActions([{ ...playerFighter, remainingActions: 2 }], playerFighter)[0].remainingActions,
+  0,
+  "manual End Turn ends remaining actions for the active fighter"
+);
 assert.equal(
   canStartManualMovementTargeting({
     combatActive: true,

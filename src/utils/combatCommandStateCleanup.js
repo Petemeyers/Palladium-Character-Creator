@@ -3,6 +3,10 @@ const cloneArray = (value) => (Array.isArray(value) ? [] : []);
 const MOVEMENT_TYPES = new Set(["move", "run", "charge", "withdraw"]);
 const NON_MOVEMENT_ACTIONS = new Set(["attack", "evade", "defend", "defend/hold", "block", "use item", "use-item", "use skill", "use-skill"]);
 const LEGACY_DEFENSIVE_ACTIONS = new Set(["defend", "defend/hold", "evade", "block"]);
+const EXPLICIT_MANUAL_END_TURN_SOURCES = new Set([
+  "command-center-end-turn",
+  "legacy-compatibility-end-turn",
+]);
 const LEGACY_DEFENSIVE_POSTURE_BY_ACTION = {
   defend: "Defend",
   "defend/hold": "Defend",
@@ -57,6 +61,43 @@ export function getLegacyDefensiveRemainingActionMessage({ actorName, remainingA
 
 export function shouldClearLegacySelectedAction(actionName) {
   return isLegacyDefensiveAction(actionName);
+}
+
+export function isExplicitManualEndTurnSource(source) {
+  return EXPLICIT_MANUAL_END_TURN_SOURCES.has(normalizeText(source));
+}
+
+export function canUseManualEndTurn(options = {}) {
+  const safeOptions = options && typeof options === "object" ? options : {};
+  const {
+    source = "",
+    currentFighter = null,
+    commandTurn = null,
+    aiControlEnabled = false,
+  } = safeOptions;
+  if (!isExplicitManualEndTurnSource(source)) return false;
+  const side = normalizeText(commandTurn?.activeActorTeam || commandTurn?.turnEntry?.side || currentFighter?.side || currentFighter?.type);
+  const isEnemy =
+    side === "enemy" ||
+    commandTurn?.isEnemyControlled === true ||
+    currentFighter?.aiControlled === true;
+  if (isEnemy) return false;
+  if (commandTurn?.isPlayerControlled === false) return false;
+  if (aiControlEnabled) return false;
+  return Boolean(currentFighter);
+}
+
+export function endManualTurnActions(fighters = [], currentFighter = null) {
+  if (!Array.isArray(fighters)) return fighters;
+  const currentId = getId(currentFighter);
+  if (!currentId) return fighters;
+  return fighters.map((fighter) => {
+    if (getId(fighter) !== currentId) return fighter;
+    return {
+      ...fighter,
+      remainingActions: 0,
+    };
+  });
 }
 
 export function canStartManualMovementTargeting({
@@ -210,9 +251,12 @@ export default {
   buildClearedAttackAbortState,
   buildClearedMovementState,
   canStartManualMovementTargeting,
+  canUseManualEndTurn,
+  endManualTurnActions,
   getLegacyDefensiveDuplicateMessage,
   getLegacyDefensivePosture,
   getLegacyDefensiveRemainingActionMessage,
+  isExplicitManualEndTurnSource,
   isDuplicateLegacyDefensiveAction,
   isLegacyDefensiveAction,
   sanitizeBusyStateAfterAbort,

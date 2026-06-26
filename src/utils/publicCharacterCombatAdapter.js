@@ -22,9 +22,23 @@ const toFiniteNumber = (value, fallback = null) => {
   return Number.isFinite(number) ? number : fallback;
 };
 
+const firstPlainObject = (...values) => {
+  for (const value of values) {
+    const plain = toPlainObject(value);
+    if (plain && typeof plain === "object" && Object.keys(plain).length > 0) {
+      return plain;
+    }
+  }
+  return {};
+};
+
 export function buildCompatibilityAttributesFromPublicCharacter(character = {}) {
   const existingAttributes = toPlainObject(character.attributes);
-  const publicScores = toPlainObject(character.finalAbilityScores);
+  const publicScores = firstPlainObject(
+    character.finalAbilityScores,
+    character.publicAbilityScores,
+    character.abilityScores
+  );
   const attributes = { ...existingAttributes };
 
   Object.entries(PUBLIC_TO_COMPATIBILITY_ATTRIBUTES).forEach(([publicKey, compatibilityKey]) => {
@@ -44,10 +58,45 @@ export function buildCompatibilityAttributesFromPublicCharacter(character = {}) 
   return attributes;
 }
 
+export function isSavedCharacterCombatData(character = {}) {
+  return Boolean(
+    character?.source === "saved-character" ||
+    character?.publicDisplaySource === "saved-character" ||
+    character?.generated === false
+  );
+}
+
+export function getPlayableCharacterImportLogLines(character = {}, name = "Combatant") {
+  const safeName = String(name || character?.name || "Combatant");
+  if (isSavedCharacterCombatData(character)) {
+    return [
+      `Loaded saved character ${safeName}.`,
+      "Loaded saved character attributes from Character List.",
+    ];
+  }
+  return [`Auto-rolled ${safeName}:`];
+}
+
 export function adaptPublicCharacterForAutoRoll(character = {}) {
   const missingRequiredFields = [];
+  const finalAbilityScores = firstPlainObject(
+    character.finalAbilityScores,
+    character.publicAbilityScores,
+    character.abilityScores
+  );
+  const abilityModifiers = firstPlainObject(
+    character.abilityModifiers,
+    character.publicAbilityModifiers
+  );
   const attributes = buildCompatibilityAttributesFromPublicCharacter(character);
-  const derivedStats = getPublicDerivedStatsForCharacter(character);
+  const derivedStats =
+    character.publicDerivedStats ||
+    character.derivedStats ||
+    getPublicDerivedStatsForCharacter({
+      ...character,
+      finalAbilityScores,
+      abilityModifiers,
+    });
   const hasClass = Boolean(character.publicClassName || character.class || character.profession);
   const hasSpecies = Boolean(character.publicSpeciesName || character.species || character.race || character.category);
 
@@ -104,8 +153,10 @@ export function adaptPublicCharacterForAutoRoll(character = {}) {
       Spd: speed,
       spd: speed,
       alignment_options: character.alignment ? [character.alignment] : undefined,
-      publicAbilityScores: character.finalAbilityScores,
-      publicAbilityModifiers: character.abilityModifiers,
+      finalAbilityScores,
+      abilityModifiers,
+      publicAbilityScores: finalAbilityScores,
+      publicAbilityModifiers: abilityModifiers,
       publicDisplaySource: "saved-character",
       publicDerivedStats: derivedStats,
       publicLanguages: character.publicLanguages || [],
@@ -114,6 +165,9 @@ export function adaptPublicCharacterForAutoRoll(character = {}) {
       publicAttackPreviews,
       attacks: character.attacks || [{ name: "Unarmed Attack", damage: "1d4", count: 1 }],
       bonuses: character.bonuses || {},
+      source: "saved-character",
+      sourceCharacterId: character.id || character._id || character.characterId,
+      generated: false,
       special_abilities: character.special_abilities || [],
       training: character.training || [],
       tactics: character.tactics || [],
@@ -124,4 +178,6 @@ export function adaptPublicCharacterForAutoRoll(character = {}) {
 export default {
   adaptPublicCharacterForAutoRoll,
   buildCompatibilityAttributesFromPublicCharacter,
+  getPlayableCharacterImportLogLines,
+  isSavedCharacterCombatData,
 };

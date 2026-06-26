@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
-import { adaptPublicCharacterToRosterEntry } from "../src/utils/publicRosterAdapter.js";
+import {
+  adaptPublicCharacterToRosterEntry,
+  resolveStagedSavedCharacterForImport,
+} from "../src/utils/publicRosterAdapter.js";
 
 const savedCharacter = {
   _id: "saved-public-1",
@@ -41,6 +44,8 @@ assert.equal(rosterEntry.id, "saved-public-1", "Roster entry should preserve sav
 assert.equal(rosterEntry.name, "Rin", "Roster entry should preserve name");
 assert.equal(rosterEntry.side, "player", "Saved public character should become player-side roster metadata");
 assert.equal(rosterEntry.source, "saved-character", "Roster entry should mark saved character source");
+assert.equal(rosterEntry.sourceCharacterId, "saved-public-1", "Roster entry should preserve source character id");
+assert.equal(rosterEntry.generated, false, "Roster entry should mark saved characters as not generated");
 assert.equal(rosterEntry.publicClassName, "Fighter", "Public class label should be preserved");
 assert.equal(rosterEntry.publicSpeciesName, "Human", "Public species label should be preserved");
 assert.equal(rosterEntry.publicBackgroundName, "Soldier", "Public background label should be preserved");
@@ -50,5 +55,27 @@ assert.equal(rosterEntry.compatibilityAttributes.PS, 17, "Compatibility attribut
 assert.equal(rosterEntry.attribute_dice.PS, "17", "Fixed compatibility roll input should be created");
 assert.equal(rosterEntry.autoRollReady, true, "Complete public character should be ready for preview");
 assert.deepEqual(savedCharacter, snapshot, "Roster adapter should not mutate source character");
+
+const staleStagedEntry = {
+  id: "saved-public-1",
+  name: "Old Rin",
+  side: "player",
+  source: "saved-character",
+  publicAbilityScores: { str: 8, dex: 8, con: 8, int: 8, wis: 8, cha: 8 },
+};
+const resolved = resolveStagedSavedCharacterForImport(staleStagedEntry, [savedCharacter]);
+assert.equal(resolved.ok, true, "staged saved character resolves against current saved character list");
+assert.equal(resolved.entry.name, "Rin", "resolved import uses fresh saved character name");
+assert.equal(resolved.entry.publicAbilityScores.str, 17, "resolved import uses fresh saved ability scores");
+assert.equal(resolved.entry.autoRollCharacter.attributes.PS, 17, "resolved import preserves saved compatibility attributes");
+
+const missing = resolveStagedSavedCharacterForImport(staleStagedEntry, []);
+assert.equal(missing.ok, false, "missing saved character is skipped safely");
+assert.equal(missing.reason, "saved character no longer exists");
+
+const enemyEntry = { id: "goblin-warrior", name: "Goblin Warrior", side: "enemy", source: "public-enemy" };
+const resolvedEnemy = resolveStagedSavedCharacterForImport(enemyEntry, [savedCharacter]);
+assert.equal(resolvedEnemy.ok, true, "public enemy entries pass through saved-character resolver");
+assert.equal(resolvedEnemy.entry.name, "Goblin Warrior");
 
 console.log("Public roster adapter tests passed.");

@@ -98,9 +98,12 @@ import {
   buildClearedLegacyDefensiveActionState,
   buildClearedMovementState,
   canStartManualMovementTargeting,
+  canUseManualEndTurn,
+  endManualTurnActions,
   getLegacyDefensiveDuplicateMessage,
   getLegacyDefensiveRemainingActionMessage,
   getLegacyDefensivePosture,
+  isExplicitManualEndTurnSource,
   isDuplicateLegacyDefensiveAction,
   isLegacyDefensiveAction,
 } from "../utils/combatCommandStateCleanup.js";
@@ -235,6 +238,11 @@ import {
   checkPublicPlayerCombatReadiness,
 } from "../utils/publicCombatReadiness.js";
 import { adaptPublicEnemyToCombatant } from "../utils/publicEnemyCombatAdapter.js";
+import { resolveStagedSavedCharacterForImport } from "../utils/publicRosterAdapter.js";
+import {
+  getPlayableCharacterImportLogLines,
+  isSavedCharacterCombatData,
+} from "../utils/publicCharacterCombatAdapter.js";
 
 // Debug toggle for grapple system
 const DEBUG_GRAPPLE = true; // set to false in production
@@ -11686,7 +11694,8 @@ function CombatPage({ characters = [] }) {
           source === "manual-no-action" ||
           source === "manual-attack-finalized" ||
           source === "manual-move-finalized" ||
-          source === "horror-action-consumed";
+          source === "horror-action-consumed" ||
+          isExplicitManualEndTurnSource(source);
           const getBlockedTurnDebug = (reason) =>
             `tryEndTurn blocked: reason=${reason} busy=${busy} pending=${pending} resolving=${turnActionResolvingRef.current} executing=${executingActionRef.current} projectile=${projectilePending} techniqueImpact=${techniqueImpactPending} manualWaiting=${manualPlayerWaiting} manualAllowed=${allowManualNoActionEndTurn} source=${source} fighter=${current?.name ?? "none"} fighterId=${current?.id ?? "none"} remaining=${current?.remainingActions ?? "n/a"} selectedAction=${selectedAction?.name ?? "none"} selectedTarget=${selectedTarget?.name ?? selectedTarget?.id ?? "none"} selectedWeapon=${selectedAttackWeapon?.name ?? "none"} selectedMovementMode=${selectedActionType ?? "none"} movementMode=${movementMode?.active ? (movementMode?.isRunning ? "run" : "move") : "inactive"} manualMovementMode=${playerMovementMode ?? "none"} selectedMovementFighter=${selectedMovementFighter ?? "none"} selectedMovementHex=${selectedMovementHex ? `${selectedMovementHex.x},${selectedMovementHex.y}` : "none"} selectedHex=${selectedHex ? `${selectedHex.x},${selectedHex.y}` : "none"} showMovementSelection=${showMovementSelection} validMoves=${engineValidMoves?.length ?? 0} pendingMoveCosts=${Object.keys(moveCostsByHex || {}).length} activeAttack=${activeAttackActionIdRef.current ?? "none"} activeGrapple=${activeGrappleActionIdRef.current ?? "none"} activeTechnique=${pendingTechnique?.castId ?? "none"} playerAIScheduled=${playerAIActionScheduledRef.current} processingPlayerAI=${processingPlayerAIRef.current} processingEnemy=${processingEnemyTurnRef.current} enemyActionCommitted=${enemyActionCommittedThisSliceRef.current}`;
 
@@ -11777,6 +11786,7 @@ function CombatPage({ characters = [] }) {
       combatActive,
       isActionBusy,
       isCurrentCombatSession,
+      isExplicitManualEndTurnSource,
       scaleDelayMs,
       fighters,
       selectedAction,
@@ -13102,73 +13112,76 @@ function CombatPage({ characters = [] }) {
     setTargetingMode,
   ]);
 
-  const endCompatibilityCombatTurn = useCallback(() => {
-    const liveFighters = fightersRef.current ?? fighters;
-    const liveFighter = liveFighters?.[turnIndexRef.current ?? turnIndex] || currentFighter;
-    clearLegacyDefensiveActionState("Defend/Hold");
-    addLog(`${liveFighter?.name || "Combatant"} ends their turn.`, "info");
-    scheduleEndTurn(0, "legacy-compatibility-end-turn");
-  }, [
-    addLog,
-    clearLegacyDefensiveActionState,
-    currentFighter,
-    fighters,
-    scheduleEndTurn,
-    turnIndex,
-  ]);
-
-  const endCommandCenterTurn = useCallback(() => {
+  const endManualPlayerTurn = useCallback(({ source, logType = "command" } = {}) => {
     const liveFighters = fightersRef.current ?? fighters;
     const liveFighter = liveFighters?.[turnIndexRef.current ?? turnIndex] || currentFighter;
     const activeActorId = String(commandTurnBridge.activeActorId || "");
     const liveFighterId = String(liveFighter?.id || liveFighter?._id || "");
+    const isCommandCenterSource = source === "command-center-end-turn";
 
-    if (!commandTurnBridge.isPlayerControlled || commandTurnBridge.isEnemyControlled) {
-      addLog(commandBlockedLog({ action: "End Turn", reason: "current turn is not player-controlled." }), "warning");
+    if (!canUseManualEndTurn({
+      source,
+      currentFighter: liveFighter,
+      commandTurn: isCommandCenterSource ? commandTurnBridge : null,
+      aiControlEnabled: aiControlEnabledRef.current,
+    })) {
+      const action = isCommandCenterSource ? "End Turn" : "Compatibility End Turn";
+      addLog(commandBlockedLog({ action, reason: "current turn is not player-controlled." }), "warning");
       return;
     }
 
-    if (commandTurnBridge.warning) {
+    if (isCommandCenterSource && commandTurnBridge.warning) {
       addLog(commandBlockedLog({ action: "End Turn", reason: commandTurnBridge.warning }), "warning");
       return;
     }
 
-    if (!liveFighter || (activeActorId && liveFighterId && activeActorId !== liveFighterId)) {
+    if (isCommandCenterSource && (!liveFighter || (activeActorId && liveFighterId && activeActorId !== liveFighterId))) {
       addLog(commandBlockedLog({ action: "End Turn", reason: "current combatant was not found." }), "warning");
       return;
     }
 
-    if (
-      pendingTurnAdvanceRef.current ||
-      turnTimeoutRef.current ||
-      isActionBusy() ||
+    const actionBusy = isActionBusy();
+    const hasTrueBusyState =
+      actionBusy ||
       turnActionResolvingRef.current ||
       activeTechniqueImpactRef.current ||
-      (projectilesRef.current?.length ?? 0) > 0
-    ) {
+      (projectilesRef.current?.length ?? 0) > 0 ||
+      turnTimeoutRef.current;
+
+    if (hasTrueBusyState) {
+      pendingTurnAdvanceRef.current = false;
       addLog(commandBlockedLog({ action: "End Turn", reason: "action is still resolving." }), "warning");
       return;
     }
 
-    if (movementMode.active && String(selectedMovementFighter || "") === activeActorId) {
+    if (movementMode.active && String(selectedMovementFighter || "") === String(liveFighter?.id || "")) {
       addLog(commandBlockedLog({ action: "End Turn", reason: "movement targeting is active." }), "warning");
       return;
     }
 
-    clearLegacyDefensiveActionState("End Turn");
+    pendingTurnAdvanceRef.current = false;
+    clearLegacyDefensiveActionState("Defend/Hold");
     setSelectedCombatAction(null);
     setSelectedMovementCommandResult(null);
     pendingSelectedMovementCommandRef.current = null;
-    addLog(commandCompletedLog({ actor: liveFighter, action: "End Turn", detail: "ends turn." }), "info");
-    scheduleEndTurn(0, "command-center-end-turn");
+
+    const endedFighters = endManualTurnActions(liveFighters, liveFighter);
+    fightersRef.current = endedFighters;
+    setFighters(endedFighters);
+
+    if (logType === "compatibility") {
+      addLog(`${liveFighter?.name || "Combatant"} ends their turn.`, "info");
+    } else {
+      addLog(commandCompletedLog({ actor: liveFighter, action: "End Turn", detail: "ends turn." }), "info");
+    }
+
+    scheduleEndTurn(0, source);
   }, [
     addLog,
     clearLegacyDefensiveActionState,
-    commandTurnBridge.activeActorId,
-    commandTurnBridge.isEnemyControlled,
-    commandTurnBridge.isPlayerControlled,
-    commandTurnBridge.warning,
+    commandTurnBridge,
     currentFighter,
+    endManualTurnActions,
     fighters,
     isActionBusy,
     movementMode.active,
@@ -13176,6 +13189,20 @@ function CombatPage({ characters = [] }) {
     selectedMovementFighter,
     turnIndex,
   ]);
+
+  const endCompatibilityCombatTurn = useCallback(() => {
+    endManualPlayerTurn({
+      source: "legacy-compatibility-end-turn",
+      logType: "compatibility",
+    });
+  }, [endManualPlayerTurn]);
+
+  const endCommandCenterTurn = useCallback(() => {
+    endManualPlayerTurn({
+      source: "command-center-end-turn",
+      logType: "command",
+    });
+  }, [endManualPlayerTurn]);
 
   // Trip maneuver handler
   const executeTripManeuver = useCallback((attacker, defender) => {
@@ -24153,8 +24180,12 @@ function CombatPage({ characters = [] }) {
 
     // Check if this is a playable character
     if (combatantData.playable) {
+      const isSavedCharacterImport = isSavedCharacterCombatData(combatantData);
       // Auto-roll attributes and create playable character fighter
       newFighter = createPlayableCharacterFighter(combatantData, nameToUse);
+      newFighter.source = isSavedCharacterImport ? "saved-character" : (combatantData.source || "autoroll");
+      newFighter.sourceCharacterId = combatantData.sourceCharacterId || combatantData.id || combatantData._id;
+      newFighter.generated = !isSavedCharacterImport;
 
       // Override weapon if one was selected
       if (weaponToEquip && weaponToEquip !== "None") {
@@ -24192,16 +24223,26 @@ function CombatPage({ characters = [] }) {
         newFighter = syncLegacyArmorFields(newFighter);
       }
 
-      // Log detailed roll information with debug details
+      // Log detailed import or roll information with debug details
       const rollDetails = getPlayableCharacterRollDetails(combatantData, newFighter.attributes);
+      const importLogLines = getPlayableCharacterImportLogLines(combatantData, newFighter.name);
 
-      addLog(`Auto-rolled ${newFighter.name}:`, "info");
-      // Enhanced attribute roll logging
-      Object.entries(rollDetails.attributes).forEach(([attr, data]) => {
-        const rollBreakdown = data.roll?.diceRolls?.map(d => d.result).join(' + ') || data.value;
-        const bonus = data.roll?.bonus ? ` + ${data.roll.bonus}` : '';
-        addLog(`   ${attr}: ${data.dice} = [${rollBreakdown}]${bonus} = ${data.value}`, "info");
-      });
+      if (isSavedCharacterImport) {
+        importLogLines.forEach((line) => addLog(line, "info"));
+        Object.entries(newFighter.attributes || {})
+          .filter(([attr]) => attr !== "_rollDetails")
+          .forEach(([attr, value]) => {
+            addLog(`   ${attr}: ${value}`, "info");
+          });
+      } else {
+        addLog(importLogLines[0], "info");
+        // Enhanced attribute roll logging
+        Object.entries(rollDetails.attributes).forEach(([attr, data]) => {
+          const rollBreakdown = data.roll?.diceRolls?.map(d => d.result).join(' + ') || data.value;
+          const bonus = data.roll?.bonus ? ` + ${data.roll.bonus}` : '';
+          addLog(`   ${attr}: ${data.dice} = [${rollBreakdown}]${bonus} = ${data.value}`, "info");
+        });
+      }
       addLog(`   HP: ${newFighter.currentHP}, AC: ${newFighter.guardRating}, Speed: ${newFighter.Spd || newFighter.spd || newFighter.attributes?.Spd || newFighter.attributes?.spd || 10}`, "info");
       const equistaminadArmorName = getEquistaminadArmorName(newFighter);
       const equistaminadArmorAR =
@@ -24225,12 +24266,23 @@ function CombatPage({ characters = [] }) {
         addLog(`${newFighter.name} has ${newFighter.training.length} techniques (stamina: ${newFighter.stamina})`, "info");
       }
 
-      // Assign random alignment from arenaRoster entry (always pick one from the array/category)
-      // Even if alignment exists as an array, we need to pick a specific one
-      const randomAlignment = getRandomAlignmentFromArenaRoster(combatantData);
-      newFighter.alignment = randomAlignment;
-      newFighter.alignmentName = randomAlignment;
-      addLog(`${newFighter.name} alignment: ${randomAlignment}`, "info");
+      if (isSavedCharacterImport) {
+        const savedAlignment = Array.isArray(combatantData.alignment)
+          ? combatantData.alignment[0]
+          : combatantData.alignment;
+        if (savedAlignment) {
+          newFighter.alignment = savedAlignment;
+          newFighter.alignmentName = savedAlignment;
+          addLog(`${newFighter.name} alignment: ${savedAlignment}`, "info");
+        }
+      } else {
+        // Assign random alignment from arenaRoster entry (always pick one from the array/category)
+        // Even if alignment exists as an array, we need to pick a specific one
+        const randomAlignment = getRandomAlignmentFromArenaRoster(combatantData);
+        newFighter.alignment = randomAlignment;
+        newFighter.alignmentName = randomAlignment;
+        addLog(`${newFighter.name} alignment: ${randomAlignment}`, "info");
+      }
     } else {
       // Regular combatant (existing logic)
       const rolledHP = rollHP(combatantData.HP);
@@ -24794,20 +24846,30 @@ function CombatPage({ characters = [] }) {
 
     entries.forEach((entry) => {
       if (staleIds.has(`${entry.side || ""}:${entry.id || ""}`)) {
-        messages.push(`${entry.name || "Staged character"} skipped: saved character no longer exists.`);
+        const message = `${entry.name || "Staged character"} skipped: saved character no longer exists.`;
+        messages.push(message);
+        addLog(message, "warning");
         return;
       }
 
       if (entry.side === "player") {
-        const readiness = checkPublicPlayerCombatReadiness(entry);
+        const resolved = resolveStagedSavedCharacterForImport(entry, characters);
+        if (!resolved.ok) {
+          const message = `${resolved.entryName || entry.name || "Staged character"} skipped: ${resolved.reason}.`;
+          messages.push(message);
+          addLog(message, "warning");
+          return;
+        }
+        const importEntry = resolved.entry;
+        const readiness = checkPublicPlayerCombatReadiness(importEntry);
         if (!readiness.ready) {
           messages.push(`${entry.name || "Staged player"} skipped: missing ${readiness.missing.join(", ")}`);
           return;
         }
 
-        addCombatant(entry.autoRollCharacter, entry.name, 1, null, "None", 0, "player", "party");
+        addCombatant(importEntry.autoRollCharacter, importEntry.name, 1, null, "None", 0, "player", "party");
         importedCount += 1;
-        messages.push(`${entry.name} imported as a player.`);
+        messages.push(`${importEntry.name} imported as a player.`);
         return;
       }
 

@@ -2,9 +2,11 @@ import assert from "node:assert/strict";
 
 import {
   buildClearedLegacyDefensiveActionState,
+  canUseManualEndTurn,
   getLegacyDefensiveDuplicateMessage,
   getLegacyDefensivePosture,
   getLegacyDefensiveRemainingActionMessage,
+  isExplicitManualEndTurnSource,
   isDuplicateLegacyDefensiveAction,
   isLegacyDefensiveAction,
 } from "../src/utils/combatCommandStateCleanup.js";
@@ -23,6 +25,15 @@ const snapshot = JSON.stringify(state);
 assert.equal(isLegacyDefensiveAction("Defend/Hold"), true, "Defend/Hold is a legacy defensive action");
 assert.equal(isLegacyDefensiveAction({ name: "Block" }), true, "Block is a legacy defensive action");
 assert.equal(isLegacyDefensiveAction({ name: "Evade" }), true, "Evade is a legacy defensive action");
+assert.equal(isExplicitManualEndTurnSource("legacy-compatibility-end-turn"), true, "compatibility End Turn uses explicit manual end-turn source");
+assert.equal(
+  canUseManualEndTurn({
+    source: "legacy-compatibility-end-turn",
+    currentFighter: { id: "fighter-1", name: "Kara", type: "player" },
+  }),
+  true,
+  "compatibility End Turn is allowed for manual player turns"
+);
 
 assert.equal(getLegacyDefensivePosture("Defend/Hold"), "Defend", "Defend/Hold maps to Defend posture");
 assert.equal(getLegacyDefensivePosture("Block"), "Block", "Block maps to Block posture");
