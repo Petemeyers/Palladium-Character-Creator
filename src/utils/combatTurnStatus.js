@@ -52,13 +52,17 @@ export function buildCombatTurnStatus({
   commandTurn = {},
   activeActor = null,
   selectedCombatAction = null,
+  endTurnUnavailableReason = "",
 } = {}) {
   const warning = toPlainText(commandTurn?.warning, "");
+  const safeEndTurnUnavailableReason = toPlainText(endTurnUnavailableReason, "");
   const actorName = toPlainText(commandTurn?.activeActorName || commandTurn?.turnEntry?.name || activeActor?.name, "");
   const actionsRemaining = toNumber(commandTurn?.remainingActions ?? commandTurn?.turnEntry?.remainingActions, 0);
   const maxActions = toNumber(commandTurn?.maxActions ?? commandTurn?.turnEntry?.maxActions, actionsRemaining);
   const hasActor = Boolean(commandTurn?.activeActorId || actorName || activeActor);
   const finalWarning = !hasActor ? "No active combatant." : warning;
+  const showEndTurnButton = Boolean(hasActor && commandTurn?.isPlayerControlled && !commandTurn?.isEnemyControlled);
+  const endTurnAvailable = Boolean(showEndTurnButton && !finalWarning && !safeEndTurnUnavailableReason);
 
   return {
     currentTurnName: actorName || "No active combatant",
@@ -70,6 +74,10 @@ export function buildCombatTurnStatus({
     nextStepMessage: finalWarning || nextStepFor({ commandTurn, actionsRemaining, maxActions, selectedCombatAction }),
     isPlayerTurn: Boolean(commandTurn?.isPlayerControlled),
     isEnemyTurn: Boolean(commandTurn?.isEnemyControlled),
+    showEndTurnButton,
+    endTurnAvailable,
+    endTurnDisabledReason: safeEndTurnUnavailableReason,
+    endTurnButtonLabel: "End Turn",
     warning: finalWarning,
   };
 }

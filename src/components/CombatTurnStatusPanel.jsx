@@ -2,6 +2,7 @@ import React from "react";
 import {
   Badge,
   Box,
+  Button,
   HStack,
   SimpleGrid,
   Text,
@@ -26,8 +27,16 @@ const CombatTurnStatusPanel = ({
   commandTurn = {},
   activeActor = null,
   selectedCombatAction = null,
+  endTurnUnavailableReason = "",
+  onEndTurn,
 }) => {
-  const status = buildCombatTurnStatus({ commandTurn, activeActor, selectedCombatAction });
+  const status = buildCombatTurnStatus({
+    commandTurn,
+    activeActor,
+    selectedCombatAction,
+    endTurnUnavailableReason,
+  });
+  const canClickEndTurn = status.endTurnAvailable && typeof onEndTurn === "function";
 
   return (
     <Box borderWidth="1px" borderColor="purple.200" borderRadius="md" p={3} bg="white">
@@ -61,6 +70,24 @@ const CombatTurnStatusPanel = ({
             </Text>
           </Box>
         </SimpleGrid>
+
+        {status.showEndTurnButton && (
+          <HStack justify="space-between" align="center" wrap="wrap" spacing={3}>
+            <Text fontSize="xs" color={status.endTurnAvailable ? "gray.600" : "orange.700"}>
+              {status.endTurnDisabledReason || "Ends this fighter's turn and advances initiative."}
+            </Text>
+            <Button
+              size="sm"
+              colorScheme="purple"
+              onClick={() => {
+                if (canClickEndTurn) onEndTurn();
+              }}
+              isDisabled={!canClickEndTurn}
+            >
+              {status.endTurnButtonLabel}
+            </Button>
+          </HStack>
+        )}
       </VStack>
     </Box>
   );

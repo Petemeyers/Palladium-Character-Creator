@@ -7837,6 +7837,26 @@ function CombatPage({ characters = [] }) {
   const commandManualTurnActive = Boolean(commandTurnBridge.activeActorId && commandTurnBridge.isPlayerControlled);
   const commandCenterDisabledReason = commandTurnBridge.warning ||
     (commandTurnBridge.isEnemyControlled ? "Waiting for enemy turn." : "");
+  const commandCenterEndTurnUnavailableReason = (() => {
+    if (!commandTurnBridge.isPlayerControlled || commandTurnBridge.isEnemyControlled) return "";
+    if (
+      pendingTurnAdvanceRef.current ||
+      turnTimeoutRef.current ||
+      isActionBusy() ||
+      turnActionResolvingRef.current ||
+      activeTechniqueImpactRef.current ||
+      (projectilesRef.current?.length ?? 0) > 0
+    ) {
+      return "End Turn unavailable while action resolves.";
+    }
+    if (
+      movementMode.active &&
+      String(selectedMovementFighter || "") === String(commandTurnBridge.activeActorId || "")
+    ) {
+      return "End Turn unavailable while movement targeting is active.";
+    }
+    return "";
+  })();
   const activeFighters = fighters.filter(f => f.status === "active");
   const alivePlayers = fighters.filter(f => f.type === "player" && getCombatantHP(f) > -21);
   const aliveEnemies = fighters.filter(f => f.type === "enemy" && getCombatantHP(f) > -21);
@@ -13094,6 +13114,66 @@ function CombatPage({ characters = [] }) {
     currentFighter,
     fighters,
     scheduleEndTurn,
+    turnIndex,
+  ]);
+
+  const endCommandCenterTurn = useCallback(() => {
+    const liveFighters = fightersRef.current ?? fighters;
+    const liveFighter = liveFighters?.[turnIndexRef.current ?? turnIndex] || currentFighter;
+    const activeActorId = String(commandTurnBridge.activeActorId || "");
+    const liveFighterId = String(liveFighter?.id || liveFighter?._id || "");
+
+    if (!commandTurnBridge.isPlayerControlled || commandTurnBridge.isEnemyControlled) {
+      addLog(commandBlockedLog({ action: "End Turn", reason: "current turn is not player-controlled." }), "warning");
+      return;
+    }
+
+    if (commandTurnBridge.warning) {
+      addLog(commandBlockedLog({ action: "End Turn", reason: commandTurnBridge.warning }), "warning");
+      return;
+    }
+
+    if (!liveFighter || (activeActorId && liveFighterId && activeActorId !== liveFighterId)) {
+      addLog(commandBlockedLog({ action: "End Turn", reason: "current combatant was not found." }), "warning");
+      return;
+    }
+
+    if (
+      pendingTurnAdvanceRef.current ||
+      turnTimeoutRef.current ||
+      isActionBusy() ||
+      turnActionResolvingRef.current ||
+      activeTechniqueImpactRef.current ||
+      (projectilesRef.current?.length ?? 0) > 0
+    ) {
+      addLog(commandBlockedLog({ action: "End Turn", reason: "action is still resolving." }), "warning");
+      return;
+    }
+
+    if (movementMode.active && String(selectedMovementFighter || "") === activeActorId) {
+      addLog(commandBlockedLog({ action: "End Turn", reason: "movement targeting is active." }), "warning");
+      return;
+    }
+
+    clearLegacyDefensiveActionState("End Turn");
+    setSelectedCombatAction(null);
+    setSelectedMovementCommandResult(null);
+    pendingSelectedMovementCommandRef.current = null;
+    addLog(commandCompletedLog({ actor: liveFighter, action: "End Turn", detail: "ends turn." }), "info");
+    scheduleEndTurn(0, "command-center-end-turn");
+  }, [
+    addLog,
+    clearLegacyDefensiveActionState,
+    commandTurnBridge.activeActorId,
+    commandTurnBridge.isEnemyControlled,
+    commandTurnBridge.isPlayerControlled,
+    commandTurnBridge.warning,
+    currentFighter,
+    fighters,
+    isActionBusy,
+    movementMode.active,
+    scheduleEndTurn,
+    selectedMovementFighter,
     turnIndex,
   ]);
 
@@ -30832,6 +30912,8 @@ function CombatPage({ characters = [] }) {
                             commandTurn={commandTurnBridge}
                             activeActor={commandStatusActor}
                             selectedCombatAction={activeSelectedCombatAction}
+                            endTurnUnavailableReason={commandCenterEndTurnUnavailableReason}
+                            onEndTurn={endCommandCenterTurn}
                           />
 
                           <Box borderWidth="1px" borderColor="purple.100" borderRadius="md" p={3} bg="white">

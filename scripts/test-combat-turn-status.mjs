@@ -38,6 +38,9 @@ assert.equal(fullActions.actionsRemaining, 2);
 assert.equal(fullActions.maxActions, 2);
 assert.equal(fullActions.postureLabel, "None");
 assert.equal(fullActions.nextStepMessage, "Choose a command.");
+assert.equal(fullActions.showEndTurnButton, true);
+assert.equal(fullActions.endTurnAvailable, true);
+assert.equal(fullActions.endTurnButtonLabel, "End Turn");
 
 const partialActions = buildCombatTurnStatus({
   commandTurn: { ...playerTurn, remainingActions: 1 },
@@ -50,6 +53,8 @@ const noActions = buildCombatTurnStatus({
   activeActor: actor,
 });
 assert.equal(noActions.nextStepMessage, "No actions remaining. End Turn.");
+assert.equal(noActions.showEndTurnButton, true);
+assert.equal(noActions.endTurnAvailable, true);
 
 const enemyTurn = buildCombatTurnStatus({
   commandTurn: {
@@ -63,6 +68,17 @@ const enemyTurn = buildCombatTurnStatus({
 });
 assert.equal(enemyTurn.teamLabel, "Enemy");
 assert.equal(enemyTurn.nextStepMessage, "Waiting for enemy action.");
+assert.equal(enemyTurn.showEndTurnButton, false);
+assert.equal(enemyTurn.endTurnAvailable, false);
+
+const busyEndTurn = buildCombatTurnStatus({
+  commandTurn: playerTurn,
+  activeActor: actor,
+  endTurnUnavailableReason: "End Turn unavailable while action resolves.",
+});
+assert.equal(busyEndTurn.showEndTurnButton, true);
+assert.equal(busyEndTurn.endTurnAvailable, false);
+assert.equal(busyEndTurn.endTurnDisabledReason, "End Turn unavailable while action resolves.");
 
 const blocking = buildCombatTurnStatus({
   commandTurn: playerTurn,
@@ -88,11 +104,14 @@ assert.equal(legacyEvade.postureLabel, "Evading");
 const missingActor = buildCombatTurnStatus({ commandTurn: { source: "none" }, activeActor: null });
 assert.equal(missingActor.warning, "No active combatant.");
 assert.equal(missingActor.nextStepMessage, "No active combatant.");
+assert.equal(missingActor.showEndTurnButton, false);
+assert.equal(missingActor.endTurnAvailable, false);
 
 const malformed = buildCombatTurnStatus({
   commandTurn: { activeActorName: { raw: true }, activeActorTeam: () => "bad", remainingActions: "bad", maxActions: false },
   activeActor: { name: { raw: true }, combatPosture: { type: {}, label: () => "bad" } },
   selectedCombatAction: { handler: () => "bad" },
+  endTurnUnavailableReason: { raw: true },
 });
 assert.equal(hasFunction(malformed), false, "helper output contains no functions");
 assert.equal(hasRawObjectString(malformed), false, "helper output contains no raw object strings");
