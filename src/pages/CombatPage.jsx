@@ -83,6 +83,7 @@ import CombatActionsPanel from "../components/CombatActionsPanel.jsx";
 import EncounterReadinessPanel from "../components/EncounterReadinessPanel.jsx";
 import InitiativeSetupPreview from "../components/InitiativeSetupPreview.jsx";
 import CombatActionCatalogPanel from "../components/CombatActionCatalogPanel.jsx";
+import CombatTurnStatusPanel from "../components/CombatTurnStatusPanel.jsx";
 import SelectedCombatActionPanel from "../components/SelectedCombatActionPanel.jsx";
 import CompatibilityCombatControlsPanel from "../components/CompatibilityCombatControlsPanel.jsx";
 import ManualPublicAttackTest from "../components/ManualPublicAttackTest.jsx";
@@ -7807,6 +7808,13 @@ function CombatPage({ characters = [] }) {
       String(fighter?.id || fighter?._id || fighter?.name || index) === String(commandTurnBridge.activeActorId)
     ) || null;
   }, [commandTurnBridge.activeActorId, fighters]);
+  const commandStatusActor = useMemo(() => {
+    if (!commandActor) return null;
+    return {
+      ...commandActor,
+      legacyDefensivePosture: defensiveStance[commandActor.id] || "",
+    };
+  }, [commandActor, defensiveStance]);
   const commandCatalogTargets = useMemo(() => {
     if (!commandActor) return [];
     const currentId = String(commandTurnBridge.activeActorId || "");
@@ -30819,6 +30827,12 @@ function CombatPage({ characters = [] }) {
                             </Box>
                             <Badge colorScheme="purple">Primary Manual Controls</Badge>
                           </HStack>
+
+                          <CombatTurnStatusPanel
+                            commandTurn={commandTurnBridge}
+                            activeActor={commandStatusActor}
+                            selectedCombatAction={activeSelectedCombatAction}
+                          />
 
                           <Box borderWidth="1px" borderColor="purple.100" borderRadius="md" p={3} bg="white">
                             <VStack align="stretch" spacing={3}>
