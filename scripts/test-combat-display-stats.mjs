@@ -64,6 +64,37 @@ assert.equal(savedFinalDisplay.staminaCurrent, 24, "fatigue stamina should beat 
 assert.equal(savedFinalDisplay.staminaMax, 24, "fatigue max stamina should be used with fatigue current stamina");
 assert.deepEqual(savedWithFinalScores, savedFinalSnapshot, "display helper should not mutate saved character input");
 
+const savedWithCombatSpeed = {
+  source: "saved-character",
+  generated: false,
+  speed: 90,
+  movementSpeed: 90,
+  publicDerivedStats: {
+    speed: 30,
+  },
+  attributes: {
+    Spd: 16,
+  },
+};
+const savedCombatSpeedDisplay = buildCombatDisplayStats(savedWithCombatSpeed);
+assert.equal(savedCombatSpeedDisplay.movementSpeed, 30, "saved public movement should beat stale combat speed");
+assert.equal(savedCombatSpeedDisplay.legacySpdAttribute, 16, "compatibility Spd should stay separate from movement");
+
+const savedWithDerivedSpeed = {
+  sourceCharacterId: "saved-derived",
+  generated: false,
+  movementSpeed: 90,
+  derivedStats: {
+    speed: 30,
+  },
+  attributes: {
+    Spd: 16,
+  },
+};
+const savedDerivedSpeedDisplay = buildCombatDisplayStats(savedWithDerivedSpeed);
+assert.equal(savedDerivedSpeedDisplay.movementSpeed, 30, "saved derived speed should beat legacy movementSpeed");
+assert.equal(savedDerivedSpeedDisplay.legacySpdAttribute, 16, "derived speed should not overwrite Compatibility Spd");
+
 const savedWithPublicScores = {
   name: "Public Scores",
   source: "saved-character",
@@ -112,6 +143,12 @@ assert.deepEqual(compatibilityDisplay.compatibilityAttributes, {
 });
 assert.equal(compatibilityDisplay.abilityScores.strength, 12, "compatibility PS should remain a fallback for Strength display");
 assert.equal(compatibilityDisplay.movementSpeed, 30, "movement speed should not be confused with compatibility Spd");
+
+const generatedCompatibilityMovement = buildCombatDisplayStats({
+  generated: true,
+  movementSpeed: 90,
+});
+assert.equal(generatedCompatibilityMovement.movementSpeed, 90, "generated compatibility movement fallback should remain available");
 
 assert.equal(buildCombatDisplayStats({ generated: true }).sourceLabel, "Generated");
 assert.equal(buildCombatDisplayStats({ type: "enemy" }).sourceLabel, "Enemy");

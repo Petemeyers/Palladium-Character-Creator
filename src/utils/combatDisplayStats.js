@@ -104,15 +104,55 @@ const getSourceLabel = (combatant) => {
   return "Compatibility";
 };
 
-const readMovementSpeed = (combatant) => (
-  firstNumber(
+const isSavedCharacterSource = (combatant) => {
+  const source = String(combatant?.source || combatant?.publicDisplaySource || combatant?.sourceLabel || "").toLowerCase();
+  return (
+    source === "saved-character" ||
+    source === "saved character" ||
+    combatant?.publicDisplaySource === "saved-character" ||
+    Boolean(combatant?.sourceCharacterId) ||
+    combatant?.generated === false
+  );
+};
+
+const readSavedCharacterMovementSpeed = (combatant) => {
+  const derivedSpeed = firstNumber(
+    combatant?.publicDerivedStats?.speed,
+    combatant?.derivedStats?.speed,
+    combatant?.derived?.speed
+  );
+  if (derivedSpeed !== null) return derivedSpeed;
+
+  const savedSheetSpeed = firstNumber(
+    combatant?.characterSheet?.speed,
+    combatant?.characterSheet?.movementSpeed,
+    combatant?.publicMovementSpeed,
+    combatant?.savedMovementSpeed,
+    combatant?.baseMovementSpeed,
+    combatant?.walkSpeed,
+    combatant?.walkingSpeed
+  );
+  if (savedSheetSpeed !== null) return savedSheetSpeed;
+
+  const speed = firstNumber(combatant?.speed);
+  if (speed !== null && speed > 0 && speed <= 60) return speed;
+
+  return 30;
+};
+
+const readMovementSpeed = (combatant) => {
+  if (isSavedCharacterSource(combatant)) {
+    return readSavedCharacterMovementSpeed(combatant);
+  }
+
+  return firstNumber(
     combatant?.publicDerivedStats?.speed,
     combatant?.derivedStats?.speed,
     combatant?.derived?.speed,
     combatant?.movementSpeed,
     combatant?.speed
-  ) ?? 30
-);
+  ) ?? 30;
+};
 
 const readStaminaPair = (combatant) => {
   const pairs = [

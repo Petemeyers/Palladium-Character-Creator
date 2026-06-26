@@ -248,6 +248,12 @@ import {
   isSavedCharacterCombatData,
 } from "../utils/publicCharacterCombatAdapter.js";
 import { buildCombatDisplayStats } from "../utils/combatDisplayStats.js";
+import {
+  buildEnemyTurnSlotKey,
+  shouldCoalesceBlockedEnemyTurn,
+  shouldDedupeEnemyTurnStart,
+  shouldSkipBlockedEnemyTurnStart,
+} from "../utils/enemyTurnScheduling.js";
 
 // Debug toggle for grapple system
 const DEBUG_GRAPPLE = true; // set to false in production
@@ -4517,6 +4523,7 @@ function CombatPage({ characters = [] }) {
   const statusResolvedTurnSnapshotRef = useRef(null); // Horror/rout consumed this exact turn snapshot
   const horrorRoutEffectAdvanceIgnoredKeyRef = useRef(null); // Dedupe pending-advance ignore logs per turn slot
   const blockedMovementActionRef = useRef(null); // Movement consumed this exact turn snapshot while blocked
+  const blockedEnemyActionTurnSlotRef = useRef(null); // Enemy action lock blocked this exact turn slot
   const endTurnScheduleIdRef = useRef(null); // Active scheduled end-turn callback owner
   const endTurnScheduleSerialRef = useRef(0); // Monotonic id for scheduled end-turn ownership
   const endTurnGenerationRef = useRef(0); // Invalidates stale delayed tryEndTurn callbacks
@@ -4579,6 +4586,7 @@ function CombatPage({ characters = [] }) {
     pendingTurnStartKeysRef.current.clear();
     turnStartInFlightKeyRef.current = null;
     directTurnHandoffSnapshotRef.current = null;
+    blockedEnemyActionTurnSlotRef.current = null;
     playerAIActionScheduledRef.current = false;
     processingPlayerAIRef.current = false;
     if (aiImprovisedAmmoRef.current?.clear) aiImprovisedAmmoRef.current.clear();
@@ -4628,6 +4636,7 @@ function CombatPage({ characters = [] }) {
     pendingTurnAdvanceRef.current = false;
     turnStartInFlightKeyRef.current = null;
     directTurnHandoffSnapshotRef.current = null;
+    blockedEnemyActionTurnSlotRef.current = null;
     endTurnGenerationRef.current += 1;
     processingEnemyTurnRef.current = false;
     processingPlayerAIRef.current = false;
@@ -9803,6 +9812,21 @@ function CombatPage({ characters = [] }) {
       return false;
     }
 
+    const counter = turnCounterRef.current;
+    const requestedTurnStartKey = makeTurnStartKey(fighter, index, counter);
+    if (usesEnemyAIPath && shouldDedupeEnemyTurnStart({
+      pendingKey: lastEnemyScheduleTurnKeyRef.current,
+      nextKey: requestedTurnStartKey,
+      hasTimer: Boolean(enemyTurnTimerRef.current),
+      isProcessing: Boolean(processingEnemyTurnRef.current),
+    })) {
+      addLog?.(
+       `enemy turn start deduped for ${fighter?.name ?? "enemy"} reason=${reason}`,
+        "warning"
+      );
+      return false;
+    }
+
     if (turnStartInFlightKeyRef.current) {
       if (DEBUG_COMBAT) {
         addLog?.(
@@ -9813,7 +9837,6 @@ function CombatPage({ characters = [] }) {
       return false;
     }
 
-    const counter = turnCounterRef.current;
     const key = claimTurnStart(fighter, index, counter, reason);
     if (!key) return false;
     turnStartInFlightKeyRef.current = key;
@@ -10589,6 +10612,7 @@ function CombatPage({ characters = [] }) {
     statusResolvedTurnSnapshotRef.current = null;
     horrorRoutEffectAdvanceIgnoredKeyRef.current = null;
     blockedMovementActionRef.current = null;
+    blockedEnemyActionTurnSlotRef.current = null;
     currentTurnTokenRef.current = null;
     activeTacticalImpactRef.current = null;
     activeGrappleActionIdRef.current = null;
@@ -19611,6 +19635,19 @@ function CombatPage({ characters = [] }) {
       turnActionResolvingRef.current = false;
       pendingTurnAdvanceRef.current = false;
       processingEnemyTurnRef.current = false;
+      blockedEnemyActionTurnSlotRef.current = {
+        combatSession: combatSessionRef.current,
+        fighterId: liveEnemy.id,
+        turnKey: buildEnemyTurnSlotKey({
+          fighterId: liveEnemy.id,
+          fighterType: liveEnemy.type,
+          round: meleeRoundRef.current ?? meleeRound,
+          turnIndex: turnIndexRef.current ?? turnIndex,
+          turnCounter: turnCounterRef.current ?? turnCounter,
+        }),
+        reason,
+      };
+      pendingEnemyTurnRef.current = false;
       scheduleEndTurn(0, reason);
     };
     function commitEnemyAction(reason) {
@@ -23478,13 +23515,29 @@ function CombatPage({ characters = [] }) {
         pendingEnemyTurnRef.current = false;
         const stillCurrent =
           fightersRef.current?.[turnIndexRef.current]?.id === enemy?.id;
-        const coalescedTurnKey = `${enemy?.id}|round:${meleeRound}|turnIndex:${turnIndex}|turnCounter:${turnCounter}`;
-        const alreadyClaimedAndActive =
-          lastEnemyScheduleTurnKeyRef.current === coalescedTurnKey &&
-          (enemyTurnTimerRef.current != null || processingEnemyTurnRef.current);
-        if (stillCurrent && !combatOverRef.current && combatActive && !alreadyClaimedAndActive) {
+        const coalescedFighter =
+          fightersRef.current?.[turnIndexRef.current] || enemy;
+        const coalescedTurnKey = buildEnemyTurnSlotKey({
+          fighterId: coalescedFighter?.id,
+          fighterType: coalescedFighter?.type,
+          round: meleeRoundRef.current ?? meleeRound,
+          turnIndex: turnIndexRef.current ?? turnIndex,
+          turnCounter: turnCounterRef.current ?? turnCounter,
+        });
+        const alreadyClaimedAndActive = shouldDedupeEnemyTurnStart({
+          pendingKey: lastEnemyScheduleTurnKeyRef.current,
+          nextKey: coalescedTurnKey,
+          hasTimer: enemyTurnTimerRef.current != null,
+          isProcessing: processingEnemyTurnRef.current,
+        });
+        if (shouldCoalesceBlockedEnemyTurn({
+          stillCurrent,
+          combatActive,
+          combatOver: combatOverRef.current,
+          alreadyClaimedAndActive,
+        })) {
           const fighterToRun =
-            fightersRef.current?.[turnIndexRef.current] || enemy;
+            coalescedFighter;
           addLog(`Coalesced blocked call, re-scheduling ${fighterToRun?.name}`, "info");
           const coalescedTurnToken = currentTurnTokenRef.current;
           setTimeout(() => {
@@ -23622,6 +23675,7 @@ function CombatPage({ characters = [] }) {
     }
 
     const currentFighter = liveActiveFighter;
+    const currentTurnKey = makeTurnStartKey(currentFighter, turnIndex, turnCounter);
 
     const blockedMovementSnapshot = blockedMovementActionRef.current;
     if (blockedMovementSnapshot) {
@@ -23722,6 +23776,25 @@ function CombatPage({ characters = [] }) {
       directTurnHandoffSnapshotRef.current = null;
     }
 
+    const blockedEnemyActionTurnSlot = blockedEnemyActionTurnSlotRef.current;
+    if (blockedEnemyActionTurnSlot) {
+      const currentEnemyTurnSlot = {
+        combatSession: combatSessionRef.current,
+        fighterId: currentFighter.id,
+        turnKey: currentTurnKey,
+      };
+      if (shouldSkipBlockedEnemyTurnStart(blockedEnemyActionTurnSlot, currentEnemyTurnSlot)) {
+        addLog?.(
+         `effect-turn-advance skipped for blocked enemy action slot: ${currentFighter.name}`,
+          "warning"
+        );
+        return;
+      }
+      if (blockedEnemyActionTurnSlot.combatSession !== combatSessionRef.current) {
+        blockedEnemyActionTurnSlotRef.current = null;
+      }
+    }
+
     // If the fighter has no actions left, don't re-run AI/menus repeatedly.
     // This can hastaminan because endTurn() increments turnCounter before fighter state updates settle.
     // Dedupe by full turn slot (id + combat round + initiative index + turnCounter), not fighter id alone,
@@ -23746,8 +23819,6 @@ function CombatPage({ characters = [] }) {
     }
 
     // Turn key must include turnCounter so the same fighter can act again after initiative wraps.
-    const currentTurnKey = makeTurnStartKey(currentFighter, turnIndex, turnCounter);
-
     if (turnStartInFlightKeyRef.current || playerAITimerRef.current || enemyTurnTimerRef.current) {
       if (DEBUG_COMBAT) {
         addLog(
