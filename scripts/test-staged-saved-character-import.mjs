@@ -8,6 +8,7 @@ import {
   getPlayableCharacterImportLogLines,
   isSavedCharacterCombatData,
 } from "../src/utils/publicCharacterCombatAdapter.js";
+import { buildCombatDisplayStats } from "../src/utils/combatDisplayStats.js";
 import { adaptPublicEnemyToCombatant } from "../src/utils/publicEnemyCombatAdapter.js";
 import { PUBLIC_ENEMIES } from "../src/data/publicEnemies.js";
 
@@ -95,6 +96,11 @@ assert.equal(resolved.entry.autoRollCharacter.attributes.PP, 15, "saved Dexterit
 assert.equal(resolved.entry.autoRollCharacter.HP, 12, "saved HP is preserved");
 assert.equal(resolved.entry.autoRollCharacter.guardRating, 12, "saved AC is preserved");
 assert.equal(isSavedCharacterCombatData(resolved.entry.autoRollCharacter), true, "resolved combat data is marked as saved");
+const resolvedDisplayStats = buildCombatDisplayStats(resolved.entry.autoRollCharacter);
+assert.equal(resolvedDisplayStats.sourceLabel, "Saved Character", "resolved combat data displays as saved");
+assert.equal(resolvedDisplayStats.abilityScores.strength, 16, "resolved combat data displays saved Strength");
+assert.equal(resolvedDisplayStats.abilityScores.dexterity, 15, "resolved combat data displays saved Dexterity");
+assert.equal(resolvedDisplayStats.movementSpeed, 30, "resolved combat data displays saved movement speed");
 assert.deepEqual(
   getPlayableCharacterImportLogLines(resolved.entry.autoRollCharacter, resolved.entry.name),
   ["Loaded saved character Kara.", "Loaded saved character attributes from Character List."],

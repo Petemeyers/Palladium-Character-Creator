@@ -5,6 +5,7 @@ import {
   getPlayableCharacterImportLogLines,
   isSavedCharacterCombatData,
 } from "../src/utils/publicCharacterCombatAdapter.js";
+import { buildCombatDisplayStats } from "../src/utils/combatDisplayStats.js";
 
 const sampleCharacter = {
   _id: "sample-public-character",
@@ -90,6 +91,11 @@ assert.equal(adaptation.combatCharacter.sourceCharacterId, "sample-public-charac
 assert.equal(adaptation.combatCharacter.generated, false, "Saved character combat data should not be marked generated");
 assert.equal(adaptation.combatCharacter.class, "Barbarian", "Class compatibility field should be set at the adapter boundary");
 assert.equal(isSavedCharacterCombatData(adaptation.combatCharacter), true, "Saved combat data should be detected");
+const displayStats = buildCombatDisplayStats(adaptation.combatCharacter);
+assert.equal(displayStats.sourceLabel, "Saved Character", "Saved character display source should be explicit");
+assert.equal(displayStats.abilityScores.strength, 16, "Display stats should prefer saved public Strength");
+assert.equal(displayStats.movementSpeed, 30, "Display movement should preserve saved movement speed");
+assert.equal(displayStats.legacySpdAttribute, 30, "Compatibility Spd should remain separately available");
 assert.deepEqual(
   getPlayableCharacterImportLogLines(adaptation.combatCharacter, "Ada"),
   ["Loaded saved character Ada.", "Loaded saved character attributes from Character List."],

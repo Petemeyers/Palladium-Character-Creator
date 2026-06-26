@@ -3,6 +3,7 @@ import {
   adaptPublicCharacterToRosterEntry,
   resolveStagedSavedCharacterForImport,
 } from "../src/utils/publicRosterAdapter.js";
+import { buildCombatDisplayStats } from "../src/utils/combatDisplayStats.js";
 
 const savedCharacter = {
   _id: "saved-public-1",
@@ -68,6 +69,10 @@ assert.equal(resolved.ok, true, "staged saved character resolves against current
 assert.equal(resolved.entry.name, "Rin", "resolved import uses fresh saved character name");
 assert.equal(resolved.entry.publicAbilityScores.str, 17, "resolved import uses fresh saved ability scores");
 assert.equal(resolved.entry.autoRollCharacter.attributes.PS, 17, "resolved import preserves saved compatibility attributes");
+const resolvedDisplayStats = buildCombatDisplayStats(resolved.entry.autoRollCharacter);
+assert.equal(resolvedDisplayStats.sourceLabel, "Saved Character", "resolved saved import should display saved source");
+assert.equal(resolvedDisplayStats.abilityScores.strength, 17, "resolved saved import should display fresh saved Strength");
+assert.equal(resolvedDisplayStats.movementSpeed, 30, "resolved saved import should display saved movement speed");
 
 const missing = resolveStagedSavedCharacterForImport(staleStagedEntry, []);
 assert.equal(missing.ok, false, "missing saved character is skipped safely");

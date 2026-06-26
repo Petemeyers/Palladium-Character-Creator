@@ -247,6 +247,7 @@ import {
   getPlayableCharacterImportLogLines,
   isSavedCharacterCombatData,
 } from "../utils/publicCharacterCombatAdapter.js";
+import { buildCombatDisplayStats } from "../utils/combatDisplayStats.js";
 
 // Debug toggle for grapple system
 const DEBUG_GRAPPLE = true; // set to false in production
@@ -1052,6 +1053,38 @@ function getDisplayRoleLine(fighter) {
   if (className) return className;
   if (backgroundName) return `Background: ${backgroundName}`;
   return "";
+}
+
+const DISPLAY_ABILITY_LABELS = {
+  strength: "Strength",
+  dexterity: "Dexterity",
+  constitution: "Constitution",
+  intelligence: "Intelligence",
+  wisdom: "Wisdom",
+  charisma: "Charisma",
+};
+
+const DISPLAY_COMPATIBILITY_LABELS = {
+  IQ: "IQ",
+  ME: "ME",
+  MA: "MA",
+  PS: "PS",
+  PP: "PP",
+  PE: "PE",
+  PB: "PB",
+  Spd: "Compatibility Spd",
+};
+
+function getDisplayStatEntries(stats, labels) {
+  return Object.entries(labels)
+    .map(([key, label]) => ({ key, label, value: stats?.[key] }))
+    .filter((entry) => entry.value !== null && entry.value !== undefined && entry.value !== "");
+}
+
+function formatDisplayNumber(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return "?";
+  return Number.isInteger(number) ? String(number) : number.toFixed(1);
 }
 
 function getDeploymentSideLabel(side) {
@@ -7984,6 +8017,18 @@ function CombatPage({ characters = [] }) {
   const rosterPreviewFighter = useMemo(
     () => rosterFighters.find((fighter) => fighter.id === selectedRosterPreviewId) || null,
     [rosterFighters, selectedRosterPreviewId]
+  );
+  const rosterPreviewDisplayStats = useMemo(
+    () => (rosterPreviewFighter ? buildCombatDisplayStats(rosterPreviewFighter) : null),
+    [rosterPreviewFighter]
+  );
+  const rosterPreviewAbilityEntries = useMemo(
+    () => getDisplayStatEntries(rosterPreviewDisplayStats?.abilityScores, DISPLAY_ABILITY_LABELS),
+    [rosterPreviewDisplayStats]
+  );
+  const rosterPreviewCompatibilityEntries = useMemo(
+    () => getDisplayStatEntries(rosterPreviewDisplayStats?.compatibilityAttributes, DISPLAY_COMPATIBILITY_LABELS),
+    [rosterPreviewDisplayStats]
   );
 
   useEffect(() => {
@@ -24293,7 +24338,10 @@ function CombatPage({ characters = [] }) {
           addLog(`   ${attr}: ${data.dice} = [${rollBreakdown}]${bonus} = ${data.value}`, "info");
         });
       }
-      addLog(`   HP: ${newFighter.currentHP}, AC: ${newFighter.guardRating}, Speed: ${newFighter.Spd || newFighter.spd || newFighter.attributes?.Spd || newFighter.attributes?.spd || 10}`, "info");
+      addLog(
+        `   HP: ${newFighter.currentHP}, AC: ${newFighter.guardRating}, Movement: ${buildCombatDisplayStats(newFighter).movementSpeed} ft`,
+        "info"
+      );
       const equistaminadArmorName = getEquistaminadArmorName(newFighter);
       const equistaminadArmorAR =
         newFighter.equistaminad?.chest?.guardRating ||
@@ -29405,7 +29453,12 @@ function CombatPage({ characters = [] }) {
                 </Box>
               ) : (
                 <Grid templateColumns="repeat(auto-fill, minmax(280px, 1fr))" gap={3}>
-                  {fighters.filter(f => f.type === "player").map((fighter) => (
+                  {fighters.filter(f => f.type === "player").map((fighter) => {
+                    const displayStats = buildCombatDisplayStats(fighter);
+                    const abilityScoreEntries = getDisplayStatEntries(displayStats.abilityScores, DISPLAY_ABILITY_LABELS);
+                    const compatibilityEntries = getDisplayStatEntries(displayStats.compatibilityAttributes, DISPLAY_COMPATIBILITY_LABELS);
+
+                    return (
                     <GridItem key={fighter.id}>
                       <Box
                         key={fighter.id}
@@ -29486,6 +29539,7 @@ function CombatPage({ characters = [] }) {
                               {getDisplayBackgroundName(fighter) && (
                                 <Badge colorScheme="teal" size="sm">Background: {getDisplayBackgroundName(fighter)}</Badge>
                               )}
+                              <Badge colorScheme="gray" size="sm">Source: {displayStats.sourceLabel}</Badge>
                               {/* Alignment Display */}
                               {(fighter.alignment || fighter.alignmentName || fighter.alignmentText) && (
                                 <Badge colorScheme="gray" size="sm">
@@ -29495,25 +29549,29 @@ function CombatPage({ characters = [] }) {
                             </HStack>
 
                             <Text fontSize="sm" color="blue.700">
-                              HP: {getCombatantHP(fighter)}/{getCombatantMaxHP(fighter)} | AC: {fighter.guardRating || 10} | Speed: {fighter.Spd || fighter.spd || fighter.attributes?.Spd || fighter.attributes?.spd || 10}
-                              {getCombatantTempHP(fighter) > 0 && ` | Temp HP: ${getCombatantTempHP(fighter)}`}
-                              {fighter.focus !== undefined && ` | focus: ${fighter.focus}`}
-                              {formatFighterstamina(fighter)}
+                              HP: {displayStats.hpCurrent}/{displayStats.hpMax} | AC: {displayStats.armorClass} | Movement: {displayStats.movementSpeed} ft
+                              {displayStats.tempHp > 0 && ` | Temp HP: ${displayStats.tempHp}`}
+                              {displayStats.focusCurrent !== null && ` | Focus: ${displayStats.focusCurrent}`}
                             </Text>
 
-                            {/* Attributes Display */}
-                            {fighter.attributes && (
+                            {/* Attribute display */}
+                            {abilityScoreEntries.length > 0 && (
                               <Box fontSize="xs" color="gray.600">
-                                <Text fontWeight="medium">Attributes:</Text>
+                                <Text fontWeight="medium">Ability Scores:</Text>
                                 <HStack spacing={2} flexWrap="wrap">
-                                  {fighter.attributes.IQ && <Text>IQ: {fighter.attributes.IQ}</Text>}
-                                  {fighter.attributes.ME && <Text>ME: {fighter.attributes.ME}</Text>}
-                                  {fighter.attributes.MA && <Text>MA: {fighter.attributes.MA}</Text>}
-                                  {fighter.attributes.PS && <Text>PS: {fighter.attributes.PS}</Text>}
-                                  {fighter.attributes.PP && <Text>PP: {fighter.attributes.PP}</Text>}
-                                  {fighter.attributes.PE && <Text>PE: {fighter.attributes.PE}</Text>}
-                                  {fighter.attributes.PB && <Text>PB: {fighter.attributes.PB}</Text>}
-                                  {fighter.attributes.Spd && <Text>Speed: {fighter.attributes.Spd}</Text>}
+                                  {abilityScoreEntries.map((entry) => (
+                                    <Text key={entry.key}>{entry.label}: {entry.value}</Text>
+                                  ))}
+                                </HStack>
+                              </Box>
+                            )}
+                            {compatibilityEntries.length > 0 && (
+                              <Box fontSize="xs" color="gray.500">
+                                <Text fontWeight="medium">Compatibility Attributes:</Text>
+                                <HStack spacing={2} flexWrap="wrap">
+                                  {compatibilityEntries.map((entry) => (
+                                    <Text key={entry.key}>{entry.label}: {entry.value}</Text>
+                                  ))}
                                 </HStack>
                               </Box>
                             )}
@@ -29525,14 +29583,12 @@ function CombatPage({ characters = [] }) {
                                   : 'Ground'}
                               </Text>
                               {(() => {
-                                const fatigueStatus = getFatigueStatus(fighter);
-                                if (fatigueStatus && fatigueStatus.maxStamina) {
-                                  const staminaColor = fatigueStatus.stamina <= 0 ? "red.700" :
-                                    fatigueStatus.stamina < fatigueStatus.maxStamina * 0.5 ? "orange.700" : "green.700";
+                                if (displayStats.staminaMax) {
+                                  const staminaColor = displayStats.staminaCurrent <= 0 ? "red.700" :
+                                    displayStats.staminaCurrent < displayStats.staminaMax * 0.5 ? "orange.700" : "green.700";
                                   return (
                                     <Text color={staminaColor}>
-                                      Stamina: {fatigueStatus.stamina?.toFixed(1) || 0}/{fatigueStatus.maxStamina || 0} SP
-                                      {fatigueStatus.status !== "ready" && ` (${fatigueStatus.description})`}
+                                      Stamina: {formatDisplayNumber(displayStats.staminaCurrent)}/{formatDisplayNumber(displayStats.staminaMax)}
                                     </Text>
                                   );
                                 }
@@ -29721,9 +29777,10 @@ function CombatPage({ characters = [] }) {
                           <Button size="sm" colorScheme="red" variant="outline" onClick={() => removeFighter(fighter.id)}>
                             </Button>
                         </Flex>
-                      </Box>
-                    </GridItem>
-                  ))}
+                        </Box>
+                      </GridItem>
+                    );
+                  })}
                 </Grid>
               )}
             </Box>
@@ -31961,6 +32018,9 @@ function CombatPage({ characters = [] }) {
                       const displayName = sameNameCount > 1
                         ? `${fighter.name} (#${array.filter(f => f.type === "enemy" && f.name === fighter.name && getCombatantHP(f) > 0).indexOf(fighter) + 1})`
                         : fighter.name;
+                      const displayStats = buildCombatDisplayStats(fighter);
+                      const abilityScoreEntries = getDisplayStatEntries(displayStats.abilityScores, DISPLAY_ABILITY_LABELS);
+                      const compatibilityEntries = getDisplayStatEntries(displayStats.compatibilityAttributes, DISPLAY_COMPATIBILITY_LABELS);
 
                       return (
                         <GridItem key={fighter.id}>
@@ -32049,6 +32109,7 @@ function CombatPage({ characters = [] }) {
                                   {getDisplayBackgroundName(fighter) && (
                                     <Badge colorScheme="teal" size="sm">Background: {getDisplayBackgroundName(fighter)}</Badge>
                                   )}
+                                  <Badge colorScheme="gray" size="sm">Source: {displayStats.sourceLabel}</Badge>
                                   {/* Alignment Display */}
                                   {(fighter.alignment || fighter.alignmentName || fighter.alignmentText) && (
                                     <Badge colorScheme="gray" size="sm">
@@ -32058,25 +32119,29 @@ function CombatPage({ characters = [] }) {
                                 </HStack>
 
                                 <Box fontSize="sm">
-                                  HP: {getCombatantHP(fighter)}/{getCombatantMaxHP(fighter)} | AC: {fighter.guardRating || 10} | Speed: {fighter.Spd || fighter.spd || fighter.attributes?.Spd || fighter.attributes?.spd || 10}
-                                  {getCombatantTempHP(fighter) > 0 && ` | Temp HP: ${getCombatantTempHP(fighter)}`}
-                                  {fighter.focus !== undefined && ` | focus: ${fighter.focus}`}
-                                  {formatFighterstamina(fighter)}
+                                  HP: {displayStats.hpCurrent}/{displayStats.hpMax} | AC: {displayStats.armorClass} | Movement: {displayStats.movementSpeed} ft
+                                  {displayStats.tempHp > 0 && ` | Temp HP: ${displayStats.tempHp}`}
+                                  {displayStats.focusCurrent !== null && ` | Focus: ${displayStats.focusCurrent}`}
                                 </Box>
 
-                                {/* Attributes Display */}
-                                {fighter.attributes && (
+                                {/* Attribute display */}
+                                {abilityScoreEntries.length > 0 && (
                                   <Box fontSize="xs" color="gray.600">
-                                    <Text fontWeight="medium">Attributes:</Text>
+                                    <Text fontWeight="medium">Ability Scores:</Text>
                                     <HStack spacing={2} flexWrap="wrap">
-                                      {fighter.attributes.IQ && <Text>IQ: {fighter.attributes.IQ}</Text>}
-                                      {fighter.attributes.ME && <Text>ME: {fighter.attributes.ME}</Text>}
-                                      {fighter.attributes.MA && <Text>MA: {fighter.attributes.MA}</Text>}
-                                      {fighter.attributes.PS && <Text>PS: {fighter.attributes.PS}</Text>}
-                                      {fighter.attributes.PP && <Text>PP: {fighter.attributes.PP}</Text>}
-                                      {fighter.attributes.PE && <Text>PE: {fighter.attributes.PE}</Text>}
-                                      {fighter.attributes.PB && <Text>PB: {fighter.attributes.PB}</Text>}
-                                      {fighter.attributes.Spd && <Text>Speed: {fighter.attributes.Spd}</Text>}
+                                      {abilityScoreEntries.map((entry) => (
+                                        <Text key={entry.key}>{entry.label}: {entry.value}</Text>
+                                      ))}
+                                    </HStack>
+                                  </Box>
+                                )}
+                                {compatibilityEntries.length > 0 && (
+                                  <Box fontSize="xs" color="gray.500">
+                                    <Text fontWeight="medium">Compatibility Attributes:</Text>
+                                    <HStack spacing={2} flexWrap="wrap">
+                                      {compatibilityEntries.map((entry) => (
+                                        <Text key={entry.key}>{entry.label}: {entry.value}</Text>
+                                      ))}
                                     </HStack>
                                   </Box>
                                 )}
@@ -32088,14 +32153,12 @@ function CombatPage({ characters = [] }) {
                                       : 'Ground'}
                                   </Text>
                                   {(() => {
-                                    const fatigueStatus = getFatigueStatus(fighter);
-                                    if (fatigueStatus && fatigueStatus.maxStamina) {
-                                      const staminaColor = fatigueStatus.stamina <= 0 ? "red.700" :
-                                        fatigueStatus.stamina < fatigueStatus.maxStamina * 0.5 ? "orange.700" : "green.700";
+                                    if (displayStats.staminaMax) {
+                                      const staminaColor = displayStats.staminaCurrent <= 0 ? "red.700" :
+                                        displayStats.staminaCurrent < displayStats.staminaMax * 0.5 ? "orange.700" : "green.700";
                                       return (
                                         <Text color={staminaColor}>
-                                          Stamina: {fatigueStatus.stamina?.toFixed(1) || 0}/{fatigueStatus.maxStamina || 0} SP
-                                          {fatigueStatus.status !== "ready" && ` (${fatigueStatus.description})`}
+                                          Stamina: {formatDisplayNumber(displayStats.staminaCurrent)}/{formatDisplayNumber(displayStats.staminaMax)}
                                         </Text>
                                       );
                                     }
@@ -32296,7 +32359,10 @@ function CombatPage({ characters = [] }) {
                   <Heading size="md">Scene Actors ({fighters.filter(f => f.type === "npc").length})</Heading>
                   <Box w="100%" maxH="220px" overflowY="auto" border="2px solid" borderColor="purple.300" p={4} borderRadius="md" bg="purple.50">
                     <Grid templateColumns="repeat(auto-fill, minmax(260px, 1fr))" gap={3}>
-                      {fighters.filter(f => f.type === "npc").map((fighter) => (
+                      {fighters.filter(f => f.type === "npc").map((fighter) => {
+                        const displayStats = buildCombatDisplayStats(fighter);
+
+                        return (
                         <GridItem key={fighter.id}>
                           <Box
                             p={3}
@@ -32315,8 +32381,8 @@ function CombatPage({ characters = [] }) {
                               </HStack>
                               {renderCombatRoleBadges(fighter)}
                               <Text fontSize="sm" color="purple.800">
-                                HP: {getCombatantHP(fighter)}/{getCombatantMaxHP(fighter)} | AC: {fighter.guardRating || 10} | Speed: {fighter.Spd || fighter.spd || fighter.attributes?.Spd || fighter.attributes?.spd || 10}
-                                {getCombatantTempHP(fighter) > 0 && ` | Temp HP: ${getCombatantTempHP(fighter)}`}
+                                HP: {displayStats.hpCurrent}/{displayStats.hpMax} | AC: {displayStats.armorClass} | Movement: {displayStats.movementSpeed} ft
+                                {displayStats.tempHp > 0 && ` | Temp HP: ${displayStats.tempHp}`}
                               </Text>
                               {fighter.initiative > 0 && (
                                 <Badge colorScheme="purple" size="sm">
@@ -32326,7 +32392,8 @@ function CombatPage({ characters = [] }) {
                             </VStack>
                           </Box>
                         </GridItem>
-                      ))}
+                        );
+                      })}
                     </Grid>
                   </Box>
                 </>
@@ -32744,7 +32811,7 @@ function CombatPage({ characters = [] }) {
                       <VStack align="stretch" spacing={1} maxH="500px" overflowY="auto">
                         {fighters.map((fighter) => {
                           const pos = positions[fighter.id];
-                          const speed = fighter.Spd || fighter.spd || fighter.attributes?.Spd || fighter.attributes?.spd || 10;
+                          const displayStats = buildCombatDisplayStats(fighter);
 
                           // Calculate distance to closest enemy/ally
                           let closestDistance = Infinity;
@@ -32801,7 +32868,7 @@ function CombatPage({ characters = [] }) {
                                   </>
                                 )}
                                 <Badge colorScheme="cyan">
-                                  Speed: {speed}
+                                  Movement: {displayStats.movementSpeed} ft
                                 </Badge>
                               </HStack>
                             </HStack>
@@ -33374,6 +33441,7 @@ function CombatPage({ characters = [] }) {
                                 <Badge colorScheme={rosterPreviewFighter.type === "enemy" ? "red" : rosterPreviewFighter.type === "npc" ? "purple" : "blue"}>
                                   {rosterPreviewFighter.type === "npc" ? getSceneRoleLabel(rosterPreviewFighter) : rosterPreviewFighter.type === "enemy" ? "Enemy Side" : "Party Side"}
                                 </Badge>
+                                <Badge colorScheme="gray">Source: {rosterPreviewDisplayStats.sourceLabel}</Badge>
                                 {(rosterPreviewFighter.alignment || rosterPreviewFighter.alignmentName) && (
                                   <Badge colorScheme="gray">
                                     {rosterPreviewFighter.alignment || rosterPreviewFighter.alignmentName}
@@ -33387,19 +33455,19 @@ function CombatPage({ characters = [] }) {
                               <Box>
                                 <Text fontSize="xs" color="gray.500" textTransform="ustaminarcase">HP</Text>
                                 <Text fontWeight="semibold">
-                                  {getCombatantHP(rosterPreviewFighter)}
-                                  {` / ${getCombatantMaxHP(rosterPreviewFighter)}`}
-                                  {getCombatantTempHP(rosterPreviewFighter) > 0 && ` (+${getCombatantTempHP(rosterPreviewFighter)} temp)`}
+                                  {rosterPreviewDisplayStats.hpCurrent}
+                                  {` / ${rosterPreviewDisplayStats.hpMax}`}
+                                  {rosterPreviewDisplayStats.tempHp > 0 && ` (+${rosterPreviewDisplayStats.tempHp} temp)`}
                                 </Text>
                               </Box>
                               <Box>
                                 <Text fontSize="xs" color="gray.500" textTransform="ustaminarcase">AC</Text>
-                                <Text fontWeight="semibold">{rosterPreviewFighter.guardRating || rosterPreviewFighter.guardRating || "?"}</Text>
+                                <Text fontWeight="semibold">{rosterPreviewDisplayStats.armorClass}</Text>
                               </Box>
                               <Box>
-                                <Text fontSize="xs" color="gray.500" textTransform="ustaminarcase">Speed</Text>
+                                <Text fontSize="xs" color="gray.500" textTransform="ustaminarcase">Movement</Text>
                                 <Text fontWeight="semibold">
-                                  {rosterPreviewFighter.Spd || rosterPreviewFighter.spd || rosterPreviewFighter.attributes?.Spd || rosterPreviewFighter.attributes?.spd || "?"}
+                                  {rosterPreviewDisplayStats.movementSpeed} ft
                                 </Text>
                               </Box>
                               <Box>
@@ -33420,16 +33488,16 @@ function CombatPage({ characters = [] }) {
                                 <Text fontWeight="semibold">{getDisplayBackgroundName(rosterPreviewFighter)}</Text>
                               </Box>
                               )}
-                              {(rosterPreviewFighter.stamina !== undefined || rosterPreviewFighter.currentstamina !== undefined) && (
-                                <Box>
-                                  <Text fontSize="xs" color="gray.500" textTransform="ustaminarcase">stamina</Text>
-                                  <Text fontWeight="semibold">{rosterPreviewFighter.currentstamina ?? rosterPreviewFighter.stamina}</Text>
-                                </Box>
-                              )}
+                              <Box>
+                                <Text fontSize="xs" color="gray.500" textTransform="ustaminarcase">Stamina</Text>
+                                <Text fontWeight="semibold">
+                                  {formatDisplayNumber(rosterPreviewDisplayStats.staminaCurrent)}/{formatDisplayNumber(rosterPreviewDisplayStats.staminaMax)}
+                                </Text>
+                              </Box>
                               {(rosterPreviewFighter.focus !== undefined || rosterPreviewFighter.currentfocus !== undefined) && (
                                 <Box>
-                                  <Text fontSize="xs" color="gray.500" textTransform="ustaminarcase">focus</Text>
-                                  <Text fontWeight="semibold">{rosterPreviewFighter.currentfocus ?? rosterPreviewFighter.focus}</Text>
+                                  <Text fontSize="xs" color="gray.500" textTransform="ustaminarcase">Focus</Text>
+                                  <Text fontWeight="semibold">{rosterPreviewDisplayStats.focusCurrent ?? 0}</Text>
                                 </Box>
                               )}
                             </Grid>
@@ -33438,13 +33506,13 @@ function CombatPage({ characters = [] }) {
 
                             <Box>
                               <Text fontSize="xs" color="gray.500" textTransform="ustaminarcase" mb={2}>
-                                Attributes
+                                Ability Scores
                               </Text>
                               <Wrap spacing={2}>
-                                {rosterPreviewFighter.attributes && Object.entries(rosterPreviewFighter.attributes).length > 0 ? (
-                                  Object.entries(rosterPreviewFighter.attributes).map(([attr, value]) => (
-                                    <WrapItem key={attr}>
-                                      <Badge colorScheme="purple">{attr}: {String(value)}</Badge>
+                                {rosterPreviewAbilityEntries.length > 0 ? (
+                                  rosterPreviewAbilityEntries.map((entry) => (
+                                    <WrapItem key={entry.key}>
+                                      <Badge colorScheme="purple">{entry.label}: {entry.value}</Badge>
                                     </WrapItem>
                                   ))
                                 ) : (
@@ -33452,6 +33520,20 @@ function CombatPage({ characters = [] }) {
                                 )}
                               </Wrap>
                             </Box>
+                            {rosterPreviewCompatibilityEntries.length > 0 && (
+                              <Box>
+                                <Text fontSize="xs" color="gray.500" textTransform="ustaminarcase" mb={2}>
+                                  Compatibility Attributes
+                                </Text>
+                                <Wrap spacing={2}>
+                                  {rosterPreviewCompatibilityEntries.map((entry) => (
+                                    <WrapItem key={entry.key}>
+                                      <Badge colorScheme="gray">{entry.label}: {entry.value}</Badge>
+                                    </WrapItem>
+                                  ))}
+                                </Wrap>
+                              </Box>
+                            )}
                           </VStack>
                         ) : (
                           <Text fontSize="sm" color="gray.500">
@@ -33844,6 +33926,7 @@ function CombatPage({ characters = [] }) {
                 <Text fontWeight="bold" mb={2}>Fighter Preview:</Text>
                 {(() => {
                   const combatant = selectedCombatantData;
+                  const displayStats = combatant ? buildCombatDisplayStats(combatant) : null;
                   return combatant ? (
                     <VStack align="start" spacing={1}>
                       {combatant.playable ? (
@@ -33857,7 +33940,7 @@ function CombatPage({ characters = [] }) {
                           <Text fontSize="sm">Attributes: {Object.entries(combatant.attribute_dice || {}).map(([attr, dice]) => `${attr}: ${dice}`).join(", ")}</Text>
                           <Text fontSize="sm">HP: {combatant.HP || "Variable"}</Text>
                           <Text fontSize="sm">AC: {combatant.guardRating || "Variable"}</Text>
-                          <Text fontSize="sm">Speed: {combatant.spd || "Variable"}</Text>
+                          <Text fontSize="sm">Movement: {displayStats.movementSpeed} ft</Text>
                           <Text fontSize="sm">Category: {formatCombatantCategory(combatant.category)}</Text>
                           <Text fontSize="sm">Training: {combatant.training || "None"}</Text>
                           <Text fontSize="sm">Tactics: {combatant.tactics || "None"}</Text>
@@ -33867,7 +33950,7 @@ function CombatPage({ characters = [] }) {
                           <Text fontSize="sm">Category: {formatCombatantCategory(combatant.category)}</Text>
                           <Text fontSize="sm">HP: {getCombatantHP(combatant)} / {getCombatantMaxHP(combatant)}</Text>
                           <Text fontSize="sm">AC: {combatant.guardRating}</Text>
-                          <Text fontSize="sm">Speed: {combatant.spd}</Text>
+                          <Text fontSize="sm">Movement: {displayStats.movementSpeed} ft</Text>
                           <Text fontSize="sm">Attacks: {combatant.attacks?.map(a => a.name).join(", ")}</Text>
                         </>
                       )}
@@ -33928,7 +34011,10 @@ function CombatPage({ characters = [] }) {
               </Alert>
             ) : (
               <VStack spacing={3} align="stretch">
-                {characters.map((character) => (
+                {characters.map((character) => {
+                  const displayStats = buildCombatDisplayStats(character);
+
+                  return (
                   <Box
                     key={character._id}
                     p={3}
@@ -33952,7 +34038,7 @@ function CombatPage({ characters = [] }) {
                         <Text fontWeight="bold">{character.name}</Text>
                         <Text fontSize="sm" color="gray.600">
                           {getDisplayRoleLine(character) || "Fighter"} | Level {character.level || 1} | HP: {character.derived?.hitPoints || character.hp || character.HP || 20}
-                          | AC: {character.guardRating || 10} | Speed: {character.Spd || character.spd || character.attributes?.Spd || character.attributes?.spd || 10}
+                          | AC: {displayStats.armorClass} | Movement: {displayStats.movementSpeed} ft
                         </Text>
                         {character.attributes && Object.entries(character.attributes).slice(0, 4).map(([attr, value]) => (
                           <Badge key={attr} size="sm" colorScheme="blue">
@@ -33986,7 +34072,8 @@ function CombatPage({ characters = [] }) {
                       </Box>
                     </HStack>
                   </Box>
-                ))}
+                  );
+                })}
               </VStack>
             )}
           </ModalBody>
