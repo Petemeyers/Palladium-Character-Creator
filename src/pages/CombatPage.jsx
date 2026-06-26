@@ -133,9 +133,13 @@ import { applyStaminaRecovery, getRecoveryAmount } from "../utils/combatRecovery
 import {
   applyCombatPosture,
   applyDefensivePosture,
+  applyDefensiveReserve,
+  canUseDefensiveReserveForReaction,
   clearExpiredPostures,
+  consumeDefensiveReserve,
   createCombatPosture,
   createDefensivePosture,
+  getDefensiveReserve,
   getCombatPosture,
 } from "../utils/combatPosture.js";
 import { createPlayableCharacterFighter, getPlayableCharacterRollDetails } from "../utils/autoRoll.js";
@@ -10605,7 +10609,8 @@ function CombatPage({ characters = [] }) {
 
       // Reset all fighters' actions for new combat round
       // Also reset the "no ranged options" log flag for each fighter
-      const updated = fightersNow.map(f => {
+      const expiredDefensiveReserveIds = new Set();
+      const updated = fightersNow.map((f, index) => {
         // Tick down + clear status effects each melee
         // (needed so temporary effects like SHAKEN expire correctly)
         const withStatus = updateStatusEffects({ ...f }, nextMeleeRound);
@@ -10630,8 +10635,12 @@ function CombatPage({ characters = [] }) {
         // Fix: Use proper fallback for animals (actionsPerRound ?? attacks ?? 2)
         const apm =
           withBleeding.actionsPerRound ?? withBleeding.attacks ?? 2; // fallback for animals
+        const withExpiredPosture = clearExpiredPostures(withBleeding, nextMeleeRound, index);
+        if (getDefensiveReserve(withBleeding).active && !getDefensiveReserve(withExpiredPosture).active) {
+          expiredDefensiveReserveIds.add(withBleeding.id);
+        }
         const fighter = {
-          ...withBleeding,
+          ...withExpiredPosture,
           remainingActions: canFighterStartTurn(withBleeding) ? apm : 0,
           techniquesCastThisMelee: 0, // Reset techniques cast counter for new combat round (RAW)
           // if you track "hasActedThisRound" etc, reset it here too
@@ -10712,6 +10721,13 @@ function CombatPage({ characters = [] }) {
       setMeleeRound(nextMeleeRound);
       setTurnIndex(firstEligibleIndex >= 0 ? firstEligibleIndex : 0); // Start from first eligible initiative slot
       setTurnCounter(nextTurnCounter);
+      if (expiredDefensiveReserveIds.size > 0) {
+        setDefensiveStance(prev => {
+          const next = { ...prev };
+          expiredDefensiveReserveIds.forEach((id) => delete next[id]);
+          return next;
+        });
+      }
 
       // Clear processing flags for new round (only if combat is still active)
       if (combatActiveNow && !combatEndCheckRef.current) {
@@ -10765,10 +10781,17 @@ function CombatPage({ characters = [] }) {
       pendingTurnStartKeysRef.current.clear();
       const nextMeleeRound = meleeRoundNow + 1;
       const nextTurnCounter = turnCounterNow + 1;
-      const resetFighters = fightersNow.map(f => ({
-        ...f,
-        remainingActions: canFighterStartTurn(f) ? (f.actionsPerRound || 2) : 0
-      }));
+      const expiredDefensiveReserveIds = new Set();
+      const resetFighters = fightersNow.map((f, index) => {
+        const withExpiredPosture = clearExpiredPostures(f, nextMeleeRound, index);
+        if (getDefensiveReserve(f).active && !getDefensiveReserve(withExpiredPosture).active) {
+          expiredDefensiveReserveIds.add(f.id);
+        }
+        return {
+          ...withExpiredPosture,
+          remainingActions: canFighterStartTurn(f) ? (f.actionsPerRound || 2) : 0
+        };
+      });
       const firstEligibleIndex = resetFighters.findIndex(
         f => canFighterStartTurn(f) && (Number(f.remainingActions ?? 0) || 0) > 0
       );
@@ -10780,6 +10803,13 @@ function CombatPage({ characters = [] }) {
       setMeleeRound(nextMeleeRound);
       setTurnIndex(firstEligibleIndex >= 0 ? firstEligibleIndex : 0);
       setTurnCounter(nextTurnCounter);
+      if (expiredDefensiveReserveIds.size > 0) {
+        setDefensiveStance(prev => {
+          const next = { ...prev };
+          expiredDefensiveReserveIds.forEach((id) => delete next[id]);
+          return next;
+        });
+      }
       if (firstEligibleIndex >= 0) {
         startTurnOnce(resetFighters[firstEligibleIndex], firstEligibleIndex, "new-melee-round-direct");
       }
@@ -15957,10 +15987,25 @@ function CombatPage({ characters = [] }) {
 
       // Only process regular defense if auto-block hasn't already handled it
       if (defenseType && attackRoll >= targetGuardRating && !autoBlockUsed) {
+        const reserveDefenseType =
+          defenseType === "Block" ? "block" :
+          defenseType === "Evade" ? "evade" :
+          defenseType === "Defend" ? "defend" :
+          "";
+        const usesHeldDefense =
+          (Number(defender.remainingActions ?? 0) || 0) <= 0 &&
+          canUseDefensiveReserveForReaction(defender, reserveDefenseType);
         // Check if defender has attacks remaining to block/evade
-        if (defender.remainingActions <= 0) {
+        if (defender.remainingActions <= 0 && !usesHeldDefense) {
           addLog(`${defender.name} is out of actions and cannot ${defenseType.toLowerCase()}!`, "error");
         } else {
+          if (usesHeldDefense) {
+            const reserveLabel =
+              reserveDefenseType === "block" ? "held block" :
+              reserveDefenseType === "evade" ? "held evade" :
+              "held defense";
+            addLog(`${defender.name} uses their ${reserveLabel}.`, "info");
+          }
           // Defender is using block, evade, or move - roll defense!
           // Apply fatigue penalties to defense rolls
           const fatiguedDefender = applyFatiguePenalties(defender);
@@ -16118,9 +16163,14 @@ function CombatPage({ characters = [] }) {
             addLog(`${defender.name}'s ${defenseType.toLowerCase()} fails! (${defenseRoll} < ${attackRoll})`, "info");
           }
 
-          // Deduct 1 attack for defensive action
-          updated[defenderIndex].remainingActions = Math.max(0, (updated[defenderIndex].remainingActions || 0) - 1);
-          addLog(`${defender.name} used 1 action to defend (${updated[defenderIndex].remainingActions}/${defender.actionsPerRound} remaining)`, "info");
+          if (usesHeldDefense) {
+            updated[defenderIndex] = consumeDefensiveReserve(updated[defenderIndex]);
+            addLog(`${defender.name}'s held defense is spent.`, "info");
+          } else {
+            // Deduct 1 attack for defensive action
+            updated[defenderIndex].remainingActions = Math.max(0, (updated[defenderIndex].remainingActions || 0) - 1);
+            addLog(`${defender.name} used 1 action to defend (${updated[defenderIndex].remainingActions}/${defender.actionsPerRound} remaining)`, "info");
+          }
         }
 
         // Clear defensive stance after it's used (one-time use per turn)
@@ -25240,7 +25290,11 @@ function CombatPage({ characters = [] }) {
       round: commandTurnBridge.round || manualPublicTurnRound,
       turnIndex: commandTurnBridge.initiativeIndex ?? manualPublicTurnIndex,
     });
-    const nextTurnEntry = applyDefensivePosture(spendResult.updated, posture);
+    const nextTurnEntry = applyDefensiveReserve(
+      applyDefensivePosture(spendResult.updated, posture),
+      "defend",
+      1
+    );
     if (commandTurnBridge.source === "manual-public-turn-order") {
       const nextManualTurnOrder = manualPublicTurnOrder.map((row, index) =>
         index === manualPublicTurnIndex ? nextTurnEntry : row
@@ -25254,13 +25308,14 @@ function CombatPage({ characters = [] }) {
     const nextFighters = sourceFighters.map((fighter, index) => {
       const fighterId = String(fighter?.id || fighter?._id || fighter?.name || index);
       if (fighterId !== String(actorId)) return fighter;
-      return {
+      return applyDefensiveReserve({
         ...applyDefensivePosture(fighter, posture),
         remainingActions: spendResult.remainingActions,
-      };
+      }, "defend", 1);
     });
     fightersRef.current = nextFighters;
     setFighters(nextFighters);
+    setDefensiveStance(prev => ({ ...prev, [actorId]: "Defend" }));
 
     const name = nextTurnEntry.name || currentCommandTurn.name || "Combatant";
     const message =
@@ -25321,7 +25376,12 @@ function CombatPage({ characters = [] }) {
       round: commandTurnBridge.round || manualPublicTurnRound,
       turnIndex: commandTurnBridge.initiativeIndex ?? manualPublicTurnIndex,
     });
-    const nextTurnEntry = applyCombatPosture(spendResult.updated, posture);
+    const reserveType = normalizedPostureType === "evading" ? "evade" : "block";
+    const nextTurnEntry = applyDefensiveReserve(
+      applyCombatPosture(spendResult.updated, posture),
+      reserveType,
+      1
+    );
     if (commandTurnBridge.source === "manual-public-turn-order") {
       const nextManualTurnOrder = manualPublicTurnOrder.map((row, index) =>
         index === manualPublicTurnIndex ? nextTurnEntry : row
@@ -25335,13 +25395,17 @@ function CombatPage({ characters = [] }) {
     const nextFighters = sourceFighters.map((fighter, index) => {
       const fighterId = String(fighter?.id || fighter?._id || fighter?.name || index);
       if (fighterId !== String(actorId)) return fighter;
-      return {
+      return applyDefensiveReserve({
         ...applyCombatPosture(fighter, posture),
         remainingActions: spendResult.remainingActions,
-      };
+      }, reserveType, 1);
     });
     fightersRef.current = nextFighters;
     setFighters(nextFighters);
+    setDefensiveStance(prev => ({
+      ...prev,
+      [actorId]: normalizedPostureType === "evading" ? "Evade" : "Block",
+    }));
 
     const name = nextTurnEntry.name || currentCommandTurn.name || "Combatant";
     const message =
@@ -26863,7 +26927,15 @@ function CombatPage({ characters = [] }) {
           if (f.id !== currentFighter.id) return f;
           const cost = blockCost === "all" ? f.remainingActions : blockCost;
           remainingAfterBlock = Math.max(0, f.remainingActions - cost);
-          return { ...f, remainingActions: remainingAfterBlock };
+          const posture = createCombatPosture({
+            type: "blocking",
+            round: meleeRoundRef.current || meleeRound,
+            turnIndex: turnIndexRef.current ?? turnIndex,
+          });
+          return applyDefensiveReserve({
+            ...applyCombatPosture(f, posture),
+            remainingActions: remainingAfterBlock,
+          }, "block", 1);
         }));
         clearLegacyDefensiveActionState("Block");
         if (remainingAfterBlock <= 0) {
@@ -26899,7 +26971,15 @@ function CombatPage({ characters = [] }) {
           if (f.id !== currentFighter.id) return f;
           const cost = evadeCost === "all" ? f.remainingActions : evadeCost;
           remainingAfterEvade = Math.max(0, f.remainingActions - cost);
-          return { ...f, remainingActions: remainingAfterEvade };
+          const posture = createCombatPosture({
+            type: "evading",
+            round: meleeRoundRef.current || meleeRound,
+            turnIndex: turnIndexRef.current ?? turnIndex,
+          });
+          return applyDefensiveReserve({
+            ...applyCombatPosture(f, posture),
+            remainingActions: remainingAfterEvade,
+          }, "evade", 1);
         }));
         clearLegacyDefensiveActionState("Evade");
         if (remainingAfterEvade <= 0) {
@@ -27025,7 +27105,14 @@ function CombatPage({ characters = [] }) {
         commitFighters(prev => prev.map(f => {
           if (f.id !== currentFighter.id) return f;
           remainingAfterDefend = Math.max(0, f.remainingActions - 1);
-          return { ...f, remainingActions: remainingAfterDefend };
+          const posture = createDefensivePosture({
+            round: meleeRoundRef.current || meleeRound,
+            turnIndex: turnIndexRef.current ?? turnIndex,
+          });
+          return applyDefensiveReserve({
+            ...applyDefensivePosture(f, posture),
+            remainingActions: remainingAfterDefend,
+          }, "defend", 1);
         }));
         clearLegacyDefensiveActionState("Defend/Hold");
         if (remainingAfterDefend <= 0) {
