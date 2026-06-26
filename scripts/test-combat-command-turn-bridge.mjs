@@ -28,6 +28,13 @@ const liveEnemy = {
   remainingActions: 1,
   actionsPerRound: 2,
 };
+const enemyTeamPlayable = {
+  id: "playable-arena-champion",
+  name: "Arena Champion",
+  team: "enemy",
+  type: "player",
+  remainingActions: 1,
+};
 const manualTurn = {
   id: "mimi",
   name: "Mimi",
@@ -67,6 +74,14 @@ const liveEnemyBridge = buildCombatCommandTurnBridge({
 assert.equal(liveEnemyBridge.source, "live-initiative", "live enemy still uses live initiative");
 assert.equal(liveEnemyBridge.isEnemyControlled, true, "enemy live actor is enemy controlled");
 assert.equal(liveEnemyBridge.isPlayerControlled, false, "enemy live actor is not player controlled");
+
+const enemyTeamPlayableBridge = buildCombatCommandTurnBridge({
+  combatActive: true,
+  liveActor: enemyTeamPlayable,
+});
+assert.equal(enemyTeamPlayableBridge.isEnemyControlled, true);
+assert.equal(enemyTeamPlayableBridge.isPlayerControlled, false);
+assert.equal(enemyTeamPlayableBridge.activeActorTeam, "enemy");
 
 const fallbackBridge = buildCombatCommandTurnBridge({
   combatActive: false,
