@@ -4,11 +4,14 @@ import {
   PUBLIC_ARENA_ROSTER_STORAGE_KEY,
   clearStagedRosterEntries,
   getDuplicateStagedSavedCharacters,
+  getDuplicateStagedRosterEntries,
+  getMissingSavedCharacterStagedEntries,
   getStagedRosterEntries,
   hasStagedSavedCharacter,
   pruneStagedRosterEntriesAgainstSavedCharacters,
   removeDuplicateSavedCharacterEntries,
   removeDuplicateSavedCharacterEntriesFromStorage,
+  removeDuplicateStagedRosterEntriesFromStorage,
   removeStagedRosterEntriesByCharacterId,
   removeStagedRosterEntry,
   saveStagedRosterEntries,
@@ -63,6 +66,14 @@ const stagedGoblin = {
   side: "enemy",
   source: "public-enemy",
 };
+const stagedGeneratedCharacter = {
+  id: "generated-ranger",
+  name: "Generated Ranger",
+  side: "player",
+  source: "autoroll",
+  generated: true,
+  autoRollCharacter: { name: "Generated Ranger" },
+};
 
 const originalEntries = [stagedMimi, stagedSorulwen, stagedGoblin];
 const originalSnapshot = JSON.stringify(originalEntries);
@@ -74,6 +85,10 @@ assert.equal(hasStagedSavedCharacter(getStagedRosterEntries(), "missing-characte
 
 const removedOne = removeStagedRosterEntry("char-sorulwen");
 assert.deepEqual(removedOne.map((entry) => entry.id), ["char-mimi", "goblin-warrior"], "removeStagedRosterEntry removes one entry");
+
+saveStagedRosterEntries([stagedGoblin, { ...stagedGoblin }, stagedSorulwen]);
+const removedOneDuplicate = removeStagedRosterEntry(stagedGoblin);
+assert.deepEqual(removedOneDuplicate.map((entry) => entry.id), ["goblin-warrior", "char-sorulwen"], "removeStagedRosterEntry removes only one matching staged row");
 
 saveStagedRosterEntries([stagedMimi, stagedMimiDuplicate, stagedGoblin]);
 const removedByCharacter = removeStagedRosterEntriesByCharacterId("char-mimi");
@@ -107,10 +122,23 @@ assert.deepEqual(
   "storage duplicate cleanup keeps first saved-character entry and enemy entries"
 );
 
-saveStagedRosterEntries(originalEntries);
+const duplicatePublicActor = { id: "longbowman", name: "Longbowman", side: "enemy", source: "normalized-legacy-actor" };
+saveStagedRosterEntries([stagedMimi, stagedMimiDuplicate, duplicatePublicActor, { ...duplicatePublicActor }, stagedGoblin]);
+assert.equal(getDuplicateStagedRosterEntries(getStagedRosterEntries()).length, 2, "generic duplicate detection includes saved and normalized staged entries");
+const allDeduped = removeDuplicateStagedRosterEntriesFromStorage();
+assert.deepEqual(allDeduped.map((entry) => entry.id), ["char-mimi", "longbowman", "goblin-warrior"], "generic duplicate cleanup preserves one entry per source identity");
+
+saveStagedRosterEntries([...originalEntries, stagedGeneratedCharacter, duplicatePublicActor]);
 const pruned = pruneStagedRosterEntriesAgainstSavedCharacters([{ _id: "char-mimi", name: "Mimi" }]);
-assert.deepEqual(pruned.map((entry) => entry.id), ["char-mimi", "goblin-warrior"], "prune removes missing saved-character entries and keeps valid/enemy entries");
+assert.deepEqual(pruned.map((entry) => entry.id), ["char-mimi", "goblin-warrior", "generated-ranger", "longbowman"], "prune removes missing saved-character entries and keeps valid public/generated/normalized entries");
 assert.equal(pruned.some((entry) => entry.id === "goblin-warrior"), true, "prune keeps enemy entries");
+assert.equal(pruned.some((entry) => entry.id === "generated-ranger"), true, "prune keeps generated AutoRoll entries");
+assert.equal(pruned.some((entry) => entry.id === "longbowman"), true, "prune keeps normalized selectable actors");
+assert.deepEqual(
+  getMissingSavedCharacterStagedEntries([stagedMimi, stagedGoblin], []).map((entry) => entry.id),
+  ["char-mimi"],
+  "missing detection reports stale saved references when no saved characters remain"
+);
 
 assert.deepEqual(clearStagedRosterEntries(), [], "clearStagedRosterEntries clears all entries");
 assert.deepEqual(getStagedRosterEntries(), [], "cleared storage loads as empty");
