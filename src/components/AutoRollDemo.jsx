@@ -24,13 +24,13 @@ import { adaptPublicEnemyToRosterEntry } from "../utils/publicEnemyRosterAdapter
 import {
   adaptPublicCharacterToRosterEntry,
   clearStagedRosterEntries,
-  getDuplicateStagedSavedCharacters,
+  getDuplicateStagedRosterEntries,
   getMissingSavedCharacterStagedEntries,
   getStagedSavedCharacterId,
   hasStagedSavedCharacter,
   loadPublicArenaRosterEntries,
   pruneStagedRosterEntriesAgainstSavedCharacters,
-  removeDuplicateSavedCharacterEntriesFromStorage,
+  removeDuplicateStagedRosterEntriesFromStorage,
   removeStagedRosterEntry,
   upsertPublicArenaRosterEntry,
 } from "../utils/publicRosterAdapter.js";
@@ -147,7 +147,7 @@ const AutoRollDemo = () => {
     [savedCharacters, stagedRosterEntries]
   );
   const duplicateStagedSavedCharacters = useMemo(
-    () => getDuplicateStagedSavedCharacters(stagedRosterEntries),
+    () => getDuplicateStagedRosterEntries(stagedRosterEntries),
     [stagedRosterEntries]
   );
 
@@ -250,7 +250,7 @@ const AutoRollDemo = () => {
   };
 
   const removeStagedEntry = (entry) => {
-    setStagedRosterEntries(removeStagedRosterEntry(entry?.stagedEntryId || entry?.entryId || entry?.id));
+    setStagedRosterEntries(removeStagedRosterEntry(entry));
     setStagedRosterMessage(`${entry?.name || "Staged entry"} removed from staged roster.`);
   };
 
@@ -265,8 +265,8 @@ const AutoRollDemo = () => {
   };
 
   const removeDuplicateStagedCharacters = () => {
-    setStagedRosterEntries(removeDuplicateSavedCharacterEntriesFromStorage());
-    setStagedRosterMessage("Duplicate staged characters removed.");
+    setStagedRosterEntries(removeDuplicateStagedRosterEntriesFromStorage());
+    setStagedRosterMessage("Duplicate staged entries removed.");
   };
 
   return (
@@ -402,12 +402,12 @@ const AutoRollDemo = () => {
             <HStack spacing={2}>
               {duplicateStagedSavedCharacters.length > 0 && (
                 <Button size="xs" colorScheme="orange" variant="outline" onClick={removeDuplicateStagedCharacters}>
-                  Remove Duplicate Characters
+                  Remove Duplicates
                 </Button>
               )}
               {missingStagedSavedCharacters.length > 0 && (
                 <Button size="xs" colorScheme="orange" variant="outline" onClick={removeMissingStagedCharacters}>
-                  Remove Missing Characters
+                  Remove Missing
                 </Button>
               )}
               <Button size="xs" colorScheme="red" variant="outline" onClick={clearStagedRoster} isDisabled={stagedRosterEntries.length === 0}>
@@ -455,7 +455,7 @@ const AutoRollDemo = () => {
                       <Badge alignSelf="start" colorScheme="orange">Missing saved character</Badge>
                     )}
                     <Button size="xs" variant="outline" colorScheme="red" alignSelf="start" onClick={() => removeStagedEntry(entry)}>
-                      Remove from Staged Roster
+                      Remove
                     </Button>
                   </VStack>
                 </Box>

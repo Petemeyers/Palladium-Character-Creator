@@ -1,4 +1,8 @@
-import { isEnemyCombatant, isManualPlayerCombatant } from "./combatantSide.js";
+import {
+  getExplicitCombatantControlMode,
+  isEnemyCombatant,
+  isManualPlayerCombatant,
+} from "./combatantSide.js";
 
 const cloneArray = (value) => (Array.isArray(value) ? [] : []);
 
@@ -78,11 +82,12 @@ export function canUseManualEndTurn(options = {}) {
     aiControlEnabled = false,
   } = safeOptions;
   if (!isExplicitManualEndTurnSource(source)) return false;
+  const explicitControlMode = getExplicitCombatantControlMode(currentFighter, commandTurn?.turnEntry);
   const isEnemy =
     isEnemyCombatant(currentFighter, commandTurn?.turnEntry || { side: commandTurn?.activeActorTeam }) ||
     commandTurn?.isEnemyControlled === true ||
     currentFighter?.aiControlled === true;
-  if (isEnemy) return false;
+  if (isEnemy && explicitControlMode !== "manual") return false;
   if (commandTurn?.isPlayerControlled === false) return false;
   return isManualPlayerCombatant(currentFighter, {
     related: commandTurn?.turnEntry || { side: commandTurn?.activeActorTeam },

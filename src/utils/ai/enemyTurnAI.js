@@ -81,6 +81,8 @@ import {
   canTargetForAction,
   isAllyOf,
 } from "../factionDisposition.js";
+import { getSelectableActorAttackForDistance } from "../selectableActorAdapter.js";
+import { spendEnemyNoTargetAction } from "../enemyTurnScheduling.js";
 
 // -----------------------------------------------------------------------------
 // Weakness Memory Persistence (across encounters)
@@ -2953,8 +2955,11 @@ export function runEnemyTurnAI(enemy, context) {
         }
         addLog(`${enemy.name} has no targets and defends.`, "info");
       }
+      if ((Number(enemy.remainingActions ?? 0) || 0) > 0) {
+        setFighters((previous) => spendEnemyNoTargetAction(previous, enemy.id));
+      }
       processingEnemyTurnRef.current = false;
-      scheduleEndTurn();
+      scheduleEndTurn(0, "enemy-no-targets");
       return;
     }
 
@@ -4371,6 +4376,12 @@ export function runEnemyTurnAI(enemy, context) {
 
       // Recalculate distance with current positions using proper hex distance
       currentDistance = calculateDistance(enemyCurrentPos, targetCurrentPos);
+
+      selectedAttack = getSelectableActorAttackForDistance(
+        enemy,
+        currentDistance,
+        selectedAttack,
+      );
 
       addLog(
         `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ${enemy.name} is at (${enemyCurrentPos.x}, ${enemyCurrentPos.y}), ${

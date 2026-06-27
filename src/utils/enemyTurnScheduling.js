@@ -25,9 +25,21 @@ export function shouldCoalesceBlockedEnemyTurn({ stillCurrent, combatActive, com
   return Boolean(stillCurrent && combatActive && !combatOver && !alreadyClaimedAndActive);
 }
 
+export function spendEnemyNoTargetAction(fighters = [], fighterId = "") {
+  if (!Array.isArray(fighters) || !fighterId) return fighters;
+  return fighters.map((fighter) => {
+    if (fighter?.id !== fighterId) return fighter;
+    const remainingActions = Math.max(0, Number(fighter.remainingActions ?? 0) || 0);
+    return remainingActions > 0
+      ? { ...fighter, remainingActions: remainingActions - 1 }
+      : fighter;
+  });
+}
+
 export default {
   buildEnemyTurnSlotKey,
   shouldCoalesceBlockedEnemyTurn,
   shouldDedupeEnemyTurnStart,
   shouldSkipBlockedEnemyTurnStart,
+  spendEnemyNoTargetAction,
 };

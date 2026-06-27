@@ -3,6 +3,7 @@ import {
   buildPublicEnemyActionPreview,
 } from "./publicEnemyCombatAdapter.js";
 import { buildPublicPlayerAttackPreviews } from "./publicPlayerAttackPreview.js";
+import { getCombatantSide } from "./combatantSide.js";
 
 const REQUIRED_COMPATIBILITY_ATTRIBUTES = ["IQ", "ME", "MA", "PS", "PP", "PE", "PB", "Spd"];
 const REQUIRED_PUBLIC_ABILITIES = ["str", "dex", "con", "int", "wis", "cha"];
@@ -93,6 +94,9 @@ const getActionPreviews = (entry = {}, side = "") => {
 };
 
 export function getEncounterCombatantSource(entry = {}) {
+  if (entry.source === "public-actor" || entry.source === "normalized-legacy-actor" || entry.source === "compatibility-actor") {
+    return entry.sourceLabel || entry.source;
+  }
   if (
     entry.source === "saved-character" ||
     entry.publicDisplaySource === "saved-character" ||
@@ -111,10 +115,10 @@ export function getEncounterCombatantSource(entry = {}) {
 }
 
 export function getEncounterCombatantSide(entry = {}) {
-  const side = entry.side || entry.type || entry.autoRollCharacter?.side || entry.autoRollCharacter?.type;
-  if (side === "player" || entry.playable === true || entry.autoRollCharacter?.playable === true) return "player";
-  if (side === "enemy" || entry.source === "public-enemy" || entry.publicEnemyMetadata) return "enemy";
-  return side || "";
+  const side = getCombatantSide(entry, entry.autoRollCharacter || null);
+  if (side !== "unknown") return side;
+  if (entry.source === "public-enemy" || entry.publicEnemyMetadata) return "enemy";
+  return "";
 }
 
 export function checkPublicPlayerCombatReadiness(entry = {}) {
@@ -186,7 +190,7 @@ export function checkEncounterCombatantReadiness(entry = {}) {
   pushMissing(missing, hasValue(firstValue(entry.name, entry.autoRollCharacter?.name)), "name");
 
   if (side === "player") {
-    const publicScores = entry.publicAbilityScores || entry.finalAbilityScores || entry.autoRollCharacter?.publicAbilityScores || {};
+    const publicScores = entry.publicAbilityScores || entry.finalAbilityScores || entry.abilityScores || entry.autoRollCharacter?.publicAbilityScores || {};
     const compatibilityAttributes =
       entry.compatibilityAttributes ||
       entry.attributes ||
@@ -241,7 +245,7 @@ export function checkEncounterCombatantReadiness(entry = {}) {
     pushMissing(missing, hasAnyPathValue(entry, ["speed", "Spd", "spd", "attributes.Spd", "attributes.spd"]), "speed");
     pushMissing(missing, hasAnyPathValue(entry, ["size", "sizeCategory"]), "size");
     pushMissing(missing, hasAnyPathValue(entry, ["category", "creatureType", "combatantType"]), "category/creatureType");
-    pushMissing(missing, hasAttackMetadata(entry), "attacks");
+    pushMissing(missing, hasAttackMetadata(entry) || entry.controlMode === "passive", "attacks");
   } else {
     pushMissing(missing, false, "side");
   }

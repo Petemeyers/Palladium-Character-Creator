@@ -45,6 +45,22 @@ const enemyStatus = buildCombatTurnStatus({
 assert.equal(enemyStatus.teamLabel, "Enemy");
 assert.equal(enemyStatus.showEndTurnButton, false);
 
+const manualEnemy = { ...enemyPlayable, controlMode: "manual", playable: true };
+const manualEnemyBridge = buildCombatCommandTurnBridge({
+  combatActive: true,
+  liveActor: manualEnemy,
+});
+assert.equal(getCombatantSide(manualEnemy), "enemy", "manual control does not change allegiance");
+assert.equal(isManualPlayerCombatant(manualEnemy), true, "playable enemy may be manually controlled");
+assert.equal(isManualPlayerCombatant(manualEnemy, { aiControlEnabled: true }), true, "explicit manual control remains authoritative");
+assert.equal(manualEnemyBridge.isPlayerControlled, true);
+assert.equal(manualEnemyBridge.isEnemyControlled, false);
+assert.equal(canUseManualEndTurn({
+  source: "command-center-end-turn",
+  currentFighter: manualEnemy,
+  commandTurn: manualEnemyBridge,
+}), true);
+
 const partyPlayer = {
   id: "playable-party-scout",
   name: "Party Scout",
@@ -54,6 +70,12 @@ const partyPlayer = {
 };
 assert.equal(getCombatantSide(partyPlayer), "player");
 assert.equal(isManualPlayerCombatant(partyPlayer), true);
+
+const aiPartyPlayer = { ...partyPlayer, controlMode: "ai" };
+const aiPartyBridge = buildCombatCommandTurnBridge({ combatActive: true, liveActor: aiPartyPlayer });
+assert.equal(getCombatantSide(aiPartyPlayer), "player", "AI control does not change party allegiance");
+assert.equal(aiPartyBridge.isPlayerControlled, false);
+assert.equal(aiPartyBridge.isEnemyControlled, true);
 
 const battleSideEnemy = { id: "fighter-3", battleSide: "enemy", type: "player" };
 assert.equal(getCombatantSide(battleSideEnemy), "enemy");

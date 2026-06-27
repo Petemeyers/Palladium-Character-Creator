@@ -63,6 +63,15 @@ export const clearStagedRosterEntries = clearPublicArenaRosterEntries;
 const getEntryId = (entry) =>
   String(entry?.stagedEntryId || entry?.entryId || entry?.id || "");
 
+const getEntryIdentity = (entry) => {
+  const savedCharacterId = getStagedSavedCharacterId(entry);
+  if (savedCharacterId) return `saved-character:${savedCharacterId}`;
+  const source = String(entry?.source || "staged-entry");
+  const side = String(entry?.side || entry?.team || "unknown");
+  const id = String(entry?.selectableActorId || entry?.sourceEnemyId || entry?.id || entry?.name || "");
+  return id ? `${source}:${side}:${id}` : "";
+};
+
 const getCharacterId = (entry) =>
   String(entry?.characterId || entry?.savedCharacterId || entry?.sourceCharacterId || entry?.id || "");
 
@@ -70,7 +79,11 @@ const getSavedCharacterId = (character) =>
   String(character?.id || character?._id || character?.characterId || "");
 
 const isSavedCharacterEntry = (entry) =>
-  entry?.source === "saved-character" || (entry?.side === "player" && Boolean(entry?.autoRollCharacter));
+  entry?.source === "saved-character" || (
+    entry?.side === "player" &&
+    entry?.generated !== true &&
+    Boolean(entry?.autoRollCharacter)
+  );
 
 export const getStagedSavedCharacterId = (entry) =>
   isSavedCharacterEntry(entry) ? getCharacterId(entry) : "";
@@ -123,11 +136,41 @@ export function removeDuplicateSavedCharacterEntriesFromStorage() {
   return savePublicArenaRosterEntries(removeDuplicateSavedCharacterEntries(entries));
 }
 
-export function removeStagedRosterEntry(entryId) {
-  const targetId = String(entryId || "");
+export function getDuplicateStagedRosterEntries(entries = []) {
+  if (!Array.isArray(entries)) return [];
+  const seen = new Set();
+  return entries.filter((entry) => {
+    const identity = getEntryIdentity(entry);
+    if (!identity) return false;
+    if (seen.has(identity)) return true;
+    seen.add(identity);
+    return false;
+  });
+}
+
+export function removeDuplicateStagedRosterEntries(entries = []) {
+  if (!Array.isArray(entries)) return [];
+  const duplicateEntries = new Set(getDuplicateStagedRosterEntries(entries));
+  return toSafeEntries(entries.filter((entry) => !duplicateEntries.has(entry)));
+}
+
+export function removeDuplicateStagedRosterEntriesFromStorage() {
+  return savePublicArenaRosterEntries(removeDuplicateStagedRosterEntries(loadPublicArenaRosterEntries()));
+}
+
+export function removeStagedRosterEntry(entryOrId) {
+  const targetId = typeof entryOrId === "object" ? getEntryId(entryOrId) : String(entryOrId || "");
   if (!targetId) return loadPublicArenaRosterEntries();
   const entries = loadPublicArenaRosterEntries();
-  const nextEntries = entries.filter((entry) => getEntryId(entry) !== targetId);
+  const targetSide = typeof entryOrId === "object" ? String(entryOrId?.side || entryOrId?.team || "") : "";
+  const targetSource = typeof entryOrId === "object" ? String(entryOrId?.source || "") : "";
+  const removeIndex = entries.findIndex((entry) => (
+    getEntryId(entry) === targetId &&
+    (!targetSide || String(entry?.side || entry?.team || "") === targetSide) &&
+    (!targetSource || String(entry?.source || "") === targetSource)
+  ));
+  if (removeIndex < 0) return entries;
+  const nextEntries = entries.filter((_entry, index) => index !== removeIndex);
   return savePublicArenaRosterEntries(nextEntries);
 }
 
@@ -163,7 +206,6 @@ export function getMissingSavedCharacterStagedEntries(entries = [], savedCharact
       .map(getSavedCharacterId)
       .filter(Boolean)
   );
-  if (savedIds.size === 0) return [];
   return (Array.isArray(entries) ? entries : []).filter((entry) =>
     isSavedCharacterEntry(entry) && !savedIds.has(getCharacterId(entry))
   );
@@ -188,6 +230,7 @@ export default {
   clearPublicArenaRosterEntries,
   clearStagedRosterEntries,
   getDuplicateStagedSavedCharacters,
+  getDuplicateStagedRosterEntries,
   getMissingSavedCharacterStagedEntries,
   getStagedSavedCharacterId,
   getStagedRosterEntries,
@@ -196,6 +239,8 @@ export default {
   pruneStagedRosterEntriesAgainstSavedCharacters,
   removeDuplicateSavedCharacterEntries,
   removeDuplicateSavedCharacterEntriesFromStorage,
+  removeDuplicateStagedRosterEntries,
+  removeDuplicateStagedRosterEntriesFromStorage,
   removeStagedRosterEntriesByCharacterId,
   removeStagedRosterEntry,
   savePublicArenaRosterEntries,

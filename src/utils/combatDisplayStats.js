@@ -92,6 +92,9 @@ const readCompatibilityAttributes = (combatant) => {
 
 const getSourceLabel = (combatant) => {
   const source = String(combatant?.source || combatant?.publicDisplaySource || "").toLowerCase();
+  if (["public-actor", "normalized-legacy-actor", "compatibility-actor"].includes(source)) {
+    return combatant?.sourceLabel || "Selectable Actor";
+  }
   if (source === "saved-character" || combatant?.publicDisplaySource === "saved-character" || combatant?.generated === false) {
     return "Saved Character";
   }

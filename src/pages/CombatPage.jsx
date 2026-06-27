@@ -78,7 +78,12 @@ import {
 import { HamburgerIcon } from "@chakra-ui/icons";
 import CryptoSecureDice from "../utils/cryptoDice.js";
 import arenaRoster from "../data/arenaRoster.js";
+import SELECTABLE_ACTORS from "../data/selectableActors.js";
 import { getAllArenaRosterEntries } from "../utils/arenaRosterUtils.js";
+import {
+  adaptSelectableActorToCombatant,
+  getSelectableActorAttackForDistance,
+} from "../utils/selectableActorAdapter.js";
 import CombatActionsPanel from "../components/CombatActionsPanel.jsx";
 import EncounterReadinessPanel from "../components/EncounterReadinessPanel.jsx";
 import InitiativeSetupPreview from "../components/InitiativeSetupPreview.jsx";
@@ -155,6 +160,7 @@ import { initializeAmmo, setAmmo, canFireMissileWeapon, getInventoryAmmoCount, d
 import { getTechniquesForLevel } from "../data/combatTechniques.js";
 import { selectAITechnique } from "../utils/ai/selectAITechnique.js";
 import { canTargetForAction, getFactionId, isAllyOf, isHostileTo } from "../utils/factionDisposition.js";
+import { getCombatHostilityState } from "../utils/combatHostilityState.js";
 import { getTechniquesForCombatant, TECHNIQUE_ELEMENT_MAP } from "../utils/trainingAbilitiesParser.js";
 import { updateStatusEffects } from "../utils/statusEffectSystem.js";
 import { createThreatProfile } from "../utils/ai/threatAnalysis.js";
@@ -235,12 +241,12 @@ import {
 import { getDefaultMovementMode, getSpeciesProfile } from "../utils/ai/movementModeHelpers.js";
 import {
   clearPublicArenaRosterEntries,
-  getDuplicateStagedSavedCharacters,
+  getDuplicateStagedRosterEntries,
   getMissingSavedCharacterStagedEntries,
   getStagedSavedCharacterId,
   loadPublicArenaRosterEntries,
   pruneStagedRosterEntriesAgainstSavedCharacters,
-  removeDuplicateSavedCharacterEntriesFromStorage,
+  removeDuplicateStagedRosterEntriesFromStorage,
   removeStagedRosterEntry,
 } from "../utils/publicStagedRosterStorage.js";
 import {
@@ -259,6 +265,7 @@ import {
   shouldCoalesceBlockedEnemyTurn,
   shouldDedupeEnemyTurnStart,
   shouldSkipBlockedEnemyTurnStart,
+  spendEnemyNoTargetAction,
 } from "../utils/enemyTurnScheduling.js";
 
 // Debug toggle for grapple system
@@ -2561,7 +2568,7 @@ function CombatPage({ characters = [] }) {
     [characters, stagedRosterEntries]
   );
   const duplicateSavedStagedRosterEntries = useMemo(
-    () => getDuplicateStagedSavedCharacters(stagedRosterEntries),
+    () => getDuplicateStagedRosterEntries(stagedRosterEntries),
     [stagedRosterEntries]
   );
   const canStartManualPublicTurns = useMemo(() => canStartPublicTurnOrder(fighters), [fighters]);
@@ -6020,11 +6027,34 @@ function CombatPage({ characters = [] }) {
 
   const [combatantTypeFilter, setCombatantTypeFilter] = useState("all"); // Filter arenaRoster by category
   const collator = useMemo(() => new Intl.Collator(undefined, { sensitivity: "base" }), []);
+  const selectableActorCombatants = useMemo(() => (
+    SELECTABLE_ACTORS.map((actor) => {
+      const conversion = adaptSelectableActorToCombatant(actor);
+      if (!conversion.ok) return null;
+      return {
+        ...conversion.combatant,
+        pickerId: `normalized:${actor.id}`,
+        pickerGroup: "normalized",
+      };
+    }).filter(Boolean)
+  ), []);
+  const compatibilityActorCombatants = useMemo(() => (
+    getAllArenaRosterEntries(arenaRoster).map((combatant) => ({
+      ...combatant,
+      source: combatant.source || "compatibility-actor",
+      sourceLabel: combatant.sourceLabel || "Compatibility Actor",
+      pickerId: `compatibility:${combatant.id}`,
+      pickerGroup: "compatibility",
+    }))
+  ), []);
+  const pickerCombatants = useMemo(
+    () => [...selectableActorCombatants, ...compatibilityActorCombatants],
+    [compatibilityActorCombatants, selectableActorCombatants]
+  );
   const combatantTypeOptions = useMemo(() => {
-    const combatants = getAllArenaRosterEntries(arenaRoster);
-    const uniqueCategories = new Set(combatants.map((combatant) => combatant.category || "Unknown"));
+    const uniqueCategories = new Set(pickerCombatants.map((combatant) => combatant.category || "Unknown"));
     return Array.from(uniqueCategories).sort((a, b) => collator.compare(a, b));
-  }, [collator]);
+  }, [collator, pickerCombatants]);
   const formatCombatantCategory = useCallback((category) => {
     if (!category) return "Unknown";
     return category
@@ -6033,15 +6063,16 @@ function CombatPage({ characters = [] }) {
       .join(" ");
   }, []);
   const sortedCombatants = useMemo(() => {
-    const combatants = getAllArenaRosterEntries(arenaRoster);
     const filteredCombatants =
       combatantTypeFilter === "all"
-        ? combatants
-        : combatants.filter((combatant) => (combatant.category || "Unknown") === combatantTypeFilter);
+        ? pickerCombatants
+        : pickerCombatants.filter((combatant) => (combatant.category || "Unknown") === combatantTypeFilter);
     const sorted = [...filteredCombatants];
 
     if (enemySortMode === "type") {
       return sorted.sort((a, b) => {
+        const groupComparison = a.pickerGroup === b.pickerGroup ? 0 : a.pickerGroup === "normalized" ? -1 : 1;
+        if (groupComparison !== 0) return groupComparison;
         const typeA = a.category || "Unknown";
         const typeB = b.category || "Unknown";
         const typeComparison = collator.compare(typeA, typeB);
@@ -6050,10 +6081,13 @@ function CombatPage({ characters = [] }) {
       });
     }
 
-    return sorted.sort((a, b) => collator.compare(a.name || "", b.name || ""));
-  }, [collator, combatantTypeFilter, enemySortMode]);
+    return sorted.sort((a, b) => {
+      const groupComparison = a.pickerGroup === b.pickerGroup ? 0 : a.pickerGroup === "normalized" ? -1 : 1;
+      return groupComparison || collator.compare(a.name || "", b.name || "");
+    });
+  }, [collator, combatantTypeFilter, enemySortMode, pickerCombatants]);
   const selectedCombatantData = useMemo(
-    () => sortedCombatants.find((combatant) => combatant.id === selectedCombatant),
+    () => sortedCombatants.find((combatant) => combatant.pickerId === selectedCombatant),
     [sortedCombatants, selectedCombatant]
   );
 
@@ -7988,12 +8022,15 @@ function CombatPage({ characters = [] }) {
         (isHostileTo(actor, target, sceneContext) || isHostileTo(target, actor, sceneContext))
       )
     );
+    const hostilityState = getCombatHostilityState(active, sceneContext);
 
     return {
       activeParty,
       hostileThreats,
       partyFighters,
       nonPartyHostileConflict,
+      hasHostileSides: hostilityState.hasHostileSides,
+      noHostileSidesRemaining: hostilityState.noHostileSidesRemaining,
       partyDefeated: activeParty.length === 0 && partyFighters.length > 0 && hostileThreats.length > 0,
       partyVictorious: activeParty.length > 0 && hostileThreats.length === 0 && !nonPartyHostileConflict,
     };
@@ -8019,6 +8056,15 @@ function CombatPage({ characters = [] }) {
       clearCombatFlowLocks();
       addLog("Victory! All enemies defeated!", "victory");
       addLog("Combat is over. No further attacks are scheduled.", "info");
+      setCombatActive(false);
+      return true;
+    }
+
+    if (combatVictoryState.noHostileSidesRemaining) {
+      combatEndCheckRef.current = true;
+      combatOverRef.current = true;
+      clearCombatFlowLocks();
+      addLog("Combat has no hostile sides remaining.", "info");
       setCombatActive(false);
       return true;
     }
@@ -8131,13 +8177,15 @@ function CombatPage({ characters = [] }) {
   const getFighterControlMode = useCallback((fighter) => {
     if (!fighter) return "passive";
 
-    const schedulerTeam = getFighterSchedulerTeam(fighter);
-    if (schedulerTeam === "enemy") return "ai";
-
     const explicitMode = String(fighter.controlMode || "").toLowerCase();
-    if (["player", "ai", "passive", "defensive"].includes(explicitMode)) {
+    if (["player", "manual", "ai", "autoplay", "passive", "defensive"].includes(explicitMode)) {
+      if (explicitMode === "manual") return "player";
+      if (explicitMode === "autoplay") return "ai";
       return explicitMode;
     }
+
+    const schedulerTeam = getFighterSchedulerTeam(fighter);
+    if (schedulerTeam === "enemy") return "ai";
 
     const isPlayable =
       schedulerTeam === "player" ||
@@ -19575,6 +19623,7 @@ function CombatPage({ characters = [] }) {
         setDefensiveStance,
         setTemporaryHexSharing,
         setCombatActive,
+        onNoHostilesRemaining: () => endCombatIfVictoryResolved(fightersRef.current ?? liveFighters),
         // Attack & combat
         attack: guardedEnemyAttack,
         // Refs
@@ -21024,13 +21073,8 @@ function CombatPage({ characters = [] }) {
         addLog(`${enemy.name} has no targets and defends.`, "info");
       }
       const remainingBefore = Number(enemy.remainingActions ?? 0) || 0;
-      const remainingAfter = Math.max(0, remainingBefore - (remainingBefore > 0 ? 1 : 0));
       if (remainingBefore > 0) {
-        commitFighters(prev => prev.map(f =>
-          f.id === enemy.id
-            ? { ...f, remainingActions: remainingAfter }
-            : f
-        ));
+        commitFighters(prev => spendEnemyNoTargetAction(prev, enemy.id));
       }
       processingEnemyTurnRef.current = false;
       scheduleEndTurn(0, "enemy-no-targets");
@@ -21803,6 +21847,19 @@ function CombatPage({ characters = [] }) {
       // Recalculate distance with current positions using proper hex distance
       currentDistance = calculateDistance(enemyCurrentPos, targetCurrentPos);
 
+      selectedAttack = getSelectableActorAttackForDistance(
+        enemy,
+        currentDistance,
+        selectedAttack,
+        {
+          canUseAttack: (attackOption) => (
+            !attackOption?.ammunition ||
+            getInventoryAmmoCount(enemy, attackOption.ammunition) > 0
+          ),
+        },
+      );
+      attackName = selectedAttack?.name || attackName;
+
       addLog(`${enemy.name} is at (${enemyCurrentPos.x}, ${enemyCurrentPos.y}), ${target.name} is at (${targetCurrentPos.x}, ${targetCurrentPos.y}), distance: ${Math.round(currentDistance)}ft`, "info");
 
       // Guardrail (again, just in case): keep selectedAttack resolved before validating.
@@ -22561,31 +22618,26 @@ function CombatPage({ characters = [] }) {
           const rangedAttack = availableAttacks.find(a => a.range && a.range > 0);
           if (rangedAttack) {
             addLog(`${enemy.name} uses ranged attack instead of moving (${aiDecision.reason})`, "info");
-            if (!commitEnemyAction("USE_RANGED_INSTEAD")) return;
-            setTimeout(() => {
-              void (async () => {
-                if (combatOverRef.current || !combatActive || combatEndCheckRef.current) return;
-                if (!guardEnemyStillActiveForAttack()) return;
-                const flankingBonus = calculateFlankingBonus(
-                  positions[enemy.id],
-                  positions[target.id],
-                  positions,
-                  enemy.id
-                );
-                const bonuses = flankingBonus > 0 ? { flankingBonus } : {};
-                const updatedEnemyForRanged = {
-                  ...enemy,
-                  selectedAttack: rangedAttack,
-                  attacks: enemy.attacks || [],
-                };
-                await commitOneEnemyAction("ranged-attack", async () => {
-                  turnActionResolvingRef.current = true;
-                  pendingTurnAdvanceRef.current = false;
-                  await attack(updatedEnemyForRanged, target.id, bonuses);
-                });
-                processingEnemyTurnRef.current = false;
-              })();
-            }, 1000);
+            if (combatOverRef.current || !combatActive || combatEndCheckRef.current) return;
+            if (!guardEnemyStillActiveForAttack()) return;
+            const flankingBonus = calculateFlankingBonus(
+              positions[enemy.id],
+              positions[target.id],
+              positions,
+              enemy.id
+            );
+            const bonuses = flankingBonus > 0 ? { flankingBonus } : {};
+            const updatedEnemyForRanged = {
+              ...enemy,
+              selectedAttack: rangedAttack,
+              attacks: enemy.attacks || [],
+            };
+            await commitOneEnemyAction("ranged-attack", async () => {
+              turnActionResolvingRef.current = true;
+              pendingTurnAdvanceRef.current = false;
+              await attack(updatedEnemyForRanged, target.id, bonuses);
+            });
+            processingEnemyTurnRef.current = false;
             return;
           }
           // Fall back to movement if no ranged attack
@@ -22942,7 +22994,7 @@ function CombatPage({ characters = [] }) {
           }
         } else {
           // Not occupied, safe to move
-          if (!commitEnemyAction(`move:${movementType || "Move"}`)) return;
+          // The movement action was claimed before destination resolution above.
           const currentMovementAction = movementType === MOVEMENT_ACTIONS.CHARGE.name ? MOVEMENT_ACTIONS.CHARGE : MOVEMENT_ACTIONS.MOVE;
           movementInfo = {
             action: movementType,
@@ -23113,7 +23165,7 @@ function CombatPage({ characters = [] }) {
           }
 
           const fallback = findFallbackApproachHex(enemy, currentPos, targetPos, moveDistance);
-          addLog(`${enemy.name} cannot find an open attack hex near ${blockedTarget?.name || target.name}.`, "info");
+          addLog(`${enemy.name} cannot find an open attack hex near ${target.name}.`, "info");
           if (fallback) {
             addLog(`fallback approach hex selected: (${fallback.x},${fallback.y})`, "info");
             addLog(`${enemy.name} moves as close as possible instead.`, "info");
@@ -23395,7 +23447,7 @@ function CombatPage({ characters = [] }) {
     }
 
     addLog(`${enemy.name} ${reasoning} and attacks ${target.name} with ${attackName}!`, "info");
-    addLog("enemy melee branch reached after layered preference log", "debug");
+    addLog("enemy attack branch reached after layered preference log", "debug");
 
     // Create updated enemy with selected attack (don't update state yet to prevent re-render loop)
     // Preserve selectedAttack from attacks array - don't let weapon selection override natural attacks
@@ -23452,7 +23504,7 @@ function CombatPage({ characters = [] }) {
         }
 
         addLog(
-         `enemy melee execution starting: actor=${enemy.name} target=${target.name} weapon=${attackName}`,
+         `enemy attack execution starting: actor=${enemy.name} target=${target.name} weapon=${attackName}`,
           "debug"
         );
         // Action committed; block effect-turn-advance until endTurn advances.
@@ -24331,7 +24383,7 @@ function CombatPage({ characters = [] }) {
       : (selectedArmy?.role && SCENE_ROLE_PRESETS[selectedArmy.role] ? selectedArmy.role : "enemy");
 
     // Check if this is a playable character
-    if (combatantData.playable) {
+    if (combatantData.playable && !combatantData.normalizedSelectableActor) {
       const isSavedCharacterImport = isSavedCharacterCombatData(combatantData);
       // Auto-roll attributes and create playable character fighter
       newFighter = createPlayableCharacterFighter(combatantData, nameToUse);
@@ -24473,7 +24525,12 @@ function CombatPage({ characters = [] }) {
       // Assign weapon - use selected weapon if provided, otherwise use default/random assignment
       const isHumanoidCombatant = isHumanoid(combatantData);
 
-      if (isHumanoidCombatant && weaponToEquip && weaponToEquip !== "None") {
+      if (combatantData.normalizedSelectableActor) {
+        const primaryAttack = combatantData.attacks?.[0];
+        if (primaryAttack?.name) {
+          addLog(`${newFighter.name} uses ${primaryAttack.name}`, "info");
+        }
+      } else if (isHumanoidCombatant && weaponToEquip && weaponToEquip !== "None") {
         // Use selected weapon
         const weaponData = weapons.find(w => w.name === weaponToEquip);
         if (weaponData) {
@@ -24709,6 +24766,17 @@ function CombatPage({ characters = [] }) {
       newFighter = applyArmyToFighter(newFighter, selectedArmy.id, {
         preservePlayerOverride: fighterTypeOverride === "player",
       });
+      if (newFighter.normalizedSelectableActor) {
+        const runtimeTeam = selectedArmy.teamId || selectedArmy.id;
+        newFighter.team = runtimeTeam;
+        newFighter.side = runtimeTeam;
+        newFighter.battleSide = runtimeTeam;
+        newFighter.type = runtimeTeam === "party" ? "player" : runtimeTeam === "enemy" ? "enemy" : "npc";
+        if (runtimeTeam === "enemy" && /^(playable|player)-/i.test(String(newFighter.id || ""))) {
+          newFighter.id = String(newFighter.id).replace(/^(playable|player)-/i, "enemy-");
+          newFighter._id = newFighter.id;
+        }
+      }
       newFighter.sceneRoleKey = normalizedSceneRoleKey;
       newFighter.sceneRoleLabel = selectedArmy.name;
       if (selectedArmy.id !== "enemy") {
@@ -24977,9 +25045,9 @@ function CombatPage({ characters = [] }) {
 
   function importReadyStagedRoster() {
     const loadedEntries = loadPublicArenaRosterEntries();
-    const duplicateEntries = getDuplicateStagedSavedCharacters(loadedEntries);
+    const duplicateEntries = getDuplicateStagedRosterEntries(loadedEntries);
     const entries = duplicateEntries.length > 0
-      ? removeDuplicateSavedCharacterEntriesFromStorage()
+      ? removeDuplicateStagedRosterEntriesFromStorage()
       : loadedEntries;
     const staleIds = new Set(
       getMissingSavedCharacterStagedEntries(entries, characters).map((entry) => `${entry.side || ""}:${entry.id || ""}`)
@@ -25070,13 +25138,13 @@ function CombatPage({ characters = [] }) {
   }
 
   function removeDuplicateStagedRosterCharacters() {
-    const nextEntries = removeDuplicateSavedCharacterEntriesFromStorage();
+    const nextEntries = removeDuplicateStagedRosterEntriesFromStorage();
     setStagedRosterEntries(nextEntries);
-    setStagedRosterImportMessages(["Duplicate staged characters removed."]);
+    setStagedRosterImportMessages(["Duplicate staged entries removed."]);
   }
 
   function removeOneStagedRosterEntry(entry) {
-    const nextEntries = removeStagedRosterEntry(entry?.stagedEntryId || entry?.entryId || entry?.id);
+    const nextEntries = removeStagedRosterEntry(entry);
     setStagedRosterEntries(nextEntries);
     setStagedRosterImportMessages([`${entry?.name || "Staged entry"} removed from staged roster.`]);
   }
@@ -28688,6 +28756,12 @@ function CombatPage({ characters = [] }) {
           addLog("Victory! All enemies defeated!", "victory");
           addLog("Combat is over. No further attacks are scheduled.", "info");
           setCombatActive(false);
+        } else if (combatVictoryState.noHostileSidesRemaining) {
+          combatEndCheckRef.current = true;
+          combatOverRef.current = true;
+          clearCombatFlowLocks();
+          addLog("Combat has no hostile sides remaining.", "info");
+          setCombatActive(false);
         }
       };
 
@@ -31212,7 +31286,7 @@ function CombatPage({ characters = [] }) {
                                       variant="outline"
                                       onClick={removeDuplicateStagedRosterCharacters}
                                     >
-                                      Remove Duplicate Characters
+                                      Remove Duplicates
                                     </Button>
                                   )}
                                   {missingSavedStagedRosterEntries.length > 0 && (
@@ -31222,7 +31296,7 @@ function CombatPage({ characters = [] }) {
                                       variant="outline"
                                       onClick={removeMissingStagedRosterCharacters}
                                     >
-                                      Remove Missing Characters
+                                      Remove Missing
                                     </Button>
                                   )}
                                 </HStack>
@@ -33705,12 +33779,12 @@ function CombatPage({ characters = [] }) {
                   </Badge>
                   {duplicateSavedStagedRosterEntries.length > 0 && (
                     <Button size="xs" colorScheme="orange" variant="outline" onClick={removeDuplicateStagedRosterCharacters}>
-                      Remove Duplicate Characters
+                      Remove Duplicates
                     </Button>
                   )}
                   {missingSavedStagedRosterEntries.length > 0 && (
                     <Button size="xs" colorScheme="orange" variant="outline" onClick={removeMissingStagedRosterCharacters}>
-                      Remove Missing Characters
+                      Remove Missing
                     </Button>
                   )}
                   <Button size="xs" colorScheme="red" variant="outline" onClick={clearStagedRoster} isDisabled={stagedRosterEntries.length === 0}>
@@ -33788,7 +33862,7 @@ function CombatPage({ characters = [] }) {
                           </Td>
                           <Td>
                             <Button size="xs" colorScheme="red" variant="outline" onClick={() => removeOneStagedRosterEntry(entry)}>
-                              Remove from Staged Roster
+                              Remove
                             </Button>
                           </Td>
                         </Tr>
@@ -33835,17 +33909,26 @@ function CombatPage({ characters = [] }) {
             </FormControl>
 
             <FormControl mb={4}>
-              <FormLabel>Select Fighter from Arena Roster:</FormLabel>
+              <FormLabel>Select Fighter:</FormLabel>
               <Select
                 placeholder="Choose a fighter..."
                 value={selectedCombatant}
                 onChange={(e) => setSelectedCombatant(e.target.value)}
               >
-                {sortedCombatants.map((combatant) => (
-                  <option key={combatant.id} value={combatant.id}>
-                    {combatant.name} ({formatCombatantCategory(combatant.category)}){combatant.playable ? " [PLAYABLE]" : ""}
-                  </option>
-                ))}
+                <optgroup label="Public / Normalized Actors">
+                  {sortedCombatants.filter((combatant) => combatant.pickerGroup === "normalized").map((combatant) => (
+                    <option key={combatant.pickerId} value={combatant.pickerId}>
+                      {combatant.name} ({formatCombatantCategory(combatant.category)})
+                    </option>
+                  ))}
+                </optgroup>
+                <optgroup label="Compatibility Actors">
+                  {sortedCombatants.filter((combatant) => combatant.pickerGroup === "compatibility").map((combatant) => (
+                    <option key={combatant.pickerId} value={combatant.pickerId}>
+                      {combatant.name} ({formatCombatantCategory(combatant.category)})
+                    </option>
+                  ))}
+                </optgroup>
               </Select>
             </FormControl>
 
@@ -33986,7 +34069,23 @@ function CombatPage({ characters = [] }) {
                   const displayStats = combatant ? buildCombatDisplayStats(combatant) : null;
                   return combatant ? (
                     <VStack align="start" spacing={1}>
-                      {combatant.playable ? (
+                      {combatant.normalizedSelectableActor ? (
+                        <>
+                          <Text fontSize="sm">Category: {formatCombatantCategory(combatant.category)}</Text>
+                          <Text fontSize="sm">Source: {combatant.sourceLabel}</Text>
+                          <Text fontSize="sm">Role: {formatCombatantCategory(combatant.aiRole)}</Text>
+                          <Text fontSize="sm">Playable: {combatant.playable ? "Yes" : "No"}</Text>
+                          <Text fontSize="sm">Default Control: {formatCombatantCategory(combatant.defaultControlMode)}</Text>
+                          <Text fontSize="sm">Movement: {combatant.movement?.ground ?? displayStats.movementSpeed} ft</Text>
+                          <Text fontSize="sm">Movement Modes: {combatant.movementModes?.join(", ") || "ground"}</Text>
+                          <Text fontSize="sm">Primary Attack: {combatant.attacks?.[0]?.name || "None"}</Text>
+                          {combatant.attacks?.[0]?.isRanged && (
+                            <Text fontSize="sm">
+                              Range: {combatant.attacks[0].rangeProfile?.normal ?? combatant.attacks[0].range} ft normal
+                            </Text>
+                          )}
+                        </>
+                      ) : combatant.playable ? (
                         <>
                           <Text fontSize="sm" color="blue.500">Playable human fighter - auto-rolls attributes.</Text>
                           <Text fontSize="sm">Category: {formatCombatantCategory(combatant.category || combatant.race || "human")}</Text>

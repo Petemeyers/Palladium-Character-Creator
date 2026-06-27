@@ -113,15 +113,19 @@ export function getDisposition(actor, target, sceneContext = {}) {
     return "ally";
   }
 
+  if (actor.attacksEveryone === true) return "hostile";
+
+  const actorTeam = normalizeKey(getExplicitTeamId(actor));
+  const targetTeam = normalizeKey(getExplicitTeamId(target));
+  if (actorTeam && targetTeam && actorTeam === targetTeam) return "ally";
+
+  const explicitActorFaction = normalizeKey(getExplicitFactionId(actor));
+  const explicitTargetFaction = normalizeKey(getExplicitFactionId(target));
+  if (explicitActorFaction && explicitTargetFaction && explicitActorFaction === explicitTargetFaction) return "friendly";
+
   const aggression = normalizeKey(actor.aggression);
   const disposition = normalizeKey(actor.disposition);
-  if (
-    actor.attacksEveryone === true ||
-    HOSTILE_AGGRESSIONS.has(aggression) ||
-    HOSTILE_DISPOSITIONS.has(disposition)
-  ) {
-    return "hostile";
-  }
+  if (HOSTILE_AGGRESSIONS.has(aggression) || HOSTILE_DISPOSITIONS.has(disposition)) return "hostile";
 
   const actorFaction = normalizeKey(getFactionId(actor));
   const targetFaction = normalizeKey(getFactionId(target));
@@ -133,13 +137,6 @@ export function getDisposition(actor, target, sceneContext = {}) {
   if (sceneRelation) return sceneRelation;
 
   if (target.nonCombatant === true) return "neutral";
-
-  const actorTeam = normalizeKey(getExplicitTeamId(actor));
-  const targetTeam = normalizeKey(getExplicitTeamId(target));
-  if (actorTeam && targetTeam && actorTeam === targetTeam) return "ally";
-  const explicitActorFaction = normalizeKey(getExplicitFactionId(actor));
-  const explicitTargetFaction = normalizeKey(getExplicitFactionId(target));
-  if (explicitActorFaction && explicitTargetFaction && explicitActorFaction === explicitTargetFaction) return "friendly";
 
   const actorType = normalizeKey(actor?.type);
   const targetType = normalizeKey(target?.type);
