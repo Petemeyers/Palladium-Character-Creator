@@ -1,9 +1,9 @@
+import { clearStoredAuthState, getStoredAuthToken } from "./authStorage.js";
+
 export const CHARACTER_SAVE_AUTH_MESSAGE = "Please log in before saving a character to your account.";
 
 export function getCharacterSaveToken(storage = globalThis.localStorage) {
-  if (!storage || typeof storage.getItem !== "function") return "";
-  const token = storage.getItem("token");
-  return typeof token === "string" ? token.trim() : "";
+  return getStoredAuthToken(storage);
 }
 
 export function isCharacterSaveAuthenticationError(error) {
@@ -20,6 +20,7 @@ export async function saveCharacterWithAuth({
   storage = globalThis.localStorage,
 } = {}) {
   if (!getCharacterSaveToken(storage)) {
+    clearStoredAuthState(storage);
     return {
       saved: false,
       authRequired: true,
@@ -38,6 +39,7 @@ export async function saveCharacterWithAuth({
     };
   } catch (error) {
     if (isCharacterSaveAuthenticationError(error)) {
+      clearStoredAuthState(storage);
       return {
         saved: false,
         authRequired: true,

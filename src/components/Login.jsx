@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import axiosInstance from '../utils/axios';
 import '../styles/Login.css';
+import { storeAuthSession } from '../utils/authStorage.js';
 
 const Login = () => {
   const navigate = useNavigate();
@@ -55,8 +56,7 @@ const Login = () => {
         });
 
         if (response.data.token) {
-          localStorage.setItem('token', response.data.token);
-          localStorage.setItem('user', JSON.stringify(response.data.user));
+          storeAuthSession(response.data.token, response.data.user);
           console.log('User authenticated successfully:', response.data.user);
           navigate('/');
         } else {

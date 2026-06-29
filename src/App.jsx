@@ -14,7 +14,12 @@ import ErrorBoundary from './components/ErrorBoundary';
 import { syncEquistaminadWeapons } from './utils/weaponManager';
 import ArenaRosterPanel from './components/ArenaRosterPanel';
 import { isBackendOfflineError, markBackendOffline } from './utils/backendStatus';
-import { DEV_AUTH_BYPASS_USER, isDevAuthBypassEnabled } from './utils/devAuthBypass';
+import { isDevAuthBypassEnabled } from './utils/devAuthBypass';
+import {
+  AUTH_STATE_CHANGED_EVENT,
+  clearStoredAuthState,
+  hasStoredAuthToken,
+} from './utils/authStorage.js';
 
 // Lazy load heavy components
 import {
@@ -98,17 +103,20 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (devAuthBypassEnabled) {
-      localStorage.setItem('user', JSON.stringify(DEV_AUTH_BYPASS_USER));
-      setIsAuthenticated(true);
+    const syncAuthState = () => {
+      setIsAuthenticated(hasStoredAuthToken());
+      setDataLoaded(false);
       setLoading(false);
-      return;
-    }
+    };
 
-    const token = localStorage.getItem('token');
-    setIsAuthenticated(!!token);
-    setLoading(false);
-  }, [devAuthBypassEnabled]);
+    syncAuthState();
+    window.addEventListener(AUTH_STATE_CHANGED_EVENT, syncAuthState);
+    window.addEventListener('storage', syncAuthState);
+    return () => {
+      window.removeEventListener(AUTH_STATE_CHANGED_EVENT, syncAuthState);
+      window.removeEventListener('storage', syncAuthState);
+    };
+  }, []);
 
   useEffect(() => {
     if (devAuthBypassEnabled && !dataLoaded) {
@@ -215,6 +223,14 @@ function App() {
     fetchCharacters();
   }, [fetchCharacters]);
 
+  const handleLogout = useCallback(() => {
+    clearStoredAuthState();
+    setIsAuthenticated(false);
+    setCharacters([]);
+    setParties([]);
+    setDataLoaded(false);
+  }, []);
+
   if (loading) {
     return <div>Loading...</div>;
   }
@@ -224,7 +240,7 @@ function App() {
 
   return (
     <ErrorBoundary>
-      {showNavbar && <Navbar />}
+      {showNavbar && <Navbar onLogout={handleLogout} />}
       {devAuthBypassEnabled && (
         <div
           style={{

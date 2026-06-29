@@ -11,6 +11,11 @@ import {
   saveCharacterWithAuth,
 } from "../src/utils/characterSave.js";
 import { getStatsForLevel } from "../src/utils/levelProgression.js";
+import {
+  clearStoredAuthState,
+  getStoredAuthDisplayName,
+  hasStoredAuthToken,
+} from "../src/utils/authStorage.js";
 
 assert.equal(evaluateDice("2d6+3", (sides, count) => sides * count), 15);
 assert.equal(evaluateDice("+2"), 2);
@@ -50,9 +55,15 @@ assert.deepEqual(updatedAttributes, { PS: 12, PP: 12, PE: 12 });
 assert.equal(evaluateDice(professionData.stamina), 8);
 assert.equal(evaluateDice(professionData.focus), 0);
 
-const createStorage = (token = "") => ({
-  getItem: (key) => key === "token" ? token : null,
-});
+const createStorage = (initialValues = {}) => {
+  const values = new Map(Object.entries(initialValues));
+  return {
+    getItem: (key) => values.get(key) ?? null,
+    setItem: (key, value) => values.set(key, String(value)),
+    removeItem: (key) => values.delete(key),
+    values,
+  };
+};
 const character = { id: "draft-1", name: "Alden" };
 let saveCalls = 0;
 let alertCalls = 0;
@@ -65,7 +76,7 @@ globalThis.confirm = () => { confirmCalls += 1; return false; };
 try {
   const unauthenticatedResult = await saveCharacterWithAuth({
     character,
-    storage: createStorage(),
+    storage: createStorage({ user: JSON.stringify({ name: "Stale Player" }) }),
     onSave: async () => { saveCalls += 1; },
   });
   assert.equal(unauthenticatedResult.saved, false);
@@ -78,7 +89,7 @@ try {
 
   const authenticatedResult = await saveCharacterWithAuth({
     character,
-    storage: createStorage("existing-token"),
+    storage: createStorage({ token: "existing-token" }),
     onSave: async (input, options) => {
       saveCalls += 1;
       assert.equal(input, character);
@@ -89,10 +100,41 @@ try {
   assert.equal(authenticatedResult.saved, true);
   assert.equal(authenticatedResult.character.id, "saved-1");
   assert.equal(saveCalls, 1);
-  assert.equal(getCharacterSaveToken(createStorage("existing-token")), "existing-token");
+  assert.equal(getCharacterSaveToken(createStorage({ token: "existing-token" })), "existing-token");
+
+  const rejectedStorage = createStorage({
+    token: "rejected-token",
+    user: JSON.stringify({ name: "Stale Player" }),
+    role: "player",
+    currentUser: "stale",
+    authToken: "legacy-token",
+  });
+  const rejectedResult = await saveCharacterWithAuth({
+    character,
+    storage: rejectedStorage,
+    onSave: async () => {
+      throw { status: 401, message: "No authentication token" };
+    },
+  });
+  assert.equal(rejectedResult.authRequired, true);
+  assert.equal(hasStoredAuthToken(rejectedStorage), false);
+  assert.equal(rejectedStorage.values.size, 0, "rejected save clears all stale auth keys");
 } finally {
   globalThis.alert = originalAlert;
   globalThis.confirm = originalConfirm;
 }
+
+const staleUserStorage = createStorage({ user: JSON.stringify({ name: "Stale Player" }) });
+assert.equal(hasStoredAuthToken(staleUserStorage), false);
+assert.equal(getStoredAuthDisplayName(staleUserStorage), "", "header has no Player badge without token");
+const staleLogoutStorage = createStorage({
+  user: "stale",
+  username: "Player",
+  role: "player",
+  currentUser: "stale",
+  authToken: "legacy-token",
+});
+clearStoredAuthState(staleLogoutStorage);
+assert.equal(staleLogoutStorage.values.size, 0, "logout clears stale auth even without token");
 
 console.log("character creator save and dice tests passed");

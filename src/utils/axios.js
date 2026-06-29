@@ -6,6 +6,7 @@ import {
   NetworkError,
 } from "./errorHandler.js";
 import { markBackendOffline } from "./backendStatus.js";
+import { clearStoredAuthState, getStoredAuthToken, storeAuthSession } from "./authStorage.js";
 
 const instance = axios.create({
   baseURL: "http://localhost:5000/api/v1",
@@ -18,7 +19,7 @@ const instance = axios.create({
 // Enhanced request interceptor
 instance.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem("token");
+    const token = getStoredAuthToken();
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
@@ -95,8 +96,7 @@ instance.interceptors.response.use(
           const originalRequest = error.config;
 
           if (originalRequest?.suppressAuthPrompt === true) {
-            localStorage.removeItem("token");
-            localStorage.removeItem("user");
+            clearStoredAuthState();
             break;
           }
 
@@ -105,8 +105,7 @@ instance.interceptors.response.use(
             originalRequest?.url?.includes("/refresh-token") ||
             originalRequest?.url?.includes("/login")
           ) {
-            localStorage.removeItem("token");
-            localStorage.removeItem("user");
+            clearStoredAuthState();
             if (window.location.pathname !== "/login") {
               const message =
                 apiError.response?.data?.code === "TOKEN_EXPIRED"
@@ -121,7 +120,7 @@ instance.interceptors.response.use(
           }
 
           // Attempt to refresh token
-          const token = localStorage.getItem("token");
+          const token = getStoredAuthToken();
           if (token && apiError.response?.data?.code === "TOKEN_EXPIRED") {
             try {
               const refreshResponse = await axios.post(
@@ -131,11 +130,7 @@ instance.interceptors.response.use(
               );
 
               if (refreshResponse.data.token) {
-                localStorage.setItem("token", refreshResponse.data.token);
-                localStorage.setItem(
-                  "user",
-                  JSON.stringify(refreshResponse.data.user),
-                );
+                storeAuthSession(refreshResponse.data.token, refreshResponse.data.user);
 
                 // Retry original request with new token
                 originalRequest.headers.Authorization = `Bearer ${refreshResponse.data.token}`;
@@ -144,8 +139,7 @@ instance.interceptors.response.use(
             } catch (refreshError) {
               console.error("Token refresh failed:", refreshError);
               // Clear tokens and redirect to login
-              localStorage.removeItem("token");
-              localStorage.removeItem("user");
+              clearStoredAuthState();
               if (window.location.pathname !== "/login") {
                 if (
                   window.confirm(
@@ -158,8 +152,7 @@ instance.interceptors.response.use(
             }
           } else {
             // Clear tokens for non-expiration 401s
-            localStorage.removeItem("token");
-            localStorage.removeItem("user");
+            clearStoredAuthState();
             if (window.location.pathname !== "/login") {
               const message = "Authentication required. Please log in.";
               if (window.confirm(message + " Click OK to go to login page.")) {

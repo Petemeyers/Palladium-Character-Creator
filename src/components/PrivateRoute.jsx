@@ -2,14 +2,14 @@ import React from 'react';
 import { Navigate } from 'react-router-dom';
 import PropTypes from 'prop-types';
 import { isDevAuthBypassEnabled } from '../utils/devAuthBypass';
+import { hasStoredAuthToken } from '../utils/authStorage.js';
 
 const PrivateRoute = ({ children }) => {
   if (isDevAuthBypassEnabled()) {
     return children;
   }
 
-  const token = localStorage.getItem('token');
-  return token ? children : <Navigate to="/login" />;
+  return hasStoredAuthToken() ? children : <Navigate to="/login" />;
 };
 
 PrivateRoute.propTypes = {

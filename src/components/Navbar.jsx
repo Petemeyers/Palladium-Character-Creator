@@ -1,10 +1,15 @@
 import React, { useState, useEffect } from 'react';
+import PropTypes from 'prop-types';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useParty } from '../context/PartyContext';
 import RulesReferenceButton from './RulesReferenceButton';
 import '../styles/Navbar.css';
+import {
+  clearStoredAuthState,
+  getStoredAuthDisplayName,
+} from '../utils/authStorage.js';
 
-const Navbar = () => {
+const Navbar = ({ onLogout }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [username, setUsername] = useState('');
   const navigate = useNavigate();
@@ -20,9 +25,7 @@ const Navbar = () => {
   }
 
   useEffect(() => {
-    // Get username from localStorage or token
-    const user = localStorage.getItem('username') || 'Player';
-    setUsername(user);
+    setUsername(getStoredAuthDisplayName());
   }, []);
 
   // Close menu when route changes
@@ -39,8 +42,8 @@ const Navbar = () => {
   };
 
   const handleLogout = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('username');
+    clearStoredAuthState();
+    onLogout?.();
     navigate('/login');
     closeMenu();
   };
@@ -64,7 +67,7 @@ const Navbar = () => {
             {activeParty.name}
           </span>
         )}
-        <span className="username-badge">{username}</span>
+        {username && <span className="username-badge">{username}</span>}
       </div>
 
       {/* Hamburger Menu Button */}
@@ -180,3 +183,7 @@ const Navbar = () => {
 };
 
 export default Navbar; 
+
+Navbar.propTypes = {
+  onLogout: PropTypes.func,
+};
