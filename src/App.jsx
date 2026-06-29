@@ -67,7 +67,7 @@ function App() {
 
   const fetchCharacters = useCallback(async () => {
     try {
-      const response = await axiosInstance.get('/characters');
+      const response = await axiosInstance.get('/characters', { suppressAuthPrompt: true });
       // Sync equistaminadWeapons from equistaminad object for all characters to ensure consistency
       const syncedCharacters = response.data.map(char => syncEquistaminadWeapons(char));
       setCharacters(syncedCharacters);
@@ -86,7 +86,7 @@ function App() {
 
   const fetchParties = useCallback(async () => {
     try {
-      const response = await axiosInstance.get('/parties');
+      const response = await axiosInstance.get('/parties', { suppressAuthPrompt: true });
       if (response.data.success) {
         setParties(response.data.parties || response.data);
       } else {
@@ -189,15 +189,29 @@ function App() {
 
   const handleCreateCharacter = useCallback(async (newCharacter, options = {}) => {
     try {
+      if (import.meta.env?.DEV || import.meta.env?.MODE === 'development') {
+        console.debug('[character-save] request', {
+          endpoint: '/api/v1/characters',
+          hasAuthorization: hasStoredAuthToken(),
+          payloadKeys: Object.keys(newCharacter || {}).sort(),
+          inventoryCount: Array.isArray(newCharacter?.inventory) ? newCharacter.inventory.length : 0,
+        });
+      }
       const response = await axiosInstance.post('/characters', newCharacter, {
         suppressAuthPrompt: options.suppressAuthPrompt === true,
       });
       if (response.data) {
-        setCharacters(prev => [...prev, response.data]);
-        return response.data;
+        const savedCharacter = response.data.character || response.data;
+        setCharacters(prev => [...prev, savedCharacter]);
+        return savedCharacter;
       }
     } catch (error) {
-      console.error('Error creating character:', error);
+      console.error('[character-save] failed', {
+        status: error?.status ?? error?.response?.status ?? null,
+        message: error?.response?.data?.message || error?.message,
+        response: error?.response?.data || error?.details || null,
+        hasAuthorization: hasStoredAuthToken(),
+      });
       throw error;
     }
   }, []);
@@ -273,9 +287,9 @@ function App() {
         <Route path="/npc-memory" element={<PrivateRoute><NpcMemoryEditor /></PrivateRoute>} />
         <Route path="/gm-panel" element={<PrivateRoute><GMControlPanel parties={parties} onDeleteParty={handleDeleteParty} onLoadParty={handleLoadParty} onUpdateCharacter={handleUpdateCharacter} /></PrivateRoute>} />
         <Route path="/arena-roster" element={<PrivateRoute><ArenaRosterPanel /></PrivateRoute>} />
-        <Route path="/character-creation" element={<PrivateRoute><CharacterCreator onCreateCharacter={handleCreateCharacter} /></PrivateRoute>} />
+        <Route path="/character-creation" element={<PrivateRoute allowWithoutToken><CharacterCreator onCreateCharacter={handleCreateCharacter} /></PrivateRoute>} />
         <Route path="/character-list" element={
-          <PrivateRoute>
+          <PrivateRoute allowWithoutToken>
             <CharacterList 
               characters={characters}
               onUpdateCharacter={handleUpdateCharacter}

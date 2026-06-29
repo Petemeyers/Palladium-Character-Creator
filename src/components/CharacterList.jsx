@@ -14,7 +14,9 @@ import { calculateStorageCapacity, calculateMonthlyCosts } from '../utils/storag
 import { getUnifiedAbilities } from '../utils/unifiedAbilities';
 import { formatSignedModifier, getPublicDerivedStatsForCharacter } from '../utils/publicDerivedStats.js';
 import { removeStagedRosterEntriesByCharacterId } from '../utils/publicStagedRosterStorage.js';
-import axiosInstance from '../utils/axiosConfig';
+import axiosInstance from '../utils/axios';
+import { getStoredAuthToken } from '../utils/authStorage.js';
+import { loadSavedCharacters } from '../utils/characterListLoader.js';
 import '../styles/CharacterList.css';
 
 const getDisplayClassName = (character) =>
@@ -177,28 +179,33 @@ const CharacterList = ({
   const [selectedForDelete, setSelectedForDelete] = useState([]);
   const [selectAll, setSelectAll] = useState(false);
   const [loadedCharacters, setLoadedCharacters] = useState([]);
+  const [characterLoadMessage, setCharacterLoadMessage] = useState('');
+  const characterLoadRequestRef = useRef(null);
   const displayCharacters = characters.length > 0 ? characters : loadedCharacters;
 
   React.useEffect(() => {
     if (characters.length > 0) {
       setLoadedCharacters([]);
+      setCharacterLoadMessage('');
+      characterLoadRequestRef.current = null;
       return;
     }
 
     let cancelled = false;
     const loadCharacters = async () => {
-      try {
-        const response = await axiosInstance.get('/characters');
-        const fetchedCharacters = Array.isArray(response.data)
-          ? response.data
-          : response.data?.data || response.data?.characters || [];
-        if (!cancelled) {
-          setLoadedCharacters(fetchedCharacters);
-        }
-      } catch (error) {
-        if (!cancelled) {
-          console.error('Error loading characters:', error);
-        }
+      const requestKey = getStoredAuthToken() || '__missing_token__';
+      if (!characterLoadRequestRef.current || characterLoadRequestRef.current.key !== requestKey) {
+        characterLoadRequestRef.current = {
+          key: requestKey,
+          promise: loadSavedCharacters({
+            request: (config) => axiosInstance.get('/characters', config),
+          }),
+        };
+      }
+      const result = await characterLoadRequestRef.current.promise;
+      if (!cancelled) {
+        setLoadedCharacters(result.characters);
+        setCharacterLoadMessage(result.message);
       }
     };
 
@@ -476,6 +483,11 @@ const CharacterList = ({
     <>
       <div className="character-list">
         <h1>Character List</h1>
+        {characterLoadMessage && (
+          <div className="character-list-auth-message" role="status">
+            {characterLoadMessage} <Link to="/login">Log in</Link>
+          </div>
+        )}
         
         <div className="actions-container">
           <button 

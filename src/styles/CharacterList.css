@@ -1181,3 +1181,15 @@ td {
 .equip-equipment-btn:hover {
   background: #138496;
 }
+.character-list-auth-message {
+  margin: 0 0 16px;
+  padding: 10px 12px;
+  border-left: 4px solid #b7791f;
+  background: #fffaf0;
+  color: #744210;
+}
+
+.character-list-auth-message a {
+  color: #2b6cb0;
+  font-weight: 600;
+}
