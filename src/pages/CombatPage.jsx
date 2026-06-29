@@ -222,6 +222,16 @@ import {
   createOriginalTraitAwardProposalState,
   markOriginalTraitAwardProposalApplied,
 } from "../utils/originalActorTraitAwardApplication.js";
+import {
+  buildSavedTraitAwardPayload,
+  getSavedCharacterIdForAwardProposal,
+  isAwardProposalSaveEligible,
+  markAwardProposalSaveFailed,
+  markAwardProposalSaved,
+  markAwardProposalSaving,
+} from "../utils/originalActorTraitAwardPersistence.js";
+import { clearStoredAuthState, getStoredAuthToken } from "../utils/authStorage.js";
+import { api } from "../utils/axios.js";
 import { calculateTotalHP } from "../utils/levelProgression.js";
 import { grantXPFromEnemy, getOpponentByName, calculateOpponentXP } from "../utils/enemyXP.js";
 import { weapons, getWeaponByName, arenaWhip } from "../data/weapons.js";
@@ -3426,6 +3436,51 @@ function CombatPage({ characters = [] }) {
       markOriginalTraitAwardProposalApplied(current, proposal, result)
     ));
   }, []);
+
+  const getCombatantForTraitAward = useCallback((proposal) => {
+    const actorId = String(proposal?.actorId || "");
+    return (fightersRef.current || []).find((fighter) => (
+      String(fighter?.id || fighter?._id || fighter?.fighterId || fighter?.characterId || "") === actorId
+    )) || null;
+  }, []);
+
+  const canSaveProposedTraitAward = useCallback((proposal) => {
+    const actor = getCombatantForTraitAward(proposal);
+    return isAwardProposalSaveEligible(actor, proposal, getStoredAuthToken());
+  }, [getCombatantForTraitAward]);
+
+  const saveProposedTraitAward = useCallback(async (proposal) => {
+    const actor = getCombatantForTraitAward(proposal);
+    const token = getStoredAuthToken();
+    if (!isAwardProposalSaveEligible(actor, proposal, token)) return;
+
+    const savedCharacterId = getSavedCharacterIdForAwardProposal(actor, proposal);
+    const payload = buildSavedTraitAwardPayload(actor, proposal, {
+      encounterId: combatSessionRef.current,
+    });
+    if (!savedCharacterId || !payload) return;
+
+    setProposedTraitAwards((current) => markAwardProposalSaving(current, proposal));
+    try {
+      const response = await api.patch(
+        `/characters/${encodeURIComponent(savedCharacterId)}/original-traits`,
+        payload,
+        { suppressAuthPrompt: true, suppressErrorLogging: true }
+      );
+      setProposedTraitAwards((current) => markAwardProposalSaved(
+        current,
+        proposal,
+        response?.data || { savedCharacterId }
+      ));
+    } catch (error) {
+      if (Number(error?.status ?? error?.response?.status) === 401) {
+        clearStoredAuthState();
+      }
+      setProposedTraitAwards((current) => (
+        markAwardProposalSaveFailed(current, proposal, error)
+      ));
+    }
+  }, [getCombatantForTraitAward]);
 
   // =========================
   // Engine Adapter (for MOVE command authority)
@@ -24492,6 +24547,15 @@ function CombatPage({ characters = [] }) {
       newFighter = createPlayableCharacterFighter(combatantData, nameToUse);
       newFighter.source = isSavedCharacterImport ? "saved-character" : (combatantData.source || "autoroll");
       newFighter.sourceCharacterId = combatantData.sourceCharacterId || combatantData.id || combatantData._id;
+      if (isSavedCharacterImport) {
+        newFighter.savedCharacterId =
+          combatantData.savedCharacterId ||
+          combatantData.sourceCharacterId ||
+          combatantData.characterId ||
+          combatantData.id ||
+          combatantData._id;
+        newFighter.characterId = newFighter.savedCharacterId;
+      }
       newFighter.generated = !isSavedCharacterImport;
 
       // Override weapon if one was selected
@@ -32679,6 +32743,8 @@ function CombatPage({ characters = [] }) {
                 <ProposedChronicleAwardsPanel
                   proposals={proposedTraitAwards}
                   onApply={applyProposedTraitAward}
+                  onSave={saveProposedTraitAward}
+                  isSaveEligible={canSaveProposedTraitAward}
                 />
                 <Tabs size="sm" colorScheme="blue" isLazy>
                   <TabList>

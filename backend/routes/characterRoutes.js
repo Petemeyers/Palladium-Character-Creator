@@ -11,6 +11,7 @@ import {
   sanitizeInput,
 } from "../middleware/validation.js";
 import { getIo } from "../socket.js";
+import { patchOriginalCharacterTrait } from "../controllers/originalActorTraitController.js";
 
 const router = express.Router();
 
@@ -395,6 +396,9 @@ router.get("/bulk", async (req, res) => {
     });
   }
 });
+
+// Persist one confirmed Chronicle Award without replacing the character record.
+router.patch("/:id/original-traits", patchOriginalCharacterTrait);
 
 // PUT update character
 router.put("/:id", async (req, res) => {
