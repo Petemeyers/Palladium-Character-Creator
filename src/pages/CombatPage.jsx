@@ -298,6 +298,12 @@ import {
   getCombatantFootprintHexes,
   selectEnemyClosingMovementHex,
 } from "../utils/enemyClosingMovement.js";
+import {
+  isCombatantFled,
+  markCombatantFled,
+  preserveCombatantFledState,
+  removeFledCombatantPositions,
+} from "../utils/combatFledState.js";
 
 // Debug toggle for grapple system
 const DEBUG_GRAPPLE = true; // set to false in production
@@ -1768,11 +1774,8 @@ function CombatPage({ characters = [] }) {
   );
   const fledFighters = useMemo(() => {
     return fighters.filter((f) => {
-      const hasFled =
-        f?.moraleState?.hasFled ||
-        (Array.isArray(f?.statusEffects) && f.statusEffects.includes("FLED"));
       const onMap = positions?.[f.id];
-      return hasFled && !onMap;
+      return isCombatantFled(f) && !onMap;
     });
   }, [fighters, positions]);
 
@@ -1987,7 +1990,7 @@ function CombatPage({ characters = [] }) {
       };
     }
 
-    return fighter;
+    return preserveCombatantFledState(rawFighter, fighter);
   }, [normalizeFighterId]);
 
   const normalizeCombatantForBattle = useCallback((combatant) => {
@@ -2277,8 +2280,7 @@ function CombatPage({ characters = [] }) {
     if (!fighter) return false;
 
     // Units that have fully fled the battlefield cannot act
-    if (fighter.moraleState?.hasFled) return false;
-    if (Array.isArray(fighter.statusEffects) && fighter.statusEffects.includes("FLED")) return false;
+    if (isCombatantFled(fighter)) return false;
     if (fighter.canAct === false) return false;
     if (fighter.fatigueState?.status === "collapsed") return false;
 
@@ -2358,28 +2360,6 @@ function CombatPage({ characters = [] }) {
 
     return base;
   }, [isTinyPrey, isPredatorBird]);
-
-  // Optional helper to restore a fled fighter back onto the map (for reuse in later encounters)
-  // Usage: restoreFledFighterToMap(fighterId, { x: 10, y: 10 })
-  const restoreFledFighterToMap = useCallback((fighterId, spawnPos) => {
-    setFighters((prev) =>
-      prev.map((f) =>
-        f.id === fighterId
-          ? {
-            ...f,
-            moraleState: { ...(f.moraleState || {}), hasFled: false, status: "STEADY" },
-            statusEffects: (f.statusEffects || []).filter((s) => s !== "FLED"),
-          }
-          : f
-      )
-    );
-
-    setPositions((prev) => {
-      const next = { ...prev, [fighterId]: spawnPos };
-      positionsRef.current = next;
-      return next;
-    });
-  }, []);
 
   // Helper to calculate allies down ratio for morale checks
   const getAlliesDownRatio = useCallback((fightersArray, subject) => {
@@ -2906,27 +2886,14 @@ function CombatPage({ characters = [] }) {
 
   // Helper to mark a fighter as fled off-map (soft swap: keep in fighters, remove from map)
   const markFighterFledOffMap = useCallback((fighterId, nameForLog) => {
-    // 1) Keep them in fighters, but mark fled + no actions
     commitFighters((prev) =>
       prev.map((f) =>
         f.id === fighterId
-          ? {
-            ...f,
-            remainingActions: 0,
-            moraleState: {
-              ...(f.moraleState || {}),
-              status: "ROUTED", // or "FLED" if you want a distinct status
-              hasFled: true,
-            },
-            statusEffects: Array.isArray(f.statusEffects)
-              ? Array.from(new Set([...f.statusEffects, "FLED"]))
-              : ["FLED"],
-          }
+          ? markCombatantFled(f)
           : f
       )
     );
 
-    // 2) Remove them from the map so they disastaminaar from grid
     setPositions((prev) => {
       const next = { ...prev };
       delete next[fighterId];
@@ -2934,8 +2901,28 @@ function CombatPage({ characters = [] }) {
       return next;
     });
 
-    if (nameForLog) addLog(`${nameForLog} escapes the battlefield!`, "warning");
+    if (nameForLog) {
+      addLog(`${nameForLog} flees the battlefield!`, "warning");
+      addLog(`${nameForLog} is removed from combat.`, "info");
+    }
   }, [addLog, commitFighters]);
+
+  useEffect(() => {
+    if (settings.useMoraleRouting) return;
+    const liveFighters = fightersRef.current || [];
+    if (!liveFighters.some(isCombatantFled)) return;
+
+    commitFighters((prev) => prev.map((fighter) => (
+      isCombatantFled(fighter)
+        ? preserveCombatantFledState(fighter, fighter)
+        : fighter
+    )));
+    setPositions((prev) => {
+      const next = removeFledCombatantPositions(fightersRef.current || liveFighters, prev);
+      positionsRef.current = next;
+      return next;
+    });
+  }, [settings.useMoraleRouting, commitFighters]);
 
   const getFleeDirectionFromEdge = useCallback((pos, bounds) => {
     if (!pos || !bounds) return "away";
@@ -5554,10 +5541,7 @@ function CombatPage({ characters = [] }) {
     }
     if (fighter.canAct === false) return "canAct is false";
     if (fighter.fatigueState?.status === "collapsed") return "collapsed from exhaustion";
-    if (fighter.moraleState?.hasFled) return "fled";
-    if (Array.isArray(fighter.statusEffects) && fighter.statusEffects.includes("FLED")) {
-      return "fled";
-    }
+    if (isCombatantFled(fighter)) return "fled";
     if (fighter.isCarried || fighter.carriedById || fighter.carriedBy || fighter.grappleState?.lifted) {
       return "being carried";
     }
@@ -8118,8 +8102,7 @@ function CombatPage({ characters = [] }) {
     const condition = String(fighter.condition || "").toLowerCase();
     if (["defeated", "dead", "unconscious", "dying", "fled"].includes(status)) return false;
     if (["dead", "unconscious", "unconsciousbleeding", "unconsciousstable", "dying"].includes(condition)) return false;
-    if (fighter.moraleState?.hasFled) return false;
-    if (Array.isArray(fighter.statusEffects) && fighter.statusEffects.includes("FLED")) return false;
+    if (isCombatantFled(fighter)) return false;
     const carryState = String(
       fighter.mountState?.state ||
       fighter.mountState?.status ||
@@ -20863,6 +20846,7 @@ function CombatPage({ characters = [] }) {
     };
     const isCanonicalHostileTarget = (attacker, candidate) => {
       if (!attacker || !candidate || attacker.id === candidate.id) return false;
+      if (isCombatantFled(attacker) || isCombatantFled(candidate)) return false;
       const aggression = String(attacker?.aggression || "").toLowerCase();
       const disposition = String(attacker?.disposition || "").toLowerCase();
       const friendlyFire =
@@ -31937,18 +31921,6 @@ function CombatPage({ characters = [] }) {
                                           />
                                         </HStack>
                                         <HStack spacing={2} mt={2}>
-                                          <Button
-                                            size="xs"
-                                            onClick={() => {
-                                              const candidate = fledFighters[0];
-                                              if (candidate) {
-                                                const spawn = activePos || { x: 0, y: 0 };
-                                                restoreFledFighterToMap(candidate.id, spawn);
-                                              }
-                                            }}
-                                          >
-                                            Restore fled fighter
-                                          </Button>
                                           <Button
                                             size="xs"
                                             variant={cinematicProjectiles ? "solid" : "outline"}

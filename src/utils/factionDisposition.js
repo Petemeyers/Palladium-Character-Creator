@@ -1,3 +1,5 @@
+import { isCombatantFled } from "./combatFledState.js";
+
 const DISPOSITIONS = new Set([
   "ally",
   "friendly",
@@ -171,6 +173,7 @@ export function canDialogueWith(actor, target, sceneContext = {}) {
 
 export function canTargetForAction(actor, target, actionKind = "attack", sceneContext = {}) {
   if (!actor || !target) return false;
+  if (isCombatantFled(actor) || isCombatantFled(target)) return false;
   if ((actor.id || actor._id) && (actor.id || actor._id) === (target.id || target._id)) {
     const shumanKind = normalizeKey(actionKind);
     return ["shuman", "heal", "buff", "assist"].includes(shumanKind);

@@ -1,18 +1,19 @@
 import { getFactionId, getTeamId, isHostileTo } from "./factionDisposition.js";
+import { isCombatantFled } from "./combatFledState.js";
 
 const normalize = (value) => String(value || "").trim().toLowerCase();
 const getId = (combatant) => combatant?.id ?? combatant?._id ?? "";
 
 export function isActiveCombatantForHostility(combatant = {}) {
   if (!combatant) return false;
+  if (isCombatantFled(combatant)) return false;
   const hp = Number(combatant.currentHP ?? combatant.HP ?? combatant.hp ?? combatant.hitPoints);
   if (Number.isFinite(hp) && hp <= 0) return false;
   const status = normalize(combatant.status);
   const condition = normalize(combatant.condition);
   if (["defeated", "dead", "unconscious", "dying", "fled"].includes(status)) return false;
   if (["dead", "unconscious", "unconsciousbleeding", "unconsciousstable", "dying"].includes(condition)) return false;
-  if (combatant.canAct === false || combatant.moraleState?.hasFled) return false;
-  if (Array.isArray(combatant.statusEffects) && combatant.statusEffects.includes("FLED")) return false;
+  if (combatant.canAct === false) return false;
   return true;
 }
 
