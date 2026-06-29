@@ -1,3 +1,5 @@
+import { buildOriginalActorMetadata } from "./originalActorMetadata.js";
+
 export const PUBLIC_ARENA_ROSTER_STORAGE_KEY = "publicArenaRosterEntries";
 
 const getStorage = () => {
@@ -72,11 +74,19 @@ const getEntryIdentity = (entry) => {
   return id ? `${source}:${side}:${id}` : "";
 };
 
-const getCharacterId = (entry) =>
-  String(entry?.characterId || entry?.savedCharacterId || entry?.sourceCharacterId || entry?.id || "");
+const cleanId = (value) => value === undefined || value === null ? "" : String(value).trim();
 
-const getSavedCharacterId = (character) =>
-  String(character?.id || character?._id || character?.characterId || "");
+const getCharacterId = (entry) =>
+  cleanId(entry?.sourceCharacterId || entry?.savedCharacterId || entry?.characterId || entry?._id || entry?.id);
+
+export const getSavedCharacterStableId = (character) =>
+  cleanId(
+    character?._id ||
+    character?.sourceCharacterId ||
+    character?.savedCharacterId ||
+    character?.characterId ||
+    character?.id
+  );
 
 const isSavedCharacterEntry = (entry) =>
   entry?.source === "saved-character" || (
@@ -87,6 +97,158 @@ const isSavedCharacterEntry = (entry) =>
 
 export const getStagedSavedCharacterId = (entry) =>
   isSavedCharacterEntry(entry) ? getCharacterId(entry) : "";
+
+const getIdentityIds = (value, includeLegacyId = true) => {
+  const ids = [
+    value?.sourceCharacterId,
+    value?.savedCharacterId,
+    value?.characterId,
+    value?._id,
+    includeLegacyId ? value?.id : "",
+  ].map(cleanId).filter(Boolean);
+  return [...new Set(ids)];
+};
+
+const normalizeIdentityText = (value) => {
+  if (typeof value !== "string" && typeof value !== "number") return "";
+  return String(value).trim().toLowerCase().replace(/\s+/g, " ");
+};
+
+const firstIdentityText = (value, fields) => {
+  for (const field of fields) {
+    const direct = normalizeIdentityText(value?.[field]);
+    if (direct) return direct;
+    const snapshot = normalizeIdentityText(value?.autoRollCharacter?.[field]);
+    if (snapshot) return snapshot;
+  }
+  return "";
+};
+
+const SAVED_CHARACTER_IDENTITY_FIELDS = {
+  className: ["publicClassName", "class", "profession"],
+  species: ["publicSpeciesName", "species", "race", "category"],
+  background: ["publicBackgroundName", "background", "socialBackground"],
+};
+
+const matchesSafeIdentity = (entry, character) => {
+  if (firstIdentityText(entry, ["name"]) !== firstIdentityText(character, ["name"])) return false;
+  return Object.values(SAVED_CHARACTER_IDENTITY_FIELDS).every((fields) => {
+    const stagedValue = firstIdentityText(entry, fields);
+    return !stagedValue || stagedValue === firstIdentityText(character, fields);
+  });
+};
+
+const buildStagedEntryId = (entry, stableId) => cleanId(
+  entry?.stagedEntryId ||
+  entry?.entryId ||
+  (entry?.id ? `staged-saved:${entry.id}` : `staged-saved:${stableId}`)
+);
+
+export function repairStagedSavedCharacterEntry(entry = {}, savedCharacter = {}) {
+  const stableId = getSavedCharacterStableId(savedCharacter);
+  if (!stableId) return toSafeEntries([entry])[0] || {};
+  const savedMetadata = buildOriginalActorMetadata(savedCharacter);
+  const originalActorMetadata = buildOriginalActorMetadata({
+    ...savedCharacter,
+    attributes: savedMetadata.attributes,
+    training: savedMetadata.training,
+    traits: savedMetadata.traits,
+    state: savedMetadata.state,
+    reputation: savedMetadata.reputation,
+    favor: savedMetadata.favor,
+    behavior: savedMetadata.behavior,
+    movement: savedMetadata.movement,
+    originalActorMetadata: entry?.originalActorMetadata || savedCharacter?.originalActorMetadata,
+  });
+  return toSafeEntries([{
+    ...entry,
+    stagedEntryId: buildStagedEntryId(entry, stableId),
+    id: stableId,
+    name: savedCharacter?.name || entry?.name || "Saved character",
+    source: "saved-character",
+    sourceLabel: entry?.sourceLabel || "Saved Character",
+    sourceCharacterId: stableId,
+    savedCharacterId: stableId,
+    characterId: stableId,
+    publicClassName: savedCharacter?.publicClassName || savedCharacter?.class || savedCharacter?.profession || entry?.publicClassName,
+    publicSpeciesName: savedCharacter?.publicSpeciesName || savedCharacter?.species || savedCharacter?.race || savedCharacter?.category || entry?.publicSpeciesName,
+    publicBackgroundName: savedCharacter?.publicBackgroundName || savedCharacter?.background || savedCharacter?.socialBackground || entry?.publicBackgroundName,
+    originalActorMetadata,
+  }])[0];
+}
+
+export function resolveSavedCharacterForStagedEntry(entry = {}, savedCharacters = []) {
+  if (!isSavedCharacterEntry(entry)) {
+    return { status: "not-saved-character", entry: toSafeEntries([entry])[0] || {}, character: null };
+  }
+
+  const characters = Array.isArray(savedCharacters) ? savedCharacters.filter(Boolean) : [];
+  const stagedIds = new Set(getIdentityIds(entry));
+  const exactMatches = characters.filter((character) =>
+    getIdentityIds(character).some((id) => stagedIds.has(id))
+  );
+
+  let matches = exactMatches;
+  let matchType = "exact";
+  if (matches.length === 0) {
+    matches = characters.filter((character) => matchesSafeIdentity(entry, character));
+    matchType = "identity";
+  }
+
+  if (matches.length > 1) {
+    return {
+      status: "ambiguous",
+      entry: toSafeEntries([entry])[0] || {},
+      character: null,
+      candidates: matches.map((character) => ({
+        id: getSavedCharacterStableId(character),
+        name: character?.name || "Saved character",
+      })),
+    };
+  }
+  if (matches.length === 0) {
+    return { status: "missing", entry: toSafeEntries([entry])[0] || {}, character: null, candidates: [] };
+  }
+
+  const character = matches[0];
+  const stableId = getSavedCharacterStableId(character);
+  const repairedEntry = repairStagedSavedCharacterEntry(entry, character);
+  const alreadyCurrent =
+    cleanId(entry?.sourceCharacterId) === stableId &&
+    cleanId(entry?.savedCharacterId) === stableId &&
+    cleanId(entry?.characterId) === stableId &&
+    cleanId(entry?.id) === stableId &&
+    Boolean(entry?.stagedEntryId);
+
+  return {
+    status: matchType === "exact" && alreadyCurrent ? "exact" : "repaired",
+    matchType,
+    entry: repairedEntry,
+    character,
+    stableId,
+    candidates: [],
+  };
+}
+
+export function repairStagedSavedCharacterEntries(entries = [], savedCharacters = []) {
+  const resolutions = (Array.isArray(entries) ? entries : []).map((entry) =>
+    resolveSavedCharacterForStagedEntry(entry, savedCharacters)
+  );
+  const repairedEntries = resolutions.map((resolution) => resolution.entry);
+  return {
+    entries: repairedEntries,
+    resolutions,
+    changed: JSON.stringify(repairedEntries) !== JSON.stringify(Array.isArray(entries) ? entries : []),
+  };
+}
+
+export function repairStagedSavedCharacterEntriesInStorage(savedCharacters = []) {
+  const result = repairStagedSavedCharacterEntries(loadPublicArenaRosterEntries(), savedCharacters);
+  return {
+    ...result,
+    entries: result.changed ? savePublicArenaRosterEntries(result.entries) : result.entries,
+  };
+}
 
 export function hasStagedSavedCharacter(entries = [], characterId = "") {
   const targetId = String(characterId || "");
@@ -186,28 +348,22 @@ export function removeStagedRosterEntriesByCharacterId(characterId) {
 
 export function pruneStagedRosterEntriesAgainstSavedCharacters(savedCharacters = []) {
   const entries = loadPublicArenaRosterEntries();
-  const savedIds = new Set(
-    (Array.isArray(savedCharacters) ? savedCharacters : [])
-      .map(getSavedCharacterId)
-      .filter(Boolean)
-  );
-  if (savedIds.size === 0) {
-    return savePublicArenaRosterEntries(entries.filter((entry) => !isSavedCharacterEntry(entry)));
-  }
-  const nextEntries = entries.filter((entry) =>
-    !isSavedCharacterEntry(entry) || savedIds.has(getCharacterId(entry))
-  );
+  const nextEntries = entries.flatMap((entry) => {
+    const resolution = resolveSavedCharacterForStagedEntry(entry, savedCharacters);
+    return resolution.status === "missing" ? [] : [resolution.entry];
+  });
   return savePublicArenaRosterEntries(nextEntries);
 }
 
 export function getMissingSavedCharacterStagedEntries(entries = [], savedCharacters = []) {
-  const savedIds = new Set(
-    (Array.isArray(savedCharacters) ? savedCharacters : [])
-      .map(getSavedCharacterId)
-      .filter(Boolean)
-  );
   return (Array.isArray(entries) ? entries : []).filter((entry) =>
-    isSavedCharacterEntry(entry) && !savedIds.has(getCharacterId(entry))
+    resolveSavedCharacterForStagedEntry(entry, savedCharacters).status === "missing"
+  );
+}
+
+export function getAmbiguousSavedCharacterStagedEntries(entries = [], savedCharacters = []) {
+  return (Array.isArray(entries) ? entries : []).filter((entry) =>
+    resolveSavedCharacterForStagedEntry(entry, savedCharacters).status === "ambiguous"
   );
 }
 
@@ -231,12 +387,18 @@ export default {
   clearStagedRosterEntries,
   getDuplicateStagedSavedCharacters,
   getDuplicateStagedRosterEntries,
+  getAmbiguousSavedCharacterStagedEntries,
   getMissingSavedCharacterStagedEntries,
+  getSavedCharacterStableId,
   getStagedSavedCharacterId,
   getStagedRosterEntries,
   hasStagedSavedCharacter,
   loadPublicArenaRosterEntries,
   pruneStagedRosterEntriesAgainstSavedCharacters,
+  repairStagedSavedCharacterEntries,
+  repairStagedSavedCharacterEntriesInStorage,
+  repairStagedSavedCharacterEntry,
+  resolveSavedCharacterForStagedEntry,
   removeDuplicateSavedCharacterEntries,
   removeDuplicateSavedCharacterEntriesFromStorage,
   removeDuplicateStagedRosterEntries,

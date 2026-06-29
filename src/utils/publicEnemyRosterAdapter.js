@@ -1,5 +1,7 @@
+import { addOriginalActorMetadata } from "./originalActorMetadata.js";
+
 export function adaptPublicEnemyToRosterEntry(enemy = {}) {
-  const rosterEntry = {
+  const rosterEntry = addOriginalActorMetadata({
     id: enemy.id,
     name: enemy.name,
     side: "enemy",
@@ -19,7 +21,8 @@ export function adaptPublicEnemyToRosterEntry(enemy = {}) {
     source: "public-enemy",
     ruleset: enemy.ruleset || "core-d20",
     originalSource: enemy.source,
-  };
+    originalActorMetadata: enemy.originalActorMetadata,
+  });
 
   return rosterEntry;
 }

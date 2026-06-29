@@ -1,3 +1,5 @@
+import { addOriginalActorMetadata } from "./originalActorMetadata.js";
+
 const hasValue = (value) => value !== undefined && value !== null && value !== "";
 
 const toDisplayText = (value) => {
@@ -112,7 +114,7 @@ export function adaptPublicEnemyToCombatant(enemy = {}) {
 
   return {
     ok: true,
-    combatant: {
+    combatant: addOriginalActorMetadata({
       id: enemy.id,
       name: enemy.name,
       HP: enemy.hitPoints,
@@ -122,6 +124,7 @@ export function adaptPublicEnemyToCombatant(enemy = {}) {
       creatureType: enemy.creatureType,
       speed: enemy.speed,
       spd: enemy.speed,
+      abilityScores: enemy.abilityScores ? { ...enemy.abilityScores } : undefined,
       attacks,
       publicEnemyMetadata: {
         abilityScores: enemy.abilityScores ? { ...enemy.abilityScores } : undefined,
@@ -137,7 +140,8 @@ export function adaptPublicEnemyToCombatant(enemy = {}) {
       },
       source: "public-enemy",
       ruleset: enemy.ruleset || "core-d20",
-    },
+      originalActorMetadata: enemy.originalActorMetadata,
+    }),
     missingFields: [],
     warnings,
     source: "public-enemy",

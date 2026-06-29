@@ -241,15 +241,19 @@ import {
 import { getDefaultMovementMode, getSpeciesProfile } from "../utils/ai/movementModeHelpers.js";
 import {
   clearPublicArenaRosterEntries,
+  getAmbiguousSavedCharacterStagedEntries,
   getDuplicateStagedRosterEntries,
   getMissingSavedCharacterStagedEntries,
   getStagedSavedCharacterId,
   loadPublicArenaRosterEntries,
   pruneStagedRosterEntriesAgainstSavedCharacters,
+  repairStagedSavedCharacterEntriesInStorage,
   removeDuplicateStagedRosterEntriesFromStorage,
   removeStagedRosterEntry,
+  upsertPublicArenaRosterEntry,
 } from "../utils/publicStagedRosterStorage.js";
 import {
+  checkEncounterCombatantReadiness,
   checkPublicEnemyCombatReadiness,
   checkPublicPlayerCombatReadiness,
 } from "../utils/publicCombatReadiness.js";
@@ -260,6 +264,7 @@ import {
   isSavedCharacterCombatData,
 } from "../utils/publicCharacterCombatAdapter.js";
 import { buildCombatDisplayStats } from "../utils/combatDisplayStats.js";
+import { summarizeOriginalActorMetadata } from "../utils/originalActorMetadataDisplay.js";
 import {
   buildEnemyTurnSlotKey,
   shouldCoalesceBlockedEnemyTurn,
@@ -2556,6 +2561,8 @@ function CombatPage({ characters = [] }) {
   const [armyCount, setArmyCount] = useState(2);
   const [encounterArmies, setEncounterArmies] = useState(() => DEFAULT_ENCOUNTER_ARMIES);
   const [selectedArmyId, setSelectedArmyId] = useState("enemy");
+  const [selectedActorSide, setSelectedActorSide] = useState("enemy");
+  const [selectedActorControlMode, setSelectedActorControlMode] = useState("ai");
   const [newArmyName, setNewArmyName] = useState("");
   const [newArmyType, setNewArmyType] = useState("enemyArmy");
   const [selectedAttack, setSelectedAttack] = useState(0);
@@ -2567,10 +2574,19 @@ function CombatPage({ characters = [] }) {
     () => getMissingSavedCharacterStagedEntries(stagedRosterEntries, characters),
     [characters, stagedRosterEntries]
   );
+  const ambiguousSavedStagedRosterEntries = useMemo(
+    () => getAmbiguousSavedCharacterStagedEntries(stagedRosterEntries, characters),
+    [characters, stagedRosterEntries]
+  );
   const duplicateSavedStagedRosterEntries = useMemo(
     () => getDuplicateStagedRosterEntries(stagedRosterEntries),
     [stagedRosterEntries]
   );
+  useEffect(() => {
+    if (!Array.isArray(characters) || characters.length === 0) return;
+    const repaired = repairStagedSavedCharacterEntriesInStorage(characters);
+    if (repaired.changed) setStagedRosterEntries(repaired.entries);
+  }, [characters]);
   const canStartManualPublicTurns = useMemo(() => canStartPublicTurnOrder(fighters), [fighters]);
   const manualPublicCurrentTurn = manualPublicTurnOrder[manualPublicTurnIndex] || null;
   const manualPublicCurrentCombatant = useMemo(() => {
@@ -6090,6 +6106,20 @@ function CombatPage({ characters = [] }) {
     () => sortedCombatants.find((combatant) => combatant.pickerId === selectedCombatant),
     [sortedCombatants, selectedCombatant]
   );
+  const selectedCatalogActor = useMemo(
+    () => selectedCombatantData?.normalizedSelectableActor
+      ? SELECTABLE_ACTORS.find((actor) => actor.id === selectedCombatantData.selectableActorId) || null
+      : null,
+    [selectedCombatantData]
+  );
+  const configuredSelectableActor = useMemo(() => {
+    if (!selectedCatalogActor) return selectedCombatantData;
+    const conversion = adaptSelectableActorToCombatant(selectedCatalogActor, {
+      team: selectedActorSide,
+      controlMode: selectedActorControlMode,
+    });
+    return conversion.ok ? conversion.combatant : selectedCombatantData;
+  }, [selectedActorControlMode, selectedActorSide, selectedCatalogActor, selectedCombatantData]);
 
   // Get all available armors from armorShopData
   const availableArmors = useMemo(() => {
@@ -6166,6 +6196,11 @@ function CombatPage({ characters = [] }) {
       setSelectedCombatant("");
     }
   }, [selectedCombatant, selectedCombatantData]);
+  useEffect(() => {
+    if (!selectedCombatantData?.normalizedSelectableActor) return;
+    setSelectedActorSide(selectedCombatantData.team === "party" ? "party" : "enemy");
+    setSelectedActorControlMode(selectedCombatantData.defaultControlMode || "ai");
+  }, [selectedCombatantData?.selectableActorId]);
   const combatStateRef = useRef({ closedDistances: new Map() }); // Track reach-based combat state
   const [visibleCells, setVisibleCells] = useState([]); // Fog of war: visible cell positions
   const [exploredCells, setExploredCells] = useState([]); // Fog of war: explored (memory) cell positions
@@ -24772,6 +24807,8 @@ function CombatPage({ characters = [] }) {
         newFighter.side = runtimeTeam;
         newFighter.battleSide = runtimeTeam;
         newFighter.type = runtimeTeam === "party" ? "player" : runtimeTeam === "enemy" ? "enemy" : "npc";
+        newFighter.controlMode = combatantData.controlMode || newFighter.controlMode;
+        newFighter.playable = combatantData.playable !== false;
         if (runtimeTeam === "enemy" && /^(playable|player)-/i.test(String(newFighter.id || ""))) {
           newFighter.id = String(newFighter.id).replace(/^(playable|player)-/i, "enemy-");
           newFighter._id = newFighter.id;
@@ -25029,10 +25066,19 @@ function CombatPage({ characters = [] }) {
   }
 
   function getStagedRosterReadiness(entry) {
-    if (entry?.side === "player") {
+    if (entry?.normalizedSelectableActor) {
+      const readiness = checkEncounterCombatantReadiness(entry);
+      return {
+        ...readiness,
+        missing: readiness.missing || readiness.missingFields || [],
+        missingArenaShape: [],
+      };
+    }
+    const stagedSide = getCombatantSide(entry);
+    if (stagedSide === "player") {
       return checkPublicPlayerCombatReadiness(entry);
     }
-    if (entry?.side === "enemy") {
+    if (stagedSide === "enemy") {
       return checkPublicEnemyCombatReadiness(entry);
     }
     return {
@@ -25044,14 +25090,12 @@ function CombatPage({ characters = [] }) {
   }
 
   function importReadyStagedRoster() {
-    const loadedEntries = loadPublicArenaRosterEntries();
+    const repairResult = repairStagedSavedCharacterEntriesInStorage(characters);
+    const loadedEntries = repairResult.entries;
     const duplicateEntries = getDuplicateStagedRosterEntries(loadedEntries);
     const entries = duplicateEntries.length > 0
       ? removeDuplicateStagedRosterEntriesFromStorage()
       : loadedEntries;
-    const staleIds = new Set(
-      getMissingSavedCharacterStagedEntries(entries, characters).map((entry) => `${entry.side || ""}:${entry.id || ""}`)
-    );
     setStagedRosterEntries(entries);
 
     if (entries.length === 0) {
@@ -25068,10 +25112,16 @@ function CombatPage({ characters = [] }) {
     });
 
     entries.forEach((entry) => {
-      if (staleIds.has(`${entry.side || ""}:${entry.id || ""}`)) {
-        const message = `${entry.name || "Staged character"} skipped: saved character no longer exists.`;
-        messages.push(message);
-        addLog(message, "warning");
+      if (entry.normalizedSelectableActor) {
+        const stagedSide = getCombatantSide(entry);
+        const armyId = stagedSide === "player" ? "party" : stagedSide === "enemy" ? "enemy" : "";
+        if (!armyId) {
+          messages.push(`${entry.name || "Staged actor"} skipped: missing side.`);
+          return;
+        }
+        addCombatant(entry, entry.name, 1, null, "None", 0, null, armyId);
+        importedCount += 1;
+        messages.push(`${entry.name} imported as ${armyId === "party" ? "party" : "enemy"} / ${entry.controlMode || "ai"}.`);
         return;
       }
 
@@ -25092,7 +25142,7 @@ function CombatPage({ characters = [] }) {
 
         addCombatant(importEntry.autoRollCharacter, importEntry.name, 1, null, "None", 0, "player", "party");
         importedCount += 1;
-        messages.push(`${importEntry.name} imported as a player.`);
+        messages.push(`${importEntry.name} imported as a player${resolved.linkStatus === "repaired" ? " after updating its saved-character link" : ""}.`);
         return;
       }
 
@@ -31309,6 +31359,13 @@ function CombatPage({ characters = [] }) {
                                 </Alert>
                               )}
 
+                              {ambiguousSavedStagedRosterEntries.length > 0 && (
+                                <Alert status="warning" borderRadius="md">
+                                  <AlertIcon />
+                                  <Text fontSize="sm">Some staged characters match multiple Character List entries and need relinking.</Text>
+                                </Alert>
+                              )}
+
                               {duplicateSavedStagedRosterEntries.length > 0 && (
                                 <Alert status="warning" borderRadius="md">
                                   <AlertIcon />
@@ -33801,6 +33858,12 @@ function CombatPage({ characters = [] }) {
                   <Text fontSize="sm">Some staged characters no longer exist in Character List.</Text>
                 </Alert>
               )}
+              {ambiguousSavedStagedRosterEntries.length > 0 && (
+                <Alert status="warning" borderRadius="md" mb={3}>
+                  <AlertIcon />
+                  <Text fontSize="sm">Some staged characters match multiple Character List entries and need relinking.</Text>
+                </Alert>
+              )}
               {duplicateSavedStagedRosterEntries.length > 0 && (
                 <Alert status="warning" borderRadius="md" mb={3}>
                   <AlertIcon />
@@ -33827,16 +33890,19 @@ function CombatPage({ characters = [] }) {
                     {stagedRosterEntries.map((entry) => {
                       const readiness = getStagedRosterReadiness(entry);
                       const missing = [...(readiness.missing || []), ...(readiness.missingArenaShape || [])];
+                      const stagedSide = getCombatantSide(entry);
                       return (
                         <Tr key={`${entry.side || "unknown"}-${entry.id || entry.name}`}>
                           <Td>{entry.name || "Unnamed"}</Td>
                           <Td>
-                            <Badge colorScheme={entry.side === "player" ? "blue" : "red"}>
-                              {entry.side === "player" ? "Player" : entry.side === "enemy" ? "Enemy" : "Unknown"}
+                            <Badge colorScheme={stagedSide === "player" ? "blue" : stagedSide === "enemy" ? "red" : "gray"}>
+                              {stagedSide === "player" ? "Party" : stagedSide === "enemy" ? "Enemy" : "Unknown"}
                             </Badge>
                           </Td>
                           <Td>
-                            {entry.side === "player"
+                            {entry.normalizedSelectableActor
+                              ? `${formatCombatantCategory(entry.category)} | ${formatCombatantCategory(entry.controlMode || "ai")}`
+                              : stagedSide === "player"
                               ? `${entry.publicSpeciesName || "Species not set"} ${entry.publicClassName || "Class not set"}`
                               : `${entry.size || "Size not set"} ${entry.creatureType || "Type not set"} | HP ${entry.hitPoints ?? "?"} | AC ${entry.armorClass ?? "?"}`}
                           </Td>
@@ -33848,12 +33914,15 @@ function CombatPage({ characters = [] }) {
                               {missingSavedStagedRosterEntries.some((missing) => missing.id === entry.id && missing.side === entry.side) && (
                                 <Badge colorScheme="orange">Missing saved character</Badge>
                               )}
+                              {ambiguousSavedStagedRosterEntries.includes(entry) && (
+                                <Badge colorScheme="orange">Ambiguous saved character</Badge>
+                              )}
                               {duplicateSavedStagedRosterEntries.some((duplicate) =>
                                 getStagedSavedCharacterId(duplicate) === getStagedSavedCharacterId(entry) &&
                                 (duplicate.stagedEntryId || duplicate.entryId || duplicate.id || duplicate.name) ===
                                   (entry.stagedEntryId || entry.entryId || entry.id || entry.name)
                               ) && (
-                                <Badge colorScheme="orange">Duplicate saved character</Badge>
+                                <Badge colorScheme="orange">Duplicate staged entry</Badge>
                               )}
                               {!readiness.ready && missing.length > 0 && (
                                 <Text fontSize="xs" color="gray.600">{missing.join(", ")}</Text>
@@ -33932,19 +34001,41 @@ function CombatPage({ characters = [] }) {
               </Select>
             </FormControl>
 
-            <FormControl mb={4}>
-              <FormLabel>Add To Army / Faction:</FormLabel>
-              <Select
-                value={selectedArmyId}
-                onChange={(e) => setSelectedArmyId(e.target.value)}
-              >
-                {encounterArmies.map((army) => (
-                  <option key={army.id} value={army.id}>
-                    {army.name}
-                  </option>
-                ))}
-              </Select>
-            </FormControl>
+            {selectedCombatantData?.normalizedSelectableActor ? (
+              <Grid templateColumns={{ base: "1fr", md: "1fr 1fr" }} gap={3} mb={4}>
+                <FormControl>
+                  <FormLabel>Side</FormLabel>
+                  <Select value={selectedActorSide} onChange={(e) => setSelectedActorSide(e.target.value)}>
+                    <option value="party">Party</option>
+                    <option value="enemy">Enemy</option>
+                  </Select>
+                </FormControl>
+                <FormControl>
+                  <FormLabel>Control Mode</FormLabel>
+                  <Select value={selectedActorControlMode} onChange={(e) => setSelectedActorControlMode(e.target.value)}>
+                    <option value="manual">Manual</option>
+                    <option value="ai">AI</option>
+                    <option value="autoplay">Autoplay</option>
+                    <option value="passive">Passive</option>
+                    <option value="defensive">Defensive</option>
+                  </Select>
+                </FormControl>
+              </Grid>
+            ) : (
+              <FormControl mb={4}>
+                <FormLabel>Add To Army / Faction:</FormLabel>
+                <Select
+                  value={selectedArmyId}
+                  onChange={(e) => setSelectedArmyId(e.target.value)}
+                >
+                  {encounterArmies.map((army) => (
+                    <option key={army.id} value={army.id}>
+                      {army.name}
+                    </option>
+                  ))}
+                </Select>
+              </FormControl>
+            )}
 
             <FormControl mb={4}>
               <FormLabel>Custom Name (optional):</FormLabel>
@@ -34044,7 +34135,7 @@ function CombatPage({ characters = [] }) {
             )}
 
             <FormControl mb={4}>
-              <FormLabel>Number of Enemies (1-10):</FormLabel>
+              <FormLabel>Number of Fighters (1-10):</FormLabel>
               <Input
                 type="number"
                 min="1"
@@ -34065,8 +34156,11 @@ function CombatPage({ characters = [] }) {
               <Box mb={4} p={3} border="1px solid" borderColor="gray.200" borderRadius="md">
                 <Text fontWeight="bold" mb={2}>Fighter Preview:</Text>
                 {(() => {
-                  const combatant = selectedCombatantData;
+                  const combatant = configuredSelectableActor;
                   const displayStats = combatant ? buildCombatDisplayStats(combatant) : null;
+                  const originalMetadata = combatant?.originalActorMetadata
+                    ? summarizeOriginalActorMetadata(combatant)
+                    : null;
                   return combatant ? (
                     <VStack align="start" spacing={1}>
                       {combatant.normalizedSelectableActor ? (
@@ -34075,6 +34169,8 @@ function CombatPage({ characters = [] }) {
                           <Text fontSize="sm">Source: {combatant.sourceLabel}</Text>
                           <Text fontSize="sm">Role: {formatCombatantCategory(combatant.aiRole)}</Text>
                           <Text fontSize="sm">Playable: {combatant.playable ? "Yes" : "No"}</Text>
+                          <Text fontSize="sm">Selected Side: {combatant.team === "party" ? "Party" : "Enemy"}</Text>
+                          <Text fontSize="sm">Selected Control Mode: {formatCombatantCategory(combatant.controlMode)}</Text>
                           <Text fontSize="sm">Default Control: {formatCombatantCategory(combatant.defaultControlMode)}</Text>
                           <Text fontSize="sm">Movement: {combatant.movement?.ground ?? displayStats.movementSpeed} ft</Text>
                           <Text fontSize="sm">Movement Modes: {combatant.movementModes?.join(", ") || "ground"}</Text>
@@ -34083,6 +34179,23 @@ function CombatPage({ characters = [] }) {
                             <Text fontSize="sm">
                               Range: {combatant.attacks[0].rangeProfile?.normal ?? combatant.attacks[0].range} ft normal
                             </Text>
+                          )}
+                          {combatant.inventory?.some((item) => item.type === "ammunition") && (
+                            <Text fontSize="sm">
+                              Ammo: {combatant.inventory.filter((item) => item.type === "ammunition").map((item) => `${item.quantity ?? 0} ${item.name}`).join(", ")}
+                            </Text>
+                          )}
+                          {originalMetadata && (
+                            <Box w="full" pt={2}>
+                              <Text fontSize="sm" fontWeight="bold" mb={1}>Original Attributes</Text>
+                              <Grid templateColumns={{ base: "repeat(2, minmax(0, 1fr))", md: "repeat(3, minmax(0, 1fr))" }} gap={1}>
+                                {originalMetadata.attributes.map((attribute) => (
+                                  <Text key={attribute.key} fontSize="xs">
+                                    <strong>{attribute.label}:</strong> {attribute.value}
+                                  </Text>
+                                ))}
+                              </Grid>
+                            </Box>
                           )}
                         </>
                       ) : combatant.playable ? (
@@ -34120,11 +34233,14 @@ function CombatPage({ characters = [] }) {
               <Button
                 colorScheme="blue"
                 onClick={() => {
-                  const combatant = selectedCombatantData;
+                  const combatant = configuredSelectableActor;
                   if (combatant) {
+                    const destinationArmyId = combatant.normalizedSelectableActor
+                      ? (combatant.team === "party" ? "party" : "enemy")
+                      : selectedArmyId;
                     if (enemyCount === 1) {
                       // Single enemy - use original function
-                      addCombatant(combatant, null, enemyLevel, selectedArmor, selectedWeapon, selectedAmmoCount, null, selectedArmyId);
+                      addCombatant(combatant, null, enemyLevel, selectedArmor, selectedWeapon, selectedAmmoCount, null, destinationArmyId);
                       setCustomEnemyName("");
                       setSelectedCombatant("");
                       setEnemyLevel(1); // Reset level
@@ -34135,7 +34251,7 @@ function CombatPage({ characters = [] }) {
                       onClose();
                     } else {
                       // Multiple enemies - use new function
-                      addMultipleEnemies(combatant, enemyCount, enemyLevel, selectedArmor, selectedWeapon, selectedAmmoCount, selectedArmyId);
+                      addMultipleEnemies(combatant, enemyCount, enemyLevel, selectedArmor, selectedWeapon, selectedAmmoCount, destinationArmyId);
                     }
                   }
                 }}
@@ -34143,6 +34259,21 @@ function CombatPage({ characters = [] }) {
               >
                 {enemyCount === 1 ? "Add to Combat" : `Add ${enemyCount} to Combat`}
               </Button>
+              {configuredSelectableActor?.normalizedSelectableActor && (
+                <Button
+                  variant="outline"
+                  colorScheme="purple"
+                  onClick={() => {
+                    const nextEntries = upsertPublicArenaRosterEntry(configuredSelectableActor);
+                    setStagedRosterEntries(nextEntries);
+                    setStagedRosterImportMessages([
+                      `${configuredSelectableActor.name} staged as ${configuredSelectableActor.team === "party" ? "Party" : "Enemy"} / ${formatCombatantCategory(configuredSelectableActor.controlMode)}.`,
+                    ]);
+                  }}
+                >
+                  Stage Actor
+                </Button>
+              )}
               <Button onClick={onClose}>Cancel</Button>
             </HStack>
           </ModalBody>

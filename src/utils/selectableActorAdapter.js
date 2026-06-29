@@ -1,3 +1,5 @@
+import { addOriginalActorMetadata } from "./originalActorMetadata.js";
+
 const hasValue = (value) => value !== undefined && value !== null && value !== "";
 
 const cloneObject = (value) => value && typeof value === "object" && !Array.isArray(value) ? { ...value } : {};
@@ -13,6 +15,12 @@ const normalizeAttack = (attack = {}) => {
   const ranged = String(attack.kind || attack.attackType || attack.type || "").toLowerCase() === "ranged";
   const normalRange = Number(rangeProfile.normal ?? attack.range ?? attack.rangeFeet);
   const reach = Number(attack.reach ?? attack.reachFeet ?? 5);
+  const physicalLength = Number(
+    attack.lengthFt ??
+    attack.length ??
+    attack.weaponLengthFt ??
+    reach
+  );
   return {
     name: String(attack.name || "Unnamed attack"),
     kind: ranged ? "ranged" : "melee",
@@ -25,6 +33,7 @@ const normalizeAttack = (attack = {}) => {
     count: Number(attack.count) || 1,
     reach: ranged ? null : (Number.isFinite(reach) ? reach : 5),
     reachFeet: ranged ? null : (Number.isFinite(reach) ? reach : 5),
+    lengthFt: ranged ? null : (Number.isFinite(physicalLength) ? physicalLength : (Number.isFinite(reach) ? reach : 5)),
     range: ranged && Number.isFinite(normalRange) ? normalRange : 0,
     rangeFeet: ranged && Number.isFinite(normalRange) ? normalRange : 0,
     rangeProfile,
@@ -72,7 +81,7 @@ export function adaptSelectableActorToCombatant(actor = {}, options = {}) {
   const armorClass = Number(actor.derivedStats.armorClass ?? actor.derivedStats.guardRating ?? 10);
   const hasFlight = Array.isArray(actor.movementModes) && actor.movementModes.includes("flying") && flyingMovement > 0;
 
-  const combatant = {
+  const combatant = addOriginalActorMetadata({
     id: runtimeId,
     name: actor.name,
     category: actor.category,
@@ -103,6 +112,15 @@ export function adaptSelectableActorToCombatant(actor = {}, options = {}) {
       cha: getAbility(abilityScores, "charisma", "cha"),
     },
     compatibilityAttributes,
+    originalActorMetadata: cloneObject(actor.originalActorMetadata),
+    training: actor.training,
+    traits: Array.isArray(actor.traits)
+      ? actor.traits.map((trait) => trait && typeof trait === "object" ? { ...trait } : trait)
+      : actor.traits,
+    state: cloneObject(actor.state),
+    reputation: cloneObject(actor.reputation),
+    favor: cloneObject(actor.favor),
+    behavior: cloneObject(actor.behavior),
     HP: Number.isFinite(hp) ? hp : 1,
     hp: Number.isFinite(hp) ? hp : 1,
     currentHP: Number.isFinite(hp) ? hp : 1,
@@ -126,6 +144,19 @@ export function adaptSelectableActorToCombatant(actor = {}, options = {}) {
       : {},
     normalizedSelectableActor: true,
     selectableActorId: actor.id,
+  });
+
+  combatant.movement = {
+    ...movement,
+    modes: [...combatant.originalActorMetadata.movement.modes],
+    pace: combatant.originalActorMetadata.movement.pace,
+    burst: combatant.originalActorMetadata.movement.burst,
+    recoveryStep: combatant.originalActorMetadata.movement.recoveryStep,
+    pursuit: combatant.originalActorMetadata.movement.pursuit,
+    withdrawal: combatant.originalActorMetadata.movement.withdrawal,
+    turnControl: combatant.originalActorMetadata.movement.turnControl,
+    formationPace: combatant.originalActorMetadata.movement.formationPace,
+    terrainMobility: { ...combatant.originalActorMetadata.movement.terrainMobility },
   };
 
   return { ok: true, combatant, missingFields: [] };

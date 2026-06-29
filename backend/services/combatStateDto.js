@@ -39,6 +39,7 @@ function getPublicMetadata(source) {
     "backgroundEquipmentTags",
     "startingGold",
     "publicDerivedStats",
+    "originalActorMetadata",
   ].forEach((key) => {
     if (source?.[key] !== undefined) metadata[key] = source[key];
   });

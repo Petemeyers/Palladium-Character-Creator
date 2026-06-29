@@ -1,3 +1,5 @@
+import { addOriginalActorMetadata } from "./originalActorMetadata.js";
+
 const DEFAULT_ABILITY_SCORE = 10;
 const DEFAULT_HIT_POINTS = 10;
 const DEFAULT_ARMOR_CLASS = 10;
@@ -138,7 +140,7 @@ export function getConModifier(combatant = {}) {
 }
 
 export function normalizeCombatant(input = {}) {
-  const combatant = input || {};
+  const combatant = addOriginalActorMetadata(input || {});
   const str = getAbilityScore(combatant, "str", "PS");
   const dex = getAbilityScore(combatant, "dex", "PP");
   const con = getAbilityScore(combatant, "con", "PE");

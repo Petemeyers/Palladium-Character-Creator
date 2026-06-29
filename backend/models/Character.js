@@ -132,6 +132,10 @@ const characterSchema = new mongoose.Schema({
     of: mongoose.Schema.Types.Mixed,
     required: true,
   },
+  originalActorMetadata: {
+    type: mongoose.Schema.Types.Mixed,
+    required: false,
+  },
   level: {
     type: Number,
     required: true,

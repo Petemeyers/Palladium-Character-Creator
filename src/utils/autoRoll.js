@@ -145,6 +145,7 @@ import {
   createDeterministicRng,
   normalizestaminaState,
 } from './techniqueUtils.js';
+import { addOriginalActorMetadata } from './originalActorMetadata.js';
 
 export function createPlayableCharacterFighter(character, customName = null) {
   // Roll attributes
@@ -505,7 +506,10 @@ export function createPlayableCharacterFighter(character, customName = null) {
   fighter.staminaLevelGainsTotal = normalizedstamina.staminaLevelGainsTotal;
   fighter.staminaLevelGainRolls = normalizedstamina.staminaLevelGainRolls;
 
-  return fighter;
+  return addOriginalActorMetadata({
+    ...fighter,
+    originalActorMetadata: character.originalActorMetadata,
+  });
 }
 
 /**

@@ -1,17 +1,27 @@
 import { adaptPublicCharacterForAutoRoll } from "./publicCharacterCombatAdapter.js";
-import { getStagedSavedCharacterId } from "./publicStagedRosterStorage.js";
+import { addOriginalActorMetadata } from "./originalActorMetadata.js";
+import {
+  getSavedCharacterStableId,
+  getStagedSavedCharacterId,
+  resolveSavedCharacterForStagedEntry,
+} from "./publicStagedRosterStorage.js";
 export {
   PUBLIC_ARENA_ROSTER_STORAGE_KEY,
   clearPublicArenaRosterEntries,
   clearStagedRosterEntries,
+  getAmbiguousSavedCharacterStagedEntries,
   getDuplicateStagedSavedCharacters,
   getDuplicateStagedRosterEntries,
   getMissingSavedCharacterStagedEntries,
+  getSavedCharacterStableId,
   getStagedSavedCharacterId,
   getStagedRosterEntries,
   hasStagedSavedCharacter,
   loadPublicArenaRosterEntries,
   pruneStagedRosterEntriesAgainstSavedCharacters,
+  repairStagedSavedCharacterEntries,
+  repairStagedSavedCharacterEntriesInStorage,
+  repairStagedSavedCharacterEntry,
   removeDuplicateSavedCharacterEntries,
   removeDuplicateSavedCharacterEntriesFromStorage,
   removeDuplicateStagedRosterEntries,
@@ -20,6 +30,7 @@ export {
   removeStagedRosterEntry,
   savePublicArenaRosterEntries,
   saveStagedRosterEntries,
+  resolveSavedCharacterForStagedEntry,
   upsertPublicArenaRosterEntry,
 } from "./publicStagedRosterStorage.js";
 
@@ -31,16 +42,24 @@ const clonePlain = (value) => {
 export function adaptPublicCharacterToRosterEntry(character = {}) {
   const adaptation = adaptPublicCharacterForAutoRoll(character);
   const combatCharacter = adaptation.combatCharacter;
-  const sourceCharacterId = character.id || character._id || character.characterId || `saved-${character.name || "character"}`;
+  const sourceCharacterId = getSavedCharacterStableId(character) || `saved-${character.name || "character"}`;
+  const stagedEntryId = character.stagedEntryId || `staged-saved:${sourceCharacterId}`;
   const publicAbilityScores = character.finalAbilityScores || character.publicAbilityScores || character.abilityScores;
   const publicAbilityModifiers = character.abilityModifiers || character.publicAbilityModifiers;
 
-  return {
+  return addOriginalActorMetadata({
     id: sourceCharacterId,
+    stagedEntryId,
     name: character.name || "Saved Character",
-    side: "player",
+    side: character.side || "player",
+    team: character.team || "party",
+    battleSide: character.battleSide || character.team || "party",
+    controlMode: character.controlMode || "manual",
     source: "saved-character",
+    sourceLabel: "Saved Character",
     sourceCharacterId,
+    savedCharacterId: sourceCharacterId,
+    characterId: sourceCharacterId,
     generated: false,
     publicClassName: character.publicClassName || combatCharacter?.publicClassName,
     publicSpeciesName: character.publicSpeciesName || combatCharacter?.publicSpeciesName,
@@ -54,16 +73,17 @@ export function adaptPublicCharacterToRosterEntry(character = {}) {
     attribute_dice: clonePlain(combatCharacter?.attribute_dice),
     autoRollReady: adaptation.ready,
     autoRollMissingFields: [...adaptation.missingRequiredFields],
-    autoRollCharacter: combatCharacter ? clonePlain(combatCharacter) : null,
-  };
+    autoRollCharacter: combatCharacter ? {
+      ...clonePlain(combatCharacter),
+      sourceCharacterId,
+      savedCharacterId: sourceCharacterId,
+    } : null,
+    originalActorMetadata: clonePlain(combatCharacter?.originalActorMetadata || character.originalActorMetadata),
+  });
 }
 
 export function findSavedCharacterForStagedEntry(entry = {}, savedCharacters = []) {
-  const stagedCharacterId = getStagedSavedCharacterId(entry);
-  if (!stagedCharacterId || !Array.isArray(savedCharacters)) return null;
-  return savedCharacters.find((character) =>
-    String(character?.id || character?._id || character?.characterId || "") === stagedCharacterId
-  ) || null;
+  return resolveSavedCharacterForStagedEntry(entry, savedCharacters).character || null;
 }
 
 export function resolveStagedSavedCharacterForImport(entry = {}, savedCharacters = []) {
@@ -75,30 +95,51 @@ export function resolveStagedSavedCharacterForImport(entry = {}, savedCharacters
     };
   }
 
-  const savedCharacterId = getStagedSavedCharacterId(entry);
-  if (!savedCharacterId) {
+  const resolution = resolveSavedCharacterForStagedEntry(entry, savedCharacters);
+  if (resolution.status === "ambiguous") {
     return {
       ok: false,
-      reason: "missing saved character id",
+      reason: "saved character link is ambiguous",
       entryName: entry?.name || "Staged character",
+      candidates: resolution.candidates,
     };
   }
-
-  const savedCharacter = findSavedCharacterForStagedEntry(entry, savedCharacters);
-  if (!savedCharacter) {
+  if (resolution.status === "missing") {
     return {
       ok: false,
       reason: "saved character no longer exists",
       entryName: entry?.name || "Staged character",
-      savedCharacterId,
+      savedCharacterId: getStagedSavedCharacterId(entry),
     };
   }
 
+  const savedCharacter = resolution.character;
+  const adaptedEntry = adaptPublicCharacterToRosterEntry(savedCharacter);
+  const originalActorMetadata = clonePlain(
+    resolution.entry.originalActorMetadata || adaptedEntry.originalActorMetadata
+  );
+  const importEntry = addOriginalActorMetadata({
+    ...adaptedEntry,
+    stagedEntryId: resolution.entry.stagedEntryId,
+    side: resolution.entry.side || adaptedEntry.side,
+    team: resolution.entry.team || adaptedEntry.team,
+    battleSide: resolution.entry.battleSide || resolution.entry.team || adaptedEntry.battleSide,
+    controlMode: resolution.entry.controlMode || adaptedEntry.controlMode,
+    originalActorMetadata,
+    autoRollCharacter: adaptedEntry.autoRollCharacter
+      ? addOriginalActorMetadata({
+          ...adaptedEntry.autoRollCharacter,
+          originalActorMetadata,
+        })
+      : null,
+  });
   return {
     ok: true,
-    entry: adaptPublicCharacterToRosterEntry(savedCharacter),
+    entry: importEntry,
     source: "saved-character",
-    savedCharacterId,
+    savedCharacterId: resolution.stableId,
+    linkStatus: resolution.status,
+    repairedStagedEntry: resolution.entry,
   };
 }
 

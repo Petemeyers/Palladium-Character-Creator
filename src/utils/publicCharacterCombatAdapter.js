@@ -1,5 +1,6 @@
 import { getPublicDerivedStatsForCharacter } from "./publicDerivedStats.js";
 import { buildPublicPlayerAttackPreviews } from "./publicPlayerAttackPreview.js";
+import { addOriginalActorMetadata } from "./originalActorMetadata.js";
 
 const PUBLIC_TO_COMPATIBILITY_ATTRIBUTES = {
   str: "PS",
@@ -131,10 +132,7 @@ export function adaptPublicCharacterForAutoRoll(character = {}) {
     publicDerivedStats: derivedStats,
   });
 
-  return {
-    ready: true,
-    missingRequiredFields: [],
-    combatCharacter: {
+  const combatCharacter = addOriginalActorMetadata({
       ...character,
       id: character.id || character._id || `public-${character.name || "character"}`,
       name: character.name || "Public Character",
@@ -171,7 +169,12 @@ export function adaptPublicCharacterForAutoRoll(character = {}) {
       special_abilities: character.special_abilities || [],
       training: character.training || [],
       tactics: character.tactics || [],
-    },
+    });
+
+  return {
+    ready: true,
+    missingRequiredFields: [],
+    combatCharacter,
   };
 }
 
