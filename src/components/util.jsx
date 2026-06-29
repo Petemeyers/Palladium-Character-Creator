@@ -1,6 +1,6 @@
-import { applyBonus, evaluateDice } from "../utils/diceExpression.js";
+import { applyBonus, evaluateDice, getAverageDiceRoll } from "../utils/diceExpression.js";
 
-export { applyBonus, evaluateDice };
+export { applyBonus, evaluateDice, getAverageDiceRoll };
 
 export const rollDice = (sides, count, useCryptoRandom = false) => {
   let total = 0;

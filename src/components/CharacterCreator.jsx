@@ -23,6 +23,7 @@ import {
   rollFromTable,
   evaluateDice,
   applyBonus,
+  getAverageDiceRoll,
 } from './util';
 import gameData from "../data/originalGameData.js";
 import clothingEquipmentData from "../data/clothingEquipment.json";
@@ -727,7 +728,7 @@ const CharacterCreator = ({ onCreateCharacter }) => {
     if (!progression) return baseHP || 10;
 
     // Use average values instead of rolling dice
-    const averageHPPerLevel = getAverageRoll(progression.hpPerLevel);
+    const averageHPPerLevel = getAverageDiceRoll(progression.hpPerLevel);
     
     // Calculate total HP deterministically
     let totalHP = baseHP || averageHPPerLevel;
@@ -741,15 +742,6 @@ const CharacterCreator = ({ onCreateCharacter }) => {
     totalHP += peBonus * level;
     
     return Math.max(1, Math.round(totalHP));
-  };
-
-  // Helper function to calculate average roll for dice notation
-  const getAverageRoll = (diceNotation) => {
-    if (!diceNotation) return 3.5; // Default average for 1d6
-    
-    const [numDice, diceSize] = diceNotation.split('d').map(Number);
-    const averagePerDie = (diceSize + 1) / 2;
-    return numDice * averagePerDie;
   };
 
   // Generate starting clothing based on race (1994 Medieval Combat Simulator)

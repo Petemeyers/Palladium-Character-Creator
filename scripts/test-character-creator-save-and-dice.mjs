@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   applyBonus,
   evaluateDice,
+  getAverageDiceRoll,
 } from "../src/utils/diceExpression.js";
 import {
   CHARACTER_SAVE_AUTH_MESSAGE,
@@ -20,6 +21,13 @@ assert.equal(evaluateDice({ value: 4 }), 0);
 assert.equal(evaluateDice([4]), 0);
 assert.equal(applyBonus(10, 3), 13);
 assert.equal(applyBonus("10", 3), 13);
+assert.equal(getAverageDiceRoll("2d6+2"), 9);
+assert.equal(getAverageDiceRoll(6), 6);
+assert.equal(getAverageDiceRoll("6"), 6);
+assert.equal(getAverageDiceRoll(null), 3.5);
+assert.equal(getAverageDiceRoll(undefined), 3.5);
+assert.equal(getAverageDiceRoll({ dice: "1d6" }), 3.5);
+assert.equal(getAverageDiceRoll(["1d6"]), 3.5);
 
 const professionData = { bonuses: { PS: 2, PP: "1", PE: null }, stamina: 8, focus: undefined };
 const attributes = { PS: 10, PP: 11, PE: 12 };

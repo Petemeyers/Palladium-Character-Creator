@@ -37,4 +37,24 @@ export function applyBonus(current, bonusExpression) {
   return normalizedCurrent + evaluateDice(bonusExpression);
 }
 
+export function getAverageDiceRoll(diceNotation, fallback = 3.5) {
+  if (typeof diceNotation === "number") {
+    return Number.isFinite(diceNotation) && diceNotation >= 0 ? diceNotation : fallback;
+  }
+  if (typeof diceNotation !== "string") return fallback;
+
+  const normalizedNotation = diceNotation.trim();
+  if (!normalizedNotation) return fallback;
+  const numericValue = Number(normalizedNotation);
+  if (Number.isFinite(numericValue) && numericValue >= 0) return numericValue;
+
+  const diceMatch = normalizedNotation.match(/^(\d+)d(\d+)([+-]\d+)?$/i);
+  if (!diceMatch) return fallback;
+  const diceCount = Number(diceMatch[1]);
+  const diceSides = Number(diceMatch[2]);
+  const modifier = diceMatch[3] ? Number(diceMatch[3]) : 0;
+  if (diceCount <= 0 || diceSides <= 0) return fallback;
+  return diceCount * ((diceSides + 1) / 2) + modifier;
+}
+
 export default evaluateDice;
