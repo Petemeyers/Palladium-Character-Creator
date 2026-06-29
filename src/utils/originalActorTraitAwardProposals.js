@@ -19,6 +19,11 @@ const EVENT_TRAIT_MAP = Object.freeze({
 });
 
 const normalizeText = (value) => String(value || "").trim().toLowerCase();
+const normalizeDisplayText = (value, fallback) => {
+  if (typeof value !== "string" && typeof value !== "number") return fallback;
+  const text = String(value).trim();
+  return text || fallback;
+};
 const normalizeEventType = (value) => normalizeText(value).replace(/[\s-]+/g, "_");
 
 const getActorId = (actor) => String(
@@ -47,10 +52,20 @@ const getWounds = (actor) => {
 
 const isDead = (actor, context = {}) => {
   const status = normalizeText(actor?.status || actor?.condition);
-  if (actor?.isDead === true || actor?.dead === true || status === "dead") return true;
+  if (
+    actor?.isDead === true ||
+    actor?.dead === true ||
+    actor?.isKO === true ||
+    actor?.isDefeated === true ||
+    actor?.defeated === true ||
+    ["dead", "defeated"].includes(status)
+  ) return true;
   const hp = Number(actor?.currentHP ?? actor?.currentHp ?? actor?.hp ?? actor?.HP);
   const deathThreshold = Number(context.deathThreshold ?? -20);
-  return Number.isFinite(hp) && Number.isFinite(deathThreshold) && hp < deathThreshold;
+  return Number.isFinite(hp) && (
+    hp <= 0 ||
+    (Number.isFinite(deathThreshold) && hp < deathThreshold)
+  );
 };
 
 const isRouted = (actor) => (
@@ -170,6 +185,29 @@ export function proposeOriginalTraitAwards({
   });
 
   return proposals;
+}
+
+export function summarizeOriginalTraitAwardProposal(proposal = {}) {
+  const actorName = normalizeDisplayText(proposal?.actorName, "Unnamed actor");
+  const traitName = normalizeDisplayText(proposal?.traitName, "Unnamed trait");
+  return {
+    actorId: normalizeDisplayText(proposal?.actorId, ""),
+    traitId: normalizeDisplayText(proposal?.traitId, ""),
+    actorName,
+    traitName,
+    headline: `${actorName} may gain ${traitName}`,
+    reason: normalizeDisplayText(proposal?.reason, "No proposal reason recorded."),
+    layer: normalizeDisplayText(proposal?.layer, ""),
+    source: normalizeDisplayText(proposal?.source, ""),
+    confidence: normalizeDisplayText(proposal?.confidence, ""),
+  };
+}
+
+export function summarizeOriginalTraitAwardProposals(proposals = []) {
+  if (!Array.isArray(proposals)) return [];
+  return proposals
+    .filter((proposal) => proposal && typeof proposal === "object")
+    .map(summarizeOriginalTraitAwardProposal);
 }
 
 export default proposeOriginalTraitAwards;

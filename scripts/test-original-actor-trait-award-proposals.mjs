@@ -3,7 +3,11 @@ import assert from "node:assert/strict";
 import SELECTABLE_ACTORS from "../src/data/selectableActors.js";
 import { adaptSelectableActorToCombatant } from "../src/utils/selectableActorAdapter.js";
 import { awardOriginalTrait } from "../src/utils/originalActorTraits.js";
-import { proposeOriginalTraitAwards } from "../src/utils/originalActorTraitAwardProposals.js";
+import {
+  proposeOriginalTraitAwards,
+  summarizeOriginalTraitAwardProposal,
+  summarizeOriginalTraitAwardProposals,
+} from "../src/utils/originalActorTraitAwardProposals.js";
 
 const before = [
   {
@@ -75,6 +79,25 @@ const passiveProposals = proposeOriginalTraitAwards({
   combatantsAfter: [{ id: "civilian-1", name: "Civilian", controlMode: "passive", currentHP: 5 }],
 });
 assert.deepEqual(passiveProposals, [], "passive actors are not assumed to have participated");
+
+const defeatedProposals = proposeOriginalTraitAwards({
+  combatantsAfter: [{ id: "defeated-1", name: "Defeated Fighter", controlMode: "ai", currentHP: 8, status: "defeated" }],
+  battleEvents: [{ type: "actor_survived_combat", actorId: "defeated-1" }],
+});
+assert.deepEqual(defeatedProposals, [], "defeated actors do not receive Blooded proposals");
+
+const proposalSummary = summarizeOriginalTraitAwardProposal(guardTraits[0]);
+assert.equal(proposalSummary.actorName, "Alden");
+assert.equal(proposalSummary.traitName.length > 0, true);
+assert.equal(proposalSummary.reason.length > 0, true);
+assert.equal(proposalSummary.headline, `${proposalSummary.actorName} may gain ${proposalSummary.traitName}`);
+assert.equal(summarizeOriginalTraitAwardProposals(guardTraits).length, guardTraits.length);
+assert.deepEqual(summarizeOriginalTraitAwardProposals(null), []);
+assert.doesNotMatch(
+  summarizeOriginalTraitAwardProposal({ actorName: {}, traitName: [], reason: null }).headline,
+  /\[object Object\]/,
+  "proposal summaries never render raw objects"
+);
 
 const getActor = (id) => SELECTABLE_ACTORS.find((actor) => actor.id === id);
 const referenceActors = ["longbowman", "hawk", "minotaur"].map((id) =>

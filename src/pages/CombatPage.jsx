@@ -89,6 +89,7 @@ import EncounterReadinessPanel from "../components/EncounterReadinessPanel.jsx";
 import InitiativeSetupPreview from "../components/InitiativeSetupPreview.jsx";
 import CombatActionCatalogPanel from "../components/CombatActionCatalogPanel.jsx";
 import CombatTurnStatusPanel from "../components/CombatTurnStatusPanel.jsx";
+import ProposedChronicleAwardsPanel from "../components/ProposedChronicleAwardsPanel.jsx";
 import SelectedCombatActionPanel from "../components/SelectedCombatActionPanel.jsx";
 import CompatibilityCombatControlsPanel from "../components/CompatibilityCombatControlsPanel.jsx";
 import ManualPublicAttackTest from "../components/ManualPublicAttackTest.jsx";
@@ -215,6 +216,7 @@ import {
   finalizeOriginalBattleEventLedger,
   initializeOriginalBattleEventLedger,
 } from "../utils/originalBattleEventLedger.js";
+import { proposeOriginalTraitAwards } from "../utils/originalActorTraitAwardProposals.js";
 import { calculateTotalHP } from "../utils/levelProgression.js";
 import { grantXPFromEnemy, getOpponentByName, calculateOpponentXP } from "../utils/enemyXP.js";
 import { weapons, getWeaponByName, arenaWhip } from "../data/weapons.js";
@@ -2555,6 +2557,7 @@ function CombatPage({ characters = [] }) {
   const [meleeRound, setMeleeRound] = useState(1); // Track combat rounds (1 minute each)
   const [turnCounter, setTurnCounter] = useState(0); // Track absolute turn number (increments every turn)
   const [combatActive, setCombatActive] = useState(false);
+  const [proposedTraitAwards, setProposedTraitAwards] = useState([]);
   const [selectedCombatant, setSelectedCombatant] = useState("");
   const [customEnemyName, setCustomEnemyName] = useState("");
   const [enemyCount, setEnemyCount] = useState(1);
@@ -3370,6 +3373,7 @@ function CombatPage({ characters = [] }) {
   const combatRosterSnapshotRef = useRef(null); // Clean pre-combat roster for reset/restart.
   const originalBattleEventLedgerRef = useRef([]);
   const originalBattleLedgerFinalizedRef = useRef(true);
+  const originalBattleCombatantsBeforeRef = useRef([]);
   const currentTurnTokenRef = useRef(null); // Universal turn/action ownership token for delayed callbacks.
   const activeGrappleActionIdRef = useRef(null); // Grapple action ownership token; stale helper continuations must match.
   const activeAttackActionIdRef = useRef(null); // Attack/multi-attack ownership token for delayed callbacks.
@@ -3379,7 +3383,7 @@ function CombatPage({ characters = [] }) {
     if (combatActive || originalBattleLedgerFinalizedRef.current) return;
     if (originalBattleEventLedgerRef.current.length === 0) return;
 
-    originalBattleEventLedgerRef.current = finalizeOriginalBattleEventLedger(
+    const finalizedLedger = finalizeOriginalBattleEventLedger(
       originalBattleEventLedgerRef.current,
       {
         combatants: fightersRef.current || [],
@@ -3387,6 +3391,18 @@ function CombatPage({ characters = [] }) {
         turn: turnCounterRef.current,
       }
     );
+    originalBattleEventLedgerRef.current = finalizedLedger;
+    const combatantsAfter = fightersRef.current || [];
+    const participantActorIds = finalizedLedger
+      .filter((event) => event.type === "actor_entered_combat")
+      .map((event) => event.actorId)
+      .filter(Boolean);
+    setProposedTraitAwards(proposeOriginalTraitAwards({
+      combatantsBefore: originalBattleCombatantsBeforeRef.current,
+      combatantsAfter,
+      battleEvents: finalizedLedger,
+      context: { participantActorIds },
+    }));
     originalBattleLedgerFinalizedRef.current = true;
   }, [combatActive]);
 
@@ -26239,6 +26255,8 @@ function CombatPage({ characters = [] }) {
 
     fightersRef.current = updatedFighters;
     setFighters(updatedFighters);
+    originalBattleCombatantsBeforeRef.current = updatedFighters.map((fighter) => cloneCombatData(fighter));
+    setProposedTraitAwards([]);
     originalBattleEventLedgerRef.current = initializeOriginalBattleEventLedger({
       combatants: updatedFighters,
       round: 1,
@@ -32627,6 +32645,7 @@ function CombatPage({ characters = [] }) {
                 <Heading size="sm" color="blue.700" mb={2}>
                   Combat Info
                 </Heading>
+                <ProposedChronicleAwardsPanel proposals={proposedTraitAwards} />
                 <Tabs size="sm" colorScheme="blue" isLazy>
                   <TabList>
                     <Tab>Log</Tab>

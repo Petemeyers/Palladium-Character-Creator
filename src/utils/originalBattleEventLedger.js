@@ -46,13 +46,15 @@ const isPassiveCombatant = (actor) => (
 
 const isDefeatedCombatant = (actor) => {
   const status = normalizeText(actor?.status || actor?.condition).toLowerCase();
+  const currentHP = Number(actor?.currentHP ?? actor?.currentHp ?? actor?.hp ?? actor?.HP);
   return (
     actor?.isDead === true ||
     actor?.dead === true ||
     actor?.isKO === true ||
     actor?.isDefeated === true ||
     actor?.defeated === true ||
-    ["dead", "defeated"].includes(status)
+    ["dead", "defeated"].includes(status) ||
+    (Number.isFinite(currentHP) && currentHP <= 0)
   );
 };
 
