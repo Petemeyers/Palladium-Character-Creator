@@ -1363,13 +1363,16 @@ const CharacterCreator = ({ onCreateCharacter }) => {
 
       if (!saveResult.saved) {
         setPendingCharacter(saveResult.character);
-        setSaveMessage({ status: "warning", text: saveResult.message });
+        setSaveMessage({
+          status: saveResult.authRequired ? "warning" : "error",
+          text: saveResult.message,
+        });
         return;
       }
 
-      setPendingCharacter(null);
+      setPendingCharacter(saveResult.character);
+      setSaveMessage({ status: "success", text: saveResult.message });
       console.log('Character creation response:', saveResult.character);
-      navigate('/character-list');
     } catch (error) {
       console.error('Full error object:', error);
       console.error('Error creating character:', {

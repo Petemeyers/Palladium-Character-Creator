@@ -7,7 +7,13 @@ import {
 } from "../src/utils/diceExpression.js";
 import {
   CHARACTER_SAVE_AUTH_MESSAGE,
+  CHARACTER_SAVE_NETWORK_MESSAGE,
+  CHARACTER_SAVE_REAUTH_MESSAGE,
+  CHARACTER_SAVE_SERVER_MESSAGE,
+  CHARACTER_SAVE_SUCCESS_MESSAGE,
+  CHARACTER_SAVE_VALIDATION_MESSAGE,
   getCharacterSaveToken,
+  normalizeCharacterSavePayload,
   saveCharacterWithAuth,
 } from "../src/utils/characterSave.js";
 import { getStatsForLevel } from "../src/utils/levelProgression.js";
@@ -92,12 +98,14 @@ try {
     storage: createStorage({ token: "existing-token" }),
     onSave: async (input, options) => {
       saveCalls += 1;
-      assert.equal(input, character);
+      assert.equal(input.name, character.name);
+      assert.equal(input.profession, "General");
       assert.equal(options.suppressAuthPrompt, true);
       return { ...input, id: "saved-1" };
     },
   });
   assert.equal(authenticatedResult.saved, true);
+  assert.equal(authenticatedResult.message, CHARACTER_SAVE_SUCCESS_MESSAGE);
   assert.equal(authenticatedResult.character.id, "saved-1");
   assert.equal(saveCalls, 1);
   assert.equal(getCharacterSaveToken(createStorage({ token: "existing-token" })), "existing-token");
@@ -117,11 +125,34 @@ try {
     },
   });
   assert.equal(rejectedResult.authRequired, true);
+  assert.equal(rejectedResult.message, CHARACTER_SAVE_REAUTH_MESSAGE);
   assert.equal(hasStoredAuthToken(rejectedStorage), false);
   assert.equal(rejectedStorage.values.size, 0, "rejected save clears all stale auth keys");
 } finally {
   globalThis.alert = originalAlert;
   globalThis.confirm = originalConfirm;
+}
+
+const requiredPayload = normalizeCharacterSavePayload({ name: "Alden", species: "HUMAN", class: "Knight" });
+[
+  "name", "species", "class", "profession", "attributes", "level", "hp", "origin",
+  "socialBackground", "age", "disposition", "hostility", "gender",
+].forEach((field) => assert.notEqual(requiredPayload[field], undefined, `payload includes ${field}`));
+
+const failureCases = [
+  [{ status: 400, message: "bad" }, CHARACTER_SAVE_VALIDATION_MESSAGE],
+  [{ status: 422, message: "bad" }, CHARACTER_SAVE_VALIDATION_MESSAGE],
+  [{ status: 500, message: "bad" }, CHARACTER_SAVE_SERVER_MESSAGE],
+  [{ name: "NetworkError", message: "no response" }, CHARACTER_SAVE_NETWORK_MESSAGE],
+];
+for (const [failure, expectedMessage] of failureCases) {
+  const result = await saveCharacterWithAuth({
+    character,
+    storage: createStorage({ token: "existing-token" }),
+    onSave: async () => { throw failure; },
+  });
+  assert.equal(result.saved, false);
+  assert.equal(result.message, expectedMessage);
 }
 
 const staleUserStorage = createStorage({ user: JSON.stringify({ name: "Stale Player" }) });
@@ -136,5 +167,33 @@ const staleLogoutStorage = createStorage({
 });
 clearStoredAuthState(staleLogoutStorage);
 assert.equal(staleLogoutStorage.values.size, 0, "logout clears stale auth even without token");
+
+const originalLocalStorage = globalThis.localStorage;
+const axiosStorage = createStorage({ token: "request-token" });
+globalThis.localStorage = axiosStorage;
+try {
+  const axiosInstance = (await import("../src/utils/axios.js")).default;
+  let capturedConfig = null;
+  const response = await axiosInstance.post("/characters", requiredPayload, {
+    suppressAuthPrompt: true,
+    adapter: async (config) => {
+      capturedConfig = config;
+      return {
+        data: { ...requiredPayload, _id: "saved-character" },
+        status: 201,
+        statusText: "Created",
+        headers: {},
+        config,
+        request: {},
+      };
+    },
+  });
+  assert.equal(response.status, 201);
+  assert.equal(capturedConfig.baseURL, "http://localhost:5000/api/v1");
+  assert.equal(capturedConfig.url, "/characters");
+  assert.equal(capturedConfig.headers.Authorization, "Bearer request-token");
+} finally {
+  globalThis.localStorage = originalLocalStorage;
+}
 
 console.log("character creator save and dice tests passed");

@@ -4,8 +4,8 @@ import PropTypes from 'prop-types';
 import { isDevAuthBypassEnabled } from '../utils/devAuthBypass';
 import { hasStoredAuthToken } from '../utils/authStorage.js';
 
-const PrivateRoute = ({ children }) => {
-  if (isDevAuthBypassEnabled()) {
+const PrivateRoute = ({ children, allowWithoutToken = false }) => {
+  if (isDevAuthBypassEnabled() || allowWithoutToken) {
     return children;
   }
 
@@ -14,6 +14,7 @@ const PrivateRoute = ({ children }) => {
 
 PrivateRoute.propTypes = {
   children: PropTypes.node.isRequired,
+  allowWithoutToken: PropTypes.bool,
 };
 
 export default PrivateRoute; 

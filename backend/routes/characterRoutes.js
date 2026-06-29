@@ -194,9 +194,12 @@ router.post("/", validate(characterValidation.create), async (req, res) => {
     res.status(201).json(savedCharacter);
   } catch (error) {
     console.error("Error adding character:", error);
-    res.status(500).json({
+    const isValidationError = error?.name === "ValidationError";
+    res.status(isValidationError ? 422 : 500).json({
       success: false,
-      message: "Server Error: Unable to add character.",
+      message: isValidationError
+        ? "Character data is missing required fields or contains invalid values."
+        : "Server Error: Unable to add character.",
       error: error.message,
     });
   }

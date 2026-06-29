@@ -24,6 +24,20 @@ instance.interceptors.request.use(
       config.headers.Authorization = `Bearer ${token}`;
     }
 
+    if (
+      (import.meta.env?.DEV || import.meta.env?.MODE === "development") &&
+      String(config.url || "").includes("/characters")
+    ) {
+      console.debug("[character-save] axios request", {
+        method: config.method?.toUpperCase(),
+        url: `${config.baseURL || ""}${config.url || ""}`,
+        hasAuthorization: Boolean(config.headers.Authorization),
+        payloadKeys: config.data && typeof config.data === "object" && !Array.isArray(config.data)
+          ? Object.keys(config.data).sort()
+          : [],
+      });
+    }
+
     // Log request for debugging (only in development)
     if (import.meta.env?.DEV || import.meta.env?.MODE === "development") {
       console.log(
@@ -65,6 +79,18 @@ instance.interceptors.response.use(
   },
   async (error) => {
     const apiError = createAPIError(error);
+
+    if (
+      (import.meta.env?.DEV || import.meta.env?.MODE === "development") &&
+      String(error.config?.url || "").includes("/characters")
+    ) {
+      console.debug("[character-save] axios response error", {
+        status: error.response?.status ?? null,
+        message: error.response?.data?.message || error.response?.data?.error || error.message,
+        response: error.response?.data || null,
+        hasAuthorization: Boolean(error.config?.headers?.Authorization),
+      });
+    }
 
     // Skip logging 404s for expected endpoints:
     // - /parties/active: expected when no active party exists
