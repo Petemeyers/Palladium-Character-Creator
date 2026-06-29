@@ -25,6 +25,10 @@ export function shouldCoalesceBlockedEnemyTurn({ stillCurrent, combatActive, com
   return Boolean(stillCurrent && combatActive && !combatOver && !alreadyClaimedAndActive);
 }
 
+export function shouldSuppressEnemyAttackContinuation({ combatActive, combatOver, combatEndCheck } = {}) {
+  return Boolean(!combatActive || combatOver || combatEndCheck);
+}
+
 export function spendEnemyNoTargetAction(fighters = [], fighterId = "") {
   if (!Array.isArray(fighters) || !fighterId) return fighters;
   return fighters.map((fighter) => {
@@ -41,5 +45,6 @@ export default {
   shouldCoalesceBlockedEnemyTurn,
   shouldDedupeEnemyTurnStart,
   shouldSkipBlockedEnemyTurnStart,
+  shouldSuppressEnemyAttackContinuation,
   spendEnemyNoTargetAction,
 };

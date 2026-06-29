@@ -5,6 +5,7 @@ import {
   shouldCoalesceBlockedEnemyTurn,
   shouldDedupeEnemyTurnStart,
   shouldSkipBlockedEnemyTurnStart,
+  shouldSuppressEnemyAttackContinuation,
   spendEnemyNoTargetAction,
 } from "../src/utils/enemyTurnScheduling.js";
 import {
@@ -151,6 +152,37 @@ assert.equal(
   }),
   false,
   "blocked duplicate should not coalesce when the same turn is already claimed"
+);
+
+assert.equal(
+  shouldCoalesceBlockedEnemyTurn({
+    stillCurrent: true,
+    combatActive: true,
+    combatOver: true,
+    alreadyClaimedAndActive: false,
+  }),
+  false,
+  "combat end prevents blocked enemy turns from being rescheduled"
+);
+
+assert.equal(
+  shouldSuppressEnemyAttackContinuation({
+    combatActive: true,
+    combatOver: true,
+    combatEndCheck: true,
+  }),
+  true,
+  "lethal impact suppresses late enemy attack continuation logging"
+);
+
+assert.equal(
+  shouldSuppressEnemyAttackContinuation({
+    combatActive: true,
+    combatOver: false,
+    combatEndCheck: false,
+  }),
+  false,
+  "active combat retains normal enemy attack finalization logging"
 );
 
 assert.equal(

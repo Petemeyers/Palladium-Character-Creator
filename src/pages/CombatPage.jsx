@@ -281,6 +281,7 @@ import {
   shouldCoalesceBlockedEnemyTurn,
   shouldDedupeEnemyTurnStart,
   shouldSkipBlockedEnemyTurnStart,
+  shouldSuppressEnemyAttackContinuation,
   spendEnemyNoTargetAction,
 } from "../utils/enemyTurnScheduling.js";
 
@@ -23572,26 +23573,26 @@ function CombatPage({ characters = [] }) {
       addLog(`${enemy.name} gains +${attackFlankingBonus} flanking bonus!`, "info");
     }
 
-    const executeEnemyMeleeAttackOnce = async (label = `attack:${attackName}`) => {
+    const executeEnemyAttackOnce = async (label = `attack:${attackName}`) => {
       if (!guardEnemyStillActiveForAttack(`${label}-pre-commit`)) {
-        addLog("enemy melee branch return before attack: pre-commit guard failed", "warning");
-        addLog("enemy melee execution blocked before attack; finalizing safely", "warning");
-        finishEnemyActionSafely("enemy-melee-blocked-before-attack");
+        addLog("enemy attack branch return before attack: pre-commit guard failed", "warning");
+        addLog("enemy attack execution blocked before attack; finalizing safely", "warning");
+        finishEnemyActionSafely("enemy-attack-blocked-before-attack");
         return false;
       }
 
-      const enemyMeleeCommitted = commitEnemyAction(label);
-      if (!enemyMeleeCommitted) {
-        addLog("enemy melee branch return before attack: action lock blocked", "warning");
-        addLog("enemy melee execution blocked before attack; finalizing safely", "warning");
+      const enemyAttackCommitted = commitEnemyAction(label);
+      if (!enemyAttackCommitted) {
+        addLog("enemy attack branch return before attack: action lock blocked", "warning");
+        addLog("enemy attack execution blocked before attack; finalizing safely", "warning");
         return false;
       }
 
       try {
         if (!guardEnemyStillActiveForAttack(`${label}-post-commit`)) {
-          addLog("enemy melee branch return before attack: post-commit guard failed", "warning");
-          addLog("enemy melee execution blocked before attack; finalizing safely", "warning");
-          finishEnemyActionSafely("enemy-melee-blocked-before-attack");
+          addLog("enemy attack branch return before attack: post-commit guard failed", "warning");
+          addLog("enemy attack execution blocked before attack; finalizing safely", "warning");
+          finishEnemyActionSafely("enemy-attack-blocked-before-attack");
           return false;
         }
 
@@ -23603,17 +23604,27 @@ function CombatPage({ characters = [] }) {
         turnActionResolvingRef.current = true;
         pendingTurnAdvanceRef.current = false;
         await Promise.resolve(attack(updatedEnemy, target.id, allBonuses));
-        addLog(`enemy melee attack invoked; waiting for impact finalizer`, "debug");
         enemyActionResolved = true;
-        addLog(`enemy melee execution promise resolved: actor=${enemy.name}`, "debug");
+
+        if (shouldSuppressEnemyAttackContinuation({
+          combatActive: combatActiveRef.current,
+          combatOver: combatOverRef.current,
+          combatEndCheck: combatEndCheckRef.current,
+        })) {
+          return true;
+        }
+
+        const enemyAttackType = isRangedSelectedAttack ? "ranged" : "melee";
+        addLog(`enemy ${enemyAttackType} attack invoked; waiting for impact finalizer`, "debug");
+        addLog(`enemy ${enemyAttackType} execution promise resolved: actor=${enemy.name}`, "debug");
         return true;
       } catch (err) {
         const message = err?.message || String(err);
-        addLog(`enemy melee execution exception: ${message}`, "warning");
+        addLog(`enemy attack execution exception: ${message}`, "warning");
         turnActionResolvingRef.current = false;
         pendingTurnAdvanceRef.current = false;
         processingEnemyTurnRef.current = false;
-        scheduleEndTurn(0, "enemy-melee-exception");
+        scheduleEndTurn(0, "enemy-attack-exception");
         return false;
       }
     };
@@ -23622,14 +23633,14 @@ function CombatPage({ characters = [] }) {
     if (actionPlan?.attackMode) {
       const actionPlanAttackMode = String(actionPlan.attackMode || "").toLowerCase();
       if (!isRangedSelectedAttack && actionPlanAttackMode.includes("melee")) {
-        await executeEnemyMeleeAttackOnce("worker-ai-melee-attack");
+        await executeEnemyAttackOnce("worker-ai-melee-attack");
         processingEnemyTurnRef.current = false;
         return;
       }
 
       // Use worker AI adapter for attack execution
       if (!guardEnemyStillActiveForAttack()) {
-        addLog("enemy melee branch return before attack: worker attack guard failed", "warning");
+        addLog("enemy attack branch return before attack: worker attack guard failed", "warning");
         return;
       }
       await commitOneEnemyAction("worker-ai-attack", async () => {
@@ -23645,7 +23656,7 @@ function CombatPage({ characters = [] }) {
       return;
     }
 
-    await executeEnemyMeleeAttackOnce(`attack:${attackName}`);
+    await executeEnemyAttackOnce(`attack:${attackName}`);
     processingEnemyTurnRef.current = false;
     return;
     } finally {
