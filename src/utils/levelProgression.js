@@ -22,7 +22,7 @@ export function calculateTotalHP(
   // Different profession categories have different HP per level
 
   const baseHP = 20; // Default base HP
-  const hpPerLevel = getHPPerLevel(professionCategory);
+  const hpPerLevel = getHPPerLevel(occCategory);
 
   return baseHP + (level - 1) * hpPerLevel + peBonus;
 }
@@ -32,7 +32,7 @@ export function calculateTotalHP(
  * @param {string} occCategory - profession category
  * @returns {number} HP gained per level
  */
-function getHPPerLevel(professionCategory) {
+function getHPPerLevel(professionCategory = "Men of Arms", hpPerLevelOverride) {
   // TODO: Return appropriate HP per level based on category
   const hpTable = {
     "Men of Arms": 10,
@@ -41,7 +41,27 @@ function getHPPerLevel(professionCategory) {
     Optional: 8,
   };
 
-  return hpTable[occCategory] || 8;
+  const fallback = hpTable[professionCategory] || 8;
+  return hpPerLevelOverride === undefined || hpPerLevelOverride === null
+    ? fallback
+    : getAverageDiceRoll(hpPerLevelOverride, fallback);
+}
+
+function resolveProfessionProgression(professionOrCategory) {
+  if (professionOrCategory && typeof professionOrCategory === "object" && !Array.isArray(professionOrCategory)) {
+    const category = String(
+      professionOrCategory.category || professionOrCategory.professionCategory || "Men of Arms"
+    ).trim() || "Men of Arms";
+    return {
+      category,
+      hpPerLevel: professionOrCategory.hpPerLevel ?? professionOrCategory.progression?.hpPerLevel,
+    };
+  }
+
+  const category = typeof professionOrCategory === "string"
+    ? professionOrCategory.trim()
+    : "";
+  return { category: category || "Men of Arms", hpPerLevel: undefined };
 }
 
 /**
@@ -92,18 +112,20 @@ export function getSkillBonus(level = 1, skillName = "") {
  * @param {string} occCategory - profession category
  * @returns {Object} Stats for the level (HP, bonuses, etc.)
  */
-export function getStatsForLevel(level = 1, occCategory = "Men of Arms") {
-  const hpPerLevel = getHPPerLevel(professionCategory);
+export function getStatsForLevel(level = 1, professionOrCategory = "Men of Arms") {
+  const normalizedLevel = Math.max(1, Number.parseInt(level, 10) || 1);
+  const progression = resolveProfessionProgression(professionOrCategory);
+  const hpPerLevel = getHPPerLevel(progression.category, progression.hpPerLevel);
   const baseHP = 20;
-  const totalHP = baseHP + (level - 1) * hpPerLevel;
+  const totalHP = baseHP + (normalizedLevel - 1) * hpPerLevel;
   
   return {
-    level,
-    occCategory,
+    level: normalizedLevel,
+    occCategory: progression.category,
     hpPerLevel,
     totalHP,
-    skillBonus: (level - 1) * 5, // +5% per level for most skills
-    xpForNextLevel: getXPForNextLevel(level),
+    skillBonus: (normalizedLevel - 1) * 5, // +5% per level for most skills
+    xpForNextLevel: getXPForNextLevel(normalizedLevel),
   };
 }
 
@@ -112,4 +134,6 @@ export default {
   getXPForNextLevel,
   calculateLevelFromXP,
   getSkillBonus,
+  getStatsForLevel,
 };
+import { getAverageDiceRoll } from "./diceExpression.js";

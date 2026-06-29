@@ -460,15 +460,8 @@ const CharacterCreator = ({ onCreateCharacter }) => {
       let stats = {};
       if (professionData) {
         stats = getStatsForLevel(
-          professionData,
           currentLevel,
-          attributes,
-          calculatedHP,
-          tactics?.stamina || 0,
-          tactics?.focus || 0,
-          professionSkills,
-          electiveSkills,
-          secondarySkills
+          professionData.category || "Men of Arms"
         ) || {};
       }
       

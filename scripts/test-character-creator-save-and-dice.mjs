@@ -10,6 +10,7 @@ import {
   getCharacterSaveToken,
   saveCharacterWithAuth,
 } from "../src/utils/characterSave.js";
+import { getStatsForLevel } from "../src/utils/levelProgression.js";
 
 assert.equal(evaluateDice("2d6+3", (sides, count) => sides * count), 15);
 assert.equal(evaluateDice("+2"), 2);
@@ -28,6 +29,16 @@ assert.equal(getAverageDiceRoll(null), 3.5);
 assert.equal(getAverageDiceRoll(undefined), 3.5);
 assert.equal(getAverageDiceRoll({ dice: "1d6" }), 3.5);
 assert.equal(getAverageDiceRoll(["1d6"]), 3.5);
+
+const categorizedStats = getStatsForLevel(3, "Men of Arms");
+assert.equal(categorizedStats.occCategory, "Men of Arms");
+assert.equal(categorizedStats.hpPerLevel, 10);
+assert.equal(categorizedStats.totalHP, 40);
+const missingCategoryStats = getStatsForLevel(2, null);
+assert.equal(missingCategoryStats.occCategory, "Men of Arms");
+assert.equal(missingCategoryStats.totalHP, 30);
+assert.equal(getStatsForLevel(2, { category: "Human Arms", hpPerLevel: 6 }).totalHP, 26);
+assert.equal(getStatsForLevel(2, { category: "Custom", hpPerLevel: "1d8" }).totalHP, 24.5);
 
 const professionData = { bonuses: { PS: 2, PP: "1", PE: null }, stamina: 8, focus: undefined };
 const attributes = { PS: 10, PP: 11, PE: 12 };
