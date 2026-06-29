@@ -17,6 +17,7 @@ import { removeStagedRosterEntriesByCharacterId } from '../utils/publicStagedRos
 import axiosInstance from '../utils/axios';
 import { getStoredAuthToken } from '../utils/authStorage.js';
 import { loadSavedCharacters } from '../utils/characterListLoader.js';
+import { summarizeOriginalTraitsForDisplay } from '../utils/originalActorMetadataDisplay.js';
 import '../styles/CharacterList.css';
 
 const getDisplayClassName = (character) =>
@@ -568,6 +569,7 @@ const CharacterList = ({
               const displayLanguages = Array.isArray(character.publicLanguages)
                 ? character.publicLanguages.filter(Boolean).join(', ')
                 : '';
+              const chronicleTraitSummary = summarizeOriginalTraitsForDisplay(character, { limit: 3 });
 
               return (
               <div key={index} className="character-card">
@@ -721,6 +723,33 @@ const CharacterList = ({
                         ))}
                       </div>
                     </div>
+                  )}
+
+                  {chronicleTraitSummary.total > 0 && (
+                    <section className="chronicle-traits-section" aria-label="Chronicle Traits">
+                      <h4>Chronicle Traits</h4>
+                      <div className="chronicle-traits-list">
+                        {chronicleTraitSummary.traits.map((trait) => (
+                          <div key={trait.id || trait.name} className="chronicle-trait-item">
+                            <div className="chronicle-trait-name">{trait.name}</div>
+                            {(trait.layer || trait.source) && (
+                              <div className="chronicle-trait-meta">
+                                {trait.layer && <span>Layer: {trait.layer}</span>}
+                                {trait.source && <span>Source: {trait.source}</span>}
+                              </div>
+                            )}
+                            {trait.reason && (
+                              <div className="chronicle-trait-reason">Reason: {trait.reason}</div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                      {chronicleTraitSummary.hiddenCount > 0 && (
+                        <div className="chronicle-traits-more">
+                          +{chronicleTraitSummary.hiddenCount} more Chronicle {chronicleTraitSummary.hiddenCount === 1 ? 'trait' : 'traits'}
+                        </div>
+                      )}
+                    </section>
                   )}
 
                   {publicDerivedStats && (

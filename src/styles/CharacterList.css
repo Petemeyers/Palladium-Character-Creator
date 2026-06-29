@@ -154,6 +154,57 @@ td {
   border-color: #007bff;
 }
 
+.chronicle-traits-section {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid #d9dee3;
+}
+
+.chronicle-traits-section h4 {
+  margin: 0 0 8px;
+  color: #2c3e50;
+  font-size: 0.95rem;
+}
+
+.chronicle-traits-list {
+  display: grid;
+  gap: 6px;
+}
+
+.chronicle-trait-item {
+  padding: 7px 9px;
+  border-left: 3px solid #477a72;
+  background: #f5f8f7;
+}
+
+.chronicle-trait-name {
+  color: #243b38;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.chronicle-trait-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  color: #52605e;
+  font-size: 0.76rem;
+}
+
+.chronicle-trait-reason {
+  margin-top: 3px;
+  color: #4e5554;
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.chronicle-traits-more {
+  margin-top: 6px;
+  color: #59636c;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
 /* Card Header */
 .card-header {
   display: flex;
