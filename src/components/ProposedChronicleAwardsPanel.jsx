@@ -1,39 +1,65 @@
 import React, { useMemo } from "react";
 import PropTypes from "prop-types";
-import { Badge, Box, HStack, Heading, Text, VStack } from "@chakra-ui/react";
-import { summarizeOriginalTraitAwardProposals } from "../utils/originalActorTraitAwardProposals.js";
+import { Badge, Box, Button, HStack, Heading, Text, VStack } from "@chakra-ui/react";
+import { summarizeOriginalTraitAwardProposal } from "../utils/originalActorTraitAwardProposals.js";
 
-export default function ProposedChronicleAwardsPanel({ proposals = [] }) {
-  const summaries = useMemo(
-    () => summarizeOriginalTraitAwardProposals(proposals),
+export default function ProposedChronicleAwardsPanel({ proposals = [], onApply }) {
+  const rows = useMemo(
+    () => (Array.isArray(proposals) ? proposals : [])
+      .filter((proposal) => proposal && typeof proposal === "object")
+      .map((proposal) => ({ proposal, summary: summarizeOriginalTraitAwardProposal(proposal) })),
     [proposals]
   );
 
-  if (summaries.length === 0) return null;
+  if (rows.length === 0) return null;
 
   return (
     <Box as="section" mb={3} pb={3} borderBottomWidth="1px" borderColor="gray.200">
       <Heading size="xs" mb={1}>Proposed Chronicle Awards</Heading>
       <Text fontSize="xs" color="gray.600" mb={3}>
-        These are proposed character-history traits from this encounter. They are not applied or saved yet.
+        Applied awards affect only the current combat session. Saved characters are not updated yet.
       </Text>
       <VStack align="stretch" spacing={2}>
-        {summaries.map((summary, index) => (
+        {rows.map(({ proposal, summary }, index) => {
+          const isPending = summary.status === "pending";
+          const statusLabel = summary.status === "applied"
+            ? "Applied this session"
+            : summary.status === "already_applied"
+              ? "Already applied this session"
+              : summary.status === "actor_not_found"
+                ? "Current fighter unavailable"
+                : null;
+          return (
           <Box
             key={`${summary.actorId || summary.actorName}:${summary.traitId || summary.traitName}:${index}`}
             pb={2}
-            borderBottomWidth={index < summaries.length - 1 ? "1px" : "0"}
+            borderBottomWidth={index < rows.length - 1 ? "1px" : "0"}
             borderColor="gray.100"
           >
-            <Text fontSize="sm" fontWeight="semibold">{summary.headline}</Text>
+            <HStack justify="space-between" align="start" spacing={3}>
+              <Text fontSize="sm" fontWeight="semibold">{summary.headline}</Text>
+              {isPending ? (
+                <Button size="xs" colorScheme="blue" onClick={() => onApply?.(proposal)}>
+                  Apply
+                </Button>
+              ) : (
+                <Badge colorScheme={summary.status === "actor_not_found" ? "orange" : "green"}>
+                  {statusLabel || "Unavailable"}
+                </Badge>
+              )}
+            </HStack>
             <Text fontSize="xs" color="gray.700">Reason: {summary.reason}</Text>
+            {summary.applicationMessage && (
+              <Text fontSize="xs" color="gray.600">{summary.applicationMessage}</Text>
+            )}
             <HStack spacing={2} mt={1} wrap="wrap">
               {summary.layer && <Badge colorScheme="blue">Layer: {summary.layer}</Badge>}
               {summary.source && <Badge colorScheme="gray">Source: {summary.source}</Badge>}
               {summary.confidence && <Badge colorScheme="green">Confidence: {summary.confidence}</Badge>}
             </HStack>
           </Box>
-        ))}
+          );
+        })}
       </VStack>
     </Box>
   );
@@ -49,5 +75,9 @@ ProposedChronicleAwardsPanel.propTypes = {
     layer: PropTypes.string,
     source: PropTypes.string,
     confidence: PropTypes.string,
+    status: PropTypes.string,
+    appliedAt: PropTypes.number,
+    applicationMessage: PropTypes.string,
   })),
+  onApply: PropTypes.func,
 };

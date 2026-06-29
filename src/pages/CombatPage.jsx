@@ -217,6 +217,11 @@ import {
   initializeOriginalBattleEventLedger,
 } from "../utils/originalBattleEventLedger.js";
 import { proposeOriginalTraitAwards } from "../utils/originalActorTraitAwardProposals.js";
+import {
+  applyOriginalTraitAwardProposalToCombatants,
+  createOriginalTraitAwardProposalState,
+  markOriginalTraitAwardProposalApplied,
+} from "../utils/originalActorTraitAwardApplication.js";
 import { calculateTotalHP } from "../utils/levelProgression.js";
 import { grantXPFromEnemy, getOpponentByName, calculateOpponentXP } from "../utils/enemyXP.js";
 import { weapons, getWeaponByName, arenaWhip } from "../data/weapons.js";
@@ -3397,14 +3402,29 @@ function CombatPage({ characters = [] }) {
       .filter((event) => event.type === "actor_entered_combat")
       .map((event) => event.actorId)
       .filter(Boolean);
-    setProposedTraitAwards(proposeOriginalTraitAwards({
+    setProposedTraitAwards(createOriginalTraitAwardProposalState(proposeOriginalTraitAwards({
       combatantsBefore: originalBattleCombatantsBeforeRef.current,
       combatantsAfter,
       battleEvents: finalizedLedger,
       context: { participantActorIds },
-    }));
+    })));
     originalBattleLedgerFinalizedRef.current = true;
   }, [combatActive]);
+
+  const applyProposedTraitAward = useCallback((proposal) => {
+    const result = applyOriginalTraitAwardProposalToCombatants(
+      fightersRef.current || [],
+      proposal,
+      { source: proposal?.source }
+    );
+    if (result.applied) {
+      fightersRef.current = result.combatants;
+      setFighters(result.combatants);
+    }
+    setProposedTraitAwards((current) => (
+      markOriginalTraitAwardProposalApplied(current, proposal, result)
+    ));
+  }, []);
 
   // =========================
   // Engine Adapter (for MOVE command authority)
@@ -26256,7 +26276,7 @@ function CombatPage({ characters = [] }) {
     fightersRef.current = updatedFighters;
     setFighters(updatedFighters);
     originalBattleCombatantsBeforeRef.current = updatedFighters.map((fighter) => cloneCombatData(fighter));
-    setProposedTraitAwards([]);
+    setProposedTraitAwards(createOriginalTraitAwardProposalState());
     originalBattleEventLedgerRef.current = initializeOriginalBattleEventLedger({
       combatants: updatedFighters,
       round: 1,
@@ -32645,7 +32665,10 @@ function CombatPage({ characters = [] }) {
                 <Heading size="sm" color="blue.700" mb={2}>
                   Combat Info
                 </Heading>
-                <ProposedChronicleAwardsPanel proposals={proposedTraitAwards} />
+                <ProposedChronicleAwardsPanel
+                  proposals={proposedTraitAwards}
+                  onApply={applyProposedTraitAward}
+                />
                 <Tabs size="sm" colorScheme="blue" isLazy>
                   <TabList>
                     <Tab>Log</Tab>

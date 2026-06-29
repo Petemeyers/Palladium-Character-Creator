@@ -190,6 +190,7 @@ export function proposeOriginalTraitAwards({
 export function summarizeOriginalTraitAwardProposal(proposal = {}) {
   const actorName = normalizeDisplayText(proposal?.actorName, "Unnamed actor");
   const traitName = normalizeDisplayText(proposal?.traitName, "Unnamed trait");
+  const status = normalizeDisplayText(proposal?.status, "pending").toLowerCase();
   return {
     actorId: normalizeDisplayText(proposal?.actorId, ""),
     traitId: normalizeDisplayText(proposal?.traitId, ""),
@@ -200,6 +201,9 @@ export function summarizeOriginalTraitAwardProposal(proposal = {}) {
     layer: normalizeDisplayText(proposal?.layer, ""),
     source: normalizeDisplayText(proposal?.source, ""),
     confidence: normalizeDisplayText(proposal?.confidence, ""),
+    status,
+    applicationMessage: normalizeDisplayText(proposal?.applicationMessage, ""),
+    appliedAt: Number.isFinite(Number(proposal?.appliedAt)) ? Number(proposal.appliedAt) : null,
   };
 }
 
