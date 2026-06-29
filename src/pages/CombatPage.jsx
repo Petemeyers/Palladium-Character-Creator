@@ -211,6 +211,10 @@ import {
   normalizeCombatant,
 } from "../utils/normalizeCombatant.js";
 import { rollInitiativeD20 } from "../utils/initiativeD20.js";
+import {
+  finalizeOriginalBattleEventLedger,
+  initializeOriginalBattleEventLedger,
+} from "../utils/originalBattleEventLedger.js";
 import { calculateTotalHP } from "../utils/levelProgression.js";
 import { grantXPFromEnemy, getOpponentByName, calculateOpponentXP } from "../utils/enemyXP.js";
 import { weapons, getWeaponByName, arenaWhip } from "../data/weapons.js";
@@ -3364,10 +3368,27 @@ function CombatPage({ characters = [] }) {
   const combatSessionRef = useRef(0); // Bumps on combat start/reset so old async callbacks cannot re-enter.
   const dreadRatingMemoryRef = useRef(new Map()); // key: `${generation}:${observerId}:${sourceId}`
   const combatRosterSnapshotRef = useRef(null); // Clean pre-combat roster for reset/restart.
+  const originalBattleEventLedgerRef = useRef([]);
+  const originalBattleLedgerFinalizedRef = useRef(true);
   const currentTurnTokenRef = useRef(null); // Universal turn/action ownership token for delayed callbacks.
   const activeGrappleActionIdRef = useRef(null); // Grapple action ownership token; stale helper continuations must match.
   const activeAttackActionIdRef = useRef(null); // Attack/multi-attack ownership token for delayed callbacks.
   const handlePlayerAITurnRef = useRef(null);
+
+  useEffect(() => {
+    if (combatActive || originalBattleLedgerFinalizedRef.current) return;
+    if (originalBattleEventLedgerRef.current.length === 0) return;
+
+    originalBattleEventLedgerRef.current = finalizeOriginalBattleEventLedger(
+      originalBattleEventLedgerRef.current,
+      {
+        combatants: fightersRef.current || [],
+        round: meleeRoundRef.current,
+        turn: turnCounterRef.current,
+      }
+    );
+    originalBattleLedgerFinalizedRef.current = true;
+  }, [combatActive]);
 
   // =========================
   // Engine Adapter (for MOVE command authority)
@@ -26218,6 +26239,12 @@ function CombatPage({ characters = [] }) {
 
     fightersRef.current = updatedFighters;
     setFighters(updatedFighters);
+    originalBattleEventLedgerRef.current = initializeOriginalBattleEventLedger({
+      combatants: updatedFighters,
+      round: 1,
+      turn: 0,
+    });
+    originalBattleLedgerFinalizedRef.current = false;
     setTurnIndex(0);
     setMeleeRound(1); // Start at combat round 1
 

@@ -5,8 +5,10 @@ import {
   appendOriginalBattleEvent,
   createOriginalBattleEvent,
   createOriginalBattleEventLedger,
+  finalizeOriginalBattleEventLedger,
   getOriginalBattleEventsByType,
   getOriginalBattleEventsForActor,
+  initializeOriginalBattleEventLedger,
 } from "../src/utils/originalBattleEventLedger.js";
 import { proposeOriginalTraitAwards } from "../src/utils/originalActorTraitAwardProposals.js";
 
@@ -92,5 +94,89 @@ circular.self = circular;
 assert.deepEqual(createOriginalBattleEvent({ type: "test", details: circular }).details, {}, "circular details fail safely");
 assert.deepEqual(createOriginalBattleEventLedger(null), []);
 assert.deepEqual(getOriginalBattleEventsForActor(null, "guard-1"), []);
+
+const longbowman = {
+  id: "longbowman-1",
+  name: "Longbowman",
+  currentHP: 18,
+  controlMode: "ai",
+  modelKey: "longbowman",
+  aiRole: "archer",
+  attacks: [{ name: "Longbow Shot", rangeProfile: { normal: 150 } }],
+};
+const hawk = {
+  id: "hawk-1",
+  name: "Hawk",
+  currentHP: 4,
+  controlMode: "ai",
+  modelKey: "hawk",
+  movementModes: ["walking", "flying"],
+  movement: { walking: 10, flying: 60 },
+};
+const minotaur = {
+  id: "minotaur-1",
+  name: "Minotaur",
+  currentHP: 0,
+  status: "defeated",
+  controlMode: "ai",
+  modelKey: "minotaur",
+  category: "mythic",
+  aiRole: "brute",
+};
+const passiveObserver = {
+  id: "observer-1",
+  name: "Observer",
+  currentHP: 5,
+  controlMode: "passive",
+};
+const combatants = [longbowman, hawk, minotaur, passiveObserver];
+const combatantsSnapshot = JSON.stringify(combatants);
+const lifecycleLedger = initializeOriginalBattleEventLedger({ combatants }, { now: () => 2000 });
+
+assert.equal(getOriginalBattleEventsByType(lifecycleLedger, "combat_started").length, 1);
+assert.equal(getOriginalBattleEventsByType(lifecycleLedger, "actor_entered_combat").length, 3);
+assert.equal(
+  getOriginalBattleEventsForActor(lifecycleLedger, "observer-1").length,
+  0,
+  "passive actors are not initial combat participants"
+);
+
+const completedLifecycleLedger = finalizeOriginalBattleEventLedger(lifecycleLedger, {
+  combatants,
+  round: 2,
+  turn: 7,
+}, { now: () => 3000 });
+assert.equal(getOriginalBattleEventsByType(completedLifecycleLedger, "combat_ended").length, 1);
+assert.equal(getOriginalBattleEventsByType(completedLifecycleLedger, "actor_survived_combat").length, 2);
+assert.equal(getOriginalBattleEventsByType(completedLifecycleLedger, "actor_defeated").length, 1);
+assert.equal(JSON.stringify(combatants), combatantsSnapshot, "ledger lifecycle does not mutate combatants");
+assert.equal(longbowman.attacks[0].rangeProfile.normal, 150);
+assert.equal(longbowman.modelKey, "longbowman");
+assert.equal(longbowman.aiRole, "archer");
+assert.deepEqual(hawk.movementModes, ["walking", "flying"]);
+assert.equal(hawk.movement.flying, 60);
+assert.equal(hawk.modelKey, "hawk");
+assert.equal(minotaur.name, "Minotaur");
+assert.equal(minotaur.category, "mythic");
+assert.equal(minotaur.aiRole, "brute");
+assert.equal(minotaur.modelKey, "minotaur");
+
+const survivorOnlyProposal = proposeOriginalTraitAwards({
+  combatantsBefore: [longbowman],
+  combatantsAfter: [],
+  battleEvents: getOriginalBattleEventsForActor(completedLifecycleLedger, "longbowman-1"),
+});
+assert.equal(
+  survivorOnlyProposal.some((proposal) => proposal.traitId === "blooded"),
+  true,
+  "encounter-end survivor events feed trait proposals"
+);
+
+const finalizedAgain = finalizeOriginalBattleEventLedger(completedLifecycleLedger, { combatants });
+assert.equal(
+  getOriginalBattleEventsByType(finalizedAgain, "combat_ended").length,
+  1,
+  "ledger finalization is idempotent"
+);
 
 console.log("original battle event ledger tests passed");

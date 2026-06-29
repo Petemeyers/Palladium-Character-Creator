@@ -4,6 +4,7 @@ import {
 } from "./originalActorTraits.js";
 
 const EVENT_TRAIT_MAP = Object.freeze({
+  actor_survived_combat: "blooded",
   line_held: "line_holder",
   formation_held: "line_holder",
   rout_survived: "rout_survivor",

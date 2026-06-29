@@ -1,13 +1,17 @@
 export const ORIGINAL_BATTLE_EVENT_TYPES = Object.freeze({
+  COMBAT_STARTED: "combat_started",
+  ACTOR_ENTERED_COMBAT: "actor_entered_combat",
   ENCOUNTER_STARTED: "encounter_started",
   ACTOR_DAMAGED: "actor_damaged",
   ACTOR_WOUNDED: "actor_wounded",
   ACTOR_ROUTED: "actor_routed",
   ACTOR_DEFEATED: "actor_defeated",
+  ACTOR_SURVIVED_COMBAT: "actor_survived_combat",
   LINE_HELD: "line_held",
   DUEL_WON: "duel_won",
   MONSTER_DREAD_SURVIVED: "monster_dread_survived",
   ENCOUNTER_ENDED: "encounter_ended",
+  COMBAT_ENDED: "combat_ended",
 });
 
 const normalizeText = (value) => String(value || "").trim();
@@ -35,6 +39,31 @@ const cloneDetails = (details) => {
     return {};
   }
 };
+
+const isPassiveCombatant = (actor) => (
+  actor?.nonCombatant === true || normalizeText(actor?.controlMode).toLowerCase() === "passive"
+);
+
+const isDefeatedCombatant = (actor) => {
+  const status = normalizeText(actor?.status || actor?.condition).toLowerCase();
+  return (
+    actor?.isDead === true ||
+    actor?.dead === true ||
+    actor?.isKO === true ||
+    actor?.isDefeated === true ||
+    actor?.defeated === true ||
+    ["dead", "defeated"].includes(status)
+  );
+};
+
+const getCombatantDetails = (actor) => ({
+  team: normalizeText(actor?.team || actor?.teamId || actor?.side) || null,
+  controlMode: normalizeText(actor?.controlMode) || null,
+  status: normalizeText(actor?.status || actor?.condition) || null,
+  currentHP: Number.isFinite(Number(actor?.currentHP ?? actor?.currentHp ?? actor?.hp ?? actor?.HP))
+    ? Number(actor?.currentHP ?? actor?.currentHp ?? actor?.hp ?? actor?.HP)
+    : null,
+});
 
 const defaultEventId = ({ type, actorId, timestamp, sequence }) => {
   const subject = normalizeText(actorId || "encounter").replace(/[^a-zA-Z0-9_-]+/g, "-") || "encounter";
@@ -89,6 +118,89 @@ export function appendOriginalBattleEvent(ledger = [], event = {}, options = {})
 
 export const recordOriginalBattleEvent = appendOriginalBattleEvent;
 
+export function initializeOriginalBattleEventLedger({
+  combatants = [],
+  round = 1,
+  turn = 0,
+  details = {},
+} = {}, options = {}) {
+  const participants = (Array.isArray(combatants) ? combatants : [])
+    .filter((actor) => actor && typeof actor === "object" && !isPassiveCombatant(actor));
+  let ledger = appendOriginalBattleEvent([], {
+    type: ORIGINAL_BATTLE_EVENT_TYPES.COMBAT_STARTED,
+    actorName: "Encounter",
+    round,
+    turn,
+    details: {
+      ...cloneDetails(details),
+      participantCount: participants.length,
+    },
+  }, options);
+
+  participants.forEach((actor) => {
+    ledger = appendOriginalBattleEvent(ledger, {
+      type: ORIGINAL_BATTLE_EVENT_TYPES.ACTOR_ENTERED_COMBAT,
+      actor,
+      round,
+      turn,
+      details: getCombatantDetails(actor),
+    }, options);
+  });
+
+  return ledger;
+}
+
+export function finalizeOriginalBattleEventLedger(ledger = [], {
+  combatants = [],
+  round = 0,
+  turn = 0,
+  details = {},
+} = {}, options = {}) {
+  const currentLedger = createOriginalBattleEventLedger(ledger);
+  if (currentLedger.some((event) => event.type === ORIGINAL_BATTLE_EVENT_TYPES.COMBAT_ENDED)) {
+    return currentLedger;
+  }
+
+  const enteredActorIds = new Set(
+    currentLedger
+      .filter((event) => event.type === ORIGINAL_BATTLE_EVENT_TYPES.ACTOR_ENTERED_COMBAT)
+      .map((event) => normalizeText(event.actorId))
+      .filter(Boolean)
+  );
+  const actors = (Array.isArray(combatants) ? combatants : [])
+    .filter((actor) => actor && typeof actor === "object")
+    .filter((actor) => !isPassiveCombatant(actor) || isDefeatedCombatant(actor))
+    .filter((actor) => (
+      enteredActorIds.size === 0 ||
+      enteredActorIds.has(getActorId(actor)) ||
+      isDefeatedCombatant(actor)
+    ));
+  let nextLedger = appendOriginalBattleEvent(currentLedger, {
+    type: ORIGINAL_BATTLE_EVENT_TYPES.COMBAT_ENDED,
+    actorName: "Encounter",
+    round,
+    turn,
+    details: {
+      ...cloneDetails(details),
+      participantCount: actors.length,
+    },
+  }, options);
+
+  actors.forEach((actor) => {
+    nextLedger = appendOriginalBattleEvent(nextLedger, {
+      type: isDefeatedCombatant(actor)
+        ? ORIGINAL_BATTLE_EVENT_TYPES.ACTOR_DEFEATED
+        : ORIGINAL_BATTLE_EVENT_TYPES.ACTOR_SURVIVED_COMBAT,
+      actor,
+      round,
+      turn,
+      details: getCombatantDetails(actor),
+    }, options);
+  });
+
+  return nextLedger;
+}
+
 export function getOriginalBattleEventsByType(ledger = [], type = "") {
   const targetType = normalizeType(type);
   return (Array.isArray(ledger) ? ledger : [])
@@ -113,7 +225,9 @@ export default {
   appendOriginalBattleEvent,
   createOriginalBattleEvent,
   createOriginalBattleEventLedger,
+  finalizeOriginalBattleEventLedger,
   getOriginalBattleEventsByType,
   getOriginalBattleEventsForActor,
+  initializeOriginalBattleEventLedger,
   recordOriginalBattleEvent,
 };
