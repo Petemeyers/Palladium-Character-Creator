@@ -179,9 +179,11 @@ function App() {
     }
   };
 
-  const handleCreateCharacter = useCallback(async (newCharacter) => {
+  const handleCreateCharacter = useCallback(async (newCharacter, options = {}) => {
     try {
-      const response = await axiosInstance.post('/characters', newCharacter);
+      const response = await axiosInstance.post('/characters', newCharacter, {
+        suppressAuthPrompt: options.suppressAuthPrompt === true,
+      });
       if (response.data) {
         setCharacters(prev => [...prev, response.data]);
         return response.data;

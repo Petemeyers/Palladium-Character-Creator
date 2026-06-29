@@ -94,6 +94,12 @@ instance.interceptors.response.use(
           // Handle token expiration by attempting refresh
           const originalRequest = error.config;
 
+          if (originalRequest?.suppressAuthPrompt === true) {
+            localStorage.removeItem("token");
+            localStorage.removeItem("user");
+            break;
+          }
+
           // Don't retry if this is already a refresh attempt or login
           if (
             originalRequest?.url?.includes("/refresh-token") ||

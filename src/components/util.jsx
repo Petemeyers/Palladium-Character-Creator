@@ -1,3 +1,7 @@
+import { applyBonus, evaluateDice } from "../utils/diceExpression.js";
+
+export { applyBonus, evaluateDice };
+
 export const rollDice = (sides, count, useCryptoRandom = false) => {
   let total = 0;
   for (let i = 0; i < count; i++) {
@@ -82,39 +86,6 @@ export function savingThrow(char, type) {
 
   const success = roll >= target;
   return { roll, target, success };
-}
-
-// Parse expressions like "2d6+12", "1d6", "+2"
-export function evaluateDice(expression) {
-  if (!expression) return 0;
-
-  let total = 0;
-  let match;
-
-  // e.g. "2d6+12"
-  match = expression.match(/(\d+)d(\d+)([+-]\d+)?/i);
-  if (match) {
-    const [, diceCount, diceSides, modifier] = match;
-    total = rollDice(parseInt(diceSides), parseInt(diceCount));
-    if (modifier) total += parseInt(modifier);
-    return total;
-  }
-
-  // e.g. "+2" or "-1"
-  match = expression.match(/([+-]\d+)/);
-  if (match) {
-    return parseInt(match[1]);
-  }
-
-  // fallback: just a number
-  return parseInt(expression) || 0;
-}
-
-// Apply bonus to existing attribute value
-export function applyBonus(current, bonusExpr) {
-  if (!bonusExpr) return current;
-  const bonus = evaluateDice(bonusExpr);
-  return current + bonus;
 }
 
 // Combat system expansions

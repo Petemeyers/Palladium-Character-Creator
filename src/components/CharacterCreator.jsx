@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import PropTypes from 'prop-types';
 import '../app.css';
 import '../styles/CharacterCreation.css';
-import { Button } from '@chakra-ui/react';
+import { Alert, AlertIcon, Button } from '@chakra-ui/react';
 import tactics from '../data/tactics.json';
 import {
   speciesData,
@@ -76,6 +76,7 @@ import {
 } from '../utils/techniqueUtils.js';
 import HumanPreviewPanel from './creator/HumanPreviewPanel.jsx';
 import { buildHumanVisualProfile } from '../utils/visuals/buildHumanVisualProfile.js';
+import { saveCharacterWithAuth } from '../utils/characterSave.js';
 
 const PUBLIC_CLASS_COMPATIBILITY_KEYS = {
   barbarian: "Brigand",
@@ -189,6 +190,8 @@ const CharacterCreator = ({ onCreateCharacter }) => {
   const [electiveSkills, setElectiveSkills] = useState([]);
   const [secondarySkills, setSecondarySkills] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [pendingCharacter, setPendingCharacter] = useState(null);
+  const [saveMessage, setSaveMessage] = useState(null);
   const [attributesRolled, setAttributesRolled] = useState(false);
   const [autoRollEnabled, setAutoRollEnabled] = useState(false);
   const [minTotalValue, setMinTotalValue] = useState(70); // Default minimum total
@@ -1075,6 +1078,7 @@ const CharacterCreator = ({ onCreateCharacter }) => {
   };
 
   const handleSubmit = async () => {
+    setSaveMessage(null);
     // Validate required fields
     if (!hp) {
       alert('Please roll HP before creating character');
@@ -1367,9 +1371,19 @@ const CharacterCreator = ({ onCreateCharacter }) => {
       console.log('electiveSkills:', characterData.electiveSkills);
       console.log('secondarySkills:', characterData.secondarySkills);
       
-      const response = await onCreateCharacter(characterData);
+      const saveResult = await saveCharacterWithAuth({
+        character: characterData,
+        onSave: onCreateCharacter,
+      });
 
-      console.log('Character creation response:', response);
+      if (!saveResult.saved) {
+        setPendingCharacter(saveResult.character);
+        setSaveMessage({ status: "warning", text: saveResult.message });
+        return;
+      }
+
+      setPendingCharacter(null);
+      console.log('Character creation response:', saveResult.character);
       navigate('/character-list');
     } catch (error) {
       console.error('Full error object:', error);
@@ -1392,7 +1406,7 @@ const CharacterCreator = ({ onCreateCharacter }) => {
       }
       
       console.error('Character creation error details:', error.response?.data);
-      alert(errorMessage);
+      setSaveMessage({ status: "error", text: errorMessage });
     }
   };
 
@@ -3448,14 +3462,21 @@ const CharacterCreator = ({ onCreateCharacter }) => {
             </div>
           </div>
           <div className="button-row">
-            <Button 
-              onClick={handleSubmit} 
+            {saveMessage && (
+              <Alert status={saveMessage.status} role="status" borderRadius="md">
+                <AlertIcon />
+                {saveMessage.text}
+                {pendingCharacter?.name ? ` ${pendingCharacter.name} remains available on this page.` : ''}
+              </Alert>
+            )}
+            <Button
+              onClick={handleSubmit}
               className="create-button"
             >
               Create Character
             </Button>
-            <button 
-              onClick={() => navigate(-1)} 
+            <button
+              onClick={() => navigate(-1)}
               className="back-button"
             >
               Back
