@@ -10,11 +10,12 @@ const abilities = (strength, dexterity, constitution, intelligence = 10, wisdom 
   charisma,
 });
 
-const melee = (name, damage, { reach = 5, attackBonus = 2, damageType = "" } = {}) => ({
+const melee = (name, damage, { reach = 5, lengthFt, attackBonus = 2, damageType = "" } = {}) => ({
   name,
   kind: "melee",
   attackType: "melee",
   reach,
+  ...(Number.isFinite(lengthFt) ? { lengthFt } : {}),
   attackBonus,
   damage,
   damageType,
@@ -216,7 +217,7 @@ export const SELECTABLE_ACTORS = [
     movement: { ground: 40 },
     equipment: [{ name: "Heavy Axe", type: "melee" }],
     attacks: [
-      melee("Heavy Axe", "2d8+4", { reach: 10, attackBonus: 6, damageType: "slashing" }),
+      melee("Heavy Axe", "2d8+4", { reach: 10, lengthFt: 6, attackBonus: 6, damageType: "slashing" }),
       melee("Horn Charge", "2d6+4", { attackBonus: 6, damageType: "piercing" }),
     ],
     aiRole: "brute",

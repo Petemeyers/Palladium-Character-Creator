@@ -70,6 +70,10 @@ assert.equal(hawk.abilities.movement.flight.feetPerRound, 60);
 
 const minotaur = adaptSelectableActorToCombatant(getActor("minotaur")).combatant;
 const champion = adaptSelectableActorToCombatant(getActor("arena-champion")).combatant;
+const adaptedHeavyAxe = minotaur.attacks.find((attack) => attack.name === "Heavy Axe");
+assert.equal(adaptedHeavyAxe.reach, 10);
+assert.equal(adaptedHeavyAxe.reachFeet, 10);
+assert.equal(adaptedHeavyAxe.lengthFt, 6);
 assert.equal(minotaur.modelKey, "minotaur");
 assert.equal(minotaur.category, "mythic");
 assert.equal(minotaur.aiRole, "brute");

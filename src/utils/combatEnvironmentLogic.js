@@ -118,13 +118,17 @@ export function getWeaponLength(weapon, character = null) {
 
   let baseLength = 3;
 
-  // Check explicit length property
-  if (weapon.length && typeof weapon.length === "number") {
-    baseLength = weapon.length;
-  }
-  // Infer from reach
-  else if (weapon.reach && typeof weapon.reach === "number") {
-    baseLength = weapon.reach;
+  const physicalLength = [
+    weapon.lengthFt,
+    weapon.length,
+    weapon.weaponLengthFt,
+    weapon.reachFeet,
+    weapon.reach,
+  ].find((value) => typeof value === "number" && Number.isFinite(value));
+
+  // Prefer physical dimensions; reach remains the compatibility fallback.
+  if (physicalLength !== undefined) {
+    baseLength = physicalLength;
   }
   // Infer from weapon type
   else {

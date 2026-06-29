@@ -24,12 +24,14 @@ import { adaptPublicEnemyToRosterEntry } from "../utils/publicEnemyRosterAdapter
 import {
   adaptPublicCharacterToRosterEntry,
   clearStagedRosterEntries,
+  getAmbiguousSavedCharacterStagedEntries,
   getDuplicateStagedRosterEntries,
   getMissingSavedCharacterStagedEntries,
   getStagedSavedCharacterId,
   hasStagedSavedCharacter,
   loadPublicArenaRosterEntries,
   pruneStagedRosterEntriesAgainstSavedCharacters,
+  repairStagedSavedCharacterEntriesInStorage,
   removeDuplicateStagedRosterEntriesFromStorage,
   removeStagedRosterEntry,
   upsertPublicArenaRosterEntry,
@@ -146,6 +148,10 @@ const AutoRollDemo = () => {
     () => getMissingSavedCharacterStagedEntries(stagedRosterEntries, savedCharacters),
     [savedCharacters, stagedRosterEntries]
   );
+  const ambiguousStagedSavedCharacters = useMemo(
+    () => getAmbiguousSavedCharacterStagedEntries(stagedRosterEntries, savedCharacters),
+    [savedCharacters, stagedRosterEntries]
+  );
   const duplicateStagedSavedCharacters = useMemo(
     () => getDuplicateStagedRosterEntries(stagedRosterEntries),
     [stagedRosterEntries]
@@ -184,7 +190,9 @@ const AutoRollDemo = () => {
       try {
         const response = await axiosInstance.get("/characters");
         if (!cancelled) {
-          setSavedCharacters(Array.isArray(response.data) ? response.data : []);
+          const loadedCharacters = Array.isArray(response.data) ? response.data : [];
+          setSavedCharacters(loadedCharacters);
+          setStagedRosterEntries(repairStagedSavedCharacterEntriesInStorage(loadedCharacters).entries);
         }
       } catch (error) {
         if (!cancelled) {
@@ -421,6 +429,12 @@ const AutoRollDemo = () => {
               <Text fontSize="sm">Some staged characters no longer exist in Character List.</Text>
             </Alert>
           )}
+          {ambiguousStagedSavedCharacters.length > 0 && (
+            <Alert status="warning" mb={3}>
+              <AlertIcon />
+              <Text fontSize="sm">Some staged characters match multiple Character List entries and need relinking.</Text>
+            </Alert>
+          )}
           {duplicateStagedSavedCharacters.length > 0 && (
             <Alert status="warning" mb={3}>
               <AlertIcon />
@@ -436,7 +450,7 @@ const AutoRollDemo = () => {
           {stagedRosterEntries.length > 0 ? (
             <Grid templateColumns="repeat(auto-fit, minmax(240px, 1fr))" gap={3}>
               {stagedRosterEntries.map((entry) => (
-                <Box key={`${entry.side}-${entry.id}`} p={3} border="1px solid" borderColor="gray.200" borderRadius="md">
+                <Box key={entry.stagedEntryId || `${entry.side}-${entry.id}`} p={3} border="1px solid" borderColor="gray.200" borderRadius="md">
                   <VStack align="stretch" spacing={2}>
                     <HStack justify="space-between" align="start">
                       <Box>
@@ -453,6 +467,9 @@ const AutoRollDemo = () => {
                     </HStack>
                     {missingStagedSavedCharacters.some((missing) => missing.id === entry.id && missing.side === entry.side) && (
                       <Badge alignSelf="start" colorScheme="orange">Missing saved character</Badge>
+                    )}
+                    {ambiguousStagedSavedCharacters.includes(entry) && (
+                      <Badge alignSelf="start" colorScheme="orange">Ambiguous saved character</Badge>
                     )}
                     <Button size="xs" variant="outline" colorScheme="red" alignSelf="start" onClick={() => removeStagedEntry(entry)}>
                       Remove

@@ -89,6 +89,8 @@ assert.equal(resolved.ok, true, "staged saved character resolves from saved Char
 assert.equal(resolved.entry.name, "Kara", "resolved import uses saved character name");
 assert.equal(resolved.entry.source, "saved-character");
 assert.equal(resolved.entry.sourceCharacterId, "saved-kara");
+assert.equal(resolved.entry.savedCharacterId, "saved-kara");
+assert.notEqual(resolved.entry.stagedEntryId, resolved.entry.savedCharacterId, "staged row id is separate from saved character id");
 assert.equal(resolved.entry.generated, false);
 assert.deepEqual(resolved.entry.publicAbilityScores, savedCharacter.finalAbilityScores, "saved finalAbilityScores win over stale staged scores");
 assert.equal(resolved.entry.autoRollCharacter.attributes.PS, 16, "saved Strength maps to PS");
@@ -122,6 +124,8 @@ assert.equal(enemyConversion.ok, true, "public enemy import still works");
 assert.equal(enemyConversion.combatant.source, "public-enemy");
 
 const rosterEntry = adaptPublicCharacterToRosterEntry(savedCharacter);
+assert.equal(rosterEntry.savedCharacterId, savedCharacter._id, "roster entry uses stable saved character id");
+assert.notEqual(rosterEntry.stagedEntryId, rosterEntry.savedCharacterId, "roster entry keeps separate staged identity");
 assert.equal(hasFunction(rosterEntry), false, "roster entry contains no functions");
 assert.equal(hasRawObjectString(rosterEntry), false, "roster entry contains no raw object strings");
 assert.equal(JSON.stringify(savedCharacter), savedSnapshot, "saved character source is not mutated");
