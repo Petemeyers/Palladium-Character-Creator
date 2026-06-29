@@ -294,6 +294,10 @@ import {
   shouldSuppressEnemyAttackContinuation,
   spendEnemyNoTargetAction,
 } from "../utils/enemyTurnScheduling.js";
+import {
+  getCombatantFootprintHexes,
+  selectEnemyClosingMovementHex,
+} from "../utils/enemyClosingMovement.js";
 
 // Debug toggle for grapple system
 const DEBUG_GRAPPLE = true; // set to false in production
@@ -3382,6 +3386,7 @@ function CombatPage({ characters = [] }) {
   const executeTacticalPowerRef = useRef(null); // Store latest executeTacticalPower to avoid deps churn
   const lastOpenedChoicesTurnRef = useRef(null); // Track which turn we opened choices for
   const movementAttemptsRef = useRef({}); // Track movement attempts per fighter to prevent infinite loops: {fighterId: {count, lastDistance, lastPosition}}
+  const enemyClosingMovementHistoryRef = useRef(new Map());
   const combatEndCheckRef = useRef(false); // Prevent duplicate combat end checks
   const combatOverRef = useRef(false); // AUTHORITATIVE: Combat is over (checked by all timeouts/actions)
   const combatSessionRef = useRef(0); // Bumps on combat start/reset so old async callbacks cannot re-enter.
@@ -22939,40 +22944,45 @@ function CombatPage({ characters = [] }) {
         }
         return GRID_CONFIG.CELL_SIZE + 0.5;
       };
+      const isLegalClosingMovementCenter = (center) => (
+        getCombatantFootprintHexes(enemy, center).every((cell) => (
+          cell.x >= 0 &&
+          cell.x < GRID_CONFIG.GRID_WIDTH &&
+          cell.y >= 0 &&
+          cell.y < GRID_CONFIG.GRID_HEIGHT &&
+          isValidPosition(cell.x, cell.y, combatTerrain) &&
+          !isHexOccupied(cell.x, cell.y, enemy.id)
+        ))
+      );
       const findBestReachableClosingHex = (maxHexes) => {
-        const maxFt = Math.max(GRID_CONFIG.CELL_SIZE, maxHexes * GRID_CONFIG.CELL_SIZE);
-        const candidates = [];
-        for (let x = 0; x < GRID_CONFIG.GRID_WIDTH; x += 1) {
-          for (let y = 0; y < GRID_CONFIG.GRID_HEIGHT; y += 1) {
-            if (x === currentPos.x && y === currentPos.y) continue;
-            if (x === targetPos.x && y === targetPos.y) continue;
-            if (!isValidPosition(x, y, combatTerrain)) continue;
-            if (isHexOccupied(x, y, enemy.id)) continue;
-
-            const pos = { x, y };
-            const fromDistance = calculateDistance(currentPos, pos);
-            if (fromDistance > maxFt + 0.01) continue;
-
-            const targetDistance = calculateDistance(pos, targetPos);
-            if (targetDistance >= currentDistance - 0.01) continue;
-
-            candidates.push({ pos, fromDistance, targetDistance });
-          }
-        }
-
-        return candidates.sort((a, b) =>
-          a.targetDistance - b.targetDistance ||
-          b.fromDistance - a.fromDistance
-        )[0]?.pos || null;
+        const history = enemyClosingMovementHistoryRef.current.get(enemy.id);
+        const previousPosition = history?.selectedPosition?.x === currentPos.x &&
+          history?.selectedPosition?.y === currentPos.y
+          ? history.previousPosition
+          : null;
+        return selectEnemyClosingMovementHex({
+          currentPosition: currentPos,
+          targetPosition: targetPos,
+          maxHexes,
+          getNeighbors: getHexNeighbors,
+          isLegalCenter: isLegalClosingMovementCenter,
+          getDistance: calculateDistance,
+          previousPosition,
+        });
       };
       const commitClosingMoveOrPass = (maxHexes, reason = "enemy-closing-move") => {
         addLog(
           "enemy closing move: target unreachable this action; choosing best reachable hex",
           "info"
         );
-        const closingHex = findBestReachableClosingHex(maxHexes);
+        const selection = findBestReachableClosingHex(maxHexes);
+        const closingHex = selection.position;
+        addLog(
+          `enemy closing movement fallback: current distance=${Math.round(selection.currentDistance ?? currentDistance)}ft best candidate distance=${selection.bestCandidateDistance == null ? "none" : `${Math.round(selection.bestCandidateDistance)}ft`} selected fallback hex=${closingHex ? `(${closingHex.x},${closingHex.y})` : "none"} candidates=${selection.candidateCount} reason=${selection.reason}`,
+          closingHex ? "info" : "warning"
+        );
         if (!closingHex) {
-          addLog("enemy closing move failed: no reachable hex that improves distance", "warning");
+          addLog(`${enemy.name} cannot find a path and holds position.`, "warning");
           consumeBlockedMovementAction(enemy, reason);
           processingEnemyTurnRef.current = false;
           scheduleEndTurn(0, reason);
@@ -22980,6 +22990,10 @@ function CombatPage({ characters = [] }) {
         }
 
         const newDistance = calculateDistance(closingHex, targetPos);
+        enemyClosingMovementHistoryRef.current.set(enemy.id, {
+          previousPosition: { ...currentPos },
+          selectedPosition: { ...closingHex },
+        });
         handlePositionChange(enemy.id, closingHex, {
           action: movementType,
           actionCost: MOVEMENT_ACTIONS.MOVE.actionCost,
@@ -23215,34 +23229,9 @@ function CombatPage({ characters = [] }) {
         let targetY = newY;
         let attackOfOpportunityAttacker = null;
         let stostaminadAdjacentToTarget = false;
-        const getCenterFootprintHexes = (fighterLike, center) => {
-          const explicitRadius = Number(
-            fighterLike?.footprint?.radiusHex ??
-            fighterLike?.gridFootprint?.radiusHex ??
-            fighterLike?.occupiedRadiusHex
-          );
-          const sizeRank = Number(fighterLike?.sizeRank ?? fighterLike?.attributes?.sizeRank ?? 0) || 0;
-          const sizeLabel = String(fighterLike?.sizeCategory || fighterLike?.size || "").toLowerCase();
-          const radiusHex = Number.isFinite(explicitRadius)
-            ? Math.max(0, Math.floor(explicitRadius))
-            : (sizeRank >= 1 || sizeLabel.includes("large") ? 1 : 0);
-          if (radiusHex <= 0) return [center];
-          const cells = [];
-          const origin = { q: center.x, r: center.y };
-          for (let dq = -radiusHex; dq <= radiusHex; dq += 1) {
-            for (let dr = -radiusHex; dr <= radiusHex; dr += 1) {
-              const q = origin.q + dq;
-              const r = origin.r + dr;
-              if (Math.max(Math.abs(dq), Math.abs(dr), Math.abs(dq + dr)) <= radiusHex) {
-                cells.push({ x: q, y: r });
-              }
-            }
-          }
-          return cells;
-        };
         const isLegalMovementCenter = (fighterLike, center) => (
           !!center &&
-          getCenterFootprintHexes(fighterLike, center).every((cell) => (
+          getCombatantFootprintHexes(fighterLike, center).every((cell) => (
             cell.x >= 0 &&
             cell.x < GRID_CONFIG.GRID_WIDTH &&
             cell.y >= 0 &&
@@ -26123,6 +26112,7 @@ function CombatPage({ characters = [] }) {
     clearCombatFlowLocks();
     combatSessionRef.current += 1;
     dreadRatingMemoryRef.current = new Map();
+    enemyClosingMovementHistoryRef.current.clear();
     const combatGeneration = combatSessionRef.current;
     setCombatPaused(false);
     setLog([]);
@@ -28275,6 +28265,7 @@ function CombatPage({ characters = [] }) {
       clearCombatFlowLocks();
       combatSessionRef.current += 1;
       dreadRatingMemoryRef.current = new Map();
+      enemyClosingMovementHistoryRef.current.clear();
       const combatGeneration = combatSessionRef.current;
       // Reset per-combat AI refs (prevents stale behavior after multiple resets)
       resetAITransientRefs();
