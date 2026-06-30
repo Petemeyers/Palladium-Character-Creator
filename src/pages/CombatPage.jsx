@@ -313,7 +313,13 @@ import {
   getCombatantFootprintHexes,
   selectEnemyClosingMovementHex,
 } from "../utils/enemyClosingMovement.js";
-import { chooseEnemyMovementFallback } from "../utils/enemyMovementFallback.js";
+import {
+  chooseEnemyMovementFallback,
+  executeEnemyMovementPlan,
+  hydrateEnemyFromCanonicalPosition,
+  persistEnemyMovementPosition,
+  validateEnemyMovementPlan,
+} from "../utils/enemyMovementFallback.js";
 import {
   isCombatantFled,
   markCombatantFled,
@@ -5151,10 +5157,12 @@ function CombatPage({ characters = [] }) {
 
   // Check if a hex is occupied by any LIVING combatant
   const isHexOccupied = useCallback((x, y, excludeId = null) => {
-    for (const [id, pos] of Object.entries(positions)) {
+    const canonicalPositions = positionsRef.current || positions;
+    const canonicalFighters = fightersRef.current || fighters;
+    for (const [id, pos] of Object.entries(canonicalPositions)) {
       if (id === excludeId) continue; // Don't check against shuman
 
-      const combatant = fighters.find(f => f.id === id);
+      const combatant = canonicalFighters.find(f => f.id === id);
       if (combatant) {
         // Only check living combatants - defeated enemies don't block movement
         if (pos.x === x && pos.y === y && combatant.status !== "defeated") {
@@ -14281,9 +14289,33 @@ function CombatPage({ characters = [] }) {
   // Handle position changes on the tactical map
   const handlePositionChange = useCallback((combatantId, newPosition, movementInfo = null) => {
     const combatant = fighters.find(f => f.id === combatantId);
+    const movementAction = String(movementInfo?.action || "").toUpperCase();
+    const isRunOrSprint = movementAction === 'RUN' || movementAction === 'SPRINT';
+    const persistImmediately = movementInfo?.persistImmediately === true;
 
-    // Only update position if it's NOT a pending movement (RUN/SPRINT only - CHARGE is now immediate)
-    if (movementInfo && (movementInfo.action === 'RUN' || movementInfo.action === 'SPRINT')) {
+    // Enemy closing MOVE and RUN actions are final movement, not deferred
+    // previews. CHARGE keeps its dedicated movement/bonus branch below.
+    if (persistImmediately && movementAction !== 'CHARGE') {
+      persistEnemyMovementPosition({
+        fighterId: combatantId,
+        destination: newPosition,
+        positionsRef,
+        setPositions,
+        syncPositions: (updated) => syncCombinedPositions(
+          fightersRef.current ?? fighters,
+          updated,
+        ),
+      });
+      setFlashingCombatants(prev => new Set(prev).add(combatantId));
+      if (combatant) {
+        const { action, description } = movementInfo;
+        addLog(
+          `${combatant.name} ${action.toLowerCase()}s to position (${newPosition.x}, ${newPosition.y}) - ${description}`,
+          "info",
+        );
+      }
+    // Only non-closing RUN/SPRINT movement remains a pending preview.
+    } else if (isRunOrSprint) {
       // Don't update position - it's a pending movement
       // Add to flashing set
       setFlashingCombatants(prev => new Set(prev).add(combatantId));
@@ -16591,7 +16623,7 @@ function CombatPage({ characters = [] }) {
         const livePositions2 =
           positionsRef.current && Object.keys(positionsRef.current).length > 0
             ? positionsRef.current
-            : positions;
+            : livePositions;
         const defenderPos =
           bonusModifiers?.defenderPosOverride || livePositions2?.[defenderId];
         const neighbors =
@@ -18158,7 +18190,7 @@ function CombatPage({ characters = [] }) {
       const currentPositions =
         positionsRef.current && Object.keys(positionsRef.current).length > 0
           ? positionsRef.current
-          : positions;
+          : livePositions;
       const myPos = currentPositions?.[latestPlayer.id];
       if (myPos) {
         const predators = liveFightersForPlayerAI.filter(f =>
@@ -18645,7 +18677,7 @@ function CombatPage({ characters = [] }) {
         return false;
       }
 
-      const currentPositions = pickNonEmptyObject(positionsRef.current, positions);
+        const currentPositions = pickNonEmptyObject(positionsRef.current, livePositions);
       const myPos = currentPositions?.[livePlayer.id];
       if (!myPos) return false;
 
@@ -19682,6 +19714,10 @@ function CombatPage({ characters = [] }) {
     const liveFighters = fightersRef.current ?? fighters;
     const livePositions = pickNonEmptyObject(positionsRef.current, positions);
     let liveEnemy = liveFighters.find((f) => f.id === enemy.id) ?? enemy;
+    liveEnemy = hydrateEnemyFromCanonicalPosition(liveEnemy, livePositions);
+    // The incoming argument may be an initiative snapshot. From this point on,
+    // hydrate legacy planning from the canonical actor and coordinate map.
+    enemy = liveEnemy;
     const activeFighter = liveFighters[turnIndexRef.current ?? turnIndex];
 
     if (activeFighter?.id !== liveEnemy.id) {
@@ -20950,7 +20986,7 @@ function CombatPage({ characters = [] }) {
     if (enemy?.grappleState?.opponent && enemy.grappleState.state !== GRAPPLE_STATES.NEUTRAL) {
       const opponent = liveFighters.find((f) => f.id === enemy.grappleState.opponent);
       const opponentState = opponent?.grappleState;
-      const currentPositions = pickNonEmptyObject(positionsRef.current, positions);
+      const currentPositions = pickNonEmptyObject(positionsRef.current, livePositions);
       const enemyPos = currentPositions?.[enemy.id] || enemy.hex || enemy.position;
       const opponentPos = currentPositions?.[opponent?.id] || opponent?.hex || opponent?.position;
       const sharedHex = enemy.grappleState?.sharedHex || opponentState?.sharedHex;
@@ -21028,7 +21064,7 @@ function CombatPage({ characters = [] }) {
     // FIX: Filter players by visibility AND exclude unconscious/dying/dead targets
     // Only target conscious players (HP > 0) - unconscious/dying players are already defeated
     let rejectedAllies = 0;
-    const allPlayers = fighters.filter(f => {
+    const allPlayers = liveFighters.filter(f => {
       const hostile = isCanonicalHostileTarget(liveEnemy, f);
       if (!hostile && f?.id !== liveEnemy?.id && getCanonicalCombatSide(f) === getCanonicalCombatSide(liveEnemy)) {
         rejectedAllies += 1;
@@ -21055,7 +21091,7 @@ function CombatPage({ characters = [] }) {
     // Filter visible targets and get awareness states
     const visiblePlayers = [];
     allPlayers.forEach(target => {
-      const isVisible = canAISeeTarget(enemy, target, positions, combatTerrain, {
+      const isVisible = canAISeeTarget(enemy, target, livePositions, combatTerrain, {
         useFogOfWar: fogEnabled,
         fogOfWarVisibleCells: visibleCells
       });
@@ -21072,7 +21108,7 @@ function CombatPage({ characters = [] }) {
           // Check if enemy has dreadRating (uses centralized canTriggerHorrorFactor)
           if (hasHorrorFactor(enemy)) {
             // Check if player can see this enemy (reverse visibility check)
-            const playerCanSeeEnemy = canAISeeTarget(target, enemy, positions, combatTerrain, {
+            const playerCanSeeEnemy = canAISeeTarget(target, enemy, livePositions, combatTerrain, {
               useFogOfWar: fogEnabled,
               fogOfWarVisibleCells: visibleCells
             });
@@ -21081,7 +21117,7 @@ function CombatPage({ characters = [] }) {
               // Use centralized check - idempotent, safe to call every time
               // It will only process once per source/target pair
               // IMPORTANT: Get the latest fighter state from the fighters array to ensure we have persisted meta
-              const latestTarget = fighters.find(f => f.id === target.id) || target;
+              const latestTarget = liveFighters.find(f => f.id === target.id) || target;
               const updatedTarget = resolveHorrorCheck({
                 source: enemy,
                 target: latestTarget,
@@ -21131,8 +21167,8 @@ function CombatPage({ characters = [] }) {
           {
             terrain: combatTerrain?.terrain,
             lighting: combatTerrain?.lighting || "BRIGHT_DAYLIGHT",
-            distance: positions[enemy.id] && positions[target.id]
-              ? calculateDistance(positions[enemy.id], positions[target.id])
+            distance: livePositions[enemy.id] && livePositions[target.id]
+              ? calculateDistance(livePositions[enemy.id], livePositions[target.id])
               : 0
           }
         );
@@ -21168,7 +21204,7 @@ function CombatPage({ characters = [] }) {
 
     if (healingSkills.length > 0 && !isEvil) {
       // Find injured allies (same type as enemy)
-      const allies = fighters.filter(f =>
+      const allies = liveFighters.filter(f =>
         canTargetForAction(enemy, f, "assist", { sceneType: "combat", relations: {} }) &&
         f.id !== enemy.id &&
         f.currentHP > -21 &&
@@ -21181,8 +21217,8 @@ function CombatPage({ characters = [] }) {
         const targetAlly = dyingAllies.length > 0 ? dyingAllies[0] : allies[0];
 
         // Check if enemy is adjacent to target (for touch skills)
-        const enemyPos = positions[enemy.id];
-        const allyPos = positions[targetAlly.id];
+        const enemyPos = livePositions[enemy.id];
+        const allyPos = livePositions[targetAlly.id];
         const isAdjacent = enemyPos && allyPos && calculateDistance(enemyPos, allyPos) <= 5.5;
 
         if (isAdjacent) {
@@ -21347,7 +21383,7 @@ function CombatPage({ characters = [] }) {
     const positionsForEngineAI =
       positionsRef.current && Object.keys(positionsRef.current).length > 0
         ? positionsRef.current
-        : positions;
+        : livePositions;
 
     const engineContext = {
       combatants: fighters,
@@ -21479,7 +21515,7 @@ function CombatPage({ characters = [] }) {
           const currentPositions =
             positionsRef.current && Object.keys(positionsRef.current).length > 0
               ? positionsRef.current
-              : positions;
+              : livePositions;
           const currentPos = currentPositions?.[enemy.id];
           const threatPositions = playerTargets
             .map((target) => currentPositions?.[target.id])
@@ -21641,17 +21677,17 @@ function CombatPage({ characters = [] }) {
       });
 
       // Strategy 3: Target players who are currently taking their turn (aggressive)
-      const currentPlayerTarget = playerTargets.find(f => f.id === fighters[turnIndex]?.id);
+      const currentPlayerTarget = playerTargets.find(f => f.id === liveFighters[turnIndex]?.id);
 
       // Enhanced AI LOGIC: Smart target selection with pathfinding consideration
 
       // Calculate distances to all targets and check if they're reachable
       const targetsWithDistance = playerTargets.map(t => {
-        const dist = positions[enemy.id] && positions[t.id]
-          ? calculateDistance(positions[enemy.id], positions[t.id])
+        const dist = livePositions[enemy.id] && livePositions[t.id]
+          ? calculateDistance(livePositions[enemy.id], livePositions[t.id])
           : Infinity;
 
-        const isBlockedLoS = isTargetBlocked(enemy.id, t.id, positions);
+        const isBlockedLoS = isTargetBlocked(enemy.id, t.id, livePositions);
 
         const unreachableForEnemy = aiUnreachableTargetsRef.current?.[enemy.id];
         const isUnreachableMelee = unreachableForEnemy?.has(t.id) || false;
@@ -21715,7 +21751,7 @@ function CombatPage({ characters = [] }) {
             // Some targets are just blocked by other combatants - try area attack
             const bestBlocked = justBlockedTargets[0];
             target = bestBlocked.target;
-            reasoning = `target blocked by ${getBlockingCombatant(enemy.id, target.id, positions)?.name || 'another combatant'}, considering area attack`;
+            reasoning = `target blocked by ${getBlockingCombatant(enemy.id, target.id, livePositions)?.name || 'another combatant'}, considering area attack`;
           } else if (unreachableTargets.length > 0) {
             // All targets are unreachable (e.g., all flying) - skip this turn or find alternative
             // Don't select an unreachable target - end turn instead
@@ -21902,8 +21938,8 @@ function CombatPage({ characters = [] }) {
       const aiTechnique = selectAITechnique(
         enemy,
         techniqueBook,
-        fighters,
-        positions,
+        liveFighters,
+        livePositions,
         lastTechniqueMemoryRef?.current || {},
         { sceneType: "combat", relations: {} }
       );
@@ -22058,10 +22094,10 @@ function CombatPage({ characters = [] }) {
     };
 
     // Check weapon range for enemy attacks
-    if (positions && positions[enemy.id] && positions[target.id]) {
+    if (livePositions && livePositions[enemy.id] && livePositions[target.id]) {
       // Check if enemy just arrived from pending movement - use CURRENT position
-      const enemyCurrentPos = positions[enemy.id];
-      const targetCurrentPos = positions[target.id];
+      const enemyCurrentPos = livePositions[enemy.id];
+      const targetCurrentPos = livePositions[target.id];
 
       // Recalculate distance with current positions using proper hex distance
       currentDistance = calculateDistance(enemyCurrentPos, targetCurrentPos);
@@ -22096,7 +22132,7 @@ function CombatPage({ characters = [] }) {
       }
 
       const suitability = isAttackUsableAtCurrentRange(enemy, target, selectedAttack, currentDistance, {
-        positions,
+        positions: livePositions,
       });
       if (!suitability.usable) {
         if (suitability.reason === "charge-adjacent") {
@@ -22110,7 +22146,7 @@ function CombatPage({ characters = [] }) {
             attackOption.name !== "Techniquecasting" &&
             attackOption.damage !== "by technique" &&
             !isRangedLikeForEnemy(attackOption) &&
-            isAttackUsableAtCurrentRange(enemy, target, attackOption, currentDistance, { positions }).usable
+            isAttackUsableAtCurrentRange(enemy, target, attackOption, currentDistance, { positions: livePositions }).usable
           ) ||
           { name: "Unarmed Attack", damage: enemy.unarmedDamage || "1d4", type: "melee", count: 1, usableAdjacent: true };
 
@@ -22156,7 +22192,7 @@ function CombatPage({ characters = [] }) {
         const livePositions =
           positionsRef.current && Object.keys(positionsRef.current).length > 0
             ? positionsRef.current
-            : positions;
+        : livePositions;
         const enemyPos = livePositions?.[enemy.id];
         const tgtPos = livePositions?.[target.id];
         const landingCandidates = tgtPos ? findFlankingPositions(tgtPos, livePositions, enemy.id) : [];
@@ -22373,7 +22409,7 @@ function CombatPage({ characters = [] }) {
 
             // 2) Search/pickup action: pull real props from the arena based on environment seed
             if (ammoQty <= 0 && canThrow) {
-              const livePos = pickNonEmptyObject(positionsRef.current, positions);
+              const livePos = pickNonEmptyObject(positionsRef.current, livePositions);
               const myPos = livePos?.[enemy.id];
 
               const got = findAndTakeNearbyProps(myPos, 2); // radius 2 hexes
@@ -22436,7 +22472,7 @@ function CombatPage({ characters = [] }) {
               );
 
               try {
-                const livePos = pickNonEmptyObject(positionsRef.current, positions);
+                const livePos = pickNonEmptyObject(positionsRef.current, livePositions);
                 const myPos = livePos?.[enemy.id];
                 const tgtPos = livePos?.[target.id];
 
@@ -22509,7 +22545,7 @@ function CombatPage({ characters = [] }) {
           // If we're close-ish and can throw but have no ammo yet, SEARCH once to acquire nearby props.
           // (This prevents the "stand adjacent doing nothing" loop.)
           if (canThrow && currentDistance <= 30 && getImprovisedAmmoQty(enemy.id) <= 0) {
-            const livePos = pickNonEmptyObject(positionsRef.current, positions);
+            const livePos = pickNonEmptyObject(positionsRef.current, livePositions);
             const myPos = livePos?.[enemy.id];
             const got = findAndTakeNearbyProps(myPos, 2);
             if (got.total > 0) {
@@ -22545,9 +22581,9 @@ function CombatPage({ characters = [] }) {
       }
     }
     // Enhanced enemy AI using distance-based combat system
-    if (needsToMoveCloser && target && positions[enemy.id] && positions[target.id]) {
-      const currentPos = positions[enemy.id];
-      const targetPos = positions[target.id];
+    if (needsToMoveCloser && target && livePositions[enemy.id] && livePositions[target.id]) {
+      const currentPos = livePositions[enemy.id];
+      const targetPos = livePositions[target.id];
 
       // Use analyzeMovementAndAttack to determine best movement strategy
       const equistaminadWeapon = enemy.equistaminadWeapons?.primary || enemy.equistaminadWeapons?.secondary || enemy.attacks?.[0] || null;
@@ -22562,8 +22598,8 @@ function CombatPage({ characters = [] }) {
       const aiDecision = calculateEnemyMovementAI(enemy, target, currentPos, targetPos, availableAttacks);
 
       // Check for flanking opportunities
-      const flankingPositions = findFlankingPositions(targetPos, positions, enemy.id);
-      const currentFlankingBonus = calculateFlankingBonus(currentPos, targetPos, positions, enemy.id);
+        const flankingPositions = findFlankingPositions(targetPos, livePositions, enemy.id);
+        const currentFlankingBonus = calculateFlankingBonus(currentPos, targetPos, livePositions, enemy.id);
 
       // Check if target is already marked as unreachable
       const unreachableForEnemy = aiUnreachableTargetsRef.current?.[enemy.id];
@@ -22623,7 +22659,7 @@ function CombatPage({ characters = [] }) {
               })
               .filter(fp => {
                 // Filter out occupied positions
-                for (const [id, pos] of Object.entries(positions)) {
+            for (const [id, pos] of Object.entries(livePositions)) {
                   if (id !== enemy.id && pos.x === fp.pos.x && pos.y === fp.pos.y) {
                     return false;
                   }
@@ -22734,7 +22770,7 @@ function CombatPage({ characters = [] }) {
                   const livePositionsNow =
                     positionsRef.current && Object.keys(positionsRef.current).length > 0
                       ? positionsRef.current
-                      : positions;
+          : livePositions;
                   const liveAttacker =
                     (fightersRef.current ?? fighters).find((f) => f.id === enemy.id) || enemy;
                   const liveTarget =
@@ -22818,7 +22854,7 @@ function CombatPage({ characters = [] }) {
           // Use unified movement calculation for walking speed
           const moveAndAttackFeet = getMaxMoveFtThisAction(enemy, "MOVE");
           hexesToMove = Math.floor(moveAndAttackFeet / GRID_CONFIG.CELL_SIZE);
-          addLog(`${enemy.name} moves closer to attack (${aiDecision.reason})`, "info");
+          // Planning only; the selected movement executor logs the final action.
           break;
         }
 
@@ -22840,9 +22876,9 @@ function CombatPage({ characters = [] }) {
             if (combatOverRef.current || !combatActive || combatEndCheckRef.current) return;
             if (!guardEnemyStillActiveForAttack()) return;
             const flankingBonus = calculateFlankingBonus(
-              positions[enemy.id],
-              positions[target.id],
-              positions,
+              livePositions[enemy.id],
+              livePositions[target.id],
+              livePositions,
               enemy.id
             );
             const bonuses = flankingBonus > 0 ? { flankingBonus } : {};
@@ -22941,7 +22977,7 @@ function CombatPage({ characters = [] }) {
         const maxMovementFeet = getMaxMoveFtThisAction(enemy, movementType === "FLY" ? "FLY" : "Run");
         hexesToMove = Math.floor(maxMovementFeet / GRID_CONFIG.CELL_SIZE);
 
-        addLog(`${enemy.name} is very far away, ${movementDescription} at full speed (${Math.round(maxMovementFeet)}ft/action)`, "info");
+        // Planning only; do not emit a final-sounding movement log yet.
       }
       else if (
         enemyPrefersFlightMovement &&
@@ -23016,16 +23052,18 @@ function CombatPage({ characters = [] }) {
           cell.x < GRID_CONFIG.GRID_WIDTH &&
           cell.y >= 0 &&
           cell.y < GRID_CONFIG.GRID_HEIGHT &&
-          isValidPosition(cell.x, cell.y, combatTerrain) &&
+          // isValidPosition's third/fourth arguments are numeric bounds, not terrain.
+          // Passing the arena object here rejected every otherwise-open cell.
+          isValidPosition(cell.x, cell.y) &&
           !isHexOccupied(cell.x, cell.y, enemy.id)
         ))
       );
+      const closingMovementHistory = enemyClosingMovementHistoryRef.current.get(enemy.id);
+      const previousPosition = closingMovementHistory?.selectedPosition?.x === currentPos.x &&
+        closingMovementHistory?.selectedPosition?.y === currentPos.y
+        ? closingMovementHistory.previousPosition
+        : null;
       const findBestReachableClosingHex = (maxHexes) => {
-        const history = enemyClosingMovementHistoryRef.current.get(enemy.id);
-        const previousPosition = history?.selectedPosition?.x === currentPos.x &&
-          history?.selectedPosition?.y === currentPos.y
-          ? history.previousPosition
-          : null;
         return selectEnemyClosingMovementHex({
           currentPosition: currentPos,
           targetPosition: targetPos,
@@ -23036,44 +23074,67 @@ function CombatPage({ characters = [] }) {
           previousPosition,
         });
       };
-      const chooseLegacyMovementPlan = (maxHexes, candidates = visiblePlayers) => (
-        chooseEnemyMovementFallback({
-          enemy,
-          hostileCandidates: candidates,
-          positions,
-          currentPosition: currentPos,
-          maxHexes,
-          getNeighbors: getHexNeighbors,
-          isLegalCenter: isLegalClosingMovementCenter,
-          getDistance: calculateDistance,
-          isHostile: (candidate) => canSelectHostileCombatTarget(
+      const chooseLegacyMovementPlan = (maxHexes, candidates = visiblePlayers) => {
+        try {
+          return chooseEnemyMovementFallback({
             enemy,
-            candidate,
-            legacySceneContext,
-          ),
-          canAttackFrom: (position, candidate, candidatePosition) => {
-            const distanceFromPosition = calculateDistance(position, candidatePosition);
-            return validateWeaponRange(
+            hostileCandidates: candidates,
+            positions: livePositions,
+            currentPosition: currentPos,
+            maxHexes,
+            getNeighbors: getHexNeighbors,
+            isLegalCenter: isLegalClosingMovementCenter,
+            getDistance: calculateDistance,
+            isHostile: (candidate) => canSelectHostileCombatTarget(
               enemy,
               candidate,
-              selectedAttack,
-              distanceFromPosition,
-            ).canAttack;
-          },
-          getPreferredAttackHexes: (candidate) => (
-            findFlankingPositions(positions[candidate.id], positions, enemy.id) || []
-          ),
-          previousPosition,
-        })
-      );
-      const commitClosingMoveOrPass = (maxHexes, reason = "enemy-closing-move") => {
+              legacySceneContext,
+            ),
+            canAttackFrom: (position, candidate, candidatePosition) => {
+              const distanceFromPosition = calculateDistance(position, candidatePosition);
+              return validateWeaponRange(
+                enemy,
+                candidate,
+                selectedAttack,
+                distanceFromPosition,
+              ).canAttack;
+            },
+            getPreferredAttackHexes: (candidate) => (
+              findFlankingPositions(livePositions[candidate.id], livePositions, enemy.id) || []
+            ),
+            previousPosition,
+          });
+        } catch (error) {
+          return {
+            type: "hold",
+            target: candidates.find(Boolean) || target || null,
+            position: null,
+            path: [],
+            planningError: error?.message || String(error),
+            rankedTargets: [],
+          };
+        }
+      };
+      const commitClosingMoveOrPass = (
+        maxHexes,
+        reason = "enemy-closing-move",
+        selectedMovementPlan = null,
+      ) => {
         addLog(
           "enemy closing move: target unreachable this action; choosing best reachable hex",
           "info"
         );
-        const movementPlan = chooseLegacyMovementPlan(maxHexes);
+        const movementPlan = selectedMovementPlan || chooseLegacyMovementPlan(maxHexes);
         const selection = movementPlan?.rankedTargets?.[0]?.approach ||
-          findBestReachableClosingHex(maxHexes);
+          (selectedMovementPlan
+            ? {
+                position: selectedMovementPlan.position,
+                currentDistance,
+                bestCandidateDistance: null,
+                candidateCount: 0,
+                reason: selectedMovementPlan.type || "no-selected-path",
+              }
+            : findBestReachableClosingHex(maxHexes));
         const closingHex = movementPlan?.position || selection.position;
         const closingTarget = movementPlan?.target || target;
         addLog(
@@ -23095,7 +23156,7 @@ function CombatPage({ characters = [] }) {
           );
         }
 
-        const closingTargetPos = positions[closingTarget.id] || targetPos;
+        const closingTargetPos = livePositions[closingTarget.id] || targetPos;
         const newDistance = calculateDistance(closingHex, closingTargetPos);
         enemyClosingMovementHistoryRef.current.set(enemy.id, {
           previousPosition: { ...currentPos },
@@ -23119,6 +23180,81 @@ function CombatPage({ characters = [] }) {
         scheduleEndTurn(getMoveDurationMs(calculateDistance(currentPos, closingHex)), reason);
         return true;
       };
+      const executeLegacyClosingMovementPlan = (
+        selectedPlan,
+        executionMovementType,
+        reason = "enemy-closing-movement",
+      ) => {
+        const validation = validateEnemyMovementPlan(selectedPlan, {
+          currentPosition: currentPos,
+          isLegalCenter: isLegalClosingMovementCenter,
+        });
+        const executablePlan = validation.valid
+          ? selectedPlan
+          : {
+              ...selectedPlan,
+              type: "hold",
+              position: null,
+              invalidReason: validation.reason,
+            };
+        let distanceMoved = 0;
+        return executeEnemyMovementPlan(executablePlan, {
+          commit: () => commitEnemyAction(reason),
+          move: (destination, plan) => {
+            distanceMoved = calculateDistance(currentPos, destination);
+            handlePositionChange(enemy.id, destination, {
+              action: executionMovementType,
+              actionCost: MOVEMENT_ACTIONS.MOVE.actionCost,
+              description: `Enemy closing movement to (${destination.x}, ${destination.y})`,
+              persistImmediately: true,
+            });
+            enemyClosingMovementHistoryRef.current.set(enemy.id, {
+              previousPosition: { ...currentPos },
+              selectedPosition: { ...destination },
+            });
+            addLog(
+              `${enemy.name} cannot attack this action, so it advances ${Math.round(distanceMoved)}ft toward ${plan.target?.name || target.name}.`,
+              "info",
+            );
+            addLog(
+              `${enemy.name} moves from (${currentPos.x},${currentPos.y}) to (${destination.x},${destination.y}).`,
+              "info",
+            );
+          },
+          hold: (plan) => {
+            markBlockedMovementActionConsumed(enemy, reason);
+            const failureReason = plan.planningError
+              ? `movement planning failed: ${plan.planningError}`
+              : plan.invalidReason
+                ? `the selected plan was ${plan.invalidReason}`
+                : "all closer candidates are blocked";
+            addLog(
+              `${enemy.name} cannot find a legal approach hex: ${failureReason}.`,
+              "warning",
+            );
+          },
+          spendAction: () => commitFighters((prev) => prev.map((fighter) => (
+            fighter.id === enemy.id
+              ? {
+                  ...fighter,
+                  remainingActions: Math.max(0, (Number(fighter.remainingActions ?? 0) || 0) - 1),
+                }
+              : fighter
+          ))),
+          fail: () => addLog(
+            `${enemy.name} movement did not complete normally; safely ending enemy movement action.`,
+            "warning",
+          ),
+          finish: ({ committed }) => {
+            if (!committed) return;
+            enemyActionResolved = true;
+            processingEnemyTurnRef.current = false;
+            turnActionResolvingRef.current = false;
+            executingActionRef.current = false;
+            scheduleEndTurn(getMoveDurationMs(distanceMoved), reason);
+          },
+        });
+      };
 
       // Determine actual hexes to move (don't overshoot, but ensure at least 1 hex if far away)
       // Fix: Ensure we always make progress toward the target
@@ -23128,7 +23264,7 @@ function CombatPage({ characters = [] }) {
         // For very far distances, move more aggressively to prevent infinite loops
         actualHexesToMove = Math.min(hexesToMove * 3, Math.floor(hexDistance / 3));
         actualHexesToMove = Math.max(5, actualHexesToMove); // Minimum 5 hexes for far distances
-        addLog(`${enemy.name} far away (${Math.round(currentDistance)}ft), using aggressive movement: ${actualHexesToMove} hexes`, "info");
+        // Planning only; actual distance is logged after the selected plan executes.
       } else {
         // Normal movement calculation
         actualHexesToMove = Math.max(1, Math.min(hexesToMove, hexDistance - 1)); // At least 1 hex, stop 1 hex away
@@ -23145,14 +23281,25 @@ function CombatPage({ characters = [] }) {
       if (movementType === MOVEMENT_ACTIONS.MOVE.name || movementType === MOVEMENT_ACTIONS.CHARGE.name) {
         // MOVE: move calculated hexes immediately
         // CHARGE: move multiple hexes immediately and attack with bonuses
-        if (!commitEnemyAction(movementType === MOVEMENT_ACTIONS.CHARGE.name ? "CHARGE_ATTACK" : "MOVE_CLOSER")) return;
         const hexesThisTurn = actualHexesToMove; // Use the calculated movement distance
-        const movementPlan = chooseLegacyMovementPlan(hexesThisTurn, [target]);
-        const plannedMovementPosition = movementPlan?.position || null;
-        if (!plannedMovementPosition) {
-          commitClosingMoveOrPass(hexesThisTurn, "enemy-closing-move");
-          return;
+        const targetMovementPlan = chooseLegacyMovementPlan(hexesThisTurn, [target]);
+        const movementPlan = targetMovementPlan?.position
+          ? targetMovementPlan
+          : chooseLegacyMovementPlan(hexesThisTurn);
+        if (movementPlan?.target && movementPlan.target.id !== target.id) {
+          addLog(
+            `${enemy.name} redirects toward ${movementPlan.target.name} because ${target.name} is blocked.`,
+            "info",
+          );
         }
+        const safeMovementExecution = executeLegacyClosingMovementPlan(
+          movementPlan,
+          movementType,
+          movementType === MOVEMENT_ACTIONS.CHARGE.name
+            ? "CHARGE_ATTACK"
+            : "MOVE_CLOSER",
+        );
+        if (safeMovementExecution) return;
 
         // FIX: Prevent NaN by ensuring distance is valid
         if (plannedMovementPosition) {
@@ -23322,14 +23469,23 @@ function CombatPage({ characters = [] }) {
       } else {
         // RUN/SPRINT: Move immediately (Medieval Combat Simulator 1994 - no future movement)
         const isFlightMovement = movementType === "FLY";
-        if (!commitEnemyAction(isFlightMovement ? "FLY_TO_RANGE" : "RUN_TO_RANGE")) return;
         const moveDistance = actualHexesToMove;
-        const movementPlan = chooseLegacyMovementPlan(moveDistance, [target]);
-        const plannedMovementPosition = movementPlan?.position || null;
-        if (!plannedMovementPosition) {
-          commitClosingMoveOrPass(moveDistance, "enemy-running-path-blocked");
-          return;
+        const targetMovementPlan = chooseLegacyMovementPlan(moveDistance, [target]);
+        const movementPlan = targetMovementPlan?.position
+          ? targetMovementPlan
+          : chooseLegacyMovementPlan(moveDistance);
+        if (movementPlan?.target && movementPlan.target.id !== target.id) {
+          addLog(
+            `${enemy.name} redirects toward ${movementPlan.target.name} because ${target.name} is blocked.`,
+            "info",
+          );
         }
+        const safeMovementExecution = executeLegacyClosingMovementPlan(
+          movementPlan,
+          movementType,
+          isFlightMovement ? "FLY_TO_RANGE" : "RUN_TO_RANGE",
+        );
+        if (safeMovementExecution) return;
 
         // FIX: Prevent NaN by checking distance is valid
         if (plannedMovementPosition) {
@@ -23361,7 +23517,7 @@ function CombatPage({ characters = [] }) {
             cell.x < GRID_CONFIG.GRID_WIDTH &&
             cell.y >= 0 &&
             cell.y < GRID_CONFIG.GRID_HEIGHT &&
-            isValidPosition(cell.x, cell.y, combatTerrain) &&
+            isValidPosition(cell.x, cell.y) &&
             !isHexOccupied(cell.x, cell.y, fighterLike.id)
           ))
         );
@@ -23438,8 +23594,8 @@ function CombatPage({ characters = [] }) {
           }
 
           const alternateTarget = visiblePlayers
-            .filter((candidate) => candidate.id !== target.id && positions?.[candidate.id])
-            .sort((a, b) => calculateDistance(currentPos, positions[a.id]) - calculateDistance(currentPos, positions[b.id]))[0];
+            .filter((candidate) => candidate.id !== target.id && livePositions?.[candidate.id])
+            .sort((a, b) => calculateDistance(currentPos, livePositions[a.id]) - calculateDistance(currentPos, livePositions[b.id]))[0];
           if (alternateTarget) {
             addLog(`${enemy.name} looks for another target but cannot open a path this action.`, "info");
           }
@@ -23665,9 +23821,9 @@ function CombatPage({ characters = [] }) {
       selectedAttack.name.toLowerCase().includes('gore') ||
       selectedAttack.name.toLowerCase().includes('ram');
 
-    if (isAreaAttack && isTargetBlocked(enemy.id, target.id, positions)) {
+    if (isAreaAttack && isTargetBlocked(enemy.id, target.id, livePositions)) {
       // Area attack - can hit multiple targets in line
-      const targetsInLine = getTargetsInLine(enemy.id, target.id, positions);
+      const targetsInLine = getTargetsInLine(enemy.id, target.id, livePositions);
 
       if (targetsInLine.length > 0) {
         addLog(`${enemy.name} uses ${attackName} - area attack hitting ${targetsInLine.length} target(s)!`, "info");
@@ -23694,9 +23850,9 @@ function CombatPage({ characters = [] }) {
             await attack(updatedEnemyForArea, lineTarget.id, {
               ...chargeBonus,
               flankingBonus: calculateFlankingBonus(
-                positions[enemy.id],
-                positions[lineTarget.id],
-                positions,
+              livePositions[enemy.id],
+              livePositions[lineTarget.id],
+              livePositions,
                 enemy.id
               ),
               suppressActionSpend: !lastHit,
@@ -23732,7 +23888,7 @@ function CombatPage({ characters = [] }) {
     // Flanking is melee-only.
     const attackFlankingBonus = isRangedSelectedAttack
       ? 0
-      : calculateFlankingBonus(positions[enemy.id], positions[target.id], positions, enemy.id);
+      : calculateFlankingBonus(livePositions[enemy.id], livePositions[target.id], livePositions, enemy.id);
     const flankingBonus = attackFlankingBonus > 0 ? { flankingBonus: attackFlankingBonus } : {};
 
     // Combine all bonuses
@@ -24009,7 +24165,8 @@ function CombatPage({ characters = [] }) {
         blockedMovementSnapshot.fighterId === currentFighter.id;
 
       if (blockedSnapshotMatches) {
-        addLog("blocked movement action consumed", "warning");
+        // The movement executor already emitted the detailed hold/failure reason.
+        // Do not add a second generic blocked-action log for the same action.
         return;
       }
 
@@ -25469,7 +25626,7 @@ function CombatPage({ characters = [] }) {
       turnOrder: manualPublicTurnOrder,
       currentIndex: manualPublicTurnIndex,
       round: manualPublicTurnRound,
-      combatants: fighters,
+      combatants: liveFighters,
       skipZeroHp: true,
     });
 

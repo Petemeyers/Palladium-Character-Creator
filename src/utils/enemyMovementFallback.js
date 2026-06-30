@@ -168,12 +168,158 @@ export function chooseEnemyMovementFallback(options = {}) {
       type: "approach",
       target: best.target,
       position: best.approach.position,
+      path: best.approach.path,
       steps: null,
       reason: best.approach.reason,
       rankedTargets,
     };
   }
   return { type: "hold", target: best.target, position: null, rankedTargets };
+}
+
+export function validateEnemyMovementPlan(plan, {
+  currentPosition,
+  isLegalCenter,
+} = {}) {
+  if (!plan || !plan.position) return { valid: false, reason: "missing-destination" };
+  if (sameHex(plan.position, currentPosition)) return { valid: false, reason: "no-op-destination" };
+  if (typeof isLegalCenter !== "function" || !isLegalCenter(plan.position)) {
+    return { valid: false, reason: "illegal-destination" };
+  }
+  if (!Array.isArray(plan.path) || plan.path.length < 2) {
+    return { valid: false, reason: "missing-executable-path" };
+  }
+  const executableSteps = plan.path.slice(1);
+  if (executableSteps.length === 0 || !executableSteps.every(isLegalCenter)) {
+    return { valid: false, reason: "illegal-path-step" };
+  }
+  const finalStep = executableSteps[executableSteps.length - 1];
+  if (!sameHex(finalStep, plan.position)) {
+    return { valid: false, reason: "path-destination-mismatch" };
+  }
+  return { valid: true, reason: "executable-movement-plan" };
+}
+
+export function hydrateEnemyFromCanonicalPosition(enemy, canonicalPositions = {}) {
+  if (!enemy?.id) return enemy;
+  const latestPosition = canonicalPositions[enemy.id];
+  if (!latestPosition) return enemy;
+  const position = { ...latestPosition };
+  return {
+    ...enemy,
+    position,
+    hex: { ...position },
+    x: position.x,
+    y: position.y,
+  };
+}
+
+export function persistEnemyMovementPosition({
+  fighterId,
+  destination,
+  positionsRef,
+  setPositions,
+  syncPositions,
+} = {}) {
+  if (
+    !fighterId ||
+    !destination ||
+    !Number.isFinite(Number(destination.x)) ||
+    !Number.isFinite(Number(destination.y)) ||
+    !positionsRef ||
+    typeof setPositions !== "function"
+  ) {
+    return { persisted: false, reason: "invalid-position-persistence-input" };
+  }
+
+  const previousPositions = positionsRef.current || {};
+  const previousPosition = previousPositions[fighterId] || null;
+  const nextPosition = {
+    ...destination,
+    x: Number(destination.x),
+    y: Number(destination.y),
+  };
+  const updatedPositions = {
+    ...previousPositions,
+    [fighterId]: nextPosition,
+  };
+  const canonicalPositions = typeof syncPositions === "function"
+    ? syncPositions(updatedPositions)
+    : updatedPositions;
+
+  // Future turn scheduling reads the ref synchronously, so update it before
+  // mirroring the same immutable object into React state.
+  positionsRef.current = canonicalPositions;
+  setPositions((previousState) => ({
+    ...(previousState || {}),
+    ...canonicalPositions,
+    [fighterId]: { ...canonicalPositions[fighterId] },
+  }));
+
+  return {
+    persisted: true,
+    previousPosition: previousPosition ? { ...previousPosition } : null,
+    position: { ...canonicalPositions[fighterId] },
+    positions: canonicalPositions,
+  };
+}
+
+export function executeEnemyMovementPlan(plan, {
+  commit,
+  move,
+  spendAction,
+  hold,
+  fail,
+  finish,
+} = {}) {
+  if (!plan || typeof commit !== "function") {
+    return { executed: false, committed: false, reason: "invalid-execution-input" };
+  }
+
+  let committed = false;
+  let actionSpent = false;
+  let executionResult = null;
+  try {
+    committed = Boolean(commit(plan));
+    if (!committed) {
+      return { executed: false, committed: false, reason: "action-commit-rejected" };
+    }
+
+    if (plan.type === "hold" || !plan.position) {
+      hold?.(plan);
+    } else {
+      move?.(plan.position, plan);
+    }
+    spendAction?.(plan);
+    actionSpent = true;
+    executionResult = { executed: true, committed: true, reason: plan.type };
+    return executionResult;
+  } catch (error) {
+    if (committed && !actionSpent) {
+      try {
+        spendAction?.(plan);
+        actionSpent = true;
+      } catch {
+        // The finish callback still releases the turn if spending also fails.
+      }
+    }
+    fail?.(error, plan);
+    executionResult = {
+      executed: false,
+      committed,
+      reason: "movement-execution-error",
+      error,
+    };
+    return executionResult;
+  } finally {
+    finish?.({
+      plan,
+      committed,
+      executed: Boolean(executionResult?.executed),
+      actionSpent,
+      reason: executionResult?.reason || (committed ? "execution-failed" : "action-commit-rejected"),
+    });
+  }
 }
 
 export default chooseEnemyMovementFallback;

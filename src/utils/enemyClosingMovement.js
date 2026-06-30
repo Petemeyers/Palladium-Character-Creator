@@ -67,7 +67,7 @@ export function selectEnemyClosingMovementHex({
     };
   }
 
-  const queue = [{ position: currentPosition, steps: 0 }];
+  const queue = [{ position: currentPosition, steps: 0, path: [{ ...currentPosition }] }];
   const visited = new Set([hexKey(currentPosition)]);
   const candidates = [];
 
@@ -83,8 +83,9 @@ export function selectEnemyClosingMovementHex({
       const steps = entry.steps + 1;
       const targetDistance = getDistance(position, targetPosition);
       if (!Number.isFinite(targetDistance)) return;
-      candidates.push({ position, steps, targetDistance });
-      queue.push({ position, steps });
+      const path = [...entry.path, { ...position }];
+      candidates.push({ position, steps, targetDistance, path });
+      queue.push({ position, steps, path });
     });
   }
 
@@ -145,6 +146,7 @@ export function selectEnemyClosingMovementHex({
 
   return {
     position: { ...selected.position },
+    path: selected.path.map((position) => ({ ...position })),
     currentDistance,
     bestCandidateDistance: selected.targetDistance,
     reason: improving.length > 0

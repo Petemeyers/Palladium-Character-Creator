@@ -84,7 +84,11 @@ import {
 import { getSelectableActorAttackForDistance } from "../selectableActorAdapter.js";
 import { spendEnemyNoTargetAction } from "../enemyTurnScheduling.js";
 import { getCombatantFootprintHexes } from "../enemyClosingMovement.js";
-import { chooseEnemyMovementFallback } from "../enemyMovementFallback.js";
+import {
+  chooseEnemyMovementFallback,
+  executeEnemyMovementPlan,
+  validateEnemyMovementPlan,
+} from "../enemyMovementFallback.js";
 
 // -----------------------------------------------------------------------------
 // Weakness Memory Persistence (across encounters)
@@ -4380,42 +4384,56 @@ export function runEnemyTurnAI(enemy, context) {
         cell.x < GRID_CONFIG.GRID_WIDTH &&
         cell.y >= 0 &&
         cell.y < GRID_CONFIG.GRID_HEIGHT &&
+        // movementRules.isValidPosition expects numeric width/height arguments.
+        // Terrain legality is handled by the explicit bounds/occupancy checks here;
+        // passing the terrain object as the width makes every open-arena cell fail.
         (typeof isValidPosition !== "function" ||
-          isValidPosition(cell.x, cell.y, combatTerrain)) &&
+          isValidPosition(cell.x, cell.y)) &&
         !isHexOccupied(cell.x, cell.y, enemy.id)
       ))
     );
 
     const planEnemyMovement = (maxHexes, candidates = playerTargets) => {
       if (!positions?.[enemy.id] || typeof getHexNeighbors !== "function") return null;
-      return chooseEnemyMovementFallback({
-        enemy,
-        hostileCandidates: candidates,
-        positions,
-        currentPosition: positions[enemy.id],
-        maxHexes,
-        getNeighbors: getHexNeighbors,
-        isLegalCenter: isLegalEnemyMovementCenter,
-        getDistance: calculateDistance,
-        isHostile: (candidate) => isHostileTarget(candidate),
-        canAttackFrom: (position, candidate, candidatePosition) => {
-          const distance = calculateDistance(position, candidatePosition);
-          const attackForDistance = getSelectableActorAttackForDistance(
-            enemy,
-            distance,
-            selectedAttack,
-          );
-          return Boolean(validateWeaponRange(
-            enemy,
-            candidate,
-            attackForDistance,
-            distance,
-          )?.canAttack);
-        },
-        getPreferredAttackHexes: (candidate) => (
-          findFlankingPositions(positions[candidate.id], positions, enemy.id) || []
-        ),
-      });
+      try {
+        return chooseEnemyMovementFallback({
+          enemy,
+          hostileCandidates: candidates,
+          positions,
+          currentPosition: positions[enemy.id],
+          maxHexes,
+          getNeighbors: getHexNeighbors,
+          isLegalCenter: isLegalEnemyMovementCenter,
+          getDistance: calculateDistance,
+          isHostile: (candidate) => isHostileTarget(candidate),
+          canAttackFrom: (position, candidate, candidatePosition) => {
+            const distance = calculateDistance(position, candidatePosition);
+            const attackForDistance = getSelectableActorAttackForDistance(
+              enemy,
+              distance,
+              selectedAttack,
+            );
+            return Boolean(validateWeaponRange(
+              enemy,
+              candidate,
+              attackForDistance,
+              distance,
+            )?.canAttack);
+          },
+          getPreferredAttackHexes: (candidate) => (
+            findFlankingPositions(positions[candidate.id], positions, enemy.id) || []
+          ),
+        });
+      } catch (error) {
+        return {
+          type: "hold",
+          target: candidates.find(Boolean) || target || null,
+          position: null,
+          path: [],
+          planningError: error?.message || String(error),
+          rankedTargets: [],
+        };
+      }
     };
 
     // Rank targets before range logging so a blocked closest target does not
@@ -5337,10 +5355,12 @@ export function runEnemyTurnAI(enemy, context) {
           hexesToMove = Math.floor(
             moveAndAttackWalkingSpeed / GRID_CONFIG.CELL_SIZE,
           );
+          if (import.meta.env?.DEV || import.meta.env?.MODE === "development") {
           addLog(
             `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ ${enemy.name} moves closer to attack (${aiDecision.reason})`,
             "info",
           );
+          }
           break;
         }
 
@@ -5430,10 +5450,12 @@ export function runEnemyTurnAI(enemy, context) {
           movementRates.running / (enemy.actionsPerRound || 1); // Use feet per action
         hexesToMove = Math.floor(maxMovementFeet / GRID_CONFIG.CELL_SIZE);
 
+        if (import.meta.env?.DEV || import.meta.env?.MODE === "development") {
         addLog(
           `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ ${enemy.name} is very far away, ${movementDescription} at full speed (${maxMovementFeet}ft/action)`,
           "info",
         );
+        }
       }
       // else: close distance (1-3 hexes) - use default MOVE (1 hex)
 
@@ -5549,28 +5571,62 @@ export function runEnemyTurnAI(enemy, context) {
       }
 
       let newX, newY, movementInfo;
-      const liveMovementPlan = planEnemyMovement(actualHexesToMove, [target]);
-      const plannedMovementPosition = liveMovementPlan?.position || null;
+      const liveMovementPlan = planEnemyMovement(actualHexesToMove);
+      if (liveMovementPlan?.target && liveMovementPlan.target.id !== target.id) {
+        const previousTarget = target;
+        target = liveMovementPlan.target;
+        targetPos = positions[target.id];
+        addLog(
+          `${enemy.name} redirects toward ${target.name} because ${previousTarget.name} is blocked.`,
+          "info",
+        );
+      }
+      const movementValidation = validateEnemyMovementPlan(liveMovementPlan, {
+        currentPosition: currentPos,
+        isLegalCenter: isLegalEnemyMovementCenter,
+      });
+      const executableMovementPlan = movementValidation.valid
+        ? liveMovementPlan
+        : {
+            ...liveMovementPlan,
+            type: "hold",
+            position: null,
+            invalidReason: movementValidation.reason,
+          };
+      const plannedMovementPosition = executableMovementPlan?.position || null;
       if (plannedMovementPosition && liveMovementPlan.type === "approach") {
         const actualFeet = calculateDistance(currentPos, plannedMovementPosition);
         addLog(
           `${enemy.name} cannot reach an open attack position, so it advances ${Math.round(actualFeet)}ft along a clear path.`,
           "info",
         );
-      } else if (!plannedMovementPosition && liveMovementPlan?.type === "hold") {
-        addLog(`${enemy.name} cannot find a legal path and holds position.`, "warning");
-        if (commitEnemyAction("BLOCKED_MOVEMENT_HOLD")) {
-          setFighters((prev) => prev.map((fighter) => (
+      } else if (!plannedMovementPosition && executableMovementPlan?.type === "hold") {
+        executeEnemyMovementPlan(executableMovementPlan, {
+          commit: () => commitEnemyAction("BLOCKED_MOVEMENT_HOLD"),
+          hold: (plan) => {
+            const failureReason = plan.planningError
+              ? `movement planning failed: ${plan.planningError}`
+              : plan.invalidReason
+                ? `the selected plan was ${plan.invalidReason}`
+                : "all closer candidates are blocked";
+            addLog(
+              `${enemy.name} cannot find a legal approach hex: ${failureReason}.`,
+              "warning",
+            );
+          },
+          spendAction: () => setFighters((prev) => prev.map((fighter) => (
             fighter.id === enemy.id
               ? {
                   ...fighter,
                   remainingActions: Math.max(0, (fighter.remainingActions ?? 1) - 1),
                 }
               : fighter
-          )));
-        }
-        processingEnemyTurnRef.current = false;
-        scheduleEndTurn();
+          ))),
+          finish: () => {
+            processingEnemyTurnRef.current = false;
+            scheduleEndTurn();
+          },
+        });
         return;
       }
 
@@ -5725,6 +5781,7 @@ export function runEnemyTurnAI(enemy, context) {
           // Not occupied, safe to move
           if (!commitEnemyAction(`move:${movementType || "Move"}`)) {
             processingEnemyTurnRef.current = false;
+            scheduleEndTurn();
             return;
           }
           const currentMovementAction = isChargeMovement
@@ -5808,6 +5865,7 @@ export function runEnemyTurnAI(enemy, context) {
         // RUN/SPRINT/CLOSE: Move immediately (Medieval Combat Simulator 1994 ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â move only this slice, no deferred attack)
         if (!commitEnemyAction("RUN_TO_RANGE")) {
           processingEnemyTurnRef.current = false;
+          scheduleEndTurn();
           return;
         }
         const moveDistance = actualHexesToMove;
