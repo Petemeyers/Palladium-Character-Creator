@@ -213,9 +213,11 @@ import {
 } from "../utils/normalizeCombatant.js";
 import { rollInitiativeD20 } from "../utils/initiativeD20.js";
 import {
+  appendOriginalBattleEvent,
   finalizeOriginalBattleEventLedger,
   initializeOriginalBattleEventLedger,
 } from "../utils/originalBattleEventLedger.js";
+import { createOriginalDamageAwardEventInputs } from "../utils/originalActorRuntimeAwardEvents.js";
 import { proposeOriginalTraitAwards } from "../utils/originalActorTraitAwardProposals.js";
 import {
   applyOriginalTraitAwardProposalToCombatants,
@@ -17013,6 +17015,31 @@ function CombatPage({ characters = [] }) {
         updated[defenderIndex] = defenderAfterHit;
         // Use defenderAfterHit directly instead of reassigning const defender
 
+        const damageAwardEvents = createOriginalDamageAwardEventInputs({
+          actor: defenderAfterHit,
+          sourceActor: stateAttacker,
+          damage: finalDamage,
+          hpBefore: startingHP,
+          hpAfter: getFighterHP(defenderAfterHit),
+          maxHP: getFighterMaxHP(defenderAfterHit),
+          attackName: attackData?.name,
+          damageExpression: loggedDamageSource,
+          bodyLocation:
+            bonusModifiers?.bodyLocation ||
+            bonusModifiers?.impactZone?.zone ||
+            attackData?.bodyLocation ||
+            attackData?.targetArea,
+          wasCritical: isCriticalHit,
+          round: meleeRoundRef.current,
+          turn: turnCounterRef.current,
+        });
+        damageAwardEvents.forEach((event) => {
+          originalBattleEventLedgerRef.current = appendOriginalBattleEvent(
+            originalBattleEventLedgerRef.current,
+            event
+          );
+        });
+
         // CRITICAL: Check for victory condition AFTER damage is applied
         if (getCombatVictoryState(updated).partyVictorious && !combatEndCheckRef.current) {
           // All hostile threats are defeated - end combat immediately
@@ -17421,6 +17448,7 @@ function CombatPage({ characters = [] }) {
     applyHPToFighter,
     clampHP,
     getFighterHP,
+    getFighterMaxHP,
     getCombatVictoryState,
     getHPStatus,
     getCombatantAC,

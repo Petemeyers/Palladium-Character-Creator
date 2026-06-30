@@ -8,11 +8,16 @@ const EVENT_TRAIT_MAP = Object.freeze({
   line_held: "line_holder",
   formation_held: "line_holder",
   rout_survived: "rout_survivor",
+  actor_retreat_survived: "rout_survivor",
   serious_wound_survived: "scarred_survivor",
+  actor_seriously_wounded: "scarred_survivor",
   duel_won: "duel_proven",
   duel_victory: "duel_proven",
+  actor_defeated_enemy: "duel_proven",
   monster_dread_survived: "monster_dread_tested",
   monster_fear_survived: "monster_dread_tested",
+  actor_survived_mythic_encounter: "monster_dread_tested",
+  actor_held_formation: "line_holder",
   oath_kept: "oath_fast",
   oath_broken: "oathbreaker",
   village_defended: "village_defender",
@@ -169,7 +174,11 @@ export function proposeOriginalTraitAwards({
   events.forEach((event) => {
     const actorId = getEventActorId(event);
     const actor = afterById.get(actorId) || beforeById.get(actorId);
-    if (!actor || isDead(afterById.get(actorId) || actor, context)) return;
+    if (
+      !actor ||
+      !isEligibleParticipant(actor, participantIds) ||
+      isDead(afterById.get(actorId) || actor, context)
+    ) return;
     const explicitTraitId = normalizeText(event.traitId || event.proposedTraitId);
     const traitId = getOriginalTraitDefinition(explicitTraitId)
       ? explicitTraitId

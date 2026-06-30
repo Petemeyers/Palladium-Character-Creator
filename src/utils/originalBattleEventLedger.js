@@ -1,12 +1,20 @@
+import { createMythicFacingEventInputs } from "./originalActorRuntimeAwardEvents.js";
+
 export const ORIGINAL_BATTLE_EVENT_TYPES = Object.freeze({
   COMBAT_STARTED: "combat_started",
   ACTOR_ENTERED_COMBAT: "actor_entered_combat",
   ENCOUNTER_STARTED: "encounter_started",
   ACTOR_DAMAGED: "actor_damaged",
+  ACTOR_SERIOUSLY_WOUNDED: "actor_seriously_wounded",
   ACTOR_WOUNDED: "actor_wounded",
   ACTOR_ROUTED: "actor_routed",
+  ACTOR_RETREAT_SURVIVED: "actor_retreat_survived",
   ACTOR_DEFEATED: "actor_defeated",
+  ACTOR_DEFEATED_ENEMY: "actor_defeated_enemy",
+  ACTOR_FACED_MYTHIC: "actor_faced_mythic",
+  ACTOR_SURVIVED_MYTHIC_ENCOUNTER: "actor_survived_mythic_encounter",
   ACTOR_SURVIVED_COMBAT: "actor_survived_combat",
+  ACTOR_HELD_FORMATION: "actor_held_formation",
   LINE_HELD: "line_held",
   DUEL_WON: "duel_won",
   MONSTER_DREAD_SURVIVED: "monster_dread_survived",
@@ -149,6 +157,10 @@ export function initializeOriginalBattleEventLedger({
     }, options);
   });
 
+  createMythicFacingEventInputs(participants, { round, turn }).forEach((event) => {
+    ledger = appendOriginalBattleEvent(ledger, event, options);
+  });
+
   return ledger;
 }
 
@@ -189,8 +201,9 @@ export function finalizeOriginalBattleEventLedger(ledger = [], {
   }, options);
 
   actors.forEach((actor) => {
+    const defeated = isDefeatedCombatant(actor);
     nextLedger = appendOriginalBattleEvent(nextLedger, {
-      type: isDefeatedCombatant(actor)
+      type: defeated
         ? ORIGINAL_BATTLE_EVENT_TYPES.ACTOR_DEFEATED
         : ORIGINAL_BATTLE_EVENT_TYPES.ACTOR_SURVIVED_COMBAT,
       actor,
@@ -198,6 +211,48 @@ export function finalizeOriginalBattleEventLedger(ledger = [], {
       turn,
       details: getCombatantDetails(actor),
     }, options);
+
+    if (defeated) return;
+    const actorId = getActorId(actor);
+    const mythicFacingEvent = currentLedger.find((event) => (
+      event.type === ORIGINAL_BATTLE_EVENT_TYPES.ACTOR_FACED_MYTHIC &&
+      normalizeText(event.actorId) === actorId
+    ));
+    if (mythicFacingEvent) {
+      nextLedger = appendOriginalBattleEvent(nextLedger, {
+        type: ORIGINAL_BATTLE_EVENT_TYPES.ACTOR_SURVIVED_MYTHIC_ENCOUNTER,
+        actor,
+        sourceActorId: mythicFacingEvent.sourceActorId,
+        sourceActorName: mythicFacingEvent.sourceActorName,
+        round,
+        turn,
+        details: cloneDetails(mythicFacingEvent.details),
+      }, options);
+    }
+
+    const fled = actor?.fled === true || normalizeText(actor?.status).toLowerCase() === "fled" ||
+      normalizeText(actor?.moraleState?.status).toLowerCase() === "fled";
+    if (fled) {
+      if (!currentLedger.some((event) => (
+        event.type === ORIGINAL_BATTLE_EVENT_TYPES.ACTOR_ROUTED &&
+        normalizeText(event.actorId) === actorId
+      ))) {
+        nextLedger = appendOriginalBattleEvent(nextLedger, {
+          type: ORIGINAL_BATTLE_EVENT_TYPES.ACTOR_ROUTED,
+          actor,
+          round,
+          turn,
+          details: getCombatantDetails(actor),
+        }, options);
+      }
+      nextLedger = appendOriginalBattleEvent(nextLedger, {
+        type: ORIGINAL_BATTLE_EVENT_TYPES.ACTOR_RETREAT_SURVIVED,
+        actor,
+        round,
+        turn,
+        details: getCombatantDetails(actor),
+      }, options);
+    }
   });
 
   return nextLedger;
