@@ -40,21 +40,25 @@ assert.equal(fullActions.postureLabel, "None");
 assert.equal(fullActions.nextStepMessage, "Choose a command.");
 assert.equal(fullActions.showEndTurnButton, true);
 assert.equal(fullActions.endTurnAvailable, true);
+assert.equal(fullActions.endCurrentActionAvailable, true);
+assert.equal(fullActions.endCurrentActionButtonLabel, "End Current Action");
 assert.equal(fullActions.endTurnButtonLabel, "End All Actions");
 
 const partialActions = buildCombatTurnStatus({
   commandTurn: { ...playerTurn, remainingActions: 1 },
   activeActor: actor,
 });
-assert.equal(partialActions.nextStepMessage, "Choose another action or End Turn.");
+assert.equal(partialActions.nextStepMessage, "Choose another action or end the current action.");
 
 const noActions = buildCombatTurnStatus({
   commandTurn: { ...playerTurn, remainingActions: 0 },
   activeActor: actor,
 });
-assert.equal(noActions.nextStepMessage, "No actions remaining. End Turn.");
+assert.equal(noActions.nextStepMessage, "No actions remaining. End All Actions to advance.");
 assert.equal(noActions.showEndTurnButton, true);
 assert.equal(noActions.endTurnAvailable, true);
+assert.equal(noActions.endCurrentActionAvailable, false);
+assert.equal(noActions.endCurrentActionDisabledReason, "No actions remaining.");
 
 const enemyTurn = buildCombatTurnStatus({
   commandTurn: {

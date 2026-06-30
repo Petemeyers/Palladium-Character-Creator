@@ -49,8 +49,8 @@ const postureLabelFor = (activeActor = {}) => {
 const nextStepFor = ({ commandTurn, actionsRemaining, maxActions }) => {
   if (commandTurn?.isEnemyControlled) return "Waiting for enemy action.";
   if (!commandTurn?.isPlayerControlled) return "Choose a command.";
-  if (actionsRemaining <= 0) return "No actions remaining. End Turn.";
-  if (maxActions > 0 && actionsRemaining < maxActions) return "Choose another action or End Turn.";
+  if (actionsRemaining <= 0) return "No actions remaining. End All Actions to advance.";
+  if (maxActions > 0 && actionsRemaining < maxActions) return "Choose another action or end the current action.";
   return "Choose a command.";
 };
 
@@ -83,6 +83,11 @@ export function buildCombatTurnStatus({
     showEndTurnButton,
     endTurnAvailable,
     endTurnDisabledReason: safeEndTurnUnavailableReason,
+    endCurrentActionAvailable: Boolean(endTurnAvailable && actionsRemaining > 0),
+    endCurrentActionDisabledReason: actionsRemaining <= 0
+      ? "No actions remaining."
+      : safeEndTurnUnavailableReason,
+    endCurrentActionButtonLabel: "End Current Action",
     endTurnButtonLabel: "End All Actions",
     warning: finalWarning,
   };

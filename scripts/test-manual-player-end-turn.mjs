@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 
 import {
   canUseManualEndTurn,
+  endCurrentManualAction,
   endManualTurnActions,
   isExplicitManualEndTurnSource,
 } from "../src/utils/combatCommandStateCleanup.js";
@@ -102,7 +103,14 @@ assert.equal(hasFunction(ended), false, "manual end-turn helper output contains 
 assert.equal(hasRawObjectString(ended), false, "manual end-turn helper output contains no raw object strings");
 assert.equal(JSON.stringify(fighters), snapshot, "manual end-turn helper does not mutate inputs");
 
+const endedCurrentAction = endCurrentManualAction(fighters, player);
+assert.equal(endedCurrentAction[0].remainingActions, 1, "End Current Action spends exactly one action");
+assert.equal(endedCurrentAction[1].remainingActions, 1, "End Current Action preserves ally actions");
+assert.equal(endedCurrentAction[2].remainingActions, 2, "End Current Action preserves enemy actions");
+assert.equal(JSON.stringify(fighters), snapshot, "End Current Action does not mutate inputs");
+
 assert.doesNotThrow(() => canUseManualEndTurn(null));
 assert.doesNotThrow(() => endManualTurnActions(null, player));
+assert.doesNotThrow(() => endCurrentManualAction(null, player));
 
 console.log("manual player end turn tests passed");

@@ -28,6 +28,8 @@ const CombatTurnStatusPanel = ({
   activeActor = null,
   selectedCombatAction = null,
   endTurnUnavailableReason = "",
+  onEndCurrentAction,
+  onEndAllActions,
   onEndTurn,
 }) => {
   const status = buildCombatTurnStatus({
@@ -36,7 +38,10 @@ const CombatTurnStatusPanel = ({
     selectedCombatAction,
     endTurnUnavailableReason,
   });
-  const canClickEndTurn = status.endTurnAvailable && typeof onEndTurn === "function";
+  const endAllHandler = onEndAllActions || onEndTurn;
+  const canClickEndCurrentAction =
+    status.endCurrentActionAvailable && typeof onEndCurrentAction === "function";
+  const canClickEndAllActions = status.endTurnAvailable && typeof endAllHandler === "function";
 
   return (
     <Box borderWidth="1px" borderColor="purple.200" borderRadius="md" p={3} bg="white">
@@ -72,21 +77,39 @@ const CombatTurnStatusPanel = ({
         </SimpleGrid>
 
         {status.showEndTurnButton && (
-          <HStack justify="space-between" align="center" wrap="wrap" spacing={3}>
-            <Text fontSize="xs" color={status.endTurnAvailable ? "gray.600" : "orange.700"}>
-              {status.endTurnDisabledReason || "Sets this fighter's remaining actions to 0 and advances initiative."}
-            </Text>
-            <Button
-              size="sm"
-              colorScheme="purple"
-              onClick={() => {
-                if (canClickEndTurn) onEndTurn();
-              }}
-              isDisabled={!canClickEndTurn}
-            >
-              {status.endTurnButtonLabel}
-            </Button>
-          </HStack>
+          <VStack align="stretch" spacing={2}>
+            <HStack justify="space-between" align="center" wrap="wrap" spacing={3}>
+              <Text fontSize="xs" color={status.endCurrentActionAvailable ? "gray.600" : "orange.700"}>
+                {status.endCurrentActionDisabledReason || "Spend one remaining action and pass initiative; later actions remain available this round."}
+              </Text>
+              <Button
+                size="sm"
+                variant="outline"
+                colorScheme="purple"
+                onClick={() => {
+                  if (canClickEndCurrentAction) onEndCurrentAction();
+                }}
+                isDisabled={!canClickEndCurrentAction}
+              >
+                {status.endCurrentActionButtonLabel}
+              </Button>
+            </HStack>
+            <HStack justify="space-between" align="center" wrap="wrap" spacing={3}>
+              <Text fontSize="xs" color={status.endTurnAvailable ? "gray.600" : "orange.700"}>
+                {status.endTurnDisabledReason || "Set all remaining actions to 0 and finish this fighter's round."}
+              </Text>
+              <Button
+                size="sm"
+                colorScheme="purple"
+                onClick={() => {
+                  if (canClickEndAllActions) endAllHandler();
+                }}
+                isDisabled={!canClickEndAllActions}
+              >
+                {status.endTurnButtonLabel}
+              </Button>
+            </HStack>
+          </VStack>
         )}
       </VStack>
     </Box>

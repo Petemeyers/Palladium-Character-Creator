@@ -108,6 +108,19 @@ export function endManualTurnActions(fighters = [], currentFighter = null) {
   });
 }
 
+export function endCurrentManualAction(fighters = [], currentFighter = null) {
+  if (!Array.isArray(fighters)) return fighters;
+  const currentId = getId(currentFighter);
+  if (!currentId) return fighters;
+  return fighters.map((fighter) => {
+    if (getId(fighter) !== currentId) return fighter;
+    return {
+      ...fighter,
+      remainingActions: Math.max(0, Number(fighter?.remainingActions) - 1 || 0),
+    };
+  });
+}
+
 export function canStartManualMovementTargeting({
   combatActive = false,
   combatOver = false,
@@ -260,6 +273,7 @@ export default {
   canStartManualMovementTargeting,
   canUseManualEndTurn,
   endManualTurnActions,
+  endCurrentManualAction,
   getLegacyDefensiveDuplicateMessage,
   getLegacyDefensivePosture,
   getLegacyDefensiveRemainingActionMessage,

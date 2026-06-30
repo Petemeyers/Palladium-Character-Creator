@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { buildCombatActionCatalog } from "../src/utils/combatActionCatalog.js";
 import { buildCombatCommandLayoutSummary } from "../src/utils/combatCommandLayout.js";
 import { endManualTurnActions } from "../src/utils/combatCommandStateCleanup.js";
+import { buildManualQuickAttackState } from "../src/utils/manualCombatControlPolish.js";
 
 const layout = buildCombatCommandLayoutSummary();
 assert.equal(layout.order[0], "Combat Command Center");
@@ -54,6 +55,17 @@ const manualResolverSource = readFileSync("src/components/ManualPublicAttackTest
 assert.match(manualResolverSource, /Target: \{targetRow\.summary\.name\}/);
 assert.match(manualResolverSource, /getRangedAttackRangeModifier/);
 assert.match(combatPageSource, /getRangedAttackRangeModifier/);
-assert.match(manualResolverSource, /Attack \$\{targetRow\.summary\.name\} with/);
+assert.match(manualResolverSource, /quickAttackState\.label/);
+assert.match(
+  buildManualQuickAttackState({
+    attacker: actor,
+    target,
+    attack: actor.attacks[0],
+    rangeValidation: { inRange: true, distanceFt: 40 },
+    rangedRangeModifier: { isRanged: true, distanceFt: 40, maxRangeFt: 150, bandLabel: "Effective Range" },
+    remainingActions: 2,
+  }).label,
+  /Shoot Goblin Warrior with Longbow Shot/
+);
 
 console.log("combat control streamlining tests passed");
