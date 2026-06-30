@@ -313,6 +313,7 @@ import {
   getCombatantFootprintHexes,
   selectEnemyClosingMovementHex,
 } from "../utils/enemyClosingMovement.js";
+import { chooseEnemyMovementFallback } from "../utils/enemyMovementFallback.js";
 import {
   isCombatantFled,
   markCombatantFled,
@@ -19810,6 +19811,8 @@ function CombatPage({ characters = [] }) {
         validateWeaponRange,
         handlePositionChange,
         isHexOccupied,
+        getHexNeighbors,
+        isValidPosition,
         findRetreatDestination,
         // Healing / support
         getAvailableSkills,
@@ -23033,13 +23036,46 @@ function CombatPage({ characters = [] }) {
           previousPosition,
         });
       };
+      const chooseLegacyMovementPlan = (maxHexes, candidates = visiblePlayers) => (
+        chooseEnemyMovementFallback({
+          enemy,
+          hostileCandidates: candidates,
+          positions,
+          currentPosition: currentPos,
+          maxHexes,
+          getNeighbors: getHexNeighbors,
+          isLegalCenter: isLegalClosingMovementCenter,
+          getDistance: calculateDistance,
+          isHostile: (candidate) => canSelectHostileCombatTarget(
+            enemy,
+            candidate,
+            legacySceneContext,
+          ),
+          canAttackFrom: (position, candidate, candidatePosition) => {
+            const distanceFromPosition = calculateDistance(position, candidatePosition);
+            return validateWeaponRange(
+              enemy,
+              candidate,
+              selectedAttack,
+              distanceFromPosition,
+            ).canAttack;
+          },
+          getPreferredAttackHexes: (candidate) => (
+            findFlankingPositions(positions[candidate.id], positions, enemy.id) || []
+          ),
+          previousPosition,
+        })
+      );
       const commitClosingMoveOrPass = (maxHexes, reason = "enemy-closing-move") => {
         addLog(
           "enemy closing move: target unreachable this action; choosing best reachable hex",
           "info"
         );
-        const selection = findBestReachableClosingHex(maxHexes);
-        const closingHex = selection.position;
+        const movementPlan = chooseLegacyMovementPlan(maxHexes);
+        const selection = movementPlan?.rankedTargets?.[0]?.approach ||
+          findBestReachableClosingHex(maxHexes);
+        const closingHex = movementPlan?.position || selection.position;
+        const closingTarget = movementPlan?.target || target;
         addLog(
           `enemy closing movement fallback: current distance=${Math.round(selection.currentDistance ?? currentDistance)}ft best candidate distance=${selection.bestCandidateDistance == null ? "none" : `${Math.round(selection.bestCandidateDistance)}ft`} selected fallback hex=${closingHex ? `(${closingHex.x},${closingHex.y})` : "none"} candidates=${selection.candidateCount} reason=${selection.reason}`,
           closingHex ? "info" : "warning"
@@ -23052,7 +23088,15 @@ function CombatPage({ characters = [] }) {
           return false;
         }
 
-        const newDistance = calculateDistance(closingHex, targetPos);
+        if (closingTarget.id !== target.id) {
+          addLog(
+            `${enemy.name} cannot reach ${target.name}, so it redirects toward ${closingTarget.name}.`,
+            "info"
+          );
+        }
+
+        const closingTargetPos = positions[closingTarget.id] || targetPos;
+        const newDistance = calculateDistance(closingHex, closingTargetPos);
         enemyClosingMovementHistoryRef.current.set(enemy.id, {
           previousPosition: { ...currentPos },
           selectedPosition: { ...closingHex },
@@ -23068,7 +23112,7 @@ function CombatPage({ characters = [] }) {
             : f
         ));
         addLog(
-         `${enemy.name} closes distance from ${Math.round(currentDistance)}ft to ${Math.round(newDistance)}ft new position (${closingHex.x},${closingHex.y})`,
+          `${enemy.name} advances along a clear path toward ${closingTarget.name}, ending ${Math.round(newDistance)}ft away at (${closingHex.x},${closingHex.y})`,
           "info"
         );
         processingEnemyTurnRef.current = false;
@@ -23103,9 +23147,18 @@ function CombatPage({ characters = [] }) {
         // CHARGE: move multiple hexes immediately and attack with bonuses
         if (!commitEnemyAction(movementType === MOVEMENT_ACTIONS.CHARGE.name ? "CHARGE_ATTACK" : "MOVE_CLOSER")) return;
         const hexesThisTurn = actualHexesToMove; // Use the calculated movement distance
+        const movementPlan = chooseLegacyMovementPlan(hexesThisTurn, [target]);
+        const plannedMovementPosition = movementPlan?.position || null;
+        if (!plannedMovementPosition) {
+          commitClosingMoveOrPass(hexesThisTurn, "enemy-closing-move");
+          return;
+        }
 
         // FIX: Prevent NaN by ensuring distance is valid
-        if (distance < 0.01) {
+        if (plannedMovementPosition) {
+          newX = plannedMovementPosition.x;
+          newY = plannedMovementPosition.y;
+        } else if (distance < 0.01) {
           newX = currentPos.x;
           newY = currentPos.y;
         } else {
@@ -23232,7 +23285,7 @@ function CombatPage({ characters = [] }) {
           // Update position immediately for MOVE or CHARGE
           handlePositionChange(enemy.id, { x: newX, y: newY }, movementInfo);
 
-          const distanceMoved = hexesThisTurn * GRID_CONFIG.CELL_SIZE;
+          const distanceMoved = calculateDistance(currentPos, { x: newX, y: newY });
           const actionVerb = movementType === MOVEMENT_ACTIONS.CHARGE.name ? 'charges' : 'moves';
 
           // Use MOVEMENT_RATES for 1994 Medieval Combat Simulator format
@@ -23271,9 +23324,18 @@ function CombatPage({ characters = [] }) {
         const isFlightMovement = movementType === "FLY";
         if (!commitEnemyAction(isFlightMovement ? "FLY_TO_RANGE" : "RUN_TO_RANGE")) return;
         const moveDistance = actualHexesToMove;
+        const movementPlan = chooseLegacyMovementPlan(moveDistance, [target]);
+        const plannedMovementPosition = movementPlan?.position || null;
+        if (!plannedMovementPosition) {
+          commitClosingMoveOrPass(moveDistance, "enemy-running-path-blocked");
+          return;
+        }
 
         // FIX: Prevent NaN by checking distance is valid
-        if (distance < 0.01) {
+        if (plannedMovementPosition) {
+          newX = plannedMovementPosition.x;
+          newY = plannedMovementPosition.y;
+        } else if (distance < 0.01) {
           // Already at target, don't move
           newX = currentPos.x;
           newY = currentPos.y;

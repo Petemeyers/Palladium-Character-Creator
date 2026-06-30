@@ -83,6 +83,8 @@ import {
 } from "../factionDisposition.js";
 import { getSelectableActorAttackForDistance } from "../selectableActorAdapter.js";
 import { spendEnemyNoTargetAction } from "../enemyTurnScheduling.js";
+import { getCombatantFootprintHexes } from "../enemyClosingMovement.js";
+import { chooseEnemyMovementFallback } from "../enemyMovementFallback.js";
 
 // -----------------------------------------------------------------------------
 // Weakness Memory Persistence (across encounters)
@@ -1621,6 +1623,8 @@ export function runEnemyTurnAI(enemy, context) {
     validateWeaponRange,
     handlePositionChange,
     isHexOccupied,
+    getHexNeighbors,
+    isValidPosition,
     findRetreatDestination,
     // Healing / support
     getAvailableSkills,
@@ -4073,6 +4077,7 @@ export function runEnemyTurnAI(enemy, context) {
     // Check if enemy needs to move closer to attack
     let needsToMoveCloser = false;
     let currentDistance = Infinity;
+    let enemyMovementPlan = null;
 
     // Select which attack to use (if combatant has multiple attacks)
     const availableAttacks = enemy.attacks || [
@@ -4366,6 +4371,81 @@ export function runEnemyTurnAI(enemy, context) {
         technique,
         type: "technique",
       };
+    }
+
+    const isLegalEnemyMovementCenter = (center) => (
+      Boolean(center) &&
+      getCombatantFootprintHexes(enemy, center).every((cell) => (
+        cell.x >= 0 &&
+        cell.x < GRID_CONFIG.GRID_WIDTH &&
+        cell.y >= 0 &&
+        cell.y < GRID_CONFIG.GRID_HEIGHT &&
+        (typeof isValidPosition !== "function" ||
+          isValidPosition(cell.x, cell.y, combatTerrain)) &&
+        !isHexOccupied(cell.x, cell.y, enemy.id)
+      ))
+    );
+
+    const planEnemyMovement = (maxHexes, candidates = playerTargets) => {
+      if (!positions?.[enemy.id] || typeof getHexNeighbors !== "function") return null;
+      return chooseEnemyMovementFallback({
+        enemy,
+        hostileCandidates: candidates,
+        positions,
+        currentPosition: positions[enemy.id],
+        maxHexes,
+        getNeighbors: getHexNeighbors,
+        isLegalCenter: isLegalEnemyMovementCenter,
+        getDistance: calculateDistance,
+        isHostile: (candidate) => isHostileTarget(candidate),
+        canAttackFrom: (position, candidate, candidatePosition) => {
+          const distance = calculateDistance(position, candidatePosition);
+          const attackForDistance = getSelectableActorAttackForDistance(
+            enemy,
+            distance,
+            selectedAttack,
+          );
+          return Boolean(validateWeaponRange(
+            enemy,
+            candidate,
+            attackForDistance,
+            distance,
+          )?.canAttack);
+        },
+        getPreferredAttackHexes: (candidate) => (
+          findFlankingPositions(positions[candidate.id], positions, enemy.id) || []
+        ),
+      });
+    };
+
+    // Rank targets before range logging so a blocked closest target does not
+    // hide an attackable or path-reachable hostile actor.
+    if (target && positions?.[enemy.id]) {
+      const speedForPlanning =
+        enemy.Spd || enemy.spd || enemy.attributes?.Spd || enemy.attributes?.spd || 10;
+      const runningFeet = MOVEMENT_RATES.calculateMovement(speedForPlanning).running;
+      const planningHexes = Math.max(
+        1,
+        Math.floor(
+          (runningFeet / (enemy.actionsPerRound || 1)) /
+          (GRID_CONFIG.CELL_SIZE || 5),
+        ),
+      );
+      enemyMovementPlan = planEnemyMovement(planningHexes);
+      if (enemyMovementPlan?.target && enemyMovementPlan.target.id !== target.id) {
+        const previousTarget = target;
+        target = enemyMovementPlan.target;
+        currentDistance = calculateDistance(positions[enemy.id], positions[target.id]);
+        selectedAttack = getSelectableActorAttackForDistance(
+          enemy,
+          currentDistance,
+          selectedAttack,
+        );
+        addLog(
+          `${enemy.name} cannot get a clear approach to ${previousTarget.name}, so it redirects toward ${target.name}.`,
+          "info",
+        );
+      }
     }
 
     // Check weapon range for enemy attacks
@@ -4844,7 +4924,7 @@ export function runEnemyTurnAI(enemy, context) {
       positions[target.id]
     ) {
       const currentPos = positions[enemy.id];
-      const targetPos = positions[target.id];
+      let targetPos = positions[target.id];
 
       // Check if target is unreachable using centralized helper
       if (!canThreatenWithMelee(enemy, target)) {
@@ -5030,6 +5110,9 @@ export function runEnemyTurnAI(enemy, context) {
         targetPos,
         availableAttacks,
       );
+      if (String(aiDecision?.reason || "").toLowerCase() === "can reach and attack") {
+        aiDecision.reason = "cannot attack this action, closing distance";
+      }
 
       // Check for flanking opportunities
       const flankingPositions = findFlankingPositions(
@@ -5084,11 +5167,22 @@ export function runEnemyTurnAI(enemy, context) {
             );
           }
 
+          const flankPlan = planEnemyMovement(
+            Math.max(1, Math.floor(maxMoveDistance / (GRID_CONFIG.CELL_SIZE || 5))),
+            [target],
+          );
+          const reachableFlankKeys = new Set(
+            (flankPlan?.rankedTargets?.[0]?.attackHexes || [])
+              .filter((entry) => entry.preferred)
+              .map((entry) => `${entry.position.x},${entry.position.y}`),
+          );
+
           // Filter flanking positions to only those that are:
           // 1. Within movement range
           // 2. Within attack range after moving
           const validFlankingPositions = flankingPositions.filter(
             (flankPos) => {
+              if (!reachableFlankKeys.has(`${flankPos.x},${flankPos.y}`)) return false;
               const flankDistance = calculateDistance(currentPos, flankPos);
               if (flankDistance > maxMoveDistance) return false; // Can't reach it
 
@@ -5190,6 +5284,15 @@ export function runEnemyTurnAI(enemy, context) {
               `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â½ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¯ ${enemy.name} cannot reach a valid flanking position - will move directly toward ${target.name}`,
               "info",
             );
+            if (
+              (flankPlan?.rankedTargets?.[0]?.attackHexes || [])
+                .some((entry) => !entry.preferred)
+            ) {
+              addLog(
+                `${enemy.name} cannot reach the flank tile, so it takes the nearest open attack position.`,
+                "info",
+              );
+            }
           }
         } // Close the else block for reachable target check
       }
@@ -5446,6 +5549,30 @@ export function runEnemyTurnAI(enemy, context) {
       }
 
       let newX, newY, movementInfo;
+      const liveMovementPlan = planEnemyMovement(actualHexesToMove, [target]);
+      const plannedMovementPosition = liveMovementPlan?.position || null;
+      if (plannedMovementPosition && liveMovementPlan.type === "approach") {
+        const actualFeet = calculateDistance(currentPos, plannedMovementPosition);
+        addLog(
+          `${enemy.name} cannot reach an open attack position, so it advances ${Math.round(actualFeet)}ft along a clear path.`,
+          "info",
+        );
+      } else if (!plannedMovementPosition && liveMovementPlan?.type === "hold") {
+        addLog(`${enemy.name} cannot find a legal path and holds position.`, "warning");
+        if (commitEnemyAction("BLOCKED_MOVEMENT_HOLD")) {
+          setFighters((prev) => prev.map((fighter) => (
+            fighter.id === enemy.id
+              ? {
+                  ...fighter,
+                  remainingActions: Math.max(0, (fighter.remainingActions ?? 1) - 1),
+                }
+              : fighter
+          )));
+        }
+        processingEnemyTurnRef.current = false;
+        scheduleEndTurn();
+        return;
+      }
 
       if (isChargeMovement || isWalkOrMoveMovement) {
         // MOVE: move calculated hexes immediately
@@ -5453,7 +5580,10 @@ export function runEnemyTurnAI(enemy, context) {
         const hexesThisTurn = actualHexesToMove; // Use the calculated movement distance
 
         // FIX: Prevent NaN by ensuring distance is valid
-        if (distance < 0.01) {
+        if (plannedMovementPosition) {
+          newX = plannedMovementPosition.x;
+          newY = plannedMovementPosition.y;
+        } else if (distance < 0.01) {
           newX = currentPos.x;
           newY = currentPos.y;
         } else {
@@ -5611,7 +5741,7 @@ export function runEnemyTurnAI(enemy, context) {
           // Update position immediately for MOVE or CHARGE
           handlePositionChange(enemy.id, { x: newX, y: newY }, movementInfo);
 
-          const distanceMoved = hexesThisTurn * GRID_CONFIG.CELL_SIZE;
+          const distanceMoved = calculateDistance(currentPos, { x: newX, y: newY });
           const actionVerb = isChargeMovement ? "charges" : "moves";
 
           // Use MOVEMENT_RATES for 1994 Medieval Combat Simulator format
@@ -5683,7 +5813,10 @@ export function runEnemyTurnAI(enemy, context) {
         const moveDistance = actualHexesToMove;
 
         // FIX: Prevent NaN by checking distance is valid
-        if (distance < 0.01) {
+        if (plannedMovementPosition) {
+          newX = plannedMovementPosition.x;
+          newY = plannedMovementPosition.y;
+        } else if (distance < 0.01) {
           // Already at target, don't move
           newX = currentPos.x;
           newY = currentPos.y;
