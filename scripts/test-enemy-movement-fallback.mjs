@@ -10,6 +10,7 @@ import {
   validateEnemyMovementPlan,
 } from "../src/utils/enemyMovementFallback.js";
 import { getCombatantFootprintHexes } from "../src/utils/enemyClosingMovement.js";
+import { decideEnemyTacticalIntent } from "../src/utils/enemyAttributeTacticalIntent.js";
 
 const offsets = [[1, 0], [1, -1], [0, -1], [-1, 0], [-1, 1], [0, 1]];
 const getNeighbors = (x, y) => offsets.map(([dx, dy]) => ({ x: x + dx, y: y + dy }));
@@ -460,6 +461,40 @@ plan = chooseEnemyMovementFallback(makeOptions({
 }));
 assert.equal(plan.type, "hold", "enemy holds only when no legal step exists");
 
+const tacticalHolder = {
+  id: "tactical-holder",
+  currentHP: 3,
+  maxHP: 20,
+  originalActorMetadata: {
+    attributes: {
+      resolve: 6,
+      discipline: 12,
+      mobility: 8,
+      awareness: 14,
+      cunning: 10,
+      presence: 8,
+      vigor: 8,
+      endurance: 8,
+      might: 9,
+    },
+  },
+};
+const tacticalHoldDecision = decideEnemyTacticalIntent({
+  actor: tacticalHolder,
+  distanceFt: 50,
+  enemies: [{ id: "one" }, { id: "two" }, { id: "three" }],
+});
+assert.ok(["hold", "hesitate"].includes(tacticalHoldDecision.intent));
+let tacticalHoldActions = 0;
+let tacticalHoldAdvances = 0;
+executeEnemyMovementPlan({ type: tacticalHoldDecision.intent, position: null }, {
+  commit: () => true,
+  spendAction: () => { tacticalHoldActions += 1; },
+  finish: () => { tacticalHoldAdvances += 1; },
+});
+assert.equal(tacticalHoldActions, 1, "attribute hold consumes one action safely");
+assert.equal(tacticalHoldAdvances, 1, "attribute hold advances the turn safely");
+
 for (const invalid of [
   { id: "dead", team: "party", HP: 0 },
   { id: "defeated", team: "party", defeated: true },
@@ -502,6 +537,9 @@ assert.match(combatPageSource, /chooseLegacyMovementPlan/);
 assert.match(combatPageSource, /redirects toward/);
 assert.match(combatPageSource, /moves from \(\$\{currentPos\.x\},\$\{currentPos\.y\}\) to/);
 assert.match(combatPageSource, /hydrateEnemyFromCanonicalPosition\(liveEnemy, livePositions\)/);
+assert.match(combatPageSource, /decideEnemyTacticalIntentSafely/);
+assert.match(combatPageSource, /TACTICAL_\$\{tacticalIntent\.intent\.toUpperCase\(\)\}/);
+assert.match(combatPageSource, /\["cautious_advance", "flank"\]\.includes\(tacticalIntent\.intent\)/);
 assert.match(
   combatPageSource,
   /if \(persistImmediately && movementAction !== 'CHARGE'\)/,

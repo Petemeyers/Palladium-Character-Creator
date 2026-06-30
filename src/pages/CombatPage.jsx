@@ -320,6 +320,7 @@ import {
   persistEnemyMovementPosition,
   validateEnemyMovementPlan,
 } from "../utils/enemyMovementFallback.js";
+import { decideEnemyTacticalIntentSafely } from "../utils/enemyAttributeTacticalIntent.js";
 import {
   isCombatantFled,
   markCombatantFled,
@@ -22597,6 +22598,62 @@ function CombatPage({ characters = [] }) {
       // Use new AI system for movement decisions with flanking consideration
       const aiDecision = calculateEnemyMovementAI(enemy, target, currentPos, targetPos, availableAttacks);
 
+      const tacticalAllies = liveFighters.filter((fighter) => (
+        fighter.id !== enemy.id &&
+        canFighterAct(fighter) &&
+        !isCanonicalHostileTarget(enemy, fighter)
+      ));
+      const tacticalEnemies = liveFighters.filter((fighter) => (
+        fighter.id !== enemy.id &&
+        canFighterAct(fighter) &&
+        isCanonicalHostileTarget(enemy, fighter)
+      ));
+      const allyEngaged = tacticalAllies.some((ally) => (
+        livePositions[ally.id] && calculateDistance(livePositions[ally.id], targetPos) <= GRID_CONFIG.CELL_SIZE + 0.01
+      ));
+      const tacticalIntent = decideEnemyTacticalIntentSafely({
+        actor: enemy,
+        target,
+        distanceFt: currentDistance,
+        meleeRangeFt: GRID_CONFIG.CELL_SIZE,
+        allies: tacticalAllies,
+        enemies: tacticalEnemies,
+        battlefield: { allyEngaged },
+        movementContext: {
+          hasAttackOption: availableAttacks.length > 0,
+          inAttackRange: false,
+          allyEngaged,
+          defensive: ["defensive", "guard"].includes(String(enemy.aiRole || "").toLowerCase()),
+        },
+      }, (error) => {
+        addLog(
+          `${enemy.name} tactical intent failed; using normal advance (${error?.message || String(error)}).`,
+          "warning",
+        );
+      });
+      const intentLabel = tacticalIntent.intent === "advance"
+        ? (String(enemy.aiRole || "").toLowerCase() === "brute" ? "aggressive advance" : "steady advance")
+        : tacticalIntent.intent.replaceAll("_", " ");
+      addLog(
+        `${enemy.name} chooses ${intentLabel}: ${tacticalIntent.reasons.slice(0, 2).join("; ")}.`,
+        "info",
+      );
+
+      if (tacticalIntent.intent === "hold" || tacticalIntent.intent === "hesitate") {
+        if (!commitEnemyAction(`TACTICAL_${tacticalIntent.intent.toUpperCase()}`)) return;
+        commitFighters((prev) => prev.map((fighter) => (
+          fighter.id === enemy.id
+            ? {
+                ...fighter,
+                remainingActions: Math.max(0, (Number(fighter.remainingActions ?? 0) || 0) - 1),
+              }
+            : fighter
+        )));
+        processingEnemyTurnRef.current = false;
+        scheduleEndTurn(0, `enemy-tactical-${tacticalIntent.intent}`);
+        return;
+      }
+
       // Check for flanking opportunities
         const flankingPositions = findFlankingPositions(targetPos, livePositions, enemy.id);
         const currentFlankingBonus = calculateFlankingBonus(currentPos, targetPos, livePositions, enemy.id);
@@ -22991,6 +23048,17 @@ function CombatPage({ characters = [] }) {
         addLog(`${enemy.name} flies closer (${aiDecision.reason})`, "info");
       }
       // else: close distance (1-3 hexes) - use default MOVE (1 hex)
+
+      if (
+        ["cautious_advance", "flank"].includes(tacticalIntent.intent) &&
+        movementType !== 'CHARGE' &&
+        movementType !== 'FLY'
+      ) {
+        movementType = 'MOVE';
+        movementDescription = tacticalIntent.intent === "flank" ? "advances cautiously toward a flank" : "advances cautiously";
+        const cautiousMoveFeet = getMaxMoveFtThisAction(enemy, "MOVE");
+        hexesToMove = Math.max(1, Math.floor(cautiousMoveFeet / GRID_CONFIG.CELL_SIZE));
+      }
 
       // If we decided to CHARGE, make sure we're using a charge-type attack!
       if (movementType === 'CHARGE' && isChargingAttack) {

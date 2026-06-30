@@ -89,6 +89,7 @@ import {
   executeEnemyMovementPlan,
   validateEnemyMovementPlan,
 } from "../enemyMovementFallback.js";
+import { decideEnemyTacticalIntentSafely } from "../enemyAttributeTacticalIntent.js";
 
 // -----------------------------------------------------------------------------
 // Weakness Memory Persistence (across encounters)
@@ -5131,6 +5132,56 @@ export function runEnemyTurnAI(enemy, context) {
       if (String(aiDecision?.reason || "").toLowerCase() === "can reach and attack") {
         aiDecision.reason = "cannot attack this action, closing distance";
       }
+      const tacticalAllies = fighters.filter((fighter) => (
+        fighter.id !== enemy.id && canFighterAct(fighter) && isAllyTarget(fighter)
+      ));
+      const tacticalEnemies = fighters.filter((fighter) => (
+        fighter.id !== enemy.id && canFighterAct(fighter) && isHostileTarget(fighter)
+      ));
+      const allyEngaged = tacticalAllies.some((ally) => (
+        positions[ally.id] && calculateDistance(positions[ally.id], targetPos) <= GRID_CONFIG.CELL_SIZE + 0.01
+      ));
+      const tacticalIntent = decideEnemyTacticalIntentSafely({
+        actor: enemy,
+        target,
+        distanceFt: currentDistance,
+        meleeRangeFt: GRID_CONFIG.CELL_SIZE,
+        allies: tacticalAllies,
+        enemies: tacticalEnemies,
+        battlefield: { allyEngaged },
+        movementContext: {
+          hasAttackOption: availableAttacks.length > 0,
+          inAttackRange: false,
+          allyEngaged,
+          defensive: ["defensive", "guard"].includes(String(enemy.aiRole || "").toLowerCase()),
+        },
+      }, (error) => addLog(
+        `${enemy.name} tactical intent failed; using normal advance (${error?.message || String(error)}).`,
+        "warning",
+      ));
+      addLog(
+        `${enemy.name} chooses ${tacticalIntent.intent.replaceAll("_", " ")}: ${tacticalIntent.reasons.slice(0, 2).join("; ")}.`,
+        "info",
+      );
+      if (tacticalIntent.intent === "hold" || tacticalIntent.intent === "hesitate") {
+        executeEnemyMovementPlan({ type: tacticalIntent.intent, position: null }, {
+          commit: () => commitEnemyAction(`TACTICAL_${tacticalIntent.intent.toUpperCase()}`),
+          spendAction: () => setFighters((prev) => prev.map((fighter) => (
+            fighter.id === enemy.id
+              ? {
+                  ...fighter,
+                  remainingActions: Math.max(0, (Number(fighter.remainingActions ?? 0) || 0) - 1),
+                }
+              : fighter
+          ))),
+          finish: ({ committed }) => {
+            if (!committed) return;
+            processingEnemyTurnRef.current = false;
+            scheduleEndTurn();
+          },
+        });
+        return;
+      }
 
       // Check for flanking opportunities
       const flankingPositions = findFlankingPositions(
@@ -5458,6 +5509,19 @@ export function runEnemyTurnAI(enemy, context) {
         }
       }
       // else: close distance (1-3 hexes) - use default MOVE (1 hex)
+
+      if (
+        ["cautious_advance", "flank"].includes(tacticalIntent.intent) &&
+        movementType !== "CHARGE" &&
+        movementType !== "FLY"
+      ) {
+        movementType = "MOVE";
+        movementDescription = tacticalIntent.intent === "flank"
+          ? "advances cautiously toward a flank"
+          : "advances cautiously";
+        const cautiousFeet = (speed * 18 * 0.5) / (enemy.actionsPerRound || 1);
+        hexesToMove = Math.max(1, Math.floor(cautiousFeet / GRID_CONFIG.CELL_SIZE));
+      }
 
       // AI switch uses "MOVE"/"RUN"/"CHARGE" while MOVEMENT_ACTIONS uses Title Case ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â normalize.
       const mtNorm = String(movementType || "").trim();
