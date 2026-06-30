@@ -28,6 +28,11 @@ import {
   formatRangeModifier,
   getRangedAttackRangeModifier,
 } from "../utils/rangedAttackRangeModifier.js";
+import {
+  buildManualQuickAttackState,
+  chooseManualAttackTarget,
+  chooseManualAttackWeapon,
+} from "../utils/manualCombatControlPolish.js";
 
 const getId = (combatant, index) =>
   String(combatant?.id || combatant?._id || combatant?.name || index);
@@ -41,11 +46,14 @@ const ManualPublicAttackTest = ({
   currentTurnStamina = null,
   selectedCombatAction = null,
   onCommandLog,
+  combatOver = false,
+  disabledReason = "",
 }) => {
   const [attackerId, setAttackerId] = useState("");
   const [targetId, setTargetId] = useState("");
-  const [attackIndex, setAttackIndex] = useState("0");
+  const [attackIndex, setAttackIndex] = useState("");
   const [result, setResult] = useState(null);
+  const [selectionMessage, setSelectionMessage] = useState("");
   const lastPreferredAttackerId = useRef("");
   const lastSelectedCombatActionId = useRef("");
 
@@ -66,7 +74,7 @@ const ManualPublicAttackTest = ({
     : [];
   const targetRow = availableTargets.find((row) => row.id === targetId) || null;
   const attacks = attackerRow?.summary.actionPreviews || [];
-  const selectedAttack = attacks[Number(attackIndex)] || null;
+  const selectedAttack = attackIndex === "" ? null : attacks[Number(attackIndex)] || null;
   const rangeValidation = validateAttackRange({
     attacker: attackerRow?.combatant,
     target: targetRow?.combatant,
@@ -107,7 +115,19 @@ const ManualPublicAttackTest = ({
     selectedAttackerIsCurrentTurn &&
     currentTurnStamina &&
     Number(currentTurnStamina.currentStamina) <= 0;
+  const quickAttackState = buildManualQuickAttackState({
+    attacker: attackerRow?.combatant,
+    target: targetRow?.combatant,
+    attack: selectedAttack,
+    rangeValidation,
+    rangedRangeModifier,
+    remainingActions: selectedAttackerIsCurrentTurn
+      ? currentTurnActions?.remainingActions ?? null
+      : null,
+    combatOver,
+  });
   const canApplyDamage =
+    !disabledReason &&
     typeof onApplyDamage === "function" &&
     result?.hit === true &&
     Number.isFinite(Number(result.damageTotal)) &&
@@ -118,7 +138,8 @@ const ManualPublicAttackTest = ({
 
   const handleAttackerChange = (value) => {
     setAttackerId(value);
-    setAttackIndex("0");
+    setAttackIndex("");
+    setSelectionMessage("");
     setResult(null);
   };
 
@@ -136,23 +157,26 @@ const ManualPublicAttackTest = ({
     if (!hasPreferredAttacker) return;
     lastPreferredAttackerId.current = String(preferredAttackerId);
     setAttackerId(String(preferredAttackerId));
-    setAttackIndex("0");
+    setAttackIndex("");
+    setSelectionMessage("");
     setResult(null);
   }, [preferredAttackerId, rows]);
 
   useEffect(() => {
     if (!attackerRow) return;
-    if (availableTargets.some((row) => row.id === targetId)) return;
-    setTargetId(availableTargets.length === 1 ? availableTargets[0].id : "");
+    const nextTargetId = chooseManualAttackTarget(availableTargets, targetId);
+    if (nextTargetId === targetId) return;
+    setTargetId(nextTargetId);
     setResult(null);
   }, [attackerRow?.id, availableTargets, targetId]);
 
   useEffect(() => {
-    if (!attackerRow || attacks.length === 0) return;
-    const selectedChoice = attackChoices[Number(attackIndex)];
-    if (selectedChoice && selectedChoice.validation.inRange !== false) return;
-    const legalChoices = attackChoices.filter((choice) => choice.validation.inRange !== false);
-    if (legalChoices.length === 1) setAttackIndex(String(legalChoices[0].index));
+    if (!attackerRow) return;
+    const selection = chooseManualAttackWeapon(attackChoices, attackIndex);
+    if (selection.attackIndex === attackIndex) return;
+    setAttackIndex(selection.attackIndex);
+    setSelectionMessage(selection.invalidReason);
+    setResult(null);
   }, [attackChoices, attackIndex, attackerRow, attacks.length]);
 
   useEffect(() => {
@@ -187,10 +211,15 @@ const ManualPublicAttackTest = ({
     setAttackerId(nextAttackerRow.id);
     if (nextTarget) setTargetId(nextTarget.id);
     setAttackIndex(String(nextAttackIndex));
+    setSelectionMessage("");
     setResult(null);
   }, [currentTurnId, preferredAttackerId, rows, selectedCombatAction]);
 
   const handleResolve = () => {
+    if (disabledReason) {
+      onCommandLog?.(commandBlockedLog({ action: "Attack", reason: disabledReason }), "warning");
+      return;
+    }
     if (!attackerRow || !targetRow || !selectedAttack) {
       onCommandLog?.(
         commandBlockedLog({
@@ -262,6 +291,7 @@ const ManualPublicAttackTest = ({
   };
 
   const handleApplyDamage = () => {
+    if (disabledReason) return;
     if (!canApplyDamage) return;
     const applyResult = onApplyDamage({
       attackerId,
@@ -300,8 +330,15 @@ const ManualPublicAttackTest = ({
           </Text>
         )}
 
+        {disabledReason && (
+          <Alert status="warning" borderRadius="md">
+            <AlertIcon />
+            <Text fontSize="sm">{disabledReason}</Text>
+          </Alert>
+        )}
+
         <HStack align="end" spacing={3} wrap="wrap">
-          <FormControl maxW="260px">
+          <FormControl maxW="260px" isDisabled={Boolean(disabledReason)}>
             <FormLabel fontSize="xs">Attacker</FormLabel>
             <Select
               size="sm"
@@ -317,13 +354,14 @@ const ManualPublicAttackTest = ({
             </Select>
           </FormControl>
 
-          <FormControl maxW="260px" isDisabled={!attackerRow}>
+          <FormControl maxW="260px" isDisabled={!attackerRow || Boolean(disabledReason)}>
             <FormLabel fontSize="xs">Target</FormLabel>
             <Select
               size="sm"
               value={targetId}
               onChange={(event) => {
                 setTargetId(event.target.value);
+                setSelectionMessage("");
                 setResult(null);
               }}
               placeholder="Select target"
@@ -340,17 +378,19 @@ const ManualPublicAttackTest = ({
             </Select>
           </FormControl>
 
-          <FormControl flex="1" minW="260px" isDisabled={!attackerRow || attacks.length === 0}>
+          <FormControl flex="1" minW="260px" isDisabled={!attackerRow || attacks.length === 0 || Boolean(disabledReason)}>
             <FormLabel fontSize="xs">Weapons</FormLabel>
             <HStack spacing={2} wrap="wrap">
               {attackChoices.map(({ attack, index, validation, ranged }) => {
                 const selected = String(index) === attackIndex;
                 const unavailable = validation.inRange === false;
-                const rangeText = ranged.isRanged
-                  ? `${validation.distanceFt ?? "?"} / ${ranged.maxRangeFt ?? "?"} ft - ${ranged.bandLabel}`
+                const detailText = ranged.isRanged
+                  ? unavailable
+                    ? `${validation.distanceFt ?? "?"}/${ranged.maxRangeFt ?? "?"} ft | Out of range`
+                    : `${validation.distanceFt ?? "?"}/${ranged.maxRangeFt ?? "?"} ft | ${ranged.bandLabel} | ${formatRangeModifier(ranged.finalModifier)} range mod`
                   : unavailable
-                    ? "Out of melee range"
-                    : `${validation.distanceFt ?? "?"} / ${validation.reachFt ?? "?"} ft - Melee`;
+                    ? `${validation.reachFt ?? 5} ft reach | Out of melee range`
+                    : `${validation.reachFt ?? 5} ft reach | In melee range`;
                 return (
                   <Button
                     key={`${attack.name || "attack"}-${index}`}
@@ -359,12 +399,20 @@ const ManualPublicAttackTest = ({
                     colorScheme={selected ? "purple" : "gray"}
                     onClick={() => {
                       setAttackIndex(String(index));
+                      setSelectionMessage("");
                       setResult(null);
                     }}
-                    isDisabled={unavailable}
+                    isDisabled={unavailable || Boolean(disabledReason)}
                     title={validation.message}
+                    h="auto"
+                    minH="44px"
+                    py={1}
+                    whiteSpace="normal"
                   >
-                    {attack.name || "Unnamed attack"} - {rangeText}
+                    <VStack spacing={0} align="start">
+                      <Text fontSize="xs" fontWeight="bold">{attack.name || "Unnamed attack"}</Text>
+                      <Text fontSize="xs" fontWeight="normal">{detailText}</Text>
+                    </VStack>
                   </Button>
                 );
               })}
@@ -375,12 +423,18 @@ const ManualPublicAttackTest = ({
             size="sm"
             colorScheme="purple"
             onClick={handleResolve}
+            isDisabled={!quickAttackState.enabled || Boolean(disabledReason)}
+            title={disabledReason || quickAttackState.disabledReason}
           >
-            {targetRow && selectedAttack
-              ? `Attack ${targetRow.summary.name} with ${selectedAttack.name || "selected weapon"}`
-              : "Resolve Attack"}
+            {quickAttackState.label}
           </Button>
         </HStack>
+
+        {(selectionMessage || !quickAttackState.enabled) && (
+          <Text fontSize="xs" color="orange.700">
+            {selectionMessage || quickAttackState.disabledReason}
+          </Text>
+        )}
 
         {targetRow && (
           <Text fontSize="sm" fontWeight="semibold">

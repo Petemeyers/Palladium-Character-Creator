@@ -111,6 +111,7 @@ import {
   buildClearedMovementState,
   canStartManualMovementTargeting,
   canUseManualEndTurn,
+  endCurrentManualAction,
   endManualTurnActions,
   getLegacyDefensiveDuplicateMessage,
   getLegacyDefensiveRemainingActionMessage,
@@ -123,6 +124,11 @@ import {
   buildCombatCommandTurnBridge,
   selectedActionMatchesCommandTurn,
 } from "../utils/combatCommandTurnBridge.js";
+import {
+  formatCommandActionCount,
+  getCommandCenterAttackGate,
+  getLegacyManualTurnOrderGate,
+} from "../utils/combatCommandParity.js";
 import { canExecuteMovementCommand } from "../utils/combatMovementCommand.js";
 import {
   commandBlockedLog,
@@ -8077,14 +8083,32 @@ function CombatPage({ characters = [] }) {
       return !currentSide || !fighterSide || fighterSide !== currentSide;
     });
   }, [commandActor, commandTurnBridge.activeActorId, fighters]);
+  const legacyManualTurnOrderGate = getLegacyManualTurnOrderGate({
+    combatActive,
+    combatOver: combatOverRef.current || combatEndCheckRef.current,
+    schedulerSource: commandTurnBridge.source,
+  });
+  const commandCenterAttackGate = getCommandCenterAttackGate({
+    combatActive,
+    combatOver: combatOverRef.current || combatEndCheckRef.current,
+    schedulerSource: commandTurnBridge.source,
+  });
   const selectedCombatActionTurnMatch = selectedActionMatchesCommandTurn(selectedCombatAction, commandTurnBridge);
-  const activeSelectedCombatAction = selectedCombatAction && !selectedCombatActionTurnMatch.ok
-    ? {
-        ...selectedCombatAction,
-        enabled: false,
-        disabledReason: selectedCombatActionTurnMatch.reason,
-      }
-    : selectedCombatAction;
+  const activeSelectedCombatAction = selectedCombatAction
+    ? !selectedCombatActionTurnMatch.ok
+      ? {
+          ...selectedCombatAction,
+          enabled: false,
+          disabledReason: selectedCombatActionTurnMatch.reason,
+        }
+      : selectedCombatAction.type === "attack" && !commandCenterAttackGate.enabled
+        ? {
+            ...selectedCombatAction,
+            enabled: false,
+            disabledReason: commandCenterAttackGate.reason,
+          }
+        : selectedCombatAction
+    : null;
   const commandManualTurnActive = Boolean(commandTurnBridge.activeActorId && commandTurnBridge.isPlayerControlled);
   const commandCenterDisabledReason = commandTurnBridge.warning ||
     (commandTurnBridge.isEnemyControlled ? "Waiting for enemy turn." : "");
@@ -13373,12 +13397,19 @@ function CombatPage({ characters = [] }) {
     setTargetingMode,
   ]);
 
-  const endManualPlayerTurn = useCallback(({ source, logType = "command" } = {}) => {
+  const endManualPlayerTurn = useCallback(({
+    source,
+    logType = "command",
+    endAllActions = true,
+  } = {}) => {
     const liveFighters = fightersRef.current ?? fighters;
     let liveFighter = liveFighters?.[turnIndexRef.current ?? turnIndex] || currentFighter;
     const activeActorId = String(commandTurnBridge.activeActorId || "");
     const liveFighterId = String(liveFighter?.id || liveFighter?._id || "");
     const isCommandCenterSource = source === "command-center-end-turn";
+    const manualEndActionLabel = isCommandCenterSource
+      ? endAllActions ? "End All Actions" : "End Current Action"
+      : "Compatibility End Turn";
 
     if (!canUseManualEndTurn({
       source,
@@ -13386,18 +13417,17 @@ function CombatPage({ characters = [] }) {
       commandTurn: isCommandCenterSource ? commandTurnBridge : null,
       aiControlEnabled: aiControlEnabledRef.current,
     })) {
-      const action = isCommandCenterSource ? "End Turn" : "Compatibility End Turn";
-      addLog(commandBlockedLog({ action, reason: "current turn is not player-controlled." }), "warning");
+      addLog(commandBlockedLog({ action: manualEndActionLabel, reason: "current turn is not player-controlled." }), "warning");
       return;
     }
 
     if (isCommandCenterSource && commandTurnBridge.warning) {
-      addLog(commandBlockedLog({ action: "End Turn", reason: commandTurnBridge.warning }), "warning");
+      addLog(commandBlockedLog({ action: manualEndActionLabel, reason: commandTurnBridge.warning }), "warning");
       return;
     }
 
     if (isCommandCenterSource && (!liveFighter || (activeActorId && liveFighterId && activeActorId !== liveFighterId))) {
-      addLog(commandBlockedLog({ action: "End Turn", reason: "current combatant was not found." }), "warning");
+      addLog(commandBlockedLog({ action: manualEndActionLabel, reason: "current combatant was not found." }), "warning");
       return;
     }
 
@@ -13411,17 +13441,18 @@ function CombatPage({ characters = [] }) {
 
     if (hasTrueBusyState) {
       pendingTurnAdvanceRef.current = false;
-      addLog(commandBlockedLog({ action: "End Turn", reason: "action is still resolving." }), "warning");
+      addLog(commandBlockedLog({ action: manualEndActionLabel, reason: "action is still resolving." }), "warning");
       return;
     }
 
     if (movementMode.active && String(selectedMovementFighter || "") === String(liveFighter?.id || "")) {
-      addLog(commandBlockedLog({ action: "End Turn", reason: "movement targeting is active." }), "warning");
+      addLog(commandBlockedLog({ action: manualEndActionLabel, reason: "movement targeting is active." }), "warning");
       return;
     }
 
     const pendingDefense = getPendingDefensiveSelection(selectedCombatAction, selectedAction);
     let fightersReadyToEnd = liveFighters;
+    let selectedActionAlreadySpent = false;
     if (pendingDefense) {
       const legacyActionCost = !selectedCombatAction && pendingDefense.reserveType === "block"
         ? getActionCost("PARRY")
@@ -13440,13 +13471,14 @@ function CombatPage({ characters = [] }) {
 
       if (!defenseResult.ok) {
         addLog(commandBlockedLog({
-          action: "End Turn",
+          action: manualEndActionLabel,
           reason: "Resolve selected defense before ending turn.",
         }), "warning");
         return;
       }
 
       if (defenseResult.applied) {
+        selectedActionAlreadySpent = true;
         liveFighter = defenseResult.updated;
         fightersReadyToEnd = liveFighters.map((fighter) =>
           String(fighter?.id || fighter?._id || "") === liveFighterId
@@ -13472,14 +13504,20 @@ function CombatPage({ characters = [] }) {
     setSelectedMovementCommandResult(null);
     pendingSelectedMovementCommandRef.current = null;
 
-    const endedFighters = endManualTurnActions(fightersReadyToEnd, liveFighter);
+    const endedFighters = endAllActions
+      ? endManualTurnActions(fightersReadyToEnd, liveFighter)
+      : selectedActionAlreadySpent
+        ? fightersReadyToEnd
+        : endCurrentManualAction(fightersReadyToEnd, liveFighter);
     fightersRef.current = endedFighters;
     setFighters(endedFighters);
 
     if (logType === "compatibility") {
       addLog(`${liveFighter?.name || "Combatant"} ends their turn.`, "info");
     } else {
-      addLog(commandCompletedLog({ actor: liveFighter, action: "End Turn", detail: "ends turn." }), "info");
+      const action = endAllActions ? "End All Actions" : "End Current Action";
+      const detail = endAllActions ? "finishes all actions for this round." : "passes initiative after one action.";
+      addLog(commandCompletedLog({ actor: liveFighter, action, detail }), "info");
     }
 
     scheduleEndTurn(0, source);
@@ -13488,6 +13526,7 @@ function CombatPage({ characters = [] }) {
     clearLegacyDefensiveActionState,
     commandTurnBridge,
     currentFighter,
+    endCurrentManualAction,
     endManualTurnActions,
     fighters,
     isActionBusy,
@@ -13511,6 +13550,14 @@ function CombatPage({ characters = [] }) {
     endManualPlayerTurn({
       source: "command-center-end-turn",
       logType: "command",
+    });
+  }, [endManualPlayerTurn]);
+
+  const endCommandCenterCurrentAction = useCallback(() => {
+    endManualPlayerTurn({
+      source: "command-center-end-turn",
+      logType: "command",
+      endAllActions: false,
     });
   }, [endManualPlayerTurn]);
 
@@ -25337,6 +25384,10 @@ function CombatPage({ characters = [] }) {
   }
 
   function startManualPublicTurnOrder() {
+    if (!legacyManualTurnOrderGate.enabled) {
+      addLog(legacyManualTurnOrderGate.reason, "warning");
+      return;
+    }
     const rows = buildPublicTurnOrderRows(fighters).filter((row) => row.ready);
     setManualPublicTurnOrder(rows);
     setManualPublicTurnIndex(0);
@@ -25348,6 +25399,10 @@ function CombatPage({ characters = [] }) {
   }
 
   function endManualPublicTurn() {
+    if (!legacyManualTurnOrderGate.enabled) {
+      addLog(legacyManualTurnOrderGate.reason, "warning");
+      return;
+    }
     const nextTurn = advancePublicTurnOrder({
       turnOrder: manualPublicTurnOrder,
       currentIndex: manualPublicTurnIndex,
@@ -25387,6 +25442,14 @@ function CombatPage({ characters = [] }) {
   }
 
   function applyManualPublicAttackDamage({ attackerId, targetId, damageTotal, result } = {}) {
+    if (!commandCenterAttackGate.enabled) {
+      addLog(commandBlockedLog({ action: "Attack", reason: commandCenterAttackGate.reason }), "warning");
+      return {
+        ok: false,
+        missingFields: ["scheduledCombat"],
+        message: commandCenterAttackGate.reason,
+      };
+    }
     const sourceFighters = Array.isArray(fightersRef.current) && fightersRef.current.length > 0
       ? fightersRef.current
       : fighters;
@@ -25444,7 +25507,7 @@ function CombatPage({ characters = [] }) {
         );
         setManualPublicTurnOrder(nextManualTurnOrder);
       }
-      actionMessage = ` Action spent: ${spendResult.remainingActions}/${spendResult.maxActions} remaining.`;
+      actionMessage = ` ${formatCommandActionCount(spendResult.remainingActions, spendResult.maxActions)}`;
       staminaMessage = ` Stamina spent: ${staminaResult.currentStamina}/${staminaResult.maxStamina} remaining.`;
     }
 
@@ -26482,6 +26545,11 @@ function CombatPage({ characters = [] }) {
     combatCastGuardRef.current.clear(); // Clear cast guard for new combat
     // Reset per-combat AI refs (anti-air ammo, unreachable counters, technique spam guards, arena props)
     resetAITransientRefs();
+
+    // The live scheduler is the sole turn-order authority once combat starts.
+    setManualPublicTurnOrder([]);
+    setManualPublicTurnIndex(0);
+    setManualPublicTurnRound(1);
 
     combatActiveRef.current = true;
     setCombatActive(true);
@@ -31447,7 +31515,8 @@ function CombatPage({ characters = [] }) {
                             activeActor={commandStatusActor}
                             selectedCombatAction={activeSelectedCombatAction}
                             endTurnUnavailableReason={commandCenterEndTurnUnavailableReason}
-                            onEndTurn={endCommandCenterTurn}
+                            onEndCurrentAction={endCommandCenterCurrentAction}
+                            onEndAllActions={endCommandCenterTurn}
                           />
 
                           <Box borderWidth="1px" borderColor="purple.100" borderRadius="md" p={3} bg="white">
@@ -31586,7 +31655,7 @@ function CombatPage({ characters = [] }) {
                                         size="xs"
                                         colorScheme="purple"
                                         onClick={startManualPublicTurnOrder}
-                                        isDisabled={!canStartManualPublicTurns}
+                                        isDisabled={!canStartManualPublicTurns || !legacyManualTurnOrderGate.enabled}
                                       >
                                         Start Manual Turn Order
                                       </Button>
@@ -31594,14 +31663,21 @@ function CombatPage({ characters = [] }) {
                                         size="xs"
                                         variant="outline"
                                         onClick={endManualPublicTurn}
-                                        isDisabled={manualPublicTurnOrder.length === 0}
+                                        isDisabled={manualPublicTurnOrder.length === 0 || !legacyManualTurnOrderGate.enabled}
                                       >
                                         End Turn
                                       </Button>
                                     </HStack>
                                   </HStack>
 
-                                  {!canStartManualPublicTurns && (
+                                  {!legacyManualTurnOrderGate.enabled && (
+                                    <Alert status="warning" borderRadius="md">
+                                      <AlertIcon />
+                                      <Text fontSize="sm">{legacyManualTurnOrderGate.reason}</Text>
+                                    </Alert>
+                                  )}
+
+                                  {!canStartManualPublicTurns && legacyManualTurnOrderGate.enabled && (
                                     <Text fontSize="xs" color="gray.600">
                                       Add at least one ready player and one ready enemy to start manual turn order.
                                     </Text>
@@ -31740,6 +31816,8 @@ function CombatPage({ characters = [] }) {
                                     }
                                   : null}
                                 onCommandLog={addLog}
+                                combatOver={!combatActive}
+                                disabledReason={commandCenterAttackGate.reason}
                               />
                             )}
                             {activeSelectedCombatAction?.type === "recover" && (
