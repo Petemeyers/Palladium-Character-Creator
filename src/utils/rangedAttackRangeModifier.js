@@ -158,6 +158,33 @@ export function getRangedAttackRangeModifier({
   };
 }
 
+export function applyRangedAttackRangeModifierToBonus({
+  actor = {},
+  attack = {},
+  distanceFt,
+  baseAttackBonus = 0,
+  adjacentHostile = false,
+} = {}) {
+  const profile = getRangedAttackRangeModifier({
+    actor,
+    attack,
+    distanceFt,
+    adjacentHostile,
+  });
+  const safeBaseAttackBonus = toNumber(baseAttackBonus) ?? 0;
+  const blocked = profile.isRanged && profile.canAttack === false;
+  const rangeModifier = profile.isRanged && profile.canAttack === true
+    ? profile.finalModifier ?? 0
+    : 0;
+  return {
+    ...profile,
+    blocked,
+    rangeModifier,
+    baseAttackBonus: safeBaseAttackBonus,
+    modifiedAttackBonus: safeBaseAttackBonus + rangeModifier,
+  };
+}
+
 export const formatRangeModifier = (value) => {
   const number = toNumber(value);
   if (number === null) return "n/a";

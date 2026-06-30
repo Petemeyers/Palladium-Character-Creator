@@ -100,6 +100,7 @@ import MovementActionHandler from "../components/MovementActionHandler.jsx";
 import UseItemActionHandler from "../components/UseItemActionHandler.jsx";
 import UseSkillActionHandler from "../components/UseSkillActionHandler.jsx";
 import {
+  applyRangedAttackRangeModifierToBonus,
   formatRangeModifier,
   getRangedAttackRangeModifier,
   isExplicitRangedAttack,
@@ -11462,13 +11463,14 @@ function CombatPage({ characters = [] }) {
     // If we can't locate positions, do NOT allow an attack override.
     if (!aPos || !dPos) return null;
 
-    const distHex = calculateDistance(aPos, dPos);
-    const distFeet = distHex * 5;
+    const distFeet = calculateDistance(aPos, dPos);
 
     const weapon = pickEquistaminadWeapon(attacker);
+    const normalizedAttackMode = String(attackMode || "melee").toLowerCase();
+    if (normalizedAttackMode === "ranged" && !isExplicitRangedAttack(weapon)) return null;
 
     // MELEE range gate (use your real melee reach if you have it; fallback to ~5.5ft)
-    if ((attackMode || "melee") === "melee") {
+    if (normalizedAttackMode === "melee") {
       const meleeMaxFeet =
         Number(weapon?.reachFeet ?? weapon?.reachFt ?? weapon?.reach ?? 5.5) || 5.5;
 
@@ -11479,7 +11481,7 @@ function CombatPage({ characters = [] }) {
     }
 
     // RANGED range gate
-    if ((attackMode || "melee") === "ranged") {
+    if (normalizedAttackMode === "ranged") {
       const maxRangeFeet = Number(weapon?.range ?? weapon?.maxRange ?? 0) || 0;
       if (maxRangeFeet > 0 && distFeet > maxRangeFeet) return null;
     }
@@ -11522,7 +11524,15 @@ function CombatPage({ characters = [] }) {
       (tempModifiers?.[attackerId]?.attackBonus || 0) +
       (tempModifiers?.[attackerId]?.nextMeleeAttack || 0);
 
-    let toHitBonus = baseAttackBonus + tempBonus;
+    const rangedAttackProfile = applyRangedAttackRangeModifierToBonus({
+      actor: attacker,
+      attack: weapon || {},
+      distanceFt: distFeet,
+      baseAttackBonus: baseAttackBonus + tempBonus,
+      adjacentHostile: distFeet <= 5,
+    });
+    if (rangedAttackProfile.blocked) return null;
+    let toHitBonus = rangedAttackProfile.modifiedAttackBonus;
 
     if (
       combatTerrain?.lightingData &&
@@ -11548,6 +11558,8 @@ function CombatPage({ characters = [] }) {
       ammoType,
       critOn: 20,
       critMult: 2,
+      rangeBand: rangedAttackProfile.band,
+      rangeModifier: rangedAttackProfile.rangeModifier,
     };
   }, [
     combatTerrain,
@@ -12204,16 +12216,52 @@ function CombatPage({ characters = [] }) {
       const attackSnapshot = {
         name: weapon.name,
         damage: weaponDamage,
-        type:
-          weapon?.range != null ||
-            ["bow", "crossbow", "sling"].includes((weapon?.category || "").toLowerCase())
-            ? "ranged"
-            : weapon.type,
+        type: isExplicitRangedAttack(weapon) ? "ranged" : weapon.type,
         range: weapon?.range,
+        rangeProfile: weapon?.rangeProfile,
         ammunition: weapon?.ammunition,
         weaponType: weapon?.weaponType,
         category: weapon?.category,
       };
+      const shooterPosition = positionsRef.current?.[shooter.id] || null;
+      const overwatchDistanceFt = shooterPosition ? calculateDistance(shooterPosition, hex) : null;
+      const targetIdAtHex = Object.entries(positionsRef.current || {}).find(([id, position]) => (
+        id !== String(shooter.id) && position?.x === hex.x && position?.y === hex.y
+      ))?.[0];
+      const targetAtHex = (fightersRef.current || []).find((fighter) => (
+        String(fighter?.id || fighter?._id || "") === String(targetIdAtHex || "")
+      ));
+      const baseAttackBonus = getCombatBonus(shooter, "attack", attackSnapshot) || 0;
+      const tempBonus =
+        (tempModifiers[shooter.id]?.attackBonus || 0) +
+        (tempModifiers[shooter.id]?.nextMeleeAttack || 0);
+      const overwatchRangeProfile = applyRangedAttackRangeModifierToBonus({
+        actor: shooter,
+        attack: attackSnapshot,
+        distanceFt: overwatchDistanceFt,
+        baseAttackBonus: baseAttackBonus + tempBonus,
+        adjacentHostile: Number(overwatchDistanceFt) <= 5,
+      });
+      if (overwatchRangeProfile.blocked) {
+        addLog(
+          `${shooter.name} cannot make an overwatch shot: ${targetAtHex?.name || "target hex"} is out of range.`,
+          "warning"
+        );
+        return;
+      }
+      const attackBonus = overwatchRangeProfile.modifiedAttackBonus;
+
+      if (overwatchRangeProfile.isRanged && overwatchRangeProfile.canAttack) {
+        addLog(
+          `${shooter.name} makes an overwatch shot at ${targetAtHex?.name || `hex (${hex.x}, ${hex.y})`}.`,
+          "info"
+        );
+        addLog(
+          `Range: ${Math.round(overwatchRangeProfile.distanceFt)}/${overwatchRangeProfile.maxRangeFt} ft, ` +
+          `${overwatchRangeProfile.bandLabel}, range modifier ${formatRangeModifier(overwatchRangeProfile.rangeModifier)}.`,
+          "info"
+        );
+      }
       const damageBonus = shooter.bonuses?.damage || 0;
       const safeDamageBonus =
         typeof damageBonus === "number" && !isNaN(damageBonus) ? damageBonus : 0;
@@ -12281,12 +12329,6 @@ function CombatPage({ characters = [] }) {
       attackSnapshot.damageDiceRolls = damageRollResult?.diceRolls || [];
       attackSnapshot.damageFormula = damageFormulaSnapshot;
 
-      const baseAttackBonus = getCombatBonus(shooter, "attack", attackSnapshot) || 0;
-      const tempBonus =
-        (tempModifiers[shooter.id]?.attackBonus || 0) +
-        (tempModifiers[shooter.id]?.nextMeleeAttack || 0);
-      const attackBonus = baseAttackBonus + tempBonus;
-
       if (tempModifiers[shooter.id]?.nextMeleeAttack) {
         const updatedTempMods = { ...tempModifiers };
         delete updatedTempMods[shooter.id].nextMeleeAttack;
@@ -12316,6 +12358,12 @@ function CombatPage({ characters = [] }) {
       attackSnapshot.isCriticalHit = isCriticalHit;
       attackSnapshot.isCriticalMiss = isCriticalMiss;
       attackSnapshot.attackBonus = attackBonus;
+      attackSnapshot.baseAttackBonus = baseAttackBonus + tempBonus;
+      attackSnapshot.rangeBand = overwatchRangeProfile.band;
+      attackSnapshot.rangeModifier = overwatchRangeProfile.rangeModifier;
+      attackSnapshot.rangeDistanceFt = overwatchRangeProfile.distanceFt;
+      attackSnapshot.maxRangeFt = overwatchRangeProfile.maxRangeFt;
+      attackSnapshot.rangeModifierApplied = overwatchRangeProfile.isRanged && overwatchRangeProfile.canAttack === true;
       attackSnapshot.scatterSeed = `${shooter.id}|${attackSnapshot.name}|${attackDiceRoll}|${attackRoll}`;
 
       // Store deterministic scatter hex at fire time (only used if crit miss)
@@ -15477,7 +15525,7 @@ function CombatPage({ characters = [] }) {
         return;
       } else {
         // Log range info for successful attacks
-        if (rangedAttackRangeProfile?.canAttack) {
+        if (rangedAttackRangeProfile?.canAttack && bonusModifiers?.preRoll?.rangeModifierApplied !== true) {
           addLog(
             `${attacker.name} attacks at ${rangedAttackRangeProfile.bandLabel.toLowerCase()}: ` +
             `${Math.round(rangedAttackRangeProfile.distanceFt)}/${rangedAttackRangeProfile.maxRangeFt} ft, ` +
@@ -15865,17 +15913,28 @@ function CombatPage({ characters = [] }) {
       // Flanking is melee-only (avoid ranged attackers "flanking" from 100+ ft).
       const effectiveFlankingBonus = isRangedForBonus ? 0 : flankingBonus;
 
-      const computedAttackBonus =
+      const computedAttackBonusBeforeRange =
         baseAttackBonus +
         chargeBonus +
         effectiveFlankingBonus +
         tempBonus +
         terrainModifiers.attack +
         sneakAttackBonus +
-        grappleAdvantage +
-        (rangedAttackRangeProfile?.finalModifier ?? 0);
-      const attackBonus =
-        bonusModifiers?.preRoll?.attackBonus ?? computedAttackBonus;
+        grappleAdvantage;
+      const computedAttackBonus =
+        computedAttackBonusBeforeRange + (rangedAttackRangeProfile?.finalModifier ?? 0);
+      const preRoll = bonusModifiers?.preRoll;
+      const preRollRangeAdjustment =
+        preRoll &&
+        preRoll.rangeModifierApplied !== true &&
+        rangedAttackRangeProfile?.isRanged &&
+        rangedAttackRangeProfile?.canAttack
+          ? rangedAttackRangeProfile.finalModifier ?? 0
+          : 0;
+      const preRollAttackBonus = Number(preRoll?.attackBonus);
+      const attackBonus = preRoll
+        ? (Number.isFinite(preRollAttackBonus) ? preRollAttackBonus : computedAttackBonusBeforeRange) + preRollRangeAdjustment
+        : computedAttackBonus;
 
       if (tempBonus !== 0) {
         addLog(`${attacker.name} has ${tempBonus > 0 ? '+' : ''}${tempBonus} temporary attack bonus!`, "info");
@@ -15906,7 +15965,6 @@ function CombatPage({ characters = [] }) {
         }));
       }
 
-      const preRoll = bonusModifiers?.preRoll;
       let attackRollResult;
       let attackRoll;
       let attackDiceRoll;
@@ -15914,7 +15972,7 @@ function CombatPage({ characters = [] }) {
       let isCriticalMiss;
 
       if (preRoll) {
-        attackRoll = preRoll.attackRoll;
+        attackRoll = Number(preRoll.attackRoll) + preRollRangeAdjustment;
         attackDiceRoll = preRoll.attackDiceRoll;
         isCriticalHit = preRoll.isCriticalHit;
         isCriticalMiss = preRoll.isCriticalMiss;
