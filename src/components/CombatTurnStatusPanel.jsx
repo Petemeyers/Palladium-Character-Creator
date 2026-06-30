@@ -74,7 +74,7 @@ const CombatTurnStatusPanel = ({
         {status.showEndTurnButton && (
           <HStack justify="space-between" align="center" wrap="wrap" spacing={3}>
             <Text fontSize="xs" color={status.endTurnAvailable ? "gray.600" : "orange.700"}>
-              {status.endTurnDisabledReason || "Ends this fighter's turn and advances initiative."}
+              {status.endTurnDisabledReason || "Sets this fighter's remaining actions to 0 and advances initiative."}
             </Text>
             <Button
               size="sm"

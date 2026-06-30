@@ -3,17 +3,17 @@ export const COMBAT_COMMAND_LAYOUT = {
   commandCenterLabel: "Combat Command Center",
   actionCatalogLabel: "Combat Action Catalog",
   selectedActionLabel: "Selected Combat Action",
-  compatibilityLabel: "Compatibility Combat Controls",
-  compatibilityToolsLabel: "Legacy/Compatibility Tools",
+  compatibilityLabel: "Legacy / Compatibility Tools",
+  compatibilityToolsLabel: "Fallback Testing",
   compatibilityDescription:
-    "These controls are preserved for compatibility while the Combat Command Center becomes the primary manual combat flow.",
+    "Older controls preserved for fallback testing.",
   defaultCompatibilityCollapsed: true,
   order: [
     "Combat Command Center",
     "Combat Action Catalog",
     "Selected Combat Action",
     "Combat Log / Status Panels",
-    "Compatibility Combat Controls",
+    "Legacy / Compatibility Tools",
   ],
 };
 

@@ -1,3 +1,5 @@
+import { isExplicitRangedAttack } from "./rangedAttackRangeModifier.js";
+
 const hasValue = (value) => value !== undefined && value !== null && value !== "";
 
 const toNumber = (value) => {
@@ -66,6 +68,7 @@ export function getDistanceBetweenCombatants(attacker, target) {
 }
 
 const inferRangeType = (attack = {}, reachFt, rangeFt) => {
+  if (isExplicitRangedAttack(attack)) return "ranged";
   const attackText = [
     attack?.rangeType,
     attack?.attackType,
@@ -76,9 +79,7 @@ const inferRangeType = (attack = {}, reachFt, rangeFt) => {
     attack?.label,
   ].map((value) => cleanText(value).toLowerCase()).join(" ");
 
-  if (/\b(ranged|range|bow|crossbow|sling|thrown|javelin|dart)\b/.test(attackText)) return "ranged";
   if (/\b(melee|close|reach|sword|axe|mace|spear|dagger|knife|unarmed|bite|claw)\b/.test(attackText)) return "melee";
-  if (rangeFt !== null && (reachFt === null || rangeFt > reachFt)) return "ranged";
   if (reachFt !== null) return "melee";
   return "unknown";
 };
@@ -101,6 +102,7 @@ export function getAttackReachOrRange(attack = {}) {
   const rangeFt = parseFeet(
     attack.rangeFt ??
     attack.range ??
+    attack.rangeProfile?.normal ??
     attack.normalRangeFt ??
     attack.normalRange ??
     attack.metadata?.rangeFt ??

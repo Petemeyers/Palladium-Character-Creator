@@ -1,4 +1,8 @@
 import { validateAttackRange } from "./combatRangeValidation.js";
+import {
+  formatRangeModifier,
+  getRangedAttackRangeModifier,
+} from "./rangedAttackRangeModifier.js";
 
 const hasValue = (value) => value !== undefined && value !== null && value !== "";
 
@@ -233,6 +237,12 @@ const buildAttackAction = ({ actor, currentTurnEntry, entry, index, targetId, se
   const reachFt = parseFeet(entry.reachFt ?? entry.reach);
   const rangeFt = parseFeet(entry.rangeFt ?? entry.range);
   const rangeValidation = validateAttackRange({ attacker: actor, target: selectedTarget, attack: entry });
+  const rangedRangeModifier = getRangedAttackRangeModifier({
+    actor,
+    attack: entry,
+    distanceFt: rangeValidation.distanceFt,
+    adjacentHostile: Number(rangeValidation.distanceFt) <= 5,
+  });
   const outOfRange = rangeValidation.inRange === false;
   const rangeSummary = rangeValidation.message && rangeValidation.message !== "Range unknown."
     ? rangeValidation.message
@@ -255,6 +265,11 @@ const buildAttackAction = ({ actor, currentTurnEntry, entry, index, targetId, se
     disabledReason: outOfRange ? rangeValidation.message : "",
     previewSummary: [
       buildAttackSummary(entry) || "Attack preview pending.",
+      rangedRangeModifier.isRanged && rangedRangeModifier.maxRangeFt !== null
+        ? `${rangedRangeModifier.distanceFt ?? "?"} / ${rangedRangeModifier.maxRangeFt} ft - ${rangedRangeModifier.bandLabel}; modifier ${formatRangeModifier(rangedRangeModifier.finalModifier)}`
+        : rangeValidation.rangeType === "melee" && rangeValidation.distanceFt !== null
+          ? `${rangeValidation.distanceFt} / ${rangeValidation.reachFt ?? "?"} ft - ${outOfRange ? "Out of melee range" : "Melee"}`
+          : "",
       rangeSummary,
     ].filter(Boolean).join(" "),
     metadata: {
@@ -266,6 +281,8 @@ const buildAttackAction = ({ actor, currentTurnEntry, entry, index, targetId, se
       rangeType: rangeValidation.rangeType,
       rangeMessage: rangeValidation.message,
       suggestedAction: rangeValidation.suggestedAction,
+      rangeBand: rangedRangeModifier.band,
+      rangeModifier: rangedRangeModifier.finalModifier,
     },
   });
 };

@@ -90,6 +90,7 @@ export function resolvePublicBasicAttack({
   attacker,
   target,
   attack,
+  attackModifier = 0,
   rollD20,
   rollDamage,
 } = {}) {
@@ -98,7 +99,9 @@ export function resolvePublicBasicAttack({
   const attackerName = getName(attacker, "Attacker");
   const targetName = getName(target, "Target");
   const attackName = String(firstValue(attack?.name, "Basic Attack"));
-  const attackBonus = getAttackBonus(attack);
+  const baseAttackBonus = getAttackBonus(attack);
+  const safeAttackModifier = toNumber(attackModifier) ?? 0;
+  const attackBonus = baseAttackBonus === null ? null : baseAttackBonus + safeAttackModifier;
   const targetArmor = getTargetArmor(target);
   const posturePreview = applyPostureEffectsToAttackPreview({
     target,
@@ -124,6 +127,8 @@ export function resolvePublicBasicAttack({
       attackName,
       d20Roll: null,
       attackBonus,
+      baseAttackBonus,
+      attackModifier: safeAttackModifier,
       totalToHit: null,
       targetArmor: finalTargetArmor,
       baseTargetArmor: targetArmor,
@@ -152,6 +157,8 @@ export function resolvePublicBasicAttack({
       attackName,
       d20Roll: null,
       attackBonus,
+      baseAttackBonus,
+      attackModifier: safeAttackModifier,
       totalToHit: null,
       targetArmor: finalTargetArmor,
       baseTargetArmor: targetArmor,
@@ -178,6 +185,8 @@ export function resolvePublicBasicAttack({
       attackName,
       d20Roll,
       attackBonus,
+      baseAttackBonus,
+      attackModifier: safeAttackModifier,
       totalToHit,
       targetArmor: finalTargetArmor,
       baseTargetArmor: targetArmor,
@@ -204,6 +213,8 @@ export function resolvePublicBasicAttack({
     attackName,
     d20Roll,
     attackBonus,
+    baseAttackBonus,
+    attackModifier: safeAttackModifier,
     totalToHit,
     targetArmor: finalTargetArmor,
     baseTargetArmor: targetArmor,

@@ -100,6 +100,11 @@ import MovementActionHandler from "../components/MovementActionHandler.jsx";
 import UseItemActionHandler from "../components/UseItemActionHandler.jsx";
 import UseSkillActionHandler from "../components/UseSkillActionHandler.jsx";
 import {
+  formatRangeModifier,
+  getRangedAttackRangeModifier,
+  isExplicitRangedAttack,
+} from "../utils/rangedAttackRangeModifier.js";
+import {
   buildClearedAttackAbortState,
   buildClearedLegacyDefensiveActionState,
   buildClearedMovementState,
@@ -220,6 +225,7 @@ import {
 import { createOriginalDamageAwardEventInputs } from "../utils/originalActorRuntimeAwardEvents.js";
 import { proposeOriginalTraitAwards } from "../utils/originalActorTraitAwardProposals.js";
 import {
+  applyAllOriginalTraitAwardProposalsToCombatants,
   applyOriginalTraitAwardProposalToCombatants,
   createOriginalTraitAwardProposalState,
   markOriginalTraitAwardProposalApplied,
@@ -3430,6 +3436,17 @@ function CombatPage({ characters = [] }) {
       markOriginalTraitAwardProposalApplied(current, proposal, result)
     ));
   }, []);
+
+  const applyAllProposedTraitAwards = useCallback(() => {
+    const result = applyAllOriginalTraitAwardProposalsToCombatants(
+      fightersRef.current || [],
+      proposedTraitAwards,
+      { source: "combat" }
+    );
+    fightersRef.current = result.combatants;
+    setFighters(result.combatants);
+    setProposedTraitAwards(result.proposals);
+  }, [proposedTraitAwards]);
 
   const getCombatantForTraitAward = useCallback((proposal) => {
     const actorId = String(proposal?.actorId || "");
@@ -12902,19 +12919,6 @@ function CombatPage({ characters = [] }) {
     const weaponName = String(attackData?.name || "Unarmed");
     const weaponNameLower = weaponName.toLowerCase();
 
-    // Thrown/ranged fast-path:
-    // Ensure thrown attacks never fall into melee validation logic.
-    const isExplicitThrown =
-      attackData?.isThrown === true ||
-      attackData?.weaponType === "thrown" ||
-      attackData?.category === "thrown" ||
-      attackData?.attackMode === "thrown";
-    // Name-based ranged detection (covers cases where attack entries omit range/type metadata)
-    const isNameRanged =
-      weaponNameLower.includes("bow") ||
-      weaponNameLower.includes("crossbow") ||
-      weaponNameLower.includes("sling");
-
     // Provide sane default ranges by name when metadata is missing (prevents 60ft fallback for bows)
     const impliedRangeByName =
       weaponNameLower.includes("long bow") || weaponNameLower === "longbow"
@@ -12927,14 +12931,7 @@ function CombatPage({ characters = [] }) {
               ? 160
               : null;
 
-    const isExplicitRanged =
-      attackData?.type === "ranged" ||
-      attackData?.rangeCategory === "ranged" ||
-      attackData?.isRanged === true ||
-      isExplicitThrown ||
-      isNameRanged ||
-      (attackData?.range != null && Number(attackData.range) > 10) ||
-      weaponNameLower.includes("thrown");
+    const isExplicitRanged = isExplicitRangedAttack(attackData);
     if (isExplicitRanged) {
       const maxRange =
         Number(attackData?.range ?? attackData?.rangeFt ?? attackData?.rangeFeet ?? impliedRangeByName ?? 0) || 60;
@@ -13003,15 +13000,7 @@ function CombatPage({ characters = [] }) {
       // Breath weapons (Fire Breath, Ice Breath, etc.) are treated as ranged/area attacks
       const isBreathWeapon = weaponName.toLowerCase().includes('breath') ||
         weaponName.toLowerCase().includes('breath weapon');
-      const isRangedWeapon = isBreathWeapon ||
-        weaponName.toLowerCase().includes('bow') ||
-        weaponName.toLowerCase().includes('crossbow') ||
-        weaponName.toLowerCase().includes('sling') ||
-        weaponName.toLowerCase().includes('gun') ||
-        weaponName.toLowerCase().includes('thrown') ||
-        weaponName.toLowerCase().includes('technique') ||
-        (attackData?.type === 'ranged') ||
-        (attackData?.range && attackData.range > 10);
+      const isRangedWeapon = isBreathWeapon || isExplicitRangedAttack(attackData);
 
       if (isRangedWeapon) {
         // Get weapon range from attackData or use defaults
@@ -13080,24 +13069,7 @@ function CombatPage({ characters = [] }) {
         const effectiveRange = Math.max(5.5, weaponLength > 0 ? weaponLength : 5.5);
 
         // Check if this is a melee attack (do NOT fraidere melee for thrown/ranged)
-        const isExplicitThrown =
-          attackData?.isThrown === true ||
-          attackData?.weaponType === "thrown" ||
-          attackData?.category === "thrown" ||
-          attackData?.attackMode === "thrown";
-        const weaponNameLower = weaponName.toLowerCase();
-        const isNameRanged =
-          weaponNameLower.includes("bow") ||
-          weaponNameLower.includes("crossbow") ||
-          weaponNameLower.includes("sling");
-        const isExplicitRanged =
-          attackData?.type === "ranged" ||
-          attackData?.rangeCategory === "ranged" ||
-          attackData?.isRanged === true ||
-          isExplicitThrown ||
-          isNameRanged ||
-          (attackData?.range && attackData.range > 10) ||
-          weaponName.toLowerCase().includes("thrown");
+        const isExplicitRanged = isExplicitRangedAttack(attackData);
         const isMeleeAttack = !isExplicitRanged;
 
         // SYMMETRIC ALTITUDE CHECK: For melee attacks, check vertical separation for both sides
@@ -13204,12 +13176,7 @@ function CombatPage({ characters = [] }) {
       return null;
     };
 
-    const looksRanged =
-      weaponName.toLowerCase().includes("bow") ||
-      weaponName.toLowerCase().includes("crossbow") ||
-      weaponName.toLowerCase().includes("sling") ||
-      weapon?.type === "ranged" ||
-      (typeof weapon?.range === "number" && weapon.range > 10);
+    const looksRanged = isExplicitRangedAttack(weapon || attackData);
 
     const parsedRange = looksRanged ? resolveRangeFeet(weapon, weaponName) : null;
     const normalizedWeapon =
@@ -15366,21 +15333,11 @@ function CombatPage({ characters = [] }) {
 
     // Classify attack type early so it stays in scope for later combat resolution.
     const weaponName = attackData?.name || "";
-    const isRangedWeapon =
-      weaponName.toLowerCase().includes("bow") ||
-      weaponName.toLowerCase().includes("crossbow") ||
-      weaponName.toLowerCase().includes("sling") ||
-      attackData?.type === "ranged" ||
-      (attackData?.range && attackData.range > 10);
+    const isRangedWeapon = isExplicitRangedAttack(attackData);
     const ammoType = attackData?.ammunition;
     const requiresAmmo = Boolean(ammoType && ammoType !== "shuman" && isRangedWeapon);
-    const isProjectileAttack =
-      isRangedWeapon ||
-      attackData?.type === "ranged" ||
-      attackData?.rangeCategory === "ranged" ||
-      attackData?.isRanged === true ||
-      attackData?.weaponType === "thrown" ||
-      attackData?.category === "thrown";
+    const isProjectileAttack = isRangedWeapon;
+    let rangedAttackRangeProfile = null;
     let ammoContext = null;
 
     // Check range and line of sight for attacks
@@ -15429,18 +15386,16 @@ function CombatPage({ characters = [] }) {
 
       // Use proper weapon range validation
       const vSepFt = Math.abs((getAltitude(attacker) || 0) - (getAltitude(defender) || 0));
-      const attackNameLower = String(attackData?.name || "").toLowerCase();
-      const isRangedForRangeCheck =
-        attackData?.type === "ranged" ||
-        attackData?.weaponType === "thrown" ||
-        attackData?.isThrown === true ||
-        (attackData?.range != null && Number(attackData.range) > 10) ||
-        (attackData?.category && String(attackData.category).toLowerCase() === "thrown") ||
-        // Name-based fallback (enemy attacks are sometimes "Attack" with a ranged weapon name)
-        attackNameLower.includes("bow") ||
-        attackNameLower.includes("crossbow") ||
-        attackNameLower.includes("sling");
+      const isRangedForRangeCheck = isExplicitRangedAttack(attackData);
       const distanceForRangeCheck = isRangedForRangeCheck ? Math.hypot(distance, vSepFt) : distance;
+      if (isRangedForRangeCheck) {
+        rangedAttackRangeProfile = getRangedAttackRangeModifier({
+          actor: attacker,
+          attack: attackData,
+          distanceFt: distanceForRangeCheck,
+          adjacentHostile: distanceForRangeCheck <= 5,
+        });
+      }
 
       const actionTypeForValidation =
         attackData?.type === "technique" || attackData?.technique || attackData?.damage === "by technique"
@@ -15492,15 +15447,7 @@ function CombatPage({ characters = [] }) {
         }
       } else if (!rangeValidation.canAttack) {
         // Check if this is a ranged attack - if so, don't log melee-specific errors
-        const isRangedAttackForError =
-          attackData?.type === "ranged" ||
-          attackData?.weaponType === "thrown" ||
-          attackData?.isThrown === true ||
-          (attackData?.range != null && Number(attackData.range) > 10) ||
-          (attackData?.category && String(attackData.category).toLowerCase() === "thrown") ||
-          attackNameLower.includes("bow") ||
-          attackNameLower.includes("crossbow") ||
-          attackNameLower.includes("sling");
+        const isRangedAttackForError = isExplicitRangedAttack(attackData);
 
         const reasonLower = String(rangeValidation.reason || "").toLowerCase();
         const isMeleeSpecificError =
@@ -15530,7 +15477,14 @@ function CombatPage({ characters = [] }) {
         return;
       } else {
         // Log range info for successful attacks
-        if (rangeValidation.rangeInfo) {
+        if (rangedAttackRangeProfile?.canAttack) {
+          addLog(
+            `${attacker.name} attacks at ${rangedAttackRangeProfile.bandLabel.toLowerCase()}: ` +
+            `${Math.round(rangedAttackRangeProfile.distanceFt)}/${rangedAttackRangeProfile.maxRangeFt} ft, ` +
+            `range modifier ${formatRangeModifier(rangedAttackRangeProfile.finalModifier)}.`,
+            "info"
+          );
+        } else if (rangeValidation.rangeInfo) {
           addLog(`${attacker.name} attacking at ${rangeValidation.rangeInfo}`, "info");
         }
       }
@@ -15906,12 +15860,7 @@ function CombatPage({ characters = [] }) {
       // Check for grapple advantage bonus
       const grappleAdvantage = attacker.grappleState?.hasGrappleAdvantage ? 2 : 0;
 
-      const isRangedForBonus =
-        attackData?.type === "ranged" ||
-        attackData?.weaponType === "thrown" ||
-        attackData?.isThrown === true ||
-        (attackData?.range != null && Number(attackData.range) > 10) ||
-        (attackData?.category && String(attackData.category).toLowerCase() === "thrown");
+      const isRangedForBonus = isExplicitRangedAttack(attackData);
 
       // Flanking is melee-only (avoid ranged attackers "flanking" from 100+ ft).
       const effectiveFlankingBonus = isRangedForBonus ? 0 : flankingBonus;
@@ -15923,7 +15872,8 @@ function CombatPage({ characters = [] }) {
         tempBonus +
         terrainModifiers.attack +
         sneakAttackBonus +
-        grappleAdvantage;
+        grappleAdvantage +
+        (rangedAttackRangeProfile?.finalModifier ?? 0);
       const attackBonus =
         bonusModifiers?.preRoll?.attackBonus ?? computedAttackBonus;
 
@@ -16090,11 +16040,7 @@ function CombatPage({ characters = [] }) {
         addLog(`${attacker.name} rolls ${attackDiceRoll} ${bonusDisplay} = ${attackRoll} vs AC ${targetGuardRating}`, "info");
       }
 
-      const isRangedAttack =
-        attackData?.type === "ranged" ||
-        attackData?.weaponType === "thrown" ||
-        (attackData?.range != null && Number(attackData.range) > 10) ||
-        (attackData?.category && String(attackData.category).toLowerCase() === "thrown");
+      const isRangedAttack = isExplicitRangedAttack(attackData);
 
       // AUTO-PARRY: If enemy attacks and defender has Hand-to-Hand, auto-block if conditions are met
       // NOTE: Ranged/thrown attacks are NOT blockable under our rules; only evade/cover applies.
@@ -32734,6 +32680,7 @@ function CombatPage({ characters = [] }) {
                 <ProposedChronicleAwardsPanel
                   proposals={proposedTraitAwards}
                   onApply={applyProposedTraitAward}
+                  onApplyAll={applyAllProposedTraitAwards}
                   onSave={saveProposedTraitAward}
                   isSaveEligible={canSaveProposedTraitAward}
                 />

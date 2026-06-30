@@ -24,6 +24,10 @@ import { previewWound } from "../utils/combatWounds.js";
 import { getWoundRecords } from "../utils/combatWoundRecords.js";
 import { validateAttackRange } from "../utils/combatRangeValidation.js";
 import { commandBlockedLog } from "../utils/combatCommandLog.js";
+import {
+  formatRangeModifier,
+  getRangedAttackRangeModifier,
+} from "../utils/rangedAttackRangeModifier.js";
 
 const getId = (combatant, index) =>
   String(combatant?.id || combatant?._id || combatant?.name || index);
@@ -69,6 +73,26 @@ const ManualPublicAttackTest = ({
     attack: selectedAttack,
   });
   const attackOutOfRange = rangeValidation.inRange === false;
+  const rangedRangeModifier = getRangedAttackRangeModifier({
+    actor: attackerRow?.combatant,
+    attack: selectedAttack,
+    distanceFt: rangeValidation.distanceFt,
+    adjacentHostile: Number(rangeValidation.distanceFt) <= 5,
+  });
+  const attackChoices = attacks.map((attack, index) => {
+    const validation = validateAttackRange({
+      attacker: attackerRow?.combatant,
+      target: targetRow?.combatant,
+      attack,
+    });
+    const ranged = getRangedAttackRangeModifier({
+      actor: attackerRow?.combatant,
+      attack,
+      distanceFt: validation.distanceFt,
+      adjacentHostile: Number(validation.distanceFt) <= 5,
+    });
+    return { attack, index, validation, ranged };
+  });
   const targetHpInfo = getPublicCombatHpInfo(targetRow?.combatant || {});
   const targetArmorProfile = getArmorProfile(targetRow?.combatant || {});
   const targetPostureEffect = getPostureEffect(targetRow?.combatant || {});
@@ -94,7 +118,6 @@ const ManualPublicAttackTest = ({
 
   const handleAttackerChange = (value) => {
     setAttackerId(value);
-    setTargetId("");
     setAttackIndex("0");
     setResult(null);
   };
@@ -113,10 +136,24 @@ const ManualPublicAttackTest = ({
     if (!hasPreferredAttacker) return;
     lastPreferredAttackerId.current = String(preferredAttackerId);
     setAttackerId(String(preferredAttackerId));
-    setTargetId("");
     setAttackIndex("0");
     setResult(null);
   }, [preferredAttackerId, rows]);
+
+  useEffect(() => {
+    if (!attackerRow) return;
+    if (availableTargets.some((row) => row.id === targetId)) return;
+    setTargetId(availableTargets.length === 1 ? availableTargets[0].id : "");
+    setResult(null);
+  }, [attackerRow?.id, availableTargets, targetId]);
+
+  useEffect(() => {
+    if (!attackerRow || attacks.length === 0) return;
+    const selectedChoice = attackChoices[Number(attackIndex)];
+    if (selectedChoice && selectedChoice.validation.inRange !== false) return;
+    const legalChoices = attackChoices.filter((choice) => choice.validation.inRange !== false);
+    if (legalChoices.length === 1) setAttackIndex(String(legalChoices[0].index));
+  }, [attackChoices, attackIndex, attackerRow, attacks.length]);
 
   useEffect(() => {
     if (!selectedCombatAction || selectedCombatAction.type !== "attack") return;
@@ -178,7 +215,18 @@ const ManualPublicAttackTest = ({
       attacker: attackerRow?.combatant,
       target: targetRow?.combatant,
       attack: selectedAttack,
+      attackModifier: rangedRangeModifier.isRanged
+        ? rangedRangeModifier.finalModifier ?? 0
+        : 0,
     });
+    if (rangedRangeModifier.isRanged && rangedRangeModifier.canAttack) {
+      onCommandLog?.(
+        `${attackerRow.summary.name} attacks at ${rangedRangeModifier.bandLabel.toLowerCase()}: ` +
+        `${rangedRangeModifier.distanceFt}/${rangedRangeModifier.maxRangeFt} ft, ` +
+        `range modifier ${formatRangeModifier(rangedRangeModifier.finalModifier)}.`,
+        "info"
+      );
+    }
     const armorMitigation = nextResult.hit
       ? applyArmorMitigation({
           target: targetRow?.combatant,
@@ -282,28 +330,45 @@ const ManualPublicAttackTest = ({
             >
               {availableTargets.map((row) => (
                 <option key={row.id} value={row.id}>
-                  {row.summary.name} ({row.summary.side})
+                  {row.summary.name} ({row.summary.side}) - {validateAttackRange({
+                    attacker: attackerRow?.combatant,
+                    target: row.combatant,
+                    attack: selectedAttack,
+                  }).distanceFt ?? "?"} ft
                 </option>
               ))}
             </Select>
           </FormControl>
 
-          <FormControl maxW="260px" isDisabled={!attackerRow || attacks.length === 0}>
-            <FormLabel fontSize="xs">Attack</FormLabel>
-            <Select
-              size="sm"
-              value={attackIndex}
-              onChange={(event) => {
-                setAttackIndex(event.target.value);
-                setResult(null);
-              }}
-            >
-              {attacks.map((attack, index) => (
-                <option key={`${attack.name || "attack"}-${index}`} value={String(index)}>
-                  {attack.name || "Unnamed attack"}
-                </option>
-              ))}
-            </Select>
+          <FormControl flex="1" minW="260px" isDisabled={!attackerRow || attacks.length === 0}>
+            <FormLabel fontSize="xs">Weapons</FormLabel>
+            <HStack spacing={2} wrap="wrap">
+              {attackChoices.map(({ attack, index, validation, ranged }) => {
+                const selected = String(index) === attackIndex;
+                const unavailable = validation.inRange === false;
+                const rangeText = ranged.isRanged
+                  ? `${validation.distanceFt ?? "?"} / ${ranged.maxRangeFt ?? "?"} ft - ${ranged.bandLabel}`
+                  : unavailable
+                    ? "Out of melee range"
+                    : `${validation.distanceFt ?? "?"} / ${validation.reachFt ?? "?"} ft - Melee`;
+                return (
+                  <Button
+                    key={`${attack.name || "attack"}-${index}`}
+                    size="sm"
+                    variant={selected ? "solid" : "outline"}
+                    colorScheme={selected ? "purple" : "gray"}
+                    onClick={() => {
+                      setAttackIndex(String(index));
+                      setResult(null);
+                    }}
+                    isDisabled={unavailable}
+                    title={validation.message}
+                  >
+                    {attack.name || "Unnamed attack"} - {rangeText}
+                  </Button>
+                );
+              })}
+            </HStack>
           </FormControl>
 
           <Button
@@ -311,9 +376,17 @@ const ManualPublicAttackTest = ({
             colorScheme="purple"
             onClick={handleResolve}
           >
-            Resolve Basic Attack
+            {targetRow && selectedAttack
+              ? `Attack ${targetRow.summary.name} with ${selectedAttack.name || "selected weapon"}`
+              : "Resolve Attack"}
           </Button>
         </HStack>
+
+        {targetRow && (
+          <Text fontSize="sm" fontWeight="semibold">
+            Target: {targetRow.summary.name} | Distance: {rangeValidation.distanceFt ?? "unknown"} ft
+          </Text>
+        )}
 
         {selectedAttack && (
           <Box borderWidth="1px" borderRadius="md" p={2} bg={attackOutOfRange ? "orange.50" : "gray.50"}>
@@ -335,10 +408,18 @@ const ManualPublicAttackTest = ({
                     Range: {rangeValidation.rangeFt} ft
                   </Text>
                 )}
+                {rangedRangeModifier.isRanged && rangedRangeModifier.canAttack && (
+                  <Badge colorScheme="blue">{rangedRangeModifier.bandLabel}</Badge>
+                )}
               </HStack>
               <Text fontSize="xs" color={attackOutOfRange ? "orange.700" : "gray.600"}>
                 {rangeValidation.message}
               </Text>
+              {rangedRangeModifier.isRanged && rangedRangeModifier.canAttack && (
+                <Text fontSize="xs" color="gray.700">
+                  Base range modifier {formatRangeModifier(rangedRangeModifier.baseModifier)}; Deftness/Awareness control {formatRangeModifier(rangedRangeModifier.controlModifier)}; Final range modifier {formatRangeModifier(rangedRangeModifier.finalModifier)}.
+                </Text>
+              )}
               {attackOutOfRange && rangeValidation.suggestedAction && (
                 <Text fontSize="xs" color="orange.700">
                   Suggestion: {rangeValidation.suggestedAction}

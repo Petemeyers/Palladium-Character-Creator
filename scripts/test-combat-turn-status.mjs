@@ -40,7 +40,7 @@ assert.equal(fullActions.postureLabel, "None");
 assert.equal(fullActions.nextStepMessage, "Choose a command.");
 assert.equal(fullActions.showEndTurnButton, true);
 assert.equal(fullActions.endTurnAvailable, true);
-assert.equal(fullActions.endTurnButtonLabel, "End Turn");
+assert.equal(fullActions.endTurnButtonLabel, "End All Actions");
 
 const partialActions = buildCombatTurnStatus({
   commandTurn: { ...playerTurn, remainingActions: 1 },

@@ -21,6 +21,7 @@ import { summarizeOriginalTraitAwardProposal } from "../utils/originalActorTrait
 export default function ProposedChronicleAwardsPanel({
   proposals = [],
   onApply,
+  onApplyAll,
   onSave,
   isSaveEligible,
 }) {
@@ -39,20 +40,33 @@ export default function ProposedChronicleAwardsPanel({
   }, [rows.length]);
 
   if (rows.length === 0) return null;
+  const pendingCount = rows.filter(({ summary }) => summary.status === "pending").length;
 
   return (
     <Box as="section" mb={3} pb={3} borderBottomWidth="1px" borderColor="gray.200">
       <HStack justify="space-between" align="center" spacing={3} mb={1}>
         <Heading size="xs">Proposed Chronicle Awards ({rows.length})</Heading>
-        <Button
-          size="xs"
-          variant="outline"
-          onClick={() => setIsExpanded((current) => !current)}
-          aria-expanded={isExpanded}
-          aria-controls="proposed-chronicle-awards-list"
-        >
-          {isExpanded ? "Hide Awards" : "Show Awards"}
-        </Button>
+        <HStack spacing={2}>
+          {pendingCount > 0 && (
+            <Button
+              size="xs"
+              colorScheme="blue"
+              onClick={() => onApplyAll?.()}
+              isDisabled={typeof onApplyAll !== "function"}
+            >
+              Apply All Session Awards
+            </Button>
+          )}
+          <Button
+            size="xs"
+            variant="outline"
+            onClick={() => setIsExpanded((current) => !current)}
+            aria-expanded={isExpanded}
+            aria-controls="proposed-chronicle-awards-list"
+          >
+            {isExpanded ? "Hide Awards" : "Show Awards"}
+          </Button>
+        </HStack>
       </HStack>
       {!isExpanded && (
         <Text fontSize="xs" color="gray.600" mb={1}>
@@ -192,6 +206,7 @@ ProposedChronicleAwardsPanel.propTypes = {
     saveMessage: PropTypes.string,
   })),
   onApply: PropTypes.func,
+  onApplyAll: PropTypes.func,
   onSave: PropTypes.func,
   isSaveEligible: PropTypes.func,
 };

@@ -83,7 +83,7 @@ export function buildCombatTurnStatus({
     showEndTurnButton,
     endTurnAvailable,
     endTurnDisabledReason: safeEndTurnUnavailableReason,
-    endTurnButtonLabel: "End Turn",
+    endTurnButtonLabel: "End All Actions",
     warning: finalWarning,
   };
 }

@@ -104,4 +104,44 @@ export function markOriginalTraitAwardProposalApplied(
   });
 }
 
+export function applyAllOriginalTraitAwardProposalsToCombatants(
+  combatants = [],
+  proposals = [],
+  options = {}
+) {
+  let nextCombatants = Array.isArray(combatants) ? combatants : [];
+  let nextProposals = Array.isArray(proposals)
+    ? proposals.map((proposal) => ({ ...proposal }))
+    : [];
+  const results = [];
+
+  nextProposals
+    .filter((proposal) => proposal?.status === "pending")
+    .forEach((proposal) => {
+      const result = applyOriginalTraitAwardProposalToCombatants(
+        nextCombatants,
+        proposal,
+        { ...options, source: proposal?.source || options.source }
+      );
+      nextCombatants = result.combatants;
+      nextProposals = markOriginalTraitAwardProposalApplied(
+        nextProposals,
+        proposal,
+        result,
+        options
+      );
+      results.push({
+        actorId: normalizeId(proposal.actorId),
+        traitId: normalizeId(proposal.traitId).toLowerCase(),
+        status: result.status,
+      });
+    });
+
+  return {
+    combatants: nextCombatants,
+    proposals: nextProposals,
+    results,
+  };
+}
+
 export default applyOriginalTraitAwardProposalToCombatants;

@@ -17,15 +17,15 @@ const summary = buildCombatCommandLayoutSummary();
 assert.equal(summary.commandCenterLabel, "Combat Command Center");
 assert.equal(summary.actionCatalogLabel, "Combat Action Catalog");
 assert.equal(summary.selectedActionLabel, "Selected Combat Action");
-assert.equal(summary.compatibilityLabel, "Compatibility Combat Controls");
+assert.equal(summary.compatibilityLabel, "Legacy / Compatibility Tools");
 assert.equal(summary.defaultCompatibilityCollapsed, true);
-assert.ok(summary.compatibilityDescription.includes("preserved for compatibility"));
+assert.equal(summary.compatibilityDescription, "Older controls preserved for fallback testing.");
 assert.deepEqual(summary.order.slice(0, 3), [
   "Combat Command Center",
   "Combat Action Catalog",
   "Selected Combat Action",
 ]);
-assert.equal(summary.order.at(-1), "Compatibility Combat Controls");
+assert.equal(summary.order.at(-1), "Legacy / Compatibility Tools");
 assert.equal(hasFunction(summary), false, "layout metadata is display-safe");
 
 summary.order.push("mutation probe");
