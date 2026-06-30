@@ -1,20 +1,24 @@
-## Actor / Enemy Migration Vision
+# AGENTS.md
 
-This project is not a simple party-versus-monster combat demo. It is a historical-mythic combat simulator where humans, animals, soldiers, monsters, mythic creatures, spirits, and armies should eventually use one unified combat actor pipeline.
+This file is the authoritative instruction file for future AI coding agents working on this simulator.
 
-When modernizing old combat systems, do not remove working ideas just because they came from a legacy or compatibility-era implementation. Preserve the useful feature, normalize its data, and migrate it into the current original simulation structure.
+## Project Direction
+
+This project is a historical-mythic combat simulator, not a simple party-versus-monster combat demo. Humans, animals, soldiers, monsters, mythic creatures, spirits, and armies should eventually use one unified combat actor pipeline.
+
+When modernizing old combat systems, preserve useful working behavior even when it came from legacy or compatibility-era code. Normalize the data, migrate the feature into the current original simulation structure, and add tests before removing old paths.
+
+## Core Actor Principles
 
 ### Playable Does Not Mean Party
 
-Enemies, creatures, animals, mythic beings, and soldiers can be playable.
+`playable` means an actor can be manually selected or controlled when assigned an appropriate control mode. It does **not** mean the actor belongs to the player party.
 
-`playable` means the actor can be manually controlled by a human if assigned that control mode. It does not mean the actor belongs to the player party.
-
-Separate these concepts:
+Keep these concepts separate:
 
 - `team`, `side`, `battleSide`, `armyId`, or `factionId` determines allegiance.
 - `controlMode` determines who controls the actor.
-- `playable` determines whether the actor can be manually selected/controlled.
+- `playable` determines whether the actor can be manually selected or controlled.
 - `type` is legacy metadata and must not be the source of truth for allegiance.
 
 Expected examples:
@@ -60,7 +64,7 @@ Do not assume:
 
 ### Control Modes Are First-Class
 
-The combat simulator should support:
+The simulator should support:
 
 - player versus AI
 - AI versus AI
@@ -91,39 +95,35 @@ Expected defaults:
 - party + AI mode = AI controlled ally
 - enemy + AI mode = AI controlled opponent
 - enemy + manual mode = player-controlled enemy
-- neutral civilian/merchant/dialogue actor = passive
-- guard/defender = defensive until provoked or scripted
+- neutral civilian, merchant, or dialogue actor = passive
+- guard or defender = defensive until provoked or scripted
 
-Do not block enemy-side playable actors with manual-player-waiting unless their explicit `controlMode` is manual.
+Do not block enemy-side playable actors with manual-player-waiting unless their explicit `controlMode` is `"manual"`.
 
-### Preserve Working Legacy Features
+## Legacy Preservation Rules
 
-Do not delete old working features just because their data shape is messy.
+Do not delete old working features just because their data shape is messy. Migrate and normalize them.
 
-Migrate and normalize them.
+Preserve these working concepts:
 
-Examples:
-
-- Longbowman should keep its model and arrow-firing behavior.
-- Hawk and flying creatures should keep flight mechanics.
-- Minotaur should exist as its own mythic brute archetype, not collapse into Arena Champion.
-- Arena Champion should remain a separate arena/training opponent.
+- Longbowman keeps its model and arrow-firing behavior.
+- Hawk and flying creatures keep flight mechanics.
+- Minotaur remains its own mythic brute archetype and must not collapse into Arena Champion.
+- Arena Champion remains a separate arena/training opponent.
 - Legacy creatures, soldiers, and enemies may become normalized selectable actors.
-- Compatibility fields may remain as bridges, but should not be the primary source of truth for new systems.
+- Compatibility fields may remain as bridges, but must not be the primary source of truth for new systems.
 
-When a legacy actor behaves strangely, do not immediately remove it. First ask:
+When a legacy actor behaves strangely, ask:
 
 1. What feature was this actor supposed to prove?
 2. Which parts still work?
-3. Which fields are legacy/unsafe?
+3. Which fields are legacy or unsafe?
 4. What normalized actor shape should replace the raw legacy body?
 5. How can the model, attacks, movement, and AI role be preserved?
 
-### Selectable Actor Catalog
+## Selectable Actor Catalog
 
-The enemy picker should evolve into a selectable actor or bestiary catalog.
-
-This catalog should include clean public/original actors and normalized compatibility actors.
+The enemy picker should evolve into a selectable actor or bestiary catalog. This catalog should include clean public/original actors and normalized compatibility actors.
 
 Each selectable actor should define a normalized shape like:
 
@@ -133,6 +133,7 @@ Each selectable actor should define a normalized shape like:
   name: "Longbowman",
   category: "human",
   source: "normalized-legacy-actor",
+  sourceLabel: "Normalized Legacy Actor",
   teamDefault: "enemy",
   playable: true,
   defaultControlMode: "ai",
@@ -162,38 +163,38 @@ Each selectable actor should define a normalized shape like:
 }
 ```
 
-Use categories such as:
+Recommended categories:
 
-- human
-- humanoid
-- animal
-- mythic
-- giant
-- spirit
-- undead
-- construct
-- soldier
-- civilian
-- training
+- `human`
+- `humanoid`
+- `animal`
+- `mythic`
+- `giant`
+- `spirit`
+- `undead`
+- `construct`
+- `soldier`
+- `civilian`
+- `training`
 
-Use AI roles such as:
+Recommended AI roles:
 
-- passive
-- defensive
-- melee
-- ranged
-- archer
-- skirmisher
-- brute
-- grappler
-- flier
-- cavalry
-- commander
-- swarm
+- `passive`
+- `defensive`
+- `melee`
+- `ranged`
+- `archer`
+- `skirmisher`
+- `brute`
+- `grappler`
+- `flier`
+- `cavalry`
+- `commander`
+- `swarm`
 
-The catalog should not feed raw legacy enemy objects directly into combat. Raw legacy entries must be adapted first.
+The catalog must not feed raw legacy enemy objects directly into combat. Raw legacy entries must be adapted first.
 
-### Required Starter Actor Entries
+## Required Starter Actor Entries
 
 When building or repairing the selectable enemy/actor list, preserve or restore these concepts:
 
@@ -205,22 +206,20 @@ When building or repairing the selectable enemy/actor list, preserve or restore 
 - Archer: ranged humanoid.
 - Longbowman: ranged humanoid with model, longbow, arrows, and melee fallback.
 - Arena Champion: humanoid arena opponent.
-- Minotaur: mythic brute with its own identity/model/archetype.
+- Minotaur: mythic brute with its own identity, model, and archetype.
 - Hawk: flying animal using the existing flight mechanic.
 - Wolf: ground animal predator.
 - Boar: ground animal charger/brute.
 
 Do not replace Minotaur with Arena Champion. They are separate archetypes.
 
-Do not replace Longbowman with a generic melee enemy. It should remain a ranged actor.
+Do not replace Longbowman with a generic melee enemy. It must remain a ranged actor.
 
 Do not flatten Hawk or other flying actors into ground-only enemies.
 
-### Movement Mode Preservation
+## Movement Mode Preservation
 
-Movement must support multiple movement modes.
-
-Do not collapse movement into a single ground speed.
+Movement must support multiple movement modes. Do not collapse movement into a single ground speed.
 
 Preserve or normalize:
 
@@ -234,22 +233,22 @@ Preserve or normalize:
 A flying actor should have clear movement fields, such as:
 
 ```js
-movementModes: ["ground", "flying"],
-movement: {
-  ground: 10,
-  flying: 60
+{
+  movementModes: ["ground", "flying"],
+  movement: {
+    ground: 10,
+    flying: 60
+  }
 }
 ```
 
-or the closest existing project-compatible equivalent.
+Use the closest existing project-compatible equivalent when this exact shape is not yet supported.
 
 Flight mechanics for hawks and other flying characters must be preserved.
 
-### Ranged Actor Preservation
+## Ranged Actor Preservation
 
-Ranged actors must be able to fight at range.
-
-Longbowman, Archer, and other ranged actors should not be forced to close into melee when they have a valid ranged attack.
+Ranged actors must be able to fight at range. Longbowman, Archer, and other ranged actors should not be forced to close into melee when they have a valid ranged attack.
 
 A normalized ranged actor should include:
 
@@ -278,7 +277,7 @@ Use project-safe/original naming. Do not copy private/proprietary rulebook termi
 
 If a ranged actor is 80 ft away and has a valid ranged attack with normal range greater than 80 ft, the AI should prefer shooting rather than repeatedly attempting movement.
 
-### Mythic Actor Preservation
+## Mythic Actor Preservation
 
 Mythic creatures are part of the long-term project vision.
 
@@ -286,7 +285,7 @@ Minotaur, giants, spirits, dragons, and other mythic actors should use the same 
 
 Do not build a separate one-off monster system unless specifically requested.
 
-### Compatibility Actor Rules
+## Compatibility Actor Rules
 
 Legacy/compatibility actors may remain available, but must be clearly labeled.
 
@@ -317,11 +316,9 @@ The adapter should normalize:
 
 Do not allow old compatibility-only movement/range fields to override clean public/original fields unless explicitly intended.
 
-### AI Autoplay Goal
+## AI Autoplay Goal
 
-AI mode is a first-class project goal.
-
-The simulator should eventually allow the user to press a mode/toggle and watch a fight play out.
+AI mode is a first-class project goal. The simulator should eventually allow the user to press a mode/toggle and watch a fight play out.
 
 AI autoplay should support:
 
@@ -337,7 +334,7 @@ Do not assume that enemies are always AI-only.
 
 Do not assume that a side with no manual actor should stall.
 
-### Migration Rule For Strange Legacy Behavior
+## Migration Rule For Strange Legacy Behavior
 
 If a legacy actor behaves strangely, such as an archer repeatedly trying to move instead of shooting:
 
@@ -348,22 +345,20 @@ If a legacy actor behaves strangely, such as an archer repeatedly trying to move
 5. Add an adapter test proving the normalized version behaves correctly.
 6. Keep the legacy path labeled separately until it can be removed safely.
 
-Example:
+Example target for Longbowman normalization:
 
-Longbowman should become a normalized ranged actor with:
-
-- modelKey: `"longbowman"`
-- playable: true
-- defaultControlMode: `"ai"`
-- teamDefault: `"enemy"`
-- aiRole: `"ranged"`
+- `modelKey: "longbowman"`
+- `playable: true`
+- `defaultControlMode: "ai"`
+- `teamDefault: "enemy"`
+- `aiRole: "ranged"`
 - movement ground speed around normal human movement unless intentionally modified
 - longbow ranged attack
 - melee fallback
 - clean range profile
 - no raw legacy movement/range fields overriding the new profile
 
-### Implementation Priority
+## Implementation Priority
 
 When working on selectable actors, prioritize:
 
@@ -375,3 +370,16 @@ When working on selectable actors, prioritize:
 6. Manual playability for any actor.
 7. Separation of allegiance from control mode.
 8. Tests proving ranged, flying, mythic, passive, defensive, and playable-enemy actors do not stall turn flow.
+
+## Regression Expectations
+
+When implementing this migration, add or preserve tests that prove:
+
+- ranged actors attack from valid range instead of repeatedly closing into melee
+- flying actors retain flying movement and do not become ground-only
+- mythic actors remain distinct from training or arena actors
+- passive actors do not stall turn flow
+- defensive actors do not incorrectly behave as always-aggressive attackers
+- playable enemy-side actors can be manual or AI depending on `controlMode`
+- AI/autoplay battles continue when no party-side manual actor exists
+- compatibility actors are adapted before entering combat
