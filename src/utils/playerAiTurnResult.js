@@ -14,12 +14,14 @@ export function createPlayerAiActionResult(action, details = {}) {
     acted: true,
     actionTaken: true,
     action,
+    result: action,
   };
 }
 
 export function summarizePlayerAiResult(result, actionScheduled = false) {
   if (didPlayerAiAct(result, actionScheduled)) {
-    return String(result?.action || result?.actionType || result?.type || "acted").toLowerCase();
+    const resultText = result?.result ?? result?.action ?? result?.actionType ?? result?.type ?? "acted";
+    return String(resultText).toLowerCase();
   }
   if (result?.passed === true || result?.pass === true) return "pass";
   return "no-action";

@@ -640,6 +640,7 @@ function findRetreatDestination({
     isHexOccupied: (x, y) => (isHexOccupied ? isHexOccupied(x, y, enemyId) : false),
     getHexNeighbors,
     isValidPosition: (x, y) => isValidPosition(x, y),
+    calculateDistance,
     gridWidth: GRID_CONFIG.GRID_WIDTH,
     gridHeight: GRID_CONFIG.GRID_HEIGHT,
     allowTieMoves: true,
@@ -14443,7 +14444,10 @@ function CombatPage({ characters = [] }) {
   // Handle position changes on the tactical map
   const handlePositionChange = useCallback((combatantId, newPosition, movementInfo = null) => {
     const combatant = fighters.find(f => f.id === combatantId);
-    const movementAction = String(movementInfo?.action || "").toUpperCase();
+    const movementActionName = String(
+      movementInfo?.action || movementInfo?.movementType || "move"
+    );
+    const movementAction = movementActionName.toUpperCase();
     const isRunOrSprint = movementAction === 'RUN' || movementAction === 'SPRINT';
     const persistImmediately = movementInfo?.persistImmediately === true;
 
@@ -14462,9 +14466,9 @@ function CombatPage({ characters = [] }) {
       });
       setFlashingCombatants(prev => new Set(prev).add(combatantId));
       if (combatant) {
-        const { action, description } = movementInfo;
+        const { description } = movementInfo;
         addLog(
-          `${combatant.name} ${action.toLowerCase()}s to position (${newPosition.x}, ${newPosition.y}) - ${description}`,
+          `${combatant.name} ${movementActionName.toLowerCase()}s to position (${newPosition.x}, ${newPosition.y}) - ${description}`,
           "info",
         );
       }
@@ -14476,8 +14480,8 @@ function CombatPage({ characters = [] }) {
 
       // Just log the action
       if (combatant) {
-        const { action, actionCost, description } = movementInfo;
-        addLog(`${combatant.name} ${action.toLowerCase()}s to position (${newPosition.x}, ${newPosition.y}) - ${description}`, "info");
+        const { actionCost, description } = movementInfo;
+        addLog(`${combatant.name} ${movementActionName.toLowerCase()}s to position (${newPosition.x}, ${newPosition.y}) - ${description}`, "info");
 
         // Handle action cost
         if (actionCost === "all" || actionCost >= 1) {
@@ -14607,8 +14611,8 @@ function CombatPage({ characters = [] }) {
 
       if (combatant) {
         if (movementInfo) {
-          const { action, actionCost, description } = movementInfo;
-          addLog(`${combatant.name} ${action.toLowerCase()}s to position (${newPosition.x}, ${newPosition.y}) - ${description}`, "info");
+          const { actionCost, description } = movementInfo;
+          addLog(`${combatant.name} ${movementActionName.toLowerCase()}s to position (${newPosition.x}, ${newPosition.y}) - ${description}`, "info");
 
           // Handle action cost - if it costs actions, end the turn
           if (actionCost === "all" || actionCost >= 1) {
@@ -19232,6 +19236,7 @@ function CombatPage({ characters = [] }) {
       isHexOccupied,
       handlePositionChange,
       getEquistaminadWeapons,
+      findRetreatDestination,
       // Visibility / fog
       fogEnabled,
       visibleCells,

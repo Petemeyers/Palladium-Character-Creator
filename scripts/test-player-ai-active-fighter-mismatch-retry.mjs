@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 
 import { shouldRetryPlayerAiActiveFighterMismatch } from "../src/utils/playerAiTurnStartRetry.js";
+import { summarizePlayerAiResult } from "../src/utils/playerAiTurnResult.js";
 
 const safeTurnAdvance = {
   reason: "endTurn-direct",
@@ -34,6 +35,8 @@ for (let retry = 0; retry < activeIds.length; retry += 1) {
   assert.equal(shouldRetryPlayerAiActiveFighterMismatch({ ...safeTurnAdvance, retryCount: retry }), true);
 }
 assert.equal(starts, 1, "next party actor starts exactly once after refs settle");
+assert.equal(summarizePlayerAiResult({ actionTaken: true }), "acted",
+  "missing routed result labels cannot interrupt the next-actor handoff");
 
 const source = fs.readFileSync(new URL("../src/pages/CombatPage.jsx", import.meta.url), "utf8");
 assert.match(source, /player AI start blocked: reason=active-fighter-mismatch[\s\S]*scheduledKey=/);
@@ -41,4 +44,3 @@ assert.match(source, /player AI start retrying after active-fighter-mismatch/);
 assert.match(source, /queuePlayerStartRetry\(fighter, 1\)/);
 
 console.log("player AI active-fighter-mismatch retry tests passed");
-

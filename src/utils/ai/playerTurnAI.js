@@ -871,6 +871,7 @@ export async function runPlayerTurnAI(player, context) {
     player.moraleState?.status === "ROUTED" ||
     player.statusEffects?.includes("ROUTED")
   ) {
+    addLog(`player routed AI start fighter=${player.name}`, "debug");
     addLog(`ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€šÃ‚ÂÃƒâ€ Ã¢â‚¬â„¢ ${player.name} is ROUTED and attempts to flee!`, "warning");
     trace(`route: attempting flee`);
 
@@ -882,9 +883,11 @@ export async function runPlayerTurnAI(player, context) {
         "warning"
       );
       trace(`exit: routed but no position data`);
+      addLog("player routed AI blocked reason=no-position-data", "warning");
+      markActionScheduled();
       processingPlayerAIRef.current = false;
       scheduleEndTurn();
-      return;
+      return createPlayerAiActionResult("routed-blocked", { reason: "no-position-data" });
     }
 
     // Get active enemy fighters as threats
@@ -900,9 +903,11 @@ export async function runPlayerTurnAI(player, context) {
     if (enemyFighters.length === 0) {
       addLog(`ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã‚Â¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¯Ãƒâ€šÃ‚Â¸Ãƒâ€šÃ‚Â ${player.name} finds no active foes.`, "info");
       trace(`exit: no active foes`);
+      addLog("player routed AI blocked reason=no-active-foes", "warning");
+      markActionScheduled();
       processingPlayerAIRef.current = false;
       scheduleEndTurn();
-      return;
+      return createPlayerAiActionResult("routed-blocked", { reason: "no-active-foes" });
     }
 
     // Calculate threat positions
@@ -935,9 +940,13 @@ export async function runPlayerTurnAI(player, context) {
       } catch {
         // no-op (non-browser)
       }
+      addLog("player routed AI blocked reason=no-visible-threat-position", "warning");
+      markActionScheduled();
       processingPlayerAIRef.current = false;
       scheduleEndTurn();
-      return;
+      return createPlayerAiActionResult("routed-blocked", {
+        reason: "no-visible-threat-position",
+      });
     }
 
     // Calculate max retreat steps based on movement
@@ -954,7 +963,17 @@ export async function runPlayerTurnAI(player, context) {
       Math.min(Math.floor(fullFeetPerAction / GRID_CONFIG.CELL_SIZE), 5)
     );
 
-    // Try to find retreat destination
+    if (typeof findRetreatDestination !== "function") {
+      addLog("player routed AI blocked reason=retreat-helper-unavailable", "warning");
+      markActionScheduled();
+      processingPlayerAIRef.current = false;
+      scheduleEndTurn();
+      return createPlayerAiActionResult("routed-blocked", {
+        reason: "retreat-helper-unavailable",
+      });
+    }
+
+    // Try to find retreat destination using the shared live-combat routing adapter.
     const retreatDestination = findRetreatDestination({
       currentPos,
       threatPositions,
@@ -965,6 +984,10 @@ export async function runPlayerTurnAI(player, context) {
 
     if (retreatDestination && retreatDestination.position) {
       addLog(
+        `player routed AI flee target selected=${retreatDestination.position.x},${retreatDestination.position.y}`,
+        "debug",
+      );
+      addLog(
         `ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€¦Ã‚Â¡Ãƒâ€šÃ‚Â¶ ${player.name} withdraws from threats to (${retreatDestination.position.x}, ${retreatDestination.position.y}).`,
         "info"
       );
@@ -974,14 +997,24 @@ export async function runPlayerTurnAI(player, context) {
 
       // Actually move the player using handlePositionChange
       handlePositionChange(player.id, retreatDestination.position, {
+        action: "RETREAT",
+        actionCost: 0,
+        description: "Flee from threats",
         movementType: "withdraw",
         source: "AI_WITHDRAW",
         threatPositions: threatPositions,
       });
 
+      addLog(
+        `player routed AI moved fighter=${player.name} to=${retreatDestination.position.x},${retreatDestination.position.y} result=routed-move`,
+        "debug",
+      );
+      markActionScheduled();
       processingPlayerAIRef.current = false;
       scheduleEndTurn();
-      return;
+      return createPlayerAiActionResult("routed-move", {
+        destination: retreatDestination.position,
+      });
     }
 
     // No safe retreat hex found ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ end turn
@@ -990,9 +1023,13 @@ export async function runPlayerTurnAI(player, context) {
       "warning"
     );
 
+    addLog("player routed AI blocked reason=no-retreat-destination", "warning");
+    markActionScheduled();
     processingPlayerAIRef.current = false;
     scheduleEndTurn();
-    return;
+    return createPlayerAiActionResult("routed-blocked", {
+      reason: "no-retreat-destination",
+    });
   }
 
   // Check if combat is still active

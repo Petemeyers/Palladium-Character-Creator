@@ -6,7 +6,11 @@ import {
   resolveExplicitCombatControlMode,
 } from "../src/utils/combatantSide.js";
 import { buildCombatCommandTurnBridge } from "../src/utils/combatCommandTurnBridge.js";
-import { didPlayerAiAct, createPlayerAiActionResult } from "../src/utils/playerAiTurnResult.js";
+import {
+  didPlayerAiAct,
+  createPlayerAiActionResult,
+  summarizePlayerAiResult,
+} from "../src/utils/playerAiTurnResult.js";
 
 const resolveTurnMode = (actor, aiControlEnabled) => {
   const side = getCombatantSide(actor);
@@ -44,6 +48,10 @@ assert.equal(didPlayerAiAct(createPlayerAiActionResult("pending-continuation")),
   "automated movement continuations count as actions in large battles");
 assert.equal(didPlayerAiAct({ ok: false, blocked: true }), false,
   "a rejected continuation is not mistaken for a completed action result");
+assert.equal(didPlayerAiAct(createPlayerAiActionResult("routed-move")), true,
+  "routed party AI movement remains action-positive during auto-run");
+assert.equal(summarizePlayerAiResult({ ok: true, acted: true }), "acted",
+  "auto-run result logging cannot throw when an action label is absent");
 
 const partyBridge = buildCombatCommandTurnBridge({
   combatActive: true,
