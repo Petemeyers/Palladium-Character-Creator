@@ -76,6 +76,7 @@ import {
   findRoutingDestination,
   getRoutingProfile,
   hasSatisfiedRoutingExit,
+  resolveRoutedTurnRecovery,
 } from "../routingSystem.js";
 import {
   canTargetForAction,
@@ -90,6 +91,9 @@ import {
   validateEnemyMovementPlan,
 } from "../enemyMovementFallback.js";
 import { decideEnemyTacticalIntentSafely } from "../enemyAttributeTacticalIntent.js";
+import { markCombatantFled } from "../combatFledState.js";
+import { normalizeMoraleState } from "../morale/moraleChecks.js";
+import { evaluateMoraleTriggers } from "../morale/moraleTriggerChecks.js";
 
 // -----------------------------------------------------------------------------
 // Weakness Memory Persistence (across encounters)
@@ -1609,6 +1613,9 @@ export function runEnemyTurnAI(enemy, context) {
     meleeRound,
     turnIndex,
     turnCounter,
+    routRecoveryHandled = false,
+    moraleTriggersHandled = false,
+    routingEnabled = true,
     combatActive,
     // Core helpers
     canFighterAct,
@@ -1675,6 +1682,26 @@ export function runEnemyTurnAI(enemy, context) {
   const combatStateRef = context.combatStateRef;
   const commitEnemyTurnAction = context.commitEnemyTurnAction;
   const isEnemyTurnStillCurrent = context.isEnemyTurnStillCurrent;
+  if (!moraleTriggersHandled) {
+    const moraleOutcome = evaluateMoraleTriggers(enemy, {
+      fighters,
+      positions: positionsRef?.current || positions,
+      calculateDistance,
+      routingEnabled,
+      sceneContext,
+      turnKey: `${turnCounter}:${enemy.id}`,
+    });
+    if (!moraleOutcome.skipped) {
+      enemy = moraleOutcome.actor;
+      setFighters((prev) => prev.map((fighter) => (
+        fighter.id === enemy.id ? enemy : fighter
+      )));
+      addLog(
+        `${enemy.name} morale pressure (${moraleOutcome.trigger}, enemy-turn): ${moraleOutcome.result}.`,
+        ["routed", "broken"].includes(moraleOutcome.result) ? "warning" : "info",
+      );
+    }
+  }
   const isHostileTarget = (target, actionKind = "attack") =>
     canTargetForAction(enemy, target, actionKind, sceneContext);
   const isAllyTarget = (target) => isAllyOf(enemy, target, sceneContext);
@@ -1754,6 +1781,12 @@ export function runEnemyTurnAI(enemy, context) {
     enemy.moraleState?.status === "ROUTED" ||
     enemy.statusEffects?.includes("ROUTED")
   ) {
+    const bridgedEnemy = normalizeMoraleState(enemy);
+    setFighters((prev) => prev.map((fighter) => (
+      fighter.id === enemy.id
+        ? { ...fighter, state: bridgedEnemy.state }
+        : fighter
+    )));
     if (isFallenCombatant(enemy)) {
       // ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ Fallen: clear ROUTED and stand ground
       addLog(
@@ -1789,6 +1822,27 @@ export function runEnemyTurnAI(enemy, context) {
 
       // fall through to normal action selection instead of flee
     } else if (!isFallenCombatant(enemy) && !isRaiderCombatant(enemy)) {
+      if (!routRecoveryHandled) {
+        const recovery = resolveRoutedTurnRecovery({
+          actor: enemy,
+          fighters,
+          positions: positionsRef?.current || positions,
+          calculateDistance,
+          sceneContext: { sceneType: "combat", relations: {} },
+          turnKey: `${turnCounter}:${enemy.id}`,
+        });
+        setFighters((prev) => prev.map((fighter) => (
+          fighter.id === enemy.id ? recovery.actor : fighter
+        )));
+        if (recovery.recovered) {
+          const label = recovery.result === "strong_recovery" ? "uneasy" : "shaken";
+          addLog(`${enemy.name} steadies enough to stop routing, but remains ${label}.`, "info");
+          processingEnemyTurnRef.current = false;
+          scheduleEndTurn();
+          return;
+        }
+      }
+
       const routingProfile = getRoutingProfile(enemy);
       const usesOpponentRouting = routingProfile.pathStyle !== "panic";
       const currentPos = (positionsRef?.current || positions)?.[enemy.id];
@@ -1849,9 +1903,8 @@ export function runEnemyTurnAI(enemy, context) {
         setFighters((prev) =>
           prev.map((f) =>
             f.id === enemy.id
-              ? {
+              ? markCombatantFled({
                   ...f,
-                  remainingActions: 0,
                   moraleState: {
                     ...(f.moraleState || {}),
                     status: "ROUTED",
@@ -1860,7 +1913,7 @@ export function runEnemyTurnAI(enemy, context) {
                   statusEffects: Array.isArray(f.statusEffects)
                     ? Array.from(new Set([...f.statusEffects, "FLED"]))
                     : ["FLED"],
-                }
+                })
               : f,
           ),
         );
@@ -1929,9 +1982,8 @@ export function runEnemyTurnAI(enemy, context) {
           setFighters((prev) =>
             prev.map((f) =>
               f.id === enemy.id
-                ? {
+                ? markCombatantFled({
                     ...f,
-                    remainingActions: 0,
                     moraleState: {
                       ...(f.moraleState || {}),
                       status: "ROUTED",
@@ -1940,7 +1992,7 @@ export function runEnemyTurnAI(enemy, context) {
                     statusEffects: Array.isArray(f.statusEffects)
                       ? Array.from(new Set([...f.statusEffects, "FLED"]))
                       : ["FLED"],
-                  }
+                  })
                 : f,
             ),
           );

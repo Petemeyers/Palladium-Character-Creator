@@ -53,6 +53,7 @@ const actor = ({
   rangeProfile = {},
   aiRole = "melee",
   tags = [],
+  traits = [],
   visual = {},
 }) => ({
   id,
@@ -75,6 +76,7 @@ const actor = ({
   rangeProfile,
   aiRole,
   tags: [...new Set([...tags, "playable"])],
+  traits: [...traits],
   visual: {
     modelUrl: visual.modelUrl || HUMAN_MODEL,
     desiredHeightFt: visual.desiredHeightFt || 5.8,
@@ -222,6 +224,7 @@ export const SELECTABLE_ACTORS = [
     ],
     aiRole: "brute",
     tags: ["mythic", "brute", "grappler"],
+    traits: ["Terrifying Presence"],
     visual: { desiredHeightFt: 7 },
   }),
   actor({

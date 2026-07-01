@@ -34,6 +34,9 @@ import {
   isWeaponGrappleSuitable,
 } from "../grapplingSystem.js";
 import { assessGrappleSizeOutcome } from "../sizeStrengthModifiers.js";
+import { getPlayerAiProfessionText } from "../playerAiProfileText.js";
+import { createPlayerAiActionResult } from "../playerAiTurnResult.js";
+import { getPlayerAiContinuationBlockReason } from "../playerAiContinuation.js";
 
 const DEFEATED_KEYWORDS = [
   "vampire",
@@ -144,16 +147,7 @@ function isGoodAlignedForAI(fighter = {}) {
 function isHealerProfessionForAI(fighter = {}) {
   if (!fighter) return false;
 
-  const professionText = [
-    fighter.PROFESSION,
-    fighter.profession,
-    fighter.class,
-    fighter.professionName,
-    fighter.role,
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
+  const professionText = getPlayerAiProfessionText(fighter);
 
   // Map directly to PROFESSIONs you defined in professionData.js (category: "Clergy")
   // Priest, PriestOfLight, PriestOfDarkness, Healer, Druid, Shaman
@@ -166,7 +160,7 @@ function isHealerProfessionForAI(fighter = {}) {
     "shaman",
   ];
 
-  return healerPatterns.some((pattern) => occText.includes(pattern));
+  return healerPatterns.some((pattern) => professionText.includes(pattern));
 }
 
 // Healer archetype detection
@@ -510,6 +504,7 @@ export async function runPlayerTurnAI(player, context) {
     getFighterfocus,
     // Attack & combat
     attack,
+    clearPlayerAIContinuationAttack,
     executeGrapple,
     setPositions,
     setFighters,
@@ -1942,12 +1937,12 @@ export async function runPlayerTurnAI(player, context) {
   // Debug: Show what we found (only log if not a prey animal to reduce spam)
   if (!isPreyAnimal(player)) {
     addLog(
-      `ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒâ€šÃ‚Â ${player.name} weapon check: ${equistaminadWeapons.length} equistaminad weapons found`,
+      `ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒâ€šÃ‚Â ${player.name} weapon check: ${equistaminadWeapons.length} equipped weapons found`,
       "info"
     );
     if (equistaminadWeapons.length > 0) {
       addLog(
-        `ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒâ€šÃ‚Â ${player.name} equistaminad weapons: ${equistaminadWeapons
+        `ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒâ€šÃ‚Â ${player.name} equipped weapons: ${equistaminadWeapons
           .map((w) => w.name)
           .join(", ")}`,
         "info"
@@ -2693,7 +2688,7 @@ export async function runPlayerTurnAI(player, context) {
   // If no weapons found, try to equip a basic weapon from inventory
   if (equistaminadWeapons.length === 0) {
     addLog(
-      `ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã‚Â¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¯Ãƒâ€šÃ‚Â¸Ãƒâ€šÃ‚Â ${player.name} has no equistaminad weapons - checking inventory...`,
+      `ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã‚Â¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¯Ãƒâ€šÃ‚Â¸Ãƒâ€šÃ‚Â ${player.name} has no equipped weapons - checking inventory...`,
       "warning"
     );
 
@@ -3450,6 +3445,8 @@ export async function runPlayerTurnAI(player, context) {
               "info"
             );
 
+            // Claim this turn before yielding to the post-move continuation.
+            markActionScheduled();
             // Continue with attack after movement - use updated positions from state
             setTimeout(() => {
               if (!tokenStillValid()) return;
@@ -3553,6 +3550,14 @@ export async function runPlayerTurnAI(player, context) {
                       return;
                     }
                     if (turnActionResolvingRef) turnActionResolvingRef.current = true;
+                    const flankingAttackActionId = [
+                      "player-ai-flank",
+                      combatSession || "session",
+                      currentTurnToken || "turn",
+                      player.id,
+                      liveTarget.id,
+                      turnCounter,
+                    ].join(":");
                     let flankingAttackSettled = false;
                     const flankingAttackWatchdog = setTimeout(() => {
                       if (flankingAttackSettled) return;
@@ -3565,22 +3570,53 @@ export async function runPlayerTurnAI(player, context) {
                       ) {
                         flankingAttackSettled = true;
                         addLog("ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€¦Ã‚Â¡Ãƒâ€šÃ‚Â« flanking continuation exception: attack did not settle", "warning");
+                        clearPlayerAIContinuationAttack?.(
+                          flankingAttackActionId,
+                          "flanking-attack-watchdog",
+                        );
                         turnActionResolvingRef.current = false;
+                        if (pendingTurnAdvanceRef) pendingTurnAdvanceRef.current = false;
                         processingPlayerAIRef.current = false;
                         scheduleEndTurn(16, "player-ai-flank-attack-watchdog");
                       }
                     }, 5000);
                     try {
                       addLog("ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€šÃ‚Â§Ãƒâ€šÃ‚Âª flanking continuation calling attack", "debug");
-                      await attack(updatedPlayer, liveTarget.id, {
+                      addLog(
+                        `flanking continuation attack start attacker=${livePlayer.name} target=${liveTarget.name} weapon=${selectedAttack?.name || "unknown"}`,
+                        "debug",
+                      );
+                      const attackOutcome = await attack(updatedPlayer, liveTarget.id, {
                         ...bonuses,
+                        attackActionId: flankingAttackActionId,
                         attackDataOverride: selectedAttack,
                         attackerPosOverride: actualFlankPos,
                         defenderPosOverride: actualTargetPos,
                         distanceOverride: newDistance,
                       });
+                      const blockedReason = getPlayerAiContinuationBlockReason(attackOutcome);
+                      if (blockedReason) {
+                        flankingAttackSettled = true;
+                        clearTimeout(flankingAttackWatchdog);
+                        addLog(
+                          `flanking continuation attack blocked: reason=${blockedReason} attacker=${livePlayer.name} target=${liveTarget.name}`,
+                          "warning",
+                        );
+                        clearPlayerAIContinuationAttack?.(
+                          flankingAttackActionId,
+                          `flanking-blocked:${blockedReason}`,
+                        );
+                        if (turnActionResolvingRef) turnActionResolvingRef.current = false;
+                        if (pendingTurnAdvanceRef) pendingTurnAdvanceRef.current = false;
+                        scheduleEndTurn(16, "player-ai-flank-attack-blocked");
+                        return;
+                      }
                       flankingAttackSettled = true;
                       clearTimeout(flankingAttackWatchdog);
+                      addLog(
+                        `flanking continuation attack resolved attacker=${livePlayer.name} result=${attackOutcome?.accepted ? "scheduled" : "resolved"}`,
+                        "debug",
+                      );
                     } catch (err) {
                       flankingAttackSettled = true;
                       clearTimeout(flankingAttackWatchdog);
@@ -3592,6 +3628,10 @@ export async function runPlayerTurnAI(player, context) {
                       addLog(
                         `ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã‚Â¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¯Ãƒâ€šÃ‚Â¸Ãƒâ€šÃ‚Â Player AI attack failed: ${err?.message || String(err)}`,
                         "warning"
+                      );
+                      clearPlayerAIContinuationAttack?.(
+                        flankingAttackActionId,
+                        "flanking-attack-exception",
                       );
                       if (turnActionResolvingRef) turnActionResolvingRef.current = false;
                       if (pendingTurnAdvanceRef) pendingTurnAdvanceRef.current = false;
@@ -3714,7 +3754,10 @@ export async function runPlayerTurnAI(player, context) {
                 return currentPositions; // Return unchanged since we already updated it
               });
             }, 1000);
-            return;
+            return createPlayerAiActionResult("pending-continuation", {
+              pendingContinuation: true,
+              movement: "flank",
+            });
           }
         } // Close the else block for reachable flanking
       } // Close the if block for flankingPositions.length > 0
@@ -4070,7 +4113,9 @@ export async function runPlayerTurnAI(player, context) {
           }
 
           finalizeApproachMoveOnly("player-ai-approach-move-only");
-          return;
+          return createPlayerAiActionResult("move", {
+            movement: "approach",
+          });
         } else {
           const livePositionsNow = positionsRef.current || positions;
           const liveFightersNow = fightersRef?.current || fighters;
@@ -4099,7 +4144,9 @@ export async function runPlayerTurnAI(player, context) {
             if (pendingTurnAdvanceRef) pendingTurnAdvanceRef.current = false;
             processingPlayerAIRef.current = false;
             scheduleEndTurn(0, "player-ai-approach-continuation-abort");
-            return;
+            return createPlayerAiActionResult("move", {
+              movement: "approach",
+            });
           }
 
           addLog(
@@ -4109,7 +4156,9 @@ export async function runPlayerTurnAI(player, context) {
 
           if (!liveRangeValidation.canAttack) {
             finalizeApproachMoveOnly("player-ai-approach-move-only");
-            return;
+            return createPlayerAiActionResult("move", {
+              movement: "approach",
+            });
           }
 
           addLog(
@@ -4164,7 +4213,10 @@ export async function runPlayerTurnAI(player, context) {
               }
             })();
           }, 100);
-          return;
+          return createPlayerAiActionResult("pending-continuation", {
+            pendingContinuation: true,
+            movement: "approach",
+          });
         }
       }
     } catch (error) {
@@ -4181,7 +4233,7 @@ export async function runPlayerTurnAI(player, context) {
     `ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€šÃ‚Â¤ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Å“ ${player.name} ${reasoning} and attacks ${target.name} with ${attackName}!`,
     "info"
   );
-  // Mark immediately so CombatPage's invariant doesn't end-turn before delayed execution hastaminans.
+  // Mark immediately so CombatPage's invariant doesn't end the turn before delayed execution happens.
   markActionScheduled();
 
   // Create updatedPlayer with selectedAttack
@@ -4335,9 +4387,10 @@ export async function runPlayerTurnAI(player, context) {
   };
 
   // Use a longer delay to ensure position state is fully updated, then execute attack
+  markActionScheduled();
   setTimeout(() => {
     if (!tokenStillValid()) return;
-    markActionScheduled();
     executeAttack(0); // No flanking bonus by default
   }, 1000);
+  return { actionTaken: true, action: "attack" };
 }

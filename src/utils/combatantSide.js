@@ -53,10 +53,27 @@ export function getExplicitCombatantControlMode(combatant = {}, related = null) 
   return "";
 }
 
+export function resolveExplicitCombatControlMode(combatant = {}, {
+  related = null,
+  aiControlEnabled = false,
+  schedulerSide = "",
+} = {}) {
+  const explicitMode = getExplicitCombatantControlMode(combatant, related);
+  if (!explicitMode) return "";
+  const normalizedMode = explicitMode === "manual"
+    ? "player"
+    : explicitMode === "autoplay"
+      ? "ai"
+      : explicitMode;
+  const side = schedulerSide || getCombatantSide(combatant, related);
+  if (aiControlEnabled && side === "player" && normalizedMode === "player") return "ai";
+  return normalizedMode;
+}
+
 export function isManualPlayerCombatant(combatant = {}, { related = null, aiControlEnabled = false } = {}) {
   if (!combatant || combatant.aiControlled === true) return false;
-  const controlMode = getExplicitCombatantControlMode(combatant, related);
-  if (controlMode === "manual") return combatant.playable !== false;
+  const controlMode = resolveExplicitCombatControlMode(combatant, { related, aiControlEnabled });
+  if (controlMode === "player") return combatant.playable !== false;
   if (controlMode) return false;
   if (aiControlEnabled) return false;
   return isPartyCombatant(combatant, related);
@@ -65,6 +82,7 @@ export function isManualPlayerCombatant(combatant = {}, { related = null, aiCont
 export default {
   getCombatantSide,
   getExplicitCombatantControlMode,
+  resolveExplicitCombatControlMode,
   isEnemyCombatant,
   isManualPlayerCombatant,
   isPartyCombatant,

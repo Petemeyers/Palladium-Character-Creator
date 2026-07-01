@@ -1,5 +1,128 @@
 // src/utils/routingSystem.js
 
+import { isCombatantFled } from "./combatFledState.js";
+import { isAllyOf, isHostileTo } from "./factionDisposition.js";
+import { getActorAttributes, getAttributeMod } from "./morale/moraleAttributes.js";
+import { attemptRoutRecovery, normalizeMoraleState } from "./morale/moraleChecks.js";
+import { MORALE_STATES } from "./morale/moraleConstants.js";
+
+const finiteNumber = (value, fallback = 0) => {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : fallback;
+};
+
+const isExplicitCommander = (actor = {}) => {
+  const tags = [
+    ...(Array.isArray(actor.tags) ? actor.tags : []),
+    ...(Array.isArray(actor.aiTags) ? actor.aiTags : []),
+  ]
+    .map((tag) => String(tag || "").trim().toLowerCase());
+  return actor.aiRole === "commander" || actor.role === "commander" || tags.includes("commander");
+};
+
+const isLivingBattleActor = (actor = {}) => {
+  if (!actor || isCombatantFled(actor) || actor.isDead || actor.isKO) return false;
+  const hp = Number(actor.currentHP ?? actor.HP ?? actor.hp ?? actor.hitPoints);
+  return !Number.isFinite(hp) || hp > 0;
+};
+
+export function buildRoutRecoveryContext({
+  actor,
+  fighters = [],
+  positions = {},
+  calculateDistance,
+  sceneContext = { sceneType: "combat", relations: {} },
+} = {}) {
+  const actorPosition = positions?.[actor?.id];
+  const canMeasureDistance = actorPosition && typeof calculateDistance === "function";
+  const nearbyAllies = [];
+  const adjacentEnemies = [];
+
+  if (canMeasureDistance) {
+    fighters.forEach((candidate) => {
+      if (!candidate || candidate.id === actor?.id || !isLivingBattleActor(candidate)) return;
+      const candidatePosition = positions?.[candidate.id];
+      if (!candidatePosition) return;
+      const distance = finiteNumber(calculateDistance(actorPosition, candidatePosition), Infinity);
+      if (distance <= 5.01 && isAllyOf(actor, candidate, sceneContext)) nearbyAllies.push(candidate);
+      if (distance <= 5.01 && isHostileTo(actor, candidate, sceneContext)) adjacentEnemies.push(candidate);
+    });
+  }
+
+  const commander = nearbyAllies.find(isExplicitCommander) || null;
+  const currentHP = Number(actor?.currentHP ?? actor?.HP ?? actor?.hp ?? actor?.hitPoints);
+  const maxHP = Number(actor?.maxHP ?? actor?.totalHP ?? actor?.hpMax ?? actor?.maxHitPoints);
+  const badlyWounded = Number.isFinite(currentHP) && Number.isFinite(maxHP) && maxHP > 0
+    ? currentHP / maxHP <= 0.2
+    : false;
+
+  return {
+    allowRecoveryWhenRoutingDisabled: true,
+    commanderNearby: Boolean(commander),
+    commanderPresenceBonus: commander
+      ? getAttributeMod(getActorAttributes(commander).presence)
+      : 0,
+    alliesNearby: nearbyAllies.length,
+    enemyAdjacent: adjacentEnemies.length > 0,
+    surrounded: adjacentEnemies.length >= 2,
+    badlyWounded,
+    inCover: false,
+    nearWalls: false,
+    mythicTerrorNearby: false,
+  };
+}
+
+export function resolveRoutedTurnRecovery({
+  actor,
+  fighters = [],
+  positions = {},
+  calculateDistance,
+  sceneContext,
+  turnKey,
+  rng = Math.random,
+} = {}) {
+  const normalized = normalizeMoraleState(actor);
+  if (normalized.state.hasFledBattle || isCombatantFled(normalized)) {
+    return { actor: normalized, result: "already_fled", skipped: true, recovered: false, context: {} };
+  }
+  if (![MORALE_STATES.ROUTED, MORALE_STATES.BROKEN].includes(normalized.state.moraleState)) {
+    return { actor: normalized, result: "not_routed", skipped: true, recovered: false, context: {} };
+  }
+  if (turnKey != null && normalized.state.lastRecoveryTurnKey === turnKey) {
+    return { actor: normalized, result: "already_attempted", skipped: true, recovered: false, context: {} };
+  }
+
+  const context = buildRoutRecoveryContext({
+    actor: normalized,
+    fighters,
+    positions,
+    calculateDistance,
+    sceneContext,
+  });
+  const recovery = attemptRoutRecovery(normalized, context, rng);
+  const recovered = ["strong_recovery", "partial_recovery"].includes(recovery.result);
+  const recoveryActor = {
+    ...recovery.actor,
+    ...(recovered ? { inBattle: true, remainingActions: 0 } : {}),
+    state: {
+      ...recovery.actor.state,
+      ...(turnKey != null ? { lastRecoveryTurnKey: turnKey } : {}),
+    },
+    ...(recovered ? {
+      moraleState: {
+        ...(recovery.actor.moraleState || {}),
+        status: recovery.actor.state.moraleState.toUpperCase(),
+        hasFled: false,
+      },
+      statusEffects: Array.isArray(recovery.actor.statusEffects)
+        ? recovery.actor.statusEffects.filter((effect) => String(effect).toUpperCase() !== "ROUTED")
+        : recovery.actor.statusEffects,
+    } : {}),
+  };
+
+  return { ...recovery, actor: recoveryActor, recovered, context };
+}
+
 /**
  * Get a list of hex positions for threats (enemies to the router).
  */
@@ -84,7 +207,7 @@ export function getThreatPositionsForFighter(fighter, fighters, positions) {
         f.type !== sameSideType &&
         !f.isDead &&
         !f.isKO &&
-        !f.moraleState?.hasFled
+        !isCombatantFled(f)
     )
     .map((f) => positions[f.id])
     .filter(Boolean);

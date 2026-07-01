@@ -1,6 +1,6 @@
 import {
   getCombatantSide,
-  getExplicitCombatantControlMode,
+  resolveExplicitCombatControlMode,
   isEnemyCombatant,
   isPartyCombatant,
 } from "./combatantSide.js";
@@ -115,11 +115,14 @@ export function buildCombatCommandTurnBridge({
     };
   }
 
-  const explicitControlMode = getExplicitCombatantControlMode(actor, turnEntry);
+  const explicitControlMode = resolveExplicitCombatControlMode(actor, {
+    related: turnEntry,
+    aiControlEnabled,
+  });
   const enemyControlled = explicitControlMode
-    ? explicitControlMode === "ai" || explicitControlMode === "autoplay"
+    ? explicitControlMode === "ai"
     : isEnemySide(actor, turnEntry) || (isPlayerSide(actor, turnEntry) && aiControlEnabled);
-  const playerControlled = explicitControlMode === "manual" || (
+  const playerControlled = explicitControlMode === "player" || (
     !explicitControlMode && !enemyControlled && isPlayerSide(actor, turnEntry) && !aiControlEnabled
   );
 

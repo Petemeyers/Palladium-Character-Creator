@@ -1,7 +1,12 @@
+import { markActorFled } from "./morale/moraleChecks.js";
+
 const normalize = (value) => String(value || "").trim().toLowerCase();
 
 export function isCombatantFled(combatant = {}) {
   if (!combatant) return false;
+  if (combatant.inBattle === false) return true;
+  if (combatant.state?.hasFledBattle === true) return true;
+  if (normalize(combatant.state?.moraleState) === "fled") return true;
   if (combatant.fled === true || combatant.moraleState?.hasFled === true) return true;
   if (normalize(combatant.status) === "fled") return true;
   if (normalize(combatant.moraleState?.status) === "fled") return true;
@@ -22,7 +27,7 @@ export function markCombatantFled(combatant = {}) {
     ? combatant.statusEffects.filter((effect) => normalize(effect) !== "routed")
     : [];
 
-  return {
+  const marked = markActorFled({
     ...combatant,
     status: alreadyDead ? combatant.status : "fled",
     fled: true,
@@ -36,6 +41,15 @@ export function markCombatantFled(combatant = {}) {
       hasFled: true,
     },
     statusEffects: Array.from(new Set([...statusEffects, "FLED"])),
+  });
+  if (!alreadyDead) return marked;
+  return {
+    ...marked,
+    status: combatant.status,
+    moraleState: {
+      ...marked.moraleState,
+      status: combatant.moraleState?.status,
+    },
   };
 }
 

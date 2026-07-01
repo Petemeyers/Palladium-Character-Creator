@@ -71,6 +71,21 @@ const partyPlayer = {
 assert.equal(getCombatantSide(partyPlayer), "player");
 assert.equal(isManualPlayerCombatant(partyPlayer), true);
 
+const manualPartyPlayer = { ...partyPlayer, controlMode: "manual" };
+assert.equal(isManualPlayerCombatant(manualPartyPlayer), true);
+assert.equal(
+  isManualPlayerCombatant(manualPartyPlayer, { aiControlEnabled: true }),
+  false,
+  "global AI mode temporarily automates explicitly manual party actors",
+);
+const autoRunPartyBridge = buildCombatCommandTurnBridge({
+  combatActive: true,
+  liveActor: manualPartyPlayer,
+  aiControlEnabled: true,
+});
+assert.equal(autoRunPartyBridge.isEnemyControlled, true);
+assert.equal(autoRunPartyBridge.isPlayerControlled, false);
+
 const aiPartyPlayer = { ...partyPlayer, controlMode: "ai" };
 const aiPartyBridge = buildCombatCommandTurnBridge({ combatActive: true, liveActor: aiPartyPlayer });
 assert.equal(getCombatantSide(aiPartyPlayer), "player", "AI control does not change party allegiance");
