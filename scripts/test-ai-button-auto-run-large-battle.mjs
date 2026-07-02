@@ -11,6 +11,11 @@ import {
   createPlayerAiActionResult,
   summarizePlayerAiResult,
 } from "../src/utils/playerAiTurnResult.js";
+import {
+  createTurnFinalizerSnapshot,
+  shouldAcceptTurnFinalizer,
+  shouldDeferTurnStartUntilRefsSettle,
+} from "../src/utils/turnFinalizerOwnership.js";
 
 const resolveTurnMode = (actor, aiControlEnabled) => {
   const side = getCombatantSide(actor);
@@ -52,6 +57,12 @@ assert.equal(didPlayerAiAct(createPlayerAiActionResult("routed-move")), true,
   "routed party AI movement remains action-positive during auto-run");
 assert.equal(summarizePlayerAiResult({ ok: true, acted: true }), "acted",
   "auto-run result logging cannot throw when an action label is absent");
+const oldFinalizer = createTurnFinalizerSnapshot({ generation: 1, fighterId: "party-1", turnIndex: 0 });
+const currentFinalizer = createTurnFinalizerSnapshot({ generation: 2, fighterId: "party-2", turnIndex: 2 });
+assert.equal(shouldAcceptTurnFinalizer(oldFinalizer, currentFinalizer), false,
+  "large-battle auto-run rejects finalizers from previous actors");
+assert.equal(shouldDeferTurnStartUntilRefsSettle({ deferTurnStart: true }), true,
+  "accepted player finalizers wait for authoritative refs before large-battle handoff");
 
 const partyBridge = buildCombatCommandTurnBridge({
   combatActive: true,

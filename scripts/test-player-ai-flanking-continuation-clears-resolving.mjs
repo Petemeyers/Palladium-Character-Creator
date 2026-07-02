@@ -36,6 +36,7 @@ assert.match(source, /flanking continuation attack blocked: reason=/);
 assert.match(source, /flanking continuation attack resolved attacker=/);
 assert.match(source, /clearPlayerAIContinuationAttack\?\.\(\s*flankingAttackActionId/);
 assert.match(source, /scheduleEndTurn\(16, "player-ai-flank-attack-blocked"\)/);
+assert.match(source, /canFinalizeTurn/,
+  "player AI continuations share the guarded turn-finalizer context");
 
 console.log("player AI flanking continuation resolving-cleanup tests passed");
-

@@ -180,6 +180,12 @@ import { resolvePlayerAiLivePositions } from "../utils/playerAiLivePositions.js"
 import { awaitPlayerAiTurnResult } from "../utils/playerAiTurnResult.js";
 import { shouldRetryPlayerAiActiveFighterMismatch } from "../utils/playerAiTurnStartRetry.js";
 import { doesPlayerAiContinuationOwnAttack } from "../utils/playerAiContinuation.js";
+import {
+  createTurnFinalizerSnapshot,
+  getTurnFinalizerKey,
+  getTurnFinalizerStaleReason,
+  shouldDeferTurnStartUntilRefsSettle,
+} from "../utils/turnFinalizerOwnership.js";
 import { getTechniquesForCombatant, TECHNIQUE_ELEMENT_MAP } from "../utils/trainingAbilitiesParser.js";
 import { updateStatusEffects } from "../utils/statusEffectSystem.js";
 import { createThreatProfile } from "../utils/ai/threatAnalysis.js";
@@ -10929,7 +10935,8 @@ function CombatPage({ characters = [] }) {
 
   // Define endTurn function with useCallback - MUST be before handleMoveSelect
   // MCS rule: Alternating actions per initiative
-  const endTurn = useCallback(() => {
+  const endTurn = useCallback((finalizerMeta = {}) => {
+    const deferTurnStartUntilRefsSettle = shouldDeferTurnStartUntilRefsSettle(finalizerMeta);
     if (suppressEndTurnRef.current) {
       return;
     }
@@ -10987,6 +10994,36 @@ function CombatPage({ characters = [] }) {
     turnStartInFlightKeyRef.current = null;
 
     clearScheduledTurn();
+
+    const scheduleNextTurnStart = (fighter, index, directReason) => {
+      if (!fighter || index < 0) return false;
+      if (!deferTurnStartUntilRefsSettle) {
+        return startTurnOnce(fighter, index, directReason);
+      }
+
+      const expectedGeneration = endTurnGenerationRef.current;
+      const expectedCombatSession = combatSessionRef.current;
+      const expectedRound = meleeRoundRef.current ?? meleeRoundNow;
+      const expectedCounter = turnCounterRef.current ?? turnCounterNow;
+      const timer = setTimeout(() => {
+        if (combatSessionRef.current !== expectedCombatSession) return;
+        if (endTurnGenerationRef.current !== expectedGeneration) return;
+        if (!combatActiveRef.current || combatOverRef.current || combatEndCheckRef.current) return;
+
+        // A stale React commit may briefly restore the previous refs. Reassert the
+        // already-accepted endTurn destination before claiming the next start.
+        turnIndexRef.current = index;
+        meleeRoundRef.current = expectedRound;
+        turnCounterRef.current = expectedCounter;
+        addLog(
+          `accepted finalizer refs settled fighter=${fighter.name} source=${finalizerMeta?.source || directReason}`,
+          "debug",
+        );
+        startTurnOnce(fighter, index, "effect-turn-advance");
+      }, 0);
+      allTimeoutsRef.current.push(timer);
+      return true;
+    };
 
     // Clear movement attempts tracker for old turns (keep only current and previous turn)
     const currentTurnKey = turnCounterNow;
@@ -11161,7 +11198,7 @@ function CombatPage({ characters = [] }) {
       }
 
       if (firstEligibleIndex >= 0) {
-        startTurnOnce(resetFighters[firstEligibleIndex], firstEligibleIndex, "new-melee-round-direct");
+        scheduleNextTurnStart(resetFighters[firstEligibleIndex], firstEligibleIndex, "new-melee-round-direct");
       }
       return;
     }
@@ -11234,7 +11271,7 @@ function CombatPage({ characters = [] }) {
         });
       }
       if (firstEligibleIndex >= 0) {
-        startTurnOnce(resetFighters[firstEligibleIndex], firstEligibleIndex, "new-melee-round-direct");
+        scheduleNextTurnStart(resetFighters[firstEligibleIndex], firstEligibleIndex, "new-melee-round-direct");
       }
       return;
     }
@@ -11303,7 +11340,7 @@ function CombatPage({ characters = [] }) {
       visibilityLogRef.current = new Set(entries.slice(-100));
     }
 
-    startTurnOnce(fightersNow[nextIndex], nextIndex, "endTurn-direct");
+    scheduleNextTurnStart(fightersNow[nextIndex], nextIndex, "endTurn-direct");
     return;
   }, [fighters, positions, turnIndex, temporaryHexSharing, addLog, meleeRound, turnCounter, clearScheduledTurn, canFighterAct, canFighterStartTurn, combatActive, tickBleeding, startTurnOnce, releaseTurnStart]);
 
@@ -12098,7 +12135,7 @@ function CombatPage({ characters = [] }) {
   // Rule: Only ONE place delays the next turn - scheduleEndTurn(animationMs).
   // Default 0 = instant; pass durationMs only when a visual (projectile, movement) must finish.
   const scheduleEndTurn = useCallback(
-    (delayOverride = null, source = "unknown") => {
+    (delayOverride = null, source = "unknown", options = {}) => {
       if (DEBUG_COMBAT) {
         const delayMs = typeof delayOverride === "number" ? delayOverride : 0;
         addLog(`scheduleEndTurn source=${source} delay=${delayMs}`, "debug");
@@ -12200,7 +12237,10 @@ function CombatPage({ characters = [] }) {
 
         pendingTurnAdvanceRef.current = false;
         addLog("tryEndTurn advancing turn", "info");
-        endTurnRef.current?.();
+        endTurnRef.current?.({
+          source,
+          deferTurnStart: options?.deferTurnStart === true,
+        });
       };
 
       const delay =
@@ -18613,6 +18653,61 @@ function CombatPage({ characters = [] }) {
     const startMeleeRound = meleeRoundRef.current ?? meleeRound;
     const startTurnCounter = turnCounterRef.current ?? turnCounter;
     const capturedTurnToken = playerTurnToken;
+    const playerTurnFinalizerSnapshot = createTurnFinalizerSnapshot({
+      combatSession: combatSessionRef.current,
+      generation: endTurnGenerationRef.current,
+      fighterId: startFighterId,
+      turnIndex: startTurnIndex,
+      meleeRound: startMeleeRound,
+      turnCounter: startTurnCounter,
+      turnToken: capturedTurnToken,
+    });
+    const loggedStalePlayerFinalizers = new Set();
+    const getCurrentPlayerFinalizerSnapshot = () => {
+      const latestIndex = turnIndexRef.current;
+      const latestFighter = fightersRef.current?.[latestIndex];
+      return createTurnFinalizerSnapshot({
+        combatSession: combatSessionRef.current,
+        generation: endTurnGenerationRef.current,
+        fighterId: latestFighter?.id,
+        turnIndex: latestIndex,
+        meleeRound: meleeRoundRef.current ?? meleeRound,
+        turnCounter: turnCounterRef.current ?? turnCounter,
+        turnToken: currentTurnTokenRef.current,
+        remainingActions: latestFighter?.remainingActions,
+      });
+    };
+    const canFinalizePlayerAITurn = (source = "player-ai", logAccepted = false) => {
+      const latestSnapshot = getCurrentPlayerFinalizerSnapshot();
+      const staleReason = getTurnFinalizerStaleReason(
+        playerTurnFinalizerSnapshot,
+        latestSnapshot,
+      );
+      const finalizerKey = getTurnFinalizerKey(playerTurnFinalizerSnapshot);
+      const latestKey = getTurnFinalizerKey(latestSnapshot);
+      if (staleReason) {
+        const staleLogKey = `${source}:${staleReason}`;
+        if (!loggedStalePlayerFinalizers.has(staleLogKey)) {
+          loggedStalePlayerFinalizers.add(staleLogKey);
+          addLog(
+            `stale no-actions finalizer ignored fighter=${latestPlayer.name} source=${source} finalizerKey=${finalizerKey} latestKey=${latestKey}`,
+            "warning",
+          );
+          addLog(
+            `stale turn finalizer ignored fighter=${latestPlayer.name} source=${source} reason=${staleReason}`,
+            "warning",
+          );
+        }
+        return false;
+      }
+      if (logAccepted) {
+        addLog(
+          `turn finalizer accepted fighter=${latestPlayer.name} source=${source} finalizerKey=${finalizerKey}`,
+          "debug",
+        );
+      }
+      return true;
+    };
 
     const spendNoActionPassForFighter = (fighterId, source) => {
       const liveFighters = fightersRef.current ?? fighters;
@@ -19070,6 +19165,10 @@ function CombatPage({ characters = [] }) {
     };
 
     const schedulePlayerAIEndTurn = (delayOverride = null, source = "player-ai") => {
+      if (!canFinalizePlayerAITurn(source, true)) {
+        processingPlayerAIRef.current = false;
+        return false;
+      }
       const liveFighters = fightersRef.current ?? fighters;
       const liveIndex = turnIndexRef.current;
       const activeFighter = liveFighters?.[liveIndex];
@@ -19092,7 +19191,8 @@ function CombatPage({ characters = [] }) {
         }
       }
       processingPlayerAIRef.current = false;
-      scheduleEndTurn(delayOverride, source);
+      scheduleEndTurn(delayOverride, source, { deferTurnStart: true });
+      return true;
     };
 
     const clearSeparatedGrappleForPlayerAI = (actor, target) => {
@@ -19292,6 +19392,7 @@ function CombatPage({ characters = [] }) {
       getTargetsInLine,
       canSelectHostileTarget: canSelectHostileCombatTarget,
       clearSeparatedGrapple: clearSeparatedGrappleForPlayerAI,
+      canFinalizeTurn: canFinalizePlayerAITurn,
       sceneContext: { sceneType: "combat", relations: {} },
     };
 
@@ -19987,6 +20088,15 @@ function CombatPage({ characters = [] }) {
       turnIndex: turnIndexRef.current,
       meleeRound: meleeRoundRef.current ?? meleeRound,
     };
+    const enemyTurnFinalizerSnapshot = createTurnFinalizerSnapshot({
+      combatSession: combatSessionRef.current,
+      generation: endTurnGenerationRef.current,
+      fighterId: enemyTurnSliceToken.fighterId,
+      turnIndex: enemyTurnSliceToken.turnIndex,
+      meleeRound: enemyTurnSliceToken.meleeRound,
+      turnCounter: enemyTurnSliceToken.turnCounter,
+      turnToken: enemyTurnActionToken,
+    });
 
     const isEnemyTurnTokenStillCurrent = (label = "action") => {
       const active = fightersRef.current?.[turnIndexRef.current];
@@ -20008,6 +20118,43 @@ function CombatPage({ characters = [] }) {
         );
       }
       return isCurrent;
+    };
+
+    const scheduleEnemyAIEndTurn = (delayOverride = null, finalizerSource = "enemy-ai") => {
+      const latestIndex = turnIndexRef.current;
+      const latestFighter = fightersRef.current?.[latestIndex];
+      const latestSnapshot = createTurnFinalizerSnapshot({
+        combatSession: combatSessionRef.current,
+        generation: endTurnGenerationRef.current,
+        fighterId: latestFighter?.id,
+        turnIndex: latestIndex,
+        meleeRound: meleeRoundRef.current ?? meleeRound,
+        turnCounter: turnCounterRef.current ?? turnCounter,
+        turnToken: currentTurnTokenRef.current,
+        remainingActions: latestFighter?.remainingActions,
+      });
+      const staleReason = getTurnFinalizerStaleReason(
+        enemyTurnFinalizerSnapshot,
+        latestSnapshot,
+      );
+      const finalizerKey = getTurnFinalizerKey(enemyTurnFinalizerSnapshot);
+      if (staleReason) {
+        addLog(
+          `stale no-actions finalizer ignored fighter=${liveEnemy.name} source=${finalizerSource} finalizerKey=${finalizerKey} latestKey=${getTurnFinalizerKey(latestSnapshot)}`,
+          "warning",
+        );
+        addLog(
+          `stale turn finalizer ignored fighter=${liveEnemy.name} source=${finalizerSource} reason=${staleReason}`,
+          "warning",
+        );
+        return false;
+      }
+      addLog(
+        `turn finalizer accepted fighter=${liveEnemy.name} source=${finalizerSource} finalizerKey=${finalizerKey}`,
+        "debug",
+      );
+      scheduleEndTurn(delayOverride, finalizerSource);
+      return true;
     };
 
     const guardedEnemyAttack = (...args) => {
@@ -20067,7 +20214,7 @@ function CombatPage({ characters = [] }) {
         canFighterAct,
         getHPStatus,
         addLog,
-        scheduleEndTurn,
+        scheduleEndTurn: scheduleEnemyAIEndTurn,
         endTurn,
         // Distance & movement
         calculateDistance,

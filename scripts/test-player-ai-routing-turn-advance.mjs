@@ -6,6 +6,11 @@ import {
   didPlayerAiAct,
   summarizePlayerAiResult,
 } from "../src/utils/playerAiTurnResult.js";
+import {
+  createTurnFinalizerSnapshot,
+  shouldAcceptTurnFinalizer,
+  shouldDeferTurnStartUntilRefsSettle,
+} from "../src/utils/turnFinalizerOwnership.js";
 
 const common = {
   retryCount: 0,
@@ -34,5 +39,13 @@ assert.equal(didPlayerAiAct(createPlayerAiActionResult("routed-move")), true,
 assert.equal(didPlayerAiAct(createPlayerAiActionResult("routed-blocked")), true,
   "a routed blocked fallback still resolves and advances safely");
 assert.equal(summarizePlayerAiResult(createPlayerAiActionResult("routed-move")), "routed-move");
+const routedCurrent = createTurnFinalizerSnapshot({ generation: 12, fighterId: "routed-knight", turnIndex: 1 });
+const previousActor = createTurnFinalizerSnapshot({ generation: 11, fighterId: "old-knight", turnIndex: 0 });
+assert.equal(shouldAcceptTurnFinalizer(previousActor, routedCurrent), false,
+  "a previous actor cannot interrupt the current routed turn");
+assert.equal(shouldAcceptTurnFinalizer(routedCurrent, routedCurrent), true,
+  "the routed current actor can still advance normally");
+assert.equal(shouldDeferTurnStartUntilRefsSettle({ deferTurnStart: true }), true,
+  "accepted routed player finalizers can hand off after refs settle");
 
 console.log("player AI routing turn-advance tests passed");

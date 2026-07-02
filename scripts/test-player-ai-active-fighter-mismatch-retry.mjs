@@ -42,5 +42,9 @@ const source = fs.readFileSync(new URL("../src/pages/CombatPage.jsx", import.met
 assert.match(source, /player AI start blocked: reason=active-fighter-mismatch[\s\S]*scheduledKey=/);
 assert.match(source, /player AI start retrying after active-fighter-mismatch/);
 assert.match(source, /queuePlayerStartRetry\(fighter, 1\)/);
+assert.match(source, /player AI start blocked: reason=turn-key-mismatch/,
+  "finalizer ownership does not weaken the scheduler mismatch guard");
+assert.match(source, /startTurnOnce\(fighter, index, "effect-turn-advance"\)/,
+  "accepted-finalizer timing uses the retry-compatible start source");
 
 console.log("player AI active-fighter-mismatch retry tests passed");

@@ -562,6 +562,7 @@ export async function runPlayerTurnAI(player, context) {
     getTargetsInLine,
     canSelectHostileTarget,
     clearSeparatedGrapple,
+    canFinalizeTurn,
     onNoHostilesRemaining,
     sceneContext = { sceneType: "combat", relations: {} },
   } = context;
@@ -1041,6 +1042,10 @@ export async function runPlayerTurnAI(player, context) {
 
   // Check if player has actions remaining
   if (player.remainingActions <= 0) {
+    if (typeof canFinalizeTurn === "function" && !canFinalizeTurn("player-ai-no-actions")) {
+      processingPlayerAIRef.current = false;
+      return createPlayerAiActionResult("stale-finalizer-ignored");
+    }
     addLog(
       `ÃƒÆ’Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒâ€šÃ‚Â­ÃƒÆ’Ã‚Â¯Ãƒâ€šÃ‚Â¸Ãƒâ€šÃ‚Â ${player.name} has no actions remaining - passing to next fighter in initiative order`,
       "info"
