@@ -70,3 +70,14 @@ export function shouldAcceptTurnFinalizer(expected, current) {
 export function shouldDeferTurnStartUntilRefsSettle(finalizerMeta = {}) {
   return finalizerMeta?.deferTurnStart === true;
 }
+
+export function acceptTurnFinalizerKey(registry, finalizerKey) {
+  if (!(registry instanceof Set) || !finalizerKey) {
+    return { accepted: false, duplicate: false };
+  }
+  if (registry.has(finalizerKey)) {
+    return { accepted: false, duplicate: true };
+  }
+  registry.add(finalizerKey);
+  return { accepted: true, duplicate: false };
+}

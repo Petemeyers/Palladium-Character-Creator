@@ -3,6 +3,7 @@ import fs from "node:fs";
 
 import {
   createTurnFinalizerSnapshot,
+  acceptTurnFinalizerKey,
   shouldAcceptTurnFinalizer,
   shouldDeferTurnStartUntilRefsSettle,
 } from "../src/utils/turnFinalizerOwnership.js";
@@ -20,7 +21,11 @@ assert.equal(shouldAcceptTurnFinalizer(finalizer, finalizer), true,
   "approach move-only finalizer is accepted while its actor owns the turn");
 assert.equal(shouldDeferTurnStartUntilRefsSettle({ deferTurnStart: true }), true);
 assert.equal(shouldDeferTurnStartUntilRefsSettle({}), false,
-  "enemy/direct starts remain immediate unless explicitly deferred");
+  "direct endTurn calls remain immediate unless explicitly deferred");
+const acceptedKeys = new Set();
+assert.equal(acceptTurnFinalizerKey(acceptedKeys, "accepted-key").accepted, true);
+assert.equal(acceptTurnFinalizerKey(acceptedKeys, "accepted-key").duplicate, true,
+  "duplicate sources cannot enqueue a second settled handoff");
 
 const refs = { fighterId: "knight-2", turnIndex: 5, turnCounter: 40 };
 const intended = { fighterId: "knight-1", turnIndex: 6, turnCounter: 41 };
@@ -58,4 +63,3 @@ assert.match(source, /player AI start blocked: reason=turn-key-mismatch/,
   "turn-key mismatch guard remains intact");
 
 console.log("accepted finalizer settled-start tests passed");
-

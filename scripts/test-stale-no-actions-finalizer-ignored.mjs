@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 
 import {
   createTurnFinalizerSnapshot,
+  acceptTurnFinalizerKey,
   getTurnFinalizerKey,
   getTurnFinalizerStaleReason,
   shouldAcceptTurnFinalizer,
@@ -44,5 +45,8 @@ assert.equal(getTurnFinalizerStaleReason(current, current), null);
 assert.notEqual(getTurnFinalizerKey(delayedFinalizers[0]), getTurnFinalizerKey(current));
 assert.equal(shouldDeferTurnStartUntilRefsSettle({ deferTurnStart: true }), true,
   "accepted async player finalizers wait one settled tick without reviving stale ones");
+const acceptedKeys = new Set();
+assert.equal(acceptTurnFinalizerKey(acceptedKeys, getTurnFinalizerKey(current)).accepted, true);
+assert.equal(acceptTurnFinalizerKey(acceptedKeys, getTurnFinalizerKey(current)).duplicate, true);
 
 console.log("stale no-actions finalizer ownership tests passed");

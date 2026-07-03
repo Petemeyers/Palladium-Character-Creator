@@ -28,10 +28,11 @@ assert.equal(shouldAcceptTurnFinalizer(expected, advanced), false);
 assert.equal(shouldAcceptTurnFinalizer(advanced, advanced), true);
 
 const combatPage = fs.readFileSync(new URL("../src/pages/CombatPage.jsx", import.meta.url), "utf8");
-assert.match(combatPage, /const schedulePlayerAIEndTurn[\s\S]*if \(!canFinalizePlayerAITurn\(source, true\)\)[\s\S]*return false;[\s\S]*scheduleEndTurn\(delayOverride, source, \{ deferTurnStart: true \}\)/,
+assert.match(combatPage, /const schedulePlayerAIEndTurn[\s\S]*if \(!canFinalizePlayerAITurn\(source, \{ logAccepted: true, consume: true \}\)\)[\s\S]*return false;[\s\S]*scheduleEndTurn\(delayOverride, source, \{ deferTurnStart: true \}\)/,
   "player AI wrapper rejects stale ownership before shared scheduling");
 assert.match(combatPage, /stale no-actions finalizer ignored fighter=/);
 assert.match(combatPage, /turn finalizer accepted fighter=/);
+assert.match(combatPage, /duplicate turn finalizer ignored fighter=/);
 assert.match(combatPage, /player AI start blocked: reason=turn-key-mismatch/,
   "turn-key mismatch guard remains intact");
 

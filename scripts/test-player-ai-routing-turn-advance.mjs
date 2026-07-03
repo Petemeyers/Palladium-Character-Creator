@@ -8,6 +8,7 @@ import {
 } from "../src/utils/playerAiTurnResult.js";
 import {
   createTurnFinalizerSnapshot,
+  acceptTurnFinalizerKey,
   shouldAcceptTurnFinalizer,
   shouldDeferTurnStartUntilRefsSettle,
 } from "../src/utils/turnFinalizerOwnership.js";
@@ -47,5 +48,9 @@ assert.equal(shouldAcceptTurnFinalizer(routedCurrent, routedCurrent), true,
   "the routed current actor can still advance normally");
 assert.equal(shouldDeferTurnStartUntilRefsSettle({ deferTurnStart: true }), true,
   "accepted routed player finalizers can hand off after refs settle");
+const routingFinalizers = new Set();
+assert.equal(acceptTurnFinalizerKey(routingFinalizers, "routed-turn").accepted, true);
+assert.equal(acceptTurnFinalizerKey(routingFinalizers, "routed-turn").duplicate, true,
+  "routed turn cannot be interrupted by a duplicate prior handoff");
 
 console.log("player AI routing turn-advance tests passed");
