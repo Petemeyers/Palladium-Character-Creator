@@ -186,6 +186,7 @@ import {
   shouldPlayerAiContinuationWatchdogFire,
 } from "../utils/playerAiContinuation.js";
 import { shouldLogTurnSchedulerClassification } from "../utils/turnSchedulerLogThrottle.js";
+import { sanitizeCombatLogMessage } from "../utils/combatLogSanitizer.js";
 import {
   createPlayerAiExecutionOwnership,
   shouldPlayerAiExecutionWatchdogFire,
@@ -1933,8 +1934,9 @@ function CombatPage({ characters = [] }) {
   }, []);
 
   const addLog = useCallback((message, type = "info", diceInfo = null) => {
+    const readableMessage = sanitizeCombatLogMessage(message);
     // Prevent duplicate log messages (React Strict Mode double-invocation and rapid repeats)
-    const recentKey = `${message.substring(0, 100)}_${type}`; // Use first 100 chars + type as key
+    const recentKey = `${readableMessage.substring(0, 100)}_${type}`; // Use first 100 chars + type as key
     const now = Date.now();
 
     // Check if this exact message was logged in the last 2 seconds (prevent duplicates from rapid calls)
@@ -1959,7 +1961,7 @@ function CombatPage({ characters = [] }) {
     const logEntry = {
       id: generateCryptoId(),
       seq: ++combatLogSeqRef.current,
-      message,
+      message: readableMessage,
       type,
       timestamp: new Date().toLocaleTimeString(),
       diceInfo
@@ -25017,6 +25019,22 @@ function CombatPage({ characters = [] }) {
             "debug",
           );
         }
+        return;
+      }
+      const noActionsFinalizerKey = getTurnFinalizerKey(createTurnFinalizerSnapshot({
+        combatSession: combatSessionRef.current,
+        generation: endTurnGenerationRef.current,
+        fighterId: currentFighter.id,
+        turnIndex,
+        meleeRound,
+        turnCounter,
+        turnToken: currentTurnTokenRef.current,
+      }));
+      if (acceptedTurnFinalizerKeysRef.current.has(noActionsFinalizerKey)) {
+        addLog(
+          `no-actions pass deferred: accepted finalizer owns handoff fighter=${currentFighter.name} source=effect-no-actions finalizerKey=${noActionsFinalizerKey}`,
+          "debug",
+        );
         return;
       }
       if (lastNoActionTurnKeyRef.current === noActionTurnSlotKey) return;

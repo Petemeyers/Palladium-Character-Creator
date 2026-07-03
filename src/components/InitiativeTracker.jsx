@@ -37,6 +37,7 @@ import { initializeWeaponSlots, equipWeapon, toggleTwoHandedGrip, getWeaponDamag
 import { initializePositions, updatePosition, getAutoTargetDistance, getAllDistances, getDistanceBetween } from "../utils/positionManager";
 import TacticalMap from "./TacticalMap";
 import { getEngagementRange, MOVEMENT_RATES, GRID_CONFIG } from "../data/movementRules";
+import { sanitizeCombatLogMessage } from "../utils/combatLogSanitizer.js";
 
 const socket = getSocket(); // Use centralized socket manager
 
@@ -373,7 +374,9 @@ const InitiativeTracker = () => {
   const logCombatEvent = async (text) => {
     if (!activeParty?._id) return;
     try {
-      await axiosInstance.post(`/combat-log/${activeParty._id}`, { event: text });
+      await axiosInstance.post(`/combat-log/${activeParty._id}`, {
+        event: sanitizeCombatLogMessage(text),
+      });
     } catch (err) {
       console.error("Failed to log combat event:", err);
     }
