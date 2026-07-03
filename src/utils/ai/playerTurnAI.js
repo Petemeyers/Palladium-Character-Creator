@@ -3527,7 +3527,7 @@ export async function runPlayerTurnAI(player, context) {
               setTimeout(() => {
                   void (async () => {
                     const abortFlankingContinuation = (reason = "flanking continuation aborted") => {
-                    addLog("flanking continuation aborted safely", "warning");
+                    addLog(`flanking continuation stopped: reason=${reason}`, "warning");
                     addLog(`ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€šÃ‚Â§Ãƒâ€šÃ‚Âª ${reason}`, "debug");
                     if (turnActionResolvingRef) turnActionResolvingRef.current = false;
                     if (pendingTurnAdvanceRef) pendingTurnAdvanceRef.current = false;

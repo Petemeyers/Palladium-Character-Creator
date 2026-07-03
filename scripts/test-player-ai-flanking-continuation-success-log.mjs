@@ -12,6 +12,8 @@ assert.ok(attackAwait >= 0 && resolvedLog > attackAwait);
 assert.ok(resolvedFinalizer > resolvedLog);
 assert.doesNotMatch(successSlice, /aborted safely|player-ai-flanking-continuation-abort/,
   "successful continuation uses resolved cleanup/finalization language only");
+assert.doesNotMatch(source, /flanking continuation aborted safely/,
+  "legacy ambiguous abort wording is removed from continuation logs");
 assert.match(source, /if \(flankingContinuationStarted\) return;/,
   "the continuation has a one-shot launch latch");
 const launchSlice = source.slice(

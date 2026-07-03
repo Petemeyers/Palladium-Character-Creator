@@ -12,5 +12,7 @@ assert.match(source, /shouldLogTurnSchedulerClassification\(/);
 assert.match(source, /lastTurnSchedulerClassificationKeyRef\.current = schedulerClassificationKey/);
 assert.match(source, /handlePlayerAITurn before runPlayerTurnAI fighter=/,
   "classification throttling does not remove executor traces");
+assert.match(source, /sanitizeCombatLogMessage\(message\)/,
+  "scheduler and executor traces pass through the readable browser-log boundary");
 
 console.log("scheduler-classification log-throttle tests passed");

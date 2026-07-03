@@ -72,6 +72,8 @@ assert.equal(acceptTurnFinalizerKey(largeBattleFinalizers, "same-turn").duplicat
 const combatPageSource = fs.readFileSync(new URL("../src/pages/CombatPage.jsx", import.meta.url), "utf8");
 assert.match(combatPageSource, /pending continuation owns turn/,
   "large-battle auto-run defers same-actor restarts while continuation work owns the turn");
+assert.match(combatPageSource, /accepted finalizer owns handoff/,
+  "large-battle auto-run cannot bypass an accepted continuation finalizer with endTurn-direct");
 
 const partyBridge = buildCombatCommandTurnBridge({
   combatActive: true,

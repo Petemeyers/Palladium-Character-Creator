@@ -34,5 +34,7 @@ assert.ok(deferredLog > continuationGuard);
 assert.ok(normalPassLog > deferredLog);
 assert.ok(directAdvance > normalPassLog,
   "continuation ownership returns before generic no-actions logging and direct advancement");
+assert.match(source, /acceptedTurnFinalizerKeysRef\.current\.has\(noActionsFinalizerKey\)/,
+  "accepted continuation finalizer also blocks the generic no-actions handoff window");
 
 console.log("pending continuation no-actions deferral tests passed");
