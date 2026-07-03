@@ -68,7 +68,8 @@ assert.equal(processing, false, "processing ownership clears after async work se
 
 const combatPageSource = fs.readFileSync(new URL("../src/pages/CombatPage.jsx", import.meta.url), "utf8");
 assert.match(combatPageSource, /const handlePlayerAITurn = useCallback\(async/);
-assert.match(combatPageSource, /await awaitPlayerAiTurnResult\(/);
+assert.match(combatPageSource, /await Promise\.race\(\[[\s\S]{0,300}awaitPlayerAiTurnResult\(/,
+  "player AI result remains awaited alongside the bounded execution watchdog");
 assert.match(combatPageSource, /if \(!resolvedPlayerAi\.acted\) setTimeout/);
 assert.equal(combatPageSource.includes("result=[object Promise]"), false);
 assert.equal(combatPageSource.includes("error=occText is not defined"), false);

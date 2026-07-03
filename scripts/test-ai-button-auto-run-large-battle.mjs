@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
 
 import {
   getCombatantSide,
@@ -13,6 +14,7 @@ import {
 } from "../src/utils/playerAiTurnResult.js";
 import {
   createTurnFinalizerSnapshot,
+  acceptTurnFinalizerKey,
   shouldAcceptTurnFinalizer,
   shouldDeferTurnStartUntilRefsSettle,
 } from "../src/utils/turnFinalizerOwnership.js";
@@ -63,6 +65,13 @@ assert.equal(shouldAcceptTurnFinalizer(oldFinalizer, currentFinalizer), false,
   "large-battle auto-run rejects finalizers from previous actors");
 assert.equal(shouldDeferTurnStartUntilRefsSettle({ deferTurnStart: true }), true,
   "accepted player finalizers wait for authoritative refs before large-battle handoff");
+const largeBattleFinalizers = new Set();
+assert.equal(acceptTurnFinalizerKey(largeBattleFinalizers, "same-turn").accepted, true);
+assert.equal(acceptTurnFinalizerKey(largeBattleFinalizers, "same-turn").duplicate, true);
+
+const combatPageSource = fs.readFileSync(new URL("../src/pages/CombatPage.jsx", import.meta.url), "utf8");
+assert.match(combatPageSource, /pending continuation owns turn/,
+  "large-battle auto-run defers same-actor restarts while continuation work owns the turn");
 
 const partyBridge = buildCombatCommandTurnBridge({
   combatActive: true,

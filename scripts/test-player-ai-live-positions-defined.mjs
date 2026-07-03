@@ -14,8 +14,8 @@ assert.equal(/\blivePositions\b/.test(playerAiHandlerSource), false,
   "player AI handler contains no undefined enemy-scope livePositions reference");
 assert.match(playerAiHandlerSource, /resolvePlayerAiLivePositions\(positionsRef\.current, positions\)/);
 assert.match(playerAiHandlerSource, /positions:\s*positionsForAI/);
-assert.match(playerAiHandlerSource, /await awaitPlayerAiTurnResult\(/,
-  "player AI startup awaits its executor before evaluating completion");
+assert.match(playerAiHandlerSource, /await Promise\.race\(\[[\s\S]{0,300}awaitPlayerAiTurnResult\(/,
+  "player AI startup awaits its executor with a bounded watchdog before evaluating completion");
 assert.equal(playerAiHandlerSource.includes("[object Promise]"), false);
 assert.equal(playerAiHandlerSource.includes("occText is not defined"), false);
 

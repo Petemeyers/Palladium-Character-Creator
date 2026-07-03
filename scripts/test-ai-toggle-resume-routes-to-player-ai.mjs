@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
 
 import {
   decidePlayerTurnStartRoute,
@@ -86,5 +87,9 @@ assert.equal(decidePlayerTurnStartRoute({
   activeFighterMatches: false,
   canAct: true,
 }).blockReason, "active-fighter-mismatch", "stale scheduled fighters remain blocked");
+
+const combatPage = fs.readFileSync(new URL("../src/pages/CombatPage.jsx", import.meta.url), "utf8");
+assert.match(combatPage, /handlePlayerAITurn before runPlayerTurnAI fighter=/,
+  "AI-toggle resume reaches the visible executor boundary");
 
 console.log("AI toggle resume player-AI routing tests passed");

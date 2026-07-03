@@ -179,9 +179,20 @@ import { decidePlayerTurnStartRoute, planAiToggleResume } from "../utils/aiToggl
 import { resolvePlayerAiLivePositions } from "../utils/playerAiLivePositions.js";
 import { awaitPlayerAiTurnResult } from "../utils/playerAiTurnResult.js";
 import { shouldRetryPlayerAiActiveFighterMismatch } from "../utils/playerAiTurnStartRetry.js";
-import { doesPlayerAiContinuationOwnAttack } from "../utils/playerAiContinuation.js";
+import {
+  createPlayerAiContinuationOwnership,
+  doesPlayerAiContinuationOwnAttack,
+  doesPlayerAiContinuationOwnTurn,
+  shouldPlayerAiContinuationWatchdogFire,
+} from "../utils/playerAiContinuation.js";
+import { shouldLogTurnSchedulerClassification } from "../utils/turnSchedulerLogThrottle.js";
+import {
+  createPlayerAiExecutionOwnership,
+  shouldPlayerAiExecutionWatchdogFire,
+} from "../utils/playerAiExecution.js";
 import {
   createTurnFinalizerSnapshot,
+  acceptTurnFinalizerKey,
   getTurnFinalizerKey,
   getTurnFinalizerStaleReason,
   shouldDeferTurnStartUntilRefsSettle,
@@ -3476,6 +3487,8 @@ function CombatPage({ characters = [] }) {
   const currentTurnTokenRef = useRef(null); // Universal turn/action ownership token for delayed callbacks.
   const activeGrappleActionIdRef = useRef(null); // Grapple action ownership token; stale helper continuations must match.
   const activeAttackActionIdRef = useRef(null); // Attack/multi-attack ownership token for delayed callbacks.
+  const pendingPlayerAIContinuationRef = useRef(null); // Async post-move work owns its originating player turn.
+  const playerAIExecutionRef = useRef(null); // Exact player AI executor invocation currently owning the turn.
   const handlePlayerAITurnRef = useRef(null);
 
   useEffect(() => {
@@ -4763,6 +4776,8 @@ function CombatPage({ characters = [] }) {
   const endTurnScheduleIdRef = useRef(null); // Active scheduled end-turn callback owner
   const endTurnScheduleSerialRef = useRef(0); // Monotonic id for scheduled end-turn ownership
   const endTurnGenerationRef = useRef(0); // Invalidates stale delayed tryEndTurn callbacks
+  const acceptedTurnFinalizerKeysRef = useRef(new Set()); // One accepted finalizer per turn snapshot
+  const lastTurnSchedulerClassificationKeyRef = useRef(null); // Avoid repeated unchanged classification logs.
   const lastEndTurnAdvanceKeyRef = useRef(null); // Prevent duplicate endTurn() advances from delayed callbacks in one slice
   const allTimeoutsRef = useRef([]); // Track ALL timeouts so we can clear them on combat end
   const combatPausedRef = useRef(false); // Track paused state in async callbacks
@@ -4803,6 +4818,19 @@ function CombatPage({ characters = [] }) {
   const prevAiControlRef = useRef(aiControlEnabled);
   const wasPausedRef = useRef(false);
 
+  function clearPendingPlayerAIContinuation() {
+    const pending = pendingPlayerAIContinuationRef.current;
+    if (pending?.watchdogId) clearTimeout(pending.watchdogId);
+    pendingPlayerAIContinuationRef.current = null;
+  }
+
+  function clearPlayerAIExecution(reason = "combat-flow-reset") {
+    const execution = playerAIExecutionRef.current;
+    if (execution?.watchdogId) clearTimeout(execution.watchdogId);
+    playerAIExecutionRef.current = null;
+    execution?.settle?.({ kind: "superseded", reason });
+  }
+
   // =========================
   // AI transient refs reset (per-combat)
   // =========================
@@ -4825,6 +4853,9 @@ function CombatPage({ characters = [] }) {
     blockedEnemyActionTurnSlotRef.current = null;
     playerAIActionScheduledRef.current = false;
     processingPlayerAIRef.current = false;
+    clearPendingPlayerAIContinuation();
+    clearPlayerAIExecution();
+    lastTurnSchedulerClassificationKeyRef.current = null;
     if (aiImprovisedAmmoRef.current?.clear) aiImprovisedAmmoRef.current.clear();
     if (aiUnreachableTurnsRef.current?.clear) aiUnreachableTurnsRef.current.clear();
     aiUnreachableTargetsRef.current = {};
@@ -4845,6 +4876,7 @@ function CombatPage({ characters = [] }) {
     techniqueImpactTurnEndHandledRef.current = null;
     lastTechniqueMemoryRef.current = {};
     noActionsPassLogRef.current = new Set();
+    acceptedTurnFinalizerKeysRef.current.clear();
 
     // Separate turnKey claim refs - reset so new combat can schedule cleanly
     lastNoActionTurnKeyRef.current = null;
@@ -4874,8 +4906,12 @@ function CombatPage({ characters = [] }) {
     directTurnHandoffSnapshotRef.current = null;
     blockedEnemyActionTurnSlotRef.current = null;
     endTurnGenerationRef.current += 1;
+    acceptedTurnFinalizerKeysRef.current.clear();
     processingEnemyTurnRef.current = false;
     processingPlayerAIRef.current = false;
+    clearPendingPlayerAIContinuation();
+    clearPlayerAIExecution();
+    lastTurnSchedulerClassificationKeyRef.current = null;
     playerAIActionScheduledRef.current = false;
     enemyTurnTokenRef.current = (enemyTurnTokenRef.current || 0) + 1;
     playerAITurnTokenRef.current = (playerAITurnTokenRef.current || 0) + 1;
@@ -10133,6 +10169,8 @@ function CombatPage({ characters = [] }) {
     currentTurnTokenRef.current = turnToken;
     activeGrappleActionIdRef.current = null;
     activeAttackActionIdRef.current = null;
+    clearPendingPlayerAIContinuation();
+    clearPlayerAIExecution();
 
     if (controlMode === "passive" || controlMode === "defensive") {
       const liveFighters = Array.isArray(fightersRef.current) ? fightersRef.current : [];
@@ -10571,6 +10609,19 @@ function CombatPage({ characters = [] }) {
             if (!isCurrentCombatSession(scheduledCombatSession, `player-turn-start-busy-retry:${reason}`)) return;
             const nowIndex = turnIndexRef.current;
             const nowFighter = fightersRef.current?.[nowIndex];
+            const pendingContinuation = pendingPlayerAIContinuationRef.current;
+            if (doesPlayerAiContinuationOwnTurn(pendingContinuation, {
+              fighterId: expectedFighter?.id,
+              turnIndex: nowIndex,
+              turnCounter: turnCounterRef.current,
+              turnToken: currentTurnTokenRef.current,
+            })) {
+              addLog(
+                `player AI start deferred: pending continuation owns turn fighter=${expectedFighter?.name} source=player-turn-start-busy-retry`,
+                "debug",
+              );
+              return;
+            }
             if (!nowFighter || nowFighter.id !== expectedFighter?.id) {
               const shouldRetry = shouldRetryPlayerAiActiveFighterMismatch({
                 reason,
@@ -10617,6 +10668,7 @@ function CombatPage({ characters = [] }) {
               turnActionResolvingRef.current = false;
             }
             if (isActionBusy() || turnActionResolvingRef.current) return;
+            if (processingPlayerAIRef.current) return;
             startTurnOnce(nowFighter, nowIndex, "player-turn-start-busy-retry");
           }, 32);
         };
@@ -10780,6 +10832,20 @@ function CombatPage({ characters = [] }) {
               }
             );
             processingPlayerAIRef.current = false;
+            clearMatchingDirectHandoffSnapshot(latestFighter);
+            releaseStartedTurn();
+            return;
+          }
+          if (doesPlayerAiContinuationOwnTurn(pendingPlayerAIContinuationRef.current, {
+            fighterId: latestFighter.id,
+            turnIndex: liveIndex,
+            turnCounter: turnCounterRef.current,
+            turnToken: currentTurnTokenRef.current,
+          })) {
+            addLog(
+              `player AI start deferred: pending continuation owns turn fighter=${latestFighter.name} source=${reason}`,
+              "debug",
+            );
             clearMatchingDirectHandoffSnapshot(latestFighter);
             releaseStartedTurn();
             return;
@@ -10991,6 +11057,7 @@ function CombatPage({ characters = [] }) {
     enemyActionCommittedSliceKeyRef.current = null;
 
     endTurnGenerationRef.current += 1;
+    acceptedTurnFinalizerKeysRef.current.clear();
     turnStartInFlightKeyRef.current = null;
 
     clearScheduledTurn();
@@ -11215,16 +11282,6 @@ function CombatPage({ characters = [] }) {
       if (nextFighter && canFighterStartTurn(nextFighter) && (nextFighter.remainingActions || 0) > 0) {
         foundNext = true;
         break; // Found a fighter that can act and has actions
-      }
-      if (
-        nextFighter &&
-        canFighterStartTurn(nextFighter) &&
-        (Number(nextFighter.remainingActions ?? 0) || 0) <= 0
-      ) {
-        addLog(
-         `${nextFighter.name} has no actions remaining - passing to next fighter in initiative order`,
-          "info"
-        );
       }
       nextIndex = (nextIndex + 1) % fightersNow.length;
       attempts++;
@@ -12239,7 +12296,7 @@ function CombatPage({ characters = [] }) {
         addLog("tryEndTurn advancing turn", "info");
         endTurnRef.current?.({
           source,
-          deferTurnStart: options?.deferTurnStart === true,
+          deferTurnStart: options?.deferTurnStart !== false,
         });
       };
 
@@ -18341,6 +18398,18 @@ function CombatPage({ characters = [] }) {
 
     // Prevent duplicate processing - check FIRST before any logging
     if (processingPlayerAIRef.current) {
+      if (doesPlayerAiContinuationOwnTurn(pendingPlayerAIContinuationRef.current, {
+        fighterId: player.id,
+        turnIndex: turnIndexRef.current,
+        turnCounter: turnCounterRef.current,
+        turnToken: currentTurnTokenRef.current,
+      })) {
+        addLog(
+          `player AI start deferred: pending continuation owns turn fighter=${player.name} source=${startReason}`,
+          "debug",
+        );
+        return;
+      }
       addLog(`player AI start blocked: reason=already-processing fighter=${player.name}`, "warning");
       return;
     }
@@ -18677,7 +18746,10 @@ function CombatPage({ characters = [] }) {
         remainingActions: latestFighter?.remainingActions,
       });
     };
-    const canFinalizePlayerAITurn = (source = "player-ai", logAccepted = false) => {
+    const canFinalizePlayerAITurn = (
+      source = "player-ai",
+      { logAccepted = false, consume = false } = {},
+    ) => {
       const latestSnapshot = getCurrentPlayerFinalizerSnapshot();
       const staleReason = getTurnFinalizerStaleReason(
         playerTurnFinalizerSnapshot,
@@ -18699,6 +18771,19 @@ function CombatPage({ characters = [] }) {
           );
         }
         return false;
+      }
+      if (consume) {
+        const acceptance = acceptTurnFinalizerKey(
+          acceptedTurnFinalizerKeysRef.current,
+          finalizerKey,
+        );
+        if (acceptance.duplicate) {
+          addLog(
+            `duplicate turn finalizer ignored fighter=${latestPlayer.name} source=${source} finalizerKey=${finalizerKey}`,
+            "warning",
+          );
+          return false;
+        }
       }
       if (logAccepted) {
         addLog(
@@ -19164,8 +19249,62 @@ function CombatPage({ characters = [] }) {
       );
     };
 
+    const continuationCurrent = () => ({
+      fighterId: startFighterId,
+      turnIndex: startTurnIndex,
+      turnCounter: startTurnCounter,
+      turnToken: capturedTurnToken,
+    });
+    const completePlayerAIContinuation = (source = "player-ai-continuation") => {
+      const pending = pendingPlayerAIContinuationRef.current;
+      if (!doesPlayerAiContinuationOwnTurn(pending, continuationCurrent())) return false;
+      if (pending.watchdogId) clearTimeout(pending.watchdogId);
+      pendingPlayerAIContinuationRef.current = null;
+      if (source === "player-ai-flanking-continuation-resolved") {
+        addLog(`flanking continuation cleanup complete fighter=${latestPlayer.name}`, "debug");
+      }
+      return true;
+    };
+    const claimPlayerAIContinuation = ({
+      source = "player-ai-continuation",
+      timeoutMs = 6500,
+    } = {}) => {
+      clearPendingPlayerAIContinuation();
+      const ownership = createPlayerAiContinuationOwnership({
+        ...continuationCurrent(),
+        source,
+        timeoutMs,
+      });
+      const watchdogId = setTimeout(() => {
+        const pending = pendingPlayerAIContinuationRef.current;
+        const liveCurrent = {
+          fighterId: fightersRef.current?.[turnIndexRef.current]?.id,
+          turnIndex: turnIndexRef.current,
+          turnCounter: turnCounterRef.current,
+          turnToken: currentTurnTokenRef.current,
+        };
+        if (!shouldPlayerAiContinuationWatchdogFire(pending, liveCurrent, Date.now())) return;
+        pendingPlayerAIContinuationRef.current = null;
+        addLog(
+          `pending continuation watchdog fired fighter=${latestPlayer.name} source=${pending.source} reason=timeout`,
+          "warning",
+        );
+        processingPlayerAIRef.current = false;
+        if (!pendingTurnAdvanceRef.current) {
+          turnActionResolvingRef.current = false;
+          const timeoutSource = pending.source === "player-ai-flanking-continuation"
+            ? "player-ai-flanking-continuation-timeout"
+            : "player-ai-continuation-timeout";
+          schedulePlayerAIEndTurn(0, timeoutSource);
+        }
+      }, Math.max(1, Number(timeoutMs) || 6500));
+      pendingPlayerAIContinuationRef.current = { ...ownership, watchdogId };
+      return pendingPlayerAIContinuationRef.current;
+    };
+
     const schedulePlayerAIEndTurn = (delayOverride = null, source = "player-ai") => {
-      if (!canFinalizePlayerAITurn(source, true)) {
+      completePlayerAIContinuation(source);
+      if (!canFinalizePlayerAITurn(source, { logAccepted: true, consume: true })) {
         processingPlayerAIRef.current = false;
         return false;
       }
@@ -19294,7 +19433,10 @@ function CombatPage({ characters = [] }) {
       return true;
     };
 
-    const context = {
+    addLog(`handlePlayerAITurn before build context fighter=${latestPlayer.name}`, "debug");
+    let context;
+    try {
+      context = {
       fighters: liveFightersForPlayerAI,
       positions: positionsForAI,
       combatTerrain,
@@ -19324,6 +19466,8 @@ function CombatPage({ characters = [] }) {
       getHPStatus,
       addLog,
       scheduleEndTurn: schedulePlayerAIEndTurn,
+      claimPlayerAIContinuation,
+      completePlayerAIContinuation,
       endTurn,
       // Distance & movement
       calculateDistance,
@@ -19393,8 +19537,17 @@ function CombatPage({ characters = [] }) {
       canSelectHostileTarget: canSelectHostileCombatTarget,
       clearSeparatedGrapple: clearSeparatedGrappleForPlayerAI,
       canFinalizeTurn: canFinalizePlayerAITurn,
-      sceneContext: { sceneType: "combat", relations: {} },
-    };
+        sceneContext: { sceneType: "combat", relations: {} },
+      };
+    } catch (error) {
+      addLog(
+        `handlePlayerAITurn context build failed fighter=${latestPlayer.name} error=${error?.message || String(error)}`,
+        "warning",
+      );
+      processingPlayerAIRef.current = false;
+      schedulePlayerAIEndTurn(0, "player-ai-context-build-exception");
+      return;
+    }
 
     // Delegate to AI module - use latestPlayer to ensure we have persisted state
     const turnKey = getPlayerTurnInFlightKey(latestPlayer);
@@ -19418,20 +19571,109 @@ function CombatPage({ characters = [] }) {
     if (tryPlayerPreferredFlyerFallback(latestPlayer)) {
       return;
     }
-    let resolvedPlayerAi;
-    try {
-      resolvedPlayerAi = await awaitPlayerAiTurnResult(
-        () => runPlayerTurnAI(latestPlayer, context),
-        () => playerAIActionScheduledRef.current,
-      );
-    } catch (error) {
+    const executionOwnership = createPlayerAiExecutionOwnership({
+      combatSession: combatSessionRef.current,
+      generation: endTurnGenerationRef.current,
+      fighterId: startFighterId,
+      turnIndex: startTurnIndex,
+      meleeRound: startMeleeRound,
+      turnCounter: startTurnCounter,
+      turnToken: capturedTurnToken,
+      playerAiToken: playerAITurnToken,
+      reason: startReason,
+      timeoutMs: 8000,
+    });
+    if (playerAIExecutionRef.current?.executionKey) {
+      const prior = playerAIExecutionRef.current;
+      if (prior.watchdogId) clearTimeout(prior.watchdogId);
+      prior.settle?.({ kind: "superseded", reason: "newer-execution" });
       addLog(
-        `handlePlayerAITurn finished ${latestPlayer.name} result=failed error=${error?.message || String(error)}`,
+        `stale player AI execution ignored fighter=${prior.fighterName || prior.fighterId} executionKey=${prior.executionKey} latestKey=${executionOwnership.executionKey}`,
         "warning",
       );
-      processingPlayerAIRef.current = false;
-      scheduleEndTurn(0, "player-ai-exception");
-      return;
+    }
+    let settleExecutionControl;
+    const executionControl = new Promise((resolve) => {
+      settleExecutionControl = resolve;
+    });
+    const watchdogId = setTimeout(() => {
+      const ownedExecution = playerAIExecutionRef.current;
+      const liveExecution = {
+        fighterId: fightersRef.current?.[turnIndexRef.current]?.id,
+        turnIndex: turnIndexRef.current,
+        meleeRound: meleeRoundRef.current,
+        turnCounter: turnCounterRef.current,
+        turnToken: currentTurnTokenRef.current,
+        playerAiToken: playerAITurnTokenRef.current,
+      };
+      if (
+        ownedExecution?.executionKey !== executionOwnership.executionKey ||
+        !shouldPlayerAiExecutionWatchdogFire(ownedExecution, liveExecution, Date.now())
+      ) return;
+      settleExecutionControl({ kind: "timeout" });
+    }, 8000);
+    playerAIExecutionRef.current = {
+      ...executionOwnership,
+      fighterName: latestPlayer.name,
+      watchdogId,
+      settle: settleExecutionControl,
+    };
+    addLog(
+      `handlePlayerAITurn before runPlayerTurnAI fighter=${latestPlayer.name} executionKey=${executionOwnership.executionKey}`,
+      "info",
+    );
+    let resolvedPlayerAi;
+    try {
+      const executionResult = await Promise.race([
+        awaitPlayerAiTurnResult(
+          () => runPlayerTurnAI(latestPlayer, context),
+          () => playerAIActionScheduledRef.current,
+        ).then(
+          (value) => ({ kind: "result", value }),
+          (error) => ({ kind: "error", error }),
+        ),
+        executionControl,
+      ]);
+      if (executionResult?.kind === "timeout") {
+        addLog(
+          `player AI execution watchdog fired fighter=${latestPlayer.name} reason=${startReason} executionKey=${executionOwnership.executionKey}`,
+          "warning",
+        );
+        processingPlayerAIRef.current = false;
+        if (playerTurnInFlightKeyRef.current === turnKey) playerTurnInFlightKeyRef.current = null;
+        schedulePlayerAIEndTurn(0, "player-ai-execution-timeout");
+        return;
+      }
+      if (executionResult?.kind === "superseded") {
+        return;
+      }
+      if (executionResult?.kind === "error") {
+        const error = executionResult.error;
+        addLog(
+          `handlePlayerAITurn finished ${latestPlayer.name} result=failed error=${error?.message || String(error)}`,
+          "warning",
+        );
+        processingPlayerAIRef.current = false;
+        schedulePlayerAIEndTurn(0, "player-ai-exception");
+        return;
+      }
+      if (playerAIExecutionRef.current?.executionKey !== executionOwnership.executionKey) {
+        addLog(
+          `stale player AI execution ignored fighter=${latestPlayer.name} executionKey=${executionOwnership.executionKey} latestKey=${playerAIExecutionRef.current?.executionKey || "none"}`,
+          "warning",
+        );
+        return;
+      }
+      resolvedPlayerAi = executionResult.value;
+      addLog(
+        `handlePlayerAITurn after runPlayerTurnAI fighter=${latestPlayer.name} result=${resolvedPlayerAi.summary}`,
+        "debug",
+      );
+    } finally {
+      if (playerAIExecutionRef.current?.executionKey === executionOwnership.executionKey) {
+        clearTimeout(playerAIExecutionRef.current.watchdogId);
+        playerAIExecutionRef.current = null;
+      }
     }
     addLog(
       `handlePlayerAITurn finished ${latestPlayer.name} result=${resolvedPlayerAi.summary}`,
@@ -20149,12 +20391,44 @@ function CombatPage({ characters = [] }) {
         );
         return false;
       }
+      const acceptance = acceptTurnFinalizerKey(
+        acceptedTurnFinalizerKeysRef.current,
+        finalizerKey,
+      );
+      if (acceptance.duplicate) {
+        addLog(
+          `duplicate turn finalizer ignored fighter=${liveEnemy.name} source=${finalizerSource} finalizerKey=${finalizerKey}`,
+          "warning",
+        );
+        return false;
+      }
       addLog(
         `turn finalizer accepted fighter=${liveEnemy.name} source=${finalizerSource} finalizerKey=${finalizerKey}`,
         "debug",
       );
       scheduleEndTurn(delayOverride, finalizerSource);
       return true;
+    };
+
+    const canFinalizeEnemyTurn = (finalizerSource = "enemy-ai-no-actions") => {
+      const latestIndex = turnIndexRef.current;
+      const latestFighter = fightersRef.current?.[latestIndex];
+      const latestSnapshot = createTurnFinalizerSnapshot({
+        combatSession: combatSessionRef.current,
+        generation: endTurnGenerationRef.current,
+        fighterId: latestFighter?.id,
+        turnIndex: latestIndex,
+        meleeRound: meleeRoundRef.current ?? meleeRound,
+        turnCounter: turnCounterRef.current ?? turnCounter,
+        turnToken: currentTurnTokenRef.current,
+      });
+      const staleReason = getTurnFinalizerStaleReason(enemyTurnFinalizerSnapshot, latestSnapshot);
+      if (!staleReason) return true;
+      addLog(
+        `stale no-actions finalizer ignored fighter=${liveEnemy.name} source=${finalizerSource} finalizerKey=${getTurnFinalizerKey(enemyTurnFinalizerSnapshot)} latestKey=${getTurnFinalizerKey(latestSnapshot)}`,
+        "warning",
+      );
+      return false;
     };
 
     const guardedEnemyAttack = (...args) => {
@@ -20215,6 +20489,7 @@ function CombatPage({ characters = [] }) {
         getHPStatus,
         addLog,
         scheduleEndTurn: scheduleEnemyAIEndTurn,
+        canFinalizeTurn: canFinalizeEnemyTurn,
         endTurn,
         // Distance & movement
         calculateDistance,
@@ -21432,10 +21707,14 @@ function CombatPage({ characters = [] }) {
 
     // Check if enemy has actions remaining
     if (enemy.remainingActions <= 0) {
+      if (!canFinalizeEnemyTurn("legacy-enemy-no-actions")) {
+        processingEnemyTurnRef.current = false;
+        return;
+      }
       if (!(enemy?.moraleState?.hasFled) && !(Array.isArray(enemy?.statusEffects) && enemy.statusEffects.includes('FLED'))) {
         addLog(`${enemy.name} has no actions remaining - passing to next fighter in initiative order`, 'info');
       }
-      scheduleEndTurn();
+      scheduleEnemyAIEndTurn(0, "legacy-enemy-no-actions");
       return;
     }
 
@@ -24724,8 +25003,39 @@ function CombatPage({ characters = [] }) {
     // so we do not treat each 0-action fighter in order as a "new" dedupe bucket and spam endTurn().
     if ((currentFighter.remainingActions ?? 0) <= 0) {
       const noActionTurnSlotKey = makeTurnStartKey(currentFighter, turnIndex, turnCounter);
+      const pendingContinuation = pendingPlayerAIContinuationRef.current;
+      if (doesPlayerAiContinuationOwnTurn(pendingContinuation, {
+        fighterId: currentFighter.id,
+        turnIndex,
+        turnCounter,
+        turnToken: currentTurnTokenRef.current,
+      })) {
+        if (!pendingContinuation.noActionsPassDeferredLogged) {
+          pendingContinuation.noActionsPassDeferredLogged = true;
+          addLog(
+            `no-actions pass deferred: pending continuation owns turn fighter=${currentFighter.name} source=effect-no-actions continuationKey=${pendingContinuation.continuationKey}`,
+            "debug",
+          );
+        }
+        return;
+      }
       if (lastNoActionTurnKeyRef.current === noActionTurnSlotKey) return;
       lastNoActionTurnKeyRef.current = noActionTurnSlotKey;
+
+      const liveIndex = turnIndexRef.current;
+      const liveFighter = fightersRef.current?.[liveIndex];
+      const staleNoActionSlot =
+        liveIndex !== turnIndex ||
+        liveFighter?.id !== currentFighter.id ||
+        (turnCounterRef.current ?? turnCounter) !== turnCounter ||
+        (meleeRoundRef.current ?? meleeRound) !== meleeRound;
+      if (staleNoActionSlot) {
+        addLog(
+          `stale no-actions finalizer ignored fighter=${currentFighter.name} source=effect-no-actions finalizerKey=${noActionTurnSlotKey} latestKey=${makeTurnStartKey(liveFighter, liveIndex, turnCounterRef.current)}`,
+          "warning",
+        );
+        return;
+      }
 
       const passLogKey = `${currentFighter.id}:${meleeRound}`;
       if (!noActionsPassLogRef.current.has(passLogKey)) {
@@ -24798,10 +25108,22 @@ function CombatPage({ characters = [] }) {
     const currentSchedulerTeam = getFighterSchedulerTeam(currentFighter);
     const currentIsPlayable = currentSchedulerTeam === "player";
     const usesPlayerAIPath = currentControlMode === "ai" && currentIsPlayable;
-    addLog?.(
-     `turn scheduler classified ${currentFighter.name} as ${usesPlayerAIPath || currentControlMode === "player" ? "player" : "enemy"} team=${currentFighter.team ?? currentFighter.teamId ?? currentFighter.armyId ?? currentSchedulerTeam ?? "unknown"} type=${currentFighter.type ?? "unknown"}`,
-      "debug"
-    );
+    const schedulerClassificationKey = [
+      currentTurnKey,
+      currentControlMode,
+      currentSchedulerTeam,
+      currentFighter.type ?? "unknown",
+    ].join("|");
+    if (shouldLogTurnSchedulerClassification(
+      lastTurnSchedulerClassificationKeyRef.current,
+      schedulerClassificationKey,
+    )) {
+      lastTurnSchedulerClassificationKeyRef.current = schedulerClassificationKey;
+      addLog?.(
+       `turn scheduler classified ${currentFighter.name} as ${usesPlayerAIPath || currentControlMode === "player" ? "player" : "enemy"} team=${currentFighter.team ?? currentFighter.teamId ?? currentFighter.armyId ?? currentSchedulerTeam ?? "unknown"} type=${currentFighter.type ?? "unknown"}`,
+        "debug"
+      );
+    }
 
     if (currentControlMode === "player" || usesPlayerAIPath) {
       if (usesPlayerAIPath) {
@@ -30248,6 +30570,16 @@ function CombatPage({ characters = [] }) {
                   startTurnOnce(currentFighter, liveIndex, "ai-toggle-resume");
                 }
               } else {
+                const activeExecution = playerAIExecutionRef.current;
+                if (activeExecution?.executionKey) {
+                  if (activeExecution.watchdogId) clearTimeout(activeExecution.watchdogId);
+                  playerAIExecutionRef.current = null;
+                  activeExecution.settle?.({ kind: "superseded", reason: "manual-toggle" });
+                  addLog(
+                    `player AI execution superseded fighter=${activeExecution.fighterName || activeExecution.fighterId} reason=manual-toggle executionKey=${activeExecution.executionKey}`,
+                    "info",
+                  );
+                }
                 if (playerAITimerRef.current) {
                   clearTimeout(playerAITimerRef.current);
                   playerAITimerRef.current = null;

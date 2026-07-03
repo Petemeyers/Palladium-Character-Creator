@@ -35,8 +35,17 @@ assert.match(source, /flanking continuation attack start attacker=/);
 assert.match(source, /flanking continuation attack blocked: reason=/);
 assert.match(source, /flanking continuation attack resolved attacker=/);
 assert.match(source, /clearPlayerAIContinuationAttack\?\.\(\s*flankingAttackActionId/);
-assert.match(source, /scheduleEndTurn\(16, "player-ai-flank-attack-blocked"\)/);
+assert.match(source, /scheduleEndTurn\(16, "player-ai-flanking-continuation-blocked"\)/);
 assert.match(source, /canFinalizeTurn/,
   "player AI continuations share the guarded turn-finalizer context");
+assert.match(source, /player-ai-flanking-continuation-blocked/,
+  "blocked continuation uses one canonical finalizer source");
+assert.match(source, /completePlayerAIContinuation\?\.\([\s\S]{0,180}player-ai-flanking-continuation-resolved/,
+  "successful continuation releases ownership after attack settlement");
+const combatPage = fs.readFileSync(new URL("../src/pages/CombatPage.jsx", import.meta.url), "utf8");
+assert.match(combatPage, /flanking continuation cleanup complete/,
+  "successful cleanup is not mislabeled as an abort");
+assert.match(source, /scheduleEndTurn\(16, "player-ai-flanking-continuation-resolved"\)/,
+  "successful continuation uses a resolved finalizer source");
 
 console.log("player AI flanking continuation resolving-cleanup tests passed");

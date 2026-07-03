@@ -505,6 +505,8 @@ export async function runPlayerTurnAI(player, context) {
     // Attack & combat
     attack,
     clearPlayerAIContinuationAttack,
+    claimPlayerAIContinuation,
+    completePlayerAIContinuation,
     executeGrapple,
     setPositions,
     setFighters,
@@ -566,6 +568,8 @@ export async function runPlayerTurnAI(player, context) {
     onNoHostilesRemaining,
     sceneContext = { sceneType: "combat", relations: {} },
   } = context;
+
+  addLog?.(`runPlayerTurnAI entered fighter=${player?.name || "unknown"}`, "info");
 
   const isHostileTarget = (target, actionKind = "attack") =>
     actionKind === "attack" && typeof canSelectHostileTarget === "function"
@@ -1069,7 +1073,12 @@ export async function runPlayerTurnAI(player, context) {
   );
 
   // Get equistaminad weapons early for reachability checks
+  addLog?.(`runPlayerTurnAI before weapon selection fighter=${player.name}`, "debug");
   const equistaminadWeapons = getEquistaminadWeapons(player);
+  addLog?.(
+    `runPlayerTurnAI after weapon selection fighter=${player.name} count=${equistaminadWeapons.length}`,
+    "debug",
+  );
 
   // Check if player has ranged weapons (used to determine if we should respect "unreachable" marks)
   const hasRangedWeapon = equistaminadWeapons.some((w) => {
@@ -1979,12 +1988,12 @@ export async function runPlayerTurnAI(player, context) {
   // Debug: Show what we found (only log if not a prey animal to reduce spam)
   if (!isPreyAnimal(player)) {
     addLog(
-      `ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒâ€šÃ‚Â ${player.name} weapon check: ${equistaminadWeapons.length} equipped weapons found`,
+      `${player.name} weapon check: ${equistaminadWeapons.length} equipped weapons found`,
       "info"
     );
     if (equistaminadWeapons.length > 0) {
       addLog(
-        `ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒâ€šÃ‚Â ${player.name} equipped weapons: ${equistaminadWeapons
+        `${player.name} equipped weapons: ${equistaminadWeapons
           .map((w) => w.name)
           .join(", ")}`,
         "info"
@@ -3489,24 +3498,42 @@ export async function runPlayerTurnAI(player, context) {
 
             // Claim this turn before yielding to the post-move continuation.
             markActionScheduled();
+            claimPlayerAIContinuation?.({
+              source: "player-ai-flanking-continuation",
+              timeoutMs: 6500,
+            });
+            let flankingContinuationStarted = false;
             // Continue with attack after movement - use updated positions from state
             setTimeout(() => {
-              if (!tokenStillValid()) return;
-              if (pendingTurnAdvanceRef?.current) return;
-              if (!combatActive) return;
-              // Re-read positions from state to ensure we have the latest
-              setPositions((currentPositions) => {
-                positionsRef.current = currentPositions;
-                // Check range after position update
-                setTimeout(() => {
+              if (!tokenStillValid()) {
+                completePlayerAIContinuation?.("player-ai-flanking-continuation-stale");
+                return;
+              }
+              if (pendingTurnAdvanceRef?.current) {
+                completePlayerAIContinuation?.("player-ai-flanking-continuation-advance-pending");
+                return;
+              }
+              if (!combatActive) {
+                completePlayerAIContinuation?.("player-ai-flanking-continuation-combat-ended");
+                return;
+              }
+              // Read the canonical position ref directly. React state updaters may replay,
+              // so they must not be used to launch continuation side effects.
+              const currentPositions = positionsRef.current || positions;
+              positionsRef.current = currentPositions;
+              if (flankingContinuationStarted) return;
+              flankingContinuationStarted = true;
+              // Check range after position update
+              setTimeout(() => {
                   void (async () => {
-                  const abortFlankingContinuation = (reason = "flanking continuation aborted") => {
-                    addLog("ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€¦Ã‚Â¡Ãƒâ€šÃ‚Â« flanking continuation aborted safely", "warning");
+                    const abortFlankingContinuation = (reason = "flanking continuation aborted") => {
+                    addLog("flanking continuation aborted safely", "warning");
                     addLog(`ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€šÃ‚Â§Ãƒâ€šÃ‚Âª ${reason}`, "debug");
                     if (turnActionResolvingRef) turnActionResolvingRef.current = false;
                     if (pendingTurnAdvanceRef) pendingTurnAdvanceRef.current = false;
-                    processingPlayerAIRef.current = false;
-                    scheduleEndTurn(0, "player-ai-flanking-continuation-abort");
+                      processingPlayerAIRef.current = false;
+                      completePlayerAIContinuation?.("player-ai-flanking-continuation-abort");
+                      scheduleEndTurn(0, "player-ai-flanking-continuation-abort");
                   };
 
                   try {
@@ -3611,7 +3638,7 @@ export async function runPlayerTurnAI(player, context) {
                         tokenStillValid()
                       ) {
                         flankingAttackSettled = true;
-                        addLog("ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€¦Ã‚Â¡Ãƒâ€šÃ‚Â« flanking continuation exception: attack did not settle", "warning");
+                        addLog("flanking continuation exception: attack did not settle", "warning");
                         clearPlayerAIContinuationAttack?.(
                           flankingAttackActionId,
                           "flanking-attack-watchdog",
@@ -3619,11 +3646,12 @@ export async function runPlayerTurnAI(player, context) {
                         turnActionResolvingRef.current = false;
                         if (pendingTurnAdvanceRef) pendingTurnAdvanceRef.current = false;
                         processingPlayerAIRef.current = false;
-                        scheduleEndTurn(16, "player-ai-flank-attack-watchdog");
+                        completePlayerAIContinuation?.("player-ai-flanking-continuation-timeout");
+                        scheduleEndTurn(16, "player-ai-flanking-continuation-timeout");
                       }
                     }, 5000);
                     try {
-                      addLog("ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€šÃ‚Â§Ãƒâ€šÃ‚Âª flanking continuation calling attack", "debug");
+                      addLog("flanking continuation calling attack", "debug");
                       addLog(
                         `flanking continuation attack start attacker=${livePlayer.name} target=${liveTarget.name} weapon=${selectedAttack?.name || "unknown"}`,
                         "debug",
@@ -3636,6 +3664,11 @@ export async function runPlayerTurnAI(player, context) {
                         defenderPosOverride: actualTargetPos,
                         distanceOverride: newDistance,
                       });
+                      completePlayerAIContinuation?.(
+                        getPlayerAiContinuationBlockReason(attackOutcome)
+                          ? "player-ai-flanking-continuation-blocked"
+                          : "player-ai-flanking-continuation-resolved",
+                      );
                       const blockedReason = getPlayerAiContinuationBlockReason(attackOutcome);
                       if (blockedReason) {
                         flankingAttackSettled = true;
@@ -3650,7 +3683,7 @@ export async function runPlayerTurnAI(player, context) {
                         );
                         if (turnActionResolvingRef) turnActionResolvingRef.current = false;
                         if (pendingTurnAdvanceRef) pendingTurnAdvanceRef.current = false;
-                        scheduleEndTurn(16, "player-ai-flank-attack-blocked");
+                        scheduleEndTurn(16, "player-ai-flanking-continuation-blocked");
                         return;
                       }
                       flankingAttackSettled = true;
@@ -3659,12 +3692,13 @@ export async function runPlayerTurnAI(player, context) {
                         `flanking continuation attack resolved attacker=${livePlayer.name} result=${attackOutcome?.accepted ? "scheduled" : "resolved"}`,
                         "debug",
                       );
+                      scheduleEndTurn(16, "player-ai-flanking-continuation-resolved");
                     } catch (err) {
                       flankingAttackSettled = true;
                       clearTimeout(flankingAttackWatchdog);
                       console.error("[playerTurnAI] flanking attack failed:", err);
                       addLog(
-                        `ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€¦Ã‚Â¡Ãƒâ€šÃ‚Â« flanking continuation exception: ${err?.message || String(err)}`,
+                        `flanking continuation exception: ${err?.message || String(err)}`,
                         "warning"
                       );
                       addLog(
@@ -3785,16 +3819,13 @@ export async function runPlayerTurnAI(player, context) {
                   } catch (err) {
                     console.error("[playerTurnAI] flanking continuation failed:", err);
                     addLog(
-                      `ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€¦Ã‚Â¡Ãƒâ€šÃ‚Â« flanking continuation exception: ${err?.message || String(err)}`,
+                      `flanking continuation exception: ${err?.message || String(err)}`,
                       "warning"
                     );
                     abortFlankingContinuation(`exception: ${err?.message || String(err)}`);
                   }
                 })();
-                }, 100);
-
-                return currentPositions; // Return unchanged since we already updated it
-              });
+              }, 100);
             }, 1000);
             return createPlayerAiActionResult("pending-continuation", {
               pendingContinuation: true,
@@ -4181,7 +4212,7 @@ export async function runPlayerTurnAI(player, context) {
             );
           } catch (err) {
             console.error("[playerTurnAI] approach range validation failed:", err);
-            addLog("ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€¦Ã‚Â¡Ãƒâ€šÃ‚Â« approach continuation aborted safely", "warning");
+            addLog("approach continuation aborted safely", "warning");
             if (turnActionResolvingRef) turnActionResolvingRef.current = false;
             if (pendingTurnAdvanceRef) pendingTurnAdvanceRef.current = false;
             processingPlayerAIRef.current = false;
@@ -4212,16 +4243,20 @@ export async function runPlayerTurnAI(player, context) {
             "info"
           );
           markActionScheduled();
+          claimPlayerAIContinuation?.({
+            source: "player-ai-approach-continuation",
+            timeoutMs: 5000,
+          });
           setTimeout(() => {
             void (async () => {
               if (!canRunPlayerAICallback({ token: playerAITurnToken, fighterId: player.id })) {
-                addLog("ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€¦Ã‚Â¡Ãƒâ€šÃ‚Â« approach continuation aborted safely", "warning");
+                addLog("approach continuation aborted safely", "warning");
                 processingPlayerAIRef.current = false;
                 scheduleEndTurn(0, "player-ai-approach-stale");
                 return;
               }
               if (pendingTurnAdvanceRef?.current || !combatActive) {
-                addLog("ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€¦Ã‚Â¡Ãƒâ€šÃ‚Â« approach continuation aborted safely", "warning");
+                addLog("approach continuation aborted safely", "warning");
                 if (turnActionResolvingRef) turnActionResolvingRef.current = false;
                 if (pendingTurnAdvanceRef) pendingTurnAdvanceRef.current = false;
                 processingPlayerAIRef.current = false;
@@ -4240,15 +4275,17 @@ export async function runPlayerTurnAI(player, context) {
                     distanceOverride: liveDistance,
                   }
                 );
+                completePlayerAIContinuation?.("player-ai-approach-continuation-resolved");
               } catch (err) {
                 console.error("[playerTurnAI] approach attack failed:", err);
-                addLog("ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€¦Ã‚Â¡Ãƒâ€šÃ‚Â« approach continuation aborted safely", "warning");
+                addLog("approach continuation aborted safely", "warning");
                 addLog(
                   `ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã‚Â¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¯Ãƒâ€šÃ‚Â¸Ãƒâ€šÃ‚Â Player AI approach attack failed: ${err?.message || String(err)}`,
                   "warning"
                 );
                 if (turnActionResolvingRef) turnActionResolvingRef.current = false;
                 if (pendingTurnAdvanceRef) pendingTurnAdvanceRef.current = false;
+                completePlayerAIContinuation?.("player-ai-approach-continuation-abort");
                 scheduleEndTurn(16, "player-ai-approach-attack-catch");
               } finally {
                 processingPlayerAIRef.current = false;

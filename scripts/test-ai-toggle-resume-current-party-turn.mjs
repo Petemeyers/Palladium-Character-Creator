@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
 
 import { planAiToggleResume } from "../src/utils/aiToggleResume.js";
 import { resolveExplicitCombatControlMode } from "../src/utils/combatantSide.js";
@@ -97,5 +98,9 @@ assert.equal(
   "player",
   "turning AI off restores manual party control",
 );
+
+const combatPage = fs.readFileSync(new URL("../src/pages/CombatPage.jsx", import.meta.url), "utf8");
+assert.match(combatPage, /player AI execution superseded fighter=/,
+  "returning to manual control settles an in-flight executor cleanly");
 
 console.log("AI toggle current-party-turn resume tests passed");
