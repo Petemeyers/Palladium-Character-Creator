@@ -146,8 +146,15 @@ import {
   canStartPublicTurnOrder,
 } from "../utils/publicTurnOrder.js";
 import { spendAction } from "../utils/publicActionBudget.js";
-import { spendStamina } from "../utils/combatStamina.js";
-import { applyStaminaRecovery, getRecoveryAmount } from "../utils/combatRecovery.js";
+import { getSimulationDelay, normalizeSimulationSpeed, SIMULATION_SPEEDS } from "../utils/simulationSpeed.js";
+import {
+  calculateAttackStaminaCost,
+  calculateDefenseStaminaCost,
+  calculateEffectiveRoutedMovement,
+  chooseAIStaminaRecovery,
+  spendStamina,
+} from "../utils/combatStamina.js";
+import { applyRecoveryAction, applyStaminaRecovery, getRecoveryAmount } from "../utils/combatRecovery.js";
 import {
   applyPendingDefensiveSelection,
   applyCombatPosture,
@@ -161,6 +168,7 @@ import {
   getDefensiveReserve,
   getCombatPosture,
   getPendingDefensiveSelection,
+  interruptDefensiveRecovery,
 } from "../utils/combatPosture.js";
 import {
   getCombatantSide,
@@ -351,6 +359,12 @@ import {
   preserveCombatantFledState,
   removeFledCombatantPositions,
 } from "../utils/combatFledState.js";
+import {
+  advanceExhaustedCower,
+  isCombatantBroken,
+  resetExhaustedCowerCount,
+  resolveCombatSideOutcome,
+} from "../utils/combatBrokenState.js";
 import { normalizeMoraleState } from "../utils/morale/moraleChecks.js";
 import { evaluateMoraleTriggers } from "../utils/morale/moraleTriggerChecks.js";
 
@@ -557,7 +571,17 @@ import {
   hasSatisfiedRoutingExit,
   getClosestEscapeEdgeHex,
   resolveRoutedTurnRecovery,
+  chooseRoutingSurvivalIntent,
+  findSurvivalIntentDestination,
+  getSurvivalMovementFailureReason,
+  hasCrossedRoutedEscapeBoundary,
+  canAttemptRallyFromRouting,
 } from "../utils/routingSystem.js";
+import {
+  SURVIVAL_INTENTS,
+  calculateRoutedMovementStaminaCost,
+  formatSurvivalIntent,
+} from "../utils/survivalIntent.js";
 import { canBeCaptured, tieUpPrisoner, lootPrisoner } from "../utils/captureSystem.js";
 import {
   initializeCombatFatigue,
@@ -574,6 +598,7 @@ import {
 import { createAIActionSelector } from "../utils/combatEngine.js";
 import { runPlayerTurnAI } from "../utils/ai/playerTurnAI.js";
 import { runEnemyTurnAI } from "../utils/ai/enemyTurnAI.js";
+import { isRoutingOrPassiveTarget, prioritizeEnemyCombatTargets } from "../utils/ai/routedTargetPriority.js";
 import { runFlyingTurn, isFlyingCombatant, moveFlyingCombatant as moveFlyingCombatantHelper, performDiveAttack as performDiveAttackHelper } from "../utils/ai/flyingBehaviorSystem.js";
 import { hasAnyValidOffensiveOption } from "../utils/ai/meleeReachabilityHelpers.js";
 import {
@@ -1171,6 +1196,15 @@ const DISPLAY_ABILITY_LABELS = {
   charisma: "Charisma",
 };
 
+// Routed panic uses the configured tactical field as a terminal escape boundary.
+// Capture it before legacy chase code can mutate GRID_CONFIG during a session.
+const ROUTED_ESCAPE_BOUNDS = Object.freeze({
+  minX: 0,
+  minY: 0,
+  maxX: GRID_CONFIG.GRID_WIDTH - 1,
+  maxY: GRID_CONFIG.GRID_HEIGHT - 1,
+});
+
 const DISPLAY_COMPATIBILITY_LABELS = {
   IQ: "IQ",
   ME: "ME",
@@ -1728,18 +1762,6 @@ function CombatPage({ characters = [] }) {
   const [turnIndex, setTurnIndex] = useState(0);
   const [positions, setPositions] = useState({}); // Combatant positions on tactical map
   const [renderPositions, setRenderPositions] = useState({}); // Render-only positions (visual pose)
-  const [routingChaseState, setRoutingChaseState] = useState({
-    mapBounds: {
-      minX: 0,
-      minY: 0,
-      maxX: GRID_CONFIG.GRID_WIDTH - 1,
-      maxY: GRID_CONFIG.GRID_HEIGHT - 1,
-    },
-    expandedChunks: [],
-    fleeDirection: null,
-    pursuers: [],
-  });
-  const routingChaseStateRef = useRef(routingChaseState);
   const [projectiles, setProjectiles] = useState([]); // Render-only projectiles
   const projectilesRef = useRef([]);
   const [embeddedArrows, setEmbeddedArrows] = useState([]); // Arrows stuck after impact
@@ -1750,10 +1772,6 @@ function CombatPage({ characters = [] }) {
   const [mapDefinition, setMapDefinition] = useState(null); // Map definition for editor mode (moved up for arenaEnvironment)
   const [savedBattleMaps, setSavedBattleMaps] = useState(() => loadSavedBattleMapsFromStorage());
   const [selectedBattleMapId, setSelectedBattleMapId] = useState("default");
-
-  useEffect(() => {
-    routingChaseStateRef.current = routingChaseState;
-  }, [routingChaseState]);
 
   useEffect(() => {
     const refreshSavedBattleMaps = () => {
@@ -1896,6 +1914,9 @@ function CombatPage({ characters = [] }) {
   }, [addGMNarration, gmNarrationMode]);
 
   const recentLogMessagesRef = useRef(new Map()); // Track recent log messages to prevent duplicates
+  const [simulationSpeed, setSimulationSpeed] = useState(() => {
+    try { return normalizeSimulationSpeed(localStorage.getItem("combatSimulationSpeed")); } catch { return SIMULATION_SPEEDS.NORMAL; }
+  });
   const logQueueRef = useRef([]);
   const logFlushTimerRef = useRef(null);
   const combatLogSeqRef = useRef(0); // Monotonic sequence for stable ordering
@@ -1906,12 +1927,16 @@ function CombatPage({ characters = [] }) {
     logStepModeRef.current = logStepMode;
   }, [logStepMode]);
 
+  useEffect(() => {
+    try { localStorage.setItem("combatSimulationSpeed", simulationSpeed); } catch { /* non-browser */ }
+  }, [simulationSpeed]);
+
   const scaleDelayMs = useCallback((value) => {
     const raw = Number(value);
     if (!Number.isFinite(raw)) return value;
     const scale = Math.max(0.05, Number(timeScaleRef.current) || 1);
-    return raw / scale;
-  }, []);
+    return getSimulationDelay(raw / scale, simulationSpeed);
+  }, [simulationSpeed]);
 
   const getVisualDurationMs = useCallback(
     (baseMs, minMs = 120, maxMs = 2500) => {
@@ -2332,7 +2357,7 @@ function CombatPage({ characters = [] }) {
     if (!fighter) return false;
 
     // Units that have fully fled the battlefield cannot act
-    if (isCombatantFled(fighter)) return false;
+    if (isCombatantFled(fighter) || isCombatantBroken(fighter)) return false;
     if (fighter.canAct === false) return false;
     if (fighter.fatigueState?.status === "collapsed") return false;
 
@@ -2937,11 +2962,11 @@ function CombatPage({ characters = [] }) {
   }, []);
 
   // Helper to mark a fighter as fled off-map (soft swap: keep in fighters, remove from map)
-  const markFighterFledOffMap = useCallback((fighterId, nameForLog) => {
+  const markFighterFledOffMap = useCallback((fighterId, nameForLog, reason = "rout-exit") => {
     commitFighters((prev) =>
       prev.map((f) =>
         f.id === fighterId
-          ? markCombatantFled(f)
+          ? markCombatantFled(f, reason)
           : f
       )
     );
@@ -2954,8 +2979,13 @@ function CombatPage({ characters = [] }) {
     });
 
     if (nameForLog) {
-      addLog(`${nameForLog} flees the battlefield!`, "warning");
-      addLog(`${nameForLog} is removed from combat.`, "info");
+      if (reason === "routed-off-field") {
+        addLog(`${nameForLog} flees beyond the battlefield and is removed from combat.`, "warning");
+        addLog(`${nameForLog} is no longer an active combatant.`, "info");
+      } else {
+        addLog(`${nameForLog} flees the battlefield!`, "warning");
+        addLog(`${nameForLog} is removed from combat.`, "info");
+      }
     }
   }, [addLog, commitFighters]);
 
@@ -3004,41 +3034,6 @@ function CombatPage({ characters = [] }) {
     });
   }, [calculateDistance, getSpeedScore]);
 
-  const expandBattlefieldForRouting = useCallback((router, direction, pursuers) => {
-    const chunk = 12;
-    const prevState = routingChaseStateRef.current;
-    const prevBounds = prevState.mapBounds || {
-      minX: 0,
-      minY: 0,
-      maxX: GRID_CONFIG.GRID_WIDTH - 1,
-      maxY: GRID_CONFIG.GRID_HEIGHT - 1,
-    };
-    const nextBounds = { ...prevBounds };
-    if (direction === "west") nextBounds.minX -= chunk;
-    else if (direction === "east") nextBounds.maxX += chunk;
-    else if (direction === "north") nextBounds.minY -= chunk;
-    else nextBounds.maxY += chunk;
-
-    GRID_CONFIG.GRID_WIDTH = Math.max(GRID_CONFIG.GRID_WIDTH, nextBounds.maxX - nextBounds.minX + 1);
-    GRID_CONFIG.GRID_HEIGHT = Math.max(GRID_CONFIG.GRID_HEIGHT, nextBounds.maxY - nextBounds.minY + 1);
-
-    const chunkRecord = {
-      id: `${router.id}:${direction}:${Date.now()}`,
-      direction,
-      bounds: nextBounds,
-      routerId: router.id,
-      createdAt: Date.now(),
-    };
-    setRoutingChaseState((prev) => ({
-      mapBounds: nextBounds,
-      expandedChunks: [...(prev.expandedChunks || []), chunkRecord],
-      fleeDirection: direction,
-      pursuers: (pursuers || []).map((p) => p.id),
-    }));
-    addLog(`The battlefield expands as ${router.name} flees ${direction}!`, "warning");
-    return nextBounds;
-  }, [addLog]);
-
   const markTurnResolvedByStatus = useCallback((fighter, reason) => {
     if (!fighter?.id) return;
     statusResolvedTurnSnapshotRef.current = {
@@ -3076,7 +3071,7 @@ function CombatPage({ characters = [] }) {
   }, [addLog, calculateDistance, commitFighters, fighters, positions, settings.useMoraleRouting, turnCounter]);
 
   const fraidereRoutingFleeAction = useCallback((fighter, allFighters, source = "routing") => {
-    if (!fighter || isCombatantFled(fighter)) return false;
+    if (!fighter || isCombatantFled(fighter) || isCombatantBroken(fighter)) return false;
     const bridgedFighter = normalizeMoraleState(fighter);
     const routed =
       fighter.moraleState?.status === "ROUTED" ||
@@ -3157,21 +3152,33 @@ function CombatPage({ characters = [] }) {
         ? positionsRef.current
         : positions;
     const liveFighters = allFighters || fightersRef.current || fighters;
-    const recovery = resolveRoutedTurnRecovery({
-      actor: bridgedFighter,
-      fighters: liveFighters,
+    const rallyEnemies = liveFighters.filter((candidate) => candidate?.id !== fighter.id && candidate.type !== fighter.type);
+    const rallyEligibility = canAttemptRallyFromRouting({
+      fighter: bridgedFighter,
+      enemies: rallyEnemies,
       positions: currentPositions,
       calculateDistance,
-      sceneContext: { sceneType: "combat", relations: {} },
-      turnKey: `${turnCounter}:${fighter.id}`,
     });
-    commitFighters((prev) => prev.map((candidate) => (
-      candidate.id === fighter.id ? recovery.actor : candidate
-    )));
-    if (recovery.recovered) {
-      const label = recovery.result === "strong_recovery" ? "uneasy" : "shaken";
-      addLog(`${fighter.name} steadies enough to stop routing, but remains ${label}.`, "info");
-      return true;
+    if (rallyEligibility.canAttempt) {
+      addLog(`${fighter.name} is no longer being pursued and tries to rally.`, "info");
+      const recovery = resolveRoutedTurnRecovery({
+        actor: bridgedFighter,
+        fighters: liveFighters,
+        positions: currentPositions,
+        calculateDistance,
+        sceneContext: { sceneType: "combat", relations: {} },
+        turnKey: `${turnCounter}:${fighter.id}`,
+      });
+      commitFighters((prev) => prev.map((candidate) => (
+        candidate.id === fighter.id
+          ? (recovery.recovered ? resetExhaustedCowerCount(recovery.actor) : recovery.actor)
+          : candidate
+      )));
+      if (recovery.recovered) {
+        addLog(`${fighter.name} steadies enough to return to the battle.`, "info");
+        return true;
+      }
+      addLog(`${fighter.name} fails to rally and keeps routing.`, "info");
     }
     if (!settings.useMoraleRouting) return false;
 
@@ -3181,6 +3188,7 @@ function CombatPage({ characters = [] }) {
       !candidate?.isDead &&
       !candidate?.isKO &&
       !candidate?.moraleState?.hasFled &&
+      !isCombatantBroken(candidate) &&
       currentPositions?.[candidate.id] &&
       candidate.type !== fighter.type
     ));
@@ -3215,17 +3223,231 @@ function CombatPage({ characters = [] }) {
       return true;
     }
 
-    const mapBounds = routingChaseStateRef.current?.mapBounds || {
-      minX: 0,
-      minY: 0,
-      maxX: GRID_CONFIG.GRID_WIDTH - 1,
-      maxY: GRID_CONFIG.GRID_HEIGHT - 1,
-    };
+    const mapBounds = ROUTED_ESCAPE_BOUNDS;
     const occupied = new Set(
       Object.entries(currentPositions)
         .filter(([id]) => String(id) !== String(fighter.id))
         .map(([, pos]) => `${pos.x},${pos.y}`)
     );
+    const maxFleeHexes = Math.max(1, Math.floor(30 / (GRID_CONFIG.CELL_SIZE || 5)));
+    const survivalDecision = chooseRoutingSurvivalIntent({
+      actor: bridgedFighter,
+      fighters: liveFighters,
+      positions: currentPositions,
+      calculateDistance,
+      sceneContext: { sceneType: "combat", relations: {} },
+    });
+    const survivalIntent = survivalDecision.intent;
+    if (survivalDecision.staminaProfile?.hasExplicitStamina) {
+      if (survivalDecision.staminaProfile.band === "exhausted") {
+        addLog(`${fighter.name} is exhausted and more likely to panic.`, "warning");
+      } else if (
+        survivalDecision.staminaProfile.band === "fresh" &&
+        survivalIntent !== SURVIVAL_INTENTS.PANIC_FLEE_TO_EDGE
+      ) {
+        addLog(`${fighter.name}'s stamina helps them keep control.`, "info");
+      }
+    }
+    addLog(
+      `${fighter.name} survival intent: ${formatSurvivalIntent(survivalIntent)}.`,
+      survivalIntent === SURVIVAL_INTENTS.PANIC_FLEE_TO_EDGE ? "warning" : "info",
+    );
+    if (
+      survivalIntent === SURVIVAL_INTENTS.PANIC_FLEE_TO_EDGE &&
+      hasCrossedRoutedEscapeBoundary(myPos, ROUTED_ESCAPE_BOUNDS)
+    ) {
+      markFighterFledOffMap(fighter.id, fighter.name, "routed-off-field");
+      return true;
+    }
+
+    if (survivalIntent !== SURVIVAL_INTENTS.PANIC_FLEE_TO_EDGE) {
+      const effectiveControlledMovement = calculateEffectiveRoutedMovement({
+        fighter,
+        baseDistanceFeet: 30,
+        movementType: "walk",
+        staminaProfile: survivalDecision.staminaProfile,
+        armorProfile: survivalDecision.armorProfile,
+      });
+      const controlledMaxSteps = Math.max(1, Math.floor(effectiveControlledMovement.distanceFeet / (GRID_CONFIG.CELL_SIZE || 5)));
+      const occupiedForMove = (x, y) => occupied.has(`${x},${y}`);
+      let survivalMove = findSurvivalIntentDestination({
+        intent: survivalIntent,
+        context: survivalDecision.context,
+        positions: currentPositions,
+        currentPos: myPos,
+        threatPositions,
+        maxSteps: controlledMaxSteps,
+        isHexOccupied: occupiedForMove,
+        getHexNeighbors,
+        // movementRules expects numeric bounds in arguments three and four.
+        isValidPosition: (x, y) => isValidPosition(
+          x,
+          y,
+          GRID_CONFIG.GRID_WIDTH,
+          GRID_CONFIG.GRID_HEIGHT,
+        ),
+        calculateDistance,
+        gridWidth: GRID_CONFIG.GRID_WIDTH,
+        gridHeight: GRID_CONFIG.GRID_HEIGHT,
+      });
+      let executedSurvivalIntent = survivalIntent;
+      if (!survivalMove?.position) {
+        survivalMove = findSurvivalIntentDestination({
+          intent: SURVIVAL_INTENTS.DEFENSIVE_BACKSTEP,
+          context: survivalDecision.context,
+          positions: currentPositions,
+          currentPos: myPos,
+          threatPositions,
+          maxSteps: controlledMaxSteps,
+          isHexOccupied: occupiedForMove,
+          getHexNeighbors,
+          isValidPosition: (x, y) => isValidPosition(
+            x,
+            y,
+            GRID_CONFIG.GRID_WIDTH,
+            GRID_CONFIG.GRID_HEIGHT,
+          ),
+          calculateDistance,
+          gridWidth: GRID_CONFIG.GRID_WIDTH,
+          gridHeight: GRID_CONFIG.GRID_HEIGHT,
+        });
+        executedSurvivalIntent = SURVIVAL_INTENTS.DEFENSIVE_BACKSTEP;
+      }
+
+      const destination = survivalMove?.position || myPos;
+      const movedForSurvival = destination.x !== myPos.x || destination.y !== myPos.y;
+      const routedStaminaCost = movedForSurvival
+        ? calculateRoutedMovementStaminaCost({
+            fighter,
+            distanceFeet: survivalMove?.distanceFeet,
+            movementType: "controlled-withdrawal",
+            survivalIntent: executedSurvivalIntent,
+            armorProfile: survivalDecision.armorProfile,
+          })
+        : 0;
+      const routedStaminaSpent = routedStaminaCost > 0
+        ? spendStamina(fighter, routedStaminaCost).spent
+        : 0;
+      if (destination.x !== myPos.x || destination.y !== myPos.y) {
+        const allyName = survivalIntent === SURVIVAL_INTENTS.FALL_BACK_TO_LEADER
+          ? survivalDecision.context.nearbyLeader?.name
+          : survivalDecision.context.nearbyAllies?.[0]?.name;
+        if (executedSurvivalIntent === SURVIVAL_INTENTS.REGROUP_WITH_ALLY) {
+          addLog(`${fighter.name} falls back toward ${allyName || "the nearest ally"}.`, "info");
+          addLog(`${fighter.name} moves ${Math.round(survivalMove.distanceFeet)}ft toward ally support.`, "info");
+        } else if (executedSurvivalIntent === SURVIVAL_INTENTS.FALL_BACK_TO_LEADER) {
+          addLog(`${fighter.name} falls back toward ${allyName || "their leader"}.`, "info");
+          addLog(`${fighter.name} moves ${Math.round(survivalMove.distanceFeet)}ft toward leader support.`, "info");
+        } else if (executedSurvivalIntent === SURVIVAL_INTENTS.WITHDRAW_TO_TEAM_CENTER) {
+          addLog(`${fighter.name} withdraws toward allied formation.`, "info");
+          addLog(`${fighter.name} moves ${Math.round(survivalMove.distanceFeet)}ft toward team center.`, "info");
+        } else if (executedSurvivalIntent === SURVIVAL_INTENTS.HIDE_BEHIND_STRONGEST_ALLY) {
+          addLog(`${fighter.name} withdraws behind ${survivalDecision.context.strongestAlly?.name || "a stronger ally"}.`, "info");
+          addLog(`${fighter.name} moves ${Math.round(survivalMove.distanceFeet)}ft toward cover.`, "info");
+        } else {
+          addLog(`${fighter.name} backs away from the nearest threat.`, "info");
+          addLog(`${fighter.name} moves ${Math.round(survivalMove.distanceFeet)}ft in a defensive backstep.`, "info");
+        }
+        if (routedStaminaSpent > 0) {
+          const staminaAction = {
+            [SURVIVAL_INTENTS.REGROUP_WITH_ALLY]: "regrouping with allies",
+            [SURVIVAL_INTENTS.FALL_BACK_TO_LEADER]: "falling back to their leader",
+            [SURVIVAL_INTENTS.WITHDRAW_TO_TEAM_CENTER]: "withdrawing toward team center",
+            [SURVIVAL_INTENTS.HIDE_BEHIND_STRONGEST_ALLY]: "moving behind stronger allies",
+            [SURVIVAL_INTENTS.DEFENSIVE_BACKSTEP]: "making a defensive backstep",
+          }[executedSurvivalIntent] || "withdrawing";
+          const armorBurdenLabel = survivalDecision.armorProfile?.heavy ? " in heavy armor" : "";
+          addLog(`${fighter.name} spends ${routedStaminaSpent} stamina ${staminaAction}${armorBurdenLabel}.`, "info");
+        }
+        const nextPositions = { ...currentPositions, [fighter.id]: destination };
+        positionsRef.current = nextPositions;
+        setPositions(nextPositions);
+      } else {
+        const failureReason = getSurvivalMovementFailureReason({
+          intent: survivalIntent,
+          context: survivalDecision.context,
+          positions: currentPositions,
+          currentPos: myPos,
+          threatPositions,
+          maxSteps: maxFleeHexes,
+          getHexNeighbors,
+          gridWidth: GRID_CONFIG.GRID_WIDTH,
+          gridHeight: GRID_CONFIG.GRID_HEIGHT,
+        });
+        addLog(
+          `survival movement failed fighter=${fighter.name} intent=${survivalIntent} reason=${failureReason}`,
+          "info",
+        );
+        const fallbackLabel = {
+          [SURVIVAL_INTENTS.REGROUP_WITH_ALLY]: "regroup",
+          [SURVIVAL_INTENTS.FALL_BACK_TO_LEADER]: "leader fallback",
+          [SURVIVAL_INTENTS.WITHDRAW_TO_TEAM_CENTER]: "team-center withdrawal",
+          [SURVIVAL_INTENTS.HIDE_BEHIND_STRONGEST_ALLY]: "cover",
+          [SURVIVAL_INTENTS.DEFENSIVE_BACKSTEP]: "defensive retreat",
+        }[survivalIntent] || "survival";
+        addLog(`${fighter.name} cannot find a safe ${fallbackLabel} path and cowers in place.`, "info");
+      }
+      commitFighters((prev) => prev.map((candidate) => {
+        if (candidate.id !== fighter.id) return candidate;
+        const staminaResult = routedStaminaCost > 0
+          ? spendStamina(candidate, routedStaminaCost)
+          : { updated: candidate };
+        return resetExhaustedCowerCount({
+          ...staminaResult.updated,
+          remainingActions: Math.max(0, (Number(candidate.remainingActions ?? 0) || 0) - 1),
+          moraleState: {
+            ...(candidate.moraleState || {}),
+            status: "ROUTED",
+            hasFled: false,
+            routingSource: source,
+            survivalIntent,
+            executedSurvivalIntent: survivalMove?.position ? executedSurvivalIntent : SURVIVAL_INTENTS.COWER,
+            lastRoutePosition: destination,
+          },
+        });
+      }));
+      return true;
+    }
+
+    const effectivePanicMovement = calculateEffectiveRoutedMovement({
+      fighter,
+      baseDistanceFeet: 30,
+      movementType: "panic",
+      staminaProfile: survivalDecision.staminaProfile,
+      armorProfile: survivalDecision.armorProfile,
+    });
+    if (effectivePanicMovement.distanceFeet <= 0) {
+      let terminalCower = false;
+      addLog(`${fighter.name} is too exhausted to keep fleeing and cowers in place.`, "warning");
+      commitFighters((prev) => prev.map((candidate) => {
+        if (candidate.id !== fighter.id) return candidate;
+        const cower = advanceExhaustedCower(candidate);
+        terminalCower = cower.terminal;
+        if (cower.terminal) return cower.actor;
+        return {
+          ...cower.actor,
+          remainingActions: Math.max(0, (Number(candidate.remainingActions ?? 0) || 0) - 1),
+          moraleState: {
+            ...(cower.actor.moraleState || {}),
+            status: "ROUTED",
+            survivalIntent: SURVIVAL_INTENTS.COWER,
+          },
+        };
+      }));
+      if (terminalCower) {
+        addLog(`${fighter.name} is too exhausted and broken to continue fighting.`, "warning");
+        addLog(`${fighter.name} is no longer an active combatant.`, "info");
+      }
+      return true;
+    }
+    if (effectivePanicMovement.multiplier < 1) {
+      addLog(`${fighter.name} is ${effectivePanicMovement.band}; panic flight is slowed.`, "warning");
+      if (effectivePanicMovement.armorPenaltyApplied) {
+        addLog(`${fighter.name}'s ${survivalDecision.armorProfile.band} armor slows their ${effectivePanicMovement.band} flight.`, "warning");
+      }
+      addLog(`${fighter.name} can only flee ${effectivePanicMovement.distanceFeet}ft.`, "info");
+    }
+    const panicMaxHexes = Math.max(1, Math.floor(effectivePanicMovement.distanceFeet / (GRID_CONFIG.CELL_SIZE || 5)));
     const escapeRoute = getClosestEscapeEdgeHex(
       { ...fighter, position: myPos },
       threatPositions,
@@ -3261,8 +3483,7 @@ function CombatPage({ characters = [] }) {
     const routePath = Array.isArray(escapeRoute.path) && escapeRoute.path.length > 1
       ? escapeRoute.path
       : [myPos, escapeRoute.position].filter(Boolean);
-    const maxFleeHexes = Math.max(1, Math.floor(30 / (GRID_CONFIG.CELL_SIZE || 5)));
-    const stepIndex = Math.min(routePath.length - 1, maxFleeHexes);
+    const stepIndex = Math.min(routePath.length - 1, panicMaxHexes);
     const nextPosition = routePath[stepIndex] || escapeRoute.position;
     const direction = getFleeDirectionFromEdge(escapeRoute.position || nextPosition, mapBounds);
     const directionLabel = {
@@ -3272,10 +3493,30 @@ function CombatPage({ characters = [] }) {
       west: "western",
     }[direction] || "outer";
     const distanceFeet = Math.round(calculateDistance(myPos, nextPosition));
+    const panicStaminaCost = calculateRoutedMovementStaminaCost({
+      fighter,
+      distanceFeet,
+      movementType: "panic-run",
+      survivalIntent: SURVIVAL_INTENTS.PANIC_FLEE_TO_EDGE,
+      armorProfile: survivalDecision.armorProfile,
+    });
+    const panicStaminaSpent = spendStamina(fighter, panicStaminaCost).spent;
+    commitFighters((prev) => prev.map((candidate) => {
+      if (candidate.id !== fighter.id) return candidate;
+      const staminaResult = spendStamina(candidate, panicStaminaCost);
+      return staminaResult.updated;
+    }));
+    if (panicStaminaSpent > 0) {
+      const armorLabel = survivalDecision.armorProfile?.heavy ? " in heavy armor" : "";
+      if (survivalDecision.armorProfile?.heavy) {
+        addLog(`${fighter.name}'s heavy armor makes panic-running more exhausting.`, "warning");
+      }
+      addLog(`${fighter.name} spends ${panicStaminaSpent} stamina panic-running${armorLabel}.`, "warning");
+    }
 
-    addLog(`${fighter.name} is routing and runs for the ${directionLabel} edge!`, "warning");
+    addLog(`${fighter.name} panics and flees toward the ${directionLabel} edge.`, "warning");
     if (!escapeRoute.reachedEdge) {
-      addLog(`${fighter.name} fraideres through the nearest escape route!`, "warning");
+      addLog(`${fighter.name} presses through the nearest escape route.`, "warning");
     }
 
     const retreat = {
@@ -3296,12 +3537,12 @@ function CombatPage({ characters = [] }) {
       "info"
     );
 
+    if (hasCrossedRoutedEscapeBoundary(retreat.position, ROUTED_ESCAPE_BOUNDS)) {
+      markFighterFledOffMap(fighter.id, fighter.name, "routed-off-field");
+      return true;
+    }
+
     const updatedPursuers = liveThreats.filter((threat) => nextPositions?.[threat.id]);
-    const reachedBoundary =
-      retreat.position.x <= mapBounds.minX ||
-      retreat.position.x >= mapBounds.maxX ||
-      retreat.position.y <= mapBounds.minY ||
-      retreat.position.y >= mapBounds.maxY;
     const stillPursued = canAnyPursuerCatch(fighter, updatedPursuers, retreat.position, nextPositions);
 
     if (!stillPursued) {
@@ -3309,15 +3550,11 @@ function CombatPage({ characters = [] }) {
       return true;
     }
 
-    if (reachedBoundary) {
-      expandBattlefieldForRouting(fighter, direction, updatedPursuers);
-    }
-
     addLog(`${fighter.name} is still being pursued!`, "warning");
     commitFighters((prev) =>
       prev.map((f) =>
         f.id === fighter.id
-          ? {
+          ? resetExhaustedCowerCount({
               ...f,
               remainingActions: Math.max(0, (Number(f.remainingActions ?? 0) || 0) - 1),
               moraleState: {
@@ -3327,7 +3564,7 @@ function CombatPage({ characters = [] }) {
                 routingSource: source,
                 lastRoutePosition: retreat.position,
               },
-            }
+            })
           : f
       )
     );
@@ -3343,7 +3580,6 @@ function CombatPage({ characters = [] }) {
     markFighterFledOffMap,
     calculateDistance,
     canAnyPursuerCatch,
-    expandBattlefieldForRouting,
     getFleeDirectionFromEdge,
   ]);
 
@@ -3489,6 +3725,7 @@ function CombatPage({ characters = [] }) {
   const currentTurnTokenRef = useRef(null); // Universal turn/action ownership token for delayed callbacks.
   const activeGrappleActionIdRef = useRef(null); // Grapple action ownership token; stale helper continuations must match.
   const activeAttackActionIdRef = useRef(null); // Attack/multi-attack ownership token for delayed callbacks.
+  const staminaChargedAttackKeysRef = useRef(new Set()); // Charge stamina once per logical attack/multi-hit sequence.
   const pendingPlayerAIContinuationRef = useRef(null); // Async post-move work owns its originating player turn.
   const playerAIExecutionRef = useRef(null); // Exact player AI executor invocation currently owning the turn.
   const handlePlayerAITurnRef = useRef(null);
@@ -5662,7 +5899,7 @@ function CombatPage({ characters = [] }) {
 
     const status = String(fighter?.status || "").toLowerCase();
     const condition = String(fighter?.condition || "").toLowerCase();
-    const blockedStatuses = new Set(["defeated", "dead", "unconscious", "dying", "fled"]);
+    const blockedStatuses = new Set(["defeated", "dead", "unconscious", "dying", "fled", "surrendered", "combat-broken"]);
     const blockedConditions = new Set([
       "dead",
       "unconscious",
@@ -5684,13 +5921,14 @@ function CombatPage({ characters = [] }) {
     if (fighter.canAct === false) return "canAct is false";
     if (fighter.fatigueState?.status === "collapsed") return "collapsed from exhaustion";
     if (isCombatantFled(fighter)) return "fled";
+    if (isCombatantBroken(fighter)) return "surrendered/combat-broken";
     if (fighter.isCarried || fighter.carriedById || fighter.carriedBy || fighter.grappleState?.lifted) {
       return "being carried";
     }
 
     const status = String(fighter.status || "").toLowerCase();
     const condition = String(fighter.condition || "").toLowerCase();
-    if (["defeated", "dead", "unconscious", "dying", "fled"].includes(status)) {
+    if (["defeated", "dead", "unconscious", "dying", "fled", "surrendered", "combat-broken"].includes(status)) {
       return `status ${fighter.status}`;
     }
     if (["dead", "unconscious", "unconsciousbleeding", "unconsciousstable", "dying"].includes(condition)) {
@@ -7233,9 +7471,9 @@ function CombatPage({ characters = [] }) {
       const scaled = Math.round(
         base * Math.min(1, Math.max(0.25, (distanceFeet || 0) / 30))
       );
-      return Math.max(250, Math.min(2500, scaled));
+      return getSimulationDelay(Math.max(250, Math.min(2500, scaled)), simulationSpeed);
     },
-    [getActionDelay]
+    [getActionDelay, simulationSpeed]
   );
 
   const markActionBusy = useCallback(
@@ -8248,7 +8486,6 @@ function CombatPage({ characters = [] }) {
     }
     return "";
   })();
-  const activeFighters = fighters.filter(f => f.status === "active");
   const alivePlayers = fighters.filter(f => f.type === "player" && getCombatantHP(f) > -21);
   const aliveEnemies = fighters.filter(f => f.type === "enemy" && getCombatantHP(f) > -21);
   const totalEnemyCount = fighters.filter((f) => f.type === "enemy").length;
@@ -8260,9 +8497,9 @@ function CombatPage({ characters = [] }) {
     if (Number.isFinite(hp) && hp <= 0) return false;
     const status = String(fighter.status || "").toLowerCase();
     const condition = String(fighter.condition || "").toLowerCase();
-    if (["defeated", "dead", "unconscious", "dying", "fled"].includes(status)) return false;
+    if (["defeated", "dead", "unconscious", "dying", "fled", "surrendered", "combat-broken"].includes(status)) return false;
     if (["dead", "unconscious", "unconsciousbleeding", "unconsciousstable", "dying"].includes(condition)) return false;
-    if (isCombatantFled(fighter)) return false;
+    if (isCombatantFled(fighter) || isCombatantBroken(fighter)) return false;
     const carryState = String(
       fighter.mountState?.state ||
       fighter.mountState?.status ||
@@ -8307,6 +8544,13 @@ function CombatPage({ characters = [] }) {
     const sceneContext = victorySceneContext;
     const active = (fighterList || []).filter(isActiveForVictory);
     const partyFighters = (fighterList || []).filter(isPartyAlignedForVictory);
+    const hostileFighters = (fighterList || []).filter((fighter) => {
+      if (isPartyAlignedForVictory(fighter)) return false;
+      return partyFighters.some((partyFighter) =>
+        isHostileTo(fighter, partyFighter, sceneContext) ||
+        isHostileTo(partyFighter, fighter, sceneContext)
+      );
+    });
     const activeParty = active.filter(isPartyAlignedForVictory);
     const hostileThreats = active.filter((fighter) =>
       isHostileThreatToParty(fighter, fighterList || [], sceneContext)
@@ -8319,16 +8563,24 @@ function CombatPage({ characters = [] }) {
       )
     );
     const hostilityState = getCombatHostilityState(active, sceneContext);
+    const sideOutcome = resolveCombatSideOutcome({
+      partyCount: partyFighters.length,
+      hostileCount: hostileFighters.length,
+      activePartyCount: activeParty.length,
+      activeHostileCount: hostileThreats.length,
+    });
 
     return {
       activeParty,
       hostileThreats,
       partyFighters,
+      hostileFighters,
       nonPartyHostileConflict,
       hasHostileSides: hostilityState.hasHostileSides,
       noHostileSidesRemaining: hostilityState.noHostileSidesRemaining,
-      partyDefeated: activeParty.length === 0 && partyFighters.length > 0 && hostileThreats.length > 0,
-      partyVictorious: activeParty.length > 0 && hostileThreats.length === 0 && !nonPartyHostileConflict,
+      partyDefeated: sideOutcome.partyDefeated,
+      partyVictorious: sideOutcome.partyVictorious && !nonPartyHostileConflict,
+      bothSidesBroken: sideOutcome.bothSidesBroken,
     };
   }, [getVictoryFighterId, isActiveForVictory, isHostileThreatToParty, isPartyAlignedForVictory]);
 
@@ -8336,11 +8588,19 @@ function CombatPage({ characters = [] }) {
     if (combatEndCheckRef.current || combatOverRef.current) return true;
 
     const combatVictoryState = getCombatVictoryState(fighterList);
+    if (combatVictoryState.bothSidesBroken) {
+      combatEndCheckRef.current = true;
+      combatOverRef.current = true;
+      clearCombatFlowLocks();
+      addLog("Combat ends: both sides are broken and unable to continue.", "info");
+      setCombatActive(false);
+      return true;
+    }
     if (combatVictoryState.partyDefeated) {
       combatEndCheckRef.current = true;
       combatOverRef.current = true;
       clearCombatFlowLocks();
-      addLog("All players are defeated! Enemies win!", "defeat");
+      addLog("Defeat! All party members are defeated, fled, or broken!", "defeat");
       addLog("Combat is over. No further attacks are scheduled.", "info");
       setCombatActive(false);
       return true;
@@ -8350,7 +8610,7 @@ function CombatPage({ characters = [] }) {
       combatEndCheckRef.current = true;
       combatOverRef.current = true;
       clearCombatFlowLocks();
-      addLog("Victory! All enemies defeated!", "victory");
+      addLog("Victory! All enemies defeated, fled, or broken!", "victory");
       addLog("Combat is over. No further attacks are scheduled.", "info");
       setCombatActive(false);
       return true;
@@ -10543,7 +10803,7 @@ function CombatPage({ characters = [] }) {
         } catch (err) {
           recoverEnemyTurnStart("exception", err);
         }
-      }, 0);
+      }, getSimulationDelay(0, simulationSpeed));
       return true;
     }
 
@@ -10672,7 +10932,7 @@ function CombatPage({ characters = [] }) {
             if (isActionBusy() || turnActionResolvingRef.current) return;
             if (processingPlayerAIRef.current) return;
             startTurnOnce(nowFighter, nowIndex, "player-turn-start-busy-retry");
-          }, 32);
+          }, getSimulationDelay(32, simulationSpeed, { minMs: simulationSpeed === SIMULATION_SPEEDS.INSTANT ? 0 : 1 }));
         };
         try {
           playerAITimerRef.current = null;
@@ -10990,7 +11250,7 @@ function CombatPage({ characters = [] }) {
           );
           releaseStartedTurn();
         }
-      }, 0);
+      }, getSimulationDelay(0, simulationSpeed));
       return true;
     }
 
@@ -10999,7 +11259,7 @@ function CombatPage({ characters = [] }) {
       turnStartInFlightKeyRef.current = null;
     }
     return false;
-  }, [addLog, blockStaleAction, canFighterStartTurn, claimTurnStart, getFighterControlMode, getFighterSchedulerTeam, isActionBusy, isCurrentCombatSession, makeTurnStartKey, makeTurnToken, releaseTurnStart]);
+  }, [addLog, blockStaleAction, canFighterStartTurn, claimTurnStart, getFighterControlMode, getFighterSchedulerTeam, isActionBusy, isCurrentCombatSession, makeTurnStartKey, makeTurnToken, releaseTurnStart, simulationSpeed]);
 
   // Define endTurn function with useCallback - MUST be before handleMoveSelect
   // MCS rule: Alternating actions per initiative
@@ -11089,7 +11349,7 @@ function CombatPage({ characters = [] }) {
           "debug",
         );
         startTurnOnce(fighter, index, "effect-turn-advance");
-      }, 0);
+      }, getSimulationDelay(0, simulationSpeed));
       allTimeoutsRef.current.push(timer);
       return true;
     };
@@ -11165,6 +11425,13 @@ function CombatPage({ characters = [] }) {
         const apm =
           withBleeding.actionsPerRound ?? withBleeding.attacks ?? 2; // fallback for animals
         const withExpiredPosture = clearExpiredPostures(withBleeding, nextMeleeRound, index);
+        if (withExpiredPosture.lastDefensiveRecovery?.resolvedRound === nextMeleeRound) {
+          if (withExpiredPosture.lastDefensiveRecovery.interrupted) {
+            addLog(`${withBleeding.name}'s defensive recovery was interrupted.`, "info");
+          } else if (withExpiredPosture.lastDefensiveRecovery.recovered > 0) {
+            addLog(`${withBleeding.name} held a defensive posture and recovers 1 stamina.`, "info");
+          }
+        }
         if (getDefensiveReserve(withBleeding).active && !getDefensiveReserve(withExpiredPosture).active) {
           expiredDefensiveReserveIds.add(withBleeding.id);
         }
@@ -11303,6 +11570,13 @@ function CombatPage({ characters = [] }) {
       const expiredDefensiveReserveIds = new Set();
       const resetFighters = fightersNow.map((f, index) => {
         const withExpiredPosture = clearExpiredPostures(f, nextMeleeRound, index);
+        if (withExpiredPosture.lastDefensiveRecovery?.resolvedRound === nextMeleeRound) {
+          if (withExpiredPosture.lastDefensiveRecovery.interrupted) {
+            addLog(`${f.name}'s defensive recovery was interrupted.`, "info");
+          } else if (withExpiredPosture.lastDefensiveRecovery.recovered > 0) {
+            addLog(`${f.name} held a defensive posture and recovers 1 stamina.`, "info");
+          }
+        }
         if (getDefensiveReserve(f).active && !getDefensiveReserve(withExpiredPosture).active) {
           expiredDefensiveReserveIds.add(f.id);
         }
@@ -12369,123 +12643,6 @@ function CombatPage({ characters = [] }) {
   useEffect(() => {
     scheduleEndTurnRef.current = scheduleEndTurn;
   }, [scheduleEndTurn]);
-
-  const getFatigueAIState = useCallback((fighter) => {
-    if (!fighter) return "normal";
-    const fatigueState = fighter.fatigueState || {};
-    const status = String(fatigueState.status || "").toLowerCase();
-    const fatigueStatus = getFatigueStatus(fighter) || {};
-    const statusFromHelper = String(fatigueStatus.status || "").toLowerCase();
-    const stamina = Number(
-      fatigueStatus.stamina ??
-      fatigueState.currentStamina ??
-      fighter.currentStamina
-    );
-    const maxStamina = Number(
-      fatigueStatus.maxStamina ??
-      fatigueState.maxStamina ??
-      fighter.maxStamina
-    );
-    const attackPenalty = Number(
-      fatigueStatus.penalties?.attack ??
-      fatigueState.penalties?.attack ??
-      0
-    );
-    const staminaPercent =
-      Number.isFinite(stamina) && Number.isFinite(maxStamina) && maxStamina > 0
-        ? (stamina / maxStamina) * 100
-        : null;
-
-    if (status === "collapsed" || statusFromHelper === "collapsed" || fighter.canAct === false) {
-      return "collapsed";
-    }
-    if (
-      status === "collapse_risk" ||
-      statusFromHelper === "collapse_risk" ||
-      (Number.isFinite(stamina) && stamina <= -15) ||
-      attackPenalty <= -3
-    ) {
-      return "collapseRisk";
-    }
-    if (
-      status === "exhausted" ||
-      statusFromHelper === "exhausted" ||
-      (Number.isFinite(stamina) && stamina <= -10) ||
-      attackPenalty <= -2
-    ) {
-      return "exhausted";
-    }
-    if (
-      status === "fatigued" ||
-      statusFromHelper === "fatigued" ||
-      (Number.isFinite(stamina) && stamina <= 0) ||
-      (staminaPercent !== null && staminaPercent <= 25)
-    ) {
-      return "low";
-    }
-    return "normal";
-  }, []);
-
-  const spendRecoverAction = useCallback((fighterId, source = "ai-fatigue") => {
-    const liveFighters = fightersRef.current ?? fighters;
-    const liveFighter = liveFighters.find((f) => f.id === fighterId);
-    const remaining = Number(liveFighter?.remainingActions ?? 0) || 0;
-    if (!liveFighter || remaining <= 0) return false;
-
-    const currentStaminaRaw =
-      liveFighter.fatigueState?.currentStamina ??
-      liveFighter.currentStamina ??
-      0;
-    const maxStaminaRaw =
-      liveFighter.fatigueState?.maxStamina ??
-      liveFighter.maxStamina ??
-      liveFighter.fatigueState?.baseStamina ??
-      0;
-    const currentStamina = Number(currentStaminaRaw);
-    const maxStamina = Number(maxStaminaRaw);
-    const safeCurrent = Number.isFinite(currentStamina) ? currentStamina : 0;
-    const safeMax = Number.isFinite(maxStamina) && maxStamina > 0 ? maxStamina : 20;
-    const peRecoveryBonus = getGrappleAttributeModifiers(liveFighter).peRecoveryBonus;
-    const recoverAmount = Math.max(2, Math.ceil(safeMax * 0.1)) + peRecoveryBonus;
-    const nextStamina = Math.min(safeMax, safeCurrent + recoverAmount);
-
-    addLog(`${liveFighter.name} slows down to avoid collapse.`, "info");
-    if (peRecoveryBonus > 0) {
-      addLog(`${liveFighter.name}'s endurance improves stamina recovery.`, "info");
-    }
-
-    commitFighters((prev) =>
-      prev.map((f) => {
-        if (f.id !== fighterId) return f;
-        const updated = {
-          ...f,
-          fatigueState: {
-            ...(f.fatigueState || liveFighter.fatigueState || {}),
-            currentStamina: nextStamina,
-            maxStamina: safeMax,
-          },
-          remainingActions: Math.max(0, (Number(f.remainingActions ?? remaining) || 0) - 1),
-        };
-        updateFatiguePenalties(updated);
-        return updated;
-      })
-    );
-
-    addLog(
-     `${liveFighter.name} catches their breath (+${recoverAmount} SP, ${safeCurrent.toFixed(1)} ${nextStamina.toFixed(1)}).`,
-      "info"
-    );
-    scheduleEndTurn(0, source);
-    return true;
-  }, [addLog, commitFighters, fighters, getGrappleAttributeModifiers, scheduleEndTurn]);
-
-  const maybeSpendAIRecoverAction = useCallback((fighter, source = "ai-fatigue") => {
-    const state = getFatigueAIState(fighter);
-    if (state === "collapseRisk" || state === "exhausted") {
-      return spendRecoverAction(fighter.id, source);
-    }
-    return false;
-  }, [getFatigueAIState, spendRecoverAction]);
 
   const confirmOverwatchHex = useCallback(
     (hex) => {
@@ -13758,6 +13915,9 @@ function CombatPage({ characters = [] }) {
             ? `${liveFighter.name} takes a defensive stance, preparing to block incoming attacks.`
             : `${liveFighter.name} takes a defensive stance and holds their ground.`;
         addLog(postureMessage, "info");
+        if (pendingDefense.reserveType === "defend") {
+          addLog(`${liveFighter.name} holds a defensive posture and conserves energy.`, "info");
+        }
       }
     }
 
@@ -14798,8 +14958,15 @@ function CombatPage({ characters = [] }) {
       return false;
     }
 
-    const liveFighters = fightersRef.current ?? fighters;
+    let liveFighters = fightersRef.current ?? fighters;
     let stateAttacker = liveFighters.find(f => f.id === attacker.id) || attacker;
+    if ((Number(stateAttacker.routingExhaustedCowerCount ?? stateAttacker.moraleState?.exhaustedCowerCount) || 0) > 0) {
+      liveFighters = liveFighters.map((fighter) => (
+        fighter.id === stateAttacker.id ? resetExhaustedCowerCount(fighter) : fighter
+      ));
+      commitFighters(liveFighters);
+      stateAttacker = liveFighters.find((fighter) => fighter.id === attacker.id) || stateAttacker;
+    }
 
     if (bonusModifiers?.multiAttackSubHit && bonusModifiers?.multiAttackSequenceToken) {
       const t = bonusModifiers.multiAttackSequenceToken;
@@ -16302,6 +16469,37 @@ function CombatPage({ characters = [] }) {
         }));
       }
 
+      const staminaChargeKey = `${combatSessionRef.current}:${String(
+        bonusModifiers?.multiAttackSequenceToken ||
+        bonusModifiers?.attackSequenceToken ||
+        attackActionId
+      )}`;
+      if (!staminaChargedAttackKeysRef.current.has(staminaChargeKey)) {
+        const attackStaminaCost = calculateAttackStaminaCost({
+          fighter: effectiveAttacker,
+          weapon: attackData,
+          attackType: attackData?.attackType || attackData?.type,
+        });
+        const attackStamina = spendStamina(attackerInArray || effectiveAttacker, attackStaminaCost);
+        if (attackerInArray) Object.assign(attackerInArray, attackStamina.updated);
+        staminaChargedAttackKeysRef.current.add(staminaChargeKey);
+        if (staminaChargedAttackKeysRef.current.size > 200) {
+          staminaChargedAttackKeysRef.current = new Set(Array.from(staminaChargedAttackKeysRef.current).slice(-100));
+        }
+        if (attackStamina.spent > 0) {
+          addLog(
+            `${effectiveAttacker.name} spends ${attackStamina.spent} stamina attacking with ${attackData?.name || "an attack"}.`,
+            "info"
+          );
+        }
+      }
+
+      if (getCombatPosture(defender) && defender.defensiveRecoveryInterrupted !== true) {
+        updated[defenderIndex] = interruptDefensiveRecovery(updated[defenderIndex]);
+        defender = updated[defenderIndex];
+        addLog(`${defender.name}'s defensive recovery is interrupted by the attack.`, "info");
+      }
+
       let attackRollResult;
       let attackRoll;
       let attackDiceRoll;
@@ -16442,6 +16640,26 @@ function CombatPage({ characters = [] }) {
       let defenseSuccess = false;
       let defenseType = defensiveStance[defender.id];
       let autoBlockUsed = false; // Track if auto-block was used
+      const spendActiveDefenseStamina = (activeDefenseType) => {
+        const defenseCost = calculateDefenseStaminaCost({
+          defender: updated[defenderIndex],
+          defenseType: activeDefenseType,
+          attackResult: { isCriticalHit },
+          weapon: attackData,
+        });
+        if (defenseCost <= 0) return;
+        const defenseStamina = spendStamina(updated[defenderIndex], defenseCost);
+        updated[defenderIndex] = defenseStamina.updated;
+        defender = updated[defenderIndex];
+        if (defenseStamina.spent > 0) {
+          const defenseLabel = /evade|dodge|move/i.test(activeDefenseType)
+            ? "evading"
+            : defender.hasShield || defender.equippedShield || /shield/i.test(String(defender.shield || defender.offHand || ""))
+              ? "blocking with shield"
+              : "blocking";
+          addLog(`${defender.name} spends ${defenseStamina.spent} stamina ${defenseLabel}.`, "info");
+        }
+      };
 
       if (bonusModifiers?.fraidereNoDefense) {
         defenseType = null;
@@ -16471,6 +16689,7 @@ function CombatPage({ characters = [] }) {
           defenseType = "Block";
           autoBlockUsed = true; // Mark that auto-block was used
           addLog(`${defender.name} automatically attempts to block!`, "info");
+          spendActiveDefenseStamina(defenseType);
 
           // Apply fatigue penalties to defense rolls
           const fatiguedDefender = applyFatiguePenalties(defender);
@@ -16540,21 +16759,11 @@ function CombatPage({ characters = [] }) {
             defenseSuccess = true;
             addLog(`${defender.name} successfully blocks the attack!`, "success");
 
-            // Deduct one attack for the block
-            commitFighters(prev => prev.map(f =>
-              f.id === defender.id
-                ? { ...f, remainingActions: Math.max(0, (f.remainingActions || 0) - 1) }
-                : f
-            ));
+            updated[defenderIndex].remainingActions = Math.max(0, (updated[defenderIndex].remainingActions || 0) - 1);
           } else {
             addLog(`${defender.name}'s block fails (${defenseRoll} < ${attackRoll}) - attack hits!`, "warning");
 
-            // Deduct one attack for the failed block attempt
-            commitFighters(prev => prev.map(f =>
-              f.id === defender.id
-                ? { ...f, remainingActions: Math.max(0, (f.remainingActions || 0) - 1) }
-                : f
-            ));
+            updated[defenderIndex].remainingActions = Math.max(0, (updated[defenderIndex].remainingActions || 0) - 1);
           }
         }
       }
@@ -16605,6 +16814,7 @@ function CombatPage({ characters = [] }) {
         if (defender.remainingActions <= 0 && !usesHeldDefense) {
           addLog(`${defender.name} is out of actions and cannot ${defenseType.toLowerCase()}!`, "error");
         } else {
+          spendActiveDefenseStamina(defenseType);
           if (usesHeldDefense) {
             const reserveLabel =
               reserveDefenseType === "block" ? "held block" :
@@ -18672,6 +18882,42 @@ function CombatPage({ characters = [] }) {
       `handlePlayerAITurn positions resolved fighter=${latestPlayer.name} count=${Object.keys(positionsForAI || {}).length}`,
       "info",
     );
+    const playerRecoveryHostiles = liveFightersForPlayerAI.filter((candidate) =>
+      candidate.id !== latestPlayer.id &&
+      canSelectHostileCombatTarget(latestPlayer, candidate, { sceneType: "combat", relations: {} }) &&
+      canFighterAct(candidate)
+    );
+    const playerRecoveryAllies = liveFightersForPlayerAI.filter((candidate) =>
+      candidate.id !== latestPlayer.id &&
+      !canSelectHostileCombatTarget(latestPlayer, candidate, { sceneType: "combat", relations: {} }) &&
+      canFighterAct(candidate)
+    );
+    const playerPosForRecovery = positionsForAI?.[latestPlayer.id];
+    const playerCanFinishEnemy = playerRecoveryHostiles.some((candidate) => {
+      const targetPos = positionsForAI?.[candidate.id];
+      const hp = Number(candidate.currentHP ?? candidate.HP ?? candidate.hp);
+      return playerPosForRecovery && targetPos && calculateDistance(playerPosForRecovery, targetPos) <= 5.01 &&
+        Number.isFinite(hp) && hp > 0 && hp <= 5;
+    });
+    const playerRecoveryDecision = chooseAIStaminaRecovery({
+      fighter: latestPlayer,
+      enemies: playerRecoveryHostiles,
+      allies: playerRecoveryAllies,
+      positions: positionsForAI,
+      calculateDistance,
+      canFinishEnemy: playerCanFinishEnemy,
+      routed: false,
+    });
+    if (playerRecoveryDecision.shouldRecover) {
+      const recovery = applyRecoveryAction(latestPlayer, { amount: 3, actionCost: 1 });
+      if (recovery.ok) {
+        commitFighters((prev) => prev.map((fighter) => fighter.id === latestPlayer.id ? recovery.updated : fighter));
+        addLog(`${latestPlayer.name} catches their breath and recovers ${recovery.recovered} stamina.`, "info");
+        processingPlayerAIRef.current = false;
+        scheduleEndTurn(0, "player-ai-recover");
+        return;
+      }
+    }
     // Optional turn banner to confirm turn flow (opt-in).
     // Usage: localStorage.debugTurnFlow = "1"
     try {
@@ -19565,11 +19811,6 @@ function CombatPage({ characters = [] }) {
 
     // Reset action-scheduled marker for this AI turn
     playerAIActionScheduledRef.current = false;
-    if (maybeSpendAIRecoverAction(latestPlayer, "player-ai-fatigue")) {
-      playerAIActionScheduledRef.current = true;
-      processingPlayerAIRef.current = false;
-      return;
-    }
     if (tryPlayerPreferredFlyerFallback(latestPlayer)) {
       return;
     }
@@ -19808,7 +20049,6 @@ function CombatPage({ characters = [] }) {
     getFighterMaxHP,
     getMoveDurationMs,
     applyOngoingCarryStaminaDrain,
-    maybeSpendAIRecoverAction,
     getTargetsInLine,
     getAvailableGrappleActions,
     aiControlEnabled,
@@ -20319,11 +20559,6 @@ function CombatPage({ characters = [] }) {
       liveEnemy =
         (fightersRef.current ?? fighters).find((f) => f.id === liveEnemy.id) ||
         liveEnemy;
-    }
-
-    if (maybeSpendAIRecoverAction(liveEnemy, "enemy-ai-fatigue")) {
-      processingEnemyTurnRef.current = false;
-      return;
     }
 
     const enemyTurnSliceToken = {
@@ -21619,7 +21854,7 @@ function CombatPage({ characters = [] }) {
     };
     const isCanonicalHostileTarget = (attacker, candidate) => {
       if (!attacker || !candidate || attacker.id === candidate.id) return false;
-      if (isCombatantFled(attacker) || isCombatantFled(candidate)) return false;
+      if (isCombatantFled(attacker) || isCombatantFled(candidate) || isCombatantBroken(attacker) || isCombatantBroken(candidate)) return false;
       const aggression = String(attacker?.aggression || "").toLowerCase();
       const disposition = String(attacker?.disposition || "").toLowerCase();
       const friendlyFire =
@@ -21637,6 +21872,38 @@ function CombatPage({ characters = [] }) {
       if (attackerSide === "player") return candidateSide === "enemy";
       return canSelectHostileCombatTarget(attacker, candidate, legacySceneContext);
     };
+    const enemyRecoveryHostiles = fightersSnapshot.filter((candidate) =>
+      isCanonicalHostileTarget(liveEnemy, candidate) && canFighterAct(candidate)
+    );
+    const enemyRecoveryAllies = fightersSnapshot.filter((candidate) =>
+      candidate.id !== liveEnemy.id && !isCanonicalHostileTarget(liveEnemy, candidate) && canFighterAct(candidate)
+    );
+    const enemyPositionForRecovery = livePositions?.[liveEnemy.id];
+    const enemyCanFinishTarget = enemyRecoveryHostiles.some((candidate) => {
+      const targetPosition = livePositions?.[candidate.id];
+      const hp = Number(candidate.currentHP ?? candidate.HP ?? candidate.hp);
+      return enemyPositionForRecovery && targetPosition && calculateDistance(enemyPositionForRecovery, targetPosition) <= 5.01 &&
+        Number.isFinite(hp) && hp > 0 && hp <= 5;
+    });
+    const enemyRecoveryDecision = chooseAIStaminaRecovery({
+      fighter: liveEnemy,
+      enemies: enemyRecoveryHostiles,
+      allies: enemyRecoveryAllies,
+      positions: livePositions,
+      calculateDistance,
+      canFinishEnemy: enemyCanFinishTarget,
+      routed: false,
+    });
+    if (enemyRecoveryDecision.shouldRecover) {
+      const recovery = applyRecoveryAction(liveEnemy, { amount: 3, actionCost: 1 });
+      if (recovery.ok) {
+        commitFighters((prev) => prev.map((fighter) => fighter.id === liveEnemy.id ? recovery.updated : fighter));
+        addLog(`${liveEnemy.name} catches their breath and recovers ${recovery.recovered} stamina.`, "info");
+        processingEnemyTurnRef.current = false;
+        scheduleEndTurn(0, "enemy-ai-recover");
+        return;
+      }
+    }
     let activeGrappleTargetId = null;
     if (enemy?.grappleState?.opponent && enemy.grappleState.state !== GRAPPLE_STATES.NEUTRAL) {
       const opponent = liveFighters.find((f) => f.id === enemy.grappleState.opponent);
@@ -21973,7 +22240,16 @@ function CombatPage({ characters = [] }) {
       }
     }
 
-    const playerTargets = visiblePlayers;
+    const playerTargets = prioritizeEnemyCombatTargets({
+      attacker: enemy,
+      candidates: visiblePlayers,
+      positions: livePositions,
+      calculateDistance,
+    });
+    const ignoredRouter = visiblePlayers.find((target) => isRoutingOrPassiveTarget(target) && !playerTargets.includes(target));
+    if (ignoredRouter && playerTargets[0]) {
+      addLog(`${enemy.name} ignores routing ${ignoredRouter.name} and focuses on ${playerTargets[0].name}.`, "info");
+    }
     if (playerTargets.length === 0) {
       if (endCombatIfVictoryResolved(fightersRef.current ?? fightersSnapshot)) {
         processingEnemyTurnRef.current = false;
@@ -24773,7 +25049,6 @@ function CombatPage({ characters = [] }) {
     arenaEnvironment,
     scheduleEndTurn,
     applyOngoingCarryStaminaDrain,
-    maybeSpendAIRecoverAction,
     settings,
     canFighterAct,
     canFighterStartTurn,
@@ -26493,7 +26768,12 @@ function CombatPage({ characters = [] }) {
           message: "No actions remaining. End Turn manually.",
         };
       }
-      const staminaResult = spendStamina(spendResult.updated, 1);
+      const attackStaminaCost = calculateAttackStaminaCost({
+        fighter: currentCommandTurn,
+        weapon: result?.weapon || result?.attack || { name: result?.attackName },
+        attackType: result?.attackType,
+      });
+      const staminaResult = spendStamina(spendResult.updated, attackStaminaCost);
       if (!staminaResult.ok) {
         addLog(commandBlockedLog({ action: "Attack", reason: "No stamina remaining." }), "warning");
         return {
@@ -26667,6 +26947,7 @@ function CombatPage({ characters = [] }) {
       `Action spent: ${spendResult.remainingActions}/${spendResult.maxActions} remaining.`,
       "info"
     );
+    addLog(`${name} catches their breath and recovers ${recoveryResult.recovered} stamina.`, "info");
 
     return {
       ok: true,
@@ -26753,6 +27034,7 @@ function CombatPage({ characters = [] }) {
       `Action spent: ${spendResult.remainingActions}/${spendResult.maxActions} remaining.`,
       "info"
     );
+    addLog(`${name} holds a defensive posture and conserves energy.`, "info");
 
     return {
       ok: true,
@@ -27014,6 +27296,11 @@ function CombatPage({ characters = [] }) {
     copy.isRestrained = false;
     copy.routed = false;
     copy.hasFled = false;
+    copy.isSurrendered = false;
+    copy.isCombatBroken = false;
+    copy.combatState = "active";
+    copy.defeatReason = null;
+    copy.routingExhaustedCowerCount = 0;
     copy.isCarried = false;
     copy.carriedById = null;
     copy.carriedBy = null;
@@ -27051,6 +27338,8 @@ function CombatPage({ characters = [] }) {
       status: "STEADY",
       failedChecks: 0,
       hasFled: false,
+      exhaustedCowerCount: 0,
+      terminalReason: null,
     };
 
     const meta = { ...(copy.meta || {}) };
@@ -29999,7 +30288,7 @@ function CombatPage({ characters = [] }) {
 
   // Check for combat end conditions (reduced to prevent duplicate checks - primary check is in attack function)
   useEffect(() => {
-    if (combatActive && activeFighters.length > 0 && !combatEndCheckRef.current) {
+    if (combatActive && fighters.length > 0 && !combatEndCheckRef.current) {
       const scheduledCombatSession = combatSessionRef.current;
       // Only do a delayed check if combat end hasn't been triggered yet
       const checkCombatEnd = () => {
@@ -30007,38 +30296,14 @@ function CombatPage({ characters = [] }) {
         // Skip if already checked
         if (combatEndCheckRef.current || !combatActive) return;
 
-        const combatVictoryState = getCombatVictoryState(fighters);
-
-        if (combatVictoryState.partyDefeated) {
-          // All players are either dead or unconscious - enemies win
-          combatEndCheckRef.current = true;
-          combatOverRef.current = true; // AUTHORITATIVE: Stop all further actions (defeat)
-          clearCombatFlowLocks();
-          addLog("All players are defeated! Enemies win!", "defeat");
-          addLog("Combat is over. No further attacks are scheduled.", "info");
-          setCombatActive(false);
-        } else if (combatVictoryState.partyVictorious) {
-          // All enemies are either dead or unconscious - players win
-          combatEndCheckRef.current = true;
-          combatOverRef.current = true; // AUTHORITATIVE: Set combat over flag
-          clearCombatFlowLocks();
-          addLog("Victory! All enemies defeated!", "victory");
-          addLog("Combat is over. No further attacks are scheduled.", "info");
-          setCombatActive(false);
-        } else if (combatVictoryState.noHostileSidesRemaining) {
-          combatEndCheckRef.current = true;
-          combatOverRef.current = true;
-          clearCombatFlowLocks();
-          addLog("Combat has no hostile sides remaining.", "info");
-          setCombatActive(false);
-        }
+        endCombatIfVictoryResolved(fightersRef.current ?? fighters);
       };
 
       // Delay the check to allow for state updates to complete
       const timer = setTimeout(checkCombatEnd, 500);
       allTimeoutsRef.current.push(timer);
     }
-  }, [fighters, combatActive, turnIndex, getCombatVictoryState, addLog, activeFighters.length, isCurrentCombatSession]); // Check on turn changes
+  }, [fighters, combatActive, turnIndex, endCombatIfVictoryResolved, isCurrentCombatSession]); // Check on turn changes
 
   // Update visible cells for fog of war (optimized for performance)
   // Enhanced to account for altitude when fog is enabled
@@ -30423,6 +30688,22 @@ function CombatPage({ characters = [] }) {
           }}>
             Reset Combat
           </Button>
+          <Select
+            size="sm"
+            width="130px"
+            value={simulationSpeed}
+            aria-label="Simulation Speed"
+            onChange={(event) => {
+              const nextSpeed = normalizeSimulationSpeed(event.target.value);
+              setSimulationSpeed(nextSpeed);
+              addLog(`Simulation speed set to ${nextSpeed[0].toUpperCase()}${nextSpeed.slice(1)}.`, "info");
+            }}
+          >
+            <option value={SIMULATION_SPEEDS.NORMAL}>Normal</option>
+            <option value={SIMULATION_SPEEDS.FAST}>Fast</option>
+            <option value={SIMULATION_SPEEDS.TURBO}>Turbo</option>
+            <option value={SIMULATION_SPEEDS.INSTANT}>Instant</option>
+          </Select>
           <Button
             size="sm"
             colorScheme="blue"

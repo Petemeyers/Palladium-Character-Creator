@@ -1,3 +1,6 @@
+import { applyStaminaRecovery } from "./combatRecovery.js";
+import { calculateRecoveryStamina } from "./combatStamina.js";
+
 const POSTURE_DEFINITIONS = {
   defending: {
     type: "defending",
@@ -201,6 +204,7 @@ export function applyDefensiveReserve(combatantOrTurnEntry = {}, reserveType = "
     defensiveReserve: reserveActions > 0,
     defensiveReserveType: normalizedType,
     defensiveReserveActions: reserveActions,
+    defensiveRecoveryInterrupted: false,
     combatPosture: {
       ...posture,
       type: postureType,
@@ -209,6 +213,19 @@ export function applyDefensiveReserve(combatantOrTurnEntry = {}, reserveType = "
       note: posture.note || POSTURE_DEFINITIONS[postureType]?.note || "",
       reserveActions,
       defensiveReserveType: normalizedType,
+    },
+  };
+}
+
+export function interruptDefensiveRecovery(combatantOrTurnEntry = {}) {
+  const posture = getCombatPosture(combatantOrTurnEntry);
+  if (!posture) return { ...combatantOrTurnEntry };
+  return {
+    ...combatantOrTurnEntry,
+    defensiveRecoveryInterrupted: true,
+    combatPosture: {
+      ...posture,
+      defensiveRecoveryInterrupted: true,
     },
   };
 }
@@ -254,14 +271,28 @@ export function clearExpiredPostures(combatantOrTurnEntry = {}, currentRound = 1
   const laterRound = toSafeRound(currentRound) > posture.createdRound;
   const supportedPosture = Boolean(POSTURE_DEFINITIONS[posture.type]);
   if (supportedPosture && posture.expires === "next-turn" && sameTurnSlot && laterRound) {
+    const interrupted = combatantOrTurnEntry?.defensiveRecoveryInterrupted === true ||
+      combatantOrTurnEntry?.combatPosture?.defensiveRecoveryInterrupted === true;
     const {
       combatPosture: _combatPosture,
       defensiveReserve: _defensiveReserve,
       defensiveReserveType: _defensiveReserveType,
       defensiveReserveActions: _defensiveReserveActions,
+      defensiveRecoveryInterrupted: _defensiveRecoveryInterrupted,
       ...rest
     } = combatantOrTurnEntry || {};
-    return rest;
+    const recoveryAmount = calculateRecoveryStamina({ fighter: rest, recoveryType: "defensive-posture" });
+    const recovery = interrupted
+      ? { ok: false, updated: rest, recovered: 0 }
+      : applyStaminaRecovery(rest, recoveryAmount);
+    return {
+      ...(recovery.ok ? recovery.updated : rest),
+      lastDefensiveRecovery: {
+        resolvedRound: toSafeRound(currentRound),
+        interrupted,
+        recovered: recovery.recovered || 0,
+      },
+    };
   }
 
   return { ...combatantOrTurnEntry, combatPosture: posture };
@@ -281,5 +312,6 @@ export default {
   getDefensiveReserve,
   getCombatPosture,
   getPendingDefensiveSelection,
+  interruptDefensiveRecovery,
   normalizeDefensiveReserveType,
 };

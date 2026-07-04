@@ -1,4 +1,4 @@
-import { getFatigueLabel } from "./combatStamina.js";
+import { calculateRecoveryStamina, getFatigueLabel } from "./combatStamina.js";
 
 const hasValue = (value) => value !== undefined && value !== null && value !== "";
 
@@ -17,11 +17,11 @@ export function getRecoveryAmount(_combatant = {}, action = {}) {
   return (
     toPositiveNumber(action?.recoveryAmount) ??
     toPositiveNumber(action?.metadata?.recoveryAmount) ??
-    2
+    calculateRecoveryStamina({ fighter: _combatant, recoveryType: action?.type || "recover" })
   );
 }
 
-export function applyStaminaRecovery(combatantOrTurnEntry = {}, amount = 2) {
+export function applyStaminaRecovery(combatantOrTurnEntry = {}, amount = 3) {
   const maxStamina = toPositiveNumber(
     combatantOrTurnEntry?.maxStamina ??
     combatantOrTurnEntry?.fatigueState?.maxStamina
@@ -89,7 +89,27 @@ export function applyStaminaRecovery(combatantOrTurnEntry = {}, amount = 2) {
   };
 }
 
+export function applyRecoveryAction(combatantOrTurnEntry = {}, { amount = 3, actionCost = 1 } = {}) {
+  const remainingActions = Math.max(0, Number(combatantOrTurnEntry?.remainingActions) || 0);
+  const cost = Math.max(1, Number(actionCost) || 1);
+  if (remainingActions < cost) {
+    return { ok: false, updated: { ...combatantOrTurnEntry }, recovered: 0, spentActions: 0, message: "No actions remaining." };
+  }
+  const recovery = applyStaminaRecovery(combatantOrTurnEntry, amount);
+  if (!recovery.ok) return { ...recovery, spentActions: 0 };
+  return {
+    ...recovery,
+    updated: {
+      ...recovery.updated,
+      remainingActions: remainingActions - cost,
+    },
+    spentActions: cost,
+    remainingActions: remainingActions - cost,
+  };
+}
+
 export default {
   applyStaminaRecovery,
+  applyRecoveryAction,
   getRecoveryAmount,
 };

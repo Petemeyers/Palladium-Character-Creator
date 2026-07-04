@@ -411,9 +411,9 @@ const buildDefensiveRecoveryActions = ({ actor, currentTurnEntry }) => [
     source: "manual catalog",
     category: "Recovery",
     costActions: 1,
-    previewSummary: "Restore 2 stamina.",
+    previewSummary: "Restore 3 stamina.",
     metadata: {
-      recoveryAmount: 2,
+      recoveryAmount: 3,
     },
   }),
 ];
