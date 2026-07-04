@@ -919,6 +919,10 @@ The adapter should translate them into the original attribute system when possib
 
 Compatibility fields may remain during migration, but new systems should prefer the original names.
 
+Saved or imported actors may also retain an `alignment` field. Treat alignment as
+legacy/compatibility metadata until the character-sheet redesign defines an
+original disposition, ethos, or temperament model; do not use it as combat truth.
+
 ---
 
 # Implementation Priorities

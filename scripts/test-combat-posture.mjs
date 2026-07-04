@@ -105,7 +105,7 @@ assert.equal(stillDefending.combatPosture.label, "Defending", "posture remains b
 const cleared = clearExpiredPostures(defended, 3, 3);
 assert.equal(getCombatPosture(cleared), null, "posture clears when combatant reaches next turn");
 assert.equal(cleared.hp, base.hp, "clearing posture does not change HP");
-assert.equal(cleared.currentStamina, base.currentStamina, "clearing posture does not change stamina");
+assert.equal(cleared.currentStamina, base.currentStamina + 1, "uninterrupted defensive posture recovers 1 stamina on expiry");
 assert.equal(cleared.armorReduction, base.armorReduction, "clearing posture does not change armor data");
 assert.equal(cleared.damageTotal, base.damageTotal, "clearing posture does not change damage data");
 assert.deepEqual(cleared.wounds, base.wounds, "clearing posture does not change wounds");

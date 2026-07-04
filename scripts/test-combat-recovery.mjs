@@ -41,7 +41,7 @@ assert.doesNotThrow(() => applyStaminaRecovery(null, 2), "null input does not th
 assert.doesNotThrow(() => applyStaminaRecovery({ currentStamina: "bad", maxStamina: true }, 2), "malformed fields do not throw");
 
 assert.equal(JSON.stringify(base), snapshot, "recovery does not mutate original object");
-assert.equal(getRecoveryAmount(base, {}), 2, "default recovery is 2");
+assert.equal(getRecoveryAmount(base, {}), 3, "default Catch Breath recovery is 3");
 assert.equal(getRecoveryAmount(base, { metadata: { recoveryAmount: 3 } }), 3, "action metadata can set recovery amount");
 
 const spentOnce = spendAction({ ...recovered.updated, remainingActions: 1, maxActions: 1 }, 1);

@@ -1,10 +1,18 @@
 // src/utils/routingSystem.js
 
 import { isCombatantFled } from "./combatFledState.js";
+import { isCombatantBroken } from "./combatBrokenState.js";
 import { isAllyOf, isHostileTo } from "./factionDisposition.js";
 import { getActorAttributes, getAttributeMod } from "./morale/moraleAttributes.js";
 import { attemptRoutRecovery, normalizeMoraleState } from "./morale/moraleChecks.js";
 import { MORALE_STATES } from "./morale/moraleConstants.js";
+import {
+  chooseSurvivalIntent,
+  getRoutingArmorProfile,
+  getStaminaRoutingProfile,
+  SURVIVAL_INTENT_THRESHOLDS,
+  SURVIVAL_INTENTS,
+} from "./survivalIntent.js";
 
 const finiteNumber = (value, fallback = 0) => {
   const numeric = Number(value);
@@ -21,7 +29,7 @@ const isExplicitCommander = (actor = {}) => {
 };
 
 const isLivingBattleActor = (actor = {}) => {
-  if (!actor || isCombatantFled(actor) || actor.isDead || actor.isKO) return false;
+  if (!actor || isCombatantFled(actor) || isCombatantBroken(actor) || actor.isDead || actor.isKO) return false;
   const hp = Number(actor.currentHP ?? actor.HP ?? actor.hp ?? actor.hitPoints);
   return !Number.isFinite(hp) || hp > 0;
 };
@@ -55,6 +63,8 @@ export function buildRoutRecoveryContext({
   const badlyWounded = Number.isFinite(currentHP) && Number.isFinite(maxHP) && maxHP > 0
     ? currentHP / maxHP <= 0.2
     : false;
+  const staminaProfile = getStaminaRoutingProfile(actor);
+  const armorProfile = getRoutingArmorProfile(actor);
 
   return {
     allowRecoveryWhenRoutingDisabled: true,
@@ -69,6 +79,8 @@ export function buildRoutRecoveryContext({
     inCover: false,
     nearWalls: false,
     mythicTerrorNearby: false,
+    staminaRallyBonus: staminaProfile.band === "fresh" ? 1 : staminaProfile.band === "tired" ? -1 : staminaProfile.band === "exhausted" ? -2 : 0,
+    armorConfidenceBonus: armorProfile.heavy ? 1 : 0,
   };
 }
 
@@ -207,7 +219,8 @@ export function getThreatPositionsForFighter(fighter, fighters, positions) {
         f.type !== sameSideType &&
         !f.isDead &&
         !f.isKO &&
-        !isCombatantFled(f)
+        !isCombatantFled(f) &&
+        !isCombatantBroken(f)
     )
     .map((f) => positions[f.id])
     .filter(Boolean);
@@ -237,6 +250,116 @@ export function isAtMapEdge(pos, gridWidth, gridHeight) {
     pos.x === gridWidth - 1 ||
     pos.y === gridHeight - 1
   );
+}
+
+export function hasCrossedRoutedEscapeBoundary(position, bounds = {}) {
+  if (!position) return false;
+  const minX = Number.isFinite(Number(bounds.minX)) ? Number(bounds.minX) : 0;
+  const minY = Number.isFinite(Number(bounds.minY)) ? Number(bounds.minY) : 0;
+  const maxX = Number.isFinite(Number(bounds.maxX))
+    ? Number(bounds.maxX)
+    : Math.max(minX, Number(bounds.gridWidth ?? bounds.width ?? 1) - 1);
+  const maxY = Number.isFinite(Number(bounds.maxY))
+    ? Number(bounds.maxY)
+    : Math.max(minY, Number(bounds.gridHeight ?? bounds.height ?? 1) - 1);
+  return Number(position.x) <= minX || Number(position.x) >= maxX ||
+    Number(position.y) <= minY || Number(position.y) >= maxY;
+}
+
+const actorStrengthScore = (actor = {}) => {
+  const hp = finiteNumber(actor.currentHP ?? actor.HP ?? actor.hp ?? actor.hitPoints);
+  const maxHp = Math.max(1, finiteNumber(actor.maxHP ?? actor.totalHP ?? actor.hpMax ?? actor.maxHitPoints, hp || 1));
+  const armor = finiteNumber(actor.armorClass ?? actor.ac ?? actor.derivedStats?.armorClass);
+  const strength = finiteNumber(actor.abilityScores?.strength ?? actor.attributes?.strength ?? actor.Str);
+  return hp / maxHp * 10 + armor + strength;
+};
+
+export function buildSurvivalIntentContext({
+  actor,
+  fighters = [],
+  positions = {},
+  calculateDistance,
+  sceneContext = { sceneType: "combat", relations: {} },
+} = {}) {
+  const actorPosition = positions?.[actor?.id];
+  const distanceFromActor = (candidate) => {
+    const position = positions?.[candidate?.id];
+    if (!actorPosition || !position || typeof calculateDistance !== "function") return Infinity;
+    return finiteNumber(calculateDistance(actorPosition, position), Infinity);
+  };
+  const living = (Array.isArray(fighters) ? fighters : []).filter((candidate) => (
+    candidate?.id !== actor?.id && isLivingBattleActor(candidate) && positions?.[candidate.id]
+  ));
+  const allies = living.filter((candidate) => isAllyOf(actor, candidate, sceneContext));
+  const enemies = living.filter((candidate) => isHostileTo(actor, candidate, sceneContext));
+  const nearbyAllies = allies.filter((candidate) => distanceFromActor(candidate) <= 30.01)
+    .sort((left, right) => distanceFromActor(left) - distanceFromActor(right));
+  const nearbyLeader = allies.filter(isExplicitCommander)
+    .filter((candidate) => distanceFromActor(candidate) <= 60.01)
+    .sort((left, right) => distanceFromActor(left) - distanceFromActor(right))[0] || null;
+  const strongestAlly = allies.slice().sort((left, right) => actorStrengthScore(right) - actorStrengthScore(left))[0] || null;
+  const teamCenter = allies.length >= 2 ? {
+    x: allies.reduce((sum, ally) => sum + finiteNumber(positions[ally.id].x), 0) / allies.length,
+    y: allies.reduce((sum, ally) => sum + finiteNumber(positions[ally.id].y), 0) / allies.length,
+  } : null;
+  const currentHP = Number(actor?.currentHP ?? actor?.HP ?? actor?.hp ?? actor?.hitPoints);
+  const maxHP = Number(actor?.maxHP ?? actor?.totalHP ?? actor?.hpMax ?? actor?.maxHitPoints);
+  const badlyWounded = Number.isFinite(currentHP) && Number.isFinite(maxHP) && maxHP > 0
+    ? currentHP / maxHP <= SURVIVAL_INTENT_THRESHOLDS.badlyWoundedHpRatio
+    : false;
+  const routReason = String(actor?.state?.routReason || actor?.moraleState?.routReason || "").toLowerCase();
+
+  return {
+    allies,
+    enemies,
+    nearbyAllies,
+    nearbyLeader,
+    teamCenter,
+    strongestAlly,
+    badlyWounded,
+    isolated: allies.every((candidate) => distanceFromActor(candidate) > 60.01),
+    adjacentThreats: enemies.filter((candidate) => distanceFromActor(candidate) <= 5.01).length,
+    mythicTerror: routReason === "mythicterror",
+  };
+}
+
+export function chooseRoutingSurvivalIntent(options = {}) {
+  const context = buildSurvivalIntentContext(options);
+  const actor = options.actor || {};
+  const moraleState = String(actor?.state?.moraleState || actor?.moraleState?.status || "").toLowerCase();
+  return {
+    ...chooseSurvivalIntent({
+      fighter: actor,
+      routed: ["routed", "broken"].includes(moraleState),
+      moraleFailureMargin: finiteNumber(actor?.state?.moraleFailureMargin),
+      ...context,
+    }),
+    context,
+  };
+}
+
+export function canAttemptRallyFromRouting({
+  fighter,
+  enemies = [],
+  positions = {},
+  calculateDistance,
+  pursuitRangeFeet = 30,
+} = {}) {
+  const fighterPos = positions?.[fighter?.id];
+  if (!fighter || !fighterPos || typeof calculateDistance !== "function") {
+    return { canAttempt: false, reason: "missing-position" };
+  }
+  const pursuer = (Array.isArray(enemies) ? enemies : []).find((enemy) => {
+    if (!enemy || isCombatantFled(enemy) || isCombatantBroken(enemy) || !positions?.[enemy.id]) return false;
+    const hp = Number(enemy.currentHP ?? enemy.HP ?? enemy.hp ?? enemy.hitPoints);
+    const status = String(enemy.status || enemy.condition || "").toLowerCase();
+    if ((Number.isFinite(hp) && hp <= 0) || /dead|unconscious|dying/.test(status)) return false;
+    const fastOrAggressive = enemy.aiRole === "pursuer" || enemy.aggression === "berserk" ||
+      (enemy.tags || []).some((tag) => ["fast", "mythic", "pursuer"].includes(String(tag).toLowerCase()));
+    const range = fastOrAggressive ? Math.max(60, pursuitRangeFeet) : pursuitRangeFeet;
+    return calculateDistance(fighterPos, positions[enemy.id]) <= range;
+  });
+  return { canAttempt: !pursuer, reason: pursuer ? "hostile-in-pursuit-range" : "unpursued", pursuer: pursuer || null };
 }
 
 function normalizeBounds(mapBounds = {}) {
@@ -523,6 +646,140 @@ export function findBestRetreatHex({
     distanceFeet: calculateDistance(currentPos, best),
     safetyScore: bestSafety,
     reachedEdge: bestIsEdge,
+  };
+}
+
+export function getSurvivalIntentTarget(intent, context = {}, positions = {}, threatPositions = []) {
+  if (intent === SURVIVAL_INTENTS.FALL_BACK_TO_LEADER) {
+    return positions?.[context.nearbyLeader?.id] || null;
+  }
+  if (intent === SURVIVAL_INTENTS.REGROUP_WITH_ALLY) {
+    return positions?.[context.nearbyAllies?.[0]?.id] || null;
+  }
+  if (intent === SURVIVAL_INTENTS.WITHDRAW_TO_TEAM_CENTER) {
+    return context.teamCenter || null;
+  }
+  if (intent === SURVIVAL_INTENTS.HIDE_BEHIND_STRONGEST_ALLY) {
+    const allyPosition = positions?.[context.strongestAlly?.id];
+    const threat = threatPositions?.[0];
+    if (!allyPosition || !threat) return allyPosition || null;
+    const dx = Number(allyPosition.x) - Number(threat.x);
+    const dy = Number(allyPosition.y) - Number(threat.y);
+    const scale = Math.max(1, Math.abs(dx), Math.abs(dy));
+    return {
+      x: Math.round(Number(allyPosition.x) + (dx / scale) * 2),
+      y: Math.round(Number(allyPosition.y) + (dy / scale) * 2),
+    };
+  }
+  return null;
+}
+
+export function getSurvivalMovementFailureReason({
+  intent,
+  context = {},
+  positions = {},
+  currentPos,
+  threatPositions = [],
+  maxSteps,
+  getHexNeighbors,
+  gridWidth,
+  gridHeight,
+} = {}) {
+  if (!currentPos) return "no-current-position";
+  if (!Number.isFinite(Number(maxSteps)) || Number(maxSteps) <= 0) return "no-movement-allowance";
+  if (typeof getHexNeighbors !== "function") return "movement-helper-unavailable";
+  const invalidGridArguments =
+    (gridWidth != null && !Number.isFinite(Number(gridWidth))) ||
+    (gridHeight != null && !Number.isFinite(Number(gridHeight)));
+  if (invalidGridArguments) {
+    return `invalid-grid-arguments gridWidthType=${typeof gridWidth} gridHeightType=${typeof gridHeight}`;
+  }
+  const targetedIntents = new Set([
+    SURVIVAL_INTENTS.REGROUP_WITH_ALLY,
+    SURVIVAL_INTENTS.FALL_BACK_TO_LEADER,
+    SURVIVAL_INTENTS.WITHDRAW_TO_TEAM_CENTER,
+    SURVIVAL_INTENTS.HIDE_BEHIND_STRONGEST_ALLY,
+  ]);
+  if (targetedIntents.has(intent) && !getSurvivalIntentTarget(intent, context, positions, threatPositions)) {
+    return "no-valid-destination";
+  }
+  return "all-candidates-blocked";
+}
+
+/** Find a reachable formation-preserving destination for a non-panic intent. */
+export function findSurvivalIntentDestination({
+  intent,
+  context = {},
+  positions = {},
+  currentPos,
+  threatPositions = [],
+  maxSteps,
+  isHexOccupied,
+  getHexNeighbors,
+  isValidPosition,
+  calculateDistance,
+  gridWidth,
+  gridHeight,
+}) {
+  if ([SURVIVAL_INTENTS.HOLD, SURVIVAL_INTENTS.COWER, SURVIVAL_INTENTS.SURRENDER].includes(intent)) {
+    return currentPos ? { position: currentPos, stepsMoved: 0, distanceFeet: 0 } : null;
+  }
+  if (intent === SURVIVAL_INTENTS.DEFENSIVE_BACKSTEP) {
+    return findBestRetreatHex({
+      currentPos,
+      threatPositions,
+      maxSteps,
+      isHexOccupied,
+      getHexNeighbors,
+      isValidPosition,
+      calculateDistance,
+      gridWidth,
+      gridHeight,
+      allowTieMoves: true,
+      preferEdgeEscape: false,
+    });
+  }
+
+  const target = getSurvivalIntentTarget(intent, context, positions, threatPositions);
+  if (!currentPos || !target || !maxSteps || typeof getHexNeighbors !== "function") return null;
+  const distance = typeof calculateDistance === "function"
+    ? calculateDistance
+    : (left, right) => Math.hypot(Number(left.x) - Number(right.x), Number(left.y) - Number(right.y));
+  const valid = typeof isValidPosition === "function" ? isValidPosition : () => true;
+  const occupied = typeof isHexOccupied === "function" ? isHexOccupied : () => false;
+  const visited = new Map([[keyOf(currentPos), { pos: currentPos, steps: 0 }]]);
+  const queue = [{ pos: currentPos, steps: 0 }];
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (current.steps >= maxSteps) continue;
+    for (const next of getHexNeighbors(current.pos.x, current.pos.y)) {
+      const key = keyOf(next);
+      if (visited.has(key) || !valid(next.x, next.y) || occupied(next.x, next.y)) continue;
+      const entry = { pos: next, steps: current.steps + 1 };
+      visited.set(key, entry);
+      queue.push(entry);
+    }
+  }
+
+  const startThreatSafety = getMinimumThreatDistance(currentPos, threatPositions, distance);
+  const candidates = [...visited.values()].filter((entry) => entry.steps > 0);
+  const best = candidates.sort((left, right) => {
+    const score = (entry) => {
+      const targetDistance = finiteNumber(distance(entry.pos, target), Infinity);
+      const threatSafety = getMinimumThreatDistance(entry.pos, threatPositions, distance);
+      const safetyGain = Number.isFinite(startThreatSafety) && Number.isFinite(threatSafety)
+        ? threatSafety - startThreatSafety
+        : 0;
+      return -targetDistance * 4 + safetyGain * 2 + entry.steps * 0.01;
+    };
+    return score(right) - score(left);
+  })[0];
+  if (!best) return null;
+  return {
+    position: best.pos,
+    stepsMoved: best.steps,
+    distanceFeet: finiteNumber(distance(currentPos, best.pos)),
+    target,
   };
 }
 

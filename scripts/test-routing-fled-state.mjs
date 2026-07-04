@@ -58,6 +58,9 @@ assert.equal(fledMinotaur.status, "fled");
 assert.equal(fledMinotaur.moraleState.status, "FLED");
 assert.equal(fledMinotaur.moraleState.hasFled, true);
 assert.equal(fledMinotaur.fled, true);
+assert.equal(fledMinotaur.isFled, true);
+assert.equal(fledMinotaur.combatState, "fled");
+assert.equal(fledMinotaur.defeatReason, "fled");
 assert.equal(fledMinotaur.active, false);
 assert.equal(fledMinotaur.canAct, false);
 assert.equal(fledMinotaur.remainingActions, 0);
@@ -66,6 +69,7 @@ assert.equal(fledMinotaur.statusEffects.includes("ROUTED"), false);
 assert.equal(fledMinotaur.state.moraleState, "fled");
 assert.equal(fledMinotaur.state.hasFledBattle, true);
 assert.equal(fledMinotaur.inBattle, false);
+assert.equal(fledMinotaur.currentHP, minotaur.currentHP);
 
 assert.equal(isCombatantFled(fledMinotaur), true);
 assert.equal(isActiveCombatantForHostility(fledMinotaur), false, "fled actor is skipped by active scheduling/hostility lists");

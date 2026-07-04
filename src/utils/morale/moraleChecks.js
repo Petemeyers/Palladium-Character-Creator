@@ -187,6 +187,8 @@ export function getRecoveryBonus(actor = {}, context = {}) {
   if (context.surrounded) total -= 4;
   if (context.badlyWounded) total -= 2;
   if (context.mythicTerrorNearby) total -= 3;
+  total += finiteOr(context.staminaRallyBonus);
+  total += finiteOr(context.armorConfidenceBonus);
   if (hasTrait(actor, "rout_survivor")) total += 2;
   if (hasTrait(actor, "oath_fast")) total += 3;
   if (hasTrait(actor, "labyrinth_born") && context.nearWalls) total += 2;

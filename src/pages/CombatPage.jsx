@@ -332,6 +332,7 @@ import {
   isSavedCharacterCombatData,
 } from "../utils/publicCharacterCombatAdapter.js";
 import { buildCombatDisplayStats } from "../utils/combatDisplayStats.js";
+import { buildActorSheetDisplay } from "../utils/actorSheetDisplay.js";
 import { summarizeOriginalActorMetadata } from "../utils/originalActorMetadataDisplay.js";
 import {
   buildEnemyTurnSlotKey,
@@ -8637,6 +8638,10 @@ function CombatPage({ characters = [] }) {
   );
   const rosterPreviewDisplayStats = useMemo(
     () => (rosterPreviewFighter ? buildCombatDisplayStats(rosterPreviewFighter) : null),
+    [rosterPreviewFighter]
+  );
+  const rosterPreviewSheetDisplay = useMemo(
+    () => (rosterPreviewFighter ? buildActorSheetDisplay(rosterPreviewFighter) : null),
     [rosterPreviewFighter]
   );
   const rosterPreviewAbilityEntries = useMemo(
@@ -31200,6 +31205,7 @@ function CombatPage({ characters = [] }) {
                 <Grid templateColumns="repeat(auto-fill, minmax(280px, 1fr))" gap={3}>
                   {fighters.filter(f => f.type === "player").map((fighter) => {
                     const displayStats = buildCombatDisplayStats(fighter);
+                    const sheetDisplay = buildActorSheetDisplay(fighter);
                     const abilityScoreEntries = getDisplayStatEntries(displayStats.abilityScores, DISPLAY_ABILITY_LABELS);
                     const compatibilityEntries = getDisplayStatEntries(displayStats.compatibilityAttributes, DISPLAY_COMPATIBILITY_LABELS);
 
@@ -31284,25 +31290,37 @@ function CombatPage({ characters = [] }) {
                               {getDisplayBackgroundName(fighter) && (
                                 <Badge colorScheme="teal" size="sm">Background: {getDisplayBackgroundName(fighter)}</Badge>
                               )}
-                              <Badge colorScheme="gray" size="sm">Source: {displayStats.sourceLabel}</Badge>
+                              <Badge colorScheme="gray" size="sm">Source: {sheetDisplay.identity.source}</Badge>
                               {/* Alignment Display */}
                               {(fighter.alignment || fighter.alignmentName || fighter.alignmentText) && (
                                 <Badge colorScheme="gray" size="sm">
-                                  {fighter.alignment || fighter.alignmentName || fighter.alignmentText}
+                                  Legacy Alignment: {fighter.alignment || fighter.alignmentName || fighter.alignmentText}
                                 </Badge>
                               )}
                             </HStack>
 
                             <Text fontSize="sm" color="blue.700">
-                              HP: {displayStats.hpCurrent}/{displayStats.hpMax} | AC: {displayStats.armorClass} | Movement: {displayStats.movementSpeed} ft
+                              HP: {displayStats.hpCurrent}/{displayStats.hpMax} | Defense &amp; Armor: {sheetDisplay.armor.name} | Movement: {displayStats.movementSpeed} ft
                               {displayStats.tempHp > 0 && ` | Temp HP: ${displayStats.tempHp}`}
                               {displayStats.focusCurrent !== null && ` | Focus: ${displayStats.focusCurrent}`}
                             </Text>
 
-                            {/* Attribute display */}
+                            <Box fontSize="xs" color="purple.700">
+                              <Text fontWeight="medium">Core Simulator Attributes:</Text>
+                              {sheetDisplay.coreAttributes.entries.length > 0 ? (
+                                <HStack spacing={2} flexWrap="wrap">
+                                  {sheetDisplay.coreAttributes.entries.map((entry) => (
+                                    <Text key={entry.key}>{entry.label}: {entry.value}</Text>
+                                  ))}
+                                </HStack>
+                              ) : (
+                                <Text>Not yet assigned. Using compatibility fallback.</Text>
+                              )}
+                            </Box>
+                            {/* Legacy attribute display */}
                             {abilityScoreEntries.length > 0 && (
                               <Box fontSize="xs" color="gray.600">
-                                <Text fontWeight="medium">Ability Scores:</Text>
+                                <Text fontWeight="medium">Legacy Compatibility - Classic Ability Scores:</Text>
                                 <HStack spacing={2} flexWrap="wrap">
                                   {abilityScoreEntries.map((entry) => (
                                     <Text key={entry.key}>{entry.label}: {entry.value}</Text>
@@ -31312,7 +31330,7 @@ function CombatPage({ characters = [] }) {
                             )}
                             {compatibilityEntries.length > 0 && (
                               <Box fontSize="xs" color="gray.500">
-                                <Text fontWeight="medium">Compatibility Attributes:</Text>
+                                <Text fontWeight="medium">Legacy Compatibility Attributes:</Text>
                                 <HStack spacing={2} flexWrap="wrap">
                                   {compatibilityEntries.map((entry) => (
                                     <Text key={entry.key}>{entry.label}: {entry.value}</Text>
@@ -31333,7 +31351,7 @@ function CombatPage({ characters = [] }) {
                                     displayStats.staminaCurrent < displayStats.staminaMax * 0.5 ? "orange.700" : "green.700";
                                   return (
                                     <Text color={staminaColor}>
-                                      Stamina: {formatDisplayNumber(displayStats.staminaCurrent)}/{formatDisplayNumber(displayStats.staminaMax)}
+                                      Stamina: {formatDisplayNumber(displayStats.staminaCurrent)}/{formatDisplayNumber(displayStats.staminaMax)} ({sheetDisplay.stamina.band})
                                     </Text>
                                   );
                                 }
@@ -33769,6 +33787,7 @@ function CombatPage({ characters = [] }) {
                         ? `${fighter.name} (#${array.filter(f => f.type === "enemy" && f.name === fighter.name && getCombatantHP(f) > 0).indexOf(fighter) + 1})`
                         : fighter.name;
                       const displayStats = buildCombatDisplayStats(fighter);
+                      const sheetDisplay = buildActorSheetDisplay(fighter);
                       const abilityScoreEntries = getDisplayStatEntries(displayStats.abilityScores, DISPLAY_ABILITY_LABELS);
                       const compatibilityEntries = getDisplayStatEntries(displayStats.compatibilityAttributes, DISPLAY_COMPATIBILITY_LABELS);
 
@@ -33859,25 +33878,37 @@ function CombatPage({ characters = [] }) {
                                   {getDisplayBackgroundName(fighter) && (
                                     <Badge colorScheme="teal" size="sm">Background: {getDisplayBackgroundName(fighter)}</Badge>
                                   )}
-                                  <Badge colorScheme="gray" size="sm">Source: {displayStats.sourceLabel}</Badge>
+                                  <Badge colorScheme="gray" size="sm">Source: {sheetDisplay.identity.source}</Badge>
                                   {/* Alignment Display */}
                                   {(fighter.alignment || fighter.alignmentName || fighter.alignmentText) && (
                                     <Badge colorScheme="gray" size="sm">
-                                      {fighter.alignment || fighter.alignmentName || fighter.alignmentText}
+                                      Legacy Alignment: {fighter.alignment || fighter.alignmentName || fighter.alignmentText}
                                     </Badge>
                                   )}
                                 </HStack>
 
                                 <Box fontSize="sm">
-                                  HP: {displayStats.hpCurrent}/{displayStats.hpMax} | AC: {displayStats.armorClass} | Movement: {displayStats.movementSpeed} ft
+                                  HP: {displayStats.hpCurrent}/{displayStats.hpMax} | Defense &amp; Armor: {sheetDisplay.armor.name} | Movement: {displayStats.movementSpeed} ft
                                   {displayStats.tempHp > 0 && ` | Temp HP: ${displayStats.tempHp}`}
                                   {displayStats.focusCurrent !== null && ` | Focus: ${displayStats.focusCurrent}`}
                                 </Box>
 
-                                {/* Attribute display */}
+                                <Box fontSize="xs" color="purple.700">
+                                  <Text fontWeight="medium">Core Simulator Attributes:</Text>
+                                  {sheetDisplay.coreAttributes.entries.length > 0 ? (
+                                    <HStack spacing={2} flexWrap="wrap">
+                                      {sheetDisplay.coreAttributes.entries.map((entry) => (
+                                        <Text key={entry.key}>{entry.label}: {entry.value}</Text>
+                                      ))}
+                                    </HStack>
+                                  ) : (
+                                    <Text>Not yet assigned. Using compatibility fallback.</Text>
+                                  )}
+                                </Box>
+                                {/* Legacy attribute display */}
                                 {abilityScoreEntries.length > 0 && (
                                   <Box fontSize="xs" color="gray.600">
-                                    <Text fontWeight="medium">Ability Scores:</Text>
+                                    <Text fontWeight="medium">Legacy Compatibility - Classic Ability Scores:</Text>
                                     <HStack spacing={2} flexWrap="wrap">
                                       {abilityScoreEntries.map((entry) => (
                                         <Text key={entry.key}>{entry.label}: {entry.value}</Text>
@@ -33887,7 +33918,7 @@ function CombatPage({ characters = [] }) {
                                 )}
                                 {compatibilityEntries.length > 0 && (
                                   <Box fontSize="xs" color="gray.500">
-                                    <Text fontWeight="medium">Compatibility Attributes:</Text>
+                                    <Text fontWeight="medium">Legacy Compatibility Attributes:</Text>
                                     <HStack spacing={2} flexWrap="wrap">
                                       {compatibilityEntries.map((entry) => (
                                         <Text key={entry.key}>{entry.label}: {entry.value}</Text>
@@ -33908,7 +33939,7 @@ function CombatPage({ characters = [] }) {
                                         displayStats.staminaCurrent < displayStats.staminaMax * 0.5 ? "orange.700" : "green.700";
                                       return (
                                         <Text color={staminaColor}>
-                                          Stamina: {formatDisplayNumber(displayStats.staminaCurrent)}/{formatDisplayNumber(displayStats.staminaMax)}
+                                          Stamina: {formatDisplayNumber(displayStats.staminaCurrent)}/{formatDisplayNumber(displayStats.staminaMax)} ({sheetDisplay.stamina.band})
                                         </Text>
                                       );
                                     }
@@ -35198,14 +35229,24 @@ function CombatPage({ characters = [] }) {
                                 <Badge colorScheme={rosterPreviewFighter.type === "enemy" ? "red" : rosterPreviewFighter.type === "npc" ? "purple" : "blue"}>
                                   {rosterPreviewFighter.type === "npc" ? getSceneRoleLabel(rosterPreviewFighter) : rosterPreviewFighter.type === "enemy" ? "Enemy Side" : "Party Side"}
                                 </Badge>
-                                <Badge colorScheme="gray">Source: {rosterPreviewDisplayStats.sourceLabel}</Badge>
+                                <Badge colorScheme="gray">Source: {rosterPreviewSheetDisplay.identity.source}</Badge>
                                 {(rosterPreviewFighter.alignment || rosterPreviewFighter.alignmentName) && (
                                   <Badge colorScheme="gray">
-                                    {rosterPreviewFighter.alignment || rosterPreviewFighter.alignmentName}
+                                    Legacy Alignment: {rosterPreviewFighter.alignment || rosterPreviewFighter.alignmentName}
                                   </Badge>
                                 )}
                               </HStack>
                               {renderFighterArmySelector(rosterPreviewFighter, "sm")}
+                            </Box>
+
+                            <Box borderWidth="1px" borderRadius="md" p={3} bg="white">
+                              <Text fontWeight="bold" fontSize="sm" mb={1}>Combat State</Text>
+                              <Text fontSize="sm">Living State: {rosterPreviewSheetDisplay.combatState.livingState}</Text>
+                              <Text fontSize="sm">Combat State: {rosterPreviewSheetDisplay.combatState.combatState}</Text>
+                              <Text fontSize="sm">Morale: {rosterPreviewSheetDisplay.morale.state}</Text>
+                              {rosterPreviewSheetDisplay.combatState.inactive && (
+                                <Text fontSize="sm" color="orange.700" fontWeight="bold">No longer active combatant</Text>
+                              )}
                             </Box>
 
                             <Grid templateColumns="repeat(2, minmax(0, 1fr))" gap={3}>
@@ -35218,8 +35259,9 @@ function CombatPage({ characters = [] }) {
                                 </Text>
                               </Box>
                               <Box>
-                                <Text fontSize="xs" color="gray.500" textTransform="ustaminarcase">AC</Text>
-                                <Text fontWeight="semibold">{rosterPreviewDisplayStats.armorClass}</Text>
+                                <Text fontSize="xs" color="gray.500" textTransform="ustaminarcase">Defense &amp; Armor</Text>
+                                <Text fontWeight="semibold">{rosterPreviewSheetDisplay.armor.name}</Text>
+                                {rosterPreviewSheetDisplay.armor.source && <Text fontSize="xs">{rosterPreviewSheetDisplay.armor.source}</Text>}
                               </Box>
                               <Box>
                                 <Text fontSize="xs" color="gray.500" textTransform="ustaminarcase">Movement</Text>
@@ -35250,6 +35292,7 @@ function CombatPage({ characters = [] }) {
                                 <Text fontWeight="semibold">
                                   {formatDisplayNumber(rosterPreviewDisplayStats.staminaCurrent)}/{formatDisplayNumber(rosterPreviewDisplayStats.staminaMax)}
                                 </Text>
+                                <Text fontSize="xs">Band: {rosterPreviewSheetDisplay.stamina.band}</Text>
                               </Box>
                               {(rosterPreviewFighter.focus !== undefined || rosterPreviewFighter.currentfocus !== undefined) && (
                                 <Box>
@@ -35263,31 +35306,39 @@ function CombatPage({ characters = [] }) {
 
                             <Box>
                               <Text fontSize="xs" color="gray.500" textTransform="ustaminarcase" mb={2}>
-                                Ability Scores
+                                Core Simulator Attributes
                               </Text>
                               <Wrap spacing={2}>
-                                {rosterPreviewAbilityEntries.length > 0 ? (
-                                  rosterPreviewAbilityEntries.map((entry) => (
+                                {rosterPreviewSheetDisplay.coreAttributes.entries.length > 0 ? (
+                                  rosterPreviewSheetDisplay.coreAttributes.entries.map((entry) => (
                                     <WrapItem key={entry.key}>
                                       <Badge colorScheme="purple">{entry.label}: {entry.value}</Badge>
                                     </WrapItem>
                                   ))
                                 ) : (
-                                  <Text fontSize="sm" color="gray.500">No attribute breakdown available.</Text>
+                                  <Text fontSize="sm" color="gray.500">Not yet assigned. Using compatibility fallback.</Text>
                                 )}
                               </Wrap>
                             </Box>
-                            {rosterPreviewCompatibilityEntries.length > 0 && (
+                            {(rosterPreviewAbilityEntries.length > 0 || rosterPreviewCompatibilityEntries.length > 0 || rosterPreviewSheetDisplay.legacy.alignment !== "Not assigned") && (
                               <Box>
                                 <Text fontSize="xs" color="gray.500" textTransform="ustaminarcase" mb={2}>
-                                  Compatibility Attributes
+                                  Legacy Compatibility
                                 </Text>
                                 <Wrap spacing={2}>
+                                  {rosterPreviewAbilityEntries.map((entry) => (
+                                    <WrapItem key={`classic-${entry.key}`}>
+                                      <Badge colorScheme="gray">{entry.label}: {entry.value}</Badge>
+                                    </WrapItem>
+                                  ))}
                                   {rosterPreviewCompatibilityEntries.map((entry) => (
                                     <WrapItem key={entry.key}>
                                       <Badge colorScheme="gray">{entry.label}: {entry.value}</Badge>
                                     </WrapItem>
                                   ))}
+                                  {rosterPreviewSheetDisplay.legacy.alignment !== "Not assigned" && (
+                                    <WrapItem><Badge colorScheme="gray">Legacy Alignment: {rosterPreviewSheetDisplay.legacy.alignment}</Badge></WrapItem>
+                                  )}
                                 </Wrap>
                               </Box>
                             )}

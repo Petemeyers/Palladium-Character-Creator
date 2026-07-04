@@ -7,7 +7,8 @@ export function isCombatantFled(combatant = {}) {
   if (combatant.inBattle === false) return true;
   if (combatant.state?.hasFledBattle === true) return true;
   if (normalize(combatant.state?.moraleState) === "fled") return true;
-  if (combatant.fled === true || combatant.moraleState?.hasFled === true) return true;
+  if (combatant.fled === true || combatant.isFled === true || combatant.moraleState?.hasFled === true) return true;
+  if (normalize(combatant.combatState) === "fled") return true;
   if (normalize(combatant.status) === "fled") return true;
   if (normalize(combatant.moraleState?.status) === "fled") return true;
   return Array.isArray(combatant.statusEffects) && combatant.statusEffects.some(
@@ -15,7 +16,7 @@ export function isCombatantFled(combatant = {}) {
   );
 }
 
-export function markCombatantFled(combatant = {}) {
+export function markCombatantFled(combatant = {}, reason = "routExit") {
   const status = normalize(combatant.status);
   const condition = normalize(combatant.condition);
   const alreadyDead = (
@@ -31,17 +32,22 @@ export function markCombatantFled(combatant = {}) {
     ...combatant,
     status: alreadyDead ? combatant.status : "fled",
     fled: true,
+    isFled: true,
+    combatState: "fled",
+    defeatReason: "fled",
     canAct: false,
     remainingActions: 0,
-    ...(Object.prototype.hasOwnProperty.call(combatant, "active") ? { active: false } : {}),
-    ...(Object.prototype.hasOwnProperty.call(combatant, "isActive") ? { isActive: false } : {}),
+    active: false,
+    isActive: false,
+    routingExhaustedCowerCount: 0,
     moraleState: {
       ...(combatant.moraleState || {}),
       status: alreadyDead ? combatant.moraleState?.status : "FLED",
       hasFled: true,
+      exhaustedCowerCount: 0,
     },
     statusEffects: Array.from(new Set([...statusEffects, "FLED"])),
-  });
+  }, reason);
   if (!alreadyDead) return marked;
   return {
     ...marked,

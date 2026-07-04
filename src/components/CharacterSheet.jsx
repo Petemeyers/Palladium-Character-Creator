@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import PropTypes from 'prop-types';
 import {
   Box,
@@ -17,6 +17,7 @@ import {
 import axiosInstance from '../utils/axios';
 import { getPublicSkillById } from '../utils/publicClassAdapter.js';
 import { formatSignedModifier, getPublicDerivedStatsForCharacter } from '../utils/publicDerivedStats.js';
+import { buildActorSheetDisplay } from '../utils/actorSheetDisplay.js';
 
 const getDisplayClassName = (character) =>
   character?.publicClassName || character?.class || character?.profession || '';
@@ -403,6 +404,10 @@ export default function CharacterSheet({ characterData = null, onSave = null }) 
     : '';
   const publicSkillNames = getDisplayPublicSkillNames(characterData);
   const publicDerivedStats = getPublicDerivedStatsForCharacter(characterData || {});
+  const sheetDisplay = useMemo(
+    () => buildActorSheetDisplay(characterData || character),
+    [characterData, character]
+  );
 
   return (
     <Box className="character-sheet" maxW="4xl" mx="auto" p={4} bg="white" borderRadius="md" boxShadow="lg">
@@ -419,10 +424,130 @@ export default function CharacterSheet({ characterData = null, onSave = null }) 
 
         <Divider />
 
+        <Box>
+          <Heading size="sm" mb={3}>Identity</Heading>
+          <Grid templateColumns={{ base: '1fr', md: 'repeat(3, 1fr)' }} gap={3}>
+            <Text fontSize="sm"><strong>Name:</strong> {sheetDisplay.identity.name}</Text>
+            <Text fontSize="sm"><strong>Battle Side:</strong> {sheetDisplay.identity.battleSide}</Text>
+            <Text fontSize="sm"><strong>Team:</strong> {sheetDisplay.identity.team}</Text>
+            <Text fontSize="sm"><strong>Species / Category:</strong> {sheetDisplay.identity.species}</Text>
+            <Text fontSize="sm"><strong>Profession / Role:</strong> {sheetDisplay.identity.role}</Text>
+            <Text fontSize="sm"><strong>Source:</strong> {sheetDisplay.identity.source}</Text>
+            <Text fontSize="sm"><strong>Control Mode:</strong> {sheetDisplay.identity.controlMode}</Text>
+          </Grid>
+        </Box>
+
+        <Divider />
+
+        <Box>
+          <Heading size="sm" mb={3}>Combat State</Heading>
+          <Grid templateColumns={{ base: 'repeat(2, 1fr)', md: 'repeat(4, 1fr)' }} gap={3}>
+            <Text fontSize="sm"><strong>HP:</strong> {sheetDisplay.combatState.hpCurrent} / {sheetDisplay.combatState.hpMax}</Text>
+            <Text fontSize="sm"><strong>Living State:</strong> {sheetDisplay.combatState.livingState}</Text>
+            <Text fontSize="sm"><strong>Combat State:</strong> {sheetDisplay.combatState.combatState}</Text>
+            <Text fontSize="sm"><strong>Current Posture:</strong> {sheetDisplay.combatState.posture}</Text>
+            <Text fontSize="sm"><strong>Actions Remaining:</strong> {sheetDisplay.combatState.actionsRemaining}</Text>
+          </Grid>
+          {sheetDisplay.combatState.inactive && (
+            <Text mt={2} fontWeight="bold" color="orange.700">No longer active combatant</Text>
+          )}
+        </Box>
+
+        <Divider />
+
+        <Box>
+          <Heading size="sm" mb={3}>Core Simulator Attributes</Heading>
+          {sheetDisplay.coreAttributes.entries.length > 0 ? (
+            <Grid templateColumns={{ base: 'repeat(2, 1fr)', md: 'repeat(4, 1fr)' }} gap={3}>
+              {sheetDisplay.coreAttributes.entries.map((entry) => (
+                <Text key={entry.key} fontSize="sm"><strong>{entry.label}:</strong> {entry.value}</Text>
+              ))}
+            </Grid>
+          ) : (
+            <Text fontSize="sm" color="orange.700">Not yet assigned. Using compatibility fallback.</Text>
+          )}
+        </Box>
+
+        <Divider />
+
+        <Grid templateColumns={{ base: '1fr', lg: 'repeat(2, 1fr)' }} gap={5}>
+          <Box>
+            <Heading size="sm" mb={3}>Stamina &amp; Fatigue</Heading>
+            <VStack align="stretch" spacing={1}>
+              <Text fontSize="sm"><strong>Stamina:</strong> {sheetDisplay.stamina.current} / {sheetDisplay.stamina.max}</Text>
+              <Text fontSize="sm"><strong>Band:</strong> {sheetDisplay.stamina.band}</Text>
+              <Text fontSize="sm"><strong>Fatigue Notes:</strong> {sheetDisplay.stamina.fatigueNotes}</Text>
+              <Text fontSize="sm"><strong>Recovery:</strong> Catch Breath restores 3 stamina</Text>
+              <Text fontSize="sm"><strong>Defensive Posture:</strong> may recover 1 stamina if not attacked</Text>
+              <Text fontSize="sm"><strong>Armor Burden:</strong> {sheetDisplay.armor.burden}</Text>
+            </VStack>
+          </Box>
+          <Box>
+            <Heading size="sm" mb={3}>Morale &amp; Resolve</Heading>
+            <VStack align="stretch" spacing={1}>
+              <Text fontSize="sm"><strong>Morale:</strong> {sheetDisplay.morale.state}</Text>
+              <Text fontSize="sm"><strong>Resolve:</strong> {sheetDisplay.morale.resolve ?? 'Not assigned'}</Text>
+              <Text fontSize="sm"><strong>Pressure:</strong> {sheetDisplay.morale.pressure}</Text>
+              <Text fontSize="sm"><strong>Rally:</strong> {sheetDisplay.morale.rally}</Text>
+            </VStack>
+          </Box>
+        </Grid>
+
+        <Divider />
+
+        <Box>
+          <Heading size="sm" mb={3}>Defense &amp; Armor</Heading>
+          <Text fontSize="sm" fontWeight="bold">{sheetDisplay.armor.name}</Text>
+          {sheetDisplay.armor.kind === 'itemized' ? (
+            <Grid templateColumns={{ base: '1fr', md: 'repeat(3, 1fr)' }} gap={2} mt={2}>
+              <Text fontSize="sm"><strong>Class:</strong> {sheetDisplay.armor.armorClass}</Text>
+              <Text fontSize="sm"><strong>Coverage:</strong> {sheetDisplay.armor.coverage}</Text>
+              <Text fontSize="sm"><strong>Condition:</strong> {sheetDisplay.armor.condition}</Text>
+              <Text fontSize="sm"><strong>Lootable:</strong> {sheetDisplay.armor.lootable}</Text>
+              <Text fontSize="sm"><strong>Guard / Defense Bonus:</strong> {sheetDisplay.armor.guardBonus ?? 'Not recorded'}</Text>
+              <Text fontSize="sm"><strong>Stamina Burden:</strong> {sheetDisplay.armor.burden}</Text>
+              <Text fontSize="sm"><strong>Morale Protection:</strong> {sheetDisplay.armor.moraleProtection}</Text>
+            </Grid>
+          ) : (
+            <VStack align="stretch" spacing={1} mt={2}>
+              <Text fontSize="sm"><strong>Source:</strong> {sheetDisplay.armor.source}</Text>
+              <Text fontSize="sm"><strong>Lootable:</strong> {sheetDisplay.armor.lootable}</Text>
+              <Text fontSize="sm"><strong>Stamina Burden:</strong> {sheetDisplay.armor.burden}</Text>
+            </VStack>
+          )}
+          {sheetDisplay.armor.shield && (
+            <Box mt={3} pl={3} borderLeftWidth="3px" borderColor="blue.300">
+              <Text fontSize="sm" fontWeight="bold">Shield: {sheetDisplay.armor.shield.name}</Text>
+              <Text fontSize="sm">Stamina Burden: {sheetDisplay.armor.shield.burden}</Text>
+              <Text fontSize="sm">Defensive Use: {sheetDisplay.armor.shield.defensiveUse}</Text>
+            </Box>
+          )}
+        </Box>
+
+        <Divider />
+
+        <Box>
+          <Heading size="sm" mb={3}>Weapons</Heading>
+          {sheetDisplay.weapons.length > 0 ? sheetDisplay.weapons.map((weapon) => (
+            <Box key={weapon.key} borderWidth="1px" borderRadius="md" p={2} mb={2}>
+              <Text fontWeight="bold" fontSize="sm">{weapon.name}</Text>
+              <Text fontSize="sm">Slot: {weapon.slot} | Damage: {weapon.damage} | Reach: {weapon.reach ?? 'Not recorded'} | Attack Type: {weapon.attackType} | Attack Cost: {weapon.staminaCost} stamina</Text>
+            </Box>
+          )) : <Text fontSize="sm" color="gray.600">No equipped weapon data available.</Text>}
+        </Box>
+
+        <Box>
+          <Heading size="sm" mb={3}>Actions / Techniques</Heading>
+          {sheetDisplay.actions.standard.map((action) => <Text key={action} fontSize="sm">{action}</Text>)}
+          {sheetDisplay.actions.techniques.map((technique) => <Text key={technique} fontSize="sm">Technique: {technique}</Text>)}
+        </Box>
+
+        <Divider />
+
         {/* Basic Information */}
         <Box>
           <Text fontWeight="bold" mb={1} fontSize="sm" color="gray.700">
-            Compatibility Character Entry
+            Legacy Compatibility Editor
           </Text>
           <Text fontSize="sm" color="gray.600">
             For SRD/public characters, use Character Creator.
@@ -459,7 +584,7 @@ export default function CharacterSheet({ characterData = null, onSave = null }) 
           <GridItem>
             <Input
               name="alignment"
-              placeholder="Alignment"
+              placeholder="Legacy Alignment"
               value={character.alignment}
               onChange={handleChange}
               size="md"
@@ -480,7 +605,7 @@ export default function CharacterSheet({ characterData = null, onSave = null }) 
         {(displayClassName || displayBackgroundName || displaySpeciesName || displayLanguages || displayAge || displayAbilityScores.length > 0 || publicSkillNames.length > 0 || publicDerivedStats) && (
           <Box>
             <Text fontWeight="bold" mb={2} fontSize="sm" color="gray.700">
-              Public Character Summary
+              Imported Character Details
             </Text>
             <Grid templateColumns={{ base: '1fr', md: 'repeat(2, 1fr)' }} gap={3}>
               {displayClassName && (
@@ -518,13 +643,6 @@ export default function CharacterSheet({ characterData = null, onSave = null }) 
                   </Text>
                 </GridItem>
               )}
-              {characterData?.alignment && (
-                <GridItem>
-                  <Text fontSize="sm">
-                    <strong>Alignment:</strong> {characterData.alignment}
-                  </Text>
-                </GridItem>
-              )}
               {publicSkillNames.length > 0 && (
                 <GridItem>
                   <Text fontSize="sm">
@@ -533,17 +651,6 @@ export default function CharacterSheet({ characterData = null, onSave = null }) 
                 </GridItem>
               )}
             </Grid>
-            {displayAbilityScores.length > 0 && (
-              <Grid templateColumns={{ base: 'repeat(2, 1fr)', md: 'repeat(3, 1fr)' }} gap={3} mt={3}>
-                {displayAbilityScores.map((ability) => (
-                  <GridItem key={ability.key}>
-                    <Text fontSize="sm">
-                      <strong>{ability.label}:</strong> {ability.score}{ability.modifier ? ` (${ability.modifier})` : ''}
-                    </Text>
-                  </GridItem>
-                ))}
-              </Grid>
-            )}
             {publicDerivedStats && (
               <Box mt={3}>
                 <Text fontWeight="bold" mb={2} fontSize="sm" color="gray.700">
@@ -563,7 +670,7 @@ export default function CharacterSheet({ characterData = null, onSave = null }) 
                     <Text fontSize="sm"><strong>Initiative:</strong> {formatSignedModifier(publicDerivedStats.initiative)}</Text>
                   </GridItem>
                   <GridItem>
-                    <Text fontSize="sm"><strong>Base AC:</strong> {publicDerivedStats.baseArmorClass}</Text>
+                    <Text fontSize="sm"><strong>Legacy Base AC:</strong> {publicDerivedStats.baseArmorClass}</Text>
                   </GridItem>
                   <GridItem>
                     <Text fontSize="sm"><strong>Passive Perception:</strong> {publicDerivedStats.passivePerception}</Text>
@@ -608,8 +715,18 @@ export default function CharacterSheet({ characterData = null, onSave = null }) 
         {displayAbilityScores.length > 0 ? (
           <Box as="details">
             <Box as="summary" fontWeight="bold" mb={2} fontSize="sm" color="gray.700">
-              Compatibility Details
+              Legacy Compatibility
             </Box>
+            <Text fontSize="sm" mb={2}><strong>Legacy Alignment:</strong> {sheetDisplay.legacy.alignment}</Text>
+            {displayAbilityScores.length > 0 && (
+              <Grid templateColumns={{ base: 'repeat(2, 1fr)', md: 'repeat(3, 1fr)' }} gap={3} mb={3}>
+                {displayAbilityScores.map((ability) => (
+                  <GridItem key={ability.key}>
+                    <Text fontSize="sm"><strong>{ability.label}:</strong> {ability.score}{ability.modifier ? ` (${ability.modifier})` : ''}</Text>
+                  </GridItem>
+                ))}
+              </Grid>
+            )}
             <Grid templateColumns={{ base: 'repeat(2, 1fr)', md: 'repeat(4, 1fr)' }} gap={3}>
               {attributeFields.map(({ key, label }) => (
                 <Input
@@ -626,7 +743,7 @@ export default function CharacterSheet({ characterData = null, onSave = null }) 
         ) : (
           <Box>
             <Text fontWeight="bold" mb={2} fontSize="sm" color="gray.700">
-              Attributes
+              Legacy Compatibility Attributes
             </Text>
             <Grid templateColumns={{ base: 'repeat(2, 1fr)', md: 'repeat(4, 1fr)' }} gap={3}>
               {attributeFields.map(({ key, label }) => (

@@ -1,4 +1,5 @@
 import { isCombatantFled } from "../combatFledState.js";
+import { isCombatantBroken } from "../combatBrokenState.js";
 import { isAllyOf, isHostileTo } from "../factionDisposition.js";
 import { getActorAttributes, getAttributeMod, hasTrait } from "./moraleAttributes.js";
 import { performMoraleCheck, normalizeMoraleState } from "./moraleChecks.js";
@@ -28,7 +29,7 @@ const isDefeated = (actor = {}) => {
     normalizeText(actor.condition).includes("dead");
 };
 
-const isActive = (actor = {}) => !isCombatantFled(actor) && !isDefeated(actor) && !actor.isKO;
+const isActive = (actor = {}) => !isCombatantFled(actor) && !isCombatantBroken(actor) && !isDefeated(actor) && !actor.isKO;
 const emitsMythicTerror = (actor = {}) => MYTHIC_TERROR_TRAITS.some((trait) => hasTrait(actor, trait));
 
 function getAdjacentActors(actor, fighters, positions, calculateDistance) {

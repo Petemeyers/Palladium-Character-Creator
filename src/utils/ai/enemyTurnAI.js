@@ -37,6 +37,7 @@ import {
 } from "../aiVisibilityFilter";
 import { hasSpecialSenses } from "../stealthSystem";
 import { calculatePerceptionCheck } from "../terrainSystem";
+import { isRoutingOrPassiveTarget, prioritizeEnemyCombatTargets } from "./routedTargetPriority.js";
 import { getWeaponRange } from "../distanceCombatSystem";
 import { canFly, isFlying, getAltitude } from "../abilitySystem";
 import { getSizeCategory, SIZE_CATEGORIES } from "../sizeStrengthModifiers";
@@ -2833,7 +2834,16 @@ export function runEnemyTurnAI(enemy, context) {
       setFighters,
     });
 
-    const playerTargets = visiblePlayers;
+    const playerTargets = prioritizeEnemyCombatTargets({
+      attacker: enemy,
+      candidates: visiblePlayers,
+      positions,
+      calculateDistance,
+    });
+    const ignoredRouter = visiblePlayers.find((target) => isRoutingOrPassiveTarget(target) && !playerTargets.includes(target));
+    if (ignoredRouter && playerTargets[0]) {
+      addLog(`${enemy.name} ignores routing ${ignoredRouter.name} and focuses on ${playerTargets[0].name}.`, "info");
+    }
     if (playerTargets.length === 0) {
       if (
         utilityAction?.type === ACTION_TYPES.USE_SKILL ||
