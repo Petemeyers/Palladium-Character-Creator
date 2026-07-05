@@ -4,6 +4,72 @@ const sameHex = (left, right) => (
 
 const hexKey = (hex) => `${hex.x},${hex.y}`;
 
+const positiveNumber = (...values) => {
+  for (const value of values) {
+    const number = Number(value);
+    if (Number.isFinite(number) && number > 0) return number;
+  }
+  return null;
+};
+
+export function getEnemyActionMovementAllowanceFeet(
+  fighter = {},
+  movementType = "MOVE",
+  legacyAllowanceFeet = 0,
+) {
+  const mode = String(movementType || "MOVE").toUpperCase();
+  const canonicalAllowance = mode === "FLY"
+    ? positiveNumber(fighter.movement?.flying, fighter.flightSpeed, fighter.flySpeed)
+    : positiveNumber(
+        fighter.movement?.ground,
+        fighter.derivedStats?.movement,
+        fighter.movementSpeed,
+        fighter.originalActorMetadata?.movement?.pace,
+      );
+  const legacyAllowance = Math.max(0, Number(legacyAllowanceFeet) || 0);
+  return canonicalAllowance ?? legacyAllowance;
+}
+
+export function resolveEnemyMovementBudget({
+  fighter = {},
+  movementType = "MOVE",
+  pathSearchBudgetFeet = 0,
+  legacyAllowanceFeet = pathSearchBudgetFeet,
+  distanceFeet = Infinity,
+  cellSize = 5,
+} = {}) {
+  const safeCellSize = Math.max(1, Number(cellSize) || 5);
+  const movementAllowanceThisAction = getEnemyActionMovementAllowanceFeet(
+    fighter,
+    movementType,
+    legacyAllowanceFeet,
+  );
+  const pathSearchBudget = Math.max(0, Number(pathSearchBudgetFeet) || 0);
+  const distanceCap = Number.isFinite(Number(distanceFeet))
+    ? Math.max(0, Number(distanceFeet) - safeCellSize)
+    : Infinity;
+  const actualMoveCapFeet = Math.max(
+    0,
+    Math.min(movementAllowanceThisAction, pathSearchBudget || movementAllowanceThisAction, distanceCap),
+  );
+  return {
+    movementAllowanceThisAction,
+    pathSearchBudget,
+    actualMoveCapFeet,
+    maxCommittedHexes: Math.max(0, Math.floor(actualMoveCapFeet / safeCellSize)),
+  };
+}
+
+export function formatEnemyMovementDebug({
+  movementAllowanceThisAction = 0,
+  pathSearchBudget = 0,
+  actualMovedDistance = null,
+} = {}) {
+  const moved = actualMovedDistance == null ? "pending" : `${Math.round(actualMovedDistance)}ft`;
+  return `movementAllowanceThisAction=${Math.round(movementAllowanceThisAction)}ft, ` +
+    `pathSearchBudget=${Math.round(pathSearchBudget)}ft, actualMovedDistance=${moved}`;
+}
+
 export function getCombatantFootprintHexes(combatant = {}, center = null) {
   if (!center) return [];
   const explicitRadius = Number(

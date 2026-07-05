@@ -52,6 +52,86 @@ const getConstitutionModifier = (combatant = {}) => {
   ));
 };
 
+const getCreatureFallbackStamina = (combatant = {}) => {
+  const size = String(
+    combatant.size || combatant.sizeCategory || combatant.creatureSize || "medium"
+  ).toLowerCase();
+  const descriptors = [
+    combatant.category,
+    combatant.creatureType,
+    combatant.aiRole,
+    ...(Array.isArray(combatant.tags) ? combatant.tags : []),
+  ].map((value) => String(value || "").toLowerCase());
+
+  if (["large", "huge", "gargantuan", "colossal"].some((value) => size.includes(value)) ||
+      descriptors.some((value) => ["mythic", "giant", "brute"].includes(value))) {
+    return 30;
+  }
+  if (["tiny", "small"].some((value) => size.includes(value)) ||
+      descriptors.some((value) => ["small", "weak"].includes(value))) {
+    return 12;
+  }
+  return 20;
+};
+
+/**
+ * Resolve the encounter-fatigue pool used by the legacy combat runtime.
+ * Explicit stamina wins, then the public Endurance/legacy PE rule (score x 2),
+ * then a size-aware creature fallback. Nested one-point fatigue state is treated
+ * as a stale normalization sentinel unless the actor deliberately declares a
+ * one-point pool on a top-level canonical field.
+ */
+export function resolveEncounterStamina(combatant = {}) {
+  const explicitMax = firstNumber(
+    combatant.maxStamina,
+    combatant.staminaMax,
+    combatant.maxstamina,
+    combatant.combatStamina?.maxStamina,
+  );
+  const deliberatelyConfigured = combatant.staminaConfigured === true ||
+    combatant.explicitStamina === true ||
+    String(combatant.staminaAuthority || "").toLowerCase() === "statblock";
+  if (explicitMax !== null && (explicitMax > 1 || deliberatelyConfigured)) {
+    return { maxStamina: explicitMax, source: "explicit", usedFallback: false };
+  }
+
+  const endurance = firstNumber(
+    combatant.finalAttributes?.endurance,
+    combatant.publicAttributes?.endurance,
+    combatant.attributes?.endurance,
+    combatant.actorProfile?.attributes?.endurance,
+    combatant.originalActorMetadata?.attributes?.endurance,
+  );
+  if (endurance !== null && endurance > 0) {
+    return { maxStamina: endurance * 2, source: "endurance", usedFallback: false };
+  }
+
+  const physicalEndurance = firstNumber(
+    combatant.PE,
+    combatant.pe,
+    combatant.attributes?.PE,
+    combatant.attributes?.pe,
+    combatant.stats?.PE,
+    combatant.stats?.pe,
+    combatant.compatibilityAttributes?.PE,
+    combatant.compatibilityAttributes?.pe,
+  );
+  if (physicalEndurance !== null && physicalEndurance > 0) {
+    return { maxStamina: physicalEndurance * 2, source: "physical-endurance", usedFallback: false };
+  }
+
+  const nestedMax = firstNumber(combatant.fatigueState?.maxStamina);
+  if (nestedMax !== null && nestedMax > 1) {
+    return { maxStamina: nestedMax, source: "existing-fatigue-state", usedFallback: false };
+  }
+
+  return {
+    maxStamina: getCreatureFallbackStamina(combatant),
+    source: "creature-fallback",
+    usedFallback: true,
+  };
+}
+
 export function getFatigueLabel(currentStamina, maxStamina) {
   const current = Math.max(0, toNumber(currentStamina) ?? 0);
   const max = Math.max(1, toNumber(maxStamina) ?? 1);
@@ -62,6 +142,14 @@ export function getFatigueLabel(currentStamina, maxStamina) {
 }
 
 export function getDefaultStamina(combatant = {}) {
+  const encounterStamina = resolveEncounterStamina(combatant);
+  if (
+    combatant.normalizedSelectableActor === true ||
+    encounterStamina.source === "explicit" ||
+    encounterStamina.source === "endurance"
+  ) {
+    return encounterStamina.maxStamina;
+  }
   const constitutionModifier = getConstitutionModifier(combatant);
   return Math.max(1, 10 + (constitutionModifier ?? 0));
 }
@@ -78,13 +166,22 @@ export function initializeStamina(combatant = {}) {
 }
 
 export function getStaminaState(combatantOrTurnEntry = {}) {
-  const maxStamina = Math.max(1, firstNumber(
+  const declaredMaxStamina = firstNumber(
     combatantOrTurnEntry?.maxStamina,
     combatantOrTurnEntry?.staminaMax,
     combatantOrTurnEntry?.maxstamina,
     combatantOrTurnEntry?.combatStamina?.maxStamina,
     combatantOrTurnEntry?.fatigueState?.maxStamina,
-  ) ?? getDefaultStamina(combatantOrTurnEntry));
+  );
+  const onePointPoolIsDeliberate = combatantOrTurnEntry.staminaConfigured === true ||
+    combatantOrTurnEntry.explicitStamina === true ||
+    String(combatantOrTurnEntry.staminaAuthority || "").toLowerCase() === "statblock";
+  const maxStamina = Math.max(
+    1,
+    declaredMaxStamina !== null && (declaredMaxStamina > 1 || onePointPoolIsDeliberate)
+      ? declaredMaxStamina
+      : getDefaultStamina(combatantOrTurnEntry),
+  );
   const currentStamina = Math.max(
     0,
     Math.min(maxStamina, firstNumber(

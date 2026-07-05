@@ -85,7 +85,11 @@ import {
 } from "../factionDisposition.js";
 import { getSelectableActorAttackForDistance } from "../selectableActorAdapter.js";
 import { spendEnemyNoTargetAction } from "../enemyTurnScheduling.js";
-import { getCombatantFootprintHexes } from "../enemyClosingMovement.js";
+import {
+  formatEnemyMovementDebug,
+  getCombatantFootprintHexes,
+  resolveEnemyMovementBudget,
+} from "../enemyClosingMovement.js";
 import {
   chooseEnemyMovementFallback,
   executeEnemyMovementPlan,
@@ -5657,11 +5661,19 @@ export function runEnemyTurnAI(enemy, context) {
 
       // Calculate distance in hexes for movement calculations
       const hexDistance = Math.round(currentDistance / GRID_CONFIG.CELL_SIZE);
+      const movementBudget = resolveEnemyMovementBudget({
+        fighter: enemy,
+        movementType,
+        pathSearchBudgetFeet: hexesToMove * GRID_CONFIG.CELL_SIZE,
+        legacyAllowanceFeet: hexesToMove * GRID_CONFIG.CELL_SIZE,
+        distanceFeet: currentDistance,
+        cellSize: GRID_CONFIG.CELL_SIZE,
+      });
 
       dbgLog(
         `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ${enemy.name} movement debug: distance=${Math.round(
           currentDistance,
-        )}ft, hexDistance=${hexDistance}, hexesToMove=${hexesToMove}, movementType=${movementType}`,
+        )}ft, hexDistance=${hexDistance}, ${formatEnemyMovementDebug(movementBudget)}, movementType=${movementType}`,
         "info",
       );
 
@@ -5669,23 +5681,7 @@ export function runEnemyTurnAI(enemy, context) {
       // Fix: Ensure we always make progress toward the target
       let actualHexesToMove;
 
-      if (currentDistance > 100) {
-        // For very far distances, move more aggressively to prevent infinite loops
-        actualHexesToMove = Math.min(
-          hexesToMove * 3,
-          Math.floor(hexDistance / 3),
-        );
-        actualHexesToMove = Math.max(5, actualHexesToMove); // Minimum 5 hexes for far distances
-        dbgLog(
-          `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ${enemy.name} far away (${Math.round(
-            currentDistance,
-          )}ft), using aggressive movement: ${actualHexesToMove} hexes`,
-          "info",
-        );
-      } else {
-        // Normal movement calculation
-        actualHexesToMove = Math.max(1, Math.min(hexesToMove, hexDistance - 1)); // At least 1 hex, stop 1 hex away
-      }
+      actualHexesToMove = movementBudget.maxCommittedHexes;
       const moveRatio =
         (actualHexesToMove * GRID_CONFIG.CELL_SIZE) /
         (distance * GRID_CONFIG.CELL_SIZE);
@@ -5729,6 +5725,13 @@ export function runEnemyTurnAI(enemy, context) {
         const actualFeet = calculateDistance(currentPos, plannedMovementPosition);
         addLog(
           `${enemy.name} cannot reach an open attack position, so it advances ${Math.round(actualFeet)}ft along a clear path.`,
+          "info",
+        );
+        dbgLog(
+          `${enemy.name} movement debug: ${formatEnemyMovementDebug({
+            ...movementBudget,
+            actualMovedDistance: actualFeet,
+          })}`,
           "info",
         );
       } else if (!plannedMovementPosition && executableMovementPlan?.type === "hold") {

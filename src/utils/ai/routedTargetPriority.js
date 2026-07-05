@@ -10,15 +10,47 @@ export function isRoutingOrPassiveTarget(target = {}) {
     effects.some((effect) => ["routed", "cowering", "cower"].includes(effect));
 }
 
+const statusTokens = (target = {}) => [
+  target.status,
+  target.condition,
+  target.state?.status,
+  target.moraleState?.status,
+  target.state?.moraleState,
+  ...(Array.isArray(target.statusEffects) ? target.statusEffects : []),
+].map((value) => normalized(typeof value === "object" ? value?.type || value?.status : value));
+
+export function getCombatTargetExclusionReason(target = {}, options = {}) {
+  if (!target) return "missing combatant";
+  const tokens = statusTokens(target);
+  const hasToken = (value) => tokens.some((token) => token === value || token.includes(value));
+  if (isCombatantFled(target) || hasToken("fled")) return "fled";
+  if (hasToken("surrendered")) return "surrendered";
+  if (isCombatantBroken(target) || hasToken("combat-broken") || hasToken("broken")) return "combat-broken";
+  if (hasToken("dead") || target.isDead === true || Number(target.currentHP) <= -20) return "dead";
+  if (hasToken("dying")) return "dying";
+  if (hasToken("unconscious") || target.isKO === true) return "unconscious";
+  if (Number.isFinite(Number(target.currentHP)) && Number(target.currentHP) <= 0) return "unconscious";
+  if (typeof options.isHostile === "function" && !options.isHostile(target)) return "allied or not hostile";
+  if (typeof options.canSelect === "function" && !options.canSelect(target)) return "not selectable in current scene";
+  if (typeof options.canAct === "function" && !options.canAct(target)) return "inactive or unable to act";
+  if (typeof options.additionalReason === "function") return options.additionalReason(target) || null;
+  return null;
+}
+
+export function partitionCombatTargets(candidates = [], options = {}) {
+  return (Array.isArray(candidates) ? candidates : []).reduce((result, target) => {
+    const reason = getCombatTargetExclusionReason(target, options);
+    if (reason) result.excluded.push({ target, reason });
+    else result.eligible.push(target);
+    return result;
+  }, { eligible: [], excluded: [] });
+}
+
 export function prioritizeEnemyCombatTargets({
   attacker = {}, candidates = [], positions = {}, calculateDistance, adjacentDistance = 5,
 } = {}) {
   const viable = (Array.isArray(candidates) ? candidates : []).filter((target) => {
-    if (!target || isCombatantFled(target) || isCombatantBroken(target)) return false;
-    const status = normalized(target.status || target.moraleState?.status);
-    const condition = normalized(target.condition);
-    return !["dead", "unconscious", "dying", "surrendered", "fled"].includes(status) &&
-      !["dead", "unconscious", "dying"].some((value) => condition.includes(value));
+    return !getCombatTargetExclusionReason(target);
   });
   const active = viable.filter((target) => !isRoutingOrPassiveTarget(target));
   if (active.length === 0) return viable;
