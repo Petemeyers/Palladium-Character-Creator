@@ -1,3 +1,5 @@
+import { resolveEncounterStamina } from "./combatStamina.js";
+
 /**
  * Medieval Combat Simulator - Combat Fatigue System
  *
@@ -116,21 +118,14 @@ function isFallenCombatant(character) {
  * @returns {Object} Fatigue state object
  */
 export function initializeCombatFatigue(character) {
-  // Get endurance from various possible locations
-  const PE =
-    character.PE ||
-    character.pe ||
-    character.attributes?.PE ||
-    character.attributes?.pe ||
-    character.stats?.PE ||
-    character.stats?.pe ||
-    10; // Default to 10 if not found
-
-  const baseStamina = PE * 2;
+  const staminaResolution = resolveEncounterStamina(character);
+  const baseStamina = staminaResolution.maxStamina;
 
   return {
     maxStamina: baseStamina,
     currentStamina: baseStamina,
+    staminaSource: staminaResolution.source,
+    staminaUsedFallback: staminaResolution.usedFallback,
     fatigueLevel: 0, // Current fatigue level (0 = none)
     penalties: {
       // Current penalties applied
@@ -818,14 +813,14 @@ export function canPerformAction(character, actionType) {
  */
 export function resetFatigue(character) {
   if (character.fatigueState) {
-    const PE =
-      character.PE ||
-      character.pe ||
-      character.attributes?.PE ||
-      character.attributes?.pe ||
-      10;
-
-    character.fatigueState.currentStamina = PE * 2;
+    const staminaResolution = resolveEncounterStamina({
+      ...character,
+      fatigueState: undefined,
+    });
+    character.fatigueState.maxStamina = staminaResolution.maxStamina;
+    character.fatigueState.currentStamina = staminaResolution.maxStamina;
+    character.fatigueState.staminaSource = staminaResolution.source;
+    character.fatigueState.staminaUsedFallback = staminaResolution.usedFallback;
     character.fatigueState.fatigueLevel = 0;
     character.fatigueState.penalties = {
       attack: 0,

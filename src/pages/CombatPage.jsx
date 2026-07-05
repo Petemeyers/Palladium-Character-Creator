@@ -152,6 +152,7 @@ import {
   calculateDefenseStaminaCost,
   calculateEffectiveRoutedMovement,
   chooseAIStaminaRecovery,
+  resolveEncounterStamina,
   spendStamina,
 } from "../utils/combatStamina.js";
 import { applyRecoveryAction, applyStaminaRecovery, getRecoveryAmount } from "../utils/combatRecovery.js";
@@ -343,7 +344,10 @@ import {
   spendEnemyNoTargetAction,
 } from "../utils/enemyTurnScheduling.js";
 import {
+  formatEnemyMovementDebug,
+  getEnemyActionMovementAllowanceFeet,
   getCombatantFootprintHexes,
+  resolveEnemyMovementBudget,
   selectEnemyClosingMovementHex,
 } from "../utils/enemyClosingMovement.js";
 import {
@@ -599,7 +603,11 @@ import {
 import { createAIActionSelector } from "../utils/combatEngine.js";
 import { runPlayerTurnAI } from "../utils/ai/playerTurnAI.js";
 import { runEnemyTurnAI } from "../utils/ai/enemyTurnAI.js";
-import { isRoutingOrPassiveTarget, prioritizeEnemyCombatTargets } from "../utils/ai/routedTargetPriority.js";
+import {
+  isRoutingOrPassiveTarget,
+  partitionCombatTargets,
+  prioritizeEnemyCombatTargets,
+} from "../utils/ai/routedTargetPriority.js";
 import { runFlyingTurn, isFlyingCombatant, moveFlyingCombatant as moveFlyingCombatantHelper, performDiveAttack as performDiveAttackHelper } from "../utils/ai/flyingBehaviorSystem.js";
 import { hasAnyValidOffensiveOption } from "../utils/ai/meleeReachabilityHelpers.js";
 import {
@@ -18466,6 +18474,14 @@ function CombatPage({ characters = [] }) {
 
   // Unified movement calculation - single source of truth
   const getMaxMoveFtThisAction = useCallback((fighter, movementType = "Run") => {
+    if (fighter?.normalizedSelectableActor) {
+      const canonicalAllowance = getEnemyActionMovementAllowanceFeet(
+        fighter,
+        movementType,
+        0,
+      );
+      if (canonicalAllowance > 0) return canonicalAllowance;
+    }
     const speed = fighter.Spd || fighter.spd || fighter.attributes?.Spd || fighter.attributes?.spd || 10;
     const actionsPerRound = fighter.actionsPerRound || fighter.actionsPerMelee || 4;
 
@@ -21994,25 +22010,31 @@ function CombatPage({ characters = [] }) {
 
     // FIX: Filter players by visibility AND exclude unconscious/dying/dead targets
     // Only target conscious players (HP > 0) - unconscious/dying players are already defeated
-    let rejectedAllies = 0;
-    const allPlayers = liveFighters.filter(f => {
-      const hostile = isCanonicalHostileTarget(liveEnemy, f);
-      if (!hostile && f?.id !== liveEnemy?.id && getCanonicalCombatSide(f) === getCanonicalCombatSide(liveEnemy)) {
-        rejectedAllies += 1;
-      }
-      return (
-        (!activeGrappleTargetId || f.id === activeGrappleTargetId) &&
-        hostile &&
-        canSelectHostileCombatTarget(liveEnemy, f, legacySceneContext) &&
-        canFighterAct(f) &&
-        f.currentHP > 0 &&  // Only conscious players
-        f.currentHP > -21    // Not dead
-      );
+    const targetPartition = partitionCombatTargets(liveFighters, {
+      isHostile: (fighter) => isCanonicalHostileTarget(liveEnemy, fighter),
+      canSelect: (fighter) => canSelectHostileCombatTarget(liveEnemy, fighter, legacySceneContext),
+      canAct: canFighterAct,
+      additionalReason: (fighter) => (
+        activeGrappleTargetId && fighter.id !== activeGrappleTargetId
+          ? "not the active grapple target"
+          : null
+      ),
     });
+    const allPlayers = targetPartition.eligible;
+    let rejectedAllies = targetPartition.excluded.filter(({ reason }) => (
+      reason === "allied or not hostile"
+    )).length;
     addLog?.(
      `target filter: ${liveEnemy.name} hostile candidates=${allPlayers.length} rejected allies=${rejectedAllies}`,
       "debug"
     );
+    if (DEBUG_COMBAT) {
+      targetPartition.excluded
+        .filter(({ target, reason }) => target?.id !== liveEnemy?.id && reason !== "allied or not hostile")
+        .forEach(({ target, reason }) => {
+          addLog?.(`${target.name || target.id} excluded from targeting: ${reason}.`, "debug");
+        });
+    }
 
     // Decay awareness for each player target
     allPlayers.forEach(target => {
@@ -24041,9 +24063,22 @@ function CombatPage({ characters = [] }) {
 
       // Use unified movement calculation
       const maxMoveFtThisAction = getMaxMoveFtThisAction(enemy, movementType);
-      const maxHexesThisAction = Math.floor(maxMoveFtThisAction / GRID_CONFIG.CELL_SIZE);
+      const movementBudget = resolveEnemyMovementBudget({
+        fighter: enemy,
+        movementType,
+        pathSearchBudgetFeet: hexesToMove * GRID_CONFIG.CELL_SIZE,
+        legacyAllowanceFeet: maxMoveFtThisAction,
+        distanceFeet: currentDistance,
+        cellSize: GRID_CONFIG.CELL_SIZE,
+      });
 
-      addLog(`${enemy.name} movement debug: distance=${Math.round(currentDistance)}ft, hexDistance=${hexDistance}, hexesToMove=${hexesToMove}, maxThisAction=${Math.round(maxMoveFtThisAction)}ft (${maxHexesThisAction} hexes), movementType=${movementType}`, "info");
+      if (DEBUG_COMBAT) {
+        addLog(
+          `${enemy.name} movement debug: distance=${Math.round(currentDistance)}ft, ` +
+          `${formatEnemyMovementDebug(movementBudget)}, movementType=${movementType}`,
+          "debug",
+        );
+      }
 
       const getSelectedAttackRangeFt = () => {
         if (typeof selectedAttack?.range === "number") return selectedAttack.range;
@@ -24227,6 +24262,15 @@ function CombatPage({ characters = [] }) {
               `${enemy.name} moves from (${currentPos.x},${currentPos.y}) to (${destination.x},${destination.y}).`,
               "info",
             );
+            if (DEBUG_COMBAT) {
+              addLog(
+                `${enemy.name} movement debug: ${formatEnemyMovementDebug({
+                  ...movementBudget,
+                  actualMovedDistance: distanceMoved,
+                })}`,
+                "debug",
+              );
+            }
           },
           hold: (plan) => {
             markBlockedMovementActionConsumed(enemy, reason);
@@ -24267,15 +24311,7 @@ function CombatPage({ characters = [] }) {
       // Fix: Ensure we always make progress toward the target
       let actualHexesToMove;
 
-      if (currentDistance > 100) {
-        // For very far distances, move more aggressively to prevent infinite loops
-        actualHexesToMove = Math.min(hexesToMove * 3, Math.floor(hexDistance / 3));
-        actualHexesToMove = Math.max(5, actualHexesToMove); // Minimum 5 hexes for far distances
-        // Planning only; actual distance is logged after the selected plan executes.
-      } else {
-        // Normal movement calculation
-        actualHexesToMove = Math.max(1, Math.min(hexesToMove, hexDistance - 1)); // At least 1 hex, stop 1 hex away
-      }
+      actualHexesToMove = movementBudget.maxCommittedHexes;
       const moveRatio = (actualHexesToMove * GRID_CONFIG.CELL_SIZE) / (distance * GRID_CONFIG.CELL_SIZE);
 
       // Log movement ratio for debugging (if significant movement)
@@ -27607,10 +27643,19 @@ function CombatPage({ characters = [] }) {
       }
 
       // Initialize combat fatigue for each fighter
-      if (!fighter.fatigueState) {
+      const encounterStamina = resolveEncounterStamina(fighter);
+      const existingFatigueMax = Number(fighter.fatigueState?.maxStamina);
+      if (!fighter.fatigueState || !Number.isFinite(existingFatigueMax) ||
+          (existingFatigueMax <= 1 && encounterStamina.maxStamina > 1)) {
         fighter.fatigueState = initializeCombatFatigue(fighter);
         const fatigueStatus = getFatigueStatus(fighter);
         addLog(`${fighter.name} stamina: ${fatigueStatus.maxStamina} SP (endurance ${fighter.attributes?.PE || fighter.PE || 10} 2)`, "info");
+        if (DEBUG_COMBAT && fighter.fatigueState.staminaUsedFallback) {
+          addLog(
+            `${fighter.name} stamina normalized from fallback: ${fatigueStatus.maxStamina} max.`,
+            "debug",
+          );
+        }
       }
 
       // Initialize grapple state for each fighter
