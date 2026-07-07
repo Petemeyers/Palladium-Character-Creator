@@ -1,5 +1,6 @@
 import { adaptPublicCharacterForAutoRoll } from "./publicCharacterCombatAdapter.js";
 import { addOriginalActorMetadata } from "./originalActorMetadata.js";
+import { ensureKnightCloseWeaponLoadout } from "./knightLoadout.js";
 import {
   getSavedCharacterStableId,
   getStagedSavedCharacterId,
@@ -41,13 +42,13 @@ const clonePlain = (value) => {
 
 export function adaptPublicCharacterToRosterEntry(character = {}) {
   const adaptation = adaptPublicCharacterForAutoRoll(character);
-  const combatCharacter = adaptation.combatCharacter;
+  const combatCharacter = ensureKnightCloseWeaponLoadout(adaptation.combatCharacter);
   const sourceCharacterId = getSavedCharacterStableId(character) || `saved-${character.name || "character"}`;
   const stagedEntryId = character.stagedEntryId || `staged-saved:${sourceCharacterId}`;
   const publicAbilityScores = character.finalAbilityScores || character.publicAbilityScores || character.abilityScores;
   const publicAbilityModifiers = character.abilityModifiers || character.publicAbilityModifiers;
 
-  return addOriginalActorMetadata({
+  return ensureKnightCloseWeaponLoadout(addOriginalActorMetadata({
     id: sourceCharacterId,
     stagedEntryId,
     name: character.name || "Saved Character",
@@ -79,7 +80,7 @@ export function adaptPublicCharacterToRosterEntry(character = {}) {
       savedCharacterId: sourceCharacterId,
     } : null,
     originalActorMetadata: clonePlain(combatCharacter?.originalActorMetadata || character.originalActorMetadata),
-  });
+  }));
 }
 
 export function findSavedCharacterForStagedEntry(entry = {}, savedCharacters = []) {

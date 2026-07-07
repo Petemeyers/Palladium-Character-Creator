@@ -1,4 +1,5 @@
 import { addOriginalActorMetadata } from "./originalActorMetadata.js";
+import { ensureKnightCloseWeaponLoadout } from "./knightLoadout.js";
 
 const hasValue = (value) => value !== undefined && value !== null && value !== "";
 
@@ -41,6 +42,12 @@ const normalizeAttack = (attack = {}) => {
     isRanged: ranged,
     isMelee: !ranged,
     notes: attack.notes,
+    usableInClose: attack.usableInClose === true,
+    usableInClinch: attack.usableInClinch === true,
+    requiresOpenMelee: attack.requiresOpenMelee === true,
+    chargeOnly: attack.chargeOnly === true,
+    naturalWeapon: attack.naturalWeapon === true,
+    isNaturalAttack: attack.isNaturalAttack === true || attack.naturalWeapon === true,
   };
 };
 
@@ -76,6 +83,7 @@ export function adaptSelectableActorToCombatant(actor = {}, options = {}) {
   const attacks = actor.attacks.map(normalizeAttack);
   const equipment = Array.isArray(actor.equipment) ? actor.equipment.map((item) => ({ ...item })) : [];
   const compatibilityAttributes = cloneObject(actor.compatibilityAttributes);
+  const attributes = cloneObject(actor.attributes);
   const hp = Number(actor.derivedStats.hp ?? actor.derivedStats.hitPoints ?? 1);
   const maxHp = Number(actor.derivedStats.maxHp ?? actor.derivedStats.maxHitPoints ?? hp);
   const armorClass = Number(actor.derivedStats.armorClass ?? actor.derivedStats.guardRating ?? 10);
@@ -111,6 +119,7 @@ export function adaptSelectableActorToCombatant(actor = {}, options = {}) {
       wis: getAbility(abilityScores, "wisdom", "wis"),
       cha: getAbility(abilityScores, "charisma", "cha"),
     },
+    attributes,
     compatibilityAttributes,
     originalActorMetadata: cloneObject(actor.originalActorMetadata),
     training: actor.training,
@@ -130,12 +139,23 @@ export function adaptSelectableActorToCombatant(actor = {}, options = {}) {
     derivedStats: { ...actor.derivedStats },
     equipment,
     inventory: equipment.map((item) => ({ ...item })),
+    equippedArmor: cloneObject(actor.equippedArmor),
+    equippedShield: cloneObject(actor.equippedShield),
+    armorProfile: cloneObject(actor.armorProfile),
     attacks,
     equistaminadWeapons: attacks.map((attack, index) => ({
       ...attack,
       slot: index === 0 ? "Right Hand" : "Left Hand",
     })),
     rangeProfile: cloneObject(actor.rangeProfile),
+    bonuses: cloneObject(actor.bonuses),
+    ...(Number.isFinite(Number(actor.maxStamina)) ? { maxStamina: Number(actor.maxStamina) } : {}),
+    ...(Number.isFinite(Number(actor.currentStamina)) ? { currentStamina: Number(actor.currentStamina) } : {}),
+    ...(actor.staminaConfigured !== undefined ? { staminaConfigured: actor.staminaConfigured === true } : {}),
+    ...(Number.isFinite(Number(actor.actionsPerRound)) ? {
+      actionsPerRound: Number(actor.actionsPerRound),
+      remainingActions: Number(actor.actionsPerRound),
+    } : {}),
     aiRole: actor.aiRole || "melee",
     tags: Array.isArray(actor.tags) ? [...actor.tags] : [],
     visual: cloneObject(actor.visual),
@@ -159,7 +179,11 @@ export function adaptSelectableActorToCombatant(actor = {}, options = {}) {
     terrainMobility: { ...combatant.originalActorMetadata.movement.terrainMobility },
   };
 
-  return { ok: true, combatant, missingFields: [] };
+  return {
+    ok: true,
+    combatant: ensureKnightCloseWeaponLoadout(combatant),
+    missingFields: [],
+  };
 }
 
 export function getSelectableActorAttackForDistance(

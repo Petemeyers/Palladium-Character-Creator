@@ -50,7 +50,10 @@ export function prioritizeEnemyCombatTargets({
   attacker = {}, candidates = [], positions = {}, calculateDistance, adjacentDistance = 5,
 } = {}) {
   const viable = (Array.isArray(candidates) ? candidates : []).filter((target) => {
-    return !getCombatTargetExclusionReason(target);
+    const attackerId = attacker.id ?? attacker._id;
+    const targetId = target?.id ?? target?._id;
+    return !(attackerId != null && targetId != null && String(attackerId) === String(targetId)) &&
+      !getCombatTargetExclusionReason(target);
   });
   const active = viable.filter((target) => !isRoutingOrPassiveTarget(target));
   if (active.length === 0) return viable;

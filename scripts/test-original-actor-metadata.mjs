@@ -125,6 +125,6 @@ assert.equal(minotaur.name, "Minotaur");
 assert.equal(minotaur.modelKey, "minotaur");
 assert.equal(minotaur.category, "mythic");
 assert.equal(minotaur.aiRole, "brute");
-assert.equal(minotaurSummary.attributes.find((attribute) => attribute.key === "might").value, "18");
+assert.equal(minotaurSummary.attributes.find((attribute) => attribute.key === "might").value, "19");
 
 console.log("original actor metadata tests passed");

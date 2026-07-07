@@ -31,12 +31,17 @@ import {
 } from "../factionDisposition.js";
 import {
   getPreferredEngagementRange,
-  isWeaponGrappleSuitable,
 } from "../grapplingSystem.js";
+import {
+  getMeleeEngagementContext,
+  selectMeleeAttackForContext,
+} from "../meleeEngagementContext.js";
 import { assessGrappleSizeOutcome } from "../sizeStrengthModifiers.js";
 import { getPlayerAiProfessionText } from "../playerAiProfileText.js";
 import { createPlayerAiActionResult } from "../playerAiTurnResult.js";
 import { getPlayerAiContinuationBlockReason } from "../playerAiContinuation.js";
+import { formatCombatActorLabel, isSameCombatActor } from "../combatActorIdentity.js";
+import { formatCombatWeaponAvailability } from "../combatWeaponAvailability.js";
 
 const DEFEATED_KEYWORDS = [
   "vampire",
@@ -571,10 +576,12 @@ export async function runPlayerTurnAI(player, context) {
 
   addLog?.(`runPlayerTurnAI entered fighter=${player?.name || "unknown"}`, "info");
 
-  const isHostileTarget = (target, actionKind = "attack") =>
-    actionKind === "attack" && typeof canSelectHostileTarget === "function"
+  const isHostileTarget = (target, actionKind = "attack") => {
+    if (!target || isSameCombatActor(player, target)) return false;
+    return actionKind === "attack" && typeof canSelectHostileTarget === "function"
       ? canSelectHostileTarget(player, target, sceneContext)
       : canTargetForAction(player, target, actionKind, sceneContext);
+  };
   const isAllyTarget = (target) => isAllyOf(player, target, sceneContext);
 
   const isPlayerAiAllowed = () => {
@@ -1999,6 +2006,7 @@ export async function runPlayerTurnAI(player, context) {
         "info"
       );
     }
+    addLog(formatCombatWeaponAvailability(player), "info");
   }
 
   // Calculate distances to all targets and check if they're reachable
@@ -2816,9 +2824,18 @@ export async function runPlayerTurnAI(player, context) {
       positions[player.id],
       positions[target.id]
     );
+    const combatLogRoster = fightersRef?.current || fighters || [];
+    const playerLogLabel = formatCombatActorLabel(player, {
+      roster: combatLogRoster,
+      counterpart: target,
+    });
+    const targetLogLabel = formatCombatActorLabel(target, {
+      roster: combatLogRoster,
+      counterpart: player,
+    });
     addLog(
-      `ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒâ€šÃ‚Â ${player.name} is ${Math.round(currentDistance)}ft from ${
-        target.name
+      `${playerLogLabel} is ${Math.round(currentDistance)}ft from ${
+        targetLogLabel
       }`,
       "info"
     );
@@ -2848,6 +2865,13 @@ export async function runPlayerTurnAI(player, context) {
   const inGrappleRange =
     !!target &&
     (sameHexAsTarget || activeGrappleBetween);
+  const meleeEngagementContext = getMeleeEngagementContext({
+    actor: player,
+    target,
+    positions,
+    distanceFeet: currentDistance,
+    calculateDistance,
+  });
 
   const shouldAttemptAdjacentGrapple = () => {
     if (typeof executeGrapple !== "function" || !target) return false;
@@ -2968,8 +2992,6 @@ export async function runPlayerTurnAI(player, context) {
 
     const meleeWeapons = equistaminadWeapons.filter((w) => !isTrueRangedWeapon(w));
     const rangedWeapons = equistaminadWeapons.filter((w) => isTrueRangedWeapon(w));
-    const isKnifeOrDagger = (w) => isWeaponGrappleSuitable(w);
-
     // Use getWeaponType and getWeaponLength for detailed weapon info
     const weaponTypeInfo = equistaminadWeapons
       .map((w) => {
@@ -3001,10 +3023,21 @@ export async function runPlayerTurnAI(player, context) {
 
     const adjacentToTarget = Number(currentDistance) <= 5.5;
 
-    if (inGrappleRange) {
-      const grappleWeapon = meleeWeapons.find(isKnifeOrDagger);
+    if (
+      meleeEngagementContext.isClinched ||
+      meleeEngagementContext.isGrappling ||
+      meleeEngagementContext.isGround
+    ) {
       const currentWeapon = equistaminadWeapons[0];
-      if (currentWeapon && !isWeaponGrappleSuitable(currentWeapon)) {
+      const clinchSelection = selectMeleeAttackForContext({
+        actor: player,
+        target,
+        candidates: meleeWeapons,
+        selectedAttack: currentWeapon,
+        context: meleeEngagementContext,
+      });
+      const grappleWeapon = clinchSelection.attack;
+      if (clinchSelection.rejectedAttack) {
         grappleOriginalWeaponName = currentWeapon.name || "Unknown";
         addLog(
           `ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã‚Â¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¯Ãƒâ€šÃ‚Â¸Ãƒâ€šÃ‚Â ${player.name} cannot use ${currentWeapon.name} effectively in a grapple.`,
@@ -3014,7 +3047,9 @@ export async function runPlayerTurnAI(player, context) {
       if (grappleWeapon) {
         selectedWeapon = grappleWeapon;
         addLog(
-          `${player.name} is in grapple range and switches to close-quarters combat.`,
+          /dagger|knife/i.test(selectedWeapon?.name || "")
+            ? `${player.name} switches to ${selectedWeapon.name} for close fighting.`
+            : `${player.name} uses ${selectedWeapon.name} in the clinch.`,
           "info"
         );
       } else {
@@ -3559,6 +3594,10 @@ export async function runPlayerTurnAI(player, context) {
                     liveFighters.find((f) => f.id === player.id) || player;
                   const liveTarget =
                     liveFighters.find((f) => f.id === target.id) || target;
+                  if (isSameCombatActor(livePlayer, liveTarget) || !isHostileTarget(liveTarget)) {
+                    abortFlankingContinuation("target is self or no longer hostile");
+                    return;
+                  }
                   const newDistance = calculateDistance(
                     actualFlankPos,
                     actualTargetPos

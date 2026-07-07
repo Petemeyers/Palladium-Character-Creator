@@ -3,6 +3,11 @@ import {
   formatRangeModifier,
   getRangedAttackRangeModifier,
 } from "./rangedAttackRangeModifier.js";
+import {
+  getMeleeEngagementContext,
+  isAttackUsableInClinch,
+  isChargeOnlyAttack,
+} from "./meleeEngagementContext.js";
 
 const hasValue = (value) => value !== undefined && value !== null && value !== "";
 
@@ -244,6 +249,19 @@ const buildAttackAction = ({ actor, currentTurnEntry, entry, index, targetId, se
     adjacentHostile: Number(rangeValidation.distanceFt) <= 5,
   });
   const outOfRange = rangeValidation.inRange === false;
+  const engagement = getMeleeEngagementContext({
+    actor,
+    target: selectedTarget,
+    distanceFeet: rangeValidation.distanceFt,
+  });
+  const inClinch = engagement.isClinched || engagement.isGrappling || engagement.isGround;
+  const blockedInClinch = inClinch && !isAttackUsableInClinch(entry);
+  const chargeBlockedAtCloseRange = engagement.isAdjacent && isChargeOnlyAttack(entry);
+  const engagementBlockedReason = blockedInClinch
+    ? `${name} cannot be used effectively in the clinch.`
+    : chargeBlockedAtCloseRange
+      ? `${name} requires open melee and cannot be used at adjacent range.`
+      : "";
   const rangeSummary = rangeValidation.message && rangeValidation.message !== "Range unknown."
     ? rangeValidation.message
     : "";
@@ -261,8 +279,8 @@ const buildAttackAction = ({ actor, currentTurnEntry, entry, index, targetId, se
     targetId,
     reachFt,
     rangeFt,
-    enabled: !outOfRange,
-    disabledReason: outOfRange ? rangeValidation.message : "",
+    enabled: !outOfRange && !engagementBlockedReason,
+    disabledReason: outOfRange ? rangeValidation.message : engagementBlockedReason,
     previewSummary: [
       buildAttackSummary(entry) || "Attack preview pending.",
       rangedRangeModifier.isRanged && rangedRangeModifier.maxRangeFt !== null
@@ -271,6 +289,7 @@ const buildAttackAction = ({ actor, currentTurnEntry, entry, index, targetId, se
           ? `${rangeValidation.distanceFt} / ${rangeValidation.reachFt ?? "?"} ft - ${outOfRange ? "Out of melee range" : "Melee"}`
           : "",
       rangeSummary,
+      engagementBlockedReason,
     ].filter(Boolean).join(" "),
     metadata: {
       attackName: name,
@@ -283,6 +302,7 @@ const buildAttackAction = ({ actor, currentTurnEntry, entry, index, targetId, se
       suggestedAction: rangeValidation.suggestedAction,
       rangeBand: rangedRangeModifier.band,
       rangeModifier: rangedRangeModifier.finalModifier,
+      meleeRangeBand: engagement.rangeBand,
     },
   });
 };

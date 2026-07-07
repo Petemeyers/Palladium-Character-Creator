@@ -67,6 +67,12 @@ export function resolveExplicitCombatControlMode(combatant = {}, {
       : explicitMode;
   const side = schedulerSide || getCombatantSide(combatant, related);
   if (aiControlEnabled && side === "player" && normalizedMode === "player") return "ai";
+  if (
+    !aiControlEnabled &&
+    side === "player" &&
+    normalizedMode === "ai" &&
+    combatant?.globalManualControlOverride === true
+  ) return "player";
   return normalizedMode;
 }
 

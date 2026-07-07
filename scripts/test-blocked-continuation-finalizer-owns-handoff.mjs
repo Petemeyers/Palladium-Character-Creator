@@ -33,7 +33,7 @@ assert.ok(acceptedGuard > noActionsBranch);
 assert.ok(deferredLog > acceptedGuard);
 assert.ok(normalPass > deferredLog && directEnd > normalPass,
   "accepted-finalizer guard returns before generic no-actions logging and endTurn-direct");
-assert.match(source, /accepted finalizer refs settled fighter=.*source=/);
+assert.match(source, /formatAcceptedFinalizerSettlement\(\{/);
 assert.match(source, /startTurnOnce\(fighter, index, "effect-turn-advance"\)/);
 
 console.log("blocked continuation finalizer handoff tests passed");

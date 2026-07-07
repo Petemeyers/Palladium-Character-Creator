@@ -12,6 +12,10 @@ import {
   isWeaponGrappleSuitable,
 } from "../grapplingSystem.js";
 import { getCombinedGrappleModifiers } from "../sizeStrengthModifiers.js";
+import {
+  applyGrappleFollowUpOutcome,
+  selectGrappleFollowUpWeapon,
+} from "../grappleFollowUp.js";
 
 // Debug flag for grapple system
 const DEBUG_GRAPPLE = false;
@@ -163,9 +167,16 @@ export function handleGrappleAction(actionType, attacker, defenderId, context) {
         ...(Array.isArray(attacker.equistaminadWeapons) ? attacker.equistaminadWeapons : []),
       ].filter(Boolean);
       const currentWeapon = equistaminadWeapons[0] || null;
-      const weapon = equistaminadWeapons.find(isWeaponGrappleSuitable) || null;
+      const followUpSelection = selectGrappleFollowUpWeapon(attacker);
+      const weapon = followUpSelection.weapon;
       if (currentWeapon && !isWeaponGrappleSuitable(currentWeapon)) {
         addLog(`Ã¢Å¡Â Ã¯Â¸Â ${attacker.name} cannot use ${currentWeapon.name} effectively in a grapple.`, "warning");
+      }
+      if (weapon && currentWeapon?.name !== weapon.name) {
+        addLog(`${attacker.name} switches to ${weapon.name} in the clinch.`, "info");
+      }
+      if (weapon) {
+        addLog(`${attacker.name} attacks ${defender.name} with ${weapon.name}.`, "info");
       }
       result = groundAttack(attacker, defender, weapon, rollDice);
       
@@ -405,7 +416,8 @@ export function handleGrappleAction(actionType, attacker, defenderId, context) {
       addLog(result.message, "info");
     }
     
-    // Deduct attack action
+    // Merge the outcome and spend its action atomically. Grapple result objects
+    // are based on the pre-action actor and must not restore remainingActions.
     const spendStaleReason = getStaleGrappleReason();
     if (spendStaleReason) {
       abortStaleGrapple(spendStaleReason);
@@ -414,38 +426,31 @@ export function handleGrappleAction(actionType, attacker, defenderId, context) {
     const updated = [...getLiveFighters()];
     const attackerIndex = updated.findIndex(f => f.id === attacker.id);
     if (attackerIndex !== -1) {
-      updated[attackerIndex].remainingActions = Math.max(0, updated[attackerIndex].remainingActions - 1);
+      const outcome = nextAttacker || attacker;
+      const transition = applyGrappleFollowUpOutcome(updated[attackerIndex], outcome);
+      if (!transition.ok) {
+        abortStaleGrapple("no actions");
+        return;
+      }
+      updated[attackerIndex] = transition.actor;
+      if (outcome?.hex) {
+        updated[attackerIndex].hex = outcome.hex;
+        updated[attackerIndex].position = outcome.position || outcome.hex;
+      }
       addLog(
-        `${updated[attackerIndex].name} has ${updated[attackerIndex].remainingActions}/${updated[attackerIndex].actionsPerRound || updated[attackerIndex].actionsPerMelee || "?"} attacks remaining.`,
+        `${updated[attackerIndex].name} has ${transition.remainingAfter}/${updated[attackerIndex].actionsPerRound || updated[attackerIndex].actionsPerMelee || "?"} attacks remaining.`,
         "info"
       );
-      setFighters(updated);
     }
-    
-    // Update fighter states - handle new format with attacker/defender objects
-    setFighters(prev => prev.map(f => {
-      if (nextAttacker && f.id === nextAttacker.id) {
-        // Update position/hex if grapple pulled them together
-        const updated = { ...f, ...nextAttacker };
-        if (nextAttacker.hex) {
-          updated.hex = nextAttacker.hex;
-          updated.position = nextAttacker.position || nextAttacker.hex;
-        }
-        return updated;
+    const defenderIndex = updated.findIndex(f => f.id === defenderId);
+    if (defenderIndex !== -1 && nextDefender) {
+      updated[defenderIndex] = { ...updated[defenderIndex], ...nextDefender };
+      if (nextDefender.hex) {
+        updated[defenderIndex].hex = nextDefender.hex;
+        updated[defenderIndex].position = nextDefender.position || nextDefender.hex;
       }
-      if (nextDefender && f.id === nextDefender.id) {
-        const updated = { ...f, ...nextDefender };
-        if (nextDefender.hex) {
-          updated.hex = nextDefender.hex;
-          updated.position = nextDefender.position || nextDefender.hex;
-        }
-        return updated;
-      }
-      // Fallback to old format
-      if (f.id === attacker.id) return { ...f, ...attacker };
-      if (f.id === defenderId) return { ...f, ...defender };
-      return f;
-    }));
+    }
+    setFighters(updated);
     
     // Update positions if grapple pulled fighters together - both fighters should be in same hex
     if (nextAttacker && nextAttacker.hex) {

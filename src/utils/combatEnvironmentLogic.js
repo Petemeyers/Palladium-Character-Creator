@@ -68,6 +68,15 @@ export function getWeaponType(weapon) {
     return "SHORT";
   }
   if (
+    name.includes("long sword") ||
+    name.includes("longsword") ||
+    name.includes("arming sword") ||
+    name.includes("broad sword") ||
+    name.includes("broadsword")
+  ) {
+    return "MEDIUM";
+  }
+  if (
     name.includes("greatsword") ||
     name.includes("two-handed") ||
     name.includes("polearm") ||
@@ -90,14 +99,14 @@ export function getWeaponType(weapon) {
   }
 
   // Check weapon reach
-  const reach = weapon.reach || 0;
-  if (reach <= 1) return "SHORT";
-  if (reach >= 8) return "LONG";
+  const reach = Number(weapon.reach);
+  if (Number.isFinite(reach) && reach > 0 && reach <= 1) return "SHORT";
+  if (Number.isFinite(reach) && reach >= 8) return "LONG";
 
   // Check weapon length property if available
-  const length = weapon.length || 0;
-  if (length <= 2) return "SHORT";
-  if (length >= 6) return "LONG";
+  const length = Number(weapon.length);
+  if (Number.isFinite(length) && length > 0 && length <= 2) return "SHORT";
+  if (Number.isFinite(length) && length >= 6) return "LONG";
 
   return "MEDIUM";
 }
@@ -129,6 +138,11 @@ export function getWeaponLength(weapon, character = null) {
   // Prefer physical dimensions; reach remains the compatibility fallback.
   if (physicalLength !== undefined) {
     baseLength = physicalLength;
+  }
+
+  const weaponName = String(weapon.name || "").toLowerCase();
+  if (weaponName.includes("long sword") || weaponName.includes("longsword")) {
+    baseLength = Math.max(3, baseLength);
   }
   // Infer from weapon type
   else {

@@ -1,4 +1,5 @@
 import { buildOriginalActorMetadata } from "./originalActorMetadata.js";
+import { ensureKnightCloseWeaponLoadout } from "./knightLoadout.js";
 
 export const PUBLIC_ARENA_ROSTER_STORAGE_KEY = "publicArenaRosterEntries";
 
@@ -23,7 +24,9 @@ export function loadPublicArenaRosterEntries() {
   try {
     const stored = storage.getItem(PUBLIC_ARENA_ROSTER_STORAGE_KEY);
     const parsed = stored ? JSON.parse(stored) : [];
-    return Array.isArray(parsed) ? parsed : [];
+    return Array.isArray(parsed)
+      ? parsed.map((entry) => ensureKnightCloseWeaponLoadout(entry))
+      : [];
   } catch (_error) {
     return [];
   }

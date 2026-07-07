@@ -17,7 +17,9 @@ assert.equal(
 );
 
 const combatPage = fs.readFileSync(new URL("../src/pages/CombatPage.jsx", import.meta.url), "utf8");
-assert.match(combatPage, /const readableMessage = sanitizeCombatLogMessage\(message\)/);
+assert.match(combatPage, /const readableMessage = disambiguateDuplicateCombatActorNames\(/);
+assert.match(combatPage, /sanitizeCombatLogMessage\(message\)/,
+  "messages remain sanitized before duplicate-name labels are added");
 assert.match(combatPage, /message: readableMessage/,
   "only sanitized messages enter the browser combat log queue");
 assert.doesNotMatch(

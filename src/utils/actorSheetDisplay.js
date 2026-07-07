@@ -1,4 +1,4 @@
-import { calculateAttackStaminaCost } from "./combatStamina.js";
+import { calculateAttackStaminaCost, getStaminaState } from "./combatStamina.js";
 import { getRoutingArmorProfile, getStaminaRoutingProfile } from "./survivalIntent.js";
 import { isCombatantFled } from "./combatFledState.js";
 import { isCombatantBroken } from "./combatBrokenState.js";
@@ -112,13 +112,21 @@ export function getActorCoreAttributesDisplay(actor = {}) {
 }
 
 export function getActorStaminaDisplay(actor = {}) {
-  const profile = getStaminaRoutingProfile(actor);
+  const declaredProfile = getStaminaRoutingProfile(actor);
+  const staminaState = getStaminaState(actor);
+  const profile = declaredProfile.hasExplicitStamina
+    ? declaredProfile
+    : getStaminaRoutingProfile({
+        ...actor,
+        maxStamina: staminaState.maxStamina,
+        currentStamina: staminaState.currentStamina,
+      });
   const current = profile.current;
   return {
     current,
     max: profile.max,
     band: current <= 0 ? "Spent" : label(profile.band),
-    isFallback: !profile.hasExplicitStamina,
+    isFallback: !declaredProfile.hasExplicitStamina,
     fatigueNotes: text(actor?.fatigueState?.note, actor?.fatigueNotes, "None recorded"),
     catchBreath: "Recover 3 stamina, consumes 1 action",
     defensivePosture: "May recover 1 stamina if not attacked",
