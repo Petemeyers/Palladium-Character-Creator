@@ -366,6 +366,7 @@ import {
 } from "../utils/enemyClosingMovement.js";
 import {
   chooseEnemyMovementFallback,
+  diagnoseReachableAttackHexRejections,
   executeEnemyMovementPlan,
   hydrateEnemyFromCanonicalPosition,
   persistEnemyMovementPosition,
@@ -23363,6 +23364,27 @@ function CombatPage({ characters = [] }) {
       attackName = selectedAttack?.name || attackName;
 
       addLog(`${enemyLogLabel} is at (${enemyCurrentPos.x}, ${enemyCurrentPos.y}), ${targetLogLabel} is at (${targetCurrentPos.x}, ${targetCurrentPos.y}), distance: ${Math.round(currentDistance)}ft`, "info");
+      if (enemyCurrentPos.x === targetCurrentPos.x && enemyCurrentPos.y === targetCurrentPos.y) {
+        const enemyGrappleState = String(enemy?.grappleState?.state || "").toLowerCase();
+        const targetGrappleState = String(target?.grappleState?.state || "").toLowerCase();
+        const isGrappleOpponent =
+          enemy?.grappleState?.opponent === target?.id ||
+          target?.grappleState?.opponent === enemy?.id;
+        const sameHexReason =
+          enemyGrappleState === "clinch" || targetGrappleState === "clinch"
+            ? "clinch"
+            : isGrappleOpponent || enemyGrappleState || targetGrappleState
+              ? "grapple"
+              : (Number(enemy?.routingExhaustedCowerCount ?? enemy?.moraleState?.exhaustedCowerCount) || 0) > 0
+                ? "cower-overlap"
+                : String(enemy?.moraleState?.status || enemy?.state?.moraleState || "").toLowerCase().includes("rout")
+                  ? "routing-overlap"
+                  : "unknown-overlap";
+        addLog(
+          `same-hex engagement position normalized: actor=${enemyLogLabel} target=${targetLogLabel} reason=${sameHexReason}`,
+          sameHexReason === "unknown-overlap" ? "warning" : "info",
+        );
+      }
 
       // Guardrail (again, just in case): keep selectedAttack resolved before validating.
       // This uses the same resolver as attack() so planner/executor cannot diverge.
@@ -23863,6 +23885,32 @@ function CombatPage({ characters = [] }) {
             !isHexOccupied(cell.x, cell.y, enemy.id)
           ))
         );
+        const classifyCloseRangeCandidate = (position) => {
+          if (!position) return { reason: "unknown" };
+          for (const cell of getCombatantFootprintHexes(enemy, position)) {
+            if (
+              cell.x < 0 ||
+              cell.x >= GRID_CONFIG.GRID_WIDTH ||
+              cell.y < 0 ||
+              cell.y >= GRID_CONFIG.GRID_HEIGHT
+            ) {
+              return { reason: "out-of-bounds" };
+            }
+            if (!isValidPosition(cell.x, cell.y)) {
+              return { reason: "blocked" };
+            }
+            const occupant = isHexOccupied(cell.x, cell.y, enemy.id);
+            if (occupant) {
+              const sameSideOccupied = !canSelectHostileCombatTarget(
+                enemy,
+                occupant,
+                legacySceneContext,
+              );
+              return { reason: sameSideOccupied ? "same-side-occupied" : "occupied" };
+            }
+          }
+          return null;
+        };
         const selectedApproachPlan = chooseEnemyMovementFallback({
           enemy,
           hostileCandidates: [target],
@@ -23905,6 +23953,35 @@ function CombatPage({ characters = [] }) {
         )) || selectedApproachPlan?.rankedTargets?.[0] || null;
         const closeRangeAttackHexes = closeRangeTargetRank?.attackHexes || [];
         if (currentDistance <= Math.max(attackReach + (2 * GRID_CONFIG.CELL_SIZE), 3 * GRID_CONFIG.CELL_SIZE)) {
+          const closeRangeDiagnostics = diagnoseReachableAttackHexRejections({
+            currentPosition: currentPos,
+            target,
+            targetPosition: targetPos,
+            maxHexes: approachMaxHexes,
+            getNeighbors: getHexNeighbors,
+            isLegalCenter: isLegalApproachCenter,
+            getDistance: calculateDistance,
+            canAttackFrom: (position, candidate, candidatePosition) => {
+              const distanceFromPosition = calculateDistance(position, candidatePosition);
+              return validateWeaponRange(
+                enemy,
+                candidate,
+                selectedAttack,
+                distanceFromPosition,
+              ).canAttack;
+            },
+            classifyCandidate: classifyCloseRangeCandidate,
+          });
+          closeRangeDiagnostics.rejections.forEach((entry) => {
+            addLog(
+              `enemy close-range candidate rejected: actor=${formatCombatActorLabel(enemy, { roster: fightersRef.current ?? fighters ?? [], counterpart: target })} target=${formatCombatActorLabel(target, { roster: fightersRef.current ?? fighters ?? [], counterpart: enemy })} hex=(${entry.position.x},${entry.position.y}) reason=${entry.reason}`,
+              "debug",
+            );
+          });
+          addLog(
+            `enemy close-range approach candidates summary: attackReach=${Math.round(attackReach)}ft legal=${closeRangeDiagnostics.summary.legal} rejectedOccupied=${closeRangeDiagnostics.summary.rejectedOccupied} rejectedBlocked=${closeRangeDiagnostics.summary.rejectedBlocked} rejectedReach=${closeRangeDiagnostics.summary.rejectedReach} rejectedPath=${closeRangeDiagnostics.summary.rejectedPath} rejectedOutOfBounds=${closeRangeDiagnostics.summary.rejectedOutOfBounds} rejectedSameSideOccupied=${closeRangeDiagnostics.summary.rejectedSameSideOccupied} rejectedReserved=${closeRangeDiagnostics.summary.rejectedReserved} rejectedUnknown=${closeRangeDiagnostics.summary.rejectedUnknown}`,
+            "info",
+          );
           addLog(
             `enemy close-range approach candidates: actor=${formatCombatActorLabel(enemy, { roster: fightersRef.current ?? fighters ?? [], counterpart: target })} target=${formatCombatActorLabel(target, { roster: fightersRef.current ?? fighters ?? [], counterpart: enemy })} attackReach=${Math.round(attackReach)}ft candidates=${closeRangeAttackHexes.length}`,
             "info",
@@ -23961,6 +24038,7 @@ function CombatPage({ characters = [] }) {
           ? "enemy-ai-no-move-fallback"
           : "RUN_TO_RANGE";
         let approachDistanceMoved = 0;
+        let noMoveFallbackPositionSnapshot = null;
         executeEnemyMovementPlan(executableApproachPlan, {
           commit: () => {
             const committed = commitEnemyAction(approachFinalizerSource);
@@ -23994,6 +24072,11 @@ function CombatPage({ characters = [] }) {
             );
           },
           hold: (plan) => {
+            noMoveFallbackPositionSnapshot = { ...(positionsRef.current?.[enemy.id] || currentPos) };
+            addLog(
+              `enemy no-move fallback position snapshot: actor=${formatCombatActorLabel(enemy, { roster: fightersRef.current ?? fighters ?? [], counterpart: target })} before=(${noMoveFallbackPositionSnapshot.x},${noMoveFallbackPositionSnapshot.y})`,
+              "debug",
+            );
             const failureReason = plan.planningError
               ? `movement planning failed: ${plan.planningError}`
               : plan.invalidReason
@@ -24028,6 +24111,21 @@ function CombatPage({ characters = [] }) {
           ),
           finish: ({ committed }) => {
             if (!committed) return;
+            if (approachFinalizerSource === "enemy-ai-no-move-fallback" && noMoveFallbackPositionSnapshot) {
+              const afterPosition = positionsRef.current?.[enemy.id] || currentPos;
+              if (
+                afterPosition &&
+                (
+                  afterPosition.x !== noMoveFallbackPositionSnapshot.x ||
+                  afterPosition.y !== noMoveFallbackPositionSnapshot.y
+                )
+              ) {
+                addLog(
+                  `enemy no-move fallback position changed unexpectedly: actor=${formatCombatActorLabel(enemy, { roster: fightersRef.current ?? fighters ?? [], counterpart: target })} before=(${noMoveFallbackPositionSnapshot.x},${noMoveFallbackPositionSnapshot.y}) after=(${afterPosition.x},${afterPosition.y}) source=${approachFinalizerSource}`,
+                  "warning",
+                );
+              }
+            }
             enemyActionResolved = true;
             processingEnemyTurnRef.current = false;
             turnActionResolvingRef.current = false;

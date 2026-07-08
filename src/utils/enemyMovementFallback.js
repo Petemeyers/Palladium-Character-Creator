@@ -78,6 +78,94 @@ export function findReachableAttackHexes({
   ));
 }
 
+export function diagnoseReachableAttackHexRejections({
+  currentPosition,
+  target,
+  targetPosition,
+  maxHexes,
+  getNeighbors,
+  isLegalCenter,
+  canAttackFrom,
+  getDistance,
+  classifyCandidate,
+} = {}) {
+  const summary = {
+    legal: 0,
+    rejectedOccupied: 0,
+    rejectedBlocked: 0,
+    rejectedReach: 0,
+    rejectedPath: 0,
+    rejectedOutOfBounds: 0,
+    rejectedSameSideOccupied: 0,
+    rejectedReserved: 0,
+    rejectedUnknown: 0,
+  };
+  const rejections = [];
+
+  if (
+    !currentPosition || !targetPosition || !target ||
+    typeof getNeighbors !== "function" ||
+    typeof isLegalCenter !== "function" ||
+    typeof canAttackFrom !== "function"
+  ) {
+    return { summary, rejections };
+  }
+
+  const maxSteps = Math.max(0, Math.floor(Number(maxHexes) || 0));
+  const queue = [{ position: currentPosition, steps: 0 }];
+  const visited = new Set([hexKey(currentPosition)]);
+
+  const record = (position, reason, distance = null) => {
+    const normalizedReason = reason || "unknown";
+    rejections.push({
+      position: { ...position },
+      reason: normalizedReason,
+      distance,
+    });
+    if (normalizedReason === "occupied") summary.rejectedOccupied += 1;
+    else if (normalizedReason === "same-side-occupied") summary.rejectedSameSideOccupied += 1;
+    else if (normalizedReason === "blocked") summary.rejectedBlocked += 1;
+    else if (normalizedReason === "out-of-bounds") summary.rejectedOutOfBounds += 1;
+    else if (normalizedReason === "not-in-reach") summary.rejectedReach += 1;
+    else if (normalizedReason === "not-reachable") summary.rejectedPath += 1;
+    else if (normalizedReason === "reserved") summary.rejectedReserved += 1;
+    else summary.rejectedUnknown += 1;
+  };
+
+  while (queue.length > 0) {
+    const entry = queue.shift();
+    if (entry.steps >= maxSteps) continue;
+    for (const position of getNeighbors(entry.position.x, entry.position.y) || []) {
+      if (!position || visited.has(hexKey(position))) continue;
+      visited.add(hexKey(position));
+      const classified = typeof classifyCandidate === "function"
+        ? classifyCandidate(position, { target, targetPosition, steps: entry.steps + 1 })
+        : null;
+      const classifierReason = classified?.reason || null;
+      const legal = classifierReason ? false : Boolean(isLegalCenter(position));
+      const distance = typeof getDistance === "function"
+        ? getDistance(position, targetPosition)
+        : null;
+
+      if (!legal) {
+        record(position, classifierReason || "unknown", distance);
+        continue;
+      }
+
+      if (!canAttackFrom(position, target, targetPosition)) {
+        record(position, "not-in-reach", distance);
+        queue.push({ position: { ...position }, steps: entry.steps + 1 });
+        continue;
+      }
+
+      summary.legal += 1;
+      queue.push({ position: { ...position }, steps: entry.steps + 1 });
+    }
+  }
+
+  return { summary, rejections };
+}
+
 export function findBestApproachHex({
   currentPosition,
   targetPosition,
