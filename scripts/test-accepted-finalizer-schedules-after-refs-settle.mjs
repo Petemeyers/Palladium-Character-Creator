@@ -53,7 +53,7 @@ assert.equal(starts, 1, "the correct next actor starts exactly once after refs s
 assert.equal(turnKeyMismatches, 0, "settled scheduling avoids turn-key mismatch");
 
 const source = fs.readFileSync(new URL("../src/pages/CombatPage.jsx", import.meta.url), "utf8");
-assert.match(source, /scheduleEndTurn\(delayOverride, source, \{ deferTurnStart: true \}\)/,
+assert.match(source, /scheduleEndTurn\(delayOverride, source, \{[\s\S]*deferTurnStart: true[\s\S]*\}\)/,
   "accepted player finalizers explicitly request settled scheduling");
 assert.match(source, /startTurnOnce\(fighter, index, "effect-turn-advance"\)/,
   "settled starts route through the existing effect-turn-advance path");

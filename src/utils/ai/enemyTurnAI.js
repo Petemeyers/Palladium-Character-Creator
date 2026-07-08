@@ -2101,6 +2101,24 @@ export function runEnemyTurnAI(enemy, context) {
     }
 
     // Check if combat is still active
+    if (needsToMoveCloser) {
+      const noMoveSource = "enemy-ai-no-move-fallback";
+      addLog(`${enemy.name} cannot find a path and holds position.`, "warning");
+      if (commitEnemyAction(noMoveSource)) {
+        setFighters((prev) => prev.map((fighter) => (
+          fighter.id === enemy.id
+            ? {
+                ...fighter,
+                remainingActions: Math.max(0, (Number(fighter.remainingActions ?? 0) || 0) - 1),
+              }
+            : fighter
+        )));
+      }
+      processingEnemyTurnRef.current = false;
+      scheduleEndTurn(0, noMoveSource);
+      return;
+    }
+
     if (!combatActive) {
       addLog(`ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¯ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â Combat ended, ${enemy.name} skips turn`, "info");
       processingEnemyTurnRef.current = false;
@@ -6397,7 +6415,7 @@ export function runEnemyTurnAI(enemy, context) {
         }
 
         processingEnemyTurnRef.current = false;
-        scheduleEndTurn(16);
+        scheduleEndTurn(16, "RUN_TO_RANGE");
         return;
       }
     }

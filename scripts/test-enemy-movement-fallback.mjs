@@ -538,7 +538,9 @@ assert.match(combatPageSource, /redirects toward/);
 assert.match(combatPageSource, /moves from \(\$\{currentPos\.x\},\$\{currentPos\.y\}\) to/);
 assert.match(combatPageSource, /hydrateEnemyFromCanonicalPosition\(liveEnemy, livePositions\)/);
 assert.match(combatPageSource, /decideEnemyTacticalIntentSafely/);
-assert.match(combatPageSource, /TACTICAL_\$\{tacticalIntent\.intent\.toUpperCase\(\)\}/);
+assert.match(combatPageSource, /reason = "enemy-closing-movement"/);
+assert.match(combatPageSource, /const finalizerSource = executablePlan\?\.type === "hold" \|\| !executablePlan\?\.position/);
+assert.match(combatPageSource, /commitEnemyAction\(finalizerSource\)/);
 assert.match(combatPageSource, /\["cautious_advance", "flank"\]\.includes\(tacticalIntent\.intent\)/);
 assert.match(
   combatPageSource,

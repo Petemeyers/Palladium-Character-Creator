@@ -27,6 +27,7 @@ export function findReachableAttackHexes({
   getNeighbors,
   isLegalCenter,
   canAttackFrom,
+  getDistance,
   preferredAttackHexes = [],
 } = {}) {
   if (
@@ -55,7 +56,14 @@ export function findReachableAttackHexes({
         path: [...entry.path, { ...position }],
       };
       if (canAttackFrom(position, target, targetPosition)) {
-        attackHexes.push({ ...next, preferred: preferred.has(hexKey(position)) });
+        const attackDistance = typeof getDistance === "function"
+          ? getDistance(position, targetPosition)
+          : null;
+        attackHexes.push({
+          ...next,
+          attackDistance: Number.isFinite(Number(attackDistance)) ? Number(attackDistance) : null,
+          preferred: preferred.has(hexKey(position)),
+        });
       }
       queue.push(next);
     }
@@ -63,6 +71,7 @@ export function findReachableAttackHexes({
 
   return attackHexes.sort((left, right) => (
     Number(right.preferred) - Number(left.preferred) ||
+    (left.attackDistance ?? Infinity) - (right.attackDistance ?? Infinity) ||
     left.steps - right.steps ||
     left.position.x - right.position.x ||
     left.position.y - right.position.y
@@ -120,6 +129,7 @@ export function rankEnemyMovementTargets({
         getNeighbors,
         isLegalCenter,
         canAttackFrom,
+        getDistance,
         preferredAttackHexes: getPreferredAttackHexes?.(target) || [],
       });
       const approach = alreadyInRange || attackHexes.length > 0 ? null : findBestApproachHex({

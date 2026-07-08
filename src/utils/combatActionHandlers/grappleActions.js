@@ -16,6 +16,7 @@ import {
   applyGrappleFollowUpOutcome,
   selectGrappleFollowUpWeapon,
 } from "../grappleFollowUp.js";
+import { formatCombatActorLabel } from "../combatActorIdentity.js";
 
 // Debug flag for grapple system
 const DEBUG_GRAPPLE = false;
@@ -95,6 +96,8 @@ export function handleGrappleAction(actionType, attacker, defenderId, context) {
 
   const getLiveFighters = () =>
     typeof getFighters === "function" ? getFighters() : fighters;
+  const labelActor = (actor, counterpart = null, roster = getLiveFighters()) =>
+    formatCombatActorLabel(actor, { roster, counterpart });
   const abortStaleGrapple = (reason) => {
     addLog(`Ã°Å¸Å¡Â« stale grapple follow-up aborted: ${reason}`, "warning");
     addLog("Ã°Å¸Å¡Â« stale grapple callback ignored", "warning");
@@ -173,10 +176,10 @@ export function handleGrappleAction(actionType, attacker, defenderId, context) {
         addLog(`Ã¢Å¡Â Ã¯Â¸Â ${attacker.name} cannot use ${currentWeapon.name} effectively in a grapple.`, "warning");
       }
       if (weapon && currentWeapon?.name !== weapon.name) {
-        addLog(`${attacker.name} switches to ${weapon.name} in the clinch.`, "info");
+        addLog(`${labelActor(attacker, defender)} switches to ${weapon.name} in the clinch.`, "info");
       }
       if (weapon) {
-        addLog(`${attacker.name} attacks ${defender.name} with ${weapon.name}.`, "info");
+        addLog(`${labelActor(attacker, defender)} attacks ${labelActor(defender, attacker)} with ${weapon.name}.`, "info");
       }
       result = groundAttack(attacker, defender, weapon, rollDice);
       
@@ -340,9 +343,12 @@ export function handleGrappleAction(actionType, attacker, defenderId, context) {
         return;
       }
       const updated = [...getLiveFighters()];
-      const defenderIndex = updated.findIndex(f => f.id === defenderId);
+      const damageTargetId = defender?.id ?? defenderId;
+      const defenderIndex = updated.findIndex(f => f.id === damageTargetId);
       if (defenderIndex !== -1) {
         const defenderCopy = { ...updated[defenderIndex] };
+        const damageTargetLabel = labelActor(defenderCopy, attacker, updated);
+        const attackerLabel = labelActor(attacker, defenderCopy, updated);
         
         // Use applyDamageWithArmor to handle armor logic
         const updatedDefender = applyDamageWithArmor(result, attacker, defenderCopy);
@@ -350,7 +356,7 @@ export function handleGrappleAction(actionType, attacker, defenderId, context) {
         if (DEBUG_GRAPPLE) {
           console.log(
             `[GRAPPLE DEBUG] Post-damage: ` +
-              `${defender.name} HP=${updatedDefender.currentHP ?? updatedDefender.hp} ` +
+              `${damageTargetLabel} HP=${updatedDefender.currentHP ?? updatedDefender.hp} ` +
               `armorDurability=${updatedDefender.currentarmorDurability ?? updatedDefender.armorDurability} ` +
               (updatedDefender.equistaminadArmor
                 ? `ArmorarmorDurability=${updatedDefender.equistaminadArmor.currentarmorDurability ?? updatedDefender.equistaminadArmor.armorDurability}`
@@ -366,7 +372,7 @@ export function handleGrappleAction(actionType, attacker, defenderId, context) {
         if (result.ignoresArmor) {
           // Critical hit or death blow - bypasses armor (chink in armor)
           addLog(
-            `Ã°Å¸â€™Â¥ ${defender.name} takes ${result.damage} damage (armor bypassed - weak point struck)! (HP: ${finalHP}/${maxHP})`,
+            `Ã°Å¸â€™Â¥ ${damageTargetLabel} takes ${result.damage} damage from ${attackerLabel} (armor bypassed - weak point struck)! (HP: ${finalHP}/${maxHP})`,
             result.critical ? "critical" : "warning"
           );
           
@@ -377,7 +383,7 @@ export function handleGrappleAction(actionType, attacker, defenderId, context) {
               .map(armor => armor.name);
             if (brokenArmor.length > 0) {
               brokenArmor.forEach(name => {
-                addLog(`Ã°Å¸â€™Â¢ ${defender.name}'s ${name} is destroyed!`, "warning");
+                addLog(`Ã°Å¸â€™Â¢ ${damageTargetLabel}'s ${name} is destroyed!`, "warning");
               });
             }
           }
@@ -386,12 +392,12 @@ export function handleGrappleAction(actionType, attacker, defenderId, context) {
           const damageTaken = (getFighterHP(defenderCopy) - finalHP);
           if (damageTaken > 0) {
             addLog(
-              `Ã°Å¸â€™Â¥ ${defender.name} takes ${damageTaken} damage! (HP: ${finalHP}/${maxHP})`,
+              `Ã°Å¸â€™Â¥ ${damageTargetLabel} takes ${damageTaken} damage from ${attackerLabel}! (HP: ${finalHP}/${maxHP})`,
               "warning"
             );
           } else {
             addLog(
-              `Ã°Å¸â€ºÂ¡Ã¯Â¸Â ${defender.name}'s armor absorbs the blow! (Armor armorDurability damaged: ${result.damage})`,
+              `Ã°Å¸â€ºÂ¡Ã¯Â¸Â ${damageTargetLabel}'s armor absorbs the blow from ${attackerLabel}! (Armor armorDurability damaged: ${result.damage})`,
               "info"
             );
           }
@@ -401,7 +407,7 @@ export function handleGrappleAction(actionType, attacker, defenderId, context) {
         if (result.deathBlow) {
           applyHPToFighter(updatedDefender, -999);
           updatedDefender.isDead = true;
-          addLog(`Ã°Å¸â€™â‚¬ ${defender.name} is slain by death blow!`, "error");
+          addLog(`Ã°Å¸â€™â‚¬ ${damageTargetLabel} is slain by death blow!`, "error");
         }
         
         // Update fighter state
@@ -442,7 +448,8 @@ export function handleGrappleAction(actionType, attacker, defenderId, context) {
         "info"
       );
     }
-    const defenderIndex = updated.findIndex(f => f.id === defenderId);
+    const damageTargetId = defender?.id ?? defenderId;
+      const defenderIndex = updated.findIndex(f => f.id === damageTargetId);
     if (defenderIndex !== -1 && nextDefender) {
       updated[defenderIndex] = { ...updated[defenderIndex], ...nextDefender };
       if (nextDefender.hex) {

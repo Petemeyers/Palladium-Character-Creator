@@ -3657,6 +3657,22 @@ export async function runPlayerTurnAI(player, context) {
                       abortFlankingContinuation("combat inactive before attack");
                       return;
                     }
+                    const remainingActionsAfterMovement = Number(livePlayer?.remainingActions);
+                    if (
+                      Number.isFinite(remainingActionsAfterMovement) &&
+                      remainingActionsAfterMovement <= 0
+                    ) {
+                      addLog(
+                        "flanking continuation skipped attack: no actions remaining after movement",
+                        "warning",
+                      );
+                      completePlayerAIContinuation?.("player-ai-flanking-move-only");
+                      if (turnActionResolvingRef) turnActionResolvingRef.current = false;
+                      if (pendingTurnAdvanceRef) pendingTurnAdvanceRef.current = false;
+                      processingPlayerAIRef.current = false;
+                      scheduleEndTurn(16, "player-ai-flanking-move-only");
+                      return;
+                    }
                     if (turnActionResolvingRef) turnActionResolvingRef.current = true;
                     const flankingAttackActionId = [
                       "player-ai-flank",

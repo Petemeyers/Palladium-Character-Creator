@@ -5083,6 +5083,8 @@ function CombatPage({ characters = [] }) {
   const enemyTechniqueLoopGuardRef = useRef(new Map()); // key: `${enemyId}:${meleeRound}` => { lastCastAt, lastTechniqueName, targetId, recent: string[], lastMeleeRound }
   const lastNoActionTurnKeyRef = useRef(null);
   const lastEnemyScheduleTurnKeyRef = useRef(null);
+  const unresolvedEnemyTurnStartKeyRef = useRef(null);
+  const enemyTurnEnteredAIBranchKeyRef = useRef(null);
   const lastPlayerAIScheduleTurnKeyRef = useRef(null);
   const pendingTurnStartKeysRef = useRef(new Set());
   /** Blocks duplicate player-AI turn entry for the same fighter/round/index/RA snapshot. */
@@ -5194,6 +5196,8 @@ function CombatPage({ characters = [] }) {
     enemyActionLockRef.current = null;
     enemyActionCommittedThisSliceRef.current = false;
     enemyActionCommittedSliceKeyRef.current = null;
+    unresolvedEnemyTurnStartKeyRef.current = null;
+    enemyTurnEnteredAIBranchKeyRef.current = null;
     pendingEnemyTurnRef.current = false;
     executingActionRef.current = false;
     activeTechniqueImpactRef.current = null;
@@ -10425,6 +10429,10 @@ function CombatPage({ characters = [] }) {
     );
 
     if (usesEnemyAIPath && processingEnemyTurnRef.current) {
+      addLog?.(
+        `enemy turn already processing for ${formatCombatActorLabel(fighter, { roster: fightersRef.current ?? fighters ?? [] })}; ignoring duplicate start reason=${reason}`,
+        "warning"
+      );
       if (DEBUG_COMBAT) {
         console.warn("[ENEMY TURN SCHEDULE BLOCKED - already processing]", {
           fighter: fighter?.name,
@@ -10436,6 +10444,56 @@ function CombatPage({ characters = [] }) {
 
     const counter = turnCounterRef.current;
     const requestedTurnStartKey = makeTurnStartKey(fighter, index, counter);
+    if (
+      usesEnemyAIPath &&
+      unresolvedEnemyTurnStartKeyRef.current === requestedTurnStartKey
+    ) {
+      const enemyTurnEnteredAIBranch =
+        enemyTurnEnteredAIBranchKeyRef.current === requestedTurnStartKey;
+      if (!enemyTurnEnteredAIBranch) {
+        addLog?.(
+          `enemy unresolved fallback skipped because turn never entered AI branch: actor=${formatCombatActorLabel(fighter, { roster: fightersRef.current ?? fighters ?? [] })} reason=busy-start-block`,
+          "warning",
+        );
+        unresolvedEnemyTurnStartKeyRef.current = null;
+        if (lastEnemyScheduleTurnKeyRef.current === requestedTurnStartKey) {
+          lastEnemyScheduleTurnKeyRef.current = null;
+        }
+        processingEnemyTurnRef.current = false;
+      } else {
+      const unresolvedHasNoWork =
+        !enemyActionCommittedThisSliceRef.current &&
+        !enemyTurnTimerRef.current &&
+        !pendingTurnAdvanceRef.current &&
+        !turnTimeoutRef.current &&
+        !isActionBusy() &&
+        !turnActionResolvingRef.current &&
+        !activeTechniqueImpactRef.current;
+      addLog?.(
+       `enemy turn start deduped for ${formatCombatActorLabel(fighter, { roster: fightersRef.current ?? fighters ?? [] })} reason=${reason}`,
+        "warning"
+      );
+      if (unresolvedHasNoWork) {
+        addLog?.(
+          `enemy unresolved turn has no committed action or finalizer: actor=${formatCombatActorLabel(fighter, { roster: fightersRef.current ?? fighters ?? [] })} source=${reason}`,
+          "warning",
+        );
+        unresolvedEnemyTurnStartKeyRef.current = null;
+        processingEnemyTurnRef.current = false;
+        const liveFighters = fightersRef.current ?? fighters ?? [];
+        const nextFighters = liveFighters.map((entry) => (
+          entry.id === fighter.id
+            ? { ...entry, remainingActions: 0 }
+            : entry
+        ));
+        fightersRef.current = nextFighters;
+        setFighters(nextFighters);
+        const scheduleTurnEnd = scheduleEndTurnRef.current || scheduleEndTurn;
+        scheduleTurnEnd(0, "enemy-ai-unresolved-turn-fallback");
+      }
+        return false;
+      }
+    }
     if (usesEnemyAIPath && shouldDedupeEnemyTurnStart({
       pendingKey: lastEnemyScheduleTurnKeyRef.current,
       nextKey: requestedTurnStartKey,
@@ -10538,6 +10596,8 @@ function CombatPage({ characters = [] }) {
         }
       }
       lastEnemyScheduleTurnKeyRef.current = key;
+      unresolvedEnemyTurnStartKeyRef.current = key;
+      enemyTurnEnteredAIBranchKeyRef.current = null;
       enemyTurnTimerRef.current = setTimeout(() => {
         if (!isCurrentCombatSession(scheduledCombatSession, `enemy-turn-start:${reason}`)) {
           enemyTurnTimerRef.current = null;
@@ -10545,6 +10605,12 @@ function CombatPage({ characters = [] }) {
           releaseTurnStart(key);
           if (lastEnemyScheduleTurnKeyRef.current === key) {
             lastEnemyScheduleTurnKeyRef.current = null;
+          }
+          if (unresolvedEnemyTurnStartKeyRef.current === key) {
+            unresolvedEnemyTurnStartKeyRef.current = null;
+          }
+          if (enemyTurnEnteredAIBranchKeyRef.current === key) {
+            enemyTurnEnteredAIBranchKeyRef.current = null;
           }
           if (turnStartInFlightKeyRef.current === key) {
             turnStartInFlightKeyRef.current = null;
@@ -10841,6 +10907,7 @@ function CombatPage({ characters = [] }) {
             }
             return;
           }
+          enemyTurnEnteredAIBranchKeyRef.current = key;
           Promise.resolve(
             handleEnemyTurnRef.current?.(latestFighter, reason, { turnKey: key, token, turnToken })
           ).finally(releaseStartedTurn);
@@ -11691,6 +11758,23 @@ function CombatPage({ characters = [] }) {
 
     // NOTE: We do NOT reset remainingActions here - actions persist across the combat round
     // Each fighter keeps their remainingActions until the combat round completes
+    const isFallbackFinalizer =
+      finalizerMeta?.source === "enemy-ai-no-move-fallback" ||
+      finalizerMeta?.source === "enemy-ai-unresolved-turn-fallback";
+    if (isFallbackFinalizer && fightersNow[nextIndex]?.id === acceptedActingActor?.id) {
+      const alternateIndex = fightersNow.findIndex((candidate, candidateIndex) => (
+        candidateIndex !== turnIndexNow &&
+        canFighterStartTurn(candidate) &&
+        (Number(candidate.remainingActions ?? 0) || 0) > 0
+      ));
+      if (alternateIndex >= 0) {
+        addLog(
+          "fallback finalizer cannot hand back to same actor; advancing to next active combatant",
+          "warning",
+        );
+        nextIndex = alternateIndex;
+      }
+    }
 
     // CRITICAL: Only reset combat end check flag if combat is still active
     // Don't reset if combat has ended (prevents further action processing)
@@ -15468,6 +15552,10 @@ function CombatPage({ characters = [] }) {
     }
 
     let defender = updated[defenderIndex];
+    const normalAttackAttackerId = stateAttacker.id;
+    const normalAttackTargetId = defender.id ?? defenderId;
+    const formatNormalAttackActorLabel = (actor, counterpart = null, roster = fightersRef.current ?? fighters ?? []) =>
+      formatCombatActorLabel(actor, { roster, counterpart });
 
     /*
     // Snapshot attack identity after dreadRating; horror-fail must not select/log a weapon.
@@ -16729,24 +16817,31 @@ function CombatPage({ characters = [] }) {
         }
       }
 
+      if (!isAttackActionLive("attack-roll-log")) {
+        addLog("stale delayed attack ignored.", "warning");
+        return false;
+      }
+
+      const attackRollAttackerLabel = formatNormalAttackActorLabel(stateAttacker, defender, updated);
+
       // Log the attack roll and store in diceRolls
       setDiceRolls(prev => [...prev, {
         id: generateCryptoId(),
         type: 'attack',
-        attacker: attacker.name,
+        attacker: attackRollAttackerLabel,
         roll: attackDiceRoll,
         total: attackRoll,
         bonus: attackBonus,
         timestamp: new Date().toLocaleTimeString()
       }]);
       if (isCriticalHit) {
-        addLog(`${attacker.name} rolls NATURAL 20! Critical Hit! Raw 20, modified total ${attackRoll} vs AC ${targetGuardRating}`, "critical");
+        addLog(`${attackRollAttackerLabel} rolls NATURAL 20! Critical Hit! Raw 20, modified total ${attackRoll} vs AC ${targetGuardRating}`, "critical");
       } else if (isCriticalMiss) {
-        addLog(`${attacker.name} rolls NATURAL 1! Critical Miss!`, "miss");
+        addLog(`${attackRollAttackerLabel} rolls NATURAL 1! Critical Miss!`, "miss");
       } else {
         // Format attack bonus display (show negative clearly)
         const bonusDisplay = attackBonus >= 0 ? `+${attackBonus}` : `${attackBonus}`;
-        addLog(`${attacker.name} rolls ${attackDiceRoll} ${bonusDisplay} = ${attackRoll} vs AC ${targetGuardRating}`, "info");
+        addLog(`${attackRollAttackerLabel} rolls ${attackDiceRoll} ${bonusDisplay} = ${attackRoll} vs AC ${targetGuardRating}`, "info");
       }
 
       const isRangedAttack = isExplicitRangedAttack(attackData);
@@ -17503,22 +17598,24 @@ function CombatPage({ characters = [] }) {
         }
 
         const liveDamageFighters = fightersRef.current ?? fighters;
-        const liveDefenderForDamage = liveDamageFighters.find((f) => f.id === defender.id);
-        const liveAttackerForDamage = liveDamageFighters.find((f) => f.id === stateAttacker.id);
+        const liveDefenderForDamage = liveDamageFighters.find((f) => f.id === normalAttackTargetId);
+        const liveAttackerForDamage = liveDamageFighters.find((f) => f.id === normalAttackAttackerId);
         if (!liveDefenderForDamage || !liveAttackerForDamage) {
           addLog("stale damage application ignored", "warning");
           return;
         }
         updated.length = 0;
         updated.push(...liveDamageFighters.map((f) => ({ ...f })));
-        defenderIndex = updated.findIndex((f) => f.id === defender.id);
-        const liveAttackerIndexForDamage = updated.findIndex((f) => f.id === stateAttacker.id);
+        defenderIndex = updated.findIndex((f) => f.id === normalAttackTargetId);
+        const liveAttackerIndexForDamage = updated.findIndex((f) => f.id === normalAttackAttackerId);
         if (defenderIndex < 0 || liveAttackerIndexForDamage < 0) {
           addLog("stale damage application ignored", "warning");
           return;
         }
         defender = updated[defenderIndex];
         stateAttacker = updated[liveAttackerIndexForDamage];
+        const normalDamageTargetLabel = formatNormalAttackActorLabel(defender, stateAttacker, updated);
+        const normalDamageAttackerLabel = formatNormalAttackActorLabel(stateAttacker, defender, updated);
 
         // Allow HP to go negative for coma rules
         const startingHP = getFighterHP(defender);
@@ -17557,6 +17654,13 @@ function CombatPage({ characters = [] }) {
         }
         const newHP = clampHP(startingHP - finalDamage, defender);
         applyHPToFighter(defender, newHP);
+        const appliedDamage = Math.max(0, startingHP - getFighterHP(defender));
+        if (appliedDamage > 0) {
+          addLog(
+            `${normalDamageTargetLabel} takes ${appliedDamage} damage from ${normalDamageAttackerLabel}! (HP: ${getFighterHP(defender)}/${getFighterMaxHP(defender)})`,
+            "warning",
+          );
+        }
 
         // OPTION B: Dive-hit auto-grapple (talon grab)
         try {
@@ -17574,7 +17678,7 @@ function CombatPage({ characters = [] }) {
 
           // Only grapple if the attack hit AND target is still alive
           if (isDiveAttack && isPredBird && newHP > 0) {
-            const attInUpdated = updated[attackerIndex];
+            const attInUpdated = updated[liveAttackerIndexForDamage];
             const defInUpdated = updated[defenderIndex];
 
             const attStatus = getGrappleStatus(attInUpdated);
@@ -17603,7 +17707,10 @@ function CombatPage({ characters = [] }) {
                 canUseLongWeapons: false,
               };
 
-              addLog(`${attInUpdated.name} hooks ${defInUpdated.name} in a talon-grab grapple!`, "combat");
+              addLog(
+                `${formatNormalAttackActorLabel(attInUpdated, defInUpdated, updated)} hooks ${formatNormalAttackActorLabel(defInUpdated, attInUpdated, updated)} in a talon-grab grapple!`,
+                "combat",
+              );
             }
           }
         } catch (err) {
@@ -17665,16 +17772,16 @@ function CombatPage({ characters = [] }) {
 
           if (moraleOutcome.moraleState.status === "ROUTED") {
             if (wasAlreadyRouting) {
-              addLog(`${defenderAfterHit.name} is already routing; not reapplying route break`, "debug");
+              addLog(`${formatNormalAttackActorLabel(defenderAfterHit, stateAttacker, updated)} is already routing; not reapplying route break`, "debug");
             } else {
-              addLog(`${defenderAfterHit.name} breaks and ROUTES!`, "warning");
+              addLog(`${formatNormalAttackActorLabel(defenderAfterHit, stateAttacker, updated)} breaks and ROUTES!`, "warning");
             }
           } else if (
             moraleOutcome.moraleState.status === "SHAKEN" &&
             moraleOutcome.result &&
             !moraleOutcome.success
           ) {
-            addLog(`${defenderAfterHit.name} is SHAKEN by the attack!`, "info");
+            addLog(`${formatNormalAttackActorLabel(defenderAfterHit, stateAttacker, updated)} is SHAKEN by the attack!`, "info");
           }
         }
 
@@ -17735,7 +17842,7 @@ function CombatPage({ characters = [] }) {
           if (attackDiceRoll >= 18 && attackDiceRoll <= 20) {
             // Braced weapon counter-damage
             const counterDamage = Math.floor(finalDamage / 3); // Attacker takes 1/3 of damage
-            addLog(`${defender.name}'s braced ${defenderWeapon.name} impales ${attacker.name} for ${counterDamage} damage!`, "critical");
+            addLog(`${formatNormalAttackActorLabel(defenderAfterHit, stateAttacker, updated)}'s braced ${defenderWeapon.name} impales ${formatNormalAttackActorLabel(stateAttacker, defenderAfterHit, updated)} for ${counterDamage} damage!`, "critical");
             // Apply counter-damage to attacker
             const attackerInUpdated = updated.find(f => f.id === attacker.id);
             if (attackerInUpdated) {
@@ -17768,11 +17875,11 @@ function CombatPage({ characters = [] }) {
             const peCheck = defenderAfterHit.PE || defenderAfterHit.pe || defenderAfterHit.attributes?.PE || defenderAfterHit.attributes?.pe || 10;
             const peRoll = CryptoSecureDice.parseAndRoll("1d20").totalWithBonus;
             if (peRoll > peCheck) {
-              addLog(`${defenderAfterHit.name} is knocked down! (endurance ${peCheck} < roll ${peRoll}) - loses 1 action to recover`, "warning");
+              addLog(`${formatNormalAttackActorLabel(defenderAfterHit, stateAttacker, updated)} is knocked down! (endurance ${peCheck} < roll ${peRoll}) - loses 1 action to recover`, "warning");
               // Deduct 1 action from defender
               updated[defenderIndex].remainingActions = Math.max(0, (updated[defenderIndex].remainingActions || 0) - 1);
             } else {
-              addLog(`${defenderAfterHit.name} resists knockdown! (endurance ${peCheck} >= roll ${peRoll})`, "info");
+              addLog(`${formatNormalAttackActorLabel(defenderAfterHit, stateAttacker, updated)} resists knockdown! (endurance ${peCheck} >= roll ${peRoll})`, "info");
             }
           }
         }
@@ -17782,7 +17889,7 @@ function CombatPage({ characters = [] }) {
         if (isFlying(defenderAfterHit) && defenderAfterHit.currentHP <= 0) {
           const currentAltitude = getAltitude(defenderAfterHit) || 0;
           if (currentAltitude > 0) {
-            addLog(`${defenderAfterHit.name} is hit and plummets ${currentAltitude}ft to the ground!`, "warning");
+            addLog(`${formatNormalAttackActorLabel(defenderAfterHit, stateAttacker, updated)} is hit and plummets ${currentAltitude}ft to the ground!`, "warning");
 
             // Apply fall damage
             const afterFall = applyFallDamage(defenderAfterHit, currentAltitude, addLog);
@@ -17814,17 +17921,17 @@ function CombatPage({ characters = [] }) {
           updated[defenderIndex] = defenderAfterHit;
 
           if (defenderAfterHit.condition === "dead") {
-            addLog(`${defenderAfterHit.name} has been KILLED! (${hpStatus.description})`, "defeat");
+            addLog(`${formatNormalAttackActorLabel(defenderAfterHit, stateAttacker, updated)} has been KILLED! (${hpStatus.description})`, "defeat");
             // Reset grapple state when fighter dies
             resetGrapple(defenderAfterHit);
           } else if (defenderAfterHit.condition === "critical") {
-            addLog(`${defenderAfterHit.name} is critically wounded! Needs help fast.`, "defeat");
+            addLog(`${formatNormalAttackActorLabel(defenderAfterHit, stateAttacker, updated)} is critically wounded! Needs help fast.`, "defeat");
           } else if (defenderAfterHit.condition === "dying") {
-            addLog(`${defenderAfterHit.name} is DYING! Bleeding out unless helped.`, "defeat");
+            addLog(`${formatNormalAttackActorLabel(defenderAfterHit, stateAttacker, updated)} is DYING! Bleeding out unless helped.`, "defeat");
           } else if (defenderAfterHit.condition === "unconsciousBleeding") {
-            addLog(`${defenderAfterHit.name} collapses unconscious and is bleeding!`, "defeat");
+            addLog(`${formatNormalAttackActorLabel(defenderAfterHit, stateAttacker, updated)} collapses unconscious and is bleeding!`, "defeat");
           } else {
-            addLog(`${defenderAfterHit.name} has been knocked unconscious!`, "defeat");
+            addLog(`${formatNormalAttackActorLabel(defenderAfterHit, stateAttacker, updated)} has been knocked unconscious!`, "defeat");
           }
 
           // CRITICAL: Check for victory condition AFTER damage is applied
@@ -20638,7 +20745,10 @@ function CombatPage({ characters = [] }) {
         timerPending: enemyTurnTimerRef.current != null,
         activeFighterId,
       });
-      addLog(`Blocked duplicate call for ${enemy?.name} (source=${source} turnKey=${turnKeyForLog} activeFighterId=${activeFighterId ?? "?"})`, "warning");
+      addLog(
+        `enemy turn already processing for ${formatCombatActorLabel(enemy, { roster: fightersRef.current ?? fighters ?? [] })}; ignoring duplicate start reason=${source}`,
+        "warning",
+      );
       pendingEnemyTurnRef.current = true; // Coalesce: will re-schedule once in finally if turn wasn't completed
       return;
     }
@@ -20797,6 +20907,8 @@ function CombatPage({ characters = [] }) {
         `turn finalizer accepted fighter=${liveEnemy.name} source=${finalizerSource} finalizerKey=${finalizerKey}`,
         "debug",
       );
+      unresolvedEnemyTurnStartKeyRef.current = null;
+      enemyTurnEnteredAIBranchKeyRef.current = null;
       scheduleEndTurn(delayOverride, finalizerSource);
       return true;
     };
@@ -22406,6 +22518,14 @@ function CombatPage({ characters = [] }) {
       positions: livePositions,
       calculateDistance,
     });
+    const nearestVisibleHostileByDistance = playerTargets
+      .filter((candidate) => livePositions?.[enemy.id] && livePositions?.[candidate.id])
+      .map((candidate) => ({
+        target: candidate,
+        distance: calculateDistance(livePositions[enemy.id], livePositions[candidate.id]),
+      }))
+      .filter((entry) => Number.isFinite(entry.distance))
+      .sort((a, b) => a.distance - b.distance)[0] || null;
     const ignoredRouter = visiblePlayers.find((target) => isRoutingOrPassiveTarget(target) && !playerTargets.includes(target));
     if (ignoredRouter && playerTargets[0]) {
       addLog(`${enemy.name} ignores routing ${ignoredRouter.name} and focuses on ${playerTargets[0].name}.`, "info");
@@ -22577,6 +22697,18 @@ function CombatPage({ characters = [] }) {
     if (actionPlan) {
       const aiType = (actionPlan.type || "").toLowerCase();
       if (aiType === "hold") {
+        if (nearestVisibleHostileByDistance) {
+          addLog(
+            `enemy out-of-range hold overridden for approach: actor=${formatCombatActorLabel(enemy, { roster: fightersRef.current ?? fighters ?? [] })} target=${formatCombatActorLabel(nearestVisibleHostileByDistance.target, { roster: fightersRef.current ?? fighters ?? [], counterpart: enemy })} distance=${Math.round(nearestVisibleHostileByDistance.distance)}ft`,
+            "info",
+          );
+          actionPlan = {
+            ...actionPlan,
+            type: "move",
+            target: nearestVisibleHostileByDistance.target,
+            aiAction: actionPlan.aiAction || "Approach nearest hostile",
+          };
+        } else {
         addLog(
          `[AI] ${enemy.name} holds position (${actionPlan.aiAction || "Hold"})`,
           "ai"
@@ -22596,6 +22728,7 @@ function CombatPage({ characters = [] }) {
         );
         scheduleEndTurn();
         return;
+        }
       }
 
       if (aiType === "defend" || aiType === "evade") {
@@ -22867,6 +23000,16 @@ function CombatPage({ characters = [] }) {
       }
     } else if (!reasoning) {
       reasoning = `following layered AI plan: ${actionPlan?.aiAction || "Attack"}`;
+    }
+    if (!target && playerTargets.length > 0) {
+      addLog(
+        `enemy out-of-range target selection failed despite hostile candidates: actor=${formatCombatActorLabel(enemy, { roster: fightersRef.current ?? fighters ?? [] })} candidates=${playerTargets.length}`,
+        "warning",
+      );
+      target = nearestVisibleHostileByDistance?.target || playerTargets[0];
+      if (target) {
+        reasoning = "fallback selected nearest hostile after target selection failure";
+      }
     }
 
     // AIR-CHASE PREFLIGHT
@@ -23677,6 +23820,10 @@ function CombatPage({ characters = [] }) {
       if (!rangeValidation.canAttack) {
         needsToMoveCloser = true;
         addLog(`${enemyLogLabel} is ${Math.round(currentDistance)}ft from ${targetLogLabel} (${rangeValidation.reason})`, "info");
+        addLog(
+          `enemy out-of-range target selected for approach: actor=${enemyLogLabel} target=${targetLogLabel} distance=${Math.round(currentDistance)}ft`,
+          "info",
+        );
       } else {
         addLog(`${enemy.name} is in range (${rangeValidation.reason})`, "info");
         if (rangeValidation.rangeInfo) {
@@ -23688,6 +23835,225 @@ function CombatPage({ characters = [] }) {
     if (needsToMoveCloser && target && livePositions[enemy.id] && livePositions[target.id]) {
       const currentPos = livePositions[enemy.id];
       const targetPos = livePositions[target.id];
+      addLog(
+        `enemy approach branch entering movement planner: actor=${formatCombatActorLabel(enemy, { roster: fightersRef.current ?? fighters ?? [], counterpart: target })} target=${formatCombatActorLabel(target, { roster: fightersRef.current ?? fighters ?? [], counterpart: enemy })} distance=${Math.round(currentDistance)}ft`,
+        "info",
+      );
+
+      try {
+        const approachMovementType = "RUN";
+        const approachMaxFeet = getMaxMoveFtThisAction(enemy, "Run");
+        const approachBudget = resolveEnemyMovementBudget({
+          fighter: enemy,
+          movementType: approachMovementType,
+          pathSearchBudgetFeet: approachMaxFeet,
+          legacyAllowanceFeet: approachMaxFeet,
+          distanceFeet: currentDistance,
+          cellSize: GRID_CONFIG.CELL_SIZE,
+        });
+        const approachMaxHexes = Math.max(1, approachBudget.maxCommittedHexes);
+        const isLegalApproachCenter = (center) => (
+          !!center &&
+          getCombatantFootprintHexes(enemy, center).every((cell) => (
+            cell.x >= 0 &&
+            cell.x < GRID_CONFIG.GRID_WIDTH &&
+            cell.y >= 0 &&
+            cell.y < GRID_CONFIG.GRID_HEIGHT &&
+            isValidPosition(cell.x, cell.y) &&
+            !isHexOccupied(cell.x, cell.y, enemy.id)
+          ))
+        );
+        const selectedApproachPlan = chooseEnemyMovementFallback({
+          enemy,
+          hostileCandidates: [target],
+          positions: livePositions,
+          currentPosition: currentPos,
+          maxHexes: approachMaxHexes,
+          getNeighbors: getHexNeighbors,
+          isLegalCenter: isLegalApproachCenter,
+          getDistance: calculateDistance,
+          isHostile: (candidate) => canSelectHostileCombatTarget(
+            enemy,
+            candidate,
+            legacySceneContext,
+          ),
+          canAttackFrom: (position, candidate, candidatePosition) => {
+            const distanceFromPosition = calculateDistance(position, candidatePosition);
+            return validateWeaponRange(
+              enemy,
+              candidate,
+              selectedAttack,
+              distanceFromPosition,
+            ).canAttack;
+          },
+          getPreferredAttackHexes: (candidate) => (
+            findFlankingPositions(livePositions[candidate.id], livePositions, enemy.id) || []
+          ),
+        });
+        addLog(
+          `enemy approach movement planner returned: actor=${formatCombatActorLabel(enemy, { roster: fightersRef.current ?? fighters ?? [], counterpart: target })} result=${selectedApproachPlan?.type || "none"}`,
+          selectedApproachPlan?.position ? "info" : "warning",
+        );
+        const attackReach = Number(
+          selectedAttack?.range ??
+          selectedAttack?.reach ??
+          selectedAttack?.rangeFt ??
+          selectedAttack?.weapon?.range
+        ) || (GRID_CONFIG.CELL_SIZE + 0.5);
+        const closeRangeTargetRank = selectedApproachPlan?.rankedTargets?.find((entry) => (
+          entry?.target?.id === target.id
+        )) || selectedApproachPlan?.rankedTargets?.[0] || null;
+        const closeRangeAttackHexes = closeRangeTargetRank?.attackHexes || [];
+        if (currentDistance <= Math.max(attackReach + (2 * GRID_CONFIG.CELL_SIZE), 3 * GRID_CONFIG.CELL_SIZE)) {
+          addLog(
+            `enemy close-range approach candidates: actor=${formatCombatActorLabel(enemy, { roster: fightersRef.current ?? fighters ?? [], counterpart: target })} target=${formatCombatActorLabel(target, { roster: fightersRef.current ?? fighters ?? [], counterpart: enemy })} attackReach=${Math.round(attackReach)}ft candidates=${closeRangeAttackHexes.length}`,
+            "info",
+          );
+          if (
+            selectedApproachPlan?.position &&
+            (selectedApproachPlan.type === "attack-position" || selectedApproachPlan.type === "flank")
+          ) {
+            const selectedAttackDistance = calculateDistance(selectedApproachPlan.position, targetPos);
+            addLog(
+              `enemy close-range approach selected attack hex: actor=${formatCombatActorLabel(enemy, { roster: fightersRef.current ?? fighters ?? [], counterpart: target })} to=(${selectedApproachPlan.position.x},${selectedApproachPlan.position.y}) distance=${Math.round(selectedAttackDistance)}ft`,
+              "info",
+            );
+          } else if (closeRangeAttackHexes.length === 0) {
+            addLog(
+              `enemy close-range approach no attack hex available: actor=${formatCombatActorLabel(enemy, { roster: fightersRef.current ?? fighters ?? [], counterpart: target })} target=${formatCombatActorLabel(target, { roster: fightersRef.current ?? fighters ?? [], counterpart: enemy })}`,
+              "warning",
+            );
+          }
+        }
+        const validation = validateEnemyMovementPlan(selectedApproachPlan, {
+          currentPosition: currentPos,
+          isLegalCenter: isLegalApproachCenter,
+        });
+        let executableApproachPlan = validation.valid
+          ? selectedApproachPlan
+          : {
+              ...selectedApproachPlan,
+              type: "hold",
+              position: null,
+              invalidReason: validation.reason,
+            };
+        if (
+          executableApproachPlan?.position &&
+          currentDistance <= Math.max(attackReach + (2 * GRID_CONFIG.CELL_SIZE), 3 * GRID_CONFIG.CELL_SIZE)
+        ) {
+          const destinationDistance = calculateDistance(executableApproachPlan.position, targetPos);
+          const stillOutOfReach = destinationDistance > attackReach + 0.01;
+          const nonImproving = destinationDistance >= currentDistance - 0.01;
+          if (stillOutOfReach && nonImproving) {
+            addLog(
+              `enemy approach rejected non-improving close-range move: actor=${formatCombatActorLabel(enemy, { roster: fightersRef.current ?? fighters ?? [], counterpart: target })} target=${formatCombatActorLabel(target, { roster: fightersRef.current ?? fighters ?? [], counterpart: enemy })} fromDistance=${Math.round(currentDistance)}ft toDistance=${Math.round(destinationDistance)}ft`,
+              "warning",
+            );
+            executableApproachPlan = {
+              ...executableApproachPlan,
+              type: "hold",
+              position: null,
+              invalidReason: "non-improving-close-range-approach",
+            };
+          }
+        }
+        const approachFinalizerSource = executableApproachPlan?.type === "hold" || !executableApproachPlan?.position
+          ? "enemy-ai-no-move-fallback"
+          : "RUN_TO_RANGE";
+        let approachDistanceMoved = 0;
+        executeEnemyMovementPlan(executableApproachPlan, {
+          commit: () => {
+            const committed = commitEnemyAction(approachFinalizerSource);
+            if (committed) {
+              addLog(
+                `enemy approach movement committed: actor=${formatCombatActorLabel(enemy, { roster: fightersRef.current ?? fighters ?? [], counterpart: target })} source=${approachFinalizerSource}`,
+                "info",
+              );
+            }
+            return committed;
+          },
+          move: (destination, plan) => {
+            approachDistanceMoved = calculateDistance(currentPos, destination);
+            handlePositionChange(enemy.id, destination, {
+              action: approachMovementType,
+              actionCost: MOVEMENT_ACTIONS.MOVE.actionCost,
+              description: `Enemy closing movement to (${destination.x}, ${destination.y})`,
+              persistImmediately: true,
+            });
+            enemyClosingMovementHistoryRef.current.set(enemy.id, {
+              previousPosition: { ...currentPos },
+              selectedPosition: { ...destination },
+            });
+            addLog(
+              `${enemy.name} cannot attack this action, so it advances ${Math.round(approachDistanceMoved)}ft toward ${plan.target?.name || target.name}.`,
+              "info",
+            );
+            addLog(
+              `${enemy.name} moves from (${currentPos.x},${currentPos.y}) to (${destination.x},${destination.y}).`,
+              "info",
+            );
+          },
+          hold: (plan) => {
+            const failureReason = plan.planningError
+              ? `movement planning failed: ${plan.planningError}`
+              : plan.invalidReason
+                ? `the selected plan was ${plan.invalidReason}`
+                : "all closer candidates are blocked";
+            addLog(
+              `${enemy.name} cannot find a movement path and holds position.`,
+              "warning",
+            );
+            addLog(
+              `${enemy.name} cannot find a legal approach hex: ${failureReason}.`,
+              "warning",
+            );
+            addLog(
+              `enemy approach movement failed; finalizing no-move fallback: actor=${formatCombatActorLabel(enemy, { roster: fightersRef.current ?? fighters ?? [], counterpart: target })}`,
+              "warning",
+            );
+          },
+          spendAction: () => commitFighters((prev) => prev.map((fighter) => (
+            fighter.id === enemy.id
+              ? {
+                  ...fighter,
+                  remainingActions: approachFinalizerSource === "enemy-ai-no-move-fallback"
+                    ? 0
+                    : Math.max(0, (Number(fighter.remainingActions ?? 0) || 0) - 1),
+                }
+              : fighter
+          ))),
+          fail: (error) => addLog(
+            `enemy approach movement planner error: actor=${formatCombatActorLabel(enemy, { roster: fightersRef.current ?? fighters ?? [], counterpart: target })} message=${error?.message || String(error)}`,
+            "warning",
+          ),
+          finish: ({ committed }) => {
+            if (!committed) return;
+            enemyActionResolved = true;
+            processingEnemyTurnRef.current = false;
+            turnActionResolvingRef.current = false;
+            executingActionRef.current = false;
+            scheduleEnemyAIEndTurn(getMoveDurationMs(approachDistanceMoved), approachFinalizerSource);
+          },
+        });
+        return;
+      } catch (error) {
+        const noMoveSource = "enemy-ai-no-move-fallback";
+        addLog(
+          `enemy approach movement planner error: actor=${formatCombatActorLabel(enemy, { roster: fightersRef.current ?? fighters ?? [], counterpart: target })} message=${error?.message || String(error)}`,
+          "warning",
+        );
+        if (commitEnemyAction(noMoveSource)) {
+          commitFighters((prev) => prev.map((fighter) => (
+            fighter.id === enemy.id
+              ? { ...fighter, remainingActions: 0 }
+              : fighter
+          )));
+          enemyActionResolved = true;
+        }
+        processingEnemyTurnRef.current = false;
+        scheduleEnemyAIEndTurn(0, noMoveSource);
+        return;
+      }
 
       // Use analyzeMovementAndAttack to determine best movement strategy
       const equistaminadWeapon = enemy.equistaminadWeapons?.primary || enemy.equistaminadWeapons?.secondary || enemy.attacks?.[0] || null;
@@ -23743,18 +24109,10 @@ function CombatPage({ characters = [] }) {
       );
 
       if (tacticalIntent.intent === "hold" || tacticalIntent.intent === "hesitate") {
-        if (!commitEnemyAction(`TACTICAL_${tacticalIntent.intent.toUpperCase()}`)) return;
-        commitFighters((prev) => prev.map((fighter) => (
-          fighter.id === enemy.id
-            ? {
-                ...fighter,
-                remainingActions: Math.max(0, (Number(fighter.remainingActions ?? 0) || 0) - 1),
-              }
-            : fighter
-        )));
-        processingEnemyTurnRef.current = false;
-        scheduleEndTurn(0, `enemy-tactical-${tacticalIntent.intent}`);
-        return;
+        addLog(
+          `${enemy.name} overrides ${tacticalIntent.intent} because selected hostile is out of range; entering approach movement.`,
+          "info",
+        );
       }
 
       // Check for flanking opportunities
@@ -24326,10 +24684,11 @@ function CombatPage({ characters = [] }) {
           closingHex ? "info" : "warning"
         );
         if (!closingHex) {
+          const noMoveSource = "enemy-ai-no-move-fallback";
           addLog(`${enemy.name} cannot find a path and holds position.`, "warning");
-          consumeBlockedMovementAction(enemy, reason);
+          consumeBlockedMovementAction(enemy, noMoveSource);
           processingEnemyTurnRef.current = false;
-          scheduleEndTurn(0, reason);
+          scheduleEnemyAIEndTurn(0, noMoveSource);
           return false;
         }
 
@@ -24361,7 +24720,7 @@ function CombatPage({ characters = [] }) {
           "info"
         );
         processingEnemyTurnRef.current = false;
-        scheduleEndTurn(getMoveDurationMs(calculateDistance(currentPos, closingHex)), reason);
+        scheduleEnemyAIEndTurn(getMoveDurationMs(calculateDistance(currentPos, closingHex)), reason);
         return true;
       };
       const executeLegacyClosingMovementPlan = (
@@ -24381,9 +24740,21 @@ function CombatPage({ characters = [] }) {
               position: null,
               invalidReason: validation.reason,
             };
+        const finalizerSource = executablePlan?.type === "hold" || !executablePlan?.position
+          ? "enemy-ai-no-move-fallback"
+          : reason;
         let distanceMoved = 0;
         return executeEnemyMovementPlan(executablePlan, {
-          commit: () => commitEnemyAction(reason),
+          commit: () => {
+            const committed = commitEnemyAction(finalizerSource);
+            if (committed) {
+              addLog(
+                `enemy approach movement committed: actor=${formatCombatActorLabel(enemy, { roster: fightersRef.current ?? fighters ?? [], counterpart: target })} source=${finalizerSource}`,
+                "info",
+              );
+            }
+            return committed;
+          },
           move: (destination, plan) => {
             distanceMoved = calculateDistance(currentPos, destination);
             handlePositionChange(enemy.id, destination, {
@@ -24415,7 +24786,7 @@ function CombatPage({ characters = [] }) {
             }
           },
           hold: (plan) => {
-            markBlockedMovementActionConsumed(enemy, reason);
+            markBlockedMovementActionConsumed(enemy, finalizerSource);
             const failureReason = plan.planningError
               ? `movement planning failed: ${plan.planningError}`
               : plan.invalidReason
@@ -24423,6 +24794,10 @@ function CombatPage({ characters = [] }) {
                 : "all closer candidates are blocked";
             addLog(
               `${enemy.name} cannot find a legal approach hex: ${failureReason}.`,
+              "warning",
+            );
+            addLog(
+              `enemy approach movement failed; finalizing no-move fallback: actor=${formatCombatActorLabel(enemy, { roster: fightersRef.current ?? fighters ?? [], counterpart: target })}`,
               "warning",
             );
           },
@@ -24444,7 +24819,7 @@ function CombatPage({ characters = [] }) {
             processingEnemyTurnRef.current = false;
             turnActionResolvingRef.current = false;
             executingActionRef.current = false;
-            scheduleEndTurn(getMoveDurationMs(distanceMoved), reason);
+            scheduleEnemyAIEndTurn(getMoveDurationMs(distanceMoved), finalizerSource);
           },
         });
       };
@@ -24471,6 +24846,10 @@ function CombatPage({ characters = [] }) {
         const movementPlan = targetMovementPlan?.position
           ? targetMovementPlan
           : chooseLegacyMovementPlan(hexesThisTurn);
+        addLog(
+          `enemy approach movement planner returned: actor=${formatCombatActorLabel(enemy, { roster: fightersRef.current ?? fighters ?? [], counterpart: target })} result=${movementPlan?.type || "none"}`,
+          movementPlan?.position ? "info" : "warning",
+        );
         if (movementPlan?.target && movementPlan.target.id !== target.id) {
           addLog(
             `${enemy.name} redirects toward ${movementPlan.target.name} because ${target.name} is blocked.`,
@@ -24648,7 +25027,7 @@ function CombatPage({ characters = [] }) {
           // Movement is the enemy's action for this turn slice.
           // Do not continue into another move or attack from the same call.
           processingEnemyTurnRef.current = false;
-          scheduleEndTurn(getMoveDurationMs(distanceMoved));
+          scheduleEnemyAIEndTurn(getMoveDurationMs(distanceMoved), "MOVE_CLOSER");
           return;
         }
       } else {
@@ -24659,6 +25038,10 @@ function CombatPage({ characters = [] }) {
         const movementPlan = targetMovementPlan?.position
           ? targetMovementPlan
           : chooseLegacyMovementPlan(moveDistance);
+        addLog(
+          `enemy approach movement planner returned: actor=${formatCombatActorLabel(enemy, { roster: fightersRef.current ?? fighters ?? [], counterpart: target })} result=${movementPlan?.type || "none"}`,
+          movementPlan?.position ? "info" : "warning",
+        );
         if (movementPlan?.target && movementPlan.target.id !== target.id) {
           addLog(
             `${enemy.name} redirects toward ${movementPlan.target.name} because ${target.name} is blocked.`,
@@ -24949,9 +25332,28 @@ function CombatPage({ characters = [] }) {
 
         // RUN = move only, then end slice (no delayed attack)
         processingEnemyTurnRef.current = false;
-        scheduleEndTurn(getMoveDurationMs(distanceMoved));
+        scheduleEnemyAIEndTurn(getMoveDurationMs(distanceMoved), isFlightMovement ? "FLY_TO_RANGE" : "RUN_TO_RANGE");
         return;
       }
+    }
+
+    if (needsToMoveCloser) {
+      const noMoveSource = "enemy-ai-no-move-fallback";
+      addLog(`${enemy.name} cannot find a path and holds position.`, "warning");
+      if (commitEnemyAction(noMoveSource)) {
+        commitFighters((prev) => prev.map((fighter) => (
+          fighter.id === enemy.id
+            ? {
+                ...fighter,
+                remainingActions: Math.max(0, (Number(fighter.remainingActions ?? 0) || 0) - 1),
+              }
+            : fighter
+        )));
+        enemyActionResolved = true;
+      }
+      processingEnemyTurnRef.current = false;
+      scheduleEnemyAIEndTurn(0, noMoveSource);
+      return;
     }
 
     // FIX: Final validation: make sure target can still be attacked and combat is active
