@@ -1,6 +1,7 @@
 import { PUBLIC_BACKGROUNDS } from "../data/publicBackgrounds.js";
 import { PUBLIC_CLASSES } from "../data/publicClasses.js";
 import { PUBLIC_SKILLS } from "../data/publicSkills.js";
+import { getBackgroundAttributeOptions } from "./simulatorCreatorAttributes.js";
 
 const normalizeKey = (value) => String(value || "").trim().toLowerCase();
 
@@ -34,6 +35,10 @@ export function getPublicBackgrounds() {
 export function getPublicBackgroundById(id) {
   const key = normalizeKey(id);
   return PUBLIC_BACKGROUNDS.find((entry) => entry.id === key) || null;
+}
+
+export function getPublicBackgroundAttributeOptions(background) {
+  return getBackgroundAttributeOptions(background);
 }
 
 export function createPublicCharacterDefaults(classId, backgroundId) {
@@ -76,5 +81,6 @@ export default {
   getPublicSkillById,
   getPublicBackgrounds,
   getPublicBackgroundById,
+  getPublicBackgroundAttributeOptions,
   createPublicCharacterDefaults,
 };

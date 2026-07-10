@@ -10,6 +10,10 @@ import {
   rollRandomAbilityScores,
   STANDARD_ARRAY_SCORES,
 } from "../src/utils/publicAbilityScores.js";
+import {
+  getBackgroundAttributeOptions,
+  ROLLABLE_SIMULATOR_ATTRIBUTE_KEYS,
+} from "../src/utils/simulatorCreatorAttributes.js";
 
 function testStandardArray() {
   assert.deepEqual(STANDARD_ARRAY_SCORES, [15, 14, 13, 12, 10, 8]);
@@ -80,13 +84,14 @@ function testFinalScores() {
 
 function testPublicBackgrounds() {
   for (const background of PUBLIC_BACKGROUNDS) {
-    assert.equal(Array.isArray(background.abilityScoreOptions), true);
-    assert.equal(background.abilityScoreOptions.length, 3);
-    for (const abilityId of background.abilityScoreOptions) {
+    const attributeOptions = getBackgroundAttributeOptions(background);
+    assert.equal(Array.isArray(attributeOptions), true);
+    assert.equal(attributeOptions.length, 3);
+    for (const attributeId of attributeOptions) {
       assert.equal(
-        PUBLIC_ABILITIES.some((ability) => ability.id === abilityId),
+        ROLLABLE_SIMULATOR_ATTRIBUTE_KEYS.includes(attributeId),
         true,
-        `${background.name} has unsupported ability option ${abilityId}`,
+        `${background.name} has unsupported attribute option ${attributeId}`,
       );
     }
   }

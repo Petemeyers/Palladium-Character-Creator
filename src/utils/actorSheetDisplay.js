@@ -2,22 +2,9 @@ import { calculateAttackStaminaCost, getStaminaState } from "./combatStamina.js"
 import { getRoutingArmorProfile, getStaminaRoutingProfile } from "./survivalIntent.js";
 import { isCombatantFled } from "./combatFledState.js";
 import { isCombatantBroken } from "./combatBrokenState.js";
+import { SIMULATOR_ATTRIBUTE_DEFINITIONS } from "../data/simulatorAttributes.js";
 
-export const SIMULATOR_ATTRIBUTE_DEFINITIONS = Object.freeze([
-  ["might", "Might"],
-  ["deftness", "Deftness"],
-  ["vigor", "Vigor"],
-  ["endurance", "Endurance"],
-  ["mobility", "Mobility"],
-  ["intellect", "Intellect"],
-  ["awareness", "Awareness"],
-  ["cunning", "Cunning"],
-  ["resolve", "Resolve"],
-  ["discipline", "Discipline"],
-  ["presence", "Presence"],
-  ["renown", "Renown"],
-  ["favor", "Favor"],
-]);
+export { SIMULATOR_ATTRIBUTE_DEFINITIONS };
 
 const CLASSIC_ABILITY_DEFINITIONS = Object.freeze([
   ["strength", "str", "Strength"],

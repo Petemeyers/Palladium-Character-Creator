@@ -41,17 +41,10 @@ import { BASE_SAVES, PROFESSION_SAVE_MODIFIERS, getLevelSaveBonus } from '../uti
 import { PROFESSIONS, ELECTIVE_SKILLS, SECONDARY_SKILLS } from '../data/professionData';
 import {
   calculateAbilityModifier,
-  calculateBackgroundAbilityBonuses,
-  calculateFinalAbilityScores,
-  convertPublicScoresToLegacyAttributes,
-  getPointCostTotal,
-  POINT_COSTS,
-  PUBLIC_ABILITIES,
-  rollRandomAbilityScores,
-  STANDARD_ARRAY_SCORES,
 } from '../utils/publicAbilityScores.js';
 import {
   getPublicBackgroundById,
+  getPublicBackgroundAttributeOptions,
   getPublicBackgrounds,
   getPublicClassById,
   getPublicClasses,
@@ -78,6 +71,19 @@ import {
 import HumanPreviewPanel from './creator/HumanPreviewPanel.jsx';
 import { buildHumanVisualProfile } from '../utils/visuals/buildHumanVisualProfile.js';
 import { saveCharacterWithAuth } from '../utils/characterSave.js';
+import {
+  calculateBackgroundAttributeBonuses,
+  calculateFinalSimulatorAttributes,
+  calculateSimulatorAttributeModifier,
+  convertSimulatorToClassicAbilityScores,
+  convertSimulatorToCompatibilityAttributes,
+  getCreatorSectionOrder,
+  getSimulatorAttributeLabel,
+  hasBaseSimulatorAttributes,
+  ROLLABLE_SIMULATOR_ATTRIBUTE_KEYS,
+  rollSimulatorBaseAttributesFromProfile,
+  resolveSpeciesAttributeDiceProfile,
+} from '../utils/simulatorCreatorAttributes.js';
 
 const PUBLIC_CLASS_COMPATIBILITY_KEYS = {
   barbarian: "Brigand",
@@ -178,12 +184,10 @@ const CharacterCreator = ({ onCreateCharacter }) => {
   const [selectedClassEquipmentOptionId, setSelectedClassEquipmentOptionId] = useState('');
   const [selectedPublicSkillIds, setSelectedPublicSkillIds] = useState([]);
   const [selectedPublicLanguageIds, setSelectedPublicLanguageIds] = useState([]);
-  const [abilityScoreMethod, setAbilityScoreMethod] = useState('standard-array');
-  const [generatedAbilityScores, setGeneratedAbilityScores] = useState(STANDARD_ARRAY_SCORES);
-  const [abilityAssignments, setAbilityAssignments] = useState({});
-  const [backgroundAbilityMode, setBackgroundAbilityMode] = useState('split');
-  const [backgroundPlusTwoAbility, setBackgroundPlusTwoAbility] = useState('');
-  const [backgroundPlusOneAbility, setBackgroundPlusOneAbility] = useState('');
+  const [baseSimulatorAttributes, setBaseSimulatorAttributes] = useState({});
+  const [backgroundAttributeMode, setBackgroundAttributeMode] = useState('split');
+  const [backgroundPlusTwoAttribute, setBackgroundPlusTwoAttribute] = useState('');
+  const [backgroundPlusOneAttribute, setBackgroundPlusOneAttribute] = useState('');
   const [availableClasses, setAvailableClasses] = useState([]);
   const [filteredClasses, setFilteredClasses] = useState([]);
   const [tactics, setTactics] = useState(null);
@@ -296,39 +300,51 @@ const CharacterCreator = ({ onCreateCharacter }) => {
       choices: [...new Set(validSelectedChoices)],
     };
   }, [publicSkillSuggestions.choiceIds, publicSkillSuggestions.proficiencyIds, selectedPublicSkillIds]);
-  const backgroundAbilityOptions = selectedPublicBackground?.abilityScoreOptions || [];
-  const assignedScoreIndexes = useMemo(
-    () => new Set(Object.values(abilityAssignments).filter((value) => value !== '')),
-    [abilityAssignments]
+  const creatorSectionOrder = useMemo(() => getCreatorSectionOrder(), []);
+  const backgroundAttributeOptions = useMemo(
+    () => getPublicBackgroundAttributeOptions(selectedPublicBackground),
+    [selectedPublicBackground]
   );
-  const baseAbilityScores = useMemo(() => {
-    return PUBLIC_ABILITIES.reduce((acc, ability) => {
-      const scoreIndex = abilityAssignments[ability.id];
-      const score = generatedAbilityScores[Number(scoreIndex)];
-      if (score !== undefined) {
-        acc[ability.id] = score;
+  const hasBaseAttributes = useMemo(
+    () => hasBaseSimulatorAttributes(baseSimulatorAttributes),
+    [baseSimulatorAttributes]
+  );
+  const backgroundAttributeBonuses = useMemo(
+    () => (hasBaseAttributes
+      ? calculateBackgroundAttributeBonuses({
+        mode: backgroundAttributeMode,
+        options: backgroundAttributeOptions,
+        plusTwoAttribute: backgroundPlusTwoAttribute,
+        plusOneAttribute: backgroundPlusOneAttribute,
+      })
+      : {}),
+    [
+      backgroundAttributeMode,
+      backgroundAttributeOptions,
+      backgroundPlusOneAttribute,
+      backgroundPlusTwoAttribute,
+      hasBaseAttributes,
+    ]
+  );
+  const finalSimulatorAttributes = useMemo(
+    () => calculateFinalSimulatorAttributes(baseSimulatorAttributes, backgroundAttributeBonuses),
+    [backgroundAttributeBonuses, baseSimulatorAttributes]
+  );
+  const finalAbilityScores = useMemo(
+    () => convertSimulatorToClassicAbilityScores(finalSimulatorAttributes),
+    [finalSimulatorAttributes]
+  );
+  const attributeModifiers = useMemo(() => {
+    return ROLLABLE_SIMULATOR_ATTRIBUTE_KEYS.reduce((acc, key) => {
+      if (finalSimulatorAttributes[key] !== undefined) {
+        acc[key] = calculateSimulatorAttributeModifier(finalSimulatorAttributes[key]);
       }
       return acc;
     }, {});
-  }, [abilityAssignments, generatedAbilityScores]);
-  const backgroundAbilityBonuses = useMemo(
-    () => calculateBackgroundAbilityBonuses({
-      mode: backgroundAbilityMode,
-      options: backgroundAbilityOptions,
-      plusTwoAbility: backgroundPlusTwoAbility,
-      plusOneAbility: backgroundPlusOneAbility,
-    }),
-    [backgroundAbilityMode, backgroundAbilityOptions, backgroundPlusOneAbility, backgroundPlusTwoAbility]
-  );
-  const finalAbilityScores = useMemo(
-    () => calculateFinalAbilityScores(baseAbilityScores, backgroundAbilityBonuses),
-    [backgroundAbilityBonuses, baseAbilityScores]
-  );
-  const abilityModifiers = useMemo(() => {
-    return PUBLIC_ABILITIES.reduce((acc, ability) => {
-      if (finalAbilityScores[ability.id] !== undefined) {
-        acc[ability.id] = calculateAbilityModifier(finalAbilityScores[ability.id]);
-      }
+  }, [finalSimulatorAttributes]);
+  const classicAbilityModifiers = useMemo(() => {
+    return Object.entries(finalAbilityScores).reduce((acc, [abilityId, score]) => {
+      acc[abilityId] = calculateAbilityModifier(score);
       return acc;
     }, {});
   }, [finalAbilityScores]);
@@ -338,13 +354,11 @@ const CharacterCreator = ({ onCreateCharacter }) => {
       publicClassId,
       publicClassName: selectedPublicClass?.name,
       finalAbilityScores,
-      abilityModifiers,
+      abilityModifiers: classicAbilityModifiers,
       publicSkillProficiencies: publicSkillMetadata.proficiencies,
     }),
-    [abilityModifiers, finalAbilityScores, level, publicClassId, publicSkillMetadata.proficiencies, selectedPublicClass]
+    [classicAbilityModifiers, finalAbilityScores, level, publicClassId, publicSkillMetadata.proficiencies, selectedPublicClass]
   );
-  const allPublicAbilitiesAssigned = PUBLIC_ABILITIES.every((ability) => baseAbilityScores[ability.id] !== undefined);
-  const pointCostTotal = getPointCostTotal(baseAbilityScores);
 
   useEffect(() => {
     setSelectedPublicSkillIds((current) =>
@@ -362,26 +376,26 @@ const CharacterCreator = ({ onCreateCharacter }) => {
   }, [classEquipmentOptions]);
 
   useEffect(() => {
-    setBackgroundPlusTwoAbility((current) =>
-      backgroundAbilityOptions.includes(current) ? current : ''
+    setBackgroundPlusTwoAttribute((current) =>
+      backgroundAttributeOptions.includes(current) ? current : ''
     );
-    setBackgroundPlusOneAbility((current) =>
-      backgroundAbilityOptions.includes(current) ? current : ''
+    setBackgroundPlusOneAttribute((current) =>
+      backgroundAttributeOptions.includes(current) ? current : ''
     );
-  }, [backgroundAbilityOptions]);
+  }, [backgroundAttributeOptions]);
 
   useEffect(() => {
-    if (!allPublicAbilitiesAssigned) {
+    if (!hasBaseAttributes) {
       setAttributes({});
       setAttributesRolled(false);
       setHp(null);
       return;
     }
 
-    setAttributes(convertPublicScoresToLegacyAttributes(finalAbilityScores));
+    setAttributes(convertSimulatorToCompatibilityAttributes(finalSimulatorAttributes));
     setAttributesRolled(true);
     setBonusRolled(false);
-  }, [allPublicAbilitiesAssigned, finalAbilityScores]);
+  }, [finalSimulatorAttributes, hasBaseAttributes]);
 
   const togglePublicSkillChoice = (skillId) => {
     setSelectedPublicSkillIds((current) => {
@@ -898,40 +912,33 @@ const CharacterCreator = ({ onCreateCharacter }) => {
     });
   };
 
-  const resetAbilityAssignmentState = (scores) => {
-    setGeneratedAbilityScores(scores);
-    setAbilityAssignments({});
+  const handleRollAttributes = () => {
+    setBaseSimulatorAttributes(rollSimulatorBaseAttributesFromProfile({
+      species,
+      publicSpeciesId,
+      profile: selectedPublicSpecies,
+    }));
     setHp(null);
     setBonusRolled(false);
   };
 
-  const handleAbilityScoreMethodChange = (method) => {
-    if (method === 'point-cost') {
-      return;
-    }
+  const activeAttributeDiceProfile = useMemo(
+    () => resolveSpeciesAttributeDiceProfile({
+      species,
+      publicSpeciesId,
+      profile: selectedPublicSpecies,
+    }),
+    [publicSpeciesId, selectedPublicSpecies, species],
+  );
 
-    setAbilityScoreMethod(method);
-    if (method === 'standard-array') {
-      resetAbilityAssignmentState(STANDARD_ARRAY_SCORES);
-      return;
-    }
-
-    resetAbilityAssignmentState([]);
-  };
-
-  const handleGenerateRandomAbilityScores = () => {
-    const rollDie = () => rollDice(6, 1, useCryptoRandom);
-    setAbilityScoreMethod('random-generation');
-    resetAbilityAssignmentState(rollRandomAbilityScores({ rollDie }));
-  };
-
-  const handleAbilityAssignmentChange = (abilityId, scoreIndex) => {
-    setAbilityAssignments((current) => {
+  const handleBaseAttributeChange = (attributeKey, value) => {
+    const parsed = Number(value);
+    setBaseSimulatorAttributes((current) => {
       const next = { ...current };
-      if (scoreIndex === '') {
-        delete next[abilityId];
+      if (!Number.isFinite(parsed)) {
+        delete next[attributeKey];
       } else {
-        next[abilityId] = scoreIndex;
+        next[attributeKey] = parsed;
       }
       return next;
     });
@@ -1085,17 +1092,17 @@ const CharacterCreator = ({ onCreateCharacter }) => {
       return;
     }
 
-    if (!allPublicAbilitiesAssigned) {
-      alert('Please assign all six ability scores before creating character');
+    if (!hasBaseAttributes) {
+      alert('Please roll or enter all base attributes before creating character');
       return;
     }
 
     if (
-      backgroundAbilityMode === 'split' &&
-      backgroundAbilityOptions.length >= 3 &&
-      (!backgroundPlusTwoAbility || !backgroundPlusOneAbility || backgroundPlusTwoAbility === backgroundPlusOneAbility)
+      backgroundAttributeMode === 'split' &&
+      backgroundAttributeOptions.length >= 3 &&
+      (!backgroundPlusTwoAttribute || !backgroundPlusOneAttribute || backgroundPlusTwoAttribute === backgroundPlusOneAttribute)
     ) {
-      alert('Please choose different background abilities for the +2 and +1 increases');
+      alert('Please choose different background attributes for the +2 and +1 increases');
       return;
     }
 
@@ -1134,11 +1141,13 @@ const CharacterCreator = ({ onCreateCharacter }) => {
         level: Number(level) || 1, // Use actual level state
       hp: Number(hp),
       alignment,
-      abilityScoreMethod,
-      baseAbilityScores,
-      backgroundAbilityBonuses,
+      attributeRollMethod: 'random-3d6',
+      baseSimulatorAttributes,
+      backgroundAttributeBonuses,
+      finalSimulatorAttributes,
       finalAbilityScores,
-      abilityModifiers,
+      attributeModifiers,
+      classicAbilityModifiers,
       publicDerivedStats,
       attributes,
       age,
@@ -1283,17 +1292,23 @@ const CharacterCreator = ({ onCreateCharacter }) => {
         level: Number(level) || 1,
         hp: calculatedHP, // Use calculated total HP instead of base HP
         alignment: alignment || "",
-        abilityScoreMethod,
-        baseAbilityScores,
-        backgroundAbilityBonuses,
+        attributeRollMethod: 'random-3d6',
+        baseSimulatorAttributes,
+        simulatorAttributes: finalSimulatorAttributes,
+        backgroundAttributeBonuses,
         finalAbilityScores,
-        abilityModifiers,
+        attributeModifiers,
+        classicAbilityModifiers,
         publicDerivedStats,
         publicStartingEquipment,
         selectedClassEquipmentOptionId: selectedClassEquipmentOption?.id || selectedClassEquipmentOptionId || undefined,
         backgroundEquipmentTags,
         startingGold,
         attributes: validatedAttributes,
+        originalActorMetadata: {
+          attributes: finalSimulatorAttributes,
+        },
+        publicAbilityScores: finalAbilityScores,
         age: normalizedAge ?? "Not set",
         socialBackground: socialBackground || "Unknown",
         disposition: disposition || "Unknown",
@@ -1625,7 +1640,7 @@ const CharacterCreator = ({ onCreateCharacter }) => {
     }
   };
 
-  const formatAttributeLabel = (attr) => ({
+  const formatAttributeLabel = (attr) => getSimulatorAttributeLabel(attr) || ({
     PS: 'Strength',
     PP: 'Dexterity',
     PE: 'Constitution',
@@ -2376,7 +2391,7 @@ const CharacterCreator = ({ onCreateCharacter }) => {
       <div className="character-creation" style={{ display: 'flex', flexDirection: 'column' }}>
         <h1 className="page-title">Character Creator</h1>
         
-        <section className="creation-section" style={{ order: 0 }}>
+        <section className="creation-section" style={{ order: creatorSectionOrder.identity }}>
           <h2 className="section-title">Character Identity</h2>
           
           <div className="form-row">
@@ -2445,19 +2460,19 @@ const CharacterCreator = ({ onCreateCharacter }) => {
           </div>
         </section>
 
-        <section className="creation-section" style={{ order: 7 }}>
-          <h2 className="section-title">Determine Ability Scores</h2>
-          
+        <section className="creation-section" style={{ order: creatorSectionOrder.attributes }}>
+          <h2 className="section-title">Attributes</h2>
+
           <div className="background-info">
             <div className="background-section">
               <div className="info-item">
-                <strong>Standard Array:</strong> 15, 14, 13, 12, 10, 8
+                <strong>Random Roll:</strong> Uses the selected species/profile source dice when available; otherwise rolls default human/base dice into simulator attributes.
               </div>
               <div className="info-item">
-                <strong>Random Generation:</strong> Roll four d6 and keep the highest three, six times.
+                <strong>Active Dice Profile:</strong> {Object.entries(activeAttributeDiceProfile).map(([abbrev, dice]) => `${abbrev} ${dice}`).join(', ')}
               </div>
               <div className="info-item">
-                <strong>Point Cost:</strong> 27 points. Placeholder only in this pass.
+                <strong>Manual Edit:</strong> Adjust any rolled value before choosing background bonuses.
               </div>
             </div>
           </div>
@@ -2465,134 +2480,37 @@ const CharacterCreator = ({ onCreateCharacter }) => {
           <div className="button-row">
             <button
               type="button"
-              onClick={() => handleAbilityScoreMethodChange('standard-array')}
-              className={abilityScoreMethod === 'standard-array' ? 'primary-button' : 'secondary-button'}
+              onClick={handleRollAttributes}
+              className="primary-button"
             >
-              Standard Array
-            </button>
-            <button
-              type="button"
-              onClick={handleGenerateRandomAbilityScores}
-              className={abilityScoreMethod === 'random-generation' ? 'primary-button' : 'secondary-button'}
-            >
-              Random Generation
-            </button>
-            <button
-              type="button"
-              disabled
-              className="secondary-button disabled-button"
-              title={`Point Cost table: ${Object.entries(POINT_COSTS).map(([score, cost]) => `${score}=${cost}`).join(', ')}`}
-            >
-              Point Cost
+              Roll Attributes
             </button>
           </div>
 
           <div className="background-info">
-            <h3>Generated Scores</h3>
-            <p>{generatedAbilityScores.length > 0 ? generatedAbilityScores.join(', ') : 'Choose Random Generation to roll scores.'}</p>
-            {abilityScoreMethod === 'point-cost' && (
-              <p>Point Cost total: {pointCostTotal}/27</p>
-            )}
-          </div>
-
-          <div className="background-info">
-            <h3>Assign Scores</h3>
+            <h3>Base Attribute Scores</h3>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
-              {PUBLIC_ABILITIES.map((ability) => (
-                <div key={ability.id} className="form-group">
-                  <label htmlFor={`ability-${ability.id}`}>{ability.name}</label>
-                  <select
-                    id={`ability-${ability.id}`}
-                    value={abilityAssignments[ability.id] ?? ''}
-                    onChange={(event) => handleAbilityAssignmentChange(ability.id, event.target.value)}
-                    className="select-input"
-                    disabled={generatedAbilityScores.length !== 6}
-                  >
-                    <option value="">Assign score</option>
-                    {generatedAbilityScores.map((score, index) => {
-                      const value = String(index);
-                      const isAssignedElsewhere = assignedScoreIndexes.has(value) && abilityAssignments[ability.id] !== value;
-                      return (
-                        <option key={`${score}-${index}`} value={value} disabled={isAssignedElsewhere}>
-                          {score}
-                        </option>
-                      );
-                    })}
-                  </select>
+              {ROLLABLE_SIMULATOR_ATTRIBUTE_KEYS.map((attributeKey) => (
+                <div key={attributeKey} className="form-group">
+                  <label htmlFor={`attribute-${attributeKey}`}>{getSimulatorAttributeLabel(attributeKey)}</label>
+                  <input
+                    id={`attribute-${attributeKey}`}
+                    type="number"
+                    min="3"
+                    max="18"
+                    value={baseSimulatorAttributes[attributeKey] ?? ''}
+                    onChange={(event) => handleBaseAttributeChange(attributeKey, event.target.value)}
+                    className="number-input"
+                  />
                 </div>
               ))}
             </div>
           </div>
 
-          <div className="background-info">
-            <h3>Background Ability Increases</h3>
-            {(backgroundAbilityOptions || []).length >= 3 ? (
-              <>
-                <div className="button-row">
-                  <button
-                    type="button"
-                    onClick={() => setBackgroundAbilityMode('split')}
-                    className={backgroundAbilityMode === 'split' ? 'primary-button' : 'secondary-button'}
-                  >
-                    +2 / +1
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setBackgroundAbilityMode('all')}
-                    className={backgroundAbilityMode === 'all' ? 'primary-button' : 'secondary-button'}
-                  >
-                    +1 / +1 / +1
-                  </button>
-                </div>
-                {backgroundAbilityMode === 'split' && (
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
-                    <div className="form-group">
-                      <label htmlFor="background-plus-two">Increase by +2</label>
-                      <select
-                        id="background-plus-two"
-                        value={backgroundPlusTwoAbility}
-                        onChange={(event) => setBackgroundPlusTwoAbility(event.target.value)}
-                        className="select-input"
-                      >
-                        <option value="">Choose ability</option>
-                        {backgroundAbilityOptions.map((abilityId) => (
-                          <option key={abilityId} value={abilityId} disabled={abilityId === backgroundPlusOneAbility}>
-                            {formatAttributeLabel(abilityId)}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="form-group">
-                      <label htmlFor="background-plus-one">Increase by +1</label>
-                      <select
-                        id="background-plus-one"
-                        value={backgroundPlusOneAbility}
-                        onChange={(event) => setBackgroundPlusOneAbility(event.target.value)}
-                        className="select-input"
-                      >
-                        <option value="">Choose ability</option>
-                        {backgroundAbilityOptions.map((abilityId) => (
-                          <option key={abilityId} value={abilityId} disabled={abilityId === backgroundPlusTwoAbility}>
-                            {formatAttributeLabel(abilityId)}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-                )}
-                {backgroundAbilityMode === 'all' && (
-                  <p>Increasing {backgroundAbilityOptions.map(formatAttributeLabel).join(', ')} by +1.</p>
-                )}
-              </>
-            ) : (
-              <p>Choose a background to apply ability increases.</p>
-            )}
-          </div>
-
           <table id="attributes-table">
             <thead>
               <tr>
-                <th>Ability</th>
+                <th>Attribute</th>
                 <th>Base Score</th>
                 <th>Background Bonus</th>
                 <th>Final Score</th>
@@ -2600,34 +2518,24 @@ const CharacterCreator = ({ onCreateCharacter }) => {
               </tr>
             </thead>
             <tbody>
-              {PUBLIC_ABILITIES.map((ability) => (
-                <tr key={ability.id}>
-                  <td>{ability.name}</td>
-                  <td>{baseAbilityScores[ability.id] ?? '-'}</td>
-                  <td>+{backgroundAbilityBonuses[ability.id] || 0}</td>
-                  <td>{finalAbilityScores[ability.id] ?? '-'}</td>
+              {ROLLABLE_SIMULATOR_ATTRIBUTE_KEYS.map((attributeKey) => (
+                <tr key={attributeKey}>
+                  <td>{getSimulatorAttributeLabel(attributeKey)}</td>
+                  <td>{baseSimulatorAttributes[attributeKey] ?? '-'}</td>
+                  <td>+{hasBaseAttributes ? (backgroundAttributeBonuses[attributeKey] || 0) : 0}</td>
+                  <td>{hasBaseAttributes ? (finalSimulatorAttributes[attributeKey] ?? '-') : '-'}</td>
                   <td>
-                    {abilityModifiers[ability.id] !== undefined
-                      ? `${abilityModifiers[ability.id] >= 0 ? '+' : ''}${abilityModifiers[ability.id]}`
+                    {hasBaseAttributes && attributeModifiers[attributeKey] !== undefined
+                      ? `${attributeModifiers[attributeKey] >= 0 ? '+' : ''}${attributeModifiers[attributeKey]}`
                       : '-'}
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
-
-          <div className="button-row">
-            <Button
-              onClick={rollHP}
-              disabled={hp !== null || !allPublicAbilitiesAssigned}
-              className="secondary-button"
-            >
-              {hp !== null ? `HP: ${hp}` : 'Roll HP'}
-            </Button>
-          </div>
         </section>
 
-        <section className="creation-section" style={{ order: 4 }}>
+        <section className="creation-section" style={{ order: creatorSectionOrder.species }}>
           <h2 className="section-title">Determine Origin: Species</h2>
           <div className="form-group">
             <label htmlFor="public-species">Species</label>
@@ -2668,7 +2576,7 @@ const CharacterCreator = ({ onCreateCharacter }) => {
           )}
         </section>
 
-        <section className="creation-section" style={{ order: 5 }}>
+        <section className="creation-section" style={{ order: creatorSectionOrder.languages }}>
           <h2 className="section-title">Determine Origin: Languages</h2>
           <div className="background-info">
             <div className="background-section">
@@ -2708,7 +2616,7 @@ const CharacterCreator = ({ onCreateCharacter }) => {
         </section>
 
         {(selectedPublicClass || selectedPublicBackground) && (
-          <section className="creation-section" style={{ order: 2 }}>
+          <section className="creation-section" style={{ order: creatorSectionOrder.proficiencies }}>
             <h2 className="section-title">Proficiencies</h2>
             {(publicSkillSuggestions.fixed.length > 0 || publicSkillSuggestions.background.length > 0) && (
               <div className="background-info">
@@ -2763,7 +2671,7 @@ const CharacterCreator = ({ onCreateCharacter }) => {
         )}
 
         {selectedPublicSpecies?.id === 'human' && (
-          <section className="creation-section" style={{ order: 4 }}>
+          <section className="creation-section" style={{ order: creatorSectionOrder.species }}>
             <h2 className="section-title">Human Visual Profile (v1)</h2>
             <HumanPreviewPanel
               stats={humanStatsForVisuals}
@@ -2773,7 +2681,7 @@ const CharacterCreator = ({ onCreateCharacter }) => {
         )}
 
 
-        <section className="creation-section" style={{ order: 3 }}>
+        <section className="creation-section" style={{ order: creatorSectionOrder.background }}>
           <h2 className="section-title">Determine Origin: Background</h2>
 
           <div className="form-group">
@@ -2805,9 +2713,9 @@ const CharacterCreator = ({ onCreateCharacter }) => {
                 <div className="info-item">
                   <strong>Feature:</strong> {selectedPublicBackground.feature}
                 </div>
-                {(selectedPublicBackground.abilityScoreOptions || []).length > 0 && (
+                {backgroundAttributeOptions.length > 0 && (
                   <div className="info-item">
-                    <strong>Ability Score Options:</strong> {selectedPublicBackground.abilityScoreOptions.map(formatAttributeLabel).join(', ')}
+                    <strong>Attribute Options:</strong> {backgroundAttributeOptions.map(getSimulatorAttributeLabel).join(', ')}
                   </div>
                 )}
                 {selectedPublicBackground.originFeat && (
@@ -2831,10 +2739,79 @@ const CharacterCreator = ({ onCreateCharacter }) => {
               </div>
             )}
           </div>
+
+          <div className="background-info">
+            <h3>Background Attribute Increases</h3>
+            {!hasBaseAttributes ? (
+              <p>Roll or enter base attributes before applying background bonuses.</p>
+            ) : backgroundAttributeOptions.length >= 3 ? (
+              <>
+                <div className="button-row">
+                  <button
+                    type="button"
+                    onClick={() => setBackgroundAttributeMode('split')}
+                    className={backgroundAttributeMode === 'split' ? 'primary-button' : 'secondary-button'}
+                  >
+                    +2 / +1
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setBackgroundAttributeMode('all')}
+                    className={backgroundAttributeMode === 'all' ? 'primary-button' : 'secondary-button'}
+                  >
+                    +1 / +1 / +1
+                  </button>
+                </div>
+                {backgroundAttributeMode === 'split' && (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
+                    <div className="form-group">
+                      <label htmlFor="background-plus-two">Increase by +2</label>
+                      <select
+                        id="background-plus-two"
+                        value={backgroundPlusTwoAttribute}
+                        onChange={(event) => setBackgroundPlusTwoAttribute(event.target.value)}
+                        className="select-input"
+                        disabled={!hasBaseAttributes}
+                      >
+                        <option value="">Choose attribute</option>
+                        {backgroundAttributeOptions.map((attributeId) => (
+                          <option key={attributeId} value={attributeId} disabled={attributeId === backgroundPlusOneAttribute}>
+                            {getSimulatorAttributeLabel(attributeId)}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="form-group">
+                      <label htmlFor="background-plus-one">Increase by +1</label>
+                      <select
+                        id="background-plus-one"
+                        value={backgroundPlusOneAttribute}
+                        onChange={(event) => setBackgroundPlusOneAttribute(event.target.value)}
+                        className="select-input"
+                        disabled={!hasBaseAttributes}
+                      >
+                        <option value="">Choose attribute</option>
+                        {backgroundAttributeOptions.map((attributeId) => (
+                          <option key={attributeId} value={attributeId} disabled={attributeId === backgroundPlusTwoAttribute}>
+                            {getSimulatorAttributeLabel(attributeId)}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                )}
+                {backgroundAttributeMode === 'all' && (
+                  <p>Increasing {backgroundAttributeOptions.map(getSimulatorAttributeLabel).join(', ')} by +1.</p>
+                )}
+              </>
+            ) : (
+              <p>Choose a background to apply attribute increases.</p>
+            )}
+          </div>
         </section>
 
         {attributes.IQ && species && (
-          <section className="creation-section" style={{ order: 11 }}>
+          <section className="creation-section" style={{ order: creatorSectionOrder.tactics }}>
             <h2 className="section-title">Tactics</h2>
             <TacticsRoll
               IQ={attributes.IQ}
@@ -2845,7 +2822,7 @@ const CharacterCreator = ({ onCreateCharacter }) => {
           </section>
         )}
 
-        <section className="creation-section" style={{ order: 1 }}>
+        <section className="creation-section" style={{ order: creatorSectionOrder.class }}>
           <h2 className="section-title">Choose Class</h2>
           
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '20px' }}>
@@ -3357,7 +3334,7 @@ const CharacterCreator = ({ onCreateCharacter }) => {
           )}
         </section>
 
-        <section className="creation-section" style={{ order: 8 }}>
+        <section className="creation-section" style={{ order: creatorSectionOrder.alignment }}>
           <h2 className="section-title">Choose Alignment</h2>
           <div className="form-group">
             <label htmlFor="alignment-outlook">Alignment</label>
@@ -3376,7 +3353,45 @@ const CharacterCreator = ({ onCreateCharacter }) => {
           </div>
         </section>
 
-        <section className="creation-section action-section" style={{ order: 10 }}>
+        <section className="creation-section" style={{ order: creatorSectionOrder.derivedStats }}>
+          <h2 className="section-title">Derived Combat Stats</h2>
+          <div className="background-info">
+            <div className="background-section">
+              <div className="info-item">
+                <strong>Proficiency Bonus:</strong> {formatSignedModifier(publicDerivedStats.proficiencyBonus)}
+              </div>
+              <div className="info-item">
+                <strong>Hit Points:</strong> {publicDerivedStats.hitPoints}
+              </div>
+              <div className="info-item">
+                <strong>Hit Die:</strong> {publicDerivedStats.hitDie}
+              </div>
+              <div className="info-item">
+                <strong>Initiative:</strong> {formatSignedModifier(publicDerivedStats.initiative)}
+              </div>
+              <div className="info-item">
+                <strong>Base AC:</strong> {publicDerivedStats.baseArmorClass}
+              </div>
+              <div className="info-item">
+                <strong>Passive Perception:</strong> {publicDerivedStats.passivePerception}
+              </div>
+            </div>
+          </div>
+          <div className="button-row">
+            <Button
+              onClick={rollHP}
+              disabled={hp !== null || !hasBaseAttributes}
+              className="secondary-button"
+            >
+              {hp !== null ? `HP: ${hp}` : 'Roll HP'}
+            </Button>
+          </div>
+          {!hasBaseAttributes && (
+            <p>Roll or enter all base attributes before rolling HP.</p>
+          )}
+        </section>
+
+        <section className="creation-section action-section" style={{ order: creatorSectionOrder.review }}>
           <h2 className="section-title">Review / Create</h2>
           <div className="background-info">
             <div className="background-section">
@@ -3471,7 +3486,7 @@ const CharacterCreator = ({ onCreateCharacter }) => {
             </button>
           </div>
         </section>
-        <section className="creation-section" style={{ order: 6 }}>
+        <section className="creation-section" style={{ order: creatorSectionOrder.equipment }}>
           <h2 className="section-title">Determine Origin: Starting Equipment</h2>
           <div className="background-info">
             <div className="background-section">
