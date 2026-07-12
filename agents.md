@@ -371,6 +371,195 @@ When working on selectable actors, prioritize:
 7. Separation of allegiance from control mode.
 8. Tests proving ranged, flying, mythic, passive, defensive, and playable-enemy actors do not stall turn flow.
 
+## Combat Engine Stability Invariants
+
+These rules are mandatory for all future changes to combat turn flow, movement, AI execution, grapples, routing, cower/no-move behavior, and delayed attack callbacks.
+
+### Real Movement Commit Authority
+
+Real tactical movement must update every canonical position store together. A movement change is not complete unless the fighter object and all active position stores agree.
+
+When an actor actually moves, update:
+
+- fighter `x` / `y`
+- fighter `position`
+- fighter `hex` if present
+- `positionsRef.current`
+- `committedPositionsRef.current`
+- the last-real-movement authority, such as `lastMovementCommitRef.current`
+- React position state, when used by the current UI path
+
+Real tactical movement includes:
+
+- combat reset / initial placement
+- manual movement
+- player AI approach move-only
+- player AI flanking movement
+- routed flee / retreat movement
+- enemy run-to-range movement
+- enemy flank or direct approach movement
+- successful grapple / shared-position synchronization
+- explicit debug or scripted placement, when intentionally used
+
+Do not update last-real-movement authority from stale scheduled actors, no-move branches, cower branches, fallback branches, finalizer handoffs, or delayed callback snapshots.
+
+### No-Move, Cower, Fallback, And Horror Finalizers
+
+No-move, cower, fallback, and horror-action-consumed paths must preserve the latest real tactical position. They must not write stale actor coordinates back into fighter state or position stores.
+
+All no-move style branches should use a shared preservation helper, such as:
+
+```js
+finalizeNoMovePreservingPosition({
+  fighterId,
+  actorPatch,
+  reason,
+  source,
+});
+```
+
+The helper must:
+
+- resolve the latest position by fighter id
+- prefer last-real-movement authority over stale actor data
+- strip position fields from stale actor patches
+- apply only non-position metadata, action consumption, status, morale, or routing fields
+- write the preserved latest position back to all canonical stores
+- log mismatches before they become gameplay bugs
+
+Recommended diagnostic shape:
+
+```text
+position authority candidates: actor=<name> source=<source> lastMove=(x,y) committed=(x,y) positionsRef=(x,y) fighter=(x,y) stale=(x,y)
+cower preserve position check: actor=<name> source=<source> stale=(x,y) latest=(x,y)
+cower preserve position committed: actor=<name> source=<source> final=(x,y)
+position store mismatch after no-move: actor=<name> fighter=(x,y) positionsRef=(x,y) committed=(x,y)
+```
+
+Enemy no-move fallback snapshots must resolve from the latest position authority, not from the scheduled enemy actor object.
+
+### Turn Ownership And Delayed Execution
+
+Delayed combat work is unsafe unless it proves ownership immediately before mutating state.
+
+Any delayed callback, promise continuation, timeout, AI continuation, grapple follow-up, attack finalizer, or projectile/impact callback must validate that it still owns the relevant turn/action before it can:
+
+- spend stamina
+- roll attack
+- roll defense
+- roll damage
+- apply HP mutation
+- apply critical effects
+- consume actions
+- accept a finalizer
+
+When a callback no longer owns the turn, it must return early and log a blocked stale execution.
+
+Recommended blocked log:
+
+```text
+stale combat roll blocked: actor=<name> reason=<reason> executionKey=<key> source=<source>
+```
+
+Do not merely detect stale work after the roll. Block it before any roll, damage, or HP mutation occurs.
+
+### Combat Roll Ownership Gate
+
+Every attack roll and damage path must pass through the final low-level combat roll ownership gate.
+
+Use or preserve a helper such as:
+
+```js
+validateCombatRollOwnership({
+  actorId,
+  targetId,
+  executionKey,
+  source,
+  allowOutOfTurnAttack,
+});
+```
+
+This gate must run immediately before:
+
+- attack roll
+- grapple ground attack roll
+- damage roll
+- grapple damage roll
+- HP mutation
+- grapple HP mutation
+
+A valid roll path should show an intentional gate chain before mutation:
+
+```text
+combat roll gate passed: actor=<name> source=attack-entry-pre-roll executionKey=<key>
+combat roll gate passed: actor=<name> source=immediate-pre-roll executionKey=<key>
+combat roll gate passed: actor=<name> source=attack-roll-pre-stamina executionKey=<key>
+combat roll gate passed: actor=<name> source=attack-roll executionKey=<key>
+combat roll gate passed: actor=<name> source=damage-roll executionKey=<key>
+combat roll gate passed: actor=<name> source=hp-mutation executionKey=<key>
+```
+
+A roll that starts at `attack-roll`, `damage-roll`, or `hp-mutation` without a valid entry/pre-stamina gate in the same execution chain is suspicious and should be blocked unless it is an explicitly valid reaction path.
+
+Execution keys must expire or become invalid when:
+
+- a finalizer settles
+- cower/no-move/horror-action-consumed consumes the turn
+- a new melee round starts
+- the actor reaches zero actions
+- the active fighter changes
+- combat ends
+- generation, round, turn serial, action serial, or owner token no longer matches
+
+Unkeyed non-reaction attacks must be blocked. Attack-of-opportunity and other explicit reactions may pass only when deliberately marked with `allowOutOfTurnAttack` or the project’s equivalent.
+
+### Grapple And Clinch Safety
+
+Grapple initiation, grapple follow-ups, ground attacks, mauls, escapes, and clinch weapon swaps must follow the same ownership rules as normal attacks.
+
+Before any grapple follow-up roll, validate:
+
+- combat is active
+- actor and target still exist
+- actor still owns the action or continuation
+- actor has actions remaining when the action consumes one
+- round/generation/turn token still matches
+- target is still valid
+- positions are still valid for the grapple state
+
+A stale grapple follow-up must block before the ground attack roll or damage roll.
+
+### Armed AI Grapple Preference
+
+An armed fighter with a usable melee weapon should not voluntarily initiate a grapple against an ordinary armed enemy unless one of the following is true:
+
+- the actor has an explicit grappler, wrestler, beast, brute, or clinch-focused trait
+- the target is prone, stunned, disarmed, trapped, or otherwise vulnerable
+- the actor is unarmed
+- the actor has no usable melee weapon
+- the actor has a special tactical intent that explicitly says to grapple
+
+A sword-armed fighter at normal melee range should generally prefer the sword attack over voluntary grapple initiation. Existing grapple follow-ups may still switch to an appropriate clinch weapon such as a dagger.
+
+### Browser Log Verification Required
+
+Unit and regression tests are required, but they are not enough for async combat work.
+
+After changing any of these systems, run a browser combat test and inspect the log:
+
+- turn scheduler
+- finalizer handoff
+- player AI continuation
+- enemy AI start
+- movement commit
+- cower/no-move/fallback
+- attack roll gate
+- grapple follow-up
+- new melee round transition
+- combat end
+
+The browser log must not show rolls, damage, or HP mutation without a valid ownership chain.
+
 ## Regression Expectations
 
 When implementing this migration, add or preserve tests that prove:
