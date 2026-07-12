@@ -509,12 +509,15 @@ export async function runPlayerTurnAI(player, context) {
     getFighterfocus,
     // Attack & combat
     attack,
+    createAttackActionGrant,
+    createAttackExecutionKey,
     clearPlayerAIContinuationAttack,
     claimPlayerAIContinuation,
     completePlayerAIContinuation,
     executeGrapple,
     setPositions,
     setFighters,
+    commitPlayerAIPosition,
     positionsRef,
     movementAttemptsRef,
     playerAIRecentlyUsedTacticsRef,
@@ -2899,6 +2902,62 @@ export async function runPlayerTurnAI(player, context) {
       target?.prone ||
       target?.stunned ||
       target?.restrained;
+    const traitText = [
+      ...(Array.isArray(player.traits) ? player.traits : []),
+      player.trait,
+      player.archetype,
+      player.aiRole,
+      player.tacticalIntent,
+      player.intent,
+    ]
+      .map((trait) => (typeof trait === "string" ? trait : trait?.name || trait?.id || trait?.type || ""))
+      .join(" ")
+      .toLowerCase();
+    const hasGrapplerTrait =
+      traitText.includes("grappler") ||
+      traitText.includes("wrestler") ||
+      traitText.includes("wrestling") ||
+      traitText.includes("grapple");
+    const hasSpecialGrappleIntent =
+      String(player.specialTacticalIntent || player.tacticalIntent?.type || player.aiIntent || "")
+        .toLowerCase()
+        .includes("grapple");
+    const weaponLooksRanged = (weapon) => {
+      const name = String(weapon?.name || "").toLowerCase();
+      const type = String(weapon?.type || weapon?.weaponType || weapon?.category || "").toLowerCase();
+      const range = Number(weapon?.range ?? weapon?.normalRange ?? 0);
+      return (
+        weapon?.isRanged === true ||
+        weapon?.ammunition ||
+        weapon?.ammoType ||
+        type.includes("ranged") ||
+        type.includes("bow") ||
+        name.includes("bow") ||
+        name.includes("crossbow") ||
+        name.includes("sling") ||
+        (Number.isFinite(range) && range > 10)
+      );
+    };
+    const weaponLooksUnarmed = (weapon) => {
+      const name = String(weapon?.name || weapon?.type || "").toLowerCase();
+      return !weapon || name.includes("unarmed") || name.includes("fist") || name.includes("punch");
+    };
+    const hasUsableMeleeWeapon = equistaminadWeapons.some((weapon) => (
+      weapon &&
+      !weaponLooksUnarmed(weapon) &&
+      !weaponLooksRanged(weapon)
+    ));
+    const actorIsUnarmed = !hasUsableMeleeWeapon;
+
+    if (
+      hasUsableMeleeWeapon &&
+      !hasGrapplerTrait &&
+      !targetDisabled &&
+      !actorIsUnarmed &&
+      !hasSpecialGrappleIntent
+    ) {
+      return false;
+    }
 
     if (sizeOutcome.sizeDelta >= 2 && !sizeOutcome.hasSpecialAdvantage && !targetDisabled) {
       return false;
@@ -3497,14 +3556,18 @@ export async function runPlayerTurnAI(player, context) {
             );
 
             // Move to flanking position
-            setPositions((prev) => {
-              const updated = {
-                ...prev,
-                [player.id]: bestFlankPos,
-              };
-              positionsRef.current = updated;
-              return updated;
-            });
+            if (typeof commitPlayerAIPosition === "function") {
+              commitPlayerAIPosition(player, bestFlankPos, "player-ai-flanking");
+            } else {
+              setPositions((prev) => {
+                const updated = {
+                  ...prev,
+                  [player.id]: bestFlankPos,
+                };
+                positionsRef.current = updated;
+                return updated;
+              });
+            }
 
             // Deduct movement action cost
             const movementCost = Math.ceil(flankDistance / (speed * 5));
@@ -3674,14 +3737,19 @@ export async function runPlayerTurnAI(player, context) {
                       return;
                     }
                     if (turnActionResolvingRef) turnActionResolvingRef.current = true;
-                    const flankingAttackActionId = [
-                      "player-ai-flank",
-                      combatSession || "session",
-                      currentTurnToken || "turn",
-                      player.id,
-                      liveTarget.id,
-                      turnCounter,
-                    ].join(":");
+                    const flankingAttackGrant =
+                      typeof createAttackActionGrant === "function"
+                        ? createAttackActionGrant(player.id, liveTarget.id, "player-ai-flanking-continuation")
+                        : null;
+                    const flankingAttackActionId =
+                      typeof createAttackExecutionKey === "function"
+                        ? createAttackExecutionKey(player.id, liveTarget.id, "player-ai-flanking-continuation", {
+                            grant: flankingAttackGrant,
+                            scheduledAtTurnToken: flankingAttackGrant?.turnToken || currentTurnToken || "no-turn-token",
+                            callbackSource: "player-ai-flanking-continuation",
+                            isDelayedCallback: true,
+                          })
+                        : `player-ai-flank-${Date.now()}-${Math.random().toString(36).slice(2)}`;
                     let flankingAttackSettled = false;
                     const flankingAttackWatchdog = setTimeout(() => {
                       if (flankingAttackSettled) return;
@@ -3714,6 +3782,7 @@ export async function runPlayerTurnAI(player, context) {
                       const attackOutcome = await attack(updatedPlayer, liveTarget.id, {
                         ...bonuses,
                         attackActionId: flankingAttackActionId,
+                        attackActionGrant: flankingAttackGrant,
                         attackDataOverride: selectedAttack,
                         attackerPosOverride: actualFlankPos,
                         defenderPosOverride: actualTargetPos,
@@ -4134,14 +4203,18 @@ export async function runPlayerTurnAI(player, context) {
           return;
         }
 
-        setPositions((prev) => {
-          const updated = {
-            ...prev,
-            [player.id]: { x: chosenMove.pos.x, y: chosenMove.pos.y },
-          };
-          positionsRef.current = updated;
-          return updated;
-        });
+        if (typeof commitPlayerAIPosition === "function") {
+          commitPlayerAIPosition(player, chosenMove.pos, "player-ai-approach-move-only");
+        } else {
+          setPositions((prev) => {
+            const updated = {
+              ...prev,
+              [player.id]: { x: chosenMove.pos.x, y: chosenMove.pos.y },
+            };
+            positionsRef.current = updated;
+            return updated;
+          });
+        }
 
         if (chosenMove.type === "bee") {
           const stepsTaken = chosenMove.meta?.stepsTaken ?? 1;
@@ -4199,6 +4272,10 @@ export async function runPlayerTurnAI(player, context) {
             if (f.id === player.id) {
               return {
                 ...f,
+                x: chosenMove.pos.x,
+                y: chosenMove.pos.y,
+                position: { x: chosenMove.pos.x, y: chosenMove.pos.y },
+                hex: f.hex ? { x: chosenMove.pos.x, y: chosenMove.pos.y } : f.hex,
                 remainingActions: Math.max(0, (f.remainingActions || 0) - 1),
               };
             }

@@ -89,9 +89,9 @@ export function handleGrappleAction(actionType, attacker, defenderId, context) {
     return;
   }
   
-  const getStaleGrappleReason = () =>
+  const getStaleGrappleReason = (source = "grapple-roll") =>
     typeof validateGrappleResult === "function"
-      ? validateGrappleResult(actionType, null, grappleActionId)
+      ? validateGrappleResult(actionType, null, grappleActionId, source)
       : null;
 
   const getLiveFighters = () =>
@@ -99,12 +99,16 @@ export function handleGrappleAction(actionType, attacker, defenderId, context) {
   const labelActor = (actor, counterpart = null, roster = getLiveFighters()) =>
     formatCombatActorLabel(actor, { roster, counterpart });
   const abortStaleGrapple = (reason) => {
+    addLog(
+      `stale grapple follow-up blocked: actor=${attacker?.name || "unknown"} reason=${reason || "unknown"} executionKey=${grappleActionId || "unknown"}`,
+      "warning",
+    );
     addLog(`Ã°Å¸Å¡Â« stale grapple follow-up aborted: ${reason}`, "warning");
     addLog("Ã°Å¸Å¡Â« stale grapple callback ignored", "warning");
     onStaleGrappleAbort?.(grappleActionId);
   };
 
-  const preActionStaleReason = getStaleGrappleReason();
+  const preActionStaleReason = getStaleGrappleReason("grapple-action-entry");
   if (preActionStaleReason) {
     abortStaleGrapple(preActionStaleReason);
     return;
@@ -115,11 +119,21 @@ export function handleGrappleAction(actionType, attacker, defenderId, context) {
     return;
   }
 
-  // Use CryptoSecureDice for rolling
-  const rollDice = () => CryptoSecureDice.rollD20();
+  // Use CryptoSecureDice for rolling, but validate ownership at the lowest roll layer.
+  const rollDice = () => {
+    const rollStaleReason = getStaleGrappleReason("grapple-ground-attack-roll");
+    if (rollStaleReason) {
+      abortStaleGrapple(rollStaleReason);
+      const error = new Error(`stale grapple roll blocked: ${rollStaleReason}`);
+      error.staleGrappleRoll = true;
+      throw error;
+    }
+    return CryptoSecureDice.rollD20();
+  };
   
   let result;
-  switch (actionType) {
+  try {
+    switch (actionType) {
     case 'grapple': {
       // Get current positions from state to pass to initiateGrapple
       const currentAttackerPos = positions[attacker.id] || attacker.hex || attacker.position;
@@ -252,6 +266,10 @@ export function handleGrappleAction(actionType, attacker, defenderId, context) {
     default:
       addLog(`Unknown grapple action: ${actionType}`, "error");
       return;
+    }
+  } catch (error) {
+    if (error?.staleGrappleRoll) return;
+    throw error;
   }
   
   const staleReason = getStaleGrappleReason();
@@ -337,7 +355,7 @@ export function handleGrappleAction(actionType, attacker, defenderId, context) {
     // For takedown, damage is always applied if result.damage exists (takedown doesn't use hit property)
     // For ground attacks, result.hit indicates if the attack connected
     if (result.damage && (actionType === 'takedown' || result.hit)) {
-      const damageStaleReason = getStaleGrappleReason();
+      const damageStaleReason = getStaleGrappleReason("grapple-damage-roll");
       if (damageStaleReason) {
         abortStaleGrapple(damageStaleReason);
         return;
@@ -424,7 +442,7 @@ export function handleGrappleAction(actionType, attacker, defenderId, context) {
     
     // Merge the outcome and spend its action atomically. Grapple result objects
     // are based on the pre-action actor and must not restore remainingActions.
-    const spendStaleReason = getStaleGrappleReason();
+    const spendStaleReason = getStaleGrappleReason("grapple-hp-mutation");
     if (spendStaleReason) {
       abortStaleGrapple(spendStaleReason);
       return;
@@ -490,7 +508,7 @@ export function handleGrappleAction(actionType, attacker, defenderId, context) {
     
     // Still deduct attack if it was attempted
     if (actionType !== 'breakFree') {
-      const failSpendStaleReason = getStaleGrappleReason();
+      const failSpendStaleReason = getStaleGrappleReason("grapple-failed-action-spend");
       if (failSpendStaleReason) {
         abortStaleGrapple(failSpendStaleReason);
         return;

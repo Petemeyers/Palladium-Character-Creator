@@ -1679,6 +1679,9 @@ export function runEnemyTurnAI(enemy, context) {
     onNoHostilesRemaining,
     // Attack & combat
     attack,
+    createAttackActionGrant,
+    createAttackExecutionKey,
+    validateDelayedAttackCallback,
     // Refs
     positionsRef,
     processingEnemyTurnRef,
@@ -1739,6 +1742,41 @@ export function runEnemyTurnAI(enemy, context) {
     actionCommitted = true;
     return true;
   }
+
+  const makeEnemyAttackExecutionKey = (actor, targetId, source = "enemy-ai-attack", options = {}) => {
+    const grant =
+      options.grant ||
+      (
+        typeof createAttackActionGrant === "function"
+          ? createAttackActionGrant(actor?.id, targetId, source)
+          : null
+      );
+    return typeof createAttackExecutionKey === "function"
+      ? createAttackExecutionKey(actor?.id, targetId, source, {
+          grant,
+          scheduledAtTurnToken: grant?.turnToken,
+          callbackSource: options.callbackSource,
+          isDelayedCallback: Boolean(options.isDelayedCallback || options.callbackSource),
+        })
+      : `attack-legacy-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  };
+
+  const validateEnemyAttackCallbackEntry = ({
+    actor,
+    targetId,
+    executionKey,
+    source = "enemy-ai-delayed-attack",
+    allowOutOfTurn = false,
+  } = {}) => {
+    if (typeof validateDelayedAttackCallback !== "function") return true;
+    return validateDelayedAttackCallback({
+      actor,
+      targetId,
+      executionKey,
+      source,
+      allowOutOfTurn,
+    });
+  };
 
   // -----------------------------------------------------------------------------
   // Load weakness memory once per turn for this enemy (persistent across encounters)
@@ -4885,7 +4923,20 @@ export function runEnemyTurnAI(enemy, context) {
         );
 
         // Attack immediately after dive
+        const diveExecutionKey = makeEnemyAttackExecutionKey(enemy, target.id, "enemy-turn-ai-dive-attack", {
+          callbackSource: "enemy-turn-ai-dive-attack-callback",
+          isDelayedCallback: true,
+        });
         setTimeout(() => {
+          if (!validateEnemyAttackCallbackEntry({
+            actor: enemy,
+            targetId: target.id,
+            executionKey: diveExecutionKey,
+            source: "enemy-turn-ai-dive-attack-callback",
+          })) {
+            processingEnemyTurnRef.current = false;
+            return;
+          }
           if (
             combatOverRef?.current ||
             combatEndCheckRef?.current ||
@@ -4905,7 +4956,10 @@ export function runEnemyTurnAI(enemy, context) {
           if (rangeValidation.canAttack) {
             addLog(`ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ ${enemy.name} attacks with talons!`, "info");
             if (attackRef.current) {
-              attackRef.current(enemy, target.id, {});
+              attackRef.current(enemy, target.id, {
+                attackActionId: diveExecutionKey,
+                source: "enemy-turn-ai-dive-attack",
+              });
             }
 
             // After attack, immediately fly back up and away (hit-and-run)
@@ -5590,7 +5644,20 @@ export function runEnemyTurnAI(enemy, context) {
               processingEnemyTurnRef.current = false;
               return;
             }
+            const rangedExecutionKey = makeEnemyAttackExecutionKey(enemy, target.id, "enemy-turn-ai-ranged-attack", {
+              callbackSource: "enemy-turn-ai-ranged-callback",
+              isDelayedCallback: true,
+            });
             setTimeout(() => {
+              if (!validateEnemyAttackCallbackEntry({
+                actor: enemy,
+                targetId: target.id,
+                executionKey: rangedExecutionKey,
+                source: "enemy-turn-ai-ranged-callback",
+              })) {
+                processingEnemyTurnRef.current = false;
+                return;
+              }
               if (
                 combatOverRef?.current ||
                 combatEndCheckRef?.current ||
@@ -5608,6 +5675,8 @@ export function runEnemyTurnAI(enemy, context) {
               const bonuses = {
                 ...(flankingBonus > 0 ? { flankingBonus } : {}),
                 attackDataOverride: rangedAttack,
+                attackActionId: rangedExecutionKey,
+                source: "enemy-turn-ai-ranged-attack",
               };
               attack(
                 { ...enemy, selectedAttack: rangedAttack },
@@ -6330,8 +6399,26 @@ export function runEnemyTurnAI(enemy, context) {
           );
           const attackerForAoO = attackOfOpportunityAttacker;
           const targetForAoO = enemy.id;
+          const opportunityExecutionKey = makeEnemyAttackExecutionKey(
+            attackerForAoO,
+            targetForAoO,
+            "enemy-turn-ai-attack-of-opportunity",
+            {
+              callbackSource: "enemy-turn-ai-attack-of-opportunity-callback",
+              isDelayedCallback: true,
+            },
+          );
 
           setTimeout(() => {
+            if (!validateEnemyAttackCallbackEntry({
+              actor: attackerForAoO,
+              targetId: targetForAoO,
+              executionKey: opportunityExecutionKey,
+              source: "enemy-turn-ai-attack-of-opportunity-callback",
+              allowOutOfTurn: true,
+            })) {
+              return;
+            }
             if (
               combatOverRef?.current ||
               combatEndCheckRef?.current ||
@@ -6340,13 +6427,26 @@ export function runEnemyTurnAI(enemy, context) {
               return;
             }
             if (attackRef.current) {
-              attackRef.current(attackerForAoO, targetForAoO, {});
+              attackRef.current(attackerForAoO, targetForAoO, {
+                attackActionId: opportunityExecutionKey,
+                allowOutOfTurnAttack: true,
+                source: "attack-of-opportunity",
+              });
             } else {
               addLog(
                 `ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¯ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â Attack of opportunity delayed - attack system not ready`,
                 "info",
               );
               setTimeout(() => {
+                if (!validateEnemyAttackCallbackEntry({
+                  actor: attackerForAoO,
+                  targetId: targetForAoO,
+                  executionKey: opportunityExecutionKey,
+                  source: "enemy-turn-ai-attack-of-opportunity-retry",
+                  allowOutOfTurn: true,
+                })) {
+                  return;
+                }
                 if (
                   combatOverRef?.current ||
                   combatEndCheckRef?.current ||
@@ -6355,7 +6455,11 @@ export function runEnemyTurnAI(enemy, context) {
                   return;
                 }
                 if (attackRef.current) {
-                  attackRef.current(attackerForAoO, targetForAoO, {});
+                  attackRef.current(attackerForAoO, targetForAoO, {
+                    attackActionId: opportunityExecutionKey,
+                    allowOutOfTurnAttack: true,
+                    source: "attack-of-opportunity",
+                  });
                 }
               }, 1000);
             }
@@ -6513,9 +6617,24 @@ export function runEnemyTurnAI(enemy, context) {
         const chargeBonus = isChargingAttack ? { attackBonus: +2 } : {};
 
         // Attack all targets in line, but this is still ONE action
-        targetsInLine.forEach((lineTarget) => {
+        targetsInLine.forEach((lineTarget, lineIndex) => {
+          const areaExecutionKey = makeEnemyAttackExecutionKey(
+            enemy,
+            lineTarget.id,
+            `enemy-turn-ai-area-attack:${lineIndex}`,
+          );
+          if (!validateEnemyAttackCallbackEntry({
+            actor: enemy,
+            targetId: lineTarget.id,
+            executionKey: areaExecutionKey,
+            source: "enemy-turn-ai-area-attack-entry",
+          })) {
+            return;
+          }
           attack({ ...enemy, selectedAttack }, lineTarget.id, {
             ...chargeBonus,
+            attackActionId: areaExecutionKey,
+            source: "enemy-turn-ai-area-attack",
             attackDataOverride: selectedAttack,
             suppressEndTurn: true,
             flankingBonus: calculateFlankingBonus(
@@ -6651,7 +6770,23 @@ export function runEnemyTurnAI(enemy, context) {
     }
 
     // Multi-attack (count > 1): attack() schedules sub-attacks and logs once.
-    attack(updatedEnemy, target.id, allBonuses);
+    const meleeExecutionKey =
+      allBonuses?.attackActionId ||
+      makeEnemyAttackExecutionKey(updatedEnemy, target.id, "enemy-turn-ai-melee-attack");
+    if (!validateEnemyAttackCallbackEntry({
+      actor: updatedEnemy,
+      targetId: target.id,
+      executionKey: meleeExecutionKey,
+      source: "enemy-turn-ai-melee-entry",
+    })) {
+      processingEnemyTurnRef.current = false;
+      return;
+    }
+    attack(updatedEnemy, target.id, {
+      ...allBonuses,
+      attackActionId: meleeExecutionKey,
+      source: allBonuses?.source || "enemy-turn-ai-melee-attack",
+    });
     processingEnemyTurnRef.current = false;
     return;
   }

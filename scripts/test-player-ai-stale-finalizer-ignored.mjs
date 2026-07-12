@@ -28,7 +28,7 @@ assert.equal(shouldAcceptTurnFinalizer(expected, advanced), false);
 assert.equal(shouldAcceptTurnFinalizer(advanced, advanced), true);
 
 const combatPage = fs.readFileSync(new URL("../src/pages/CombatPage.jsx", import.meta.url), "utf8");
-assert.match(combatPage, /const schedulePlayerAIEndTurn[\s\S]*if \(!canFinalizePlayerAITurn\(source, \{ logAccepted: true, consume: true \}\)\)[\s\S]*return false;[\s\S]*scheduleEndTurn\(delayOverride, source, \{ deferTurnStart: true \}\)/,
+assert.match(combatPage, /const schedulePlayerAIEndTurn[\s\S]*if \(!canFinalizePlayerAITurn\(source, \{ logAccepted: true, consume: true \}\)\)[\s\S]*return false;[\s\S]*scheduleEndTurn\(delayOverride, source, \{[\s\S]*deferTurnStart: true,[\s\S]*actingActorSnapshot: playerAiActingActorSnapshot,[\s\S]*actingActorLabel: playerAiActingActorLabel,[\s\S]*\}\)/,
   "player AI wrapper rejects stale ownership before shared scheduling");
 assert.match(combatPage, /stale no-actions finalizer ignored fighter=/);
 assert.match(combatPage, /turn finalizer accepted fighter=/);

@@ -249,8 +249,8 @@ function App() {
     return <div>Loading...</div>;
   }
 
-  // Show navbar on all pages except login
-  const showNavbar = isAuthenticated && location.pathname !== '/login';
+  // Show navbar on all authenticated/dev-bypass pages except login
+  const showNavbar = (isAuthenticated || devAuthBypassEnabled) && location.pathname !== '/login';
 
   return (
     <ErrorBoundary>

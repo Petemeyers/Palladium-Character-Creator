@@ -206,6 +206,19 @@ import {
 } from "../utils/playerAiContinuation.js";
 import { shouldLogTurnSchedulerClassification } from "../utils/turnSchedulerLogThrottle.js";
 import { sanitizeCombatLogMessage } from "../utils/combatLogSanitizer.js";
+import { rollImpactLocation } from "../utils/combat/impactLocationClock.js";
+import {
+  buildCriticalImpactScenario,
+  getDamageSeverity,
+} from "../utils/combat/criticalImpactScenarios.js";
+import { applyBleedingMeterForNewMeleeRound } from "../utils/combat/bleedingMeter.js";
+import {
+  getCombatantGridPosition,
+  resolveNoMovePositionAuthority,
+  preserveLatestPositionAcrossStores,
+  preserveLatestPositionForNoMove,
+  stripPositionFields,
+} from "../utils/combat/noMovePositionPreservation.js";
 import {
   disambiguateDuplicateCombatActorNames,
   formatCombatActorLabel,
@@ -535,7 +548,6 @@ import {
   getReachAttackModifiers,
   getReachBlockModifiers,
   getReachEvadeModifiers,
-  canUseCalledShot,
   hasClosedDistance,
   markDistanceClosed,
   attemptCloseDistance,
@@ -2779,6 +2791,9 @@ function CombatPage({ characters = [] }) {
     return 200; // default cap
   }, []);
   const positionsRef = useRef(positions);
+  const committedPositionsRef = useRef(positions);
+  const lastMovementCommitRef = useRef({});
+  const movementCommitSequenceRef = useRef(0);
   const renderPositionsRef = useRef(renderPositions);
   const prevPositionsRef = useRef(null);
   const suppressNextAnimationRef = useRef(new Set());
@@ -2788,6 +2803,9 @@ function CombatPage({ characters = [] }) {
   const suppressEndTurnRef = useRef(false);
   useEffect(() => {
     positionsRef.current = positions;
+    if (Object.keys(committedPositionsRef.current || {}).length === 0) {
+      committedPositionsRef.current = positions;
+    }
   }, [positions]);
 
   useEffect(() => {
@@ -2991,6 +3009,154 @@ function CombatPage({ characters = [] }) {
     setFighters(next);
   }, []);
 
+  const recordLastMovementCommit = useCallback((fighterId, position, source = "movement") => {
+    const normalizedPosition = getCombatantGridPosition(position);
+    if (!fighterId || !normalizedPosition) return null;
+    const sequence = (movementCommitSequenceRef.current || 0) + 1;
+    movementCommitSequenceRef.current = sequence;
+    const commit = {
+      x: normalizedPosition.x,
+      y: normalizedPosition.y,
+      source,
+      generation: combatSessionRef.current,
+      combatRound: meleeRoundRef.current ?? meleeRound,
+      turnSerial: turnCounterRef.current ?? turnCounter,
+      sequence,
+    };
+    lastMovementCommitRef.current = {
+      ...(lastMovementCommitRef.current || {}),
+      [fighterId]: commit,
+    };
+    return commit;
+  }, [meleeRound, turnCounter]);
+
+  const recordMovementCommitMap = useCallback((positionMap = {}, source = "movement-map") => {
+    Object.entries(positionMap || {}).forEach(([fighterId, position]) => {
+      recordLastMovementCommit(fighterId, position, source);
+    });
+  }, [recordLastMovementCommit]);
+
+  const resolveLatestNoMovePosition = useCallback((fighterId, staleActor = null, latestFighter = null, source = "no-move") => {
+    if (!fighterId) return null;
+    const liveFighter = latestFighter || (fightersRef.current ?? fighters ?? []).find((fighter) => fighter.id === fighterId);
+    return resolveNoMovePositionAuthority({
+      lastMovementCommit: lastMovementCommitRef.current?.[fighterId],
+      committedPosition: committedPositionsRef.current?.[fighterId],
+      refPosition: positionsRef.current?.[fighterId],
+      latestFighter: liveFighter,
+      staleActor,
+      source,
+      actorLabel: formatCombatActorLabel(liveFighter || staleActor, {
+        roster: fightersRef.current ?? fighters ?? [],
+      }),
+      log: addLog,
+    });
+  }, [addLog, fighters]);
+
+  const auditNoMovePositionStores = useCallback((fighterId, actorLabel = "unknown") => {
+    const fighter = (fightersRef.current ?? fighters ?? []).find((candidate) => candidate.id === fighterId);
+    const fighterPosition = getCombatantGridPosition(fighter);
+    const refPosition = getCombatantGridPosition(positionsRef.current?.[fighterId]);
+    const committedPosition = getCombatantGridPosition(committedPositionsRef.current?.[fighterId]);
+    const samePosition = (a, b) => (!a && !b) || (!!a && !!b && a.x === b.x && a.y === b.y);
+    if (!samePosition(fighterPosition, refPosition) || !samePosition(refPosition, committedPosition)) {
+      addLog(
+        `position store mismatch after no-move: actor=${actorLabel} fighter=${fighterPosition ? `(${fighterPosition.x},${fighterPosition.y})` : "(unknown)"} positionsRef=${refPosition ? `(${refPosition.x},${refPosition.y})` : "(unknown)"} committed=${committedPosition ? `(${committedPosition.x},${committedPosition.y})` : "(unknown)"}`,
+        "warning",
+      );
+    }
+  }, [addLog, fighters]);
+
+  const preserveNoMovePosition = useCallback((latestFighter, staleActor, patch = {}, source = "no-move") => {
+    const canonicalPosition = latestFighter?.id
+      ? resolveLatestNoMovePosition(latestFighter.id, staleActor, latestFighter, source)
+      : null;
+    const latestCanonicalFighter = canonicalPosition
+      ? {
+          ...latestFighter,
+          position: { ...canonicalPosition },
+          hex: latestFighter.hex ? { ...canonicalPosition } : latestFighter.hex,
+          x: canonicalPosition.x,
+          y: canonicalPosition.y,
+        }
+      : latestFighter;
+    const preserved = preserveLatestPositionForNoMove({
+      latestFighter: latestCanonicalFighter,
+      staleActor,
+      patch,
+      log: addLog,
+      actorLabel: formatCombatActorLabel(latestCanonicalFighter || staleActor, {
+        roster: fightersRef.current ?? fighters ?? [],
+      }),
+    });
+    if (latestFighter?.id && canonicalPosition) {
+      const result = preserveLatestPositionAcrossStores({
+        fighterId: latestFighter.id,
+        staleActor,
+        updatedFighters: [preserved],
+        positions: {
+          ...(positionsRef.current ?? {}),
+          [latestFighter.id]: { ...canonicalPosition },
+        },
+        lastKnownPositions: {
+          ...(committedPositionsRef.current ?? {}),
+          [latestFighter.id]: { ...canonicalPosition },
+        },
+        log: addLog,
+        actorLabel: formatCombatActorLabel(latestCanonicalFighter || staleActor, {
+          roster: fightersRef.current ?? fighters ?? [],
+        }),
+      });
+      const repairedPosition = result.position || canonicalPosition;
+      const stalePosition = getCombatantGridPosition(staleActor);
+      if (stalePosition && repairedPosition) {
+        addLog(
+          `cower preserve position check: actor=${formatCombatActorLabel(latestCanonicalFighter || staleActor, { roster: fightersRef.current ?? fighters ?? [] })} source=${source} stale=(${stalePosition.x},${stalePosition.y}) latest=(${repairedPosition.x},${repairedPosition.y})`,
+          "debug",
+        );
+      }
+      const repairedPositions = {
+        ...(positionsRef.current || {}),
+        [latestFighter.id]: { ...repairedPosition },
+      };
+      positionsRef.current = repairedPositions;
+      committedPositionsRef.current = {
+        ...(committedPositionsRef.current || {}),
+        [latestFighter.id]: { ...repairedPosition },
+      };
+      setPositions((prev) => {
+        const current = prev?.[latestFighter.id];
+        if (current?.x === repairedPosition.x && current?.y === repairedPosition.y) return prev;
+        return {
+          ...(prev || {}),
+          [latestFighter.id]: { ...repairedPosition },
+        };
+      });
+      const finalFighter = result.fighters?.[0] || preserved;
+      addLog(
+        `cower preserve position committed: actor=${formatCombatActorLabel(finalFighter, { roster: fightersRef.current ?? fighters ?? [] })} source=${source} final=(${repairedPosition.x},${repairedPosition.y})`,
+        "debug",
+      );
+      setTimeout(() => auditNoMovePositionStores(latestFighter.id, formatCombatActorLabel(finalFighter, { roster: fightersRef.current ?? fighters ?? [] })), 0);
+      return finalFighter;
+    }
+    return preserved;
+  }, [addLog, auditNoMovePositionStores, fighters, resolveLatestNoMovePosition]);
+
+  const finalizeNoMovePreservingPosition = useCallback(({
+    fighterId,
+    actorPatch = {},
+    staleActor = null,
+    reason = "no-move",
+    source = "no-move",
+    latestFighter = null,
+  } = {}) => {
+    const liveFighter = latestFighter || (fightersRef.current ?? fighters ?? []).find((fighter) => fighter.id === fighterId);
+    if (!liveFighter) return actorPatch;
+    const sanitizedPatch = stripPositionFields(actorPatch);
+    return preserveNoMovePosition(liveFighter, staleActor || actorPatch, sanitizedPatch, source || reason);
+  }, [fighters, preserveNoMovePosition]);
+
   // Helper to mark a fighter as fled off-map (soft swap: keep in fighters, remove from map)
   const markFighterFledOffMap = useCallback((fighterId, nameForLog, reason = "rout-exit") => {
     commitFighters((prev) =>
@@ -3005,6 +3171,12 @@ function CombatPage({ characters = [] }) {
       const next = { ...prev };
       delete next[fighterId];
       positionsRef.current = next;
+      const committedNext = { ...(committedPositionsRef.current || {}) };
+      delete committedNext[fighterId];
+      committedPositionsRef.current = committedNext;
+      const lastMoveNext = { ...(lastMovementCommitRef.current || {}) };
+      delete lastMoveNext[fighterId];
+      lastMovementCommitRef.current = lastMoveNext;
       return next;
     });
 
@@ -3077,9 +3249,12 @@ function CombatPage({ characters = [] }) {
 
   const applyMoraleTriggersForTurn = useCallback((fighter, allFighters, source) => {
     if (!fighter) return fighter;
-    const currentPositions = positionsRef.current && Object.keys(positionsRef.current).length > 0
-      ? positionsRef.current
-      : positions;
+    const currentPositions =
+      committedPositionsRef.current && Object.keys(committedPositionsRef.current).length > 0
+        ? committedPositionsRef.current
+        : positionsRef.current && Object.keys(positionsRef.current).length > 0
+          ? positionsRef.current
+          : positions;
     const outcome = evaluateMoraleTriggers(fighter, {
       fighters: allFighters || fightersRef.current || fighters,
       positions: currentPositions,
@@ -3178,9 +3353,11 @@ function CombatPage({ characters = [] }) {
     }
 
     const currentPositions =
-      positionsRef.current && Object.keys(positionsRef.current).length > 0
-        ? positionsRef.current
-        : positions;
+      committedPositionsRef.current && Object.keys(committedPositionsRef.current).length > 0
+        ? committedPositionsRef.current
+        : positionsRef.current && Object.keys(positionsRef.current).length > 0
+          ? positionsRef.current
+          : positions;
     const liveFighters = allFighters || fightersRef.current || fighters;
     const rallyEnemies = liveFighters.filter((candidate) => candidate?.id !== fighter.id && candidate.type !== fighter.type);
     const rallyEligibility = canAttemptRallyFromRouting({
@@ -3396,6 +3573,11 @@ function CombatPage({ characters = [] }) {
         }
         const nextPositions = { ...currentPositions, [fighter.id]: destination };
         positionsRef.current = nextPositions;
+        committedPositionsRef.current = {
+          ...(committedPositionsRef.current || {}),
+          [fighter.id]: { ...destination },
+        };
+        recordLastMovementCommit(fighter.id, destination, source || "routed-survival-movement");
         setPositions(nextPositions);
       } else {
         const failureReason = getSurvivalMovementFailureReason({
@@ -3427,7 +3609,7 @@ function CombatPage({ characters = [] }) {
         const staminaResult = routedStaminaCost > 0
           ? spendStamina(candidate, routedStaminaCost)
           : { updated: candidate };
-        return resetExhaustedCowerCount({
+        const noMovePatch = resetExhaustedCowerCount({
           ...staminaResult.updated,
           remainingActions: Math.max(0, (Number(candidate.remainingActions ?? 0) || 0) - 1),
           moraleState: {
@@ -3439,6 +3621,14 @@ function CombatPage({ characters = [] }) {
             executedSurvivalIntent: survivalMove?.position ? executedSurvivalIntent : SURVIVAL_INTENTS.COWER,
             lastRoutePosition: destination,
           },
+        });
+        return finalizeNoMovePreservingPosition({
+          fighterId: candidate.id,
+          latestFighter: candidate,
+          staleActor: fighter,
+          actorPatch: noMovePatch,
+          reason: "survival-cower",
+          source: "survival-cower",
         });
       }));
       return true;
@@ -3458,8 +3648,19 @@ function CombatPage({ characters = [] }) {
         if (candidate.id !== fighter.id) return candidate;
         const cower = advanceExhaustedCower(candidate);
         terminalCower = cower.terminal;
-        if (cower.terminal) return cower.actor;
-        return {
+        if (cower.terminal) return finalizeNoMovePreservingPosition({
+          fighterId: candidate.id,
+          latestFighter: candidate,
+          staleActor: cower.actor || fighter,
+          actorPatch: cower.actor,
+          reason: "exhausted-cower-terminal",
+          source: "exhausted-cower",
+        });
+        return finalizeNoMovePreservingPosition({
+          fighterId: candidate.id,
+          latestFighter: candidate,
+          staleActor: cower.actor || fighter,
+          actorPatch: {
           ...cower.actor,
           remainingActions: Math.max(0, (Number(candidate.remainingActions ?? 0) || 0) - 1),
           moraleState: {
@@ -3467,7 +3668,10 @@ function CombatPage({ characters = [] }) {
             status: "ROUTED",
             survivalIntent: SURVIVAL_INTENTS.COWER,
           },
-        };
+          },
+          reason: "exhausted-cower",
+          source: "exhausted-cower",
+        });
       }));
       if (terminalCower) {
         addLog(`${fighter.name} is too exhausted and broken to continue fighting.`, "warning");
@@ -3565,6 +3769,11 @@ function CombatPage({ characters = [] }) {
     );
     const nextPositions = { ...currentPositions, [fighter.id]: retreat.position };
     positionsRef.current = nextPositions;
+    committedPositionsRef.current = {
+      ...(committedPositionsRef.current || {}),
+      [fighter.id]: { ...retreat.position },
+    };
+    recordLastMovementCommit(fighter.id, retreat.position, source || "routed-panic-flee");
     setPositions(nextPositions);
 
     addLog(
@@ -3612,6 +3821,7 @@ function CombatPage({ characters = [] }) {
     combatTerrain,
     addLog,
     commitFighters,
+    recordLastMovementCommit,
     markFighterFledOffMap,
     calculateDistance,
     canAnyPursuerCatch,
@@ -3760,6 +3970,11 @@ function CombatPage({ characters = [] }) {
   const currentTurnTokenRef = useRef(null); // Universal turn/action ownership token for delayed callbacks.
   const activeGrappleActionIdRef = useRef(null); // Grapple action ownership token; stale helper continuations must match.
   const activeAttackActionIdRef = useRef(null); // Attack/multi-attack ownership token for delayed callbacks.
+  const attackExecutionGateChainsRef = useRef(new Map()); // executionKey -> entry/preStamina/roll/damage/hp gate chain.
+  const attackExecutionRegistryRef = useRef(new Map()); // opaque attack execution id -> metadata snapshot.
+  const attackExecutionSerialRef = useRef(0);
+  const attackActionGrantRegistryRef = useRef(new Map()); // grantId -> turn/action ownership metadata.
+  const staleAttackBlockFinalizerRef = useRef(null);
   const staminaChargedAttackKeysRef = useRef(new Set()); // Charge stamina once per logical attack/multi-hit sequence.
   const pendingPlayerAIContinuationRef = useRef(null); // Async post-move work owns its originating player turn.
   const playerAIExecutionRef = useRef(null); // Exact player AI executor invocation currently owning the turn.
@@ -5151,6 +5366,9 @@ function CombatPage({ characters = [] }) {
     currentTurnTokenRef.current = null;
     activeGrappleActionIdRef.current = null;
     activeAttackActionIdRef.current = null;
+    attackExecutionGateChainsRef.current.clear();
+    attackExecutionRegistryRef.current.clear();
+    attackActionGrantRegistryRef.current.clear();
     techniqueImpactTurnEndHandledRef.current = null;
     lastTechniqueMemoryRef.current = {};
     noActionsPassLogRef.current = new Set();
@@ -5178,6 +5396,10 @@ function CombatPage({ characters = [] }) {
     currentTurnTokenRef.current = null;
     activeGrappleActionIdRef.current = null;
     activeAttackActionIdRef.current = null;
+    attackExecutionGateChainsRef.current.clear();
+    attackExecutionRegistryRef.current.clear();
+    attackActionGrantRegistryRef.current.clear();
+    staleAttackBlockFinalizerRef.current = null;
     turnActionResolvingRef.current = false;
     pendingTurnAdvanceRef.current = false;
     turnStartInFlightKeyRef.current = null;
@@ -5234,6 +5456,18 @@ function CombatPage({ characters = [] }) {
     allTimeoutsRef.current.forEach((id) => clearTimeout(id));
     allTimeoutsRef.current = [];
     playerTurnInFlightKeyRef.current = null;
+  }
+
+  function clearAttackExecutionState(reason = "unknown") {
+    const hadAttackKey = Boolean(activeAttackActionIdRef.current);
+    const hadGateChains = (attackExecutionGateChainsRef.current?.size ?? 0) > 0;
+    activeAttackActionIdRef.current = null;
+    attackExecutionGateChainsRef.current.clear();
+    attackExecutionRegistryRef.current.clear();
+    attackActionGrantRegistryRef.current.clear();
+    if (DEBUG_COMBAT && (hadAttackKey || hadGateChains)) {
+      addLog(`attack execution keys invalidated: reason=${reason}`, "debug");
+    }
   }
 
   const getPlayerTurnInFlightKey = useCallback((fighter) => {
@@ -6564,6 +6798,22 @@ function CombatPage({ characters = [] }) {
       }
     }
   }, [addLog, getCombatantHP, MIN_COMBAT_HP]);
+
+  const applyCriticalBleedingForNewMeleeRound = useCallback(
+    (fighter, nextMeleeRound) => {
+      const result = applyBleedingMeterForNewMeleeRound(fighter, {
+        meleeRound: nextMeleeRound,
+      });
+      if (!result.hpLoss) return result.fighter;
+
+      const nextFighter = { ...result.fighter };
+      const nextHP = clampHP(getFighterHP(fighter) - result.hpLoss, nextFighter);
+      applyHPToFighter(nextFighter, nextHP);
+      addLog(`${nextFighter.name} loses ${result.hpLoss} HP from bleeding.`, "warning");
+      return nextFighter;
+    },
+    [addLog, applyHPToFighter, clampHP, getFighterHP],
+  );
 
   const [combatantTypeFilter, setCombatantTypeFilter] = useState("all"); // Filter arenaRoster by category
   const collator = useMemo(() => new Intl.Collator(undefined, { sensitivity: "base" }), []);
@@ -11449,7 +11699,7 @@ function CombatPage({ characters = [] }) {
     currentTurnTokenRef.current = null;
     activeTacticalImpactRef.current = null;
     activeGrappleActionIdRef.current = null;
-    activeAttackActionIdRef.current = null;
+    clearAttackExecutionState(`finalizer-settled:${finalizerMeta?.source || "unknown"}`);
     // Invalidate any delayed player AI callbacks when turn ownership changes.
     playerAITurnTokenRef.current = (playerAITurnTokenRef.current || 0) + 1;
     // Cancel pending player AI timers (CombatPage-level scheduler).
@@ -11551,24 +11801,25 @@ function CombatPage({ characters = [] }) {
         // Tick down + clear status effects each melee
         // (needed so temporary effects like SHAKEN expire correctly)
         const withStatus = updateStatusEffects({ ...f }, nextMeleeRound);
-        const withBleeding = tickBleeding(withStatus);
-        if (withBleeding !== withStatus) {
+        const withLegacyBleeding = tickBleeding(withStatus);
+        if (withLegacyBleeding !== withStatus) {
           try {
             if (
-              withStatus?.condition !== withBleeding?.condition &&
-              withBleeding?.condition === "dying"
+              withStatus?.condition !== withLegacyBleeding?.condition &&
+              withLegacyBleeding?.condition === "dying"
             ) {
-              addLog(`${withBleeding.name} worsens to DYING from blood loss!`, "defeat");
+              addLog(`${withLegacyBleeding.name} worsens to DYING from blood loss!`, "defeat");
             } else if (
-              withStatus?.condition !== withBleeding?.condition &&
-              withBleeding?.condition === "dead"
+              withStatus?.condition !== withLegacyBleeding?.condition &&
+              withLegacyBleeding?.condition === "dead"
             ) {
-              addLog(`${withBleeding.name} bleeds out and dies!`, "defeat");
+              addLog(`${withLegacyBleeding.name} bleeds out and dies!`, "defeat");
             }
           } catch {
             // ignore
           }
         }
+        const withBleeding = applyCriticalBleedingForNewMeleeRound(withLegacyBleeding, nextMeleeRound);
         // Fix: Use proper fallback for animals (actionsPerRound ?? attacks ?? 2)
         const apm =
           withBleeding.actionsPerRound ?? withBleeding.attacks ?? 2; // fallback for animals
@@ -11840,7 +12091,7 @@ function CombatPage({ characters = [] }) {
 
     scheduleNextTurnStart(fightersNow[nextIndex], nextIndex, "endTurn-direct");
     return;
-  }, [fighters, positions, turnIndex, temporaryHexSharing, addLog, meleeRound, turnCounter, clearScheduledTurn, canFighterAct, canFighterStartTurn, combatActive, tickBleeding, startTurnOnce, releaseTurnStart]);
+  }, [fighters, positions, turnIndex, temporaryHexSharing, addLog, meleeRound, turnCounter, clearScheduledTurn, canFighterAct, canFighterStartTurn, combatActive, tickBleeding, applyCriticalBleedingForNewMeleeRound, startTurnOnce, releaseTurnStart]);
 
   // Update endTurnRef when endTurn is defined
   useEffect(() => {
@@ -11960,6 +12211,7 @@ function CombatPage({ characters = [] }) {
   // Extract combat round reset logic (reused from endTurn)
   const startNewMeleeRound = useCallback((nextRoundNumber) => {
     addLog(`Combat Round ${meleeRound} complete! Starting Round ${nextRoundNumber}...`, "combat");
+    clearAttackExecutionState(`new-melee-round:${nextRoundNumber}`);
 
     // Clear cast guard for new combat round (allows new casts in new round)
     combatCastGuardRef.current.clear();
@@ -11977,10 +12229,11 @@ function CombatPage({ characters = [] }) {
         // Tick down + clear status effects each melee
         // (needed so temporary effects like SHAKEN expire correctly)
         const withStatus = updateStatusEffects({ ...f }, nextRoundNumber);
+        const withBleeding = applyCriticalBleedingForNewMeleeRound(withStatus, nextRoundNumber);
         // Fix: Use proper fallback for animals (actionsPerRound ?? attacks ?? 2)
-        const apm = withStatus.actionsPerRound ?? withStatus.attacks ?? 2; // fallback for animals
+        const apm = withBleeding.actionsPerRound ?? withBleeding.attacks ?? 2; // fallback for animals
         const fighter = {
-          ...withStatus,
+          ...withBleeding,
           remainingActions: apm,
           techniquesCastThisMelee: 0, // Reset techniques cast counter for new combat round (RAW)
         };
@@ -12049,7 +12302,7 @@ function CombatPage({ characters = [] }) {
       processingPlayerAIRef.current = false;
       lastOpenedChoicesTurnRef.current = null;
     }
-  }, [addLog, meleeRound, fighters, positions, combatActive, canFighterAct, canFighterStartTurn]);
+  }, [addLog, meleeRound, fighters, positions, combatActive, canFighterAct, canFighterStartTurn, applyCriticalBleedingForNewMeleeRound]);
 
   // Helper to build lightweight position snapshot (reduces serialization cost)
   const buildPositionsLite = useCallback((posMap) => {
@@ -12654,6 +12907,16 @@ function CombatPage({ characters = [] }) {
       if (DEBUG_COMBAT) {
         const delayMs = typeof delayOverride === "number" ? delayOverride : 0;
         addLog(`scheduleEndTurn source=${diagnosticSource} delay=${delayMs}`, "debug");
+      }
+      if (
+        diagnosticSource === "horror-action-consumed" ||
+        diagnosticSource.includes("cower") ||
+        diagnosticSource.includes("no-move") ||
+        diagnosticSource.includes("unresolved-turn-fallback") ||
+        diagnosticSource.includes("cannot-act") ||
+        diagnosticSource.includes("recover")
+      ) {
+        clearAttackExecutionState(`scheduleEndTurn:${diagnosticSource}`);
       }
       if (suppressEndTurnRef.current) {
         return;
@@ -13387,13 +13650,19 @@ function CombatPage({ characters = [] }) {
             addLog(`${attackerForAoO.name} makes attack of opportunity!`, "info");
             // Execute attack of opportunity - will be called via ref after attack is defined
             if (attackRef.current) {
-              attackRef.current(attackerForAoO, targetForAoO, {});
+              attackRef.current(attackerForAoO, targetForAoO, {
+                allowOutOfTurnAttack: true,
+                source: "attack-of-opportunity",
+              });
             } else {
               addLog(`Attack of opportunity delayed - attack function not ready`, "info");
               // Retry after a longer delay
               setTimeout(() => {
                 if (attackRef.current) {
-                  attackRef.current(attackerForAoO, targetForAoO, {});
+                  attackRef.current(attackerForAoO, targetForAoO, {
+                    allowOutOfTurnAttack: true,
+                    source: "attack-of-opportunity",
+                  });
                 }
               }, 1000);
             }
@@ -14207,6 +14476,260 @@ function CombatPage({ characters = [] }) {
     });
   }, [fighters, combatActive, addLog, setFighters, positions]);
 
+  const createAttackActionGrant = useCallback((actorId, targetId, source = "attack", options = {}) => {
+    const activeFighter = fightersRef.current?.[turnIndexRef.current];
+    const grantId = `grant-${combatSessionRef.current}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const grant = {
+      grantId,
+      actorId: String(actorId || "unknown"),
+      targetId: String(targetId || "unknown"),
+      turnToken: currentTurnTokenRef.current || "no-turn-token",
+      round: meleeRoundRef.current ?? meleeRound,
+      turnCounter: turnCounterRef.current ?? turnCounter,
+      combatSession: combatSessionRef.current,
+      generation: endTurnGenerationRef.current,
+      activeActorId: activeFighter?.id ? String(activeFighter.id) : null,
+      actionIndex: options.actionIndex ?? activeFighter?.remainingActions ?? null,
+      source: source || "attack",
+      createdAt: Date.now(),
+    };
+    attackActionGrantRegistryRef.current.set(grantId, grant);
+    return grant;
+  }, [meleeRound, turnCounter]);
+
+  const getAttackActionGrant = useCallback((grantOrId) => {
+    if (!grantOrId) return null;
+    if (typeof grantOrId === "object" && grantOrId.grantId) return grantOrId;
+    if (typeof grantOrId === "string") return attackActionGrantRegistryRef.current.get(grantOrId) || null;
+    return null;
+  }, []);
+
+  const isAttackActionGrantCurrent = useCallback((grant, actorId, targetId) => {
+    if (!grant) return false;
+    const activeFighter = fightersRef.current?.[turnIndexRef.current];
+    const activeActorId = activeFighter?.id ? String(activeFighter.id) : null;
+    const grantActionIndexMatches =
+      grant.actionIndex == null ||
+      activeFighter?.remainingActions == null ||
+      Number(activeFighter.remainingActions) === Number(grant.actionIndex);
+    return (
+      grant.actorId === String(actorId || "unknown") &&
+      grant.targetId === String(targetId || "unknown") &&
+      grant.turnToken === String(currentTurnTokenRef.current || "no-turn-token") &&
+      grant.round === (meleeRoundRef.current ?? meleeRound) &&
+      grant.turnCounter === (turnCounterRef.current ?? turnCounter) &&
+      grant.combatSession === combatSessionRef.current &&
+      grant.generation === endTurnGenerationRef.current &&
+      (!grant.activeActorId || grant.activeActorId === activeActorId) &&
+      grantActionIndexMatches
+    );
+  }, [meleeRound, turnCounter]);
+
+  const createAttackExecutionKey = useCallback((actorId, targetId, source = "attack", options = {}) => {
+    const grant = getAttackActionGrant(options.grant || options.grantId);
+    const isDelayedCallback = Boolean(options.isDelayedCallback || options.callbackSource);
+    if (isDelayedCallback && !isAttackActionGrantCurrent(grant, actorId, targetId)) {
+      const actorForLog = (fightersRef.current ?? fighters ?? []).find((fighter) => fighter.id === actorId);
+      addLog(
+        `stale callback key mint blocked: actor=${actorForLog?.name || actorId || "unknown"} source=${source || options.callbackSource || "attack"} reason=no-current-action-grant`,
+        "warning",
+      );
+      return null;
+    }
+    const serial = (attackExecutionSerialRef.current || 0) + 1;
+    attackExecutionSerialRef.current = serial;
+    const id = `attack-${combatSessionRef.current}-${serial}-${Math.random().toString(36).slice(2)}`;
+    const activeFighter = fightersRef.current?.[turnIndexRef.current];
+    const registryActor = (fightersRef.current ?? fighters ?? []).find((fighter) => fighter.id === actorId);
+    const metadata = {
+      id,
+      source: source || "attack",
+      combatSession: combatSessionRef.current,
+      generation: endTurnGenerationRef.current,
+      meleeRound: meleeRoundRef.current ?? meleeRound,
+      turnCounter: turnCounterRef.current ?? turnCounter,
+      currentTurnToken: currentTurnTokenRef.current || "no-turn-token",
+      actorId: String(actorId || "unknown"),
+      targetId: String(targetId || "unknown"),
+      actionIndex: options.actionIndex ?? activeFighter?.remainingActions ?? null,
+      grantId: grant?.grantId || null,
+      scheduledAtTurnToken: options.scheduledAtTurnToken || grant?.turnToken || currentTurnTokenRef.current || "no-turn-token",
+      callbackSource: options.callbackSource || null,
+      isDelayedCallback,
+      createdAt: Date.now(),
+    };
+    attackExecutionRegistryRef.current.set(id, metadata);
+    addLog(
+      `attack key registry created: actor=${registryActor?.name || metadata.actorId} source=${metadata.source} id=${id} round=${metadata.meleeRound} turn=${metadata.turnCounter} token=${metadata.currentTurnToken}`,
+      "debug",
+    );
+    return id;
+  }, [addLog, fighters, getAttackActionGrant, isAttackActionGrantCurrent, meleeRound, turnCounter]);
+
+  const getAttackExecutionMetadata = useCallback((executionKey) => {
+    if (!executionKey || typeof executionKey !== "string") return null;
+    return attackExecutionRegistryRef.current.get(executionKey) || null;
+  }, []);
+
+  const getAttackExecutionGateChain = useCallback((executionKey) => {
+    if (!executionKey) return {
+      entry: false,
+      preStamina: false,
+      roll: false,
+      damage: false,
+      hp: false,
+    };
+    const existing = attackExecutionGateChainsRef.current.get(executionKey);
+    if (existing) return existing;
+    const created = {
+      entry: false,
+      preStamina: false,
+      roll: false,
+      damage: false,
+      hp: false,
+    };
+    attackExecutionGateChainsRef.current.set(executionKey, created);
+    return created;
+  }, []);
+
+  const logAttackExecutionGateChain = useCallback((actorName, executionKey) => {
+    const chain = getAttackExecutionGateChain(executionKey);
+    addLog(
+      `attack execution gate chain: actor=${actorName || "unknown"} executionKey=${executionKey || "none"} entry=${!!chain.entry} preStamina=${!!chain.preStamina} roll=${!!chain.roll} damage=${!!chain.damage} hp=${!!chain.hp}`,
+      "debug",
+    );
+  }, [addLog, getAttackExecutionGateChain]);
+
+  const validateCombatRollOwnership = useCallback(({
+    actorId,
+    targetId,
+    executionKey,
+    source = "combat-roll",
+    allowOutOfTurn = false,
+    expectedCombatSession = combatSessionRef.current,
+    expectedTurnToken = currentTurnTokenRef.current,
+    expectedMeleeRound = meleeRoundRef.current ?? meleeRound,
+    expectedTurnCounter = turnCounterRef.current ?? turnCounter,
+    expectedTurnIndex = turnIndexRef.current,
+    requireActionRemaining = true,
+    ownership = "attack",
+    requireEntryGate = false,
+    requirePreStaminaGate = false,
+    requireRollGate = false,
+    requireDamageGate = false,
+  } = {}) => {
+    const latestFighters = fightersRef.current ?? fighters ?? [];
+    const latestActor = latestFighters.find((fighter) => fighter.id === actorId);
+    const latestTarget = latestFighters.find((fighter) => fighter.id === targetId);
+    const activeFighter = latestFighters?.[turnIndexRef.current];
+    const reasons = [];
+    const keyMetadata = getAttackExecutionMetadata(executionKey);
+
+    if (!executionKey && !allowOutOfTurn) reasons.push("missing-execution-key");
+    if (executionKey && ownership !== "grapple" && !keyMetadata) reasons.push("unknown-execution-key");
+    if (keyMetadata) {
+      if (String(keyMetadata.combatSession) !== String(combatSessionRef.current)) reasons.push("execution-key-combat-session-stale");
+      if (keyMetadata.currentTurnToken !== "no-turn-token" && keyMetadata.currentTurnToken !== String(currentTurnTokenRef.current || "no-turn-token")) {
+        reasons.push("execution-key-turn-token-stale");
+      }
+      if (
+        keyMetadata.isDelayedCallback &&
+        keyMetadata.scheduledAtTurnToken &&
+        keyMetadata.scheduledAtTurnToken !== String(currentTurnTokenRef.current || "no-turn-token")
+      ) {
+        reasons.push("delayed-callback-scheduled-token-stale");
+      }
+      if (keyMetadata.actorId !== String(actorId || "unknown")) reasons.push(`execution-key-actor-mismatch:${keyMetadata.actorId}`);
+      if (keyMetadata.targetId !== String(targetId || "unknown")) reasons.push(`execution-key-target-mismatch:${keyMetadata.targetId}`);
+      if (Number.isFinite(keyMetadata.meleeRound) && keyMetadata.meleeRound !== (meleeRoundRef.current ?? meleeRound)) {
+        reasons.push("execution-key-round-stale");
+      }
+      if (Number.isFinite(keyMetadata.turnCounter) && keyMetadata.turnCounter !== (turnCounterRef.current ?? turnCounter)) {
+        reasons.push("execution-key-turn-counter-stale");
+      }
+    }
+    if (combatOverRef.current || combatEndCheckRef.current) reasons.push("combat-over");
+    if (!combatActiveRef.current) reasons.push("combat-inactive");
+    if (expectedCombatSession !== combatSessionRef.current) reasons.push("combat-session-mismatch");
+    if (expectedTurnToken && currentTurnTokenRef.current !== expectedTurnToken) reasons.push("turn-token-mismatch");
+    if ((meleeRoundRef.current ?? meleeRound) !== expectedMeleeRound) reasons.push("round-mismatch");
+    if ((turnCounterRef.current ?? turnCounter) !== expectedTurnCounter) reasons.push("turn-counter-mismatch");
+    if (!latestActor) reasons.push("actor-missing");
+    if (
+      !latestTarget ||
+      latestTarget.status === "defeated" ||
+      latestTarget.condition === "dead" ||
+      Number(latestTarget.currentHP ?? latestTarget.hp ?? 1) <= -21
+    ) {
+      reasons.push("target-invalid");
+    }
+
+    const activeOwnershipKey =
+      ownership === "grapple"
+        ? activeGrappleActionIdRef.current
+        : ownership === "callback"
+          ? executionKey
+          : activeAttackActionIdRef.current;
+    if (executionKey && ownership !== "callback" && activeOwnershipKey !== executionKey) {
+      reasons.push(`${ownership}-action-mismatch`);
+    }
+
+    if (ownership === "attack" && executionKey) {
+      const chain = getAttackExecutionGateChain(executionKey);
+      if (requireEntryGate && !chain.entry) reasons.push("missing-entry-gate");
+      if (requirePreStaminaGate && !chain.preStamina) reasons.push("missing-pre-stamina-gate");
+      if (requireRollGate && !chain.roll) reasons.push("missing-roll-gate");
+      if (requireDamageGate && !chain.damage) reasons.push("missing-damage-gate");
+    }
+
+    if (!allowOutOfTurn) {
+      if (activeFighter?.id && actorId && activeFighter.id !== actorId) {
+        reasons.push(`active-fighter-mismatch:${activeFighter.id}`);
+      }
+      if (expectedTurnIndex != null && turnIndexRef.current !== expectedTurnIndex) {
+        reasons.push("turn-index-mismatch");
+      }
+    }
+
+    const remaining = Number(latestActor?.remainingActions);
+    if (requireActionRemaining && Number.isFinite(remaining) && remaining <= 0) {
+      reasons.push("attacker-has-no-actions");
+    }
+
+    if (reasons.length > 0) {
+      addLog(
+        `attack key registry rejected: actor=${latestActor?.name || actorId || "unknown"} source=${source} id=${executionKey || "none"} reason=${reasons.join("|")}`,
+        "warning",
+      );
+      addLog(
+        `stale combat roll blocked: actor=${latestActor?.name || actorId || "unknown"} reason=${reasons.join("|")} executionKey=${executionKey || "none"} source=${source}`,
+        "warning",
+      );
+      return {
+        ok: false,
+        reason: reasons.join("|"),
+        latestActor,
+        latestTarget,
+        activeFighter,
+      };
+    }
+
+    addLog(
+      `attack key registry validated: actor=${latestActor?.name || actorId || "unknown"} source=${source} id=${executionKey || "none"}`,
+      "debug",
+    );
+    addLog(
+      `combat roll gate passed: actor=${latestActor?.name || actorId || "unknown"} source=${source} executionKey=${executionKey || "none"}`,
+      "debug",
+    );
+    return {
+      ok: true,
+      latestActor,
+      latestTarget,
+      activeFighter,
+    };
+  }, [addLog, fighters, getAttackExecutionGateChain, getAttackExecutionMetadata, meleeRound, turnCounter]);
+
   // Grapple action handler
   const handleGrappleAction = useCallback((actionType, attacker, defenderId) => {
     let grappleFighters = fightersRef.current ?? fighters;
@@ -14265,9 +14788,15 @@ function CombatPage({ characters = [] }) {
       if (!canFighterStartTurn(latestAttacker)) return "cannot act";
       return null;
     };
+    const logStaleGrappleFollowUpBlocked = (reason, executionKey = grappleActionId) => {
+      addLog(
+        `stale grapple follow-up blocked: actor=${liveAttacker?.name || attacker?.name || "unknown"} reason=${reason || "unknown"} executionKey=${executionKey}`,
+        "warning",
+      );
+    };
     const staleReason = getStaleGrappleReason();
     if (staleReason) {
-      addLog(`stale grapple follow-up aborted: ${staleReason}`, "warning");
+      logStaleGrappleFollowUpBlocked(staleReason);
       addLog("stale grapple callback ignored", "warning");
       return false;
     }
@@ -14356,6 +14885,9 @@ function CombatPage({ characters = [] }) {
           [defenderId]: sharedHex,
         };
         positionsRef.current = syncedPositions;
+        committedPositionsRef.current = syncedPositions;
+        recordLastMovementCommit(liveAttacker.id, sharedHex, "grapple-shared-position-sync");
+        recordLastMovementCommit(defenderId, sharedHex, "grapple-shared-position-sync");
         setPositions(syncedPositions);
         const next = grappleFighters.map((f) => (
           f.id === liveAttacker.id || f.id === defenderId
@@ -14566,12 +15098,29 @@ function CombatPage({ characters = [] }) {
         return next;
       });
     };
-    const validateGrappleResult = (_actionType, _result, validationActionId = grappleActionId) =>
-      getStaleGrappleReason(validationActionId);
+    const validateGrappleResult = (_actionType, _result, validationActionId = grappleActionId, source = "grapple-roll") => {
+      const staleGrappleReason = getStaleGrappleReason(validationActionId);
+      if (staleGrappleReason) return staleGrappleReason;
+      const gateResult = validateCombatRollOwnership({
+        actorId: liveAttacker?.id,
+        targetId: defenderId,
+        executionKey: validationActionId,
+        source,
+        allowOutOfTurn: false,
+        expectedCombatSession: grappleTurnSnapshot.combatSession,
+        expectedTurnToken: grappleActionToken,
+        expectedMeleeRound: grappleTurnSnapshot.meleeRound,
+        expectedTurnCounter: grappleTurnSnapshot.turnCounter,
+        expectedTurnIndex: grappleTurnSnapshot.turnIndex,
+        requireActionRemaining: true,
+        ownership: "grapple",
+      });
+      return gateResult.ok ? null : gateResult.reason;
+    };
 
     const latestStaleReason = getStaleGrappleReason(grappleActionId);
     if (latestStaleReason) {
-      addLog(`stale grapple follow-up aborted: ${latestStaleReason}`, "warning");
+      logStaleGrappleFollowUpBlocked(latestStaleReason, grappleActionId);
       addLog("stale grapple callback ignored", "warning");
       clearOwnedGrappleActionId();
       clearOwnedActionLatch();
@@ -14608,7 +15157,7 @@ function CombatPage({ characters = [] }) {
     });
     clearOwnedGrappleActionId();
     return true;
-  }, [fighters, combatActive, addLog, positions, setFighters, setPositions, clampHP, getFighterHP, applyHPToFighter, getGrappleAttributeModifiers, canFighterStartTurn, meleeRound, turnCounter]);
+  }, [fighters, combatActive, addLog, positions, setFighters, setPositions, clampHP, getFighterHP, applyHPToFighter, getGrappleAttributeModifiers, canFighterStartTurn, meleeRound, turnCounter, validateCombatRollOwnership]);
 
   const hashToIndex = (str, mod) => {
     let h = 2166136261; // FNV-1a
@@ -14914,7 +15463,7 @@ function CombatPage({ characters = [] }) {
     // Enemy closing MOVE and RUN actions are final movement, not deferred
     // previews. CHARGE keeps its dedicated movement/bonus branch below.
     if (persistImmediately && movementAction !== 'CHARGE') {
-      persistEnemyMovementPosition({
+      const persistenceResult = persistEnemyMovementPosition({
         fighterId: combatantId,
         destination: newPosition,
         positionsRef,
@@ -14924,6 +15473,17 @@ function CombatPage({ characters = [] }) {
           updated,
         ),
       });
+      if (persistenceResult?.position) {
+        committedPositionsRef.current = {
+          ...(committedPositionsRef.current || {}),
+          [combatantId]: { ...persistenceResult.position },
+        };
+        recordLastMovementCommit(
+          combatantId,
+          persistenceResult.position,
+          movementInfo?.source || movementInfo?.action || "persist-immediate-movement",
+        );
+      }
       setFlashingCombatants(prev => new Set(prev).add(combatantId));
       if (combatant) {
         const { description } = movementInfo;
@@ -14959,6 +15519,12 @@ function CombatPage({ characters = [] }) {
         // Sync combined body positions (mounts, carriers, etc.)
         const synced = syncCombinedPositions(fighters, updated);
         positionsRef.current = synced;
+        committedPositionsRef.current = synced;
+        recordLastMovementCommit(
+          combatantId,
+          newPosition,
+          movementInfo?.source || movementInfo?.action || "charge",
+        );
         return synced;
       });
 
@@ -15026,6 +15592,12 @@ function CombatPage({ characters = [] }) {
           const updated = { ...prev };
           delete updated[combatantId];
           positionsRef.current = updated;
+          const committedNext = { ...(committedPositionsRef.current || {}) };
+          delete committedNext[combatantId];
+          committedPositionsRef.current = committedNext;
+          const lastMoveNext = { ...(lastMovementCommitRef.current || {}) };
+          delete lastMoveNext[combatantId];
+          lastMovementCommitRef.current = lastMoveNext;
           return updated;
         });
         setRenderPositions((prev) => {
@@ -15050,6 +15622,12 @@ function CombatPage({ characters = [] }) {
           // Sync combined body positions (mounts, carriers, etc.)
           const synced = syncCombinedPositions(fighters, updated);
           positionsRef.current = synced;
+          committedPositionsRef.current = synced;
+          recordLastMovementCommit(
+            combatantId,
+            newPosition,
+            movementInfo?.source || movementInfo?.action || "move",
+          );
           return synced;
         });
       });
@@ -15084,26 +15662,57 @@ function CombatPage({ characters = [] }) {
         }
       }
     }
-  }, [fighters, positions, addLog, scheduleEndTurn, enqueueMoveAnimation, getMoveDurationMs, setRenderPositions]);
+  }, [fighters, positions, addLog, scheduleEndTurn, enqueueMoveAnimation, getMoveDurationMs, recordLastMovementCommit, setRenderPositions]);
 
   // Define attack function with useCallback (isPredatorBird, isTinyPrey, canAISeeTargetAsymmetric are defined earlier)
   const attack = useCallback(async (attacker, defenderId, bonusModifiers = {}) => {
+    const attackSource = bonusModifiers?.playerAITurnMeta?.source || bonusModifiers?.source || "attack";
+    const makeBlockedAttackResult = (reason, executionKey = bonusModifiers?.attackActionId || null) => ({
+      blocked: true,
+      stale: true,
+      reason,
+      executionKey,
+      finalized: false,
+    });
+    const providedAttackActionId = bonusModifiers?.attackActionId;
+    if (!providedAttackActionId && !bonusModifiers?.allowOutOfTurnAttack) {
+      addLog(
+        `stale combat roll blocked: actor=${attacker?.name || attacker?.id || "unknown"} reason=missing-execution-key executionKey=none source=${attackSource}`,
+        "warning",
+      );
+      return makeBlockedAttackResult("missing-execution-key", null);
+    }
     const attackActionId =
-      bonusModifiers?.attackActionId ||
-      [
-        "attack",
-        combatSessionRef.current,
-        currentTurnTokenRef.current || "no-turn-token",
-        attacker?.id || "unknown",
-        defenderId || "unknown",
-        meleeRoundRef.current ?? meleeRound,
-        turnCounterRef.current ?? turnCounter,
-        Date.now(),
-        Math.random().toString(36).slice(2),
-      ].join(":");
+      providedAttackActionId ||
+      createAttackExecutionKey(attacker?.id, defenderId, attackSource);
     const expectedCombatSession = bonusModifiers?.combatSession ?? combatSessionRef.current;
     const expectedTurnToken = bonusModifiers?.turnToken ?? currentTurnTokenRef.current;
+    const expectedMeleeRound = bonusModifiers?.meleeRound ?? (meleeRoundRef.current ?? meleeRound);
+    const expectedTurnCounter = bonusModifiers?.turnCounter ?? (turnCounterRef.current ?? turnCounter);
+    const expectedTurnIndex = bonusModifiers?.turnIndex ?? turnIndexRef.current;
+    const expectedActorId = bonusModifiers?.expectedActorId ?? attacker?.id;
     const ownsAttackAction = !bonusModifiers?.multiAttackSubHit;
+    const entryActiveFighter = fightersRef.current?.[turnIndexRef.current];
+    if (
+      !bonusModifiers?.allowOutOfTurnAttack &&
+      entryActiveFighter?.id &&
+      attacker?.id &&
+      entryActiveFighter.id !== attacker.id
+    ) {
+      addLog(
+        `stale combat roll blocked: actor=${attacker?.name || "unknown"} reason=active-fighter-mismatch:${entryActiveFighter.id} executionKey=${attackActionId} source=${attackSource}`,
+        "warning",
+      );
+      addLog(
+        `stale attack roll blocked: actor=${attacker?.name || "unknown"} reason=active-fighter-mismatch:${entryActiveFighter.id} executionKey=${attackActionId}`,
+        "warning",
+      );
+      addLog(
+        `stale attack promise resolved with actor mismatch: expected=${attacker?.name || attacker?.id || "unknown"} actual=${entryActiveFighter?.name || entryActiveFighter?.id || "none"} executionKey=${attackActionId}`,
+        "warning",
+      );
+      return makeBlockedAttackResult(`active-fighter-mismatch:${entryActiveFighter.id}`, attackActionId);
+    }
     if (ownsAttackAction) {
       activeAttackActionIdRef.current = attackActionId;
     }
@@ -15142,13 +15751,13 @@ function CombatPage({ characters = [] }) {
     // Attacks can be scheduled via timeouts; once combat end has been declared, ignore late arrivals silently.
     if (!isAttackActionLive("attack-entry")) {
       addLog("stale damage application ignored");
-      return false;
+      return makeBlockedAttackResult("attack-entry-not-live", attackActionId);
     }
     if (combatOverRef.current || combatEndCheckRef.current) {
       if (isDebugThrownAttack) {
         addLog(`DEBUG throw: attack() aborted (combat over)`, "info");
       }
-      return false;
+      return makeBlockedAttackResult("combat-over", attackActionId);
     }
 
     // CRITICAL: Check if combat is still active before allowing attacks
@@ -15156,7 +15765,7 @@ function CombatPage({ characters = [] }) {
       if (isDebugThrownAttack) {
         addLog(`DEBUG throw: attack() aborted (combatActive=false)`, "info");
       }
-      return false;
+      return makeBlockedAttackResult("combat-inactive", attackActionId);
     }
 
     let liveFighters = fightersRef.current ?? fighters;
@@ -15168,6 +15777,159 @@ function CombatPage({ characters = [] }) {
       commitFighters(liveFighters);
       stateAttacker = liveFighters.find((fighter) => fighter.id === attacker.id) || stateAttacker;
     }
+
+    const getAttackRollOwnershipBlockReason = (phase = "attack-roll") => {
+      const requiresEntryGate = phase !== "attack-entry-pre-roll";
+      const requiresPreStaminaGate = [
+        "attack-roll",
+        "damage-roll-pre-hp",
+        "damage-roll",
+        "hp-mutation",
+      ].includes(phase);
+      const requiresRollGate = [
+        "damage-roll-pre-hp",
+        "damage-roll",
+        "hp-mutation",
+      ].includes(phase);
+      const requiresDamageGate = phase === "hp-mutation";
+      const gateResult = validateCombatRollOwnership({
+        actorId: stateAttacker?.id || attacker?.id,
+        targetId: defenderId,
+        executionKey: attackActionId,
+        source: phase,
+        allowOutOfTurn: !!bonusModifiers?.allowOutOfTurnAttack,
+        expectedCombatSession,
+        expectedTurnToken,
+        expectedMeleeRound,
+        expectedTurnCounter,
+        expectedTurnIndex,
+        requireActionRemaining: !bonusModifiers?.multiAttackSubHit,
+        ownership: "attack",
+        requireEntryGate: requiresEntryGate,
+        requirePreStaminaGate: requiresPreStaminaGate,
+        requireRollGate: requiresRollGate,
+        requireDamageGate: requiresDamageGate,
+      });
+      if (!gateResult.ok) {
+        return {
+          phase,
+          reason: gateResult.reason,
+          activeFighter: gateResult.activeFighter,
+          latestAttacker: gateResult.latestActor,
+          latestDefender: gateResult.latestTarget,
+        };
+      }
+      const activeAttackFighter = fightersRef.current?.[turnIndexRef.current];
+      const latestAttacker = fightersRef.current?.find((fighter) => fighter.id === stateAttacker?.id) || stateAttacker;
+      const latestDefender = fightersRef.current?.find((fighter) => fighter.id === defenderId);
+      const reasons = [];
+      const latestAttackerRemainingRaw = Number(latestAttacker?.remainingActions);
+      const hasExplicitRemainingActions = Number.isFinite(latestAttackerRemainingRaw);
+      if (combatOverRef.current || combatEndCheckRef.current) reasons.push("combat-over");
+      if (!combatActiveRef.current) reasons.push("combat-inactive");
+      if (expectedCombatSession !== combatSessionRef.current) reasons.push("combat-session-mismatch");
+      if (expectedTurnToken && currentTurnTokenRef.current !== expectedTurnToken) reasons.push("turn-token-mismatch");
+      if ((meleeRoundRef.current ?? meleeRound) !== expectedMeleeRound) reasons.push("round-mismatch");
+      if ((turnCounterRef.current ?? turnCounter) !== expectedTurnCounter) reasons.push("turn-counter-mismatch");
+      if (activeAttackActionIdRef.current !== attackActionId) reasons.push("attack-action-mismatch");
+      if (expectedActorId && latestAttacker?.id && latestAttacker.id !== expectedActorId) reasons.push(`expected-actor-mismatch:${expectedActorId}`);
+      if (
+        !latestDefender ||
+        latestDefender.status === "defeated" ||
+        latestDefender.condition === "dead" ||
+        Number(latestDefender.currentHP ?? latestDefender.hp ?? 1) <= -21
+      ) {
+        reasons.push("target-invalid");
+      }
+      if (hasExplicitRemainingActions && latestAttackerRemainingRaw <= 0 && !bonusModifiers?.multiAttackSubHit) {
+        reasons.push("attacker-has-no-actions");
+      }
+      if (
+        !bonusModifiers?.allowOutOfTurnAttack &&
+        activeAttackFighter?.id &&
+        latestAttacker?.id &&
+        activeAttackFighter.id !== latestAttacker.id
+      ) {
+        reasons.push(`active-fighter-mismatch:${activeAttackFighter.id}`);
+      }
+      if (
+        !bonusModifiers?.allowOutOfTurnAttack &&
+        expectedTurnIndex != null &&
+        turnIndexRef.current !== expectedTurnIndex
+      ) {
+        reasons.push("turn-index-mismatch");
+      }
+      return reasons.length > 0
+        ? {
+            phase,
+            reason: reasons.join("|"),
+            activeFighter: activeAttackFighter,
+            latestAttacker,
+            latestDefender,
+          }
+        : null;
+    };
+    const markAttackGateChain = (field) => {
+      const chain = getAttackExecutionGateChain(attackActionId);
+      if (field && Object.prototype.hasOwnProperty.call(chain, field)) {
+        chain[field] = true;
+      }
+      logAttackExecutionGateChain(
+        stateAttacker?.name || attacker?.name || expectedActorId || "unknown",
+        attackActionId,
+      );
+      return chain;
+    };
+    const logStaleCombatRollBlocked = (block) => {
+      addLog(
+        `stale combat roll blocked: actor=${block?.latestAttacker?.name || stateAttacker?.name || attacker?.name || "unknown"} reason=${block?.reason || "unknown"} executionKey=${attackActionId} source=${block?.phase || "attack-roll"}`,
+        "warning",
+      );
+      if (
+        block?.reason?.includes("active-fighter-mismatch") ||
+        block?.reason?.includes("expected-actor-mismatch")
+      ) {
+        addLog(
+          `stale attack promise resolved with actor mismatch: expected=${stateAttacker?.name || attacker?.name || expectedActorId || "unknown"} actual=${block?.activeFighter?.name || block?.activeFighter?.id || "none"} executionKey=${attackActionId}`,
+          "warning",
+        );
+      }
+    };
+    const logStaleAttackRollBlocked = (block) => {
+      addLog(
+        `stale attack roll blocked: actor=${block?.latestAttacker?.name || stateAttacker?.name || attacker?.name || "unknown"} reason=${block?.reason || "unknown"} executionKey=${attackActionId}`,
+        "warning",
+      );
+      if (DEBUG_COMBAT) {
+        console.warn("[STALE ATTACK ROLL BLOCKED]", {
+          actor: block?.latestAttacker?.name || stateAttacker?.name || attacker?.name,
+          reason: block?.reason,
+          phase: block?.phase,
+          executionKey: attackActionId,
+          remainingActions: block?.latestAttacker?.remainingActions,
+          activeFighter: block?.activeFighter?.name,
+          activeAttackActionId: activeAttackActionIdRef.current,
+          expectedTurnToken,
+          currentTurnToken: currentTurnTokenRef.current,
+          expectedCombatSession,
+          currentCombatSession: combatSessionRef.current,
+          source: bonusModifiers?.playerAITurnMeta?.source || bonusModifiers?.source || "attack",
+        });
+      }
+    };
+    const attackKeyMetadataForDiagnostics = getAttackExecutionMetadata(attackActionId);
+    addLog(
+      `attack key context: actor=${stateAttacker?.name || attacker?.name || "unknown"} source=${attackSource} keyRound=${attackKeyMetadataForDiagnostics?.meleeRound ?? "unknown"} currentRound=${meleeRoundRef.current ?? meleeRound} keyTurn=${attackKeyMetadataForDiagnostics?.turnCounter ?? "unknown"} currentTurn=${turnCounterRef.current ?? turnCounter} keyToken=${attackKeyMetadataForDiagnostics?.currentTurnToken ?? "unknown"} currentToken=${currentTurnTokenRef.current || "no-turn-token"}`,
+      "debug",
+    );
+    const entryAttackBlock = getAttackRollOwnershipBlockReason("attack-entry-pre-roll");
+    if (entryAttackBlock) {
+      logStaleCombatRollBlocked(entryAttackBlock);
+      logStaleAttackRollBlocked(entryAttackBlock);
+      if (activeAttackActionIdRef.current === attackActionId) activeAttackActionIdRef.current = null;
+      return makeBlockedAttackResult(entryAttackBlock.reason, attackActionId);
+    }
+    markAttackGateChain("entry");
 
     if (bonusModifiers?.multiAttackSubHit && bonusModifiers?.multiAttackSequenceToken) {
       const t = bonusModifiers.multiAttackSequenceToken;
@@ -15635,15 +16397,21 @@ function CombatPage({ characters = [] }) {
           const liveIndex = updated.findIndex((f) => f.id === updatedAttacker.id);
           if (liveIndex !== -1) {
             const remaining = Number(updated[liveIndex].remainingActions ?? 0) || 0;
-            updated[liveIndex] = {
-              ...updated[liveIndex],
-              remainingActions: Math.max(0, remaining - 1),
-              attacksRemaining: Math.max(0, remaining - 1),
-              meta: {
-                ...(updated[liveIndex].meta || {}),
-                horrorLostActionConsumedKey: horrorConsumeKey,
+            updated[liveIndex] = finalizeNoMovePreservingPosition({
+              fighterId: updated[liveIndex].id,
+              latestFighter: updated[liveIndex],
+              staleActor: updatedAttacker,
+              actorPatch: {
+                remainingActions: Math.max(0, remaining - 1),
+                attacksRemaining: Math.max(0, remaining - 1),
+                meta: {
+                  ...(updated[liveIndex].meta || {}),
+                  horrorLostActionConsumedKey: horrorConsumeKey,
+                },
               },
-            };
+              reason: "horror-action-consumed",
+              source: "horror-action-consumed",
+            });
           }
           addLog(`${updatedAttacker.name} loses this action to dread before acting.`, "warning");
           markTurnResolvedByStatus(updatedAttacker, "horror");
@@ -15793,7 +16561,14 @@ function CombatPage({ characters = [] }) {
         const next = prev.map((f) => {
           if (f.id !== attackerId) return f;
           const before = Number(f.remainingActions ?? 0) || 0;
-          return { ...f, remainingActions: Math.max(0, before - 1) };
+          return finalizeNoMovePreservingPosition({
+            fighterId: f.id,
+            latestFighter: f,
+            staleActor: effectiveAttacker || attacker,
+            actorPatch: { remainingActions: Math.max(0, before - 1) },
+            reason,
+            source: "burnFailedAutomatedActionAndEnd",
+          });
         });
         fightersRef.current = next;
         return next;
@@ -16451,6 +17226,17 @@ function CombatPage({ characters = [] }) {
 
     try {
       // Crypto secure attack roll with optional bonus modifiers (e.g., +2 from charge, flanking bonus)
+      const preRollAttackBlock = getAttackRollOwnershipBlockReason("immediate-pre-roll");
+      if (preRollAttackBlock) {
+        logStaleAttackRollBlocked(preRollAttackBlock);
+        if (activeAttackActionIdRef.current === attackActionId) activeAttackActionIdRef.current = null;
+        return false;
+      }
+      logAttackExecutionGateChain(
+        stateAttacker?.name || attacker?.name || expectedActorId || "unknown",
+        attackActionId,
+      );
+
       const baseAttackBonus = getCombatBonus(attacker, "attack", attackData) || 0;
       const chargeBonus = bonusModifiers.attackBonus || 0;
       const flankingBonus = bonusModifiers.flankingBonus || 0;
@@ -16512,16 +17298,6 @@ function CombatPage({ characters = [] }) {
 
         // Get attack distance
         const attackDistance = calculateDistance(positions[attacker.id], positions[defenderId]);
-
-        // Check if called shot is possible (for future called shot feature)
-        if (attackerWeapon) {
-          const calledShotCheck = canUseCalledShot(attackerWeapon, attackDistance);
-          // Store called shot info for potential use (not implemented in UI yet)
-          if (calledShotCheck.canUse && (import.meta.env?.DEV || import.meta.env?.MODE === 'development')) {
-            // Only log in development to avoid spam
-            addLog(`// Called shot available: ${calledShotCheck.reason}`, "info");
-          }
-        }
 
         // Get combat modifiers based on terrain and environment
         terrainModifiers = getCombatModifiers(
@@ -16645,6 +17421,15 @@ function CombatPage({ characters = [] }) {
         ? (Number.isFinite(preRollAttackBonus) ? preRollAttackBonus : computedAttackBonusBeforeRange) + preRollRangeAdjustment
         : computedAttackBonus;
 
+      const preRollOwnershipBlock = getAttackRollOwnershipBlockReason("attack-roll-pre-stamina");
+      if (preRollOwnershipBlock) {
+        logStaleCombatRollBlocked(preRollOwnershipBlock);
+        logStaleAttackRollBlocked(preRollOwnershipBlock);
+        if (activeAttackActionIdRef.current === attackActionId) activeAttackActionIdRef.current = null;
+        return makeBlockedAttackResult(preRollOwnershipBlock.reason, attackActionId);
+      }
+      markAttackGateChain("preStamina");
+
       if (tempBonus !== 0) {
         addLog(`${attacker.name} has ${tempBonus > 0 ? '+' : ''}${tempBonus} temporary attack bonus!`, "info");
       }
@@ -16744,6 +17529,14 @@ function CombatPage({ characters = [] }) {
           );
         }
 
+        const immediateAttackRollBlock = getAttackRollOwnershipBlockReason("attack-roll");
+        if (immediateAttackRollBlock) {
+          logStaleCombatRollBlocked(immediateAttackRollBlock);
+          logStaleAttackRollBlocked(immediateAttackRollBlock);
+          if (activeAttackActionIdRef.current === attackActionId) activeAttackActionIdRef.current = null;
+          return makeBlockedAttackResult(immediateAttackRollBlock.reason, attackActionId);
+        }
+        markAttackGateChain("roll");
         attackRollResult = CryptoSecureDice.parseAndRoll(diceFormula, bonus);
         attackRoll = attackRollResult.totalWithBonus;
 
@@ -16774,6 +17567,10 @@ function CombatPage({ characters = [] }) {
         attackDiceRoll = attackRollResult.diceRolls?.[0]?.result || attackRoll - attackBonus;
         isCriticalHit = attackDiceRoll === 20; // Natural 20 = critical hit
         isCriticalMiss = attackDiceRoll === 1; // Natural 1 = critical miss
+      }
+
+      if (preRoll) {
+        markAttackGateChain("roll");
       }
 
       let targetGuardRating = getCombatantAC(defender);
@@ -17387,6 +18184,18 @@ function CombatPage({ characters = [] }) {
       }
       // Critical hit auto-succeeds, normal hit requires beating AC
       if (didHit) {
+        const preDamageOwnershipBlock = getAttackRollOwnershipBlockReason("damage-roll-pre-hp");
+        if (preDamageOwnershipBlock) {
+          logStaleCombatRollBlocked(preDamageOwnershipBlock);
+          logStaleAttackRollBlocked(preDamageOwnershipBlock);
+          if (activeAttackActionIdRef.current === attackActionId) activeAttackActionIdRef.current = null;
+          return makeBlockedAttackResult(preDamageOwnershipBlock.reason, attackActionId);
+        }
+        logAttackExecutionGateChain(
+          stateAttacker?.name || attacker?.name || expectedActorId || "unknown",
+          attackActionId,
+        );
+
         // Hit! Crypto secure damage roll
         const damageBonus = attacker.bonuses?.damage || 0;
 
@@ -17420,6 +18229,17 @@ function CombatPage({ characters = [] }) {
           // No match - return as-is with no bonus
           return { baseFormula: damageStr, existingBonus: 0 };
         };
+        const estimateDamageMax = (damageSource, fallbackDamage = 1) => {
+          const parsed = parseDamageFormula(damageSource);
+          const diceMatch = String(parsed.baseFormula || "").match(/^(\d+)d(\d+)$/);
+          if (!diceMatch) return Math.max(1, Number(fallbackDamage) || 1);
+          const diceCount = Number(diceMatch[1]);
+          const dieSize = Number(diceMatch[2]);
+          if (!Number.isFinite(diceCount) || !Number.isFinite(dieSize)) {
+            return Math.max(1, Number(fallbackDamage) || 1);
+          }
+          return Math.max(1, (diceCount * dieSize) + (Number(parsed.existingBonus) || 0) + safeDamageBonus);
+        };
 
         // Use crypto dice for damage roll
         let damageRollResult;
@@ -17427,6 +18247,15 @@ function CombatPage({ characters = [] }) {
 
         // Log attack data for debugging
         console.log(`Attack data for ${attacker.name}:`, attackData);
+
+        const immediateDamageRollBlock = getAttackRollOwnershipBlockReason("damage-roll");
+        if (immediateDamageRollBlock) {
+          logStaleCombatRollBlocked(immediateDamageRollBlock);
+          logStaleAttackRollBlocked(immediateDamageRollBlock);
+          if (activeAttackActionIdRef.current === attackActionId) activeAttackActionIdRef.current = null;
+          return makeBlockedAttackResult(immediateDamageRollBlock.reason, attackActionId);
+        }
+        markAttackGateChain("damage");
 
         // Handle "by weapon" damage - resolve to actual weapon damage
         if (attackData.damage && typeof attackData.damage === 'string' && attackData.damage.toLowerCase().includes('by weapon')) {
@@ -17653,6 +18482,14 @@ function CombatPage({ characters = [] }) {
             addLog(`${attacker.name} pulls the attack and seizes ${defender.name} alive!`, "combat");
           }
         }
+        const hpMutationBlock = getAttackRollOwnershipBlockReason("hp-mutation");
+        if (hpMutationBlock) {
+          logStaleCombatRollBlocked(hpMutationBlock);
+          logStaleAttackRollBlocked(hpMutationBlock);
+          if (activeAttackActionIdRef.current === attackActionId) activeAttackActionIdRef.current = null;
+          return makeBlockedAttackResult(hpMutationBlock.reason, attackActionId);
+        }
+        markAttackGateChain("hp");
         const newHP = clampHP(startingHP - finalDamage, defender);
         applyHPToFighter(defender, newHP);
         const appliedDamage = Math.max(0, startingHP - getFighterHP(defender));
@@ -17661,6 +18498,46 @@ function CombatPage({ characters = [] }) {
             `${normalDamageTargetLabel} takes ${appliedDamage} damage from ${normalDamageAttackerLabel}! (HP: ${getFighterHP(defender)}/${getFighterMaxHP(defender)})`,
             "warning",
           );
+        }
+
+        if (didHit && isCriticalHit && !defenseSuccess) {
+          const impact = rollImpactLocation();
+          const damageMax = estimateDamageMax(loggedDamageSource, finalDamage) * 2;
+          const severity = getDamageSeverity({
+            damageRolled: finalDamage,
+            damageMax,
+          });
+          const scenario = buildCriticalImpactScenario({
+            attacker: stateAttacker,
+            defender,
+            weapon: attackData,
+            attackType: isRangedAttack ? "ranged" : "melee",
+            location: impact.location,
+            severity,
+            damage: finalDamage,
+          });
+          addLog(
+            `Critical impact clock: d100=${impact.roll} → ${impact.location} (${severity})`,
+            "critical",
+          );
+          addLog(scenario.text, "critical");
+          if (scenario.effects.length > 0) {
+            const existingConditions = Array.isArray(defender.conditions)
+              ? defender.conditions
+              : [];
+            const nextEffects = scenario.effects.map((effect) => ({
+              ...effect,
+              source: effect.source || attackData?.name || "critical impact",
+              startedMeleeRound: meleeRoundRef.current ?? meleeRound,
+            }));
+            defender.conditions = [...existingConditions, ...nextEffects];
+            if (nextEffects.some((effect) => effect.type === "DAZED")) {
+              defender.statusEffects = Array.from(new Set([
+                ...(Array.isArray(defender.statusEffects) ? defender.statusEffects : []),
+                "DAZED",
+              ]));
+            }
+          }
         }
 
         // OPTION B: Dive-hit auto-grapple (talon grab)
@@ -18234,6 +19111,12 @@ function CombatPage({ characters = [] }) {
     handlePositionChange,
     isHexOccupied,
     generateCryptoId,
+    createAttackActionGrant,
+    createAttackExecutionKey,
+    getAttackExecutionMetadata,
+    getAttackExecutionGateChain,
+    logAttackExecutionGateChain,
+    validateCombatRollOwnership,
     rollDeterministicClock12,
     commitFighters,
     applyIncapacitationCondition,
@@ -19072,7 +19955,16 @@ function CombatPage({ characters = [] }) {
                 return;
               } else {
                 // Routed player moves but hasn't reached edge yet - still in combat, just fleeing
-                setPositions((prev) => ({ ...prev, [latestPlayer.id]: retreat.position }));
+                setPositions((prev) => {
+                  const updated = { ...prev, [latestPlayer.id]: retreat.position };
+                  positionsRef.current = updated;
+                  committedPositionsRef.current = {
+                    ...(committedPositionsRef.current || {}),
+                    [latestPlayer.id]: { ...retreat.position },
+                  };
+                  recordLastMovementCommit(latestPlayer.id, retreat.position, "player-ai-routed-retreat");
+                  return updated;
+                });
                 addLog(
                  `${latestPlayer.name} flees ${Math.round(retreat.distanceFeet)}ft to (${retreat.position.x}, ${retreat.position.y})!`,
                   "warning"
@@ -19294,6 +20186,7 @@ function CombatPage({ characters = [] }) {
           `turn finalizer accepted fighter=${playerAiActingActorLabel} source=${source} finalizerKey=${finalizerKey}`,
           "debug",
         );
+        clearAttackExecutionState(`player-ai-finalizer-accepted:${source}`);
       }
       return true;
     };
@@ -19445,15 +20338,36 @@ function CombatPage({ characters = [] }) {
       };
       const attackArgs = args.slice(1);
       const existingBonusModifiers = attackArgs[1];
+      const existingAttackSource =
+        existingBonusModifiers?.source ||
+        existingBonusModifiers?.playerAITurnMeta?.source ||
+        playerAITurnMeta.source;
+      const playerAttackGrant =
+        existingBonusModifiers?.attackActionGrant ||
+        createAttackActionGrant(liveAttacker.id, attackArgs[0], existingAttackSource);
       attackArgs[1] =
         existingBonusModifiers &&
         typeof existingBonusModifiers === "object" &&
         !Array.isArray(existingBonusModifiers)
           ? {
               ...existingBonusModifiers,
+              attackActionId:
+                existingBonusModifiers.attackActionId ||
+                createAttackExecutionKey(liveAttacker.id, attackArgs[0], existingAttackSource, {
+                  grant: playerAttackGrant,
+                  scheduledAtTurnToken: playerAttackGrant.turnToken,
+                }),
+              attackActionGrant: playerAttackGrant,
               playerAITurnMeta,
             }
-          : { playerAITurnMeta };
+          : {
+              attackActionId: createAttackExecutionKey(liveAttacker.id, attackArgs[0], existingAttackSource, {
+                grant: playerAttackGrant,
+                scheduledAtTurnToken: playerAttackGrant.turnToken,
+              }),
+              attackActionGrant: playerAttackGrant,
+              playerAITurnMeta,
+            };
 
       const attackResult = await attack(liveAttacker, ...attackArgs);
       if (attackResult === false) {
@@ -19546,6 +20460,52 @@ function CombatPage({ characters = [] }) {
         return clampAIstaminaRestore(next, live);
       });
       return commitFighters(guarded);
+    };
+
+    const commitPlayerAIPosition = (fighterLike, destination, source = "player-ai-movement") => {
+      if (
+        !fighterLike?.id ||
+        !destination ||
+        !Number.isFinite(Number(destination.x)) ||
+        !Number.isFinite(Number(destination.y))
+      ) {
+        return false;
+      }
+      const nextPosition = {
+        ...destination,
+        x: Number(destination.x),
+        y: Number(destination.y),
+      };
+      const updatedPositions = {
+        ...(positionsRef.current || positionsForAI || positions || {}),
+        [fighterLike.id]: nextPosition,
+      };
+      positionsRef.current = updatedPositions;
+      committedPositionsRef.current = {
+        ...(committedPositionsRef.current || {}),
+        [fighterLike.id]: { ...nextPosition },
+      };
+      recordLastMovementCommit(fighterLike.id, nextPosition, source);
+      setPositions(updatedPositions);
+      commitFighters((prev) => prev.map((fighter) => (
+        fighter.id === fighterLike.id
+          ? {
+              ...fighter,
+              x: nextPosition.x,
+              y: nextPosition.y,
+              position: { ...nextPosition },
+              hex: fighter.hex ? { ...nextPosition } : fighter.hex,
+            }
+          : fighter
+      )));
+      const movementLabel = source === "player-ai-approach-move-only"
+        ? "player AI approach movement committed"
+        : "player AI flanking movement committed";
+      addLog(
+        `${movementLabel}: actor=${formatCombatActorLabel(fighterLike, { roster: fightersRef.current ?? fighters ?? [] })} to=(${nextPosition.x},${nextPosition.y}) source=${source}`,
+        "debug",
+      );
+      return true;
     };
 
     const tryPlayerPreferredFlyerFallback = (playerForTurn) => {
@@ -19669,6 +20629,8 @@ function CombatPage({ characters = [] }) {
           const basePositions = { ...currentPositions, [livePlayer.id]: { ...takeoffStep } };
           const syncedPositions = syncCombinedPositions(liveFighters, basePositions);
           positionsRef.current = syncedPositions;
+          committedPositionsRef.current = syncedPositions;
+          recordLastMovementCommit(livePlayer.id, takeoffStep, "player-ai-flight-takeoff");
           setPositions(syncedPositions);
           const takeoffGlideDistance = calculateDistance(myPos, takeoffStep);
           return spendPlayerFlightAction(
@@ -19733,6 +20695,8 @@ function CombatPage({ characters = [] }) {
       const basePositions = { ...currentPositions, [livePlayer.id]: { ...step } };
       const syncedPositions = syncCombinedPositions(liveFighters, basePositions);
       positionsRef.current = syncedPositions;
+      committedPositionsRef.current = syncedPositions;
+      recordLastMovementCommit(livePlayer.id, step, "player-ai-flight-glide");
       setPositions(syncedPositions);
       const playerGlideDistance = calculateDistance(myPos, step);
       return spendPlayerFlightAction(
@@ -19858,6 +20822,21 @@ function CombatPage({ characters = [] }) {
     };
 
     const executePlayerAIGrapple = (attacker, target, requestedActionType = null) => {
+      const grappleExecutionKey = playerAIExecutionRef.current?.executionKey || [
+        "player-ai-grapple",
+        combatSessionRef.current,
+        currentTurnTokenRef.current || "no-token",
+        attacker?.id || "unknown",
+        target?.id || "unknown",
+        meleeRoundRef.current ?? meleeRound,
+        turnCounterRef.current ?? turnCounter,
+      ].join(":");
+      const logPlayerAIGrappleBlocked = (reason, actor = attacker) => {
+        addLog(
+          `stale grapple follow-up blocked: actor=${actor?.name || "unknown"} reason=${reason || "unknown"} executionKey=${grappleExecutionKey}`,
+          "warning",
+        );
+      };
       const liveFighters = fightersRef.current ?? fighters;
       const liveIndex = turnIndexRef.current;
       const activeFighter = liveFighters?.[liveIndex];
@@ -19870,21 +20849,47 @@ function CombatPage({ characters = [] }) {
         (meleeRoundRef.current ?? meleeRound) === startMeleeRound &&
         (turnCounterRef.current ?? turnCounter) === startTurnCounter;
 
-      if (!combatActiveRef.current || combatOverRef.current || !sameTurn) return false;
-      if (!liveAttacker || !liveTarget) return false;
+      if (!combatActiveRef.current || combatOverRef.current) {
+        logPlayerAIGrappleBlocked("combat-inactive");
+        return false;
+      }
+      if (!sameTurn) {
+        logPlayerAIGrappleBlocked(
+          activeFighter?.id !== startFighterId ? "active-fighter-changed" : "round-or-turn-changed",
+          liveAttacker || attacker,
+        );
+        return false;
+      }
+      if (!liveAttacker || !liveTarget) {
+        logPlayerAIGrappleBlocked(!liveAttacker ? "attacker-missing" : "target-missing", liveAttacker || attacker);
+        return false;
+      }
       if (!canFighterAct(liveAttacker)) {
         addLog(`${liveAttacker.name} is collapsed/exhausted and cannot act.`, "warning");
+        logPlayerAIGrappleBlocked("cannot-act", liveAttacker);
         processingPlayerAIRef.current = false;
         scheduleEndTurn(0, "player-ai-grapple-cannot-act");
         return false;
       }
-      if ((Number(liveAttacker.remainingActions ?? 0) || 0) <= 0) return false;
-      if (getFighterHP(liveTarget) <= MIN_COMBAT_HP || liveTarget.status === "defeated") return false;
+      if ((Number(liveAttacker.remainingActions ?? 0) || 0) <= 0) {
+        logPlayerAIGrappleBlocked("no-actions", liveAttacker);
+        return false;
+      }
+      if (getFighterHP(liveTarget) <= MIN_COMBAT_HP || liveTarget.status === "defeated") {
+        logPlayerAIGrappleBlocked("target-invalid", liveAttacker);
+        return false;
+      }
       const attackerPos = positionsRef.current?.[liveAttacker.id] || positions?.[liveAttacker.id];
       const targetPos = positionsRef.current?.[liveTarget.id] || positions?.[liveTarget.id];
-      if (!attackerPos || !targetPos) return false;
+      if (!attackerPos || !targetPos) {
+        logPlayerAIGrappleBlocked("missing-position", liveAttacker);
+        return false;
+      }
       const grappleDistance = calculateDistance(attackerPos, targetPos);
-      if (!isAdjacentDistance(grappleDistance)) return false;
+      if (!isAdjacentDistance(grappleDistance)) {
+        logPlayerAIGrappleBlocked("not-adjacent", liveAttacker);
+        return false;
+      }
 
       const availableActions = getAvailableGrappleActions(liveAttacker, liveTarget);
       const attackerGrappleState = liveAttacker?.grappleState?.state;
@@ -20001,10 +21006,13 @@ function CombatPage({ characters = [] }) {
       getFighterfocus,
       // Attack & combat
       attack: executePlayerAIAttack,
+      createAttackActionGrant,
+      createAttackExecutionKey,
       clearPlayerAIContinuationAttack,
       executeGrapple: executePlayerAIGrapple,
       setPositions,
       setFighters: commitPlayerAIFighters,
+      commitPlayerAIPosition,
       getActionDelay,
       arenaSpeed,
       positionsRef,
@@ -20088,6 +21096,15 @@ function CombatPage({ characters = [] }) {
     });
     if (playerAIExecutionRef.current?.executionKey) {
       const prior = playerAIExecutionRef.current;
+      if (prior.fighterId === startFighterId) {
+        addLog(
+          `player AI overlap blocked: actor=${playerAiActingActorLabel} existing=${prior.executionKey} attempted=${executionOwnership.executionKey}`,
+          "warning",
+        );
+        processingPlayerAIRef.current = false;
+        if (playerTurnInFlightKeyRef.current === turnKey) playerTurnInFlightKeyRef.current = null;
+        return;
+      }
       if (prior.watchdogId) clearTimeout(prior.watchdogId);
       prior.settle?.({ kind: "superseded", reason: "newer-execution" });
       addLog(
@@ -20309,6 +21326,8 @@ function CombatPage({ characters = [] }) {
     MIN_COMBAT_HP,
     getFighterHP,
     getFighterMaxHP,
+    createAttackActionGrant,
+    createAttackExecutionKey,
     getMoveDurationMs,
     applyOngoingCarryStaminaDrain,
     getTargetsInLine,
@@ -20373,6 +21392,8 @@ function CombatPage({ characters = [] }) {
       );
       attack(finalAttacker, target.id, {
         ...(flankingBonus > 0 ? { flankingBonus } : {}),
+        attackActionId: createAttackExecutionKey(finalAttacker.id, target.id, "worker-ai-attack"),
+        source: "worker-ai-attack",
         attackDataOverride: resolved.attack,
       });
       return;
@@ -20381,6 +21402,45 @@ function CombatPage({ characters = [] }) {
     const attackerId = attacker?.id ?? attacker?._id;
     const targetId = target?.id ?? target?._id;
     if (!attackerId || !targetId) return;
+    const workerEngineExecutionKey = createAttackExecutionKey(attackerId, targetId, "worker-ai-engine-attack");
+    activeAttackActionIdRef.current = workerEngineExecutionKey;
+    const workerEngineEntryGate = validateCombatRollOwnership({
+      actorId: attackerId,
+      targetId,
+      executionKey: workerEngineExecutionKey,
+      source: "worker-ai-engine-entry",
+      ownership: "attack",
+      requireActionRemaining: true,
+    });
+    if (!workerEngineEntryGate.ok) return;
+    const workerEngineGateChain = getAttackExecutionGateChain(workerEngineExecutionKey);
+    workerEngineGateChain.entry = true;
+    logAttackExecutionGateChain(attacker?.name, workerEngineExecutionKey);
+    const workerEnginePreStaminaGate = validateCombatRollOwnership({
+      actorId: attackerId,
+      targetId,
+      executionKey: workerEngineExecutionKey,
+      source: "worker-ai-engine-pre-stamina",
+      ownership: "attack",
+      requireEntryGate: true,
+      requireActionRemaining: true,
+    });
+    if (!workerEnginePreStaminaGate.ok) return;
+    workerEngineGateChain.preStamina = true;
+    logAttackExecutionGateChain(attacker?.name, workerEngineExecutionKey);
+    const workerEngineRollGate = validateCombatRollOwnership({
+      actorId: attackerId,
+      targetId,
+      executionKey: workerEngineExecutionKey,
+      source: "attack-roll",
+      ownership: "attack",
+      requireEntryGate: true,
+      requirePreStaminaGate: true,
+      requireActionRemaining: true,
+    });
+    if (!workerEngineRollGate.ok) return;
+    workerEngineGateChain.roll = true;
+    logAttackExecutionGateChain(attacker?.name, workerEngineExecutionKey);
 
     const toHitBonus = Number(attacker?.bonuses?.attack ?? attacker?.attackBonus ?? attacker?.toHitBonus ?? 0);
     const targetGuardRating = getCombatantAC(target);
@@ -20449,6 +21509,35 @@ function CombatPage({ characters = [] }) {
     }
 
     const { events = [], delta } = result || {};
+    const workerEngineDamageGate = validateCombatRollOwnership({
+      actorId: attackerId,
+      targetId,
+      executionKey: workerEngineExecutionKey,
+      source: "damage-roll",
+      ownership: "attack",
+      requireEntryGate: true,
+      requirePreStaminaGate: true,
+      requireRollGate: true,
+      requireActionRemaining: true,
+    });
+    if (!workerEngineDamageGate.ok) return;
+    workerEngineGateChain.damage = true;
+    logAttackExecutionGateChain(attacker?.name, workerEngineExecutionKey);
+    const workerEngineHpGate = validateCombatRollOwnership({
+      actorId: attackerId,
+      targetId,
+      executionKey: workerEngineExecutionKey,
+      source: "hp-mutation",
+      ownership: "attack",
+      requireEntryGate: true,
+      requirePreStaminaGate: true,
+      requireRollGate: true,
+      requireDamageGate: true,
+      requireActionRemaining: true,
+    });
+    if (!workerEngineHpGate.ok) return;
+    workerEngineGateChain.hp = true;
+    logAttackExecutionGateChain(attacker?.name, workerEngineExecutionKey);
     events.forEach((e) => addLog(eventToLogLine(e), "combat"));
     applyAttackDelta(delta);
 
@@ -20474,6 +21563,10 @@ function CombatPage({ characters = [] }) {
     pickNonEmptyObject,
     getCombatantAC,
     getCombatantHP,
+    createAttackExecutionKey,
+    getAttackExecutionGateChain,
+    logAttackExecutionGateChain,
+    validateCombatRollOwnership,
   ]);
 
   // AI execution adapters (wrastaminars for worker AI_INTENT)
@@ -20793,7 +21886,10 @@ function CombatPage({ characters = [] }) {
     }
 
     const liveFighters = fightersRef.current ?? fighters;
-    const livePositions = pickNonEmptyObject(positionsRef.current, positions);
+    const livePositions = pickNonEmptyObject(
+      committedPositionsRef.current,
+      pickNonEmptyObject(positionsRef.current, positions),
+    );
     let liveEnemy = liveFighters.find((f) => f.id === enemy.id) ?? enemy;
     liveEnemy = hydrateEnemyFromCanonicalPosition(liveEnemy, livePositions);
     // The incoming argument may be an initiative snapshot. From this point on,
@@ -20908,6 +22004,7 @@ function CombatPage({ characters = [] }) {
         `turn finalizer accepted fighter=${liveEnemy.name} source=${finalizerSource} finalizerKey=${finalizerKey}`,
         "debug",
       );
+      clearAttackExecutionState(`enemy-finalizer-accepted:${finalizerSource}`);
       unresolvedEnemyTurnStartKeyRef.current = null;
       enemyTurnEnteredAIBranchKeyRef.current = null;
       scheduleEndTurn(delayOverride, finalizerSource);
@@ -20940,8 +22037,58 @@ function CombatPage({ characters = [] }) {
         processingEnemyTurnRef.current = false;
         return undefined;
       }
+      const attackerArg = args[0];
+      const targetIdArg = args[1];
+      const existingBonusModifiers = args[2];
+      const attackSource = existingBonusModifiers?.source || "enemy-ai-attack";
+      const enemyAttackGrant =
+        existingBonusModifiers?.attackActionGrant ||
+        createAttackActionGrant(attackerArg?.id, targetIdArg, attackSource);
+      args[2] =
+        existingBonusModifiers &&
+        typeof existingBonusModifiers === "object" &&
+        !Array.isArray(existingBonusModifiers)
+          ? {
+              ...existingBonusModifiers,
+              attackActionId:
+                existingBonusModifiers.attackActionId ||
+                createAttackExecutionKey(attackerArg?.id, targetIdArg, attackSource, {
+                  grant: enemyAttackGrant,
+                  scheduledAtTurnToken: enemyAttackGrant.turnToken,
+                }),
+              attackActionGrant: enemyAttackGrant,
+              source: attackSource,
+            }
+          : {
+              attackActionId: createAttackExecutionKey(attackerArg?.id, targetIdArg, attackSource, {
+                grant: enemyAttackGrant,
+                scheduledAtTurnToken: enemyAttackGrant.turnToken,
+              }),
+              attackActionGrant: enemyAttackGrant,
+              source: attackSource,
+            };
       return attack(...args);
     };
+    const validateDelayedEnemyAttackCallback = ({
+      actor,
+      targetId,
+      executionKey,
+      source = "enemy-delayed-attack-callback",
+      allowOutOfTurn = false,
+    } = {}) => validateCombatRollOwnership({
+      actorId: actor?.id,
+      targetId,
+      executionKey,
+      source,
+      allowOutOfTurn,
+      expectedCombatSession: combatSessionRef.current,
+      expectedTurnToken: currentTurnTokenRef.current,
+      expectedMeleeRound: meleeRoundRef.current ?? meleeRound,
+      expectedTurnCounter: turnCounterRef.current ?? turnCounter,
+      expectedTurnIndex: turnIndexRef.current,
+      requireActionRemaining: !allowOutOfTurn,
+      ownership: "callback",
+    }).ok;
 
     const settingsNow = settingsRef.current;
     const terrainNow = terrainRef.current;
@@ -21040,6 +22187,9 @@ function CombatPage({ characters = [] }) {
         onNoHostilesRemaining: () => endCombatIfVictoryResolved(fightersRef.current ?? liveFighters),
         // Attack & combat
         attack: guardedEnemyAttack,
+        createAttackActionGrant,
+        createAttackExecutionKey,
+        validateDelayedAttackCallback: validateDelayedEnemyAttackCallback,
         // Refs
         positionsRef,
         processingEnemyTurnRef,
@@ -21159,7 +22309,16 @@ function CombatPage({ characters = [] }) {
       commitFighters((prev) =>
         prev.map((f) =>
           f.id === fighterLike.id
-            ? { ...f, remainingActions: Math.max(0, (Number(f.remainingActions ?? 0) || 0) - 1) }
+            ? finalizeNoMovePreservingPosition({
+                fighterId: f.id,
+                latestFighter: f,
+                staleActor: fighterLike,
+                actorPatch: {
+                  remainingActions: Math.max(0, (Number(f.remainingActions ?? 0) || 0) - 1),
+                },
+                reason,
+                source: reason,
+              })
             : f
         )
       );
@@ -21498,11 +22657,26 @@ function CombatPage({ characters = [] }) {
       // A) If prey is weak, finish it.
       if (preyHP <= weakThreshold && finisher) {
         const updatedAttacker = { ...liveEnemy, selectedAttack: finisher };
+        const grappleFinishGrant = createAttackActionGrant(updatedAttacker.id, prey.id, "enemy-grapple-finish");
+        const grappleFinishExecutionKey = createAttackExecutionKey(updatedAttacker.id, prey.id, "enemy-grapple-finish", {
+          grant: grappleFinishGrant,
+          scheduledAtTurnToken: grappleFinishGrant.turnToken,
+          callbackSource: "enemy-grapple-finish-callback",
+          isDelayedCallback: true,
+        });
         addLog(`${liveEnemy.name} tears into ${prey.name} with ${finisher.name}!`, "combat");
         await commitOneEnemyAction("grapple-finish", async () => {
           setTimeout(() => {
+            if (!validateDelayedEnemyAttackCallback({
+              actor: updatedAttacker,
+              targetId: prey.id,
+              executionKey: grappleFinishExecutionKey,
+              source: "enemy-grapple-finish-callback",
+            })) return;
             if (!guardEnemyStillActiveForAttack()) return;
             attack(updatedAttacker, prey.id, {
+              attackActionId: grappleFinishExecutionKey,
+              attackActionGrant: grappleFinishGrant,
               source: "GRAPPLE_FINISH",
               consumeAttackerAction: true,
             });
@@ -21520,11 +22694,26 @@ function CombatPage({ characters = [] }) {
       // C) If carrying is not feasible, just keep mauling in the grapple.
       if (finisher) {
         const updatedAttacker = { ...liveEnemy, selectedAttack: finisher };
+        const grappleMaulGrant = createAttackActionGrant(updatedAttacker.id, prey.id, "enemy-grapple-maul");
+        const grappleMaulExecutionKey = createAttackExecutionKey(updatedAttacker.id, prey.id, "enemy-grapple-maul", {
+          grant: grappleMaulGrant,
+          scheduledAtTurnToken: grappleMaulGrant.turnToken,
+          callbackSource: "enemy-grapple-maul-callback",
+          isDelayedCallback: true,
+        });
         addLog(`${liveEnemy.name} mauls ${prey.name} with ${finisher.name}!`, "combat");
         await commitOneEnemyAction("grapple-maul", async () => {
           setTimeout(() => {
+            if (!validateDelayedEnemyAttackCallback({
+              actor: updatedAttacker,
+              targetId: prey.id,
+              executionKey: grappleMaulExecutionKey,
+              source: "enemy-grapple-maul-callback",
+            })) return;
             if (!guardEnemyStillActiveForAttack()) return;
             attack(updatedAttacker, prey.id, {
+              attackActionId: grappleMaulExecutionKey,
+              attackActionGrant: grappleMaulGrant,
               source: "GRAPPLE_MAUL",
               consumeAttackerAction: true,
             });
@@ -21704,10 +22893,25 @@ function CombatPage({ characters = [] }) {
                 addLog(`${liveEnemy.name} swoops low and attacks ${prey.name}!`, "combat");
               }
 
+              const predatorDiveGrant = createAttackActionGrant(updatedAttacker.id, prey.id, "predator-dive-attack");
+              const predatorDiveExecutionKey = createAttackExecutionKey(updatedAttacker.id, prey.id, "predator-dive-attack", {
+                grant: predatorDiveGrant,
+                scheduledAtTurnToken: predatorDiveGrant.turnToken,
+                callbackSource: "predator-dive-attack-callback",
+                isDelayedCallback: true,
+              });
               await commitOneEnemyAction("predator-dive-attack", async () => {
                 setTimeout(async () => {
+                  if (!validateDelayedEnemyAttackCallback({
+                    actor: updatedAttacker,
+                    targetId: prey.id,
+                    executionKey: predatorDiveExecutionKey,
+                    source: "predator-dive-attack-callback",
+                  })) return;
                   if (!guardEnemyStillActiveForAttack()) return;
                   attack(updatedAttacker, prey.id, {
+                    attackActionId: predatorDiveExecutionKey,
+                    attackActionGrant: predatorDiveGrant,
                     attackBonus: dive?.attackBonus ?? 0,
                     source: "DIVE_ATTACK",
                     diveAttack: true,
@@ -21830,7 +23034,13 @@ function CombatPage({ characters = [] }) {
                 // Execute attack with dive bonus from options
                 const diveBonus = options?.attackBonus || 0;
                 commitOneEnemyAction("flying-melee-attack", async () => {
+                  const flyingMeleeGrant = createAttackActionGrant(updatedAttacker.id, defender.id, options?.source || "flying-melee-attack");
                   attack(updatedAttacker, defender.id, {
+                    attackActionId: createAttackExecutionKey(updatedAttacker.id, defender.id, options?.source || "flying-melee-attack", {
+                      grant: flyingMeleeGrant,
+                      scheduledAtTurnToken: flyingMeleeGrant.turnToken,
+                    }),
+                    attackActionGrant: flyingMeleeGrant,
                     attackBonus: diveBonus, // Use attackBonus to match existing attack system
                     diveBonus: diveBonus, // Also include for logging
                     source: options?.source || "DIVE_ATTACK",
@@ -22058,7 +23268,16 @@ function CombatPage({ characters = [] }) {
                 return;
               } else {
                 // Routed unit moves but hasn't reached edge yet - still in combat, just fleeing
-                setPositions((prev) => ({ ...prev, [liveEnemy.id]: retreat.position }));
+                setPositions((prev) => {
+                  const updated = { ...prev, [liveEnemy.id]: retreat.position };
+                  positionsRef.current = updated;
+                  committedPositionsRef.current = {
+                    ...(committedPositionsRef.current || {}),
+                    [liveEnemy.id]: { ...retreat.position },
+                  };
+                  recordLastMovementCommit(liveEnemy.id, retreat.position, "enemy-routed-retreat");
+                  return updated;
+                });
                 addLog(
                  `${liveEnemy.name} flees ${Math.round(retreat.distanceFeet)}ft to (${retreat.position.x}, ${retreat.position.y})!`,
                   "warning"
@@ -22210,6 +23429,9 @@ function CombatPage({ characters = [] }) {
           [opponent.id]: sharedHex,
         };
         positionsRef.current = syncedPositions;
+        committedPositionsRef.current = syncedPositions;
+        recordLastMovementCommit(enemy.id, sharedHex, "enemy-grapple-shared-position-sync");
+        recordLastMovementCommit(opponent.id, sharedHex, "enemy-grapple-shared-position-sync");
         setPositions(syncedPositions);
         const next = liveFighters.map((f) => (
           f.id === enemy.id || f.id === opponent.id
@@ -23493,7 +24715,16 @@ function CombatPage({ characters = [] }) {
 
             // Execute the attack with dive bonuses.
             const updatedEnemy = { ...enemy, selectedAttack };
+            const diveAttackGrant = createAttackActionGrant(updatedEnemy.id, target.id, "enemy-dive-attack");
             const diveBonuses = {
+              attackActionId: createAttackExecutionKey(updatedEnemy.id, target.id, "enemy-dive-attack", {
+                grant: diveAttackGrant,
+                scheduledAtTurnToken: diveAttackGrant.turnToken,
+                callbackSource: "enemy-dive-attack-callback",
+                isDelayedCallback: true,
+              }),
+              attackActionGrant: diveAttackGrant,
+              source: "enemy-dive-attack",
               attackBonus: 2,
               extraDamageDice: "1d6",
               // Make sure the post-attack fighter state keeps the descended altitude.
@@ -23510,6 +24741,12 @@ function CombatPage({ characters = [] }) {
 
             await commitOneEnemyAction("dive-attack", async () => {
               setTimeout(() => {
+                if (!validateDelayedEnemyAttackCallback({
+                  actor: updatedEnemy,
+                  targetId: target.id,
+                  executionKey: diveBonuses.attackActionId,
+                  source: "enemy-dive-attack-callback",
+                })) return;
                 if (!guardEnemyStillActiveForAttack()) return;
                 attack(updatedEnemy, target.id, diveBonuses);
                 // attack() calls scheduleEndTurn(0) when done - only place that delays next turn
@@ -23604,7 +24841,10 @@ function CombatPage({ characters = [] }) {
             }
             await commitOneEnemyAction("improvised-throw", async () => {
               if (!guardEnemyStillActiveForAttack()) return;
-              attackFn(updatedEnemyForThrow, target.id, {});
+              attackFn(updatedEnemyForThrow, target.id, {
+                attackActionId: createAttackExecutionKey(updatedEnemyForThrow.id, target.id, "enemy-improvised-throw"),
+                source: "enemy-improvised-throw",
+              });
             });
             return;
           }
@@ -23671,7 +24911,10 @@ function CombatPage({ characters = [] }) {
               }
               await commitOneEnemyAction("improvised-throw-stuck", async () => {
                 if (!guardEnemyStillActiveForAttack()) return;
-                attackFn(updatedEnemyForThrow, target.id, {});
+                attackFn(updatedEnemyForThrow, target.id, {
+                  attackActionId: createAttackExecutionKey(updatedEnemyForThrow.id, target.id, "enemy-improvised-throw-stuck"),
+                  source: "enemy-improvised-throw-stuck",
+                });
               });
               return;
             }
@@ -24072,7 +25315,28 @@ function CombatPage({ characters = [] }) {
             );
           },
           hold: (plan) => {
-            noMoveFallbackPositionSnapshot = { ...(positionsRef.current?.[enemy.id] || currentPos) };
+            const latestEnemyForSnapshot = (fightersRef.current ?? fighters ?? []).find((fighter) => fighter.id === enemy.id) || enemy;
+            const latestNoMovePosition = resolveLatestNoMovePosition(
+              enemy.id,
+              enemy,
+              latestEnemyForSnapshot,
+              approachFinalizerSource,
+            ) || currentPos;
+            const scheduledEnemyPosition = getCombatantGridPosition(enemy);
+            if (
+              scheduledEnemyPosition &&
+              latestNoMovePosition &&
+              (
+                scheduledEnemyPosition.x !== latestNoMovePosition.x ||
+                scheduledEnemyPosition.y !== latestNoMovePosition.y
+              )
+            ) {
+              addLog(
+                `enemy no-move snapshot corrected from stale actor: actor=${formatCombatActorLabel(enemy, { roster: fightersRef.current ?? fighters ?? [], counterpart: target })} stale=(${scheduledEnemyPosition.x},${scheduledEnemyPosition.y}) latest=(${latestNoMovePosition.x},${latestNoMovePosition.y})`,
+                "warning",
+              );
+            }
+            noMoveFallbackPositionSnapshot = { ...latestNoMovePosition };
             addLog(
               `enemy no-move fallback position snapshot: actor=${formatCombatActorLabel(enemy, { roster: fightersRef.current ?? fighters ?? [], counterpart: target })} before=(${noMoveFallbackPositionSnapshot.x},${noMoveFallbackPositionSnapshot.y})`,
               "debug",
@@ -24095,16 +25359,24 @@ function CombatPage({ characters = [] }) {
               "warning",
             );
           },
-          spendAction: () => commitFighters((prev) => prev.map((fighter) => (
-            fighter.id === enemy.id
-              ? {
-                  ...fighter,
-                  remainingActions: approachFinalizerSource === "enemy-ai-no-move-fallback"
-                    ? 0
-                    : Math.max(0, (Number(fighter.remainingActions ?? 0) || 0) - 1),
-                }
-              : fighter
-          ))),
+          spendAction: () => commitFighters((prev) => prev.map((fighter) => {
+            if (fighter.id !== enemy.id) return fighter;
+            const actionPatch = {
+              remainingActions: approachFinalizerSource === "enemy-ai-no-move-fallback"
+                ? 0
+                : Math.max(0, (Number(fighter.remainingActions ?? 0) || 0) - 1),
+            };
+            return approachFinalizerSource === "enemy-ai-no-move-fallback"
+              ? finalizeNoMovePreservingPosition({
+                  fighterId: fighter.id,
+                  latestFighter: fighter,
+                  staleActor: enemy,
+                  actorPatch: actionPatch,
+                  reason: approachFinalizerSource,
+                  source: approachFinalizerSource,
+                })
+              : { ...fighter, ...actionPatch };
+          })),
           fail: (error) => addLog(
             `enemy approach movement planner error: actor=${formatCombatActorLabel(enemy, { roster: fightersRef.current ?? fighters ?? [], counterpart: target })} message=${error?.message || String(error)}`,
             "warning",
@@ -24143,7 +25415,14 @@ function CombatPage({ characters = [] }) {
         if (commitEnemyAction(noMoveSource)) {
           commitFighters((prev) => prev.map((fighter) => (
             fighter.id === enemy.id
-              ? { ...fighter, remainingActions: 0 }
+              ? finalizeNoMovePreservingPosition({
+                  fighterId: fighter.id,
+                  latestFighter: fighter,
+                  staleActor: enemy,
+                  actorPatch: { remainingActions: 0 },
+                  reason: noMoveSource,
+                  source: noMoveSource,
+                })
               : fighter
           )));
           enemyActionResolved = true;
@@ -24338,6 +25617,11 @@ function CombatPage({ characters = [] }) {
                     [enemy.id]: targetFlankPos
                   };
                   positionsRef.current = updated;
+                  committedPositionsRef.current = {
+                    ...(committedPositionsRef.current || {}),
+                    [enemy.id]: { ...targetFlankPos },
+                  };
+                  recordLastMovementCommit(enemy.id, targetFlankPos, "enemy-flank-movement");
                   return updated;
                 });
 
@@ -24373,7 +25657,23 @@ function CombatPage({ characters = [] }) {
                     turnActionResolvingRef.current = false;
                   }
                 };
+                const flankGrant = createAttackActionGrant(enemy.id, target.id, "enemy-flank-attack");
+                const flankExecutionKey = createAttackExecutionKey(enemy.id, target.id, "enemy-flank-attack", {
+                  grant: flankGrant,
+                  scheduledAtTurnToken: flankGrant.turnToken,
+                  callbackSource: "enemy-flank-attack-callback",
+                  isDelayedCallback: true,
+                });
                 setTimeout(async () => {
+                  if (!validateDelayedEnemyAttackCallback({
+                    actor: enemy,
+                    targetId: target.id,
+                    executionKey: flankExecutionKey,
+                    source: "enemy-flank-attack-callback",
+                  })) {
+                    clearDelayedFlankLatchIfCurrent();
+                    return;
+                  }
                   if (!combatActive || combatEndCheckRef.current) {
                     clearDelayedFlankLatchIfCurrent();
                     return;
@@ -24413,6 +25713,9 @@ function CombatPage({ characters = [] }) {
                     const bonuses = flankingBonus > 0 ? { flankingBonus } : {};
                     await attack(updatedEnemy, liveTarget.id, {
                       ...bonuses,
+                      attackActionId: flankExecutionKey,
+                      attackActionGrant: flankGrant,
+                      source: "enemy-flank-attack",
                       attackerPosOverride: liveAttackerPos,
                       defenderPosOverride: liveTargetPos,
                       distanceOverride: newDistance,
@@ -24506,7 +25809,11 @@ function CombatPage({ characters = [] }) {
             await commitOneEnemyAction("ranged-attack", async () => {
               turnActionResolvingRef.current = true;
               pendingTurnAdvanceRef.current = false;
-              await attack(updatedEnemyForRanged, target.id, bonuses);
+              await attack(updatedEnemyForRanged, target.id, {
+                ...bonuses,
+                attackActionId: createAttackExecutionKey(updatedEnemyForRanged.id, target.id, "enemy-ranged-attack"),
+                source: "enemy-ranged-attack",
+              });
             });
             processingEnemyTurnRef.current = false;
             return;
@@ -24901,10 +26208,23 @@ function CombatPage({ characters = [] }) {
           },
           spendAction: () => commitFighters((prev) => prev.map((fighter) => (
             fighter.id === enemy.id
-              ? {
-                  ...fighter,
-                  remainingActions: Math.max(0, (Number(fighter.remainingActions ?? 0) || 0) - 1),
-                }
+              ? (
+                  finalizerSource === "enemy-ai-no-move-fallback"
+                    ? finalizeNoMovePreservingPosition({
+                        fighterId: fighter.id,
+                        latestFighter: fighter,
+                        staleActor: enemy,
+                        actorPatch: {
+                          remainingActions: Math.max(0, (Number(fighter.remainingActions ?? 0) || 0) - 1),
+                        },
+                        reason: finalizerSource,
+                        source: finalizerSource,
+                      })
+                    : {
+                        ...fighter,
+                        remainingActions: Math.max(0, (Number(fighter.remainingActions ?? 0) || 0) - 1),
+                      }
+                )
               : fighter
           ))),
           fail: () => addLog(
@@ -25352,6 +26672,11 @@ function CombatPage({ characters = [] }) {
             [enemy.id]: { x: targetX, y: targetY }
           };
           positionsRef.current = updated;
+          committedPositionsRef.current = {
+            ...(committedPositionsRef.current || {}),
+            [enemy.id]: { x: targetX, y: targetY },
+          };
+          recordLastMovementCommit(enemy.id, { x: targetX, y: targetY }, "enemy-direct-movement");
           return updated;
         });
 
@@ -25359,17 +26684,48 @@ function CombatPage({ characters = [] }) {
           addLog(`${attackOfOpportunityAttacker.name} gets an attack of opportunity against ${enemy.name}!`, "warning");
           const attackerForAoO = attackOfOpportunityAttacker;
           const targetForAoO = enemy.id;
+          const opportunityGrant = createAttackActionGrant(attackerForAoO.id, targetForAoO, "enemy-inline-attack-of-opportunity");
+          const opportunityExecutionKey = createAttackExecutionKey(attackerForAoO.id, targetForAoO, "enemy-inline-attack-of-opportunity", {
+            grant: opportunityGrant,
+            scheduledAtTurnToken: opportunityGrant.turnToken,
+            callbackSource: "enemy-inline-attack-of-opportunity-callback",
+            isDelayedCallback: true,
+          });
 
           setTimeout(() => {
             if (combatOverRef.current || !combatActive || combatEndCheckRef.current) return;
+            if (!validateDelayedEnemyAttackCallback({
+              actor: attackerForAoO,
+              targetId: targetForAoO,
+              executionKey: opportunityExecutionKey,
+              source: "enemy-inline-attack-of-opportunity-callback",
+              allowOutOfTurn: true,
+            })) return;
             if (attackRef.current) {
-              attackRef.current(attackerForAoO, targetForAoO, {});
+              attackRef.current(attackerForAoO, targetForAoO, {
+                allowOutOfTurnAttack: true,
+                attackActionId: opportunityExecutionKey,
+                attackActionGrant: opportunityGrant,
+                source: "attack-of-opportunity",
+              });
             } else {
               addLog(`Attack of opportunity delayed - attack system not ready`, "info");
               setTimeout(() => {
                 if (combatOverRef.current || !combatActive || combatEndCheckRef.current) return;
+                if (!validateDelayedEnemyAttackCallback({
+                  actor: attackerForAoO,
+                  targetId: targetForAoO,
+                  executionKey: opportunityExecutionKey,
+                  source: "enemy-inline-attack-of-opportunity-retry",
+                  allowOutOfTurn: true,
+                })) return;
                 if (attackRef.current) {
-                  attackRef.current(attackerForAoO, targetForAoO, {});
+                  attackRef.current(attackerForAoO, targetForAoO, {
+                    allowOutOfTurnAttack: true,
+                    attackActionId: opportunityExecutionKey,
+                    attackActionGrant: opportunityGrant,
+                    source: "attack-of-opportunity",
+                  });
                 }
               }, 1000);
             }
@@ -25441,10 +26797,16 @@ function CombatPage({ characters = [] }) {
       if (commitEnemyAction(noMoveSource)) {
         commitFighters((prev) => prev.map((fighter) => (
           fighter.id === enemy.id
-            ? {
-                ...fighter,
-                remainingActions: Math.max(0, (Number(fighter.remainingActions ?? 0) || 0) - 1),
-              }
+            ? finalizeNoMovePreservingPosition({
+                fighterId: fighter.id,
+                latestFighter: fighter,
+                staleActor: enemy,
+                actorPatch: {
+                  remainingActions: Math.max(0, (Number(fighter.remainingActions ?? 0) || 0) - 1),
+                },
+                reason: noMoveSource,
+                source: noMoveSource,
+              })
             : fighter
         )));
         enemyActionResolved = true;
@@ -25534,6 +26896,8 @@ function CombatPage({ characters = [] }) {
             const lastHit = i === total - 1;
             await attack(updatedEnemyForArea, lineTarget.id, {
               ...chargeBonus,
+              attackActionId: createAttackExecutionKey(updatedEnemyForArea.id, lineTarget.id, `enemy-area-attack:${i}`),
+              source: "enemy-area-attack",
               flankingBonus: calculateFlankingBonus(
               livePositions[enemy.id],
               livePositions[lineTarget.id],
@@ -25613,7 +26977,99 @@ function CombatPage({ characters = [] }) {
         // Action committed; block effect-turn-advance until endTurn advances.
         turnActionResolvingRef.current = true;
         pendingTurnAdvanceRef.current = false;
-        await Promise.resolve(attack(updatedEnemy, target.id, allBonuses));
+        const expectedEnemyAttackActorId = updatedEnemy.id;
+        const expectedEnemyMeleeRound = meleeRoundRef.current ?? meleeRound;
+        const expectedEnemyTurnCounter = turnCounterRef.current ?? turnCounter;
+        const enemyAttackSource = allBonuses?.source || "enemy-melee-attack";
+        const enemyMeleeGrant = createAttackActionGrant(expectedEnemyAttackActorId, target.id, enemyAttackSource);
+        const expectedEnemyAttackExecutionKey = createAttackExecutionKey(
+          expectedEnemyAttackActorId,
+          target.id,
+          enemyAttackSource,
+          {
+            grant: enemyMeleeGrant,
+            scheduledAtTurnToken: enemyMeleeGrant.turnToken,
+          },
+        );
+        const attackResult = await Promise.resolve(attack(updatedEnemy, target.id, {
+          ...allBonuses,
+          attackActionId: expectedEnemyAttackExecutionKey,
+          attackActionGrant: enemyMeleeGrant,
+          source: enemyAttackSource,
+        }));
+        if (attackResult?.blocked) {
+          const activeAfterBlock = fightersRef.current?.[turnIndexRef.current];
+          const blockedActorOwnsTurn =
+            activeAfterBlock?.id === expectedEnemyAttackActorId &&
+            (meleeRoundRef.current ?? meleeRound) === expectedEnemyMeleeRound &&
+            (turnCounterRef.current ?? turnCounter) === expectedEnemyTurnCounter;
+          activeAttackActionIdRef.current = null;
+          activeTechniqueImpactRef.current = null;
+          turnActionResolvingRef.current = false;
+          pendingTurnAdvanceRef.current = false;
+          processingEnemyTurnRef.current = false;
+          enemyActionResolved = true;
+          addLog(
+            `stale attack block finalized turn advance: actor=${updatedEnemy.name || expectedEnemyAttackActorId} source=${enemyAttackSource} reason=${attackResult.reason || "unknown"}`,
+            "warning",
+          );
+          addLog(
+            `attack impact wait recovered: actor=${updatedEnemy.name || expectedEnemyAttackActorId} reason=no-active-impact-after-block`,
+            "warning",
+          );
+          if (!blockedActorOwnsTurn) {
+            addLog(
+              `stale attack block ignored without turn advance: actor=${updatedEnemy.name || expectedEnemyAttackActorId} source=${enemyAttackSource} reason=non-owner`,
+              "warning",
+            );
+            return false;
+          }
+          const staleBlockFinalizerKey = [
+            expectedEnemyAttackActorId,
+            meleeRoundRef.current ?? meleeRound,
+            turnIndexRef.current ?? turnIndex,
+            turnCounterRef.current ?? turnCounter,
+            enemyAttackSource,
+          ].join("|");
+          if (staleAttackBlockFinalizerRef.current === staleBlockFinalizerKey) {
+            addLog(
+              `stale attack self-loop prevented: actor=${updatedEnemy.name || expectedEnemyAttackActorId} source=${enemyAttackSource} previousFinalizer=${staleBlockFinalizerKey}`,
+              "warning",
+            );
+            return false;
+          }
+          staleAttackBlockFinalizerRef.current = staleBlockFinalizerKey;
+          commitFighters((prev) => prev.map((fighter) => (
+            fighter.id === expectedEnemyAttackActorId
+              ? {
+                  ...fighter,
+                  remainingActions: Math.max(0, (Number(fighter.remainingActions ?? 0) || 0) - 1),
+                }
+              : fighter
+          )));
+          scheduleEnemyAIEndTurn(0, "enemy-stale-attack-block-finalized");
+          return false;
+        }
+        if (attackResult === false) {
+          activeAttackActionIdRef.current = null;
+          turnActionResolvingRef.current = false;
+          pendingTurnAdvanceRef.current = false;
+          processingEnemyTurnRef.current = false;
+          addLog(
+            `attack impact wait recovered: actor=${updatedEnemy.name || expectedEnemyAttackActorId} reason=no-active-impact-after-block`,
+            "warning",
+          );
+          scheduleEnemyAIEndTurn(0, "enemy-attack-block-finalized");
+          return false;
+        }
+        const activeAfterEnemyAttack = fightersRef.current?.[turnIndexRef.current];
+        if (activeAfterEnemyAttack?.id && activeAfterEnemyAttack.id !== expectedEnemyAttackActorId) {
+          addLog(
+            `stale attack promise resolved with actor mismatch: expected=${updatedEnemy.name || expectedEnemyAttackActorId} actual=${activeAfterEnemyAttack.name || activeAfterEnemyAttack.id} executionKey=${expectedEnemyAttackExecutionKey}`,
+            "warning",
+          );
+          return false;
+        }
         enemyActionResolved = true;
 
         if (shouldSuppressEnemyAttackContinuation({
@@ -25625,6 +27081,16 @@ function CombatPage({ characters = [] }) {
         }
 
         const enemyAttackType = isRangedSelectedAttack ? "ranged" : "melee";
+        if (!activeAttackActionIdRef.current && !activeTechniqueImpactRef.current) {
+          addLog(
+            `attack impact wait recovered: actor=${enemy.name} reason=no-active-impact-after-block`,
+            "warning",
+          );
+          turnActionResolvingRef.current = false;
+          pendingTurnAdvanceRef.current = false;
+          scheduleEnemyAIEndTurn(0, "enemy-attack-no-active-impact-fallback");
+          return false;
+        }
         addLog(`enemy ${enemyAttackType} attack invoked; waiting for impact finalizer`, "debug");
         addLog(`enemy ${enemyAttackType} execution promise resolved: actor=${enemy.name}`, "debug");
         return true;
@@ -25764,6 +27230,9 @@ function CombatPage({ characters = [] }) {
     pickEnemyTechniqueFromCatalog,
     pickNonEmptyObject,
     resolveEnemyEffectiveAttack,
+    createAttackActionGrant,
+    createAttackExecutionKey,
+    validateCombatRollOwnership,
     turnCounter,
     turnIndex,
     validateWeaponRange,
@@ -27849,6 +29318,9 @@ function CombatPage({ characters = [] }) {
     combatRosterSnapshotRef.current = null;
     setCombatActive(false);
     setFighters([]);
+    positionsRef.current = {};
+    committedPositionsRef.current = {};
+    lastMovementCommitRef.current = {};
     setPositions({});
     setRenderPositions({});
     setPhase0Results(null);
@@ -27907,6 +29379,9 @@ function CombatPage({ characters = [] }) {
     combatRosterSnapshotRef.current = null;
     setCombatActive(false);
     setFighters(data.fighters.map(normalizeCombatantForBattle));
+    positionsRef.current = data.positions || {};
+    committedPositionsRef.current = data.positions || {};
+    recordMovementCommitMap(data.positions || {}, "combat-load-placement");
     setPositions(data.positions || {});
     setRenderPositions(data.positions || {});
     setPhase0Results(null);
@@ -28512,6 +29987,8 @@ function CombatPage({ characters = [] }) {
     }
 
     positionsRef.current = positionMap;
+    committedPositionsRef.current = positionMap;
+    recordMovementCommitMap(positionMap, "initial-combat-placement");
     setPositions(positionMap);
     setProjectiles([]);
     setEmbeddedArrows([]);
@@ -29310,7 +30787,10 @@ function CombatPage({ characters = [] }) {
           addLog(`${currentFighter.name} attacks with ${weaponToExecute.name}!`, "info");
           turnActionResolvingRef.current = true;
           try {
-            await attack(currentFighter, targetToExecute.id);
+            await attack(currentFighter, targetToExecute.id, {
+              attackActionId: createAttackExecutionKey(currentFighter.id, targetToExecute.id, "manual-attack"),
+              source: "manual-attack",
+            });
           } catch (err) {
             turnActionResolvingRef.current = false;
             pendingTurnAdvanceRef.current = false;
@@ -30218,6 +31698,7 @@ function CombatPage({ characters = [] }) {
         turnActionResolvingRef.current = true;
         try {
           await attack(updatedAttacker, targetToExecute.id, {
+            attackActionId: createAttackExecutionKey(updatedAttacker.id, targetToExecute.id, "manual-dive-attack"),
             attackBonus: diveBonus,
             source: "DIVE_ATTACK",
             diveFromFeet: fromAlt,
@@ -30506,6 +31987,8 @@ function CombatPage({ characters = [] }) {
       setProjectiles([]);
       setEmbeddedArrows([]);
       positionsRef.current = {};
+      committedPositionsRef.current = {};
+      lastMovementCommitRef.current = {};
       setPositions({});
       setRenderPositions({});
       setSelectedAttack(0); // Reset attack selection
