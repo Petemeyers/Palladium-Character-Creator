@@ -40,7 +40,7 @@ assert.match(combatPageSource, /attackActionGrant: diveAttackGrant/);
 assert.match(combatPageSource, /attackActionId: createAttackExecutionKey\(updatedEnemyForRanged\.id, target\.id, "enemy-ranged-attack"\)/);
 assert.match(combatPageSource, /attackActionId: createAttackExecutionKey\(updatedEnemyForArea\.id, lineTarget\.id, `enemy-area-attack:\$\{i\}`\)/);
 assert.match(combatPageSource, /attackActionId: expectedEnemyAttackExecutionKey/);
-assert.match(combatPageSource, /const enemyAttackSource = allBonuses\?\.source \|\| "enemy-melee-attack"/);
+assert.match(combatPageSource, /const enemyAttackSource = allBonuses\?\.source \|\| \(isRangedSelectedAttack \? "enemy-ranged-attack" : "enemy-melee-attack"\)/);
 assert.match(combatPageSource, /source: enemyAttackSource/);
 
 assert.match(combatPageSource, /attackActionId: createAttackExecutionKey\(currentFighter\.id, targetToExecute\.id, "manual-attack"\)/);

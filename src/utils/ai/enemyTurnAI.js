@@ -1757,6 +1757,7 @@ export function runEnemyTurnAI(enemy, context) {
           scheduledAtTurnToken: grant?.turnToken,
           callbackSource: options.callbackSource,
           isDelayedCallback: Boolean(options.isDelayedCallback || options.callbackSource),
+          allowOutOfTurnAttack: Boolean(options.allowOutOfTurnAttack),
         })
       : `attack-legacy-${Date.now()}-${Math.random().toString(36).slice(2)}`;
   };
@@ -6406,6 +6407,7 @@ export function runEnemyTurnAI(enemy, context) {
             {
               callbackSource: "enemy-turn-ai-attack-of-opportunity-callback",
               isDelayedCallback: true,
+              allowOutOfTurnAttack: true,
             },
           );
 

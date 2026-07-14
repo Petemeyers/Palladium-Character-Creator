@@ -220,6 +220,14 @@ import {
   stripPositionFields,
 } from "../utils/combat/noMovePositionPreservation.js";
 import {
+  COMBAT_LOG_AUDIENCES,
+  COMBAT_LOG_CHANNELS,
+  normalizeCombatLogEntry,
+  selectCombatEventsByChannel,
+  selectDeveloperCombatEvents,
+  selectPlayerCombatEvents,
+} from "../utils/combat/combatLogEvents.js";
+import {
   disambiguateDuplicateCombatActorNames,
   formatCombatActorLabel,
 } from "../utils/combatActorIdentity.js";
@@ -1777,6 +1785,7 @@ function CombatPage({ characters = [] }) {
   const navigate = useNavigate();
   const [log, setLog] = useState([]);
   const [logFilterType, setLogFilterType] = useState("all");
+  const [developerLogFilterType, setDeveloperLogFilterType] = useState("all");
   const [logSortOrder, setLogSortOrder] = useState("oldest");
   const [logStepMode, setLogStepMode] = useState(false);
   const [revealedLogCount, setRevealedLogCount] = useState(0);
@@ -1994,16 +2003,22 @@ function CombatPage({ characters = [] }) {
     };
   }, []);
 
-  const addLog = useCallback((message, type = "info", diceInfo = null) => {
+  const addLog = useCallback((...logArgs) => {
+    const [message, type, diceInfo = null] = logArgs;
+    const explicitTypeProvided = logArgs.length >= 2;
+    const legacyType = type ?? "info";
+    const rawMessage = typeof message === "object" && message !== null
+      ? message.message ?? ""
+      : message;
     const readableMessage = disambiguateDuplicateCombatActorNames(
-      sanitizeCombatLogMessage(message),
+      sanitizeCombatLogMessage(rawMessage),
       {
         roster: fightersRef.current ?? [],
         activeActor: fightersRef.current?.[turnIndexRef.current] ?? null,
       },
     );
     // Prevent duplicate log messages (React Strict Mode double-invocation and rapid repeats)
-    const recentKey = `${readableMessage.substring(0, 100)}_${type}`; // Use first 100 chars + type as key
+    const recentKey = `${readableMessage.substring(0, 100)}_${legacyType}`; // Use first 100 chars + type as key
     const now = Date.now();
 
     // Check if this exact message was logged in the last 2 seconds (prevent duplicates from rapid calls)
@@ -2025,14 +2040,24 @@ function CombatPage({ characters = [] }) {
       }
     }
 
-    const logEntry = {
-      id: generateCryptoId(),
-      seq: ++combatLogSeqRef.current,
-      message: readableMessage,
-      type,
-      timestamp: new Date().toLocaleTimeString(),
-      diceInfo
-    };
+    const sequence = ++combatLogSeqRef.current;
+    const displayTimestamp = new Date().toLocaleTimeString();
+    const logEntry = normalizeCombatLogEntry(
+      typeof message === "object" && message !== null
+        ? { ...message, message: readableMessage }
+        : readableMessage,
+      {
+        id: generateCryptoId(),
+        sequence,
+        timestamp: Date.now(),
+        displayTimestamp,
+        legacyType,
+        explicitTypeProvided,
+        diceInfo,
+        round: meleeRoundRef.current ?? null,
+        turn: turnCounterRef.current ?? null,
+      },
+    );
     logQueueRef.current.push(logEntry);
     if (!logFlushTimerRef.current) {
       const stepMs = Math.max(16, scaleDelayMs(LOG_STEP_MS));
@@ -2960,7 +2985,7 @@ function CombatPage({ characters = [] }) {
     if (!gmNarrationEnabled) return;
     if (!Array.isArray(log) || log.length === 0) return;
 
-    const oldestFirst = [...log].reverse();
+    const oldestFirst = [...selectPlayerCombatEvents(log)].reverse();
 
     for (const entry of oldestFirst) {
       if (!entry?.id) continue;
@@ -8484,7 +8509,8 @@ function CombatPage({ characters = [] }) {
   }, [combatPaused, clearScheduledTurn]);
 
   useEffect(() => {
-    if (!logStepMode || !combatActive || log.length <= revealedLogCount) return;
+    const playerVisibleLogCount = selectPlayerCombatEvents(log).length;
+    if (!logStepMode || !combatActive || playerVisibleLogCount <= revealedLogCount) return;
 
     stepLogPauseOwnedRef.current = true;
     processingEnemyTurnRef.current = false;
@@ -8496,7 +8522,7 @@ function CombatPage({ characters = [] }) {
       combatPausedRef.current = true;
       setCombatPaused(true);
     }
-  }, [log.length, revealedLogCount, logStepMode, combatActive, clearScheduledTurn]);
+  }, [log, revealedLogCount, logStepMode, combatActive, clearScheduledTurn]);
 
   // Helper: Check if alignment is evil (would attack dying targets)
   const isEvilAlignment = useCallback((alignment) => {
@@ -14528,6 +14554,20 @@ function CombatPage({ characters = [] }) {
   const createAttackExecutionKey = useCallback((actorId, targetId, source = "attack", options = {}) => {
     const grant = getAttackActionGrant(options.grant || options.grantId);
     const isDelayedCallback = Boolean(options.isDelayedCallback || options.callbackSource);
+    const activeFighter = fightersRef.current?.[turnIndexRef.current];
+    if (
+      !options.allowOutOfTurnAttack &&
+      activeFighter?.id &&
+      actorId &&
+      String(activeFighter.id) !== String(actorId)
+    ) {
+      const actorForLog = (fightersRef.current ?? fighters ?? []).find((fighter) => fighter.id === actorId);
+      addLog(
+        `stale callback key mint blocked: actor=${actorForLog?.name || actorId || "unknown"} source=${source || options.callbackSource || "attack"} reason=actor-not-active-fighter active=${activeFighter.name || activeFighter.id}`,
+        "warning",
+      );
+      return null;
+    }
     if (isDelayedCallback && !isAttackActionGrantCurrent(grant, actorId, targetId)) {
       const actorForLog = (fightersRef.current ?? fighters ?? []).find((fighter) => fighter.id === actorId);
       addLog(
@@ -14539,7 +14579,6 @@ function CombatPage({ characters = [] }) {
     const serial = (attackExecutionSerialRef.current || 0) + 1;
     attackExecutionSerialRef.current = serial;
     const id = `attack-${combatSessionRef.current}-${serial}-${Math.random().toString(36).slice(2)}`;
-    const activeFighter = fightersRef.current?.[turnIndexRef.current];
     const registryActor = (fightersRef.current ?? fighters ?? []).find((fighter) => fighter.id === actorId);
     const metadata = {
       id,
@@ -15684,7 +15723,12 @@ function CombatPage({ characters = [] }) {
     }
     const attackActionId =
       providedAttackActionId ||
-      createAttackExecutionKey(attacker?.id, defenderId, attackSource);
+      createAttackExecutionKey(attacker?.id, defenderId, attackSource, {
+        allowOutOfTurnAttack: Boolean(bonusModifiers?.allowOutOfTurnAttack),
+      });
+    if (!attackActionId && !bonusModifiers?.allowOutOfTurnAttack) {
+      return makeBlockedAttackResult("execution-key-mint-rejected", attackActionId);
+    }
     const expectedCombatSession = bonusModifiers?.combatSession ?? combatSessionRef.current;
     const expectedTurnToken = bonusModifiers?.turnToken ?? currentTurnTokenRef.current;
     const expectedMeleeRound = bonusModifiers?.meleeRound ?? (meleeRoundRef.current ?? meleeRound);
@@ -17633,13 +17677,61 @@ function CombatPage({ characters = [] }) {
         timestamp: new Date().toLocaleTimeString()
       }]);
       if (isCriticalHit) {
-        addLog(`${attackRollAttackerLabel} rolls NATURAL 20! Critical Hit! Raw 20, modified total ${attackRoll} vs AC ${targetGuardRating}`, "critical");
+        addLog({
+          audience: COMBAT_LOG_AUDIENCES.PLAYER,
+          channel: COMBAT_LOG_CHANNELS.ROLL,
+          eventType: "critical-hit",
+          level: "info",
+          type: "critical",
+          actorId: stateAttacker?.id || attacker?.id,
+          targetId: defender?.id,
+          message: `Attack roll: Natural 20 — Critical hit! Total ${attackRoll} vs AC ${targetGuardRating}.`,
+          data: {
+            naturalRoll: attackDiceRoll,
+            modifier: attackBonus,
+            total: attackRoll,
+            targetNumber: targetGuardRating,
+            result: "critical-hit",
+          },
+        }, "critical");
       } else if (isCriticalMiss) {
-        addLog(`${attackRollAttackerLabel} rolls NATURAL 1! Critical Miss!`, "miss");
+        addLog({
+          audience: COMBAT_LOG_AUDIENCES.PLAYER,
+          channel: COMBAT_LOG_CHANNELS.ROLL,
+          eventType: "critical-miss",
+          level: "info",
+          type: "miss",
+          actorId: stateAttacker?.id || attacker?.id,
+          targetId: defender?.id,
+          message: "Attack roll: Natural 1 — Critical miss!",
+          data: {
+            naturalRoll: attackDiceRoll,
+            modifier: attackBonus,
+            total: attackRoll,
+            targetNumber: targetGuardRating,
+            result: "critical-miss",
+          },
+        }, "miss");
       } else {
         // Format attack bonus display (show negative clearly)
         const bonusDisplay = attackBonus >= 0 ? `+${attackBonus}` : `${attackBonus}`;
-        addLog(`${attackRollAttackerLabel} rolls ${attackDiceRoll} ${bonusDisplay} = ${attackRoll} vs AC ${targetGuardRating}`, "info");
+        addLog({
+          audience: COMBAT_LOG_AUDIENCES.PLAYER,
+          channel: COMBAT_LOG_CHANNELS.ROLL,
+          eventType: "attack-roll",
+          level: "info",
+          type: attackRoll >= targetGuardRating ? "hit" : "miss",
+          actorId: stateAttacker?.id || attacker?.id,
+          targetId: defender?.id,
+          message: `Attack roll: ${attackDiceRoll} ${bonusDisplay} = ${attackRoll} vs AC ${targetGuardRating} — ${attackRoll >= targetGuardRating ? "Hit" : "Miss"}.`,
+          data: {
+            naturalRoll: attackDiceRoll,
+            modifier: attackBonus,
+            total: attackRoll,
+            targetNumber: targetGuardRating,
+            result: attackRoll >= targetGuardRating ? "hit" : "miss",
+          },
+        }, attackRoll >= targetGuardRating ? "hit" : "miss");
       }
 
       const isRangedAttack = isExplicitRangedAttack(attackData);
@@ -18057,9 +18149,39 @@ function CombatPage({ characters = [] }) {
         }
         const remainingAmmo = Math.max(0, currentAmmo - 1);
         if (remainingAmmo > 0) {
-          addLog(`${attacker.name} fires ${weaponName} (${remainingAmmo} ${ammoType} remaining)`, "info");
+          addLog({
+            audience: COMBAT_LOG_AUDIENCES.PLAYER,
+            channel: COMBAT_LOG_CHANNELS.ACTION,
+            eventType: "ranged-attack",
+            level: "info",
+            type: "combat",
+            actorId: attacker?.id,
+            targetId: defenderId,
+            message: `${attacker.name} fires ${weaponName}.`,
+            data: {
+              weaponName,
+              ammoType,
+              ammoSpent: 1,
+              remainingAmmo,
+            },
+          }, "combat");
         } else {
-          addLog(`${attacker.name} fires ${weaponName} (OUT OF ${String(ammoType).toUpperCase()}!)`, "warning");
+          addLog({
+            audience: COMBAT_LOG_AUDIENCES.PLAYER,
+            channel: COMBAT_LOG_CHANNELS.ACTION,
+            eventType: "ranged-attack",
+            level: "warning",
+            type: "warning",
+            actorId: attacker?.id,
+            targetId: defenderId,
+            message: `${attacker.name} fires ${weaponName} and runs out of ${ammoType}.`,
+            data: {
+              weaponName,
+              ammoType,
+              ammoSpent: 1,
+              remainingAmmo,
+            },
+          }, "warning");
         }
       }
 
@@ -18361,13 +18483,46 @@ function CombatPage({ characters = [] }) {
           const parsedDamage = parseDamageFormula(loggedDamageSource);
           const totalBonusForLog = parsedDamage.existingBonus + safeDamageBonus;
           const extraText = extraDamageFromDive > 0 ? ` + ${extraDamageFromDive}` : "";
-          addLog(`Damage: ${parsedDamage.baseFormula} + ${totalBonusForLog}${extraText} = ${baseDamageBeforeCrit} 2 (CRITICAL) = ${damage}`, "critical");
+          addLog({
+            audience: COMBAT_LOG_AUDIENCES.PLAYER,
+            channel: COMBAT_LOG_CHANNELS.DAMAGE,
+            eventType: "damage-roll",
+            level: "info",
+            type: "critical",
+            actorId: stateAttacker?.id || attacker?.id,
+            targetId: defender?.id,
+            message: `Damage roll: ${parsedDamage.baseFormula} + ${totalBonusForLog}${extraText} = ${baseDamageBeforeCrit}; critical hit doubles it to ${damage}.`,
+            data: {
+              formula: parsedDamage.baseFormula,
+              modifier: totalBonusForLog,
+              extraDamage: extraDamageFromDive,
+              baseDamage: baseDamageBeforeCrit,
+              totalDamage: damage,
+              critical: true,
+            },
+          }, "critical");
         } else {
           // Calculate total bonus for logging
           const parsedDamage = parseDamageFormula(loggedDamageSource);
           const totalBonusForLog = parsedDamage.existingBonus + safeDamageBonus;
           const extraText = extraDamageFromDive > 0 ? ` + ${extraDamageFromDive}` : "";
-          addLog(`Damage: ${parsedDamage.baseFormula} + ${totalBonusForLog}${extraText} = ${damage}`, "info");
+          addLog({
+            audience: COMBAT_LOG_AUDIENCES.PLAYER,
+            channel: COMBAT_LOG_CHANNELS.DAMAGE,
+            eventType: "damage-roll",
+            level: "info",
+            type: "damage",
+            actorId: stateAttacker?.id || attacker?.id,
+            targetId: defender?.id,
+            message: `Damage roll: ${parsedDamage.baseFormula} + ${totalBonusForLog}${extraText} = ${damage} damage.`,
+            data: {
+              formula: parsedDamage.baseFormula,
+              modifier: totalBonusForLog,
+              extraDamage: extraDamageFromDive,
+              totalDamage: damage,
+              critical: false,
+            },
+          }, "damage");
         }
 
         // Calculate damage with multipliers
@@ -18495,8 +18650,22 @@ function CombatPage({ characters = [] }) {
         const appliedDamage = Math.max(0, startingHP - getFighterHP(defender));
         if (appliedDamage > 0) {
           addLog(
-            `${normalDamageTargetLabel} takes ${appliedDamage} damage from ${normalDamageAttackerLabel}! (HP: ${getFighterHP(defender)}/${getFighterMaxHP(defender)})`,
-            "warning",
+            {
+              audience: COMBAT_LOG_AUDIENCES.PLAYER,
+              channel: COMBAT_LOG_CHANNELS.DAMAGE,
+              eventType: "damage-applied",
+              level: "info",
+              type: "damage",
+              actorId: stateAttacker?.id || attacker?.id,
+              targetId: defender?.id,
+              message: `${normalDamageTargetLabel} takes ${appliedDamage} damage from ${normalDamageAttackerLabel}.`,
+              data: {
+                damage: appliedDamage,
+                hp: getFighterHP(defender),
+                maxHp: getFighterMaxHP(defender),
+              },
+            },
+            "damage",
           );
         }
 
@@ -26690,6 +26859,7 @@ function CombatPage({ characters = [] }) {
             scheduledAtTurnToken: opportunityGrant.turnToken,
             callbackSource: "enemy-inline-attack-of-opportunity-callback",
             isDelayedCallback: true,
+            allowOutOfTurnAttack: true,
           });
 
           setTimeout(() => {
@@ -26980,7 +27150,7 @@ function CombatPage({ characters = [] }) {
         const expectedEnemyAttackActorId = updatedEnemy.id;
         const expectedEnemyMeleeRound = meleeRoundRef.current ?? meleeRound;
         const expectedEnemyTurnCounter = turnCounterRef.current ?? turnCounter;
-        const enemyAttackSource = allBonuses?.source || "enemy-melee-attack";
+        const enemyAttackSource = allBonuses?.source || (isRangedSelectedAttack ? "enemy-ranged-attack" : "enemy-melee-attack");
         const enemyMeleeGrant = createAttackActionGrant(expectedEnemyAttackActorId, target.id, enemyAttackSource);
         const expectedEnemyAttackExecutionKey = createAttackExecutionKey(
           expectedEnemyAttackActorId,
@@ -32621,9 +32791,31 @@ function CombatPage({ characters = [] }) {
     }
   };
 
+  const playerCombatEvents = useMemo(() => selectPlayerCombatEvents(log), [log]);
+  const developerCombatEvents = useMemo(() => selectDeveloperCombatEvents(log), [log]);
+
   const chronologicalLogEntries = useMemo(() => {
-    return [...log].sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0));
-  }, [log]);
+    return [...playerCombatEvents].sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0));
+  }, [playerCombatEvents]);
+
+  const chronologicalDeveloperLogEntries = useMemo(() => {
+    return [...developerCombatEvents].sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0));
+  }, [developerCombatEvents]);
+
+  const filteredDeveloperLogEntries = useMemo(() => {
+    return selectCombatEventsByChannel(chronologicalDeveloperLogEntries, developerLogFilterType);
+  }, [chronologicalDeveloperLogEntries, developerLogFilterType]);
+
+  const visibleDeveloperLogEntries = useMemo(() => {
+    return filteredDeveloperLogEntries.slice(-200).reverse();
+  }, [filteredDeveloperLogEntries]);
+
+  const formatLogTimestamp = (entry) => {
+    if (entry?.displayTimestamp) return entry.displayTimestamp;
+    if (typeof entry?.timestamp === "string") return entry.timestamp;
+    if (Number.isFinite(entry?.timestamp)) return new Date(entry.timestamp).toLocaleTimeString();
+    return "";
+  };
 
   const filteredChronologicalLogEntries = useMemo(() => {
     if (logFilterType === "all") return chronologicalLogEntries;
@@ -33309,7 +33501,7 @@ function CombatPage({ characters = [] }) {
                   },
                 }}
               >
-                {log.length === 0 ? (
+                {chronologicalLogEntries.length === 0 ? (
                   <Text fontSize="xs" color="gray.500" fontStyle="italic" h="20px" lineHeight="20px">
                     Combat log will astaminaar here...
                   </Text>
@@ -33329,7 +33521,7 @@ function CombatPage({ characters = [] }) {
                         h="20px"
                         lineHeight="20px"
                       >
-                        [#{String(entry.seq ?? 0).padStart(3, "0")} {entry.timestamp}] {entry.message}
+                        [#{String(entry.seq ?? 0).padStart(3, "0")} {formatLogTimestamp(entry)}] {entry.message}
                       </Text>
                     ))}
                   </VStack>
@@ -33367,7 +33559,7 @@ function CombatPage({ characters = [] }) {
                   <VStack align="stretch" spacing={2} maxH="160px" overflowY="auto">
                     {gmNarration.slice(0, 8).map((entry) => (
                       <Text key={entry.id} fontSize="sm" color="purple.800">
-                        [{entry.timestamp}] {entry.message}
+                        [{formatLogTimestamp(entry)}] {entry.message}
                       </Text>
                     ))}
                   </VStack>
@@ -35945,8 +36137,8 @@ function CombatPage({ characters = [] }) {
                           <Box flex="1" minW={0} bg="rgba(0,0,0,0.25)" borderRadius="md" p={2} maxH={{ base: "110px", md: "100%" }} overflowY="auto">
                             <Text fontSize="xs" fontWeight="bold" mb={1}>Combat Log</Text>
                             <VStack align="stretch" spacing={1}>
-                              {log.slice(-6).map((entry, idx) => (
-                                <Text key={`${entry.timestamp || idx}-${idx}`} fontSize="xs" color="gray.100" noOfLines={2}>
+                              {chronologicalLogEntries.slice(-6).map((entry, idx) => (
+                                <Text key={`${entry.id || idx}-${idx}`} fontSize="xs" color="gray.100" noOfLines={2}>
                                   {typeof entry === "string" ? entry : entry.message || entry.text || String(entry)}
                                 </Text>
                               ))}
@@ -36400,8 +36592,16 @@ function CombatPage({ characters = [] }) {
                   onSave={saveProposedTraitAward}
                   isSaveEligible={canSaveProposedTraitAward}
                 />
-                <Tabs size="sm" colorScheme="blue" isLazy>
-                  <TabList>
+                <Tabs
+                  size="sm"
+                  colorScheme="blue"
+                  isLazy
+                  display="flex"
+                  flexDirection="column"
+                  minH={0}
+                  maxH="620px"
+                >
+                  <TabList flexShrink={0}>
                     <Tab>Log</Tab>
                     <Tab>Fighter</Tab>
                     <Tab>Inventory</Tab>
@@ -36409,10 +36609,10 @@ function CombatPage({ characters = [] }) {
                     <Tab>Legend</Tab>
                     <Tab>Debug</Tab>
                   </TabList>
-                  <TabPanels>
+                  <TabPanels flex="1" minH={0} overflow="hidden">
                     {/* Combat Log Tab */}
-                    <TabPanel p={2}>
-                      <VStack align="stretch" spacing={2}>
+                    <TabPanel p={2} h="100%" minH={0} overflowY="auto" pb={4}>
+                      <VStack align="stretch" spacing={2} minH={0} pb={3}>
                         {/* Log Control Buttons */}
                         <HStack spacing={2} flexWrap="wrap">
                           <Button
@@ -36436,7 +36636,7 @@ function CombatPage({ characters = [] }) {
                                     setCombatPaused(true);
                                   }
                                 } else {
-                                  setRevealedLogCount(log.length);
+                                  setRevealedLogCount(chronologicalLogEntries.length);
                                   if (stepLogPauseOwnedRef.current) {
                                     stepLogPauseOwnedRef.current = false;
                                     setCombatPaused(false);
@@ -36454,8 +36654,8 @@ function CombatPage({ characters = [] }) {
                             colorScheme="orange"
                             variant="outline"
                             onClick={() => {
-                              if (revealedLogCount < log.length) {
-                                setRevealedLogCount((count) => Math.min(count + 1, log.length));
+                              if (revealedLogCount < chronologicalLogEntries.length) {
+                                setRevealedLogCount((count) => Math.min(count + 1, chronologicalLogEntries.length));
                                 return;
                               }
 
@@ -36464,18 +36664,18 @@ function CombatPage({ characters = [] }) {
                                 setCombatPaused(false);
                               }
                             }}
-                            isDisabled={!logStepMode || (!combatActive && revealedLogCount >= log.length)}
+                            isDisabled={!logStepMode || (!combatActive && revealedLogCount >= chronologicalLogEntries.length)}
                           >
-                            {revealedLogCount < log.length ? "Next Log" : "Continue to Next Log"}
+                            {revealedLogCount < chronologicalLogEntries.length ? "Next Log" : "Continue to Next Log"}
                           </Button>
                           {logStepMode && (
                             <Button
                               size="xs"
                               variant="ghost"
-                              onClick={() => setRevealedLogCount(log.length)}
-                              isDisabled={revealedLogCount >= log.length}
+                              onClick={() => setRevealedLogCount(chronologicalLogEntries.length)}
+                              isDisabled={revealedLogCount >= chronologicalLogEntries.length}
                             >
-                              Show All ({Math.min(revealedLogCount, log.length)}/{log.length})
+                              Show All ({Math.min(revealedLogCount, chronologicalLogEntries.length)}/{chronologicalLogEntries.length})
                             </Button>
                           )}
                           <Select
@@ -36507,9 +36707,9 @@ function CombatPage({ characters = [] }) {
                             size="xs"
                             colorScheme="green"
                             onClick={() => {
-                              const logText = [...log]
+                              const logText = [...chronologicalLogEntries]
                                 .sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0))
-                                .map(entry => `[#${String(entry.seq ?? 0).padStart(3, "0")} ${entry.timestamp}] ${entry.message}`)
+                                .map(entry => `[#${String(entry.seq ?? 0).padStart(3, "0")} ${formatLogTimestamp(entry)}] ${entry.message}`)
                                 .join('\n');
                               navigator.clipboard.writeText(logText);
                               alert('Combat log copied to clipboard!');
@@ -36542,7 +36742,7 @@ function CombatPage({ characters = [] }) {
                           overflowY="auto"
                           bg="gray.50"
                         >
-                          {log.length === 0 && diceRolls.length === 0 ? (
+                          {chronologicalLogEntries.length === 0 && diceRolls.length === 0 ? (
                             <Text color="gray.500" fontSize="xs">Combat log and dice rolls will astaminaar here...</Text>
                           ) : (
                             <VStack align="stretch" spacing={2}>
@@ -36561,7 +36761,7 @@ function CombatPage({ characters = [] }) {
                                   </VStack>
                                 </Box>
                               )}
-                              {visibleDetailedLogEntries.length === 0 && log.length > 0 && (
+                              {visibleDetailedLogEntries.length === 0 && chronologicalLogEntries.length > 0 && (
                                 <Text fontSize="xs" color="gray.500" fontStyle="italic">
                                   {logStepMode
                                     ? "Press Next Log to reveal the next combat log entry."
@@ -36575,7 +36775,7 @@ function CombatPage({ characters = [] }) {
                                     color={getLogColor(entry.type)}
                                     fontWeight="bold"
                                   >
-                                    [#{String(entry.seq ?? 0).padStart(3, "0")} {entry.timestamp}] {entry.message}
+                                    [#{String(entry.seq ?? 0).padStart(3, "0")} {formatLogTimestamp(entry)}] {entry.message}
                                   </Text>
 
                                   {entry.diceInfo && showRollDetails && (
@@ -36632,6 +36832,82 @@ function CombatPage({ characters = [] }) {
                             </VStack>
                           )}
                         </Box>
+                        {import.meta.env.DEV && (
+                          <Box
+                            border="1px solid"
+                            borderColor="orange.200"
+                            bg="orange.50"
+                            p={2}
+                            borderRadius="md"
+                            flexShrink={0}
+                            mb={2}
+                          >
+                            <HStack justify="space-between" mb={2} flexWrap="wrap">
+                              <Text fontSize="xs" fontWeight="bold" color="orange.800">
+                                Developer Combat Events
+                              </Text>
+                              <Select
+                                size="xs"
+                                width="170px"
+                                value={developerLogFilterType}
+                                onChange={(e) => setDeveloperLogFilterType(e.target.value)}
+                              >
+                                <option value="all">All</option>
+                                <option value="ai">AI</option>
+                                <option value="execution">Execution</option>
+                                <option value="state">State</option>
+                                <option value="validation">Validation</option>
+                                <option value="warnings">Warnings</option>
+                                <option value="errors">Errors</option>
+                                <option value="player">Player-visible events</option>
+                              </Select>
+                            </HStack>
+                            <Box
+                              maxH={{ base: "180px", md: "280px" }}
+                              minH="96px"
+                              overflowY="auto"
+                              overflowX="auto"
+                              pr={1}
+                              borderWidth="1px"
+                              borderColor="orange.100"
+                              borderRadius="md"
+                              bg="white"
+                              sx={{
+                                '&::-webkit-scrollbar': {
+                                  width: '8px',
+                                  height: '8px',
+                                },
+                                '&::-webkit-scrollbar-track': {
+                                  background: 'rgba(251, 211, 141, 0.25)',
+                                  borderRadius: '4px',
+                                },
+                                '&::-webkit-scrollbar-thumb': {
+                                  background: '#dd6b20',
+                                  borderRadius: '4px',
+                                },
+                              }}
+                            >
+                              <VStack align="stretch" spacing={1} p={1}>
+                                {visibleDeveloperLogEntries.length === 0 ? (
+                                  <Text fontSize="xs" color="orange.700" fontStyle="italic">
+                                    No developer events match this filter.
+                                  </Text>
+                                ) : visibleDeveloperLogEntries.map((entry) => (
+                                  <Box key={entry.id} bg="white" borderWidth="1px" borderColor="orange.100" borderRadius="sm" p={1}>
+                                    <Text fontSize="xs" color="orange.900" whiteSpace="pre-wrap" wordBreak="break-word">
+                                      [#{String(entry.seq ?? 0).padStart(3, "0")} {formatLogTimestamp(entry)}] [{entry.audience}/{entry.channel}/{entry.eventType}] {entry.message}
+                                    </Text>
+                                    {entry.data && Object.keys(entry.data).length > 0 && (
+                                      <Text as="pre" fontSize="10px" color="gray.600" whiteSpace="pre-wrap" wordBreak="break-word" mt={1}>
+                                        {JSON.stringify(entry.data, null, 2)}
+                                      </Text>
+                                    )}
+                                  </Box>
+                                ))}
+                              </VStack>
+                            </Box>
+                          </Box>
+                        )}
                       </VStack>
                     </TabPanel>
 
