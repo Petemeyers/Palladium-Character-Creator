@@ -23,6 +23,30 @@ const postureColor = (postureLabel) => {
   return "gray";
 };
 
+const formatActorHp = (actor = {}) => {
+  const current = actor.currentHP ?? actor.hp ?? actor.health;
+  const max = actor.maxHP ?? actor.maxHp ?? actor.maximumHP;
+  if (current === undefined && max === undefined) return "Unknown";
+  if (max === undefined || max === null || max === "") return String(current ?? "Unknown");
+  return `${current ?? "?"}/${max}`;
+};
+
+const formatActorStamina = (actor = {}) => {
+  const current = actor.currentStamina ?? actor.stamina;
+  const max = actor.maxStamina ?? actor.maximumStamina;
+  if (current === undefined && max === undefined) return "Unknown";
+  if (max === undefined || max === null || max === "") return String(current ?? "Unknown");
+  return `${current ?? "?"}/${max}`;
+};
+
+const formatMovementMode = (actor = {}) => {
+  const mode = actor.currentMovementMode || actor.movementMode || actor.preferredMovementMode;
+  if (typeof mode === "string" && mode.trim()) return mode.trim();
+  if (Array.isArray(actor.movementModes) && actor.movementModes.length > 0) return actor.movementModes.join(", ");
+  if (actor.isFlying || actor.airborne || Number(actor.altitudeFeet ?? actor.altitude ?? 0) > 0) return "flying";
+  return "ground";
+};
+
 const CombatTurnStatusPanel = ({
   commandTurn = {},
   activeActor = null,
@@ -57,11 +81,29 @@ const CombatTurnStatusPanel = ({
           </HStack>
         </HStack>
 
-        <SimpleGrid columns={{ base: 1, md: 3 }} spacing={3}>
+        <SimpleGrid columns={{ base: 1, md: 6 }} spacing={3}>
+          <Box>
+            <Text fontSize="xs" color="gray.500" fontWeight="semibold">HP / State</Text>
+            <Text fontSize="sm">
+              {formatActorHp(activeActor || commandTurn.turnEntry || {})}
+            </Text>
+          </Box>
+          <Box>
+            <Text fontSize="xs" color="gray.500" fontWeight="semibold">Stamina</Text>
+            <Text fontSize="sm">
+              {formatActorStamina(activeActor || commandTurn.turnEntry || {})}
+            </Text>
+          </Box>
           <Box>
             <Text fontSize="xs" color="gray.500" fontWeight="semibold">Actions</Text>
             <Text fontSize="sm">
               {status.actionsRemaining} / {status.maxActions}
+            </Text>
+          </Box>
+          <Box>
+            <Text fontSize="xs" color="gray.500" fontWeight="semibold">Movement</Text>
+            <Text fontSize="sm" textTransform="capitalize">
+              {formatMovementMode(activeActor || commandTurn.turnEntry || {})}
             </Text>
           </Box>
           <Box>

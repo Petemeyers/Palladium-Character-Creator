@@ -550,7 +550,7 @@ export default function CharacterSheet({ characterData = null, onSave = null }) 
             Legacy Compatibility Editor
           </Text>
           <Text fontSize="sm" color="gray.600">
-            For SRD/public characters, use Character Creator.
+            For simulator-profile characters, use Character Creator.
           </Text>
         </Box>
         <Grid templateColumns={{ base: '1fr', md: 'repeat(2, 1fr)', lg: 'repeat(4, 1fr)' }} gap={4}>

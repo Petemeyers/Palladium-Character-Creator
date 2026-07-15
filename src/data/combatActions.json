@@ -8,7 +8,7 @@
         "types": ["melee", "ranged"],
         "description": "Make a weapon or natural attack.",
         "cost": "1 action",
-        "mechanic": "d20-style attack check vs Guard Rating"
+        "mechanic": "Attack check vs Guard Rating"
       },
       {
         "name": "Overwatch Shot",
@@ -71,7 +71,7 @@
         "name": "Use a Skill",
         "description": "Climb, hide, give first aid, track, rally, or perform another practical task under pressure.",
         "cost": "1 action",
-        "mechanic": "d20-style skill check with ability modifier and trainingBonus"
+        "mechanic": "Skill check with attribute bonus and training bonus"
       },
       {
         "name": "Use an Item",

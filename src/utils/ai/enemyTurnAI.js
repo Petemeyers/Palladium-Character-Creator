@@ -84,6 +84,7 @@ import {
   isAllyOf,
 } from "../factionDisposition.js";
 import { getSelectableActorAttackForDistance } from "../selectableActorAdapter.js";
+import { getInventoryAmmoCount } from "../combatAmmoManager.js";
 import {
   getMeleeEngagementContext,
   isChargeOnlyAttack,
@@ -4529,6 +4530,10 @@ export function runEnemyTurnAI(enemy, context) {
         !isHexOccupied(cell.x, cell.y, enemy.id)
       ))
     );
+    const canUseEnemyAttack = (attackOption) => (
+      !attackOption?.ammunition ||
+      getInventoryAmmoCount(enemy, attackOption.ammunition) > 0
+    );
 
     const planEnemyMovement = (maxHexes, candidates = playerTargets) => {
       if (!positions?.[enemy.id] || typeof getHexNeighbors !== "function") return null;
@@ -4549,6 +4554,7 @@ export function runEnemyTurnAI(enemy, context) {
               enemy,
               distance,
               selectedAttack,
+              { canUseAttack: canUseEnemyAttack },
             );
             return Boolean(validateWeaponRange(
               enemy,
@@ -4595,6 +4601,7 @@ export function runEnemyTurnAI(enemy, context) {
           enemy,
           currentDistance,
           selectedAttack,
+          { canUseAttack: canUseEnemyAttack },
         );
         addLog(
           `${enemy.name} cannot get a clear approach to ${previousTarget.name}, so it redirects toward ${target.name}.`,
@@ -4617,6 +4624,7 @@ export function runEnemyTurnAI(enemy, context) {
         enemy,
         currentDistance,
         selectedAttack,
+        { canUseAttack: canUseEnemyAttack },
       );
 
       const meleeEngagement = getMeleeEngagementContext({

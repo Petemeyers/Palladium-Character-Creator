@@ -80,14 +80,14 @@ assert.equal(endCurrentManualAction(fighters, actor)[0].remainingActions, 1);
 assert.equal(endManualTurnActions(fighters, actor)[0].remainingActions, 0);
 
 const layout = buildCombatCommandLayoutSummary();
-assert.equal(layout.order.at(-1), "Legacy / Compatibility Tools");
+assert.equal(layout.order.at(-1), "Advanced Combat Tools");
 assert.equal(layout.defaultCompatibilityCollapsed, true);
 
 const combatPageSource = readFileSync("src/pages/CombatPage.jsx", "utf8");
 assert.match(combatPageSource, /if \(!legacyManualTurnOrderGate\.enabled\)/);
 assert.match(combatPageSource, /if \(!commandCenterAttackGate\.enabled\)/);
 assert.match(combatPageSource, /setManualPublicTurnOrder\(\[\]\)/);
-assert.match(combatPageSource, /await attack\(currentFighter, targetToExecute\.id\)/, "scheduled manual attacks retain the common resolver");
+assert.match(combatPageSource, /await attack\(currentFighter, targetToExecute\.id,\s*\{/, "scheduled manual attacks retain the common resolver");
 const commandAttackApplySource = combatPageSource.slice(
   combatPageSource.indexOf("function applyManualPublicAttackDamage"),
   combatPageSource.indexOf("function applyManualPublicRecovery")

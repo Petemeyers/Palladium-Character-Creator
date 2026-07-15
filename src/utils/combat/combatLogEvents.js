@@ -154,11 +154,18 @@ export function selectDeveloperCombatEvents(events = []) {
   ));
 }
 
+export function selectCombatEventsByAudience(events = [], audienceMode = COMBAT_LOG_AUDIENCES.PLAYER) {
+  if (audienceMode === "all") return events;
+  if (audienceMode === COMBAT_LOG_AUDIENCES.DEVELOPER) {
+    return selectDeveloperCombatEvents(events);
+  }
+  return selectPlayerCombatEvents(events);
+}
+
 export function selectCombatEventsByChannel(events = [], channelOrGroup = "all") {
   if (channelOrGroup === "all") return events;
   if (channelOrGroup === "player") return selectPlayerCombatEvents(events);
   if (channelOrGroup === "warnings") return events.filter((event) => event.level === "warning" || event.channel === COMBAT_LOG_CHANNELS.WARNING);
   if (channelOrGroup === "errors") return events.filter((event) => event.level === "error" || event.channel === COMBAT_LOG_CHANNELS.ERROR);
-  return events.filter((event) => event.channel === channelOrGroup);
+  return events.filter((event) => event.channel === channelOrGroup || event.type === channelOrGroup || event.eventType === channelOrGroup);
 }
-

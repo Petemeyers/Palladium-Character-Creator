@@ -14,7 +14,7 @@ export const PUBLIC_ENEMIES = [
     challengeRating: "1/4",
     proficiencyBonus: 2,
     actions: [{ name: "Scimitar", attackBonus: 4, damage: "1d6+2", damageType: "slashing" }],
-    source: "SRD 5.2.1",
+    source: "Simulator Combat Profile",
     ruleset: "core-d20",
   },
   {
@@ -30,7 +30,7 @@ export const PUBLIC_ENEMIES = [
     challengeRating: "1/8",
     proficiencyBonus: 2,
     actions: [{ name: "Scimitar", attackBonus: 3, damage: "1d6+1", damageType: "slashing" }],
-    source: "SRD 5.2.1",
+    source: "Simulator Combat Profile",
     ruleset: "core-d20",
   },
   {
@@ -47,7 +47,7 @@ export const PUBLIC_ENEMIES = [
     challengeRating: "1/8",
     proficiencyBonus: 2,
     actions: [{ name: "Spear", attackBonus: 3, damage: "1d6+1", damageType: "piercing" }],
-    source: "SRD 5.2.1",
+    source: "Simulator Combat Profile",
     ruleset: "core-d20",
   },
   {
@@ -64,7 +64,7 @@ export const PUBLIC_ENEMIES = [
     challengeRating: "1/4",
     proficiencyBonus: 2,
     actions: [{ name: "Bite", attackBonus: 4, damage: "2d4+2", damageType: "piercing" }],
-    source: "SRD 5.2.1",
+    source: "Simulator Combat Profile",
     ruleset: "core-d20",
   },
   {
@@ -84,7 +84,7 @@ export const PUBLIC_ENEMIES = [
       { name: "Bite", attackBonus: 5, damage: "1d8+4", damageType: "piercing" },
       { name: "Claw", attackBonus: 5, damage: "2d6+4", damageType: "slashing" },
     ],
-    source: "SRD 5.2.1",
+    source: "Simulator Combat Profile",
     ruleset: "core-d20",
   },
   {
@@ -101,7 +101,7 @@ export const PUBLIC_ENEMIES = [
     challengeRating: "1/4",
     proficiencyBonus: 2,
     actions: [{ name: "Shortsword", attackBonus: 4, damage: "1d6+2", damageType: "piercing" }],
-    source: "SRD 5.2.1",
+    source: "Simulator Combat Profile",
     ruleset: "core-d20",
   },
   {
@@ -119,7 +119,7 @@ export const PUBLIC_ENEMIES = [
     challengeRating: "1/4",
     proficiencyBonus: 2,
     actions: [{ name: "Slam", attackBonus: 3, damage: "1d6+1", damageType: "bludgeoning" }],
-    source: "SRD 5.2.1",
+    source: "Simulator Combat Profile",
     ruleset: "core-d20",
   },
   {
@@ -137,7 +137,7 @@ export const PUBLIC_ENEMIES = [
     challengeRating: "1/2",
     proficiencyBonus: 2,
     actions: [{ name: "Greataxe", attackBonus: 5, damage: "1d12+3", damageType: "slashing" }],
-    source: "SRD 5.2.1",
+    source: "Simulator Combat Profile",
     ruleset: "core-d20",
   },
   {
@@ -154,7 +154,7 @@ export const PUBLIC_ENEMIES = [
     challengeRating: "1/8",
     proficiencyBonus: 2,
     actions: [{ name: "Scimitar", attackBonus: 3, damage: "1d6+1", damageType: "slashing" }],
-    source: "SRD 5.2.1",
+    source: "Simulator Combat Profile",
     ruleset: "core-d20",
   },
   {
@@ -170,7 +170,7 @@ export const PUBLIC_ENEMIES = [
     challengeRating: "1/8",
     proficiencyBonus: 2,
     actions: [{ name: "Bite", attackBonus: 4, damage: "1d4+2", damageType: "piercing" }],
-    source: "SRD 5.2.1",
+    source: "Simulator Combat Profile",
     ruleset: "core-d20",
   },
 ];

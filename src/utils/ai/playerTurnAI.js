@@ -3423,7 +3423,7 @@ export async function runPlayerTurnAI(player, context) {
           "error"
         );
         processingPlayerAIRef.current = false;
-        scheduleEndTurn();
+        scheduleEndTurn(0, "movement-attempt-limit");
         return;
       }
 
@@ -3442,7 +3442,7 @@ export async function runPlayerTurnAI(player, context) {
           "info"
         );
         processingPlayerAIRef.current = false;
-        scheduleEndTurn();
+        scheduleEndTurn(0, "non-improving-approach");
         return;
       }
 

@@ -183,7 +183,14 @@ import {
 import { createPlayableCharacterFighter, getPlayableCharacterRollDetails } from "../utils/autoRoll.js";
 import { assignRandomWeaponToEnemy, getDefaultWeaponForEnemy, equipWeaponToEnemy, addWeaponToInventory } from "../utils/enemyWeaponAssigner.js";
 import armorShopData from "../data/armorShopData.js";
-import { initializeAmmo, setAmmo, canFireMissileWeapon, getInventoryAmmoCount, decrementInventoryAmmo } from "../utils/combatAmmoManager.js";
+import {
+  initializeAmmo,
+  setAmmo,
+  canFireMissileWeapon,
+  getInventoryAmmoCount,
+  decrementInventoryAmmo,
+  ensureConfiguredStartingAmmo,
+} from "../utils/combatAmmoManager.js";
 import { getTechniquesForLevel } from "../data/combatTechniques.js";
 import { selectAITechnique } from "../utils/ai/selectAITechnique.js";
 import { canTargetForAction, getFactionId, isAllyOf, isHostileTo } from "../utils/factionDisposition.js";
@@ -222,11 +229,23 @@ import {
 import {
   COMBAT_LOG_AUDIENCES,
   COMBAT_LOG_CHANNELS,
+  selectCombatEventsByAudience,
   normalizeCombatLogEntry,
   selectCombatEventsByChannel,
-  selectDeveloperCombatEvents,
   selectPlayerCombatEvents,
 } from "../utils/combat/combatLogEvents.js";
+import {
+  buildCombatLogFilename,
+  buildCombatLogText,
+  formatCombatLogTimestamp,
+} from "../utils/combat/combatLogExport.js";
+import {
+  COMBAT_LOG_VISIBLE_INCREMENT,
+  DEFAULT_COMBAT_LOG_VISIBLE_LIMIT,
+  deriveCombatLogWindow,
+  getChronologicalCombatEvents,
+  getCopyCurrentViewEvents,
+} from "../utils/combat/combatLogWindow.js";
 import {
   disambiguateDuplicateCombatActorNames,
   formatCombatActorLabel,
@@ -1392,7 +1411,10 @@ function getDeploymentHint(target) {
 }
 
 const EMBEDDED_ARROW_LIMIT = 40;
-const MAX_RENDERED_LOG_ENTRIES = 300;
+const MAX_RENDERED_LOG_ENTRIES = DEFAULT_COMBAT_LOG_VISIBLE_LIMIT;
+const LOG_RENDER_WINDOW_INCREMENT = COMBAT_LOG_VISIBLE_INCREMENT;
+const LOG_APPEND_BATCH_SIZE = 250;
+const COMBAT_ROUND_SECONDS = 6;
 
 function canEmbedProjectile(projectile) {
   const kind = String(projectile?.kind || "").toLowerCase();
@@ -1784,11 +1806,15 @@ function getSuggestedDeploymentAnchor(side, bounds) {
 function CombatPage({ characters = [] }) {
   const navigate = useNavigate();
   const [log, setLog] = useState([]);
+  const [logAudienceFilter, setLogAudienceFilter] = useState(COMBAT_LOG_AUDIENCES.PLAYER);
   const [logFilterType, setLogFilterType] = useState("all");
-  const [developerLogFilterType, setDeveloperLogFilterType] = useState("all");
   const [logSortOrder, setLogSortOrder] = useState("oldest");
   const [logStepMode, setLogStepMode] = useState(false);
   const [revealedLogCount, setRevealedLogCount] = useState(0);
+  const [renderedLogWindowSize, setRenderedLogWindowSize] = useState(MAX_RENDERED_LOG_ENTRIES);
+  const [trimmedLogEntryCount, setTrimmedLogEntryCount] = useState(0);
+  const [isDetailedLogPinned, setIsDetailedLogPinned] = useState(true);
+  const [hasNewDetailedLogEvents, setHasNewDetailedLogEvents] = useState(false);
 
   const [gmNarrationEnabled, setGmNarrationEnabled] = useState(true);
   const [gmNarrationMode, setGmNarrationMode] = useState("template");
@@ -1965,12 +1991,6 @@ function CombatPage({ characters = [] }) {
   const logQueueRef = useRef([]);
   const logFlushTimerRef = useRef(null);
   const combatLogSeqRef = useRef(0); // Monotonic sequence for stable ordering
-  const logStepModeRef = useRef(logStepMode);
-  const LOG_STEP_MS = 80; // Base delay between log flushes (lower = snappier; was 500)
-
-  useEffect(() => {
-    logStepModeRef.current = logStepMode;
-  }, [logStepMode]);
 
   useEffect(() => {
     try { localStorage.setItem("combatSimulationSpeed", simulationSpeed); } catch { /* non-browser */ }
@@ -2003,6 +2023,26 @@ function CombatPage({ characters = [] }) {
     };
   }, []);
 
+  const appendCanonicalLogBatch = useCallback((batch) => {
+    if (!Array.isArray(batch) || batch.length === 0) return;
+    setLog((prev) => [...prev, ...batch]);
+  }, []);
+
+  const flushQueuedLogEntries = useCallback(({ immediate = false } = {}) => {
+    const queue = logQueueRef.current;
+    if (!queue.length) return 0;
+    const batchSize = immediate
+      ? queue.length
+      : LOG_APPEND_BATCH_SIZE;
+    const batch = queue.splice(0, batchSize);
+    appendCanonicalLogBatch(batch);
+    return batch.length;
+  }, [appendCanonicalLogBatch]);
+
+  const getCanonicalLogSnapshot = useCallback(() => (
+    getChronologicalCombatEvents([...log, ...logQueueRef.current])
+  ), [log]);
+
   const addLog = useCallback((...logArgs) => {
     const [message, type, diceInfo = null] = logArgs;
     const explicitTypeProvided = logArgs.length >= 2;
@@ -2010,8 +2050,11 @@ function CombatPage({ characters = [] }) {
     const rawMessage = typeof message === "object" && message !== null
       ? message.message ?? ""
       : message;
+    const sanitizedMessage = typeof message === "object" && message !== null
+      ? sanitizeCombatLogMessage(rawMessage)
+      : sanitizeCombatLogMessage(message);
     const readableMessage = disambiguateDuplicateCombatActorNames(
-      sanitizeCombatLogMessage(rawMessage),
+      sanitizedMessage,
       {
         roster: fightersRef.current ?? [],
         activeActor: fightersRef.current?.[turnIndexRef.current] ?? null,
@@ -2060,22 +2103,16 @@ function CombatPage({ characters = [] }) {
     );
     logQueueRef.current.push(logEntry);
     if (!logFlushTimerRef.current) {
-      const stepMs = Math.max(16, scaleDelayMs(LOG_STEP_MS));
+      const stepMs = 32;
       logFlushTimerRef.current = setInterval(() => {
-        const queue = logQueueRef.current;
-        const batchSize = logStepModeRef.current ? 1 : 5;
-        const batch = queue.splice(0, batchSize); // Step mode reveals/logs one entry at a time.
-        if (batch.length > 0) {
-          // Keep log in chronological order (oldest newest) for readable transcript
-          setLog((prev) => [...prev, ...batch].slice(-MAX_RENDERED_LOG_ENTRIES));
-        }
-        if (queue.length === 0) {
+        flushQueuedLogEntries();
+        if (logQueueRef.current.length === 0) {
           clearInterval(logFlushTimerRef.current);
           logFlushTimerRef.current = null;
         }
       }, stepMs);
     }
-  }, [generateCryptoId, scaleDelayMs]);
+  }, [flushQueuedLogEntries, generateCryptoId]);
 
   const handleBattleMapSelectionChange = useCallback((eventOrValue) => {
     const nextId = typeof eventOrValue === "string" ? eventOrValue : eventOrValue?.target?.value || "default";
@@ -2438,6 +2475,58 @@ function CombatPage({ characters = [] }) {
     return hpStatus.canAct && !blocksByStatus;
   }, [getCombatantHP, getHPStatus]);
 
+  const isCombatCapableFighter = useCallback((fighter) => {
+    if (!fighter) return false;
+    if (isCombatantFled(fighter) || isCombatantBroken(fighter)) return false;
+    const moraleState = String(
+      fighter.state?.moraleState ||
+      fighter.moraleState?.status ||
+      fighter.moraleState ||
+      ""
+    ).toLowerCase();
+    const statusEffects = Array.isArray(fighter.statusEffects)
+      ? fighter.statusEffects.map((effect) => String(effect).toLowerCase())
+      : [];
+    if (
+      ["routed", "broken", "fled", "surrendered", "captured"].includes(moraleState) ||
+      statusEffects.some((effect) => ["routed", "broken", "fled", "surrendered", "captured"].includes(effect))
+    ) {
+      return false;
+    }
+    return canFighterAct(fighter);
+  }, [canFighterAct]);
+
+  const getCombatCapableRosterCount = useCallback((roster = []) => {
+    const total = Array.isArray(roster) ? roster.length : 0;
+    const active = Array.isArray(roster)
+      ? roster.filter((fighter) => isCombatCapableFighter(fighter)).length
+      : 0;
+    return { active, total };
+  }, [isCombatCapableFighter]);
+
+  const getCombatInactiveLabel = useCallback((fighter) => {
+    if (!fighter) return "";
+    if (isCombatantFled(fighter)) return "FLED";
+    if (isCombatantBroken(fighter)) return "BROKEN";
+    const moraleState = String(
+      fighter.state?.moraleState ||
+      fighter.moraleState?.status ||
+      fighter.moraleState ||
+      ""
+    ).toLowerCase();
+    if (moraleState === "routed") return "ROUTED";
+    if (moraleState === "broken") return "BROKEN";
+    if (moraleState === "fled") return "FLED";
+    const hpStatus = getHPStatus(getCombatantHP(fighter));
+    if (hpStatus.status === "dead") return "DEAD";
+    if (hpStatus.status === "critical") return "CRITICAL";
+    if (hpStatus.status === "dying") return "DYING";
+    if (hpStatus.status === "unconscious") return "UNCONSCIOUS";
+    if (fighter.canAct === false) return "INACTIVE";
+    if (fighter.fatigueState?.status === "collapsed") return "COLLAPSED";
+    return "";
+  }, [getCombatantHP, getHPStatus]);
+
   // =========================
   // Predator/Prey visibility + panic helpers (Hawk Mouse)
   // =========================
@@ -2701,6 +2790,11 @@ function CombatPage({ characters = [] }) {
   const [meleeRound, setMeleeRound] = useState(1); // Track combat rounds (1 minute each)
   const [turnCounter, setTurnCounter] = useState(0); // Track absolute turn number (increments every turn)
   const [combatActive, setCombatActive] = useState(false);
+  useEffect(() => {
+    if (!combatActive || combatPaused) {
+      flushQueuedLogEntries({ immediate: true });
+    }
+  }, [combatActive, combatPaused, flushQueuedLogEntries]);
   const [proposedTraitAwards, setProposedTraitAwards] = useState([]);
   const [selectedCombatant, setSelectedCombatant] = useState("");
   const [customEnemyName, setCustomEnemyName] = useState("");
@@ -4000,6 +4094,8 @@ function CombatPage({ characters = [] }) {
   const attackExecutionSerialRef = useRef(0);
   const attackActionGrantRegistryRef = useRef(new Map()); // grantId -> turn/action ownership metadata.
   const staleAttackBlockFinalizerRef = useRef(null);
+  const enemyContinuationRequestsRef = useRef(new Map()); // actor|turn token|remaining revision|source -> scheduled continuation.
+  const enemyPendingActionContinuationRef = useRef(null); // Authoritative same-fighter AI continuation waiting to invoke startEnemyTurn.
   const staminaChargedAttackKeysRef = useRef(new Set()); // Charge stamina once per logical attack/multi-hit sequence.
   const pendingPlayerAIContinuationRef = useRef(null); // Async post-move work owns its originating player turn.
   const playerAIExecutionRef = useRef(null); // Exact player AI executor invocation currently owning the turn.
@@ -8804,9 +8900,13 @@ function CombatPage({ characters = [] }) {
     }
     return "";
   })();
-  const alivePlayers = fighters.filter(f => f.type === "player" && getCombatantHP(f) > -21);
-  const aliveEnemies = fighters.filter(f => f.type === "enemy" && getCombatantHP(f) > -21);
-  const totalEnemyCount = fighters.filter((f) => f.type === "enemy").length;
+  const partyRoster = useMemo(() => fighters.filter((f) => f.type === "player"), [fighters]);
+  const opponentRoster = useMemo(() => fighters.filter((f) => f.type === "enemy"), [fighters]);
+  const partyRosterCount = useMemo(() => getCombatCapableRosterCount(partyRoster), [getCombatCapableRosterCount, partyRoster]);
+  const opponentRosterCount = useMemo(() => getCombatCapableRosterCount(opponentRoster), [getCombatCapableRosterCount, opponentRoster]);
+  const alivePlayers = partyRoster.filter(isCombatCapableFighter);
+  const aliveEnemies = opponentRoster.filter(isCombatCapableFighter);
+  const totalEnemyCount = opponentRosterCount.total;
   const victorySceneContext = { sceneType: "combat", relations: {} };
   const getVictoryFighterId = useCallback((fighter) => fighter?.id ?? fighter?._id, []);
   const isActiveForVictory = useCallback((fighter) => {
@@ -9473,23 +9573,23 @@ function CombatPage({ characters = [] }) {
   const speciesProfile = currentFighter ? getSpeciesProfile(currentFighter) : null;
   const isFloatOnly = !!speciesProfile && (speciesProfile.movementMode === "float" || speciesProfile.usesGroundRun === false);
 
-  // Decide what label to show on the Move button
-  let moveLabel = "Move";
+  // Decide what label to show on the Walk button
+  let moveLabel = "Walk";
   let moveTitle = !showTacticalMap
     ? "Show tactical map first to enable movement"
-    : "Click to activate movement mode";
+    : "Click to activate walking movement";
 
   if (currentFighter && currentFighter.type === "player") {
     if (isFloatOnly) {
-      moveLabel = "Move (Float)";
-      moveTitle = "This combatant moves by floating/flying; it does not run on the ground.";
+      moveLabel = "Float";
+      moveTitle = "This combatant moves by floating or flying; it does not run on the ground.";
     } else if (canFlyNow) {
       if (playerMovementMode === "flight") {
-        moveLabel = "Move (Fly)";
-        moveTitle = "Move by flying using aerial movement rules.";
+        moveLabel = "Fly";
+        moveTitle = "Fly using aerial movement rules.";
       } else {
-        moveLabel = "Move (Run)";
-        moveTitle = "Move on the ground using normal running rules.";
+        moveLabel = "Walk";
+        moveTitle = "Walk on the ground using normal movement rules.";
       }
     }
   }
@@ -10031,7 +10131,7 @@ function CombatPage({ characters = [] }) {
       setSelectedMovementFighter(currentFighter.id);
       setSelectedActionType("move");
       setShowMovementSelection(true); // Show movement selection UI
-      addLog(`Select a highlighted hex to move ${currentFighter.name}`, "info");
+      addLog(`Select a highlighted hex for ${currentFighter.name} to walk`, "info");
     }
   }, [combatActive, currentFighter, addLog]);
 
@@ -10077,7 +10177,7 @@ function CombatPage({ characters = [] }) {
 
     pendingSelectedMovementCommandRef.current = {
       actorId: actor.id,
-      actionName: action?.name || (mode === "run" ? "Run" : mode === "charge" ? "Charge" : "Move"),
+      actionName: action?.name || (mode === "run" ? "Run" : mode === "charge" ? "Charge" : "Walk"),
       actionType: mode,
       actionCost: Number(action?.costActions ?? 1) || 1,
       staminaCost: Number(action?.costStamina ?? 0) || 0,
@@ -10721,6 +10821,21 @@ function CombatPage({ characters = [] }) {
 
     const counter = turnCounterRef.current;
     const requestedTurnStartKey = makeTurnStartKey(fighter, index, counter);
+    const isManualWaitingPath =
+      isPlayableTurnFighter &&
+      !usesPlayerAIPath &&
+      !forceAutomaticPlayerSurvival &&
+      (controlMode === "manual" || controlMode === "player");
+    if (
+      isManualWaitingPath &&
+      manualPlayerWaitTurnKeyRef.current === requestedTurnStartKey
+    ) {
+      addLog?.(
+        `manual player turn already waiting: actor=${formatCombatActorLabel(liveScheduledFighter, { roster: fightersRef.current ?? fighters ?? [] })} key=${requestedTurnStartKey} reason=${reason}`,
+        "debug",
+      );
+      return false;
+    }
     if (
       usesEnemyAIPath &&
       unresolvedEnemyTurnStartKeyRef.current === requestedTurnStartKey
@@ -20941,10 +21056,6 @@ function CombatPage({ characters = [] }) {
 
     const schedulePlayerAIEndTurn = (delayOverride = null, source = "player-ai") => {
       completePlayerAIContinuation(source);
-      if (!canFinalizePlayerAITurn(source, { logAccepted: true, consume: true })) {
-        processingPlayerAIRef.current = false;
-        return false;
-      }
       const liveFighters = fightersRef.current ?? fighters;
       const liveIndex = turnIndexRef.current;
       const activeFighter = liveFighters?.[liveIndex];
@@ -20965,6 +21076,49 @@ function CombatPage({ characters = [] }) {
         if (spendNoActionPassForFighter(startFighterId, source)) {
           playerAIActionScheduledRef.current = true;
         }
+      }
+      const refreshedPlayer =
+        (fightersRef.current ?? fighters ?? []).find((fighter) => fighter.id === startFighterId) ||
+        livePlayer;
+      const refreshedRemaining = Number(refreshedPlayer?.remainingActions ?? 0) || 0;
+      const explicitPassOrTerminalSource = /pass|non-improving|no-actions|no-action|no-target|no-move|unresolved|cannot-act|stale|blocked|fallback|fled|defeated|combat-end/i.test(String(source || ""));
+      const refreshedActive = (fightersRef.current ?? fighters ?? [])?.[turnIndexRef.current];
+      const canContinuePlayerAI =
+        refreshedActive?.id === startFighterId &&
+        refreshedRemaining > 0 &&
+        !explicitPassOrTerminalSource &&
+        combatActiveRef.current &&
+        !combatOverRef.current &&
+        !combatEndCheckRef.current &&
+        canFighterStartTurn(refreshedPlayer);
+      if (canContinuePlayerAI) {
+        addLog(
+          `canonical player AI action completion: actor=${formatCombatActorLabel(refreshedPlayer, { roster: fightersRef.current ?? fighters ?? [] })} remainingActions=${refreshedRemaining} source=${source} continue=true`,
+          "debug",
+        );
+        processingPlayerAIRef.current = false;
+        pendingTurnAdvanceRef.current = false;
+        turnActionResolvingRef.current = false;
+        if (playerTurnInFlightKeyRef.current === turnKey) {
+          playerTurnInFlightKeyRef.current = null;
+        }
+        claimPlayerAIContinuation({
+          source: "player-ai-remaining-action-continuation",
+          timeoutMs: 6500,
+        });
+        setTimeout(() => {
+          if (blockStaleAction(refreshedPlayer, capturedTurnToken, "player-ai-remaining-action-continuation")) return;
+          completePlayerAIContinuation("player-ai-remaining-action-continuation-start");
+          handlePlayerAITurnRef.current?.(refreshedPlayer, {
+            turnToken: capturedTurnToken,
+            reason: "remaining-action-continuation",
+          });
+        }, getSimulationDelay(delayOverride || 0, simulationSpeed));
+        return true;
+      }
+      if (!canFinalizePlayerAITurn(source, { logAccepted: true, consume: true })) {
+        processingPlayerAIRef.current = false;
+        return false;
       }
       processingPlayerAIRef.current = false;
       scheduleEndTurn(delayOverride, source, {
@@ -21237,12 +21391,39 @@ function CombatPage({ characters = [] }) {
     // Delegate to AI module - use latestPlayer to ensure we have persisted state
     const turnKey = getPlayerTurnInFlightKey(latestPlayer);
     if (playerTurnInFlightKeyRef.current === turnKey) {
+      const liveRemaining = Number(
+        (fightersRef.current ?? fighters ?? []).find((fighter) => fighter.id === startFighterId)?.remainingActions ??
+        latestPlayer?.remainingActions ??
+        0
+      ) || 0;
+      const pendingContinuationOwnsTurn = doesPlayerAiContinuationOwnTurn(
+        pendingPlayerAIContinuationRef.current,
+        continuationCurrent(),
+      );
+      const pendingExecution = playerAIExecutionRef.current;
+      const pendingOperation = pendingContinuationOwnsTurn
+        ? pendingPlayerAIContinuationRef.current?.source || "continuation"
+        : pendingExecution?.fighterId === startFighterId
+          ? pendingExecution.reason || "execution"
+          : "";
       addLog(
-       `${latestPlayer.name} player turn start blocked: same turn already in flight key=${turnKey}`,
+        `player AI in-flight ownership: actor=${playerAiActingActorLabel} turnToken=${capturedTurnToken || "none"} remainingActions=${liveRemaining} pendingOperation=${pendingOperation || "none"} ownerSource=${pendingOperation || "none"}`,
+        "debug",
+      );
+      if (pendingOperation) {
+        processingPlayerAIRef.current = false;
+        return;
+      }
+      addLog(
+       `player AI orphaned turn repaired: actor=${playerAiActingActorLabel} turnToken=${capturedTurnToken || "none"} clearedKey=${turnKey} recovery=${liveRemaining > 0 ? "continue" : "pass"}`,
         "warning"
       );
-      processingPlayerAIRef.current = false;
-      return;
+      playerTurnInFlightKeyRef.current = null;
+      if (liveRemaining <= 0) {
+        processingPlayerAIRef.current = false;
+        schedulePlayerAIEndTurn(0, "player-ai-orphaned-turn-pass");
+        return;
+      }
     }
     playerTurnInFlightKeyRef.current = turnKey;
 
@@ -22129,9 +22310,161 @@ function CombatPage({ characters = [] }) {
       return isCurrent;
     };
 
+    const buildEnemyContinuationKey = ({
+      actorId,
+      turnToken,
+      remainingActionsRevision,
+      recoverySource,
+    } = {}) => [
+      actorId || "unknown-actor",
+      turnToken || "no-turn-token",
+      remainingActionsRevision ?? "no-remaining-revision",
+      recoverySource || "unknown-source",
+    ].join("|");
+
+    const scheduleCanonicalEnemyContinuation = ({
+      actor,
+      turnToken,
+      remainingActions,
+      source,
+      delayOverride = null,
+    } = {}) => {
+      const actorId = actor?.id;
+      const continuationKey = buildEnemyContinuationKey({
+        actorId,
+        turnToken,
+        remainingActionsRevision: remainingActions,
+        recoverySource: source,
+      });
+      const existing = enemyContinuationRequestsRef.current.get(continuationKey);
+      if (existing) {
+        addLog(
+          `enemy continuation deduped: actor=${formatCombatActorLabel(actor || {}, { roster: fightersRef.current ?? fighters ?? [] })} continuationKey=${continuationKey} originalSource=${existing.source || "unknown"} duplicateSource=${source || "unknown"}`,
+          "warning",
+        );
+        return false;
+      }
+
+      enemyContinuationRequestsRef.current.set(continuationKey, {
+        actorId,
+        turnToken,
+        remainingActions,
+        source,
+        createdAt: Date.now(),
+      });
+      enemyPendingActionContinuationRef.current = {
+        actorId,
+        turnToken,
+        continuationKey,
+        remainingActions,
+        source,
+      };
+      addLog(
+        `enemy continuation scheduled: actor=${formatCombatActorLabel(actor || {}, { roster: fightersRef.current ?? fighters ?? [] })} turnToken=${turnToken || "none"} continuationKey=${continuationKey} remainingActions=${remainingActions} source=${source || "unknown"}`,
+        "debug",
+      );
+
+      const continuationDelay = delayOverride == null
+        ? getSimulationDelay(0, simulationSpeed)
+        : getSimulationDelay(delayOverride, simulationSpeed);
+      setTimeout(() => {
+        const request = enemyContinuationRequestsRef.current.get(continuationKey);
+        if (!request) return;
+        enemyContinuationRequestsRef.current.delete(continuationKey);
+        if (enemyPendingActionContinuationRef.current?.continuationKey === continuationKey) {
+          enemyPendingActionContinuationRef.current = null;
+        }
+        const latestFighter =
+          (fightersRef.current ?? fighters ?? []).find((fighter) => fighter.id === actorId) ||
+          actor;
+        if (blockStaleAction(latestFighter, turnToken, "enemy-remaining-action-continuation")) return;
+        handleEnemyTurnRef.current?.(latestFighter, "remaining-action-continuation", {
+          turnToken,
+          continuationKey,
+        });
+      }, continuationDelay);
+      return true;
+    };
+
+    const completeCanonicalEnemyAction = ({
+      actorId,
+      turnToken,
+      completedActionKey = null,
+      actionSource = "enemy-ai",
+      remainingActions = 0,
+      explicitPass = false,
+      turnEndingEffect = false,
+      fighterIncapacitated = false,
+      combatEnded = false,
+      delayOverride = null,
+    } = {}) => {
+      const latestIndex = turnIndexRef.current;
+      const latestFighter = fightersRef.current?.[latestIndex];
+      const authoritativeActive = latestFighter?.id === actorId;
+      const canContinue =
+        remainingActions > 0 &&
+        authoritativeActive &&
+        combatActiveRef.current &&
+        !combatOverRef.current &&
+        !combatEndCheckRef.current &&
+        !combatEnded &&
+        canFighterStartTurn(latestFighter) &&
+        !explicitPass &&
+        !turnEndingEffect &&
+        !fighterIncapacitated;
+
+      addLog(
+        `canonical enemy action completion: actor=${formatCombatActorLabel(latestFighter || { id: actorId }, { roster: fightersRef.current ?? fighters ?? [] })} remainingActions=${remainingActions} explicitPass=${explicitPass} turnEndingEffect=${turnEndingEffect} fighterIncapacitated=${fighterIncapacitated} combatEnded=${combatEnded} authoritativeActive=${authoritativeActive} completedActionKey=${completedActionKey || "none"} source=${actionSource}`,
+        "debug",
+      );
+
+      if (!canContinue) {
+        return false;
+      }
+
+      unresolvedEnemyTurnStartKeyRef.current = null;
+      enemyTurnEnteredAIBranchKeyRef.current = null;
+      const releasedActionLock = enemyActionLockRef.current;
+      enemyActionLockRef.current = null;
+      enemyActionCommittedThisSliceRef.current = false;
+      enemyActionCommittedSliceKeyRef.current = null;
+      pendingTurnAdvanceRef.current = false;
+      turnActionResolvingRef.current = false;
+      processingEnemyTurnRef.current = false;
+      addLog(
+        `enemy action lock released for canonical continuation: actor=${formatCombatActorLabel(latestFighter, { roster: fightersRef.current ?? fighters ?? [] })} lock=${releasedActionLock || "none"} source=${actionSource}`,
+        "debug",
+      );
+      return scheduleCanonicalEnemyContinuation({
+        actor: latestFighter,
+        turnToken,
+        remainingActions,
+        source: actionSource,
+        delayOverride,
+      });
+    };
+
     const scheduleEnemyAIEndTurn = (delayOverride = null, finalizerSource = "enemy-ai") => {
       const latestIndex = turnIndexRef.current;
       const latestFighter = fightersRef.current?.[latestIndex];
+      const latestRemainingActions = Number(latestFighter?.remainingActions ?? 0) || 0;
+      const explicitPassOrTerminalSource = /pass|no-actions|no-action|no-target|no-move|unresolved|cannot-act|stale|blocked|fallback|fled|defeated|combat-end/i.test(String(finalizerSource || ""));
+      if (
+        completeCanonicalEnemyAction({
+          actorId: liveEnemy.id,
+          turnToken: currentTurnTokenRef.current,
+          completedActionKey: enemyActionCommittedSliceKeyRef.current,
+          actionSource: finalizerSource,
+          remainingActions: latestRemainingActions,
+          explicitPass: explicitPassOrTerminalSource,
+          turnEndingEffect: false,
+          fighterIncapacitated: !canFighterStartTurn(latestFighter),
+          combatEnded: combatOverRef.current || combatEndCheckRef.current || !combatActiveRef.current,
+          delayOverride,
+        })
+      ) {
+        return true;
+      }
       const latestSnapshot = createTurnFinalizerSnapshot({
         combatSession: combatSessionRef.current,
         generation: endTurnGenerationRef.current,
@@ -22257,7 +22590,115 @@ function CombatPage({ characters = [] }) {
       expectedTurnIndex: turnIndexRef.current,
       requireActionRemaining: !allowOutOfTurn,
       ownership: "callback",
-    }).ok;
+    });
+
+    const recoverAbortedEnemyAction = ({
+      actor,
+      targetId,
+      reason = "aborted-action",
+      source = "enemy-action-aborted",
+      executionKey = null,
+      clearGrapple = false,
+    } = {}) => {
+      const actorId = actor?.id;
+      const staleTarget = targetId || actor?.grappleState?.opponent || actor?.grappledWith || actor?.grappleTargetId;
+      const beforeLock = enemyActionLockRef.current;
+      const beforeDedupe = unresolvedEnemyTurnStartKeyRef.current;
+      const turnToken = currentTurnTokenRef.current;
+
+      if (clearGrapple && (actorId || staleTarget)) {
+        commitFighters((prev) => {
+          const next = prev.map((fighter) => {
+            const fighterId = String(fighter?.id || "");
+            const referencesActor =
+              String(fighter?.grappleState?.opponent || fighter?.grappleState?.opponentId || "") === String(actorId || "") ||
+              String(fighter?.grappledWith || fighter?.grappleTargetId || fighter?.pinnedBy || fighter?.carriedById || "") === String(actorId || "");
+            const referencesTarget =
+              String(fighter?.grappleState?.opponent || fighter?.grappleState?.opponentId || "") === String(staleTarget || "") ||
+              String(fighter?.grappledWith || fighter?.grappleTargetId || fighter?.pinnedBy || fighter?.carriedById || "") === String(staleTarget || "");
+            const isActorOrTarget = fighterId === String(actorId || "") || fighterId === String(staleTarget || "");
+            if (!isActorOrTarget && !referencesActor && !referencesTarget) return fighter;
+            return {
+              ...fighter,
+              grappleState: null,
+              grappledWith: null,
+              grappleTargetId: null,
+              pinnedBy: null,
+              isCarried: fighterId === String(staleTarget || "") ? false : fighter.isCarried,
+              carriedById: null,
+              isCarrying: fighterId === String(actorId || "") ? false : fighter.isCarrying,
+              carriedTargetId: fighterId === String(actorId || "") ? null : fighter.carriedTargetId,
+              carrying: fighterId === String(actorId || "") ? null : fighter.carrying,
+            };
+          });
+          fightersRef.current = next;
+          return next;
+        });
+      }
+
+      if (executionKey && activeAttackActionIdRef.current === executionKey) {
+        activeAttackActionIdRef.current = null;
+      }
+      activeGrappleActionIdRef.current = null;
+      enemyActionLockRef.current = null;
+      enemyActionCommittedThisSliceRef.current = false;
+      enemyActionCommittedSliceKeyRef.current = null;
+      unresolvedEnemyTurnStartKeyRef.current = null;
+      enemyTurnEnteredAIBranchKeyRef.current = null;
+      if (lastEnemyScheduleTurnKeyRef.current === beforeDedupe) {
+        lastEnemyScheduleTurnKeyRef.current = null;
+      }
+      pendingEnemyTurnRef.current = false;
+      processingEnemyTurnRef.current = false;
+      turnActionResolvingRef.current = false;
+      pendingTurnAdvanceRef.current = false;
+      actionCommitted = false;
+      enemyActionResolved = true;
+
+      const latestFightersAfterCleanup = fightersRef.current ?? fighters ?? [];
+      const latestActor =
+        latestFightersAfterCleanup.find((fighter) => fighter.id === actorId) ||
+        actor;
+      const latestActive = latestFightersAfterCleanup?.[turnIndexRef.current];
+      const remainingActions = Number(latestActor?.remainingActions ?? 0) || 0;
+      addLog(
+        `grapple continuation aborted: actor=${formatCombatActorLabel(latestActor || actor || {}, { roster: latestFightersAfterCleanup })} staleTarget=${staleTarget || "none"} reason=${reason} remainingActions=${remainingActions} actionLock=${beforeLock || "none"} turnToken=${turnToken || "none"}`,
+        "warning",
+      );
+      const recovery =
+        !combatActiveRef.current || combatOverRef.current || combatEndCheckRef.current
+          ? "combat-ended"
+          : latestActive?.id !== actorId
+            ? "explicit-pass"
+            : remainingActions > 0 && canFighterStartTurn(latestActor)
+              ? "retry-action"
+              : remainingActions <= 0
+                ? "finalize-zero-actions"
+                : "explicit-pass";
+      addLog(
+        `enemy action recovery: actor=${formatCombatActorLabel(latestActor || actor || {}, { roster: latestFightersAfterCleanup })} recovery=${recovery} remainingActions=${remainingActions} clearedLock=${beforeLock || "none"} clearedDedupe=${beforeDedupe || "none"}`,
+        "warning",
+      );
+
+      if (recovery === "retry-action") {
+        scheduleEnemyAIEndTurn(0, "enemy-action-retry-after-aborted-grapple");
+      } else if (recovery === "finalize-zero-actions") {
+        scheduleEnemyAIEndTurn(0, "enemy-action-aborted-zero-actions");
+      } else if (recovery === "explicit-pass") {
+        const latestAfterPass = (fightersRef.current ?? fighters ?? []).map((fighter) => (
+          fighter.id === actorId
+            ? { ...fighter, remainingActions: 0 }
+            : fighter
+        ));
+        fightersRef.current = latestAfterPass;
+        setFighters(latestAfterPass);
+        scheduleEnemyAIEndTurn(0, "enemy-action-aborted-explicit-pass");
+      }
+      return { recovery, remainingActions, clearedLock: beforeLock, clearedDedupe: beforeDedupe };
+    };
+
+    const validateDelayedEnemyAttackCallbackOk = (args) =>
+      validateDelayedEnemyAttackCallback(args).ok;
 
     const settingsNow = settingsRef.current;
     const terrainNow = terrainRef.current;
@@ -22358,7 +22799,7 @@ function CombatPage({ characters = [] }) {
         attack: guardedEnemyAttack,
         createAttackActionGrant,
         createAttackExecutionKey,
-        validateDelayedAttackCallback: validateDelayedEnemyAttackCallback,
+        validateDelayedAttackCallback: validateDelayedEnemyAttackCallbackOk,
         // Refs
         positionsRef,
         processingEnemyTurnRef,
@@ -22435,15 +22876,21 @@ function CombatPage({ characters = [] }) {
          `Enemy extra action blocked: ${liveEnemy.name} attempted ${reason} after action already committed`,
           "warning"
         );
+        addLog?.(
+          `enemy duplicate pre-action rejected without turn advance: actor=${formatCombatActorLabel(liveEnemy, { roster: fightersRef.current ?? fighters ?? [] })} attemptedAction=${reason} lockOwner=${enemyActionLockRef.current || "local-action-committed"} pendingAction=${enemyPendingActionContinuationRef.current?.continuationKey || enemyActionCommittedSliceKeyRef.current || "none"}`,
+          "warning",
+        );
         console.warn("[INLINE ENEMY AI BLOCKED - duplicate action]", {
             enemy: enemy?.name,
             reason,
           });
-        finishEnemyActionSafely("enemy-action-blocked-before-resolution");
         return false;
       }
       if (!commitEnemyTurnAction(liveEnemy, reason)) {
-        finishEnemyActionSafely("enemy-action-blocked-before-resolution");
+        addLog?.(
+          `enemy duplicate pre-action rejected without turn advance: actor=${formatCombatActorLabel(liveEnemy, { roster: fightersRef.current ?? fighters ?? [] })} attemptedAction=${reason} lockOwner=${enemyActionLockRef.current || "none"} pendingAction=${enemyPendingActionContinuationRef.current?.continuationKey || enemyActionCommittedSliceKeyRef.current || "none"}`,
+          "warning",
+        );
         return false;
       }
       actionCommitted = true;
@@ -22836,12 +23283,25 @@ function CombatPage({ characters = [] }) {
         addLog(`${liveEnemy.name} tears into ${prey.name} with ${finisher.name}!`, "combat");
         await commitOneEnemyAction("grapple-finish", async () => {
           setTimeout(() => {
-            if (!validateDelayedEnemyAttackCallback({
+            const callbackValidation = validateDelayedEnemyAttackCallback({
               actor: updatedAttacker,
               targetId: prey.id,
               executionKey: grappleFinishExecutionKey,
               source: "enemy-grapple-finish-callback",
-            })) return;
+            });
+            if (!callbackValidation.ok) {
+              if (String(callbackValidation.reason || "").includes("target-invalid")) {
+                recoverAbortedEnemyAction({
+                  actor: updatedAttacker,
+                  targetId: prey.id,
+                  reason: "target-invalid",
+                  source: "enemy-grapple-finish-callback",
+                  executionKey: grappleFinishExecutionKey,
+                  clearGrapple: true,
+                });
+              }
+              return;
+            }
             if (!guardEnemyStillActiveForAttack()) return;
             attack(updatedAttacker, prey.id, {
               attackActionId: grappleFinishExecutionKey,
@@ -22873,12 +23333,25 @@ function CombatPage({ characters = [] }) {
         addLog(`${liveEnemy.name} mauls ${prey.name} with ${finisher.name}!`, "combat");
         await commitOneEnemyAction("grapple-maul", async () => {
           setTimeout(() => {
-            if (!validateDelayedEnemyAttackCallback({
+            const callbackValidation = validateDelayedEnemyAttackCallback({
               actor: updatedAttacker,
               targetId: prey.id,
               executionKey: grappleMaulExecutionKey,
               source: "enemy-grapple-maul-callback",
-            })) return;
+            });
+            if (!callbackValidation.ok) {
+              if (String(callbackValidation.reason || "").includes("target-invalid")) {
+                recoverAbortedEnemyAction({
+                  actor: updatedAttacker,
+                  targetId: prey.id,
+                  reason: "target-invalid",
+                  source: "enemy-grapple-maul-callback",
+                  executionKey: grappleMaulExecutionKey,
+                  clearGrapple: true,
+                });
+              }
+              return;
+            }
             if (!guardEnemyStillActiveForAttack()) return;
             attack(updatedAttacker, prey.id, {
               attackActionId: grappleMaulExecutionKey,
@@ -22994,7 +23467,7 @@ function CombatPage({ characters = [] }) {
                 return { ...f, remainingActions: Math.max(0, ra - 1) };
               }));
               processingEnemyTurnRef.current = false;
-              scheduleEndTurn(getMoveDurationMs(distanceMoved));
+              scheduleEnemyAIEndTurn(getMoveDurationMs(distanceMoved), "enemy-flight-glide");
               return;
             } else {
               // Couldn't improve horizontal distance this action (blocked / already optimal).
@@ -23006,7 +23479,7 @@ function CombatPage({ characters = [] }) {
                 return { ...f, remainingActions: Math.max(0, ra - 1) };
               }));
               processingEnemyTurnRef.current = false;
-              scheduleEndTurn(getMoveDurationMs(5));
+              scheduleEnemyAIEndTurn(getMoveDurationMs(5), "enemy-flight-circle");
               return;
             }
           }
@@ -23062,16 +23535,16 @@ function CombatPage({ characters = [] }) {
                 addLog(`${liveEnemy.name} swoops low and attacks ${prey.name}!`, "combat");
               }
 
-              const predatorDiveGrant = createAttackActionGrant(updatedAttacker.id, prey.id, "predator-dive-attack");
-              const predatorDiveExecutionKey = createAttackExecutionKey(updatedAttacker.id, prey.id, "predator-dive-attack", {
-                grant: predatorDiveGrant,
-                scheduledAtTurnToken: predatorDiveGrant.turnToken,
-                callbackSource: "predator-dive-attack-callback",
-                isDelayedCallback: true,
-              });
               await commitOneEnemyAction("predator-dive-attack", async () => {
+                const predatorDiveGrant = createAttackActionGrant(updatedAttacker.id, prey.id, "predator-dive-attack");
+                const predatorDiveExecutionKey = createAttackExecutionKey(updatedAttacker.id, prey.id, "predator-dive-attack", {
+                  grant: predatorDiveGrant,
+                  scheduledAtTurnToken: predatorDiveGrant.turnToken,
+                  callbackSource: "predator-dive-attack-callback",
+                  isDelayedCallback: true,
+                });
                 setTimeout(async () => {
-                  if (!validateDelayedEnemyAttackCallback({
+                  if (!validateDelayedEnemyAttackCallbackOk({
                     actor: updatedAttacker,
                     targetId: prey.id,
                     executionKey: predatorDiveExecutionKey,
@@ -23278,7 +23751,7 @@ function CombatPage({ characters = [] }) {
       if (flyingHandled) {
         // Flying AI handled the turn, don't run normal ground AI
         processingEnemyTurnRef.current = false;
-        scheduleEndTurn(getMoveDurationMs(5));
+        scheduleEnemyAIEndTurn(getMoveDurationMs(5), "enemy-flight-scout");
         return;
       }
     }
@@ -24849,13 +25322,13 @@ function CombatPage({ characters = [] }) {
         );
 
       if (diveTriggered) {
-        const livePositions =
+        const diveLivePositions =
           positionsRef.current && Object.keys(positionsRef.current).length > 0
             ? positionsRef.current
-        : livePositions;
-        const enemyPos = livePositions?.[enemy.id];
-        const tgtPos = livePositions?.[target.id];
-        const landingCandidates = tgtPos ? findFlankingPositions(tgtPos, livePositions, enemy.id) : [];
+            : livePositions;
+        const enemyPos = diveLivePositions?.[enemy.id];
+        const tgtPos = diveLivePositions?.[target.id];
+        const landingCandidates = tgtPos ? findFlankingPositions(tgtPos, diveLivePositions, enemy.id) : [];
 
         if (enemyPos && tgtPos && landingCandidates.length > 0) {
           // Choose closest adjacent landing hex around the target (already filtered as unoccupied)
@@ -24872,6 +25345,7 @@ function CombatPage({ characters = [] }) {
 
           if (distToLanding <= feetPerAction + 0.01) {
             const targetAlt = getAltitude(target) || 0;
+            const contactAlt = targetAlt + 5;
 
             addLog(`${enemy.name} DIVE ATTACKS ${target.name}!`, "combat");
 
@@ -24896,11 +25370,11 @@ function CombatPage({ characters = [] }) {
               source: "enemy-dive-attack",
               attackBonus: 2,
               extraDamageDice: "1d6",
-              // Make sure the post-attack fighter state keeps the descended altitude.
+              // Make sure the post-attack fighter state keeps contact altitude without grounding the flier.
               attackerStatePatch: {
-                altitudeFeet: targetAlt,
-                altitude: targetAlt,
-                isFlying: targetAlt > 0,
+                altitudeFeet: contactAlt,
+                altitude: contactAlt,
+                isFlying: true,
               },
               // Ensure range check uses the landing hex immediately (before React state settles)
               attackerPosOverride: landing,
@@ -24910,7 +25384,7 @@ function CombatPage({ characters = [] }) {
 
             await commitOneEnemyAction("dive-attack", async () => {
               setTimeout(() => {
-                if (!validateDelayedEnemyAttackCallback({
+                if (!validateDelayedEnemyAttackCallbackOk({
                   actor: updatedEnemy,
                   targetId: target.id,
                   executionKey: diveBonuses.attackActionId,
@@ -25275,8 +25749,20 @@ function CombatPage({ characters = [] }) {
       );
 
       try {
-        const approachMovementType = "RUN";
-        const approachMaxFeet = getMaxMoveFtThisAction(enemy, "Run");
+        const approachCanFly = canFighterFly(enemy) || canFly(enemy);
+        const approachAirborne = isFlying(enemy) || (Number(getAltitude(enemy) ?? enemy.altitudeFeet ?? enemy.altitude ?? 0) > 0);
+        const approachPrefersFlight = approachCanFly && (
+          approachAirborne ||
+          getPreferredMovementModeForAI(enemy, target) === "flight" ||
+          enemy?.movementProfile?.preferFlight === true
+        );
+        const approachMovementType = approachPrefersFlight ? "FLY" : "RUN";
+        const approachMovementLabel = approachMovementType === "FLY" ? "flies" : "runs";
+        const approachMaxFeet = getMaxMoveFtThisAction(enemy, approachMovementType === "FLY" ? "FLY" : "Run");
+        addLog(
+          `enemy approach movement mode: actor=${formatCombatActorLabel(enemy, { roster: fightersRef.current ?? fighters ?? [], counterpart: target })} startMode=${approachAirborne ? "flight" : "ground"} resultMode=${approachMovementType === "FLY" ? "flight" : "ground"} airborne=${approachAirborne} source=approach-planner origin=(${currentPos.x},${currentPos.y})`,
+          "debug",
+        );
         const approachBudget = resolveEnemyMovementBudget({
           fighter: enemy,
           movementType: approachMovementType,
@@ -25448,7 +25934,7 @@ function CombatPage({ characters = [] }) {
         }
         const approachFinalizerSource = executableApproachPlan?.type === "hold" || !executableApproachPlan?.position
           ? "enemy-ai-no-move-fallback"
-          : "RUN_TO_RANGE";
+          : (approachMovementType === "FLY" ? "FLY_TO_RANGE" : "RUN_TO_RANGE");
         let approachDistanceMoved = 0;
         let noMoveFallbackPositionSnapshot = null;
         executeEnemyMovementPlan(executableApproachPlan, {
@@ -25467,7 +25953,9 @@ function CombatPage({ characters = [] }) {
             handlePositionChange(enemy.id, destination, {
               action: approachMovementType,
               actionCost: MOVEMENT_ACTIONS.MOVE.actionCost,
-              description: `Enemy closing movement to (${destination.x}, ${destination.y})`,
+              description: approachMovementType === "FLY"
+                ? `Enemy flight closing movement to (${destination.x}, ${destination.y})`
+                : `Enemy closing movement to (${destination.x}, ${destination.y})`,
               persistImmediately: true,
             });
             enemyClosingMovementHistoryRef.current.set(enemy.id, {
@@ -25475,13 +25963,19 @@ function CombatPage({ characters = [] }) {
               selectedPosition: { ...destination },
             });
             addLog(
-              `${enemy.name} cannot attack this action, so it advances ${Math.round(approachDistanceMoved)}ft toward ${plan.target?.name || target.name}.`,
+              `${enemy.name} cannot attack this action, so it ${approachMovementLabel} ${Math.round(approachDistanceMoved)}ft toward ${plan.target?.name || target.name}.`,
               "info",
             );
             addLog(
-              `${enemy.name} moves from (${currentPos.x},${currentPos.y}) to (${destination.x},${destination.y}).`,
+              `${enemy.name} ${approachMovementType === "FLY" ? "swoops" : "moves"} from (${currentPos.x},${currentPos.y}) to (${destination.x},${destination.y}).`,
               "info",
             );
+            if (approachMovementType === "FLY") {
+              addLog(
+                `enemy flight movement commit: actor=${formatCombatActorLabel(enemy, { roster: fightersRef.current ?? fighters ?? [], counterpart: target })} startMode=${approachAirborne ? "flight" : "ground"} resultMode=flight airborne=true source=${approachFinalizerSource} origin=(${currentPos.x},${currentPos.y}) destination=(${destination.x},${destination.y})`,
+                "debug",
+              );
+            }
           },
           hold: (plan) => {
             const latestEnemyForSnapshot = (fightersRef.current ?? fighters ?? []).find((fighter) => fighter.id === enemy.id) || enemy;
@@ -25834,7 +26328,7 @@ function CombatPage({ characters = [] }) {
                   isDelayedCallback: true,
                 });
                 setTimeout(async () => {
-                  if (!validateDelayedEnemyAttackCallback({
+                  if (!validateDelayedEnemyAttackCallbackOk({
                     actor: enemy,
                     targetId: target.id,
                     executionKey: flankExecutionKey,
@@ -26864,7 +27358,7 @@ function CombatPage({ characters = [] }) {
 
           setTimeout(() => {
             if (combatOverRef.current || !combatActive || combatEndCheckRef.current) return;
-            if (!validateDelayedEnemyAttackCallback({
+            if (!validateDelayedEnemyAttackCallbackOk({
               actor: attackerForAoO,
               targetId: targetForAoO,
               executionKey: opportunityExecutionKey,
@@ -26882,7 +27376,7 @@ function CombatPage({ characters = [] }) {
               addLog(`Attack of opportunity delayed - attack system not ready`, "info");
               setTimeout(() => {
                 if (combatOverRef.current || !combatActive || combatEndCheckRef.current) return;
-                if (!validateDelayedEnemyAttackCallback({
+                if (!validateDelayedEnemyAttackCallbackOk({
                   actor: attackerForAoO,
                   targetId: targetForAoO,
                   executionKey: opportunityExecutionKey,
@@ -28626,6 +29120,14 @@ function CombatPage({ characters = [] }) {
     }
 
     newFighter = syncLegacyArmorFields(newFighter);
+    newFighter = ensureConfiguredStartingAmmo(newFighter, {
+      source: "add-combatant",
+      preserveExisting: true,
+      log: ({ actor, weaponName, ammoType, starting, source }) => addLog(
+        `ammo initialized: actor=${actor?.name || "Unknown"} weapon=${weaponName} ammoType=${ammoType} starting=${starting} source=${source}`,
+        "debug",
+      ),
+    });
 
     // Load techniques if combatant has trainingAbilities or training (arenaRoster uses "training" for duelist techniques)
     const trainingAbilitiesStr = newFighter.trainingAbilities ?? newFighter.training;
@@ -29649,9 +30151,30 @@ function CombatPage({ characters = [] }) {
     copy.isCarrying = false;
     copy.carriedTargetId = null;
     copy.carrying = null;
-    copy.altitude = 0;
-    copy.altitudeFeet = 0;
-    copy.isFlying = false;
+    const shouldStartAirborne =
+      canFighterFly(copy) &&
+      !copy.state?.grounded &&
+      !copy.state?.isGrounded &&
+      !copy.state?.perched &&
+      !copy.state?.unableToFly &&
+      !copy.restrained &&
+      !copy.isRestrained &&
+      !copy.unconscious &&
+      !copy.isUnconscious &&
+      copy.isFlying !== false;
+    const startingAltitude = Number(copy.altitudeFeet ?? copy.altitude ?? copy.aiFlightState?.cruiseAltitudeFeet ?? 20) || 20;
+    copy.altitude = shouldStartAirborne ? startingAltitude : 0;
+    copy.altitudeFeet = shouldStartAirborne ? startingAltitude : 0;
+    copy.isFlying = shouldStartAirborne;
+    copy.airborne = shouldStartAirborne;
+    copy.movementMode = shouldStartAirborne ? "flight" : (copy.movementMode === "flight" ? "ground" : copy.movementMode);
+    copy.aiFlightState = shouldStartAirborne
+      ? {
+          ...(copy.aiFlightState || {}),
+          mode: copy.aiFlightState?.mode || "cruising",
+          cruiseAltitudeFeet: startingAltitude,
+        }
+      : copy.aiFlightState;
 
     copy.statusEffects = Array.isArray(copy.statusEffects)
       ? copy.statusEffects.filter((effect) => {
@@ -29693,7 +30216,19 @@ function CombatPage({ characters = [] }) {
     copy.fatigueState = initializeCombatFatigue(copy);
     resetFatigue(copy);
 
-    return normalizeCombatantForBattle(syncLegacyArmorFields(normalizeFighterId(copy)));
+    const resetFighter = ensureConfiguredStartingAmmo(
+      normalizeCombatantForBattle(syncLegacyArmorFields(normalizeFighterId(copy))),
+      {
+        source: "combat-start",
+        preserveExisting: true,
+        log: ({ actor, weaponName, ammoType, starting, source }) => addLog(
+          `ammo initialized: actor=${actor?.name || "Unknown"} weapon=${weaponName} ammoType=${ammoType} starting=${starting} source=${source}`,
+          "debug",
+        ),
+      },
+    );
+
+    return resetFighter;
   };
 
   function startCombat(skipPhase0 = false, options = {}) {
@@ -29898,7 +30433,7 @@ function CombatPage({ characters = [] }) {
       return cleanFighterForNewCombat(fighter);
     };
 
-    // Roll initiative for all fighters: d20 + DEX modifier + explicit initiative bonus
+    // Roll initiative for all fighters: initiative roll + attribute-derived bonus + explicit initiative bonus
     let updatedFighters = combatRoster.map(rawFighter => {
       const fighter = sanitizeFighterForCombatStart(rawFighter);
       const initiativeRoll = rollInitiativeD20(fighter, {
@@ -29926,7 +30461,7 @@ function CombatPage({ characters = [] }) {
 
       const modifierText = totalBonus >= 0 ? `+${totalBonus}` : `${totalBonus}`;
       addLog(
-        `${fighter.name} rolled Initiative: ${initiativeTotal} (d20:${d20} ${modifierText}; DEX modifier:${initiativeRoll.dexModifier}, initiative bonus:${initiativeRoll.initiativeBonus})`,
+        `${fighter.name} rolled Initiative: ${initiativeTotal} (roll:${d20} ${modifierText}; attribute bonus:${initiativeRoll.dexModifier}, initiative bonus:${initiativeRoll.initiativeBonus})`,
         "initiative",
         rollInfo
       );
@@ -30203,7 +30738,7 @@ function CombatPage({ characters = [] }) {
     setMode("COMBAT"); // Ensure mode is set to COMBAT so icons astaminaar on the map
 
     addLog("Combat Started!", "combat");
-    addLog(`Combat Round 1 begins - Actions will alternate in initiative order`, "info");
+    addLog(`Round 1 · approximately ${COMBAT_ROUND_SECONDS} seconds begins - Actions will alternate in initiative order`, "info");
     addLog(`Initiative Order: ${updatedFighters.map(f => `${f.name} (${f.initiative})`).join(", ")}`, "info");
 
     // Start of combat: apply courage/holy aura bonuses + fear dfocusel for Round 1
@@ -32315,9 +32850,192 @@ function CombatPage({ characters = [] }) {
   }
 
   function removeFighter(fighterId) {
-    setFighters(prev => prev.filter(f => f.id !== fighterId));
-    addLog(`Removed fighter from combat.`, "info");
+    const stableId = String(fighterId || "");
+    if (!stableId) return;
+
+    const liveRoster = Array.isArray(fightersRef.current) && fightersRef.current.length > 0
+      ? fightersRef.current
+      : fighters;
+    const removedFighter = liveRoster.find((fighter) => String(fighter?.id || "") === stableId);
+    if (!removedFighter) {
+      addLog(`Remove combatant skipped: no fighter found for id=${stableId}.`, "warning");
+      return;
+    }
+
+    if (combatActiveRef.current && typeof window !== "undefined") {
+      const confirmed = window.confirm?.(`Remove ${removedFighter.name || "this fighter"} from this combat?`);
+      if (confirmed === false) return;
+    }
+
+    const currentIndex = turnIndexRef.current ?? turnIndex;
+    const removedCurrentTurn = String(liveRoster?.[currentIndex]?.id || "") === stableId;
+
+    const clearPositionStoresForRemovedFighter = () => {
+      setPositions((prev) => {
+        const next = { ...(prev || {}) };
+        delete next[stableId];
+        positionsRef.current = next;
+        return next;
+      });
+      setRenderPositions((prev) => {
+        const next = { ...(prev || {}) };
+        delete next[stableId];
+        return next;
+      });
+      const committedNext = { ...(committedPositionsRef.current || {}) };
+      delete committedNext[stableId];
+      committedPositionsRef.current = committedNext;
+      const lastMoveNext = { ...(lastMovementCommitRef.current || {}) };
+      delete lastMoveNext[stableId];
+      lastMovementCommitRef.current = lastMoveNext;
+    };
+
+    clearPositionStoresForRemovedFighter();
+
+    setPreBattleDeployment((prev) => ({
+      ...prev,
+      selectionBySide: Object.fromEntries(
+        Object.entries(prev.selectionBySide || {}).map(([side, ids]) => [
+          side,
+          (ids || []).filter((id) => String(id || "") !== stableId),
+        ])
+      ),
+      positionsBySide: Object.fromEntries(
+        Object.entries(prev.positionsBySide || {}).map(([side, sidePositions]) => {
+          const next = { ...(sidePositions || {}) };
+          delete next[stableId];
+          return [side, next];
+        })
+      ),
+      manualPositionsBySide: Object.fromEntries(
+        Object.entries(prev.manualPositionsBySide || {}).map(([side, sidePositions]) => {
+          const next = { ...(sidePositions || {}) };
+          delete next[stableId];
+          return [side, next];
+        })
+      ),
+      selectedFighterBySide: Object.fromEntries(
+        Object.entries(prev.selectedFighterBySide || {}).map(([side, id]) => [
+          side,
+          String(id || "") === stableId ? null : id,
+        ])
+      ),
+    }));
+
+    setTemporaryHexSharing((prev) => {
+      const next = { ...(prev || {}) };
+      delete next[stableId];
+      Object.entries(next).forEach(([id, entry]) => {
+        if (String(entry?.targetCharId || entry?.targetId || "") === stableId) {
+          delete next[id];
+        }
+      });
+      return next;
+    });
+
+    if (String(selectedRosterPreviewId || "") === stableId) setSelectedRosterPreviewId(null);
+    if (String(selectedCombatantId || "") === stableId) setSelectedCombatantId(null);
+    if (String(selectedMovementFighter || "") === stableId) setSelectedMovementFighter(null);
+    if (String(selectedTarget?.id || "") === stableId) setSelectedTarget(null);
+    if (String(selectedAttackWeapon?.fighterId || selectedAttackWeapon?.actorId || "") === stableId) {
+      setSelectedAttackWeapon(null);
+    }
+    if (String(selectedCombatAction?.actorId || selectedCombatAction?.actor?.id || "") === stableId) {
+      setSelectedCombatAction(null);
+    }
+    setSelectedMovementHex(null);
+    setSelectedHex(null);
+    setShowMovementSelection(false);
+    setMovementMode({ active: false, isRunning: false });
+    pendingSelectedMovementCommandRef.current = null;
+    manualMovementRequestActiveRef.current = false;
+    manualMovementRequestIdRef.current += 1;
+
+    const nextRoster = liveRoster
+      .filter((fighter) => String(fighter?.id || "") !== stableId)
+      .map((fighter) => {
+        const grappleState = fighter?.grappleState;
+        const grappleOpponentId = String(grappleState?.opponent || grappleState?.opponentId || "");
+        const isReferencingRemoved =
+          String(fighter?.grappledWith || fighter?.grappleTargetId || fighter?.pinnedBy || "") === stableId ||
+          grappleOpponentId === stableId;
+        if (!isReferencingRemoved) return fighter;
+        return {
+          ...fighter,
+          grappledWith: null,
+          grappleTargetId: null,
+          pinnedBy: null,
+          grappleState: null,
+        };
+      });
+
+    fightersRef.current = nextRoster;
+    setFighters(nextRoster);
+    setSelectedParty((prev) => (prev || []).filter((id) => String(id || "") !== stableId));
+
+    activeGrappleActionIdRef.current = null;
+    if (String(activeAttackActionIdRef.current || "").includes(stableId)) activeAttackActionIdRef.current = null;
+    if (String(activeTacticalImpactRef.current?.actorId || activeTacticalImpactRef.current?.attackerId || "") === stableId) {
+      activeTacticalImpactRef.current = null;
+    }
+    if (String(activeTechniqueImpactRef.current?.actorId || activeTechniqueImpactRef.current?.casterId || "") === stableId) {
+      activeTechniqueImpactRef.current = null;
+    }
+    clearAttackExecutionState(`remove-fighter:${stableId}`);
+    blockedEnemyActionTurnSlotRef.current = null;
+    unresolvedEnemyTurnStartKeyRef.current = null;
+    enemyTurnEnteredAIBranchKeyRef.current = null;
+    pendingEnemyTurnRef.current = false;
+    processingEnemyTurnRef.current = false;
+    enemyActionCommittedThisSliceRef.current = false;
+    enemyActionCommittedSliceKeyRef.current = null;
+    enemyActionLockRef.current = null;
+
+    addLog(`Removed ${removedFighter.name || "fighter"} from combat.`, "info");
+
+    if (!combatActiveRef.current) return;
+
+    if (endCombatIfVictoryResolved(nextRoster)) return;
+
+    if (removedCurrentTurn) {
+      clearScheduledTurn();
+      currentTurnTokenRef.current = null;
+      pendingTurnAdvanceRef.current = false;
+      turnActionResolvingRef.current = false;
+      const rewindIndex = Math.max(0, Math.min(currentIndex, nextRoster.length) - 1);
+      turnIndexRef.current = rewindIndex;
+      setTurnIndex(rewindIndex);
+      scheduleEndTurn(0, "combatant-removed-current-turn");
+    }
   }
+
+  const fighterCardLayoutProps = {
+    w: "100%",
+    maxW: "100%",
+    minW: 0,
+    boxSizing: "border-box",
+    overflow: "hidden",
+  };
+
+  const renderRemoveFighterButton = (fighter) => (
+    <Button
+      size="sm"
+      minW="34px"
+      h="34px"
+      px={0}
+      flexShrink={0}
+      colorScheme="red"
+      variant="outline"
+      aria-label={`Remove ${fighter?.name || "fighter"}`}
+      title="Remove fighter"
+      onClick={(event) => {
+        event.stopPropagation();
+        removeFighter(fighter.id);
+      }}
+    >
+      ×
+    </Button>
+  );
 
   function changeFighterSide(fighterId, newSide) {
     if (newSide !== "player" && newSide !== "enemy") {
@@ -32792,49 +33510,53 @@ function CombatPage({ characters = [] }) {
   };
 
   const playerCombatEvents = useMemo(() => selectPlayerCombatEvents(log), [log]);
-  const developerCombatEvents = useMemo(() => selectDeveloperCombatEvents(log), [log]);
+  const canonicalChronologicalLogEntries = useMemo(() => getChronologicalCombatEvents(log), [log]);
 
-  const chronologicalLogEntries = useMemo(() => {
-    return [...playerCombatEvents].sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0));
+  const playerChronologicalLogEntries = useMemo(() => {
+    return getChronologicalCombatEvents(playerCombatEvents);
   }, [playerCombatEvents]);
 
-  const chronologicalDeveloperLogEntries = useMemo(() => {
-    return [...developerCombatEvents].sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0));
-  }, [developerCombatEvents]);
+  const combatLogWindow = useMemo(() => deriveCombatLogWindow({
+    events: canonicalChronologicalLogEntries,
+    audience: logAudienceFilter,
+    channel: logFilterType || "all",
+    sortOrder: logSortOrder || "oldest",
+    visibleLimit: renderedLogWindowSize,
+  }), [canonicalChronologicalLogEntries, logAudienceFilter, logFilterType, logSortOrder, renderedLogWindowSize]);
 
-  const filteredDeveloperLogEntries = useMemo(() => {
-    return selectCombatEventsByChannel(chronologicalDeveloperLogEntries, developerLogFilterType);
-  }, [chronologicalDeveloperLogEntries, developerLogFilterType]);
+  const chronologicalLogEntries = useMemo(() => (
+    selectCombatEventsByAudience(canonicalChronologicalLogEntries, logAudienceFilter)
+  ), [canonicalChronologicalLogEntries, logAudienceFilter]);
 
-  const visibleDeveloperLogEntries = useMemo(() => {
-    return filteredDeveloperLogEntries.slice(-200).reverse();
-  }, [filteredDeveloperLogEntries]);
+  useEffect(() => {
+    setRenderedLogWindowSize(MAX_RENDERED_LOG_ENTRIES);
+  }, [logAudienceFilter, logFilterType, logSortOrder]);
 
-  const formatLogTimestamp = (entry) => {
-    if (entry?.displayTimestamp) return entry.displayTimestamp;
-    if (typeof entry?.timestamp === "string") return entry.timestamp;
-    if (Number.isFinite(entry?.timestamp)) return new Date(entry.timestamp).toLocaleTimeString();
-    return "";
-  };
-
-  const filteredChronologicalLogEntries = useMemo(() => {
-    if (logFilterType === "all") return chronologicalLogEntries;
-    return chronologicalLogEntries.filter(entry => entry.type === logFilterType);
-  }, [chronologicalLogEntries, logFilterType]);
+  const filteredChronologicalLogEntries = combatLogWindow.filteredEvents;
 
   const visibleTopLogEntries = useMemo(() => {
-    return logStepMode
-      ? chronologicalLogEntries.slice(0, revealedLogCount)
-      : chronologicalLogEntries;
-  }, [chronologicalLogEntries, logStepMode, revealedLogCount]);
+    const revealedTop = logStepMode
+      ? playerChronologicalLogEntries.slice(0, revealedLogCount)
+      : playerChronologicalLogEntries;
+    return revealedTop.slice(-MAX_RENDERED_LOG_ENTRIES);
+  }, [playerChronologicalLogEntries, logStepMode, revealedLogCount]);
 
   const visibleDetailedLogEntries = useMemo(() => {
-    const revealed = logStepMode
-      ? filteredChronologicalLogEntries.slice(0, revealedLogCount)
-      : filteredChronologicalLogEntries;
+    if (!logStepMode) return combatLogWindow.visibleEvents;
+    const revealedWindow = deriveCombatLogWindow({
+      events: canonicalChronologicalLogEntries.slice(0, revealedLogCount),
+      audience: logAudienceFilter,
+      channel: logFilterType || "all",
+      sortOrder: logSortOrder || "oldest",
+      visibleLimit: renderedLogWindowSize,
+    });
+    return revealedWindow.visibleEvents;
+  }, [canonicalChronologicalLogEntries, combatLogWindow.visibleEvents, logAudienceFilter, logFilterType, logSortOrder, logStepMode, renderedLogWindowSize, revealedLogCount]);
 
-    return logSortOrder === "newest" ? [...revealed].reverse() : revealed;
-  }, [filteredChronologicalLogEntries, logSortOrder, logStepMode, revealedLogCount]);
+  const matchingDetailedLogCount = logStepMode
+    ? selectCombatEventsByChannel(selectCombatEventsByAudience(canonicalChronologicalLogEntries.slice(0, revealedLogCount), logAudienceFilter), logFilterType || "all").length
+    : combatLogWindow.matchingEventCount;
+  const fullDetailedLogCount = combatLogWindow.fullEventCount;
 
   // Auto-scroll top combat log to show most recent entry
   useEffect(() => {
@@ -32846,14 +33568,79 @@ function CombatPage({ characters = [] }) {
 
   // Auto-scroll detailed combat log to show most recent entry
   useEffect(() => {
-    if (detailedCombatLogRef.current && visibleDetailedLogEntries.length > 0) {
+    if (detailedCombatLogRef.current && visibleDetailedLogEntries.length > 0 && isDetailedLogPinned) {
       // When showing newest-first we want the most recent at the top; otherwise scroll to bottom.
       detailedCombatLogRef.current.scrollTop =
         logSortOrder === "newest"
           ? 0
           : detailedCombatLogRef.current.scrollHeight;
+      setHasNewDetailedLogEvents(false);
+    } else if (visibleDetailedLogEntries.length > 0) {
+      setHasNewDetailedLogEvents(true);
     }
-  }, [visibleDetailedLogEntries, logSortOrder]);
+  }, [visibleDetailedLogEntries, logSortOrder, isDetailedLogPinned]);
+
+  const copyTextToClipboard = useCallback(async (text, successMessage) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      addLog(successMessage, "success");
+      return true;
+    } catch (error) {
+      addLog(`Clipboard copy failed: ${error?.message || String(error)}. Use Download Entire Log as a fallback.`, "warning");
+      return false;
+    }
+  }, [addLog]);
+
+  const handleCopyCurrentLogView = useCallback(async () => {
+    const snapshot = getCanonicalLogSnapshot();
+    flushQueuedLogEntries({ immediate: true });
+    const events = getCopyCurrentViewEvents({
+      events: snapshot,
+      audience: logAudienceFilter,
+      channel: logFilterType || "all",
+      sortOrder: logSortOrder || "oldest",
+    });
+    const text = buildCombatLogText(events, {
+      trimNoticeCount: trimmedLogEntryCount,
+      chronological: false,
+    });
+    await copyTextToClipboard(
+      text,
+      `Copied current combat log view (${events.length} event${events.length === 1 ? "" : "s"}).`,
+    );
+  }, [copyTextToClipboard, flushQueuedLogEntries, getCanonicalLogSnapshot, logAudienceFilter, logFilterType, logSortOrder, trimmedLogEntryCount]);
+
+  const getEntireCombatLogTextForExport = useCallback(() => {
+    const snapshot = getCanonicalLogSnapshot();
+    flushQueuedLogEntries({ immediate: true });
+    return buildCombatLogText(snapshot, {
+      trimNoticeCount: trimmedLogEntryCount,
+      chronological: true,
+    });
+  }, [flushQueuedLogEntries, getCanonicalLogSnapshot, trimmedLogEntryCount]);
+
+  const handleCopyEntireLog = useCallback(async () => {
+    const text = getEntireCombatLogTextForExport();
+    await copyTextToClipboard(text, "Copied entire canonical combat log.");
+  }, [copyTextToClipboard, getEntireCombatLogTextForExport]);
+
+  const handleDownloadEntireLog = useCallback(() => {
+    try {
+      const text = getEntireCombatLogTextForExport();
+      const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = buildCombatLogFilename();
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      addLog("Downloaded entire canonical combat log.", "success");
+    } catch (error) {
+      addLog(`Combat log download failed: ${error?.message || String(error)}`, "error");
+    }
+  }, [addLog, getEntireCombatLogTextForExport]);
 
   return (
     <Box
@@ -32895,7 +33682,7 @@ function CombatPage({ characters = [] }) {
               <MenuItem onClick={() => alert('Combat Help:\n\n1. Click on characters in the map to select them\n2. Use the Combat Options menu to select actions\n3. Click "Move" button to activate movement mode\n4. Click colored hexes to move characters\n5. Use Attack, Block, Evade, and other actions from the dropdown')}>
                 Combat Guide
               </MenuItem>
-              <MenuItem onClick={() => alert('Movement Help:\n\n- Green hexes: 1 action (15s)\n- Yellow hexes: 2 actions (30s)\n- Orange hexes: 3 actions (45s)\n- Red hexes: 4 actions (60s)\n\nClick "Move" in Combat Options to activate movement mode, then click a colored hex to move.')}>
+              <MenuItem onClick={() => alert('Movement Help:\n\n- Green hexes: ordinary walking distance\n- Yellow/orange/red hexes: farther destinations that may require additional movement choices\n\nClick "Walk" in Combat Options to activate walking movement, then click a colored hex to move.')}>
                 Movement Guide
               </MenuItem>
               <MenuItem onClick={() => alert('Actions:\n\n- Attack: Attack with equistaminad weapon\n- Block: Defend against melee attacks\n- Evade: Avoid attacks\n- Run: Move quickly\n- Use Skill: Perform a skill check\n- And more...')}>
@@ -33438,7 +34225,7 @@ function CombatPage({ characters = [] }) {
                               Use Combat Options menu to move characters
                             </Text>
                             <Text fontSize="xs" color="blue.600" fontWeight="bold">
-                              Click &quot;Move&quot; button to activate movement mode
+                              Click &quot;Walk&quot; button to activate walking movement
                             </Text>
                           </VStack>
                         )}
@@ -33462,7 +34249,7 @@ function CombatPage({ characters = [] }) {
                             Use Combat Options menu to move characters
                           </Text>
                           <Text fontSize="xs" color="blue.600" fontWeight="bold">
-                            Click &quot;Move&quot; button to activate movement mode
+                            Click &quot;Walk&quot; button to activate walking movement
                           </Text>
                         </VStack>
                       )}
@@ -33501,7 +34288,7 @@ function CombatPage({ characters = [] }) {
                   },
                 }}
               >
-                {chronologicalLogEntries.length === 0 ? (
+                {playerChronologicalLogEntries.length === 0 ? (
                   <Text fontSize="xs" color="gray.500" fontStyle="italic" h="20px" lineHeight="20px">
                     Combat log will astaminaar here...
                   </Text>
@@ -33581,9 +34368,9 @@ function CombatPage({ characters = [] }) {
         leftSidebar={
           <VStack align="start" spacing={4} h="full">
             {/* Party Members Panel */}
-            <Heading size="md">Party Members ({alivePlayers.length}/{fighters.filter(f => f.type === "player").length})</Heading>
+            <Heading size="md">Party Members ({partyRosterCount.active}/{partyRosterCount.total} active)</Heading>
             <Box w="100%" maxH="300px" overflowY="auto" border="2px solid" borderColor="blue.400" p={4} borderRadius="md" bg="blue.50">
-              {fighters.filter(f => f.type === "player").length === 0 ? (
+              {partyRoster.length === 0 ? (
                 <Box color="gray.500" textAlign="center" py={8}>
                   <VStack spacing={3}>
                     <Text fontWeight="bold">No party members selected</Text>
@@ -33595,16 +34382,19 @@ function CombatPage({ characters = [] }) {
                 </Box>
               ) : (
                 <Grid templateColumns="repeat(auto-fill, minmax(280px, 1fr))" gap={3}>
-                  {fighters.filter(f => f.type === "player").map((fighter) => {
+                  {partyRoster.map((fighter) => {
                     const displayStats = buildCombatDisplayStats(fighter);
                     const sheetDisplay = buildActorSheetDisplay(fighter);
                     const abilityScoreEntries = getDisplayStatEntries(displayStats.abilityScores, DISPLAY_ABILITY_LABELS);
                     const compatibilityEntries = getDisplayStatEntries(displayStats.compatibilityAttributes, DISPLAY_COMPATIBILITY_LABELS);
+                    const combatCapable = isCombatCapableFighter(fighter);
+                    const inactiveLabel = combatCapable ? "" : getCombatInactiveLabel(fighter);
 
                     return (
                     <GridItem key={fighter.id}>
                       <Box
                         key={fighter.id}
+                        {...fighterCardLayoutProps}
                         p={3}
                         mb={2}
                         border="2px solid"
@@ -33624,15 +34414,18 @@ function CombatPage({ characters = [] }) {
                                   fighter.id === currentFighter?.id ? "yellow.100" : "white"
                         }
                         shadow="sm"
+                        opacity={combatCapable ? 1 : 0.62}
+                        filter={combatCapable ? "none" : "grayscale(35%)"}
                         _hover={{ shadow: "md" }}
                       >
-                        <Flex justify="space-between" align="start">
-                          <VStack align="start" spacing={2} flex="1" w="100%">
+                        <Flex justify="space-between" align="start" gap={2} minW={0}>
+                          <VStack align="start" spacing={2} flex="1" w="100%" minW={0}>
                             <HStack flexWrap="wrap" spacing={2}>
                               <Text fontWeight="bold" color="blue.600" fontSize="md">
                                 {fighter.name}
                               </Text>
                               {fighter.id === currentFighter?.id && <Badge colorScheme="yellow" size="md">Current Turn</Badge>}
+                              {!combatCapable && inactiveLabel && <Badge colorScheme="gray" size="md">{inactiveLabel}</Badge>}
                               {fighter.suppression?.isSuppressed &&
                                 fighter.suppression?.visibleThreat && (
                                   <Badge colorScheme="orange" size="md">
@@ -33929,8 +34722,7 @@ function CombatPage({ characters = [] }) {
                               </Badge>
                             )}
                           </VStack>
-                          <Button size="sm" colorScheme="red" variant="outline" onClick={() => removeFighter(fighter.id)}>
-                            </Button>
+                          {renderRemoveFighterButton(fighter)}
                         </Flex>
                         </Box>
                       </GridItem>
@@ -34358,14 +35150,14 @@ function CombatPage({ characters = [] }) {
                     {showTacticalMap && currentFighter && currentFighter.type === "player" && (
                       <VStack spacing={1} align="start">
                         <Text fontSize="xs" color="blue.600" fontStyle="italic">
-                          Click &quot;{canFlyNow ? (playerMovementMode === "flight" ? "Move (Fly)" : "Move (Run)") : "Move"}&quot; then click a green hex to move
+                          Click &quot;{canFlyNow ? (playerMovementMode === "flight" ? "Fly" : "Walk") : "Walk"}&quot; then click a green hex to move
                         </Text>
                         <Text fontSize="xs" color="orange.600" fontStyle="italic">
                           Click &quot;Run&quot; then click a green hex to run (full speed)
                         </Text>
                         {movementMode.active && (
                           <Text fontSize="xs" color="green.600" fontWeight="bold">
-                            {movementMode.isRunning ? "Running" : "Movement"} mode active - select destination hex
+                            {movementMode.isRunning ? "Running" : "Walking"} mode active - select destination hex
                           </Text>
                         )}
                       </VStack>
@@ -35146,11 +35938,11 @@ function CombatPage({ characters = [] }) {
               {/* Combat Arena - Controls Panel (2D map is shown via Show/Hide Map above) */}
               {fighters.length > 0 && !combatActive && (showDeploymentModal || manualDeploymentOpen) && !combatControlsExpanded ? (
                 <Box
-                  position="fixed"
-                  top="12px"
-                  left="50%"
-                  transform="translateX(-50%)"
-                  zIndex={1500}
+                  w="100%"
+                  maxW="1200px"
+                  mx="auto"
+                  mt={4}
+                  mb={4}
                   bg="white"
                   borderWidth="1px"
                   borderRadius="md"
@@ -35159,18 +35951,26 @@ function CombatPage({ characters = [] }) {
                   py={2}
                 >
                   <Button size="sm" variant="ghost" onClick={() => setCombatControlsExpanded(true)}>
-                    Combat Arena Controls </Button>
+                    Combat Arena Controls
+                  </Button>
                 </Box>
               ) : fighters.length > 0 && !show3DView && (
-                <Box w="100%" display="flex" justifyContent="center" mt={4} mb={4}>
-                  <FloatingPanel
-                    title="Combat Arena - Controls"
-                    initialWidth={1200}
-                    initialHeight={600}
-                    zIndex={1000}
-                    minWidth={800}
-                    minHeight={400}
-                    center={false}
+                <Box
+                  w="100%"
+                  maxW="1200px"
+                  mx="auto"
+                  mt={4}
+                  mb={4}
+                  borderWidth="1px"
+                  borderColor="gray.200"
+                  borderRadius="lg"
+                  bg="white"
+                  boxShadow="md"
+                  p={3}
+                  maxH={{ base: "70vh", lg: "calc(100vh - 220px)" }}
+                  overflowY="auto"
+                  overflowX="hidden"
+                  data-testid="combat-command-center-docked"
                   >
                     <VStack align="stretch" spacing={3}>
                       <HStack justify="space-between" align="center" wrap="wrap">
@@ -35682,6 +36482,7 @@ function CombatPage({ characters = [] }) {
                         {/* Combat Round & Action Panel (below map) */}
                         {combatActive && (
                           <Box
+                            {...fighterCardLayoutProps}
                             p={3}
                             border="2px solid"
                             borderColor="green.300"
@@ -35697,7 +36498,7 @@ function CombatPage({ characters = [] }) {
                                 <VStack align="stretch" spacing={3} fontSize="sm">
                                   <Box>
                                     <Text fontWeight="bold" fontSize="lg" color="green.700">
-                                      Combat Round {meleeRound} - {currentFighter?.name}&apos;s Action
+                                      Round {meleeRound} · approximately {COMBAT_ROUND_SECONDS} seconds - {currentFighter?.name}&apos;s Action
                                     </Text>
                                     <Text fontSize="md">
                                       Initiative Order Action: <strong>{currentFighter?.name}</strong> (Initiative: {currentFighter?.initiative || 'N/A'})
@@ -35993,7 +36794,6 @@ function CombatPage({ characters = [] }) {
                       </Flex>
                       </CompatibilityCombatControlsPanel>
                     </VStack>
-                  </FloatingPanel>
                 </Box>
               )}
 
@@ -36131,7 +36931,7 @@ function CombatPage({ characters = [] }) {
                               </Button>
                             </HStack>
                             <Text fontSize="xs" color="gray.200">
-                              Round {meleeRound} | Nearest threat: {Number.isFinite(dangerDistance) ? `${dangerDistance} hex` : "-"} | Ammo: {formatAmmoDisplay(currentFighter)}
+                              Round {meleeRound} · approximately {COMBAT_ROUND_SECONDS} seconds | Nearest threat: {Number.isFinite(dangerDistance) ? `${dangerDistance} hex` : "-"} | Ammo: {formatAmmoDisplay(currentFighter)}
                             </Text>
                           </VStack>
                           <Box flex="1" minW={0} bg="rgba(0,0,0,0.25)" borderRadius="md" p={2} maxH={{ base: "110px", md: "100%" }} overflowY="auto">
@@ -36157,7 +36957,7 @@ function CombatPage({ characters = [] }) {
           <>
             {/* RIGHT COLUMN - Enemies */}
             <VStack align="start" spacing={4} h="full">
-              <Heading size="md" color="red.600">Opponents ({aliveEnemies.length}/{totalEnemyCount})</Heading>
+              <Heading size="md" color="red.600">Opponents ({opponentRosterCount.active}/{opponentRosterCount.total} active)</Heading>
               <Box ref={enemyListScrollRef} w="100%" maxH="300px" overflowY="auto" border="2px solid" borderColor="red.400" p={4} borderRadius="md" bg="red.50">
                 {totalEnemyCount === 0 ? (
                   <Box color="gray.500" textAlign="center" py={8}>
@@ -36171,7 +36971,7 @@ function CombatPage({ characters = [] }) {
                   </Box>
                 ) : (
                   <Grid templateColumns="repeat(auto-fill, minmax(280px, 1fr))" gap={3}>
-                    {fighters.filter(f => f.type === "enemy").map((fighter, index, array) => {
+                    {opponentRoster.map((fighter, index, array) => {
                       // Check if there are multiple enemies with the same name
                       const sameNameCount = array.filter(f => f.name === fighter.name && getCombatantHP(f) > 0).length;
                       // Display with index number if duplicates exist
@@ -36182,6 +36982,8 @@ function CombatPage({ characters = [] }) {
                       const sheetDisplay = buildActorSheetDisplay(fighter);
                       const abilityScoreEntries = getDisplayStatEntries(displayStats.abilityScores, DISPLAY_ABILITY_LABELS);
                       const compatibilityEntries = getDisplayStatEntries(displayStats.compatibilityAttributes, DISPLAY_COMPATIBILITY_LABELS);
+                      const combatCapable = isCombatCapableFighter(fighter);
+                      const inactiveLabel = combatCapable ? "" : getCombatInactiveLabel(fighter);
 
                       return (
                         <GridItem key={fighter.id}>
@@ -36206,15 +37008,18 @@ function CombatPage({ characters = [] }) {
                                       fighter.id === currentFighter?.id ? "yellow.100" : "white"
                             }
                             shadow="sm"
+                            opacity={combatCapable ? 1 : 0.62}
+                            filter={combatCapable ? "none" : "grayscale(35%)"}
                             _hover={{ shadow: "md" }}
                           >
-                            <Flex justify="space-between" align="start">
-                              <VStack align="start" spacing={2} flex="1" w="100%">
+                            <Flex justify="space-between" align="start" gap={2} minW={0}>
+                              <VStack align="start" spacing={2} flex="1" w="100%" minW={0}>
                                 <HStack flexWrap="wrap" spacing={2}>
                                   <Text fontWeight="bold" color="red.600" fontSize="md">
                                     {displayName}
                                   </Text>
                                   {fighter.id === currentFighter?.id && <Badge colorScheme="yellow" size="md">Current Turn</Badge>}
+                                  {!combatCapable && inactiveLabel && <Badge colorScheme="gray" size="md">{inactiveLabel}</Badge>}
                                   {fighter.suppression?.isSuppressed &&
                                     fighter.suppression?.visibleThreat && (
                                       <Badge colorScheme="orange" size="md">
@@ -36517,8 +37322,7 @@ function CombatPage({ characters = [] }) {
                                   </Badge>
                                 )}
                               </VStack>
-                              <Button size="sm" colorScheme="red" variant="outline" onClick={() => removeFighter(fighter.id)}>
-                                </Button>
+                              {renderRemoveFighterButton(fighter)}
                             </Flex>
                           </Box>
                         </GridItem>
@@ -36680,19 +37484,38 @@ function CombatPage({ characters = [] }) {
                           )}
                           <Select
                             size="xs"
-                            width="120px"
+                            width="140px"
+                            value={logAudienceFilter}
+                            onChange={(e) => {
+                              setLogAudienceFilter(e.target.value);
+                              setRevealedLogCount(0);
+                            }}
+                          >
+                            <option value="player">Player Events</option>
+                            <option value="developer">Developer Events</option>
+                            <option value="all">All Events</option>
+                          </Select>
+                          <Select
+                            size="xs"
+                            width="130px"
                             value={logFilterType || "all"}
                             onChange={(e) => setLogFilterType(e.target.value)}
                           >
                             <option value="all">All Types</option>
-                            <option value="hit">Hits</option>
-                            <option value="miss">Misses</option>
-                            <option value="critical">Critical</option>
-                            <option value="victory">Victory</option>
-                            <option value="defeat">Defeat</option>
-                            <option value="info">Info</option>
-                            <option value="combat">Combat</option>
-                            <option value="error">Errors</option>
+                            <option value="roll">Rolls</option>
+                            <option value="damage">Damage</option>
+                            <option value="movement">Movement</option>
+                            <option value="turn">Turn</option>
+                            <option value="action">Action</option>
+                            <option value="status">Status</option>
+                            <option value="outcome">Outcome</option>
+                            <option value="system">System</option>
+                            <option value="ai">AI</option>
+                            <option value="execution">Execution</option>
+                            <option value="state">State</option>
+                            <option value="validation">Validation</option>
+                            <option value="warnings">Warnings</option>
+                            <option value="errors">Errors</option>
                           </Select>
                           <Select
                             size="xs"
@@ -36706,21 +37529,37 @@ function CombatPage({ characters = [] }) {
                           <Button
                             size="xs"
                             colorScheme="green"
-                            onClick={() => {
-                              const logText = [...chronologicalLogEntries]
-                                .sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0))
-                                .map(entry => `[#${String(entry.seq ?? 0).padStart(3, "0")} ${formatLogTimestamp(entry)}] ${entry.message}`)
-                                .join('\n');
-                              navigator.clipboard.writeText(logText);
-                              alert('Combat log copied to clipboard!');
-                            }}
+                            onClick={handleCopyCurrentLogView}
                           >
-                            Copy Log
+                            Copy Current View
+                          </Button>
+                          <Button
+                            size="xs"
+                            colorScheme="green"
+                            variant="outline"
+                            onClick={handleCopyEntireLog}
+                          >
+                            Copy Entire Log
+                          </Button>
+                          <Button
+                            size="xs"
+                            colorScheme="purple"
+                            variant="outline"
+                            onClick={handleDownloadEntireLog}
+                          >
+                            Download Entire Log
                           </Button>
                           <Button
                             size="xs"
                             onClick={() => {
                               setLog([]);
+                              logQueueRef.current = [];
+                              if (logFlushTimerRef.current) {
+                                clearInterval(logFlushTimerRef.current);
+                                logFlushTimerRef.current = null;
+                              }
+                              setTrimmedLogEntryCount(0);
+                              setRenderedLogWindowSize(MAX_RENDERED_LOG_ENTRIES);
                               setDiceRolls([]);
                               setRevealedLogCount(0);
                             }}
@@ -36741,6 +37580,15 @@ function CombatPage({ characters = [] }) {
                           borderRadius="md"
                           overflowY="auto"
                           bg="gray.50"
+                          onScroll={(event) => {
+                            const el = event.currentTarget;
+                            const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+                            const nearBottom = logSortOrder === "newest"
+                              ? el.scrollTop <= 48
+                              : distanceFromBottom <= 80;
+                            setIsDetailedLogPinned(nearBottom);
+                            if (nearBottom) setHasNewDetailedLogEvents(false);
+                          }}
                         >
                           {chronologicalLogEntries.length === 0 && diceRolls.length === 0 ? (
                             <Text color="gray.500" fontSize="xs">Combat log and dice rolls will astaminaar here...</Text>
@@ -36768,15 +37616,82 @@ function CombatPage({ characters = [] }) {
                                     : "No log entries match the current filter."}
                                 </Text>
                               )}
+                              {matchingDetailedLogCount > 0 && (
+                                <HStack justify="space-between" spacing={2} flexWrap="wrap">
+                                  <VStack align="start" spacing={0}>
+                                    <Text fontSize="xs" color="gray.500">
+                                      Showing newest {visibleDetailedLogEntries.length} of {matchingDetailedLogCount.toLocaleString()} matching events
+                                      {trimmedLogEntryCount > 0 ? ` (${trimmedLogEntryCount} older trimmed)` : ""}
+                                    </Text>
+                                    <Text fontSize="xs" color="gray.500">
+                                      Full battle history retained: {fullDetailedLogCount.toLocaleString()} events
+                                    </Text>
+                                  </VStack>
+                                  <HStack spacing={2}>
+                                    {hasNewDetailedLogEvents && !isDetailedLogPinned && (
+                                      <Button
+                                        size="xs"
+                                        colorScheme="purple"
+                                        variant="outline"
+                                        onClick={() => {
+                                          setRenderedLogWindowSize(MAX_RENDERED_LOG_ENTRIES);
+                                          setIsDetailedLogPinned(true);
+                                          setHasNewDetailedLogEvents(false);
+                                          requestAnimationFrame(() => {
+                                            if (!detailedCombatLogRef.current) return;
+                                            detailedCombatLogRef.current.scrollTop =
+                                              logSortOrder === "newest"
+                                                ? 0
+                                                : detailedCombatLogRef.current.scrollHeight;
+                                          });
+                                        }}
+                                      >
+                                        New events — Jump to latest
+                                      </Button>
+                                    )}
+                                    {visibleDetailedLogEntries.length < matchingDetailedLogCount && (
+                                      <Button
+                                        size="xs"
+                                        variant="outline"
+                                        onClick={() => setRenderedLogWindowSize((size) => size + LOG_RENDER_WINDOW_INCREMENT)}
+                                      >
+                                        Load Older
+                                      </Button>
+                                    )}
+                                  </HStack>
+                                </HStack>
+                              )}
                               {visibleDetailedLogEntries.map((entry) => (
-                                <Box key={entry.id}>
+                                <Box
+                                  key={entry.id}
+                                  bg={entry.audience === COMBAT_LOG_AUDIENCES.DEVELOPER ? "orange.50" : "transparent"}
+                                  borderWidth={entry.audience === COMBAT_LOG_AUDIENCES.DEVELOPER ? "1px" : "0"}
+                                  borderColor="orange.100"
+                                  borderRadius="sm"
+                                  p={entry.audience === COMBAT_LOG_AUDIENCES.DEVELOPER ? 1 : 0}
+                                >
+                                  {entry.audience === COMBAT_LOG_AUDIENCES.DEVELOPER && (
+                                    <HStack spacing={1} mb={1} align="center" wrap="wrap">
+                                      <Badge colorScheme="orange" size="sm">DEV</Badge>
+                                      <Text fontSize="10px" color="orange.800">
+                                        {entry.channel}/{entry.eventType}
+                                      </Text>
+                                    </HStack>
+                                  )}
                                   <Text
                                     fontSize="xs"
-                                    color={getLogColor(entry.type)}
+                                    color={entry.audience === COMBAT_LOG_AUDIENCES.DEVELOPER ? "orange.900" : getLogColor(entry.type)}
                                     fontWeight="bold"
+                                    whiteSpace="pre-wrap"
+                                    wordBreak="break-word"
                                   >
                                     [#{String(entry.seq ?? 0).padStart(3, "0")} {formatLogTimestamp(entry)}] {entry.message}
                                   </Text>
+                                  {entry.audience === COMBAT_LOG_AUDIENCES.DEVELOPER && entry.data && Object.keys(entry.data).length > 0 && (
+                                    <Text as="pre" fontSize="10px" color="gray.600" whiteSpace="pre-wrap" wordBreak="break-word" mt={1}>
+                                      {JSON.stringify(entry.data, null, 2)}
+                                    </Text>
+                                  )}
 
                                   {entry.diceInfo && showRollDetails && (
                                     <Box ml={4} mt={1} p={2} bg="white" borderRadius="md" border="1px" borderColor="gray.300">
@@ -36832,82 +37747,6 @@ function CombatPage({ characters = [] }) {
                             </VStack>
                           )}
                         </Box>
-                        {import.meta.env.DEV && (
-                          <Box
-                            border="1px solid"
-                            borderColor="orange.200"
-                            bg="orange.50"
-                            p={2}
-                            borderRadius="md"
-                            flexShrink={0}
-                            mb={2}
-                          >
-                            <HStack justify="space-between" mb={2} flexWrap="wrap">
-                              <Text fontSize="xs" fontWeight="bold" color="orange.800">
-                                Developer Combat Events
-                              </Text>
-                              <Select
-                                size="xs"
-                                width="170px"
-                                value={developerLogFilterType}
-                                onChange={(e) => setDeveloperLogFilterType(e.target.value)}
-                              >
-                                <option value="all">All</option>
-                                <option value="ai">AI</option>
-                                <option value="execution">Execution</option>
-                                <option value="state">State</option>
-                                <option value="validation">Validation</option>
-                                <option value="warnings">Warnings</option>
-                                <option value="errors">Errors</option>
-                                <option value="player">Player-visible events</option>
-                              </Select>
-                            </HStack>
-                            <Box
-                              maxH={{ base: "180px", md: "280px" }}
-                              minH="96px"
-                              overflowY="auto"
-                              overflowX="auto"
-                              pr={1}
-                              borderWidth="1px"
-                              borderColor="orange.100"
-                              borderRadius="md"
-                              bg="white"
-                              sx={{
-                                '&::-webkit-scrollbar': {
-                                  width: '8px',
-                                  height: '8px',
-                                },
-                                '&::-webkit-scrollbar-track': {
-                                  background: 'rgba(251, 211, 141, 0.25)',
-                                  borderRadius: '4px',
-                                },
-                                '&::-webkit-scrollbar-thumb': {
-                                  background: '#dd6b20',
-                                  borderRadius: '4px',
-                                },
-                              }}
-                            >
-                              <VStack align="stretch" spacing={1} p={1}>
-                                {visibleDeveloperLogEntries.length === 0 ? (
-                                  <Text fontSize="xs" color="orange.700" fontStyle="italic">
-                                    No developer events match this filter.
-                                  </Text>
-                                ) : visibleDeveloperLogEntries.map((entry) => (
-                                  <Box key={entry.id} bg="white" borderWidth="1px" borderColor="orange.100" borderRadius="sm" p={1}>
-                                    <Text fontSize="xs" color="orange.900" whiteSpace="pre-wrap" wordBreak="break-word">
-                                      [#{String(entry.seq ?? 0).padStart(3, "0")} {formatLogTimestamp(entry)}] [{entry.audience}/{entry.channel}/{entry.eventType}] {entry.message}
-                                    </Text>
-                                    {entry.data && Object.keys(entry.data).length > 0 && (
-                                      <Text as="pre" fontSize="10px" color="gray.600" whiteSpace="pre-wrap" wordBreak="break-word" mt={1}>
-                                        {JSON.stringify(entry.data, null, 2)}
-                                      </Text>
-                                    )}
-                                  </Box>
-                                ))}
-                              </VStack>
-                            </Box>
-                          </Box>
-                        )}
                       </VStack>
                     </TabPanel>
 
@@ -37299,18 +38138,33 @@ function CombatPage({ characters = [] }) {
       <Modal
         isOpen={showPreBattleDuelist && !combatActive}
         onClose={() => setShowPreBattleDuelist(false)}
-        size={preBattleStep === PRE_BATTLE_STEPS.ROSTER ? "4xl" : "lg"}
+        size={preBattleStep === PRE_BATTLE_STEPS.ROSTER ? "full" : "lg"}
         closeOnOverlayClick={false}
       >
         <ModalOverlay />
-        <ModalContent>
+        <ModalContent
+          w={preBattleStep === PRE_BATTLE_STEPS.ROSTER ? { base: "calc(100vw - 16px)", md: "min(96vw, 1500px)" } : undefined}
+          maxW={preBattleStep === PRE_BATTLE_STEPS.ROSTER ? "calc(100vw - 24px)" : undefined}
+          h={preBattleStep === PRE_BATTLE_STEPS.ROSTER ? { base: "calc(100vh - 16px)", md: "min(94vh, 1050px)" } : undefined}
+          maxH={preBattleStep === PRE_BATTLE_STEPS.ROSTER ? "calc(100vh - 20px)" : undefined}
+          boxSizing="border-box"
+          display="flex"
+          flexDirection="column"
+          overflow="hidden"
+        >
           <ModalHeader>
             {preBattleStep === PRE_BATTLE_STEPS.ROSTER
               ? "Step 1 of 3: Choose Both Sides"
               : "Step 3 of 3: Begin Combat"}
           </ModalHeader>
           <ModalCloseButton />
-          <ModalBody pb={6}>
+          <ModalBody
+            pb={6}
+            flex={preBattleStep === PRE_BATTLE_STEPS.ROSTER ? "1" : undefined}
+            minH={preBattleStep === PRE_BATTLE_STEPS.ROSTER ? 0 : undefined}
+            overflowY={preBattleStep === PRE_BATTLE_STEPS.ROSTER ? "auto" : undefined}
+            overflowX={preBattleStep === PRE_BATTLE_STEPS.ROSTER ? "hidden" : undefined}
+          >
             <VStack align="stretch" spacing={4}>
               <HStack spacing={2} justify="center">
                 <Badge colorScheme={preBattleStep === PRE_BATTLE_STEPS.ROSTER ? "purple" : "gray"} px={3} py={1}>
@@ -37396,9 +38250,26 @@ function CombatPage({ characters = [] }) {
                       </Button>
                     </VStack>
                   ) : (
-                  <Grid templateColumns={{ base: "1fr", xl: "minmax(0, 2fr) 340px" }} gap={4} alignItems="start">
-                    <GridItem colSpan={{ base: 1, xl: 2 }}>
-                      <Box borderWidth="1px" borderRadius="lg" p={4} bg="white">
+                  <Grid
+                    templateColumns={{
+                      base: "minmax(0, 1fr)",
+                      md: "minmax(320px, 380px) minmax(280px, 1fr)",
+                      xl: "minmax(320px, 380px) minmax(280px, 1fr) minmax(280px, 1fr)",
+                    }}
+                    templateAreas={{
+                      base: `"preview" "players" "opponents" "scene" "armies"`,
+                      md: `"preview players" "preview opponents" "scene scene" "armies armies"`,
+                      xl: `"preview players opponents" "preview scene scene" "armies armies armies"`,
+                    }}
+                    gap={{ base: 3, md: 4, xl: 5 }}
+                    alignItems="start"
+                    w="100%"
+                    maxW="100%"
+                    minW={0}
+                    overflowX="hidden"
+                  >
+                    <GridItem gridArea="armies" minW={0} maxW="100%">
+                      <Box borderWidth="1px" borderRadius="lg" p={4} bg="white" w="100%" maxW="100%" minW={0} boxSizing="border-box">
                         <HStack justify="space-between" mb={3} align="start" flexWrap="wrap">
                           <Heading size="sm">Armies / Factions</Heading>
                           <HStack spacing={2} flexWrap="wrap">
@@ -37497,9 +38368,8 @@ function CombatPage({ characters = [] }) {
                         </Grid>
                       </Box>
                     </GridItem>
-                    <GridItem>
-                      <Grid templateColumns={{ base: "1fr", md: "1fr 1fr" }} gap={4}>
-                        <Box borderWidth="1px" borderRadius="lg" p={4} bg="blue.50">
+                    <GridItem gridArea="players" minW={0} maxW="100%">
+                        <Box borderWidth="1px" borderRadius="lg" p={4} bg="blue.50" w="100%" maxW="100%" minW={0} boxSizing="border-box">
                           <Heading size="sm">Player Characters</Heading>
                           <Button
                             colorScheme="blue"
@@ -37522,6 +38392,7 @@ function CombatPage({ characters = [] }) {
                                   return (
                                     <Box
                                       key={fighter.id}
+                                      {...fighterCardLayoutProps}
                                       borderWidth="1px"
                                       borderColor={isPreviewSelected ? "blue.400" : "blue.200"}
                                       borderRadius="md"
@@ -37530,21 +38401,14 @@ function CombatPage({ characters = [] }) {
                                       cursor="pointer"
                                       onClick={() => setSelectedRosterPreviewId(fighter.id)}
                                     >
-                                  <HStack justify="space-between" align="start">
-                                    <VStack align="start" spacing={1} flex="1">
-                                      <Text fontSize="sm" fontWeight="semibold">{fighter.name}</Text>
+                                  <HStack justify="space-between" align="start" minW={0}>
+                                    <VStack align="start" spacing={1} flex="1" minW={0}>
+                                      <Text fontSize="sm" fontWeight="semibold" noOfLines={2} wordBreak="break-word">{fighter.name}</Text>
                                       {renderFighterArmySelector(fighter)}
                                     </VStack>
-                                    <HStack spacing={2} onClick={(e) => e.stopPropagation()}>
+                                    <HStack spacing={2} flexShrink={0} onClick={(e) => e.stopPropagation()}>
                                       <Badge colorScheme="blue">Ready</Badge>
-                                      <Button
-                                        size="xs"
-                                        colorScheme="red"
-                                        variant="ghost"
-                                        onClick={() => removeFighter(fighter.id)}
-                                      >
-                                        X
-                                      </Button>
+                                      {renderRemoveFighterButton(fighter)}
                                     </HStack>
                                   </HStack>
                                     </Box>
@@ -37555,8 +38419,10 @@ function CombatPage({ characters = [] }) {
                             )}
                           </VStack>
                         </Box>
+                    </GridItem>
 
-                        <Box borderWidth="1px" borderRadius="lg" p={4} bg="red.50">
+                    <GridItem gridArea="opponents" minW={0} maxW="100%">
+                        <Box borderWidth="1px" borderRadius="lg" p={4} bg="red.50" w="100%" maxW="100%" minW={0} boxSizing="border-box">
                           <Heading size="sm" mb={2}>Fighters / Opponents</Heading>
                           <HStack mb={3} spacing={2} flexWrap="wrap">
                             <Button
@@ -37589,6 +38455,7 @@ function CombatPage({ characters = [] }) {
                                   return (
                                     <Box
                                       key={fighter.id}
+                                      {...fighterCardLayoutProps}
                                       borderWidth="1px"
                                       borderColor={isPreviewSelected ? "red.400" : "red.200"}
                                       borderRadius="md"
@@ -37597,21 +38464,14 @@ function CombatPage({ characters = [] }) {
                                       cursor="pointer"
                                       onClick={() => setSelectedRosterPreviewId(fighter.id)}
                                     >
-                                      <HStack justify="space-between" align="start">
-                                        <VStack align="start" spacing={1} flex="1">
-                                          <Text fontSize="sm" fontWeight="semibold">{fighter.name}</Text>
+                                      <HStack justify="space-between" align="start" minW={0}>
+                                        <VStack align="start" spacing={1} flex="1" minW={0}>
+                                          <Text fontSize="sm" fontWeight="semibold" noOfLines={2} wordBreak="break-word">{fighter.name}</Text>
                                           {renderFighterArmySelector(fighter)}
                                         </VStack>
-                                        <HStack spacing={2} onClick={(e) => e.stopPropagation()}>
+                                        <HStack spacing={2} flexShrink={0} onClick={(e) => e.stopPropagation()}>
                                           <Badge colorScheme="red">Ready</Badge>
-                                          <Button
-                                            size="xs"
-                                            colorScheme="red"
-                                            variant="ghost"
-                                            onClick={() => removeFighter(fighter.id)}
-                                          >
-                                            X
-                                          </Button>
+                                          {renderRemoveFighterButton(fighter)}
                                         </HStack>
                                       </HStack>
                                     </Box>
@@ -37622,8 +38482,10 @@ function CombatPage({ characters = [] }) {
                             )}
                           </VStack>
                         </Box>
+                    </GridItem>
 
-                        <Box borderWidth="1px" borderRadius="lg" p={4} bg="purple.50">
+                    <GridItem gridArea="scene" minW={0} maxW="100%">
+                        <Box borderWidth="1px" borderRadius="lg" p={4} bg="purple.50" w="100%" maxW="100%" minW={0} boxSizing="border-box">
                           <Heading size="sm" mb={2}>Scene Actors</Heading>
                           <VStack align="stretch" spacing={2}>
                             {fighters.filter((fighter) => fighter.type === "npc").length > 0 ? (
@@ -37634,6 +38496,7 @@ function CombatPage({ characters = [] }) {
                                   return (
                                     <Box
                                       key={fighter.id}
+                                      {...fighterCardLayoutProps}
                                       borderWidth="1px"
                                       borderColor={isPreviewSelected ? "purple.400" : "purple.200"}
                                       borderRadius="md"
@@ -37642,9 +38505,9 @@ function CombatPage({ characters = [] }) {
                                       cursor="pointer"
                                       onClick={() => setSelectedRosterPreviewId(fighter.id)}
                                     >
-                                      <HStack justify="space-between" align="start">
-                                        <VStack align="start" spacing={1} flex="1">
-                                          <Text fontSize="sm" fontWeight="semibold">{fighter.name}</Text>
+                                      <HStack justify="space-between" align="start" minW={0}>
+                                        <VStack align="start" spacing={1} flex="1" minW={0}>
+                                          <Text fontSize="sm" fontWeight="semibold" noOfLines={2} wordBreak="break-word">{fighter.name}</Text>
                                           <HStack spacing={2} flexWrap="wrap">
                                             <Badge colorScheme="purple">{getSceneRoleLabel(fighter)}</Badge>
                                             {fighter.factionId && <Badge colorScheme="gray">{fighter.factionId}</Badge>}
@@ -37655,16 +38518,9 @@ function CombatPage({ characters = [] }) {
                                           </HStack>
                                           {renderFighterArmySelector(fighter)}
                                         </VStack>
-                                        <HStack spacing={2} onClick={(e) => e.stopPropagation()}>
+                                        <HStack spacing={2} flexShrink={0} onClick={(e) => e.stopPropagation()}>
                                           <Badge colorScheme="purple">Scene</Badge>
-                                          <Button
-                                            size="xs"
-                                            colorScheme="red"
-                                            variant="ghost"
-                                            onClick={() => removeFighter(fighter.id)}
-                                          >
-                                            X
-                                          </Button>
+                                          {renderRemoveFighterButton(fighter)}
                                         </HStack>
                                       </HStack>
                                     </Box>
@@ -37675,11 +38531,22 @@ function CombatPage({ characters = [] }) {
                             )}
                           </VStack>
                         </Box>
-                      </Grid>
                     </GridItem>
 
-                    <GridItem>
-                      <Box borderWidth="1px" borderRadius="lg" p={4} bg="gray.50" position="sticky" top="0">
+                    <GridItem gridArea="preview" minW={0} maxW="100%">
+                      <Box
+                        borderWidth="1px"
+                        borderRadius="lg"
+                        p={4}
+                        bg="gray.50"
+                        position={{ base: "static", xl: "sticky" }}
+                        top={{ xl: "0" }}
+                        w="100%"
+                        maxW="100%"
+                        minW={0}
+                        boxSizing="border-box"
+                        overflowWrap="break-word"
+                      >
                         <Heading size="sm" mb={3}>Roster Preview</Heading>
                         {rosterPreviewFighter ? (
                           <VStack align="stretch" spacing={4}>
@@ -37882,7 +38749,15 @@ function CombatPage({ characters = [] }) {
               )}
             </VStack>
           </ModalBody>
-          <ModalFooter>
+          <ModalFooter
+            flexShrink={0}
+            position={preBattleStep === PRE_BATTLE_STEPS.ROSTER ? "sticky" : undefined}
+            bottom={preBattleStep === PRE_BATTLE_STEPS.ROSTER ? 0 : undefined}
+            bg="white"
+            zIndex={1}
+            borderTop={preBattleStep === PRE_BATTLE_STEPS.ROSTER ? "1px solid" : undefined}
+            borderColor={preBattleStep === PRE_BATTLE_STEPS.ROSTER ? "gray.100" : undefined}
+          >
             <HStack spacing={3}>
               {preBattleStep === PRE_BATTLE_STEPS.READY ? (
                 <>

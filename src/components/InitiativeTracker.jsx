@@ -1707,10 +1707,10 @@ const InitiativeTracker = () => {
               <strong>Defense:</strong> Block (with weapon/shield) or Evade (-1 action)
             </Text>
             <Text fontSize="sm">
-              <strong>Initiative:</strong> d20 + DEX modifier
+              <strong>Initiative:</strong> roll + initiative bonus
             </Text>
             <Text fontSize="sm">
-              <strong>Damage:</strong> Weapon dice + STR modifier
+              <strong>Damage:</strong> Weapon impact + attribute bonus
             </Text>
             <Text fontSize="sm">
               <strong>Status:</strong> OK Ã¢â€ â€™ Wounded Ã¢â€ â€™ KO Ã¢â€ â€™ Dead

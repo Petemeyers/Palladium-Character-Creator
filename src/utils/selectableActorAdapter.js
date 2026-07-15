@@ -88,6 +88,16 @@ export function adaptSelectableActorToCombatant(actor = {}, options = {}) {
   const maxHp = Number(actor.derivedStats.maxHp ?? actor.derivedStats.maxHitPoints ?? hp);
   const armorClass = Number(actor.derivedStats.armorClass ?? actor.derivedStats.guardRating ?? 10);
   const hasFlight = Array.isArray(actor.movementModes) && actor.movementModes.includes("flying") && flyingMovement > 0;
+  const startsGrounded = Boolean(
+    actor.state?.grounded ||
+    actor.state?.isGrounded ||
+    actor.state?.perched ||
+    actor.state?.restrained ||
+    actor.state?.unconscious ||
+    actor.state?.unableToFly
+  );
+  const startsAirborne = hasFlight && !startsGrounded && actor.state?.isFlying !== false;
+  const defaultFlightAltitude = Number(actor.state?.altitudeFeet ?? actor.state?.altitude ?? 20) || 20;
 
   const combatant = addOriginalActorMetadata({
     id: runtimeId,
@@ -162,6 +172,17 @@ export function adaptSelectableActorToCombatant(actor = {}, options = {}) {
     abilities: hasFlight
       ? { movement: { flight: { active: true, feetPerRound: flyingMovement, mphSpeed: flyingMovement / 22 } } }
       : {},
+    ...(startsAirborne ? {
+      isFlying: true,
+      airborne: true,
+      movementMode: "flight",
+      altitude: defaultFlightAltitude,
+      altitudeFeet: defaultFlightAltitude,
+      aiFlightState: {
+        mode: "cruising",
+        cruiseAltitudeFeet: defaultFlightAltitude,
+      },
+    } : {}),
     normalizedSelectableActor: true,
     selectableActorId: actor.id,
   });

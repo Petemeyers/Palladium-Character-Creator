@@ -283,14 +283,14 @@ const AutoRollDemo = () => {
         <Box>
           <Heading size="lg" mb={2}>Auto-Roll Demo for Playable Characters</Heading>
           <Text color="gray.600">
-            Select any playable character below to generate a combat preview using the current auto-roll compatibility layer.
+            Select any playable character below to generate a combat preview using the current simulator combat profile.
           </Text>
         </Box>
 
         <Alert status="info">
           <AlertIcon />
           <Text fontSize="sm">
-            <strong>Combat Preview:</strong> HP, AC, Speed, and abilities are shown using the current core d20 compatibility layer.
+            <strong>Combat Preview:</strong> HP, guard rating, speed, and simulator attributes are shown using the current combat compatibility layer.
           </Text>
         </Alert>
         {savedCharacterError && (
@@ -487,7 +487,7 @@ const AutoRollDemo = () => {
         </Box>
 
         <Box>
-          <Heading size="md" mb={4}>SRD Enemies</Heading>
+            <Heading size="md" mb={4}>Simulator Opponents</Heading>
           <Grid templateColumns="repeat(auto-fit, minmax(260px, 1fr))" gap={4}>
             {PUBLIC_ENEMIES.map((enemy) => (
               <Box key={enemy.id} p={4} border="1px solid" borderColor="gray.200" borderRadius="md">

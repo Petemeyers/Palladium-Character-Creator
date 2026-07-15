@@ -71,7 +71,7 @@ export function disambiguateDuplicateCombatActorNames(message, { roster = [], ac
     const active = activeMatch || actors[0];
     const others = actors.filter((actor) => !isSameCombatActor(actor, active));
     let occurrence = 0;
-    result = result.replace(new RegExp(`${escapeRegExp(name)}(?!\\s*\\[)`, "g"), () => {
+    result = result.replace(new RegExp(`${escapeRegExp(name)}(?![\\w#-])(?!\\s*\\[)`, "g"), () => {
       const actor = occurrence === 0 ? active : (others[occurrence - 1] || others[0] || active);
       occurrence += 1;
       return formatCombatActorLabel(actor, { roster: actors });

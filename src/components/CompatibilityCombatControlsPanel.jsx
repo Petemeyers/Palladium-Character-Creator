@@ -26,7 +26,7 @@ const CompatibilityCombatControlsPanel = ({
             <Text fontWeight="bold">{COMBAT_COMMAND_LAYOUT.compatibilityLabel}</Text>
             <Badge colorScheme="gray">{COMBAT_COMMAND_LAYOUT.compatibilityToolsLabel}</Badge>
             {currentFighterName && <Badge colorScheme="blue">{currentFighterName}</Badge>}
-            {currentActionName && <Badge colorScheme="orange">Legacy action: {currentActionName}</Badge>}
+            {currentActionName && <Badge colorScheme="orange">Selected action: {currentActionName}</Badge>}
           </HStack>
           <Text fontSize="xs" color="gray.600">
             {COMBAT_COMMAND_LAYOUT.compatibilityDescription}

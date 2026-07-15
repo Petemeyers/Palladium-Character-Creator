@@ -3,7 +3,7 @@
  * Handles ammunition tracking during combat
  */
 
-import { getMissileWeapon } from "../data/missileWeapons";
+import { getMissileWeapon } from "../data/missileWeapons.js";
 import { getWeaponByName } from "../data/weapons.js";
 
 // Inventory item name aliases for ammo types.
@@ -23,9 +23,119 @@ function normName(value) {
  * Given a weapon item/name, return the most reliable data we can find
  * (missileWeapons.js -> weapons.js -> raw item).
  */
-function getWeaponData(weapon) {
+export function getWeaponData(weapon) {
   const name = typeof weapon === "string" ? weapon : weapon?.name;
   return getMissileWeapon(name) || getWeaponByName(name) || weapon || null;
+}
+
+function inferAmmoProfile(candidate = {}) {
+  const weaponData = getWeaponData(candidate);
+  const explicitAmmo = weaponData?.ammunition ?? candidate?.ammunition ?? candidate?.ammoType;
+  const name = normName(weaponData?.name || candidate?.name);
+  const type = normName(weaponData?.type || candidate?.type || candidate?.kind || candidate?.attackType);
+  const category = normName(weaponData?.category || candidate?.category);
+  const hasRangedShape =
+    Number(weaponData?.maxRange ?? candidate?.maxRange ?? candidate?.rangeProfile?.normal ?? candidate?.range ?? candidate?.rangeFeet ?? 0) > 10 ||
+    ["ranged", "missile"].includes(type) ||
+    ["bow", "crossbow", "sling", "ranged"].includes(category) ||
+    /bow|crossbow|sling|dart/.test(name);
+
+  let ammoType = normName(explicitAmmo);
+  if ((!ammoType || ammoType === "shuman") && hasRangedShape) {
+    if (/crossbow/.test(name)) ammoType = "bolts";
+    else if (/sling/.test(name)) ammoType = "sling stones";
+    else if (/dart/.test(name)) ammoType = "darts";
+    else if (/bow/.test(name) || type === "ranged" || category === "ranged") ammoType = "arrows";
+  }
+  if (!ammoType || ammoType === "shuman") return null;
+
+  const startingAmmo = Number(
+    weaponData?.startingAmmo ??
+    candidate?.startingAmmo ??
+    candidate?.ammoCount ??
+    candidate?.quantity
+  );
+
+  return {
+    ammoType,
+    weaponName: weaponData?.name || candidate?.name || "ranged attack",
+    startingAmmo: Number.isFinite(startingAmmo) && startingAmmo > 0 ? startingAmmo : 20,
+  };
+}
+
+function collectAmmoProfiles(character = {}) {
+  const profiles = new Map();
+  const candidates = [
+    ...(Array.isArray(character?.inventory) ? character.inventory : []),
+    ...(Array.isArray(character?.equipment) ? character.equipment : []),
+    ...(Array.isArray(character?.equistaminadWeapons) ? character.equistaminadWeapons : []),
+    ...(Array.isArray(character?.attacks) ? character.attacks : []),
+    character?.weapon,
+    character?.equistaminadWeapon,
+  ].filter(Boolean);
+
+  candidates.forEach((candidate) => {
+    const profile = inferAmmoProfile(candidate);
+    if (!profile) return;
+    const existing = profiles.get(profile.ammoType);
+    if (!existing || profile.startingAmmo > existing.startingAmmo) {
+      profiles.set(profile.ammoType, profile);
+    }
+  });
+
+  return Array.from(profiles.values());
+}
+
+export function ensureConfiguredStartingAmmo(character = {}, {
+  preserveExisting = true,
+  source = "combat-start",
+  log = null,
+} = {}) {
+  if (!character || typeof character !== "object") return character;
+  const profiles = collectAmmoProfiles(character);
+  if (profiles.length === 0) return character;
+
+  let next = character;
+  let inventory = Array.isArray(character.inventory)
+    ? character.inventory.map((item) => ({ ...item }))
+    : [];
+  let changed = false;
+
+  profiles.forEach((profile) => {
+    const current = getInventoryAmmoCount({ inventory }, profile.ammoType);
+    if (preserveExisting && current > 0) {
+      log?.({
+        actor: character,
+        weaponName: profile.weaponName,
+        ammoType: profile.ammoType,
+        starting: current,
+        source: `${source}:preserved`,
+      });
+      return;
+    }
+    if (current <= 0) {
+      inventory = [
+        ...inventory,
+        {
+          name: profile.ammoType,
+          type: "ammunition",
+          category: "ammunition",
+          quantity: profile.startingAmmo,
+        },
+      ];
+      changed = true;
+      log?.({
+        actor: character,
+        weaponName: profile.weaponName,
+        ammoType: profile.ammoType,
+        starting: profile.startingAmmo,
+        source,
+      });
+    }
+  });
+
+  if (changed) next = { ...character, inventory };
+  return next;
 }
 
 /** Get inventory item name aliases that satisfy an ammoType. */
@@ -198,9 +308,11 @@ export default {
   canFireMissileWeapon,
   getInventoryAmmoCount,
   decrementInventoryAmmo,
+  ensureConfiguredStartingAmmo,
   getAmmoInfo,
   calculateRangeModifier,
   getAmmoAliases,
+  getWeaponData,
 };
 
 // ---------------------------
