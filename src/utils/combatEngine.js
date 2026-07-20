@@ -39,16 +39,8 @@ import {
 
 import {
   initializeGrappleState,
-  attemptGrapple,
-  // eslint-disable-next-line no-unused-vars
-  maintainGrapple,
-  // eslint-disable-next-line no-unused-vars
-  breakFree,
-  // eslint-disable-next-line no-unused-vars
-  groundAttack,
   GRAPPLE_STATES,
 } from "./grapplingSystem.js";
-// Note: maintainGrapple, breakFree, groundAttack are available for future use
 
 // Import and re-export arenaRoster utilities for convenience
 // eslint-disable-next-line no-unused-vars
@@ -132,6 +124,7 @@ export class CombatEngine {
       ((msg, type = "info") => console.log(`[${type}] ${msg}`));
     this.onCombatantUpdate = options.onCombatantUpdate || (() => {});
     this.onMeleeRoundComplete = options.onMeleeRoundComplete || (() => {});
+    this.executeCanonicalGrappleAction = options.executeCanonicalGrappleAction || null;
     this.isActive = false;
     this.activeCircles = []; // Track active protection circles
     // Hit location system toggle (default: enabled for realism)
@@ -985,9 +978,17 @@ export class CombatEngine {
       return false;
     }
 
-    const result = attemptGrapple(attacker, defender, () =>
-      CryptoSecureDice.rollD20()
-    );
+    if (typeof this.executeCanonicalGrappleAction !== "function") {
+      this.logCallback("grapple-inner-resolver-direct-entry-blocked: canonical grapple executor is required", "warning");
+      return false;
+    }
+    const result = this.executeCanonicalGrappleAction({
+      actor: attacker,
+      opponent: defender,
+      actionType: "grapple",
+      source: "combat-engine",
+      requestedActionSequence: 1,
+    });
 
     if (result.success) {
       this.logCallback(result.message, "combat");
@@ -1403,7 +1404,7 @@ export const rollDice = (formula) => {
  * @returns {Promise<Object>} Round statistics
  */
 // eslint-disable-next-line no-unused-vars
-export async function combatRound(combatants, arenaRosterData = null) {
+export async function combatRound(combatants, arenaRosterData = null, options = {}) {
   // Normalize combatants - convert string IDs to full objects using arenaRosterLoader
   const normalizedCombatants = combatants.map((c) => {
     if (typeof c === "string") {
@@ -1508,7 +1509,9 @@ export async function combatRound(combatants, arenaRosterData = null) {
       const useGrapple = Math.random() < 0.25;
 
       if (useGrapple) {
-        const result = attemptGrapple(actor, target, rollD20);
+        const result = typeof options.executeCanonicalGrappleAction === "function"
+          ? options.executeCanonicalGrappleAction({ actor, opponent: target, actionType: "grapple", source: "combat-round", requestedActionSequence: 1 })
+          : { accepted: false, success: false, reason: "grapple-inner-resolver-direct-entry-blocked" };
         console.log(result.success ? result.message : result.reason);
         if (result.success) roundStats.grapples++;
       } else {

@@ -15,7 +15,7 @@ assert.match(source, /stale grapple follow-up blocked: actor=/);
 assert.match(source, /executionKey=\$\{executionKey\}/);
 assert.match(source, /logStaleGrappleFollowUpBlocked\(latestStaleReason, grappleActionId\)/);
 
-assert.match(source, /const executePlayerAIGrapple = \(attacker, target, requestedActionType = null\) =>/);
+assert.match(source, /const executePlayerAIGrapple = \(attacker,\s*target,\s*requestedActionType = null,\s*armoredActionPlan = null,\s*admission = null\) =>/);
 assert.match(source, /const grappleExecutionKey = playerAIExecutionRef\.current\?\.executionKey/);
 assert.match(source, /const logPlayerAIGrappleBlocked = \(reason, actor = attacker\) =>/);
 assert.match(source, /logPlayerAIGrappleBlocked\("no-actions", liveAttacker\)/);

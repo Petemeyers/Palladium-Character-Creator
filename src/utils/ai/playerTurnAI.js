@@ -42,6 +42,8 @@ import { createPlayerAiActionResult } from "../playerAiTurnResult.js";
 import { getPlayerAiContinuationBlockReason } from "../playerAiContinuation.js";
 import { formatCombatActorLabel, isSameCombatActor } from "../combatActorIdentity.js";
 import { formatCombatWeaponAvailability } from "../combatWeaponAvailability.js";
+import { resolveArmoredCombatAction } from "./resolveArmoredCombatAction.js";
+import { resolveGrappleTurnAction } from "./resolveGrappleTurnAction.js";
 
 const DEFEATED_KEYWORDS = [
   "vampire",
@@ -514,7 +516,9 @@ export async function runPlayerTurnAI(player, context) {
     clearPlayerAIContinuationAttack,
     claimPlayerAIContinuation,
     completePlayerAIContinuation,
-    executeGrapple,
+    createFiredActionContinuationReceipt,
+    dispatchGrappleTurnAction,
+    recoverMissingPlayerGrappleDispatcher,
     setPositions,
     setFighters,
     commitPlayerAIPosition,
@@ -576,6 +580,36 @@ export async function runPlayerTurnAI(player, context) {
     onNoHostilesRemaining,
     sceneContext = { sceneType: "combat", relations: {} },
   } = context;
+
+  const continuationKey = context.continuationKey || null;
+  const continuationAuthorization = context.continuationAuthorization || null;
+
+  if (continuationAuthorization) {
+    addLog?.({
+      audience: "developer",
+      channel: "turn",
+      eventType: "action-continuation-receipt-hop",
+      level: "info",
+      type: "debug",
+      actorId: continuationAuthorization.actorId,
+      source: "run-player-turn-ai",
+      message: `action continuation receipt hop: stage=player-action-route continuationKey=${continuationAuthorization.continuationKey}`,
+      data: {
+        stage: "player-action-route",
+        continuationId: continuationAuthorization.continuationId || continuationAuthorization.authorizationId || null,
+        continuationKey: continuationAuthorization.continuationKey,
+        initiativeTurnId: continuationAuthorization.initiativeTurnId,
+        actorId: continuationAuthorization.actorId,
+        receiptState: continuationAuthorization.state,
+        completedActionType: continuationAuthorization.completedActionType,
+        completedActionSequence: continuationAuthorization.completedActionSequence,
+        nextActionSequence: continuationAuthorization.nextActionSequence,
+        requestedActionSequence: continuationAuthorization.nextActionSequence,
+        consumingActionType: null,
+        consumingActionToken: null,
+      },
+    }, "debug");
+  }
 
   addLog?.(`runPlayerTurnAI entered fighter=${player?.name || "unknown"}`, "info");
 
@@ -2877,7 +2911,7 @@ export async function runPlayerTurnAI(player, context) {
   });
 
   const shouldAttemptAdjacentGrapple = () => {
-    if (typeof executeGrapple !== "function" || !target) return false;
+    if (typeof dispatchGrappleTurnAction !== "function" || !target) return false;
     if (!sameHexAsTarget && (!Number.isFinite(currentDistance) || currentDistance > 5.5)) return false;
     if ((Number(player.remainingActions ?? 0) || 0) <= 0) return false;
     if (!inGrappleRange && (!isNeutralGrappleState(player) || !isNeutralGrappleState(target))) return false;
@@ -2982,20 +3016,205 @@ export async function runPlayerTurnAI(player, context) {
 
   if (inGrappleState && !inGrappleRange) {
     clearSeparatedGrapple?.(player, target);
-  } else if (inGrappleState && typeof executeGrapple === "function") {
+  } else if (inGrappleState && typeof dispatchGrappleTurnAction !== "function") {
+    const recovery = recoverMissingPlayerGrappleDispatcher?.({
+      actorId: player.id,
+      initiativeTurnId: context.initiativeTurnId,
+      opponentId: target?.id || player?.grappleState?.opponent || null,
+      source: "player-ai-active-grapple",
+      remainingActions: player.remainingActions,
+    });
+    return createPlayerAiActionResult("pass", {
+      ...(recovery || {}),
+      reason: "grapple-dispatch-required-but-missing",
+      terminal: true,
+      handled: true,
+    });
+  } else if (inGrappleState && typeof dispatchGrappleTurnAction === "function") {
+    addLog?.({
+      audience: "developer",
+      channel: "ai",
+      eventType: "grapple-state-read",
+      level: "info",
+      type: "debug",
+      actorId: player.id,
+      targetId: target?.id,
+      source: "player-ai-active-grapple",
+      message: `grapple-state-read: actorId=${player.id} opponentId=${target?.id || player?.grappleState?.opponent || "unknown"} active=true source=player-ai-active-grapple`,
+      data: { active: true, grappleState: player?.grappleState },
+    }, "debug");
+    addLog?.({
+      audience: "developer",
+      channel: "ai",
+      eventType: "standing-armored-selector-suppressed",
+      level: "info",
+      type: "debug",
+      actorId: player.id,
+      targetId: target?.id,
+      source: "player-ai-active-grapple",
+      message: `standing armored selector suppressed: actor=${player.name || player.id} reason=active-grapple`,
+      data: { reason: "active-grapple" },
+    }, "debug");
+    addLog?.({
+      audience: "developer",
+      channel: "ai",
+      eventType: "player-grapple-dispatcher-route-entry",
+      level: "info",
+      type: "debug",
+      actorId: player.id,
+      targetId: target?.id,
+      source: "player-ai-active-grapple",
+      message: `player grapple dispatcher route entry: actorId=${player.id} dispatcherPresent=${typeof dispatchGrappleTurnAction === "function"}`,
+      data: {
+        initiativeTurnId: context.initiativeTurnId || null,
+        actorId: player.id,
+        source: "player-ai-active-grapple",
+        dispatcherPresent: typeof dispatchGrappleTurnAction === "function",
+        dispatcherType: typeof dispatchGrappleTurnAction,
+        continuationAuthorizationPresent: Boolean(continuationAuthorization),
+      },
+    }, "debug");
+    if (continuationAuthorization) {
+      addLog?.({
+        audience: "developer",
+        channel: "ai",
+        eventType: "player-grapple-authorization-route-entry",
+        level: "info",
+        type: "debug",
+        actorId: player.id,
+        targetId: target?.id,
+        source: "player-ai-active-grapple",
+        message: `player grapple authorization route entry: continuationKey=${continuationAuthorization.continuationKey}`,
+        data: { ...continuationAuthorization, receiptPresent: true, runPlayerDispatcherPresent: typeof dispatchGrappleTurnAction === "function" },
+      }, "debug");
+    }
+    const grappleRoute = resolveGrappleTurnAction({
+      actor: player,
+      opponent: target,
+      grappleState: player?.grappleState,
+      remainingActions: player?.remainingActions,
+      availableClinchWeapons: equistaminadWeapons,
+      generationId: combatSession || combatSessionRef?.current || "default",
+      round: context.meleeRound,
+      initiativeIndex: context.turnIndexRef?.current,
+      initiativeTurnId: context.initiativeTurnId,
+      turnToken: currentTurnToken || currentTurnTokenRef?.current,
+      source: "player-ai",
+    });
+    addLog?.({
+      audience: "developer",
+      channel: "ai",
+      eventType: "combat-obligation-routed",
+      level: "info",
+      type: "debug",
+      actorId: player.id,
+      targetId: target?.id,
+      message:
+        `combat obligation routed: actorId=${player.id} opponentId=${target?.id || player?.grappleState?.opponent || "unknown"} ` +
+        `obligation=active-grapple generationId=${combatSession || combatSessionRef?.current || "default"} ` +
+        `turnToken=${currentTurnToken || currentTurnTokenRef?.current || "missing"}`,
+      data: grappleRoute,
+    }, "debug");
+    if (grappleRoute.routeType === "legal-pass") {
+      scheduleEndTurn?.(0, "player-ai-active-grapple-legal-pass");
+      return createPlayerAiActionResult("pass", { reason: grappleRoute.reason || "no-grapple-action" });
+    }
+    if (!grappleRoute.handled || !grappleRoute.dispatchRequired) {
+      return createPlayerAiActionResult("no-action", { reason: grappleRoute.reason || "routing-only-no-action" });
+    }
     addLog(`${player.name} attempts a grapple follow-up.`, "info");
     markActionScheduled();
-    if (executeGrapple(player, target)) {
-      return;
+    const grappleDispatchSource = continuationAuthorization
+      ? "remaining-action-continuation"
+      : "player-ai-active-grapple";
+    const grappleResult = dispatchGrappleTurnAction(
+      player,
+      target,
+      grappleRoute.grappleAction?.actionType || grappleRoute.actionType,
+      null,
+      {
+        continuationKey,
+        continuationAuthorization,
+        source: grappleDispatchSource,
+        dispatcherChain: {
+          ...(context.dispatcherChain || {}),
+          runPlayerDispatcherPresent: typeof dispatchGrappleTurnAction === "function",
+          routeDispatcherPresent: typeof dispatchGrappleTurnAction === "function",
+        },
+      },
+    );
+    if (grappleResult?.terminal === true) {
+      addLog?.({
+        audience: "developer",
+        channel: "turn",
+        eventType: "player-grapple-terminal-return-propagated",
+        level: "info",
+        type: "debug",
+        actorId: player.id,
+        targetId: target?.id,
+        source: "player-ai-active-grapple",
+        message:
+          `player-grapple-terminal-return-propagated: actorId=${player.id} ` +
+          `initiativeTurnId=${context.initiativeTurnId || "none"} source=player-ai-active-grapple`,
+        data: {
+          handled: true,
+          terminal: true,
+          routeType: "grapple-terminal",
+          result: grappleResult,
+        },
+      }, "debug");
+      return createPlayerAiActionResult("grapple", {
+        reason: grappleResult.reason || "active-grapple-dispatched",
+        handled: true,
+        terminal: true,
+        routeType: "grapple-terminal",
+        grappleRoute,
+        grappleResult,
+      });
     }
-    if (playerAIActionScheduledRef) playerAIActionScheduledRef.current = false;
+    addLog?.({
+      audience: "developer",
+      channel: "ai",
+      eventType: "player-ai-zero-progress-action-detected",
+      level: "error",
+      type: "error",
+      actorId: player.id,
+      targetId: target?.id,
+      source: "player-ai-active-grapple",
+      message: `player AI zero progress action detected: actorId=${player.id} source=active-grapple-dispatch-returned-false`,
+      data: {
+        remainingActionsBefore: player.remainingActions,
+        remainingActionsAfter: player.remainingActions,
+        actionTokenBefore: context.actionToken || null,
+        actionTokenAfter: context.actionToken || null,
+        pendingContinuationBefore: Boolean(continuationKey),
+        pendingContinuationAfter: Boolean(continuationKey),
+        authoritativeExecutionBefore: false,
+        authoritativeExecutionAfter: false,
+      },
+    }, "error");
+    const recovery = recoverMissingPlayerGrappleDispatcher?.({
+      actorId: player.id,
+      initiativeTurnId: context.initiativeTurnId,
+      opponentId: target?.id || player?.grappleState?.opponent || null,
+      source: "player-ai-active-grapple-zero-progress-recovery",
+      remainingActions: player.remainingActions,
+    });
+    return createPlayerAiActionResult("pass", {
+      ...(recovery || {}),
+      reason: "player-ai-active-grapple-zero-progress-recovered",
+      grappleRoute,
+      terminal: true,
+      handled: true,
+    });
   }
 
   if (shouldAttemptAdjacentGrapple()) {
     addLog(`${player.name} attempts to grapple ${target.name}!`, "info");
     markActionScheduled();
-    if (executeGrapple(player, target)) {
-      return;
+    const grappleResult = dispatchGrappleTurnAction(player, target, null, null, { continuationKey, continuationAuthorization, source: "player-ai-adjacent-grapple" });
+    if (grappleResult?.terminal === true) {
+      return createPlayerAiActionResult("grapple", { reason: grappleResult.reason || "adjacent-grapple-dispatched", terminal: true, grappleResult });
     }
     if (playerAIActionScheduledRef) playerAIActionScheduledRef.current = false;
   }
@@ -3325,6 +3544,122 @@ export async function runPlayerTurnAI(player, context) {
       range: 5.5,
       type: "melee",
     };
+  }
+
+  if (target && selectedAttack) {
+    const attackerPos = positions?.[player.id];
+    const defenderPos = positions?.[target.id];
+    const armoredDistance = attackerPos && defenderPos && typeof calculateDistance === "function"
+      ? calculateDistance(attackerPos, defenderPos)
+      : currentDistance;
+    let armoredAction;
+    try {
+      armoredAction = resolveArmoredCombatAction({
+        attacker: player,
+        defender: target,
+        selectedWeapon: selectedAttack.weapon || selectedAttack,
+        distance: armoredDistance,
+        remainingActions: player.remainingActions,
+        generationId: context.combatSession || context.combatSessionRef?.current || "default",
+        round: context.meleeRound,
+        initiativeIndex: context.turnIndexRef?.current,
+        initiativeTurnId: context.initiativeTurnIdRef?.current || context.initiativeTurnId,
+        turnToken: context.currentTurnToken || context.currentTurnTokenRef?.current,
+        actionToken: context.currentTurnToken || context.currentTurnTokenRef?.current,
+        getTacticalMemory: context.getArmoredTacticalMemory,
+        rng: context.armoredTechniqueRng,
+        rngSource: context.armoredTechniqueRngSource || "player-ai",
+        source: "player-ai",
+        addLog,
+      });
+    } catch (error) {
+      addLog?.({
+        audience: "developer",
+        channel: "ai",
+        eventType: "armored-selection-runtime-fallback",
+        level: "error",
+        type: "error",
+        actorId: player.id,
+        targetId: target.id,
+        message: `armored selection runtime fallback: actor=${player.name} target=${target.name} error=${error?.message || String(error)}`,
+        data: { error: error?.message || String(error), source: "player-ai" },
+      }, "error");
+      armoredAction = {
+        actionType: "attack",
+        technique: "longsword-cut",
+        weapon: {
+          ...(selectedAttack.weapon || selectedAttack),
+          attackMode: "longsword-cut",
+          selectedTechnique: "longsword-cut",
+          armorTechnique: "longsword-cut",
+          armoredActionPlan: {
+            actionType: "attack",
+            selectedTechnique: "longsword-cut",
+            attackerId: player.id,
+            defenderId: target.id,
+            generationId: context.combatSession || context.combatSessionRef?.current || "default",
+            round: context.meleeRound,
+            initiativeIndex: context.turnIndexRef?.current,
+            turnToken: context.currentTurnToken || context.currentTurnTokenRef?.current,
+            source: "armored-selection-runtime-fallback",
+          },
+        },
+      };
+    }
+    if (armoredAction?.suppressed) {
+      scheduleEndTurn?.(0, "player-ai-offensive-suppressed");
+      return;
+    }
+    if (armoredAction?.technique) {
+      if (armoredAction.actionType === "grapple" && typeof dispatchGrappleTurnAction === "function") {
+        addLog?.(`${player.name} closes to grapple the armored opponent.`, "info");
+        addLog?.({
+          audience: "developer",
+          channel: "ai",
+          eventType: "armored-action-plan-dispatched",
+          level: "info",
+          type: "debug",
+          actorId: player.id,
+          targetId: target.id,
+          message: `armored action plan dispatched: actor=${player.name} target=${target.name} technique=${armoredAction.technique}`,
+          data: { actionType: armoredAction.actionType, selectedTechnique: armoredAction.technique, source: "player-ai" },
+        }, "debug");
+        markActionScheduled();
+        if (dispatchGrappleTurnAction(player, target, null, armoredAction.armoredActionPlan, {
+          continuationAuthorization,
+          continuationKey: continuationAuthorization?.continuationKey || null,
+          requestedActionSequence: continuationAuthorization?.nextActionSequence ?? null,
+          nextActionSequence: continuationAuthorization?.nextActionSequence ?? null,
+          initiativeTurnId: continuationAuthorization?.initiativeTurnId || context.initiativeTurnId || null,
+          source: continuationAuthorization ? "remaining-action-continuation" : "player-ai-armored-grapple",
+        })) {
+          return createPlayerAiActionResult("grapple", {
+            reason: "armored-grapple-dispatched",
+            armoredAction,
+          });
+        }
+        if (playerAIActionScheduledRef) playerAIActionScheduledRef.current = false;
+      } else {
+        selectedAttack = armoredAction.weapon;
+        attackName = selectedAttack.name;
+        addLog?.({
+          audience: "developer",
+          channel: "ai",
+          eventType: "armored-action-plan-dispatched",
+          level: "info",
+          type: "debug",
+          actorId: player.id,
+          targetId: target.id,
+          message: `armored action plan dispatched: actor=${player.name} target=${target.name} technique=${armoredAction.technique}`,
+          data: selectedAttack.armoredActionPlan || { actionType: "attack", selectedTechnique: armoredAction.technique, source: "player-ai" },
+        }, "debug");
+        if (armoredAction.technique === "half-sword-thrust") {
+          addLog?.(`${player.name} shifts to a half-sword grip.`, "info");
+        } else if (armoredAction.technique === "pommel-or-crossguard-strike") {
+          addLog?.(`${player.name} reverses the sword and strikes with the pommel.`, "info");
+        }
+      }
+    }
   }
 
   // Check if player needs to move closer to attack
@@ -3736,54 +4071,160 @@ export async function runPlayerTurnAI(player, context) {
                       scheduleEndTurn(16, "player-ai-flanking-move-only");
                       return;
                     }
-                    if (turnActionResolvingRef) turnActionResolvingRef.current = true;
-                    const flankingAttackGrant =
-                      typeof createAttackActionGrant === "function"
-                        ? createAttackActionGrant(player.id, liveTarget.id, "player-ai-flanking-continuation")
-                        : null;
-                    const flankingAttackActionId =
-                      typeof createAttackExecutionKey === "function"
-                        ? createAttackExecutionKey(player.id, liveTarget.id, "player-ai-flanking-continuation", {
-                            grant: flankingAttackGrant,
-                            scheduledAtTurnToken: flankingAttackGrant?.turnToken || currentTurnToken || "no-turn-token",
-                            callbackSource: "player-ai-flanking-continuation",
-                            isDelayedCallback: true,
-                          })
-                        : `player-ai-flank-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+                    // Selection is deliberately ownership-free: a flanking continuation
+                    // may resolve into either an ordinary attack or a dedicated grapple.
+                    const completedMovementSequence = Math.max(1, Number(context.getActionSequence?.() ?? 0) + 1);
+                    context.setActionSequence?.(completedMovementSequence);
+                    const movementContinuationAdmission = createFiredActionContinuationReceipt?.({
+                      actorId: livePlayer.id,
+                      opponentId: liveTarget.id,
+                      completedActionType: "movement",
+                      completedActionSequence: completedMovementSequence,
+                      remainingActions: remainingActionsAfterMovement,
+                      source: "player-ai-flanking-movement",
+                    }) || null;
+                    let flankingAttackGrant = null;
+                    let flankingAttackActionId = null;
                     let flankingAttackSettled = false;
-                    const flankingAttackWatchdog = setTimeout(() => {
-                      if (flankingAttackSettled) return;
-                      if (
-                        !pendingTurnAdvanceRef?.current &&
-                        turnActionResolvingRef?.current &&
-                        combatActiveRef?.current !== false &&
-                        !combatOverRef?.current &&
-                        tokenStillValid()
-                      ) {
-                        flankingAttackSettled = true;
-                        addLog("flanking continuation exception: attack did not settle", "warning");
-                        clearPlayerAIContinuationAttack?.(
-                          flankingAttackActionId,
-                          "flanking-attack-watchdog",
-                        );
-                        turnActionResolvingRef.current = false;
-                        if (pendingTurnAdvanceRef) pendingTurnAdvanceRef.current = false;
-                        processingPlayerAIRef.current = false;
-                        completePlayerAIContinuation?.("player-ai-flanking-continuation-timeout");
-                        scheduleEndTurn(16, "player-ai-flanking-continuation-timeout");
-                      }
-                    }, 5000);
+                    let flankingAttackWatchdog = null;
                     try {
-                      addLog("flanking continuation calling attack", "debug");
+                      let flankingAttackData = selectedAttack;
+                      const flankingArmoredAction = resolveArmoredCombatAction({
+                        attacker: livePlayer,
+                        defender: liveTarget,
+                        selectedWeapon: flankingAttackData?.weapon || flankingAttackData,
+                        distance: newDistance,
+                        remainingActions: livePlayer.remainingActions,
+                        generationId: context.combatSession || context.combatSessionRef?.current || "default",
+                        round: context.meleeRound,
+                        initiativeIndex: context.turnIndexRef?.current,
+                        initiativeTurnId: context.initiativeTurnIdRef?.current || context.initiativeTurnId,
+                        turnToken: currentTurnToken || currentTurnTokenRef?.current,
+                        actionToken: currentTurnToken || currentTurnTokenRef?.current,
+                        getTacticalMemory: context.getArmoredTacticalMemory,
+                        rng: context.armoredTechniqueRng,
+                        rngSource: context.armoredTechniqueRngSource || "player-ai-flanking-continuation",
+                        source: "player-ai-flanking-continuation",
+                        addLog,
+                      });
+                      if (flankingArmoredAction?.suppressed) {
+                        flankingAttackSettled = true;
+                        clearTimeout(flankingAttackWatchdog);
+                        completePlayerAIContinuation?.("player-ai-flanking-armored-suppressed");
+                        scheduleEndTurn(16, "player-ai-flanking-armored-suppressed");
+                        return;
+                      }
+                      addLog?.({
+                        audience: "developer",
+                        channel: "ai",
+                        eventType: "flanking-armored-action-resolved",
+                        level: "info",
+                        type: "debug",
+                        actorId: livePlayer.id,
+                        targetId: liveTarget.id,
+                        source: "player-ai-flanking-continuation",
+                        message: `flanking armored action resolved: actorId=${livePlayer.id} actionType=${flankingArmoredAction?.actionType || "attack"}`,
+                        data: { actionType: flankingArmoredAction?.actionType || "attack", armoredActionPlan: flankingArmoredAction?.armoredActionPlan || null },
+                      }, "debug");
+                      if (flankingArmoredAction?.actionType === "grapple" && typeof dispatchGrappleTurnAction === "function") {
+                        flankingAttackSettled = true;
+                        // The movement continuation is not an attack owner. Release its
+                        // latch so the dedicated grapple dispatcher can own this action.
+                        if (turnActionResolvingRef) turnActionResolvingRef.current = false;
+                        addLog?.({
+                          audience: "developer",
+                          channel: "ai",
+                          eventType: "flanking-grapple-dispatch-started",
+                          level: "info",
+                          type: "debug",
+                          actorId: livePlayer.id,
+                          targetId: liveTarget.id,
+                          source: "player-ai-flanking-continuation",
+                          message: `flanking grapple dispatch started: actorId=${livePlayer.id} targetId=${liveTarget.id}`,
+                          data: { armoredActionPlan: flankingArmoredAction.armoredActionPlan || null },
+                        }, "debug");
+                        addLog("flanking continuation dispatching armored grapple plan", "debug");
+                        const grappleResult = dispatchGrappleTurnAction(
+                          livePlayer,
+                          liveTarget,
+                          null,
+                          flankingArmoredAction.armoredActionPlan,
+                          movementContinuationAdmission,
+                        );
+                        if (grappleResult?.terminal === true || grappleResult) {
+                          completePlayerAIContinuation?.("player-ai-flanking-grapple-dispatched");
+                          addLog?.({
+                            audience: "developer",
+                            channel: "turn",
+                            eventType: "player-flanking-grapple-terminal-return-propagated",
+                            level: "info",
+                            type: "debug",
+                            actorId: livePlayer.id,
+                            targetId: liveTarget.id,
+                            source: "player-ai-flanking-continuation",
+                            message: `player flanking grapple terminal return propagated: actorId=${livePlayer.id}`,
+                            data: { handled: true, terminal: true, routeType: "grapple-terminal", result: grappleResult },
+                          }, "debug");
+                          return;
+                        }
+                        completePlayerAIContinuation?.("player-ai-flanking-grapple-failed");
+                        scheduleEndTurn(16, "player-ai-flanking-grapple-failed");
+                        return;
+                      }
+                      if (flankingArmoredAction?.technique && flankingArmoredAction?.weapon) {
+                        flankingAttackData = flankingArmoredAction.weapon;
+                      }
+                      if (turnActionResolvingRef) turnActionResolvingRef.current = true;
+                      flankingAttackGrant =
+                        typeof createAttackActionGrant === "function"
+                          ? createAttackActionGrant(player.id, liveTarget.id, "player-ai-flanking-continuation")
+                          : null;
+                      flankingAttackActionId =
+                        typeof createAttackExecutionKey === "function"
+                          ? createAttackExecutionKey(player.id, liveTarget.id, "player-ai-flanking-continuation", {
+                              grant: flankingAttackGrant,
+                              scheduledAtTurnToken: flankingAttackGrant?.turnToken || currentTurnToken || "no-turn-token",
+                              callbackSource: "player-ai-flanking-continuation",
+                              isDelayedCallback: true,
+                            })
+                          : `player-ai-flank-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+                      addLog?.({
+                        audience: "developer",
+                        channel: "ai",
+                        eventType: "flanking-attack-execution-key-created",
+                        level: "info",
+                        type: "debug",
+                        actorId: livePlayer.id,
+                        targetId: liveTarget.id,
+                        executionKey: flankingAttackActionId,
+                        source: "player-ai-flanking-continuation",
+                        message: `flanking attack execution key created: actorId=${livePlayer.id} executionKey=${flankingAttackActionId}`,
+                      }, "debug");
+                      flankingAttackWatchdog = setTimeout(() => {
+                        if (flankingAttackSettled || !flankingAttackActionId) return;
+                        if (!pendingTurnAdvanceRef?.current && turnActionResolvingRef?.current && combatActiveRef?.current !== false && !combatOverRef?.current && tokenStillValid()) {
+                          flankingAttackSettled = true;
+                          addLog("flanking continuation exception: attack did not settle", "warning");
+                          clearPlayerAIContinuationAttack?.(flankingAttackActionId, "flanking-attack-watchdog");
+                          turnActionResolvingRef.current = false;
+                          if (pendingTurnAdvanceRef) pendingTurnAdvanceRef.current = false;
+                          processingPlayerAIRef.current = false;
+                          completePlayerAIContinuation?.("player-ai-flanking-continuation-timeout");
+                          scheduleEndTurn(16, "player-ai-flanking-continuation-timeout");
+                        }
+                      }, 5000);
+                      addLog("flanking continuation calling attack after armored action resolution", "debug");
                       addLog(
-                        `flanking continuation attack start attacker=${livePlayer.name} target=${liveTarget.name} weapon=${selectedAttack?.name || "unknown"}`,
+                        `flanking continuation attack start attacker=${livePlayer.name} target=${liveTarget.name} weapon=${flankingAttackData?.name || "unknown"}`,
                         "debug",
                       );
                       const attackOutcome = await attack(updatedPlayer, liveTarget.id, {
                         ...bonuses,
+                        continuationAuthorization: movementContinuationAdmission?.continuationAuthorization || null,
+                        requestedActionSequence: movementContinuationAdmission?.nextActionSequence || null,
                         attackActionId: flankingAttackActionId,
                         attackActionGrant: flankingAttackGrant,
-                        attackDataOverride: selectedAttack,
+                        attackDataOverride: flankingAttackData,
                         attackerPosOverride: actualFlankPos,
                         defenderPosOverride: actualTargetPos,
                         distanceOverride: newDistance,

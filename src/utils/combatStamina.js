@@ -14,6 +14,42 @@ const firstNumber = (...values) => {
   return null;
 };
 
+const clampFinite = (value, min, max) => {
+  const numeric = toNumber(value);
+  if (numeric === null) return null;
+  return Math.max(min, Math.min(max, numeric));
+};
+
+const currentStaminaIsAuthoritative = (combatant = {}, field = "") => {
+  const authority = String(combatant.staminaAuthority || combatant.combatStamina?.authority || "").toLowerCase();
+  if (field === "combatStamina.currentStamina") return true;
+  if (field === "currentStamina") return true;
+  if (field === "fatigueState.currentStamina") {
+    return ["combat-stamina", "fatigue-state", "statblock", "explicit"].includes(authority) ||
+      combatant.fatigueState?.authority === "combat-stamina";
+  }
+  return ["combat-stamina", "statblock", "explicit", "legacy-current"].includes(authority) ||
+    combatant.staminaConfigured === true ||
+    combatant.explicitStamina === true;
+};
+
+function findCanonicalCurrentStamina(combatant = {}, maxStamina) {
+  const candidates = [
+    ["combatStamina.currentStamina", combatant.combatStamina?.currentStamina],
+    ["currentStamina", combatant.currentStamina],
+    ["fatigueState.currentStamina", combatant.fatigueState?.currentStamina],
+    ["currentstamina", combatant.currentstamina],
+    ["staminaCurrent", combatant.staminaCurrent],
+    ["training.currentstamina", combatant.training?.currentstamina],
+  ];
+  for (const [field, value] of candidates) {
+    if (!currentStaminaIsAuthoritative(combatant, field)) continue;
+    const current = clampFinite(value, 0, maxStamina);
+    if (current !== null) return { currentStamina: current, source: field };
+  }
+  return { currentStamina: maxStamina, source: "maxStamina" };
+}
+
 const modifierFromScore = (score) => {
   const number = toNumber(score);
   return number === null ? null : Math.floor((number - 10) / 2);
@@ -132,6 +168,169 @@ export function resolveEncounterStamina(combatant = {}) {
   };
 }
 
+export function mirrorCombatStaminaCompatibilityFields(fighter = {}, value, maxValue = undefined) {
+  const maxStamina = Math.max(0, toNumber(maxValue) ?? toNumber(fighter.combatStamina?.maxStamina) ?? toNumber(fighter.maxStamina) ?? value ?? 0);
+  const currentStamina = Math.max(0, Math.min(maxStamina, toNumber(value) ?? maxStamina));
+  return {
+    ...fighter,
+    maxStamina,
+    currentStamina,
+    currentstamina: currentStamina,
+    staminaAuthority: "combat-stamina",
+    staminaCurrent: currentStamina,
+    combatStamina: {
+      ...(fighter.combatStamina || {}),
+      maxStamina,
+      currentStamina,
+      authority: "combat-stamina",
+    },
+    fatigueState: {
+      ...(fighter.fatigueState || {}),
+      maxStamina,
+      currentStamina,
+      authority: "combat-stamina",
+    },
+    ...(!Array.isArray(fighter.training) && fighter.training
+      ? { training: { ...fighter.training, currentstamina: currentStamina } }
+      : {}),
+  };
+}
+
+export function initializeCombatStamina(fighter = {}) {
+  const resolved = resolveEncounterStamina(fighter);
+  const maxStamina = Math.max(0, toNumber(fighter.combatStamina?.maxStamina) ?? resolved.maxStamina ?? 0);
+  const current = findCanonicalCurrentStamina(fighter, maxStamina);
+  const initialized = mirrorCombatStaminaCompatibilityFields(fighter, current.currentStamina, maxStamina);
+  return {
+    ...initialized,
+    fatigueLabel: getFatigueLabel(current.currentStamina, maxStamina),
+    combatStamina: {
+      ...(initialized.combatStamina || {}),
+      initialized: true,
+      currentSource: current.source,
+    },
+  };
+}
+
+export function readCombatStamina(fighter = {}) {
+  const initialized = initializeCombatStamina(fighter);
+  const maxStamina = toNumber(initialized.combatStamina?.maxStamina);
+  const currentStamina = toNumber(initialized.combatStamina?.currentStamina);
+  const valid = maxStamina !== null && currentStamina !== null && currentStamina >= 0 && currentStamina <= maxStamina;
+  return {
+    valid,
+    maxStamina,
+    currentStamina,
+    authority: initialized.combatStamina?.authority || "combat-stamina",
+    fighter: initialized,
+    reason: valid ? null : "invalid-canonical-stamina",
+  };
+}
+
+export function spendCombatStamina({
+  fighter = {},
+  amount = 0,
+  reason = "unknown",
+  allowOverexertion = false,
+} = {}) {
+  const state = readCombatStamina(fighter);
+  const requestedSpend = toNumber(amount);
+  if (!state.valid || requestedSpend === null || requestedSpend < 0) {
+    return {
+      accepted: false,
+      reason: "invalid-canonical-stamina",
+      previousStamina: state.currentStamina,
+      requestedSpend: requestedSpend ?? null,
+      appliedSpend: null,
+      spent: 0,
+      nextStamina: null,
+      maxStamina: state.maxStamina,
+      currentStamina: state.currentStamina,
+      updated: state.fighter,
+      insufficientStamina: false,
+      overexertionApplied: false,
+    };
+  }
+  const insufficientStamina = state.currentStamina < requestedSpend;
+  const accepted = !insufficientStamina || allowOverexertion;
+  if (!accepted) {
+    return {
+      accepted: false,
+      reason: "insufficient-stamina",
+      previousStamina: state.currentStamina,
+      requestedSpend,
+      appliedSpend: 0,
+      spent: 0,
+      nextStamina: state.currentStamina,
+      maxStamina: state.maxStamina,
+      currentStamina: state.currentStamina,
+      updated: state.fighter,
+      insufficientStamina,
+      overexertionApplied: false,
+    };
+  }
+  const appliedSpend = Math.min(state.currentStamina, requestedSpend);
+  const nextStamina = Math.max(0, state.currentStamina - appliedSpend);
+  if (!Number.isFinite(nextStamina)) {
+    return {
+      accepted: false,
+      reason: "invalid-canonical-stamina",
+      previousStamina: state.currentStamina,
+      requestedSpend,
+      appliedSpend,
+      spent: 0,
+      nextStamina: null,
+      maxStamina: state.maxStamina,
+      currentStamina: state.currentStamina,
+      updated: state.fighter,
+      insufficientStamina,
+      overexertionApplied: false,
+    };
+  }
+  const updated = {
+    ...mirrorCombatStaminaCompatibilityFields(state.fighter, nextStamina, state.maxStamina),
+    fatigueLabel: getFatigueLabel(nextStamina, state.maxStamina),
+  };
+  return {
+    accepted: true,
+    reason,
+    previousStamina: state.currentStamina,
+    requestedSpend,
+    appliedSpend,
+    spent: appliedSpend,
+    nextStamina,
+    maxStamina: state.maxStamina,
+    currentStamina: nextStamina,
+    updated,
+    insufficientStamina,
+    overexertionApplied: insufficientStamina && allowOverexertion,
+    overexertionActions: insufficientStamina && allowOverexertion ? 1 : 0,
+  };
+}
+
+export function recoverCombatStamina({ fighter = {}, amount = 0, reason = "recovery" } = {}) {
+  const state = readCombatStamina(fighter);
+  const recovery = toNumber(amount);
+  if (!state.valid || recovery === null || recovery < 0) {
+    return { accepted: false, reason: "invalid-canonical-stamina", updated: state.fighter };
+  }
+  const nextStamina = Math.min(state.maxStamina, state.currentStamina + recovery);
+  const updated = {
+    ...mirrorCombatStaminaCompatibilityFields(state.fighter, nextStamina, state.maxStamina),
+    fatigueLabel: getFatigueLabel(nextStamina, state.maxStamina),
+  };
+  return {
+    accepted: true,
+    reason,
+    previousStamina: state.currentStamina,
+    recovered: nextStamina - state.currentStamina,
+    nextStamina,
+    maxStamina: state.maxStamina,
+    currentStamina: nextStamina,
+    updated,
+  };
+}
+
 export function getFatigueLabel(currentStamina, maxStamina) {
   const current = Math.max(0, toNumber(currentStamina) ?? 0);
   const max = Math.max(1, toNumber(maxStamina) ?? 1);
@@ -156,42 +355,16 @@ export function getDefaultStamina(combatant = {}) {
 
 export function initializeStamina(combatant = {}) {
   const maxStamina = getDefaultStamina(combatant);
-
-  return {
+  return initializeCombatStamina({
     ...combatant,
     maxStamina,
-    currentStamina: maxStamina,
-    fatigueLabel: getFatigueLabel(maxStamina, maxStamina),
-  };
+  });
 }
 
 export function getStaminaState(combatantOrTurnEntry = {}) {
-  const declaredMaxStamina = firstNumber(
-    combatantOrTurnEntry?.maxStamina,
-    combatantOrTurnEntry?.staminaMax,
-    combatantOrTurnEntry?.maxstamina,
-    combatantOrTurnEntry?.combatStamina?.maxStamina,
-    combatantOrTurnEntry?.fatigueState?.maxStamina,
-  );
-  const onePointPoolIsDeliberate = combatantOrTurnEntry.staminaConfigured === true ||
-    combatantOrTurnEntry.explicitStamina === true ||
-    String(combatantOrTurnEntry.staminaAuthority || "").toLowerCase() === "statblock";
-  const maxStamina = Math.max(
-    1,
-    declaredMaxStamina !== null && (declaredMaxStamina > 1 || onePointPoolIsDeliberate)
-      ? declaredMaxStamina
-      : getDefaultStamina(combatantOrTurnEntry),
-  );
-  const currentStamina = Math.max(
-    0,
-    Math.min(maxStamina, firstNumber(
-      combatantOrTurnEntry?.currentStamina,
-      combatantOrTurnEntry?.staminaCurrent,
-      combatantOrTurnEntry?.currentstamina,
-      combatantOrTurnEntry?.combatStamina?.currentStamina,
-      combatantOrTurnEntry?.fatigueState?.currentStamina,
-    ) ?? maxStamina)
-  );
+  const state = readCombatStamina(combatantOrTurnEntry);
+  const maxStamina = Math.max(1, state.maxStamina ?? getDefaultStamina(combatantOrTurnEntry));
+  const currentStamina = Math.max(0, Math.min(maxStamina, state.currentStamina ?? maxStamina));
 
   return {
     maxStamina,
@@ -404,7 +577,12 @@ export default {
   getDefaultStamina,
   getFatigueLabel,
   getStaminaState,
+  initializeCombatStamina,
   initializeStamina,
+  mirrorCombatStaminaCompatibilityFields,
+  readCombatStamina,
+  recoverCombatStamina,
   resetStaminaForEncounter,
+  spendCombatStamina,
   spendStamina,
 };

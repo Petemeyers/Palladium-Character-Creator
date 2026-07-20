@@ -10,7 +10,7 @@ assert.ok(blockIndex !== -1 && blockReturnIndex !== -1, "blocked attack result m
 assert.ok(waitingIndex !== -1 && blockReturnIndex < waitingIndex, "blocked attack must not log waiting-for-impact");
 
 assert.match(source, /if \(!activeAttackActionIdRef\.current && !activeTechniqueImpactRef\.current\) \{/);
-assert.match(source, /scheduleEnemyAIEndTurn\(0, "enemy-attack-no-active-impact-fallback"\)/);
+assert.match(source, /canonical completion observed after ownership release/);
 assert.match(source, /reason=no-active-impact-after-block/);
 
 const entryBlockIndex = source.indexOf('const entryAttackBlock = getAttackRollOwnershipBlockReason("attack-entry-pre-roll")');

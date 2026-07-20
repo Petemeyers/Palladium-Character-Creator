@@ -7,7 +7,7 @@ const grappleActionsSource = readFileSync(
 );
 const combatPageSource = readFileSync(new URL("../src/pages/CombatPage.jsx", import.meta.url), "utf8");
 
-assert.match(grappleActionsSource, /const rollDice = \(\) => \{\s+const rollStaleReason = getStaleGrappleReason\("grapple-ground-attack-roll"\)/);
+assert.match(grappleActionsSource, /const rollDice = \(\) => \{[\s\S]*?const rollStaleReason = getStaleGrappleReason\("grapple-ground-attack-roll"\)/);
 assert.match(grappleActionsSource, /stale grapple roll blocked/);
 assert.match(grappleActionsSource, /error\.staleGrappleRoll = true/);
 assert.match(grappleActionsSource, /if \(error\?\.staleGrappleRoll\) return/);

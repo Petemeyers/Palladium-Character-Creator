@@ -72,6 +72,26 @@ const getRoutingProfile = () => ({ pathStyle: "panic" });
 const hasSatisfiedRoutingExit = () => false;
 const canTargetForAction = (actor, target) => actor?.id !== target?.id && target?.type !== actor?.type;
 const isAllyOf = (actor, target) => actor?.type === target?.type;
+const getSelectableActorAttackForDistance = (_actor, _distance, attack) => attack;
+const getMeleeEngagementContext = () => ({ rangeBand: "melee", isClinched: false, isGrappling: false, isGround: false });
+const isChargeOnlyAttack = () => false;
+const selectMeleeAttackForContext = ({ selectedAttack }) => ({ attack: selectedAttack, changed: false });
+const spendEnemyNoTargetAction = () => ({ spent: true });
+const formatEnemyMovementDebug = () => "";
+const getCombatantFootprintHexes = () => [];
+const resolveEnemyMovementBudget = () => ({ movementBudget: 30 });
+const chooseEnemyMovementFallback = () => null;
+const executeEnemyMovementPlan = () => null;
+const validateEnemyMovementPlan = () => ({ valid: true });
+const decideEnemyTacticalIntentSafely = () => ({ intent: "attack" });
+const markCombatantFled = (actor) => actor;
+const normalizeMoraleState = (actor) => actor;
+const evaluateMoraleTriggers = (actor) => ({ actor, skipped: true, result: "steady" });
+const formatCombatActorLabel = (actor) => actor?.name || actor?.id || "Unknown";
+const isSameCombatActor = (a, b) => a?.id === b?.id;
+const buildArmoredTechniqueAttack = (weapon, selectedTechnique) => ({ ...(weapon || {}), selectedTechnique, attackMode: selectedTechnique });
+const selectArmoredCombatTechnique = () => ({ selectedTechnique: null, candidates: [] });
+const resolveArmoredCombatAction = ({ selectedWeapon }) => ({ actionType: "attack", technique: null, weapon: selectedWeapon, selection: null });
 `;
 
   const moduleUrl = `data:text/javascript;base64,${Buffer.from(

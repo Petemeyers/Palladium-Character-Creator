@@ -10,5 +10,7 @@ assert.equal(result.spent, 2);
 assert.equal(result.currentStamina, 8);
 const source = fs.readFileSync(new URL("../src/pages/CombatPage.jsx", import.meta.url), "utf8");
 assert.match(source, /calculateAttackStaminaCost\(\{/);
-assert.match(source, /spendStamina\(attackerInArray \|\| effectiveAttacker, attackStaminaCost\)/);
+assert.match(source, /spendCombatStamina\(\{/);
+assert.match(source, /allowOverexertion: true/);
+assert.match(source, /attack-stamina-spend-rejected/);
 console.log("attack stamina spending tests passed");

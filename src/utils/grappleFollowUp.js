@@ -1,4 +1,5 @@
 import { selectMeleeAttackForContext } from "./meleeEngagementContext.js";
+import { createClinchWeaponProfile } from "./combat/clinchWeaponProfiles.js";
 
 const actionCount = (actor = {}) => {
   const value = Number(actor.remainingActions ?? 0);
@@ -46,10 +47,11 @@ export function selectGrappleFollowUpWeapon(actor = {}) {
   });
   const attack = selection.attack || null;
   const usesGroundFallback = !attack || attack.isFallbackUnarmed === true;
+  const weapon = createClinchWeaponProfile(usesGroundFallback ? null : attack, actor);
   return {
     ...selection,
     attack,
-    weapon: usesGroundFallback ? null : attack,
+    weapon,
     usesGroundFallback,
   };
 }

@@ -27,6 +27,7 @@ import {
   COMBINED_MODES,
 } from "./combinedBodySystem.js";
 import { canFly, isFlying, getAltitude } from "./abilitySystem.js";
+import { normalizeCanonicalD20Roll } from "./combat/normalizeCanonicalD20Roll.js";
 
 /**
  * Grapple states
@@ -46,6 +47,7 @@ export const GRAPPLE_STATES = {
 export function initializeGrappleState(character) {
   return {
     state: GRAPPLE_STATES.NEUTRAL,
+    positionState: "neutral",
     opponent: null, // ID of opponent being grappled with
     penalties: {
       attack: 0,
@@ -70,6 +72,8 @@ export function initializeGrappleState(character) {
  * @returns {Object} Result object with success status and message
  */
 export function attemptGrapple(attacker, defender, rollDice = null, attackerPos = null, defenderPos = null) {
+  const canonicalRoller = getCanonicalGrappleRoller(rollDice, ["opposed-grapple-initiation"]);
+  if (!canonicalRoller) return blockedCanonicalGrappleDiceResult("grapple");
   if (!attacker.grappleState) {
     attacker.grappleState = initializeGrappleState(attacker);
   }
@@ -114,7 +118,7 @@ export function attemptGrapple(attacker, defender, rollDice = null, attackerPos 
   // Check for automatic grapple (if PS difference is 10+)
   if (sizeModifiers.autoGrapple) {
     // Defender can only avoid with natural 20
-    const rollFn = rollDice || (() => Math.floor(Math.random() * 20) + 1);
+    const rollFn = canonicalRoller;
     const defenderRoll = rollFn();
 
     if (defenderRoll === 20) {
@@ -168,7 +172,7 @@ export function attemptGrapple(attacker, defender, rollDice = null, attackerPos 
   }
 
   // Roll opposed attack vs block with size/strength modifiers
-  const rollFn = rollDice || (() => Math.floor(Math.random() * 20) + 1);
+  const rollFn = canonicalRoller;
   const naturalAttackRoll = rollFn();
   const naturalDefendRoll = rollFn();
   const psStepMod = Number.isFinite(sizeModifiers.psModifier)
@@ -302,6 +306,8 @@ export function attemptGrapple(attacker, defender, rollDice = null, attackerPos 
  * @returns {Object} Result object
  */
 export function maintainGrapple(attacker, defender, rollDice = null) {
+  const canonicalRoller = getCanonicalGrappleRoller(rollDice, ["opposed-grapple-maintain"]);
+  if (!canonicalRoller) return blockedCanonicalGrappleDiceResult("maintain");
   if (
     !attacker.grappleState ||
     attacker.grappleState.state === GRAPPLE_STATES.NEUTRAL
@@ -327,15 +333,15 @@ export function maintainGrapple(attacker, defender, rollDice = null) {
   const defenderPSBonus = Math.floor((defenderPS - 10) / 2);
 
   // Get leverage penalty for smaller character
-  const leverageMod = getLeveragePenalty(defender, attacker);
+  const leveragePenalty = getLeveragePenalty(defender, attacker);
 
   // Opposed strength roll with leverage modifier
-  const rollFn = rollDice || (() => Math.floor(Math.random() * 20) + 1);
+  const rollFn = canonicalRoller;
   const attackerRoll = rollFn() + attackerPSBonus;
-  const defenderRoll = rollFn() + defenderPSBonus + leverageMod.escapePenalty;
+  const defenderRoll = rollFn() + defenderPSBonus + leveragePenalty;
 
-  attacker.grappleState.roundsInGrapple += 1;
-  defender.grappleState.roundsInGrapple += 1;
+  // roundsInGrapple is advanced once per surviving melee round by the
+  // CombatPage relationship synchronizer, not once per maintain action.
 
   // Drain stamina for both (grappling costs 2x)
   drainStamina(attacker, STAMINA_COSTS.GRAPPLING, 1);
@@ -377,6 +383,8 @@ export function maintainGrapple(attacker, defender, rollDice = null) {
  * @returns {Object} Result object
  */
 export function performTakedown(attacker, defender, rollDice = null) {
+  const canonicalRoller = getCanonicalGrappleRoller(rollDice, ["grapple-takedown"]);
+  if (!canonicalRoller) return blockedCanonicalGrappleDiceResult("takedown");
   if (
     !attacker.grappleState ||
     attacker.grappleState.state !== GRAPPLE_STATES.CLINCH
@@ -417,7 +425,7 @@ export function performTakedown(attacker, defender, rollDice = null) {
   }
 
   // Roll for takedown (target 15+) with size modifiers
-  const rollFn = rollDice || (() => Math.floor(Math.random() * 20) + 1);
+  const rollFn = canonicalRoller;
   const takedownModifier =
     sizeModifiers.attackerAttackBonus ??
     sizeModifiers.attackBonus ??
@@ -449,7 +457,9 @@ export function performTakedown(attacker, defender, rollDice = null) {
   if (takedownRoll >= 15) {
     // Successful takedown
     attacker.grappleState.state = GRAPPLE_STATES.GROUND;
+    attacker.grappleState.positionState = "grounded";
     defender.grappleState.state = GRAPPLE_STATES.GRAPPLED;
+    defender.grappleState.positionState = "grounded";
 
     // Enhanced penalties for ground position
     defender.grappleState.penalties = {
@@ -553,8 +563,17 @@ export function groundAttack(
   attacker,
   defender,
   weapon = null,
-  rollDice = null
+  rollDice = null,
+  validateDamageRoll = null,
+  requiredPosition = "ground"
 ) {
+  const expectedRollKind = requiredPosition === "standing" ? "clinch-strike-attack" : "ground-attack";
+  const canonicalRoller = getCanonicalGrappleRoller(rollDice, [expectedRollKind]);
+  if (!canonicalRoller) {
+    return requiredPosition === "standing"
+      ? { ...blockedCanonicalGrappleDiceResult("clinchStrike"), reason: "clinch-strike-roll-without-canonical-execution-blocked" }
+      : blockedCanonicalGrappleDiceResult("groundAttack");
+  }
   if (!attacker || !defender) {
     return {
       success: false,
@@ -578,14 +597,15 @@ export function groundAttack(
     };
   }
 
-  if (
-    attackerGrapple.state !== GRAPPLE_STATES.CLINCH &&
-    attackerGrapple.state !== GRAPPLE_STATES.GROUND
-  ) {
+  const standingClinch = attackerGrapple.state === GRAPPLE_STATES.CLINCH && defenderGrapple.state === GRAPPLE_STATES.CLINCH;
+  const groundedGrapple = attackerGrapple.state === GRAPPLE_STATES.GROUND || defenderGrapple.state === GRAPPLE_STATES.GRAPPLED;
+  if ((requiredPosition === "standing" && !standingClinch) || (requiredPosition !== "standing" && !groundedGrapple)) {
     return {
       success: false,
       hit: false,
-      reason: `${attacker.name} must be in a clinch or on the ground with ${defender.name} to attempt a ground attack.`,
+      reason: requiredPosition === "standing"
+        ? `${attacker.name} must be in a standing clinch with ${defender.name} to attempt a clinch strike.`
+        : `${attacker.name} must have ${defender.name} grounded to attempt a ground attack.`,
     };
   }
 
@@ -618,7 +638,7 @@ export function groundAttack(
     weaponName.includes("knife") ||
     weaponName.includes("short blade");
   const daggerBonus = isCloseBlade ? 1 : 0;
-  const rollFn = rollDice || (() => Math.floor(Math.random() * 20) + 1);
+  const rollFn = canonicalRoller;
   const naturalRoll = rollFn();
 
   const attackRoll = naturalRoll + attackerPPBonus + attackBonus + daggerBonus;
@@ -667,6 +687,7 @@ export function groundAttack(
 
   // 2) Critical/high-margin close blade = "weak point in armor" attack
   if (isCritical) {
+    validateDamageRoll?.("grapple-critical-damage-roll");
     const damageRoll = rollDamage(baseDamageFormula);
     const totalDamage = damageRoll * 2 + psBonus;
     const criticalMessage = canExploitWeakSpot
@@ -692,6 +713,7 @@ export function groundAttack(
   // 3) Normal hit (armor still works normally)
   // You can later change the "12+" into your normal to-hit vs guardRating check if you want.
   if (attackRoll >= 12) {
+    validateDamageRoll?.("grapple-damage-roll");
     const damageRoll = rollDamage(baseDamageFormula);
     const totalDamage = damageRoll + psBonus;
 
@@ -733,9 +755,12 @@ export function groundAttack(
  * @returns {Object} Result object
  */
 export function breakFree(character, opponent, rollDice = null) {
+  const canonicalRoller = getCanonicalGrappleRoller(rollDice, ["break-free-opposed-roll"]);
+  if (!canonicalRoller) return blockedCanonicalGrappleDiceResult("breakFree");
   if (
     !character.grappleState ||
-    character.grappleState.state !== GRAPPLE_STATES.GRAPPLED
+    (character.grappleState.state !== GRAPPLE_STATES.GRAPPLED &&
+      !(character.grappleState.state === GRAPPLE_STATES.CLINCH && character.grappleState.isAttacker !== true))
   ) {
     return {
       success: false,
@@ -751,19 +776,60 @@ export function breakFree(character, opponent, rollDice = null) {
   }
 
   // Get Physical Strength bonuses
-  const characterPS = character.attributes?.PS || character.PS || 10;
-  const opponentPS = opponent.attributes?.PS || opponent.PS || 10;
+  const readPhysicalStrength = (fighter) => {
+    const raw = fighter?.attributes?.PS ?? fighter?.PS ?? fighter?.ps ?? 10;
+    if (typeof raw === "object" && raw !== null) {
+      const nested = raw.value ?? raw.total ?? raw.score ?? raw.base;
+      return Number.isFinite(Number(nested)) ? Number(nested) : 10;
+    }
+    return Number.isFinite(Number(raw)) ? Number(raw) : 10;
+  };
+  const characterPS = readPhysicalStrength(character);
+  const opponentPS = readPhysicalStrength(opponent);
 
   const characterPSBonus = Math.floor((characterPS - 10) / 2);
   const opponentPSBonus = Math.floor((opponentPS - 10) / 2);
 
   // Get leverage penalty for smaller character
-  const leverageMod = getLeveragePenalty(character, opponent);
+  const leveragePenalty = getLeveragePenalty(character, opponent);
 
   // Opposed strength roll with leverage modifier
-  const rollFn = rollDice || (() => Math.floor(Math.random() * 20) + 1);
-  const characterRoll = rollFn() + characterPSBonus + leverageMod.escapePenalty;
-  const opponentRoll = rollFn() + opponentPSBonus;
+  const rollFn = canonicalRoller;
+  const identity = {
+    actionType: "breakFree",
+    executionKey: rollDice?.canonicalExecutionKey || null,
+    rollKind: "break-free-opposed-roll",
+  };
+  const characterRollBreakdown = normalizeCanonicalD20Roll(rollFn(), {
+    ...identity,
+    actorId: character.id,
+    modifier: characterPSBonus + leveragePenalty,
+  });
+  if (!characterRollBreakdown.ok) {
+    return {
+      success: false,
+      invalidRoll: true,
+      rejectionReason: characterRollBreakdown.rejectionReason,
+      characterRollBreakdown,
+      opponentRollBreakdown: null,
+    };
+  }
+  const opponentRollBreakdown = normalizeCanonicalD20Roll(rollFn(), {
+    ...identity,
+    actorId: opponent.id,
+    modifier: opponentPSBonus,
+  });
+  if (!opponentRollBreakdown.ok) {
+    return {
+      success: false,
+      invalidRoll: true,
+      rejectionReason: characterRollBreakdown.rejectionReason || opponentRollBreakdown.rejectionReason,
+      characterRollBreakdown,
+      opponentRollBreakdown,
+    };
+  }
+  const characterRoll = characterRollBreakdown.total;
+  const opponentRoll = opponentRollBreakdown.total;
 
   // Drain stamina (attempting to break free costs stamina)
   drainStamina(character, STAMINA_COSTS.GRAPPLING, 1);
@@ -771,12 +837,14 @@ export function breakFree(character, opponent, rollDice = null) {
   if (characterRoll > opponentRoll) {
     // Successfully breaks free
     character.grappleState.state = GRAPPLE_STATES.NEUTRAL;
+    character.grappleState.positionState = "neutral";
     character.grappleState.opponent = null;
     character.grappleState.penalties = { attack: 0, block: 0, evade: 0 };
     character.grappleState.canUseLongWeapons = true;
     character.grappleState.roundsInGrapple = 0;
 
     opponent.grappleState.state = GRAPPLE_STATES.NEUTRAL;
+    opponent.grappleState.positionState = "neutral";
     opponent.grappleState.opponent = null;
     opponent.grappleState.roundsInGrapple = 0;
 
@@ -785,6 +853,8 @@ export function breakFree(character, opponent, rollDice = null) {
       message: `${character.name} breaks free from ${opponent.name}'s hold!`,
       characterRoll,
       opponentRoll,
+      characterRollBreakdown,
+      opponentRollBreakdown,
     };
   } else {
     return {
@@ -792,6 +862,8 @@ export function breakFree(character, opponent, rollDice = null) {
       reason: `${character.name} fails to break free (${characterRoll} vs ${opponentRoll})`,
       characterRoll,
       opponentRoll,
+      characterRollBreakdown,
+      opponentRollBreakdown,
     };
   }
 }
@@ -1141,6 +1213,7 @@ export function initiateGrapple({ attacker, defender, attackerPos = null, defend
     grappleState: {
       ...attacker.grappleState,
       state: GRAPPLE_STATES.CLINCH,
+      positionState: "standing",
       opponent: defender.id,
       sharedHex,
       attackerOriginHex,
@@ -1155,6 +1228,7 @@ export function initiateGrapple({ attacker, defender, attackerPos = null, defend
     grappleState: {
       ...defender.grappleState,
       state: GRAPPLE_STATES.CLINCH,
+      positionState: "standing",
       opponent: attacker.id,
       sharedHex,
       attackerOriginHex,
@@ -1168,6 +1242,27 @@ export function initiateGrapple({ attacker, defender, attackerPos = null, defend
     defender: updatedDefender,
     message: `${attacker.name} grabs ${defender.name} and locks into a clinch.`,
   };
+}
+
+function getCanonicalGrappleRoller(rollDice, expectedRollKinds = []) {
+  const admission = rollDice?.canonicalAdmission;
+  const rollKind = rollDice?.canonicalRollKind;
+  const valid = Boolean(
+    typeof rollDice === "function" &&
+    admission?.generationId &&
+    admission?.initiativeTurnId &&
+    admission?.actionToken &&
+    Number.isInteger(admission?.actionSequence) &&
+    admission?.actorId && admission?.opponentId && admission?.executionKey &&
+    rollDice?.canonicalActionToken === admission.actionToken &&
+    rollDice?.canonicalExecutionKey === admission.executionKey &&
+    (!expectedRollKinds.length || expectedRollKinds.includes(rollKind))
+  );
+  return valid ? rollDice : null;
+}
+
+function blockedCanonicalGrappleDiceResult(actionType) {
+  return { success: false, hit: false, blocked: true, actionType, reason: "grapple-dice-boundary-without-canonical-claim-blocked" };
 }
 
 /**

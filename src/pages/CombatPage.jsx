@@ -156,7 +156,9 @@ import {
   calculateDefenseStaminaCost,
   calculateEffectiveRoutedMovement,
   chooseAIStaminaRecovery,
+  initializeCombatStamina,
   resolveEncounterStamina,
+  spendCombatStamina as spendCanonicalCombatStamina,
   spendStamina,
 } from "../utils/combatStamina.js";
 import { applyRecoveryAction, applyStaminaRecovery, getRecoveryAmount } from "../utils/combatRecovery.js";
@@ -193,6 +195,8 @@ import {
 } from "../utils/combatAmmoManager.js";
 import { getTechniquesForLevel } from "../data/combatTechniques.js";
 import { selectAITechnique } from "../utils/ai/selectAITechnique.js";
+import { resolveArmoredCombatAction } from "../utils/ai/resolveArmoredCombatAction.js";
+import { resolveGrappleTurnAction } from "../utils/ai/resolveGrappleTurnAction.js";
 import { canTargetForAction, getFactionId, isAllyOf, isHostileTo } from "../utils/factionDisposition.js";
 import { getCombatHostilityState } from "../utils/combatHostilityState.js";
 import {
@@ -218,6 +222,52 @@ import {
   buildCriticalImpactScenario,
   getDamageSeverity,
 } from "../utils/combat/criticalImpactScenarios.js";
+import { resolveArmorContact } from "../utils/combat/armorContactResolver.js";
+import {
+  createCanonicalGrappleAdmission,
+  createCanonicalGrappleExecutionKey,
+  transitionCanonicalGrappleExecutionRecord,
+} from "../utils/combat/canonicalGrappleExecution.js";
+import {
+  auditSettledActionContinuationReceipts,
+  consumeActionContinuationReceipt,
+  createActionContinuationReceipt,
+  fireActionContinuationReceipt,
+  rejectActionContinuationReceipt,
+  validateActionContinuationAdmission,
+} from "../utils/combat/actionContinuationReceipt.js";
+import { resolveArmorImpactEffect } from "../utils/combat/armorImpactResolver.js";
+import {
+  createArmoredActionPlanRegistry,
+  markArmoredActionPlanDispatched,
+  markArmoredActionPlanTerminal,
+  registerArmoredActionPlan,
+  staleArmoredActionPlans,
+  validateArmoredActionPlanIdentity,
+} from "../utils/combat/armoredActionPlanRegistry.js";
+import {
+  getArmoredTechniqueSourceWeapon,
+  isArmoredLongswordTechnique,
+  validateArmoredTechniqueWeapon,
+} from "../utils/combat/armoredTechniqueWeaponValidation.js";
+import {
+  getArmoredTacticalMemory,
+  recordArmoredTacticalOutcome,
+} from "../utils/combat/armoredTacticalMemory.js";
+import { formatHitLocationForPlayer } from "../utils/combat/hitLocationDisplay.js";
+import {
+  isLongswordWeapon,
+  normalizeArmorProfile,
+} from "../utils/combat/weaponArmorProfiles.js";
+import { endGrappleRelationship } from "../utils/combat/grappleRelationship.js";
+import {
+  findEligibleClinchWeapon,
+  getPhase3B2GrappleActions,
+  isGroundedGrapple,
+  isStandingClinch,
+  normalizeCombatWeaponState,
+  recoverDroppedWeaponTransition,
+} from "../utils/combat/grappleWeaponTransitions.js";
 import { applyBleedingMeterForNewMeleeRound } from "../utils/combat/bleedingMeter.js";
 import {
   getCombatantGridPosition,
@@ -237,7 +287,7 @@ import {
 import {
   buildCombatLogFilename,
   buildCombatLogText,
-  formatCombatLogTimestamp,
+  formatLogTimestamp,
 } from "../utils/combat/combatLogExport.js";
 import {
   COMBAT_LOG_VISIBLE_INCREMENT,
@@ -656,6 +706,11 @@ import {
 } from "../utils/combatFatigueSystem.js";
 import { createAIActionSelector } from "../utils/combatEngine.js";
 import { runPlayerTurnAI } from "../utils/ai/playerTurnAI.js";
+import {
+  executeMissingPlayerGrappleDispatcherRecovery,
+  hasPlayerAiActionProgress,
+  normalizePlayerGrappleDispatcherContext,
+} from "../utils/ai/playerGrappleDispatcher.js";
 import { runEnemyTurnAI } from "../utils/ai/enemyTurnAI.js";
 import {
   isRoutingOrPassiveTarget,
@@ -666,11 +721,6 @@ import { runFlyingTurn, isFlyingCombatant, moveFlyingCombatant as moveFlyingComb
 import { hasAnyValidOffensiveOption } from "../utils/ai/meleeReachabilityHelpers.js";
 import {
   initializeGrappleState,
-  attemptGrapple,
-  maintainGrapple,
-  performTakedown,
-  groundAttack,
-  breakFree,
   getGrappleStatus,
   resetGrapple,
   canUseWeaponInGrapple,
@@ -708,7 +758,7 @@ import {
   handleAttackWithMovement as handleAttackWithMovementHandler,
 } from "../utils/combatActionHandlers/attackActions.js";
 import {
-  handleGrappleAction as handleGrappleActionHandler,
+  executeAdmittedGrappleResolution as executeAdmittedGrappleResolutionHandler,
 } from "../utils/combatActionHandlers/grappleActions.js";
 
 const withTimeout = (promise, ms = 4000, label = "engine") => {
@@ -2413,6 +2463,22 @@ function CombatPage({ characters = [] }) {
     return (hash32(String(seed)) % 12) + 1;
   }, [hash32]);
 
+  const rollArmoredTechniqueRng = useCallback(() => {
+    if (rngStateRef.current) {
+      const current = rngStateRef.current;
+      const seed = Number(current.seed ?? seedValue ?? 1) >>> 0;
+      const counter = Number(current.counter ?? 0) + 1;
+      const next = hash32(`armored-technique:${seed}:${counter}`) / 0x100000000;
+      rngStateRef.current = { ...current, seed, counter };
+      return next;
+    }
+    const high = CryptoSecureDice.parseAndRoll("1d1000").totalWithBonus - 1;
+    const mid = CryptoSecureDice.parseAndRoll("1d1000").totalWithBonus - 1;
+    const low = CryptoSecureDice.parseAndRoll("1d1000").totalWithBonus - 1;
+    const combined = high * 1_000_000 + mid * 1_000 + low;
+    return Math.max(0, Math.min(0.999999999, combined / 1_000_000_000));
+  }, [hash32, seedValue]);
+
   // odd-q offset neighbors (flat-top hex)
   const getNeighborOddQ = useCallback((col, row, dir) => {
     // dir: 0..5 clockwise
@@ -2790,6 +2856,7 @@ function CombatPage({ characters = [] }) {
   const [meleeRound, setMeleeRound] = useState(1); // Track combat rounds (1 minute each)
   const [turnCounter, setTurnCounter] = useState(0); // Track absolute turn number (increments every turn)
   const [combatActive, setCombatActive] = useState(false);
+  const [combatPaused, setCombatPaused] = useState(false); // Pause/resume combat flow
   useEffect(() => {
     if (!combatActive || combatPaused) {
       flushQueuedLogEntries({ immediate: true });
@@ -3119,14 +3186,62 @@ function CombatPage({ characters = [] }) {
   // Single helper so future patches don't forget to sync the ref + React state.
   const commitFighters = useCallback((nextOrUpdater) => {
     const base = fightersRef.current ?? [];
-    const next =
+    const rawNext =
       typeof nextOrUpdater === "function"
         ? nextOrUpdater(base)
         : nextOrUpdater;
+    const clampCurrent = (value) => {
+      const numeric = Number(value);
+      return Number.isFinite(numeric) && numeric < 0 ? 0 : value;
+    };
+    const next = Array.isArray(rawNext)
+      ? rawNext.map((fighter) => {
+          if (!fighter) return fighter;
+          const clamped = initializeCombatStamina({ ...fighter });
+          let changed = false;
+          for (const key of ["currentstamina", "currentStamina", "staminaCurrent"]) {
+            if (!Number.isFinite(Number(clamped[key])) || Number(clamped[key]) < 0) {
+              clamped[key] = 0;
+              changed = true;
+            }
+          }
+          if (clamped.combatStamina && (!Number.isFinite(Number(clamped.combatStamina.currentStamina)) || Number(clamped.combatStamina.currentStamina) < 0)) {
+            clamped.combatStamina = { ...clamped.combatStamina, currentStamina: 0 };
+            changed = true;
+          }
+          if (clamped.fatigueState && (!Number.isFinite(Number(clamped.fatigueState.currentStamina)) || Number(clamped.fatigueState.currentStamina) < 0)) {
+            clamped.fatigueState = { ...clamped.fatigueState, currentStamina: 0 };
+            changed = true;
+          }
+          if (clamped.derived && (!Number.isFinite(Number(clamped.derived.currentstamina)) || Number(clamped.derived.currentstamina) < 0)) {
+            clamped.derived = { ...clamped.derived, currentstamina: 0 };
+            changed = true;
+          }
+          if (!Array.isArray(clamped.training) && clamped.training && (!Number.isFinite(Number(clamped.training.currentstamina)) || Number(clamped.training.currentstamina) < 0)) {
+            clamped.training = { ...clamped.training, currentstamina: 0 };
+            changed = true;
+          }
+          if (changed) {
+            addLog?.({
+              audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+              channel: COMBAT_LOG_CHANNELS.STATE,
+              eventType: "stamina-boundary-applied",
+              level: "warning",
+              type: "warning",
+              actorId: clamped.id,
+              message: `stamina boundary applied: actor=${clamped.name || clamped.id} minimum=0`,
+              data: { actorId: clamped.id, source: "commitFighters" },
+            }, "warning");
+          }
+          clamped.currentstamina = clampCurrent(clamped.currentstamina);
+          clamped.currentStamina = clampCurrent(clamped.currentStamina);
+          return clamped;
+        })
+      : rawNext;
 
     fightersRef.current = next;
     setFighters(next);
-  }, []);
+  }, [addLog]);
 
   const recordLastMovementCommit = useCallback((fighterId, position, source = "movement") => {
     const normalizedPosition = getCombatantGridPosition(position);
@@ -3402,6 +3517,71 @@ function CombatPage({ characters = [] }) {
       (Array.isArray(fighter.statusEffects) && fighter.statusEffects.includes("ROUTED")) ||
       ["routed", "broken"].includes(bridgedFighter.state.moraleState);
     if (!routed) return false;
+    const completeMoraleAction = ({
+      actionType = "hold",
+      explicitTurnEndingEffect = false,
+      combatEnded = false,
+      fighterCapable = true,
+      resultSource = source,
+    } = {}) => {
+      const latest = (fightersRef.current ?? fighters ?? []).find((entry) => entry?.id === fighter.id) || fighter;
+      const remainingActions = Math.max(0, Number(latest?.remainingActions ?? 0) || 0);
+      initiativeActionSequenceRef.current = (Number(initiativeActionSequenceRef.current) || 0) + 1;
+      const actionToken = [
+        initiativeTurnIdRef.current || currentTurnTokenRef.current || "no-initiative-turn",
+        initiativeActionSequenceRef.current,
+      ].join(":");
+      const result = {
+        accepted: true,
+        completed: true,
+        actorId: fighter.id,
+        actionType: "grapple",
+        actionSpent: true,
+        actionsSpent: 1,
+        explicitTurnEndingEffect,
+        remainingActions,
+        fighterCapable,
+        combatEnded,
+        initiativeTurnId: initiativeTurnIdRef.current,
+        actionToken,
+        source: resultSource,
+      };
+      addLog?.({
+        audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+        channel: COMBAT_LOG_CHANNELS.TURN,
+        eventType: "initiative-action-token-created",
+        level: "info",
+        type: "debug",
+        actorId: fighter.id,
+        round: meleeRoundRef.current ?? meleeRound,
+        turn: turnCounterRef.current,
+        turnToken: currentTurnTokenRef.current,
+        source: resultSource,
+        message: `initiative action token created: actor=${fighter.name || fighter.id} actionToken=${actionToken}`,
+        data: {
+          initiativeTurnId: initiativeTurnIdRef.current,
+          actionToken,
+          actionSequence: initiativeActionSequenceRef.current,
+        },
+      }, "debug");
+      addLog?.({
+        audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+        channel: COMBAT_LOG_CHANNELS.TURN,
+        eventType: "morale-action-completed",
+        level: "info",
+        type: "debug",
+        actorId: fighter.id,
+        round: meleeRoundRef.current ?? meleeRound,
+        turn: turnCounterRef.current,
+        turnToken: currentTurnTokenRef.current,
+        source: resultSource,
+        message:
+          `morale action completed: actorId=${fighter.id} actionType=${actionType} ` +
+          `remainingActions=${remainingActions} explicitTurnEndingEffect=${explicitTurnEndingEffect}`,
+        data: result,
+      }, "debug");
+      return result;
+    };
 
     commitFighters((prev) => prev.map((candidate) => (
       candidate.id === fighter.id
@@ -3443,10 +3623,15 @@ function CombatPage({ characters = [] }) {
                   hasFled: false,
                 },
               }
-            : f
+          : f
         )
       );
-      return true;
+      return completeMoraleAction({
+        actionType: "hold",
+        explicitTurnEndingEffect: true,
+        fighterCapable: false,
+        resultSource: "routed-incapacitated",
+      });
     }
 
     if (fighter.neverFlee || isFearImmune(fighter)) {
@@ -3477,7 +3662,7 @@ function CombatPage({ characters = [] }) {
         : positionsRef.current && Object.keys(positionsRef.current).length > 0
           ? positionsRef.current
           : positions;
-    const liveFighters = allFighters || fightersRef.current || fighters;
+    let liveFighters = allFighters || fightersRef.current || fighters;
     const rallyEnemies = liveFighters.filter((candidate) => candidate?.id !== fighter.id && candidate.type !== fighter.type);
     const rallyEligibility = canAttemptRallyFromRouting({
       fighter: bridgedFighter,
@@ -3502,11 +3687,65 @@ function CombatPage({ characters = [] }) {
       )));
       if (recovery.recovered) {
         addLog(`${fighter.name} steadies enough to return to the battle.`, "info");
-        return true;
+        return completeMoraleAction({
+          actionType: "hold",
+          explicitTurnEndingEffect: false,
+          resultSource: "routed-recovery",
+        });
       }
       addLog(`${fighter.name} fails to rally and keeps routing.`, "info");
     }
     if (!settings.useMoraleRouting) return false;
+
+    const releaseActiveGrappleForMorale = (reason = "routing") => {
+      const roster = fightersRef.current ?? liveFighters ?? [];
+      const latestActor = roster.find((candidate) => candidate?.id === fighter.id) || fighter;
+      const actorGrappleState = latestActor?.grappleState || {};
+      const opponentId =
+        actorGrappleState.opponent ||
+        actorGrappleState.opponentId ||
+        latestActor?.grappledWith ||
+        null;
+      if (!opponentId) return false;
+      const opponent = roster.find((candidate) => candidate?.id === opponentId) || null;
+      const actorStateText = String(actorGrappleState.state || "").toLowerCase();
+      const opponentStateText = String(opponent?.grappleState?.state || "").toLowerCase();
+      const activeGrapple =
+        actorStateText && actorStateText !== "neutral" ||
+        (opponent?.grappleState?.opponent === latestActor.id && opponentStateText && opponentStateText !== "neutral");
+      if (!activeGrapple) return false;
+      const ended = endGrappleRelationship({
+        fighters: roster,
+        actorId: latestActor.id,
+        opponentId,
+        grappleId: actorGrappleState.grappleId || opponent?.grappleState?.grappleId,
+        reason,
+        generationId: combatSessionRef.current || "default",
+      });
+      commitFighters(ended.fighters);
+      liveFighters = fightersRef.current || ended.fighters || roster;
+      addLog?.({
+        audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+        channel: COMBAT_LOG_CHANNELS.STATE,
+        eventType: "grapple-state-ended",
+        level: "info",
+        type: "debug",
+        actorId: latestActor.id,
+        targetId: opponentId,
+        round: meleeRoundRef.current ?? meleeRound,
+        turn: turnCounterRef.current,
+        turnToken: currentTurnTokenRef.current,
+        source,
+        message:
+          `grapple state ended: grappleId=${ended.grappleId} actorId=${latestActor.id} ` +
+          `opponentId=${opponentId} reason=${reason}`,
+        data: ended,
+      }, "debug");
+      return true;
+    };
+    releaseActiveGrappleForMorale(
+      /panic/.test(String(source || "").toLowerCase()) ? "panic" : "routing",
+    );
 
     const myPos = currentPositions?.[fighter.id];
     const liveThreats = liveFighters.filter((candidate) => (
@@ -3538,20 +3777,34 @@ function CombatPage({ characters = [] }) {
                   routingSource: source,
                 },
               }
-            : f
+          : f
         )
       );
-      return true;
+      return completeMoraleAction({
+        actionType: "hold",
+        explicitTurnEndingEffect: false,
+        resultSource: "routed-no-position",
+      });
     }
 
     if (hasCrossedRoutedEscapeBoundary(myPos, ROUTED_ESCAPE_BOUNDS)) {
       markFighterFledOffMap(fighter.id, fighter.name, "routed-off-field");
-      return true;
+      return completeMoraleAction({
+        actionType: "route-move",
+        explicitTurnEndingEffect: true,
+        fighterCapable: false,
+        resultSource: "routed-off-field",
+      });
     }
 
     if (threatPositions.length === 0) {
       markFighterFledOffMap(fighter.id, fighter.name);
-      return true;
+      return completeMoraleAction({
+        actionType: "route-move",
+        explicitTurnEndingEffect: true,
+        fighterCapable: false,
+        resultSource: "rout-exit",
+      });
     }
 
     const mapBounds = ROUTED_ESCAPE_BOUNDS;
@@ -3588,7 +3841,12 @@ function CombatPage({ characters = [] }) {
       hasCrossedRoutedEscapeBoundary(myPos, ROUTED_ESCAPE_BOUNDS)
     ) {
       markFighterFledOffMap(fighter.id, fighter.name, "routed-off-field");
-      return true;
+      return completeMoraleAction({
+        actionType: "panic-move",
+        explicitTurnEndingEffect: true,
+        fighterCapable: false,
+        resultSource: "routed-off-field",
+      });
     }
 
     if (survivalIntent !== SURVIVAL_INTENTS.PANIC_FLEE_TO_EDGE) {
@@ -3750,7 +4008,11 @@ function CombatPage({ characters = [] }) {
           source: "survival-cower",
         });
       }));
-      return true;
+      return completeMoraleAction({
+        actionType: movedForSurvival ? "route-move" : "cower",
+        explicitTurnEndingEffect: false,
+        resultSource: movedForSurvival ? "route-move" : "cower",
+      });
     }
 
     const effectivePanicMovement = calculateEffectiveRoutedMovement({
@@ -3796,7 +4058,12 @@ function CombatPage({ characters = [] }) {
         addLog(`${fighter.name} is too exhausted and broken to continue fighting.`, "warning");
         addLog(`${fighter.name} is no longer an active combatant.`, "info");
       }
-      return true;
+      return completeMoraleAction({
+        actionType: "cower",
+        explicitTurnEndingEffect: terminalCower,
+        fighterCapable: !terminalCower,
+        resultSource: terminalCower ? "exhausted-cower-terminal" : "exhausted-cower",
+      });
     }
     if (effectivePanicMovement.multiplier < 1) {
       addLog(`${fighter.name} is ${effectivePanicMovement.band}; panic flight is slowed.`, "warning");
@@ -3835,7 +4102,11 @@ function CombatPage({ characters = [] }) {
             : f
         )
       );
-      return true;
+      return completeMoraleAction({
+        actionType: "cower",
+        explicitTurnEndingEffect: false,
+        resultSource: "panic-no-route-cower",
+      });
     }
 
     const routePath = Array.isArray(escapeRoute.path) && escapeRoute.path.length > 1
@@ -3902,7 +4173,12 @@ function CombatPage({ characters = [] }) {
 
     if (hasCrossedRoutedEscapeBoundary(retreat.position, ROUTED_ESCAPE_BOUNDS)) {
       markFighterFledOffMap(fighter.id, fighter.name, "routed-off-field");
-      return true;
+      return completeMoraleAction({
+        actionType: "panic-move",
+        explicitTurnEndingEffect: true,
+        fighterCapable: false,
+        resultSource: "routed-off-field",
+      });
     }
 
     const updatedPursuers = liveThreats.filter((threat) => nextPositions?.[threat.id]);
@@ -3910,7 +4186,12 @@ function CombatPage({ characters = [] }) {
 
     if (!stillPursued) {
       markFighterFledOffMap(fighter.id, fighter.name);
-      return true;
+      return completeMoraleAction({
+        actionType: "panic-move",
+        explicitTurnEndingEffect: true,
+        fighterCapable: false,
+        resultSource: "rout-exit",
+      });
     }
 
     addLog(`${fighter.name} is still being pursued!`, "warning");
@@ -3931,9 +4212,14 @@ function CombatPage({ characters = [] }) {
           : f
       )
     );
-    return true;
+    return completeMoraleAction({
+      actionType: "panic-move",
+      explicitTurnEndingEffect: false,
+      resultSource: "panic-move",
+    });
   }, [
     settings.useMoraleRouting,
+    meleeRound,
     turnCounter,
     positions,
     fighters,
@@ -4081,25 +4367,148 @@ function CombatPage({ characters = [] }) {
   const combatEndCheckRef = useRef(false); // Prevent duplicate combat end checks
   const combatOverRef = useRef(false); // AUTHORITATIVE: Combat is over (checked by all timeouts/actions)
   const combatSessionRef = useRef(0); // Bumps on combat start/reset so old async callbacks cannot re-enter.
+  const armoredTacticalMemoryRef = useRef(new Map()); // generation::attacker::defender -> armored contact adaptation.
+  const armoredTacticalMemoryGenerationRef = useRef(null);
+  const armoredActionPlanRegistryRef = useRef(createArmoredActionPlanRegistry());
   const dreadRatingMemoryRef = useRef(new Map()); // key: `${generation}:${observerId}:${sourceId}`
   const combatRosterSnapshotRef = useRef(null); // Clean pre-combat roster for reset/restart.
   const originalBattleEventLedgerRef = useRef([]);
   const originalBattleLedgerFinalizedRef = useRef(true);
   const originalBattleCombatantsBeforeRef = useRef([]);
   const currentTurnTokenRef = useRef(null); // Universal turn/action ownership token for delayed callbacks.
+  const initiativeTurnIdRef = useRef(null); // Stable identity for all actions during one fighter's initiative turn.
+  const initiativeTurnInstanceRef = useRef(0);
+  const initiativeActionSequenceRef = useRef(0);
+  const initiativeTurnLogicalRegistryRef = useRef(new Map()); // generation|round|initiativeIndex|actorId -> initiativeTurnId.
+  const initiativeTurnStartRetryTimersRef = useRef(new Map()); // initiativeTurnId -> retry timer id.
+  const manualSchedulerPausedLogTurnKeyRef = useRef(null);
   const activeGrappleActionIdRef = useRef(null); // Grapple action ownership token; stale helper continuations must match.
   const activeAttackActionIdRef = useRef(null); // Attack/multi-attack ownership token for delayed callbacks.
+  const finalizedFumbleActionIdsRef = useRef(new Set());
+  const turnEndingExhaustionRegistryRef = useRef(new Map()); // generation::initiativeTurnId::actorId -> turn-ending zero-action latch.
   const attackExecutionGateChainsRef = useRef(new Map()); // executionKey -> entry/preStamina/roll/damage/hp gate chain.
   const attackExecutionRegistryRef = useRef(new Map()); // opaque attack execution id -> metadata snapshot.
   const attackExecutionSerialRef = useRef(0);
   const attackActionGrantRegistryRef = useRef(new Map()); // grantId -> turn/action ownership metadata.
+  const grappleActionExecutionRegistryRef = useRef(new Map()); // executionKey -> grapple action ownership record.
+  const droppedBattlefieldItemsRef = useRef(new Map()); // combat-only recoverable items; permanent inventory remains unchanged.
+  const playerGrappleMissingDispatcherRecoveryRef = useRef(new Map()); // initiativeTurnId|actorId|sequence|reason -> canonical safe-pass recovery.
+  const combatActionCompletionRegistryRef = useRef(new Map()); // generation::initiativeTurnId::actionToken -> exactly-once completion.
   const staleAttackBlockFinalizerRef = useRef(null);
   const enemyContinuationRequestsRef = useRef(new Map()); // actor|turn token|remaining revision|source -> scheduled continuation.
   const enemyPendingActionContinuationRef = useRef(null); // Authoritative same-fighter AI continuation waiting to invoke startEnemyTurn.
+  const remainingActionContinuationRegistryRef = useRef(new Map()); // generation|turn token|actor|completed action|remaining -> owner.
+  const noProgressRecoveryByTurnRef = useRef(new Map());
   const staminaChargedAttackKeysRef = useRef(new Set()); // Charge stamina once per logical attack/multi-hit sequence.
   const pendingPlayerAIContinuationRef = useRef(null); // Async post-move work owns its originating player turn.
   const playerAIExecutionRef = useRef(null); // Exact player AI executor invocation currently owning the turn.
   const handlePlayerAITurnRef = useRef(null);
+
+  const getArmoredMemoryStore = useCallback(() => {
+    const generationId = combatSessionRef.current || "default";
+    if (armoredTacticalMemoryGenerationRef.current !== generationId) {
+      armoredTacticalMemoryRef.current.clear();
+      armoredTacticalMemoryGenerationRef.current = generationId;
+    }
+    return armoredTacticalMemoryRef.current;
+  }, []);
+
+  const getArmoredMemoryForCombatants = useCallback((attackerId, defenderId) => (
+    getArmoredTacticalMemory(getArmoredMemoryStore(), {
+      generationId: combatSessionRef.current || "default",
+      attackerId,
+      defenderId,
+    })
+  ), [getArmoredMemoryStore]);
+
+  const spendCombatStamina = useCallback(({
+    fighter,
+    amount,
+    reason = "unknown",
+    executionKey = null,
+    source = reason,
+    allowOverexertion = false,
+  } = {}) => {
+    const liveFighter = (fightersRef.current || []).find((candidate) => candidate.id === fighter?.id) || fighter;
+    const spendResult = spendCanonicalCombatStamina({
+      fighter: liveFighter,
+      amount,
+      reason,
+      allowOverexertion,
+    });
+    if (!spendResult.accepted && spendResult.reason === "invalid-canonical-stamina") {
+      addLog?.({
+        audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+        channel: COMBAT_LOG_CHANNELS.STATE,
+        eventType: "combat-stamina-invalid",
+        level: "error",
+        type: "error",
+        actorId: liveFighter?.id,
+        executionKey,
+        source,
+        message:
+          `combat stamina invalid: actor=${liveFighter?.name || liveFighter?.id || "unknown"} ` +
+          `max=${spendResult.maxStamina ?? "invalid"} current=${spendResult.previousStamina ?? "invalid"} ` +
+          `requested=${spendResult.requestedSpend ?? "invalid"} source=${source}`,
+        data: {
+          actorId: liveFighter?.id,
+          maxStamina: Number.isFinite(spendResult.maxStamina) ? spendResult.maxStamina : { invalid: spendResult.maxStamina },
+          currentStamina: Number.isFinite(spendResult.previousStamina) ? spendResult.previousStamina : { invalid: spendResult.previousStamina },
+          requestedSpend: Number.isFinite(spendResult.requestedSpend) ? spendResult.requestedSpend : { invalid: spendResult.requestedSpend },
+          reason: spendResult.reason,
+        },
+      }, "error");
+      return spendResult;
+    }
+    const requestedSpend = spendResult.requestedSpend ?? 0;
+    const appliedSpend = spendResult.appliedSpend ?? 0;
+    const nextStamina = spendResult.nextStamina ?? spendResult.currentStamina ?? 0;
+    const previousStamina = spendResult.previousStamina ?? nextStamina;
+    const maxStamina = spendResult.maxStamina ?? previousStamina;
+    const insufficientStamina = Boolean(spendResult.insufficientStamina);
+    addLog?.({
+      audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+      channel: COMBAT_LOG_CHANNELS.STATE,
+      eventType: "stamina-spend-resolved",
+      level: insufficientStamina ? "warning" : "info",
+      type: insufficientStamina ? "warning" : "debug",
+      actorId: liveFighter?.id,
+      executionKey,
+      source,
+      message:
+        `stamina spend resolved: actor=${liveFighter?.name || liveFighter?.id || "unknown"} previous=${previousStamina} ` +
+        `requested=${requestedSpend} applied=${appliedSpend} next=${nextStamina} insufficient=${insufficientStamina}`,
+      data: spendResult,
+    }, insufficientStamina ? "warning" : "debug");
+    addLog?.({
+      audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+      channel: COMBAT_LOG_CHANNELS.STATE,
+      eventType: "combat-stamina-ledger",
+      level: "info",
+      type: "debug",
+      actorId: liveFighter?.id,
+      executionKey,
+      source,
+      message:
+        `combat stamina ledger: actor=${liveFighter?.name || liveFighter?.id || "unknown"} ` +
+        `starting=${previousStamina} attackSpent=${reason === "attack" ? appliedSpend : 0} ` +
+        `otherSpent=${reason === "attack" ? 0 : appliedSpend} recovered=0 ending=${nextStamina} differenceCheck=${Math.max(0, previousStamina - appliedSpend) === nextStamina}`,
+      data: {
+        actorId: liveFighter?.id,
+        starting: previousStamina,
+        movementSpent: reason === "movement" ? appliedSpend : 0,
+        attackSpent: reason === "attack" ? appliedSpend : 0,
+        grappleSpent: reason === "grapple" ? appliedSpend : 0,
+        otherSpent: !["movement", "attack", "grapple"].includes(reason) ? appliedSpend : 0,
+        recovered: 0,
+        ending: nextStamina,
+        maxStamina,
+        overexertionActions: spendResult.overexertionActions || 0,
+        differenceCheck: Math.max(0, previousStamina - appliedSpend) === nextStamina,
+      },
+    }, "debug");
+    return spendResult;
+  }, [addLog]);
 
   useEffect(() => {
     if (combatActive || originalBattleLedgerFinalizedRef.current) return;
@@ -4208,6 +4617,7 @@ function CombatPage({ characters = [] }) {
   // Ref for endTurn to avoid initialization order issues
   const endTurnRef = useRef(null);
   const scheduleEndTurnRef = useRef(null);
+  const resolveCombatActionCompletionRef = useRef(null);
   // Ref for setLocksByEid to avoid initialization order issues
   const setLocksByEidRef = useRef(null);
 
@@ -5085,9 +5495,55 @@ function CombatPage({ characters = [] }) {
     handleEngineEventRef.current = handleEngineEvent;
   }, [handleEngineEvent]);
 
+  const handleEngineEventBatch = useCallback((events = [], metadata = {}) => {
+    if (!Array.isArray(events) || events.length === 0) return;
+
+    let pendingPositions = null;
+    const flushPositions = () => {
+      if (!pendingPositions) return;
+      const positionPatch = pendingPositions;
+      pendingPositions = null;
+      setPositions((prev) => ({
+        ...prev,
+        ...positionPatch,
+      }));
+    };
+
+    for (const event of events) {
+      if (!event) continue;
+      if (event.type === "HEX_MOVED" || event.type === "MOVED" || event.type === "HEX_MOVED_STEP") {
+        const { eid, to } = event;
+        if (eid && to) {
+          pendingPositions = {
+            ...(pendingPositions || {}),
+            [eid]: { x: to.x, y: to.y },
+          };
+          continue;
+        }
+      }
+      if (event.type === "HEX_PATH_MOVED") {
+        const { eid, path, to } = event;
+        const end = to || (path && path[path.length - 1]);
+        if (eid && end) {
+          pendingPositions = {
+            ...(pendingPositions || {}),
+            [eid]: { x: end.x, y: end.y },
+          };
+          continue;
+        }
+      }
+
+      flushPositions();
+      handleEngineEventRef.current?.(event, metadata);
+    }
+
+    flushPositions();
+  }, [setPositions]);
+
   // Clock player for scheduled events (replaces setTimeout approach)
   const clock = useClockPlayer({
     onEvent: handleEngineEvent,
+    onEventBatch: handleEngineEventBatch,
     replaceMode: false, // recommended once you have projectiles (allows concurrent schedules)
     engineCall,
     onCancelSchedule: useCallback((id, meta, reason) => {
@@ -5120,6 +5576,16 @@ function CombatPage({ characters = [] }) {
 
   const clockRef = useRef(null);
   useEffect(() => { clockRef.current = clock; }, [clock]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    window.__combatTimelinePerformance = () => clockRef.current?.getPerformanceSummary?.() ?? "";
+    return () => {
+      if (window.__combatTimelinePerformance) {
+        delete window.__combatTimelinePerformance;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -5470,6 +5936,7 @@ function CombatPage({ characters = [] }) {
     clearPlayerAIExecution();
     lastTurnSchedulerClassificationKeyRef.current = null;
     manualPlayerWaitTurnKeyRef.current = null;
+    manualSchedulerPausedLogTurnKeyRef.current = null;
     if (aiImprovisedAmmoRef.current?.clear) aiImprovisedAmmoRef.current.clear();
     if (aiUnreachableTurnsRef.current?.clear) aiUnreachableTurnsRef.current.clear();
     aiUnreachableTargetsRef.current = {};
@@ -5487,9 +5954,24 @@ function CombatPage({ characters = [] }) {
     currentTurnTokenRef.current = null;
     activeGrappleActionIdRef.current = null;
     activeAttackActionIdRef.current = null;
+    initiativeTurnIdRef.current = null;
+    initiativeTurnInstanceRef.current = 0;
+    initiativeActionSequenceRef.current = 0;
+    initiativeTurnLogicalRegistryRef.current.clear();
+    for (const timerId of initiativeTurnStartRetryTimersRef.current.values()) {
+      clearTimeout(timerId);
+    }
+    initiativeTurnStartRetryTimersRef.current.clear();
+    finalizedFumbleActionIdsRef.current = new Set();
+    turnEndingExhaustionRegistryRef.current.clear();
+    armoredActionPlanRegistryRef.current = createArmoredActionPlanRegistry();
     attackExecutionGateChainsRef.current.clear();
     attackExecutionRegistryRef.current.clear();
     attackActionGrantRegistryRef.current.clear();
+    grappleActionExecutionRegistryRef.current.clear();
+    droppedBattlefieldItemsRef.current.clear();
+    playerGrappleMissingDispatcherRecoveryRef.current.clear();
+    combatActionCompletionRegistryRef.current.clear();
     techniqueImpactTurnEndHandledRef.current = null;
     lastTechniqueMemoryRef.current = {};
     noActionsPassLogRef.current = new Set();
@@ -5510,8 +5992,87 @@ function CombatPage({ characters = [] }) {
     );
   }
 
+  function cancelCombatOwnedContinuations({
+    reason = "combat-end",
+    combatGenerationId = combatSessionRef.current || "default",
+    actorId = null,
+    targetId = null,
+    source = "cancel-combat-owned-continuations",
+  } = {}) {
+    const remainingContinuationsCanceled = remainingActionContinuationRegistryRef.current?.size || 0;
+    remainingActionContinuationRegistryRef.current?.clear?.();
+    for (const timer of initiativeTurnStartRetryTimersRef.current?.values?.() || []) {
+      clearTimeout(timer);
+    }
+    const retryTimersCanceled = initiativeTurnStartRetryTimersRef.current?.size || 0;
+    initiativeTurnStartRetryTimersRef.current?.clear?.();
+    const staledPlans = staleArmoredActionPlans(
+      armoredActionPlanRegistryRef.current,
+      () => true,
+      { reason, source },
+    );
+    let grappleCallbacks = 0;
+    for (const [key, record] of grappleActionExecutionRegistryRef.current.entries()) {
+      if (record?.state === "completed" || record?.state === "canceled" || record?.state === "stale" || record?.state === "rejected") continue;
+      grappleActionExecutionRegistryRef.current.set(key, {
+        ...record,
+        state: "stale",
+        staleReason: reason,
+        staledAt: Date.now(),
+      });
+      grappleCallbacks += 1;
+    }
+    const aiTimers = 0;
+    const totalCanceled = remainingContinuationsCanceled + retryTimersCanceled + staledPlans.length + grappleCallbacks + aiTimers;
+    if (totalCanceled) {
+      addLog?.({
+        audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+        channel: COMBAT_LOG_CHANNELS.TURN,
+        eventType: "combat-owned-continuations-canceled",
+        level: "info",
+        type: "debug",
+        round: meleeRoundRef.current,
+        turn: turnCounterRef.current,
+        turnToken: currentTurnTokenRef.current,
+        source,
+        message:
+          `combat-owned-continuations-canceled: reason=${reason} generation=${combatGenerationId} ` +
+          `remaining=${remainingContinuationsCanceled} grappleCallbacks=${grappleCallbacks} ` +
+          `retryTimers=${retryTimersCanceled} aiTimers=${aiTimers} plans=${staledPlans.length} total=${totalCanceled}`,
+        data: {
+          reason,
+          combatGenerationId,
+          actorId,
+          targetId,
+          remainingActionContinuations: remainingContinuationsCanceled,
+          grappleCallbacks,
+          retryTimersCanceled,
+          retryTimers: retryTimersCanceled,
+          aiTimers,
+          staledPlans: staledPlans.length,
+          totalCanceled,
+        },
+      }, "debug");
+    }
+    return {
+      remainingContinuationsCanceled,
+      remainingActionContinuations: remainingContinuationsCanceled,
+      grappleCallbacks,
+      retryTimersCanceled,
+      retryTimers: retryTimersCanceled,
+      aiTimers,
+      staledPlans: staledPlans.length,
+      totalCanceled,
+    };
+  }
+
   /** Clear turn/action flow latches and timers so reset/combat-end does not inherit stale state. */
-  function clearCombatFlowLocks() {
+  function clearCombatFlowLocks(reason = "combat-end", source = "clear-combat-flow-locks") {
+    cancelCombatOwnedContinuations({
+      reason,
+      combatGenerationId: combatSessionRef.current || "default",
+      source,
+    });
     techniqueScheduleAuthorizedRef.current = false;
     playerTechniqueInFlightKeyRef.current = null;
     currentTurnTokenRef.current = null;
@@ -5520,6 +6081,10 @@ function CombatPage({ characters = [] }) {
     attackExecutionGateChainsRef.current.clear();
     attackExecutionRegistryRef.current.clear();
     attackActionGrantRegistryRef.current.clear();
+    grappleActionExecutionRegistryRef.current.clear();
+    droppedBattlefieldItemsRef.current.clear();
+    combatActionCompletionRegistryRef.current.clear();
+    turnEndingExhaustionRegistryRef.current.clear();
     staleAttackBlockFinalizerRef.current = null;
     turnActionResolvingRef.current = false;
     pendingTurnAdvanceRef.current = false;
@@ -7100,7 +7665,6 @@ function CombatPage({ characters = [] }) {
   const [visibleCells, setVisibleCells] = useState([]); // Fog of war: visible cell positions
   const [exploredCells, setExploredCells] = useState([]); // Fog of war: explored (memory) cell positions
   const [fogEnabled, setFogEnabled] = useState(false); // Enable/disable fog of war
-  const [combatPaused, setCombatPaused] = useState(false); // Pause/resume combat flow
   // Awareness states are now tracked internally by aiVisibilityFilter.js using Map
   // No need for separate state - awareness is managed automatically
   const currentMapType = useMemo(() => {
@@ -9006,6 +9570,54 @@ function CombatPage({ characters = [] }) {
     if (combatEndCheckRef.current || combatOverRef.current) return true;
 
     const combatVictoryState = getCombatVictoryState(fighterList);
+    const combatWillEnd =
+      combatVictoryState.bothSidesBroken ||
+      combatVictoryState.partyDefeated ||
+      combatVictoryState.partyVictorious ||
+      combatVictoryState.noHostileSidesRemaining;
+    if (combatWillEnd) {
+      const roster = Array.isArray(fighterList) ? fighterList : (fightersRef.current ?? []);
+      const grappledActor = roster.find((fighter) => {
+        const opponentId = fighter?.grappleState?.opponent || fighter?.grappleState?.opponentId;
+        return opponentId && String(fighter?.grappleState?.state || "").toLowerCase() !== "neutral";
+      });
+      const opponentId = grappledActor?.grappleState?.opponent || grappledActor?.grappleState?.opponentId;
+      if (grappledActor && opponentId) {
+        const ended = endGrappleRelationship({
+          fighters: roster,
+          actorId: grappledActor.id,
+          opponentId,
+          grappleId: grappledActor.grappleState?.grappleId,
+          reason: "combat-end",
+          generationId: combatSessionRef.current || "default",
+        });
+        fightersRef.current = ended.fighters;
+        setFighters(ended.fighters);
+        addLog?.({
+          audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+          channel: COMBAT_LOG_CHANNELS.STATE,
+          eventType: "grapple-state-ended",
+          level: "info",
+          type: "debug",
+          actorId: grappledActor.id,
+          targetId: opponentId,
+          source: "post-hp-combat-end",
+          message: `grapple state ended: actorId=${grappledActor.id} opponentId=${opponentId} reason=combat-end`,
+          data: ended,
+        }, "debug");
+        addLog?.({
+          audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+          channel: COMBAT_LOG_CHANNELS.VALIDATION,
+          eventType: "combat-end-grapple-cleanup-validated",
+          level: "info",
+          type: "debug",
+          actorId: grappledActor.id,
+          targetId: opponentId,
+          source: "post-hp-combat-end",
+          message: `combat end grapple cleanup validated: actorId=${grappledActor.id} opponentId=${opponentId}`,
+        }, "debug");
+      }
+    }
     if (combatVictoryState.bothSidesBroken) {
       combatEndCheckRef.current = true;
       combatOverRef.current = true;
@@ -9944,53 +10556,24 @@ function CombatPage({ characters = [] }) {
     // If both are neutral, can attempt grapple
     if (grappleStatus.state === GRAPPLE_STATES.NEUTRAL && targetGrappleStatus.state === GRAPPLE_STATES.NEUTRAL) {
       actions.push({ value: 'grapple', label: 'Attempt Grapple' });
+      const fighterHex = positionsRef.current?.[fighter.id] || fighter.hex || fighter.position;
+      const recoverable = Array.from(droppedBattlefieldItemsRef.current.values()).find((item) =>
+        item?.recoverable && fighterHex && Number(item.currentHex?.x) === Number(fighterHex.x) && Number(item.currentHex?.y) === Number(fighterHex.y));
+      if (recoverable) actions.push({ value: 'pickUpDroppedWeapon', label: `Recover ${recoverable.itemSnapshot?.name || 'Dropped Weapon'}`, droppedItemId: recoverable.droppedItemId });
       return actions;
     }
 
-    // Check if in a clinch
-    const inClinch = grappleStatus.state === GRAPPLE_STATES.CLINCH &&
-      targetGrappleStatus.state === GRAPPLE_STATES.CLINCH &&
-      grappleStatus.opponent === target.id &&
-      targetGrappleStatus.opponent === fighter.id;
-
-    if (inClinch) {
-      // Check who is the grappler (isAttacker)
-      const fighterGrappleState = fighter.grappleState || {};
-      const isGrappler = fighterGrappleState.isAttacker === true;
-
-      if (isGrappler) {
-        // Grappler actions
-        actions.push({ value: 'takedown', label: 'Takedown/Trip' });
-        actions.push({ value: 'groundAttack', label: 'Ground Attack' });
-        actions.push({ value: 'grapplerPushOff', label: 'Push Off (Break)' });
-      } else {
-        // Defender actions
-        actions.push({ value: 'defenderPushBreak', label: 'Push Break' });
-        actions.push({ value: 'defenderReversal', label: 'Reversal (Take Control)' });
-        actions.push({ value: 'breakFree', label: 'Break Free' });
-      }
-    }
-
-    // If fighter is grappling on ground
-    if (grappleStatus.state === GRAPPLE_STATES.GROUND) {
-      actions.push({ value: 'maintain', label: 'Maintain Grapple' });
-      actions.push({ value: 'groundAttack', label: 'Ground Attack' });
-    }
-
-    // If fighter is pinned
-    if (grappleStatus.state === GRAPPLE_STATES.GRAPPLED) {
-      if (!inClinch) {
-        actions.push({ value: 'breakFree', label: 'Break Free' });
-        actions.push({ value: 'groundAttack', label: 'Ground Attack' });
-      }
-    }
-
-    // If target is pinned
-    if (targetGrappleStatus.state === GRAPPLE_STATES.GRAPPLED) {
-      if (!actions.find(a => a.value === 'groundAttack')) {
-        actions.push({ value: 'groundAttack', label: 'Ground Attack' });
-      }
-    }
+    const labels = {
+      breakFree: "Break Free",
+      reverseControl: "Reverse Control",
+      improveControl: "Improve Control",
+      drawClinchDagger: "Draw Clinch Dagger",
+      clinchStrike: "Clinch Strike",
+      takedown: "Takedown/Trip",
+      releaseGrapple: "Release Grapple",
+      groundAttack: "Ground Attack",
+    };
+    getPhase3B2GrappleActions(fighter, target).forEach((value) => actions.push({ value, label: labels[value] || value }));
 
     return actions;
   }, []);
@@ -10769,6 +11352,366 @@ function CombatPage({ characters = [] }) {
     return true;
   }, [addLog, isLiveAction]);
 
+  const makeLogicalInitiativeTurnKey = useCallback((fighter, index) => ([
+    combatSessionRef.current || "default",
+    meleeRoundRef.current ?? meleeRound,
+    index ?? turnIndexRef.current ?? "?",
+    fighter?.id ?? "?",
+  ].join("|")), [meleeRound]);
+
+  const logInitiativeTurnStateTransition = useCallback((record, from, to, source) => {
+    addLog?.({
+      audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+      channel: COMBAT_LOG_CHANNELS.TURN,
+      eventType: "initiative-turn-state-transition",
+      level: "info",
+      type: "debug",
+      actorId: record?.actorId,
+      round: record?.round,
+      turn: turnCounterRef.current,
+      turnToken: currentTurnTokenRef.current,
+      source,
+      message:
+        `initiative turn state transition: initiativeTurnId=${record?.initiativeTurnId || "none"} ` +
+        `from=${from || "none"} to=${to || "none"} source=${source}`,
+      data: { ...record, from, to, source },
+    }, "debug");
+  }, [addLog]);
+
+  const transitionLogicalInitiativeTurn = useCallback((initiativeTurnId, to, source = "turn-state", meta = {}) => {
+    if (!initiativeTurnId) return null;
+    for (const [logicalTurnKey, record] of initiativeTurnLogicalRegistryRef.current.entries()) {
+      if (record?.initiativeTurnId !== initiativeTurnId) continue;
+      const from = record.state || "pending-start";
+      const next = {
+        ...record,
+        ...meta,
+        state: to,
+        lastTransitionSource: source,
+        ...(to === "waiting-manual" ? {
+          executionOwner: meta.executionOwner || "manual-player",
+          executionStarted: false,
+          executionStartedAt: null,
+        } : {}),
+        ...(to === "active" ? {
+          startedAt: record.startedAt || Date.now(),
+          executionStarted: meta.executionStarted ?? true,
+          executionStartedAt: meta.executionStartedAt || Date.now(),
+        } : {}),
+        ...(to === "completed" ? { completedAt: Date.now() } : {}),
+        ...(to === "canceled" ? { canceledAt: Date.now() } : {}),
+      };
+      initiativeTurnLogicalRegistryRef.current.set(logicalTurnKey, next);
+      logInitiativeTurnStateTransition(next, from, to, source);
+      return next;
+    }
+    return null;
+  }, [logInitiativeTurnStateTransition]);
+
+  const ensureLogicalInitiativeTurn = useCallback((fighter, index, source = "turn-start") => {
+    const logicalTurnKey = makeLogicalInitiativeTurnKey(fighter, index);
+    const existing = initiativeTurnLogicalRegistryRef.current.get(logicalTurnKey);
+    const generationId = combatSessionRef.current || "default";
+    const round = meleeRoundRef.current ?? meleeRound;
+    if (existing?.initiativeTurnId) {
+      const state = existing.state || "pending-start";
+      if (state === "pending-start" || state === "starting") {
+        addLog?.({
+          audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+          channel: COMBAT_LOG_CHANNELS.TURN,
+          eventType: "initiative-turn-existing-pending",
+          level: "info",
+          type: "debug",
+          actorId: fighter?.id,
+          round,
+          turn: turnCounterRef.current,
+          source,
+          message:
+            `initiative turn existing pending: actor=${fighter?.name || fighter?.id} ` +
+            `initiativeTurnId=${existing.initiativeTurnId} state=${state}`,
+          data: { ...existing, logicalTurnKey, disposition: "existing-pending" },
+        }, "debug");
+        return {
+          accepted: true,
+          disposition: "existing-pending",
+          initiativeTurnId: existing.initiativeTurnId,
+          logicalTurnKey,
+          state,
+          shouldStart: true,
+          record: existing,
+        };
+      }
+      if (state === "waiting-manual") {
+        return {
+          accepted: true,
+          disposition: "existing-manual-wait",
+          initiativeTurnId: existing.initiativeTurnId,
+          logicalTurnKey,
+          state,
+          shouldStart: false,
+          takeoverAllowed: true,
+          record: existing,
+        };
+      }
+      if (state === "active") {
+        const continuationOwnsTurn = Array.from(remainingActionContinuationRegistryRef.current.values()).some((entry) => (
+          entry?.initiativeTurnId === existing.initiativeTurnId &&
+          entry?.actorId === fighter?.id &&
+          (entry?.pending === true || entry?.consumedForEntry === true || entry?.state === "pending" || entry?.state === "consumed-for-entry")
+        ));
+        if (!continuationOwnsTurn) {
+          return {
+            accepted: true,
+            disposition: "existing-active-execution",
+            initiativeTurnId: existing.initiativeTurnId,
+            logicalTurnKey,
+            state,
+            shouldStart: false,
+            takeoverAllowed: false,
+            record: existing,
+          };
+        }
+        return {
+          accepted: true,
+          disposition: "existing-active-continuation",
+          initiativeTurnId: existing.initiativeTurnId,
+          logicalTurnKey,
+          state,
+          shouldStart: false,
+          record: existing,
+        };
+      }
+      addLog?.({
+        audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+        channel: COMBAT_LOG_CHANNELS.TURN,
+        eventType: "initiative-turn-creation-rejected",
+        level: "warning",
+        type: "warning",
+        actorId: fighter?.id,
+        round,
+        turn: turnCounterRef.current,
+        source,
+        message:
+          `initiative turn creation rejected: actor=${fighter?.name || fighter?.id} ` +
+          `reason=${state === "completed" || state === "canceled" ? "stale-or-completed" : "invalid-logical-turn-state"} ` +
+          `initiativeTurnId=${existing.initiativeTurnId}`,
+        data: {
+          reason: state === "completed" || state === "canceled" ? "stale-or-completed" : "invalid-logical-turn-state",
+          logicalTurnKey,
+          initiativeTurnId: existing.initiativeTurnId,
+          state,
+        },
+      }, "warning");
+      return {
+        accepted: false,
+        disposition: "rejected-stale-or-completed",
+        reason: state,
+        logicalTurnKey,
+        initiativeTurnId: existing.initiativeTurnId,
+        state,
+      };
+    }
+
+    initiativeTurnInstanceRef.current += 1;
+    initiativeActionSequenceRef.current = 0;
+    const initiativeTurnId = [
+      generationId,
+      round,
+      index,
+      fighter.id,
+      initiativeTurnInstanceRef.current,
+    ].join(":");
+    const record = {
+      logicalTurnKey,
+      initiativeTurnId,
+      generationId,
+      round,
+      initiativeIndex: index,
+      actorId: fighter.id,
+      turnInstance: initiativeTurnInstanceRef.current,
+      state: "pending-start",
+      executionOwner: null,
+      executionStarted: false,
+      executionStartedAt: null,
+      createdAt: Date.now(),
+      startAttempts: 0,
+      startedAt: null,
+      completedAt: null,
+      lastStartBlockReason: null,
+      source,
+    };
+    initiativeTurnLogicalRegistryRef.current.set(logicalTurnKey, record);
+    initiativeTurnIdRef.current = initiativeTurnId;
+    addLog?.({
+      audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+      channel: COMBAT_LOG_CHANNELS.TURN,
+      eventType: "initiative-turn-created",
+      level: "info",
+      type: "debug",
+      actorId: fighter.id,
+      round,
+      turn: turnCounterRef.current,
+      turnToken: currentTurnTokenRef.current,
+      source,
+      message: `initiative turn created: actor=${fighter.name || fighter.id} initiativeTurnId=${initiativeTurnId}`,
+      data: record,
+    }, "debug");
+    return {
+      accepted: true,
+      disposition: "created-pending",
+      initiativeTurnId,
+      logicalTurnKey,
+      state: "pending-start",
+      shouldStart: true,
+      record,
+    };
+  }, [addLog, makeLogicalInitiativeTurnKey, meleeRound]);
+
+  const recordPendingTurnStartDeferred = useCallback(({ record, reason, source }) => {
+    if (!record?.initiativeTurnId) return;
+    const logicalTurnKey = record.logicalTurnKey;
+    const existing = initiativeTurnLogicalRegistryRef.current.get(logicalTurnKey) || record;
+    const next = {
+      ...existing,
+      state: "pending-start",
+      lastStartBlockReason: reason,
+      startAttempts: Number(existing.startAttempts ?? 0) + 1,
+    };
+    initiativeTurnLogicalRegistryRef.current.set(logicalTurnKey, next);
+    addLog?.({
+      audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+      channel: COMBAT_LOG_CHANNELS.TURN,
+      eventType: "initiative-turn-start-deferred",
+      level: "info",
+      type: "debug",
+      actorId: next.actorId,
+      round: next.round,
+      turn: turnCounterRef.current,
+      turnToken: currentTurnTokenRef.current,
+      source,
+      message:
+        `initiative turn start deferred: actorId=${next.actorId} initiativeTurnId=${next.initiativeTurnId} ` +
+        `reason=${reason} retryScheduled=true`,
+      data: { ...next, reason, retryScheduled: true },
+    }, "debug");
+  }, [addLog]);
+
+  const startPendingInitiativeTurn = useCallback(({
+    initiativeTurnId,
+    logicalTurnKey,
+    fighter,
+    index,
+    requestedSource = "turn-start",
+  }) => {
+    const record = initiativeTurnLogicalRegistryRef.current.get(logicalTurnKey);
+    const activeFighter = fightersRef.current?.[turnIndexRef.current];
+    const currentGenerationId = combatSessionRef.current || "default";
+    const currentRound = meleeRoundRef.current ?? meleeRound;
+    const reject = (reason) => {
+      addLog?.({
+        audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+        channel: COMBAT_LOG_CHANNELS.TURN,
+        eventType: "initiative-turn-creation-rejected",
+        level: "warning",
+        type: "warning",
+        actorId: fighter?.id,
+        round: currentRound,
+        turn: turnCounterRef.current,
+        source: requestedSource,
+        message:
+          `initiative turn start rejected: actor=${fighter?.name || fighter?.id || "unknown"} ` +
+          `reason=${reason} initiativeTurnId=${initiativeTurnId || "none"}`,
+        data: {
+          reason,
+          logicalTurnKey,
+          initiativeTurnId,
+          state: record?.state,
+          actorId: fighter?.id,
+          activeActorId: activeFighter?.id,
+          currentGenerationId,
+          currentRound,
+          currentIndex: turnIndexRef.current,
+          requestedIndex: index,
+        },
+      }, "warning");
+      return { accepted: false, disposition: "rejected-stale-or-completed", reason, record };
+    };
+
+    if (!record || record.initiativeTurnId !== initiativeTurnId) {
+      return reject("missing-pending-turn");
+    }
+    if (record.generationId !== currentGenerationId) {
+      return reject("generation-mismatch");
+    }
+    if (record.round !== currentRound) {
+      return reject("round-mismatch");
+    }
+    if (record.initiativeIndex !== index || turnIndexRef.current !== index) {
+      return reject("initiative-index-mismatch");
+    }
+    if (record.actorId !== fighter?.id || activeFighter?.id !== fighter?.id) {
+      return reject("active-fighter-mismatch");
+    }
+    if (!combatActiveRef.current || combatOverRef.current || combatEndCheckRef.current) {
+      return reject("combat-inactive");
+    }
+    if (record.state !== "pending-start" && record.state !== "starting") {
+      return reject(record.state === "completed" || record.state === "canceled"
+        ? "stale-or-completed"
+        : "invalid-logical-turn-state");
+    }
+
+    const startingRecord = transitionLogicalInitiativeTurn(initiativeTurnId, "starting", requestedSource);
+    return {
+      accepted: true,
+      disposition: "started-pending",
+      initiativeTurnId,
+      logicalTurnKey,
+      state: "starting",
+      record: startingRecord || record,
+    };
+  }, [addLog, meleeRound, transitionLogicalInitiativeTurn]);
+
+  const markLogicalTurnWaitingManual = useCallback((fighter, index, source = "manual-player-wait") => {
+    if (!fighter?.id) return null;
+    const logicalTurnKey = makeLogicalInitiativeTurnKey(fighter, index);
+    const record = initiativeTurnLogicalRegistryRef.current.get(logicalTurnKey);
+    if (!record?.initiativeTurnId) return null;
+    const next = transitionLogicalInitiativeTurn(record.initiativeTurnId, "waiting-manual", source, {
+      executionOwner: "manual-player",
+      executionStarted: false,
+      executionStartedAt: null,
+      waitingManualStartedAt: Date.now(),
+    });
+    const turnKey = makeTurnStartKey(fighter, index, turnCounterRef.current);
+    if (manualSchedulerPausedLogTurnKeyRef.current !== turnKey) {
+      manualSchedulerPausedLogTurnKeyRef.current = turnKey;
+      addLog?.({
+        audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+        channel: COMBAT_LOG_CHANNELS.TURN,
+        eventType: "turn-scheduler-paused-for-manual-control",
+        level: "info",
+        type: "debug",
+        actorId: fighter.id,
+        round: meleeRoundRef.current ?? meleeRound,
+        turn: turnCounterRef.current,
+        turnToken: currentTurnTokenRef.current,
+        source,
+        message:
+          `turn scheduler paused for manual control: actorId=${fighter.id} ` +
+          `initiativeTurnId=${record.initiativeTurnId} turnKey=${turnKey}`,
+        data: {
+          initiativeTurnId: record.initiativeTurnId,
+          logicalTurnKey,
+          turnKey,
+          executionOwner: "manual-player",
+          executionStarted: false,
+        },
+      }, "debug");
+    }
+    return next || record;
+  }, [addLog, makeLogicalInitiativeTurnKey, makeTurnStartKey, meleeRound, transitionLogicalInitiativeTurn]);
+
   const startTurnOnce = useCallback((fighter, index, reason) => {
     if (!fighter) return false;
 
@@ -10805,6 +11748,106 @@ function CombatPage({ characters = [] }) {
       "debug"
     );
 
+    const existingLogicalTurnKey = makeLogicalInitiativeTurnKey(liveScheduledFighter, index);
+    const existingLogicalTurn = initiativeTurnLogicalRegistryRef.current.get(existingLogicalTurnKey);
+    const continuationOwnedState = ["continuation-pending", "fired-awaiting-admission", "sequence-two-active"].includes(existingLogicalTurn?.state) ||
+      ["continuation-pending", "fired-awaiting-admission", "sequence-two-active"].includes(existingLogicalTurn?.continuationPhase);
+    if (continuationOwnedState) {
+      addLog?.({
+        audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+        channel: COMBAT_LOG_CHANNELS.TURN,
+        eventType: "turn-start-suppressed",
+        level: "info",
+        type: "debug",
+        actorId: liveScheduledFighter.id,
+        source: reason,
+        message: `turn start suppressed: actorId=${liveScheduledFighter.id} reason=continuation-owned state=${existingLogicalTurn.state} phase=${existingLogicalTurn.continuationPhase || "none"}`,
+        data: { reason: "continuation-owned", logicalTurnKey: existingLogicalTurnKey, initiativeTurnId: existingLogicalTurn.initiativeTurnId, state: existingLogicalTurn.state, continuationPhase: existingLogicalTurn.continuationPhase || null },
+      }, "debug");
+      return false;
+    }
+
+    const logicalTurn = ensureLogicalInitiativeTurn(liveScheduledFighter, index, reason);
+    if (!logicalTurn.accepted) {
+      return false;
+    }
+    initiativeTurnIdRef.current = logicalTurn.initiativeTurnId;
+    const schedulePendingStartRetry = (blockReason = "previous-turn-busy") => {
+      recordPendingTurnStartDeferred({ record: logicalTurn.record, reason: blockReason, source: reason });
+      if (initiativeTurnStartRetryTimersRef.current.has(logicalTurn.initiativeTurnId)) return false;
+      const retryTimer = setTimeout(() => {
+        initiativeTurnStartRetryTimersRef.current.delete(logicalTurn.initiativeTurnId);
+        const record = initiativeTurnLogicalRegistryRef.current.get(logicalTurn.logicalTurnKey);
+        if (!record || record.initiativeTurnId !== logicalTurn.initiativeTurnId) return;
+        if (record.state !== "pending-start" && record.state !== "starting") return;
+        if (combatSessionRef.current !== record.generationId) return;
+        if (!combatActiveRef.current || combatOverRef.current || combatEndCheckRef.current) return;
+        addLog?.({
+          audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+          channel: COMBAT_LOG_CHANNELS.TURN,
+          eventType: "initiative-turn-start-resumed",
+          level: "info",
+          type: "debug",
+          actorId: record.actorId,
+          round: record.round,
+          turn: turnCounterRef.current,
+          turnToken: currentTurnTokenRef.current,
+          source: "pending-turn-start-retry",
+          message:
+            `initiative turn start resumed: actorId=${record.actorId} initiativeTurnId=${record.initiativeTurnId} ` +
+            `attempt=${Number(record.startAttempts ?? 0) + 1}`,
+          data: { ...record, attempt: Number(record.startAttempts ?? 0) + 1 },
+        }, "debug");
+        const live = fightersRef.current?.[record.initiativeIndex];
+        if (live?.id === record.actorId) {
+          startTurnOnce(live, record.initiativeIndex, "pending-turn-start-retry");
+        }
+      }, getSimulationDelay(0, simulationSpeed));
+      initiativeTurnStartRetryTimersRef.current.set(logicalTurn.initiativeTurnId, retryTimer);
+      allTimeoutsRef.current.push(retryTimer);
+      return true;
+    };
+    if (!logicalTurn.shouldStart) {
+      if (logicalTurn.disposition === "existing-manual-wait") {
+        const manualTurnKey = makeTurnStartKey(liveScheduledFighter, index, turnCounterRef.current);
+        if (manualSchedulerPausedLogTurnKeyRef.current !== manualTurnKey) {
+          manualSchedulerPausedLogTurnKeyRef.current = manualTurnKey;
+          addLog?.({
+            audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+            channel: COMBAT_LOG_CHANNELS.TURN,
+            eventType: "turn-scheduler-paused-for-manual-control",
+            level: "info",
+            type: "debug",
+            actorId: liveScheduledFighter.id,
+            round: meleeRoundRef.current,
+            turn: turnCounterRef.current,
+            source: reason,
+            message:
+              `turn scheduler paused for manual control: actorId=${liveScheduledFighter.id} ` +
+              `initiativeTurnId=${logicalTurn.initiativeTurnId} turnKey=${manualTurnKey}`,
+            data: logicalTurn,
+          }, "debug");
+        }
+        return false;
+      }
+      addLog?.({
+        audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+        channel: COMBAT_LOG_CHANNELS.TURN,
+        eventType: "turn-scheduler-existing-pending",
+        level: "info",
+        type: "debug",
+        actorId: liveScheduledFighter.id,
+        round: meleeRoundRef.current,
+        turn: turnCounterRef.current,
+        source: reason,
+        message:
+          `turn scheduler existing pending: actorId=${liveScheduledFighter.id} ` +
+          `initiativeTurnId=${logicalTurn.initiativeTurnId} source=${reason}`,
+        data: logicalTurn,
+      }, "debug");
+      return false;
+    }
+
     if (usesEnemyAIPath && processingEnemyTurnRef.current) {
       addLog?.(
         `enemy turn already processing for ${formatCombatActorLabel(fighter, { roster: fightersRef.current ?? fighters ?? [] })}; ignoring duplicate start reason=${reason}`,
@@ -10816,6 +11859,7 @@ function CombatPage({ characters = [] }) {
           reason,
         });
       }
+      schedulePendingStartRetry("previous-turn-busy");
       return false;
     }
 
@@ -10896,6 +11940,7 @@ function CombatPage({ characters = [] }) {
        `enemy turn start deduped for ${fighter?.name ?? "enemy"} reason=${reason}`,
         "warning"
       );
+      schedulePendingStartRetry("action-lock-settling");
       return false;
     }
 
@@ -10906,6 +11951,7 @@ function CombatPage({ characters = [] }) {
           "warning"
         );
       }
+      schedulePendingStartRetry("previous-turn-busy");
       return false;
     }
 
@@ -10921,8 +11967,23 @@ function CombatPage({ characters = [] }) {
         source: reason,
       };
     }
+    const pendingStart = startPendingInitiativeTurn({
+      initiativeTurnId: logicalTurn.initiativeTurnId,
+      logicalTurnKey: logicalTurn.logicalTurnKey,
+      fighter: liveScheduledFighter,
+      index,
+      requestedSource: reason,
+    });
+    if (!pendingStart.accepted) {
+      releaseTurnStart(key);
+      if (turnStartInFlightKeyRef.current === key) {
+        turnStartInFlightKeyRef.current = null;
+      }
+      return false;
+    }
     const turnToken = makeTurnToken(activeFighter);
     currentTurnTokenRef.current = turnToken;
+    initiativeTurnIdRef.current = logicalTurn.initiativeTurnId;
     activeGrappleActionIdRef.current = null;
     activeAttackActionIdRef.current = null;
     clearPendingPlayerAIContinuation();
@@ -11300,6 +12361,11 @@ function CombatPage({ characters = [] }) {
             return;
           }
           enemyTurnEnteredAIBranchKeyRef.current = key;
+          transitionLogicalInitiativeTurn(logicalTurn.initiativeTurnId, "active", reason, {
+            executionOwner: "enemy-ai",
+            executionStarted: true,
+            executionStartedAt: Date.now(),
+          });
           Promise.resolve(
             handleEnemyTurnRef.current?.(latestFighter, reason, { turnKey: key, token, turnToken })
           ).finally(releaseStartedTurn);
@@ -11312,6 +12378,7 @@ function CombatPage({ characters = [] }) {
 
     if (controlMode === "player" || usesPlayerAIPath) {
       if (controlMode === "player" && !forceAutomaticPlayerSurvival) {
+        markLogicalTurnWaitingManual(liveScheduledFighter, index, reason);
         addLog?.(
          `${fighter.name} is waiting for manual player control`,
           "info"
@@ -11635,6 +12702,7 @@ function CombatPage({ characters = [] }) {
               lastWaitTurnKey: manualPlayerWaitTurnKeyRef.current,
             })) {
               manualPlayerWaitTurnKeyRef.current = manualTurnKey;
+              markLogicalTurnWaitingManual(latestFighter, liveIndex, reason);
               addLog(`${latestFighter.name} is waiting for manual player control.`, "info");
             }
             processingPlayerAIRef.current = false;
@@ -11663,7 +12731,8 @@ function CombatPage({ characters = [] }) {
                 "info"
               );
             }
-            if (fraidereRoutingFleeAction(latestFighter, liveFighters, "player-turn-start")) {
+            const moraleActionResult = fraidereRoutingFleeAction(latestFighter, liveFighters, "player-turn-start");
+            if (moraleActionResult) {
               markTurnResolvedByStatus(latestFighter, "rout");
               processingPlayerAIRef.current = false;
               playerAIActionScheduledRef.current = false;
@@ -11673,9 +12742,13 @@ function CombatPage({ characters = [] }) {
               clearMatchingDirectHandoffSnapshot(latestFighter);
               releaseStartedTurn();
               if (endCombatIfVictoryResolved(fightersRef.current ?? liveFighters)) return;
-              addLog(`Dread response consumes the action; scheduling turn advance.`, "info");
-              pendingTurnAdvanceRef.current = true;
-              (scheduleEndTurnRef.current)?.(0, "horror-action-consumed");
+              addLog(`Dread response consumes the action; resolving routed survival action.`, "info");
+              resolveCombatActionCompletionRef.current?.({
+                actorId: latestFighter.id,
+                actionResult: moraleActionResult,
+                source: moraleActionResult.source || "player-turn-start-morale",
+                delayMs: 0,
+              });
               return;
             }
           }
@@ -11769,6 +12842,11 @@ function CombatPage({ characters = [] }) {
             }
           }
           addLog(`player turn start routing ${latestFighter.name} to player AI reason=${reason}`, "info");
+          transitionLogicalInitiativeTurn(logicalTurn.initiativeTurnId, "active", reason, {
+            executionOwner: "player-ai",
+            executionStarted: true,
+            executionStartedAt: Date.now(),
+          });
           Promise.resolve(
             handlePlayerAITurnRef.current?.(latestFighter, { turnToken, reason })
           ).finally(releaseStartedTurn);
@@ -11788,7 +12866,154 @@ function CombatPage({ characters = [] }) {
       turnStartInFlightKeyRef.current = null;
     }
     return false;
-  }, [addLog, blockStaleAction, canFighterStartTurn, claimTurnStart, getFighterControlMode, getFighterSchedulerTeam, isActionBusy, isCurrentCombatSession, makeTurnStartKey, makeTurnToken, releaseTurnStart, simulationSpeed]);
+  }, [addLog, blockStaleAction, canFighterStartTurn, claimTurnStart, ensureLogicalInitiativeTurn, getFighterControlMode, getFighterSchedulerTeam, isActionBusy, isCurrentCombatSession, makeLogicalInitiativeTurnKey, makeTurnStartKey, makeTurnToken, markLogicalTurnWaitingManual, recordPendingTurnStartDeferred, releaseTurnStart, simulationSpeed, startPendingInitiativeTurn, transitionLogicalInitiativeTurn]);
+
+  const resumeManualPartyTurnWithAI = useCallback(({
+    actorId,
+    initiativeTurnId,
+    generationId,
+    round,
+    initiativeIndex,
+    source = "ai-toggle-resume",
+  } = {}) => {
+    const liveFighters = fightersRef.current ?? fighters ?? [];
+    const activeFighter = liveFighters?.[turnIndexRef.current];
+    const currentRound = meleeRoundRef.current ?? meleeRound;
+    const recordEntry = Array.from(initiativeTurnLogicalRegistryRef.current.entries())
+      .find(([, record]) => record?.initiativeTurnId === initiativeTurnId);
+    const [logicalTurnKey, record] = recordEntry || [];
+    const reject = (reason) => {
+      addLog?.({
+        audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+        channel: COMBAT_LOG_CHANNELS.TURN,
+        eventType: "player-control-takeover-rejected",
+        level: "warning",
+        type: "warning",
+        actorId,
+        round: currentRound,
+        turn: turnCounterRef.current,
+        turnToken: currentTurnTokenRef.current,
+        source,
+        message:
+          `player control takeover rejected: actorId=${actorId || "none"} ` +
+          `initiativeTurnId=${initiativeTurnId || "none"} reason=${reason}`,
+        data: {
+          reason,
+          actorId,
+          activeActorId: activeFighter?.id,
+          initiativeTurnId,
+          generationId,
+          currentGenerationId: combatSessionRef.current || "default",
+          round,
+          currentRound,
+          initiativeIndex,
+          currentInitiativeIndex: turnIndexRef.current,
+          state: record?.state,
+          executionOwner: record?.executionOwner,
+        },
+      }, "warning");
+      return { accepted: false, reason };
+    };
+
+    addLog?.({
+      audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+      channel: COMBAT_LOG_CHANNELS.TURN,
+      eventType: "player-control-takeover-started",
+      level: "info",
+      type: "debug",
+      actorId,
+      round: currentRound,
+      turn: turnCounterRef.current,
+      turnToken: currentTurnTokenRef.current,
+      source,
+      message: `player control takeover started: actorId=${actorId || "none"} initiativeTurnId=${initiativeTurnId || "none"}`,
+      data: { actorId, initiativeTurnId, generationId, round, initiativeIndex },
+    }, "debug");
+
+    if (!combatActiveRef.current || combatOverRef.current || combatEndCheckRef.current) return reject("combat-ended");
+    if (!record || !logicalTurnKey || record.initiativeTurnId !== initiativeTurnId) return reject("stale-turn");
+    if (record.generationId !== generationId || record.generationId !== (combatSessionRef.current || "default")) return reject("stale-turn");
+    if (record.round !== round || currentRound !== round) return reject("stale-turn");
+    if (record.initiativeIndex !== initiativeIndex || turnIndexRef.current !== initiativeIndex) return reject("stale-turn");
+    if (!activeFighter || activeFighter.id !== actorId || record.actorId !== actorId) return reject("not-active-fighter");
+    if (getFighterSchedulerTeam(activeFighter) !== "player" || getFighterControlMode(activeFighter) !== "ai") return reject("not-active-fighter");
+    if (record.state !== "waiting-manual" || record.executionOwner !== "manual-player") return reject("stale-turn");
+    if (
+      playerAITimerRef.current ||
+      enemyTurnTimerRef.current ||
+      processingPlayerAIRef.current ||
+      processingEnemyTurnRef.current ||
+      isActionBusy() ||
+      turnActionResolvingRef.current ||
+      activeTechniqueImpactRef.current ||
+      pendingTurnAdvanceRef.current ||
+      turnTimeoutRef.current
+    ) {
+      return reject("action-in-progress");
+    }
+    if (doesPlayerAiContinuationOwnTurn(pendingPlayerAIContinuationRef.current, {
+      fighterId: actorId,
+      turnIndex: initiativeIndex,
+      turnCounter: turnCounterRef.current,
+      turnToken: currentTurnTokenRef.current,
+    })) {
+      return reject("continuation-owned");
+    }
+
+    manualPlayerWaitTurnKeyRef.current = null;
+    lastOpenedChoicesTurnRef.current = null;
+    setShowCombatChoices(false);
+    closeCombatChoices();
+    transitionLogicalInitiativeTurn(initiativeTurnId, "starting", source, {
+      executionOwner: "player-ai",
+      executionStarted: false,
+      executionStartedAt: null,
+      takeoverStartedAt: Date.now(),
+    });
+    addLog?.({
+      audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+      channel: COMBAT_LOG_CHANNELS.TURN,
+      eventType: "player-control-takeover-accepted",
+      level: "info",
+      type: "debug",
+      actorId,
+      round: currentRound,
+      turn: turnCounterRef.current,
+      turnToken: currentTurnTokenRef.current,
+      source,
+      message: `player control takeover accepted: actorId=${actorId} initiativeTurnId=${initiativeTurnId}`,
+      data: { actorId, initiativeTurnId, remainingActions: activeFighter.remainingActions },
+    }, "debug");
+    transitionLogicalInitiativeTurn(initiativeTurnId, "active", source, {
+      executionOwner: "player-ai",
+      executionStarted: true,
+      executionStartedAt: Date.now(),
+    });
+    Promise.resolve(
+      handlePlayerAITurnRef.current?.(activeFighter, {
+        turnToken: currentTurnTokenRef.current,
+        reason: source,
+        initiativeTurnId,
+        takeover: true,
+      })
+    ).finally(() => {
+      addLog?.({
+        audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+        channel: COMBAT_LOG_CHANNELS.TURN,
+        eventType: "player-control-takeover-completed",
+        level: "info",
+        type: "debug",
+        actorId,
+        round: meleeRoundRef.current ?? meleeRound,
+        turn: turnCounterRef.current,
+        turnToken: currentTurnTokenRef.current,
+        source,
+        message: `player control takeover completed: actorId=${actorId} initiativeTurnId=${initiativeTurnId}`,
+        data: { actorId, initiativeTurnId },
+      }, "debug");
+    });
+    return { accepted: true, actorId, initiativeTurnId };
+  }, [addLog, closeCombatChoices, fighters, getFighterControlMode, getFighterSchedulerTeam, isActionBusy, meleeRound, transitionLogicalInitiativeTurn]);
 
   // Define endTurn function with useCallback - MUST be before handleMoveSelect
   // MCS rule: Alternating actions per initiative
@@ -11837,6 +13062,15 @@ function CombatPage({ characters = [] }) {
     horrorRoutEffectAdvanceIgnoredKeyRef.current = null;
     blockedMovementActionRef.current = null;
     blockedEnemyActionTurnSlotRef.current = null;
+    const completingInitiativeTurnId = initiativeTurnIdRef.current;
+    if (completingInitiativeTurnId) {
+      transitionLogicalInitiativeTurn(completingInitiativeTurnId, "completed", finalizerMeta?.source || "endTurn");
+      const retryTimer = initiativeTurnStartRetryTimersRef.current.get(completingInitiativeTurnId);
+      if (retryTimer) {
+        clearTimeout(retryTimer);
+        initiativeTurnStartRetryTimersRef.current.delete(completingInitiativeTurnId);
+      }
+    }
     currentTurnTokenRef.current = null;
     activeTacticalImpactRef.current = null;
     activeGrappleActionIdRef.current = null;
@@ -12353,6 +13587,26 @@ function CombatPage({ characters = [] }) {
   const startNewMeleeRound = useCallback((nextRoundNumber) => {
     addLog(`Combat Round ${meleeRound} complete! Starting Round ${nextRoundNumber}...`, "combat");
     clearAttackExecutionState(`new-melee-round:${nextRoundNumber}`);
+    const staledPlans = staleArmoredActionPlans(
+      armoredActionPlanRegistryRef.current,
+      (plan) => Number(plan?.round) !== Number(nextRoundNumber),
+      { reason: "round-advanced", nextRoundNumber },
+    );
+    for (const plan of staledPlans) {
+      addLog?.({
+        audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+        channel: COMBAT_LOG_CHANNELS.VALIDATION,
+        eventType: "armored-action-plan-staled",
+        level: "warning",
+        type: "warning",
+        actorId: plan?.actorId || plan?.attackerId,
+        targetId: plan?.targetId || plan?.defenderId,
+        round: nextRoundNumber,
+        source: "start-new-melee-round",
+        message: `armored-action-plan-staled: reason=round-advanced planId=${plan?.planId || plan?.selectionId || "unknown"}`,
+        data: { reason: "round-advanced", plan },
+      }, "warning");
+    }
 
     // Clear cast guard for new combat round (allows new casts in new round)
     combatCastGuardRef.current.clear();
@@ -12433,7 +13687,74 @@ function CombatPage({ characters = [] }) {
         return fighter;
       });
 
-      return updatedWithRegen;
+      const byId = new Map(updatedWithRegen.map((fighter) => [fighter.id, fighter]));
+      const advancedGrappleIds = new Set();
+      const withAdvancedGrappleRounds = updatedWithRegen.map((fighter) => {
+        const opponentId = fighter?.grappleState?.opponent;
+        const opponent = opponentId ? byId.get(opponentId) : null;
+        const activeRelationship =
+          fighter?.id &&
+          opponent?.id &&
+          opponent?.grappleState?.opponent === fighter.id &&
+          fighter.grappleState?.state &&
+          fighter.grappleState.state !== GRAPPLE_STATES.NEUTRAL &&
+          opponent.grappleState?.state &&
+          opponent.grappleState.state !== GRAPPLE_STATES.NEUTRAL;
+        if (!activeRelationship) return fighter;
+        const sortedIds = [fighter.id, opponent.id].sort();
+        const grappleId =
+          fighter.grappleState?.grappleId ||
+          opponent.grappleState?.grappleId ||
+          `${combatSessionRef.current || "default"}:${sortedIds[0]}:${sortedIds[1]}`;
+        if (advancedGrappleIds.has(grappleId)) {
+          const mirrored = byId.get(fighter.id);
+          return mirrored || fighter;
+        }
+        advancedGrappleIds.add(grappleId);
+        const previousRounds = Math.max(
+          0,
+          Number(fighter.grappleState?.roundsInGrapple ?? 0) || 0,
+          Number(opponent.grappleState?.roundsInGrapple ?? 0) || 0,
+        );
+        const lastAdvancedRound = Math.max(
+          0,
+          Number(fighter.grappleState?.lastAdvancedRound ?? 0) || 0,
+          Number(opponent.grappleState?.lastAdvancedRound ?? 0) || 0,
+        );
+        const roundsInGrapple = lastAdvancedRound === nextRoundNumber
+          ? previousRounds
+          : previousRounds + 1;
+        const patchGrapple = (entry) => ({
+          ...entry,
+          grappleState: {
+            ...(entry.grappleState || {}),
+            grappleId,
+            establishedRound: entry.grappleState?.establishedRound || meleeRoundRef.current || meleeRound,
+            lastAdvancedRound: nextRoundNumber,
+            roundsInGrapple,
+          },
+        });
+        const patchedFighter = patchGrapple(fighter);
+        const patchedOpponent = patchGrapple(opponent);
+        byId.set(fighter.id, patchedFighter);
+        byId.set(opponent.id, patchedOpponent);
+        addLog?.({
+          audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+          channel: COMBAT_LOG_CHANNELS.STATE,
+          eventType: "grapple-round-advanced",
+          level: "info",
+          type: "debug",
+          actorId: fighter.id,
+          targetId: opponent.id,
+          round: nextRoundNumber,
+          source: "new-melee-round",
+          message: `grapple round advanced: grappleId=${grappleId} roundsInGrapple=${roundsInGrapple} round=${nextRoundNumber}`,
+          data: { grappleId, roundsInGrapple, round: nextRoundNumber, actorId: fighter.id, opponentId: opponent.id },
+        }, "debug");
+        return patchedFighter;
+      }).map((fighter) => byId.get(fighter.id) || fighter);
+
+      return withAdvancedGrappleRounds;
     });
 
     // Clear processing flags for new round (only if combat is still active)
@@ -13159,6 +14480,102 @@ function CombatPage({ characters = [] }) {
           return;
         }
 
+        const remainingActions = Number(current?.remainingActions ?? 0) || 0;
+        const isCapableWithActions =
+          current &&
+          remainingActions > 0 &&
+          current.status !== "defeated" &&
+          current.condition !== "dying" &&
+          current.condition !== "dead" &&
+          current.condition !== "unconscious" &&
+          current.canAct !== false;
+        const sourceIsAcceptedTurnEndingEffect =
+          allowManualNoActionEndTurn ||
+          diagnosticSource.includes("no-actions") ||
+          diagnosticSource.includes("pass") ||
+          diagnosticSource.includes("cannot-act") ||
+          diagnosticSource.includes("fled") ||
+          diagnosticSource.includes("combat-end") ||
+          diagnosticSource.includes("horror-action-consumed") ||
+          diagnosticSource.includes("cower");
+
+        if (
+          isCapableWithActions &&
+          !sourceIsAcceptedTurnEndingEffect &&
+          !busy &&
+          !projectilePending &&
+          !techniqueImpactPending &&
+          !activeAttackActionIdRef.current &&
+          !activeGrappleActionIdRef.current
+        ) {
+          clearPendingIfOwned();
+          turnActionResolvingRef.current = false;
+          addLog({
+            audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+            channel: COMBAT_LOG_CHANNELS.TURN,
+            eventType: "turn-advance-blocked-actions-remain",
+            level: "warning",
+            type: "warning",
+            actorId: current?.id,
+            round: meleeRoundRef.current,
+            turn: turnCounterRef.current,
+            turnToken: currentTurnTokenRef.current,
+            source: diagnosticSource,
+            message:
+              `turn advance blocked: actor=${formatCombatActorLabel(current || {}, { roster: fightersRef.current ?? fighters ?? [] })} ` +
+              `reason=actions-remain remainingActions=${remainingActions} source=${diagnosticSource}`,
+            data: { remainingActions, source: diagnosticSource },
+          }, "warning");
+
+          const continuationTimer = setTimeout(() => {
+            if (combatOverRef.current || !combatActiveRef.current || combatEndCheckRef.current) return;
+            const liveCurrent = fightersRef.current?.[turnIndexRef.current];
+            if (!liveCurrent || liveCurrent.id !== current.id) return;
+            if ((Number(liveCurrent.remainingActions ?? 0) || 0) <= 0) return;
+
+            addLog({
+              audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+              channel: COMBAT_LOG_CHANNELS.TURN,
+              eventType: "remaining-action-continuation",
+              level: "info",
+              type: "debug",
+              actorId: liveCurrent.id,
+              round: meleeRoundRef.current,
+              turn: turnCounterRef.current,
+              turnToken: currentTurnTokenRef.current,
+              source: diagnosticSource,
+              message:
+                `remaining action continuation: actor=${formatCombatActorLabel(liveCurrent, { roster: fightersRef.current ?? [] })} ` +
+                `remainingActions=${liveCurrent.remainingActions} source=${diagnosticSource}`,
+              data: { remainingActions: liveCurrent.remainingActions, source: diagnosticSource },
+            }, "debug");
+
+            if (liveCurrent.type === "enemy") {
+              processingEnemyTurnRef.current = false;
+              enemyActionLockRef.current = null;
+              enemyActionCommittedThisSliceRef.current = false;
+              enemyActionCommittedSliceKeyRef.current = null;
+              handleEnemyTurnRef.current?.(liveCurrent, "remaining-action-continuation", {
+                continuation: true,
+                source: diagnosticSource,
+              });
+              return;
+            }
+
+            if (aiControlEnabledRef.current && !isManualPlayerCombatant(liveCurrent, { aiControlEnabled: aiControlEnabledRef.current })) {
+              processingPlayerAIRef.current = false;
+              playerAIActionScheduledRef.current = false;
+              handlePlayerAITurnRef.current?.(liveCurrent, {
+                reason: "remaining-action-continuation",
+                source: diagnosticSource,
+              });
+              return;
+            }
+          }, 0);
+          allTimeoutsRef.current.push(continuationTimer);
+          return;
+        }
+
         pendingTurnAdvanceRef.current = false;
         addLog("tryEndTurn advancing turn", "info");
         endTurnRef.current?.({
@@ -13236,6 +14653,1240 @@ function CombatPage({ characters = [] }) {
   useEffect(() => {
     scheduleEndTurnRef.current = scheduleEndTurn;
   }, [scheduleEndTurn]);
+
+  const getAuthoritativeCombatTurnSnapshot = useCallback((actorId = null, source = "combat-action") => {
+    const roster = fightersRef.current ?? fighters ?? [];
+    const initiativeIndex = turnIndexRef.current;
+    const activeFighter = roster?.[initiativeIndex] || null;
+    const actor =
+      roster.find((fighter) => fighter?.id === actorId) ||
+      activeFighter ||
+      null;
+    const snapshot = {
+      generationId: combatSessionRef.current || "default",
+      round: meleeRoundRef.current ?? meleeRound,
+      turnCounter: turnCounterRef.current ?? turnCounter,
+      initiativeIndex,
+      actorId: actorId || activeFighter?.id || null,
+      activeFighterId: activeFighter?.id || null,
+      initiativeTurnId: initiativeTurnIdRef.current,
+      actionSequence: initiativeActionSequenceRef.current,
+      remainingActions: Number(actor?.remainingActions ?? 0) || 0,
+      fighterCapable: actor ? canFighterStartTurn(actor) : false,
+      combatActive: combatActiveRef.current && !combatOverRef.current && !combatEndCheckRef.current,
+      turnToken: currentTurnTokenRef.current,
+      source,
+    };
+    addLog?.({
+      audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+      channel: COMBAT_LOG_CHANNELS.TURN,
+      eventType: "combat-turn-snapshot-created",
+      level: "info",
+      type: "debug",
+      actorId: snapshot.actorId,
+      round: snapshot.round,
+      turn: snapshot.turnCounter,
+      turnToken: snapshot.turnToken,
+      source,
+      message:
+        `combat turn snapshot created: actorId=${snapshot.actorId || "unknown"} ` +
+        `initiativeTurnId=${snapshot.initiativeTurnId || "none"} remainingActions=${snapshot.remainingActions}`,
+      data: snapshot,
+    }, "debug");
+    return snapshot;
+  }, [addLog, canFighterStartTurn, fighters, meleeRound, turnCounter]);
+
+  const logCombatTurnSnapshotMismatch = useCallback(({
+    actorId,
+    actionResult = {},
+    snapshot,
+    source = "combat-action",
+  } = {}) => {
+    const planRound = actionResult.round ?? actionResult.meleeRound ?? actionResult?.armoredActionPlan?.round;
+    const eventRound = snapshot?.round;
+    const tokenRound = String(actionResult.actionToken || actionResult.turnToken || snapshot?.turnToken || "")
+      .split(":")
+      .find((part) => String(part) === String(eventRound)) || null;
+    const mismatches = [];
+    if (planRound != null && eventRound != null && Number(planRound) !== Number(eventRound)) mismatches.push("round");
+    if (actionResult.initiativeIndex != null && snapshot?.initiativeIndex != null && Number(actionResult.initiativeIndex) !== Number(snapshot.initiativeIndex)) mismatches.push("initiativeIndex");
+    if (actionResult.initiativeTurnId && snapshot?.initiativeTurnId && actionResult.initiativeTurnId !== snapshot.initiativeTurnId) mismatches.push("initiativeTurnId");
+    if (actionResult.actorId && actorId && actionResult.actorId !== actorId) mismatches.push("actorId");
+    if (mismatches.length === 0) return false;
+    addLog?.({
+      audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+      channel: COMBAT_LOG_CHANNELS.VALIDATION,
+      eventType: "combat-turn-snapshot-mismatch",
+      level: "error",
+      type: "error",
+      actorId,
+      round: snapshot?.round,
+      turn: snapshot?.turnCounter,
+      turnToken: snapshot?.turnToken,
+      source,
+      message:
+        `combat-turn-snapshot-mismatch: actorId=${actorId || "unknown"} ` +
+        `planRound=${planRound ?? "none"} eventRound=${eventRound ?? "none"} tokenRound=${tokenRound ?? "none"} ` +
+        `initiativeIndex=${snapshot?.initiativeIndex ?? "none"} initiativeTurnId=${snapshot?.initiativeTurnId || "none"} source=${source}`,
+      data: { actorId, actionResult, snapshot, mismatches, planRound, eventRound, tokenRound },
+    }, "error");
+    return true;
+  }, [addLog]);
+
+  const cancelRemainingActionContinuationsForActor = useCallback(({
+    actorId,
+    initiativeTurnId = null,
+    reason = "canceled",
+    source = "continuation-cancel",
+  } = {}) => {
+    if (!actorId) return 0;
+    let canceled = 0;
+    for (const [key, entry] of remainingActionContinuationRegistryRef.current.entries()) {
+      if (entry?.actorId !== actorId) continue;
+      if (initiativeTurnId && entry?.initiativeTurnId && entry.initiativeTurnId !== initiativeTurnId) continue;
+      remainingActionContinuationRegistryRef.current.delete(key);
+      canceled += 1;
+    }
+    if (canceled > 0) {
+      addLog?.({
+        audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+        channel: COMBAT_LOG_CHANNELS.TURN,
+        eventType: "fumble-continuation-canceled",
+        level: "info",
+        type: "debug",
+        actorId,
+        source,
+        message:
+          `fumble continuation canceled: actorId=${actorId} count=${canceled} ` +
+          `initiativeTurnId=${initiativeTurnId || "none"} reason=${reason}`,
+        data: { actorId, initiativeTurnId, reason, canceled },
+      }, "debug");
+    }
+    return canceled;
+  }, [addLog]);
+
+  const createTurnEndingExhaustionKey = useCallback(({ generationId, initiativeTurnId, actorId } = {}) => (
+    [
+      generationId || combatSessionRef.current || "default",
+      initiativeTurnId || initiativeTurnIdRef.current || "no-initiative-turn",
+      actorId || "unknown-actor",
+    ].join("::")
+  ), []);
+
+  const createRemainingActionContinuationKey = useCallback(({
+    generationId,
+    initiativeTurnId,
+    actorId,
+    completedActionToken,
+    nextActionSequence,
+  } = {}) => (
+    [
+      generationId || combatSessionRef.current || "default",
+      initiativeTurnId || initiativeTurnIdRef.current || "no-initiative-turn",
+      actorId || "unknown-actor",
+      completedActionToken || "completed-action",
+      `next-${nextActionSequence ?? "unknown"}`,
+    ].join("::")
+  ), []);
+
+  const createCombatActionCompletionKey = useCallback(({
+    generationId,
+    initiativeTurnId,
+    actionToken,
+  } = {}) => (
+    [
+      generationId || combatSessionRef.current || "default",
+      initiativeTurnId || initiativeTurnIdRef.current || "no-initiative-turn",
+      actionToken || "no-action-token",
+    ].join("::")
+  ), []);
+
+  const hasActiveTurnEndingExhaustion = useCallback((actorId, initiativeTurnId = initiativeTurnIdRef.current) => {
+    const key = createTurnEndingExhaustionKey({
+      generationId: combatSessionRef.current || "default",
+      initiativeTurnId,
+      actorId,
+    });
+    return turnEndingExhaustionRegistryRef.current.get(key) || null;
+  }, [createTurnEndingExhaustionKey]);
+
+  const commitTurnEndingActionExhaustion = useCallback(({
+    actorId,
+    initiativeTurnId = null,
+    actionToken = null,
+    reason = "turn-ending-effect",
+    source = "turn-ending-action-exhaustion",
+  } = {}) => {
+    if (!actorId) return null;
+    const exhaustionKey = createTurnEndingExhaustionKey({
+      generationId: combatSessionRef.current || "default",
+      initiativeTurnId,
+      actorId,
+    });
+    turnEndingExhaustionRegistryRef.current.set(exhaustionKey, {
+      active: true,
+      reason,
+      committedRemainingActions: 0,
+      generationId: combatSessionRef.current || "default",
+      initiativeTurnId,
+      actorId,
+      actionToken,
+      source,
+      createdAt: Date.now(),
+    });
+    let committed = null;
+    commitFighters((prev = []) => prev.map((fighter) => {
+      if (fighter?.id !== actorId) return fighter;
+      const next = {
+        ...fighter,
+        remainingActions: 0,
+        attacksRemaining: 0,
+      };
+      committed = next;
+      return next;
+    }));
+    addLog?.({
+      audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+      channel: COMBAT_LOG_CHANNELS.TURN,
+      eventType: "turn-ending-action-exhaustion-committed",
+      level: "info",
+      type: "debug",
+      actorId,
+      round: meleeRoundRef.current,
+      turn: turnCounterRef.current,
+      turnToken: currentTurnTokenRef.current,
+      source,
+      message:
+        `turn-ending action exhaustion committed: actorId=${actorId} ` +
+        `initiativeTurnId=${initiativeTurnId || "none"} reason=${reason}`,
+      data: { actorId, initiativeTurnId, actionToken, reason, committedRemainingActions: committed?.remainingActions ?? 0 },
+    }, "debug");
+    return committed;
+  }, [addLog, commitFighters, createTurnEndingExhaustionKey]);
+
+  const isFighterInActiveGrapple = useCallback((fighter = {}, roster = fightersRef.current ?? fighters ?? []) => {
+    const live = roster.find((entry) => entry?.id === fighter?.id) || fighter;
+    const stateText = String(live?.grappleState?.state || "").toLowerCase();
+    const opponentId =
+      live?.grappleState?.opponent ||
+      live?.grappleState?.opponentId ||
+      live?.grappledWith ||
+      null;
+    if (!opponentId) return false;
+    return Boolean(stateText && stateText !== "neutral");
+  }, [fighters]);
+
+  const normalizePlayerCombatAIContext = useCallback((rawContext = {}, source = "player-ai-context") => {
+    const normalized = normalizePlayerGrappleDispatcherContext(rawContext);
+    if (normalized.continuationAuthorization) {
+      emitActionContinuationReceiptHop("player-context-normalized", normalized.continuationAuthorization, {
+        requestedActionSequence: normalized.continuationAuthorization.nextActionSequence,
+        source,
+      });
+    }
+    addLog?.({
+      audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+      channel: COMBAT_LOG_CHANNELS.AI,
+      eventType: "player-grapple-dispatcher-normalized",
+      level: "info",
+      type: "debug",
+      actorId: rawContext.actorId || rawContext.playerId || rawContext.fighterId,
+      source,
+      message: `player grapple dispatcher normalized: dispatcherPresent=${typeof normalized.dispatchGrappleTurnAction === "function"}`,
+      data: {
+        initiativeTurnId: rawContext.initiativeTurnId || initiativeTurnIdRef.current || null,
+        actorId: rawContext.actorId || rawContext.playerId || rawContext.fighterId || null,
+        source,
+        dispatcherPresent: typeof normalized.dispatchGrappleTurnAction === "function",
+        dispatcherType: typeof normalized.dispatchGrappleTurnAction,
+        continuationAuthorizationPresent: Boolean(normalized.continuationAuthorization),
+      },
+    }, "debug");
+    if (normalized.continuationAuthorization && Array.from(grappleActionExecutionRegistryRef.current.values()).some((record) =>
+      record?.actionToken === normalized.continuationAuthorization.completedActionToken && record?.state === "completed"
+    )) {
+      addLog?.({
+        audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+        channel: COMBAT_LOG_CHANNELS.AI,
+        eventType: "player-grapple-authorization-normalized",
+        level: "info",
+        type: "debug",
+        actorId: normalized.continuationAuthorization.actorId,
+        targetId: normalized.continuationAuthorization.opponentId,
+        source,
+        message: `player grapple authorization normalized: continuationKey=${normalized.continuationAuthorization.continuationKey}`,
+        data: { ...normalized.continuationAuthorization, receiptPresent: true, normalizedDispatcherPresent: typeof normalized.dispatchGrappleTurnAction === "function" },
+      }, "debug");
+    }
+    addLog?.({
+      audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+      channel: COMBAT_LOG_CHANNELS.AI,
+      eventType: "player-ai-context-normalized",
+      level: "info",
+      type: "debug",
+      actorId: rawContext.actorId || rawContext.playerId || rawContext.fighterId,
+      round: meleeRoundRef.current,
+      turn: turnCounterRef.current,
+      turnToken: currentTurnTokenRef.current,
+      source,
+      message:
+        `player-ai-context-normalized: hasGrappleDispatcher=${typeof normalized.dispatchGrappleTurnAction === "function"} ` +
+        `source=${source} initiativeTurnId=${rawContext.initiativeTurnId || initiativeTurnIdRef.current || "none"}`,
+      data: {
+        hasGrappleDispatcher: typeof normalized.dispatchGrappleTurnAction === "function",
+        initiativeTurnId: rawContext.initiativeTurnId || initiativeTurnIdRef.current || null,
+      },
+    }, "debug");
+    return normalized;
+  }, [addLog]);
+
+  const recoverMissingPlayerGrappleDispatcher = useCallback(({
+    actorId,
+    initiativeTurnId = initiativeTurnIdRef.current,
+    opponentId = null,
+    source = "player-ai-active-grapple",
+    remainingActions = null,
+  } = {}) => {
+    return executeMissingPlayerGrappleDispatcherRecovery({
+      actorId,
+      initiativeTurnId,
+      opponentId,
+      source,
+      remainingActions,
+    }, {
+      recoveryRegistry: playerGrappleMissingDispatcherRecoveryRef.current,
+      getActor: (fighterId) => (fightersRef.current ?? []).find((fighter) => fighter?.id === fighterId),
+      getActionSequence: () => initiativeActionSequenceRef.current,
+      setActionSequence: (actionSequence) => {
+        initiativeActionSequenceRef.current = actionSequence;
+      },
+      commitPassAction: (fighterId, fallbackRemaining) => {
+        let committedRemaining = Math.max(0, Number(fallbackRemaining) - 1);
+        commitFighters((prev = []) => prev.map((fighter) => {
+          if (fighter?.id !== fighterId) return fighter;
+          committedRemaining = Math.max(0, (Number(fighter.remainingActions ?? fallbackRemaining) || 0) - 1);
+          return { ...fighter, remainingActions: committedRemaining };
+        }));
+        return committedRemaining;
+      },
+      clearTransientOwnership: () => {
+        processingPlayerAIRef.current = false;
+        playerAIActionScheduledRef.current = false;
+        playerTurnInFlightKeyRef.current = null;
+        turnActionResolvingRef.current = false;
+        pendingPlayerAIContinuationRef.current = null;
+      },
+      resolveCompletion: (completion) => resolveCombatActionCompletionRef.current?.(completion),
+      logPass: (actor) => addLog(`${actor?.name || actorId} passes and spends 1 action.`, "info"),
+      emitEvent: (eventType, data) => {
+        const duplicate = eventType === "player-grapple-missing-dispatcher-recovery-duplicate-blocked";
+        const missing = eventType === "grapple-dispatch-required-but-missing";
+        addLog?.({
+          audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+          channel: missing ? COMBAT_LOG_CHANNELS.AI : duplicate ? COMBAT_LOG_CHANNELS.VALIDATION : COMBAT_LOG_CHANNELS.TURN,
+          eventType,
+          level: missing ? "error" : "warning",
+          type: missing ? "error" : "warning",
+          actorId,
+          targetId: opponentId,
+          round: meleeRoundRef.current,
+          turn: turnCounterRef.current,
+          turnToken: currentTurnTokenRef.current,
+          source: data?.source || source,
+          message: `${eventType}: actorId=${actorId} initiativeTurnId=${initiativeTurnId}`,
+          data,
+        }, missing ? "error" : "warning");
+      },
+    });
+  }, [addLog, commitFighters]);
+
+  const ensureContinuationExecutionOwnership = useCallback(({
+    actorId,
+    initiativeTurnId,
+    expectedOwner = "player-ai",
+    continuationKey = null,
+    source = "remaining-action-continuation",
+  } = {}) => {
+    if (!actorId || !initiativeTurnId) return { accepted: false, reason: "missing-identity" };
+    const liveActor = fightersRef.current?.[turnIndexRef.current];
+    if (liveActor?.id !== actorId) return { accepted: false, reason: "active-fighter-mismatch" };
+    const recordEntry = Array.from(initiativeTurnLogicalRegistryRef.current.entries())
+      .find(([, record]) => record?.initiativeTurnId === initiativeTurnId && record?.actorId === actorId);
+    if (!recordEntry) return { accepted: false, reason: "missing-logical-turn" };
+    const [logicalTurnKey, record] = recordEntry;
+    const restored = {
+      ...record,
+      state: "active",
+      executionOwner: expectedOwner,
+      executionStarted: true,
+      executionStartedAt: record.executionStartedAt || Date.now(),
+      continuationKey,
+      ownerRestoredAt: Date.now(),
+    };
+    initiativeTurnLogicalRegistryRef.current.set(logicalTurnKey, restored);
+    initiativeTurnIdRef.current = initiativeTurnId;
+    addLog?.({
+      audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+      channel: COMBAT_LOG_CHANNELS.TURN,
+      eventType: "continuation-execution-owner-restored",
+      level: "info",
+      type: "debug",
+      actorId,
+      round: meleeRoundRef.current,
+      turn: turnCounterRef.current,
+      turnToken: currentTurnTokenRef.current,
+      source,
+      message:
+        `continuation-execution-owner-restored: actorId=${actorId} initiativeTurnId=${initiativeTurnId} ` +
+        `owner=${expectedOwner} continuationKey=${continuationKey || "none"}`,
+      data: { actorId, initiativeTurnId, expectedOwner, continuationKey },
+    }, "debug");
+    return { accepted: true, record: restored };
+  }, [addLog]);
+
+  const commitAuthoritativeTurnHandoff = useCallback(({
+    outgoingActorId,
+    expectedInitiativeTurnId = initiativeTurnIdRef.current,
+    reason = "turn-handoff",
+    explicitTurnEndingEffect = false,
+    source = "authoritative-turn-handoff",
+  } = {}) => {
+    const rosterBefore = fightersRef.current ?? fighters ?? [];
+    if (!outgoingActorId || rosterBefore.length === 0) {
+      return { accepted: false, reason: "missing-outgoing-actor" };
+    }
+    const currentInitiativeIndex = Math.max(0, turnIndexRef.current ?? 0);
+    const outgoingIndex = rosterBefore.findIndex((fighter) => fighter?.id === outgoingActorId);
+    const initiativeIndexBefore = outgoingIndex >= 0 ? outgoingIndex : currentInitiativeIndex;
+    const roundBefore = meleeRoundRef.current ?? meleeRound;
+    const turnCounterBefore = turnCounterRef.current ?? turnCounter;
+    const isLastInitiativeSlot = initiativeIndexBefore >= rosterBefore.length - 1;
+    const initiativeIndexAfter = isLastInitiativeSlot ? 0 : initiativeIndexBefore + 1;
+    const roundAfter = isLastInitiativeSlot ? roundBefore + 1 : roundBefore;
+    const turnCounterAfter = turnCounterBefore + 1;
+    const nextActor = rosterBefore[initiativeIndexAfter] || null;
+    const nextActorId = nextActor?.id || null;
+
+    commitFighters((prev = []) => prev.map((fighter) => (
+      fighter?.id === outgoingActorId
+        ? { ...fighter, remainingActions: 0, attacksRemaining: 0 }
+        : fighter
+    )));
+    if (expectedInitiativeTurnId) {
+      transitionLogicalInitiativeTurn(expectedInitiativeTurnId, "completed", source, {
+        completionReason: reason,
+        explicitTurnEndingEffect,
+      });
+    }
+    cancelRemainingActionContinuationsForActor({
+      actorId: outgoingActorId,
+      initiativeTurnId: expectedInitiativeTurnId,
+      reason,
+      source,
+    });
+
+    pendingTurnAdvanceRef.current = false;
+    turnActionResolvingRef.current = false;
+    processingEnemyTurnRef.current = false;
+    processingPlayerAIRef.current = false;
+    playerAIActionScheduledRef.current = false;
+    currentTurnTokenRef.current = null;
+    activeAttackActionIdRef.current = null;
+    activeGrappleActionIdRef.current = null;
+    turnIndexRef.current = initiativeIndexAfter;
+    meleeRoundRef.current = roundAfter;
+    turnCounterRef.current = turnCounterAfter;
+    initiativeTurnIdRef.current = null;
+    setTurnIndex(initiativeIndexAfter);
+    setMeleeRound(roundAfter);
+    setTurnCounter(turnCounterAfter);
+
+    addLog?.({
+      audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+      channel: COMBAT_LOG_CHANNELS.TURN,
+      eventType: "authoritative-turn-handoff-committed",
+      level: "info",
+      type: "debug",
+      actorId: outgoingActorId,
+      targetId: nextActorId,
+      round: roundAfter,
+      turn: turnCounterAfter,
+      source,
+      message:
+        `authoritative turn handoff committed: outgoing=${outgoingActorId} next=${nextActorId || "none"} ` +
+        `roundBefore=${roundBefore} roundAfter=${roundAfter} indexBefore=${initiativeIndexBefore} indexAfter=${initiativeIndexAfter}`,
+      data: {
+        accepted: true,
+        outgoingActorId,
+        nextActorId,
+        roundBefore,
+        roundAfter,
+        initiativeIndexBefore,
+        initiativeIndexAfter,
+        turnCounterBefore,
+        turnCounterAfter,
+        expectedInitiativeTurnId,
+        reason,
+        explicitTurnEndingEffect,
+      },
+    }, "debug");
+    addLog?.({
+      audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+      channel: COMBAT_LOG_CHANNELS.TURN,
+      eventType: "generic-handoff-suppressed",
+      level: "info",
+      type: "debug",
+      actorId: outgoingActorId,
+      source,
+      message: `generic-handoff-suppressed: reason=${reason} actorId=${outgoingActorId}`,
+      data: { reason, outgoingActorId, expectedInitiativeTurnId },
+    }, "debug");
+
+    if (nextActor && combatActiveRef.current && !combatOverRef.current && !combatEndCheckRef.current) {
+      const timer = setTimeout(() => {
+        if (!combatActiveRef.current || combatOverRef.current || combatEndCheckRef.current) return;
+        turnIndexRef.current = initiativeIndexAfter;
+        meleeRoundRef.current = roundAfter;
+        turnCounterRef.current = turnCounterAfter;
+        startTurnOnce(nextActor, initiativeIndexAfter, source);
+      }, getSimulationDelay(0, simulationSpeed));
+      allTimeoutsRef.current.push(timer);
+    }
+
+    return {
+      accepted: true,
+      outgoingActorId,
+      nextActorId,
+      roundBefore,
+      roundAfter,
+      initiativeIndexBefore,
+      initiativeIndexAfter,
+      turnCounterBefore,
+      turnCounterAfter,
+    };
+  }, [
+    addLog,
+    cancelRemainingActionContinuationsForActor,
+    commitFighters,
+    fighters,
+    meleeRound,
+    simulationSpeed,
+    startTurnOnce,
+    transitionLogicalInitiativeTurn,
+    turnCounter,
+  ]);
+
+  const resolveCombatActionCompletion = useCallback(({
+    actorId,
+    opponentId = null,
+    actionResult = {},
+    executionKey = null,
+    source = "combat-action-completion",
+    delayMs = 0,
+    onCompletionCommitted = null,
+  } = {}) => {
+    if (!actorId) return { accepted: false, reason: "missing-actor-id" };
+    const snapshot = getAuthoritativeCombatTurnSnapshot(actorId, source);
+    const roster = fightersRef.current ?? fighters ?? [];
+    const actor = roster.find((fighter) => fighter?.id === actorId) || null;
+    const opponent = roster.find((fighter) => fighter?.id === opponentId) || null;
+    let committedRemainingActions = Number(actor?.remainingActions ?? 0) || 0;
+    const actorGrappleOpponent = actor?.grappleState?.opponent || actor?.grappleState?.opponentId || actor?.grappledWith || actor?.grappleTargetId;
+    const opponentGrappleOpponent = opponent?.grappleState?.opponent || opponent?.grappleState?.opponentId || opponent?.grappledWith || opponent?.grappleTargetId;
+    const actorGrappleState = String(actor?.grappleState?.state || "").toLowerCase();
+    const opponentGrappleState = String(opponent?.grappleState?.state || "").toLowerCase();
+    const actorSharedHex = actor?.grappleState?.sharedHex || actor?.sharedHex || actor?.hex || actor?.position;
+    const opponentSharedHex = opponent?.grappleState?.sharedHex || opponent?.sharedHex || opponent?.hex || opponent?.position;
+    const grappleActive = Boolean(
+      (opponentId && actorGrappleOpponent === opponentId && actorGrappleState && actorGrappleState !== "neutral") ||
+      (opponent && opponentGrappleOpponent === actorId && opponentGrappleState && opponentGrappleState !== "neutral")
+    );
+    if (String(actionResult.actionType || "").toLowerCase().includes("grapple") || actionResult.grappleActive != null || actionResult.grappleEnded != null) {
+      const symmetric =
+        !grappleActive ||
+        (
+          actorGrappleOpponent === opponentId &&
+          opponentGrappleOpponent === actorId &&
+          (!actorSharedHex || !opponentSharedHex || (Number(actorSharedHex.x) === Number(opponentSharedHex.x) && Number(actorSharedHex.y) === Number(opponentSharedHex.y)))
+        );
+      addLog?.({
+        audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+        channel: COMBAT_LOG_CHANNELS.VALIDATION,
+        eventType: symmetric ? "grapple-completion-state-validated" : "grapple-completion-state-mismatch",
+        level: symmetric ? "info" : "error",
+        type: symmetric ? "debug" : "error",
+        actorId,
+        targetId: opponentId,
+        executionKey: executionKey || actionResult.executionKey,
+        round: snapshot.round,
+        turn: snapshot.turnCounter,
+        turnToken: snapshot.turnToken,
+        source,
+        message:
+          `${symmetric ? "grapple completion state validated" : "grapple completion state mismatch"}: ` +
+          `actorId=${actorId} opponentId=${opponentId || "none"} grappleActive=${grappleActive}`,
+        data: {
+          actorGrappleOpponent,
+          opponentGrappleOpponent,
+          actorGrappleState,
+          opponentGrappleState,
+          actorSharedHex,
+          opponentSharedHex,
+          grappleActive,
+        },
+      }, symmetric ? "debug" : "error");
+      if (!symmetric) {
+        return { accepted: false, decision: "rejected", reason: "grapple-completion-state-mismatch", snapshot };
+      }
+    }
+    const canonicalResult = {
+      ...actionResult,
+      accepted: actionResult.accepted !== false,
+      completed: actionResult.completed !== false,
+      actorId,
+      opponentId,
+      executionKey: executionKey || actionResult.executionKey || null,
+      generationId: snapshot.generationId,
+      round: snapshot.round,
+      initiativeIndex: snapshot.initiativeIndex,
+      initiativeTurnId: snapshot.initiativeTurnId,
+      actionToken: actionResult.actionToken || null,
+      actionSequence: Number(actionResult.actionSequence ?? initiativeActionSequenceRef.current) || 1,
+      actionType: actionResult.actionType || "unknown",
+      remainingActions: committedRemainingActions,
+      grappleActive,
+      grappleEnded: !grappleActive,
+    };
+
+    const completionKey = createCombatActionCompletionKey({
+      generationId: canonicalResult.generationId,
+      initiativeTurnId: canonicalResult.initiativeTurnId,
+      actionToken: canonicalResult.actionToken,
+    });
+    if (canonicalResult.actionToken && combatActionCompletionRegistryRef.current.has(completionKey)) {
+      addLog?.({
+        audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+        channel: COMBAT_LOG_CHANNELS.TURN,
+        eventType: "combat-action-completion-duplicate-blocked",
+        level: "warning",
+        type: "warning",
+        actorId,
+        targetId: opponentId,
+        executionKey: canonicalResult.executionKey,
+        round: snapshot.round,
+        turn: snapshot.turnCounter,
+        turnToken: snapshot.turnToken,
+        source,
+        message:
+          `combat-action-completion-duplicate-blocked: actorId=${actorId} ` +
+          `initiativeTurnId=${canonicalResult.initiativeTurnId || "none"} actionToken=${canonicalResult.actionToken || "none"}`,
+        data: { completionKey, existing: combatActionCompletionRegistryRef.current.get(completionKey), result: canonicalResult },
+      }, "warning");
+      return { accepted: false, decision: "duplicate-blocked", reason: "duplicate-combat-action-completion", snapshot, result: canonicalResult };
+    }
+
+    const mismatched = logCombatTurnSnapshotMismatch({ actorId, actionResult, snapshot, source });
+    if (mismatched) {
+      return { accepted: false, decision: "rejected", reason: "combat-turn-snapshot-mismatch", snapshot, result: canonicalResult };
+    }
+
+    const reportedRemaining = Number(actionResult.remainingActions);
+    if (Number.isFinite(reportedRemaining) && reportedRemaining !== committedRemainingActions) {
+      addLog?.({
+        audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+        channel: COMBAT_LOG_CHANNELS.VALIDATION,
+        eventType: "combat-action-completion-committed-state-mismatch",
+        level: "warning",
+        type: "warning",
+        actorId,
+        round: snapshot.round,
+        turn: snapshot.turnCounter,
+        turnToken: snapshot.turnToken,
+        source,
+        message:
+          `combat action completion corrected from committed state: actorId=${actorId} ` +
+          `reportedRemaining=${reportedRemaining} committedRemaining=${committedRemainingActions}`,
+        data: { reportedRemaining, committedRemainingActions, actionResult: canonicalResult },
+      }, "warning");
+    }
+
+    if (!canonicalResult.accepted || !canonicalResult.completed) {
+      return { accepted: canonicalResult.accepted, decision: "ignored", reason: "not-accepted-or-incomplete", snapshot, result: canonicalResult };
+    }
+
+    if (canonicalResult.actionToken) {
+      combatActionCompletionRegistryRef.current.set(completionKey, {
+        completionKey,
+        actorId,
+        opponentId,
+        executionKey: canonicalResult.executionKey,
+        generationId: canonicalResult.generationId,
+        initiativeTurnId: canonicalResult.initiativeTurnId,
+        actionToken: canonicalResult.actionToken,
+        actionSequence: canonicalResult.actionSequence,
+        actionType: canonicalResult.actionType,
+        source,
+        completedAt: Date.now(),
+      });
+    }
+    if (typeof onCompletionCommitted === "function") {
+      const completionHookResult = onCompletionCommitted({
+        canonicalResult,
+        completionKey,
+        completionRecord: combatActionCompletionRegistryRef.current.get(completionKey) || null,
+      });
+      if (completionHookResult?.accepted === false) {
+        return {
+          accepted: false,
+          decision: "rejected",
+          reason: completionHookResult.reason || "completion-commit-hook-rejected",
+          snapshot,
+          result: canonicalResult,
+        };
+      }
+    }
+
+    const combatEnded = !snapshot.combatActive;
+    const explicitTurnEndingEffect =
+      canonicalResult.explicitTurnEndingEffect === true ||
+      canonicalResult.turnEndingEffect === true ||
+      /fumble|horror-action-consumed|fled|pass|no-actions|cannot-act|combat-end/i.test(String(source || ""));
+    const fighterIncapacitated = !actor || !snapshot.fighterCapable;
+    const activeFighterStillOwnsTurn = snapshot.activeFighterId === actorId;
+    const actionTypeText = String(canonicalResult.actionType || "").toLowerCase();
+    const sourceText = String(source || "").toLowerCase();
+    const moraleContinuationCandidate =
+      /cower|route|panic|morale/.test(actionTypeText) ||
+      /cower|route|panic|morale|routing/.test(sourceText);
+    const forceSameActorContinuation =
+      activeFighterStillOwnsTurn &&
+      committedRemainingActions > 0 &&
+      explicitTurnEndingEffect &&
+      moraleContinuationCandidate &&
+      !fighterIncapacitated &&
+      canonicalResult.explicitTurnEndingEffect !== true &&
+      canonicalResult.turnEndingEffect !== true;
+    if (forceSameActorContinuation) {
+      addLog?.({
+        audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+        channel: COMBAT_LOG_CHANNELS.TURN,
+        eventType: "completed-turn-same-actor-reschedule",
+        level: "warning",
+        type: "warning",
+        actorId,
+        round: snapshot.round,
+        turn: snapshot.turnCounter,
+        turnToken: snapshot.turnToken,
+        source,
+        message:
+          `completed-turn-same-actor-reschedule: actorId=${actorId} nextActorId=${snapshot.activeFighterId || "unknown"} ` +
+          `initiativeTurnId=${snapshot.initiativeTurnId || "none"} remainingActions=${committedRemainingActions} source=${source}`,
+        data: { actorId, nextActorId: snapshot.activeFighterId, initiativeTurnId: snapshot.initiativeTurnId, remainingActions: committedRemainingActions, source, actionResult: canonicalResult },
+      }, "warning");
+      addLog?.({
+        audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+        channel: COMBAT_LOG_CHANNELS.TURN,
+        eventType: "turn-counter-advance-rejected",
+        level: "warning",
+        type: "warning",
+        actorId,
+        round: snapshot.round,
+        turn: snapshot.turnCounter,
+        turnToken: snapshot.turnToken,
+        source,
+        message:
+          `turn-counter-advance-rejected: actorId=${actorId} reason=same-logical-turn-continuation ` +
+          `initiativeTurnId=${snapshot.initiativeTurnId || "none"} remainingActions=${committedRemainingActions}`,
+        data: { reason: "same-logical-turn-continuation", actorId, initiativeTurnId: snapshot.initiativeTurnId, remainingActions: committedRemainingActions },
+      }, "warning");
+    }
+
+    if (combatEnded) {
+      pendingTurnAdvanceRef.current = false;
+      turnActionResolvingRef.current = false;
+      if (committedRemainingActions > 0) {
+        addLog?.({
+          audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+          channel: COMBAT_LOG_CHANNELS.TURN,
+          eventType: "combat-action-combat-end-terminal-return",
+          level: "info",
+          type: "debug",
+          actorId,
+          targetId: opponentId,
+          executionKey: canonicalResult.executionKey,
+          round: snapshot.round,
+          turn: snapshot.turnCounter,
+          turnToken: snapshot.turnToken,
+          source,
+          message:
+            `combat action combat-end terminal return: actorId=${actorId} ` +
+            `remainingActions=${committedRemainingActions} actionToken=${canonicalResult.actionToken || "none"}`,
+          data: { committedRemainingActions, actionResult: canonicalResult },
+        }, "debug");
+      }
+      return { accepted: true, decision: "combat-ended", snapshot, result: canonicalResult };
+    }
+
+    if (
+      explicitTurnEndingEffect &&
+      !forceSameActorContinuation &&
+      activeFighterStillOwnsTurn &&
+      committedRemainingActions > 0 &&
+      !fighterIncapacitated
+    ) {
+      addLog?.({
+        audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+        channel: COMBAT_LOG_CHANNELS.TURN,
+        eventType: "turn-ending-effect-actions-remain",
+        level: "warning",
+        type: "warning",
+        actorId,
+        round: snapshot.round,
+        turn: snapshot.turnCounter,
+        turnToken: snapshot.turnToken,
+        source,
+        message:
+          `turn-ending effect actions remain: actorId=${actorId} remainingActions=${committedRemainingActions} ` +
+          `initiativeTurnId=${snapshot.initiativeTurnId || "none"} source=${source}`,
+        data: { actorId, remainingActions: committedRemainingActions, initiativeTurnId: snapshot.initiativeTurnId, actionResult: canonicalResult },
+      }, "warning");
+      commitTurnEndingActionExhaustion({
+        actorId,
+        initiativeTurnId: snapshot.initiativeTurnId,
+        actionToken: snapshot.turnToken,
+        reason: "turn-ending-effect-actions-remain",
+        source,
+      });
+      cancelRemainingActionContinuationsForActor({
+        actorId,
+        initiativeTurnId: snapshot.initiativeTurnId,
+        reason: "turn-ending-effect-actions-remain",
+        source,
+      });
+      committedRemainingActions = 0;
+      canonicalResult.remainingActions = 0;
+    }
+
+    if (
+      activeFighterStillOwnsTurn &&
+      committedRemainingActions > 0 &&
+      (!explicitTurnEndingEffect || forceSameActorContinuation) &&
+      !fighterIncapacitated
+    ) {
+      const completedActionSequence = canonicalResult.actionSequence;
+      const nextActionSequence = completedActionSequence + 1;
+      const completedActionToken = canonicalResult.actionToken || executionKey || canonicalResult.executionKey ||
+        `completed-action:${snapshot.initiativeTurnId}:${completedActionSequence}:${actorId}`;
+      const continuationCompletionKey = createCombatActionCompletionKey({
+        generationId: snapshot.generationId,
+        initiativeTurnId: snapshot.initiativeTurnId,
+        actionToken: completedActionToken,
+      });
+      if (!combatActionCompletionRegistryRef.current.has(continuationCompletionKey)) {
+        combatActionCompletionRegistryRef.current.set(continuationCompletionKey, {
+          completionKey: continuationCompletionKey,
+          actorId,
+          opponentId,
+          executionKey: canonicalResult.executionKey,
+          generationId: snapshot.generationId,
+          initiativeTurnId: snapshot.initiativeTurnId,
+          actionToken: completedActionToken,
+          actionSequence: completedActionSequence,
+          actionType: canonicalResult.actionType,
+          source,
+          completedAt: Date.now(),
+        });
+      }
+      const continuationKey = createRemainingActionContinuationKey({
+        generationId: snapshot.generationId,
+        initiativeTurnId: snapshot.initiativeTurnId,
+        actorId,
+        completedActionToken,
+        nextActionSequence,
+      });
+      if (remainingActionContinuationRegistryRef.current.has(continuationKey)) {
+        addLog?.({
+          audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+          channel: COMBAT_LOG_CHANNELS.TURN,
+          eventType: "remaining-action-continuation-deduped",
+          level: "info",
+          type: "debug",
+          actorId,
+          executionKey: canonicalResult.executionKey,
+          round: snapshot.round,
+          turn: snapshot.turnCounter,
+          turnToken: snapshot.turnToken,
+          source,
+          message: `remaining action continuation deduped: actor=${actor?.name || actorId} key=${continuationKey}`,
+          data: { continuationKey, remainingActions: committedRemainingActions, initiativeTurnId: snapshot.initiativeTurnId },
+        }, "debug");
+        return { accepted: true, decision: "continuation-deduped", snapshot, result: canonicalResult, continuationKey };
+      }
+
+      const continuationCreation = createActionContinuationReceipt({
+        continuationId: continuationKey,
+        continuationKey,
+        generationId: snapshot.generationId,
+        initiativeTurnId: snapshot.initiativeTurnId,
+        actorId,
+        completedActionToken,
+        completedActionType: canonicalResult.actionType,
+        completedActionSequence,
+        remainingActions: committedRemainingActions,
+        source,
+      });
+      if (!continuationCreation.ok) {
+        return { accepted: false, decision: "rejected", reason: continuationCreation.reason, snapshot, result: canonicalResult };
+      }
+      const continuationRecord = {
+        ...continuationCreation.record,
+        opponentId,
+        turnToken: snapshot.turnToken,
+      };
+      remainingActionContinuationRegistryRef.current.set(continuationRecord.continuationKey, continuationRecord);
+      transitionLogicalInitiativeTurn(snapshot.initiativeTurnId, "continuation-pending", source, {
+        continuationKey: continuationRecord.continuationKey,
+        continuationPhase: "continuation-pending",
+      });
+      if (!remainingActionContinuationRegistryRef.current.has(continuationKey)) {
+        addLog?.({
+          audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+          channel: COMBAT_LOG_CHANNELS.TURN,
+          eventType: "combat-action-continuation-missing",
+          level: "error",
+          type: "error",
+          actorId,
+          executionKey: canonicalResult.executionKey,
+          round: snapshot.round,
+          turn: snapshot.turnCounter,
+          turnToken: snapshot.turnToken,
+          source,
+          message:
+            `combat action continuation missing: actorId=${actorId} actionType=${canonicalResult.actionType || "unknown"} ` +
+            `remainingActions=${committedRemainingActions} initiativeTurnId=${snapshot.initiativeTurnId || "none"}`,
+          data: { continuationKey, remainingActions: committedRemainingActions, initiativeTurnId: snapshot.initiativeTurnId },
+        }, "error");
+        remainingActionContinuationRegistryRef.current.set(continuationKey, {
+          continuationKey,
+          actorId,
+          combatSession: snapshot.generationId,
+          turnToken: snapshot.turnToken,
+          initiativeTurnId: snapshot.initiativeTurnId,
+          remainingActions: committedRemainingActions,
+            completedActionToken,
+            completedActionType: canonicalResult.actionType,
+            completedActionSequence,
+          nextActionSequence,
+          source,
+          pending: true,
+          state: "created",
+          recovered: true,
+          createdAt: Date.now(),
+        });
+      }
+      addLog?.({
+        audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+        channel: COMBAT_LOG_CHANNELS.TURN,
+        eventType: "remaining-action-continuation-created",
+        level: "info",
+        type: "debug",
+        actorId,
+        executionKey: canonicalResult.executionKey,
+        round: snapshot.round,
+        turn: snapshot.turnCounter,
+        turnToken: snapshot.turnToken,
+        source,
+        message:
+          `remaining action continuation created: actor=${actor?.name || actorId} ` +
+          `remainingActions=${committedRemainingActions} source=${source}`,
+        data: { continuationKey, remainingActions: committedRemainingActions, initiativeTurnId: snapshot.initiativeTurnId },
+      }, "debug");
+      addLog?.({
+        audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+        channel: COMBAT_LOG_CHANNELS.TURN,
+        eventType: "initiative-turn-reuse",
+        level: "info",
+        type: "debug",
+        actorId,
+        round: snapshot.round,
+        turn: snapshot.turnCounter,
+        turnToken: snapshot.turnToken,
+        source: "remaining-action-continuation",
+        message:
+          `initiative turn reuse: actorId=${actorId} initiativeTurnId=${snapshot.initiativeTurnId || "none"} ` +
+          `actionSequence=${initiativeActionSequenceRef.current}`,
+        data: { initiativeTurnId: snapshot.initiativeTurnId, actionSequence: initiativeActionSequenceRef.current, continuationKey },
+      }, "debug");
+
+      pendingTurnAdvanceRef.current = false;
+      turnActionResolvingRef.current = false;
+      activeGrappleActionIdRef.current = null;
+      activeAttackActionIdRef.current = null;
+      if (actor?.type === "enemy") {
+        processingEnemyTurnRef.current = false;
+        enemyActionLockRef.current = null;
+        enemyActionCommittedThisSliceRef.current = false;
+        enemyActionCommittedSliceKeyRef.current = null;
+      } else if (aiControlEnabledRef.current && actor && !isManualPlayerCombatant(actor, { aiControlEnabled: aiControlEnabledRef.current })) {
+        processingPlayerAIRef.current = false;
+        playerAIActionScheduledRef.current = false;
+      }
+      const continuationSession = snapshot.generationId;
+      const continuationTurnToken = snapshot.turnToken;
+      const continuationInitiativeTurnId = snapshot.initiativeTurnId;
+      const continuationTimer = setTimeout(() => {
+        const entry = remainingActionContinuationRegistryRef.current.get(continuationKey);
+        const liveActor = fightersRef.current?.[turnIndexRef.current];
+        if (!entry || entry.state !== "created") {
+          addLog?.({
+            audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+            channel: COMBAT_LOG_CHANNELS.TURN,
+            eventType: "continuation-fire-without-created-record",
+            level: "warning",
+            type: "warning",
+            actorId,
+            executionKey: canonicalResult.executionKey,
+            round: meleeRoundRef.current,
+            turn: turnCounterRef.current,
+            turnToken: currentTurnTokenRef.current,
+            source,
+            message: `continuation-fire-without-created-record: actor=${actor?.name || actorId} key=${continuationKey}`,
+            data: { continuationKey, entry, initiativeTurnId: continuationInitiativeTurnId },
+          }, "warning");
+          remainingActionContinuationRegistryRef.current.delete(continuationKey);
+          return;
+        }
+        if (entry.continuationKey !== continuationKey) {
+          addLog?.({
+            audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+            channel: COMBAT_LOG_CHANNELS.VALIDATION,
+            eventType: "continuation-key-reconstruction-blocked",
+            level: "error",
+            type: "error",
+            actorId,
+            source: "remaining-action-continuation-fired",
+            message: `continuation key reconstruction blocked: actorId=${actorId} scheduledKey=${continuationKey} recordKey=${entry.continuationKey || "none"}`,
+            data: { scheduledContinuationKey: continuationKey, recordContinuationKey: entry.continuationKey || null },
+          }, "error");
+          remainingActionContinuationRegistryRef.current.set(continuationKey, { ...entry, state: "stale", terminalReason: "continuation-key-identity-mismatch" });
+          return;
+        }
+        const authoritativeContinuationKey = entry.continuationKey;
+        addLog?.({
+          audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+          channel: COMBAT_LOG_CHANNELS.VALIDATION,
+          eventType: "continuation-key-identity-validated",
+          level: "info",
+          type: "debug",
+          actorId,
+          source: "remaining-action-continuation-fired",
+          message: `continuation key identity validated: actorId=${actorId} continuationKey=${authoritativeContinuationKey}`,
+          data: { continuationKey: authoritativeContinuationKey, authorizationId: entry.authorizationId },
+        }, "debug");
+        if (
+          combatOverRef.current ||
+          !combatActiveRef.current ||
+          combatEndCheckRef.current ||
+          combatSessionRef.current !== continuationSession ||
+          currentTurnTokenRef.current !== continuationTurnToken ||
+          initiativeTurnIdRef.current !== continuationInitiativeTurnId ||
+          liveActor?.id !== actorId ||
+          (Number(liveActor?.remainingActions ?? 0) || 0) <= 0
+        ) {
+          addLog?.({
+            audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+            channel: COMBAT_LOG_CHANNELS.TURN,
+            eventType: "remaining-action-continuation-stale",
+            level: "warning",
+            type: "warning",
+            actorId,
+            executionKey: canonicalResult.executionKey,
+            round: meleeRoundRef.current,
+            turn: turnCounterRef.current,
+            turnToken: currentTurnTokenRef.current,
+            source,
+            message: `remaining action continuation stale: actor=${actor?.name || actorId} key=${continuationKey}`,
+            data: { continuationKey, initiativeTurnId: continuationInitiativeTurnId },
+          }, "warning");
+          remainingActionContinuationRegistryRef.current.delete(continuationKey);
+          return;
+        }
+        const firedContinuation = fireActionContinuationReceipt(entry);
+        if (!firedContinuation.ok) {
+          remainingActionContinuationRegistryRef.current.set(authoritativeContinuationKey, rejectActionContinuationReceipt(entry, firedContinuation.reason));
+          return;
+        }
+        const firedEntry = Object.freeze({ ...firedContinuation.record });
+        remainingActionContinuationRegistryRef.current.set(authoritativeContinuationKey, firedEntry);
+        const continuationAuthorization = firedEntry;
+        emitActionContinuationReceiptHop("callback-fired", continuationAuthorization, {
+          requestedActionSequence: continuationAuthorization.nextActionSequence,
+          source,
+        });
+        const completedGrappleExecution = Array.from(grappleActionExecutionRegistryRef.current.values()).find((record) =>
+          record?.actionToken === firedEntry.completedActionToken && record?.state === "completed"
+        );
+        if (completedGrappleExecution) {
+          addLog?.({
+            audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+            channel: COMBAT_LOG_CHANNELS.TURN,
+            eventType: "grapple-authorization-receipt-fired",
+            level: "info",
+            type: "debug",
+            actorId,
+            targetId: continuationAuthorization.opponentId,
+            source: "remaining-action-continuation",
+            message: `grapple authorization receipt fired: actorId=${actorId} continuationKey=${authoritativeContinuationKey}`,
+            data: {
+              ...continuationAuthorization,
+              continuationKey: firedEntry.continuationKey,
+              completedActionToken: firedEntry.completedActionToken,
+              recordState: firedEntry.state,
+              receiptPresent: true,
+            },
+          }, "debug");
+        } else if (String(source || "").startsWith("grapple-action:")) {
+          addLog?.({
+            audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+            channel: COMBAT_LOG_CHANNELS.VALIDATION,
+            eventType: "non-grapple-grapple-receipt-creation-blocked",
+            level: "error",
+            type: "error",
+            actorId,
+            targetId: opponentId,
+            source,
+            message: `non-grapple grapple receipt creation blocked: actorId=${actorId} continuationKey=${authoritativeContinuationKey}`,
+            data: { continuationKey: authoritativeContinuationKey, completedActionToken: firedEntry.completedActionToken, completedActionType: firedEntry.completedActionType },
+          }, "error");
+        }
+        transitionLogicalInitiativeTurn(continuationInitiativeTurnId, "active", "remaining-action-continuation-fired", {
+          continuationKey: authoritativeContinuationKey,
+          continuationPhase: "fired-awaiting-admission",
+        });
+        addLog?.({
+          audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+          channel: COMBAT_LOG_CHANNELS.TURN,
+          eventType: "remaining-action-continuation-fired",
+          level: "info",
+          type: "debug",
+          actorId,
+          executionKey: canonicalResult.executionKey,
+          round: meleeRoundRef.current,
+          turn: turnCounterRef.current,
+          turnToken: currentTurnTokenRef.current,
+          source,
+          message:
+            `remaining action continuation fired: actor=${liveActor?.name || actorId} ` +
+            `remainingActions=${liveActor?.remainingActions}`,
+          data: { continuationKey: authoritativeContinuationKey, remainingActions: liveActor?.remainingActions, initiativeTurnId: continuationInitiativeTurnId },
+        }, "debug");
+        // Keep the fired record as the sole authorization for action sequence 2.
+        // It is cleaned up with the logical turn/combat, not before the callback
+        // can prove ownership of the next action.
+
+        if (liveActor.type === "enemy") {
+          processingEnemyTurnRef.current = false;
+          enemyActionLockRef.current = null;
+          enemyActionCommittedThisSliceRef.current = false;
+          enemyActionCommittedSliceKeyRef.current = null;
+          unresolvedEnemyTurnStartKeyRef.current = null;
+          enemyTurnEnteredAIBranchKeyRef.current = null;
+          handleEnemyTurnRef.current?.(liveActor, "remaining-action-continuation", {
+            continuation: true,
+            turnToken: continuationTurnToken,
+            continuationKey: authoritativeContinuationKey,
+            continuationAuthorization,
+            source,
+          });
+          return;
+        }
+
+        if (aiControlEnabledRef.current && !isManualPlayerCombatant(liveActor, { aiControlEnabled: aiControlEnabledRef.current })) {
+          const ownerRestore = ensureContinuationExecutionOwnership({
+            actorId,
+            initiativeTurnId: continuationInitiativeTurnId,
+            expectedOwner: "player-ai",
+            continuationKey: authoritativeContinuationKey,
+            source: "remaining-action-continuation-fired",
+          });
+          if (!ownerRestore.accepted) {
+            addLog?.({
+              audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+              channel: COMBAT_LOG_CHANNELS.TURN,
+              eventType: "continuation-creation-rejected",
+              level: "warning",
+              type: "warning",
+              actorId,
+              round: meleeRoundRef.current,
+              turn: turnCounterRef.current,
+              turnToken: currentTurnTokenRef.current,
+              source: "remaining-action-continuation-fired",
+              message:
+                `continuation creation rejected: actorId=${actorId} reason=${ownerRestore.reason || "owner-restore-failed"} ` +
+                `continuationKey=${authoritativeContinuationKey}`,
+              data: { reason: ownerRestore.reason || "owner-restore-failed", continuationKey: authoritativeContinuationKey, initiativeTurnId: continuationInitiativeTurnId },
+            }, "warning");
+            return;
+          }
+          processingPlayerAIRef.current = false;
+          playerAIActionScheduledRef.current = false;
+          handlePlayerAITurnRef.current?.(liveActor, {
+            turnToken: continuationTurnToken,
+            reason: "remaining-action-continuation",
+            source,
+            continuationKey: authoritativeContinuationKey,
+            continuationAuthorization,
+            initiativeTurnId: continuationInitiativeTurnId,
+          });
+        }
+      }, Math.max(0, Number(delayMs) || 0));
+      allTimeoutsRef.current.push(continuationTimer);
+      return { accepted: true, decision: "continuation-created", snapshot, result: canonicalResult, continuationKey };
+    }
+
+    activeGrappleActionIdRef.current = null;
+    activeAttackActionIdRef.current = null;
+    turnActionResolvingRef.current = false;
+    pendingTurnAdvanceRef.current = false;
+    if (actor?.type === "enemy") {
+      processingEnemyTurnRef.current = false;
+      enemyActionLockRef.current = null;
+      enemyActionCommittedThisSliceRef.current = false;
+      enemyActionCommittedSliceKeyRef.current = null;
+    } else if (aiControlEnabledRef.current && actor && !isManualPlayerCombatant(actor, { aiControlEnabled: aiControlEnabledRef.current })) {
+      processingPlayerAIRef.current = false;
+      playerAIActionScheduledRef.current = false;
+    }
+    scheduleEndTurn(0, source, {
+      actingActorSnapshot: actor || undefined,
+      actingActorLabel: actor ? formatCombatActorLabel(actor, { roster }) : undefined,
+    });
+    return {
+      accepted: true,
+      decision: explicitTurnEndingEffect || fighterIncapacitated ? "turn-ending-effect" : "turn-advanced",
+      snapshot,
+      result: canonicalResult,
+    };
+  }, [
+    addLog,
+    cancelRemainingActionContinuationsForActor,
+    canFighterStartTurn,
+    commitTurnEndingActionExhaustion,
+    createCombatActionCompletionKey,
+    createRemainingActionContinuationKey,
+    fighters,
+    formatCombatActorLabel,
+    getAuthoritativeCombatTurnSnapshot,
+    ensureContinuationExecutionOwnership,
+    logCombatTurnSnapshotMismatch,
+    meleeRound,
+    scheduleEndTurn,
+    turnCounter,
+  ]);
+
+  useEffect(() => {
+    resolveCombatActionCompletionRef.current = resolveCombatActionCompletion;
+  }, [resolveCombatActionCompletion]);
 
   const confirmOverwatchHex = useCallback(
     (hex) => {
@@ -14884,11 +17535,621 @@ function CombatPage({ characters = [] }) {
     };
   }, [addLog, fighters, getAttackExecutionGateChain, getAttackExecutionMetadata, meleeRound, turnCounter]);
 
+  const createGrappleActionExecutionRecord = useCallback(({
+    executionKey,
+    actorId,
+    targetId,
+    actionType,
+    actionToken,
+    actionSequence,
+  } = {}) => {
+    if (!executionKey) return null;
+    const record = {
+      executionKey,
+      generationId: combatSessionRef.current || "default",
+      initiativeTurnId: initiativeTurnIdRef.current || null,
+      actionToken: actionToken || null,
+      actionSequence,
+      actorId,
+      opponentId: targetId,
+      actionType,
+      state: "created",
+      rollStarted: false,
+      rollKind: null,
+      contactResolved: false,
+      stateCommitted: false,
+      completionEmitted: false,
+      completionArbiterCallCount: 0,
+      continuationSchedulingOwner: null,
+      completedAt: null,
+      createdAt: Date.now(),
+      selectedAt: null,
+      dispatchedAt: null,
+      resolvingAt: null,
+      rollClaimedAt: null,
+      committedAt: null,
+    };
+    grappleActionExecutionRegistryRef.current.set(executionKey, record);
+    return record;
+  }, []);
+
+  const createCanonicalGrappleActionToken = useCallback(({
+    initiativeTurnId,
+    actionSequence,
+    actorId,
+    opponentId,
+    source = "grapple-action-entry",
+  } = {}) => {
+    const sequence = Number(actionSequence);
+    const liveActor = fightersRef.current?.[turnIndexRef.current];
+    if (!initiativeTurnId || !Number.isInteger(sequence) || sequence < 1 || liveActor?.id !== actorId) {
+      return { ok: false, reason: "illegal-grapple-action-token-request" };
+    }
+    const actionToken = `${initiativeTurnId}:${sequence}`;
+    const duplicateToken = Array.from(grappleActionExecutionRegistryRef.current.values()).find((record) => record?.actionToken === actionToken);
+    if (duplicateToken) {
+      return { ok: false, reason: "duplicate-grapple-action-token", record: duplicateToken };
+    }
+    return { ok: true, actionToken, actionSequence: sequence };
+  }, []);
+
+  const beginGrappleActionResolution = useCallback(({
+    executionKey,
+    generationId,
+    initiativeTurnId,
+    actionToken,
+    actorId,
+    targetId,
+    actionType,
+    source = "grapple-action-entry",
+  } = {}) => {
+    const record = grappleActionExecutionRegistryRef.current.get(executionKey);
+    const identityMatches = record &&
+      record.generationId === generationId &&
+      record.initiativeTurnId === initiativeTurnId &&
+      record.actionToken === actionToken &&
+      record.actorId === actorId &&
+      record.opponentId === targetId &&
+      record.actionType === actionType;
+    if (!identityMatches || record.state !== "dispatched") {
+      return { ok: false, reason: "missing-or-terminal-grapple-execution", record };
+    }
+    const transition = transitionCanonicalGrappleExecutionRecord(record, "resolving");
+    if (!transition.ok) return transition;
+    const next = { ...transition.record, rollStarted: false, rollKind: null };
+    grappleActionExecutionRegistryRef.current.set(executionKey, next);
+    addLog?.({
+      audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+      channel: COMBAT_LOG_CHANNELS.AI,
+      eventType: "grapple-action-resolution-started",
+      level: "info",
+      type: "debug",
+      actorId,
+      targetId,
+      executionKey,
+      source,
+      message: `grapple action resolution started: actorId=${actorId} actionToken=${actionToken || "none"}`,
+      data: { actionType, record: next },
+    }, "debug");
+    return { ok: true, record: next };
+  }, [addLog]);
+
+  const claimCanonicalGrappleRoll = useCallback(({
+    executionKey,
+    generationId,
+    initiativeTurnId,
+    actionToken,
+    actorId,
+    targetId,
+    admission,
+    rollKind,
+    source = "grapple-roll",
+  } = {}) => {
+    const record = grappleActionExecutionRegistryRef.current.get(executionKey);
+    const identityMatches = record &&
+      record.generationId === generationId &&
+      record.initiativeTurnId === initiativeTurnId &&
+      record.actionToken === actionToken &&
+      Number.isInteger(record.actionSequence) &&
+      record.actorId === actorId &&
+      record.opponentId === targetId &&
+      admission?.executionKey === executionKey && admission?.actionToken === actionToken &&
+      admission?.actorId === actorId && admission?.opponentId === targetId &&
+      admission?.actionSequence === record.actionSequence && combatActiveRef.current &&
+      !combatOverRef.current && !combatEndCheckRef.current;
+    if (!identityMatches || record.state !== "resolving") {
+      addLog?.({
+        audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+        channel: COMBAT_LOG_CHANNELS.VALIDATION,
+        eventType: "grapple-roll-without-action-envelope-blocked",
+        level: "error",
+        type: "error",
+        actorId,
+        targetId,
+        executionKey,
+        source,
+        message: `grapple roll without action envelope blocked: actorId=${actorId} actionToken=${actionToken || "none"}`,
+        data: { record, generationId, initiativeTurnId, actionToken },
+      }, "error");
+      return { ok: false, reason: "missing-or-nonresolving-grapple-execution", record };
+    }
+    if (record.rollStarted) {
+      addLog?.({
+        audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+        channel: COMBAT_LOG_CHANNELS.VALIDATION,
+        eventType: "grapple-action-duplicate-roll-blocked",
+        level: "warning",
+        type: "warning",
+        actorId: record.actorId,
+        targetId: record.opponentId,
+        executionKey,
+        round: meleeRoundRef.current,
+        turn: turnCounterRef.current,
+        turnToken: currentTurnTokenRef.current,
+        source,
+        message: `grapple-action-duplicate-roll-blocked: actorId=${record.actorId} actionToken=${record.actionToken || "none"} source=${source}`,
+        data: { record },
+      }, "warning");
+      return { ok: false, reason: "duplicate-grapple-roll", record };
+    }
+    const transition = transitionCanonicalGrappleExecutionRecord(record, "roll-claimed");
+    if (!transition.ok) return transition;
+    const next = { ...transition.record, rollStarted: true, rollKind };
+    grappleActionExecutionRegistryRef.current.set(executionKey, next);
+    addLog?.({
+      audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+      channel: COMBAT_LOG_CHANNELS.AI,
+      eventType: "grapple-action-roll-claimed",
+      level: "info",
+      type: "debug",
+      actorId,
+      targetId,
+      executionKey,
+      source,
+      message: `grapple action roll claimed: actorId=${actorId} actionToken=${actionToken || "none"} rollKind=${rollKind}`,
+      data: { generationId, initiativeTurnId, actionToken, actionSequence: record.actionSequence, actorId, opponentId: targetId, actionType: record.actionType, executionKey, rollKind },
+    }, "debug");
+    return { ok: true, record: next };
+  }, [addLog]);
+
+  const validateClaimedGrappleRoll = useCallback(({
+    executionKey,
+    actionToken,
+    admission,
+    expectedRollKind,
+    source = "grapple-roll-callback",
+  } = {}) => {
+    const record = grappleActionExecutionRegistryRef.current.get(executionKey);
+    if (!record || record.actionToken !== actionToken || record.state !== "roll-claimed" ||
+      !Number.isInteger(record.actionSequence) || record.rollStarted !== true || !record.rollKind ||
+      record.rollKind !== expectedRollKind || record.completionEmitted ||
+      admission?.executionKey !== executionKey || admission?.actionToken !== actionToken ||
+      admission?.actorId !== record.actorId || admission?.opponentId !== record.opponentId ||
+      admission?.actionSequence !== record.actionSequence || !combatActiveRef.current || combatOverRef.current || combatEndCheckRef.current) {
+      return { ok: false, reason: "grapple-roll-claim-not-valid", record, source };
+    }
+    return { ok: true, record };
+  }, []);
+
+  const emitActionContinuationReceiptHop = useCallback((stage, receipt, extra = {}) => {
+    if (!receipt) return;
+    addLog?.({
+      audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+      channel: COMBAT_LOG_CHANNELS.TURN,
+      eventType: "action-continuation-receipt-hop",
+      level: "info",
+      type: "debug",
+      actorId: receipt.actorId,
+      executionKey: extra.consumingActionToken || null,
+      source: extra.source || "action-continuation-receipt",
+      message: `action continuation receipt hop: stage=${stage} continuationKey=${receipt.continuationKey}`,
+      data: {
+        stage,
+        continuationId: receipt.continuationId || receipt.authorizationId || null,
+        continuationKey: receipt.continuationKey || null,
+        initiativeTurnId: receipt.initiativeTurnId || null,
+        actorId: receipt.actorId || null,
+        receiptState: receipt.state || extra.receiptState || null,
+        completedActionType: receipt.completedActionType || null,
+        completedActionSequence: receipt.completedActionSequence ?? null,
+        nextActionSequence: receipt.nextActionSequence ?? null,
+        requestedActionSequence: extra.requestedActionSequence ?? receipt.nextActionSequence ?? null,
+        consumingActionType: extra.consumingActionType || null,
+        consumingActionToken: extra.consumingActionToken || null,
+      },
+    }, "debug");
+  }, [addLog]);
+
+  const consumeAuthoritativeActionContinuationReceipt = useCallback(({
+    continuationAuthorization,
+    initiativeTurnId,
+    actorId,
+    requestedActionSequence,
+    consumingActionToken,
+    consumingActionType,
+  } = {}) => {
+    const receipt = continuationAuthorization || null;
+    const continuationKey = receipt?.continuationKey;
+    const entry = continuationKey
+      ? remainingActionContinuationRegistryRef.current.get(continuationKey)
+      : null;
+    const activeActor = fightersRef.current?.[turnIndexRef.current];
+    const previousCompletionKey = createCombatActionCompletionKey({
+      generationId: receipt?.generationId,
+      initiativeTurnId,
+      actionToken: entry?.completedActionToken,
+    });
+    const completedActionCanonical = combatActionCompletionRegistryRef.current.has(previousCompletionKey);
+    const consumingTokenExists = Boolean(
+      consumingActionToken && (
+        attackExecutionRegistryRef.current.has(consumingActionToken) ||
+        Array.from(grappleActionExecutionRegistryRef.current.values()).some((execution) => execution?.actionToken === consumingActionToken) ||
+        String(consumingActionToken).startsWith(`${initiativeTurnId}:`)
+      )
+    );
+    const validation = validateActionContinuationAdmission({
+      record: entry,
+      receipt,
+      generationId: combatSessionRef.current || "default",
+      initiativeTurnId,
+      actorId,
+      requestedActionSequence,
+      remainingActions: activeActor?.remainingActions,
+      combatActive: Boolean(combatActiveRef.current && !combatOverRef.current && !combatEndCheckRef.current),
+      actorCapable: Boolean(activeActor?.id === actorId && canFighterStartTurn(activeActor)),
+      actionLegal: consumingTokenExists,
+      completedActionCanonical,
+    });
+    if (!validation.ok) return { ...validation, record: entry };
+    const consumption = consumeActionContinuationReceipt(entry, {
+      actionToken: consumingActionToken,
+      actionType: consumingActionType,
+    });
+    if (!consumption.ok) return consumption;
+    remainingActionContinuationRegistryRef.current.set(continuationKey, consumption.record);
+    transitionLogicalInitiativeTurn(initiativeTurnId, "active", "action-continuation-consumed", {
+      continuationKey: null,
+      continuationAdmissionPending: false,
+      continuationPhase: null,
+    });
+    addLog?.({
+      audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+      channel: COMBAT_LOG_CHANNELS.TURN,
+      eventType: "remaining-action-continuation-consumed",
+      level: "info",
+      type: "debug",
+      actorId,
+      executionKey: consumingActionToken,
+      source: `${consumingActionType}-action-entry`,
+      message: `remaining action continuation consumed: actorId=${actorId} actionType=${consumingActionType} continuationKey=${continuationKey}`,
+      data: consumption.record,
+    }, "debug");
+    emitActionContinuationReceiptHop("consumed", consumption.record, {
+      requestedActionSequence,
+      consumingActionType,
+      consumingActionToken,
+      source: `${consumingActionType}-action-entry`,
+    });
+    return {
+      ok: true,
+      accepted: true,
+      authorizationRecord: consumption.record,
+      reservedActionToken: consumingActionToken,
+      actionSequence: requestedActionSequence,
+    };
+  }, [canFighterStartTurn, createCombatActionCompletionKey, emitActionContinuationReceiptHop, transitionLogicalInitiativeTurn]);
+
+  const auditSettledActionContinuation = useCallback(({
+    initiativeTurnId,
+    actorId,
+    executionKey = null,
+    source = "action-settled",
+  } = {}) => {
+    const audit = auditSettledActionContinuationReceipts(
+      remainingActionContinuationRegistryRef.current,
+      { initiativeTurnId, actorId },
+    );
+    const firedEntries = audit.activeFiredEntries;
+    for (const [continuationKey, record] of firedEntries) {
+      addLog?.({
+        audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+        channel: COMBAT_LOG_CHANNELS.VALIDATION,
+        eventType: "fired-continuation-left-pending-after-action-settled",
+        level: "error",
+        type: "error",
+        actorId,
+        executionKey,
+        source,
+        message: `fired continuation left pending after action settled: actorId=${actorId} continuationKey=${continuationKey}`,
+        data: {
+          continuationKey,
+          receipt: record,
+          activeAttackExecution: activeAttackActionIdRef.current,
+          activeGrappleExecution: activeGrappleActionIdRef.current,
+          logicalTurn: initiativeTurnLogicalRegistryRef.current.get(initiativeTurnId) || null,
+        },
+      }, "error");
+    }
+    const exactIdentityMismatches = audit.exactIdentityMismatches;
+    addLog?.({
+      audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+      channel: COMBAT_LOG_CHANNELS.TURN,
+      eventType: "action-continuation-receipt-turn-audit",
+      level: firedEntries.length === 0 && exactIdentityMismatches === 0 ? "info" : "error",
+      type: firedEntries.length === 0 && exactIdentityMismatches === 0 ? "debug" : "error",
+      actorId,
+      executionKey,
+      source,
+      message: `action continuation receipt turn audit: actorId=${actorId} activeFired=${firedEntries.length} exactIdentityMismatches=${exactIdentityMismatches}`,
+      data: {
+        ...audit,
+        activeFiredEntries: undefined,
+      },
+    }, firedEntries.length === 0 && exactIdentityMismatches === 0 ? "debug" : "error");
+    return { ok: firedEntries.length === 0 && exactIdentityMismatches === 0, activeFired: firedEntries.length, exactIdentityMismatches };
+  }, [addLog]);
+
+  const consumeGrappleContinuationAuthorization = useCallback(({
+    continuationAuthorization, continuationKey, generationId, initiativeTurnId, actorId, requestedActionSequence, authorizedActionToken, actionType = "grapple",
+  } = {}) => {
+    const receipt = continuationAuthorization || null;
+    const exactKey = receipt?.continuationKey || continuationKey;
+    const entry = remainingActionContinuationRegistryRef.current.get(exactKey);
+    const activeActor = fightersRef.current?.[turnIndexRef.current];
+    const previousCompletionKey = createCombatActionCompletionKey({ generationId, initiativeTurnId, actionToken: entry?.completedActionToken });
+    const previousCompletionFound = combatActionCompletionRegistryRef.current.has(previousCompletionKey);
+    const validation = validateActionContinuationAdmission({
+      record: entry,
+      receipt,
+      generationId,
+      initiativeTurnId,
+      actorId,
+      requestedActionSequence,
+      remainingActions: activeActor?.remainingActions,
+      combatActive: Boolean(combatActiveRef.current && !combatOverRef.current && !combatEndCheckRef.current),
+      actorCapable: Boolean(activeActor?.id === actorId && canFighterStartTurn(activeActor)),
+      actionLegal: true,
+      completedActionCanonical: previousCompletionFound,
+    });
+    if (!validation.ok) return { ...validation, entry };
+    if (!authorizedActionToken) {
+      return { ok: true, accepted: true, authorizationRecord: entry, reservedActionToken: null, actionSequence: requestedActionSequence };
+    }
+    return consumeAuthoritativeActionContinuationReceipt({
+      continuationAuthorization: receipt,
+      initiativeTurnId,
+      actorId,
+      requestedActionSequence,
+      consumingActionToken: authorizedActionToken,
+      consumingActionType: actionType,
+    });
+  }, [canFighterStartTurn, consumeAuthoritativeActionContinuationReceipt, createCombatActionCompletionKey]);
+
+  const completeGrappleActionExecution = useCallback((executionKey, source = "grapple-action-completed") => {
+    const record = grappleActionExecutionRegistryRef.current.get(executionKey);
+    if (!record || record.state !== "committed" || record.completionEmitted) {
+      addLog?.({
+        audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+        channel: COMBAT_LOG_CHANNELS.VALIDATION,
+        eventType: "grapple-action-duplicate-completion-blocked",
+        level: "warning",
+        type: "warning",
+        actorId: record?.actorId,
+        targetId: record?.opponentId,
+        executionKey,
+        round: meleeRoundRef.current,
+        turn: turnCounterRef.current,
+        turnToken: currentTurnTokenRef.current,
+        source,
+        message: `grapple-action-duplicate-completion-blocked: actorId=${record?.actorId || "unknown"} actionToken=${record?.actionToken || "none"} source=${source}`,
+        data: { record },
+      }, "warning");
+      return { ok: false, reason: "duplicate-grapple-completion", record };
+    }
+    const transition = transitionCanonicalGrappleExecutionRecord(record, "completed");
+    if (!transition.ok) return transition;
+    const next = {
+      ...transition.record,
+      completionEmitted: true,
+    };
+    grappleActionExecutionRegistryRef.current.set(executionKey, next);
+    return { ok: true, record: next };
+  }, [addLog]);
+
+  const completeCanonicalGrappleAction = useCallback(({
+    executionKey,
+    actor,
+    opponentId,
+    actionType,
+    actionToken,
+    actionResult,
+  } = {}) => {
+    const existingExecution = grappleActionExecutionRegistryRef.current.get(executionKey);
+    if ((Number(existingExecution?.completionArbiterCallCount ?? 0) || 0) > 0) {
+      addLog?.({
+        audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+        channel: COMBAT_LOG_CHANNELS.VALIDATION,
+        eventType: "grapple-completion-arbiter-duplicate-call-blocked",
+        level: "error",
+        type: "error",
+        actorId: actor?.id,
+        targetId: opponentId,
+        executionKey,
+        source: "complete-canonical-grapple-action",
+        message: `grapple completion arbiter duplicate call blocked: actorId=${actor?.id} actionToken=${actionToken || "none"}`,
+        data: { completionArbiterCallCount: existingExecution.completionArbiterCallCount },
+      }, "error");
+      return { accepted: false, reason: "duplicate-grapple-completion-arbiter-call" };
+    }
+    const noRollAction = actionResult?.noRollAction === true;
+    const completionStateValid = noRollAction
+      ? existingExecution?.state === "resolving" && existingExecution?.rollStarted !== true
+      : existingExecution?.state === "roll-claimed" && existingExecution?.rollStarted === true;
+    if (!existingExecution || !completionStateValid) {
+      addLog?.({ audience: COMBAT_LOG_AUDIENCES.DEVELOPER, channel: COMBAT_LOG_CHANNELS.VALIDATION, eventType: "grapple-action-accepted-without-completion-detected", level: "error", type: "error", actorId: actor?.id, targetId: opponentId, executionKey, source: "complete-canonical-grapple-action", message: `grapple accepted action missing canonical roll claim: actorId=${actor?.id} actionToken=${actionToken || "none"}`, data: { existingExecution } }, "error");
+      return { accepted: false, reason: noRollAction ? "grapple-no-roll-action-not-resolving" : "grapple-action-not-roll-claimed" };
+    }
+    const committedTransition = transitionCanonicalGrappleExecutionRecord(existingExecution, "committed");
+    if (!committedTransition.ok) return { accepted: false, reason: committedTransition.reason };
+    const committedExecution = {
+      ...committedTransition.record,
+      stateCommitted: true,
+      contactResolved: Boolean(actionResult?.impactResolved || actionResult?.armorContactResolved || actionResult?.result),
+    };
+    grappleActionExecutionRegistryRef.current.set(executionKey, committedExecution);
+    addLog?.({
+      audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+      channel: COMBAT_LOG_CHANNELS.STATE,
+      eventType: "grapple-action-committed",
+      level: "info",
+      type: "debug",
+      actorId: actor?.id,
+      targetId: opponentId,
+      executionKey,
+      source: "complete-canonical-grapple-action",
+      message: `grapple action committed: actorId=${actor?.id} actionToken=${actionToken} actionType=${actionType}`,
+      data: {
+        generationId: committedExecution.generationId,
+        initiativeTurnId: committedExecution.initiativeTurnId,
+        actionToken,
+        actionSequence: committedExecution.actionSequence,
+        actorId: actor?.id,
+        opponentId,
+        actionType,
+        executionKey,
+        state: committedExecution.state,
+      },
+    }, "debug");
+    const executionCompletion = completeGrappleActionExecution(executionKey, "grapple-action-completed");
+    if (!executionCompletion.ok) {
+      return { accepted: false, executionCompletion, reason: executionCompletion.reason };
+    }
+    grappleActionExecutionRegistryRef.current.set(executionKey, {
+      ...executionCompletion.record,
+      completionArbiterCallCount: 1,
+      continuationSchedulingOwner: "grapple-completion-arbiter",
+    });
+    const completionDecision = resolveCombatActionCompletion({
+      actorId: actor?.id,
+      opponentId,
+      actionResult: { ...actionResult, continuationSchedulingOwner: "grapple-completion-arbiter" },
+      executionKey,
+      source: `grapple-action:${actionType}`,
+      onCompletionCommitted: ({ canonicalResult, completionKey, completionRecord }) => {
+        const completedExecution = grappleActionExecutionRegistryRef.current.get(executionKey);
+        const completionReady = Boolean(
+          completedExecution?.state === "completed" &&
+          completedExecution?.completionEmitted === true &&
+          completedExecution?.completedAt &&
+          completionRecord?.actionToken === actionToken &&
+          combatActionCompletionRegistryRef.current.has(completionKey)
+        );
+        if (!completionReady) {
+          addLog?.({
+            audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+            channel: COMBAT_LOG_CHANNELS.VALIDATION,
+            eventType: "grapple-continuation-created-before-completion-blocked",
+            level: "error",
+            type: "error",
+            actorId: actor?.id,
+            targetId: opponentId,
+            executionKey,
+            source: "complete-canonical-grapple-action",
+            message: `grapple continuation creation blocked before completion: actorId=${actor?.id} actionToken=${actionToken || "none"}`,
+            data: { completedExecution, completionKey, completionRecord },
+          }, "error");
+          return { accepted: false, reason: "grapple-completion-not-canonical" };
+        }
+        addLog?.({
+          audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+          channel: COMBAT_LOG_CHANNELS.AI,
+          eventType: "grapple-action-completed",
+          level: "info",
+          type: "debug",
+          actorId: actor?.id,
+          targetId: opponentId,
+          executionKey,
+          source: "complete-canonical-grapple-action",
+          message: `grapple action completed: actor=${actor?.name || actor?.id} opponentId=${opponentId} actionType=${actionType} remainingActions=${canonicalResult?.remainingActions ?? "unknown"}`,
+          data: { ...canonicalResult, executionState: completedExecution.state, completionEmitted: true },
+        }, "debug");
+        const rollClaimCount = completedExecution.rollStarted === true ? 1 : 0;
+        addLog?.({
+          audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+          channel: COMBAT_LOG_CHANNELS.VALIDATION,
+          eventType: "grapple-action-lifecycle-audit",
+          level: "info",
+          type: "debug",
+          actorId: actor?.id,
+          targetId: opponentId,
+          executionKey,
+          source: "complete-canonical-grapple-action",
+          message: `grapple action lifecycle audit: actionToken=${actionToken} actionType=${actionType} terminalState=${completedExecution.state}`,
+          data: {
+            actionToken,
+            actionType,
+            actionSequence: completedExecution.actionSequence,
+            accepted: true,
+            selectedCount: 1,
+            dispatchedCount: 1,
+            resolutionStartedCount: 1,
+            rollClaimCount,
+            committedCount: 1,
+            completedCount: 1,
+            terminalState: completedExecution.state,
+          },
+        }, "debug");
+        addLog?.({
+          audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+          channel: COMBAT_LOG_CHANNELS.VALIDATION,
+          eventType: "grapple-completion-before-continuation-validated",
+          level: "info",
+          type: "debug",
+          actorId: actor?.id,
+          targetId: opponentId,
+          executionKey,
+          source: "complete-canonical-grapple-action",
+          message: `grapple completion before continuation validated: actorId=${actor?.id} actionToken=${actionToken}`,
+          data: { executionState: completedExecution.state, completionEmitted: true, completedAt: completedExecution.completedAt, completionKey },
+        }, "debug");
+        return { accepted: true };
+      },
+    });
+    return { accepted: completionDecision?.accepted !== false, executionCompletion, completionDecision };
+  }, [addLog, completeGrappleActionExecution, resolveCombatActionCompletion]);
+
   // Grapple action handler
-  const handleGrappleAction = useCallback((actionType, attacker, defenderId) => {
+  const executeCanonicalGrappleAction = useCallback(({
+    actor: attacker,
+    opponent,
+    actionType: requestedActionType = "grapple",
+    weaponId = null,
+    attackMode = null,
+    source = "grapple-action-entry",
+    initiativeTurnId: requestedInitiativeTurnId = null,
+    requestedActionSequence = null,
+    continuationAuthorization = null,
+    armoredActionPlan = null,
+    executionKey: requestedExecutionKey = null,
+  } = {}) => {
+    let actionType = requestedActionType;
+    const defenderId = opponent?.id || opponent;
     let grappleFighters = fightersRef.current ?? fighters;
     let liveAttacker = grappleFighters.find((f) => f.id === attacker?.id) || attacker;
     let liveDefender = grappleFighters.find((f) => f.id === defenderId);
+    const initialWeaponState = normalizeCombatWeaponState(liveAttacker || {});
+    if (actionType === "clinchStrike" && liveDefender && isStandingClinch(liveAttacker, liveDefender) &&
+      !initialWeaponState.clinchWeaponReady && findEligibleClinchWeapon(liveAttacker)) {
+      actionType = "drawClinchDagger";
+      addLog?.({
+        audience: COMBAT_LOG_AUDIENCES.PLAYER,
+        channel: COMBAT_LOG_CHANNELS.STATE,
+        eventType: "clinch-strike-converted-to-draw-dagger",
+        level: "info", type: "info", actorId: liveAttacker?.id, targetId: defenderId,
+        source, message: `${liveAttacker?.name || "Fighter"} must draw a clinch weapon before striking.`,
+        data: { requestedActionType, convertedActionType: actionType, noAttackRoll: true },
+      }, "info");
+    }
     const ownsActionLatch = !turnActionResolvingRef.current;
     const clearOwnedActionLatch = () => {
       if (ownsActionLatch) {
@@ -14903,21 +18164,248 @@ function CombatPage({ characters = [] }) {
       turnCounter: turnCounterRef.current ?? turnCounter,
       meleeRound: meleeRoundRef.current ?? meleeRound,
     };
-    const grappleActionId = [
-      "grapple",
+    const armoredPlanId = armoredActionPlan?.planId || armoredActionPlan?.selectionId || null;
+    const armoredPlanExecutionKey = armoredActionPlan?.planExecutionKey || armoredActionPlan?.armoredPlanExecutionKey ||
+      armoredActionPlan?.executionKey || requestedExecutionKey ||
+      (armoredPlanId ? `armored-plan-execution|${armoredPlanId}` : null);
+    const resolvedActionSequence = Number(
+      continuationAuthorization?.nextActionSequence ?? requestedActionSequence ?? 1,
+    );
+    let grappleActionId = [
+      "grapple-request",
       liveAttacker?.id ?? "unknown",
       defenderId ?? "unknown",
       grappleTurnSnapshot.meleeRound,
       grappleTurnSnapshot.turnCounter,
       grappleTurnSnapshot.turnIndex,
       grappleActionToken ?? "no-token",
-      Date.now(),
-      Math.random().toString(36).slice(2),
+      resolvedActionSequence,
     ].join(":");
     const clearOwnedGrappleActionId = (actionId = grappleActionId) => {
       if (activeGrappleActionIdRef.current === actionId) {
         activeGrappleActionIdRef.current = null;
       }
+    };
+    addLog?.({
+      audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+      channel: COMBAT_LOG_CHANNELS.AI,
+      eventType: "canonical-grapple-executor-entered",
+      level: "info",
+      type: "debug",
+      actorId: liveAttacker?.id || attacker?.id,
+      targetId: defenderId,
+      executionKey: grappleActionId,
+      source,
+      message: `canonical grapple executor entered: actorId=${liveAttacker?.id || attacker?.id || "unknown"} actionType=${actionType}`,
+      data: {
+        generationId: combatSessionRef.current || "default",
+        initiativeTurnId: initiativeTurnIdRef.current,
+        actorId: liveAttacker?.id || attacker?.id || null,
+        opponentId: defenderId || null,
+        actionType,
+        requestedActionSequence: resolvedActionSequence,
+        continuationKey: continuationAuthorization?.continuationKey || null,
+      },
+    }, "debug");
+    let canonicalAdmissionOutcomeEmitted = false;
+    const reportCanonicalGrappleAdmission = (accepted, reason = null, extra = {}) => {
+      if (canonicalAdmissionOutcomeEmitted) return;
+      canonicalAdmissionOutcomeEmitted = true;
+      const eventType = accepted ? "canonical-grapple-admission-accepted" : "canonical-grapple-admission-rejected";
+      addLog?.({
+        audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+        channel: accepted ? COMBAT_LOG_CHANNELS.AI : COMBAT_LOG_CHANNELS.VALIDATION,
+        eventType,
+        level: accepted ? "info" : "warning",
+        type: accepted ? "debug" : "warning",
+        actorId: liveAttacker?.id || attacker?.id,
+        targetId: defenderId,
+        executionKey: grappleActionId,
+        source,
+        message: `${eventType}: actorId=${liveAttacker?.id || attacker?.id || "unknown"} reason=${reason || "accepted"}`,
+        data: {
+          generationId: combatSessionRef.current || "default",
+          initiativeTurnId: initiativeTurnIdRef.current,
+          actorId: liveAttacker?.id || attacker?.id || null,
+          opponentId: defenderId || null,
+          actionType,
+          requestedActionSequence: resolvedActionSequence,
+          continuationKey: continuationAuthorization?.continuationKey || null,
+          rejectionReason: reason,
+          continuationId: continuationAuthorization?.continuationId || continuationAuthorization?.authorizationId || null,
+          pendingOwnershipCleared: accepted ? null : extra.pendingCleared === true,
+          ...extra,
+        },
+      }, accepted ? "debug" : "warning");
+    };
+    const rejectCanonicalGrappleAdmission = (reason, result = false) => {
+      const partialExecution = grappleActionExecutionRegistryRef.current.get(grappleActionId);
+      let executionTerminalState = partialExecution?.state || null;
+      if (partialExecution && ["created", "selected", "dispatched", "resolving"].includes(partialExecution.state)) {
+        const rejectedExecution = transitionCanonicalGrappleExecutionRecord(partialExecution, "rejected");
+        const terminalExecution = rejectedExecution.ok
+          ? {
+              ...rejectedExecution.record,
+              rejectionReason: reason,
+              rejectedAt: rejectedExecution.record.rejectedAt || Date.now(),
+            }
+          : {
+              ...partialExecution,
+              state: "rejected",
+              rejectionReason: reason,
+              rejectedAt: Date.now(),
+            };
+        grappleActionExecutionRegistryRef.current.set(grappleActionId, terminalExecution);
+        executionTerminalState = terminalExecution.state;
+      }
+      if (armoredPlanId) {
+        const currentPlan = armoredActionPlanRegistryRef.current.get(armoredPlanId);
+        if (currentPlan && !["consumed", "rejected", "stale", "canceled"].includes(currentPlan.state)) {
+          markArmoredActionPlanTerminal(armoredActionPlanRegistryRef.current, armoredPlanId, "rejected", {
+            reason,
+            planExecutionKey: armoredPlanExecutionKey,
+          });
+        }
+      }
+      clearOwnedGrappleActionId(grappleActionId);
+      const expectedContinuationEntry = continuationAuthorization?.continuationKey
+        ? [
+            continuationAuthorization.continuationKey,
+            remainingActionContinuationRegistryRef.current.get(continuationAuthorization.continuationKey),
+          ]
+        : Array.from(remainingActionContinuationRegistryRef.current.entries()).find(([, record]) => (
+            record?.state === "fired" &&
+            record?.initiativeTurnId === initiativeTurnIdRef.current &&
+            record?.actorId === (liveAttacker?.id || attacker?.id)
+          ));
+      const continuationKey = expectedContinuationEntry?.[0] || null;
+      const continuationRecord = expectedContinuationEntry?.[1] || null;
+      let pendingCleared = false;
+      if (continuationRecord && ["created", "fired"].includes(continuationRecord.state)) {
+        remainingActionContinuationRegistryRef.current.set(
+          continuationKey,
+          rejectActionContinuationReceipt(continuationRecord, reason),
+        );
+        transitionLogicalInitiativeTurn(initiativeTurnIdRef.current, "active", "canonical-grapple-admission-rejected", {
+          continuationKey: null,
+          continuationAdmissionPending: false,
+          continuationPhase: null,
+        });
+        enemyContinuationRequestsRef.current.delete(continuationKey);
+        if (pendingPlayerAIContinuationRef.current?.continuationKey === continuationKey) {
+          if (pendingPlayerAIContinuationRef.current.watchdogId) {
+            clearTimeout(pendingPlayerAIContinuationRef.current.watchdogId);
+          }
+          pendingPlayerAIContinuationRef.current = null;
+        }
+        enemyActionLockRef.current = null;
+        enemyActionCommittedThisSliceRef.current = false;
+        enemyActionCommittedSliceKeyRef.current = null;
+        pendingCleared = true;
+        const recoveryActor = (fightersRef.current ?? fighters ?? []).find((fighter) => fighter?.id === (liveAttacker?.id || attacker?.id));
+        const recoveryRemainingBefore = Number(recoveryActor?.remainingActions ?? 0) || 0;
+        if (combatActiveRef.current && !combatOverRef.current && !combatEndCheckRef.current && recoveryRemainingBefore > 0) {
+          const recoveryRemaining = Math.max(0, recoveryRemainingBefore - 1);
+          const recoverySequence = resolvedActionSequence;
+          initiativeActionSequenceRef.current = Math.max(initiativeActionSequenceRef.current, recoverySequence);
+          commitFighters((prev = []) => prev.map((fighter) => fighter?.id === recoveryActor?.id
+            ? { ...fighter, remainingActions: recoveryRemaining }
+            : fighter));
+          const recoveryDecision = resolveCombatActionCompletion({
+            actorId: recoveryActor?.id,
+            opponentId: defenderId,
+            executionKey: `grapple-admission-recovery:${initiativeTurnIdRef.current}:${recoverySequence}:${recoveryActor?.id}`,
+            source: "canonical-grapple-admission-recovery",
+            actionResult: {
+              accepted: true,
+              completed: true,
+              actionType: "admission-recovery",
+              actionToken: `grapple-admission-recovery:${initiativeTurnIdRef.current}:${recoverySequence}:${recoveryActor?.id}`,
+              actionSequence: recoverySequence,
+              actionSpent: true,
+              remainingActions: recoveryRemaining,
+            },
+          });
+          addLog?.({
+            audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+            channel: COMBAT_LOG_CHANNELS.TURN,
+            eventType: "canonical-grapple-admission-recovery-completed",
+            level: "warning",
+            type: "warning",
+            actorId: recoveryActor?.id,
+            targetId: defenderId,
+            executionKey: grappleActionId,
+            source,
+            message: `canonical grapple admission recovery completed: actorId=${recoveryActor?.id} reason=${reason}`,
+            data: {
+              continuationKey,
+              actionToken: partialExecution?.actionToken || null,
+              executionKey: partialExecution?.executionKey || grappleActionId,
+              rejectionReason: reason,
+              executionTerminalState,
+              receiptTerminalState: remainingActionContinuationRegistryRef.current.get(continuationKey)?.state || "rejected",
+              pendingOwnershipCleared: true,
+              callbackOwnershipCleared: true,
+              actionSpentByRecovery: true,
+              completionCalled: true,
+              actionSpent: true,
+              remainingActions: recoveryRemaining,
+              continuationScheduled: recoveryDecision?.decision === "continuation-created",
+              handoffRequested: recoveryDecision?.decision === "handoff",
+              completionDecision: recoveryDecision?.decision,
+            },
+          }, "warning");
+        }
+      } else if (continuationRecord?.state === "rejected") {
+        pendingCleared = true;
+      }
+      const finalReceiptState = continuationKey
+        ? remainingActionContinuationRegistryRef.current.get(continuationKey)?.state || null
+        : null;
+      const activeCanonicalGrappleExecution = activeGrappleActionIdRef.current === grappleActionId;
+      const continuationPending = finalReceiptState === "fired" || finalReceiptState === "created";
+      const continuationCallbackPending = Boolean(
+        pendingPlayerAIContinuationRef.current?.continuationKey === continuationKey ||
+        enemyContinuationRequestsRef.current.has(continuationKey),
+      );
+      if (activeCanonicalGrappleExecution || continuationPending || continuationCallbackPending ||
+        ["created", "selected", "dispatched", "resolving"].includes(executionTerminalState)) {
+        addLog?.({
+          audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+          channel: COMBAT_LOG_CHANNELS.VALIDATION,
+          eventType: "grapple-rejection-left-active-ownership-blocked",
+          level: "error",
+          type: "error",
+          actorId: liveAttacker?.id || attacker?.id,
+          targetId: defenderId,
+          executionKey: grappleActionId,
+          source,
+          message: `grapple rejection left active ownership blocked: actorId=${liveAttacker?.id || attacker?.id}`,
+          data: { activeCanonicalGrappleExecution, continuationPending, continuationCallbackPending, receiptState: finalReceiptState, executionState: executionTerminalState },
+        }, "error");
+      }
+      const postReturnContinuation = continuationKey
+        ? remainingActionContinuationRegistryRef.current.get(continuationKey)
+        : null;
+      if (postReturnContinuation?.state === "fired" || postReturnContinuation?.pending === true) {
+        addLog?.({
+          audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+          channel: COMBAT_LOG_CHANNELS.VALIDATION,
+          eventType: "fired-continuation-left-pending-after-action-return",
+          level: "error",
+          type: "error",
+          actorId: liveAttacker?.id || attacker?.id,
+          targetId: defenderId,
+          executionKey: grappleActionId,
+          source,
+          message: `fired continuation left pending after action return: actorId=${liveAttacker?.id || attacker?.id} continuationKey=${continuationKey}`,
+          data: { continuationKey, record: postReturnContinuation, rejectionReason: reason },
+        }, "error");
+        remainingActionContinuationRegistryRef.current.set(continuationKey, rejectActionContinuationReceipt(postReturnContinuation, "fired-continuation-left-pending-after-action-return"));
+        pendingCleared = true;
+      }
+      reportCanonicalGrappleAdmission(false, reason, { pendingCleared });
+      return result;
     };
     const getStaleGrappleReason = (validationActionId = null) => {
       const latestFighters = fightersRef.current ?? fighters;
@@ -14950,11 +18438,64 @@ function CombatPage({ characters = [] }) {
     };
     const staleReason = getStaleGrappleReason();
     if (staleReason) {
+      if (armoredPlanId) {
+        registerArmoredActionPlan(armoredActionPlanRegistryRef.current, { ...armoredActionPlan, planExecutionKey: armoredPlanExecutionKey });
+        markArmoredActionPlanTerminal(armoredActionPlanRegistryRef.current, armoredPlanId, "stale", {
+          reason: staleReason,
+          planExecutionKey: armoredPlanExecutionKey,
+        });
+        addLog({
+          audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+          channel: COMBAT_LOG_CHANNELS.VALIDATION,
+          eventType: "armored-action-plan-stale",
+          level: "warning",
+          type: "warning",
+          actorId: liveAttacker?.id,
+          targetId: defenderId,
+          executionKey: grappleActionId,
+          source: "grapple-action-entry",
+          message: `armored action plan stale: actor=${liveAttacker?.name || liveAttacker?.id || "unknown"} technique=grapple reason=${staleReason}`,
+          data: { armoredActionPlan, reason: staleReason },
+        }, "warning");
+      }
       logStaleGrappleFollowUpBlocked(staleReason);
+      addLog?.({
+        audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+        channel: COMBAT_LOG_CHANNELS.TURN,
+        eventType: "grapple-callback-stale-ignored",
+        level: "warning",
+        type: "warning",
+        actorId: liveAttacker?.id,
+        targetId: defenderId,
+        executionKey: grappleActionId,
+        round: meleeRoundRef.current,
+        turn: turnCounterRef.current,
+        turnToken: currentTurnTokenRef.current,
+        source: "grapple-action-entry",
+        message:
+          `grapple-callback-stale-ignored: actorId=${liveAttacker?.id || "unknown"} ` +
+          `targetId=${defenderId || "unknown"} reason=${staleReason}`,
+        data: { reason: staleReason, grappleTurnSnapshot },
+      }, "warning");
       addLog("stale grapple callback ignored", "warning");
-      return false;
+      return rejectCanonicalGrappleAdmission(staleReason, false);
+    }
+    if (requestedInitiativeTurnId && requestedInitiativeTurnId !== initiativeTurnIdRef.current) {
+      clearOwnedActionLatch();
+      return rejectCanonicalGrappleAdmission("grapple-initiative-turn-mismatch", { accepted: false, completed: true, reason: "grapple-initiative-turn-mismatch" });
+    }
+    const legalGrappleActions = getAvailableGrappleActions(liveAttacker, liveDefender);
+    if (!legalGrappleActions.some((candidate) => candidate?.value === actionType)) {
+      clearOwnedActionLatch();
+      return rejectCanonicalGrappleAdmission("illegal-grapple-action", { accepted: false, completed: true, reason: "illegal-grapple-action", actionType });
     }
     activeGrappleActionIdRef.current = grappleActionId;
+    if (armoredPlanId) {
+      registerArmoredActionPlan(armoredActionPlanRegistryRef.current, { ...armoredActionPlan, planExecutionKey: armoredPlanExecutionKey });
+      markArmoredActionPlanDispatched(armoredActionPlanRegistryRef.current, armoredPlanId, {
+        planExecutionKey: armoredPlanExecutionKey,
+      });
+    }
     if (ownsActionLatch) {
       turnActionResolvingRef.current = true;
       pendingTurnAdvanceRef.current = false;
@@ -14963,11 +18504,6 @@ function CombatPage({ characters = [] }) {
     liveAttacker = grappleFighters.find((f) => f.id === attacker?.id) || liveAttacker;
     liveDefender = grappleFighters.find((f) => f.id === defenderId);
     const debugGrappleFns = {
-      grapple: attemptGrapple,
-      maintain: maintainGrapple,
-      takedown: performTakedown,
-      groundAttack,
-      breakFree,
       applyDamageWithArmor,
       initiateGrapple,
       breakGrappleWithPush,
@@ -15014,11 +18550,28 @@ function CombatPage({ characters = [] }) {
 
       if (!mutuallyLinked) {
         addLog(`Grapple state cleared: fighters separated.`, "warning");
-        const next = grappleFighters.map((f) => (
-          f.id === liveAttacker?.id || f.id === defenderId
-            ? { ...f, grappleState: initializeGrappleState(f) }
-            : f
-        ));
+        const ended = endGrappleRelationship({
+          fighters: grappleFighters,
+          actorId: liveAttacker?.id,
+          opponentId: defenderId,
+          grappleId: attackerState?.grappleId || defenderState?.grappleId,
+          reason: "forced-separation",
+          generationId: combatSessionRef.current || "default",
+        });
+        addLog({
+          audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+          channel: COMBAT_LOG_CHANNELS.STATE,
+          eventType: "grapple-state-ended",
+          level: "warning",
+          type: "warning",
+          actorId: liveAttacker?.id,
+          targetId: defenderId,
+          executionKey: grappleActionId,
+          source: "grapple-relationship-validation",
+          message: `grapple state ended: grappleId=${ended.grappleId} actorId=${liveAttacker?.id} opponentId=${defenderId} reason=forced-separation`,
+          data: ended,
+        }, "warning");
+        const next = ended.fighters;
         fightersRef.current = next;
         setFighters(next);
         clearOwnedGrappleActionId();
@@ -15064,11 +18617,28 @@ function CombatPage({ characters = [] }) {
         defender = liveDefender;
       } else if (!isAdjacentDistance(distance)) {
         addLog(`Grapple state cleared: fighters separated.`, "warning");
-        const next = grappleFighters.map((f) => (
-          f.id === liveAttacker?.id || f.id === defenderId
-            ? { ...f, grappleState: initializeGrappleState(f) }
-            : f
-        ));
+        const ended = endGrappleRelationship({
+          fighters: grappleFighters,
+          actorId: liveAttacker?.id,
+          opponentId: defenderId,
+          grappleId: attackerState?.grappleId || defenderState?.grappleId,
+          reason: "forced-separation",
+          generationId: combatSessionRef.current || "default",
+        });
+        addLog({
+          audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+          channel: COMBAT_LOG_CHANNELS.STATE,
+          eventType: "grapple-state-ended",
+          level: "warning",
+          type: "warning",
+          actorId: liveAttacker?.id,
+          targetId: defenderId,
+          executionKey: grappleActionId,
+          source: "grapple-relationship-validation",
+          message: `grapple state ended: grappleId=${ended.grappleId} actorId=${liveAttacker?.id} opponentId=${defenderId} reason=forced-separation`,
+          data: ended,
+        }, "warning");
+        const next = ended.fighters;
         fightersRef.current = next;
         setFighters(next);
         clearOwnedGrappleActionId();
@@ -15142,12 +18712,17 @@ function CombatPage({ characters = [] }) {
       const psBoost = effectivePSBonusActions.has(actionType)
         ? Math.max(0, techniqueBonus) * 2
         : 0;
+      const rawPS = fighter.PS ?? fighter.ps ?? fighter.attributes?.PS ?? 10;
+      const nestedPS = rawPS && typeof rawPS === "object"
+        ? rawPS.value ?? rawPS.total ?? rawPS.score ?? rawPS.base
+        : rawPS;
+      const finitePS = Number.isFinite(Number(nestedPS)) ? Number(nestedPS) : 10;
       return {
         ...fighter,
-        PS: Number(fighter.PS ?? fighter.ps ?? fighter.attributes?.PS ?? 10) + psBoost,
+        PS: finitePS + psBoost,
         attributes: {
           ...(fighter.attributes || {}),
-          PS: Number(fighter.attributes?.PS ?? fighter.PS ?? fighter.ps ?? 10) + psBoost,
+          PS: finitePS + psBoost,
         },
         bonuses: {
           ...(fighter.bonuses || {}),
@@ -15227,18 +18802,91 @@ function CombatPage({ characters = [] }) {
         return updated;
       });
     const setGrappleFighters = (updater) => {
-      setFighters((prev) => {
-        const next =
-          typeof updater === "function"
-            ? updater(fightersRef.current ?? prev)
-            : Array.isArray(updater)
-              ? updater
-              : prev;
-        const rebated = applyGrappleStaminaRebate(next);
-        const restored = rebated.map(restoreTechniqueFields);
-        fightersRef.current = restored;
-        return restored;
+      const authoritative = fightersRef.current ?? fighters ?? [];
+      const rawNext =
+        typeof updater === "function"
+          ? updater(authoritative)
+          : Array.isArray(updater)
+            ? updater
+            : authoritative;
+      const byId = new Map(authoritative.map((fighter) => [fighter.id, fighter]));
+      const blockRegression = (current, incoming, field, read, write) => {
+        const currentValue = Number(read(current));
+        const incomingValue = Number(read(incoming));
+        if (!Number.isFinite(currentValue) || !Number.isFinite(incomingValue) || incomingValue <= currentValue) {
+          return incoming;
+        }
+        addLog?.({
+          audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+          channel: COMBAT_LOG_CHANNELS.STATE,
+          eventType: "authoritative-state-regression-blocked",
+          level: "warning",
+          type: "warning",
+          actorId: current?.id || incoming?.id,
+          executionKey: grappleActionId,
+          round: meleeRoundRef.current,
+          turn: turnCounterRef.current,
+          turnToken: currentTurnTokenRef.current,
+          source: "grapple-commit",
+          message:
+            `authoritative-state-regression-blocked: actorId=${current?.id || incoming?.id} field=${field} ` +
+            `currentValue=${currentValue} incomingValue=${incomingValue} source=grapple-commit`,
+          data: { field, currentValue, incomingValue, source: "grapple-commit" },
+        }, "warning");
+        return write(incoming, currentValue);
+      };
+      const merged = rawNext.map((incoming) => {
+        const current = byId.get(incoming?.id);
+        if (!current || !incoming) return incoming;
+        let next = incoming;
+        next = blockRegression(current, next, "remainingActions", (f) => f.remainingActions, (f, value) => ({
+          ...f,
+          remainingActions: value,
+          attacksRemaining: Math.min(Number(f.attacksRemaining ?? value) || 0, value),
+        }));
+        next = blockRegression(current, next, "combatStamina", (f) => f.combatStamina?.currentStamina, (f, value) => ({
+          ...f,
+          combatStamina: { ...(f.combatStamina || {}), currentStamina: value },
+        }));
+        next = blockRegression(current, next, "currentStamina", (f) => f.fatigueState?.currentStamina ?? f.currentStamina, (f, value) => ({
+          ...f,
+          currentStamina: value,
+          fatigueState: { ...(f.fatigueState || {}), currentStamina: value },
+        }));
+        return {
+          ...current,
+          ...next,
+          meta: { ...(current.meta || {}), ...(next.meta || {}) },
+          state: { ...(current.state || {}), ...(next.state || {}) },
+          statusEffects: next.statusEffects ?? current.statusEffects,
+          wounds: next.wounds ?? current.wounds,
+          bleeding: next.bleeding ?? current.bleeding,
+          initiativeTurnId: current.initiativeTurnId ?? next.initiativeTurnId,
+        };
       });
+      const rebated = applyGrappleStaminaRebate(merged);
+      const restored = rebated.map(restoreTechniqueFields);
+      fightersRef.current = restored;
+      addLog?.({
+        audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+        channel: COMBAT_LOG_CHANNELS.STATE,
+        eventType: "authoritative-combatant-commit",
+        level: "info",
+        type: "debug",
+        actorId: liveAttacker?.id,
+        targetId: defenderId,
+        executionKey: grappleActionId,
+        round: meleeRoundRef.current,
+        turn: turnCounterRef.current,
+        turnToken: currentTurnTokenRef.current,
+        source: "grapple-commit",
+        message:
+          `authoritative combatant commit: actorId=${liveAttacker?.id || "unknown"} ` +
+          `targetId=${defenderId || "unknown"} source=grapple-commit`,
+        data: { actorId: liveAttacker?.id, defenderId, generationId: combatSessionRef.current, initiativeTurnId: initiativeTurnIdRef.current },
+      }, "debug");
+      setFighters(restored);
+      return restored;
     };
     const setGrapplePositions = (updater) => {
       setPositions((prev) => {
@@ -15278,7 +18926,36 @@ function CombatPage({ characters = [] }) {
       addLog("stale grapple callback ignored", "warning");
       clearOwnedGrappleActionId();
       clearOwnedActionLatch();
-      return false;
+      return rejectCanonicalGrappleAdmission(latestStaleReason, false);
+    }
+
+    const activeLogicalTurnRecord = Array.from(initiativeTurnLogicalRegistryRef.current.values()).find((record) =>
+      record?.initiativeTurnId === initiativeTurnIdRef.current &&
+      record?.actorId === liveAttacker?.id &&
+      (record?.state === "active" || record?.state === "continuation-pending")
+    );
+    if (!activeLogicalTurnRecord) {
+      addLog({
+        audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+        channel: COMBAT_LOG_CHANNELS.VALIDATION,
+        eventType: "combat-action-entry-without-turn-owner",
+        level: "error",
+        type: "error",
+        actorId: liveAttacker?.id,
+        targetId: defenderId,
+        executionKey: grappleActionId,
+        round: meleeRoundRef.current,
+        turn: turnCounterRef.current,
+        turnToken: currentTurnTokenRef.current,
+        source: "grapple-action-entry",
+        message:
+          `combat-action-entry-without-turn-owner: actorId=${liveAttacker?.id} ` +
+          `initiativeTurnId=${initiativeTurnIdRef.current || "none"} actionToken=${currentTurnTokenRef.current || "none"} source=grapple-action-entry`,
+        data: { actorId: liveAttacker?.id, initiativeTurnId: initiativeTurnIdRef.current, actionToken: currentTurnTokenRef.current, source: "grapple-action-entry" },
+      }, "error");
+      clearOwnedGrappleActionId();
+      clearOwnedActionLatch();
+      return rejectCanonicalGrappleAdmission("combat-action-entry-without-turn-owner", { accepted: false, completed: true, reason: "combat-action-entry-without-turn-owner", actorId: liveAttacker?.id, opponentId: defenderId });
     }
 
     if (attackerMods.peDrainReduction > 0) {
@@ -15291,7 +18968,412 @@ function CombatPage({ characters = [] }) {
       addLog(`${attacker.name}'s speed helps with grapple footwork.`, "info");
     }
 
-    handleGrappleActionHandler(actionType, enhancedAttacker, defenderId, {
+    const allowedActionsPerTurn = Number(liveAttacker?.actionsPerRound ?? liveAttacker?.actionsPerMelee ?? liveAttacker?.attacks ?? 1) || 1;
+    const nextGrappleActionSequence = resolvedActionSequence;
+    if (!Number.isInteger(nextGrappleActionSequence) || nextGrappleActionSequence < 1) {
+      clearOwnedGrappleActionId();
+      clearOwnedActionLatch();
+      return rejectCanonicalGrappleAdmission("illegal-grapple-action-sequence", { accepted: false, completed: true, reason: "illegal-grapple-action-sequence" });
+    }
+    const expectedFiredContinuation = Array.from(remainingActionContinuationRegistryRef.current.values()).find((record) => (
+      record?.state === "fired" &&
+      record?.initiativeTurnId === initiativeTurnIdRef.current &&
+      record?.actorId === liveAttacker?.id &&
+      record?.nextActionSequence === initiativeActionSequenceRef.current + 1
+    ));
+    if (expectedFiredContinuation && !continuationAuthorization) {
+      addLog?.({
+        audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+        channel: COMBAT_LOG_CHANNELS.VALIDATION,
+        eventType: "missing-action-continuation-authorization",
+        level: "error",
+        type: "error",
+        actorId: liveAttacker?.id,
+        targetId: defenderId,
+        executionKey: grappleActionId,
+        source,
+        message: `missing action continuation authorization: actorId=${liveAttacker?.id} continuationKey=${expectedFiredContinuation.continuationKey}`,
+        data: { expectedContinuation: expectedFiredContinuation, requestedActionSequence: nextGrappleActionSequence },
+      }, "error");
+      clearOwnedGrappleActionId();
+      clearOwnedActionLatch();
+      return rejectCanonicalGrappleAdmission("missing-action-continuation-authorization", { accepted: false, completed: true, reason: "missing-action-continuation-authorization" });
+    }
+    if (nextGrappleActionSequence !== initiativeActionSequenceRef.current + 1) {
+      addLog?.({ audience: COMBAT_LOG_AUDIENCES.DEVELOPER, channel: COMBAT_LOG_CHANNELS.VALIDATION, eventType: "continuation-action-sequence-mismatch", level: "error", type: "error", actorId: liveAttacker?.id, targetId: defenderId, executionKey: grappleActionId, source, message: `continuation action sequence mismatch: actorId=${liveAttacker?.id} expected=${initiativeActionSequenceRef.current + 1} requested=${nextGrappleActionSequence}`, data: { expectedActionSequence: initiativeActionSequenceRef.current + 1, requestedActionSequence: nextGrappleActionSequence, continuationKey: continuationAuthorization?.continuationKey || null } }, "error");
+      clearOwnedGrappleActionId();
+      clearOwnedActionLatch();
+      return rejectCanonicalGrappleAdmission("illegal-grapple-action-sequence", { accepted: false, completed: true, reason: "illegal-grapple-action-sequence" });
+    }
+    let validatedContinuationReceipt = null;
+    if (nextGrappleActionSequence > 1) {
+      const receipt = continuationAuthorization || null;
+      const receiptRecord = remainingActionContinuationRegistryRef.current.get(receipt?.continuationKey);
+      if (receiptRecord) remainingActionContinuationRegistryRef.current.set(receipt.continuationKey, { ...receiptRecord, authorizationReceivedAt: Date.now() });
+      addLog?.({ audience: COMBAT_LOG_AUDIENCES.DEVELOPER, channel: COMBAT_LOG_CHANNELS.TURN, eventType: "grapple-continuation-authorization-received", level: "info", type: "debug", actorId: liveAttacker?.id, targetId: defenderId, source, message: `grapple continuation authorization received: actorId=${liveAttacker?.id} continuationKey=${receipt?.continuationKey || "none"}`, data: { ...(receipt || {}), requestedActionSequence: nextGrappleActionSequence, recordFound: Boolean(receiptRecord), recordState: receiptRecord?.state || null, receiptPresent: Boolean(receipt) } }, "debug");
+      const authorization = consumeGrappleContinuationAuthorization({
+        continuationAuthorization,
+        continuationKey: continuationAuthorization?.continuationKey,
+        generationId: combatSessionRef.current || "default",
+        initiativeTurnId: initiativeTurnIdRef.current,
+        actorId: liveAttacker?.id,
+        opponentId: defenderId,
+        requestedActionSequence: nextGrappleActionSequence,
+      });
+      if (!authorization.ok) {
+        addLog?.({
+          audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+          channel: COMBAT_LOG_CHANNELS.VALIDATION,
+          eventType: "grapple-second-action-without-fired-continuation",
+          level: "error",
+          type: "error",
+          actorId: liveAttacker?.id,
+          targetId: defenderId,
+          executionKey: grappleActionId,
+          source: "grapple-action-entry",
+          message: `grapple second action blocked: actorId=${liveAttacker?.id} actionSequence=${nextGrappleActionSequence} reason=${authorization.reason}`,
+          data: { initiativeTurnId: initiativeTurnIdRef.current, nextActionSequence: nextGrappleActionSequence, continuationKey: continuationAuthorization?.continuationKey },
+        }, "error");
+        addLog?.({
+          audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+          channel: COMBAT_LOG_CHANNELS.VALIDATION,
+          eventType: "grapple-continuation-authorization-rejected",
+          level: "error",
+          type: "error",
+          actorId: liveAttacker?.id,
+          targetId: defenderId,
+          executionKey: grappleActionId,
+          source,
+          message: `grapple continuation authorization rejected: actorId=${liveAttacker?.id} continuationKey=${receipt?.continuationKey || "none"} reason=${authorization.reason}`,
+          data: { ...(receipt || {}), requestedActionSequence: nextGrappleActionSequence, rejectionReason: authorization.reason },
+        }, "error");
+        const rejectedKey = receipt?.continuationKey;
+        const rejectedRecord = remainingActionContinuationRegistryRef.current.get(rejectedKey);
+        if (rejectedRecord) {
+          remainingActionContinuationRegistryRef.current.set(rejectedKey, rejectActionContinuationReceipt(rejectedRecord, authorization.reason));
+        }
+        transitionLogicalInitiativeTurn(initiativeTurnIdRef.current, "active", "grapple-continuation-authorization-rejected", {
+          continuationKey: null,
+          continuationRejectedAt: Date.now(),
+          continuationRejectionReason: authorization.reason,
+          continuationPhase: null,
+        });
+        clearOwnedGrappleActionId();
+        clearOwnedActionLatch();
+        return rejectCanonicalGrappleAdmission(authorization.reason, { accepted: false, completed: true, terminal: true, routeType: "grapple-terminal", reason: "grapple-second-action-without-fired-continuation" });
+      }
+      addLog?.({ audience: COMBAT_LOG_AUDIENCES.DEVELOPER, channel: COMBAT_LOG_CHANNELS.VALIDATION, eventType: "continuation-action-sequence-validated", level: "info", type: "debug", actorId: liveAttacker?.id, targetId: defenderId, executionKey: grappleActionId, source, message: `continuation action sequence validated: actorId=${liveAttacker?.id} completed=${receipt?.completedActionSequence} next=${nextGrappleActionSequence}`, data: { continuationKey: receipt?.continuationKey, completedActionSequence: receipt?.completedActionSequence, nextActionSequence: nextGrappleActionSequence } }, "debug");
+      addLog?.({ audience: COMBAT_LOG_AUDIENCES.DEVELOPER, channel: COMBAT_LOG_CHANNELS.TURN, eventType: "grapple-continuation-authorization-validated", level: "info", type: "debug", actorId: liveAttacker?.id, targetId: defenderId, source, message: `grapple continuation authorization validated: actorId=${liveAttacker?.id} continuationKey=${receipt?.continuationKey}`, data: { ...(receipt || {}), requestedActionSequence: nextGrappleActionSequence } }, "debug");
+      const validatedRecord = remainingActionContinuationRegistryRef.current.get(receipt.continuationKey);
+      remainingActionContinuationRegistryRef.current.set(receipt.continuationKey, { ...validatedRecord, authorizationValidatedAt: Date.now() });
+      validatedContinuationReceipt = receipt;
+    } else if (continuationAuthorization) {
+      addLog?.({ audience: COMBAT_LOG_AUDIENCES.DEVELOPER, channel: COMBAT_LOG_CHANNELS.VALIDATION, eventType: "synthetic-grapple-continuation-authorization-blocked", level: "error", type: "error", actorId: liveAttacker?.id, targetId: defenderId, executionKey: grappleActionId, source, message: `synthetic grapple continuation authorization blocked: actorId=${liveAttacker?.id} actionSequence=1`, data: { continuationAuthorization } }, "error");
+      clearOwnedGrappleActionId();
+      clearOwnedActionLatch();
+      return rejectCanonicalGrappleAdmission("synthetic-grapple-continuation-authorization-blocked", { accepted: false, completed: true, reason: "synthetic-grapple-continuation-authorization-blocked" });
+    }
+    if (initiativeActionSequenceRef.current >= allowedActionsPerTurn) {
+      addLog({
+        audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+        channel: COMBAT_LOG_CHANNELS.VALIDATION,
+        eventType: "combat-action-sequence-exceeded",
+        level: "error",
+        type: "error",
+        actorId: liveAttacker?.id,
+        targetId: defenderId,
+        executionKey: grappleActionId,
+        round: meleeRoundRef.current,
+        turn: turnCounterRef.current,
+        turnToken: currentTurnTokenRef.current,
+        source: "grapple-action-entry",
+        message:
+          `combat-action-sequence-exceeded: actorId=${liveAttacker?.id} initiativeTurnId=${initiativeTurnIdRef.current || "none"} ` +
+          `actionSequence=${initiativeActionSequenceRef.current + 1} actionsPerRound=${allowedActionsPerTurn} source=grapple-action-entry`,
+        data: {
+          actorId: liveAttacker?.id,
+          initiativeTurnId: initiativeTurnIdRef.current,
+          actionSequence: initiativeActionSequenceRef.current + 1,
+          actionsPerRound: allowedActionsPerTurn,
+          source: "grapple-action-entry",
+        },
+      }, "error");
+      clearOwnedGrappleActionId();
+      clearOwnedActionLatch();
+      return rejectCanonicalGrappleAdmission("combat-action-sequence-exceeded", { accepted: false, completed: true, reason: "combat-action-sequence-exceeded", actorId: liveAttacker?.id, opponentId: defenderId });
+    }
+    const canonicalTokenResult = createCanonicalGrappleActionToken({
+      initiativeTurnId: initiativeTurnIdRef.current,
+      actionSequence: nextGrappleActionSequence,
+      actorId: liveAttacker?.id,
+      opponentId: defenderId,
+      source: "grapple-action-entry",
+    });
+    if (!canonicalTokenResult.ok) {
+      clearOwnedGrappleActionId();
+      clearOwnedActionLatch();
+      return rejectCanonicalGrappleAdmission(canonicalTokenResult.reason, { accepted: false, completed: true, terminal: true, routeType: "grapple-terminal", reason: canonicalTokenResult.reason });
+    }
+    const grappleDispatchActionToken = canonicalTokenResult.actionToken;
+    const canonicalExecutionKeyResult = createCanonicalGrappleExecutionKey({
+      generationId: combatSessionRef.current || "default",
+      initiativeTurnId: initiativeTurnIdRef.current,
+      actionToken: grappleDispatchActionToken,
+      actorId: liveAttacker?.id,
+      opponentId: defenderId,
+      actionSequence: nextGrappleActionSequence,
+    });
+    if (!canonicalExecutionKeyResult.ok) {
+      clearOwnedGrappleActionId();
+      clearOwnedActionLatch();
+      return rejectCanonicalGrappleAdmission(canonicalExecutionKeyResult.reason, { accepted: false, completed: true, reason: canonicalExecutionKeyResult.reason });
+    }
+    const canonicalExecutionKey = canonicalExecutionKeyResult.executionKey;
+    const identityCollision = [armoredPlanExecutionKey, armoredPlanId, armoredActionPlan?.selectionId]
+      .filter(Boolean)
+      .some((identity) => identity === canonicalExecutionKey);
+    if (identityCollision) {
+      addLog?.({
+        audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+        channel: COMBAT_LOG_CHANNELS.VALIDATION,
+        eventType: "grapple-plan-canonical-execution-identity-collision-blocked",
+        level: "error",
+        type: "error",
+        actorId: liveAttacker?.id,
+        targetId: defenderId,
+        executionKey: canonicalExecutionKey,
+        source,
+        message: `grapple plan/canonical execution identity collision blocked: actorId=${liveAttacker?.id}`,
+        data: { armoredPlanId, armoredPlanExecutionKey, selectionId: armoredActionPlan?.selectionId || null, canonicalExecutionKey },
+      }, "error");
+      clearOwnedGrappleActionId();
+      clearOwnedActionLatch();
+      return rejectCanonicalGrappleAdmission("grapple-plan-canonical-execution-identity-collision-blocked", { accepted: false, completed: true, reason: "grapple-plan-canonical-execution-identity-collision-blocked" });
+    }
+    grappleActionId = canonicalExecutionKey;
+    activeGrappleActionIdRef.current = canonicalExecutionKey;
+    const createdExecution = createGrappleActionExecutionRecord({
+      executionKey: canonicalExecutionKey,
+      actorId: liveAttacker?.id,
+      targetId: defenderId,
+      actionType,
+      actionToken: grappleDispatchActionToken,
+      actionSequence: nextGrappleActionSequence,
+    });
+    if (!createdExecution) {
+      clearOwnedGrappleActionId();
+      clearOwnedActionLatch();
+      return rejectCanonicalGrappleAdmission("missing-grapple-execution-record", { accepted: false, completed: true, reason: "missing-grapple-execution-record" });
+    }
+    initiativeActionSequenceRef.current = nextGrappleActionSequence;
+    const lifecycleIdentity = {
+      generationId: combatSessionRef.current || "default",
+      initiativeTurnId: initiativeTurnIdRef.current,
+      actionToken: grappleDispatchActionToken,
+      actionSequence: nextGrappleActionSequence,
+      actorId: liveAttacker?.id,
+      opponentId: defenderId,
+      actionType,
+      executionKey: canonicalExecutionKey,
+    };
+    addLog?.({
+      audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+      channel: COMBAT_LOG_CHANNELS.TURN,
+      eventType: "initiative-action-token-created",
+      level: "info",
+      type: "debug",
+      actorId: liveAttacker?.id,
+      targetId: defenderId,
+      executionKey: canonicalExecutionKey,
+      round: meleeRoundRef.current,
+      turn: turnCounterRef.current,
+      turnToken: currentTurnTokenRef.current,
+      source: "grapple-action-entry",
+      message: `initiative action token created: actorId=${liveAttacker?.id} actionToken=${grappleDispatchActionToken}`,
+      data: lifecycleIdentity,
+    }, "debug");
+    addLog?.({
+      audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+      channel: COMBAT_LOG_CHANNELS.VALIDATION,
+      eventType: "grapple-plan-canonical-identity-separated",
+      level: "info",
+      type: "debug",
+      actorId: liveAttacker?.id,
+      targetId: defenderId,
+      executionKey: canonicalExecutionKey,
+      source,
+      message: `grapple plan/canonical identity separated: actorId=${liveAttacker?.id} actionToken=${grappleDispatchActionToken}`,
+      data: {
+        initiativeTurnId: initiativeTurnIdRef.current,
+        actorId: liveAttacker?.id,
+        actionToken: grappleDispatchActionToken,
+        actionSequence: nextGrappleActionSequence,
+        planId: armoredPlanId,
+        planExecutionKey: armoredPlanExecutionKey,
+        canonicalExecutionKey,
+        identitiesDistinct: true,
+      },
+    }, "debug");
+    if (validatedContinuationReceipt) {
+      const consumedAuthorization = consumeGrappleContinuationAuthorization({
+        continuationAuthorization: validatedContinuationReceipt,
+        continuationKey: validatedContinuationReceipt.continuationKey,
+        generationId: combatSessionRef.current || "default",
+        initiativeTurnId: initiativeTurnIdRef.current,
+        actorId: liveAttacker?.id,
+        opponentId: defenderId,
+        requestedActionSequence: initiativeActionSequenceRef.current,
+        authorizedActionToken: grappleDispatchActionToken,
+        actionType: "grapple",
+      });
+      if (!consumedAuthorization.ok) {
+        clearOwnedGrappleActionId();
+        clearOwnedActionLatch();
+        return rejectCanonicalGrappleAdmission(consumedAuthorization.reason, { accepted: false, completed: true, terminal: true, routeType: "grapple-terminal", reason: "grapple-continuation-consumption-failed" });
+      }
+      addLog?.({ audience: COMBAT_LOG_AUDIENCES.DEVELOPER, channel: COMBAT_LOG_CHANNELS.TURN, eventType: "grapple-continuation-authorization-consumed", level: "info", type: "debug", actorId: liveAttacker?.id, targetId: defenderId, source, message: `grapple continuation authorization consumed: actorId=${liveAttacker?.id} continuationKey=${validatedContinuationReceipt.continuationKey}`, data: { ...consumedAuthorization.authorizationRecord, actionToken: grappleDispatchActionToken, actionSequence: initiativeActionSequenceRef.current } }, "debug");
+    }
+    if (armoredPlanId) {
+      const consumedPlan = markArmoredActionPlanTerminal(
+        armoredActionPlanRegistryRef.current,
+        armoredPlanId,
+        "consumed",
+        {
+          planExecutionKey: armoredPlanExecutionKey,
+          consumedByCanonicalActionToken: grappleDispatchActionToken,
+        },
+      );
+      if (!consumedPlan.ok) {
+        clearOwnedGrappleActionId();
+        clearOwnedActionLatch();
+        return rejectCanonicalGrappleAdmission(consumedPlan.reason, { accepted: false, completed: true, reason: consumedPlan.reason });
+      }
+      addLog?.({
+        audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+        channel: COMBAT_LOG_CHANNELS.AI,
+        eventType: "armored-action-plan-consumed",
+        level: "info",
+        type: "debug",
+        actorId: liveAttacker?.id,
+        targetId: defenderId,
+        executionKey: canonicalExecutionKey,
+        source,
+        message: `armored grapple plan consumed: actorId=${liveAttacker?.id} planId=${armoredPlanId}`,
+        data: {
+          planId: armoredPlanId,
+          planExecutionKey: armoredPlanExecutionKey,
+          canonicalActionToken: grappleDispatchActionToken,
+          planState: consumedPlan.plan?.state,
+        },
+      }, "debug");
+    }
+    const selectedTransition = transitionCanonicalGrappleExecutionRecord(createdExecution, "selected");
+    if (!selectedTransition.ok) return rejectCanonicalGrappleAdmission(selectedTransition.reason, { accepted: false, completed: true, reason: selectedTransition.reason });
+    const selectedExecution = selectedTransition.record;
+    grappleActionExecutionRegistryRef.current.set(grappleActionId, selectedExecution);
+    addLog({
+      audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+      channel: COMBAT_LOG_CHANNELS.AI,
+      eventType: "grapple-action-selected",
+      level: "info",
+      type: "debug",
+      actorId: liveAttacker?.id,
+      targetId: defenderId,
+      executionKey: grappleActionId,
+      source,
+      message: `grapple action selected: actor=${liveAttacker?.name || liveAttacker?.id} target=${defender?.name || defenderId} actionType=${actionType}`,
+      data: lifecycleIdentity,
+    }, "debug");
+    const dispatchedTransition = transitionCanonicalGrappleExecutionRecord(selectedExecution, "dispatched");
+    if (!dispatchedTransition.ok) return rejectCanonicalGrappleAdmission(dispatchedTransition.reason, { accepted: false, completed: true, reason: dispatchedTransition.reason });
+    grappleActionExecutionRegistryRef.current.set(grappleActionId, dispatchedTransition.record);
+    addLog({
+      audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+      channel: COMBAT_LOG_CHANNELS.AI,
+      eventType: "grapple-action-dispatched",
+      level: "info",
+      type: "debug",
+      actorId: liveAttacker?.id,
+      targetId: defenderId,
+      executionKey: grappleActionId,
+      source,
+      message: `grapple action dispatched: actor=${liveAttacker?.name || liveAttacker?.id} target=${defender?.name || defenderId} actionType=${actionType}`,
+      data: lifecycleIdentity,
+    }, "debug");
+
+    const resolutionStart = beginGrappleActionResolution({
+      executionKey: grappleActionId,
+      generationId: combatSessionRef.current || "default",
+      initiativeTurnId: initiativeTurnIdRef.current || null,
+      actionToken: grappleDispatchActionToken,
+      actorId: liveAttacker?.id,
+      targetId: defenderId,
+      actionType,
+      source: "grapple-action-entry",
+    });
+    if (!resolutionStart.ok) {
+      clearOwnedGrappleActionId();
+      clearOwnedActionLatch();
+      return rejectCanonicalGrappleAdmission(resolutionStart.reason, { accepted: false, completed: true, terminal: true, routeType: "grapple-terminal", reason: resolutionStart.reason });
+    }
+
+    const canonicalAdmissionResult = createCanonicalGrappleAdmission({
+      generationId: lifecycleIdentity.generationId,
+      initiativeTurnId: lifecycleIdentity.initiativeTurnId,
+      actionToken: lifecycleIdentity.actionToken,
+      actionSequence: lifecycleIdentity.actionSequence,
+      actorId: lifecycleIdentity.actorId,
+      opponentId: lifecycleIdentity.opponentId,
+      actionType: lifecycleIdentity.actionType,
+      weaponId,
+      attackMode,
+      executionKey: lifecycleIdentity.executionKey,
+      continuationAuthorizationId: validatedContinuationReceipt?.authorizationId || null,
+      continuationKey: validatedContinuationReceipt?.continuationKey || null,
+      source,
+      admittedAt: Date.now(),
+    }, { freeze: Boolean(import.meta.env?.DEV) });
+    if (!canonicalAdmissionResult.ok) {
+      clearOwnedGrappleActionId();
+      clearOwnedActionLatch();
+      return rejectCanonicalGrappleAdmission(canonicalAdmissionResult.reason, { accepted: false, completed: true, reason: canonicalAdmissionResult.reason });
+    }
+    const canonicalAdmission = canonicalAdmissionResult.admission;
+    if (
+      canonicalAdmission.actionSequence !== resolvedActionSequence ||
+      canonicalAdmission.actionToken !== grappleDispatchActionToken ||
+      canonicalAdmission.executionKey !== canonicalExecutionKey
+    ) {
+      addLog?.({
+        audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+        channel: COMBAT_LOG_CHANNELS.VALIDATION,
+        eventType: "grapple-admission-action-sequence-mutated-blocked",
+        level: "error",
+        type: "error",
+        actorId: liveAttacker?.id,
+        targetId: defenderId,
+        executionKey: canonicalExecutionKey,
+        source,
+        message: `grapple admission action sequence mutated blocked: actorId=${liveAttacker?.id}`,
+        data: { resolvedActionSequence, admission: canonicalAdmission, grappleDispatchActionToken, canonicalExecutionKey },
+      }, "error");
+      clearOwnedGrappleActionId();
+      clearOwnedActionLatch();
+      return rejectCanonicalGrappleAdmission("grapple-admission-action-sequence-mutated-blocked", { accepted: false, completed: true, reason: "grapple-admission-action-sequence-mutated-blocked" });
+    }
+    reportCanonicalGrappleAdmission(true, null, {
+      actionToken: canonicalAdmission.actionToken,
+      actionSequence: canonicalAdmission.actionSequence,
+      continuationKey: canonicalAdmission.continuationKey,
+    });
+    const grappleCompletion = executeAdmittedGrappleResolutionHandler({
+      admission: canonicalAdmission,
+      actor: enhancedAttacker,
+      opponent: defenderId,
+      actionType,
+      weaponId,
+      attackMode,
+    }, {
       fighters: enhancedFighters,
       combatActive,
       addLog,
@@ -15302,16 +19384,284 @@ function CombatPage({ characters = [] }) {
       clampHP,
       getFighterHP,
       applyHPToFighter,
+      onPostHpMutation: (updatedFighters, meta = {}) => {
+        const ended = endCombatIfVictoryResolved(fightersRef.current ?? updatedFighters);
+        if (ended) {
+          addLog?.({
+            audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+            channel: COMBAT_LOG_CHANNELS.TURN,
+            eventType: "grapple-combat-end-detected",
+            level: "info",
+            type: "debug",
+            actorId: meta.actorId,
+            targetId: meta.targetId,
+            executionKey: meta.executionKey,
+            source: meta.source || "grapple-hp-mutation",
+            message:
+              `grapple combat end detected after HP mutation: actorId=${meta.actorId || "unknown"} ` +
+              `targetId=${meta.targetId || "unknown"} source=${meta.source || "grapple-hp-mutation"}`,
+            data: { ...meta, combatEnded: true },
+          }, "debug");
+        }
+        return ended;
+      },
+      registerDroppedBattlefieldItem: (record) => {
+        if (!record?.droppedItemId) return false;
+        droppedBattlefieldItemsRef.current.set(record.droppedItemId, record);
+        return true;
+      },
+      meleeRound: meleeRoundRef.current,
+      turnCounter: turnCounterRef.current,
       validateGrappleResult,
+      claimCanonicalGrappleRoll: ({ admission: claimedAdmission, rollKind, source }) => claimCanonicalGrappleRoll({
+        executionKey: grappleActionId,
+        generationId: combatSessionRef.current || "default",
+        initiativeTurnId: initiativeTurnIdRef.current || null,
+        actionToken: grappleDispatchActionToken,
+        actorId: liveAttacker?.id,
+        targetId: defenderId,
+        admission: claimedAdmission || canonicalAdmission,
+        rollKind,
+        source,
+      }),
+      validateClaimedGrappleRoll: ({ expectedRollKind, source }) => validateClaimedGrappleRoll({
+        executionKey: grappleActionId,
+        actionToken: grappleDispatchActionToken,
+        admission: canonicalAdmission,
+        expectedRollKind,
+        source,
+      }),
       grappleActionId,
+      initiativeTurnId: initiativeTurnIdRef.current,
+      actionToken: grappleDispatchActionToken,
+      admission: canonicalAdmission,
       onStaleGrappleAbort: (abortedActionId) => {
         clearOwnedGrappleActionId(abortedActionId);
         clearOwnedActionLatch();
       },
     });
+    const canonicalCompletion =
+      grappleCompletion && grappleCompletion.accepted !== false
+        ? completeCanonicalGrappleAction({
+            executionKey: grappleActionId,
+            actor: liveAttacker,
+            opponentId: defenderId,
+            actionType,
+            actionToken: grappleDispatchActionToken,
+            actionResult: grappleCompletion,
+          })
+        : null;
+    if (canonicalCompletion && canonicalCompletion.accepted === false) {
+      clearOwnedGrappleActionId();
+      clearOwnedActionLatch();
+      return {
+        accepted: false,
+        completed: true,
+        reason: canonicalCompletion.reason || canonicalCompletion.completionDecision?.reason,
+        actorId: liveAttacker?.id,
+        opponentId: defenderId,
+        actionType,
+        initiativeTurnId: initiativeTurnIdRef.current,
+        actionToken: grappleDispatchActionToken,
+        executionKey: grappleActionId,
+      };
+    }
+    auditSettledActionContinuation({
+      initiativeTurnId: initiativeTurnIdRef.current,
+      actorId: liveAttacker?.id,
+      executionKey: grappleActionId,
+      source: "grapple-executor-settled",
+    });
+    if (grappleCompletion?.combatEnded === true || canonicalCompletion?.completionDecision?.decision === "combat-ended") {
+      const continuationAuditEntries = Array.from(remainingActionContinuationRegistryRef.current.entries());
+      cancelRemainingActionContinuationsForActor({
+        actorId: liveAttacker?.id,
+        initiativeTurnId: initiativeTurnIdRef.current,
+        reason: "grapple-combat-ended",
+        source: "grapple-combat-end-terminal-return",
+      });
+      commitFighters((current = []) => current.map((fighter) => {
+        if (fighter?.id !== liveAttacker?.id && fighter?.id !== defenderId) return fighter;
+        const next = { ...fighter, grappleState: fighter?.grappleState ? { ...fighter.grappleState } : fighter?.grappleState };
+        resetGrapple(next);
+        return next;
+      }));
+      clearOwnedGrappleActionId();
+      clearOwnedActionLatch();
+      const continuationRecords = continuationAuditEntries.map(([, record]) => record);
+      const exactKeyMismatches = continuationAuditEntries.filter(([key, record]) => record?.continuationKey !== key).length;
+      const executionRecords = Array.from(grappleActionExecutionRegistryRef.current.values());
+      const terminalExecutionStates = new Set(["completed", "rejected", "canceled-combat-ended"]);
+      const callbacksPending = Array.from(remainingActionContinuationRegistryRef.current.values()).filter((record) => record?.pending === true).length;
+      const activePendingOwnership = Array.from(remainingActionContinuationRegistryRef.current.values()).filter((record) => record?.pending === true || record?.state === "continuation-pending").length;
+      addLog?.({
+        audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+        channel: COMBAT_LOG_CHANNELS.VALIDATION,
+        eventType: "grapple-continuation-key-lifecycle-audit",
+        level: exactKeyMismatches === 0 ? "info" : "error",
+        type: exactKeyMismatches === 0 ? "debug" : "error",
+        actorId: liveAttacker?.id,
+        targetId: defenderId,
+        executionKey: grappleActionId,
+        source: "grapple-combat-end-terminal-return",
+        message: `grapple continuation key lifecycle audit: exactKeyMismatches=${exactKeyMismatches}`,
+        data: {
+          createdCount: continuationRecords.filter((record) => record?.createdAt).length,
+          firedCount: continuationRecords.filter((record) => record?.firedAt).length,
+          receivedCount: continuationRecords.filter((record) => record?.authorizationReceivedAt).length,
+          validatedCount: continuationRecords.filter((record) => record?.authorizationValidatedAt).length,
+          consumedCount: continuationRecords.filter((record) => record?.authorizationConsumedAt).length,
+          canceledCount: continuationRecords.filter((record) => /canceled|stale/.test(String(record?.state || ""))).length,
+          exactKeyMismatches,
+        },
+      }, exactKeyMismatches === 0 ? "debug" : "error");
+      addLog?.({
+        audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+        channel: COMBAT_LOG_CHANNELS.VALIDATION,
+        eventType: "grapple-combat-end-continuation-audit",
+        level: callbacksPending === 0 && activePendingOwnership === 0 ? "info" : "error",
+        type: callbacksPending === 0 && activePendingOwnership === 0 ? "debug" : "error",
+        actorId: liveAttacker?.id,
+        targetId: defenderId,
+        executionKey: grappleActionId,
+        source: "grapple-combat-end-terminal-return",
+        message: `grapple combat-end continuation audit: callbacksPending=${callbacksPending} activePendingOwnership=${activePendingOwnership}`,
+        data: {
+          created: continuationRecords.filter((record) => record?.createdAt).length,
+          fired: continuationRecords.filter((record) => record?.firedAt).length,
+          authorizationConsumed: continuationRecords.filter((record) => record?.authorizationConsumedAt).length,
+          canceled: continuationRecords.filter((record) => /canceled|stale/.test(String(record?.state || ""))).length,
+          callbacksPending,
+          activePendingOwnership,
+          nonterminalExecutions: executionRecords.filter((record) => !terminalExecutionStates.has(record?.state)).length,
+          completedExecutions: executionRecords.filter((record) => record?.state === "completed").length,
+        },
+      }, callbacksPending === 0 && activePendingOwnership === 0 ? "debug" : "error");
+      addLog?.({
+        audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+        channel: COMBAT_LOG_CHANNELS.TURN,
+        eventType: "grapple-combat-end-terminal-return",
+        level: "info",
+        type: "debug",
+        actorId: liveAttacker?.id,
+        targetId: defenderId,
+        executionKey: grappleActionId,
+        source: "execute-canonical-grapple-action",
+        message: `grapple combat-end terminal return: actorId=${liveAttacker?.id} actionToken=${grappleDispatchActionToken}`,
+        data: { ...lifecycleIdentity, continuationCanceled: true, grappleCleanup: true },
+      }, "debug");
+      return { ...(grappleCompletion || {}), handled: true, terminal: true, combatEnded: true, routeType: "grapple-terminal", completionDecision: "combat-ended" };
+    }
+    const grappleCompletionDecision = canonicalCompletion?.completionDecision || null;
+    if (actionType === "drawClinchDagger" && grappleCompletionDecision?.decision === "continuation-created") {
+      addLog?.({
+        audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+        channel: COMBAT_LOG_CHANNELS.VALIDATION,
+        eventType: "draw-clinch-dagger-followup-scheduling-blocked",
+        level: "error",
+        type: "error",
+        actorId: liveAttacker?.id,
+        targetId: defenderId,
+        executionKey: grappleActionId,
+        source: "execute-canonical-grapple-action",
+        message: `draw clinch dagger follow-up scheduling blocked: actorId=${liveAttacker?.id} actionToken=${grappleDispatchActionToken}`,
+        data: { ...lifecycleIdentity, completionDecision: grappleCompletionDecision.decision },
+      }, "error");
+      cancelRemainingActionContinuationsForActor({
+        actorId: liveAttacker?.id,
+        initiativeTurnId: initiativeTurnIdRef.current,
+        reason: "draw-clinch-dagger-turn-ending",
+        source: "draw-clinch-dagger-followup-scheduling-blocked",
+      });
+      scheduleEndTurn(0, "draw-clinch-dagger-turn-ending-recovery");
+    }
+    if (actionType === "grapple" && grappleCompletion?.success === true &&
+      (grappleCompletionDecision?.decision === "continuation-created" || Number(grappleCompletion?.remainingActions ?? 0) !== 0)) {
+      addLog?.({
+        audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+        channel: COMBAT_LOG_CHANNELS.VALIDATION,
+        eventType: "initial-grapple-illegal-immediate-followup-blocked",
+        level: "error", type: "error", actorId: liveAttacker?.id, targetId: defenderId,
+        executionKey: grappleActionId, source: "execute-canonical-grapple-action",
+        message: `initial grapple illegal immediate follow-up blocked: actorId=${liveAttacker?.id} actionToken=${grappleDispatchActionToken}`,
+        data: { ...lifecycleIdentity, remainingActions: grappleCompletion?.remainingActions, completionDecision: grappleCompletionDecision?.decision, attemptedActionTypes: ["groundAttack", "clinchStrike", "drawClinchDagger"] },
+      }, "error");
+      cancelRemainingActionContinuationsForActor({
+        actorId: liveAttacker?.id,
+        initiativeTurnId: initiativeTurnIdRef.current,
+        reason: "initial-grapple-turn-ending-commitment",
+        source: "initial-grapple-illegal-immediate-followup-blocked",
+      });
+      scheduleEndTurn(0, "initial-grapple-turn-ending-commitment-recovery");
+    }
+    const canonicalGrappleCompletion =
+      grappleCompletionDecision?.result ||
+      grappleCompletion ||
+      { accepted: true, completed: true, actionType, initiativeTurnId: initiativeTurnIdRef.current, actionToken: grappleDispatchActionToken };
+    if (canonicalGrappleCompletion?.accepted === false) addLog({
+      audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+      channel: COMBAT_LOG_CHANNELS.AI,
+      eventType: canonicalGrappleCompletion?.accepted === false ? "grapple-action-rejected" : "grapple-action-completed",
+      level: canonicalGrappleCompletion?.accepted === false ? "warning" : "info",
+      type: canonicalGrappleCompletion?.accepted === false ? "warning" : "debug",
+      actorId: liveAttacker?.id,
+      targetId: defenderId,
+      executionKey: grappleActionId,
+      source: "grapple-action-entry",
+      message:
+        `${canonicalGrappleCompletion?.accepted === false ? "grapple action rejected" : "grapple action completed"}: ` +
+        `actor=${liveAttacker?.name || liveAttacker?.id} target=${defender?.name || defenderId} actionType=${actionType} ` +
+        `remainingActions=${canonicalGrappleCompletion?.remainingActions ?? "unknown"}`,
+      data: { ...canonicalGrappleCompletion, completionDecision: grappleCompletionDecision?.decision || null },
+    }, "warning");
     clearOwnedGrappleActionId();
-    return true;
-  }, [fighters, combatActive, addLog, positions, setFighters, setPositions, clampHP, getFighterHP, applyHPToFighter, getGrappleAttributeModifiers, canFighterStartTurn, meleeRound, turnCounter, validateCombatRollOwnership]);
+    if (actionType === "drawClinchDagger" && grappleCompletionDecision?.decision === "continuation-created") {
+      clearOwnedActionLatch();
+      return {
+        ...(canonicalGrappleCompletion || {}),
+        handled: true,
+        terminal: true,
+        pendingContinuation: false,
+        routeType: "grapple-terminal",
+        completionDecision: "handoff-recovery",
+      };
+    }
+    if (grappleCompletionDecision?.decision === "continuation-created") {
+      addLog?.({
+        audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+        channel: COMBAT_LOG_CHANNELS.TURN,
+        eventType: "grapple-continuation-terminal-return-propagated",
+        level: "info",
+        type: "debug",
+        actorId: liveAttacker?.id,
+        targetId: defenderId,
+        executionKey: grappleActionId,
+        source: "grapple-action-entry",
+        message: `grapple continuation terminal return propagated: actorId=${liveAttacker?.id} continuationKey=${grappleCompletionDecision.continuationKey}`,
+        data: { continuationKey: grappleCompletionDecision.continuationKey, initiativeTurnId: initiativeTurnIdRef.current, completedActionToken: grappleDispatchActionToken },
+      }, "debug");
+      return {
+        ...(canonicalGrappleCompletion || {}),
+        handled: true,
+        terminal: true,
+        pendingContinuation: true,
+        continuationKey: grappleCompletionDecision.continuationKey,
+        initiativeTurnId: initiativeTurnIdRef.current,
+        completedActionToken: grappleDispatchActionToken,
+        routeType: "grapple-terminal",
+        completionDecision: grappleCompletionDecision.decision,
+      };
+    }
+    return {
+      ...(canonicalGrappleCompletion || {}),
+      handled: true,
+      terminal: true,
+      routeType: "grapple-terminal",
+      actionSpent: Boolean(canonicalGrappleCompletion?.actionSpent),
+      remainingActions: canonicalGrappleCompletion?.remainingActions ?? liveAttacker?.remainingActions ?? null,
+      completionDecision: grappleCompletionDecision?.decision || null,
+    };
+  }, [fighters, combatActive, addLog, positions, setFighters, setPositions, clampHP, getFighterHP, applyHPToFighter, getGrappleAttributeModifiers, getAvailableGrappleActions, canFighterStartTurn, meleeRound, turnCounter, validateCombatRollOwnership, resolveCombatActionCompletion, transitionLogicalInitiativeTurn, commitFighters, cancelRemainingActionContinuationsForActor, createCanonicalGrappleActionToken, createGrappleActionExecutionRecord, beginGrappleActionResolution, claimCanonicalGrappleRoll, validateClaimedGrappleRoll, consumeGrappleContinuationAuthorization, completeCanonicalGrappleAction, auditSettledActionContinuation, endCombatIfVictoryResolved]);
 
   const hashToIndex = (str, mod) => {
     let h = 2166136261; // FNV-1a
@@ -15929,6 +20279,180 @@ function CombatPage({ characters = [] }) {
 
     let liveFighters = fightersRef.current ?? fighters;
     let stateAttacker = liveFighters.find(f => f.id === attacker.id) || attacker;
+    let attackContinuationAuthorization = bonusModifiers?.continuationAuthorization || null;
+    if (!attackContinuationAuthorization) {
+      const exactFiredReceipt = Array.from(remainingActionContinuationRegistryRef.current.values()).find((record) =>
+        record?.state === "fired" &&
+        record?.initiativeTurnId === initiativeTurnIdRef.current &&
+        record?.actorId === stateAttacker?.id &&
+        [initiativeActionSequenceRef.current, initiativeActionSequenceRef.current + 1].includes(Number(record?.nextActionSequence)));
+      if (exactFiredReceipt) {
+        attackContinuationAuthorization = exactFiredReceipt;
+        addLog?.({
+          audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+          channel: COMBAT_LOG_CHANNELS.TURN,
+          eventType: "action-continuation-receipt-recovered-at-attack-entry",
+          level: "warning", type: "warning", actorId: stateAttacker?.id,
+          targetId: defenderId, executionKey: attackActionId, source: attackSource,
+          message: `authoritative fired continuation receipt recovered at attack entry: actorId=${stateAttacker?.id} continuationKey=${exactFiredReceipt.continuationKey}`,
+          data: { continuationKey: exactFiredReceipt.continuationKey, authorizationId: exactFiredReceipt.authorizationId, nextActionSequence: exactFiredReceipt.nextActionSequence },
+        }, "warning");
+      }
+    }
+    const resolvedAttackActionSequence = Number(
+      attackContinuationAuthorization?.nextActionSequence ??
+      bonusModifiers?.requestedActionSequence ??
+      (initiativeActionSequenceRef.current + 1),
+    );
+    const attackSequenceAlreadyReserved = Boolean(
+      attackContinuationAuthorization &&
+      resolvedAttackActionSequence === initiativeActionSequenceRef.current &&
+      Number(attackContinuationAuthorization.completedActionSequence) === resolvedAttackActionSequence - 1
+    );
+    if (
+      ownsAttackAction &&
+      !bonusModifiers?.allowOutOfTurnAttack &&
+      (!Number.isInteger(resolvedAttackActionSequence) ||
+        (resolvedAttackActionSequence !== initiativeActionSequenceRef.current + 1 && !attackSequenceAlreadyReserved))
+    ) {
+      if (activeAttackActionIdRef.current === attackActionId) activeAttackActionIdRef.current = null;
+      return makeBlockedAttackResult("illegal-attack-action-sequence", attackActionId);
+    }
+    if (attackContinuationAuthorization) {
+      emitActionContinuationReceiptHop(
+        stateAttacker?.type === "enemy" ? "enemy-action-executor" : "player-action-executor",
+        attackContinuationAuthorization,
+        {
+          requestedActionSequence: resolvedAttackActionSequence,
+          consumingActionType: "attack",
+          consumingActionToken: attackActionId,
+          source: attackSource,
+        },
+      );
+      const consumedContinuation = consumeAuthoritativeActionContinuationReceipt({
+        continuationAuthorization: attackContinuationAuthorization,
+        initiativeTurnId: initiativeTurnIdRef.current,
+        actorId: stateAttacker?.id,
+        requestedActionSequence: resolvedAttackActionSequence,
+        consumingActionToken: attackActionId,
+        consumingActionType: "attack",
+      });
+      if (!consumedContinuation.ok) {
+        const continuationKey = attackContinuationAuthorization.continuationKey;
+        const authoritativeReceipt = remainingActionContinuationRegistryRef.current.get(continuationKey);
+        if (authoritativeReceipt && ["created", "fired"].includes(authoritativeReceipt.state)) {
+          const rejectedReceipt = rejectActionContinuationReceipt(authoritativeReceipt, consumedContinuation.reason);
+          remainingActionContinuationRegistryRef.current.set(continuationKey, rejectedReceipt);
+          emitActionContinuationReceiptHop("rejected", rejectedReceipt, {
+            requestedActionSequence: resolvedAttackActionSequence,
+            consumingActionType: "attack",
+            consumingActionToken: attackActionId,
+            source: attackSource,
+          });
+        }
+        if (activeAttackActionIdRef.current === attackActionId) activeAttackActionIdRef.current = null;
+        turnActionResolvingRef.current = false;
+        pendingTurnAdvanceRef.current = false;
+        return makeBlockedAttackResult(consumedContinuation.reason || "action-continuation-consumption-failed", attackActionId);
+      }
+    }
+    if (ownsAttackAction && !bonusModifiers?.allowOutOfTurnAttack) {
+      initiativeActionSequenceRef.current = resolvedAttackActionSequence;
+    }
+    const activeGrappleStateText = String(stateAttacker?.grappleState?.state || "").toLowerCase();
+    const activeGrappleOpponentId =
+      stateAttacker?.grappleState?.opponent ||
+      stateAttacker?.grappleState?.opponentId ||
+      stateAttacker?.grappledWith ||
+      null;
+    const attackerInActiveGrapple =
+      activeGrappleOpponentId &&
+      activeGrappleStateText &&
+      activeGrappleStateText !== "neutral";
+    const explicitlyGrappleDispatched =
+      bonusModifiers?.allowActiveGrappleGenericAttack === true ||
+      /grapple|clinch/.test(String(attackSource || "").toLowerCase());
+    if (attackerInActiveGrapple && !explicitlyGrappleDispatched) {
+      addLog?.({
+        audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+        channel: COMBAT_LOG_CHANNELS.VALIDATION,
+        eventType: "active-grapple-generic-attack-blocked",
+        level: "error",
+        type: "error",
+        actorId: stateAttacker?.id || attacker?.id,
+        targetId: defenderId,
+        executionKey: attackActionId,
+        round: meleeRoundRef.current,
+        turn: turnCounterRef.current,
+        turnToken: currentTurnTokenRef.current,
+        source: attackSource,
+        message:
+          `active-grapple-generic-attack-blocked: actor=${stateAttacker?.name || attacker?.name || "unknown"} ` +
+          `opponentId=${activeGrappleOpponentId} source=${attackSource}`,
+        data: {
+          actorId: stateAttacker?.id || attacker?.id,
+          targetId: defenderId,
+          opponentId: activeGrappleOpponentId,
+          grappleState: stateAttacker?.grappleState,
+          attackSource,
+        },
+      }, "error");
+      let committedRemaining = 0;
+      commitFighters((prev = []) => prev.map((fighter) => {
+        if (fighter?.id !== (stateAttacker?.id || attacker?.id)) return fighter;
+        committedRemaining = Math.max(0, (Number(fighter.remainingActions ?? 0) || 0) - 1);
+        return {
+          ...fighter,
+          remainingActions: committedRemaining,
+        };
+      }));
+      const recoveryResult = {
+        accepted: true,
+        completed: true,
+        blocked: true,
+        stale: false,
+        actionType: "pass",
+        actionSpent: true,
+        actionsSpent: 1,
+        explicitPass: true,
+        explicitTurnEndingEffect: false,
+        remainingActions: committedRemaining,
+        source: "active-grapple-generic-attack-recovery",
+        reason: "active-grapple-generic-attack-blocked",
+        executionKey: attackActionId,
+      };
+      const completionDecision = resolveCombatActionCompletion({
+        actorId: stateAttacker?.id || attacker?.id,
+        opponentId: activeGrappleOpponentId || defenderId,
+        executionKey: attackActionId,
+        source: "active-grapple-generic-attack-recovery",
+        actionResult: recoveryResult,
+      });
+      addLog?.({
+        audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+        channel: COMBAT_LOG_CHANNELS.TURN,
+        eventType: "active-grapple-generic-attack-recovery-completed",
+        level: "warning",
+        type: "warning",
+        actorId: stateAttacker?.id || attacker?.id,
+        targetId: defenderId,
+        executionKey: attackActionId,
+        round: meleeRoundRef.current,
+        turn: turnCounterRef.current,
+        turnToken: currentTurnTokenRef.current,
+        source: "active-grapple-generic-attack-recovery",
+        message:
+          `active-grapple generic attack recovery completed: actor=${stateAttacker?.name || attacker?.name || "unknown"} ` +
+          `remainingActions=${committedRemaining} decision=${completionDecision?.decision || "unknown"}`,
+        data: { recoveryResult, completionDecision },
+      }, "warning");
+      return {
+        ...makeBlockedAttackResult("active-grapple-generic-attack-blocked", attackActionId),
+        recovered: true,
+        completionDecision,
+        remainingActions: committedRemaining,
+      };
+    }
     if ((Number(stateAttacker.routingExhaustedCowerCount ?? stateAttacker.moraleState?.exhaustedCowerCount) || 0) > 0) {
       liveFighters = liveFighters.map((fighter) => (
         fighter.id === stateAttacker.id ? resetExhaustedCowerCount(fighter) : fighter
@@ -16226,12 +20750,45 @@ function CombatPage({ characters = [] }) {
 
       const canTrustUpdatedAlreadySpent = spendReason === "multi-attack-parent-complete";
 
-      const after =
+      let after =
         canTrustUpdatedAlreadySpent &&
         Number.isFinite(impactRaNum) &&
         impactRaNum < before
           ? impactRaNum
           : Math.max(0, before - 1);
+      const turnEndingExhaustion = hasActiveTurnEndingExhaustion(attackerId, initiativeTurnIdRef.current);
+      if (turnEndingExhaustion && after > 0) {
+        addLog?.({
+          audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+          channel: COMBAT_LOG_CHANNELS.TURN,
+          eventType: "turn-ending-exhaustion-regression-blocked",
+          level: "warning",
+          type: "warning",
+          actorId: attackerId,
+          executionKey: attackActionId,
+          round: meleeRoundRef.current,
+          turn: turnCounterRef.current,
+          turnToken: currentTurnTokenRef.current,
+          source: "finishAttackAfterImpact",
+          message:
+            `turn-ending exhaustion regression blocked: actorId=${attackerId} ` +
+            `attemptedRemainingActions=${after} reason=${turnEndingExhaustion.reason || "turn-ending"}`,
+          data: { attemptedRemainingActions: after, latch: turnEndingExhaustion },
+        }, "warning");
+        addLog?.({
+          audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+          channel: COMBAT_LOG_CHANNELS.TURN,
+          eventType: "impact-action-bookkeeping-suppressed",
+          level: "info",
+          type: "debug",
+          actorId: attackerId,
+          executionKey: attackActionId,
+          source: "finishAttackAfterImpact",
+          message: `impact-action-bookkeeping-suppressed: actorId=${attackerId} reason=fumble-handoff-owned`,
+          data: { reason: "fumble-handoff-owned", latch: turnEndingExhaustion },
+        }, "debug");
+        after = 0;
+      }
 
       const preserveLivestaminaAfterImpactMerge = (merged, liveFighter) => {
         const livestaminaValues = [
@@ -16334,6 +20891,315 @@ function CombatPage({ characters = [] }) {
       turnActionResolvingRef.current = true;
       commitFighters(committed);
 
+      const actorAfterSpend = committed.find((f) => f.id === attackerId) || attackerRowForLog;
+      const remainingAfterSpend = Number(actorAfterSpend?.remainingActions ?? after) || 0;
+      const explicitTurnEndingEffect =
+        String(spendReason || "").includes("critical-miss") ||
+        String(spendReason || "").includes("fumble") ||
+        String(spendReason || "").includes("horror-action-consumed") ||
+        String(spendReason || "").includes("cower") ||
+        String(spendReason || "").includes("fled");
+      const fighterCapable =
+        actorAfterSpend &&
+        actorAfterSpend.status !== "defeated" &&
+        actorAfterSpend.condition !== "dying" &&
+        actorAfterSpend.condition !== "dead" &&
+        actorAfterSpend.condition !== "unconscious" &&
+        actorAfterSpend.canAct !== false;
+      const unresolvedOwnership =
+        (projectilesRef.current?.length ?? 0) > 0 ||
+        Boolean(activeTechniqueImpactRef.current) ||
+        (activeGrappleActionIdRef.current && activeGrappleActionIdRef.current !== attackActionId);
+      const activeFighterMatches = fightersRef.current?.[turnIndexRef.current]?.id === attackerId;
+      const shouldContinueCurrentTurn =
+        activeFighterMatches &&
+        remainingAfterSpend > 0 &&
+        fighterCapable &&
+        !combatOverRef.current &&
+        combatActiveRef.current &&
+        !combatEndCheckRef.current &&
+        !explicitTurnEndingEffect &&
+        !unresolvedOwnership;
+
+      addLog({
+        audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+        channel: COMBAT_LOG_CHANNELS.TURN,
+        eventType: "remaining-action-decision",
+        level: "info",
+        type: "debug",
+        actorId: attackerId,
+        executionKey: attackActionId,
+        round: meleeRoundRef.current,
+        turn: turnCounterRef.current,
+        turnToken: currentTurnTokenRef.current,
+        source: "finalizeAttackSpend",
+        message:
+          `remaining action decision: actor=${actorAfterSpend?.name || attackerId} remainingActions=${remainingAfterSpend} ` +
+          `shouldContinue=${shouldContinueCurrentTurn} reason=${spendReason}`,
+        data: {
+          actorId: attackerId,
+          authoritativeRemainingActions: remainingAfterSpend,
+          fighterCapable,
+          combatEnded: combatOverRef.current || !combatActiveRef.current || combatEndCheckRef.current,
+          explicitTurnEndingEffect,
+          unresolvedOwnership,
+          shouldContinueCurrentTurn,
+          source: "finalizeAttackSpend",
+        },
+      }, "debug");
+
+      if (shouldContinueCurrentTurn) {
+        const grappleOwnedExecution = Array.from(grappleActionExecutionRegistryRef.current.values()).find((record) => (
+          (record?.executionKey === attackActionId || record?.actionToken === attackActionId) &&
+          record?.continuationSchedulingOwner === "grapple-completion-arbiter"
+        ));
+        if (grappleOwnedExecution) {
+          addLog?.({
+            audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+            channel: COMBAT_LOG_CHANNELS.TURN,
+            eventType: "generic-continuation-scheduler-suppressed-for-grapple",
+            level: "info",
+            type: "debug",
+            actorId: attackerId,
+            executionKey: attackActionId,
+            source: "finalizeAttackSpend",
+            message: `generic continuation scheduler suppressed for grapple: actorId=${attackerId} actionToken=${grappleOwnedExecution.actionToken}`,
+            data: { continuationSchedulingOwner: grappleOwnedExecution.continuationSchedulingOwner, actionToken: grappleOwnedExecution.actionToken },
+          }, "debug");
+          return true;
+        }
+        if (activeAttackActionIdRef.current === attackActionId) {
+          activeAttackActionIdRef.current = null;
+        }
+        turnActionResolvingRef.current = false;
+        pendingTurnAdvanceRef.current = false;
+
+        const completedActionSequence = Math.max(1, Number(initiativeActionSequenceRef.current) || 1);
+        const nextActionSequence = completedActionSequence + 1;
+        const continuationKey = createRemainingActionContinuationKey({
+          generationId: combatSessionRef.current || "default",
+          initiativeTurnId: initiativeTurnIdRef.current,
+          actorId: attackerId,
+          completedActionToken: attackActionId || "completed-action",
+          nextActionSequence,
+        });
+
+        if (remainingActionContinuationRegistryRef.current.has(continuationKey)) {
+          addLog({
+            audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+            channel: COMBAT_LOG_CHANNELS.TURN,
+            eventType: "remaining-action-continuation-deduped",
+            level: "info",
+            type: "debug",
+            actorId: attackerId,
+            executionKey: attackActionId,
+            round: meleeRoundRef.current,
+            turn: turnCounterRef.current,
+            turnToken: currentTurnTokenRef.current,
+            source: "finalizeAttackSpend",
+            message: `remaining action continuation deduped: actor=${actorAfterSpend?.name || attackerId} key=${continuationKey}`,
+            data: { continuationKey, remainingActions: remainingAfterSpend },
+          }, "debug");
+          return true;
+        }
+
+        const completedActionToken = attackActionId || "completed-attack";
+        const attackCompletionKey = createCombatActionCompletionKey({
+          generationId: combatSessionRef.current || "default",
+          initiativeTurnId: initiativeTurnIdRef.current,
+          actionToken: completedActionToken,
+        });
+        if (!combatActionCompletionRegistryRef.current.has(attackCompletionKey)) {
+          combatActionCompletionRegistryRef.current.set(attackCompletionKey, {
+            completionKey: attackCompletionKey,
+            actorId: attackerId,
+            opponentId: defenderId,
+            executionKey: attackActionId,
+            generationId: combatSessionRef.current || "default",
+            initiativeTurnId: initiativeTurnIdRef.current,
+            actionToken: completedActionToken,
+            actionSequence: completedActionSequence,
+            actionType: "attack",
+            source: "finalizeAttackSpend",
+            completedAt: Date.now(),
+          });
+        }
+        const continuationCreation = createActionContinuationReceipt({
+          continuationId: continuationKey,
+          continuationKey,
+          generationId: combatSessionRef.current || "default",
+          initiativeTurnId: initiativeTurnIdRef.current,
+          actorId: attackerId,
+          completedActionToken,
+          completedActionType: "attack",
+          completedActionSequence,
+          remainingActions: remainingAfterSpend,
+          source: spendReason,
+        });
+        if (!continuationCreation.ok) {
+          scheduleEndTurn(delayMs, continuationCreation.reason);
+          return true;
+        }
+        remainingActionContinuationRegistryRef.current.set(continuationKey, {
+          ...continuationCreation.record,
+          opponentId: defenderId,
+          turnToken: currentTurnTokenRef.current,
+        });
+        transitionLogicalInitiativeTurn(initiativeTurnIdRef.current, "continuation-pending", "finalizeAttackSpend", {
+          continuationKey,
+          continuationPhase: "continuation-pending",
+        });
+        addLog({
+          audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+          channel: COMBAT_LOG_CHANNELS.TURN,
+          eventType: "remaining-action-continuation-created",
+          level: "info",
+          type: "debug",
+          actorId: attackerId,
+          executionKey: attackActionId,
+          round: meleeRoundRef.current,
+          turn: turnCounterRef.current,
+          turnToken: currentTurnTokenRef.current,
+          source: "finalizeAttackSpend",
+          message:
+            `remaining action continuation created: actor=${actorAfterSpend?.name || attackerId} ` +
+            `remainingActions=${remainingAfterSpend} source=${spendReason}`,
+          data: { continuationKey, remainingActions: remainingAfterSpend, source: spendReason },
+        }, "debug");
+
+        const continuationSession = combatSessionRef.current;
+        const continuationTurnToken = currentTurnTokenRef.current;
+        const continuationInitiativeTurnId = initiativeTurnIdRef.current;
+        const continuationTimer = setTimeout(() => {
+          const entry = remainingActionContinuationRegistryRef.current.get(continuationKey);
+          const liveActor = fightersRef.current?.[turnIndexRef.current];
+          if (!entry || entry.state !== "created") {
+            addLog({
+              audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+              channel: COMBAT_LOG_CHANNELS.TURN,
+              eventType: "continuation-fire-without-created-record",
+              level: "warning",
+              type: "warning",
+              actorId: attackerId,
+              executionKey: attackActionId,
+              source: "finalizeAttackSpend",
+              message: `continuation fire without created record: actor=${actorAfterSpend?.name || attackerId} key=${continuationKey}`,
+              data: { continuationKey, entry },
+            }, "warning");
+            remainingActionContinuationRegistryRef.current.delete(continuationKey);
+            return;
+          }
+          if (
+            combatOverRef.current ||
+            !combatActiveRef.current ||
+            combatEndCheckRef.current ||
+            combatSessionRef.current !== continuationSession ||
+            currentTurnTokenRef.current !== continuationTurnToken ||
+            liveActor?.id !== attackerId ||
+            (Number(liveActor?.remainingActions ?? 0) || 0) <= 0
+          ) {
+            addLog({
+              audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+              channel: COMBAT_LOG_CHANNELS.TURN,
+              eventType: "remaining-action-continuation-stale",
+              level: "warning",
+              type: "warning",
+              actorId: attackerId,
+              executionKey: attackActionId,
+              source: "finalizeAttackSpend",
+              message: `remaining action continuation stale: actor=${actorAfterSpend?.name || attackerId} key=${continuationKey}`,
+              data: { continuationKey },
+            }, "warning");
+            remainingActionContinuationRegistryRef.current.delete(continuationKey);
+            return;
+          }
+          const firedContinuation = fireActionContinuationReceipt(entry);
+          if (!firedContinuation.ok) {
+            remainingActionContinuationRegistryRef.current.set(continuationKey, rejectActionContinuationReceipt(entry, firedContinuation.reason));
+            return;
+          }
+          const continuationAuthorization = Object.freeze({ ...firedContinuation.record });
+          remainingActionContinuationRegistryRef.current.set(continuationKey, continuationAuthorization);
+          emitActionContinuationReceiptHop("callback-fired", continuationAuthorization, {
+            requestedActionSequence: continuationAuthorization.nextActionSequence,
+            source: "finalizeAttackSpend",
+          });
+          transitionLogicalInitiativeTurn(continuationInitiativeTurnId, "active", "remaining-action-continuation-fired", {
+            continuationKey: firedContinuation.record.continuationKey,
+            continuationPhase: "fired-awaiting-admission",
+          });
+          addLog({
+            audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+            channel: COMBAT_LOG_CHANNELS.TURN,
+            eventType: "remaining-action-continuation-fired",
+            level: "info",
+            type: "debug",
+            actorId: attackerId,
+            executionKey: attackActionId,
+            round: meleeRoundRef.current,
+            turn: turnCounterRef.current,
+            turnToken: currentTurnTokenRef.current,
+            source: "finalizeAttackSpend",
+            message:
+              `remaining action continuation fired: actor=${liveActor?.name || attackerId} ` +
+              `remainingActions=${liveActor?.remainingActions}`,
+            data: { continuationKey, remainingActions: liveActor?.remainingActions },
+          }, "debug");
+          // Preserve the fired authorization until the continuation-owned action
+          // has entered; a fired record cannot fire again because it is no longer
+          // in the created state.
+
+          if (liveActor.type === "enemy") {
+            processingEnemyTurnRef.current = false;
+            enemyActionLockRef.current = null;
+            enemyActionCommittedThisSliceRef.current = false;
+            enemyActionCommittedSliceKeyRef.current = null;
+            handleEnemyTurnRef.current?.(liveActor, "remaining-action-continuation", {
+              continuation: true,
+              turnToken: continuationTurnToken,
+              continuationKey: firedContinuation.record.continuationKey,
+              continuationAuthorization,
+              source: "finalizeAttackSpend",
+            });
+          } else if (aiControlEnabledRef.current && !isManualPlayerCombatant(liveActor, { aiControlEnabled: aiControlEnabledRef.current })) {
+            const ownerRestore = ensureContinuationExecutionOwnership({
+              actorId: attackerId,
+              initiativeTurnId: continuationInitiativeTurnId,
+              expectedOwner: "player-ai",
+              continuationKey,
+              source: "finalizeAttackSpend-continuation",
+            });
+            if (!ownerRestore.accepted) {
+              addLog({
+                audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+                channel: COMBAT_LOG_CHANNELS.TURN,
+                eventType: "continuation-creation-rejected",
+                level: "warning",
+                type: "warning",
+                actorId: attackerId,
+                source: "finalizeAttackSpend",
+                message:
+                  `continuation creation rejected: actorId=${attackerId} reason=${ownerRestore.reason || "owner-restore-failed"} ` +
+                  `continuationKey=${continuationKey}`,
+                data: { reason: ownerRestore.reason || "owner-restore-failed", continuationKey, initiativeTurnId: continuationInitiativeTurnId },
+              }, "warning");
+              return;
+            }
+            processingPlayerAIRef.current = false;
+            playerAIActionScheduledRef.current = false;
+            handlePlayerAITurnRef.current?.(liveActor, {
+              reason: "remaining-action-continuation",
+              turnToken: continuationTurnToken,
+              continuationKey: firedContinuation.record.continuationKey,
+              continuationAuthorization,
+              initiativeTurnId: continuationInitiativeTurnId,
+            });
+          }
+        }, 0);
+        allTimeoutsRef.current.push(continuationTimer);
+        return true;
+      }
+
       if (scheduleTurnEnd) {
         scheduleEndTurn(delayMs, "finalizeAttackSpend");
       }
@@ -16402,6 +21268,12 @@ function CombatPage({ characters = [] }) {
         logRemaining: logRem,
         reason,
         attackStartRemainingAttacks: spendAttackStart,
+      });
+      auditSettledActionContinuation({
+        initiativeTurnId: initiativeTurnIdRef.current,
+        actorId: attackerForLog?.id || attacker?.id,
+        executionKey: attackActionId,
+        source: `attack-impact-finalized:${reason}`,
       });
 
       const isManualPlayerAttack =
@@ -16886,6 +21758,12 @@ function CombatPage({ characters = [] }) {
         : Number.POSITIVE_INFINITY;
     })();
     if (isAIConchampionedAttacker) {
+      const armoredMetadataBeforeResolve = {
+        selectedTechnique: attackData?.selectedTechnique,
+        armorTechnique: attackData?.armorTechnique,
+        attackMode: attackData?.attackMode,
+        originalWeaponName: attackData?.originalWeaponName,
+      };
       const resolved = resolveEnemyEffectiveAttack(effectiveAttacker, attackData, {
         preferRanged: true,
         grappleRange:
@@ -16893,10 +21771,317 @@ function CombatPage({ characters = [] }) {
           attackerGrappleStatus.state !== GRAPPLE_STATES.NEUTRAL ||
           getGrappleStatus(defender).state !== GRAPPLE_STATES.NEUTRAL,
       });
-      attackData = resolved.attack;
+      attackData = {
+        ...resolved.attack,
+        ...Object.fromEntries(
+          Object.entries(armoredMetadataBeforeResolve).filter(([, value]) => value !== undefined && value !== null)
+        ),
+      };
     }
 
     attackDataForFinish = attackData;
+
+    const armorPlanProfile = normalizeArmorProfile(defender);
+    const attackPlanName = String(attackData?.name || "").toLowerCase();
+    const attackPlanType = String(attackData?.type || attackData?.weaponType || attackData?.category || "").toLowerCase();
+    const attackPlanRange = Number(attackData?.range ?? attackData?.rangeFeet ?? attackData?.normalRange ?? 0);
+    const attackPlanIsRanged =
+      attackData?.isRanged === true ||
+      attackPlanType.includes("ranged") ||
+      attackPlanType.includes("bow") ||
+      attackPlanName.includes("bow") ||
+      attackPlanName.includes("crossbow") ||
+      attackPlanName.includes("sling") ||
+      (Number.isFinite(attackPlanRange) && attackPlanRange > 10);
+    const selectedArmoredTechnique =
+      attackData?.selectedTechnique || attackData?.armorTechnique || bonusModifiers?.selectedTechnique;
+    const armoredActionPlan = attackData?.armoredActionPlan || null;
+    const armoredSourceWeaponForPlan = getArmoredTechniqueSourceWeapon(attackData, attackData);
+    const requiresArmoredActionPlan =
+      isAutomatedAttacker &&
+      !attackPlanIsRanged &&
+      armorPlanProfile?.armorClass === "plate" &&
+      armorPlanProfile?.rigidCoverage === true &&
+      (isLongswordWeapon(armoredSourceWeaponForPlan) || isArmoredLongswordTechnique(selectedArmoredTechnique));
+    const hasArmoredActionPlan = Boolean(
+      attackData?.selectedTechnique ||
+      attackData?.armorTechnique ||
+      bonusModifiers?.selectedTechnique,
+    );
+    const armoredActionPlanId = armoredActionPlan?.planId || armoredActionPlan?.selectionId || null;
+    const armoredActionPlanIdentity = armoredActionPlanId ? {
+      generationId: combatSessionRef.current || "default",
+      round: meleeRoundRef.current ?? meleeRound,
+      initiativeIndex: turnIndexRef.current,
+      initiativeTurnId: initiativeTurnIdRef.current,
+      actorId: effectiveAttacker?.id || attacker?.id,
+      targetId: defender?.id,
+      actionToken: currentTurnTokenRef.current,
+      selectedTechnique: selectedArmoredTechnique,
+      sourceWeaponId:
+        armoredSourceWeaponForPlan?.id ||
+        armoredSourceWeaponForPlan?.weaponId ||
+        armoredSourceWeaponForPlan?.name ||
+        "unknown-weapon",
+    } : null;
+    if (armoredActionPlanId) {
+      registerArmoredActionPlan(armoredActionPlanRegistryRef.current, armoredActionPlan);
+      const dispatchIdentity = validateArmoredActionPlanIdentity(
+        armoredActionPlanRegistryRef.current,
+        armoredActionPlanId,
+        armoredActionPlanIdentity,
+        "dispatch",
+      );
+      if (!dispatchIdentity.ok) {
+        markArmoredActionPlanTerminal(armoredActionPlanRegistryRef.current, armoredActionPlanId, "rejected", {
+          reason: dispatchIdentity.reason,
+          executionKey: attackActionId,
+        });
+        addLog({
+          audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+          channel: COMBAT_LOG_CHANNELS.VALIDATION,
+          eventType: "armored-action-plan-identity-rejected",
+          level: "error",
+          type: "error",
+          actorId: effectiveAttacker?.id || attacker?.id,
+          targetId: defender?.id,
+          executionKey: attackActionId,
+          round: meleeRoundRef.current,
+          turn: turnCounterRef.current,
+          turnToken: currentTurnTokenRef.current,
+          source: attackSource,
+          message:
+            `armored-action-plan-identity-rejected: stage=dispatch reason=${dispatchIdentity.reason} ` +
+            `planId=${armoredActionPlanId}`,
+          data: { stage: "dispatch", reason: dispatchIdentity.reason, planId: armoredActionPlanId, identity: armoredActionPlanIdentity, result: dispatchIdentity },
+        }, "error");
+        if (activeAttackActionIdRef.current === attackActionId) activeAttackActionIdRef.current = null;
+        turnActionResolvingRef.current = false;
+        pendingTurnAdvanceRef.current = false;
+        return makeBlockedAttackResult(dispatchIdentity.reason, attackActionId);
+      }
+      const dispatched = markArmoredActionPlanDispatched(armoredActionPlanRegistryRef.current, armoredActionPlanId, {
+        executionKey: attackActionId,
+        source: attackSource,
+      });
+      if (!dispatched.ok) {
+        addLog({
+          audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+          channel: COMBAT_LOG_CHANNELS.VALIDATION,
+          eventType: "armored-action-plan-identity-rejected",
+          level: "error",
+          type: "error",
+          actorId: effectiveAttacker?.id || attacker?.id,
+          targetId: defender?.id,
+          executionKey: attackActionId,
+          source: attackSource,
+          message:
+            `armored-action-plan-identity-rejected: stage=dispatch reason=${dispatched.reason} ` +
+            `planId=${armoredActionPlanId}`,
+          data: { stage: "dispatch", reason: dispatched.reason, planId: armoredActionPlanId, result: dispatched },
+        }, "error");
+        if (activeAttackActionIdRef.current === attackActionId) activeAttackActionIdRef.current = null;
+        turnActionResolvingRef.current = false;
+        pendingTurnAdvanceRef.current = false;
+        return makeBlockedAttackResult(dispatched.reason, attackActionId);
+      }
+      addLog({
+        audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+        channel: COMBAT_LOG_CHANNELS.VALIDATION,
+        eventType: dispatched.alreadyDispatched ? "armored-action-plan-dispatch-validated" : "armored-action-plan-dispatched",
+        level: "info",
+        type: "debug",
+        actorId: effectiveAttacker?.id || attacker?.id,
+        targetId: defender?.id,
+        executionKey: attackActionId,
+        round: meleeRoundRef.current,
+        turn: turnCounterRef.current,
+        turnToken: currentTurnTokenRef.current,
+        source: attackSource,
+        message:
+          `${dispatched.alreadyDispatched ? "armored action plan dispatch validated" : "armored action plan dispatched"}: actor=${effectiveAttacker?.name || attacker?.name || "Unknown"} ` +
+          `target=${defender?.name || "Unknown"} technique=${selectedArmoredTechnique} planId=${armoredActionPlanId}`,
+        data: { armoredActionPlanId, plan: dispatched.plan },
+      }, "debug");
+      const attackEntryIdentity = validateArmoredActionPlanIdentity(
+        armoredActionPlanRegistryRef.current,
+        armoredActionPlanId,
+        armoredActionPlanIdentity,
+        "attack-entry",
+      );
+      if (!attackEntryIdentity.ok) {
+        markArmoredActionPlanTerminal(armoredActionPlanRegistryRef.current, armoredActionPlanId, "rejected", {
+          reason: attackEntryIdentity.reason,
+          executionKey: attackActionId,
+        });
+        addLog({
+          audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+          channel: COMBAT_LOG_CHANNELS.VALIDATION,
+          eventType: "armored-action-plan-identity-rejected",
+          level: "error",
+          type: "error",
+          actorId: effectiveAttacker?.id || attacker?.id,
+          targetId: defender?.id,
+          executionKey: attackActionId,
+          round: meleeRoundRef.current,
+          turn: turnCounterRef.current,
+          turnToken: currentTurnTokenRef.current,
+          source: attackSource,
+          message:
+            `armored-action-plan-identity-rejected: stage=attack-entry reason=${attackEntryIdentity.reason} ` +
+            `planId=${armoredActionPlanId}`,
+          data: { stage: "attack-entry", reason: attackEntryIdentity.reason, planId: armoredActionPlanId, identity: armoredActionPlanIdentity, result: attackEntryIdentity },
+        }, "error");
+        if (activeAttackActionIdRef.current === attackActionId) activeAttackActionIdRef.current = null;
+        turnActionResolvingRef.current = false;
+        pendingTurnAdvanceRef.current = false;
+        return makeBlockedAttackResult(attackEntryIdentity.reason, attackActionId);
+      }
+    }
+    if (requiresArmoredActionPlan && !hasArmoredActionPlan) {
+      addLog({
+        audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+        channel: COMBAT_LOG_CHANNELS.VALIDATION,
+        eventType: "armored-action-plan-rejected",
+        level: "error",
+        type: "error",
+        actorId: effectiveAttacker?.id || attacker?.id,
+        targetId: defender?.id,
+        executionKey: attackActionId,
+        round: meleeRoundRef.current,
+        turn: turnCounterRef.current,
+        turnToken: currentTurnTokenRef.current,
+        source: attackSource,
+        message:
+          `armored action plan rejected: actor=${effectiveAttacker?.name || attacker?.name || "Unknown"} ` +
+          `target=${defender?.name || "Unknown"} source=${attackSource} reason=missing-technique-plan`,
+        data: {
+          reason: "missing-technique-plan",
+          attackName: attackData?.name,
+          attackMode: attackData?.attackMode,
+        },
+      }, "error");
+      if (activeAttackActionIdRef.current === attackActionId) activeAttackActionIdRef.current = null;
+      turnActionResolvingRef.current = false;
+      pendingTurnAdvanceRef.current = false;
+      return makeBlockedAttackResult("missing-armored-action-plan", attackActionId);
+    }
+    if (requiresArmoredActionPlan && hasArmoredActionPlan) {
+      const sourceWeapon = getArmoredTechniqueSourceWeapon(attackData, attackData);
+      const validation = validateArmoredTechniqueWeapon({
+        selectedTechnique: selectedArmoredTechnique,
+        sourceWeapon,
+        activeGrappleState: { active: Boolean(stateAttacker?.grappleState?.opponent || defender?.grappleState?.opponent) },
+      });
+      if (!validation.ok) {
+        if (armoredActionPlanId) {
+          markArmoredActionPlanTerminal(armoredActionPlanRegistryRef.current, armoredActionPlanId, "rejected", {
+            reason: validation.reason,
+            executionKey: attackActionId,
+          });
+        }
+        addLog({
+          audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+          channel: COMBAT_LOG_CHANNELS.VALIDATION,
+          eventType: "armored-action-plan-rejected",
+          level: "error",
+          type: "error",
+          actorId: effectiveAttacker?.id || attacker?.id,
+          targetId: defender?.id,
+          executionKey: attackActionId,
+          round: meleeRoundRef.current,
+          turn: turnCounterRef.current,
+          turnToken: currentTurnTokenRef.current,
+          source: attackSource,
+          message:
+            `armored action plan rejected: actor=${effectiveAttacker?.name || attacker?.name || "Unknown"} ` +
+            `technique=${selectedArmoredTechnique} sourceWeapon=${sourceWeapon?.name || "Unknown"} reason=${validation.reason}`,
+          data: {
+            reason: validation.reason,
+            selectedTechnique: selectedArmoredTechnique,
+            sourceWeapon: sourceWeapon?.name || null,
+            attackName: attackData?.name,
+          },
+        }, "error");
+        if (activeAttackActionIdRef.current === attackActionId) activeAttackActionIdRef.current = null;
+        turnActionResolvingRef.current = false;
+        pendingTurnAdvanceRef.current = false;
+        return makeBlockedAttackResult(validation.reason, attackActionId);
+      }
+      addLog({
+        audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+        channel: COMBAT_LOG_CHANNELS.VALIDATION,
+        eventType: "armored-source-weapon-validated",
+        level: "info",
+        type: "debug",
+        actorId: effectiveAttacker?.id || attacker?.id,
+        targetId: defender?.id,
+        executionKey: attackActionId,
+        round: meleeRoundRef.current,
+        turn: turnCounterRef.current,
+        turnToken: currentTurnTokenRef.current,
+        source: attackSource,
+        message:
+          `armored source weapon validated: actor=${effectiveAttacker?.name || attacker?.name || "Unknown"} ` +
+          `technique=${selectedArmoredTechnique} sourceWeapon=${sourceWeapon?.name || "Unknown"}`,
+        data: {
+          armoredActionPlan,
+          selectedTechnique: selectedArmoredTechnique,
+          sourceWeapon: sourceWeapon?.name || null,
+          validation,
+        },
+      }, "debug");
+      if (armoredActionPlanId) {
+        const consumed = markArmoredActionPlanTerminal(armoredActionPlanRegistryRef.current, armoredActionPlanId, "consumed", {
+          executionKey: attackActionId,
+        });
+        if (!consumed.ok) {
+          addLog({
+            audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+            channel: COMBAT_LOG_CHANNELS.VALIDATION,
+            eventType: "armored-action-plan-identity-rejected",
+            level: "error",
+            type: "error",
+            actorId: effectiveAttacker?.id || attacker?.id,
+            targetId: defender?.id,
+            executionKey: attackActionId,
+            round: meleeRoundRef.current,
+            turn: turnCounterRef.current,
+            turnToken: currentTurnTokenRef.current,
+            source: attackSource,
+            message:
+              `armored-action-plan-identity-rejected: stage=consume reason=${consumed.reason} ` +
+              `planId=${armoredActionPlanId}`,
+            data: { stage: "consume", reason: consumed.reason, armoredActionPlan, result: consumed },
+          }, "error");
+          if (activeAttackActionIdRef.current === attackActionId) activeAttackActionIdRef.current = null;
+          turnActionResolvingRef.current = false;
+          pendingTurnAdvanceRef.current = false;
+          return makeBlockedAttackResult(consumed.reason, attackActionId);
+        }
+      }
+      addLog({
+        audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+        channel: COMBAT_LOG_CHANNELS.VALIDATION,
+        eventType: "armored-action-plan-consumed",
+        level: "info",
+        type: "debug",
+        actorId: effectiveAttacker?.id || attacker?.id,
+        targetId: defender?.id,
+        executionKey: attackActionId,
+        round: meleeRoundRef.current,
+        turn: turnCounterRef.current,
+        turnToken: currentTurnTokenRef.current,
+        source: attackSource,
+        message:
+          `armored action plan consumed: actor=${effectiveAttacker?.name || attacker?.name || "Unknown"} ` +
+          `target=${defender?.name || "Unknown"} technique=${selectedArmoredTechnique}`,
+        data: {
+          armoredActionPlan,
+          selectedTechnique: selectedArmoredTechnique,
+        },
+      }, "debug");
+    }
 
     if (DEBUG_COMBAT) {
       addLog(
@@ -17629,7 +22814,33 @@ function CombatPage({ characters = [] }) {
           weapon: attackData,
           attackType: attackData?.attackType || attackData?.type,
         });
-        const attackStamina = spendStamina(attackerInArray || effectiveAttacker, attackStaminaCost);
+        const attackStamina = spendCombatStamina({
+          fighter: attackerInArray || effectiveAttacker,
+          amount: attackStaminaCost,
+          reason: "attack",
+          source: "attack-roll-pre-stamina",
+          executionKey: attackActionId,
+          allowOverexertion: true,
+        });
+        if (!attackStamina.accepted) {
+          addLog?.({
+            audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+            channel: COMBAT_LOG_CHANNELS.VALIDATION,
+            eventType: "attack-stamina-spend-rejected",
+            level: "error",
+            type: "error",
+            actorId: effectiveAttacker?.id || attacker?.id,
+            targetId: defender?.id,
+            executionKey: attackActionId,
+            source: "attack-roll-pre-stamina",
+            message:
+              `attack stamina spend rejected: actor=${effectiveAttacker?.name || attacker?.name || "Unknown"} ` +
+              `reason=${attackStamina.reason || "unknown"}`,
+            data: attackStamina,
+          }, "error");
+          if (activeAttackActionIdRef.current === attackActionId) activeAttackActionIdRef.current = null;
+          return makeBlockedAttackResult(attackStamina.reason || "stamina-spend-rejected", attackActionId);
+        }
         if (attackerInArray) Object.assign(attackerInArray, attackStamina.updated);
         staminaChargedAttackKeysRef.current.add(staminaChargeKey);
         if (staminaChargedAttackKeysRef.current.size > 200) {
@@ -18330,6 +23541,194 @@ function CombatPage({ characters = [] }) {
         });
       }
 
+      const completeTurnEndingFumble = () => {
+        if (finalizedFumbleActionIdsRef.current.has(attackActionId)) {
+          addLog({
+            audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+            channel: COMBAT_LOG_CHANNELS.TURN,
+            eventType: "fumble-turn-handoff",
+            level: "warning",
+            type: "warning",
+            actorId: attacker?.id,
+            executionKey: attackActionId,
+            source: attackSource,
+            message: `fumble turn handoff ignored: actorId=${attacker?.id} reason=already-finalized executionKey=${attackActionId}`,
+            data: { actorId: attacker?.id, reason: "already-finalized", executionKey: attackActionId },
+          }, "warning");
+          return;
+        }
+        finalizedFumbleActionIdsRef.current.add(attackActionId);
+        const fumbleInitiativeTurnId = initiativeTurnIdRef.current;
+        const fumbleActionToken = currentTurnTokenRef.current;
+        const canceledContinuationCount = cancelRemainingActionContinuationsForActor({
+          actorId: attacker?.id,
+          initiativeTurnId: fumbleInitiativeTurnId,
+          reason: "critical-miss",
+          source: "fumble-turn-handoff",
+        });
+        const activeRoster = fightersRef.current ?? liveFighters ?? [];
+        const outgoingInitiativeIndex = activeRoster.findIndex((f) => f?.id === attacker?.id);
+        const safeOutgoingIndex = outgoingInitiativeIndex >= 0 ? outgoingInitiativeIndex : turnIndexRef.current;
+        const nextInitiativeIndex = activeRoster.length > 0 ? (safeOutgoingIndex + 1) % activeRoster.length : -1;
+        const roundBefore = meleeRoundRef.current ?? meleeRound;
+        const roundAfter =
+          activeRoster.length > 0 && nextInitiativeIndex === 0
+            ? roundBefore + 1
+            : roundBefore;
+        const nextActorId = nextInitiativeIndex >= 0 ? activeRoster[nextInitiativeIndex]?.id : null;
+        addLog({
+          audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+          channel: COMBAT_LOG_CHANNELS.TURN,
+          eventType: "fumble-turn-handoff-started",
+          level: "info",
+          type: "debug",
+          actorId: attacker?.id,
+          targetId: defenderId,
+          executionKey: attackActionId,
+          source: attackSource,
+          message:
+            `fumble turn handoff started: actorId=${attacker?.id} outgoingInitiativeIndex=${safeOutgoingIndex} ` +
+            `nextInitiativeIndex=${nextInitiativeIndex} nextActorId=${nextActorId || "none"} ` +
+            `roundBefore=${roundBefore} roundAfter=${roundAfter} turnToken=${currentTurnTokenRef.current} executionKey=${attackActionId}`,
+          data: {
+            actorId: attacker?.id,
+            outgoingInitiativeIndex: safeOutgoingIndex,
+            nextInitiativeIndex,
+            nextActorId,
+            roundBefore,
+            roundAfter,
+            turnToken: fumbleActionToken,
+            executionKey: attackActionId,
+            explicitTurnEndingEffect: true,
+            initiativeTurnId: fumbleInitiativeTurnId,
+            continuationCanceled: canceledContinuationCount,
+            reason: "critical-miss",
+          },
+        }, "debug");
+        commitTurnEndingActionExhaustion({
+          actorId: attacker?.id,
+          initiativeTurnId: fumbleInitiativeTurnId,
+          actionToken: fumbleActionToken,
+          reason: "critical-miss",
+          source: "fumble-turn-handoff",
+        });
+        const finalized = finishAttackAfterImpact({
+          updated,
+          attackerInArray,
+          attackData,
+          reason: "critical-miss",
+          suppressEndTurn: true,
+          endTurnDelayMs: 0,
+          logRemaining: true,
+        });
+        addLog({
+          audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+          channel: COMBAT_LOG_CHANNELS.TURN,
+          eventType: "turn-finalizer-suppressed",
+          level: "info",
+          type: "debug",
+          actorId: attacker?.id,
+          targetId: defenderId,
+          executionKey: attackActionId,
+          source: "fumble-turn-handoff",
+          message:
+            `turn finalizer suppressed: actorId=${attacker?.id} reason=fumble-handoff-owned executionKey=${attackActionId}`,
+          data: { reason: "fumble-handoff-owned", finalizerOwner: "fumble", executionKey: attackActionId },
+        }, "debug");
+        commitTurnEndingActionExhaustion({
+          actorId: attacker?.id,
+          initiativeTurnId: fumbleInitiativeTurnId,
+          actionToken: fumbleActionToken,
+          reason: "critical-miss-post-impact",
+          source: "fumble-turn-handoff",
+        });
+        const fumbleCompletionDecision = commitAuthoritativeTurnHandoff({
+          outgoingActorId: attacker?.id,
+          expectedInitiativeTurnId: fumbleInitiativeTurnId,
+          reason: "fumble-handoff-owned",
+          explicitTurnEndingEffect: true,
+          source: "fumble-turn-handoff",
+        });
+        const rosterAfterFumble = fightersRef.current ?? [];
+        const fumblerAfter = rosterAfterFumble.find((fighter) => fighter?.id === attacker?.id);
+        const activeAfterFumble = rosterAfterFumble[turnIndexRef.current] || null;
+        const continuationRemains = Array.from(remainingActionContinuationRegistryRef.current.values()).some((entry) =>
+          entry?.actorId === attacker?.id && (!fumbleInitiativeTurnId || entry?.initiativeTurnId === fumbleInitiativeTurnId)
+        );
+        const fumbleHandoffVerified =
+          fumbleCompletionDecision?.accepted === true &&
+          (meleeRoundRef.current ?? meleeRound) === fumbleCompletionDecision.roundAfter &&
+          turnIndexRef.current === fumbleCompletionDecision.initiativeIndexAfter &&
+          (turnCounterRef.current ?? turnCounter) === fumbleCompletionDecision.turnCounterAfter &&
+          activeAfterFumble?.id === fumbleCompletionDecision.nextActorId &&
+          activeAfterFumble?.id !== attacker?.id &&
+          (Number(fumblerAfter?.remainingActions ?? 0) || 0) <= 0 &&
+          !continuationRemains;
+        if (!fumbleHandoffVerified) {
+          addLog({
+            audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+            channel: COMBAT_LOG_CHANNELS.TURN,
+            eventType: "fumble-turn-handoff-incomplete",
+            level: "warning",
+            type: "warning",
+            actorId: attacker?.id,
+            targetId: defenderId,
+            executionKey: attackActionId,
+            source: "fumble-turn-handoff",
+            message:
+              `fumble turn handoff incomplete: actorId=${attacker?.id} activeActorId=${activeAfterFumble?.id || "none"} ` +
+              `remainingActions=${fumblerAfter?.remainingActions ?? "unknown"} continuationRemains=${continuationRemains}`,
+            data: {
+              activeActorId: activeAfterFumble?.id || null,
+              remainingActions: fumblerAfter?.remainingActions ?? null,
+              continuationRemains,
+              completionDecision: fumbleCompletionDecision,
+              expectedRound: fumbleCompletionDecision?.roundAfter,
+              actualRound: meleeRoundRef.current ?? meleeRound,
+              expectedIndex: fumbleCompletionDecision?.initiativeIndexAfter,
+              actualIndex: turnIndexRef.current,
+              expectedTurnCounter: fumbleCompletionDecision?.turnCounterAfter,
+              actualTurnCounter: turnCounterRef.current ?? turnCounter,
+            },
+          }, "warning");
+        }
+        if (fumbleHandoffVerified) {
+          turnEndingExhaustionRegistryRef.current.delete(createTurnEndingExhaustionKey({
+            generationId: combatSessionRef.current || "default",
+            initiativeTurnId: fumbleInitiativeTurnId,
+            actorId: attacker?.id,
+          }));
+        }
+        addLog({
+          audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+          channel: COMBAT_LOG_CHANNELS.TURN,
+          eventType: "fumble-turn-handoff-completed",
+          level: "info",
+          type: "debug",
+          actorId: attacker?.id,
+          targetId: defenderId,
+          executionKey: attackActionId,
+          source: attackSource,
+          message:
+            `fumble turn handoff completed: actorId=${attacker?.id} nextActorId=${nextActorId || "none"} ` +
+            `continuationCanceled=${canceledContinuationCount} accepted=${Boolean(finalized && fumbleHandoffVerified)}`,
+          data: {
+            accepted: Boolean(finalized && fumbleHandoffVerified),
+            actorId: attacker?.id,
+            nextActorId,
+            roundBefore,
+            roundAfter,
+            initiativeIndexBefore: safeOutgoingIndex,
+            initiativeIndexAfter: nextInitiativeIndex,
+            continuationCanceled: canceledContinuationCount,
+            handoffCompleted: Boolean(finalized && fumbleHandoffVerified),
+            completionDecision: fumbleCompletionDecision?.decision || null,
+            initiativeTurnId: initiativeTurnIdRef.current,
+            executionKey: attackActionId,
+          },
+        }, "debug");
+      };
+
       // Critical miss: deterministic scatter for projectile/ranged attacks (Option B)
       // NOTE: projectile NAT 1 is handled above as MISFIRE, so this branch is now effectively dead for projectiles.
       if (isCriticalMiss && isProjectileAttack) {
@@ -18400,14 +23799,12 @@ function CombatPage({ characters = [] }) {
 
           if (isCriticalMiss) {
             addLog(`${attacker.name} FUMBLES the attack!`, "miss");
-            commitFighters(updated);
-            deferMultiAttackHitEnd();
+            completeTurnEndingFumble();
             return;
           }
         } else {
           addLog(`${attacker.name} FUMBLES the attack!`, "miss");
-          commitFighters(updated);
-          deferMultiAttackHitEnd();
+          completeTurnEndingFumble();
           return;
         }
       }
@@ -18415,12 +23812,452 @@ function CombatPage({ characters = [] }) {
       // Critical miss auto-fails (non-projectile, or if scatter did not retarget)
       if (isCriticalMiss) {
         addLog(`${attacker.name} FUMBLES the attack!`, "miss");
-        commitFighters(updated);
-        deferMultiAttackHitEnd();
+        completeTurnEndingFumble();
         return;
       }
       // Critical hit auto-succeeds, normal hit requires beating AC
       if (didHit) {
+        const defenderArmorProfile = normalizeArmorProfile(defender);
+        const shouldResolveArmorContact =
+          !isRangedAttack &&
+          defenderArmorProfile?.armorClass === "plate" &&
+          defenderArmorProfile?.rigidCoverage === true &&
+          (
+            isLongswordWeapon(getArmoredTechniqueSourceWeapon(attackData, attackData)) ||
+            isArmoredLongswordTechnique(
+              bonusModifiers?.selectedTechnique ||
+              attackData?.selectedTechnique ||
+              attackData?.armorTechnique ||
+              attackData?.attackMode
+            )
+          );
+        let armorContactResult = null;
+        let preDamageImpact = null;
+
+        if (shouldResolveArmorContact) {
+          const hasArmoredSelectorMetadata = Boolean(
+            bonusModifiers?.selectedTechnique ||
+            attackData?.selectedTechnique ||
+            attackData?.armorTechnique,
+          );
+          const selectedTechnique =
+            bonusModifiers?.selectedTechnique ||
+            attackData?.selectedTechnique ||
+            attackData?.armorTechnique ||
+            bonusModifiers?.attackMode ||
+            bonusModifiers?.mode ||
+            attackData?.attackMode ||
+            attackData?.mode ||
+            "longsword-cut";
+          if (!hasArmoredSelectorMetadata) {
+            addLog({
+              audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+              channel: COMBAT_LOG_CHANNELS.VALIDATION,
+              eventType: "armored-selector-bypassed",
+              level: "warning",
+              type: "warning",
+              actorId: stateAttacker?.id || attacker?.id,
+              targetId: defender?.id,
+              executionKey: attackActionId,
+              round: meleeRoundRef.current,
+              turn: turnCounterRef.current,
+              turnToken: currentTurnTokenRef.current,
+              source: attackSource,
+              message:
+                `armored selector bypassed: actor=${stateAttacker?.name || attacker?.name || "Unknown"} ` +
+                `target=${defender?.name || "Unknown"} source=${attackSource} reason=missing-selected-technique-metadata`,
+              data: {
+                reason: "missing-selected-technique-metadata",
+                attackName: attackData?.name,
+                attackMode: attackData?.attackMode,
+              },
+            }, "warning");
+          }
+          const attackReceivedMode =
+            attackData?.attackMode ||
+            attackData?.mode ||
+            selectedTechnique;
+          if (selectedTechnique !== attackReceivedMode) {
+            addLog({
+              audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+              channel: COMBAT_LOG_CHANNELS.VALIDATION,
+              eventType: "attack-mode-mismatch",
+              level: "warning",
+              type: "warning",
+              actorId: stateAttacker?.id || attacker?.id,
+              targetId: defender?.id,
+              executionKey: attackActionId,
+              source: attackSource,
+              message:
+                `attack mode mismatch: selected=${selectedTechnique} attackReceived=${attackReceivedMode} source=${attackSource}`,
+              data: { selectedTechnique, attackReceivedMode, attackMode: attackData?.attackMode },
+            }, "warning");
+          }
+          addLog({
+            audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+            channel: COMBAT_LOG_CHANNELS.VALIDATION,
+            eventType: "attack-mode-propagated",
+            level: "info",
+            type: "debug",
+            actorId: stateAttacker?.id || attacker?.id,
+            targetId: defender?.id,
+            executionKey: attackActionId,
+            source: attackSource,
+            message:
+              `attack mode propagated: actor=${stateAttacker?.name || attacker?.name || "Unknown"} ` +
+              `selected=${selectedTechnique} attackReceived=${attackReceivedMode}`,
+            data: { selectedTechnique, attackReceivedMode, attackMode: attackData?.attackMode },
+          }, "debug");
+          preDamageImpact = rollImpactLocation();
+          armorContactResult = resolveArmorContact({
+            attacker: stateAttacker || attacker,
+            defender,
+            weapon: attackData,
+            attackData,
+            attackMode: selectedTechnique,
+            attackRoll: attackDiceRoll,
+            attackTotal: attackRoll,
+            critical: isCriticalHit,
+            hitLocation: preDamageImpact,
+            armor: defenderArmorProfile,
+            targetState: {
+              prone: defender?.condition === "prone" || defender?.statusEffects?.includes?.("PRONE"),
+              stunned: defender?.condition === "stunned" || defender?.statusEffects?.includes?.("STUNNED") || defender?.statusEffects?.includes?.("DAZED"),
+              grappled: Boolean(defender?.grappleState?.opponent),
+              pinned: defender?.grappleState?.state === "PINNED",
+              offBalance: defender?.statusEffects?.includes?.("OFF_BALANCE"),
+            },
+            normalDefense: targetGuardRating,
+          });
+
+          addLog({
+            audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+            channel: COMBAT_LOG_CHANNELS.VALIDATION,
+            eventType: "armor-contact-resolved",
+            level: "info",
+            type: "debug",
+            actorId: stateAttacker?.id || attacker?.id,
+            targetId: defender?.id,
+            executionKey: attackActionId,
+            round: meleeRoundRef.current,
+            turn: turnCounterRef.current,
+            turnToken: currentTurnTokenRef.current,
+            source: attackSource,
+            message:
+              `armor contact resolved: actor=${stateAttacker?.name || attacker?.name || "Unknown"} ` +
+              `target=${defender?.name || "Unknown"} weapon=${attackData?.name || "Unknown"} ` +
+              `mode=${armorContactResult.attackMode} location=${armorContactResult.hitLocation} ` +
+              `coverage=${armorContactResult.coverageType} contact=${armorContactResult.contactType} ` +
+              `gapCapable=${armorContactResult.gapCapable} gapReached=${armorContactResult.gapReached} ` +
+              `hpDamage=0 prevented=${armorContactResult.damagePrevented}`,
+            data: {
+              attackerId: stateAttacker?.id || attacker?.id,
+              attackerName: stateAttacker?.name || attacker?.name,
+              defenderId: defender?.id,
+              defenderName: defender?.name,
+              weapon: attackData?.name,
+              attackMode: armorContactResult.attackMode,
+              attackRoll: attackDiceRoll,
+              attackTotal: attackRoll,
+              normalDefense: targetGuardRating,
+              gapDefense: armorContactResult.gapDefense,
+              critical: isCriticalHit,
+              hitLocation: armorContactResult.hitLocation,
+              armor: defenderArmorProfile.armorName,
+              coverageResult: armorContactResult.coverageType,
+              contactType: armorContactResult.contactType,
+              gapCapable: armorContactResult.gapCapable,
+              gapReached: armorContactResult.gapReached,
+              penetration: armorContactResult.penetration,
+              originalDamageType: attackData?.damageType || "slashing",
+              convertedDamageType: armorContactResult.convertedDamageType,
+              bodilyDamageAllowed: armorContactResult.damageAllowed,
+              hpDamageApplied: 0,
+              damagePrevented: armorContactResult.damagePrevented,
+              mayStagger: armorContactResult.mayStagger,
+              mayKnockDown: armorContactResult.mayKnockDown,
+              mayBleed: armorContactResult.mayBleed,
+              mayCauseUnconsciousness: armorContactResult.mayCauseUnconsciousness,
+              reason: armorContactResult.reason,
+            },
+          }, "debug");
+
+          if (!armorContactResult.damageAllowed) {
+            const attackerLabel = formatNormalAttackActorLabel(stateAttacker, defender, updated);
+            const defenderLabel = formatNormalAttackActorLabel(defender, stateAttacker, updated);
+            const locationLabel = formatHitLocationForPlayer(armorContactResult.hitLocation, {
+              armorClass: defenderArmorProfile.armorClass,
+              coverageType: armorContactResult.coverageType,
+            });
+            const armorImpactEffect = resolveArmorImpactEffect({
+              attacker: stateAttacker || attacker,
+              defender,
+              attackMode: armorContactResult.attackMode,
+              hitLocation: armorContactResult.hitLocation,
+              critical: isCriticalHit,
+              attackMargin: attackRoll - targetGuardRating,
+              contactResult: armorContactResult,
+              rng: () => CryptoSecureDice.parseAndRoll("1d20").totalWithBonus,
+            });
+            if (armorImpactEffect.checkRequired) {
+              addLog({
+                audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+                channel: COMBAT_LOG_CHANNELS.VALIDATION,
+                eventType: "armor-impact-check",
+                level: "info",
+                type: "debug",
+                actorId: stateAttacker?.id || attacker?.id,
+                targetId: defender?.id,
+                executionKey: attackActionId,
+                round: meleeRoundRef.current,
+                turn: turnCounterRef.current,
+                turnToken: currentTurnTokenRef.current,
+                source: attackSource,
+                message:
+                  `armor impact check: actor=${stateAttacker?.name || attacker?.name || "Unknown"} ` +
+                  `target=${defender?.name || "Unknown"} effect=${armorImpactEffect.effectType} ` +
+                  `dc=${armorImpactEffect.dc} roll=${armorImpactEffect.roll ?? "none"} success=${armorImpactEffect.success}`,
+                data: armorImpactEffect,
+              }, "debug");
+              if (armorImpactEffect.statusApplied) {
+                const defenderForImpact = updated[defenderIndex];
+                const existingStatuses = Array.isArray(defenderForImpact.statusEffects)
+                  ? defenderForImpact.statusEffects
+                  : [];
+                if (!existingStatuses.includes(armorImpactEffect.statusApplied)) {
+                  updated[defenderIndex] = {
+                    ...defenderForImpact,
+                    statusEffects: [...existingStatuses, armorImpactEffect.statusApplied],
+                  };
+                  defender = updated[defenderIndex];
+                }
+              }
+            }
+            const impactPrefix = armorContactResult.criticalArmorImpact
+              ? "Critical armor impact: "
+              : "";
+            const stoppedAction = armorContactResult.attackMode?.includes("thrust")
+              ? "thrust"
+              : armorContactResult.attackMode?.includes("pommel") || armorContactResult.attackMode?.includes("crossguard")
+                ? "blow"
+                : "cut";
+            addLog({
+              audience: COMBAT_LOG_AUDIENCES.PLAYER,
+              channel: COMBAT_LOG_CHANNELS.DAMAGE,
+              eventType: "armor-contact",
+              level: "info",
+              type: "combat",
+              actorId: stateAttacker?.id || attacker?.id,
+              targetId: defender?.id,
+              message:
+                `${impactPrefix}${attackerLabel}'s ${attackData?.name || "weapon"} strikes ${defenderLabel}'s ${locationLabel}. ` +
+                `The armor stops the ${stoppedAction}; no bodily damage is dealt.`,
+              data: {
+                contactType: armorContactResult.contactType,
+                hitLocation: armorContactResult.hitLocation,
+                attackMode: armorContactResult.attackMode,
+                damageAllowed: false,
+                hpDamageApplied: 0,
+                mayBleed: false,
+                mayCauseUnconsciousness: false,
+              },
+            }, "combat");
+
+            const armoredOutcome = recordArmoredTacticalOutcome(getArmoredMemoryStore(), {
+              generationId: combatSessionRef.current || "default",
+              attackerId: stateAttacker?.id || attacker?.id,
+              defenderId: defender?.id,
+              executionKey: attackActionId,
+              attackMode: armorContactResult.attackMode,
+              contactResult: armorContactResult,
+              round: meleeRoundRef.current,
+              turn: turnCounterRef.current,
+            });
+            const updatedArmoredMemory = armoredOutcome.memory;
+            addLog({
+              audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+              channel: COMBAT_LOG_CHANNELS.VALIDATION,
+              eventType: "armored-memory-write",
+              level: "info",
+              type: "debug",
+              actorId: stateAttacker?.id || attacker?.id,
+              targetId: defender?.id,
+              executionKey: attackActionId,
+              round: meleeRoundRef.current,
+              turn: turnCounterRef.current,
+              turnToken: currentTurnTokenRef.current,
+              source: attackSource,
+              message:
+                `armored memory write: actor=${stateAttacker?.name || attacker?.name || "Unknown"} ` +
+                `target=${defender?.name || "Unknown"} outcome=${armoredOutcome.outcomeType} recorded=${armoredOutcome.recorded} ` +
+                `ineffectiveCuts=${updatedArmoredMemory.ineffectiveCutContacts} ` +
+                `solidPlate=${updatedArmoredMemory.solidPlateContacts}`,
+              data: armoredOutcome,
+            }, "debug");
+            addLog({
+              audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+              channel: COMBAT_LOG_CHANNELS.VALIDATION,
+              eventType: "armored-tactical-outcome-recorded",
+              level: "info",
+              type: "debug",
+              actorId: stateAttacker?.id || attacker?.id,
+              targetId: defender?.id,
+              executionKey: attackActionId,
+              round: meleeRoundRef.current,
+              turn: turnCounterRef.current,
+              turnToken: currentTurnTokenRef.current,
+              source: attackSource,
+              message:
+                `armored tactical outcome recorded: actor=${stateAttacker?.name || attacker?.name || "Unknown"} ` +
+                `target=${defender?.name || "Unknown"} outcome=${armoredOutcome.outcomeType} recorded=${armoredOutcome.recorded}`,
+              data: armoredOutcome,
+            }, "debug");
+
+            const memoryAttacker = updated.find((f) => f.id === (stateAttacker?.id || attacker?.id));
+            if (memoryAttacker) {
+              memoryAttacker.tacticalMemory = {
+                ...(memoryAttacker.tacticalMemory || {}),
+                armorContacts: [
+                  ...((memoryAttacker.tacticalMemory?.armorContacts || []).slice(-4)),
+                  {
+                    targetId: defender?.id,
+                    armorClass: defenderArmorProfile.armorClass,
+                    weapon: attackData?.name,
+                    attackMode: armorContactResult.attackMode,
+                    contactType: armorContactResult.contactType,
+                    round: meleeRoundRef.current,
+                    turn: turnCounterRef.current,
+                    suggestedModes: ["half-sword-thrust", "pommel-or-crossguard-strike", "grapple"],
+                  },
+                ],
+              };
+            }
+
+            finishAttackAfterImpact({
+              updated,
+              attackerInArray,
+              attackData,
+              reason: "armor-contact-resolved",
+              suppressEndTurn: Boolean(bonusModifiers?.suppressEndTurn),
+              endTurnDelayMs: 16,
+              logRemaining: true,
+            });
+            return true;
+          }
+
+          if (armorContactResult.gapReached) {
+            const armoredOutcome = recordArmoredTacticalOutcome(getArmoredMemoryStore(), {
+              generationId: combatSessionRef.current || "default",
+              attackerId: stateAttacker?.id || attacker?.id,
+              defenderId: defender?.id,
+              executionKey: attackActionId,
+              attackMode: armorContactResult.attackMode,
+              contactResult: armorContactResult,
+              outcomeType: "successful-gap-hit",
+              round: meleeRoundRef.current,
+              turn: turnCounterRef.current,
+            });
+            addLog({
+              audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+              channel: COMBAT_LOG_CHANNELS.VALIDATION,
+              eventType: "armored-memory-write",
+              level: "info",
+              type: "debug",
+              actorId: stateAttacker?.id || attacker?.id,
+              targetId: defender?.id,
+              executionKey: attackActionId,
+              round: meleeRoundRef.current,
+              turn: turnCounterRef.current,
+              turnToken: currentTurnTokenRef.current,
+              source: attackSource,
+              message:
+                `armored memory write: actor=${stateAttacker?.name || attacker?.name || "Unknown"} ` +
+                `target=${defender?.name || "Unknown"} outcome=${armoredOutcome.outcomeType} recorded=${armoredOutcome.recorded} ` +
+                `successfulGapHits=${armoredOutcome.memory.successfulGapHits}`,
+              data: armoredOutcome,
+            }, "debug");
+            addLog({
+              audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+              channel: COMBAT_LOG_CHANNELS.VALIDATION,
+              eventType: "armored-tactical-outcome-recorded",
+              level: "info",
+              type: "debug",
+              actorId: stateAttacker?.id || attacker?.id,
+              targetId: defender?.id,
+              executionKey: attackActionId,
+              round: meleeRoundRef.current,
+              turn: turnCounterRef.current,
+              turnToken: currentTurnTokenRef.current,
+              source: attackSource,
+              message:
+                `armored tactical outcome recorded: actor=${stateAttacker?.name || attacker?.name || "Unknown"} ` +
+                `target=${defender?.name || "Unknown"} outcome=${armoredOutcome.outcomeType} recorded=${armoredOutcome.recorded}`,
+              data: armoredOutcome,
+            }, "debug");
+            const gapTechnique = armorContactResult.attackMode === "half-sword-thrust"
+              ? "half-sword thrust"
+              : "thrust";
+            addLog({
+              audience: COMBAT_LOG_AUDIENCES.PLAYER,
+              channel: COMBAT_LOG_CHANNELS.DAMAGE,
+              eventType: "armor-gap-contact",
+              level: "info",
+              type: "damage",
+              actorId: stateAttacker?.id || attacker?.id,
+              targetId: defender?.id,
+              message:
+                `${formatNormalAttackActorLabel(stateAttacker, defender, updated)}'s ${gapTechnique} reaches ` +
+                `a gap ${armorContactResult.gapLocation || "in the armor"}.`,
+              data: {
+                contactType: armorContactResult.contactType,
+                gapLocation: armorContactResult.gapLocation,
+                hitLocation: armorContactResult.hitLocation,
+                attackMode: armorContactResult.attackMode,
+              },
+            }, "damage");
+          }
+        }
+
+        if (
+          shouldResolveArmorContact &&
+          isArmoredLongswordTechnique(
+            bonusModifiers?.selectedTechnique ||
+            attackData?.selectedTechnique ||
+            attackData?.armorTechnique ||
+            attackData?.attackMode
+          ) &&
+          !armorContactResult
+        ) {
+          addLog({
+            audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+            channel: COMBAT_LOG_CHANNELS.VALIDATION,
+            eventType: "armor-contact-required-but-missing",
+            level: "error",
+            type: "error",
+            actorId: stateAttacker?.id || attacker?.id,
+            targetId: defender?.id,
+            executionKey: attackActionId,
+            source: attackSource,
+            message:
+              `armor contact required but missing: actor=${stateAttacker?.name || attacker?.name || "Unknown"} ` +
+              `target=${defender?.name || "Unknown"} technique=${attackData?.selectedTechnique || attackData?.armorTechnique || attackData?.attackMode}`,
+            data: {
+              technique: attackData?.selectedTechnique || attackData?.armorTechnique || attackData?.attackMode,
+              sourceWeapon: getArmoredTechniqueSourceWeapon(attackData, attackData)?.name || null,
+            },
+          }, "error");
+          finishAttackAfterImpact({
+            updated,
+            attackerInArray,
+            attackData,
+            reason: "armor-contact-required-but-missing",
+            suppressEndTurn: Boolean(bonusModifiers?.suppressEndTurn),
+            endTurnDelayMs: 16,
+            logRemaining: true,
+          });
+          return true;
+        }
+
         const preDamageOwnershipBlock = getAttackRollOwnershipBlockReason("damage-roll-pre-hp");
         if (preDamageOwnershipBlock) {
           logStaleCombatRollBlocked(preDamageOwnershipBlock);
@@ -18785,25 +24622,60 @@ function CombatPage({ characters = [] }) {
         }
 
         if (didHit && isCriticalHit && !defenseSuccess) {
-          const impact = rollImpactLocation();
+          const impact = armorContactResult?.contactType === "armor-gap"
+            ? {
+                ...(preDamageImpact || {}),
+                location: armorContactResult.hitLocation || preDamageImpact?.location || "torso",
+                roll: preDamageImpact?.roll ?? "armor-gap",
+              }
+            : (preDamageImpact || rollImpactLocation());
           const damageMax = estimateDamageMax(loggedDamageSource, finalDamage) * 2;
           const severity = getDamageSeverity({
             damageRolled: finalDamage,
             damageMax,
           });
-          const scenario = buildCriticalImpactScenario({
-            attacker: stateAttacker,
-            defender,
-            weapon: attackData,
-            attackType: isRangedAttack ? "ranged" : "melee",
-            location: impact.location,
-            severity,
-            damage: finalDamage,
-          });
+          const scenario = armorContactResult?.contactType === "armor-gap"
+            ? {
+                text:
+                  `${formatNormalAttackActorLabel(stateAttacker, defender, updated)}'s ${attackData?.name || "weapon"} ` +
+                  `lands a ${severity} critical strike through a ${armorContactResult.hitLocation || "torso"} armor gap.`,
+                effects: [],
+              }
+            : buildCriticalImpactScenario({
+                attacker: stateAttacker,
+                defender,
+                weapon: attackData,
+                attackType: isRangedAttack ? "ranged" : "melee",
+                location: impact.location,
+                severity,
+                damage: finalDamage,
+              });
           addLog(
             `Critical impact clock: d100=${impact.roll} → ${impact.location} (${severity})`,
             "critical",
           );
+          if (armorContactResult?.contactType === "armor-gap") {
+            addLog({
+              audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+              channel: COMBAT_LOG_CHANNELS.VALIDATION,
+              eventType: "gap-critical-resolved",
+              level: "info",
+              type: "debug",
+              actorId: stateAttacker?.id || attacker?.id,
+              targetId: defender?.id,
+              executionKey: attackActionId,
+              source: attackSource,
+              message:
+                `gap critical resolved: actor=${stateAttacker?.name || attacker?.name || "Unknown"} ` +
+                `target=${defender?.name || "Unknown"} contactType=armor-gap location=${armorContactResult.hitLocation || "torso"}`,
+              data: {
+                contactType: armorContactResult.contactType,
+                gapLocation: armorContactResult.gapLocation,
+                hitLocation: armorContactResult.hitLocation,
+                severity,
+              },
+            }, "debug");
+          }
           addLog(scenario.text, "critical");
           if (scenario.effects.length > 0) {
             const existingConditions = Array.isArray(defender.conditions)
@@ -19381,6 +25253,7 @@ function CombatPage({ characters = [] }) {
     spawnProjectile,
     validateWeaponRange,
     clearManualAttackAbortState,
+    cancelRemainingActionContinuationsForActor,
     applyHPToFighter,
     clampHP,
     getFighterHP,
@@ -19401,6 +25274,15 @@ function CombatPage({ characters = [] }) {
     getAttackExecutionGateChain,
     logAttackExecutionGateChain,
     validateCombatRollOwnership,
+    resolveCombatActionCompletion,
+    consumeAuthoritativeActionContinuationReceipt,
+    auditSettledActionContinuation,
+    commitTurnEndingActionExhaustion,
+    commitAuthoritativeTurnHandoff,
+    ensureContinuationExecutionOwnership,
+    hasActiveTurnEndingExhaustion,
+    createRemainingActionContinuationKey,
+    createTurnEndingExhaustionKey,
     rollDeterministicClock12,
     commitFighters,
     applyIncapacitationCondition,
@@ -19648,11 +25530,12 @@ function CombatPage({ characters = [] }) {
           payload.weapon
         );
       case "GRAPPLE":
-        return handleGrappleAction(
-          payload.actionType || "grapple",
-          payload.attacker,
-          payload.target?.id
-        );
+        return executeCanonicalGrappleAction({
+          actor: payload.attacker,
+          opponent: payload.target,
+          actionType: payload.actionType || "grapple",
+          source: "combat-action-dispatcher",
+        });
       default:
         addLog(`Unknown action: ${type}`, "warning");
         return undefined;
@@ -19663,7 +25546,7 @@ function CombatPage({ characters = [] }) {
     handleWithdraw,
     handleChargeAttack,
     handleAttackWithMovement,
-    handleGrappleAction,
+    executeCanonicalGrappleAction,
     addLog,
   ]);
 
@@ -19980,6 +25863,17 @@ function CombatPage({ characters = [] }) {
   // AI logic for player characters
   const handlePlayerAITurn = useCallback(async (player, meta = {}) => {
     const startReason = meta?.reason || "scheduled-player-ai";
+    if (meta?.continuationAuthorization) {
+      emitActionContinuationReceiptHop("player-ai-entry", meta.continuationAuthorization, {
+        requestedActionSequence: meta.continuationAuthorization.nextActionSequence,
+        source: startReason,
+      });
+    }
+    if (meta?.continuationAuthorization && Array.from(grappleActionExecutionRegistryRef.current.values()).some((record) =>
+      record?.actionToken === meta.continuationAuthorization.completedActionToken && record?.state === "completed"
+    )) {
+      addLog?.({ audience: COMBAT_LOG_AUDIENCES.DEVELOPER, channel: COMBAT_LOG_CHANNELS.AI, eventType: "player-grapple-authorization-ai-entry", level: "info", type: "debug", actorId: player?.id, targetId: meta.continuationAuthorization.opponentId, source: startReason, message: `player grapple authorization AI entry: continuationKey=${meta.continuationAuthorization.continuationKey}`, data: { ...meta.continuationAuthorization, receiptPresent: true, outerDispatcherPresent: true } }, "debug");
+    }
     const forceAutomaticSurvival = shouldAutoResolvePlayerSurvival(player);
     if (!aiControlEnabledRef.current && !forceAutomaticSurvival) {
       const manualTurnKey = makeTurnStartKey(
@@ -19995,6 +25889,7 @@ function CombatPage({ characters = [] }) {
         lastWaitTurnKey: manualPlayerWaitTurnKeyRef.current,
       })) {
         manualPlayerWaitTurnKeyRef.current = manualTurnKey;
+        markLogicalTurnWaitingManual(player, turnIndexRef.current, "handle-player-ai-manual-wait");
         addLog(`${player.name} is waiting for manual player control.`, "info");
       }
       processingPlayerAIRef.current = false;
@@ -20002,6 +25897,40 @@ function CombatPage({ characters = [] }) {
     }
     if (!aiControlEnabledRef.current && forceAutomaticSurvival) {
       addLog(`${player.name} is routed; resolving survival response automatically.`, "info");
+    }
+
+    const playerAiTurnRecord = Array.from(initiativeTurnLogicalRegistryRef.current.values()).find((record) => (
+      record?.initiativeTurnId === (meta?.initiativeTurnId || initiativeTurnIdRef.current) &&
+      record?.actorId === player?.id
+    ));
+    if (
+      !playerAiTurnRecord ||
+      playerAiTurnRecord.executionOwner !== "player-ai" ||
+      !["starting", "active"].includes(playerAiTurnRecord.state)
+    ) {
+      addLog?.({
+        audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+        channel: COMBAT_LOG_CHANNELS.TURN,
+        eventType: "player-turn-entry-owner-mismatch",
+        level: "warning",
+        type: "warning",
+        actorId: player?.id,
+        round: meleeRoundRef.current ?? meleeRound,
+        turn: turnCounterRef.current,
+        turnToken: currentTurnTokenRef.current,
+        source: startReason,
+        message:
+          `player turn entry owner mismatch: actorId=${player?.id || "none"} ` +
+          `initiativeTurnId=${meta?.initiativeTurnId || initiativeTurnIdRef.current || "none"} ` +
+          `state=${playerAiTurnRecord?.state || "none"} owner=${playerAiTurnRecord?.executionOwner || "none"}`,
+        data: {
+          initiativeTurnId: meta?.initiativeTurnId || initiativeTurnIdRef.current,
+          state: playerAiTurnRecord?.state,
+          executionOwner: playerAiTurnRecord?.executionOwner,
+        },
+      }, "warning");
+      processingPlayerAIRef.current = false;
+      return false;
     }
 
     addLog(`handlePlayerAITurn start ${player.name} reason=${startReason}`, "info");
@@ -20079,7 +26008,8 @@ function CombatPage({ characters = [] }) {
         latestPlayer.statusEffects?.includes("ROUTED") ||
         ["routed", "broken"].includes(latestPlayer.state?.moraleState))
     ) {
-      if (fraidereRoutingFleeAction(latestPlayer, liveFightersForPlayerAI, "player-ai-routing")) {
+      const moraleActionResult = fraidereRoutingFleeAction(latestPlayer, liveFightersForPlayerAI, "player-ai-routing");
+      if (moraleActionResult) {
         markTurnResolvedByStatus(latestPlayer, "rout");
         processingPlayerAIRef.current = false;
         playerAIActionScheduledRef.current = false;
@@ -20087,9 +26017,13 @@ function CombatPage({ characters = [] }) {
         turnActionResolvingRef.current = false;
         executingActionRef.current = false;
         if (endCombatIfVictoryResolved(fightersRef.current ?? fighters)) return;
-        addLog(`Dread response consumes the action; scheduling turn advance.`, "info");
-        pendingTurnAdvanceRef.current = true;
-        (scheduleEndTurnRef.current)?.(0, "horror-action-consumed");
+        addLog(`Dread response consumes the action; resolving routed survival action.`, "info");
+        resolveCombatActionCompletion({
+          actorId: latestPlayer.id,
+          actionResult: moraleActionResult,
+          source: moraleActionResult.source || "player-ai-routing",
+          delayMs: 0,
+        });
         return;
       }
     }
@@ -20643,6 +26577,14 @@ function CombatPage({ characters = [] }) {
                 }),
               attackActionGrant: playerAttackGrant,
               playerAITurnMeta,
+              continuationAuthorization:
+                existingBonusModifiers.continuationAuthorization ||
+                meta?.continuationAuthorization ||
+                null,
+              requestedActionSequence:
+                existingBonusModifiers.requestedActionSequence ??
+                meta?.continuationAuthorization?.nextActionSequence ??
+                null,
             }
           : {
               attackActionId: createAttackExecutionKey(liveAttacker.id, attackArgs[0], existingAttackSource, {
@@ -20651,6 +26593,8 @@ function CombatPage({ characters = [] }) {
               }),
               attackActionGrant: playerAttackGrant,
               playerAITurnMeta,
+              continuationAuthorization: meta?.continuationAuthorization || null,
+              requestedActionSequence: meta?.continuationAuthorization?.nextActionSequence ?? null,
             };
 
       const attackResult = await attack(liveAttacker, ...attackArgs);
@@ -20754,6 +26698,26 @@ function CombatPage({ characters = [] }) {
         !Number.isFinite(Number(destination.y))
       ) {
         return false;
+      }
+      if (meta?.continuationAuthorization) {
+        const movementSequence = Number(meta.continuationAuthorization.nextActionSequence);
+        const movementActionToken = `${initiativeTurnIdRef.current}:${movementSequence}:movement:${fighterLike.id}`;
+        emitActionContinuationReceiptHop("player-action-executor", meta.continuationAuthorization, {
+          requestedActionSequence: movementSequence,
+          consumingActionType: "movement",
+          consumingActionToken: movementActionToken,
+          source,
+        });
+        const consumedMovementReceipt = consumeAuthoritativeActionContinuationReceipt({
+          continuationAuthorization: meta.continuationAuthorization,
+          initiativeTurnId: initiativeTurnIdRef.current,
+          actorId: fighterLike.id,
+          requestedActionSequence: movementSequence,
+          consumingActionToken: movementActionToken,
+          consumingActionType: "movement",
+        });
+        if (!consumedMovementReceipt.ok) return false;
+        initiativeActionSequenceRef.current = movementSequence;
       }
       const nextPosition = {
         ...destination,
@@ -21055,6 +27019,24 @@ function CombatPage({ characters = [] }) {
     };
 
     const schedulePlayerAIEndTurn = (delayOverride = null, source = "player-ai") => {
+      const inboundReceipt = meta?.continuationAuthorization;
+      const authoritativeInboundReceipt = inboundReceipt?.continuationKey
+        ? remainingActionContinuationRegistryRef.current.get(inboundReceipt.continuationKey)
+        : null;
+      if (authoritativeInboundReceipt?.state === "fired") {
+        const passSequence = Number(inboundReceipt.nextActionSequence);
+        const consumingActionType = /morale|route|cower|flee|panic/i.test(String(source)) ? "morale" : "pass";
+        const passActionToken = `${initiativeTurnIdRef.current}:${passSequence}:${consumingActionType}:${startFighterId}`;
+        const consumedPassReceipt = consumeAuthoritativeActionContinuationReceipt({
+          continuationAuthorization: inboundReceipt,
+          initiativeTurnId: initiativeTurnIdRef.current,
+          actorId: startFighterId,
+          requestedActionSequence: passSequence,
+          consumingActionToken: passActionToken,
+          consumingActionType,
+        });
+        if (consumedPassReceipt.ok) initiativeActionSequenceRef.current = passSequence;
+      }
       completePlayerAIContinuation(source);
       const liveFighters = fightersRef.current ?? fighters;
       const liveIndex = turnIndexRef.current;
@@ -21091,6 +27073,48 @@ function CombatPage({ characters = [] }) {
         !combatOverRef.current &&
         !combatEndCheckRef.current &&
         canFighterStartTurn(refreshedPlayer);
+      const canonicalActionContinuation = Array.from(remainingActionContinuationRegistryRef.current.values()).find((entry) => (
+        entry?.actorId === startFighterId &&
+        entry?.initiativeTurnId === initiativeTurnIdRef.current &&
+        ["created", "fired"].includes(entry?.state)
+      ));
+      if (canContinuePlayerAI && canonicalActionContinuation) {
+        addLog?.({
+          audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+          channel: COMBAT_LOG_CHANNELS.TURN,
+          eventType: "generic-continuation-scheduler-suppressed-for-grapple",
+          level: "info",
+          type: "debug",
+          actorId: startFighterId,
+          source,
+          message: `parallel continuation scheduler suppressed: actorId=${startFighterId} continuationKey=${canonicalActionContinuation.continuationKey}`,
+          data: { continuationKey: canonicalActionContinuation.continuationKey, continuationSchedulingOwner: "canonical-action-completion" },
+        }, "debug");
+        return true;
+      }
+      const unresolvedCanonicalImpact =
+        Boolean(activeAttackActionIdRef.current) ||
+        Boolean(activeTechniqueImpactRef.current) ||
+        Boolean(activeTacticalImpactRef.current);
+      if (canContinuePlayerAI && unresolvedCanonicalImpact) {
+        addLog?.({
+          audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+          channel: COMBAT_LOG_CHANNELS.TURN,
+          eventType: "generic-continuation-scheduler-suppressed-for-active-action",
+          level: "info",
+          type: "debug",
+          actorId: startFighterId,
+          source,
+          message: `parallel continuation scheduler suppressed while canonical impact remains active: actorId=${startFighterId}`,
+          data: {
+            activeAttackActionId: activeAttackActionIdRef.current || null,
+            activeTechniqueImpact: Boolean(activeTechniqueImpactRef.current),
+            activeTacticalImpact: Boolean(activeTacticalImpactRef.current),
+            continuationSchedulingOwner: "canonical-action-completion",
+          },
+        }, "debug");
+        return true;
+      }
       if (canContinuePlayerAI) {
         addLog(
           `canonical player AI action completion: actor=${formatCombatActorLabel(refreshedPlayer, { roster: fightersRef.current ?? fighters ?? [] })} remainingActions=${refreshedRemaining} source=${source} continue=true`,
@@ -21144,7 +27168,51 @@ function CombatPage({ characters = [] }) {
       return true;
     };
 
-    const executePlayerAIGrapple = (attacker, target, requestedActionType = null) => {
+    const executePlayerAIGrapple = (attacker, target, requestedActionType = null, armoredActionPlan = null, admission = null) => {
+      if (admission?.continuationAuthorization) {
+        emitActionContinuationReceiptHop("player-action-executor", admission.continuationAuthorization, {
+          requestedActionSequence: admission.nextActionSequence ?? admission.requestedActionSequence,
+          consumingActionType: "grapple",
+          source: admission.source || "player-grapple-dispatch",
+        });
+      }
+      addLog?.({
+        audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+        channel: COMBAT_LOG_CHANNELS.AI,
+        eventType: "player-grapple-dispatcher-action-entry",
+        level: "info",
+        type: "debug",
+        actorId: attacker?.id,
+        targetId: target?.id,
+        source: admission?.source || "player-ai-active-grapple",
+        message: `player grapple dispatcher action entry: actorId=${attacker?.id} dispatcherPresent=true`,
+        data: {
+          initiativeTurnId: initiativeTurnIdRef.current,
+          actorId: attacker?.id || null,
+          source: admission?.source || "player-ai-active-grapple",
+          dispatcherPresent: true,
+          dispatcherType: "function",
+          continuationAuthorizationPresent: Boolean(admission?.continuationAuthorization),
+        },
+      }, "debug");
+      addLog?.({
+        audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+        channel: COMBAT_LOG_CHANNELS.AI,
+        eventType: "player-grapple-dispatcher-chain",
+        level: "info",
+        type: "debug",
+        actorId: attacker?.id,
+        targetId: target?.id,
+        source: admission?.source || "player-ai-active-grapple",
+        message: `player grapple dispatcher chain complete: actorId=${attacker?.id}`,
+        data: {
+          outerDispatcherPresent: admission?.dispatcherChain?.outerDispatcherPresent === true,
+          normalizedDispatcherPresent: admission?.dispatcherChain?.normalizedDispatcherPresent === true,
+          runPlayerDispatcherPresent: admission?.dispatcherChain?.runPlayerDispatcherPresent === true,
+          routeDispatcherPresent: admission?.dispatcherChain?.routeDispatcherPresent === true,
+          actionDispatcherPresent: true,
+        },
+      }, "debug");
       const grappleExecutionKey = playerAIExecutionRef.current?.executionKey || [
         "player-ai-grapple",
         combatSessionRef.current,
@@ -21239,40 +27307,84 @@ function CombatPage({ characters = [] }) {
       const maxStamina = Number(liveAttacker?.fatigueState?.maxStamina ?? liveAttacker?.maxStamina ?? 0);
       const staminaLow = maxStamina > 0 && stamina <= maxStamina * 0.25;
       const armoredGrappleFollowUp = alreadyGrappling && targetArmored;
+      const requestedActionIsLegal = Boolean(
+        requestedActionType && availableActions.some((action) => action.value === requestedActionType)
+      );
       const preferredAction =
-        requestedActionType ||
+        (requestedActionIsLegal ? requestedActionType : null) ||
         (staminaLow ? availableActions.find((action) => action.value === "defenderReversal")?.value : null) ||
         (staminaLow ? availableActions.find((action) => action.value === "breakFree")?.value : null) ||
-        (armoredGrappleFollowUp ? availableActions.find((action) => action.value === "groundAttack")?.value : null) ||
+        (armoredGrappleFollowUp ? availableActions.find((action) => action.value === "clinchStrike")?.value : null) ||
         (canTakedown ? availableActions.find((action) => action.value === "takedown")?.value : null) ||
-        availableActions.find((action) => action.value === "maintain")?.value ||
+        availableActions.find((action) => action.value === "drawClinchDagger")?.value ||
+        availableActions.find((action) => action.value === "improveControl")?.value ||
+        availableActions.find((action) => action.value === "clinchStrike")?.value ||
         availableActions.find((action) => action.value === "groundAttack")?.value ||
-        availableActions.find((action) => action.value === "defenderReversal")?.value ||
+        availableActions.find((action) => action.value === "reverseControl")?.value ||
         availableActions.find((action) => action.value === "breakFree")?.value ||
         availableActions.find((action) => action.value === "grapple")?.value ||
         null;
-      if (!preferredAction || !availableActions.some((action) => action.value === preferredAction)) {
+      if (!preferredAction) {
         return false;
       }
 
       playerAIActionScheduledRef.current = true;
-      const launchedGrapple = handleGrappleAction(preferredAction, liveAttacker, liveTarget.id);
-      if (!launchedGrapple) {
+      if (admission?.continuationAuthorization) {
+        addLog?.({ audience: COMBAT_LOG_AUDIENCES.DEVELOPER, channel: COMBAT_LOG_CHANNELS.AI, eventType: "player-grapple-authorization-dispatch-entry", level: "info", type: "debug", actorId: liveAttacker.id, targetId: liveTarget.id, source: admission.source || "remaining-action-continuation", message: `player grapple authorization dispatch entry: continuationKey=${admission.continuationAuthorization.continuationKey}`, data: { ...admission.continuationAuthorization, receiptPresent: true, activeGrappleDispatcherPresent: true } }, "debug");
+      }
+      const launchedGrapple = executeCanonicalGrappleAction({
+        actor: liveAttacker,
+        opponent: liveTarget,
+        actionType: preferredAction,
+        source: admission?.source || "player-grapple-dispatch",
+        initiativeTurnId: admission?.initiativeTurnId || null,
+        requestedActionSequence: admission?.nextActionSequence || admission?.requestedActionSequence || null,
+        continuationAuthorization: admission?.continuationAuthorization || null,
+        armoredActionPlan,
+      });
+      if (!launchedGrapple || launchedGrapple.accepted === false) {
         playerAIActionScheduledRef.current = false;
         processingPlayerAIRef.current = false;
-        scheduleEndTurn(0, "player-ai-grapple-aborted");
-        return true;
+        return {
+          ...(launchedGrapple || {}),
+          handled: true,
+          terminal: true,
+          routeType: "grapple-terminal",
+          accepted: false,
+          completed: Boolean(launchedGrapple?.completed),
+          actionSpent: Boolean(launchedGrapple?.actionSpent),
+          remainingActions: launchedGrapple?.remainingActions ?? liveAttacker.remainingActions,
+          reason: launchedGrapple?.reason || "player-ai-grapple-aborted",
+        };
       }
       playerAITurnTokenRef.current = (playerAITurnTokenRef.current || 0) + 1;
       processingPlayerAIRef.current = false;
-      scheduleEndTurn(50, "player-ai-grapple");
-      return true;
+      return { ...launchedGrapple, handled: true, terminal: true, routeType: "grapple-terminal" };
     };
 
+    addLog?.({
+      audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+      channel: COMBAT_LOG_CHANNELS.AI,
+      eventType: "player-grapple-dispatcher-ai-entry",
+      level: "info",
+      type: "debug",
+      actorId: latestPlayer?.id,
+      source: startReason,
+      message: `player grapple dispatcher AI entry: actorId=${latestPlayer?.id} dispatcherPresent=${typeof executePlayerAIGrapple === "function"}`,
+      data: {
+        initiativeTurnId: initiativeTurnIdRef.current,
+        actorId: latestPlayer?.id || null,
+        source: startReason,
+        dispatcherPresent: typeof executePlayerAIGrapple === "function",
+        dispatcherType: typeof executePlayerAIGrapple,
+        continuationAuthorizationPresent: Boolean(meta?.continuationAuthorization),
+      },
+    }, "debug");
     addLog(`handlePlayerAITurn before build context fighter=${latestPlayer.name}`, "debug");
     let context;
     try {
-      context = {
+      const rawContext = {
+      actorId: latestPlayer.id,
       fighters: liveFightersForPlayerAI,
       positions: positionsForAI,
       combatTerrain,
@@ -21281,6 +27393,8 @@ function CombatPage({ characters = [] }) {
       turnCounter,
       combatActive,
       aiControlEnabled: aiControlEnabledRef.current === true,
+      continuationKey: meta?.continuationKey || null,
+      continuationAuthorization: meta?.continuationAuthorization || null,
       // Player AI async guardrails
       playerAIActionScheduledRef,
       playerAITurnTokenRef,
@@ -21294,8 +27408,104 @@ function CombatPage({ characters = [] }) {
       combatOverRef,
       combatSessionRef,
       combatSession: combatSessionRef.current,
+      getArmoredTacticalMemory: getArmoredMemoryForCombatants,
+      armoredTechniqueRng: rollArmoredTechniqueRng,
+      armoredTechniqueRngSource: rngStateRef.current ? "seeded-combat-rng" : "crypto-dice",
       currentTurnTokenRef,
       currentTurnToken: capturedTurnToken,
+      initiativeTurnId: initiativeTurnIdRef.current,
+      getActionSequence: () => initiativeActionSequenceRef.current,
+      setActionSequence: (sequence) => {
+        initiativeActionSequenceRef.current = sequence;
+      },
+      createFiredActionContinuationReceipt: ({
+        actorId,
+        opponentId = null,
+        completedActionType,
+        completedActionSequence,
+        remainingActions,
+        source: continuationSource,
+      } = {}) => {
+        if (!actorId || !initiativeTurnIdRef.current || (Number(remainingActions) || 0) <= 0) return null;
+        const generationId = combatSessionRef.current || "default";
+        const initiativeTurnId = initiativeTurnIdRef.current;
+        const completedActionToken = `${initiativeTurnId}:${completedActionSequence}`;
+        const continuationKey = createRemainingActionContinuationKey({
+          generationId,
+          initiativeTurnId,
+          actorId,
+          completedActionToken,
+          nextActionSequence: completedActionSequence + 1,
+        });
+        const existing = remainingActionContinuationRegistryRef.current.get(continuationKey);
+        if (existing?.state === "fired") {
+          return {
+            continuationKey,
+            continuationAuthorization: Object.freeze({ ...existing }),
+            initiativeTurnId,
+            nextActionSequence: existing.nextActionSequence,
+            source: continuationSource,
+          };
+        }
+        const completionKey = createCombatActionCompletionKey({ generationId, initiativeTurnId, actionToken: completedActionToken });
+        if (!combatActionCompletionRegistryRef.current.has(completionKey)) {
+          combatActionCompletionRegistryRef.current.set(completionKey, {
+            completionKey,
+            actorId,
+            opponentId,
+            generationId,
+            initiativeTurnId,
+            actionToken: completedActionToken,
+            actionSequence: completedActionSequence,
+            actionType: completedActionType,
+            source: continuationSource,
+            completedAt: Date.now(),
+          });
+        }
+        const creation = createActionContinuationReceipt({
+          continuationId: continuationKey,
+          continuationKey,
+          generationId,
+          initiativeTurnId,
+          actorId,
+          completedActionToken,
+          completedActionType,
+          completedActionSequence,
+          remainingActions,
+          source: continuationSource,
+        });
+        if (!creation.ok) return null;
+        const createdRecord = { ...creation.record, opponentId, turnToken: currentTurnTokenRef.current };
+        remainingActionContinuationRegistryRef.current.set(continuationKey, createdRecord);
+        transitionLogicalInitiativeTurn(initiativeTurnId, "continuation-pending", continuationSource, {
+          continuationKey,
+          continuationPhase: "continuation-pending",
+        });
+        addLog?.({ audience: COMBAT_LOG_AUDIENCES.DEVELOPER, channel: COMBAT_LOG_CHANNELS.TURN, eventType: "remaining-action-continuation-created", level: "info", type: "debug", actorId, targetId: opponentId, source: continuationSource, message: `remaining action continuation created: actorId=${actorId} continuationKey=${continuationKey}`, data: createdRecord }, "debug");
+        const fired = fireActionContinuationReceipt(createdRecord);
+        if (!fired.ok) return null;
+        const continuationAuthorization = Object.freeze({ ...fired.record });
+        remainingActionContinuationRegistryRef.current.set(continuationKey, continuationAuthorization);
+        emitActionContinuationReceiptHop("callback-fired", continuationAuthorization, {
+          requestedActionSequence: continuationAuthorization.nextActionSequence,
+          source: continuationSource,
+        });
+        transitionLogicalInitiativeTurn(initiativeTurnId, "active", continuationSource, {
+          continuationKey,
+          continuationPhase: "fired-awaiting-admission",
+        });
+        addLog?.({ audience: COMBAT_LOG_AUDIENCES.DEVELOPER, channel: COMBAT_LOG_CHANNELS.TURN, eventType: "remaining-action-continuation-fired", level: "info", type: "debug", actorId, targetId: opponentId, source: continuationSource, message: `remaining action continuation fired: actorId=${actorId} continuationKey=${continuationKey}`, data: fired.record }, "debug");
+        return {
+          continuationKey,
+          continuationAuthorization,
+          initiativeTurnId,
+          nextActionSequence: fired.record.nextActionSequence,
+          source: continuationSource,
+        };
+      },
+      actionToken: initiativeTurnIdRef.current
+        ? [initiativeTurnIdRef.current, initiativeActionSequenceRef.current + 1].join(":")
+        : currentTurnTokenRef.current,
       turnIndexRef,
       // Core helpers
       canFighterAct,
@@ -21332,7 +27542,11 @@ function CombatPage({ characters = [] }) {
       createAttackActionGrant,
       createAttackExecutionKey,
       clearPlayerAIContinuationAttack,
-      executeGrapple: executePlayerAIGrapple,
+      dispatchGrappleTurnAction: executePlayerAIGrapple,
+      dispatcherChain: {
+        outerDispatcherPresent: typeof executePlayerAIGrapple === "function",
+      },
+      recoverMissingPlayerGrappleDispatcher,
       setPositions,
       setFighters: commitPlayerAIFighters,
       commitPlayerAIPosition,
@@ -21378,6 +27592,7 @@ function CombatPage({ characters = [] }) {
       canFinalizeTurn: canFinalizePlayerAITurn,
         sceneContext: { sceneType: "combat", relations: {} },
       };
+      context = normalizePlayerCombatAIContext(rawContext, startReason);
     } catch (error) {
       addLog(
         `handlePlayerAITurn context build failed fighter=${latestPlayer.name} error=${error?.message || String(error)}`,
@@ -21386,6 +27601,28 @@ function CombatPage({ characters = [] }) {
       processingPlayerAIRef.current = false;
       schedulePlayerAIEndTurn(0, "player-ai-context-build-exception");
       return;
+    }
+
+    const activePlayerGrappleOpponentId =
+      latestPlayer?.grappleState?.opponent ||
+      latestPlayer?.grappleState?.opponentId ||
+      latestPlayer?.grappledWith ||
+      null;
+    if (
+      isFighterInActiveGrapple(latestPlayer, fightersRef.current ?? liveFightersForPlayerAI) &&
+      typeof context.dispatchGrappleTurnAction !== "function"
+    ) {
+      const recovery = recoverMissingPlayerGrappleDispatcher({
+        actorId: latestPlayer.id,
+        initiativeTurnId: initiativeTurnIdRef.current,
+        opponentId: activePlayerGrappleOpponentId,
+        source: startReason,
+        remainingActions: latestPlayer.remainingActions,
+      });
+      processingPlayerAIRef.current = false;
+      playerAIActionScheduledRef.current = false;
+      playerTurnInFlightKeyRef.current = null;
+      return recovery;
     }
 
     // Delegate to AI module - use latestPlayer to ensure we have persisted state
@@ -21492,6 +27729,23 @@ function CombatPage({ characters = [] }) {
       `handlePlayerAITurn before runPlayerTurnAI fighter=${playerAiActingActorLabel} executionKey=${executionOwnership.executionKey}`,
       "info",
     );
+    const getPlayerAiProgressSnapshot = () => {
+      const liveRoster = fightersRef.current ?? fighters ?? [];
+      const liveActor = liveRoster.find((fighter) => fighter?.id === startFighterId);
+      const ownedContinuation = Array.from(remainingActionContinuationRegistryRef.current.values()).find((entry) => (
+        entry?.actorId === startFighterId && entry?.initiativeTurnId === initiativeTurnIdRef.current && ["created", "fired"].includes(entry?.state)
+      ));
+      return {
+        remainingActions: Number(liveActor?.remainingActions ?? 0) || 0,
+        actionToken: initiativeActionSequenceRef.current > 0
+          ? `${initiativeTurnIdRef.current}:${initiativeActionSequenceRef.current}`
+          : null,
+        pendingContinuation: ownedContinuation?.continuationKey || null,
+        authoritativeExecution: activeGrappleActionIdRef.current || activeAttackActionIdRef.current || null,
+        activeActorId: liveRoster?.[turnIndexRef.current]?.id || null,
+      };
+    };
+    const playerAiProgressBefore = getPlayerAiProgressSnapshot();
     let resolvedPlayerAi;
     try {
       const executionResult = await Promise.race([
@@ -21549,6 +27803,51 @@ function CombatPage({ characters = [] }) {
       `handlePlayerAITurn finished ${playerAiActingActorLabel} result=${resolvedPlayerAi.summary}`,
       "info",
     );
+    const playerAiProgressAfter = getPlayerAiProgressSnapshot();
+    const playerAiMadeProgress = hasPlayerAiActionProgress(
+      playerAiProgressBefore,
+      playerAiProgressAfter,
+      {
+        turnHandoffStarted: pendingTurnAdvanceRef.current,
+        actionScheduled: playerAIActionScheduledRef.current,
+        combatEnded: !combatActiveRef.current || combatOverRef.current || combatEndCheckRef.current,
+      },
+    );
+    if (!playerAiMadeProgress) {
+      addLog?.({
+        audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+        channel: COMBAT_LOG_CHANNELS.VALIDATION,
+        eventType: "player-ai-zero-progress-action-detected",
+        level: "error",
+        type: "error",
+        actorId: startFighterId,
+        source: startReason,
+        message: `player AI zero progress action detected: actorId=${startFighterId} source=${startReason}`,
+        data: {
+          remainingActionsBefore: playerAiProgressBefore.remainingActions,
+          remainingActionsAfter: playerAiProgressAfter.remainingActions,
+          actionTokenBefore: playerAiProgressBefore.actionToken,
+          actionTokenAfter: playerAiProgressAfter.actionToken,
+          pendingContinuationBefore: playerAiProgressBefore.pendingContinuation,
+          pendingContinuationAfter: playerAiProgressAfter.pendingContinuation,
+          authoritativeExecutionBefore: playerAiProgressBefore.authoritativeExecution,
+          authoritativeExecutionAfter: playerAiProgressAfter.authoritativeExecution,
+        },
+      }, "error");
+      if (isFighterInActiveGrapple(latestPlayer, fightersRef.current ?? fighters)) {
+        return recoverMissingPlayerGrappleDispatcher({
+          actorId: startFighterId,
+          initiativeTurnId: initiativeTurnIdRef.current,
+          opponentId: activePlayerGrappleOpponentId,
+          source: "player-ai-zero-progress-recovery",
+          remainingActions: playerAiProgressAfter.remainingActions,
+        });
+      }
+      spendNoActionPassForFighter(startFighterId, "player-ai-zero-progress-recovery");
+      processingPlayerAIRef.current = false;
+      schedulePlayerAIEndTurn(0, "player-ai-no-action-zero-progress-recovery");
+      return { handled: true, terminal: true, actionSpent: true, recovery: "player-ai-zero-progress-safe-pass" };
+    }
     const playerAICombatSession = combatSessionRef.current;
 
     // Invariant: player AI must spend an action OR end the turn.
@@ -21658,12 +27957,13 @@ function CombatPage({ characters = [] }) {
     getFighterstamina,
     getFighterfocus,
     attack,
-    handleGrappleAction,
+    executeCanonicalGrappleAction,
     setPositions,
     setFighters,
     getActionDelay,
     getFighterSchedulerTeam,
     makeTurnStartKey,
+    markLogicalTurnWaitingManual,
     arenaSpeed,
     positionsRef,
     pickNonEmptyObject,
@@ -21685,6 +27985,7 @@ function CombatPage({ characters = [] }) {
     aiControlEnabled,
     markFighterFledOffMap,
     endCombatIfVictoryResolved,
+    resolveCombatActionCompletion,
     isTinyPrey,
     isPredatorBird,
     canAISeeTargetAsymmetric,
@@ -21732,8 +28033,99 @@ function CombatPage({ characters = [] }) {
       }
       const updatedAttacker = { ...attacker, selectedAttack, attacks: attacker.attacks || [] };
       const resolved = resolveEnemyEffectiveAttack(updatedAttacker, selectedAttack, { preferRanged: mode === "ranged" });
-      const finalAttacker = { ...updatedAttacker, selectedAttack: resolved.attack };
       const posNow = pickNonEmptyObject(positionsRef.current, positions);
+      const distanceNow = posNow?.[attacker.id] && posNow?.[target.id]
+        ? calculateDistance(posNow[attacker.id], posNow[target.id])
+        : Infinity;
+      let armoredAction;
+      try {
+        armoredAction = resolveArmoredCombatAction({
+          attacker: updatedAttacker,
+          defender: target,
+          selectedWeapon: resolved.attack,
+          distance: distanceNow,
+          remainingActions: updatedAttacker.remainingActions,
+          generationId: combatSessionRef.current || "default",
+          round: meleeRoundRef.current ?? meleeRound,
+          initiativeIndex: turnIndexRef.current,
+          initiativeTurnId: initiativeTurnIdRef.current,
+          turnToken: currentTurnTokenRef.current,
+          actionToken: currentTurnTokenRef.current,
+          getTacticalMemory: getArmoredMemoryForCombatants,
+          rng: rollArmoredTechniqueRng,
+          rngSource: rngStateRef.current ? "seeded-combat-rng" : "crypto-dice",
+          source: "worker-ai-attack-fallback",
+          addLog,
+        });
+      } catch (error) {
+        addLog?.({
+          audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+          channel: COMBAT_LOG_CHANNELS.AI,
+          eventType: "armored-selection-runtime-fallback",
+          level: "error",
+          type: "error",
+          actorId: updatedAttacker.id,
+          targetId: target.id,
+          message: `armored selection runtime fallback: actor=${updatedAttacker.name} target=${target.name} error=${error?.message || String(error)}`,
+          data: { error: error?.message || String(error), source: "worker-ai-attack-fallback" },
+        }, "error");
+        armoredAction = {
+          actionType: "attack",
+          technique: "longsword-cut",
+          weapon: {
+            ...resolved.attack,
+            attackMode: "longsword-cut",
+            selectedTechnique: "longsword-cut",
+            armorTechnique: "longsword-cut",
+            armoredActionPlan: {
+              actionType: "attack",
+              selectedTechnique: "longsword-cut",
+              attackerId: updatedAttacker.id,
+              defenderId: target.id,
+              generationId: combatSessionRef.current || "default",
+              round: meleeRoundRef.current ?? meleeRound,
+              initiativeIndex: turnIndexRef.current,
+              turnToken: currentTurnTokenRef.current,
+              source: "armored-selection-runtime-fallback",
+            },
+          },
+        };
+      }
+      if (armoredAction?.suppressed) {
+        scheduleEndTurn(0, "worker-ai-offensive-suppressed");
+        return;
+      }
+      if (armoredAction?.actionType === "grapple") {
+        addLog?.(`${attacker.name} closes to grapple the armored opponent.`, "info");
+        addLog?.({
+          audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+          channel: COMBAT_LOG_CHANNELS.AI,
+          eventType: "armored-action-plan-dispatched",
+          level: "info",
+          type: "debug",
+          actorId: attacker.id,
+          targetId: target.id,
+          message: `armored action plan dispatched: actor=${attacker.name} target=${target.name} technique=${armoredAction.technique}`,
+          data: { actionType: armoredAction.actionType, selectedTechnique: armoredAction.technique, source: "worker-ai-attack-fallback" },
+        }, "debug");
+        executeCanonicalGrappleAction({ actor: updatedAttacker, opponent: target, actionType: "grapple", source: "worker-ai-attack-fallback", armoredActionPlan: armoredAction?.armoredActionPlan || null });
+        return;
+      }
+      const finalAttack = armoredAction?.weapon || resolved.attack;
+      if (armoredAction?.technique) {
+        addLog?.({
+          audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+          channel: COMBAT_LOG_CHANNELS.AI,
+          eventType: "armored-action-plan-dispatched",
+          level: "info",
+          type: "debug",
+          actorId: attacker.id,
+          targetId: target.id,
+          message: `armored action plan dispatched: actor=${attacker.name} target=${target.name} technique=${armoredAction.technique}`,
+          data: finalAttack.armoredActionPlan || { actionType: "attack", selectedTechnique: armoredAction.technique, source: "worker-ai-attack-fallback" },
+        }, "debug");
+      }
+      const finalAttacker = { ...updatedAttacker, selectedAttack: finalAttack };
       const flankingBonus = calculateFlankingBonus(
         posNow[attacker.id],
         posNow[target.id],
@@ -21744,7 +28136,9 @@ function CombatPage({ characters = [] }) {
         ...(flankingBonus > 0 ? { flankingBonus } : {}),
         attackActionId: createAttackExecutionKey(finalAttacker.id, target.id, "worker-ai-attack"),
         source: "worker-ai-attack",
-        attackDataOverride: resolved.attack,
+        attackDataOverride: finalAttack,
+        selectedTechnique: finalAttack?.selectedTechnique,
+        attackMode: finalAttack?.attackMode,
       });
       return;
     }
@@ -21900,6 +28294,14 @@ function CombatPage({ characters = [] }) {
     attack,
     resolveEnemyEffectiveAttack,
     calculateFlankingBonus,
+    calculateDistance,
+    getArmoredMemoryForCombatants,
+    rollArmoredTechniqueRng,
+    executeCanonicalGrappleAction,
+    normalizePlayerCombatAIContext,
+    isFighterInActiveGrapple,
+    recoverMissingPlayerGrappleDispatcher,
+    scheduleEndTurn,
     positions,
     addLog,
     blockStaleAction,
@@ -22105,7 +28507,18 @@ function CombatPage({ characters = [] }) {
   // Define handleEnemyTurn function with useCallback last
   const handleEnemyTurn = useCallback(async (enemy, source = "unknown", meta = {}) => {
     const { turnKey: metaTurnKey, token: metaToken } = meta;
+    if (meta?.continuationAuthorization) {
+      emitActionContinuationReceiptHop("enemy-ai-entry", meta.continuationAuthorization, {
+        requestedActionSequence: meta.continuationAuthorization.nextActionSequence,
+        source,
+      });
+    }
     addLog(`startEnemyTurn called (fighterId=${enemy?.id} name=${enemy?.name} source=${source})`, "info");
+    if (meta?.continuationAuthorization && Array.from(grappleActionExecutionRegistryRef.current.values()).some((record) =>
+      record?.actionToken === meta.continuationAuthorization.completedActionToken && record?.state === "completed"
+    )) {
+      addLog?.({ audience: COMBAT_LOG_AUDIENCES.DEVELOPER, channel: COMBAT_LOG_CHANNELS.AI, eventType: "enemy-grapple-authorization-ai-entry", level: "info", type: "debug", actorId: enemy?.id, targetId: meta.continuationAuthorization.opponentId, source, message: `enemy grapple authorization AI entry: continuationKey=${meta.continuationAuthorization.continuationKey}`, data: { ...meta.continuationAuthorization, receiptPresent: true } }, "debug");
+    }
 
     const liveTurnFighter = fightersRef.current?.[turnIndexRef.current];
     if (!liveTurnFighter || liveTurnFighter.id !== enemy?.id) {
@@ -22413,6 +28826,44 @@ function CombatPage({ characters = [] }) {
         !turnEndingEffect &&
         !fighterIncapacitated;
 
+      const noProgressSource = /suppressed|routing-only-no-action|no-progress/i.test(String(actionSource || ""));
+      if (noProgressSource) {
+        const noProgressKey = [
+          combatSessionRef.current || "default",
+          currentTurnTokenRef.current || turnToken || "no-token",
+          actorId || "unknown",
+          actionSource || "unknown",
+        ].join("::");
+        const previousRecoveries = noProgressRecoveryByTurnRef.current.get(noProgressKey) || 0;
+        noProgressRecoveryByTurnRef.current.set(noProgressKey, previousRecoveries + 1);
+        addLog({
+          audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+          channel: COMBAT_LOG_CHANNELS.TURN,
+          eventType: "combat-action-no-progress",
+          level: "warning",
+          type: "warning",
+          actorId,
+          round: meleeRoundRef.current,
+          turn: turnCounterRef.current,
+          turnToken: currentTurnTokenRef.current,
+          source: actionSource,
+          message:
+            `combat action no progress: actorId=${actorId} source=${actionSource} ` +
+            `remainingActionsBefore=${remainingActions} remainingActionsAfter=${remainingActions} ` +
+            `turnToken=${currentTurnTokenRef.current || turnToken || "none"} generationId=${combatSessionRef.current || "default"}`,
+          data: {
+            actorId,
+            source: actionSource,
+            remainingActionsBefore: remainingActions,
+            remainingActionsAfter: remainingActions,
+            turnToken: currentTurnTokenRef.current || turnToken || null,
+            generationId: combatSessionRef.current || "default",
+            recoveryCount: previousRecoveries + 1,
+          },
+        }, "warning");
+        return false;
+      }
+
       addLog(
         `canonical enemy action completion: actor=${formatCombatActorLabel(latestFighter || { id: actorId }, { roster: fightersRef.current ?? fighters ?? [] })} remainingActions=${remainingActions} explicitPass=${explicitPass} turnEndingEffect=${turnEndingEffect} fighterIncapacitated=${fighterIncapacitated} combatEnded=${combatEnded} authoritativeActive=${authoritativeActive} completedActionKey=${completedActionKey || "none"} source=${actionSource}`,
         "debug",
@@ -22445,10 +28896,28 @@ function CombatPage({ characters = [] }) {
     };
 
     const scheduleEnemyAIEndTurn = (delayOverride = null, finalizerSource = "enemy-ai") => {
+      const inboundReceipt = meta?.continuationAuthorization;
+      const authoritativeInboundReceipt = inboundReceipt?.continuationKey
+        ? remainingActionContinuationRegistryRef.current.get(inboundReceipt.continuationKey)
+        : null;
+      if (authoritativeInboundReceipt?.state === "fired") {
+        const passSequence = Number(inboundReceipt.nextActionSequence);
+        const consumingActionType = /morale|route|cower|flee|panic/i.test(String(finalizerSource)) ? "morale" : "pass";
+        const passActionToken = `${initiativeTurnIdRef.current}:${passSequence}:${consumingActionType}:${liveEnemy.id}`;
+        const consumedPassReceipt = consumeAuthoritativeActionContinuationReceipt({
+          continuationAuthorization: inboundReceipt,
+          initiativeTurnId: initiativeTurnIdRef.current,
+          actorId: liveEnemy.id,
+          requestedActionSequence: passSequence,
+          consumingActionToken: passActionToken,
+          consumingActionType,
+        });
+        if (consumedPassReceipt.ok) initiativeActionSequenceRef.current = passSequence;
+      }
       const latestIndex = turnIndexRef.current;
       const latestFighter = fightersRef.current?.[latestIndex];
       const latestRemainingActions = Number(latestFighter?.remainingActions ?? 0) || 0;
-      const explicitPassOrTerminalSource = /pass|no-actions|no-action|no-target|no-move|unresolved|cannot-act|stale|blocked|fallback|fled|defeated|combat-end/i.test(String(finalizerSource || ""));
+      const explicitPassOrTerminalSource = /pass|no-actions|no-action|no-target|no-move|unresolved|cannot-act|stale|blocked|fallback|fled|defeated|combat-end|suppressed|routing-only-no-action|no-progress/i.test(String(finalizerSource || ""));
       if (
         completeCanonicalEnemyAction({
           actorId: liveEnemy.id,
@@ -22560,6 +29029,14 @@ function CombatPage({ characters = [] }) {
                 }),
               attackActionGrant: enemyAttackGrant,
               source: attackSource,
+              continuationAuthorization:
+                existingBonusModifiers.continuationAuthorization ||
+                meta?.continuationAuthorization ||
+                null,
+              requestedActionSequence:
+                existingBonusModifiers.requestedActionSequence ??
+                meta?.continuationAuthorization?.nextActionSequence ??
+                null,
             }
           : {
               attackActionId: createAttackExecutionKey(attackerArg?.id, targetIdArg, attackSource, {
@@ -22568,6 +29045,8 @@ function CombatPage({ characters = [] }) {
               }),
               attackActionGrant: enemyAttackGrant,
               source: attackSource,
+              continuationAuthorization: meta?.continuationAuthorization || null,
+              requestedActionSequence: meta?.continuationAuthorization?.nextActionSequence ?? null,
             };
       return attack(...args);
     };
@@ -22702,6 +29181,33 @@ function CombatPage({ characters = [] }) {
 
     const settingsNow = settingsRef.current;
     const terrainNow = terrainRef.current;
+    let enemyMovementContinuationConsumed = false;
+    const handleEnemyAIPositionChange = (...positionArgs) => {
+      if (meta?.continuationAuthorization && !enemyMovementContinuationConsumed) {
+        const mover = positionArgs[0];
+        const movementActorId = mover?.id || liveEnemy?.id;
+        const movementSequence = Number(meta.continuationAuthorization.nextActionSequence);
+        const movementActionToken = `${initiativeTurnIdRef.current}:${movementSequence}:movement:${movementActorId}`;
+        emitActionContinuationReceiptHop("enemy-action-executor", meta.continuationAuthorization, {
+          requestedActionSequence: movementSequence,
+          consumingActionType: "movement",
+          consumingActionToken: movementActionToken,
+          source: "enemy-ai-movement",
+        });
+        const consumedMovementReceipt = consumeAuthoritativeActionContinuationReceipt({
+          continuationAuthorization: meta.continuationAuthorization,
+          initiativeTurnId: initiativeTurnIdRef.current,
+          actorId: movementActorId,
+          requestedActionSequence: movementSequence,
+          consumingActionToken: movementActionToken,
+          consumingActionType: "movement",
+        });
+        if (!consumedMovementReceipt.ok) return false;
+        initiativeActionSequenceRef.current = movementSequence;
+        enemyMovementContinuationConsumed = true;
+      }
+      return handlePositionChange(...positionArgs);
+    };
 
     const commitEnemyTurnAction = (enemyLike, reason) => {
       const live =
@@ -22733,7 +29239,7 @@ function CombatPage({ characters = [] }) {
     };
 
     if (settingsNow?.useModularEnemyAI) {
-      runEnemyTurnAI(liveEnemy, {
+      await runEnemyTurnAI(liveEnemy, {
         fighters: liveFighters,
         positions: livePositions,
         combatTerrain: terrainNow,
@@ -22745,6 +29251,18 @@ function CombatPage({ characters = [] }) {
         moraleTriggersHandled: true,
         routingEnabled: settingsNow?.useMoraleRouting !== false,
         combatActive,
+        combatSession: combatSessionRef.current,
+        currentTurnToken: currentTurnTokenRef.current,
+        currentTurnTokenRef,
+        initiativeTurnId: initiativeTurnIdRef.current,
+        continuationKey: meta?.continuationKey || null,
+        continuationAuthorization: meta?.continuationAuthorization || null,
+        actionToken: initiativeTurnIdRef.current
+          ? [initiativeTurnIdRef.current, initiativeActionSequenceRef.current + 1].join(":")
+          : currentTurnTokenRef.current,
+        getArmoredTacticalMemory: getArmoredMemoryForCombatants,
+        armoredTechniqueRng: rollArmoredTechniqueRng,
+        armoredTechniqueRngSource: rngStateRef.current ? "seeded-combat-rng" : "crypto-dice",
         // Core helpers
         canFighterAct,
         getHPStatus,
@@ -22762,7 +29280,7 @@ function CombatPage({ characters = [] }) {
         findFlankingPositions,
         calculateFlankingBonus,
         validateWeaponRange,
-        handlePositionChange,
+        handlePositionChange: handleEnemyAIPositionChange,
         isHexOccupied,
         getHexNeighbors,
         isValidPosition,
@@ -22797,6 +29315,26 @@ function CombatPage({ characters = [] }) {
         onNoHostilesRemaining: () => endCombatIfVictoryResolved(fightersRef.current ?? liveFighters),
         // Attack & combat
         attack: guardedEnemyAttack,
+        executeGrapple: (actor, targetActor, requestedActionType = "grapple", armoredActionPlan = null, admission = null) => {
+          if (admission?.continuationAuthorization) {
+            emitActionContinuationReceiptHop("enemy-action-executor", admission.continuationAuthorization, {
+              requestedActionSequence: admission.nextActionSequence ?? admission.requestedActionSequence,
+              consumingActionType: "grapple",
+              source: admission.source || "enemy-grapple-dispatch",
+            });
+          }
+          return executeCanonicalGrappleAction({ actor, opponent: targetActor, actionType: requestedActionType || "grapple", source: admission?.source || "enemy-grapple-dispatch", initiativeTurnId: admission?.initiativeTurnId || null, requestedActionSequence: admission?.nextActionSequence || admission?.requestedActionSequence || null, continuationAuthorization: admission?.continuationAuthorization || null, armoredActionPlan });
+        },
+        dispatchGrappleTurnAction: (actor, targetActor, requestedActionType = "grapple", armoredActionPlan = null, admission = null) => {
+          if (admission?.continuationAuthorization) {
+            emitActionContinuationReceiptHop("enemy-action-executor", admission.continuationAuthorization, {
+              requestedActionSequence: admission.nextActionSequence ?? admission.requestedActionSequence,
+              consumingActionType: "grapple",
+              source: admission.source || "enemy-grapple-dispatch",
+            });
+          }
+          return executeCanonicalGrappleAction({ actor, opponent: targetActor, actionType: requestedActionType || "grapple", source: admission?.source || "enemy-grapple-dispatch", initiativeTurnId: admission?.initiativeTurnId || null, requestedActionSequence: admission?.nextActionSequence || admission?.requestedActionSequence || null, continuationAuthorization: admission?.continuationAuthorization || null, armoredActionPlan });
+        },
         createAttackActionGrant,
         createAttackExecutionKey,
         validateDelayedAttackCallback: validateDelayedEnemyAttackCallbackOk,
@@ -23821,16 +30359,21 @@ function CombatPage({ characters = [] }) {
       liveEnemy.statusEffects?.includes("ROUTED") ||
       ["routed", "broken"].includes(liveEnemy.state?.moraleState)
     ) {
-      if (fraidereRoutingFleeAction(liveEnemy, fightersSnapshot, "enemy-routing")) {
+      const moraleActionResult = fraidereRoutingFleeAction(liveEnemy, fightersSnapshot, "enemy-routing");
+      if (moraleActionResult) {
         markTurnResolvedByStatus(liveEnemy, "rout");
         processingEnemyTurnRef.current = false;
         turnActionResolvingRef.current = false;
         executingActionRef.current = false;
         playerAIActionScheduledRef.current = false;
         if (endCombatIfVictoryResolved(fightersRef.current ?? fightersSnapshot)) return;
-        addLog(`Dread response consumes the action; scheduling turn advance.`, "info");
-        pendingTurnAdvanceRef.current = true;
-        (scheduleEndTurnRef.current)?.(0, "horror-action-consumed");
+        addLog(`Dread response consumes the action; resolving routed survival action.`, "info");
+        resolveCombatActionCompletion({
+          actorId: liveEnemy.id,
+          actionResult: moraleActionResult,
+          source: moraleActionResult.source || "enemy-routing",
+          delayMs: 0,
+        });
         return;
       }
       // Fear-immune combatants never flee - clear ROUTED and continue with normal turn
@@ -27577,6 +34120,301 @@ function CombatPage({ characters = [] }) {
       }
     }
 
+    const inlineEnemyDistance = livePositions?.[enemy.id] && livePositions?.[target.id]
+      ? calculateDistance(livePositions[enemy.id], livePositions[target.id])
+      : currentDistance;
+    const liveInlineRosterForGrapple = fightersRef.current ?? fighters ?? [];
+    const liveInlineEnemyForGrapple = liveInlineRosterForGrapple.find((fighter) => fighter?.id === enemy?.id) || enemy;
+    const liveInlineTargetForGrapple = liveInlineRosterForGrapple.find((fighter) => fighter?.id === target?.id) || target;
+    const inlineEnemyGrappleStateText = String(liveInlineEnemyForGrapple?.grappleState?.state || "neutral").toLowerCase();
+    const inlineTargetGrappleStateText = String(liveInlineTargetForGrapple?.grappleState?.state || "neutral").toLowerCase();
+    const inlineActiveGrappleObligation = Boolean(
+      (liveInlineEnemyForGrapple?.grappleState?.opponent === liveInlineTargetForGrapple?.id && inlineEnemyGrappleStateText !== "neutral") ||
+      (liveInlineEnemyForGrapple?.grappleState?.opponentId === liveInlineTargetForGrapple?.id && inlineEnemyGrappleStateText !== "neutral") ||
+      (liveInlineTargetForGrapple?.grappleState?.opponent === liveInlineEnemyForGrapple?.id && inlineTargetGrappleStateText !== "neutral") ||
+      (liveInlineTargetForGrapple?.grappleState?.opponentId === liveInlineEnemyForGrapple?.id && inlineTargetGrappleStateText !== "neutral")
+    );
+    if (inlineActiveGrappleObligation) {
+      addLog?.({
+        audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+        channel: COMBAT_LOG_CHANNELS.AI,
+        eventType: "grapple-state-read",
+        level: "info",
+        type: "debug",
+        actorId: enemy.id,
+        targetId: target.id,
+        source: "enemy-inline-attack",
+        message: `grapple-state-read: actorId=${enemy.id} opponentId=${target.id} active=true source=enemy-inline-attack`,
+        data: {
+          active: true,
+          actorGrappleState: liveInlineEnemyForGrapple?.grappleState,
+          targetGrappleState: liveInlineTargetForGrapple?.grappleState,
+        },
+      }, "debug");
+      addLog?.({
+        audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+        channel: COMBAT_LOG_CHANNELS.AI,
+        eventType: "standing-armored-selector-suppressed",
+        level: "info",
+        type: "debug",
+        actorId: enemy.id,
+        targetId: target.id,
+        source: "enemy-inline-attack",
+        message: `standing armored selector suppressed: actor=${enemy.name} reason=active-grapple`,
+        data: { reason: "active-grapple" },
+      }, "debug");
+      if (typeof executeCanonicalGrappleAction !== "function") {
+        addLog?.({
+          audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+          channel: COMBAT_LOG_CHANNELS.AI,
+          eventType: "grapple-dispatch-context-missing",
+          level: "error",
+          type: "error",
+          actorId: enemy.id,
+          targetId: target.id,
+          source: "enemy-inline-attack",
+          message: `grapple-dispatch-context-missing: actorId=${enemy.id} opponentId=${target.id} source=enemy-inline-attack`,
+          data: { actorId: enemy.id, opponentId: target.id, initiativeTurnId: initiativeTurnIdRef.current },
+        }, "error");
+        const missingDispatchResult = {
+          accepted: true,
+          completed: true,
+          actionType: "pass",
+          actionSpent: true,
+          actionsSpent: 1,
+          explicitPass: true,
+          remainingActions: Math.max(0, (Number(liveInlineEnemyForGrapple?.remainingActions ?? 0) || 0) - 1),
+          source: "enemy-inline-active-grapple-dispatch-missing",
+        };
+        commitFighters((prev = []) => prev.map((fighter) => (
+          fighter?.id === enemy.id ? { ...fighter, remainingActions: missingDispatchResult.remainingActions } : fighter
+        )));
+        resolveCombatActionCompletion({
+          actorId: enemy.id,
+          opponentId: target.id,
+          source: "enemy-inline-active-grapple-dispatch-missing",
+          actionResult: missingDispatchResult,
+        });
+        processingEnemyTurnRef.current = false;
+        return { handled: true, terminal: true, routeType: "grapple-terminal", actionType: "grapple", result: missingDispatchResult };
+      }
+      if (meta?.continuationAuthorization) {
+        addLog?.({
+          audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+          channel: COMBAT_LOG_CHANNELS.AI,
+          eventType: "enemy-grapple-authorization-route-entry",
+          level: "info",
+          type: "debug",
+          actorId: liveInlineEnemyForGrapple.id,
+          targetId: liveInlineTargetForGrapple.id,
+          source: "enemy-inline-active-grapple",
+          message: `enemy grapple authorization route entry: continuationKey=${meta.continuationAuthorization.continuationKey}`,
+          data: { functionName: "handleEnemyTurn:inline-active-grapple", ...meta.continuationAuthorization, receiptPresent: true },
+        }, "debug");
+      }
+      const grappleRoute = resolveGrappleTurnAction({
+        actor: liveInlineEnemyForGrapple,
+        opponent: liveInlineTargetForGrapple,
+        grappleState: liveInlineEnemyForGrapple?.grappleState,
+        remainingActions: liveInlineEnemyForGrapple?.remainingActions,
+        availableClinchWeapons: liveInlineEnemyForGrapple?.attacks || enemy.attacks || [],
+        generationId: combatSessionRef.current || "default",
+        round: meleeRoundRef.current ?? meleeRound,
+        initiativeIndex: turnIndexRef.current,
+        initiativeTurnId: initiativeTurnIdRef.current,
+        turnToken: currentTurnTokenRef.current,
+        source: "enemy-inline-attack",
+      });
+      addLog?.({
+        audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+        channel: COMBAT_LOG_CHANNELS.AI,
+        eventType: "combat-obligation-routed",
+        level: "info",
+        type: "debug",
+        actorId: enemy.id,
+        targetId: target.id,
+        source: "enemy-inline-attack",
+        message:
+          `combat obligation routed: actorId=${enemy.id} opponentId=${target.id} obligation=active-grapple ` +
+          `source=enemy-inline-attack`,
+        data: grappleRoute,
+      }, "debug");
+      if (!grappleRoute?.handled || !grappleRoute?.dispatchRequired) {
+        processingEnemyTurnRef.current = false;
+        scheduleEnemyAIEndTurn(0, "enemy-inline-active-grapple-no-action");
+        return { handled: true, terminal: true, routeType: "grapple-terminal", actionType: "grapple", result: grappleRoute };
+      }
+      if (!commitEnemyAction("INLINE_ACTIVE_GRAPPLE")) {
+        processingEnemyTurnRef.current = false;
+        return { handled: true, terminal: true, routeType: "grapple-terminal", actionType: "grapple", result: grappleRoute };
+      }
+      const grappleActionType = grappleRoute.grappleAction?.actionType || grappleRoute.actionType || "clinchStrike";
+      if (meta?.continuationAuthorization) {
+        addLog?.({
+          audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+          channel: COMBAT_LOG_CHANNELS.AI,
+          eventType: "enemy-grapple-authorization-dispatch-entry",
+          level: "info",
+          type: "debug",
+          actorId: liveInlineEnemyForGrapple.id,
+          targetId: liveInlineTargetForGrapple.id,
+          source: "enemy-inline-active-grapple",
+          message: `enemy grapple authorization dispatch entry: continuationKey=${meta.continuationAuthorization.continuationKey}`,
+          data: { functionName: "handleEnemyTurn:inline-dispatch", ...meta.continuationAuthorization, receiptPresent: true },
+        }, "debug");
+      }
+      const launched = executeCanonicalGrappleAction({
+        actor: liveInlineEnemyForGrapple,
+        opponent: liveInlineTargetForGrapple,
+        actionType: grappleActionType,
+        source: "remaining-action-continuation",
+        initiativeTurnId: meta?.initiativeTurnId || null,
+        requestedActionSequence: meta?.nextActionSequence || null,
+        continuationAuthorization: meta?.continuationAuthorization || null,
+      });
+      const completionDecision = { accepted: Boolean(launched), decision: launched ? "grapple-dispatched" : "grapple-dispatch-failed" };
+      addLog?.({
+        audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+        channel: COMBAT_LOG_CHANNELS.TURN,
+        eventType: "enemy-grapple-terminal-return-propagated",
+        level: "info",
+        type: "debug",
+        actorId: enemy.id,
+        targetId: target.id,
+        round: meleeRoundRef.current,
+        turn: turnCounterRef.current,
+        turnToken: currentTurnTokenRef.current,
+        source: "enemy-inline-active-grapple",
+        message:
+          `enemy-grapple-terminal-return-propagated: actorId=${enemy.id} ` +
+          `initiativeTurnId=${initiativeTurnIdRef.current || "none"} source=enemy-inline-active-grapple`,
+        data: {
+          handled: true,
+          terminal: true,
+          routeType: "grapple-terminal",
+          actionType: "grapple",
+          result: grappleRoute,
+          completionDecision,
+        },
+      }, "debug");
+      processingEnemyTurnRef.current = false;
+      if (!launched) scheduleEnemyAIEndTurn(0, "enemy-inline-active-grapple-dispatch-failed");
+      return {
+        handled: true,
+        terminal: true,
+        routeType: "grapple-terminal",
+        actionType: "grapple",
+        result: grappleRoute,
+        completionDecision,
+      };
+    }
+    const inlineArmoredAction = (() => {
+      try {
+        return resolveArmoredCombatAction({
+          attacker: enemy,
+          defender: target,
+          selectedWeapon: selectedAttack?.weapon || selectedAttack,
+          distance: inlineEnemyDistance,
+          remainingActions: enemy.remainingActions,
+          generationId: combatSessionRef.current || "default",
+          round: meleeRoundRef.current ?? meleeRound,
+          initiativeIndex: turnIndexRef.current,
+          initiativeTurnId: initiativeTurnIdRef.current,
+          turnToken: currentTurnTokenRef.current,
+          actionToken: currentTurnTokenRef.current,
+          getTacticalMemory: getArmoredMemoryForCombatants,
+          rng: rollArmoredTechniqueRng,
+          rngSource: rngStateRef.current ? "seeded-combat-rng" : "crypto-dice",
+          source: "enemy-inline-attack",
+          addLog,
+        });
+      } catch (error) {
+        addLog?.({
+          audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+          channel: COMBAT_LOG_CHANNELS.AI,
+          eventType: "armored-selection-runtime-fallback",
+          level: "error",
+          type: "error",
+          actorId: enemy.id,
+          targetId: target.id,
+          message: `armored selection runtime fallback: actor=${enemy.name} target=${target.name} error=${error?.message || String(error)}`,
+          data: { error: error?.message || String(error), source: "enemy-inline-attack" },
+        }, "error");
+        return {
+          actionType: "attack",
+          technique: "longsword-cut",
+          weapon: {
+            ...(selectedAttack?.weapon || selectedAttack),
+            attackMode: "longsword-cut",
+            selectedTechnique: "longsword-cut",
+            armorTechnique: "longsword-cut",
+            armoredActionPlan: {
+              actionType: "attack",
+              selectedTechnique: "longsword-cut",
+              attackerId: enemy.id,
+              defenderId: target.id,
+              generationId: combatSessionRef.current || "default",
+              round: meleeRoundRef.current ?? meleeRound,
+              initiativeIndex: turnIndexRef.current,
+              turnToken: currentTurnTokenRef.current,
+              source: "armored-selection-runtime-fallback",
+            },
+          },
+        };
+      }
+    })();
+    if (inlineArmoredAction?.suppressed) {
+      processingEnemyTurnRef.current = false;
+      scheduleEnemyAIEndTurn(0, "enemy-inline-offensive-suppressed");
+      return;
+    }
+    if (inlineArmoredAction?.actionType === "grapple") {
+      if (!commitEnemyAction("INLINE_ARMORED_GRAPPLE")) {
+        processingEnemyTurnRef.current = false;
+        return;
+      }
+      addLog?.(`${enemy.name} closes to grapple the armored opponent.`, "info");
+      addLog?.({
+        audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+        channel: COMBAT_LOG_CHANNELS.AI,
+        eventType: "armored-action-plan-dispatched",
+        level: "info",
+        type: "debug",
+        actorId: enemy.id,
+        targetId: target.id,
+        message: `armored action plan dispatched: actor=${enemy.name} target=${target.name} technique=${inlineArmoredAction.technique}`,
+        data: { actionType: "grapple", selectedTechnique: inlineArmoredAction.technique, source: "enemy-inline-attack" },
+      }, "debug");
+      const launched = executeCanonicalGrappleAction({
+        actor: enemy,
+        opponent: target,
+        actionType: "grapple",
+        source: meta?.continuationAuthorization ? "remaining-action-continuation" : "enemy-inline-attack",
+        initiativeTurnId: meta?.continuationAuthorization?.initiativeTurnId || meta?.initiativeTurnId || null,
+        requestedActionSequence: meta?.continuationAuthorization?.nextActionSequence ?? null,
+        continuationAuthorization: meta?.continuationAuthorization || null,
+        armoredActionPlan: inlineArmoredAction?.armoredActionPlan || null,
+      });
+      processingEnemyTurnRef.current = false;
+      if (!launched) scheduleEnemyAIEndTurn(0, "enemy-inline-armored-grapple-failed");
+      return;
+    }
+    if (inlineArmoredAction?.technique) {
+      selectedAttack = inlineArmoredAction.weapon;
+      attackName = selectedAttack?.name || attackName;
+      addLog?.({
+        audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+        channel: COMBAT_LOG_CHANNELS.AI,
+        eventType: "armored-action-plan-dispatched",
+        level: "info",
+        type: "debug",
+        actorId: enemy.id,
+        targetId: target.id,
+        message: `armored action plan dispatched: actor=${enemy.name} target=${target.name} technique=${inlineArmoredAction.technique}`,
+        data: selectedAttack.armoredActionPlan || { actionType: "attack", selectedTechnique: inlineArmoredAction.technique, source: "enemy-inline-attack" },
+      }, "debug");
+    }
+
     addLog(`${enemy.name} ${reasoning} and attacks ${target.name} with ${attackName}!`, "info");
     addLog("enemy attack branch reached after layered preference log", "debug");
 
@@ -27657,10 +34495,25 @@ function CombatPage({ characters = [] }) {
         );
         const attackResult = await Promise.resolve(attack(updatedEnemy, target.id, {
           ...allBonuses,
+          continuationAuthorization: allBonuses?.continuationAuthorization || meta?.continuationAuthorization || null,
+          requestedActionSequence: allBonuses?.requestedActionSequence ?? meta?.continuationAuthorization?.nextActionSequence ?? null,
           attackActionId: expectedEnemyAttackExecutionKey,
           attackActionGrant: enemyMeleeGrant,
           source: enemyAttackSource,
         }));
+        if (attackResult?.recovered && attackResult?.reason === "active-grapple-generic-attack-blocked") {
+          activeAttackActionIdRef.current = null;
+          activeTechniqueImpactRef.current = null;
+          turnActionResolvingRef.current = false;
+          pendingTurnAdvanceRef.current = false;
+          processingEnemyTurnRef.current = false;
+          enemyActionResolved = true;
+          addLog(
+            `active-grapple generic attack recovery observed: actor=${updatedEnemy.name || expectedEnemyAttackActorId} source=${enemyAttackSource}`,
+            "warning",
+          );
+          return true;
+        }
         if (attackResult?.blocked) {
           const activeAfterBlock = fightersRef.current?.[turnIndexRef.current];
           const blockedActorOwnsTurn =
@@ -27747,13 +34600,11 @@ function CombatPage({ characters = [] }) {
         const enemyAttackType = isRangedSelectedAttack ? "ranged" : "melee";
         if (!activeAttackActionIdRef.current && !activeTechniqueImpactRef.current) {
           addLog(
-            `attack impact wait recovered: actor=${enemy.name} reason=no-active-impact-after-block`,
-            "warning",
+            `enemy ${enemyAttackType} canonical completion observed after ownership release: actor=${enemy.name}`,
+            "debug",
           );
-          turnActionResolvingRef.current = false;
-          pendingTurnAdvanceRef.current = false;
-          scheduleEnemyAIEndTurn(0, "enemy-attack-no-active-impact-fallback");
-          return false;
+          processingEnemyTurnRef.current = false;
+          return true;
         }
         addLog(`enemy ${enemyAttackType} attack invoked; waiting for impact finalizer`, "debug");
         addLog(`enemy ${enemyAttackType} execution promise resolved: actor=${enemy.name}`, "debug");
@@ -27889,6 +34740,7 @@ function CombatPage({ characters = [] }) {
     isTargetBlocked,
     markFighterFledOffMap,
     endCombatIfVictoryResolved,
+    resolveCombatActionCompletion,
     applyMoraleTriggersForTurn,
     meleeRound,
     pickEnemyTechniqueFromCatalog,
@@ -27970,6 +34822,61 @@ function CombatPage({ characters = [] }) {
 
     const currentFighter = liveActiveFighter;
     const currentTurnKey = makeTurnStartKey(currentFighter, turnIndex, turnCounter);
+    const currentContinuationRecords = Array.from(remainingActionContinuationRegistryRef.current.values()).filter((entry) => (
+      entry?.actorId === currentFighter?.id &&
+      entry?.combatSession === combatSessionRef.current &&
+      entry?.turnToken === currentTurnTokenRef.current &&
+      Number(entry?.remainingActions ?? 0) > 0
+    ));
+    const ownedContinuation = currentContinuationRecords.find((entry) => ["created", "fired"].includes(entry?.state));
+    const logicalContinuationPending = Array.from(initiativeTurnLogicalRegistryRef.current.values()).find((record) => (
+      record?.actorId === currentFighter?.id && record?.initiativeTurnId === initiativeTurnIdRef.current && record?.state === "continuation-pending"
+    ));
+    if (logicalContinuationPending && !ownedContinuation) {
+      const terminalRecord = currentContinuationRecords[0] || null;
+      addLog?.({
+        audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+        channel: COMBAT_LOG_CHANNELS.VALIDATION,
+        eventType: "orphaned-continuation-pending-state-detected",
+        level: "warning",
+        type: "warning",
+        actorId: currentFighter?.id,
+        source: "effect-turn-advance",
+        message: `orphaned continuation pending state detected: actorId=${currentFighter?.id} recordState=${terminalRecord?.state || "missing"}`,
+        data: { continuationKey: terminalRecord?.continuationKey || null, recordState: terminalRecord?.state || null },
+      }, "warning");
+      transitionLogicalInitiativeTurn(initiativeTurnIdRef.current, "active", "orphaned-continuation-pending-cleanup", {
+        continuationKey: null,
+        continuationAdmissionPending: false,
+        continuationPhase: null,
+      });
+    }
+    if (ownedContinuation) {
+      addLog({
+        audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+        channel: COMBAT_LOG_CHANNELS.TURN,
+        eventType: "turn-start-suppressed",
+        level: "info",
+        type: "debug",
+        actorId: currentFighter?.id,
+        round: meleeRoundRef.current,
+        turn: turnCounterRef.current,
+        turnToken: currentTurnTokenRef.current,
+        source: "effect-turn-advance",
+        message:
+          `turn start suppressed: actorId=${currentFighter?.id} reason=continuation-pending ` +
+          `initiativeTurnId=${ownedContinuation.initiativeTurnId || initiativeTurnIdRef.current || "none"} ` +
+          `continuationKey=${ownedContinuation.continuationKey || "registered"}`,
+        data: {
+          reason: "continuation-pending",
+          initiativeTurnId: ownedContinuation.initiativeTurnId || initiativeTurnIdRef.current || null,
+          continuationKey: ownedContinuation.continuationKey || null,
+          attemptedSource: "effect-turn-advance",
+          actorId: currentFighter?.id,
+        },
+      }, "debug");
+      return;
+    }
 
     const blockedMovementSnapshot = blockedMovementActionRef.current;
     if (blockedMovementSnapshot) {
@@ -28265,6 +35172,7 @@ function CombatPage({ characters = [] }) {
       }
     } else {
       // Manual control: open choices once per turn
+      markLogicalTurnWaitingManual(currentFighter, turnIndex, "effect-manual-wait");
       if (shouldEnterManualPlayerWait({
         aiControlEnabled,
         isPartyActor: currentIsPlayable,
@@ -28363,6 +35271,7 @@ function CombatPage({ characters = [] }) {
     getHPStatus,
     meleeRound,
     makeTurnStartKey,
+    markLogicalTurnWaitingManual,
     startTurnOnce,
     isActionBusy,
   ]);
@@ -29400,6 +36309,36 @@ function CombatPage({ characters = [] }) {
 
     if (entries.length === 0) {
       setStagedRosterImportMessages(["No staged roster entries found."]);
+      return;
+    }
+
+    const ownedContinuation = Array.from(remainingActionContinuationRegistryRef.current.values()).find((entry) => (
+      entry?.actorId === currentFighter?.id &&
+      entry?.combatSession === combatSessionRef.current &&
+      entry?.turnToken === currentTurnTokenRef.current &&
+      Number(entry?.remainingActions ?? 0) > 0
+    ));
+    if (ownedContinuation) {
+      addLog({
+        audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+        channel: COMBAT_LOG_CHANNELS.TURN,
+        eventType: "turn-start-suppressed",
+        level: "info",
+        type: "debug",
+        actorId: currentFighter?.id,
+        round: meleeRoundRef.current,
+        turn: turnCounterRef.current,
+        turnToken: currentTurnTokenRef.current,
+        source: "effect-turn-advance",
+        message:
+          `turn start suppressed: actorId=${currentFighter?.id} reason=continuation-pending ` +
+          `continuationKey=${ownedContinuation.continuationKey || "registered"}`,
+        data: {
+          reason: "continuation-pending",
+          continuationKey: ownedContinuation.continuationKey || null,
+          actorId: currentFighter?.id,
+        },
+      }, "debug");
       return;
     }
 
@@ -31839,9 +38778,12 @@ function CombatPage({ characters = [] }) {
 
             if (!selectedGrappleAction) {
               // Fallback: determine appropriate grapple action based on current state
-              if (grappleStatus.state === GRAPPLE_STATES.CLINCH || grappleStatus.state === GRAPPLE_STATES.GROUND) {
-                // Already grappling - default to maintain
-                grappleAction = 'maintain';
+              if (grappleStatus.state === GRAPPLE_STATES.CLINCH) {
+                const available = getAvailableGrappleActions(currentFighter, targetToExecute);
+                grappleAction = available.find((action) => action.value === "drawClinchDagger")?.value ||
+                  available.find((action) => action.value === "clinchStrike")?.value || "improveControl";
+              } else if (grappleStatus.state === GRAPPLE_STATES.GROUND) {
+                grappleAction = 'improveControl';
               } else if (grappleStatus.state === GRAPPLE_STATES.GRAPPLED) {
                 // Pinned - default to break free
                 grappleAction = 'breakFree';
@@ -31852,7 +38794,7 @@ function CombatPage({ characters = [] }) {
             }
 
             // Execute grapple action
-            const launchedGrapple = handleGrappleAction(grappleAction, currentFighter, targetToExecute.id);
+            const launchedGrapple = executeCanonicalGrappleAction({ actor: currentFighter, opponent: targetToExecute, actionType: grappleAction, source: "manual-active-grapple" });
             setSelectedGrappleAction(null); // Clear selection after use
             if (launchedGrapple) {
               scheduleEndTurn(500, "manual-grapple-follow-up");
@@ -31867,7 +38809,7 @@ function CombatPage({ characters = [] }) {
 
             if (selectedManeuver === "grapple") {
               // Use handleGrappleAction for grapple maneuver
-              const launchedGrapple = handleGrappleAction('grapple', currentFighter, targetToExecute.id);
+              const launchedGrapple = executeCanonicalGrappleAction({ actor: currentFighter, opponent: targetToExecute, actionType: 'grapple', source: "manual-grapple" });
               setSelectedManeuver(null); // Clear selection after use
               if (launchedGrapple) {
                 scheduleEndTurn(500, "manual-grapple");
@@ -31887,6 +38829,33 @@ function CombatPage({ characters = [] }) {
               executeDisarmManeuver(currentFighter, targetToExecute);
               setSelectedManeuver(null); // Clear selection after use
               scheduleEndTurn(500);
+              return;
+            } else if (selectedManeuver === "pickUpDroppedWeapon") {
+              const fighterHex = positionsRef.current?.[currentFighter.id] || currentFighter.hex || currentFighter.position;
+              const droppedItem = Array.from(droppedBattlefieldItemsRef.current.values()).find((item) =>
+                item?.recoverable && fighterHex && Number(item.currentHex?.x) === Number(fighterHex.x) && Number(item.currentHex?.y) === Number(fighterHex.y));
+              const recovery = recoverDroppedWeaponTransition({ fighter: currentFighter, droppedItem, round: meleeRoundRef.current, turn: turnCounterRef.current });
+              if (!recovery.ok) {
+                addLog(`${currentFighter.name} cannot recover that weapon: ${recovery.reason}.`, "warning");
+                return;
+              }
+              droppedBattlefieldItemsRef.current.delete(recovery.droppedItemId);
+              commitFighters((current = []) => current.map((fighter) => fighter.id === currentFighter.id ? recovery.fighter : fighter));
+              addLog(`${currentFighter.name} spends the turn recovering ${droppedItem.itemSnapshot?.name || "the dropped weapon"}.`, "info");
+              addLog?.({
+                audience: COMBAT_LOG_AUDIENCES.PLAYER, channel: COMBAT_LOG_CHANNELS.ACTION,
+                eventType: "dropped-weapon-recovered", level: "info", type: "info",
+                actorId: currentFighter.id, source: "manual-dropped-weapon-recovery",
+                message: `${currentFighter.name} recovers ${droppedItem.itemSnapshot?.name || "a dropped weapon"}.`,
+                data: { droppedItemId: recovery.droppedItemId, weaponId: recovery.weaponId, actionSpent: 1, turnEndingEffect: true },
+              }, "info");
+              resolveCombatActionCompletion({
+                actorId: currentFighter.id,
+                actionResult: { accepted: true, completed: true, actionType: "pickUpDroppedWeapon", actionSpent: true, remainingActions: 0, turnEndingEffect: true },
+                executionKey: `pickup:${initiativeTurnIdRef.current}:${recovery.droppedItemId}`,
+                source: "manual-dropped-weapon-recovery",
+              });
+              setSelectedManeuver(null);
               return;
             } else {
               addLog(`Unknown maneuver: ${selectedManeuver}`, "error");
@@ -33939,6 +40908,7 @@ function CombatPage({ characters = [] }) {
               }
               setCombatPaused((prev) => {
                 const next = !prev;
+                combatPausedRef.current = next;
                 if (next) {
                   processingEnemyTurnRef.current = false;
                   processingPlayerAIRef.current = false;
@@ -34038,7 +41008,14 @@ function CombatPage({ characters = [] }) {
 
                 if (canResumeCurrentPlayerTurn) {
                   addLog(`AI toggle resume: scheduling player AI for ${currentFighter.name}`, "info");
-                  startTurnOnce(currentFighter, liveIndex, "ai-toggle-resume");
+                  resumeManualPartyTurnWithAI({
+                    actorId: currentFighter.id,
+                    initiativeTurnId: initiativeTurnIdRef.current,
+                    generationId: combatSessionRef.current || "default",
+                    round: meleeRoundRef.current ?? meleeRound,
+                    initiativeIndex: liveIndex,
+                    source: "ai-toggle-resume",
+                  });
                 }
               } else {
                 const activeExecution = playerAIExecutionRef.current;
@@ -35207,6 +42184,10 @@ function CombatPage({ characters = [] }) {
                           { value: "disarm", label: "Disarm" },
                           { value: "grapple", label: "Grapple" },
                         ];
+                        const currentHex = positionsRef.current?.[currentFighter.id] || currentFighter.hex || currentFighter.position;
+                        const recoverableWeapon = Array.from(droppedBattlefieldItemsRef.current.values()).find((item) =>
+                          item?.recoverable && currentHex && Number(item.currentHex?.x) === Number(currentHex.x) && Number(item.currentHex?.y) === Number(currentHex.y));
+                        if (recoverableWeapon) maneuvers.push({ value: "pickUpDroppedWeapon", label: `Recover ${recoverableWeapon.itemSnapshot?.name || "Dropped Weapon"}` });
 
                         return (
                           <Box>

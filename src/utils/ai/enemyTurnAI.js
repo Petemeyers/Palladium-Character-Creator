@@ -106,6 +106,8 @@ import { markCombatantFled } from "../combatFledState.js";
 import { normalizeMoraleState } from "../morale/moraleChecks.js";
 import { evaluateMoraleTriggers } from "../morale/moraleTriggerChecks.js";
 import { formatCombatActorLabel, isSameCombatActor } from "../combatActorIdentity.js";
+import { resolveArmoredCombatAction } from "./resolveArmoredCombatAction.js";
+import { resolveGrappleTurnAction } from "./resolveGrappleTurnAction.js";
 
 // -----------------------------------------------------------------------------
 // Weakness Memory Persistence (across encounters)
@@ -1680,6 +1682,8 @@ export function runEnemyTurnAI(enemy, context) {
     onNoHostilesRemaining,
     // Attack & combat
     attack,
+    executeGrapple: executeGrappleFromContext,
+    dispatchGrappleTurnAction,
     createAttackActionGrant,
     createAttackExecutionKey,
     validateDelayedAttackCallback,
@@ -1692,6 +1696,38 @@ export function runEnemyTurnAI(enemy, context) {
     getTargetsInLine,
     sceneContext = { sceneType: "combat", relations: {} },
   } = context;
+
+  const executeGrapple =
+    typeof dispatchGrappleTurnAction === "function"
+      ? dispatchGrappleTurnAction
+      : executeGrappleFromContext;
+  if (context.continuationAuthorization) {
+    const continuationAuthorization = context.continuationAuthorization;
+    addLog?.({
+      audience: "developer",
+      channel: "turn",
+      eventType: "action-continuation-receipt-hop",
+      level: "info",
+      type: "debug",
+      actorId: continuationAuthorization.actorId,
+      source: "run-enemy-turn-ai",
+      message: `action continuation receipt hop: stage=enemy-action-route continuationKey=${continuationAuthorization.continuationKey}`,
+      data: {
+        stage: "enemy-action-route",
+        continuationId: continuationAuthorization.continuationId || continuationAuthorization.authorizationId || null,
+        continuationKey: continuationAuthorization.continuationKey,
+        initiativeTurnId: continuationAuthorization.initiativeTurnId,
+        actorId: continuationAuthorization.actorId,
+        receiptState: continuationAuthorization.state,
+        completedActionType: continuationAuthorization.completedActionType,
+        completedActionSequence: continuationAuthorization.completedActionSequence,
+        nextActionSequence: continuationAuthorization.nextActionSequence,
+        requestedActionSequence: continuationAuthorization.nextActionSequence,
+        consumingActionType: null,
+        consumingActionToken: null,
+      },
+    }, "debug");
+  }
 
   const combatOverRef = context.combatOverRef;
   const markDistanceClosed = context.markDistanceClosed;
@@ -4676,6 +4712,240 @@ export function runEnemyTurnAI(enemy, context) {
         }), distance: ${Math.round(currentDistance)}ft`,
         "info",
       );
+
+      const enemyGrappleStateText = String(enemy?.grappleState?.state || "neutral").toLowerCase();
+      const targetGrappleStateText = String(target?.grappleState?.state || "neutral").toLowerCase();
+      const activeGrappleObligation =
+        (enemy?.grappleState?.opponent && enemy.grappleState.opponent === target?.id && enemyGrappleStateText !== "neutral") ||
+        (target?.grappleState?.opponent && target.grappleState.opponent === enemy?.id && targetGrappleStateText !== "neutral");
+      if (activeGrappleObligation && typeof executeGrapple !== "function") {
+        addLog?.({
+          audience: "developer",
+          channel: "ai",
+          eventType: "grapple-dispatch-context-missing",
+          level: "error",
+          type: "error",
+          actorId: enemy.id,
+          targetId: target.id,
+          source: "enemy-ai-active-grapple",
+          message:
+            `grapple-dispatch-context-missing: actorId=${enemy.id} opponentId=${target.id} ` +
+            `source=enemy-ai-active-grapple`,
+          data: {
+            actorId: enemy.id,
+            opponentId: target.id,
+            initiativeTurnId: context.initiativeTurnId,
+          },
+        }, "error");
+        scheduleEndTurn?.(0, "enemy-ai-grapple-dispatch-context-missing");
+        return;
+      }
+      if (activeGrappleObligation && typeof executeGrapple === "function") {
+        if (context.continuationAuthorization) {
+          addLog?.({
+            audience: "developer",
+            channel: "ai",
+            eventType: "enemy-grapple-authorization-route-entry",
+            level: "info",
+            type: "debug",
+            actorId: enemy.id,
+            targetId: target.id,
+            source: "enemy-ai-active-grapple",
+            message: `enemy grapple authorization route entry: continuationKey=${context.continuationAuthorization.continuationKey}`,
+            data: { ...context.continuationAuthorization, receiptPresent: true },
+          }, "debug");
+        }
+        const grappleRoute = resolveGrappleTurnAction({
+          actor: enemy,
+          opponent: target,
+          grappleState: enemy?.grappleState,
+          remainingActions: enemy?.remainingActions,
+          availableClinchWeapons: availableAttacks,
+          generationId: context.combatSession || "default",
+          round: context.meleeRound,
+          initiativeIndex: context.turnIndex,
+          initiativeTurnId: context.initiativeTurnId,
+          turnToken: context.currentTurnToken || context.currentTurnTokenRef?.current,
+          source: "enemy-ai",
+        });
+        addLog?.({
+          audience: "developer",
+          channel: "ai",
+          eventType: "combat-obligation-routed",
+          level: "info",
+          type: "debug",
+          actorId: enemy.id,
+          targetId: target.id,
+          message:
+            `combat obligation routed: actorId=${enemy.id} opponentId=${target.id} obligation=active-grapple ` +
+            `generationId=${context.combatSession || "default"} turnToken=${context.currentTurnToken || context.currentTurnTokenRef?.current || "missing"}`,
+          data: grappleRoute,
+        }, "debug");
+        if (grappleRoute.routeType === "legal-pass") {
+          scheduleEndTurn?.(0, "enemy-ai-active-grapple-legal-pass");
+          return;
+        }
+        if (!grappleRoute.handled || !grappleRoute.dispatchRequired) {
+          scheduleEndTurn?.(0, "enemy-ai-active-grapple-no-action");
+          return;
+        }
+        if (!commitEnemyAction("ACTIVE_GRAPPLE")) {
+          processingEnemyTurnRef.current = false;
+          return;
+        }
+        if (context.continuationAuthorization) {
+          addLog?.({
+            audience: "developer",
+            channel: "ai",
+            eventType: "enemy-grapple-authorization-dispatch-entry",
+            level: "info",
+            type: "debug",
+            actorId: enemy.id,
+            targetId: target.id,
+            source: "enemy-ai-active-grapple",
+            message: `enemy grapple authorization dispatch entry: continuationKey=${context.continuationAuthorization.continuationKey}`,
+            data: { ...context.continuationAuthorization, receiptPresent: true },
+          }, "debug");
+        }
+        const launched = executeGrapple(enemy, target, grappleRoute.grappleAction?.actionType || grappleRoute.actionType, null, { continuationKey: context.continuationKey || null, continuationAuthorization: context.continuationAuthorization || null, source: "remaining-action-continuation" });
+        processingEnemyTurnRef.current = false;
+        if (!launched) {
+          addLog?.({
+            audience: "developer",
+            channel: "ai",
+            eventType: "grapple-dispatch-required-but-missing",
+            level: "error",
+            type: "error",
+            actorId: enemy.id,
+            targetId: target.id,
+            message:
+              `grapple dispatch required but missing: actorId=${enemy.id} opponentId=${target.id} ` +
+              `actionType=${grappleRoute.actionType} initiativeTurnId=${grappleRoute.initiativeTurnId || "none"} actionToken=${grappleRoute.actionToken || "none"}`,
+            data: grappleRoute,
+          }, "error");
+          scheduleEndTurn(0, "enemy-active-grapple-dispatch-missing");
+        }
+        return;
+      }
+
+      let armoredAction;
+      try {
+        armoredAction = resolveArmoredCombatAction({
+          attacker: enemy,
+          defender: target,
+          selectedWeapon: selectedAttack?.weapon || selectedAttack,
+          distance: currentDistance,
+          remainingActions: enemy.remainingActions,
+          generationId: context.combatSession || "default",
+          round: context.meleeRound,
+          initiativeIndex: context.turnIndex,
+          initiativeTurnId: context.initiativeTurnId,
+          turnToken: context.currentTurnToken || context.currentTurnTokenRef?.current,
+          actionToken: context.actionToken || context.currentTurnToken || context.currentTurnTokenRef?.current,
+          getTacticalMemory: context.getArmoredTacticalMemory,
+          rng: context.armoredTechniqueRng,
+          rngSource: context.armoredTechniqueRngSource || "enemy-ai",
+          source: "enemy-ai",
+          addLog,
+        });
+      } catch (error) {
+        addLog?.({
+          audience: "developer",
+          channel: "ai",
+          eventType: "armored-selection-runtime-fallback",
+          level: "error",
+          type: "error",
+          actorId: enemy.id,
+          targetId: target.id,
+          message: `armored selection runtime fallback: actor=${enemy.name} target=${target.name} error=${error?.message || String(error)}`,
+          data: { error: error?.message || String(error), source: "enemy-ai" },
+        }, "error");
+        armoredAction = {
+          actionType: "attack",
+          technique: "longsword-cut",
+          weapon: {
+            ...(selectedAttack?.weapon || selectedAttack),
+            attackMode: "longsword-cut",
+            selectedTechnique: "longsword-cut",
+            armorTechnique: "longsword-cut",
+            armoredActionPlan: {
+              actionType: "attack",
+              selectedTechnique: "longsword-cut",
+              attackerId: enemy.id,
+              defenderId: target.id,
+              generationId: context.combatSession || "default",
+              round: context.meleeRound,
+              initiativeIndex: context.turnIndex,
+              turnToken: context.currentTurnToken || context.currentTurnTokenRef?.current,
+              source: "armored-selection-runtime-fallback",
+            },
+          },
+        };
+      }
+      if (armoredAction?.suppressed) {
+        scheduleEndTurn?.(0, "enemy-ai-offensive-suppressed");
+        return;
+      }
+      if (armoredAction?.technique) {
+        if (armoredAction.actionType === "grapple" && typeof executeGrapple === "function") {
+          if (!commitEnemyAction("ARMORED_GRAPPLE")) {
+            processingEnemyTurnRef.current = false;
+            return;
+          }
+          addLog?.(`${enemy.name} closes to grapple the armored opponent.`, "info");
+          addLog?.({
+            audience: "developer",
+            channel: "ai",
+            eventType: "armored-action-plan-dispatched",
+            level: "info",
+            type: "debug",
+            actorId: enemy.id,
+            targetId: target.id,
+            message: `armored action plan dispatched: actor=${enemy.name} target=${target.name} technique=${armoredAction.technique}`,
+            data: { actionType: armoredAction.actionType, selectedTechnique: armoredAction.technique, source: "enemy-ai" },
+          }, "debug");
+          addLog?.({
+            audience: "developer",
+            channel: "ai",
+            eventType: "grapple-execution-routed",
+            level: "info",
+            type: "debug",
+            actorId: enemy.id,
+            targetId: target.id,
+            message: `grapple execution routed: actor=${enemy.name} target=${target.name} source=armored-technique-selector`,
+            data: { selectedTechnique: armoredAction.technique },
+          }, "debug");
+          const launched = executeGrapple(enemy, target, null, armoredAction.armoredActionPlan, {
+            continuationAuthorization: context.continuationAuthorization || null,
+            continuationKey: context.continuationAuthorization?.continuationKey || null,
+            requestedActionSequence: context.continuationAuthorization?.nextActionSequence ?? null,
+            nextActionSequence: context.continuationAuthorization?.nextActionSequence ?? null,
+            initiativeTurnId: context.continuationAuthorization?.initiativeTurnId || context.initiativeTurnId || null,
+            source: context.continuationAuthorization ? "remaining-action-continuation" : "enemy-ai-armored-grapple",
+          });
+          processingEnemyTurnRef.current = false;
+          if (!launched) scheduleEndTurn(0, "enemy-armored-grapple-failed");
+          return;
+        }
+        selectedAttack = armoredAction.weapon;
+        attackName = selectedAttack?.name || attackName;
+        addLog?.({
+          audience: "developer",
+          channel: "ai",
+          eventType: "armored-action-plan-dispatched",
+          level: "info",
+          type: "debug",
+          actorId: enemy.id,
+          targetId: target.id,
+          message: `armored action plan dispatched: actor=${enemy.name} target=${target.name} technique=${armoredAction.technique}`,
+          data: selectedAttack.armoredActionPlan || { actionType: "attack", selectedTechnique: armoredAction.technique, source: "enemy-ai" },
+        }, "debug");
+        if (armoredAction.technique === "half-sword-thrust") {
+          addLog?.(`${enemy.name} shifts to a half-sword grip.`, "info");
+        } else if (armoredAction.technique === "pommel-or-crossguard-strike") {
+          addLog?.(`${enemy.name} reverses the sword and strikes with the pommel.`, "info");
+        }
+      }
 
       // Use proper weapon range validation
       const rangeValidation = validateWeaponRange(
