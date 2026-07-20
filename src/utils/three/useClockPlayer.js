@@ -1,16 +1,29 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  createBatchDispatcher,
+  processDueScheduleEvents,
+} from "../combat/processScheduledEventBatch.js";
+import {
+  createTimelinePerformanceTelemetry,
+  formatTimelinePerformanceSummary,
+  recordEngineCallDuration,
+} from "../combat/combatPerformanceTelemetry.js";
 
 const defaultEngineCall = (method, payload) =>
   (typeof window !== "undefined" && window?.engine?.call)
     ? window.engine.call(method, payload)
     : Promise.resolve({ ok: false, error: { message: "Engine not available" } });
 
-const isEngineCallEvent = (evt) =>
-  evt && evt.type === "ENGINE_CALL" && typeof evt.method === "string";
-
 const DEBUG_CLOCK =
   typeof window !== "undefined" &&
   window.localStorage?.getItem("debugClock") === "true";
+
+const timestampNow = () => {
+  if (typeof performance !== "undefined" && typeof performance.now === "function") {
+    return performance.now();
+  }
+  return Date.now();
+};
 
 /**
  * Clock player for SCHEDULED_EVENTS emitted by engine worker.
@@ -19,28 +32,64 @@ const DEBUG_CLOCK =
  * - pause/resume
  * - live speed changes
  * - cancel schedule(s)
- * - ENGINE_CALL execution: runs engine calls, dfocusatches returned events, blocks schedule until done
+ * - optional batch delivery via onEventBatch
+ * - ENGINE_CALL execution blocks later items until done
  * - optional step forward/back debugging
  */
-export function useClockPlayer({ onEvent, replaceMode = true, onCancelSchedule, engineCall }) {
+export function useClockPlayer({
+  onEvent,
+  onEventBatch,
+  replaceMode = true,
+  onCancelSchedule,
+  engineCall,
+  maxEventsPerFrame = 250,
+  maxProcessingMsPerFrame = 6,
+}) {
   const rafRef = useRef(null);
 
-  // playback controls
   const [isPaused, setIsPaused] = useState(false);
-  const [speed, setSpeed] = useState(1); // 0.25 .. 4 typically
+  const [speed, setSpeed] = useState(1);
 
-  // timeline state (refs for perf)
-  const schedulesRef = useRef(new Map()); // id -> { baseMs, cursor, items }
-  const scheduleMetaRef = useRef(new Map()); // id -> { kind, owner, locks }
+  const schedulesRef = useRef(new Map());
+  const scheduleMetaRef = useRef(new Map());
   const playheadRef = useRef(0);
   const lastRealRef = useRef(null);
 
-  // debugging
-  const historyRef = useRef([]); // [{ atMs, event }]
+  const historyRef = useRef([]);
   const maxHistory = DEBUG_CLOCK ? 5000 : 250;
+  const telemetryRef = useRef(createTimelinePerformanceTelemetry());
+
+  const onEventRef = useRef(onEvent);
+  const onEventBatchRef = useRef(onEventBatch);
+  useEffect(() => {
+    onEventRef.current = onEvent;
+    onEventBatchRef.current = onEventBatch;
+  }, [onEvent, onEventBatch]);
+
+  const engineCallRef = useRef(engineCall ?? defaultEngineCall);
+  useEffect(() => {
+    engineCallRef.current = engineCall ?? defaultEngineCall;
+  }, [engineCall]);
+
+  const dispatchBatch = useCallback((events, metadata = {}) => {
+    const dispatcher = createBatchDispatcher({
+      onEvent: onEventRef.current,
+      onEventBatch: onEventBatchRef.current,
+      historyRef,
+      playheadRef,
+      maxHistory,
+      debug: DEBUG_CLOCK,
+      telemetryRef,
+    });
+    return dispatcher(events, metadata);
+  }, [maxHistory]);
+
+  const dispatchBatchRef = useRef(dispatchBatch);
+  useEffect(() => {
+    dispatchBatchRef.current = dispatchBatch;
+  }, [dispatchBatch]);
 
   const clearAll = useCallback(() => {
-    // Notify cancellation for all schedules
     for (const [id, meta] of scheduleMetaRef.current.entries()) {
       onCancelSchedule?.(id, meta, "clearAll");
     }
@@ -49,6 +98,7 @@ export function useClockPlayer({ onEvent, replaceMode = true, onCancelSchedule, 
     playheadRef.current = 0;
     lastRealRef.current = null;
     historyRef.current = [];
+    telemetryRef.current = createTimelinePerformanceTelemetry();
   }, [onCancelSchedule]);
 
   const cancelSchedule = useCallback((id) => {
@@ -93,10 +143,7 @@ export function useClockPlayer({ onEvent, replaceMode = true, onCancelSchedule, 
     const { id, items, kind, owner, locks } = scheduleEvent || {};
     if (!id || !Array.isArray(items)) return;
 
-    // Replace mode: any new schedule flushes older ones
-    // Good for now (movement = single timeline). Later set replaceMode=false for concurrent effects.
     if (replaceMode) {
-      // Notify cancellation for all existing schedules
       for (const [existingId, meta] of scheduleMetaRef.current.entries()) {
         onCancelSchedule?.(existingId, meta, "replaceMode");
       }
@@ -107,45 +154,130 @@ export function useClockPlayer({ onEvent, replaceMode = true, onCancelSchedule, 
       historyRef.current = [];
     }
 
-    // Ensure sorted by t
     const sorted = [...items].sort((a, b) => (a.t ?? 0) - (b.t ?? 0));
-
     schedulesRef.current.set(id, {
-      baseMs: 0,       // reserved for future "insert at current time"
+      baseMs: 0,
       cursor: 0,
       items: sorted,
+      generation: (schedulesRef.current.get(id)?.generation || 0) + 1,
     });
-
-    // Store schedule metadata
     scheduleMetaRef.current.set(id, {
       kind: kind || "unknown",
       owner: owner || null,
       locks: locks || [],
     });
-  }, [replaceMode, onCancelSchedule]);
+  }, [onCancelSchedule, replaceMode]);
 
-  const dfocusatch = useCallback((evt) => {
-    if (!evt) return;
-    onEvent?.(evt);
+  const startEngineCall = useCallback(({
+    scheduleId,
+    sched,
+    cursor,
+    event,
+    metadata,
+    playheadMs,
+    frameTimestamp,
+    source,
+  }) => {
+    const { method, payload } = event;
+    const castId = payload?.meta?.castId ?? "none";
+    const caster = payload?.caster ?? "?";
+    const target = typeof payload?.target === "string" ? payload.target : payload?.target?.id ?? "?";
 
-    // history (for stepping/back)
-    if (DEBUG_CLOCK) {
-      historyRef.current.push({ atMs: playheadRef.current, event: evt });
-      if (historyRef.current.length > maxHistory) {
-        historyRef.current.splice(0, historyRef.current.length - maxHistory);
-      }
-    }
-  }, [onEvent]);
+    dispatchBatchRef.current?.([{
+      type: "LOG",
+      level: "info",
+      message: `ENGINE_CALL ${method} castId=${castId} caster=${caster} target=${target}`,
+    }], {
+      scheduleId,
+      frameTimestamp,
+      playheadMs,
+      source,
+      engineCallMethod: method,
+      owner: metadata?.owner,
+      kind: "engine-call-start",
+    });
 
-  const dfocusatchRef = useRef(dfocusatch);
-  useEffect(() => {
-    dfocusatchRef.current = dfocusatch;
-  }, [dfocusatch]);
+    const startedAt = timestampNow();
+    engineCallRef.current(method, payload)
+      .then((res) => {
+        const latest = schedulesRef.current.get(scheduleId);
+        if (!latest || latest !== sched || latest.cursor !== cursor || !latest.engineCallInFlight) {
+          return;
+        }
 
-  const engineCallRef = useRef(engineCall ?? defaultEngineCall);
-  useEffect(() => {
-    engineCallRef.current = engineCall ?? defaultEngineCall;
-  }, [engineCall]);
+        const returnedEvents = Array.isArray(res?.events) ? res.events : [];
+        if (returnedEvents.length > 0) {
+          dispatchBatchRef.current?.(returnedEvents, {
+            scheduleId,
+            frameTimestamp,
+            playheadMs: playheadRef.current,
+            source: "engine-call-result",
+            engineCallMethod: method,
+            owner: metadata?.owner,
+            kind: "engine-call-result",
+          });
+        }
+
+        const returnedTypes = DEBUG_CLOCK
+          ? returnedEvents.map((item) => item?.type).filter(Boolean)
+          : [];
+        dispatchBatchRef.current?.([{
+          type: "LOG",
+          level: "info",
+          message: DEBUG_CLOCK
+            ? `ENGINE_CALL ${method} returned ${returnedTypes.length} events: ${returnedTypes.join(", ") || "(none)"}`
+            : `ENGINE_CALL ${method} returned ${returnedEvents.length} events`,
+        }], {
+          scheduleId,
+          frameTimestamp,
+          playheadMs: playheadRef.current,
+          source: "engine-call-complete",
+          engineCallMethod: method,
+          owner: metadata?.owner,
+          kind: "engine-call-complete",
+        });
+      })
+      .catch((err) => {
+        const latest = schedulesRef.current.get(scheduleId);
+        if (!latest || latest !== sched || latest.cursor !== cursor || !latest.engineCallInFlight) {
+          return;
+        }
+        dispatchBatchRef.current?.([{
+          type: "LOG",
+          level: "error",
+          message: `ENGINE_CALL ${method} failed: ${err?.message ?? String(err)}`,
+        }], {
+          scheduleId,
+          frameTimestamp,
+          playheadMs: playheadRef.current,
+          source: "engine-call-error",
+          engineCallMethod: method,
+          owner: metadata?.owner,
+          kind: "engine-call-error",
+        });
+      })
+      .finally(() => {
+        recordEngineCallDuration(telemetryRef.current, timestampNow() - startedAt);
+        const latest = schedulesRef.current.get(scheduleId);
+        if (latest && latest === sched) {
+          latest.engineCallInFlight = false;
+          latest.cursor = cursor + 1;
+        }
+      });
+  }, []);
+
+  const processDue = useCallback((frameTimestamp, source = "tick") => processDueScheduleEvents({
+    playheadMs: playheadRef.current,
+    schedules: schedulesRef.current,
+    scheduleMeta: scheduleMetaRef.current,
+    dispatchBatch: dispatchBatchRef.current,
+    startEngineCall,
+    maxEvents: maxEventsPerFrame,
+    maxProcessingMs: maxProcessingMsPerFrame,
+    frameTimestamp,
+    source,
+    telemetry: telemetryRef.current,
+  }), [maxEventsPerFrame, maxProcessingMsPerFrame, startEngineCall]);
 
   const tick = useCallback((realNow) => {
     if (isPaused) {
@@ -157,81 +289,11 @@ export function useClockPlayer({ onEvent, replaceMode = true, onCancelSchedule, 
     const last = lastRealRef.current ?? realNow;
     const deltaReal = realNow - last;
     lastRealRef.current = realNow;
-
-    // advance playhead
-    const s = Math.max(0, speed);
-    playheadRef.current += deltaReal * s;
-
-    // fire due events across all schedules
-    for (const [id, sched] of schedulesRef.current.entries()) {
-      const { items } = sched;
-      let { cursor } = sched;
-
-      while (cursor < items.length) {
-        const item = items[cursor];
-        const t = (item?.t ?? 0) + (sched.baseMs ?? 0);
-        if (t > playheadRef.current) break;
-
-        // Block later items until ENGINE_CALL resolves
-        if (sched.engineCallInFlight) break;
-
-        const ev = item.e;
-
-        if (isEngineCallEvent(ev)) {
-          const { method, payload } = ev;
-          sched.engineCallInFlight = true;
-
-          const castId = payload?.meta?.castId ?? "none";
-          const caster = payload?.caster ?? "?";
-          const target = typeof payload?.target === "string" ? payload.target : payload?.target?.id ?? "?";
-          dfocusatchRef.current?.({
-            type: "LOG",
-            level: "info",
-            message: `ðŸ§ª ENGINE_CALL ${method} castId=${castId} caster=${caster} target=${target}`,
-          });
-
-          engineCallRef.current(method, payload)
-            .then((res) => {
-              const out = res?.events ?? [];
-              const types = out.map((x) => x?.type).filter(Boolean);
-              dfocusatchRef.current?.({
-                type: "LOG",
-                level: "info",
-                message: `ðŸ§ª ENGINE_CALL ${method} returned ${types.length} events: ${types.join(", ") || "(none)"}`,
-              });
-              for (const e of out) dfocusatchRef.current?.(e);
-            })
-            .catch((err) => {
-              dfocusatchRef.current?.({
-                type: "LOG",
-                level: "error",
-                message: `ENGINE_CALL ${method} failed: ${err?.message ?? String(err)}`,
-              });
-            })
-            .finally(() => {
-              const s2 = schedulesRef.current.get(id);
-              if (s2) s2.engineCallInFlight = false;
-              sched.cursor = cursor + 1;
-            });
-
-          break; // Stop processing this schedule until ENGINE_CALL resolves
-        }
-
-        dfocusatch(ev);
-        cursor++;
-      }
-
-      sched.cursor = cursor;
-
-      // if done, remove schedule and notify completion
-      if (sched.cursor >= items.length) {
-        schedulesRef.current.delete(id);
-        scheduleMetaRef.current.delete(id);
-      }
-    }
+    playheadRef.current += deltaReal * Math.max(0, speed);
+    processDue(realNow, "tick");
 
     rafRef.current = requestAnimationFrame(tick);
-  }, [dfocusatch, isPaused, speed]);
+  }, [isPaused, processDue, speed]);
 
   useEffect(() => {
     rafRef.current = requestAnimationFrame(tick);
@@ -241,86 +303,34 @@ export function useClockPlayer({ onEvent, replaceMode = true, onCancelSchedule, 
     };
   }, [tick]);
 
-  // Debugging controls
   const stepForward = useCallback((ms = 16) => {
     playheadRef.current += ms;
-    for (const [id, sched] of schedulesRef.current.entries()) {
-      const { items } = sched;
-      let { cursor } = sched;
-
-      while (cursor < items.length) {
-        const item = items[cursor];
-        const t = (item?.t ?? 0) + (sched.baseMs ?? 0);
-        if (t > playheadRef.current) break;
-        if (sched.engineCallInFlight) break;
-
-        const ev = item.e;
-        if (isEngineCallEvent(ev)) {
-          const { method } = ev;
-          sched.engineCallInFlight = true;
-          engineCallRef.current(ev.method, ev.payload)
-            .then((res) => {
-              const out = res?.events ?? [];
-              for (const e of out) dfocusatchRef.current?.(e);
-            })
-            .catch((err) => {
-              dfocusatchRef.current?.({
-                type: "LOG",
-                level: "error",
-                message: `ENGINE_CALL ${method} failed: ${err?.message ?? String(err)}`,
-              });
-            })
-            .finally(() => {
-              const s2 = schedulesRef.current.get(id);
-              if (s2) {
-                s2.engineCallInFlight = false;
-                s2.cursor = cursor + 1;
-              }
-            });
-          break;
-        }
-        dfocusatch(ev);
-        cursor++;
-      }
-
-      sched.cursor = cursor;
-      if (sched.cursor >= items.length) {
-        schedulesRef.current.delete(id);
-        scheduleMetaRef.current.delete(id);
-      }
-    }
-  }, [dfocusatch]);
+    return processDue(null, "stepForward");
+  }, [processDue]);
 
   const stepBack = useCallback((ms = 120) => {
-    // NOTE: stepping back requires state rewind support to be perfect.
-    // Here we only move the playhead back; you'd also need to reapply state from a snapshot.
     playheadRef.current = Math.max(0, playheadRef.current - ms);
   }, []);
 
   return {
-    // feed schedules
     addSchedule,
-
-    // playback controls
     isPaused,
     setIsPaused,
     speed,
     setSpeed,
-
-    // timeline ops
     clearAll,
     cancelSchedule,
     cancelByPrefix,
     cancelByKind,
     cancelByOwner,
-
-    // debug
     stepForward,
     stepBack,
-
-    // optional readouts
     getPlayheadMs: () => playheadRef.current,
     getHistory: () => historyRef.current.slice(),
+    getPerformanceTelemetry: () => ({
+      ...telemetryRef.current,
+      presentationCommits: { ...telemetryRef.current.presentationCommits },
+    }),
+    getPerformanceSummary: () => formatTimelinePerformanceSummary(telemetryRef.current),
   };
 }
-

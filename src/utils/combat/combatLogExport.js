@@ -1,10 +1,45 @@
 import { getChronologicalCombatEvents } from "./combatLogWindow.js";
 
+const PREFORMATTED_TIME_PATTERN = /^\d{1,2}:\d{2}:\d{2}\s?(?:AM|PM)$/i;
+
+function getTimestampValue(input = {}) {
+  if (input && typeof input === "object" && !(input instanceof Date)) {
+    if (input.displayTimestamp != null && input.displayTimestamp !== "") {
+      return input.displayTimestamp;
+    }
+    return input.timestamp;
+  }
+  return input;
+}
+
+export function formatLogTimestamp(input = {}) {
+  const timestamp = getTimestampValue(input);
+  if (timestamp == null || timestamp === "") return "";
+
+  if (typeof timestamp === "string") {
+    const trimmed = timestamp.trim();
+    if (!trimmed) return "";
+    if (PREFORMATTED_TIME_PATTERN.test(trimmed)) return trimmed;
+    const parsed = new Date(trimmed);
+    if (Number.isNaN(parsed.getTime())) return "";
+    return parsed.toLocaleTimeString([], {
+      hour: "numeric",
+      minute: "2-digit",
+      second: "2-digit",
+    });
+  }
+
+  const date = timestamp instanceof Date ? timestamp : new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleTimeString([], {
+    hour: "numeric",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+}
+
 export function formatCombatLogTimestamp(entry = {}) {
-  if (entry?.displayTimestamp) return entry.displayTimestamp;
-  if (typeof entry?.timestamp === "string") return entry.timestamp;
-  if (Number.isFinite(entry?.timestamp)) return new Date(entry.timestamp).toLocaleTimeString();
-  return "";
+  return formatLogTimestamp(entry);
 }
 
 function padSequence(entry = {}) {
