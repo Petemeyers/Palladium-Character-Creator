@@ -89,6 +89,7 @@ import EncounterReadinessPanel from "../components/EncounterReadinessPanel.jsx";
 import InitiativeSetupPreview from "../components/InitiativeSetupPreview.jsx";
 import CombatActionCatalogPanel from "../components/CombatActionCatalogPanel.jsx";
 import CombatTurnStatusPanel from "../components/CombatTurnStatusPanel.jsx";
+import SurrenderDecisionPanel from "../components/SurrenderDecisionPanel.jsx";
 import ProposedChronicleAwardsPanel from "../components/ProposedChronicleAwardsPanel.jsx";
 import SelectedCombatActionPanel from "../components/SelectedCombatActionPanel.jsx";
 import CompatibilityCombatControlsPanel from "../components/CompatibilityCombatControlsPanel.jsx";
@@ -276,10 +277,22 @@ import {
 import {
   isPendingSurrenderResolution,
   isSurrenderedForCombat,
+  normalizeSurrenderState,
   offerRoutedExhaustedCowerSurrender,
-  scoreSurrenderTreatment,
+  offerSurrender,
   shouldDeferCombatEndForSurrender,
 } from "../utils/combat/surrenderState.js";
+import {
+  SURRENDER_DECISION_PHASES,
+  commitSurrenderResolution,
+  commitSurrenderResponse,
+  createCanonicalSurrenderOffer,
+  createSurrenderDecisionToken,
+  createSurrenderLifecycleRegistry,
+  finalizeResolvedSurrenderEncounter,
+  getPendingSurrenderRecords,
+} from "../utils/combat/surrenderLifecycle.js";
+import { selectSurrenderResolution, selectSurrenderResponse } from "../utils/behavior/selectSurrenderResolution.js";
 import { applyBleedingMeterForNewMeleeRound } from "../utils/combat/bleedingMeter.js";
 import { createCanonicalUnarmedAttack } from "../utils/combat/unarmedAttackSanitization.js";
 import { validateCombatActor } from "../utils/combat/validateCombatActor.js";
@@ -2958,6 +2971,7 @@ function CombatPage({ characters = [] }) {
   const [selectedGrappleAction, setSelectedGrappleAction] = useState(null);
   const [selectedManeuver, setSelectedManeuver] = useState(null);
   const [selectedTarget, setSelectedTarget] = useState(null);
+  const [pendingManualSurrenderDecision, setPendingManualSurrenderDecision] = useState(null);
   const [selectedWeaponSlot, setSelectedWeaponSlot] = useState(null);
   const [showWeaponModal, setShowWeaponModal] = useState(false);
   const [selectedAttackWeapon, setSelectedAttackWeapon] = useState(null);
@@ -3009,6 +3023,8 @@ function CombatPage({ characters = [] }) {
   const lastMovementCommitRef = useRef({});
   const movementCommitSequenceRef = useRef(0);
   const surrenderResolutionEntryKeysRef = useRef(new Set());
+  const surrenderLifecycleRegistryRef = useRef(createSurrenderLifecycleRegistry());
+  const surrenderDecisionSequenceRef = useRef(0);
   const renderPositionsRef = useRef(renderPositions);
   const prevPositionsRef = useRef(null);
   const suppressNextAnimationRef = useRef(new Set());
@@ -4058,6 +4074,9 @@ function CombatPage({ characters = [] }) {
         const offered = offerRoutedExhaustedCowerSurrender(candidate, {
           offeredToId: liveThreats[0]?.id || null,
           actionToken: currentTurnTokenRef.current || null,
+          generationId: combatSessionRef.current || "default",
+          initiativeTurnId: initiativeTurnIdRef.current || null,
+          round: meleeRound,
         });
         return finalizeNoMovePreservingPosition({
           fighterId: candidate.id,
@@ -9613,27 +9632,17 @@ function CombatPage({ characters = [] }) {
         surrenderResolutionEntryKeysRef.current.add(resolutionKey);
         const victor = combatVictoryState.activeParty[0];
         const surrenderingFighter = combatVictoryState.pendingSurrenders[0];
-        const treatment = scoreSurrenderTreatment({
-          responder: victor,
-          surrenderingFighter,
-          orders: victor?.orders,
-          prisonerValue: surrenderingFighter?.prisonerValue || 0,
-          guardsPresent: combatVictoryState.activeParty.length,
-          alliesPresent: combatVictoryState.activeParty.length,
-          enemiesRemaining: 0,
-          witnessesPresent: Math.max(0, (fighterList || []).length - 2),
-        });
         addLog?.({
           audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
           channel: COMBAT_LOG_CHANNELS.STATE,
-          eventType: "surrender-resolution-entered",
+          eventType: "combat-finalization-deferred-for-surrender",
           level: "info",
           type: "debug",
           actorId: victor?.id || null,
           targetId: surrenderingFighter?.id || null,
           source: "routed-exhausted-cower",
-          message: `surrender resolution entered: victorId=${victor?.id || "unknown"} surrenderingId=${surrenderingFighter?.id || "unknown"}`,
-          data: { treatment, pendingFighterIds: combatVictoryState.pendingSurrenders.map((fighter) => fighter.id) },
+          message: `combat finalization deferred for surrender: victorId=${victor?.id || "unknown"} surrenderingId=${surrenderingFighter?.id || "unknown"}`,
+          data: { pendingFighterIds: combatVictoryState.pendingSurrenders.map((fighter) => fighter.id) },
         }, "debug");
       }
       return false;
@@ -9887,6 +9896,242 @@ function CombatPage({ characters = [] }) {
 
     return "passive";
   }, [encounterArmies, getFighterSchedulerTeam]);
+
+  const emitSurrenderLifecycleEvents = useCallback((events = [], actors = {}) => {
+    events.forEach((entry) => {
+      const actorName = actors[entry.actorId]?.name || entry.actorId || "fighter";
+      const targetName = actors[entry.targetId]?.name || entry.targetId || "opponent";
+      const playerMessages = {
+        "surrender-offered": `${actorName} offers surrender to ${targetName}.`,
+        "surrender-accepted": `${targetName} accepts ${actorName}'s surrender.`,
+        "surrender-refused": `${targetName} refuses ${actorName}'s surrender; combat continues.`,
+        "prisoner-taken": `${actorName} is secured as a prisoner.`,
+        "ransom-disposition-recorded": `${actorName} is marked for a future ransom agreement.`,
+        "confiscation-pending-recorded": `${actorName}'s equipment is marked for later confiscation.`,
+        "surrendered-actor-released": `${actorName} is disarmed and released.`,
+        "yielded-opponent-accepted": `${targetName} accepts ${actorName}'s yield without capture.`,
+        "surrendered-opponent-executed": `${actorName} is executed after surrender.`,
+      };
+      if (playerMessages[entry.eventType]) addLog(playerMessages[entry.eventType], entry.eventType.includes("executed") ? "warning" : "info");
+      addLog?.({
+        audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+        channel: COMBAT_LOG_CHANNELS.STATE,
+        level: entry.eventType.includes("rejected") ? "warning" : "info",
+        type: "debug",
+        ...entry,
+        message: `${entry.eventType}: surrenderId=${entry.surrenderId || entry.data?.surrenderId || "unknown"}`,
+      }, "debug");
+    });
+  }, [addLog]);
+
+  const commitSurrenderRosterResult = useCallback((result, recipientId, { finalize = false } = {}) => {
+    const current = fightersRef.current || [];
+    const actors = Object.fromEntries(current.map((fighter) => [fighter.id, fighter]));
+    if (!result?.committed || !result.fighter) {
+      emitSurrenderLifecycleEvents(result?.events, actors);
+      return null;
+    }
+    const next = current.map((fighter) => {
+      if (fighter.id === result.fighter.id) return result.fighter;
+      if (result.releaseGrapple && fighter.id === recipientId) {
+        return { ...fighter, grappleState: { ...(fighter.grappleState || {}), state: "neutral", positionState: "neutral", opponent: null } };
+      }
+      return fighter;
+    });
+    fightersRef.current = next;
+    setFighters(next);
+    emitSurrenderLifecycleEvents(result.events, actors);
+    if (finalize) {
+      const registry = surrenderLifecycleRegistryRef.current;
+      const pendingRecords = getPendingSurrenderRecords(registry);
+      if (!pendingRecords.length) {
+        const resolvedIds = Array.from(registry.records.values())
+          .filter((record) => record.status === "resolved")
+          .map((record) => record.surrenderId);
+        const encounterFinalization = finalizeResolvedSurrenderEncounter({ registry, surrenderIds: resolvedIds });
+        if (encounterFinalization.finalized) emitSurrenderLifecycleEvents(encounterFinalization.events, actors);
+        const scheduledGenerationId = combatSessionRef.current;
+        queueMicrotask(() => {
+          if (combatSessionRef.current !== scheduledGenerationId) {
+            emitSurrenderLifecycleEvents([{
+              eventType: "surrender-resolution-ownership-rejected",
+              actorId: result.record?.offeredById,
+              targetId: result.record?.offeredToId,
+              surrenderId: result.record?.surrenderId,
+              data: { reason: "stale-combat-generation-before-encounter-finalization" },
+            }], actors);
+            return;
+          }
+          endCombatIfVictoryResolved(fightersRef.current || next);
+        });
+      }
+    }
+    return next;
+  }, [emitSurrenderLifecycleEvents, endCombatIfVictoryResolved]);
+
+  const resolveAiSurrenderRecord = useCallback((record, surrenderingActor, recipient) => {
+    const registry = surrenderLifecycleRegistryRef.current;
+    let response = { committed: true, fighter: surrenderingActor, record };
+    if (record.status === "response-pending") {
+      const responseSelection = selectSurrenderResponse({
+        victor: recipient,
+        surrenderedActor: surrenderingActor,
+        factionOrders: recipient.factionOrders || recipient.orders,
+        battlefieldContext: {
+          hostileFightersRemaining: (fightersRef.current || []).filter((fighter) => fighter.id !== surrenderingActor.id && fighter.team === surrenderingActor.team && !isSurrenderedForCombat(fighter)).length,
+          witnesses: Math.max(0, (fightersRef.current || []).length - 2),
+          legalAuthority: recipient.legalAuthority || 0,
+        },
+        rng: () => (CryptoSecureDice.rollDie(1000) - 1) / 1000,
+      });
+      addLog?.({
+        audience: COMBAT_LOG_AUDIENCES.DEVELOPER, channel: COMBAT_LOG_CHANNELS.AI,
+        eventType: "surrender-resolution-candidates", level: "info", type: "debug",
+        actorId: recipient.id, targetId: surrenderingActor.id, surrenderId: record.surrenderId,
+        message: `surrender response candidates: surrenderId=${record.surrenderId}`,
+        data: responseSelection,
+      }, "debug");
+      const responseToken = createSurrenderDecisionToken({
+        record, decisionOwnerId: recipient.id, decisionSequence: ++surrenderDecisionSequenceRef.current,
+        phase: SURRENDER_DECISION_PHASES.RESPONSE, initiativeTurnId: initiativeTurnIdRef.current,
+        postCombatDecisionId: `post-combat:${record.surrenderId}`,
+      });
+      response = commitSurrenderResponse({
+        registry, surrenderingActor, token: responseToken,
+        response: responseSelection.selectedDecision === "accept" ? "accept" : "refuse",
+        responseReason: "alignment-weighted-ai-response",
+      });
+      commitSurrenderRosterResult(response, recipient.id, { finalize: false });
+      if (!response.committed || response.combatContinues) return response;
+    }
+    const resolutionSelection = selectSurrenderResolution({
+      victor: recipient,
+      surrenderedActor: response.fighter,
+      factionOrders: recipient.factionOrders || recipient.orders,
+      battlefieldContext: {
+        guardsAvailable: Math.max(0, (fightersRef.current || []).filter((fighter) => fighter.team === recipient.team && fighter.id !== recipient.id && !fighter.dead).length),
+        restraintsAvailable: Number(recipient.restraintsAvailable || 0),
+        battlefieldDanger: 0,
+        hostileFightersRemaining: 0,
+        witnesses: Math.max(0, (fightersRef.current || []).length - 2),
+        legalAuthority: Number(recipient.legalAuthority || 0),
+        prisonerValue: Number(surrenderingActor.prisonerValue || surrenderingActor.ransomValue || 0),
+        escapeRisk: Number(surrenderingActor.escapeRisk || 0),
+        allowExecution: recipient.executionAuthority === true ||
+          [recipient.factionOrders, recipient.orders, recipient.commanderOrders]
+            .some((orders) => orders?.prisonerPolicy === "no-quarter"),
+      },
+      rng: () => (CryptoSecureDice.rollDie(1000) - 1) / 1000,
+    });
+    addLog?.({
+      audience: COMBAT_LOG_AUDIENCES.DEVELOPER, channel: COMBAT_LOG_CHANNELS.AI,
+      eventType: "surrender-resolution-candidates", level: "info", type: "debug",
+      actorId: recipient.id, targetId: surrenderingActor.id, surrenderId: record.surrenderId,
+      message: `surrender resolution candidates: surrenderId=${record.surrenderId}`,
+      data: resolutionSelection,
+    }, "debug");
+    const victorToken = createSurrenderDecisionToken({
+      record, decisionOwnerId: recipient.id, decisionSequence: ++surrenderDecisionSequenceRef.current,
+      phase: SURRENDER_DECISION_PHASES.VICTOR, postCombatDecisionId: `post-combat:${record.surrenderId}`,
+    });
+    const resolution = commitSurrenderResolution({ registry, surrenderedActor: response.fighter, victor: recipient, token: victorToken, decision: resolutionSelection.selectedDecision, round: meleeRound });
+    commitSurrenderRosterResult(resolution, recipient.id, { finalize: true });
+    return resolution;
+  }, [addLog, commitSurrenderRosterResult, meleeRound]);
+
+  useEffect(() => {
+    if (!combatActive || pendingManualSurrenderDecision) return;
+    const roster = fightersRef.current || fighters;
+    const surrenderingActor = roster.find((fighter) => isPendingSurrenderResolution(fighter));
+    if (!surrenderingActor) return;
+    const state = normalizeSurrenderState(surrenderingActor);
+    const recipient = roster.find((fighter) => fighter.id === state.offeredToId) || roster.find((fighter) => fighter.team !== surrenderingActor.team && !fighter.dead && !fighter.defeated);
+    if (!recipient) return;
+    const registry = surrenderLifecycleRegistryRef.current;
+    let record = state.surrenderId ? registry.records.get(state.surrenderId) : null;
+    if (!record) {
+      const offer = createCanonicalSurrenderOffer({
+        registry, surrenderingActor, receivingActor: recipient, reason: state.reason || "voluntary-surrender",
+        generationId: state.generationId || combatSessionRef.current || "default", round: state.offeredAtRound ?? meleeRound,
+        initiativeTurnId: state.initiativeTurnId || initiativeTurnIdRef.current, actionToken: state.actionToken || null,
+        source: state.source || state.reason || "surrender-offer",
+      });
+      if (!offer.accepted) {
+        emitSurrenderLifecycleEvents(offer.events, Object.fromEntries(roster.map((fighter) => [fighter.id, fighter])));
+        return;
+      }
+      record = offer.record;
+      const next = roster.map((fighter) => fighter.id === surrenderingActor.id ? offer.fighter : fighter);
+      fightersRef.current = next;
+      setFighters(next);
+      emitSurrenderLifecycleEvents(offer.events, Object.fromEntries(roster.map((fighter) => [fighter.id, fighter])));
+      return;
+    }
+    const controlMode = getFighterControlMode(recipient);
+    if (["player", "manual"].includes(controlMode)) {
+      setCombatPaused(true);
+      setPendingManualSurrenderDecision({ phase: record.status === "victor-decision-pending" ? "victor-decision" : "response", surrenderId: record.surrenderId, recipientId: recipient.id, surrenderingActor, reason: record.reason });
+      return;
+    }
+    if (!["ai", "autoplay"].includes(controlMode)) {
+      const pendingAuthorityKey = `no-authoritative-decision-maker:${record.surrenderId}`;
+      if (!surrenderResolutionEntryKeysRef.current.has(pendingAuthorityKey)) {
+        surrenderResolutionEntryKeysRef.current.add(pendingAuthorityKey);
+        emitSurrenderLifecycleEvents([{ eventType: "surrender-response-pending", surrenderId: record.surrenderId, actorId: surrenderingActor.id, targetId: recipient.id, data: { reason: "no-authoritative-decision-maker" } }], Object.fromEntries(roster.map((fighter) => [fighter.id, fighter])));
+      }
+      return;
+    }
+    if (["response-pending", "victor-decision-pending"].includes(record.status)) resolveAiSurrenderRecord(record, surrenderingActor, recipient);
+  }, [combatActive, emitSurrenderLifecycleEvents, fighters, getFighterControlMode, meleeRound, pendingManualSurrenderDecision, resolveAiSurrenderRecord]);
+
+  const handleManualSurrenderResponse = useCallback((responseChoice) => {
+    const pending = pendingManualSurrenderDecision;
+    const registry = surrenderLifecycleRegistryRef.current;
+    const record = registry.records.get(pending?.surrenderId);
+    const roster = fightersRef.current || [];
+    const surrenderingActor = roster.find((fighter) => fighter.id === record?.offeredById);
+    const recipient = roster.find((fighter) => fighter.id === pending?.recipientId);
+    if (!record || !surrenderingActor || !recipient) return;
+    const token = createSurrenderDecisionToken({ record, decisionOwnerId: recipient.id, decisionSequence: ++surrenderDecisionSequenceRef.current, phase: SURRENDER_DECISION_PHASES.RESPONSE, initiativeTurnId: initiativeTurnIdRef.current, actionToken: currentTurnTokenRef.current, postCombatDecisionId: `manual:${record.surrenderId}` });
+    const result = commitSurrenderResponse({ registry, surrenderingActor, token, response: responseChoice, responseReason: "manual-player-decision" });
+    commitSurrenderRosterResult(result, recipient.id, { finalize: false });
+    if (result.committed && responseChoice === "accept") setPendingManualSurrenderDecision({ ...pending, phase: "victor-decision", surrenderingActor: result.fighter });
+    else if (result.committed) { setPendingManualSurrenderDecision(null); setCombatPaused(false); }
+  }, [commitSurrenderRosterResult, pendingManualSurrenderDecision]);
+
+  const handleManualSurrenderResolution = useCallback((decision) => {
+    const pending = pendingManualSurrenderDecision;
+    const registry = surrenderLifecycleRegistryRef.current;
+    const record = registry.records.get(pending?.surrenderId);
+    const roster = fightersRef.current || [];
+    const surrenderingActor = roster.find((fighter) => fighter.id === record?.offeredById);
+    const recipient = roster.find((fighter) => fighter.id === pending?.recipientId);
+    if (!record || !surrenderingActor || !recipient) return;
+    const token = createSurrenderDecisionToken({ record, decisionOwnerId: recipient.id, decisionSequence: ++surrenderDecisionSequenceRef.current, phase: SURRENDER_DECISION_PHASES.VICTOR, postCombatDecisionId: `manual:${record.surrenderId}`, actionToken: currentTurnTokenRef.current });
+    const result = commitSurrenderResolution({ registry, surrenderedActor: surrenderingActor, victor: recipient, token, decision, round: meleeRound });
+    commitSurrenderRosterResult(result, recipient.id, { finalize: result.committed });
+    if (result.committed) { setPendingManualSurrenderDecision(null); setCombatPaused(false); }
+  }, [commitSurrenderRosterResult, meleeRound, pendingManualSurrenderDecision]);
+
+  const handleManualVoluntarySurrender = useCallback(() => {
+    const roster = fightersRef.current || [];
+    const actor = roster[turnIndexRef.current];
+    if (!actor || !["player", "manual"].includes(getFighterControlMode(actor))) return;
+    const recipient = roster.find((fighter) => fighter.id !== actor.id && fighter.team !== actor.team && !fighter.dead && !isSurrenderedForCombat(fighter));
+    if (!recipient) return;
+    const offered = offerSurrender(actor, {
+      offeredToId: recipient.id,
+      actionToken: currentTurnTokenRef.current,
+      reason: "manual-voluntary-surrender",
+      generationId: combatSessionRef.current || "default",
+      initiativeTurnId: initiativeTurnIdRef.current,
+      round: meleeRound,
+      source: "manual-player",
+    });
+    const next = roster.map((fighter) => fighter.id === actor.id ? { ...offered, canAct: false, remainingActions: 0, attacksRemaining: 0 } : fighter);
+    fightersRef.current = next;
+    setFighters(next);
+  }, [getFighterControlMode, meleeRound]);
 
   const applyArmyToFighter = useCallback((fighter, armyId, { preservePlayerOverride = false } = {}) => {
     const army = getEncounterArmyById(preservePlayerOverride ? "party" : armyId);
@@ -37580,6 +37825,10 @@ function CombatPage({ characters = [] }) {
 
     clearCombatFlowLocks();
     combatSessionRef.current += 1;
+    surrenderLifecycleRegistryRef.current = createSurrenderLifecycleRegistry();
+    surrenderResolutionEntryKeysRef.current.clear();
+    surrenderDecisionSequenceRef.current = 0;
+    setPendingManualSurrenderDecision(null);
     dreadRatingMemoryRef.current = new Map();
     enemyClosingMovementHistoryRef.current.clear();
     const combatGeneration = combatSessionRef.current;
@@ -39783,6 +40032,10 @@ function CombatPage({ characters = [] }) {
     try {
       clearCombatFlowLocks();
       combatSessionRef.current += 1;
+      surrenderLifecycleRegistryRef.current = createSurrenderLifecycleRegistry();
+      surrenderResolutionEntryKeysRef.current.clear();
+      surrenderDecisionSequenceRef.current = 0;
+      setPendingManualSurrenderDecision(null);
       dreadRatingMemoryRef.current = new Map();
       enemyClosingMovementHistoryRef.current.clear();
       const combatGeneration = combatSessionRef.current;
@@ -40901,6 +41154,11 @@ function CombatPage({ characters = [] }) {
       w="100%"
       mx="auto"
     >
+      <SurrenderDecisionPanel
+        decision={pendingManualSurrenderDecision}
+        onRespond={handleManualSurrenderResponse}
+        onResolve={handleManualSurrenderResolution}
+      />
       {/* Navigation Bar with Hamburger Menu */}
       <Flex align="center" justify="space-between" mb={6}>
         <VStack align="start" spacing={1}>
@@ -41106,6 +41364,11 @@ function CombatPage({ characters = [] }) {
           }}>
             Reset Combat
           </Button>
+          {combatActive && currentFighter && ["player", "manual"].includes(getFighterControlMode(currentFighter)) && !isPendingSurrenderResolution(currentFighter) && !isSurrenderedForCombat(currentFighter) && (
+            <Button size="sm" colorScheme="orange" variant="outline" onClick={handleManualVoluntarySurrender}>
+              Offer Surrender
+            </Button>
+          )}
           <Select
             size="sm"
             width="130px"
@@ -42530,7 +42793,7 @@ function CombatPage({ characters = [] }) {
                     })()}
 
                     {/* Capture Actions (for surrendered enemies) */}
-                    {selectedTarget && canBeCaptured(selectedTarget) && currentFighter && currentFighter.type === "player" && (
+                    {selectedTarget && !selectedTarget.surrenderState?.surrenderId && canBeCaptured(selectedTarget) && currentFighter && currentFighter.type === "player" && (
                       <Box>
                         <Text fontSize="sm" fontWeight="bold" mb={2} color="orange.600">
                           Prisoner Actions:

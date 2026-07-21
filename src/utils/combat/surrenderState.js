@@ -1,8 +1,12 @@
 export const SURRENDER_STATES = Object.freeze({
   NONE: "none",
   OFFERED: "offered",
+  RESPONSE_PENDING: "response-pending",
   ACCEPTED: "accepted",
   REFUSED: "refused",
+  VICTOR_DECISION_PENDING: "victor-decision-pending",
+  RESOLVED: "resolved",
+  CANCELED: "canceled",
   CAPTURED: "captured",
   RELEASED: "released",
   EXECUTED: "executed",
@@ -58,24 +62,41 @@ export function scoreSurrenderResponse({
   return { scores, preference, factors: { alignment, orders: orderText, prisonerValue, guardsPresent, alliesPresent, enemiesRemaining, witnessesPresent } };
 }
 
-export function offerSurrender(fighter = {}, { offeredToId = null, actionToken = null, reason = null } = {}) {
+export function offerSurrender(fighter = {}, {
+  offeredToId = null, actionToken = null, reason = null, generationId = null,
+  initiativeTurnId = null, round = null, source = reason,
+} = {}) {
+  const existing = normalizeSurrenderState(fighter);
+  if ([SURRENDER_STATES.OFFERED, "response-pending", "victor-decision-pending"].includes(existing.status) && existing.offeredToId === offeredToId) {
+    return { ...fighter, surrenderOfferDuplicateRejected: true };
+  }
   return {
     ...fighter,
     surrenderState: {
-      ...normalizeSurrenderState(fighter),
+      ...existing,
       status: SURRENDER_STATES.OFFERED,
+      offeredById: fighter.id ?? fighter._id ?? null,
       offeredToId,
       actionToken,
       reason,
+      generationId,
+      initiativeTurnId,
+      offeredAtRound: round,
+      source,
     },
   };
 }
 
-export function offerRoutedExhaustedCowerSurrender(fighter = {}, { offeredToId = null, actionToken = null } = {}) {
+export function offerRoutedExhaustedCowerSurrender(fighter = {}, {
+  offeredToId = null, actionToken = null, generationId = null, initiativeTurnId = null, round = null,
+} = {}) {
   const offered = offerSurrender(fighter, {
     offeredToId,
     actionToken,
     reason: "routed-exhausted-cower",
+    generationId,
+    initiativeTurnId,
+    round,
   });
   return {
     ...offered,
@@ -93,7 +114,8 @@ export function offerRoutedExhaustedCowerSurrender(fighter = {}, { offeredToId =
 }
 
 export function isPendingSurrenderResolution(fighter = {}) {
-  return normalizeSurrenderState(fighter).status === SURRENDER_STATES.OFFERED;
+  return [SURRENDER_STATES.OFFERED, "response-pending", "accepted", "victor-decision-pending"]
+    .includes(normalizeSurrenderState(fighter).status);
 }
 
 export function shouldDeferCombatEndForSurrender({ pendingSurrenders = [], resistingFighters = [], victors = [] } = {}) {
@@ -128,8 +150,11 @@ export function applySurrenderResponse(fighter = {}, response = SURRENDER_STATES
 }
 
 export function isSurrenderedForCombat(fighter = {}) {
-  return [SURRENDER_STATES.ACCEPTED, SURRENDER_STATES.CAPTURED, SURRENDER_STATES.EXECUTED]
-    .includes(normalizeSurrenderState(fighter).status);
+  const surrender = normalizeSurrenderState(fighter);
+  return fighter.isSurrendered === true || fighter.isCaptured === true || (
+    [SURRENDER_STATES.ACCEPTED, SURRENDER_STATES.CAPTURED, SURRENDER_STATES.EXECUTED, "victor-decision-pending", "resolved"]
+      .includes(surrender.status) && !["refused", "acceptance-revoked"].includes(surrender.resolution)
+  );
 }
 
 export default { SURRENDER_STATES, applySurrenderResponse, isPendingSurrenderResolution, isSurrenderedForCombat, normalizeSurrenderState, offerRoutedExhaustedCowerSurrender, offerSurrender, scoreSurrenderResponse, scoreSurrenderTreatment, shouldDeferCombatEndForSurrender };

@@ -35,12 +35,7 @@ import {
   applyGroundedGrappleHoldAndRest,
   hasSufficientGroundControl,
 } from "../combat/exhaustionCollapseState.js";
-import {
-  SURRENDER_STATES,
-  applySurrenderResponse,
-  offerSurrender,
-  scoreSurrenderResponse,
-} from "../combat/surrenderState.js";
+import { offerSurrender } from "../combat/surrenderState.js";
 import { formatArmorGapContactOutcomeLog } from "../combat/grappleLogMessages.js";
 
 // Debug flag for grapple system
@@ -574,34 +569,20 @@ export function executeAdmittedGrappleResolution({
       const offeredDefender = offerSurrender(defender, {
         offeredToId: attacker.id,
         actionToken: admission.actionToken,
-      });
-      const scoring = scoreSurrenderResponse({
-        responder: defender,
-        surrenderingFighter: defender,
-        orders: defender.orders,
-        prisonerValue: defender.prisonerValue || defender.ransomValue || 0,
-        guardsPresent: context.guardsPresent || 0,
-        alliesPresent: context.alliesPresent || 0,
-        enemiesRemaining: context.enemiesRemaining || 1,
-        witnessesPresent: context.witnessesPresent || 0,
-      });
-      const response = ["accept", "capture", "release"].includes(scoring.preference)
-        ? SURRENDER_STATES.ACCEPTED
-        : SURRENDER_STATES.REFUSED;
-      const nextDefender = applySurrenderResponse(offeredDefender, response, {
-        demandedById: attacker.id,
-        actionToken: admission.actionToken,
-        scoring,
+        reason: "grounded-demand-surrender",
+        generationId: admission.generationId,
+        initiativeTurnId: admission.initiativeTurnId,
+        round: meleeRound,
       });
       result = {
         success: true,
         noRollAction: true,
-        surrenderResponse: response,
-        message: response === SURRENDER_STATES.ACCEPTED
-          ? `${defender.name} accepts ${attacker.name}'s demand and surrenders.`
-          : `${defender.name} refuses ${attacker.name}'s demand to surrender.`,
+        turnEndingEffect: true,
+        surrenderResponse: "response-pending",
+        surrenderDecisionPending: true,
+        message: `${attacker.name} demands ${defender.name}'s surrender; the response is pending.`,
         attacker,
-        defender: nextDefender,
+        defender: offeredDefender,
       };
       addLog?.({
         audience: "player", channel: "state", eventType: "grapple-surrender-demanded",
@@ -622,7 +603,7 @@ export function executeAdmittedGrappleResolution({
         level: "info", type: "info", actorId: defender.id, targetId: attacker.id,
         executionKey: admission.executionKey, source: admission.source,
         message: result.message,
-        data: { ...admission, response, scoring },
+        data: { ...admission, response: "response-pending", grapplePreserved: true },
       }, "info");
       break;
     }
