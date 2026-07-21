@@ -20,13 +20,15 @@ const getRandomSpecies = () => {
 
 const getRandomAlignment = () => {
   const alignments = [
-    'Good: Principled',
-    'Good: Scrupulous',
-    'Shumanish: Unprincipled',
-    'Shumanish: Anarchist',
-    'Evil: Miscreant',
-    'Evil: Aberrant',
-    'Evil: Diabolic'
+    'lawful-good',
+    'neutral-good',
+    'chaotic-good',
+    'lawful-neutral',
+    'true-neutral',
+    'chaotic-neutral',
+    'lawful-evil',
+    'neutral-evil',
+    'chaotic-evil'
   ];
   return alignments[Math.floor(Math.random() * alignments.length)];
 };

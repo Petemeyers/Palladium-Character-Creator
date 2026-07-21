@@ -44,6 +44,7 @@ import { formatCombatActorLabel, isSameCombatActor } from "../combatActorIdentit
 import { formatCombatWeaponAvailability } from "../combatWeaponAvailability.js";
 import { resolveArmoredCombatAction } from "./resolveArmoredCombatAction.js";
 import { resolveGrappleTurnAction } from "./resolveGrappleTurnAction.js";
+import { normalizeAlignmentBehavior } from "../behavior/normalizeAlignmentBehavior.js";
 
 const DEFEATED_KEYWORDS = [
   "vampire",
@@ -139,15 +140,7 @@ function getAlignmentTextForAI(fighter = {}) {
 }
 
 function isGoodAlignedForAI(fighter = {}) {
-  const text = getAlignmentTextForAI(fighter);
-  if (!text) return false;
-
-  // Medieval Combat Simulator "good" family: Principled, Scrupulous, etc.
-  return (
-    text.includes("good") ||
-    text.includes("principled") ||
-    text.includes("scrupulous")
-  );
+  return normalizeAlignmentBehavior(getAlignmentTextForAI(fighter))?.goodEvilAxis === "good";
 }
 
 // Healer PROFESSION detection based on rulebook PROFESSION list (Clergy)
@@ -227,27 +220,7 @@ function isGoodAlignmentForHealer(player) {
 
   if (!raw) return false;
 
-  const a = raw.toLowerCase();
-
-  // Obviously evil tags first
-  if (
-    a.includes("diabolic") ||
-    a.includes("miscreant") ||
-    a.includes("aberrant")
-  ) {
-    return false;
-  }
-
-  // Basic good/selfish-but-not-horrible
-  if (
-    a.includes("good") ||
-    a.includes("scrupulous") ||
-    a.includes("principled")
-  ) {
-    return true;
-  }
-
-  return false;
+  return normalizeAlignmentBehavior(raw)?.goodEvilAxis === "good";
 }
 
 // Find ally needing healing
@@ -2278,14 +2251,8 @@ export async function runPlayerTurnAI(player, context) {
 
   // Track recently used tactics per fighter to prevent spamming
   // Alignment and healer helpers
-  const GOOD_ALIGNMENTS = ["principled", "scrupulous"];
-  // Alignment constants (for future use)
-  // const EVIL_ALIGNMENTS = ["diabolic", "miscreant"];
-  // const SHUMANISH_ALIGNMENTS = ["unprincipled", "anarchist"];
-
   const isGood = (fighter) => {
-    const a = (fighter.alignment || "").toLowerCase();
-    return GOOD_ALIGNMENTS.includes(a);
+    return normalizeAlignmentBehavior(fighter.alignment)?.goodEvilAxis === "good";
   };
 
   const isHealerProfession = (fighter) => {

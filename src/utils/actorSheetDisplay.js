@@ -3,6 +3,7 @@ import { getRoutingArmorProfile, getStaminaRoutingProfile } from "./survivalInte
 import { isCombatantFled } from "./combatFledState.js";
 import { isCombatantBroken } from "./combatBrokenState.js";
 import { SIMULATOR_ATTRIBUTE_DEFINITIONS } from "../data/simulatorAttributes.js";
+import { getAlignmentDisplayName } from "./behavior/normalizeAlignmentBehavior.js";
 
 export { SIMULATOR_ATTRIBUTE_DEFINITIONS };
 
@@ -223,7 +224,9 @@ export function getLegacyCompatibilityDisplay(actor = {}) {
   })).filter((entry) => entry.value !== null);
   return {
     classicAbilityScores,
-    alignment: text(actor?.alignment, actor?.alignmentName, "Not assigned"),
+    alignment: actor?.alignment || actor?.alignmentName
+      ? getAlignmentDisplayName(actor?.alignment || actor?.alignmentName)
+      : "Not assigned",
     armorClass: finite(actor?.armorClass, actor?.ac, actor?.guardRating, actor?.derivedStats?.armorClass),
     className: text(actor?.class, actor?.className, actor?.profession, "Not assigned"),
     species: text(actor?.race, actor?.species, "Not assigned"),

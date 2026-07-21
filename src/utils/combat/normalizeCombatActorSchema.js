@@ -31,7 +31,7 @@ export function normalizeReferenceCombatActor(actor = {}, { source = "combat-sta
   const maximumStamina = explicitNumber(actor.combatStamina?.maximum, actor.maxStamina, actor.maxstamina, definition.combatStamina.maximum);
   const runtimeId = actor.id ?? actor._id ?? definition.id;
   const team = actor.team ?? actor.side ?? actor.battleSide ?? definition.teamDefault;
-  const alignmentBehavior = normalizeAlignmentBehavior(actor.alignment || definition.alignment);
+  const alignmentBehavior = normalizeAlignmentBehavior(actor.behaviorProfile || actor.alignment || definition.alignment, actor.behavior || {});
   const preserved = {
     id: runtimeId,
     ...(actor._id !== undefined ? { _id: actor._id } : {}),
@@ -89,7 +89,8 @@ export function normalizeReferenceCombatActor(actor = {}, { source = "combat-sta
     surrenderProfile: clone(definition.surrenderProfile),
     behavior: { ...definition.behavior, ...(alignmentBehavior || {}) },
     behaviorProfile: alignmentBehavior,
-    alignment: actor.alignment || definition.alignment,
+    alignment: alignmentBehavior?.alignmentKey || actor.alignment || definition.alignment,
+    alignmentName: alignmentBehavior?.alignmentName || actor.alignmentName || definition.alignmentName,
     schemaNormalizedAt: source,
   };
   // Live ownership and position fields are never inferred from the reference definition.

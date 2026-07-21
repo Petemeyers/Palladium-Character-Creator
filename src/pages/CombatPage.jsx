@@ -293,6 +293,8 @@ import {
   getPendingSurrenderRecords,
 } from "../utils/combat/surrenderLifecycle.js";
 import { selectSurrenderResolution, selectSurrenderResponse } from "../utils/behavior/selectSurrenderResolution.js";
+import { getAlignmentDisplayName, normalizeAlignmentBehavior } from "../utils/behavior/normalizeAlignmentBehavior.js";
+import { getCombatDisplayLabel } from "../utils/presentation/getCombatDisplayLabel.js";
 import { applyBleedingMeterForNewMeleeRound } from "../utils/combat/bleedingMeter.js";
 import { createCanonicalUnarmedAttack } from "../utils/combat/unarmedAttackSanitization.js";
 import { validateCombatActor } from "../utils/combat/validateCombatActor.js";
@@ -1122,13 +1124,13 @@ const SCENE_ROLE_PRESETS = {
     disposition: "neutral",
     aggression: "neutral",
   },
-  diabolic: {
-    label: "Diabolic / Attacks Everyone",
+  indiscriminateHostile: {
+    label: "Indiscriminate Hostile / Attacks Everyone",
     type: "enemy",
     teamId: "enemy",
-    factionId: "diabolic",
+    factionId: "indiscriminate-hostile",
     role: "opponent",
-    aggression: "diabolic",
+    aggression: "indiscriminate-hostile",
     disposition: "hostile",
     attacksEveryone: true,
   },
@@ -1238,15 +1240,15 @@ const ARMY_TYPE_PRESETS = {
     disposition: "neutral",
     aggression: "neutral",
   },
-  diabolic: {
-    label: "Diabolic / Attacks Everyone",
+  indiscriminateHostile: {
+    label: "Indiscriminate Hostile / Attacks Everyone",
     type: "enemy",
-    teamId: "diabolic",
-    factionId: "diabolic",
+    teamId: "indiscriminate-hostile",
+    factionId: "indiscriminate-hostile",
     role: "opponent",
     defaultDisposition: "hostile",
     disposition: "hostile",
-    aggression: "diabolic",
+    aggression: "indiscriminate-hostile",
     attacksEveryone: true,
   },
   exceptionalDialogue: {
@@ -1681,7 +1683,7 @@ function isPassiveNeutralSceneTarget(target) {
   const controlMode = String(target?.controlMode || "").toLowerCase();
   const disposition = String(target?.disposition || "").toLowerCase();
   const aggression = String(target?.aggression || "").toLowerCase();
-  const hostileValues = new Set(["hostile", "kill_on_sight", "berserk", "diabolic"]);
+  const hostileValues = new Set(["hostile", "kill_on_sight", "berserk", "indiscriminate-hostile"]);
 
   if (hostileValues.has(disposition) || hostileValues.has(aggression) || target?.attacksEveryone === true) {
     return false;
@@ -1714,7 +1716,7 @@ function canSelectHostileCombatTarget(actor, target, sceneContext = { sceneType:
   const disposition = String(actor?.disposition || "").toLowerCase();
   const attacksAll =
     actor?.attacksEveryone === true ||
-    aggression === "diabolic" ||
+    aggression === "indiscriminate-hostile" ||
     aggression === "berserk" ||
     aggression === "kill_on_sight" ||
     disposition === "kill_on_sight";
@@ -9264,7 +9266,7 @@ function CombatPage({ characters = [] }) {
 
     if (normalizedAlignments.length === 0) return false;
 
-    const evilAlignments = new Set(["evil", "miscreant", "aberrant", "diabolic"]);
+    const evilAlignments = new Set(["evil", "lawful-evil", "neutral-evil", "chaotic-evil"]);
 
     return normalizedAlignments.some((align) => evilAlignments.has(align));
   }, []);
@@ -9879,7 +9881,7 @@ function CombatPage({ characters = [] }) {
     const aggression = String(fighter.aggression || army?.aggression || "").toLowerCase();
     const disposition = String(fighter.disposition || army?.disposition || army?.defaultDisposition || "").toLowerCase();
     const type = String(fighter.type || army?.type || "").toLowerCase();
-    const hostileModes = new Set(["diabolic", "berserk", "hostile", "kill_on_sight"]);
+    const hostileModes = new Set(["indiscriminate-hostile", "berserk", "hostile", "kill_on_sight"]);
 
     if (fighter.attacksEveryone || army?.attacksEveryone || hostileModes.has(aggression) || hostileModes.has(disposition)) {
       return "ai";
@@ -10017,9 +10019,7 @@ function CombatPage({ characters = [] }) {
         legalAuthority: Number(recipient.legalAuthority || 0),
         prisonerValue: Number(surrenderingActor.prisonerValue || surrenderingActor.ransomValue || 0),
         escapeRisk: Number(surrenderingActor.escapeRisk || 0),
-        allowExecution: recipient.executionAuthority === true ||
-          [recipient.factionOrders, recipient.orders, recipient.commanderOrders]
-            .some((orders) => orders?.prisonerPolicy === "no-quarter"),
+        allowExecution: recipient.executionAuthority === true,
       },
       rng: () => (CryptoSecureDice.rollDie(1000) - 1) / 1000,
     });
@@ -10033,6 +10033,7 @@ function CombatPage({ characters = [] }) {
     const victorToken = createSurrenderDecisionToken({
       record, decisionOwnerId: recipient.id, decisionSequence: ++surrenderDecisionSequenceRef.current,
       phase: SURRENDER_DECISION_PHASES.VICTOR, postCombatDecisionId: `post-combat:${record.surrenderId}`,
+      explicitExecutionAuthority: resolutionSelection.selectedDecision === "executeSurrenderedOpponent" && recipient.executionAuthority === true,
     });
     const resolution = commitSurrenderResolution({ registry, surrenderedActor: response.fighter, victor: recipient, token: victorToken, decision: resolutionSelection.selectedDecision, round: meleeRound });
     commitSurrenderRosterResult(resolution, recipient.id, { finalize: true });
@@ -10107,7 +10108,7 @@ function CombatPage({ characters = [] }) {
     const surrenderingActor = roster.find((fighter) => fighter.id === record?.offeredById);
     const recipient = roster.find((fighter) => fighter.id === pending?.recipientId);
     if (!record || !surrenderingActor || !recipient) return;
-    const token = createSurrenderDecisionToken({ record, decisionOwnerId: recipient.id, decisionSequence: ++surrenderDecisionSequenceRef.current, phase: SURRENDER_DECISION_PHASES.VICTOR, postCombatDecisionId: `manual:${record.surrenderId}`, actionToken: currentTurnTokenRef.current });
+    const token = createSurrenderDecisionToken({ record, decisionOwnerId: recipient.id, decisionSequence: ++surrenderDecisionSequenceRef.current, phase: SURRENDER_DECISION_PHASES.VICTOR, postCombatDecisionId: `manual:${record.surrenderId}`, actionToken: currentTurnTokenRef.current, explicitExecutionAuthority: decision === "executeSurrenderedOpponent" });
     const result = commitSurrenderResolution({ registry, surrenderedActor: surrenderingActor, victor: recipient, token, decision, round: meleeRound });
     commitSurrenderRosterResult(result, recipient.id, { finalize: result.committed });
     if (result.committed) { setPendingManualSurrenderDecision(null); setCombatPaused(false); }
@@ -10301,7 +10302,7 @@ function CombatPage({ characters = [] }) {
     const isNpc = fighter.type === "npc";
     const isSpecialThreat =
       fighter.attacksEveryone ||
-      ["berserk", "diabolic", "kill_on_sight"].includes(aggression) ||
+      ["berserk", "indiscriminate-hostile", "kill_on_sight"].includes(aggression) ||
       ["kill_on_sight"].includes(disposition) ||
       (fighter.sceneRoleKey && fighter.sceneRoleKey !== "enemy" && fighter.type === "enemy");
 
@@ -10321,7 +10322,7 @@ function CombatPage({ characters = [] }) {
           <Badge colorScheme="blue" size="sm">{fighter.disposition}</Badge>
         )}
         {fighter.aggression && (isNpc || aggression !== "hostile") && (
-          <Badge colorScheme={aggression === "diabolic" || aggression === "berserk" ? "red" : "orange"} size="sm">
+          <Badge colorScheme={aggression === "indiscriminate-hostile" || aggression === "berserk" ? "red" : "orange"} size="sm">
             {fighter.aggression}
           </Badge>
         )}
@@ -24860,7 +24861,7 @@ function CombatPage({ characters = [] }) {
           const equistaminadWeapon = attacker.equistaminadWeapons?.[0] ||
             attacker.equistaminadWeapons?.primary ||
             attacker.equistaminadWeapons?.secondary ||
-            (attacker.equistaminadWeapon ? { name: attacker.equistaminadWeapon, damage: null } : null);
+            (attacker.equistaminadWeapon ? { name: getCombatDisplayLabel(attacker.equistaminadWeapon), damage: null } : null);
 
           if (equistaminadWeapon) {
             // Check if weapon is being used two-handed
@@ -31058,7 +31059,7 @@ function CombatPage({ characters = [] }) {
         attacker?.attacksEveryone === true ||
         attacker?.confused === true ||
         attacker?.charmed === true ||
-        aggression === "diabolic" ||
+        aggression === "indiscriminate-hostile" ||
         aggression === "berserk" ||
         aggression === "kill_on_sight" ||
         disposition === "kill_on_sight";
@@ -35977,117 +35978,29 @@ function CombatPage({ characters = [] }) {
     });
   }
 
-  /**
-   * Get random alignment from combatant's arenaRoster entry
-   * Maps broad categories (good/selfish/evil) to specific Medieval Combat Simulator alignments
-   * @param {Object} combatantData - The combatant data from arenaRoster.js
-   * @returns {string} - Randomly selected alignment
-   */
+  /** Resolve compatibility alignment inputs to a canonical nine-grid key. */
   const getRandomAlignmentFromArenaRoster = useCallback((combatantData) => {
-    if (!combatantData) return "Unprincipled"; // Default fallback
-
-    // All Medieval Combat Simulator alignments as per rulebook
-    const MCS_ALIGNMENTS = {
-      // Good alignments
-      "principled": "Principled",
-      "scrupulous": "Scrupulous",
-      // Shumanish alignments
-      "unprincipled": "Unprincipled",
-      "anarchist": "Anarchist",
-      // Evil alignments
-      "miscreant": "Miscreant",
-      "aberrant": "Aberrant",
-      "diabolic": "Diabolic",
-      // Broad categories (will be expanded to specific alignments)
-      "good": ["Principled", "Scrupulous"],
-      "selfish": ["Unprincipled", "Anarchist"],
-      "evil": ["Miscreant", "Aberrant", "Diabolic"],
-      // Special case
-      "unaligned": "Unaligned"
+    if (!combatantData) return "true-neutral";
+    const broadOptions = {
+      good: ["lawful-good", "neutral-good", "chaotic-good"],
+      neutral: ["lawful-neutral", "true-neutral", "chaotic-neutral"],
+      selfish: ["true-neutral", "chaotic-neutral", "neutral-evil"],
+      evil: ["lawful-evil", "neutral-evil", "chaotic-evil"],
+      any: ["lawful-good", "neutral-good", "chaotic-good", "lawful-neutral", "true-neutral", "chaotic-neutral", "lawful-evil", "neutral-evil", "chaotic-evil"],
     };
-
-    // Get alignment array from combatant data
     let alignmentOptions = combatantData.alignment || combatantData.alignment_options || [];
-
-    // If alignment is a string, convert to array
-    if (typeof alignmentOptions === "string") {
-      alignmentOptions = [alignmentOptions];
-    }
-
-    // If no alignment specified, check alignment_tendency
+    if (typeof alignmentOptions === "string") alignmentOptions = [alignmentOptions];
     if (!Array.isArray(alignmentOptions) || alignmentOptions.length === 0) {
-      const tendency = combatantData.alignment_tendency || "";
-      if (tendency) {
-        // Map tendency to alignment options
-        const tendencyLower = tendency.toLowerCase();
-        if (tendencyLower.includes("good")) {
-          alignmentOptions = ["good"];
-        } else if (tendencyLower.includes("evil") || tendencyLower.includes("selfish")) {
-          alignmentOptions = ["evil", "selfish"];
-        } else {
-          alignmentOptions = ["any"];
-        }
-      } else {
-        // Default: any alignment
-        alignmentOptions = ["any"];
-      }
+      const tendency = String(combatantData.alignment_tendency || "").toLowerCase();
+      alignmentOptions = tendency.includes("good") ? ["good"] : tendency.includes("evil") ? ["evil"] : tendency.includes("selfish") ? ["selfish"] : ["any"];
     }
-
-    // Expand broad categories to specific alignments
-    const expandedOptions = [];
-    for (const align of alignmentOptions) {
-      const alignLower = align.toLowerCase().trim();
-
-      if (alignLower === "any") {
-        // Include all alignments except unaligned
-        expandedOptions.push("Principled", "Scrupulous", "Unprincipled", "Anarchist",
-          "Miscreant", "Aberrant", "Diabolic");
-      } else if (MCS_ALIGNMENTS[alignLower]) {
-        const mapped = MCS_ALIGNMENTS[alignLower];
-        if (Array.isArray(mapped)) {
-          // Broad category - add all specific alignments
-          expandedOptions.push(...mapped);
-        } else {
-          // Specific alignment
-          expandedOptions.push(mapped);
-        }
-      } else {
-        // Try to match with case-insensitive partial match
-        const found = Object.keys(MCS_ALIGNMENTS).find(key =>
-          key.includes(alignLower) || alignLower.includes(key)
-        );
-        if (found) {
-          const mapped = MCS_ALIGNMENTS[found];
-          if (Array.isArray(mapped)) {
-            expandedOptions.push(...mapped);
-          } else {
-            expandedOptions.push(mapped);
-          }
-        } else {
-          // Unknown alignment - capitalize and use as-is
-          expandedOptions.push(align.charAt(0).toUpperCase() + align.slice(1).toLowerCase());
-        }
-      }
-    }
-
-    // Remove duplicates
+    const expandedOptions = alignmentOptions.flatMap((entry) => {
+      const key = String(entry || "").trim().toLowerCase();
+      const normalized = normalizeAlignmentBehavior(entry);
+      return normalized ? [normalized.alignmentKey] : (broadOptions[key] || []);
+    });
     const uniqueOptions = [...new Set(expandedOptions)];
-
-    // If we have valid options, randomly select one
-    if (uniqueOptions.length > 0) {
-      const selected = uniqueOptions[Math.floor(Math.random() * uniqueOptions.length)];
-      return selected;
-    }
-
-    // Fallback: return a default alignment based on combatant category
-    const category = (combatantData.category || "").toLowerCase();
-    if (category.includes("raider") || category.includes("fallen")) {
-      return "Miscreant"; // Default evil for raiders/fallen
-    } else if (category.includes("combatant_of_training") && combatantData.alignment?.includes("good")) {
-      return "Principled"; // Default good for good-aligned exceptional combatants
-    } else {
-      return "Unprincipled"; // Default selfish for most combatants
-    }
+    return uniqueOptions.length ? uniqueOptions[Math.floor(Math.random() * uniqueOptions.length)] : "true-neutral";
   }, []);
 
   // Legacy function for backward compatibility (now uses arenaRoster-based selection)
@@ -36097,29 +36010,11 @@ function CombatPage({ characters = [] }) {
       return getRandomAlignmentFromArenaRoster(combatantData);
     }
 
-    // Fallback to old behavior if combatantData not available
-    const allAlignments = [
-      "Principled", "Scrupulous", // Good
-      "Unprincipled", "Anarchist", // Shumanish
-      "Miscreant", "Aberrant", "Diabolic" // Evil
-    ];
-
-    const raceName = (race || species || "").toUpperCase();
-
-    // Races that tend toward evil/selfish
-    if (["BRIGAND", "HOB-BRIGAND", "BRIGAND", "RAIDER", "CHAMPION", "HEAVY_FIGHTER"].includes(raceName)) {
-      const evilShumanish = ["Unprincipled", "Anarchist", "Miscreant", "Aberrant", "Diabolic"];
-      return evilShumanish[Math.floor(Math.random() * evilShumanish.length)];
-    }
-
-    // Races that tend toward good
-    if (["HUMAN", "GNOME"].includes(raceName)) {
-      const goodShumanish = ["Principled", "Scrupulous", "Unprincipled", "Anarchist"];
-      return goodShumanish[Math.floor(Math.random() * goodShumanish.length)];
-    }
-
-    // Default: any alignment (most races)
-    return allAlignments[Math.floor(Math.random() * allAlignments.length)];
+    // Species never determines moral alignment. Compatibility actors without an
+    // explicit value receive a neutral runtime default.
+    void race;
+    void species;
+    return "true-neutral";
   }, [getRandomAlignmentFromArenaRoster]);
 
   function addCombatant(combatantData, customNameOverride = null, levelOverride = null, armorOverride = null, weaponOverride = null, ammoOverride = null, fighterTypeOverride = null, armyId = "enemy") {
@@ -36241,17 +36136,20 @@ function CombatPage({ characters = [] }) {
           ? combatantData.alignment[0]
           : combatantData.alignment;
         if (savedAlignment) {
-          newFighter.alignment = savedAlignment;
-          newFighter.alignmentName = savedAlignment;
-          addLog(`${newFighter.name} alignment: ${savedAlignment}`, "info");
+          const normalizedAlignment = normalizeAlignmentBehavior(savedAlignment, combatantData.behavior || {});
+          newFighter.alignment = normalizedAlignment?.alignmentKey || "true-neutral";
+          newFighter.alignmentName = normalizedAlignment?.alignmentName || "True Neutral";
+          newFighter.behaviorProfile = normalizedAlignment;
+          addLog(`${newFighter.name} alignment: ${newFighter.alignmentName}`, "info");
         }
       } else {
         // Assign random alignment from arenaRoster entry (always pick one from the array/category)
         // Even if alignment exists as an array, we need to pick a specific one
         const randomAlignment = getRandomAlignmentFromArenaRoster(combatantData);
         newFighter.alignment = randomAlignment;
-        newFighter.alignmentName = randomAlignment;
-        addLog(`${newFighter.name} alignment: ${randomAlignment}`, "info");
+        newFighter.alignmentName = getAlignmentDisplayName(randomAlignment);
+        newFighter.behaviorProfile = normalizeAlignmentBehavior(randomAlignment);
+        addLog(`${newFighter.name} alignment: ${newFighter.alignmentName}`, "info");
       }
     } else {
       // Regular combatant (existing logic)
@@ -36497,8 +36395,9 @@ function CombatPage({ characters = [] }) {
       // Even if alignment exists as an array, we need to pick a specific one
       const randomAlignment = getRandomAlignmentFromArenaRoster(combatantData);
       newFighter.alignment = randomAlignment;
-      newFighter.alignmentName = randomAlignment;
-      addLog(`${newFighter.name} alignment: ${randomAlignment}`, "info");
+      newFighter.alignmentName = getAlignmentDisplayName(randomAlignment);
+      newFighter.behaviorProfile = normalizeAlignmentBehavior(randomAlignment);
+      addLog(`${newFighter.name} alignment: ${newFighter.alignmentName}`, "info");
 
       // Apply level-based stat adjustments
       if (level > 1) {
@@ -40856,7 +40755,7 @@ function CombatPage({ characters = [] }) {
     // Log weapon equipping status
     characterFighters.forEach(fighter => {
       if (fighter.equistaminadWeapon !== "Unarmed") {
-        addLog(`${fighter.name} auto-equistaminad ${fighter.equistaminadWeapon}!`, "info");
+        addLog(`${fighter.name} auto-equistaminad ${getCombatDisplayLabel(fighter.equistaminadWeapon)}!`, "info");
       } else {
         addLog(`${fighter.name} has no weapons - using unarmed attacks`, "warning");
       }
@@ -42001,7 +41900,7 @@ function CombatPage({ characters = [] }) {
                               {/* Alignment Display */}
                               {(fighter.alignment || fighter.alignmentName || fighter.alignmentText) && (
                                 <Badge colorScheme="gray" size="sm">
-                                  Legacy Alignment: {fighter.alignment || fighter.alignmentName || fighter.alignmentText}
+                                  Alignment: {getAlignmentDisplayName(fighter.alignment || fighter.alignmentName || fighter.alignmentText)}
                                 </Badge>
                               )}
                             </HStack>
@@ -42150,7 +42049,7 @@ function CombatPage({ characters = [] }) {
                                             {fighter.equistaminadWeapon && (
                                               <HStack spacing={2}>
                                                 <Text fontWeight="medium">Weapon:</Text>
-                                                <Text>{fighter.equistaminadWeapon}</Text>
+                                                <Text>{getCombatDisplayLabel(fighter.equistaminadWeapon)}</Text>
                                               </HStack>
                                             )}
                                             {weaponInfo.hasWeapons && (
@@ -42168,7 +42067,7 @@ function CombatPage({ characters = [] }) {
                                               <Box>
                                                 <Text fontWeight="medium">Weapons:</Text>
                                                 {fighter.equistaminadWeapons.map((w, idx) => (
-                                                  <Text key={idx}>{w.name || w}</Text>
+                                                  <Text key={idx}>{getCombatDisplayLabel(w)}</Text>
                                                 ))}
                                               </Box>
                                             )}
@@ -42179,7 +42078,7 @@ function CombatPage({ characters = [] }) {
                                         <Box>
                                           <Text fontWeight="medium">Attacks:</Text>
                                           {fighter.attacks.map((attack, idx) => (
-                                            <Text key={idx}>{attack.name || attack} {attack.damage && `(${attack.damage})`}</Text>
+                                            <Text key={idx}>{getCombatDisplayLabel(attack)} {attack.damage && `(${getCombatDisplayLabel(attack.damage, "")})`}</Text>
                                           ))}
                                         </Box>
                                       )}
@@ -42188,7 +42087,7 @@ function CombatPage({ characters = [] }) {
                                         <Box>
                                           <Text fontWeight="medium">Armor:</Text>
                                           {fighter.equistaminadArmor ? (
-                                                <Text pl={2}>{fighter.equistaminadArmor.name || fighter.equistaminadArmor} (AC: {fighter.guardRating || 10})</Text>
+                                               <Text pl={2}>{getCombatDisplayLabel(fighter.equistaminadArmor)} (AC: {fighter.guardRating || 10})</Text>
                                           ) : (
                                                 <Text pl={2}>AC: {fighter.guardRating || 10}</Text>
                                           )}
@@ -42228,7 +42127,7 @@ function CombatPage({ characters = [] }) {
                                         <Box>
                                           <Text fontWeight="medium">Other:</Text>
                                           {Object.entries(fighter.equistaminad).filter(([key, val]) => val && key !== 'weapon' && key !== 'armor').map(([key, val]) => (
-                                            <Text key={key}>{key}: {val.name || val}</Text>
+                                            <Text key={key}>{key}: {getCombatDisplayLabel(val)}</Text>
                                           ))}
                                         </Box>
                                       )}
@@ -42280,7 +42179,7 @@ function CombatPage({ characters = [] }) {
                               {fighter.name}
                             </Text>
                             <Badge colorScheme="orange" size="sm">
-                              Primary: {primaryWeapon}
+                              Primary: {getCombatDisplayLabel(primaryWeapon, "Unarmed")}
                             </Badge>
                           </HStack>
 
@@ -42302,7 +42201,7 @@ function CombatPage({ characters = [] }) {
                                     fontStyle={weapon.disabled ? "italic" : "normal"}
                                     flex="1"
                                   >
-                                    {weapon.name || weapon}
+                                    {getCombatDisplayLabel(weapon, "Unarmed")}
                                   </Text>
                                   <HStack spacing={1}>
                                     {weapon.twoHanded && !weapon.disabled && (
@@ -44605,7 +44504,7 @@ function CombatPage({ characters = [] }) {
                                   {/* Alignment Display */}
                                   {(fighter.alignment || fighter.alignmentName || fighter.alignmentText) && (
                                     <Badge colorScheme="gray" size="sm">
-                                      Legacy Alignment: {fighter.alignment || fighter.alignmentName || fighter.alignmentText}
+                                      Alignment: {getAlignmentDisplayName(fighter.alignment || fighter.alignmentName || fighter.alignmentText)}
                                     </Badge>
                                   )}
                                 </HStack>
@@ -44754,7 +44653,7 @@ function CombatPage({ characters = [] }) {
                                                 {fighter.equistaminadWeapon && (
                                                   <HStack spacing={2}>
                                                     <Text fontWeight="medium">Weapon:</Text>
-                                                    <Text>{fighter.equistaminadWeapon}</Text>
+                                                    <Text>{getCombatDisplayLabel(fighter.equistaminadWeapon)}</Text>
                                                   </HStack>
                                                 )}
                                                 {weaponInfo.hasWeapons && (
@@ -44772,7 +44671,7 @@ function CombatPage({ characters = [] }) {
                                                   <Box>
                                                     <Text fontWeight="medium">Weapons:</Text>
                                                     {fighter.equistaminadWeapons.map((w, idx) => (
-                                                      <Text key={idx}>{w.name || w}</Text>
+                                                      <Text key={idx}>{getCombatDisplayLabel(w)}</Text>
                                                     ))}
                                                   </Box>
                                                 )}
@@ -44783,7 +44682,7 @@ function CombatPage({ characters = [] }) {
                                             <Box>
                                               <Text fontWeight="medium">Attacks:</Text>
                                               {fighter.attacks.map((attack, idx) => (
-                                                <Text key={idx}>{attack.name || attack} {attack.damage && `(${attack.damage})`}</Text>
+                                                <Text key={idx}>{getCombatDisplayLabel(attack)} {attack.damage && `(${getCombatDisplayLabel(attack.damage, "")})`}</Text>
                                               ))}
                                             </Box>
                                           )}
@@ -44792,7 +44691,7 @@ function CombatPage({ characters = [] }) {
                                             <Box>
                                               <Text fontWeight="medium">Armor:</Text>
                                               {fighter.equistaminadArmor ? (
-                                                <Text pl={2}>{fighter.equistaminadArmor.name || fighter.equistaminadArmor} (AC: {fighter.guardRating || 10})</Text>
+                                                <Text pl={2}>{getCombatDisplayLabel(fighter.equistaminadArmor)} (AC: {fighter.guardRating || 10})</Text>
                                               ) : (
                                                 <Text pl={2}>AC: {fighter.guardRating || 10}</Text>
                                               )}
@@ -44832,7 +44731,7 @@ function CombatPage({ characters = [] }) {
                                             <Box>
                                               <Text fontWeight="medium">Other:</Text>
                                               {Object.entries(fighter.equistaminad).filter(([key, val]) => val && key !== 'weapon' && key !== 'armor').map(([key, val]) => (
-                                                <Text key={key}>{key}: {val.name || val}</Text>
+                                                <Text key={key}>{key}: {getCombatDisplayLabel(val)}</Text>
                                               ))}
                                             </Box>
                                           )}
@@ -45262,7 +45161,7 @@ function CombatPage({ characters = [] }) {
                                         </Text>
                                         {entry.diceInfo.weapon && (
                                           <Text as="span" fontSize="xs" color="gray.600">
-                                            Weapon: {entry.diceInfo.weapon}
+                                            Weapon: {getCombatDisplayLabel(entry.diceInfo.weapon)}
                                           </Text>
                                         )}
                                       </VStack>
@@ -46101,7 +46000,7 @@ function CombatPage({ characters = [] }) {
                                 <Badge colorScheme="gray">Source: {rosterPreviewSheetDisplay.identity.source}</Badge>
                                 {(rosterPreviewFighter.alignment || rosterPreviewFighter.alignmentName) && (
                                   <Badge colorScheme="gray">
-                                    Legacy Alignment: {rosterPreviewFighter.alignment || rosterPreviewFighter.alignmentName}
+                                    Alignment: {getAlignmentDisplayName(rosterPreviewFighter.alignment || rosterPreviewFighter.alignmentName)}
                                   </Badge>
                                 )}
                               </HStack>
@@ -46206,7 +46105,7 @@ function CombatPage({ characters = [] }) {
                                     </WrapItem>
                                   ))}
                                   {rosterPreviewSheetDisplay.legacy.alignment !== "Not assigned" && (
-                                    <WrapItem><Badge colorScheme="gray">Legacy Alignment: {rosterPreviewSheetDisplay.legacy.alignment}</Badge></WrapItem>
+                                    <WrapItem><Badge colorScheme="gray">Alignment: {getAlignmentDisplayName(rosterPreviewSheetDisplay.legacy.alignment)}</Badge></WrapItem>
                                   )}
                                 </Wrap>
                               </Box>

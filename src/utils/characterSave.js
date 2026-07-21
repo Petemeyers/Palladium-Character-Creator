@@ -1,4 +1,5 @@
 import { clearStoredAuthState, getStoredAuthToken } from "./authStorage.js";
+import { normalizeAlignmentBehavior } from "./behavior/normalizeAlignmentBehavior.js";
 
 export const CHARACTER_SAVE_AUTH_MESSAGE = "Please log in before saving a character to your account.";
 export const CHARACTER_SAVE_REAUTH_MESSAGE = "Please log in again before saving this character.";
@@ -15,6 +16,7 @@ export function normalizeCharacterSavePayload(character = {}) {
   const profession = String(safeCharacter.profession || safeCharacter.class || "General").trim() || "General";
   const numericLevel = Number(safeCharacter.level);
   const numericHP = Number(safeCharacter.hp);
+  const alignment = normalizeAlignmentBehavior(safeCharacter.alignment || safeCharacter.alignmentName);
   return {
     ...safeCharacter,
     name: String(safeCharacter.name || "Unnamed Character").trim() || "Unnamed Character",
@@ -32,6 +34,7 @@ export function normalizeCharacterSavePayload(character = {}) {
     disposition: String(safeCharacter.disposition || "Unknown"),
     hostility: String(safeCharacter.hostility || "Unknown"),
     gender: String(safeCharacter.gender || "Unknown"),
+    alignment: alignment?.alignmentKey || "true-neutral",
   };
 }
 

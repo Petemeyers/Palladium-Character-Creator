@@ -1,3 +1,5 @@
+import { normalizeAlignmentBehavior } from "./behavior/normalizeAlignmentBehavior.js";
+
 /**
  * Tactical Decision Helpers
  * 
@@ -13,7 +15,7 @@
  * @param {Object} params.target - Target enemy
  * @param {number} params.distanceFeet - Distance to target in feet
  * @param {number} params.focus - Current focus available
- * @param {string} params.alignment - Fighter alignment (e.g., "principled", "diabolic")
+ * @param {string} params.alignment - Canonical nine-grid fighter alignment
  * @returns {Object|null} Best tactical power to use, or null if none available
  */
 export function chooseBestOffensiveTactical({
@@ -42,8 +44,7 @@ export function chooseBestOffensiveTactical({
   if (!affordable.length) return null;
 
   // Good / selfish prefer control; evil may prefer direct harm (if you add those later)
-  const goodAlignments = ["principled", "scrupulous"];
-  const isGood = goodAlignments.includes((alignment || "").toLowerCase());
+  const isGood = normalizeAlignmentBehavior(alignment)?.goodEvilAxis === "good";
 
   let candidates = [];
 

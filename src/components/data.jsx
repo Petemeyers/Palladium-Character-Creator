@@ -18,7 +18,7 @@ export const speciesData = {
   ANIMAL: { label: "Animal", type: "animal" },
 };
 
-export const alignments = ["principled", "scrupulous", "unprincipled", "selfish", "neutral"];
+export const alignments = ["lawful-good", "neutral-good", "chaotic-good", "lawful-neutral", "true-neutral", "chaotic-neutral", "lawful-evil", "neutral-evil", "chaotic-evil"];
 export const socialBackgrounds = ["Peasant", "Townsperson", "Retinue", "Mercenary Company", "Noble Household"];
 export const ageTable = { Human: [16, 20, 25, 30, 40, 50, 60, 70] };
 export const dispositions = ["friendly", "neutral", "defensive", "hostile"];

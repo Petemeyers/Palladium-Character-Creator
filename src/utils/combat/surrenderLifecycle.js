@@ -59,13 +59,13 @@ export function createCanonicalSurrenderOffer({
   return { accepted: true, record, fighter, events: [event("surrender-offered", record), event("surrender-response-pending", record)] };
 }
 
-export function createSurrenderDecisionToken({ record, decisionOwnerId, decisionSequence = 1, phase, initiativeTurnId = null, postCombatDecisionId = null, actionToken = null } = {}) {
+export function createSurrenderDecisionToken({ record, decisionOwnerId, decisionSequence = 1, phase, initiativeTurnId = null, postCombatDecisionId = null, actionToken = null, explicitExecutionAuthority = false } = {}) {
   if (!record?.surrenderId || !decisionOwnerId || !Object.values(SURRENDER_DECISION_PHASES).includes(phase)) return null;
   const token = {
     generationId: record.generationId, round: record.offeredAtRound,
     initiativeTurnId: initiativeTurnId ?? record.offeredAtInitiativeTurnId ?? null,
     postCombatDecisionId, decisionOwnerId, surrenderId: record.surrenderId, decisionSequence,
-    phase, actionToken,
+    phase, actionToken, explicitExecutionAuthority: explicitExecutionAuthority === true,
   };
   return Object.freeze({ ...token, decisionTokenId: ["surrender-decision", token.generationId, token.surrenderId, phase, decisionOwnerId, decisionSequence].join(":") });
 }
@@ -92,7 +92,7 @@ function manufacturedReadyWeapon(actor) {
 export function getAcceptedSurrenderWeaponDisposition(actor = {}) {
   const manufactured = manufacturedReadyWeapon(actor);
   const natural = (actor.weaponProfiles || actor.attacks || []).filter((profile) => profile.naturalWeapon === true || profile.isNaturalAttack === true);
-  if (manufactured) return { status: "placed-down", weaponId: manufactured.profileKey || manufactured.weaponId || manufactured.id || manufactured.name, originalOwnerId: idOf(actor), ownershipTransferred: false, shieldDisposition: actor.equippedShield ? "lowered-or-placed-down" : "none", naturalWeaponIds: natural.map((profile) => profile.profileKey || profile.weaponId || profile.id || profile.name), naturalWeaponsAvailable: false };
+  if (manufactured) return { status: "placed-down", weaponId: manufactured.profileKey || manufactured.weaponId || manufactured.id || manufactured.name, weaponName: manufactured.name || null, originalOwnerId: idOf(actor), ownershipTransferred: false, shieldDisposition: actor.equippedShield ? "lowered-or-placed-down" : "none", naturalWeaponIds: natural.map((profile) => profile.profileKey || profile.weaponId || profile.id || profile.name), naturalWeaponsAvailable: false };
   if (natural.length) return { status: "natural-weapons-nonhostile", weaponId: null, originalOwnerId: idOf(actor), ownershipTransferred: false, naturalWeaponIds: natural.map((profile) => profile.profileKey || profile.weaponId || profile.id || profile.name), naturalWeaponsAvailable: false };
   return { status: "none", weaponId: null, originalOwnerId: idOf(actor), ownershipTransferred: false, naturalWeaponIds: [], naturalWeaponsAvailable: false };
 }
@@ -133,6 +133,7 @@ export function commitSurrenderResolution({ registry, surrenderedActor, victor, 
   if (!SURRENDER_OUTCOMES[decision]) return rejected(record, "surrender-resolution-ownership-rejected", "invalid-surrender-resolution");
   const helpless = surrenderedActor.isSurrendered === true || surrenderedActor.isCaptured === true || surrenderedActor.prisonerState?.status === "prisoner" || ["dominant", "pinned"].includes(surrenderedActor.grappleState?.groundControl?.state);
   if (decision === "executeSurrenderedOpponent" && !helpless) return rejected(record, "surrender-resolution-ownership-rejected", "execution-target-not-legally-helpless");
+  if (decision === "executeSurrenderedOpponent" && token.explicitExecutionAuthority !== true) return rejected(record, "surrender-resolution-ownership-rejected", "explicit-execution-authority-required");
   registry.committedDecisionTokens.add(token.decisionTokenId);
   let fighter = { ...surrenderedActor };
   let resolutionEvents = [event("surrender-resolution-selected", record, { decision })];

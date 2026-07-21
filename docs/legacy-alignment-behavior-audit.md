@@ -1,5 +1,10 @@
 # Legacy Alignment and Behavior Audit
 
+> Historical compatibility record: the named legacy alignment labels below are
+> retained only to document old-save migration and compatibility lookup. Phase
+> 3B3B now uses the standard nine-alignment grid for canonical actors, new saves,
+> combat UI, logs, and surrender decisions.
+
 Phase 3C0 searched the repository for alignment labels and for mercy, honor, cruelty, surrender, prisoner, execution, ransom, confiscation, looting, disposition, and morale decisions. Legacy behavior is retained; this audit does not delete or activate prisoner-economy code.
 
 ## Relevant files found
@@ -7,7 +12,7 @@ Phase 3C0 searched the repository for alignment labels and for mercy, honor, cru
 | File | Existing material | Phase 3C0 disposition |
 |---|---|---|
 | `src/data/publicAlignment.js` | Modern nine-label public character-creation list. | Map as aliases; keep as the public UI vocabulary. |
-| `src/components/BulkCharacterGenerator.jsx` | Generates Principled, Scrupulous, Unprincipled, Anarchist, Miscreant, Aberrant, and Diabolic labels. | Keep compatibility-only until generator migration. |
+| `src/components/BulkCharacterGenerator.jsx` | Historically generated the seven legacy labels. | Migrated to canonical nine-grid keys in Phase 3B3B. |
 | `src/components/data.jsx` | Short legacy alignment option list. | Compatibility-only; later consolidate with public alignment data. |
 | `src/data/preCombatSystem.json` | All seven legacy labels; numeric surprise/hostility modifiers and encounter presets. | Preserve encounter math; do not reuse those modifiers as surrender probabilities. |
 | `src/utils/stealthSystem.js` | Alignment-indexed pre-combat and hostility tendencies. | Keep current stealth behavior; later consume normalized `alignmentKey`. |
@@ -16,8 +21,8 @@ Phase 3C0 searched the repository for alignment labels and for mercy, honor, cru
 | `src/utils/fearAIAutoCast.js` | Hard-coded label families affecting fear-action selection. | Later replace label parsing with behavior dimensions; do not alter current weights now. |
 | `src/utils/tacticalDecisionHelpers.js` | Good-label tactical preference and alignment documentation. | Later read normalized honor/mercy; keep compatibility parsing. |
 | `src/utils/ai/playerTurnAI.js` | Multiple good/evil label checks, including dying-target and healing decisions; commented category lists. | Preserve behavior; migrate incrementally after weighted-decision review. |
-| `src/utils/ai/enemyTurnAI.js` | Principled/Scrupulous checks in enemy decisions. | Preserve; later consume normalized behavior profile. |
-| `src/pages/CombatPage.jsx` | Diabolic faction presets, hostile disposition checks, evil-targeting helper, random legacy alignment generation, and new surrender-resolution scoring entry. | Faction aggression must remain separate from personal alignment. Replace random legacy assignment later. |
+| `src/utils/ai/enemyTurnAI.js` | Historically contained direct legacy-label checks. | Migrated to normalized alignment axes in Phase 3B3B. |
+| `src/pages/CombatPage.jsx` | Historically generated and displayed legacy alignments. | Migrated to canonical keys and nine-grid display names in Phase 3B3B; faction aggression remains separate. |
 | `src/utils/combat/surrenderState.js` | Current weighted surrender response/treatment foundation. | Modern destination for behavior dimensions; no inventory/ransom execution in Phase 3C0. |
 | `src/utils/captureSystem.js` | Capture/tie-up and immediate prisoner-looting helpers. | Keep dormant/compatibility-only. Do not call from new surrender resolution until inventory ownership is authoritative. |
 | `src/utils/scavengingSystem.js` | Loot/scavenging behavior outside canonical surrender treatment. | Keep separate pending inventory migration. |

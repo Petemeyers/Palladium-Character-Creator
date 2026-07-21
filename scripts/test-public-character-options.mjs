@@ -118,13 +118,17 @@ function testPublicAlignment() {
     "Neutral Good",
     "Chaotic Good",
     "Lawful Neutral",
-    "Neutral",
+    "True Neutral",
     "Chaotic Neutral",
     "Lawful Evil",
     "Neutral Evil",
     "Chaotic Evil",
   ]);
   assert.equal(getPublicAlignments()[0].value, "");
+  assert.deepEqual(getPublicAlignments().slice(1).map((entry) => entry.value), [
+    "lawful-good", "neutral-good", "chaotic-good", "lawful-neutral", "true-neutral",
+    "chaotic-neutral", "lawful-evil", "neutral-evil", "chaotic-evil",
+  ]);
 }
 
 function testPublicBackgroundEquipmentTags() {

@@ -19,7 +19,11 @@ const wrongParticipants = commitSurrenderResolution({ registry, surrenderedActor
 assert.equal(wrongParticipants.committed, false);
 assert.equal(wrongParticipants.reason, "surrender-participant-identity-mismatch");
 assert.equal(response.fighter.currentHP, 8);
-const token = createSurrenderDecisionToken({ record: offer.record, decisionOwnerId: victor.id, phase: "victor-decision", actionToken: "explicit-execution-token" });
+const unauthorizedToken = createSurrenderDecisionToken({ record: offer.record, decisionOwnerId: victor.id, phase: "victor-decision", actionToken: "unauthorized-execution-token" });
+const unauthorized = commitSurrenderResolution({ registry, surrenderedActor: response.fighter, victor, token: unauthorizedToken, decision: "executeSurrenderedOpponent", round: 2 });
+assert.equal(unauthorized.committed, false);
+assert.equal(unauthorized.reason, "explicit-execution-authority-required");
+const token = createSurrenderDecisionToken({ record: offer.record, decisionOwnerId: victor.id, phase: "victor-decision", decisionSequence: 2, actionToken: "explicit-execution-token", explicitExecutionAuthority: true });
 const executed = commitSurrenderResolution({ registry, surrenderedActor: response.fighter, victor, token, decision: "executeSurrenderedOpponent", round: 2 });
 assert.equal(executed.committed, true);
 assert.equal(executed.terminalResult, true);

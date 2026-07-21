@@ -71,6 +71,7 @@ import {
 import HumanPreviewPanel from './creator/HumanPreviewPanel.jsx';
 import { buildHumanVisualProfile } from '../utils/visuals/buildHumanVisualProfile.js';
 import { saveCharacterWithAuth } from '../utils/characterSave.js';
+import { getAlignmentDisplayName } from '../utils/behavior/normalizeAlignmentBehavior.js';
 import {
   calculateBackgroundAttributeBonuses,
   calculateFinalSimulatorAttributes,
@@ -3408,7 +3409,7 @@ const CharacterCreator = ({ onCreateCharacter }) => {
                 <strong>Languages:</strong> {selectedPublicLanguages.map((language) => language.name).join(', ')}
               </div>
               <div className="info-item">
-                <strong>Alignment:</strong> {alignment || 'Unselected'}
+                <strong>Alignment:</strong> {alignment ? getAlignmentDisplayName(alignment) : 'Unselected'}
               </div>
               <div className="info-item">
                 <strong>Proficiencies:</strong> {publicSkillMetadata.proficiencies.join(', ') || 'None selected'}

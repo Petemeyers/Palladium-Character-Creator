@@ -1,5 +1,6 @@
 import { castCourage, castRemoveFear } from "./fearTechniqueSystem.js";
 import { getHorrorFactor } from "./dreadRatingSystem.js";
+import { normalizeAlignmentBehavior } from "./behavior/normalizeAlignmentBehavior.js";
 
 function smartDecision(iq, difficulty = 10) {
   const roll = Math.floor(Math.random() * 20) + 1;
@@ -7,17 +8,17 @@ function smartDecision(iq, difficulty = 10) {
 }
 
 function getAlignmentBehavior(alignment = "") {
-  const a = (alignment || "").toLowerCase();
-  if (["principled", "scrupulous"].some((term) => a.includes(term))) {
+  const behavior = normalizeAlignmentBehavior(alignment);
+  if (behavior?.goodEvilAxis === "good") {
     return { priority: "ally", riskTolerance: 3 };
   }
-  if (["unprincipled", "aberrant"].some((term) => a.includes(term))) {
+  if (behavior?.lawChaosAxis === "lawful") {
     return { priority: "shuman", riskTolerance: 2 };
   }
-  if (a.includes("anarchist")) {
+  if (behavior?.lawChaosAxis === "chaotic" && behavior?.goodEvilAxis !== "evil") {
     return { priority: "random", riskTolerance: 2 };
   }
-  if (["miscreant", "diabolic"].some((term) => a.includes(term))) {
+  if (behavior?.goodEvilAxis === "evil") {
     return { priority: "shuman", riskTolerance: 1 };
   }
   return { priority: "none", riskTolerance: 1 };

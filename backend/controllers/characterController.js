@@ -1,5 +1,6 @@
 import Character from "../models/Character.js";
 import { assignInitialEquipment } from "../utils/characterUtils.js";
+import { normalizeAlignmentBehavior } from "../../src/utils/behavior/normalizeAlignmentBehavior.js";
 
 export const createCharacter = async (req, res) => {
   try {
@@ -42,7 +43,7 @@ export const createCharacter = async (req, res) => {
       user: req.user.id,
       level: characterData.level || 1,
       hp: characterData.hp || 10,
-      alignment: characterData.alignment || "Neutral",
+      alignment: normalizeAlignmentBehavior(characterData.alignment)?.alignmentKey || "true-neutral",
       gender: characterData.gender || "Unknown",
       professionSkills: characterData.professionSkills || [],
       electiveSkills: characterData.electiveSkills || [],

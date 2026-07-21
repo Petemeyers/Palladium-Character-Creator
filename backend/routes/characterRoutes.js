@@ -12,6 +12,7 @@ import {
 } from "../middleware/validation.js";
 import { getIo } from "../socket.js";
 import { patchOriginalCharacterTrait } from "../controllers/originalActorTraitController.js";
+import { normalizeAlignmentBehavior } from "../../src/utils/behavior/normalizeAlignmentBehavior.js";
 
 const router = express.Router();
 
@@ -165,6 +166,7 @@ router.post("/", validate(characterValidation.create), async (req, res) => {
     // Create new character with user reference
     const newCharacter = new Character({
       ...req.body,
+      alignment: normalizeAlignmentBehavior(req.body.alignment)?.alignmentKey || "true-neutral",
       user: userId,
     });
 
@@ -351,6 +353,7 @@ router.post(
       // Add user reference and bulk flag to each character
       const charactersWithUser = characters.map((character) => ({
         ...character,
+        alignment: normalizeAlignmentBehavior(character.alignment)?.alignmentKey || "true-neutral",
         user: req.user.userId,
         isBulkCharacter: true,
       }));

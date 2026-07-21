@@ -18,6 +18,8 @@ import axiosInstance from '../utils/axios';
 import { getPublicSkillById } from '../utils/publicClassAdapter.js';
 import { formatSignedModifier, getPublicDerivedStatsForCharacter } from '../utils/publicDerivedStats.js';
 import { buildActorSheetDisplay } from '../utils/actorSheetDisplay.js';
+import { getAlignmentDisplayName } from '../utils/behavior/normalizeAlignmentBehavior.js';
+import { getCombatDisplayLabel } from '../utils/presentation/getCombatDisplayLabel.js';
 
 const getDisplayClassName = (character) =>
   character?.publicClassName || character?.class || character?.profession || '';
@@ -118,7 +120,7 @@ export default function CharacterSheet({ characterData = null, onSave = null }) 
         name: characterData.name || '',
         race: getDisplaySpeciesName(characterData),
         profession: getDisplayClassName(characterData),
-        alignment: characterData.alignment || '',
+        alignment: characterData.alignment ? getAlignmentDisplayName(characterData.alignment) : '',
         level: characterData.level || 1,
         iq: characterData.attributes?.iq || '',
         me: characterData.attributes?.me || '',
@@ -171,7 +173,7 @@ export default function CharacterSheet({ characterData = null, onSave = null }) 
     const weapons = [];
     if (char.weapons?.length) {
       char.weapons.forEach(weapon => {
-        const weaponName = weapon.name || weapon.weaponName || weapon;
+        const weaponName = getCombatDisplayLabel(weapon.name || weapon.weaponName || weapon);
         const proficiency = weapon.proficiency || weapon.prof || '';
         weapons.push(`${weaponName}${proficiency ? ` (${proficiency}%)` : ''}`);
       });
@@ -584,7 +586,7 @@ export default function CharacterSheet({ characterData = null, onSave = null }) 
           <GridItem>
             <Input
               name="alignment"
-              placeholder="Legacy Alignment"
+              placeholder="Alignment"
               value={character.alignment}
               onChange={handleChange}
               size="md"
@@ -715,9 +717,9 @@ export default function CharacterSheet({ characterData = null, onSave = null }) 
         {displayAbilityScores.length > 0 ? (
           <Box as="details">
             <Box as="summary" fontWeight="bold" mb={2} fontSize="sm" color="gray.700">
-              Legacy Compatibility
+              Compatibility Data
             </Box>
-            <Text fontSize="sm" mb={2}><strong>Legacy Alignment:</strong> {sheetDisplay.legacy.alignment}</Text>
+            <Text fontSize="sm" mb={2}><strong>Alignment:</strong> {getAlignmentDisplayName(sheetDisplay.legacy.alignment)}</Text>
             {displayAbilityScores.length > 0 && (
               <Grid templateColumns={{ base: 'repeat(2, 1fr)', md: 'repeat(3, 1fr)' }} gap={3} mb={3}>
                 {displayAbilityScores.map((ability) => (

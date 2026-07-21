@@ -23,8 +23,8 @@ export function normalizePrisonerPolicy(value) {
 }
 
 function getBehavior(victor, alignmentBehavior) {
-  return alignmentBehavior || victor?.behaviorProfile || normalizeAlignmentBehavior(victor?.alignment) || {
-    alignmentKey: "unmapped",
+  return normalizeAlignmentBehavior(alignmentBehavior || victor?.behaviorProfile || victor?.alignment, victor?.behavior || {}) || {
+    alignmentKey: "unmapped", dimensions: {}, surrenderWeights: {},
     honor: finite(victor?.behavior?.honor, 50), mercy: finite(victor?.behavior?.mercy, 50),
     discipline: finite(victor?.behavior?.discipline, 50), greed: finite(victor?.behavior?.greed, 50),
     cruelty: finite(victor?.behavior?.cruelty, 25), pride: finite(victor?.behavior?.pride, 50),

@@ -21,6 +21,7 @@ import {
   updateAiMemoryAfterAction,
 } from "../../ai";
 import { createThreatProfile } from "./threatAnalysis";
+import { normalizeAlignmentBehavior } from "../behavior/normalizeAlignmentBehavior.js";
 import {
   getWeaknessMemoryForEnemy,
   recordWeaknessAttempt,
@@ -2408,11 +2409,7 @@ export function runEnemyTurnAI(enemy, context) {
     // Check for allies that need healing (only for non-evil alignments)
     const enemyAlignment = enemy.alignment || enemy.attributes?.alignment || "";
     const isEvil = isEvilAlignment(enemyAlignment);
-    const isGood =
-      !isEvil &&
-      ((enemyAlignment || "").toLowerCase().includes("good") ||
-        (enemyAlignment || "").toLowerCase().includes("principled") ||
-        (enemyAlignment || "").toLowerCase().includes("scrupulous"));
+    const isGood = !isEvil && normalizeAlignmentBehavior(enemyAlignment)?.goodEvilAxis === "good";
 
     // Good-aligned healers prioritize healing allies
     if (isHealer && isGood && (healingSkills.length > 0 || hasHealerSkills)) {

@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import PropTypes from "prop-types";
 import { Alert, AlertIcon, Box, Button, HStack, Modal, ModalBody, ModalContent, ModalFooter, ModalHeader, ModalOverlay, Text, VStack, Wrap } from "@chakra-ui/react";
+import { getCombatDisplayLabel } from "../utils/presentation/getCombatDisplayLabel.js";
 
 const OUTCOMES = [
   ["takePrisoner", "Take prisoner"],
@@ -16,6 +17,7 @@ export default function SurrenderDecisionPanel({ decision, onRespond, onResolve 
   if (!decision) return null;
   const responsePending = decision.phase === "response";
   const actorName = decision.surrenderingActor?.name || "Opponent";
+  const weaponDisposition = decision.surrenderingActor?.surrenderState?.weaponDisposition;
   return (
     <Modal isOpen closeOnEsc={false} closeOnOverlayClick={false} onClose={() => {}} isCentered>
       <ModalOverlay />
@@ -24,6 +26,9 @@ export default function SurrenderDecisionPanel({ decision, onRespond, onResolve 
         <ModalBody>
           <VStack align="stretch" spacing={3}>
             <Text>{decision.reason || `${actorName} has yielded and awaits your decision.`}</Text>
+            {weaponDisposition?.weaponId && (
+              <Text fontSize="sm">Surrendered weapon: {getCombatDisplayLabel(weaponDisposition.weaponName || weaponDisposition.weaponId)}</Text>
+            )}
             {responsePending ? (
               <Alert status="info"><AlertIcon />Combat positions and initiative are preserved while you decide.</Alert>
             ) : executionConfirmation ? (
