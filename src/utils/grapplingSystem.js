@@ -28,6 +28,7 @@ import {
 } from "./combinedBodySystem.js";
 import { canFly, isFlying, getAltitude } from "./abilitySystem.js";
 import { normalizeCanonicalD20Roll } from "./combat/normalizeCanonicalD20Roll.js";
+import { restoreRetainedWeaponAfterGrapple } from "./combat/grappleWeaponTransitions.js";
 
 /**
  * Grapple states
@@ -306,7 +307,7 @@ export function attemptGrapple(attacker, defender, rollDice = null, attackerPos 
  * @returns {Object} Result object
  */
 export function maintainGrapple(attacker, defender, rollDice = null) {
-  const canonicalRoller = getCanonicalGrappleRoller(rollDice, ["opposed-grapple-maintain"]);
+  const canonicalRoller = getCanonicalGrappleRoller(rollDice, ["opposed-grapple-maintain", "grapple-ground-control"]);
   if (!canonicalRoller) return blockedCanonicalGrappleDiceResult("maintain");
   if (
     !attacker.grappleState ||
@@ -567,8 +568,10 @@ export function groundAttack(
   validateDamageRoll = null,
   requiredPosition = "ground"
 ) {
-  const expectedRollKind = requiredPosition === "standing" ? "clinch-strike-attack" : "ground-attack";
-  const canonicalRoller = getCanonicalGrappleRoller(rollDice, [expectedRollKind]);
+  const expectedRollKinds = requiredPosition === "standing"
+    ? ["clinch-strike-attack"]
+    : ["ground-attack", "grounded-armor-gap-strike"];
+  const canonicalRoller = getCanonicalGrappleRoller(rollDice, expectedRollKinds);
   if (!canonicalRoller) {
     return requiredPosition === "standing"
       ? { ...blockedCanonicalGrappleDiceResult("clinchStrike"), reason: "clinch-strike-roll-without-canonical-execution-blocked" }
@@ -598,7 +601,10 @@ export function groundAttack(
   }
 
   const standingClinch = attackerGrapple.state === GRAPPLE_STATES.CLINCH && defenderGrapple.state === GRAPPLE_STATES.CLINCH;
-  const groundedGrapple = attackerGrapple.state === GRAPPLE_STATES.GROUND || defenderGrapple.state === GRAPPLE_STATES.GRAPPLED;
+  const groundedGrapple = attackerGrapple.state === GRAPPLE_STATES.GROUND ||
+    defenderGrapple.state === GRAPPLE_STATES.GRAPPLED ||
+    [attackerGrapple.positionState, defenderGrapple.positionState]
+      .some((state) => ["ground", "grounded"].includes(String(state || "").toLowerCase()));
   if ((requiredPosition === "standing" && !standingClinch) || (requiredPosition !== "standing" && !groundedGrapple)) {
     return {
       success: false,
@@ -636,7 +642,8 @@ export function groundAttack(
   const isCloseBlade =
     weaponName.includes("dagger") ||
     weaponName.includes("knife") ||
-    weaponName.includes("short blade");
+    weaponName.includes("short blade") ||
+    weaponName.includes("misericorde");
   const daggerBonus = isCloseBlade ? 1 : 0;
   const rollFn = canonicalRoller;
   const naturalRoll = rollFn();
@@ -948,6 +955,9 @@ export function resetGrapple(character) {
     character.grappleState.penalties = { attack: 0, block: 0, evade: 0 };
     character.grappleState.canUseLongWeapons = true;
     character.grappleState.roundsInGrapple = 0;
+  }
+  if (character?.combatWeaponState?.retainedWeaponId) {
+    Object.assign(character, restoreRetainedWeaponAfterGrapple(character, { reason: "grapple-reset" }));
   }
 }
 

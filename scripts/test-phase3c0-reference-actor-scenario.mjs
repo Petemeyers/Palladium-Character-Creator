@@ -1,0 +1,27 @@
+import assert from "node:assert/strict";
+import { getSelectableActorById } from "../src/data/selectableActors.js";
+import { runPhase3C0ReferenceActorScenario } from "../src/utils/combat/phase3c0ReferenceActorScenario.js";
+
+const scenario = runPhase3C0ReferenceActorScenario();
+assert.equal(scenario.scenarioCompleted, true);
+assert.equal(scenario.validations.every((result) => result.valid), true);
+assert.equal(scenario.positionsAuthoritative, true);
+assert.equal(scenario.goblinMoved, true);
+assert.equal(scenario.manualToAiTakeover, true);
+assert.equal(scenario.axeDisposition.disposition, "dropped-two-handed");
+assert.ok(scenario.minotaurNaturalAttacks.length >= 3);
+assert.equal(scenario.collapseNonterminal, true);
+assert.equal(scenario.surrenderOffer.surrenderState.status, "offered");
+assert.deepEqual(scenario.battleOutcome, { completed: true, winnerSide: "party", schemaErrors: 0, deadFighterIds: [] });
+assert.equal(scenario.surrenderResolutions.every((fighter) => fighter.surrenderState.status === "accepted" && fighter.defeated === true), true);
+assert.equal(scenario.actionLedger.every((entry) => Boolean(entry.actionToken)), true);
+assert.equal(new Set(scenario.actionLedger.map((entry) => entry.actionToken)).size, scenario.actionLedger.length);
+assert.equal(scenario.normalizationSources.every((source) => source === "phase3c0-reference-scenario"), true);
+for (const key of ["knight", "goblin-warrior", "minotaur"]) assert.ok(getSelectableActorById(key));
+const [knight, goblin, minotaur] = scenario.fighters;
+assert.equal(knight.grappleState.positionState, "ground");
+assert.equal(minotaur.grappleState.positionState, "ground");
+assert.equal(knight.grappleState.opponent, minotaur.id);
+assert.equal(minotaur.grappleState.opponent, knight.id);
+assert.equal(goblin.species, "goblin");
+console.log("Phase 3C0 deterministic reference-actor scenario passed");

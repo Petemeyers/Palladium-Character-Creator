@@ -8,6 +8,7 @@ import {
   selectArmoredCombatTechnique,
 } from "./selectArmoredCombatTechnique.js";
 import { validateArmoredTechniqueWeapon } from "../combat/armoredTechniqueWeaponValidation.js";
+import { createAuthoritativeArmoredPlanTurnIdentity } from "../combat/armoredActionPlanRegistry.js";
 
 function hasActiveGrappleBetween(attacker = {}, defender = {}) {
   const attackerOpponent = attacker?.grappleState?.opponent || attacker?.grappleState?.opponentId;
@@ -53,8 +54,24 @@ export function resolveArmoredCombatAction({
   initiativeIndex = null,
   initiativeTurnId = null,
   actionToken = turnToken,
+  authoritativeTurn = null,
   addLog,
 } = {}) {
+  const turnIdentity = createAuthoritativeArmoredPlanTurnIdentity({
+    authoritativeTurn,
+    generationId,
+    round,
+    initiativeIndex,
+    initiativeTurnId,
+    actionToken,
+    turnToken,
+  });
+  const planGenerationId = turnIdentity.generationId;
+  const planRound = turnIdentity.round;
+  const planInitiativeIndex = turnIdentity.initiativeIndex;
+  const planInitiativeTurnId = turnIdentity.initiativeTurnId;
+  const planActionToken = turnIdentity.actionToken;
+  const planTurnToken = turnIdentity.turnToken;
   const attackerId = attacker?.id || attacker?._id;
   const defenderId = defender?.id || defender?._id;
   const moraleState = attacker?.state?.moraleState || attacker?.moraleState || attacker?.routingState;
@@ -249,8 +266,8 @@ export function resolveArmoredCombatAction({
   }, "debug");
 
   if (selection.selectedTechnique === ARMORED_TECHNIQUES.GRAPPLE) {
-    const selectionId = `${generationId}:${attackerId}:${defenderId}:${selection.selectedTechnique}:${selection.deterministicRoll ?? "none"}`;
-    if (!turnToken) {
+    const selectionId = `${planGenerationId}:${attackerId}:${defenderId}:${selection.selectedTechnique}:${selection.deterministicRoll ?? "none"}`;
+    if (!planTurnToken || !turnIdentity.complete) {
       addLog?.({
         audience: "developer",
         channel: "validation",
@@ -261,7 +278,7 @@ export function resolveArmoredCombatAction({
         targetId: defenderId,
         source,
         message: `armored action plan rejected: actor=${attacker?.name || attackerId} technique=grapple reason=missing-turn-token`,
-        data: { actionType: "grapple", selectedTechnique: "grapple", reason: "missing-turn-token", generationId, attackerId, defenderId },
+        data: { actionType: "grapple", selectedTechnique: "grapple", reason: "missing-authoritative-turn-identity", turnIdentity, attackerId, defenderId },
       }, "error");
       return { actionType: "rejected", technique: "grapple", suppressed: true, reason: "missing-turn-token" };
     }
@@ -277,12 +294,12 @@ export function resolveArmoredCombatAction({
       resolvedAttackMode: "grapple",
       attackerId,
       defenderId,
-      generationId,
-      round,
-      initiativeIndex,
-      initiativeTurnId,
-      actionToken: actionToken || turnToken || null,
-      turnToken,
+      generationId: planGenerationId,
+      round: Number(planRound),
+      initiativeIndex: Number(planInitiativeIndex),
+      initiativeTurnId: planInitiativeTurnId,
+      actionToken: planActionToken,
+      turnToken: planTurnToken,
       source,
       selectionId,
     };
@@ -342,8 +359,8 @@ export function resolveArmoredCombatAction({
     };
   }
 
-  const selectionId = `${generationId}:${attackerId}:${defenderId}:${selection.selectedTechnique}:${selection.deterministicRoll ?? "none"}`;
-  if (!turnToken) {
+  const selectionId = `${planGenerationId}:${attackerId}:${defenderId}:${selection.selectedTechnique}:${selection.deterministicRoll ?? "none"}`;
+  if (!planTurnToken || !turnIdentity.complete) {
     addLog?.({
       audience: "developer",
       channel: "validation",
@@ -354,7 +371,7 @@ export function resolveArmoredCombatAction({
       targetId: defenderId,
       source,
       message: `armored action plan rejected: actor=${attacker?.name || attackerId} technique=${selection.selectedTechnique} reason=missing-turn-token`,
-      data: { selectedTechnique: selection.selectedTechnique, reason: "missing-turn-token", generationId, attackerId, defenderId },
+      data: { selectedTechnique: selection.selectedTechnique, reason: "missing-authoritative-turn-identity", turnIdentity, attackerId, defenderId },
     }, "error");
     return { actionType: "rejected", technique: selection.selectedTechnique, suppressed: true, reason: "missing-turn-token" };
   }
@@ -376,12 +393,12 @@ export function resolveArmoredCombatAction({
       resolvedAttackMode: selection.selectedTechnique,
       attackerId,
       defenderId,
-      generationId,
-      round,
-      initiativeIndex,
-      initiativeTurnId,
-      actionToken: actionToken || turnToken || null,
-      turnToken,
+      generationId: planGenerationId,
+      round: Number(planRound),
+      initiativeIndex: Number(planInitiativeIndex),
+      initiativeTurnId: planInitiativeTurnId,
+      actionToken: planActionToken,
+      turnToken: planTurnToken,
       source,
       selectionId,
     },

@@ -1,4 +1,5 @@
 import { addOriginalActorMetadata } from "./originalActorMetadata.js";
+import { normalizeReferenceCombatActor } from "./combat/normalizeCombatActorSchema.js";
 
 export function adaptPublicEnemyToRosterEntry(enemy = {}) {
   const rosterEntry = addOriginalActorMetadata({
@@ -24,7 +25,7 @@ export function adaptPublicEnemyToRosterEntry(enemy = {}) {
     originalActorMetadata: enemy.originalActorMetadata,
   });
 
-  return rosterEntry;
+  return normalizeReferenceCombatActor(rosterEntry, { source: "public-enemy-roster-adapter" }).normalizedActor;
 }
 
 export default {

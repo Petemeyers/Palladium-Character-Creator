@@ -22,6 +22,36 @@ function valuesMatch(expected, actual) {
   return String(expected) === String(actual);
 }
 
+export function createAuthoritativeArmoredPlanTurnIdentity({
+  authoritativeTurn = null,
+  generationId = "default",
+  round = null,
+  initiativeIndex = null,
+  initiativeTurnId = null,
+  actionToken = null,
+  turnToken = null,
+} = {}) {
+  const source = authoritativeTurn || {};
+  const identity = {
+    generationId: source.generationId ?? generationId,
+    round: source.round ?? round,
+    initiativeIndex: source.initiativeIndex ?? initiativeIndex,
+    initiativeTurnId: source.initiativeTurnId ?? initiativeTurnId,
+    actionToken: source.actionToken ?? actionToken ?? source.turnToken ?? turnToken,
+    turnToken: source.turnToken ?? turnToken ?? source.actionToken ?? actionToken,
+  };
+  const complete = authoritativeTurn
+    ? Boolean(
+        identity.generationId &&
+        Number.isInteger(Number(identity.round)) &&
+        Number.isInteger(Number(identity.initiativeIndex)) &&
+        identity.initiativeTurnId &&
+        identity.actionToken
+      )
+    : Boolean(identity.actionToken);
+  return Object.freeze({ ...identity, complete, source: authoritativeTurn ? "authoritative-turn" : "legacy-fields" });
+}
+
 export function createArmoredActionPlanRegistry() {
   return new Map();
 }
@@ -153,6 +183,7 @@ export function summarizeArmoredActionPlans(registry) {
 }
 
 export default {
+  createAuthoritativeArmoredPlanTurnIdentity,
   createArmoredActionPlanRegistry,
   markArmoredActionPlanDispatched,
   markArmoredActionPlanTerminal,

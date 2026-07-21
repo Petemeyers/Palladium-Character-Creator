@@ -3566,6 +3566,7 @@ export async function runPlayerTurnAI(player, context) {
         initiativeTurnId: context.initiativeTurnIdRef?.current || context.initiativeTurnId,
         turnToken: context.currentTurnToken || context.currentTurnTokenRef?.current,
         actionToken: context.currentTurnToken || context.currentTurnTokenRef?.current,
+        authoritativeTurn: context.authoritativeInitiativeTurn || null,
         getTacticalMemory: context.getArmoredTacticalMemory,
         rng: context.armoredTechniqueRng,
         rngSource: context.armoredTechniqueRngSource || "player-ai",
@@ -4101,6 +4102,7 @@ export async function runPlayerTurnAI(player, context) {
                         initiativeTurnId: context.initiativeTurnIdRef?.current || context.initiativeTurnId,
                         turnToken: currentTurnToken || currentTurnTokenRef?.current,
                         actionToken: currentTurnToken || currentTurnTokenRef?.current,
+                        authoritativeTurn: context.authoritativeInitiativeTurn || null,
                         getTacticalMemory: context.getArmoredTacticalMemory,
                         rng: context.armoredTechniqueRng,
                         rngSource: context.armoredTechniqueRngSource || "player-ai-flanking-continuation",
@@ -4293,7 +4295,7 @@ export async function runPlayerTurnAI(player, context) {
                     ) {
                       addLog(
                         `ÃƒÆ’Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒâ€¦Ã¢â‚¬â„¢ ${player.name} cannot reach ${target.name} from flanking position (${rangeValidation.reason})`,
-                        "error"
+                        "warning"
                       );
                     }
 
@@ -4754,7 +4756,7 @@ export async function runPlayerTurnAI(player, context) {
           if (!(isRangedLikeAttack(selectedAttack) && isMeleeSpecificError)) {
             addLog(
               `ÃƒÆ’Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒâ€¦Ã¢â‚¬â„¢ ${player.name} still cannot reach ${target.name} for attack! (${rangeValidation.reason})`,
-              "error"
+              "warning"
             );
           }
 

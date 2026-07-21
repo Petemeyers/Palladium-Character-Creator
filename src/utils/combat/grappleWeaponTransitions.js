@@ -1,4 +1,5 @@
 import { createClinchWeaponProfile, isDaggerLikeWeapon } from "./clinchWeaponProfiles.js";
+import { hasSufficientGroundControl } from "./exhaustionCollapseState.js";
 
 const asArray = (value) => Array.isArray(value) ? value.filter(Boolean) : [];
 
@@ -194,11 +195,39 @@ export function drawClinchDaggerTransition({ fighter, opponent, position, round 
 export function restoreRetainedWeaponAfterGrapple(fighter = {}, { round = null, turn = null, reason = "grapple-ended" } = {}) {
   const prior = normalizeCombatWeaponState(fighter);
   if (!prior.retainedWeaponId) return { ...fighter, combatWeaponState: prior };
+  if (prior.droppedWeaponIds.includes(prior.retainedWeaponId)) {
+    return { ...fighter, combatWeaponState: prior };
+  }
+  const retainedWeapon = findCombatWeapon(fighter, prior.retainedWeaponId);
+  if (!retainedWeapon || retainedWeapon.broken === true || retainedWeapon.disabled === true || retainedWeapon.confiscated === true || retainedWeapon.lost === true) {
+    return { ...fighter, combatWeaponState: prior };
+  }
+  const retainedId = getCombatWeaponId(retainedWeapon);
+  const existingEquipped = Array.isArray(fighter.equistaminadWeapons)
+    ? fighter.equistaminadWeapons
+    : [fighter.equistaminadWeapons?.primary, fighter.equistaminadWeapons?.secondary].filter(Boolean);
+  const equistaminadWeapons = [
+    retainedWeapon,
+    ...existingEquipped.filter((weapon) => getCombatWeaponId(weapon) !== retainedId),
+  ];
+  const ordinaryAttacks = [
+    retainedWeapon,
+    ...asArray(fighter.attacks).filter((attack) => {
+      const attackId = getCombatWeaponId(attack);
+      return attackId !== retainedId && attack?.isFallbackUnarmed !== true &&
+        String(attack?.name || "").toLowerCase() !== "unarmed attack";
+    }),
+  ];
   return {
     ...fighter,
+    equistaminadWeapons,
+    equistaminadWeapon: retainedWeapon,
+    selectedWeapon: retainedWeapon,
+    weapon: retainedWeapon,
+    attacks: ordinaryAttacks,
     combatWeaponState: {
       ...prior,
-      readyWeaponId: prior.retainedWeaponId,
+      readyWeaponId: retainedId,
       retainedWeaponId: null,
       retainedWeaponDisposition: null,
       clinchWeaponId: null,
@@ -231,13 +260,19 @@ export function recoverDroppedWeaponTransition({ fighter, droppedItem, round = n
 }
 
 export function isStandingClinch(fighter = {}, opponent = {}) {
+  const groundedPosition = [fighter?.grappleState?.positionState, opponent?.grappleState?.positionState]
+    .some((state) => ["ground", "grounded"].includes(String(state || "").toLowerCase()));
   return fighter?.grappleState?.opponent === opponent?.id && opponent?.grappleState?.opponent === fighter?.id &&
-    String(fighter?.grappleState?.state) === "grapple_clinch" && String(opponent?.grappleState?.state) === "grapple_clinch";
+    !groundedPosition && String(fighter?.grappleState?.state) === "grapple_clinch" && String(opponent?.grappleState?.state) === "grapple_clinch";
 }
 
 export function isGroundedGrapple(fighter = {}, opponent = {}) {
   const states = [String(fighter?.grappleState?.state || ""), String(opponent?.grappleState?.state || "")];
-  return fighter?.grappleState?.opponent === opponent?.id && states.some((state) => state === "grapple_ground" || state === "grappled");
+  const positions = [fighter?.grappleState?.positionState, opponent?.grappleState?.positionState]
+    .map((state) => String(state || "").toLowerCase());
+  return fighter?.grappleState?.opponent === opponent?.id &&
+    (states.some((state) => state === "grapple_ground" || state === "grappled") ||
+      positions.some((state) => state === "ground" || state === "grounded"));
 }
 
 export function getPhase3B2GrappleActions(fighter = {}, opponent = {}) {
@@ -251,7 +286,14 @@ export function getPhase3B2GrappleActions(fighter = {}, opponent = {}) {
     actions.push("takedown", "releaseGrapple");
     return actions;
   }
-  if (isGroundedGrapple(fighter, opponent)) return ["breakFree", "reverseControl", "improveControl", "groundAttack", "releaseGrapple"];
+  if (isGroundedGrapple(fighter, opponent)) {
+    const state = normalizeCombatWeaponState(fighter);
+    const actions = ["breakFree", "reverseControl", "improveControl", "secureGroundControl", "holdAndRest"];
+    if (hasSufficientGroundControl(fighter, opponent) && state.clinchWeaponReady) actions.push("groundedArmorGapStrike");
+    if (hasSufficientGroundControl(fighter, opponent)) actions.push("demandSurrender");
+    actions.push("groundAttack", "releaseGrapple");
+    return actions;
+  }
   return [];
 }
 

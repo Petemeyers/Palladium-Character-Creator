@@ -30,6 +30,18 @@ import {
   resolveGrappleWeaponDisposition,
   restoreRetainedWeaponAfterGrapple,
 } from "../combat/grappleWeaponTransitions.js";
+import {
+  advanceGroundControl,
+  applyGroundedGrappleHoldAndRest,
+  hasSufficientGroundControl,
+} from "../combat/exhaustionCollapseState.js";
+import {
+  SURRENDER_STATES,
+  applySurrenderResponse,
+  offerSurrender,
+  scoreSurrenderResponse,
+} from "../combat/surrenderState.js";
+import { formatArmorGapContactOutcomeLog } from "../combat/grappleLogMessages.js";
 
 // Debug flag for grapple system
 const DEBUG_GRAPPLE = false;
@@ -243,7 +255,7 @@ export function executeAdmittedGrappleResolution({
 
   // Claim once at the first actual die boundary. Subsequent opposed or delayed
   // dice validate that claim without attempting to own the action again.
-  const noRollAction = actionType === "drawClinchDagger" || actionType === "releaseGrapple";
+  const noRollAction = ["drawClinchDagger", "releaseGrapple", "holdAndRest", "demandSurrender"].includes(actionType);
   let rollKind = actionType === "grapple"
     ? "opposed-grapple-initiation"
     : actionType === "maintain"
@@ -254,7 +266,9 @@ export function executeAdmittedGrappleResolution({
           ? "grapple-release"
           : actionType === "defenderPushBreak" || actionType === "defenderReversal"
             ? "grapple-control-transfer"
+            : actionType === "secureGroundControl" ? "grapple-ground-control"
             : actionType === "groundAttack" ? "ground-attack"
+              : actionType === "groundedArmorGapStrike" ? "grounded-armor-gap-strike"
               : actionType === "clinchStrike" ? "clinch-strike-attack" : `grapple-${actionType}`;
   let rollClaimed = false;
   const rollDice = () => {
@@ -317,9 +331,27 @@ export function executeAdmittedGrappleResolution({
       result = attemptGrapple(attacker, defender, rollDice, currentAttackerPos, currentDefenderPos);
       break;
     }
+    case 'secureGroundControl':
     case 'improveControl':
     case 'maintain':
       result = maintainGrapple(attacker, defender, rollDice);
+      if (actionType === "secureGroundControl") {
+        if (!isGroundedGrapple(attacker, defender)) return rejectContract("ground-control-requires-grounded-grapple");
+        if (result?.success) {
+          const control = advanceGroundControl(result.attacker || attacker, result.defender || defender, {
+            reason: "secure-ground-control",
+            actionToken: admission.actionToken,
+          });
+          result = { ...result, attacker: control.fighter, defender: control.opponent, groundControl: control.groundControl };
+          addLog?.({
+            audience: "player", channel: "state", eventType: "grapple-ground-control-updated",
+            level: "info", type: "info", actorId: attacker.id, targetId: defender.id,
+            executionKey: admission.executionKey, source: admission.source,
+            message: `${attacker.name} improves ground control over ${defender.name} to ${control.groundControl.state}.`,
+            data: { ...admission, groundControl: control.groundControl },
+          }, "info");
+        }
+      }
       // Log dice rolls for maintain grapple
       if (result && result.attackerRoll !== undefined && result.defenderRoll !== undefined) {
         const attackerPS = attacker.attributes?.PS || attacker.PS || 10;
@@ -355,10 +387,11 @@ export function executeAdmittedGrappleResolution({
       }
       break;
     case 'clinchStrike':
+    case 'groundedArmorGapStrike':
     case 'groundAttack': {
       const standing = isStandingClinch(attacker, defender);
       const grounded = isGroundedGrapple(attacker, defender);
-      if (actionType === "groundAttack" && !grounded) {
+      if ((actionType === "groundAttack" || actionType === "groundedArmorGapStrike") && !grounded) {
         if (standing) {
           addLog?.({
             audience: "developer", channel: "validation", eventType: "standing-clinch-used-ground-attack-resolver-blocked",
@@ -369,6 +402,9 @@ export function executeAdmittedGrappleResolution({
           }, "error");
         }
         return rejectContract("ground-attack-requires-grounded-grapple");
+      }
+      if (actionType === "groundedArmorGapStrike" && !hasSufficientGroundControl(attacker, defender)) {
+        return rejectContract("grounded-armor-gap-strike-requires-dominant-control");
       }
       if (actionType === "clinchStrike" && !standing) return rejectContract("clinch-strike-requires-standing-clinch");
       const equistaminadWeapons = [
@@ -382,7 +418,9 @@ export function executeAdmittedGrappleResolution({
       const validation = validateClinchWeaponProfile(weapon);
       selectedGrappleWeapon = weapon;
       selectedGrappleAttackMode = weapon?.attackMode || null;
-      rollKind = actionType === "clinchStrike" ? "clinch-strike-attack" : "ground-attack";
+      rollKind = actionType === "clinchStrike"
+        ? "clinch-strike-attack"
+        : actionType === "groundedArmorGapStrike" ? "grounded-armor-gap-strike" : "ground-attack";
       addLog?.({
         audience: "developer",
         channel: "validation",
@@ -504,6 +542,87 @@ export function executeAdmittedGrappleResolution({
         executionKey: admission.executionKey, source: admission.source,
         message: result.message,
         data: { ...admission, daggerId: draw.daggerId, priorWeaponDisposition: draw.priorWeaponDisposition, primaryWeaponDropped: draw.primaryWeaponDropped, actionSpent: 1, turnEndingEffect: true },
+      }, "info");
+      break;
+    }
+    case 'holdAndRest': {
+      const rest = applyGroundedGrappleHoldAndRest(attacker, defender, { recovery: 1 });
+      if (!rest.ok) return rejectContract(rest.reason);
+      const recovery = rest.recovery;
+      result = {
+        success: true,
+        noRollAction: true,
+        turnEndingEffect: true,
+        recovery,
+        message: `${attacker.name} holds the grounded grapple and catches a breath.`,
+        attacker: rest.fighter,
+        defender: rest.opponent,
+      };
+      addLog?.({
+        audience: "player", channel: "state", eventType: "grapple-hold-and-rest-committed",
+        level: "info", type: "info", actorId: attacker.id, targetId: defender.id,
+        executionKey: admission.executionKey, source: admission.source,
+        message: result.message,
+        data: { ...admission, recovery, collapseCleared: false, grapplePreserved: true, turnEndingEffect: true },
+      }, "info");
+      break;
+    }
+    case 'demandSurrender': {
+      if (!isGroundedGrapple(attacker, defender) || !hasSufficientGroundControl(attacker, defender)) {
+        return rejectContract("demand-surrender-requires-dominant-ground-control");
+      }
+      const offeredDefender = offerSurrender(defender, {
+        offeredToId: attacker.id,
+        actionToken: admission.actionToken,
+      });
+      const scoring = scoreSurrenderResponse({
+        responder: defender,
+        surrenderingFighter: defender,
+        orders: defender.orders,
+        prisonerValue: defender.prisonerValue || defender.ransomValue || 0,
+        guardsPresent: context.guardsPresent || 0,
+        alliesPresent: context.alliesPresent || 0,
+        enemiesRemaining: context.enemiesRemaining || 1,
+        witnessesPresent: context.witnessesPresent || 0,
+      });
+      const response = ["accept", "capture", "release"].includes(scoring.preference)
+        ? SURRENDER_STATES.ACCEPTED
+        : SURRENDER_STATES.REFUSED;
+      const nextDefender = applySurrenderResponse(offeredDefender, response, {
+        demandedById: attacker.id,
+        actionToken: admission.actionToken,
+        scoring,
+      });
+      result = {
+        success: true,
+        noRollAction: true,
+        surrenderResponse: response,
+        message: response === SURRENDER_STATES.ACCEPTED
+          ? `${defender.name} accepts ${attacker.name}'s demand and surrenders.`
+          : `${defender.name} refuses ${attacker.name}'s demand to surrender.`,
+        attacker,
+        defender: nextDefender,
+      };
+      addLog?.({
+        audience: "player", channel: "state", eventType: "grapple-surrender-demanded",
+        level: "info", type: "info", actorId: attacker.id, targetId: defender.id,
+        executionKey: admission.executionKey, source: admission.source,
+        message: `${attacker.name} demands ${defender.name}'s surrender.`,
+        data: { ...admission, groundControl: attacker.grappleState?.groundControl },
+      }, "info");
+      addLog?.({
+        audience: "developer", channel: "state", eventType: "surrender-offer-created",
+        level: "info", type: "debug", actorId: defender.id, targetId: attacker.id,
+        executionKey: admission.executionKey, source: admission.source,
+        message: `surrender offer created from demand: actorId=${defender.id} demandedById=${attacker.id}`,
+        data: { ...admission, surrenderState: offeredDefender.surrenderState },
+      }, "debug");
+      addLog?.({
+        audience: "player", channel: "state", eventType: "grapple-surrender-response",
+        level: "info", type: "info", actorId: defender.id, targetId: attacker.id,
+        executionKey: admission.executionKey, source: admission.source,
+        message: result.message,
+        data: { ...admission, response, scoring },
       }, "info");
       break;
     }
@@ -719,7 +838,7 @@ export function executeAdmittedGrappleResolution({
         const damageTargetLabel = labelActor(defenderCopy, attacker, updated);
         const attackerLabel = labelActor(attacker, defenderCopy, updated);
 
-        if ((actionType === "groundAttack" || actionType === "clinchStrike") && selectedGrappleWeapon) {
+        if ((actionType === "groundAttack" || actionType === "groundedArmorGapStrike" || actionType === "clinchStrike") && selectedGrappleWeapon) {
           const hitLocation =
             result.hitLocation ||
             (typeof resolveGrappleHitLocation === "function"
@@ -735,7 +854,7 @@ export function executeAdmittedGrappleResolution({
             attackTotal: result.attackRoll,
             critical: result.critical === true,
             hitLocation,
-            targetState: { grappled: true },
+            targetState: { grappled: true, pinned: attacker.grappleState?.groundControl?.state === "pinned" },
             normalDefense: defenderCopy.guardRating ?? defenderCopy.armorClass ?? 12,
           });
           const damageBeforeContact = Number(result.damage || 0) || 0;
@@ -799,11 +918,17 @@ export function executeAdmittedGrappleResolution({
         
         // Log damage application
         if (result.ignoresArmor) {
+          const armorGapLog = formatArmorGapContactOutcomeLog({
+            attackerLabel,
+            targetLabel: damageTargetLabel,
+            rolledDamage: result.damage,
+            hpDamageApplied,
+            finalHP,
+            maxHP,
+            critical: result.critical === true,
+          });
           // Critical hit or death blow - bypasses armor (chink in armor)
-          addLog(
-            `Ã°Å¸â€™Â¥ ${damageTargetLabel} takes ${result.damage} damage from ${attackerLabel} (armor bypassed - weak point struck)! (HP: ${finalHP}/${maxHP})`,
-            result.critical ? "critical" : "warning"
-          );
+          addLog(armorGapLog.message, armorGapLog.type);
           
           // Log broken armor if any (from calculateArmorDamage)
           if (updatedDefender.equistaminad) {
@@ -884,7 +1009,7 @@ export function executeAdmittedGrappleResolution({
     const attackerIndex = updated.findIndex(f => f.id === attacker.id);
     if (attackerIndex !== -1) {
       const outcome = nextAttacker || attacker;
-      const drawIsTurnEnding = actionType === "drawClinchDagger";
+      const drawIsTurnEnding = actionType === "drawClinchDagger" || actionType === "holdAndRest";
       const remainingActionsBefore = Number(updated[attackerIndex].remainingActions ?? 0) || 0;
       const transition = drawIsTurnEnding
         ? {
@@ -1042,7 +1167,7 @@ export function executeAdmittedGrappleResolution({
     weaponId: selectedGrappleWeapon?.weaponId || selectedGrappleWeapon?.name || null,
     attackMode: selectedGrappleAttackMode,
     actionSpent: true,
-    staminaSpent: actionType === "groundAttack" || actionType === "clinchStrike" || actionType === "maintain" || actionType === "improveControl" || actionType === "grapple" ? 1 : 0,
+    staminaSpent: actionType === "groundAttack" || actionType === "groundedArmorGapStrike" || actionType === "clinchStrike" || actionType === "maintain" || actionType === "improveControl" || actionType === "secureGroundControl" || actionType === "grapple" ? 1 : 0,
     impactResolved: Boolean(result?.attackRoll || result?.attackerRoll || result?.defendRoll || result?.hit || result?.message),
     armorContactResolved: Boolean(armorContactOutcome),
     hpDamageApplied,
@@ -1054,7 +1179,7 @@ export function executeAdmittedGrappleResolution({
     armorContact: armorContactOutcome,
     opponentGrappleState: latestOpponent?.grappleState || null,
     noRollAction,
-    turnEndingEffect: (actionType === "grapple" && result?.success === true) || actionType === "drawClinchDagger",
+    turnEndingEffect: (actionType === "grapple" && result?.success === true) || actionType === "drawClinchDagger" || actionType === "holdAndRest",
     continuationCreated: false,
   };
 }

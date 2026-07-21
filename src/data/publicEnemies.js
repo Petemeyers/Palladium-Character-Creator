@@ -1,3 +1,5 @@
+import { getCanonicalCombatActorDefinition } from "./canonicalCombatActors.js";
+
 export const PUBLIC_ENEMIES = [
   {
     id: "goblin-warrior",
@@ -173,6 +175,21 @@ export const PUBLIC_ENEMIES = [
     source: "Simulator Combat Profile",
     ruleset: "core-d20",
   },
-];
+].map((entry) => {
+  if (entry.id !== "goblin-warrior") return entry;
+  const canonical = getCanonicalCombatActorDefinition("goblin-warrior");
+  return {
+    ...entry,
+    actorKey: canonical.actorKey,
+    species: canonical.species,
+    combatActorSchemaVersion: 1,
+    weaponProfiles: canonical.weaponProfiles.map((profile) => ({ ...profile })),
+    equipment: canonical.equipment.map((item) => ({ ...item })),
+    alignment: canonical.alignment,
+    behavior: { ...canonical.behavior },
+    grappleProfile: { ...canonical.grappleProfile },
+    surrenderProfile: { ...canonical.surrenderProfile },
+  };
+});
 
 export default PUBLIC_ENEMIES;

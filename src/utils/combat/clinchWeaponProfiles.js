@@ -2,7 +2,25 @@ import { isLongswordWeapon } from "./weaponArmorProfiles.js";
 
 export const CLINCH_ATTACK_MODES = Object.freeze({
   DAGGER_GAP_ATTACK: "dagger-clinch-gap-attack",
+  MISERICORDE_THRUST: "misericorde-thrust",
   UNARMED_ATTACK: "unarmed-clinch-attack",
+});
+
+export const MISERICORDE_WEAPON_PROFILE = Object.freeze({
+  id: "misericorde",
+  weaponId: "misericorde",
+  name: "Misericorde",
+  category: "dagger",
+  damage: "1d4",
+  damageDice: "1d4",
+  damageType: "piercing",
+  usableInClinch: true,
+  attackMode: CLINCH_ATTACK_MODES.MISERICORDE_THRUST,
+  reservedActionType: "misericordeThrust",
+  armorContactTraits: Object.freeze({
+    armorContactResolverRequired: true,
+    gapCapableModes: Object.freeze([CLINCH_ATTACK_MODES.MISERICORDE_THRUST]),
+  }),
 });
 
 function text(...values) {
@@ -13,7 +31,7 @@ function text(...values) {
 }
 
 export function isDaggerLikeWeapon(weapon = {}) {
-  return /dagger|knife|short blade/.test(text(weapon?.name, weapon?.type, weapon?.category, weapon?.weaponType));
+  return /dagger|knife|short blade|misericorde/.test(text(weapon?.name, weapon?.type, weapon?.category, weapon?.weaponType));
 }
 
 export function isUnarmedLikeWeapon(weapon = {}) {
@@ -28,6 +46,7 @@ export function isUnarmedLikeWeapon(weapon = {}) {
 export function createClinchWeaponProfile(weapon = null, actor = {}) {
   if (weapon && isDaggerLikeWeapon(weapon)) {
     const weaponName = weapon.name || "Dagger";
+    const misericorde = /misericorde/.test(text(weaponName, weapon.type, weapon.weaponType));
     return {
       ...weapon,
       id: weapon.id || weapon.weaponId || weaponName,
@@ -39,7 +58,7 @@ export function createClinchWeaponProfile(weapon = null, actor = {}) {
       damageDice: weapon.damageDice || weapon.damage || "1d4",
       damageType: weapon.damageType || "piercing",
       usableInClinch: true,
-      attackMode: CLINCH_ATTACK_MODES.DAGGER_GAP_ATTACK,
+      attackMode: misericorde ? CLINCH_ATTACK_MODES.MISERICORDE_THRUST : CLINCH_ATTACK_MODES.DAGGER_GAP_ATTACK,
       armorTechnique: null,
       selectedTechnique: null,
       sourceWeapon: null,
@@ -47,7 +66,7 @@ export function createClinchWeaponProfile(weapon = null, actor = {}) {
       armoredActionPlan: null,
       armorContactTraits: {
         armorContactResolverRequired: true,
-        gapCapableModes: [CLINCH_ATTACK_MODES.DAGGER_GAP_ATTACK],
+        gapCapableModes: [misericorde ? CLINCH_ATTACK_MODES.MISERICORDE_THRUST : CLINCH_ATTACK_MODES.DAGGER_GAP_ATTACK],
       },
     };
   }
@@ -91,7 +110,9 @@ export function createClinchWeaponProfile(weapon = null, actor = {}) {
 
 export function validateClinchWeaponProfile(profile = {}) {
   const mode = profile?.attackMode;
-  const isClinchMode = mode === CLINCH_ATTACK_MODES.DAGGER_GAP_ATTACK || mode === CLINCH_ATTACK_MODES.UNARMED_ATTACK;
+  const isClinchMode = mode === CLINCH_ATTACK_MODES.DAGGER_GAP_ATTACK ||
+    mode === CLINCH_ATTACK_MODES.MISERICORDE_THRUST ||
+    mode === CLINCH_ATTACK_MODES.UNARMED_ATTACK;
   if (!isClinchMode) return { ok: false, reason: "not-clinch-mode", profile };
   const longSwordSource = Boolean(
     isLongswordWeapon(profile) ||
@@ -123,6 +144,7 @@ export function stripStandingAttackFieldsForClinch(actor = {}, weaponProfile = n
 
 export default {
   CLINCH_ATTACK_MODES,
+  MISERICORDE_WEAPON_PROFILE,
   createClinchWeaponProfile,
   isDaggerLikeWeapon,
   isUnarmedLikeWeapon,

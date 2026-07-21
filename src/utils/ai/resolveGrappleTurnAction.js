@@ -4,6 +4,7 @@ import {
   isStandingClinch,
   normalizeCombatWeaponState,
 } from "../combat/grappleWeaponTransitions.js";
+import { hasSufficientGroundControl } from "../combat/exhaustionCollapseState.js";
 
 function text(value) {
   return String(value || "").toLowerCase();
@@ -57,10 +58,15 @@ export function resolveGrappleTurnAction({
   const grounded = isGroundedGrapple(routingActor, opponent);
   const defenderFirstEscape = standing && grappleState?.isAttacker !== true &&
     !weaponState.clinchWeaponReady && (Number(remainingActions ?? 0) || 0) > 1;
+  const dominantGroundControl = grounded && hasSufficientGroundControl(routingActor, opponent);
   const actionType = !canAct
     ? "pass"
     : grounded
-      ? "groundAttack"
+      ? dominantGroundControl && weaponState.clinchWeaponReady
+        ? "groundedArmorGapStrike"
+        : dominantGroundControl && opponent?.fatigueState?.status === "collapsed"
+          ? "demandSurrender"
+          : "groundAttack"
       : defenderFirstEscape
         ? "breakFree"
         : dagger && !weaponState.clinchWeaponReady
@@ -72,6 +78,12 @@ export function resolveGrappleTurnAction({
       ? "Break Free"
       : actionType === "groundAttack"
         ? "Ground Attack"
+        : actionType === "groundedArmorGapStrike"
+          ? "Grounded Armor-Gap Strike"
+          : actionType === "secureGroundControl"
+            ? "Secure Ground Control"
+            : actionType === "demandSurrender"
+              ? "Demand Surrender"
         : canAct ? "Clinch Strike" : "Pass";
   const weapon = weaponState.clinchWeaponReady ? dagger : (actionType === "clinchStrike" ? unarmed : dagger || unarmed || null);
   const executionKey = [

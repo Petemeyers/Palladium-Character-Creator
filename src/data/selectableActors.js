@@ -1,3 +1,5 @@
+import { getCanonicalCombatActorDefinition } from "./canonicalCombatActors.js";
+
 const HUMAN_MODEL = "/assets/models/characters/human_base_morph.glb";
 const HAWK_MODEL = "/assets/models/characters/hawk_flying.glb";
 
@@ -420,7 +422,10 @@ export const SELECTABLE_ACTORS = [
     tags: ["animal", "charger"],
     visual: { desiredHeightFt: 3 },
   }),
-];
+].map((entry) => {
+  const canonical = getCanonicalCombatActorDefinition(entry.id);
+  return canonical ? { ...entry, ...canonical, visual: { ...(entry.visual || {}), ...(canonical.visual || {}) } } : entry;
+});
 
 export function getSelectableActorById(id) {
   return SELECTABLE_ACTORS.find((entry) => entry.id === id) || null;

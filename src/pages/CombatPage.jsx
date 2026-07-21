@@ -248,6 +248,7 @@ import {
 import {
   getArmoredTechniqueSourceWeapon,
   isArmoredLongswordTechnique,
+  validateArmoredPlanRuntimeWeaponIdentity,
   validateArmoredTechniqueWeapon,
 } from "../utils/combat/armoredTechniqueWeaponValidation.js";
 import {
@@ -268,7 +269,20 @@ import {
   normalizeCombatWeaponState,
   recoverDroppedWeaponTransition,
 } from "../utils/combat/grappleWeaponTransitions.js";
+import {
+  applyAuthoritativeExhaustionCollapse,
+  isConsciousExhaustionCollapse,
+} from "../utils/combat/exhaustionCollapseState.js";
+import {
+  isPendingSurrenderResolution,
+  isSurrenderedForCombat,
+  offerRoutedExhaustedCowerSurrender,
+  scoreSurrenderTreatment,
+  shouldDeferCombatEndForSurrender,
+} from "../utils/combat/surrenderState.js";
 import { applyBleedingMeterForNewMeleeRound } from "../utils/combat/bleedingMeter.js";
+import { createCanonicalUnarmedAttack } from "../utils/combat/unarmedAttackSanitization.js";
+import { validateCombatActor } from "../utils/combat/validateCombatActor.js";
 import {
   getCombatantGridPosition,
   resolveNoMovePositionAuthority,
@@ -470,7 +484,6 @@ import {
   removeFledCombatantPositions,
 } from "../utils/combatFledState.js";
 import {
-  advanceExhaustedCower,
   isCombatantBroken,
   resetExhaustedCowerCount,
   resolveCombatSideOutcome,
@@ -2226,8 +2239,19 @@ function CombatPage({ characters = [] }) {
 
   const normalizeCombatantForBattle = useCallback((combatant) => {
     if (!combatant) return combatant;
-    return normalizeFighter(normalizeCombatant(combatant));
-  }, [normalizeFighter]);
+    const validation = validateCombatActor(combatant, { normalize: true });
+    validation.diagnostics.forEach((diagnostic) => addLog?.({
+      audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+      channel: COMBAT_LOG_CHANNELS.VALIDATION,
+      ...diagnostic,
+      type: diagnostic.level === "error" ? "error" : "debug",
+      message: `${diagnostic.eventType}: actorId=${diagnostic.actorId || combatant.id || "unknown"}`,
+    }, diagnostic.level === "error" ? "error" : "debug"));
+    if (validation.blocksCombatStart) {
+      return { ...validation.normalizedActor, combatActorValidationBlocked: true, combatActorValidationErrors: validation.errors };
+    }
+    return normalizeFighter(normalizeCombatant(validation.normalizedActor));
+  }, [addLog, normalizeFighter]);
 
   const getCombatantAC = useCallback((combatant) => getArmorClass(combatant), []);
   const getCombatantHP = useCallback((combatant) => getHitPoints(combatant), []);
@@ -2555,10 +2579,14 @@ function CombatPage({ characters = [] }) {
       : [];
     if (
       ["routed", "broken", "fled", "surrendered", "captured"].includes(moraleState) ||
-      statusEffects.some((effect) => ["routed", "broken", "fled", "surrendered", "captured"].includes(effect))
+      statusEffects.some((effect) => ["routed", "broken", "fled", "surrendered", "captured"].includes(effect)) ||
+      isSurrenderedForCombat(fighter)
     ) {
       return false;
     }
+    // Exhaustion removes the ability to act, not consciousness or combat
+    // participation. It must therefore not satisfy a victory predicate.
+    if (isConsciousExhaustionCollapse(fighter)) return true;
     return canFighterAct(fighter);
   }, [canFighterAct]);
 
@@ -2980,6 +3008,7 @@ function CombatPage({ characters = [] }) {
   const committedPositionsRef = useRef(positions);
   const lastMovementCommitRef = useRef({});
   const movementCommitSequenceRef = useRef(0);
+  const surrenderResolutionEntryKeysRef = useRef(new Set());
   const renderPositionsRef = useRef(renderPositions);
   const prevPositionsRef = useRef(null);
   const suppressNextAnimationRef = useRef(new Set());
@@ -3535,7 +3564,7 @@ function CombatPage({ characters = [] }) {
         accepted: true,
         completed: true,
         actorId: fighter.id,
-        actionType: "grapple",
+        actionType,
         actionSpent: true,
         actionsSpent: 1,
         explicitTurnEndingEffect,
@@ -4023,46 +4052,40 @@ function CombatPage({ characters = [] }) {
       armorProfile: survivalDecision.armorProfile,
     });
     if (effectivePanicMovement.distanceFeet <= 0) {
-      let terminalCower = false;
       addLog(`${fighter.name} is too exhausted to keep fleeing and cowers in place.`, "warning");
       commitFighters((prev) => prev.map((candidate) => {
         if (candidate.id !== fighter.id) return candidate;
-        const cower = advanceExhaustedCower(candidate);
-        terminalCower = cower.terminal;
-        if (cower.terminal) return finalizeNoMovePreservingPosition({
-          fighterId: candidate.id,
-          latestFighter: candidate,
-          staleActor: cower.actor || fighter,
-          actorPatch: cower.actor,
-          reason: "exhausted-cower-terminal",
-          source: "exhausted-cower",
+        const offered = offerRoutedExhaustedCowerSurrender(candidate, {
+          offeredToId: liveThreats[0]?.id || null,
+          actionToken: currentTurnTokenRef.current || null,
         });
         return finalizeNoMovePreservingPosition({
           fighterId: candidate.id,
           latestFighter: candidate,
-          staleActor: cower.actor || fighter,
-          actorPatch: {
-          ...cower.actor,
-          remainingActions: Math.max(0, (Number(candidate.remainingActions ?? 0) || 0) - 1),
-          moraleState: {
-            ...(cower.actor.moraleState || {}),
-            status: "ROUTED",
-            survivalIntent: SURVIVAL_INTENTS.COWER,
-          },
-          },
-          reason: "exhausted-cower",
-          source: "exhausted-cower",
+          staleActor: offered,
+          actorPatch: offered,
+          reason: "routed-exhausted-cower",
+          source: "routed-exhausted-cower",
         });
       }));
-      if (terminalCower) {
-        addLog(`${fighter.name} is too exhausted and broken to continue fighting.`, "warning");
-        addLog(`${fighter.name} is no longer an active combatant.`, "info");
-      }
+      addLog(`${fighter.name} yields rather than continuing an exhausted flight.`, "warning");
+      addLog?.({
+        audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+        channel: COMBAT_LOG_CHANNELS.STATE,
+        eventType: "surrender-offered",
+        level: "info",
+        type: "debug",
+        actorId: fighter.id,
+        targetId: liveThreats[0]?.id || null,
+        source: "routed-exhausted-cower",
+        message: `surrender offered: actorId=${fighter.id} reason=routed-exhausted-cower`,
+        data: { actionType: "cower", reason: "routed-exhausted-cower", surrenderStatus: "offered" },
+      }, "debug");
       return completeMoraleAction({
         actionType: "cower",
-        explicitTurnEndingEffect: terminalCower,
-        fighterCapable: !terminalCower,
-        resultSource: terminalCower ? "exhausted-cower-terminal" : "exhausted-cower",
+        explicitTurnEndingEffect: true,
+        fighterCapable: false,
+        resultSource: "routed-exhausted-cower",
       });
     }
     if (effectivePanicMovement.multiplier < 1) {
@@ -9500,6 +9523,9 @@ function CombatPage({ characters = [] }) {
       fighter.grappleState?.carryMode === "grappleLift" ||
       carryState === "carried"
     ) return false;
+    if (isSurrenderedForCombat(fighter)) return false;
+    if (isPendingSurrenderResolution(fighter)) return true;
+    if (isConsciousExhaustionCollapse(fighter)) return true;
     return canFighterAct(fighter);
   }, [canFighterAct, getFighterHP]);
   const isPartyAlignedForVictory = useCallback((fighter) => {
@@ -9537,6 +9563,8 @@ function CombatPage({ characters = [] }) {
     const hostileThreats = active.filter((fighter) =>
       isHostileThreatToParty(fighter, fighterList || [], sceneContext)
     );
+    const pendingSurrenders = hostileFighters.filter(isPendingSurrenderResolution);
+    const resistingHostileThreats = hostileThreats.filter((fighter) => !isPendingSurrenderResolution(fighter));
     const activeNonParty = active.filter((fighter) => !isPartyAlignedForVictory(fighter));
     const nonPartyHostileConflict = activeNonParty.some((actor, index) =>
       activeNonParty.slice(index + 1).some((target) =>
@@ -9555,6 +9583,8 @@ function CombatPage({ characters = [] }) {
     return {
       activeParty,
       hostileThreats,
+      pendingSurrenders,
+      resistingHostileThreats,
       partyFighters,
       hostileFighters,
       nonPartyHostileConflict,
@@ -9570,6 +9600,44 @@ function CombatPage({ characters = [] }) {
     if (combatEndCheckRef.current || combatOverRef.current) return true;
 
     const combatVictoryState = getCombatVictoryState(fighterList);
+    if (shouldDeferCombatEndForSurrender({
+      pendingSurrenders: combatVictoryState.pendingSurrenders,
+      resistingFighters: combatVictoryState.resistingHostileThreats,
+      victors: combatVictoryState.activeParty,
+    })) {
+      const resolutionKey = combatVictoryState.pendingSurrenders
+        .map((fighter) => fighter.id)
+        .sort()
+        .join(":");
+      if (!surrenderResolutionEntryKeysRef.current.has(resolutionKey)) {
+        surrenderResolutionEntryKeysRef.current.add(resolutionKey);
+        const victor = combatVictoryState.activeParty[0];
+        const surrenderingFighter = combatVictoryState.pendingSurrenders[0];
+        const treatment = scoreSurrenderTreatment({
+          responder: victor,
+          surrenderingFighter,
+          orders: victor?.orders,
+          prisonerValue: surrenderingFighter?.prisonerValue || 0,
+          guardsPresent: combatVictoryState.activeParty.length,
+          alliesPresent: combatVictoryState.activeParty.length,
+          enemiesRemaining: 0,
+          witnessesPresent: Math.max(0, (fighterList || []).length - 2),
+        });
+        addLog?.({
+          audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+          channel: COMBAT_LOG_CHANNELS.STATE,
+          eventType: "surrender-resolution-entered",
+          level: "info",
+          type: "debug",
+          actorId: victor?.id || null,
+          targetId: surrenderingFighter?.id || null,
+          source: "routed-exhausted-cower",
+          message: `surrender resolution entered: victorId=${victor?.id || "unknown"} surrenderingId=${surrenderingFighter?.id || "unknown"}`,
+          data: { treatment, pendingFighterIds: combatVictoryState.pendingSurrenders.map((fighter) => fighter.id) },
+        }, "debug");
+      }
+      return false;
+    }
     const combatWillEnd =
       combatVictoryState.bothSidesBroken ||
       combatVictoryState.partyDefeated ||
@@ -10572,6 +10640,10 @@ function CombatPage({ characters = [] }) {
       takedown: "Takedown/Trip",
       releaseGrapple: "Release Grapple",
       groundAttack: "Ground Attack",
+      holdAndRest: "Hold and Rest",
+      secureGroundControl: "Secure Ground Control",
+      groundedArmorGapStrike: "Grounded Armor-Gap Strike",
+      demandSurrender: "Demand Surrender",
     };
     getPhase3B2GrappleActions(fighter, target).forEach((value) => actions.push({ value, label: labels[value] || value }));
 
@@ -11671,6 +11743,23 @@ function CombatPage({ characters = [] }) {
       record: startingRecord || record,
     };
   }, [addLog, meleeRound, transitionLogicalInitiativeTurn]);
+
+  const getAuthoritativeInitiativeTurnSnapshot = useCallback((actorId = null) => {
+    const initiativeTurnId = initiativeTurnIdRef.current;
+    const record = Array.from(initiativeTurnLogicalRegistryRef.current.values()).find((entry) => (
+      entry?.initiativeTurnId === initiativeTurnId && (!actorId || entry?.actorId === actorId)
+    ));
+    if (!record) return null;
+    return Object.freeze({
+      generationId: record.generationId,
+      round: record.round,
+      initiativeIndex: record.initiativeIndex,
+      initiativeTurnId: record.initiativeTurnId,
+      actorId: record.actorId,
+      actionToken: currentTurnTokenRef.current,
+      turnToken: currentTurnTokenRef.current,
+    });
+  }, []);
 
   const markLogicalTurnWaitingManual = useCallback((fighter, index, source = "manual-player-wait") => {
     if (!fighter?.id) return null;
@@ -14228,9 +14317,14 @@ function CombatPage({ characters = [] }) {
       commitFighters(prev =>
         prev.map(f => {
           if (f.id === currentFighter.id) {
+            const remainsGrounded = ["ground", "grounded"].includes(String(f.grappleState?.positionState || "").toLowerCase());
             const updatedFighter = {
               ...f,
               canAct: true,
+              collapsed: false,
+              collapseState: { ...(f.collapseState || {}), conscious: true, resolved: true },
+              prone: remainsGrounded,
+              isProne: remainsGrounded,
               fatigueState: {
                 ...f.fatigueState,
                 status: "exhausted",
@@ -14249,7 +14343,9 @@ function CombatPage({ characters = [] }) {
       );
 
       addLog(
-       `${currentFighter.name} staggers back to their feet, still exhausted.`,
+       ["ground", "grounded"].includes(String(currentFighter.grappleState?.positionState || "").toLowerCase())
+         ? `${currentFighter.name} recovers from collapse but remains grounded and exhausted.`
+         : `${currentFighter.name} staggers back to their feet, still exhausted.`,
         "status"
       );
 
@@ -14263,35 +14359,63 @@ function CombatPage({ characters = [] }) {
         resolveCollapseFromExhaustion(currentFighter, stamina);
 
       if (collapsed) {
-        // Update fighter to fully collapsed
-        commitFighters(prev =>
-          prev.map(f =>
-            f.id === currentFighter.id
-              ? {
-                ...f,
-                canAct: false,
-                fatigueState: {
-                  ...f.fatigueState,
-                  status: "collapsed",
-                  currentStamina: newStamina,
-                  collapseRoundsRemaining: durationMelees,
-                  penalties: {
-                    attack: -5,
-                    block: -5,
-                    evade: -5,
-                    ps: 0,
-                    speed: 0,
-                  },
-                },
-              }
-              : f
-          )
-        );
+        let collapseCommit = null;
+        commitFighters((previous) => {
+          collapseCommit = applyAuthoritativeExhaustionCollapse({
+            fighters: previous,
+            fighterId: currentFighter.id,
+            currentStamina: newStamina,
+            collapseRoundsRemaining: durationMelees,
+            round: meleeRound,
+            turn: turnCounter,
+          });
+          return collapseCommit.ok ? collapseCommit.fighters : previous;
+        });
 
         addLog(
          `${currentFighter.name} collapses from exhaustion! (rolled ${roll} vs endurance ${target})`,
           "warning"
         );
+        if (collapseCommit?.ok) {
+          addLog?.({
+            audience: COMBAT_LOG_AUDIENCES.PLAYER,
+            channel: COMBAT_LOG_CHANNELS.STATE,
+            eventType: "conscious-exhaustion-collapse-committed",
+            level: "warning",
+            type: "status",
+            actorId: currentFighter.id,
+            targetId: collapseCommit.opponentId,
+            source: "turn-start-exhaustion-collapse",
+            message: `${currentFighter.name} collapses but remains conscious and in the fight.`,
+            data: collapseCommit,
+          }, "status");
+          if (collapseCommit.activeGrapplePreserved) {
+            addLog?.({
+              audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+              channel: COMBAT_LOG_CHANNELS.STATE,
+              eventType: "grapple-collapse-ground-transition-committed",
+              level: "info",
+              type: "debug",
+              actorId: currentFighter.id,
+              targetId: collapseCommit.opponentId,
+              source: "turn-start-exhaustion-collapse",
+              message: `standing grapple grounded by conscious collapse: actorId=${currentFighter.id} controllerId=${collapseCommit.groundControl?.controllerId}`,
+              data: collapseCommit,
+            }, "debug");
+            addLog?.({
+              audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+              channel: COMBAT_LOG_CHANNELS.STATE,
+              eventType: "grapple-ground-control-updated",
+              level: "info",
+              type: "debug",
+              actorId: collapseCommit.groundControl?.controllerId,
+              targetId: currentFighter.id,
+              source: "turn-start-exhaustion-collapse",
+              message: `ground control updated: state=dominant controllerId=${collapseCommit.groundControl?.controllerId}`,
+              data: collapseCommit.groundControl,
+            }, "debug");
+          }
+        }
 
         // Their turn is basically a no-op now - skip to next fighter
         onEndTurnFull(currentFighter?.id);
@@ -15346,7 +15470,7 @@ function CombatPage({ characters = [] }) {
       }
     }
 
-    const combatEnded = !snapshot.combatActive;
+    const combatEnded = actionResult.combatEnded === true || !snapshot.combatActive;
     const explicitTurnEndingEffect =
       canonicalResult.explicitTurnEndingEffect === true ||
       canonicalResult.turnEndingEffect === true ||
@@ -17963,8 +18087,13 @@ function CombatPage({ characters = [] }) {
     actionType,
     actionToken,
     actionResult,
+    executionSnapshot = null,
   } = {}) => {
-    const existingExecution = grappleActionExecutionRegistryRef.current.get(executionKey);
+    let existingExecution = grappleActionExecutionRegistryRef.current.get(executionKey);
+    if (!existingExecution && executionSnapshot?.executionKey === executionKey && executionSnapshot?.actionToken === actionToken) {
+      existingExecution = Object.freeze({ ...executionSnapshot });
+      grappleActionExecutionRegistryRef.current.set(executionKey, existingExecution);
+    }
     if ((Number(existingExecution?.completionArbiterCallCount ?? 0) || 0) > 0) {
       addLog?.({
         audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
@@ -19385,7 +19514,13 @@ function CombatPage({ characters = [] }) {
       getFighterHP,
       applyHPToFighter,
       onPostHpMutation: (updatedFighters, meta = {}) => {
-        const ended = endCombatIfVictoryResolved(fightersRef.current ?? updatedFighters);
+        const victoryState = getCombatVictoryState(fightersRef.current ?? updatedFighters);
+        const ended = Boolean(
+          victoryState.bothSidesBroken ||
+          victoryState.partyDefeated ||
+          victoryState.partyVictorious ||
+          victoryState.noHostileSidesRemaining
+        );
         if (ended) {
           addLog?.({
             audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
@@ -19440,6 +19575,9 @@ function CombatPage({ characters = [] }) {
         clearOwnedActionLatch();
       },
     });
+    const immutableAdmittedExecutionSnapshot = Object.freeze({
+      ...(grappleActionExecutionRegistryRef.current.get(grappleActionId) || {}),
+    });
     const canonicalCompletion =
       grappleCompletion && grappleCompletion.accepted !== false
         ? completeCanonicalGrappleAction({
@@ -19449,6 +19587,7 @@ function CombatPage({ characters = [] }) {
             actionType,
             actionToken: grappleDispatchActionToken,
             actionResult: grappleCompletion,
+            executionSnapshot: immutableAdmittedExecutionSnapshot,
           })
         : null;
     if (canonicalCompletion && canonicalCompletion.accepted === false) {
@@ -19472,25 +19611,39 @@ function CombatPage({ characters = [] }) {
       executionKey: grappleActionId,
       source: "grapple-executor-settled",
     });
-    if (grappleCompletion?.combatEnded === true || canonicalCompletion?.completionDecision?.decision === "combat-ended") {
-      const continuationAuditEntries = Array.from(remainingActionContinuationRegistryRef.current.entries());
+    const grappleTerminalCombatEnd = Boolean(
+      grappleCompletion?.combatEnded === true || canonicalCompletion?.completionDecision?.decision === "combat-ended"
+    );
+    const terminalContinuationAuditEntries = grappleTerminalCombatEnd
+      ? Array.from(remainingActionContinuationRegistryRef.current.entries())
+      : [];
+    const terminalExecutionRecords = grappleTerminalCombatEnd
+      ? Array.from(grappleActionExecutionRegistryRef.current.values()).map((record) => Object.freeze({ ...record }))
+      : [];
+    const combatEndCommitted = grappleTerminalCombatEnd
+      ? endCombatIfVictoryResolved(fightersRef.current ?? fighters)
+      : false;
+    if (grappleTerminalCombatEnd) {
+      const continuationAuditEntries = terminalContinuationAuditEntries;
       cancelRemainingActionContinuationsForActor({
         actorId: liveAttacker?.id,
-        initiativeTurnId: initiativeTurnIdRef.current,
+        initiativeTurnId: canonicalAdmission.initiativeTurnId,
         reason: "grapple-combat-ended",
         source: "grapple-combat-end-terminal-return",
       });
-      commitFighters((current = []) => current.map((fighter) => {
-        if (fighter?.id !== liveAttacker?.id && fighter?.id !== defenderId) return fighter;
-        const next = { ...fighter, grappleState: fighter?.grappleState ? { ...fighter.grappleState } : fighter?.grappleState };
-        resetGrapple(next);
-        return next;
-      }));
+      if (!combatEndCommitted) {
+        commitFighters((current = []) => current.map((fighter) => {
+          if (fighter?.id !== liveAttacker?.id && fighter?.id !== defenderId) return fighter;
+          const next = { ...fighter, grappleState: fighter?.grappleState ? { ...fighter.grappleState } : fighter?.grappleState };
+          resetGrapple(next);
+          return next;
+        }));
+      }
       clearOwnedGrappleActionId();
       clearOwnedActionLatch();
       const continuationRecords = continuationAuditEntries.map(([, record]) => record);
       const exactKeyMismatches = continuationAuditEntries.filter(([key, record]) => record?.continuationKey !== key).length;
-      const executionRecords = Array.from(grappleActionExecutionRegistryRef.current.values());
+      const executionRecords = terminalExecutionRecords;
       const terminalExecutionStates = new Set(["completed", "rejected", "canceled-combat-ended"]);
       const callbacksPending = Array.from(remainingActionContinuationRegistryRef.current.values()).filter((record) => record?.pending === true).length;
       const activePendingOwnership = Array.from(remainingActionContinuationRegistryRef.current.values()).filter((record) => record?.pending === true || record?.state === "continuation-pending").length;
@@ -19703,7 +19856,10 @@ function CombatPage({ characters = [] }) {
           const base = getWeaponByName(weapon.name) || {};
           const merged = { ...base, ...weapon }; // equistaminad overrides canonical
           weapons.push({
+            ...merged,
             name: merged.name,
+            id: merged.id || merged.weaponId || weapon.id || weapon.weaponId || merged.name,
+            weaponId: merged.weaponId || merged.id || weapon.weaponId || weapon.id || merged.name,
             damage: merged.damage || "1d3",
             slot: weapon.slot || "Right Hand",
             range: merged.range,
@@ -19895,23 +20051,7 @@ function CombatPage({ characters = [] }) {
           : equistaminad;
       if (grappleRange && candidates.length === 0) {
         return {
-          attack: {
-            ...attackData,
-            name: "Unarmed Attack",
-            damage: attackData?.damage || "1d3",
-            damageDice: attackData?.damageDice || attackData?.damage || "1d3",
-            count: Number(attackData?.count ?? 1),
-            type: "melee",
-            attackType: "melee",
-            weaponType: "melee",
-            category: "melee",
-            range: 5,
-            rangeFeet: 5,
-            reachFeet: 5,
-            isRanged: false,
-            isMelee: true,
-            isFallbackUnarmed: true,
-          },
+          attack: createCanonicalUnarmedAttack(attackData, enemy),
           meta: { beforeName, afterName: "Unarmed Attack", equistaminadName: null },
         };
       }
@@ -20359,6 +20499,82 @@ function CombatPage({ characters = [] }) {
     if (ownsAttackAction && !bonusModifiers?.allowOutOfTurnAttack) {
       initiativeActionSequenceRef.current = resolvedAttackActionSequence;
     }
+    let armoredPlanRejectionRecovery = null;
+    const recoverRejectedArmoredActionPlan = ({ reason, planId, stage }) => {
+      if (armoredPlanRejectionRecovery) return armoredPlanRejectionRecovery;
+      const actorId = stateAttacker?.id || attacker?.id;
+      for (const [continuationKey, record] of remainingActionContinuationRegistryRef.current.entries()) {
+        if (record?.actorId !== actorId || record?.initiativeTurnId !== initiativeTurnIdRef.current || record?.state !== "fired") continue;
+        const rejected = rejectActionContinuationReceipt(record, reason || "armored-action-plan-rejected");
+        remainingActionContinuationRegistryRef.current.set(continuationKey, rejected);
+        emitActionContinuationReceiptHop("rejected", rejected, {
+          requestedActionSequence: resolvedAttackActionSequence,
+          consumingActionType: "attack",
+          consumingActionToken: attackActionId,
+          source: "armored-action-plan-rejection-recovery",
+        });
+      }
+      let remainingActions = 0;
+      commitFighters((current = []) => current.map((fighter) => {
+        if (fighter?.id !== actorId) return fighter;
+        remainingActions = Math.max(0, (Number(fighter.remainingActions ?? 0) || 0) - 1);
+        return { ...fighter, remainingActions };
+      }));
+      if (activeAttackActionIdRef.current === attackActionId) activeAttackActionIdRef.current = null;
+      attackExecutionRegistryRef.current.delete(attackActionId);
+      attackExecutionGateChainsRef.current.delete(attackActionId);
+      turnActionResolvingRef.current = false;
+      pendingTurnAdvanceRef.current = false;
+      const recoveryResult = {
+        accepted: true,
+        completed: true,
+        blocked: true,
+        stale: false,
+        actionType: "attack-plan-rejection-recovery",
+        actionSpent: true,
+        actionsSpent: 1,
+        explicitPass: true,
+        remainingActions,
+        reason,
+        executionKey: attackActionId,
+        actionToken: attackActionId,
+        actionSequence: resolvedAttackActionSequence,
+      };
+      const completionDecision = resolveCombatActionCompletion({
+        actorId,
+        opponentId: defenderId,
+        actionResult: recoveryResult,
+        executionKey: attackActionId,
+        source: "armored-action-plan-rejection-recovery",
+      });
+      auditSettledActionContinuation({
+        initiativeTurnId: initiativeTurnIdRef.current,
+        actorId,
+        executionKey: attackActionId,
+        source: "armored-action-plan-rejection-recovery",
+      });
+      addLog?.({
+        audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+        channel: COMBAT_LOG_CHANNELS.TURN,
+        eventType: "armored-action-plan-rejection-recovery-completed",
+        level: "warning",
+        type: "warning",
+        actorId,
+        targetId: defenderId,
+        executionKey: attackActionId,
+        source: attackSource,
+        message: `armored action plan rejection recovery completed: actorId=${actorId} stage=${stage} reason=${reason} remainingActions=${remainingActions}`,
+        data: { planId, stage, reason, recoveryResult, completionDecision },
+      }, "warning");
+      armoredPlanRejectionRecovery = {
+        ...makeBlockedAttackResult(reason, attackActionId),
+        recovered: true,
+        finalized: true,
+        remainingActions,
+        completionDecision,
+      };
+      return armoredPlanRejectionRecovery;
+    };
     const activeGrappleStateText = String(stateAttacker?.grappleState?.state || "").toLowerCase();
     const activeGrappleOpponentId =
       stateAttacker?.grappleState?.opponent ||
@@ -21763,6 +21979,7 @@ function CombatPage({ characters = [] }) {
         armorTechnique: attackData?.armorTechnique,
         attackMode: attackData?.attackMode,
         originalWeaponName: attackData?.originalWeaponName,
+        armoredActionPlan: attackData?.armoredActionPlan,
       };
       const resolved = resolveEnemyEffectiveAttack(effectiveAttacker, attackData, {
         preferRanged: true,
@@ -21774,7 +21991,10 @@ function CombatPage({ characters = [] }) {
       attackData = {
         ...resolved.attack,
         ...Object.fromEntries(
-          Object.entries(armoredMetadataBeforeResolve).filter(([, value]) => value !== undefined && value !== null)
+          Object.entries(armoredMetadataBeforeResolve).filter(([key, value]) =>
+            value !== undefined && value !== null &&
+            (resolved.attack?.isFallbackUnarmed !== true || key === "armoredActionPlan")
+          )
         ),
       };
     }
@@ -21809,23 +22029,44 @@ function CombatPage({ characters = [] }) {
       bonusModifiers?.selectedTechnique,
     );
     const armoredActionPlanId = armoredActionPlan?.planId || armoredActionPlan?.selectionId || null;
+    const authoritativeArmoredTurn = getAuthoritativeInitiativeTurnSnapshot(effectiveAttacker?.id || attacker?.id);
     const armoredActionPlanIdentity = armoredActionPlanId ? {
-      generationId: combatSessionRef.current || "default",
-      round: meleeRoundRef.current ?? meleeRound,
-      initiativeIndex: turnIndexRef.current,
-      initiativeTurnId: initiativeTurnIdRef.current,
+      generationId: authoritativeArmoredTurn?.generationId,
+      round: authoritativeArmoredTurn?.round,
+      initiativeIndex: authoritativeArmoredTurn?.initiativeIndex,
+      initiativeTurnId: authoritativeArmoredTurn?.initiativeTurnId,
       actorId: effectiveAttacker?.id || attacker?.id,
       targetId: defender?.id,
-      actionToken: currentTurnTokenRef.current,
+      actionToken: authoritativeArmoredTurn?.actionToken,
       selectedTechnique: selectedArmoredTechnique,
-      sourceWeaponId:
-        armoredSourceWeaponForPlan?.id ||
-        armoredSourceWeaponForPlan?.weaponId ||
-        armoredSourceWeaponForPlan?.name ||
-        "unknown-weapon",
+      sourceWeaponId: armoredActionPlan?.sourceWeaponId || "unknown-weapon",
     } : null;
     if (armoredActionPlanId) {
       registerArmoredActionPlan(armoredActionPlanRegistryRef.current, armoredActionPlan);
+      if (!authoritativeArmoredTurn) {
+        markArmoredActionPlanTerminal(armoredActionPlanRegistryRef.current, armoredActionPlanId, "rejected", {
+          reason: "missing-authoritative-initiative-turn",
+          executionKey: attackActionId,
+        });
+        addLog?.({
+          audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+          channel: COMBAT_LOG_CHANNELS.VALIDATION,
+          eventType: "armored-action-plan-identity-rejected",
+          level: "error",
+          type: "error",
+          actorId: effectiveAttacker?.id || attacker?.id,
+          targetId: defender?.id,
+          executionKey: attackActionId,
+          source: attackSource,
+          message: `armored-action-plan-identity-rejected: stage=dispatch reason=missing-authoritative-initiative-turn planId=${armoredActionPlanId}`,
+          data: { stage: "dispatch", reason: "missing-authoritative-initiative-turn", planId: armoredActionPlanId },
+        }, "error");
+        return recoverRejectedArmoredActionPlan({
+          reason: "missing-authoritative-initiative-turn",
+          planId: armoredActionPlanId,
+          stage: "dispatch-identity",
+        });
+      }
       const dispatchIdentity = validateArmoredActionPlanIdentity(
         armoredActionPlanRegistryRef.current,
         armoredActionPlanId,
@@ -21855,10 +22096,11 @@ function CombatPage({ characters = [] }) {
             `planId=${armoredActionPlanId}`,
           data: { stage: "dispatch", reason: dispatchIdentity.reason, planId: armoredActionPlanId, identity: armoredActionPlanIdentity, result: dispatchIdentity },
         }, "error");
-        if (activeAttackActionIdRef.current === attackActionId) activeAttackActionIdRef.current = null;
-        turnActionResolvingRef.current = false;
-        pendingTurnAdvanceRef.current = false;
-        return makeBlockedAttackResult(dispatchIdentity.reason, attackActionId);
+        return recoverRejectedArmoredActionPlan({
+          reason: dispatchIdentity.reason,
+          planId: armoredActionPlanId,
+          stage: "dispatch-identity",
+        });
       }
       const dispatched = markArmoredActionPlanDispatched(armoredActionPlanRegistryRef.current, armoredActionPlanId, {
         executionKey: attackActionId,
@@ -21880,10 +22122,11 @@ function CombatPage({ characters = [] }) {
             `planId=${armoredActionPlanId}`,
           data: { stage: "dispatch", reason: dispatched.reason, planId: armoredActionPlanId, result: dispatched },
         }, "error");
-        if (activeAttackActionIdRef.current === attackActionId) activeAttackActionIdRef.current = null;
-        turnActionResolvingRef.current = false;
-        pendingTurnAdvanceRef.current = false;
-        return makeBlockedAttackResult(dispatched.reason, attackActionId);
+        return recoverRejectedArmoredActionPlan({
+          reason: dispatched.reason,
+          planId: armoredActionPlanId,
+          stage: "dispatch-transition",
+        });
       }
       addLog({
         audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
@@ -21932,10 +22175,11 @@ function CombatPage({ characters = [] }) {
             `planId=${armoredActionPlanId}`,
           data: { stage: "attack-entry", reason: attackEntryIdentity.reason, planId: armoredActionPlanId, identity: armoredActionPlanIdentity, result: attackEntryIdentity },
         }, "error");
-        if (activeAttackActionIdRef.current === attackActionId) activeAttackActionIdRef.current = null;
-        turnActionResolvingRef.current = false;
-        pendingTurnAdvanceRef.current = false;
-        return makeBlockedAttackResult(attackEntryIdentity.reason, attackActionId);
+        return recoverRejectedArmoredActionPlan({
+          reason: attackEntryIdentity.reason,
+          planId: armoredActionPlanId,
+          stage: "attack-entry",
+        });
       }
     }
     if (requiresArmoredActionPlan && !hasArmoredActionPlan) {
@@ -21966,8 +22210,42 @@ function CombatPage({ characters = [] }) {
       pendingTurnAdvanceRef.current = false;
       return makeBlockedAttackResult("missing-armored-action-plan", attackActionId);
     }
-    if (requiresArmoredActionPlan && hasArmoredActionPlan) {
+    if (armoredActionPlanId) {
       const sourceWeapon = getArmoredTechniqueSourceWeapon(attackData, attackData);
+      const runtimeWeapon = attackData?.isFallbackUnarmed === true || String(attackData?.name || "").toLowerCase() === "unarmed attack"
+        ? attackData
+        : attackData?.weapon || sourceWeapon;
+      const runtimeIdentity = validateArmoredPlanRuntimeWeaponIdentity({
+        plan: armoredActionPlan,
+        runtimeWeapon,
+        runtimeAttackMode: attackData?.attackMode || selectedArmoredTechnique,
+      });
+      if (!runtimeIdentity.ok) {
+        if (armoredActionPlanId) {
+          markArmoredActionPlanTerminal(armoredActionPlanRegistryRef.current, armoredActionPlanId, "rejected", {
+            reason: runtimeIdentity.reason,
+            executionKey: attackActionId,
+          });
+        }
+        addLog?.({
+          audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+          channel: COMBAT_LOG_CHANNELS.VALIDATION,
+          eventType: "armored-plan-runtime-weapon-identity-rejected",
+          level: "error",
+          type: "error",
+          actorId: effectiveAttacker?.id || attacker?.id,
+          targetId: defender?.id,
+          executionKey: attackActionId,
+          source: attackSource,
+          message: `armored plan runtime weapon identity rejected: actor=${effectiveAttacker?.name || attacker?.name || "Unknown"} reason=${runtimeIdentity.reason}`,
+          data: { plan: armoredActionPlan, runtimeWeapon, runtimeIdentity },
+        }, "error");
+        return recoverRejectedArmoredActionPlan({
+          reason: runtimeIdentity.reason,
+          planId: armoredActionPlanId,
+          stage: "runtime-weapon-identity",
+        });
+      }
       const validation = validateArmoredTechniqueWeapon({
         selectedTechnique: selectedArmoredTechnique,
         sourceWeapon,
@@ -27414,6 +27692,7 @@ function CombatPage({ characters = [] }) {
       currentTurnTokenRef,
       currentTurnToken: capturedTurnToken,
       initiativeTurnId: initiativeTurnIdRef.current,
+      authoritativeInitiativeTurn: getAuthoritativeInitiativeTurnSnapshot(latestPlayer.id),
       getActionSequence: () => initiativeActionSequenceRef.current,
       setActionSequence: (sequence) => {
         initiativeActionSequenceRef.current = sequence;
@@ -28055,6 +28334,7 @@ function CombatPage({ characters = [] }) {
           rng: rollArmoredTechniqueRng,
           rngSource: rngStateRef.current ? "seeded-combat-rng" : "crypto-dice",
           source: "worker-ai-attack-fallback",
+          authoritativeTurn: getAuthoritativeInitiativeTurnSnapshot(updatedAttacker.id),
           addLog,
         });
       } catch (error) {
@@ -29255,6 +29535,7 @@ function CombatPage({ characters = [] }) {
         currentTurnToken: currentTurnTokenRef.current,
         currentTurnTokenRef,
         initiativeTurnId: initiativeTurnIdRef.current,
+        authoritativeInitiativeTurn: getAuthoritativeInitiativeTurnSnapshot(liveEnemy.id),
         continuationKey: meta?.continuationKey || null,
         continuationAuthorization: meta?.continuationAuthorization || null,
         actionToken: initiativeTurnIdRef.current
@@ -34326,6 +34607,7 @@ function CombatPage({ characters = [] }) {
           rng: rollArmoredTechniqueRng,
           rngSource: rngStateRef.current ? "seeded-combat-rng" : "crypto-dice",
           source: "enemy-inline-attack",
+          authoritativeTurn: getAuthoritativeInitiativeTurnSnapshot(enemy.id),
           addLog,
         });
       } catch (error) {

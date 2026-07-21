@@ -5,6 +5,6 @@ const source = readFileSync(new URL("../src/utils/combatActionHandlers/grappleAc
 
 assert.match(source, /const damageTargetLabel = labelActor\(defenderCopy, attacker, updated\)/);
 assert.match(source, /\$\{damageTargetLabel\} takes \$\{damageTaken\} damage from \$\{attackerLabel\}/);
-assert.match(source, /\$\{damageTargetLabel\} takes \$\{result\.damage\} damage from \$\{attackerLabel\}/);
+assert.match(source, /formatArmorGapContactOutcomeLog\(\{[\s\S]*?attackerLabel,[\s\S]*?targetLabel: damageTargetLabel/);
 
 console.log("grapple follow-up damaged-actor log tests passed");

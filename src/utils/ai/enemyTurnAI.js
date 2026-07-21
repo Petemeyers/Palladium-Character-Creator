@@ -4842,6 +4842,7 @@ export function runEnemyTurnAI(enemy, context) {
           initiativeTurnId: context.initiativeTurnId,
           turnToken: context.currentTurnToken || context.currentTurnTokenRef?.current,
           actionToken: context.actionToken || context.currentTurnToken || context.currentTurnTokenRef?.current,
+          authoritativeTurn: context.authoritativeInitiativeTurn || null,
           getTacticalMemory: context.getArmoredTacticalMemory,
           rng: context.armoredTechniqueRng,
           rngSource: context.armoredTechniqueRngSource || "enemy-ai",

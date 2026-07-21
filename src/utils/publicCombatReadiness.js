@@ -276,7 +276,7 @@ export function getEncounterReadinessSummary(entry = {}) {
     publicClassName: formatValue(firstValue(entry.publicClassName, entry.autoRollCharacter?.publicClassName, entry.class, entry.profession), ""),
     publicSpeciesName: formatValue(firstValue(entry.publicSpeciesName, entry.autoRollCharacter?.publicSpeciesName, entry.species, entry.race), ""),
     publicBackgroundName: formatValue(firstValue(entry.publicBackgroundName, entry.autoRollCharacter?.publicBackgroundName, entry.background, entry.socialBackground), ""),
-    enemyCreatureType: formatValue(firstValue(entry.creatureType, publicEnemyMetadata.creatureType, entry.category), ""),
+    enemyCreatureType: formatValue(firstValue(publicEnemyMetadata.creatureType, entry.creatureType, entry.category), ""),
     proficiencyBonus: formatValue(firstValue(derivedStats.proficiencyBonus, entry.proficiencyBonus, publicEnemyMetadata.proficiencyBonus), ""),
     actionPreviews: getActionPreviews(entry, side),
     ready: readiness.ready,

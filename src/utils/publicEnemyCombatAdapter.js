@@ -1,4 +1,5 @@
 import { addOriginalActorMetadata } from "./originalActorMetadata.js";
+import { normalizeReferenceCombatActor } from "./combat/normalizeCombatActorSchema.js";
 
 const hasValue = (value) => value !== undefined && value !== null && value !== "";
 
@@ -112,39 +113,44 @@ export function adaptPublicEnemyToCombatant(enemy = {}) {
     };
   }
 
+  const compatibilityCombatant = addOriginalActorMetadata({
+    id: enemy.id,
+    name: enemy.name,
+    HP: enemy.hitPoints,
+    guardRating: enemy.armorClass,
+    size: enemy.size,
+    category: enemy.creatureType,
+    creatureType: enemy.creatureType,
+    species: enemy.species,
+    speed: enemy.speed,
+    spd: enemy.speed,
+    abilityScores: enemy.abilityScores ? { ...enemy.abilityScores } : undefined,
+    attacks,
+    publicEnemyMetadata: {
+      creatureType: enemy.creatureType,
+      abilityScores: enemy.abilityScores ? { ...enemy.abilityScores } : undefined,
+      savingThrows: enemy.savingThrows ? { ...enemy.savingThrows } : undefined,
+      skills: enemy.skills ? { ...enemy.skills } : undefined,
+      senses: Array.isArray(enemy.senses) ? [...enemy.senses] : undefined,
+      languages: Array.isArray(enemy.languages) ? [...enemy.languages] : undefined,
+      challengeRating: enemy.challengeRating,
+      proficiencyBonus: enemy.proficiencyBonus,
+      source: enemy.originalSource || enemy.source,
+      ruleset: enemy.ruleset,
+      actions: actionPreviews,
+    },
+    source: "public-enemy",
+    ruleset: enemy.ruleset || "core-d20",
+    originalActorMetadata: enemy.originalActorMetadata,
+  });
+  const normalized = normalizeReferenceCombatActor(compatibilityCombatant, { source: "public-enemy-adapter" });
   return {
     ok: true,
-    combatant: addOriginalActorMetadata({
-      id: enemy.id,
-      name: enemy.name,
-      HP: enemy.hitPoints,
-      guardRating: enemy.armorClass,
-      size: enemy.size,
-      category: enemy.creatureType,
-      creatureType: enemy.creatureType,
-      speed: enemy.speed,
-      spd: enemy.speed,
-      abilityScores: enemy.abilityScores ? { ...enemy.abilityScores } : undefined,
-      attacks,
-      publicEnemyMetadata: {
-        abilityScores: enemy.abilityScores ? { ...enemy.abilityScores } : undefined,
-        savingThrows: enemy.savingThrows ? { ...enemy.savingThrows } : undefined,
-        skills: enemy.skills ? { ...enemy.skills } : undefined,
-        senses: Array.isArray(enemy.senses) ? [...enemy.senses] : undefined,
-        languages: Array.isArray(enemy.languages) ? [...enemy.languages] : undefined,
-        challengeRating: enemy.challengeRating,
-        proficiencyBonus: enemy.proficiencyBonus,
-        source: enemy.originalSource || enemy.source,
-        ruleset: enemy.ruleset,
-        actions: actionPreviews,
-      },
-      source: "public-enemy",
-      ruleset: enemy.ruleset || "core-d20",
-      originalActorMetadata: enemy.originalActorMetadata,
-    }),
+    combatant: normalized.normalizedActor,
     missingFields: [],
     warnings,
     source: "public-enemy",
+    diagnostics: normalized.diagnostics,
   };
 }
 

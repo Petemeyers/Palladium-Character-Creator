@@ -57,4 +57,35 @@ export function validateArmoredTechniqueWeapon({
   return { ok: true, reason: "compatible-source-weapon" };
 }
 
+const getRuntimeWeaponId = (weapon = {}) =>
+  weapon?.weaponId || weapon?.id || weapon?.key || weapon?.name || null;
+
+export function validateArmoredPlanRuntimeWeaponIdentity({
+  plan = null,
+  runtimeWeapon = null,
+  runtimeAttackMode = null,
+} = {}) {
+  if (!plan) return { ok: false, reason: "missing-armored-action-plan" };
+  if (!runtimeWeapon) return { ok: false, reason: "missing-runtime-weapon" };
+  const expectedWeaponId = plan.sourceWeaponId || plan.sourceWeaponName || null;
+  const actualWeaponId = getRuntimeWeaponId(runtimeWeapon);
+  const expectedWeaponName = String(plan.sourceWeaponName || "").trim();
+  const actualWeaponName = String(runtimeWeapon.name || runtimeWeapon.weaponName || "").trim();
+  const expectedAttackMode = String(plan.resolvedAttackMode || plan.selectedTechnique || "").trim();
+  const actualAttackMode = String(runtimeAttackMode || "").trim();
+  if (String(actualWeaponId || "") !== String(expectedWeaponId || "")) {
+    return { ok: false, reason: "runtime-source-weapon-id-mismatch", expected: expectedWeaponId, actual: actualWeaponId };
+  }
+  if (actualWeaponName !== expectedWeaponName) {
+    return { ok: false, reason: "runtime-source-weapon-name-mismatch", expected: expectedWeaponName, actual: actualWeaponName };
+  }
+  if (actualAttackMode !== expectedAttackMode) {
+    return { ok: false, reason: "runtime-attack-mode-mismatch", expected: expectedAttackMode, actual: actualAttackMode };
+  }
+  if (String(actualWeaponName).toLowerCase() === "unarmed attack" && isArmoredLongswordTechnique(expectedAttackMode)) {
+    return { ok: false, reason: "unarmed-cannot-consume-longsword-technique" };
+  }
+  return { ok: true, reason: "runtime-weapon-identity-matched" };
+}
+
 export default validateArmoredTechniqueWeapon;

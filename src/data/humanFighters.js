@@ -1,3 +1,5 @@
+import { getCanonicalCombatActorDefinition } from "./canonicalCombatActors.js";
+
 export const allowedHumanRoles = [
   "Knight",
   "Squire",
@@ -19,7 +21,7 @@ export const allowedHumanRoles = [
   "Arena Champion",
 ];
 
-export const humanFighters = [
+const HUMAN_FIGHTERS = [
   {
     id: "knight",
     name: "Knight",
@@ -266,5 +268,22 @@ export const humanFighters = [
     footprint: { feet: 5, hexes: 1, radiusHex: 0 },
   },
 ];
+
+export const humanFighters = HUMAN_FIGHTERS.map((entry) => {
+  if (entry.id !== "knight") return entry;
+  const canonical = getCanonicalCombatActorDefinition("knight");
+  return {
+    ...entry,
+    ...canonical,
+    guardRating: canonical.derivedStats.armorClass,
+    armorClass: canonical.derivedStats.armorClass,
+    HP: canonical.derivedStats.hp,
+    hp: canonical.derivedStats.hp,
+    currentHP: canonical.derivedStats.hp,
+    maxHP: canonical.derivedStats.maxHp,
+    speed: canonical.movement.ground,
+    movementSpeed: canonical.movement.ground,
+  };
+});
 
 export default humanFighters;

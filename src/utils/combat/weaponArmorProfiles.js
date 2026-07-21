@@ -107,6 +107,9 @@ export function normalizeLongswordAttackMode({ weapon = {}, attackMode, attackDa
   if (explicit.includes("dagger-clinch-gap-attack")) {
     return "dagger-clinch-gap-attack";
   }
+  if (explicit.includes("misericorde-thrust")) {
+    return "misericorde-thrust";
+  }
   if (explicit.includes("unarmed-clinch-attack")) {
     return "unarmed-clinch-attack";
   }

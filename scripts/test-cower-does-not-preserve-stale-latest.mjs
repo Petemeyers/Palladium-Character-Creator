@@ -27,7 +27,7 @@ assert.match(combatPageSource, /const lastMovementCommitRef = useRef\(\{\}\)/);
 assert.match(combatPageSource, /resolveNoMovePositionAuthority\(\{/);
 assert.match(combatPageSource, /lastMovementCommit: lastMovementCommitRef\.current\?\.\[fighterId\]/);
 assert.match(combatPageSource, /source: "survival-cower"/);
-assert.match(combatPageSource, /source: "exhausted-cower"/);
+assert.match(combatPageSource, /source: "routed-exhausted-cower"/);
 assert.match(combatPageSource, /positions: \{\s+\.\.\.\(positionsRef\.current \?\? \{\}\),\s+\[latestFighter\.id\]: \{ \.\.\.canonicalPosition \},\s+\}/);
 assert.match(combatPageSource, /lastKnownPositions: \{\s+\.\.\.\(committedPositionsRef\.current \?\? \{\}\),\s+\[latestFighter\.id\]: \{ \.\.\.canonicalPosition \},\s+\}/);
 

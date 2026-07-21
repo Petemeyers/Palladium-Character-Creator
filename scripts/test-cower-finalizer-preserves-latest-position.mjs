@@ -44,7 +44,7 @@ assert.match(combatPageSource, /cower preserve position check: actor=/);
 assert.match(combatPageSource, /cower preserve position committed: actor=/);
 assert.match(combatPageSource, /position store mismatch after no-move: actor=/);
 assert.match(combatPageSource, /source: "survival-cower"/);
-assert.match(combatPageSource, /source: "exhausted-cower"/);
+assert.match(combatPageSource, /source: "routed-exhausted-cower"/);
 assert.match(combatPageSource, /cannot find a safe \$\{fallbackLabel\} path and cowers in place/);
 assert.match(combatPageSource, /is too exhausted to keep fleeing and cowers in place/);
 

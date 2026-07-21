@@ -128,7 +128,7 @@ assert.match(combatPageSource, /const lastMovementCommitRef = useRef\(\{\}\)/);
 assert.match(combatPageSource, /lastMovementCommit: lastMovementCommitRef\.current\?\.\[fighterId\]/);
 assert.match(combatPageSource, /cannot find a safe \$\{fallbackLabel\} path and cowers in place/);
 assert.match(combatPageSource, /finalizeNoMovePreservingPosition\(\{\s*[\s\S]*?source: "survival-cower"/);
-assert.match(combatPageSource, /finalizeNoMovePreservingPosition\(\{\s*[\s\S]*?source: "exhausted-cower"/);
+assert.match(combatPageSource, /finalizeNoMovePreservingPosition\(\{\s*[\s\S]*?source: "routed-exhausted-cower"/);
 assert.match(combatPageSource, /finalizeNoMovePreservingPosition\(\{\s*[\s\S]*?source: approachFinalizerSource/);
 assert.match(combatPageSource, /const consumeBlockedMovementAction = \(fighterLike, reason = "blocked-movement"\) => \{\s*[\s\S]*?finalizeNoMovePreservingPosition\(\{\s*[\s\S]*?source: reason/s);
 assert.match(helperSource, /no-move fallback preserved latest position over stale snapshot/);

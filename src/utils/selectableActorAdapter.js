@@ -1,5 +1,6 @@
 import { addOriginalActorMetadata } from "./originalActorMetadata.js";
 import { ensureKnightCloseWeaponLoadout } from "./knightLoadout.js";
+import { normalizeReferenceCombatActor } from "./combat/normalizeCombatActorSchema.js";
 
 const hasValue = (value) => value !== undefined && value !== null && value !== "";
 
@@ -200,10 +201,14 @@ export function adaptSelectableActorToCombatant(actor = {}, options = {}) {
     terrainMobility: { ...combatant.originalActorMetadata.movement.terrainMobility },
   };
 
+  const loadedCombatant = ensureKnightCloseWeaponLoadout(combatant);
+  const normalized = normalizeReferenceCombatActor(loadedCombatant, { source: "selectable-actor-adapter" });
   return {
     ok: true,
-    combatant: ensureKnightCloseWeaponLoadout(combatant),
+    combatant: normalized.normalizedActor,
     missingFields: [],
+    diagnostics: normalized.diagnostics,
+    compatibilityFallbacks: normalized.compatibilityFallbacks,
   };
 }
 
