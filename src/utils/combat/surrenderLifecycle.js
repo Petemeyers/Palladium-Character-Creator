@@ -242,6 +242,15 @@ export function getPendingSurrenderRecords(registry) {
   return Array.from(registry?.records?.values?.() || []).filter((record) => unresolved.has(record.status));
 }
 
+export function getCurrentGenerationPendingSurrenderRecords(registry, generationId) {
+  return getPendingSurrenderRecords(registry).filter((record) => String(record.generationId) === String(generationId));
+}
+
+export function shouldDeferEncounterFinalizationForCanonicalSurrender({ registry, generationId } = {}) {
+  const records = getCurrentGenerationPendingSurrenderRecords(registry, generationId);
+  return { defer: records.length > 0, records };
+}
+
 export function finalizeResolvedSurrenderEncounter({ registry, surrenderIds = [] } = {}) {
   const records = surrenderIds.map((id) => registry?.records?.get(id)).filter(Boolean);
   if (!records.length || records.some((record) => record.status !== CANONICAL_SURRENDER_STATUSES.RESOLVED)) return { finalized: false, reason: "surrender-resolution-still-pending" };
@@ -251,4 +260,17 @@ export function finalizeResolvedSurrenderEncounter({ registry, surrenderIds = []
   return { finalized: true, records, events: newlyFinalized.map((record) => event("surrender-record-finalized", record, { surrenderRecordFinalized: true, combatEncounterFinalized: false })) };
 }
 
-export default { claimSurrenderDecisionOwner, createCanonicalSurrenderOffer, createSurrenderDecisionToken, createSurrenderLifecycleRegistry, commitSurrenderResponse, commitSurrenderResolution, finalizeResolvedSurrenderEncounter, getAuthoritativeManualSurrenderDecision, getPendingSurrenderRecords, validateSurrenderDecisionToken };
+export function commitCanonicalSurrenderOfferToRoster({
+  registry, fighters = [], surrenderingActor, receivingActor, reason, generationId = "default",
+  round = 0, initiativeTurnId = null, actionToken = null, source = reason, sequence = null,
+} = {}) {
+  const offer = createCanonicalSurrenderOffer({
+    registry, surrenderingActor, receivingActor, reason, generationId, round,
+    initiativeTurnId, actionToken, source, sequence,
+  });
+  if (!offer.accepted) return { ...offer, fighters, pendingEncounterDecision: Boolean(offer.record && unresolved.has(offer.record.status)) };
+  const nextFighters = fighters.map((fighter) => idOf(fighter) === offer.record.offeredById ? offer.fighter : fighter);
+  return { ...offer, fighters: nextFighters, pendingEncounterDecision: true };
+}
+
+export default { claimSurrenderDecisionOwner, commitCanonicalSurrenderOfferToRoster, createCanonicalSurrenderOffer, createSurrenderDecisionToken, createSurrenderLifecycleRegistry, commitSurrenderResponse, commitSurrenderResolution, finalizeResolvedSurrenderEncounter, getAuthoritativeManualSurrenderDecision, getCurrentGenerationPendingSurrenderRecords, getPendingSurrenderRecords, shouldDeferEncounterFinalizationForCanonicalSurrender, validateSurrenderDecisionToken };

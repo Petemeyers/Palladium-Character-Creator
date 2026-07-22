@@ -37,6 +37,8 @@ const natural = (profileKey, name, damage, damageType, extra = {}) => Object.fre
 
 const knightSword = weapon("weapon.long-sword", "Long Sword", "1d8", "slashing", { category: "one-handed", handedness: "one-handed", handsRequired: 1, lengthFt: 3, attackBonus: 3, armorTechniqueCompatibility: ["longsword-cut", "longsword-thrust", "half-sword-thrust", "pommel-or-crossguard-strike"], retainedInClinch: true, usableInClinch: false });
 const knightDagger = weapon("weapon.dagger", "Dagger", "1d4", "piercing", { category: "one-handed", handedness: "one-handed", handsRequired: 1, lengthFt: 1, reach: 1, reachFeet: 1, usableInClinch: true, groundedCompatible: true, armorGapCapable: true });
+const knightShortSword = weapon("weapon.short-sword", "Short Sword", "1d6", "slashing", { category: "one-handed", handedness: "one-handed", handsRequired: 1, lengthFt: 2, retainedInClinch: true, usableInClinch: false });
+const ritualDagger = weapon("weapon.ritual-dagger", "Ritual Dagger", "1d4", "piercing", { category: "one-handed", handedness: "one-handed", handsRequired: 1, lengthFt: 1, reach: 1, reachFeet: 1, usableInClinch: true, groundedCompatible: true, armorGapCapable: true });
 const goblinSword = weapon("weapon.short-sword", "Short Sword", "1d6+2", "slashing", { category: "one-handed", handedness: "one-handed", handsRequired: 1, attackBonus: 4 });
 const goblinDagger = weapon("weapon.goblin-dagger", "Dagger", "1d4", "piercing", { category: "one-handed", handedness: "one-handed", handsRequired: 1, reach: 1, reachFeet: 1, usableInClinch: true, groundedCompatible: true });
 const minotaurAxe = weapon("weapon.minotaur-heavy-axe", "Heavy Axe", "2d8+4", "slashing", { category: "two-handed", handedness: "two-handed", handsRequired: 2, twoHanded: true, requiresTwoHands: true, reach: 10, reachFeet: 10, lengthFt: 6, attackBonus: 6, usableInClinch: false });
@@ -101,6 +103,37 @@ export const CANONICAL_COMBAT_ACTORS = Object.freeze({
 
 export function getCanonicalCombatActorDefinition(actorKey) {
   return CANONICAL_COMBAT_ACTORS[String(actorKey || "").toLowerCase()] || null;
+}
+
+const CANONICAL_WEAPON_ALIASES = Object.freeze({
+  "long sword": knightSword,
+  longsword: knightSword,
+  "short sword": knightShortSword,
+  shortsword: knightShortSword,
+  dagger: knightDagger,
+  "ritual dagger": ritualDagger,
+});
+
+export function getCanonicalWeaponProfileByAlias(value) {
+  const source = value && typeof value === "object" ? value : { name: value };
+  const key = String(source.profileKey || source.weaponId || source.id || source.name || "")
+    .trim()
+    .toLowerCase()
+    .replace(/^weapon\./, "")
+    .replace(/-/g, " ");
+  const canonical = CANONICAL_WEAPON_ALIASES[key] || null;
+  if (!canonical) return null;
+  return {
+    ...canonical,
+    ...source,
+    id: canonical.id,
+    weaponId: canonical.weaponId,
+    profileKey: canonical.profileKey,
+    name: canonical.name,
+    damage: source.damage || canonical.damage,
+    damageDice: source.damageDice || source.damage || canonical.damageDice,
+    damageType: source.damageType || canonical.damageType,
+  };
 }
 
 export default CANONICAL_COMBAT_ACTORS;

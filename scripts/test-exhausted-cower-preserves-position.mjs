@@ -47,8 +47,9 @@ const helperSource = readFileSync(new URL("../src/utils/combat/noMovePositionPre
 }
 
 assert.match(combatPageSource, /is too exhausted to keep fleeing and cowers in place/);
-assert.match(combatPageSource, /const offered = offerRoutedExhaustedCowerSurrender\(candidate/);
-assert.match(combatPageSource, /return finalizeNoMovePreservingPosition\(\{\s*[\s\S]*?staleActor: offered,\s*[\s\S]*?actorPatch: offered,\s*[\s\S]*?source: "routed-exhausted-cower"/);
+assert.match(combatPageSource, /const coweringActor = offerRoutedExhaustedCowerSurrender\(surrenderingActor/);
+assert.match(combatPageSource, /const canonicalOffer = recipient \? commitCanonicalSurrenderOfferToRoster\(/);
+assert.match(combatPageSource, /finalizeNoMovePreservingPosition\(\{\s*[\s\S]*?staleActor: offeredActor,\s*[\s\S]*?actorPatch: offeredActor,\s*[\s\S]*?source: "routed-exhausted-cower"/);
 assert.match(combatPageSource, /const preserveNoMovePosition = useCallback/);
 assert.match(combatPageSource, /const finalizeNoMovePreservingPosition = useCallback/);
 assert.match(combatPageSource, /resolveLatestNoMovePosition\(latestFighter\.id, staleActor, latestFighter, source\)/);

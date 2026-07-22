@@ -1,0 +1,37 @@
+import assert from "node:assert/strict";
+import fs from "node:fs";
+
+const tacticalMap = fs.readFileSync(new URL("../src/components/TacticalMap.jsx", import.meta.url), "utf8");
+const hexArena = fs.readFileSync(new URL("../src/utils/three/HexArena.js", import.meta.url), "utf8");
+const hexArenaComponent = fs.readFileSync(new URL("../src/components/HexArena3D.jsx", import.meta.url), "utf8");
+const combatPage = fs.readFileSync(new URL("../src/pages/CombatPage.jsx", import.meta.url), "utf8");
+const placeholders = fs.readFileSync(new URL("../src/utils/characterPlaceholders.js", import.meta.url), "utf8");
+
+assert.match(tacticalMap, /getCombatIconAppearance/);
+assert.match(tacticalMap, /aria-label=\{iconAppearance\.accessibleLabel\}/);
+assert.match(tacticalMap, /fill=\{iconAppearance\.baseColor\}/);
+assert.match(tacticalMap, /stroke=\{iconAppearance\.centerStrokeColor\}/);
+assert.match(tacticalMap, /iconAppearance\.statusMarker/);
+assert.match(tacticalMap, /iconAppearance\.rings\.map/);
+assert.match(tacticalMap, /ring\.style === "reticle"/);
+assert.match(tacticalMap, /surrenderRecord: surrenderRecordsByFighterId/);
+assert.match(hexArena, /applyCombatIconAppearance/);
+assert.match(hexArena, /group\.userData\.accessibleLabel = appearance\.accessibleLabel/);
+assert.match(hexArena, /appearance\.rings\.forEach/);
+assert.match(hexArena, /combat-appearance-\$\{ring\.key\}/);
+assert.match(hexArena, /disposeCombatIconAppearance\(previous\)/);
+assert.match(hexArena, /material\.map\?\.dispose/);
+assert.match(hexArena, /activeFighterId/);
+assert.match(hexArena, /targetFighterId/);
+assert.match(hexArena, /surrenderRecord: surrenderRecordsByFighterId/);
+assert.match(hexArenaComponent, /activeFighterId/);
+assert.match(combatPage, /activeFighterId=\{currentFighter\?\.id \|\| null\}/);
+assert.match(combatPage, /selectedFighterId=\{selectedCombatantId\}/);
+assert.match(combatPage, /targetFighterId=\{selectedTarget\?\.id \|\| null\}/);
+assert.match(combatPage, /surrenderRecordsByFighterId=\{combatIconSurrenderRecordsByFighterId\}/);
+assert.match(combatPage, /combatGenerationId=\{combatSessionRef\.current\}/);
+assert.match(placeholders, /character\.combatIconAppearance\?\.baseColor/);
+assert.doesNotMatch(placeholders, /alignment === "evil"/);
+assert.doesNotMatch(hexArena, /alignment: fighter\.type === "enemy"/);
+assert.doesNotMatch(tacticalMap, /fill=\{combatant\.isEnemy \? "#dc2626" : "#2563eb"\}/);
+console.log("combat icon appearance renderer integration passed");

@@ -11,5 +11,5 @@ const eligibility = canAttemptRallyFromRouting({
 });
 assert.equal(eligibility.canAttempt, true);
 const source = fs.readFileSync(new URL("../src/pages/CombatPage.jsx", import.meta.url), "utf8");
-assert.ok(source.indexOf("canAttemptRallyFromRouting") < source.indexOf("offerRoutedExhaustedCowerSurrender(candidate"));
+assert.ok(source.indexOf("const rallyEligibility = canAttemptRallyFromRouting") < source.indexOf("const canonicalOffer = recipient ? commitCanonicalSurrenderOfferToRoster"));
 console.log("exhausted cower unpursued rally-attempt tests passed");

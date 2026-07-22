@@ -1,5 +1,9 @@
 import * as THREE from "three";
 
+// LEGACY/DISCONNECTED: the live combat renderer is utils/three/HexArena.js.
+// Keep this compatibility module isolated; it must not become a second combat
+// appearance authority.
+
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
 import { HEX_RADIUS, worldVectorFromAxial } from "./hexGridMath.js";

@@ -20,6 +20,12 @@ const HexArena3D = forwardRef(function HexArena3D(
     embeddedArrows,
     impactReactions,
     dangerHexes,
+    activeFighterId,
+    selectedFighterId,
+    targetFighterId,
+    surrenderRecordsByFighterId,
+    combatGenerationId,
+    activeTurnGenerationId,
     terrain,
     mode,
     movementMode,
@@ -112,11 +118,17 @@ const HexArena3D = forwardRef(function HexArena3D(
         embeddedArrows,
         impactReactions,
         dangerHexes,
+        activeFighterId,
+        selectedFighterId,
+        targetFighterId,
+        surrenderRecordsByFighterId,
+        combatGenerationId,
+        activeTurnGenerationId,
         terrain,
         mapType: terrain?.mapType || "hex",
       });
     }
-  }, [mapDefinition, editorProps, selectedEditorPropId, fighters, positions, renderPositions, projectiles, embeddedArrows, impactReactions, dangerHexes, terrain, mode]);
+  }, [mapDefinition, editorProps, selectedEditorPropId, fighters, positions, renderPositions, projectiles, embeddedArrows, impactReactions, dangerHexes, activeFighterId, selectedFighterId, targetFighterId, surrenderRecordsByFighterId, combatGenerationId, activeTurnGenerationId, terrain, mode]);
 
   useEffect(() => {
     if (!arenaRef.current?.setMapInteractionState) return;
@@ -185,6 +197,12 @@ HexArena3D.propTypes = {
   embeddedArrows: PropTypes.array,
   impactReactions: PropTypes.object,
   dangerHexes: PropTypes.array,
+  activeFighterId: PropTypes.string,
+  selectedFighterId: PropTypes.string,
+  targetFighterId: PropTypes.string,
+  surrenderRecordsByFighterId: PropTypes.object,
+  combatGenerationId: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+  activeTurnGenerationId: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
   terrain: PropTypes.object,
   mode: PropTypes.string,
   movementMode: PropTypes.object,

@@ -51,6 +51,7 @@ const ranged = (name, damage, normal, long, { attackBonus = 2, damageType = "pie
 
 const actor = ({
   id,
+  actorKey,
   name,
   category,
   source = "normalized-legacy-actor",
@@ -83,6 +84,8 @@ const actor = ({
   visual = {},
 }) => ({
   id,
+  actorKey: actorKey || (getCanonicalCombatActorDefinition(id) ? id : undefined),
+  sourceActorKey: actorKey || (getCanonicalCombatActorDefinition(id) ? id : undefined),
   name,
   category,
   source,

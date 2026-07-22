@@ -1,4 +1,4 @@
-const MAX_TOKEN_LABEL_LENGTH = 28;
+const MAX_TOKEN_LABEL_LENGTH = 20;
 
 const BROKEN_TEXT_PATTERN = new RegExp(
   "[\\u00c3\\u00f0\\ufffd\\u00e2\\u0192\\u00c2\\u00c5\\u00c6\\u0153\\u00a2\\u20ac\\u2122\\u0178\\u00a1\\u00af\\u00b8]",
@@ -69,7 +69,7 @@ export const getMapCombatantTokenLabel = ({
   }
 
   if (isCurrent) {
-    return shortenLabel(`${name} Current`);
+    return shortenLabel(name);
   }
 
   return "";

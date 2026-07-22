@@ -38,6 +38,7 @@ import { initializePositions, updatePosition, getAutoTargetDistance, getAllDista
 import TacticalMap from "./TacticalMap";
 import { getEngagementRange, MOVEMENT_RATES, GRID_CONFIG } from "../data/movementRules";
 import { sanitizeCombatLogMessage } from "../utils/combatLogSanitizer.js";
+import { getCombatIconAppearance } from "../utils/presentation/getCombatIconAppearance.js";
 
 const socket = getSocket(); // Use centralized socket manager
 
@@ -1079,6 +1080,10 @@ const InitiativeTracker = () => {
   };
 
   const currentCharacter = order[turnIndex]?.char;
+  const getInitiativeAppearance = (entry) => getCombatIconAppearance({
+    fighter: { ...entry.char, team: entry.isEnemy ? "enemy" : "party" },
+    activeFighterId: currentCharacter?._id || currentCharacter?.id || null,
+  });
 
   return (
     <Box className="container" p={4}>
@@ -1398,13 +1403,15 @@ const InitiativeTracker = () => {
                   <Tr
                     key={`${entry.char._id}-${idx}`}
                     style={{
-                      background: idx === turnIndex ? "#e6fffa" : "inherit",
-                      border: idx === turnIndex ? "2px solid #38b2ac" : "1px solid #e2e8f0",
+                      background: idx === turnIndex ? `${getInitiativeAppearance(entry).activeColor}22` : "inherit",
+                      border: `2px solid ${getInitiativeAppearance(entry).status.color}`,
                     }}
+                    aria-label={getInitiativeAppearance(entry).accessibleLabel}
                   >
                     <Td>
                       <Badge
-                        colorScheme={idx === turnIndex ? "teal" : "gray"}
+                        bg={getInitiativeAppearance(entry).allegiance.baseColor}
+                        color="white"
                         size="lg"
                       >
                         {idx + 1}

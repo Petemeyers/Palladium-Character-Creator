@@ -102,6 +102,9 @@ export function adaptSelectableActorToCombatant(actor = {}, options = {}) {
 
   const combatant = addOriginalActorMetadata({
     id: runtimeId,
+    actorKey: actor.actorKey,
+    sourceActorKey: actor.sourceActorKey || actor.actorKey || actor.id,
+    pickerId: actor.id,
     name: actor.name,
     category: actor.category,
     role: actor.aiRole || "melee",

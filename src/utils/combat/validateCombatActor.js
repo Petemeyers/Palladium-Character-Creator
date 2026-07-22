@@ -36,7 +36,7 @@ export function validateCombatActor(actor = {}, { comparisonActor = null, emitDi
   if (actor.team && actor.side && text(actor.team) !== text(actor.side)) pushError("side-identity-contradiction", "Team and side identity disagree.", "combat-actor-identity-contradiction");
   if (actor.team && actor.battleSide && text(actor.team) !== text(actor.battleSide)) pushError("battle-side-identity-contradiction", "Team and battle-side identity disagree.", "combat-actor-identity-contradiction");
 
-  const inventory = Array.isArray(identityActor.inventory) ? identityActor.inventory : (normalizedActor.inventory || []);
+  const inventory = normalizedActor.inventory || [];
   const attacks = Array.isArray(identityActor.attacks) ? identityActor.attacks : (normalizedActor.attacks || []);
   const profiles = Array.isArray(identityActor.weaponProfiles) ? identityActor.weaponProfiles : (normalizedActor.weaponProfiles || attacks);
   const profileIds = new Set(profiles.map(idOf).filter(Boolean));
@@ -77,6 +77,7 @@ export function validateCombatActor(actor = {}, { comparisonActor = null, emitDi
     if (JSON.stringify(other.weaponProfiles) !== JSON.stringify(normalizedActor.weaponProfiles)) pushError("public-compatibility-weapon-divergence", "Public and compatibility weapon profiles differ.", "combat-actor-weapon-profile-contradiction");
   }
   const diagnostics = [
+    ...(normalizedResult.diagnostics || []).filter((entry) => entry.eventType === "combat-actor-unsupported-weapon-replaced"),
     ...errors.map((entry) => ({ eventType: entry.eventType, level: "error", actorId: normalizedActor.id, data: entry })),
     ...warnings.map((entry) => ({ eventType: entry.eventType, level: "warning", actorId: normalizedActor.id, data: entry })),
     ...compatibilityFallbacks.map((fallback) => ({ eventType: "combat-actor-compatibility-fallback-used", level: "warning", actorId: normalizedActor.id, data: { fallback } })),

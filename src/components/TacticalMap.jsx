@@ -17,6 +17,7 @@ import {
   getMapCombatantTokenLabel,
   getMapCombatantTooltip,
 } from "../utils/mapCombatantLabels.js";
+import { getCombatIconAppearance } from "../utils/presentation/getCombatIconAppearance.js";
 import {
   GRID_CONFIG,
   calculateDistance,
@@ -45,6 +46,10 @@ const TacticalMap = ({
   combatants = [],
   positions = {},
   currentTurn = null,
+  combatGenerationId = null,
+  activeTurnGenerationId = combatGenerationId,
+  targetFighterId = null,
+  surrenderRecordsByFighterId = {},
   flashingCombatants: externalFlashingCombatants = null,
   impactReactions = {},
   movementMode = { active: false, isRunning: false },
@@ -2481,7 +2486,16 @@ const TacticalMap = ({
                     const combatantSize = getCombatantSize(combatant);
                     const bodyPartsEnabled = combatantSize.width > 1;
                     const combatantId = getCombatantId(combatant);
-                    const isCurrentCombatant = combatantId === currentTurn;
+                    const iconAppearance = getCombatIconAppearance({
+                      fighter: combatant,
+                      activeFighterId: currentTurn,
+                      selectedFighterId: selectedCombatant,
+                      targetFighterId,
+                      surrenderRecord: surrenderRecordsByFighterId?.[combatantId] || null,
+                      generationId: combatGenerationId,
+                      activeGenerationId: activeTurnGenerationId,
+                    });
+                    const isCurrentCombatant = iconAppearance.activeTurnIndicator;
                     const isSelectedCombatant = combatantId === selectedCombatant;
                     const isHoveredCombatant = hoveredCell?.x === col && hoveredCell?.y === row;
                     const tokenLabel = getMapCombatantTokenLabel({
@@ -2490,7 +2504,8 @@ const TacticalMap = ({
                       isSelected: isSelectedCombatant,
                       isHovered: isHoveredCombatant,
                     });
-                    const tokenTooltip = getMapCombatantTooltip(combatant);
+                    const baseTooltip = getMapCombatantTooltip(combatant);
+                    const tokenTooltip = [baseTooltip, `Status: ${iconAppearance.statusLabel}`].filter(Boolean).join(" | ");
                     const reaction = impactReactions?.[combatantId] || null;
                     const shakeDurationSeconds = Math.max(
                       0.12,
@@ -2507,6 +2522,8 @@ const TacticalMap = ({
                       <motion.g
                         key={`${getCombatantId(combatant)}:${reaction?.id || "idle"}`}
                         opacity={1}
+                        role="img"
+                        aria-label={iconAppearance.accessibleLabel}
                         style={{ pointerEvents: 'none' }}
                         initial={false}
                         animate={
@@ -2563,18 +2580,33 @@ const TacticalMap = ({
 
                         {tokenTooltip && <title>{tokenTooltip}</title>}
 
+                        {iconAppearance.rings.map((ring, ringIndex) => {
+                          const radius = 11 + ringIndex * 3;
+                          if (ring.style === "reticle") {
+                            return (
+                              <g key={ring.key} data-combat-ring={ring.key}>
+                                <circle cx={iconX} cy={iconY - 2} r={radius} fill="none" stroke={ring.color} strokeWidth={ring.width} strokeDasharray="5 4" />
+                                <path d={`M ${iconX - radius - 3} ${iconY - 2} h 6 M ${iconX + radius - 3} ${iconY - 2} h 6 M ${iconX} ${iconY - radius - 5} v 6 M ${iconX} ${iconY + radius - 5} v 6`} stroke={ring.color} strokeWidth={ring.width} fill="none" />
+                              </g>
+                            );
+                          }
+                          return (
+                            <circle key={ring.key} data-combat-ring={ring.key} cx={iconX} cy={iconY - 2} r={radius} fill="none" stroke={ring.color} strokeWidth={ring.width} strokeDasharray={ring.style === "dashed" ? "3 2" : undefined} style={{ pointerEvents: "none", filter: ring.style === "glow" ? `drop-shadow(0 0 4px ${ring.color})` : undefined }} />
+                          );
+                        })}
+
                         {/* Combatant marker */}
                         <circle
                           cx={iconX}
                           cy={iconY - 2}
-                          r={isSelectedCombatant ? "10" : "8"}
-                          fill={combatant.isEnemy ? "#dc2626" : "#2563eb"}
-                          stroke={isSelectedCombatant ? "#facc15" : combatant.isEnemy ? "#991b1b" : "#1e40af"}
-                          strokeWidth={isSelectedCombatant ? "3" : "2"}
-                          opacity="0.9"
+                          r={8 * iconAppearance.scale}
+                          fill={iconAppearance.baseColor}
+                          stroke={iconAppearance.centerStrokeColor}
+                          strokeWidth={iconAppearance.borderWidth}
+                          opacity={iconAppearance.opacity}
                           style={{
                             pointerEvents: 'none',
-                            opacity: flashingCombatants.has(combatantId) ? undefined : 0.9,
+                            opacity: flashingCombatants.has(combatantId) ? undefined : iconAppearance.opacity,
                             animation: flashingCombatants.has(combatantId) ? 'flash-slow 0.5s ease-in-out infinite' : 'none',
                           }}
                         />
@@ -2618,8 +2650,8 @@ const TacticalMap = ({
                                     cx={sx}
                                     cy={sy - 2}
                                     r="6"
-                                    fill={combatant.isEnemy ? "#991b1b" : "#1e40af"}
-                                    stroke={combatant.isEnemy ? "#7f1d1d" : "#1e3a8a"}
+                                    fill={iconAppearance.segmentColor}
+                                    stroke={iconAppearance.centerStrokeColor}
                                     strokeWidth="1.5"
                                     opacity="0.8"
                                     style={{ pointerEvents: "none" }}
@@ -2644,8 +2676,8 @@ const TacticalMap = ({
                                   cx={bodyPartX}
                                   cy={iconY - 2}
                                   r="6"
-                                  fill={combatant.isEnemy ? "#991b1b" : "#1e40af"}
-                                  stroke={combatant.isEnemy ? "#7f1d1d" : "#1e3a8a"}
+                                  fill={iconAppearance.segmentColor}
+                                  stroke={iconAppearance.centerStrokeColor}
                                   strokeWidth="1.5"
                                   opacity="0.8"
                                   style={{ pointerEvents: "none" }}
@@ -2656,6 +2688,15 @@ const TacticalMap = ({
 
                           return bodyPartIcons;
                         })()}
+
+                        {iconAppearance.statusMarker && (
+                          <g style={{ pointerEvents: "none" }}>
+                            <circle cx={iconX + 9} cy={iconY - 10} r="4.2" fill={iconAppearance.status.color} stroke="#ffffff" strokeWidth="1" />
+                            <text x={iconX + 9} y={iconY - 9.5} textAnchor="middle" dominantBaseline="middle" fontSize="6" fontWeight="bold" fill="#ffffff" stroke="#0f172a" strokeWidth="0.45" paintOrder="stroke">
+                              {iconAppearance.statusMarker}
+                            </text>
+                          </g>
+                        )}
 
                         {/* Altitude indicator for flying combatants */}
                         {(combatant.isFlying || (combatant.altitudeFeet ?? 0) > 0) && (() => {
@@ -2706,36 +2747,23 @@ const TacticalMap = ({
                           );
                         })()}
 
-                        {/* Current turn indicator */}
-                        {isCurrentCombatant && (
-                          <circle
-                            cx={iconX + size * 0.4}
-                            cy={iconY - size * 0.4}
-                            r="4"
-                            fill="#f6ad55"
-                            stroke="white"
-                            strokeWidth="1.5"
-                            style={{ pointerEvents: 'none' }}
-                          />
-                        )}
-
                         {tokenLabel && (
                           <g style={{ pointerEvents: "none" }}>
                             <rect
-                              x={iconX - 54}
-                              y={iconY - 31}
-                              width="108"
-                              height="15"
+                              x={iconX - 34}
+                              y={iconY - 29}
+                              width="68"
+                              height="13"
                               rx="3"
                               fill="rgba(15, 23, 42, 0.82)"
-                              stroke={isCurrentCombatant ? "#f6ad55" : "rgba(255, 255, 255, 0.55)"}
+                              stroke={isCurrentCombatant ? iconAppearance.activeColor : "rgba(255, 255, 255, 0.55)"}
                               strokeWidth="1"
                             />
                             <text
                               x={iconX}
-                              y={iconY - 20}
+                              y={iconY - 19.5}
                               textAnchor="middle"
-                              fontSize="10"
+                              fontSize="8.5"
                               fill="#ffffff"
                               dominantBaseline="middle"
                               style={{
@@ -2747,6 +2775,7 @@ const TacticalMap = ({
                             >
                               {tokenLabel}
                             </text>
+                            <path d={`M ${iconX - 3} ${iconY - 16} L ${iconX + 3} ${iconY - 16} L ${iconX} ${iconY - 12} Z`} fill="rgba(15, 23, 42, 0.82)" stroke={isCurrentCombatant ? iconAppearance.activeColor : "rgba(255, 255, 255, 0.55)"} strokeWidth="0.7" />
                           </g>
                         )}
 
@@ -2780,7 +2809,7 @@ const TacticalMap = ({
     }
 
     return cells;
-  }, [positions, combatants, hoveredCell, selectedCombatant, currentTurn, flashingCombatants, impactReactions, getCombatantsAtPosition, getCellColorCb, getCombatantPrimaryPositionCb, handleCellClick, terrain, effectiveMapType, getCellDataFromSceneCb, fogEnabled, isCellVisibleCb, isCellExploredCb, getFogOpacityCb, isEnemyVisibleCb, getCellPixelPositionCb, getCellPixelPosition, getCellShapeCb, HEX_WIDTH, activeCircles, dangerHexSet, featureColors, getCellFillCb, getTerrainIconCb, handleCellPointerDown, handleCellPointerOver, handleCellPointerUp, mode, onHoveredCellChange, selectedTargetHex, terrainColors, validMoves, getCombatantId]);
+  }, [positions, combatants, hoveredCell, selectedCombatant, currentTurn, targetFighterId, surrenderRecordsByFighterId, combatGenerationId, activeTurnGenerationId, flashingCombatants, impactReactions, getCombatantsAtPosition, getCellColorCb, getCombatantPrimaryPositionCb, handleCellClick, terrain, effectiveMapType, getCellDataFromSceneCb, fogEnabled, isCellVisibleCb, isCellExploredCb, getFogOpacityCb, isEnemyVisibleCb, getCellPixelPositionCb, getCellPixelPosition, getCellShapeCb, HEX_WIDTH, activeCircles, dangerHexSet, featureColors, getCellFillCb, getTerrainIconCb, handleCellPointerDown, handleCellPointerOver, handleCellPointerUp, mode, onHoveredCellChange, selectedTargetHex, terrainColors, validMoves, getCombatantId]);
 
   // Render grid using SVG (supports both hex and square)
   const renderGrid = () => {
@@ -3327,6 +3356,10 @@ TacticalMap.propTypes = {
   positions: PropTypes.object.isRequired,
   onPositionChange: PropTypes.func,
   currentTurn: PropTypes.string,
+  combatGenerationId: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+  activeTurnGenerationId: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+  targetFighterId: PropTypes.string,
+  surrenderRecordsByFighterId: PropTypes.object,
   highlightMovement: PropTypes.bool,
   flashingCombatants: PropTypes.instanceOf(Set),
   impactReactions: PropTypes.object,

@@ -26,7 +26,7 @@ assert.equal(getMapCombatantTokenLabel({ combatant: fighter }), "", "normal unit
 assert.equal(getMapCombatantTokenLabel({ combatant: fighter, isHovered: true }), "", "hover uses tooltip only");
 
 const currentLabel = getMapCombatantTokenLabel({ combatant: fighter, isCurrent: true });
-assert.equal(currentLabel, "Shield Bearer Current", "current unit gets compact current label");
+assert.equal(currentLabel, "Shield Bearer", "gold treatment conveys current turn without label clutter");
 assert.equal(hasUnsafeText(currentLabel), false, "current label is display safe");
 
 const selectedLabel = getMapCombatantTokenLabel({ combatant: fighter, isSelected: true });
@@ -54,7 +54,7 @@ const longLabel = getMapCombatantTokenLabel({
   combatant: { name: "Extremely Long Battlefield Combatant Name", currentHP: 99 },
   isSelected: true,
 });
-assert.ok(longLabel.length <= 28, "map labels stay compact");
+assert.ok(longLabel.length <= 20, "map labels stay compact");
 assert.equal(hasUnsafeText(longLabel), false, "shortened labels remain display safe");
 
 console.log("map combatant label tests passed");

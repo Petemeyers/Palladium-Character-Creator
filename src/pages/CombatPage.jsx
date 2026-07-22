@@ -288,11 +288,13 @@ import {
   commitSurrenderResolution,
   commitSurrenderResponse,
   createCanonicalSurrenderOffer,
+  commitCanonicalSurrenderOfferToRoster,
   createSurrenderDecisionToken,
   createSurrenderLifecycleRegistry,
   finalizeResolvedSurrenderEncounter,
   getAuthoritativeManualSurrenderDecision,
   getPendingSurrenderRecords,
+  shouldDeferEncounterFinalizationForCanonicalSurrender,
 } from "../utils/combat/surrenderLifecycle.js";
 import { selectSurrenderResolution, selectSurrenderResponse } from "../utils/behavior/selectSurrenderResolution.js";
 import { getAlignmentDisplayName, normalizeAlignmentBehavior } from "../utils/behavior/normalizeAlignmentBehavior.js";
@@ -300,6 +302,7 @@ import { getCombatDisplayLabel } from "../utils/presentation/getCombatDisplayLab
 import { applyBleedingMeterForNewMeleeRound } from "../utils/combat/bleedingMeter.js";
 import { createCanonicalUnarmedAttack } from "../utils/combat/unarmedAttackSanitization.js";
 import { validateCombatActor } from "../utils/combat/validateCombatActor.js";
+import { resolveCanonicalCombatActorKey } from "../utils/combat/normalizeCombatActorSchema.js";
 import {
   getCombatantGridPosition,
   resolveNoMovePositionAuthority,
@@ -365,6 +368,7 @@ import { isTwoHandedWeapon, getWeaponDamage } from "../utils/weaponSlotManager.j
 import { applyInitialEffect, applyFallDamage } from "../utils/updateActiveEffects.js";
 import TacticalMap from "../components/TacticalMap.jsx";
 import HexArena3D from "../components/HexArena3D.jsx";
+import { getCombatIconAppearance } from "../utils/presentation/getCombatIconAppearance.js";
 import Phase0PreCombatModal from "../components/Phase0PreCombatModal.jsx";
 import ResizableLayout from "../components/ResizableLayout.jsx";
 import LootWindow from "../components/LootWindow.jsx";
@@ -3029,6 +3033,11 @@ function CombatPage({ characters = [] }) {
   const movementCommitSequenceRef = useRef(0);
   const surrenderResolutionEntryKeysRef = useRef(new Set());
   const surrenderLifecycleRegistryRef = useRef(createSurrenderLifecycleRegistry());
+  const combatIconSurrenderRecordsByFighterId = Object.fromEntries(
+    Array.from(surrenderLifecycleRegistryRef.current.records.values())
+      .filter((record) => record?.offeredById)
+      .map((record) => [String(record.offeredById), record]),
+  );
   const surrenderDecisionSequenceRef = useRef(0);
   const surrenderSubmissionLockRef = useRef(new Set());
   const surrenderModalEventKeysRef = useRef(new Set());
@@ -4077,37 +4086,48 @@ function CombatPage({ characters = [] }) {
     });
     if (effectivePanicMovement.distanceFeet <= 0) {
       addLog(`${fighter.name} is too exhausted to keep fleeing and cowers in place.`, "warning");
-      commitFighters((prev) => prev.map((candidate) => {
-        if (candidate.id !== fighter.id) return candidate;
-        const offered = offerRoutedExhaustedCowerSurrender(candidate, {
-          offeredToId: liveThreats[0]?.id || null,
-          actionToken: currentTurnTokenRef.current || null,
-          generationId: combatSessionRef.current || "default",
-          initiativeTurnId: initiativeTurnIdRef.current || null,
-          round: meleeRound,
-        });
-        return finalizeNoMovePreservingPosition({
-          fighterId: candidate.id,
-          latestFighter: candidate,
-          staleActor: offered,
-          actorPatch: offered,
-          reason: "routed-exhausted-cower",
-          source: "routed-exhausted-cower",
-        });
-      }));
-      addLog(`${fighter.name} yields rather than continuing an exhausted flight.`, "warning");
-      addLog?.({
-        audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
-        channel: COMBAT_LOG_CHANNELS.STATE,
-        eventType: "surrender-offered",
-        level: "info",
-        type: "debug",
-        actorId: fighter.id,
-        targetId: liveThreats[0]?.id || null,
+      const rosterBeforeOffer = fightersRef.current || [];
+      const surrenderingActor = rosterBeforeOffer.find((candidate) => candidate.id === fighter.id) || fighter;
+      const recipient = liveThreats[0] || rosterBeforeOffer.find((candidate) => candidate.id !== fighter.id && !candidate.dead && !candidate.defeated);
+      const coweringActor = offerRoutedExhaustedCowerSurrender(surrenderingActor, {
+        offeredToId: recipient?.id || null,
+        actionToken: currentTurnTokenRef.current || null,
+        generationId: combatSessionRef.current || "default",
+        initiativeTurnId: initiativeTurnIdRef.current || null,
+        round: meleeRound,
+      });
+      const canonicalOffer = recipient ? commitCanonicalSurrenderOfferToRoster({
+        registry: surrenderLifecycleRegistryRef.current,
+        fighters: rosterBeforeOffer,
+        surrenderingActor: coweringActor,
+        receivingActor: recipient,
+        reason: "routed-exhausted-cower",
+        generationId: combatSessionRef.current || "default",
+        round: meleeRound,
+        initiativeTurnId: initiativeTurnIdRef.current || null,
+        actionToken: currentTurnTokenRef.current || null,
         source: "routed-exhausted-cower",
-        message: `surrender offered: actorId=${fighter.id} reason=routed-exhausted-cower`,
-        data: { actionType: "cower", reason: "routed-exhausted-cower", surrenderStatus: "offered" },
-      }, "debug");
+      }) : null;
+      const offeredActor = canonicalOffer?.fighter || coweringActor;
+      const nextRoster = (canonicalOffer?.fighters || rosterBeforeOffer).map((candidate) => (
+        candidate.id === fighter.id
+          ? finalizeNoMovePreservingPosition({
+              fighterId: candidate.id,
+              latestFighter: surrenderingActor,
+              staleActor: offeredActor,
+              actorPatch: offeredActor,
+              reason: "routed-exhausted-cower",
+              source: "routed-exhausted-cower",
+            })
+          : candidate
+      ));
+      commitFighters(nextRoster);
+      if (canonicalOffer?.accepted) {
+        emitSurrenderLifecycleEvents(canonicalOffer.events, Object.fromEntries(nextRoster.map((candidate) => [candidate.id, candidate])));
+        if (!combatPausedRef.current) surrenderManualPauseRef.current = true;
+        setCombatPaused(true);
+      }
+      addLog(`${fighter.name} yields rather than continuing an exhausted flight.`, "warning");
       return completeMoraleAction({
         actionType: "cower",
         explicitTurnEndingEffect: true,
@@ -4276,6 +4296,7 @@ function CombatPage({ characters = [] }) {
     combatTerrain,
     addLog,
     commitFighters,
+    finalizeNoMovePreservingPosition,
     recordLastMovementCommit,
     markFighterFledOffMap,
     calculateDistance,
@@ -9590,7 +9611,18 @@ function CombatPage({ characters = [] }) {
     const hostileThreats = active.filter((fighter) =>
       isHostileThreatToParty(fighter, fighterList || [], sceneContext)
     );
-    const pendingSurrenders = hostileFighters.filter(isPendingSurrenderResolution);
+    const currentGenerationId = combatSessionRef.current || "default";
+    const canonicalPendingRecords = shouldDeferEncounterFinalizationForCanonicalSurrender({
+      registry: surrenderLifecycleRegistryRef.current,
+      generationId: currentGenerationId,
+    }).records;
+    const canonicalPendingIds = new Set(canonicalPendingRecords.map((record) => record.offeredById));
+    const pendingSurrenders = (fighterList || []).filter((fighter) => (
+      canonicalPendingIds.has(fighter.id) || isPendingSurrenderResolution(fighter)
+    ));
+    const surrenderDecisionRecipients = canonicalPendingRecords
+      .map((record) => (fighterList || []).find((fighter) => fighter.id === record.offeredToId))
+      .filter(Boolean);
     const resistingHostileThreats = hostileThreats.filter((fighter) => !isPendingSurrenderResolution(fighter));
     const activeNonParty = active.filter((fighter) => !isPartyAlignedForVictory(fighter));
     const nonPartyHostileConflict = activeNonParty.some((actor, index) =>
@@ -9611,6 +9643,8 @@ function CombatPage({ characters = [] }) {
       activeParty,
       hostileThreats,
       pendingSurrenders,
+      canonicalPendingRecords,
+      surrenderDecisionRecipients,
       resistingHostileThreats,
       partyFighters,
       hostileFighters,
@@ -9629,8 +9663,8 @@ function CombatPage({ characters = [] }) {
     const combatVictoryState = getCombatVictoryState(fighterList);
     if (shouldDeferCombatEndForSurrender({
       pendingSurrenders: combatVictoryState.pendingSurrenders,
-      resistingFighters: combatVictoryState.resistingHostileThreats,
-      victors: combatVictoryState.activeParty,
+      resistingFighters: [],
+      victors: combatVictoryState.surrenderDecisionRecipients,
     })) {
       const resolutionKey = combatVictoryState.pendingSurrenders
         .map((fighter) => fighter.id)
@@ -9638,7 +9672,7 @@ function CombatPage({ characters = [] }) {
         .join(":");
       if (!surrenderResolutionEntryKeysRef.current.has(resolutionKey)) {
         surrenderResolutionEntryKeysRef.current.add(resolutionKey);
-        const victor = combatVictoryState.activeParty[0];
+        const victor = combatVictoryState.surrenderDecisionRecipients[0];
         const surrenderingFighter = combatVictoryState.pendingSurrenders[0];
         addLog?.({
           audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
@@ -10028,7 +10062,12 @@ function CombatPage({ characters = [] }) {
         responseReason: "alignment-weighted-ai-response",
       });
       commitSurrenderRosterResult(response, recipient.id, { finalize: false });
-      if (!response.committed || response.combatContinues) return response;
+      if (!response.committed) return response;
+      if (response.combatContinues) {
+        if (surrenderManualPauseRef.current) surrenderManualPauseRef.current = false;
+        setCombatPaused(false);
+        return response;
+      }
       const victorClaim = claimSurrenderDecisionOwner({
         registry, surrenderId: record.surrenderId, type: record.decisionOwner?.type || (getFighterSchedulerTeam(recipient) === "enemy" ? "enemy-ai" : "player-ai"),
         actorId: recipient.id, generationId: record.generationId, phase: SURRENDER_DECISION_PHASES.VICTOR,
@@ -10276,10 +10315,27 @@ function CombatPage({ characters = [] }) {
       round: meleeRound,
       source: "manual-player",
     });
-    const next = roster.map((fighter) => fighter.id === actor.id ? { ...offered, canAct: false, remainingActions: 0, attacksRemaining: 0 } : fighter);
+    const canonicalOffer = commitCanonicalSurrenderOfferToRoster({
+      registry: surrenderLifecycleRegistryRef.current,
+      fighters: roster,
+      surrenderingActor: { ...offered, canAct: false, remainingActions: 0, attacksRemaining: 0 },
+      receivingActor: recipient,
+      reason: "manual-voluntary-surrender",
+      generationId: combatSessionRef.current || "default",
+      initiativeTurnId: initiativeTurnIdRef.current,
+      actionToken: currentTurnTokenRef.current,
+      round: meleeRound,
+      source: "manual-player",
+    });
+    const next = canonicalOffer.accepted ? canonicalOffer.fighters : roster;
     fightersRef.current = next;
     setFighters(next);
-  }, [getFighterControlMode, meleeRound]);
+    if (canonicalOffer.accepted) {
+      emitSurrenderLifecycleEvents(canonicalOffer.events, Object.fromEntries(next.map((fighter) => [fighter.id, fighter])));
+      if (!combatPausedRef.current) surrenderManualPauseRef.current = true;
+      setCombatPaused(true);
+    }
+  }, [emitSurrenderLifecycleEvents, getFighterControlMode, meleeRound]);
 
   const applyArmyToFighter = useCallback((fighter, armyId, { preservePlayerOverride = false } = {}) => {
     const army = getEncounterArmyById(preservePlayerOverride ? "party" : armyId);
@@ -10444,6 +10500,15 @@ function CombatPage({ characters = [] }) {
 
   const renderCombatRoleBadges = (fighter) => {
     if (!fighter) return null;
+    const appearance = getCombatIconAppearance({
+      fighter,
+      activeFighterId: currentFighter?.id || null,
+      selectedFighterId: selectedCombatantId,
+      targetFighterId: selectedTarget?.id || null,
+      surrenderRecord: combatIconSurrenderRecordsByFighterId[String(fighter.id)] || null,
+      generationId: combatSessionRef.current,
+      activeGenerationId: combatSessionRef.current,
+    });
     const aggression = String(fighter.aggression || "").toLowerCase();
     const disposition = String(fighter.disposition || "").toLowerCase();
     const isNpc = fighter.type === "npc";
@@ -10453,10 +10518,17 @@ function CombatPage({ characters = [] }) {
       ["kill_on_sight"].includes(disposition) ||
       (fighter.sceneRoleKey && fighter.sceneRoleKey !== "enemy" && fighter.type === "enemy");
 
-    if (!isNpc && !isSpecialThreat) return null;
-
     return (
       <HStack spacing={1} flexWrap="wrap">
+        <Badge
+          size="sm"
+          border="1px solid"
+          borderColor={appearance.status.color}
+          color={appearance.status.color}
+          aria-label={appearance.accessibleLabel}
+        >
+          {appearance.status.marker || appearance.allegiance.key.toUpperCase()} {appearance.status.label}
+        </Badge>
         {(isNpc || fighter.sceneRoleKey !== "enemy") && (
           <Badge colorScheme={isNpc ? "purple" : "red"} size="sm">
             {getSceneRoleLabel(fighter)}
@@ -36166,6 +36238,7 @@ function CombatPage({ characters = [] }) {
 
   function addCombatant(combatantData, customNameOverride = null, levelOverride = null, armorOverride = null, weaponOverride = null, ammoOverride = null, fighterTypeOverride = null, armyId = "enemy") {
     let newFighter;
+    const sourceActorResolution = resolveCanonicalCombatActorKey(combatantData);
     const nameToUse = customNameOverride || customEnemyName;
     const level = levelOverride || enemyLevel || 1;
     const armorToEquip = armorOverride || selectedArmor;
@@ -36559,6 +36632,16 @@ function CombatPage({ characters = [] }) {
           newFighter = equipArmorToEnemy(newFighter, armorData);
           addLog(`${newFighter.name} equistaminad with ${armorData.name} (AC: ${armorData.guardRating})`, "info");
         }
+      }
+    }
+
+    if (sourceActorResolution.actorKey) {
+      newFighter.actorKey = sourceActorResolution.actorKey;
+      newFighter.sourceActorKey = sourceActorResolution.actorKey;
+      newFighter.combatActorMigrationAlias = sourceActorResolution.actorKey;
+      if (weaponToEquip && weaponToEquip !== "None") {
+        const selectedProfile = weapons.find((weaponEntry) => weaponEntry.name === weaponToEquip) || { name: weaponToEquip, type: "weapon" };
+        newFighter.selectedCanonicalLoadout = [{ ...selectedProfile }];
       }
     }
 
@@ -43427,6 +43510,10 @@ function CombatPage({ characters = [] }) {
                         dangerHexes={dangerHexes}
                         onPositionChange={handlePositionChange}
                         currentTurn={currentFighter?.id}
+                        targetFighterId={selectedTarget?.id || null}
+                        surrenderRecordsByFighterId={combatIconSurrenderRecordsByFighterId}
+                        combatGenerationId={combatSessionRef.current}
+                        activeTurnGenerationId={combatSessionRef.current}
                         highlightMovement={combatActive}
                         flashingCombatants={flashingCombatants}
                         movementMode={!combatActive && (showDeploymentModal || manualDeploymentOpen)
@@ -44413,6 +44500,12 @@ function CombatPage({ characters = [] }) {
                       projectiles={projectiles}
                       embeddedArrows={embeddedArrows}
                       dangerHexes={dangerHexes}
+                      activeFighterId={currentFighter?.id || null}
+                      selectedFighterId={selectedCombatantId}
+                      targetFighterId={selectedTarget?.id || null}
+                      surrenderRecordsByFighterId={combatIconSurrenderRecordsByFighterId}
+                      combatGenerationId={combatSessionRef.current}
+                      activeTurnGenerationId={combatSessionRef.current}
                       terrain={arenaEnvironment}
                       mode={mode}
                       movementMode={movementMode}

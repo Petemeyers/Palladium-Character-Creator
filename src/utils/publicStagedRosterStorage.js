@@ -147,6 +147,18 @@ const buildStagedEntryId = (entry, stableId) => cleanId(
   (entry?.id ? `staged-saved:${entry.id}` : `staged-saved:${stableId}`)
 );
 
+const getExplicitCombatActorMigrationAlias = (entry = {}, savedCharacter = {}) => {
+  const explicit = cleanId(
+    savedCharacter.actorKey || savedCharacter.canonicalActorKey || savedCharacter.sourceActorKey ||
+    entry.actorKey || entry.canonicalActorKey || entry.sourceActorKey || entry.combatActorMigrationAlias
+  ).toLowerCase();
+  if (explicit) return explicit;
+  const classKey = normalizeIdentityText(
+    savedCharacter.publicClassName || savedCharacter.class || savedCharacter.profession || entry.publicClassName
+  );
+  return classKey === "knight" ? "knight" : "";
+};
+
 export function repairStagedSavedCharacterEntry(entry = {}, savedCharacter = {}) {
   const stableId = getSavedCharacterStableId(savedCharacter);
   if (!stableId) return toSafeEntries([entry])[0] || {};
@@ -163,6 +175,7 @@ export function repairStagedSavedCharacterEntry(entry = {}, savedCharacter = {})
     movement: savedMetadata.movement,
     originalActorMetadata: entry?.originalActorMetadata || savedCharacter?.originalActorMetadata,
   });
+  const combatActorMigrationAlias = getExplicitCombatActorMigrationAlias(entry, savedCharacter);
   return toSafeEntries([{
     ...entry,
     stagedEntryId: buildStagedEntryId(entry, stableId),
@@ -177,6 +190,14 @@ export function repairStagedSavedCharacterEntry(entry = {}, savedCharacter = {})
     publicSpeciesName: savedCharacter?.publicSpeciesName || savedCharacter?.species || savedCharacter?.race || savedCharacter?.category || entry?.publicSpeciesName,
     publicBackgroundName: savedCharacter?.publicBackgroundName || savedCharacter?.background || savedCharacter?.socialBackground || entry?.publicBackgroundName,
     originalActorMetadata,
+    ...(combatActorMigrationAlias ? {
+      combatActorMigrationAlias,
+      autoRollCharacter: {
+        ...(entry.autoRollCharacter || savedCharacter.autoRollCharacter || savedCharacter),
+        combatActorMigrationAlias,
+        sourceActorKey: combatActorMigrationAlias,
+      },
+    } : {}),
   }])[0];
 }
 

@@ -22,6 +22,7 @@ import {
   updateCharacterBillboards,
 } from "../characterPlaceholders.js";
 import { hexDistance } from "../hexPathfinding.js";
+import { getCombatIconAppearance } from "../presentation/getCombatIconAppearance.js";
 
 const DEBUG_COMBAT =
   typeof window !== "undefined" &&
@@ -177,6 +178,129 @@ function getDesiredFootprintRadiusWorld(fighter) {
   // Radius in world space to the OUTER EDGE:
   // radiusHex steps to outer hex centers + one hex radius to reach the edge
   return radiusHex * centerSpacing + HEX_RADIUS;
+}
+
+function disposeCombatIconAppearance(group) {
+  if (!group) return;
+  group.traverse((child) => {
+    child.geometry?.dispose?.();
+    if (Array.isArray(child.material)) child.material.forEach((material) => material?.dispose?.());
+    else child.material?.dispose?.();
+    child.material?.map?.dispose?.();
+  });
+}
+
+function createCombatStatusSprite(marker, borderColor) {
+  if (!marker || typeof document === "undefined") return null;
+  const canvas = document.createElement("canvas");
+  canvas.width = 128;
+  canvas.height = 48;
+  const context = canvas.getContext("2d");
+  if (!context) return null;
+  context.fillStyle = "rgba(15, 23, 42, 0.88)";
+  context.strokeStyle = borderColor;
+  context.lineWidth = 5;
+  context.beginPath();
+  context.roundRect(3, 3, 122, 42, 10);
+  context.fill();
+  context.stroke();
+  context.fillStyle = "#ffffff";
+  context.font = "bold 22px Arial";
+  context.textAlign = "center";
+  context.textBaseline = "middle";
+  context.fillText(marker, 64, 25);
+  const texture = new THREE.CanvasTexture(canvas);
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true, depthWrite: false }));
+  sprite.scale.set(1.8, 0.68, 1);
+  return sprite;
+}
+
+function applyCombatIconAppearance(characterMesh, fighter, context = {}) {
+  if (!characterMesh || !fighter) return;
+  const appearance = getCombatIconAppearance({ fighter, ...context });
+  characterMesh.traverse((child) => {
+    if (child.userData?.type !== "characterPlaceholder" || !child.material?.color) return;
+    child.material.color.set(appearance.baseColor);
+    child.material.opacity = appearance.opacity;
+  });
+  const signature = JSON.stringify({
+    baseColor: appearance.baseColor, borderColor: appearance.borderColor, opacity: appearance.opacity,
+    statusMarker: appearance.statusMarker, pendingSurrender: appearance.pendingSurrender,
+    active: appearance.activeTurnIndicator, selected: appearance.selectedIndicator, targeted: appearance.targetedIndicator,
+    rings: appearance.rings,
+  });
+  if (characterMesh.userData.combatIconAppearanceSignature === signature) return;
+  const previous = characterMesh.userData.combatIconAppearanceGroup;
+  if (previous) {
+    characterMesh.remove(previous);
+    disposeCombatIconAppearance(previous);
+  }
+
+  const radius = Math.max(1.05, getDesiredFootprintRadiusWorld(fighter) * 0.72);
+  const group = new THREE.Group();
+  group.name = "combat-icon-appearance";
+  const base = new THREE.Mesh(
+    new THREE.CircleGeometry(radius, 48),
+    new THREE.MeshBasicMaterial({ color: appearance.baseColor, transparent: true, opacity: Math.min(0.42, appearance.opacity * 0.45), depthWrite: false, side: THREE.DoubleSide }),
+  );
+  base.rotation.x = -Math.PI / 2;
+  base.position.y = 0.045;
+  group.add(base);
+  const border = new THREE.Mesh(
+    new THREE.RingGeometry(radius * 0.87, radius, 48),
+    new THREE.MeshBasicMaterial({ color: appearance.centerStrokeColor, transparent: true, opacity: appearance.opacity, depthWrite: false, side: THREE.DoubleSide }),
+  );
+  border.rotation.x = -Math.PI / 2;
+  border.position.y = 0.065;
+  group.add(border);
+  appearance.rings.forEach((ring, index) => {
+    const inner = radius * (1.04 + index * 0.13);
+    const outer = inner + radius * Math.max(0.06, ring.width * 0.025);
+    const addRingMesh = (geometry, suffix = "") => {
+      const ringMesh = new THREE.Mesh(
+        geometry,
+        new THREE.MeshBasicMaterial({ color: ring.color, transparent: true, opacity: 1, depthWrite: false, side: THREE.DoubleSide }),
+      );
+      ringMesh.name = `combat-appearance-${ring.key}${suffix}`;
+      ringMesh.rotation.x = -Math.PI / 2;
+      ringMesh.position.y = 0.075 + index * 0.006;
+      ringMesh.userData.ringStyle = ring.style;
+      group.add(ringMesh);
+    };
+    if (ring.style === "dashed") {
+      for (let dashIndex = 0; dashIndex < 8; dashIndex += 1) {
+        addRingMesh(new THREE.RingGeometry(inner, outer, 8, 1, dashIndex * (Math.PI / 4), Math.PI / 7), `-dash-${dashIndex}`);
+      }
+    } else {
+      addRingMesh(new THREE.RingGeometry(inner, outer, ring.style === "reticle" ? 16 : 48));
+    }
+    if (ring.style === "reticle") {
+      const reticleRadius = outer + radius * 0.12;
+      [[reticleRadius, 0, 0], [-reticleRadius, 0, 0], [0, 0, reticleRadius], [0, 0, -reticleRadius]].forEach(([x, y, z], segmentIndex) => {
+        const segment = new THREE.Mesh(
+          new THREE.BoxGeometry(radius * 0.24, radius * 0.025, radius * 0.045),
+          new THREE.MeshBasicMaterial({ color: ring.color, depthWrite: false }),
+        );
+        segment.name = "combat-appearance-target-reticle-segment";
+        segment.position.set(x, 0.085 + index * 0.006 + y, z);
+        if (segmentIndex > 1) segment.rotation.y = Math.PI / 2;
+        group.add(segment);
+      });
+    }
+  });
+  const displayMarker = appearance.statusMarker || appearance.secondaryMarkers[0]?.marker || null;
+  const marker = createCombatStatusSprite(displayMarker, appearance.borderColor);
+  if (marker) {
+    marker.position.set(radius * 0.7, Math.max(1.2, radius * 0.75), 0);
+    marker.userData.statusLabel = appearance.statusLabel;
+    group.add(marker);
+  }
+  group.userData.appearance = appearance;
+  group.userData.accessibleLabel = appearance.accessibleLabel;
+  characterMesh.add(group);
+  characterMesh.userData.combatIconAppearanceGroup = group;
+  characterMesh.userData.combatIconAppearanceSignature = signature;
+  characterMesh.userData.combatIconAppearance = appearance;
 }
 
 const BESTIARY_ENTRIES = getAllArenaRosterEntries(arenaRosterData);
@@ -1528,13 +1652,15 @@ export function initHexArena(containerElement) {
   function dfocusoseCharacterMesh(mesh) {
     if (!mesh) return;
     mesh.traverse((child) => {
-      if (child.isMesh) {
-        if (child.geometry) child.geometry.dfocusose();
-        if (Array.isArray(child.material)) {
-          child.material.forEach((mat) => mat?.dfocusose?.());
-        } else if (child.material) {
-          child.material.dfocusose();
-        }
+      child.geometry?.dispose?.();
+      if (Array.isArray(child.material)) {
+        child.material.forEach((mat) => {
+          mat?.map?.dispose?.();
+          mat?.dispose?.();
+        });
+      } else if (child.material) {
+        child.material.map?.dispose?.();
+        child.material.dispose?.();
       }
     });
   }
@@ -1547,6 +1673,12 @@ export function initHexArena(containerElement) {
     embeddedArrows = [],
     impactReactions = {},
     dangerHexes = [],
+    activeFighterId = null,
+    selectedFighterId = null,
+    targetFighterId = null,
+    surrenderRecordsByFighterId = {},
+    combatGenerationId = null,
+    activeTurnGenerationId = combatGenerationId,
     terrain,
   }) {
     rebuildGridFromEnvironment(terrain);
@@ -1708,7 +1840,15 @@ export function initHexArena(containerElement) {
           terrainType,
           isWater,
           name: fighter.name || fighter.characterName || "Unknown",
-          alignment: fighter.type === "enemy" ? "evil" : "good",
+          combatIconAppearance: getCombatIconAppearance({
+            fighter,
+            activeFighterId,
+            selectedFighterId,
+            targetFighterId,
+            surrenderRecord: surrenderRecordsByFighterId?.[fighterId] || null,
+            generationId: combatGenerationId,
+            activeGenerationId: activeTurnGenerationId,
+          }),
           // Explicitly preserve visual and footprint after spread to ensure they win
           visual: resolvedVisual,
           footprint: {
@@ -1896,6 +2036,14 @@ export function initHexArena(containerElement) {
         // ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ Update debug base ring if footprint changed (pass center hex for accurate radius)
         ensureDebugBaseRing(characterMesh, fighter, { q, r });
       }
+      applyCombatIconAppearance(characterMesh, fighter, {
+        activeFighterId,
+        selectedFighterId,
+        targetFighterId,
+        surrenderRecord: surrenderRecordsByFighterId?.[fighterId] || null,
+        generationId: combatGenerationId,
+        activeGenerationId: activeTurnGenerationId,
+      });
     });
 
     // === Facing: rotate each unit toward nearest opposing unit (LAST, after all position updates) ===

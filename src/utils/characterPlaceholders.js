@@ -110,7 +110,6 @@ export function createCharacterIcon(character = {}) {
     r = 0,
     altitude = 0,
     name = "Unit",
-    alignment = "neutral",
     visual = {},
     footprint = {},
   } = character;
@@ -123,7 +122,7 @@ export function createCharacterIcon(character = {}) {
   const sphereRadius = 1.0; // 5ft diameter = 2.5ft radius = 1 unit
   const geometry = new THREE.SphereGeometry(sphereRadius, 16, 16);
   const material = new THREE.MeshStandardMaterial({
-    color: alignment === "evil" ? "#AA0000" : "#00AAFF",
+    color: character.combatIconAppearance?.baseColor || character.color || "#64748b",
     transparent: true,
     opacity: 0.85,
     metalness: 0.3,
