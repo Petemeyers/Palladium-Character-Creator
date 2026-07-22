@@ -49,7 +49,8 @@ assert.equal(prisoner.events.filter((entry) => entry.eventType === "prisoner-tak
 assert.equal(commitSurrenderResolution({ registry, surrenderedActor: accepted.fighter, victor: knight, token: victorToken, decision: "takePrisoner" }).committed, false);
 const finalized = finalizeResolvedSurrenderEncounter({ registry, surrenderIds: [offered.record.surrenderId] });
 assert.equal(finalized.finalized, true);
-assert.deepEqual(finalized.events.map((entry) => entry.eventType), ["surrender-encounter-finalized"]);
+assert.deepEqual(finalized.events.map((entry) => entry.eventType), ["surrender-record-finalized"]);
+assert.deepEqual(finalized.events[0].data, { surrenderRecordFinalized: true, combatEncounterFinalized: false, surrenderId: offered.record.surrenderId });
 assert.equal(prisoner.events.filter((entry) => entry.eventType === "surrender-resolution-completed").length, 1);
 assert.equal(finalizeResolvedSurrenderEncounter({ registry, surrenderIds: [offered.record.surrenderId] }).finalized, false);
 const repeatedOffer = createCanonicalSurrenderOffer({ registry, surrenderingActor: goblin, receivingActor: knight, reason: "later-offer", generationId: "battle-1", round: 3 });

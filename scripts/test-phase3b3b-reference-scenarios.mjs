@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { runPhase3B3BSurrenderScenarios } from "../src/utils/combat/phase3b3bSurrenderScenarios.js";
+import { runPhase3B3BModalOwnershipScenarios, runPhase3B3BSurrenderScenarios } from "../src/utils/combat/phase3b3bSurrenderScenarios.js";
 
 const scenarios = runPhase3B3BSurrenderScenarios();
 const knight = scenarios.knightReceivesGoblin;
@@ -28,4 +28,13 @@ assert.equal(grounded.response.fighter.currentHP, grounded.surrenderedActor.curr
 assert.equal(grounded.resolution.committed, true);
 assert.equal(grounded.resolution.releaseGrapple, true);
 assert.equal(grounded.resolution.events.filter((event) => event.eventType === "surrender-resolution-committed").length, 1);
+
+const modal = runPhase3B3BModalOwnershipScenarios();
+assert.equal(modal.ai.panel, null);
+assert.equal(modal.ai.resolution.events.filter((event) => event.eventType === "surrender-resolution-committed").length, 1);
+assert.equal(modal.ai.hostileGoblinRemains, true);
+assert.equal(modal.manual.responsePanel.phase, "response");
+assert.equal(modal.manual.victorPanel.phase, "victor-decision");
+assert.equal(modal.manual.closedPanel, null);
+assert.equal(modal.manual.resolution.fighter.combatState, "captured");
 console.log("Phase 3B3B reference surrender scenarios passed");

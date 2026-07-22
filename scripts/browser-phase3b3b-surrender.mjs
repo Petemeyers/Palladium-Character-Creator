@@ -26,6 +26,7 @@ const evaluated = await send("Runtime.evaluate", {
     const lifecycle = await import('/src/utils/combat/surrenderLifecycle.js');
     const selector = await import('/src/utils/behavior/selectSurrenderResolution.js');
     const scenarios = scenariosModule.runPhase3B3BSurrenderScenarios();
+    const modalOwnership = scenariosModule.runPhase3B3BModalOwnershipScenarios();
     return {
       knightAccepted: scenarios.knightReceivesGoblin.response.committed,
       knightResolved: scenarios.knightReceivesGoblin.resolution.committed,
@@ -36,6 +37,14 @@ const evaluated = await send("Runtime.evaluate", {
       groundedResolvedOnce: scenarios.groundedSurrender.resolution.events.filter((entry) => entry.eventType === 'surrender-resolution-committed').length,
       tokenFactoryAvailable: typeof lifecycle.createSurrenderDecisionToken === 'function',
       selectorAvailable: typeof selector.selectSurrenderResolution === 'function',
+      aiManualPanelVisible: Boolean(modalOwnership.ai.panel),
+      aiResolutionCount: modalOwnership.ai.resolution.events.filter((entry) => entry.eventType === 'surrender-resolution-committed').length,
+      hostileGoblinRemains: modalOwnership.ai.hostileGoblinRemains,
+      manualResponsePanelPhase: modalOwnership.manual.responsePanel?.phase,
+      manualVictorPanelPhase: modalOwnership.manual.victorPanel?.phase,
+      manualPanelClosed: modalOwnership.manual.closedPanel === null,
+      manualCapturedVisible: modalOwnership.manual.resolution.fighter.combatState === 'captured',
+      modalExportControls: modalOwnership.manual.exportControlsExpected,
     };
   })()`,
   awaitPromise: true,
@@ -52,5 +61,13 @@ assert.equal(result.groundedPreservedThroughAcceptance, true);
 assert.equal(result.groundedResolvedOnce, 1);
 assert.equal(result.tokenFactoryAvailable, true);
 assert.equal(result.selectorAvailable, true);
+assert.equal(result.aiManualPanelVisible, false);
+assert.equal(result.aiResolutionCount, 1);
+assert.equal(result.hostileGoblinRemains, true);
+assert.equal(result.manualResponsePanelPhase, 'response');
+assert.equal(result.manualVictorPanelPhase, 'victor-decision');
+assert.equal(result.manualPanelClosed, true);
+assert.equal(result.manualCapturedVisible, true);
+assert.deepEqual(result.modalExportControls, ['Copy Entire Log', 'Download Entire Log']);
 socket.close();
 console.log("Phase 3B3B browser surrender scenarios passed", result);

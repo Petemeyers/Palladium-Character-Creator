@@ -12,7 +12,10 @@ const OUTCOMES = [
   ["executeSurrenderedOpponent", "Execute"],
 ];
 
-export default function SurrenderDecisionPanel({ decision, onRespond, onResolve }) {
+export default function SurrenderDecisionPanel({
+  decision, onRespond, onResolve, onCopyEntireLog, onDownloadEntireLog,
+  isSubmitting = false, submissionError = null, onReturnToCombat,
+}) {
   const [executionConfirmation, setExecutionConfirmation] = useState(false);
   if (!decision) return null;
   const responsePending = decision.phase === "response";
@@ -29,6 +32,7 @@ export default function SurrenderDecisionPanel({ decision, onRespond, onResolve 
             {weaponDisposition?.weaponId && (
               <Text fontSize="sm">Surrendered weapon: {getCombatDisplayLabel(weaponDisposition.weaponName || weaponDisposition.weaponId)}</Text>
             )}
+            {submissionError && <Alert status="warning"><AlertIcon />{submissionError}</Alert>}
             {responsePending ? (
               <Alert status="info"><AlertIcon />Combat positions and initiative are preserved while you decide.</Alert>
             ) : executionConfirmation ? (
@@ -38,24 +42,32 @@ export default function SurrenderDecisionPanel({ decision, onRespond, onResolve 
             )}
           </VStack>
         </ModalBody>
-        <ModalFooter>
-          {responsePending ? (
-            <HStack>
-              <Button colorScheme="green" onClick={() => onRespond("accept")}>Accept surrender</Button>
-              <Button colorScheme="red" variant="outline" onClick={() => onRespond("refuse")}>Refuse surrender</Button>
+        <ModalFooter display="block">
+          <VStack align="stretch" spacing={3}>
+            {responsePending ? (
+              <HStack justify="flex-end">
+                <Button colorScheme="green" isDisabled={isSubmitting} onClick={() => onRespond("accept")}>Accept surrender</Button>
+                <Button colorScheme="red" variant="outline" isDisabled={isSubmitting} onClick={() => onRespond("refuse")}>Refuse surrender</Button>
+              </HStack>
+            ) : executionConfirmation ? (
+              <HStack justify="flex-end">
+                <Button isDisabled={isSubmitting} onClick={() => setExecutionConfirmation(false)}>Cancel</Button>
+                <Button colorScheme="red" isDisabled={isSubmitting} onClick={() => { setExecutionConfirmation(false); onResolve("executeSurrenderedOpponent"); }}>Confirm execution</Button>
+              </HStack>
+            ) : decision.isPending !== false ? (
+              <Wrap justify="flex-end">
+                {OUTCOMES.map(([key, label]) => (
+                  <Button key={key} size="sm" isDisabled={isSubmitting} colorScheme={key === "executeSurrenderedOpponent" ? "red" : "blue"} variant={key === "executeSurrenderedOpponent" ? "outline" : "solid"} onClick={() => key === "executeSurrenderedOpponent" ? setExecutionConfirmation(true) : onResolve(key)}>{label}</Button>
+                ))}
+              </Wrap>
+            ) : (
+              <Button onClick={onReturnToCombat}>Return to combat</Button>
+            )}
+            <HStack justify="flex-end">
+              <Button size="sm" variant="ghost" onClick={onCopyEntireLog}>Copy Entire Log</Button>
+              <Button size="sm" variant="ghost" onClick={onDownloadEntireLog}>Download Entire Log</Button>
             </HStack>
-          ) : executionConfirmation ? (
-            <HStack>
-              <Button onClick={() => setExecutionConfirmation(false)}>Cancel</Button>
-              <Button colorScheme="red" onClick={() => { setExecutionConfirmation(false); onResolve("executeSurrenderedOpponent"); }}>Confirm execution</Button>
-            </HStack>
-          ) : (
-            <Wrap justify="flex-end">
-              {OUTCOMES.map(([key, label]) => (
-                <Button key={key} size="sm" colorScheme={key === "executeSurrenderedOpponent" ? "red" : "blue"} variant={key === "executeSurrenderedOpponent" ? "outline" : "solid"} onClick={() => key === "executeSurrenderedOpponent" ? setExecutionConfirmation(true) : onResolve(key)}>{label}</Button>
-              ))}
-            </Wrap>
-          )}
+          </VStack>
         </ModalFooter>
       </ModalContent>
     </Modal>
@@ -63,7 +75,12 @@ export default function SurrenderDecisionPanel({ decision, onRespond, onResolve 
 }
 
 SurrenderDecisionPanel.propTypes = {
-  decision: PropTypes.shape({ phase: PropTypes.string, reason: PropTypes.string, surrenderingActor: PropTypes.object }),
+  decision: PropTypes.shape({ phase: PropTypes.string, reason: PropTypes.string, surrenderingActor: PropTypes.object, isPending: PropTypes.bool }),
   onRespond: PropTypes.func.isRequired,
   onResolve: PropTypes.func.isRequired,
+  onCopyEntireLog: PropTypes.func.isRequired,
+  onDownloadEntireLog: PropTypes.func.isRequired,
+  isSubmitting: PropTypes.bool,
+  submissionError: PropTypes.string,
+  onReturnToCombat: PropTypes.func,
 };

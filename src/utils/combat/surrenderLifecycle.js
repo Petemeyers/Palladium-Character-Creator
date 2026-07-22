@@ -24,7 +24,70 @@ const rejected = (record, eventType, reason) => ({
 });
 
 export function createSurrenderLifecycleRegistry() {
-  return { records: new Map(), committedDecisionTokens: new Set(), finalizedSurrenderIds: new Set(), offerSequence: 0 };
+  return { records: new Map(), committedDecisionTokens: new Set(), finalizedSurrenderIds: new Set(), offerSequence: 0, decisionOwnerSequence: 0 };
+}
+
+const pendingStatusForPhase = (phase) => phase === SURRENDER_DECISION_PHASES.RESPONSE
+  ? CANONICAL_SURRENDER_STATUSES.RESPONSE_PENDING
+  : CANONICAL_SURRENDER_STATUSES.VICTOR_DECISION_PENDING;
+
+export function claimSurrenderDecisionOwner({
+  registry, surrenderId, type, actorId, generationId, phase, allowTransfer = false,
+} = {}) {
+  const record = registry?.records?.get(surrenderId);
+  if (!record || !actorId || !["manual", "player-ai", "enemy-ai"].includes(type)) {
+    return { claimed: false, reason: "invalid-surrender-decision-owner", events: [] };
+  }
+  if (record.generationId !== generationId || record.status !== pendingStatusForPhase(phase)) {
+    return { claimed: false, reason: "surrender-decision-phase-not-pending", record, events: [] };
+  }
+  const existing = record.decisionOwner;
+  if (existing && existing.type === type && existing.actorId === actorId && existing.phase === phase) {
+    return { claimed: true, alreadyClaimed: true, record, decisionOwner: existing, events: [] };
+  }
+  if (existing && !allowTransfer) {
+    return { claimed: false, reason: "surrender-decision-owner-already-claimed", record, decisionOwner: existing, events: [] };
+  }
+  const sequence = ++registry.decisionOwnerSequence;
+  const decisionOwner = Object.freeze({
+    type, actorId, generationId: record.generationId, surrenderId: record.surrenderId, phase,
+    claimedAt: Date.now(), tokenId: ["surrender-owner", record.generationId, record.surrenderId, phase, type, actorId, sequence].join(":"),
+  });
+  record.decisionOwner = decisionOwner;
+  const eventType = existing ? "surrender-decision-owner-transferred" : "surrender-decision-owner-claimed";
+  return {
+    claimed: true, transferred: Boolean(existing), record, decisionOwner,
+    events: [event(eventType, record, {
+      phase, ownerType: type, ownerActorId: actorId, ownerTokenId: decisionOwner.tokenId,
+      previousOwnerType: existing?.type || null, previousOwnerTokenId: existing?.tokenId || null,
+    })],
+  };
+}
+
+export function getAuthoritativeManualSurrenderDecision({ registry, generationId, actors = [], preferredSurrenderId = null, getControlMode } = {}) {
+  const actorById = new Map(actors.map((actor) => [idOf(actor), actor]));
+  const candidates = Array.from(registry?.records?.values?.() || []).filter((record) => {
+    const phase = record.status === CANONICAL_SURRENDER_STATUSES.RESPONSE_PENDING
+      ? SURRENDER_DECISION_PHASES.RESPONSE
+      : record.status === CANONICAL_SURRENDER_STATUSES.VICTOR_DECISION_PENDING
+        ? SURRENDER_DECISION_PHASES.VICTOR
+        : null;
+    const recipient = actorById.get(record.offeredToId);
+    return phase && record.generationId === generationId && record.decisionOwner?.type === "manual"
+      && record.decisionOwner.actorId === record.offeredToId && record.decisionOwner.phase === phase
+      && recipient && ["manual", "player"].includes(getControlMode?.(recipient));
+  });
+  const record = candidates.find((candidate) => candidate.surrenderId === preferredSurrenderId) || candidates[0] || null;
+  if (!record) return null;
+  return {
+    surrenderId: record.surrenderId,
+    phase: record.status === CANONICAL_SURRENDER_STATUSES.RESPONSE_PENDING ? SURRENDER_DECISION_PHASES.RESPONSE : SURRENDER_DECISION_PHASES.VICTOR,
+    recipientId: record.offeredToId,
+    surrenderingActor: actorById.get(record.offeredById) || null,
+    reason: record.reason,
+    decisionOwner: record.decisionOwner,
+    record,
+  };
 }
 
 export function createCanonicalSurrenderId({ generationId = "default", offeredById, offeredToId, round = 0, sequence = 1 } = {}) {
@@ -59,15 +122,15 @@ export function createCanonicalSurrenderOffer({
   return { accepted: true, record, fighter, events: [event("surrender-offered", record), event("surrender-response-pending", record)] };
 }
 
-export function createSurrenderDecisionToken({ record, decisionOwnerId, decisionSequence = 1, phase, initiativeTurnId = null, postCombatDecisionId = null, actionToken = null, explicitExecutionAuthority = false } = {}) {
+export function createSurrenderDecisionToken({ record, decisionOwnerId, decisionOwnerTokenId = record?.decisionOwner?.tokenId || null, decisionSequence = 1, phase, initiativeTurnId = null, postCombatDecisionId = null, actionToken = null, explicitExecutionAuthority = false } = {}) {
   if (!record?.surrenderId || !decisionOwnerId || !Object.values(SURRENDER_DECISION_PHASES).includes(phase)) return null;
   const token = {
     generationId: record.generationId, round: record.offeredAtRound,
     initiativeTurnId: initiativeTurnId ?? record.offeredAtInitiativeTurnId ?? null,
-    postCombatDecisionId, decisionOwnerId, surrenderId: record.surrenderId, decisionSequence,
+    postCombatDecisionId, decisionOwnerId, decisionOwnerTokenId, surrenderId: record.surrenderId, decisionSequence,
     phase, actionToken, explicitExecutionAuthority: explicitExecutionAuthority === true,
   };
-  return Object.freeze({ ...token, decisionTokenId: ["surrender-decision", token.generationId, token.surrenderId, phase, decisionOwnerId, decisionSequence].join(":") });
+  return Object.freeze({ ...token, decisionTokenId: ["surrender-decision", token.generationId, token.surrenderId, phase, decisionOwnerId, decisionOwnerTokenId || "unclaimed", decisionSequence].join(":") });
 }
 
 export function validateSurrenderDecisionToken({ registry, record, token, expectedOwnerId, expectedPhase } = {}) {
@@ -76,6 +139,11 @@ export function validateSurrenderDecisionToken({ registry, record, token, expect
   if (token.surrenderId !== record.surrenderId || token.generationId !== record.generationId || token.decisionOwnerId !== expectedOwnerId || token.phase !== expectedPhase) {
     return { valid: false, reason: "surrender-decision-token-identity-mismatch", eventType: "surrender-resolution-token-rejected" };
   }
+  if (record.decisionOwner && (
+    token.decisionOwnerTokenId !== record.decisionOwner.tokenId
+    || record.decisionOwner.actorId !== expectedOwnerId
+    || record.decisionOwner.phase !== expectedPhase
+  )) return { valid: false, reason: "surrender-decision-owner-token-mismatch", eventType: "surrender-resolution-ownership-rejected" };
   if (!token.initiativeTurnId && !token.postCombatDecisionId && !token.actionToken) {
     return { valid: false, reason: "surrender-decision-token-missing-authority-context", eventType: "surrender-resolution-token-rejected" };
   }
@@ -107,12 +175,12 @@ export function commitSurrenderResponse({ registry, surrenderingActor, token, re
   if (response === "defer") return { committed: false, deferred: true, record, fighter: surrenderingActor, events: [event("surrender-response-pending", record, { deferred: true })] };
   registry.committedDecisionTokens.add(token.decisionTokenId);
   if (response === "refuse") {
-    Object.assign(record, { status: CANONICAL_SURRENDER_STATUSES.RESOLVED, response: "refused", responseReason, resolution: "refused", resolvedByActionToken: token.actionToken, lifecycle: [...record.lifecycle, "refused", "resolved"] });
+    Object.assign(record, { status: CANONICAL_SURRENDER_STATUSES.RESOLVED, response: "refused", responseReason, resolution: "refused", resolvedByActionToken: token.actionToken, decisionOwner: null, lifecycle: [...record.lifecycle, "refused", "resolved"] });
     const fighter = { ...surrenderingActor, canAct: true, active: true, isActive: true, surrenderState: clone(record) };
     return { committed: true, record, fighter, combatContinues: true, events: [event("surrender-refused", record), event("surrender-resolution-completed", record)] };
   }
   const weaponDisposition = getAcceptedSurrenderWeaponDisposition(surrenderingActor);
-  Object.assign(record, { status: CANONICAL_SURRENDER_STATUSES.VICTOR_DECISION_PENDING, response: "accepted", responseReason, weaponDisposition, lifecycle: [...record.lifecycle, "accepted", "victor-decision-pending"] });
+  Object.assign(record, { status: CANONICAL_SURRENDER_STATUSES.VICTOR_DECISION_PENDING, response: "accepted", responseReason, weaponDisposition, decisionOwner: null, lifecycle: [...record.lifecycle, "accepted", "victor-decision-pending"] });
   const fighter = {
     ...surrenderingActor, combatState: "surrendered", isSurrendered: true, canAct: false,
     remainingActions: 0, attacksRemaining: 0, isDefeated: true, defeated: true,
@@ -164,7 +232,7 @@ export function commitSurrenderResolution({ registry, surrenderedActor, victor, 
     fighter = { ...fighter, currentHP: 0, currentHp: 0, hp: 0, HP: 0, combatState: "executed", isDead: true, dead: true, isDefeated: true, defeated: true, canAct: false, defeatReason: "execution" };
     resolutionEvents.push(event("surrendered-opponent-execution-selected", record), event("surrendered-opponent-executed", record, { moralEvent: true, futureReputationHook: true }));
   }
-  Object.assign(record, { status: CANONICAL_SURRENDER_STATUSES.RESOLVED, victorDecision: decision, resolution: SURRENDER_OUTCOMES[decision], resolvedAtRound: round, resolvedByActionToken: token.actionToken || token.decisionTokenId, lifecycle: [...record.lifecycle, "resolved"] });
+  Object.assign(record, { status: CANONICAL_SURRENDER_STATUSES.RESOLVED, victorDecision: decision, resolution: SURRENDER_OUTCOMES[decision], resolvedAtRound: round, resolvedByActionToken: token.actionToken || token.decisionTokenId, decisionOwner: null, lifecycle: [...record.lifecycle, "resolved"] });
   fighter.surrenderState = clone(record);
   resolutionEvents.push(event("surrender-resolution-committed", record, { decision }), event("surrender-resolution-completed", record, { decision }));
   return { committed: true, record, fighter, releaseGrapple, terminalResult: decision === "executeSurrenderedOpponent", events: resolutionEvents };
@@ -178,9 +246,9 @@ export function finalizeResolvedSurrenderEncounter({ registry, surrenderIds = []
   const records = surrenderIds.map((id) => registry?.records?.get(id)).filter(Boolean);
   if (!records.length || records.some((record) => record.status !== CANONICAL_SURRENDER_STATUSES.RESOLVED)) return { finalized: false, reason: "surrender-resolution-still-pending" };
   const newlyFinalized = records.filter((record) => !registry.finalizedSurrenderIds.has(record.surrenderId));
-  if (!newlyFinalized.length) return { finalized: false, reason: "surrender-encounter-already-finalized" };
-  newlyFinalized.forEach((record) => { registry.finalizedSurrenderIds.add(record.surrenderId); record.encounterStatus = "encounter-finalized"; record.lifecycle = [...record.lifecycle, "encounter-finalized"]; });
-  return { finalized: true, records, events: newlyFinalized.map((record) => event("surrender-encounter-finalized", record, { encounterFinalized: true })) };
+  if (!newlyFinalized.length) return { finalized: false, reason: "surrender-record-already-finalized" };
+  newlyFinalized.forEach((record) => { registry.finalizedSurrenderIds.add(record.surrenderId); record.recordStatus = "record-finalized"; record.lifecycle = [...record.lifecycle, "record-finalized"]; });
+  return { finalized: true, records, events: newlyFinalized.map((record) => event("surrender-record-finalized", record, { surrenderRecordFinalized: true, combatEncounterFinalized: false })) };
 }
 
-export default { createCanonicalSurrenderOffer, createSurrenderDecisionToken, createSurrenderLifecycleRegistry, commitSurrenderResponse, commitSurrenderResolution, finalizeResolvedSurrenderEncounter, getPendingSurrenderRecords, validateSurrenderDecisionToken };
+export default { claimSurrenderDecisionOwner, createCanonicalSurrenderOffer, createSurrenderDecisionToken, createSurrenderLifecycleRegistry, commitSurrenderResponse, commitSurrenderResolution, finalizeResolvedSurrenderEncounter, getAuthoritativeManualSurrenderDecision, getPendingSurrenderRecords, validateSurrenderDecisionToken };
