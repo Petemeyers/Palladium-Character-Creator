@@ -176,19 +176,36 @@ export const PUBLIC_ENEMIES = [
     ruleset: "core-d20",
   },
 ].map((entry) => {
-  if (entry.id !== "goblin-warrior") return entry;
-  const canonical = getCanonicalCombatActorDefinition("goblin-warrior");
+  const canonical = getCanonicalCombatActorDefinition(entry.id);
+  if (!canonical) return entry;
   return {
     ...entry,
     actorKey: canonical.actorKey,
+    sourceActorKey: canonical.actorKey,
+    canonicalActorKey: canonical.actorKey,
+    displayName: canonical.displayName,
     species: canonical.species,
+    category: canonical.category,
+    role: canonical.role,
     combatActorSchemaVersion: 1,
     weaponProfiles: canonical.weaponProfiles.map((profile) => ({ ...profile })),
     equipment: canonical.equipment.map((item) => ({ ...item })),
-    alignment: canonical.alignment,
-    behavior: { ...canonical.behavior },
+    inventory: canonical.inventory.map((item) => ({ ...item })),
+    equippedArmor: { ...canonical.equippedArmor },
+    equippedShield: canonical.equippedShield ? { ...canonical.equippedShield } : null,
+    armorProfile: { ...canonical.armorProfile },
+    heldItems: { ...canonical.heldItems },
+    loadoutKey: canonical.loadoutKey,
+    defaultLoadoutKey: canonical.defaultLoadoutKey,
+    loadouts: structuredClone(canonical.loadouts),
     grappleProfile: { ...canonical.grappleProfile },
+    alignment: canonical.alignment,
+    alignmentName: canonical.alignmentName,
+    behavior: { ...canonical.behavior },
+    moraleProfile: { ...canonical.moraleProfile },
     surrenderProfile: { ...canonical.surrenderProfile },
+    traits: [...canonical.traits],
+    tags: [...canonical.tags],
   };
 });
 

@@ -39,6 +39,14 @@ const knightSword = weapon("weapon.long-sword", "Long Sword", "1d8", "slashing",
 const knightDagger = weapon("weapon.dagger", "Dagger", "1d4", "piercing", { category: "one-handed", handedness: "one-handed", handsRequired: 1, lengthFt: 1, reach: 1, reachFeet: 1, usableInClinch: true, groundedCompatible: true, armorGapCapable: true });
 const knightShortSword = weapon("weapon.short-sword", "Short Sword", "1d6", "slashing", { category: "one-handed", handedness: "one-handed", handsRequired: 1, lengthFt: 2, retainedInClinch: true, usableInClinch: false });
 const ritualDagger = weapon("weapon.ritual-dagger", "Ritual Dagger", "1d4", "piercing", { category: "one-handed", handedness: "one-handed", handsRequired: 1, lengthFt: 1, reach: 1, reachFeet: 1, usableInClinch: true, groundedCompatible: true, armorGapCapable: true });
+const armingSword = weapon("weapon.arming-sword", "Arming Sword", "1d8", "slashing", { category: "one-handed", handedness: "one-handed", handsRequired: 1, lengthFt: 3, retainedInClinch: true, usableInClinch: false, shieldCompatible: true });
+const mace = weapon("weapon.mace", "Mace", "1d8", "bludgeoning", { category: "one-handed", handedness: "one-handed", handsRequired: 1, lengthFt: 2, retainedInClinch: true, usableInClinch: false, shieldCompatible: true, armorTechniqueCompatibility: ["mace-strike"] });
+const handAxe = weapon("weapon.hand-axe", "Hand Axe", "1d6", "slashing", { category: "one-handed", handedness: "one-handed", handsRequired: 1, lengthFt: 2, retainedInClinch: true, usableInClinch: false, shieldCompatible: true });
+const guardSpear = weapon("weapon.guard-spear", "Spear", "1d6+1", "piercing", { category: "one-handed", handedness: "one-handed", handsRequired: 1, reach: 10, reachFeet: 10, lengthFt: 6, attackBonus: 3, retainedInClinch: true, usableInClinch: false, shieldCompatible: true });
+const infantrySpear = weapon("weapon.infantry-spear", "Spear", "1d8+1", "piercing", { category: "two-handed", handedness: "two-handed", handsRequired: 2, requiresTwoHands: true, twoHanded: true, reach: 10, reachFeet: 10, lengthFt: 6, attackBonus: 3, retainedInClinch: false, usableInClinch: false, shieldCompatible: false });
+const huntingBow = weapon("weapon.hunting-bow", "Hunting Bow", "1d6+1", "piercing", { kind: "ranged", attackType: "ranged", category: "ranged", handedness: "two-handed", handsRequired: 2, requiresTwoHands: true, twoHanded: true, reach: 0, reachFeet: 0, lengthFt: 4, attackBonus: 3, rangeProfile: { normal: 80, long: 240 }, usableInClinch: false, shieldCompatible: false });
+const scimitar = weapon("weapon.scimitar", "Scimitar", "1d6+1", "slashing", { category: "one-handed", handedness: "one-handed", handsRequired: 1, lengthFt: 3, retainedInClinch: true, usableInClinch: false, shieldCompatible: true });
+const greatAxe = weapon("weapon.greataxe", "Greataxe", "1d12+3", "slashing", { category: "two-handed", handedness: "two-handed", handsRequired: 2, requiresTwoHands: true, twoHanded: true, lengthFt: 5, attackBonus: 5, retainedInClinch: false, usableInClinch: false, shieldCompatible: false });
 const goblinSword = weapon("weapon.short-sword", "Short Sword", "1d6+2", "slashing", { category: "one-handed", handedness: "one-handed", handsRequired: 1, attackBonus: 4 });
 const goblinDagger = weapon("weapon.goblin-dagger", "Dagger", "1d4", "piercing", { category: "one-handed", handedness: "one-handed", handsRequired: 1, reach: 1, reachFeet: 1, usableInClinch: true, groundedCompatible: true });
 const minotaurAxe = weapon("weapon.minotaur-heavy-axe", "Heavy Axe", "2d8+4", "slashing", { category: "two-handed", handedness: "two-handed", handsRequired: 2, twoHanded: true, requiresTwoHands: true, reach: 10, reachFeet: 10, lengthFt: 6, attackBonus: 6, usableInClinch: false });
@@ -55,6 +63,18 @@ const common = (definition) => Object.freeze({
   playable: true,
   defaultControlMode: "ai",
   ...definition,
+  displayName: definition.displayName || definition.name,
+  stamina: definition.stamina || definition.combatStamina,
+  morale: definition.morale || definition.moraleProfile,
+  loadoutKey: definition.loadoutKey || "default",
+  defaultLoadoutKey: definition.defaultLoadoutKey || definition.loadoutKey || "default",
+  loadouts: definition.loadouts || {
+    default: {
+      loadoutKey: "default",
+      weaponProfileKeys: (definition.weaponProfiles || []).map((profile) => profile.profileKey),
+      heldItems: { ...(definition.heldItems || {}) },
+    },
+  },
   wornArmor: definition.equippedArmor,
   combatWeaponState: {
     readyWeaponId: definition.heldItems?.mainHand ?? null,
@@ -67,6 +87,186 @@ const common = (definition) => Object.freeze({
   },
 });
 
+const armor = (profileKey, name, guardRating, category, extra = {}) => Object.freeze({
+  id: profileKey,
+  profileKey,
+  name,
+  type: "armor",
+  category,
+  weightClass: category,
+  guardRating,
+  ...extra,
+});
+
+const shield = (profileKey, name, extra = {}) => Object.freeze({
+  id: profileKey,
+  profileKey,
+  name,
+  type: "shield",
+  category: "shield",
+  active: true,
+  ...extra,
+});
+
+const martialAttributes = ({ strength, dexterity, constitution, intelligence = 10, wisdom = 10, charisma = 10 }) => ({
+  might: strength,
+  deftness: dexterity,
+  vigor: constitution,
+  endurance: constitution,
+  mobility: dexterity,
+  intellect: intelligence,
+  awareness: wisdom,
+  cunning: intelligence,
+  resolve: wisdom,
+  discipline: wisdom,
+  presence: charisma,
+  renown: 0,
+  favor: 0,
+});
+
+const ordinaryBehavior = (alignmentKey, overrides = {}) => ({
+  aggression: 55,
+  caution: 55,
+  loyalty: 50,
+  instinct: 45,
+  mercy: 50,
+  cruelty: 20,
+  greed: 35,
+  honor: 50,
+  pride: 45,
+  discipline: 55,
+  alignmentKey,
+  ...overrides,
+});
+
+const ordinarySurrender = (alignmentKey, overrides = {}) => ({
+  mayOfferSurrender: true,
+  mayAcceptSurrender: true,
+  behaviorProfile: alignmentKey,
+  prisonerPreference: "circumstantial",
+  releasePreference: "circumstantial",
+  ransomPreference: "circumstantial",
+  confiscationPreference: "circumstantial",
+  executionPreference: "circumstantial",
+  alignmentBehaviorMappingKey: alignmentKey,
+  ...overrides,
+});
+
+const ordinaryGrapple = (overrides = {}) => ({
+  sizeProfile: "medium",
+  mayInitiateGrapple: true,
+  preferredInitiator: false,
+  grapplePreference: "situational",
+  prefersAssist: false,
+  prefersProneTargets: false,
+  sizeRulesApply: true,
+  canUseSwarmTakedown: false,
+  takedownCompatible: true,
+  groundControlCompatible: true,
+  weaponRetentionBehavior: "metadata-driven",
+  clinchWeaponAvailability: "inventory-only",
+  groundedWeaponAvailability: "profile-only",
+  ...overrides,
+});
+
+const buildOrdinaryHumanoid = ({
+  actorKey,
+  name,
+  species = "human",
+  role,
+  hp,
+  armorClass,
+  movement = 30,
+  staminaMaximum,
+  actionsPerRound = 2,
+  scores,
+  attributes,
+  bonuses,
+  alignment,
+  behavior,
+  morale,
+  surrenderProfile,
+  weaponProfiles,
+  equippedArmor,
+  equippedShield = null,
+  armorProfile,
+  heldItems,
+  grappleProfile,
+  factionTags = ["human-realms"],
+  cultureTags = ["ordinary-infantry"],
+  tags = [],
+  traits = [],
+  aiRole = "melee",
+  defaultControlMode = "ai",
+  source = "normalized-legacy-actor",
+  sourceLabel = "Normalized Legacy Actor",
+  loadoutKey = "default",
+}) => common({
+  actorKey,
+  id: actorKey,
+  name,
+  displayName: name,
+  species,
+  creatureType: "humanoid",
+  category: species === "human" ? "human" : "humanoid",
+  size: "medium",
+  role,
+  modelKey: actorKey,
+  source,
+  sourceLabel,
+  teamDefault: "enemy",
+  defaultControlMode,
+  factionTags,
+  cultureTags,
+  tags: [...new Set([species, "humanoid", "melee", ...tags])],
+  traitKeys: [...traits],
+  traits: [...traits],
+  attributes: { ...martialAttributes(scores), ...(attributes || {}) },
+  abilityScores: { ...scores },
+  derivedStats: { hp, maxHp: hp, armorClass, movement },
+  movement: { ground: movement, groundPace: movement, burst: movement * 2, runDistance: movement * 2, recoveryStep: 5, terrainMobility: {} },
+  currentStamina: staminaMaximum,
+  combatStamina: { authority: "canonical", maximum: staminaMaximum, current: staminaMaximum },
+  fatigueState: "ready",
+  actionsPerRound,
+  bonuses,
+  alignment,
+  alignmentName: alignment.split("-").map((part) => part[0].toUpperCase() + part.slice(1)).join(" ").replace("True Neutral", "True Neutral"),
+  alignmentBehaviorMappingKey: alignment,
+  behaviorProfileKey: `${actorKey}-${alignment}`,
+  behavior: ordinaryBehavior(alignment, behavior),
+  moraleProfile: { state: "steady", routBehavior: "withdraw-or-yield", surrenderEligible: true, terminalEscapeBehavior: "map-boundary", ...morale },
+  surrenderProfile: ordinarySurrender(alignment, surrenderProfile),
+  loadoutKey,
+  defaultLoadoutKey: loadoutKey,
+  loadouts: { [loadoutKey]: { loadoutKey, weaponProfileKeys: weaponProfiles.map((profile) => profile.profileKey), heldItems: { ...heldItems } } },
+  equipment: [...weaponProfiles, ...(equippedShield ? [equippedShield] : []), equippedArmor],
+  inventory: [...weaponProfiles],
+  equippedArmor,
+  equippedShield,
+  armorProfile,
+  heldItems,
+  attacks: [...weaponProfiles],
+  weaponProfiles: [...weaponProfiles],
+  grappleProfile: ordinaryGrapple(grappleProfile),
+  aiRole,
+});
+
+const squireArmor = armor("armor.mail-shirt", "Mail Shirt", 13, "medium", { armorClass: "mail", rigidCoverage: false });
+const squireShield = shield("shield.light", "Light Shield", { weight: 5 });
+const manAtArmsArmor = armor("armor.mail-hauberk-heavy", "Mail Hauberk", 15, "medium", { armorClass: "mail", rigidCoverage: false, compatibilityNote: "Source guard value retained." });
+const manAtArmsShield = shield("shield.kite", "Kite Shield", { weight: 10 });
+const spearmanArmor = armor("armor.spearman-gambeson", "Gambeson", 13, "light", { armorClass: "padded", rigidCoverage: false, compatibilityNote: "Source guard value retained; coverage is textile, not plate." });
+const brigandArmor = armor("armor.leather-jack", "Leather Jack", 12, "light", { armorClass: "leather", rigidCoverage: false });
+const brigandShield = shield("shield.buckler", "Buckler", { weight: 2 });
+const banditArmor = armor("armor.bandit-leather", "Leather Armor", 12, "light", { armorClass: "leather", rigidCoverage: false, compatibilityNote: "Public profile supplied armor class without layered coverage." });
+const guardArmor = armor("armor.guard-mail", "Guard Mail", 16, "medium", { armorClass: "mail", rigidCoverage: false, compatibilityNote: "Guard rating preserves the source defensive profile and does not imply plate." });
+const guardShield = shield("shield.guard", "Guard Shield", { weight: 8 });
+const orcArmor = armor("armor.orc-hide", "Hide Armor", 13, "light", { armorClass: "hide", rigidCoverage: false });
+const cultistArmor = armor("armor.cultist-leather", "Leather Armor", 12, "light", { armorClass: "leather", rigidCoverage: false });
+const veteranKnightArmor = armor("armor.veteran-plate-harness", "Plate Harness", 16, "heavy", { armorClass: "plate", rigidCoverage: true, weight: 45 });
+const veteranKnightShield = shield("shield.veteran-heater", "Heater Shield", { weight: 8 });
+
 export const CANONICAL_COMBAT_ACTORS = Object.freeze({
   knight: common({
     actorKey: "knight", id: "knight", name: "Knight", species: "human", creatureType: "humanoid", category: "human", size: "medium", role: "armored-martial-fighter", modelKey: "knight", source: "public-actor", sourceLabel: "Public Actor", teamDefault: "enemy",
@@ -78,6 +278,116 @@ export const CANONICAL_COMBAT_ACTORS = Object.freeze({
     equipment: [knightSword, knightDagger, { id: "shield.heater", profileKey: "shield.heater", name: "Heater Shield", type: "shield", category: "shield", weight: 8 }, { id: "armor.plate-harness", profileKey: "armor.plate-harness", name: "Plate Harness", type: "armor", category: "heavy", weightClass: "heavy", guardRating: 16, weight: 45 }], inventory: [knightSword, knightDagger],
     equippedArmor: { id: "armor.plate-harness", profileKey: "armor.plate-harness", name: "Plate Harness", type: "armor", category: "heavy", weightClass: "heavy", guardRating: 16, weight: 45 }, equippedShield: { id: "shield.heater", profileKey: "shield.heater", name: "Heater Shield", type: "shield", category: "shield", weight: 8 }, armorProfile: { profileKey: "armor.plate-harness", armorClass: "plate", category: "heavy", weightClass: "heavy", rigidCoverage: true }, heldItems: { mainHand: "weapon.long-sword", offHand: "shield.heater" }, attacks: [knightSword], weaponProfiles: [knightSword, knightDagger],
     grappleProfile: { sizeProfile: "medium", preferredInitiator: true, prefersAssist: false, prefersProneTargets: false, sizeRulesApply: true, canUseSwarmTakedown: false, takedownCompatible: true, groundControlCompatible: true, mayDemandSurrender: true }, aiRole: "melee",
+  }),
+  squire: buildOrdinaryHumanoid({
+    actorKey: "squire", name: "Squire", role: "shielded-swordsman", hp: 20, armorClass: 13, staminaMaximum: 24,
+    scores: { strength: 12, dexterity: 12, constitution: 12, intelligence: 10, wisdom: 10, charisma: 10 },
+    bonuses: { attack: 2, block: 1, evade: 1, damage: 1 }, alignment: "neutral-good",
+    behavior: { aggression: 48, caution: 62, loyalty: 72, mercy: 68, honor: 66, discipline: 62 },
+    weaponProfiles: [{ ...armingSword, damage: "1d8+1", damageDice: "1d8+1", attackBonus: 2 }],
+    equippedArmor: squireArmor, equippedShield: squireShield,
+    armorProfile: { profileKey: squireArmor.profileKey, armorClass: "mail", category: "medium", weightClass: "medium", rigidCoverage: false },
+    heldItems: { mainHand: "weapon.arming-sword", offHand: squireShield.profileKey },
+    grappleProfile: { weaponRetentionBehavior: "retain-one-handed", clinchWeaponAvailability: "none-carried" },
+    cultureTags: ["knightly-retinue"], tags: ["soldier", "shield-bearer"], traits: ["shield_drill"],
+  }),
+  "man-at-arms": buildOrdinaryHumanoid({
+    actorKey: "man-at-arms", name: "Man-at-Arms", role: "armored-infantry", hp: 26, armorClass: 15, movement: 25, staminaMaximum: 26,
+    scores: { strength: 14, dexterity: 11, constitution: 13, intelligence: 10, wisdom: 11, charisma: 10 },
+    bonuses: { attack: 2, block: 2, evade: 1, damage: 2 }, alignment: "lawful-neutral",
+    behavior: { aggression: 62, caution: 58, loyalty: 68, honor: 64, discipline: 72 },
+    weaponProfiles: [{ ...mace, damage: "1d8+2", damageDice: "1d8+2", attackBonus: 2 }],
+    equippedArmor: manAtArmsArmor, equippedShield: manAtArmsShield,
+    armorProfile: { profileKey: manAtArmsArmor.profileKey, armorClass: "mail", category: "medium", weightClass: "medium", rigidCoverage: false },
+    heldItems: { mainHand: "weapon.mace", offHand: manAtArmsShield.profileKey },
+    grappleProfile: { weaponRetentionBehavior: "retain-one-handed", clinchWeaponAvailability: "none-carried" },
+    tags: ["soldier", "armored-infantry", "shield-bearer"], traits: ["shield_drill", "armored_training"],
+  }),
+  spearman: buildOrdinaryHumanoid({
+    actorKey: "spearman", name: "Spearman", role: "reach-infantry", hp: 14, armorClass: 13, staminaMaximum: 24,
+    scores: { strength: 12, dexterity: 12, constitution: 12, intelligence: 10, wisdom: 10, charisma: 10 },
+    bonuses: { attack: 3, block: 1, evade: 1, damage: 1 }, alignment: "true-neutral",
+    behavior: { aggression: 56, caution: 60, loyalty: 58, discipline: 64 },
+    weaponProfiles: [infantrySpear], equippedArmor: spearmanArmor,
+    armorProfile: { profileKey: spearmanArmor.profileKey, armorClass: "padded", category: "light", weightClass: "light", rigidCoverage: false },
+    heldItems: { mainHand: infantrySpear.profileKey, offHand: null },
+    grappleProfile: { weaponRetentionBehavior: "drop-two-handed", clinchWeaponAvailability: "none-carried", groundedWeaponAvailability: "none-after-drop" },
+    tags: ["soldier", "reach"], traits: ["reach_training"],
+  }),
+  brigand: buildOrdinaryHumanoid({
+    actorKey: "brigand", name: "Brigand", role: "light-ambusher", hp: 17, armorClass: 12, staminaMaximum: 22,
+    scores: { strength: 11, dexterity: 13, constitution: 11, intelligence: 10, wisdom: 10, charisma: 9 },
+    bonuses: { attack: 2, block: 1, evade: 2, damage: 1 }, alignment: "chaotic-neutral",
+    behavior: { aggression: 58, caution: 62, greed: 68, honor: 28, discipline: 38 },
+    surrenderProfile: { prisonerPreference: "ransom-or-confiscate", ransomPreference: "preferred", executionPreference: "avoid-unless-threatened" },
+    weaponProfiles: [{ ...handAxe, damage: "1d6+1", damageDice: "1d6+1", attackBonus: 2 }],
+    equippedArmor: brigandArmor, equippedShield: brigandShield,
+    armorProfile: { profileKey: brigandArmor.profileKey, armorClass: "leather", category: "light", weightClass: "light", rigidCoverage: false },
+    heldItems: { mainHand: handAxe.profileKey, offHand: brigandShield.profileKey },
+    grappleProfile: { weaponRetentionBehavior: "retain-one-handed", clinchWeaponAvailability: "none-carried" },
+    factionTags: ["outlaw-bands"], cultureTags: ["roadside-band"], tags: ["ambusher", "shield-bearer"], traits: ["opportunistic"], aiRole: "skirmisher",
+  }),
+  bandit: buildOrdinaryHumanoid({
+    actorKey: "bandit", name: "Bandit", role: "melee-skirmisher", hp: 11, armorClass: 12, staminaMaximum: 24,
+    scores: { strength: 11, dexterity: 12, constitution: 12, intelligence: 10, wisdom: 10, charisma: 10 },
+    bonuses: { attack: 3, block: 1, evade: 2, damage: 1 }, alignment: "chaotic-neutral",
+    behavior: { aggression: 52, caution: 68, greed: 72, honor: 24, discipline: 34 },
+    surrenderProfile: { prisonerPreference: "ransom-or-release", ransomPreference: "preferred", confiscationPreference: "preferred", executionPreference: "avoid" },
+    weaponProfiles: [{ ...handAxe, damage: "1d6+1", damageDice: "1d6+1", attackBonus: 3 }, huntingBow],
+    equippedArmor: banditArmor,
+    armorProfile: { profileKey: banditArmor.profileKey, armorClass: "leather", category: "light", weightClass: "light", rigidCoverage: false },
+    heldItems: { mainHand: handAxe.profileKey, offHand: null },
+    grappleProfile: { weaponRetentionBehavior: "retain-one-handed", clinchWeaponAvailability: "none-carried" },
+    factionTags: ["outlaw-bands"], cultureTags: ["bandit-company"], tags: ["light-fighter", "skirmisher"], traits: ["self_preserving"], aiRole: "skirmisher",
+  }),
+  guard: buildOrdinaryHumanoid({
+    actorKey: "guard", name: "Guard", role: "defensive-spear-guard", hp: 11, armorClass: 16, staminaMaximum: 24,
+    scores: { strength: 13, dexterity: 12, constitution: 12, intelligence: 10, wisdom: 11, charisma: 10 },
+    bonuses: { attack: 3, block: 2, evade: 1, damage: 1 }, alignment: "lawful-neutral",
+    behavior: { aggression: 44, caution: 70, loyalty: 72, honor: 62, discipline: 78 },
+    surrenderProfile: { prisonerPreference: "take-prisoner", releasePreference: "authority-directed", executionPreference: "avoid" },
+    weaponProfiles: [guardSpear], equippedArmor: guardArmor, equippedShield: guardShield,
+    armorProfile: { profileKey: guardArmor.profileKey, armorClass: "mail", category: "medium", weightClass: "medium", rigidCoverage: false },
+    heldItems: { mainHand: guardSpear.profileKey, offHand: guardShield.profileKey },
+    grappleProfile: { weaponRetentionBehavior: "retain-one-handed", clinchWeaponAvailability: "none-carried" },
+    factionTags: ["settlement-watch"], cultureTags: ["local-garrison"], tags: ["guard", "defensive", "shield-bearer"], traits: ["defensive_discipline", "shield_drill"], aiRole: "defensive", defaultControlMode: "defensive",
+  }),
+  "veteran-knight": buildOrdinaryHumanoid({
+    actorKey: "veteran-knight", name: "Veteran Knight", role: "veteran-armored-infantry", hp: 28, armorClass: 16, movement: 25, staminaMaximum: 30,
+    scores: { strength: 16, dexterity: 12, constitution: 15, intelligence: 10, wisdom: 14, charisma: 14 },
+    attributes: { might: 16, deftness: 12, vigor: 13, endurance: 15, mobility: 9, intellect: 10, awareness: 12, cunning: 11, resolve: 14, discipline: 15, presence: 14, renown: 2, favor: 0 },
+    bonuses: { attack: 4, block: 4, evade: 1, damage: 3 }, alignment: "neutral-good",
+    behavior: { aggression: 62, caution: 64, loyalty: 78, mercy: 78, honor: 82, discipline: 80 },
+    surrenderProfile: { prisonerPreference: "take-prisoner", releasePreference: "honorable-release", executionPreference: "avoid" },
+    weaponProfiles: [{ ...knightSword, attackBonus: 4 }, knightDagger], equippedArmor: veteranKnightArmor, equippedShield: veteranKnightShield,
+    armorProfile: { profileKey: veteranKnightArmor.profileKey, armorClass: "plate", category: "heavy", weightClass: "heavy", rigidCoverage: true },
+    heldItems: { mainHand: knightSword.profileKey, offHand: veteranKnightShield.profileKey },
+    grappleProfile: { preferredInitiator: true, weaponRetentionBehavior: "retain-one-handed", clinchWeaponAvailability: "inventory-only", groundedWeaponAvailability: "dagger-profile" },
+    cultureTags: ["knightly-retinue"], tags: ["soldier", "knight", "veteran", "heavy-armor"], traits: ["armored_training", "shield_drill", "grapple_capable"], source: "public-actor", sourceLabel: "Public Actor",
+  }),
+  orc: buildOrdinaryHumanoid({
+    actorKey: "orc", name: "Orc", species: "orc", role: "two-handed-shock-infantry", hp: 15, armorClass: 13, staminaMaximum: 32,
+    scores: { strength: 16, dexterity: 12, constitution: 16, intelligence: 7, wisdom: 11, charisma: 10 },
+    bonuses: { attack: 5, block: 0, evade: 1, damage: 3 }, alignment: "chaotic-neutral",
+    behavior: { aggression: 76, caution: 38, loyalty: 58, instinct: 68, mercy: 34, cruelty: 42, honor: 44, discipline: 48 },
+    surrenderProfile: { prisonerPreference: "circumstantial", confiscationPreference: "preferred", executionPreference: "circumstantial" },
+    weaponProfiles: [greatAxe], equippedArmor: orcArmor,
+    armorProfile: { profileKey: orcArmor.profileKey, armorClass: "hide", category: "light", weightClass: "light", rigidCoverage: false },
+    heldItems: { mainHand: greatAxe.profileKey, offHand: null },
+    grappleProfile: { preferredInitiator: true, weaponRetentionBehavior: "drop-two-handed", clinchWeaponAvailability: "none-carried", groundedWeaponAvailability: "none-after-drop" },
+    factionTags: ["orc-warband"], cultureTags: ["warband-infantry"], tags: ["shock-infantry", "two-handed"], traits: ["powerful_build"],
+  }),
+  cultist: buildOrdinaryHumanoid({
+    actorKey: "cultist", name: "Cultist", role: "light-melee-follower", hp: 9, armorClass: 12, staminaMaximum: 20,
+    scores: { strength: 11, dexterity: 12, constitution: 10, intelligence: 10, wisdom: 11, charisma: 10 },
+    bonuses: { attack: 3, block: 1, evade: 1, damage: 1 }, alignment: "neutral-evil",
+    behavior: { aggression: 58, caution: 48, loyalty: 66, mercy: 24, cruelty: 48, honor: 28, discipline: 56 },
+    surrenderProfile: { prisonerPreference: "circumstantial", releasePreference: "rare", executionPreference: "circumstantial" },
+    weaponProfiles: [scimitar], equippedArmor: cultistArmor,
+    armorProfile: { profileKey: cultistArmor.profileKey, armorClass: "leather", category: "light", weightClass: "light", rigidCoverage: false },
+    heldItems: { mainHand: scimitar.profileKey, offHand: null },
+    grappleProfile: { weaponRetentionBehavior: "retain-one-handed", clinchWeaponAvailability: "none-carried" },
+    factionTags: ["cult-cell"], cultureTags: ["secret-society"], tags: ["follower", "light-fighter"], traits: ["fanatical_loyalty"],
   }),
   "goblin-warrior": common({
     actorKey: "goblin-warrior", id: "goblin-warrior", name: "Goblin Warrior", species: "goblin", creatureType: "humanoid", category: "humanoid", size: "small", role: "opportunistic-skirmisher", modelKey: "goblin-warrior", source: "public-actor", sourceLabel: "Public Actor", teamDefault: "enemy",
@@ -101,8 +411,24 @@ export const CANONICAL_COMBAT_ACTORS = Object.freeze({
   }),
 });
 
+const CANONICAL_COMBAT_ACTOR_ALIASES = Object.freeze({
+  "town_guard": "guard",
+  "town-guard": "guard",
+  "man_at_arms": "man-at-arms",
+  "veteran_knight": "veteran-knight",
+});
+
+export function resolveCanonicalCombatActorAlias(value) {
+  const candidate = String(value || "").trim().toLowerCase();
+  if (!candidate) return { actorKey: null, aliasUsed: false, alias: null };
+  if (CANONICAL_COMBAT_ACTORS[candidate]) return { actorKey: candidate, aliasUsed: false, alias: null };
+  const actorKey = CANONICAL_COMBAT_ACTOR_ALIASES[candidate] || null;
+  return { actorKey, aliasUsed: Boolean(actorKey), alias: actorKey ? candidate : null };
+}
+
 export function getCanonicalCombatActorDefinition(actorKey) {
-  return CANONICAL_COMBAT_ACTORS[String(actorKey || "").toLowerCase()] || null;
+  const resolution = resolveCanonicalCombatActorAlias(actorKey);
+  return resolution.actorKey ? CANONICAL_COMBAT_ACTORS[resolution.actorKey] : null;
 }
 
 const CANONICAL_WEAPON_ALIASES = Object.freeze({
@@ -110,6 +436,17 @@ const CANONICAL_WEAPON_ALIASES = Object.freeze({
   longsword: knightSword,
   "short sword": knightShortSword,
   shortsword: knightShortSword,
+  "arming sword": armingSword,
+  mace,
+  "hand axe": handAxe,
+  handaxe: handAxe,
+  spear: infantrySpear,
+  "infantry spear": infantrySpear,
+  "guard spear": guardSpear,
+  "hunting bow": huntingBow,
+  scimitar,
+  greataxe: greatAxe,
+  "great axe": greatAxe,
   dagger: knightDagger,
   "ritual dagger": ritualDagger,
 });

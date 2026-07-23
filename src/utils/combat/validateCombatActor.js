@@ -25,6 +25,9 @@ export function validateCombatActor(actor = {}, { comparisonActor = null, emitDi
     compatibilityFallbacks.push("unmigrated-actor-schema");
     pushWarning("unmigrated-actor-schema", "Actor has not yet migrated to combatActorSchemaVersion 1.");
   }
+  if (Number(normalizedActor.combatActorSchemaVersion) === 1 && text(normalizedActor.creatureType) === "humanoid" && !normalizedActor.actorKey) {
+    pushError("migrated-humanoid-missing-actor-key", "Schema-version-one humanoid requires a canonical actorKey.", "combat-actor-identity-contradiction");
+  }
   if (canonical && actor.species && text(actor.species) !== text(canonical.species)) pushError("species-identity-contradiction", `${actor.species} contradicts ${canonical.species}.`, "combat-actor-identity-contradiction");
   if (canonical && actor.creatureType && text(actor.creatureType) !== text(canonical.creatureType)) pushError("creature-type-identity-contradiction", `${actor.creatureType} contradicts ${canonical.creatureType}.`, "combat-actor-identity-contradiction");
   if (canonical && Array.isArray(actor.tags)) {
@@ -54,17 +57,45 @@ export function validateCombatActor(actor = {}, { comparisonActor = null, emitDi
     const matchingAttack = attacks.find((attack) => idOf(attack) === idOf(profile));
     if (matchingAttack && (matchingAttack.damage !== profile.damage || text(matchingAttack.damageType) !== text(profile.damageType))) pushError("attack-profile-damage-contradiction", `${profile.name} attack/profile damage identity differs.`, "combat-actor-weapon-profile-contradiction");
   });
+  const activeShield = normalizedActor.equippedShield && normalizedActor.equippedShield.active !== false;
+  const activeTwoHandedWeapon = profiles.find((profile) => (
+    idOf(profile) === mainHand &&
+    (profile.twoHanded || profile.requiresTwoHands || Number(profile.handsRequired) === 2)
+  ));
+  if (activeShield && activeTwoHandedWeapon) pushError("two-handed-weapon-with-active-shield", `${activeTwoHandedWeapon.name} cannot be ready with an active shield.`, "combat-actor-weapon-profile-contradiction");
+  const loadout = normalizedActor.loadouts?.[normalizedActor.loadoutKey || normalizedActor.defaultLoadoutKey];
+  if (normalizedActor.loadoutKey && !loadout) pushError("loadout-key-missing", `Loadout ${normalizedActor.loadoutKey} has no canonical definition.`, "combat-actor-weapon-profile-contradiction");
+  for (const profileKey of loadout?.weaponProfileKeys || []) {
+    if (!profiles.some((profile) => idOf(profile) === profileKey)) pushError("loadout-reference-missing-item", `Loadout references unavailable weapon ${profileKey}.`, "combat-actor-weapon-profile-contradiction");
+  }
+  const sidearmId = normalizedActor.heldItems?.sidearm;
+  if (sidearmId && !inventory.some((item) => idOf(item) === sidearmId)) pushError("sidearm-without-inventory-source", `Sidearm ${sidearmId} is not present in inventory.`, "combat-actor-weapon-profile-contradiction");
   const clinchId = normalizedActor.combatWeaponState?.clinchWeaponId;
   if (clinchId && !profiles.some((profile) => idOf(profile) === clinchId && profile.usableInClinch === true)) pushError("invalid-clinch-weapon", "Clinch-ready weapon lacks clinch compatibility.", "combat-actor-weapon-profile-contradiction");
   const retainedId = normalizedActor.combatWeaponState?.retainedWeaponId;
   if (retainedId && !inventory.some((item) => idOf(item) === retainedId) && !profiles.some((item) => idOf(item) === retainedId)) pushError("retained-weapon-unavailable", "Retained weapon is unavailable for grapple cleanup.", "combat-actor-weapon-profile-contradiction");
   if (normalizedActor.equippedArmor && Object.keys(normalizedActor.equippedArmor).length > 0 && (!normalizedActor.armorProfile || Object.keys(normalizedActor.armorProfile).length === 0)) pushError("missing-armor-profile", "Equipped armor has no armor profile.");
+  if (normalizedActor.armorProfile && Object.keys(normalizedActor.armorProfile).length > 0 && (!normalizedActor.equippedArmor || Object.keys(normalizedActor.equippedArmor).length === 0)) pushWarning("armor-profile-without-equipped-armor", "Armor profile exists without an equipped armor item.");
+  const equipment = Array.isArray(normalizedActor.equipment) ? normalizedActor.equipment : [];
+  const armorItems = equipment.filter((item) => text(item.type) === "armor");
+  if (armorItems.length && !normalizedActor.armorProfile?.profileKey) pushError("armor-item-without-armor-profile", "Equipped armor item has no canonical armor profile.");
+  if (armorItems.length && normalizedActor.armorProfile?.profileKey && !armorItems.some((item) => idOf(item) === normalizedActor.armorProfile.profileKey)) pushError("armor-equipment-profile-identity-contradiction", "Armor equipment does not contain the canonical armor-profile item.");
+  const shieldItems = equipment.filter((item) => text(item.type) === "shield");
+  const equippedShieldId = idOf(normalizedActor.equippedShield || {});
+  const heldOffHandId = normalizedActor.heldItems?.offHand;
+  if (shieldItems.length && !shieldItems.some((item) => idOf(item) === equippedShieldId || idOf(item) === heldOffHandId)) pushWarning("shield-listed-but-not-held-equipped", "Shield is listed but neither held nor equipped.");
   if (normalizedActor.equippedArmor?.profileKey && normalizedActor.armorProfile?.profileKey && normalizedActor.equippedArmor.profileKey !== normalizedActor.armorProfile.profileKey) pushError("armor-profile-identity-contradiction", "Equipped armor and armor profile identities differ.");
   const armorGuard = Number(normalizedActor.equippedArmor?.guardRating);
   const derivedArmorClass = Number(normalizedActor.derivedStats?.armorClass);
   if (Number.isFinite(armorGuard) && Number.isFinite(derivedArmorClass) && armorGuard !== derivedArmorClass) pushError("armor-rating-contradiction", "Equipped armor rating disagrees with derived armor class.");
+  if (text(normalizedActor.armorProfile?.armorClass) === "plate" && !/plate|heavy/.test(text(normalizedActor.equippedArmor?.armorClass || normalizedActor.equippedArmor?.category || normalizedActor.equippedArmor?.name))) pushError("plate-coverage-worn-layer-contradiction", "Plate armor profile contradicts the equipped armor layer.");
+  const durabilityValues = values(normalizedActor.equippedArmor?.armorDurability, normalizedActor.equippedArmor?.durability, normalizedActor.armorProfile?.armorDurability, normalizedActor.armorProfile?.durability);
+  if (durabilityValues.some((value) => value < 0)) pushError("negative-armor-durability", "Armor durability cannot be negative.");
+  if (new Set(durabilityValues).size > 1) pushWarning("duplicate-armor-durability-authority", "Armor durability authorities disagree.");
   if (!hasAlignmentBehaviorMapping(normalizedActor.alignment)) pushWarning("alignment-mapping-missing", `No behavior mapping for ${normalizedActor.alignment || "empty alignment"}.`, "combat-actor-alignment-mapping-missing");
   if (normalizedActor.surrenderProfile?.mayOfferSurrender && !normalizedActor.surrenderProfile?.behaviorProfile) pushWarning("missing-surrender-profile", "Surrender-capable actor lacks behavior profile.");
+  if (canonical && !normalizedActor.surrenderProfile) pushError("surrender-capable-actor-missing-surrender-profile", "Canonical humanoid lacks a surrender profile.");
+  if (canonical && !normalizedActor.grappleProfile) pushError("grapple-profile-absent", "Canonical humanoid lacks a grapple profile.");
   const staminaValues = values(actor.currentStamina, actor.currentstamina, actor.stamina, actor.combatStamina?.current, actor.combatStamina?.currentStamina);
   if (new Set(staminaValues).size > 1) pushWarning("stamina-authority-contradiction", "Legacy stamina aliases disagree with combatStamina.");
   const hpValues = values(actor.currentHP, actor.currentHp, actor.hp, actor.HP);
@@ -75,6 +106,9 @@ export function validateCombatActor(actor = {}, { comparisonActor = null, emitDi
       if (text(other[field]) !== text(normalizedActor[field])) pushError("public-compatibility-divergence", `Public and compatibility ${field} differ.`, "combat-actor-identity-contradiction");
     }
     if (JSON.stringify(other.weaponProfiles) !== JSON.stringify(normalizedActor.weaponProfiles)) pushError("public-compatibility-weapon-divergence", "Public and compatibility weapon profiles differ.", "combat-actor-weapon-profile-contradiction");
+    for (const field of ["armorProfile", "heldItems", "grappleProfile", "surrenderProfile", "alignment"]) {
+      if (JSON.stringify(other[field]) !== JSON.stringify(normalizedActor[field])) pushError("public-compatibility-schema-divergence", `Public and compatibility ${field} differ.`, "combat-actor-identity-contradiction");
+    }
   }
   const diagnostics = [
     ...(normalizedResult.diagnostics || []).filter((entry) => entry.eventType === "combat-actor-unsupported-weapon-replaced"),

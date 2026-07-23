@@ -270,8 +270,8 @@ const HUMAN_FIGHTERS = [
 ];
 
 export const humanFighters = HUMAN_FIGHTERS.map((entry) => {
-  if (entry.id !== "knight") return entry;
-  const canonical = getCanonicalCombatActorDefinition("knight");
+  const canonical = getCanonicalCombatActorDefinition(entry.id);
+  if (!canonical) return entry;
   return {
     ...entry,
     ...canonical,

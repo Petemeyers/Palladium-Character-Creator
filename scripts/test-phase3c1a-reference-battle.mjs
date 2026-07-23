@@ -1,0 +1,31 @@
+import assert from "node:assert/strict";
+import { runPhase3C1AHumanoidMeleeScenario } from "../src/utils/combat/phase3c1aHumanoidMeleeScenario.js";
+
+const result = runPhase3C1AHumanoidMeleeScenario();
+assert.equal(result.roster.length, 6);
+assert.equal(result.roster.every((actor) => actor.combatActorSchemaVersion === 1 && Boolean(actor.actorKey)), true);
+assert.equal(result.validations.every((validation) => validation.valid), true, JSON.stringify(result.validations));
+assert.deepEqual(result.schemaWarnings, []);
+assert.equal(result.actionLedger.length, result.roster.length);
+assert.equal(result.actionLedger.every((entry) => entry.actionToken && entry.completed), true);
+assert.equal(result.actionLedger.some((entry) => entry.ownerType === "player-ai"), true);
+assert.equal(result.actionLedger.some((entry) => entry.ownerType === "enemy-ai"), true);
+assert.equal(new Set(result.actionLedger.map((entry) => entry.actionToken)).size, result.actionLedger.length);
+assert.equal(result.twoHandedTransitions.every((transition) => transition.disposition === "dropped-two-handed"), true);
+assert.equal(Object.values(result.iconAppearances).filter((appearance) => appearance.allegiance.key === "party").length, 3);
+assert.equal(Object.values(result.iconAppearances).filter((appearance) => appearance.allegiance.key === "enemy").length, 3);
+assert.equal(result.surrender.offerAccepted, true);
+assert.equal(result.surrender.gateAtOffer.defer, true);
+assert.equal(result.surrender.responseOwnerClaimed, true);
+assert.equal(result.surrender.responseCommitted, true);
+assert.equal(result.surrender.decisionOwnerClaimed, true);
+assert.equal(result.surrender.resolutionCommitted, true);
+assert.equal(result.surrender.finalizationCommitted, true);
+assert.equal(result.surrender.duplicateFinalizationBlocked, true);
+assert.equal(result.surrender.gateAfterResolution.defer, false);
+assert.equal(result.surrender.combatOverCount, 1);
+const captured = result.roster.find((actor) => actor.actorKey === "bandit");
+assert.equal(captured.combatState, "captured");
+assert.notEqual(captured.isDead, true);
+
+console.log("Phase 3C1A deterministic mixed humanoid battle passed");

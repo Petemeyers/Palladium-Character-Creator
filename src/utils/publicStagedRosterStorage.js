@@ -156,7 +156,19 @@ const getExplicitCombatActorMigrationAlias = (entry = {}, savedCharacter = {}) =
   const classKey = normalizeIdentityText(
     savedCharacter.publicClassName || savedCharacter.class || savedCharacter.profession || entry.publicClassName
   );
-  return classKey === "knight" ? "knight" : "";
+  const explicitClassAliases = {
+    knight: "knight",
+    "veteran knight": "veteran-knight",
+    squire: "squire",
+    "man at arms": "man-at-arms",
+    "man-at-arms": "man-at-arms",
+    spearman: "spearman",
+    brigand: "brigand",
+    bandit: "bandit",
+    guard: "guard",
+    cultist: "cultist",
+  };
+  return explicitClassAliases[classKey] || "";
 };
 
 export function repairStagedSavedCharacterEntry(entry = {}, savedCharacter = {}) {

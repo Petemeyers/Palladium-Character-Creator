@@ -1,4 +1,4 @@
-import { getCanonicalCombatActorDefinition, getCanonicalWeaponProfileByAlias } from "../../data/canonicalCombatActors.js";
+import { getCanonicalCombatActorDefinition, getCanonicalWeaponProfileByAlias, resolveCanonicalCombatActorAlias } from "../../data/canonicalCombatActors.js";
 import { normalizeAlignmentBehavior } from "../behavior/normalizeAlignmentBehavior.js";
 
 const clone = (value) => value == null ? value : JSON.parse(JSON.stringify(value));
@@ -6,23 +6,32 @@ const keyText = (value) => String(value || "").trim().toLowerCase();
 
 export function resolveCanonicalCombatActorKey(actor = {}) {
   const candidates = [
-    actor.actorKey,
-    actor.canonicalActorKey,
-    actor.sourceActorKey,
-    actor.combatActorMigrationAlias,
-    actor.selectableActorId,
-    actor.pickerId,
-    actor.compatibilityId,
-    actor.sourceEnemyId,
-    actor.sourceCharacterId,
-    actor.modelKey,
-    actor.id,
+    ["actorKey", actor.actorKey],
+    ["canonicalActorKey", actor.canonicalActorKey],
+    ["sourceActorKey", actor.sourceActorKey],
+    ["combatActorMigrationAlias", actor.combatActorMigrationAlias],
+    ["selectableActorId", actor.selectableActorId],
+    ["pickerId", actor.pickerId],
+    ["compatibilityId", actor.compatibilityId],
+    ["sourceEnemyId", actor.sourceEnemyId],
+    ["sourceCharacterId", actor.sourceCharacterId],
+    ["modelKey", actor.modelKey],
+    ["id", actor.id],
   ];
-  for (const candidate of candidates) {
+  const matches = candidates.flatMap(([identityField, candidate]) => {
     const key = keyText(candidate).replace(/^selectable-/, "");
-    if (getCanonicalCombatActorDefinition(key)) return { actorKey: key, fallback: null };
+    const resolved = resolveCanonicalCombatActorAlias(key);
+    return resolved.actorKey ? [{ identityField, identityValue: candidate, ...resolved }] : [];
+  });
+  const actorKeys = [...new Set(matches.map((match) => match.actorKey))];
+  if (actorKeys.length > 1) {
+    return { actorKey: null, fallback: null, ambiguous: true, missing: false, matches };
   }
-  return { actorKey: null, fallback: null };
+  if (actorKeys.length === 1) {
+    const authoritativeMatch = matches.find((match) => match.actorKey === actorKeys[0]);
+    return { actorKey: actorKeys[0], fallback: null, ambiguous: false, missing: false, matches, ...authoritativeMatch };
+  }
+  return { actorKey: null, fallback: null, ambiguous: false, missing: true, matches: [] };
 }
 
 const explicitNumber = (...values) => {
@@ -49,27 +58,77 @@ function resolveCanonicalLoadout(actor, definition) {
       ? actor.migrationMetadata.combatActor.requestedLoadout
       : []),
   ].filter((item) => !/unarmed|claw/i.test(String(typeof item === "string" ? item : item?.name || "")));
-  if (!requested.length) return { profiles: clone(definition.weaponProfiles), unsupported: [] };
+  if (!requested.length) return { profiles: clone(definition.weaponProfiles), unsupported: [], resolvedAliases: [], safeDefaultUsed: false, requested: false };
   const supported = [];
   const unsupported = [];
+  const resolvedAliases = [];
   const seen = new Set();
   requested.forEach((item) => {
-    const profile = getCanonicalWeaponProfileByAlias(item);
+    const requestedIdentity = keyText(typeof item === "string" ? item : item?.profileKey || item?.weaponId || item?.id || item?.name)
+      .replace(/^weapon\./, "")
+      .replace(/-/g, " ");
+    const actorProfile = (definition.weaponProfiles || []).find((candidate) => {
+      const identities = [candidate.profileKey, candidate.weaponId, candidate.id, candidate.name]
+        .map((value) => keyText(value).replace(/^weapon\./, "").replace(/-/g, " "));
+      return identities.includes(requestedIdentity);
+    });
+    const aliasedProfile = actorProfile || getCanonicalWeaponProfileByAlias(item);
+    const profile = aliasedProfile && typeof item === "object"
+      ? {
+          ...aliasedProfile,
+          ...item,
+          id: aliasedProfile.id,
+          weaponId: aliasedProfile.weaponId,
+          profileKey: aliasedProfile.profileKey,
+          name: aliasedProfile.name,
+          damage: item.damage || aliasedProfile.damage,
+          damageDice: item.damageDice || item.damage || aliasedProfile.damageDice,
+          damageType: item.damageType || aliasedProfile.damageType,
+        }
+      : aliasedProfile;
     if (!profile) {
       unsupported.push(typeof item === "string" ? item : item?.name || item?.id || "unknown weapon");
       return;
     }
+    resolvedAliases.push({ requested: typeof item === "string" ? item : item?.name || item?.id, profileKey: profile.profileKey });
     if (!seen.has(profile.profileKey)) {
       seen.add(profile.profileKey);
       supported.push(profile);
     }
   });
-  return { profiles: supported.length ? supported : clone(definition.weaponProfiles), unsupported };
+  const safeDefaultUsed = unsupported.length > 0 || supported.length === 0;
+  return {
+    profiles: safeDefaultUsed ? clone(definition.weaponProfiles) : supported,
+    unsupported,
+    resolvedAliases,
+    safeDefaultUsed,
+    requested: true,
+  };
 }
 
-export function normalizeReferenceCombatActor(actor = {}, { source = "combat-start", emitDiagnostic = null } = {}) {
+export function normalizeReferenceCombatActor(actor = {}, { source = "combat-start", emitDiagnostic = null, lifecyclePhase = "combat-start" } = {}) {
+  const forbiddenLifecyclePhases = new Set(["attack-resolution", "damage-application", "grapple-resolution", "movement-commit", "action-continuation", "surrender-decision-commit"]);
+  if (forbiddenLifecyclePhases.has(keyText(lifecyclePhase))) {
+    const diagnostic = {
+      eventType: "combat-actor-normalization-during-owned-action-blocked",
+      level: "warning",
+      actorId: actor.id ?? actor._id ?? null,
+      data: { source, lifecyclePhase },
+    };
+    emitDiagnostic?.(diagnostic);
+    return { normalizedActor: actor, diagnostics: [diagnostic], compatibilityFallbacks: [], blocked: true };
+  }
   const resolution = resolveCanonicalCombatActorKey(actor);
-  if (!resolution.actorKey) return { normalizedActor: { ...actor }, diagnostics: [], compatibilityFallbacks: [] };
+  if (!resolution.actorKey) {
+    const diagnostic = {
+      eventType: resolution.ambiguous ? "combat-actor-canonical-identity-ambiguous" : "combat-actor-canonical-identity-missing",
+      level: "warning",
+      actorId: actor.id ?? actor._id ?? null,
+      data: { source, matches: resolution.matches || [] },
+    };
+    emitDiagnostic?.(diagnostic);
+    return { normalizedActor: { ...actor }, diagnostics: [diagnostic], compatibilityFallbacks: [] };
+  }
   const definition = clone(getCanonicalCombatActorDefinition(resolution.actorKey));
   const canonicalLoadout = resolveCanonicalLoadout(actor, definition);
   const currentHp = explicitNumber(actor.currentHP, actor.currentHp, actor.hp, actor.HP, definition.currentHP, definition.derivedStats.hp);
@@ -79,6 +138,8 @@ export function normalizeReferenceCombatActor(actor = {}, { source = "combat-sta
   const runtimeId = actor.id ?? actor._id ?? definition.id;
   const team = actor.team ?? actor.side ?? actor.battleSide ?? definition.teamDefault;
   const alignmentBehavior = normalizeAlignmentBehavior(actor.behaviorProfile || actor.alignment || definition.alignment, actor.behavior || {});
+  const selectedLoadoutAccepted = canonicalLoadout.requested && !canonicalLoadout.safeDefaultUsed;
+  const resolvedLoadoutKey = selectedLoadoutAccepted ? "selected" : (definition.defaultLoadoutKey || definition.loadoutKey || "default");
   const preserved = {
     id: runtimeId,
     ...(actor._id !== undefined ? { _id: actor._id } : {}),
@@ -128,6 +189,11 @@ export function normalizeReferenceCombatActor(actor = {}, { source = "combat-sta
     equippedShield: clone(definition.equippedShield),
     armorProfile: clone(definition.armorProfile),
     heldItems: { ...clone(definition.heldItems), mainHand: canonicalLoadout.profiles[0]?.profileKey || definition.heldItems?.mainHand || null },
+    loadoutKey: resolvedLoadoutKey,
+    defaultLoadoutKey: definition.defaultLoadoutKey || definition.loadoutKey || "default",
+    loadouts: selectedLoadoutAccepted
+      ? { ...clone(definition.loadouts), selected: { loadoutKey: "selected", weaponProfileKeys: canonicalLoadout.profiles.map((profile) => profile.profileKey), heldItems: { ...clone(definition.heldItems), mainHand: canonicalLoadout.profiles[0]?.profileKey || null } } }
+      : clone(definition.loadouts),
     attacks: clone(canonicalLoadout.profiles),
     weaponProfiles: clone(canonicalLoadout.profiles),
     equistaminadWeapons: clone(canonicalLoadout.profiles.filter((profile) => profile.naturalWeapon !== true)),
@@ -173,17 +239,51 @@ export function normalizeReferenceCombatActor(actor = {}, { source = "combat-sta
   }
   const compatibilityFallbacks = resolution.fallback ? [resolution.fallback] : [];
   const diagnostics = [{
+    eventType: "combat-actor-canonical-identity-resolved",
+    level: "info",
+    actorId: runtimeId,
+    data: { actorKey: definition.actorKey, identityField: resolution.identityField, source },
+  }, {
     eventType: "combat-actor-schema-normalized",
     level: "info",
     actorId: runtimeId,
     data: { actorKey: definition.actorKey, schemaVersion: 1, source },
   }];
+  if (resolution.aliasUsed) diagnostics.push({
+    eventType: "combat-actor-migration-alias-used",
+    level: "info",
+    actorId: runtimeId,
+    data: { actorKey: definition.actorKey, alias: resolution.alias, identityField: resolution.identityField, source },
+  });
+  canonicalLoadout.resolvedAliases.forEach((resolvedAlias) => diagnostics.push({
+    eventType: "combat-weapon-profile-alias-resolved",
+    level: "info",
+    actorId: runtimeId,
+    data: { actorKey: definition.actorKey, ...resolvedAlias, source },
+  }));
+  canonicalLoadout.unsupported.forEach((weaponName) => diagnostics.push({
+    eventType: "combat-weapon-profile-unsupported",
+    level: "warning",
+    actorId: runtimeId,
+    data: { actorKey: definition.actorKey, weaponName, replacementWeaponId: canonicalLoadout.profiles[0]?.profileKey || definition.heldItems?.mainHand || null, source },
+  }));
   canonicalLoadout.unsupported.forEach((weaponName) => diagnostics.push({
     eventType: "combat-actor-unsupported-weapon-replaced",
     level: "warning",
     actorId: runtimeId,
     data: { actorKey: definition.actorKey, weaponName, replacementWeaponId: canonicalLoadout.profiles[0]?.profileKey || definition.heldItems?.mainHand || null, source },
   }));
+  if (canonicalLoadout.safeDefaultUsed && canonicalLoadout.unsupported.length) diagnostics.push({
+    eventType: "combat-weapon-safe-default-used",
+    level: "warning",
+    actorId: runtimeId,
+    data: { actorKey: definition.actorKey, replacementWeaponIds: canonicalLoadout.profiles.map((profile) => profile.profileKey), source },
+  }, {
+    eventType: "combat-actor-safe-loadout-substituted",
+    level: "warning",
+    actorId: runtimeId,
+    data: { actorKey: definition.actorKey, loadoutKey: definition.defaultLoadoutKey || "default", source },
+  });
   if (resolution.fallback) diagnostics.push({
     eventType: "combat-actor-compatibility-fallback-used", level: "warning", actorId: runtimeId,
     data: { fallback: resolution.fallback, source },
