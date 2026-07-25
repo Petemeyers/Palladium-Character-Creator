@@ -41,8 +41,12 @@ assert.match(combatPage, /\(!explicitTurnEndingEffect \|\| forceSameActorContinu
 for (const source of ["player-turn-start", "player-ai-routing", "enemy-routing"]) {
   const sourceIndex = combatPage.indexOf(`fraidereRoutingFleeAction`, combatPage.indexOf(`"${source}"`) - 500);
   assert.ok(sourceIndex > 0, `${source} routed call should exist`);
-  const block = combatPage.slice(Math.max(0, sourceIndex - 220), sourceIndex + 1000);
-  assert.match(block, /const moraleActionResult = fraidereRoutingFleeAction\(/);
+  const block = combatPage.slice(Math.max(0, sourceIndex - 500), sourceIndex + 1000);
+  assert.match(
+    block,
+    /dispatchOwnedSurvivalAction\(\{[\s\S]*dispatch: \(\) => fraidereRoutingFleeAction\(/,
+    `${source} should validate action-token ownership before dispatch`,
+  );
   assert.ok(
     /resolveCombatActionCompletionRef\.current\?\.\(\{|resolveCombatActionCompletion\(\{/.test(block),
     `${source} should route morale action through completion arbiter`,

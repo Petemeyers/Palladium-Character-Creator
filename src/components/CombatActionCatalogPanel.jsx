@@ -46,7 +46,7 @@ const CombatActionCatalogPanel = ({
     equippedWeapons,
     inventory,
     compatibilityActions,
-    });
+    }).filter((action) => action.playerVisible !== false);
     if (!disabledReason) return built;
     return built.map((action) => ({
       ...action,

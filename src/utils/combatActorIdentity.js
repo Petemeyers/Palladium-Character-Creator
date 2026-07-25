@@ -49,6 +49,35 @@ export function formatCombatActorLabel(actor = {}, { roster = [], counterpart = 
   return sameSideDuplicate ? `${name} [${side}/${shortId(actor)}]` : `${name} [${side}]`;
 }
 
+export function buildCombatDamageLogEvent({
+  actor = {},
+  target = {},
+  roster = [],
+  damage = 0,
+  damageType = null,
+  hitLocation = null,
+  result = "damage-applied",
+} = {}) {
+  const actorLabel = formatCombatActorLabel(actor, { roster, counterpart: target });
+  const targetLabel = formatCombatActorLabel(target, { roster, counterpart: actor });
+  const appliedDamage = Math.max(0, Number(damage) || 0);
+  return {
+    actorId: getCombatActorId(actor),
+    actorName: String(actor.name || actor.displayName || "Unknown"),
+    actorSide: getCombatActorSide(actor),
+    targetId: getCombatActorId(target),
+    targetName: String(target.name || target.displayName || "Unknown"),
+    targetSide: getCombatActorSide(target),
+    damage: appliedDamage,
+    damageType,
+    hitLocation,
+    result,
+    message: appliedDamage > 0
+      ? `${targetLabel} takes ${appliedDamage} damage from ${actorLabel}.`
+      : `${targetLabel} takes no bodily damage from ${actorLabel}.`,
+  };
+}
+
 const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 export function disambiguateDuplicateCombatActorNames(message, { roster = [], activeActor = null } = {}) {
@@ -81,6 +110,7 @@ export function disambiguateDuplicateCombatActorNames(message, { roster = [], ac
 }
 
 export default {
+  buildCombatDamageLogEvent,
   disambiguateDuplicateCombatActorNames,
   formatCombatActorLabel,
   getCombatActorId,

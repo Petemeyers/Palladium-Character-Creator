@@ -8,7 +8,7 @@ import { buildManualQuickAttackState } from "../src/utils/manualCombatControlPol
 
 const layout = buildCombatCommandLayoutSummary();
 assert.equal(layout.order[0], "Combat Command Center");
-assert.equal(layout.order.at(-1), "Legacy / Compatibility Tools");
+assert.equal(layout.order.at(-1), "Advanced Combat Tools");
 assert.equal(layout.defaultCompatibilityCollapsed, true);
 
 const compatibilitySource = readFileSync("src/components/CompatibilityCombatControlsPanel.jsx", "utf8");
@@ -18,6 +18,23 @@ assert.ok(
   combatPageSource.indexOf("<CombatActionCatalogPanel") < combatPageSource.indexOf("<CompatibilityCombatControlsPanel", combatPageSource.indexOf("<CombatActionCatalogPanel")),
   "primary catalog renders before the following compatibility panel"
 );
+assert.equal(
+  (combatPageSource.match(/<CombatActionCatalogPanel/g) || []).length,
+  1,
+  "one action-selection catalog is authoritative",
+);
+assert.equal(
+  (combatPageSource.match(/<SelectedCombatActionPanel/g) || []).length,
+  1,
+  "one selected-action resolver is authoritative",
+);
+assert.equal(
+  (combatPageSource.match(/<SurrenderDecisionPanel/g) || []).length,
+  1,
+  "surrender lifecycle has one modal owner",
+);
+assert.doesNotMatch(combatPageSource, /presceneBattles|Quick Start Fight|quickStartBattle/);
+assert.match(combatPageSource, /endManualTurnActions\(/, "manual End Turn uses the shared action-budget authority");
 
 const actor = {
   id: "longbowman-1",

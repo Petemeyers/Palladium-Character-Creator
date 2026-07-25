@@ -106,7 +106,7 @@ function testLengthPolicyGatePreservesCurrentLength() {
   assert.equal(getWeaponLength({ name: "Short Blade", reach: 1 }, neutralPolicy), 1);
   assert.equal(getWeaponLength(DAGGER, neutralPolicy), 2);
   assert.equal(getWeaponLength(PIKE, neutralPolicy), 6);
-  assert.equal(getWeaponLength(LONGBOW, neutralPolicy), 150);
+  assert.equal(getWeaponLength(LONGBOW, neutralPolicy), 3);
   assert.equal(getWeaponLength(null, neutralPolicy), 3);
 }
 
@@ -115,9 +115,9 @@ function testExplicitAndFallbackWeaponLength() {
   assert.equal(getWeaponLength({ name: "Short Blade", reach: 1 }), 1);
   assert.equal(getWeaponLength(DAGGER), 2);
   assert.equal(getWeaponLength(PIKE), 6);
-  assert.equal(getWeaponLength(LONGBOW), 150);
+  assert.equal(getWeaponLength(LONGBOW), 3);
   assert.equal(getWeaponLength(null), 3);
-  assert.equal(getWeaponLength({}), 2);
+  assert.equal(getWeaponLength({}), 3);
 }
 
 function testWeaponTypeBaseline() {
@@ -126,7 +126,7 @@ function testWeaponTypeBaseline() {
   assert.equal(getWeaponType(PIKE), "LONG");
   assert.equal(getWeaponType({ name: "Warhammer" }), "HEAVY");
   assert.equal(getWeaponType(LONGBOW), "RANGED");
-  assert.equal(getWeaponType({ name: "Plain Tool" }), "SHORT");
+  assert.equal(getWeaponType({ name: "Plain Tool" }), "MEDIUM");
 }
 
 function testReachEnvironmentOutputShapes() {

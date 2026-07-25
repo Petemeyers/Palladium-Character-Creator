@@ -332,6 +332,7 @@ import {
   getCopyCurrentViewEvents,
 } from "../utils/combat/combatLogWindow.js";
 import {
+  buildCombatDamageLogEvent,
   disambiguateDuplicateCombatActorNames,
   formatCombatActorLabel,
 } from "../utils/combatActorIdentity.js";
@@ -511,6 +512,8 @@ import {
   persistEnemyMovementPosition,
   validateEnemyMovementPlan,
 } from "../utils/enemyMovementFallback.js";
+import { runEnemyApproachPlanner } from "../utils/enemyApproachPlannerContract.js";
+import { dispatchOwnedSurvivalAction } from "../utils/ownedSurvivalAction.js";
 import { decideEnemyTacticalIntentSafely } from "../utils/enemyAttributeTacticalIntent.js";
 import {
   isCombatantFled,
@@ -738,6 +741,7 @@ import {
   SURVIVAL_INTENTS,
   calculateRoutedMovementStaminaCost,
   formatSurvivalIntent,
+  resolvePanicFleeStaminaSpend,
 } from "../utils/survivalIntent.js";
 import { canBeCaptured, tieUpPrisoner, lootPrisoner } from "../utils/captureSystem.js";
 import {
@@ -4236,18 +4240,26 @@ function CombatPage({ characters = [] }) {
       west: "western",
     }[direction] || "outer";
     const distanceFeet = Math.round(calculateDistance(myPos, nextPosition));
-    const panicStaminaCost = calculateRoutedMovementStaminaCost({
+    const panicActionToken = currentTurnTokenRef.current || initiativeTurnIdRef.current || null;
+    const panicStaminaResolution = resolvePanicFleeStaminaSpend({
       fighter,
       distanceFeet,
-      movementType: "panic-run",
-      survivalIntent: SURVIVAL_INTENTS.PANIC_FLEE_TO_EDGE,
+      movementCommitted: nextPosition.x !== myPos.x || nextPosition.y !== myPos.y,
+      actionToken: panicActionToken,
+      activeActionToken: panicActionToken,
       armorProfile: survivalDecision.armorProfile,
     });
-    const panicStaminaSpent = spendStamina(fighter, panicStaminaCost).spent;
+    const panicStaminaSpent = panicStaminaResolution.spent;
     commitFighters((prev) => prev.map((candidate) => {
       if (candidate.id !== fighter.id) return candidate;
-      const staminaResult = spendStamina(candidate, panicStaminaCost);
-      return staminaResult.updated;
+      return resolvePanicFleeStaminaSpend({
+        fighter: candidate,
+        distanceFeet,
+        movementCommitted: nextPosition.x !== myPos.x || nextPosition.y !== myPos.y,
+        actionToken: panicActionToken,
+        activeActionToken: currentTurnTokenRef.current || initiativeTurnIdRef.current || null,
+        armorProfile: survivalDecision.armorProfile,
+      }).updated;
     }));
     if (panicStaminaSpent > 0) {
       const armorLabel = survivalDecision.armorProfile?.heavy ? " in heavy armor" : "";
@@ -13395,7 +13407,14 @@ function CombatPage({ characters = [] }) {
                 "info"
               );
             }
-            const moraleActionResult = fraidereRoutingFleeAction(latestFighter, liveFighters, "player-turn-start");
+            const survivalActionToken = currentTurnTokenRef.current || initiativeTurnIdRef.current || null;
+            const moraleActionResult = dispatchOwnedSurvivalAction({
+              actor: latestFighter,
+              actionToken: survivalActionToken,
+              activeActionToken: survivalActionToken,
+              source: "player-turn-start",
+              dispatch: () => fraidereRoutingFleeAction(latestFighter, liveFighters, "player-turn-start"),
+            }).result;
             if (moraleActionResult) {
               markTurnResolvedByStatus(latestFighter, "rout");
               processingPlayerAIRef.current = false;
@@ -25745,6 +25764,14 @@ function CombatPage({ characters = [] }) {
         applyHPToFighter(defender, newHP);
         const appliedDamage = Math.max(0, startingHP - getFighterHP(defender));
         if (appliedDamage > 0) {
+          const damageLogEvent = buildCombatDamageLogEvent({
+            actor: stateAttacker,
+            target: defender,
+            roster: updated,
+            damage: appliedDamage,
+            damageType: attackData?.damageType || null,
+            hitLocation: armorContactResult?.hitLocation || preDamageImpact?.location || null,
+          });
           addLog(
             {
               audience: COMBAT_LOG_AUDIENCES.PLAYER,
@@ -25754,8 +25781,10 @@ function CombatPage({ characters = [] }) {
               type: "damage",
               actorId: stateAttacker?.id || attacker?.id,
               targetId: defender?.id,
-              message: `${normalDamageTargetLabel} takes ${appliedDamage} damage from ${normalDamageAttackerLabel}.`,
+              message: damageLogEvent.message,
               data: {
+                ...damageLogEvent,
+                message: undefined,
                 damage: appliedDamage,
                 hp: getFighterHP(defender),
                 maxHp: getFighterMaxHP(defender),
@@ -27152,7 +27181,14 @@ function CombatPage({ characters = [] }) {
         latestPlayer.statusEffects?.includes("ROUTED") ||
         ["routed", "broken"].includes(latestPlayer.state?.moraleState))
     ) {
-      const moraleActionResult = fraidereRoutingFleeAction(latestPlayer, liveFightersForPlayerAI, "player-ai-routing");
+      const survivalActionToken = currentTurnTokenRef.current || initiativeTurnIdRef.current || null;
+      const moraleActionResult = dispatchOwnedSurvivalAction({
+        actor: latestPlayer,
+        actionToken: survivalActionToken,
+        activeActionToken: survivalActionToken,
+        source: "player-ai-routing",
+        dispatch: () => fraidereRoutingFleeAction(latestPlayer, liveFightersForPlayerAI, "player-ai-routing"),
+      }).result;
       if (moraleActionResult) {
         markTurnResolvedByStatus(latestPlayer, "rout");
         processingPlayerAIRef.current = false;
@@ -31515,7 +31551,14 @@ function CombatPage({ characters = [] }) {
       liveEnemy.statusEffects?.includes("ROUTED") ||
       ["routed", "broken"].includes(liveEnemy.state?.moraleState)
     ) {
-      const moraleActionResult = fraidereRoutingFleeAction(liveEnemy, fightersSnapshot, "enemy-routing");
+      const survivalActionToken = currentTurnTokenRef.current || initiativeTurnIdRef.current || null;
+      const moraleActionResult = dispatchOwnedSurvivalAction({
+        actor: liveEnemy,
+        actionToken: survivalActionToken,
+        activeActionToken: survivalActionToken,
+        source: "enemy-routing",
+        dispatch: () => fraidereRoutingFleeAction(liveEnemy, fightersSnapshot, "enemy-routing"),
+      }).result;
       if (moraleActionResult) {
         markTurnResolvedByStatus(liveEnemy, "rout");
         processingEnemyTurnRef.current = false;
@@ -33490,6 +33533,15 @@ function CombatPage({ characters = [] }) {
         `enemy approach branch entering movement planner: actor=${formatCombatActorLabel(enemy, { roster: fightersRef.current ?? fighters ?? [], counterpart: target })} target=${formatCombatActorLabel(target, { roster: fightersRef.current ?? fighters ?? [], counterpart: enemy })} distance=${Math.round(currentDistance)}ft`,
         "info",
       );
+      addLog({
+        audience: "developer",
+        channel: "movement",
+        eventType: "enemy-approach-planner-entered",
+        actorId: enemy.id,
+        targetId: target.id,
+        initiativeTurnId: initiativeTurnIdRef.current || null,
+        data: { origin: currentPos, beforeDistance: currentDistance },
+      }, "debug");
 
       try {
         const approachCanFly = canFighterFly(enemy) || canFly(enemy);
@@ -33552,33 +33604,66 @@ function CombatPage({ characters = [] }) {
           }
           return null;
         };
-        const selectedApproachPlan = chooseEnemyMovementFallback({
-          enemy,
-          hostileCandidates: [target],
-          positions: livePositions,
-          currentPosition: currentPos,
-          maxHexes: approachMaxHexes,
-          getNeighbors: getHexNeighbors,
-          isLegalCenter: isLegalApproachCenter,
+        const approachPlannerResult = runEnemyApproachPlanner({
+          actor: enemy,
+          target,
+          origin: currentPos,
+          targetPosition: targetPos,
+          beforeDistance: currentDistance,
+          initiativeTurnId: initiativeTurnIdRef.current || null,
           getDistance: calculateDistance,
-          isHostile: (candidate) => canSelectHostileCombatTarget(
+          planner: () => chooseEnemyMovementFallback({
             enemy,
-            candidate,
-            legacySceneContext,
-          ),
-          canAttackFrom: (position, candidate, candidatePosition) => {
-            const distanceFromPosition = calculateDistance(position, candidatePosition);
-            return validateWeaponRange(
+            hostileCandidates: [target],
+            positions: livePositions,
+            currentPosition: currentPos,
+            maxHexes: approachMaxHexes,
+            getNeighbors: getHexNeighbors,
+            isLegalCenter: isLegalApproachCenter,
+            getDistance: calculateDistance,
+            isHostile: (candidate) => canSelectHostileCombatTarget(
               enemy,
               candidate,
-              selectedAttack,
-              distanceFromPosition,
-            ).canAttack;
-          },
-          getPreferredAttackHexes: (candidate) => (
-            findFlankingPositions(livePositions[candidate.id], livePositions, enemy.id) || []
-          ),
+              legacySceneContext,
+            ),
+            canAttackFrom: (position, candidate, candidatePosition) => {
+              const distanceFromPosition = calculateDistance(position, candidatePosition);
+              return validateWeaponRange(
+                enemy,
+                candidate,
+                selectedAttack,
+                distanceFromPosition,
+              ).canAttack;
+            },
+            getPreferredAttackHexes: (candidate) => (
+              findFlankingPositions(livePositions[candidate.id], livePositions, enemy.id) || []
+            ),
+          }),
         });
+        if (!approachPlannerResult.accepted) {
+          addLog({
+            audience: "developer",
+            channel: "movement",
+            eventType: approachPlannerResult.result === "error"
+              ? "enemy-approach-planner-error"
+              : "enemy-approach-planner-rejected",
+            actorId: enemy.id,
+            targetId: target.id,
+            initiativeTurnId: initiativeTurnIdRef.current || null,
+            data: approachPlannerResult,
+          }, "warning");
+          throw approachPlannerResult.error || new Error(approachPlannerResult.reason);
+        }
+        const selectedApproachPlan = approachPlannerResult.plan;
+        addLog({
+          audience: "developer",
+          channel: "movement",
+          eventType: "enemy-approach-planner-resolved",
+          actorId: enemy.id,
+          targetId: target.id,
+          initiativeTurnId: initiativeTurnIdRef.current || null,
+          data: approachPlannerResult,
+        }, "debug");
         addLog(
           `enemy approach movement planner returned: actor=${formatCombatActorLabel(enemy, { roster: fightersRef.current ?? fighters ?? [], counterpart: target })} result=${selectedApproachPlan?.type || "none"}`,
           selectedApproachPlan?.position ? "info" : "warning",
@@ -33814,6 +33899,15 @@ function CombatPage({ characters = [] }) {
         return;
       } catch (error) {
         const noMoveSource = "enemy-ai-no-move-fallback";
+        addLog({
+          audience: "developer",
+          channel: "movement",
+          eventType: "enemy-approach-planner-error",
+          actorId: enemy.id,
+          targetId: target.id,
+          initiativeTurnId: initiativeTurnIdRef.current || null,
+          data: { reason: error?.message || String(error) },
+        }, "warning");
         addLog(
           `enemy approach movement planner error: actor=${formatCombatActorLabel(enemy, { roster: fightersRef.current ?? fighters ?? [], counterpart: target })} message=${error?.message || String(error)}`,
           "warning",

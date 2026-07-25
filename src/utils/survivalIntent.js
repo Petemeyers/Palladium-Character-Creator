@@ -1,4 +1,4 @@
-import { getArmorStaminaBurden } from "./combatStamina.js";
+import { getArmorStaminaBurden, spendStamina } from "./combatStamina.js";
 
 export const SURVIVAL_INTENTS = Object.freeze({
   HOLD: "hold",
@@ -125,6 +125,54 @@ export function calculateRoutedMovementStaminaCost({
   return controlledBase +
     armorBurden.controlledMovePenalty +
     (distance >= 60 ? armorBurden.longMovePenalty : 0);
+}
+
+/**
+ * Apply the existing panic-movement stamina cost only after real movement has
+ * been selected under the active action token.
+ */
+export function resolvePanicFleeStaminaSpend({
+  fighter = {},
+  distanceFeet = 0,
+  movementCommitted = false,
+  actionToken = null,
+  activeActionToken = null,
+  armorProfile = getRoutingArmorProfile(fighter),
+} = {}) {
+  if (!movementCommitted || !(Number(distanceFeet) > 0)) {
+    return {
+      accepted: false,
+      reason: "no-movement-committed",
+      cost: 0,
+      spent: 0,
+      updated: fighter,
+    };
+  }
+  if (!actionToken || !activeActionToken || actionToken !== activeActionToken) {
+    return {
+      accepted: false,
+      reason: "stale-action-token",
+      cost: 0,
+      spent: 0,
+      updated: fighter,
+    };
+  }
+  const cost = calculateRoutedMovementStaminaCost({
+    fighter,
+    distanceFeet,
+    movementType: "panic-run",
+    survivalIntent: SURVIVAL_INTENTS.PANIC_FLEE_TO_EDGE,
+    armorProfile,
+  });
+  const result = spendStamina(fighter, cost);
+  return {
+    accepted: result.ok,
+    reason: result.ok ? null : "stamina-spend-rejected",
+    actionToken,
+    cost,
+    spent: result.spent,
+    updated: result.updated,
+  };
 }
 
 /**

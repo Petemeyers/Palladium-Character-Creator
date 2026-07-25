@@ -117,7 +117,11 @@ export function getWeaponType(weapon) {
  * @returns {number} Length in feet
  */
 /**
- * Get weapon length/reach, adjusted for small/tiny races
+ * Get physical weapon length, adjusted for small/tiny races.
+ *
+ * `reach` is retained only as a compatibility fallback for melee weapons that
+ * predate an explicit physical-length field. Projectile range is never a
+ * physical-length source.
  * @param {Object} weapon - Weapon object
  * @param {Object} character - Character object (optional, for size adjustments)
  * @returns {number} Weapon length/reach in feet
@@ -125,28 +129,29 @@ export function getWeaponType(weapon) {
 export function getWeaponLength(weapon, character = null) {
   if (!weapon) return 3; // Default medium weapon
 
-  let baseLength = 3;
-
-  const physicalLength = [
+  const explicitPhysicalLength = [
     weapon.lengthFt,
     weapon.length,
     weapon.weaponLengthFt,
-    weapon.reachFeet,
-    weapon.reach,
-  ].find((value) => typeof value === "number" && Number.isFinite(value));
-
-  // Prefer physical dimensions; reach remains the compatibility fallback.
-  if (physicalLength !== undefined) {
-    baseLength = physicalLength;
-  }
+  ].find((value) => typeof value === "number" && Number.isFinite(value) && value > 0);
+  const weaponType = getWeaponType(weapon);
+  const isProjectile = weaponType === "RANGED" ||
+    weapon.deliveryType === "projectile" ||
+    weapon.type === "ranged" ||
+    weapon.isRanged === true;
+  const legacyMeleeReach = !isProjectile
+    ? [weapon.reachFeet, weapon.reach]
+        .find((value) => typeof value === "number" && Number.isFinite(value) && value > 0)
+    : undefined;
+  let baseLength = explicitPhysicalLength ?? legacyMeleeReach ?? 3;
 
   const weaponName = String(weapon.name || "").toLowerCase();
   if (weaponName.includes("long sword") || weaponName.includes("longsword")) {
     baseLength = Math.max(3, baseLength);
   }
-  // Infer from weapon type
-  else {
-    const weaponType = getWeaponType(weapon);
+  // Infer only when neither physical dimensions nor a legacy melee fallback
+  // exists. Never overwrite an explicit physical length with a type default.
+  else if (explicitPhysicalLength === undefined && legacyMeleeReach === undefined) {
     switch (weaponType) {
       case "SHORT":
         baseLength = 2;
@@ -161,8 +166,9 @@ export function getWeaponLength(weapon, character = null) {
         baseLength = 5;
         break;
       case "RANGED":
-        // Use weapon range for ranged weapons, not melee length
-        baseLength = weapon.range && typeof weapon.range === "number" ? weapon.range : 100;
+        // Unknown projectile dimensions use the neutral medium fallback.
+        // Projectile normal/long range remains separate combat metadata.
+        baseLength = 3;
         break;
       default:
         baseLength = 3;

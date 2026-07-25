@@ -4150,17 +4150,35 @@ export async function runPlayerTurnAI(player, context) {
                       if (turnActionResolvingRef) turnActionResolvingRef.current = true;
                       flankingAttackGrant =
                         typeof createAttackActionGrant === "function"
-                          ? createAttackActionGrant(player.id, liveTarget.id, "player-ai-flanking-continuation")
+                          ? createAttackActionGrant(livePlayer.id, liveTarget.id, "player-ai-flanking-continuation")
                           : null;
+                      if (!flankingAttackGrant?.grantId || !flankingAttackGrant?.turnToken || flankingAttackGrant.turnToken === "no-turn-token") {
+                        flankingAttackSettled = true;
+                        completePlayerAIContinuation?.("player-ai-flanking-missing-action-grant");
+                        addLog("flanking continuation rejected: canonical action grant unavailable", "warning");
+                        if (turnActionResolvingRef) turnActionResolvingRef.current = false;
+                        if (pendingTurnAdvanceRef) pendingTurnAdvanceRef.current = false;
+                        scheduleEndTurn(16, "player-ai-flanking-missing-action-grant");
+                        return;
+                      }
                       flankingAttackActionId =
                         typeof createAttackExecutionKey === "function"
-                          ? createAttackExecutionKey(player.id, liveTarget.id, "player-ai-flanking-continuation", {
+                          ? createAttackExecutionKey(livePlayer.id, liveTarget.id, "player-ai-flanking-continuation", {
                               grant: flankingAttackGrant,
-                              scheduledAtTurnToken: flankingAttackGrant?.turnToken || currentTurnToken || "no-turn-token",
+                              scheduledAtTurnToken: flankingAttackGrant.turnToken,
                               callbackSource: "player-ai-flanking-continuation",
                               isDelayedCallback: true,
                             })
-                          : `player-ai-flank-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+                          : null;
+                      if (!flankingAttackActionId) {
+                        flankingAttackSettled = true;
+                        completePlayerAIContinuation?.("player-ai-flanking-key-rejected");
+                        addLog("flanking continuation rejected: captured execution key unavailable", "warning");
+                        if (turnActionResolvingRef) turnActionResolvingRef.current = false;
+                        if (pendingTurnAdvanceRef) pendingTurnAdvanceRef.current = false;
+                        scheduleEndTurn(16, "player-ai-flanking-key-rejected");
+                        return;
+                      }
                       addLog?.({
                         audience: "developer",
                         channel: "ai",

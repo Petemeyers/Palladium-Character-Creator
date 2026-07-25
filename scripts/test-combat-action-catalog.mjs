@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 
 import { buildCombatActionCatalog } from "../src/utils/combatActionCatalog.js";
+import { getCombatActionContract } from "../src/utils/combatActionCatalog.js";
 import { buildCombatCommandTurnBridge } from "../src/utils/combatCommandTurnBridge.js";
 
 const hasFunction = (value) => {
@@ -49,7 +50,7 @@ const catalog = buildCombatActionCatalog({
 });
 
 assert.ok(catalog.some((action) => action.type === "attack" && action.name === "Attack with Shortsword"), "equipped weapon creates attack action");
-assert.ok(catalog.some((action) => action.type === "move" && action.name === "Move"), "move action exists");
+assert.ok(catalog.some((action) => action.type === "move" && action.name === "Walk"), "canonical walk action exists");
 assert.ok(catalog.some((action) => action.type === "run" && action.name === "Run"), "run action exists");
 assert.ok(catalog.some((action) => action.type === "charge" && action.name === "Charge"), "charge action exists");
 assert.ok(catalog.some((action) => action.type === "defend" && action.name === "Defend"), "defend action exists");
@@ -60,6 +61,28 @@ assert.ok(catalog.some((action) => action.type === "use-item" && action.name ===
 assert.ok(catalog.some((action) => action.type === "use-skill" && action.name === "Use Skill"), "skill compatibility action exists");
 assert.equal(catalog.some((action) => action.name === "Attack with true"), false, "boolean actions field is ignored");
 assert.equal(catalog.some(hasFunction), false, "catalog actions contain no functions");
+for (const action of catalog.filter((entry) => entry.playerVisible)) {
+  assert.ok(action.actionKey, `${action.name} has stable action identity`);
+  assert.equal(action.displayLabel, action.name);
+  assert.ok(action.category);
+  assert.ok(action.executorIdentity, `${action.name} has an executor`);
+  assert.ok(Array.isArray(action.legalActorStates));
+  assert.equal(typeof action.rollRequired, "boolean");
+  assert.equal(typeof action.turnEnding, "boolean");
+  assert.equal(typeof action.aiAvailable, "boolean");
+}
+assert.equal(
+  catalog.filter((action) => action.source === "compatibility controls").every((action) => !action.playerVisible),
+  true,
+  "compatibility transitions are not presented as canonical player actions",
+);
+for (const type of ["grapple", "ground-control", "surrender", "projectile", "extended-melee", "reload", "draw"]) {
+  assert.notEqual(
+    getCombatActionContract(type).executorIdentity,
+    "compatibility-controls-panel",
+    `${type} has a distinct canonical executor identity`,
+  );
+}
 
 const enabledAttack = catalog.find((action) => action.name === "Attack with Shortsword");
 assert.equal(enabledAttack.enabled, true, "numeric remaining actions and stamina allow weapon attack");

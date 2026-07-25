@@ -85,6 +85,39 @@ const sanitizeMetadata = (metadata = {}) =>
     return safe;
   }, {});
 
+const ACTION_CONTRACTS = Object.freeze({
+  attack: { rollRequired: true, executorIdentity: "canonical-attack-dispatcher", aiAvailable: true },
+  move: { rollRequired: false, executorIdentity: "canonical-movement-dispatcher", aiAvailable: true },
+  run: { rollRequired: false, executorIdentity: "canonical-movement-dispatcher", aiAvailable: true },
+  charge: { rollRequired: false, executorIdentity: "canonical-movement-dispatcher", aiAvailable: true },
+  defend: { rollRequired: false, executorIdentity: "defend-action-handler", aiAvailable: true },
+  block: { rollRequired: false, executorIdentity: "block-action-handler", aiAvailable: true },
+  evade: { rollRequired: false, executorIdentity: "evade-action-handler", aiAvailable: true },
+  recover: { rollRequired: false, executorIdentity: "recover-action-handler", aiAvailable: true },
+  "use-item": { rollRequired: false, executorIdentity: "use-item-action-handler", aiAvailable: false },
+  "use-skill": { rollRequired: false, executorIdentity: "use-skill-action-handler", aiAvailable: true },
+  grapple: { rollRequired: true, executorIdentity: "canonical-grapple-executor", aiAvailable: true },
+  "ground-control": { rollRequired: false, executorIdentity: "canonical-grapple-executor", aiAvailable: true },
+  surrender: { rollRequired: false, executorIdentity: "canonical-surrender-lifecycle", aiAvailable: true },
+  projectile: { rollRequired: true, executorIdentity: "canonical-ranged-dispatcher", aiAvailable: true },
+  "extended-melee": { rollRequired: true, executorIdentity: "canonical-attack-dispatcher", aiAvailable: true },
+  reload: { rollRequired: false, executorIdentity: "canonical-ranged-reload", aiAvailable: true },
+  draw: { rollRequired: false, executorIdentity: "canonical-weapon-transition", aiAvailable: true },
+  compatibility: { rollRequired: false, executorIdentity: "compatibility-controls-panel", aiAvailable: false },
+});
+
+export const getCombatActionContract = (type, source = "") => {
+  const normalizedType = normalizeText(type, "compatibility");
+  const contract = ACTION_CONTRACTS[normalizedType] || ACTION_CONTRACTS.compatibility;
+  const compatibility = normalizeText(source).toLowerCase().includes("compatibility");
+  return {
+    ...contract,
+    playerVisible: !compatibility,
+    turnEnding: false,
+    legalActorStates: ["active", "conscious"],
+  };
+};
+
 const getDisabledReason = ({ enabled, disabledReason, costActions, costStamina, targetRequired, targetId, actor, currentTurnEntry }) => {
   if (enabled === false && disabledReason) return disabledReason;
   const remainingActions = getRemainingActions(actor, currentTurnEntry);
@@ -129,9 +162,13 @@ const makeAction = ({
     currentTurnEntry,
   });
 
+  const stableId = normalizeId(id, normalizeId(name, "action"));
+  const contract = getCombatActionContract(type, source);
   return {
-    id: normalizeId(id, normalizeId(name, "action")),
+    id: stableId,
+    actionKey: stableId,
     name: normalizeText(name, "Unnamed action"),
+    displayLabel: normalizeText(name, "Unnamed action"),
     type: normalizeText(type, "compatibility"),
     source: normalizeText(source, "catalog"),
     category: normalizeText(category, "General"),
@@ -145,6 +182,7 @@ const makeAction = ({
     disabledReason: reason,
     previewSummary: normalizeText(previewSummary, ""),
     metadata: sanitizeMetadata(metadata),
+    ...contract,
   };
 };
 

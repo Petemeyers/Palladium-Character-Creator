@@ -11,6 +11,28 @@ export function doesPlayerAiContinuationOwnAttack(activeAttackActionId, expected
   );
 }
 
+export function validateCapturedFlankingAttackIdentity(captured = {}, current = {}) {
+  const required = [
+    "executionKey",
+    "grantId",
+    "generation",
+    "combatSession",
+    "initiativeTurnId",
+    "actorId",
+    "targetId",
+    "actionSequence",
+  ];
+  if (required.some((field) => captured[field] === null || captured[field] === undefined || captured[field] === "")) {
+    return { accepted: false, reason: "incomplete-captured-identity" };
+  }
+  for (const field of required.slice(2)) {
+    if (String(captured[field]) !== String(current[field] ?? "")) {
+      return { accepted: false, reason: `${field}-mismatch` };
+    }
+  }
+  return { accepted: true, reason: null, executionKey: captured.executionKey };
+}
+
 export function createPlayerAiContinuationOwnership({
   fighterId,
   turnIndex,
