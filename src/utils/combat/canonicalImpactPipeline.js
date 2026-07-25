@@ -1,5 +1,21 @@
 const event = (eventType, data = {}, level = "info") => ({ eventType, level, data });
 
+export const COMMITTED_MINOTAUR_IMPACT_STAGES = Object.freeze([
+  "selected-technique",
+  "technique-prerequisite-passed",
+  "derived-attack-modifier-components",
+  "movement-momentum",
+  "active-defense-resolved",
+  "shield-interception-resolved",
+  "hit-location-resolved",
+  "armor-layer-contacted",
+  "contact-surface-resolved",
+  "armor-impact-resolved",
+  "stability-contest-resolved",
+  "stamina-spent",
+  "injury-authorization-resolved",
+]);
+
 export function resolveCanonicalImpactPipeline({
   intent,
   prerequisite,
@@ -24,7 +40,7 @@ export function resolveCanonicalImpactPipeline({
   ];
   if (defense.evaded) {
     events.push(event("recovery-opening-created", { committedMiss: true, opening: "attacker-recovery" }));
-    return { accepted: true, outcome: "evaded", bodilyDamagePermitted: false, directHpMutation: false, events };
+    return { accepted: true, outcome: "evaded", bodilyDamagePermitted: false, directHpMutation: false, stageCountValid: true, events };
   }
   events.push(event("shield-interception-resolved", {
     intercepted: shield.intercepted === true,
@@ -39,7 +55,7 @@ export function resolveCanonicalImpactPipeline({
       event("stamina-spent", { amount: stamina.spent || intent.technique.staminaCost || 0 }),
       event("injury-authorization-resolved", { authorized: false, reason: "shield-interception" }),
     );
-    return { accepted: true, outcome: "shield-interception", bodilyDamagePermitted: false, directHpMutation: false, events };
+    return { accepted: true, outcome: "shield-interception", bodilyDamagePermitted: false, directHpMutation: false, stageCountValid: true, events };
   }
   events.push(event("armor-layer-contacted", { layer: armor.layer || armor.armorClass || "unarmored" }));
   events.push(event("contact-surface-resolved", {
@@ -71,7 +87,16 @@ export function resolveCanonicalImpactPipeline({
     reason: bodilyDamagePermitted ? outcome : "intact-rigid-coverage",
     bluntTransfer: contact.bluntTransfer || 0,
   }));
-  return { accepted: true, outcome, bodilyDamagePermitted, directHpMutation: false, events };
+  return {
+    accepted: true,
+    outcome,
+    bodilyDamagePermitted,
+    directHpMutation: false,
+    stageCountValid:
+      events.length === COMMITTED_MINOTAUR_IMPACT_STAGES.length &&
+      COMMITTED_MINOTAUR_IMPACT_STAGES.every((stage, index) => events[index]?.eventType === stage),
+    events,
+  };
 }
 
 export default resolveCanonicalImpactPipeline;

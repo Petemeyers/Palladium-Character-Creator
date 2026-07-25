@@ -435,9 +435,21 @@ import {
 import {
   createCanonicalMinotaurTechniqueIntent,
   filterLegalMinotaurTechniqueCandidates,
+  isCanonicalMinotaurActor,
 } from "../utils/combat/minotaurTechniqueResolver.js";
 import { resolveCanonicalImpactPipeline } from "../utils/combat/canonicalImpactPipeline.js";
 import { isCurrentRoundInitiativeSlotAvailable } from "../utils/combat/canonicalRoundAdvance.js";
+import {
+  admitInitiativeCoordinate,
+  createInitiativeCoordinate,
+} from "../utils/combat/initiativeCoordinateAuthority.js";
+import {
+  FUMBLE_HANDOFF_STATES,
+  createFumbleHandoffOwnership,
+  isActiveFumbleHandoffOwnership,
+  transitionFumbleHandoffOwnership,
+} from "../utils/combat/fumbleHandoffOwnership.js";
+import { resolveCanonicalArmorCoverage } from "../utils/combat/canonicalArmorCoverage.js";
 import { validateCanonicalNaturalD20 } from "../utils/combat/normalizeCanonicalD20Roll.js";
 import { calculateRangePenalty, calculateReachAdvantage } from "../utils/weaponSystem.js";
 import {
@@ -6028,6 +6040,7 @@ function CombatPage({ characters = [] }) {
   const lastTurnSchedulerClassificationKeyRef = useRef(null); // Avoid repeated unchanged classification logs.
   const manualPlayerWaitTurnKeyRef = useRef(null); // Log/enter manual wait once per stable turn slot.
   const lastEndTurnAdvanceKeyRef = useRef(null); // Prevent duplicate endTurn() advances from delayed callbacks in one slice
+  const fumbleHandoffOwnershipRef = useRef(null); // Exact-once owner for critical-miss turn boundaries.
   const allTimeoutsRef = useRef([]); // Track ALL timeouts so we can clear them on combat end
   const combatPausedRef = useRef(false); // Track paused state in async callbacks
   const stepLogPauseOwnedRef = useRef(false); // Only resume automatically when Step Log caused the pause.
@@ -12018,6 +12031,20 @@ function CombatPage({ characters = [] }) {
     fighter?.id ?? "?",
   ].join("|")), [meleeRound]);
 
+  const getCurrentInitiativeCoordinate = useCallback((fighter = null, index = null) => {
+    const authoritativeIndex = index ?? turnIndexRef.current ?? 0;
+    const authoritativeActor = fighter || fightersRef.current?.[authoritativeIndex] || null;
+    return createInitiativeCoordinate({
+      generationId: combatSessionRef.current || "default",
+      combatSession: combatSessionRef.current || "default",
+      round: meleeRoundRef.current ?? meleeRound,
+      initiativeIndex: authoritativeIndex,
+      turnCounter: turnCounterRef.current ?? turnCounter,
+      actorId: authoritativeActor?.id || null,
+      initiativeTurnId: initiativeTurnIdRef.current || null,
+    });
+  }, [meleeRound, turnCounter]);
+
   const logInitiativeTurnStateTransition = useCallback((record, from, to, source) => {
     addLog?.({
       audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
@@ -12072,6 +12099,52 @@ function CombatPage({ characters = [] }) {
     const existing = initiativeTurnLogicalRegistryRef.current.get(logicalTurnKey);
     const generationId = combatSessionRef.current || "default";
     const round = meleeRoundRef.current ?? meleeRound;
+    const candidateCoordinate = createInitiativeCoordinate({
+      generationId,
+      combatSession: generationId,
+      round,
+      initiativeIndex: index,
+      turnCounter: turnCounterRef.current ?? turnCounter,
+      actorId: fighter?.id,
+      initiativeTurnId: null,
+    });
+    const authoritativeCoordinate = getCurrentInitiativeCoordinate();
+    const coordinateAdmission = admitInitiativeCoordinate(candidateCoordinate, authoritativeCoordinate);
+    if (!coordinateAdmission.accepted) {
+      const stale = coordinateAdmission.comparison === "older";
+      addLog?.({
+        audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+        channel: COMBAT_LOG_CHANNELS.TURN,
+        eventType: stale ? "stale-turn-creation-blocked" : "initiative-coordinate-admission-rejected",
+        level: "warning",
+        type: "warning",
+        actorId: fighter?.id,
+        round,
+        turn: turnCounterRef.current,
+        source,
+        message: `initiative coordinate admission rejected: comparison=${coordinateAdmission.comparison} actorId=${fighter?.id || "none"}`,
+        data: coordinateAdmission,
+      }, "warning");
+      return {
+        accepted: false,
+        disposition: "rejected-coordinate",
+        reason: coordinateAdmission.comparison,
+        coordinateAdmission,
+      };
+    }
+    addLog?.({
+      audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+      channel: COMBAT_LOG_CHANNELS.TURN,
+      eventType: "initiative-coordinate-admission-accepted",
+      level: "info",
+      type: "debug",
+      actorId: fighter?.id,
+      round,
+      turn: turnCounterRef.current,
+      source,
+      message: `initiative coordinate admission accepted: actorId=${fighter?.id} comparison=${coordinateAdmission.comparison}`,
+      data: coordinateAdmission,
+    }, "debug");
     if (existing?.initiativeTurnId) {
       const state = existing.state || "pending-start";
       if (state === "pending-start" || state === "starting") {
@@ -12224,7 +12297,7 @@ function CombatPage({ characters = [] }) {
       shouldStart: true,
       record,
     };
-  }, [addLog, makeLogicalInitiativeTurnKey, meleeRound]);
+  }, [addLog, getCurrentInitiativeCoordinate, makeLogicalInitiativeTurnKey, meleeRound, turnCounter]);
 
   const recordPendingTurnStartDeferred = useCallback(({ record, reason, source }) => {
     if (!record?.initiativeTurnId) return;
@@ -13723,6 +13796,24 @@ function CombatPage({ characters = [] }) {
     // CRITICAL: Stop processing if combat has ended
     if (!combatActiveNow || combatEndCheckRef.current) {
       return;
+    }
+    const activeFumbleHandoff = fumbleHandoffOwnershipRef.current;
+    if (
+      isActiveFumbleHandoffOwnership(activeFumbleHandoff) &&
+      finalizerMeta?.handoffToken !== activeFumbleHandoff.handoffToken
+    ) {
+      addLog?.({
+        audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+        channel: COMBAT_LOG_CHANNELS.TURN,
+        eventType: "generic-handoff-suppressed",
+        level: "info",
+        type: "debug",
+        actorId: actingFighter?.id,
+        source: finalizerMeta?.source || "endTurn",
+        message: `generic handoff suppressed while fumble owns boundary: handoffToken=${activeFumbleHandoff.handoffToken}`,
+        data: { ownership: activeFumbleHandoff, finalizerMeta },
+      }, "debug");
+      return { accepted: false, reason: "fumble-handoff-owned" };
     }
 
     if (lastEndTurnAdvanceKeyRef.current === endTurnAdvanceKey) {
@@ -15784,6 +15875,7 @@ function CombatPage({ characters = [] }) {
     reason = "turn-handoff",
     explicitTurnEndingEffect = false,
     source = "authoritative-turn-handoff",
+    handoffOwnership = null,
   } = {}) => {
     const rosterBefore = fightersRef.current ?? fighters ?? [];
     if (!outgoingActorId || rosterBefore.length === 0) {
@@ -15794,46 +15886,60 @@ function CombatPage({ characters = [] }) {
     const initiativeIndexBefore = outgoingIndex >= 0 ? outgoingIndex : currentInitiativeIndex;
     const roundBefore = meleeRoundRef.current ?? meleeRound;
     const turnCounterBefore = turnCounterRef.current ?? turnCounter;
-    const isLastInitiativeSlot = initiativeIndexBefore >= rosterBefore.length - 1;
-    const initiativeIndexAfter = isLastInitiativeSlot ? 0 : initiativeIndexBefore + 1;
-    const roundAfter = isLastInitiativeSlot ? roundBefore + 1 : roundBefore;
-    const turnCounterAfter = turnCounterBefore + 1;
-    const nextActor = rosterBefore[initiativeIndexAfter] || null;
-    const nextActorId = nextActor?.id || null;
-
-    commitFighters((prev = []) => prev.map((fighter) => (
-      fighter?.id === outgoingActorId
-        ? { ...fighter, remainingActions: 0, attacksRemaining: 0 }
-        : fighter
-    )));
-    if (expectedInitiativeTurnId) {
-      transitionLogicalInitiativeTurn(expectedInitiativeTurnId, "completed", source, {
-        completionReason: reason,
-        explicitTurnEndingEffect,
-      });
+    if (
+      handoffOwnership?.handoffOwner === "fumble" &&
+      (
+        handoffOwnership.expectedOutgoingTurnId !== expectedInitiativeTurnId ||
+        handoffOwnership.state !== FUMBLE_HANDOFF_STATES.CLAIMED
+      )
+    ) {
+      return { accepted: false, reason: "invalid-fumble-handoff-ownership" };
     }
-    cancelRemainingActionContinuationsForActor({
-      actorId: outgoingActorId,
-      initiativeTurnId: expectedInitiativeTurnId,
-      reason,
+    if (handoffOwnership?.handoffOwner === "fumble") {
+      fumbleHandoffOwnershipRef.current = transitionFumbleHandoffOwnership(
+        handoffOwnership,
+        FUMBLE_HANDOFF_STATES.COMMITTING,
+      );
+    }
+    const completion = endTurnRef.current?.({
       source,
+      handoffToken: handoffOwnership?.handoffToken || null,
+      actingActorSnapshot: rosterBefore[initiativeIndexBefore] || null,
+      explicitTurnEndingEffect,
+      deferTurnStartUntilRefsSettle: false,
     });
-
-    pendingTurnAdvanceRef.current = false;
-    turnActionResolvingRef.current = false;
-    processingEnemyTurnRef.current = false;
-    processingPlayerAIRef.current = false;
-    playerAIActionScheduledRef.current = false;
-    currentTurnTokenRef.current = null;
-    activeAttackActionIdRef.current = null;
-    activeGrappleActionIdRef.current = null;
-    turnIndexRef.current = initiativeIndexAfter;
-    meleeRoundRef.current = roundAfter;
-    turnCounterRef.current = turnCounterAfter;
-    initiativeTurnIdRef.current = null;
-    setTurnIndex(initiativeIndexAfter);
-    setMeleeRound(roundAfter);
-    setTurnCounter(turnCounterAfter);
+    const rosterAfter = fightersRef.current ?? [];
+    const initiativeIndexAfter = turnIndexRef.current ?? 0;
+    const roundAfter = meleeRoundRef.current ?? roundBefore;
+    const turnCounterAfter = turnCounterRef.current ?? turnCounterBefore;
+    const nextActor = rosterAfter[initiativeIndexAfter] || null;
+    const nextActorId = nextActor?.id || null;
+    const accepted =
+      completion?.accepted !== false &&
+      (
+        turnCounterAfter > turnCounterBefore ||
+        roundAfter > roundBefore ||
+        initiativeIndexAfter !== initiativeIndexBefore
+      );
+    const committedCoordinate = createInitiativeCoordinate({
+      generationId: combatSessionRef.current || "default",
+      combatSession: combatSessionRef.current || "default",
+      round: roundAfter,
+      initiativeIndex: initiativeIndexAfter,
+      turnCounter: turnCounterAfter,
+      actorId: nextActorId,
+      initiativeTurnId: initiativeTurnIdRef.current || null,
+    });
+    if (handoffOwnership?.handoffOwner === "fumble") {
+      const committedOwnership = transitionFumbleHandoffOwnership(
+        fumbleHandoffOwnershipRef.current,
+        accepted ? FUMBLE_HANDOFF_STATES.COMMITTED : FUMBLE_HANDOFF_STATES.REJECTED,
+        { committedCoordinate, reason: accepted ? null : "canonical-end-turn-rejected" },
+      );
+      fumbleHandoffOwnershipRef.current = accepted
+        ? transitionFumbleHandoffOwnership(committedOwnership, FUMBLE_HANDOFF_STATES.RELEASED)
+        : committedOwnership;
+    }
 
     addLog?.({
       audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
@@ -15850,7 +15956,7 @@ function CombatPage({ characters = [] }) {
         `authoritative turn handoff committed: outgoing=${outgoingActorId} next=${nextActorId || "none"} ` +
         `roundBefore=${roundBefore} roundAfter=${roundAfter} indexBefore=${initiativeIndexBefore} indexAfter=${initiativeIndexAfter}`,
       data: {
-        accepted: true,
+        accepted,
         outgoingActorId,
         nextActorId,
         roundBefore,
@@ -15876,19 +15982,8 @@ function CombatPage({ characters = [] }) {
       data: { reason, outgoingActorId, expectedInitiativeTurnId },
     }, "debug");
 
-    if (nextActor && combatActiveRef.current && !combatOverRef.current && !combatEndCheckRef.current) {
-      const timer = setTimeout(() => {
-        if (!combatActiveRef.current || combatOverRef.current || combatEndCheckRef.current) return;
-        turnIndexRef.current = initiativeIndexAfter;
-        meleeRoundRef.current = roundAfter;
-        turnCounterRef.current = turnCounterAfter;
-        startTurnOnce(nextActor, initiativeIndexAfter, source);
-      }, getSimulationDelay(0, simulationSpeed));
-      allTimeoutsRef.current.push(timer);
-    }
-
     return {
-      accepted: true,
+      accepted,
       outgoingActorId,
       nextActorId,
       roundBefore,
@@ -15897,16 +15992,12 @@ function CombatPage({ characters = [] }) {
       initiativeIndexAfter,
       turnCounterBefore,
       turnCounterAfter,
+      committedCoordinate,
     };
   }, [
     addLog,
-    cancelRemainingActionContinuationsForActor,
-    commitFighters,
     fighters,
     meleeRound,
-    simulationSpeed,
-    startTurnOnce,
-    transitionLogicalInitiativeTurn,
     turnCounter,
   ]);
 
@@ -23001,7 +23092,7 @@ function CombatPage({ characters = [] }) {
       return;
     }
 
-    if (attackData?.techniqueKey && effectiveAttacker?.actorKey === "minotaur") {
+    if (attackData?.techniqueKey && isCanonicalMinotaurActor(effectiveAttacker)) {
       const techniqueIntent = createCanonicalMinotaurTechniqueIntent({
         techniqueKey: attackData.techniqueKey,
         actor: effectiveAttacker,
@@ -24558,6 +24649,30 @@ function CombatPage({ characters = [] }) {
             ? roundBefore + 1
             : roundBefore;
         const nextActorId = nextInitiativeIndex >= 0 ? activeRoster[nextInitiativeIndex]?.id : null;
+        const fumbleHandoffOwnership = createFumbleHandoffOwnership({
+          handoffToken: `${attackActionId}:fumble-handoff`,
+          expectedOutgoingTurnId: fumbleInitiativeTurnId,
+          expectedCoordinate: getCurrentInitiativeCoordinate(
+            activeRoster[safeOutgoingIndex] || attacker,
+            safeOutgoingIndex,
+          ),
+        });
+        if (!fumbleHandoffOwnership.accepted) {
+          addLog?.({
+            audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+            channel: COMBAT_LOG_CHANNELS.TURN,
+            eventType: "fumble-turn-handoff-incomplete",
+            level: "error",
+            type: "error",
+            actorId: attacker?.id,
+            executionKey: attackActionId,
+            source: "fumble-turn-handoff",
+            message: `fumble handoff claim rejected: actorId=${attacker?.id} reason=${fumbleHandoffOwnership.reason}`,
+            data: fumbleHandoffOwnership,
+          }, "error");
+          return;
+        }
+        fumbleHandoffOwnershipRef.current = fumbleHandoffOwnership;
         addLog({
           audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
           channel: COMBAT_LOG_CHANNELS.TURN,
@@ -24630,6 +24745,7 @@ function CombatPage({ characters = [] }) {
           reason: "fumble-handoff-owned",
           explicitTurnEndingEffect: true,
           source: "fumble-turn-handoff",
+          handoffOwnership: fumbleHandoffOwnership,
         });
         const rosterAfterFumble = fightersRef.current ?? [];
         const fumblerAfter = rosterAfterFumble.find((fighter) => fighter?.id === attacker?.id);
@@ -24895,6 +25011,30 @@ function CombatPage({ characters = [] }) {
           }, "debug");
 
           preDamageImpact = rollImpactLocation();
+          const canonicalArmorCoverage = resolveCanonicalArmorCoverage({
+            defender,
+            armor: defenderArmorProfile,
+            hitLocation: preDamageImpact,
+          });
+          addLog({
+            audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+            channel: COMBAT_LOG_CHANNELS.VALIDATION,
+            eventType: canonicalArmorCoverage.valid
+              ? "canonical-armor-coverage-resolved"
+              : "canonical-armor-coverage-invalid",
+            level: canonicalArmorCoverage.valid ? "info" : "error",
+            type: canonicalArmorCoverage.valid ? "debug" : "error",
+            actorId: stateAttacker?.id || attacker?.id,
+            targetId: defender?.id,
+            executionKey: attackActionId,
+            source: attackSource,
+            message:
+              `canonical armor coverage ${canonicalArmorCoverage.valid ? "resolved" : "invalid"}: ` +
+              `armor=${canonicalArmorCoverage.armorName} location=${canonicalArmorCoverage.hitLocation} ` +
+              `coverage=${canonicalArmorCoverage.coverageType}`,
+            data: canonicalArmorCoverage,
+          }, canonicalArmorCoverage.valid ? "debug" : "error");
+          // preDamageImpact = rollImpactLocation() is complete before canonical contact.
           armorContactResult = resolveArmorContact({
             attacker: stateAttacker || attacker,
             defender,
@@ -24917,6 +25057,22 @@ function CombatPage({ characters = [] }) {
           });
 
           if (canonicalMinotaurTechniqueIntent?.directHpMutationAllowed === false) {
+            addLog({
+              audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+              channel: COMBAT_LOG_CHANNELS.VALIDATION,
+              eventType: "minotaur-impact-pipeline-entered",
+              level: "info",
+              type: "debug",
+              actorId: stateAttacker?.id || attacker?.id,
+              targetId: defender?.id,
+              executionKey: attackActionId,
+              source: attackSource,
+              message: `Minotaur impact pipeline entered: technique=${canonicalMinotaurTechniqueIntent.techniqueKey}`,
+              data: {
+                techniqueKey: canonicalMinotaurTechniqueIntent.techniqueKey,
+                actionSequence: initiativeActionSequenceRef.current,
+              },
+            }, "debug");
             canonicalMinotaurImpactAuthorization = resolveCanonicalImpactPipeline({
               intent: canonicalMinotaurTechniqueIntent,
               prerequisite: { accepted: true },
@@ -24976,6 +25132,27 @@ function CombatPage({ characters = [] }) {
                 },
               }, impactEvent.level === "warning" ? "warning" : "debug");
             });
+            addLog({
+              audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+              channel: COMBAT_LOG_CHANNELS.VALIDATION,
+              eventType: canonicalMinotaurImpactAuthorization.stageCountValid
+                ? "minotaur-impact-pipeline-completed"
+                : "minotaur-impact-stage-count-invalid",
+              level: canonicalMinotaurImpactAuthorization.stageCountValid ? "info" : "error",
+              type: canonicalMinotaurImpactAuthorization.stageCountValid ? "debug" : "error",
+              actorId: stateAttacker?.id || attacker?.id,
+              targetId: defender?.id,
+              executionKey: attackActionId,
+              source: attackSource,
+              message:
+                `Minotaur impact pipeline ${canonicalMinotaurImpactAuthorization.stageCountValid ? "completed" : "invalid"}: ` +
+                `technique=${canonicalMinotaurTechniqueIntent.techniqueKey} stages=${canonicalMinotaurImpactAuthorization.events.length}`,
+              data: {
+                techniqueKey: canonicalMinotaurTechniqueIntent.techniqueKey,
+                actionSequence: initiativeActionSequenceRef.current,
+                stageCount: canonicalMinotaurImpactAuthorization.events.length,
+              },
+            }, canonicalMinotaurImpactAuthorization.stageCountValid ? "debug" : "error");
           }
 
           addLog({
@@ -24997,7 +25174,7 @@ function CombatPage({ characters = [] }) {
               `mode=${armorContactResult.attackMode} location=${armorContactResult.hitLocation} ` +
               `coverage=${armorContactResult.coverageType} contact=${armorContactResult.contactType} ` +
               `gapCapable=${armorContactResult.gapCapable} gapReached=${armorContactResult.gapReached} ` +
-              `hpDamage=0 prevented=${armorContactResult.damagePrevented}`,
+              `authorizedBodilyDamage=${armorContactResult.damageAllowed} prevented=${armorContactResult.damagePrevented}`,
             data: {
               attackerId: stateAttacker?.id || attacker?.id,
               attackerName: stateAttacker?.name || attacker?.name,
@@ -25020,7 +25197,8 @@ function CombatPage({ characters = [] }) {
               originalDamageType: attackData?.damageType || "slashing",
               convertedDamageType: armorContactResult.convertedDamageType,
               bodilyDamageAllowed: armorContactResult.damageAllowed,
-              hpDamageApplied: 0,
+              hpDamageAppliedAtThisStage: 0,
+              authorizedBodilyDamage: armorContactResult.damageAllowed,
               damagePrevented: armorContactResult.damagePrevented,
               mayStagger: armorContactResult.mayStagger,
               mayKnockDown: armorContactResult.mayKnockDown,
@@ -25311,6 +25489,22 @@ function CombatPage({ characters = [] }) {
           !canonicalMinotaurImpactAuthorization
         ) {
           const impactLocation = preDamageImpact || rollImpactLocation();
+          addLog({
+            audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+            channel: COMBAT_LOG_CHANNELS.VALIDATION,
+            eventType: "minotaur-impact-pipeline-entered",
+            level: "info",
+            type: "debug",
+            actorId: stateAttacker?.id || attacker?.id,
+            targetId: defender?.id,
+            executionKey: attackActionId,
+            source: attackSource,
+            message: `Minotaur impact pipeline entered: technique=${canonicalMinotaurTechniqueIntent.techniqueKey}`,
+            data: {
+              techniqueKey: canonicalMinotaurTechniqueIntent.techniqueKey,
+              actionSequence: initiativeActionSequenceRef.current,
+            },
+          }, "debug");
           canonicalMinotaurImpactAuthorization = resolveCanonicalImpactPipeline({
             intent: canonicalMinotaurTechniqueIntent,
             prerequisite: { accepted: true },
@@ -25365,11 +25559,35 @@ function CombatPage({ characters = [] }) {
               },
             }, impactEvent.level === "warning" ? "warning" : "debug");
           });
+          addLog({
+            audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+            channel: COMBAT_LOG_CHANNELS.VALIDATION,
+            eventType: canonicalMinotaurImpactAuthorization.stageCountValid
+              ? "minotaur-impact-pipeline-completed"
+              : "minotaur-impact-stage-count-invalid",
+            level: canonicalMinotaurImpactAuthorization.stageCountValid ? "info" : "error",
+            type: canonicalMinotaurImpactAuthorization.stageCountValid ? "debug" : "error",
+            actorId: stateAttacker?.id || attacker?.id,
+            targetId: defender?.id,
+            executionKey: attackActionId,
+            source: attackSource,
+            message:
+              `Minotaur impact pipeline ${canonicalMinotaurImpactAuthorization.stageCountValid ? "completed" : "invalid"}: ` +
+              `technique=${canonicalMinotaurTechniqueIntent.techniqueKey} stages=${canonicalMinotaurImpactAuthorization.events.length}`,
+            data: {
+              techniqueKey: canonicalMinotaurTechniqueIntent.techniqueKey,
+              actionSequence: initiativeActionSequenceRef.current,
+              stageCount: canonicalMinotaurImpactAuthorization.events.length,
+            },
+          }, canonicalMinotaurImpactAuthorization.stageCountValid ? "debug" : "error");
         }
 
         if (
           canonicalMinotaurTechniqueIntent?.directHpMutationAllowed === false &&
-          canonicalMinotaurImpactAuthorization?.bodilyDamagePermitted !== true
+          (
+            canonicalMinotaurImpactAuthorization?.bodilyDamagePermitted !== true ||
+            canonicalMinotaurImpactAuthorization?.stageCountValid !== true
+          )
         ) {
           addLog({
             audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
@@ -25742,7 +25960,10 @@ function CombatPage({ characters = [] }) {
         }
         if (
           canonicalMinotaurTechniqueIntent?.directHpMutationAllowed === false &&
-          canonicalMinotaurImpactAuthorization?.bodilyDamagePermitted !== true
+          (
+            canonicalMinotaurImpactAuthorization?.bodilyDamagePermitted !== true ||
+            canonicalMinotaurImpactAuthorization?.stageCountValid !== true
+          )
         ) {
           addLog({
             audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
@@ -25763,6 +25984,34 @@ function CombatPage({ characters = [] }) {
         const newHP = clampHP(startingHP - finalDamage, defender);
         applyHPToFighter(defender, newHP);
         const appliedDamage = Math.max(0, startingHP - getFighterHP(defender));
+        if (canonicalMinotaurTechniqueIntent) {
+          addLog({
+            audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+            channel: COMBAT_LOG_CHANNELS.DAMAGE,
+            eventType: "canonical-impact-damage-committed",
+            level: "info",
+            type: "debug",
+            actorId: stateAttacker?.id || attacker?.id,
+            targetId: defender?.id,
+            executionKey: attackActionId,
+            source: attackSource,
+            message:
+              `canonical impact damage committed: technique=${canonicalMinotaurTechniqueIntent.techniqueKey} ` +
+              `damage=${appliedDamage} resultingHP=${getFighterHP(defender)}`,
+            data: {
+              techniqueKey: canonicalMinotaurTechniqueIntent.techniqueKey,
+              armorContactResult,
+              injuryAuthorizationReason:
+                canonicalMinotaurImpactAuthorization?.outcome ||
+                armorContactResult?.reason ||
+                null,
+              finalDamage: appliedDamage,
+              damageType: attackData?.damageType || armorContactResult?.convertedDamageType || null,
+              hitLocation: armorContactResult?.hitLocation || preDamageImpact?.location || null,
+              resultingHP: getFighterHP(defender),
+            },
+          }, "debug");
+        }
         if (appliedDamage > 0) {
           const damageLogEvent = buildCombatDamageLogEvent({
             actor: stateAttacker,

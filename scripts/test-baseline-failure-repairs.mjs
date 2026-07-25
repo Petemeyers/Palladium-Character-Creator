@@ -42,7 +42,8 @@ const approach = runEnemyApproachPlanner({
   target: { id: "party:1" },
   planner: () => ({ type: "hold", position: null }),
 });
-assert.equal(approach.result, "no-legal-path");
+assert.equal(approach.result, "hold-position");
+assert.equal(approach.reason, "no-legal-improving-attack-hex");
 
 assert.equal(dispatchOwnedSurvivalAction({
   actor: { id: "party:1" },

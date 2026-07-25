@@ -5,8 +5,8 @@ const combatPage = fs.readFileSync("src/pages/CombatPage.jsx", "utf8");
 
 assert.match(
   combatPage,
-  /const commitAuthoritativeTurnHandoff = useCallback[\s\S]*?const isLastInitiativeSlot[\s\S]*?roundAfter = isLastInitiativeSlot \? roundBefore \+ 1 : roundBefore[\s\S]*?turnCounterAfter = turnCounterBefore \+ 1/,
-  "authoritative handoff should atomically calculate round wrap and turn counter increment.",
+  /const commitAuthoritativeTurnHandoff = useCallback[\s\S]*?endTurnRef\.current\?\.\(\{[\s\S]*?handoffToken:[\s\S]*?const committedCoordinate = createInitiativeCoordinate/,
+  "authoritative handoff should delegate the entire boundary to canonical endTurn and capture its committed coordinate.",
 );
 
 assert.match(
@@ -17,7 +17,7 @@ assert.match(
 
 assert.match(
   combatPage,
-  /const fumbleCompletionDecision = commitAuthoritativeTurnHandoff\(\{[\s\S]*?reason:\s*"fumble-handoff-owned"[\s\S]*?explicitTurnEndingEffect:\s*true/,
+  /const fumbleHandoffOwnership = createFumbleHandoffOwnership\(\{[\s\S]*?const fumbleCompletionDecision = commitAuthoritativeTurnHandoff\(\{[\s\S]*?reason:\s*"fumble-handoff-owned"[\s\S]*?handoffOwnership:\s*fumbleHandoffOwnership/,
   "natural-1 fumble should use the authoritative handoff helper.",
 );
 

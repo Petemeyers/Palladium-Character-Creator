@@ -11,6 +11,7 @@ import {
   normalizeArmorProfile,
   normalizeLongswordAttackMode,
 } from "./weaponArmorProfiles.js";
+import { resolveCanonicalArmorCoverage } from "./canonicalArmorCoverage.js";
 
 function getLocation(hitLocation) {
   if (typeof hitLocation === "string") return hitLocation;
@@ -130,6 +131,11 @@ export function resolveArmorContact({
     attackMode: mode,
     targetState: gapState,
   });
+  const canonicalCoverage = resolveCanonicalArmorCoverage({
+    defender,
+    armor: armorProfile,
+    hitLocation: location,
+  });
 
   if (total < defense && !critical) {
     return baseResult({
@@ -145,7 +151,10 @@ export function resolveArmorContact({
     });
   }
 
-  const plateCovered = isPlateCoveredLocation(armorProfile, location);
+  const plateCovered =
+    canonicalCoverage.valid &&
+    canonicalCoverage.coverageType === "plate" &&
+    isPlateCoveredLocation(armorProfile, location);
   if (!plateCovered) {
     return baseResult({
       contactType: ARMOR_CONTACT_TYPES.UNARMORED,
@@ -167,7 +176,88 @@ export function resolveArmorContact({
     });
   }
 
+  const contactProfile = String(
+    attackData?.armorContactProfile ||
+    weapon?.armorContactProfile ||
+    "",
+  ).toLowerCase();
+  const canonicalHeavyAxe =
+    attackData?.techniqueKey === "heavyAxe" ||
+    /heavy[-\s]?axe/.test(contactProfile) ||
+    /\bheavy axe\b/i.test(attackData?.name || weapon?.name || "");
+  const canonicalHeadbutt =
+    attackData?.techniqueKey === "headbutt" ||
+    contactProfile === "helmet-blunt-impact";
+  const canonicalRockSmash =
+    attackData?.techniqueKey === "rockSmash" ||
+    contactProfile === "improvised-heavy-melee";
+
+  if (plateCovered && canonicalHeavyAxe) {
+    const conditionalPenetration = Boolean(critical);
+    return baseResult({
+      contactType: conditionalPenetration
+        ? ARMOR_CONTACT_TYPES.PENETRATED_ARMOR
+        : ARMOR_CONTACT_TYPES.SOLID_PLATE,
+      hitLocation: location,
+      coverageType: ARMOR_COVERAGE_TYPES.SOLID_PLATE,
+      armorLayer: armorProfile.armorLayer,
+      attackMode: mode,
+      normalDefense: defense,
+      gapDefense,
+      gapCapable: false,
+      damageAllowed: conditionalPenetration,
+      bodilyDamageMultiplier: conditionalPenetration ? 1 : 0,
+      convertedDamageType: conditionalPenetration ? (attackData?.damageType || "slashing") : "blunt",
+      damagePrevented: !conditionalPenetration,
+      penetration: conditionalPenetration,
+      mayStagger: true,
+      mayKnockDown: critical,
+      reason: conditionalPenetration
+        ? "heavy-axe-conditional-plate-penetration"
+        : "heavy-axe-deflection-denting-or-blunt-transfer",
+      criticalArmorImpact: Boolean(critical),
+    });
+  }
+
+  if (plateCovered && (canonicalHeadbutt || canonicalRockSmash)) {
+    return baseResult({
+      contactType: ARMOR_CONTACT_TYPES.BLUNT_THROUGH_ARMOR,
+      hitLocation: location,
+      coverageType: ARMOR_COVERAGE_TYPES.SOLID_PLATE,
+      armorLayer: armorProfile.armorLayer,
+      attackMode: mode,
+      normalDefense: defense,
+      gapDefense,
+      gapCapable: false,
+      damageAllowed: false,
+      bodilyDamageMultiplier: 0,
+      convertedDamageType: "bludgeoning",
+      damagePrevented: true,
+      mayStagger: true,
+      mayKnockDown: critical || location === "legs",
+      mayCauseUnconsciousness: location === "head" && critical,
+      reason: canonicalHeadbutt
+        ? "headbutt-blunt-impact-on-plate"
+        : "rock-smash-blunt-impact-on-plate",
+      criticalArmorImpact: Boolean(critical),
+    });
+  }
+
   if (!isLongswordWeapon(weapon || attackData) && !weaponTraits?.armorContactResolverRequired) {
+    if (canonicalCoverage.armorClass === "plate" && canonicalCoverage.coverageType === "plate") {
+      return baseResult({
+        contactType: ARMOR_CONTACT_TYPES.SOLID_PLATE,
+        hitLocation: location,
+        coverageType: ARMOR_COVERAGE_TYPES.SOLID_PLATE,
+        armorLayer: armorProfile.armorLayer,
+        attackMode: mode,
+        normalDefense: defense,
+        gapDefense,
+        gapCapable,
+        damagePrevented: true,
+        reason: "canonical-plate-contact-profile-required",
+      });
+    }
     return baseResult({
       contactType: ARMOR_CONTACT_TYPES.PENETRATED_ARMOR,
       hitLocation: location,

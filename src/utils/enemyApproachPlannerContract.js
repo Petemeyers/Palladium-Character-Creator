@@ -47,14 +47,18 @@ export function runEnemyApproachPlanner({
       result: destination
         ? "movement-selected"
         : plan?.type === "hold"
-          ? "no-legal-path"
+          ? "hold-position"
           : "already-in-legal-range",
       destination,
       afterDistance,
       enteredRange: plan?.enteredRange === true,
       tacticalPositionImproved: normalizedBefore !== null && afterDistance !== null &&
         afterDistance < normalizedBefore,
-      reason: plan?.invalidReason || null,
+      reason: plan?.type === "hold"
+        ? plan?.invalidReason || "no-legal-improving-attack-hex"
+        : plan?.invalidReason || null,
+      positionChanged: Boolean(destination),
+      staminaSpent: 0,
       plan,
     };
   } catch (error) {

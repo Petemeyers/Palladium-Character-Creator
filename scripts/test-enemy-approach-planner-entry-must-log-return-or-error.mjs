@@ -35,10 +35,9 @@ assert.equal(moved.enteredRange, true);
 assert.equal(moved.tacticalPositionImproved, true);
 assert.equal(moved.executionKey, "move:1");
 
-assert.equal(
-  runEnemyApproachPlanner({ ...base, planner: () => ({ type: "hold", position: null }) }).result,
-  "no-legal-path",
-);
+const held = runEnemyApproachPlanner({ ...base, planner: () => ({ type: "hold", position: null }) });
+assert.equal(held.result, "hold-position");
+assert.equal(held.reason, "no-legal-improving-attack-hex");
 assert.equal(runEnemyApproachPlanner({ ...base, actor: null, planner: () => null }).reason, "actor-invalid");
 assert.equal(runEnemyApproachPlanner({ ...base, target: null, planner: () => null }).reason, "target-invalid");
 assert.equal(runEnemyApproachPlanner({ ...base, authorityAccepted: false, planner: () => null }).reason, "stale-authority");

@@ -1,6 +1,16 @@
 const num = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
 const key = (value) => String(value || "").trim().toLowerCase();
 
+export function isCanonicalMinotaurActor(actor = {}) {
+  return [
+    actor.actorKey,
+    actor.modelKey,
+    actor.catalogKey,
+    actor.species,
+    actor.name,
+  ].some((value) => key(value) === "minotaur");
+}
+
 export const MINOTAUR_TECHNIQUES = Object.freeze({
   heavyAxe: { deliveryMethod: "manufactured-melee", resolverRoute: "standard-weapon-impact", contactSurface: "axe-edge-or-haft", recoveryOnCommittedMiss: true },
   gore: { deliveryMethod: "natural-thrust", resolverRoute: "standard-natural-impact", contactSurface: "horn-point", mayEstablish: "horn-engagement" },

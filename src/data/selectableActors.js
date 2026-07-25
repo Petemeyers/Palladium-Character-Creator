@@ -371,7 +371,7 @@ export const SELECTABLE_ACTORS = [
     },
     armorProfile: { category: "medium natural armor", weightClass: "medium" },
     attacks: [
-      melee("Heavy Axe", "2d8+4", { reach: 10, lengthFt: 6, damageType: "slashing", techniqueKey: "heavyAxe", resolverRoute: "standard-weapon-impact" }),
+      melee("Heavy Axe", "2d8+4", { reach: 10, lengthFt: 6, damageType: "slashing", techniqueKey: "heavyAxe", resolverRoute: "standard-weapon-impact", armorContactProfile: "heavy-axe-edge-or-haft" }),
       melee("Charging Gore", "2d6+4", { damageType: "piercing", chargeOnly: true, minimumStraightLineFeet: 15, requiresOpenMelee: true, techniqueKey: "chargingGore", resolverRoute: "movement-collision-impact" }),
       melee("Headbutt", "2d6+4", { damageType: "bludgeoning", usableInClose: true, usableInClinch: true, naturalWeapon: true, techniqueKey: "headbutt", resolverRoute: "standard-natural-impact" }),
       melee("Horn Hook", "2d6+4", { damageType: "piercing", usableInClose: true, usableInClinch: true, naturalWeapon: true, techniqueKey: "hornHook", prerequisite: "horn-engagement", resolverRoute: "canonical-grapple-control" }),
