@@ -1,6 +1,7 @@
 import { getCanonicalCombatActorDefinition } from "../../data/canonicalCombatActors.js";
 import { hasAlignmentBehaviorMapping } from "../behavior/normalizeAlignmentBehavior.js";
 import { normalizeReferenceCombatActor, resolveCanonicalCombatActorKey } from "./normalizeCombatActorSchema.js";
+import { getNaturalAttackAnatomyRejection, isCanonicalNaturalAttack, NATURAL_ATTACK_MANUFACTURED_FIELDS } from "./canonicalNaturalAttacks.js";
 
 const text = (value) => String(value || "").trim().toLowerCase();
 const idOf = (item = {}) => item.profileKey || item.weaponId || item.id || item.name || null;
@@ -16,6 +17,7 @@ export function validateCombatActor(actor = {}, { comparisonActor = null, emitDi
   const normalizedResult = normalize ? normalizeReferenceCombatActor(actor, { source: "validator" }) : { normalizedActor: actor, compatibilityFallbacks: [] };
   const normalizedActor = normalizedResult.normalizedActor;
   const identityActor = canonical ? actor : normalizedActor;
+  const canonicalAnimal = text(normalizedActor.creatureType) === "animal";
   compatibilityFallbacks.push(...normalizedResult.compatibilityFallbacks);
   const pushError = (code, message, eventType = "combat-actor-validation-failed") => errors.push({ code, message, eventType });
   const pushWarning = (code, message, eventType = "combat-actor-validation-warning") => warnings.push({ code, message, eventType });
@@ -28,6 +30,15 @@ export function validateCombatActor(actor = {}, { comparisonActor = null, emitDi
   if (Number(normalizedActor.combatActorSchemaVersion) === 1 && text(normalizedActor.creatureType) === "humanoid" && !normalizedActor.actorKey) {
     pushError("migrated-humanoid-missing-actor-key", "Schema-version-one humanoid requires a canonical actorKey.", "combat-actor-identity-contradiction");
   }
+  if (Number(normalizedActor.combatActorSchemaVersion) === 1 && canonicalAnimal && !normalizedActor.actorKey) pushError("animal-missing-actor-key", "Schema-version-one animal requires a canonical actorKey.", "animal-canonical-identity-missing");
+  if (canonicalAnimal && !normalizedActor.species) pushError("animal-missing-species", "Canonical animal requires an explicit species.", "animal-canonical-identity-missing");
+  if (canonicalAnimal && !normalizedActor.anatomyProfile) pushError("animal-missing-anatomy-profile", "Canonical animal requires an anatomy profile.", "animal-anatomy-invalid");
+  if (canonicalAnimal && normalizedActor.movement?.canFly === true) pushError("ground-animal-flying-movement", "Phase 3C2A ground animals cannot carry flying movement.", "animal-movement-invalid");
+  if (canonicalAnimal && (normalizedActor.rider || normalizedActor.riderId || normalizedActor.mounted || normalizedActor.barding || normalizedActor.armorProfile?.barding === true)) pushError("ground-animal-mounted-state", "Phase 3C2A animals cannot carry rider, mounted, or barding state.", "animal-mounted-state-invalid");
+  if (canonicalAnimal && (normalizedActor.heldItems?.mainHand || normalizedActor.heldItems?.offHand)) pushError("animal-holding-manufactured-weapon", "Ordinary animals cannot hold manufactured weapons.", "natural-attack-manufactured-metadata");
+  if (canonicalAnimal && (normalizedActor.ammunitionState || (normalizedActor.ammunition || []).length)) pushError("animal-carrying-ammunition", "Ordinary animals cannot carry ammunition.", "natural-attack-manufactured-metadata");
+  if (canonicalAnimal && normalizedActor.surrenderProfile?.opensHumanoidDecisionPanel === true) pushError("animal-using-humanoid-surrender-panel", "Ordinary animals cannot open the humanoid surrender panel.", "animal-invalid-humanoid-surrender-blocked");
+  if (canonicalAnimal && normalizedActor.alignment) pushError("animal-species-moral-alignment", "Ordinary animal behavior cannot be derived from moral alignment.", "animal-alignment-authority-invalid");
   if (canonical && actor.species && text(actor.species) !== text(canonical.species)) pushError("species-identity-contradiction", `${actor.species} contradicts ${canonical.species}.`, "combat-actor-identity-contradiction");
   if (canonical && actor.creatureType && text(actor.creatureType) !== text(canonical.creatureType)) pushError("creature-type-identity-contradiction", `${actor.creatureType} contradicts ${canonical.creatureType}.`, "combat-actor-identity-contradiction");
   if (canonical && Array.isArray(actor.tags)) {
@@ -51,10 +62,20 @@ export function validateCombatActor(actor = {}, { comparisonActor = null, emitDi
   if (mainHand && readyWeapon && mainHand !== readyWeapon && !(identityActor.combatWeaponState || normalizedActor.combatWeaponState)?.lastTransitionReason) pushError("held-ready-weapon-contradiction", "Held and ready weapon differ without a transition reason.", "combat-actor-weapon-profile-contradiction");
   profiles.forEach((profile) => {
     if ((profile.twoHanded || profile.requiresTwoHands || Number(profile.handsRequired) === 2) && text(profile.handedness || profile.category) === "one-handed") pushError("two-handed-marked-one-handed", `${profile.name} has contradictory handedness.`, "combat-actor-weapon-profile-contradiction");
-    if (profile.isNaturalAttack || profile.naturalWeapon) {
-      if (profile.sourceWeaponId || profile.sourceWeaponName || profile.manufacturedWeapon === true) pushError("natural-manufactured-metadata", `${profile.name} inherits manufactured weapon metadata.`, "combat-actor-weapon-profile-contradiction");
-    }
     const deliveryType = text(profile.deliveryType);
+    if (isCanonicalNaturalAttack(profile)) {
+      if (canonicalAnimal) {
+        const manufacturedFields = NATURAL_ATTACK_MANUFACTURED_FIELDS.filter((field) => profile[field] !== undefined && profile[field] !== null && profile[field] !== false && profile[field] !== 0 && profile[field] !== "none");
+        if (profile.manufacturedWeapon === true || manufacturedFields.length) pushError("natural-manufactured-metadata", `${profile.name} inherits manufactured weapon metadata: ${manufacturedFields.join(", ") || "manufacturedWeapon"}.`, "natural-attack-manufactured-metadata");
+        const anatomyReason = getNaturalAttackAnatomyRejection(normalizedActor, profile);
+        if (anatomyReason) pushError("natural-attack-invalid-anatomy", `${profile.name} is unavailable: ${anatomyReason}.`, "animal-anatomy-invalid");
+        if (!profile.anatomySource) pushError("natural-attack-missing-anatomy-source", `${profile.name} lacks anatomySource.`, "animal-anatomy-invalid");
+        if (deliveryType === "projectile" || text(profile.resolverRoute).includes("projectile")) pushError("natural-attack-projectile-routing", `${profile.name} cannot use projectile routing.`, "natural-attack-manufactured-metadata");
+        if (text(profile.naturalWeaponType) === "pounce" && !(profile.prerequisites || []).length) pushError("pounce-missing-prerequisite", `${profile.name} requires an explicit prerequisite.`, "animal-anatomy-invalid");
+      } else if (profile.sourceWeaponId || profile.sourceWeaponName || profile.manufacturedWeapon === true) {
+        pushError("natural-manufactured-metadata", `${profile.name} inherits manufactured weapon metadata.`, "combat-actor-weapon-profile-contradiction");
+      }
+    }
     const normalRange = Number(profile.normalRangeFeet ?? profile.rangeProfile?.normal);
     const longRange = Number(profile.longRangeFeet ?? profile.rangeProfile?.long);
     const minimumReach = Number(profile.minimumEffectiveReachFeet);
@@ -105,7 +126,7 @@ export function validateCombatActor(actor = {}, { comparisonActor = null, emitDi
   const retainedId = normalizedActor.combatWeaponState?.retainedWeaponId;
   if (retainedId && !inventory.some((item) => idOf(item) === retainedId) && !profiles.some((item) => idOf(item) === retainedId)) pushError("retained-weapon-unavailable", "Retained weapon is unavailable for grapple cleanup.", "combat-actor-weapon-profile-contradiction");
   if (normalizedActor.equippedArmor && Object.keys(normalizedActor.equippedArmor).length > 0 && (!normalizedActor.armorProfile || Object.keys(normalizedActor.armorProfile).length === 0)) pushError("missing-armor-profile", "Equipped armor has no armor profile.");
-  if (normalizedActor.armorProfile && Object.keys(normalizedActor.armorProfile).length > 0 && (!normalizedActor.equippedArmor || Object.keys(normalizedActor.equippedArmor).length === 0)) pushWarning("armor-profile-without-equipped-armor", "Armor profile exists without an equipped armor item.");
+  if (!canonicalAnimal && normalizedActor.armorProfile && Object.keys(normalizedActor.armorProfile).length > 0 && (!normalizedActor.equippedArmor || Object.keys(normalizedActor.equippedArmor).length === 0)) pushWarning("armor-profile-without-equipped-armor", "Armor profile exists without an equipped armor item.");
   const equipment = Array.isArray(normalizedActor.equipment) ? normalizedActor.equipment : [];
   const armorItems = equipment.filter((item) => text(item.type) === "armor");
   if (armorItems.length && !normalizedActor.armorProfile?.profileKey) pushError("armor-item-without-armor-profile", "Equipped armor item has no canonical armor profile.");
@@ -122,10 +143,10 @@ export function validateCombatActor(actor = {}, { comparisonActor = null, emitDi
   const durabilityValues = values(normalizedActor.equippedArmor?.armorDurability, normalizedActor.equippedArmor?.durability, normalizedActor.armorProfile?.armorDurability, normalizedActor.armorProfile?.durability);
   if (durabilityValues.some((value) => value < 0)) pushError("negative-armor-durability", "Armor durability cannot be negative.");
   if (new Set(durabilityValues).size > 1) pushWarning("duplicate-armor-durability-authority", "Armor durability authorities disagree.");
-  if (!hasAlignmentBehaviorMapping(normalizedActor.alignment)) pushWarning("alignment-mapping-missing", `No behavior mapping for ${normalizedActor.alignment || "empty alignment"}.`, "combat-actor-alignment-mapping-missing");
+  if (!canonicalAnimal && !hasAlignmentBehaviorMapping(normalizedActor.alignment)) pushWarning("alignment-mapping-missing", `No behavior mapping for ${normalizedActor.alignment || "empty alignment"}.`, "combat-actor-alignment-mapping-missing");
   if (normalizedActor.surrenderProfile?.mayOfferSurrender && !normalizedActor.surrenderProfile?.behaviorProfile) pushWarning("missing-surrender-profile", "Surrender-capable actor lacks behavior profile.");
-  if (canonical && !normalizedActor.surrenderProfile) pushError("surrender-capable-actor-missing-surrender-profile", "Canonical humanoid lacks a surrender profile.");
-  if (canonical && !normalizedActor.grappleProfile) pushError("grapple-profile-absent", "Canonical humanoid lacks a grapple profile.");
+  if (canonical && !normalizedActor.surrenderProfile) pushError("surrender-capable-actor-missing-surrender-profile", "Canonical actor lacks a surrender profile.");
+  if (canonical && !normalizedActor.grappleProfile) pushError("grapple-profile-absent", "Canonical actor lacks a grapple profile.");
   const staminaValues = values(actor.currentStamina, actor.currentstamina, actor.stamina, actor.combatStamina?.current, actor.combatStamina?.currentStamina);
   if (new Set(staminaValues).size > 1) pushWarning("stamina-authority-contradiction", "Legacy stamina aliases disagree with combatStamina.");
   const hpValues = values(actor.currentHP, actor.currentHp, actor.hp, actor.HP);
@@ -136,7 +157,7 @@ export function validateCombatActor(actor = {}, { comparisonActor = null, emitDi
       if (text(other[field]) !== text(normalizedActor[field])) pushError("public-compatibility-divergence", `Public and compatibility ${field} differ.`, "combat-actor-identity-contradiction");
     }
     if (JSON.stringify(other.weaponProfiles) !== JSON.stringify(normalizedActor.weaponProfiles)) pushError("public-compatibility-weapon-divergence", "Public and compatibility weapon profiles differ.", "combat-actor-weapon-profile-contradiction");
-    for (const field of ["armorProfile", "heldItems", "grappleProfile", "surrenderProfile", "alignment"]) {
+    for (const field of ["armorProfile", "heldItems", "grappleProfile", "surrenderProfile", "alignment", "anatomyProfile", "naturalAttackProfiles"]) {
       if (JSON.stringify(other[field]) !== JSON.stringify(normalizedActor[field])) pushError("public-compatibility-schema-divergence", `Public and compatibility ${field} differ.`, "combat-actor-identity-contradiction");
     }
   }
@@ -145,6 +166,7 @@ export function validateCombatActor(actor = {}, { comparisonActor = null, emitDi
     ...errors.map((entry) => ({ eventType: entry.eventType, level: "error", actorId: normalizedActor.id, data: entry })),
     ...warnings.map((entry) => ({ eventType: entry.eventType, level: "warning", actorId: normalizedActor.id, data: entry })),
     ...compatibilityFallbacks.map((fallback) => ({ eventType: "combat-actor-compatibility-fallback-used", level: "warning", actorId: normalizedActor.id, data: { fallback } })),
+    ...(canonicalAnimal ? [{ eventType: "animal-anatomy-validated", level: "info", actorId: normalizedActor.id, data: { actorKey: normalizedActor.actorKey, bodyPlan: normalizedActor.anatomyProfile?.bodyPlan } }] : []),
     { eventType: "combat-actor-schema-normalized", level: "info", actorId: normalizedActor.id, data: { actorKey: normalizedActor.actorKey, schemaVersion: normalizedActor.combatActorSchemaVersion } },
   ];
   diagnostics.forEach((entry) => emitDiagnostic?.(entry));

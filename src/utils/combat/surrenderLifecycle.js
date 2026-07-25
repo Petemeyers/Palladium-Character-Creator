@@ -101,6 +101,18 @@ export function createCanonicalSurrenderOffer({
   const offeredById = idOf(surrenderingActor);
   const offeredToId = idOf(receivingActor);
   if (!registry?.records || !offeredById || !offeredToId || !reason) return { accepted: false, reason: "invalid-surrender-offer-identity", events: [] };
+  if (String(surrenderingActor?.creatureType || "").toLowerCase() === "animal" && surrenderingActor?.surrenderProfile?.opensHumanoidDecisionPanel !== true) {
+    return {
+      accepted: false,
+      reason: "animal-humanoid-surrender-not-supported",
+      events: [{
+        eventType: "animal-invalid-humanoid-surrender-blocked",
+        actorId: offeredById,
+        targetId: offeredToId,
+        data: { reason: "animal-humanoid-surrender-not-supported", source },
+      }],
+    };
+  }
   const duplicate = Array.from(registry.records.values()).find((record) => record.offeredById === offeredById && record.offeredToId === offeredToId && unresolved.has(record.status));
   if (duplicate) return { accepted: false, reason: "duplicate-unresolved-surrender-offer", record: duplicate, events: [event("surrender-offer-duplicate-rejected", duplicate)] };
   let resolvedSequence = Number.isInteger(sequence) && sequence > 0 ? sequence : ++registry.offerSequence;

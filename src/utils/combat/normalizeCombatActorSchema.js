@@ -108,7 +108,7 @@ function resolveCanonicalLoadout(actor, definition) {
 }
 
 export function normalizeReferenceCombatActor(actor = {}, { source = "combat-start", emitDiagnostic = null, lifecyclePhase = "combat-start" } = {}) {
-  const forbiddenLifecyclePhases = new Set(["attack-resolution", "damage-application", "grapple-resolution", "movement-commit", "action-continuation", "surrender-decision-commit"]);
+  const forbiddenLifecyclePhases = new Set(["attack-resolution", "damage-application", "grapple-resolution", "movement-commit", "action-continuation", "continuation-admission", "survival-action-commit", "surrender-decision-commit", "turn-handoff"]);
   if (forbiddenLifecyclePhases.has(keyText(lifecyclePhase))) {
     const diagnostic = {
       eventType: "combat-actor-normalization-during-owned-action-blocked",
@@ -121,8 +121,11 @@ export function normalizeReferenceCombatActor(actor = {}, { source = "combat-sta
   }
   const resolution = resolveCanonicalCombatActorKey(actor);
   if (!resolution.actorKey) {
+    const animalLike = keyText(actor.creatureType || actor.category) === "animal" || keyText(actor.creatureType) === "beast";
     const diagnostic = {
-      eventType: resolution.ambiguous ? "combat-actor-canonical-identity-ambiguous" : "combat-actor-canonical-identity-missing",
+      eventType: animalLike
+        ? (resolution.ambiguous ? "animal-canonical-identity-ambiguous" : "animal-canonical-identity-missing")
+        : (resolution.ambiguous ? "combat-actor-canonical-identity-ambiguous" : "combat-actor-canonical-identity-missing"),
       level: "warning",
       actorId: actor.id ?? actor._id ?? null,
       data: { source, matches: resolution.matches || [] },
@@ -131,6 +134,7 @@ export function normalizeReferenceCombatActor(actor = {}, { source = "combat-sta
     return { normalizedActor: { ...actor }, diagnostics: [diagnostic], compatibilityFallbacks: [] };
   }
   const definition = clone(getCanonicalCombatActorDefinition(resolution.actorKey));
+  const canonicalAnimal = keyText(definition.creatureType) === "animal";
   const canonicalLoadout = resolveCanonicalLoadout(actor, definition);
   const currentHp = explicitNumber(actor.currentHP, actor.currentHp, actor.hp, actor.HP, definition.currentHP, definition.derivedStats.hp);
   const maxHp = explicitNumber(actor.maxHP, actor.maxHp, definition.derivedStats.maxHp, currentHp);
@@ -163,6 +167,9 @@ export function normalizeReferenceCombatActor(actor = {}, { source = "combat-sta
     initiativeTurnId: actor.initiativeTurnId, actionToken: actor.actionToken, initiativeIdentity: clone(actor.initiativeIdentity),
     remainingActions: actor.remainingActions ?? definition.actionsPerRound,
     ammunitionState: clone(actor.ammunitionState),
+    currentTarget: clone(actor.currentTarget), targetId: actor.targetId,
+    moraleState: clone(actor.moraleState), survivalState: clone(actor.survivalState),
+    statusEffects: clone(actor.statusEffects), injuryState: clone(actor.injuryState),
   };
   const normalizedActor = {
     ...definition,
@@ -178,19 +185,29 @@ export function normalizeReferenceCombatActor(actor = {}, { source = "combat-sta
     traitKeys: [...definition.traitKeys],
     traits: [...definition.traits],
     attributes: { ...definition.attributes },
-    abilityScores: { ...definition.abilityScores },
+    abilityScores: {
+      ...definition.abilityScores,
+      str: definition.abilityScores?.strength ?? definition.abilityScores?.str,
+      dex: definition.abilityScores?.dexterity ?? definition.abilityScores?.dex,
+      con: definition.abilityScores?.constitution ?? definition.abilityScores?.con,
+      int: definition.abilityScores?.intelligence ?? definition.abilityScores?.int,
+      wis: definition.abilityScores?.wisdom ?? definition.abilityScores?.wis,
+      cha: definition.abilityScores?.charisma ?? definition.abilityScores?.cha,
+    },
     movementModes: [...definition.movementModes],
     movement: clone(definition.movement),
     movementSpeed: definition.movement.ground,
     speed: definition.movement.ground,
     derivedStats: { ...definition.derivedStats, hp: currentHp, maxHp, maxHP: maxHp },
-    inventory: clone([...canonicalLoadout.profiles, ...definition.equipment.filter((item) => !looksLikeWeapon(item))]),
-    equipment: clone([...canonicalLoadout.profiles, ...definition.equipment.filter((item) => !looksLikeWeapon(item))]),
+    inventory: clone(canonicalAnimal ? definition.inventory : [...canonicalLoadout.profiles, ...definition.equipment.filter((item) => !looksLikeWeapon(item))]),
+    equipment: clone(canonicalAnimal ? definition.equipment : [...canonicalLoadout.profiles, ...definition.equipment.filter((item) => !looksLikeWeapon(item))]),
     equippedArmor: clone(definition.equippedArmor),
     wornArmor: clone(definition.wornArmor || definition.equippedArmor),
     equippedShield: clone(definition.equippedShield),
     armorProfile: clone(definition.armorProfile),
-    heldItems: { ...clone(definition.heldItems), mainHand: canonicalLoadout.profiles[0]?.profileKey || definition.heldItems?.mainHand || null },
+    heldItems: canonicalAnimal
+      ? clone(definition.heldItems)
+      : { ...clone(definition.heldItems), mainHand: canonicalLoadout.profiles[0]?.profileKey || definition.heldItems?.mainHand || null },
     loadoutKey: resolvedLoadoutKey,
     defaultLoadoutKey: definition.defaultLoadoutKey || definition.loadoutKey || "default",
     loadouts: selectedLoadoutAccepted
@@ -198,6 +215,12 @@ export function normalizeReferenceCombatActor(actor = {}, { source = "combat-sta
       : clone(definition.loadouts),
     attacks: clone(canonicalLoadout.profiles),
     weaponProfiles: clone(canonicalLoadout.profiles),
+    naturalAttackProfiles: clone(definition.naturalAttackProfiles || []),
+    anatomyProfile: clone(definition.anatomyProfile),
+    defenseProfile: clone(definition.defenseProfile),
+    survivalProfile: clone(definition.survivalProfile),
+    tacticalProfile: clone(definition.tacticalProfile),
+    ecologyTags: clone(definition.ecologyTags || []),
     equistaminadWeapons: clone(canonicalLoadout.profiles.filter((profile) => profile.naturalWeapon !== true)),
     grappleProfile: clone(definition.grappleProfile),
     moraleProfile: clone(definition.moraleProfile),
@@ -208,10 +231,10 @@ export function normalizeReferenceCombatActor(actor = {}, { source = "combat-sta
       canonicalLoadout.profiles.find((profile) => profile.deliveryType === "projectile"),
     ),
     rangedTacticalProfile: clone(definition.rangedTacticalProfile),
-    behavior: { ...definition.behavior, ...(alignmentBehavior || {}) },
-    behaviorProfile: alignmentBehavior,
-    alignment: alignmentBehavior?.alignmentKey || actor.alignment || definition.alignment,
-    alignmentName: alignmentBehavior?.alignmentName || actor.alignmentName || definition.alignmentName,
+    behavior: canonicalAnimal ? { ...definition.behavior, ...(actor.behavior || {}) } : { ...definition.behavior, ...(alignmentBehavior || {}) },
+    behaviorProfile: canonicalAnimal ? null : alignmentBehavior,
+    alignment: canonicalAnimal ? null : (alignmentBehavior?.alignmentKey || actor.alignment || definition.alignment),
+    alignmentName: canonicalAnimal ? "Unaligned" : (alignmentBehavior?.alignmentName || actor.alignmentName || definition.alignmentName),
     schemaNormalizedAt: source,
     migrationMetadata: {
       ...(actor.migrationMetadata || {}),
@@ -236,7 +259,7 @@ export function normalizeReferenceCombatActor(actor = {}, { source = "combat-sta
   }
   if (!normalizedActor.combatWeaponState) {
     normalizedActor.combatWeaponState = {
-      readyWeaponId: canonicalLoadout.profiles[0]?.profileKey || definition.heldItems.mainHand,
+      readyWeaponId: canonicalAnimal ? null : (canonicalLoadout.profiles[0]?.profileKey || definition.heldItems.mainHand),
       retainedWeaponId: null,
       retainedWeaponDisposition: null,
       clinchWeaponId: null,
@@ -257,8 +280,24 @@ export function normalizeReferenceCombatActor(actor = {}, { source = "combat-sta
     actorId: runtimeId,
     data: { actorKey: definition.actorKey, schemaVersion: 1, source },
   }];
+  if (canonicalAnimal) diagnostics.push({
+    eventType: "animal-canonical-identity-resolved",
+    level: "info",
+    actorId: runtimeId,
+    data: { actorKey: definition.actorKey, identityField: resolution.identityField, source },
+  }, {
+    eventType: "animal-anatomy-validated",
+    level: "info",
+    actorId: runtimeId,
+    data: { actorKey: definition.actorKey, bodyPlan: definition.anatomyProfile?.bodyPlan, source },
+  }, ...(definition.naturalAttackProfiles || []).map((profile) => ({
+    eventType: "natural-attack-profile-resolved",
+    level: "info",
+    actorId: runtimeId,
+    data: { actorKey: definition.actorKey, attackKey: profile.attackKey, profileKey: profile.profileKey, source },
+  })));
   if (resolution.aliasUsed) diagnostics.push({
-    eventType: "combat-actor-migration-alias-used",
+    eventType: canonicalAnimal ? "animal-migration-alias-used" : "combat-actor-migration-alias-used",
     level: "info",
     actorId: runtimeId,
     data: { actorKey: definition.actorKey, alias: resolution.alias, identityField: resolution.identityField, source },

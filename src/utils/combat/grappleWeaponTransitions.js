@@ -1,5 +1,6 @@
 import { createClinchWeaponProfile, isDaggerLikeWeapon } from "./clinchWeaponProfiles.js";
 import { hasSufficientGroundControl } from "./exhaustionCollapseState.js";
+import { isCanonicalNaturalAttack } from "./canonicalNaturalAttacks.js";
 
 const asArray = (value) => Array.isArray(value) ? value.filter(Boolean) : [];
 
@@ -108,16 +109,16 @@ export function resolveGrappleWeaponDisposition({
     lastTransitionRound: round,
     lastTransitionTurn: turn ?? initiativeTurnId,
   };
-  if (!weapon || !weaponId || weapon.isFallbackUnarmed === true) {
+  if (!weapon || !weaponId || weapon.isFallbackUnarmed === true || isCanonicalNaturalAttack(weapon)) {
     const combatWeaponState = {
       ...prior,
       readyWeaponId: null,
       retainedWeaponId: null,
       retainedWeaponDisposition: null,
-      lastTransitionReason: "grapple-commitment-unarmed",
+      lastTransitionReason: isCanonicalNaturalAttack(weapon) ? "grapple-commitment-natural-attacks-retained" : "grapple-commitment-unarmed",
       ...transitionBase,
     };
-    return { disposition: "unarmed", retainedWeaponId: null, droppedWeaponId: null, droppedItemRecord: null, clinchWeaponReady: false, combatWeaponState };
+    return { disposition: isCanonicalNaturalAttack(weapon) ? "natural-attacks-retained" : "unarmed", retainedWeaponId: null, droppedWeaponId: null, droppedItemRecord: null, clinchWeaponReady: false, combatWeaponState };
   }
   if (isMetadataTwoHandedWeapon(weapon)) {
     const droppedItemRecord = createDroppedBattlefieldWeapon({ fighter, weapon, position, round, turn, actionToken, dropReason: "grapple-commitment-two-handed" });

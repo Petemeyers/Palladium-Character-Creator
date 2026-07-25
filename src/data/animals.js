@@ -10,7 +10,7 @@ export const allowedAnimals = [
   "Falcon",
 ];
 
-export const animals = [
+const legacyAnimals = [
   {
     id: "warhorse",
     name: "Warhorse",
@@ -142,4 +142,26 @@ export const animals = [
   },
 ];
 
+export const animals = legacyAnimals.map((entry) => {
+  const canonical = getCanonicalCombatActorDefinition(entry.id);
+  if (!canonical) return entry;
+  return {
+    ...entry,
+    ...canonical,
+    compatibilityId: entry.id,
+    sourceActorKey: canonical.actorKey,
+    canonicalActorKey: canonical.actorKey,
+    pickerId: entry.id,
+    legacyAnimalProfile: {
+      HP: entry.HP,
+      guardRating: entry.guardRating,
+      speed: entry.speed,
+      attacks: entry.attacks.map((attack) => ({ ...attack })),
+    },
+    visual: { ...(entry.visual || {}), ...(canonical.visual || {}) },
+    footprint: { ...(entry.footprint || {}) },
+  };
+});
+
 export default animals;
+import { getCanonicalCombatActorDefinition } from "./canonicalCombatActors.js";

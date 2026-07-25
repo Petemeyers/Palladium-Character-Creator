@@ -1,6 +1,7 @@
 import { addOriginalActorMetadata } from "./originalActorMetadata.js";
 import { ensureKnightCloseWeaponLoadout } from "./knightLoadout.js";
 import { normalizeReferenceCombatActor } from "./combat/normalizeCombatActorSchema.js";
+import { isCanonicalNaturalAttack, sanitizeCanonicalNaturalAttack } from "./combat/canonicalNaturalAttacks.js";
 
 const hasValue = (value) => value !== undefined && value !== null && value !== "";
 
@@ -23,7 +24,8 @@ const normalizeAttack = (attack = {}) => {
     attack.weaponLengthFt ??
     reach
   );
-  return {
+  const normalized = {
+    ...attack,
     name: String(attack.name || "Unnamed attack"),
     kind: ranged ? "ranged" : "melee",
     attackType: ranged ? "ranged" : "melee",
@@ -50,6 +52,7 @@ const normalizeAttack = (attack = {}) => {
     naturalWeapon: attack.naturalWeapon === true,
     isNaturalAttack: attack.isNaturalAttack === true || attack.naturalWeapon === true,
   };
+  return isCanonicalNaturalAttack(normalized) ? sanitizeCanonicalNaturalAttack(normalized) : normalized;
 };
 
 export function adaptSelectableActorToCombatant(actor = {}, options = {}) {
@@ -157,7 +160,7 @@ export function adaptSelectableActorToCombatant(actor = {}, options = {}) {
     equippedShield: cloneObject(actor.equippedShield),
     armorProfile: cloneObject(actor.armorProfile),
     attacks,
-    equistaminadWeapons: attacks.map((attack, index) => ({
+    equistaminadWeapons: attacks.filter((attack) => !isCanonicalNaturalAttack(attack)).map((attack, index) => ({
       ...attack,
       slot: index === 0 ? "Right Hand" : "Left Hand",
     })),

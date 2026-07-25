@@ -321,6 +321,190 @@ const buildOrdinaryHumanoid = ({
   aiRole,
 });
 
+const animalNatural = (attackKey, displayName, damageDice, damageType, naturalWeaponType, anatomySource, extra = {}) => Object.freeze({
+  id: `natural.${attackKey}`,
+  profileKey: `natural.${attackKey}`,
+  attackKey,
+  name: displayName,
+  displayName,
+  type: "melee",
+  kind: "melee",
+  attackType: "melee",
+  deliveryType: "natural",
+  naturalWeaponType,
+  anatomySource,
+  damage: damageDice,
+  damageDice,
+  damageType,
+  damageModifierSource: "profile",
+  attackBonusSource: "actor-and-profile",
+  reach: 5,
+  reachFeet: 5,
+  minimumReachFeet: 0,
+  contactSurface: naturalWeaponType,
+  armorContactProfile: `natural-${naturalWeaponType}`,
+  grappleCompatibility: "anatomy-dependent",
+  groundedCompatibility: "anatomy-dependent",
+  requiresMovement: false,
+  prerequisites: [],
+  actionCost: 1,
+  turnEnding: false,
+  traits: [],
+  naturalWeapon: true,
+  isNaturalAttack: true,
+  manufacturedWeapon: false,
+  isMelee: true,
+  isRanged: false,
+  resolverRoute: "standard-natural-impact",
+  droppable: false,
+  lootable: false,
+  ...extra,
+});
+
+const animalAnatomy = ({
+  primaryNaturalWeapons,
+  secondaryNaturalWeapons = [],
+  mouthAvailable = false,
+  tailPresent = false,
+  hornsPresent = false,
+  tusksPresent = false,
+  hoovesPresent = false,
+  clawsPresent = false,
+}) => Object.freeze({
+  bodyPlan: "quadruped",
+  locomotionLimbs: ["front-left", "front-right", "rear-left", "rear-right"],
+  manipulationLimbs: [],
+  primaryNaturalWeapons,
+  secondaryNaturalWeapons,
+  mouthAvailable,
+  tailPresent,
+  hornsPresent,
+  tusksPresent,
+  hoovesPresent,
+  clawsPresent,
+  canStandBipedally: false,
+});
+
+const buildOrdinaryGroundAnimal = ({
+  actorKey,
+  name,
+  species,
+  size,
+  role,
+  hp,
+  armorClass,
+  movement,
+  staminaMaximum,
+  actionsPerRound = 2,
+  scores,
+  bonuses,
+  anatomyProfile,
+  naturalAttackProfiles,
+  factionTags = ["wildlife"],
+  ecologyTags = [],
+  tags = [],
+  traits = [],
+  aiRole = "melee",
+  source = "normalized-legacy-actor",
+  sourceLabel = "Normalized Legacy Actor",
+  modelKey = actorKey,
+  grappleProfile = {},
+  moraleProfile = {},
+  survivalProfile = {},
+  tacticalProfile = {},
+}) => common({
+  actorKey,
+  id: actorKey,
+  name,
+  displayName: name,
+  species,
+  creatureType: "animal",
+  category: "animal",
+  size,
+  role,
+  modelKey,
+  source,
+  sourceLabel,
+  teamDefault: "enemy",
+  factionTags,
+  ecologyTags,
+  cultureTags: [],
+  tags: [...new Set([species, "animal", "ground", ...tags])],
+  traitKeys: [...traits],
+  traits: [...traits],
+  attributes: martialAttributes(scores),
+  abilityScores: { ...scores },
+  derivedStats: { hp, maxHp: hp, armorClass, movement },
+  movement: {
+    ground: movement,
+    groundPace: movement,
+    burst: movement * 2,
+    runDistance: movement * 2,
+    recoveryStep: 5,
+    terrainMobility: {},
+    mode: "ground",
+    bodyPlan: "quadruped",
+    walkFeet: movement,
+    runFeet: movement * 2,
+    turnRadiusClass: size === "large" ? "wide" : "ordinary",
+    canClimb: false,
+    canSwim: false,
+    canBurrow: false,
+    canFly: false,
+  },
+  currentStamina: staminaMaximum,
+  combatStamina: { authority: "canonical", maximum: staminaMaximum, current: staminaMaximum },
+  stamina: { authority: "combatStamina", maximum: staminaMaximum, current: staminaMaximum },
+  fatigueState: "ready",
+  actionsPerRound,
+  bonuses,
+  anatomyProfile,
+  defenseProfile: { armorClass, defenseSource: "agility-and-natural-defense", shieldEligible: false },
+  equippedArmor: null,
+  equippedShield: null,
+  armorProfile: { armorClass: "natural-hide", category: "natural", weightClass: "none", rigidCoverage: false, wornArmor: false, barding: false },
+  heldItems: { mainHand: null, offHand: null },
+  equipment: [],
+  inventory: [],
+  attacks: [...naturalAttackProfiles],
+  weaponProfiles: [...naturalAttackProfiles],
+  naturalAttackProfiles: [...naturalAttackProfiles],
+  grappleProfile: ordinaryGrapple({
+    sizeProfile: size,
+    preferredInitiator: false,
+    grapplePreference: "defensive-only",
+    weaponRetentionBehavior: "natural-attacks-retained",
+    clinchWeaponAvailability: "anatomy-only",
+    groundedWeaponAvailability: "anatomy-only",
+    ...grappleProfile,
+  }),
+  moraleProfile: {
+    state: "steady",
+    routBehavior: "animal-retreat",
+    surrenderEligible: false,
+    terminalEscapeBehavior: "map-boundary",
+    ...moraleProfile,
+  },
+  survivalProfile: {
+    authority: "canonical-animal-survival",
+    permittedOutcomes: ["flee", "hold-position", "cower", "animal-retreated", "animal-driven-off", "animal-captured"],
+    unresolvedOutcomeDefersCombatFinalization: true,
+    ...survivalProfile,
+  },
+  surrenderProfile: {
+    mayOfferSurrender: false,
+    mayAcceptSurrender: false,
+    opensHumanoidDecisionPanel: false,
+    animalOutcomeAuthority: "canonical-animal-survival",
+  },
+  tacticalProfile: { attackSelection: "existing-weighted-legal-actions", packMembershipAuthority: "explicit-group-metadata", ...tacticalProfile },
+  behavior: { aggression: 50, caution: 55, instinct: 75, discipline: 25 },
+  alignment: null,
+  alignmentName: "Unaligned",
+  alignmentBehaviorMappingKey: null,
+  aiRole,
+});
+
 const squireArmor = armor("armor.mail-shirt", "Mail Shirt", 13, "medium", { armorClass: "mail", rigidCoverage: false });
 const squireShield = shield("shield.light", "Light Shield", { weight: 5 });
 const manAtArmsArmor = armor("armor.mail-hauberk-heavy", "Mail Hauberk", 15, "medium", { armorClass: "mail", rigidCoverage: false, compatibilityNote: "Source guard value retained." });
@@ -338,6 +522,16 @@ const orcArmor = armor("armor.orc-hide", "Hide Armor", 13, "light", { armorClass
 const cultistArmor = armor("armor.cultist-leather", "Leather Armor", 12, "light", { armorClass: "leather", rigidCoverage: false });
 const veteranKnightArmor = armor("armor.veteran-plate-harness", "Plate Harness", 16, "heavy", { armorClass: "plate", rigidCoverage: true, weight: 45 });
 const veteranKnightShield = shield("shield.veteran-heater", "Heater Shield", { weight: 8 });
+
+const wolfBite = animalNatural("wolf-bite", "Bite", "2d4+2", "piercing", "bite", "mouth", { attackBonus: 4, usableInClinch: true, groundedCompatible: true });
+const boarTuskCharge = animalNatural("boar-tusk-charge", "Tusk Charge", "1d8+2", "piercing", "tusk", "tusks", { attackBonus: 4, attackMode: "charge", usableInClinch: false });
+const mastiffBite = animalNatural("mastiff-bite", "Bite", "1d6+2", "piercing", "bite", "mouth", { attackBonus: 2, usableInClinch: true, groundedCompatible: true });
+const warhorseHoof = animalNatural("warhorse-hoof", "Hoof Attack", "1d8+3", "bludgeoning", "hoof", "hooves", { attackBonus: 2, contactSurface: "hoof", armorContactProfile: "natural-hoof-blunt", usableInClinch: false });
+const bearClaw = animalNatural("bear-claw", "Claw Swipe", "1d8+4", "slashing", "claw", "claws", { attackBonus: 3, usableInClinch: true, groundedCompatible: true });
+const bearBite = animalNatural("bear-bite", "Bite", "1d10+4", "piercing", "bite", "mouth", { attackBonus: 3, usableInClinch: true, groundedCompatible: true });
+const brownBearBite = animalNatural("brown-bear-bite", "Bite", "1d8+4", "piercing", "bite", "mouth", { attackBonus: 5, usableInClinch: true, groundedCompatible: true });
+const brownBearClaw = animalNatural("brown-bear-claw", "Claw", "2d6+4", "slashing", "claw", "claws", { attackBonus: 5, usableInClinch: true, groundedCompatible: true });
+const giantRatBite = animalNatural("giant-rat-bite", "Bite", "1d4+2", "piercing", "bite", "mouth", { attackBonus: 4, usableInClinch: true, groundedCompatible: true });
 
 export const CANONICAL_COMBAT_ACTORS = Object.freeze({
   knight: common({
@@ -517,6 +711,76 @@ export const CANONICAL_COMBAT_ACTORS = Object.freeze({
     equipment: [minotaurAxe], inventory: [minotaurAxe], equippedArmor: { id: "armor.minotaur-hide", profileKey: "armor.minotaur-hide", name: "Natural Hide", type: "natural armor", category: "medium natural armor", weightClass: "medium", lootable: false }, armorProfile: { profileKey: "armor.minotaur-hide", armorClass: "natural", category: "medium natural armor", weightClass: "medium", rigidCoverage: false }, heldItems: { mainHand: "weapon.minotaur-heavy-axe", offHand: null }, attacks: [minotaurAxe, minotaurGore, minotaurCharge, minotaurHornHook, minotaurHookAndLift, minotaurBodyClinch, minotaurLift, minotaurSlam, minotaurThrow, minotaurCrush, minotaurHeadbutt, minotaurTrample, minotaurRockThrow, minotaurRockSmash], weaponProfiles: [minotaurAxe, minotaurGore, minotaurCharge, minotaurHornHook, minotaurHookAndLift, minotaurBodyClinch, minotaurLift, minotaurSlam, minotaurThrow, minotaurCrush, minotaurHeadbutt, minotaurTrample, minotaurRockThrow, minotaurRockSmash],
     grappleProfile: { sizeProfile: "large", preferredInitiator: true, prefersAssist: false, prefersProneTargets: true, sizeRulesApply: true, canUseSwarmTakedown: false, powerfulBuild: true, takedownCompatible: true, groundControlCompatible: true, liftRequiresExplicitAction: true, throwRequiresExplicitAction: true }, aiRole: "brute",
   }),
+  wolf: buildOrdinaryGroundAnimal({
+    actorKey: "wolf", name: "Wolf", species: "wolf", size: "medium", role: "pack-predator",
+    hp: 11, armorClass: 13, movement: 40, staminaMaximum: 12,
+    scores: { strength: 12, dexterity: 15, constitution: 12, intelligence: 3, wisdom: 12, charisma: 6 },
+    bonuses: { attack: 4, block: 0, evade: 2, damage: 2 },
+    anatomyProfile: animalAnatomy({ primaryNaturalWeapons: ["natural.wolf-bite"], mouthAvailable: true }),
+    naturalAttackProfiles: [wolfBite], ecologyTags: ["predator", "pack-animal"],
+    tags: ["predator", "pack-animal"], traits: ["keen-senses"], aiRole: "skirmisher",
+    source: "public-actor", sourceLabel: "Public Actor",
+    tacticalProfile: { packCapable: true },
+  }),
+  boar: buildOrdinaryGroundAnimal({
+    actorKey: "boar", name: "Boar", species: "wild-boar", size: "medium", role: "ground-charger",
+    hp: 18, armorClass: 13, movement: 35, staminaMaximum: 14,
+    scores: { strength: 14, dexterity: 10, constitution: 14, intelligence: 2, wisdom: 11, charisma: 5 },
+    bonuses: { attack: 4, block: 0, evade: 1, damage: 2 },
+    anatomyProfile: animalAnatomy({ primaryNaturalWeapons: ["natural.boar-tusk-charge"], mouthAvailable: true, tusksPresent: true }),
+    naturalAttackProfiles: [boarTuskCharge], ecologyTags: ["forager", "territorial"],
+    tags: ["charger", "tusked"], traits: ["stubborn"], aiRole: "brute",
+    source: "public-actor", sourceLabel: "Public Actor",
+  }),
+  mastiff: buildOrdinaryGroundAnimal({
+    actorKey: "mastiff", name: "Mastiff", species: "domestic-dog", size: "medium", role: "trained-guard-animal",
+    hp: 16, armorClass: 12, movement: 40, staminaMaximum: 12,
+    scores: { strength: 13, dexterity: 13, constitution: 12, intelligence: 3, wisdom: 12, charisma: 7 },
+    bonuses: { attack: 2, block: 0, evade: 2, damage: 2 },
+    anatomyProfile: animalAnatomy({ primaryNaturalWeapons: ["natural.mastiff-bite"], mouthAvailable: true }),
+    naturalAttackProfiles: [mastiffBite], factionTags: ["trained-animals"], ecologyTags: ["domestic", "pack-animal"],
+    tags: ["trained", "guard-animal"], traits: ["trained-guard"], aiRole: "defensive",
+  }),
+  warhorse: buildOrdinaryGroundAnimal({
+    actorKey: "warhorse", name: "Warhorse", species: "horse", size: "large", role: "unmounted-trained-horse",
+    hp: 30, armorClass: 13, movement: 60, staminaMaximum: 15,
+    scores: { strength: 17, dexterity: 10, constitution: 15, intelligence: 2, wisdom: 11, charisma: 7 },
+    bonuses: { attack: 2, block: 0, evade: 1, damage: 3 },
+    anatomyProfile: animalAnatomy({ primaryNaturalWeapons: ["natural.warhorse-hoof"], mouthAvailable: true, hoovesPresent: true }),
+    naturalAttackProfiles: [warhorseHoof], factionTags: ["trained-animals"], ecologyTags: ["domestic", "herd-animal"],
+    tags: ["trained", "unmounted", "hoofed"], traits: ["combat-trained"], aiRole: "defensive",
+    survivalProfile: { mountedCombatSupported: false }, tacticalProfile: { riderState: "none", bardingState: "none" },
+  }),
+  bear: buildOrdinaryGroundAnimal({
+    actorKey: "bear", name: "Bear", species: "bear", size: "large", role: "large-ground-predator",
+    hp: 42, armorClass: 14, movement: 35, staminaMaximum: 16,
+    scores: { strength: 18, dexterity: 10, constitution: 16, intelligence: 2, wisdom: 12, charisma: 7 },
+    bonuses: { attack: 3, block: 0, evade: 1, damage: 4 },
+    anatomyProfile: animalAnatomy({ primaryNaturalWeapons: ["natural.bear-claw"], secondaryNaturalWeapons: ["natural.bear-bite"], mouthAvailable: true, clawsPresent: true }),
+    naturalAttackProfiles: [bearClaw, bearBite], ecologyTags: ["omnivore", "solitary"],
+    tags: ["large-animal", "clawed"], traits: ["powerful-build"], aiRole: "brute",
+  }),
+  "brown-bear": buildOrdinaryGroundAnimal({
+    actorKey: "brown-bear", name: "Brown Bear", species: "brown-bear", size: "large", role: "large-ground-predator",
+    hp: 34, armorClass: 11, movement: 40, staminaMaximum: 16,
+    scores: { strength: 19, dexterity: 10, constitution: 16, intelligence: 2, wisdom: 13, charisma: 7 },
+    bonuses: { attack: 5, block: 0, evade: 1, damage: 4 },
+    anatomyProfile: animalAnatomy({ primaryNaturalWeapons: ["natural.brown-bear-claw"], secondaryNaturalWeapons: ["natural.brown-bear-bite"], mouthAvailable: true, clawsPresent: true }),
+    naturalAttackProfiles: [brownBearBite, brownBearClaw], ecologyTags: ["omnivore", "solitary"],
+    tags: ["large-animal", "clawed"], traits: ["powerful-build"], aiRole: "brute",
+    source: "public-enemy", sourceLabel: "Public Enemy",
+  }),
+  "giant-rat": buildOrdinaryGroundAnimal({
+    actorKey: "giant-rat", name: "Giant Rat", species: "giant-rat", size: "small", role: "small-ground-scavenger",
+    hp: 7, armorClass: 12, movement: 30, staminaMaximum: 11,
+    scores: { strength: 7, dexterity: 15, constitution: 11, intelligence: 2, wisdom: 10, charisma: 4 },
+    bonuses: { attack: 4, block: 0, evade: 2, damage: 2 },
+    anatomyProfile: animalAnatomy({ primaryNaturalWeapons: ["natural.giant-rat-bite"], mouthAvailable: true }),
+    naturalAttackProfiles: [giantRatBite], ecologyTags: ["scavenger", "pack-animal"],
+    tags: ["small-animal", "scavenger"], traits: ["keen-smell"], aiRole: "skirmisher",
+    source: "public-enemy", sourceLabel: "Public Enemy",
+    tacticalProfile: { packCapable: true },
+  }),
 });
 
 const CANONICAL_COMBAT_ACTOR_ALIASES = Object.freeze({
@@ -527,6 +791,9 @@ const CANONICAL_COMBAT_ACTOR_ALIASES = Object.freeze({
   "selectable-archer": "archer",
   "selectable-longbowman": "longbowman",
   "longbow_man": "longbowman",
+  "war-horse": "warhorse",
+  "brown_bear": "brown-bear",
+  "giant_rat": "giant-rat",
 });
 
 export function resolveCanonicalCombatActorAlias(value) {
@@ -584,6 +851,10 @@ export const CANONICAL_RANGED_AND_REACH_WEAPON_FIXTURES = Object.freeze({
   infantrySpear,
   thrownDagger,
 });
+
+export const CANONICAL_GROUND_ANIMAL_KEYS = Object.freeze([
+  "wolf", "boar", "mastiff", "warhorse", "bear", "brown-bear", "giant-rat",
+]);
 
 export function getCanonicalWeaponProfileByAlias(value) {
   const source = value && typeof value === "object" ? value : { name: value };

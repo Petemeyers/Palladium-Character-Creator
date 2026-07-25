@@ -165,6 +165,11 @@ import {
 } from "../utils/combatStamina.js";
 import { applyRecoveryAction, applyStaminaRecovery, getRecoveryAmount } from "../utils/combatRecovery.js";
 import {
+  completeCanonicalNaturalAttackImpact,
+  isCanonicalNaturalAttack,
+  resolveCanonicalNaturalAttack,
+} from "../utils/combat/canonicalNaturalAttacks.js";
+import {
   applyPendingDefensiveSelection,
   applyCombatPosture,
   applyDefensivePosture,
@@ -21607,6 +21612,8 @@ function CombatPage({ characters = [] }) {
 
     /** Safe for finishAttackAfterImpact / catch before `let attackData` is assigned (avoids TDZ). */
     let attackDataForFinish = null;
+    let naturalAttackAdmission = null;
+    let naturalAttackCompletionEmitted = false;
     /** Snapshot at attack entry so finalizeAttackSpend does not double-spend after in-attack RA mutations. */
     let attackStartSnapshot = null;
 
@@ -22113,6 +22120,27 @@ function CombatPage({ characters = [] }) {
       logRemaining: logRem = true,
       attackStartRemainingAttacks: attackStartPass,
     } = {}) => {
+      if (naturalAttackAdmission?.accepted && !naturalAttackCompletionEmitted) {
+        naturalAttackCompletionEmitted = true;
+        const completion = completeCanonicalNaturalAttackImpact({
+          actorId: naturalAttackAdmission.actorId || attackerPass?.id || attacker?.id,
+          targetId: defenderId,
+          profile: naturalAttackAdmission.profile,
+          actionToken: naturalAttackAdmission.actionToken,
+          initiativeTurnId: naturalAttackAdmission.initiativeTurnId,
+          committed: !/blocked|stale|invalid|failed/i.test(String(reason)),
+        });
+        addLog({
+          audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+          channel: COMBAT_LOG_CHANNELS.ACTION,
+          level: completion.eventType.endsWith("rejected") ? "warning" : "info",
+          type: completion.eventType.endsWith("rejected") ? "warning" : "info",
+          ...completion,
+          message:
+            `${completion.eventType}: actorId=${completion.actorId} targetId=${completion.targetId} ` +
+            `attackKey=${completion.data.attackKey} actionToken=${completion.data.actionToken}`,
+        });
+      }
       if (combatOverRef.current) {
         turnActionResolvingRef.current = false;
         pendingTurnAdvanceRef.current = false;
@@ -22680,6 +22708,47 @@ function CombatPage({ characters = [] }) {
           )
         ),
       };
+    }
+
+    if (isCanonicalNaturalAttack(attackData) && String(effectiveAttacker?.creatureType || "").toLowerCase() === "animal") {
+      const naturalTurn = getAuthoritativeInitiativeTurnSnapshot(effectiveAttacker?.id || attacker?.id);
+      naturalAttackAdmission = resolveCanonicalNaturalAttack({
+        actor: effectiveAttacker,
+        attackKey: attackData.attackKey || attackData.profileKey || attackData.id,
+        actionToken: naturalTurn?.actionToken || attackActionId,
+        initiativeTurnId: naturalTurn?.initiativeTurnId || initiativeTurnIdRef.current || expectedTurnToken,
+      });
+      if (!naturalAttackAdmission.accepted) {
+        naturalAttackAdmission.events.forEach((event) => addLog({
+          audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+          channel: COMBAT_LOG_CHANNELS.ACTION,
+          level: "warning",
+          type: "warning",
+          ...event,
+          message: `${event.eventType}: actorId=${event.actorId} reason=${naturalAttackAdmission.reason}`,
+        }, "warning"));
+        finishAttackAfterImpact({
+          updated,
+          attacker: effectiveAttacker,
+          attackerInArray,
+          attackData,
+          reason: `natural-attack-blocked:${naturalAttackAdmission.reason}`,
+          endTurnDelayMs: 0,
+        });
+        return;
+      }
+      attackData = naturalAttackAdmission.profile;
+      naturalAttackAdmission = { ...naturalAttackAdmission, actorId: effectiveAttacker?.id || attacker?.id };
+      naturalAttackAdmission.events.forEach((event) => addLog({
+        audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+        channel: COMBAT_LOG_CHANNELS.ACTION,
+        level: "info",
+        type: "info",
+        ...event,
+        message:
+          `${event.eventType}: actorId=${event.actorId} attackKey=${event.data.attackKey} ` +
+          `actionToken=${event.data.actionToken}`,
+      }));
     }
 
     attackDataForFinish = attackData;
