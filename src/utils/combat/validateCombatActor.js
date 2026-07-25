@@ -58,6 +58,34 @@ export function validateCombatActor(actor = {}, { comparisonActor = null, emitDi
       pushError("unsupported-flight-source", "Phase 3C2B supports only ordinary biological flight.", "invalid-flight-state");
     }
   }
+  const carrierLink = normalizedActor.carrierLink;
+  if (carrierLink) {
+    if (!carrierLink.linkId || !carrierLink.carrierId || !carrierLink.passengerId) {
+      pushError("carrier-link-missing-identity", "Carrier links require stable link, carrier, and passenger IDs.", "invalid-carrier-link");
+    }
+    if (carrierLink.carrierId === carrierLink.passengerId) {
+      pushError("carrier-equals-passenger", "A carrier cannot carry itself.", "invalid-carrier-link");
+    }
+    if (carrierLink.positionAuthority !== "carrier" || carrierLink.altitudeAuthority !== "carrier") {
+      pushError("carrier-link-invalid-authority", "Carrier links require carrier-owned position and altitude.", "invalid-carrier-link");
+    }
+    if (carrierLink.carrierId === normalizedActor.name || carrierLink.passengerId === normalizedActor.name) {
+      pushError("carrier-link-display-name-identity", "Carrier relationships cannot connect actors by display name.", "invalid-carrier-link");
+    }
+    if (carrierLink.relationshipType === "flying-mounted" && !canonicalFlyer && carrierLink.carrierId === normalizedActor.id) {
+      pushError("ground-mount-airborne", "A ground-only carrier cannot own a flying-mounted link.", "invalid-carrier-link");
+    }
+  }
+  if (normalizedActor.fallState) {
+    const fallState = normalizedActor.fallState;
+    const validFallStates = ["claimed", "descending", "impact-pending", "impact-authorized", "committed", "completed", "canceled", "rejected"];
+    if (!fallState.fallId || !fallState.actorId || !validFallStates.includes(text(fallState.state))) {
+      pushError("invalid-fall-state", "Fall state requires stable identity and a canonical lifecycle state.", "invalid-fall-state");
+    }
+    if (fallState.actorId && fallState.actorId !== normalizedActor.id) {
+      pushError("fall-actor-mismatch", "Fall state actor identity does not match its actor.", "invalid-fall-state");
+    }
+  }
   if (canonicalAnimal && (normalizedActor.rider || normalizedActor.riderId || normalizedActor.mounted || normalizedActor.barding || normalizedActor.armorProfile?.barding === true)) pushError("ground-animal-mounted-state", "Phase 3C2A animals cannot carry rider, mounted, or barding state.", "animal-mounted-state-invalid");
   if (canonicalAnimal && (normalizedActor.heldItems?.mainHand || normalizedActor.heldItems?.offHand)) pushError("animal-holding-manufactured-weapon", "Ordinary animals cannot hold manufactured weapons.", "natural-attack-manufactured-metadata");
   if (canonicalAnimal && (normalizedActor.ammunitionState || (normalizedActor.ammunition || []).length)) pushError("animal-carrying-ammunition", "Ordinary animals cannot carry ammunition.", "natural-attack-manufactured-metadata");

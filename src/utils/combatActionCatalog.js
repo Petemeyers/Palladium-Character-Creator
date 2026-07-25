@@ -103,6 +103,9 @@ const ACTION_CONTRACTS = Object.freeze({
   "extended-melee": { rollRequired: true, executorIdentity: "canonical-attack-dispatcher", aiAvailable: true },
   reload: { rollRequired: false, executorIdentity: "canonical-ranged-reload", aiAvailable: true },
   draw: { rollRequired: false, executorIdentity: "canonical-weapon-transition", aiAvailable: true },
+  mount: { rollRequired: false, executorIdentity: "canonical-carrier-executor", aiAvailable: true },
+  dismount: { rollRequired: false, executorIdentity: "canonical-carrier-executor", aiAvailable: true },
+  "emergency-dismount": { rollRequired: false, executorIdentity: "canonical-carrier-executor", aiAvailable: false },
   compatibility: { rollRequired: false, executorIdentity: "compatibility-controls-panel", aiAvailable: false },
 });
 
@@ -113,7 +116,7 @@ export const getCombatActionContract = (type, source = "") => {
   return {
     ...contract,
     playerVisible: !compatibility,
-    turnEnding: false,
+    turnEnding: ["mount", "dismount", "emergency-dismount"].includes(normalizedType),
     legalActorStates: ["active", "conscious"],
   };
 };
@@ -476,6 +479,76 @@ const buildDefensiveRecoveryActions = ({ actor, currentTurnEntry }) => [
   }),
 ];
 
+const buildCarrierActions = ({
+  actor,
+  currentTurnEntry,
+  selectedTarget,
+  carrierContext = {},
+}) => {
+  const activeLink = carrierContext.activeLink || actor?.carrierLink || null;
+  const actorId = getEntryId(actor);
+  const selectedCarrierSupportsMount = selectedTarget?.carrierProfile?.allowedRelationshipTypes?.includes?.("mounted") === true;
+  const actorIsMountedPassenger = activeLink?.relationshipType === "mounted"
+    && String(activeLink.passengerId) === actorId
+    && !["released", "broken"].includes(activeLink.state);
+  const actions = [];
+  if (!activeLink && selectedCarrierSupportsMount) {
+    actions.push(makeAction({
+      actor,
+      currentTurnEntry,
+      id: "mount",
+      name: "Mount",
+      type: "mount",
+      source: "canonical carrier catalog",
+      category: "Carrier",
+      costActions: 1,
+      targetRequired: true,
+      targetId: selectedTargetId(selectedTarget),
+      previewSummary: "Establish a basic mounted carrier link. Mounted attacks are not enabled.",
+      metadata: {
+        executor: "establishCanonicalCarrierLink",
+        relationshipType: "mounted",
+        legalRelationshipState: "none",
+      },
+    }));
+  }
+  if (actorIsMountedPassenger) {
+    actions.push(makeAction({
+      actor,
+      currentTurnEntry,
+      id: "dismount",
+      name: "Dismount",
+      type: "dismount",
+      source: "canonical carrier catalog",
+      category: "Carrier",
+      costActions: 1,
+      previewSummary: "Release the mounted link into a legal adjacent position.",
+      metadata: {
+        executor: "releaseCanonicalCarrierLink",
+        relationshipType: "mounted",
+        legalRelationshipState: activeLink.state,
+      },
+    }));
+    actions.push(makeAction({
+      actor,
+      currentTurnEntry,
+      id: "emergency-dismount",
+      name: "Emergency Dismount",
+      type: "emergency-dismount",
+      source: "canonical carrier catalog",
+      category: "Carrier",
+      costActions: 1,
+      previewSummary: "Release immediately through canonical fall and stability authority.",
+      metadata: {
+        executor: "releaseCanonicalCarrierLink",
+        relationshipType: "mounted",
+        legalRelationshipState: activeLink.state,
+      },
+    }));
+  }
+  return actions;
+};
+
 const buildItemActions = ({ actor, currentTurnEntry, inventory }) =>
   getInventoryCandidates({ actor, inventory })
     .filter((item) => item && typeof item !== "function")
@@ -597,6 +670,7 @@ export function buildCombatActionCatalog({
   equippedWeapons,
   inventory,
   compatibilityActions,
+  carrierContext,
 } = {}) {
   if (!actor || typeof actor !== "object") return [];
 
@@ -634,6 +708,7 @@ export function buildCombatActionCatalog({
 
   buildMovementActions({ actor, currentTurnEntry, targetId }).forEach((action) => addUnique(actions, action));
   buildDefensiveRecoveryActions({ actor, currentTurnEntry }).forEach((action) => addUnique(actions, action));
+  buildCarrierActions({ actor, currentTurnEntry, selectedTarget, carrierContext }).forEach((action) => addUnique(actions, action));
   buildItemActions({ actor, currentTurnEntry, inventory }).forEach((action) => addUnique(actions, action));
   buildSkillActions({ actor, currentTurnEntry }).forEach((action) => addUnique(actions, action));
   buildCompatibilityActions({ actor, currentTurnEntry, compatibilityActions }).forEach((action) => addUnique(actions, action));

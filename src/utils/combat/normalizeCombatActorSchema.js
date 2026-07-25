@@ -159,6 +159,8 @@ export function normalizeReferenceCombatActor(actor = {}, { source = "combat-sta
     instanceId: actor.instanceId,
     position: clone(actor.position), hex: clone(actor.hex), x: actor.x, y: actor.y,
     flightState: clone(actor.flightState),
+    carrierLink: clone(actor.carrierLink),
+    fallState: clone(actor.fallState),
     altitude: actor.altitude,
     altitudeFeet: actor.altitudeFeet,
     currentHP: currentHp, currentHp, hp: currentHp, HP: currentHp, maxHP: maxHp, maxHp,
@@ -269,7 +271,7 @@ export function normalizeReferenceCombatActor(actor = {}, { source = "combat-sta
     delete normalizedActor[legacyField];
   }
   // Live ownership and position fields are never inferred from the reference definition.
-  for (const field of ["position", "hex", "x", "y", "grappleState", "surrenderState", "combatWeaponState", "initiativeTurnId", "actionToken", "initiativeIdentity", "instanceId", "factionId", "armyId"]) {
+  for (const field of ["position", "hex", "x", "y", "carrierLink", "fallState", "grappleState", "surrenderState", "combatWeaponState", "initiativeTurnId", "actionToken", "initiativeIdentity", "instanceId", "factionId", "armyId"]) {
     if (preserved[field] === undefined && !(field === "position" && definition.flightProfile?.kind === "biological")) delete normalizedActor[field];
   }
   if (!normalizedActor.combatWeaponState) {

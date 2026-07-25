@@ -418,6 +418,7 @@ const buildOrdinaryFlyingAnimal = ({
   modelKey = actorKey,
   takeoffAltitudeFeet = 20,
   maximumAltitudeFeet = 100,
+  carrierProfile = null,
 }) => common({
   actorKey,
   id: actorKey,
@@ -474,6 +475,7 @@ const buildOrdinaryFlyingAnimal = ({
     mountedFlight: false,
     magicalFlight: false,
   },
+  carrierProfile,
   flightState: {
     mode: "airborne",
     altitudeFeet: takeoffAltitudeFeet,
@@ -510,7 +512,7 @@ const buildOrdinaryFlyingAnimal = ({
     clinchWeaponAvailability: "anatomy-only",
     groundedWeaponAvailability: "anatomy-only",
     controlledFlightLostWhenRestrained: true,
-    carryingTargetsSupported: false,
+    carryingTargetsSupported: carrierProfile?.allowedRelationshipTypes?.includes("prey-carry") === true,
   }),
   moraleProfile: {
     state: "steady",
@@ -568,6 +570,7 @@ const buildOrdinaryGroundAnimal = ({
   moraleProfile = {},
   survivalProfile = {},
   tacticalProfile = {},
+  carrierProfile = null,
 }) => common({
   actorKey,
   id: actorKey,
@@ -654,6 +657,7 @@ const buildOrdinaryGroundAnimal = ({
     animalOutcomeAuthority: "canonical-animal-survival",
   },
   tacticalProfile: { attackSelection: "existing-weighted-legal-actions", packMembershipAuthority: "explicit-group-metadata", ...tacticalProfile },
+  carrierProfile,
   behavior: { aggression: 50, caution: 55, instinct: 75, discipline: 25 },
   alignment: null,
   alignmentName: "Unaligned",
@@ -719,7 +723,9 @@ export const CANONICAL_COMBAT_ACTORS = Object.freeze({
     moraleProfile: { state: "steady", routBehavior: "organized-withdrawal", surrenderEligible: true, terminalEscapeBehavior: "map-boundary" }, surrenderProfile: { mayOfferSurrender: true, mayAcceptSurrender: true, behaviorProfile: "neutral-good", prisonerPreference: "take-prisoner", executionPreference: "avoid", alignmentBehaviorMappingKey: "neutral-good" },
     equipment: [knightSword, knightDagger, { id: "shield.heater", profileKey: "shield.heater", name: "Heater Shield", type: "shield", category: "shield", weight: 8 }, { id: "armor.plate-harness", profileKey: "armor.plate-harness", name: "Plate Harness", type: "armor", category: "heavy", weightClass: "heavy", guardRating: 16, weight: 45 }], inventory: [knightSword, knightDagger],
     equippedArmor: { id: "armor.plate-harness", profileKey: "armor.plate-harness", name: "Plate Harness", type: "armor", category: "heavy", weightClass: "heavy", guardRating: 16, weight: 45 }, equippedShield: { id: "shield.heater", profileKey: "shield.heater", name: "Heater Shield", type: "shield", category: "shield", weight: 8 }, armorProfile: { profileKey: "armor.plate-harness", armorClass: "plate", category: "heavy", weightClass: "heavy", rigidCoverage: true }, heldItems: { mainHand: "weapon.long-sword", offHand: "shield.heater" }, attacks: [knightSword], weaponProfiles: [knightSword, knightDagger],
-    grappleProfile: { sizeProfile: "medium", preferredInitiator: true, prefersAssist: false, prefersProneTargets: false, sizeRulesApply: true, canUseSwarmTakedown: false, takedownCompatible: true, groundControlCompatible: true, mayDemandSurrender: true }, aiRole: "melee",
+    grappleProfile: { sizeProfile: "medium", preferredInitiator: true, prefersAssist: false, prefersProneTargets: false, sizeRulesApply: true, canUseSwarmTakedown: false, takedownCompatible: true, groundControlCompatible: true, mayDemandSurrender: true },
+    passengerProfile: { allowedRelationshipTypes: ["mounted"], mountFoundationOnly: true },
+    aiRole: "melee",
   }),
   squire: buildOrdinaryHumanoid({
     actorKey: "squire", name: "Squire", role: "shielded-swordsman", hp: 20, armorClass: 13, staminaMaximum: 24,
@@ -926,6 +932,12 @@ export const CANONICAL_COMBAT_ACTORS = Object.freeze({
     naturalAttackProfiles: [warhorseHoof], factionTags: ["trained-animals"], ecologyTags: ["domestic", "herd-animal"],
     tags: ["trained", "unmounted", "hoofed"], traits: ["combat-trained"], aiRole: "defensive",
     survivalProfile: { mountedCombatSupported: false }, tacticalProfile: { riderState: "none", bardingState: "none" },
+    carrierProfile: {
+      maximumLoad: 300,
+      authority: "legacy-movement.mountMovement.warHorse.carryingCapacity",
+      allowedRelationshipTypes: ["mounted"],
+      coordinatedMountedCombatSupported: false,
+    },
   }),
   bear: buildOrdinaryGroundAnimal({
     actorKey: "bear", name: "Bear", species: "bear", size: "large", role: "large-ground-predator",
@@ -970,6 +982,12 @@ export const CANONICAL_COMBAT_ACTORS = Object.freeze({
     ecologyTags: ["predator", "diurnal-raptor"],
     tags: ["scout", "avian"],
     traits: ["keen-sight"],
+    carrierProfile: {
+      maximumLoad: 50,
+      authority: "compatibility-existing-physical-strength-times-ten",
+      allowedRelationshipTypes: ["prey-carry"],
+      quarryOnly: true,
+    },
     source: "public-actor",
     sourceLabel: "Public Actor",
   }),
@@ -987,6 +1005,12 @@ export const CANONICAL_COMBAT_ACTORS = Object.freeze({
     ecologyTags: ["predator", "trained"],
     tags: ["scout", "avian", "trained"],
     traits: ["keen-sight"],
+    carrierProfile: {
+      maximumLoad: 50,
+      authority: "compatibility-existing-physical-strength-times-ten",
+      allowedRelationshipTypes: ["prey-carry"],
+      quarryOnly: true,
+    },
   }),
 });
 

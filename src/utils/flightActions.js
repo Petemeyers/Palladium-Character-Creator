@@ -524,15 +524,22 @@ export function dropCarriedTarget(fighter, target, options = {}) {
   } catch (e) {
     // ignore
   }
-  // Apply fall damage to drostaminad target
-  const afterFall = applyFallDamage(f2, dropHeight);
-
   return {
     success: true,
     message: `${fighter.name} drops ${target.name} from ${dropHeight}ft`,
     fighter: f1,
-    target: afterFall,
-    fallDamage: dropHeight > 0,
+    target: f2,
+    fallDamage: false,
+    fallPending: dropHeight > 0,
+    fallRequest: dropHeight > 0
+      ? {
+          actorId: f2.id,
+          sourceActorId: f1.id,
+          cause: "legacy-drop-adapter",
+          startingAltitudeFeet: dropHeight,
+          requiresCanonicalFallAuthority: true,
+        }
+      : null,
   };
 }
 
