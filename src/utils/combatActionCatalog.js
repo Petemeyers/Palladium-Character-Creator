@@ -8,6 +8,7 @@ import {
   isAttackUsableInClinch,
   isChargeOnlyAttack,
 } from "./meleeEngagementContext.js";
+import { MOUNTED_ACTION_CONTRACTS } from "./combat/canonicalMountedCombat.js";
 
 const hasValue = (value) => value !== undefined && value !== null && value !== "";
 
@@ -106,17 +107,37 @@ const ACTION_CONTRACTS = Object.freeze({
   mount: { rollRequired: false, executorIdentity: "canonical-carrier-executor", aiAvailable: true },
   dismount: { rollRequired: false, executorIdentity: "canonical-carrier-executor", aiAvailable: true },
   "emergency-dismount": { rollRequired: false, executorIdentity: "canonical-carrier-executor", aiAvailable: false },
+  "control-mount": { rollRequired: "pressure-only", executorIdentity: "canonical-mounted-executor", aiAvailable: true },
+  "mounted-walk": { rollRequired: false, executorIdentity: "canonical-mounted-executor", aiAvailable: true },
+  "mounted-run": { rollRequired: false, executorIdentity: "canonical-mounted-executor", aiAvailable: true },
+  "mounted-charge": { rollRequired: true, executorIdentity: "canonical-mounted-executor", aiAvailable: true },
+  "mounted-rider-strike": { rollRequired: true, executorIdentity: "canonical-mounted-executor", aiAvailable: true },
+  "mounted-rider-ranged-attack": { rollRequired: true, executorIdentity: "canonical-mounted-executor", aiAvailable: true },
+  "mount-natural-attack": { rollRequired: true, executorIdentity: "canonical-mounted-executor", aiAvailable: true },
+  "brace-against-charge": { rollRequired: false, executorIdentity: "canonical-mounted-executor", aiAvailable: true },
+  "recover-mounted-control": { rollRequired: true, executorIdentity: "canonical-mounted-executor", aiAvailable: true },
   compatibility: { rollRequired: false, executorIdentity: "compatibility-controls-panel", aiAvailable: false },
 });
 
 export const getCombatActionContract = (type, source = "") => {
   const normalizedType = normalizeText(type, "compatibility");
   const contract = ACTION_CONTRACTS[normalizedType] || ACTION_CONTRACTS.compatibility;
+  const mountedContract = MOUNTED_ACTION_CONTRACTS[normalizedType] || null;
   const compatibility = normalizeText(source).toLowerCase().includes("compatibility");
   return {
     ...contract,
+    ...(mountedContract ? {
+      stableKey: mountedContract.key,
+      actionOwner: mountedContract.owner,
+      staminaOwner: mountedContract.staminaOwner,
+      prerequisites: mountedContract.prerequisites,
+      legalRiderStates: mountedContract.legalRiderStates,
+      legalMountStates: mountedContract.legalMountStates,
+      mountedExecutor: mountedContract.executor,
+    } : {}),
     playerVisible: !compatibility,
-    turnEnding: ["mount", "dismount", "emergency-dismount"].includes(normalizedType),
+    turnEnding: MOUNTED_ACTION_CONTRACTS[normalizedType]?.turnEnding
+      ?? ["mount", "dismount", "emergency-dismount"].includes(normalizedType),
     legalActorStates: ["active", "conscious"],
   };
 };
@@ -487,7 +508,9 @@ const buildCarrierActions = ({
 }) => {
   const activeLink = carrierContext.activeLink || actor?.carrierLink || null;
   const actorId = getEntryId(actor);
-  const selectedCarrierSupportsMount = selectedTarget?.carrierProfile?.allowedRelationshipTypes?.includes?.("mounted") === true;
+  const selectedCarrierSupportsMount = selectedTarget?.carrierProfile?.allowedRelationshipTypes?.includes?.("mounted") === true
+    && selectedTarget?.mountProfile?.mayServeAsMount === true
+    && actor?.riderProfile?.mayRide === true;
   const actorIsMountedPassenger = activeLink?.relationshipType === "mounted"
     && String(activeLink.passengerId) === actorId
     && !["released", "broken"].includes(activeLink.state);
@@ -504,13 +527,36 @@ const buildCarrierActions = ({
       costActions: 1,
       targetRequired: true,
       targetId: selectedTargetId(selectedTarget),
-      previewSummary: "Establish a basic mounted carrier link. Mounted attacks are not enabled.",
+      previewSummary: "Establish the canonical mounted carrier link.",
       metadata: {
         executor: "establishCanonicalCarrierLink",
         relationshipType: "mounted",
         legalRelationshipState: "none",
       },
     }));
+  }
+  if (!activeLink) {
+    const braceWeapon = (actor.weaponProfiles || actor.attacks || []).find((weapon) => /spear|pike|polearm|halberd/i.test(weapon?.name || ""));
+    if (braceWeapon) {
+      const contract = MOUNTED_ACTION_CONTRACTS["brace-against-charge"];
+      actions.push(makeAction({
+        actor,
+        currentTurnEntry,
+        id: contract.key,
+        name: contract.label,
+        type: contract.key,
+        source: "canonical mounted catalog",
+        category: contract.category,
+        costActions: contract.actionCost,
+        previewSummary: "Prepare the equipped reach weapon against an authorized charge.",
+        metadata: {
+          executor: contract.executor,
+          actionOwner: contract.owner,
+          staminaOwner: contract.staminaOwner,
+          weaponId: braceWeapon.profileKey || braceWeapon.id,
+        },
+      }));
+    }
   }
   if (actorIsMountedPassenger) {
     actions.push(makeAction({
@@ -545,6 +591,60 @@ const buildCarrierActions = ({
         legalRelationshipState: activeLink.state,
       },
     }));
+    const mountedTurn = carrierContext.mountedTurn || null;
+    const mount = carrierContext.mount || null;
+    const controlState = activeLink.mountedState?.controlState || "controlled";
+    const riderWeapons = actor.weaponProfiles || actor.attacks || [];
+    const meleeWeapon = riderWeapons.find((weapon) => !["projectile", "ranged"].includes(normalizeText(weapon.deliveryType || weapon.kind).toLowerCase()));
+    const rangedWeapon = riderWeapons.find((weapon) => ["projectile", "ranged"].includes(normalizeText(weapon.deliveryType || weapon.kind).toLowerCase()));
+    const mountNaturalAttack = mount?.naturalAttackProfiles?.[0] || null;
+    const mountedKeys = [
+      "control-mount",
+      "mounted-walk",
+      "mounted-run",
+      ...(meleeWeapon ? ["mounted-rider-strike"] : []),
+      ...(rangedWeapon ? ["mounted-rider-ranged-attack"] : []),
+      ...(mountNaturalAttack ? ["mount-natural-attack"] : []),
+      ...(meleeWeapon && carrierContext.chargePath?.straightLine === true ? ["mounted-charge"] : []),
+      ...(controlState === "out-of-control" ? ["recover-mounted-control"] : []),
+    ];
+    mountedKeys.forEach((key) => {
+      const contract = MOUNTED_ACTION_CONTRACTS[key];
+      const ownerActions = contract.owner === "mount"
+        ? mountedTurn?.mountActionsRemaining
+        : contract.owner === "rider"
+          ? mountedTurn?.riderActionsRemaining
+          : Math.min(mountedTurn?.riderActionsRemaining ?? 0, mountedTurn?.mountActionsRemaining ?? 0);
+      actions.push(makeAction({
+        actor,
+        currentTurnEntry,
+        id: key,
+        name: contract.label,
+        type: key,
+        source: "canonical mounted catalog",
+        category: contract.category,
+        costActions: contract.actionCost,
+        targetRequired: ["mounted-charge", "mounted-rider-strike", "mounted-rider-ranged-attack", "mount-natural-attack"].includes(key),
+        targetId: selectedTargetId(selectedTarget),
+        enabled: mountedTurn?.state === "active" && ownerActions > 0,
+        disabledReason: mountedTurn?.state !== "active" ? "No active mounted turn." : ownerActions <= 0 ? "No mounted actions remaining." : "",
+        previewSummary: `${contract.label} through canonical ${contract.owner} ownership.`,
+        metadata: {
+          executor: contract.executor,
+          actionOwner: contract.owner,
+          staminaOwner: contract.staminaOwner || "none",
+          rollRequired: String(contract.rollRequired),
+          turnEnding: contract.turnEnding,
+          pairId: activeLink.mountedState?.pairId || activeLink.linkId,
+          mountedTurnId: mountedTurn?.mountedTurnId || "",
+          attackId: key === "mount-natural-attack"
+            ? mountNaturalAttack?.profileKey || mountNaturalAttack?.attackKey
+            : key === "mounted-rider-ranged-attack"
+              ? rangedWeapon?.profileKey || rangedWeapon?.id
+              : meleeWeapon?.profileKey || meleeWeapon?.id,
+        },
+      }));
+    });
   }
   return actions;
 };
@@ -706,14 +806,21 @@ export function buildCombatActionCatalog({
     addUnique(actions, buildUnarmedAction({ actor, currentTurnEntry, targetId, selectedTarget }));
   }
 
-  buildMovementActions({ actor, currentTurnEntry, targetId }).forEach((action) => addUnique(actions, action));
+  const activeCarrierLink = carrierContext?.activeLink || actor?.carrierLink || null;
+  const actorMounted = activeCarrierLink?.relationshipType === "mounted"
+    && String(activeCarrierLink.passengerId) === getEntryId(actor)
+    && !["released", "broken"].includes(activeCarrierLink.state);
+  if (!actorMounted) buildMovementActions({ actor, currentTurnEntry, targetId }).forEach((action) => addUnique(actions, action));
   buildDefensiveRecoveryActions({ actor, currentTurnEntry }).forEach((action) => addUnique(actions, action));
   buildCarrierActions({ actor, currentTurnEntry, selectedTarget, carrierContext }).forEach((action) => addUnique(actions, action));
   buildItemActions({ actor, currentTurnEntry, inventory }).forEach((action) => addUnique(actions, action));
   buildSkillActions({ actor, currentTurnEntry }).forEach((action) => addUnique(actions, action));
   buildCompatibilityActions({ actor, currentTurnEntry, compatibilityActions }).forEach((action) => addUnique(actions, action));
 
-  return actions.map((action, index) => ({
+  const routedActions = actorMounted
+    ? actions.filter((action) => !["attack", "projectile", "extended-melee"].includes(action.type))
+    : actions;
+  return routedActions.map((action, index) => ({
     ...action,
     id: action.id || `action-${index}`,
     metadata: sanitizeMetadata({

@@ -86,7 +86,14 @@ export function validateCombatActor(actor = {}, { comparisonActor = null, emitDi
       pushError("fall-actor-mismatch", "Fall state actor identity does not match its actor.", "invalid-fall-state");
     }
   }
-  if (canonicalAnimal && (normalizedActor.rider || normalizedActor.riderId || normalizedActor.mounted || normalizedActor.barding || normalizedActor.armorProfile?.barding === true)) pushError("ground-animal-mounted-state", "Phase 3C2A animals cannot carry rider, mounted, or barding state.", "animal-mounted-state-invalid");
+  if (canonicalAnimal && (normalizedActor.rider || normalizedActor.riderId || normalizedActor.mounted || normalizedActor.barding || normalizedActor.armorProfile?.barding === true) && normalizedActor.mountProfile?.mayServeAsMount !== true) pushError("ground-animal-mounted-state", "Only an explicit canonical mount profile may carry mounted or barding state.", "animal-mounted-state-invalid");
+  if (normalizedActor.mountProfile?.mayServeAsMount === true) {
+    if (normalizedActor.carrierProfile?.allowedRelationshipTypes?.includes("mounted") !== true) pushError("mount-profile-without-carrier-authority", "Mount profiles require canonical mounted carrier authority.", "invalid-mounted-link");
+    if (normalizedActor.mountProfile.flightSupported === true) pushError("mounted-flight-deferred", "Phase 3C3B does not enable mounted flight.", "invalid-mounted-link");
+    if (Number(normalizedActor.mountProfile.maximumRiders) !== 1) pushError("unsupported-mount-rider-capacity", "Phase 3C3B supports exactly one rider.", "invalid-mounted-link");
+    if (normalizedActor.mountProfile.equipmentSlots?.barding?.equippedProfile && !normalizedActor.mountProfile.equipmentSlots.barding.statisticsAuthority) pushError("barding-without-authoritative-profile", "Barding cannot be equipped without authoritative statistics.", "combat-actor-validation-failed");
+  }
+  if (normalizedActor.riderProfile?.mayRide === true && normalizedActor.passengerProfile?.allowedRelationshipTypes?.includes("mounted") !== true) pushError("rider-profile-without-passenger-authority", "Rider profiles require canonical mounted passenger authority.", "invalid-mounted-link");
   if (canonicalAnimal && (normalizedActor.heldItems?.mainHand || normalizedActor.heldItems?.offHand)) pushError("animal-holding-manufactured-weapon", "Ordinary animals cannot hold manufactured weapons.", "natural-attack-manufactured-metadata");
   if (canonicalAnimal && (normalizedActor.ammunitionState || (normalizedActor.ammunition || []).length)) pushError("animal-carrying-ammunition", "Ordinary animals cannot carry ammunition.", "natural-attack-manufactured-metadata");
   if (canonicalAnimal && normalizedActor.surrenderProfile?.opensHumanoidDecisionPanel === true) pushError("animal-using-humanoid-surrender-panel", "Ordinary animals cannot open the humanoid surrender panel.", "animal-invalid-humanoid-surrender-blocked");

@@ -314,6 +314,23 @@ export function establishCanonicalCarrierLink(request = {}) {
     restraintState,
     saddleState,
     harnessState,
+    reinsState: request.reinsState || "none",
+    mountedState: relationshipType === "mounted"
+      ? Object.freeze({
+          pairId: linkId,
+          riderId: passengerId,
+          mountId: carrierId,
+          initiativeTurnId,
+          generationId,
+          state: "mounted",
+          controlState: controlType === "rider-controlled" ? "controlled" : "independent",
+          saddleState,
+          reinsState: request.reinsState || "none",
+          riderSeatState: "seated",
+          currentActionOwner: null,
+          coordinatedActionId: null,
+        })
+      : null,
     createdAt: now,
     completedAt: null,
   };
@@ -771,9 +788,28 @@ export function executeCanonicalMountAction({
   initiativeTurnId,
   actionToken,
   authoritativeTurn,
-  saddleState = "basic",
+  saddleState = "none",
   harnessState = "none",
+  reinsState = "none",
 } = {}) {
+  if (mount?.mountProfile?.mayServeAsMount !== true) {
+    return rejectLink("mounted-link-without-mount-profile", {
+      carrier: mount, passenger: rider, generationId, initiativeTurnId, actionToken,
+    });
+  }
+  if (rider?.riderProfile?.mayRide !== true) {
+    return rejectLink("mounted-link-without-rider-profile", {
+      carrier: mount, passenger: rider, generationId, initiativeTurnId, actionToken,
+    });
+  }
+  if (
+    !mount.mountProfile.permittedRiderSizes?.includes?.(text(rider?.size))
+    || Number(mount.mountProfile.maximumRiders) !== 1
+  ) {
+    return rejectLink("mounted-profile-incompatible", {
+      carrier: mount, passenger: rider, generationId, initiativeTurnId, actionToken,
+    });
+  }
   return establishCanonicalCarrierLink({
     registry,
     carrier: mount,
@@ -789,6 +825,7 @@ export function executeCanonicalMountAction({
     actionOwnerId: idOf(rider),
     saddleState,
     harnessState,
+    reinsState,
   });
 }
 

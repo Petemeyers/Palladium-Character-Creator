@@ -2599,6 +2599,17 @@ const TacticalMap = ({
                             <circle key={ring.key} data-combat-ring={ring.key} cx={iconX} cy={iconY - 2} r={radius} fill="none" stroke={ring.color} strokeWidth={ring.width} strokeDasharray={ring.style === "dashed" ? "3 2" : undefined} style={{ pointerEvents: "none", filter: ring.style === "glow" ? `drop-shadow(0 0 4px ${ring.color})` : undefined }} />
                           );
                         })}
+                        {iconAppearance.externalRelationship && (
+                          <g
+                            data-combat-relationship={iconAppearance.externalRelationship.key}
+                            aria-label={iconAppearance.externalRelationship.label}
+                          >
+                            <circle cx={iconX + 10} cy={iconY - 13} r="5" fill={iconAppearance.innerColor} stroke={iconAppearance.borderColor} strokeWidth="1" />
+                            <text x={iconX + 10} y={iconY - 11} textAnchor="middle" fontSize="6" fontWeight="bold" fill={iconAppearance.baseColor}>
+                              {iconAppearance.externalRelationship.marker}
+                            </text>
+                          </g>
+                        )}
 
                         {/* Combatant marker */}
                         <circle

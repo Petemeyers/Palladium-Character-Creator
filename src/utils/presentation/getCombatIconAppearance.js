@@ -71,6 +71,9 @@ export function getCombatIconAppearance({
   const surrender = resolveSurrender(fighter, surrenderRecord, generationId);
   const morale = resolveMorale(fighter, visualState);
   const grapple = resolveGrapple(fighter, grappleState);
+  const carrierLink = fighter.carrierLink || fighter.mountedState?.carrierLink || null;
+  const mounted = carrierLink?.relationshipType === "mounted"
+    && !["released", "broken"].includes(text(carrierLink.state));
   const id = idOf(fighter);
   const dead = visualState.bodyState === BODY_VISUAL_STATES.DEAD;
   const unconscious = visualState.bodyState === BODY_VISUAL_STATES.UNCONSCIOUS;
@@ -110,7 +113,10 @@ export function getCombatIconAppearance({
   const healthMarker = visualState.bodyState === BODY_VISUAL_STATES.CRITICAL ? { marker: "!", label: "Critical HP" }
     : visualState.bodyState === BODY_VISUAL_STATES.BLOODIED ? { marker: "◆", label: "Bloodied" }
       : visualState.bodyState === BODY_VISUAL_STATES.WOUNDED ? { marker: "•", label: "Wounded" } : null;
-  const labels = [...conditions.map((condition) => condition.label), ...(healthMarker ? [healthMarker.label] : []), ...(active ? ["Active turn"] : []), ...(selected ? ["Selected"] : []), ...(targeted ? ["Targeted"] : [])];
+  const mountedRole = mounted
+    ? String(carrierLink.passengerId) === id ? "Mounted rider" : String(carrierLink.carrierId) === id ? "Mount carrying rider" : "Mounted relationship"
+    : null;
+  const labels = [...conditions.map((condition) => condition.label), ...(healthMarker ? [healthMarker.label] : []), ...(mountedRole ? [mountedRole] : []), ...(active ? ["Active turn"] : []), ...(selected ? ["Selected"] : []), ...(targeted ? ["Targeted"] : [])];
   if (!labels.length) labels.push(`${allegianceKey} fighter`);
   const status = Object.freeze({ key: primary.key, color: primary.color, marker: primary.marker, label: primary.label });
   const opacity = dead ? 0.28 : unconscious ? 0.45 : surrender.captured ? 0.7 : surrender.surrendered ? 0.78 : 0.9;
@@ -127,6 +133,9 @@ export function getCombatIconAppearance({
     activeTurnIndicator: active, selectedIndicator: selected, targetedIndicator: targeted,
     activeColor: tokens.active, selectionColor: tokens.selected, targetColor: tokens.target,
     pendingSurrender: surrender.pending,
+    externalRelationship: mounted
+      ? Object.freeze({ key: "mounted", marker: "R", label: mountedRole })
+      : null,
   });
 }
 

@@ -130,5 +130,5 @@ const checks = [
 
 assert.equal(checks.length, 54);
 for (const [name, passed] of checks) assert.equal(Boolean(passed), true, name);
-assert.equal(warhorseDefinition.carrierProfile.coordinatedMountedCombatSupported, false);
+assert.equal(warhorseDefinition.carrierProfile.coordinatedMountedCombatSupported, true);
 console.log(`Phase 3C3A requirement matrix passed: ${checks.length}/54`);

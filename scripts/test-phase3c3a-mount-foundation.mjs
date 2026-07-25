@@ -58,9 +58,9 @@ equal(getCombatActionContract("dismount").rollRequired, false);
 const knight = structuredClone(getCanonicalCombatActorDefinition("knight"));
 const warhorse = structuredClone(getCanonicalCombatActorDefinition("warhorse"));
 equal(warhorse.carrierProfile.maximumLoad, 300);
-equal(warhorse.carrierProfile.coordinatedMountedCombatSupported, false);
-equal(knight.passengerProfile.mountFoundationOnly, true);
-equal(warhorse.survivalProfile.mountedCombatSupported, false);
+equal(warhorse.carrierProfile.coordinatedMountedCombatSupported, true);
+equal(knight.passengerProfile.mountFoundationOnly, false);
+equal(warhorse.survivalProfile.mountedCombatSupported, true);
 equal(warhorse.armorProfile.barding, false);
 const capacity = resolveCarrierCapacity({
   carrier: warhorse,
