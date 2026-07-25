@@ -86,7 +86,7 @@ export function createCanonicalMountedCombatRegistry({ carrierRegistry } = {}) {
 
 export function getCanonicalMountedPair({ registry, linkId, rider, mount } = {}) {
   const link = registry?.carrierRegistry?.links?.get(String(linkId || ""));
-  if (!link || link.relationshipType !== "mounted" || ["released", "broken"].includes(link.state)) {
+  if (!link || !["mounted", "flying-mounted"].includes(link.relationshipType) || ["released", "broken"].includes(link.state)) {
     return reject("invalid-mounted-link", { riderId: idOf(rider), mountId: idOf(mount) }, "invalid-mounted-link");
   }
   if (
@@ -95,7 +95,10 @@ export function getCanonicalMountedPair({ registry, linkId, rider, mount } = {})
     || registry.carrierRegistry.activeByPassenger.get(link.passengerId) !== link.linkId
     || registry.carrierRegistry.activeByCarrier.get(link.carrierId) !== link.linkId
   ) return reject("invalid-mounted-link", { ...link, riderId: idOf(rider), mountId: idOf(mount) }, "invalid-mounted-link");
-  if (mount?.mountProfile?.mayServeAsMount !== true) return reject("mounted-link-without-mount-profile", link, "invalid-mounted-link");
+  const validMountProfile = link.relationshipType === "flying-mounted"
+    ? mount?.flyingMountProfile?.mayServeAsFlyingMount === true
+    : mount?.mountProfile?.mayServeAsMount === true;
+  if (!validMountProfile) return reject("mounted-link-without-mount-profile", link, "invalid-mounted-link");
   if (rider?.riderProfile?.mayRide !== true) return reject("mounted-link-without-rider-profile", link, "invalid-mounted-link");
   const pairId = link.mountedState?.pairId || link.linkId;
   return { accepted: true, pairId, link, rider, mount };
@@ -177,9 +180,10 @@ export function claimCanonicalMountedAction({
   targetId = null,
   attackId = null,
   combatActive = true,
+  actionContract = null,
 } = {}) {
   const turn = liveTurn(registry, mountedTurnId);
-  const contract = MOUNTED_ACTION_CONTRACTS[actionKey];
+  const contract = actionContract || MOUNTED_ACTION_CONTRACTS[actionKey];
   if (!turn || !contract || turn.state !== "active" || combatActive === false) return reject("stale-mounted-callback", turn, "stale-mounted-callback-rejected");
   if (turn.generationId !== generationId || turn.initiativeTurnId !== initiativeTurnId) return reject("stale-mounted-callback", turn, "stale-mounted-callback-rejected");
   if (owner !== contract.owner || turn.currentActionOwner) return reject("mounted-action-owner-unavailable", turn, "mounted-action-owner-rejected");
@@ -207,6 +211,10 @@ export function claimCanonicalMountedAction({
     attackId,
     state: "claimed",
     completionCount: 0,
+    actionCost: contract.actionCost,
+    riderActionCost: contract.riderActionCost ?? null,
+    mountActionCost: contract.mountActionCost ?? null,
+    turnEnding: contract.turnEnding === true,
   };
   turn.actionSequence = actionSequence;
   turn.currentActionOwner = owner;
@@ -222,7 +230,7 @@ export function completeCanonicalMountedAction({ registry, actionToken, status =
   }
   const turn = liveTurn(registry, `${claim.generationId}:${claim.initiativeTurnId}:mounted-turn:${claim.pairId}`);
   if (!turn || turn.currentActionOwner !== claim.owner) return reject("stale-mounted-callback", claim, "stale-mounted-callback-rejected");
-  const contract = MOUNTED_ACTION_CONTRACTS[claim.actionKey];
+  const contract = MOUNTED_ACTION_CONTRACTS[claim.actionKey] || claim;
   if (claim.owner === "rider") turn.riderActionsRemaining -= contract.actionCost;
   if (claim.owner === "mount") turn.mountActionsRemaining -= contract.actionCost;
   if (claim.owner === "coordinated") {
@@ -237,7 +245,7 @@ export function completeCanonicalMountedAction({ registry, actionToken, status =
   claim.completionCount += 1;
   registry.completedActionTokens.add(claim.actionToken);
   const shouldHandoff = combatActive === false
-    || contract.turnEnding
+    || claim.turnEnding
     || (turn.riderActionsRemaining <= 0 && turn.mountActionsRemaining <= 0);
   if (shouldHandoff && turn.state === "active") {
     turn.state = combatActive === false ? "canceled-outcome" : "completed";

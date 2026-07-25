@@ -88,6 +88,7 @@ export function resolveCarrierCapacity({
   carrier,
   passenger,
   passengerEquipment,
+  carrierEquipment,
   relationshipType,
   carrierProfile,
 } = {}) {
@@ -104,7 +105,14 @@ export function resolveCarrierCapacity({
       ?? passenger?.equipment
       ?? passenger?.inventory,
   );
-  const totalLoad = passengerWeight + resolvedEquipmentWeight;
+  const resolvedCarrierEquipmentWeight = relationshipType === "flying-mounted"
+    ? equipmentWeight(
+        carrierEquipment
+          ?? carrier?.equipment
+          ?? carrier?.inventory,
+      )
+    : 0;
+  const totalLoad = passengerWeight + resolvedEquipmentWeight + resolvedCarrierEquipmentWeight;
   const maximumLoad = Math.max(0, finite(
     profile.maximumLoad
       ?? profile.maximumLoadLbs
@@ -128,6 +136,8 @@ export function resolveCarrierCapacity({
     allowed,
     passengerWeight,
     equipmentWeight: resolvedEquipmentWeight,
+    passengerEquipmentWeight: resolvedEquipmentWeight,
+    carrierEquipmentWeight: resolvedCarrierEquipmentWeight,
     totalLoad,
     maximumLoad,
     loadRatio,
@@ -274,6 +284,7 @@ export function establishCanonicalCarrierLink(request = {}) {
     carrier,
     passenger,
     passengerEquipment: request.passengerEquipment,
+    carrierEquipment: request.carrierEquipment,
     relationshipType,
     carrierProfile: request.carrierProfile,
   });
@@ -315,7 +326,7 @@ export function establishCanonicalCarrierLink(request = {}) {
     saddleState,
     harnessState,
     reinsState: request.reinsState || "none",
-    mountedState: relationshipType === "mounted"
+    mountedState: ["mounted", "flying-mounted"].includes(relationshipType)
       ? Object.freeze({
           pairId: linkId,
           riderId: passengerId,
@@ -327,6 +338,23 @@ export function establishCanonicalCarrierLink(request = {}) {
           saddleState,
           reinsState: request.reinsState || "none",
           riderSeatState: "seated",
+          currentActionOwner: null,
+          coordinatedActionId: null,
+        })
+      : null,
+    mountedFlightState: relationshipType === "flying-mounted"
+      ? Object.freeze({
+          pairId: linkId,
+          riderId: passengerId,
+          mountId: carrierId,
+          initiativeTurnId,
+          generationId,
+          state: altitude > 0 ? "airborne" : "grounded-mounted",
+          controlState: controlType === "rider-controlled" ? "controlled" : "independent",
+          attachmentState: request.attachmentState || saddleState || harnessState || "loose",
+          harnessState,
+          riderSeatState: "seated",
+          loadState: capacity.capacityState,
           currentActionOwner: null,
           coordinatedActionId: null,
         })
@@ -349,7 +377,7 @@ export function establishCanonicalCarrierLink(request = {}) {
         maximumLoad: capacity.maximumLoad,
       }),
       event("carrier-link-established", link),
-      ...(relationshipType === "mounted" ? [event("mount-link-established", link)] : []),
+      ...(["mounted", "flying-mounted"].includes(relationshipType) ? [event("mount-link-established", link)] : []),
       ...(relationshipType === "prey-carry" ? [event("prey-lifted", link)] : []),
     ],
     playerEvents: [playerEvent(
@@ -675,7 +703,7 @@ export function releaseCanonicalCarrierLink({
       ...derived.events,
       ...(fallClaim?.events || []),
       event("carrier-link-released", link, { cause }),
-      ...(link.relationshipType === "mounted" ? [event("mount-link-released", link, { cause })] : []),
+      ...(["mounted", "flying-mounted"].includes(link.relationshipType) ? [event("mount-link-released", link, { cause })] : []),
       ...(link.relationshipType === "prey-carry" ? [event("prey-released", link, { cause })] : []),
     ],
   };

@@ -9,6 +9,7 @@ import {
   isChargeOnlyAttack,
 } from "./meleeEngagementContext.js";
 import { MOUNTED_ACTION_CONTRACTS } from "./combat/canonicalMountedCombat.js";
+import { MOUNTED_FLIGHT_ACTION_CONTRACTS } from "./combat/canonicalMountedFlight.js";
 
 const hasValue = (value) => value !== undefined && value !== null && value !== "";
 
@@ -116,6 +117,19 @@ const ACTION_CONTRACTS = Object.freeze({
   "mount-natural-attack": { rollRequired: true, executorIdentity: "canonical-mounted-executor", aiAvailable: true },
   "brace-against-charge": { rollRequired: false, executorIdentity: "canonical-mounted-executor", aiAvailable: true },
   "recover-mounted-control": { rollRequired: true, executorIdentity: "canonical-mounted-executor", aiAvailable: true },
+  "flying-mount-takeoff": { rollRequired: false, executorIdentity: "canonical-mounted-flight-executor", aiAvailable: true },
+  "flying-mount-ascend": { rollRequired: false, executorIdentity: "canonical-mounted-flight-executor", aiAvailable: true },
+  "flying-mount-descend": { rollRequired: false, executorIdentity: "canonical-mounted-flight-executor", aiAvailable: true },
+  "mounted-flight-move": { rollRequired: false, executorIdentity: "canonical-mounted-flight-executor", aiAvailable: true },
+  "flying-mount-land": { rollRequired: false, executorIdentity: "canonical-mounted-flight-executor", aiAvailable: true },
+  "secure-seat": { rollRequired: false, executorIdentity: "canonical-mounted-flight-executor", aiAvailable: true },
+  "release-from-flying-mount": { rollRequired: false, executorIdentity: "canonical-mounted-flight-executor", aiAvailable: true },
+  "emergency-aerial-separation": { rollRequired: false, executorIdentity: "canonical-mounted-flight-executor", aiAvailable: false },
+  "mounted-aerial-rider-ranged-attack": { rollRequired: true, executorIdentity: "canonical-mounted-flight-executor", aiAvailable: true },
+  "mounted-aerial-rider-melee-attack": { rollRequired: true, executorIdentity: "canonical-mounted-flight-executor", aiAvailable: true },
+  "flying-mount-natural-attack": { rollRequired: true, executorIdentity: "canonical-mounted-flight-executor", aiAvailable: true },
+  "command-intelligent-mount": { rollRequired: false, executorIdentity: "canonical-mounted-flight-executor", aiAvailable: true },
+  "recover-mounted-flight-control": { rollRequired: true, executorIdentity: "canonical-mounted-flight-executor", aiAvailable: true },
   compatibility: { rollRequired: false, executorIdentity: "compatibility-controls-panel", aiAvailable: false },
 });
 
@@ -123,20 +137,22 @@ export const getCombatActionContract = (type, source = "") => {
   const normalizedType = normalizeText(type, "compatibility");
   const contract = ACTION_CONTRACTS[normalizedType] || ACTION_CONTRACTS.compatibility;
   const mountedContract = MOUNTED_ACTION_CONTRACTS[normalizedType] || null;
+  const mountedFlightContract = MOUNTED_FLIGHT_ACTION_CONTRACTS[normalizedType] || null;
   const compatibility = normalizeText(source).toLowerCase().includes("compatibility");
   return {
     ...contract,
-    ...(mountedContract ? {
-      stableKey: mountedContract.key,
-      actionOwner: mountedContract.owner,
-      staminaOwner: mountedContract.staminaOwner,
-      prerequisites: mountedContract.prerequisites,
-      legalRiderStates: mountedContract.legalRiderStates,
-      legalMountStates: mountedContract.legalMountStates,
-      mountedExecutor: mountedContract.executor,
+    ...((mountedFlightContract || mountedContract) ? {
+      stableKey: (mountedFlightContract || mountedContract).key,
+      actionOwner: (mountedFlightContract || mountedContract).owner,
+      staminaOwner: (mountedFlightContract || mountedContract).staminaOwner,
+      prerequisites: (mountedFlightContract || mountedContract).prerequisites,
+      legalRiderStates: (mountedFlightContract || mountedContract).legalRiderStates,
+      legalMountStates: (mountedFlightContract || mountedContract).legalMountStates,
+      mountedExecutor: (mountedFlightContract || mountedContract).executor,
     } : {}),
     playerVisible: !compatibility,
-    turnEnding: MOUNTED_ACTION_CONTRACTS[normalizedType]?.turnEnding
+    turnEnding: MOUNTED_FLIGHT_ACTION_CONTRACTS[normalizedType]?.turnEnding
+      ?? MOUNTED_ACTION_CONTRACTS[normalizedType]?.turnEnding
       ?? ["mount", "dismount", "emergency-dismount"].includes(normalizedType),
     legalActorStates: ["active", "conscious"],
   };
@@ -511,11 +527,15 @@ const buildCarrierActions = ({
   const selectedCarrierSupportsMount = selectedTarget?.carrierProfile?.allowedRelationshipTypes?.includes?.("mounted") === true
     && selectedTarget?.mountProfile?.mayServeAsMount === true
     && actor?.riderProfile?.mayRide === true;
-  const actorIsMountedPassenger = activeLink?.relationshipType === "mounted"
+  const selectedCarrierSupportsFlyingMount = selectedTarget?.carrierProfile?.allowedRelationshipTypes?.includes?.("flying-mounted") === true
+    && selectedTarget?.flyingMountProfile?.mayServeAsFlyingMount === true
+    && actor?.riderProfile?.mayRide === true;
+  const actorIsMountedPassenger = ["mounted", "flying-mounted"].includes(activeLink?.relationshipType)
     && String(activeLink.passengerId) === actorId
     && !["released", "broken"].includes(activeLink.state);
   const actions = [];
-  if (!activeLink && selectedCarrierSupportsMount) {
+  if (!activeLink && (selectedCarrierSupportsMount || selectedCarrierSupportsFlyingMount)) {
+    const relationshipType = selectedCarrierSupportsFlyingMount ? "flying-mounted" : "mounted";
     actions.push(makeAction({
       actor,
       currentTurnEntry,
@@ -530,7 +550,7 @@ const buildCarrierActions = ({
       previewSummary: "Establish the canonical mounted carrier link.",
       metadata: {
         executor: "establishCanonicalCarrierLink",
-        relationshipType: "mounted",
+        relationshipType,
         legalRelationshipState: "none",
       },
     }));
@@ -559,6 +579,67 @@ const buildCarrierActions = ({
     }
   }
   if (actorIsMountedPassenger) {
+    if (activeLink.relationshipType === "flying-mounted") {
+      const mountedTurn = carrierContext.mountedTurn || carrierContext.mountedFlightTurn || null;
+      const mount = carrierContext.mount || null;
+      const flightState = activeLink.mountedFlightState?.state || "grounded-mounted";
+      const riderWeapons = actor.weaponProfiles || actor.attacks || [];
+      const meleeWeapon = riderWeapons.find((weapon) => !["projectile", "ranged"].includes(normalizeText(weapon.deliveryType || weapon.kind).toLowerCase()));
+      const rangedWeapon = riderWeapons.find((weapon) => ["projectile", "ranged"].includes(normalizeText(weapon.deliveryType || weapon.kind).toLowerCase()));
+      const mountNaturalAttack = mount?.naturalAttackProfiles?.[0] || mount?.weaponProfiles?.find((profile) => profile.naturalWeapon === true) || null;
+      const keys = [
+        ...(flightState === "grounded-mounted" || flightState === "perched" ? ["flying-mount-takeoff", "release-from-flying-mount"] : []),
+        ...(["airborne", "ascending", "descending"].includes(flightState) ? ["flying-mount-ascend", "flying-mount-descend", "mounted-flight-move", "flying-mount-land", "emergency-aerial-separation"] : []),
+        ...(rangedWeapon && flightState !== "grounded-mounted" ? ["mounted-aerial-rider-ranged-attack"] : []),
+        ...(meleeWeapon && flightState !== "grounded-mounted" ? ["mounted-aerial-rider-melee-attack"] : []),
+        ...(mountNaturalAttack && flightState !== "grounded-mounted" ? ["flying-mount-natural-attack"] : []),
+        ...(["loose", "failing", "bareback"].includes(activeLink.mountedFlightState?.attachmentState) ? ["secure-seat"] : []),
+        ...(activeLink.controlType === "independent-intelligent-mount" ? ["command-intelligent-mount"] : []),
+        ...(flightState === "out-of-control" ? ["recover-mounted-flight-control"] : []),
+      ];
+      keys.forEach((key) => {
+        const flightContract = MOUNTED_FLIGHT_ACTION_CONTRACTS[key];
+        const ownerActions = flightContract.owner === "mount"
+          ? mountedTurn?.mountActionsRemaining
+          : flightContract.owner === "rider"
+            ? mountedTurn?.riderActionsRemaining
+            : Math.min(mountedTurn?.riderActionsRemaining ?? 0, mountedTurn?.mountActionsRemaining ?? 0);
+        const attackId = key === "flying-mount-natural-attack"
+          ? mountNaturalAttack?.profileKey || mountNaturalAttack?.attackKey
+          : key === "mounted-aerial-rider-ranged-attack"
+            ? rangedWeapon?.profileKey || rangedWeapon?.id
+            : key === "mounted-aerial-rider-melee-attack"
+              ? meleeWeapon?.profileKey || meleeWeapon?.id
+              : "";
+        actions.push(makeAction({
+          actor,
+          currentTurnEntry,
+          id: key,
+          name: flightContract.label,
+          type: key,
+          source: "canonical mounted-flight catalog",
+          category: flightContract.category,
+          costActions: flightContract.actionCost,
+          targetRequired: Boolean(flightContract.targetRequirements),
+          targetId: selectedTargetId(selectedTarget),
+          enabled: mountedTurn?.state === "active" && ownerActions > 0,
+          disabledReason: mountedTurn?.state !== "active" ? "No active mounted-flight turn." : ownerActions <= 0 ? "No mounted-flight actions remaining." : "",
+          previewSummary: `${flightContract.label} through canonical ${flightContract.owner} ownership.`,
+          metadata: {
+            executor: flightContract.executor,
+            actionOwner: flightContract.owner,
+            staminaOwner: flightContract.staminaOwner || "none",
+            turnEnding: flightContract.turnEnding,
+            pairId: activeLink.mountedFlightState?.pairId || activeLink.linkId,
+            mountedTurnId: mountedTurn?.mountedTurnId || "",
+            attackId,
+            attachmentState: activeLink.mountedFlightState?.attachmentState,
+            flightState,
+          },
+        }));
+      });
+      return actions;
+    }
     actions.push(makeAction({
       actor,
       currentTurnEntry,
@@ -807,7 +888,7 @@ export function buildCombatActionCatalog({
   }
 
   const activeCarrierLink = carrierContext?.activeLink || actor?.carrierLink || null;
-  const actorMounted = activeCarrierLink?.relationshipType === "mounted"
+  const actorMounted = ["mounted", "flying-mounted"].includes(activeCarrierLink?.relationshipType)
     && String(activeCarrierLink.passengerId) === getEntryId(actor)
     && !["released", "broken"].includes(activeCarrierLink.state);
   if (!actorMounted) buildMovementActions({ actor, currentTurnEntry, targetId }).forEach((action) => addUnique(actions, action));

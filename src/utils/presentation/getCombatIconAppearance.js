@@ -72,8 +72,11 @@ export function getCombatIconAppearance({
   const morale = resolveMorale(fighter, visualState);
   const grapple = resolveGrapple(fighter, grappleState);
   const carrierLink = fighter.carrierLink || fighter.mountedState?.carrierLink || null;
-  const mounted = carrierLink?.relationshipType === "mounted"
+  const mounted = ["mounted", "flying-mounted"].includes(carrierLink?.relationshipType)
     && !["released", "broken"].includes(text(carrierLink.state));
+  const mountedFlight = carrierLink?.relationshipType === "flying-mounted"
+    ? carrierLink.mountedFlightState || null
+    : null;
   const id = idOf(fighter);
   const dead = visualState.bodyState === BODY_VISUAL_STATES.DEAD;
   const unconscious = visualState.bodyState === BODY_VISUAL_STATES.UNCONSCIOUS;
@@ -114,9 +117,16 @@ export function getCombatIconAppearance({
     : visualState.bodyState === BODY_VISUAL_STATES.BLOODIED ? { marker: "◆", label: "Bloodied" }
       : visualState.bodyState === BODY_VISUAL_STATES.WOUNDED ? { marker: "•", label: "Wounded" } : null;
   const mountedRole = mounted
-    ? String(carrierLink.passengerId) === id ? "Mounted rider" : String(carrierLink.carrierId) === id ? "Mount carrying rider" : "Mounted relationship"
+    ? String(carrierLink.passengerId) === id
+      ? (mountedFlight ? "Airborne mounted rider" : "Mounted rider")
+      : String(carrierLink.carrierId) === id
+        ? (mountedFlight ? "Flying mount carrying rider" : "Mount carrying rider")
+        : (mountedFlight ? "Mounted-flight relationship" : "Mounted relationship")
     : null;
-  const labels = [...conditions.map((condition) => condition.label), ...(healthMarker ? [healthMarker.label] : []), ...(mountedRole ? [mountedRole] : []), ...(active ? ["Active turn"] : []), ...(selected ? ["Selected"] : []), ...(targeted ? ["Targeted"] : [])];
+  const mountedFlightLabel = mountedFlight
+    ? `Altitude ${Number(fighter.flightState?.altitudeFeet ?? fighter.position?.altitudeFeet ?? fighter.altitudeFeet ?? fighter.altitude ?? 0)} feet; attachment ${mountedFlight.attachmentState || "unknown"}; control ${mountedFlight.controlState || "unknown"}`
+    : null;
+  const labels = [...conditions.map((condition) => condition.label), ...(healthMarker ? [healthMarker.label] : []), ...(mountedRole ? [mountedRole] : []), ...(mountedFlightLabel ? [mountedFlightLabel] : []), ...(active ? ["Active turn"] : []), ...(selected ? ["Selected"] : []), ...(targeted ? ["Targeted"] : [])];
   if (!labels.length) labels.push(`${allegianceKey} fighter`);
   const status = Object.freeze({ key: primary.key, color: primary.color, marker: primary.marker, label: primary.label });
   const opacity = dead ? 0.28 : unconscious ? 0.45 : surrender.captured ? 0.7 : surrender.surrendered ? 0.78 : 0.9;
@@ -134,7 +144,7 @@ export function getCombatIconAppearance({
     activeColor: tokens.active, selectionColor: tokens.selected, targetColor: tokens.target,
     pendingSurrender: surrender.pending,
     externalRelationship: mounted
-      ? Object.freeze({ key: "mounted", marker: "R", label: mountedRole })
+      ? Object.freeze({ key: mountedFlight ? "flying-mounted" : "mounted", marker: "R", label: mountedFlightLabel ? `${mountedRole}; ${mountedFlightLabel}` : mountedRole })
       : null,
   });
 }
