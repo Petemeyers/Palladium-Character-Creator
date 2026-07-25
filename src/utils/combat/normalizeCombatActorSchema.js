@@ -1,5 +1,6 @@
 import { getCanonicalCombatActorDefinition, getCanonicalWeaponProfileByAlias, resolveCanonicalCombatActorAlias } from "../../data/canonicalCombatActors.js";
 import { normalizeAlignmentBehavior } from "../behavior/normalizeAlignmentBehavior.js";
+import { normalizeCanonicalAmmunitionState } from "./canonicalRangedCombat.js";
 
 const clone = (value) => value == null ? value : JSON.parse(JSON.stringify(value));
 const keyText = (value) => String(value || "").trim().toLowerCase();
@@ -161,6 +162,7 @@ export function normalizeReferenceCombatActor(actor = {}, { source = "combat-sta
     grappleState: clone(actor.grappleState), surrenderState: clone(actor.surrenderState), combatWeaponState: clone(actor.combatWeaponState),
     initiativeTurnId: actor.initiativeTurnId, actionToken: actor.actionToken, initiativeIdentity: clone(actor.initiativeIdentity),
     remainingActions: actor.remainingActions ?? definition.actionsPerRound,
+    ammunitionState: clone(actor.ammunitionState),
   };
   const normalizedActor = {
     ...definition,
@@ -200,6 +202,12 @@ export function normalizeReferenceCombatActor(actor = {}, { source = "combat-sta
     grappleProfile: clone(definition.grappleProfile),
     moraleProfile: clone(definition.moraleProfile),
     surrenderProfile: clone(definition.surrenderProfile),
+    ammunition: clone(definition.ammunition || []),
+    ammunitionState: normalizeCanonicalAmmunitionState(
+      { ...definition, ...actor, inventory: actor.inventory || definition.inventory, ammunitionState: actor.ammunitionState || definition.ammunitionState },
+      canonicalLoadout.profiles.find((profile) => profile.deliveryType === "projectile"),
+    ),
+    rangedTacticalProfile: clone(definition.rangedTacticalProfile),
     behavior: { ...definition.behavior, ...(alignmentBehavior || {}) },
     behaviorProfile: alignmentBehavior,
     alignment: alignmentBehavior?.alignmentKey || actor.alignment || definition.alignment,

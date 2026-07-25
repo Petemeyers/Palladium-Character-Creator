@@ -54,9 +54,39 @@ export function validateCombatActor(actor = {}, { comparisonActor = null, emitDi
     if (profile.isNaturalAttack || profile.naturalWeapon) {
       if (profile.sourceWeaponId || profile.sourceWeaponName || profile.manufacturedWeapon === true) pushError("natural-manufactured-metadata", `${profile.name} inherits manufactured weapon metadata.`, "combat-actor-weapon-profile-contradiction");
     }
+    const deliveryType = text(profile.deliveryType);
+    const normalRange = Number(profile.normalRangeFeet ?? profile.rangeProfile?.normal);
+    const longRange = Number(profile.longRangeFeet ?? profile.rangeProfile?.long);
+    const minimumReach = Number(profile.minimumEffectiveReachFeet);
+    const maximumReach = Number(profile.reachFeet ?? profile.reach);
+    if (deliveryType === "projectile" && !profile.ammunitionType) pushError("projectile-missing-ammunition-type", `${profile.name} has no canonical ammunition type.`, "combat-actor-weapon-profile-contradiction");
+    if (deliveryType === "projectile" && !profile.armorContactProfile) pushError("projectile-missing-armor-contact-profile", `${profile.name} has no armor-contact profile.`, "combat-actor-weapon-profile-contradiction");
+    if (deliveryType === "projectile" && text(profile.kind || profile.attackType) === "melee") pushError("projectile-routed-as-melee", `${profile.name} is routed as melee.`, "combat-actor-weapon-profile-contradiction");
+    if (deliveryType === "extended-melee" && (profile.ammunitionType || profile.ammunition)) pushError("polearm-consuming-ammunition", `${profile.name} cannot consume projectile ammunition.`, "combat-actor-weapon-profile-contradiction");
+    if (deliveryType === "extended-melee" && text(profile.kind || profile.attackType) === "ranged") pushError("extended-melee-routed-as-projectile", `${profile.name} is routed as projectile.`, "combat-actor-weapon-profile-contradiction");
+    if (deliveryType === "projectile" && (!Number.isFinite(normalRange) || !Number.isFinite(longRange) || normalRange <= 0 || longRange <= 0 || normalRange > longRange)) pushError("invalid-projectile-range", `${profile.name} has contradictory range values.`, "combat-actor-weapon-profile-contradiction");
+    if (deliveryType === "extended-melee" && Number.isFinite(minimumReach) && Number.isFinite(maximumReach) && minimumReach > maximumReach) pushError("invalid-extended-melee-reach", `${profile.name} has minimum reach beyond maximum reach.`, "combat-actor-weapon-profile-contradiction");
+    if (text(profile.weaponFamily) === "bow" || text(profile.weaponFamily) === "longbow") {
+      if (text(profile.reloadRequirement) !== "none") pushError("bow-inherits-crossbow-reload", `${profile.name} cannot use crossbow reload behavior.`, "combat-actor-weapon-profile-contradiction");
+    }
+    if (text(profile.weaponFamily) === "crossbow" && text(profile.drawRequirement) === "part-of-attack") pushError("crossbow-inherits-bow-draw", `${profile.name} cannot use bow draw behavior.`, "combat-actor-weapon-profile-contradiction");
     const matchingAttack = attacks.find((attack) => idOf(attack) === idOf(profile));
     if (matchingAttack && (matchingAttack.damage !== profile.damage || text(matchingAttack.damageType) !== text(profile.damageType))) pushError("attack-profile-damage-contradiction", `${profile.name} attack/profile damage identity differs.`, "combat-actor-weapon-profile-contradiction");
   });
+  const ammunitionState = normalizedActor.ammunitionState;
+  if (ammunitionState) {
+    const current = Number(ammunitionState.current);
+    const maximum = Number(ammunitionState.maximum);
+    const ammoWeapon = profiles.find((profile) => idOf(profile) === ammunitionState.weaponId);
+    if (!ammoWeapon || text(ammoWeapon.deliveryType) !== "projectile") pushError("ammunition-without-compatible-weapon", "Canonical ammunition has no compatible projectile weapon.", "combat-actor-weapon-profile-contradiction");
+    if (!Number.isFinite(current) || current < 0) pushError("negative-ammunition", "Ammunition cannot be negative.", "combat-actor-weapon-profile-contradiction");
+    if (!Number.isFinite(maximum) || current > maximum) pushError("ammunition-above-maximum", "Ammunition exceeds canonical maximum.", "combat-actor-weapon-profile-contradiction");
+    if (text(ammoWeapon?.weaponFamily) === "crossbow" && ammunitionState.reloadState === "loaded" && !ammunitionState.chambered) pushError("loaded-crossbow-without-chambered-bolt", "Loaded crossbow requires a chambered bolt.", "combat-actor-weapon-profile-contradiction");
+    if (ammunitionState.chambered && ammunitionState.reloadState !== "loaded") pushError("chambered-ammunition-with-unloaded-state", "Chambered ammunition contradicts reload state.", "combat-actor-weapon-profile-contradiction");
+  }
+  if (normalizedActor.rangedTacticalProfile && !profiles.some((profile) => text(profile.deliveryType) === "projectile" || text(profile.deliveryType) === "thrown")) {
+    pushError("ranged-ai-without-usable-ranged-weapon", "Ranged tactical profile has no ranged weapon.", "combat-actor-weapon-profile-contradiction");
+  }
   const activeShield = normalizedActor.equippedShield && normalizedActor.equippedShield.active !== false;
   const activeTwoHandedWeapon = profiles.find((profile) => (
     idOf(profile) === mainHand &&

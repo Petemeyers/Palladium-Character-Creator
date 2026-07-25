@@ -13,6 +13,30 @@ const weapon = (profileKey, name, damage, damageType, extra = {}) => Object.free
   reachFeet: 5,
   naturalWeapon: false,
   isNaturalAttack: false,
+  isMelee: true,
+  isRanged: false,
+  displayName: name,
+  weaponFamily: "manufactured-weapon",
+  deliveryType: "melee",
+  manufacturedOrNatural: "manufactured",
+  manufacturedWeapon: true,
+  handedness: "one-handed",
+  handsRequired: 1,
+  attackBonusSource: "actor-and-profile",
+  minimumEffectiveReachFeet: 0,
+  normalRangeFeet: null,
+  longRangeFeet: null,
+  ammunitionType: null,
+  ammunitionPerAttack: 0,
+  reloadRequirement: "none",
+  drawRequirement: "none",
+  armorContactProfile: "manufactured-melee",
+  grappleCompatibility: "metadata-driven",
+  clinchCompatibility: "profile-only",
+  groundedCompatibility: "profile-only",
+  shieldCompatibility: true,
+  alternateProfiles: [],
+  aliases: [],
   ...extra,
 });
 
@@ -31,20 +55,51 @@ const natural = (profileKey, name, damage, damageType, extra = {}) => Object.fre
   reachFeet: 5,
   naturalWeapon: true,
   isNaturalAttack: true,
+  isMelee: true,
+  isRanged: false,
   manufacturedWeapon: false,
+  displayName: name,
+  weaponFamily: "natural",
+  deliveryType: "natural",
+  manufacturedOrNatural: "natural",
+  handedness: "natural",
+  handsRequired: 0,
+  attackBonusSource: "actor-and-profile",
+  minimumEffectiveReachFeet: 0,
+  normalRangeFeet: null,
+  longRangeFeet: null,
+  ammunitionType: null,
+  ammunitionPerAttack: 0,
+  reloadRequirement: "none",
+  drawRequirement: "none",
+  armorContactProfile: "natural-contact",
+  grappleCompatibility: "natural",
+  clinchCompatibility: "profile-only",
+  groundedCompatibility: "profile-only",
+  shieldCompatibility: true,
+  alternateProfiles: [],
+  aliases: [],
   ...extra,
 });
 
 const knightSword = weapon("weapon.long-sword", "Long Sword", "1d8", "slashing", { category: "one-handed", handedness: "one-handed", handsRequired: 1, lengthFt: 3, attackBonus: 3, armorTechniqueCompatibility: ["longsword-cut", "longsword-thrust", "half-sword-thrust", "pommel-or-crossguard-strike"], retainedInClinch: true, usableInClinch: false });
-const knightDagger = weapon("weapon.dagger", "Dagger", "1d4", "piercing", { category: "one-handed", handedness: "one-handed", handsRequired: 1, lengthFt: 1, reach: 1, reachFeet: 1, usableInClinch: true, groundedCompatible: true, armorGapCapable: true });
+const knightDagger = weapon("weapon.dagger", "Dagger", "1d4", "piercing", { weaponFamily: "dagger", deliveryType: "melee", category: "one-handed", handedness: "one-handed", handsRequired: 1, lengthFt: 1, reach: 5, reachFeet: 5, range: null, normalRangeFeet: null, longRangeFeet: null, usableInClinch: true, groundedCompatible: true, armorGapCapable: true, alternateProfileKeys: ["weapon.dagger.thrown"] });
+const thrownDagger = weapon("weapon.dagger.thrown", "Thrown Dagger", "1d4", "piercing", { weaponFamily: "dagger", deliveryType: "thrown", type: "ranged", kind: "ranged", attackType: "ranged", category: "thrown", isMelee: false, isRanged: true, handedness: "one-handed", handsRequired: 1, lengthFt: 1, reach: null, reachFeet: null, normalRangeFeet: 20, longRangeFeet: 60, range: 20, rangeProfile: { normal: 20, long: 60 }, ammunitionType: null, ammunitionPerAttack: 0, drawRequirement: "part-of-attack", armorContactProfile: "thrown-light-blade", grappleCompatibility: "inventory-only", clinchCompatibility: "unavailable", aliases: ["Dagger Throw"] });
 const knightShortSword = weapon("weapon.short-sword", "Short Sword", "1d6", "slashing", { category: "one-handed", handedness: "one-handed", handsRequired: 1, lengthFt: 2, retainedInClinch: true, usableInClinch: false });
 const ritualDagger = weapon("weapon.ritual-dagger", "Ritual Dagger", "1d4", "piercing", { category: "one-handed", handedness: "one-handed", handsRequired: 1, lengthFt: 1, reach: 1, reachFeet: 1, usableInClinch: true, groundedCompatible: true, armorGapCapable: true });
 const armingSword = weapon("weapon.arming-sword", "Arming Sword", "1d8", "slashing", { category: "one-handed", handedness: "one-handed", handsRequired: 1, lengthFt: 3, retainedInClinch: true, usableInClinch: false, shieldCompatible: true });
 const mace = weapon("weapon.mace", "Mace", "1d8", "bludgeoning", { category: "one-handed", handedness: "one-handed", handsRequired: 1, lengthFt: 2, retainedInClinch: true, usableInClinch: false, shieldCompatible: true, armorTechniqueCompatibility: ["mace-strike"] });
 const handAxe = weapon("weapon.hand-axe", "Hand Axe", "1d6", "slashing", { category: "one-handed", handedness: "one-handed", handsRequired: 1, lengthFt: 2, retainedInClinch: true, usableInClinch: false, shieldCompatible: true });
-const guardSpear = weapon("weapon.guard-spear", "Spear", "1d6+1", "piercing", { category: "one-handed", handedness: "one-handed", handsRequired: 1, reach: 10, reachFeet: 10, lengthFt: 6, attackBonus: 3, retainedInClinch: true, usableInClinch: false, shieldCompatible: true });
-const infantrySpear = weapon("weapon.infantry-spear", "Spear", "1d8+1", "piercing", { category: "two-handed", handedness: "two-handed", handsRequired: 2, requiresTwoHands: true, twoHanded: true, reach: 10, reachFeet: 10, lengthFt: 6, attackBonus: 3, retainedInClinch: false, usableInClinch: false, shieldCompatible: false });
-const huntingBow = weapon("weapon.hunting-bow", "Hunting Bow", "1d6+1", "piercing", { kind: "ranged", attackType: "ranged", category: "ranged", handedness: "two-handed", handsRequired: 2, requiresTwoHands: true, twoHanded: true, reach: 0, reachFeet: 0, lengthFt: 4, attackBonus: 3, rangeProfile: { normal: 80, long: 240 }, usableInClinch: false, shieldCompatible: false });
+const guardSpear = weapon("weapon.guard-spear", "Spear", "1d6+1", "piercing", { weaponFamily: "spear", deliveryType: "extended-melee", category: "one-handed", handedness: "one-handed", handsRequired: 1, reach: 10, reachFeet: 10, lengthFt: 6, attackBonus: 3, retainedInClinch: true, usableInClinch: false, shieldCompatible: true, shieldCompatibility: true });
+const infantrySpear = weapon("weapon.infantry-spear", "Spear", "1d8+1", "piercing", { weaponFamily: "long-spear", deliveryType: "extended-melee", category: "two-handed", handedness: "two-handed", handsRequired: 2, requiresTwoHands: true, twoHanded: true, reach: 10, reachFeet: 10, lengthFt: 6, attackBonus: 3, retainedInClinch: false, usableInClinch: false, shieldCompatible: false, shieldCompatibility: false });
+const huntingBow = weapon("weapon.hunting-bow", "Hunting Bow", "1d6+1", "piercing", { type: "ranged", weaponFamily: "bow", deliveryType: "projectile", kind: "ranged", attackType: "ranged", category: "ranged", isMelee: false, isRanged: true, handedness: "two-handed", handsRequired: 2, requiresTwoHands: true, twoHanded: true, reach: null, reachFeet: null, lengthFt: null, attackBonus: 3, range: 80, rangeProfile: { normal: 80, long: 240 }, normalRangeFeet: 80, longRangeFeet: 240, ammunition: "arrows", ammunitionType: "arrow", ammunitionPerAttack: 1, reloadRequirement: "none", drawRequirement: "part-of-attack", armorContactProfile: "ordinary-broadhead-arrow", usableInClinch: false, grappleCompatibility: "unavailable", clinchCompatibility: "unavailable", groundedCompatibility: "unavailable", shieldCompatible: false, shieldCompatibility: false });
+const archerBow = weapon("weapon.bow", "Bow Shot", "1d6+2", "piercing", { type: "ranged", displayName: "Bow", weaponFamily: "bow", deliveryType: "projectile", kind: "ranged", attackType: "ranged", category: "ranged", isMelee: false, isRanged: true, handedness: "two-handed", handsRequired: 2, requiresTwoHands: true, twoHanded: true, reach: null, reachFeet: null, lengthFt: null, attackBonus: 4, range: 120, rangeProfile: { normal: 120, long: 480 }, normalRangeFeet: 120, longRangeFeet: 480, ammunition: "arrows", ammunitionType: "arrow", ammunitionPerAttack: 1, reloadRequirement: "none", drawRequirement: "part-of-attack", armorContactProfile: "ordinary-broadhead-arrow", usableInClinch: false, grappleCompatibility: "unavailable", clinchCompatibility: "unavailable", groundedCompatibility: "unavailable", shieldCompatible: false, shieldCompatibility: false, aliases: ["Bow"] });
+const longbow = weapon("weapon.longbow", "Longbow Shot", "1d8+2", "piercing", { type: "ranged", displayName: "Longbow", weaponFamily: "longbow", deliveryType: "projectile", kind: "ranged", attackType: "ranged", category: "ranged", isMelee: false, isRanged: true, handedness: "two-handed", handsRequired: 2, requiresTwoHands: true, twoHanded: true, reach: null, reachFeet: null, lengthFt: null, attackBonus: 4, range: 150, rangeProfile: { normal: 150, long: 600 }, normalRangeFeet: 150, longRangeFeet: 600, ammunition: "arrows", ammunitionType: "arrow", ammunitionPerAttack: 1, reloadRequirement: "none", drawRequirement: "part-of-attack", armorContactProfile: "heavy-war-bow-arrow", usableInClinch: false, grappleCompatibility: "unavailable", clinchCompatibility: "unavailable", groundedCompatibility: "unavailable", shieldCompatible: false, shieldCompatibility: false, aliases: ["Long Bow", "Longbow"] });
+const archerKnife = weapon("weapon.knife", "Knife Attack", "1d4", "piercing", { type: "melee", displayName: "Knife", category: "one-handed", reach: 5, reachFeet: 5, lengthFt: 1, usableInClinch: true, groundedCompatible: true, groundedCompatibility: "available", aliases: ["Knife"] });
+const longbowmanKnife = weapon("weapon.longbowman-knife", "Knife Attack", "1d4+1", "piercing", { type: "melee", displayName: "Knife", category: "one-handed", attackBonus: 3, reach: 5, reachFeet: 5, lengthFt: 1, usableInClinch: true, groundedCompatible: true, groundedCompatibility: "available", aliases: ["Knife"] });
+const pike = weapon("weapon.pike", "Pike", "1d10", "piercing", { weaponFamily: "pike", deliveryType: "extended-melee", category: "two-handed", handedness: "two-handed", handsRequired: 2, requiresTwoHands: true, twoHanded: true, reach: 10, reachFeet: 10, lengthFt: 10, minimumEffectiveReachFeet: 5, usableInClinch: false, grappleCompatibility: "drop-on-entry", clinchCompatibility: "unavailable", groundedCompatibility: "unavailable", shieldCompatible: false, shieldCompatibility: false });
+const halberd = weapon("weapon.halberd", "Halberd", "1d10", "slashing", { weaponFamily: "halberd", deliveryType: "extended-melee", category: "two-handed", handedness: "two-handed", handsRequired: 2, requiresTwoHands: true, twoHanded: true, reach: 8, reachFeet: 8, lengthFt: 8, minimumEffectiveReachFeet: 0, usableInClinch: false, grappleCompatibility: "drop-on-entry", clinchCompatibility: "unavailable", groundedCompatibility: "unavailable", shieldCompatible: false, shieldCompatibility: false });
+const crossbow = weapon("weapon.crossbow", "Crossbow", "1d10", "piercing", { type: "ranged", weaponFamily: "crossbow", deliveryType: "projectile", kind: "ranged", attackType: "ranged", category: "ranged", isMelee: false, isRanged: true, handedness: "two-handed", handsRequired: 2, requiresTwoHands: true, twoHanded: true, reach: null, reachFeet: null, lengthFt: null, range: 120, rangeProfile: { normal: 120, long: 480 }, normalRangeFeet: 120, longRangeFeet: 480, ammunition: "bolts", ammunitionType: "bolt", ammunitionPerAttack: 1, reloadRequirement: "one-action", drawRequirement: "none", armorContactProfile: "light-crossbow-bolt", usableInClinch: false, grappleCompatibility: "unavailable", clinchCompatibility: "unavailable", groundedCompatibility: "unavailable", shieldCompatible: false, shieldCompatibility: false });
 const scimitar = weapon("weapon.scimitar", "Scimitar", "1d6+1", "slashing", { category: "one-handed", handedness: "one-handed", handsRequired: 1, lengthFt: 3, retainedInClinch: true, usableInClinch: false, shieldCompatible: true });
 const greatAxe = weapon("weapon.greataxe", "Greataxe", "1d12+3", "slashing", { category: "two-handed", handedness: "two-handed", handsRequired: 2, requiresTwoHands: true, twoHanded: true, lengthFt: 5, attackBonus: 5, retainedInClinch: false, usableInClinch: false, shieldCompatible: false });
 const goblinSword = weapon("weapon.short-sword", "Short Sword", "1d6+2", "slashing", { category: "one-handed", handedness: "one-handed", handsRequired: 1, attackBonus: 4 });
@@ -208,6 +263,10 @@ const buildOrdinaryHumanoid = ({
   source = "normalized-legacy-actor",
   sourceLabel = "Normalized Legacy Actor",
   loadoutKey = "default",
+  loadouts = null,
+  ammunition = [],
+  ammunitionState = null,
+  rangedTacticalProfile = null,
 }) => common({
   actorKey,
   id: actorKey,
@@ -225,7 +284,7 @@ const buildOrdinaryHumanoid = ({
   defaultControlMode,
   factionTags,
   cultureTags,
-  tags: [...new Set([species, "humanoid", "melee", ...tags])],
+  tags: [...new Set([species, "humanoid", aiRole === "ranged" || aiRole === "archer" ? "ranged" : "melee", ...tags])],
   traitKeys: [...traits],
   traits: [...traits],
   attributes: { ...martialAttributes(scores), ...(attributes || {}) },
@@ -246,8 +305,8 @@ const buildOrdinaryHumanoid = ({
   surrenderProfile: ordinarySurrender(alignment, surrenderProfile),
   loadoutKey,
   defaultLoadoutKey: loadoutKey,
-  loadouts: { [loadoutKey]: { loadoutKey, weaponProfileKeys: weaponProfiles.map((profile) => profile.profileKey), heldItems: { ...heldItems } } },
-  equipment: [...weaponProfiles, ...(equippedShield ? [equippedShield] : []), equippedArmor],
+  loadouts: loadouts || { [loadoutKey]: { loadoutKey, weaponProfileKeys: weaponProfiles.map((profile) => profile.profileKey), heldItems: { ...heldItems } } },
+  equipment: [...weaponProfiles, ...ammunition, ...(equippedShield ? [equippedShield] : []), equippedArmor],
   inventory: [...weaponProfiles],
   equippedArmor,
   equippedShield,
@@ -256,6 +315,9 @@ const buildOrdinaryHumanoid = ({
   attacks: [...weaponProfiles],
   weaponProfiles: [...weaponProfiles],
   grappleProfile: ordinaryGrapple(grappleProfile),
+  ammunition: [...ammunition],
+  ammunitionState,
+  rangedTacticalProfile,
   aiRole,
 });
 
@@ -267,6 +329,9 @@ const spearmanArmor = armor("armor.spearman-gambeson", "Gambeson", 13, "light", 
 const brigandArmor = armor("armor.leather-jack", "Leather Jack", 12, "light", { armorClass: "leather", rigidCoverage: false });
 const brigandShield = shield("shield.buckler", "Buckler", { weight: 2 });
 const banditArmor = armor("armor.bandit-leather", "Leather Armor", 12, "light", { armorClass: "leather", rigidCoverage: false, compatibilityNote: "Public profile supplied armor class without layered coverage." });
+const archerArmor = armor("armor.archer-padded", "Padded Armor", 12, "light", { armorClass: "padded", rigidCoverage: false });
+const longbowmanArmor = armor("armor.longbowman-padded-jack", "Padded Jack", 12, "light", { armorClass: "padded", rigidCoverage: false });
+const arrowStack = (quantity = 20, ammunitionProfile = "ordinary-arrow") => Object.freeze({ id: `ammunition.${ammunitionProfile}`, profileKey: `ammunition.${ammunitionProfile}`, name: "Arrows", type: "ammunition", category: "ammunition", ammunitionType: "arrow", ammunitionProfile, quantity });
 const guardArmor = armor("armor.guard-mail", "Guard Mail", 16, "medium", { armorClass: "mail", rigidCoverage: false, compatibilityNote: "Guard rating preserves the source defensive profile and does not imply plate." });
 const guardShield = shield("shield.guard", "Guard Shield", { weight: 8 });
 const orcArmor = armor("armor.orc-hide", "Hide Armor", 13, "light", { armorClass: "hide", rigidCoverage: false });
@@ -344,8 +409,44 @@ export const CANONICAL_COMBAT_ACTORS = Object.freeze({
     equippedArmor: banditArmor,
     armorProfile: { profileKey: banditArmor.profileKey, armorClass: "leather", category: "light", weightClass: "light", rigidCoverage: false },
     heldItems: { mainHand: handAxe.profileKey, offHand: null },
+    loadouts: {
+      "hand-axe-skirmisher": { loadoutKey: "hand-axe-skirmisher", weaponProfileKeys: [handAxe.profileKey, huntingBow.profileKey], heldItems: { mainHand: handAxe.profileKey, offHand: null } },
+      "hunting-bow-skirmisher": { loadoutKey: "hunting-bow-skirmisher", weaponProfileKeys: [huntingBow.profileKey, handAxe.profileKey], heldItems: { mainHand: huntingBow.profileKey, sidearm: handAxe.profileKey, offHand: null } },
+    },
+    loadoutKey: "hand-axe-skirmisher",
+    ammunition: [arrowStack(20)],
+    ammunitionState: { weaponId: huntingBow.weaponId, ammunitionType: "arrow", current: 20, maximum: 20, chambered: false, reloadState: "ready", lastSpentActionToken: null, spentActionTokens: [] },
+    rangedTacticalProfile: { role: "skirmisher", preferredBand: "normal", repositionForLineOfSight: true, sidearmWeaponId: handAxe.weaponId },
     grappleProfile: { weaponRetentionBehavior: "retain-one-handed", clinchWeaponAvailability: "none-carried" },
     factionTags: ["outlaw-bands"], cultureTags: ["bandit-company"], tags: ["light-fighter", "skirmisher"], traits: ["self_preserving"], aiRole: "skirmisher",
+  }),
+  archer: buildOrdinaryHumanoid({
+    actorKey: "archer", name: "Archer", role: "dedicated-bowman", hp: 12, armorClass: 12, staminaMaximum: 20,
+    scores: { strength: 10, dexterity: 14, constitution: 10, intelligence: 10, wisdom: 10, charisma: 10 },
+    bonuses: { attack: 4, block: 0, evade: 2, damage: 2 }, alignment: "true-neutral",
+    behavior: { aggression: 48, caution: 70, discipline: 60 },
+    weaponProfiles: [archerBow, archerKnife], equippedArmor: archerArmor,
+    armorProfile: { profileKey: archerArmor.profileKey, armorClass: "padded", category: "light", weightClass: "light", rigidCoverage: false },
+    heldItems: { mainHand: archerBow.profileKey, sidearm: archerKnife.profileKey, offHand: null },
+    grappleProfile: { weaponRetentionBehavior: "drop-two-handed", clinchWeaponAvailability: "inventory-only", groundedWeaponAvailability: "knife-profile" },
+    ammunition: [arrowStack(20)],
+    ammunitionState: { weaponId: archerBow.weaponId, ammunitionType: "arrow", current: 20, maximum: 20, chambered: false, reloadState: "ready", lastSpentActionToken: null, spentActionTokens: [] },
+    rangedTacticalProfile: { role: "ranged", preferredBand: "normal", repositionForLineOfSight: true, sidearmWeaponId: archerKnife.weaponId },
+    cultureTags: ["field-archers"], tags: ["soldier", "archer"], traits: [], aiRole: "ranged",
+  }),
+  longbowman: buildOrdinaryHumanoid({
+    actorKey: "longbowman", name: "Longbowman", role: "dedicated-longbowman", hp: 14, armorClass: 12, staminaMaximum: 22,
+    scores: { strength: 13, dexterity: 14, constitution: 11, intelligence: 10, wisdom: 10, charisma: 10 },
+    bonuses: { attack: 4, block: 0, evade: 2, damage: 2 }, alignment: "true-neutral",
+    behavior: { aggression: 50, caution: 68, discipline: 64 },
+    weaponProfiles: [longbow, longbowmanKnife], equippedArmor: longbowmanArmor,
+    armorProfile: { profileKey: longbowmanArmor.profileKey, armorClass: "padded", category: "light", weightClass: "light", rigidCoverage: false },
+    heldItems: { mainHand: longbow.profileKey, sidearm: longbowmanKnife.profileKey, offHand: null },
+    grappleProfile: { weaponRetentionBehavior: "drop-two-handed", clinchWeaponAvailability: "inventory-only", groundedWeaponAvailability: "knife-profile" },
+    ammunition: [arrowStack(20, "ordinary-war-arrow")],
+    ammunitionState: { weaponId: longbow.weaponId, ammunitionType: "arrow", current: 20, maximum: 20, chambered: false, reloadState: "ready", lastSpentActionToken: null, spentActionTokens: [] },
+    rangedTacticalProfile: { role: "archer", preferredBand: "normal", repositionForLineOfSight: true, sidearmWeaponId: longbowmanKnife.weaponId },
+    cultureTags: ["field-archers"], tags: ["soldier", "archer", "longbow"], traits: [], aiRole: "archer",
   }),
   guard: buildOrdinaryHumanoid({
     actorKey: "guard", name: "Guard", role: "defensive-spear-guard", hp: 11, armorClass: 16, staminaMaximum: 24,
@@ -423,6 +524,9 @@ const CANONICAL_COMBAT_ACTOR_ALIASES = Object.freeze({
   "town-guard": "guard",
   "man_at_arms": "man-at-arms",
   "veteran_knight": "veteran-knight",
+  "selectable-archer": "archer",
+  "selectable-longbowman": "longbowman",
+  "longbow_man": "longbowman",
 });
 
 export function resolveCanonicalCombatActorAlias(value) {
@@ -451,11 +555,34 @@ const CANONICAL_WEAPON_ALIASES = Object.freeze({
   "infantry spear": infantrySpear,
   "guard spear": guardSpear,
   "hunting bow": huntingBow,
+  bow: archerBow,
+  "bow shot": archerBow,
+  longbow,
+  "long bow": longbow,
+  "longbow shot": longbow,
+  crossbow,
+  pike,
+  halberd,
+  knife: archerKnife,
   scimitar,
   greataxe: greatAxe,
   "great axe": greatAxe,
   dagger: knightDagger,
+  "thrown dagger": thrownDagger,
+  "dagger throw": thrownDagger,
   "ritual dagger": ritualDagger,
+});
+
+export const CANONICAL_RANGED_AND_REACH_WEAPON_FIXTURES = Object.freeze({
+  huntingBow,
+  archerBow,
+  longbow,
+  crossbow,
+  pike,
+  halberd,
+  guardSpear,
+  infantrySpear,
+  thrownDagger,
 });
 
 export function getCanonicalWeaponProfileByAlias(value) {
@@ -477,6 +604,16 @@ export function getCanonicalWeaponProfileByAlias(value) {
     damage: source.damage || canonical.damage,
     damageDice: source.damageDice || source.damage || canonical.damageDice,
     damageType: source.damageType || canonical.damageType,
+    deliveryType: canonical.deliveryType,
+    kind: canonical.kind,
+    attackType: canonical.attackType,
+    isMelee: canonical.isMelee,
+    isRanged: canonical.isRanged,
+    range: canonical.range ?? null,
+    reach: canonical.reach ?? null,
+    reachFeet: canonical.reachFeet ?? null,
+    normalRangeFeet: canonical.normalRangeFeet ?? null,
+    longRangeFeet: canonical.longRangeFeet ?? null,
   };
 }
 
