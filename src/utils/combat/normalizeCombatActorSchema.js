@@ -109,7 +109,7 @@ function resolveCanonicalLoadout(actor, definition) {
 }
 
 export function normalizeReferenceCombatActor(actor = {}, { source = "combat-start", emitDiagnostic = null, lifecyclePhase = "combat-start" } = {}) {
-  const forbiddenLifecyclePhases = new Set(["attack-resolution", "damage-application", "grapple-resolution", "movement-commit", "flight-movement", "flight-transition", "takeoff", "landing", "altitude-commit", "falling", "linked-falling", "mounted-movement", "mounted-charge", "mounted-attack", "mounted-flight-attack", "aerial-separation", "forced-dismount", "action-continuation", "mounted-continuation", "mounted-flight-continuation", "continuation-admission", "survival-action-commit", "surrender-decision-commit", "turn-handoff"]);
+  const forbiddenLifecyclePhases = new Set(["attack-resolution", "damage-application", "grapple-resolution", "movement-commit", "flight-movement", "flight-transition", "takeoff", "landing", "altitude-commit", "falling", "linked-falling", "mounted-movement", "mounted-charge", "mounted-attack", "mounted-flight-attack", "aerial-separation", "forced-dismount", "action-continuation", "mounted-continuation", "mounted-flight-continuation", "continuation-admission", "survival-action-commit", "surrender-decision-commit", "wildlife-detection", "hunting-stalk", "hunting-shot", "hunting-pursuit", "companion-command", "companion-carry", "quarry-recovery", "hunting-finalization", "turn-handoff"]);
   if (forbiddenLifecyclePhases.has(keyText(lifecyclePhase))) {
     const diagnostic = {
       eventType: "combat-actor-normalization-during-owned-action-blocked",
@@ -182,6 +182,15 @@ export function normalizeReferenceCombatActor(actor = {}, { source = "combat-sta
     currentTarget: clone(actor.currentTarget), targetId: actor.targetId,
     moraleState: clone(actor.moraleState), survivalState: clone(actor.survivalState),
     statusEffects: clone(actor.statusEffects), injuryState: clone(actor.injuryState),
+    animalIntent: clone(actor.animalIntent),
+    huntingEncounterId: actor.huntingEncounterId,
+    trackState: clone(actor.trackState),
+    pursuitState: clone(actor.pursuitState),
+    recoveryState: clone(actor.recoveryState),
+    carcassState: clone(actor.carcassState),
+    companionLink: clone(actor.companionLink),
+    currentCommand: actor.currentCommand,
+    handlerId: actor.handlerId,
   };
   const normalizedActor = {
     ...definition,
@@ -248,6 +257,10 @@ export function normalizeReferenceCombatActor(actor = {}, { source = "combat-sta
     passengerProfile: clone(definition.passengerProfile),
     mountProfile: clone(definition.mountProfile),
     flyingMountProfile: clone(definition.flyingMountProfile),
+    wildlifeBehaviorProfile: clone(definition.wildlifeBehaviorProfile),
+    perceptionProfile: clone(definition.perceptionProfile),
+    quarryProfile: clone(definition.quarryProfile),
+    companionProfile: clone(definition.companionProfile),
     riderProfile: clone(definition.riderProfile),
     behavior: canonicalAnimal ? { ...definition.behavior, ...(actor.behavior || {}) } : { ...definition.behavior, ...(alignmentBehavior || {}) },
     behaviorProfile: canonicalAnimal ? null : alignmentBehavior,
@@ -282,7 +295,7 @@ export function normalizeReferenceCombatActor(actor = {}, { source = "combat-sta
     delete normalizedActor[legacyField];
   }
   // Live ownership and position fields are never inferred from the reference definition.
-  for (const field of ["position", "hex", "x", "y", "carrierLink", "mountedState", "mountedTurn", "mountedFlightState", "mountedFlightTurn", "attachmentState", "loadState", "fallState", "grappleState", "surrenderState", "combatWeaponState", "initiativeTurnId", "actionToken", "initiativeIdentity", "instanceId", "factionId", "armyId"]) {
+  for (const field of ["position", "hex", "x", "y", "carrierLink", "mountedState", "mountedTurn", "mountedFlightState", "mountedFlightTurn", "attachmentState", "loadState", "fallState", "grappleState", "surrenderState", "combatWeaponState", "animalIntent", "huntingEncounterId", "trackState", "pursuitState", "recoveryState", "carcassState", "companionLink", "currentCommand", "handlerId", "initiativeTurnId", "actionToken", "initiativeIdentity", "instanceId", "factionId", "armyId"]) {
     if (preserved[field] === undefined && !(field === "position" && definition.flightProfile?.kind === "biological")) delete normalizedActor[field];
   }
   if (!normalizedActor.combatWeaponState) {

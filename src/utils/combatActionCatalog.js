@@ -10,6 +10,7 @@ import {
 } from "./meleeEngagementContext.js";
 import { MOUNTED_ACTION_CONTRACTS } from "./combat/canonicalMountedCombat.js";
 import { MOUNTED_FLIGHT_ACTION_CONTRACTS } from "./combat/canonicalMountedFlight.js";
+import { HUNTING_ACTION_CONTRACTS } from "./combat/canonicalHuntingEncounter.js";
 
 const hasValue = (value) => value !== undefined && value !== null && value !== "";
 
@@ -130,6 +131,20 @@ const ACTION_CONTRACTS = Object.freeze({
   "flying-mount-natural-attack": { rollRequired: true, executorIdentity: "canonical-mounted-flight-executor", aiAvailable: true },
   "command-intelligent-mount": { rollRequired: false, executorIdentity: "canonical-mounted-flight-executor", aiAvailable: true },
   "recover-mounted-flight-control": { rollRequired: true, executorIdentity: "canonical-mounted-flight-executor", aiAvailable: true },
+  "search-for-sign": { rollRequired: "caller-authoritative", executorIdentity: "canonical-hunting-executor", aiAvailable: true },
+  "examine-tracks": { rollRequired: "caller-authoritative", executorIdentity: "canonical-hunting-executor", aiAvailable: true },
+  "follow-trail": { rollRequired: "caller-authoritative", executorIdentity: "canonical-hunting-executor", aiAvailable: true },
+  stalk: { rollRequired: "caller-authoritative", executorIdentity: "canonical-hunting-executor", aiAvailable: true },
+  "wait-in-cover": { rollRequired: false, executorIdentity: "canonical-hunting-executor", aiAvailable: true },
+  "scan-terrain": { rollRequired: "caller-authoritative", executorIdentity: "canonical-hunting-executor", aiAvailable: true },
+  listen: { rollRequired: "caller-authoritative", executorIdentity: "canonical-hunting-executor", aiAvailable: true },
+  "take-hunting-shot": { rollRequired: true, executorIdentity: "canonical-ranged-dispatcher", aiAvailable: true },
+  "begin-pursuit": { rollRequired: false, executorIdentity: "canonical-hunting-executor", aiAvailable: true },
+  "follow-blood-trail": { rollRequired: "caller-authoritative", executorIdentity: "canonical-hunting-executor", aiAvailable: true },
+  "abandon-hunt": { rollRequired: false, executorIdentity: "canonical-hunting-executor", aiAvailable: true },
+  "recover-quarry": { rollRequired: false, executorIdentity: "canonical-hunting-executor", aiAvailable: true },
+  "field-dress-carcass": { rollRequired: false, executorIdentity: "canonical-harvest-boundary", aiAvailable: false },
+  "issue-companion-command": { rollRequired: "pressure-only", executorIdentity: "canonical-companion-executor", aiAvailable: true },
   compatibility: { rollRequired: false, executorIdentity: "compatibility-controls-panel", aiAvailable: false },
 });
 
@@ -138,6 +153,7 @@ export const getCombatActionContract = (type, source = "") => {
   const contract = ACTION_CONTRACTS[normalizedType] || ACTION_CONTRACTS.compatibility;
   const mountedContract = MOUNTED_ACTION_CONTRACTS[normalizedType] || null;
   const mountedFlightContract = MOUNTED_FLIGHT_ACTION_CONTRACTS[normalizedType] || null;
+  const huntingContract = HUNTING_ACTION_CONTRACTS[normalizedType] || null;
   const compatibility = normalizeText(source).toLowerCase().includes("compatibility");
   return {
     ...contract,
@@ -149,6 +165,14 @@ export const getCombatActionContract = (type, source = "") => {
       legalRiderStates: (mountedFlightContract || mountedContract).legalRiderStates,
       legalMountStates: (mountedFlightContract || mountedContract).legalMountStates,
       mountedExecutor: (mountedFlightContract || mountedContract).executor,
+    } : {}),
+    ...(huntingContract ? {
+      stableKey: huntingContract.key,
+      actionOwner: "hunter",
+      staminaOwner: huntingContract.staminaOwner,
+      legalPhases: huntingContract.legalPhases,
+      huntingExecutor: huntingContract.executor,
+      deferred: huntingContract.deferred,
     } : {}),
     playerVisible: !compatibility,
     turnEnding: MOUNTED_FLIGHT_ACTION_CONTRACTS[normalizedType]?.turnEnding
@@ -760,6 +784,50 @@ const buildItemActions = ({ actor, currentTurnEntry, inventory }) =>
       });
     });
 
+const buildHuntingActions = ({
+  actor,
+  currentTurnEntry,
+  selectedTarget,
+  huntingContext = {},
+}) => {
+  const encounter = huntingContext.encounter;
+  if (!encounter || encounter.state !== "active") return [];
+  const actorId = getEntryId(actor);
+  if (!encounter.hunterIds?.includes?.(actorId)) return [];
+  const targetId = selectedTargetId(selectedTarget);
+  return Object.values(HUNTING_ACTION_CONTRACTS)
+    .filter((contract) => contract.playerVisible && contract.legalPhases.includes(encounter.phase))
+    .map((contract) => makeAction({
+      actor,
+      currentTurnEntry,
+      id: contract.key,
+      name: contract.label,
+      type: contract.key,
+      source: contract.deferred ? "canonical harvest boundary" : "canonical hunting catalog",
+      category: "Hunting",
+      costActions: contract.actionCost,
+      targetRequired: contract.targetRequired,
+      targetId,
+      enabled: !contract.deferred && (!contract.targetRequired || Boolean(targetId)),
+      disabledReason: contract.deferred
+        ? "Harvest transfer is deferred; eligibility only."
+        : contract.targetRequired && !targetId
+          ? "Select a quarry or hunting target."
+          : "",
+      previewSummary: contract.deferred
+        ? "Create the field-dressing and harvest eligibility boundary without transferring inventory."
+        : `${contract.label} through canonical hunting ownership.`,
+      metadata: {
+        executor: contract.executor,
+        encounterPhase: encounter.phase,
+        encounterId: encounter.encounterId,
+        staminaOwner: contract.staminaOwner || "none",
+        rollBehavior: contract.rollBehavior,
+        deferred: contract.deferred,
+      },
+    }));
+};
+
 const buildSkillActions = ({ actor, currentTurnEntry }) =>
   getSkillCandidates({ actor })
     .map((skill, index) => {
@@ -852,6 +920,7 @@ export function buildCombatActionCatalog({
   inventory,
   compatibilityActions,
   carrierContext,
+  huntingContext,
 } = {}) {
   if (!actor || typeof actor !== "object") return [];
 
@@ -894,6 +963,7 @@ export function buildCombatActionCatalog({
   if (!actorMounted) buildMovementActions({ actor, currentTurnEntry, targetId }).forEach((action) => addUnique(actions, action));
   buildDefensiveRecoveryActions({ actor, currentTurnEntry }).forEach((action) => addUnique(actions, action));
   buildCarrierActions({ actor, currentTurnEntry, selectedTarget, carrierContext }).forEach((action) => addUnique(actions, action));
+  buildHuntingActions({ actor, currentTurnEntry, selectedTarget, huntingContext }).forEach((action) => addUnique(actions, action));
   buildItemActions({ actor, currentTurnEntry, inventory }).forEach((action) => addUnique(actions, action));
   buildSkillActions({ actor, currentTurnEntry }).forEach((action) => addUnique(actions, action));
   buildCompatibilityActions({ actor, currentTurnEntry, compatibilityActions }).forEach((action) => addUnique(actions, action));
