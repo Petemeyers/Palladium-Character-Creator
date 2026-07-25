@@ -158,6 +158,7 @@ import {
   calculateEffectiveRoutedMovement,
   chooseAIStaminaRecovery,
   initializeCombatStamina,
+  mirrorCombatStaminaCompatibilityFields,
   resolveEncounterStamina,
   spendCombatStamina as spendCanonicalCombatStamina,
   spendStamina,
@@ -424,6 +425,13 @@ import { grantXPFromEnemy, getOpponentByName, calculateOpponentXP } from "../uti
 import { weapons, getWeaponByName, arenaWhip } from "../data/weapons.js";
 import { presceneBattles, getPresceneById } from "../data/presceneBattles.js";
 import { getSavedPresets, savePreset, loadSavedPreset } from "../utils/savedPresets.js";
+import {
+  createCanonicalMinotaurTechniqueIntent,
+  filterLegalMinotaurTechniqueCandidates,
+} from "../utils/combat/minotaurTechniqueResolver.js";
+import { resolveCanonicalImpactPipeline } from "../utils/combat/canonicalImpactPipeline.js";
+import { isCurrentRoundInitiativeSlotAvailable } from "../utils/combat/canonicalRoundAdvance.js";
+import { validateCanonicalNaturalD20 } from "../utils/combat/normalizeCanonicalD20Roll.js";
 import { calculateRangePenalty, calculateReachAdvantage } from "../utils/weaponSystem.js";
 import {
   analyzeMovementAndAttack,
@@ -3405,9 +3413,17 @@ function CombatPage({ characters = [] }) {
       });
       const repairedPosition = result.position || canonicalPosition;
       const stalePosition = getCombatantGridPosition(staleActor);
+      const isActualCower = /cower/i.test(String(source || ""));
+      const diagnosticPrefix = isActualCower
+        ? "cower preserve position"
+        : "failed action position preserved";
       if (stalePosition && repairedPosition) {
+        const actorLabel = formatCombatActorLabel(latestCanonicalFighter || staleActor, { roster: fightersRef.current ?? fighters ?? [] });
+        const positionCheckMessage = isActualCower
+          ? `cower preserve position check: actor=${actorLabel} source=${source} stale=(${stalePosition.x},${stalePosition.y}) latest=(${repairedPosition.x},${repairedPosition.y})`
+          : `failed action position preserved check: actor=${actorLabel} source=${source} stale=(${stalePosition.x},${stalePosition.y}) latest=(${repairedPosition.x},${repairedPosition.y})`;
         addLog(
-          `cower preserve position check: actor=${formatCombatActorLabel(latestCanonicalFighter || staleActor, { roster: fightersRef.current ?? fighters ?? [] })} source=${source} stale=(${stalePosition.x},${stalePosition.y}) latest=(${repairedPosition.x},${repairedPosition.y})`,
+          positionCheckMessage,
           "debug",
         );
       }
@@ -3429,8 +3445,12 @@ function CombatPage({ characters = [] }) {
         };
       });
       const finalFighter = result.fighters?.[0] || preserved;
+      const finalActorLabel = formatCombatActorLabel(finalFighter, { roster: fightersRef.current ?? fighters ?? [] });
+      const positionCommittedMessage = isActualCower
+        ? `cower preserve position committed: actor=${finalActorLabel} source=${source} final=(${repairedPosition.x},${repairedPosition.y})`
+        : `${diagnosticPrefix} committed: actor=${finalActorLabel} source=${source} final=(${repairedPosition.x},${repairedPosition.y})`;
       addLog(
-        `cower preserve position committed: actor=${formatCombatActorLabel(finalFighter, { roster: fightersRef.current ?? fighters ?? [] })} source=${source} final=(${repairedPosition.x},${repairedPosition.y})`,
+        positionCommittedMessage,
         "debug",
       );
       setTimeout(() => auditNoMovePositionStores(latestFighter.id, formatCombatActorLabel(finalFighter, { roster: fightersRef.current ?? fighters ?? [] })), 0);
@@ -3450,8 +3470,39 @@ function CombatPage({ characters = [] }) {
     const liveFighter = latestFighter || (fightersRef.current ?? fighters ?? []).find((fighter) => fighter.id === fighterId);
     if (!liveFighter) return actorPatch;
     const sanitizedPatch = stripPositionFields(actorPatch);
-    return preserveNoMovePosition(liveFighter, staleActor || actorPatch, sanitizedPatch, source || reason);
-  }, [fighters, preserveNoMovePosition]);
+    const preserved = preserveNoMovePosition(liveFighter, staleActor || actorPatch, sanitizedPatch, source || reason);
+    if (!/cower/i.test(String(source || reason))) {
+      const authoritativePosition = getCombatantGridPosition(preserved);
+      const stalePosition = getCombatantGridPosition(staleActor || actorPatch);
+      addLog?.({
+        audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+        channel: COMBAT_LOG_CHANNELS.STATE,
+        eventType: "failed-action-position-preserved",
+        level: "info",
+        type: "debug",
+        actorId: liveFighter.id,
+        executionKey: activeAttackActionIdRef.current || activeGrappleActionIdRef.current || null,
+        source,
+        message: `failed action position preserved: actor=${liveFighter.name || liveFighter.id} source=${source} reason=${reason}`,
+        data: {
+          actorId: liveFighter.id,
+          actorName: liveFighter.name || null,
+          sourceAction: source,
+          failedPrerequisiteReason: reason,
+          authoritativePosition,
+          stalePosition,
+          correctionRequired: Boolean(
+            authoritativePosition &&
+            stalePosition &&
+            (authoritativePosition.x !== stalePosition.x || authoritativePosition.y !== stalePosition.y)
+          ),
+          executionKey: activeAttackActionIdRef.current || activeGrappleActionIdRef.current || null,
+          initiativeTurnId: initiativeTurnIdRef.current,
+        },
+      }, "debug");
+    }
+    return preserved;
+  }, [addLog, fighters, preserveNoMovePosition]);
 
   // Helper to mark a fighter as fled off-map (soft swap: keep in fighters, remove from map)
   const markFighterFledOffMap = useCallback((fighterId, nameForLog, reason = "rout-exit") => {
@@ -4379,13 +4430,33 @@ function CombatPage({ characters = [] }) {
 
   const meleeRoundRef = useRef(meleeRound);
   useEffect(() => {
+    if (
+      combatActive &&
+      Number.isFinite(Number(meleeRoundRef.current)) &&
+      Number(meleeRound) < Number(meleeRoundRef.current)
+    ) {
+      // A batched render from an earlier action must not roll the authoritative
+      // round snapshot backward after a direct round-wrap handoff.
+      setMeleeRound(meleeRoundRef.current);
+      return;
+    }
     meleeRoundRef.current = meleeRound;
-  }, [meleeRound]);
+  }, [combatActive, meleeRound]);
 
   const turnCounterRef = useRef(turnCounter);
   useEffect(() => {
+    if (
+      combatActive &&
+      Number.isFinite(Number(turnCounterRef.current)) &&
+      Number(turnCounter) < Number(turnCounterRef.current)
+    ) {
+      // Keep the monotonic scheduler counter aligned with the ref authority.
+      // Reset paths run with combat inactive and may intentionally return to 0.
+      setTurnCounter(turnCounterRef.current);
+      return;
+    }
     turnCounterRef.current = turnCounter;
-  }, [turnCounter]);
+  }, [combatActive, turnCounter]);
 
   const combatActiveRef = useRef(combatActive);
   useEffect(() => {
@@ -4414,6 +4485,8 @@ function CombatPage({ characters = [] }) {
   const enemyActionLockRef = useRef(null); // One action per enemy per turn-slice (across callbacks)
   const enemyActionCommittedThisSliceRef = useRef(false); // Busy clock should only block after an enemy action commits
   const enemyActionCommittedSliceKeyRef = useRef(null);
+  const enemyActionSliceOwnerKeyRef = useRef(null);
+  const enemyCommittedActionSequenceByTurnRef = useRef(new Map());
   const enemyTurnTokenRef = useRef(0); // Token to bail if state changed before timeout fired
   const aiControlEnabledRef = useRef(aiControlEnabled);
   const activePlayerAITurnKeysRef = useRef(new Set());
@@ -4549,7 +4622,19 @@ function CombatPage({ characters = [] }) {
       message:
         `stamina spend resolved: actor=${liveFighter?.name || liveFighter?.id || "unknown"} previous=${previousStamina} ` +
         `requested=${requestedSpend} applied=${appliedSpend} next=${nextStamina} insufficient=${insufficientStamina}`,
-      data: spendResult,
+      data: {
+        actorId: liveFighter?.id || null,
+        actorName: liveFighter?.name || null,
+        previous: previousStamina,
+        requested: requestedSpend,
+        applied: appliedSpend,
+        next: nextStamina,
+        reason,
+        executionKey,
+        initiativeTurnId: initiativeTurnIdRef.current,
+        round: meleeRoundRef.current,
+        initiativeIndex: turnIndexRef.current,
+      },
     }, insufficientStamina ? "warning" : "debug");
     addLog?.({
       audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
@@ -4578,6 +4663,17 @@ function CombatPage({ characters = [] }) {
         differenceCheck: Math.max(0, previousStamina - appliedSpend) === nextStamina,
       },
     }, "debug");
+    if (spendResult.accepted && spendResult.updated?.id) {
+      const committed = (fightersRef.current || []).map((candidate) => (
+        candidate.id === spendResult.updated.id
+          ? spendResult.updated
+          : candidate
+      ));
+      if (committed.some((candidate) => candidate.id === spendResult.updated.id)) {
+        fightersRef.current = committed;
+        setFighters(committed);
+      }
+    }
     return spendResult;
   }, [addLog]);
 
@@ -6070,8 +6166,18 @@ function CombatPage({ characters = [] }) {
     targetId = null,
     source = "cancel-combat-owned-continuations",
   } = {}) {
-    const remainingContinuationsCanceled = remainingActionContinuationRegistryRef.current?.size || 0;
-    remainingActionContinuationRegistryRef.current?.clear?.();
+    let remainingContinuationsCanceled = 0;
+    for (const [continuationKey, record] of remainingActionContinuationRegistryRef.current?.entries?.() || []) {
+      const active = ["created", "fired", "pending", "continuation-pending"].includes(record?.state);
+      if (!active) continue;
+      remainingActionContinuationRegistryRef.current.set(continuationKey, {
+        ...record,
+        state: "canceled",
+        canceledAt: Date.now(),
+        cancelReason: reason,
+      });
+      remainingContinuationsCanceled += 1;
+    }
     for (const timer of initiativeTurnStartRetryTimersRef.current?.values?.() || []) {
       clearTimeout(timer);
     }
@@ -6176,6 +6282,8 @@ function CombatPage({ characters = [] }) {
     enemyActionLockRef.current = null;
     enemyActionCommittedThisSliceRef.current = false;
     enemyActionCommittedSliceKeyRef.current = null;
+    enemyActionSliceOwnerKeyRef.current = null;
+    enemyCommittedActionSequenceByTurnRef.current.clear();
     unresolvedEnemyTurnStartKeyRef.current = null;
     enemyTurnEnteredAIBranchKeyRef.current = null;
     pendingEnemyTurnRef.current = false;
@@ -13610,6 +13718,12 @@ function CombatPage({ characters = [] }) {
     processingEnemyTurnRef.current = false;
     pendingEnemyTurnRef.current = false;
     processingPlayerAIRef.current = false;
+    playerAIActionScheduledRef.current = false;
+    activeTechniqueImpactRef.current = null;
+    if (actionClockRef.current) {
+      actionClockRef.current.busy = false;
+      actionClockRef.current.endsAtMs = 0;
+    }
     playerTurnInFlightKeyRef.current = null;
     playerTechniqueInFlightKeyRef.current = null;
     statusResolvedTurnSnapshotRef.current = null;
@@ -13640,6 +13754,7 @@ function CombatPage({ characters = [] }) {
     enemyActionLockRef.current = null;
     enemyActionCommittedThisSliceRef.current = false;
     enemyActionCommittedSliceKeyRef.current = null;
+    enemyActionSliceOwnerKeyRef.current = null;
 
     endTurnGenerationRef.current += 1;
     acceptedTurnFinalizerKeysRef.current.clear();
@@ -13695,10 +13810,19 @@ function CombatPage({ characters = [] }) {
     // MCS rule: Check if all fighters are out of actions (combat round complete).
     // Must match the "find next fighter" loop below (canFighterStartTurn + numeric attacks),
     // otherwise we skip the new-melee reset while endlessly cycling 0-action fighters.
-    const fightersWithActions = fightersNow.filter(
-      (f) =>
-        canFighterStartTurn(f) && (Number(f.remainingActions ?? 0) || 0) > 0
-    );
+    const hasUncompletedLogicalTurnInCurrentRound = (fighter, index) => {
+      return isCurrentRoundInitiativeSlotAvailable({
+        fighter,
+        initiativeIndex: index,
+        generationId: combatSessionRef.current || "default",
+        round: meleeRoundNow,
+        logicalTurnRegistry: initiativeTurnLogicalRegistryRef.current,
+        canStartFighter: canFighterStartTurn,
+      });
+    };
+    const fightersWithActions = fightersNow.filter((fighter, index) => (
+      hasUncompletedLogicalTurnInCurrentRound(fighter, index)
+    ));
 
     if (fightersWithActions.length === 0) {
       // All fighters are out of actions - start new combat round
@@ -13876,7 +14000,7 @@ function CombatPage({ characters = [] }) {
     // Loop through fighters in initiative order until we find one with actions
     while (attempts < fightersNow.length) {
       const nextFighter = fightersNow[nextIndex];
-      if (nextFighter && canFighterStartTurn(nextFighter) && (nextFighter.remainingActions || 0) > 0) {
+      if (hasUncompletedLogicalTurnInCurrentRound(nextFighter, nextIndex)) {
         foundNext = true;
         break; // Found a fighter that can act and has actions
       }
@@ -16626,7 +16750,29 @@ function CombatPage({ characters = [] }) {
         attackRoll += fatiguePenalty;
       }
 
-      const attackDiceRoll = rollResult.diceRolls?.[0]?.result || attackRoll - attackBonus;
+      const attackDiceRoll =
+        rollResult.individualRolls?.[0] ??
+        rollResult.diceRolls?.[0]?.result;
+      const naturalBoundary = validateCanonicalNaturalD20(attackDiceRoll, {
+        actionType: "overwatch",
+        actorId: shooter.id,
+        executionKey: attackSnapshot.executionKey || null,
+        rollKind: "attack-roll",
+      });
+      if (!naturalBoundary.ok) {
+        addLog({
+          audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+          channel: COMBAT_LOG_CHANNELS.ROLL,
+          eventType: "invalid-natural-d20-boundary",
+          level: "error",
+          type: "error",
+          actorId: shooter.id,
+          executionKey: attackSnapshot.executionKey || null,
+          message: `invalid natural d20 boundary: actor=${shooter.name} value=${String(attackDiceRoll)} source=overwatch`,
+          data: naturalBoundary,
+        }, "error");
+        return null;
+      }
       const isCriticalHit = attackDiceRoll === 20;
       const isCriticalMiss = attackDiceRoll === 1;
 
@@ -21472,61 +21618,17 @@ function CombatPage({ characters = [] }) {
       }
 
       const preserveLivestaminaAfterImpactMerge = (merged, liveFighter) => {
-        const livestaminaValues = [
-          liveFighter.currentstamina,
-          liveFighter.stamina,
-          liveFighter.stamina,
-          liveFighter.derived?.currentstamina,
-          !Array.isArray(liveFighter.training) ? liveFighter.training?.currentstamina : undefined,
-        ]
-          .map((value) => Number(value))
-          .filter((value) => Number.isFinite(value));
-        const livestaminaCeiling = livestaminaValues.length ? Math.min(...livestaminaValues) : null;
-        const keepNonIncreasing = (liveValue, mergedValue) => {
-          const mergedNum = Number(mergedValue);
-          if (livestaminaCeiling !== null) {
-            return Number.isFinite(mergedNum) ? Math.min(livestaminaCeiling, mergedNum) : livestaminaCeiling;
-          }
-          const liveNum = Number(liveValue);
-          if (Number.isFinite(liveNum) && Number.isFinite(mergedNum)) {
-            return Math.min(liveNum, mergedNum);
-          }
-          return Number.isFinite(liveNum) ? liveValue : mergedValue;
-        };
-
-        const protectedMerged = { ...merged };
-        protectedMerged.currentstamina = keepNonIncreasing(liveFighter.currentstamina, merged.currentstamina);
-        protectedMerged.stamina = keepNonIncreasing(liveFighter.stamina, merged.stamina);
-        protectedMerged.stamina = keepNonIncreasing(liveFighter.stamina, merged.stamina);
-
-        const derivedCurrentstamina = keepNonIncreasing(
-          liveFighter.derived?.currentstamina,
-          merged.derived?.currentstamina
+        const liveStamina = initializeCombatStamina(liveFighter);
+        const mergedStamina = initializeCombatStamina(merged);
+        const authoritativeCurrent = Math.min(
+          Number(liveStamina.combatStamina.currentStamina),
+          Number(mergedStamina.combatStamina.currentStamina),
         );
-        if (merged.derived || liveFighter.derived) {
-          protectedMerged.derived = {
-            ...(merged.derived || liveFighter.derived || {}),
-            currentstamina: derivedCurrentstamina,
-          };
-        }
-
-        const trainingCurrentstamina = keepNonIncreasing(
-          liveFighter.training?.currentstamina,
-          merged.training?.currentstamina
+        return mirrorCombatStaminaCompatibilityFields(
+          merged,
+          authoritativeCurrent,
+          liveStamina.combatStamina.maxStamina,
         );
-        if (Array.isArray(liveFighter.training)) {
-          protectedMerged.training = liveFighter.training;
-        } else if (Array.isArray(merged.training)) {
-          protectedMerged.training = merged.training;
-        } else if (merged.training || liveFighter.training) {
-          protectedMerged.training = preserveTrainingWithstamina(
-            merged.training || liveFighter.training,
-            trainingCurrentstamina,
-            liveFighter.training?.maxstamina ?? merged.training?.maxstamina ?? protectedMerged.maxstamina
-          );
-        }
-
-        return protectedMerged;
       };
 
       const committed = liveFighters.map((liveFighter) => {
@@ -22269,22 +22371,24 @@ function CombatPage({ characters = [] }) {
       const attackerId = effectiveAttacker?.id || attacker?.id;
       if (!isAutomatedAttacker || !attackerId) return false;
 
-      setFighters((prev) => {
-        const next = prev.map((f) => {
-          if (f.id !== attackerId) return f;
-          const before = Number(f.remainingActions ?? 0) || 0;
-          return finalizeNoMovePreservingPosition({
-            fighterId: f.id,
-            latestFighter: f,
-            staleActor: effectiveAttacker || attacker,
-            actorPatch: { remainingActions: Math.max(0, before - 1) },
-            reason,
-            source: "burnFailedAutomatedActionAndEnd",
-          });
+      const authoritativeFighters = fightersRef.current || [];
+      const nextFighters = authoritativeFighters.map((fighter) => {
+        if (fighter.id !== attackerId) return fighter;
+        const before = Number(fighter.remainingActions ?? 0) || 0;
+        return finalizeNoMovePreservingPosition({
+          fighterId: fighter.id,
+          latestFighter: fighter,
+          staleActor: effectiveAttacker || attacker,
+          actorPatch: { remainingActions: Math.max(0, before - 1) },
+          reason,
+          source: "burnFailedAutomatedActionAndEnd",
         });
-        fightersRef.current = next;
-        return next;
       });
+      // The turn scheduler reads fightersRef synchronously. Commit the burned
+      // action before scheduling so a last-slot failure cannot recreate the
+      // completed logical turn from a stale React updater.
+      fightersRef.current = nextFighters;
+      setFighters(nextFighters);
 
       if (effectiveAttackerType === "player") {
         playerAIActionScheduledRef.current = true;
@@ -22331,6 +22435,8 @@ function CombatPage({ characters = [] }) {
 
     // Get attack data - use selected weapon for players, selectedAttack for enemies
     let attackData;
+    let canonicalMinotaurTechniqueIntent = null;
+    let canonicalMinotaurImpactAuthorization = null;
     if (bonusModifiers?.attackDataOverride) {
       attackData = bonusModifiers.attackDataOverride;
     } else if (attacker.type === "player" && selectedAttackWeapon) {
@@ -22874,6 +22980,44 @@ function CombatPage({ characters = [] }) {
       return;
     }
 
+    if (attackData?.techniqueKey && effectiveAttacker?.actorKey === "minotaur") {
+      const techniqueIntent = createCanonicalMinotaurTechniqueIntent({
+        techniqueKey: attackData.techniqueKey,
+        actor: effectiveAttacker,
+        target: defender,
+        movement: bonusModifiers?.movementContext || {
+          straightLineFeet: bonusModifiers?.movementDistanceFeet || 0,
+          overrunEstablished: bonusModifiers?.overrunEstablished === true,
+        },
+        environment: { pathObstructed: bonusModifiers?.pathObstructed === true },
+        position: { attackModifier: bonusModifiers?.positionModifier || 0 },
+        fatigue: effectiveAttacker.fatigueState,
+      });
+      addLog({
+        audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+        channel: COMBAT_LOG_CHANNELS.ACTION,
+        eventType: techniqueIntent.eventType || "minotaur-technique-selected",
+        level: techniqueIntent.accepted ? "info" : "warning",
+        actorId: effectiveAttacker.id,
+        targetId: defender.id,
+        executionKey: attackActionId,
+        message: techniqueIntent.accepted
+          ? `selected technique: ${attackData.techniqueKey}; derived modifier=${techniqueIntent.derivedAttackModifier.total}`
+          : `technique prerequisite failed: ${attackData.techniqueKey} reason=${techniqueIntent.reason}`,
+        data: techniqueIntent,
+      }, techniqueIntent.accepted ? "info" : "warning");
+      if (!techniqueIntent.accepted) {
+        burnFailedAutomatedActionAndEnd(techniqueIntent.reason || "technique-prerequisite-failed");
+        return;
+      }
+      canonicalMinotaurTechniqueIntent = techniqueIntent;
+      attackData = {
+        ...attackData,
+        derivedAttackModifier: techniqueIntent.derivedAttackModifier,
+        resolverRoute: techniqueIntent.resolverRoute,
+      };
+    }
+
     // FIX: If this is a technique attack, route to executeTechnique() instead of melee/ranged attack
     if (attackData.type === "technique" || attackData.damage === "by technique" || attackData.technique) {
       const techniqueToCast = attackData.technique || attackData;
@@ -23324,7 +23468,10 @@ function CombatPage({ characters = [] }) {
         attackActionId,
       );
 
-      const baseAttackBonus = getCombatBonus(attacker, "attack", attackData) || 0;
+      const derivedTechniqueAttackBonus = Number(attackData?.derivedAttackModifier?.total);
+      const baseAttackBonus = Number.isFinite(derivedTechniqueAttackBonus)
+        ? derivedTechniqueAttackBonus
+        : (getCombatBonus(attacker, "attack", attackData) || 0);
       const chargeBonus = bonusModifiers.attackBonus || 0;
       const flankingBonus = bonusModifiers.flankingBonus || 0;
       let tempBonus =
@@ -23608,12 +23755,43 @@ function CombatPage({ characters = [] }) {
       let attackDiceRoll;
       let isCriticalHit;
       let isCriticalMiss;
+      let contextualRollModifiers = {
+        baseAttack: attackBonus,
+        fatigue: 0,
+        reach: 0,
+        range: preRollRangeAdjustment,
+      };
 
       if (preRoll) {
         attackRoll = Number(preRoll.attackRoll) + preRollRangeAdjustment;
         attackDiceRoll = preRoll.attackDiceRoll;
-        isCriticalHit = preRoll.isCriticalHit;
-        isCriticalMiss = preRoll.isCriticalMiss;
+        const naturalBoundary = validateCanonicalNaturalD20(attackDiceRoll, {
+          actionType: attackData?.techniqueKey || attackData?.name || "attack",
+          actorId: attacker.id,
+          executionKey: attackActionId,
+          rollKind: "pre-rolled-attack",
+        });
+        if (!naturalBoundary.ok) {
+          addLog({
+            audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+            channel: COMBAT_LOG_CHANNELS.ROLL,
+            eventType: "invalid-natural-d20-boundary",
+            level: "error",
+            type: "error",
+            actorId: attacker.id,
+            targetId: defender?.id,
+            executionKey: attackActionId,
+            source: "pre-rolled-attack",
+            message:
+              `invalid natural d20 boundary: actor=${attacker.name} ` +
+              `value=${String(attackDiceRoll)} action=${attackData?.name || "attack"}`,
+            data: naturalBoundary,
+          }, "error");
+          if (activeAttackActionIdRef.current === attackActionId) activeAttackActionIdRef.current = null;
+          return makeBlockedAttackResult("invalid-natural-d20-boundary", attackActionId);
+        }
+        isCriticalHit = attackDiceRoll === 20;
+        isCriticalMiss = attackDiceRoll === 1;
         attackRollResult = {
           totalWithBonus: attackRoll,
           diceRolls: [{ result: attackDiceRoll }],
@@ -23631,6 +23809,12 @@ function CombatPage({ characters = [] }) {
         const reachMod = getReachAdvantage(attacker, defender);
         const sizeMod = getCombinedGrappleModifiers(attacker, defender);
         const sizeAttackBonus = reachMod.attackBonus; // Use reach bonus for regular attacks
+        contextualRollModifiers = {
+          baseAttack: attackBonus,
+          fatigue: fatiguePenalty,
+          reach: sizeAttackBonus,
+          range: rangedAttackRangeProfile?.finalModifier ?? preRollRangeAdjustment ?? 0,
+        };
         if (import.meta.env?.DEV && settingsRef.current?.showCombatDebug) {
           addLog(`Debug: sizeMod=${sizeMod} reachAttack=${sizeAttackBonus}`, "info");
         }
@@ -23666,7 +23850,10 @@ function CombatPage({ characters = [] }) {
           addLog(`${reachMod.description}`, "info");
         }
 
-        if (!bonusModifiers?.skipStaminaDrain) {
+        if (
+          !bonusModifiers?.skipStaminaDrain &&
+          !staminaChargedAttackKeysRef.current.has(staminaChargeKey)
+        ) {
           // Drain stamina for normal combat action
           const staminaDrained = drainStamina(attacker, STAMINA_COSTS.NORMAL_COMBAT, 1);
           if (staminaDrained.currentStamina < staminaDrained.maxStamina * 0.5) {
@@ -23677,7 +23864,34 @@ function CombatPage({ characters = [] }) {
           }
         }
 
-        attackDiceRoll = attackRollResult.diceRolls?.[0]?.result || attackRoll - attackBonus;
+        attackDiceRoll =
+          attackRollResult.individualRolls?.[0] ??
+          attackRollResult.diceRolls?.[0]?.result;
+        const naturalBoundary = validateCanonicalNaturalD20(attackDiceRoll, {
+          actionType: attackData?.techniqueKey || attackData?.name || "attack",
+          actorId: attacker.id,
+          executionKey: attackActionId,
+          rollKind: "attack-roll",
+        });
+        if (!naturalBoundary.ok) {
+          addLog({
+            audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+            channel: COMBAT_LOG_CHANNELS.ROLL,
+            eventType: "invalid-natural-d20-boundary",
+            level: "error",
+            type: "error",
+            actorId: attacker.id,
+            targetId: defender?.id,
+            executionKey: attackActionId,
+            source: "attack-roll",
+            message:
+              `invalid natural d20 boundary: actor=${attacker.name} ` +
+              `value=${String(attackDiceRoll)} action=${attackData?.name || "attack"}`,
+            data: naturalBoundary,
+          }, "error");
+          if (activeAttackActionIdRef.current === attackActionId) activeAttackActionIdRef.current = null;
+          return makeBlockedAttackResult("invalid-natural-d20-boundary", attackActionId);
+        }
         isCriticalHit = attackDiceRoll === 20; // Natural 20 = critical hit
         isCriticalMiss = attackDiceRoll === 1; // Natural 1 = critical miss
       }
@@ -23734,6 +23948,7 @@ function CombatPage({ characters = [] }) {
       }
 
       const attackRollAttackerLabel = formatNormalAttackActorLabel(stateAttacker, defender, updated);
+      const totalAttackModifier = attackRoll - attackDiceRoll;
 
       // Log the attack roll and store in diceRolls
       setDiceRolls(prev => [...prev, {
@@ -23742,7 +23957,7 @@ function CombatPage({ characters = [] }) {
         attacker: attackRollAttackerLabel,
         roll: attackDiceRoll,
         total: attackRoll,
-        bonus: attackBonus,
+        bonus: totalAttackModifier,
         timestamp: new Date().toLocaleTimeString()
       }]);
       if (isCriticalHit) {
@@ -23757,7 +23972,8 @@ function CombatPage({ characters = [] }) {
           message: `Attack roll: Natural 20 — Critical hit! Total ${attackRoll} vs AC ${targetGuardRating}.`,
           data: {
             naturalRoll: attackDiceRoll,
-            modifier: attackBonus,
+            modifier: totalAttackModifier,
+            modifierComponents: contextualRollModifiers,
             total: attackRoll,
             targetNumber: targetGuardRating,
             result: "critical-hit",
@@ -23775,7 +23991,8 @@ function CombatPage({ characters = [] }) {
           message: "Attack roll: Natural 1 — Critical miss!",
           data: {
             naturalRoll: attackDiceRoll,
-            modifier: attackBonus,
+            modifier: totalAttackModifier,
+            modifierComponents: contextualRollModifiers,
             total: attackRoll,
             targetNumber: targetGuardRating,
             result: "critical-miss",
@@ -23783,7 +24000,7 @@ function CombatPage({ characters = [] }) {
         }, "miss");
       } else {
         // Format attack bonus display (show negative clearly)
-        const bonusDisplay = attackBonus >= 0 ? `+${attackBonus}` : `${attackBonus}`;
+        const bonusDisplay = totalAttackModifier >= 0 ? `+${totalAttackModifier}` : `${totalAttackModifier}`;
         addLog({
           audience: COMBAT_LOG_AUDIENCES.PLAYER,
           channel: COMBAT_LOG_CHANNELS.ROLL,
@@ -23795,7 +24012,8 @@ function CombatPage({ characters = [] }) {
           message: `Attack roll: ${attackDiceRoll} ${bonusDisplay} = ${attackRoll} vs AC ${targetGuardRating} — ${attackRoll >= targetGuardRating ? "Hit" : "Miss"}.`,
           data: {
             naturalRoll: attackDiceRoll,
-            modifier: attackBonus,
+            modifier: totalAttackModifier,
+            modifierComponents: contextualRollModifiers,
             total: attackRoll,
             targetNumber: targetGuardRating,
             result: attackRoll >= targetGuardRating ? "hit" : "miss",
@@ -24566,6 +24784,7 @@ function CombatPage({ characters = [] }) {
           defenderArmorProfile?.armorClass === "plate" &&
           defenderArmorProfile?.rigidCoverage === true &&
           (
+            canonicalMinotaurTechniqueIntent?.directHpMutationAllowed === false ||
             isLongswordWeapon(getArmoredTechniqueSourceWeapon(attackData, attackData)) ||
             isArmoredLongswordTechnique(
               bonusModifiers?.selectedTechnique ||
@@ -24581,7 +24800,8 @@ function CombatPage({ characters = [] }) {
           const hasArmoredSelectorMetadata = Boolean(
             bonusModifiers?.selectedTechnique ||
             attackData?.selectedTechnique ||
-            attackData?.armorTechnique,
+            attackData?.armorTechnique ||
+            canonicalMinotaurTechniqueIntent?.techniqueKey,
           );
           const selectedTechnique =
             bonusModifiers?.selectedTechnique ||
@@ -24591,6 +24811,7 @@ function CombatPage({ characters = [] }) {
             bonusModifiers?.mode ||
             attackData?.attackMode ||
             attackData?.mode ||
+            canonicalMinotaurTechniqueIntent?.techniqueKey ||
             "longsword-cut";
           if (!hasArmoredSelectorMetadata) {
             addLog({
@@ -24651,6 +24872,7 @@ function CombatPage({ characters = [] }) {
               `selected=${selectedTechnique} attackReceived=${attackReceivedMode}`,
             data: { selectedTechnique, attackReceivedMode, attackMode: attackData?.attackMode },
           }, "debug");
+
           preDamageImpact = rollImpactLocation();
           armorContactResult = resolveArmorContact({
             attacker: stateAttacker || attacker,
@@ -24672,6 +24894,68 @@ function CombatPage({ characters = [] }) {
             },
             normalDefense: targetGuardRating,
           });
+
+          if (canonicalMinotaurTechniqueIntent?.directHpMutationAllowed === false) {
+            canonicalMinotaurImpactAuthorization = resolveCanonicalImpactPipeline({
+              intent: canonicalMinotaurTechniqueIntent,
+              prerequisite: { accepted: true },
+              movement: bonusModifiers?.movementContext || {
+                straightLineFeet: bonusModifiers?.movementDistanceFeet || 0,
+              },
+              defense: { evaded: defenseSuccess && !autoBlockUsed },
+              shield: {
+                intercepted: autoBlockUsed || String(defenseType || "").toLowerCase().includes("block"),
+                shieldId: defender?.equippedShield?.id || defender?.shield?.id || null,
+              },
+              hitLocation: {
+                location: armorContactResult.hitLocation || preDamageImpact?.location || "unresolved",
+              },
+              armor: {
+                layer: defenderArmorProfile.armorName,
+                armorClass: defenderArmorProfile.armorClass,
+                rigidCoverage: defenderArmorProfile.rigidCoverage,
+              },
+              contact: {
+                armorGap: armorContactResult.gapReached === true,
+                exposedLocation: armorContactResult.coverageType === "uncovered",
+                penetrated: armorContactResult.penetration === true,
+                dented: armorContactResult.contactType === "armor-dent",
+                bluntTransfer: armorContactResult.bluntTransfer || 0,
+                contactType: armorContactResult.contactType,
+              },
+              stability: {
+                checked: false,
+                displacementFeet: 0,
+              },
+              stamina: {
+                spent: calculateAttackStaminaCost({
+                  fighter: stateAttacker || attacker,
+                  weapon: attackData,
+                  attackType: attackData?.attackType || attackData?.type,
+                }),
+              },
+            });
+            canonicalMinotaurImpactAuthorization.events.forEach((impactEvent) => {
+              addLog({
+                audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+                channel: COMBAT_LOG_CHANNELS.VALIDATION,
+                eventType: `minotaur-impact-${impactEvent.eventType}`,
+                level: impactEvent.level || "info",
+                type: impactEvent.level === "warning" ? "warning" : "debug",
+                actorId: stateAttacker?.id || attacker?.id,
+                targetId: defender?.id,
+                executionKey: attackActionId,
+                source: attackSource,
+                message:
+                  `Minotaur impact stage: ${impactEvent.eventType} ` +
+                  `technique=${canonicalMinotaurTechniqueIntent.techniqueKey}`,
+                data: {
+                  techniqueKey: canonicalMinotaurTechniqueIntent.techniqueKey,
+                  ...impactEvent.data,
+                },
+              }, impactEvent.level === "warning" ? "warning" : "debug");
+            });
+          }
 
           addLog({
             audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
@@ -24994,6 +25278,102 @@ function CombatPage({ characters = [] }) {
             attackerInArray,
             attackData,
             reason: "armor-contact-required-but-missing",
+            suppressEndTurn: Boolean(bonusModifiers?.suppressEndTurn),
+            endTurnDelayMs: 16,
+            logRemaining: true,
+          });
+          return true;
+        }
+
+        if (
+          canonicalMinotaurTechniqueIntent?.directHpMutationAllowed === false &&
+          !canonicalMinotaurImpactAuthorization
+        ) {
+          const impactLocation = preDamageImpact || rollImpactLocation();
+          canonicalMinotaurImpactAuthorization = resolveCanonicalImpactPipeline({
+            intent: canonicalMinotaurTechniqueIntent,
+            prerequisite: { accepted: true },
+            movement: bonusModifiers?.movementContext || {
+              straightLineFeet: bonusModifiers?.movementDistanceFeet || 0,
+            },
+            defense: { evaded: defenseSuccess && !autoBlockUsed },
+            shield: {
+              intercepted: autoBlockUsed || String(defenseType || "").toLowerCase().includes("block"),
+              shieldId: defender?.equippedShield?.id || defender?.shield?.id || null,
+            },
+            hitLocation: { location: impactLocation.location || "unresolved" },
+            armor: {
+              layer: defenderArmorProfile?.armorName || "unarmored",
+              armorClass: defenderArmorProfile?.armorClass || "unarmored",
+              rigidCoverage: defenderArmorProfile?.rigidCoverage === true,
+            },
+            contact: {
+              armorGap: armorContactResult?.gapReached === true,
+              exposedLocation: !defenderArmorProfile?.rigidCoverage,
+              penetrated: armorContactResult?.penetration === true,
+              dented: armorContactResult?.contactType === "armor-dent",
+              bluntTransfer: armorContactResult?.bluntTransfer || 0,
+              contactType: armorContactResult?.contactType || "direct-body-contact",
+            },
+            stability: { checked: false, displacementFeet: 0 },
+            stamina: {
+              spent: calculateAttackStaminaCost({
+                fighter: stateAttacker || attacker,
+                weapon: attackData,
+                attackType: attackData?.attackType || attackData?.type,
+              }),
+            },
+          });
+          canonicalMinotaurImpactAuthorization.events.forEach((impactEvent) => {
+            addLog({
+              audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+              channel: COMBAT_LOG_CHANNELS.VALIDATION,
+              eventType: `minotaur-impact-${impactEvent.eventType}`,
+              level: impactEvent.level || "info",
+              type: impactEvent.level === "warning" ? "warning" : "debug",
+              actorId: stateAttacker?.id || attacker?.id,
+              targetId: defender?.id,
+              executionKey: attackActionId,
+              source: attackSource,
+              message:
+                `Minotaur impact stage: ${impactEvent.eventType} ` +
+                `technique=${canonicalMinotaurTechniqueIntent.techniqueKey}`,
+              data: {
+                techniqueKey: canonicalMinotaurTechniqueIntent.techniqueKey,
+                ...impactEvent.data,
+              },
+            }, impactEvent.level === "warning" ? "warning" : "debug");
+          });
+        }
+
+        if (
+          canonicalMinotaurTechniqueIntent?.directHpMutationAllowed === false &&
+          canonicalMinotaurImpactAuthorization?.bodilyDamagePermitted !== true
+        ) {
+          addLog({
+            audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+            channel: COMBAT_LOG_CHANNELS.VALIDATION,
+            eventType: "minotaur-impact-hp-mutation-blocked",
+            level: "info",
+            type: "debug",
+            actorId: stateAttacker?.id || attacker?.id,
+            targetId: defender?.id,
+            executionKey: attackActionId,
+            source: attackSource,
+            message:
+              `Minotaur bodily HP mutation blocked: technique=${canonicalMinotaurTechniqueIntent.techniqueKey} ` +
+              `outcome=${canonicalMinotaurImpactAuthorization?.outcome || "not-authorized"}`,
+            data: {
+              techniqueKey: canonicalMinotaurTechniqueIntent.techniqueKey,
+              outcome: canonicalMinotaurImpactAuthorization?.outcome || null,
+              injuryAuthorized: false,
+            },
+          }, "debug");
+          finishAttackAfterImpact({
+            updated,
+            attackerInArray,
+            attackData,
+            reason: "minotaur-impact-no-bodily-injury",
             suppressEndTurn: Boolean(bonusModifiers?.suppressEndTurn),
             endTurnDelayMs: 16,
             logRemaining: true,
@@ -25338,6 +25718,25 @@ function CombatPage({ characters = [] }) {
           logStaleAttackRollBlocked(hpMutationBlock);
           if (activeAttackActionIdRef.current === attackActionId) activeAttackActionIdRef.current = null;
           return makeBlockedAttackResult(hpMutationBlock.reason, attackActionId);
+        }
+        if (
+          canonicalMinotaurTechniqueIntent?.directHpMutationAllowed === false &&
+          canonicalMinotaurImpactAuthorization?.bodilyDamagePermitted !== true
+        ) {
+          addLog({
+            audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+            channel: COMBAT_LOG_CHANNELS.VALIDATION,
+            eventType: "minotaur-hp-mutation-without-injury-authorization-blocked",
+            level: "error",
+            type: "error",
+            actorId: stateAttacker?.id || attacker?.id,
+            targetId: defender?.id,
+            executionKey: attackActionId,
+            source: attackSource,
+            message: `Minotaur HP mutation blocked without injury authorization: technique=${canonicalMinotaurTechniqueIntent.techniqueKey}`,
+            data: { techniqueKey: canonicalMinotaurTechniqueIntent.techniqueKey },
+          }, "error");
+          return makeBlockedAttackResult("minotaur-injury-authorization-required", attackActionId);
         }
         markAttackGateChain("hp");
         const newHP = clampHP(startingHP - finalDamage, defender);
@@ -29361,9 +29760,10 @@ function CombatPage({ characters = [] }) {
       turnCounterRef.current ?? turnCounter,
     ].join(":");
 
-    if (enemyActionCommittedSliceKeyRef.current !== enemySliceKey) {
+    if (enemyActionSliceOwnerKeyRef.current !== enemySliceKey) {
       enemyActionCommittedThisSliceRef.current = false;
-      enemyActionCommittedSliceKeyRef.current = enemySliceKey;
+      enemyActionCommittedSliceKeyRef.current = null;
+      enemyActionSliceOwnerKeyRef.current = enemySliceKey;
     }
 
     if (actionClockRef.current?.busy && enemyActionCommittedThisSliceRef.current) {
@@ -29974,11 +30374,19 @@ function CombatPage({ characters = [] }) {
       }
       enemyActionLockRef.current = key;
       enemyActionCommittedThisSliceRef.current = true;
+      const initiativeTurnId = initiativeTurnIdRef.current || "no-initiative-turn";
+      const actionSequence =
+        (enemyCommittedActionSequenceByTurnRef.current.get(initiativeTurnId) || 0) + 1;
+      enemyCommittedActionSequenceByTurnRef.current.set(initiativeTurnId, actionSequence);
       enemyActionCommittedSliceKeyRef.current = [
+        combatSessionRef.current || "default",
         live?.id ?? "?",
         meleeRoundRef.current ?? meleeRound,
         turnIndexRef.current ?? turnIndex,
         turnCounterRef.current ?? turnCounter,
+        initiativeTurnId,
+        actionSequence,
+        reason || "enemy-action",
       ].join(":");
       return true;
     };
@@ -32247,7 +32655,51 @@ function CombatPage({ characters = [] }) {
     let currentDistance = Infinity;
 
     // Select which attack to use (if combatant has multiple attacks)
-    const availableAttacks = [...(enemy.attacks || [{ name: "Claw", damage: "1d6", count: 1 }])];
+    let availableAttacks = [...(enemy.attacks || [{ name: "Claw", damage: "1d6", count: 1 }])];
+    if (enemy.actorKey === "minotaur") {
+      const techniqueCandidates = filterLegalMinotaurTechniqueCandidates({
+        actor: enemy,
+        target,
+        candidates: availableAttacks,
+        movement: {
+          straightLineFeet: enemy.chargeState?.straightLineFeet ?? enemy.movementState?.straightLineFeet ?? 0,
+          sharpTurn: enemy.chargeState?.sharpTurn === true,
+          overrunEstablished: enemy.overrunState?.established === true,
+        },
+        environment: {
+          pathObstructed: enemy.chargeState?.pathObstructed === true,
+        },
+      });
+      techniqueCandidates.rejected.forEach(({ candidate, prerequisite }) => {
+        addLog({
+          audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+          channel: COMBAT_LOG_CHANNELS.VALIDATION,
+          eventType: "minotaur-technique-filtered-before-selection",
+          level: "info",
+          type: "debug",
+          actorId: enemy.id,
+          targetId: target?.id,
+          source: "enemy-ai-technique-selection",
+          message:
+            `Minotaur technique filtered before selection: technique=${candidate.techniqueKey} ` +
+            `reason=${prerequisite.reason}`,
+          data: {
+            techniqueKey: candidate.techniqueKey,
+            reason: prerequisite.reason,
+          },
+        }, "debug");
+      });
+      availableAttacks = [...techniqueCandidates.legal];
+      if (availableAttacks.length === 0) {
+        availableAttacks = [{
+          name: "Unarmed Attack",
+          damage: enemy.unarmedDamage || "1d4",
+          type: "melee",
+          count: 1,
+          usableAdjacent: true,
+        }];
+      }
+    }
     let selectedAttack = availableAttacks[0]; // Default to first attack
     let isChargingAttack = false; // Track if this will be a charge attack
 
@@ -41410,7 +41862,7 @@ function CombatPage({ characters = [] }) {
                   setShowSavePresetModal(true);
                 }}
                 isDisabled={fighters.length === 0}
-                title="Save current fighters and positions as a quick-start preset"
+                title="Save current canonical fighters and positions"
               >
                 Save Preset
               </Button>
@@ -46372,7 +46824,6 @@ function CombatPage({ characters = [] }) {
                       </Box>
                     </GridItem>
                   </Grid>
-                  )}
                 </>
               ) : (
                 <>

@@ -1,12 +1,23 @@
 const hasOwn = (value, key) => Boolean(value && Object.prototype.hasOwnProperty.call(value, key));
 
 function finiteCandidate(value) {
-  if (typeof value === "number") return Number.isFinite(value) ? value : null;
-  if (typeof value === "string" && value.trim() !== "") {
-    const numeric = Number(value);
-    return Number.isFinite(numeric) ? numeric : null;
-  }
-  return null;
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+export function validateCanonicalNaturalD20(value, context = {}) {
+  const valid = (
+    typeof value === "number" &&
+    Number.isInteger(value) &&
+    value >= 1 &&
+    value <= 20
+  );
+  return Object.freeze({
+    ok: valid,
+    naturalRoll: valid ? value : null,
+    rejectedValue: valid ? null : value,
+    rejectionReason: valid ? null : "invalid-natural-d20-boundary",
+    ...context,
+  });
 }
 
 export function normalizeCanonicalD20Roll(result, {
@@ -49,11 +60,19 @@ export function normalizeCanonicalD20Roll(result, {
     const suppliedTotal = finiteCandidate(result.total);
     if (suppliedTotal !== null) total = suppliedTotal;
   }
-  const ok = Number.isFinite(naturalRoll) && Number.isFinite(modifier) && Number.isFinite(total);
+  const naturalBoundary = validateCanonicalNaturalD20(naturalRoll, {
+    actionType,
+    actorId,
+    executionKey,
+    rollKind,
+  });
+  const ok = naturalBoundary.ok && Number.isFinite(modifier) && Number.isFinite(total);
   const rejectionReason = ok
     ? null
-    : !Number.isFinite(naturalRoll)
-      ? "missing-or-invalid-natural-roll"
+    : !naturalBoundary.ok
+      ? naturalRoll === null
+        ? "missing-or-invalid-natural-roll"
+        : naturalBoundary.rejectionReason
       : !Number.isFinite(modifier)
         ? "missing-or-invalid-modifier"
         : "missing-or-invalid-total";

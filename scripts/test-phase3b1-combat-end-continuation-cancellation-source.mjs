@@ -5,8 +5,8 @@ const combatPage = fs.readFileSync("src/pages/CombatPage.jsx", "utf8");
 
 assert.match(
   combatPage,
-  /function cancelCombatOwnedContinuations\(\{[\s\S]*?remainingActionContinuationRegistryRef\.current\?\.clear\?\.\(\)/,
-  "central combat-owned continuation cancellation should clear remaining-action continuations.",
+  /function cancelCombatOwnedContinuations\(\{[\s\S]*?for \(const \[continuationKey, record\][\s\S]*?state:\s*"canceled"/,
+  "central combat-owned continuation cancellation should cancel active remaining-action continuations without erasing historical receipts.",
 );
 
 assert.match(

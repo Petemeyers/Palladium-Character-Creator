@@ -86,6 +86,7 @@ import {
 } from "../factionDisposition.js";
 import { getSelectableActorAttackForDistance } from "../selectableActorAdapter.js";
 import { getInventoryAmmoCount } from "../combatAmmoManager.js";
+import { filterLegalMinotaurTechniqueCandidates } from "../combat/minotaurTechniqueResolver.js";
 import {
   getMeleeEngagementContext,
   isChargeOnlyAttack,
@@ -4255,9 +4256,31 @@ export function runEnemyTurnAI(enemy, context) {
     let enemyMovementPlan = null;
 
     // Select which attack to use (if combatant has multiple attacks)
-    const availableAttacks = enemy.attacks || [
+    let availableAttacks = enemy.attacks || [
       { name: "Claw", damage: "1d6", count: 1 },
     ];
+    if (enemy.actorKey === "minotaur") {
+      const filtered = filterLegalMinotaurTechniqueCandidates({
+        actor: enemy,
+        target,
+        candidates: availableAttacks,
+        movement: {
+          straightLineFeet: enemy.chargeState?.straightLineFeet ?? enemy.movementState?.straightLineFeet ?? 0,
+          sharpTurn: enemy.chargeState?.sharpTurn === true,
+          overrunEstablished: enemy.overrunState?.established === true,
+        },
+        environment: { pathObstructed: enemy.chargeState?.pathObstructed === true },
+      });
+      filtered.rejected.forEach(({ candidate, prerequisite }) => {
+        addLog?.(
+          `Minotaur technique filtered before selection: technique=${candidate.techniqueKey} reason=${prerequisite.reason}`,
+          "debug",
+        );
+      });
+      availableAttacks = filtered.legal.length > 0
+        ? [...filtered.legal]
+        : [{ name: "Unarmed Attack", damage: enemy.unarmedDamage || "1d4", type: "melee", count: 1, usableAdjacent: true }];
+    }
     let selectedAttack = availableAttacks[0]; // Default to first attack
     let isChargingAttack = false; // Track if this will be a charge attack
 

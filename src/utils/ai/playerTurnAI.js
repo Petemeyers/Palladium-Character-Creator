@@ -45,6 +45,7 @@ import { formatCombatWeaponAvailability } from "../combatWeaponAvailability.js";
 import { resolveArmoredCombatAction } from "./resolveArmoredCombatAction.js";
 import { resolveGrappleTurnAction } from "./resolveGrappleTurnAction.js";
 import { normalizeAlignmentBehavior } from "../behavior/normalizeAlignmentBehavior.js";
+import { classifyCanonicalMovementProgress } from "../combat/canonicalMovementProgress.js";
 
 const DEFEATED_KEYWORDS = [
   "vampire",
@@ -3708,6 +3709,9 @@ export async function runPlayerTurnAI(player, context) {
         movementAttemptsRef.current[attemptKey] = {
           count: 0,
           lastDistance: currentDistance,
+          lastMoveImproved: null,
+          lastDistanceBeforeMove: null,
+          lastDistanceAfterMove: null,
           lastPosition: { ...currentPos },
         };
       }
@@ -3751,12 +3755,12 @@ export async function runPlayerTurnAI(player, context) {
 
       if (
         movementTracker.count > 0 &&
-        currentDistance >= movementTracker.lastDistance
+        movementTracker.lastMoveImproved === false
       ) {
         addLog(
           `ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã‚Â¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¯Ãƒâ€šÃ‚Â¸Ãƒâ€šÃ‚Â ${player.name} movement not improving distance (${Math.round(
-            currentDistance
-          )}ft >= ${Math.round(movementTracker.lastDistance)}ft) - ending turn`,
+            movementTracker.lastDistanceAfterMove ?? currentDistance
+          )}ft >= ${Math.round(movementTracker.lastDistanceBeforeMove ?? movementTracker.lastDistance)}ft) - ending turn`,
           "warning"
         );
         processingPlayerAIRef.current = false;
@@ -4672,8 +4676,19 @@ export async function runPlayerTurnAI(player, context) {
           selectedAttack,
           newDistance
         );
-        const improved = newDistance + 0.01 < previousDistance;
+        const progress = classifyCanonicalMovementProgress({
+          distanceBefore: previousDistance,
+          distanceAfter: newDistance,
+          origin: currentPos,
+          destination: chosenMove.pos,
+          enteredWeaponRange: rangeValidation.canAttack,
+          tacticalPositionImproved: chosenMove.type === "flank",
+        });
+        const improved = progress.progressed;
 
+        movementTracker.lastDistanceBeforeMove = previousDistance;
+        movementTracker.lastDistanceAfterMove = newDistance;
+        movementTracker.lastMoveImproved = improved;
         movementTracker.lastDistance = Math.min(previousDistance, newDistance);
         movementTracker.lastPosition = { ...chosenMove.pos };
 

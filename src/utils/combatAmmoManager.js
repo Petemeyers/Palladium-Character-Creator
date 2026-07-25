@@ -31,9 +31,24 @@ export function getWeaponData(weapon) {
 function inferAmmoProfile(candidate = {}) {
   const weaponData = getWeaponData(candidate);
   const explicitAmmo = weaponData?.ammunition ?? candidate?.ammunition ?? candidate?.ammoType;
+  const ammunitionPerAttack = Number(
+    weaponData?.ammunitionPerAttack ??
+    candidate?.ammunitionPerAttack
+  );
   const name = normName(weaponData?.name || candidate?.name);
   const type = normName(weaponData?.type || candidate?.type || candidate?.kind || candidate?.attackType);
   const category = normName(weaponData?.category || candidate?.category);
+  const deliveryType = normName(
+    weaponData?.deliveryType ??
+    weaponData?.deliveryMethod ??
+    candidate?.deliveryType ??
+    candidate?.deliveryMethod
+  );
+  const explicitlyAmmoFree =
+    ammunitionPerAttack === 0 ||
+    ["thrown", "environmental", "unlimited-environmental", "improvised-thrown"].includes(deliveryType) ||
+    /\brock throw\b|\bthrown dagger\b/.test(name);
+  if (explicitlyAmmoFree && !normName(explicitAmmo)) return null;
   const hasRangedShape =
     Number(weaponData?.maxRange ?? candidate?.maxRange ?? candidate?.rangeProfile?.normal ?? candidate?.range ?? candidate?.rangeFeet ?? 0) > 10 ||
     ["ranged", "missile"].includes(type) ||
@@ -45,7 +60,7 @@ function inferAmmoProfile(candidate = {}) {
     if (/crossbow/.test(name)) ammoType = "bolts";
     else if (/sling/.test(name)) ammoType = "sling stones";
     else if (/dart/.test(name)) ammoType = "darts";
-    else if (/bow/.test(name) || type === "ranged" || category === "ranged") ammoType = "arrows";
+    else if (/bow/.test(name)) ammoType = "arrows";
   }
   if (!ammoType || ammoType === "shuman") return null;
 
