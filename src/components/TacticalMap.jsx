@@ -18,6 +18,7 @@ import {
   getMapCombatantTooltip,
 } from "../utils/mapCombatantLabels.js";
 import { getCombatIconAppearance } from "../utils/presentation/getCombatIconAppearance.js";
+import { getCanonicalFlightPresentation } from "../utils/combat/canonicalFlightState.js";
 import {
   GRID_CONFIG,
   calculateDistance,
@@ -2473,7 +2474,8 @@ const TacticalMap = ({
 
                     // Calculate altitude offset for flying combatants (0.4 pixels per foot for visual scale)
                     // This makes altitude visible: 5ft = 2px up, 20ft = 8px up, 80ft = 32px up, 120ft = 48px up
-                    const altitude = combatant.altitudeFeet ?? combatant.altitude ?? 0;
+                    const flightPresentation = getCanonicalFlightPresentation(combatant);
+                    const altitude = flightPresentation.altitudeFeet;
                     const altitudeOffsetY = altitude > 0 ? -(altitude * 0.4) : 0;
 
                     // Base icon position (ground level)
@@ -2505,7 +2507,10 @@ const TacticalMap = ({
                       isHovered: isHoveredCombatant,
                     });
                     const baseTooltip = getMapCombatantTooltip(combatant);
-                    const tokenTooltip = [baseTooltip, `Status: ${iconAppearance.statusLabel}`].filter(Boolean).join(" | ");
+                    const flightAccessibility = combatant.flightProfile?.kind === "biological"
+                      ? flightPresentation.accessibilityLabel
+                      : null;
+                    const tokenTooltip = [baseTooltip, flightAccessibility, `Status: ${iconAppearance.statusLabel}`].filter(Boolean).join(" | ");
                     const reaction = impactReactions?.[combatantId] || null;
                     const shakeDurationSeconds = Math.max(
                       0.12,
@@ -2699,8 +2704,8 @@ const TacticalMap = ({
                         )}
 
                         {/* Altitude indicator for flying combatants */}
-                        {(combatant.isFlying || (combatant.altitudeFeet ?? 0) > 0) && (() => {
-                          const altitude = combatant.altitudeFeet ?? combatant.altitude ?? 0;
+                        {flightPresentation.altitudeFeet > 0 && (() => {
+                          const altitude = flightPresentation.altitudeFeet;
                           // Color coding by altitude bands: low (5-15ft), mid (20-40ft), high (45+ft)
                           let fillColor = "#2563eb"; // Default blue
                           if (altitude >= 5 && altitude <= 15) {
@@ -2741,7 +2746,7 @@ const TacticalMap = ({
                                   zIndex: 11
                                 }}
                               >
-                                {altitude}ft
+                                {flightPresentation.compactMarker}
                               </text>
                             </g>
                           );

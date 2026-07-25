@@ -1,6 +1,7 @@
 import { getCanonicalCombatActorDefinition, getCanonicalWeaponProfileByAlias, resolveCanonicalCombatActorAlias } from "../../data/canonicalCombatActors.js";
 import { normalizeAlignmentBehavior } from "../behavior/normalizeAlignmentBehavior.js";
 import { normalizeCanonicalAmmunitionState } from "./canonicalRangedCombat.js";
+import { normalizeCanonicalFlightState } from "./canonicalFlightState.js";
 
 const clone = (value) => value == null ? value : JSON.parse(JSON.stringify(value));
 const keyText = (value) => String(value || "").trim().toLowerCase();
@@ -108,7 +109,7 @@ function resolveCanonicalLoadout(actor, definition) {
 }
 
 export function normalizeReferenceCombatActor(actor = {}, { source = "combat-start", emitDiagnostic = null, lifecyclePhase = "combat-start" } = {}) {
-  const forbiddenLifecyclePhases = new Set(["attack-resolution", "damage-application", "grapple-resolution", "movement-commit", "action-continuation", "continuation-admission", "survival-action-commit", "surrender-decision-commit", "turn-handoff"]);
+  const forbiddenLifecyclePhases = new Set(["attack-resolution", "damage-application", "grapple-resolution", "movement-commit", "flight-movement", "flight-transition", "landing", "falling", "action-continuation", "continuation-admission", "survival-action-commit", "surrender-decision-commit", "turn-handoff"]);
   if (forbiddenLifecyclePhases.has(keyText(lifecyclePhase))) {
     const diagnostic = {
       eventType: "combat-actor-normalization-during-owned-action-blocked",
@@ -157,6 +158,9 @@ export function normalizeReferenceCombatActor(actor = {}, { source = "combat-sta
     controlMode: actor.controlMode ?? definition.defaultControlMode,
     instanceId: actor.instanceId,
     position: clone(actor.position), hex: clone(actor.hex), x: actor.x, y: actor.y,
+    flightState: clone(actor.flightState),
+    altitude: actor.altitude,
+    altitudeFeet: actor.altitudeFeet,
     currentHP: currentHp, currentHp, hp: currentHp, HP: currentHp, maxHP: maxHp, maxHp,
     currentStamina,
     ...(actor.maxStamina !== undefined || actor.maxstamina !== undefined || actor.staminaMax !== undefined
@@ -231,6 +235,7 @@ export function normalizeReferenceCombatActor(actor = {}, { source = "combat-sta
       canonicalLoadout.profiles.find((profile) => profile.deliveryType === "projectile"),
     ),
     rangedTacticalProfile: clone(definition.rangedTacticalProfile),
+    flightProfile: clone(definition.flightProfile),
     behavior: canonicalAnimal ? { ...definition.behavior, ...(actor.behavior || {}) } : { ...definition.behavior, ...(alignmentBehavior || {}) },
     behaviorProfile: canonicalAnimal ? null : alignmentBehavior,
     alignment: canonicalAnimal ? null : (alignmentBehavior?.alignmentKey || actor.alignment || definition.alignment),
@@ -250,12 +255,22 @@ export function normalizeReferenceCombatActor(actor = {}, { source = "combat-sta
       },
     },
   };
+  if (definition.flightProfile?.kind === "biological") {
+    const canonicalFlight = normalizeCanonicalFlightState({
+      ...normalizedActor,
+      flightState: preserved.flightState || definition.flightState,
+      position: preserved.position,
+      altitude: preserved.altitude,
+      altitudeFeet: preserved.altitudeFeet,
+    });
+    Object.assign(normalizedActor, canonicalFlight.actor);
+  }
   for (const legacyField of ["alignmentText", "alignment_options", "alignmentOptions", "alignment_tendency", "selectedLoadout", "selectedCanonicalLoadout", "selectedWeaponProfile"]) {
     delete normalizedActor[legacyField];
   }
   // Live ownership and position fields are never inferred from the reference definition.
   for (const field of ["position", "hex", "x", "y", "grappleState", "surrenderState", "combatWeaponState", "initiativeTurnId", "actionToken", "initiativeIdentity", "instanceId", "factionId", "armyId"]) {
-    if (preserved[field] === undefined) delete normalizedActor[field];
+    if (preserved[field] === undefined && !(field === "position" && definition.flightProfile?.kind === "biological")) delete normalizedActor[field];
   }
   if (!normalizedActor.combatWeaponState) {
     normalizedActor.combatWeaponState = {
@@ -296,6 +311,22 @@ export function normalizeReferenceCombatActor(actor = {}, { source = "combat-sta
     actorId: runtimeId,
     data: { actorKey: definition.actorKey, attackKey: profile.attackKey, profileKey: profile.profileKey, source },
   })));
+  if (definition.flightProfile?.kind === "biological") diagnostics.push({
+    eventType: "flying-animal-identity-resolved",
+    level: "info",
+    actorId: runtimeId,
+    data: { actorKey: definition.actorKey, species: definition.species, source },
+  }, {
+    eventType: "flight-state-normalized",
+    level: "info",
+    actorId: runtimeId,
+    data: {
+      actorKey: definition.actorKey,
+      mode: normalizedActor.flightState?.mode,
+      altitudeFeet: normalizedActor.flightState?.altitudeFeet,
+      source,
+    },
+  });
   if (resolution.aliasUsed) diagnostics.push({
     eventType: canonicalAnimal ? "animal-migration-alias-used" : "combat-actor-migration-alias-used",
     level: "info",

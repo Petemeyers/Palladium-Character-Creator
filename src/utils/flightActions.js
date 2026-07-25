@@ -10,6 +10,50 @@ import { unlinkCombinedBodies, COMBINED_MODES } from "./combinedBodySystem.js";
 import { applyFallDamage } from "./updateActiveEffects.js";
 import { drainStamina, STAMINA_COSTS } from "./combatFatigueSystem.js";
 import { calculateDistance } from "../data/movementRules.js";
+import {
+  createFlightAuthorityRegistry,
+  resolveFlightTransition,
+} from "./combat/canonicalFlightState.js";
+
+const canonicalFlightRegistry = createFlightAuthorityRegistry();
+const isCanonicalOrdinaryFlyer = (fighter) => (
+  fighter?.combatActorSchemaVersion === 1
+  && fighter?.creatureType === "animal"
+  && fighter?.flightProfile?.kind === "biological"
+);
+
+function commitCanonicalFlightTransition(fighter, requestedTransition, destination, options = {}) {
+  const result = resolveFlightTransition({
+    actor: fighter,
+    currentFlightState: fighter.flightState,
+    requestedTransition,
+    destination,
+    actionToken: options.actionToken,
+    initiativeTurnId: options.initiativeTurnId,
+    generationId: options.generationId,
+    movementSequence: options.movementSequence,
+    authoritativeTurn: options.authoritativeTurn || {
+      actorId: fighter.id,
+      actionToken: options.actionToken,
+      initiativeTurnId: options.initiativeTurnId,
+      generationId: options.generationId,
+    },
+    registry: options.flightRegistry || canonicalFlightRegistry,
+    occupied: options.occupied === true,
+    landingValid: options.landingValid !== false,
+    takeoffBlocked: options.takeoffBlocked === true,
+    ceilingHeightFeet: options.ceilingHeightFeet,
+    obstacleHeightFeet: options.obstacleHeightFeet,
+    movementRequired: options.movementRequired ?? 0,
+    movementAvailable: options.movementAvailable ?? Infinity,
+    staminaCost: options.staminaCost ?? 0,
+    staminaAvailable: fighter.combatStamina?.current ?? fighter.currentStamina ?? Infinity,
+  });
+  result.events?.forEach((event) => options.emitDeveloperEvent?.(event));
+  if (!result.accepted) return result;
+  Object.assign(fighter, result.actor);
+  return result;
+}
 
 function ensureGrappleState(f) {
   if (!f.grappleState) {
@@ -136,6 +180,18 @@ export function startFlying(fighter, options = {}) {
     };
   }
 
+  if (isCanonicalOrdinaryFlyer(fighter)) {
+    const result = commitCanonicalFlightTransition(
+      fighter,
+      fighter.flightState?.mode === "perched" ? "leave-perch" : "takeoff",
+      { x: fighter.position?.x ?? fighter.x, y: fighter.position?.y ?? fighter.y, altitudeFeet: options.altitude ?? fighter.flightProfile.takeoffAltitudeFeet },
+      options,
+    );
+    return result.accepted
+      ? { success: true, message: `${fighter.name} takes off and begins flying at ${result.flightState.altitudeFeet}ft altitude`, fighter, events: result.events }
+      : { success: false, reason: result.reason, fighter, events: result.events };
+  }
+
   const altitude = options.altitude || 20; // Default takeoff altitude
   fighter.isFlying = true;
   fighter.altitude = altitude;
@@ -172,6 +228,22 @@ export function landFighter(fighter, options = {}) {
   }
 
   const currentAltitude = getAltitude(fighter) || 0;
+
+  if (isCanonicalOrdinaryFlyer(fighter)) {
+    const result = commitCanonicalFlightTransition(
+      fighter,
+      options.perch === true ? "perch" : "land",
+      {
+        x: options.destination?.x ?? fighter.position?.x ?? fighter.x,
+        y: options.destination?.y ?? fighter.position?.y ?? fighter.y,
+        altitudeFeet: 0,
+      },
+      options,
+    );
+    return result.accepted
+      ? { success: true, message: `${fighter.name} lands safely`, fighter, events: result.events }
+      : { success: false, reason: result.reason, fighter, events: result.events };
+  }
 
   // If landing from height, apply fall damage if not conchampioned landing
   if (currentAltitude > 5 && !options.conchampionedLanding) {
@@ -225,6 +297,28 @@ export function changeAltitude(fighter, deltaFeet, options = {}) {
   }
 
   const currentAltitude = getAltitude(fighter) || 0;
+  if (isCanonicalOrdinaryFlyer(fighter)) {
+    const requestedAltitude = currentAltitude + Number(deltaFeet || 0);
+    const result = commitCanonicalFlightTransition(
+      fighter,
+      Number(deltaFeet) > 0 ? "ascend" : "descend",
+      {
+        x: fighter.position?.x ?? fighter.x,
+        y: fighter.position?.y ?? fighter.y,
+        altitudeFeet: requestedAltitude,
+      },
+      options,
+    );
+    return result.accepted
+      ? {
+          success: true,
+          message: `${fighter.name} ${Number(deltaFeet) > 0 ? "climbs" : "descends"} from ${currentAltitude}ft to ${result.flightState.altitudeFeet}ft`,
+          fighter,
+          newAltitude: result.flightState.altitudeFeet,
+          events: result.events,
+        }
+      : { success: false, reason: result.reason, fighter, events: result.events };
+  }
   const newAltitude = currentAltitude + deltaFeet;
   const maxAltitude = options.maxAltitude || 100; // Reasonable max
   const finalAltitude = Math.max(0, Math.min(newAltitude, maxAltitude)); // Clamp between 0 and maxAltitude
@@ -270,6 +364,20 @@ export function performDiveAttack(fighter, target, options = {}) {
       reason: `${fighter.name} must be flying to perform a dive attack`,
     };
   }
+  if (isCanonicalOrdinaryFlyer(fighter) && !fighter.flightProfile?.swoopProfile) {
+    const event = {
+      eventType: "swoop-prerequisite-rejected",
+      actorId: fighter.id,
+      targetId: target.id,
+      data: {
+        reason: "swoop-profile-missing",
+        actionToken: options.actionToken ?? null,
+        initiativeTurnId: options.initiativeTurnId ?? null,
+      },
+    };
+    options.emitDeveloperEvent?.(event);
+    return { success: false, reason: "swoop-profile-missing", fighter, events: [event] };
+  }
 
   const currentAltitude = getAltitude(fighter) || 0;
   const targetAltitude = getAltitude(target) || 0;
@@ -311,6 +419,9 @@ export function performDiveAttack(fighter, target, options = {}) {
 export function liftAndCarry(fighter, target, options = {}) {
   if (!fighter || !target) {
     return { success: false, reason: "Fighter and target required" };
+  }
+  if (isCanonicalOrdinaryFlyer(fighter)) {
+    return { success: false, reason: "ordinary-flying-animal-carrying-deferred" };
   }
 
   if (!isFlying(fighter)) {

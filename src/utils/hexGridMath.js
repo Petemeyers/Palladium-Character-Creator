@@ -104,7 +104,14 @@ export function worldVectorFromEntity(
   const tileElevation = tileSurfaceWorldY(tileHeightUnits);
 
   // Combatant altitude is in FEET; convert using world Y scale (5ft = 1 world unit).
-  const altitudeFeet = toNumberOr(entity.altitudeFeet ?? entity.altitude ?? 0, 0);
+  const altitudeFeet = toNumberOr(
+    entity.flightState?.altitudeFeet
+      ?? entity.position?.altitudeFeet
+      ?? entity.altitudeFeet
+      ?? entity.altitude
+      ?? 0,
+    0,
+  );
   const altitudeWorld = altitudeFeet / FEET_PER_WORLD_Y_UNIT;
 
   const totalElevation = tileElevation + altitudeWorld;

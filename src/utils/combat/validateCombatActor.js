@@ -2,6 +2,7 @@ import { getCanonicalCombatActorDefinition } from "../../data/canonicalCombatAct
 import { hasAlignmentBehaviorMapping } from "../behavior/normalizeAlignmentBehavior.js";
 import { normalizeReferenceCombatActor, resolveCanonicalCombatActorKey } from "./normalizeCombatActorSchema.js";
 import { getNaturalAttackAnatomyRejection, isCanonicalNaturalAttack, NATURAL_ATTACK_MANUFACTURED_FIELDS } from "./canonicalNaturalAttacks.js";
+import { FLIGHT_MODES, getAltitudeBand, getCanonicalAltitude } from "./canonicalFlightState.js";
 
 const text = (value) => String(value || "").trim().toLowerCase();
 const idOf = (item = {}) => item.profileKey || item.weaponId || item.id || item.name || null;
@@ -18,6 +19,7 @@ export function validateCombatActor(actor = {}, { comparisonActor = null, emitDi
   const normalizedActor = normalizedResult.normalizedActor;
   const identityActor = canonical ? actor : normalizedActor;
   const canonicalAnimal = text(normalizedActor.creatureType) === "animal";
+  const canonicalFlyer = canonicalAnimal && normalizedActor.flightProfile?.kind === "biological";
   compatibilityFallbacks.push(...normalizedResult.compatibilityFallbacks);
   const pushError = (code, message, eventType = "combat-actor-validation-failed") => errors.push({ code, message, eventType });
   const pushWarning = (code, message, eventType = "combat-actor-validation-warning") => warnings.push({ code, message, eventType });
@@ -33,7 +35,29 @@ export function validateCombatActor(actor = {}, { comparisonActor = null, emitDi
   if (Number(normalizedActor.combatActorSchemaVersion) === 1 && canonicalAnimal && !normalizedActor.actorKey) pushError("animal-missing-actor-key", "Schema-version-one animal requires a canonical actorKey.", "animal-canonical-identity-missing");
   if (canonicalAnimal && !normalizedActor.species) pushError("animal-missing-species", "Canonical animal requires an explicit species.", "animal-canonical-identity-missing");
   if (canonicalAnimal && !normalizedActor.anatomyProfile) pushError("animal-missing-anatomy-profile", "Canonical animal requires an anatomy profile.", "animal-anatomy-invalid");
-  if (canonicalAnimal && normalizedActor.movement?.canFly === true) pushError("ground-animal-flying-movement", "Phase 3C2A ground animals cannot carry flying movement.", "animal-movement-invalid");
+  if (canonicalAnimal && normalizedActor.movement?.canFly === true && !canonicalFlyer) pushError("ground-animal-flying-movement", "Phase 3C2A ground animals cannot carry flying movement.", "animal-movement-invalid");
+  if (canonicalAnimal && normalizedActor.movement?.canFly === true && !normalizedActor.flightProfile) pushError("flying-animal-missing-flight-profile", "Flying movement requires a canonical flight profile.", "invalid-flight-state");
+  if (canonicalFlyer && normalizedActor.anatomyProfile?.wingsPresent !== true) pushError("flying-animal-missing-wing-anatomy", "Biological flight requires explicit wings.", "invalid-flight-state");
+  if (canonicalFlyer) {
+    const flightState = normalizedActor.flightState || {};
+    const altitude = getCanonicalAltitude(normalizedActor);
+    const mode = text(flightState.mode);
+    if (!FLIGHT_MODES.includes(mode)) pushError("unsupported-flight-mode", `Unsupported flight mode ${flightState.mode}.`, "invalid-flight-state");
+    if (!Number.isFinite(Number(flightState.altitudeFeet))) pushError("non-finite-altitude", "Canonical altitude must be finite.", "invalid-flight-state");
+    if (Number(flightState.altitudeFeet) < 0) pushError("negative-altitude", "Canonical altitude cannot be negative.", "negative-altitude");
+    if (["grounded", "perched"].includes(mode) && altitude !== 0) pushError("grounded-positive-altitude", "Grounded or perched flight state requires altitude zero.", "invalid-flight-state");
+    if (["airborne", "descending", "falling"].includes(mode) && altitude <= 0) pushError("airborne-zero-altitude", "Airborne flight state requires positive altitude.", "invalid-flight-state");
+    if (flightState.altitudeBand !== getAltitudeBand(altitude)) pushError("unsupported-altitude-band", "Altitude band does not match exact altitude.", "invalid-flight-state");
+    if (mode === "falling" && Number(flightState.verticalVelocity) > 0) pushError("falling-upward-velocity", "Falling cannot carry upward vertical velocity.", "invalid-flight-state");
+    const legacyValues = [normalizedActor.isFlying, normalizedActor.flying, normalizedActor.airborne, normalizedActor.inFlight, normalizedActor.hovering]
+      .filter((value) => typeof value === "boolean");
+    if (normalizedActor.flightCompatibilityProjection !== true && legacyValues.some((value) => value !== (altitude > 0))) {
+      pushError("conflicting-flight-booleans", "Legacy flight booleans conflict with canonical flight state.", "invalid-flight-state");
+    }
+    if (normalizedActor.flightProfile?.mountedFlight === true || normalizedActor.flightProfile?.magicalFlight === true) {
+      pushError("unsupported-flight-source", "Phase 3C2B supports only ordinary biological flight.", "invalid-flight-state");
+    }
+  }
   if (canonicalAnimal && (normalizedActor.rider || normalizedActor.riderId || normalizedActor.mounted || normalizedActor.barding || normalizedActor.armorProfile?.barding === true)) pushError("ground-animal-mounted-state", "Phase 3C2A animals cannot carry rider, mounted, or barding state.", "animal-mounted-state-invalid");
   if (canonicalAnimal && (normalizedActor.heldItems?.mainHand || normalizedActor.heldItems?.offHand)) pushError("animal-holding-manufactured-weapon", "Ordinary animals cannot hold manufactured weapons.", "natural-attack-manufactured-metadata");
   if (canonicalAnimal && (normalizedActor.ammunitionState || (normalizedActor.ammunition || []).length)) pushError("animal-carrying-ammunition", "Ordinary animals cannot carry ammunition.", "natural-attack-manufactured-metadata");
@@ -72,6 +96,7 @@ export function validateCombatActor(actor = {}, { comparisonActor = null, emitDi
         if (!profile.anatomySource) pushError("natural-attack-missing-anatomy-source", `${profile.name} lacks anatomySource.`, "animal-anatomy-invalid");
         if (deliveryType === "projectile" || text(profile.resolverRoute).includes("projectile")) pushError("natural-attack-projectile-routing", `${profile.name} cannot use projectile routing.`, "natural-attack-manufactured-metadata");
         if (text(profile.naturalWeaponType) === "pounce" && !(profile.prerequisites || []).length) pushError("pounce-missing-prerequisite", `${profile.name} requires an explicit prerequisite.`, "animal-anatomy-invalid");
+        if (profile.swoopProfile && !(profile.swoopProfile.minimumAltitudeFeet > 0)) pushError("swoop-missing-prerequisite", `${profile.name} lacks a valid swoop altitude prerequisite.`, "animal-anatomy-invalid");
       } else if (profile.sourceWeaponId || profile.sourceWeaponName || profile.manufacturedWeapon === true) {
         pushError("natural-manufactured-metadata", `${profile.name} inherits manufactured weapon metadata.`, "combat-actor-weapon-profile-contradiction");
       }

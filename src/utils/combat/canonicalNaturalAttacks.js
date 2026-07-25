@@ -59,6 +59,8 @@ export function getNaturalAttackAnatomyRejection(actor = {}, profile = {}) {
   if ((source === "horns" || type === "horn") && anatomy.hornsPresent !== true) return "horns-unavailable";
   if ((source === "tusks" || type === "tusk" || type === "gore") && anatomy.tusksPresent !== true && anatomy.hornsPresent !== true) return "gore-anatomy-unavailable";
   if ((source === "hooves" || type === "hoof" || type === "kick") && anatomy.hoovesPresent !== true) return "hooves-unavailable";
+  if ((source === "talons" || type === "talon") && anatomy.talonsPresent !== true) return "talons-unavailable";
+  if ((source === "beak" || type === "beak" || type === "peck") && anatomy.beakPresent !== true) return "beak-unavailable";
   return null;
 }
 

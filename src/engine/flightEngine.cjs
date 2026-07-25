@@ -7,6 +7,8 @@ function getFighter(state, id) {
 function getAltitude(state, id) {
   const f = getFighter(state, id);
   if (!f) return 0;
+  if (Number.isFinite(f.flightState?.altitudeFeet)) return f.flightState.altitudeFeet;
+  if (Number.isFinite(f.position?.altitudeFeet)) return f.position.altitudeFeet;
   if (Number.isFinite(f.altitude)) return f.altitude;
 
   const flying = f.statuses?.find(s => s.key === "Flying" || s.key === "Flight");

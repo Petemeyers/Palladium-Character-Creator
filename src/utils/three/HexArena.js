@@ -1738,7 +1738,12 @@ export function initHexArena(containerElement) {
       occupiedHexesMap.set(fighterId, occupiedHexes);
 
       // Get altitude from fighter (for flying characters)
-      altitude = fighter.altitude || fighter.altitudeFeet || 0;
+      altitude =
+        fighter.flightState?.altitudeFeet ??
+        fighter.position?.altitudeFeet ??
+        fighter.altitudeFeet ??
+        fighter.altitude ??
+        0;
 
       // Determine terrain height and type under this fighter (so units stand on cliffs/water)
       let tileHeightUnits = 0;
@@ -1783,7 +1788,11 @@ export function initHexArena(containerElement) {
       // Resolve model URL based on flying state and perching state (if provided)
       const isPerched = fighter.perchedOn && fighter.perchedOn.treeId;
       const isAirborne =
-        fighter.isFlying || (fighter.altitudeFeet ?? fighter.altitude ?? 0) > 0;
+        (fighter.flightState?.altitudeFeet ??
+          fighter.position?.altitudeFeet ??
+          fighter.altitudeFeet ??
+          fighter.altitude ??
+          0) > 0;
       const baseModelUrl = fighterVisual.modelUrl;
       const groundedModelUrl =
         fighterVisual.groundedModelUrl ||

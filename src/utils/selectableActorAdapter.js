@@ -2,6 +2,7 @@ import { addOriginalActorMetadata } from "./originalActorMetadata.js";
 import { ensureKnightCloseWeaponLoadout } from "./knightLoadout.js";
 import { normalizeReferenceCombatActor } from "./combat/normalizeCombatActorSchema.js";
 import { isCanonicalNaturalAttack, sanitizeCanonicalNaturalAttack } from "./combat/canonicalNaturalAttacks.js";
+import { createCanonicalFlightState, normalizeCanonicalFlightState } from "./combat/canonicalFlightState.js";
 
 const hasValue = (value) => value !== undefined && value !== null && value !== "";
 
@@ -179,16 +180,13 @@ export function adaptSelectableActorToCombatant(actor = {}, options = {}) {
     abilities: hasFlight
       ? { movement: { flight: { active: true, feetPerRound: flyingMovement, mphSpeed: flyingMovement / 22 } } }
       : {},
-    ...(startsAirborne ? {
-      isFlying: true,
-      airborne: true,
-      movementMode: "flight",
-      altitude: defaultFlightAltitude,
-      altitudeFeet: defaultFlightAltitude,
-      aiFlightState: {
-        mode: "cruising",
-        cruiseAltitudeFeet: defaultFlightAltitude,
-      },
+    ...(hasFlight ? {
+      flightProfile: cloneObject(actor.flightProfile),
+      flightState: createCanonicalFlightState({
+        ...(actor.flightState || {}),
+        mode: startsAirborne ? "airborne" : "grounded",
+        altitudeFeet: startsAirborne ? defaultFlightAltitude : 0,
+      }),
     } : {}),
     normalizedSelectableActor: true,
     selectableActorId: actor.id,
@@ -207,7 +205,8 @@ export function adaptSelectableActorToCombatant(actor = {}, options = {}) {
     terrainMobility: { ...combatant.originalActorMetadata.movement.terrainMobility },
   };
 
-  const loadedCombatant = ensureKnightCloseWeaponLoadout(combatant);
+  const flightNormalizedCombatant = hasFlight ? normalizeCanonicalFlightState(combatant).actor : combatant;
+  const loadedCombatant = ensureKnightCloseWeaponLoadout(flightNormalizedCombatant);
   const normalized = normalizeReferenceCombatActor(loadedCombatant, { source: "selectable-actor-adapter" });
   return {
     ok: true,

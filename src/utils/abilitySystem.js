@@ -23,6 +23,7 @@
  */
 
 import { rollDice } from "./dice.js";
+import { createCanonicalFlightState, getCanonicalAltitude, isCanonicallyAirborne } from "./combat/canonicalFlightState.js";
 import { lookupSkill } from "./skillSystem.js";
 
 /**
@@ -606,6 +607,7 @@ export function getSkillPercent(abilities, skill) {
  */
 export function canFly(fighter) {
   if (!fighter) return false;
+  if (fighter.flightProfile?.kind === "biological") return true;
   const abilities = fighter.abilities || fighter;
   return abilities?.movement?.flight?.active === true;
 }
@@ -617,6 +619,7 @@ export function canFly(fighter) {
  */
 export function isFlying(fighter) {
   if (!fighter) return false;
+  if (fighter.flightState) return isCanonicallyAirborne(fighter);
   // Check if fighter has altitude > 0 (currently airborne)
   const altitude = fighter.altitude || fighter.altitudeFeet || 0;
   return altitude > 0;
@@ -630,6 +633,7 @@ export function isFlying(fighter) {
  */
 export function getAltitude(fighter) {
   if (!fighter) return 0;
+  if (fighter.flightState) return getCanonicalAltitude(fighter);
   // Prefer altitudeFeet, fallback to altitude, default to 0
   return fighter.altitudeFeet !== undefined ? fighter.altitudeFeet : 
          fighter.altitude !== undefined ? fighter.altitude : 0;
@@ -642,8 +646,18 @@ export function getAltitude(fighter) {
  */
 export function setAltitude(fighter, altitudeFeet) {
   if (!fighter) return;
-  fighter.altitude = altitudeFeet;
-  fighter.altitudeFeet = altitudeFeet;
+  if (fighter.flightState) {
+    const altitude = Math.max(0, Number(altitudeFeet) || 0);
+    fighter.flightState = createCanonicalFlightState({
+      ...fighter.flightState,
+      mode: altitude > 0 ? "airborne" : "grounded",
+      altitudeFeet: altitude,
+    });
+    fighter.position = { ...(fighter.position || {}), altitudeFeet: altitude };
+  }
+  const projectedAltitude = fighter.flightState?.altitudeFeet ?? altitudeFeet;
+  fighter.altitude = projectedAltitude;
+  fighter.altitudeFeet = projectedAltitude;
 }
 
 /**

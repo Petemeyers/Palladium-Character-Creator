@@ -16,7 +16,7 @@ export function createAnimalSurvivalAction({
   if (!registry?.pending || !actor?.id || !generationId || !initiativeTurnId || !actionToken) {
     return { accepted: false, reason: "animal-survival-ownership-required", events: [] };
   }
-  if (!["flee", "hold-position", "cower", "animal-retreated", "animal-driven-off", "animal-captured", "animal-submitted"].includes(outcome)) {
+  if (!["flee", "flee-by-air", "retreat-to-altitude", "land-and-submit", "hold-position", "cower", "animal-retreated", "animal-driven-off", "animal-captured", "animal-submitted"].includes(outcome)) {
     return { accepted: false, reason: "animal-survival-outcome-invalid", events: [] };
   }
   const survivalToken = Object.freeze({
@@ -33,7 +33,13 @@ export function createAnimalSurvivalAction({
   return {
     accepted: true,
     survivalToken,
-    events: [{ eventType: "animal-survival-action-owned", actorId: actor.id, data: { ...survivalToken } }],
+    events: [{
+      eventType: actor.flightProfile?.kind === "biological"
+        ? "flying-animal-survival-owned"
+        : "animal-survival-action-owned",
+      actorId: actor.id,
+      data: { ...survivalToken },
+    }],
   };
 }
 
@@ -70,12 +76,16 @@ export function commitAnimalSurvivalAction({
       : survivalToken.outcome === "animal-captured"
         ? "animal-captured"
         : "animal-movement-committed";
+  const resolvedEventType = actor.flightProfile?.kind === "biological"
+    && ["flee-by-air", "retreat-to-altitude", "animal-retreated"].includes(survivalToken.outcome)
+    ? "flying-animal-retreated"
+    : eventType;
   return {
     committed: true,
     actor: nextActor,
     staminaSpent,
     terminal,
-    events: [{ eventType, actorId: actor.id, data: { actionToken: survivalToken.actionToken, initiativeTurnId: survivalToken.initiativeTurnId, outcome: survivalToken.outcome, staminaSpent } }],
+    events: [{ eventType: resolvedEventType, actorId: actor.id, data: { actionToken: survivalToken.actionToken, initiativeTurnId: survivalToken.initiativeTurnId, outcome: survivalToken.outcome, staminaSpent } }],
   };
 }
 

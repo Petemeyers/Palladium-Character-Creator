@@ -23,6 +23,17 @@ import {
 } from "../scavengingSystem";
 import { findFoodItem, consumeItem } from "../consumptionSystem";
 import { canTargetForAction } from "../factionDisposition.js";
+import {
+  createFlightAuthorityRegistry,
+  resolveFlightTransition,
+} from "../combat/canonicalFlightState.js";
+
+const aiFlightRegistry = createFlightAuthorityRegistry();
+const isCanonicalOrdinaryFlyer = (fighter) => (
+  fighter?.combatActorSchemaVersion === 1
+  && fighter?.creatureType === "animal"
+  && fighter?.flightProfile?.kind === "biological"
+);
 
 /**
  * Determine if a combatant should be treated as a flying combatant for AI purposes.
@@ -87,6 +98,30 @@ export function runFlyingTurn(flier, ctx) {
 
   // 1) Landing / resting logic â€“ let fatigue system decide when to land
   if (airborne && shouldLandToRest(flier) && hasActions) {
+    if (isCanonicalOrdinaryFlyer(flier)) {
+      const ownership = ctx.flightOwnership || {};
+      const landing = resolveFlightTransition({
+        actor: flier,
+        currentFlightState: flier.flightState,
+        requestedTransition: "land",
+        destination: { ...(positions?.[flier.id] || flier.position || {}), altitudeFeet: 0 },
+        actionToken: ownership.actionToken,
+        initiativeTurnId: ownership.initiativeTurnId,
+        generationId: ownership.generationId,
+        movementSequence: ownership.movementSequence,
+        authoritativeTurn: ownership,
+        registry: ctx.flightRegistry || aiFlightRegistry,
+        occupied: ownership.occupied === true,
+      });
+      landing.events?.forEach((event) => ctx.emitDeveloperEvent?.(event));
+      if (!landing.accepted) return false;
+      setFighters((prev) => prev.map((f) => f.id === flier.id
+        ? { ...landing.actor, remainingActions: Math.max(0, (f.remainingActions ?? 1) - 1) }
+        : f));
+      recoverStamina(landing.actor, "FULL_REST", 1);
+      addLog?.(`${flier.name} lands to rest and recover stamina.`, "info");
+      return true;
+    }
     // Land in place (keep same x,y, set altitude to 0)
     setFighters((prev) =>
       prev.map((f) =>
@@ -416,6 +451,41 @@ export function moveFlyingCombatant(flier, targetHex, context, options = {}) {
   const from = positions[flier.id];
   if (!from) return false;
 
+  if (isCanonicalOrdinaryFlyer(flier)) {
+    const ownership = options.flightOwnership || context.flightOwnership || {};
+    const transition = resolveFlightTransition({
+      actor: flier,
+      currentFlightState: flier.flightState,
+      requestedTransition: "horizontal-flight",
+      destination: {
+        x: targetHex.x ?? targetHex.q,
+        y: targetHex.y ?? targetHex.r,
+        altitudeFeet: options.altitudeFeet ?? flier.flightState?.altitudeFeet,
+      },
+      actionToken: ownership.actionToken,
+      initiativeTurnId: ownership.initiativeTurnId,
+      generationId: ownership.generationId,
+      movementSequence: ownership.movementSequence,
+      authoritativeTurn: ownership,
+      registry: context.flightRegistry || aiFlightRegistry,
+      movementRequired: options.distanceFt ?? 0,
+      movementAvailable: options.movementAvailable ?? flier.movement?.flying ?? Infinity,
+      staminaCost: options.staminaCost ?? 0,
+      staminaAvailable: flier.combatStamina?.current ?? flier.currentStamina ?? Infinity,
+      ceilingHeightFeet: options.ceilingHeightFeet,
+    });
+    transition.events?.forEach((event) => context.emitDeveloperEvent?.(event));
+    if (!transition.accepted) return false;
+    Object.assign(flier, transition.actor);
+    moveCombatantOnMap(flier, targetHex, {
+      movementType: options.movementType || "FLY",
+      mode: "FLY",
+      altitudeFeet: transition.flightState.altitudeFeet,
+      flightTransitionKey: transition.transitionKey,
+    });
+    return true;
+  }
+
   flier.isFlying = true;
   if (flier.altitudeFeet == null) {
     // Default altitude: 100ft for hawks/birds, 20ft for others
@@ -452,6 +522,15 @@ export function moveFlyingCombatant(flier, targetHex, context, options = {}) {
 export function performDiveAttack(flier, target, context) {
   const { gameState, log, moveCombatantOnMap, performMeleeAttack } = context;
   if (!flier || !target || !performMeleeAttack) return false;
+  if (isCanonicalOrdinaryFlyer(flier) && !flier.flightProfile?.swoopProfile) {
+    context.emitDeveloperEvent?.({
+      eventType: "swoop-prerequisite-rejected",
+      actorId: flier.id,
+      targetId: target.id,
+      data: { reason: "swoop-profile-missing" },
+    });
+    return false;
+  }
 
   const positions = gameState?.positions || context.positions || {};
   const from = positions[flier.id];
