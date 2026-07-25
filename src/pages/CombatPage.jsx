@@ -423,8 +423,14 @@ import { api } from "../utils/axios.js";
 import { calculateTotalHP } from "../utils/levelProgression.js";
 import { grantXPFromEnemy, getOpponentByName, calculateOpponentXP } from "../utils/enemyXP.js";
 import { weapons, getWeaponByName, arenaWhip } from "../data/weapons.js";
-import { presceneBattles, getPresceneById } from "../data/presceneBattles.js";
-import { getSavedPresets, savePreset, loadSavedPreset } from "../utils/savedPresets.js";
+import {
+  deleteAllSavedPresets,
+  deleteSavedPreset,
+  getSavedPresets,
+  loadSavedPreset,
+  migrateLegacyPresetStorage,
+  savePreset,
+} from "../utils/savedPresets.js";
 import {
   createCanonicalMinotaurTechniqueIntent,
   filterLegalMinotaurTechniqueCandidates,
@@ -1434,31 +1440,18 @@ function createEncounterArmyFromPreset({
 function getRosterTutorialTarget({
   playerCount,
   enemyCount,
-  quickChoicesOpen,
-  setupMode,
 }) {
-  if (quickChoicesOpen) return "quickChoice";
-
   const hasPlayers = playerCount > 0;
   const hasEnemies = enemyCount > 0;
 
-  if (!hasPlayers && !hasEnemies) return "quickStart";
+  if (!hasPlayers && !hasEnemies) return "chooseParty";
   if (hasPlayers && hasEnemies) return "nextDeployment";
   if (hasPlayers && !hasEnemies) return "addEnemy";
-
-  if (setupMode === "manual") {
-    if (!hasPlayers) return "chooseParty";
-  }
-
-  return "quickStart";
+  return "chooseParty";
 }
 
 function getRosterHint(target) {
   switch (target) {
-    case "quickStart":
-      return "Start fast with a ready-made encounter.";
-    case "quickChoice":
-      return "Pick the quick battle you want to load.";
     case "chooseParty":
       return "Choose your heroes first.";
     case "addEnemy":
@@ -6997,8 +6990,7 @@ function CombatPage({ characters = [] }) {
   const [showPhase0Modal, setShowPhase0Modal] = useState(false); // Phase 0 scene setup modal
   const [showDeploymentModal, setShowDeploymentModal] = useState(false); // Guided deployment overlay
   const [showPreBattleDuelist, setShowPreBattleDuelist] = useState(false); // Mobile-style setup flow
-  const [setupMode, setSetupMode] = useState("quick");
-  const [quickChoicesOpen, setQuickChoicesOpen] = useState(false);
+  const [setupMode, setSetupMode] = useState("manual");
   const [manualDeploymentOpen, setManualDeploymentOpen] = useState(false);
   const [combatControlsExpanded, setCombatControlsExpanded] = useState(false);
   const [preBattleStep, setPreBattleStep] = useState(PRE_BATTLE_STEPS.ROSTER);
@@ -7006,12 +6998,25 @@ function CombatPage({ characters = [] }) {
   const [hasAutoOpenedPreBattleFlow, setHasAutoOpenedPreBattleFlow] = useState(false);
   const [showSavePresetModal, setShowSavePresetModal] = useState(false);
   const [savePresetName, setSavePresetName] = useState("");
+  const [savedPresetList, setSavedPresetList] = useState([]);
   const [lootWindowOpen, setLootWindowOpen] = useState(false); // Loot window state
   const [selectedLootSource, setSelectedLootSource] = useState(null); // Fighter to loot from
   const [lootData, setLootData] = useState(null); // Loot data to display
   const [arenaSpeed, setArenaSpeed] = useState("slow"); // Combat pacing: slow/normal/fast
   const [mode, setMode] = useState("MAP_EDITOR"); // "MAP_EDITOR" | "COMBAT"
   const arena3DRef = useRef(null);
+  useEffect(() => {
+    const migration = migrateLegacyPresetStorage({
+      emitDeveloperEvent: (event) => addLog({
+        audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+        channel: COMBAT_LOG_CHANNELS.VALIDATION,
+        ...event,
+        message: `Removed ${event.data.removedCount} obsolete combat preset(s).`,
+      }, "info"),
+    });
+    setSavedPresetList(getSavedPresets());
+    if (!migration.migrated) return;
+  }, [addLog]);
   useEffect(() => {
     arena3DRef.current?.setTimeScale?.(timeScale);
   }, [timeScale]);
@@ -7909,10 +7914,8 @@ function CombatPage({ characters = [] }) {
       getRosterTutorialTarget({
         playerCount: playerSetupCount,
         enemyCount: enemySetupCount,
-        quickChoicesOpen,
-        setupMode,
       }),
-    [playerSetupCount, enemySetupCount, quickChoicesOpen, setupMode]
+    [playerSetupCount, enemySetupCount]
   );
 
   const rosterHint = useMemo(
@@ -8343,7 +8346,6 @@ function CombatPage({ characters = [] }) {
 
   const openGuidedSetup = useCallback((step = PRE_BATTLE_STEPS.ROSTER) => {
     if (step === PRE_BATTLE_STEPS.ROSTER) {
-      setQuickChoicesOpen(false);
       setManualDeploymentOpen(false);
     }
     if (step === PRE_BATTLE_STEPS.DEPLOY) {
@@ -38023,69 +38025,6 @@ function CombatPage({ characters = [] }) {
   }
 
   /**
-   * Load a prescene battle - predefined fighters for quick combat start.
-   * Clears current fighters and loads the preset (players + enemies).
-   */
-  function loadPrescene(presceneId) {
-    const prescene = getPresceneById(presceneId);
-    if (!prescene) {
-      addLog(`Prescene "${presceneId}" not found`, "error");
-      return;
-    }
-
-    resetAITransientRefs();
-    combatRosterSnapshotRef.current = null;
-    setCombatActive(false);
-    setFighters([]);
-    positionsRef.current = {};
-    committedPositionsRef.current = {};
-    lastMovementCommitRef.current = {};
-    setPositions({});
-    setRenderPositions({});
-    setPhase0Results(null);
-    setCombatTerrain(null);
-
-    const combatants = getAllArenaRosterEntries(arenaRoster);
-
-    // Add players first
-    for (const player of prescene.players) {
-      const combatant = combatants.find((c) => c.id === player.arenaRosterId);
-      if (!combatant) {
-        addLog(`Prescene: combatant "${player.arenaRosterId}" not found in arenaRoster`, "error");
-        continue;
-      }
-      addCombatant(
-        combatant,
-        player.name || combatant.name,
-        1,
-        null,
-        player.weaponName || "None",
-        player.ammoCount ?? 0,
-        "player"
-      );
-    }
-
-    // Add enemies
-    for (const enemy of prescene.enemies) {
-      const combatant = combatants.find((c) => c.id === enemy.arenaRosterId);
-      if (!combatant) {
-        addLog(`Prescene: combatant "${enemy.arenaRosterId}" not found in arenaRoster`, "error");
-        continue;
-      }
-      addCombatant(
-        combatant,
-        enemy.name || combatant.name,
-        1,
-        enemy.armorName || null,
-        enemy.weaponName || "None",
-        enemy.ammoCount ?? 0
-      );
-    }
-
-    addLog(`Loaded prescene: ${prescene.name}`, "success");
-  }
-
-  /**
    * Load a saved preset - restores fighters and positions directly.
    */
   function loadSavedPresetById(presetId) {
@@ -38112,12 +38051,27 @@ function CombatPage({ characters = [] }) {
     const name = savePresetName.trim() || `Combat ${new Date().toLocaleString()}`;
     try {
       savePreset({ name, fighters, positions });
+      setSavedPresetList(getSavedPresets());
       addLog(`Saved preset: ${name}`, "success");
       setShowSavePresetModal(false);
       setSavePresetName("");
     } catch (e) {
       addLog(`Failed to save preset: ${e?.message || e}`, "error");
     }
+  }
+
+  function handleDeleteSavedPreset(presetId, presetName) {
+    if (!window.confirm(`Delete saved preset "${presetName}"? This cannot be undone.`)) return;
+    deleteSavedPreset(presetId);
+    setSavedPresetList(getSavedPresets());
+    addLog(`Deleted saved preset: ${presetName}`, "info");
+  }
+
+  function handleDeleteAllSavedPresets() {
+    if (!window.confirm("Delete ALL saved combat presets? This permanently removes every saved setup and cannot be undone.")) return;
+    const result = deleteAllSavedPresets();
+    setSavedPresetList([]);
+    addLog(`Deleted ${result.deletedCount} saved combat preset(s).`, "warning");
   }
 
   const getMaxFighterHP = (fighter) => {
@@ -41831,24 +41785,31 @@ function CombatPage({ characters = [] }) {
         <HStack>
           {!combatActive && (
             <>
-              <Menu>
+              <Menu closeOnSelect={false}>
                 <MenuButton as={Button} colorScheme="orange" variant="outline" size="sm">
-                  Quick Start
+                  Saved Presets
                 </MenuButton>
-                <MenuList maxH="300px" overflowY="auto">
-                  {presceneBattles.map((p) => (
-                    <MenuItem key={p.id} onClick={() => loadPrescene(p.id)}>
-                      {p.name}
-                    </MenuItem>
-                  ))}
-                  {getSavedPresets().length > 0 && (
+                <MenuList maxH="360px" overflowY="auto">
+                  {savedPresetList.length === 0 ? (
+                    <MenuItem isDisabled>No saved presets</MenuItem>
+                  ) : (
                     <>
-                      <MenuDivider />
-                      {getSavedPresets().map((p) => (
-                        <MenuItem key={p.id} onClick={() => loadSavedPresetById(p.id)}>
-                          {p.name}
+                      {savedPresetList.map((preset) => (
+                        <MenuItem key={preset.id} as={Box}>
+                          <HStack justify="space-between" width="100%">
+                            <Button size="xs" variant="ghost" onClick={() => loadSavedPresetById(preset.id)}>
+                              {preset.name}
+                            </Button>
+                            <Button size="xs" colorScheme="red" variant="outline" onClick={() => handleDeleteSavedPreset(preset.id, preset.name)}>
+                              Delete
+                            </Button>
+                          </HStack>
                         </MenuItem>
                       ))}
+                      <MenuDivider />
+                      <MenuItem onClick={handleDeleteAllSavedPresets} color="red.600">
+                        Delete All Saved Presets
+                      </MenuItem>
                     </>
                   )}
                 </MenuList>
@@ -46250,7 +46211,7 @@ function CombatPage({ characters = [] }) {
               />
             </FormControl>
             <Text mt={2} fontSize="sm" color="gray.500">
-              Saves {fighters.length} fighter(s) and their positions. Appears in Quick Start.
+              Saves {fighters.length} canonical fighter(s) and their positions.
             </Text>
           </ModalBody>
           <ModalFooter>
@@ -46324,62 +46285,6 @@ function CombatPage({ characters = [] }) {
                     </Text>
                   </Box>
 
-                  {quickChoicesOpen ? (
-                    <VStack align="stretch" spacing={3}>
-                      <Text fontWeight="bold">Choose a quick battle</Text>
-
-                      {presceneBattles.map((battle, index) => (
-                        <Button
-                          key={battle.id}
-                          justifyContent="flex-start"
-                          variant={index === 0 ? "solid" : "outline"}
-                          colorScheme={index === 0 ? "purple" : "gray"}
-                          className={
-                            rosterTutorialTarget === "quickChoice" && index === 0
-                              ? "tutorial-pulse"
-                              : ""
-                          }
-                          onClick={() => {
-                            loadPrescene(battle.id);
-                            setQuickChoicesOpen(false);
-                            openGuidedSetup(PRE_BATTLE_STEPS.DEPLOY);
-                          }}
-                        >
-                          {battle.name}
-                        </Button>
-                      ))}
-
-                      {getSavedPresets().length > 0 && (
-                        <>
-                          <Divider />
-                          <Text fontWeight="bold" fontSize="sm">
-                            Saved presets
-                          </Text>
-                          {getSavedPresets().map((p) => (
-                            <Button
-                              key={p.id}
-                              justifyContent="flex-start"
-                              variant="outline"
-                              onClick={() => {
-                                loadSavedPresetById(p.id);
-                                setQuickChoicesOpen(false);
-                                openGuidedSetup(PRE_BATTLE_STEPS.DEPLOY);
-                              }}
-                            >
-                              {p.name}
-                            </Button>
-                          ))}
-                        </>
-                      )}
-
-                      <Button
-                        variant="ghost"
-                        onClick={() => setQuickChoicesOpen(false)}
-                      >
-                        Back
-                      </Button>
-                    </VStack>
-                  ) : (
                   <Grid
                     templateColumns={{
                       base: "minmax(0, 1fr)",
@@ -46555,16 +46460,6 @@ function CombatPage({ characters = [] }) {
                         <Box borderWidth="1px" borderRadius="lg" p={4} bg="red.50" w="100%" maxW="100%" minW={0} boxSizing="border-box">
                           <Heading size="sm" mb={2}>Fighters / Opponents</Heading>
                           <HStack mb={3} spacing={2} flexWrap="wrap">
-                            <Button
-                              colorScheme="orange"
-                              className={rosterTutorialTarget === "quickStart" ? "tutorial-pulse" : ""}
-                              onClick={() => {
-                                setSetupMode("quick");
-                                setQuickChoicesOpen(true);
-                              }}
-                            >
-                              Quick Start
-                            </Button>
                             <Button
                               colorScheme="red"
                               className={rosterTutorialTarget === "addEnemy" ? "tutorial-pulse-red" : ""}
