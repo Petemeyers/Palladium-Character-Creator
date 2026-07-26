@@ -85,7 +85,7 @@ export const HUNTING_ACTION_CONTRACTS = Object.freeze({
   "follow-blood-trail": actionContract("follow-blood-trail", "Follow Blood Trail", ["pursuit"], { executor: "updateCanonicalHuntingPursuit", staminaOwner: "hunter", targetRequired: true }),
   "abandon-hunt": actionContract("abandon-hunt", "Abandon Hunt", HUNTING_PHASES.filter((phase) => phase !== "resolved"), { executor: "commitCanonicalHuntingOutcome" }),
   "recover-quarry": actionContract("recover-quarry", "Recover Quarry", ["recovery"], { executor: "recoverCanonicalCarcass", targetRequired: true }),
-  "field-dress-carcass": actionContract("field-dress-carcass", "Field Dress Carcass", ["recovery", "resolved"], { executor: "deferredHarvestBoundary", targetRequired: true, deferred: true, aiAvailable: false }),
+  "field-dress-carcass": actionContract("field-dress-carcass", "Field Dress Carcass", ["recovery", "resolved"], { executor: "completeCanonicalFieldDressing", targetRequired: true, playerVisible: false }),
   "issue-companion-command": actionContract("issue-companion-command", "Issue Companion Command", ["search", "sign-found", "tracking", "stalking", "contact", "engagement", "pursuit", "recovery"], { executor: "issueCanonicalCompanionCommand", targetRequired: true }),
 });
 
@@ -972,7 +972,10 @@ export function createCanonicalCarcassState({
   registry,
   sourceActor,
   generationId,
+  huntingEncounterId = null,
+  deathEventId = null,
   deathTime = Date.now(),
+  deathRound = null,
   deathLocation,
   causeOfDeath = "unknown",
   primaryInjuries = [],
@@ -987,11 +990,34 @@ export function createCanonicalCarcassState({
   const carcassId = `${generationId}:carcass:${sourceActorId}`;
   if (registry.carcasses.has(carcassId)) return reject("duplicate-carcass", { generationId, actorId: sourceActorId }, "duplicate-completion");
   const carcassState = {
-    carcassId, sourceActorId, species: sourceActor.species, size: sourceActor.size,
-    deathTime, deathLocation: point(deathLocation || sourceActor), causeOfDeath,
+    carcassId, sourceActorId, sourceActorKey: sourceActor.actorKey,
+    species: sourceActor.species, size: sourceActor.size,
+    huntingEncounterId,
+    deathEventId: deathEventId || sourceActor.deathEventId || `committed-death:${generationId}:${sourceActorId}`,
+    deathAuthority: sourceActor.deathEventId || deathEventId ? "authoritative-death-event" : "committed-death-flag",
+    deathTime, deathRound, deathPosition: point(deathLocation || sourceActor),
+    deathLocation: point(deathLocation || sourceActor), causeOfDeath,
     primaryInjuries: Object.freeze([...primaryInjuries]), contaminationState: "unknown",
     recovered, claimedByActorId, fieldDressed: false,
     harvestEligibility: recovered ? "boundary-available" : "unavailable",
+    recoveryState: recovered ? "recovered" : "unrecovered",
+    processingState: "intact",
+    conditionProfile: freeze({
+      freshnessState: "fresh",
+      bodyCondition: primaryInjuries.length > 2 ? "heavily-damaged" : primaryInjuries.length ? "damaged" : "intact",
+      contaminationTags: Object.freeze([]),
+      damagedLocations: Object.freeze([...primaryInjuries]),
+      lostLocations: Object.freeze([]),
+      bleedLossClass: "unknown",
+      burnExposure: false,
+      poisonExposure: false,
+      diseaseConcern: false,
+      recoveryDelayClass: "immediate",
+    }),
+    recoveryOwnerToken: null,
+    processingOwnerToken: null,
+    harvestProfileKey: null,
+    remainingResources: {},
     projectileRecoveryState: freeze({
       projectileIds: Object.freeze([...projectileIds]), embedded: projectileIds.length > 0,
       recoverable: "undetermined", damaged: "undetermined", recoveryPending: projectileIds.length > 0,
@@ -1009,6 +1035,7 @@ export function recoverCanonicalCarcass({ registry, carcassId, claimantId, recov
   carcass.claimedByActorId = claimantId;
   carcass.recoveryPosition = point(recoveryPosition || carcass.deathLocation);
   carcass.harvestEligibility = "boundary-available";
+  carcass.recoveryState = "recovered";
   carcass.state = "recovered";
   return { accepted: true, carcassState: freeze(carcass), events: [event("quarry-recovered", { actorId: claimantId }, { carcassId })] };
 }

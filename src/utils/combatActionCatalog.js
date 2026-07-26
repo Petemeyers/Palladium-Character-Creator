@@ -12,6 +12,7 @@ import { MOUNTED_ACTION_CONTRACTS } from "./combat/canonicalMountedCombat.js";
 import { MOUNTED_FLIGHT_ACTION_CONTRACTS } from "./combat/canonicalMountedFlight.js";
 import { HUNTING_ACTION_CONTRACTS } from "./combat/canonicalHuntingEncounter.js";
 import { CONCEALMENT_ACTIONS } from "./combat/liveWildlifeConcealmentRanged.js";
+import { CARCASS_PROCESSING_ACTIONS } from "./combat/canonicalCarcassProcessing.js";
 
 const hasValue = (value) => value !== undefined && value !== null && value !== "";
 
@@ -144,7 +145,7 @@ const ACTION_CONTRACTS = Object.freeze({
   "follow-blood-trail": { rollRequired: "caller-authoritative", executorIdentity: "canonical-hunting-executor", aiAvailable: true },
   "abandon-hunt": { rollRequired: false, executorIdentity: "canonical-hunting-executor", aiAvailable: true },
   "recover-quarry": { rollRequired: false, executorIdentity: "canonical-hunting-executor", aiAvailable: true },
-  "field-dress-carcass": { rollRequired: false, executorIdentity: "canonical-harvest-boundary", aiAvailable: false },
+  "field-dress-carcass": { rollRequired: "uncertainty-only", executorIdentity: "canonical-carcass-processing", aiAvailable: true },
   "issue-companion-command": { rollRequired: "pressure-only", executorIdentity: "canonical-companion-executor", aiAvailable: true },
   hide: { rollRequired: true, executorIdentity: "canonical-concealment-executor", aiAvailable: true },
   sneak: { rollRequired: false, executorIdentity: "canonical-concealment-executor", aiAvailable: true },
@@ -158,6 +159,7 @@ export const getCombatActionContract = (type, source = "") => {
   const mountedContract = MOUNTED_ACTION_CONTRACTS[normalizedType] || null;
   const mountedFlightContract = MOUNTED_FLIGHT_ACTION_CONTRACTS[normalizedType] || null;
   const huntingContract = HUNTING_ACTION_CONTRACTS[normalizedType] || null;
+  const processingContract = CARCASS_PROCESSING_ACTIONS[normalizedType] || null;
   const compatibility = normalizeText(source).toLowerCase().includes("compatibility");
   return {
     ...contract,
@@ -177,6 +179,18 @@ export const getCombatActionContract = (type, source = "") => {
       legalPhases: huntingContract.legalPhases,
       huntingExecutor: huntingContract.executor,
       deferred: huntingContract.deferred,
+    } : {}),
+    ...(processingContract ? {
+      stableKey: processingContract.key,
+      executorIdentity: "canonical-carcass-processing",
+      aiAvailable: processingContract.aiAvailable,
+      rollRequired: processingContract.rollBehavior,
+      actionOwner: processingContract.owner,
+      legalRecoveryStates: processingContract.legalRecoveryStates,
+      legalProcessingStates: processingContract.legalProcessingStates,
+      processingExecutor: processingContract.executor,
+      toolCapability: processingContract.toolCapability,
+      inventoryTransferBehavior: processingContract.inventoryTransferBehavior,
     } : {}),
     playerVisible: !compatibility,
     turnEnding: MOUNTED_FLIGHT_ACTION_CONTRACTS[normalizedType]?.turnEnding
@@ -832,6 +846,43 @@ const buildHuntingActions = ({
     }));
 };
 
+const buildCarcassProcessingActions = ({
+  actor,
+  currentTurnEntry,
+  processingContext = {},
+}) => {
+  const carcass = processingContext.carcass;
+  if (!carcass || carcass.processingFinalized || carcass.state === "abandoned") return [];
+  const availableResources = new Set(processingContext.availableResourceKeys || []);
+  return Object.values(CARCASS_PROCESSING_ACTIONS)
+    .filter((contract) => contract.playerVisible)
+    .filter((contract) => !contract.resourceKey || availableResources.has(contract.resourceKey))
+    .filter((contract) => contract.legalRecoveryStates.includes(carcass.recoveryState))
+    .filter((contract) => contract.legalProcessingStates.includes(carcass.processingState))
+    .map((contract) => makeAction({
+      actor,
+      currentTurnEntry,
+      id: contract.key,
+      name: contract.label,
+      type: contract.key,
+      source: "canonical carcass processing",
+      category: "Post-hunt",
+      costActions: contract.actionCost,
+      targetRequired: true,
+      targetId: carcass.carcassId,
+      enabled: true,
+      previewSummary: `${contract.label} through canonical post-hunt processing ownership.`,
+      metadata: {
+        executor: contract.executor,
+        owner: contract.owner,
+        toolCapability: contract.toolCapability || "none",
+        inventoryTransferBehavior: contract.inventoryTransferBehavior,
+        resourceKey: contract.resourceKey || "",
+        carcassId: carcass.carcassId,
+      },
+    }));
+};
+
 const buildSkillActions = ({ actor, currentTurnEntry }) =>
   getSkillCandidates({ actor })
     .map((skill, index) => {
@@ -960,6 +1011,7 @@ export function buildCombatActionCatalog({
   compatibilityActions,
   carrierContext,
   huntingContext,
+  processingContext,
 } = {}) {
   if (!actor || typeof actor !== "object") return [];
 
@@ -1004,6 +1056,7 @@ export function buildCombatActionCatalog({
   buildCarrierActions({ actor, currentTurnEntry, selectedTarget, carrierContext }).forEach((action) => addUnique(actions, action));
   buildHuntingActions({ actor, currentTurnEntry, selectedTarget, huntingContext }).forEach((action) => addUnique(actions, action));
   buildConcealmentAndAimActions({ actor, currentTurnEntry, selectedTarget }).forEach((action) => addUnique(actions, action));
+  buildCarcassProcessingActions({ actor, currentTurnEntry, processingContext }).forEach((action) => addUnique(actions, action));
   buildItemActions({ actor, currentTurnEntry, inventory }).forEach((action) => addUnique(actions, action));
   buildSkillActions({ actor, currentTurnEntry }).forEach((action) => addUnique(actions, action));
   buildCompatibilityActions({ actor, currentTurnEntry, compatibilityActions }).forEach((action) => addUnique(actions, action));
