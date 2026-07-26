@@ -110,6 +110,14 @@ import { evaluateMoraleTriggers } from "../morale/moraleTriggerChecks.js";
 import { formatCombatActorLabel, isSameCombatActor } from "../combatActorIdentity.js";
 import { resolveArmoredCombatAction } from "./resolveArmoredCombatAction.js";
 import { resolveGrappleTurnAction } from "./resolveGrappleTurnAction.js";
+import {
+  createLiveWildlifeRegistry,
+  resolveAerialSearchWaypoint,
+  resolveLiveWildlifeTurnContext,
+  resolveWildlifeEscapeRoute,
+} from "../combat/liveWildlifeConcealmentRanged.js";
+
+const finiteNumber = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
 
 // -----------------------------------------------------------------------------
 // Weakness Memory Persistence (across encounters)
@@ -1697,6 +1705,7 @@ export function runEnemyTurnAI(enemy, context) {
     // Other
     getTargetsInLine,
     sceneContext = { sceneType: "combat", relations: {} },
+    liveWildlifeRegistry = null,
   } = context;
 
   const executeGrapple =
@@ -2388,6 +2397,183 @@ export function runEnemyTurnAI(enemy, context) {
         }
       }
     });
+
+    // Phase 3C4A1: wildlife motivation is resolved before healer, utility,
+    // target-priority, or generic RUN_TO_RANGE routing. Team remains an
+    // encounter grouping and attack-legality input, never motivation.
+    if (enemy?.creatureType === "animal" && enemy?.wildlifeBehaviorProfile) {
+      const wildlifeRegistry = liveWildlifeRegistry || createLiveWildlifeRegistry();
+      const authoritativeTurn = context.authoritativeInitiativeTurn || {};
+      const generationId = authoritativeTurn.generationId || context.combatSession || "live-combat";
+      const initiativeTurnId = authoritativeTurn.initiativeTurnId || context.initiativeTurnId;
+      const actionToken = context.actionToken;
+      const bounds = {
+        minX: 0,
+        minY: 0,
+        maxX: Math.max(0, finiteNumber(GRID_CONFIG?.GRID_WIDTH, 30) - 1),
+        maxY: Math.max(0, finiteNumber(GRID_CONFIG?.GRID_HEIGHT, 20) - 1),
+      };
+      const currentPosition = (positionsRef?.current || positions)?.[enemy.id];
+      const exitRegions = context.liveWildlifeExitRegions || [
+        { x: bounds.minX, y: currentPosition?.y ?? bounds.minY },
+        { x: bounds.maxX, y: currentPosition?.y ?? bounds.maxY },
+      ];
+      const coverRegions = context.liveWildlifeCoverRegions || [];
+      const wildlife = resolveLiveWildlifeTurnContext({
+        registry: wildlifeRegistry,
+        actor: enemy,
+        actors: fighters,
+        positions: positionsRef?.current || positions,
+        environment: {
+          terrain: combatTerrain?.terrain,
+          terrainTags: combatTerrain?.terrainTags || [],
+          lighting: combatTerrain?.lighting,
+          objects: arenaEnvironment?.objects || [],
+        },
+        encounter: context.encounter,
+        generationId,
+        initiativeTurnId,
+        actionToken,
+        authoritativeTurn: {
+          actorId: enemy.id,
+          generationId,
+          initiativeTurnId,
+          actionToken,
+        },
+        forcedAggression: Boolean(
+          enemy?.animalIntent?.forcedAggression
+          || enemy?.wildlifeBehaviorState?.forcedAggression
+          || context.encounter?.forcedAggressionByActorId?.[enemy.id]
+        ),
+        exitRegions,
+        coverRegions,
+      });
+      for (const structuredEvent of wildlife.events || []) {
+        addLog?.({
+          audience: "developer",
+          channel: "ai",
+          level: "info",
+          type: "debug",
+          actorId: structuredEvent.actorId || enemy.id,
+          targetId: structuredEvent.targetId || null,
+          eventType: structuredEvent.eventType,
+          source: "enemy-ai-live-wildlife-routing",
+          message: `${structuredEvent.eventType}: actor=${enemy.name} reason=${structuredEvent.data?.reason || wildlife.reason || "resolved"}`,
+          data: structuredEvent.data,
+        }, "debug");
+      }
+      if (wildlife.accepted && wildlife.governedByWildlifeIntent && !wildlife.mayEnterGenericAttackRouting) {
+        const goal = wildlife.selectedGoal || "observe";
+        if (!commitEnemyAction(`WILDLIFE_${String(goal).toUpperCase().replaceAll("-", "_")}`)) {
+          processingEnemyTurnRef.current = false;
+          return;
+        }
+        let movementCommitted = false;
+        if (goal === "glide-search-pattern" && currentPosition) {
+          const waypoint = resolveAerialSearchWaypoint({
+            actor: enemy,
+            position: currentPosition,
+            altitude: getAltitude(enemy),
+            environment: combatTerrain,
+            previouslySearchedSectors: wildlifeRegistry.searchSectorsByActor.get(enemy.id) || [],
+            threats: wildlife.legalThreatTargets.map((target) => (positionsRef?.current || positions)?.[target.id]).filter(Boolean),
+            legalBounds: bounds,
+            flightProfile: enemy.flightProfile,
+          });
+          if (waypoint.allowed) {
+            const committed = handlePositionChange?.(enemy.id, waypoint.destination, {
+              action: "AERIAL_SEARCH",
+              actionCost: 0,
+              source: "enemy-ai-live-wildlife-search",
+              initiativeTurnId,
+              actionToken,
+            });
+            movementCommitted = committed !== false;
+            if (movementCommitted) {
+              wildlifeRegistry.searchSectorsByActor.set(enemy.id, [
+                ...(wildlifeRegistry.searchSectorsByActor.get(enemy.id) || []),
+                waypoint.searchSector,
+              ].slice(-4));
+              addLog?.({
+                audience: "developer",
+                channel: "movement",
+                eventType: "aerial-search-movement-committed",
+                actorId: enemy.id,
+                source: "enemy-ai-live-wildlife-search",
+                message: `aerial search movement committed: actor=${enemy.name} destination=(${waypoint.destination.x},${waypoint.destination.y})`,
+                data: { ...waypoint, initiativeTurnId, actionToken },
+              }, "debug");
+              addLog?.(`${enemy.name} glides through a search pattern and scans the ground.`, "info");
+            }
+          }
+        } else if (goal === "wildlife-flee" && currentPosition && wildlife.primaryThreat) {
+          const threatPosition = (positionsRef?.current || positions)?.[wildlife.primaryThreat.id];
+          const escape = resolveWildlifeEscapeRoute({
+            actor: enemy,
+            actorPosition: currentPosition,
+            threatPosition,
+            exitRegions,
+            coverRegions,
+            legalBounds: bounds,
+          });
+          if (escape.allowed) {
+            const committed = handlePositionChange?.(enemy.id, escape.destination, {
+              action: "WILDLIFE_FLEE",
+              actionCost: 0,
+              source: "enemy-ai-live-wildlife-flee",
+              initiativeTurnId,
+              actionToken,
+            });
+            movementCommitted = committed !== false;
+            if (movementCommitted) {
+              addLog?.({
+                audience: "developer",
+                channel: "movement",
+                eventType: "wildlife-flee-committed",
+                actorId: enemy.id,
+                targetId: wildlife.primaryThreat.id,
+                source: "enemy-ai-live-wildlife-flee",
+                message: `wildlife flee committed: actor=${enemy.name} route=${escape.routeType}`,
+                data: { ...escape, initiativeTurnId, actionToken },
+              }, "debug");
+              addLog?.(`${enemy.name} flees away from ${wildlife.primaryThreat.name}${escape.routeType === "cover" ? " toward cover" : ""}.`, "info");
+            }
+          }
+        }
+        setFighters((previous) => previous.map((fighter) => (
+          fighter.id === enemy.id
+            ? {
+                ...fighter,
+                remainingActions: Math.max(0, finiteNumber(fighter.remainingActions, 1) - 1),
+                wildlifeBehaviorState: {
+                  ...(fighter.wildlifeBehaviorState || {}),
+                  intent: wildlife.intent,
+                  selectedGoal: goal,
+                  lastActionToken: actionToken,
+                  movementCommitted,
+                },
+              }
+            : fighter
+        )));
+        if (!movementCommitted) {
+          addLog?.(`${enemy.name} holds position and watches for a safe opening.`, "info");
+        }
+        processingEnemyTurnRef.current = false;
+        scheduleEndTurn(0, `wildlife-${goal}`);
+        return;
+      }
+      if (wildlife.accepted && wildlife.governedByWildlifeIntent && wildlife.mayEnterGenericAttackRouting) {
+        const authorizedTargetIds = new Set([
+          ...(wildlife.legalQuarry || []).map((entry) => entry?.candidate?.id),
+          ...(wildlife.legalThreatTargets || []).map((target) => target?.id),
+        ].filter(Boolean));
+        for (let index = visiblePlayers.length - 1; index >= 0; index -= 1) {
+          if (!authorizedTargetIds.has(visiblePlayers[index]?.id)) {
+            visiblePlayers.splice(index, 1);
+          }
+        }
+      }
+    }
 
     // AI Skill Usage: Check if enemy should use healing/support skills before attacking
     const availableSkills = getAvailableSkills(enemy);

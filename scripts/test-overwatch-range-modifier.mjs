@@ -22,15 +22,15 @@ assert.equal(close.band, "close");
 assert.equal(close.rangeModifier, 1);
 assert.equal(close.modifiedAttackBonus, 5);
 
-const effective = applyRangedAttackRangeModifierToBonus({
+const standard = applyRangedAttackRangeModifierToBonus({
   actor: archer,
   attack: longbow,
   distanceFt: 75,
   baseAttackBonus: 4,
 });
-assert.equal(effective.band, "effective");
-assert.equal(effective.rangeModifier, 0);
-assert.equal(effective.modifiedAttackBonus, 4);
+assert.equal(standard.band, "standard");
+assert.equal(standard.rangeModifier, 0);
+assert.equal(standard.modifiedAttackBonus, 4);
 
 const long = applyRangedAttackRangeModifierToBonus({
   actor: archer,
@@ -40,8 +40,8 @@ const long = applyRangedAttackRangeModifierToBonus({
 });
 assert.equal(long.band, "long");
 assert.equal(long.controlModifier, 1);
-assert.equal(long.rangeModifier, -1);
-assert.equal(long.modifiedAttackBonus, 3);
+assert.equal(long.rangeModifier, -2);
+assert.equal(long.modifiedAttackBonus, 2);
 
 const outOfRange = applyRangedAttackRangeModifierToBonus({
   actor: archer,

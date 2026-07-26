@@ -676,14 +676,6 @@ export function attemptMidCombatHide(
     player.skills?.Prowl ||
     player.prowlSkill ||
     0;
-
-  if (!prowlSkill) {
-    return {
-      success: false,
-      reason: "No prowl skill.",
-      log: `${player.name} has no Prowl skill.`,
-    };
-  }
   const lighting =
     combatTerrain?.lighting ||
     combatTerrain?.lightingData?.name ||
@@ -698,7 +690,16 @@ export function attemptMidCombatHide(
     };
   }
 
-  const hasCover = player.cover && player.cover !== "none";
+  const terrainLabel = String(
+    combatTerrain?.terrain ||
+    combatTerrain?.groundCover ||
+    combatTerrain?.visualCover ||
+    "",
+  ).toLowerCase();
+  const terrainConcealment = ["brush", "tall grass", "tall-grass", "woodland", "fog"].some(
+    (label) => terrainLabel.includes(label),
+  );
+  const hasCover = (player.cover && player.cover !== "none") || terrainConcealment;
   const isDark = lighting.includes("DARK") || lighting.includes("darkness");
 
   if (!hasCover && !isDark) {
@@ -716,7 +717,11 @@ export function attemptMidCombatHide(
   const darknessBonus = isDark ? 15 : 0;
 
   const roll = CryptoSecureDice.rollD100();
-  const total = prowlSkill + coverBonus + darknessBonus + armorPenalty;
+  const dexterity = Number(player?.abilityScores?.dexterity ?? player?.attributes?.deftness ?? 10);
+  const awareness = Number(player?.abilityScores?.wisdom ?? player?.attributes?.awareness ?? 10);
+  const untrainedBase = 35 + Math.floor((dexterity - 10) / 2) * 5 + Math.floor((awareness - 10) / 2) * 2;
+  const skillBonus = prowlSkill ? Math.min(40, Number(prowlSkill) || 0) : 0;
+  const total = untrainedBase + skillBonus + coverBonus + darknessBonus + armorPenalty;
   const success = roll <= total;
 
   if (success) {
@@ -725,6 +730,7 @@ export function attemptMidCombatHide(
       prowlSuccess: true,
       roll,
       total,
+      trained: Boolean(prowlSkill),
     };
 
     resetSneakAttackBonus(player);
@@ -740,7 +746,7 @@ export function attemptMidCombatHide(
       reason: "Successfully hidden",
       log: `${player.name} vanishes into ${
         hasCover ? "cover" : "darkness"
-      } (${roll}/${total}). Sneak attack bonus reset.`,
+      } (${roll}/${total}${prowlSkill ? ", trained" : ", untrained"}). Sneak attack bonus reset.`,
     };
   } else {
     player.prowlState = { hidden: false, prowlSuccess: false };

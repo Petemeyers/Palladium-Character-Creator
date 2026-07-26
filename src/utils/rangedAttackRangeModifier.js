@@ -93,6 +93,12 @@ export function getRangedAttackRangeModifier({
   attack = {},
   distanceFt,
   adjacentHostile = false,
+  threatened = adjacentHostile,
+  aimBonus = 0,
+  visibilityModifier = 0,
+  shooterMovementModifier = 0,
+  targetMovementModifier = 0,
+  fatigueModifier = 0,
 } = {}) {
   const isRanged = isExplicitRangedAttack(attack);
   const distance = parseFeet(distanceFt);
@@ -109,7 +115,15 @@ export function getRangedAttackRangeModifier({
       bandLabel: isRanged ? "Range Unknown" : "Melee",
       baseModifier: 0,
       controlModifier,
+      trainingModifier: 0,
+      aimModifier: 0,
+      visibilityModifier: 0,
+      threatenedModifier: 0,
+      shooterMovementModifier: 0,
+      targetMovementModifier: 0,
+      fatigueModifier: 0,
       finalModifier: 0,
+      totalModifier: 0,
     };
   }
 
@@ -124,26 +138,48 @@ export function getRangedAttackRangeModifier({
       bandLabel: "Out of Range",
       baseModifier: null,
       controlModifier,
+      trainingModifier: 0,
+      aimModifier: 0,
+      visibilityModifier: 0,
+      threatenedModifier: 0,
+      shooterMovementModifier: 0,
+      targetMovementModifier: 0,
+      fatigueModifier: 0,
       finalModifier: null,
+      totalModifier: null,
     };
   }
 
-  let band = "long";
-  let bandLabel = "Long Range";
-  let baseModifier = -2;
-  if (ratio <= 0.25) {
+  let band = "extreme";
+  let bandLabel = "Extreme Range";
+  let baseModifier = -4;
+  if (ratio <= 0.2) {
     band = "close";
     bandLabel = "Close Range";
-    baseModifier = adjacentHostile ? 0 : 1;
+    baseModifier = threatened ? -2 : 1;
   } else if (ratio <= 0.6) {
-    band = "effective";
-    bandLabel = "Effective Range";
+    band = "standard";
+    bandLabel = "Standard Range";
     baseModifier = 0;
+  } else if (ratio <= 0.85) {
+    band = "long";
+    bandLabel = "Long Range";
+    baseModifier = -2;
   }
 
-  const finalModifier = band === "long"
-    ? clamp(baseModifier + controlModifier, -4, 0)
-    : baseModifier;
+  const training = actor?.rangedTrainingProfile;
+  const familyMatches = normalize(training?.weaponFamily) === normalize(attack?.weaponFamily);
+  const trainingModifier = familyMatches ? toNumber(training?.specializationBonus) ?? 0 : 0;
+  const proficiencyModifier = familyMatches ? toNumber(training?.proficiencyBonus) ?? 0 : 0;
+  const proficiencyAlreadyIncluded = familyMatches && training?.existingAttackBonusIncludesProficiency === true;
+  const aimModifier = clamp(toNumber(aimBonus) ?? 0, 0, 2);
+  const visibility = toNumber(visibilityModifier) ?? 0;
+  const shooterMovement = toNumber(shooterMovementModifier) ?? 0;
+  const targetMovement = toNumber(targetMovementModifier) ?? 0;
+  const fatigue = Math.min(0, toNumber(fatigueModifier) ?? 0);
+  const finalModifier = baseModifier;
+  const totalModifier = finalModifier + trainingModifier + aimModifier + visibility
+    + shooterMovement + targetMovement + fatigue;
 
   return {
     isRanged: true,
@@ -154,7 +190,30 @@ export function getRangedAttackRangeModifier({
     bandLabel,
     baseModifier,
     controlModifier,
+    proficiencyModifier,
+    proficiencyAlreadyIncluded,
+    trainingModifier,
+    aimModifier,
+    visibilityModifier: visibility,
+    threatenedModifier: threatened && band === "close" ? -2 : 0,
+    threatened: Boolean(threatened),
+    shooterMovementModifier: shooterMovement,
+    targetMovementModifier: targetMovement,
+    fatigueModifier: fatigue,
     finalModifier,
+    totalModifier,
+    components: Object.freeze({
+      proficiency: proficiencyModifier,
+      proficiencyApplied: proficiencyAlreadyIncluded ? 0 : proficiencyModifier,
+      specialization: trainingModifier,
+      range: threatened && band === "close" ? 0 : finalModifier,
+      aim: aimModifier,
+      visibility,
+      threatenedClose: threatened && band === "close" ? -2 : 0,
+      shooterMovement,
+      targetMovement,
+      fatigue,
+    }),
   };
 }
 
@@ -164,24 +223,40 @@ export function applyRangedAttackRangeModifierToBonus({
   distanceFt,
   baseAttackBonus = 0,
   adjacentHostile = false,
+  threatened = adjacentHostile,
+  aimBonus = 0,
+  visibilityModifier = 0,
+  shooterMovementModifier = 0,
+  targetMovementModifier = 0,
+  fatigueModifier = 0,
 } = {}) {
   const profile = getRangedAttackRangeModifier({
     actor,
     attack,
     distanceFt,
     adjacentHostile,
+    threatened,
+    aimBonus,
+    visibilityModifier,
+    shooterMovementModifier,
+    targetMovementModifier,
+    fatigueModifier,
   });
   const safeBaseAttackBonus = toNumber(baseAttackBonus) ?? 0;
   const blocked = profile.isRanged && profile.canAttack === false;
   const rangeModifier = profile.isRanged && profile.canAttack === true
     ? profile.finalModifier ?? 0
     : 0;
+  const contextualModifier = profile.isRanged && profile.canAttack === true
+    ? profile.totalModifier ?? rangeModifier
+    : 0;
   return {
     ...profile,
     blocked,
     rangeModifier,
+    contextualModifier,
     baseAttackBonus: safeBaseAttackBonus,
-    modifiedAttackBonus: safeBaseAttackBonus + rangeModifier,
+    modifiedAttackBonus: safeBaseAttackBonus + contextualModifier,
   };
 }
 

@@ -267,6 +267,7 @@ const buildOrdinaryHumanoid = ({
   ammunition = [],
   ammunitionState = null,
   rangedTacticalProfile = null,
+  rangedTrainingProfile = null,
 }) => common({
   actorKey,
   id: actorKey,
@@ -318,6 +319,7 @@ const buildOrdinaryHumanoid = ({
   ammunition: [...ammunition],
   ammunitionState,
   rangedTacticalProfile,
+  rangedTrainingProfile,
   aiRole,
 });
 
@@ -364,6 +366,8 @@ const animalNatural = (attackKey, displayName, damageDice, damageType, naturalWe
 const animalAnatomy = ({
   primaryNaturalWeapons,
   secondaryNaturalWeapons = [],
+  bodyPlan = "quadruped",
+  locomotionLimbs = null,
   mouthAvailable = false,
   beakPresent = false,
   wingsPresent = false,
@@ -375,8 +379,12 @@ const animalAnatomy = ({
   hoovesPresent = false,
   clawsPresent = false,
 }) => Object.freeze({
-  bodyPlan: "quadruped",
-  locomotionLimbs: ["front-left", "front-right", "rear-left", "rear-right"],
+  bodyPlan,
+  locomotionLimbs: locomotionLimbs || (
+    bodyPlan === "avian"
+      ? ["left-wing", "right-wing", "left-talon", "right-talon"]
+      : ["front-left", "front-right", "rear-left", "rear-right"]
+  ),
   manipulationLimbs: [],
   primaryNaturalWeapons,
   secondaryNaturalWeapons,
@@ -909,6 +917,17 @@ export const CANONICAL_COMBAT_ACTORS = Object.freeze({
     ammunition: [arrowStack(20, "ordinary-war-arrow")],
     ammunitionState: { weaponId: longbow.weaponId, ammunitionType: "arrow", current: 20, maximum: 20, chambered: false, reloadState: "ready", lastSpentActionToken: null, spentActionTokens: [] },
     rangedTacticalProfile: { role: "archer", preferredBand: "normal", repositionForLineOfSight: true, sidearmWeaponId: longbowmanKnife.weaponId },
+    rangedTrainingProfile: {
+      weaponFamily: "longbow",
+      proficiencyLevel: "specialist",
+      proficiencyBonus: 2,
+      specializationBonus: 2,
+      existingAttackBonusIncludesProficiency: true,
+      trainedRangeControl: true,
+      aimSupported: true,
+      movingShotProfile: "trained",
+      threatenedShotProfile: "longbow-threatened",
+    },
     cultureTags: ["field-archers"], tags: ["soldier", "archer", "longbow"], traits: [], aiRole: "archer",
   }),
   guard: buildOrdinaryHumanoid({
@@ -1187,6 +1206,8 @@ export const CANONICAL_COMBAT_ACTORS = Object.freeze({
     bonuses: { attack: 5, block: 0, evade: 3, damage: 0 },
     anatomyProfile: animalAnatomy({
       primaryNaturalWeapons: ["natural.hawk-talon-rake"],
+      bodyPlan: "avian",
+      locomotionLimbs: ["left-wing", "right-wing", "left-talon", "right-talon"],
       mouthAvailable: true, beakPresent: true, wingsPresent: true, wingCount: 2, talonsPresent: true,
     }),
     naturalAttackProfiles: [hawkTalonRake],
@@ -1223,6 +1244,8 @@ export const CANONICAL_COMBAT_ACTORS = Object.freeze({
     bonuses: { attack: 2, block: 0, evade: 5, damage: 0 },
     anatomyProfile: animalAnatomy({
       primaryNaturalWeapons: ["natural.falcon-talon-rake"],
+      bodyPlan: "avian",
+      locomotionLimbs: ["left-wing", "right-wing", "left-talon", "right-talon"],
       mouthAvailable: true, beakPresent: true, wingsPresent: true, wingCount: 2, talonsPresent: true,
     }),
     naturalAttackProfiles: [falconTalonRake],

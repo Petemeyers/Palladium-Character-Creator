@@ -46,6 +46,12 @@ import { resolveArmoredCombatAction } from "./resolveArmoredCombatAction.js";
 import { resolveGrappleTurnAction } from "./resolveGrappleTurnAction.js";
 import { normalizeAlignmentBehavior } from "../behavior/normalizeAlignmentBehavior.js";
 import { classifyCanonicalMovementProgress } from "../combat/canonicalMovementProgress.js";
+import {
+  createLiveWildlifeRegistry,
+  resolveAerialSearchWaypoint,
+  resolveLiveWildlifeTurnContext,
+  resolveWildlifeEscapeRoute,
+} from "../combat/liveWildlifeConcealmentRanged.js";
 
 const DEFEATED_KEYWORDS = [
   "vampire",
@@ -553,6 +559,9 @@ export async function runPlayerTurnAI(player, context) {
     canFinalizeTurn,
     onNoHostilesRemaining,
     sceneContext = { sceneType: "combat", relations: {} },
+    liveWildlifeRegistry = null,
+    authoritativeInitiativeTurn = null,
+    actionToken = null,
   } = context;
 
   const continuationKey = context.continuationKey || null;
@@ -1089,6 +1098,130 @@ export async function runPlayerTurnAI(player, context) {
       f.currentHP > 0 && // Only conscious enemies
       f.currentHP > -21 // Not dead
   );
+
+  if (player?.creatureType === "animal" && player?.wildlifeBehaviorProfile) {
+    const registry = liveWildlifeRegistry || createLiveWildlifeRegistry();
+    const generationId = authoritativeInitiativeTurn?.generationId || combatSession || "live-combat";
+    const initiativeTurnId = authoritativeInitiativeTurn?.initiativeTurnId || context.initiativeTurnId;
+    const ownedActionToken = actionToken || currentTurnToken;
+    const currentPosition = (positionsRef?.current || positions)?.[player.id];
+    const bounds = {
+      minX: 0,
+      minY: 0,
+      maxX: Math.max(0, Number(GRID_CONFIG?.GRID_WIDTH || 30) - 1),
+      maxY: Math.max(0, Number(GRID_CONFIG?.GRID_HEIGHT || 20) - 1),
+    };
+    const exitRegions = context.liveWildlifeExitRegions || [
+      { x: bounds.minX, y: currentPosition?.y ?? bounds.minY },
+      { x: bounds.maxX, y: currentPosition?.y ?? bounds.maxY },
+    ];
+    const coverRegions = context.liveWildlifeCoverRegions || [];
+    const wildlife = resolveLiveWildlifeTurnContext({
+      registry,
+      actor: player,
+      actors: fighters,
+      positions: positionsRef?.current || positions,
+      environment: {
+        terrain: combatTerrain?.terrain,
+        terrainTags: combatTerrain?.terrainTags || [],
+        lighting: combatTerrain?.lighting,
+      },
+      encounter: context.encounter,
+      generationId,
+      initiativeTurnId,
+      actionToken: ownedActionToken,
+      authoritativeTurn: {
+        actorId: player.id,
+        generationId,
+        initiativeTurnId,
+        actionToken: ownedActionToken,
+      },
+      forcedAggression: Boolean(
+        player?.animalIntent?.forcedAggression
+        || player?.wildlifeBehaviorState?.forcedAggression
+        || context.encounter?.forcedAggressionByActorId?.[player.id]
+      ),
+      exitRegions,
+      coverRegions,
+    });
+    for (const structuredEvent of wildlife.events || []) {
+      addLog?.({
+        audience: "developer",
+        channel: "ai",
+        eventType: structuredEvent.eventType,
+        actorId: player.id,
+        targetId: structuredEvent.targetId || null,
+        source: "player-ai-live-wildlife-routing",
+        message: `${structuredEvent.eventType}: actor=${player.name} reason=${structuredEvent.data?.reason || wildlife.reason || "resolved"}`,
+        data: structuredEvent.data,
+      }, "debug");
+    }
+    if (wildlife.accepted && wildlife.governedByWildlifeIntent && !wildlife.mayEnterGenericAttackRouting) {
+      const goal = wildlife.selectedGoal || "observe";
+      let destination = null;
+      if (goal === "glide-search-pattern" && currentPosition) {
+        const waypoint = resolveAerialSearchWaypoint({
+          actor: player,
+          position: currentPosition,
+          altitude: getAltitude(player),
+          threats: wildlife.legalThreatTargets.map((target) => (positionsRef?.current || positions)?.[target.id]).filter(Boolean),
+          legalBounds: bounds,
+          flightProfile: player.flightProfile,
+        });
+        if (waypoint.allowed) destination = waypoint.destination;
+      } else if (goal === "wildlife-flee" && currentPosition && wildlife.primaryThreat) {
+        const escape = resolveWildlifeEscapeRoute({
+          actor: player,
+          actorPosition: currentPosition,
+          threatPosition: (positionsRef?.current || positions)?.[wildlife.primaryThreat.id],
+          exitRegions,
+          coverRegions,
+          legalBounds: bounds,
+        });
+        if (escape.allowed) destination = escape.destination;
+      }
+      let moved = false;
+      if (destination && typeof commitPlayerAIPosition === "function") {
+        moved = commitPlayerAIPosition(player, destination, `player-ai-wildlife-${goal}`) !== false;
+      }
+      setFighters((previous) => previous.map((fighter) => (
+        fighter.id === player.id
+          ? {
+              ...fighter,
+              remainingActions: Math.max(0, Number(fighter.remainingActions || 0) - 1),
+              wildlifeBehaviorState: {
+                ...(fighter.wildlifeBehaviorState || {}),
+                intent: wildlife.intent,
+                selectedGoal: goal,
+                lastActionToken: ownedActionToken,
+                movementCommitted: moved,
+              },
+            }
+          : fighter
+      )));
+      markActionScheduled();
+      addLog?.(
+        moved
+          ? `${player.name} ${goal === "wildlife-flee" ? "flees from the threat" : "moves through a search pattern"}.`
+          : `${player.name} holds position and observes.`,
+        "info",
+      );
+      processingPlayerAIRef.current = false;
+      scheduleEndTurn(0, `player-ai-wildlife-${goal}`);
+      return createPlayerAiActionResult("wildlife-action", { goal, destination, moved });
+    }
+    if (wildlife.accepted && wildlife.governedByWildlifeIntent && wildlife.mayEnterGenericAttackRouting) {
+      const authorizedTargetIds = new Set([
+        ...(wildlife.legalQuarry || []).map((entry) => entry?.candidate?.id),
+        ...(wildlife.legalThreatTargets || []).map((target) => target?.id),
+      ].filter(Boolean));
+      for (let index = allEnemies.length - 1; index >= 0; index -= 1) {
+        if (!authorizedTargetIds.has(allEnemies[index]?.id)) {
+          allEnemies.splice(index, 1);
+        }
+      }
+    }
+  }
 
   // Get equistaminad weapons early for reachability checks
   addLog?.(`runPlayerTurnAI before weapon selection fighter=${player.name}`, "debug");

@@ -107,6 +107,15 @@ import {
   isExplicitRangedAttack,
 } from "../utils/rangedAttackRangeModifier.js";
 import {
+  cancelCanonicalAim,
+  consumeCanonicalAim,
+  createLiveWildlifeRegistry,
+  establishCanonicalAim,
+  resolveCanonicalRangedContext,
+  resolveCanonicalHide,
+  resolveCanonicalSneak,
+} from "../utils/combat/liveWildlifeConcealmentRanged.js";
+import {
   buildClearedAttackAbortState,
   buildClearedLegacyDefensiveActionState,
   buildClearedMovementState,
@@ -389,7 +398,6 @@ import {
   getAwareness,
   decayAwareness,
   canPerformSneakAttack,
-  attemptMidCombatHide,
   AWARENESS_STATES
 } from "../utils/aiVisibilityFilter.js";
 import { calculateVisibleCells, calculateVisibleCellsMultiple, getVisibilityRange } from "../utils/visibilityCalculator.js";
@@ -3053,6 +3061,7 @@ function CombatPage({ characters = [] }) {
   const committedPositionsRef = useRef(positions);
   const lastMovementCommitRef = useRef({});
   const movementCommitSequenceRef = useRef(0);
+  const liveWildlifeRegistryRef = useRef(createLiveWildlifeRegistry());
   const surrenderResolutionEntryKeysRef = useRef(new Set());
   const surrenderLifecycleRegistryRef = useRef(createSurrenderLifecycleRegistry());
   const combatIconSurrenderRecordsByFighterId = Object.fromEntries(
@@ -3345,8 +3354,24 @@ function CombatPage({ characters = [] }) {
       ...(lastMovementCommitRef.current || {}),
       [fighterId]: commit,
     };
+    const canceledAim = cancelCanonicalAim({
+      registry: liveWildlifeRegistryRef.current,
+      actorId: fighterId,
+      reason: "movement",
+    });
+    for (const structuredEvent of canceledAim.events || []) {
+      addLog?.({
+        audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+        channel: COMBAT_LOG_CHANNELS.ACTION,
+        eventType: structuredEvent.eventType,
+        actorId: fighterId,
+        source,
+        message: `${structuredEvent.eventType}: actorId=${fighterId} reason=movement`,
+        data: structuredEvent.data,
+      }, "debug");
+    }
     return commit;
-  }, [meleeRound, turnCounter]);
+  }, [addLog, meleeRound, turnCounter]);
 
   const recordMovementCommitMap = useCallback((positionMap = {}, source = "movement-map") => {
     Object.entries(positionMap || {}).forEach(([fighterId, position]) => {
@@ -10898,6 +10923,8 @@ function CombatPage({ characters = [] }) {
       { value: "Combat Maneuvers", label: "Maneuver" },
       { value: "Use Skill", label: "Use Skill" },
       { value: "Hide", label: "Hide / Prowl" },
+      { value: "Sneak", label: "Sneak" },
+      { value: "Aim", label: "Aim" },
     ];
 
     // Add flight actions if fighter can fly
@@ -14762,7 +14789,12 @@ function CombatPage({ characters = [] }) {
       attack: weapon || {},
       distanceFt: distFeet,
       baseAttackBonus: baseAttackBonus + tempBonus,
-      adjacentHostile: distFeet <= 5,
+      threatened: (fightersRef.current || fighters).some((candidate) => {
+        if (!candidate || candidate.id === attacker.id || candidate.team === attacker.team) return false;
+        if (candidate.dead || candidate.unconscious || Number(candidate.currentHP ?? 1) <= 0) return false;
+        const candidatePosition = positions?.[candidate.id];
+        return candidatePosition && calculateDistance(positions?.[attacker.id], candidatePosition) <= 5.5;
+      }),
     });
     if (rangedAttackProfile.blocked) return null;
     let toHitBonus = rangedAttackProfile.modifiedAttackBonus;
@@ -23333,12 +23365,56 @@ function CombatPage({ characters = [] }) {
       const isRangedForRangeCheck = isExplicitRangedAttack(attackData);
       const distanceForRangeCheck = isRangedForRangeCheck ? Math.hypot(distance, vSepFt) : distance;
       if (isRangedForRangeCheck) {
+        const liveRosterForThreat = fightersRef.current || fighters;
+        const attackerThreatened = liveRosterForThreat.some((candidate) => {
+          if (!candidate || candidate.id === attacker.id || candidate.id === defender.id) return false;
+          if (candidate.team === attacker.team || candidate.side === attacker.side) return false;
+          if (candidate.dead || candidate.isDead || candidate.unconscious || candidate.isUnconscious || Number(candidate.currentHP ?? 1) <= 0) return false;
+          const candidatePosition = livePositions?.[candidate.id];
+          return candidatePosition && calculateDistance(attackerPos, candidatePosition) <= 5.5;
+        }) || (
+          distanceForRangeCheck <= 5.5
+          && !defender.dead
+          && !defender.unconscious
+          && Number(defender.currentHP ?? 1) > 0
+        );
         rangedAttackRangeProfile = getRangedAttackRangeModifier({
           actor: attacker,
           attack: attackData,
           distanceFt: distanceForRangeCheck,
-          adjacentHostile: distanceForRangeCheck <= 5,
+          threatened: attackerThreatened,
         });
+        if (rangedAttackRangeProfile.canAttack) {
+          const consumedAim = consumeCanonicalAim({
+            registry: liveWildlifeRegistryRef.current,
+            actor: attacker,
+            target: defender,
+            weapon: attackData,
+            generationId: getAuthoritativeInitiativeTurnSnapshot(attacker.id)?.generationId,
+            initiativeTurnId: initiativeTurnIdRef.current,
+          });
+          for (const structuredEvent of consumedAim.events || []) {
+            addLog?.({
+              audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+              channel: COMBAT_LOG_CHANNELS.ACTION,
+              eventType: structuredEvent.eventType,
+              actorId: attacker.id,
+              targetId: defender.id,
+              source: "canonical-ranged-attack-entry",
+              message: `${structuredEvent.eventType}: actor=${attacker.name} target=${defender.name}`,
+              data: structuredEvent.data,
+            }, "debug");
+          }
+          if (consumedAim.accepted) {
+            rangedAttackRangeProfile = getRangedAttackRangeModifier({
+              actor: attacker,
+              attack: attackData,
+              distanceFt: distanceForRangeCheck,
+              threatened: attackerThreatened,
+              aimBonus: consumedAim.bonus,
+            });
+          }
+        }
       }
 
       const actionTypeForValidation =
@@ -23425,7 +23501,10 @@ function CombatPage({ characters = [] }) {
           addLog(
             `${attacker.name} attacks at ${rangedAttackRangeProfile.bandLabel.toLowerCase()}: ` +
             `${Math.round(rangedAttackRangeProfile.distanceFt)}/${rangedAttackRangeProfile.maxRangeFt} ft, ` +
-            `range modifier ${formatRangeModifier(rangedAttackRangeProfile.finalModifier)}.`,
+            `range ${formatRangeModifier(rangedAttackRangeProfile.finalModifier)}, ` +
+            `training ${formatRangeModifier(rangedAttackRangeProfile.trainingModifier)}, ` +
+            `aim ${formatRangeModifier(rangedAttackRangeProfile.aimModifier)}, ` +
+            `threatened ${rangedAttackRangeProfile.threatened ? "yes" : "no"}.`,
             "info"
           );
         } else if (rangeValidation.rangeInfo) {
@@ -23822,14 +23901,14 @@ function CombatPage({ characters = [] }) {
         sneakAttackBonus +
         grappleAdvantage;
       const computedAttackBonus =
-        computedAttackBonusBeforeRange + (rangedAttackRangeProfile?.finalModifier ?? 0);
+        computedAttackBonusBeforeRange + (rangedAttackRangeProfile?.totalModifier ?? 0);
       const preRoll = bonusModifiers?.preRoll;
       const preRollRangeAdjustment =
         preRoll &&
         preRoll.rangeModifierApplied !== true &&
         rangedAttackRangeProfile?.isRanged &&
         rangedAttackRangeProfile?.canAttack
-          ? rangedAttackRangeProfile.finalModifier ?? 0
+          ? rangedAttackRangeProfile.totalModifier ?? 0
           : 0;
       const preRollAttackBonus = Number(preRoll?.attackBonus);
       const attackBonus = preRoll
@@ -23994,8 +24073,43 @@ function CombatPage({ characters = [] }) {
           baseAttack: attackBonus,
           fatigue: fatiguePenalty,
           reach: sizeAttackBonus,
-          range: rangedAttackRangeProfile?.finalModifier ?? preRollRangeAdjustment ?? 0,
+          range: rangedAttackRangeProfile?.finalModifier ?? 0,
+          proficiency: rangedAttackRangeProfile?.proficiencyAlreadyIncluded
+            ? 0
+            : (rangedAttackRangeProfile?.proficiencyModifier ?? 0),
+          specialization: rangedAttackRangeProfile?.trainingModifier ?? 0,
+          aim: rangedAttackRangeProfile?.aimModifier ?? 0,
+          visibility: rangedAttackRangeProfile?.visibilityModifier ?? 0,
+          threatened: rangedAttackRangeProfile?.threatenedModifier ?? 0,
+          shooterMovement: rangedAttackRangeProfile?.shooterMovementModifier ?? 0,
+          targetMovement: rangedAttackRangeProfile?.targetMovementModifier ?? 0,
         };
+        if (rangedAttackRangeProfile?.isRanged) {
+          const rangedAudit = resolveCanonicalRangedContext({
+            actor: attacker,
+            target: defender,
+            attack: attackData,
+            distanceFt: rangedAttackRangeProfile.distanceFt,
+            baseAttackBonus: computedAttackBonusBeforeRange,
+            threatened: rangedAttackRangeProfile.threatened,
+            aimBonus: rangedAttackRangeProfile.aimModifier,
+            visibilityModifier: rangedAttackRangeProfile.visibilityModifier,
+            shooterMovementModifier: rangedAttackRangeProfile.shooterMovementModifier,
+            targetMovementModifier: rangedAttackRangeProfile.targetMovementModifier,
+            fatigueModifier: fatiguePenalty,
+          });
+          addLog?.({
+            audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+            channel: COMBAT_LOG_CHANNELS.ROLL,
+            eventType: "ranged-modifier-audit",
+            actorId: attacker.id,
+            targetId: defender.id,
+            executionKey: attackActionId,
+            source: "attack-roll",
+            message: `ranged modifier audit: actor=${attacker.name} target=${defender.name} total=${rangedAudit.total} valid=${rangedAudit.auditValid}`,
+            data: rangedAudit,
+          }, rangedAudit.auditValid ? "debug" : "error");
+        }
         if (import.meta.env?.DEV && settingsRef.current?.showCombatDebug) {
           addLog(`Debug: sizeMod=${sizeMod} reachAttack=${sizeAttackBonus}`, "info");
         }
@@ -28913,6 +29027,7 @@ function CombatPage({ characters = [] }) {
       currentTurnToken: capturedTurnToken,
       initiativeTurnId: initiativeTurnIdRef.current,
       authoritativeInitiativeTurn: getAuthoritativeInitiativeTurnSnapshot(latestPlayer.id),
+      liveWildlifeRegistry: liveWildlifeRegistryRef.current,
       getActionSequence: () => initiativeActionSequenceRef.current,
       setActionSequence: (sequence) => {
         initiativeActionSequenceRef.current = sequence;
@@ -30770,6 +30885,7 @@ function CombatPage({ characters = [] }) {
         actionToken: initiativeTurnIdRef.current
           ? [initiativeTurnIdRef.current, initiativeActionSequenceRef.current + 1].join(":")
           : currentTurnTokenRef.current,
+        liveWildlifeRegistry: liveWildlifeRegistryRef.current,
         getArmoredTacticalMemory: getArmoredMemoryForCombatants,
         armoredTechniqueRng: rollArmoredTechniqueRng,
         armoredTechniqueRngSource: rngStateRef.current ? "seeded-combat-rng" : "crypto-dice",
@@ -39946,6 +40062,55 @@ function CombatPage({ characters = [] }) {
         // Hex selection commits the overwatch; nothing else to do here.
         return;
 
+      case "Aim": {
+        if (!targetToExecute || !weaponToExecute) {
+          addLog(`${currentFighter.name} must select a visible target and ranged weapon before aiming.`, "warning");
+          return;
+        }
+        const authoritativeTurn = getAuthoritativeInitiativeTurnSnapshot(currentFighter.id);
+        const aimActionToken = `${authoritativeTurn?.initiativeTurnId || "no-initiative-turn"}:aim:${initiativeActionSequenceRef.current + 1}`;
+        const aimResult = establishCanonicalAim({
+          registry: liveWildlifeRegistryRef.current,
+          actor: currentFighter,
+          target: targetToExecute,
+          weapon: weaponToExecute,
+          visible: canAISeeTarget(
+            currentFighter,
+            targetToExecute,
+            positionsRef.current || positions,
+            combatTerrain,
+          ),
+          generationId: authoritativeTurn?.generationId,
+          initiativeTurnId: authoritativeTurn?.initiativeTurnId,
+          actionToken: aimActionToken,
+          authoritativeTurn: authoritativeTurn ? { ...authoritativeTurn, actionToken: aimActionToken } : null,
+        });
+        for (const structuredEvent of aimResult.events || []) {
+          addLog?.({
+            audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+            channel: COMBAT_LOG_CHANNELS.ACTION,
+            eventType: structuredEvent.eventType,
+            actorId: currentFighter.id,
+            targetId: targetToExecute.id,
+            source: "manual-canonical-aim",
+            message: `${structuredEvent.eventType}: actor=${currentFighter.name} target=${targetToExecute.name}`,
+            data: structuredEvent.data,
+          }, "debug");
+        }
+        if (!aimResult.accepted) {
+          addLog(`${currentFighter.name} cannot aim: ${aimResult.reason}.`, "warning");
+          return;
+        }
+        commitFighters((previous) => previous.map((fighter) => (
+          fighter.id === currentFighter.id
+            ? { ...fighter, remainingActions: Math.max(0, Number(fighter.remainingActions || 0) - 1) }
+            : fighter
+        )));
+        addLog(`${currentFighter.name} aims the ${weaponToExecute.name} at ${targetToExecute.name}.`, "info");
+        scheduleEndTurn(0, "manual-canonical-aim");
+        return;
+      }
+
       case "Block": {
         if (isDuplicateLegacyDefensiveAction({
           actionName: actionToExecute.name,
@@ -40037,31 +40202,142 @@ function CombatPage({ characters = [] }) {
 
       case "Hide":
       case "Prowl": {
-        // Attempt to hide mid-combat
-        const hideResult = attemptMidCombatHide(
-          currentFighter,
-          positions,
-          combatTerrain,
-          fighters.filter(f => f.type === "enemy")
-        );
-
-        addLog(hideResult.log, hideResult.success ? "info" : "warning");
-
-        if (hideResult.success) {
-          // Update awareness for all enemies - they lose track
-          fighters.filter(f => f.type === "enemy").forEach(enemy => {
-            updateAwareness(enemy, currentFighter, AWARENESS_STATES.SEARCHING);
-          });
+        const authoritativeTurn = getAuthoritativeInitiativeTurnSnapshot(currentFighter.id);
+        const hideActionToken = `${authoritativeTurn?.initiativeTurnId || "no-initiative-turn"}:concealment:${initiativeActionSequenceRef.current + 1}`;
+        const hideResult = resolveCanonicalHide({
+          registry: liveWildlifeRegistryRef.current,
+          actor: currentFighter,
+          observers: fighters.filter((fighter) => fighter.id !== currentFighter.id && fighter.team !== currentFighter.team),
+          positions: positionsRef.current || positions,
+          environment: {
+            terrain: combatTerrain?.terrain,
+            terrainTags: combatTerrain?.terrainTags || [],
+            groundCover: combatTerrain?.groundCover,
+            visualCover: combatTerrain?.visualCover,
+            lighting: combatTerrain?.lighting,
+          },
+          objects: arenaEnvironment?.objects || combatTerrain?.objects || [],
+          roll: CryptoSecureDice.rollD100(),
+          generationId: authoritativeTurn?.generationId,
+          initiativeTurnId: authoritativeTurn?.initiativeTurnId,
+          actionToken: hideActionToken,
+          authoritativeTurn: authoritativeTurn ? { ...authoritativeTurn, actionToken: hideActionToken } : null,
+        });
+        for (const structuredEvent of hideResult.events || []) {
+          addLog?.({
+            audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+            channel: COMBAT_LOG_CHANNELS.ACTION,
+            eventType: structuredEvent.eventType,
+            actorId: structuredEvent.actorId || currentFighter.id,
+            targetId: structuredEvent.targetId || null,
+            source: "manual-canonical-hide",
+            message: `${structuredEvent.eventType}: actor=${currentFighter.name} reason=${structuredEvent.data?.reason || hideResult.reason || "resolved"}`,
+            data: structuredEvent.data,
+          }, "debug");
         }
-
-        // Deduct action cost using standardized function
-        const hideCost = getActionCost("USE_SKILL"); // Hide/Prowl uses skill action cost
-        setFighters(prev => prev.map(f =>
+        addLog(
+          hideResult.success
+            ? `${currentFighter.name} settles into available concealment.`
+            : `${currentFighter.name} cannot hide here${hideResult.reason === "no-concealment-source" ? " because no real concealment is available" : ""}.`,
+          hideResult.success ? "info" : "warning",
+        );
+        const hideCost = getActionCost("USE_SKILL");
+        commitFighters(prev => prev.map(f =>
           f.id === currentFighter.id
-            ? { ...f, remainingActions: Math.max(0, f.remainingActions - (hideCost === "all" ? f.remainingActions : hideCost)) }
+            ? {
+                ...f,
+                ...(hideResult.actorPatch || {}),
+                remainingActions: Math.max(0, f.remainingActions - (hideCost === "all" ? f.remainingActions : hideCost)),
+              }
             : f
         ));
+        if (hideResult.success) {
+          fighters.filter(fighter => fighter.id !== currentFighter.id && fighter.team !== currentFighter.team).forEach(observer => {
+            const observerVisibility = hideResult.visibility?.find((entry) => entry.observerId === observer.id);
+            updateAwareness(
+              observer,
+              currentFighter,
+              observerVisibility?.aware ? AWARENESS_STATES.SEARCHING : AWARENESS_STATES.UNAWARE,
+            );
+          });
+        }
         scheduleEndTurn(500);
+        return;
+      }
+
+      case "Sneak": {
+        if (!selectedMovementHex) {
+          addLog(`${currentFighter.name} must select a concealed destination before sneaking.`, "warning");
+          return;
+        }
+        const authoritativeTurn = getAuthoritativeInitiativeTurnSnapshot(currentFighter.id);
+        const sneakActionToken = `${authoritativeTurn?.initiativeTurnId || "no-initiative-turn"}:sneak:${initiativeActionSequenceRef.current + 1}`;
+        const from = (positionsRef.current || positions)?.[currentFighter.id];
+        const environment = {
+          terrain: combatTerrain?.terrain,
+          terrainTags: combatTerrain?.terrainTags || [],
+          groundCover: combatTerrain?.groundCover,
+          visualCover: combatTerrain?.visualCover,
+          lighting: combatTerrain?.lighting,
+        };
+        const sneakResult = resolveCanonicalSneak({
+          registry: liveWildlifeRegistryRef.current,
+          actor: currentFighter,
+          observers: fighters.filter((fighter) => fighter.id !== currentFighter.id && fighter.team !== currentFighter.team),
+          from,
+          destination: selectedMovementHex,
+          environment,
+          destinationEnvironment: environment,
+          positions: positionsRef.current || positions,
+          generationId: authoritativeTurn?.generationId,
+          initiativeTurnId: authoritativeTurn?.initiativeTurnId,
+          actionToken: sneakActionToken,
+          authoritativeTurn: authoritativeTurn ? { ...authoritativeTurn, actionToken: sneakActionToken } : null,
+          commitMovement: ({ actorId, destination, source }) => {
+            const active = fightersRef.current?.[turnIndexRef.current];
+            if (!combatActiveRef.current || active?.id !== actorId) return { accepted: false, reason: "stale-sneak-callback" };
+            const nextPositions = {
+              ...(positionsRef.current || {}),
+              [actorId]: { ...destination },
+            };
+            positionsRef.current = nextPositions;
+            committedPositionsRef.current = {
+              ...(committedPositionsRef.current || {}),
+              [actorId]: { ...destination },
+            };
+            recordLastMovementCommit(actorId, destination, source);
+            setPositions(nextPositions);
+            return { accepted: true };
+          },
+        });
+        for (const structuredEvent of sneakResult.events || []) {
+          addLog?.({
+            audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+            channel: COMBAT_LOG_CHANNELS.MOVEMENT,
+            eventType: structuredEvent.eventType,
+            actorId: currentFighter.id,
+            source: "manual-canonical-sneak",
+            message: `${structuredEvent.eventType}: actor=${currentFighter.name} reason=${structuredEvent.data?.reason || sneakResult.reason || "resolved"}`,
+            data: structuredEvent.data,
+          }, "debug");
+        }
+        if (!sneakResult.accepted) {
+          addLog(`${currentFighter.name} cannot sneak: ${sneakResult.reason}.`, "warning");
+          return;
+        }
+        commitFighters((previous) => previous.map((fighter) => (
+          fighter.id === currentFighter.id
+            ? {
+                ...fighter,
+                x: selectedMovementHex.x,
+                y: selectedMovementHex.y,
+                position: { ...selectedMovementHex },
+                remainingActions: Math.max(0, Number(fighter.remainingActions || 0) - 1),
+              }
+            : fighter
+        )));
+        addLog(`${currentFighter.name} sneaks to the next concealed position.`, "info");
+        scheduleEndTurn(0, "manual-canonical-sneak");
         return;
       }
 

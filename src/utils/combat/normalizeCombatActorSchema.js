@@ -142,6 +142,27 @@ export function normalizeReferenceCombatActor(actor = {}, { source = "combat-sta
   const currentStamina = explicitNumber(actor.combatStamina?.current, actor.currentStamina, actor.currentstamina, actor.stamina, definition.combatStamina.current);
   const maximumStamina = explicitNumber(actor.combatStamina?.maximum, actor.maxStamina, actor.maxstamina, definition.combatStamina.maximum);
   const runtimeId = actor.id ?? actor._id ?? definition.id;
+  const avianActor = ["hawk", "falcon"].includes(definition?.actorKey);
+  const invalidAvianDefinition = avianActor && (
+    definition?.anatomyProfile?.bodyPlan !== "avian"
+    || definition?.anatomyProfile?.wingsPresent !== true
+    || Number(definition?.anatomyProfile?.wingCount || 0) < 2
+    || (definition?.naturalAttackProfiles || []).some(
+      (profile) => profile?.anatomySource === "talons" && definition?.anatomyProfile?.talonsPresent !== true,
+    )
+  );
+  if (invalidAvianDefinition) {
+    const diagnostic = {
+      eventType: definition?.anatomyProfile?.bodyPlan !== "avian"
+        ? "hawk-quadruped-body-plan"
+        : "avian-wing-anatomy-missing",
+      level: "error",
+      actorId: runtimeId,
+      data: { actorKey: definition.actorKey, source },
+    };
+    emitDiagnostic?.(diagnostic);
+    return { normalizedActor: actor, diagnostics: [diagnostic], compatibilityFallbacks: [], blocked: true };
+  }
   const team = actor.team ?? actor.side ?? actor.battleSide ?? definition.teamDefault;
   const alignmentBehavior = normalizeAlignmentBehavior(actor.behaviorProfile || actor.alignment || definition.alignment, actor.behavior || {});
   const selectedLoadoutAccepted = canonicalLoadout.requested && !canonicalLoadout.safeDefaultUsed;
@@ -252,6 +273,7 @@ export function normalizeReferenceCombatActor(actor = {}, { source = "combat-sta
       canonicalLoadout.profiles.find((profile) => profile.deliveryType === "projectile"),
     ),
     rangedTacticalProfile: clone(definition.rangedTacticalProfile),
+    rangedTrainingProfile: clone(definition.rangedTrainingProfile),
     flightProfile: clone(definition.flightProfile),
     carrierProfile: clone(definition.carrierProfile),
     passengerProfile: clone(definition.passengerProfile),

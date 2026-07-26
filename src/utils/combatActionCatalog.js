@@ -11,6 +11,7 @@ import {
 import { MOUNTED_ACTION_CONTRACTS } from "./combat/canonicalMountedCombat.js";
 import { MOUNTED_FLIGHT_ACTION_CONTRACTS } from "./combat/canonicalMountedFlight.js";
 import { HUNTING_ACTION_CONTRACTS } from "./combat/canonicalHuntingEncounter.js";
+import { CONCEALMENT_ACTIONS } from "./combat/liveWildlifeConcealmentRanged.js";
 
 const hasValue = (value) => value !== undefined && value !== null && value !== "";
 
@@ -145,6 +146,9 @@ const ACTION_CONTRACTS = Object.freeze({
   "recover-quarry": { rollRequired: false, executorIdentity: "canonical-hunting-executor", aiAvailable: true },
   "field-dress-carcass": { rollRequired: false, executorIdentity: "canonical-harvest-boundary", aiAvailable: false },
   "issue-companion-command": { rollRequired: "pressure-only", executorIdentity: "canonical-companion-executor", aiAvailable: true },
+  hide: { rollRequired: true, executorIdentity: "canonical-concealment-executor", aiAvailable: true },
+  sneak: { rollRequired: false, executorIdentity: "canonical-concealment-executor", aiAvailable: true },
+  aim: { rollRequired: false, executorIdentity: "canonical-ranged-aim", aiAvailable: true },
   compatibility: { rollRequired: false, executorIdentity: "compatibility-controls-panel", aiAvailable: false },
 });
 
@@ -858,6 +862,41 @@ const buildSkillActions = ({ actor, currentTurnEntry }) =>
       });
     });
 
+const buildConcealmentAndAimActions = ({ actor, currentTurnEntry, selectedTarget }) => {
+  const targetId = selectedTargetId(selectedTarget);
+  const rangedWeapon = getWeaponCandidates({ actor }).find((weapon) => (
+    weapon?.isRanged === true || ["ranged", "projectile"].includes(normalizeText(weapon?.type).toLowerCase())
+  ));
+  return Object.values(CONCEALMENT_ACTIONS).map((contract) => makeAction({
+    actor,
+    currentTurnEntry,
+    id: contract.key,
+    name: contract.label,
+    type: contract.key,
+    source: "canonical concealment and ranged catalog",
+    category: contract.key === "aim" ? "Ranged" : "Stealth",
+    costActions: contract.actionCost,
+    targetRequired: contract.key === "aim",
+    targetId,
+    enabled: contract.key !== "aim" || Boolean(targetId && rangedWeapon),
+    disabledReason: contract.key === "aim" && !targetId
+      ? "Select a visible target."
+      : contract.key === "aim" && !rangedWeapon
+        ? "A compatible ranged weapon is required."
+        : "",
+    previewSummary: contract.key === "hide"
+      ? "Use real terrain concealment; training improves but is not required."
+      : contract.key === "sneak"
+        ? "Move once through connected concealment with observer-specific detection."
+        : "Spend one action for a nonstacking +2 on the next legal shot at this target with this weapon.",
+    metadata: {
+      executor: contract.executor,
+      weaponId: rangedWeapon?.weaponId || rangedWeapon?.profileKey || "",
+      nonstacking: contract.key === "aim",
+    },
+  }));
+};
+
 const compatibilityTypeFor = (label) => {
   const normalized = label.toLowerCase();
   if (normalized.includes("skill") || normalized.includes("hide") || normalized.includes("prowl")) return "use-skill";
@@ -964,6 +1003,7 @@ export function buildCombatActionCatalog({
   buildDefensiveRecoveryActions({ actor, currentTurnEntry }).forEach((action) => addUnique(actions, action));
   buildCarrierActions({ actor, currentTurnEntry, selectedTarget, carrierContext }).forEach((action) => addUnique(actions, action));
   buildHuntingActions({ actor, currentTurnEntry, selectedTarget, huntingContext }).forEach((action) => addUnique(actions, action));
+  buildConcealmentAndAimActions({ actor, currentTurnEntry, selectedTarget }).forEach((action) => addUnique(actions, action));
   buildItemActions({ actor, currentTurnEntry, inventory }).forEach((action) => addUnique(actions, action));
   buildSkillActions({ actor, currentTurnEntry }).forEach((action) => addUnique(actions, action));
   buildCompatibilityActions({ actor, currentTurnEntry, compatibilityActions }).forEach((action) => addUnique(actions, action));
