@@ -2,13 +2,26 @@ import React from "react";
 import PropTypes from "prop-types";
 import { getCanonicalHuntingPresentation } from "../utils/combat/canonicalHuntingEncounter.js";
 import { getCanonicalCarcassProcessingPresentation } from "../utils/combat/canonicalCarcassProcessing.js";
+import { getCanonicalFoodProcessingPresentation } from "../utils/combat/canonicalFoodProcessing.js";
 
 const label = (value) => String(value ?? "none").replaceAll("-", " ");
 
-export default function HuntingEncounterPanel({ encounter, companionLink = null, carcass = null }) {
+export default function HuntingEncounterPanel({
+  encounter,
+  companionLink = null,
+  carcass = null,
+  foods = [],
+  heatSources = [],
+  foodProcessingContexts = [],
+}) {
   const view = getCanonicalHuntingPresentation({ encounter, companionLink });
   const processing = getCanonicalCarcassProcessingPresentation({ carcass });
-  if (!view.visible && !processing.visible) return null;
+  const foodProcessing = getCanonicalFoodProcessingPresentation({
+    foods,
+    heatSources,
+    contexts: foodProcessingContexts,
+  });
+  if (!view.visible && !processing.visible && !foodProcessing.visible) return null;
 
   return (
     <section className="rounded border border-amber-800/50 bg-stone-950/75 p-2 text-xs text-stone-200" aria-label={view.ariaLabel || "Post-hunt carcass processing"}>
@@ -39,6 +52,18 @@ export default function HuntingEncounterPanel({ encounter, companionLink = null,
           <span>Processing: {label(processing.processingOutcome)}</span>
         </div>
       )}
+      {foodProcessing.visible && (
+        <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 border-t border-orange-900/40 pt-1">
+          <span>Food batches: {foodProcessing.foodCount}</span>
+          <span>Portions: {foodProcessing.portions}</span>
+          <span>Freshness: {foodProcessing.freshnessStates.map(label).join(", ") || "none"}</span>
+          <span>Fire: {label(foodProcessing.heatSourceState)}</span>
+          <span>Heat: {label(foodProcessing.heatClass)}</span>
+          <span>Fuel: {label(foodProcessing.fuelState)}</span>
+          {foodProcessing.selectedRecipe && <span>Recipe: {label(foodProcessing.selectedRecipe)}</span>}
+          <span>Food processing: {label(foodProcessing.processingState)}</span>
+        </div>
+      )}
     </section>
   );
 }
@@ -47,4 +72,7 @@ HuntingEncounterPanel.propTypes = {
   encounter: PropTypes.object,
   companionLink: PropTypes.object,
   carcass: PropTypes.object,
+  foods: PropTypes.arrayOf(PropTypes.object),
+  heatSources: PropTypes.arrayOf(PropTypes.object),
+  foodProcessingContexts: PropTypes.arrayOf(PropTypes.object),
 };

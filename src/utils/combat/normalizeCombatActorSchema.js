@@ -109,7 +109,7 @@ function resolveCanonicalLoadout(actor, definition) {
 }
 
 export function normalizeReferenceCombatActor(actor = {}, { source = "combat-start", emitDiagnostic = null, lifecyclePhase = "combat-start" } = {}) {
-  const forbiddenLifecyclePhases = new Set(["attack-resolution", "damage-application", "grapple-resolution", "movement-commit", "flight-movement", "flight-transition", "takeoff", "landing", "altitude-commit", "falling", "linked-falling", "mounted-movement", "mounted-charge", "mounted-attack", "mounted-flight-attack", "aerial-separation", "forced-dismount", "action-continuation", "mounted-continuation", "mounted-flight-continuation", "continuation-admission", "survival-action-commit", "surrender-decision-commit", "wildlife-detection", "hunting-stalk", "hunting-shot", "hunting-pursuit", "companion-command", "companion-carry", "quarry-recovery", "hunting-finalization", "carcass-recovery", "field-dressing", "harvest-resolution", "harvest-inventory-transfer", "projectile-recovery", "carcass-processing-finalization", "turn-handoff"]);
+  const forbiddenLifecyclePhases = new Set(["attack-resolution", "damage-application", "grapple-resolution", "movement-commit", "flight-movement", "flight-transition", "takeoff", "landing", "altitude-commit", "falling", "linked-falling", "mounted-movement", "mounted-charge", "mounted-attack", "mounted-flight-attack", "aerial-separation", "forced-dismount", "action-continuation", "mounted-continuation", "mounted-flight-continuation", "continuation-admission", "survival-action-commit", "surrender-decision-commit", "wildlife-detection", "hunting-stalk", "hunting-shot", "hunting-pursuit", "companion-command", "companion-carry", "quarry-recovery", "hunting-finalization", "carcass-recovery", "field-dressing", "harvest-resolution", "harvest-inventory-transfer", "projectile-recovery", "carcass-processing-finalization", "food-resource-registration", "fire-ignition", "food-processing-reservation", "food-processing-completion", "food-output-commit", "meal-portion-consumption", "freshness-transition", "food-processing-cancellation", "turn-handoff"]);
   if (forbiddenLifecyclePhases.has(keyText(lifecyclePhase))) {
     const diagnostic = {
       eventType: "combat-actor-normalization-during-owned-action-blocked",
@@ -222,6 +222,11 @@ export function normalizeReferenceCombatActor(actor = {}, { source = "combat-sta
     inventoryTransferState: clone(actor.inventoryTransferState),
     processingOwnerToken: actor.processingOwnerToken,
     recoveryOwnerToken: actor.recoveryOwnerToken,
+    foodState: clone(actor.foodState),
+    foodProcessingContext: clone(actor.foodProcessingContext),
+    heatSourceState: clone(actor.heatSourceState),
+    nourishmentState: clone(actor.nourishmentState),
+    foodStorageContext: clone(actor.foodStorageContext),
     companionLink: clone(actor.companionLink),
     currentCommand: actor.currentCommand,
     handlerId: actor.handlerId,
@@ -330,7 +335,7 @@ export function normalizeReferenceCombatActor(actor = {}, { source = "combat-sta
     delete normalizedActor[legacyField];
   }
   // Live ownership and position fields are never inferred from the reference definition.
-  for (const field of ["position", "hex", "x", "y", "carrierLink", "mountedState", "mountedTurn", "mountedFlightState", "mountedFlightTurn", "attachmentState", "loadState", "fallState", "grappleState", "surrenderState", "combatWeaponState", "animalIntent", "huntingEncounterId", "trackState", "pursuitState", "recoveryState", "carcassState", "carcassId", "sourceActorId", "deathEventId", "carcassClaim", "conditionProfile", "harvestProfileKey", "processingState", "remainingResources", "projectileRecoveryRecords", "spoilageState", "inventoryTransferState", "processingOwnerToken", "recoveryOwnerToken", "companionLink", "currentCommand", "handlerId", "initiativeTurnId", "actionToken", "initiativeIdentity", "instanceId", "factionId", "armyId"]) {
+  for (const field of ["position", "hex", "x", "y", "carrierLink", "mountedState", "mountedTurn", "mountedFlightState", "mountedFlightTurn", "attachmentState", "loadState", "fallState", "grappleState", "surrenderState", "combatWeaponState", "animalIntent", "huntingEncounterId", "trackState", "pursuitState", "recoveryState", "carcassState", "carcassId", "sourceActorId", "deathEventId", "carcassClaim", "conditionProfile", "harvestProfileKey", "processingState", "remainingResources", "projectileRecoveryRecords", "spoilageState", "inventoryTransferState", "processingOwnerToken", "recoveryOwnerToken", "foodState", "foodProcessingContext", "heatSourceState", "nourishmentState", "foodStorageContext", "companionLink", "currentCommand", "handlerId", "initiativeTurnId", "actionToken", "initiativeIdentity", "instanceId", "factionId", "armyId"]) {
     if (preserved[field] === undefined && !(field === "position" && definition.flightProfile?.kind === "biological")) delete normalizedActor[field];
   }
   if (!normalizedActor.combatWeaponState) {

@@ -13,6 +13,10 @@ import { MOUNTED_FLIGHT_ACTION_CONTRACTS } from "./combat/canonicalMountedFlight
 import { HUNTING_ACTION_CONTRACTS } from "./combat/canonicalHuntingEncounter.js";
 import { CONCEALMENT_ACTIONS } from "./combat/liveWildlifeConcealmentRanged.js";
 import { CARCASS_PROCESSING_ACTIONS } from "./combat/canonicalCarcassProcessing.js";
+import {
+  CANONICAL_FOOD_RECIPES,
+  FOOD_PROCESSING_ACTIONS,
+} from "./combat/canonicalFoodProcessing.js";
 
 const hasValue = (value) => value !== undefined && value !== null && value !== "";
 
@@ -150,6 +154,21 @@ const ACTION_CONTRACTS = Object.freeze({
   hide: { rollRequired: true, executorIdentity: "canonical-concealment-executor", aiAvailable: true },
   sneak: { rollRequired: false, executorIdentity: "canonical-concealment-executor", aiAvailable: true },
   aim: { rollRequired: false, executorIdentity: "canonical-ranged-aim", aiAvailable: true },
+  "build-fire": { rollRequired: "environment-only", executorIdentity: "canonical-food-processing", aiAvailable: true },
+  "add-fuel": { rollRequired: false, executorIdentity: "canonical-food-processing", aiAvailable: true },
+  "extinguish-fire": { rollRequired: false, executorIdentity: "canonical-food-processing", aiAvailable: true },
+  "prepare-food": { rollRequired: false, executorIdentity: "canonical-food-processing", aiAvailable: true },
+  "roast-meat": { rollRequired: "uncertainty-only", executorIdentity: "canonical-food-processing", aiAvailable: true },
+  "cook-food": { rollRequired: "uncertainty-only", executorIdentity: "canonical-food-processing", aiAvailable: true },
+  "smoke-food": { rollRequired: false, executorIdentity: "canonical-food-processing", aiAvailable: true },
+  "dry-food": { rollRequired: false, executorIdentity: "canonical-food-processing", aiAvailable: true },
+  "salt-food": { rollRequired: false, executorIdentity: "canonical-food-processing", aiAvailable: true },
+  "inspect-food": { rollRequired: false, executorIdentity: "canonical-food-processing", aiAvailable: true },
+  "consume-meal": { rollRequired: false, executorIdentity: "canonical-food-processing", aiAvailable: true },
+  "discard-food": { rollRequired: false, executorIdentity: "canonical-food-processing", aiAvailable: false },
+  "pack-food": { rollRequired: false, executorIdentity: "canonical-food-processing", aiAvailable: true },
+  "retrieve-food": { rollRequired: false, executorIdentity: "canonical-food-processing", aiAvailable: true },
+  "cancel-food-processing": { rollRequired: false, executorIdentity: "canonical-food-processing", aiAvailable: true },
   compatibility: { rollRequired: false, executorIdentity: "compatibility-controls-panel", aiAvailable: false },
 });
 
@@ -160,6 +179,7 @@ export const getCombatActionContract = (type, source = "") => {
   const mountedFlightContract = MOUNTED_FLIGHT_ACTION_CONTRACTS[normalizedType] || null;
   const huntingContract = HUNTING_ACTION_CONTRACTS[normalizedType] || null;
   const processingContract = CARCASS_PROCESSING_ACTIONS[normalizedType] || null;
+  const foodContract = FOOD_PROCESSING_ACTIONS[normalizedType] || null;
   const compatibility = normalizeText(source).toLowerCase().includes("compatibility");
   return {
     ...contract,
@@ -191,6 +211,15 @@ export const getCombatActionContract = (type, source = "") => {
       processingExecutor: processingContract.executor,
       toolCapability: processingContract.toolCapability,
       inventoryTransferBehavior: processingContract.inventoryTransferBehavior,
+    } : {}),
+    ...(foodContract ? {
+      stableKey: foodContract.key,
+      executorIdentity: "canonical-food-processing",
+      aiAvailable: foodContract.aiAvailable,
+      actionOwner: "food-processing-actor",
+      foodProcessingExecutor: foodContract.executor,
+      recipeKey: foodContract.recipeKey,
+      delayed: foodContract.delayed,
     } : {}),
     playerVisible: !compatibility,
     turnEnding: MOUNTED_FLIGHT_ACTION_CONTRACTS[normalizedType]?.turnEnding
@@ -883,6 +912,76 @@ const buildCarcassProcessingActions = ({
     }));
 };
 
+const buildFoodProcessingActions = ({
+  actor,
+  currentTurnEntry,
+  foodProcessingContext = {},
+}) => {
+  const foods = foodProcessingContext.foods || [];
+  const heatSources = foodProcessingContext.heatSources || [];
+  const activeContext = foodProcessingContext.activeContext || null;
+  if (
+    foodProcessingContext.enabled !== true
+    && !foods.length
+    && !heatSources.length
+    && !activeContext
+    && !foodProcessingContext.campCache
+  ) return [];
+  const inventoryKeys = new Set((foodProcessingContext.inventory || actor?.inventory || []).map((item) => (
+    normalizeText(item.itemKey || item.inventoryItemKey || item.id).toLowerCase()
+  )));
+  const availableFood = foods.find((food) => food.state === "available" && !food.reservation);
+  const activeHeat = heatSources.find((heatSource) => ["burning", "embers"].includes(heatSource.state));
+  return Object.values(FOOD_PROCESSING_ACTIONS).map((contract) => {
+    const recipe = contract.recipeKey ? CANONICAL_FOOD_RECIPES[contract.recipeKey] : null;
+    const missingIngredient = recipe?.requiredIngredientKeys?.find((key) => !inventoryKeys.has(key));
+    const requiresHeat = recipe && recipe.minimumHeatClass !== "none";
+    const enabled = contract.key === "build-fire"
+      ? Boolean(foodProcessingContext.legalFireLocation)
+      : contract.key === "cancel-food-processing"
+        ? Boolean(activeContext)
+        : contract.key === "extinguish-fire" || contract.key === "add-fuel"
+          ? Boolean(activeHeat)
+          : contract.key === "consume-meal" || contract.key === "inspect-food" || contract.key === "discard-food"
+            ? Boolean(availableFood)
+            : contract.key === "pack-food" || contract.key === "retrieve-food"
+              ? Boolean(foodProcessingContext.campCache)
+              : Boolean(availableFood && (!requiresHeat || activeHeat) && !missingIngredient);
+    return makeAction({
+      actor,
+      currentTurnEntry,
+      id: contract.key,
+      name: contract.label,
+      type: contract.key,
+      source: "canonical food processing",
+      category: "Camp food",
+      costActions: contract.actionCost,
+      targetRequired: Boolean(availableFood),
+      targetId: availableFood?.foodId || activeHeat?.heatSourceId || "",
+      enabled,
+      disabledReason: enabled
+        ? ""
+        : missingIngredient === "resource.salt"
+          ? "Salt inventory is required."
+          : requiresHeat && !activeHeat
+            ? "A compatible nearby heat source is required."
+            : contract.key === "build-fire"
+              ? "A legal fire location, fuel, and ignition source are required."
+              : "No legal food-processing target is available.",
+      previewSummary: contract.delayed
+        ? `${contract.label} establishes an owned world-time process and releases the actor after setup.`
+        : `${contract.label} through canonical food, heat, inventory, and portion authority.`,
+      metadata: {
+        executor: contract.executor,
+        recipeKey: contract.recipeKey || "",
+        delayed: contract.delayed,
+        foodId: availableFood?.foodId || "",
+        heatSourceId: activeHeat?.heatSourceId || "",
+      },
+    });
+  });
+};
+
 const buildSkillActions = ({ actor, currentTurnEntry }) =>
   getSkillCandidates({ actor })
     .map((skill, index) => {
@@ -1012,6 +1111,7 @@ export function buildCombatActionCatalog({
   carrierContext,
   huntingContext,
   processingContext,
+  foodProcessingContext,
 } = {}) {
   if (!actor || typeof actor !== "object") return [];
 
@@ -1057,6 +1157,7 @@ export function buildCombatActionCatalog({
   buildHuntingActions({ actor, currentTurnEntry, selectedTarget, huntingContext }).forEach((action) => addUnique(actions, action));
   buildConcealmentAndAimActions({ actor, currentTurnEntry, selectedTarget }).forEach((action) => addUnique(actions, action));
   buildCarcassProcessingActions({ actor, currentTurnEntry, processingContext }).forEach((action) => addUnique(actions, action));
+  buildFoodProcessingActions({ actor, currentTurnEntry, foodProcessingContext }).forEach((action) => addUnique(actions, action));
   buildItemActions({ actor, currentTurnEntry, inventory }).forEach((action) => addUnique(actions, action));
   buildSkillActions({ actor, currentTurnEntry }).forEach((action) => addUnique(actions, action));
   buildCompatibilityActions({ actor, currentTurnEntry, compatibilityActions }).forEach((action) => addUnique(actions, action));
