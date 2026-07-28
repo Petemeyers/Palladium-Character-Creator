@@ -24,7 +24,7 @@ function hasActiveGrappleBetween(attacker = {}, defender = {}) {
 }
 
 function snapshotWeapon(weapon = {}) {
-  return {
+  return Object.freeze({
     id: weapon?.id || weapon?.weaponId || weapon?.key || weapon?.name || "unknown-weapon",
     name: weapon?.name || weapon?.label || weapon?.weaponName || "Unknown Weapon",
     type: weapon?.type || weapon?.weaponType || weapon?.category || null,
@@ -33,8 +33,10 @@ function snapshotWeapon(weapon = {}) {
     damageType: weapon?.damageType,
     reach: weapon?.reach,
     range: weapon?.range,
-    armorContactTraits: weapon?.armorContactTraits,
-  };
+    armorContactTraits: weapon?.armorContactTraits
+      ? Object.freeze({ ...weapon.armorContactTraits })
+      : null,
+  });
 }
 
 export function resolveArmoredCombatAction({
@@ -266,7 +268,7 @@ export function resolveArmoredCombatAction({
   }, "debug");
 
   if (selection.selectedTechnique === ARMORED_TECHNIQUES.GRAPPLE) {
-    const selectionId = `${planGenerationId}:${attackerId}:${defenderId}:${selection.selectedTechnique}:${selection.deterministicRoll ?? "none"}`;
+    const selectionId = `${planGenerationId}:${planActionToken}:${attackerId}:${defenderId}:${selection.selectedTechnique}:${selection.deterministicRoll ?? "none"}`;
     if (!planTurnToken || !turnIdentity.complete) {
       addLog?.({
         audience: "developer",
@@ -283,7 +285,7 @@ export function resolveArmoredCombatAction({
       return { actionType: "rejected", technique: "grapple", suppressed: true, reason: "missing-turn-token" };
     }
     const planId = selectionId;
-    const plan = {
+    const plan = Object.freeze({
       planId,
       actionType: "grapple",
       selectedTechnique: selection.selectedTechnique,
@@ -301,8 +303,10 @@ export function resolveArmoredCombatAction({
       actionToken: planActionToken,
       turnToken: planTurnToken,
       source,
+      selectionSource: source,
       selectionId,
-    };
+      state: "created",
+    });
     addLog?.({
       audience: "developer",
       channel: "ai",
@@ -359,7 +363,7 @@ export function resolveArmoredCombatAction({
     };
   }
 
-  const selectionId = `${planGenerationId}:${attackerId}:${defenderId}:${selection.selectedTechnique}:${selection.deterministicRoll ?? "none"}`;
+  const selectionId = `${planGenerationId}:${planActionToken}:${attackerId}:${defenderId}:${selection.selectedTechnique}:${selection.deterministicRoll ?? "none"}`;
   if (!planTurnToken || !turnIdentity.complete) {
     addLog?.({
       audience: "developer",
@@ -377,19 +381,21 @@ export function resolveArmoredCombatAction({
   }
 
   const planId = selectionId;
-  const plannedWeapon = {
-    ...buildArmoredTechniqueAttack(selectedWeapon, selection.selectedTechnique),
-    sourceWeapon: selectedWeapon,
-    sourceWeaponSnapshot: snapshotWeapon(selectedWeapon),
-    presentationAttackName: buildArmoredTechniqueAttack(selectedWeapon, selection.selectedTechnique)?.name,
-    armoredActionPlan: {
+  const sourceWeaponSnapshot = snapshotWeapon(selectedWeapon);
+  const plannedAttackProfile = Object.freeze({
+    ...buildArmoredTechniqueAttack(sourceWeaponSnapshot, selection.selectedTechnique),
+    sourceWeaponId: sourceWeaponSnapshot.id,
+    sourceWeaponName: sourceWeaponSnapshot.name,
+  });
+  const armoredActionPlan = Object.freeze({
       planId,
       actionType: "attack",
       selectedTechnique: selection.selectedTechnique,
       sourceWeaponId: selectedWeapon?.id || selectedWeapon?.weaponId || selectedWeapon?.name || "unknown-weapon",
       sourceWeaponName: selectedWeapon?.name || selectedWeapon?.label || "Unknown Weapon",
       sourceWeaponProfileKey: selectedWeapon?.profileKey || selectedWeapon?.armorProfileKey || null,
-      sourceWeaponSnapshot: snapshotWeapon(selectedWeapon),
+      sourceWeaponSnapshot,
+      attackSnapshot: plannedAttackProfile,
       resolvedAttackMode: selection.selectedTechnique,
       attackerId,
       defenderId,
@@ -400,8 +406,16 @@ export function resolveArmoredCombatAction({
       actionToken: planActionToken,
       turnToken: planTurnToken,
       source,
+      selectionSource: source,
       selectionId,
-    },
+      state: "created",
+  });
+  const plannedWeapon = {
+    ...plannedAttackProfile,
+    sourceWeapon: sourceWeaponSnapshot,
+    sourceWeaponSnapshot,
+    presentationAttackName: plannedAttackProfile.name,
+    armoredActionPlan,
   };
   addLog?.({
     audience: "developer",

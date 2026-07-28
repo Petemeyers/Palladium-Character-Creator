@@ -10,7 +10,8 @@ assert.match(combatPage, /eventType:\s*"combat-turn-snapshot-created"/);
 assert.match(combatPage, /eventType:\s*"combat-turn-snapshot-mismatch"/);
 assert.match(combatPage, /const resolveCombatActionCompletion = useCallback/);
 assert.match(combatPage, /resolveCombatActionCompletion\(\{[\s\S]*source:\s*`grapple-action:\$\{actionType\}`/);
-assert.match(combatPage, /eventType:\s*"combat-action-completion-committed-state-mismatch"/);
+assert.doesNotMatch(combatPage, /eventType:\s*"combat-action-completion-committed-state-mismatch"/);
+assert.match(combatPage, /eventType:\s*"grapple-completion-action-count-audit"/);
 assert.match(combatPage, /eventType:\s*"combat-action-continuation-missing"|eventType:\s*"remaining-action-continuation-created"/);
 assert.match(combatPage, /eventType:\s*"initiative-turn-reuse"/);
 

@@ -6,6 +6,17 @@ function getPlanId(plan = {}) {
 
 function normalizePlan(plan = {}) {
   const planId = getPlanId(plan);
+  const sourceWeaponSnapshot = plan.sourceWeaponSnapshot
+    ? Object.freeze({
+        ...plan.sourceWeaponSnapshot,
+        armorContactTraits: plan.sourceWeaponSnapshot.armorContactTraits
+          ? Object.freeze({ ...plan.sourceWeaponSnapshot.armorContactTraits })
+          : null,
+      })
+    : null;
+  const attackSnapshot = plan.attackSnapshot
+    ? Object.freeze({ ...plan.attackSnapshot })
+    : null;
   return {
     ...plan,
     planId,
@@ -14,6 +25,9 @@ function normalizePlan(plan = {}) {
     actorId: plan.actorId || plan.attackerId || null,
     targetId: plan.targetId || plan.defenderId || null,
     actionToken: plan.actionToken || plan.turnToken || null,
+    sourceWeaponSnapshot,
+    attackSnapshot,
+    selectionSource: plan.selectionSource || plan.source || "unknown",
   };
 }
 
@@ -66,12 +80,12 @@ export function registerArmoredActionPlan(registry, plan = {}) {
   if (existing && TERMINAL_STATES.has(existing.state)) {
     return { ok: false, reason: `plan-${existing.state}`, plan: existing };
   }
-  const next = {
+  const next = Object.freeze({
     ...existing,
     ...normalized,
     state: existing?.state || "created",
     createdAt: existing?.createdAt || Date.now(),
-  };
+  });
   registry.set(planId, next);
   return { ok: true, plan: next };
 }
@@ -87,7 +101,7 @@ export function markArmoredActionPlanDispatched(registry, selectionId, patch = {
   if (existing.state !== "created") {
     return { ok: false, reason: "state-mismatch", fromState: existing.state || "unknown", requestedState: "dispatched", plan: existing };
   }
-  const next = { ...existing, ...patch, state: "dispatched", dispatchedAt: Date.now() };
+  const next = Object.freeze({ ...existing, ...patch, state: "dispatched", dispatchedAt: Date.now() });
   registry.set(selectionId, next);
   return { ok: true, plan: next };
 }
@@ -141,7 +155,7 @@ export function markArmoredActionPlanTerminal(registry, selectionId, state, patc
       plan: existing,
     };
   }
-  const next = { ...existing, ...patch, state, terminalAt: Date.now() };
+  const next = Object.freeze({ ...existing, ...patch, state, terminalAt: Date.now() });
   registry.set(selectionId, next);
   return { ok: true, plan: next };
 }

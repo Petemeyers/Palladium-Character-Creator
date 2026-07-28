@@ -10,7 +10,8 @@ assert.ok(claimIndex !== -1, "attack should still claim ownership for valid atta
 assert.ok(preClaimIndex < claimIndex, "active-fighter mismatch must be blocked before activeAttackActionIdRef is claimed");
 
 assert.match(combatPageSource, /stale combat roll blocked: actor=\$\{attacker\?\.name \|\| "unknown"\} reason=active-fighter-mismatch/);
-assert.match(combatPageSource, /stale attack promise resolved with actor mismatch: expected=/);
+assert.doesNotMatch(combatPageSource, /stale attack promise resolved with actor mismatch: expected=/);
+assert.match(combatPageSource, /eventType:\s*"stale-attack-promise-ignored"/);
 assert.match(combatPageSource, /const expectedMeleeRound = bonusModifiers\?\.meleeRound/);
 assert.match(combatPageSource, /const expectedTurnCounter = bonusModifiers\?\.turnCounter/);
 assert.match(combatPageSource, /round-mismatch/);

@@ -17,7 +17,8 @@ assert.match(source, /turn-token-mismatch/);
 assert.match(source, /combat-session-mismatch/);
 assert.match(source, /allowOutOfTurnAttack/);
 assert.match(source, /source: "attack-of-opportunity"/);
-assert.match(source, /stale attack promise resolved with actor mismatch: expected=/);
+assert.doesNotMatch(source, /stale attack promise resolved with actor mismatch: expected=/);
+assert.match(source, /eventType:\s*"stale-attack-promise-ignored"/);
 assert.match(source, /expectedEnemyAttackExecutionKey/);
 
 const preRollIndex = source.indexOf('const preRollAttackBlock = getAttackRollOwnershipBlockReason("immediate-pre-roll")');

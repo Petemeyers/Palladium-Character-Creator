@@ -59,6 +59,7 @@ import { mapPROFESSIONSkillsToCombat, getAttacksPerMelee } from "./professionSki
 import { getUnifiedAbilities, getCombatBonus } from "./unifiedAbilities.js";
 
 import CryptoSecureDice from "./cryptoDice.js";
+import { rollRoundInitiative } from "./combat/roundInitiative.js";
 import { checkDamageResistance } from "./abilitySystem.js";
 import {
   // eslint-disable-next-line no-unused-vars
@@ -144,9 +145,6 @@ export class CombatEngine {
 
     // Roll initiative for all fighters
     this.rollInitiative();
-
-    // Sort by initiative (highest first)
-    this.combatants.sort((a, b) => b.initiative - a.initiative);
 
     // Initialize fatigue and grapple states
     this.combatants.forEach((fighter) => {
@@ -329,63 +327,36 @@ export class CombatEngine {
    * Roll initiative for all fighters
    */
   rollInitiative() {
-    this.combatants.forEach((fighter) => {
-      const d20 = CryptoSecureDice.rollD20();
-      const handToHandBonus = fighter.handToHand?.initiativeBonus || 0;
-      const ppBonus = Math.floor(
-        ((fighter.attributes?.PP || fighter.PP || 10) - 10) / 2
-      );
-      const totalBonus = handToHandBonus + ppBonus;
-      fighter.initiative = d20 + totalBonus;
-
-      this.logCallback(
-        `${fighter.name} initiative: ${fighter.initiative} (d20:${d20}${
-          totalBonus > 0 ? ` + ${totalBonus}` : ""
-        })`,
-        "initiative"
-      );
-    });
-
-    // Resolve ties
-    this.resolveInitiativeTies();
+    this.combatants = rollRoundInitiative(
+      this.combatants,
+      { round: this.meleeRound, source: "combat-engine" },
+      () => CryptoSecureDice.rollD20(),
+    );
+    const eligible = this.combatants.filter((fighter) => fighter.initiativeEligible);
+    this.logCallback(
+      `Initiative Order — Round ${this.meleeRound}:\n${eligible
+        .map((fighter, index) => `${index + 1}. ${fighter.name} — ${fighter.initiativeTotal}`)
+        .join("\n")}`,
+      "initiative",
+    );
   }
 
   /**
-   * Resolve initiative ties (Medieval Combat Simulator rules: reroll tied fighters)
+   * Compatibility sorter for callers that already hold canonical tie metadata.
    */
   resolveInitiativeTies() {
-    const initiativeGroups = {};
-
-    this.combatants.forEach((fighter) => {
-      if (!initiativeGroups[fighter.initiative]) {
-        initiativeGroups[fighter.initiative] = [];
-      }
-      initiativeGroups[fighter.initiative].push(fighter);
+    this.combatants = [...this.combatants].sort((left, right) => {
+      const totalDifference =
+        Number(right.initiativeTotal ?? right.initiative ?? 0) -
+        Number(left.initiativeTotal ?? left.initiative ?? 0);
+      if (totalDifference !== 0) return totalDifference;
+      const tieDifference =
+        Number(right.initiativeTieBreaker ?? 0) -
+        Number(left.initiativeTieBreaker ?? 0);
+      if (tieDifference !== 0) return tieDifference;
+      return String(left.id ?? left.name ?? "").localeCompare(String(right.id ?? right.name ?? ""));
     });
-
-    Object.keys(initiativeGroups).forEach((initValue) => {
-      const tiedFighters = initiativeGroups[initValue];
-      if (tiedFighters.length > 1) {
-        this.logCallback(
-          `ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ¢â‚¬Å¾ Initiative tie at ${initValue}! Rerolling for: ${tiedFighters
-            .map((f) => f.name)
-            .join(", ")}`,
-          "info"
-        );
-
-        tiedFighters.forEach((fighter) => {
-          const tieBreaker = CryptoSecureDice.rollD20();
-          fighter.initiative += tieBreaker;
-          this.logCallback(
-            `${fighter.name} rerolls: ${tieBreaker} ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ new total: ${fighter.initiative}`,
-            "info"
-          );
-        });
-      }
-    });
-
-    // Re-sort after tie resolution
-    this.combatants.sort((a, b) => b.initiative - a.initiative);
+    return this.combatants;
   }
 
   /**
@@ -536,6 +507,7 @@ export class CombatEngine {
     // Reset all fighters' actions for next combat round
     this.resetActionsForNewRound();
     this.meleeRound++;
+    this.rollInitiative();
 
     this.onMeleeRoundComplete(this.meleeRound - 1, roundStats);
 

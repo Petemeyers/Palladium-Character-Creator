@@ -161,7 +161,10 @@ export function selectArmoredCombatTechnique({
   const rejectedCandidates = [];
   const reasons = [];
   const closeEnough = Number(distance) <= 6;
-  const weaponSupports = isLongswordWeapon(weapon) || isLongswordWeapon(attacker?.selectedAttack);
+  // Technique selection and execution must share one source weapon. A mutable
+  // actor-level preference must not authorize a longsword plan when the
+  // selected action weapon is currently a dagger (or any other weapon).
+  const weaponSupports = isLongswordWeapon(weapon);
 
   if (armor?.armorClass !== "plate" || armor?.rigidCoverage !== true) {
     return {

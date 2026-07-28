@@ -39,6 +39,7 @@ import TacticalMap from "./TacticalMap";
 import { getEngagementRange, MOVEMENT_RATES, GRID_CONFIG } from "../data/movementRules";
 import { sanitizeCombatLogMessage } from "../utils/combatLogSanitizer.js";
 import { getCombatIconAppearance } from "../utils/presentation/getCombatIconAppearance.js";
+import { rollRoundInitiative } from "../utils/combat/roundInitiative.js";
 
 const socket = getSocket(); // Use centralized socket manager
 
@@ -396,52 +397,61 @@ const InitiativeTracker = () => {
     logCombatEvent(`Ã°Å¸â€ â€¢ Added enemy: ${enemy.name} (HP: 20)`);
   };
 
-  // Roll initiative for party + enemies
+  const createTrackerInitiativeOrder = (initiativeRound, existingOrder = null) => {
+    const sourceEntries = Array.isArray(existingOrder) && existingOrder.length > 0
+      ? existingOrder
+      : [
+          ...activeParty.members.map((char) => ({ char, isEnemy: false })),
+          ...enemies.map((char) => ({ char, isEnemy: true })),
+        ];
+    const prepared = sourceEntries.map(({ char, isEnemy }) => {
+      const encumbranceInfo = isEnemy
+        ? { penalty: { initiative: 0 }, currentWeight: 0, maxWeight: 0 }
+        : getEncumbranceInfo(char);
+      const encumbrancePenalty = Number(encumbranceInfo?.penalty?.initiative) || 0;
+      if (encumbrancePenalty < 0 && activeParty?._id) {
+        socket.emit("partyMessage", {
+          partyId: activeParty._id,
+          user: "System",
+          text: `${char.name} suffers ${encumbrancePenalty} initiative from encumbrance (carrying ${encumbranceInfo.currentWeight}/${encumbranceInfo.maxWeight}).`,
+          type: "system",
+        });
+      }
+      return {
+        ...char,
+        _initiativeTrackerIsEnemy: isEnemy,
+        _initiativeTrackerEncumbrancePenalty: encumbrancePenalty,
+        _initiativeTrackerBaseTemporary: Number(char.temporaryInitiativeBonus) || 0,
+        temporaryInitiativeBonus:
+          (Number(char.temporaryInitiativeBonus) || 0) + encumbrancePenalty,
+      };
+    });
+    return rollRoundInitiative(
+      prepared,
+      { round: initiativeRound, source: "initiative-tracker" },
+      () => rollDice(20, 1),
+    ).map((combatant) => {
+      const {
+        _initiativeTrackerIsEnemy: isEnemy,
+        _initiativeTrackerEncumbrancePenalty: encumbrancePenalty,
+        _initiativeTrackerBaseTemporary: baseTemporary,
+        ...char
+      } = combatant;
+      char.temporaryInitiativeBonus = baseTemporary || undefined;
+      return {
+        char,
+        initiative: combatant.initiativeTotal,
+        physicalProwessModifier: combatant.initiativeBreakdown?.physicalProwessModifier ?? 0,
+        encumbrancePenalty,
+        rawRoll: combatant.initiativeRoll,
+        isEnemy,
+      };
+    });
+  };
+
+  // Roll initiative for party + enemies through the canonical round helper.
   const rollInitiative = () => {
-    const rolls = [
-      ...activeParty.members.map((char) => {
-        const baseRoll = rollDice(20, 1);
-        const dexModifier = char.attributes?.PP ? Math.floor((char.attributes.PP - 10) / 2) : 0;
-
-        // Calculate encumbrance penalty
-        const encumbranceInfo = getEncumbranceInfo(char);
-        const encumbrancePenalty = encumbranceInfo.penalty.initiative;
-
-        // Post encumbrance penalty notice to PartyChat
-        if (encumbrancePenalty < 0 && activeParty?._id) {
-          socket.emit("partyMessage", {
-            partyId: activeParty._id,
-            user: "System",
-            text: `Ã¢Å¡Â Ã¯Â¸Â ${char.name} suffers encumbrance penalty: ${encumbrancePenalty} to initiative, ${encumbranceInfo.penalty.skill} to skills (Carrying ${encumbranceInfo.currentWeight}/${encumbranceInfo.maxWeight})`,
-            type: "system",
-          });
-        }
-
-        const totalInitiative = baseRoll + dexModifier + encumbrancePenalty;
-        return {
-          char,
-          initiative: totalInitiative,
-          dexModifier,
-          encumbrancePenalty,
-          rawRoll: baseRoll,
-          isEnemy: false
-        };
-      }),
-      ...enemies.map((char) => {
-        const roll = rollDice(20, 1);
-        const totalInitiative = roll; // Enemies don't get modifiers for now
-        return {
-          char,
-          initiative: totalInitiative,
-          dexModifier: 0,
-          encumbrancePenalty: 0,
-          rawRoll: roll,
-          isEnemy: true
-        };
-      }),
-    ];
-
-    const sorted = rolls.sort((a, b) => b.initiative - a.initiative);
+    const sorted = createTrackerInitiativeOrder(1);
     setOrder(sorted);
     setTurnIndex(0);
     setRoundNumber(1);
@@ -473,7 +483,9 @@ const InitiativeTracker = () => {
       const initiativeText = sorted
         .map((r) => {
           const modifiers = [];
-          if (r.dexModifier !== 0) modifiers.push(`DEX+${r.dexModifier}`);
+          if (r.physicalProwessModifier !== 0) {
+            modifiers.push(`PP${r.physicalProwessModifier >= 0 ? "+" : ""}${r.physicalProwessModifier}`);
+          }
           if (r.encumbrancePenalty !== 0) modifiers.push(`ENC${r.encumbrancePenalty}`);
           const modText = modifiers.length > 0 ? ` (${r.rawRoll}+${modifiers.join('+')})` : '';
           return `${r.char.name}${r.isEnemy ? " (Enemy)" : ""} (${r.initiative}${modText})`;
@@ -497,15 +509,20 @@ const InitiativeTracker = () => {
   // Advance to next turn
   const nextTurn = () => {
     const newIndex = (turnIndex + 1) % order.length;
-    setTurnIndex(newIndex);
 
     // If we've completed a full round, increment round number
     if (newIndex === 0) {
       const newRound = roundNumber + 1;
+      const rerolled = createTrackerInitiativeOrder(newRound, order);
+      setOrder(rerolled);
+      setTurnIndex(0);
       setRoundNumber(newRound);
 
       if (activeParty._id) {
-        const logText = `Ã°Å¸â€â€ž Round ${newRound} begins!`;
+        const logText = `Initiative Order — Round ${newRound}: ${rerolled
+          .filter((entry) => entry.char.initiativeEligible)
+          .map((entry, index) => `${index + 1}. ${entry.char.name} — ${entry.initiative}`)
+          .join(", ")}`;
 
         socket.emit("partyMessage", {
           partyId: activeParty._id,
@@ -516,7 +533,9 @@ const InitiativeTracker = () => {
 
         logCombatEvent(logText);
       }
+      return;
     }
+    setTurnIndex(newIndex);
   };
 
   // Attack roll with profession bonuses, criticals, and fumbles
