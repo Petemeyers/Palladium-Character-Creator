@@ -44,7 +44,7 @@ function findCanonicalCurrentStamina(combatant = {}, maxStamina) {
   ];
   for (const [field, value] of candidates) {
     if (!currentStaminaIsAuthoritative(combatant, field)) continue;
-    const current = clampFinite(value, 0, maxStamina);
+    const current = clampFinite(value, getStaminaDebtFloor(maxStamina), maxStamina);
     if (current !== null) return { currentStamina: current, source: field };
   }
   return { currentStamina: maxStamina, source: "maxStamina" };
@@ -170,8 +170,9 @@ export function resolveEncounterStamina(combatant = {}) {
 
 export function mirrorCombatStaminaCompatibilityFields(fighter = {}, value, maxValue = undefined) {
   const maxStamina = Math.max(0, toNumber(maxValue) ?? toNumber(fighter.combatStamina?.maxStamina) ?? toNumber(fighter.maxStamina) ?? value ?? 0);
-  const currentStamina = Math.max(0, Math.min(maxStamina, toNumber(value) ?? maxStamina));
-  return {
+  const debtFloor = getStaminaDebtFloor(maxStamina);
+  const currentStamina = Math.max(debtFloor, Math.min(maxStamina, toNumber(value) ?? maxStamina));
+  return applyExertionProfileToFighter({
     ...fighter,
     maxStamina,
     currentStamina,
@@ -194,7 +195,7 @@ export function mirrorCombatStaminaCompatibilityFields(fighter = {}, value, maxV
     ...(!Array.isArray(fighter.training) && fighter.training
       ? { training: { ...fighter.training, currentstamina: currentStamina } }
       : {}),
-  };
+  }, currentStamina, maxStamina);
 }
 
 export function initializeCombatStamina(fighter = {}) {
@@ -217,7 +218,8 @@ export function readCombatStamina(fighter = {}) {
   const initialized = initializeCombatStamina(fighter);
   const maxStamina = toNumber(initialized.combatStamina?.maxStamina);
   const currentStamina = toNumber(initialized.combatStamina?.currentStamina);
-  const valid = maxStamina !== null && currentStamina !== null && currentStamina >= 0 && currentStamina <= maxStamina;
+  const debtFloor = maxStamina === null ? null : getStaminaDebtFloor(maxStamina);
+  const valid = maxStamina !== null && currentStamina !== null && currentStamina >= debtFloor && currentStamina <= maxStamina;
   return {
     valid,
     maxStamina,
@@ -270,8 +272,25 @@ export function spendCombatStamina({
       overexertionApplied: false,
     };
   }
-  const appliedSpend = Math.min(state.currentStamina, requestedSpend);
-  const nextStamina = Math.max(0, state.currentStamina - appliedSpend);
+  const appliedSpend = requestedSpend;
+  const nextStamina = state.currentStamina - appliedSpend;
+  const debtFloor = getStaminaDebtFloor(state.maxStamina);
+  if (nextStamina < debtFloor) {
+    return {
+      accepted: false,
+      reason: "exertion-floor-reached",
+      previousStamina: state.currentStamina,
+      requestedSpend,
+      appliedSpend: 0,
+      spent: 0,
+      nextStamina: state.currentStamina,
+      maxStamina: state.maxStamina,
+      currentStamina: state.currentStamina,
+      updated: state.fighter,
+      insufficientStamina,
+      overexertionApplied: false,
+    };
+  }
   if (!Number.isFinite(nextStamina)) {
     return {
       accepted: false,
@@ -365,7 +384,10 @@ export function initializeStamina(combatant = {}) {
 export function getStaminaState(combatantOrTurnEntry = {}) {
   const state = readCombatStamina(combatantOrTurnEntry);
   const maxStamina = Math.max(1, state.maxStamina ?? getDefaultStamina(combatantOrTurnEntry));
-  const currentStamina = Math.max(0, Math.min(maxStamina, state.currentStamina ?? maxStamina));
+  const currentStamina = Math.max(
+    getStaminaDebtFloor(maxStamina),
+    Math.min(maxStamina, state.currentStamina ?? maxStamina),
+  );
 
   return {
     maxStamina,
@@ -500,10 +522,13 @@ export function calculateEffectiveRoutedMovement({
   armorProfile = {},
 } = {}) {
   const staminaState = getStaminaState(fighter);
-  const band = staminaState.currentStamina <= 0
-    ? "spent"
-    : String(staminaProfile.band || "fresh").toLowerCase();
   const kind = /panic/i.test(movementType) ? "panic" : /run/i.test(movementType) ? "run" : "walk";
+  const survivalOverrideActive = staminaState.currentStamina < 0 && kind === "panic";
+  const band = staminaState.currentStamina <= 0
+    ? survivalOverrideActive
+      ? String(staminaProfile.band || "exhausted").toLowerCase()
+      : "spent"
+    : String(staminaProfile.band || "fresh").toLowerCase();
   const baseMultiplier = ROUTED_MOVEMENT_MULTIPLIERS[band]?.[kind] ?? 1;
   const armorBand = String(armorProfile.band || "none").toLowerCase();
   const lowStamina = ["winded", "tired", "exhausted", "spent"].includes(band);
@@ -519,6 +544,7 @@ export function calculateEffectiveRoutedMovement({
     exhausted: ["exhausted", "spent"].includes(band),
     spent: band === "spent",
     armorPenaltyApplied: armorMultiplier < 1,
+    survivalOverrideActive,
     band,
   };
 }
@@ -587,3 +613,7 @@ export default {
   spendCombatStamina,
   spendStamina,
 };
+import {
+  applyExertionProfileToFighter,
+  getStaminaDebtFloor,
+} from "./combat/exertionState.js";

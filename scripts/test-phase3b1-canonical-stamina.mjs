@@ -47,8 +47,8 @@ const zero = spendCombatStamina({
   allowOverexertion: true,
 });
 assert.equal(zero.accepted, true);
-assert.equal(zero.appliedSpend, 0);
-assert.equal(zero.nextStamina, 0);
+assert.equal(zero.appliedSpend, 1, "authorized overexertion must spend the complete action cost");
+assert.equal(zero.nextStamina, -1, "authorized overexertion must preserve canonical stamina debt");
 assert.equal(zero.overexertionApplied, true);
 assert.equal(zero.overexertionActions, 1);
 
