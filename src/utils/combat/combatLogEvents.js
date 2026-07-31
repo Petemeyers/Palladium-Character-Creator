@@ -86,6 +86,96 @@ export function getLegacyCombatLogChannel(type) {
   }
 }
 
+const DEDUPE_IDENTITY_FIELDS = Object.freeze([
+  ["actorId"],
+  ["targetId"],
+  ["generationId"],
+  ["initiativeIndex"],
+  ["initiativeTurnId"],
+  ["turnToken"],
+  ["executionKey", "attackExecutionKey"],
+  ["actionToken"],
+  ["continuationKey"],
+  ["actionSequence", "requestedActionSequence"],
+  ["actionType"],
+  ["projectileId"],
+  ["grappleActionToken", "grappleToken"],
+  ["castId"],
+  ["hitLocation", "location"],
+  ["weaponId"],
+]);
+
+function firstStableValue(event, aliases) {
+  for (const key of aliases) {
+    const direct = event?.[key];
+    if (direct !== undefined && direct !== null && direct !== "") return direct;
+    const nested = event?.data?.[key];
+    if (nested !== undefined && nested !== null && nested !== "") return nested;
+  }
+  return null;
+}
+
+export function buildCombatLogDeduplicationFingerprint(entry, {
+  readableMessage,
+  legacyType = "info",
+  round = null,
+  turn = null,
+} = {}) {
+  const event = entry && typeof entry === "object" ? entry : {};
+  const message = readableMessage ?? event.message ?? String(entry ?? "");
+  const identity = DEDUPE_IDENTITY_FIELDS.map(([field, ...aliases]) => [
+    field,
+    firstStableValue(event, [field, ...aliases]),
+  ]);
+
+  return JSON.stringify([
+    ["eventType", event.eventType ?? "legacy-message"],
+    ["channel", event.channel ?? getLegacyCombatLogChannel(event.type ?? legacyType)],
+    ["audience", event.audience ?? getLegacyCombatLogAudience(legacyType, true)],
+    ["legacyType", event.type ?? legacyType],
+    ["round", event.round ?? event.data?.round ?? round],
+    ["turn", event.turn ?? event.data?.turn ?? turn],
+    ...identity,
+    ["message", message],
+  ]);
+}
+
+export function shouldSuppressRecentCombatLogEvent({
+  cache,
+  entry,
+  readableMessage,
+  legacyType = "info",
+  round = null,
+  turn = null,
+  now = Date.now(),
+  dedupeWindowMs = 2000,
+  retentionMs = 10000,
+  maxEntries = 200,
+} = {}) {
+  if (!(cache instanceof Map)) return false;
+
+  for (const [key, timestamp] of cache.entries()) {
+    if (now - timestamp > retentionMs) cache.delete(key);
+  }
+
+  const fingerprint = buildCombatLogDeduplicationFingerprint(entry, {
+    readableMessage,
+    legacyType,
+    round,
+    turn,
+  });
+  const lastTimestamp = cache.get(fingerprint);
+  if (lastTimestamp !== undefined && now - lastTimestamp < dedupeWindowMs) return true;
+
+  cache.set(fingerprint, now);
+  while (cache.size > maxEntries) {
+    const oldestKey = cache.keys().next().value;
+    if (oldestKey === undefined) break;
+    cache.delete(oldestKey);
+  }
+  return false;
+}
+
 export function normalizeCombatLogEntry(entry, {
   id,
   sequence,
@@ -132,6 +222,20 @@ export function normalizeCombatLogEntry(entry, {
     type: input.type ?? level,
     actorId: input.actorId,
     targetId: input.targetId,
+    generationId: input.generationId ?? input.data?.generationId,
+    initiativeIndex: input.initiativeIndex ?? input.data?.initiativeIndex,
+    initiativeTurnId: input.initiativeTurnId ?? input.data?.initiativeTurnId,
+    turnToken: input.turnToken ?? input.data?.turnToken,
+    executionKey: input.executionKey ?? input.data?.executionKey ?? input.data?.attackExecutionKey,
+    actionToken: input.actionToken ?? input.data?.actionToken,
+    continuationKey: input.continuationKey ?? input.data?.continuationKey,
+    actionSequence: input.actionSequence ?? input.data?.actionSequence ?? input.data?.requestedActionSequence,
+    actionType: input.actionType ?? input.data?.actionType,
+    projectileId: input.projectileId ?? input.data?.projectileId,
+    grappleActionToken: input.grappleActionToken ?? input.data?.grappleActionToken ?? input.data?.grappleToken,
+    castId: input.castId ?? input.data?.castId,
+    hitLocation: input.hitLocation ?? input.data?.hitLocation ?? input.data?.location,
+    weaponId: input.weaponId ?? input.data?.weaponId,
     round: input.round ?? round,
     turn: input.turn ?? turn,
     message: input.message ?? "",

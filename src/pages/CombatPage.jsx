@@ -381,6 +381,7 @@ import {
   normalizeCombatLogEntry,
   selectCombatEventsByChannel,
   selectPlayerCombatEvents,
+  shouldSuppressRecentCombatLogEvent,
 } from "../utils/combat/combatLogEvents.js";
 import {
   buildCombatLogFilename,
@@ -2276,28 +2277,17 @@ function CombatPage({ characters = [] }) {
         activeActor: fightersRef.current?.[turnIndexRef.current] ?? null,
       },
     );
-    // Prevent duplicate log messages (React Strict Mode double-invocation and rapid repeats)
-    const recentKey = `${readableMessage.substring(0, 100)}_${legacyType}`; // Use first 100 chars + type as key
     const now = Date.now();
-
-    // Check if this exact message was logged in the last 2 seconds (prevent duplicates from rapid calls)
     const recentMessages = recentLogMessagesRef.current;
-    const lastTimestamp = recentMessages.get(recentKey);
-
-    if (lastTimestamp && (now - lastTimestamp) < 2000) {
-      return; // Skip duplicate log (within 2 seconds)
-    }
-
-    // Add to recent messages and clean up old ones (keep only entries from last 10 seconds
-    recentMessages.set(recentKey, now);
-    if (recentMessages.size > 100) {
-      // Clean up entries older than 10 seconds)
-      for (const [key, timestamp] of recentMessages.entries()) {
-        if (now - timestamp > 10000) {
-          recentMessages.delete(key);
-        }
-      }
-    }
+    if (shouldSuppressRecentCombatLogEvent({
+      cache: recentMessages,
+      entry: message,
+      readableMessage,
+      legacyType,
+      round: meleeRoundRef.current ?? null,
+      turn: turnCounterRef.current ?? null,
+      now,
+    })) return;
 
     const sequence = ++combatLogSeqRef.current;
     const displayTimestamp = new Date().toLocaleTimeString();
