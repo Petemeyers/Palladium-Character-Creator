@@ -323,6 +323,10 @@ import {
 } from "../utils/combat/weaponArmorProfiles.js";
 import { endGrappleRelationship } from "../utils/combat/grappleRelationship.js";
 import {
+  getNonReciprocalGrappleMetadata,
+  hasReciprocalGrapplePair,
+} from "../utils/combat/grapplePairing.js";
+import {
   findEligibleClinchWeapon,
   getPhase3B2GrappleActions,
   isGroundedGrapple,
@@ -1960,6 +1964,59 @@ function getSuggestedDeploymentAnchor(side, bounds) {
       : Math.max(1, Math.floor(bounds.height * 0.8));
 
   return clampDeploymentPoint({ x: centerX, y: suggestedY }, bounds);
+}
+
+
+function sanitizeGrappleDecisionSnapshot(fighter = {}, roster = []) {
+  if (!fighter?.id) return fighter;
+  const state = fighter?.grappleState || {};
+  const opponentId =
+    state?.opponent ||
+    state?.opponentId ||
+    fighter?.grappledWith ||
+    fighter?.grappleTargetId ||
+    null;
+  const opponent = Array.isArray(roster)
+    ? roster.find((candidate) => candidate?.id === opponentId)
+    : null;
+
+  if (opponent && hasReciprocalGrapplePair(fighter, opponent)) return fighter;
+
+  const stateText = String(state?.state || "").toLowerCase();
+  const hasResidualMetadata = Boolean(
+    opponentId ||
+    (stateText && stateText !== "neutral") ||
+    state?.sharedHex ||
+    state?.attackerOriginHex ||
+    state?.isAttacker === true ||
+    state?.hasGrappleAdvantage === true
+  );
+  if (!hasResidualMetadata) return fighter;
+
+  return {
+    ...fighter,
+    grappledWith: null,
+    grappleTargetId: null,
+    grappleState: {
+      ...state,
+      state: "neutral",
+      positionState: "neutral",
+      opponent: null,
+      opponentId: null,
+      penalties: { attack: 0, block: 0, evade: 0 },
+      canUseLongWeapons: true,
+      roundsInGrapple: 0,
+      sharedHex: null,
+      attackerOriginHex: null,
+      isAttacker: false,
+      hasGrappleAdvantage: false,
+    },
+  };
+}
+
+function sanitizeGrappleDecisionRoster(roster = []) {
+  if (!Array.isArray(roster)) return [];
+  return roster.map((fighter) => sanitizeGrappleDecisionSnapshot(fighter, roster));
 }
 
 function CombatPage({ characters = [] }) {
@@ -32507,8 +32564,13 @@ function CombatPage({ characters = [] }) {
     };
 
     if (settingsNow?.useModularEnemyAI) {
-      await runEnemyTurnAI(liveEnemy, {
-        fighters: liveFighters,
+      const modularDecisionFighters = sanitizeGrappleDecisionRoster(liveFighters);
+      const modularDecisionEnemy =
+        modularDecisionFighters.find((fighter) => fighter?.id === liveEnemy?.id) ||
+        sanitizeGrappleDecisionSnapshot(liveEnemy, modularDecisionFighters);
+
+      await runEnemyTurnAI(modularDecisionEnemy, {
+        fighters: modularDecisionFighters,
         positions: livePositions,
         combatTerrain: terrainNow,
         arenaEnvironment,
@@ -35095,13 +35157,11 @@ function CombatPage({ characters = [] }) {
       if (enemyCurrentPos.x === targetCurrentPos.x && enemyCurrentPos.y === targetCurrentPos.y) {
         const enemyGrappleState = String(enemy?.grappleState?.state || "").toLowerCase();
         const targetGrappleState = String(target?.grappleState?.state || "").toLowerCase();
-        const isGrappleOpponent =
-          enemy?.grappleState?.opponent === target?.id ||
-          target?.grappleState?.opponent === enemy?.id;
+        const isGrappleOpponent = hasReciprocalGrapplePair(enemy, target);
         const sameHexReason =
-          enemyGrappleState === "clinch" || targetGrappleState === "clinch"
+          isGrappleOpponent && (enemyGrappleState === "clinch" || targetGrappleState === "clinch")
             ? "clinch"
-            : isGrappleOpponent || enemyGrappleState || targetGrappleState
+            : isGrappleOpponent
               ? "grapple"
               : (Number(enemy?.routingExhaustedCowerCount ?? enemy?.moraleState?.exhaustedCowerCount) || 0) > 0
                 ? "cower-overlap"
@@ -35119,10 +35179,7 @@ function CombatPage({ characters = [] }) {
       if (enemy?.type === "enemy" && selectedAttack) {
         const { attack: normalized } = resolveEnemyEffectiveAttack(enemy, selectedAttack, {
           preferRanged: true,
-          grappleRange:
-            getGrappleStatus(enemy).state !== GRAPPLE_STATES.NEUTRAL ||
-            getGrappleStatus(target).state !== GRAPPLE_STATES.NEUTRAL ||
-            currentDistance <= 0,
+          grappleRange: hasReciprocalGrapplePair(enemy, target),
         });
         selectedAttack = normalized;
         attackName = selectedAttack?.name || attackName;
@@ -35149,10 +35206,7 @@ function CombatPage({ characters = [] }) {
 
         const { attack: normalizedFallback } = resolveEnemyEffectiveAttack(enemy, closeRangeFallback, {
           preferRanged: false,
-          grappleRange:
-            getGrappleStatus(enemy).state !== GRAPPLE_STATES.NEUTRAL ||
-            getGrappleStatus(target).state !== GRAPPLE_STATES.NEUTRAL ||
-            currentDistance <= 0,
+          grappleRange: hasReciprocalGrapplePair(enemy, target),
         });
         selectedAttack = normalizedFallback;
         attackName = selectedAttack?.name || closeRangeFallback.name;
@@ -37498,14 +37552,36 @@ function CombatPage({ characters = [] }) {
     const liveInlineRosterForGrapple = fightersRef.current ?? fighters ?? [];
     const liveInlineEnemyForGrapple = liveInlineRosterForGrapple.find((fighter) => fighter?.id === enemy?.id) || enemy;
     const liveInlineTargetForGrapple = liveInlineRosterForGrapple.find((fighter) => fighter?.id === target?.id) || target;
-    const inlineEnemyGrappleStateText = String(liveInlineEnemyForGrapple?.grappleState?.state || "neutral").toLowerCase();
-    const inlineTargetGrappleStateText = String(liveInlineTargetForGrapple?.grappleState?.state || "neutral").toLowerCase();
-    const inlineActiveGrappleObligation = Boolean(
-      (liveInlineEnemyForGrapple?.grappleState?.opponent === liveInlineTargetForGrapple?.id && inlineEnemyGrappleStateText !== "neutral") ||
-      (liveInlineEnemyForGrapple?.grappleState?.opponentId === liveInlineTargetForGrapple?.id && inlineEnemyGrappleStateText !== "neutral") ||
-      (liveInlineTargetForGrapple?.grappleState?.opponent === liveInlineEnemyForGrapple?.id && inlineTargetGrappleStateText !== "neutral") ||
-      (liveInlineTargetForGrapple?.grappleState?.opponentId === liveInlineEnemyForGrapple?.id && inlineTargetGrappleStateText !== "neutral")
+    const inlineDecisionRoster = sanitizeGrappleDecisionRoster(liveInlineRosterForGrapple);
+    const inlineDecisionEnemy =
+      inlineDecisionRoster.find((fighter) => fighter?.id === enemy?.id) ||
+      sanitizeGrappleDecisionSnapshot(enemy, inlineDecisionRoster);
+    const inlineDecisionTarget =
+      inlineDecisionRoster.find((fighter) => fighter?.id === target?.id) ||
+      sanitizeGrappleDecisionSnapshot(target, inlineDecisionRoster);
+    const inlineActiveGrappleObligation =
+      hasReciprocalGrapplePair(inlineDecisionEnemy, inlineDecisionTarget) === true;
+    const inlineNonReciprocalMetadata = getNonReciprocalGrappleMetadata(
+      inlineDecisionEnemy,
+      inlineDecisionTarget,
     );
+    if (!inlineActiveGrappleObligation && inlineNonReciprocalMetadata) {
+      addLog?.({
+        audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+        channel: COMBAT_LOG_CHANNELS.VALIDATION,
+        eventType: "third-party-grapple-ignored",
+        level: "warning",
+        type: "warning",
+        actorId: enemy.id,
+        targetId: target.id,
+        source: "enemy-inline-attack",
+        message:
+          `third-party grapple ignored: actorId=${inlineNonReciprocalMetadata.actorId} ` +
+          `targetId=${inlineNonReciprocalMetadata.targetId} ` +
+          `targetOpponentId=${inlineNonReciprocalMetadata.targetOpponentId || "none"}`,
+        data: inlineNonReciprocalMetadata,
+      }, "warning");
+    }
     if (inlineActiveGrappleObligation) {
       addLog?.({
         audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
@@ -37519,8 +37595,8 @@ function CombatPage({ characters = [] }) {
         message: `grapple-state-read: actorId=${enemy.id} opponentId=${target.id} active=true source=enemy-inline-attack`,
         data: {
           active: true,
-          actorGrappleState: liveInlineEnemyForGrapple?.grappleState,
-          targetGrappleState: liveInlineTargetForGrapple?.grappleState,
+          actorGrappleState: inlineDecisionEnemy?.grappleState,
+          targetGrappleState: inlineDecisionTarget?.grappleState,
         },
       }, "debug");
       addLog?.({
@@ -37585,11 +37661,11 @@ function CombatPage({ characters = [] }) {
         }, "debug");
       }
       const grappleRoute = resolveGrappleTurnAction({
-        actor: liveInlineEnemyForGrapple,
-        opponent: liveInlineTargetForGrapple,
-        grappleState: liveInlineEnemyForGrapple?.grappleState,
-        remainingActions: liveInlineEnemyForGrapple?.remainingActions,
-        availableClinchWeapons: liveInlineEnemyForGrapple?.attacks || enemy.attacks || [],
+        actor: inlineDecisionEnemy,
+        opponent: inlineDecisionTarget,
+        grappleState: inlineDecisionEnemy?.grappleState,
+        remainingActions: inlineDecisionEnemy?.remainingActions,
+        availableClinchWeapons: inlineDecisionEnemy?.attacks || enemy.attacks || [],
         generationId: combatSessionRef.current || "default",
         round: meleeRoundRef.current ?? meleeRound,
         initiativeIndex: turnIndexRef.current,
@@ -37683,8 +37759,8 @@ function CombatPage({ characters = [] }) {
     const inlineArmoredAction = (() => {
       try {
         return resolveArmoredCombatAction({
-          attacker: enemy,
-          defender: target,
+          attacker: inlineDecisionEnemy,
+          defender: inlineDecisionTarget,
           selectedWeapon: selectedAttack?.weapon || selectedAttack,
           distance: inlineEnemyDistance,
           remainingActions: enemy.remainingActions,
@@ -37698,7 +37774,7 @@ function CombatPage({ characters = [] }) {
           rng: rollArmoredTechniqueRng,
           rngSource: rngStateRef.current ? "seeded-combat-rng" : "crypto-dice",
           source: "enemy-inline-attack",
-          authoritativeTurn: getAuthoritativeInitiativeTurnSnapshot(enemy.id),
+          authoritativeTurn: getAuthoritativeInitiativeTurnSnapshot(inlineDecisionEnemy.id),
           addLog,
         });
       } catch (error) {

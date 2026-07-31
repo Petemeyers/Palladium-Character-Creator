@@ -8,7 +8,7 @@ const armoredResolver = fs.readFileSync("src/utils/ai/resolveArmoredCombatAction
 
 assert.match(
   armoredResolver,
-  /if\s*\(\s*hasActiveGrappleBetween\(attacker,\s*defender\)\s*\)[\s\S]*eventType:\s*"combat-obligation-routed"[\s\S]*eventType:\s*"standing-armored-selector-suppressed"[\s\S]*return\s*{[\s\S]*actionType:\s*"grapple-obligation"/,
+  /if\s*\(\s*hasReciprocalGrapplePair\(attacker,\s*defender\)\s*\)[\s\S]*eventType:\s*"combat-obligation-routed"[\s\S]*eventType:\s*"standing-armored-selector-suppressed"[\s\S]*return\s*{[\s\S]*actionType:\s*"grapple-obligation"/,
   "active grapple should route before standing armored selector selection",
 );
 assert.match(
@@ -26,8 +26,8 @@ assert.match(
 );
 assert.match(
   enemyTurnAI,
-  /executeGrapple\(enemy,\s*target,\s*grappleRoute\.grappleAction\?\.actionType \|\| grappleRoute\.actionType,\s*null,\s*\{[\s\S]{0,300}continuationAuthorization:/,
-  "enemy AI active-grapple route should enter the existing grapple handler",
+  /executeGrapple\(grappleDecisionActor,\s*grappleDecisionTarget,\s*grappleRoute\.grappleAction\?\.actionType \|\| grappleRoute\.actionType,\s*null,\s*\{[\s\S]{0,500}continuationAuthorization:/,
+  "enemy AI active-grapple route should dispatch the sanitized reciprocal decision snapshots",
 );
 
 assert.match(

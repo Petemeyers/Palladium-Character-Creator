@@ -9,19 +9,7 @@ import {
 } from "./selectArmoredCombatTechnique.js";
 import { validateArmoredTechniqueWeapon } from "../combat/armoredTechniqueWeaponValidation.js";
 import { createAuthoritativeArmoredPlanTurnIdentity } from "../combat/armoredActionPlanRegistry.js";
-
-function hasActiveGrappleBetween(attacker = {}, defender = {}) {
-  const attackerOpponent = attacker?.grappleState?.opponent || attacker?.grappleState?.opponentId;
-  const defenderOpponent = defender?.grappleState?.opponent || defender?.grappleState?.opponentId;
-  const attackerState = String(attacker?.grappleState?.state || "").toLowerCase();
-  const defenderState = String(defender?.grappleState?.state || "").toLowerCase();
-  return Boolean(
-    (attackerOpponent && attackerOpponent === (defender?.id || defender?._id)) ||
-    (defenderOpponent && defenderOpponent === (attacker?.id || attacker?._id)) ||
-    /grapple|clinch|pinned|held|ground/.test(attackerState) ||
-    /grapple|clinch|pinned|held|ground/.test(defenderState)
-  );
-}
+import { hasReciprocalGrapplePair } from "../combat/grapplePairing.js";
 
 function snapshotWeapon(weapon = {}) {
   return Object.freeze({
@@ -103,7 +91,7 @@ export function resolveArmoredCombatAction({
     };
   }
   const memoryKey = buildArmoredTacticalMemoryKey({ generationId, attackerId, defenderId });
-  if (hasActiveGrappleBetween(attacker, defender)) {
+  if (hasReciprocalGrapplePair(attacker, defender)) {
     addLog?.({
       audience: "developer",
       channel: "ai",

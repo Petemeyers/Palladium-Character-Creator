@@ -5,6 +5,7 @@ import {
   normalizeCombatWeaponState,
 } from "../combat/grappleWeaponTransitions.js";
 import { hasSufficientGroundControl } from "../combat/exhaustionCollapseState.js";
+import { hasReciprocalGrapplePair } from "../combat/grapplePairing.js";
 
 function text(value) {
   return String(value || "").toLowerCase();
@@ -17,13 +18,7 @@ export function getActiveGrappleOpponent(actor = {}, fighters = []) {
 }
 
 export function hasActiveGrappleState(actor = {}, opponent = null) {
-  const state = text(actor?.grappleState?.state);
-  const opponentState = text(opponent?.grappleState?.state);
-  const actorOpponent = actor?.grappleState?.opponent || actor?.grappleState?.opponentId;
-  const targetOpponent = opponent?.grappleState?.opponent || opponent?.grappleState?.opponentId;
-  if (actorOpponent && (!opponent || actorOpponent === opponent.id)) return state && state !== "neutral";
-  if (opponent && targetOpponent === actor?.id) return opponentState && opponentState !== "neutral";
-  return /grapple|clinch|ground|pinned|held|restrained/.test(state);
+  return hasReciprocalGrapplePair(actor, opponent);
 }
 
 export function resolveGrappleTurnAction({

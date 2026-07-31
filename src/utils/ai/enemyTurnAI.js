@@ -116,6 +116,10 @@ import {
   resolveLiveWildlifeTurnContext,
   resolveWildlifeEscapeRoute,
 } from "../combat/liveWildlifeConcealmentRanged.js";
+import {
+  getNonReciprocalGrappleMetadata,
+  hasReciprocalGrapplePair,
+} from "../combat/grapplePairing.js";
 
 const finiteNumber = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
 
@@ -1712,6 +1716,28 @@ export function runEnemyTurnAI(enemy, context) {
     typeof dispatchGrappleTurnAction === "function"
       ? dispatchGrappleTurnAction
       : executeGrappleFromContext;
+  let thirdPartyGrappleDiagnosticEmitted = false;
+  const reportIgnoredNonReciprocalGrapple = (actor, target) => {
+    if (thirdPartyGrappleDiagnosticEmitted) return false;
+    const metadata = getNonReciprocalGrappleMetadata(actor, target);
+    if (!metadata) return false;
+    thirdPartyGrappleDiagnosticEmitted = true;
+    addLog?.({
+      audience: "developer",
+      channel: "validation",
+      eventType: "third-party-grapple-ignored",
+      level: "warning",
+      type: "warning",
+      actorId: metadata.actorId,
+      targetId: metadata.targetId,
+      source: "enemy-ai-grapple-pairing",
+      message:
+        `third-party grapple ignored: actorId=${metadata.actorId} targetId=${metadata.targetId} ` +
+        `targetOpponentId=${metadata.targetOpponentId || "none"}`,
+      data: metadata,
+    }, "warning");
+    return true;
+  };
   if (context.continuationAuthorization) {
     const continuationAuthorization = context.continuationAuthorization;
     addLog?.({
@@ -4919,11 +4945,17 @@ export function runEnemyTurnAI(enemy, context) {
         "info",
       );
 
-      const enemyGrappleStateText = String(enemy?.grappleState?.state || "neutral").toLowerCase();
-      const targetGrappleStateText = String(target?.grappleState?.state || "neutral").toLowerCase();
-      const activeGrappleObligation =
-        (enemy?.grappleState?.opponent && enemy.grappleState.opponent === target?.id && enemyGrappleStateText !== "neutral") ||
-        (target?.grappleState?.opponent && target.grappleState.opponent === enemy?.id && targetGrappleStateText !== "neutral");
+      // Grapple decisions must use the disposable roster snapshots supplied by
+      // CombatPage. Never replace either side with an unsanitized live object.
+      const grappleDecisionActor = fighters.find((fighter) => fighter?.id === enemy?.id) || null;
+      const grappleDecisionTarget = fighters.find((fighter) => fighter?.id === target?.id) || null;
+      const activeGrappleObligation = hasReciprocalGrapplePair(
+        grappleDecisionActor,
+        grappleDecisionTarget,
+      );
+      if (!activeGrappleObligation) {
+        reportIgnoredNonReciprocalGrapple(grappleDecisionActor, grappleDecisionTarget);
+      }
       if (activeGrappleObligation && typeof executeGrapple !== "function") {
         addLog?.({
           audience: "developer",
@@ -4962,10 +4994,10 @@ export function runEnemyTurnAI(enemy, context) {
           }, "debug");
         }
         const grappleRoute = resolveGrappleTurnAction({
-          actor: enemy,
-          opponent: target,
-          grappleState: enemy?.grappleState,
-          remainingActions: enemy?.remainingActions,
+          actor: grappleDecisionActor,
+          opponent: grappleDecisionTarget,
+          grappleState: grappleDecisionActor?.grappleState,
+          remainingActions: grappleDecisionActor?.remainingActions,
           availableClinchWeapons: availableAttacks,
           generationId: context.combatSession || "default",
           round: context.meleeRound,
@@ -5013,7 +5045,7 @@ export function runEnemyTurnAI(enemy, context) {
             data: { ...context.continuationAuthorization, receiptPresent: true },
           }, "debug");
         }
-        const launched = executeGrapple(enemy, target, grappleRoute.grappleAction?.actionType || grappleRoute.actionType, null, { continuationKey: context.continuationKey || null, continuationAuthorization: context.continuationAuthorization || null, source: "remaining-action-continuation" });
+        const launched = executeGrapple(grappleDecisionActor, grappleDecisionTarget, grappleRoute.grappleAction?.actionType || grappleRoute.actionType, null, { continuationKey: context.continuationKey || null, continuationAuthorization: context.continuationAuthorization || null, source: "remaining-action-continuation" });
         processingEnemyTurnRef.current = false;
         if (!launched) {
           addLog?.({
@@ -5037,8 +5069,8 @@ export function runEnemyTurnAI(enemy, context) {
       let armoredAction;
       try {
         armoredAction = resolveArmoredCombatAction({
-          attacker: enemy,
-          defender: target,
+          attacker: grappleDecisionActor,
+          defender: grappleDecisionTarget,
           selectedWeapon: selectedAttack?.weapon || selectedAttack,
           distance: currentDistance,
           remainingActions: enemy.remainingActions,
