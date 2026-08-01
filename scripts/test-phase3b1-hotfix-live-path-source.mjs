@@ -17,7 +17,8 @@ assert.match(combatPage, /recordArmoredTacticalOutcome\(getArmoredMemoryStore\(\
 assert.match(combatPage, /outcomeType:\s*"successful-gap-hit"/, "successful gap hits should be recorded before damage continues");
 assert.match(combatPage, /eventType:\s*"remaining-action-decision"/, "finalizeAttackSpend should decide remaining-action continuation");
 assert.match(combatPage, /remainingActionContinuationRegistryRef/, "same-fighter continuation should be registry-deduped");
-assert.match(combatPage, /eventType:\s*"stamina-boundary-applied"/, "fighter commits should clamp negative stamina storage");
+assert.match(combatPage, /spendCombatStamina as spendCanonicalCombatStamina/, "fighter commits should use shared stamina authority");
+assert.match(combatPage, /allowOverexertion:\s*overexertionPolicy\.allowOverexertion/, "fighter commits should preserve only policy-authorized stamina debt");
 
 assert.match(adapter, /eventType:\s*"armored-selector-invoked"/, "adapter should log selector invocation");
 assert.match(adapter, /eventType:\s*"armored-action-plan-created"/, "adapter should create structured armored action plans");

@@ -16,7 +16,8 @@ assert.match(source, /turn advance blocked: actor=\$\{formatCombatActorLabel/, "
 assert.match(source, /eventType:\s*"remaining-action-continuation"/, "Remaining-action continuation should be structurally logged");
 assert.match(source, /eventType:\s*"remaining-action-decision"/, "Action spend should make an authoritative remaining-action decision");
 assert.match(source, /eventType:\s*"remaining-action-continuation-created"/, "Same-fighter continuation should be created before initiative handoff");
-assert.match(source, /eventType:\s*"stamina-boundary-applied"/, "Canonical fighter commits should guard against negative stamina storage");
+assert.match(source, /spendCombatStamina as spendCanonicalCombatStamina/, "CombatPage should import canonical stamina authority");
+assert.match(source, /allowOverexertion:\s*overexertionPolicy\.allowOverexertion/, "Canonical fighter commits should preserve only authorized stamina debt");
 assert.match(source, /eventType:\s*"armored-selector-bypassed"/, "Plate-aware attack backstop should detect selector bypasses");
 assert.match(source, /resolveArmoredCombatAction\(\{[\s\S]*source:\s*"worker-ai-attack-fallback"/, "Worker/fallback AI attack path should use shared armored adapter");
 assert.match(source, /handleEnemyTurnRef\.current\?\.\(liveCurrent,\s*"remaining-action-continuation"/, "Enemy remaining actions should re-enter authoritative scheduling");

@@ -29,8 +29,13 @@ assert.doesNotMatch(
 
 assert.match(
   combatPage,
-  /fumbleHandoffVerified =[\s\S]*?meleeRoundRef\.current[\s\S]*?turnIndexRef\.current[\s\S]*?turnCounterRef\.current[\s\S]*?activeAfterFumble\?\.id === fumbleCompletionDecision\.nextActorId/,
-  "fumble completion should verify round, index, counter, and next actor before accepted=true.",
+  /const currentFumbleCoordinate = createInitiativeCoordinate\(\{[\s\S]*?round:\s*meleeRoundRef\.current[\s\S]*?initiativeIndex:\s*turnIndexRef\.current[\s\S]*?turnCounter:\s*turnCounterRef\.current[\s\S]*?actorId:\s*activeAfterFumble\?\.id/,
+  "fumble completion should capture the current canonical round, index, counter, and actor coordinate.",
+);
+assert.match(
+  combatPage,
+  /const fumbleCoordinateMatches = Boolean\([\s\S]*?currentFumbleCoordinate\.generationId[\s\S]*?currentFumbleCoordinate\.round[\s\S]*?currentFumbleCoordinate\.initiativeIndex[\s\S]*?currentFumbleCoordinate\.turnCounter[\s\S]*?currentFumbleCoordinate\.actorId[\s\S]*?currentFumbleCoordinate\.initiativeTurnId/,
+  "fumble completion should compare the complete authoritative initiative coordinate before accepted=true.",
 );
 
 console.log("✅ Phase 3B1 round-wrap fumble handoff source tests passed");

@@ -23,8 +23,13 @@ assert.match(
 
 assert.match(
   combatPage,
-  /eventType:\s*"fumble-turn-handoff-incomplete"[\s\S]*?accepted:\s*Boolean\(finalized && fumbleHandoffVerified\)/,
-  "fumble handoff completion should not report accepted=true unless actor handoff is verified.",
+  /const fumbleHandoffVerified =[\s\S]*?fumbleCompletionDecision\?\.accepted === true[\s\S]*?fumbleCoordinateMatches[\s\S]*?initiativeTurnAdvanced[\s\S]*?!continuationRemains/,
+  "fumble handoff should require an accepted completion, matching coordinate, advanced turn identity, and no continuation.",
+);
+assert.match(
+  combatPage,
+  /eventType:\s*"fumble-turn-handoff-completed"[\s\S]*?accepted:\s*fumbleHandoffVerified/,
+  "fumble completion must report the canonical handoff verification result.",
 );
 
 console.log("✅ Phase 3B1 fumble exhaustion source checks passed");
