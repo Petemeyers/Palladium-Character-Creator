@@ -15,9 +15,10 @@ assert.match(
   "approach action consumption should not overwrite the newly committed fighter position",
 );
 assert.match(combatPageSource, /const commitPlayerAIPosition = \(fighterLike, destination, source = "player-ai-movement"\) => \{/);
-assert.match(combatPageSource, /positionsRef\.current = updatedPositions/);
-assert.match(combatPageSource, /committedPositionsRef\.current = \{\s+\.\.\.\(committedPositionsRef\.current \|\| \{\}\),\s+\[fighterLike\.id\]: \{ \.\.\.nextPosition \},\s+\}/);
-assert.match(combatPageSource, /recordLastMovementCommit\(fighterLike\.id, nextPosition, source\)/);
+assert.match(combatPageSource, /handlePositionChange\(fighterLike\.id, nextPosition, \{/);
+assert.match(combatPageSource, /persistImmediately: true/);
+assert.match(combatPageSource, /commitCanonicalMovement\(\{/);
+assert.match(combatPageSource, /recordLastMovementCommit\(combatantId, nextPosition, movementSource\)/);
 assert.match(combatPageSource, /position: \{ \.\.\.nextPosition \}/);
 assert.match(combatPageSource, /hex: fighter\.hex \? \{ \.\.\.nextPosition \} : fighter\.hex/);
 assert.match(

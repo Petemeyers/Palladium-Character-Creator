@@ -13,5 +13,5 @@ assert.ok(
   handler.indexOf("findSurvivalIntentDestination({") < handler.indexOf("withdraws toward allied formation"),
   "team-center browser path resolves and executes its destination",
 );
-assert.match(handler, /setPositions\(nextPositions\)/);
+assert.match(handler, /commitAuthoritativeCombatPosition\(fighter\.id, destination/);
 console.log("survival intent team-center browser-path movement test passed");

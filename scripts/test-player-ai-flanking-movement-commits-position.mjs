@@ -65,8 +65,9 @@ assert.match(playerTurnAISource, /commitPlayerAIPosition\(player, bestFlankPos, 
 assert.match(playerTurnAISource, /flanking post-move continuation: inRange=/);
 
 assert.match(combatPageSource, /const commitPlayerAIPosition = \(fighterLike, destination, source = "player-ai-movement"\) =>/);
-assert.match(combatPageSource, /positionsRef\.current = updatedPositions/);
-assert.match(combatPageSource, /committedPositionsRef\.current = \{\s+\.\.\.\(committedPositionsRef\.current \|\| \{\}\),\s+\[fighterLike\.id\]: \{ \.\.\.nextPosition \}/);
+assert.match(combatPageSource, /handlePositionChange\(fighterLike\.id, nextPosition, \{/);
+assert.match(combatPageSource, /persistImmediately: true/);
+assert.match(combatPageSource, /source,/);
 assert.match(combatPageSource, /position: \{ \.\.\.nextPosition \}/);
 assert.match(
   combatPageSource,

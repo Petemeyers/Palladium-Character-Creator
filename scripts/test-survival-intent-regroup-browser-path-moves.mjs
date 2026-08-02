@@ -7,7 +7,7 @@ const end = source.indexOf("const preserveTrainingWithstamina", start);
 const handler = source.slice(start, end);
 
 const resolveIndex = handler.indexOf("findSurvivalIntentDestination({");
-const movementIndex = handler.indexOf("setPositions(nextPositions)");
+const movementIndex = handler.indexOf("commitAuthoritativeCombatPosition(fighter.id, destination");
 const cowerIndex = handler.indexOf("cannot find a safe ${fallbackLabel} path and cowers in place");
 assert.ok(resolveIndex >= 0 && resolveIndex < movementIndex, "browser route resolves a destination before movement");
 assert.ok(movementIndex < cowerIndex, "reachable movement executes before the cower fallback");

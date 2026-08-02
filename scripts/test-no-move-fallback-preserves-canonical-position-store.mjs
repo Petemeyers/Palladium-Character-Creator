@@ -90,7 +90,11 @@ assert.match(combatPageSource, /committedPositionsRef\.current = \{/);
 assert.match(combatPageSource, /positions: \{\s+\.\.\.\(positionsRef\.current \?\? \{\}\),\s+\[latestFighter\.id\]: \{ \.\.\.canonicalPosition \},\s+\}/);
 assert.match(combatPageSource, /lastKnownPositions: \{\s+\.\.\.\(committedPositionsRef\.current \?\? \{\}\),\s+\[latestFighter\.id\]: \{ \.\.\.canonicalPosition \},\s+\}/);
 assert.match(combatPageSource, /resolveLatestNoMovePosition\(\s*enemy\.id,\s*enemy,\s*latestEnemyForSnapshot,\s*approachFinalizerSource,\s*\) \|\| currentPos/);
-assert.match(combatPageSource, /committedPositionsRef\.current = \{\s+\.\.\.\(committedPositionsRef\.current \|\| \{\}\),\s+\[fighter\.id\]: \{ \.\.\.destination \}/);
+assert.match(
+  combatPageSource,
+  /commitAuthoritativeCombatPosition\(fighter\.id, destination, source \|\| "routed-survival-movement"\)/,
+  "routed survival movement uses the shared synchronous position authority transaction",
+);
 assert.match(combatPageSource, /committedPositionsRef\.current = \{\s+\.\.\.\(committedPositionsRef\.current \|\| \{\}\),\s+\[enemy\.id\]: \{ x: targetX, y: targetY \}/);
 assert.match(combatPageSource, /const livePositions = pickNonEmptyObject\(\s+committedPositionsRef\.current/);
 

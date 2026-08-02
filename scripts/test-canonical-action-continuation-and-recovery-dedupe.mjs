@@ -53,6 +53,8 @@ assert.match(source, /scheduleEnemyAIEndTurn\(getMoveDurationMs\(distanceMoved\)
 assert.match(source, /scheduleEnemyAIEndTurn\(getMoveDurationMs\(5\), "enemy-flight-circle"\)/);
 assert.match(source, /scheduleEnemyAIEndTurn\(getMoveDurationMs\(5\), "enemy-flight-scout"\)/);
 assert.match(source, /canonical player AI action completion: actor=/);
-assert.match(source, /handlePlayerAITurnRef\.current\?\.\(refreshedPlayer, \{/);
+assert.match(source, /queuePlayerAIContinuationAfterOwnerRelease\(executionOwnership\.executionKey\)/);
+assert.match(source, /handlePlayerAITurnRef\.current\?\.\(liveActor, \{/);
+assert.doesNotMatch(source, /completePlayerAIContinuation\("player-ai-remaining-action-continuation-start"\)/);
 
 console.log("canonical action continuation and recovery dedupe tests passed");
