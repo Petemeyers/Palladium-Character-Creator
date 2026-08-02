@@ -395,6 +395,15 @@ import {
 } from "../utils/combat/noMovePositionPreservation.js";
 import { commitPositionAuthoritySnapshot } from "../utils/combat/positionAuthorityAudit.js";
 import {
+  COMBAT_TIMING_MODES,
+  createTacticalPulseClock,
+  formatTacticalBattleTime,
+} from "../utils/combat/tacticalPulseClock.js";
+import {
+  createTacticalPulseRuntime,
+  resolveTacticalPulse,
+} from "../utils/combat/tacticalPulseResolver.js";
+import {
   COMBAT_LOG_AUDIENCES,
   COMBAT_LOG_CHANNELS,
   selectCombatEventsByAudience,
@@ -3575,6 +3584,13 @@ function CombatPage({ characters = [] }) {
   const [turnCounter, setTurnCounter] = useState(0); // Track absolute turn number (increments every turn)
   const [combatActive, setCombatActive] = useState(false);
   const [combatPaused, setCombatPaused] = useState(false); // Pause/resume combat flow
+  const [combatTimingMode, setCombatTimingMode] = useState(COMBAT_TIMING_MODES.SEQUENTIAL);
+  const combatTimingModeRef = useRef(COMBAT_TIMING_MODES.SEQUENTIAL);
+  const [tacticalPulseClock, setTacticalPulseClock] = useState(() => createTacticalPulseClock());
+  const [tacticalPulsesRunning, setTacticalPulsesRunning] = useState(false);
+  useEffect(() => {
+    combatTimingModeRef.current = combatTimingMode;
+  }, [combatTimingMode]);
   useEffect(() => {
     if (!combatActive || combatPaused) {
       flushQueuedLogEntries({ immediate: true });
@@ -3702,6 +3718,8 @@ function CombatPage({ characters = [] }) {
   const committedPositionsRef = useRef(positions);
   const lastMovementCommitRef = useRef({});
   const movementCommitSequenceRef = useRef(0);
+  const tacticalPulseRuntimeRef = useRef(createTacticalPulseRuntime());
+  const tacticalPulseRunRef = useRef(false);
   const liveWildlifeRegistryRef = useRef(createLiveWildlifeRegistry());
   const surrenderResolutionEntryKeysRef = useRef(new Set());
   const surrenderLifecycleRegistryRef = useRef(createSurrenderLifecycleRegistry());
@@ -5460,6 +5478,117 @@ function CombatPage({ characters = [] }) {
     }
     return spendResult;
   }, [addLog]);
+
+  const emitTacticalPulseEvent = useCallback((pulseEvent) => {
+    const actor = (fightersRef.current || []).find((candidate) => (
+      String(getCombatActorId(candidate) ?? "") === String(pulseEvent.actorId ?? "")
+    ));
+    const data = pulseEvent.data || {};
+    const isFailure = pulseEvent.eventType === "tactical-pulse-position-authority-audit" && data.matches === false;
+    addLog?.({
+      audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+      channel: pulseEvent.eventType.includes("step") ? COMBAT_LOG_CHANNELS.MOVEMENT : COMBAT_LOG_CHANNELS.STATE,
+      eventType: pulseEvent.eventType,
+      level: isFailure ? "error" : "info",
+      type: isFailure ? "error" : "debug",
+      actorId: pulseEvent.actorId,
+      source: "tactical-pulse",
+      message:
+        `${pulseEvent.eventType}: generation=${pulseEvent.generationId} pulse=${pulseEvent.pulseIndex} ` +
+        `actorId=${pulseEvent.actorId || "none"}`,
+      data,
+    }, isFailure ? "error" : "debug");
+    if (pulseEvent.eventType === "tactical-step-committed" && actor) {
+      addLog?.({
+        audience: COMBAT_LOG_AUDIENCES.PLAYER,
+        channel: COMBAT_LOG_CHANNELS.MOVEMENT,
+        eventType: "tactical-step-committed",
+        level: "info",
+        type: "info",
+        actorId: String(getCombatActorId(actor) ?? ""),
+        source: "tactical-pulse",
+        message: `${actor.battleLabel || actor.displayName || actor.name} moves one hex.`,
+        data,
+      }, "info");
+    }
+  }, [addLog]);
+
+  const advanceOneTacticalPulse = useCallback(async () => {
+    if (combatTimingMode !== COMBAT_TIMING_MODES.TACTICAL_PULSE || !combatActiveRef.current || combatOverRef.current) {
+      return { accepted: false, reason: "tactical-pulse-mode-inactive" };
+    }
+    const runtime = tacticalPulseRuntimeRef.current;
+    const result = await resolveTacticalPulse({
+      runtime,
+      fighters: fightersRef.current || [],
+      positions: positionsRef.current || {},
+      committedPositions: committedPositionsRef.current || {},
+      spendStamina: ({ actor, actorId, amount, pulseIndex, movementMode, intentId }) => spendCombatStamina({
+        fighter: actor,
+        amount,
+        reason: "movement",
+        source: "tactical-pulse",
+        executionKey: `${runtime.generationId}:${pulseIndex}:${actorId}:${movementMode}:${intentId}`,
+      }),
+      commitPosition: ({ actorId, to, pulseIndex, stepPass }) => {
+        if (
+          runtime.generationId !== endTurnGenerationRef.current ||
+          runtime.combatSession !== combatSessionRef.current
+        ) {
+          return { accepted: false, reason: "stale-generation-step-blocked" };
+        }
+        const committed = commitAuthoritativeCombatPosition(actorId, to, `tactical-pulse:${pulseIndex}:step-${stepPass}`);
+        if (committed.accepted) {
+          const nextRenderPositions = {
+            ...(renderPositionsRef.current || {}),
+            [actorId]: { ...(renderPositionsRef.current?.[actorId] || {}), x: to.x, y: to.y },
+          };
+          renderPositionsRef.current = nextRenderPositions;
+          setRenderPositions(nextRenderPositions);
+        }
+        return committed;
+      },
+      readPositionAuthorities: ({ actorId }) => {
+        const actor = (fightersRef.current || []).find((candidate) => (
+          String(getCombatActorId(candidate) ?? "") === String(actorId ?? "")
+        ));
+        return {
+          fighterPosition: actor?.position || { x: actor?.x, y: actor?.y },
+          positionsRefPosition: positionsRef.current?.[actorId] || null,
+          renderedStatePosition: renderPositionsRef.current?.[actorId] || null,
+          committedPosition: committedPositionsRef.current?.[actorId] || null,
+        };
+      },
+      onEvent: emitTacticalPulseEvent,
+    });
+    if (result.accepted) setTacticalPulseClock(result.clock);
+    else if (!String(result.reason || "").includes("overlap")) {
+      addLog(`Tactical pulse blocked: ${result.reason || "unknown reason"}.`, "warning");
+    }
+    return result;
+  }, [addLog, combatTimingMode, commitAuthoritativeCombatPosition, emitTacticalPulseEvent, spendCombatStamina]);
+
+  const runTacticalPulses = useCallback(async (count = 6) => {
+    if (tacticalPulseRunRef.current) return false;
+    tacticalPulseRunRef.current = true;
+    setTacticalPulsesRunning(true);
+    try {
+      for (let index = 0; index < count && tacticalPulseRunRef.current; index += 1) {
+        const result = await advanceOneTacticalPulse();
+        if (!result.accepted) break;
+        await new Promise((resolve) => setTimeout(resolve, 16));
+      }
+    } finally {
+      tacticalPulseRunRef.current = false;
+      setTacticalPulsesRunning(false);
+    }
+    return true;
+  }, [advanceOneTacticalPulse]);
+
+  const pauseTacticalPulses = useCallback(() => {
+    tacticalPulseRunRef.current = false;
+    setTacticalPulsesRunning(false);
+  }, []);
 
   useEffect(() => {
     if (combatActive || originalBattleLedgerFinalizedRef.current) return;
@@ -13407,6 +13536,19 @@ function CombatPage({ characters = [] }) {
 
   const startTurnOnce = useCallback((fighter, index, reason) => {
     if (!fighter) return false;
+
+    if (combatTimingModeRef.current === COMBAT_TIMING_MODES.TACTICAL_PULSE) {
+      addLog?.({
+        type: "sequential-turn-start-suppressed-by-tactical-pulse",
+        message: `sequential turn start suppressed by tactical pulse: actor=${fighter.name} reason=${reason}`,
+        data: {
+          actorId: fighter.id,
+          reason,
+          combatTimingMode: COMBAT_TIMING_MODES.TACTICAL_PULSE,
+        },
+      }, "debug");
+      return false;
+    }
 
     const activeIndex = turnIndexRef.current;
     if (index !== activeIndex) {
@@ -43715,13 +43857,38 @@ function CombatPage({ characters = [] }) {
     setMode("COMBAT"); // Ensure mode is set to COMBAT so icons astaminaar on the map
 
     addLog("Combat Started!", "combat");
-    addLog(`Round 1 · approximately ${COMBAT_ROUND_SECONDS} seconds begins - Actions will alternate in initiative order`, "info");
-    addLog(`Initiative Order: ${updatedFighters.map(f => `${f.name} (${f.initiative})`).join(", ")}`, "info");
+    if (combatTimingMode === COMBAT_TIMING_MODES.TACTICAL_PULSE) {
+      addLog("Tactical cycle 1 begins — movement resolves in simultaneous one-second pulses.", "info");
+    } else {
+      addLog(`Round 1 · approximately ${COMBAT_ROUND_SECONDS} seconds begins — Actions will alternate in initiative order`, "info");
+      addLog(`Initiative Order: ${updatedFighters.map(f => `${f.name} (${f.initiative})`).join(", ")}`, "info");
+    }
 
     // Start of combat: apply courage/holy aura bonuses + fear dfocusel for Round 1
     processCourageAuras(updatedFighters, positionMap, addLog);
     const firstEligibleIndex = updatedFighters.findIndex((fighter) => canFighterAct(fighter));
-    if (firstEligibleIndex >= 0) {
+    if (combatTimingMode === COMBAT_TIMING_MODES.TACTICAL_PULSE) {
+      const clock = createTacticalPulseClock();
+      const tacticalGeneration = endTurnGenerationRef.current;
+      tacticalPulseRuntimeRef.current = createTacticalPulseRuntime({
+        generationId: tacticalGeneration,
+        combatSession: combatSessionRef.current,
+        clock,
+      });
+      tacticalPulseRunRef.current = false;
+      setTacticalPulsesRunning(false);
+      setTacticalPulseClock(clock);
+      addLog?.({
+        audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+        channel: COMBAT_LOG_CHANNELS.STATE,
+        eventType: "tactical-pulse-mode-initialized",
+        level: "info",
+        type: "debug",
+        source: "combat-start",
+        message: `tactical pulse mode initialized: generation=${tacticalGeneration} pulse=0 cycle=1`,
+        data: { generationId: tacticalGeneration, combatSession: combatSessionRef.current, clock },
+      }, "debug");
+    } else if (firstEligibleIndex >= 0) {
       startTurnOnce(
         updatedFighters[firstEligibleIndex],
         firstEligibleIndex,
@@ -45705,6 +45872,11 @@ function CombatPage({ characters = [] }) {
 
   function resetCombat() {
     try {
+      tacticalPulseRunRef.current = false;
+      setTacticalPulsesRunning(false);
+      const resetPulseClock = createTacticalPulseClock();
+      setTacticalPulseClock(resetPulseClock);
+      tacticalPulseRuntimeRef.current = createTacticalPulseRuntime({ clock: resetPulseClock });
       const combatReset = resetCombatExecutionState({
         advanceGeneration: true,
         source: "reset-combat",
@@ -47023,6 +47195,25 @@ function CombatPage({ characters = [] }) {
                   ))}
                 </Select>
               </FormControl>
+              <FormControl width={{ base: "100%", md: "190px" }}>
+                <FormLabel fontSize="xs" mb={1}>Combat Timing</FormLabel>
+                <Select
+                  size="sm"
+                  aria-label="Combat Timing Mode"
+                  value={combatTimingMode}
+                  onChange={(event) => {
+                    const nextTimingMode = event.target.value === COMBAT_TIMING_MODES.TACTICAL_PULSE
+                      ? COMBAT_TIMING_MODES.TACTICAL_PULSE
+                      : COMBAT_TIMING_MODES.SEQUENTIAL;
+                    combatTimingModeRef.current = nextTimingMode;
+                    setCombatTimingMode(nextTimingMode);
+                  }}
+                  isDisabled={combatActive}
+                >
+                  <option value={COMBAT_TIMING_MODES.SEQUENTIAL}>Sequential (Default)</option>
+                  <option value={COMBAT_TIMING_MODES.TACTICAL_PULSE}>Tactical Pulse</option>
+                </Select>
+              </FormControl>
               <Button
                 colorScheme="blue"
                 variant={showDeploymentModal ? "solid" : "outline"}
@@ -47184,6 +47375,25 @@ function CombatPage({ characters = [] }) {
           >
             {combatPaused ? "Resume" : "Pause"}
           </Button>
+
+          {combatActive && combatTimingMode === COMBAT_TIMING_MODES.TACTICAL_PULSE && (
+            <HStack spacing={2} flexWrap="wrap" data-testid="tactical-pulse-controls">
+              <Badge colorScheme="cyan" px={2} py={1}>
+                Battle Time: {formatTacticalBattleTime(tacticalPulseClock.elapsedSeconds)}
+              </Badge>
+              <Badge colorScheme="blue" px={2} py={1}>Pulse {tacticalPulseClock.pulseIndex + 1}</Badge>
+              <Badge colorScheme="purple" px={2} py={1}>Cycle {tacticalPulseClock.cycleIndex}</Badge>
+              <Button size="sm" colorScheme="cyan" onClick={advanceOneTacticalPulse} isDisabled={tacticalPulsesRunning}>
+                Advance One Pulse
+              </Button>
+              <Button size="sm" colorScheme="blue" onClick={() => runTacticalPulses(6)} isDisabled={tacticalPulsesRunning}>
+                Run Pulses
+              </Button>
+              <Button size="sm" colorScheme="yellow" variant="outline" onClick={pauseTacticalPulses} isDisabled={!tacticalPulsesRunning}>
+                Pause Pulses
+              </Button>
+            </HStack>
+          )}
 
           {/* AI Control Toggle - Available before and during combat */}
           <Button

@@ -1,5 +1,7 @@
 import { commitPositionAuthoritySnapshot } from "./positionAuthorityAudit.js";
+import { getCombatActorId } from "../combatActorIdentity.js";
 import {
+  abortTacticalPulseClock,
   completeTacticalPulseClock,
   createTacticalPulseClock,
   createTacticalPulseOwnership,
@@ -23,12 +25,37 @@ const event = (eventType, ownership, data = {}, actorId = data.actorId ?? null) 
   pulseIndex: ownership.pulseIndex, cycleIndex: ownership.cycleIndex,
   data: { generationId: ownership.generationId, combatSession: ownership.combatSession, pulseIndex: ownership.pulseIndex, cycleIndex: ownership.cycleIndex, ...data },
 });
-const actorIdOf = (actor) => String(actor?.id ?? actor?._id ?? "");
+const actorIdOf = (actor) => String(getCombatActorId(actor) ?? "");
 const staminaOf = (actor) => Number(actor?.currentStamina ?? actor?.currentstamina ?? actor?.stamina ?? 0) || 0;
 const canAct = (actor) => Boolean(actor && !actor.dead && !actor.isDead && !actor.unconscious && !actor.isUnconscious && !actor.defeated && !actor.isDefeated && actor.canAct !== false);
+const positionOf = (value) => {
+  const x = Number(value?.x ?? value?.position?.x ?? value?.hex?.x);
+  const y = Number(value?.y ?? value?.position?.y ?? value?.hex?.y);
+  return Number.isFinite(x) && Number.isFinite(y) ? { x, y } : null;
+};
+
+export function getTacticalInitiativePriority(actor = {}) {
+  const initiativeTotal = Number(
+    actor.currentInitiativeTotal ?? actor.initiativeTotal ?? actor.currentInitiative ?? actor.initiative ?? 0,
+  ) || 0;
+  const rankValue = Number(actor.currentInitiativeRank ?? actor.initiativeRank);
+  return {
+    initiativeTotal,
+    initiativeRank: Number.isFinite(rankValue) ? rankValue : Number.POSITIVE_INFINITY,
+  };
+}
+
+const MAX_COMPLETED_OWNERSHIP_HISTORY = 12;
 
 export function createTacticalPulseRuntime({ generationId = 0, combatSession = 0, clock = createTacticalPulseClock() } = {}) {
-  return { generationId: Number(generationId), combatSession: Number(combatSession), clock, ownership: null, completedOwnershipKeys: new Set(), staminaChargeKeys: new Set() };
+  return {
+    generationId: Number(generationId),
+    combatSession: Number(combatSession),
+    clock,
+    ownership: null,
+    completedOwnershipKeys: new Set(),
+    staminaChargeKeys: new Set(),
+  };
 }
 
 export function defaultTacticalPulseStaminaSpend({ actor, amount } = {}) {
@@ -53,6 +80,12 @@ export async function resolveTacticalPulse({
   isHexLegal,
   spendStamina = defaultTacticalPulseStaminaSpend,
   commitPosition,
+  readPositionAuthorities,
+  getInitiativePriority = getTacticalInitiativePriority,
+  transitionClock = transitionTacticalPulseClock,
+  completeClock = completeTacticalPulseClock,
+  abortClock = abortTacticalPulseClock,
+  commitInternalPosition = commitPositionAuthoritySnapshot,
   onEvent,
 } = {}) {
   if (!runtime || runtime.ownership) return { accepted: false, reason: "pulse-ownership-overlap", events: [] };
@@ -61,6 +94,7 @@ export async function resolveTacticalPulse({
   const owner = ownerResult.ownership;
   const key = ownershipKey(owner);
   if (runtime.completedOwnershipKeys.has(key)) return { accepted: false, reason: "duplicate-pulse-callback", events: [] };
+  runtime.staminaChargeKeys.clear();
   runtime.ownership = owner;
   const events = [];
   const emit = (entry) => { events.push(entry); onEvent?.(entry); };
@@ -75,6 +109,44 @@ export async function resolveTacticalPulse({
     positions: Object.freeze(Object.fromEntries(Object.entries(state.positions).map(([id, value]) => [id, Object.freeze({ ...value })]))),
   });
   const intents = new Map();
+  const abortPulse = (reason, details = {}) => {
+    for (const intent of intents.values()) {
+      if (!["completed", "blocked", "canceled", "expired"].includes(intent.state)) {
+        intent.state = "canceled";
+        emit(event("tactical-movement-intent-canceled", owner, {
+          actorId: intent.actorId,
+          intentId: intent.intentId,
+          reason,
+        }, intent.actorId));
+      }
+    }
+    const aborted = abortClock(runtime.clock);
+    if (aborted?.accepted) runtime.clock = aborted.clock;
+    runtime.staminaChargeKeys.clear();
+    if (runtime.ownership === owner) runtime.ownership = null;
+    emit(event("tactical-pulse-aborted", owner, {
+      reason,
+      state: runtime.clock?.state,
+      elapsedSeconds: runtime.clock?.elapsedSeconds,
+      ...details,
+    }));
+    return {
+      accepted: false,
+      reason,
+      ownership: owner,
+      clock: runtime.clock,
+      events,
+      intents: [...intents.values()],
+    };
+  };
+  const transitionTo = (nextState) => {
+    const transition = transitionClock(runtime.clock, nextState);
+    if (!transition?.accepted) {
+      return abortPulse(transition?.reason || "invalid-pulse-state-transition", { requestedState: nextState });
+    }
+    runtime.clock = transition.clock;
+    return null;
+  };
   try {
     for (const actor of snapshot.fighters.filter(isCombatCapable)) {
       const actorId = actorIdOf(actor);
@@ -93,14 +165,14 @@ export async function resolveTacticalPulse({
       if (planned?.attackOpportunity) emit(event("tactical-attack-opportunity-detected", owner, { actorId, targetActorId: intent.targetActorId, intentId: intent.intentId }, actorId));
     }
     emit(event("tactical-pulse-planning-completed", owner, { eligibleActorCount: snapshot.fighters.filter(isCombatCapable).length, intentCount: intents.size }));
-    let transition = transitionTacticalPulseClock(runtime.clock, TACTICAL_PULSE_STATES.INTENTIONS_LOCKED);
-    runtime.clock = transition.clock;
+    let rejectedLifecycle = transitionTo(TACTICAL_PULSE_STATES.INTENTIONS_LOCKED);
+    if (rejectedLifecycle) return rejectedLifecycle;
     for (const intent of intents.values()) {
       intent.state = "active";
       emit(event("tactical-movement-intent-locked", owner, { ...intent }, intent.actorId));
     }
-    transition = transitionTacticalPulseClock(runtime.clock, TACTICAL_PULSE_STATES.MOVEMENT_RESOLVING);
-    runtime.clock = transition.clock;
+    rejectedLifecycle = transitionTo(TACTICAL_PULSE_STATES.MOVEMENT_RESOLVING);
+    if (rejectedLifecycle) return rejectedLifecycle;
 
     for (const [actorId, intent] of intents) {
       const index = state.fighters.findIndex((actor) => actorIdOf(actor) === actorId);
@@ -112,6 +184,13 @@ export async function resolveTacticalPulse({
       }
       const amount = TACTICAL_STAMINA_PER_PULSE[intent.mode];
       const chargeKey = `${key}:${actorId}`;
+      if (amount === 0) {
+        emit(event("tactical-movement-stamina-evaluated", owner, {
+          actorId, intentId: intent.intentId, movementMode: intent.mode, amount, chargeKey,
+          result: "zero-cost",
+        }, actorId));
+        continue;
+      }
       if (!runtime.staminaChargeKeys.has(chargeKey)) {
         runtime.staminaChargeKeys.add(chargeKey);
         emit(event("tactical-movement-stamina-spend-requested", owner, {
@@ -138,7 +217,7 @@ export async function resolveTacticalPulse({
 
     const movedActorIds = new Set();
     for (let stepPass = 1; stepPass <= 3; stepPass += 1) {
-      if (!ownsCurrentPulse(runtime, owner)) return { accepted: false, reason: "stale-pulse-ownership", events };
+      if (!ownsCurrentPulse(runtime, owner)) return abortPulse("stale-pulse-ownership");
       const proposals = [];
       for (const [actorId, intent] of intents) {
         if (intent.state !== "active" || stepPass > TACTICAL_HEXES_PER_PULSE[intent.mode]) continue;
@@ -167,7 +246,10 @@ export async function resolveTacticalPulse({
         candidates.sort((left, right) => {
           const leftActor = state.fighters.find((actor) => actorIdOf(actor) === left.actorId);
           const rightActor = state.fighters.find((actor) => actorIdOf(actor) === right.actorId);
-          return (Number(rightActor?.initiative) || 0) - (Number(leftActor?.initiative) || 0)
+          const leftInitiative = getInitiativePriority(leftActor);
+          const rightInitiative = getInitiativePriority(rightActor);
+          return rightInitiative.initiativeTotal - leftInitiative.initiativeTotal
+            || leftInitiative.initiativeRank - rightInitiative.initiativeRank
             || TACTICAL_MOVEMENT_PRIORITY[right.intent.mode] - TACTICAL_MOVEMENT_PRIORITY[left.intent.mode]
             || left.actorId.localeCompare(right.actorId);
         });
@@ -182,13 +264,21 @@ export async function resolveTacticalPulse({
         }
       }
       for (const proposal of accepted) {
-        if (!ownsCurrentPulse(runtime, owner)) return { accepted: false, reason: "stale-generation-step-blocked", events };
+        if (!ownsCurrentPulse(runtime, owner)) return abortPulse("stale-generation-step-blocked");
         emit(event("tactical-step-accepted", owner, { actorId: proposal.actorId, intentId: proposal.intent.intentId, from: proposal.from, to: proposal.to, movementMode: proposal.intent.mode, stepPass }, proposal.actorId));
-        const internal = commitPositionAuthoritySnapshot({ ...state, actorId: proposal.actorId, position: proposal.to });
-        if (!internal.accepted) continue;
+        const internal = commitInternalPosition({ ...state, actorId: proposal.actorId, position: proposal.to });
+        if (!internal?.accepted) {
+          emit(event("tactical-step-commit-rejected", owner, {
+            actorId: proposal.actorId,
+            intentId: proposal.intent.intentId,
+            reason: internal?.reason || "internal-position-commit-rejected",
+            stepPass,
+          }, proposal.actorId));
+          return abortPulse(internal?.reason || "internal-position-commit-rejected");
+        }
         state = { fighters: internal.fighters, positions: internal.positions, committedPositions: internal.committedPositions };
         const external = await commitPosition?.({ actorId: proposal.actorId, from: proposal.from, to: proposal.to, movementMode: proposal.intent.mode, pulseIndex: owner.pulseIndex, stepPass, intentId: proposal.intent.intentId, ownership: owner });
-        if (external?.accepted === false) return { accepted: false, reason: external.reason || "external-position-commit-rejected", events };
+        if (external?.accepted === false) return abortPulse(external.reason || "external-position-commit-rejected");
         proposal.intent.nextStepIndex += 1;
         movedActorIds.add(proposal.actorId);
         emit(event("tactical-step-committed", owner, { actorId: proposal.actorId, intentId: proposal.intent.intentId, from: proposal.from, to: proposal.to, movementMode: proposal.intent.mode, stepPass, animationDurationMs: TACTICAL_ANIMATION_DURATION_MS[proposal.intent.mode], path: proposal.intent.path }, proposal.actorId));
@@ -199,24 +289,55 @@ export async function resolveTacticalPulse({
       if (intent.state === "active") intent.state = intent.nextStepIndex > 0 ? "completed" : "blocked";
       if (intent.state === "completed") emit(event("tactical-movement-intent-completed", owner, { ...intent }, intent.actorId));
     }
-    transition = transitionTacticalPulseClock(runtime.clock, TACTICAL_PULSE_STATES.REACTIONS_PENDING);
-    runtime.clock = transition.clock;
-    const audits = [...movedActorIds].map((actorId) => {
+    rejectedLifecycle = transitionTo(TACTICAL_PULSE_STATES.REACTIONS_PENDING);
+    if (rejectedLifecycle) return rejectedLifecycle;
+    const audits = [];
+    for (const actorId of movedActorIds) {
       const actor = state.fighters.find((candidate) => actorIdOf(candidate) === actorId);
-      const expected = state.committedPositions[actorId];
-      const fighterPosition = actor?.position || { x: actor?.x, y: actor?.y };
-      const refPosition = state.positions[actorId];
-      const matches = [fighterPosition, refPosition].every((candidate) => candidate?.x === expected?.x && candidate?.y === expected?.y);
-      return { actorId, committedPosition: expected, fighterPosition, positionsRefPosition: refPosition, statePosition: refPosition, matches };
-    });
-    emit(event("tactical-pulse-position-authority-audit", owner, { movedActorCount: movedActorIds.size, matches: audits.every((audit) => audit.matches), actors: audits }));
-    transition = transitionTacticalPulseClock(runtime.clock, TACTICAL_PULSE_STATES.COMPLETED);
-    runtime.clock = transition.clock;
-    const completed = completeTacticalPulseClock(runtime.clock);
+      if (typeof readPositionAuthorities === "function") {
+        const authorities = await readPositionAuthorities({ actorId, ownership: owner });
+        const fighterPosition = positionOf(authorities?.fighterPosition);
+        const positionsRefPosition = positionOf(authorities?.positionsRefPosition);
+        const renderedStatePosition = positionOf(authorities?.renderedStatePosition);
+        const committedPosition = positionOf(authorities?.committedPosition);
+        const candidates = [fighterPosition, positionsRefPosition, renderedStatePosition, committedPosition];
+        const matches = Boolean(committedPosition) && candidates.every((candidate) => (
+          candidate?.x === committedPosition.x && candidate?.y === committedPosition.y
+        ));
+        audits.push({ actorId, authorityScope: "external", fighterPosition, positionsRefPosition, renderedStatePosition, committedPosition, matches });
+      } else {
+        const resolverFighterPosition = positionOf(actor);
+        const resolverPosition = positionOf(state.positions[actorId]);
+        const resolverCommittedPosition = positionOf(state.committedPositions[actorId]);
+        const matches = Boolean(resolverCommittedPosition) && [resolverFighterPosition, resolverPosition].every((candidate) => (
+          candidate?.x === resolverCommittedPosition.x && candidate?.y === resolverCommittedPosition.y
+        ));
+        audits.push({ actorId, authorityScope: "resolver-internal", resolverFighterPosition, resolverPosition, resolverCommittedPosition, matches });
+      }
+    }
+    emit(event("tactical-pulse-position-authority-audit", owner, {
+      movedActorCount: movedActorIds.size,
+      authorityScope: typeof readPositionAuthorities === "function" ? "external" : "resolver-internal",
+      matches: audits.every((audit) => audit.matches),
+      actors: audits,
+    }));
+    rejectedLifecycle = transitionTo(TACTICAL_PULSE_STATES.COMPLETED);
+    if (rejectedLifecycle) return rejectedLifecycle;
+    const completed = completeClock(runtime.clock);
+    if (!completed?.accepted) return abortPulse(completed?.reason || "pulse-not-completed");
     runtime.clock = completed.clock;
     runtime.completedOwnershipKeys.add(key);
+    while (runtime.completedOwnershipKeys.size > MAX_COMPLETED_OWNERSHIP_HISTORY) {
+      runtime.completedOwnershipKeys.delete(runtime.completedOwnershipKeys.values().next().value);
+    }
+    runtime.staminaChargeKeys.clear();
     emit(event("tactical-pulse-completed", owner, { elapsedSeconds: runtime.clock.elapsedSeconds, completedPulseIndex: runtime.clock.pulseIndex, nextCycleIndex: runtime.clock.cycleIndex }));
     return { accepted: true, ownership: owner, clock: runtime.clock, fighters: state.fighters, positions: state.positions, committedPositions: state.committedPositions, intents: [...intents.values()], events, movedActorIds: [...movedActorIds] };
+  } catch (error) {
+    return abortPulse("tactical-pulse-execution-threw", {
+      errorName: error?.name || "Error",
+      errorMessage: error?.message || String(error),
+    });
   } finally {
     if (runtime.ownership === owner) runtime.ownership = null;
   }

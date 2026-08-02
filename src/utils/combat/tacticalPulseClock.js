@@ -63,6 +63,19 @@ export function transitionTacticalPulseClock(clock, nextState) {
   return { accepted: true, clock: Object.freeze({ ...clock, state: nextState }) };
 }
 
+export function abortTacticalPulseClock(clock) {
+  if (clock?.mode !== COMBAT_TIMING_MODES.TACTICAL_PULSE) {
+    return { accepted: false, reason: "invalid-pulse-clock", clock };
+  }
+  return {
+    accepted: true,
+    clock: Object.freeze({
+      ...clock,
+      state: TACTICAL_PULSE_STATES.PLANNING,
+    }),
+  };
+}
+
 export function completeTacticalPulseClock(clock) {
   if (clock?.state !== TACTICAL_PULSE_STATES.COMPLETED) {
     return { accepted: false, reason: "pulse-not-completed", clock };
@@ -86,4 +99,3 @@ export function formatTacticalBattleTime(elapsedSeconds = 0) {
   const seconds = total % 60;
   return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
-

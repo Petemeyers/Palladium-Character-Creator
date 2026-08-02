@@ -1,4 +1,5 @@
 import { calculateDistance, getHexNeighbors, isValidPosition } from "../../data/movementRules.js";
+import { getCombatActorId } from "../combatActorIdentity.js";
 
 export const TACTICAL_MOVEMENT_MODES = Object.freeze(["hold", "walk", "run", "sprint", "charge"]);
 export const TACTICAL_INTENT_STATES = Object.freeze(["planned", "active", "completed", "blocked", "canceled", "expired"]);
@@ -131,29 +132,32 @@ export function getActorTacticalAttackRange(actor = {}) {
 }
 
 export function planDefaultTacticalMovement({ actor, fighters = [], positions = {}, pulseIndex, generationId, isHexLegal } = {}) {
-  const actorId = String(actor?.id ?? actor?._id ?? "");
+  const actorId = String(getCombatActorId(actor) ?? "");
   const from = point(positions[actorId] || actor?.position || actor);
   const hostiles = fighters.filter((candidate) => {
-    const candidateId = String(candidate?.id ?? candidate?._id ?? "");
+    const candidateId = String(getCombatActorId(candidate) ?? "");
     return candidateId && candidateId !== actorId && candidate?.team !== actor?.team && positions[candidateId];
   });
   hostiles.sort((left, right) => {
-    const distanceDelta = calculateDistance(from, positions[left.id]) - calculateDistance(from, positions[right.id]);
-    return distanceDelta || String(left.id).localeCompare(String(right.id));
+    const leftId = String(getCombatActorId(left) ?? "");
+    const rightId = String(getCombatActorId(right) ?? "");
+    const distanceDelta = calculateDistance(from, positions[leftId]) - calculateDistance(from, positions[rightId]);
+    return distanceDelta || leftId.localeCompare(rightId);
   });
   const target = hostiles[0] || null;
-  const targetPosition = target ? point(positions[target.id]) : null;
+  const targetActorId = target ? String(getCombatActorId(target) ?? "") : null;
+  const targetPosition = targetActorId ? point(positions[targetActorId]) : null;
   const intentId = `${generationId}:${pulseIndex}:${actorId}:movement`;
   if (!from || !target || !targetPosition) return createTacticalMovementIntent({ intentId, generationId, actorId, mode: "hold", createdAtPulse: pulseIndex });
   if (calculateDistance(from, targetPosition) <= getActorTacticalAttackRange(actor)) {
-    const result = createTacticalMovementIntent({ intentId, generationId, actorId, mode: "hold", reason: "attack-opportunity", targetActorId: target.id, createdAtPulse: pulseIndex });
+    const result = createTacticalMovementIntent({ intentId, generationId, actorId, mode: "hold", reason: "attack-opportunity", targetActorId, createdAtPulse: pulseIndex });
     return { ...result, attackOpportunity: true };
   }
   const occupied = new Set(Object.entries(positions).filter(([id]) => id !== actorId).map(([, position]) => tacticalHexKey(position)));
   const path = buildTacticalPath({ from, destination: targetPosition, occupied, isHexLegal });
-  const mode = path.length > 1 ? "run" : path.length === 1 ? "walk" : "hold";
+  const mode = path.length > 0 ? "walk" : "hold";
   return createTacticalMovementIntent({
-    intentId, generationId, actorId, mode, reason: "approach", targetActorId: target.id,
+    intentId, generationId, actorId, mode, reason: "approach", targetActorId,
     destination: targetPosition, path, createdAtPulse: pulseIndex, commitmentUntilPulse: pulseIndex,
   });
 }

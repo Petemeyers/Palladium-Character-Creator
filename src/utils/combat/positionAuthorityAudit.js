@@ -1,3 +1,5 @@
+import { getCombatActorId } from "../combatActorIdentity.js";
+
 const normalizePosition = (value) => {
   const x = Number(value?.x ?? value?.position?.x ?? value?.hex?.x);
   const y = Number(value?.y ?? value?.position?.y ?? value?.hex?.y);
@@ -13,7 +15,8 @@ export function commitPositionAuthoritySnapshot({
 } = {}) {
   const nextPosition = normalizePosition(position);
   if (!actorId || !nextPosition) return { accepted: false, reason: "invalid-position" };
-  const nextFighters = fighters.map((fighter) => fighter?.id === actorId
+  const normalizedActorId = String(actorId ?? "");
+  const nextFighters = fighters.map((fighter) => String(getCombatActorId(fighter) ?? "") === normalizedActorId
     ? {
         ...fighter,
         x: nextPosition.x,
@@ -24,7 +27,9 @@ export function commitPositionAuthoritySnapshot({
     : fighter);
   const nextPositions = { ...positions, [actorId]: { ...nextPosition } };
   const nextCommittedPositions = { ...committedPositions, [actorId]: { ...nextPosition } };
-  const fighterPosition = normalizePosition(nextFighters.find((fighter) => fighter?.id === actorId));
+  const fighterPosition = normalizePosition(nextFighters.find((fighter) => (
+    String(getCombatActorId(fighter) ?? "") === normalizedActorId
+  )));
   const positionsRefPosition = normalizePosition(nextPositions[actorId]);
   const committedPosition = normalizePosition(nextCommittedPositions[actorId]);
   const statePosition = { ...nextPosition };
