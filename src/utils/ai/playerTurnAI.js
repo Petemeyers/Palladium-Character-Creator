@@ -46,6 +46,7 @@ import { resolveArmoredCombatAction } from "./resolveArmoredCombatAction.js";
 import { resolveGrappleTurnAction } from "./resolveGrappleTurnAction.js";
 import { normalizeAlignmentBehavior } from "../behavior/normalizeAlignmentBehavior.js";
 import { classifyCanonicalMovementProgress } from "../combat/canonicalMovementProgress.js";
+import { isOrdinaryAttackTarget } from "../combat/combatParticipation.js";
 import {
   createLiveWildlifeRegistry,
   resolveAerialSearchWaypoint,
@@ -650,6 +651,14 @@ export async function runPlayerTurnAI(player, context) {
     processingPlayerAIRef.current = false;
     addLog("ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€šÃ‚Â§Ãƒâ€šÃ‚Âª approach move-only finalized; scheduling turn advance", "debug");
     scheduleEndTurn(0, reason);
+    const latest = fightersRef?.current?.find?.((fighter) => fighter.id === player.id) || player;
+    return Promise.resolve(Object.freeze({
+      status: "completed",
+      source: reason,
+      actorId: player.id,
+      actionSpent: true,
+      remainingActions: Math.max(0, Number(latest?.remainingActions ?? 0) || 0),
+    }));
   };
   const getLatestPlayerState = () =>
     fightersRef?.current?.find((f) => f.id === player.id) ||
@@ -1263,6 +1272,12 @@ export async function runPlayerTurnAI(player, context) {
   }
 
   const enemyTargets = allEnemies.filter((target) => {
+    if (!isOrdinaryAttackTarget(target, {
+      mayFinishIncapacitated: context.mayFinishIncapacitated === true,
+    })) {
+      trace(`target ${target.id}: filtered (not an ordinary attack target)`);
+      return false;
+    }
     // First check visibility
     const canSee = canAISeeTarget(player, target, positions, combatTerrain, {
       useFogOfWar: fogEnabled,
@@ -4443,11 +4458,17 @@ export async function runPlayerTurnAI(player, context) {
                       return;
                     }
 
-                    finalizeApproachMoveOnly("player-ai-flanking-move-only");
-                    return;
+                    const completion = finalizeApproachMoveOnly("player-ai-flanking-move-only");
+                    return createPlayerAiActionResult("move", {
+                      type: "move",
+                      movement: "flanking",
+                      completed: true,
+                      actionSpent: true,
+                      completion,
+                    });
 
-                    // Check if we should continue trying to move closer - use closure variables
-                    setTimeout(() => {
+                    /* Retired direct flanking recursion. The settled move result above
+                     * is continued only by the canonical outer continuation owner.
                       const updatedPlayerState = fighters.find(
                         (f) => f.id === player.id
                       );
@@ -4503,7 +4524,7 @@ export async function runPlayerTurnAI(player, context) {
                         processingPlayerAIRef.current = false;
                         scheduleEndTurn(0);
                       }
-                    }, 500);
+                    */
                   }
                   } catch (err) {
                     console.error("[playerTurnAI] flanking continuation failed:", err);
@@ -4893,9 +4914,13 @@ export async function runPlayerTurnAI(player, context) {
             );
           }
 
-          finalizeApproachMoveOnly("player-ai-approach-move-only");
+          const completion = finalizeApproachMoveOnly("player-ai-approach-move-only");
           return createPlayerAiActionResult("move", {
+            type: "move",
             movement: "approach",
+            completed: true,
+            actionSpent: true,
+            completion,
           });
         } else {
           const livePositionsNow = positionsRef.current || positions;
@@ -4936,9 +4961,13 @@ export async function runPlayerTurnAI(player, context) {
           );
 
           if (!liveRangeValidation.canAttack) {
-            finalizeApproachMoveOnly("player-ai-approach-move-only");
+            const completion = finalizeApproachMoveOnly("player-ai-approach-move-only");
             return createPlayerAiActionResult("move", {
+              type: "move",
               movement: "approach",
+              completed: true,
+              actionSpent: true,
+              completion,
             });
           }
 
@@ -5031,6 +5060,15 @@ export async function runPlayerTurnAI(player, context) {
   };
 
   // Execute attack after ensuring position state is updated
+  let attackCompletionSettled = false;
+  let settleAttackCompletion;
+  const completion = new Promise((resolve) => { settleAttackCompletion = resolve; });
+  const settleCompletion = (value) => {
+    if (attackCompletionSettled) return false;
+    attackCompletionSettled = true;
+    settleAttackCompletion(value);
+    return true;
+  };
   const executeAttack = (flankingBonus = 0) => {
     // Check for area attacks (like charge attacks)
     const isAreaAttack =
@@ -5051,7 +5089,10 @@ export async function runPlayerTurnAI(player, context) {
         // Execute area attack on all targets in line (one action, multiple targets)
         setTimeout(() => {
           void (async () => {
-            if (!canRunPlayerAICallback({ token: playerAITurnToken, fighterId: player.id })) return;
+            if (!canRunPlayerAICallback({ token: playerAITurnToken, fighterId: player.id })) {
+              settleCompletion({ status: "canceled", reason: "stale-player-ai-callback" });
+              return;
+            }
             if (turnActionResolvingRef) turnActionResolvingRef.current = true;
             try {
               for (let index = 0; index < targetsInLine.length; index += 1) {
@@ -5067,6 +5108,7 @@ export async function runPlayerTurnAI(player, context) {
                 });
               }
               scheduleEndTurn(0, "player-ai-area-line-complete");
+              settleCompletion({ status: "completed", outcome: "area-attack" });
             } catch (err) {
               console.error("[playerTurnAI] area line attack failed:", err);
               addLog(
@@ -5076,6 +5118,7 @@ export async function runPlayerTurnAI(player, context) {
               if (turnActionResolvingRef) turnActionResolvingRef.current = false;
               if (pendingTurnAdvanceRef) pendingTurnAdvanceRef.current = false;
               scheduleEndTurn(16, "player-ai-area-line-catch");
+              settleCompletion({ status: "failed", reason: err?.message || String(err) });
             } finally {
               processingPlayerAIRef.current = false;
             }
@@ -5088,7 +5131,10 @@ export async function runPlayerTurnAI(player, context) {
     // Execute attack - only ONE attack per turn
     setTimeout(() => {
       void (async () => {
-      if (!canRunPlayerAICallback({ token: playerAITurnToken, fighterId: player.id })) return;
+      if (!canRunPlayerAICallback({ token: playerAITurnToken, fighterId: player.id })) {
+        settleCompletion({ status: "canceled", reason: "stale-player-ai-callback" });
+        return;
+      }
       // Get current fighter state to check remaining attacks before executing
       const currentFighterState = fighters.find((f) => f.id === player.id);
 
@@ -5097,6 +5143,7 @@ export async function runPlayerTurnAI(player, context) {
         addLog(`ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã‚Â¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¯Ãƒâ€šÃ‚Â¸Ãƒâ€šÃ‚Â ${player.name} is out of attacks this turn!`, "warning");
         processingPlayerAIRef.current = false;
         scheduleEndTurn(0);
+        settleCompletion({ status: "canceled", reason: "no-actions-remaining" });
         return;
       }
 
@@ -5108,10 +5155,13 @@ export async function runPlayerTurnAI(player, context) {
           ? calculateDistance(attackerPos, defenderPos)
           : undefined;
 
-      if (!canRunPlayerAICallback({ token: playerAITurnToken, fighterId: player.id })) return;
+      if (!canRunPlayerAICallback({ token: playerAITurnToken, fighterId: player.id })) {
+        settleCompletion({ status: "canceled", reason: "stale-player-ai-callback" });
+        return;
+      }
       if (turnActionResolvingRef) turnActionResolvingRef.current = true;
       try {
-        await attack(updatedPlayer, target.id, {
+        const attackResult = await attack(updatedPlayer, target.id, {
           flankingBonus,
           attackDataOverride: selectedAttack,
           attackerPosOverride: attackerPos,
@@ -5156,6 +5206,7 @@ export async function runPlayerTurnAI(player, context) {
             };
           })(),
         });
+        settleCompletion({ status: "completed", result: attackResult });
       } catch (err) {
         console.error("[playerTurnAI] attack failed:", err);
         addLog(
@@ -5165,6 +5216,7 @@ export async function runPlayerTurnAI(player, context) {
         if (turnActionResolvingRef) turnActionResolvingRef.current = false;
         if (pendingTurnAdvanceRef) pendingTurnAdvanceRef.current = false;
         scheduleEndTurn(16, "player-ai-main-attack-catch");
+        settleCompletion({ status: "failed", reason: err?.message || String(err) });
       } finally {
         // attack() schedules endTurn on success; clear processing after await returns.
         processingPlayerAIRef.current = false;
@@ -5176,8 +5228,11 @@ export async function runPlayerTurnAI(player, context) {
   // Use a longer delay to ensure position state is fully updated, then execute attack
   markActionScheduled();
   setTimeout(() => {
-    if (!tokenStillValid()) return;
+    if (!tokenStillValid()) {
+      settleCompletion({ status: "canceled", reason: "stale-player-ai-turn-token" });
+      return;
+    }
     executeAttack(0); // No flanking bonus by default
   }, 1000);
-  return { actionTaken: true, action: "attack" };
+  return createPlayerAiActionResult("attack", { admitted: true, completion });
 }
