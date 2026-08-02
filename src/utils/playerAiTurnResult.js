@@ -38,4 +38,9 @@ export async function awaitPlayerAiTurnResult(execute, isActionScheduled = () =>
   };
 }
 
+export function getPlayerAiActionCompletion(result, pendingContinuation = null) {
+  const completion = result?.completion ?? pendingContinuation?.completion ?? null;
+  return completion && typeof completion.then === "function" ? completion : null;
+}
+
 export default awaitPlayerAiTurnResult;
