@@ -3,7 +3,7 @@
  * Based on OFFICIAL Medieval Combat Simulator movement mechanics
  */
 
-import { offsetToAxial } from "../utils/hexGridMath";
+import { offsetToAxial } from "../utils/hexGridMath.js";
 
 /**
  * Medieval Combat Simulator MOVEMENT SYSTEM:
