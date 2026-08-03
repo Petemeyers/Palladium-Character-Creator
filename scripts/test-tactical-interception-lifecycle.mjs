@@ -1,0 +1,17 @@
+import { assert, setup, takeStep, count } from "./tactical-charge-brace-test-helpers.mjs";
+import { submitTacticalInterceptionResponse } from "../src/utils/combat/tacticalChargeBraceRuntime.js";
+const context = setup({ manualBrace: true }); await takeStep(context, { from: { x: 0, y: 0 }, to: { x: 1, y: 0 } });
+const pending = await takeStep(context, { from: { x: 1, y: 0 }, to: { x: 2, y: 0 }, controlMode: "manual" });
+assert.equal(pending.boundary.pendingInterception, true); const window = pending.boundary.window;
+const submitted = submitTacticalInterceptionResponse(context.runtime, { interceptionWindowId: window.interceptionWindowId, interceptorId: "bracer", choice: "intercept", pulseIndex: 2 });
+assert.equal(submitted.accepted, true); assert.equal(submitTacticalInterceptionResponse(context.runtime, { interceptionWindowId: window.interceptionWindowId, interceptorId: "bracer", choice: "intercept" }).accepted, false);
+const resolved = await takeStep(context, { from: { x: 1, y: 0 }, to: { x: 2, y: 0 }, controlMode: "manual" });
+assert.equal(resolved.canonicalCalls, 1); assert.equal(count(context.events, "tactical-interception-resolution-completed"), 1); assert.equal(context.runtime.bracesByActor.get("bracer").state, "recovering");
+const expiring = setup({ manualBrace: true }); await takeStep(expiring, { from: { x: 0, y: 0 }, to: { x: 1, y: 0 } });
+const offered = await takeStep(expiring, { from: { x: 1, y: 0 }, to: { x: 2, y: 0 }, pulseIndex: 2, controlMode: "manual" });
+assert.equal(offered.boundary.window.responseDeadlinePulse, 3);
+assert.equal((await takeStep(expiring, { from: { x: 1, y: 0 }, to: { x: 2, y: 0 }, pulseIndex: 3, controlMode: "manual" })).boundary.pendingInterception, true);
+const expired = await takeStep(expiring, { from: { x: 1, y: 0 }, to: { x: 2, y: 0 }, pulseIndex: 4, controlMode: "manual" });
+assert.equal(expired.boundary.interceptionOutcome, "expired-let-pass"); assert.equal(expiring.runtime.bracesByActor.get("bracer").state, "held");
+assert.equal(count(expiring.events, "tactical-interception-window-expired"), 1);
+console.log("tactical interception lifecycle: 11/11 passed");

@@ -1,0 +1,11 @@
+import { assert, setup, takeStep, count } from "./tactical-charge-brace-test-helpers.mjs";
+import { chargeStepCrossesBraceZone } from "../src/utils/combat/tacticalInterceptionWindow.js";
+const context = setup(); const charge = context.runtime.chargesByActor.get("charger"); const brace = context.runtime.bracesByActor.get("bracer");
+assert.equal(chargeStepCrossesBraceZone({ charge, brace, from: { x: 1, y: 0 }, to: { x: 2, y: 0 }, charger: context.charger, bracer: context.target }), true);
+assert.equal(chargeStepCrossesBraceZone({ charge, brace, from: { x: 2, y: 1 }, to: { x: 2, y: 0 }, charger: context.charger, bracer: context.target }), false);
+assert.equal(chargeStepCrossesBraceZone({ charge: { ...charge, chargerId: "walker" }, brace, from: { x: 1, y: 0 }, to: { x: 2, y: 0 }, charger: { team: "party" }, bracer: context.target }), false);
+assert.equal(chargeStepCrossesBraceZone({ charge: { ...charge, state: "canceled" }, brace, from: { x: 1, y: 0 }, to: { x: 2, y: 0 }, charger: context.charger, bracer: context.target }), false);
+assert.equal(chargeStepCrossesBraceZone({ charge, brace: { ...brace, guardedHexes: [{ x: 1, y: 0 }, { x: 2, y: 0 }] }, from: { x: 1, y: 0 }, to: { x: 2, y: 0 }, charger: context.charger, bracer: context.target }), false);
+await takeStep(context, { from: { x: 0, y: 0 }, to: { x: 1, y: 0 } }); assert.equal(count(context.events, "tactical-brace-trigger-detected"), 0);
+await takeStep(context, { from: { x: 1, y: 0 }, to: { x: 2, y: 0 } }); assert.equal(count(context.events, "tactical-brace-trigger-detected"), 1);
+console.log("tactical brace trigger geometry: 7/7 passed");

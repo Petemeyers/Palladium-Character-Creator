@@ -1,0 +1,11 @@
+import { assert, setup, takeStep, count } from "./tactical-charge-brace-test-helpers.mjs";
+const context = setup(); const charge = context.runtime.chargesByActor.get("charger");
+assert.equal(charge.state, "committed"); assert.equal(charge.targetActorId, "bracer"); assert.equal(charge.weaponId, "weapon.spear");
+assert.equal(charge.readyAtPulse, 2); assert.equal(charge.committedAtPulse, 2); assert.equal(charge.completedPath.length, 0);
+const first = await takeStep(context, { from: { x: 0, y: 0 }, to: { x: 1, y: 0 } });
+assert.equal(first.boundary.commitStep, true); assert.equal(context.runtime.chargesByActor.get("charger").completedPath.length, 1);
+assert.equal(count(context.events, "tactical-charge-step-completed"), 1);
+assert.equal(first.boundary.movementClaim.pulseIndex, 2); assert.equal(first.boundary.movementClaim.actionIntentId, charge.actionIntentId);
+const duplicate = await takeStep(context, { from: { x: 0, y: 0 }, to: { x: 1, y: 0 } });
+assert.equal(duplicate.boundary.accepted, false);
+console.log("tactical charge movement: 12/12 passed");

@@ -1,0 +1,13 @@
+import { assert, setup, takeStep, resolveContact, count } from "./tactical-charge-brace-test-helpers.mjs";
+const context = setup(); await takeStep(context, { from: { x: 0, y: 0 }, to: { x: 1, y: 0 } });
+await takeStep(context, { from: { x: 1, y: 0 }, to: { x: 2, y: 0 }, result: { accepted: true, hit: false } });
+assert.equal(context.runtime.chargesByActor.get("charger").state, "contact-pending");
+const contact = await resolveContact(context); assert.equal(contact.calls, 1); assert.equal(contact.resolved.accepted, true);
+const recovering = context.runtime.chargesByActor.get("charger"); assert.equal(recovering.state, "recovering");
+assert.notEqual(recovering.contactExecutionKey, context.runtime.terminalWindows[0].executionKey);
+assert.equal(count(context.events, "tactical-charge-contact-admitted"), 1); assert.equal(count(context.events, "tactical-charge-contact-resolved"), 1);
+await resolveContact(context); assert.equal(count(context.events, "tactical-charge-contact-resolved"), 1);
+const rejected = setup(); await takeStep(rejected, { from: { x: 0, y: 0 }, to: { x: 1, y: 0 } }); await takeStep(rejected, { from: { x: 1, y: 0 }, to: { x: 2, y: 0 } });
+const contactRejected = await resolveContact(rejected, { accepted: false, reason: "contact-ownership-rejected" });
+assert.equal(contactRejected.calls, 1); assert.equal(count(rejected.events, "tactical-charge-contact-rejected"), 1); assert.equal(rejected.runtime.chargesByActor.size, 0);
+console.log("tactical charge contact: 11/11 passed");

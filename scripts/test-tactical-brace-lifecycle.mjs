@@ -1,0 +1,11 @@
+import { assert, actor, spear, sword } from "./tactical-charge-brace-test-helpers.mjs";
+import { createTacticalBraceIntent } from "../src/utils/combat/tacticalBraceIntent.js";
+import { createTacticalChargeBraceRuntime, registerTacticalBrace, progressTacticalChargeBracePreparation } from "../src/utils/combat/tacticalChargeBraceRuntime.js";
+const invalid = createTacticalBraceIntent({ generationId: 1, combatSession: 1, bracingActorId: "a", weaponId: sword.id, weapon: sword, anchorPosition: { x: 0, y: 0 }, guardedHexes: [{ x: 1, y: 0 }] });
+assert.equal(invalid.accepted, false);
+const a = actor("a", "party", { x: 0, y: 0 }); const runtime = createTacticalChargeBraceRuntime({ generationId: 1, combatSession: 1 });
+const brace = registerTacticalBrace(runtime, { generationId: 1, combatSession: 1, bracingActorId: "a", weaponId: spear.id, weapon: spear, declaredAtPulse: 1, anchorPosition: a.position, guardedHexes: [{ x: 1, y: 0 }] }, { fighters: [a] });
+assert.equal(brace.intent.state, "preparing"); assert.equal(progressTacticalChargeBracePreparation({ runtime, pulseIndex: 1, fighters: [a], positions: { a: a.position } }).accepted, true); assert.equal(runtime.bracesByActor.get("a").state, "preparing");
+progressTacticalChargeBracePreparation({ runtime, pulseIndex: 2, fighters: [a], positions: { a: a.position } }); assert.equal(runtime.bracesByActor.get("a").state, "held");
+progressTacticalChargeBracePreparation({ runtime, pulseIndex: 3, fighters: [a], positions: { a: { x: 1, y: 0 } } }); assert.equal(runtime.bracesByActor.size, 0);
+console.log("tactical brace lifecycle: 6/6 passed");

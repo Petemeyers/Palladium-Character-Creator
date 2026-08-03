@@ -1,0 +1,10 @@
+import { assert, setup, takeStep } from "./tactical-charge-brace-test-helpers.mjs";
+import { resolveTacticalBraceInterception } from "../src/utils/combat/resolveTacticalBraceInterception.js";
+const context = setup(); await takeStep(context, { from: { x: 0, y: 0 }, to: { x: 1, y: 0 } }); const result = await takeStep(context, { from: { x: 1, y: 0 }, to: { x: 2, y: 0 } });
+assert.equal(result.boundary.canonicalResult.request.reactionDepth, 1);
+assert.notEqual(result.boundary.window.executionKey, context.runtime.chargesByActor.get("charger").contactExecutionKey);
+assert.equal((await resolveTacticalBraceInterception({ admission: {}, executeCanonicalAttack: () => ({}) })).accepted, false);
+assert.equal(result.boundary.canonicalResult.request.allowOutOfTurnAttack, true);
+const depthRejected = await resolveTacticalBraceInterception({ admission: { window: { reactionDepth: 1 }, charge: {}, brace: {}, executionKey: "depth-2" }, executeCanonicalAttack: () => ({ accepted: true }) });
+assert.equal(depthRejected.reason, "reaction-depth-cap");
+console.log("tactical charge brace depth: 5/5 passed");

@@ -1,0 +1,13 @@
+import { assert, actor, spear } from "./tactical-charge-brace-test-helpers.mjs";
+import { createTacticalChargeIntent, transitionTacticalCharge } from "../src/utils/combat/tacticalChargeIntent.js";
+import { createTacticalChargeBraceRuntime, registerTacticalCharge, cancelTacticalCharge } from "../src/utils/combat/tacticalChargeBraceRuntime.js";
+const charger = actor("a", "party", { x: 0, y: 0 }); const target = actor("b", "enemy", { x: 3, y: 0 });
+const runtime = createTacticalChargeBraceRuntime({ generationId: 1, combatSession: 1 });
+const created = createTacticalChargeIntent({ generationId: 1, combatSession: 1, chargerId: "a", targetActorId: "b", weaponId: spear.id, weapon: spear, declaredAtPulse: 1, plannedPath: [{ x: 1, y: 0 }, { x: 2, y: 0 }], startingPosition: charger.position });
+assert.equal(created.accepted, true); assert.equal(created.intent.state, "planned"); assert.equal(created.intent.currentPosition.x, 0);
+const registered = registerTacticalCharge(runtime, created.intent, { fighters: [charger, target] });
+assert.equal(registered.intent.state, "preparing"); assert.equal(runtime.movementClaims.size, 0); assert.equal(runtime.contactExecutionClaims.size, 0);
+assert.equal(registered.intent.readyAtPulse, null); assert.equal(registered.intent.committedAtPulse, null);
+assert.equal(transitionTacticalCharge(registered.intent, "resolving").accepted, false);
+assert.equal(cancelTacticalCharge(runtime, "a").accepted, true);
+console.log("tactical charge lifecycle: 10/10 passed");

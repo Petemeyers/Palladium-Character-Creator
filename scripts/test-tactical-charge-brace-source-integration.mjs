@@ -1,0 +1,11 @@
+import fs from "node:fs";
+import assert from "node:assert/strict";
+const page = fs.readFileSync(new URL("../src/pages/CombatPage.jsx", import.meta.url), "utf8");
+const pulse = fs.readFileSync(new URL("../src/utils/combat/tacticalPulseResolver.js", import.meta.url), "utf8");
+const runtime = fs.readFileSync(new URL("../src/utils/combat/tacticalChargeBraceRuntime.js", import.meta.url), "utf8");
+assert.match(page, /Prepare Charge/); assert.match(page, /Cancel Charge/); assert.match(page, /Brace Weapon/); assert.match(page, /Cancel Brace/); assert.match(page, /Intercept/); assert.match(page, /Let Charge Pass/);
+assert.match(page, /registerTacticalCharge/); assert.match(page, /registerTacticalBrace/); assert.match(page, /submitTacticalInterceptionResponse/);
+assert.doesNotMatch(page, /prepareManualTacticalCharge[\s\S]{0,2500}Math\.random/);
+assert.match(pulse, /resolveTacticalChargeStepBoundary/); assert.match(pulse, /commitInternalPosition/); assert.match(pulse, /resolveTacticalChargeContacts/);
+assert.match(runtime, /resolveTacticalBraceInterception/); assert.match(runtime, /executeCanonicalAttack/); assert.match(runtime, /maxTerminalHistory = 42/); assert.match(runtime, /maxClaimHistory = 48/);
+console.log("tactical charge brace source integration: 16/16 passed");

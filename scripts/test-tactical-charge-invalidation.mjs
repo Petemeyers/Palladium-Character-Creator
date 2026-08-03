@@ -1,0 +1,10 @@
+import { assert, setup, actor, spear } from "./tactical-charge-brace-test-helpers.mjs";
+import { createTacticalChargeBraceRuntime, progressTacticalChargeBracePreparation, registerTacticalCharge } from "../src/utils/combat/tacticalChargeBraceRuntime.js";
+const context = setup();
+const stale = await import("../src/utils/combat/tacticalChargeBraceRuntime.js").then(({ resolveTacticalChargeStepBoundary }) => resolveTacticalChargeStepBoundary({ runtime: { ...context.runtime, generationId: 9 }, charge: context.runtime.chargesByActor.get("charger"), from: { x: 0, y: 0 }, to: { x: 1, y: 0 }, stepIndex: 0, pulseIndex: 2, fighters: context.fighters }));
+assert.equal(stale.accepted, false);
+const runtime = createTacticalChargeBraceRuntime({ generationId: 1, combatSession: 1 }); const a = actor("a", "party", { x: 0, y: 0 }); const b = actor("b", "enemy", { x: 3, y: 0 });
+registerTacticalCharge(runtime, { generationId: 1, combatSession: 1, chargerId: "a", targetActorId: "b", weaponId: spear.id, weapon: spear, declaredAtPulse: 1, plannedPath: [{ x: 1, y: 0 }, { x: 2, y: 0 }], startingPosition: a.position }, { fighters: [a, b] });
+const progressed = progressTacticalChargeBracePreparation({ runtime, pulseIndex: 2, fighters: [a, { ...b, defeated: true }], positions: { a: a.position, b: b.position } });
+assert.equal(progressed.accepted, true); assert.equal(runtime.chargesByActor.size, 0); assert.equal(runtime.terminalCharges.at(-1).state, "invalidated");
+console.log("tactical charge invalidation: 4/4 passed");
