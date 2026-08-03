@@ -28,6 +28,17 @@ import {
   registerTacticalAction,
 } from "./tacticalActionRuntime.js";
 import { planDefaultTacticalAction } from "./tacticalActionPlanning.js";
+import {
+  completeTacticalChargeStep,
+  claimTacticalChargeMovementStamina,
+  getTacticalChargeMovementPlan,
+  invalidateTacticalCharge,
+  progressTacticalChargeBracePreparation,
+  registerTacticalBrace,
+  registerTacticalCharge,
+  resolveTacticalChargeContacts,
+  resolveTacticalChargeStepBoundary,
+} from "./tacticalChargeBraceRuntime.js";
 
 const event = (eventType, ownership, data = {}, actorId = data.actorId ?? null) => ({
   eventType, actorId, generationId: ownership.generationId, combatSession: ownership.combatSession,
@@ -87,6 +98,7 @@ export async function resolveTacticalPulse({
   committedPositions = positions,
   planIntent = planDefaultTacticalMovement,
   planActionIntent = planDefaultTacticalAction,
+  planChargeBraceIntent,
   isCombatCapable = canAct,
   isHexLegal,
   spendStamina = defaultTacticalPulseStaminaSpend,
@@ -102,6 +114,11 @@ export async function resolveTacticalPulse({
   executeCanonicalPostParryResponse,
   getPostParryControlMode,
   selectAIPostParryResponse,
+  validateChargeIntent,
+  validateBraceIntent,
+  getInterceptionControlMode,
+  selectAIInterception,
+  readCanonicalChargePosition,
   combatActive = true,
   getInitiativePriority = getTacticalInitiativePriority,
   transitionClock = transitionTacticalPulseClock,
@@ -139,6 +156,19 @@ export async function resolveTacticalPulse({
     fighters: Object.freeze(state.fighters.map((actor) => Object.freeze({ ...actor }))),
     positions: Object.freeze(Object.fromEntries(Object.entries(state.positions).map(([id, value]) => [id, Object.freeze({ ...value })]))),
   });
+  const chargeBraceProgress = progressTacticalChargeBracePreparation({
+    runtime: runtime.actionRuntime.chargeBraceRuntime,
+    pulseIndex: owner.pulseIndex,
+    fighters: state.fighters,
+    positions: state.positions,
+    validateCharge: validateChargeIntent,
+    validateBrace: validateBraceIntent,
+    onEvent: (entry) => emit(event(entry.eventType, owner, entry.data, entry.actorId)),
+  });
+  if (!chargeBraceProgress.accepted) {
+    runtime.ownership = null;
+    return { accepted: false, reason: chargeBraceProgress.reason, events };
+  }
   const intents = new Map();
   const actionIntentsCreated = [];
   const abortPulse = (reason, details = {}) => {
@@ -185,9 +215,26 @@ export async function resolveTacticalPulse({
   try {
     for (const actor of snapshot.fighters.filter(isCombatCapable)) {
       const actorId = actorIdOf(actor);
-      const actionOwnership = getTacticalActorOwnership(runtime.actionRuntime, actorId);
+      let actionOwnership = getTacticalActorOwnership(runtime.actionRuntime, actorId);
       let createdAction = null;
       let actionPlan = null;
+      if (actionOwnership.state === "unowned" && typeof planChargeBraceIntent === "function") {
+        const tacticalPlan = await planChargeBraceIntent({
+          actor,
+          fighters: snapshot.fighters,
+          positions: snapshot.positions,
+          pulseIndex: owner.pulseIndex,
+          generationId: owner.generationId,
+          combatSession: owner.combatSession,
+        });
+        const registeredTacticalPlan = tacticalPlan?.type === "charge"
+          ? registerTacticalCharge(runtime.actionRuntime.chargeBraceRuntime, tacticalPlan.input, { fighters: snapshot.fighters, validateCharge: validateChargeIntent })
+          : tacticalPlan?.type === "brace"
+            ? registerTacticalBrace(runtime.actionRuntime.chargeBraceRuntime, tacticalPlan.input, { fighters: snapshot.fighters, validateBrace: validateBraceIntent })
+            : null;
+        for (const entry of registeredTacticalPlan?.events || []) emit(event(entry.eventType, owner, entry.data, entry.actorId));
+        if (registeredTacticalPlan?.accepted) actionOwnership = getTacticalActorOwnership(runtime.actionRuntime, actorId);
+      }
       if (actionOwnership.state === "unowned") {
         actionPlan = await planActionIntent?.({
           actor,
@@ -220,7 +267,20 @@ export async function resolveTacticalPulse({
       }
       const busyWithAction = createdAction || actionOwnership.state !== "unowned";
       const manualHold = actionPlan?.forceHold === true;
-      const planned = (busyWithAction || manualHold)
+      const chargeMovement = getTacticalChargeMovementPlan(runtime.actionRuntime.chargeBraceRuntime, actorId);
+      const planned = chargeMovement
+        ? createTacticalMovementIntent({
+            intentId: `${owner.generationId}:${owner.pulseIndex}:${actorId}:charge-movement`,
+            generationId: owner.generationId,
+            actorId,
+            mode: "charge",
+            reason: "committed-charge",
+            targetActorId: chargeMovement.charge.targetActorId,
+            destination: chargeMovement.path.at(-1),
+            path: chargeMovement.path,
+            createdAtPulse: owner.pulseIndex,
+          })
+        : (busyWithAction || manualHold)
         ? createTacticalMovementIntent({
           intentId: `${owner.generationId}:${owner.pulseIndex}:${actorId}:movement`,
           generationId: owner.generationId,
@@ -233,10 +293,16 @@ export async function resolveTacticalPulse({
         : await planIntent({ actor, fighters: snapshot.fighters, positions: snapshot.positions, pulseIndex: owner.pulseIndex, generationId: owner.generationId, isHexLegal });
       const result = planned?.intent ? planned : createTacticalMovementIntent(planned || {});
       if (!result?.accepted) continue;
-      const intent = result.intent;
+      const intent = chargeMovement ? {
+        ...result.intent,
+        chargeIntentId: chargeMovement.charge.chargeIntentId,
+        chargePathStartIndex: chargeMovement.charge.completedPath.length,
+        movementOwnershipKey: chargeMovement.movementOwnershipKey,
+      } : result.intent;
       const occupied = new Set(Object.entries(snapshot.positions).filter(([id]) => id !== actorId).map(([, value]) => tacticalHexKey(value)));
       const validity = intent.mode === "hold" ? { valid: true } : validateTacticalMovementPath({ from: snapshot.positions[actorId], path: intent.path, occupied, isHexLegal, allowOccupiedDestination: true });
       if (!validity.valid) {
+        if (intent.chargeIntentId) invalidateTacticalCharge(runtime.actionRuntime.chargeBraceRuntime, actorId, validity.reason, owner.pulseIndex, (entry) => emit(event(entry.eventType, owner, entry.data, entry.actorId)));
         emit(event("tactical-step-blocked", owner, { actorId, intentId: intent.intentId, reason: validity.reason }, actorId));
         continue;
       }
@@ -259,6 +325,12 @@ export async function resolveTacticalPulse({
       const actor = state.fighters[index];
       const downgrade = downgradeTacticalMovementMode({ mode: intent.mode, currentStamina: staminaOf(actor), pathLength: intent.path.length });
       if (downgrade.downgraded) {
+        if (intent.chargeIntentId) {
+          invalidateTacticalCharge(runtime.actionRuntime.chargeBraceRuntime, actorId, "charge-stamina-unavailable", owner.pulseIndex, (entry) => emit(event(entry.eventType, owner, entry.data, entry.actorId)));
+          intent.state = "blocked";
+          emit(event("tactical-charge-step-blocked", owner, { actorId, chargeIntentId: intent.chargeIntentId, reason: "charge-stamina-unavailable" }, actorId));
+          continue;
+        }
         emit(event("tactical-movement-mode-downgraded", owner, { actorId, intentId: intent.intentId, requestedMode: intent.mode, movementMode: downgrade.mode, reason: downgrade.reason }, actorId));
         intent.mode = downgrade.mode;
       }
@@ -271,6 +343,15 @@ export async function resolveTacticalPulse({
         }, actorId));
         continue;
       }
+      if (intent.chargeIntentId) {
+        intent.chargeStaminaAmount = amount;
+        intent.chargeStaminaKey = `${key}:${actorId}:${intent.chargeIntentId}:movement-stamina`;
+        emit(event("tactical-movement-stamina-evaluated", owner, {
+          actorId, intentId: intent.intentId, movementMode: intent.mode, amount,
+          chargeKey: intent.chargeStaminaKey, result: "deferred-until-first-authoritative-charge-step",
+        }, actorId));
+        continue;
+      }
       if (!runtime.staminaChargeKeys.has(chargeKey)) {
         runtime.staminaChargeKeys.add(chargeKey);
         emit(event("tactical-movement-stamina-spend-requested", owner, {
@@ -278,6 +359,12 @@ export async function resolveTacticalPulse({
         }, actorId));
         const spent = await spendStamina({ actor, actorId, amount, pulseIndex: owner.pulseIndex, movementMode: intent.mode, intentId: intent.intentId });
         if (spent?.accepted === false) {
+          if (intent.chargeIntentId) {
+            invalidateTacticalCharge(runtime.actionRuntime.chargeBraceRuntime, actorId, spent.reason || "charge-stamina-spend-rejected", owner.pulseIndex, (entry) => emit(event(entry.eventType, owner, entry.data, entry.actorId)));
+            intent.state = "blocked";
+            emit(event("tactical-charge-step-blocked", owner, { actorId, chargeIntentId: intent.chargeIntentId, reason: spent.reason || "charge-stamina-spend-rejected" }, actorId));
+            continue;
+          }
           intent.mode = intent.path.length ? "walk" : "hold";
           emit(event("tactical-movement-stamina-spend-rejected", owner, {
             actorId, intentId: intent.intentId, movementMode: intent.mode, amount, chargeKey,
@@ -307,6 +394,13 @@ export async function resolveTacticalPulse({
         const proposal = { actorId, intent, from: { ...from }, to: { ...to }, stepPass };
         proposals.push(proposal);
         emit(event("tactical-step-proposed", owner, { actorId, intentId: intent.intentId, from: proposal.from, to: proposal.to, movementMode: intent.mode, stepPass }, actorId));
+        if (intent.chargeIntentId) emit(event("tactical-charge-step-proposed", owner, {
+          actorId, chargerId: actorId, chargeIntentId: intent.chargeIntentId,
+          actionIntentId: runtime.actionRuntime.chargeBraceRuntime.chargesByActor.get(actorId)?.actionIntentId,
+          from: proposal.from, to: proposal.to,
+          pathStepIndex: runtime.actionRuntime.chargeBraceRuntime.chargesByActor.get(actorId)?.completedPath?.length ?? 0,
+          movementOwnershipKey: intent.movementOwnershipKey,
+        }, actorId));
       }
       const claims = new Map();
       for (const proposal of proposals) {
@@ -339,12 +433,97 @@ export async function resolveTacticalPulse({
           if (candidate === winner) accepted.push(candidate);
           else {
             candidate.intent.state = "blocked";
+            if (candidate.intent.chargeIntentId) invalidateTacticalCharge(runtime.actionRuntime.chargeBraceRuntime, candidate.actorId, swapping ? "charge-path-occupied" : "charge-path-contested", owner.pulseIndex, (entry) => emit(event(entry.eventType, owner, entry.data, entry.actorId)));
             emit(event("tactical-step-blocked", owner, { actorId: candidate.actorId, intentId: candidate.intent.intentId, from: candidate.from, to: candidate.to, movementMode: candidate.intent.mode, stepPass, reason: swapping ? "occupied-or-hostile-swap" : "contested-destination" }, candidate.actorId));
           }
         }
       }
       for (const proposal of accepted) {
         if (!ownsCurrentPulse(runtime, owner)) return abortPulse("stale-generation-step-blocked");
+        let chargeBoundary = null;
+        if (proposal.intent.chargeIntentId) {
+          const liveCharge = runtime.actionRuntime.chargeBraceRuntime.chargesByActor.get(proposal.actorId);
+          chargeBoundary = await resolveTacticalChargeStepBoundary({
+            runtime: runtime.actionRuntime.chargeBraceRuntime,
+            charge: liveCharge,
+            from: proposal.from,
+            to: proposal.to,
+            stepIndex: liveCharge?.completedPath?.length ?? proposal.intent.chargePathStartIndex + proposal.intent.nextStepIndex,
+            pulseIndex: owner.pulseIndex,
+            fighters: state.fighters,
+            getInterceptionControlMode,
+            selectAIInterception,
+            executeCanonicalAttack,
+            readCanonicalPosition: readCanonicalChargePosition,
+            validateCharge: validateChargeIntent,
+            validateBrace: validateBraceIntent,
+            onEvent: (entry) => emit(event(entry.eventType, owner, entry.data, entry.actorId)),
+          });
+          if (!chargeBoundary.accepted) {
+            proposal.intent.state = "blocked";
+            emit(event("tactical-charge-step-blocked", owner, {
+              actorId: proposal.actorId, chargeIntentId: proposal.intent.chargeIntentId,
+              from: proposal.from, to: proposal.to, reason: chargeBoundary.reason,
+            }, proposal.actorId));
+            continue;
+          }
+          if (!chargeBoundary.commitStep) {
+            proposal.intent.state = "blocked";
+            emit(event("tactical-charge-step-blocked", owner, {
+              actorId: proposal.actorId, chargeIntentId: proposal.intent.chargeIntentId,
+              from: proposal.from, to: proposal.to,
+              reason: chargeBoundary.pendingInterception ? "interception-choice-pending" : "charge-stopped-before-step",
+            }, proposal.actorId));
+            continue;
+          }
+        }
+        const preflightInternal = commitInternalPosition({ ...state, actorId: proposal.actorId, position: proposal.to });
+        if (!preflightInternal?.accepted) {
+          emit(event("tactical-step-commit-rejected", owner, {
+            actorId: proposal.actorId,
+            intentId: proposal.intent.intentId,
+            reason: preflightInternal?.reason || "internal-position-commit-rejected",
+            stepPass,
+          }, proposal.actorId));
+          if (!proposal.intent.chargeIntentId) return abortPulse(preflightInternal?.reason || "internal-position-commit-rejected");
+          invalidateTacticalCharge(runtime.actionRuntime.chargeBraceRuntime, proposal.actorId, preflightInternal?.reason || "internal-position-commit-rejected", owner.pulseIndex, (entry) => emit(event(entry.eventType, owner, entry.data, entry.actorId)));
+          proposal.intent.state = "blocked";
+          continue;
+        }
+        if (proposal.intent.chargeIntentId && !runtime.staminaChargeKeys.has(proposal.intent.chargeStaminaKey)) {
+          const actorIndex = state.fighters.findIndex((candidate) => actorIdOf(candidate) === proposal.actorId);
+          const actor = state.fighters[actorIndex];
+          const amount = proposal.intent.chargeStaminaAmount;
+          emit(event("tactical-movement-stamina-spend-requested", owner, {
+            actorId: proposal.actorId, intentId: proposal.intent.intentId, movementMode: "charge",
+            amount, chargeKey: proposal.intent.chargeStaminaKey,
+          }, proposal.actorId));
+          const spent = await spendStamina({
+            actor, actorId: proposal.actorId, amount, pulseIndex: owner.pulseIndex,
+            movementMode: "charge", intentId: proposal.intent.intentId,
+          });
+          if (spent?.accepted === false) {
+            invalidateTacticalCharge(runtime.actionRuntime.chargeBraceRuntime, proposal.actorId, spent.reason || "charge-stamina-spend-rejected", owner.pulseIndex, (entry) => emit(event(entry.eventType, owner, entry.data, entry.actorId)));
+            proposal.intent.state = "blocked";
+            emit(event("tactical-movement-stamina-spend-rejected", owner, {
+              actorId: proposal.actorId, intentId: proposal.intent.intentId, movementMode: "charge",
+              amount, chargeKey: proposal.intent.chargeStaminaKey, reason: spent.reason || "stamina-rejected",
+            }, proposal.actorId));
+            emit(event("tactical-charge-step-blocked", owner, {
+              actorId: proposal.actorId, chargeIntentId: proposal.intent.chargeIntentId,
+              from: proposal.from, to: proposal.to, reason: spent.reason || "charge-stamina-spend-rejected",
+            }, proposal.actorId));
+            continue;
+          }
+          runtime.staminaChargeKeys.add(proposal.intent.chargeStaminaKey);
+          claimTacticalChargeMovementStamina(runtime.actionRuntime.chargeBraceRuntime, proposal.intent.chargeStaminaKey);
+          emit(event("tactical-movement-stamina-spend-resolved", owner, {
+            actorId: proposal.actorId, intentId: proposal.intent.intentId, movementMode: "charge",
+            amount, spent: Number(spent?.spent || 0), previousStamina: spent?.previousStamina ?? null,
+            nextStamina: spent?.nextStamina ?? null, chargeKey: proposal.intent.chargeStaminaKey,
+          }, proposal.actorId));
+          if (spent?.updated && actorIndex >= 0) state.fighters[actorIndex] = spent.updated;
+        }
         emit(event("tactical-step-accepted", owner, { actorId: proposal.actorId, intentId: proposal.intent.intentId, from: proposal.from, to: proposal.to, movementMode: proposal.intent.mode, stepPass }, proposal.actorId));
         const internal = commitInternalPosition({ ...state, actorId: proposal.actorId, position: proposal.to });
         if (!internal?.accepted) {
@@ -358,8 +537,25 @@ export async function resolveTacticalPulse({
         }
         state = { fighters: internal.fighters, positions: internal.positions, committedPositions: internal.committedPositions };
         const external = await commitPosition?.({ actorId: proposal.actorId, from: proposal.from, to: proposal.to, movementMode: proposal.intent.mode, pulseIndex: owner.pulseIndex, stepPass, intentId: proposal.intent.intentId, ownership: owner });
-        if (external?.accepted === false) return abortPulse(external.reason || "external-position-commit-rejected");
+        if (external?.accepted === false) {
+          if (proposal.intent.chargeIntentId) invalidateTacticalCharge(runtime.actionRuntime.chargeBraceRuntime, proposal.actorId, external.reason || "external-position-commit-rejected", owner.pulseIndex, (entry) => emit(event(entry.eventType, owner, entry.data, entry.actorId)));
+          return abortPulse(external.reason || "external-position-commit-rejected");
+        }
         proposal.intent.nextStepIndex += 1;
+        if (proposal.intent.chargeIntentId) {
+          const completedChargeStep = completeTacticalChargeStep({
+            runtime: runtime.actionRuntime.chargeBraceRuntime,
+            actorId: proposal.actorId,
+            from: proposal.from,
+            to: proposal.to,
+            stepIndex: runtime.actionRuntime.chargeBraceRuntime.chargesByActor.get(proposal.actorId)?.completedPath?.length ?? proposal.intent.chargePathStartIndex,
+            stepClaimKey: chargeBoundary.stepClaimKey,
+            movementClaim: chargeBoundary.movementClaim,
+            pulseIndex: owner.pulseIndex,
+            onEvent: (entry) => emit(event(entry.eventType, owner, entry.data, entry.actorId)),
+          });
+          if (!completedChargeStep.accepted) return abortPulse(completedChargeStep.reason || "charge-step-commit-rejected");
+        }
         movedActorIds.add(proposal.actorId);
         emit(event("tactical-step-committed", owner, { actorId: proposal.actorId, intentId: proposal.intent.intentId, from: proposal.from, to: proposal.to, movementMode: proposal.intent.mode, stepPass, animationDurationMs: TACTICAL_ANIMATION_DURATION_MS[proposal.intent.mode], path: proposal.intent.path }, proposal.actorId));
         if (proposal.intent.nextStepIndex >= proposal.intent.path.length) proposal.intent.state = "completed";
@@ -371,6 +567,17 @@ export async function resolveTacticalPulse({
     }
     rejectedLifecycle = transitionTo(TACTICAL_PULSE_STATES.ACTION_PREPARATION);
     if (rejectedLifecycle) return rejectedLifecycle;
+    const chargeContacts = await resolveTacticalChargeContacts({
+      runtime: runtime.actionRuntime.chargeBraceRuntime,
+      pulseIndex: owner.pulseIndex,
+      fighters: state.fighters,
+      executeCanonicalAttack,
+      validateCharge: validateChargeIntent,
+      combatActive,
+      onEvent: (entry) => emit(event(entry.eventType, owner, entry.data, entry.actorId)),
+    });
+    if (!chargeContacts.accepted) return abortPulse(chargeContacts.reason || "charge-contact-progress-rejected");
+    emit(event("tactical-charge-brace-ownership-audit", owner, chargeContacts.audit));
     const actionProgress = await advanceTacticalActionRuntime({
       runtime: runtime.actionRuntime,
       pulseIndex: owner.pulseIndex,
