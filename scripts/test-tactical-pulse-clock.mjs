@@ -13,7 +13,15 @@ assert.equal(normalizeCombatTimingMode("tactical-pulse"), "tactical-pulse");
 let clock = createTacticalPulseClock();
 assert.deepEqual(clock, { mode: "tactical-pulse", pulseIndex: 0, elapsedSeconds: 0, cycleIndex: 1, pulsesPerCycle: 6, state: "planning" });
 for (let pulse = 1; pulse <= 7; pulse += 1) {
-  for (const state of [TACTICAL_PULSE_STATES.INTENTIONS_LOCKED, TACTICAL_PULSE_STATES.MOVEMENT_RESOLVING, TACTICAL_PULSE_STATES.REACTIONS_PENDING, TACTICAL_PULSE_STATES.COMPLETED]) {
+  for (const state of [
+    TACTICAL_PULSE_STATES.INTENTIONS_LOCKED,
+    TACTICAL_PULSE_STATES.MOVEMENT_RESOLVING,
+    TACTICAL_PULSE_STATES.ACTION_PREPARATION,
+    TACTICAL_PULSE_STATES.ACTIONS_READY,
+    TACTICAL_PULSE_STATES.ATTACK_RESOLVING,
+    TACTICAL_PULSE_STATES.REACTIONS_PENDING,
+    TACTICAL_PULSE_STATES.COMPLETED,
+  ]) {
     const transition = transitionTacticalPulseClock(clock, state);
     assert.equal(transition.accepted, true);
     clock = transition.clock;

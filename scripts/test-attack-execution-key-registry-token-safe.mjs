@@ -4,7 +4,8 @@ import { readFileSync } from "node:fs";
 const source = readFileSync(new URL("../src/pages/CombatPage.jsx", import.meta.url), "utf8");
 
 assert.match(source, /attackExecutionRegistryRef = useRef\(new Map\(\)\)/);
-assert.match(source, /const id = `attack-\$\{combatSessionRef\.current\}-\$\{serial\}-/);
+assert.match(source, /const requestedExecutionKey = options\.executionKey \? String\(options\.executionKey\) : null/);
+assert.match(source, /const id = requestedExecutionKey \|\| `attack-\$\{combatSessionRef\.current\}-\$\{serial\}-/);
 assert.match(source, /currentTurnToken: currentTurnTokenRef\.current \|\| "no-turn-token"/);
 assert.match(source, /attackExecutionRegistryRef\.current\.set\(id, metadata\)/);
 assert.match(source, /const getAttackExecutionMetadata = useCallback/);
