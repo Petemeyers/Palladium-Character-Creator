@@ -226,6 +226,10 @@ import { buildStaleDamageApplicationDiagnostic } from "../utils/combat/canonical
 import { getTechniquesForLevel } from "../data/combatTechniques.js";
 import { selectAITechnique } from "../utils/ai/selectAITechnique.js";
 import { resolveArmoredCombatAction } from "../utils/ai/resolveArmoredCombatAction.js";
+import {
+  buildArmoredTechniqueAttack,
+  selectArmoredCombatTechnique,
+} from "../utils/ai/selectArmoredCombatTechnique.js";
 import { resolveGrappleTurnAction } from "../utils/ai/resolveGrappleTurnAction.js";
 import { canTargetForAction, getFactionId, isAllyOf, isHostileTo } from "../utils/factionDisposition.js";
 import { getCombatHostilityState } from "../utils/combatHostilityState.js";
@@ -404,6 +408,21 @@ import {
   resolveTacticalPulse,
 } from "../utils/combat/tacticalPulseResolver.js";
 import {
+  cancelTacticalAction,
+  cleanupTacticalActionRuntime,
+  getTacticalActorOwnership,
+  registerTacticalAction,
+  requestTacticalActionRelease,
+} from "../utils/combat/tacticalActionRuntime.js";
+import { createTacticalActionIntent } from "../utils/combat/tacticalActionIntent.js";
+import {
+  findTacticalAttackByIntent,
+  getTacticalAttackReach,
+  isTacticalRangedAttack,
+  planDefaultTacticalAction,
+  selectTacticalTimingKey,
+} from "../utils/combat/tacticalActionPlanning.js";
+import {
   COMBAT_LOG_AUDIENCES,
   COMBAT_LOG_CHANNELS,
   selectCombatEventsByAudience,
@@ -430,6 +449,7 @@ import {
   buildCombatDamageLogEvent,
   disambiguateDuplicateCombatActorNames,
   formatCombatActorLabel,
+  getCombatActorId,
 } from "../utils/combatActorIdentity.js";
 import {
   createPlayerAiExecutionOwnership,
@@ -3720,6 +3740,9 @@ function CombatPage({ characters = [] }) {
   const movementCommitSequenceRef = useRef(0);
   const tacticalPulseRuntimeRef = useRef(createTacticalPulseRuntime());
   const tacticalPulseRunRef = useRef(false);
+  const tacticalAttackExecutorRef = useRef(null);
+  const tacticalCleanupEmittedRef = useRef(true);
+  const [, setTacticalActionUiVersion] = useState(0);
   const liveWildlifeRegistryRef = useRef(createLiveWildlifeRegistry());
   const surrenderResolutionEntryKeysRef = useRef(new Set());
   const surrenderLifecycleRegistryRef = useRef(createSurrenderLifecycleRegistry());
@@ -5511,6 +5534,55 @@ function CombatPage({ characters = [] }) {
         data,
       }, "info");
     }
+    const playerActionMessages = {
+      "tactical-action-preparation-started": actor
+        ? `${actor.battleLabel || actor.displayName || actor.name} begins preparing an attack.`
+        : null,
+      "tactical-action-ready": actor
+        ? `${actor.battleLabel || actor.displayName || actor.name} is ready to attack.`
+        : null,
+      "tactical-ranged-release": actor
+        ? `${actor.battleLabel || actor.displayName || actor.name} releases a projectile.`
+        : null,
+      "tactical-attack-resolution-completed": actor
+        ? `${actor.battleLabel || actor.displayName || actor.name} completes the attack.`
+        : null,
+      "tactical-action-recovery-completed": actor
+        ? `${actor.battleLabel || actor.displayName || actor.name} recovers from the attack.`
+        : null,
+      "tactical-action-interrupted": actor
+        ? `${actor.battleLabel || actor.displayName || actor.name}'s preparation is interrupted.`
+        : null,
+      "tactical-action-invalidated": actor
+        ? `${actor.battleLabel || actor.displayName || actor.name}'s prepared attack is no longer possible.`
+        : null,
+    };
+    const playerMessage = playerActionMessages[pulseEvent.eventType];
+    if (playerMessage) {
+      addLog?.({
+        audience: COMBAT_LOG_AUDIENCES.PLAYER,
+        channel: COMBAT_LOG_CHANNELS.ACTION,
+        eventType: pulseEvent.eventType,
+        level: "info",
+        type: "info",
+        actorId: pulseEvent.actorId,
+        source: "tactical-pulse",
+        message: playerMessage,
+        data: {
+          generationId: data.generationId ?? pulseEvent.generationId,
+          combatSession: data.combatSession ?? pulseEvent.combatSession,
+          pulseIndex: pulseEvent.pulseIndex,
+          actorId: pulseEvent.actorId,
+          targetActorId: data.targetActorId || null,
+          actionIntentId: data.actionIntentId || null,
+          weaponId: data.weaponId || null,
+          techniqueId: data.techniqueId || null,
+        },
+      }, "info");
+    }
+    if (pulseEvent.eventType.startsWith("tactical-action-") || pulseEvent.eventType.startsWith("tactical-attack-") || pulseEvent.eventType === "tactical-ranged-release") {
+      setTacticalActionUiVersion((value) => value + 1);
+    }
   }, [addLog]);
 
   const advanceOneTacticalPulse = useCallback(async () => {
@@ -5523,6 +5595,23 @@ function CombatPage({ characters = [] }) {
       fighters: fightersRef.current || [],
       positions: positionsRef.current || {},
       committedPositions: committedPositionsRef.current || {},
+      planActionIntent: (context) => {
+        const controlMode = getFighterControlMode(context.actor);
+        const isManual = controlMode === "manual" && !aiControlEnabledRef.current;
+        return isManual
+          ? { accepted: false, reason: "manual-tactical-action-awaiting-input", forceHold: true }
+          : planDefaultTacticalAction({
+              ...context,
+              selectAttackTechnique: ({ actor, target, attack, distance }) => selectArmoredCombatTechnique({
+                attacker: actor,
+                defender: target,
+                weapon: attack,
+                distance,
+                tacticalMemory: getArmoredMemoryForCombatants(actor.id, target.id),
+                rng: rollArmoredTechniqueRng,
+              }),
+            });
+      },
       spendStamina: ({ actor, actorId, amount, pulseIndex, movementMode, intentId }) => spendCombatStamina({
         fighter: actor,
         amount,
@@ -5559,6 +5648,43 @@ function CombatPage({ characters = [] }) {
           committedPosition: committedPositionsRef.current?.[actorId] || null,
         };
       },
+      validateActionIntent: ({ intent, actor, target }) => {
+        const attackData = findTacticalAttackByIntent(actor, intent);
+        if (!attackData) return { valid: false, reason: "required-weapon-unavailable" };
+        const grappleStatus = getGrappleStatus(actor);
+        if (
+          grappleStatus.state !== GRAPPLE_STATES.NEUTRAL &&
+          (!hasReciprocalGrapplePair(actor, target) || !canUseWeaponInGrapple(actor, attackData))
+        ) {
+          return { valid: false, reason: "incompatible-grapple-state" };
+        }
+        const actorPosition = positionsRef.current?.[intent.actorId];
+        const targetPosition = positionsRef.current?.[intent.targetActorId];
+        if (!actorPosition || !targetPosition) return { valid: false, reason: "tactical-position-unavailable" };
+        const distance = calculateDistance(actorPosition, targetPosition);
+        const reach = getTacticalAttackReach(attackData);
+        if (distance > reach) {
+          return { valid: false, reason: isTacticalRangedAttack(attackData) ? "target-left-range" : "target-left-reach" };
+        }
+        if (target.team === actor.team) return { valid: false, reason: "target-no-longer-hostile" };
+        return { valid: true };
+      },
+      spendCanonicalAmmunition: ({ actorId, targetActorId, weaponId }) => {
+        const actor = (fightersRef.current || []).find((fighter) => String(getCombatActorId(fighter) ?? "") === String(actorId));
+        const target = (fightersRef.current || []).find((fighter) => String(getCombatActorId(fighter) ?? "") === String(targetActorId));
+        if (!actor || !target || target.dead || target.isDead || target.unconscious || target.isUnconscious || target.defeated || target.isDefeated || target.team === actor.team) {
+          return { accepted: false, reason: "target-invalid" };
+        }
+        const intentAttack = findTacticalAttackByIntent(actor, { weaponId });
+        const ammoType = intentAttack?.ammunition || intentAttack?.ammunitionType || intentAttack?.ammoType
+          || (/crossbow/i.test(intentAttack?.name || "") ? "bolts" : "arrows");
+        return getInventoryAmmoCount(actor, ammoType) > 0
+          ? { accepted: true, spent: 0, admissionOnly: true }
+          : { accepted: false, reason: "insufficient-ammunition" };
+      },
+      executeCanonicalAttack: (admission) => tacticalAttackExecutorRef.current?.(admission)
+        ?? { accepted: false, reason: "canonical-tactical-attack-executor-unavailable" },
+      combatActive: combatActiveRef.current && !combatOverRef.current,
       onEvent: emitTacticalPulseEvent,
     });
     if (result.accepted) setTacticalPulseClock(result.clock);
@@ -5566,7 +5692,15 @@ function CombatPage({ characters = [] }) {
       addLog(`Tactical pulse blocked: ${result.reason || "unknown reason"}.`, "warning");
     }
     return result;
-  }, [addLog, combatTimingMode, commitAuthoritativeCombatPosition, emitTacticalPulseEvent, spendCombatStamina]);
+  }, [
+    addLog,
+    combatTimingMode,
+    commitAuthoritativeCombatPosition,
+    emitTacticalPulseEvent,
+    getArmoredMemoryForCombatants,
+    rollArmoredTechniqueRng,
+    spendCombatStamina,
+  ]);
 
   const runTacticalPulses = useCallback(async (count = 6) => {
     if (tacticalPulseRunRef.current) return false;
@@ -5589,6 +5723,152 @@ function CombatPage({ characters = [] }) {
     tacticalPulseRunRef.current = false;
     setTacticalPulsesRunning(false);
   }, []);
+
+  const prepareManualTacticalAttack = useCallback((expected = {}) => {
+    if (
+      combatTimingModeRef.current !== COMBAT_TIMING_MODES.TACTICAL_PULSE ||
+      !combatActiveRef.current ||
+      combatOverRef.current
+    ) return false;
+    const runtime = tacticalPulseRuntimeRef.current;
+    if (
+      (expected.generationId !== undefined && runtime.generationId !== Number(expected.generationId)) ||
+      (expected.combatSession !== undefined && runtime.combatSession !== Number(expected.combatSession))
+    ) return false;
+    const actor = fightersRef.current?.[turnIndexRef.current] || null;
+    const target = fightersRef.current?.find((fighter) => fighter.id === selectedTarget?.id) || selectedTarget;
+    const attackData = selectedAttackWeapon || actor?.selectedAttack || actor?.attacks?.[0];
+    const actorControlMode = getFighterControlMode(actor);
+    if (
+      !actor ||
+      actorControlMode !== "manual" ||
+      aiControlEnabledRef.current ||
+      (expected.actorId && String(getCombatActorId(actor) ?? "") !== String(expected.actorId))
+    ) {
+      addLog("Tactical controls are available only for the currently controlled manual fighter.", "warning");
+      return false;
+    }
+    if (!target || target.team === actor.team || !attackData) {
+      addLog("Select an attack and a hostile target before preparing.", "warning");
+      return false;
+    }
+    const actorId = String(getCombatActorId(actor) ?? "");
+    const targetActorId = String(getCombatActorId(target) ?? "");
+    const weaponId = String(attackData.id ?? attackData.weaponId ?? attackData.name ?? "");
+    const timingKey = selectTacticalTimingKey({
+      attack: attackData,
+      actor,
+      targetDistance: positionsRef.current?.[actorId] && positionsRef.current?.[targetActorId]
+        ? calculateDistance(positionsRef.current[actorId], positionsRef.current[targetActorId])
+        : Infinity,
+    });
+    const actionSequence = runtime.actionRuntime.terminalHistory.filter((intent) => (
+      intent.actorId === actorId &&
+      intent.generationId === runtime.generationId &&
+      intent.combatSession === runtime.combatSession
+    )).length + 1;
+    const created = createTacticalActionIntent({
+      actionIntentId: `${runtime.generationId}:${runtime.combatSession}:${runtime.clock.pulseIndex + 1}:${actorId}:manual-attack:${actionSequence}`,
+      generationId: runtime.generationId,
+      combatSession: runtime.combatSession,
+      actorId,
+      targetActorId,
+      actionType: isTacticalRangedAttack(attackData) ? "ranged-attack" : "melee-attack",
+      techniqueId: attackData.techniqueId ?? attackData.attackMode ?? null,
+      weaponId,
+      weaponFamily: attackData.weaponFamily ?? attackData.category ?? null,
+      attackProfileId: attackData.attackProfileId ?? attackData.id ?? null,
+      timingKey,
+      createdAtPulse: runtime.clock.pulseIndex + 1,
+      actionSequence,
+      source: "manual-tactical-control",
+    });
+    const registered = created.accepted
+      ? registerTacticalAction(tacticalPulseRuntimeRef.current.actionRuntime, created.intent, { releaseRequested: false })
+      : created;
+    if (!registered.accepted) {
+      addLog(`Tactical attack preparation rejected: ${registered.reason}.`, "warning");
+      return false;
+    }
+    emitTacticalPulseEvent({
+      eventType: "tactical-action-intent-created",
+      actorId,
+      generationId: created.intent.generationId,
+      combatSession: created.intent.combatSession,
+      pulseIndex: created.intent.createdAtPulse,
+      cycleIndex: tacticalPulseRuntimeRef.current.clock.cycleIndex,
+      data: created.intent,
+    });
+    emitTacticalPulseEvent({
+      eventType: "tactical-action-preparation-started",
+      actorId,
+      generationId: registered.intent.generationId,
+      combatSession: registered.intent.combatSession,
+      pulseIndex: registered.intent.createdAtPulse,
+      cycleIndex: runtime.clock.cycleIndex,
+      data: { ...registered.intent, previousState: "planned", nextState: "preparing" },
+    });
+    setTacticalActionUiVersion((value) => value + 1);
+    return true;
+  }, [addLog, emitTacticalPulseEvent, selectedAttackWeapon, selectedTarget]);
+
+  const cancelManualTacticalPreparation = useCallback((expected = {}) => {
+    if (combatTimingModeRef.current !== COMBAT_TIMING_MODES.TACTICAL_PULSE) return false;
+    const actor = fightersRef.current?.[turnIndexRef.current] || null;
+    const actorId = String(getCombatActorId(actor) ?? "");
+    if (getFighterControlMode(actor) !== "manual" || aiControlEnabledRef.current || (expected.actorId && expected.actorId !== actorId)) return false;
+    const canceled = cancelTacticalAction(
+      tacticalPulseRuntimeRef.current.actionRuntime,
+      actorId,
+      "manual-cancel",
+      expected,
+    );
+    if (canceled.accepted) {
+      emitTacticalPulseEvent({
+        eventType: "tactical-action-canceled",
+        actorId,
+        generationId: canceled.intent.generationId,
+        combatSession: canceled.intent.combatSession,
+        pulseIndex: tacticalPulseRuntimeRef.current.clock.pulseIndex,
+        cycleIndex: tacticalPulseRuntimeRef.current.clock.cycleIndex,
+        data: canceled.intent,
+      });
+    }
+    setTacticalActionUiVersion((value) => value + 1);
+    return canceled.accepted;
+  }, [emitTacticalPulseEvent]);
+
+  const releaseManualTacticalAttack = useCallback((expected = {}) => {
+    if (combatTimingModeRef.current !== COMBAT_TIMING_MODES.TACTICAL_PULSE) return false;
+    const actor = fightersRef.current?.[turnIndexRef.current] || null;
+    const actorId = String(getCombatActorId(actor) ?? "");
+    if (getFighterControlMode(actor) !== "manual" || aiControlEnabledRef.current || (expected.actorId && expected.actorId !== actorId)) return false;
+    const released = requestTacticalActionRelease(tacticalPulseRuntimeRef.current.actionRuntime, actorId, expected);
+    if (!released.accepted) addLog(`Tactical release rejected: ${released.reason}.`, "warning");
+    setTacticalActionUiVersion((value) => value + 1);
+    return released.accepted;
+  }, [addLog]);
+
+  useEffect(() => {
+    if (combatActive) {
+      tacticalCleanupEmittedRef.current = false;
+      return;
+    }
+    if (tacticalCleanupEmittedRef.current) return;
+    const actionRuntime = tacticalPulseRuntimeRef.current?.actionRuntime;
+    if (!actionRuntime) return;
+    const cleanup = cleanupTacticalActionRuntime(actionRuntime, "combat-ended");
+    tacticalCleanupEmittedRef.current = true;
+    emitTacticalPulseEvent({
+      eventType: cleanup.eventType,
+      actorId: null,
+      generationId: tacticalPulseRuntimeRef.current.generationId,
+      combatSession: tacticalPulseRuntimeRef.current.combatSession,
+      pulseIndex: tacticalPulseRuntimeRef.current.clock.pulseIndex,
+      cycleIndex: tacticalPulseRuntimeRef.current.clock.cycleIndex,
+      data: cleanup.data,
+    });
+  }, [combatActive, emitTacticalPulseEvent]);
 
   useEffect(() => {
     if (combatActive || originalBattleLedgerFinalizedRef.current) return;
@@ -19551,7 +19831,12 @@ function CombatPage({ characters = [] }) {
     }
     const serial = (attackExecutionSerialRef.current || 0) + 1;
     attackExecutionSerialRef.current = serial;
-    const id = `attack-${combatSessionRef.current}-${serial}-${Math.random().toString(36).slice(2)}`;
+    const requestedExecutionKey = options.executionKey ? String(options.executionKey) : null;
+    if (requestedExecutionKey && attackExecutionRegistryRef.current.has(requestedExecutionKey)) {
+      addLog(`attack key registry rejected: actor=${actorId} source=${source} id=${requestedExecutionKey} reason=duplicate-execution-key`, "warning");
+      return null;
+    }
+    const id = requestedExecutionKey || `attack-${combatSessionRef.current}-${serial}-${Math.random().toString(36).slice(2)}`;
     const registryActor = (fightersRef.current ?? fighters ?? []).find((fighter) => fighter.id === actorId);
     const metadata = {
       id,
@@ -19576,6 +19861,9 @@ function CombatPage({ characters = [] }) {
       parentAttackExecutionKey: reactionAdmission?.sourceAttackExecutionKey || null,
       sourceExchangeId: reactionAdmission?.sourceExchangeId || null,
       createdAt: Date.now(),
+      tacticalActionIntentId: options.tacticalActionAdmission?.actionIntentId || null,
+      tacticalPulseIndex: options.tacticalActionAdmission?.pulseIndex ?? null,
+      tacticalActionSequence: options.tacticalActionAdmission?.actionSequence ?? null,
     };
     attackExecutionRegistryRef.current.set(id, metadata);
     addLog(
@@ -23383,7 +23671,10 @@ function CombatPage({ characters = [] }) {
         expectedMeleeRound,
         expectedTurnCounter,
         expectedTurnIndex,
-        requireActionRemaining: !bonusModifiers?.multiAttackSubHit && !isImmediateRiposte,
+        requireActionRemaining:
+          !bonusModifiers?.suppressActionSpend &&
+          !bonusModifiers?.multiAttackSubHit &&
+          !isImmediateRiposte,
         ownership: isImmediateRiposte ? "callback" : "attack",
         requireEntryGate: requiresEntryGate,
         requirePreStaminaGate: requiresPreStaminaGate,
@@ -23431,6 +23722,7 @@ function CombatPage({ characters = [] }) {
       if (
         hasExplicitRemainingActions &&
         latestAttackerRemainingRaw <= 0 &&
+        !bonusModifiers?.suppressActionSpend &&
         !bonusModifiers?.multiAttackSubHit &&
         !isImmediateRiposte
       ) {
@@ -30930,6 +31222,84 @@ function CombatPage({ characters = [] }) {
     settings.useMoraleRouting,
     settings.usePainStagger,
   ]);
+
+  useEffect(() => {
+    tacticalAttackExecutorRef.current = async (admission) => {
+      if (
+        combatTimingModeRef.current !== COMBAT_TIMING_MODES.TACTICAL_PULSE ||
+        !combatActiveRef.current ||
+        combatOverRef.current
+      ) {
+        return { accepted: false, reason: "tactical-pulse-combat-inactive" };
+      }
+      const actor = (fightersRef.current || []).find((fighter) => (
+        String(getCombatActorId(fighter) ?? "") === String(admission.actorId)
+      ));
+      const target = (fightersRef.current || []).find((fighter) => (
+        String(getCombatActorId(fighter) ?? "") === String(admission.targetActorId)
+      ));
+      const selectedTacticalAttack = findTacticalAttackByIntent(actor, { weaponId: admission.weaponId });
+      if (!actor || !target || !selectedTacticalAttack) {
+        return { accepted: false, reason: "tactical-attack-participant-or-weapon-missing" };
+      }
+      if (
+        target.dead || target.isDead || target.unconscious || target.isUnconscious ||
+        target.defeated || target.isDefeated || getFighterHP(target) <= 0 || target.team === actor.team
+      ) {
+        return { accepted: false, reason: "target-invalid" };
+      }
+      if (admission.actionType === "grapple-entry") {
+        return { accepted: false, reason: "tactical-grapple-requires-canonical-grapple-admission" };
+      }
+      const admittedTacticalAttack = admission.techniqueId
+        ? buildArmoredTechniqueAttack(selectedTacticalAttack, admission.techniqueId)
+        : selectedTacticalAttack;
+      const tacticalActor = { ...actor, selectedAttack: admittedTacticalAttack };
+      const rangedTacticalAttack = admission.actionType === "ranged-attack";
+      const ammunitionType = rangedTacticalAttack
+        ? admittedTacticalAttack?.ammunition || admittedTacticalAttack?.ammunitionType || admittedTacticalAttack?.ammoType
+          || (/crossbow/i.test(admittedTacticalAttack?.name || "") ? "bolts" : "arrows")
+        : null;
+      const ammunitionBefore = rangedTacticalAttack ? getInventoryAmmoCount(actor, ammunitionType) : null;
+      const canonicalExecutionKey = createAttackExecutionKey(actor.id, target.id, "tactical-pulse-attack", {
+        allowOutOfTurnAttack: true,
+        executionKey: admission.executionKey,
+        tacticalActionAdmission: admission,
+      });
+      if (!canonicalExecutionKey) return { accepted: false, reason: "tactical-execution-key-mint-rejected" };
+      const previousSuppression = suppressEndTurnRef.current;
+      suppressEndTurnRef.current = true;
+      try {
+        const result = await attack(tacticalActor, target.id, {
+          attackActionId: canonicalExecutionKey,
+          allowOutOfTurnAttack: true,
+          expectedActorId: actor.id,
+          combatSession: admission.combatSession,
+          source: "tactical-pulse-attack",
+          suppressSequentialTurnAdvance: true,
+          suppressActionSpend: true,
+          tacticalActionAdmission: admission,
+        });
+        const liveActorAfterAttack = (fightersRef.current || []).find((fighter) => (
+          String(getCombatActorId(fighter) ?? "") === String(admission.actorId)
+        ));
+        const ammunitionAfter = rangedTacticalAttack
+          ? getInventoryAmmoCount(liveActorAfterAttack || actor, ammunitionType)
+          : null;
+        const ammunitionSpent = rangedTacticalAttack
+          ? Math.max(0, Number(ammunitionBefore) - Number(ammunitionAfter))
+          : 0;
+        return result?.blocked
+          ? { accepted: false, reason: result.reason || "canonical-attack-blocked", result, ammunitionSpent, projectileReleased: ammunitionSpent === 1 }
+          : { accepted: true, result, ammunitionSpent, projectileReleased: rangedTacticalAttack ? ammunitionSpent === 1 : null };
+      } finally {
+        suppressEndTurnRef.current = previousSuppression;
+      }
+    };
+    return () => {
+      tacticalAttackExecutorRef.current = null;
+    };
+  }, [attack, createAttackExecutionKey, getFighterHP]);
 
   // Handle charge attack (move and attack with bonuses)
   const handleChargeAttack = useCallback((attacker, target) => {
@@ -45876,6 +46246,21 @@ function CombatPage({ characters = [] }) {
       setTacticalPulsesRunning(false);
       const resetPulseClock = createTacticalPulseClock();
       setTacticalPulseClock(resetPulseClock);
+      const previousTacticalRuntime = tacticalPulseRuntimeRef.current;
+      if (previousTacticalRuntime?.actionRuntime) {
+        const cleanup = cleanupTacticalActionRuntime(previousTacticalRuntime.actionRuntime, "combat-reset");
+        if (cleanup.accepted && cleanup.eventType) {
+          emitTacticalPulseEvent({
+            eventType: cleanup.eventType,
+            actorId: null,
+            generationId: previousTacticalRuntime.generationId,
+            combatSession: previousTacticalRuntime.combatSession,
+            pulseIndex: previousTacticalRuntime.clock?.pulseIndex || 0,
+            cycleIndex: previousTacticalRuntime.clock?.cycleIndex || 1,
+            data: cleanup.data,
+          });
+        }
+      }
       tacticalPulseRuntimeRef.current = createTacticalPulseRuntime({ clock: resetPulseClock });
       const combatReset = resetCombatExecutionState({
         advanceGeneration: true,
@@ -47392,6 +47777,67 @@ function CombatPage({ characters = [] }) {
               <Button size="sm" colorScheme="yellow" variant="outline" onClick={pauseTacticalPulses} isDisabled={!tacticalPulsesRunning}>
                 Pause Pulses
               </Button>
+              {(() => {
+                const actorId = String(getCombatActorId(currentFighter) ?? "");
+                const ownership = getTacticalActorOwnership(tacticalPulseRuntimeRef.current.actionRuntime, actorId);
+                const action = ownership.action;
+                const recovery = ownership.recovery;
+                const isManualActor = getFighterControlMode(currentFighter) === "manual" && !aiControlEnabled;
+                const pulse = tacticalPulseRuntimeRef.current.clock.pulseIndex;
+                const terminal = [...tacticalPulseRuntimeRef.current.actionRuntime.terminalHistory]
+                  .reverse()
+                  .find((intent) => intent.actorId === actorId) || null;
+                const target = action
+                  ? fighters.find((fighter) => String(getCombatActorId(fighter) ?? "") === action.targetActorId)
+                  : null;
+                const status = action?.state === "preparing"
+                  ? `Preparing (${Math.max(0, action.readyAtPulse - pulse)} pulses)`
+                  : action?.state === "ready"
+                    ? action.releaseRequested ? "Ready — release requested" : "Ready"
+                    : recovery
+                      ? `Recovering (${Math.max(0, recovery.recoveryUntilPulse - pulse)} pulses)`
+                      : terminal?.invalidationReason || terminal?.interruptionReason
+                        ? `${terminal.state}: ${terminal.invalidationReason || terminal.interruptionReason}`
+                        : "Unowned";
+                const expectedIdentity = action ? {
+                  actorId,
+                  actionIntentId: action.actionIntentId,
+                  generationId: action.generationId,
+                  combatSession: action.combatSession,
+                } : {
+                  actorId,
+                  generationId: tacticalPulseRuntimeRef.current.generationId,
+                  combatSession: tacticalPulseRuntimeRef.current.combatSession,
+                };
+                return (
+                  <>
+                    <Badge colorScheme={action?.state === "ready" ? "green" : recovery ? "orange" : "gray"} px={2} py={1}>
+                      {status}
+                    </Badge>
+                    {action && (
+                      <Text fontSize="xs">
+                        {action.techniqueId || action.weaponId} → {target?.battleLabel || target?.displayName || target?.name || action.targetActorId}
+                      </Text>
+                    )}
+                    {isManualActor && (
+                      <>
+                        <Button size="sm" colorScheme="green" onClick={() => prepareManualTacticalAttack(expectedIdentity)} isDisabled={ownership.state !== "unowned"}>
+                          Prepare Attack
+                        </Button>
+                        <Button size="sm" variant="outline" onClick={() => cancelManualTacticalPreparation(expectedIdentity)} isDisabled={!action || !["preparing", "ready"].includes(action.state)}>
+                          Cancel Preparation
+                        </Button>
+                        <Button size="sm" colorScheme="red" onClick={() => releaseManualTacticalAttack(expectedIdentity)} isDisabled={action?.state !== "ready" || action?.releaseRequested === true}>
+                          Release Ready Attack
+                        </Button>
+                        <Button size="sm" variant="ghost" onClick={advanceOneTacticalPulse} isDisabled={tacticalPulsesRunning}>
+                          Hold
+                        </Button>
+                      </>
+                    )}
+                  </>
+                );
+              })()}
             </HStack>
           )}
 
