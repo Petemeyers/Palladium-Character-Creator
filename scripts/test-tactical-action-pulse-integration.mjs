@@ -27,11 +27,16 @@ assert.equal(attacks, 0, "planning pulse cannot resolve newly created action");
 assert.ok(first.events.some((entry) => entry.eventType === "tactical-action-preparation-started"));
 const second = await resolveTacticalPulse({ runtime, fighters, positions, planActionIntent, planIntent, executeCanonicalAttack: () => { attacks += 1; return { accepted: true }; } });
 assert.equal(second.accepted, true);
-assert.equal(attacks, 1);
+assert.equal(attacks, 0, "reaction window delays canonical attack resolution until its pulse boundary");
 const order = second.events.map((entry) => entry.eventType);
 assert.ok(order.indexOf("tactical-action-ready") < order.indexOf("tactical-attack-resolution-admitted"));
-assert.ok(order.indexOf("tactical-attack-resolution-admitted") < order.indexOf("tactical-attack-resolution-completed"));
+assert.ok(order.indexOf("tactical-attack-resolution-admitted") < order.indexOf("tactical-reaction-window-created"));
 assert.equal(second.events.some((entry) => entry.eventType === "sequential-turn-advanced"), false);
+const third = await resolveTacticalPulse({ runtime, fighters, positions, planActionIntent, planIntent, executeCanonicalAttack: () => { attacks += 1; return { accepted: true }; } });
+assert.equal(third.accepted, true);
+assert.equal(attacks, 1);
+assert.ok(third.events.some((entry) => entry.eventType === "tactical-reaction-resolution-completed"));
+assert.ok(third.events.some((entry) => entry.eventType === "tactical-attack-resolution-completed"));
 
 const manualRuntime = createTacticalActionRuntime({ generationId: 4, combatSession: 5 });
 const manualIntent = createTacticalActionIntent({
@@ -52,7 +57,7 @@ const manualAdvance = (pulseIndex) => advanceTacticalActionRuntime({
   runtime: manualRuntime,
   pulseIndex,
   fighters,
-  spendCanonicalAmmunition: () => { manualAmmo += 1; return { accepted: true }; },
+  spendCanonicalAmmunition: () => { manualAmmo += 1; return { accepted: true, spent: 1, projectileAuthorized: true }; },
   executeCanonicalAttack: () => { manualAttacks += 1; return { accepted: true }; },
 });
 const manualReady = await manualAdvance(5);
@@ -71,6 +76,9 @@ assert.equal(requestTacticalActionRelease(manualRuntime, "a", {
 }).accepted, true);
 assert.equal(requestTacticalActionRelease(manualRuntime, "a").reason, "tactical-release-already-requested");
 await manualAdvance(7);
+assert.equal(manualAttacks, 0, "manual release opens a reaction window before resolution");
+assert.equal(manualAmmo, 1, "authoritative projectile expenditure precedes the reaction window");
+await manualAdvance(8);
 assert.equal(manualAttacks, 1);
 assert.equal(manualAmmo, 1);
 

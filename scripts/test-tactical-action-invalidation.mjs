@@ -62,9 +62,15 @@ const rejectedIntent = createTacticalActionIntent({
 }).intent;
 registerTacticalAction(rejectionRuntime, rejectedIntent);
 let rejectedRolls = 0;
-const rejection = await advanceTacticalActionRuntime({
+await advanceTacticalActionRuntime({
   runtime: rejectionRuntime,
   pulseIndex: 1,
+  fighters: baseFighters,
+  executeCanonicalAttack: () => ({ accepted: false, reason: "missing-armored-action-plan", rolls: rejectedRolls }),
+});
+const rejection = await advanceTacticalActionRuntime({
+  runtime: rejectionRuntime,
+  pulseIndex: 2,
   fighters: baseFighters,
   executeCanonicalAttack: () => ({ accepted: false, reason: "missing-armored-action-plan", rolls: rejectedRolls }),
 });
@@ -90,9 +96,19 @@ const replannedIntent = createTacticalActionIntent({
   actionSequence: 2,
 }).intent;
 assert.equal(registerTacticalAction(rejectionRuntime, replannedIntent).accepted, true, "rejected admission releases primary ownership for replanning");
+await advanceTacticalActionRuntime({
+  runtime: rejectionRuntime,
+  pulseIndex: 3,
+  fighters: baseFighters,
+  executeCanonicalAttack: ({ techniqueId }) => {
+    assert.equal(techniqueId, "half-sword-thrust");
+    rejectedRolls += 1;
+    return { accepted: true, armorPipeline: true };
+  },
+});
 const replanned = await advanceTacticalActionRuntime({
   runtime: rejectionRuntime,
-  pulseIndex: 2,
+  pulseIndex: 4,
   fighters: baseFighters,
   executeCanonicalAttack: ({ techniqueId }) => {
     assert.equal(techniqueId, "half-sword-thrust");
@@ -117,9 +133,15 @@ registerTacticalAction(thrownRuntime, createTacticalActionIntent({
   weaponId: "sword",
   timingKey: "daggerAttack",
 }).intent);
-const thrown = await advanceTacticalActionRuntime({
+await advanceTacticalActionRuntime({
   runtime: thrownRuntime,
   pulseIndex: 1,
+  fighters: baseFighters,
+  executeCanonicalAttack: () => { throw new Error("adapter exploded"); },
+});
+const thrown = await advanceTacticalActionRuntime({
+  runtime: thrownRuntime,
+  pulseIndex: 2,
   fighters: baseFighters,
   executeCanonicalAttack: () => { throw new Error("adapter exploded"); },
 });

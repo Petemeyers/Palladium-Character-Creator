@@ -16,6 +16,7 @@ for (const [timingKey, releasePulse] of [["daggerAttack", 1], ["heavyMeleeAttack
   for (let pulse = 1; pulse <= releasePulse; pulse += 1) {
     await advanceTacticalActionRuntime({ runtime, pulseIndex: pulse, fighters, executeCanonicalAttack: () => { rolls += 1; return { accepted: true }; } });
   }
+  await advanceTacticalActionRuntime({ runtime, pulseIndex: releasePulse + 1, fighters, executeCanonicalAttack: () => { rolls += 1; return { accepted: true }; } });
   assert.equal(rolls, 1);
 }
 
@@ -28,6 +29,7 @@ const reachRuntime = createTacticalActionRuntime({ generationId: 1, combatSessio
 registerTacticalAction(reachRuntime, make("spearThrust", "extended-spear"));
 let extendedReachRolls = 0;
 await advanceTacticalActionRuntime({ runtime: reachRuntime, pulseIndex: 1, fighters, validateAction: () => ({ valid: true, reachFeet: 10 }), executeCanonicalAttack: () => { extendedReachRolls += 1; return { accepted: true }; } });
+await advanceTacticalActionRuntime({ runtime: reachRuntime, pulseIndex: 2, fighters, validateAction: () => ({ valid: true, reachFeet: 10 }), executeCanonicalAttack: () => { extendedReachRolls += 1; return { accepted: true }; } });
 assert.equal(extendedReachRolls, 1);
 
 const armoredPlan = planDefaultTacticalAction({

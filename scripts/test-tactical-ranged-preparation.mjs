@@ -8,10 +8,13 @@ const runtime = createTacticalActionRuntime({ generationId: 3, combatSession: 4 
 let ammo = 0;
 let rolls = 0;
 registerTacticalAction(runtime, bowIntent());
-for (let pulse = 0; pulse < 3; pulse += 1) await advanceTacticalActionRuntime({ runtime, pulseIndex: pulse, fighters, spendCanonicalAmmunition: () => { ammo += 1; return { accepted: true }; }, executeCanonicalAttack: () => { rolls += 1; return { accepted: true, hit: false }; } });
+for (let pulse = 0; pulse < 3; pulse += 1) await advanceTacticalActionRuntime({ runtime, pulseIndex: pulse, fighters, spendCanonicalAmmunition: () => { ammo += 1; return { accepted: true, spent: 1, projectileAuthorized: true }; }, executeCanonicalAttack: () => { rolls += 1; return { accepted: true, hit: false }; } });
 assert.equal(ammo, 0);
 assert.equal(rolls, 0);
-await advanceTacticalActionRuntime({ runtime, pulseIndex: 3, fighters, spendCanonicalAmmunition: () => { ammo += 1; return { accepted: true }; }, executeCanonicalAttack: () => { rolls += 1; return { accepted: true, hit: false }; } });
+await advanceTacticalActionRuntime({ runtime, pulseIndex: 3, fighters, spendCanonicalAmmunition: () => { ammo += 1; return { accepted: true, spent: 1, projectileAuthorized: true }; }, executeCanonicalAttack: () => { rolls += 1; return { accepted: true, hit: false }; } });
+assert.equal(ammo, 1, "ready ranged action spends one projectile before opening its reaction window");
+assert.equal(rolls, 0, "reaction window delays the ranged roll");
+await advanceTacticalActionRuntime({ runtime, pulseIndex: 4, fighters, spendCanonicalAmmunition: () => { ammo += 1; return { accepted: true, spent: 1, projectileAuthorized: true }; }, executeCanonicalAttack: () => { rolls += 1; return { accepted: true, hit: false, ammunitionSpent: 1, projectileReleased: true }; } });
 assert.equal(ammo, 1, "released miss spends exactly one projectile");
 assert.equal(rolls, 1);
 

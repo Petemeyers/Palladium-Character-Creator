@@ -1,0 +1,25 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+
+const page = readFileSync(new URL("../src/pages/CombatPage.jsx", import.meta.url), "utf8");
+const runtime = readFileSync(new URL("../src/utils/combat/tacticalActionRuntime.js", import.meta.url), "utf8");
+assert.match(page, /submitManualTacticalReaction/);
+assert.match(page, /tactical-reaction-controls/);
+assert.match(page, /tacticalReactionType === "dodge"/);
+assert.match(page, /tacticalReactionType === "shield-block"/);
+assert.match(page, /tacticalReactionType !== "parry"/);
+assert.match(page, /tacticalReactionType !== "decline"/);
+assert.match(page, /usesTacticalReaction/);
+assert.match(page, /spends their tactical reaction/);
+assert.match(page, /onTacticalDefenseResolved/);
+assert.match(page, /parryQuality/);
+assert.match(page, /tactical-reaction-followups-reserved-for-phase1b2b/);
+assert.match(runtime, /openTacticalReactionWindow/);
+assert.match(runtime, /admitTacticalReactionResolution/);
+assert.match(runtime, /completeTacticalReactionResolution/);
+assert.ok(runtime.indexOf("openTacticalReactionWindow") < runtime.lastIndexOf("resolveTacticalAttackIntent"));
+assert.doesNotMatch(page, /execute.*riposte.*tacticalReaction/i);
+const handlerSource = page.slice(page.indexOf("const submitManualTacticalReaction"), page.indexOf("useEffect(() =>", page.indexOf("const submitManualTacticalReaction")));
+assert.match(handlerSource, /submitTacticalReactionResponse/);
+assert.doesNotMatch(handlerSource, /lockTacticalReactionWindow|resolveTacticalAttackIntent|executeCanonicalAttack|spendCanonicalAmmunition|recoveryByActor/);
+console.log("tactical reaction source integration tests passed");

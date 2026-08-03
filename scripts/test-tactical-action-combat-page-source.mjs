@@ -11,7 +11,7 @@ assert.match(page, /createAttackExecutionKey\(actor\.id, target\.id, "tactical-p
 assert.match(page, /attack\(tacticalActor, target\.id/);
 assert.match(page, /suppressSequentialTurnAdvance: true/);
 assert.match(page, /suppressActionSpend: true/);
-assert.match(page, /getInventoryAmmoCount\(actor, ammoType\)/);
+assert.match(page, /spendAmmunitionOnce\(\{[\s\S]*executionKey,[\s\S]*projectileReleased: true/);
 assert.match(page, /cleanupTacticalActionRuntime\(previousTacticalRuntime\.actionRuntime, "combat-reset"\)/);
 assert.match(page, /manual-tactical-action-awaiting-input", forceHold: true/);
 assert.match(page, /registerTacticalAction\([\s\S]*releaseRequested: false/);

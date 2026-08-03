@@ -18,7 +18,8 @@ const execute = (admission) => {
   return canonicalResult;
 };
 await advanceTacticalActionRuntime({ runtime, pulseIndex: 1, fighters, executeCanonicalAttack: execute });
-await advanceTacticalActionRuntime({ runtime, pulseIndex: 1, fighters, executeCanonicalAttack: () => { canonicalCalls += 1; hpMutations += 1; } });
+await advanceTacticalActionRuntime({ runtime, pulseIndex: 2, fighters, executeCanonicalAttack: execute });
+await advanceTacticalActionRuntime({ runtime, pulseIndex: 2, fighters, executeCanonicalAttack: () => { canonicalCalls += 1; hpMutations += 1; } });
 assert.equal(canonicalCalls, 1);
 assert.equal(hpMutations, 1);
 assert.equal(sequentialAdvances, 0);
