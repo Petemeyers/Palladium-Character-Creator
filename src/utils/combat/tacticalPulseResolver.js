@@ -19,6 +19,15 @@ import {
   tacticalHexKey,
   validateTacticalMovementPath,
 } from "./tacticalMovementIntent.js";
+import {
+  advanceTacticalActionRuntime,
+  cancelTacticalAction,
+  completeTacticalRecoveryBoundaries,
+  createTacticalActionRuntime,
+  getTacticalActorOwnership,
+  registerTacticalAction,
+} from "./tacticalActionRuntime.js";
+import { planDefaultTacticalAction } from "./tacticalActionPlanning.js";
 
 const event = (eventType, ownership, data = {}, actorId = data.actorId ?? null) => ({
   eventType, actorId, generationId: ownership.generationId, combatSession: ownership.combatSession,
@@ -55,6 +64,7 @@ export function createTacticalPulseRuntime({ generationId = 0, combatSession = 0
     ownership: null,
     completedOwnershipKeys: new Set(),
     staminaChargeKeys: new Set(),
+    actionRuntime: createTacticalActionRuntime({ generationId, combatSession }),
   };
 }
 
@@ -76,11 +86,16 @@ export async function resolveTacticalPulse({
   positions = {},
   committedPositions = positions,
   planIntent = planDefaultTacticalMovement,
+  planActionIntent = planDefaultTacticalAction,
   isCombatCapable = canAct,
   isHexLegal,
   spendStamina = defaultTacticalPulseStaminaSpend,
   commitPosition,
   readPositionAuthorities,
+  validateActionIntent,
+  executeCanonicalAttack,
+  spendCanonicalAmmunition,
+  combatActive = true,
   getInitiativePriority = getTacticalInitiativePriority,
   transitionClock = transitionTacticalPulseClock,
   completeClock = completeTacticalPulseClock,
@@ -99,6 +114,15 @@ export async function resolveTacticalPulse({
   const events = [];
   const emit = (entry) => { events.push(entry); onEvent?.(entry); };
   emit(event("tactical-pulse-started", owner, { state: "planning" }));
+  const maturedRecovery = completeTacticalRecoveryBoundaries({
+    runtime: runtime.actionRuntime,
+    pulseIndex: owner.pulseIndex,
+    onEvent: (entry) => emit(event(entry.eventType, owner, entry.data, entry.actorId)),
+  });
+  if (!maturedRecovery.accepted) {
+    runtime.ownership = null;
+    return { accepted: false, reason: maturedRecovery.reason, events };
+  }
   let state = {
     fighters: fighters.map((actor) => ({ ...actor })),
     positions: Object.fromEntries(Object.entries(positions).map(([id, value]) => [id, { ...value }])),
@@ -109,7 +133,11 @@ export async function resolveTacticalPulse({
     positions: Object.freeze(Object.fromEntries(Object.entries(state.positions).map(([id, value]) => [id, Object.freeze({ ...value })]))),
   });
   const intents = new Map();
+  const actionIntentsCreated = [];
   const abortPulse = (reason, details = {}) => {
+    for (const action of actionIntentsCreated) {
+      cancelTacticalAction(runtime.actionRuntime, action.actorId, reason);
+    }
     for (const intent of intents.values()) {
       if (!["completed", "blocked", "canceled", "expired"].includes(intent.state)) {
         intent.state = "canceled";
@@ -150,7 +178,52 @@ export async function resolveTacticalPulse({
   try {
     for (const actor of snapshot.fighters.filter(isCombatCapable)) {
       const actorId = actorIdOf(actor);
-      const planned = await planIntent({ actor, fighters: snapshot.fighters, positions: snapshot.positions, pulseIndex: owner.pulseIndex, generationId: owner.generationId, isHexLegal });
+      const actionOwnership = getTacticalActorOwnership(runtime.actionRuntime, actorId);
+      let createdAction = null;
+      let actionPlan = null;
+      if (actionOwnership.state === "unowned") {
+        actionPlan = await planActionIntent?.({
+          actor,
+          fighters: snapshot.fighters,
+          positions: snapshot.positions,
+          pulseIndex: owner.pulseIndex,
+          generationId: owner.generationId,
+          combatSession: owner.combatSession,
+        });
+        if (actionPlan?.accepted && actionPlan.intent) {
+          const registered = registerTacticalAction(runtime.actionRuntime, actionPlan.intent, {
+            releaseRequested: actionPlan.releaseRequested !== false,
+          });
+          if (registered.accepted) {
+            createdAction = registered.intent;
+            actionIntentsCreated.push(createdAction);
+            emit(event("tactical-action-intent-created", owner, { ...createdAction }, actorId));
+            emit(event("tactical-action-preparation-started", owner, {
+              ...createdAction,
+              previousState: "planned",
+              nextState: "preparing",
+            }, actorId));
+          } else {
+            emit(event("tactical-action-intent-rejected", owner, {
+              actorId,
+              reason: registered.reason,
+            }, actorId));
+          }
+        }
+      }
+      const busyWithAction = createdAction || actionOwnership.state !== "unowned";
+      const manualHold = actionPlan?.forceHold === true;
+      const planned = (busyWithAction || manualHold)
+        ? createTacticalMovementIntent({
+          intentId: `${owner.generationId}:${owner.pulseIndex}:${actorId}:movement`,
+          generationId: owner.generationId,
+          actorId,
+          mode: "hold",
+          reason: createdAction ? "attack-preparation" : manualHold ? "manual-hold" : `action-${actionOwnership.state}`,
+          targetActorId: createdAction?.targetActorId || actionOwnership.action?.targetActorId || null,
+          createdAtPulse: owner.pulseIndex,
+        })
+        : await planIntent({ actor, fighters: snapshot.fighters, positions: snapshot.positions, pulseIndex: owner.pulseIndex, generationId: owner.generationId, isHexLegal });
       const result = planned?.intent ? planned : createTacticalMovementIntent(planned || {});
       if (!result?.accepted) continue;
       const intent = result.intent;
@@ -289,6 +362,23 @@ export async function resolveTacticalPulse({
       if (intent.state === "active") intent.state = intent.nextStepIndex > 0 ? "completed" : "blocked";
       if (intent.state === "completed") emit(event("tactical-movement-intent-completed", owner, { ...intent }, intent.actorId));
     }
+    rejectedLifecycle = transitionTo(TACTICAL_PULSE_STATES.ACTION_PREPARATION);
+    if (rejectedLifecycle) return rejectedLifecycle;
+    const actionProgress = await advanceTacticalActionRuntime({
+      runtime: runtime.actionRuntime,
+      pulseIndex: owner.pulseIndex,
+      fighters: state.fighters,
+      combatActive,
+      validateAction: validateActionIntent,
+      executeCanonicalAttack,
+      spendCanonicalAmmunition,
+      onEvent: (entry) => emit(event(entry.eventType, owner, entry.data, entry.actorId)),
+    });
+    if (!actionProgress.accepted) return abortPulse(actionProgress.reason || "tactical-action-progress-rejected");
+    rejectedLifecycle = transitionTo(TACTICAL_PULSE_STATES.ACTIONS_READY);
+    if (rejectedLifecycle) return rejectedLifecycle;
+    rejectedLifecycle = transitionTo(TACTICAL_PULSE_STATES.ATTACK_RESOLVING);
+    if (rejectedLifecycle) return rejectedLifecycle;
     rejectedLifecycle = transitionTo(TACTICAL_PULSE_STATES.REACTIONS_PENDING);
     if (rejectedLifecycle) return rejectedLifecycle;
     const audits = [];
@@ -332,7 +422,7 @@ export async function resolveTacticalPulse({
     }
     runtime.staminaChargeKeys.clear();
     emit(event("tactical-pulse-completed", owner, { elapsedSeconds: runtime.clock.elapsedSeconds, completedPulseIndex: runtime.clock.pulseIndex, nextCycleIndex: runtime.clock.cycleIndex }));
-    return { accepted: true, ownership: owner, clock: runtime.clock, fighters: state.fighters, positions: state.positions, committedPositions: state.committedPositions, intents: [...intents.values()], events, movedActorIds: [...movedActorIds] };
+    return { accepted: true, ownership: owner, clock: runtime.clock, fighters: state.fighters, positions: state.positions, committedPositions: state.committedPositions, intents: [...intents.values()], actionIntents: actionIntentsCreated, actionAudit: actionProgress.audit, events, movedActorIds: [...movedActorIds] };
   } catch (error) {
     return abortPulse("tactical-pulse-execution-threw", {
       errorName: error?.name || "Error",
