@@ -419,6 +419,10 @@ import {
   getTacticalReactionBudget,
   submitTacticalReactionResponse,
 } from "../utils/combat/tacticalReactionWindow.js";
+import {
+  submitTacticalPostParryResponse,
+} from "../utils/combat/tacticalPostParryWindow.js";
+import { resolveTacticalPostParryResponse } from "../utils/combat/resolveTacticalPostParryResponse.js";
 import { createTacticalActionIntent } from "../utils/combat/tacticalActionIntent.js";
 import {
   findTacticalAttackByIntent,
@@ -5219,6 +5223,7 @@ function CombatPage({ characters = [] }) {
   const justCreatedPendingMovementRef = useRef(new Set()); // Track movements created this turn (don't apply until NEXT turn)
   const handleEnemyTurnRef = useRef(null); // Store latest version of handleEnemyTurn to avoid dependency loops
   const attackRef = useRef(null); // Store attack function to avoid initialization order issues
+  const executeCanonicalGrappleActionRef = useRef(null);
   const executeTechniqueRef = useRef(null); // Store latest executeTechnique to avoid deps churn
   const executeTacticalPowerRef = useRef(null); // Store latest executeTacticalPower to avoid deps churn
   const lastOpenedChoicesTurnRef = useRef(null); // Track which turn we opened choices for
@@ -5569,6 +5574,17 @@ function CombatPage({ characters = [] }) {
       "tactical-reaction-window-expired": actor
         ? `${actor.battleLabel || actor.displayName || actor.name} does not react in time.`
         : null,
+      "tactical-post-parry-response-offered": actor
+        ? `${actor.battleLabel || actor.displayName || actor.name} gains an opening after the parry.`
+        : null,
+      "tactical-post-parry-response-selected": actor
+        ? data.selectedResponseType === "decline"
+          ? `${actor.battleLabel || actor.displayName || actor.name} lets the opening pass.`
+          : `${actor.battleLabel || actor.displayName || actor.name} attempts ${String(data.selectedResponseType || "a response").replaceAll("-", " ")}.`
+        : null,
+      "tactical-post-parry-window-expired": actor
+        ? `${actor.battleLabel || actor.displayName || actor.name} lets the opening pass.`
+        : null,
     };
     const playerMessage = playerActionMessages[pulseEvent.eventType];
     if (playerMessage) {
@@ -5593,7 +5609,7 @@ function CombatPage({ characters = [] }) {
         },
       }, "info");
     }
-    if (pulseEvent.eventType.startsWith("tactical-action-") || pulseEvent.eventType.startsWith("tactical-attack-") || pulseEvent.eventType === "tactical-ranged-release") {
+    if (pulseEvent.eventType.startsWith("tactical-action-") || pulseEvent.eventType.startsWith("tactical-attack-") || pulseEvent.eventType.startsWith("tactical-post-parry-") || pulseEvent.eventType === "tactical-ranged-release") {
       setTacticalActionUiVersion((value) => value + 1);
     }
   }, [addLog]);
@@ -5727,6 +5743,352 @@ function CombatPage({ characters = [] }) {
       executeCanonicalAttack: (admission) => tacticalAttackExecutorRef.current?.(admission)
         ?? { accepted: false, reason: "canonical-tactical-attack-executor-unavailable" },
       getReactionControlMode: (fighter) => getFighterControlMode(fighter),
+      getPostParryControlMode: (fighterId, roster) => {
+        const fighter = roster.find((candidate) => String(getCombatActorId(candidate) ?? "") === String(fighterId));
+        return getFighterControlMode(fighter);
+      },
+      createCanonicalPostParryOffer: ({ defenseResult, intent, executionKey }) => {
+        const roster = fightersRef.current || [];
+        const reactor = roster.find((fighter) => String(getCombatActorId(fighter) ?? "") === String(defenseResult.responderId));
+        const target = roster.find((fighter) => String(getCombatActorId(fighter) ?? "") === String(defenseResult.sourceAttackerId));
+        const exchange = weaponExchangeRegistryRef.current.get(getExchangePairKey(reactor?.id, target?.id));
+        if (!reactor || !target || !exchange || exchange.attackExecutionKey !== executionKey) {
+          return { accepted: false, reason: "canonical-parry-exchange-missing" };
+        }
+        const attacks = [
+          reactor.weaponSlots?.rightHand,
+          reactor.weaponSlots?.leftHand,
+          reactor.equippedWeapon,
+          reactor.weapon,
+          ...(Array.isArray(reactor.attacks) ? reactor.attacks : []),
+        ].filter(Boolean);
+        const reactorPosition = positionsRef.current?.[reactor.id];
+        const targetPosition = positionsRef.current?.[target.id];
+        const distanceFeet = reactorPosition && targetPosition
+          ? calculateDistance(reactorPosition, targetPosition)
+          : Number.POSITIVE_INFINITY;
+        const legalAttack = selectLegalRiposteAttack({ attacks, distanceFeet });
+        const staminaCost = legalAttack ? calculateAttackStaminaCost({
+          fighter: reactor,
+          weapon: legalAttack,
+          attackType: legalAttack.attackType || legalAttack.type || "melee",
+        }) : 0;
+        const currentStamina = Number(initializeCombatStamina(reactor)?.combatStamina?.currentStamina ?? 0);
+        const riposteOffer = canOfferRiposte({
+          exchange,
+          generationId: combatSessionRef.current,
+          round: meleeRoundRef.current,
+          sourceAttackExecutionKey: executionKey,
+          reactor,
+          target,
+          defenseType: defenseResult.defenseType,
+          attackType: "melee",
+          reactionDepth: exchange.reactionDepth,
+          legalAttack,
+          distanceFeet,
+          staminaCost,
+          currentStamina,
+          combatActive: combatActiveRef.current && !combatOverRef.current,
+          hostile: canTargetForAction(reactor, target, "attack"),
+          isGrappling: hasReciprocalGrapplePair(reactor, target),
+        });
+        let canonicalOffer;
+        let legalDisengagementDestinations = [];
+        if (defenseResult.parryQuality === DEFENSE_OUTCOMES.DOMINANT) {
+          const shield = attacks.find((item) => /shield/.test(String(item?.name || item?.type || "").toLowerCase()));
+          const normalizedDefenseType = shield && /shield|block/.test(String(defenseResult.defenseType || "")) ? "shield" : "weapon";
+          const parryingWeapon = normalizedDefenseType === "shield"
+            ? shield
+            : attacks.find((item) => !/shield/.test(String(item?.name || item?.type || "").toLowerCase()));
+          if (reactorPosition && targetPosition) {
+            legalDisengagementDestinations = (getHexNeighbors(reactorPosition.x, reactorPosition.y) || [])
+              .filter((hex) => isValidPosition(hex.x, hex.y))
+              .filter((hex) => !isHexOccupied(hex.x, hex.y, reactor.id))
+              .filter((hex) => calculateDistance(hex, targetPosition) > calculateDistance(reactorPosition, targetPosition));
+          }
+          const built = buildDominantResponseOpportunity({
+            exchange,
+            reactor,
+            target,
+            defenseType: normalizedDefenseType,
+            defenseOutcome: defenseResult.parryQuality,
+            combatActive: combatActiveRef.current && !combatOverRef.current,
+            generationId: combatSessionRef.current,
+            round: meleeRoundRef.current,
+            initiativeTurnId: initiativeTurnIdRef.current,
+            sourceAttackExecutionKey: executionKey,
+            sourceAttackType: "melee",
+            hostile: canTargetForAction(reactor, target, "attack"),
+            isGrappling: hasReciprocalGrapplePair(reactor, target),
+            parryingWeapon,
+            attackingWeapon: [
+              target.selectedAttack,
+              target.weaponSlots?.rightHand,
+              target.weaponSlots?.leftHand,
+              target.equippedWeapon,
+              target.weapon,
+              ...(Array.isArray(target.attacks) ? target.attacks : []),
+            ].filter(Boolean).find((item) => String(item?.id || item?.weaponId || item?.name) === String(defenseResult.sourceWeaponId)) || target.selectedAttack,
+            shield,
+            riposteEligible: riposteOffer.eligible,
+            legalRiposteAttack: legalAttack,
+            riposteStaminaCost: staminaCost,
+            grappleLegal: getAvailableGrappleActions(reactor, target).some((candidate) => candidate?.value === "grapple"),
+            grappleStaminaCost: 1,
+            currentStamina,
+            legalDisengagementDestinations,
+            movementStaminaCost: 0,
+          });
+          if (!built) return { accepted: false, reason: "canonical-dominant-offer-rejected" };
+          canonicalOffer = Object.freeze({ ...built, legalDisengagementDestinations });
+          dominantResponseRegistryRef.current.set(canonicalOffer.opportunityId, canonicalOffer);
+          reactionOpportunityRegistryRef.current.set(canonicalOffer.reactionId, canonicalOffer);
+        } else {
+          if (!riposteOffer.eligible) return { accepted: false, reason: riposteOffer.reason };
+          canonicalOffer = buildRiposteOpportunity({
+            exchange,
+            reactor,
+            target,
+            defenseType: defenseResult.defenseType,
+            attack: legalAttack,
+            staminaCost,
+          });
+          reactionOpportunityRegistryRef.current.set(canonicalOffer.reactionId, canonicalOffer);
+        }
+        return {
+          accepted: true,
+          canonicalOffer,
+          aiContext: {
+            retreating: /retreat|flee|rout/.test(String(reactor.routingState || reactor.moraleState?.status || "").toLowerCase()),
+            badlyFatigued: currentStamina <= 1,
+            targetHeavilyArmored: Number(target.armorClass || target.derivedStats?.armorClass || 0) >= 16,
+            defensive: getFighterControlMode(reactor) === "defensive",
+            targetWeaponThreat: true,
+            affordableRiposte: riposteOffer.eligible,
+          },
+        };
+      },
+      validatePostParryResponse: ({ window, responder, target, responseType }) => {
+        if (!combatActiveRef.current || combatOverRef.current) return { valid: false, reason: "combat-ended" };
+        if (window.generationId !== endTurnGenerationRef.current || window.combatSession !== combatSessionRef.current) {
+          return { valid: false, reason: "stale-post-parry-coordinate" };
+        }
+        if (!canTargetForAction(responder, target, "attack")) return { valid: false, reason: "post-parry-target-invalid" };
+        const offer = window.canonicalOffer;
+        const canonicalRecord = offer.opportunityType === "dominant_opening"
+          ? dominantResponseRegistryRef.current.get(window.canonicalResponseOfferId)
+          : reactionOpportunityRegistryRef.current.get(window.canonicalResponseOfferId);
+        if (!canonicalRecord || canonicalRecord !== offer) return { valid: false, reason: "canonical-post-parry-offer-identity-mismatch" };
+        if (canonicalRecord.status !== REACTION_STATUSES.OFFERED) return { valid: false, reason: "canonical-post-parry-offer-not-open" };
+        if (canonicalRecord.reactorId !== responder.id || canonicalRecord.targetId !== target.id) return { valid: false, reason: "canonical-post-parry-participant-mismatch" };
+        if (canonicalRecord.sourceAttackExecutionKey !== window.sourceExecutionKey) return { valid: false, reason: "canonical-post-parry-source-mismatch" };
+        if (Number(canonicalRecord.reactionDepth) !== 1) return { valid: false, reason: "reaction-depth-cap" };
+        if (canonicalRecord.defenseOutcome && canonicalRecord.defenseOutcome !== window.parryQuality) return { valid: false, reason: "parry-quality-changed" };
+        const sourceExchange = weaponExchangeRegistryRef.current.get(getExchangePairKey(responder.id, target.id));
+        if (!sourceExchange || sourceExchange.exchangeId !== canonicalRecord.sourceExchangeId || sourceExchange.consumed) {
+          return { valid: false, reason: "canonical-parry-exchange-stale" };
+        }
+        const canonicalChoice = responseType && ({
+          bind: DOMINANT_RESPONSE_TYPES.MAINTAIN_BIND,
+          displacement: DOMINANT_RESPONSE_TYPES.WEAPON_DISPLACEMENT,
+          "grapple-entry": DOMINANT_RESPONSE_TYPES.GRAPPLE_ENTRY,
+          disengagement: DOMINANT_RESPONSE_TYPES.CONTROLLED_DISENGAGE,
+          "shield-pressure": DOMINANT_RESPONSE_TYPES.SHIELD_PRESSURE,
+          riposte: DOMINANT_RESPONSE_TYPES.RIPOSTE,
+          decline: DOMINANT_RESPONSE_TYPES.DECLINE,
+        })[responseType];
+        if (canonicalChoice && !(offer.legalResponses || ["riposte", "decline"]).includes(canonicalChoice)) {
+          return { valid: false, reason: "canonical-post-parry-choice-no-longer-legal" };
+        }
+        const equippedItems = [
+          responder.weaponSlots?.rightHand,
+          responder.weaponSlots?.leftHand,
+          responder.equippedWeapon,
+          responder.weapon,
+          ...(Array.isArray(responder.attacks) ? responder.attacks : []),
+        ].filter(Boolean);
+        const equippedIds = equippedItems.map((item) => String(item.weaponId || item.id || item.name));
+        const targetItems = [
+          target.selectedAttack,
+          target.weaponSlots?.rightHand,
+          target.weaponSlots?.leftHand,
+          target.equippedWeapon,
+          target.weapon,
+          ...(Array.isArray(target.attacks) ? target.attacks : []),
+        ].filter(Boolean);
+        const targetWeaponIds = targetItems.map((item) => String(item.weaponId || item.id || item.name));
+        if (["riposte", "bind"].includes(responseType) && window.parryingWeaponId && !equippedIds.includes(String(window.parryingWeaponId))) {
+          return { valid: false, reason: "parrying-weapon-changed" };
+        }
+        if (["bind", "displacement"].includes(responseType) && window.incomingWeaponId && !targetWeaponIds.includes(String(window.incomingWeaponId))) {
+          return { valid: false, reason: "target-weapon-changed" };
+        }
+        if (responseType === "shield-pressure" && !equippedItems.some((item) => /shield/i.test(`${item.id || ""} ${item.name || ""} ${item.type || ""}`))) {
+          return { valid: false, reason: "shield-no-longer-usable" };
+        }
+        const responderPosition = positionsRef.current?.[responder.id];
+        const targetPosition = positionsRef.current?.[target.id];
+        if (["riposte", "bind", "displacement", "grapple-entry", "shield-pressure", "disengagement"].includes(responseType) && (!responderPosition || !targetPosition)) {
+          return { valid: false, reason: "post-parry-position-unavailable" };
+        }
+        const distanceFeet = responderPosition && targetPosition ? calculateDistance(responderPosition, targetPosition) : Infinity;
+        if (responseType === "riposte" && getRiposteReachFeet(offer.attack) + 0.01 < distanceFeet) {
+          return { valid: false, reason: "target-outside-riposte-reach" };
+        }
+        if (responseType === "grapple-entry" && !getAvailableGrappleActions(responder, target).some((candidate) => candidate?.value === "grapple")) {
+          return { valid: false, reason: "grapple-entry-no-longer-legal" };
+        }
+        if (responseType === "disengagement") {
+          const destination = offer.legalDisengagementDestinations?.[0];
+          if (
+            !destination || !isValidPosition(destination.x, destination.y) ||
+            isHexOccupied(destination.x, destination.y, responder.id) ||
+            calculateDistance(destination, targetPosition) <= distanceFeet
+          ) return { valid: false, reason: "no-legal-disengagement-hex" };
+        }
+        return { valid: true };
+      },
+      executeCanonicalPostParryResponse: (admission) => resolveTacticalPostParryResponse({
+        admission,
+        executors: {
+          decline: async (request) => {
+            const offer = request.canonicalOffer;
+            if (offer.opportunityType === "dominant_opening") {
+              const consumed = consumeDominantOpening({
+                opportunityRegistry: dominantResponseRegistryRef.current,
+                exchangeRegistry: weaponExchangeRegistryRef.current,
+                opportunity: offer,
+                selectedResponse: DOMINANT_RESPONSE_TYPES.DECLINE,
+                generationId: combatSessionRef.current,
+                round: meleeRoundRef.current,
+                reactorId: request.respondingActorId,
+                targetId: request.targetActorId,
+                combatActive: combatActiveRef.current && !combatOverRef.current,
+              });
+              return { accepted: consumed.accepted, reason: consumed.reason };
+            }
+            transitionReaction(reactionOpportunityRegistryRef.current, offer.reactionId, REACTION_STATUSES.DECLINED, { declineReason: "tactical-decline" });
+            const pairKey = getExchangePairKey(request.respondingActorId, request.targetActorId);
+            const exchange = weaponExchangeRegistryRef.current.get(pairKey);
+            if (exchange?.exchangeId === offer.sourceExchangeId) weaponExchangeRegistryRef.current.set(pairKey, Object.freeze({ ...exchange, consumed: true }));
+            return { accepted: true, declined: true };
+          },
+          riposte: async (request) => {
+            const offer = request.canonicalOffer;
+            let consumedOffer = offer;
+            if (offer.opportunityType === "dominant_opening") {
+              const consumed = consumeDominantOpening({
+                opportunityRegistry: dominantResponseRegistryRef.current,
+                exchangeRegistry: weaponExchangeRegistryRef.current,
+                opportunity: offer,
+                selectedResponse: DOMINANT_RESPONSE_TYPES.RIPOSTE,
+                generationId: combatSessionRef.current,
+                round: meleeRoundRef.current,
+                reactorId: request.respondingActorId,
+                targetId: request.targetActorId,
+                combatActive: combatActiveRef.current && !combatOverRef.current,
+              });
+              if (!consumed.accepted) return consumed;
+              consumedOffer = consumed.opportunity;
+              transitionDominantResponse(dominantResponseRegistryRef.current, offer.opportunityId, DOMINANT_OPPORTUNITY_STATUSES.RESOLVING, { attackExecutionKey: request.responseExecutionKey });
+            } else {
+              const consumed = consumeRiposteOpening({
+                exchangeRegistry: weaponExchangeRegistryRef.current,
+                reactionRegistry: reactionOpportunityRegistryRef.current,
+                opportunity: offer,
+                generationId: combatSessionRef.current,
+                round: meleeRoundRef.current,
+                sourceAttackExecutionKey: request.sourceExecutionKey,
+                reactorId: request.respondingActorId,
+                targetId: request.targetActorId,
+              });
+              if (!consumed.accepted) return consumed;
+              consumedOffer = consumed.opportunity;
+              transitionReaction(reactionOpportunityRegistryRef.current, offer.reactionId, REACTION_STATUSES.RESOLVING, { attackExecutionKey: request.responseExecutionKey });
+            }
+            const roster = fightersRef.current || [];
+            const reactor = roster.find((fighter) => String(getCombatActorId(fighter) ?? "") === request.respondingActorId);
+            const canonicalKey = createAttackExecutionKey(request.respondingActorId, request.targetActorId, "tactical-post-parry-riposte", {
+              allowOutOfTurnAttack: true,
+              executionKey: request.responseExecutionKey,
+              reactionAdmission: consumedOffer,
+            });
+            if (!canonicalKey) return { accepted: false, reason: "tactical-riposte-admission-rejected" };
+            const result = await attackRef.current?.(
+              { ...reactor, selectedAttack: offer.attack },
+              request.targetActorId,
+              {
+                attackActionId: canonicalKey,
+                attackDataOverride: offer.attack,
+                allowOutOfTurnAttack: true,
+                suppressActionSpend: true,
+                suppressEndTurn: true,
+                suppressSequentialTurnAdvance: true,
+                source: "tactical-post-parry-riposte",
+                reactionAdmission: {
+                  ...consumedOffer,
+                  reactionId: offer.reactionId || offer.opportunityId,
+                  reactionDepth: 1,
+                  sourceAttackExecutionKey: request.sourceExecutionKey,
+                },
+              },
+            );
+            if (offer.opportunityType === "dominant_opening") transitionDominantResponse(dominantResponseRegistryRef.current, offer.opportunityId, DOMINANT_OPPORTUNITY_STATUSES.RESOLVED, { attackExecutionKey: canonicalKey });
+            else transitionReaction(reactionOpportunityRegistryRef.current, offer.reactionId, REACTION_STATUSES.RESOLVED, { attackExecutionKey: canonicalKey });
+            return { accepted: !result?.blocked, result, attackExecutionKey: canonicalKey, reactionDepth: 1 };
+          },
+          bind: async (request) => {
+            const consumed = consumeDominantOpening({ opportunityRegistry: dominantResponseRegistryRef.current, exchangeRegistry: weaponExchangeRegistryRef.current, opportunity: request.canonicalOffer, selectedResponse: DOMINANT_RESPONSE_TYPES.MAINTAIN_BIND, generationId: combatSessionRef.current, round: meleeRoundRef.current, reactorId: request.respondingActorId, targetId: request.targetActorId, combatActive: combatActiveRef.current && !combatOverRef.current });
+            if (!consumed.accepted) return consumed;
+            transitionDominantResponse(dominantResponseRegistryRef.current, request.canonicalOffer.opportunityId, DOMINANT_OPPORTUNITY_STATUSES.RESOLVING);
+            const control = createDominantControlState({ type: DOMINANT_CONTROL_TYPES.BIND, opportunity: request.canonicalOffer, controllerId: request.respondingActorId, controlledActorId: request.targetActorId, controllerWeaponId: request.parryingWeaponId, controlledWeaponId: request.incomingWeaponId });
+            dominantControlRegistryRef.current.set(control.controlId, control);
+            transitionDominantResponse(dominantResponseRegistryRef.current, request.canonicalOffer.opportunityId, DOMINANT_OPPORTUNITY_STATUSES.RESOLVED, { resolvedResponse: DOMINANT_RESPONSE_TYPES.MAINTAIN_BIND });
+            return { accepted: true, control };
+          },
+          displacement: async (request) => {
+            const consumed = consumeDominantOpening({ opportunityRegistry: dominantResponseRegistryRef.current, exchangeRegistry: weaponExchangeRegistryRef.current, opportunity: request.canonicalOffer, selectedResponse: DOMINANT_RESPONSE_TYPES.WEAPON_DISPLACEMENT, generationId: combatSessionRef.current, round: meleeRoundRef.current, reactorId: request.respondingActorId, targetId: request.targetActorId, combatActive: combatActiveRef.current && !combatOverRef.current });
+            if (!consumed.accepted) return consumed;
+            transitionDominantResponse(dominantResponseRegistryRef.current, request.canonicalOffer.opportunityId, DOMINANT_OPPORTUNITY_STATUSES.RESOLVING);
+            const control = createDominantControlState({ type: DOMINANT_CONTROL_TYPES.DISPLACEMENT, opportunity: request.canonicalOffer, controllerId: request.respondingActorId, controlledActorId: request.targetActorId, controlledWeaponId: request.incomingWeaponId });
+            dominantControlRegistryRef.current.set(control.controlId, control);
+            transitionDominantResponse(dominantResponseRegistryRef.current, request.canonicalOffer.opportunityId, DOMINANT_OPPORTUNITY_STATUSES.RESOLVED, { resolvedResponse: DOMINANT_RESPONSE_TYPES.WEAPON_DISPLACEMENT });
+            return { accepted: true, control };
+          },
+          "shield-pressure": async (request) => {
+            const consumed = consumeDominantOpening({ opportunityRegistry: dominantResponseRegistryRef.current, exchangeRegistry: weaponExchangeRegistryRef.current, opportunity: request.canonicalOffer, selectedResponse: DOMINANT_RESPONSE_TYPES.SHIELD_PRESSURE, generationId: combatSessionRef.current, round: meleeRoundRef.current, reactorId: request.respondingActorId, targetId: request.targetActorId, combatActive: combatActiveRef.current && !combatOverRef.current });
+            if (!consumed.accepted) return consumed;
+            transitionDominantResponse(dominantResponseRegistryRef.current, request.canonicalOffer.opportunityId, DOMINANT_OPPORTUNITY_STATUSES.RESOLVING);
+            const control = createDominantControlState({ type: DOMINANT_CONTROL_TYPES.SHIELD_PRESSURE, opportunity: request.canonicalOffer, controllerId: request.respondingActorId, controlledActorId: request.targetActorId });
+            dominantControlRegistryRef.current.set(control.controlId, control);
+            transitionDominantResponse(dominantResponseRegistryRef.current, request.canonicalOffer.opportunityId, DOMINANT_OPPORTUNITY_STATUSES.RESOLVED, { resolvedResponse: DOMINANT_RESPONSE_TYPES.SHIELD_PRESSURE });
+            return { accepted: true, control };
+          },
+          disengagement: async (request) => {
+            const consumed = consumeDominantOpening({ opportunityRegistry: dominantResponseRegistryRef.current, exchangeRegistry: weaponExchangeRegistryRef.current, opportunity: request.canonicalOffer, selectedResponse: DOMINANT_RESPONSE_TYPES.CONTROLLED_DISENGAGE, generationId: combatSessionRef.current, round: meleeRoundRef.current, reactorId: request.respondingActorId, targetId: request.targetActorId, combatActive: combatActiveRef.current && !combatOverRef.current });
+            if (!consumed.accepted) return consumed;
+            const destination = request.canonicalOffer.legalDisengagementDestinations?.[0];
+            if (!destination) return { accepted: false, reason: "no-legal-disengagement-hex" };
+            transitionDominantResponse(dominantResponseRegistryRef.current, request.canonicalOffer.opportunityId, DOMINANT_OPPORTUNITY_STATUSES.RESOLVING);
+            const movement = commitAuthoritativeCombatPosition(request.respondingActorId, destination, "tactical-post-parry-disengagement");
+            if (!movement.accepted) return movement;
+            transitionDominantResponse(dominantResponseRegistryRef.current, request.canonicalOffer.opportunityId, DOMINANT_OPPORTUNITY_STATUSES.RESOLVED, { resolvedResponse: DOMINANT_RESPONSE_TYPES.CONTROLLED_DISENGAGE });
+            return { accepted: true, movement, destination };
+          },
+          "grapple-entry": async (request) => {
+            const consumed = consumeDominantOpening({ opportunityRegistry: dominantResponseRegistryRef.current, exchangeRegistry: weaponExchangeRegistryRef.current, opportunity: request.canonicalOffer, selectedResponse: DOMINANT_RESPONSE_TYPES.GRAPPLE_ENTRY, generationId: combatSessionRef.current, round: meleeRoundRef.current, reactorId: request.respondingActorId, targetId: request.targetActorId, combatActive: combatActiveRef.current && !combatOverRef.current });
+            if (!consumed.accepted) return consumed;
+            transitionDominantResponse(dominantResponseRegistryRef.current, request.canonicalOffer.opportunityId, DOMINANT_OPPORTUNITY_STATUSES.RESOLVING);
+            const roster = fightersRef.current || [];
+            const reactor = roster.find((fighter) => String(getCombatActorId(fighter) ?? "") === request.respondingActorId);
+            const target = roster.find((fighter) => String(getCombatActorId(fighter) ?? "") === request.targetActorId);
+            const grapple = await executeCanonicalGrappleActionRef.current?.({ actor: reactor, opponent: target, actionType: "grapple", source: "tactical-post-parry-grapple-entry", requestedActionSequence: 1, executionKey: request.responseExecutionKey, reactionAdmission: { ...consumed.opportunity, isReaction: true, reactionType: "dominant_grapple_entry", reactionDepth: 1, allowOutOfTurn: true } });
+            if (grapple?.accepted === false) return grapple;
+            transitionDominantResponse(dominantResponseRegistryRef.current, request.canonicalOffer.opportunityId, DOMINANT_OPPORTUNITY_STATUSES.RESOLVED, { resolvedResponse: DOMINANT_RESPONSE_TYPES.GRAPPLE_ENTRY });
+            return { accepted: true, grapple, reactionDepth: 1 };
+          },
+        },
+      }),
       combatActive: combatActiveRef.current && !combatOverRef.current,
       onEvent: emitTacticalPulseEvent,
     });
@@ -5918,6 +6280,34 @@ function CombatPage({ characters = [] }) {
     return submitted.accepted;
   }, [addLog, emitTacticalPulseEvent, getFighterControlMode, selectedTarget]);
 
+  const submitManualTacticalPostParryResponse = useCallback((windowId, responderId, responseType, expected = {}) => {
+    if (
+      combatTimingModeRef.current !== COMBAT_TIMING_MODES.TACTICAL_PULSE ||
+      !combatActiveRef.current || combatOverRef.current || aiControlEnabledRef.current
+    ) return false;
+    const responder = (fightersRef.current || []).find((fighter) => String(getCombatActorId(fighter) ?? "") === String(responderId));
+    const liveCurrentFighter = fightersRef.current?.[turnIndexRef.current] || null;
+    const selectedActorIds = new Set([liveCurrentFighter, selectedTarget].filter(Boolean).map((fighter) => String(getCombatActorId(fighter) ?? "")));
+    if (!responder || getFighterControlMode(responder) !== "manual" || !selectedActorIds.has(String(responderId))) return false;
+    const runtime = tacticalPulseRuntimeRef.current.actionRuntime.postParryRuntime;
+    const submitted = submitTacticalPostParryResponse({
+      runtime,
+      tacticalPostParryWindowId: windowId,
+      responderId,
+      responseType,
+      pulseIndex: tacticalPulseRuntimeRef.current.clock.pulseIndex,
+      generationId: expected.generationId,
+      combatSession: expected.combatSession,
+      sourceExecutionKey: expected.sourceExecutionKey,
+      sourceReactionResponseId: expected.sourceReactionResponseId,
+      selectedActorId: responderId,
+      onEvent: emitTacticalPulseEvent,
+    });
+    if (!submitted.accepted) addLog(`Post-parry response rejected: ${submitted.reason}.`, "warning");
+    setTacticalActionUiVersion((value) => value + 1);
+    return submitted.accepted;
+  }, [addLog, emitTacticalPulseEvent, getFighterControlMode, selectedTarget]);
+
   useEffect(() => {
     if (combatActive) {
       tacticalCleanupEmittedRef.current = false;
@@ -5937,6 +6327,18 @@ function CombatPage({ characters = [] }) {
         pulseIndex: tacticalPulseRuntimeRef.current.clock.pulseIndex,
         cycleIndex: tacticalPulseRuntimeRef.current.clock.cycleIndex,
         data: cleanup.reactionCleanup.data,
+      });
+    }
+    if (cleanup.postParryCleanup?.accepted) {
+      for (const canceledEvent of cleanup.postParryCleanup.events || []) emitTacticalPulseEvent(canceledEvent);
+      emitTacticalPulseEvent({
+        eventType: "tactical-post-parry-terminal-cleanup",
+        actorId: null,
+        generationId: tacticalPulseRuntimeRef.current.generationId,
+        combatSession: tacticalPulseRuntimeRef.current.combatSession,
+        pulseIndex: tacticalPulseRuntimeRef.current.clock.pulseIndex,
+        cycleIndex: tacticalPulseRuntimeRef.current.clock.cycleIndex,
+        data: cleanup.postParryCleanup.data,
       });
     }
     emitTacticalPulseEvent({
@@ -22667,6 +23069,15 @@ function CombatPage({ characters = [] }) {
   };
 
   // Helper function to get equistaminad weapons for a character
+  useEffect(() => {
+    executeCanonicalGrappleActionRef.current = executeCanonicalGrappleAction;
+    return () => {
+      if (executeCanonicalGrappleActionRef.current === executeCanonicalGrappleAction) {
+        executeCanonicalGrappleActionRef.current = null;
+      }
+    };
+  }, [executeCanonicalGrappleAction]);
+
   const getEquistaminadWeapons = useCallback((character) => {
     // Disabled expensive logging in production - only enable for debugging
     const isDev = import.meta.env?.DEV || import.meta.env?.MODE === 'development';
@@ -27278,6 +27689,8 @@ function CombatPage({ characters = [] }) {
             protectedActorId: tacticalReaction.protectedActorId,
             sourceExecutionKey: tacticalReaction.sourceExecutionKey,
             sourceActionIntentId: tacticalReaction.sourceActionIntentId,
+            generationId: tacticalReaction.generationId,
+            combatSession: tacticalReaction.combatSession,
             parryAttempted: tacticalReaction.responseType === "parry",
             parrySucceeded: tacticalReaction.responseType === "parry" && result.success === true,
             parryQuality: tacticalReaction.responseType === "parry" ? result.outcome : null,
@@ -27286,6 +27699,10 @@ function CombatPage({ characters = [] }) {
             sourceAttackerId: liveAttacker.id,
             sourceDefenderId: liveDefender.id,
             sourceWeaponId: attackData?.weaponId || attackData?.profileKey || attackData?.id || attackData?.name || null,
+            parryingWeaponId:
+              liveDefender?.weaponSlots?.rightHand?.weaponId || liveDefender?.weaponSlots?.rightHand?.id ||
+              liveDefender?.weaponSlots?.leftHand?.weaponId || liveDefender?.weaponSlots?.leftHand?.id ||
+              liveDefender?.equippedWeapon?.weaponId || liveDefender?.equippedWeapon?.id || null,
             defenseType: defenseKind,
             defenseSucceeded: result.success === true,
             defenseTotal: result.defenseTotal,
@@ -46396,6 +46813,18 @@ function CombatPage({ characters = [] }) {
             data: cleanup.reactionCleanup.data,
           });
         }
+        if (cleanup.postParryCleanup?.accepted) {
+          for (const canceledEvent of cleanup.postParryCleanup.events || []) emitTacticalPulseEvent(canceledEvent);
+          emitTacticalPulseEvent({
+            eventType: "tactical-post-parry-terminal-cleanup",
+            actorId: null,
+            generationId: previousTacticalRuntime.generationId,
+            combatSession: previousTacticalRuntime.combatSession,
+            pulseIndex: previousTacticalRuntime.clock?.pulseIndex || 0,
+            cycleIndex: previousTacticalRuntime.clock?.cycleIndex || 1,
+            data: cleanup.postParryCleanup.data,
+          });
+        }
         if (cleanup.accepted && cleanup.eventType) {
           emitTacticalPulseEvent({
             eventType: cleanup.eventType,
@@ -48037,6 +48466,57 @@ function CombatPage({ characters = [] }) {
                       </Button>
                     ))}
                     {reasons.length > 0 && <Text fontSize="xs">{reasons.join("; ")}</Text>}
+                  </HStack>
+                );
+              })()}
+              {(() => {
+                const postParryRuntime = tacticalPulseRuntimeRef.current.actionRuntime.postParryRuntime;
+                const manualResponder = [currentFighter, selectedTarget].filter(Boolean).find((fighter) => {
+                  const actorId = String(getCombatActorId(fighter) ?? "");
+                  return getFighterControlMode(fighter) === "manual" && postParryRuntime.responderOwnership.has(actorId);
+                });
+                if (!manualResponder || aiControlEnabled) return null;
+                const responderId = String(getCombatActorId(manualResponder) ?? "");
+                const windowId = postParryRuntime.responderOwnership.get(responderId);
+                const window = postParryRuntime.activeWindows.get(windowId);
+                if (!window) return null;
+                const attacker = fighters.find((fighter) => String(getCombatActorId(fighter) ?? "") === window.originalAttackerId);
+                const labels = {
+                  riposte: "Riposte",
+                  bind: "Bind",
+                  displacement: "Displace Weapon",
+                  "grapple-entry": "Grapple Entry",
+                  disengagement: "Disengage",
+                  "shield-pressure": "Shield Pressure",
+                  decline: "Decline",
+                };
+                const expected = {
+                  generationId: window.generationId,
+                  combatSession: window.combatSession,
+                  sourceExecutionKey: window.sourceExecutionKey,
+                  sourceReactionResponseId: window.sourceReactionResponseId,
+                };
+                return (
+                  <HStack spacing={2} flexWrap="wrap" data-testid="tactical-post-parry-controls">
+                    <Badge colorScheme={window.parryQuality === DEFENSE_OUTCOMES.DOMINANT ? "purple" : "blue"} px={2} py={1}>
+                      {window.parryQuality === DEFENSE_OUTCOMES.DOMINANT ? "Dominant" : "Advantageous"} parry opening
+                    </Badge>
+                    <Text fontSize="xs">
+                      Against {attacker?.battleLabel || attacker?.displayName || attacker?.name || window.originalAttackerId}; incoming {window.incomingWeaponId || "weapon"}; parrying with {window.parryingWeaponId || "weapon"}
+                    </Text>
+                    <Text fontSize="xs">Status: {window.state}; deadline pulse {window.responseDeadlinePulse}{window.selectedResponseType ? ` — ${labels[window.selectedResponseType]}` : ""}</Text>
+                    {window.legalResponseTypes.map((type) => (
+                      <Button
+                        key={type}
+                        size="sm"
+                        variant={window.selectedResponseType === type ? "solid" : "outline"}
+                        colorScheme={type === "decline" ? "gray" : "purple"}
+                        isDisabled={Boolean(window.selectedResponseType) || window.state !== "awaiting-selection"}
+                        onClick={() => submitManualTacticalPostParryResponse(windowId, responderId, type, expected)}
+                      >
+                        {labels[type] || type}
+                      </Button>
+                    ))}
                   </HStack>
                 );
               })()}
