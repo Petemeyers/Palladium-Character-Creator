@@ -423,6 +423,17 @@ import {
   submitTacticalPostParryResponse,
 } from "../utils/combat/tacticalPostParryWindow.js";
 import { resolveTacticalPostParryResponse } from "../utils/combat/resolveTacticalPostParryResponse.js";
+import {
+  cancelTacticalBrace,
+  cancelTacticalCharge,
+  registerTacticalBrace,
+  registerTacticalCharge,
+  submitTacticalInterceptionResponse,
+} from "../utils/combat/tacticalChargeBraceRuntime.js";
+import { getBraceCapabilities } from "../utils/combat/tacticalBraceIntent.js";
+import { getChargeCapabilities } from "../utils/combat/tacticalChargeIntent.js";
+import { TACTICAL_INTERCEPTION_CHOICES } from "../utils/combat/tacticalInterceptionWindow.js";
+import { buildTacticalPath } from "../utils/combat/tacticalMovementIntent.js";
 import { createTacticalActionIntent } from "../utils/combat/tacticalActionIntent.js";
 import {
   findTacticalAttackByIntent,
@@ -5585,6 +5596,36 @@ function CombatPage({ characters = [] }) {
       "tactical-post-parry-window-expired": actor
         ? `${actor.battleLabel || actor.displayName || actor.name} lets the opening pass.`
         : null,
+      "tactical-charge-preparation-started": actor
+        ? `${actor.battleLabel || actor.displayName || actor.name} prepares to charge.`
+        : null,
+      "tactical-charge-committed": actor
+        ? `${actor.battleLabel || actor.displayName || actor.name} commits to a charge.`
+        : null,
+      "tactical-brace-preparation-started": actor
+        ? `${actor.battleLabel || actor.displayName || actor.name} lowers the weapon and prepares to brace.`
+        : null,
+      "tactical-brace-held": actor
+        ? `${actor.battleLabel || actor.displayName || actor.name} holds a braced weapon.`
+        : null,
+      "tactical-brace-trigger-detected": actor
+        ? `${actor.battleLabel || actor.displayName || actor.name}'s guarded approach is crossed.`
+        : null,
+      "tactical-interception-resolution-admitted": actor
+        ? `${actor.battleLabel || actor.displayName || actor.name} intercepts the charge.`
+        : null,
+      "tactical-interception-window-expired": actor
+        ? `${actor.battleLabel || actor.displayName || actor.name} lets the charge pass.`
+        : null,
+      "tactical-charge-stopped": actor
+        ? `${actor.battleLabel || actor.displayName || actor.name}'s charge is stopped before contact.`
+        : null,
+      "tactical-charge-contact-resolved": actor
+        ? `${actor.battleLabel || actor.displayName || actor.name} reaches the line and completes the charge attack.`
+        : null,
+      "tactical-charge-contact-rejected": actor
+        ? `${actor.battleLabel || actor.displayName || actor.name}'s charge reaches contact, but the attack cannot proceed.`
+        : null,
     };
     const playerMessage = playerActionMessages[pulseEvent.eventType];
     if (playerMessage) {
@@ -5609,7 +5650,7 @@ function CombatPage({ characters = [] }) {
         },
       }, "info");
     }
-    if (pulseEvent.eventType.startsWith("tactical-action-") || pulseEvent.eventType.startsWith("tactical-attack-") || pulseEvent.eventType.startsWith("tactical-post-parry-") || pulseEvent.eventType === "tactical-ranged-release") {
+    if (pulseEvent.eventType.startsWith("tactical-action-") || pulseEvent.eventType.startsWith("tactical-attack-") || pulseEvent.eventType.startsWith("tactical-post-parry-") || pulseEvent.eventType.startsWith("tactical-charge-") || pulseEvent.eventType.startsWith("tactical-brace-") || pulseEvent.eventType.startsWith("tactical-interception-") || pulseEvent.eventType === "tactical-ranged-release") {
       setTacticalActionUiVersion((value) => value + 1);
     }
   }, [addLog]);
@@ -5624,6 +5665,36 @@ function CombatPage({ characters = [] }) {
       fighters: fightersRef.current || [],
       positions: positionsRef.current || {},
       committedPositions: committedPositionsRef.current || {},
+      planChargeBraceIntent: ({ actor, fighters: roster, positions: pulsePositions, pulseIndex, generationId, combatSession }) => {
+        const actorId = String(getCombatActorId(actor) ?? "");
+        const actorPosition = pulsePositions[actorId];
+        const candidates = Array.isArray(actor.weaponProfiles) ? actor.weaponProfiles : Array.isArray(actor.attacks) ? actor.attacks : [];
+        const heldWeaponId = String(actor.heldItems?.mainHand || actor.equippedWeapon?.id || actor.weapon?.id || "");
+        const weapon = candidates.find((candidate) => String(candidate.id || candidate.weaponId || candidate.profileKey || "") === heldWeaponId) || candidates[0];
+        if (!actorPosition || !weapon || getFighterControlMode(actor) === "manual") return null;
+        const hostiles = roster.filter((candidate) => candidate.team !== actor.team && canTargetForAction(actor, candidate, "attack") && pulsePositions[String(getCombatActorId(candidate) ?? "")]);
+        hostiles.sort((left, right) => calculateDistance(actorPosition, pulsePositions[String(getCombatActorId(left) ?? "")]) - calculateDistance(actorPosition, pulsePositions[String(getCombatActorId(right) ?? "")]) || String(getCombatActorId(left) ?? "").localeCompare(String(getCombatActorId(right) ?? "")));
+        const target = hostiles[0];
+        if (!target) return null;
+        const targetActorId = String(getCombatActorId(target) ?? "");
+        const targetPosition = pulsePositions[targetActorId];
+        const occupied = new Set(Object.entries(pulsePositions).filter(([id]) => id !== actorId).map(([, value]) => `${value.x},${value.y}`));
+        const path = buildTacticalPath({ from: actorPosition, destination: targetPosition, occupied, isHexLegal: (hex) => isValidPosition(hex.x, hex.y) });
+        const chargeCapabilities = getChargeCapabilities(weapon);
+        const braceCapabilities = getBraceCapabilities(weapon);
+        const aggression = Number(actor.behaviorProfile?.aggression ?? actor.behavior?.aggression ?? 50);
+        const caution = Number(actor.behaviorProfile?.caution ?? actor.behavior?.caution ?? 50);
+        const stamina = Number(actor.currentStamina ?? actor.stamina ?? 0);
+        const maximumStamina = Number((actor.maxStamina ?? actor.staminaMaximum ?? stamina) || 1);
+        const hostileBraceInPath = [...runtime.actionRuntime.chargeBraceRuntime.bracesByActor.values()].some((brace) => brace.state === "held" && brace.bracingActorId !== actorId && brace.guardedHexes.some((hex) => path.some((step) => step.x === hex.x && step.y === hex.y)));
+        if (chargeCapabilities.canCharge && aggression >= 65 && stamina >= maximumStamina * 0.4 && path.length >= chargeCapabilities.minimumCommittedSteps && !hostileBraceInPath) {
+          return { type: "charge", input: { generationId, combatSession, chargerId: actorId, targetActorId, weaponId: String(weapon.id || weapon.weaponId || weapon.profileKey || weapon.name), techniqueId: weapon.techniqueId || null, weapon, plannedPath: path, startingPosition: actorPosition, intendedContactPosition: path.at(-1), declaredAtPulse: pulseIndex } };
+        }
+        if (braceCapabilities.canBrace && caution > aggression && path.length >= 2 && pulseIndex % 2 === 1) {
+          return { type: "brace", input: { generationId, combatSession, bracingActorId: actorId, targetActorId, weaponId: String(weapon.id || weapon.weaponId || weapon.profileKey || weapon.name), techniqueId: weapon.techniqueId || null, weapon, anchorPosition: actorPosition, guardedHexes: path.slice(0, braceCapabilities.interceptionReachHexes), declaredAtPulse: pulseIndex } };
+        }
+        return null;
+      },
       planActionIntent: (context) => {
         const controlMode = getFighterControlMode(context.actor);
         const isManual = controlMode === "manual" && !aiControlEnabledRef.current;
@@ -5677,6 +5748,35 @@ function CombatPage({ characters = [] }) {
           committedPosition: committedPositionsRef.current?.[actorId] || null,
         };
       },
+      validateChargeIntent: ({ intent, actor, target, contact = false }) => {
+        if (!actor || !target || !canTargetForAction(actor, target, "attack")) return { valid: false, reason: "charge-target-invalid" };
+        const weapon = findTacticalAttackByIntent(actor, { weaponId: intent.weaponId });
+        if (!weapon || !getChargeCapabilities(weapon).canCharge) return { valid: false, reason: "charge-weapon-unavailable" };
+        const heldWeaponId = actor.heldItems?.mainHand || actor.equippedWeapon?.id || actor.equippedWeapon?.weaponId || actor.weapon?.id || actor.weapon?.weaponId;
+        if (heldWeaponId && String(heldWeaponId) !== String(intent.weaponId)) return { valid: false, reason: "charge-weapon-no-longer-equipped" };
+        if (getGrappleStatus(actor).state !== GRAPPLE_STATES.NEUTRAL) return { valid: false, reason: "charge-grapple-incompatible" };
+        const actorPosition = positionsRef.current?.[intent.chargerId];
+        const targetPosition = positionsRef.current?.[intent.targetActorId];
+        if (!actorPosition || !targetPosition) return { valid: false, reason: "charge-position-unavailable" };
+        if (contact && calculateDistance(actorPosition, targetPosition) > getTacticalAttackReach(weapon)) return { valid: false, reason: "charge-target-outside-contact-reach" };
+        return { valid: true };
+      },
+      validateBraceIntent: ({ intent, actor }) => {
+        if (!actor || actor.dead || actor.isDead || actor.unconscious || actor.isUnconscious || actor.defeated || actor.isDefeated || actor.canAct === false) return { valid: false, reason: "bracing-actor-invalid" };
+        const weapon = findTacticalAttackByIntent(actor, { weaponId: intent.weaponId });
+        if (!weapon || !getBraceCapabilities(weapon).canBrace) return { valid: false, reason: "brace-weapon-unavailable" };
+        const heldWeaponId = actor.heldItems?.mainHand || actor.equippedWeapon?.id || actor.equippedWeapon?.weaponId || actor.weapon?.id || actor.weapon?.weaponId;
+        if (heldWeaponId && String(heldWeaponId) !== String(intent.weaponId)) return { valid: false, reason: "brace-weapon-no-longer-equipped" };
+        if (getGrappleStatus(actor).state !== GRAPPLE_STATES.NEUTRAL) return { valid: false, reason: "brace-grapple-incompatible" };
+        return { valid: true };
+      },
+      getInterceptionControlMode: (fighter) => getFighterControlMode(fighter),
+      selectAIInterception: ({ interceptor, charger }) => {
+        const caution = Number(interceptor?.behaviorProfile?.caution ?? interceptor?.behavior?.caution ?? 50);
+        const hostile = interceptor?.team !== charger?.team;
+        return hostile && caution >= 25 ? TACTICAL_INTERCEPTION_CHOICES.INTERCEPT : TACTICAL_INTERCEPTION_CHOICES.LET_PASS;
+      },
+      readCanonicalChargePosition: (actorId) => positionsRef.current?.[actorId] || null,
       validateActionIntent: ({ intent, actor, target }) => {
         const attackData = findTacticalAttackByIntent(actor, intent);
         if (!attackData) return { valid: false, reason: "required-weapon-unavailable" };
@@ -6308,6 +6408,108 @@ function CombatPage({ characters = [] }) {
     return submitted.accepted;
   }, [addLog, emitTacticalPulseEvent, getFighterControlMode, selectedTarget]);
 
+  const emitChargeBraceEvents = useCallback((events = []) => {
+    for (const entry of events) emitTacticalPulseEvent({
+      ...entry,
+      generationId: entry.data?.generationId,
+      combatSession: entry.data?.combatSession,
+      pulseIndex: entry.data?.pulseIndex,
+      cycleIndex: entry.data?.cycleIndex,
+    });
+    setTacticalActionUiVersion((value) => value + 1);
+  }, [emitTacticalPulseEvent]);
+
+  const prepareManualTacticalCharge = useCallback(() => {
+    if (combatTimingModeRef.current !== COMBAT_TIMING_MODES.TACTICAL_PULSE || !combatActiveRef.current || combatOverRef.current || aiControlEnabledRef.current) return false;
+    const pulseRuntime = tacticalPulseRuntimeRef.current;
+    const actor = fightersRef.current?.[turnIndexRef.current] || null;
+    const target = fightersRef.current?.find((fighter) => String(getCombatActorId(fighter) ?? "") === String(selectedTarget?.id ?? "")) || selectedTarget;
+    const actorId = String(getCombatActorId(actor) ?? "");
+    const targetActorId = String(getCombatActorId(target) ?? "");
+    const weapon = selectedAttackWeapon || actor?.selectedAttack || actor?.weaponProfiles?.[0] || actor?.attacks?.[0];
+    if (!actor || !target || getFighterControlMode(actor) !== "manual" || !canTargetForAction(actor, target, "attack")) return false;
+    if (getGrappleStatus(actor).state !== GRAPPLE_STATES.NEUTRAL) {
+      addLog("Charge preparation rejected: incompatible grapple state.", "warning");
+      return false;
+    }
+    const capability = getChargeCapabilities(weapon);
+    const from = positionsRef.current?.[actorId]; const destination = positionsRef.current?.[targetActorId];
+    const occupied = new Set(Object.entries(positionsRef.current || {}).filter(([id]) => id !== actorId).map(([, value]) => `${value.x},${value.y}`));
+    const path = buildTacticalPath({ from, destination, occupied, isHexLegal: (hex) => isValidPosition(hex.x, hex.y) });
+    const result = registerTacticalCharge(pulseRuntime.actionRuntime.chargeBraceRuntime, {
+      generationId: pulseRuntime.generationId,
+      combatSession: pulseRuntime.combatSession,
+      chargerId: actorId,
+      targetActorId,
+      weaponId: String(weapon?.id || weapon?.weaponId || weapon?.profileKey || weapon?.name || ""),
+      techniqueId: weapon?.techniqueId || null,
+      weapon,
+      plannedPath: path,
+      startingPosition: from,
+      intendedContactPosition: path.at(-1),
+      declaredAtPulse: pulseRuntime.clock.pulseIndex,
+      minimumCommittedSteps: capability.minimumCommittedSteps,
+      maximumStepsPerPulse: capability.maximumStepsPerPulse,
+    }, { fighters: fightersRef.current || [] });
+    if (!result.accepted) addLog(`Charge preparation rejected: ${result.reason}.`, "warning");
+    else emitChargeBraceEvents(result.events);
+    return result.accepted;
+  }, [addLog, emitChargeBraceEvents, getFighterControlMode, selectedAttackWeapon, selectedTarget]);
+
+  const prepareManualTacticalBrace = useCallback(() => {
+    if (combatTimingModeRef.current !== COMBAT_TIMING_MODES.TACTICAL_PULSE || !combatActiveRef.current || combatOverRef.current || aiControlEnabledRef.current) return false;
+    const pulseRuntime = tacticalPulseRuntimeRef.current;
+    const actor = fightersRef.current?.[turnIndexRef.current] || null;
+    const target = fightersRef.current?.find((fighter) => String(getCombatActorId(fighter) ?? "") === String(selectedTarget?.id ?? "")) || selectedTarget;
+    const actorId = String(getCombatActorId(actor) ?? "");
+    const targetActorId = String(getCombatActorId(target) ?? "");
+    const weapon = selectedAttackWeapon || actor?.selectedAttack || actor?.weaponProfiles?.[0] || actor?.attacks?.[0];
+    if (!actor || !target || getFighterControlMode(actor) !== "manual" || !canTargetForAction(actor, target, "attack")) return false;
+    if (getGrappleStatus(actor).state !== GRAPPLE_STATES.NEUTRAL) {
+      addLog("Brace preparation rejected: incompatible grapple state.", "warning");
+      return false;
+    }
+    const capability = getBraceCapabilities(weapon);
+    const from = positionsRef.current?.[actorId]; const destination = positionsRef.current?.[targetActorId];
+    const occupied = new Set(Object.entries(positionsRef.current || {}).filter(([id]) => id !== actorId).map(([, value]) => `${value.x},${value.y}`));
+    const path = buildTacticalPath({ from, destination, occupied, isHexLegal: (hex) => isValidPosition(hex.x, hex.y) });
+    const result = registerTacticalBrace(pulseRuntime.actionRuntime.chargeBraceRuntime, {
+      generationId: pulseRuntime.generationId,
+      combatSession: pulseRuntime.combatSession,
+      bracingActorId: actorId,
+      targetActorId,
+      weaponId: String(weapon?.id || weapon?.weaponId || weapon?.profileKey || weapon?.name || ""),
+      techniqueId: weapon?.techniqueId || null,
+      weapon,
+      anchorPosition: from,
+      guardedHexes: path.slice(0, capability.interceptionReachHexes),
+      declaredAtPulse: pulseRuntime.clock.pulseIndex,
+    }, { fighters: fightersRef.current || [] });
+    if (!result.accepted) addLog(`Brace preparation rejected: ${result.reason}.`, "warning");
+    else emitChargeBraceEvents(result.events);
+    return result.accepted;
+  }, [addLog, emitChargeBraceEvents, getFighterControlMode, selectedAttackWeapon, selectedTarget]);
+
+  const cancelManualTacticalChargeBrace = useCallback((kind, actorId) => {
+    const runtime = tacticalPulseRuntimeRef.current.actionRuntime.chargeBraceRuntime;
+    const result = kind === "charge" ? cancelTacticalCharge(runtime, actorId) : cancelTacticalBrace(runtime, actorId);
+    if (!result.accepted) addLog(`${kind === "charge" ? "Charge" : "Brace"} cancellation rejected: ${result.reason}.`, "warning");
+    setTacticalActionUiVersion((value) => value + 1);
+    return result.accepted;
+  }, [addLog]);
+
+  const submitManualTacticalInterception = useCallback((window, choice) => {
+    const result = submitTacticalInterceptionResponse(tacticalPulseRuntimeRef.current.actionRuntime.chargeBraceRuntime, {
+      interceptionWindowId: window.interceptionWindowId,
+      interceptorId: window.interceptorId,
+      choice,
+      pulseIndex: tacticalPulseRuntimeRef.current.clock.pulseIndex,
+    });
+    if (!result.accepted) addLog(`Interception response rejected: ${result.reason}.`, "warning");
+    else emitChargeBraceEvents(result.events);
+    return result.accepted;
+  }, [addLog, emitChargeBraceEvents]);
+
   useEffect(() => {
     if (combatActive) {
       tacticalCleanupEmittedRef.current = false;
@@ -6339,6 +6541,17 @@ function CombatPage({ characters = [] }) {
         pulseIndex: tacticalPulseRuntimeRef.current.clock.pulseIndex,
         cycleIndex: tacticalPulseRuntimeRef.current.clock.cycleIndex,
         data: cleanup.postParryCleanup.data,
+      });
+    }
+    if (cleanup.chargeBraceCleanup?.accepted) {
+      emitTacticalPulseEvent({
+        eventType: cleanup.chargeBraceCleanup.eventType,
+        actorId: null,
+        generationId: tacticalPulseRuntimeRef.current.generationId,
+        combatSession: tacticalPulseRuntimeRef.current.combatSession,
+        pulseIndex: tacticalPulseRuntimeRef.current.clock.pulseIndex,
+        cycleIndex: tacticalPulseRuntimeRef.current.clock.cycleIndex,
+        data: cleanup.chargeBraceCleanup.data,
       });
     }
     emitTacticalPulseEvent({
@@ -46040,6 +46253,10 @@ function CombatPage({ characters = [] }) {
       }
 
       case "Brace": {
+        if (combatTimingModeRef.current === COMBAT_TIMING_MODES.TACTICAL_PULSE) {
+          prepareManualTacticalBrace();
+          return;
+        }
         // Set defensive stance for bracing against charges (spear/polearm)
         const braceWeapon = getEquistaminadWeapons(currentFighter)?.primary || getEquistaminadWeapons(currentFighter)?.secondary || null;
         if (braceWeapon && (braceWeapon.name?.toLowerCase().includes("spear") ||
@@ -46180,6 +46397,10 @@ function CombatPage({ characters = [] }) {
         return;
       }
       case "Charge": {
+        if (combatTimingModeRef.current === COMBAT_TIMING_MODES.TACTICAL_PULSE) {
+          prepareManualTacticalCharge();
+          return;
+        }
         if (!targetToExecute || !weaponToExecute) {
           addLog(`${currentFighter.name} wants to charge but has no target/weapon selected!`, "error");
           return;
@@ -46823,6 +47044,17 @@ function CombatPage({ characters = [] }) {
             pulseIndex: previousTacticalRuntime.clock?.pulseIndex || 0,
             cycleIndex: previousTacticalRuntime.clock?.cycleIndex || 1,
             data: cleanup.postParryCleanup.data,
+          });
+        }
+        if (cleanup.chargeBraceCleanup?.accepted) {
+          emitTacticalPulseEvent({
+            eventType: cleanup.chargeBraceCleanup.eventType,
+            actorId: null,
+            generationId: previousTacticalRuntime.generationId,
+            combatSession: previousTacticalRuntime.combatSession,
+            pulseIndex: previousTacticalRuntime.clock?.pulseIndex || 0,
+            cycleIndex: previousTacticalRuntime.clock?.cycleIndex || 1,
+            data: cleanup.chargeBraceCleanup.data,
           });
         }
         if (cleanup.accepted && cleanup.eventType) {
@@ -48358,6 +48590,11 @@ function CombatPage({ characters = [] }) {
                 const ownership = getTacticalActorOwnership(tacticalPulseRuntimeRef.current.actionRuntime, actorId);
                 const action = ownership.action;
                 const recovery = ownership.recovery;
+                const charge = ownership.charge;
+                const brace = ownership.brace;
+                const chargeBraceRuntime = tacticalPulseRuntimeRef.current.actionRuntime.chargeBraceRuntime;
+                const terminalCharge = [...chargeBraceRuntime.terminalCharges].reverse().find((intent) => intent.chargerId === actorId) || null;
+                const terminalBrace = [...chargeBraceRuntime.terminalBraces].reverse().find((intent) => intent.bracingActorId === actorId) || null;
                 const isManualActor = getFighterControlMode(currentFighter) === "manual" && !aiControlEnabled;
                 const pulse = tacticalPulseRuntimeRef.current.clock.pulseIndex;
                 const terminal = [...tacticalPulseRuntimeRef.current.actionRuntime.terminalHistory]
@@ -48366,7 +48603,11 @@ function CombatPage({ characters = [] }) {
                 const target = action
                   ? fighters.find((fighter) => String(getCombatActorId(fighter) ?? "") === action.targetActorId)
                   : null;
-                const status = action?.state === "preparing"
+                const status = charge
+                  ? `${charge.state === "committed" || charge.state === "advancing" ? "Committed Charge" : "Charge"}: ${charge.completedPath.length}/${charge.minimumCommittedSteps} committed steps; ${Math.max(0, charge.committedPath.length - charge.completedPath.length)} path steps remain`
+                  : brace
+                    ? `Brace ${brace.state}: ${brace.weaponId}; guarded approach ${brace.guardedHexes.map((hex) => `(${hex.x},${hex.y})`).join(" ")}`
+                    : action?.state === "preparing"
                   ? `Preparing (${Math.max(0, action.readyAtPulse - pulse)} pulses)`
                   : action?.state === "ready"
                     ? action.releaseRequested ? "Ready — release requested" : "Ready"
@@ -48374,6 +48615,10 @@ function CombatPage({ characters = [] }) {
                       ? `Recovering (${Math.max(0, recovery.recoveryUntilPulse - pulse)} pulses)`
                       : terminal?.invalidationReason || terminal?.interruptionReason
                         ? `${terminal.state}: ${terminal.invalidationReason || terminal.interruptionReason}`
+                        : terminalCharge?.interruptionReason || terminalCharge?.invalidationReason
+                          ? `Charge ${terminalCharge.state}: ${terminalCharge.interruptionReason || terminalCharge.invalidationReason}`
+                          : terminalBrace?.invalidationReason
+                            ? `Brace ${terminalBrace.state}: ${terminalBrace.invalidationReason}`
                         : "Unowned";
                 const expectedIdentity = action ? {
                   actorId,
@@ -48395,10 +48640,24 @@ function CombatPage({ characters = [] }) {
                         {action.techniqueId || action.weaponId} → {target?.battleLabel || target?.displayName || target?.name || action.targetActorId}
                       </Text>
                     )}
+                    {charge && <Text fontSize="xs">Target: {fighters.find((fighter) => String(getCombatActorId(fighter) ?? "") === charge.targetActorId)?.battleLabel || charge.targetActorId}; contact: {charge.state === "contact-pending" ? "pending" : "not reached"}; interception: {tacticalPulseRuntimeRef.current.actionRuntime.chargeBraceRuntime.windowsByCharge.has(charge.chargeIntentId) ? "pending" : "none"}</Text>}
+                    {brace && <Text fontSize="xs">Readiness: {brace.state}; weapon: {brace.weaponId}; incoming charger: {brace.triggerActorId || "none"}; interception: {brace.interceptionExecutionKey ? "triggered" : "waiting"}</Text>}
                     {isManualActor && (
                       <>
                         <Button size="sm" colorScheme="green" onClick={() => prepareManualTacticalAttack(expectedIdentity)} isDisabled={ownership.state !== "unowned"}>
                           Prepare Attack
+                        </Button>
+                        <Button size="sm" colorScheme="orange" onClick={prepareManualTacticalCharge} isDisabled={ownership.state !== "unowned" || !getChargeCapabilities(selectedAttackWeapon || currentFighter?.selectedAttack || currentFighter?.weaponProfiles?.[0] || currentFighter?.attacks?.[0]).canCharge}>
+                          Prepare Charge
+                        </Button>
+                        <Button size="sm" colorScheme="teal" onClick={prepareManualTacticalBrace} isDisabled={ownership.state !== "unowned" || !getBraceCapabilities(selectedAttackWeapon || currentFighter?.selectedAttack || currentFighter?.weaponProfiles?.[0] || currentFighter?.attacks?.[0]).canBrace}>
+                          Brace Weapon
+                        </Button>
+                        <Button size="sm" variant="outline" onClick={() => cancelManualTacticalChargeBrace("charge", actorId)} isDisabled={!charge || !["preparing", "ready", "committed"].includes(charge.state) || charge.completedPath.length > 0}>
+                          Cancel Charge
+                        </Button>
+                        <Button size="sm" variant="outline" onClick={() => cancelManualTacticalChargeBrace("brace", actorId)} isDisabled={!brace || !["preparing", "ready", "held"].includes(brace.state)}>
+                          Cancel Brace
                         </Button>
                         <Button size="sm" variant="outline" onClick={() => cancelManualTacticalPreparation(expectedIdentity)} isDisabled={!action || !["preparing", "ready"].includes(action.state)}>
                           Cancel Preparation
@@ -48406,12 +48665,29 @@ function CombatPage({ characters = [] }) {
                         <Button size="sm" colorScheme="red" onClick={() => releaseManualTacticalAttack(expectedIdentity)} isDisabled={action?.state !== "ready" || action?.releaseRequested === true}>
                           Release Ready Attack
                         </Button>
-                        <Button size="sm" variant="ghost" onClick={advanceOneTacticalPulse} isDisabled={tacticalPulsesRunning}>
+                        <Button size="sm" variant="ghost" onClick={advanceOneTacticalPulse} isDisabled={tacticalPulsesRunning || Boolean(charge) || Boolean(brace)}>
                           Hold
                         </Button>
                       </>
                     )}
                   </>
+                );
+              })()}
+              {(() => {
+                const chargeBraceRuntime = tacticalPulseRuntimeRef.current.actionRuntime.chargeBraceRuntime;
+                const window = [...chargeBraceRuntime.windowsByCharge.values()].find((candidate) => {
+                  const interceptor = fighters.find((fighter) => String(getCombatActorId(fighter) ?? "") === candidate.interceptorId);
+                  return candidate.state === "offered" && getFighterControlMode(interceptor) === "manual";
+                });
+                if (!window || aiControlEnabled) return null;
+                const charger = fighters.find((fighter) => String(getCombatActorId(fighter) ?? "") === window.chargerId);
+                return (
+                  <HStack spacing={2} flexWrap="wrap" data-testid="tactical-interception-controls">
+                    <Badge colorScheme="orange">Incoming charge: {charger?.battleLabel || charger?.displayName || charger?.name || window.chargerId}</Badge>
+                    <Text fontSize="xs">Trigger step ({window.proposedMovementStep.from.x},{window.proposedMovementStep.from.y}) → ({window.proposedMovementStep.to.x},{window.proposedMovementStep.to.y}); status: {window.state}; deadline pulse {window.responseDeadlinePulse}</Text>
+                    <Button size="sm" colorScheme="red" onClick={() => submitManualTacticalInterception(window, TACTICAL_INTERCEPTION_CHOICES.INTERCEPT)} isDisabled={Boolean(window.selectedResponse)}>Intercept</Button>
+                    <Button size="sm" variant="outline" onClick={() => submitManualTacticalInterception(window, TACTICAL_INTERCEPTION_CHOICES.LET_PASS)} isDisabled={Boolean(window.selectedResponse)}>Let Charge Pass</Button>
+                  </HStack>
                 );
               })()}
               {(() => {
