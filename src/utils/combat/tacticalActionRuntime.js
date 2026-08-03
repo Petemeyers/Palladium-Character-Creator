@@ -16,6 +16,13 @@ import {
   openTacticalReactionWindow,
   progressTacticalReactionWindows,
 } from "./tacticalReactionWindow.js";
+import {
+  auditTacticalPostParryOwnership,
+  cleanupTacticalPostParryRuntime,
+  createTacticalPostParryRuntime,
+  openTacticalPostParryWindow,
+  progressTacticalPostParryWindows,
+} from "./tacticalPostParryWindow.js";
 
 const activeActor = (fighter) => {
   const hp = fighter?.currentHP ?? fighter?.currentHp ?? fighter?.hp ?? fighter?.hitPoints?.current ?? fighter?.health;
@@ -47,6 +54,7 @@ export function createTacticalActionRuntime({
     ammunitionReleaseKeyOrder: [],
     terminalHistory: [],
     reactionRuntime: createTacticalReactionRuntime({ generationId, combatSession, maxTerminalHistory, maxResolutionHistory: maxClaimHistory }),
+    postParryRuntime: createTacticalPostParryRuntime({ generationId, combatSession, maxHistory: maxTerminalHistory, maxClaims: maxClaimHistory }),
     maxTerminalHistory: Math.max(16, Number(maxTerminalHistory) || 128),
     maxClaimHistory: Math.max(32, Number(maxClaimHistory) || 256),
     postCombatMutationsBlocked: 0,
@@ -61,11 +69,16 @@ export function getTacticalActorOwnership(runtime, actorId) {
   const key = String(actorId ?? "");
   const action = runtime?.activeActions?.get(key) || null;
   const recovery = runtime?.recoveryByActor?.get(key) || null;
+  const postParryWindowId = runtime?.postParryRuntime?.responderOwnership?.get(key) || null;
+  const postParryWindow = postParryWindowId
+    ? runtime.postParryRuntime.activeWindows.get(postParryWindowId) || null
+    : null;
   return {
     actorId: key,
-    state: recovery ? "recovering" : action?.state || "unowned",
+    state: postParryWindow ? "post-parry-response" : recovery ? "recovering" : action?.state || "unowned",
     action,
     recovery,
+    postParryWindow,
   };
 }
 
@@ -99,6 +112,9 @@ export function registerTacticalAction(runtime, input, { releaseRequested = true
   if (intent.combatSession !== runtime.combatSession) return { accepted: false, reason: "stale-combat-session" };
   if (runtime.activeActions.has(intent.actorId)) return { accepted: false, reason: "duplicate-action-ownership" };
   if (runtime.recoveryByActor.has(intent.actorId)) return { accepted: false, reason: "actor-recovering" };
+  if (runtime.postParryRuntime?.responderOwnership?.has(intent.actorId)) {
+    return { accepted: false, reason: "actor-owns-post-parry-response" };
+  }
   const preparing = transitionTacticalAction(intent, "preparing", { releaseRequested: Boolean(releaseRequested) });
   if (!preparing.accepted) return preparing;
   runtime.activeActions.set(intent.actorId, preparing.intent);
@@ -232,6 +248,11 @@ export async function advanceTacticalActionRuntime({
   spendCanonicalAmmunition,
   getReactionControlMode,
   selectAIReaction,
+  createCanonicalPostParryOffer,
+  validatePostParryResponse,
+  executeCanonicalPostParryResponse,
+  getPostParryControlMode,
+  selectAIPostParryResponse,
   onEvent,
 } = {}) {
   if (!runtime) return { accepted: false, reason: "tactical-action-runtime-required", events: [] };
@@ -248,6 +269,24 @@ export async function advanceTacticalActionRuntime({
     combatActive,
     onEvent: emit,
   });
+  const postParryProgress = await progressTacticalPostParryWindows({
+    runtime: runtime.postParryRuntime,
+    pulseIndex,
+    fighters,
+    combatActive,
+    validateResponse: validatePostParryResponse,
+    executeCanonicalResponse: executeCanonicalPostParryResponse,
+    onEvent: emit,
+  });
+  const postParryActorsSettledThisPulse = new Set((postParryProgress.events || [])
+    .filter((entry) => [
+      "tactical-post-parry-resolution-completed",
+      "tactical-post-parry-window-expired",
+      "tactical-post-parry-window-invalidated",
+      "tactical-post-parry-window-canceled",
+    ].includes(entry.eventType))
+    .map((entry) => String(entry.actorId || entry.data?.respondingActorId || ""))
+    .filter(Boolean));
 
   for (const recovery of runtime.recoveryByActor.values()) {
     emit(actionEvent("tactical-action-recovery-progress", recovery, pulseIndex, {
@@ -257,6 +296,12 @@ export async function advanceTacticalActionRuntime({
 
   for (const [actorId, current] of [...runtime.activeActions]) {
     let intent = current;
+    if (runtime.postParryRuntime?.responderOwnership?.has(actorId) || postParryActorsSettledThisPulse.has(actorId)) {
+      emit(actionEvent("tactical-action-held-for-post-parry-response", intent, pulseIndex, {
+        postParryWindowId: runtime.postParryRuntime.responderOwnership.get(actorId),
+      }));
+      continue;
+    }
     const validation = validateAction({ runtime, intent, fighters, combatActive, validateAction: externalValidation });
     if (!validation.valid) {
       if (intent.reactionWindowId) {
@@ -459,6 +504,45 @@ export async function advanceTacticalActionRuntime({
       result: resolved.result,
       onEvent: emit,
     });
+    const canonicalDefenseResult = resolved.result?.defenseResult || null;
+    if (
+      canonicalDefenseResult?.parryAttempted === true
+      && canonicalDefenseResult?.parrySucceeded === true
+      && ["parry_advantage", "parry_dominant"].includes(canonicalDefenseResult?.parryQuality)
+      && typeof createCanonicalPostParryOffer === "function"
+    ) {
+      let offerResult;
+      try {
+        offerResult = await createCanonicalPostParryOffer({
+          defenseResult: canonicalDefenseResult,
+          intent,
+          executionKey: resolved.executionKey,
+          pulseIndex,
+          fighters,
+        });
+      } catch (error) {
+        offerResult = { accepted: false, reason: "canonical-post-parry-offer-callback-threw", errorName: error?.name || "Error" };
+      }
+      if (offerResult?.accepted && offerResult.canonicalOffer) {
+        openTacticalPostParryWindow({
+          runtime: runtime.postParryRuntime,
+          defenseResult: Object.freeze({
+            ...canonicalDefenseResult,
+            generationId: intent.generationId,
+            combatSession: intent.combatSession,
+            sourceActionIntentId: intent.actionIntentId,
+            sourceExecutionKey: resolved.executionKey,
+          }),
+          canonicalOffer: offerResult.canonicalOffer,
+          pulseIndex,
+          fighters,
+          controlMode: getPostParryControlMode?.(canonicalDefenseResult.responderId, fighters) || "ai",
+          selectAIResponse: selectAIPostParryResponse,
+          aiContext: offerResult.aiContext || {},
+          onEvent: emit,
+        });
+      }
+    }
     const resolvingWithKey = Object.freeze({ ...intent, executionKey: resolved.executionKey });
     const contactState = intent.actionType === "ranged-attack" && resolved.result?.projectileReleased !== false
       ? "released"
@@ -495,6 +579,7 @@ export function cleanupTacticalActionRuntime(runtime, reason = "combat-ended") {
     projectileClaimCount: runtime.ammunitionReleaseKeys.size,
   };
   const reactionCleanup = cleanupTacticalReactionRuntime(runtime.reactionRuntime, reason);
+  const postParryCleanup = cleanupTacticalPostParryRuntime(runtime.postParryRuntime, reason);
   for (const action of runtime.activeActions.values()) {
     counts.pendingActionCount += 1;
     if (action.state === "preparing") counts.preparingActionCount += 1;
@@ -517,6 +602,7 @@ export function cleanupTacticalActionRuntime(runtime, reason = "combat-ended") {
   runtime.lastCleanup = {
     ...counts,
     reactionCleanup: reactionCleanup.data || null,
+    postParryCleanup: postParryCleanup.data || null,
     postCombatMutationsBlocked: runtime.postCombatMutationsBlocked,
     matches: runtime.activeActions.size === 0 && runtime.recoveryByActor.size === 0,
   };
@@ -525,6 +611,7 @@ export function cleanupTacticalActionRuntime(runtime, reason = "combat-ended") {
     eventType: "tactical-action-terminal-cleanup",
     data: runtime.lastCleanup,
     reactionCleanup,
+    postParryCleanup,
   };
 }
 
@@ -543,6 +630,7 @@ export function auditTacticalActionOwnership(runtime) {
     projectileClaimCount: runtime.ammunitionReleaseKeys.size,
     terminalHistoryCount: runtime.terminalHistory.length,
     reaction: auditTacticalReactionOwnership(runtime.reactionRuntime),
+    postParry: auditTacticalPostParryOwnership(runtime.postParryRuntime),
     matches: overlapActorIds.length === 0,
   };
 }
@@ -565,6 +653,12 @@ export function resetTacticalActionCoordinates(runtime, { generationId, combatSe
     combatSession,
     maxTerminalHistory: runtime.maxTerminalHistory,
     maxResolutionHistory: runtime.maxClaimHistory,
+  });
+  runtime.postParryRuntime = createTacticalPostParryRuntime({
+    generationId,
+    combatSession,
+    maxHistory: runtime.maxTerminalHistory,
+    maxClaims: runtime.maxClaimHistory,
   });
   return cleanup;
 }

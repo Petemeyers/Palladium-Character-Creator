@@ -97,6 +97,11 @@ export async function resolveTacticalPulse({
   spendCanonicalAmmunition,
   getReactionControlMode,
   selectAIReaction,
+  createCanonicalPostParryOffer,
+  validatePostParryResponse,
+  executeCanonicalPostParryResponse,
+  getPostParryControlMode,
+  selectAIPostParryResponse,
   combatActive = true,
   getInitiativePriority = getTacticalInitiativePriority,
   transitionClock = transitionTacticalPulseClock,
@@ -376,6 +381,11 @@ export async function resolveTacticalPulse({
       spendCanonicalAmmunition,
       getReactionControlMode,
       selectAIReaction,
+      createCanonicalPostParryOffer,
+      validatePostParryResponse,
+      executeCanonicalPostParryResponse,
+      getPostParryControlMode,
+      selectAIPostParryResponse,
       onEvent: (entry) => emit(event(entry.eventType, owner, entry.data, entry.actorId)),
     });
     if (!actionProgress.accepted) return abortPulse(actionProgress.reason || "tactical-action-progress-rejected");
