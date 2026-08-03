@@ -414,6 +414,11 @@ import {
   registerTacticalAction,
   requestTacticalActionRelease,
 } from "../utils/combat/tacticalActionRuntime.js";
+import {
+  getActiveTacticalReactionForResponder,
+  getTacticalReactionBudget,
+  submitTacticalReactionResponse,
+} from "../utils/combat/tacticalReactionWindow.js";
 import { createTacticalActionIntent } from "../utils/combat/tacticalActionIntent.js";
 import {
   findTacticalAttackByIntent,
@@ -5556,6 +5561,14 @@ function CombatPage({ characters = [] }) {
       "tactical-action-invalidated": actor
         ? `${actor.battleLabel || actor.displayName || actor.name}'s prepared attack is no longer possible.`
         : null,
+      "tactical-reaction-response-submitted": actor
+        ? pulseEvent.data?.responseType === "decline"
+          ? `${actor.battleLabel || actor.displayName || actor.name} declines to react.`
+          : `${actor.battleLabel || actor.displayName || actor.name} attempts to ${String(pulseEvent.data?.responseType || "react").replace("shield-block", "block with a shield")}.`
+        : null,
+      "tactical-reaction-window-expired": actor
+        ? `${actor.battleLabel || actor.displayName || actor.name} does not react in time.`
+        : null,
     };
     const playerMessage = playerActionMessages[pulseEvent.eventType];
     if (playerMessage) {
@@ -5669,7 +5682,7 @@ function CombatPage({ characters = [] }) {
         if (target.team === actor.team) return { valid: false, reason: "target-no-longer-hostile" };
         return { valid: true };
       },
-      spendCanonicalAmmunition: ({ actorId, targetActorId, weaponId }) => {
+      spendCanonicalAmmunition: ({ actorId, targetActorId, weaponId, executionKey }) => {
         const actor = (fightersRef.current || []).find((fighter) => String(getCombatActorId(fighter) ?? "") === String(actorId));
         const target = (fightersRef.current || []).find((fighter) => String(getCombatActorId(fighter) ?? "") === String(targetActorId));
         if (!actor || !target || target.dead || target.isDead || target.unconscious || target.isUnconscious || target.defeated || target.isDefeated || target.team === actor.team) {
@@ -5678,12 +5691,42 @@ function CombatPage({ characters = [] }) {
         const intentAttack = findTacticalAttackByIntent(actor, { weaponId });
         const ammoType = intentAttack?.ammunition || intentAttack?.ammunitionType || intentAttack?.ammoType
           || (/crossbow/i.test(intentAttack?.name || "") ? "bolts" : "arrows");
-        return getInventoryAmmoCount(actor, ammoType) > 0
-          ? { accepted: true, spent: 0, admissionOnly: true }
-          : { accepted: false, reason: "insufficient-ammunition" };
+        const expenditure = spendAmmunitionOnce({
+          registry: canonicalAmmunitionRegistryRef.current,
+          actor,
+          actorId,
+          ammoType,
+          quantity: 1,
+          executionKey,
+          projectileReleased: true,
+          source: "tactical-reaction-release-admission",
+        });
+        if (expenditure.accepted && expenditure.actor) {
+          const nextRoster = (fightersRef.current || []).map((fighter) => (
+            String(getCombatActorId(fighter) ?? "") === String(actorId) ? expenditure.actor : fighter
+          ));
+          commitFighters(nextRoster);
+        }
+        for (const ammoEvent of expenditure.events || []) {
+          addLog({
+            audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+            channel: COMBAT_LOG_CHANNELS.ACTION,
+            eventType: ammoEvent.eventType,
+            level: ammoEvent.eventType.endsWith("rejected") ? "warning" : "info",
+            type: ammoEvent.eventType.endsWith("rejected") ? "warning" : "debug",
+            actorId,
+            targetId: targetActorId,
+            executionKey,
+            source: "tactical-reaction-release-admission",
+            message: `${ammoEvent.eventType}: actorId=${actorId} executionKey=${executionKey}`,
+            data: ammoEvent.data,
+          }, ammoEvent.eventType.endsWith("rejected") ? "warning" : "debug");
+        }
+        return expenditure;
       },
       executeCanonicalAttack: (admission) => tacticalAttackExecutorRef.current?.(admission)
         ?? { accepted: false, reason: "canonical-tactical-attack-executor-unavailable" },
+      getReactionControlMode: (fighter) => getFighterControlMode(fighter),
       combatActive: combatActiveRef.current && !combatOverRef.current,
       onEvent: emitTacticalPulseEvent,
     });
@@ -5696,6 +5739,7 @@ function CombatPage({ characters = [] }) {
     addLog,
     combatTimingMode,
     commitAuthoritativeCombatPosition,
+    commitFighters,
     emitTacticalPulseEvent,
     getArmoredMemoryForCombatants,
     rollArmoredTechniqueRng,
@@ -5849,6 +5893,31 @@ function CombatPage({ characters = [] }) {
     return released.accepted;
   }, [addLog]);
 
+  const submitManualTacticalReaction = useCallback((reactionWindowId, responderId, responseType, expected = {}) => {
+    if (
+      combatTimingModeRef.current !== COMBAT_TIMING_MODES.TACTICAL_PULSE ||
+      !combatActiveRef.current || combatOverRef.current || aiControlEnabledRef.current
+    ) return false;
+    const defender = (fightersRef.current || []).find((fighter) => String(getCombatActorId(fighter) ?? "") === String(responderId));
+    const selectedActorIds = new Set([
+      fightersRef.current?.[turnIndexRef.current],
+      selectedTarget,
+    ].filter(Boolean).map((fighter) => String(getCombatActorId(fighter) ?? "")));
+    if (!defender || getFighterControlMode(defender) !== "manual" || !selectedActorIds.has(String(responderId))) return false;
+    const submitted = submitTacticalReactionResponse({
+      runtime: tacticalPulseRuntimeRef.current.actionRuntime.reactionRuntime,
+      reactionWindowId,
+      responderId,
+      responseType,
+      pulseIndex: tacticalPulseRuntimeRef.current.clock.pulseIndex,
+      expected,
+      onEvent: emitTacticalPulseEvent,
+    });
+    if (!submitted.accepted) addLog(`Tactical reaction rejected: ${submitted.reason}.`, "warning");
+    setTacticalActionUiVersion((value) => value + 1);
+    return submitted.accepted;
+  }, [addLog, emitTacticalPulseEvent, getFighterControlMode, selectedTarget]);
+
   useEffect(() => {
     if (combatActive) {
       tacticalCleanupEmittedRef.current = false;
@@ -5859,6 +5928,17 @@ function CombatPage({ characters = [] }) {
     if (!actionRuntime) return;
     const cleanup = cleanupTacticalActionRuntime(actionRuntime, "combat-ended");
     tacticalCleanupEmittedRef.current = true;
+    if (cleanup.reactionCleanup?.accepted) {
+      emitTacticalPulseEvent({
+        eventType: "tactical-reaction-terminal-cleanup",
+        actorId: null,
+        generationId: tacticalPulseRuntimeRef.current.generationId,
+        combatSession: tacticalPulseRuntimeRef.current.combatSession,
+        pulseIndex: tacticalPulseRuntimeRef.current.clock.pulseIndex,
+        cycleIndex: tacticalPulseRuntimeRef.current.clock.cycleIndex,
+        data: cleanup.reactionCleanup.data,
+      });
+    }
     emitTacticalPulseEvent({
       eventType: cleanup.eventType,
       actorId: null,
@@ -26055,19 +26135,25 @@ function CombatPage({ characters = [] }) {
       // Bows require arrows, crossbows require bolts, slings require rocks/stones.
       if (requiresAmmo) {
         const currentAmmo = getInventoryAmmoCount(attackerInArray || attacker, ammoType);
-        if (currentAmmo <= 0) {
+        if (currentAmmo <= 0 && !bonusModifiers?.tacticalProjectilePreReleased) {
           addLog(`${attacker.name} is out of ${ammoType}! Cannot fire ${weaponName}.`, "error");
           burnFailedAutomatedActionAndEnd(`out of ${ammoType}`);
           return;
         }
         // Decrement hastaminans AFTER roll resolution (so projectile misfires don't spend ammo).
-        ammoContext = { ammoType, currentAmmo, weaponName };
+        ammoContext = { ammoType, currentAmmo, weaponName, tacticalProjectilePreReleased: Boolean(bonusModifiers?.tacticalProjectilePreReleased) };
       }
     }
 
     const resolveCanonicalProjectileRelease = (projectileReleased) => {
       if (!ammoContext?.ammoType) {
         return { accepted: true, projectileAuthorized: Boolean(projectileReleased), spent: 0, actor: attackerInArray || attacker, events: [] };
+      }
+      if (ammoContext.tacticalProjectilePreReleased) {
+        const record = canonicalAmmunitionRegistryRef.current.get(attackActionId);
+        return record?.accepted && record?.projectileReleased
+          ? { accepted: true, projectileAuthorized: true, spent: 0, actor: attackerInArray || attacker, record, events: [], duplicate: true }
+          : { accepted: false, projectileAuthorized: false, spent: 0, actor: attackerInArray || attacker, reason: "pre-released-projectile-identity-missing", events: [] };
       }
       const result = spendAmmunitionOnce({
         registry: canonicalAmmunitionRegistryRef.current,
@@ -27129,10 +27215,13 @@ function CombatPage({ characters = [] }) {
           attacker: liveAttacker,
           defender: liveDefender,
         };
-        const shieldDefense = resolvedDefenseType === "Block" && Boolean(
-          liveDefender?.hasShield ||
-          liveDefender?.equippedShield ||
-          /shield/i.test(String(liveDefender?.shield || liveDefender?.offHand || ""))
+        const shieldDefense = resolvedDefenseType === "Block" && (
+          tacticalReactionType === "shield-block" ||
+          (tacticalReactionType !== "parry" && Boolean(
+            liveDefender?.hasShield ||
+            liveDefender?.equippedShield ||
+            /shield/i.test(String(liveDefender?.shield || liveDefender?.offHand || ""))
+          ))
         );
         const defenseKind = /evade|move|dodge/i.test(String(resolvedDefenseType))
           ? "dodge"
@@ -27179,6 +27268,31 @@ function CombatPage({ characters = [] }) {
           return null;
         }
         const { result, developerEvent } = resolution;
+        if (bonusModifiers?.tacticalReactionAdmission && typeof bonusModifiers?.onTacticalDefenseResolved === "function") {
+          const tacticalReaction = bonusModifiers.tacticalReactionAdmission;
+          bonusModifiers.onTacticalDefenseResolved(Object.freeze({
+            reactionWindowId: tacticalReaction.reactionWindowId,
+            reactionResponseId: tacticalReaction.reactionResponseId,
+            responseType: tacticalReaction.responseType,
+            responderId: tacticalReaction.responderId,
+            protectedActorId: tacticalReaction.protectedActorId,
+            sourceExecutionKey: tacticalReaction.sourceExecutionKey,
+            sourceActionIntentId: tacticalReaction.sourceActionIntentId,
+            parryAttempted: tacticalReaction.responseType === "parry",
+            parrySucceeded: tacticalReaction.responseType === "parry" && result.success === true,
+            parryQuality: tacticalReaction.responseType === "parry" ? result.outcome : null,
+            advantageous: tacticalReaction.responseType === "parry" && result.outcome === DEFENSE_OUTCOMES.ADVANTAGE,
+            dominant: tacticalReaction.responseType === "parry" && result.outcome === DEFENSE_OUTCOMES.DOMINANT,
+            sourceAttackerId: liveAttacker.id,
+            sourceDefenderId: liveDefender.id,
+            sourceWeaponId: attackData?.weaponId || attackData?.profileKey || attackData?.id || attackData?.name || null,
+            defenseType: defenseKind,
+            defenseSucceeded: result.success === true,
+            defenseTotal: result.defenseTotal,
+            attackTotal: result.attackTotal,
+            defenseMargin: result.defenseMargin,
+          }));
+        }
         addLog({
           audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
           channel: COMBAT_LOG_CHANNELS.ROLL,
@@ -27223,7 +27337,14 @@ function CombatPage({ characters = [] }) {
       // AUTO-PARRY: If enemy attacks and defender has Hand-to-Hand, auto-block if conditions are met
       // NOTE: Ranged/thrown attacks are NOT blockable under our rules; only evade/cover applies.
       let defenseSuccess = false;
-      let defenseType = defensiveStance[defender.id];
+      const tacticalReactionType = bonusModifiers?.tacticalReactionType || null;
+      let defenseType = tacticalReactionType === "dodge"
+        ? "Evade"
+        : ["parry", "shield-block"].includes(tacticalReactionType)
+          ? "Block"
+          : tacticalReactionType === "decline"
+            ? null
+            : defensiveStance[defender.id];
       let autoBlockUsed = false; // Track if auto-block was used
       const spendActiveDefenseStamina = (activeDefenseType) => {
         const defenseCost = calculateDefenseStaminaCost({
@@ -27258,7 +27379,7 @@ function CombatPage({ characters = [] }) {
       }
 
       // Check for auto-block when enemy attacks (only if no defensive stance already set)
-      if (!bonusModifiers?.fraidereNoDefense && !defenseType && !isRangedAttack && attackRoll >= targetGuardRating && canFighterAct(defender)) {
+      if (!bonusModifiers?.fraidereNoDefense && tacticalReactionType !== "decline" && !defenseType && !isRangedAttack && attackRoll >= targetGuardRating && canFighterAct(defender)) {
         // Check if defender has Hand-to-Hand skill
         const hasHandToHand = defender.handToHand && (
           defender.handToHand.type ||
@@ -27401,8 +27522,9 @@ function CombatPage({ characters = [] }) {
         const usesHeldDefense =
           (Number(defender.remainingActions ?? 0) || 0) <= 0 &&
           canUseDefensiveReserveForReaction(defender, reserveDefenseType);
+        const usesTacticalReaction = Boolean(bonusModifiers?.tacticalReactionAdmission);
         // Check if defender has attacks remaining to block/evade
-        if (defender.remainingActions <= 0 && !usesHeldDefense) {
+        if (defender.remainingActions <= 0 && !usesHeldDefense && !usesTacticalReaction) {
           addLog(`${defender.name} is out of actions and cannot ${defenseType.toLowerCase()}!`, "error");
         } else {
           spendActiveDefenseStamina(defenseType);
@@ -27620,6 +27742,8 @@ function CombatPage({ characters = [] }) {
           if (usesHeldDefense) {
             updated[defenderIndex] = consumeDefensiveReserve(updated[defenderIndex]);
             addLog(`${defender.name}'s held defense is spent.`, "info");
+          } else if (usesTacticalReaction) {
+            addLog(`${defender.name} spends their tactical reaction.`, "info");
           } else {
             // Deduct 1 attack for defensive action
             updated[defenderIndex].remainingActions = Math.max(0, (updated[defenderIndex].remainingActions || 0) - 1);
@@ -27636,6 +27760,9 @@ function CombatPage({ characters = [] }) {
       }
 
       const resolveImmediateRiposte = async () => {
+        if (bonusModifiers?.tacticalReactionAdmission) {
+          return { offered: false, reason: "tactical-reaction-followups-reserved-for-phase1b2b" };
+        }
         const defenseResult = canonicalDefenseResolution?.result;
         const sourceExchange = canonicalDefenseResolution?.exchange;
         if (
@@ -28361,7 +28488,9 @@ function CombatPage({ characters = [] }) {
       if (isProjectileAttack && attackDiceRoll === 1) {
         resolveCanonicalProjectileRelease(false);
         addLog(
-         `[PROJECTILE MISFIRE] attacker=${attacker.name} roll=1 projectileReleased=false ammoSpent=false`,
+          bonusModifiers?.tacticalProjectilePreReleased
+            ? `[PROJECTILE FUMBLE] attacker=${attacker.name} roll=1 projectileReleased=true ammoSpent=true outcome=failed-release-control`
+            : `[PROJECTILE MISFIRE] attacker=${attacker.name} roll=1 projectileReleased=false ammoSpent=false`,
           "info"
         );
         // Consume 1 action to avoid stalls, but do not spend ammo.
@@ -31270,6 +31399,7 @@ function CombatPage({ characters = [] }) {
       const previousSuppression = suppressEndTurnRef.current;
       suppressEndTurnRef.current = true;
       try {
+        let tacticalDefenseResult = null;
         const result = await attack(tacticalActor, target.id, {
           attackActionId: canonicalExecutionKey,
           allowOutOfTurnAttack: true,
@@ -31279,6 +31409,12 @@ function CombatPage({ characters = [] }) {
           suppressSequentialTurnAdvance: true,
           suppressActionSpend: true,
           tacticalActionAdmission: admission,
+          tacticalReactionAdmission: admission.reactionAdmission || null,
+          tacticalReactionType: admission.reactionAdmission?.responseType || "decline",
+          tacticalProjectilePreReleased: rangedTacticalAttack && Number(admission.ammunition?.spent || 0) === 1,
+          onTacticalDefenseResolved: (defenseResult) => {
+            tacticalDefenseResult = defenseResult;
+          },
         });
         const liveActorAfterAttack = (fightersRef.current || []).find((fighter) => (
           String(getCombatActorId(fighter) ?? "") === String(admission.actorId)
@@ -31287,11 +31423,11 @@ function CombatPage({ characters = [] }) {
           ? getInventoryAmmoCount(liveActorAfterAttack || actor, ammunitionType)
           : null;
         const ammunitionSpent = rangedTacticalAttack
-          ? Math.max(0, Number(ammunitionBefore) - Number(ammunitionAfter))
+          ? Math.max(Number(admission.ammunition?.spent || 0), Math.max(0, Number(ammunitionBefore) - Number(ammunitionAfter)))
           : 0;
         return result?.blocked
-          ? { accepted: false, reason: result.reason || "canonical-attack-blocked", result, ammunitionSpent, projectileReleased: ammunitionSpent === 1 }
-          : { accepted: true, result, ammunitionSpent, projectileReleased: rangedTacticalAttack ? ammunitionSpent === 1 : null };
+          ? { accepted: false, reason: result.reason || "canonical-attack-blocked", result, defenseResult: tacticalDefenseResult, ammunitionSpent, projectileReleased: ammunitionSpent === 1 }
+          : { accepted: true, result, defenseResult: tacticalDefenseResult, ammunitionSpent, projectileReleased: rangedTacticalAttack ? ammunitionSpent === 1 : null };
       } finally {
         suppressEndTurnRef.current = previousSuppression;
       }
@@ -46249,6 +46385,17 @@ function CombatPage({ characters = [] }) {
       const previousTacticalRuntime = tacticalPulseRuntimeRef.current;
       if (previousTacticalRuntime?.actionRuntime) {
         const cleanup = cleanupTacticalActionRuntime(previousTacticalRuntime.actionRuntime, "combat-reset");
+        if (cleanup.reactionCleanup?.accepted) {
+          emitTacticalPulseEvent({
+            eventType: "tactical-reaction-terminal-cleanup",
+            actorId: null,
+            generationId: previousTacticalRuntime.generationId,
+            combatSession: previousTacticalRuntime.combatSession,
+            pulseIndex: previousTacticalRuntime.clock?.pulseIndex || 0,
+            cycleIndex: previousTacticalRuntime.clock?.cycleIndex || 1,
+            data: cleanup.reactionCleanup.data,
+          });
+        }
         if (cleanup.accepted && cleanup.eventType) {
           emitTacticalPulseEvent({
             eventType: cleanup.eventType,
@@ -47836,6 +47983,61 @@ function CombatPage({ characters = [] }) {
                       </>
                     )}
                   </>
+                );
+              })()}
+              {(() => {
+                const reactionRuntime = tacticalPulseRuntimeRef.current.actionRuntime.reactionRuntime;
+                const manualDefender = [currentFighter, selectedTarget].filter(Boolean).find((fighter) => (
+                  getFighterControlMode(fighter) === "manual" &&
+                  getActiveTacticalReactionForResponder(reactionRuntime, String(getCombatActorId(fighter) ?? ""))
+                ));
+                if (!manualDefender || aiControlEnabled) return null;
+                const defenderId = String(getCombatActorId(manualDefender) ?? "");
+                const window = getActiveTacticalReactionForResponder(reactionRuntime, defenderId);
+                if (!window) return null;
+                const attacker = fighters.find((fighter) => String(getCombatActorId(fighter) ?? "") === window.attackerId);
+                const budget = getTacticalReactionBudget(reactionRuntime, defenderId, tacticalPulseRuntimeRef.current.clock.pulseIndex);
+                const selected = window.selectedPrimaryResponse?.responseType || null;
+                const expected = {
+                  generationId: window.generationId,
+                  combatSession: window.combatSession,
+                  reactionWindowId: window.reactionWindowId,
+                  sourceActionIntentId: window.sourceActionIntentId,
+                  sourceExecutionKey: window.sourceExecutionKey,
+                  responderId: defenderId,
+                  selectedActorId: defenderId,
+                };
+                const choices = [
+                  ["dodge", "Dodge"],
+                  ["parry", "Parry"],
+                  ["shield-block", "Shield Block"],
+                  ["decline", "Decline"],
+                ];
+                const reasons = choices
+                  .filter(([type]) => !window.legalChoices?.[type]?.legal)
+                  .map(([type, label]) => `${label}: ${window.legalChoices?.[type]?.reason || "Unavailable"}`);
+                return (
+                  <HStack spacing={2} flexWrap="wrap" data-testid="tactical-reaction-controls">
+                    <Badge colorScheme="red" px={2} py={1}>
+                      Incoming {window.techniqueId || window.weaponId} from {attacker?.battleLabel || attacker?.displayName || attacker?.name || window.attackerId}
+                    </Badge>
+                    <Text fontSize="xs">Defender: {manualDefender.battleLabel || manualDefender.displayName || manualDefender.name || defenderId}; status: {window.state}</Text>
+                    <Badge colorScheme="yellow" px={2} py={1}>Reaction {budget.remaining}/{budget.capacity}</Badge>
+                    <Text fontSize="xs">Deadline pulse {window.responseDeadlinePulse}{selected ? ` â€” ${selected}` : ""}</Text>
+                    {choices.map(([type, label]) => (
+                      <Button
+                        key={type}
+                        size="sm"
+                        variant={selected === type ? "solid" : "outline"}
+                        onClick={() => submitManualTacticalReaction(window.reactionWindowId, defenderId, type, expected)}
+                        isDisabled={Boolean(selected) || !window.legalChoices?.[type]?.legal || (type !== "decline" && budget.remaining <= 0)}
+                        title={window.legalChoices?.[type]?.reason || label}
+                      >
+                        {label}
+                      </Button>
+                    ))}
+                    {reasons.length > 0 && <Text fontSize="xs">{reasons.join("; ")}</Text>}
+                  </HStack>
                 );
               })()}
             </HStack>
