@@ -1,0 +1,12 @@
+import assert from "node:assert/strict";
+import { resolveTacticalPostParryResponse } from "../src/utils/combat/resolveTacticalPostParryResponse.js";
+import { openScenario, selectAndResolve } from "./tactical-post-parry-test-helpers.mjs";
+const scenario = openScenario({ quality: "parry_advantage" });
+let request;
+const result = await selectAndResolve(scenario, "riposte", { executeCanonicalResponse: (admission) => resolveTacticalPostParryResponse({ admission, executors: { riposte: (canonical) => { request = canonical; return { accepted: true }; } } }) });
+assert.equal(result.progressed.accepted, true);
+assert.equal(request.reactionDepth, 1);
+assert.notEqual(request.responseExecutionKey, request.sourceExecutionKey);
+assert.match(request.responseExecutionKey, /post-parry/);
+assert.equal(scenario.runtime.executionKeys.size, 1);
+console.log("tactical riposte integration tests passed");

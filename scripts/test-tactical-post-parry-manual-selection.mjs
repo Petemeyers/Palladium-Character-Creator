@@ -1,0 +1,11 @@
+import assert from "node:assert/strict";
+import { submitTacticalPostParryResponse } from "../src/utils/combat/tacticalPostParryWindow.js";
+import { openScenario, selectAndResolve } from "./tactical-post-parry-test-helpers.mjs";
+const scenario = openScenario();
+assert.equal(scenario.runtime.executionKeys.size, 0);
+const result = await selectAndResolve(scenario, "decline");
+assert.equal(result.selected.accepted, true);
+assert.equal(result.executions.length, 1);
+assert.equal(scenario.runtime.terminalHistory.at(-1).state, "declined");
+assert.equal(submitTacticalPostParryResponse({ runtime: scenario.runtime, tacticalPostParryWindowId: scenario.opened.window.tacticalPostParryWindowId, responderId: "defender", responseType: "riposte", pulseIndex: 7 }).accepted, false);
+console.log("tactical post-parry manual selection tests passed");

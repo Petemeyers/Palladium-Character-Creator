@@ -1,0 +1,13 @@
+import assert from "node:assert/strict";
+import { submitTacticalPostParryResponse, progressTacticalPostParryWindows } from "../src/utils/combat/tacticalPostParryWindow.js";
+import { openScenario } from "./tactical-post-parry-test-helpers.mjs";
+const scenario = openScenario();
+const window = scenario.opened.window;
+const submit = () => submitTacticalPostParryResponse({ runtime: scenario.runtime, tacticalPostParryWindowId: window.tacticalPostParryWindowId, responderId: "defender", responseType: "bind", pulseIndex: 6 });
+assert.equal(submit().accepted, true);
+assert.equal(submit().reason, "duplicate-post-parry-selection");
+let executions = 0;
+const progress = () => progressTacticalPostParryWindows({ runtime: scenario.runtime, pulseIndex: 7, fighters: scenario.roster, executeCanonicalResponse: () => { executions += 1; return { accepted: true }; } });
+await progress(); await progress();
+assert.equal(executions, 1);
+console.log("tactical post-parry idempotence tests passed");

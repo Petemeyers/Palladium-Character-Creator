@@ -1,0 +1,11 @@
+import assert from "node:assert/strict";
+import { claimDominantControlModifier, createDominantControlState, DOMINANT_CONTROL_TYPES } from "../src/utils/combat/dominantOpeningResolution.js";
+import { offer } from "./tactical-post-parry-test-helpers.mjs";
+const opportunity = offer();
+const control = createDominantControlState({ type: DOMINANT_CONTROL_TYPES.BIND, opportunity, controllerId: "defender", controlledActorId: "attacker", controllerWeaponId: "sword-a", controlledWeaponId: "sword-b" });
+const registry = new Map([[control.controlId, control]]);
+assert.equal(claimDominantControlModifier({ registry, actorId: "attacker", againstActorId: "wrong", weaponId: "sword-b", kind: "attack" }).applied, false);
+assert.equal(claimDominantControlModifier({ registry, actorId: "attacker", againstActorId: "defender", weaponId: "wrong", kind: "attack" }).applied, false);
+assert.equal(claimDominantControlModifier({ registry, actorId: "attacker", againstActorId: "defender", weaponId: "sword-b", kind: "attack" }).penalty, -2);
+assert.equal(claimDominantControlModifier({ registry, actorId: "attacker", againstActorId: "defender", weaponId: "sword-b", kind: "attack" }).applied, false);
+console.log("tactical bind integration tests passed");

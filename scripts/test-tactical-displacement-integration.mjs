@@ -1,0 +1,11 @@
+import assert from "node:assert/strict";
+import { createDominantControlState, DOMINANT_CONTROL_TYPES } from "../src/utils/combat/dominantOpeningResolution.js";
+import { offer, openScenario, selectAndResolve } from "./tactical-post-parry-test-helpers.mjs";
+const control = createDominantControlState({ type: DOMINANT_CONTROL_TYPES.DISPLACEMENT, opportunity: offer(), controllerId: "defender", controlledActorId: "attacker", controlledWeaponId: "sword-b" });
+assert.equal(control.defensePenalty, -2);
+assert.equal(control.controlledWeaponId, "sword-b");
+const scenario = openScenario();
+const result = await selectAndResolve(scenario, "displacement");
+assert.equal(result.executions.length, 1);
+assert.equal(scenario.runtime.executionKeys.size, 1);
+console.log("tactical displacement integration tests passed");

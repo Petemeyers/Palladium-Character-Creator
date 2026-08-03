@@ -64,8 +64,9 @@ test("page awaits riposte before calculating final hit path", () => {
   const didHitIndex = combatPage.indexOf("let didHit =", awaitIndex);
   assert.ok(awaitIndex > 0 && didHitIndex > awaitIndex);
 });
-test("duplicate consumption uses one canonical helper", () => {
-  assert.equal((combatPage.match(/consumeRiposteOpening\(\{/g) || []).length, 1);
+test("sequential and tactical ripostes each use the canonical consumption helper", () => {
+  assert.equal((combatPage.match(/consumeRiposteOpening\(\{/g) || []).length, 2);
+  assert.match(combatPage, /tactical-post-parry-riposte/);
 });
 test("reaction-depth cap suppresses counter-riposte", () => {
   assert.match(combatPage, /isImmediateRiposte \|\|[\s\S]{0,100}sourceExchange\.reactionDepth >= 1/);

@@ -1,0 +1,10 @@
+import assert from "node:assert/strict";
+import { resolveTacticalPostParryResponse } from "../src/utils/combat/resolveTacticalPostParryResponse.js";
+import { openScenario, selectAndResolve } from "./tactical-post-parry-test-helpers.mjs";
+const scenario = openScenario();
+let request;
+await selectAndResolve(scenario, "grapple-entry", { executeCanonicalResponse: (admission) => resolveTacticalPostParryResponse({ admission, executors: { "grapple-entry": (canonical) => { request = canonical; return { accepted: true, canonicalGrappleAdmission: true }; } } }) });
+assert.equal(request.responseType, "grapple-entry");
+assert.equal(request.canonicalResponseType, "grapple_entry");
+assert.equal(request.reactionDepth, 1);
+console.log("tactical grapple entry integration tests passed");
