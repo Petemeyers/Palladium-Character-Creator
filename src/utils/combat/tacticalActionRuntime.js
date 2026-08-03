@@ -1,9 +1,21 @@
 import {
   createTacticalActionIntent,
+  buildTacticalAttackExecutionKey,
   isTacticalActionTerminal,
   transitionTacticalAction,
 } from "./tacticalActionIntent.js";
 import { resolveTacticalAttackIntent } from "./resolveTacticalAttackIntent.js";
+import {
+  admitTacticalReactionResolution,
+  auditTacticalReactionOwnership,
+  cleanupTacticalReactionRuntime,
+  completeTacticalReactionResolution,
+  createTacticalReactionRuntime,
+  getTacticalReactionWindowByExecution,
+  invalidateTacticalReactionWindow,
+  openTacticalReactionWindow,
+  progressTacticalReactionWindows,
+} from "./tacticalReactionWindow.js";
 
 const activeActor = (fighter) => {
   const hp = fighter?.currentHP ?? fighter?.currentHp ?? fighter?.hp ?? fighter?.hitPoints?.current ?? fighter?.health;
@@ -34,6 +46,7 @@ export function createTacticalActionRuntime({
     ammunitionReleaseKeys: new Set(),
     ammunitionReleaseKeyOrder: [],
     terminalHistory: [],
+    reactionRuntime: createTacticalReactionRuntime({ generationId, combatSession, maxTerminalHistory, maxResolutionHistory: maxClaimHistory }),
     maxTerminalHistory: Math.max(16, Number(maxTerminalHistory) || 128),
     maxClaimHistory: Math.max(32, Number(maxClaimHistory) || 256),
     postCombatMutationsBlocked: 0,
@@ -217,6 +230,8 @@ export async function advanceTacticalActionRuntime({
   validateAction: externalValidation,
   executeCanonicalAttack,
   spendCanonicalAmmunition,
+  getReactionControlMode,
+  selectAIReaction,
   onEvent,
 } = {}) {
   if (!runtime) return { accepted: false, reason: "tactical-action-runtime-required", events: [] };
@@ -226,6 +241,13 @@ export async function advanceTacticalActionRuntime({
   const emit = (entry) => { events.push(entry); onEvent?.(entry); };
 
   completeTacticalRecoveryBoundaries({ runtime, pulseIndex, onEvent: emit });
+  progressTacticalReactionWindows({
+    runtime: runtime.reactionRuntime,
+    pulseIndex,
+    fighters,
+    combatActive,
+    onEvent: emit,
+  });
 
   for (const recovery of runtime.recoveryByActor.values()) {
     emit(actionEvent("tactical-action-recovery-progress", recovery, pulseIndex, {
@@ -237,6 +259,15 @@ export async function advanceTacticalActionRuntime({
     let intent = current;
     const validation = validateAction({ runtime, intent, fighters, combatActive, validateAction: externalValidation });
     if (!validation.valid) {
+      if (intent.reactionWindowId) {
+        invalidateTacticalReactionWindow({
+          runtime: runtime.reactionRuntime,
+          reactionWindowId: intent.reactionWindowId,
+          pulseIndex,
+          reason: validation.reason,
+          onEvent: emit,
+        });
+      }
       const nextState = validation.terminal || "invalidated";
       const patch = nextState === "interrupted"
         ? { interruptionReason: validation.reason }
@@ -265,24 +296,134 @@ export async function advanceTacticalActionRuntime({
       runtime.activeActions.set(actorId, intent);
       emit(actionEvent("tactical-action-ready", intent, pulseIndex, { previousState: "preparing", nextState: "ready" }));
     }
-    if (intent.state !== "ready" || intent.releaseRequested === false) continue;
-
-    const resolving = transitionTacticalAction(intent, "resolving");
-    if (!resolving.accepted) continue;
-    intent = resolving.intent;
-    runtime.activeActions.set(actorId, intent);
-    emit(actionEvent("tactical-attack-resolution-admitted", intent, pulseIndex, { previousState: "ready", nextState: "resolving" }));
+    if (intent.state === "ready" && intent.releaseRequested !== false) {
+      const resolving = transitionTacticalAction(intent, "resolving");
+      if (!resolving.accepted) continue;
+      const executionKey = buildTacticalAttackExecutionKey(resolving.intent, pulseIndex);
+      const claim = claimTacticalExecution(runtime, executionKey);
+      if (!claim.accepted) {
+        const invalid = transitionTacticalAction(resolving.intent, "invalidated", { invalidationReason: claim.reason });
+        runtime.activeActions.delete(actorId);
+        if (invalid.accepted) retainTerminal(runtime, invalid.intent);
+        continue;
+      }
+      intent = Object.freeze({ ...resolving.intent, executionKey });
+      runtime.activeActions.set(actorId, intent);
+      emit(actionEvent("tactical-attack-resolution-admitted", intent, pulseIndex, { previousState: "ready", nextState: "resolving", executionKey }));
+      if (intent.actionType === "ranged-attack") {
+        let ammunition;
+        try {
+          ammunition = await spendCanonicalAmmunition?.({
+            actorId: intent.actorId,
+            targetActorId: intent.targetActorId,
+            weaponId: intent.weaponId,
+            actionIntentId: intent.actionIntentId,
+            executionKey,
+            amount: 1,
+            pulseIndex,
+            projectileReleased: true,
+          });
+        } catch (error) {
+          ammunition = { accepted: false, reason: "canonical-ammunition-callback-threw", errorName: error?.name || "Error" };
+        }
+        if (!ammunition?.accepted || Number(ammunition.spent ?? 0) !== 1) {
+          const reason = ammunition?.reason || "canonical-ammunition-spend-required";
+          const invalid = transitionTacticalAction(intent, "invalidated", { invalidationReason: reason, executionKey });
+          runtime.activeActions.delete(actorId);
+          if (invalid.accepted) retainTerminal(runtime, invalid.intent);
+          emit(actionEvent("tactical-attack-resolution-rejected", invalid.intent || intent, pulseIndex, {
+            previousState: "resolving", nextState: "invalidated", executionKey, invalidationReason: reason,
+          }));
+          continue;
+        }
+        const projectileClaim = claimTacticalProjectileRelease(runtime, executionKey);
+        if (!projectileClaim.accepted) {
+          const invalid = transitionTacticalAction(intent, "invalidated", { invalidationReason: projectileClaim.reason, executionKey });
+          runtime.activeActions.delete(actorId);
+          if (invalid.accepted) retainTerminal(runtime, invalid.intent);
+          continue;
+        }
+        intent = Object.freeze({ ...intent, ammunition: Object.freeze({ ...ammunition }) });
+        runtime.activeActions.set(actorId, intent);
+        emit(actionEvent("tactical-ranged-release", intent, pulseIndex, { executionKey, ammunitionSpent: 1 }));
+      }
+      const reaction = openTacticalReactionWindow({
+        runtime: runtime.reactionRuntime,
+        intent,
+        executionKey,
+        pulseIndex,
+        fighters,
+        permitsReaction: ["melee-attack", "ranged-attack"].includes(intent.actionType),
+        policyReason: ["melee-attack", "ranged-attack"].includes(intent.actionType)
+          ? null
+          : "action-type-does-not-permit-ordinary-reaction",
+        getControlMode: getReactionControlMode,
+        selectAIResponse: selectAIReaction,
+        onEvent: emit,
+      });
+      if (!reaction.accepted) {
+        if (reaction.noWindow) {
+          emit(actionEvent("tactical-reaction-window-not-opened", intent, pulseIndex, {
+            executionKey,
+            permitsReaction: false,
+            reason: reaction.reason,
+          }));
+        }
+        const invalid = transitionTacticalAction(intent, "invalidated", { invalidationReason: reaction.reason, executionKey });
+        runtime.activeActions.delete(actorId);
+        if (invalid.accepted) retainTerminal(runtime, invalid.intent);
+        emit(actionEvent("tactical-attack-resolution-rejected", invalid.intent || intent, pulseIndex, {
+          previousState: "resolving", nextState: "invalidated", executionKey, invalidationReason: reaction.reason,
+        }));
+        continue;
+      }
+      intent = Object.freeze({ ...intent, reactionWindowId: reaction.window.reactionWindowId });
+      runtime.activeActions.set(actorId, intent);
+      continue;
+    }
+    if (intent.state !== "resolving" || !intent.reactionWindowId || !intent.executionKey) continue;
+    const reactionWindow = getTacticalReactionWindowByExecution(runtime.reactionRuntime, intent.executionKey);
+    if (!reactionWindow) {
+      const invalid = transitionTacticalAction(intent, "invalidated", { invalidationReason: "reaction-window-no-longer-active" });
+      runtime.activeActions.delete(actorId);
+      if (invalid.accepted) retainTerminal(runtime, invalid.intent);
+      emit(actionEvent("tactical-attack-resolution-rejected", invalid.intent || intent, pulseIndex, {
+        previousState: "resolving", nextState: "invalidated", executionKey: intent.executionKey,
+        invalidationReason: "reaction-window-no-longer-active",
+      }));
+      continue;
+    }
+    if (reactionWindow.state !== "locked") continue;
+    const reactionAdmission = admitTacticalReactionResolution({
+      runtime: runtime.reactionRuntime,
+      reactionWindowId: reactionWindow.reactionWindowId,
+      pulseIndex,
+      onEvent: emit,
+    });
+    if (!reactionAdmission.accepted) continue;
     const resolved = await resolveTacticalAttackIntent({
       intent,
       pulseIndex,
+      executionKey: intent.executionKey,
+      executionAlreadyClaimed: true,
+      reactionAdmission: Object.freeze({
+        reactionWindowId: reactionAdmission.window.reactionWindowId,
+        reactionResponseId: reactionAdmission.response?.reactionResponseId || null,
+        responseType: reactionAdmission.response?.responseType || "decline",
+        responderId: reactionAdmission.response?.responderId || reactionAdmission.window.primaryTargetId,
+        protectedActorId: reactionAdmission.response?.protectedActorId || reactionAdmission.window.primaryTargetId,
+        defenderId: reactionAdmission.window.primaryTargetId,
+        sourceActionIntentId: reactionAdmission.window.sourceActionIntentId,
+        sourceExecutionKey: reactionAdmission.window.sourceExecutionKey,
+        generationId: reactionAdmission.window.generationId,
+        combatSession: reactionAdmission.window.combatSession,
+        openedAtPulse: reactionAdmission.window.openedAtPulse,
+        lockedAtPulse: reactionAdmission.window.lockedAtPulse,
+      }),
+      ammunition: intent.ammunition || null,
+      ammunitionAlreadySpent: intent.actionType === "ranged-attack",
       executeCanonicalAttack,
-      spendCanonicalAmmunition: async (request) => {
-        if (runtime.ammunitionReleaseKeys.has(request.executionKey)) {
-          return { accepted: false, reason: "duplicate-ammunition-release" };
-        }
-        const spent = await spendCanonicalAmmunition?.(request);
-        return spent ?? { accepted: false, reason: "canonical-ammunition-spend-required" };
-      },
+      spendCanonicalAmmunition,
       claimExecution: (executionKey) => claimTacticalExecution(runtime, executionKey),
       onRelease: ({ executionKey }) => {
         const projectileClaim = claimTacticalProjectileRelease(runtime, executionKey);
@@ -292,6 +433,13 @@ export async function advanceTacticalActionRuntime({
       },
     });
     if (!resolved.accepted) {
+      invalidateTacticalReactionWindow({
+        runtime: runtime.reactionRuntime,
+        reactionWindowId: reactionAdmission.window.reactionWindowId,
+        pulseIndex,
+        reason: resolved.reason,
+        onEvent: emit,
+      });
       const invalid = transitionTacticalAction(intent, "invalidated", {
         invalidationReason: resolved.reason,
         executionKey: resolved.executionKey || null,
@@ -304,6 +452,13 @@ export async function advanceTacticalActionRuntime({
       }));
       continue;
     }
+    completeTacticalReactionResolution({
+      runtime: runtime.reactionRuntime,
+      reactionWindowId: reactionAdmission.window.reactionWindowId,
+      pulseIndex,
+      result: resolved.result,
+      onEvent: emit,
+    });
     const resolvingWithKey = Object.freeze({ ...intent, executionKey: resolved.executionKey });
     const contactState = intent.actionType === "ranged-attack" && resolved.result?.projectileReleased !== false
       ? "released"
@@ -339,6 +494,7 @@ export function cleanupTacticalActionRuntime(runtime, reason = "combat-ended") {
     releaseRequestCount: 0,
     projectileClaimCount: runtime.ammunitionReleaseKeys.size,
   };
+  const reactionCleanup = cleanupTacticalReactionRuntime(runtime.reactionRuntime, reason);
   for (const action of runtime.activeActions.values()) {
     counts.pendingActionCount += 1;
     if (action.state === "preparing") counts.preparingActionCount += 1;
@@ -360,6 +516,7 @@ export function cleanupTacticalActionRuntime(runtime, reason = "combat-ended") {
   runtime.cleanupReason = reason;
   runtime.lastCleanup = {
     ...counts,
+    reactionCleanup: reactionCleanup.data || null,
     postCombatMutationsBlocked: runtime.postCombatMutationsBlocked,
     matches: runtime.activeActions.size === 0 && runtime.recoveryByActor.size === 0,
   };
@@ -367,6 +524,7 @@ export function cleanupTacticalActionRuntime(runtime, reason = "combat-ended") {
     accepted: true,
     eventType: "tactical-action-terminal-cleanup",
     data: runtime.lastCleanup,
+    reactionCleanup,
   };
 }
 
@@ -384,6 +542,7 @@ export function auditTacticalActionOwnership(runtime) {
     releaseRequestCount: [...runtime.activeActions.values()].filter((action) => action.releaseRequested === true).length,
     projectileClaimCount: runtime.ammunitionReleaseKeys.size,
     terminalHistoryCount: runtime.terminalHistory.length,
+    reaction: auditTacticalReactionOwnership(runtime.reactionRuntime),
     matches: overlapActorIds.length === 0,
   };
 }
@@ -401,6 +560,12 @@ export function resetTacticalActionCoordinates(runtime, { generationId, combatSe
   runtime.cleanupReason = null;
   runtime.lastCleanup = null;
   runtime.postCombatMutationsBlocked = 0;
+  runtime.reactionRuntime = createTacticalReactionRuntime({
+    generationId,
+    combatSession,
+    maxTerminalHistory: runtime.maxTerminalHistory,
+    maxResolutionHistory: runtime.maxClaimHistory,
+  });
   return cleanup;
 }
 

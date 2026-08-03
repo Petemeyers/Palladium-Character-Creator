@@ -95,6 +95,8 @@ export async function resolveTacticalPulse({
   validateActionIntent,
   executeCanonicalAttack,
   spendCanonicalAmmunition,
+  getReactionControlMode,
+  selectAIReaction,
   combatActive = true,
   getInitiativePriority = getTacticalInitiativePriority,
   transitionClock = transitionTacticalPulseClock,
@@ -372,6 +374,8 @@ export async function resolveTacticalPulse({
       validateAction: validateActionIntent,
       executeCanonicalAttack,
       spendCanonicalAmmunition,
+      getReactionControlMode,
+      selectAIReaction,
       onEvent: (entry) => emit(event(entry.eventType, owner, entry.data, entry.actorId)),
     });
     if (!actionProgress.accepted) return abortPulse(actionProgress.reason || "tactical-action-progress-rejected");

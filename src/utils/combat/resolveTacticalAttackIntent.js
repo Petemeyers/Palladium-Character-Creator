@@ -3,6 +3,11 @@ import { buildTacticalAttackExecutionKey } from "./tacticalActionIntent.js";
 export async function resolveTacticalAttackIntent({
   intent,
   pulseIndex,
+  executionKey: admittedExecutionKey,
+  executionAlreadyClaimed = false,
+  reactionAdmission = null,
+  ammunition: admittedAmmunition = null,
+  ammunitionAlreadySpent = false,
   executeCanonicalAttack,
   spendCanonicalAmmunition,
   claimExecution,
@@ -11,12 +16,14 @@ export async function resolveTacticalAttackIntent({
   if (!intent || !["ready", "resolving"].includes(intent.state)) return { accepted: false, reason: "tactical-action-not-ready" };
   if (typeof executeCanonicalAttack !== "function") return { accepted: false, reason: "canonical-attack-executor-required" };
   if (typeof claimExecution !== "function") return { accepted: false, reason: "tactical-execution-claim-required" };
-  const executionKey = buildTacticalAttackExecutionKey(intent, pulseIndex);
-  const claim = claimExecution(executionKey, intent);
-  if (!claim.accepted) return { accepted: false, reason: claim.reason || "duplicate-tactical-attack-execution", executionKey };
+  const executionKey = admittedExecutionKey || buildTacticalAttackExecutionKey(intent, pulseIndex);
+  if (!executionAlreadyClaimed) {
+    const claim = claimExecution(executionKey, intent);
+    if (!claim.accepted) return { accepted: false, reason: claim.reason || "duplicate-tactical-attack-execution", executionKey };
+  }
 
-  let ammunition = null;
-  if (intent.actionType === "ranged-attack") {
+  let ammunition = admittedAmmunition;
+  if (intent.actionType === "ranged-attack" && !ammunitionAlreadySpent) {
     if (typeof spendCanonicalAmmunition !== "function") {
       return { accepted: false, reason: "canonical-ammunition-spend-required", executionKey };
     }
@@ -58,6 +65,8 @@ export async function resolveTacticalAttackIntent({
       combatSession: intent.combatSession,
       pulseIndex,
       executionKey,
+      reactionAdmission,
+      ammunition,
       source: "tactical-pulse-attack",
       suppressSequentialTurnAdvance: true,
     });
@@ -74,7 +83,7 @@ export async function resolveTacticalAttackIntent({
   if (result?.accepted === false || result?.blocked) {
     return { accepted: false, reason: result?.reason || "canonical-attack-rejected", executionKey, ammunition, result };
   }
-  if (intent.actionType === "ranged-attack") {
+  if (intent.actionType === "ranged-attack" && !ammunitionAlreadySpent) {
     if (result?.ammunitionSpent !== 0) {
       onRelease?.({ intent, executionKey, ammunition, pulseIndex, result });
     }
