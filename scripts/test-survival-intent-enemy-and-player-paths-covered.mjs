@@ -17,7 +17,8 @@ const end = source.indexOf("const preserveTrainingWithstamina", start);
 const sharedHandler = source.slice(start, end);
 assert.match(sharedHandler, /chooseRoutingSurvivalIntent/);
 assert.match(sharedHandler, /findSurvivalIntentDestination/);
-assert.match(sharedHandler, /setPositions\(nextPositions\)/);
+assert.match(sharedHandler, /commitAuthoritativeCombatPosition\(fighter\.id, destination/);
+assert.match(sharedHandler, /eventType: "position-authority-audit"|commitAuthoritativeCombatPosition/);
 
 for (const sourceName of ["player-ai-routing", "enemy-routing"]) {
   const actor = { id: `${sourceName}:actor`, moraleState: { status: "ROUTED" } };

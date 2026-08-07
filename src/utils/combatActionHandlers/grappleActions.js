@@ -32,14 +32,170 @@ import {
 } from "../combat/grappleWeaponTransitions.js";
 import {
   advanceGroundControl,
-  applyGroundedGrappleHoldAndRest,
   hasSufficientGroundControl,
 } from "../combat/exhaustionCollapseState.js";
 import { offerSurrender } from "../combat/surrenderState.js";
 import { formatArmorGapContactOutcomeLog } from "../combat/grappleLogMessages.js";
+import {
+  recoverCombatStamina as recoverCanonicalCombatStamina,
+  spendCombatStamina as spendCanonicalCombatStamina,
+} from "../combatStamina.js";
 
 // Debug flag for grapple system
 const DEBUG_GRAPPLE = false;
+
+const CANONICAL_GRAPPLE_STAMINA_COSTS = Object.freeze({
+  grapple: 1,
+  maintain: 1,
+  improveControl: 1,
+  secureGroundControl: 1,
+  takedown: 1,
+  groundAttack: 1,
+  groundedArmorGapStrike: 1,
+  clinchStrike: 1,
+  breakFree: 1,
+  grapplerPushOff: 1,
+  defenderPushBreak: 1,
+  defenderReversal: 1,
+  reverseControl: 1,
+});
+
+const getCanonicalGrappleStaminaCost = (actionType) =>
+  Math.max(0, Number(CANONICAL_GRAPPLE_STAMINA_COSTS[actionType] || 0));
+
+const cloneNested = (value) => {
+  if (!value || typeof value !== "object") return value;
+  return Array.isArray(value) ? [...value] : { ...value };
+};
+
+function snapshotCanonicalStaminaAuthority(fighter = {}) {
+  const combatStamina = cloneNested(fighter.combatStamina);
+  const fatigueState = fighter.fatigueState
+    ? {
+        ...fighter.fatigueState,
+        penalties: cloneNested(fighter.fatigueState.penalties),
+      }
+    : fighter.fatigueState;
+  const currentStamina = Number(
+    combatStamina?.currentStamina ??
+    fighter.currentStamina ??
+    fatigueState?.currentStamina ??
+    0,
+  );
+  const maxStamina = Number(
+    combatStamina?.maxStamina ??
+    fighter.maxStamina ??
+    fatigueState?.maxStamina ??
+    Math.max(0, currentStamina),
+  );
+  return {
+    maxStamina: Number.isFinite(maxStamina) ? maxStamina : 0,
+    currentStamina: Number.isFinite(currentStamina) ? currentStamina : 0,
+    currentstamina: fighter.currentstamina,
+    staminaCurrent: fighter.staminaCurrent,
+    staminaAuthority: fighter.staminaAuthority,
+    fatigueLabel: fighter.fatigueLabel,
+    combatStamina,
+    fatigueState,
+    statusEffects: Array.isArray(fighter.statusEffects)
+      ? [...fighter.statusEffects]
+      : fighter.statusEffects,
+  };
+}
+
+function applyCanonicalStaminaAuthority(fighter = {}, authority = {}) {
+  const resolvedMaxStamina = Math.max(1, Number(authority.maxStamina) || Number(fighter.maxStamina) || 1);
+  const debtFloor = -resolvedMaxStamina;
+  const currentStamina = Math.max(
+    debtFloor,
+    Math.min(resolvedMaxStamina, Number(authority.currentStamina) || 0),
+  );
+  const maxStamina = resolvedMaxStamina;
+  const sourceCombatStamina = authority.combatStamina || fighter.combatStamina || {};
+  const sourceFatigueState = authority.fatigueState || fighter.fatigueState || {};
+  return {
+    ...fighter,
+    maxStamina,
+    currentStamina,
+    currentstamina: currentStamina,
+    staminaCurrent: currentStamina,
+    staminaAuthority: "combat-stamina",
+    fatigueLabel: authority.fatigueLabel ?? fighter.fatigueLabel,
+    combatStamina: {
+      ...sourceCombatStamina,
+      maxStamina,
+      current: currentStamina,
+      currentStamina,
+      authority: "combat-stamina",
+    },
+    fatigueState: {
+      ...sourceFatigueState,
+      maxStamina,
+      currentStamina,
+      authority: "combat-stamina",
+      penalties: cloneNested(sourceFatigueState.penalties),
+    },
+    ...(authority.statusEffects !== undefined
+      ? {
+          statusEffects: Array.isArray(authority.statusEffects)
+            ? [...authority.statusEffects]
+            : authority.statusEffects,
+        }
+      : {}),
+  };
+}
+
+
+function getCanonicalGrappleStrength(fighter = {}) {
+  const candidates = [
+    fighter?.abilityScores?.strength,
+    fighter?.attributes?.might,
+    fighter?.attributes?.strength,
+    fighter?.strength,
+    fighter?.attributes?.PS,
+    fighter?.attributes?.ps,
+    fighter?.PS,
+    fighter?.ps,
+  ];
+  const base = candidates.map(Number).find(Number.isFinite) ?? 10;
+  const descriptor = [
+    fighter?.actorKey,
+    fighter?.name,
+    fighter?.size,
+    fighter?.category,
+    fighter?.aiRole,
+    ...(Array.isArray(fighter?.tags) ? fighter.tags : []),
+    ...(Array.isArray(fighter?.traits) ? fighter.traits : []),
+  ].filter(Boolean).join(" ").toLowerCase();
+  const powerfulBuildBonus = /minotaur|powerful build|mythic.*brute|large grappler/.test(descriptor) ? 4 : 0;
+  return { base, powerfulBuildBonus, effective: base + powerfulBuildBonus };
+}
+
+function withCanonicalGrappleAttributes(fighter = {}) {
+  const strength = getCanonicalGrappleStrength(fighter);
+  const dexterity = Number(
+    fighter?.abilityScores?.dexterity ??
+    fighter?.attributes?.deftness ??
+    fighter?.attributes?.dexterity ??
+    fighter?.attributes?.PP ??
+    fighter?.PP ??
+    10
+  ) || 10;
+  return {
+    ...fighter,
+    PS: strength.effective,
+    strength: strength.base,
+    PP: dexterity,
+    attributes: {
+      ...(fighter.attributes || {}),
+      PS: strength.effective,
+      PP: dexterity,
+      might: Number(fighter?.attributes?.might ?? strength.base) || strength.base,
+      deftness: Number(fighter?.attributes?.deftness ?? dexterity) || dexterity,
+    },
+    grappleStrength: strength,
+  };
+}
 
 function revealConcealment(fighter, reason = "movement") {
   if (!fighter) return fighter;
@@ -77,12 +233,13 @@ function revealConcealment(fighter, reason = "movement") {
  */
 export function executeAdmittedGrappleResolution({
   admission,
-  actor: attacker,
+  actor: incomingAttacker,
   opponent,
   actionType,
   weaponId = null,
   attackMode = null,
 } = {}, context = {}) {
+  let attacker = withCanonicalGrappleAttributes(incomingAttacker || {});
   const defenderId = opponent?.id || opponent;
   const {
     fighters,
@@ -106,6 +263,9 @@ export function executeAdmittedGrappleResolution({
     registerDroppedBattlefieldItem,
     meleeRound,
     turnCounter,
+    spendCanonicalGrappleStamina,
+    recoverCanonicalGrappleStamina,
+    automatedControl = false,
   } = context;
 
   const admissionComplete = Boolean(
@@ -168,10 +328,28 @@ export function executeAdmittedGrappleResolution({
   
   const initialLiveFighters =
     typeof getFighters === "function" ? getFighters() : fighters;
-  const attackerInArray = initialLiveFighters.find(f => f.id === attacker.id);
-  const defender = initialLiveFighters.find(f => f.id === defenderId);
+  const attackerInArray = withCanonicalGrappleAttributes(
+    initialLiveFighters.find(f => f.id === attacker.id) || attacker
+  );
+  const defender = withCanonicalGrappleAttributes(
+    initialLiveFighters.find(f => f.id === defenderId) || {}
+  );
+  attacker = attackerInArray;
+  const attackerStaminaBefore = snapshotCanonicalStaminaAuthority(attackerInArray || attacker);
+  const defenderStaminaBefore = snapshotCanonicalStaminaAuthority(defender || {});
+  let canonicalStaminaSpend = {
+    accepted: true,
+    reason: "grapple-stamina-not-required",
+    requestedSpend: 0,
+    appliedSpend: 0,
+    spent: 0,
+    updated: attackerInArray || attacker,
+  };
+  let canonicalStaminaRecovery = null;
+  const canonicalGrappleStaminaCost = getCanonicalGrappleStaminaCost(actionType);
+  let canonicalStaminaCharged = canonicalGrappleStaminaCost <= 0;
   
-  if (!attackerInArray || !defender) {
+  if (!attackerInArray?.id || !defender?.id) {
     addLog(`Invalid target for grapple action!`, "error");
     return rejectContract("invalid-target");
   }
@@ -229,6 +407,74 @@ export function executeAdmittedGrappleResolution({
 
   const getLiveFighters = () =>
     typeof getFighters === "function" ? getFighters() : fighters;
+  const ensureCanonicalGrappleStamina = () => {
+    if (canonicalStaminaCharged) return canonicalStaminaSpend;
+    const liveActor =
+      getLiveFighters()?.find?.((fighter) => fighter.id === attacker.id) ||
+      attackerInArray ||
+      attacker;
+    const spendInput = {
+      fighter: liveActor,
+      amount: canonicalGrappleStaminaCost,
+      reason: "grapple",
+      source: "grapple-action-pre-resolution",
+      actionType,
+      actionToken: admission.actionToken,
+      executionKey: admission.executionKey,
+      initiativeTurnId: admission.initiativeTurnId,
+      round: meleeRound,
+    };
+    const usedContextSpend = typeof spendCanonicalGrappleStamina === "function";
+    const spendResult = usedContextSpend
+      ? spendCanonicalGrappleStamina(spendInput)
+      : spendCanonicalCombatStamina({
+          fighter: liveActor,
+          amount: canonicalGrappleStaminaCost,
+          reason: "grapple",
+          allowOverexertion: true,
+        });
+    if (!spendResult?.accepted) {
+      const error = new Error(spendResult?.reason || "grapple-stamina-spend-rejected");
+      error.canonicalGrappleStaminaBlocked = true;
+      error.reason = spendResult?.reason || "grapple-stamina-spend-rejected";
+      error.spendResult = spendResult || null;
+      throw error;
+    }
+    canonicalStaminaCharged = true;
+    canonicalStaminaSpend = spendResult;
+    if (!usedContextSpend && spendResult.updated?.id) {
+      setFighters?.((current = []) => current.map((fighter) =>
+        fighter.id === spendResult.updated.id ? spendResult.updated : fighter));
+    }
+    addLog?.({
+      audience: "developer",
+      channel: "state",
+      eventType: "grapple-stamina-spend-resolved",
+      level: spendResult.insufficientStamina ? "warning" : "info",
+      type: spendResult.insufficientStamina ? "warning" : "debug",
+      actorId: attacker.id,
+      targetId: defenderId,
+      executionKey: admission.executionKey,
+      source: admission.source,
+      message:
+        `grapple stamina spend resolved: actorId=${attacker.id} actionType=${actionType} ` +
+        `previous=${spendResult.previousStamina ?? "unknown"} requested=${spendResult.requestedSpend ?? canonicalGrappleStaminaCost} ` +
+        `applied=${spendResult.appliedSpend ?? spendResult.spent ?? 0} next=${spendResult.nextStamina ?? spendResult.currentStamina ?? "unknown"}`,
+      data: {
+        ...admission,
+        actionType,
+        previousStamina: spendResult.previousStamina ?? null,
+        requestedSpend: spendResult.requestedSpend ?? canonicalGrappleStaminaCost,
+        appliedSpend: spendResult.appliedSpend ?? spendResult.spent ?? 0,
+        nextStamina: spendResult.nextStamina ?? spendResult.currentStamina ?? null,
+        insufficientStamina: Boolean(spendResult.insufficientStamina),
+        overexertionApplied: Boolean(spendResult.overexertionApplied),
+        duplicateSpendSuppressed: Boolean(spendResult.duplicate),
+      },
+    }, spendResult.insufficientStamina ? "warning" : "debug");
+    return spendResult;
+  };
+
   const labelActor = (actor, counterpart = null, roster = getLiveFighters()) =>
     formatCombatActorLabel(actor, { roster, counterpart });
   const abortStaleGrapple = (reason) => {
@@ -304,6 +550,57 @@ export function executeAdmittedGrappleResolution({
     canonicalExecutionKey: { value: admission.executionKey, enumerable: false },
     canonicalRollKind: { get: () => rollKind, enumerable: false },
   });
+  if (!noRollAction && canonicalGrappleStaminaCost > 0) {
+    try {
+      ensureCanonicalGrappleStamina();
+    } catch (error) {
+      if (error?.canonicalGrappleStaminaBlocked) {
+        const actionSpent = Boolean(automatedControl);
+        if (actionSpent) {
+          setFighters?.((current = []) => current.map((fighter) =>
+            fighter.id === attacker.id
+              ? { ...fighter, remainingActions: 0, attacksRemaining: 0 }
+              : fighter));
+        }
+        addLog?.({
+          audience: "developer",
+          channel: "validation",
+          eventType: "grapple-stamina-action-blocked",
+          level: "warning",
+          type: "warning",
+          actorId: attacker.id,
+          targetId: defenderId,
+          executionKey: admission.executionKey,
+          source: admission.source,
+          message:
+            `grapple stamina action blocked: actorId=${attacker.id} actionType=${actionType} ` +
+            `reason=${error.reason || "grapple-stamina-spend-rejected"} automatedActionConsumed=${actionSpent}`,
+          data: {
+            ...admission,
+            actionType,
+            reason: error.reason || "grapple-stamina-spend-rejected",
+            automatedControl: Boolean(automatedControl),
+            actionSpent,
+            spendResult: error.spendResult || null,
+          },
+        }, "warning");
+        return {
+          ...baseContract,
+          accepted: true,
+          completed: true,
+          success: false,
+          blocked: true,
+          reason: error.reason || "grapple-stamina-spend-rejected",
+          actionSpent,
+          staminaSpent: 0,
+          remainingActions: actionSpent ? 0 : attackerInArray?.remainingActions ?? null,
+          turnEndingEffect: actionSpent,
+          continuationCreated: false,
+        };
+      }
+      throw error;
+    }
+  }
   if (!noRollAction) {
     const stateMutationClaim = typeof claimCanonicalGrappleRoll === "function"
       ? claimCanonicalGrappleRoll({ admission, rollKind, source: "grapple-resolution-boundary" })
@@ -320,6 +617,7 @@ export function executeAdmittedGrappleResolution({
   try {
     switch (actionType) {
     case 'grapple': {
+      ensureCanonicalGrappleStamina();
       // Get current positions from state to pass to initiateGrapple
       const currentAttackerPos = positions[attacker.id] || attacker.hex || attacker.position;
       const currentDefenderPos = positions[defenderId] || defender.hex || defender.position;
@@ -329,9 +627,52 @@ export function executeAdmittedGrappleResolution({
     case 'secureGroundControl':
     case 'improveControl':
     case 'maintain':
+      if (actionType === "secureGroundControl" && !isGroundedGrapple(attacker, defender)) {
+        return rejectContract("ground-control-requires-grounded-grapple");
+      }
+      ensureCanonicalGrappleStamina();
       result = maintainGrapple(attacker, defender, rollDice);
+      if (actionType === "improveControl" && result?.success) {
+        const existingControl = String(
+          result?.attacker?.grappleState?.controlState ||
+          result?.attacker?.grappleState?.control ||
+          attacker?.grappleState?.controlState ||
+          attacker?.grappleState?.control ||
+          "neutral"
+        ).toLowerCase();
+        const nextControl = ["advantage", "dominant", "pinned"].includes(existingControl)
+          ? "dominant"
+          : "advantage";
+        const nextAttacker = {
+          ...(result.attacker || attacker),
+          grappleState: {
+            ...((result.attacker || attacker).grappleState || {}),
+            active: true,
+            opponent: defender.id,
+            control: nextControl,
+            controlState: nextControl,
+          },
+        };
+        const nextDefender = {
+          ...(result.defender || defender),
+          grappleState: {
+            ...((result.defender || defender).grappleState || {}),
+            active: true,
+            opponent: attacker.id,
+            control: "controlled",
+            controlState: "controlled",
+          },
+        };
+        result = { ...result, attacker: nextAttacker, defender: nextDefender, controlState: nextControl };
+        addLog?.({
+          audience: "player", channel: "state", eventType: "grapple-control-improved",
+          level: "info", type: "info", actorId: attacker.id, targetId: defender.id,
+          executionKey: admission.executionKey, source: admission.source,
+          message: `${attacker.name} improves control over ${defender.name} to ${nextControl}.`,
+          data: { ...admission, controlState: nextControl },
+        }, "info");
+      }
       if (actionType === "secureGroundControl") {
-        if (!isGroundedGrapple(attacker, defender)) return rejectContract("ground-control-requires-grounded-grapple");
         if (result?.success) {
           const control = advanceGroundControl(result.attacker || attacker, result.defender || defender, {
             reason: "secure-ground-control",
@@ -359,6 +700,7 @@ export function executeAdmittedGrappleResolution({
       }
       break;
     case 'takedown':
+      ensureCanonicalGrappleStamina();
       result = performTakedown(attacker, defender, rollDice);
       // Log dice roll for takedown
       if (result?.takedownBreakdown) {
@@ -452,6 +794,7 @@ export function executeAdmittedGrappleResolution({
           : `${labelActor(attacker, defender)} attacks ${labelActor(defender, attacker)} on the ground with ${weapon.name}.`, "info");
       }
       const clinchAttacker = stripStandingAttackFieldsForClinch(attacker, weapon);
+      ensureCanonicalGrappleStamina();
       result = groundAttack(clinchAttacker, defender, weapon, rollDice, (source) => {
         const ownedDamageRoll = typeof validateClaimedGrappleRoll === "function"
           ? validateClaimedGrappleRoll({ expectedRollKind: rollKind, source })
@@ -541,17 +884,46 @@ export function executeAdmittedGrappleResolution({
       break;
     }
     case 'holdAndRest': {
-      const rest = applyGroundedGrappleHoldAndRest(attacker, defender, { recovery: 1 });
-      if (!rest.ok) return rejectContract(rest.reason);
-      const recovery = rest.recovery;
+      if (!isGroundedGrapple(attacker, defender)) {
+        return rejectContract("hold-and-rest-requires-grounded-grapple");
+      }
+      const recovery = 1;
+      const liveActor =
+        getLiveFighters()?.find?.((fighter) => fighter.id === attacker.id) ||
+        attackerInArray ||
+        attacker;
+      const usedContextRecovery = typeof recoverCanonicalGrappleStamina === "function";
+      const recoveryResult = usedContextRecovery
+        ? recoverCanonicalGrappleStamina({
+            fighter: liveActor,
+            amount: recovery,
+            reason: "grapple-hold-and-rest",
+            source: "grapple-hold-and-rest",
+            actionType,
+            actionToken: admission.actionToken,
+            executionKey: admission.executionKey,
+          })
+        : recoverCanonicalCombatStamina({
+            fighter: liveActor,
+            amount: recovery,
+            reason: "grapple-hold-and-rest",
+          });
+      if (!recoveryResult?.accepted) {
+        return rejectContract(recoveryResult?.reason || "grapple-stamina-recovery-rejected");
+      }
+      canonicalStaminaRecovery = recoveryResult;
+      if (!usedContextRecovery && recoveryResult.updated?.id) {
+        setFighters?.((current = []) => current.map((fighter) =>
+          fighter.id === recoveryResult.updated.id ? recoveryResult.updated : fighter));
+      }
       result = {
         success: true,
         noRollAction: true,
         turnEndingEffect: true,
-        recovery,
+        recovery: recoveryResult.recovered ?? recovery,
         message: `${attacker.name} holds the grounded grapple and catches a breath.`,
-        attacker: rest.fighter,
-        defender: rest.opponent,
+        attacker: recoveryResult.updated || liveActor,
+        defender,
       };
       addLog?.({
         audience: "player", channel: "state", eventType: "grapple-hold-and-rest-committed",
@@ -621,6 +993,7 @@ export function executeAdmittedGrappleResolution({
       break;
     }
     case 'breakFree':
+      ensureCanonicalGrappleStamina();
       result = breakFree(attacker, defender, rollDice);
       if (result?.invalidRoll) {
         const current = [...getLiveFighters()];
@@ -672,15 +1045,18 @@ export function executeAdmittedGrappleResolution({
       }
       break;
     case 'grapplerPushOff': {
+      ensureCanonicalGrappleStamina();
       result = grapplerPushOff({ grappler: attacker, defender });
       break;
     }
     case 'defenderPushBreak': {
+      ensureCanonicalGrappleStamina();
       result = defenderPushBreak({ defender: attacker, grappler: defender });
       break;
     }
     case 'reverseControl':
     case 'defenderReversal': {
+      ensureCanonicalGrappleStamina();
       result = defenderReversal({ defender: attacker, grappler: defender });
       break;
     }
@@ -690,8 +1066,100 @@ export function executeAdmittedGrappleResolution({
     }
   } catch (error) {
     if (error?.staleGrappleRoll) return rejectContract(error.message || "stale-grapple-roll");
+    if (error?.canonicalGrappleStaminaBlocked) {
+      const actionSpent = Boolean(automatedControl);
+      if (actionSpent) {
+        setFighters?.((current = []) => current.map((fighter) =>
+          fighter.id === attacker.id
+            ? { ...fighter, remainingActions: 0, attacksRemaining: 0 }
+            : fighter));
+      }
+      addLog?.({
+        audience: "developer",
+        channel: "validation",
+        eventType: "grapple-stamina-action-blocked",
+        level: "warning",
+        type: "warning",
+        actorId: attacker.id,
+        targetId: defenderId,
+        executionKey: admission.executionKey,
+        source: admission.source,
+        message:
+          `grapple stamina action blocked: actorId=${attacker.id} actionType=${actionType} ` +
+          `reason=${error.reason || "grapple-stamina-spend-rejected"} automatedActionConsumed=${actionSpent}`,
+        data: {
+          ...admission,
+          actionType,
+          reason: error.reason || "grapple-stamina-spend-rejected",
+          automatedControl: Boolean(automatedControl),
+          actionSpent,
+          spendResult: error.spendResult || null,
+        },
+      }, "warning");
+      return {
+        ...baseContract,
+        accepted: true,
+        completed: true,
+        success: false,
+        blocked: true,
+        reason: error.reason || "grapple-stamina-spend-rejected",
+        actionSpent,
+        staminaSpent: 0,
+        remainingActions: actionSpent ? 0 : attackerInArray?.remainingActions ?? null,
+        turnEndingEffect: actionSpent,
+        continuationCreated: false,
+      };
+    }
     throw error;
   }
+
+  // The legacy grapple engine mutates fatigueState directly. Restore the
+  // canonical combat-stamina authority before any result object is merged back
+  // into the authoritative roster.
+  const actorAuthoritySource = snapshotCanonicalStaminaAuthority(
+    canonicalStaminaRecovery?.updated ||
+    canonicalStaminaSpend?.updated ||
+    getLiveFighters()?.find?.((fighter) => fighter.id === attacker.id) ||
+    attackerStaminaBefore,
+  );
+  const defenderAuthoritySource = defenderStaminaBefore;
+  Object.assign(attacker, applyCanonicalStaminaAuthority(attacker, actorAuthoritySource));
+  Object.assign(defender, applyCanonicalStaminaAuthority(defender, defenderAuthoritySource));
+  if (result?.attacker) {
+    result.attacker = applyCanonicalStaminaAuthority(result.attacker, actorAuthoritySource);
+  }
+  if (result?.defender) {
+    result.defender = applyCanonicalStaminaAuthority(result.defender, defenderAuthoritySource);
+  }
+  addLog?.({
+    audience: "developer",
+    channel: "state",
+    eventType: "grapple-stamina-authority-audit",
+    level: "info",
+    type: "debug",
+    actorId: attacker.id,
+    targetId: defenderId,
+    executionKey: admission.executionKey,
+    source: admission.source,
+    message:
+      `grapple stamina authority audit: actorId=${attacker.id} actionType=${actionType} ` +
+      `canonical=${actorAuthoritySource.currentStamina} compatibility=${attacker.fatigueState?.currentStamina} ` +
+      `matches=${Number(actorAuthoritySource.currentStamina) === Number(attacker.fatigueState?.currentStamina)}`,
+    data: {
+      ...admission,
+      actionType,
+      actorCanonicalStamina: actorAuthoritySource.currentStamina,
+      actorCompatibilityStamina: attacker.fatigueState?.currentStamina ?? null,
+      opponentCanonicalStamina: defenderAuthoritySource.currentStamina,
+      opponentCompatibilityStamina: defender.fatigueState?.currentStamina ?? null,
+      actorMatches:
+        Number(actorAuthoritySource.currentStamina) === Number(attacker.fatigueState?.currentStamina),
+      opponentMatches:
+        Number(defenderAuthoritySource.currentStamina) === Number(defender.fatigueState?.currentStamina),
+      legacyDrainNeutralized: true,
+    },
+  }, "debug");
+
   if (result?.blocked && result?.reason === "grapple-dice-boundary-without-canonical-claim-blocked") {
     addLog?.({
       audience: "developer",
@@ -790,12 +1258,6 @@ export function executeAdmittedGrappleResolution({
     if (result.message) {
       addLog(result.message, "info");
     }
-    if (result.weakSpot) {
-      addLog(`Ã°Å¸â€”Â¡Ã¯Â¸Â ${attacker.name} slips inside the armor with ${result.weaponName || "a dagger"}.`, "critical");
-    } else if (result.armorBlockedWeakSpot) {
-      addLog(`Ã°Å¸â€ºÂ¡Ã¯Â¸Â ${defender.name}'s armor blocks the close-quarters attack.`, "info");
-    }
-    
     // Log size modifier information if present
     if (result.autoGrapple) {
       const sizeMod = getCombinedGrappleModifiers(attacker, defender);
@@ -849,6 +1311,20 @@ export function executeAdmittedGrappleResolution({
             armorContactOutcome.damagePrevented === true;
           if (!contactAllowsDamage) {
             result.damage = 0;
+          }
+          if (armorContactOutcome.gapReached === true) {
+            addLog(
+              `${attackerLabel} slips through a gap in ${damageTargetLabel}'s armor with ${selectedGrappleWeapon.name}.`,
+              "critical",
+            );
+          } else if (
+            armorContactOutcome.damagePrevented === true ||
+            armorContactOutcome.contactType === "solid-plate"
+          ) {
+            addLog(
+              `${damageTargetLabel}'s armor stops the close-quarters strike from ${attackerLabel}.`,
+              "info",
+            );
           }
           addLog?.({
             audience: "developer",
@@ -939,6 +1415,10 @@ export function executeAdmittedGrappleResolution({
           }
         }
         
+        if (finalHP <= 0 && getFighterHP(defenderCopy) > 0 && !result.deathBlow) {
+          addLog(`${damageTargetLabel} collapses and can no longer fight.`, "warning");
+        }
+
         // Check for death blow
         if (result.deathBlow) {
           applyHPToFighter(updatedDefender, -999);
@@ -1148,7 +1628,8 @@ export function executeAdmittedGrappleResolution({
     weaponId: selectedGrappleWeapon?.weaponId || selectedGrappleWeapon?.name || null,
     attackMode: selectedGrappleAttackMode,
     actionSpent: true,
-    staminaSpent: actionType === "groundAttack" || actionType === "groundedArmorGapStrike" || actionType === "clinchStrike" || actionType === "maintain" || actionType === "improveControl" || actionType === "secureGroundControl" || actionType === "grapple" ? 1 : 0,
+    staminaSpent: Number(canonicalStaminaSpend?.spent ?? canonicalStaminaSpend?.appliedSpend ?? 0) || 0,
+    staminaRecovered: Number(canonicalStaminaRecovery?.recovered ?? 0) || 0,
     impactResolved: Boolean(result?.attackRoll || result?.attackerRoll || result?.defendRoll || result?.hit || result?.message),
     armorContactResolved: Boolean(armorContactOutcome),
     hpDamageApplied,

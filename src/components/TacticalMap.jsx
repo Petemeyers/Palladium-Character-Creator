@@ -8,7 +8,9 @@ import {
   VStack,
   HStack,
   Text,
-  Tooltip
+  Tooltip,
+  Spinner,
+  Flex,
 } from "@chakra-ui/react";
 import FogEffectsLayer from "./FogEffectsLayer.jsx";
 import ProtectionCircle, { ProtectionCircleHUD } from "./ProtectionCircle.jsx";
@@ -18,7 +20,9 @@ import {
   getMapCombatantTooltip,
 } from "../utils/mapCombatantLabels.js";
 import { getCombatIconAppearance } from "../utils/presentation/getCombatIconAppearance.js";
+import { getCombatantHealthPresentation } from "../utils/presentation/combatantHealthPresentation.js";
 import { getCanonicalFlightPresentation } from "../utils/combat/canonicalFlightState.js";
+import { getCombatStatusBadges } from "../utils/combat/combatStatusBadgeAuthority.js";
 import {
   GRID_CONFIG,
   calculateDistance,
@@ -46,16 +50,27 @@ import { getHexesInRadius } from "../utils/mapBrush.js";
 const TacticalMap = ({
   combatants = [],
   positions = {},
+  renderPositions = {},
   currentTurn = null,
   combatGenerationId = null,
   activeTurnGenerationId = combatGenerationId,
   targetFighterId = null,
   surrenderRecordsByFighterId = {},
   flashingCombatants: externalFlashingCombatants = null,
+  healthPresentationById = {},
+  processingOverlay = null,
   impactReactions = {},
   movementMode = { active: false, isRunning: false },
   validMoves: externalValidMoves = null, // Optional: engine-authoritative valid moves
   dangerHexes = [],
+  weaponMeasureOverlays = [],
+  weaponThreatLines = [],
+  weaponOverlaySettings = {},
+  weaponInteractionAnimations = [],
+  formationLinks = [],
+  formationStatesByActorId = {},
+  weaponBindStatesByActorId = {},
+  combatRound = null,
   allowEmptyHexSelection = false,
   terrain = null,
   mapType, // "hex" or "square" - no default to allow terrain.mapType fallback
@@ -120,6 +135,9 @@ const TacticalMap = ({
   const [selectedTargetHex, setSelectedTargetHex] = useState(null);
   const [internalFlashingCombatants, setInternalFlashingCombatants] = useState(new Set());
   const mapScrollRef = useRef(null);
+  const [zoomScale, setZoomScale] = useState(1);
+  const [isMapPanning, setIsMapPanning] = useState(false);
+  const mapPanStartRef = useRef(null);
   const prevMovementModeRef = useRef(false);
   const prevCurrentTurnRef = useRef(null);
   const positionsRef = useRef(positions);
@@ -202,6 +220,11 @@ const TacticalMap = ({
 
   // Use external flashing state if provided, otherwise use internal
   const flashingCombatants = externalFlashingCombatants || internalFlashingCombatants;
+  const getHealthPresentation = useCallback((combatant) => {
+    const combatantId = getCombatantId(combatant);
+    return (combatantId && healthPresentationById?.[combatantId]) ||
+      getCombatantHealthPresentation(combatant);
+  }, [getCombatantId, healthPresentationById]);
 
   const dangerHexSet = useMemo(() => {
     return new Set(
@@ -244,6 +267,124 @@ const TacticalMap = ({
     // hex pixel position is already "center" in your render system
     return { cx: p.x, cy: p.y };
   }, [effectiveMapType, getCellPixelPosition]);
+
+  const weaponMeasureRenderData = useMemo(() => {
+    const cellStep = effectiveMapType === "square" ? GRID_CONFIG.HEX_SIZE * 2 : HEX_WIDTH;
+    const overlays = weaponOverlaySettings?.showMeasureRings === false
+      ? []
+      : (Array.isArray(weaponMeasureOverlays) ? weaponMeasureOverlays : [])
+      .map((overlay) => {
+        const position = overlay?.position || positions?.[overlay?.actorId];
+        if (!position) return null;
+        const center = getCellCenter(position.x, position.y);
+        return {
+          ...overlay,
+          ...center,
+          radiusPx: Math.max(cellStep * 0.8, (Number(overlay.radiusFeet) || 5) / 5 * cellStep),
+        };
+      })
+      .filter(Boolean);
+    const lines = weaponOverlaySettings?.showThreatLines === false
+      ? []
+      : (Array.isArray(weaponThreatLines) ? weaponThreatLines : [])
+      .map((line) => {
+        const from = line?.from || positions?.[line?.controllerId];
+        const to = line?.to || positions?.[line?.targetId];
+        if (!from || !to) return null;
+        const fromCenter = getCellCenter(from.x, from.y);
+        const toCenter = getCellCenter(to.x, to.y);
+        return {
+          ...line,
+          x1: fromCenter.cx,
+          y1: fromCenter.cy,
+          x2: toCenter.cx,
+          y2: toCenter.cy,
+          labelX: (fromCenter.cx + toCenter.cx) / 2,
+          labelY: (fromCenter.cy + toCenter.cy) / 2,
+        };
+      })
+      .filter(Boolean);
+    return { overlays, lines };
+  }, [effectiveMapType, getCellCenter, positions, weaponMeasureOverlays, weaponThreatLines, weaponOverlaySettings, HEX_WIDTH]);
+
+  const formationLinkRenderData = useMemo(() => {
+    if (weaponOverlaySettings?.showFormationLinks === false) return [];
+    return (Array.isArray(formationLinks) ? formationLinks : [])
+      .map((link) => {
+        const from = positions?.[link?.actorId];
+        const to = positions?.[link?.supporterId];
+        if (!from || !to) return null;
+        const fromCenter = getCellCenter(from.x, from.y);
+        const toCenter = getCellCenter(to.x, to.y);
+        return {
+          ...link,
+          x1: fromCenter.cx,
+          y1: fromCenter.cy,
+          x2: toCenter.cx,
+          y2: toCenter.cy,
+          labelX: (fromCenter.cx + toCenter.cx) / 2,
+          labelY: (fromCenter.cy + toCenter.cy) / 2,
+        };
+      })
+      .filter(Boolean);
+  }, [formationLinks, getCellCenter, positions, weaponOverlaySettings]);
+
+  const weaponInteractionRenderData = useMemo(() => {
+    if (weaponOverlaySettings?.showInteractionAnimations === false) return [];
+    return (Array.isArray(weaponInteractionAnimations) ? weaponInteractionAnimations : [])
+      .map((event) => {
+        const actorPosition = event?.from || positions?.[event?.actorId];
+        const targetPosition = event?.to || positions?.[event?.targetId];
+        if (!actorPosition) return null;
+        const actorCenter = getCellCenter(actorPosition.x, actorPosition.y);
+        const targetCenter = targetPosition ? getCellCenter(targetPosition.x, targetPosition.y) : actorCenter;
+        return {
+          ...event,
+          x1: actorCenter.cx,
+          y1: actorCenter.cy,
+          x2: targetCenter.cx,
+          y2: targetCenter.cy,
+          midX: (actorCenter.cx + targetCenter.cx) / 2,
+          midY: (actorCenter.cy + targetCenter.cy) / 2,
+          durationSeconds: Math.max(0.35, (Number(event?.durationMs) || 900) / 1000),
+        };
+      })
+      .filter(Boolean);
+  }, [getCellCenter, positions, weaponInteractionAnimations, weaponOverlaySettings]);
+
+  const getVisualCombatantCenter = useCallback((combatantId, fallbackCol, fallbackRow) => {
+    const fallback = getCellCenter(fallbackCol, fallbackRow);
+    const visual = renderPositions?.[combatantId];
+    if (!visual) return fallback;
+
+    const from = visual.animationFrom;
+    const to = visual.animationTo;
+    const progress = Number(visual.animationProgress);
+    if (
+      from &&
+      to &&
+      Number.isFinite(Number(from.x)) &&
+      Number.isFinite(Number(from.y)) &&
+      Number.isFinite(Number(to.x)) &&
+      Number.isFinite(Number(to.y)) &&
+      Number.isFinite(progress)
+    ) {
+      const start = getCellCenter(Number(from.x), Number(from.y));
+      const end = getCellCenter(Number(to.x), Number(to.y));
+      const t = Math.min(1, Math.max(0, progress));
+      return {
+        cx: start.cx + (end.cx - start.cx) * t,
+        cy: start.cy + (end.cy - start.cy) * t,
+      };
+    }
+
+    const visualX = Number(visual.x);
+    const visualY = Number(visual.y);
+    if (Number.isInteger(visualX) && Number.isInteger(visualY)) {
+      return getCellCenter(visualX, visualY);
+    }
+    return fallback;
+  }, [getCellCenter, renderPositions]);
 
   const pathPoints = useMemo(() => {
     if (!Array.isArray(pathPreviewCells) || pathPreviewCells.length < 2) return "";
@@ -1361,10 +1502,7 @@ const TacticalMap = ({
 
     // Priority 1: Combatant coloring (highest priority)
     if (combatant) {
-      // Check if character is defeated (HP <= 0)
-      if (combatant.currentHP <= 0) {
-        return "#ffffff"; // White for defeated characters
-      }
+      const healthPresentation = getHealthPresentation(combatant);
 
       // Enemy visibility check
       if (combatant.isEnemy) {
@@ -1382,49 +1520,43 @@ const TacticalMap = ({
           !lightingStr.includes("daylight");
 
         if (enemyVisible) {
-          // ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ In pure darkness, enemies detected by sound should keep dark grey hex color
-          // The icon will still be rendered (handled in rendering code), but hex stays dark
+          // Sound-detected enemies remain visually obscured in pure darkness.
           if (isPureDarkness) {
             const wasExplored = isCellExplored(x, y);
-            // Keep dark grey color even for visible enemy in darkness (sound detection)
             return wasExplored ? "#6b7280" : "#4b5563";
           }
 
-          // With light sources or daylight, enemy position cell is white
-          return "#ffffff"; // White for visible enemy position (when not in pure darkness)
+          return healthPresentation.fillColor;
         } else {
           // Enemy is not visible - match fog of war color
           const wasExplored = isCellExplored(x, y);
           const isDaylight = lightingStr.includes("bright") || lightingStr.includes("daylight");
 
-          // Match fog of war color based on lighting severity
           if (lightingStr.includes("darkness") || lightingStr.includes("dark")) {
-            // Darkness: darker grey (same as fog Priority 7)
             return wasExplored ? "#6b7280" : "#4b5563";
           } else if (lightingStr.includes("traiderhlight") || lightingStr.includes("traiderh")) {
-            // Traiderhlight: medium grey
             return wasExplored ? "#9ca3af" : "#6b7280";
           } else if (lightingStr.includes("moonlight") || lightingStr.includes("moon")) {
-            // Moonlight: lighter grey
             return wasExplored ? "#d1d5db" : "#9ca3af";
           } else if (isDaylight) {
-            // Bright daylight: very light grey (but NOT white)
             return wasExplored ? "#e5e7eb" : "#d1d5db";
-          } else {
-            // Default: medium grey
-            return wasExplored ? "#9ca3af" : "#6b7280";
           }
+          return wasExplored ? "#9ca3af" : "#6b7280";
         }
       }
 
-      // Player characters
+      // Health state takes precedence over selection and turn highlights.
+      if (healthPresentation.state !== "healthy") {
+        return healthPresentation.fillColor;
+      }
+
       if (getCombatantId(combatant) === selectedCombatant) {
-        return "#60a5fa"; // Light blue
+        return "#60a5fa"; // Light blue selection highlight
       }
       if (getCombatantId(combatant) === currentTurn) {
-        return "#4ade80"; // Light green
+        return "#4ade80"; // Light green turn highlight
       }
-      return "#22d3ee"; // Light cyan for players
+      return healthPresentation.baseColor;
     }
 
     // Priority 1.5: Apply enemy visibility gradient to empty cells near visible enemies
@@ -1593,7 +1725,7 @@ const TacticalMap = ({
 
     // Default: White background (ONLY for visible cells when fog enabled, or all cells when fog disabled)
     return "#ffffff";
-  }, [fogEnabled, combatants, positions, getCombatantId, isWithinPlayerVisibility, getEnemyVisibilityGradient, isEnemyVisible, terrain, isCellExplored, selectedCombatant, currentTurn, validMoves, selectedTargetHex, terrainColors, featureColors, getCellDataFromScene, hoveredCell, isCellVisible]);
+  }, [fogEnabled, combatants, positions, getCombatantId, getHealthPresentation, isWithinPlayerVisibility, getEnemyVisibilityGradient, isEnemyVisible, terrain, isCellExplored, selectedCombatant, currentTurn, validMoves, selectedTargetHex, terrainColors, featureColors, getCellDataFromScene, hoveredCell, isCellVisible]);
 
   // Get lighting filter color and opacity
   const getLightingFilter = (lighting) => {
@@ -1905,6 +2037,26 @@ const TacticalMap = ({
         // Fog of war visibility check
         const cellVisible = isCellVisibleCb(col, row);
         const fogOpacity = getFogOpacityCb(col, row, terrain?.lighting);
+        const healthCombatant = combatantsAtPos.find((candidate) => (
+          !candidate?.isEnemy ||
+          !fogEnabled ||
+          isEnemyVisibleCb(col, row, candidate)
+        ));
+        const cellHealthPresentation = healthCombatant
+          ? getHealthPresentation(healthCombatant)
+          : null;
+        const healthOverlayActive = Boolean(
+          cellHealthPresentation && cellHealthPresentation.state !== "healthy"
+        );
+        const healthOverlayColor = cellHealthPresentation?.state === "dead"
+          ? cellHealthPresentation.fillColor
+          : cellHealthPresentation?.paleColor;
+        const healthOverlayAnimate = cellHealthPresentation?.state === "low-hp"
+          ? { opacity: [0.12, 0.58, 0.12] }
+          : { opacity: cellHealthPresentation?.state === "unconscious" ? 0.62 : 0.42 };
+        const healthOverlayTransition = cellHealthPresentation?.state === "low-hp"
+          ? { duration: 1.4, ease: "easeInOut", repeat: Infinity }
+          : { duration: 0.2 };
 
         // Determine terrain type for texture selection (cellData already defined above)
         const terrainType = terrainRenderKey || cellData?.terrainType || cellData?.terrain || terrain?.baseTerrain;
@@ -2071,6 +2223,32 @@ const TacticalMap = ({
                   fill={movementOverlayColor}
                   fillOpacity={0.7} // More opaque to show movement colors clearly
                   style={{ pointerEvents: 'none' }} // Don't block clicks
+                />
+              )
+            )}
+
+            {/* Health-state overlay: low HP pulses; unconscious/dead remain visibly changed. */}
+            {healthOverlayActive && (
+              effectiveMapType === "square" ? (
+                <motion.rect
+                  x={x}
+                  y={y}
+                  width={GRID_CONFIG.HEX_SIZE * 2}
+                  height={GRID_CONFIG.HEX_SIZE * 2}
+                  fill={healthOverlayColor}
+                  initial={false}
+                  animate={healthOverlayAnimate}
+                  transition={healthOverlayTransition}
+                  style={{ pointerEvents: "none" }}
+                />
+              ) : (
+                <motion.polygon
+                  points={cellPoints}
+                  fill={healthOverlayColor}
+                  initial={false}
+                  animate={healthOverlayAnimate}
+                  transition={healthOverlayTransition}
+                  style={{ pointerEvents: "none" }}
                 />
               )
             )}
@@ -2478,16 +2656,33 @@ const TacticalMap = ({
                     const altitude = flightPresentation.altitudeFeet;
                     const altitudeOffsetY = altitude > 0 ? -(altitude * 0.4) : 0;
 
-                    // Base icon position (ground level)
-                    const baseIconY = centerY + 6 + offsetY;
-                    // Icon position with altitude offset and token offset (moves up for flying combatants, adjusts for head alignment)
-                    const iconX = centerX + offsetX + tokenOffsetX;
-                    const iconY = baseIconY + altitudeOffsetY + tokenOffsetY;
+                    const combatantId = getCombatantId(combatant);
+                    const visualCenter = getVisualCombatantCenter(combatantId, col, row);
+                    const movementVisual = renderPositions?.[combatantId] || null;
+                    const movementProgress = Number(movementVisual?.animationProgress);
+                    const isWalkingAnimation =
+                      movementVisual?.movementMode === "walk" &&
+                      Number.isFinite(movementProgress) &&
+                      movementProgress >= 0 &&
+                      movementProgress < 1;
+                    const gaitEnvelope = isWalkingAnimation
+                      ? Math.sin(Math.PI * movementProgress)
+                      : 0;
+                    const gaitCycle = isWalkingAnimation
+                      ? Math.sin(Math.PI * 4 * movementProgress)
+                      : 0;
+                    const gaitSwayX = gaitCycle * 0.9 * gaitEnvelope;
+                    const gaitBounceY = -Math.abs(gaitCycle) * 1.6 * gaitEnvelope;
+                    // Base icon position (ground level). Rules and occupancy keep using
+                    // authoritative positions; only the token uses renderPositions.
+                    const baseIconY = visualCenter.cy + 6 + offsetY;
+                    // Walking uses two subtle gait beats per five-foot hex.
+                    const iconX = visualCenter.cx + offsetX + tokenOffsetX + gaitSwayX;
+                    const iconY = baseIconY + altitudeOffsetY + tokenOffsetY + gaitBounceY;
 
                     // Get combatant size for body part rendering
                     const combatantSize = getCombatantSize(combatant);
                     const bodyPartsEnabled = combatantSize.width > 1;
-                    const combatantId = getCombatantId(combatant);
                     const iconAppearance = getCombatIconAppearance({
                       fighter: combatant,
                       activeFighterId: currentTurn,
@@ -2497,6 +2692,32 @@ const TacticalMap = ({
                       generationId: combatGenerationId,
                       activeGenerationId: activeTurnGenerationId,
                     });
+                    const healthPresentation = getHealthPresentation(combatant);
+                    const combatStatusBadges = weaponOverlaySettings?.showConditionBadges === false
+                      ? []
+                      : getCombatStatusBadges({
+                          actor: combatant,
+                          currentRound: combatRound,
+                          formationState: formationStatesByActorId?.[combatantId] || null,
+                          weaponBindState: weaponBindStatesByActorId?.[combatantId] || null,
+                          maxBadges: 4,
+                        });
+                    const markerFill = healthPresentation.state === "healthy"
+                      ? iconAppearance.baseColor
+                      : healthPresentation.fillColor;
+                    const markerAnimate = healthPresentation.state === "low-hp"
+                      ? {
+                          fill: [
+                            healthPresentation.baseColor,
+                            healthPresentation.paleColor,
+                            healthPresentation.baseColor,
+                          ],
+                          opacity: [iconAppearance.opacity, 0.62, iconAppearance.opacity],
+                        }
+                      : { fill: markerFill, opacity: iconAppearance.opacity };
+                    const markerTransition = healthPresentation.state === "low-hp"
+                      ? { duration: 1.4, ease: "easeInOut", repeat: Infinity }
+                      : { duration: 0.2 };
                     const isCurrentCombatant = iconAppearance.activeTurnIndicator;
                     const isSelectedCombatant = combatantId === selectedCombatant;
                     const isHoveredCombatant = hoveredCell?.x === col && hoveredCell?.y === row;
@@ -2510,7 +2731,13 @@ const TacticalMap = ({
                     const flightAccessibility = combatant.flightProfile?.kind === "biological"
                       ? flightPresentation.accessibilityLabel
                       : null;
-                    const tokenTooltip = [baseTooltip, flightAccessibility, `Status: ${iconAppearance.statusLabel}`].filter(Boolean).join(" | ");
+                    const tokenTooltip = [
+                      baseTooltip,
+                      flightAccessibility,
+                      `Status: ${iconAppearance.statusLabel}`,
+                      `Health: ${healthPresentation.statusLabel} (${Math.max(0, Math.round(healthPresentation.currentHp))}/${Math.round(healthPresentation.maxHp)})`,
+                      combatStatusBadges.length ? `Weapon state: ${combatStatusBadges.map((badge) => badge.title).join(", ")}` : null,
+                    ].filter(Boolean).join(" | ");
                     const reaction = impactReactions?.[combatantId] || null;
                     const shakeDurationSeconds = Math.max(
                       0.12,
@@ -2587,6 +2814,33 @@ const TacticalMap = ({
 
                         {iconAppearance.rings.map((ring, ringIndex) => {
                           const radius = 11 + ringIndex * 3;
+                          const ringIdentity = [
+                            ring.key,
+                            ring.label,
+                            ring.status,
+                            iconAppearance.statusLabel,
+                          ].filter(Boolean).join(" ").toLowerCase();
+                          const isMoraleStatusRing = /panic|rout|broken|cower|fear/.test(ringIdentity);
+                          if (isMoraleStatusRing) {
+                            const burstY = iconY - 19 - ringIndex * 9;
+                            const burstWidth = Math.max(2, Number(ring.width) || 2);
+                            return (
+                              <g
+                                key={ring.key}
+                                data-combat-status-lines={ring.key}
+                                data-combat-status-burst="morale-shock"
+                                aria-label={ring.label || iconAppearance.statusLabel}
+                                style={{ pointerEvents: "none" }}
+                              >
+                                {/* Compact anime-style shock dashes above the token. */}
+                                <line data-morale-shock-dash="center" x1={iconX} y1={burstY + 2} x2={iconX} y2={burstY - 3} stroke={ring.color} strokeWidth={burstWidth} strokeLinecap="round" />
+                                <line data-morale-shock-dash="inner-left" x1={iconX - 4} y1={burstY + 2} x2={iconX - 7} y2={burstY - 2} stroke={ring.color} strokeWidth={burstWidth} strokeLinecap="round" />
+                                <line data-morale-shock-dash="outer-left" x1={iconX - 8} y1={burstY + 1} x2={iconX - 11} y2={burstY - 1} stroke={ring.color} strokeWidth={burstWidth} strokeLinecap="round" />
+                                <line data-morale-shock-dash="inner-right" x1={iconX + 4} y1={burstY + 2} x2={iconX + 7} y2={burstY - 2} stroke={ring.color} strokeWidth={burstWidth} strokeLinecap="round" />
+                                <line data-morale-shock-dash="outer-right" x1={iconX + 8} y1={burstY + 1} x2={iconX + 11} y2={burstY - 1} stroke={ring.color} strokeWidth={burstWidth} strokeLinecap="round" />
+                              </g>
+                            );
+                          }
                           if (ring.style === "reticle") {
                             return (
                               <g key={ring.key} data-combat-ring={ring.key}>
@@ -2611,20 +2865,48 @@ const TacticalMap = ({
                           </g>
                         )}
 
-                        {/* Combatant marker */}
-                        <circle
+                        {isWalkingAnimation && (
+                          <ellipse
+                            data-walk-ground-contact={combatantId}
+                            cx={visualCenter.cx + offsetX + tokenOffsetX}
+                            cy={baseIconY + altitudeOffsetY + tokenOffsetY + 7}
+                            rx={5.5 - Math.abs(gaitCycle) * 0.8}
+                            ry="1.8"
+                            fill="rgba(15, 23, 42, 0.35)"
+                            opacity={0.35 + Math.abs(gaitCycle) * 0.2}
+                            style={{ pointerEvents: "none" }}
+                          />
+                        )}
+
+                        {/* Movement is a one-shot white ring, separate from health animation. */}
+                        {flashingCombatants.has(combatantId) && (
+                          <motion.circle
+                            key={`movement-flash-${combatantId}`}
+                            cx={iconX}
+                            cy={iconY - 2}
+                            r={10 * iconAppearance.scale}
+                            fill="none"
+                            stroke="#f8fafc"
+                            strokeWidth="3"
+                            initial={{ opacity: 0.95, scale: 0.8 }}
+                            animate={{ opacity: 0, scale: 1.8 }}
+                            transition={{ duration: 0.7, ease: "easeOut" }}
+                            style={{ pointerEvents: "none" }}
+                          />
+                        )}
+
+                        {/* Combatant marker: critical HP pulses; unconscious is pale by side. */}
+                        <motion.circle
                           cx={iconX}
                           cy={iconY - 2}
                           r={8 * iconAppearance.scale}
-                          fill={iconAppearance.baseColor}
+                          fill={markerFill}
                           stroke={iconAppearance.centerStrokeColor}
                           strokeWidth={iconAppearance.borderWidth}
-                          opacity={iconAppearance.opacity}
-                          style={{
-                            pointerEvents: 'none',
-                            opacity: flashingCombatants.has(combatantId) ? undefined : iconAppearance.opacity,
-                            animation: flashingCombatants.has(combatantId) ? 'flash-slow 0.5s ease-in-out infinite' : 'none',
-                          }}
+                          initial={false}
+                          animate={markerAnimate}
+                          transition={markerTransition}
+                          style={{ pointerEvents: "none" }}
                         />
                         {/* Body part icons for combatants wider than 5 ft */}
                         {bodyPartsEnabled && (() => {
@@ -2711,6 +2993,24 @@ const TacticalMap = ({
                             <text x={iconX + 9} y={iconY - 9.5} textAnchor="middle" dominantBaseline="middle" fontSize="6" fontWeight="bold" fill="#ffffff" stroke="#0f172a" strokeWidth="0.45" paintOrder="stroke">
                               {iconAppearance.statusMarker}
                             </text>
+                          </g>
+                        )}
+
+                        {combatStatusBadges.length > 0 && (
+                          <g style={{ pointerEvents: "none" }} data-testid={`combat-condition-badges-${combatantId}`}>
+                            {combatStatusBadges.map((badge, badgeIndex) => {
+                              const badgeX = iconX - ((combatStatusBadges.length - 1) * 8) + badgeIndex * 16;
+                              const badgeY = iconY - 40;
+                              return (
+                                <g key={`${combatantId}-${badge.key}`}>
+                                  <title>{badge.title}</title>
+                                  <rect x={badgeX - 7} y={badgeY - 6} width="14" height="11" rx="3" fill={badge.fill} stroke="#ffffff" strokeWidth="0.8" />
+                                  <text x={badgeX} y={badgeY} textAnchor="middle" dominantBaseline="middle" fontSize="5.5" fontWeight="800" fill="#ffffff">
+                                    {badge.label}
+                                  </text>
+                                </g>
+                              );
+                            })}
                           </g>
                         )}
 
@@ -2825,7 +3125,7 @@ const TacticalMap = ({
     }
 
     return cells;
-  }, [positions, combatants, hoveredCell, selectedCombatant, currentTurn, targetFighterId, surrenderRecordsByFighterId, combatGenerationId, activeTurnGenerationId, flashingCombatants, impactReactions, getCombatantsAtPosition, getCellColorCb, getCombatantPrimaryPositionCb, handleCellClick, terrain, effectiveMapType, getCellDataFromSceneCb, fogEnabled, isCellVisibleCb, isCellExploredCb, getFogOpacityCb, isEnemyVisibleCb, getCellPixelPositionCb, getCellPixelPosition, getCellShapeCb, HEX_WIDTH, activeCircles, dangerHexSet, featureColors, getCellFillCb, getTerrainIconCb, handleCellPointerDown, handleCellPointerOver, handleCellPointerUp, mode, onHoveredCellChange, selectedTargetHex, terrainColors, validMoves, getCombatantId]);
+  }, [positions, combatants, hoveredCell, selectedCombatant, currentTurn, targetFighterId, surrenderRecordsByFighterId, combatGenerationId, activeTurnGenerationId, flashingCombatants, impactReactions, getCombatantsAtPosition, getCellColorCb, getCombatantPrimaryPositionCb, getHealthPresentation, getVisualCombatantCenter, handleCellClick, terrain, effectiveMapType, getCellDataFromSceneCb, fogEnabled, isCellVisibleCb, isCellExploredCb, getFogOpacityCb, isEnemyVisibleCb, getCellPixelPositionCb, getCellPixelPosition, getCellShapeCb, HEX_WIDTH, activeCircles, dangerHexSet, featureColors, getCellFillCb, getTerrainIconCb, handleCellPointerDown, handleCellPointerOver, handleCellPointerUp, mode, onHoveredCellChange, selectedTargetHex, terrainColors, validMoves, getCombatantId]);
 
   // Render grid using SVG (supports both hex and square)
   const renderGrid = () => {
@@ -2858,21 +3158,94 @@ const TacticalMap = ({
     return { width: svgWidth, height: svgHeight };
   }, [effectiveMapType, HEX_WIDTH, HEX_VERTICAL_SPACING, HEX_RADIUS]);
 
+  const clampZoomScale = useCallback((value) => Math.min(2.5, Math.max(0.6, value)), []);
+
+  const applyZoomAtPoint = useCallback((nextScale, clientX = null, clientY = null) => {
+    const container = mapScrollRef.current;
+    if (!container) {
+      setZoomScale(clampZoomScale(nextScale));
+      return;
+    }
+    const previousScale = zoomScale;
+    const resolvedScale = clampZoomScale(nextScale);
+    if (Math.abs(resolvedScale - previousScale) < 0.001) return;
+    const rect = container.getBoundingClientRect();
+    const pointerX = clientX == null ? rect.width / 2 : clientX - rect.left;
+    const pointerY = clientY == null ? rect.height / 2 : clientY - rect.top;
+    const contentX = (container.scrollLeft + pointerX) / previousScale;
+    const contentY = (container.scrollTop + pointerY) / previousScale;
+    setZoomScale(resolvedScale);
+    requestAnimationFrame(() => {
+      container.scrollLeft = contentX * resolvedScale - pointerX;
+      container.scrollTop = contentY * resolvedScale - pointerY;
+    });
+  }, [clampZoomScale, zoomScale]);
+
+  useEffect(() => {
+    const container = mapScrollRef.current;
+    if (!container || mode !== "COMBAT") return undefined;
+
+    const handleNativeMapWheel = (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const factor = event.deltaY < 0 ? 1.12 : 1 / 1.12;
+      applyZoomAtPoint(zoomScale * factor, event.clientX, event.clientY);
+    };
+
+    // A native non-passive listener is required here. Browser/React wheel
+    // delegation can otherwise allow the page to scroll while the map zooms.
+    container.addEventListener("wheel", handleNativeMapWheel, { passive: false });
+    return () => container.removeEventListener("wheel", handleNativeMapWheel);
+  }, [applyZoomAtPoint, mode, zoomScale]);
+
+  const handleMapPointerDownForPan = useCallback((event) => {
+    const wantsPan = event.button === 1 || (event.button === 0 && event.shiftKey);
+    if (!wantsPan || !mapScrollRef.current) return;
+    event.preventDefault();
+    mapPanStartRef.current = {
+      clientX: event.clientX,
+      clientY: event.clientY,
+      scrollLeft: mapScrollRef.current.scrollLeft,
+      scrollTop: mapScrollRef.current.scrollTop,
+    };
+    setIsMapPanning(true);
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  }, []);
+
+  const handleMapPointerMoveForPan = useCallback((event) => {
+    const start = mapPanStartRef.current;
+    const container = mapScrollRef.current;
+    if (!start || !container) return;
+    container.scrollLeft = start.scrollLeft - (event.clientX - start.clientX);
+    container.scrollTop = start.scrollTop - (event.clientY - start.clientY);
+  }, []);
+
+  const finishMapPan = useCallback((event) => {
+    if (!mapPanStartRef.current) return;
+    mapPanStartRef.current = null;
+    setIsMapPanning(false);
+    event?.currentTarget?.releasePointerCapture?.(event.pointerId);
+  }, []);
+
+  const fitMapToViewport = useCallback(() => {
+    const container = mapScrollRef.current;
+    if (!container) return;
+    const scale = clampZoomScale(Math.min(
+      container.clientWidth / svgDimensions.width,
+      container.clientHeight / svgDimensions.height,
+    ));
+    setZoomScale(scale);
+    requestAnimationFrame(() => {
+      container.scrollLeft = Math.max(0, (svgDimensions.width * scale - container.clientWidth) / 2);
+      container.scrollTop = Math.max(0, (svgDimensions.height * scale - container.clientHeight) / 2);
+    });
+  }, [clampZoomScale, svgDimensions.height, svgDimensions.width]);
+
   return (
     <Box position="relative" width="100%" height={`${mapHeight}px`} display="flex" flexDirection="column" minHeight={`${mapHeight}px`}>
       {/* Map Content Area - Resizable */}
       <Box flex="1" minHeight={0} position="relative" width="100%" height="100%">
         <VStack align="stretch" spacing={4}>
-          {/* CSS Animation for flashing */}
-          <style>
-            {`
-              @keyframes flash-slow {
-                0%, 100% { opacity: 1; }
-                50% { opacity: 0.3; }
-              }
-            `}
-          </style>
-
         </VStack>
       </Box>
 
@@ -2892,7 +3265,16 @@ const TacticalMap = ({
         inset={0} // Fill container
         zIndex={1} // Above 3D background
         pointerEvents="auto" // Handle all interactions
+        onPointerDown={handleMapPointerDownForPan}
+        onPointerMove={handleMapPointerMoveForPan}
+        onPointerUp={finishMapPan}
+        onPointerCancel={finishMapPan}
+        onPointerLeave={finishMapPan}
+        cursor={isMapPanning ? "grabbing" : "default"}
         sx={{
+          // Keep wheel and touch scrolling contained inside the battlefield.
+          overscrollBehavior: 'contain',
+          touchAction: 'none',
           // Smooth scrolling
           scrollBehavior: 'smooth',
           // Fraidere scrollbars to always be visible
@@ -2922,16 +3304,38 @@ const TacticalMap = ({
           scrollbarColor: '#4a5568 #e2e8f0',
         }}
       >
+        {mode === "COMBAT" && (
+          <HStack
+            position="sticky"
+            top="8px"
+            left="8px"
+            zIndex={20}
+            width="fit-content"
+            spacing={1}
+            bg="whiteAlpha.900"
+            borderRadius="md"
+            px={2}
+            py={1}
+            boxShadow="sm"
+            onPointerDown={(event) => event.stopPropagation()}
+          >
+            <button type="button" onClick={() => applyZoomAtPoint(zoomScale / 1.2)} aria-label="Zoom out">−</button>
+            <Text fontSize="xs" minWidth="46px" textAlign="center">{Math.round(zoomScale * 100)}%</Text>
+            <button type="button" onClick={() => applyZoomAtPoint(zoomScale * 1.2)} aria-label="Zoom in">+</button>
+            <button type="button" onClick={fitMapToViewport} aria-label="Fit map">Fit</button>
+            <Text fontSize="xs" color="gray.600">Wheel zoom · Shift-drag pan</Text>
+          </HStack>
+        )}
         {/* SVG content - aligns with window edges */}
         <Box
           as="div"
           boxSizing="border-box"
-          minWidth={`${svgDimensions.width}px`}
-          minHeight={`${svgDimensions.height}px`}
+          minWidth={`${svgDimensions.width * zoomScale}px`}
+          minHeight={`${svgDimensions.height * zoomScale}px`}
         >
           <svg
-            width={svgDimensions.width}
-            height={svgDimensions.height}
+            width={svgDimensions.width * zoomScale}
+            height={svgDimensions.height * zoomScale}
             viewBox={`0 0 ${svgDimensions.width} ${svgDimensions.height}`}
             style={{
               display: 'block',
@@ -2941,6 +3345,9 @@ const TacticalMap = ({
             {/* Texture pattern definitions for terrain */}
             <defs>
               {texturePatterns}
+              <marker id="weapon-threat-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto" markerUnits="strokeWidth">
+                <path d="M0,0 L8,4 L0,8 Z" fill="currentColor" />
+              </marker>
             </defs>
 
 
@@ -2971,6 +3378,224 @@ const TacticalMap = ({
 
             {/* Render grid cells with terrain, features, and combatant icons - rendered AFTER lighting so icons are visible */}
             {renderGrid()}
+
+            {/* Spatial formation cohesion links */}
+            {mode === "COMBAT" && formationLinkRenderData.length > 0 && (
+              <g pointerEvents="none" data-testid="formation-cohesion-links">
+                {formationLinkRenderData.map((link) => (
+                  <g key={link.id}>
+                    <line
+                      x1={link.x1}
+                      y1={link.y1}
+                      x2={link.x2}
+                      y2={link.y2}
+                      stroke={link.state === "ordered-line" ? "rgba(21, 128, 61, 0.82)" : "rgba(13, 148, 136, 0.62)"}
+                      strokeWidth={link.state === "ordered-line" ? 4 : 3}
+                      strokeDasharray={link.state === "ordered-line" ? "2 3" : "5 4"}
+                    />
+                    {weaponOverlaySettings?.showLabels !== false && link.state === "ordered-line" && (
+                      <text
+                        x={link.labelX}
+                        y={link.labelY - 5}
+                        textAnchor="middle"
+                        fontSize="8"
+                        fontWeight="700"
+                        fill="#14532d"
+                        paintOrder="stroke"
+                        stroke="rgba(255,255,255,0.92)"
+                        strokeWidth="3"
+                      >
+                        {link.label || "Ordered line"}
+                      </text>
+                    )}
+                  </g>
+                ))}
+              </g>
+            )}
+
+            {/* Weapon measure and control overlays */}
+            {mode === "COMBAT" && weaponMeasureRenderData.overlays.length > 0 && (
+              <g pointerEvents="none" data-testid="weapon-measure-overlays">
+                {weaponMeasureRenderData.overlays.map((overlay) => (
+                  <g key={overlay.id || `measure-${overlay.actorId}`}>
+                    <circle
+                      cx={overlay.cx}
+                      cy={overlay.cy}
+                      r={overlay.radiusPx}
+                      fill="rgba(14, 165, 233, 0.06)"
+                      stroke="rgba(14, 116, 144, 0.78)"
+                      strokeWidth="2"
+                      strokeDasharray="7 5"
+                    />
+                    {weaponOverlaySettings?.showLabels !== false && <text
+                      x={overlay.cx}
+                      y={overlay.cy - overlay.radiusPx - 5}
+                      textAnchor="middle"
+                      fontSize="10"
+                      fontWeight="700"
+                      fill="#164e63"
+                      paintOrder="stroke"
+                      stroke="rgba(255,255,255,0.9)"
+                      strokeWidth="3"
+                    >
+                      {overlay.label || "Weapon measure"}
+                    </text>}
+                  </g>
+                ))}
+              </g>
+            )}
+
+            {mode === "COMBAT" && weaponMeasureRenderData.lines.length > 0 && (
+              <g pointerEvents="none" data-testid="weapon-threat-lines">
+                {weaponMeasureRenderData.lines.map((line) => (
+                  <g key={line.id || `${line.controllerId}-${line.targetId}`}>
+                    <line
+                      x1={line.x1}
+                      y1={line.y1}
+                      x2={line.x2}
+                      y2={line.y2}
+                      stroke={line.measure === "weapon-bind"
+                        ? "rgba(109, 40, 217, 0.88)"
+                        : line.focused ? "rgba(190, 24, 93, 0.9)" : "rgba(180, 83, 9, 0.55)"}
+                      strokeWidth={line.measure === "weapon-bind" ? 4 : line.focused ? 3 : 2}
+                      strokeDasharray={line.measure === "weapon-bind" ? "2 2" : line.measure === "inside-the-point" ? "3 3" : "8 4"}
+                      markerEnd={line.measure === "weapon-bind" ? undefined : "url(#weapon-threat-arrow)"}
+                    />
+                    {line.focused && weaponOverlaySettings?.showLabels !== false && (
+                      <text
+                        x={line.labelX}
+                        y={line.labelY - 5}
+                        textAnchor="middle"
+                        fontSize="9"
+                        fontWeight="700"
+                        fill="#7f1d1d"
+                        paintOrder="stroke"
+                        stroke="rgba(255,255,255,0.92)"
+                        strokeWidth="3"
+                      >
+                        {line.label || line.measure || "Weapon control"}
+                      </text>
+                    )}
+                  </g>
+                ))}
+              </g>
+            )}
+
+            {mode === "COMBAT" && weaponInteractionRenderData.length > 0 && (
+              <g pointerEvents="none" data-testid="weapon-interaction-animations">
+                {weaponInteractionRenderData.map((event) => (
+                  <motion.g
+                    key={event.id}
+                    initial={{ opacity: 1 }}
+                    animate={{ opacity: 0 }}
+                    transition={{ duration: event.durationSeconds, ease: "easeOut" }}
+                  >
+                    {(event.type === "point-displacement" || event.type === "guard-bind" || event.type === "weapon-control") && (
+                      <motion.path
+                        d={`M ${event.x1} ${event.y1} Q ${event.midX} ${event.midY - 22} ${event.x2} ${event.y2}`}
+                        fill="none"
+                        stroke={event.type === "guard-bind" ? "#7c3aed" : "#0369a1"}
+                        strokeWidth="4"
+                        initial={{ pathLength: 0 }}
+                        animate={{ pathLength: 1 }}
+                        transition={{ duration: event.durationSeconds * 0.65, ease: "easeOut" }}
+                      />
+                    )}
+                    {event.type === "hook-draw" && (
+                      <>
+                        <motion.path
+                          d={`M ${event.x2} ${event.y2} Q ${event.midX} ${event.midY + 24} ${event.x1} ${event.y1}`}
+                          fill="none"
+                          stroke="#b45309"
+                          strokeWidth="4"
+                          initial={{ pathLength: 0 }}
+                          animate={{ pathLength: 1 }}
+                          transition={{ duration: event.durationSeconds * 0.7 }}
+                        />
+                        <motion.circle
+                          cx={event.x2}
+                          cy={event.y2}
+                          r="7"
+                          fill="none"
+                          stroke="#b45309"
+                          strokeWidth="3"
+                          initial={{ scale: 0.5 }}
+                          animate={{ scale: 1.8 }}
+                        />
+                      </>
+                    )}
+                    {(event.type === "shaft-impact" || event.type === "impact-pulse") && (
+                      <>
+                        <motion.circle
+                          cx={event.midX}
+                          cy={event.midY}
+                          fill="none"
+                          stroke={event.severity === "major" ? "#b91c1c" : "#92400e"}
+                          strokeWidth="4"
+                          initial={{ r: 3 }}
+                          animate={{ r: event.severity === "major" ? 28 : 20 }}
+                        />
+                        <motion.line x1={event.midX - 12} y1={event.midY - 12} x2={event.midX + 12} y2={event.midY + 12} stroke="#b91c1c" strokeWidth="4" />
+                        <motion.line x1={event.midX + 12} y1={event.midY - 12} x2={event.midX - 12} y2={event.midY + 12} stroke="#b91c1c" strokeWidth="4" />
+                      </>
+                    )}
+                    {event.type === "close-thrust" && (
+                      <motion.line
+                        x1={event.x1}
+                        y1={event.y1}
+                        x2={event.x2}
+                        y2={event.y2}
+                        stroke="#be123c"
+                        strokeWidth="5"
+                        initial={{ pathLength: 0 }}
+                        animate={{ pathLength: 1 }}
+                        transition={{ duration: event.durationSeconds * 0.45 }}
+                      />
+                    )}
+
+                    {(event.type === "shield-impact" || event.type === "shield-break") && (
+                      <>
+                        <motion.circle
+                          cx={event.x2}
+                          cy={event.y2}
+                          fill="none"
+                          stroke={event.type === "shield-break" ? "#dc2626" : "#2563eb"}
+                          strokeWidth="5"
+                          initial={{ r: 4, opacity: 1 }}
+                          animate={{ r: event.type === "shield-break" ? 30 : 20, opacity: 0 }}
+                        />
+                        {event.type === "shield-break" && (
+                          <motion.path
+                            d={`M ${event.x2 - 14} ${event.y2 - 14} L ${event.x2 + 14} ${event.y2 + 14} M ${event.x2 + 14} ${event.y2 - 14} L ${event.x2 - 14} ${event.y2 + 14}`}
+                            stroke="#dc2626"
+                            strokeWidth="4"
+                            initial={{ pathLength: 0 }}
+                            animate={{ pathLength: 1 }}
+                          />
+                        )}
+                      </>
+                    )}
+                    {event.type === "formation-disruption" && (
+                      <>
+                        {[0, 1, 2].map((offset) => (
+                          <motion.line
+                            key={`${event.id}-formation-${offset}`}
+                            x1={event.x2 - 18 + offset * 8}
+                            y1={event.y2 - 12}
+                            x2={event.x2 - 12 + offset * 8}
+                            y2={event.y2 + 12}
+                            stroke="#be123c"
+                            strokeWidth="3"
+                            initial={{ opacity: 1, y: 0 }}
+                            animate={{ opacity: 0, y: 8 }}
+                          />
+                        ))}
+                      </>
+                    )}
+                  </motion.g>
+                ))}
+              </g>
+            )}
 
             {/* === Path Preview Overlay (1ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Å“4) === */}
             {pathPoints && pathTotalLen > 0 && (
@@ -3300,6 +3925,31 @@ const TacticalMap = ({
         )}
       </Box>
 
+      {processingOverlay?.active && (
+        <Flex
+          position="absolute"
+          inset={0}
+          zIndex={40}
+          align="center"
+          justify="center"
+          bg="blackAlpha.300"
+          pointerEvents="none"
+          data-testid="tactical-map-processing-overlay"
+        >
+          <HStack spacing={3} bg="whiteAlpha.950" borderRadius="lg" px={4} py={3} boxShadow="lg">
+            <Spinner thickness="4px" speed="0.7s" color="cyan.500" />
+            <Box>
+              <Text fontWeight="bold" fontSize="sm">{processingOverlay.phase || "Resolving action"}</Text>
+              {processingOverlay.total > 0 && processingOverlay.phase === "Planning actions" && (
+                <Text fontSize="xs" color="gray.600">
+                  {Math.min(processingOverlay.processed || 0, processingOverlay.total)} of {processingOverlay.total} combatants
+                </Text>
+              )}
+            </Box>
+          </HStack>
+        </Flex>
+      )}
+
       {/* ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Terrain Legend Overlay (top-right corner) */}
       {terrain?.baseTerrain && (
         <Box
@@ -3378,12 +4028,34 @@ TacticalMap.propTypes = {
   surrenderRecordsByFighterId: PropTypes.object,
   highlightMovement: PropTypes.bool,
   flashingCombatants: PropTypes.instanceOf(Set),
+  healthPresentationById: PropTypes.object,
+  processingOverlay: PropTypes.shape({
+    active: PropTypes.bool,
+    phase: PropTypes.string,
+    processed: PropTypes.number,
+    total: PropTypes.number,
+  }),
   impactReactions: PropTypes.object,
   movementMode: PropTypes.shape({
     active: PropTypes.bool,
     isRunning: PropTypes.bool
   }),
   dangerHexes: PropTypes.array,
+  weaponMeasureOverlays: PropTypes.array,
+  weaponThreatLines: PropTypes.array,
+  weaponOverlaySettings: PropTypes.shape({
+    showMeasureRings: PropTypes.bool,
+    showThreatLines: PropTypes.bool,
+    showLabels: PropTypes.bool,
+    showInteractionAnimations: PropTypes.bool,
+    showFormationLinks: PropTypes.bool,
+    showConditionBadges: PropTypes.bool,
+  }),
+  weaponInteractionAnimations: PropTypes.array,
+  formationLinks: PropTypes.array,
+  formationStatesByActorId: PropTypes.object,
+  weaponBindStatesByActorId: PropTypes.object,
+  combatRound: PropTypes.number,
   allowEmptyHexSelection: PropTypes.bool,
   terrain: PropTypes.object, // Terrain data with grid, features, etc.
   mapType: PropTypes.string, // "hex" or "square"

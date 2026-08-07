@@ -1,0 +1,10 @@
+import assert from "node:assert/strict";
+import fs from "node:fs";
+const page = fs.readFileSync(new URL("../src/pages/CombatPage.jsx", import.meta.url), "utf8");
+const runtime = fs.readFileSync(new URL("../src/utils/combat/tacticalOverwatchRuntime.js", import.meta.url), "utf8");
+assert.match(page, /Prepare Overwatch/); assert.match(page, /Cancel Overwatch/); assert.match(page, /Release Held Shot/); assert.match(page, /Let Target Pass/);
+assert.match(page, /Overwatch trigger policy/);
+assert.match(page, /validateCanonicalRangedAttack/); assert.match(page, /canAISeeTargetAsymmetric/); assert.match(page, /spendAmmunitionOnce/);
+assert.match(runtime, /resolveTacticalOverwatchAttack/); assert.match(runtime, /maxTerminalHistory/); assert.match(runtime, /maxClaimHistory/);
+assert.doesNotMatch(runtime, /Math\.random|rollDice|rollD20/);
+console.log("tactical overwatch source integration: 12/12 passed");

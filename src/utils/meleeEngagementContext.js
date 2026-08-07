@@ -45,10 +45,12 @@ export function getMeleeEngagementContext({
     (actorNamesTarget || targetNamesActor) &&
     (!isNeutralGrappleState(actor) || !isNeutralGrappleState(target))
   );
-  const isGround = Boolean(
+  const isAdjacent = Number.isFinite(distance) && distance <= 5.5;
+  const hasGroundState = Boolean(
     actor?.prone || target?.prone ||
     actorState.includes("ground") || targetState.includes("ground")
   );
+  const isGround = hasGroundState && linkedGrapple;
   const isClinched = Boolean(
     linkedGrapple &&
     (actorState.includes("clinch") || targetState.includes("clinch"))
@@ -58,7 +60,6 @@ export function getMeleeEngagementContext({
     (hasGrappleStatus(actor) && actorNamesTarget) ||
     (hasGrappleStatus(target) && targetNamesActor)
   );
-  const isAdjacent = Number.isFinite(distance) && distance <= 5.5;
   const rangeBand = isGround
     ? "ground"
     : isClinched

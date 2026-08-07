@@ -1,12 +1,19 @@
 import { isCombatantFled } from "../combatFledState.js";
 import { isCombatantBroken } from "../combatBrokenState.js";
+import {
+  canExplicitlyPursueRoutedTarget,
+  isIncapacitated,
+  isOrdinaryAttackTarget,
+  isRoutedOrWithdrawn,
+  isSurrenderedOrCaptured,
+} from "../combat/combatParticipation.js";
 
 const normalized = (value) => String(value || "").trim().toLowerCase();
 
 export function isRoutingOrPassiveTarget(target = {}) {
   const morale = normalized(target.state?.moraleState || target.moraleState?.status);
   const effects = Array.isArray(target.statusEffects) ? target.statusEffects.map(normalized) : [];
-  return ["routed", "broken", "cowering", "cower", "shaken"].includes(morale) ||
+  return ["routed", "broken", "cowering", "cower"].includes(morale) ||
     effects.some((effect) => ["routed", "cowering", "cower"].includes(effect));
 }
 
@@ -24,12 +31,15 @@ export function getCombatTargetExclusionReason(target = {}, options = {}) {
   const tokens = statusTokens(target);
   const hasToken = (value) => tokens.some((token) => token === value || token.includes(value));
   if (isCombatantFled(target) || hasToken("fled")) return "fled";
-  if (hasToken("surrendered")) return "surrendered";
+  if (hasToken("surrendered") || target.surrendered === true || target.isSurrendered === true) return "surrendered";
+  if (hasToken("captured") || target.captured === true || target.isCaptured === true) return "captured";
   if (isCombatantBroken(target) || hasToken("combat-broken") || hasToken("broken")) return "combat-broken";
-  if (hasToken("dead") || target.isDead === true || Number(target.currentHP) <= -20) return "dead";
-  if (hasToken("dying")) return "dying";
-  if (hasToken("unconscious") || target.isKO === true) return "unconscious";
-  if (Number.isFinite(Number(target.currentHP)) && Number(target.currentHP) <= 0) return "unconscious";
+  if (isRoutedOrWithdrawn(target)) return "routed-or-withdrawn";
+  if (isSurrenderedOrCaptured(target)) return "surrendered-or-captured";
+  if (isIncapacitated(target) && !options.mayFinishIncapacitated) {
+    return hasToken("unconscious") || target.unconscious === true ? "unconscious" : "incapacitated";
+  }
+  if (!isOrdinaryAttackTarget(target, options)) return "not-an-ordinary-attack-target";
   if (typeof options.isHostile === "function" && !options.isHostile(target)) return "allied or not hostile";
   if (typeof options.canSelect === "function" && !options.canSelect(target)) return "not selectable in current scene";
   if (typeof options.canAct === "function" && !options.canAct(target)) return "inactive or unable to act";
@@ -47,7 +57,8 @@ export function partitionCombatTargets(candidates = [], options = {}) {
 }
 
 export function prioritizeEnemyCombatTargets({
-  attacker = {}, candidates = [], positions = {}, calculateDistance, adjacentDistance = 5,
+  attacker = {}, candidates = [],
+  pursuitContext = null,
 } = {}) {
   const viable = (Array.isArray(candidates) ? candidates : []).filter((target) => {
     const attackerId = attacker.id ?? attacker._id;
@@ -56,18 +67,11 @@ export function prioritizeEnemyCombatTargets({
       !getCombatTargetExclusionReason(target);
   });
   const active = viable.filter((target) => !isRoutingOrPassiveTarget(target));
-  if (active.length === 0) return viable;
-  const relentless = [attacker.aiRole, attacker.aggression, ...(attacker.tags || [])]
-    .map(normalized).some((value) => ["pursuer", "brutal", "terror", "berserk"].includes(value));
-  if (relentless) return viable;
-  const attackerPos = positions?.[attacker.id];
-  const routedBlockers = viable.filter((target) => {
-    if (!isRoutingOrPassiveTarget(target)) return false;
-    const targetPos = positions?.[target.id];
-    return attackerPos && targetPos && typeof calculateDistance === "function" &&
-      calculateDistance(attackerPos, targetPos) <= adjacentDistance;
-  });
-  return [...routedBlockers, ...active];
+  if (!pursuitContext) return active;
+  const pursued = (Array.isArray(candidates) ? candidates : []).filter((target) =>
+    canExplicitlyPursueRoutedTarget(attacker, target, pursuitContext),
+  );
+  return [...active, ...pursued];
 }
 
 export default prioritizeEnemyCombatTargets;

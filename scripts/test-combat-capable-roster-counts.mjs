@@ -2,11 +2,12 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 
 const source = fs.readFileSync("src/pages/CombatPage.jsx", "utf8");
+const participationSource = fs.readFileSync("src/utils/combat/combatParticipation.js", "utf8");
 
 assert.match(source, /const isCombatCapableFighter = useCallback\(\(fighter\) => \{/);
-assert.match(source, /isCombatantFled\(fighter\) \|\| isCombatantBroken\(fighter\)/);
-assert.match(source, /\["routed", "broken", "fled", "surrendered", "captured"\]\.includes\(moraleState\)/);
-assert.match(source, /return canFighterAct\(fighter\)/);
+assert.match(source, /return isCanonicalCombatCapable\(fighter\)/);
+assert.match(participationSource, /isRoutedOrWithdrawn\(actor\) \|\| isSurrenderedOrCaptured\(actor\) \|\| isIncapacitated\(actor\)/);
+assert.match(participationSource, /actor\.fatigueState\?\.status === "collapsed" \|\| actor\.collapsed === true/);
 assert.match(source, /const getCombatCapableRosterCount = useCallback\(\(roster = \[\]\) => \{/);
 assert.match(source, /active: .*isCombatCapableFighter/s);
 

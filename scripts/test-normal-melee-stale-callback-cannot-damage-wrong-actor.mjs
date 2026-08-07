@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 const source = readFileSync(new URL("../src/pages/CombatPage.jsx", import.meta.url), "utf8");
 
 const rollGuardIndex = source.indexOf('isAttackActionLive("attack-roll-log")');
-const rollLogIndex = source.indexOf('eventType: "critical-miss"', rollGuardIndex);
+const rollLogIndex = source.indexOf('eventType: "attack-roll"', rollGuardIndex);
 const damageGuardIndex = source.indexOf('isAttackActionLive("damage-application")');
 const targetLookupIndex = source.indexOf("liveDamageFighters.find((f) => f.id === normalAttackTargetId)");
 

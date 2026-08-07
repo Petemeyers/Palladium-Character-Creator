@@ -29,6 +29,12 @@ import {
   createTacticalChargeBraceRuntime,
   isActorChargeBraceBusy,
 } from "./tacticalChargeBraceRuntime.js";
+import {
+  auditTacticalOverwatchOwnership,
+  cleanupTacticalOverwatchRuntime,
+  createTacticalOverwatchRuntime,
+  isActorOverwatchBusy,
+} from "./tacticalOverwatchRuntime.js";
 
 const activeActor = (fighter) => {
   const hp = fighter?.currentHP ?? fighter?.currentHp ?? fighter?.hp ?? fighter?.hitPoints?.current ?? fighter?.health;
@@ -62,6 +68,7 @@ export function createTacticalActionRuntime({
     reactionRuntime: createTacticalReactionRuntime({ generationId, combatSession, maxTerminalHistory, maxResolutionHistory: maxClaimHistory }),
     postParryRuntime: createTacticalPostParryRuntime({ generationId, combatSession, maxHistory: maxTerminalHistory, maxClaims: maxClaimHistory }),
     chargeBraceRuntime: createTacticalChargeBraceRuntime({ generationId, combatSession, maxTerminalHistory, maxClaimHistory }),
+    overwatchRuntime: createTacticalOverwatchRuntime({ generationId, combatSession, maxTerminalHistory, maxClaimHistory }),
     maxTerminalHistory: Math.max(16, Number(maxTerminalHistory) || 128),
     maxClaimHistory: Math.max(32, Number(maxClaimHistory) || 256),
     postCombatMutationsBlocked: 0,
@@ -82,14 +89,21 @@ export function getTacticalActorOwnership(runtime, actorId) {
     : null;
   const charge = runtime?.chargeBraceRuntime?.chargesByActor?.get(key) || null;
   const brace = runtime?.chargeBraceRuntime?.bracesByActor?.get(key) || null;
+  const overwatch = runtime?.overwatchRuntime?.overwatchByActor?.get(key) || null;
+  const overwatchRecovery = runtime?.overwatchRuntime?.recoveryByActor?.get(key) || null;
+  const overwatchWindowId = runtime?.overwatchRuntime?.windowByActor?.get(key) || null;
+  const overwatchWindow = overwatchWindowId ? runtime.overwatchRuntime.windowsById.get(overwatchWindowId) || null : null;
   return {
     actorId: key,
-    state: postParryWindow ? "post-parry-response" : charge ? `charge-${charge.state}` : brace ? `brace-${brace.state}` : recovery ? "recovering" : action?.state || "unowned",
+    state: postParryWindow ? "post-parry-response" : charge ? `charge-${charge.state}` : brace ? `brace-${brace.state}` : overwatchWindow ? "overwatch-triggered" : overwatch ? `overwatch-${overwatch.state}` : overwatchRecovery ? "overwatch-recovering" : recovery ? "recovering" : action?.state || "unowned",
     action,
     recovery,
     postParryWindow,
     charge,
     brace,
+    overwatch,
+    overwatchWindow,
+    overwatchRecovery,
   };
 }
 
@@ -129,6 +143,7 @@ export function registerTacticalAction(runtime, input, { releaseRequested = true
   if (isActorChargeBraceBusy(runtime.chargeBraceRuntime, intent.actorId)) {
     return { accepted: false, reason: "actor-owns-charge-or-brace" };
   }
+  if (isActorOverwatchBusy(runtime.overwatchRuntime, intent.actorId)) return { accepted: false, reason: "actor-owns-overwatch" };
   const preparing = transitionTacticalAction(intent, "preparing", { releaseRequested: Boolean(releaseRequested) });
   if (!preparing.accepted) return preparing;
   runtime.activeActions.set(intent.actorId, preparing.intent);
@@ -595,6 +610,7 @@ export function cleanupTacticalActionRuntime(runtime, reason = "combat-ended") {
   const reactionCleanup = cleanupTacticalReactionRuntime(runtime.reactionRuntime, reason);
   const postParryCleanup = cleanupTacticalPostParryRuntime(runtime.postParryRuntime, reason);
   const chargeBraceCleanup = cleanupTacticalChargeBraceRuntime(runtime.chargeBraceRuntime, reason);
+  const overwatchCleanup = cleanupTacticalOverwatchRuntime(runtime.overwatchRuntime, reason);
   for (const action of runtime.activeActions.values()) {
     counts.pendingActionCount += 1;
     if (action.state === "preparing") counts.preparingActionCount += 1;
@@ -619,8 +635,9 @@ export function cleanupTacticalActionRuntime(runtime, reason = "combat-ended") {
     reactionCleanup: reactionCleanup.data || null,
     postParryCleanup: postParryCleanup.data || null,
     chargeBraceCleanup: chargeBraceCleanup.data || null,
+    overwatchCleanup: overwatchCleanup.data || null,
     postCombatMutationsBlocked: runtime.postCombatMutationsBlocked,
-    matches: runtime.activeActions.size === 0 && runtime.recoveryByActor.size === 0 && chargeBraceCleanup.data?.matches !== false,
+    matches: runtime.activeActions.size === 0 && runtime.recoveryByActor.size === 0 && chargeBraceCleanup.data?.matches !== false && overwatchCleanup.data?.matches !== false,
   };
   return {
     accepted: true,
@@ -629,6 +646,7 @@ export function cleanupTacticalActionRuntime(runtime, reason = "combat-ended") {
     reactionCleanup,
     postParryCleanup,
     chargeBraceCleanup,
+    overwatchCleanup,
   };
 }
 
@@ -637,11 +655,13 @@ export function auditTacticalActionOwnership(runtime) {
   const recoveryActorIds = [...runtime.recoveryByActor.keys()];
   const overlapActorIds = activeActorIds.filter((actorId) => runtime.recoveryByActor.has(actorId));
   const chargeBrace = auditTacticalChargeBraceOwnership(runtime.chargeBraceRuntime);
+  const overwatch = auditTacticalOverwatchOwnership(runtime.overwatchRuntime);
   const chargeBraceActorIds = new Set([
     ...runtime.chargeBraceRuntime.chargesByActor.keys(),
     ...runtime.chargeBraceRuntime.bracesByActor.keys(),
   ]);
   const chargeBraceOverlapActorIds = [...new Set([...activeActorIds, ...recoveryActorIds])].filter((actorId) => chargeBraceActorIds.has(actorId));
+  const overwatchOverlapActorIds = [...new Set([...activeActorIds, ...recoveryActorIds, ...chargeBraceActorIds])].filter((actorId) => isActorOverwatchBusy(runtime.overwatchRuntime, actorId));
   return {
     activeActionCount: activeActorIds.length,
     recoveryCount: recoveryActorIds.length,
@@ -656,7 +676,9 @@ export function auditTacticalActionOwnership(runtime) {
     postParry: auditTacticalPostParryOwnership(runtime.postParryRuntime),
     chargeBrace,
     chargeBraceOverlapActorIds,
-    matches: overlapActorIds.length === 0 && chargeBraceOverlapActorIds.length === 0 && chargeBrace.matches,
+    overwatch,
+    overwatchOverlapActorIds,
+    matches: overlapActorIds.length === 0 && chargeBraceOverlapActorIds.length === 0 && overwatchOverlapActorIds.length === 0 && chargeBrace.matches && overwatch.matches,
   };
 }
 
@@ -686,6 +708,12 @@ export function resetTacticalActionCoordinates(runtime, { generationId, combatSe
     maxClaims: runtime.maxClaimHistory,
   });
   runtime.chargeBraceRuntime = createTacticalChargeBraceRuntime({
+    generationId,
+    combatSession,
+    maxTerminalHistory: runtime.maxTerminalHistory,
+    maxClaimHistory: runtime.maxClaimHistory,
+  });
+  runtime.overwatchRuntime = createTacticalOverwatchRuntime({
     generationId,
     combatSession,
     maxTerminalHistory: runtime.maxTerminalHistory,

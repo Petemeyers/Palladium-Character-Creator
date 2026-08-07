@@ -68,6 +68,7 @@ import {
   Divider,
   Wrap,
   WrapItem,
+  Spinner,
 } from "@chakra-ui/react";
 import { useClockPlayer } from "../utils/three/useClockPlayer.js";
 import {
@@ -92,6 +93,7 @@ import CombatTurnStatusPanel from "../components/CombatTurnStatusPanel.jsx";
 import SurrenderDecisionPanel from "../components/SurrenderDecisionPanel.jsx";
 import RiposteOpportunityPanel from "../components/RiposteOpportunityPanel.jsx";
 import ProposedChronicleAwardsPanel from "../components/ProposedChronicleAwardsPanel.jsx";
+import AftermathDashboard from "../components/aftermath/AftermathDashboard.jsx";
 import SelectedCombatActionPanel from "../components/SelectedCombatActionPanel.jsx";
 import CompatibilityCombatControlsPanel from "../components/CompatibilityCombatControlsPanel.jsx";
 import ManualPublicAttackTest from "../components/ManualPublicAttackTest.jsx";
@@ -222,6 +224,7 @@ import {
   validateCanonicalHpMutationMetadata,
 } from "../utils/combat/canonicalDamageMetadata.js";
 import { buildCanonicalAttackRollEvent } from "../utils/combat/canonicalAttackRollEvent.js";
+import { reconcileAttackRollModifierLedger } from "../utils/combat/attackModifierAuthority.js";
 import { buildStaleDamageApplicationDiagnostic } from "../utils/combat/canonicalAttackOwnershipDiagnostic.js";
 import { getTechniquesForLevel } from "../data/combatTechniques.js";
 import { selectAITechnique } from "../utils/ai/selectAITechnique.js";
@@ -408,6 +411,129 @@ import {
   resolveTacticalPulse,
 } from "../utils/combat/tacticalPulseResolver.js";
 import {
+  getCanonicalMovementActionBudgetFt,
+  getOddRHexDistanceFeet,
+} from "../utils/combat/movementActionAuthority.js";
+import {
+  INITIATIVE_ACTIONS_MODE,
+  allowsSameActorActionContinuation,
+  canTakeInitiativeActionPass,
+  createInitiativeTurnSlotKey,
+  getInitiativeActionPassIndex,
+  isInitiativeActionsMode,
+} from "../utils/combat/initiativeActionTiming.js";
+import {
+  getCanonicalWeaponLengthFeet,
+  getCanonicalWeaponReachFeet,
+  getCanonicalWeaponTraitProfile,
+  getCanonicalWeaponTypeLabel,
+  isCanonicalInfantrySpear,
+  isCanonicalThrownWeapon,
+  normalizeCanonicalActorWeapons,
+  normalizeCanonicalCombatWeapon,
+} from "../utils/combat/canonicalWeaponTraits.js";
+import {
+  resolvePresentedBattlefieldPositions,
+  snapshotBattlefieldPositions,
+} from "../utils/combat/postCombatPositionAuthority.js";
+import {
+  applyPolearmSpecialActionOnHit,
+  getReadyCombatWeapon,
+  resolvePolearmCombatMatchup,
+  selectAutomatedPolearmAction,
+} from "../utils/combat/polearmCombatAuthority.js";
+import { reconcileCanonicalMovementLog } from "../utils/combat/movementLogAuthority.js";
+import {
+  analyzeMeasureAwareMovement,
+  getEngagementAttackModifier,
+  getPreferredEngagementDistanceFeet,
+  markCombatExertion,
+  resolvePassiveRoundStaminaRecovery,
+  resolveWeaponActionStaminaCost,
+} from "../utils/combat/weaponEngagementAuthority.js";
+import {
+  LONG_WEAPON_CLOSE_ACTIONS,
+  LONG_WEAPON_CONTROL_RESPONSES,
+  WEAPON_ENTRY_TECHNIQUES,
+  buildLongWeaponReactionAttack,
+  findSidearmCandidate,
+  getLongWeaponCloseActionOptions,
+  getWeaponEntryTechniqueOptions,
+  resolveMultiOpponentMeasurePressure,
+  resolveWeaponEntryExchange,
+  selectAutomatedEntryTechnique,
+  selectAutomatedLongWeaponCloseAction,
+  selectAutomatedLongWeaponResponse,
+} from "../utils/combat/weaponExchangeAuthority.js";
+import {
+  applySpecializedWeaponActionToAttack,
+  buildWeaponMeasurePresentation,
+  formatSpecializedWeaponActionNarration,
+  formatWeaponEntryExchangeNarration,
+  getPersistentWeaponControlStates,
+  getSpecializedWeaponActionOptions,
+  getSpecializedWeaponAttackModifier,
+  reconcilePersistentWeaponControlStates,
+  resolveSpecializedWeaponEffectOnHit,
+  selectAutomatedSpecializedWeaponAction,
+  upsertPersistentWeaponControlState,
+} from "../utils/combat/weaponSpecializationAuthority.js";
+import {
+  getActiveWeaponConditionPenalties,
+  pruneExpiredWeaponConditions,
+} from "../utils/combat/weaponConditionAuthority.js";
+import {
+  applyFormationDisruption,
+  buildFormationCohesionPresentation,
+  resolveSpatialFormationSupport,
+} from "../utils/combat/formationCohesionAuthority.js";
+import {
+  FORMATION_COMMANDS,
+  filterFormationCommandOptionsForTurnReceipt,
+  getFormationCommandOptions,
+  recordFormationCommandReceipt,
+  resolveFormationCommand,
+  selectAutomatedFormationCommand,
+} from "../utils/combat/formationCommandAuthority.js";
+import { planFormationMovementCommand } from "../utils/combat/formationMovementPlanner.js";
+import {
+  resolveTerrainFormationContext,
+} from "../utils/combat/terrainFormationAuthority.js";
+import {
+  applyShieldImpactToActor,
+  getShieldDefensePenalty,
+  resolveShieldImpact,
+} from "../utils/combat/shieldIntegrityAuthority.js";
+import {
+  createPersistentWeaponBind,
+  getActiveWeaponBinds,
+  getActorWeaponBindState,
+  getWeaponBindAttackModifier,
+  reconcilePersistentWeaponBinds,
+  releasePersistentWeaponBind,
+  upsertPersistentWeaponBind,
+} from "../utils/combat/weaponBindAuthority.js";
+import {
+  WEAPON_BIND_ACTIONS,
+  applyWeaponBindCounterplay,
+  getWeaponBindCounterplayOptions,
+  resolveWeaponBindCounterplay,
+  selectAutomatedWeaponBindAction,
+} from "../utils/combat/weaponBindCounterplayAuthority.js";
+import {
+  buildWeaponAnimationCue,
+} from "../utils/combat/weaponAnimationAuthority.js";
+import {
+  advanceAftermathDay,
+  applyAftermathAction,
+  applyAftermathLootAction,
+  createAftermathEncounter,
+  getCurrentAftermathEncounter,
+  loadAftermathCampaign,
+  saveAftermathCampaign,
+  upsertAftermathEncounter,
+} from "../utils/aftermath/aftermathAuthority.js";
+import {
   cancelTacticalAction,
   cleanupTacticalActionRuntime,
   getTacticalActorOwnership,
@@ -433,7 +559,14 @@ import {
 import { getBraceCapabilities } from "../utils/combat/tacticalBraceIntent.js";
 import { getChargeCapabilities } from "../utils/combat/tacticalChargeIntent.js";
 import { TACTICAL_INTERCEPTION_CHOICES } from "../utils/combat/tacticalInterceptionWindow.js";
-import { buildTacticalPath } from "../utils/combat/tacticalMovementIntent.js";
+import {
+  cancelTacticalOverwatch,
+  registerTacticalOverwatch,
+  submitTacticalOverwatchResponse,
+} from "../utils/combat/tacticalOverwatchRuntime.js";
+import { getOverwatchCapabilities } from "../utils/combat/tacticalOverwatchIntent.js";
+import { TACTICAL_OVERWATCH_CHOICES } from "../utils/combat/tacticalOverwatchWindow.js";
+import { buildTacticalPath, planDefaultTacticalMovement } from "../utils/combat/tacticalMovementIntent.js";
 import { createTacticalActionIntent } from "../utils/combat/tacticalActionIntent.js";
 import {
   findTacticalAttackByIntent,
@@ -442,6 +575,12 @@ import {
   planDefaultTacticalAction,
   selectTacticalTimingKey,
 } from "../utils/combat/tacticalActionPlanning.js";
+import {
+  claimCanonicalAmmunitionSpend,
+  commitCanonicalAmmunitionSpend,
+  normalizeCanonicalAmmunitionState,
+  validateCanonicalRangedAttack,
+} from "../utils/combat/canonicalRangedCombat.js";
 import {
   COMBAT_LOG_AUDIENCES,
   COMBAT_LOG_CHANNELS,
@@ -506,6 +645,7 @@ import { applyInitialEffect, applyFallDamage } from "../utils/updateActiveEffect
 import TacticalMap from "../components/TacticalMap.jsx";
 import HexArena3D from "../components/HexArena3D.jsx";
 import { getCombatIconAppearance } from "../utils/presentation/getCombatIconAppearance.js";
+import { buildCombatantHealthPresentationMap } from "../utils/presentation/combatantHealthPresentation.js";
 import Phase0PreCombatModal from "../components/Phase0PreCombatModal.jsx";
 import ResizableLayout from "../components/ResizableLayout.jsx";
 import LootWindow from "../components/LootWindow.jsx";
@@ -619,6 +759,17 @@ import {
 } from "../utils/flightActions.js";
 import { getDefaultMovementMode, getSpeciesProfile } from "../utils/ai/movementModeHelpers.js";
 import {
+  applyEquipmentSelection,
+  classifyArmorLayer,
+  EMPTY_EQUIPMENT_SELECTION,
+  normalizeWeaponProfile,
+  reapplyExplicitEquipmentSelection,
+} from "../utils/combat/equipmentAuthority.js";
+import {
+  evaluateDamageMoraleTrigger,
+  guardDamageMoraleOutcome,
+} from "../utils/combat/damageMoraleAuthority.js";
+import {
   clearPublicArenaRosterEntries,
   getAmbiguousSavedCharacterStagedEntries,
   getDuplicateStagedRosterEntries,
@@ -685,7 +836,47 @@ import {
 import { normalizeMoraleState } from "../utils/morale/moraleChecks.js";
 import { evaluateMoraleTriggers } from "../utils/morale/moraleTriggerChecks.js";
 
+const TACTICAL_PRESENTATION_WAVE_SIZE = 6;
+const TACTICAL_PRESENTATION_STAGGER_MS = 55;
+
+function getTacticalPresentationDelayMs(actor, roster = [], pulseIndex = 0) {
+  const actorId = String(getCombatActorId(actor) ?? "");
+  const ranked = [...roster]
+    .filter(Boolean)
+    .sort((left, right) => (
+      Number(left.initiativeRank ?? Number.MAX_SAFE_INTEGER) - Number(right.initiativeRank ?? Number.MAX_SAFE_INTEGER) ||
+      Number(right.initiative ?? 0) - Number(left.initiative ?? 0) ||
+      String(getCombatActorId(left) ?? "").localeCompare(String(getCombatActorId(right) ?? ""))
+    ));
+  const rankIndex = Math.max(0, ranked.findIndex((candidate) => (
+    String(getCombatActorId(candidate) ?? "") === actorId
+  )));
+  const waveSlot = rankIndex % TACTICAL_PRESENTATION_WAVE_SIZE;
+  const alternatingOffset = Number(pulseIndex) % 2 === 0
+    ? waveSlot
+    : (TACTICAL_PRESENTATION_WAVE_SIZE - 1 - waveSlot);
+  return Math.max(0, alternatingOffset * TACTICAL_PRESENTATION_STAGGER_MS);
+}
+
 // Debug toggle for grapple system
+const calculateHybridWeaponAttackStaminaCost = ({
+  fighter,
+  weapon,
+  attackType,
+  technique = null,
+  source = null,
+} = {}) => {
+  const fallbackCost = calculateAttackStaminaCost({ fighter, weapon, attackType });
+  return resolveWeaponActionStaminaCost({
+    fighter,
+    weapon,
+    actionType: attackType || "attack",
+    technique,
+    source,
+    fallbackCost,
+  }).cost;
+};
+
 const DEBUG_GRAPPLE = true; // set to false in production
 const DEBUG_COMBAT =
   typeof window !== "undefined" &&
@@ -2629,6 +2820,13 @@ function clearForcedSeparationRelationship(fighter = {}, counterpartId = null) {
   };
 }
 
+const getCanonicalCombatWeaponRange = (weapon) => {
+  const normalized = normalizeCanonicalCombatWeapon(weapon || {});
+  const traits = getCanonicalWeaponTraitProfile(normalized);
+  if (traits.isPolearm || traits.isGreatsword) return traits.reachFeet;
+  return getWeaponRange(weapon);
+};
+
 function CombatPage({ characters = [] }) {
   const navigate = useNavigate();
   const [log, setLog] = useState([]);
@@ -2653,6 +2851,10 @@ function CombatPage({ characters = [] }) {
   const gmNarrationBusyRef = useRef(false);
 
   const [fighters, setFighters] = useState([]);
+  const combatantHealthPresentationById = useMemo(
+    () => buildCombatantHealthPresentationMap(fighters),
+    [fighters],
+  );
   const [manualPublicTurnOrder, setManualPublicTurnOrder] = useState([]);
   const [manualPublicTurnIndex, setManualPublicTurnIndex] = useState(0);
   const [manualPublicTurnRound, setManualPublicTurnRound] = useState(1);
@@ -2872,13 +3074,27 @@ function CombatPage({ characters = [] }) {
   const addLog = useCallback((...logArgs) => {
     const [message, type, diceInfo = null] = logArgs;
     const explicitTypeProvided = logArgs.length >= 2;
-    const legacyType = type ?? "info";
     const rawMessage = typeof message === "object" && message !== null
       ? message.message ?? ""
       : message;
-    const sanitizedMessage = typeof message === "object" && message !== null
+    const expectedTacticalRejection = typeof rawMessage === "string" && (
+      /has no actions remaining!?/i.test(rawMessage) ||
+      /cannot reach .+ for attack! \(out of .+reach/i.test(rawMessage) ||
+      /weapon too long \(.+\) for available width \(.+\)/i.test(rawMessage)
+    );
+    const legacyType = (type ?? "info") === "error" && expectedTacticalRejection
+      ? "info"
+      : type ?? "info";
+    const normalizedMessageInput = typeof message === "object" && message !== null && expectedTacticalRejection
+      ? {
+          ...message,
+          level: message.level === "error" ? "info" : message.level,
+          type: message.type === "error" ? "info" : message.type,
+        }
+      : message;
+    const sanitizedMessage = typeof normalizedMessageInput === "object" && normalizedMessageInput !== null
       ? sanitizeCombatLogMessage(rawMessage)
-      : sanitizeCombatLogMessage(message);
+      : sanitizeCombatLogMessage(normalizedMessageInput);
     const immutableStructuredDisplay = typeof message === "object" && message !== null &&
       [
         "round-initiative-rolled",
@@ -2909,8 +3125,8 @@ function CombatPage({ characters = [] }) {
     const sequence = ++combatLogSeqRef.current;
     const displayTimestamp = new Date().toLocaleTimeString();
     const logEntry = normalizeCombatLogEntry(
-      typeof message === "object" && message !== null
-        ? { ...message, message: readableMessage }
+      typeof normalizedMessageInput === "object" && normalizedMessageInput !== null
+        ? { ...normalizedMessageInput, message: readableMessage }
         : readableMessage,
       {
         id: generateCryptoId(),
@@ -3623,13 +3839,30 @@ function CombatPage({ characters = [] }) {
   const [meleeRound, setMeleeRound] = useState(1); // Track six-second combat rounds
   const [turnCounter, setTurnCounter] = useState(0); // Track absolute turn number (increments every turn)
   const [combatActive, setCombatActive] = useState(false);
+  const [aftermathCampaign, setAftermathCampaign] = useState(() => loadAftermathCampaign());
+  const aftermathCampaignRef = useRef(aftermathCampaign);
+  useEffect(() => {
+    aftermathCampaignRef.current = aftermathCampaign;
+  }, [aftermathCampaign]);
   const [combatPaused, setCombatPaused] = useState(false); // Pause/resume combat flow
-  const [combatTimingMode, setCombatTimingMode] = useState(COMBAT_TIMING_MODES.SEQUENTIAL);
-  const combatTimingModeRef = useRef(COMBAT_TIMING_MODES.SEQUENTIAL);
+  const [combatTimingMode, setCombatTimingMode] = useState(INITIATIVE_ACTIONS_MODE);
+  const combatTimingModeRef = useRef(INITIATIVE_ACTIONS_MODE);
   const [tacticalPulseClock, setTacticalPulseClock] = useState(() => createTacticalPulseClock());
   const [tacticalPulsesRunning, setTacticalPulsesRunning] = useState(false);
+  const [tacticalAutoPlaybackEnabled, setTacticalAutoPlaybackEnabled] = useState(true);
+  const [tacticalPulseProcessing, setTacticalPulseProcessing] = useState({
+    active: false,
+    phase: "idle",
+    processed: 0,
+    total: 0,
+    pulseIndex: 0,
+  });
   useEffect(() => {
     combatTimingModeRef.current = combatTimingMode;
+    if (combatTimingMode !== COMBAT_TIMING_MODES.TACTICAL_PULSE) {
+      tacticalWalkPlansByActorRef.current.clear();
+      pendingTacticalMovePresentationByActorRef.current.clear();
+    }
   }, [combatTimingMode]);
   useEffect(() => {
     if (!combatActive || combatPaused) {
@@ -3641,8 +3874,14 @@ function CombatPage({ characters = [] }) {
   const [customEnemyName, setCustomEnemyName] = useState("");
   const [enemyCount, setEnemyCount] = useState(1);
   const [enemyLevel, setEnemyLevel] = useState(1);
-  const [selectedArmor, setSelectedArmor] = useState("");
-  const [selectedWeapon, setSelectedWeapon] = useState("");
+  const [selectedArmor, setSelectedArmor] = useState("None");
+  const [selectedWeapon, setSelectedWeapon] = useState("None");
+  const [selectedOffHandWeapon, setSelectedOffHandWeapon] = useState("None");
+  const [selectedShield, setSelectedShield] = useState("None");
+  const [selectedPadding, setSelectedPadding] = useState("None");
+  const [selectedMail, setSelectedMail] = useState("None");
+  const [selectedPlate, setSelectedPlate] = useState("None");
+  const [selectedOuterArmor, setSelectedOuterArmor] = useState("None");
   const [selectedAmmoCount, setSelectedAmmoCount] = useState(0);
   const [armyCount, setArmyCount] = useState(2);
   const [encounterArmies, setEncounterArmies] = useState(() => DEFAULT_ENCOUNTER_ARMIES);
@@ -3707,6 +3946,32 @@ function CombatPage({ characters = [] }) {
   const [pendingManualSurrenderDecision, setPendingManualSurrenderDecision] = useState(null);
   const [pendingRiposteOpportunity, setPendingRiposteOpportunity] = useState(null);
   const [riposteDecisionResolving, setRiposteDecisionResolving] = useState(false);
+  const [pendingWeaponEntryChoice, setPendingWeaponEntryChoice] = useState(null);
+  const [pendingLongWeaponCloseChoice, setPendingLongWeaponCloseChoice] = useState(null);
+  const [pendingSpecializedWeaponChoice, setPendingSpecializedWeaponChoice] = useState(null);
+  const [pendingFormationCommandChoice, setPendingFormationCommandChoice] = useState(null);
+  const [pendingWeaponBindChoice, setPendingWeaponBindChoice] = useState(null);
+  const [weaponControlPresentationRevision, setWeaponControlPresentationRevision] = useState(0);
+  const [weaponOverlaySettings, setWeaponOverlaySettings] = useState({
+    showMeasureRings: true,
+    showThreatLines: true,
+    showLabels: true,
+    showInteractionAnimations: true,
+    showFormationLinks: true,
+    showConditionBadges: true,
+  });
+  const [weaponInteractionAnimations, setWeaponInteractionAnimations] = useState([]);
+  const emitWeaponInteractionAnimation = useCallback((event = {}) => {
+    const next = buildWeaponAnimationCue(event);
+    if (!next) return null;
+    setWeaponInteractionAnimations((current) => [...current.filter((entry) => entry.id !== next.id).slice(-15), next]);
+    if (typeof window !== "undefined") {
+      window.setTimeout(() => {
+        setWeaponInteractionAnimations((current) => current.filter((entry) => entry.id !== next.id));
+      }, next.durationMs + 150);
+    }
+    return next;
+  }, []);
   const [surrenderSubmissionState, setSurrenderSubmissionState] = useState({ surrenderId: null, isSubmitting: false, error: null });
   const [selectedWeaponSlot, setSelectedWeaponSlot] = useState(null);
   const [showWeaponModal, setShowWeaponModal] = useState(false);
@@ -3756,13 +4021,20 @@ function CombatPage({ characters = [] }) {
   }, []);
   const positionsRef = useRef(positions);
   const committedPositionsRef = useRef(positions);
+  const postCombatPositionSnapshotRef = useRef({});
   const lastMovementCommitRef = useRef({});
   const movementCommitSequenceRef = useRef(0);
   const tacticalPulseRuntimeRef = useRef(createTacticalPulseRuntime());
   const tacticalPulseRunRef = useRef(false);
+  const tacticalWalkPlansByActorRef = useRef(new Map());
+  const pendingTacticalMovePresentationByActorRef = useRef(new Map());
+  const tacticalPulseProgressRef = useRef({ phase: "idle", processed: 0, total: 0, pulseIndex: 0 });
+  const tacticalPulseProgressFrameRef = useRef(null);
+  const tacticalActionUiRefreshRef = useRef(null);
   const tacticalAttackExecutorRef = useRef(null);
   const tacticalCleanupEmittedRef = useRef(true);
   const [, setTacticalActionUiVersion] = useState(0);
+  const [manualOverwatchTriggerPolicy, setManualOverwatchTriggerPolicy] = useState("enters-guarded-zone");
   const liveWildlifeRegistryRef = useRef(createLiveWildlifeRegistry());
   const surrenderResolutionEntryKeysRef = useRef(new Set());
   const surrenderLifecycleRegistryRef = useRef(createSurrenderLifecycleRegistry());
@@ -3776,6 +4048,8 @@ function CombatPage({ characters = [] }) {
   const surrenderModalEventKeysRef = useRef(new Set());
   const surrenderManualPauseRef = useRef(false);
   const renderPositionsRef = useRef(renderPositions);
+  const moveAnimationControlByFighterRef = useRef(new Map());
+  const movePresentationTimerByFighterRef = useRef(new Map());
   const prevPositionsRef = useRef(null);
   const suppressNextAnimationRef = useRef(new Set());
   const actionClockRef = useRef({ busy: false, endsAtMs: 0 });
@@ -3992,6 +4266,111 @@ function CombatPage({ characters = [] }) {
     fightersRef.current = next;
     setFighters(next);
   }, []);
+
+  const commitAftermathCampaign = useCallback((nextCampaign) => {
+    aftermathCampaignRef.current = nextCampaign;
+    setAftermathCampaign(nextCampaign);
+    saveAftermathCampaign(nextCampaign);
+    return nextCampaign;
+  }, []);
+
+  const handleAftermathAction = useCallback((casualtyId, action, requestedEncounterId = null) => {
+    const campaign = aftermathCampaignRef.current;
+    const encounterId = requestedEncounterId || campaign?.currentEncounterId;
+    const encounter = campaign?.encounters?.find((candidate) => candidate.encounterId === encounterId);
+    if (!encounter) {
+      addLog("No aftermath encounter is available for that action.", "warning");
+      return { accepted: false, reason: "encounter-not-found" };
+    }
+    const isLootAction = [
+      "field-repair-shield",
+      "workshop-repair-shield",
+      "salvage-shield",
+    ].includes(action);
+    const resolution = isLootAction
+      ? applyAftermathLootAction(encounter, { itemId: casualtyId, action })
+      : applyAftermathAction(encounter, { casualtyId, action });
+    if (!resolution.accepted) {
+      addLog(`Aftermath action blocked: ${resolution.reason}.`, "warning");
+      return resolution;
+    }
+    const nextCampaign = upsertAftermathEncounter(campaign, resolution.encounter);
+    commitAftermathCampaign(nextCampaign);
+
+    const casualty = resolution.casualty;
+    if (casualty?.actorId && encounterId === campaign.currentEncounterId) {
+      commitFighters((roster) => roster.map((fighter) => {
+        if (fighter?.id !== casualty.actorId) return fighter;
+        if (action === "stop-bleeding") {
+          return {
+            ...fighter,
+            bleeding: { ...(fighter.bleeding || {}), active: false, stabilized: true, roundsRemaining: null },
+          };
+        }
+        if (action === "bind-prisoner") {
+          return {
+            ...fighter,
+            isPrisoner: true,
+            prisoner: true,
+            isSurrendered: true,
+            canAct: false,
+          };
+        }
+        if (action === "confiscate-equipment") {
+          return {
+            ...fighter,
+            equipment: [],
+            inventory: [],
+            weapons: [],
+            equistaminadWeapons: [],
+            equippedArmor: null,
+            equippedShield: null,
+            wornArmor: null,
+          };
+        }
+        if (action === "coup-de-grace") {
+          return {
+            ...fighter,
+            currentHP: Math.min(-21, Number(fighter.currentHP ?? fighter.HP ?? 0) || 0),
+            HP: Math.min(-21, Number(fighter.currentHP ?? fighter.HP ?? 0) || 0),
+            dead: true,
+            isDead: true,
+            dying: false,
+            isDying: false,
+            unconscious: false,
+            isUnconscious: false,
+            canAct: false,
+            condition: "dead",
+            combatState: "dead",
+          };
+        }
+        return fighter;
+      }));
+    }
+
+    addLog(resolution.message || `Aftermath action completed: ${action}.`, action === "coup-de-grace" ? "warning" : "info");
+    return resolution;
+  }, [addLog, commitAftermathCampaign, commitFighters]);
+
+  const handleAdvanceAftermathDay = useCallback(() => {
+    const campaign = aftermathCampaignRef.current;
+    const encounter = getCurrentAftermathEncounter(campaign);
+    if (!encounter) {
+      addLog("No aftermath encounter is available to advance.", "warning");
+      return;
+    }
+    const resolution = advanceAftermathDay(encounter);
+    if (!resolution.accepted) {
+      addLog(`Recovery day could not advance: ${resolution.reason}.`, "warning");
+      return;
+    }
+    const nextCampaign = upsertAftermathEncounter(campaign, resolution.encounter);
+    commitAftermathCampaign(nextCampaign);
+    addLog(`Aftermath recovery advanced to day ${resolution.day}.`, "info");
+    for (const event of resolution.events || []) {
+      addLog(event.message, event.message.includes(" died ") ? "defeat" : "info");
+    }
+  }, [addLog, commitAftermathCampaign]);
 
   const recordLastMovementCommit = useCallback((fighterId, position, source = "movement") => {
     const normalizedPosition = getCombatantGridPosition(position);
@@ -5220,6 +5599,71 @@ function CombatPage({ characters = [] }) {
   const enemyCommittedActionSequenceByTurnRef = useRef(new Map());
   const enemyTurnTokenRef = useRef(0); // Token to bail if state changed before timeout fired
   const aiControlEnabledRef = useRef(aiControlEnabled);
+
+  const getFighterSchedulerTeam = useCallback((fighter) => {
+    if (!fighter) return "unknown";
+    const army = fighter.armyId
+      ? encounterArmies.find((entry) => entry.id === fighter.armyId)
+      : null;
+    return getCombatantSide(fighter, army);
+  }, [encounterArmies]);
+
+  const getFighterControlMode = useCallback((fighter) => {
+    if (!fighter) return "passive";
+
+    const schedulerTeam = getFighterSchedulerTeam(fighter);
+    const explicitMode = resolveExplicitCombatControlMode(fighter, {
+      aiControlEnabled: aiControlEnabledRef.current,
+      schedulerSide: schedulerTeam,
+    });
+    if (explicitMode) return explicitMode;
+
+    if (schedulerTeam === "enemy") return "ai";
+
+    const isPlayable =
+      schedulerTeam === "player" ||
+      fighter.playable === true ||
+      fighter.isPlayable === true ||
+      fighter.isPlayerConchampioned === true ||
+      String(fighter.teamId || "").toLowerCase() === "players" ||
+      String(fighter.armyId || "").toLowerCase() === "party";
+    if (isPlayable) {
+      return aiControlEnabledRef.current ? "ai" : "player";
+    }
+
+    const army = fighter.armyId
+      ? encounterArmies.find((entry) => entry.id === fighter.armyId)
+      : null;
+    const armyMode = String(army?.controlMode || "").toLowerCase();
+    if (["player", "ai", "passive", "defensive"].includes(armyMode)) {
+      return armyMode;
+    }
+
+    if (army?.isPlayerConchampioned === true || fighter.isPlayerConchampioned === true) {
+      return aiControlEnabledRef.current ? "ai" : "player";
+    }
+
+    const aggression = String(fighter.aggression || army?.aggression || "").toLowerCase();
+    const disposition = String(fighter.disposition || army?.disposition || army?.defaultDisposition || "").toLowerCase();
+    const type = String(fighter.type || army?.type || "").toLowerCase();
+    const hostileModes = new Set(["indiscriminate-hostile", "berserk", "hostile", "kill_on_sight"]);
+
+    if (fighter.attacksEveryone || army?.attacksEveryone || hostileModes.has(aggression) || hostileModes.has(disposition)) {
+      return "ai";
+    }
+    if (type === "enemy") return "ai";
+    if (type === "player") return aiControlEnabledRef.current ? "ai" : "player";
+    if (type === "npc") {
+      if (aggression === "defensive" || disposition === "defensive") return "defensive";
+      if (fighter.nonCombatant || army?.nonCombatant || fighter.canDialogue || army?.canDialogue || disposition === "neutral" || aggression === "neutral") {
+        return "passive";
+      }
+      return "passive";
+    }
+
+    return "passive";
+  }, [encounterArmies, getFighterSchedulerTeam]);
+
   const activePlayerAITurnKeysRef = useRef(new Set());
   // Player AI async guardrails:
   // - playerAIActionScheduledRef: set true as soon as AI schedules any delayed work (movement/attack/technique)
@@ -5234,6 +5678,8 @@ function CombatPage({ characters = [] }) {
   const justCreatedPendingMovementRef = useRef(new Set()); // Track movements created this turn (don't apply until NEXT turn)
   const handleEnemyTurnRef = useRef(null); // Store latest version of handleEnemyTurn to avoid dependency loops
   const attackRef = useRef(null); // Store attack function to avoid initialization order issues
+  const handlePositionChangeRef = useRef(null);
+  const pendingManualWeaponEntryTechniqueRef = useRef(null);
   const executeCanonicalGrappleActionRef = useRef(null);
   const executeTechniqueRef = useRef(null); // Store latest executeTechnique to avoid deps churn
   const executeTacticalPowerRef = useRef(null); // Store latest executeTacticalPower to avoid deps churn
@@ -5268,6 +5714,8 @@ function CombatPage({ characters = [] }) {
   const attackExecutionRegistryRef = useRef(new Map()); // opaque attack execution id -> metadata snapshot.
   const attackPromiseReceiptRegistryRef = useRef(new Map()); // executionKey -> immutable async completion receipt.
   const weaponExchangeRegistryRef = useRef(new Map()); // participant pair -> latest canonical parry/tempo exchange.
+  const weaponControlStateRegistryRef = useRef(new Map()); // controller::target -> persistent long-weapon measure state.
+  const weaponBindRegistryRef = useRef(new Map()); // bindId -> persistent weapon contact state.
   const reactionOpportunityRegistryRef = useRef(new Map()); // reactionId -> canonical immediate reaction lifecycle.
   const dominantResponseRegistryRef = useRef(new Map()); // opportunityId -> dominant tactical-response lifecycle.
   const dominantControlRegistryRef = useRef(new Map()); // controlId -> one-use bind, displacement, or shield-pressure state.
@@ -5420,7 +5868,7 @@ function CombatPage({ characters = [] }) {
     allowOverexertion = false,
   } = {}) => {
     const liveFighter = (fightersRef.current || []).find((candidate) => candidate.id === fighter?.id) || fighter;
-    const spendResult = spendCanonicalCombatStamina({
+    let spendResult = spendCanonicalCombatStamina({
       fighter: liveFighter,
       amount,
       reason,
@@ -5449,6 +5897,17 @@ function CombatPage({ characters = [] }) {
         },
       }, "error");
       return spendResult;
+    }
+    if (spendResult.accepted && spendResult.updated) {
+      spendResult = {
+        ...spendResult,
+        updated: markCombatExertion({
+          fighter: spendResult.updated,
+          actionType: reason,
+          source,
+          round: meleeRoundRef.current,
+        }),
+      };
     }
     const requestedSpend = spendResult.requestedSpend ?? 0;
     const appliedSpend = spendResult.appliedSpend ?? 0;
@@ -5523,26 +5982,95 @@ function CombatPage({ characters = [] }) {
     return spendResult;
   }, [addLog]);
 
+  const scheduleTacticalPulseProgress = useCallback((patch = {}) => {
+    tacticalPulseProgressRef.current = {
+      ...tacticalPulseProgressRef.current,
+      ...patch,
+    };
+    if (tacticalPulseProgressFrameRef.current !== null) return;
+    const flush = () => {
+      tacticalPulseProgressFrameRef.current = null;
+      setTacticalPulseProcessing((previous) => ({
+        ...previous,
+        ...tacticalPulseProgressRef.current,
+      }));
+    };
+    tacticalPulseProgressFrameRef.current = typeof requestAnimationFrame === "function"
+      ? requestAnimationFrame(flush)
+      : setTimeout(flush, 0);
+  }, []);
+
+  useEffect(() => () => {
+    if (tacticalPulseProgressFrameRef.current !== null) {
+      if (typeof cancelAnimationFrame === "function") cancelAnimationFrame(tacticalPulseProgressFrameRef.current);
+      else clearTimeout(tacticalPulseProgressFrameRef.current);
+      tacticalPulseProgressFrameRef.current = null;
+    }
+    for (const timerId of movePresentationTimerByFighterRef.current.values()) clearTimeout(timerId);
+    movePresentationTimerByFighterRef.current.clear();
+  }, []);
+
+  const scheduleTacticalActionUiRefresh = useCallback(() => {
+    if (tacticalActionUiRefreshRef.current !== null) return;
+    const flush = () => {
+      tacticalActionUiRefreshRef.current = null;
+      setTacticalActionUiVersion((value) => value + 1);
+    };
+    tacticalActionUiRefreshRef.current = typeof requestAnimationFrame === "function"
+      ? requestAnimationFrame(flush)
+      : setTimeout(flush, 0);
+  }, []);
+
   const emitTacticalPulseEvent = useCallback((pulseEvent) => {
+    const safePulseEvent = pulseEvent && typeof pulseEvent === "object" ? pulseEvent : {};
+    const eventType = typeof safePulseEvent.eventType === "string" && safePulseEvent.eventType.trim()
+      ? safePulseEvent.eventType
+      : "tactical-pulse-event";
+    const actorId = safePulseEvent.actorId ?? null;
+    const safeEventData = safePulseEvent.data && typeof safePulseEvent.data === "object"
+      ? safePulseEvent.data
+      : {};
+    if (eventType === "tactical-pulse-started") {
+      scheduleTacticalPulseProgress({
+        active: true,
+        phase: "Planning actions",
+        processed: 0,
+        total: Number(safeEventData.eligibleActorCount) || (fightersRef.current || []).length,
+        pulseIndex: Number(safePulseEvent.pulseIndex) || 0,
+      });
+    } else if (eventType === "tactical-pulse-planning-completed") {
+      scheduleTacticalPulseProgress({
+        active: true,
+        phase: "Resolving movement and actions",
+        processed: Number(safeEventData.eligibleActorCount) || tacticalPulseProgressRef.current.total,
+        total: Number(safeEventData.eligibleActorCount) || tacticalPulseProgressRef.current.total,
+      });
+    } else if (eventType === "tactical-pulse-completed") {
+      scheduleTacticalPulseProgress({
+        active: false,
+        phase: "idle",
+        processed: tacticalPulseProgressRef.current.total,
+      });
+    }
     const actor = (fightersRef.current || []).find((candidate) => (
-      String(getCombatActorId(candidate) ?? "") === String(pulseEvent.actorId ?? "")
+      String(getCombatActorId(candidate) ?? "") === String(actorId ?? "")
     ));
-    const data = pulseEvent.data || {};
-    const isFailure = pulseEvent.eventType === "tactical-pulse-position-authority-audit" && data.matches === false;
+    const data = safeEventData;
+    const isFailure = eventType === "tactical-pulse-position-authority-audit" && data.matches === false;
     addLog?.({
       audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
-      channel: pulseEvent.eventType.includes("step") ? COMBAT_LOG_CHANNELS.MOVEMENT : COMBAT_LOG_CHANNELS.STATE,
-      eventType: pulseEvent.eventType,
+      channel: eventType.includes("step") ? COMBAT_LOG_CHANNELS.MOVEMENT : COMBAT_LOG_CHANNELS.STATE,
+      eventType,
       level: isFailure ? "error" : "info",
       type: isFailure ? "error" : "debug",
-      actorId: pulseEvent.actorId,
+      actorId,
       source: "tactical-pulse",
       message:
-        `${pulseEvent.eventType}: generation=${pulseEvent.generationId} pulse=${pulseEvent.pulseIndex} ` +
-        `actorId=${pulseEvent.actorId || "none"}`,
+        `${eventType}: generation=${safePulseEvent.generationId ?? "unknown"} pulse=${safePulseEvent.pulseIndex ?? "unknown"} ` +
+        `actorId=${actorId || "none"}`,
       data,
     }, isFailure ? "error" : "debug");
-    if (pulseEvent.eventType === "tactical-step-committed" && actor) {
+    if (eventType === "tactical-step-committed" && actor) {
       addLog?.({
         audience: COMBAT_LOG_AUDIENCES.PLAYER,
         channel: COMBAT_LOG_CHANNELS.MOVEMENT,
@@ -5551,7 +6079,13 @@ function CombatPage({ characters = [] }) {
         type: "info",
         actorId: String(getCombatActorId(actor) ?? ""),
         source: "tactical-pulse",
-        message: `${actor.battleLabel || actor.displayName || actor.name} moves one hex.`,
+        message: `${actor.battleLabel || actor.displayName || actor.name} ${
+          data.movementMode === "walk" ? "walks 5 ft." :
+          data.movementMode === "run" ? "runs 5 ft." :
+          data.movementMode === "sprint" ? "sprints 5 ft." :
+          data.movementMode === "charge" ? "drives forward 5 ft." :
+          "moves 5 ft."
+        }`,
         data,
       }, "info");
     }
@@ -5578,9 +6112,9 @@ function CombatPage({ characters = [] }) {
         ? `${actor.battleLabel || actor.displayName || actor.name}'s prepared attack is no longer possible.`
         : null,
       "tactical-reaction-response-submitted": actor
-        ? pulseEvent.data?.responseType === "decline"
+        ? data.responseType === "decline"
           ? `${actor.battleLabel || actor.displayName || actor.name} declines to react.`
-          : `${actor.battleLabel || actor.displayName || actor.name} attempts to ${String(pulseEvent.data?.responseType || "react").replace("shield-block", "block with a shield")}.`
+          : `${actor.battleLabel || actor.displayName || actor.name} attempts to ${String(data.responseType || "react").replace("shield-block", "block with a shield")}.`
         : null,
       "tactical-reaction-window-expired": actor
         ? `${actor.battleLabel || actor.displayName || actor.name} does not react in time.`
@@ -5626,23 +6160,44 @@ function CombatPage({ characters = [] }) {
       "tactical-charge-contact-rejected": actor
         ? `${actor.battleLabel || actor.displayName || actor.name}'s charge reaches contact, but the attack cannot proceed.`
         : null,
+      "tactical-overwatch-preparation-started": actor
+        ? `${actor.battleLabel || actor.displayName || actor.name} watches the guarded approach.`
+        : null,
+      "tactical-overwatch-held": actor
+        ? `${actor.battleLabel || actor.displayName || actor.name} holds a shot ready.`
+        : null,
+      "tactical-overwatch-trigger-detected": actor
+        ? `${actor.battleLabel || actor.displayName || actor.name} spots a target entering the guarded lane.`
+        : null,
+      "tactical-overwatch-projectile-released": actor
+        ? `${actor.battleLabel || actor.displayName || actor.name} releases the held projectile.`
+        : null,
+      "tactical-overwatch-target-passed": actor
+        ? `${actor.battleLabel || actor.displayName || actor.name} lets the target pass.`
+        : null,
+      "tactical-overwatch-window-expired": actor
+        ? `${actor.battleLabel || actor.displayName || actor.name}'s overwatch opportunity expires.`
+        : null,
+      "tactical-overwatch-invalidated": actor
+        ? `${actor.battleLabel || actor.displayName || actor.name} lowers the readied ranged weapon.`
+        : null,
     };
-    const playerMessage = playerActionMessages[pulseEvent.eventType];
+    const playerMessage = playerActionMessages[eventType];
     if (playerMessage) {
       addLog?.({
         audience: COMBAT_LOG_AUDIENCES.PLAYER,
         channel: COMBAT_LOG_CHANNELS.ACTION,
-        eventType: pulseEvent.eventType,
+        eventType,
         level: "info",
         type: "info",
-        actorId: pulseEvent.actorId,
+        actorId,
         source: "tactical-pulse",
         message: playerMessage,
         data: {
-          generationId: data.generationId ?? pulseEvent.generationId,
-          combatSession: data.combatSession ?? pulseEvent.combatSession,
-          pulseIndex: pulseEvent.pulseIndex,
-          actorId: pulseEvent.actorId,
+          generationId: data.generationId ?? safePulseEvent.generationId,
+          combatSession: data.combatSession ?? safePulseEvent.combatSession,
+          pulseIndex: safePulseEvent.pulseIndex,
+          actorId,
           targetActorId: data.targetActorId || null,
           actionIntentId: data.actionIntentId || null,
           weaponId: data.weaponId || null,
@@ -5650,21 +6205,151 @@ function CombatPage({ characters = [] }) {
         },
       }, "info");
     }
-    if (pulseEvent.eventType.startsWith("tactical-action-") || pulseEvent.eventType.startsWith("tactical-attack-") || pulseEvent.eventType.startsWith("tactical-post-parry-") || pulseEvent.eventType.startsWith("tactical-charge-") || pulseEvent.eventType.startsWith("tactical-brace-") || pulseEvent.eventType.startsWith("tactical-interception-") || pulseEvent.eventType === "tactical-ranged-release") {
-      setTacticalActionUiVersion((value) => value + 1);
+    if (eventType.startsWith("tactical-action-") || eventType.startsWith("tactical-attack-") || eventType.startsWith("tactical-post-parry-") || eventType.startsWith("tactical-charge-") || eventType.startsWith("tactical-brace-") || eventType.startsWith("tactical-interception-") || eventType.startsWith("tactical-overwatch-") || eventType === "tactical-ranged-release") {
+      scheduleTacticalActionUiRefresh();
     }
-  }, [addLog]);
+  }, [addLog, scheduleTacticalActionUiRefresh, scheduleTacticalPulseProgress]);
 
-  const advanceOneTacticalPulse = useCallback(async () => {
+  const advanceOneTacticalPulse = useCallback(async ({ showProcessing = true } = {}) => {
     if (combatTimingMode !== COMBAT_TIMING_MODES.TACTICAL_PULSE || !combatActiveRef.current || combatOverRef.current) {
       return { accepted: false, reason: "tactical-pulse-mode-inactive" };
     }
     const runtime = tacticalPulseRuntimeRef.current;
+    const activeWalkCachePrefix = `${runtime.generationId}:${runtime.combatSession}:${Number(runtime.clock.cycleIndex) || 1}:`;
+    for (const cacheKey of tacticalWalkPlansByActorRef.current.keys()) {
+      if (!String(cacheKey).startsWith(activeWalkCachePrefix)) tacticalWalkPlansByActorRef.current.delete(cacheKey);
+    }
+    if (showProcessing) {
+      scheduleTacticalPulseProgress({
+        active: true,
+        phase: "Planning actions",
+        processed: 0,
+        total: (fightersRef.current || []).length,
+        pulseIndex: Number(runtime.clock.pulseIndex) + 1,
+      });
+      await new Promise((resolve) => {
+        if (typeof requestAnimationFrame === "function") requestAnimationFrame(() => resolve());
+        else setTimeout(resolve, 0);
+      });
+    }
+    let plannedActorCount = 0;
     const result = await resolveTacticalPulse({
       runtime,
       fighters: fightersRef.current || [],
       positions: positionsRef.current || {},
       committedPositions: committedPositionsRef.current || {},
+      planIntent: (context) => {
+        plannedActorCount += 1;
+        scheduleTacticalPulseProgress({
+          active: true,
+          phase: "Planning actions",
+          processed: plannedActorCount,
+          total: Math.max(plannedActorCount, (fightersRef.current || []).length),
+          pulseIndex: Number(context.pulseIndex) || Number(runtime.clock.pulseIndex) || 0,
+        });
+        const actorId = String(getCombatActorId(context.actor) ?? "");
+        const cycleIndex = Number(runtime.clock.cycleIndex) || 1;
+        const cacheKey = `${runtime.generationId}:${runtime.combatSession}:${cycleIndex}:${actorId}`;
+        const actorPosition = context.positions?.[actorId];
+        const cached = tacticalWalkPlansByActorRef.current.get(cacheKey);
+
+        if (cached && actorPosition) {
+          const reachedIndex = cached.path.findIndex((step) => (
+            Number(step.x) === Number(actorPosition.x) && Number(step.y) === Number(actorPosition.y)
+          ));
+          const completedSteps = reachedIndex >= 0 ? reachedIndex + 1 : 0;
+          const remainingPath = reachedIndex >= 0
+            ? cached.path.slice(reachedIndex + 1)
+            : cached.path.slice();
+          const nextStep = remainingPath[0] || null;
+          const nextStepOccupied = nextStep && Object.entries(context.positions || {}).some(([candidateId, position]) => (
+            candidateId !== actorId &&
+            Number(position?.x) === Number(nextStep.x) &&
+            Number(position?.y) === Number(nextStep.y)
+          ));
+
+          if (completedSteps >= cached.maxCommittedSteps || remainingPath.length === 0 || nextStepOccupied) {
+            return {
+              accepted: true,
+              intent: {
+                ...cached.intent,
+                intentId: `${runtime.generationId}:${context.pulseIndex}:${actorId}:walk-complete-hold`,
+                mode: "hold",
+                reason: nextStepOccupied ? "walk-action-path-blocked" : "walk-action-completed",
+                destination: { ...actorPosition },
+                path: [],
+                nextStepIndex: 0,
+                createdAtPulse: Number(context.pulseIndex),
+                commitmentUntilPulse: cycleIndex * (Number(runtime.clock.pulsesPerCycle) || 6),
+                state: "planned",
+              },
+            };
+          }
+
+          return {
+            accepted: true,
+            intent: {
+              ...cached.intent,
+              intentId: `${runtime.generationId}:${context.pulseIndex}:${actorId}:walk-action`,
+              destination: { ...cached.path.at(-1) },
+              path: remainingPath.map((step) => ({ ...step })),
+              nextStepIndex: 0,
+              createdAtPulse: Number(context.pulseIndex),
+              commitmentUntilPulse: cycleIndex * (Number(runtime.clock.pulsesPerCycle) || 6),
+              state: "planned",
+            },
+          };
+        }
+
+        const planned = planDefaultTacticalMovement(context);
+        if (!planned?.accepted || !planned.intent) return planned;
+        const approachWalk = planned.intent.reason === "approach" && planned.intent.path?.length > 0;
+        if (!approachWalk) return planned;
+
+        const walkBudgetFeet = getCanonicalMovementActionBudgetFt(context.actor, "walk");
+        const maxCommittedSteps = Math.max(1, Math.floor(walkBudgetFeet / 5));
+        const committedPath = planned.intent.path
+          .slice(0, maxCommittedSteps)
+          .map((step) => ({ ...step }));
+        const walkIntent = {
+          ...planned.intent,
+          mode: "walk",
+          destination: committedPath.at(-1) || planned.intent.destination,
+          path: committedPath,
+          movementBudgetFeet: walkBudgetFeet,
+          commitmentUntilPulse: cycleIndex * (Number(runtime.clock.pulsesPerCycle) || 6),
+        };
+        tacticalWalkPlansByActorRef.current.set(cacheKey, {
+          intent: walkIntent,
+          path: committedPath,
+          maxCommittedSteps,
+        });
+        return { ...planned, intent: walkIntent };
+      },
+      planOverwatchIntent: ({ actor, fighters: roster, positions: pulsePositions, pulseIndex, generationId, combatSession }) => {
+        if (getFighterControlMode(actor) === "manual") return null;
+        const actorId = String(getCombatActorId(actor) ?? "");
+        const actorPosition = pulsePositions[actorId];
+        const weapons = [...(actor.weaponProfiles || []), ...(actor.attacks || [])];
+        const weapon = weapons.find((candidate) => getOverwatchCapabilities(candidate).canOverwatch);
+        if (!actorPosition || !weapon || pulseIndex % 4 !== 1) return null;
+        const hostiles = roster.filter((candidate) => candidate.team !== actor.team && canTargetForAction(actor, candidate, "attack") && pulsePositions[String(getCombatActorId(candidate) ?? "")]);
+        hostiles.sort((left, right) => calculateDistance(actorPosition, pulsePositions[String(getCombatActorId(left) ?? "")]) - calculateDistance(actorPosition, pulsePositions[String(getCombatActorId(right) ?? "")]) || String(getCombatActorId(left) ?? "").localeCompare(String(getCombatActorId(right) ?? "")));
+        const target = hostiles[0];
+        if (!target) return null;
+        const targetActorId = String(getCombatActorId(target) ?? "");
+        const targetPosition = pulsePositions[targetActorId];
+        if (calculateDistance(actorPosition, targetPosition) <= 10) return null;
+        const timingKey = selectTacticalTimingKey({ attack: weapon, actor, targetDistance: calculateDistance(actorPosition, targetPosition), immediatelyThreatened: false });
+        return { type: "overwatch", input: {
+          overwatchIntentId: `${generationId}:${combatSession}:${pulseIndex}:${actorId}:overwatch`,
+          actionIntentId: `${generationId}:${combatSession}:${pulseIndex}:${actorId}:overwatch-action`,
+          generationId, combatSession, actorId, weaponId: String(weapon.id || weapon.weaponId || weapon.profileKey || weapon.name),
+          techniqueId: weapon.techniqueId || null, attackProfileId: weapon.attackProfileId || weapon.id || null,
+          weapon, timingKey, declaredAtPulse: pulseIndex, triggerPolicy: "enters-guarded-zone",
+          guardedHexes: [targetPosition], guardedActors: [targetActorId], source: "tactical-ai-overwatch",
+        } };
+      },
       planChargeBraceIntent: ({ actor, fighters: roster, positions: pulsePositions, pulseIndex, generationId, combatSession }) => {
         const actorId = String(getCombatActorId(actor) ?? "");
         const actorPosition = pulsePositions[actorId];
@@ -5678,19 +6363,37 @@ function CombatPage({ characters = [] }) {
         if (!target) return null;
         const targetActorId = String(getCombatActorId(target) ?? "");
         const targetPosition = pulsePositions[targetActorId];
-        const occupied = new Set(Object.entries(pulsePositions).filter(([id]) => id !== actorId).map(([, value]) => `${value.x},${value.y}`));
-        const path = buildTacticalPath({ from: actorPosition, destination: targetPosition, occupied, isHexLegal: (hex) => isValidPosition(hex.x, hex.y) });
+        const targetDistanceFeet = getOddRHexDistanceFeet(actorPosition, targetPosition);
         const chargeCapabilities = getChargeCapabilities(weapon);
         const braceCapabilities = getBraceCapabilities(weapon);
         const aggression = Number(actor.behaviorProfile?.aggression ?? actor.behavior?.aggression ?? 50);
         const caution = Number(actor.behaviorProfile?.caution ?? actor.behavior?.caution ?? 50);
         const stamina = Number(actor.currentStamina ?? actor.stamina ?? 0);
         const maximumStamina = Number((actor.maxStamina ?? actor.staminaMaximum ?? stamina) || 1);
-        const hostileBraceInPath = [...runtime.actionRuntime.chargeBraceRuntime.bracesByActor.values()].some((brace) => brace.state === "held" && brace.bracingActorId !== actorId && brace.guardedHexes.some((hex) => path.some((step) => step.x === hex.x && step.y === hex.y)));
-        if (chargeCapabilities.canCharge && aggression >= 65 && stamina >= maximumStamina * 0.4 && path.length >= chargeCapabilities.minimumCommittedSteps && !hostileBraceInPath) {
-          return { type: "charge", input: { generationId, combatSession, chargerId: actorId, targetActorId, weaponId: String(weapon.id || weapon.weaponId || weapon.profileKey || weapon.name), techniqueId: weapon.techniqueId || null, weapon, plannedPath: path, startingPosition: actorPosition, intendedContactPosition: path.at(-1), declaredAtPulse: pulseIndex } };
+        const incomingCharge = [...runtime.actionRuntime.chargeBraceRuntime.chargesByActor.values()].some((charge) => (
+          charge.targetActorId === actorId &&
+          !["completed", "canceled", "expired", "stopped"].includes(String(charge.state || "").toLowerCase())
+        ));
+        const braceThreatDistance = Math.max(15, (Number(braceCapabilities.interceptionReachHexes) || 1) * 5 + 5);
+        const closeBraceThreat = targetDistanceFeet <= braceThreatDistance;
+        const wantsCharge = chargeCapabilities.canCharge && aggression >= 65 && stamina >= maximumStamina * 0.4;
+        const wantsBrace = braceCapabilities.canBrace && caution > aggression && pulseIndex % 2 === 1 && (incomingCharge || closeBraceThreat);
+        if (!wantsCharge && !wantsBrace) return null;
+
+        const occupied = new Set(Object.entries(pulsePositions).filter(([id]) => id !== actorId).map(([, value]) => `${value.x},${value.y}`));
+        const path = buildTacticalPath({ from: actorPosition, destination: targetPosition, occupied, isHexLegal: (hex) => isValidPosition(hex.x, hex.y) });
+
+        if (wantsCharge) {
+          const hostileBraceInPath = [...runtime.actionRuntime.chargeBraceRuntime.bracesByActor.values()].some((brace) => (
+            brace.state === "held" &&
+            brace.bracingActorId !== actorId &&
+            brace.guardedHexes.some((hex) => path.some((step) => step.x === hex.x && step.y === hex.y))
+          ));
+          if (path.length >= chargeCapabilities.minimumCommittedSteps && !hostileBraceInPath) {
+            return { type: "charge", input: { generationId, combatSession, chargerId: actorId, targetActorId, weaponId: String(weapon.id || weapon.weaponId || weapon.profileKey || weapon.name), techniqueId: weapon.techniqueId || null, weapon, plannedPath: path, startingPosition: actorPosition, intendedContactPosition: path.at(-1), declaredAtPulse: pulseIndex } };
+          }
         }
-        if (braceCapabilities.canBrace && caution > aggression && path.length >= 2 && pulseIndex % 2 === 1) {
+        if (wantsBrace && path.length >= 1) {
           return { type: "brace", input: { generationId, combatSession, bracingActorId: actorId, targetActorId, weaponId: String(weapon.id || weapon.weaponId || weapon.profileKey || weapon.name), techniqueId: weapon.techniqueId || null, weapon, anchorPosition: actorPosition, guardedHexes: path.slice(0, braceCapabilities.interceptionReachHexes), declaredAtPulse: pulseIndex } };
         }
         return null;
@@ -5719,22 +6422,35 @@ function CombatPage({ characters = [] }) {
         source: "tactical-pulse",
         executionKey: `${runtime.generationId}:${pulseIndex}:${actorId}:${movementMode}:${intentId}`,
       }),
-      commitPosition: ({ actorId, to, pulseIndex, stepPass }) => {
+      commitPosition: ({ actorId, from, to, movementMode, pulseIndex, stepPass }) => {
+        const activeRuntime = tacticalPulseRuntimeRef.current;
         if (
-          runtime.generationId !== endTurnGenerationRef.current ||
-          runtime.combatSession !== combatSessionRef.current
+          activeRuntime !== runtime ||
+          activeRuntime.generationId !== runtime.generationId ||
+          activeRuntime.combatSession !== runtime.combatSession ||
+          runtime.combatSession !== combatSessionRef.current ||
+          !combatActiveRef.current ||
+          combatOverRef.current
         ) {
           return { accepted: false, reason: "stale-generation-step-blocked" };
         }
+        const presentationActor = (fightersRef.current || []).find((candidate) => (
+          String(getCombatActorId(candidate) ?? "") === String(actorId ?? "")
+        ));
+        pendingTacticalMovePresentationByActorRef.current.set(actorId, {
+          from: from ? { ...from } : null,
+          to: { ...to },
+          movementMode: movementMode || "walk",
+          pulseIndex,
+          stepPass,
+          presentationDelayMs: getTacticalPresentationDelayMs(
+            presentationActor,
+            fightersRef.current || [],
+            pulseIndex,
+          ),
+        });
         const committed = commitAuthoritativeCombatPosition(actorId, to, `tactical-pulse:${pulseIndex}:step-${stepPass}`);
-        if (committed.accepted) {
-          const nextRenderPositions = {
-            ...(renderPositionsRef.current || {}),
-            [actorId]: { ...(renderPositionsRef.current?.[actorId] || {}), x: to.x, y: to.y },
-          };
-          renderPositionsRef.current = nextRenderPositions;
-          setRenderPositions(nextRenderPositions);
-        }
+        if (!committed.accepted) pendingTacticalMovePresentationByActorRef.current.delete(actorId);
         return committed;
       },
       readPositionAuthorities: ({ actorId }) => {
@@ -5744,7 +6460,8 @@ function CombatPage({ characters = [] }) {
         return {
           fighterPosition: actor?.position || { x: actor?.x, y: actor?.y },
           positionsRefPosition: positionsRef.current?.[actorId] || null,
-          renderedStatePosition: renderPositionsRef.current?.[actorId] || null,
+          // Visual interpolation intentionally trails canonical position authority.
+          renderedStatePosition: positionsRef.current?.[actorId] || null,
           committedPosition: committedPositionsRef.current?.[actorId] || null,
         };
       },
@@ -5777,6 +6494,44 @@ function CombatPage({ characters = [] }) {
         return hostile && caution >= 25 ? TACTICAL_INTERCEPTION_CHOICES.INTERCEPT : TACTICAL_INTERCEPTION_CHOICES.LET_PASS;
       },
       readCanonicalChargePosition: (actorId) => positionsRef.current?.[actorId] || null,
+      validateOverwatchIntent: ({ intent, actor }) => {
+        if (!actor || actor.dead || actor.isDead || actor.unconscious || actor.isUnconscious || actor.defeated || actor.isDefeated || actor.routed || actor.canAct === false) return { valid: false, reason: "overwatch-actor-invalid" };
+        const weapon = findTacticalAttackByIntent(actor, { weaponId: intent.weaponId });
+        if (!weapon || !getOverwatchCapabilities(weapon).canOverwatch || !isTacticalRangedAttack(weapon)) return { valid: false, reason: "overwatch-weapon-unavailable" };
+        const heldWeaponId = actor.heldItems?.mainHand || actor.equippedWeapon?.id || actor.equippedWeapon?.weaponId || actor.weapon?.id || actor.weapon?.weaponId;
+        if (heldWeaponId && String(heldWeaponId) !== String(intent.weaponId)) return { valid: false, reason: "overwatch-weapon-no-longer-equipped" };
+        if (getGrappleStatus(actor).state !== GRAPPLE_STATES.NEUTRAL) return { valid: false, reason: "overwatch-grapple-incompatible" };
+        const ammunitionState = normalizeCanonicalAmmunitionState(actor, weapon);
+        if (!ammunitionState || ammunitionState.current < Number(weapon.ammunitionPerAttack || 1)) return { valid: false, reason: "ammunition-empty" };
+        if (getOverwatchCapabilities(weapon).requiresLoadedState && (!ammunitionState.chambered || ammunitionState.reloadState !== "loaded")) return { valid: false, reason: "reload-required" };
+        return { valid: true };
+      },
+      validateOverwatchTrigger: ({ intent, actor, target, triggerEvent }) => {
+        const weapon = findTacticalAttackByIntent(actor, { weaponId: intent.weaponId });
+        const actorPosition = positionsRef.current?.[intent.actorId];
+        const targetPosition = triggerEvent.to || triggerEvent.position || positionsRef.current?.[String(getCombatActorId(target) ?? "")];
+        if (!weapon || !actorPosition || !targetPosition) return { valid: false, reason: "overwatch-position-or-weapon-unavailable" };
+        const distance = calculateDistance(actorPosition, targetPosition);
+        const visible = canAISeeTargetAsymmetric(actor, target, positionsRef.current || {}, combatTerrain, { requireLineOfSight: true });
+        const validation = validateCanonicalRangedAttack({ actor, target, weaponProfile: weapon, ammunitionState: normalizeCanonicalAmmunitionState(actor, weapon), actionToken: intent.overwatchIntentId, activeActionToken: intent.overwatchIntentId, distanceFeet: distance, lineOfSight: visible, obstruction: !visible });
+        return { valid: validation.accepted, reason: validation.reason, distance, lineOfSight: visible, threat: Number(target.threatScore || target.currentInitiativeTotal || target.initiativeTotal || 0) };
+      },
+      validateOverwatchRelease: ({ intent, actor, target }) => {
+        if (!combatActiveRef.current || combatOverRef.current) return { valid: false, reason: "combat-ended" };
+        const weapon = findTacticalAttackByIntent(actor, { weaponId: intent.weaponId });
+        const actorPosition = positionsRef.current?.[intent.actorId];
+        const targetPosition = positionsRef.current?.[String(getCombatActorId(target) ?? "")];
+        if (!weapon || !actorPosition || !targetPosition) return { valid: false, reason: "overwatch-release-position-invalid" };
+        const visible = canAISeeTargetAsymmetric(actor, target, positionsRef.current || {}, combatTerrain, { requireLineOfSight: true });
+        const validation = validateCanonicalRangedAttack({ actor, target, weaponProfile: weapon, ammunitionState: normalizeCanonicalAmmunitionState(actor, weapon), actionToken: intent.overwatchIntentId, activeActionToken: intent.overwatchIntentId, distanceFeet: calculateDistance(actorPosition, targetPosition), lineOfSight: visible, obstruction: !visible });
+        return { valid: validation.accepted, reason: validation.reason };
+      },
+      getOverwatchControlMode: (fighter) => getFighterControlMode(fighter),
+      selectAIOverwatch: ({ actor, target, distance }) => {
+        const ammunition = Number(normalizeCanonicalAmmunitionState(actor, actor.selectedAttack)?.current ?? actor.ammunitionState?.current ?? 0);
+        const threat = Number(target?.threatScore || target?.currentInitiativeTotal || target?.initiativeTotal || 0);
+        return ammunition <= 1 && threat < 5 || distance > 150 ? TACTICAL_OVERWATCH_CHOICES.LET_PASS : TACTICAL_OVERWATCH_CHOICES.RELEASE;
+      },
       validateActionIntent: ({ intent, actor, target }) => {
         const attackData = findTacticalAttackByIntent(actor, intent);
         if (!attackData) return { valid: false, reason: "required-weapon-unavailable" };
@@ -5817,9 +6572,17 @@ function CombatPage({ characters = [] }) {
           projectileReleased: true,
           source: "tactical-reaction-release-admission",
         });
-        if (expenditure.accepted && expenditure.actor) {
+        let expenditureActor = expenditure.actor;
+        if (expenditure.accepted && expenditureActor && String(intentAttack?.weaponFamily || "").toLowerCase() === "crossbow") {
+          const ammunitionState = normalizeCanonicalAmmunitionState(actor, intentAttack);
+          const claimed = claimCanonicalAmmunitionSpend({ ammunitionState, weaponProfile: intentAttack, actionToken: executionKey, activeActionToken: executionKey });
+          const committed = claimed.accepted ? commitCanonicalAmmunitionSpend({ ammunitionState, weaponProfile: intentAttack, claim: claimed.claim }) : claimed;
+          if (!committed.accepted) return { accepted: false, reason: committed.reason || "crossbow-loaded-state-rejected", actor, events: expenditure.events || [] };
+          expenditureActor = { ...expenditureActor, ammunitionState: committed.ammunitionState };
+        }
+        if (expenditure.accepted && expenditureActor) {
           const nextRoster = (fightersRef.current || []).map((fighter) => (
-            String(getCombatActorId(fighter) ?? "") === String(actorId) ? expenditure.actor : fighter
+            String(getCombatActorId(fighter) ?? "") === String(actorId) ? expenditureActor : fighter
           ));
           commitFighters(nextRoster);
         }
@@ -5838,7 +6601,7 @@ function CombatPage({ characters = [] }) {
             data: ammoEvent.data,
           }, ammoEvent.eventType.endsWith("rejected") ? "warning" : "debug");
         }
-        return expenditure;
+        return expenditure.accepted ? { ...expenditure, actor: expenditureActor } : expenditure;
       },
       executeCanonicalAttack: (admission) => tacticalAttackExecutorRef.current?.(admission)
         ?? { accepted: false, reason: "canonical-tactical-attack-executor-unavailable" },
@@ -5868,7 +6631,7 @@ function CombatPage({ characters = [] }) {
           ? calculateDistance(reactorPosition, targetPosition)
           : Number.POSITIVE_INFINITY;
         const legalAttack = selectLegalRiposteAttack({ attacks, distanceFeet });
-        const staminaCost = legalAttack ? calculateAttackStaminaCost({
+        const staminaCost = legalAttack ? calculateHybridWeaponAttackStaminaCost({
           fighter: reactor,
           weapon: legalAttack,
           attackType: legalAttack.attackType || legalAttack.type || "melee",
@@ -6143,8 +6906,19 @@ function CombatPage({ characters = [] }) {
             transitionDominantResponse(dominantResponseRegistryRef.current, request.canonicalOffer.opportunityId, DOMINANT_OPPORTUNITY_STATUSES.RESOLVING);
             const control = createDominantControlState({ type: DOMINANT_CONTROL_TYPES.BIND, opportunity: request.canonicalOffer, controllerId: request.respondingActorId, controlledActorId: request.targetActorId, controllerWeaponId: request.parryingWeaponId, controlledWeaponId: request.incomingWeaponId });
             dominantControlRegistryRef.current.set(control.controlId, control);
+            const persistentBind = createPersistentWeaponBind({
+              sourceActorId: request.respondingActorId,
+              targetActorId: request.targetActorId,
+              sourceWeaponId: request.parryingWeaponId,
+              targetWeaponId: request.incomingWeaponId,
+              currentRound: meleeRoundRef.current,
+              durationRounds: 2,
+              source: "dominant-parry-bind",
+              controlBonus: 1,
+            });
+            if (persistentBind) upsertPersistentWeaponBind(weaponBindRegistryRef.current, persistentBind);
             transitionDominantResponse(dominantResponseRegistryRef.current, request.canonicalOffer.opportunityId, DOMINANT_OPPORTUNITY_STATUSES.RESOLVED, { resolvedResponse: DOMINANT_RESPONSE_TYPES.MAINTAIN_BIND });
-            return { accepted: true, control };
+            return { accepted: true, control, persistentBind };
           },
           displacement: async (request) => {
             const consumed = consumeDominantOpening({ opportunityRegistry: dominantResponseRegistryRef.current, exchangeRegistry: weaponExchangeRegistryRef.current, opportunity: request.canonicalOffer, selectedResponse: DOMINANT_RESPONSE_TYPES.WEAPON_DISPLACEMENT, generationId: combatSessionRef.current, round: meleeRoundRef.current, reactorId: request.respondingActorId, targetId: request.targetActorId, combatActive: combatActiveRef.current && !combatOverRef.current });
@@ -6196,6 +6970,13 @@ function CombatPage({ characters = [] }) {
     else if (!String(result.reason || "").includes("overlap")) {
       addLog(`Tactical pulse blocked: ${result.reason || "unknown reason"}.`, "warning");
     }
+    if (showProcessing) {
+      scheduleTacticalPulseProgress({
+        active: false,
+        phase: "idle",
+        processed: tacticalPulseProgressRef.current.total,
+      });
+    }
     return result;
   }, [
     addLog,
@@ -6205,6 +6986,7 @@ function CombatPage({ characters = [] }) {
     emitTacticalPulseEvent,
     getArmoredMemoryForCombatants,
     rollArmoredTechniqueRng,
+    scheduleTacticalPulseProgress,
     spendCombatStamina,
   ]);
 
@@ -6214,21 +6996,71 @@ function CombatPage({ characters = [] }) {
     setTacticalPulsesRunning(true);
     try {
       for (let index = 0; index < count && tacticalPulseRunRef.current; index += 1) {
-        const result = await advanceOneTacticalPulse();
+        if (!combatActiveRef.current || combatOverRef.current || combatPausedRef.current) break;
+        const pulseStartedAt = typeof performance !== "undefined" ? performance.now() : Date.now();
+        const result = await advanceOneTacticalPulse({ showProcessing: true });
         if (!result.accepted) break;
-        await new Promise((resolve) => setTimeout(resolve, 16));
+        const pulseFinishedAt = typeof performance !== "undefined" ? performance.now() : Date.now();
+        const targetPulseMs = Math.max(90, getSimulationDelay(520, simulationSpeed));
+        const remainingPresentationMs = Math.max(0, targetPulseMs - (pulseFinishedAt - pulseStartedAt));
+        if (remainingPresentationMs > 0) {
+          await new Promise((resolve) => setTimeout(resolve, remainingPresentationMs));
+        }
       }
     } finally {
       tacticalPulseRunRef.current = false;
+      pendingTacticalMovePresentationByActorRef.current.clear();
       setTacticalPulsesRunning(false);
+      scheduleTacticalPulseProgress({ active: false, phase: "idle" });
     }
     return true;
-  }, [advanceOneTacticalPulse]);
+  }, [advanceOneTacticalPulse, scheduleTacticalPulseProgress, simulationSpeed]);
 
   const pauseTacticalPulses = useCallback(() => {
     tacticalPulseRunRef.current = false;
     setTacticalPulsesRunning(false);
+    setTacticalAutoPlaybackEnabled(false);
+    scheduleTacticalPulseProgress({ active: false, phase: "idle" });
+  }, [scheduleTacticalPulseProgress]);
+
+  const resumeTacticalPulses = useCallback(() => {
+    setTacticalAutoPlaybackEnabled(true);
   }, []);
+
+  useEffect(() => {
+    if (
+      combatTimingMode !== COMBAT_TIMING_MODES.TACTICAL_PULSE ||
+      !combatActive ||
+      combatPaused ||
+      combatOverRef.current ||
+      !aiControlEnabled ||
+      !tacticalAutoPlaybackEnabled ||
+      tacticalPulsesRunning
+    ) return;
+
+    const timerId = setTimeout(() => {
+      if (
+        combatTimingModeRef.current === COMBAT_TIMING_MODES.TACTICAL_PULSE &&
+        combatActiveRef.current &&
+        !combatPausedRef.current &&
+        !combatOverRef.current &&
+        aiControlEnabledRef.current &&
+        !tacticalPulseRunRef.current
+      ) {
+        runTacticalPulses(6);
+      }
+    }, 40);
+    return () => clearTimeout(timerId);
+  }, [
+    aiControlEnabled,
+    combatActive,
+    combatPaused,
+    combatTimingMode,
+    runTacticalPulses,
+    tacticalAutoPlaybackEnabled,
+    tacticalPulseClock.pulseIndex,
+    tacticalPulsesRunning,
+  ]);
 
   const prepareManualTacticalAttack = useCallback((expected = {}) => {
     if (
@@ -6510,6 +7342,53 @@ function CombatPage({ characters = [] }) {
     return result.accepted;
   }, [addLog, emitChargeBraceEvents]);
 
+  const prepareManualTacticalOverwatch = useCallback(() => {
+    if (combatTimingModeRef.current !== COMBAT_TIMING_MODES.TACTICAL_PULSE || !combatActiveRef.current || combatOverRef.current || aiControlEnabledRef.current) return false;
+    const pulseRuntime = tacticalPulseRuntimeRef.current;
+    const actor = fightersRef.current?.[turnIndexRef.current] || null;
+    const target = fightersRef.current?.find((fighter) => String(getCombatActorId(fighter) ?? "") === String(selectedTarget?.id ?? "")) || selectedTarget;
+    const actorId = String(getCombatActorId(actor) ?? ""); const targetActorId = String(getCombatActorId(target) ?? "");
+    const weapon = selectedAttackWeapon || actor?.selectedAttack || actor?.weaponProfiles?.find((candidate) => getOverwatchCapabilities(candidate).canOverwatch) || actor?.attacks?.find((candidate) => getOverwatchCapabilities(candidate).canOverwatch);
+    if (!actor || !target || getFighterControlMode(actor) !== "manual" || !canTargetForAction(actor, target, "attack") || !getOverwatchCapabilities(weapon).canOverwatch) return false;
+    const actorPosition = positionsRef.current?.[actorId]; const targetPosition = positionsRef.current?.[targetActorId];
+    const occupied = new Set(Object.entries(positionsRef.current || {}).filter(([id]) => id !== actorId).map(([, value]) => `${value.x},${value.y}`));
+    const path = buildTacticalPath({ from: actorPosition, destination: targetPosition, occupied, isHexLegal: (hex) => isValidPosition(hex.x, hex.y) });
+    const timingKey = selectTacticalTimingKey({ attack: weapon, actor, targetDistance: calculateDistance(actorPosition, targetPosition), immediatelyThreatened: false });
+    const guardedHexes = manualOverwatchTriggerPolicy === "enters-guarded-zone" ? path.slice(0, Math.min(3, getOverwatchCapabilities(weapon).maximumGuardedHexes)) : [];
+    const guardedApproachVectors = manualOverwatchTriggerPolicy === "crosses-guarded-edge" && path.length
+      ? [{ from: targetPosition, to: path.at(-1) || actorPosition }]
+      : [];
+    const result = registerTacticalOverwatch(pulseRuntime.actionRuntime.overwatchRuntime, {
+      overwatchIntentId: `${pulseRuntime.generationId}:${pulseRuntime.combatSession}:${pulseRuntime.clock.pulseIndex}:${actorId}:overwatch`,
+      actionIntentId: `${pulseRuntime.generationId}:${pulseRuntime.combatSession}:${pulseRuntime.clock.pulseIndex}:${actorId}:overwatch-action`,
+      generationId: pulseRuntime.generationId, combatSession: pulseRuntime.combatSession, actorId,
+      weaponId: String(weapon.id || weapon.weaponId || weapon.profileKey || weapon.name), techniqueId: weapon.techniqueId || null,
+      attackProfileId: weapon.attackProfileId || weapon.id || null, weapon, timingKey,
+      declaredAtPulse: pulseRuntime.clock.pulseIndex, triggerPolicy: manualOverwatchTriggerPolicy,
+      guardedHexes, guardedApproachVectors, guardedActors: [targetActorId], source: "manual-tactical-overwatch",
+    }, { fighters: fightersRef.current || [] });
+    if (!result.accepted) addLog(`Overwatch preparation rejected: ${result.reason}.`, "warning");
+    else emitChargeBraceEvents(result.events);
+    return result.accepted;
+  }, [addLog, emitChargeBraceEvents, getFighterControlMode, manualOverwatchTriggerPolicy, selectedAttackWeapon, selectedTarget]);
+
+  const cancelManualTacticalOverwatch = useCallback((actorId) => {
+    const result = cancelTacticalOverwatch(tacticalPulseRuntimeRef.current.actionRuntime.overwatchRuntime, actorId);
+    if (!result.accepted) addLog(`Overwatch cancellation rejected: ${result.reason}.`, "warning");
+    else emitChargeBraceEvents(result.events);
+    return result.accepted;
+  }, [addLog, emitChargeBraceEvents]);
+
+  const submitManualTacticalOverwatch = useCallback((window, choice) => {
+    const result = submitTacticalOverwatchResponse(tacticalPulseRuntimeRef.current.actionRuntime.overwatchRuntime, {
+      overwatchWindowId: window.overwatchWindowId, overwatcherId: window.overwatcherId, choice,
+      pulseIndex: tacticalPulseRuntimeRef.current.clock.pulseIndex,
+    });
+    if (!result.accepted) addLog(`Overwatch response rejected: ${result.reason}.`, "warning");
+    else emitChargeBraceEvents(result.events);
+    return result.accepted;
+  }, [addLog, emitChargeBraceEvents]);
+
   useEffect(() => {
     if (combatActive) {
       tacticalCleanupEmittedRef.current = false;
@@ -6552,6 +7431,17 @@ function CombatPage({ characters = [] }) {
         pulseIndex: tacticalPulseRuntimeRef.current.clock.pulseIndex,
         cycleIndex: tacticalPulseRuntimeRef.current.clock.cycleIndex,
         data: cleanup.chargeBraceCleanup.data,
+      });
+    }
+    if (cleanup.overwatchCleanup?.accepted) {
+      emitTacticalPulseEvent({
+        eventType: cleanup.overwatchCleanup.eventType,
+        actorId: null,
+        generationId: tacticalPulseRuntimeRef.current.generationId,
+        combatSession: tacticalPulseRuntimeRef.current.combatSession,
+        pulseIndex: tacticalPulseRuntimeRef.current.clock.pulseIndex,
+        cycleIndex: tacticalPulseRuntimeRef.current.clock.cycleIndex,
+        data: cleanup.overwatchCleanup.data,
       });
     }
     emitTacticalPulseEvent({
@@ -8061,6 +8951,7 @@ function CombatPage({ characters = [] }) {
     // generation coordinates.
     combatActiveRef.current = false;
     combatTerminalTokenRef.current = null;
+    postCombatPositionSnapshotRef.current = {};
     clearCombatFlowLocks("combat-generation-reset", source);
     resetAITransientRefs();
     const reset = buildCombatExecutionReset({
@@ -8084,6 +8975,9 @@ function CombatPage({ characters = [] }) {
     processingEnemyTurnRef.current = reset.processingEnemy;
     processingPlayerAIRef.current = reset.processingPlayerAI;
     weaponExchangeRegistryRef.current.clear();
+    weaponControlStateRegistryRef.current.clear();
+    weaponBindRegistryRef.current.clear();
+    setWeaponControlPresentationRevision((revision) => revision + 1);
     reactionOpportunityRegistryRef.current.clear();
     dominantResponseRegistryRef.current.clear();
     dominantControlRegistryRef.current.clear();
@@ -9801,7 +10695,8 @@ function CombatPage({ characters = [] }) {
       : normalizeStandardSecondaryBladeLoadout(selectedCombatantData);
   }, [selectedActorControlMode, selectedActorSide, selectedCatalogActor, selectedCombatantData]);
 
-  // Get all available armors from armorShopData
+  // Get all available armors from armorShopData.
+  // Armor layers are selected independently; "None" is an explicit unequipped choice.
   const availableArmors = useMemo(() => {
     const allArmors = [
       ...(armorShopData.lightArmor || []),
@@ -9809,20 +10704,74 @@ function CombatPage({ characters = [] }) {
       ...(armorShopData.heavyArmor || []),
       ...(armorShopData.shields || []),
     ];
-    // Add "None" option
-    return [{ name: "None", guardRating: 0, armorDurability: 0, type: "none", description: "No armor" }, ...allArmors];
+    return [{
+      name: "None",
+      guardRating: 0,
+      armorDurability: 0,
+      type: "none",
+      description: "No armor equipped",
+    }, ...allArmors];
   }, []);
 
-  // Get all available weapons (including natural attacks for non-humanoids)
-  const availableWeapons = useMemo(() => {
-    const baseWeapons = [{ name: "None", damage: null, type: "none", description: "Use default weapon assignment" }, ...weapons];
+  const armorChoicesByLayer = useMemo(() => {
+    const none = availableArmors[0];
+    const groups = {
+      padding: [none],
+      mail: [none],
+      plate: [none],
+      outer: [none],
+      shield: [none],
+    };
+    availableArmors.slice(1).forEach((armor) => {
+      const layer = classifyArmorLayer(armor) || "outer";
+      groups[layer] = groups[layer] || [none];
+      groups[layer].push(armor);
+    });
+    return groups;
+  }, [availableArmors]);
 
-    // For non-humanoid combatants with natural attacks, add them to the weapon list
-    if (selectedCombatantData && !isHumanoid(selectedCombatantData) && selectedCombatantData.attacks && Array.isArray(selectedCombatantData.attacks)) {
+  const currentEquipmentSelection = useMemo(() => ({
+    rightHand: selectedWeapon === "None" ? null : selectedWeapon,
+    leftHand: selectedOffHandWeapon === "None" ? null : selectedOffHandWeapon,
+    shield: selectedShield === "None" ? null : selectedShield,
+    padding: selectedPadding === "None" ? null : selectedPadding,
+    mail: selectedMail === "None" ? null : selectedMail,
+    plate: selectedPlate === "None" ? null : selectedPlate,
+    outer: selectedOuterArmor === "None" ? null : selectedOuterArmor,
+  }), [
+    selectedWeapon,
+    selectedOffHandWeapon,
+    selectedShield,
+    selectedPadding,
+    selectedMail,
+    selectedPlate,
+    selectedOuterArmor,
+  ]);
+
+  // Get all available weapons (including natural attacks for non-humanoids).
+  // "None" means an empty hand and never requests a hidden default.
+  const availableWeapons = useMemo(() => {
+    const baseWeapons = [{
+      name: "None",
+      damage: null,
+      type: "none",
+      description: "Empty hand; use Unarmed Strike",
+    }, ...weapons];
+
+    if (
+      selectedCombatantData &&
+      !isHumanoid(selectedCombatantData) &&
+      selectedCombatantData.attacks &&
+      Array.isArray(selectedCombatantData.attacks)
+    ) {
       const naturalAttacks = selectedCombatantData.attacks
-        .filter(attack => attack.name && attack.damage !== "by technique" && attack.damage !== "varies" && !attack.name.toLowerCase().includes("training"))
+        .filter(attack =>
+          attack.name &&
+          attack.damage !== "by technique" &&
+          attack.damage !== "varies" &&
+          !attack.name.toLowerCase().includes("training")
+        )
         .map(attack => {
-          // Special handling for Fire Whip - use proper weapon definition
           if (attack.name === "Fire Whip") {
             return {
               name: attack.name,
@@ -9834,6 +10783,8 @@ function CombatPage({ characters = [] }) {
               weaponType: "flexible",
               properties: arenaWhip.properties || {},
               specialAttacks: arenaWhip.specialAttacks || [],
+              naturalWeapon: true,
+              isNaturalAttack: true,
             };
           }
           return {
@@ -9843,22 +10794,42 @@ function CombatPage({ characters = [] }) {
             category: "natural",
             reach: attack.reach || 0,
             range: attack.range || 0,
+            naturalWeapon: true,
+            isNaturalAttack: true,
           };
         });
 
-      // Get natural attack names to filter duplicates from weapons array
       const naturalAttackNames = new Set(naturalAttacks.map(attack => attack.name));
-
-      // Filter out weapons that are already in natural attacks (to prevent duplicates)
-      const filteredWeapons = baseWeapons.slice(1).filter(weapon => !naturalAttackNames.has(weapon.name));
-
-      // Add natural attacks to the beginning of the list (after "None")
+      const filteredWeapons = baseWeapons
+        .slice(1)
+        .filter(weapon => !naturalAttackNames.has(weapon.name));
       return [baseWeapons[0], ...naturalAttacks, ...filteredWeapons];
     }
 
     return baseWeapons;
   }, [selectedCombatantData]);
 
+  const enforceExplicitEquipmentAuthority = useCallback((fighter) => {
+    if (!fighter) return fighter;
+    return reapplyExplicitEquipmentSelection(fighter, {
+      weaponCatalog: weapons,
+      armorCatalog: availableArmors.filter((item) => item?.name !== "None"),
+      preserveNaturalAttacks: !isHumanoid(fighter),
+    });
+  }, [availableArmors]);
+
+  const selectedRightHandProfile = useMemo(
+    () => normalizeWeaponProfile(
+      availableWeapons.find((item) => item?.name === selectedWeapon)
+    ),
+    [availableWeapons, selectedWeapon],
+  );
+  const selectedLeftHandProfile = useMemo(
+    () => normalizeWeaponProfile(
+      availableWeapons.find((item) => item?.name === selectedOffHandWeapon)
+    ),
+    [availableWeapons, selectedOffHandWeapon],
+  );
   // Check if selected weapon requires ammo
   const selectedWeaponRequiresAmmo = useMemo(() => {
     if (!selectedWeapon || selectedWeapon === "None") return false;
@@ -9920,12 +10891,95 @@ function CombatPage({ characters = [] }) {
     ...(preBattleDeployment.manualPositionsBySide?.npc || {}),
   }), [preBattleDeployment.manualPositionsBySide]);
 
-  const tacticalMapPositions = useMemo(() => {
-    if (!combatActive && Object.keys(deploymentPreviewPositions).length > 0) {
-      return deploymentPreviewPositions;
-    }
-    return positions;
-  }, [combatActive, deploymentPreviewPositions, positions]);
+  const tacticalMapPositions = useMemo(() => resolvePresentedBattlefieldPositions({
+    combatActive,
+    combatEnded: Boolean(combatTerminalTokenRef.current),
+    livePositions: positions,
+    finalPositions: postCombatPositionSnapshotRef.current,
+    deploymentPositions: deploymentPreviewPositions,
+  }), [combatActive, deploymentPreviewPositions, positions]);
+
+  const getFormationTerrainAt = useCallback((position) => {
+    if (!position) return combatTerrain?.terrain || arenaEnvironment?.terrain || "open-ground";
+    const source = mode === "MAP_EDITOR" ? mapDefinition : (combatTerrain || arenaEnvironment);
+    const cell = source?.cells?.[`${Number(position.x)},${Number(position.y)}`] || null;
+    return cell?.formationType || cell?.terrainType || cell?.terrain || cell?.type ||
+      source?.formationType || source?.terrainType || source?.terrain || "open-ground";
+  }, [mode, mapDefinition, combatTerrain, arenaEnvironment]);
+
+  useEffect(() => {
+    reconcilePersistentWeaponControlStates(weaponControlStateRegistryRef.current, {
+      combatants: fighters,
+      positions: tacticalMapPositions,
+      currentRound: meleeRound,
+      getWeapon: getReadyCombatWeapon,
+      calculateDistanceFeet: calculateDistance,
+    });
+    reconcilePersistentWeaponBinds(weaponBindRegistryRef.current, {
+      combatants: fighters,
+      positions: tacticalMapPositions,
+      currentRound: meleeRound,
+      getWeapon: getReadyCombatWeapon,
+      calculateDistanceFeet: calculateDistance,
+    });
+    setWeaponControlPresentationRevision((revision) => revision + 1);
+  }, [fighters, tacticalMapPositions, meleeRound]);
+
+  const getSpatialFormationContext = useCallback((actor, target = null) => resolveSpatialFormationSupport({
+    actor,
+    target,
+    combatants: fightersRef.current || fighters,
+    positions: positionsRef.current || tacticalMapPositions,
+    getWeapon: getReadyCombatWeapon,
+    calculateDistanceFeet: calculateDistance,
+    currentRound: meleeRoundRef.current ?? meleeRound,
+    terrainAt: getFormationTerrainAt,
+  }), [fighters, tacticalMapPositions, meleeRound, getFormationTerrainAt]);
+
+  const formationCohesionPresentation = useMemo(() => buildFormationCohesionPresentation({
+    combatants: fighters,
+    positions: tacticalMapPositions,
+    getWeapon: getReadyCombatWeapon,
+    calculateDistanceFeet: calculateDistance,
+    currentRound: meleeRound,
+    terrainAt: getFormationTerrainAt,
+  }), [fighters, tacticalMapPositions, meleeRound, weaponControlPresentationRevision, getFormationTerrainAt]);
+
+  const weaponBindStatesByActorId = useMemo(() => {
+    const states = {};
+    getActiveWeaponBinds(weaponBindRegistryRef.current, meleeRound).forEach((bind) => {
+      states[bind.sourceActorId] = { active: true, role: "controller", opponentId: bind.targetActorId, bindId: bind.bindId };
+      states[bind.targetActorId] = { active: true, role: "controlled", opponentId: bind.sourceActorId, bindId: bind.bindId };
+    });
+    return states;
+  }, [meleeRound, weaponControlPresentationRevision]);
+
+  const weaponMeasurePresentation = useMemo(() => buildWeaponMeasurePresentation({
+    combatants: fighters,
+    positions: tacticalMapPositions,
+    selectedActorId: selectedCombatantId || fighters?.[turnIndex]?.id || null,
+    targetActorId: selectedTarget?.id || null,
+    controlStates: getPersistentWeaponControlStates(weaponControlStateRegistryRef.current),
+  }), [
+    fighters,
+    tacticalMapPositions,
+    selectedCombatantId,
+    fighters?.[turnIndex]?.id,
+    selectedTarget?.id,
+    weaponControlPresentationRevision,
+  ]);
+
+  const weaponBindThreatLines = useMemo(() => getActiveWeaponBinds(
+    weaponBindRegistryRef.current,
+    meleeRound,
+  ).map((bind) => ({
+    id: `persistent-bind-line:${bind.bindId}`,
+    controllerId: bind.sourceActorId,
+    targetId: bind.targetActorId,
+    measure: "weapon-bind",
+    label: "Persistent bind",
+    focused: [selectedCombatantId, selectedTarget?.id].filter(Boolean).some((id) => [bind.sourceActorId, bind.targetActorId].includes(id)),
+  })), [meleeRound, selectedCombatantId, selectedTarget?.id, weaponControlPresentationRevision]);
 
   const playerSetupCount = useMemo(
     () => fighters.filter((fighter) => fighter.type === "player").length,
@@ -10660,14 +11714,18 @@ function CombatPage({ characters = [] }) {
   );
 
   const getMoveDurationMs = useCallback(
-    (distanceFeet) => {
+    (distanceFeet, movementMode = null) => {
+      const tacticalBaseByMode = { walk: 420, run: 300, sprint: 240, charge: 340 };
+      if (movementMode && tacticalBaseByMode[movementMode]) {
+        return tacticalBaseByMode[movementMode];
+      }
       const base = getActionDelay();
       const scaled = Math.round(
         base * Math.min(1, Math.max(0.25, (distanceFeet || 0) / 30))
       );
-      return getSimulationDelay(Math.max(250, Math.min(2500, scaled)), simulationSpeed);
+      return Math.max(250, Math.min(2500, scaled));
     },
-    [getActionDelay, simulationSpeed]
+    [getActionDelay]
   );
 
   const markActionBusy = useCallback(
@@ -10699,59 +11757,123 @@ function CombatPage({ characters = [] }) {
     (fighterId, toPos, durationMs) => {
       if (!fighterId || !toPos || durationMs <= 0) return;
 
+      const target = {
+        x: Number(toPos.x),
+        y: Number(toPos.y),
+        altitudeFeet: Number(toPos.altitudeFeet ?? 0),
+        facing: Number(toPos.facing ?? 0),
+        movementMode: toPos.movementMode || null,
+        pulseIndex: Number.isFinite(Number(toPos.pulseIndex)) ? Number(toPos.pulseIndex) : null,
+      };
+      const existingControl = moveAnimationControlByFighterRef.current.get(fighterId);
+      if (existingControl?.running) {
+        existingControl.queue.push({ toPos: target, durationMs });
+        return;
+      }
+
+      const control = {
+        running: true,
+        frameId: null,
+        queue: [],
+      };
+      moveAnimationControlByFighterRef.current.set(fighterId, control);
+
       const lerp = (a, b, t) => a + (b - a) * t;
       const easeInOut = (t) =>
         t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
 
-      const scaledDurationMs = scaleDelayMs(durationMs);
-      const startMs = performance.now();
-
-      setRenderPositions((prev) => {
-        const cur =
-          prev[fighterId] ||
-          positionsRef.current?.[fighterId] ||
-          toPos;
-        return {
-          ...prev,
-          [fighterId]: {
-            x: cur.x,
-            y: cur.y,
-            altitudeFeet: cur.altitudeFeet ?? 0,
-            facing: cur.facing ?? 0,
-          },
+      const commitRenderPosition = (position) => {
+        const nextRenderPositions = {
+          ...(renderPositionsRef.current || {}),
+          [fighterId]: position,
         };
-      });
-
-      markActionBusy(durationMs);
-
-      const tick = () => {
-        const now = performance.now();
-        const tRaw = (now - startMs) / scaledDurationMs;
-        const t = Math.min(1, Math.max(0, tRaw));
-        const k = easeInOut(t);
-
-        setRenderPositions((prev) => {
-          const cur = prev[fighterId];
-          if (!cur) return prev;
-          return {
-            ...prev,
-            [fighterId]: {
-              ...cur,
-              x: lerp(cur.x, toPos.x, k),
-              y: lerp(cur.y, toPos.y, k),
-              altitudeFeet: lerp(cur.altitudeFeet ?? 0, toPos.altitudeFeet ?? 0, k),
-            },
-          };
-        });
-
-        if (t < 1) {
-          requestAnimationFrame(tick);
-        }
+        renderPositionsRef.current = nextRenderPositions;
+        setRenderPositions(nextRenderPositions);
       };
 
-      requestAnimationFrame(tick);
+      const runSegment = (segmentTarget, segmentDurationMs) => {
+        const existingRenderPosition =
+          renderPositionsRef.current?.[fighterId] ||
+          positionsRef.current?.[fighterId] ||
+          segmentTarget;
+        const fromPos = {
+          x: Number(existingRenderPosition.x),
+          y: Number(existingRenderPosition.y),
+          altitudeFeet: Number(existingRenderPosition.altitudeFeet ?? 0),
+          facing: Number(existingRenderPosition.facing ?? 0),
+          movementMode: existingRenderPosition.movementMode || segmentTarget.movementMode || null,
+          pulseIndex: existingRenderPosition.pulseIndex ?? segmentTarget.pulseIndex ?? null,
+        };
+        const targetPos = {
+          x: Number(segmentTarget.x),
+          y: Number(segmentTarget.y),
+          altitudeFeet: Number(segmentTarget.altitudeFeet ?? 0),
+          facing: Number(segmentTarget.facing ?? fromPos.facing ?? 0),
+          movementMode: segmentTarget.movementMode || fromPos.movementMode || null,
+          pulseIndex: segmentTarget.pulseIndex ?? fromPos.pulseIndex ?? null,
+        };
+        const scaledDurationMs = Math.max(1, scaleDelayMs(segmentDurationMs));
+        const startMs = performance.now();
+
+        commitRenderPosition({
+          ...fromPos,
+          animationFrom: { x: fromPos.x, y: fromPos.y },
+          animationTo: { x: targetPos.x, y: targetPos.y },
+          animationProgress: 0,
+          movementMode: targetPos.movementMode,
+          pulseIndex: targetPos.pulseIndex,
+        });
+        markActionBusy(segmentDurationMs);
+
+        const tick = () => {
+          const now = performance.now();
+          const tRaw = (now - startMs) / scaledDurationMs;
+          const t = Math.min(1, Math.max(0, tRaw));
+          const k = easeInOut(t);
+
+          commitRenderPosition({
+            x: lerp(fromPos.x, targetPos.x, k),
+            y: lerp(fromPos.y, targetPos.y, k),
+            altitudeFeet: lerp(fromPos.altitudeFeet, targetPos.altitudeFeet, k),
+            facing: targetPos.facing,
+            animationFrom: { x: fromPos.x, y: fromPos.y },
+            animationTo: { x: targetPos.x, y: targetPos.y },
+            animationProgress: k,
+            movementMode: targetPos.movementMode,
+            pulseIndex: targetPos.pulseIndex,
+          });
+
+          if (t < 1) {
+            control.frameId = requestAnimationFrame(tick);
+            return;
+          }
+
+          commitRenderPosition({
+            x: targetPos.x,
+            y: targetPos.y,
+            altitudeFeet: targetPos.altitudeFeet,
+            facing: targetPos.facing,
+            movementMode: targetPos.movementMode,
+            pulseIndex: targetPos.pulseIndex,
+          });
+
+          const nextSegment = control.queue.shift();
+          if (nextSegment) {
+            runSegment(nextSegment.toPos, nextSegment.durationMs);
+            return;
+          }
+
+          control.running = false;
+          control.frameId = null;
+          moveAnimationControlByFighterRef.current.delete(fighterId);
+        };
+
+        control.frameId = requestAnimationFrame(tick);
+      };
+
+      runSegment(target, durationMs);
     },
-    [setRenderPositions, markActionBusy, scaleDelayMs]
+    [markActionBusy, scaleDelayMs]
   );
 
   useEffect(() => {
@@ -10772,8 +11894,12 @@ function CombatPage({ characters = [] }) {
       const moved = oldPos.x !== newPos.x || oldPos.y !== newPos.y;
       if (!moved) continue;
 
+      const pendingTacticalPresentation = pendingTacticalMovePresentationByActorRef.current.get(id) || null;
+      pendingTacticalMovePresentationByActorRef.current.delete(id);
+
       if (suppressNextAnimationRef.current.has(id)) {
         suppressNextAnimationRef.current.delete(id);
+        if (moveAnimationControlByFighterRef.current.get(id)?.running) continue;
         setRenderPositions((rp) => ({
           ...rp,
           [id]: {
@@ -10793,13 +11919,44 @@ function CombatPage({ characters = [] }) {
       const fighter = fightersRef.current?.find?.((f) => f.id === id);
       const altitudeFeet = fighter?.altitudeFeet ?? fighter?.altitude ?? 0;
 
-      enqueueMoveAnimation(
-        id,
-        { x: newPos.x, y: newPos.y, altitudeFeet },
-        getMoveDurationMs(distanceFeet)
+      if (!renderPositionsRef.current?.[id]) {
+        const seededRenderPositions = {
+          ...(renderPositionsRef.current || {}),
+          [id]: { x: oldPos.x, y: oldPos.y, altitudeFeet },
+        };
+        renderPositionsRef.current = seededRenderPositions;
+        setRenderPositions(seededRenderPositions);
+      }
+
+      const movementMode = pendingTacticalPresentation?.movementMode || null;
+      const startMovePresentation = () => {
+        movePresentationTimerByFighterRef.current.delete(id);
+        enqueueMoveAnimation(
+          id,
+          {
+            x: newPos.x,
+            y: newPos.y,
+            altitudeFeet,
+            movementMode,
+            pulseIndex: pendingTacticalPresentation?.pulseIndex ?? null,
+          },
+          getMoveDurationMs(distanceFeet, movementMode)
+        );
+      };
+      const presentationDelayMs = Math.max(
+        0,
+        Number(pendingTacticalPresentation?.presentationDelayMs) || 0,
       );
+      const existingTimer = movePresentationTimerByFighterRef.current.get(id);
+      if (existingTimer) clearTimeout(existingTimer);
+      if (presentationDelayMs > 0) {
+        const timerId = setTimeout(startMovePresentation, scaleDelayMs(presentationDelayMs));
+        movePresentationTimerByFighterRef.current.set(id, timerId);
+      } else {
+        startMovePresentation();
+      }
     }
-  }, [positions, enqueueMoveAnimation, getMoveDurationMs]);
+  }, [positions, enqueueMoveAnimation, getMoveDurationMs, scaleDelayMs]);
 
   const getProjectileKindAndSpeed = useCallback((attackData) => {
     const weaponName = String(attackData?.name || "").toLowerCase();
@@ -11802,6 +12959,25 @@ function CombatPage({ characters = [] }) {
     combatEndCheckRef.current = true;
     combatOverRef.current = true;
     combatActiveRef.current = false;
+    postCombatPositionSnapshotRef.current = snapshotBattlefieldPositions(
+      committedPositionsRef.current && Object.keys(committedPositionsRef.current).length > 0
+        ? committedPositionsRef.current
+        : positionsRef.current
+    );
+    const aftermathEncounter = createAftermathEncounter({
+      fighters: fightersRef.current || [],
+      positions: postCombatPositionSnapshotRef.current,
+      result,
+      endedAt: combatTerminalTokenRef.current.endedAt,
+      environment: combatTerrain,
+    });
+    const nextAftermathCampaign = upsertAftermathEncounter(
+      aftermathCampaignRef.current,
+      aftermathEncounter
+    );
+    aftermathCampaignRef.current = nextAftermathCampaign;
+    setAftermathCampaign(nextAftermathCampaign);
+    saveAftermathCampaign(nextAftermathCampaign);
     clearCombatFlowLocks(`combat-ended:${result}`, "canonical-combat-end");
     addLog(message, logType);
     if (result === "victory" || result === "defeat") addLog("Combat is over. No further attacks are scheduled.", "info");
@@ -11844,7 +13020,7 @@ function CombatPage({ characters = [] }) {
       data: audit,
     }, audit.matches ? "debug" : "error");
     return true;
-  }, [addLog]);
+  }, [addLog, combatTerrain]);
 
   const endCombatIfVictoryResolved = useCallback((fighterList) => {
     if (combatEndCheckRef.current || combatOverRef.current) return true;
@@ -12017,14 +13193,6 @@ function CombatPage({ characters = [] }) {
     DEFAULT_ENCOUNTER_ARMIES[1]
   ), [encounterArmies]);
 
-  const getFighterSchedulerTeam = useCallback((fighter) => {
-    if (!fighter) return "unknown";
-    const army = fighter.armyId
-      ? encounterArmies.find((entry) => entry.id === fighter.armyId)
-      : null;
-    return getCombatantSide(fighter, army);
-  }, [encounterArmies]);
-
   const normalizeFighterSideId = useCallback((fighter, { log = false } = {}) => {
     if (!fighter) return fighter;
     const schedulerTeam = getFighterSchedulerTeam(fighter);
@@ -12063,62 +13231,6 @@ function CombatPage({ characters = [] }) {
 
     return normalized;
   }, [addLog, generateCryptoId, getFighterSchedulerTeam]);
-
-  const getFighterControlMode = useCallback((fighter) => {
-    if (!fighter) return "passive";
-
-    const schedulerTeam = getFighterSchedulerTeam(fighter);
-    const explicitMode = resolveExplicitCombatControlMode(fighter, {
-      aiControlEnabled: aiControlEnabledRef.current,
-      schedulerSide: schedulerTeam,
-    });
-    if (explicitMode) return explicitMode;
-
-    if (schedulerTeam === "enemy") return "ai";
-
-    const isPlayable =
-      schedulerTeam === "player" ||
-      fighter.playable === true ||
-      fighter.isPlayable === true ||
-      fighter.isPlayerConchampioned === true ||
-      String(fighter.teamId || "").toLowerCase() === "players" ||
-      String(fighter.armyId || "").toLowerCase() === "party";
-    if (isPlayable) {
-      return aiControlEnabledRef.current ? "ai" : "player";
-    }
-
-    const army = fighter.armyId
-      ? encounterArmies.find((entry) => entry.id === fighter.armyId)
-      : null;
-    const armyMode = String(army?.controlMode || "").toLowerCase();
-    if (["player", "ai", "passive", "defensive"].includes(armyMode)) {
-      return armyMode;
-    }
-
-    if (army?.isPlayerConchampioned === true || fighter.isPlayerConchampioned === true) {
-      return aiControlEnabledRef.current ? "ai" : "player";
-    }
-
-    const aggression = String(fighter.aggression || army?.aggression || "").toLowerCase();
-    const disposition = String(fighter.disposition || army?.disposition || army?.defaultDisposition || "").toLowerCase();
-    const type = String(fighter.type || army?.type || "").toLowerCase();
-    const hostileModes = new Set(["indiscriminate-hostile", "berserk", "hostile", "kill_on_sight"]);
-
-    if (fighter.attacksEveryone || army?.attacksEveryone || hostileModes.has(aggression) || hostileModes.has(disposition)) {
-      return "ai";
-    }
-    if (type === "enemy") return "ai";
-    if (type === "player") return aiControlEnabledRef.current ? "ai" : "player";
-    if (type === "npc") {
-      if (aggression === "defensive" || disposition === "defensive") return "defensive";
-      if (fighter.nonCombatant || army?.nonCombatant || fighter.canDialogue || army?.canDialogue || disposition === "neutral" || aggression === "neutral") {
-        return "passive";
-      }
-      return "passive";
-    }
-
-    return "passive";
-  }, [encounterArmies, getFighterSchedulerTeam]);
 
   const emitSurrenderLifecycleEvents = useCallback((events = [], actors = {}) => {
     events.forEach((entry) => {
@@ -13794,21 +14906,25 @@ function CombatPage({ characters = [] }) {
         return;
       }
       if (reachable) {
-        // Highlight list for UI
+        const fighter = fighters.find((candidate) => candidate.id === eid);
+        const origin = positions[eid];
+        const budgetFeet = getCanonicalMovementActionBudgetFt(fighter, mode);
+        // A manual Walk/Run click always represents one complete action.
         const highlight = reachable.hexes
-          .map(h => ({ x: h.x, y: h.y }))
-          .filter(h => !isHexOccupied(h.x, h.y, eid));
+          .map((hex) => ({ x: hex.x, y: hex.y, actionCost: 1 }))
+          .filter((hex) => (
+            origin &&
+            getOddRHexDistanceFeet(origin, hex) <= budgetFeet &&
+            !isHexOccupied(hex.x, hex.y, eid)
+          ));
         setEngineValidMoves(highlight);
 
-        // Store costs for UI tooltips (future use)
         const costsObj = {};
-        reachable.hexes.forEach(h => {
-          costsObj[`${h.x},${h.y}`] = h.cost;
+        highlight.forEach((hex) => {
+          costsObj[`${hex.x},${hex.y}`] = 1;
         });
         setMoveCostsByHex(costsObj);
-        addLog(`manual move valid hexes: ${highlight.length}`, "info");
-
-        addLog(`Reachable hexes from engine (${reachable.mode}): ${highlight.length}`, "info");
+        addLog(`manual ${mode === "RUN" ? "run" : "walk"} budget: ${budgetFeet} ft; valid hexes: ${highlight.length}`, "info");
       } else {
         // FALLBACK (temporary while verifying engine)
         const fighter = fighters.find(f => f.id === eid);
@@ -13822,12 +14938,16 @@ function CombatPage({ characters = [] }) {
             {},
             mode === "RUN"
           );
+          const budgetFeet = getCanonicalMovementActionBudgetFt(fighter, mode);
           const fallbackMoves = validPositions
-            .map(p => ({ x: p.x, y: p.y }))
-            .filter(p => !isHexOccupied(p.x, p.y, eid));
+            .map((position) => ({ x: position.x, y: position.y, actionCost: 1 }))
+            .filter((position) => (
+              getOddRHexDistanceFeet(positions[eid], position) <= budgetFeet &&
+              !isHexOccupied(position.x, position.y, eid)
+            ));
           setEngineValidMoves(fallbackMoves);
-          addLog("Engine reachability failed; used fallback highlight.", "warning");
-          addLog(`manual move valid hexes: ${fallbackMoves.length}`, "info");
+          setMoveCostsByHex(Object.fromEntries(fallbackMoves.map((position) => [`${position.x},${position.y}`, 1])));
+          addLog(`Engine reachability failed; fallback limited to one ${mode === "RUN" ? "run" : "walk"} action (${budgetFeet} ft).`, "warning");
         } else {
           setEngineValidMoves([]);
           addLog("manual move valid hexes: 0", "info");
@@ -14072,12 +15192,27 @@ function CombatPage({ characters = [] }) {
     return true;
   }, [addLog, isLiveAction]);
 
-  const makeLogicalInitiativeTurnKey = useCallback((fighter, index) => ([
-    combatSessionRef.current || "default",
-    meleeRoundRef.current ?? meleeRound,
-    index ?? turnIndexRef.current ?? "?",
-    fighter?.id ?? "?",
-  ].join("|")), [meleeRound]);
+  const makeLogicalInitiativeTurnKey = useCallback((fighter, index) => {
+    const combatSession = combatSessionRef.current || "default";
+    const round = meleeRoundRef.current ?? meleeRound;
+    const initiativeIndex = index ?? turnIndexRef.current ?? "?";
+    const actorId = fighter?.id ?? "?";
+
+    if (isInitiativeActionsMode(combatTimingModeRef.current)) {
+      // Initiative Actions must identify a turn from the immutable scheduler slot.
+      // remainingActions changes as soon as an action is committed, so deriving the
+      // registry key from it can create a phantom pass before the handoff settles.
+      return createInitiativeTurnSlotKey({
+        combatSession,
+        round,
+        turnCounter: turnCounterRef.current ?? turnCounter,
+        initiativeIndex,
+        actorId,
+      });
+    }
+
+    return [combatSession, round, initiativeIndex, actorId].join("|");
+  }, [meleeRound, turnCounter]);
 
   const getCurrentInitiativeCoordinate = useCallback((fighter = null, index = null) => {
     const authoritativeIndex = index ?? turnIndexRef.current ?? 0;
@@ -14306,8 +15441,12 @@ function CombatPage({ characters = [] }) {
       initiativeTurnId,
       generationId,
       round,
+      turnCounter: turnCounterRef.current ?? turnCounter,
       initiativeIndex: index,
       actorId: fighter.id,
+      actionPass: isInitiativeActionsMode(combatTimingModeRef.current)
+        ? getInitiativeActionPassIndex(fighter)
+        : null,
       turnInstance: initiativeTurnInstanceRef.current,
       state: "pending-start",
       executionOwner: null,
@@ -16121,6 +17260,9 @@ function CombatPage({ characters = [] }) {
     // Must match the "find next fighter" loop below (canFighterStartTurn + numeric attacks),
     // otherwise we skip the new-melee reset while endlessly cycling 0-action fighters.
     const hasUncompletedLogicalTurnInCurrentRound = (fighter, index) => {
+      if (isInitiativeActionsMode(combatTimingModeRef.current)) {
+        return canTakeInitiativeActionPass(fighter, canFighterStartTurn);
+      }
       return isCurrentRoundInitiativeSlotAvailable({
         fighter,
         initiativeIndex: index,
@@ -16200,6 +17342,7 @@ function CombatPage({ characters = [] }) {
         const fighter = {
           ...withExpiredPosture,
           remainingActions: canFighterStartTurn(withBleeding) ? apm : 0,
+          movementSpentThisRoundFt: 0,
           techniquesCastThisMelee: 0, // Reset techniques cast counter for new combat round (RAW)
           // if you track "hasActedThisRound" etc, reset it here too
         };
@@ -16349,7 +17492,8 @@ function CombatPage({ characters = [] }) {
         }
         return {
           ...withExpiredPosture,
-          remainingActions: canFighterStartTurn(f) ? (f.actionsPerRound || 2) : 0
+          remainingActions: canFighterStartTurn(f) ? (f.actionsPerRound || 2) : 0,
+          movementSpentThisRoundFt: 0
         };
       });
       const orderedFighters = rollAndLogRoundInitiative(resetFighters, {
@@ -16490,7 +17634,7 @@ function CombatPage({ characters = [] }) {
       case "ROUND_STARTED": return `Round ${e.round} started`;
       case "MELEE_ROUND_ENDED": return `Combat Round ${e.round} complete!`;
       case "ATTACK_ROLL":
-        return `${nameOf(e.attackerId)} attacks ${nameOf(e.targetId)}: ${e.d20} + ${e.bonus} = ${e.total} vs AC ${e.targetGuardRating} ${e.hit ? (e.crit ? "(CRIT!)" : "(HIT)") : "(MISS)"}`;
+        return `${nameOf(e.attackerId)} attacks ${nameOf(e.targetId)}: ${e.d20} + ${e.bonus} = ${e.total} vs Defense ${e.targetGuardRating} ${e.hit ? (e.crit ? "(CRIT!)" : "(HIT)") : "(MISS)"}`;
       case "DAMAGE":
         return e.vsArmor
           ? `${nameOf(e.attackerId)} ${nameOf(e.targetId)} armor: ${e.formula} = ${e.amount} armorDurability`
@@ -16615,14 +17759,59 @@ function CombatPage({ characters = [] }) {
       const updated = prev.map(f => {
         // Tick down + clear status effects each melee
         // (needed so temporary effects like SHAKEN expire correctly)
-        const withStatus = updateStatusEffects({ ...f }, nextRoundNumber);
+        const withStatus = pruneExpiredWeaponConditions(
+          updateStatusEffects({ ...f }, nextRoundNumber),
+          nextRoundNumber,
+        );
         const withBleeding = applyCriticalBleedingForNewMeleeRound(withStatus, nextRoundNumber);
+        const passiveRecovery = resolvePassiveRoundStaminaRecovery({
+          fighter: withBleeding,
+          completedRound: Math.max(1, Number(nextRoundNumber) - 1),
+        });
+        const recoveryResult = passiveRecovery.amount > 0
+          ? recoverCanonicalCombatStamina({
+              fighter: withBleeding,
+              amount: passiveRecovery.amount,
+              reason: passiveRecovery.reason,
+            })
+          : null;
+        const withRecovery = recoveryResult?.accepted && recoveryResult?.updated
+          ? recoveryResult.updated
+          : withBleeding;
+        if (recoveryResult?.accepted && Number(recoveryResult.recovered || 0) > 0) {
+          addLog?.({
+            audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+            channel: COMBAT_LOG_CHANNELS.STATE,
+            eventType: "passive-round-stamina-recovery",
+            level: "info",
+            type: "debug",
+            actorId: withRecovery.id,
+            round: nextRoundNumber,
+            source: "start-new-melee-round",
+            message:
+              `passive round stamina recovery: actor=${withRecovery.name || withRecovery.id} ` +
+              `recovered=${recoveryResult.recovered} next=${recoveryResult.nextStamina}`,
+            data: {
+              amount: recoveryResult.recovered,
+              previousStamina: recoveryResult.previousStamina,
+              nextStamina: recoveryResult.nextStamina,
+              reason: passiveRecovery.reason,
+            },
+          }, "debug");
+        }
         // Fix: Use proper fallback for animals (actionsPerRound ?? attacks ?? 2)
-        const apm = withBleeding.actionsPerRound ?? withBleeding.attacks ?? 2; // fallback for animals
+        const apm = withRecovery.actionsPerRound ?? withRecovery.attacks ?? 2; // fallback for animals
         const fighter = {
-          ...withBleeding,
-          remainingActions: canFighterStartTurn(withBleeding) ? apm : 0,
+          ...withRecovery,
+          remainingActions: canFighterStartTurn(withRecovery) ? apm : 0,
+          movementSpentThisRoundFt: 0,
           techniquesCastThisMelee: 0, // Reset techniques cast counter for new combat round (RAW)
+          combatExertion: {
+            round: nextRoundNumber,
+            intense: false,
+            lastActionType: null,
+            lastSource: null,
+          },
         };
         // Clear the loggedNoRangedRound flag for new combat round
         if (fighter.meta?.loggedNoRangedRound !== undefined) {
@@ -16930,6 +18119,11 @@ function CombatPage({ characters = [] }) {
     }
 
     let targetGuardRating = getCombatantAC(defender);
+    const overrideWeaponConditionPenalties = getActiveWeaponConditionPenalties(
+      defender,
+      meleeRoundRef.current ?? meleeRound,
+    );
+    targetGuardRating += overrideWeaponConditionPenalties.defense;
 
     if (combatTerrain && defenderId && positions[defenderId]) {
       const coverBonus = getCoverBonus(
@@ -17015,6 +18209,7 @@ function CombatPage({ characters = [] }) {
     pickEquistaminadWeapon,
     tempModifiers,
     positionsRef,
+    meleeRound,
   ]);
 
   // Engine-powered full turn boundary (uses worker thread when in Electron)
@@ -17545,6 +18740,7 @@ function CombatPage({ characters = [] }) {
           diagnosticSource.includes("cower");
 
         if (
+          allowsSameActorActionContinuation(combatTimingModeRef.current) &&
           isCapableWithActions &&
           !sourceIsAcceptedTurnEndingEffect &&
           !busy &&
@@ -18524,7 +19720,9 @@ function CombatPage({ characters = [] }) {
       canonicalResult.remainingActions = 0;
     }
 
+    const initiativeActionsMode = isInitiativeActionsMode(combatTimingModeRef.current);
     if (
+      !initiativeActionsMode &&
       activeFighterStillOwnsTurn &&
       committedRemainingActions > 0 &&
       (!explicitTurnEndingEffect || forceSameActorContinuation) &&
@@ -18901,6 +20099,29 @@ function CombatPage({ characters = [] }) {
       return { accepted: true, decision: "continuation-created", snapshot, result: canonicalResult, continuationKey };
     }
 
+    if (initiativeActionsMode && activeFighterStillOwnsTurn && !fighterIncapacitated) {
+      addLog?.({
+        audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+        channel: COMBAT_LOG_CHANNELS.TURN,
+        eventType: "initiative-action-pass-completed",
+        level: "info",
+        type: "debug",
+        actorId,
+        round: snapshot.round,
+        turn: snapshot.turnCounter,
+        turnToken: snapshot.turnToken,
+        source,
+        message:
+          `initiative action pass completed: actorId=${actorId} ` +
+          `pass=${Math.max(1, getInitiativeActionPassIndex(actor) - (committedRemainingActions > 0 ? 1 : 0))} remainingActions=${committedRemainingActions}`,
+        data: {
+          actorId,
+          actionPass: Math.max(1, getInitiativeActionPassIndex(actor) - (committedRemainingActions > 0 ? 1 : 0)),
+          remainingActions: committedRemainingActions,
+          initiativeTurnId: snapshot.initiativeTurnId,
+        },
+      }, "debug");
+    }
     activeGrappleActionIdRef.current = null;
     activeAttackActionIdRef.current = null;
     turnActionResolvingRef.current = false;
@@ -19417,7 +20638,7 @@ function CombatPage({ characters = [] }) {
       if (combatant) {
         // Check if combatant has enough action points
         if (combatant.remainingActions <= 0) {
-          addLog(`${combatant.name} has no actions remaining!`, "error");
+          addLog(`${combatant.name} has no actions remaining!`, "info");
           return;
         }
 
@@ -19425,13 +20646,22 @@ function CombatPage({ characters = [] }) {
         if (sharedMove) {
           selectedMove = {
             ...sharedMove,
-            actionCost: moveCostsByHex[`${x},${y}`] ?? sharedMove.actionCost ?? 1,
+            actionCost: 1,
           };
         } else {
           const speed = combatant.Spd || combatant.spd || combatant.attributes?.Spd || combatant.attributes?.spd || 10;
           const actionsPerRound = combatant.actionsPerRound || 1;
           const validPositions = getMovementRange(oldPos, speed, actionsPerRound, {}, movementMode.isRunning);
-          selectedMove = validPositions.find(pos => pos.x === x && pos.y === y);
+          const fallbackBudgetFeet = getCanonicalMovementActionBudgetFt(
+            combatant,
+            movementMode.isRunning ? "run" : "walk",
+          );
+          selectedMove = validPositions.find((position) => (
+            position.x === x &&
+            position.y === y &&
+            getOddRHexDistanceFeet(oldPos, position) <= fallbackBudgetFeet
+          ));
+          if (selectedMove) selectedMove = { ...selectedMove, actionCost: 1 };
         }
 
         if (!selectedMove) {
@@ -19451,14 +20681,31 @@ function CombatPage({ characters = [] }) {
         currentAlt > 0 &&
         Number(altitudeTargetFeet ?? 0) === 0;
 
-      const moveCost = selectedMove ? (selectedMove.actionCost ?? 1) : 1;
+      const selectedGroundMode = playerMovementMode === "flight" && canFighterFly(combatant)
+        ? "flight"
+        : selectedActionType === "charge"
+          ? "charge"
+          : movementMode.isRunning
+            ? "run"
+            : "walk";
+      const fullCommitmentMovement = selectedGroundMode === "run" || selectedGroundMode === "charge";
+      const movementAlreadySpent = Math.max(0, Number(combatant?.movementSpentThisRoundFt) || 0);
+      if (combatant && fullCommitmentMovement && movementAlreadySpent > 0) {
+        addLog(
+          `${combatant.name} cannot ${selectedGroundMode} after already moving ${movementAlreadySpent} ft this round.`,
+          "warning",
+        );
+        return;
+      }
+      const moveCost = fullCommitmentMovement
+        ? Math.max(1, Number(combatant?.remainingActions) || 1)
+        : 1;
       const landingCost = landingIntent ? 1 : 0;
       const totalCost = moveCost + landingCost;
 
-      // Require 2 actions if moving + landing
       if (combatant && (combatant.remainingActions ?? 0) < totalCost) {
         addLog(
-          `Not enough actions! ${combatant.name} needs ${totalCost} action(s) to ${landingIntent ? "fly + land" : "move"} but only has ${combatant.remainingActions ?? 0}.`,
+          `Not enough actions! ${combatant.name} needs ${totalCost} action(s) to ${landingIntent ? "fly + land" : selectedGroundMode} but only has ${combatant.remainingActions ?? 0}.`,
           "error"
         );
         return;
@@ -19475,10 +20722,302 @@ function CombatPage({ characters = [] }) {
       // Check if destination is occupied. Manual Walk/Run cannot enter occupied hexes.
       const occupant = isHexOccupied(x, y, selectedMovementFighter);
       if (occupant) {
-        addLog("manual move rejected: invalid hex", "warning");
+        addLog("manual move rejected: destination is occupied", "warning");
         return;
       }
-      const isClosingToMelee = occupant && occupant.type !== combatant.type;
+      const manualBudgetFeet = selectedGroundMode === "flight"
+        ? Number.POSITIVE_INFINITY
+        : getCanonicalMovementActionBudgetFt(combatant, selectedGroundMode);
+      const occupiedHexes = new Set(Object.entries(positions)
+        .filter(([candidateId]) => candidateId !== selectedMovementFighter)
+        .map(([, position]) => `${position.x},${position.y}`));
+      const manualMovementPath = buildTacticalPath({
+        from: oldPos,
+        destination: { x, y },
+        occupied: occupiedHexes,
+        isHexLegal: (hex) => isValidPosition(hex.x, hex.y),
+      });
+      const manualDistanceFeet = manualMovementPath.length * 5;
+      if (manualDistanceFeet <= 0 || manualDistanceFeet > manualBudgetFeet) {
+        addLog(
+          `${combatant.name} cannot ${selectedGroundMode} ${manualDistanceFeet || getOddRHexDistanceFeet(oldPos, { x, y })} ft in one action; limit is ${manualBudgetFeet} ft.`,
+          "warning",
+        );
+        return;
+      }
+      const manualActorSide = String(
+        getCombatantSide(combatant) || combatant?.team || combatant?.side || combatant?.type || ""
+      );
+      const manualActorWeapon = getReadyCombatWeapon(combatant);
+      const manualMeasureInteractions = fighters
+        .filter((candidate) => candidate?.id && candidate.id !== combatant.id && canFighterAct(candidate))
+        .filter((candidate) => {
+          const candidateSide = String(
+            getCombatantSide(candidate) || candidate?.team || candidate?.side || candidate?.type || ""
+          );
+          return manualActorSide && candidateSide && manualActorSide !== candidateSide;
+        })
+        .map((candidate) => {
+          const candidatePosition = positions[candidate.id];
+          if (!candidatePosition) return null;
+          const candidateWeapon = getReadyCombatWeapon(candidate);
+          const beforeDistanceFt = calculateDistance(oldPos, candidatePosition);
+          const desiredDistanceFt = calculateDistance({ x, y }, candidatePosition);
+          const decision = analyzeMeasureAwareMovement({
+            mover: combatant,
+            opponent: candidate,
+            moverWeapon: manualActorWeapon,
+            opponentWeapon: candidateWeapon,
+            beforeDistanceFt,
+            desiredDistanceFt,
+            movementAction: selectedGroundMode,
+            entryRoll: 10,
+            controlRoll: 10,
+          });
+          if (decision.type === "unrestricted") return null;
+          return {
+            candidate,
+            candidatePosition,
+            candidateWeapon,
+            beforeDistanceFt,
+            desiredDistanceFt,
+            decision,
+          };
+        })
+        .filter(Boolean);
+      const manualMeasurePressure = resolveMultiOpponentMeasurePressure({
+        interactions: manualMeasureInteractions,
+      });
+      const manualEntryInteraction = manualMeasurePressure.primary;
+      if (manualEntryInteraction?.decision?.type === "entry-contest") {
+        const matchingTechniqueReceipt = pendingManualWeaponEntryTechniqueRef.current;
+        const receiptMatches =
+          matchingTechniqueReceipt?.actorId === combatant.id &&
+          Number(matchingTechniqueReceipt?.destination?.x) === Number(x) &&
+          Number(matchingTechniqueReceipt?.destination?.y) === Number(y);
+        const entryOptions = getWeaponEntryTechniqueOptions({
+          actor: combatant,
+          weapon: manualActorWeapon,
+          controllerWeapon: manualEntryInteraction.candidateWeapon,
+        });
+        if (!receiptMatches) {
+          setPendingWeaponEntryChoice({
+            actorId: combatant.id,
+            actorName: combatant.name,
+            controllerId: manualEntryInteraction.candidate.id,
+            controllerName: manualEntryInteraction.candidate.name,
+            destination: { x, y },
+            movementInfo: {
+              action: selectedGroundMode,
+              source: "manual-map-movement",
+            },
+            options: entryOptions,
+            source: "manual-map-movement",
+          });
+          addLog?.({
+            audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+            channel: COMBAT_LOG_CHANNELS.ACTION,
+            eventType: "weapon-entry-choice-offered",
+            level: "info",
+            type: "debug",
+            actorId: combatant.id,
+            targetId: manualEntryInteraction.candidate.id,
+            source: "manual-map-movement",
+            message:
+              `weapon entry choice offered: actor=${combatant.name} controller=${manualEntryInteraction.candidate.name}`,
+            data: { optionIds: entryOptions.map((option) => option.id) },
+          }, "debug");
+          return;
+        }
+        pendingManualWeaponEntryTechniqueRef.current = null;
+        const selectedEntryTechnique = entryOptions.find((option) => (
+          option.id === matchingTechniqueReceipt.techniqueId
+        )) || entryOptions[0];
+        const controllerCanRetreat = (getHexNeighbors(
+          manualEntryInteraction.candidatePosition.x,
+          manualEntryInteraction.candidatePosition.y,
+        ) || []).some((position) => (
+          isValidPosition(position.x, position.y) &&
+          !isHexOccupied(position.x, position.y, manualEntryInteraction.candidate.id) &&
+          calculateDistance(position, oldPos) > manualEntryInteraction.beforeDistanceFt + 0.1
+        ));
+        const selectedControlResponse = selectAutomatedLongWeaponResponse({
+          controller: manualEntryInteraction.candidate,
+          weapon: manualEntryInteraction.candidateWeapon,
+          canRetreat: controllerCanRetreat,
+        });
+        const manualFormationSupport = resolveSpatialFormationSupport({
+          actor: manualEntryInteraction.candidate,
+          target: combatant,
+          combatants: fightersRef.current || fighters,
+          positions: positionsRef.current || positions,
+          getWeapon: getReadyCombatWeapon,
+          calculateDistanceFeet: calculateDistance,
+          currentRound: meleeRoundRef.current ?? meleeRound,
+        });
+        const manualSupportingControllers = manualFormationSupport.supporters;
+        const entryExchange = resolveWeaponEntryExchange({
+          mover: combatant,
+          controller: manualEntryInteraction.candidate,
+          moverWeapon: manualActorWeapon,
+          controllerWeapon: manualEntryInteraction.candidateWeapon,
+          entryTechnique: selectedEntryTechnique,
+          controlResponse: selectedControlResponse,
+          entryRoll: CryptoSecureDice.rollD20(),
+          controlRoll: CryptoSecureDice.rollD20(),
+          supportingControllers: manualSupportingControllers,
+          beforeDistanceFt: manualEntryInteraction.beforeDistanceFt,
+          desiredDistanceFt: manualEntryInteraction.desiredDistanceFt,
+          currentRound: meleeRoundRef.current ?? meleeRound,
+        });
+        upsertPersistentWeaponControlState(weaponControlStateRegistryRef.current, {
+          controllerId: manualEntryInteraction.candidate.id,
+          controllerName: manualEntryInteraction.candidate.name,
+          targetId: combatant.id,
+          targetName: combatant.name,
+          controllerWeaponId: manualEntryInteraction.candidateWeapon?.id || manualEntryInteraction.candidateWeapon?.weaponId || null,
+          controllerWeaponName: manualEntryInteraction.candidateWeapon?.name || "Long weapon",
+          reachFeet: entryExchange.controllerTraits?.reachFeet || 5,
+          preferredDistanceFeet: entryExchange.controllerTraits?.preferredDistanceFeet || entryExchange.controllerTraits?.reachFeet || 5,
+          measure: entryExchange.engagementState,
+          distanceFt: entryExchange.allowed ? entryExchange.desiredDistanceFt : entryExchange.beforeDistanceFt,
+          outcome: entryExchange.outcome,
+          entryTechnique: entryExchange.entryTechnique?.id || null,
+          controlResponse: entryExchange.controlResponse?.id || null,
+          supportingControllerIds: entryExchange.supportingControllerIds || [],
+          currentRound: meleeRoundRef.current,
+          source: "manual-weapon-entry-exchange",
+        });
+        setWeaponControlPresentationRevision((revision) => revision + 1);
+        addLog(formatWeaponEntryExchangeNarration({
+          mover: combatant,
+          controller: manualEntryInteraction.candidate,
+          result: entryExchange,
+        }), "combat");
+        commitFighters((current) => current.map((fighter) => {
+          if (fighter.id === combatant.id || fighter.id === manualEntryInteraction.candidate.id) {
+            const opponentId = fighter.id === combatant.id
+              ? manualEntryInteraction.candidate.id
+              : combatant.id;
+            return {
+              ...fighter,
+              weaponEngagementByTarget: {
+                ...(fighter.weaponEngagementByTarget || {}),
+                [opponentId]: {
+                  state: entryExchange.engagementState,
+                  round: meleeRoundRef.current,
+                  outcome: entryExchange.outcome,
+                  opponentId,
+                  entryTechnique: entryExchange.entryTechnique?.id || null,
+                  controlResponse: entryExchange.controlResponse?.id || null,
+                  supportingControllerIds: entryExchange.supportingControllerIds || [],
+                },
+              },
+              closeWeaponDecisionPending:
+                fighter.id === manualEntryInteraction.candidate.id && entryExchange.allowed,
+            };
+          }
+          return fighter;
+        }));
+        if (entryExchange.allowed) {
+          const disruptedIds = new Set([
+            manualEntryInteraction.candidate.id,
+            ...(entryExchange.supportingControllerIds || []),
+          ]);
+          commitFighters((current) => current.map((fighter) => (
+            disruptedIds.has(fighter.id)
+              ? applyFormationDisruption(fighter, {
+                  sourceActorId: combatant.id,
+                  currentRound: meleeRoundRef.current ?? meleeRound,
+                  durationRounds: 1,
+                  reason: "weapon-entry-breached-line",
+                })
+              : fighter
+          )));
+          emitWeaponInteractionAnimation({
+            type: "formation-disruption",
+            actorId: combatant.id,
+            targetId: manualEntryInteraction.candidate.id,
+            label: "Formation line breached",
+          });
+        }
+        if (Number(entryExchange.entryStaminaCost || 0) > 0) {
+          spendCombatStamina({
+            fighter: combatant,
+            amount: entryExchange.entryStaminaCost,
+            reason: "weapon-entry",
+            source: entryExchange.entryTechnique?.id || "manual-weapon-entry",
+            executionKey: null,
+          });
+        }
+        addLog?.({
+          audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+          channel: COMBAT_LOG_CHANNELS.ACTION,
+          eventType: "weapon-entry-exchange-resolved",
+          level: entryExchange.allowed ? "info" : "warning",
+          type: entryExchange.allowed ? "debug" : "warning",
+          actorId: combatant.id,
+          targetId: manualEntryInteraction.candidate.id,
+          source: "manual-map-movement",
+          message:
+            `weapon entry exchange resolved: mover=${combatant.name} ` +
+            `controller=${manualEntryInteraction.candidate.name} ` +
+            `entryTechnique=${entryExchange.entryTechnique?.id || "none"} ` +
+            `response=${entryExchange.controlResponse?.id || "none"} ` +
+            `outcome=${entryExchange.outcome}`,
+          data: entryExchange,
+        }, entryExchange.allowed ? "debug" : "warning");
+        if (!entryExchange.allowed) {
+          scheduleWeaponControlResponse({
+            controller: manualEntryInteraction.candidate,
+            mover: combatant,
+            controllerWeapon: manualEntryInteraction.candidateWeapon,
+            exchange: entryExchange,
+            controllerPosition: manualEntryInteraction.candidatePosition,
+            moverPosition: oldPos,
+            source: "manual-map-movement",
+          });
+          const remainingAfterDeniedEntry = Math.max(0, (Number(combatant.remainingActions) || 0) - 1);
+          commitFighters((current) => current.map((fighter) => fighter.id === combatant.id
+            ? { ...fighter, remainingActions: remainingAfterDeniedEntry }
+            : fighter));
+          addLog(
+            `${combatant.name}'s ${entryExchange.entryTechnique?.label || "entry"} is denied by ` +
+            `${manualEntryInteraction.candidate.name}'s ${entryExchange.controlResponse?.label || "point control"}.`,
+            "combat",
+          );
+          syncSelectedMovementCommandCost({
+            actorId: selectedMovementFighter,
+            destinationHex: { x, y },
+          });
+          clearManualMovementCommandState();
+          setSelectedActionType(null);
+          setSelectedAction(null);
+          setSelectedTarget(null);
+          setSelectedAttackWeapon(null);
+          setSelectedManeuver(null);
+          turnActionResolvingRef.current = false;
+          executingActionRef.current = false;
+          pendingTurnAdvanceRef.current = true;
+          scheduleEndTurn(350, "manual-weapon-entry-denied");
+          return;
+        }
+        if (Number(entryExchange.controlStaminaCost || 0) > 0) {
+          spendCombatStamina({
+            fighter: manualEntryInteraction.candidate,
+            amount: entryExchange.controlStaminaCost,
+            reason: "weapon-control",
+            source: entryExchange.controlResponse?.id || "weapon-control",
+            executionKey: null,
+          });
+        }
+        addLog(
+          `${combatant.name} uses ${entryExchange.entryTechnique?.label || "an entry"} and reaches close measure.`,
+          "combat",
+        );
+      }
+
+      const isClosingToMelee = false;
 
       if (isClosingToMelee) {
         // Character is closing into melee range - temporarily occupy same hex
@@ -19587,6 +21126,38 @@ function CombatPage({ characters = [] }) {
           return;
         }
 
+        // Present the complete Walk/Run action as visible five-foot steps.
+        const startingRenderPosition = {
+          x: oldPos.x,
+          y: oldPos.y,
+          altitudeFeet: Number(combatant.altitudeFeet ?? combatant.altitude ?? 0) || 0,
+          movementMode: selectedGroundMode,
+        };
+        const seededRenderPositions = {
+          ...(renderPositionsRef.current || {}),
+          [selectedMovementFighter]: startingRenderPosition,
+        };
+        renderPositionsRef.current = seededRenderPositions;
+        setRenderPositions(seededRenderPositions);
+        const targetActionDurationMs = selectedGroundMode === "walk" ? 950 : 700;
+        const segmentDurationMs = Math.max(
+          90,
+          Math.min(220, Math.round(targetActionDurationMs / Math.max(1, manualMovementPath.length))),
+        );
+        manualMovementPath.forEach((step) => {
+          enqueueMoveAnimation(
+            selectedMovementFighter,
+            {
+              x: step.x,
+              y: step.y,
+              altitudeFeet: startingRenderPosition.altitudeFeet,
+              movementMode: selectedGroundMode,
+            },
+            segmentDurationMs,
+          );
+        });
+        suppressNextAnimationRef.current.add(selectedMovementFighter);
+
         // Normal movement - check if this should be flight or ground
         const profile = getSpeciesProfile(combatant);
         const useFlight = playerMovementMode === 'flight' && canFighterFly(combatant);
@@ -19641,7 +21212,11 @@ function CombatPage({ characters = [] }) {
           const updatedFighters = source.map(f => {
             if (f.id !== selectedMovementFighter) return f;
 
-            const updated = { ...f, remainingActions: remainingAfter };
+            const updated = {
+              ...f,
+              remainingActions: remainingAfter,
+              movementSpentThisRoundFt: (Number(f.movementSpentThisRoundFt) || 0) + manualDistanceFeet,
+            };
 
             // If landing: override any minCruise altitude logic after the move
             if (landingIntent) {
@@ -19660,11 +21235,15 @@ function CombatPage({ characters = [] }) {
             "info"
           );
         } else {
-          const movementType = movementMode.isRunning ? "runs" : "moves";
-          const actionText = moveCost > 1 ? ` (${moveCost} actions)` : "";
+          const movementType = selectedGroundMode === "walk"
+            ? "walks"
+            : selectedGroundMode === "charge"
+              ? "charges"
+              : "runs";
           const movementModeText = playerMovementMode === "flight" ? "flies" : movementType;
           addLog(
-           `${combatant.name} ${movementModeText} from (${oldPos.x}, ${oldPos.y}) to (${x}, ${y})${actionText}`,
+           `${combatant.name} ${movementModeText} ${manualDistanceFeet} ft from (${oldPos.x}, ${oldPos.y}) to (${x}, ${y}) ` +
+           `${fullCommitmentMovement ? `as a full commitment (${totalCost} actions)` : "as one action"}.`,
             "info"
           );
         }
@@ -19691,8 +21270,16 @@ function CombatPage({ characters = [] }) {
       pendingTurnAdvanceRef.current = true;
       addLog("manual move finalized; movement state cleared", "info");
 
-      // End turn after a committed manual movement action.
-      scheduleEndTurn(500, "manual-move-finalized");
+      // Initiative Actions presents one action per fighter, then hands control
+      // to the next initiative slot. Sequential Legacy may keep the same actor.
+      if (isInitiativeActionsMode(combatTimingModeRef.current)) {
+        scheduleEndTurn(350, "manual-initiative-action-move-finalized");
+      } else if (remainingAfter > 0) {
+        pendingTurnAdvanceRef.current = false;
+        addLog(`${combatant.name} has ${remainingAfter} action${remainingAfter === 1 ? "" : "s"} remaining.`, "info");
+      } else {
+        scheduleEndTurn(350, "manual-move-finalized");
+      }
     }
   }, [
     movementMode,
@@ -19708,6 +21295,7 @@ function CombatPage({ characters = [] }) {
     turnCounter,
     scheduleEndTurn,
     handlePlayerFlightMove,
+    enqueueMoveAnimation,
     clearManualMovementCommandState,
     playerMovementMode,
     altitudeTargetFeet,
@@ -19724,6 +21312,43 @@ function CombatPage({ characters = [] }) {
     setSelectedActionType,
   ]);
 
+  const settleManualWeaponEntryChoice = useCallback((techniqueId) => {
+    const pending = pendingWeaponEntryChoice;
+    if (!pending || !techniqueId) return false;
+    const legal = pending.options?.some((option) => option.id === techniqueId);
+    if (!legal) return false;
+    setPendingWeaponEntryChoice(null);
+    if (pending.source === "canonical-position-change") {
+      setTimeout(() => {
+        handlePositionChangeRef.current?.(
+          pending.actorId,
+          pending.destination,
+          {
+            ...(pending.movementInfo || {}),
+            entryTechniqueId: techniqueId,
+            automatedWeaponEntry: false,
+          },
+        );
+      }, 0);
+      return true;
+    }
+    pendingManualWeaponEntryTechniqueRef.current = {
+      actorId: pending.actorId,
+      destination: pending.destination,
+      techniqueId,
+    };
+    setTimeout(() => {
+      handleMoveSelect(pending.destination.x, pending.destination.y);
+    }, 0);
+    return true;
+  }, [handleMoveSelect, pendingWeaponEntryChoice]);
+
+  const cancelManualWeaponEntryChoice = useCallback(() => {
+    pendingManualWeaponEntryTechniqueRef.current = null;
+    setPendingWeaponEntryChoice(null);
+    addLog("Weapon entry canceled; the fighter remains outside the point.", "info");
+  }, [addLog]);
+
   // Enhanced attack validation with distance-based combat system
   const validateWeaponRange = useCallback((
     attacker,
@@ -19739,8 +21364,49 @@ function CombatPage({ characters = [] }) {
       return { canAttack: true, reason: 'Technique (range validated separately)', shouldEndTurn: false };
     }
 
-    const weaponName = String(attackData?.name || "Unarmed");
+    const normalizedAttackData = normalizeCanonicalCombatWeapon(attackData || {});
+    const weaponName = String(normalizedAttackData?.name || attackData?.name || "Unarmed");
     const weaponNameLower = weaponName.toLowerCase();
+
+    // Infantry spears are extended melee weapons. Legacy name/range helpers must
+    // never turn this profile into a thrown 30-foot attack.
+    if (isCanonicalInfantrySpear(normalizedAttackData)) {
+      const attackerPos = attackerPosOverride || positions[attacker.id];
+      const defenderPos = defenderPosOverride || positions[defender.id];
+      const centerDistance = Number.isFinite(Number(distance))
+        ? Math.max(0, Number(distance))
+        : attackerPos && defenderPos
+          ? calculateDistance(attackerPos, defenderPos)
+          : Infinity;
+      const footprintDistance = resolveFootprintAdjustedMeleeDistance({
+        attacker,
+        defender,
+        centerDistanceFeet: centerDistance,
+        cellSizeFeet: GRID_CONFIG.CELL_SIZE,
+      });
+      const reachFeet = getCanonicalWeaponReachFeet(normalizedAttackData, 10);
+      const verticalSeparation = Math.abs((getAltitude(attacker) || 0) - (getAltitude(defender) || 0));
+      const canAttack =
+        footprintDistance.adjustedDistanceFeet <= reachFeet + 0.01 &&
+        verticalSeparation <= reachFeet + 0.01;
+      return {
+        canAttack,
+        reason: canAttack
+          ? `Within extended melee spear reach (${Math.round(footprintDistance.adjustedDistanceFeet)}ft <= ${reachFeet}ft)`
+          : verticalSeparation > reachFeet
+            ? `Out of spear reach (${Math.round(verticalSeparation)}ft vertical > ${reachFeet}ft)`
+            : `Out of spear reach (${Math.round(footprintDistance.adjustedDistanceFeet)}ft > ${reachFeet}ft)`,
+        maxRange: reachFeet,
+        centerDistance: footprintDistance.centerDistanceFeet,
+        effectiveDistance: footprintDistance.adjustedDistanceFeet,
+        footprintAdjustmentFeet: footprintDistance.footprintAllowanceFeet,
+        footprintAdjusted: footprintDistance.adjusted,
+        isUnreachable: verticalSeparation > reachFeet,
+        requiresDive: false,
+        rangeInfo: `extended melee (${reachFeet}ft)`,
+        shouldEndTurn: !canAttack,
+      };
+    }
 
     // Provide sane default ranges by name when metadata is missing (prevents 60ft fallback for bows)
     const impliedRangeByName =
@@ -19821,8 +21487,13 @@ function CombatPage({ characters = [] }) {
     }
     const verticalSeparation = Math.abs(attackerAltitude - targetAltitude);
 
-    // Try to find weapon in weapons database using getWeaponByName
-    const weapon = getWeaponByName(weaponName) || weapons.find(w => w.name.toLowerCase() === weaponName.toLowerCase());
+    // Explicitly equipped polearms use their canonical combat profile rather
+    // than a legacy database row that may contain thrown range metadata.
+    const canonicalAttackWeapon = normalizeCanonicalCombatWeapon(attackData || {});
+    const canonicalAttackTraits = getCanonicalWeaponTraitProfile(canonicalAttackWeapon);
+    const weapon = canonicalAttackTraits.isPolearm || canonicalAttackTraits.isGreatsword
+      ? canonicalAttackWeapon
+      : getWeaponByName(weaponName) || weapons.find(w => w.name.toLowerCase() === weaponName.toLowerCase());
 
     if (!weapon) {
       // Fallback: Try to create a basic weapon object from attackData to use getWeaponType
@@ -20571,6 +22242,310 @@ function CombatPage({ characters = [] }) {
   const getAttackExecutionMetadata = useCallback((executionKey) => {
     if (!executionKey || typeof executionKey !== "string") return null;
     return attackExecutionRegistryRef.current.get(executionKey) || null;
+  }, []);
+
+  const settleManualLongWeaponCloseChoice = useCallback((actionId) => {
+    const pending = pendingLongWeaponCloseChoice;
+    if (!pending?.actorId || !pending?.targetId || !actionId) return false;
+    const liveActor = (fightersRef.current || []).find((fighter) => fighter.id === pending.actorId);
+    if (!liveActor || !attackRef.current) {
+      setPendingLongWeaponCloseChoice(null);
+      return false;
+    }
+    const attackActionId = createAttackExecutionKey(
+      pending.actorId,
+      pending.targetId,
+      "manual-long-weapon-close-choice",
+    );
+    if (!attackActionId) return false;
+    setPendingLongWeaponCloseChoice(null);
+    attackRef.current(
+      { ...liveActor, selectedAttack: pending.attackData || liveActor.selectedAttack },
+      pending.targetId,
+      {
+        ...(pending.bonusModifiers || {}),
+        attackActionId,
+        attackDataOverride: pending.attackData || undefined,
+        longWeaponCloseAction: actionId,
+        source: "manual-long-weapon-close-choice",
+      },
+    );
+    return true;
+  }, [createAttackExecutionKey, pendingLongWeaponCloseChoice]);
+
+  const cancelManualLongWeaponCloseChoice = useCallback(() => {
+    setPendingLongWeaponCloseChoice(null);
+    turnActionResolvingRef.current = false;
+    executingActionRef.current = false;
+    pendingTurnAdvanceRef.current = false;
+  }, []);
+
+  const settleManualSpecializedWeaponChoice = useCallback((actionId) => {
+    const pending = pendingSpecializedWeaponChoice;
+    if (!pending?.actorId || !pending?.targetId || !actionId) return false;
+    const action = pending.options?.find((option) => option.id === actionId);
+    if (!action) return false;
+    const liveActor = (fightersRef.current || []).find((fighter) => fighter.id === pending.actorId);
+    if (!liveActor || !attackRef.current) {
+      setPendingSpecializedWeaponChoice(null);
+      return false;
+    }
+    const attackActionId = createAttackExecutionKey(
+      pending.actorId,
+      pending.targetId,
+      "manual-specialized-weapon-choice",
+    );
+    if (!attackActionId) return false;
+    setPendingSpecializedWeaponChoice(null);
+    attackRef.current(
+      { ...liveActor, selectedAttack: pending.attackData || liveActor.selectedAttack },
+      pending.targetId,
+      {
+        ...(pending.bonusModifiers || {}),
+        attackActionId,
+        attackDataOverride: pending.attackData || undefined,
+        selectedTechnique: action.id,
+        specializedWeaponActionId: action.id,
+        source: "manual-specialized-weapon-choice",
+      },
+    );
+    return true;
+  }, [createAttackExecutionKey, pendingSpecializedWeaponChoice]);
+
+  const cancelManualSpecializedWeaponChoice = useCallback(() => {
+    setPendingSpecializedWeaponChoice(null);
+    turnActionResolvingRef.current = false;
+    executingActionRef.current = false;
+    pendingTurnAdvanceRef.current = false;
+  }, []);
+
+  const findFormationCommandMovementCandidate = useCallback((actor, target, commandId) => {
+    const plan = planFormationMovementCommand({
+      commandId,
+      actor,
+      target,
+      combatants: fightersRef.current || [],
+      positions: positionsRef.current || {},
+      getWeapon: getReadyCombatWeapon,
+      calculateDistanceFeet: calculateDistance,
+      currentRound: meleeRoundRef.current,
+      terrainAt: getFormationTerrainAt,
+      getNeighbors: getHexNeighbors,
+      isPositionLegal: (position) => isValidPosition(position.x, position.y),
+      isOccupied: (position, actorId) => isHexOccupied(position.x, position.y, actorId),
+    });
+    return plan.accepted ? plan.position : null;
+  }, [calculateDistance, getFormationTerrainAt, isHexOccupied]);
+
+  const openFormationCommandChoice = useCallback(() => {
+    const roster = fightersRef.current || fighters;
+    const actor = roster?.[turnIndexRef.current] || null;
+    if (!actor || !combatActiveRef.current || Number(actor.remainingActions || 0) <= 0) {
+      addLog("No active fighter can issue a formation command.", "warning");
+      return false;
+    }
+    const target = selectedTarget?.id
+      ? roster.find((fighter) => fighter.id === selectedTarget.id) || null
+      : null;
+    const actorPosition = positionsRef.current?.[actor.id] || actor.position;
+    const targetPosition = target?.id ? positionsRef.current?.[target.id] || target.position : null;
+    const terrainContext = resolveTerrainFormationContext({
+      actor,
+      target,
+      actorPosition,
+      targetPosition,
+      terrain: getFormationTerrainAt(actorPosition),
+      targetTerrain: getFormationTerrainAt(targetPosition),
+    });
+    const options = filterFormationCommandOptionsForTurnReceipt({
+      actor,
+      initiativeTurnId: initiativeTurnIdRef.current,
+      options: getFormationCommandOptions({
+        actor,
+        target,
+        combatants: roster,
+        positions: positionsRef.current || {},
+        getWeapon: getReadyCombatWeapon,
+        calculateDistanceFeet: calculateDistance,
+        currentRound: meleeRoundRef.current,
+        terrainContext,
+      }),
+    }).filter((option) => (
+      ![FORMATION_COMMANDS.CLOSE_RANKS, FORMATION_COMMANDS.WITHDRAW_IN_ORDER].includes(option.id) ||
+      Boolean(findFormationCommandMovementCandidate(actor, target, option.id))
+    ));
+    if (options.length === 0) {
+      addLog(`${actor.name} has no legal formation command right now.`, "info");
+      return false;
+    }
+    setPendingFormationCommandChoice({
+      actorId: actor.id,
+      actorName: actor.name,
+      targetId: target?.id || null,
+      targetName: target?.name || null,
+      options,
+      terrainContext,
+    });
+    return true;
+  }, [
+    addLog,
+    calculateDistance,
+    fighters,
+    findFormationCommandMovementCandidate,
+    getFormationTerrainAt,
+    selectedTarget?.id,
+  ]);
+
+  const settleManualFormationCommandChoice = useCallback((commandId) => {
+    const pending = pendingFormationCommandChoice;
+    if (!pending?.actorId || !commandId) return false;
+    const roster = fightersRef.current || [];
+    const actor = roster.find((fighter) => fighter.id === pending.actorId);
+    const target = pending.targetId ? roster.find((fighter) => fighter.id === pending.targetId) : null;
+    if (!actor) {
+      setPendingFormationCommandChoice(null);
+      return false;
+    }
+    const movementCandidate = [FORMATION_COMMANDS.CLOSE_RANKS, FORMATION_COMMANDS.WITHDRAW_IN_ORDER].includes(commandId)
+      ? findFormationCommandMovementCandidate(actor, target, commandId)
+      : null;
+    const resolution = resolveFormationCommand({
+      commandId,
+      actor,
+      target,
+      combatants: roster,
+      positions: positionsRef.current || {},
+      getWeapon: getReadyCombatWeapon,
+      calculateDistanceFeet: calculateDistance,
+      currentRound: meleeRoundRef.current,
+      roll: CryptoSecureDice.rollD20(),
+      terrainContext: pending.terrainContext,
+      movementCandidate,
+    });
+    if (!resolution.accepted) {
+      addLog(`Formation command blocked: ${resolution.reason}.`, "warning");
+      return false;
+    }
+    let formationDestination = null;
+    if (resolution.movement) {
+      formationDestination = {
+        x: Number(resolution.movement.x),
+        y: Number(resolution.movement.y),
+        ...(Number.isFinite(Number(resolution.movement.facing))
+          ? { facing: Number(resolution.movement.facing) }
+          : {}),
+      };
+      const movementCommitHandler = handlePositionChangeRef.current;
+      const movementCommitted = typeof movementCommitHandler === "function" && movementCommitHandler(
+        actor.id,
+        formationDestination,
+        {
+          action: commandId,
+          actionCost: 0,
+          staminaCost: 0,
+          forced: true,
+          persistImmediately: true,
+          trackRoundMovement: true,
+          path: [formationDestination],
+          source: "formation-command",
+        },
+      ) !== false;
+      if (!movementCommitted) {
+        addLog(`Formation command blocked: movement commit rejected.`, "warning");
+        return false;
+      }
+    }
+    const currentStamina = Number(actor?.combatStamina?.current ?? actor?.stamina ?? 0) || 0;
+    const nextStamina = Math.max(0, currentStamina - Number(resolution.staminaCost || 0));
+    let updatedActor = {
+      ...(resolution.updatedActor || actor),
+      ...(formationDestination
+        ? {
+            x: formationDestination.x,
+            y: formationDestination.y,
+            position: { ...formationDestination },
+          }
+        : {}),
+      remainingActions: Math.max(0, Number(actor.remainingActions || 0) - Number(resolution.actionCost || 0)),
+      stamina: Number.isFinite(Number(actor.stamina)) ? nextStamina : actor.stamina,
+      combatStamina: actor.combatStamina
+        ? { ...actor.combatStamina, current: nextStamina }
+        : actor.combatStamina,
+    };
+    updatedActor = recordFormationCommandReceipt(updatedActor, {
+      commandId,
+      success: resolution.success !== false,
+      initiativeTurnId: initiativeTurnIdRef.current,
+      currentRound: meleeRoundRef.current,
+    });
+    commitFighters((current) => current.map((fighter) => fighter.id === actor.id ? updatedActor : fighter));
+    setPendingFormationCommandChoice(null);
+    setWeaponControlPresentationRevision((revision) => revision + 1);
+    addLog(
+      `${actor.name} uses ${resolution.command.label}${resolution.success === false ? " but fails to restore cohesion" : ""}.`,
+      resolution.success === false ? "warning" : "combat",
+    );
+    addLog?.({
+      audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+      channel: COMBAT_LOG_CHANNELS.ACTION,
+      eventType: "formation-command-resolved",
+      level: resolution.success === false ? "warning" : "info",
+      type: "debug",
+      actorId: actor.id,
+      targetId: target?.id || null,
+      source: commandId,
+      message: `formation command resolved: actor=${actor.name} command=${commandId} success=${resolution.success !== false}`,
+      data: resolution,
+    }, "debug");
+    if (updatedActor.remainingActions <= 0) scheduleEndTurn(50, "formation-command-complete");
+    return true;
+  }, [
+    addLog,
+    calculateDistance,
+    commitFighters,
+    findFormationCommandMovementCandidate,
+    pendingFormationCommandChoice,
+    scheduleEndTurn,
+  ]);
+
+  const cancelManualFormationCommandChoice = useCallback(() => {
+    setPendingFormationCommandChoice(null);
+  }, []);
+
+  const settleManualWeaponBindChoice = useCallback(async (actionId) => {
+    const pending = pendingWeaponBindChoice;
+    if (!pending?.actorId || !pending?.targetId || !actionId) return false;
+    const action = pending.options?.find((option) => option.id === actionId);
+    if (!action) return false;
+    setPendingWeaponBindChoice(null);
+    if (!attackRef.current) return false;
+    const attackActionId = createAttackExecutionKey(
+      pending.actorId,
+      pending.targetId,
+      "manual-weapon-bind-counterplay",
+    );
+    if (!attackActionId) return false;
+    return attackRef.current(
+      {
+        ...(fightersRef.current || []).find((fighter) => fighter.id === pending.actorId),
+        selectedAttack: pending.attackData,
+      },
+      pending.targetId,
+      {
+        ...(pending.bonusModifiers || {}),
+        attackActionId,
+        attackDataOverride: pending.attackData || undefined,
+        weaponBindActionId: action.id,
+        source: "manual-weapon-bind-counterplay",
+      },
+    );
+  }, [createAttackExecutionKey, pendingWeaponBindChoice]);
+
+  const cancelManualWeaponBindChoice = useCallback(() => {
+    setPendingWeaponBindChoice(null);
+    turnActionResolvingRef.current = false;
+    executingActionRef.current = false;
+    pendingTurnAdvanceRef.current = false;
   }, []);
 
   const getAttackExecutionGateChain = useCallback((executionKey) => {
@@ -23548,6 +25523,111 @@ function CombatPage({ characters = [] }) {
     [getEquistaminadWeapons]
   );
 
+  const scheduleWeaponControlResponse = useCallback(({
+    controller,
+    mover,
+    controllerWeapon,
+    exchange,
+    controllerPosition,
+    moverPosition,
+    source = "weapon-entry-exchange",
+  } = {}) => {
+    const response = exchange?.controlResponse;
+    if (!controller?.id || !mover?.id || !response) return false;
+
+    let retreatPosition = null;
+    if (Number(exchange?.retreatFeet || 0) > 0 && controllerPosition && moverPosition) {
+      retreatPosition = (getHexNeighbors(controllerPosition.x, controllerPosition.y) || [])
+        .filter((position) => isValidPosition(position.x, position.y))
+        .filter((position) => !isHexOccupied(position.x, position.y, controller.id))
+        .map((position) => ({
+          position,
+          distanceFt: calculateDistance(position, moverPosition),
+        }))
+        .filter((entry) => entry.distanceFt > calculateDistance(controllerPosition, moverPosition) + 0.1)
+        .sort((left, right) => right.distanceFt - left.distanceFt)[0]?.position || null;
+    }
+
+    if (retreatPosition) {
+      enqueueMoveAnimation(controller.id, {
+        x: retreatPosition.x,
+        y: retreatPosition.y,
+        altitudeFeet: Number(controller?.altitudeFeet ?? controller?.altitude ?? 0) || 0,
+        movementMode: "retreating-thrust",
+      }, 240);
+      setTimeout(() => {
+        handlePositionChangeRef.current?.(controller.id, retreatPosition, {
+          action: "REACTION_STEP",
+          actionCost: 0,
+          staminaCost: 0,
+          forced: true,
+          persistImmediately: true,
+          source: response.id,
+        });
+      }, 0);
+    }
+
+    const reactionAttack = buildLongWeaponReactionAttack({
+      weapon: controllerWeapon,
+      response,
+    });
+    if (reactionAttack && exchange?.stopThrustAuthorized) {
+      setTimeout(() => {
+        const liveController = (fightersRef.current || []).find((fighter) => fighter.id === controller.id) || controller;
+        if (!combatActiveRef.current || combatOverRef.current || !attackRef.current) return;
+        attackRef.current(
+          { ...liveController, selectedAttack: reactionAttack },
+          mover.id,
+          {
+            attackDataOverride: reactionAttack,
+            allowOutOfTurnAttack: true,
+            suppressActionSpend: true,
+            suppressEndTurn: true,
+            suppressSequentialTurnAdvance: true,
+            source: response.id,
+            reactionAdmission: {
+              reactionId: `weapon-entry:${combatSessionRef.current}:${controller.id}:${mover.id}:${meleeRoundRef.current}`,
+              reactionType: "weapon-measure-control",
+              reactionDepth: 1,
+              entryTechnique: exchange?.entryTechnique?.id || null,
+              controlResponse: response.id,
+            },
+          },
+        );
+      }, retreatPosition ? 260 : 0);
+    } else if (Number(exchange?.controlStaminaCost || 0) > 0) {
+      spendCombatStamina({
+        fighter: controller,
+        amount: exchange.controlStaminaCost,
+        reason: "weapon-control",
+        source: response.id,
+        executionKey: null,
+      });
+    }
+
+    addLog?.({
+      audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+      channel: COMBAT_LOG_CHANNELS.ACTION,
+      eventType: "weapon-control-response-executed",
+      level: "info",
+      type: "debug",
+      actorId: controller.id,
+      targetId: mover.id,
+      source,
+      message:
+        `weapon control response executed: controller=${controller.name} mover=${mover.name} ` +
+        `response=${response.id} retreat=${retreatPosition ? `${retreatPosition.x},${retreatPosition.y}` : "none"} ` +
+        `counterAttack=${Boolean(reactionAttack && exchange?.stopThrustAuthorized)}`,
+      data: {
+        response,
+        retreatPosition,
+        counterAttack: Boolean(reactionAttack && exchange?.stopThrustAuthorized),
+        entryTechnique: exchange?.entryTechnique || null,
+      },
+    }, "debug");
+    return true;
+  }, [addLog, enqueueMoveAnimation, isHexOccupied, spendCombatStamina]);
+
   // Handle position changes on the tactical map
   const handlePositionChange = useCallback((combatantId, newPosition, movementInfo = null) => {
     if (combatTerminalTokenRef.current && movementInfo?.allowAfterCombat !== true) {
@@ -23569,12 +25649,412 @@ function CombatPage({ characters = [] }) {
       movementInfo?.action || movementInfo?.movementType || "move"
     );
     const movementAction = movementActionName.toUpperCase();
+    const movementActionVerb = (() => {
+      const normalized = movementActionName.toLowerCase();
+      if (normalized === FORMATION_COMMANDS.CLOSE_RANKS) return "closes ranks and moves";
+      if (normalized === FORMATION_COMMANDS.WITHDRAW_IN_ORDER) return "withdraws in order";
+      if (normalized === FORMATION_COMMANDS.REFORM_LINE) return "reforms the line and moves";
+      if (normalized === FORMATION_COMMANDS.ANCHOR_POSITION) return "anchors and moves";
+      return `${normalized}s`;
+    })();
     const isRunOrSprint = movementAction === "RUN" || movementAction === "SPRINT";
     const persistImmediately = movementInfo?.persistImmediately === true;
     const commitsImmediately = persistImmediately || movementAction === "CHARGE" || !isRunOrSprint;
     const priorPosition = getCombatantGridPosition(
       positionsRef.current?.[combatantId] || combatant,
     );
+
+    // Weapon measure is movement authority, not a cosmetic attack bonus. A
+    // longer weapon stops at its preferred measure, while a shorter weapon
+    // must win an entry contest before crossing the point.
+    if (
+      combatant &&
+      priorPosition &&
+      newPosition &&
+      movementInfo?.forced !== true &&
+      movementAction !== "CHARGE" &&
+      Number.isFinite(Number(newPosition.x)) &&
+      Number.isFinite(Number(newPosition.y)) &&
+      Number(newPosition.x) >= 0 &&
+      Number(newPosition.y) >= 0 &&
+      Number(newPosition.x) < GRID_CONFIG.GRID_WIDTH &&
+      Number(newPosition.y) < GRID_CONFIG.GRID_HEIGHT
+    ) {
+      const actorSide = String(getCombatantSide(combatant) || combatant.team || combatant.side || combatant.type || "");
+      const actorWeapon = getReadyCombatWeapon(combatant);
+      const hostileMeasureCandidates = liveRosterAtMovement
+        .filter((candidate) => candidate?.id && candidate.id !== combatantId && canFighterAct(candidate))
+        .filter((candidate) => {
+          const candidateSide = String(getCombatantSide(candidate) || candidate.team || candidate.side || candidate.type || "");
+          return actorSide && candidateSide && actorSide !== candidateSide;
+        })
+        .map((candidate) => {
+          const candidatePosition = getCombatantGridPosition(positionsRef.current?.[candidate.id] || candidate);
+          if (!candidatePosition) return null;
+          const candidateWeapon = getReadyCombatWeapon(candidate);
+          const beforeDistanceFt = calculateDistance(priorPosition, candidatePosition);
+          const desiredDistanceFt = calculateDistance(newPosition, candidatePosition);
+          const decision = analyzeMeasureAwareMovement({
+            mover: combatant,
+            opponent: candidate,
+            moverWeapon: actorWeapon,
+            opponentWeapon: candidateWeapon,
+            beforeDistanceFt,
+            desiredDistanceFt,
+            movementAction: movementActionName,
+            entryRoll: 10,
+            controlRoll: 10,
+          });
+          return {
+            candidate,
+            candidatePosition,
+            candidateWeapon,
+            beforeDistanceFt,
+            desiredDistanceFt,
+            decision,
+          };
+        })
+        .filter(Boolean)
+        .filter((entry) => entry.decision?.type !== "unrestricted")
+        .sort((left, right) => (
+          Number(right.decision?.requiresContest) - Number(left.decision?.requiresContest) ||
+          left.desiredDistanceFt - right.desiredDistanceFt
+        ));
+
+      const measurePressure = resolveMultiOpponentMeasurePressure({
+        interactions: hostileMeasureCandidates,
+      });
+      const measureInteraction = measurePressure.primary || null;
+      if (measurePressure.interactions.length > 1) {
+        addLog?.({
+          audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+          channel: COMBAT_LOG_CHANNELS.ACTION,
+          eventType: "multi-opponent-weapon-measure-resolved",
+          level: "info",
+          type: "debug",
+          actorId: combatantId,
+          targetId: measureInteraction?.candidate?.id || null,
+          source: movementInfo?.source || movementActionName,
+          message:
+            `multi-opponent weapon measure resolved: actor=${combatant.name} ` +
+            `primary=${measureInteraction?.candidate?.name || "none"} ` +
+            `controllers=${measurePressure.interactions.length} support=${measurePressure.controlSupportBonus}`,
+          data: {
+            primaryControllerId: measureInteraction?.candidate?.id || null,
+            controllerIds: measurePressure.interactions.map((entry) => entry.candidate?.id).filter(Boolean),
+            supportingControllerIds: measurePressure.supportingControllers.map((entry) => entry?.id).filter(Boolean),
+            controlSupportBonus: measurePressure.controlSupportBonus,
+          },
+        }, "debug");
+      }
+      if (measureInteraction?.decision?.type === "maintain-measure") {
+        const preferredDistanceFeet = getPreferredEngagementDistanceFeet({
+          actorWeapon,
+          opponentWeapon: measureInteraction.candidateWeapon,
+        });
+        const rawCandidates = [
+          priorPosition,
+          ...(Array.isArray(movementInfo?.path) ? movementInfo.path : []),
+          newPosition,
+          ...(getHexNeighbors(priorPosition.x, priorPosition.y) || []),
+          ...(getHexNeighbors(newPosition.x, newPosition.y) || []),
+        ];
+        const seenCandidates = new Set();
+        const legalCandidates = rawCandidates
+          .filter((position) => position && Number.isFinite(Number(position.x)) && Number.isFinite(Number(position.y)))
+          .filter((position) => {
+            const key = `${Number(position.x)},${Number(position.y)}`;
+            if (seenCandidates.has(key)) return false;
+            seenCandidates.add(key);
+            if (!isValidPosition(Number(position.x), Number(position.y))) return false;
+            const occupant = isHexOccupied(Number(position.x), Number(position.y), combatantId);
+            return !occupant || occupant.id === combatantId;
+          })
+          .map((position) => ({
+            position: { ...position, x: Number(position.x), y: Number(position.y) },
+            distanceFt: calculateDistance(position, measureInteraction.candidatePosition),
+          }))
+          .filter((entry) => entry.distanceFt >= preferredDistanceFeet - 0.25)
+          .sort((left, right) => (
+            Math.abs(left.distanceFt - preferredDistanceFeet) - Math.abs(right.distanceFt - preferredDistanceFeet) ||
+            calculateDistance(left.position, newPosition) - calculateDistance(right.position, newPosition)
+          ));
+        const selectedMeasurePosition = legalCandidates[0]?.position || priorPosition;
+        const requestedPosition = newPosition;
+        newPosition = selectedMeasurePosition;
+        addLog?.({
+          audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+          channel: COMBAT_LOG_CHANNELS.MOVEMENT,
+          eventType: "weapon-measure-movement-clamped",
+          level: "info",
+          type: "debug",
+          actorId: combatantId,
+          targetId: measureInteraction.candidate.id,
+          source: movementInfo?.source || movementActionName,
+          message:
+            `weapon measure movement clamped: actor=${combatant.name} ` +
+            `requested=(${requestedPosition.x},${requestedPosition.y}) resolved=(${newPosition.x},${newPosition.y}) ` +
+            `preferred=${preferredDistanceFeet}ft`,
+          data: {
+            requestedPosition,
+            resolvedPosition: newPosition,
+            preferredDistanceFeet,
+            beforeDistanceFt: measureInteraction.beforeDistanceFt,
+            resolvedDistanceFt: calculateDistance(newPosition, measureInteraction.candidatePosition),
+            actorWeapon: actorWeapon?.name || null,
+            opponentWeapon: measureInteraction.candidateWeapon?.name || null,
+          },
+        }, "debug");
+        if (Number(newPosition.x) === Number(priorPosition.x) && Number(newPosition.y) === Number(priorPosition.y)) {
+          addLog(`${combatant.name} maintains ${Math.round(preferredDistanceFeet)}ft measure instead of crowding ${measureInteraction.candidate.name}.`, "info");
+          return true;
+        }
+      } else if (measureInteraction?.decision?.type === "entry-contest") {
+        const entryOptions = getWeaponEntryTechniqueOptions({
+          actor: combatant,
+          weapon: actorWeapon,
+          controllerWeapon: measureInteraction.candidateWeapon,
+        });
+        const requestedEntryTechnique =
+          movementInfo?.entryTechnique ||
+          movementInfo?.entryTechniqueId ||
+          null;
+        const manualEntryRequired =
+          getFighterControlMode(combatant) === "player" &&
+          !aiControlEnabledRef.current &&
+          !requestedEntryTechnique &&
+          movementInfo?.automatedWeaponEntry !== true;
+        if (manualEntryRequired) {
+          setPendingWeaponEntryChoice({
+            actorId: combatantId,
+            actorName: combatant.name,
+            controllerId: measureInteraction.candidate.id,
+            controllerName: measureInteraction.candidate.name,
+            destination: { x: Number(newPosition.x), y: Number(newPosition.y) },
+            movementInfo: { ...(movementInfo || {}) },
+            options: entryOptions,
+            source: "canonical-position-change",
+          });
+          addLog?.({
+            audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+            channel: COMBAT_LOG_CHANNELS.ACTION,
+            eventType: "weapon-entry-choice-offered",
+            level: "info",
+            type: "debug",
+            actorId: combatantId,
+            targetId: measureInteraction.candidate.id,
+            source: movementInfo?.source || movementActionName,
+            message: `weapon entry choice offered: actor=${combatant.name} controller=${measureInteraction.candidate.name}`,
+            data: { optionIds: entryOptions.map((option) => option.id) },
+          }, "debug");
+          return true;
+        }
+
+        const selectedEntryTechnique =
+          entryOptions.find((option) => option.id === requestedEntryTechnique) ||
+          selectAutomatedEntryTechnique({
+            actor: combatant,
+            weapon: actorWeapon,
+            controllerWeapon: measureInteraction.candidateWeapon,
+          });
+        const controllerCanRetreat = (getHexNeighbors(
+          measureInteraction.candidatePosition.x,
+          measureInteraction.candidatePosition.y,
+        ) || []).some((position) => (
+          isValidPosition(position.x, position.y) &&
+          !isHexOccupied(position.x, position.y, measureInteraction.candidate.id) &&
+          calculateDistance(position, priorPosition) > measureInteraction.beforeDistanceFt + 0.1
+        ));
+        const selectedControlResponse = selectAutomatedLongWeaponResponse({
+          controller: measureInteraction.candidate,
+          weapon: measureInteraction.candidateWeapon,
+          canRetreat: controllerCanRetreat,
+        });
+        const automatedFormationSupport = resolveSpatialFormationSupport({
+          actor: measureInteraction.candidate,
+          target: combatant,
+          combatants: fightersRef.current || fighters,
+          positions: positionsRef.current || positions,
+          getWeapon: getReadyCombatWeapon,
+          calculateDistanceFeet: calculateDistance,
+          currentRound: meleeRoundRef.current ?? meleeRound,
+        });
+        const automatedSupportingControllers = automatedFormationSupport.supporters;
+        const entry = resolveWeaponEntryExchange({
+          mover: combatant,
+          controller: measureInteraction.candidate,
+          moverWeapon: actorWeapon,
+          controllerWeapon: measureInteraction.candidateWeapon,
+          entryTechnique: selectedEntryTechnique,
+          controlResponse: selectedControlResponse,
+          entryRoll: CryptoSecureDice.rollD20(),
+          controlRoll: CryptoSecureDice.rollD20(),
+          supportingControllers: automatedSupportingControllers,
+          beforeDistanceFt: measureInteraction.beforeDistanceFt,
+          desiredDistanceFt: measureInteraction.desiredDistanceFt,
+          currentRound: meleeRoundRef.current ?? meleeRound,
+        });
+        upsertPersistentWeaponControlState(weaponControlStateRegistryRef.current, {
+          controllerId: measureInteraction.candidate.id,
+          controllerName: measureInteraction.candidate.name,
+          targetId: combatantId,
+          targetName: combatant.name,
+          controllerWeaponId: measureInteraction.candidateWeapon?.id || measureInteraction.candidateWeapon?.weaponId || null,
+          controllerWeaponName: measureInteraction.candidateWeapon?.name || "Long weapon",
+          reachFeet: entry.controllerTraits?.reachFeet || 5,
+          preferredDistanceFeet: entry.controllerTraits?.preferredDistanceFeet || entry.controllerTraits?.reachFeet || 5,
+          measure: entry.engagementState,
+          distanceFt: entry.allowed ? entry.desiredDistanceFt : entry.beforeDistanceFt,
+          outcome: entry.outcome,
+          entryTechnique: entry.entryTechnique?.id || null,
+          controlResponse: entry.controlResponse?.id || null,
+          supportingControllerIds: entry.supportingControllerIds || [],
+          currentRound: meleeRoundRef.current,
+          source: movementInfo?.source || movementActionName,
+        });
+        setWeaponControlPresentationRevision((revision) => revision + 1);
+        addLog(formatWeaponEntryExchangeNarration({
+          mover: combatant,
+          controller: measureInteraction.candidate,
+          result: entry,
+        }), "combat");
+        const engagementState = entry.engagementState;
+        commitFighters((current) => current.map((fighter) => {
+          if (fighter.id === combatantId) {
+            return {
+              ...fighter,
+              weaponEngagementByTarget: {
+                ...(fighter.weaponEngagementByTarget || {}),
+                [measureInteraction.candidate.id]: {
+                  state: engagementState,
+                  round: meleeRoundRef.current,
+                  outcome: entry.outcome,
+                  opponentId: measureInteraction.candidate.id,
+                  entryTechnique: entry.entryTechnique?.id || null,
+                  controlResponse: entry.controlResponse?.id || null,
+                  supportingControllerIds: entry.supportingControllerIds || [],
+                },
+              },
+            };
+          }
+          if (fighter.id === measureInteraction.candidate.id) {
+            return {
+              ...fighter,
+              weaponEngagementByTarget: {
+                ...(fighter.weaponEngagementByTarget || {}),
+                [combatantId]: {
+                  state: engagementState,
+                  round: meleeRoundRef.current,
+                  outcome: entry.outcome,
+                  opponentId: combatantId,
+                  entryTechnique: entry.entryTechnique?.id || null,
+                  controlResponse: entry.controlResponse?.id || null,
+                  supportingControllerIds: entry.supportingControllerIds || [],
+                },
+              },
+              closeWeaponDecisionPending: entry.allowed === true,
+            };
+          }
+          if (entry.supportingControllerIds?.includes(fighter.id)) {
+            return {
+              ...fighter,
+              weaponEngagementByTarget: {
+                ...(fighter.weaponEngagementByTarget || {}),
+                [combatantId]: {
+                  state: "supporting-long-weapon-control",
+                  round: meleeRoundRef.current,
+                  outcome: entry.outcome,
+                  opponentId: combatantId,
+                  primaryControllerId: measureInteraction.candidate.id,
+                },
+              },
+            };
+          }
+          return fighter;
+        }));
+        if (entry.allowed) {
+          const disruptedIds = new Set([
+            measureInteraction.candidate.id,
+            ...(entry.supportingControllerIds || []),
+          ]);
+          commitFighters((current) => current.map((fighter) => (
+            disruptedIds.has(fighter.id)
+              ? applyFormationDisruption(fighter, {
+                  sourceActorId: combatantId,
+                  currentRound: meleeRoundRef.current ?? meleeRound,
+                  durationRounds: 1,
+                  reason: "weapon-entry-breached-line",
+                })
+              : fighter
+          )));
+          emitWeaponInteractionAnimation({
+            type: "formation-disruption",
+            actorId: combatantId,
+            targetId: measureInteraction.candidate.id,
+            label: "Formation line breached",
+          });
+        }
+        if (Number(entry.entryStaminaCost || 0) > 0) {
+          spendCombatStamina({
+            fighter: combatant,
+            amount: entry.entryStaminaCost,
+            reason: "weapon-entry",
+            source: entry.entryTechnique?.id || "weapon-entry",
+            executionKey: movementInfo?.executionKey || null,
+          });
+        }
+        addLog?.({
+          audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+          channel: COMBAT_LOG_CHANNELS.ACTION,
+          eventType: "weapon-entry-exchange-resolved",
+          level: entry.allowed ? "info" : "warning",
+          type: entry.allowed ? "debug" : "warning",
+          actorId: combatantId,
+          targetId: measureInteraction.candidate.id,
+          source: movementInfo?.source || movementActionName,
+          message:
+            `weapon entry exchange resolved: mover=${combatant.name} controller=${measureInteraction.candidate.name} ` +
+            `entryTechnique=${entry.entryTechnique?.id || "none"} response=${entry.controlResponse?.id || "none"} ` +
+            `outcome=${entry.outcome} entry=${entry.entryScore} control=${entry.controlScore}`,
+          data: {
+            ...entry,
+            moverWeapon: actorWeapon?.name || null,
+            controllerWeapon: measureInteraction.candidateWeapon?.name || null,
+          },
+        }, entry.allowed ? "debug" : "warning");
+        if (!entry.allowed) {
+          scheduleWeaponControlResponse({
+            controller: measureInteraction.candidate,
+            mover: combatant,
+            controllerWeapon: measureInteraction.candidateWeapon,
+            exchange: entry,
+            controllerPosition: measureInteraction.candidatePosition,
+            moverPosition: priorPosition,
+            source: movementInfo?.source || movementActionName,
+          });
+          addLog(
+            `${combatant.name} attempts ${entry.entryTechnique?.label || "an entry"}, but ` +
+            `${measureInteraction.candidate.name} denies it with ${entry.controlResponse?.label || "point control"}.`,
+            "combat",
+          );
+          return true;
+        }
+        if (Number(entry.controlStaminaCost || 0) > 0) {
+          spendCombatStamina({
+            fighter: measureInteraction.candidate,
+            amount: entry.controlStaminaCost,
+            reason: "weapon-control",
+            source: entry.controlResponse?.id || "weapon-control",
+            executionKey: movementInfo?.executionKey || null,
+          });
+        }
+        addLog(
+          `${combatant.name} uses ${entry.entryTechnique?.label || "an entry"} to cross ` +
+          `${measureInteraction.candidate.name}'s point and reach close measure.`,
+          "combat",
+        );
+      }
+    }
     if (commitsImmediately && combatant && priorPosition && newPosition) {
       const movementTurn = getAuthoritativeInitiativeTurnSnapshot(combatantId);
       const movementSource = movementInfo?.source || movementInfo?.action || "movement";
@@ -23587,6 +26067,7 @@ function CombatPage({ characters = [] }) {
         movementSource,
         `${Number(newPosition.x)},${Number(newPosition.y)}`,
       ].join(":");
+      const committedDistanceFt = calculateDistance(priorPosition, newPosition);
       const movementResult = commitCanonicalMovement({
         registry: canonicalMovementRegistryRef.current,
         actor: combatant,
@@ -23594,7 +26075,7 @@ function CombatPage({ characters = [] }) {
         from: priorPosition,
         to: newPosition,
         path: movementInfo?.path || null,
-        distanceFt: calculateDistance(priorPosition, newPosition),
+        distanceFt: committedDistanceFt,
         movementMode: movementActionName,
         actionCost: movementInfo?.actionCost ?? 1,
         staminaCost: movementInfo?.staminaCost ?? null,
@@ -23611,6 +26092,12 @@ function CombatPage({ characters = [] }) {
           allowOverexertion: movementInfo?.allowOverexertion === true,
         }),
         commit: ({ actor: movedActor }) => {
+          const exertedMovedActor = markCombatExertion({
+            fighter: movedActor,
+            actionType: movementActionName,
+            source: movementSource,
+            round: meleeRoundRef.current,
+          });
           const nextPosition = { ...newPosition, x: Number(newPosition.x), y: Number(newPosition.y) };
           const nextPositions = {
             ...(positionsRef.current || {}),
@@ -23624,11 +26111,21 @@ function CombatPage({ characters = [] }) {
           commitFighters((current) => current.map((fighter) => fighter.id === combatantId
             ? {
                 ...fighter,
-                ...movedActor,
+                ...exertedMovedActor,
                 x: nextPosition.x,
                 y: nextPosition.y,
                 position: { ...nextPosition },
                 hex: fighter.hex ? { ...nextPosition } : fighter.hex,
+                movementSpentThisRoundFt: movementInfo?.trackRoundMovement === false
+                  ? (Number(fighter.movementSpentThisRoundFt) || 0)
+                  : (Number(fighter.movementSpentThisRoundFt) || 0) + committedDistanceFt,
+                formationState: movementInfo?.forced === true
+                  ? fighter.formationState
+                  : {
+                      ...(fighter.formationState || {}),
+                      anchored: false,
+                      anchorReleasedRound: fighter?.formationState?.anchored === true ? meleeRoundRef.current : fighter?.formationState?.anchorReleasedRound,
+                    },
               }
             : fighter));
           return { accepted: true, position: nextPosition };
@@ -23711,11 +26208,30 @@ function CombatPage({ characters = [] }) {
           movementInfo?.source || movementInfo?.action || "persist-immediate-movement",
         );
       }
+      const committedTravelDistance = priorPosition && newPosition
+        ? calculateDistance(priorPosition, newPosition)
+        : 0;
+      if (committedTravelDistance > 0) {
+        const presentationPath = Array.isArray(movementInfo?.path) && movementInfo.path.length > 0
+          ? movementInfo.path
+          : [newPosition];
+        presentationPath.forEach((step) => {
+          enqueueMoveAnimation(
+            combatantId,
+            {
+              x: Number(step.x),
+              y: Number(step.y),
+              altitudeFeet: combatant?.altitudeFeet ?? combatant?.altitude ?? 0,
+            },
+            getMoveDurationMs(5),
+          );
+        });
+      }
       setFlashingCombatants(prev => new Set(prev).add(combatantId));
       if (combatant) {
         const { description } = movementInfo;
         addLog(
-          `${combatant.name} ${movementActionName.toLowerCase()}s to position (${newPosition.x}, ${newPosition.y}) - ${description}`,
+          `${combatant.name} ${movementActionVerb} to position (${newPosition.x}, ${newPosition.y}) - ${description}`,
           "info",
         );
       }
@@ -23728,7 +26244,7 @@ function CombatPage({ characters = [] }) {
       // Just log the action
       if (combatant) {
         const { actionCost, description } = movementInfo;
-        addLog(`${combatant.name} ${movementActionName.toLowerCase()}s to position (${newPosition.x}, ${newPosition.y}) - ${description}`, "info");
+        addLog(`${combatant.name} ${movementActionVerb} to position (${newPosition.x}, ${newPosition.y}) - ${description}`, "info");
 
         // Handle action cost
         if (actionCost === "all" || actionCost >= 1) {
@@ -23877,7 +26393,7 @@ function CombatPage({ characters = [] }) {
       if (combatant) {
         if (movementInfo) {
           const { actionCost, description } = movementInfo;
-          addLog(`${combatant.name} ${movementActionName.toLowerCase()}s to position (${newPosition.x}, ${newPosition.y}) - ${description}`, "info");
+          addLog(`${combatant.name} ${movementActionVerb} to position (${newPosition.x}, ${newPosition.y}) - ${description}`, "info");
 
           // Handle action cost - if it costs actions, end the turn
           if (actionCost === "all" || actionCost >= 1) {
@@ -23889,7 +26405,30 @@ function CombatPage({ characters = [] }) {
         }
       }
     }
-  }, [fighters, positions, addLog, scheduleEndTurn, enqueueMoveAnimation, getMoveDurationMs, recordLastMovementCommit, setRenderPositions]);
+  }, [
+    fighters,
+    positions,
+    addLog,
+    scheduleEndTurn,
+    enqueueMoveAnimation,
+    getMoveDurationMs,
+    recordLastMovementCommit,
+    setRenderPositions,
+    canFighterAct,
+    getFighterControlMode,
+    isHexOccupied,
+    scheduleWeaponControlResponse,
+    spendCombatStamina,
+  ]);
+
+  useEffect(() => {
+    handlePositionChangeRef.current = handlePositionChange;
+    return () => {
+      if (handlePositionChangeRef.current === handlePositionChange) {
+        handlePositionChangeRef.current = null;
+      }
+    };
+  }, [handlePositionChange]);
 
   // Define attack function with useCallback (isPredatorBird, isTinyPrey, canAISeeTargetAsymmetric are defined earlier)
   const attack = useCallback(async (attacker, defenderId, bonusModifiers = {}) => {
@@ -25180,7 +27719,7 @@ function CombatPage({ characters = [] }) {
 
     // Hard guard: never execute an attack with 0 actions remaining (prevents ghost actions/log spam)
     if ((stateAttacker.remainingActions ?? 0) <= 0 && !isImmediateRiposte) {
-      addLog(`${stateAttacker.name} has no actions remaining!`, "error");
+      addLog(`${stateAttacker.name} has no actions remaining!`, "info");
       // Ensure we don't stall the combat loop if an AI branch attempted an action late.
       scheduleEndTurn(0, "attack-guard-no-actions");
       return;
@@ -25623,6 +28162,8 @@ function CombatPage({ characters = [] }) {
 
     // Get attack data - use selected weapon for players, selectedAttack for enemies
     let attackData;
+    let polearmExchangeContext = null;
+    let polearmSpecialAction = null;
     let canonicalMinotaurTechniqueIntent = null;
     let canonicalMinotaurImpactAuthorization = null;
     if (bonusModifiers?.attackDataOverride) {
@@ -25634,8 +28175,10 @@ function CombatPage({ characters = [] }) {
       // Use getWeaponDamage to properly calculate damage with two-handed bonuses and weapon size modifiers
       const weaponDamage = getWeaponDamage(selectedAttackWeapon, isUsingTwoHanded, attacker);
       attackData = {
+        ...selectedAttackWeapon,
         name: selectedAttackWeapon.name,
         damage: weaponDamage,
+        damageDice: weaponDamage,
         type: (selectedAttackWeapon?.range != null || ["bow", "crossbow", "sling"].includes((selectedAttackWeapon?.category || "").toLowerCase())) ? "ranged" : selectedAttackWeapon.type,
         range: selectedAttackWeapon?.range
       };
@@ -25892,6 +28435,754 @@ function CombatPage({ characters = [] }) {
         }, "debug");
       }
     }
+    attackData = normalizeCanonicalCombatWeapon(attackData);
+    const polearmAttackerPosition =
+      positionsRef.current?.[effectiveAttacker?.id || attacker?.id] ||
+      positions?.[effectiveAttacker?.id || attacker?.id] ||
+      effectiveAttacker?.position ||
+      effectiveAttacker;
+    const polearmDefenderPosition =
+      positionsRef.current?.[defender?.id] ||
+      positions?.[defender?.id] ||
+      defender?.position ||
+      defender;
+    const polearmDistanceFt = (
+      Number.isFinite(Number(polearmAttackerPosition?.x)) &&
+      Number.isFinite(Number(polearmAttackerPosition?.y)) &&
+      Number.isFinite(Number(polearmDefenderPosition?.x)) &&
+      Number.isFinite(Number(polearmDefenderPosition?.y))
+    )
+      ? getOddRHexDistanceFeet(polearmAttackerPosition, polearmDefenderPosition)
+      : preResolveAttackDistance;
+    const defenderReadyPolearmWeapon = getReadyCombatWeapon(defender);
+    const attackFormationContext = getSpatialFormationContext(effectiveAttacker, defender);
+
+    // Automated fighters use the same formation-command authority as manual
+    // fighters. Movement commands are planned deterministically against legal
+    // adjacent hexes before the command consumes its action and stamina.
+    if (
+      isAutomatedAttacker &&
+      bonusModifiers?.skipFormationCommand !== true &&
+      attackData?.isWeaponMeasureReaction !== true
+    ) {
+      const automatedFormationOptions = filterFormationCommandOptionsForTurnReceipt({
+        actor: effectiveAttacker,
+        initiativeTurnId: initiativeTurnIdRef.current,
+        options: getFormationCommandOptions({
+          actor: effectiveAttacker,
+          target: defender,
+          combatants: fightersRef.current || fighters,
+          positions: positionsRef.current || positions,
+          getWeapon: getReadyCombatWeapon,
+          calculateDistanceFeet: calculateDistance,
+          currentRound: meleeRoundRef.current,
+          terrainContext: attackFormationContext.terrainContext,
+        }),
+      });
+      const movementPlans = {};
+      for (const movementCommandId of [
+        FORMATION_COMMANDS.CLOSE_RANKS,
+        FORMATION_COMMANDS.WITHDRAW_IN_ORDER,
+      ]) {
+        if (!automatedFormationOptions.some((option) => option.id === movementCommandId)) continue;
+        movementPlans[movementCommandId] = planFormationMovementCommand({
+          commandId: movementCommandId,
+          actor: effectiveAttacker,
+          target: defender,
+          combatants: fightersRef.current || fighters,
+          positions: positionsRef.current || positions,
+          getWeapon: getReadyCombatWeapon,
+          calculateDistanceFeet: calculateDistance,
+          currentRound: meleeRoundRef.current,
+          terrainAt: getFormationTerrainAt,
+          getNeighbors: getHexNeighbors,
+          isPositionLegal: (position) => isValidPosition(position.x, position.y),
+          isOccupied: (position, actorId) => isHexOccupied(position.x, position.y, actorId),
+        });
+      }
+      const selectedFormationCommand = selectAutomatedFormationCommand({
+        actor: effectiveAttacker,
+        options: automatedFormationOptions,
+        formation: attackFormationContext,
+        movementPlans,
+        targetDistanceFeet: polearmDistanceFt,
+        terrainContext: attackFormationContext.terrainContext,
+      });
+      if (selectedFormationCommand) {
+        const selectedMovementPlan = movementPlans[selectedFormationCommand.id] || null;
+        const commandResolution = resolveFormationCommand({
+          commandId: selectedFormationCommand.id,
+          actor: effectiveAttacker,
+          target: defender,
+          combatants: fightersRef.current || fighters,
+          positions: positionsRef.current || positions,
+          getWeapon: getReadyCombatWeapon,
+          calculateDistanceFeet: calculateDistance,
+          currentRound: meleeRoundRef.current,
+          roll: CryptoSecureDice.rollD20(),
+          terrainContext: attackFormationContext.terrainContext,
+          movementCandidate: selectedMovementPlan?.accepted ? selectedMovementPlan.position : null,
+        });
+        if (commandResolution.accepted) {
+          let movementCommitted = true;
+          if (commandResolution.movement) {
+            const movementCommitHandler = handlePositionChangeRef.current;
+            const formationDestination = {
+              x: Number(commandResolution.movement.x),
+              y: Number(commandResolution.movement.y),
+              ...(Number.isFinite(Number(commandResolution.movement.facing))
+                ? { facing: Number(commandResolution.movement.facing) }
+                : {}),
+            };
+            movementCommitted = typeof movementCommitHandler === "function" && movementCommitHandler(
+              effectiveAttacker.id,
+              formationDestination,
+              {
+                action: selectedFormationCommand.id,
+                actionCost: 0,
+                staminaCost: 0,
+                forced: true,
+                persistImmediately: true,
+                trackRoundMovement: true,
+                path: selectedMovementPlan?.path || [formationDestination],
+                description: `${selectedFormationCommand.label}; preserve formation movement`,
+                source: `automated-formation-command:${selectedFormationCommand.id}`,
+              },
+            ) !== false;
+          }
+          if (movementCommitted) {
+            let commandActor = commandResolution.updatedActor || effectiveAttacker;
+            if (commandResolution.movement) {
+              commandActor = {
+                ...commandActor,
+                x: Number(commandResolution.movement.x),
+                y: Number(commandResolution.movement.y),
+                position: {
+                  x: Number(commandResolution.movement.x),
+                  y: Number(commandResolution.movement.y),
+                  ...(Number.isFinite(Number(commandResolution.movement.facing))
+                    ? { facing: Number(commandResolution.movement.facing) }
+                    : {}),
+                },
+              };
+            }
+            const commandStaminaSpend = spendCombatStamina({
+              fighter: commandActor,
+              amount: Number(commandResolution.staminaCost || 0),
+              reason: selectedFormationCommand.id,
+              source: "automated-formation-command",
+              executionKey: attackActionId,
+            });
+            commandActor = commandStaminaSpend?.updated || commandActor;
+            commandActor = recordFormationCommandReceipt(commandActor, {
+              commandId: selectedFormationCommand.id,
+              success: commandResolution.success !== false,
+              initiativeTurnId: initiativeTurnIdRef.current,
+              currentRound: meleeRoundRef.current,
+            });
+            if (attackerIndex !== -1) updated[attackerIndex] = commandActor;
+            addLog(
+              `${effectiveAttacker.name} uses ${selectedFormationCommand.label}${commandResolution.success === false ? " but fails to restore cohesion" : ""}.`,
+              commandResolution.success === false ? "warning" : "combat",
+            );
+            addLog?.({
+              audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+              channel: COMBAT_LOG_CHANNELS.ACTION,
+              eventType: commandResolution.movement
+                ? "automated-formation-movement-resolved"
+                : "automated-formation-command-resolved",
+              level: commandResolution.success === false ? "warning" : "info",
+              type: "debug",
+              actorId: effectiveAttacker.id,
+              targetId: defender.id,
+              executionKey: attackActionId,
+              source: selectedFormationCommand.id,
+              message:
+                `automated formation command resolved: actor=${effectiveAttacker.name} ` +
+                `command=${selectedFormationCommand.id} success=${commandResolution.success !== false}` +
+                (commandResolution.movement
+                  ? ` destination=${commandResolution.movement.x},${commandResolution.movement.y}`
+                  : ""),
+              data: {
+                ...commandResolution,
+                movementPlan: selectedMovementPlan,
+              },
+            }, "debug");
+            finishAttackAfterImpact({
+              updated,
+              attacker: commandActor,
+              attackerInArray: commandActor,
+              attackData,
+              reason: `formation-command:${selectedFormationCommand.id}`,
+              endTurnDelayMs: 0,
+            });
+            return { completed: true, action: selectedFormationCommand.id };
+          }
+          addLog?.({
+            audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+            channel: COMBAT_LOG_CHANNELS.VALIDATION,
+            eventType: "automated-formation-movement-rejected",
+            level: "warning",
+            type: "warning",
+            actorId: effectiveAttacker.id,
+            targetId: defender.id,
+            executionKey: attackActionId,
+            source: selectedFormationCommand.id,
+            message:
+              `automated formation movement rejected at commit: actor=${effectiveAttacker.name} ` +
+              `command=${selectedFormationCommand.id}`,
+            data: { commandResolution, movementPlan: selectedMovementPlan },
+          }, "warning");
+        }
+      }
+    }
+
+    const activeWeaponBindState = getActorWeaponBindState(
+      weaponBindRegistryRef.current,
+      effectiveAttacker?.id,
+      meleeRoundRef.current,
+    );
+    if (
+      activeWeaponBindState?.bind &&
+      activeWeaponBindState.opponentId === defender?.id &&
+      attackData?.isWeaponMeasureReaction !== true
+    ) {
+      const bindPositionsAvailable = Boolean(
+        Number.isFinite(Number(polearmAttackerPosition?.x)) &&
+        Number.isFinite(Number(polearmAttackerPosition?.y)) &&
+        Number.isFinite(Number(polearmDefenderPosition?.x)) &&
+        Number.isFinite(Number(polearmDefenderPosition?.y))
+      );
+      const bindCanWithdraw = bindPositionsAvailable && (getHexNeighbors(
+        polearmAttackerPosition.x,
+        polearmAttackerPosition.y,
+      ) || []).some((position) => (
+        isValidPosition(position.x, position.y) &&
+        !isHexOccupied(position.x, position.y, effectiveAttacker.id) &&
+        calculateDistance(position, polearmDefenderPosition) > polearmDistanceFt + 0.1
+      ));
+      const bindOptions = getWeaponBindCounterplayOptions({
+        bindState: activeWeaponBindState,
+        canWithdraw: bindCanWithdraw,
+        canGrapple: polearmDistanceFt <= 5.6,
+        canReleaseWeapon: true,
+      });
+      const requestedBindActionId = bonusModifiers?.weaponBindActionId || null;
+      const explicitBindAction = bindOptions.find((option) => option.id === requestedBindActionId) || null;
+      if (!isAutomatedAttacker && !explicitBindAction) {
+        setPendingWeaponBindChoice({
+          actorId: effectiveAttacker.id,
+          actorName: effectiveAttacker.name,
+          targetId: defender.id,
+          targetName: defender.name,
+          attackData,
+          bonusModifiers: { ...bonusModifiers, attackActionId: undefined },
+          bindState: activeWeaponBindState,
+          options: bindOptions,
+        });
+        if (activeAttackActionIdRef.current === attackActionId) activeAttackActionIdRef.current = null;
+        turnActionResolvingRef.current = false;
+        executingActionRef.current = false;
+        pendingTurnAdvanceRef.current = false;
+        addLog?.({
+          audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+          channel: COMBAT_LOG_CHANNELS.ACTION,
+          eventType: "weapon-bind-counterplay-choice-offered",
+          level: "info",
+          type: "debug",
+          actorId: effectiveAttacker.id,
+          targetId: defender.id,
+          source: attackSource,
+          message: `weapon bind counterplay offered: actor=${effectiveAttacker.name} role=${activeWeaponBindState.role}`,
+          data: { optionIds: bindOptions.map((option) => option.id), bindId: activeWeaponBindState.bind.bindId },
+        }, "debug");
+        return { pendingChoice: true, reason: "weapon-bind-counterplay-choice" };
+      }
+
+      const selectedBindAction = explicitBindAction || selectAutomatedWeaponBindAction({
+        bindState: activeWeaponBindState,
+        actor: effectiveAttacker,
+        canWithdraw: bindCanWithdraw,
+        canGrapple: polearmDistanceFt <= 5.6,
+      });
+      if (selectedBindAction) {
+        const bindResolution = resolveWeaponBindCounterplay({
+          actionId: selectedBindAction.id,
+          bindState: activeWeaponBindState,
+          actor: effectiveAttacker,
+          opponent: defender,
+          actorRoll: CryptoSecureDice.rollD20(),
+          opponentRoll: CryptoSecureDice.rollD20(),
+          currentRound: meleeRoundRef.current,
+        });
+        if (bindResolution.accepted) {
+          applyWeaponBindCounterplay({
+            registry: weaponBindRegistryRef.current,
+            resolution: bindResolution,
+            bindState: activeWeaponBindState,
+            currentRound: meleeRoundRef.current,
+          });
+          setWeaponControlPresentationRevision((revision) => revision + 1);
+          addLog?.({
+            audience: COMBAT_LOG_AUDIENCES.PLAYER,
+            channel: COMBAT_LOG_CHANNELS.ACTION,
+            eventType: "weapon-bind-counterplay-resolved",
+            level: bindResolution.success === false ? "warning" : "info",
+            type: "combat",
+            actorId: effectiveAttacker.id,
+            targetId: defender.id,
+            executionKey: attackActionId,
+            source: selectedBindAction.id,
+            message:
+              `${effectiveAttacker.name} uses ${selectedBindAction.label}` +
+              `${bindResolution.success === false ? " but the bind holds." : "."}`,
+            data: bindResolution,
+          }, "combat");
+
+          if (bindResolution.continueAttack) {
+            attackData = {
+              ...attackData,
+              weaponBindActionId: selectedBindAction.id,
+              selectedTechnique: selectedBindAction.id,
+            };
+          } else if (selectedBindAction.id === WEAPON_BIND_ACTIONS.RELEASE_BIND) {
+            releasePersistentWeaponBind(
+              weaponBindRegistryRef.current,
+              activeWeaponBindState.bind.bindId,
+              "controller-released-bind",
+            );
+          } else if (bindResolution.routeToGrapple && executeCanonicalGrappleActionRef.current) {
+            if (activeAttackActionIdRef.current === attackActionId) activeAttackActionIdRef.current = null;
+            return executeCanonicalGrappleActionRef.current({
+              actor: effectiveAttacker,
+              opponent: defender,
+              actionType: "grapple",
+              source: "weapon-bind-grapple",
+              requestedActionSequence: resolvedAttackActionSequence,
+              executionKey: attackActionId,
+              bindControlModifier: bindResolution.grappleControlModifier || 0,
+            });
+          } else {
+            let bindActor = effectiveAttacker;
+            const bindStaminaSpend = spendCombatStamina({
+              fighter: bindActor,
+              amount: Number(bindResolution.staminaCost || 0),
+              reason: selectedBindAction.id,
+              source: "weapon-bind-counterplay",
+              executionKey: attackActionId,
+            });
+            bindActor = bindStaminaSpend?.updated || bindActor;
+
+            if (bindResolution.dropControlledWeapon) {
+              const releaseSelection = {
+                ...EMPTY_EQUIPMENT_SELECTION,
+                ...(bindActor.equipmentSelection || {}),
+                rightHand: null,
+              };
+              bindActor = applyEquipmentSelection(bindActor, releaseSelection, {
+                weaponCatalog: weapons,
+                armorCatalog: availableArmors.filter((item) => item?.name !== "None"),
+                preserveNaturalAttacks: !isHumanoid(bindActor),
+              });
+            }
+
+            if (bindResolution.requiresWithdrawalHex && bindPositionsAvailable) {
+              const retreatCandidate = (getHexNeighbors(polearmAttackerPosition.x, polearmAttackerPosition.y) || [])
+                .filter((position) => isValidPosition(position.x, position.y))
+                .filter((position) => !isHexOccupied(position.x, position.y, effectiveAttacker.id))
+                .map((position) => ({ position, distanceFt: calculateDistance(position, polearmDefenderPosition) }))
+                .filter((entry) => entry.distanceFt > polearmDistanceFt + 0.1)
+                .sort((left, right) => right.distanceFt - left.distanceFt)[0]?.position || null;
+              if (retreatCandidate) {
+                handlePositionChangeRef.current?.(effectiveAttacker.id, retreatCandidate, {
+                  action: "YIELD_AND_WITHDRAW",
+                  actionCost: 0,
+                  staminaCost: 0,
+                  forced: true,
+                  persistImmediately: true,
+                  source: "weapon-bind-counterplay",
+                });
+              }
+            }
+
+            if (attackerIndex !== -1) updated[attackerIndex] = bindActor;
+            finishAttackAfterImpact({
+              updated,
+              attacker: bindActor,
+              attackerInArray: bindActor,
+              attackData,
+              reason: `weapon-bind-counterplay:${selectedBindAction.id}`,
+              endTurnDelayMs: 0,
+            });
+            return { completed: true, action: selectedBindAction.id, success: bindResolution.success };
+          }
+        }
+      }
+    }
+
+    const specializedWeaponOptions = getSpecializedWeaponActionOptions({
+      actor: effectiveAttacker,
+      weapon: attackData,
+      opponent: defender,
+      opponentWeapon: defenderReadyPolearmWeapon,
+      distanceFt: polearmDistanceFt,
+      formationSupported: attackFormationContext.formationSupported,
+    });
+    const requestedSpecializedActionId =
+      bonusModifiers?.specializedWeaponActionId ||
+      bonusModifiers?.selectedTechnique ||
+      attackData?.specializedWeaponActionId ||
+      attackData?.selectedTechnique ||
+      attackData?.attackMode ||
+      null;
+    const explicitSpecializedAction = specializedWeaponOptions.find((option) => (
+      option.id === requestedSpecializedActionId
+    )) || null;
+
+    if (
+      !isAutomatedAttacker &&
+      attackData?.isWeaponMeasureReaction !== true &&
+      specializedWeaponOptions.length > 0 &&
+      !explicitSpecializedAction
+    ) {
+      setPendingSpecializedWeaponChoice({
+        actorId: effectiveAttacker?.id,
+        actorName: effectiveAttacker?.name || "Fighter",
+        targetId: defender?.id,
+        targetName: defender?.name || "Opponent",
+        attackData,
+        bonusModifiers: {
+          ...bonusModifiers,
+          attackActionId: undefined,
+        },
+        options: specializedWeaponOptions,
+        distanceFt: polearmDistanceFt,
+      });
+      if (activeAttackActionIdRef.current === attackActionId) activeAttackActionIdRef.current = null;
+      turnActionResolvingRef.current = false;
+      executingActionRef.current = false;
+      pendingTurnAdvanceRef.current = false;
+      addLog?.({
+        audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+        channel: COMBAT_LOG_CHANNELS.ACTION,
+        eventType: "specialized-weapon-choice-offered",
+        level: "info",
+        type: "debug",
+        actorId: effectiveAttacker?.id,
+        targetId: defender?.id,
+        source: attackSource,
+        message: `specialized weapon choice offered: actor=${effectiveAttacker?.name || "Unknown"} options=${specializedWeaponOptions.map((option) => option.id).join(",")}`,
+        data: { optionIds: specializedWeaponOptions.map((option) => option.id), distanceFt: polearmDistanceFt },
+      }, "debug");
+      return { pendingChoice: true, reason: "specialized-weapon-choice" };
+    }
+
+    const selectedSpecializedAction = explicitSpecializedAction || (
+      isAutomatedAttacker
+        ? selectAutomatedSpecializedWeaponAction({
+            actor: effectiveAttacker,
+            weapon: attackData,
+            opponent: defender,
+            opponentWeapon: defenderReadyPolearmWeapon,
+            distanceFt: polearmDistanceFt,
+            formationSupported: attackFormationContext.formationSupported,
+          })
+        : null
+    );
+    if (selectedSpecializedAction) {
+      attackData = applySpecializedWeaponActionToAttack({
+        attack: attackData,
+        action: selectedSpecializedAction,
+      });
+      addLog?.({
+        audience: COMBAT_LOG_AUDIENCES.PLAYER,
+        channel: COMBAT_LOG_CHANNELS.ACTION,
+        eventType: "specialized-weapon-action-selected",
+        level: "info",
+        type: "combat",
+        actorId: effectiveAttacker?.id,
+        targetId: defender?.id,
+        executionKey: attackActionId,
+        source: attackSource,
+        message: formatSpecializedWeaponActionNarration({
+          actor: effectiveAttacker,
+          target: defender,
+          action: selectedSpecializedAction,
+        }),
+        data: { action: selectedSpecializedAction, distanceFt: polearmDistanceFt },
+      }, "combat");
+    }
+
+    const closeMeasureContext = getEngagementAttackModifier({
+      attackerWeapon: attackData,
+      defenderWeapon: defenderReadyPolearmWeapon,
+      distanceFt: polearmDistanceFt,
+    });
+    const longWeaponTrappedInside = Boolean(
+      closeMeasureContext?.measure === "inside-the-point" &&
+      closeMeasureContext?.attackerTraits?.isPolearm &&
+      attackData?.isWeaponMeasureReaction !== true
+    );
+    if (longWeaponTrappedInside) {
+      const sidearm = findSidearmCandidate({
+        fighter: effectiveAttacker,
+        weaponCatalog: weapons,
+      });
+      const currentDistanceFt = Number(polearmDistanceFt) || 0;
+      const preferredDistanceFt = getPreferredEngagementDistanceFeet({
+        actorWeapon: attackData,
+        opponentWeapon: defenderReadyPolearmWeapon,
+      });
+      const retreatCandidate = (
+        polearmAttackerPosition && polearmDefenderPosition
+          ? (getHexNeighbors(polearmAttackerPosition.x, polearmAttackerPosition.y) || [])
+              .filter((position) => isValidPosition(position.x, position.y))
+              .filter((position) => !isHexOccupied(position.x, position.y, effectiveAttacker?.id))
+              .map((position) => ({
+                position,
+                distanceFt: calculateDistance(position, polearmDefenderPosition),
+              }))
+              .filter((entry) => entry.distanceFt > currentDistanceFt + 0.1)
+              .sort((left, right) => (
+                Math.abs(left.distanceFt - preferredDistanceFt) - Math.abs(right.distanceFt - preferredDistanceFt) ||
+                right.distanceFt - left.distanceFt
+              ))[0]?.position || null
+          : null
+      );
+      const closeOptions = getLongWeaponCloseActionOptions({
+        fighter: effectiveAttacker,
+        weapon: attackData,
+        sidearm,
+        canWithdraw: Boolean(retreatCandidate),
+      });
+      const requestedCloseAction = bonusModifiers?.longWeaponCloseAction || null;
+      const explicitCloseAction = closeOptions.find((option) => option.id === requestedCloseAction) || null;
+
+      if (!isAutomatedAttacker && !explicitCloseAction) {
+        setPendingLongWeaponCloseChoice({
+          actorId: effectiveAttacker?.id,
+          actorName: effectiveAttacker?.name || "Fighter",
+          targetId: defender?.id,
+          targetName: defender?.name || "Opponent",
+          attackData,
+          bonusModifiers: {
+            ...bonusModifiers,
+            attackActionId: undefined,
+          },
+          options: closeOptions,
+          sidearmName: sidearm?.name || null,
+          currentDistanceFt,
+          preferredDistanceFt,
+        });
+        if (activeAttackActionIdRef.current === attackActionId) {
+          activeAttackActionIdRef.current = null;
+        }
+        turnActionResolvingRef.current = false;
+        executingActionRef.current = false;
+        pendingTurnAdvanceRef.current = false;
+        addLog?.({
+          audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+          channel: COMBAT_LOG_CHANNELS.ACTION,
+          eventType: "long-weapon-close-choice-offered",
+          level: "info",
+          type: "debug",
+          actorId: effectiveAttacker?.id,
+          targetId: defender?.id,
+          source: attackSource,
+          message:
+            `long weapon close choice offered: actor=${effectiveAttacker?.name || "Unknown"} ` +
+            `target=${defender?.name || "Unknown"} distance=${currentDistanceFt} options=${closeOptions.map((option) => option.id).join(",")}`,
+          data: {
+            optionIds: closeOptions.map((option) => option.id),
+            sidearmId: sidearm?.id || sidearm?.weaponId || null,
+            currentDistanceFt,
+            preferredDistanceFt,
+          },
+        }, "debug");
+        return { pendingChoice: true, reason: "long-weapon-close-choice" };
+      }
+
+      const closeAction = explicitCloseAction || selectAutomatedLongWeaponCloseAction({
+        fighter: effectiveAttacker,
+        weapon: attackData,
+        sidearm,
+        canWithdraw: Boolean(retreatCandidate),
+      });
+
+      if (closeAction) {
+        addLog?.({
+          audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+          channel: COMBAT_LOG_CHANNELS.ACTION,
+          eventType: "long-weapon-close-action-resolved",
+          level: "info",
+          type: "debug",
+          actorId: effectiveAttacker?.id,
+          targetId: defender?.id,
+          executionKey: attackActionId,
+          source: attackSource,
+          message:
+            `long weapon close action resolved: actor=${effectiveAttacker?.name || "Unknown"} ` +
+            `action=${closeAction.id} distance=${currentDistanceFt} sidearm=${sidearm?.name || "none"}`,
+          data: {
+            action: closeAction,
+            currentDistanceFt,
+            preferredDistanceFt,
+            sidearmId: sidearm?.id || sidearm?.weaponId || null,
+            retreatCandidate,
+          },
+        }, "debug");
+
+        if (closeAction.id === LONG_WEAPON_CLOSE_ACTIONS.WITHDRAW_TO_MEASURE && retreatCandidate) {
+          const staminaSpend = spendCombatStamina({
+            fighter: effectiveAttacker,
+            amount: Number(closeAction.staminaCost || 0),
+            reason: "withdraw-to-measure",
+            source: "long-weapon-close-action",
+            executionKey: attackActionId,
+          });
+          if (staminaSpend?.updated && attackerIndex !== -1) updated[attackerIndex] = staminaSpend.updated;
+          enqueueMoveAnimation(effectiveAttacker.id, {
+            x: retreatCandidate.x,
+            y: retreatCandidate.y,
+            altitudeFeet: Number(effectiveAttacker?.altitudeFeet ?? effectiveAttacker?.altitude ?? 0) || 0,
+            movementMode: "withdraw-to-measure",
+          }, 220);
+          handlePositionChangeRef.current?.(effectiveAttacker.id, retreatCandidate, {
+            action: "WITHDRAW_TO_MEASURE",
+            actionCost: 0,
+            staminaCost: 0,
+            forced: true,
+            persistImmediately: true,
+            source: "long-weapon-close-action",
+          });
+          attackDataForFinish = attackData;
+          finishAttackAfterImpact({
+            updated,
+            attacker: updated[attackerIndex] || effectiveAttacker,
+            attackerInArray: updated[attackerIndex] || attackerInArray,
+            attackData,
+            reason: "withdraw-to-measure",
+            endTurnDelayMs: 220,
+          });
+          return { completed: true, action: closeAction.id };
+        }
+
+        if (closeAction.id === LONG_WEAPON_CLOSE_ACTIONS.DRAW_SIDEARM && sidearm) {
+          const currentSelection = {
+            ...EMPTY_EQUIPMENT_SELECTION,
+            ...(effectiveAttacker?.equipmentSelection || {}),
+            rightHand: sidearm,
+            leftHand: null,
+          };
+          const sidearmFighter = applyEquipmentSelection(effectiveAttacker, currentSelection, {
+            weaponCatalog: weapons,
+            armorCatalog: availableArmors.filter((item) => item?.name !== "None"),
+            preserveNaturalAttacks: !isHumanoid(effectiveAttacker),
+          });
+          if (attackerIndex !== -1) updated[attackerIndex] = sidearmFighter;
+          attackDataForFinish = sidearm;
+          finishAttackAfterImpact({
+            updated,
+            attacker: sidearmFighter,
+            attackerInArray: sidearmFighter,
+            attackData: sidearm,
+            reason: "draw-sidearm",
+            endTurnDelayMs: 0,
+          });
+          return { completed: true, action: closeAction.id, sidearmId: sidearm.id || sidearm.weaponId };
+        }
+
+        if (closeAction.id === LONG_WEAPON_CLOSE_ACTIONS.SHORTEN_GRIP) {
+          attackData = {
+            ...attackData,
+            shortenedGrip: true,
+            attackMode: LONG_WEAPON_CLOSE_ACTIONS.SHORTEN_GRIP,
+            selectedTechnique: LONG_WEAPON_CLOSE_ACTIONS.SHORTEN_GRIP,
+            basicAttackStaminaCost: 1,
+          };
+        } else if (closeAction.id === LONG_WEAPON_CLOSE_ACTIONS.SHAFT_DEFENSE) {
+          const staminaSpend = spendCombatStamina({
+            fighter: effectiveAttacker,
+            amount: Number(closeAction.staminaCost || 0),
+            reason: "shaft-defense",
+            source: "long-weapon-close-action",
+            executionKey: attackActionId,
+          });
+          if (staminaSpend?.updated && attackerIndex !== -1) updated[attackerIndex] = staminaSpend.updated;
+          attackDataForFinish = attackData;
+          finishAttackAfterImpact({
+            updated,
+            attacker: updated[attackerIndex] || effectiveAttacker,
+            attackerInArray: updated[attackerIndex] || attackerInArray,
+            attackData,
+            reason: "shaft-defense",
+            endTurnDelayMs: 0,
+          });
+          return { completed: true, action: closeAction.id };
+        }
+      }
+    }
+
+    const explicitPolearmTechnique =
+      bonusModifiers?.selectedTechnique ||
+      attackData?.selectedTechnique ||
+      attackData?.armorTechnique ||
+      bonusModifiers?.attackMode ||
+      attackData?.attackMode ||
+      null;
+
+    if (isAutomatedAttacker && !explicitPolearmTechnique) {
+      polearmSpecialAction = selectAutomatedPolearmAction({
+        attacker: effectiveAttacker,
+        defender,
+        attackerWeapon: attackData,
+        defenderWeapon: defenderReadyPolearmWeapon,
+        distanceFt: polearmDistanceFt,
+      });
+      if (polearmSpecialAction) {
+        attackData = {
+          ...attackData,
+          selectedTechnique: polearmSpecialAction.id,
+          attackMode: polearmSpecialAction.id,
+          polearmSpecialAction: true,
+        };
+        addLog?.({
+          audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+          channel: COMBAT_LOG_CHANNELS.ACTION,
+          eventType: "polearm-special-action-selected",
+          level: "info",
+          type: "debug",
+          actorId: effectiveAttacker?.id || attacker?.id,
+          targetId: defender?.id,
+          executionKey: attackActionId,
+          source: attackSource,
+          message:
+            `polearm special action selected: actor=${effectiveAttacker?.name || attacker?.name || "Unknown"} ` +
+            `action=${polearmSpecialAction.id} target=${defender?.name || "Unknown"}`,
+          data: {
+            action: polearmSpecialAction,
+            distanceFt: polearmDistanceFt,
+            attackWeapon: attackData?.name || null,
+            defenderWeapon: defenderReadyPolearmWeapon?.name || null,
+          },
+        }, "debug");
+      }
+    }
+
+    polearmExchangeContext = resolvePolearmCombatMatchup({
+      attacker: effectiveAttacker,
+      defender,
+      attackWeapon: attackData,
+      defenderWeapon: defenderReadyPolearmWeapon,
+      distanceFt: polearmDistanceFt,
+      selectedTechnique:
+        attackData?.selectedTechnique ||
+        attackData?.attackMode ||
+        explicitPolearmTechnique,
+      formationSupported: attackFormationContext.formationSupported,
+      currentRound: meleeRoundRef.current ?? meleeRound,
+    });
+
     attackDataForFinish = attackData;
 
     const armorPlanProfile = normalizeArmorProfile(defender);
@@ -26493,7 +29784,7 @@ function CombatPage({ characters = [] }) {
         return;
       }
       if (attackerInArray.remainingActions <= 0) {
-        addLog(`${attacker.name} has no actions remaining!`, "error");
+        addLog(`${attacker.name} has no actions remaining!`, "info");
         return;
       }
 
@@ -26549,6 +29840,12 @@ function CombatPage({ characters = [] }) {
         executingActionRef.current = false;
       }
     }
+
+    // Canonical weapon authority must be applied before AI range, attack range,
+    // and matchup resolution. This prevents a two-handed spear from inheriting
+    // a legacy thrown/ranged profile or six-foot reach.
+    attackData = normalizeCanonicalCombatWeapon(attackData || {});
+    attackDataForFinish = attackData;
 
     // Classify attack type early so it stays in scope for later combat resolution.
     const weaponName = attackData?.name || "";
@@ -26704,7 +30001,7 @@ function CombatPage({ characters = [] }) {
           // Continue with attack using dive-modified state
         } else {
           // Dive attacks are melee-only, so this error is always valid to log
-          addLog(`${attacker.name} cannot reach ${defender.name} for attack! (${rangeValidation.reason})`, "error");
+          addLog(`${attacker.name} cannot reach ${defender.name} for attack! (${rangeValidation.reason})`, "info");
           burnFailedAutomatedActionAndEnd(rangeValidation.reason || "invalid range");
           return;
         }
@@ -26721,7 +30018,7 @@ function CombatPage({ characters = [] }) {
         // Only log error if it's not a ranged attack with a melee-specific error message
         // (ranged attacks will be validated separately and don't need melee error spam)
         if (!(isRangedAttackForError && isMeleeSpecificError)) {
-          addLog(`${attacker.name} cannot reach ${defender.name} for attack! (${rangeValidation.reason})`, "error");
+          addLog(`${attacker.name} cannot reach ${defender.name} for attack! (${rangeValidation.reason})`, "info");
 
           // Show movement suggestions
           if (rangeValidation.suggestions && rangeValidation.suggestions.length > 0) {
@@ -27225,8 +30522,123 @@ function CombatPage({ characters = [] }) {
       // Flanking is melee-only (avoid ranged attackers "flanking" from 100+ ft).
       const effectiveFlankingBonus = isRangedForBonus ? 0 : flankingBonus;
 
+      const attackerMatchupPosition = positionsRef.current?.[attacker.id] || positions?.[attacker.id];
+      const defenderMatchupPosition = positionsRef.current?.[defenderId] || positions?.[defenderId];
+      const matchupDistanceFt = attackerMatchupPosition && defenderMatchupPosition
+        ? calculateDistance(attackerMatchupPosition, defenderMatchupPosition)
+        : Number(bonusModifiers?.distanceOverride ?? 0) || 0;
+      const defenderReadyWeapon = getReadyCombatWeapon(defender);
+      const rollFormationContext = getSpatialFormationContext(attacker, defender);
+      const polearmMatchup = resolvePolearmCombatMatchup({
+        attacker,
+        defender,
+        attackWeapon: attackData,
+        defenderWeapon: defenderReadyWeapon,
+        distanceFt: matchupDistanceFt,
+        selectedTechnique: attackData?.selectedTechnique || attackData?.armorTechnique || bonusModifiers?.selectedTechnique,
+        formationSupported: rollFormationContext.formationSupported,
+        currentRound: meleeRoundRef.current ?? meleeRound,
+      });
+      const weaponMatchupBonus = Number(polearmMatchup?.attackModifier || 0);
+      const engagementAttackContext = getEngagementAttackModifier({
+        attackerWeapon: attackData,
+        defenderWeapon: defenderReadyWeapon,
+        distanceFt: matchupDistanceFt,
+      });
+      const engagementMeasureBonus = Number(engagementAttackContext?.modifier || 0);
+      const specializedAttackContext = getSpecializedWeaponAttackModifier({
+        actionId:
+          attackData?.specializedWeaponActionId ||
+          attackData?.selectedTechnique ||
+          attackData?.attackMode ||
+          bonusModifiers?.specializedWeaponActionId ||
+          bonusModifiers?.selectedTechnique,
+        attackerWeapon: attackData,
+        defenderWeapon: defenderReadyWeapon,
+        distanceFt: matchupDistanceFt,
+        formationSupported: rollFormationContext.formationSupported,
+      });
+      const specializedWeaponBonus = Number(specializedAttackContext?.modifier || 0);
+      const weaponBindContext = isRangedForBonus
+        ? { applies: false, modifier: 0, reason: "ranged-attack-not-bound" }
+        : getWeaponBindAttackModifier({
+            registry: weaponBindRegistryRef.current,
+            attackerId: attacker.id,
+            targetId: defenderId,
+            currentRound: meleeRoundRef.current ?? meleeRound,
+          });
+      const weaponBindBonus = Number(weaponBindContext?.modifier || 0);
+      if (weaponBindContext?.applies) {
+        addLog?.({
+          audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+          channel: COMBAT_LOG_CHANNELS.STATE,
+          eventType: "persistent-weapon-bind-modifier-applied",
+          level: "info",
+          type: "debug",
+          actorId: attacker.id,
+          targetId: defenderId,
+          executionKey: attackActionId,
+          source: "attack-roll-modifier",
+          message: `persistent weapon bind modifier applied: actor=${attacker.name} modifier=${weaponBindBonus} reason=${weaponBindContext.reason}`,
+          data: weaponBindContext,
+        }, "debug");
+      }
+      if (specializedAttackContext?.applies) {
+        addLog?.({
+          audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+          channel: COMBAT_LOG_CHANNELS.VALIDATION,
+          eventType: "specialized-weapon-modifier-resolved",
+          level: "info",
+          type: "debug",
+          actorId: attacker.id,
+          targetId: defenderId,
+          executionKey: attackActionId,
+          source: "attack-roll-modifier",
+          message: `specialized weapon modifier resolved: actor=${attacker.name} action=${specializedAttackContext.action?.id || "none"} modifier=${specializedWeaponBonus}`,
+          data: specializedAttackContext,
+        }, "debug");
+      }
+      if (engagementAttackContext?.measure) {
+        addLog?.({
+          audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+          channel: COMBAT_LOG_CHANNELS.VALIDATION,
+          eventType: "weapon-engagement-measure-resolved",
+          level: "info",
+          type: "debug",
+          actorId: attacker.id,
+          targetId: defenderId,
+          executionKey: attackActionId,
+          source: "attack-roll-modifier",
+          message:
+            `weapon engagement measure resolved: actor=${attacker.name} target=${defender.name} ` +
+            `measure=${engagementAttackContext.measure} modifier=${engagementMeasureBonus} reason=${engagementAttackContext.reason}`,
+          data: engagementAttackContext,
+        }, "debug");
+      }
+      if (polearmMatchup?.applies) {
+        addLog?.({
+          audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+          channel: COMBAT_LOG_CHANNELS.VALIDATION,
+          eventType: "polearm-matchup-resolved",
+          level: "info",
+          type: "debug",
+          actorId: attacker.id,
+          targetId: defenderId,
+          executionKey: attackActionId,
+          source: "attack-roll-modifier",
+          message:
+            `polearm matchup resolved: actor=${attacker.name} target=${defender.name} ` +
+            `measure=${polearmMatchup.measure} modifier=${weaponMatchupBonus} rule=${polearmMatchup.rule}`,
+          data: polearmMatchup,
+        }, "debug");
+      }
+
       const computedAttackBonusBeforeRange =
         baseAttackBonus +
+        weaponMatchupBonus +
+        engagementMeasureBonus +
+        specializedWeaponBonus +
+        weaponBindBonus +
         chargeBonus +
         effectiveFlankingBonus +
         tempBonus +
@@ -27243,9 +30655,21 @@ function CombatPage({ characters = [] }) {
         rangedAttackRangeProfile?.canAttack
           ? rangedAttackRangeProfile.totalModifier ?? 0
           : 0;
+      const preRollMatchupAdjustment =
+        preRoll && preRoll.weaponMatchupApplied !== true ? weaponMatchupBonus : 0;
+      const preRollEngagementAdjustment =
+        preRoll && preRoll.engagementMeasureApplied !== true ? engagementMeasureBonus : 0;
+      const preRollSpecializedAdjustment =
+        preRoll && preRoll.specializedWeaponApplied !== true ? specializedWeaponBonus : 0;
       const preRollAttackBonus = Number(preRoll?.attackBonus);
       const attackBonus = preRoll
-        ? (Number.isFinite(preRollAttackBonus) ? preRollAttackBonus : computedAttackBonusBeforeRange) + preRollRangeAdjustment
+        ? (Number.isFinite(preRollAttackBonus)
+            ? preRollAttackBonus
+            : computedAttackBonusBeforeRange - weaponMatchupBonus - engagementMeasureBonus - specializedWeaponBonus) +
+          preRollRangeAdjustment +
+          preRollMatchupAdjustment +
+          preRollEngagementAdjustment +
+          preRollSpecializedAdjustment
         : computedAttackBonus;
 
       const preRollOwnershipBlock = getAttackRollOwnershipBlockReason("attack-roll-pre-stamina");
@@ -27292,10 +30716,12 @@ function CombatPage({ characters = [] }) {
         attackActionId
       )}`;
       if (!staminaChargedAttackKeysRef.current.has(staminaChargeKey)) {
-        const attackStaminaCost = calculateAttackStaminaCost({
+        const attackStaminaCost = calculateHybridWeaponAttackStaminaCost({
           fighter: effectiveAttacker,
           weapon: attackData,
           attackType: attackData?.attackType || attackData?.type,
+          technique: attackData?.selectedTechnique || attackData?.attackMode || bonusModifiers?.selectedTechnique,
+          source: attackSource,
         });
         const initializedAttackStamina = initializeCombatStamina(attackerInArray || effectiveAttacker);
         const currentAttackStamina = Number(
@@ -27505,14 +30931,17 @@ function CombatPage({ characters = [] }) {
       let isCriticalHit;
       let isCriticalMiss;
       let contextualRollModifiers = {
-        baseAttack: attackBonus,
+        baseAttack: attackBonus - weaponMatchupBonus - engagementMeasureBonus - specializedWeaponBonus,
+        weaponMatchup: weaponMatchupBonus,
+        engagementMeasure: engagementMeasureBonus,
+        specializedWeapon: specializedWeaponBonus,
         fatigueModifierApplied: 0,
         reach: 0,
         lighting: 0,
       };
 
       if (preRoll) {
-        attackRoll = Number(preRoll.attackRoll) + preRollRangeAdjustment;
+        attackRoll = Number(preRoll.attackRoll) + preRollRangeAdjustment + preRollMatchupAdjustment + preRollEngagementAdjustment + preRollSpecializedAdjustment;
         attackDiceRoll = preRoll.attackDiceRoll;
         const naturalBoundary = validateCanonicalNaturalD20(attackDiceRoll, {
           actionType: attackData?.techniqueKey || attackData?.name || "attack",
@@ -27546,7 +30975,10 @@ function CombatPage({ characters = [] }) {
           diceRolls: [{ result: attackDiceRoll }],
         };
         contextualRollModifiers = {
-          baseAttack: attackRoll - attackDiceRoll,
+          baseAttack: attackRoll - attackDiceRoll - preRollMatchupAdjustment - preRollEngagementAdjustment - preRollSpecializedAdjustment,
+          weaponMatchup: preRollMatchupAdjustment,
+          engagementMeasure: preRollEngagementAdjustment,
+          specializedWeapon: preRollSpecializedAdjustment,
           fatigueModifierApplied: 0,
           reach: 0,
           lighting: 0,
@@ -27565,9 +30997,13 @@ function CombatPage({ characters = [] }) {
         // Get size/strength modifiers (for non-grapple attacks, use reach advantage)
         const reachMod = getReachAdvantage(attacker, defender);
         const sizeMod = getCombinedGrappleModifiers(attacker, defender);
-        const sizeAttackBonus = reachMod.attackBonus; // Use reach bonus for regular attacks
+        const sizeAttackBonus = isRangedForBonus ? 0 : reachMod.attackBonus; // Melee reach only; ranged geometry is resolved by ranged authority.
         contextualRollModifiers = {
-          baseAttack: attackBonus,
+          baseAttack: attackBonus - weaponMatchupBonus - engagementMeasureBonus - specializedWeaponBonus - weaponBindBonus,
+          weaponMatchup: weaponMatchupBonus,
+          engagementMeasure: engagementMeasureBonus,
+          specializedWeapon: specializedWeaponBonus,
+          weaponBind: weaponBindBonus,
           fatigueModifierApplied: fatiguePenalty,
           reach: sizeAttackBonus,
           lighting: 0,
@@ -27688,7 +31124,86 @@ function CombatPage({ characters = [] }) {
         markAttackGateChain("roll");
       }
 
+      if (polearmExchangeContext?.applies) {
+        const polearmAttackModifier = Number(polearmExchangeContext.attackModifier || 0);
+        // The canonical attack bonus already includes resolvePolearmCombatMatchup().
+        // This late exchange context is validation/narration only; applying it here
+        // would double-charge weapon measure after the d20 has already been rolled.
+        if (polearmAttackModifier !== 0) {
+          addLog?.({
+            audience: COMBAT_LOG_AUDIENCES.PLAYER,
+            channel: COMBAT_LOG_CHANNELS.ACTION,
+            eventType: "weapon-matchup-advantage",
+            level: "info",
+            type: "combat",
+            actorId: stateAttacker?.id || attacker?.id,
+            targetId: defender?.id,
+            executionKey: attackActionId,
+            source: attackSource,
+            message:
+              `${stateAttacker?.name || attacker?.name || "Attacker"} ` +
+              `${polearmAttackModifier > 0 ? "gains" : "suffers"} ` +
+              `${polearmAttackModifier > 0 ? "+" : ""}${polearmAttackModifier} from weapon measure and matchup.`,
+            data: polearmExchangeContext,
+          }, "combat");
+        }
+        const canonicalMatchupModifier = Number(contextualRollModifiers.weaponMatchup || 0);
+        if (canonicalMatchupModifier !== polearmAttackModifier) {
+          addLog?.({
+            audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+            channel: COMBAT_LOG_CHANNELS.VALIDATION,
+            eventType: "polearm-matchup-context-mismatch",
+            level: "warning",
+            type: "warning",
+            actorId: stateAttacker?.id || attacker?.id,
+            targetId: defender?.id,
+            executionKey: attackActionId,
+            source: attackSource,
+            message:
+              `polearm matchup context mismatch: canonical=${canonicalMatchupModifier} late=${polearmAttackModifier}`,
+            data: { canonical: polearmMatchup, late: polearmExchangeContext },
+          }, "warning");
+        }
+      }
+
       let targetGuardRating = getCombatantAC(defender);
+      const shieldIntegrityDefensePenalty = getShieldDefensePenalty(defender);
+      if (shieldIntegrityDefensePenalty !== 0 && shieldIntegrityDefensePenalty > -90) {
+        targetGuardRating += shieldIntegrityDefensePenalty;
+        addLog?.({
+          audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+          channel: COMBAT_LOG_CHANNELS.STATE,
+          eventType: "shield-integrity-defense-penalty-applied",
+          level: "info",
+          type: "debug",
+          actorId: defender?.id,
+          targetId: stateAttacker?.id || attacker?.id,
+          executionKey: attackActionId,
+          source: attackSource,
+          message: `shield integrity defense penalty applied: actor=${defender?.name || "Unknown"} modifier=${shieldIntegrityDefensePenalty}`,
+          data: { modifier: shieldIntegrityDefensePenalty },
+        }, "debug");
+      }
+      const weaponConditionPenalties = getActiveWeaponConditionPenalties(
+        defender,
+        meleeRoundRef.current ?? meleeRound,
+      );
+      if (weaponConditionPenalties.defense !== 0) {
+        targetGuardRating += weaponConditionPenalties.defense;
+        addLog?.({
+          audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+          channel: COMBAT_LOG_CHANNELS.STATE,
+          eventType: "weapon-condition-defense-applied",
+          level: "info",
+          type: "debug",
+          actorId: defender?.id,
+          targetId: stateAttacker?.id || attacker?.id,
+          executionKey: attackActionId,
+          source: attackSource,
+          message: `weapon condition defense applied: actor=${defender?.name || "Unknown"} modifier=${weaponConditionPenalties.defense}`,
+          data: weaponConditionPenalties,
+        }, "debug");
+      }
 
       // Apply cover bonus from terrain
       if (combatTerrain && positions && positions[defender.id]) {
@@ -27698,7 +31213,7 @@ function CombatPage({ characters = [] }) {
         );
         if (coverBonus > 0) {
           targetGuardRating += coverBonus;
-          addLog(`${defender.name} gains +${coverBonus} AC from terrain cover!`, "info");
+          addLog(`${defender.name} gains +${coverBonus} Defense from terrain cover!`, "info");
         }
       }
 
@@ -27737,7 +31252,30 @@ function CombatPage({ characters = [] }) {
       }
 
       const attackRollAttackerLabel = formatNormalAttackActorLabel(stateAttacker, defender, updated);
-      const totalAttackModifier = attackRoll - attackDiceRoll;
+      const modifierLedger = reconcileAttackRollModifierLedger({
+        naturalRoll: attackDiceRoll,
+        reportedTotal: attackRoll,
+        modifierComponents: contextualRollModifiers,
+      });
+      if (modifierLedger.corrected) {
+        addLog?.({
+          audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+          channel: COMBAT_LOG_CHANNELS.VALIDATION,
+          eventType: "attack-roll-total-reconciled",
+          level: "warning",
+          type: "warning",
+          actorId: stateAttacker?.id || attacker?.id,
+          targetId: defender?.id,
+          executionKey: attackActionId,
+          source: attackSource,
+          message:
+            `attack roll total reconciled: reported=${modifierLedger.reportedTotal} ` +
+            `canonical=${modifierLedger.canonicalTotal} delta=${modifierLedger.delta}`,
+          data: modifierLedger,
+        }, "warning");
+      }
+      attackRoll = modifierLedger.canonicalTotal;
+      const totalAttackModifier = modifierLedger.modifier;
       const canonicalAttackRollEvent = buildCanonicalAttackRollEvent({
         naturalRoll: attackDiceRoll,
         modifier: totalAttackModifier,
@@ -27783,7 +31321,7 @@ function CombatPage({ characters = [] }) {
           type: "critical",
           actorId: stateAttacker?.id || attacker?.id,
           targetId: defender?.id,
-          message: `Attack roll: Natural 20 — Critical hit! Total ${attackRoll} vs AC ${targetGuardRating}.`,
+          message: `Attack roll: Natural 20 — Critical hit! Total ${attackRoll} vs Defense ${targetGuardRating}.`,
           data: canonicalAttackRollEvent,
         }, "critical");
       } else if (isCriticalMiss) {
@@ -27809,7 +31347,7 @@ function CombatPage({ characters = [] }) {
           type: attackRoll >= targetGuardRating ? "hit" : "miss",
           actorId: stateAttacker?.id || attacker?.id,
           targetId: defender?.id,
-          message: `Attack roll: ${attackDiceRoll} ${bonusDisplay} = ${attackRoll} vs AC ${targetGuardRating} — ${attackRoll >= targetGuardRating ? "Hit" : "Miss"}.`,
+          message: `Attack roll: ${attackDiceRoll} ${bonusDisplay} = ${attackRoll} vs Defense ${targetGuardRating} — ${attackRoll >= targetGuardRating ? "Hit" : "Miss"}.`,
           data: canonicalAttackRollEvent,
         }, attackRoll >= targetGuardRating ? "hit" : "miss");
       }
@@ -27892,6 +31430,47 @@ function CombatPage({ characters = [] }) {
           return null;
         }
         const { result, developerEvent } = resolution;
+        if (result.success === true && shieldDefense && defenderIndex >= 0) {
+          const shieldImpact = resolveShieldImpact({
+            defender: updated[defenderIndex] || liveDefender,
+            attackWeapon: attackData,
+            attackNaturalRoll: attackDiceRoll,
+            attackTotal: attackRoll,
+            defenseTotal,
+            currentRound: meleeRoundRef.current ?? meleeRound,
+            source: "successful-shield-block",
+          });
+          if (shieldImpact.applied) {
+            updated[defenderIndex] = applyShieldImpactToActor(updated[defenderIndex] || liveDefender, shieldImpact);
+            defender = updated[defenderIndex];
+            emitWeaponInteractionAnimation({
+              type: shieldImpact.broken ? "shield-break" : "shield-impact",
+              actorId: liveAttacker?.id,
+              targetId: liveDefender?.id,
+              label: shieldImpact.broken ? `${shieldImpact.shieldName} breaks` : `${shieldImpact.shieldName} absorbs impact`,
+              severity: shieldImpact.broken ? "major" : shieldImpact.nextState === "battered" ? "heavy" : "normal",
+              metadata: shieldImpact,
+            });
+            addLog?.({
+              audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+              channel: COMBAT_LOG_CHANNELS.STATE,
+              eventType: shieldImpact.broken ? "shield-broken" : "shield-integrity-damaged",
+              level: shieldImpact.broken ? "warning" : "info",
+              type: shieldImpact.broken ? "warning" : "debug",
+              actorId: liveDefender?.id,
+              targetId: liveAttacker?.id,
+              executionKey: attackActionId,
+              source: attackSource,
+              message: `shield integrity resolved: defender=${liveDefender?.name || "Unknown"} damage=${shieldImpact.damage} durability=${shieldImpact.nextDurability}/${shieldImpact.maxDurability} state=${shieldImpact.nextState}`,
+              data: shieldImpact,
+            }, shieldImpact.broken ? "warning" : "debug");
+            if (shieldImpact.broken) {
+              addLog(`${liveDefender.name}'s ${shieldImpact.shieldName} breaks under the impact!`, "warning");
+            } else if (shieldImpact.nextState === "battered" && shieldImpact.previousState !== "battered") {
+              addLog(`${liveDefender.name}'s ${shieldImpact.shieldName} is badly battered and no longer protects as well.`, "warning");
+            }
+          }
+        }
         if (bonusModifiers?.tacticalReactionAdmission && typeof bonusModifiers?.onTacticalDefenseResolved === "function") {
           const tacticalReaction = bonusModifiers.tacticalReactionAdmission;
           bonusModifiers.onTacticalDefenseResolved(Object.freeze({
@@ -28420,7 +31999,7 @@ function CombatPage({ characters = [] }) {
           distanceFeet,
         });
         const staminaCost = legalAttack
-          ? calculateAttackStaminaCost({
+          ? calculateHybridWeaponAttackStaminaCost({
             fighter: liveReactor,
             weapon: legalAttack,
             attackType: legalAttack.attackType || legalAttack.type || "melee",
@@ -28679,6 +32258,19 @@ function CombatPage({ characters = [] }) {
               }
               if (control) {
                 dominantControlRegistryRef.current.set(control.controlId, control);
+                if (selectedResponse === DOMINANT_RESPONSE_TYPES.MAINTAIN_BIND) {
+                  const persistentBind = createPersistentWeaponBind({
+                    sourceActorId: liveReactor.id,
+                    targetActorId: liveTarget.id,
+                    sourceWeaponId: dominantOpportunity.parryingWeaponId,
+                    targetWeaponId: dominantOpportunity.attackingWeaponId,
+                    currentRound: meleeRoundRef.current,
+                    durationRounds: 2,
+                    source: "dominant-parry-bind",
+                    controlBonus: 1,
+                  });
+                  if (persistentBind) upsertPersistentWeaponBind(weaponBindRegistryRef.current, persistentBind);
+                }
                 addLog?.({
                   audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
                   channel: COMBAT_LOG_CHANNELS.STATE,
@@ -29587,6 +33179,220 @@ function CombatPage({ characters = [] }) {
       }
       // Critical hit auto-succeeds, normal hit requires beating AC
       if (didHit) {
+        const selectedPolearmTechnique =
+          attackData?.selectedTechnique ||
+          attackData?.attackMode ||
+          bonusModifiers?.selectedTechnique ||
+          bonusModifiers?.attackMode ||
+          null;
+        const polearmSpecialResult = applyPolearmSpecialActionOnHit({
+          attacker: stateAttacker || effectiveAttacker || attacker,
+          defender,
+          defenderWeapon: getReadyCombatWeapon(defender),
+          selectedTechnique: selectedPolearmTechnique,
+          currentRound: meleeRoundRef.current ?? meleeRound,
+        });
+
+        if (polearmSpecialResult.applied) {
+          if (polearmSpecialResult.attackerPatch && attackerInArray) {
+            Object.assign(attackerInArray, polearmSpecialResult.attackerPatch);
+          }
+          if (polearmSpecialResult.defenderPatch && defender) {
+            Object.assign(defender, polearmSpecialResult.defenderPatch);
+            if (defenderIndex >= 0) {
+              updated[defenderIndex] = {
+                ...updated[defenderIndex],
+                ...polearmSpecialResult.defenderPatch,
+              };
+              defender = updated[defenderIndex];
+            }
+          }
+
+          if (polearmSpecialResult.weaponPatch && defender) {
+            const readyWeapon = getReadyCombatWeapon(defender);
+            const readyWeaponIdentity = String(
+              readyWeapon?.id ||
+              readyWeapon?.weaponId ||
+              readyWeapon?.profileKey ||
+              readyWeapon?.name ||
+              ""
+            );
+            const patchWeaponList = (list) => Array.isArray(list)
+              ? list.map((weapon) => {
+                  const candidateIdentity = String(
+                    weapon?.id ||
+                    weapon?.weaponId ||
+                    weapon?.profileKey ||
+                    weapon?.name ||
+                    ""
+                  );
+                  return candidateIdentity === readyWeaponIdentity
+                    ? { ...weapon, ...polearmSpecialResult.weaponPatch }
+                    : weapon;
+                })
+              : list;
+            const defenderWeaponPatch = {
+              equipment: patchWeaponList(defender.equipment),
+              inventory: patchWeaponList(defender.inventory),
+              attacks: polearmSpecialResult.weaponPatch.broken
+                ? (Array.isArray(defender.attacks)
+                    ? defender.attacks.filter((weapon) => String(
+                        weapon?.id || weapon?.weaponId || weapon?.profileKey || weapon?.name || ""
+                      ) !== readyWeaponIdentity)
+                    : defender.attacks)
+                : patchWeaponList(defender.attacks),
+              weaponProfiles: patchWeaponList(defender.weaponProfiles),
+              equistaminadWeapons: patchWeaponList(defender.equistaminadWeapons),
+            };
+            if (polearmSpecialResult.weaponPatch.broken) {
+              defenderWeaponPatch.combatWeaponState = {
+                ...(defender.combatWeaponState || {}),
+                readyWeaponId: null,
+                droppedWeaponIds: Array.from(new Set([
+                  ...(defender.combatWeaponState?.droppedWeaponIds || []),
+                  readyWeaponIdentity,
+                ].filter(Boolean))),
+                lastTransitionReason: "polearm-shaft-broken",
+              };
+              defenderWeaponPatch.selectedAttack = null;
+            }
+            Object.assign(defender, defenderWeaponPatch);
+            if (defenderIndex >= 0) {
+              updated[defenderIndex] = {
+                ...updated[defenderIndex],
+                ...defenderWeaponPatch,
+              };
+              defender = updated[defenderIndex];
+            }
+          }
+
+          emitWeaponInteractionAnimation({
+            type: polearmSpecialResult.effect === "polearm-shaft-broken" || polearmSpecialResult.effect === "polearm-shaft-damaged"
+              ? "shaft-impact"
+              : "point-displacement",
+            actorId: stateAttacker?.id || attacker?.id,
+            targetId: defender?.id,
+            label: polearmSpecialResult.effect,
+            severity: polearmSpecialResult.effect === "polearm-shaft-broken" ? "major" : "normal",
+          });
+
+          const specialActionLabel = polearmSpecialResult.effect === "polearm-shaft-broken"
+            ? `${defender?.name || "The defender"}'s polearm shaft breaks!`
+            : polearmSpecialResult.effect === "polearm-shaft-damaged"
+              ? `${stateAttacker?.name || attacker?.name || "The attacker"} damages ${defender?.name || "the defender"}'s polearm shaft.`
+              : `${stateAttacker?.name || attacker?.name || "The attacker"} beats aside ${defender?.name || "the defender"}'s polearm and enters inside the point.`;
+          addLog?.({
+            audience: COMBAT_LOG_AUDIENCES.PLAYER,
+            channel: COMBAT_LOG_CHANNELS.ACTION,
+            eventType: polearmSpecialResult.effect,
+            level: "info",
+            type: "combat",
+            actorId: stateAttacker?.id || attacker?.id,
+            targetId: defender?.id,
+            executionKey: attackActionId,
+            source: attackSource,
+            message: specialActionLabel,
+            data: {
+              ...polearmSpecialResult,
+              selectedTechnique: selectedPolearmTechnique,
+            },
+          }, "combat");
+          finishAttackAfterImpact({
+            updated,
+            attacker: stateAttacker || effectiveAttacker || attacker,
+            attackerInArray,
+            attackData,
+            reason: polearmSpecialResult.effect,
+            endTurnDelayMs: 0,
+          });
+          return;
+        }
+
+        const specializedHitEffect = resolveSpecializedWeaponEffectOnHit({
+          actionId:
+            attackData?.specializedWeaponActionId ||
+            attackData?.selectedTechnique ||
+            attackData?.attackMode ||
+            selectedPolearmTechnique,
+          attacker: stateAttacker || effectiveAttacker || attacker,
+          defender,
+          currentRound: meleeRoundRef.current ?? meleeRound,
+        });
+        if (specializedHitEffect.applied) {
+          if (specializedHitEffect.attackerPatch && attackerInArray) {
+            Object.assign(attackerInArray, specializedHitEffect.attackerPatch);
+            if (attackerIndex >= 0) {
+              updated[attackerIndex] = {
+                ...updated[attackerIndex],
+                ...specializedHitEffect.attackerPatch,
+              };
+            }
+          }
+          if (specializedHitEffect.defenderPatch && defender) {
+            Object.assign(defender, specializedHitEffect.defenderPatch);
+            if (defenderIndex >= 0) {
+              updated[defenderIndex] = {
+                ...updated[defenderIndex],
+                ...specializedHitEffect.defenderPatch,
+              };
+              defender = updated[defenderIndex];
+            }
+          }
+          if (specializedHitEffect.effect === "shield-bind-control") {
+            const persistentBind = createPersistentWeaponBind({
+              sourceActorId: stateAttacker?.id || attacker?.id,
+              targetActorId: defender?.id,
+              sourceWeaponId: attackData?.weaponId || attackData?.id || attackData?.profileKey || attackData?.name,
+              targetWeaponId: getReadyCombatWeapon(defender)?.weaponId || getReadyCombatWeapon(defender)?.id || getReadyCombatWeapon(defender)?.name || null,
+              currentRound: meleeRoundRef.current ?? meleeRound,
+              durationRounds: 2,
+              source: "shield-bind-and-strike",
+              controlBonus: 1,
+            });
+            if (persistentBind) upsertPersistentWeaponBind(weaponBindRegistryRef.current, persistentBind);
+          }
+          emitWeaponInteractionAnimation({
+            type:
+              specializedHitEffect.effect === "halberd-hook-off-balance" || specializedHitEffect.effect === "axe-hook-control"
+                ? "hook-draw"
+                : specializedHitEffect.effect === "impact-guard-disruption" || specializedHitEffect.effect === "shield-bind-control"
+                  ? "guard-bind"
+                  : specializedHitEffect.effect === "impact-armor-trauma"
+                    ? "impact-pulse"
+                    : specializedHitEffect.effect === "dagger-close-thrust" || specializedHitEffect.effect === "dagger-grapple-point"
+                      ? "close-thrust"
+                      : "weapon-control",
+            actorId: stateAttacker?.id || attacker?.id,
+            targetId: defender?.id,
+            label: specializedHitEffect.action?.label || specializedHitEffect.effect,
+          });
+          const specializedEffectMessage = {
+            "halberd-hook-off-balance": `${stateAttacker?.name || attacker?.name || "The halberdier"} hooks ${defender?.name || "the opponent"} off balance.`,
+            "axe-hook-control": `${stateAttacker?.name || attacker?.name || "The axeman"} hooks ${defender?.name || "the opponent"}'s guard off line.`,
+            "axe-guard-pressure": `${stateAttacker?.name || attacker?.name || "The axeman"} hews through ${defender?.name || "the opponent"}'s guard.`,
+            "impact-armor-trauma": `${stateAttacker?.name || attacker?.name || "The fighter"} drives a crushing blow into ${defender?.name || "the opponent"}'s protection.`,
+            "impact-guard-disruption": `${stateAttacker?.name || attacker?.name || "The fighter"} disrupts ${defender?.name || "the opponent"}'s guard with an impact strike.`,
+            "dagger-close-thrust": `${stateAttacker?.name || attacker?.name || "The dagger fighter"} exploits close measure with a quick thrust.`,
+            "dagger-grapple-point": `${stateAttacker?.name || attacker?.name || "The dagger fighter"} uses the clinch to seek an opening.`,
+            "shield-bind-control": `${stateAttacker?.name || attacker?.name || "The shielded fighter"} binds the weapon line and strikes around the shield.`,
+            "pike-point-set": `${stateAttacker?.name || attacker?.name || "The pikeman"} sets the point against ${defender?.name || "the opponent"}.`,
+            "half-sword-control-established": `${stateAttacker?.name || attacker?.name || "The fighter"} establishes half-sword control.`,
+          }[specializedHitEffect.effect] || `${stateAttacker?.name || attacker?.name || "The fighter"} applies ${specializedHitEffect.action?.label || "a specialized weapon effect"}.`;
+          addLog?.({
+            audience: COMBAT_LOG_AUDIENCES.PLAYER,
+            channel: COMBAT_LOG_CHANNELS.ACTION,
+            eventType: specializedHitEffect.effect,
+            level: "info",
+            type: "combat",
+            actorId: stateAttacker?.id || attacker?.id,
+            targetId: defender?.id,
+            executionKey: attackActionId,
+            source: attackSource,
+            message: specializedEffectMessage,
+            data: specializedHitEffect,
+          }, "combat");
+        }
+
         const defenderArmorProfile = normalizeArmorProfile(defender);
         // Physical arrows and bolts must resolve armor contact before bodily damage.
         // Do not classify every ranged effect as a projectile: spells and psionics may
@@ -30075,7 +33881,7 @@ function CombatPage({ characters = [] }) {
                 displacementFeet: 0,
               },
               stamina: {
-                spent: calculateAttackStaminaCost({
+                spent: calculateHybridWeaponAttackStaminaCost({
                   fighter: stateAttacker || attacker,
                   weapon: attackData,
                   attackType: attackData?.attackType || attackData?.type,
@@ -30703,7 +34509,7 @@ function CombatPage({ characters = [] }) {
               displacementFeet: 0,
             },
             stamina: {
-              spent: calculateAttackStaminaCost({
+              spent: calculateHybridWeaponAttackStaminaCost({
                 fighter: stateAttacker || attacker,
                 weapon: attackData,
                 attackType: attackData?.attackType || attackData?.type,
@@ -31495,11 +35301,11 @@ function CombatPage({ characters = [] }) {
           bigPainHit = painResult.painTriggered;
         }
 
-        // 2) Morale check (only if enabled and defender is not incapacitated)
+        // 2) Morale check (only for meaningful new pressure)
         if (settings.useMoraleRouting && canFighterAct(defenderAfterHit)) {
           const maxHP = defenderAfterHit.maxHP || defenderAfterHit.totalHP || defenderAfterHit.currentHP || 1;
-          const hpPercent = maxHP > 0 ? defenderAfterHit.currentHP / maxHP : 1;
-
+          const hpAfter = getFighterHP(defenderAfterHit);
+          const hpPercent = maxHP > 0 ? hpAfter / maxHP : 1;
           const alliesDownRatio = getAlliesDownRatio(updated, defenderAfterHit);
 
           // Check if defender already failed a horror check this round
@@ -31511,33 +35317,120 @@ function CombatPage({ characters = [] }) {
             defenderAfterHit.moraleState?.status === "ROUTED" ||
             defenderAfterHit.statusEffects?.includes("ROUTED");
 
-          const moraleOutcome = resolveMoraleCheck(defenderAfterHit, {
-            roundNumber: meleeRound || 0,
-            reason: bigPainHit ? "pain_hit" : "damage",
-            hpPercent: hpPercent,
-            alliesDownRatio: alliesDownRatio,
-            horrorFailed: horrorFailed,
-            bigPainHit: bigPainHit,
+          const moraleTrigger = evaluateDamageMoraleTrigger({
+            defender: defenderAfterHit,
+            hpBefore: startingHP,
+            hpAfter,
             damageDealt: finalDamage,
+            critical: isCriticalHit && !defenseSuccess,
+            bigPainHit,
+            alliesDownRatio,
+            horrorFailed,
           });
 
-          defenderAfterHit = normalizeMoraleState({
-            ...defenderAfterHit,
-            moraleState: moraleOutcome.moraleState,
-          });
+          if (!moraleTrigger.shouldCheck) {
+            addLog?.({
+              audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+              channel: COMBAT_LOG_CHANNELS.VALIDATION,
+              eventType: "damage-morale-check-skipped",
+              level: "info",
+              type: "debug",
+              actorId: defenderAfterHit.id,
+              targetId: defenderAfterHit.id,
+              source: attackSource,
+              message:
+                `damage morale check skipped: actor=${formatNormalAttackActorLabel(defenderAfterHit, stateAttacker, updated)} ` +
+                `damage=${moraleTrigger.damage}/${moraleTrigger.maxHp} previous=${moraleTrigger.previousStatus} ` +
+                `reason=no-meaningful-trigger`,
+              data: moraleTrigger,
+            }, "debug");
+          } else {
+            const rawMoraleOutcome = resolveMoraleCheck(defenderAfterHit, {
+              roundNumber: meleeRound || 0,
+              reason: bigPainHit ? "pain_hit" : "damage",
+              hpPercent,
+              alliesDownRatio,
+              horrorFailed,
+              bigPainHit,
+              damageDealt: finalDamage,
+            });
+            const moraleOutcome = guardDamageMoraleOutcome({
+              fighterBefore: defenderAfterHit,
+              outcome: rawMoraleOutcome,
+              trigger: moraleTrigger,
+            });
 
-          if (moraleOutcome.moraleState.status === "ROUTED") {
-            if (wasAlreadyRouting) {
-              addLog(`${formatNormalAttackActorLabel(defenderAfterHit, stateAttacker, updated)} is already routing; not reapplying route break`, "debug");
-            } else {
-              addLog(`${formatNormalAttackActorLabel(defenderAfterHit, stateAttacker, updated)} breaks and ROUTES!`, "warning");
+            defenderAfterHit = normalizeMoraleState({
+              ...defenderAfterHit,
+              moraleState: moraleOutcome.moraleState,
+            });
+
+            addLog?.({
+              audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+              channel: COMBAT_LOG_CHANNELS.VALIDATION,
+              eventType: "damage-morale-transition-audit",
+              level: moraleOutcome.appliedStatus === "ROUTED" ? "warning" : "info",
+              type: "debug",
+              actorId: defenderAfterHit.id,
+              targetId: defenderAfterHit.id,
+              source: attackSource,
+              message:
+                `damage morale transition audit: actor=${formatNormalAttackActorLabel(defenderAfterHit, stateAttacker, updated)} ` +
+                `trigger=${moraleTrigger.primaryReason} damage=${moraleTrigger.damage}/${moraleTrigger.maxHp} ` +
+                `previous=${moraleOutcome.previousStatus} requested=${moraleOutcome.requestedStatus} ` +
+                `applied=${moraleOutcome.appliedStatus} suppressed=${moraleOutcome.suppressed === true}`,
+              data: {
+                trigger: moraleTrigger,
+                outcome: {
+                  success: moraleOutcome.success,
+                  result: moraleOutcome.result,
+                  previousStatus: moraleOutcome.previousStatus,
+                  requestedStatus: moraleOutcome.requestedStatus,
+                  appliedStatus: moraleOutcome.appliedStatus,
+                  suppressed: moraleOutcome.suppressed === true,
+                  suppressionReason: moraleOutcome.suppressionReason || null,
+                },
+              },
+            }, "debug");
+
+            if (moraleOutcome.appliedStatus === "ROUTED") {
+              if (wasAlreadyRouting) {
+                addLog(`${formatNormalAttackActorLabel(defenderAfterHit, stateAttacker, updated)} is already routing; not reapplying route break`, "debug");
+              } else {
+                addLog(`${formatNormalAttackActorLabel(defenderAfterHit, stateAttacker, updated)} breaks and ROUTES!`, "warning");
+              }
+            } else if (
+              moraleOutcome.appliedStatus === "SHAKEN" &&
+              moraleOutcome.result &&
+              !moraleOutcome.success &&
+              moraleOutcome.previousStatus !== "SHAKEN"
+            ) {
+              addLog(`${formatNormalAttackActorLabel(defenderAfterHit, stateAttacker, updated)} is SHAKEN by the attack!`, "info");
+            } else if (
+              moraleOutcome.suppressed === true &&
+              moraleOutcome.requestedStatus === "ROUTED"
+            ) {
+              addLog?.({
+                audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+                channel: COMBAT_LOG_CHANNELS.VALIDATION,
+                eventType: "damage-route-escalation-suppressed",
+                level: "warning",
+                type: "debug",
+                actorId: defenderAfterHit.id,
+                source: attackSource,
+                message:
+                  `damage route escalation suppressed: actor=${formatNormalAttackActorLabel(defenderAfterHit, stateAttacker, updated)} ` +
+                  `previous=${moraleOutcome.previousStatus} applied=${moraleOutcome.appliedStatus} ` +
+                  `reason=${moraleOutcome.suppressionReason}`,
+                data: {
+                  trigger: moraleTrigger,
+                  previousStatus: moraleOutcome.previousStatus,
+                  requestedStatus: moraleOutcome.requestedStatus,
+                  appliedStatus: moraleOutcome.appliedStatus,
+                  suppressionReason: moraleOutcome.suppressionReason,
+                },
+              }, "warning");
             }
-          } else if (
-            moraleOutcome.moraleState.status === "SHAKEN" &&
-            moraleOutcome.result &&
-            !moraleOutcome.success
-          ) {
-            addLog(`${formatNormalAttackActorLabel(defenderAfterHit, stateAttacker, updated)} is SHAKEN by the attack!`, "info");
           }
         }
 
@@ -32137,7 +36030,7 @@ function CombatPage({ characters = [] }) {
       addLog,
       fighters,
       isHexOccupied,
-      getWeaponRange,
+      getWeaponRange: getCanonicalCombatWeaponRange,
       turnCounter,
       endTurn,
       setPositions,
@@ -32510,83 +36403,10 @@ function CombatPage({ characters = [] }) {
   }, []);
 
   // Unified movement calculation - single source of truth
-  const getMaxMoveFtThisAction = useCallback((fighter, movementType = "Run") => {
-    if (fighter?.normalizedSelectableActor) {
-      const canonicalAllowance = getEnemyActionMovementAllowanceFeet(
-        fighter,
-        movementType,
-        0,
-      );
-      if (canonicalAllowance > 0) return canonicalAllowance;
-    }
-    const speed = fighter.Spd || fighter.spd || fighter.attributes?.Spd || fighter.attributes?.spd || 10;
-    const actionsPerRound = fighter.actionsPerRound || fighter.actionsPerMelee || 4;
+  const getMaxMoveFtThisAction = useCallback((fighter, movementType = "Run") => (
+    getCanonicalMovementActionBudgetFt(fighter, movementType)
+  ), []);
 
-    // Check if fighter is flying
-    const isFlyingState = fighter.isFlying || fighter.altitude > 0;
-    // Check abilities - can be array (raw) or object (parsed)
-    let canFly = false;
-    if (Array.isArray(fighter.abilities)) {
-      canFly = fighter.abilities.some(a =>
-        typeof a === "string" && (a.toLowerCase().includes("fly") || a.toLowerCase().includes("flight"))
-      );
-    } else if (fighter.abilities && typeof fighter.abilities === "object") {
-      // Check parsed abilities object
-      canFly = fighter.abilities.movement?.flight ||
-        (Array.isArray(fighter.abilities.other) && fighter.abilities.other.some(a =>
-          typeof a === "string" && (a.toLowerCase().includes("fly") || a.toLowerCase().includes("flight"))
-        ));
-    }
-
-    // If currently flying, use flight speed
-    if (isFlyingState && canFly) {
-      // Flight movement: Speed multiplier 18 feet per melee
-      // Default flight multiplier is 8 (30 mph for Speed 10)
-      const flightMultiplier = 8; // Can be extracted from abilities if needed
-      const feetPerMelee = speed * flightMultiplier * 18;
-      const feetPerAction = feetPerMelee / actionsPerRound;
-      return feetPerAction;
-    }
-
-    // If can fly but grounded, use slower ground speed
-    if (canFly && !isFlyingState) {
-      // Check for explicit ground speed in movementProfile
-      const groundSpd = fighter.movementProfile?.groundSpd;
-      if (groundSpd) {
-        const feetPerMelee = groundSpd * 18;
-        const feetPerAction = feetPerMelee / actionsPerRound;
-        if (movementType === "MOVE" || movementType === "Walk") {
-          return Math.floor(feetPerAction * 0.5);
-        }
-        return feetPerAction;
-      }
-
-      // Fallback: use default slow ground speed for flying combatants
-      // Small flyers (hawks, scouts) get Spd 4 on ground
-      const sizeCategory = fighter.sizeCategory || fighter.size || "MEDIUM";
-      const isSmall = sizeCategory === "TINY" || sizeCategory === "SMALL";
-      const groundSpeed = isSmall ? 4 : 6;
-      const feetPerMelee = groundSpeed * 18;
-      const feetPerAction = feetPerMelee / actionsPerRound;
-      if (movementType === "MOVE" || movementType === "Walk") {
-        return Math.floor(feetPerAction * 0.5);
-      }
-      return feetPerAction;
-    }
-
-    // Ground movement for non-flying combatants: Medieval Combat Simulator FORMULA
-    // Speed 18 = feet per melee (running speed)
-    const feetPerMelee = speed * 18;
-    const feetPerAction = feetPerMelee / actionsPerRound;
-
-    // Walking speed is ~half of running speed (Medieval Combat Simulator rule)
-    if (movementType === "MOVE" || movementType === "Walk") {
-      return Math.floor(feetPerAction * 0.5);
-    }
-
-    // Running speed (full speed)
-    return feetPerAction;
-  }, []);
 
   // Helper function to find flanking positions around a target
   const findFlankingPositions = useCallback((targetPos, allPositions, attackerId) => {
@@ -32898,7 +36718,7 @@ function CombatPage({ characters = [] }) {
         }));
         // Continue with normal turn (don't flee)
       } else {
-        
+
         const currentPositions =
           positionsRef.current && Object.keys(positionsRef.current).length > 0
             ? positionsRef.current
@@ -33481,7 +37301,25 @@ function CombatPage({ characters = [] }) {
       const guarded = liveFighters.map((live) => {
         const next = incomingById.get(live.id);
         if (!next) return live;
-        return clampAIstaminaRestore(next, live);
+        const staminaGuarded = clampAIstaminaRestore(next, live);
+        const authoritativePosition =
+          positionsRef.current?.[live.id] ||
+          getCombatantGridPosition(live) ||
+          null;
+        return {
+          ...staminaGuarded,
+          ...(authoritativePosition
+            ? {
+                x: Number(authoritativePosition.x),
+                y: Number(authoritativePosition.y),
+                position: { ...authoritativePosition },
+              }
+            : {}),
+          movementSpentThisRoundFt: Math.max(
+            Number(live.movementSpentThisRoundFt) || 0,
+            Number(staminaGuarded.movementSpentThisRoundFt) || 0,
+          ),
+        };
       });
       return commitFighters(guarded);
     };
@@ -33515,24 +37353,91 @@ function CombatPage({ characters = [] }) {
         if (!consumedMovementReceipt.ok) return false;
         initiativeActionSequenceRef.current = movementSequence;
       }
-      const nextPosition = {
-        ...destination,
+
+      const liveFighter = (fightersRef.current || []).find((entry) => entry?.id === fighterLike.id) || fighterLike;
+      const origin = positionsRef.current?.[fighterLike.id] || getCombatantGridPosition(liveFighter);
+      if (!origin) return false;
+      const requestedDestination = {
         x: Number(destination.x),
         y: Number(destination.y),
       };
+      const movementMode = "walk";
+      const movementBudgetFeet = getCanonicalMovementActionBudgetFt(liveFighter, movementMode);
+      const maximumSteps = Math.max(0, Math.floor(movementBudgetFeet / 5));
+      if (maximumSteps <= 0) {
+        addLog(`${formatCombatActorLabel(liveFighter, { roster: fightersRef.current ?? fighters ?? [] })} has no walking movement remaining this round.`, "info");
+        return false;
+      }
+      const occupied = new Set(Object.entries(positionsRef.current || {})
+        .filter(([candidateId]) => String(candidateId) !== String(fighterLike.id))
+        .map(([, position]) => `${position.x},${position.y}`));
+      const fullPath = buildTacticalPath({
+        from: origin,
+        destination: { x: Number(destination.x), y: Number(destination.y) },
+        occupied,
+        isHexLegal: (hex) => isValidPosition(hex.x, hex.y),
+      });
+      const committedPath = fullPath.slice(0, maximumSteps).map((step) => ({ ...step }));
+      const nextPosition = committedPath.at(-1);
+      if (!nextPosition) return false;
+      const actualDistanceFeet = committedPath.length * 5;
       const movementCommitted = handlePositionChange(fighterLike.id, nextPosition, {
-        action: "MOVE",
+        action: "WALK",
         actionCost: MOVEMENT_ACTIONS.MOVE.actionCost,
-        description: source,
+        description: `${source}; ${actualDistanceFeet} ft tactical path`,
         persistImmediately: true,
+        path: committedPath,
         source,
+        trackRoundMovement: true,
       });
       if (movementCommitted === false) return false;
+
+      // Keep the AI module's live context synchronized with the clipped canonical
+      // destination. Downstream range/flank checks must never read the farther
+      // requested coordinate after movement authority has committed a shorter path.
+      if (positionsForAI && typeof positionsForAI === "object") {
+        positionsForAI[fighterLike.id] = { ...nextPosition };
+      }
+      if (context?.positions && typeof context.positions === "object") {
+        context.positions[fighterLike.id] = { ...nextPosition };
+      }
+
+      // The legacy player-AI planner may continue evaluating the requested destination
+      // after this callback. Reconcile its local snapshots to the canonical clipped
+      // endpoint so range checks and logs cannot use the rejected farther destination.
+      try {
+        destination.x = nextPosition.x;
+        destination.y = nextPosition.y;
+      } catch {
+        // Ignore immutable planner snapshots; canonical stores remain authoritative.
+      }
+      try {
+        fighterLike.x = nextPosition.x;
+        fighterLike.y = nextPosition.y;
+        fighterLike.position = { ...nextPosition };
+      } catch {
+        // Ignore immutable actor snapshots; canonical stores remain authoritative.
+      }
+
+      if (
+        requestedDestination.x !== nextPosition.x ||
+        requestedDestination.y !== nextPosition.y
+      ) {
+        addLog(
+          `player AI movement destination clamped: actor=${formatCombatActorLabel(liveFighter, { roster: fightersRef.current ?? fighters ?? [] })} ` +
+          `requested=(${requestedDestination.x},${requestedDestination.y}) committed=(${nextPosition.x},${nextPosition.y}) ` +
+          `budget=${movementBudgetFeet}ft source=${source}`,
+          "debug",
+        );
+      }
+
       const movementLabel = source === "player-ai-approach-move-only"
         ? "player AI approach movement committed"
         : "player AI flanking movement committed";
       addLog(
-        `${movementLabel}: actor=${formatCombatActorLabel(fighterLike, { roster: fightersRef.current ?? fighters ?? [] })} to=(${nextPosition.x},${nextPosition.y}) source=${source}`,
+        `${movementLabel}: actor=${formatCombatActorLabel(liveFighter, { roster: fightersRef.current ?? fighters ?? [] })} ` +
+        `from=(${origin.x},${origin.y}) to=(${nextPosition.x},${nextPosition.y}) ` +
+        `distance=${actualDistanceFeet}ft budget=${movementBudgetFeet}ft source=${source}`,
         "debug",
       );
       return true;
@@ -33938,6 +37843,7 @@ function CombatPage({ characters = [] }) {
       const explicitPassOrTerminalSource = /pass|non-improving|no-actions|no-action|no-target|no-move|unresolved|cannot-act|stale|blocked|fallback|fled|defeated|combat-end/i.test(String(source || ""));
       const refreshedActive = (fightersRef.current ?? fighters ?? [])?.[turnIndexRef.current];
       const canContinuePlayerAI =
+        allowsSameActorActionContinuation(combatTimingModeRef.current) &&
         refreshedActive?.id === startFighterId &&
         refreshedRemaining > 0 &&
         !explicitPassOrTerminalSource &&
@@ -34352,9 +38258,10 @@ function CombatPage({ characters = [] }) {
         },
       }, "debug");
     }
-    const playerAIDecisionActor =
+    const playerAIDecisionActor = normalizeCanonicalActorWeapons(
       playerAIDecisionRoster.find((fighter) => fighter?.id === latestPlayer?.id) ||
-      sanitizeGrappleDecisionSnapshot(latestPlayer, playerAIDecisionRoster);
+      sanitizeGrappleDecisionSnapshot(latestPlayer, playerAIDecisionRoster)
+    );
 
     addLog?.({
       audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
@@ -34375,6 +38282,56 @@ function CombatPage({ characters = [] }) {
       },
     }, "debug");
     addLog(`handlePlayerAITurn before build context fighter=${latestPlayer.name}`, "debug");
+    const addCanonicalPlayerAILog = (entry, type = "info") => {
+      const message = typeof entry === "string" ? entry : entry?.message;
+      const actorLabels = [
+        latestPlayer?.battleLabel,
+        latestPlayer?.displayName,
+        latestPlayer?.name,
+      ].filter(Boolean).map((label) => String(label));
+      const mayDescribeActiveActorMovement =
+        typeof message === "string" &&
+        actorLabels.some((label) => message.toLowerCase().startsWith(`${label.toLowerCase()} move`));
+      if (mayDescribeActiveActorMovement) {
+        const reconciliation = reconcileCanonicalMovementLog({
+          message,
+          actorId: latestPlayer.id,
+          positions: positionsRef.current,
+        });
+        const committedMovement = lastMovementCommitRef.current?.[latestPlayer.id] || null;
+        const coordinateMatches = Array.from(message.matchAll(/\((-?\d+)\s*,\s*(-?\d+)\)/g));
+        const narratedDestination = coordinateMatches.length > 0
+          ? {
+              x: Number(coordinateMatches.at(-1)?.[1]),
+              y: Number(coordinateMatches.at(-1)?.[2]),
+            }
+          : null;
+        const conflictsWithCommittedMovement = Boolean(
+          committedMovement &&
+          narratedDestination &&
+          (narratedDestination.x !== committedMovement.x || narratedDestination.y !== committedMovement.y)
+        );
+        if (!reconciliation.accepted || conflictsWithCommittedMovement) {
+          addLog?.({
+            audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+            channel: COMBAT_LOG_CHANNELS.VALIDATION,
+            eventType: "stale-player-ai-movement-log-suppressed",
+            level: "warning",
+            type: "debug",
+            actorId: latestPlayer.id,
+            source: startReason,
+            message:
+              `stale player AI movement log suppressed: actorId=${latestPlayer.id} ` +
+              `requested=(${narratedDestination?.x ?? reconciliation.requested?.x ?? "?"},${narratedDestination?.y ?? reconciliation.requested?.y ?? "?"}) ` +
+              `authoritative=(${committedMovement?.x ?? reconciliation.authoritative?.x ?? "?"},${committedMovement?.y ?? reconciliation.authoritative?.y ?? "?"})`,
+            data: { reconciliation, committedMovement, narratedDestination },
+          }, "debug");
+          return false;
+        }
+      }
+      addLog(entry, type);
+      return true;
+    };
     let context;
     try {
       const rawContext = {
@@ -34506,7 +38463,7 @@ function CombatPage({ characters = [] }) {
       // Core helpers
       canFighterAct,
       getHPStatus,
-      addLog,
+      addLog: addCanonicalPlayerAILog,
       scheduleEndTurn: schedulePlayerAIEndTurn,
       claimPlayerAIContinuation,
       completePlayerAIContinuation,
@@ -34568,7 +38525,7 @@ function CombatPage({ characters = [] }) {
       activeTacticalImpactRef,
       turnCounterRef,
       // Weapon utilities
-      getWeaponRange,
+      getWeaponRange: getCanonicalCombatWeaponRange,
       getWeaponType,
       getWeaponLength,
       autoEquipWeapons,
@@ -35937,6 +39894,7 @@ function CombatPage({ characters = [] }) {
       const latestFighter = fightersRef.current?.[latestIndex];
       const authoritativeActive = latestFighter?.id === actorId;
       const canContinue =
+        allowsSameActorActionContinuation(combatTimingModeRef.current) &&
         remainingActions > 0 &&
         authoritativeActive &&
         combatActiveRef.current &&
@@ -36777,7 +40735,7 @@ function CombatPage({ characters = [] }) {
         };
 
         const isOccupiedForMove = (x, y) => isHexOccupied(x, y, liveEnemy.id);
-        if (profession(targetHex.x, targetHex.y) || !isValidPosition(targetHex.x, targetHex.y)) {
+        if (isOccupiedForMove(targetHex.x, targetHex.y) || !isValidPosition(targetHex.x, targetHex.y)) {
           const neighbors = getHexNeighbors(targetHex.x, targetHex.y)
             .filter(n => isValidPosition(n.x, n.y) && !isOccupiedForMove(n.x, n.y));
           if (neighbors.length > 0) targetHex = neighbors[0];
@@ -37566,7 +41524,7 @@ function CombatPage({ characters = [] }) {
         // Continue with normal AI turn (don't end turn)
       } else {
         // Normal routing behavior - attempt to flee
-        
+
         const currentPositions =
           positionsRef.current && Object.keys(positionsRef.current).length > 0
             ? positionsRef.current
@@ -38896,7 +42854,7 @@ function CombatPage({ characters = [] }) {
           getGrappleStatus(enemy).state !== GRAPPLE_STATES.NEUTRAL ||
           getGrappleStatus(target).state !== GRAPPLE_STATES.NEUTRAL,
       });
-      selectedAttack = normalized;
+      selectedAttack = normalizeCanonicalCombatWeapon(normalized);
       attackName = selectedAttack?.name || attackName;
 
       // Optional one-run debug: set localStorage.debugAttackNormalize = "1"
@@ -38919,13 +42877,16 @@ function CombatPage({ characters = [] }) {
 
     // Helper: enemy range validation uses 3D distance (horizontal + altitude) for ranged attacks
     const isRangedLikeForEnemy = (atk) => {
-      const n = String(atk?.name || "").toLowerCase();
+      const canonicalAttack = normalizeCanonicalCombatWeapon(atk || {});
+      if (isCanonicalInfantrySpear(canonicalAttack)) return false;
+      const n = String(canonicalAttack?.name || "").toLowerCase();
       return (
-        atk?.type === "ranged" ||
-        atk?.weaponType === "thrown" ||
-        atk?.isThrown === true ||
-        (atk?.range != null && Number(atk.range) > 10) ||
-        (atk?.category && String(atk.category).toLowerCase() === "thrown") ||
+        isCanonicalThrownWeapon(canonicalAttack) ||
+        canonicalAttack?.type === "ranged" ||
+        canonicalAttack?.weaponType === "thrown" ||
+        canonicalAttack?.isThrown === true ||
+        (canonicalAttack?.range != null && Number(canonicalAttack.range) > 10) ||
+        (canonicalAttack?.category && String(canonicalAttack.category).toLowerCase() === "thrown") ||
         n.includes("bow") ||
         n.includes("crossbow") ||
         n.includes("sling")
@@ -38987,6 +42948,16 @@ function CombatPage({ characters = [] }) {
       return validateWeaponRange(attackerF, defenderF, atk, d);
     };
 
+    const combatLogRoster = fightersRef.current ?? fighters ?? [];
+    const enemyLogLabel = formatCombatActorLabel(enemy, {
+      roster: combatLogRoster,
+      counterpart: target,
+    });
+    const targetLogLabel = formatCombatActorLabel(target, {
+      roster: combatLogRoster,
+      counterpart: enemy,
+    });
+
     // Check weapon range for enemy attacks
     if (livePositions && livePositions[enemy.id] && livePositions[target.id]) {
       // Check if enemy just arrived from pending movement - use CURRENT position
@@ -38995,16 +42966,6 @@ function CombatPage({ characters = [] }) {
 
       // Recalculate distance with current positions using proper hex distance
       currentDistance = calculateDistance(enemyCurrentPos, targetCurrentPos);
-      const combatLogRoster = fightersRef.current ?? fighters ?? [];
-      const enemyLogLabel = formatCombatActorLabel(enemy, {
-        roster: combatLogRoster,
-        counterpart: target,
-      });
-      const targetLogLabel = formatCombatActorLabel(target, {
-        roster: combatLogRoster,
-        counterpart: enemy,
-      });
-
       selectedAttack = getSelectableActorAttackForDistance(
         enemy,
         currentDistance,
@@ -39046,7 +43007,7 @@ function CombatPage({ characters = [] }) {
           preferRanged: true,
           grappleRange: hasReciprocalGrapplePair(enemy, target),
         });
-        selectedAttack = normalized;
+        selectedAttack = normalizeCanonicalCombatWeapon(normalized);
         attackName = selectedAttack?.name || attackName;
       }
 
@@ -39076,7 +43037,7 @@ function CombatPage({ characters = [] }) {
             getGrappleStatus(target).state !== GRAPPLE_STATES.NEUTRAL ||
             currentDistance <= 0,
         });
-        selectedAttack = normalizedFallback;
+        selectedAttack = normalizeCanonicalCombatWeapon(normalizedFallback);
         attackName = selectedAttack?.name || closeRangeFallback.name;
         addLog(`enemy melee selected close-range attack: ${attackName}`, "info");
       }
@@ -39551,9 +43512,20 @@ function CombatPage({ characters = [] }) {
           getPreferredMovementModeForAI(enemy, target) === "flight" ||
           enemy?.movementProfile?.preferFlight === true
         );
-        const approachMovementType = approachPrefersFlight ? "FLY" : "RUN";
-        const approachMovementLabel = approachMovementType === "FLY" ? "flies" : "runs";
-        const approachMaxFeet = getMaxMoveFtThisAction(enemy, approachMovementType === "FLY" ? "FLY" : "Run");
+        const approachMovementType = approachPrefersFlight
+          ? "FLY"
+          : isInitiativeActionsMode(combatTimingModeRef.current)
+            ? "MOVE"
+            : "RUN";
+        const approachMovementLabel = approachMovementType === "FLY"
+          ? "flies"
+          : approachMovementType === "MOVE"
+            ? "walks"
+            : "runs";
+        const approachMaxFeet = getMaxMoveFtThisAction(
+          enemy,
+          approachMovementType === "FLY" ? "FLY" : approachMovementType === "MOVE" ? "MOVE" : "Run",
+        );
         addLog(
           `enemy approach movement mode: actor=${formatCombatActorLabel(enemy, { roster: fightersRef.current ?? fighters ?? [], counterpart: target })} startMode=${approachAirborne ? "flight" : "ground"} resultMode=${approachMovementType === "FLY" ? "flight" : "ground"} airborne=${approachAirborne} source=approach-planner origin=(${currentPos.x},${currentPos.y})`,
           "debug",
@@ -39762,7 +43734,11 @@ function CombatPage({ characters = [] }) {
         }
         const approachFinalizerSource = executableApproachPlan?.type === "hold" || !executableApproachPlan?.position
           ? "enemy-ai-no-move-fallback"
-          : (approachMovementType === "FLY" ? "FLY_TO_RANGE" : "RUN_TO_RANGE");
+          : approachMovementType === "FLY"
+            ? "FLY_TO_RANGE"
+            : approachMovementType === "MOVE"
+              ? "WALK_TO_RANGE"
+              : "RUN_TO_RANGE";
         let approachDistanceMoved = 0;
         let noMoveFallbackPositionSnapshot = null;
         executeEnemyMovementPlan(executableApproachPlan, {
@@ -39785,6 +43761,9 @@ function CombatPage({ characters = [] }) {
                 ? `Enemy flight closing movement to (${destination.x}, ${destination.y})`
                 : `Enemy closing movement to (${destination.x}, ${destination.y})`,
               persistImmediately: true,
+              path: Array.isArray(plan?.path) ? plan.path : null,
+              source: approachFinalizerSource,
+              trackRoundMovement: true,
             });
             enemyClosingMovementHistoryRef.current.set(enemy.id, {
               previousPosition: { ...currentPos },
@@ -40339,6 +44318,18 @@ function CombatPage({ characters = [] }) {
         }
       }
 
+      if (
+        isInitiativeActionsMode(combatTimingModeRef.current) &&
+        movementType === MOVEMENT_ACTIONS.RUN.name &&
+        !isChargingAttack
+      ) {
+        movementType = MOVEMENT_ACTIONS.MOVE.name;
+        movementDescription = "walks closer";
+        const initiativeWalkFeet = getMaxMoveFtThisAction(enemy, "MOVE");
+        hexesToMove = Math.max(1, Math.floor(initiativeWalkFeet / GRID_CONFIG.CELL_SIZE));
+        addLog(`${enemy.name} advances at a controlled walk for this initiative action.`, "info");
+      }
+
       const speciesProfileForMovement = getSpeciesProfile(enemy);
       const flightPreferenceName = String(enemy?.species || enemy?.name || "").toLowerCase();
       const isFlyingPredatorForMovement =
@@ -40394,12 +44385,20 @@ function CombatPage({ characters = [] }) {
 
       // For very far distances, use full-speed ground run or flight.
       if (currentDistance > 20 * GRID_CONFIG.CELL_SIZE) {
-        // Far away - RUN or FLY at full speed
-        movementType = enemyPrefersFlightMovement && enemyIsFlyingForMovement ? "FLY" : MOVEMENT_ACTIONS.RUN.name;
-        movementDescription = movementType === "FLY" ? "flies" : "runs";
+        // Initiative Actions keeps ordinary closing movement as a walk.
+        // Run and charge remain explicit action choices with their own costs.
+        movementType = enemyPrefersFlightMovement && enemyIsFlyingForMovement
+          ? "FLY"
+          : isInitiativeActionsMode(combatTimingModeRef.current)
+            ? MOVEMENT_ACTIONS.MOVE.name
+            : MOVEMENT_ACTIONS.RUN.name;
+        movementDescription = movementType === "FLY" ? "flies" : movementType === MOVEMENT_ACTIONS.MOVE.name ? "walks" : "runs";
 
         // Use unified movement calculation
-        const maxMovementFeet = getMaxMoveFtThisAction(enemy, movementType === "FLY" ? "FLY" : "Run");
+        const maxMovementFeet = getMaxMoveFtThisAction(
+          enemy,
+          movementType === "FLY" ? "FLY" : movementType === MOVEMENT_ACTIONS.MOVE.name ? "MOVE" : "Run",
+        );
         hexesToMove = Math.floor(maxMovementFeet / GRID_CONFIG.CELL_SIZE);
 
         // Planning only; do not emit a final-sounding movement log yet.
@@ -40488,11 +44487,12 @@ function CombatPage({ characters = [] }) {
       }
 
       const getSelectedAttackRangeFt = () => {
-        if (typeof selectedAttack?.range === "number") return selectedAttack.range;
-        if (selectedAttack?.weapon) {
-          const derivedRange = getWeaponRange(selectedAttack.weapon);
-          if (typeof derivedRange === "number" && !Number.isNaN(derivedRange)) return derivedRange;
+        const explicitProjectileRange = Number(selectedAttack?.range);
+        if (Number.isFinite(explicitProjectileRange) && explicitProjectileRange > 0 && isCanonicalRangedAttackData(selectedAttack)) {
+          return explicitProjectileRange;
         }
+        const derivedRange = getCanonicalCombatWeaponRange(selectedAttack?.weapon || selectedAttack);
+        if (typeof derivedRange === "number" && !Number.isNaN(derivedRange) && derivedRange > 0) return derivedRange;
         return GRID_CONFIG.CELL_SIZE + 0.5;
       };
       const isLegalClosingMovementCenter = (center) => (
@@ -40669,6 +44669,9 @@ function CombatPage({ characters = [] }) {
               actionCost: MOVEMENT_ACTIONS.MOVE.actionCost,
               description: `Enemy closing movement to (${destination.x}, ${destination.y})`,
               persistImmediately: true,
+              path: Array.isArray(plan?.path) ? plan.path : null,
+              source: finalizerSource,
+              trackRoundMovement: true,
             });
             enemyClosingMovementHistoryRef.current.set(enemy.id, {
               previousPosition: { ...currentPos },
@@ -40786,9 +44789,9 @@ function CombatPage({ characters = [] }) {
         if (safeMovementExecution) return;
 
         // FIX: Prevent NaN by ensuring distance is valid
-        if (plannedMovementPosition) {
-          newX = plannedMovementPosition.x;
-          newY = plannedMovementPosition.y;
+        if (movementPlan?.position) {
+          newX = movementPlan.position.x;
+          newY = movementPlan.position.y;
         } else if (distance < 0.01) {
           newX = currentPos.x;
           newY = currentPos.y;
@@ -40976,9 +44979,9 @@ function CombatPage({ characters = [] }) {
         if (safeMovementExecution) return;
 
         // FIX: Prevent NaN by checking distance is valid
-        if (plannedMovementPosition) {
-          newX = plannedMovementPosition.x;
-          newY = plannedMovementPosition.y;
+        if (movementPlan?.position) {
+          newX = movementPlan.position.x;
+          newY = movementPlan.position.y;
         } else if (distance < 0.01) {
           // Already at target, don't move
           newX = currentPos.x;
@@ -41107,11 +45110,12 @@ function CombatPage({ characters = [] }) {
             }
           } else {
             let attackRange = 5.5;
-            if (typeof selectedAttack?.range === "number") {
-              attackRange = selectedAttack.range;
-            } else if (selectedAttack?.weapon) {
-              const derivedRange = getWeaponRange(selectedAttack.weapon);
-              if (typeof derivedRange === "number" && !Number.isNaN(derivedRange)) {
+            const explicitProjectileRange = Number(selectedAttack?.range);
+            if (Number.isFinite(explicitProjectileRange) && explicitProjectileRange > 0 && isCanonicalRangedAttackData(selectedAttack)) {
+              attackRange = explicitProjectileRange;
+            } else {
+              const derivedRange = getCanonicalCombatWeaponRange(selectedAttack?.weapon || selectedAttack);
+              if (typeof derivedRange === "number" && !Number.isNaN(derivedRange) && derivedRange > 0) {
                 attackRange = derivedRange;
               }
             }
@@ -42225,6 +46229,12 @@ function CombatPage({ characters = [] }) {
       return;
     }
 
+    // Tactical Pulse owns action planning, movement, attacks, and reactions.
+    // Do not wake the legacy initiative scheduler while the pulse runtime is active.
+    if (combatTimingModeRef.current === COMBAT_TIMING_MODES.TACTICAL_PULSE) {
+      return;
+    }
+
     if (turnCounter !== turnCounterRef.current || meleeRound !== meleeRoundRef.current) {
       return;
     }
@@ -42927,7 +46937,7 @@ function CombatPage({ characters = [] }) {
     return "true-neutral";
   }, [getRandomAlignmentFromArenaRoster]);
 
-  function addCombatant(combatantData, customNameOverride = null, levelOverride = null, armorOverride = null, weaponOverride = null, ammoOverride = null, fighterTypeOverride = null, armyId = "enemy") {
+  function addCombatant(combatantData, customNameOverride = null, levelOverride = null, armorOverride = null, weaponOverride = null, ammoOverride = null, fighterTypeOverride = null, armyId = "enemy", equipmentSelectionOverride = null) {
     let newFighter;
     const sourceActorResolution = resolveCanonicalCombatActorKey(combatantData);
     const nameToUse = customNameOverride || customEnemyName;
@@ -42935,6 +46945,14 @@ function CombatPage({ characters = [] }) {
     const armorToEquip = armorOverride || selectedArmor;
     const weaponToEquip = weaponOverride !== undefined ? weaponOverride : selectedWeapon;
     const ammoToGive = ammoOverride !== undefined ? ammoOverride : selectedAmmoCount;
+    const explicitEquipmentSelection = equipmentSelectionOverride || {
+      ...currentEquipmentSelection,
+      rightHand: weaponToEquip && weaponToEquip !== "None" ? weaponToEquip : null,
+      outer:
+        armorToEquip && armorToEquip !== "None"
+          ? armorToEquip
+          : currentEquipmentSelection.outer,
+    };
     const selectedArmy = fighterTypeOverride === "player"
       ? getEncounterArmyById("party")
       : getEncounterArmyById(armyId);
@@ -43545,6 +47563,20 @@ function CombatPage({ characters = [] }) {
     // Normalize fighter to ensure IDs, moraleState, mentalState, and core d20 adapter fields exist
     newFighter = normalizeCombatantForBattle(newFighter);
 
+    // Explicit setup equipment is the only authority for humanoid weapon attacks
+    // and armor. Legacy template attacks, default loadouts, and inferred armor
+    // cannot reappear after schema normalization.
+    newFighter = applyEquipmentSelection(newFighter, explicitEquipmentSelection, {
+      weaponCatalog: availableWeapons.filter((item) => item?.name !== "None"),
+      armorCatalog: availableArmors.filter((item) => item?.name !== "None"),
+      preserveNaturalAttacks: !isHumanoid(combatantData),
+    });
+    if (newFighter.equipmentValidation?.errors?.length) {
+      newFighter.equipmentValidation.errors.forEach((message) => {
+        addLog(`${newFighter.name}: ${message}`, "warning");
+      });
+    }
+
     // Initialize ammo for ranged weapons
     const equistaminadWeapon = newFighter.equistaminadWeapons?.[0];
     if (equistaminadWeapon) {
@@ -43576,7 +47608,7 @@ function CombatPage({ characters = [] }) {
    * @param {string} weaponName - Weapon name to equip (optional)
    * @param {number} ammoCount - Ammo count to give (optional)
    */
-  function addMultipleEnemies(combatantData, count, level = 1, armorName = null, weaponName = null, ammoCount = null, armyId = "enemy") {
+  function addMultipleEnemies(combatantData, count, level = 1, armorName = null, weaponName = null, ammoCount = null, armyId = "enemy", equipmentSelection = null) {
     if (!combatantData) {
       addLog(`No combatant selected`, "error");
       return;
@@ -43600,7 +47632,7 @@ function CombatPage({ characters = [] }) {
         ? `${customEnemyName || combatantData.name} #${i + 1}`
         : (customEnemyName || combatantData.name);
 
-      const newFighter = addCombatant(combatantData, enemyName, level, armorName, weaponName, ammoCount, null, armyId);
+      const newFighter = addCombatant(combatantData, enemyName, level, armorName, weaponName, ammoCount, null, armyId, equipmentSelection);
       if (newFighter) {
         newFighters.push(newFighter);
       }
@@ -43614,9 +47646,15 @@ function CombatPage({ characters = [] }) {
     setCustomEnemyName("");
     setSelectedCombatant("");
     setEnemyLevel(1); // Reset level
-    setSelectedArmor(""); // Reset armor
-    setSelectedWeapon(""); // Reset weapon
-    setSelectedAmmoCount(0); // Reset ammo
+    setSelectedArmor("None");
+    setSelectedWeapon("None");
+    setSelectedOffHandWeapon("None");
+    setSelectedShield("None");
+    setSelectedPadding("None");
+    setSelectedMail("None");
+    setSelectedPlate("None");
+    setSelectedOuterArmor("None");
+    setSelectedAmmoCount(0);
     setSelectedArmyId("enemy"); // Reset army
     onClose();
   }
@@ -43705,7 +47743,7 @@ function CombatPage({ characters = [] }) {
           messages.push(`${entry.name || "Staged actor"} skipped: missing side.`);
           return;
         }
-        addCombatant(entry, entry.name, 1, null, "None", 0, null, armyId);
+        addCombatant(entry, entry.name, 1, null, "None", 0, null, armyId, EMPTY_EQUIPMENT_SELECTION);
         importedCount += 1;
         messages.push(`${entry.name} imported as ${armyId === "party" ? "party" : "enemy"} / ${entry.controlMode || "ai"}.`);
         return;
@@ -43726,7 +47764,7 @@ function CombatPage({ characters = [] }) {
           return;
         }
 
-        addCombatant(importEntry.autoRollCharacter, importEntry.name, 1, null, "None", 0, "player", "party");
+        addCombatant(importEntry.autoRollCharacter, importEntry.name, 1, null, "None", 0, "player", "party", EMPTY_EQUIPMENT_SELECTION);
         importedCount += 1;
         messages.push(`${importEntry.name} imported as a player${resolved.linkStatus === "repaired" ? " after updating its saved-character link" : ""}.`);
         return;
@@ -43746,7 +47784,7 @@ function CombatPage({ characters = [] }) {
           return;
         }
 
-        addCombatant(conversion.combatant, entry.name, 1, null, "None", 0, null, "enemy");
+        addCombatant(conversion.combatant, entry.name, 1, null, "None", 0, null, "enemy", EMPTY_EQUIPMENT_SELECTION);
         importedCount += 1;
         messages.push(`${entry.name} imported as an enemy.`);
         return;
@@ -43891,7 +47929,7 @@ function CombatPage({ characters = [] }) {
           message: "No actions remaining. End Turn manually.",
         };
       }
-      const attackStaminaCost = calculateAttackStaminaCost({
+      const attackStaminaCost = calculateHybridWeaponAttackStaminaCost({
         fighter: currentCommandTurn,
         weapon: result?.weapon || result?.attack || { name: result?.attackName },
         attackType: result?.attackType,
@@ -44273,7 +48311,11 @@ function CombatPage({ characters = [] }) {
     resetAITransientRefs();
     combatRosterSnapshotRef.current = null;
     setCombatActive(false);
-    setFighters(data.fighters.map(normalizeCombatantForBattle));
+    const restoredFighters = data.fighters.map((fighter) =>
+      enforceExplicitEquipmentAuthority(normalizeCombatantForBattle(fighter))
+    );
+    fightersRef.current = restoredFighters;
+    setFighters(restoredFighters);
     positionsRef.current = data.positions || {};
     committedPositionsRef.current = data.positions || {};
     recordMovementCommitMap(data.positions || {}, "combat-load-placement");
@@ -44466,7 +48508,9 @@ function CombatPage({ characters = [] }) {
       },
     );
 
-    return normalizeStandardSecondaryBladeLoadout(resetFighter);
+    return enforceExplicitEquipmentAuthority(
+      normalizeStandardSecondaryBladeLoadout(resetFighter)
+    );
   };
 
   function startCombat(skipPhase0 = false, options = {}) {
@@ -44663,7 +48707,9 @@ function CombatPage({ characters = [] }) {
     const cleanStartRoster = assignBattleLocalIdentities(
       startSourceFighters
         .map(cleanFighterForNewCombat)
-        .map((fighter) => normalizeCombatantForBattle(normalizeFighterSideId(fighter, { log: true }))),
+        .map((fighter) => enforceExplicitEquipmentAuthority(
+          normalizeCombatantForBattle(normalizeFighterSideId(fighter, { log: true }))
+        )),
     );
     combatRosterSnapshotRef.current = cleanStartRoster.map((fighter) => cloneCombatData(fighter));
     const combatRoster = [...cleanStartRoster];
@@ -44767,6 +48813,7 @@ function CombatPage({ characters = [] }) {
         initiative: null,
         actionsPerRound: actionsPerRound,
         remainingActions: actionsPerRound, // Start with full attacks
+        movementSpentThisRoundFt: 0,
         meta: fighterMeta,
         moraleState: resetMoraleState,
         // Clear per-combat status effects if present
@@ -44780,8 +48827,10 @@ function CombatPage({ characters = [] }) {
     });
 
     updatedFighters = updatedFighters.map((fighter) =>
-      normalizeStandardSecondaryBladeLoadout(
-        normalizeCombatantForBattle(normalizeFighterSideId(fighter, { log: true }))
+      enforceExplicitEquipmentAuthority(
+        normalizeStandardSecondaryBladeLoadout(
+          normalizeCombatantForBattle(normalizeFighterSideId(fighter, { log: true }))
+        )
       )
     );
     updatedFighters.forEach((fighter) => {
@@ -44995,8 +49044,12 @@ function CombatPage({ characters = [] }) {
     addLog("Combat Started!", "combat");
     if (combatTimingMode === COMBAT_TIMING_MODES.TACTICAL_PULSE) {
       addLog("Tactical cycle 1 begins — movement resolves in simultaneous one-second pulses.", "info");
+    } else if (isInitiativeActionsMode(combatTimingMode)) {
+      addLog(`Round 1 · approximately ${COMBAT_ROUND_SECONDS} seconds begins — one action per fighter in initiative order.`, "info");
+      addLog("Initiative Actions uses tactical paths and per-hex movement without simultaneous whole-line resolution.", "info");
+      addLog(`Initiative Order: ${updatedFighters.map(f => `${f.name} (${f.initiative})`).join(", ")}`, "info");
     } else {
-      addLog(`Round 1 · approximately ${COMBAT_ROUND_SECONDS} seconds begins — Actions will alternate in initiative order`, "info");
+      addLog(`Round 1 · approximately ${COMBAT_ROUND_SECONDS} seconds begins — full turns resolve in initiative order`, "info");
       addLog(`Initiative Order: ${updatedFighters.map(f => `${f.name} (${f.initiative})`).join(", ")}`, "info");
     }
 
@@ -45012,6 +49065,8 @@ function CombatPage({ characters = [] }) {
         clock,
       });
       tacticalPulseRunRef.current = false;
+      tacticalWalkPlansByActorRef.current.clear();
+      pendingTacticalMovePresentationByActorRef.current.clear();
       setTacticalPulsesRunning(false);
       setTacticalPulseClock(clock);
       addLog?.({
@@ -47057,6 +51112,17 @@ function CombatPage({ characters = [] }) {
             data: cleanup.chargeBraceCleanup.data,
           });
         }
+        if (cleanup.overwatchCleanup?.accepted) {
+          emitTacticalPulseEvent({
+            eventType: cleanup.overwatchCleanup.eventType,
+            actorId: null,
+            generationId: previousTacticalRuntime.generationId,
+            combatSession: previousTacticalRuntime.combatSession,
+            pulseIndex: previousTacticalRuntime.clock?.pulseIndex || 0,
+            cycleIndex: previousTacticalRuntime.clock?.cycleIndex || 1,
+            data: cleanup.overwatchCleanup.data,
+          });
+        }
         if (cleanup.accepted && cleanup.eventType) {
           emitTacticalPulseEvent({
             eventType: cleanup.eventType,
@@ -47070,6 +51136,8 @@ function CombatPage({ characters = [] }) {
         }
       }
       tacticalPulseRuntimeRef.current = createTacticalPulseRuntime({ clock: resetPulseClock });
+      tacticalWalkPlansByActorRef.current.clear();
+      pendingTacticalMovePresentationByActorRef.current.clear();
       const combatReset = resetCombatExecutionState({
         advanceGeneration: true,
         source: "reset-combat",
@@ -47288,126 +51356,100 @@ function CombatPage({ characters = [] }) {
   function confirmWeaponChange(weaponName) {
     if (!selectedWeaponSlot) return;
 
-    setFighters(prev => prev.map(fighter => {
-      if (fighter.id === selectedWeaponSlot.fighterId) {
-        // Handle "Unarmed" selection
-        if (weaponName === "Unarmed") {
-          const updatedWeapons = [...(fighter.equistaminadWeapons || [])];
-          updatedWeapons[selectedWeaponSlot.slotIndex] = {
-            name: "Unarmed",
-            damage: "1d3",
-            type: "unarmed",
-            category: "unarmed",
-            weight: 0,
-            price: 0,
-            slot: selectedWeaponSlot.slotIndex === 0 ? "Right Hand" : "Left Hand"
-          };
+    const selectingEmptyHand = weaponName === "Unarmed" || weaponName === "None";
+    const selectedWeaponProfile = selectingEmptyHand
+      ? null
+      : weapons.find((weapon) =>
+          weapon?.name === weaponName ||
+          weapon?.id === weaponName ||
+          weapon?.weaponId === weaponName ||
+          weapon?.profileKey === weaponName
+        ) || null;
 
-          return {
-            ...fighter,
-            equistaminadWeapons: updatedWeapons,
-            equistaminadWeapon: updatedWeapons[0]?.name || "Unarmed"
-          };
-        }
+    if (!selectingEmptyHand && !selectedWeaponProfile) {
+      addLog(`${weaponName} is not available in the canonical weapon catalog.`, "error");
+      return;
+    }
 
-        // Find the weapon in the character's original inventory
-        const originalWeapon = fighter.inventory?.find(item =>
-          item.name === weaponName && (item.type === "weapon" || item.type === "Weapon" || item.category === "Weapons")
+    setFighters((previousFighters) => {
+      const nextFighters = previousFighters.map((fighter) => {
+        if (fighter.id !== selectedWeaponSlot.fighterId) return fighter;
+
+        const currentSelection = {
+          ...EMPTY_EQUIPMENT_SELECTION,
+          ...(fighter.equipmentSelection || {}),
+        };
+        const nextSelection = {
+          ...currentSelection,
+          [selectedWeaponSlot.slotIndex === 0 ? "rightHand" : "leftHand"]:
+            selectedWeaponProfile,
+        };
+
+        const previousPrimary =
+          fighter?.equipped?.weaponPrimary?.name ||
+          fighter?.equippedWeapons?.[0]?.name ||
+          fighter?.equistaminadWeapons?.[0]?.name ||
+          "Unarmed";
+
+        const updatedFighter = applyEquipmentSelection(fighter, nextSelection, {
+          weaponCatalog: weapons,
+          armorCatalog: availableArmors.filter((item) => item?.name !== "None"),
+          preserveNaturalAttacks: !isHumanoid(fighter),
+        });
+
+        const newPrimary =
+          updatedFighter?.equipped?.weaponPrimary?.name ||
+          updatedFighter?.equippedWeapons?.[0]?.name ||
+          "Unarmed";
+        const handLabel = selectedWeaponSlot.slotIndex === 0 ? "right hand" : "left hand";
+        addLog(
+          `${fighter.name} changes ${handLabel} from ${previousPrimary} to ${selectingEmptyHand ? "empty" : weaponName}. ` +
+          `Active attacks rebuilt from equipped weapons.`,
+          "info",
         );
 
-        if (!originalWeapon) {
-          addLog(`${weaponName} not found in ${fighter.name}'s inventory`, "error");
-          return fighter;
+        if (updatedFighter.equipmentValidation?.errors?.length) {
+          updatedFighter.equipmentValidation.errors.forEach((message) => {
+            addLog(`${fighter.name}: ${message}`, "warning");
+          });
         }
 
-        // Check if weapon is two-handed
-        const twoHanded = isTwoHandedWeapon(originalWeapon);
+        addLog?.({
+          audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+          channel: COMBAT_LOG_CHANNELS.VALIDATION,
+          eventType: "explicit-weapon-replacement-audit",
+          level: "info",
+          type: "debug",
+          actorId: fighter.id,
+          source: "weapon-selection-modal",
+          message:
+            `explicit weapon replacement audit: actor=${fighter.name} ` +
+            `primary=${newPrimary} attacks=${(updatedFighter.attacks || []).map((attack) => attack.name).join(",") || "none"} ` +
+            `readyWeaponId=${updatedFighter.combatWeaponState?.readyWeaponId || "none"}`,
+          data: {
+            previousPrimary,
+            selectedWeapon: selectingEmptyHand ? null : weaponName,
+            slotIndex: selectedWeaponSlot.slotIndex,
+            equippedWeaponIds: (updatedFighter.equippedWeapons || []).map((weapon) => weapon.weaponId || weapon.id),
+            attackIds: (updatedFighter.attacks || []).map((attack) => attack.weaponId || attack.id),
+            readyWeaponId: updatedFighter.combatWeaponState?.readyWeaponId || null,
+            heldItems: updatedFighter.heldItems || null,
+            loadoutKey: updatedFighter.loadoutKey || null,
+          },
+        }, "debug");
 
-        // Check if weapon is already equistaminad in the other hand
-        const otherHandIndex = selectedWeaponSlot.slotIndex === 0 ? 1 : 0;
-        const otherHandWeapon = fighter.equistaminadWeapons?.[otherHandIndex];
-
-        if (otherHandWeapon?.name === weaponName) {
-          // Swap weapons between hands
-          const updatedWeapons = [...(fighter.equistaminadWeapons || [])];
-          updatedWeapons[selectedWeaponSlot.slotIndex] = {
-            name: originalWeapon.name,
-            damage: originalWeapon.damage || "1d4",
-            type: originalWeapon.type || "weapon",
-            category: originalWeapon.category || "one-handed",
-            weight: originalWeapon.weight || 3,
-            price: originalWeapon.price || 6,
-            slot: selectedWeaponSlot.slotIndex === 0 ? "Right Hand" : "Left Hand",
-            twoHanded: twoHanded
-          };
-          updatedWeapons[otherHandIndex] = {
-            name: "Unarmed",
-            damage: "1d3",
-            type: "unarmed",
-            category: "unarmed",
-            weight: 0,
-            price: 0,
-            slot: otherHandIndex === 0 ? "Right Hand" : "Left Hand"
-          };
-
-          addLog(`${fighter.name} swastaminad ${weaponName} to ${selectedWeaponSlot.slotIndex === 0 ? "Right" : "Left"} Hand`, "info");
-
-          return {
-            ...fighter,
-            equistaminadWeapons: updatedWeapons,
-            equistaminadWeapon: updatedWeapons[0]?.name || "Unarmed"
-          };
-        }
-
-        // Normal weapon change
-        const updatedWeapons = [...(fighter.equistaminadWeapons || [])];
-        updatedWeapons[selectedWeaponSlot.slotIndex] = {
-          name: originalWeapon.name,
-          damage: originalWeapon.damage || "1d4",
-          type: originalWeapon.type || "weapon",
-          category: originalWeapon.category || "one-handed",
-          weight: originalWeapon.weight || 3,
-          price: originalWeapon.price || 6,
-          slot: selectedWeaponSlot.slotIndex === 0 ? "Right Hand" : "Left Hand",
-          twoHanded: twoHanded
-        };
-
-        // If two-handed weapon, clear the other hand
-        if (twoHanded) {
-          updatedWeapons[otherHandIndex] = {
-            name: "Occupied by Two-Handed Weapon",
-            damage: "",
-            type: "disabled",
-            category: "disabled",
-            weight: 0,
-            price: 0,
-            slot: otherHandIndex === 0 ? "Right Hand" : "Left Hand",
-            disabled: true
-          };
-          addLog(`${fighter.name} equistaminad ${weaponName} (Two-Handed weapon)`, "info");
-        } else {
-          // If equipping to right hand and left hand is occupied by two-handed, clear it
-          if (selectedWeaponSlot.slotIndex === 0 && updatedWeapons[1]?.disabled) {
-            updatedWeapons[1] = {
-              name: "Unarmed",
-              damage: "1d3",
-              type: "unarmed",
-              category: "unarmed",
-              weight: 0,
-              price: 0,
-              slot: "Left Hand"
-            };
-          }
-        }
-
-        return {
-          ...fighter,
-          equistaminadWeapons: updatedWeapons,
-          equistaminadWeapon: updatedWeapons[0]?.name || "Unarmed"
-        };
+        return updatedFighter;
+      });
+      fightersRef.current = nextFighters;
+      if (Array.isArray(combatRosterSnapshotRef.current) && combatRosterSnapshotRef.current.length > 0) {
+        const fighterById = new Map(nextFighters.map((fighter) => [String(fighter.id), fighter]));
+        combatRosterSnapshotRef.current = combatRosterSnapshotRef.current.map((snapshotFighter) => {
+          const replacement = fighterById.get(String(snapshotFighter?.id || ""));
+          return replacement ? cloneCombatData(replacement) : snapshotFighter;
+        });
       }
-      return fighter;
-    }));
+      return nextFighters;
+    });
 
     setShowWeaponModal(false);
     setSelectedWeaponSlot(null);
@@ -47875,7 +51917,12 @@ function CombatPage({ characters = [] }) {
       }
 
       // Normalize IDs to ensure both id and _id exist for backwards compatibility
-      return normalizeCombatantForBattle(fighterWithSizeMods);
+      const normalizedFighter = normalizeCombatantForBattle(fighterWithSizeMods);
+      return applyEquipmentSelection(normalizedFighter, EMPTY_EQUIPMENT_SELECTION, {
+        weaponCatalog: weapons,
+        armorCatalog: availableArmors,
+        preserveNaturalAttacks: false,
+      });
     });
 
     // Replace existing player fighters with new party, keep setup actors already added.
@@ -47913,15 +51960,23 @@ function CombatPage({ characters = [] }) {
       }
     });
 
-    // Log weapon equipping status
+    // Party selection does not imply equipment selection.
     characterFighters.forEach(fighter => {
-      if (fighter.equistaminadWeapon !== "Unarmed") {
-        addLog(`${fighter.name} auto-equistaminad ${getCombatDisplayLabel(fighter.equistaminadWeapon)}!`, "info");
-      } else {
-        addLog(`${fighter.name} has no weapons - using unarmed attacks`, "warning");
-      }
+      addLog(
+        `${fighter.name} enters combat unequipped: Armor None; Unarmed Strike only.`,
+        "info",
+      );
     });
-  }, [onPartyClose, addLog, generateCryptoId, setFighters, setSelectedParty, normalizeCombatantForBattle, getRandomAlignmentForRace]);
+  }, [
+    onPartyClose,
+    addLog,
+    availableArmors,
+    generateCryptoId,
+    setFighters,
+    setSelectedParty,
+    normalizeCombatantForBattle,
+    getRandomAlignmentForRace,
+  ]);
 
   // Initialize positions ONLY when combat starts (after startCombat is called)
   // Positions are NOT set until combat begins to prevent showing fighters on map prematurely
@@ -48231,6 +52286,214 @@ function CombatPage({ characters = [] }) {
         onChoose={settleManualDominantResponse}
         isResolving={riposteDecisionResolving}
       />
+      <Modal
+        isOpen={Boolean(pendingWeaponEntryChoice)}
+        onClose={cancelManualWeaponEntryChoice}
+        closeOnOverlayClick={false}
+        isCentered
+      >
+        <ModalOverlay />
+        <ModalContent>
+          <ModalHeader>Cross the Weapon Point</ModalHeader>
+          <ModalCloseButton />
+          <ModalBody>
+            <VStack align="stretch" spacing={3}>
+              <Text fontSize="sm">
+                {pendingWeaponEntryChoice?.actorName || "The fighter"} must get past {" "}
+                {pendingWeaponEntryChoice?.controllerName || "the longer weapon"} before reaching close measure.
+              </Text>
+              {(pendingWeaponEntryChoice?.options || []).map((option) => (
+                <Button
+                  key={option.id}
+                  variant="outline"
+                  colorScheme="blue"
+                  height="auto"
+                  py={3}
+                  whiteSpace="normal"
+                  onClick={() => settleManualWeaponEntryChoice(option.id)}
+                >
+                  <VStack align="start" spacing={0} w="100%">
+                    <Text fontWeight="bold">{option.label}</Text>
+                    <Text fontSize="xs" fontWeight="normal" textAlign="left">
+                      {option.description} Stamina: {option.staminaCost}.
+                    </Text>
+                  </VStack>
+                </Button>
+              ))}
+            </VStack>
+          </ModalBody>
+          <ModalFooter>
+            <Button variant="ghost" onClick={cancelManualWeaponEntryChoice}>Cancel Entry</Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
+      <Modal
+        isOpen={Boolean(pendingLongWeaponCloseChoice)}
+        onClose={cancelManualLongWeaponCloseChoice}
+        closeOnOverlayClick={false}
+        isCentered
+      >
+        <ModalOverlay />
+        <ModalContent>
+          <ModalHeader>Long Weapon at Close Measure</ModalHeader>
+          <ModalCloseButton />
+          <ModalBody>
+            <VStack align="stretch" spacing={3}>
+              <Text fontSize="sm">
+                {pendingLongWeaponCloseChoice?.actorName || "The fighter"} is inside the useful point of the long weapon against {" "}
+                {pendingLongWeaponCloseChoice?.targetName || "the opponent"}. Choose how to respond.
+              </Text>
+              {(pendingLongWeaponCloseChoice?.options || []).map((option) => (
+                <Button
+                  key={option.id}
+                  variant="outline"
+                  colorScheme="orange"
+                  height="auto"
+                  py={3}
+                  whiteSpace="normal"
+                  onClick={() => settleManualLongWeaponCloseChoice(option.id)}
+                >
+                  <VStack align="start" spacing={0} w="100%">
+                    <Text fontWeight="bold">{option.label}</Text>
+                    <Text fontSize="xs" fontWeight="normal" textAlign="left">
+                      Action cost: {option.actionCost}. Stamina: {option.staminaCost}.
+                    </Text>
+                  </VStack>
+                </Button>
+              ))}
+            </VStack>
+          </ModalBody>
+          <ModalFooter>
+            <Button variant="ghost" onClick={cancelManualLongWeaponCloseChoice}>Cancel</Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
+      <Modal
+        isOpen={Boolean(pendingSpecializedWeaponChoice)}
+        onClose={cancelManualSpecializedWeaponChoice}
+        closeOnOverlayClick={false}
+        isCentered
+      >
+        <ModalOverlay />
+        <ModalContent>
+          <ModalHeader>Choose Weapon Method</ModalHeader>
+          <ModalCloseButton />
+          <ModalBody>
+            <VStack align="stretch" spacing={3}>
+              <Text fontSize="sm">
+                {pendingSpecializedWeaponChoice?.actorName || "The fighter"} has specialized options against {" "}
+                {pendingSpecializedWeaponChoice?.targetName || "the opponent"} at {Math.round(Number(pendingSpecializedWeaponChoice?.distanceFt) || 0)} feet.
+              </Text>
+              {(pendingSpecializedWeaponChoice?.options || []).map((option) => (
+                <Button
+                  key={option.id}
+                  variant="outline"
+                  colorScheme="purple"
+                  height="auto"
+                  py={3}
+                  whiteSpace="normal"
+                  onClick={() => settleManualSpecializedWeaponChoice(option.id)}
+                >
+                  <VStack align="start" spacing={0} w="100%">
+                    <Text fontWeight="bold">{option.label}</Text>
+                    <Text fontSize="xs" fontWeight="normal" textAlign="left">
+                      {option.description} Stamina: {option.staminaCost}.
+                    </Text>
+                  </VStack>
+                </Button>
+              ))}
+            </VStack>
+          </ModalBody>
+          <ModalFooter>
+            <Button variant="ghost" onClick={cancelManualSpecializedWeaponChoice}>Cancel</Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
+      <Modal
+        isOpen={Boolean(pendingFormationCommandChoice)}
+        onClose={cancelManualFormationCommandChoice}
+        closeOnOverlayClick={false}
+        isCentered
+      >
+        <ModalOverlay />
+        <ModalContent>
+          <ModalHeader>Formation Command</ModalHeader>
+          <ModalCloseButton />
+          <ModalBody>
+            <VStack align="stretch" spacing={3}>
+              <Text fontSize="sm">
+                {pendingFormationCommandChoice?.actorName || "The fighter"} may spend an action to restore, tighten, anchor, or withdraw the formation.
+              </Text>
+              {pendingFormationCommandChoice?.terrainContext && (
+                <Text fontSize="xs" color="gray.600">
+                  Terrain: {pendingFormationCommandChoice.terrainContext.terrainLabel}. Pressure: {pendingFormationCommandChoice.terrainContext.facingArc}.
+                </Text>
+              )}
+              {(pendingFormationCommandChoice?.options || []).map((option) => (
+                <Button
+                  key={option.id}
+                  variant="outline"
+                  colorScheme="teal"
+                  height="auto"
+                  py={3}
+                  whiteSpace="normal"
+                  onClick={() => settleManualFormationCommandChoice(option.id)}
+                >
+                  <VStack align="start" spacing={0} w="100%">
+                    <Text fontWeight="bold">{option.label}</Text>
+                    <Text fontSize="xs" fontWeight="normal" textAlign="left">
+                      Action cost: {option.actionCost}. Stamina: {option.staminaCost}. {String(option.reason || "").replaceAll("-", " ")}.
+                    </Text>
+                  </VStack>
+                </Button>
+              ))}
+            </VStack>
+          </ModalBody>
+          <ModalFooter>
+            <Button variant="ghost" onClick={cancelManualFormationCommandChoice}>Cancel</Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
+      <Modal
+        isOpen={Boolean(pendingWeaponBindChoice)}
+        onClose={cancelManualWeaponBindChoice}
+        closeOnOverlayClick={false}
+        isCentered
+      >
+        <ModalOverlay />
+        <ModalContent>
+          <ModalHeader>Weapon Bind</ModalHeader>
+          <ModalCloseButton />
+          <ModalBody>
+            <VStack align="stretch" spacing={3}>
+              <Text fontSize="sm">
+                {pendingWeaponBindChoice?.actorName || "The fighter"} is engaged in a persistent bind with {pendingWeaponBindChoice?.targetName || "the opponent"}.
+              </Text>
+              {(pendingWeaponBindChoice?.options || []).map((option) => (
+                <Button
+                  key={option.id}
+                  variant="outline"
+                  colorScheme="purple"
+                  height="auto"
+                  py={3}
+                  whiteSpace="normal"
+                  onClick={() => settleManualWeaponBindChoice(option.id)}
+                >
+                  <VStack align="start" spacing={0} w="100%">
+                    <Text fontWeight="bold">{option.label}</Text>
+                    <Text fontSize="xs" fontWeight="normal" textAlign="left">
+                      Action cost: {option.actionCost}. Stamina: {option.staminaCost}.
+                    </Text>
+                  </VStack>
+                </Button>
+              ))}
+            </VStack>
+          </ModalBody>
+          <ModalFooter>
+            <Button variant="ghost" onClick={cancelManualWeaponBindChoice}>Cancel</Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
       {/* Navigation Bar with Hamburger Menu */}
       <Flex align="center" justify="space-between" mb={6}>
         <VStack align="start" spacing={1}>
@@ -48395,16 +52658,20 @@ function CombatPage({ characters = [] }) {
                   aria-label="Combat Timing Mode"
                   value={combatTimingMode}
                   onChange={(event) => {
-                    const nextTimingMode = event.target.value === COMBAT_TIMING_MODES.TACTICAL_PULSE
+                    const requestedTimingMode = event.target.value;
+                    const nextTimingMode = requestedTimingMode === COMBAT_TIMING_MODES.TACTICAL_PULSE
                       ? COMBAT_TIMING_MODES.TACTICAL_PULSE
-                      : COMBAT_TIMING_MODES.SEQUENTIAL;
+                      : requestedTimingMode === COMBAT_TIMING_MODES.SEQUENTIAL
+                        ? COMBAT_TIMING_MODES.SEQUENTIAL
+                        : INITIATIVE_ACTIONS_MODE;
                     combatTimingModeRef.current = nextTimingMode;
                     setCombatTimingMode(nextTimingMode);
                   }}
                   isDisabled={combatActive}
                 >
-                  <option value={COMBAT_TIMING_MODES.SEQUENTIAL}>Sequential (Default)</option>
-                  <option value={COMBAT_TIMING_MODES.TACTICAL_PULSE}>Tactical Pulse</option>
+                  <option value={INITIATIVE_ACTIONS_MODE}>Initiative Actions (Default)</option>
+                  <option value={COMBAT_TIMING_MODES.TACTICAL_PULSE}>Tactical Pulse (Simulation)</option>
+                  <option value={COMBAT_TIMING_MODES.SEQUENTIAL}>Sequential Full Turn (Legacy)</option>
                 </Select>
               </FormControl>
               <Button
@@ -48576,22 +52843,52 @@ function CombatPage({ characters = [] }) {
               </Badge>
               <Badge colorScheme="blue" px={2} py={1}>Pulse {tacticalPulseClock.pulseIndex + 1}</Badge>
               <Badge colorScheme="purple" px={2} py={1}>Cycle {tacticalPulseClock.cycleIndex}</Badge>
-              <Button size="sm" colorScheme="cyan" onClick={advanceOneTacticalPulse} isDisabled={tacticalPulsesRunning}>
-                Advance One Pulse
-              </Button>
-              <Button size="sm" colorScheme="blue" onClick={() => runTacticalPulses(6)} isDisabled={tacticalPulsesRunning}>
-                Run Pulses
-              </Button>
-              <Button size="sm" colorScheme="yellow" variant="outline" onClick={pauseTacticalPulses} isDisabled={!tacticalPulsesRunning}>
-                Pause Pulses
-              </Button>
-              {(() => {
+              {tacticalPulseProcessing.active && (
+                <HStack spacing={2} px={2} py={1} bg="blackAlpha.100" borderRadius="md" data-testid="tactical-pulse-loading">
+                  <Spinner size="sm" thickness="3px" color="cyan.500" />
+                  <Text fontSize="xs" fontWeight="semibold">
+                    {tacticalPulseProcessing.phase}
+                    {tacticalPulseProcessing.total > 0 && tacticalPulseProcessing.phase === "Planning actions"
+                      ? ` ${Math.min(tacticalPulseProcessing.processed, tacticalPulseProcessing.total)}/${tacticalPulseProcessing.total}`
+                      : ""}
+                  </Text>
+                </HStack>
+              )}
+              <Badge colorScheme={aiControlEnabled ? (tacticalAutoPlaybackEnabled ? "green" : "yellow") : "gray"} px={2} py={1}>
+                {aiControlEnabled
+                  ? tacticalAutoPlaybackEnabled
+                    ? "AI Auto"
+                    : "AI Paused"
+                  : "Manual Tactical"}
+              </Badge>
+              {DEBUG_COMBAT && (
+                <>
+                  <Button size="sm" colorScheme="cyan" onClick={() => advanceOneTacticalPulse()} isDisabled={tacticalPulsesRunning || tacticalPulseProcessing.active}>
+                    Step One Second
+                  </Button>
+                  <Button size="sm" colorScheme="blue" onClick={() => runTacticalPulses(6)} isDisabled={tacticalPulsesRunning || tacticalPulseProcessing.active || aiControlEnabled}>
+                    Play One Action Cycle
+                  </Button>
+                  <Button
+                    size="sm"
+                    colorScheme="yellow"
+                    variant="outline"
+                    onClick={tacticalAutoPlaybackEnabled ? pauseTacticalPulses : resumeTacticalPulses}
+                    isDisabled={!aiControlEnabled}
+                  >
+                    {tacticalAutoPlaybackEnabled ? "Pause Playback" : "Resume Playback"}
+                  </Button>
+                </>
+              )}
+              {(!aiControlEnabled || DEBUG_COMBAT) && (() => {
                 const actorId = String(getCombatActorId(currentFighter) ?? "");
                 const ownership = getTacticalActorOwnership(tacticalPulseRuntimeRef.current.actionRuntime, actorId);
                 const action = ownership.action;
                 const recovery = ownership.recovery;
                 const charge = ownership.charge;
                 const brace = ownership.brace;
+                const overwatch = ownership.overwatch;
+                const overwatchRecovery = ownership.overwatchRecovery;
                 const chargeBraceRuntime = tacticalPulseRuntimeRef.current.actionRuntime.chargeBraceRuntime;
                 const terminalCharge = [...chargeBraceRuntime.terminalCharges].reverse().find((intent) => intent.chargerId === actorId) || null;
                 const terminalBrace = [...chargeBraceRuntime.terminalBraces].reverse().find((intent) => intent.bracingActorId === actorId) || null;
@@ -48607,6 +52904,10 @@ function CombatPage({ characters = [] }) {
                   ? `${charge.state === "committed" || charge.state === "advancing" ? "Committed Charge" : "Charge"}: ${charge.completedPath.length}/${charge.minimumCommittedSteps} committed steps; ${Math.max(0, charge.committedPath.length - charge.completedPath.length)} path steps remain`
                   : brace
                     ? `Brace ${brace.state}: ${brace.weaponId}; guarded approach ${brace.guardedHexes.map((hex) => `(${hex.x},${hex.y})`).join(" ")}`
+                    : overwatch
+                      ? `${overwatch.state === "held" ? "Held Overwatch" : overwatch.state === "preparing" ? "Preparing Overwatch" : "Overwatch " + overwatch.state}: ${overwatch.weaponId}; ${overwatch.triggerPolicy}; held ${overwatch.heldAtPulse == null ? 0 : Math.max(0, pulse - overwatch.heldAtPulse)} pulses`
+                      : overwatchRecovery
+                        ? `Overwatch recovery (${Math.max(0, overwatchRecovery.recoveryUntilPulse - pulse)} pulses)`
                     : action?.state === "preparing"
                   ? `Preparing (${Math.max(0, action.readyAtPulse - pulse)} pulses)`
                   : action?.state === "ready"
@@ -48642,6 +52943,7 @@ function CombatPage({ characters = [] }) {
                     )}
                     {charge && <Text fontSize="xs">Target: {fighters.find((fighter) => String(getCombatActorId(fighter) ?? "") === charge.targetActorId)?.battleLabel || charge.targetActorId}; contact: {charge.state === "contact-pending" ? "pending" : "not reached"}; interception: {tacticalPulseRuntimeRef.current.actionRuntime.chargeBraceRuntime.windowsByCharge.has(charge.chargeIntentId) ? "pending" : "none"}</Text>}
                     {brace && <Text fontSize="xs">Readiness: {brace.state}; weapon: {brace.weaponId}; incoming charger: {brace.triggerActorId || "none"}; interception: {brace.interceptionExecutionKey ? "triggered" : "waiting"}</Text>}
+                    {overwatch && <Text fontSize="xs">Guarded area: {overwatch.guardedHexes.map((hex) => `(${hex.x},${hex.y})`).join(" ") || overwatch.guardedActors.join(", ")}; incoming target: {overwatch.lockedTargetId || "none"}</Text>}
                     {isManualActor && (
                       <>
                         <Button size="sm" colorScheme="green" onClick={() => prepareManualTacticalAttack(expectedIdentity)} isDisabled={ownership.state !== "unowned"}>
@@ -48653,11 +52955,23 @@ function CombatPage({ characters = [] }) {
                         <Button size="sm" colorScheme="teal" onClick={prepareManualTacticalBrace} isDisabled={ownership.state !== "unowned" || !getBraceCapabilities(selectedAttackWeapon || currentFighter?.selectedAttack || currentFighter?.weaponProfiles?.[0] || currentFighter?.attacks?.[0]).canBrace}>
                           Brace Weapon
                         </Button>
+                        <Select size="sm" width="auto" value={manualOverwatchTriggerPolicy} onChange={(event) => setManualOverwatchTriggerPolicy(event.target.value)} isDisabled={ownership.state !== "unowned"} aria-label="Overwatch trigger policy">
+                          <option value="enters-guarded-zone">Enters guarded zone</option>
+                          <option value="crosses-guarded-edge">Crosses guarded edge</option>
+                          <option value="leaves-cover">Leaves cover</option>
+                          <option value="begins-charge">Begins charge</option>
+                        </Select>
+                        <Button size="sm" colorScheme="purple" onClick={prepareManualTacticalOverwatch} isDisabled={ownership.state !== "unowned" || !getOverwatchCapabilities(selectedAttackWeapon || currentFighter?.selectedAttack || currentFighter?.weaponProfiles?.[0] || currentFighter?.attacks?.[0]).canOverwatch}>
+                          Prepare Overwatch
+                        </Button>
                         <Button size="sm" variant="outline" onClick={() => cancelManualTacticalChargeBrace("charge", actorId)} isDisabled={!charge || !["preparing", "ready", "committed"].includes(charge.state) || charge.completedPath.length > 0}>
                           Cancel Charge
                         </Button>
                         <Button size="sm" variant="outline" onClick={() => cancelManualTacticalChargeBrace("brace", actorId)} isDisabled={!brace || !["preparing", "ready", "held"].includes(brace.state)}>
                           Cancel Brace
+                        </Button>
+                        <Button size="sm" variant="outline" onClick={() => cancelManualTacticalOverwatch(actorId)} isDisabled={!overwatch || !["preparing", "ready", "held"].includes(overwatch.state)}>
+                          Cancel Overwatch
                         </Button>
                         <Button size="sm" variant="outline" onClick={() => cancelManualTacticalPreparation(expectedIdentity)} isDisabled={!action || !["preparing", "ready"].includes(action.state)}>
                           Cancel Preparation
@@ -48665,7 +52979,7 @@ function CombatPage({ characters = [] }) {
                         <Button size="sm" colorScheme="red" onClick={() => releaseManualTacticalAttack(expectedIdentity)} isDisabled={action?.state !== "ready" || action?.releaseRequested === true}>
                           Release Ready Attack
                         </Button>
-                        <Button size="sm" variant="ghost" onClick={advanceOneTacticalPulse} isDisabled={tacticalPulsesRunning || Boolean(charge) || Boolean(brace)}>
+                        <Button size="sm" variant="ghost" onClick={advanceOneTacticalPulse} isDisabled={tacticalPulsesRunning || Boolean(charge) || Boolean(brace) || Boolean(overwatch)}>
                           Hold
                         </Button>
                       </>
@@ -48687,6 +53001,23 @@ function CombatPage({ characters = [] }) {
                     <Text fontSize="xs">Trigger step ({window.proposedMovementStep.from.x},{window.proposedMovementStep.from.y}) → ({window.proposedMovementStep.to.x},{window.proposedMovementStep.to.y}); status: {window.state}; deadline pulse {window.responseDeadlinePulse}</Text>
                     <Button size="sm" colorScheme="red" onClick={() => submitManualTacticalInterception(window, TACTICAL_INTERCEPTION_CHOICES.INTERCEPT)} isDisabled={Boolean(window.selectedResponse)}>Intercept</Button>
                     <Button size="sm" variant="outline" onClick={() => submitManualTacticalInterception(window, TACTICAL_INTERCEPTION_CHOICES.LET_PASS)} isDisabled={Boolean(window.selectedResponse)}>Let Charge Pass</Button>
+                  </HStack>
+                );
+              })()}
+              {(() => {
+                const overwatchRuntime = tacticalPulseRuntimeRef.current.actionRuntime.overwatchRuntime;
+                const window = [...overwatchRuntime.windowsById.values()].find((candidate) => {
+                  const overwatcher = fighters.find((fighter) => String(getCombatActorId(fighter) ?? "") === candidate.overwatcherId);
+                  return ["offered", "awaiting-selection"].includes(candidate.state) && getFighterControlMode(overwatcher) === "manual";
+                });
+                if (!window || aiControlEnabled) return null;
+                const target = fighters.find((fighter) => String(getCombatActorId(fighter) ?? "") === window.targetActorId);
+                return (
+                  <HStack spacing={2} flexWrap="wrap" data-testid="tactical-overwatch-controls">
+                    <Badge colorScheme="purple">Overwatch target: {target?.battleLabel || target?.displayName || target?.name || window.targetActorId}</Badge>
+                    <Text fontSize="xs">Trigger: {window.triggerPolicy}; event {window.triggerEventId}; deadline pulse {window.responseDeadlinePulse}; response {window.selectedResponse || "pending"}</Text>
+                    <Button size="sm" colorScheme="red" onClick={() => submitManualTacticalOverwatch(window, TACTICAL_OVERWATCH_CHOICES.RELEASE)} isDisabled={Boolean(window.selectedResponse)}>Release Held Shot</Button>
+                    <Button size="sm" variant="outline" onClick={() => submitManualTacticalOverwatch(window, TACTICAL_OVERWATCH_CHOICES.LET_PASS)} isDisabled={Boolean(window.selectedResponse)}>Let Target Pass</Button>
                   </HStack>
                 );
               })()}
@@ -48815,6 +53146,11 @@ function CombatPage({ characters = [] }) {
               )));
               if (newValue) {
                 addLog("AI Control ENABLED - Players will be controlled by AI", "info");
+                if (combatTimingModeRef.current === COMBAT_TIMING_MODES.TACTICAL_PULSE) {
+                  setTacticalAutoPlaybackEnabled(true);
+                  addLog("Cinematic Auto enabled - tactical actions will advance automatically.", "info");
+                  return;
+                }
                 const liveFighters = fightersRef.current ?? fighters;
                 const liveIndex = turnIndexRef.current;
                 const currentFighter = liveFighters?.[liveIndex];
@@ -48891,6 +53227,9 @@ function CombatPage({ characters = [] }) {
                   });
                 }
               } else {
+                if (combatTimingModeRef.current === COMBAT_TIMING_MODES.TACTICAL_PULSE) {
+                  pauseTacticalPulses();
+                }
                 const activeExecution = playerAIExecutionRef.current;
                 if (activeExecution?.executionKey) {
                   if (activeExecution.watchdogId) clearTimeout(activeExecution.watchdogId);
@@ -49335,7 +53674,7 @@ function CombatPage({ characters = [] }) {
                             </HStack>
 
                             <Text fontSize="sm" color="blue.700">
-                              HP: {displayStats.hpCurrent}/{displayStats.hpMax} | Defense &amp; Armor: {sheetDisplay.armor.name} | Movement: {displayStats.movementSpeed} ft
+                              HP: {displayStats.hpCurrent}/{displayStats.hpMax} | Defense: {fighter.defenseRating ?? displayStats.armorClass} | Armor: {fighter.armorDisplaySource === "explicit-equipment-selection" ? (fighter.armorDisplayName || "None") : sheetDisplay.armor.name} | Movement: {displayStats.movementSpeed} ft
                               {displayStats.tempHp > 0 && ` | Temp HP: ${displayStats.tempHp}`}
                               {displayStats.focusCurrent !== null && ` | Focus: ${displayStats.focusCurrent}`}
                             </Text>
@@ -49511,17 +53850,22 @@ function CombatPage({ characters = [] }) {
                                           ))}
                                         </Box>
                                       )}
-                                      {/* Armor Display */}
-                                      {(fighter.equistaminadArmor || fighter.guardRating) && (
-                                        <Box>
-                                          <Text fontWeight="medium">Armor:</Text>
-                                          {fighter.equistaminadArmor ? (
-                                               <Text pl={2}>{getCombatDisplayLabel(fighter.equistaminadArmor)} (AC: {fighter.guardRating || 10})</Text>
-                                          ) : (
-                                                <Text pl={2}>AC: {fighter.guardRating || 10}</Text>
-                                          )}
-                                        </Box>
-                                      )}
+                                      {/* Armor and active defense are separate authorities. */}
+                                      <Box>
+                                        <Text fontWeight="medium">Armor:</Text>
+                                        <Text pl={2}>
+                                          {fighter.armorDisplaySource === "explicit-equipment-selection"
+                                            ? (fighter.armorDisplayName || "None")
+                                            : fighter.equistaminadArmor
+                                              ? getCombatDisplayLabel(fighter.equistaminadArmor)
+                                              : "None"}
+                                        </Text>
+                                        <Text fontWeight="medium">Defense:</Text>
+                                        <Text pl={2}>
+                                          {fighter.defenseRating ?? fighter.guardRating ?? 10}
+                                          {fighter.defenseSource ? ` (${String(fighter.defenseSource).replaceAll("-", " ")})` : ""}
+                                        </Text>
+                                      </Box>
 
                                       {/* Ammo Display */}
                                       {(() => {
@@ -49597,8 +53941,10 @@ function CombatPage({ characters = [] }) {
                   bg="orange.50"
                 >
                   {fighters.filter(f => f.type === "player").map((fighter) => {
-                    const equistaminadWeapons = fighter.equistaminadWeapons || [];
-                    const primaryWeapon = fighter.equistaminadWeapon || fighter.weapon || "Unarmed";
+                    const equistaminadWeapons = Array.isArray(fighter.equippedWeapons)
+                      ? fighter.equippedWeapons
+                      : [];
+                    const primaryWeapon = fighter?.equipped?.weaponPrimary || equistaminadWeapons[0] || "Unarmed";
 
                     return (
                       <Box key={fighter.id} mb={3} p={2} border="1px solid" borderColor="orange.300" borderRadius="md" bg="white">
@@ -50693,7 +55039,16 @@ function CombatPage({ characters = [] }) {
                           isEnemy: f.type === "enemy"
                         }))}
                         positions={tacticalMapPositions}
+                        renderPositions={combatActive ? renderPositions : tacticalMapPositions}
                         dangerHexes={dangerHexes}
+                        weaponMeasureOverlays={weaponMeasurePresentation.overlays}
+                        weaponThreatLines={[...weaponMeasurePresentation.threatLines, ...weaponBindThreatLines]}
+                        weaponOverlaySettings={weaponOverlaySettings}
+                        weaponInteractionAnimations={weaponInteractionAnimations}
+                        formationLinks={formationCohesionPresentation.links}
+                        formationStatesByActorId={formationCohesionPresentation.statesByActorId}
+                        weaponBindStatesByActorId={weaponBindStatesByActorId}
+                        combatRound={meleeRound}
                         onPositionChange={handlePositionChange}
                         currentTurn={currentFighter?.id}
                         targetFighterId={selectedTarget?.id || null}
@@ -50702,6 +55057,8 @@ function CombatPage({ characters = [] }) {
                         activeTurnGenerationId={combatSessionRef.current}
                         highlightMovement={combatActive}
                         flashingCombatants={flashingCombatants}
+                        healthPresentationById={combatantHealthPresentationById}
+                        processingOverlay={combatTimingMode === COMBAT_TIMING_MODES.TACTICAL_PULSE ? tacticalPulseProcessing : null}
                         movementMode={!combatActive && (showDeploymentModal || manualDeploymentOpen)
                           ? { active: false, isRunning: false }
                           : movementMode}
@@ -50877,6 +55234,39 @@ function CombatPage({ characters = [] }) {
                           >
                             2D Map
                           </Button>
+                          <Menu closeOnSelect={false}>
+                            <MenuButton as={Button} size="sm" variant="outline">
+                              Weapon Display
+                            </MenuButton>
+                            <MenuList minW="230px">
+                              {[
+                                ["showMeasureRings", "Measure rings"],
+                                ["showThreatLines", "Threat lines"],
+                                ["showLabels", "Measure labels"],
+                                ["showInteractionAnimations", "Weapon animations"],
+                                ["showFormationLinks", "Formation links"],
+                                ["showConditionBadges", "Condition badges"],
+                              ].map(([key, label]) => (
+                                <MenuItem
+                                  key={key}
+                                  onClick={() => setWeaponOverlaySettings((current) => ({ ...current, [key]: !current[key] }))}
+                                >
+                                  {weaponOverlaySettings[key] ? "✓" : "○"} {label}
+                                </MenuItem>
+                              ))}
+                            </MenuList>
+                          </Menu>
+                          {combatActive && currentFighter && (
+                            <Button
+                              size="sm"
+                              colorScheme="teal"
+                              variant="outline"
+                              onClick={openFormationCommandChoice}
+                              isDisabled={Number(currentFighter?.remainingActions || 0) <= 0}
+                            >
+                              Formation Command
+                            </Button>
+                          )}
                           <Button
                             size="sm"
                             colorScheme={show3DView ? "purple" : "gray"}
@@ -51681,11 +56071,14 @@ function CombatPage({ characters = [] }) {
                       ref={arena3DRef}
                       mapDefinition={mapDefinition}
                       fighters={fighters}
+                      healthPresentationById={combatantHealthPresentationById}
                       positions={positions}
                       renderPositions={renderPositions}
                       projectiles={projectiles}
                       embeddedArrows={embeddedArrows}
                       dangerHexes={dangerHexes}
+                      weaponAnimationCues={weaponInteractionAnimations}
+                      formationLinks={formationCohesionPresentation.links}
                       activeFighterId={currentFighter?.id || null}
                       selectedFighterId={selectedCombatantId}
                       targetFighterId={selectedTarget?.id || null}
@@ -51949,7 +56342,7 @@ function CombatPage({ characters = [] }) {
                                 </HStack>
 
                                 <Box fontSize="sm">
-                                  HP: {displayStats.hpCurrent}/{displayStats.hpMax} | Defense &amp; Armor: {sheetDisplay.armor.name} | Movement: {displayStats.movementSpeed} ft
+                                  HP: {displayStats.hpCurrent}/{displayStats.hpMax} | Defense: {fighter.defenseRating ?? displayStats.armorClass} | Armor: {fighter.armorDisplaySource === "explicit-equipment-selection" ? (fighter.armorDisplayName || "None") : sheetDisplay.armor.name} | Movement: {displayStats.movementSpeed} ft
                                   {displayStats.tempHp > 0 && ` | Temp HP: ${displayStats.tempHp}`}
                                   {displayStats.focusCurrent !== null && ` | Focus: ${displayStats.focusCurrent}`}
                                 </Box>
@@ -52125,17 +56518,22 @@ function CombatPage({ characters = [] }) {
                                               ))}
                                             </Box>
                                           )}
-                                          {/* Armor Display */}
-                                          {(fighter.equistaminadArmor || fighter.guardRating) && (
-                                            <Box>
-                                              <Text fontWeight="medium">Armor:</Text>
-                                              {fighter.equistaminadArmor ? (
-                                                <Text pl={2}>{getCombatDisplayLabel(fighter.equistaminadArmor)} (AC: {fighter.guardRating || 10})</Text>
-                                              ) : (
-                                                <Text pl={2}>AC: {fighter.guardRating || 10}</Text>
-                                              )}
-                                            </Box>
-                                          )}
+                                          {/* Armor and active defense are separate authorities. */}
+                                          <Box>
+                                            <Text fontWeight="medium">Armor:</Text>
+                                            <Text pl={2}>
+                                              {fighter.armorDisplaySource === "explicit-equipment-selection"
+                                                ? (fighter.armorDisplayName || "None")
+                                                : fighter.equistaminadArmor
+                                                  ? getCombatDisplayLabel(fighter.equistaminadArmor)
+                                                  : "None"}
+                                            </Text>
+                                            <Text fontWeight="medium">Defense:</Text>
+                                            <Text pl={2}>
+                                              {fighter.defenseRating ?? fighter.guardRating ?? 10}
+                                              {fighter.defenseSource ? ` (${String(fighter.defenseSource).replaceAll("-", " ")})` : ""}
+                                            </Text>
+                                          </Box>
 
                                           {/* Ammo Display */}
                                           {(() => {
@@ -52222,7 +56620,7 @@ function CombatPage({ characters = [] }) {
                               </HStack>
                               {renderCombatRoleBadges(fighter)}
                               <Text fontSize="sm" color="purple.800">
-                                HP: {displayStats.hpCurrent}/{displayStats.hpMax} | AC: {displayStats.armorClass} | Movement: {displayStats.movementSpeed} ft
+                                HP: {displayStats.hpCurrent}/{displayStats.hpMax} | Defense: {displayStats.armorClass} | Movement: {displayStats.movementSpeed} ft
                                 {displayStats.tempHp > 0 && ` | Temp HP: ${displayStats.tempHp}`}
                               </Text>
                               {fighter.initiative > 0 && (
@@ -52269,12 +56667,16 @@ function CombatPage({ characters = [] }) {
                   minH={0}
                   maxH="620px"
                 >
-                  <TabList flexShrink={0}>
+                  <TabList flexShrink={0} overflowX="auto" overflowY="hidden">
                     <Tab>Log</Tab>
                     <Tab>Fighter</Tab>
                     <Tab>Inventory</Tab>
                     <Tab>Positions</Tab>
                     <Tab>Legend</Tab>
+                    <Tab>Aftermath</Tab>
+                    <Tab>Prisoners</Tab>
+                    <Tab>Loot</Tab>
+                    <Tab>Infirmary</Tab>
                     <Tab>Debug</Tab>
                   </TabList>
                   <TabPanels flex="1" minH={0} overflow="hidden">
@@ -52897,6 +57299,46 @@ function CombatPage({ characters = [] }) {
                       </VStack>
                     </TabPanel>
 
+                    {/* Aftermath Tab */}
+                    <TabPanel p={2} h="100%" overflowY="auto">
+                      <AftermathDashboard
+                        campaign={aftermathCampaign}
+                        view="aftermath"
+                        onAction={handleAftermathAction}
+                        onAdvanceDay={handleAdvanceAftermathDay}
+                      />
+                    </TabPanel>
+
+                    {/* Prisoners Tab */}
+                    <TabPanel p={2} h="100%" overflowY="auto">
+                      <AftermathDashboard
+                        campaign={aftermathCampaign}
+                        view="prisoners"
+                        onAction={handleAftermathAction}
+                        onAdvanceDay={handleAdvanceAftermathDay}
+                      />
+                    </TabPanel>
+
+                    {/* Loot Tab */}
+                    <TabPanel p={2} h="100%" overflowY="auto">
+                      <AftermathDashboard
+                        campaign={aftermathCampaign}
+                        view="loot"
+                        onAction={handleAftermathAction}
+                        onAdvanceDay={handleAdvanceAftermathDay}
+                      />
+                    </TabPanel>
+
+                    {/* Infirmary Tab */}
+                    <TabPanel p={2} h="100%" overflowY="auto">
+                      <AftermathDashboard
+                        campaign={aftermathCampaign}
+                        view="infirmary"
+                        onAction={handleAftermathAction}
+                        onAdvanceDay={handleAdvanceAftermathDay}
+                      />
+                    </TabPanel>
+
                     {/* Debug Info Tab */}
                     <TabPanel p={2}>
                       <VStack align="stretch" spacing={3}>
@@ -53400,9 +57842,23 @@ function CombatPage({ characters = [] }) {
                                 </Text>
                               </Box>
                               <Box>
-                                <Text fontSize="xs" color="gray.500" textTransform="ustaminarcase">Defense &amp; Armor</Text>
-                                <Text fontWeight="semibold">{rosterPreviewSheetDisplay.armor.name}</Text>
-                                {rosterPreviewSheetDisplay.armor.source && <Text fontSize="xs">{rosterPreviewSheetDisplay.armor.source}</Text>}
+                                <Text fontSize="xs" color="gray.500" textTransform="ustaminarcase">Defense</Text>
+                                <Text fontWeight="semibold">
+                                  {rosterPreviewFighter.defenseRating ?? rosterPreviewDisplayStats.armorClass}
+                                </Text>
+                                <Text fontSize="xs">
+                                  {rosterPreviewFighter.defenseSource
+                                    ? String(rosterPreviewFighter.defenseSource).replaceAll("-", " ")
+                                    : "active guard"}
+                                </Text>
+                              </Box>
+                              <Box>
+                                <Text fontSize="xs" color="gray.500" textTransform="ustaminarcase">Armor</Text>
+                                <Text fontWeight="semibold">
+                                  {rosterPreviewFighter.armorDisplaySource === "explicit-equipment-selection"
+                                    ? (rosterPreviewFighter.armorDisplayName || "None")
+                                    : rosterPreviewSheetDisplay.armor.name}
+                                </Text>
                               </Box>
                               <Box>
                                 <Text fontSize="xs" color="gray.500" textTransform="ustaminarcase">Movement</Text>
@@ -53832,55 +58288,157 @@ function CombatPage({ characters = [] }) {
               </Text>
             </FormControl>
 
-            {/* Armor Selection - Only show for humanoids */}
+            {/* Explicit layered equipment selection for humanoids */}
             {isSelectedHumanoid && (
-              <FormControl mb={4}>
-                <FormLabel>Armor (Humanoid Only):</FormLabel>
-                <Select
-                  placeholder="Select armor (optional)"
-                  value={selectedArmor}
-                  onChange={(e) => setSelectedArmor(e.target.value)}
-                >
-                  {availableArmors.map((armor) => (
-                    <option key={armor.name} value={armor.name}>
-                      {armor.name} {armor.name !== "None" ? `(AC: ${armor.guardRating}, Armor Durability: ${armor.armorDurability})` : ""}
-                    </option>
-                  ))}
-                </Select>
-                <Text fontSize="xs" color="gray.500" mt={1}>
-                  Select armor to equip. Armor AC replaces base AC if higher.
+              <VStack align="stretch" spacing={3} mb={4}>
+                <Text fontWeight="bold">Equipment Loadout</Text>
+                <Text fontSize="xs" color="gray.600">
+                  Every slot is explicit. None means unequipped; no hidden weapon,
+                  shield, or armor profile will be added.
                 </Text>
-              </FormControl>
+
+                <FormControl>
+                  <FormLabel>Right Hand</FormLabel>
+                  <Select
+                    value={selectedWeapon}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      const profile = normalizeWeaponProfile(
+                        availableWeapons.find((item) => item?.name === value)
+                      );
+                      setSelectedWeapon(value);
+                      if (profile?.requiresTwoHands) {
+                        setSelectedOffHandWeapon("None");
+                        setSelectedShield("None");
+                      }
+                      if (value === "None" || !profile?.ammunition) {
+                        setSelectedAmmoCount(0);
+                      }
+                    }}
+                  >
+                    {availableWeapons.map((weapon) => {
+                      const profile = normalizeWeaponProfile(weapon);
+                      return (
+                        <option key={`right-${weapon.name}`} value={weapon.name}>
+                          {weapon.name}
+                          {weapon.name !== "None"
+                            ? ` — ${weapon.damage || "N/A"} — ${profile?.requiresTwoHands ? "Two-handed" : "One-handed"}`
+                            : " — Empty"}
+                        </option>
+                      );
+                    })}
+                  </Select>
+                </FormControl>
+
+                <FormControl>
+                  <FormLabel>Left Hand Weapon</FormLabel>
+                  <Select
+                    value={selectedOffHandWeapon}
+                    isDisabled={selectedRightHandProfile?.requiresTwoHands === true}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      const profile = normalizeWeaponProfile(
+                        availableWeapons.find((item) => item?.name === value)
+                      );
+                      setSelectedOffHandWeapon(value);
+                      if (profile?.requiresTwoHands) {
+                        setSelectedWeapon("None");
+                        setSelectedShield("None");
+                      }
+                    }}
+                  >
+                    {availableWeapons.map((weapon) => {
+                      const profile = normalizeWeaponProfile(weapon);
+                      return (
+                        <option key={`left-${weapon.name}`} value={weapon.name}>
+                          {weapon.name}
+                          {weapon.name !== "None"
+                            ? ` — ${weapon.damage || "N/A"} — ${profile?.requiresTwoHands ? "Two-handed" : "One-handed"}`
+                            : " — Empty"}
+                        </option>
+                      );
+                    })}
+                  </Select>
+                </FormControl>
+
+                <FormControl>
+                  <FormLabel>Shield</FormLabel>
+                  <Select
+                    value={selectedShield}
+                    isDisabled={
+                      selectedRightHandProfile?.requiresTwoHands === true ||
+                      selectedLeftHandProfile?.requiresTwoHands === true
+                    }
+                    onChange={(e) => setSelectedShield(e.target.value)}
+                  >
+                    {(armorChoicesByLayer.shield || []).map((armor) => (
+                      <option key={`shield-${armor.name}`} value={armor.name}>
+                        {armor.name}
+                        {armor.name !== "None"
+                          ? ` — Defense ${armor.guardRating ?? armor.ar ?? 0}`
+                          : ""}
+                      </option>
+                    ))}
+                  </Select>
+                </FormControl>
+
+                {[
+                  ["Padding / Arming Layer", selectedPadding, setSelectedPadding, armorChoicesByLayer.padding],
+                  ["Mail Layer", selectedMail, setSelectedMail, armorChoicesByLayer.mail],
+                  ["Plate Layer", selectedPlate, setSelectedPlate, armorChoicesByLayer.plate],
+                  ["Other / Outer Armor", selectedOuterArmor, setSelectedOuterArmor, armorChoicesByLayer.outer],
+                ].map(([label, value, setter, choices]) => (
+                  <FormControl key={label}>
+                    <FormLabel>{label}</FormLabel>
+                    <Select
+                      value={value}
+                      onChange={(e) => {
+                        setter(e.target.value);
+                        if (label === "Other / Outer Armor") {
+                          setSelectedArmor(e.target.value);
+                        }
+                      }}
+                    >
+                      {(choices || []).map((armor) => (
+                        <option key={`${label}-${armor.name}`} value={armor.name}>
+                          {armor.name}
+                          {armor.name !== "None"
+                            ? ` — Defense ${armor.guardRating ?? armor.ar ?? 0}, Durability ${armor.armorDurability ?? armor.sdc ?? 0}`
+                            : ""}
+                        </option>
+                      ))}
+                    </Select>
+                  </FormControl>
+                ))}
+
+                <Text fontSize="xs" color="gray.600">
+                  Generic Spear, Infantry Spear, and Long Spear require two hands.
+                  Short Spear, Javelin, and Trident may be paired with a shield.
+                </Text>
+              </VStack>
             )}
 
-            {/* Weapon Selection - Show for humanoids OR combatants with natural attacks */}
-            {(isSelectedHumanoid || (selectedCombatantData && selectedCombatantData.attacks && Array.isArray(selectedCombatantData.attacks) && selectedCombatantData.attacks.some(a => a.name && a.damage !== "by technique" && a.damage !== "varies"))) && (
-              <FormControl mb={4}>
-                <FormLabel>{isSelectedHumanoid ? "Weapon (Humanoid Only):" : "Natural Attack:"}</FormLabel>
-                <Select
-                  placeholder="Select weapon (optional)"
-                  value={selectedWeapon}
-                  onChange={(e) => {
-                    setSelectedWeapon(e.target.value);
-                    // Reset ammo count when weapon changes
-                    if (e.target.value === "None" || !availableWeapons.find(w => w.name === e.target.value)?.ammunition) {
-                      setSelectedAmmoCount(0);
-                    }
-                  }}
-                >
-                  {availableWeapons.map((weapon) => (
-                    <option key={weapon.name} value={weapon.name}>
-                      {weapon.name} {weapon.name !== "None" ? `(${weapon.damage || "N/A"} damage${weapon.ammunition ? `, needs ${weapon.ammunition}` : ""})` : ""}
-                    </option>
-                  ))}
-                </Select>
-                <Text fontSize="xs" color="gray.500" mt={1}>
-                  {isSelectedHumanoid
-                    ? "Select weapon to equip. Leave as \"None\" to use default weapon assignment."
-                    : "Select natural attack to use. Leave as \"None\" to use default attack assignment."}
-                </Text>
-              </FormControl>
-            )}
+            {/* Natural attacks are selectable only for non-humanoid creatures. */}
+            {!isSelectedHumanoid &&
+              selectedCombatantData?.attacks &&
+              Array.isArray(selectedCombatantData.attacks) && (
+                <FormControl mb={4}>
+                  <FormLabel>Natural Attack</FormLabel>
+                  <Select
+                    value={selectedWeapon}
+                    onChange={(e) => setSelectedWeapon(e.target.value)}
+                  >
+                    {availableWeapons.map((weapon) => (
+                      <option key={weapon.name} value={weapon.name}>
+                        {weapon.name}
+                        {weapon.name !== "None"
+                          ? ` (${weapon.damage || "N/A"})`
+                          : " — No selected natural attack"}
+                      </option>
+                    ))}
+                  </Select>
+                </FormControl>
+              )}
 
             {/* Ammo Selection - Only show for ranged weapons that require ammo */}
             {isSelectedHumanoid && selectedWeaponRequiresAmmo && (
@@ -54008,18 +58566,24 @@ function CombatPage({ characters = [] }) {
                       : selectedArmyId;
                     if (enemyCount === 1) {
                       // Single enemy - use original function
-                      addCombatant(combatant, null, enemyLevel, selectedArmor, selectedWeapon, selectedAmmoCount, null, destinationArmyId);
+                      addCombatant(combatant, null, enemyLevel, selectedArmor, selectedWeapon, selectedAmmoCount, null, destinationArmyId, currentEquipmentSelection);
                       setCustomEnemyName("");
                       setSelectedCombatant("");
                       setEnemyLevel(1); // Reset level
-                      setSelectedArmor(""); // Reset armor
-                      setSelectedWeapon(""); // Reset weapon
-                      setSelectedAmmoCount(0); // Reset ammo
+                      setSelectedArmor("None");
+                      setSelectedWeapon("None");
+                      setSelectedOffHandWeapon("None");
+                      setSelectedShield("None");
+                      setSelectedPadding("None");
+                      setSelectedMail("None");
+                      setSelectedPlate("None");
+                      setSelectedOuterArmor("None");
+                      setSelectedAmmoCount(0);
                       setSelectedArmyId("enemy"); // Reset army
                       onClose();
                     } else {
                       // Multiple enemies - use new function
-                      addMultipleEnemies(combatant, enemyCount, enemyLevel, selectedArmor, selectedWeapon, selectedAmmoCount, destinationArmyId);
+                      addMultipleEnemies(combatant, enemyCount, enemyLevel, selectedArmor, selectedWeapon, selectedAmmoCount, destinationArmyId, currentEquipmentSelection);
                     }
                   }
                 }}
@@ -54093,7 +58657,7 @@ function CombatPage({ characters = [] }) {
                         <Text fontWeight="bold">{character.name}</Text>
                         <Text fontSize="sm" color="gray.600">
                           {getDisplayRoleLine(character) || "Fighter"} | Level {character.level || 1} | HP: {character.derived?.hitPoints || character.hp || character.HP || 20}
-                          | AC: {displayStats.armorClass} | Movement: {displayStats.movementSpeed} ft
+                          | Defense: {displayStats.armorClass} | Movement: {displayStats.movementSpeed} ft
                         </Text>
                         {character.attributes && Object.entries(character.attributes).slice(0, 4).map(([attr, value]) => (
                           <Badge key={attr} size="sm" colorScheme="blue">
@@ -54153,14 +58717,20 @@ function CombatPage({ characters = [] }) {
       <Modal isOpen={showWeaponModal} onClose={() => setShowWeaponModal(false)} size="md">
         <ModalOverlay />
         <ModalContent>
-          <ModalHeader>Select Weapon from Inventory</ModalHeader>
+          <ModalHeader>Select Equipped Weapon</ModalHeader>
           <ModalCloseButton />
           <ModalBody pb={6}>
             <VStack spacing={3} align="stretch">
               {selectedWeaponSlot && (() => {
                 const fighter = fighters.find(f => f.id === selectedWeaponSlot.fighterId);
-                const currentSlot = fighter?.equistaminadWeapons?.[selectedWeaponSlot.slotIndex];
-                const isSlotDisabled = currentSlot?.disabled;
+                const authoritativeWeapons = Array.isArray(fighter?.equippedWeapons)
+                  ? fighter.equippedWeapons
+                  : [];
+                const currentSlot = authoritativeWeapons[selectedWeaponSlot.slotIndex] || null;
+                const isSlotDisabled = Boolean(
+                  selectedWeaponSlot.slotIndex === 1 &&
+                  fighter?.equipped?.weaponPrimary?.requiresTwoHands
+                );
 
                 // If slot is disabled, show message instead of weapon list
                 if (isSlotDisabled) {
@@ -54179,9 +58749,7 @@ function CombatPage({ characters = [] }) {
                   );
                 }
 
-                const availableWeapons = fighter?.inventory?.filter(item =>
-                  item.type === "weapon" || item.type === "Weapon" || item.category === "Weapons"
-                ) || [];
+                const selectableWeaponOptions = weapons;
 
                 return (
                   <>
@@ -54205,9 +58773,9 @@ function CombatPage({ characters = [] }) {
                         </HStack>
                       </Button>
 
-                      {/* Available weapons from inventory */}
-                      {availableWeapons.length > 0 ? (
-                        availableWeapons.map((weapon, index) => {
+                      {/* Every canonical weapon is selectable; active attacks come only from equipped slots. */}
+                      {selectableWeaponOptions.length > 0 ? (
+                        selectableWeaponOptions.map((weapon, index) => {
                           const isTwoHanded = isTwoHandedWeapon(weapon);
                           return (
                             <Button
@@ -54234,7 +58802,7 @@ function CombatPage({ characters = [] }) {
                       ) : (
                         <Box p={2} bg="gray.50" borderRadius="md" textAlign="center">
                           <Text color="gray.600" fontSize="xs">
-                            No additional weapons in inventory
+                            No canonical weapons are available
                           </Text>
                         </Box>
                       )}

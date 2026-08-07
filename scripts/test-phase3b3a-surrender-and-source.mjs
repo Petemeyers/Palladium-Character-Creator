@@ -26,10 +26,12 @@ const noQuarter = scoreSurrenderResponse({ responder: { alignment: "lawful good"
 assert.equal(noQuarter.preference, "execute", "orders and traits can outweigh alignment preference");
 
 const combatPage = fs.readFileSync(new URL("../src/pages/CombatPage.jsx", import.meta.url), "utf8");
+const participation = fs.readFileSync(new URL("../src/utils/combat/combatParticipation.js", import.meta.url), "utf8");
 const handler = fs.readFileSync(new URL("../src/utils/combatActionHandlers/grappleActions.js", import.meta.url), "utf8");
 const transitions = fs.readFileSync(new URL("../src/utils/combat/grappleWeaponTransitions.js", import.meta.url), "utf8");
 assert.match(combatPage, /applyAuthoritativeExhaustionCollapse/);
-assert.match(combatPage, /if \(isConsciousExhaustionCollapse\(fighter\)\) return true/);
+assert.match(combatPage, /isCanonicalCombatCapable\(fighter\)/);
+assert.match(participation, /A conscious exhaustion collapse changes capability, not participation/);
 assert.match(combatPage, /conscious-exhaustion-collapse-committed/);
 assert.match(combatPage, /grapple-collapse-ground-transition-committed/);
 for (const action of ["holdAndRest", "secureGroundControl", "groundedArmorGapStrike", "demandSurrender"]) {

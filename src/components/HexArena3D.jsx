@@ -20,6 +20,8 @@ const HexArena3D = forwardRef(function HexArena3D(
     embeddedArrows,
     impactReactions,
     dangerHexes,
+    weaponAnimationCues = [],
+    formationLinks = [],
     activeFighterId,
     selectedFighterId,
     targetFighterId,
@@ -51,6 +53,7 @@ const HexArena3D = forwardRef(function HexArena3D(
   const [isInitialized, setIsInitialized] = useState(false);
   const initializationStarted = useRef(false);
   const isMountedRef = useRef(true);
+  const playedWeaponAnimationCueIdsRef = useRef(new Set());
 
   // Ã¢Å“â€¦ Expose a tiny API to parent (CombatPage)
   useImperativeHandle(ref, () => ({
@@ -71,6 +74,9 @@ const HexArena3D = forwardRef(function HexArena3D(
     },
     setEditorBrushInteractionState: (value) => {
       arenaRef.current?.setEditorBrushInteractionState?.(value);
+    },
+    playWeaponAnimationCue: (cue) => {
+      arenaRef.current?.playWeaponInteractionAnimation?.(cue);
     },
   }));
 
@@ -118,6 +124,8 @@ const HexArena3D = forwardRef(function HexArena3D(
         embeddedArrows,
         impactReactions,
         dangerHexes,
+        weaponAnimationCues,
+        formationLinks,
         activeFighterId,
         selectedFighterId,
         targetFighterId,
@@ -128,7 +136,21 @@ const HexArena3D = forwardRef(function HexArena3D(
         mapType: terrain?.mapType || "hex",
       });
     }
-  }, [mapDefinition, editorProps, selectedEditorPropId, fighters, positions, renderPositions, projectiles, embeddedArrows, impactReactions, dangerHexes, activeFighterId, selectedFighterId, targetFighterId, surrenderRecordsByFighterId, combatGenerationId, activeTurnGenerationId, terrain, mode]);
+  }, [mapDefinition, editorProps, selectedEditorPropId, fighters, positions, renderPositions, projectiles, embeddedArrows, impactReactions, dangerHexes, weaponAnimationCues, formationLinks, activeFighterId, selectedFighterId, targetFighterId, surrenderRecordsByFighterId, combatGenerationId, activeTurnGenerationId, terrain, mode]);
+
+  useEffect(() => {
+    if (!arenaRef.current || !Array.isArray(weaponAnimationCues)) return;
+    arenaRef.current.syncWeaponAnimationCues?.(weaponAnimationCues);
+    weaponAnimationCues.forEach((cue) => {
+      if (!cue?.id || playedWeaponAnimationCueIdsRef.current.has(cue.id)) return;
+      playedWeaponAnimationCueIdsRef.current.add(cue.id);
+      arenaRef.current.playWeaponInteractionAnimation?.(cue);
+    });
+    if (playedWeaponAnimationCueIdsRef.current.size > 64) {
+      const activeIds = new Set(weaponAnimationCues.map((cue) => cue?.id).filter(Boolean));
+      playedWeaponAnimationCueIdsRef.current = activeIds;
+    }
+  }, [weaponAnimationCues]);
 
   useEffect(() => {
     if (!arenaRef.current?.setMapInteractionState) return;
@@ -197,6 +219,8 @@ HexArena3D.propTypes = {
   embeddedArrows: PropTypes.array,
   impactReactions: PropTypes.object,
   dangerHexes: PropTypes.array,
+  weaponAnimationCues: PropTypes.array,
+  formationLinks: PropTypes.array,
   activeFighterId: PropTypes.string,
   selectedFighterId: PropTypes.string,
   targetFighterId: PropTypes.string,

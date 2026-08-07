@@ -6,5 +6,5 @@ const routed = { id: "routed", moraleState: { status: "ROUTED" } };
 const active = { id: "active", moraleState: { status: "STEADY" } };
 const positions = { enemy: { x: 1, y: 1 }, routed: { x: 2, y: 1 }, active: { x: 8, y: 1 } };
 const result = prioritizeEnemyCombatTargets({ attacker, candidates: [routed, active], positions, calculateDistance: (a, b) => Math.abs(a.x - b.x) * 5 });
-assert.deepEqual(result.map((target) => target.id), ["routed", "active"]);
-console.log("adjacent routing blocker remains targetable test passed");
+assert.deepEqual(result.map((target) => target.id), ["active"]);
+console.log("adjacent routed fighter is excluded from ordinary targeting");

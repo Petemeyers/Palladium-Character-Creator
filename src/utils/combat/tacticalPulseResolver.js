@@ -39,6 +39,14 @@ import {
   resolveTacticalChargeContacts,
   resolveTacticalChargeStepBoundary,
 } from "./tacticalChargeBraceRuntime.js";
+import {
+  cancelTacticalOverwatch,
+  createAuthoritativeOverwatchTriggerEvent,
+  detectTacticalOverwatchTriggers,
+  progressTacticalOverwatch,
+  registerTacticalOverwatch,
+  resolveTacticalOverwatchWindows,
+} from "./tacticalOverwatchRuntime.js";
 
 const event = (eventType, ownership, data = {}, actorId = data.actorId ?? null) => ({
   eventType, actorId, generationId: ownership.generationId, combatSession: ownership.combatSession,
@@ -99,6 +107,7 @@ export async function resolveTacticalPulse({
   planIntent = planDefaultTacticalMovement,
   planActionIntent = planDefaultTacticalAction,
   planChargeBraceIntent,
+  planOverwatchIntent,
   isCombatCapable = canAct,
   isHexLegal,
   spendStamina = defaultTacticalPulseStaminaSpend,
@@ -119,6 +128,11 @@ export async function resolveTacticalPulse({
   getInterceptionControlMode,
   selectAIInterception,
   readCanonicalChargePosition,
+  validateOverwatchIntent,
+  validateOverwatchTrigger,
+  validateOverwatchRelease,
+  getOverwatchControlMode,
+  selectAIOverwatch,
   combatActive = true,
   getInitiativePriority = getTacticalInitiativePriority,
   transitionClock = transitionTacticalPulseClock,
@@ -156,6 +170,32 @@ export async function resolveTacticalPulse({
     fighters: Object.freeze(state.fighters.map((actor) => Object.freeze({ ...actor }))),
     positions: Object.freeze(Object.fromEntries(Object.entries(state.positions).map(([id, value]) => [id, Object.freeze({ ...value })]))),
   });
+  const overwatchProgress = progressTacticalOverwatch({
+    runtime: runtime.actionRuntime.overwatchRuntime,
+    pulseIndex: owner.pulseIndex,
+    fighters: state.fighters,
+    positions: state.positions,
+    validateOverwatch: validateOverwatchIntent,
+    onEvent: (entry) => emit(event(entry.eventType, owner, entry.data, entry.actorId)),
+  });
+  if (!overwatchProgress.accepted) {
+    runtime.ownership = null;
+    return { accepted: false, reason: overwatchProgress.reason, events };
+  }
+  const pendingOverwatch = await resolveTacticalOverwatchWindows({
+    runtime: runtime.actionRuntime.overwatchRuntime,
+    pulseIndex: owner.pulseIndex,
+    fighters: state.fighters,
+    validateRelease: validateOverwatchRelease,
+    spendCanonicalAmmunition,
+    executeCanonicalAttack,
+    combatActive,
+    onEvent: (entry) => emit(event(entry.eventType, owner, entry.data, entry.actorId)),
+  });
+  if (!pendingOverwatch.accepted) {
+    runtime.ownership = null;
+    return { accepted: false, reason: pendingOverwatch.reason, events };
+  }
   const chargeBraceProgress = progressTacticalChargeBracePreparation({
     runtime: runtime.actionRuntime.chargeBraceRuntime,
     pulseIndex: owner.pulseIndex,
@@ -169,12 +209,28 @@ export async function resolveTacticalPulse({
     runtime.ownership = null;
     return { accepted: false, reason: chargeBraceProgress.reason, events };
   }
+  for (const committedEvent of chargeBraceProgress.events.filter((entry) => entry.eventType === "tactical-charge-committed")) {
+    const trigger = createAuthoritativeOverwatchTriggerEvent({
+      triggerEventId: `${owner.generationId}:${owner.combatSession}:${owner.pulseIndex}:${committedEvent.data?.chargeIntentId}:charge-committed`,
+      generationId: owner.generationId, combatSession: owner.combatSession, pulseIndex: owner.pulseIndex,
+      kind: "charge-committed", actorId: committedEvent.actorId || committedEvent.data?.chargerId,
+      position: state.positions[committedEvent.actorId || committedEvent.data?.chargerId],
+      movementOwnershipKey: committedEvent.data?.movementOwnershipKey || null,
+      chargeIntentId: committedEvent.data?.chargeIntentId, authoritative: true, eventOrder: 0,
+    });
+    if (trigger.accepted) {
+      detectTacticalOverwatchTriggers({ runtime: runtime.actionRuntime.overwatchRuntime, triggerEvent: trigger.triggerEvent, fighters: state.fighters, positions: state.positions, validateTrigger: validateOverwatchTrigger, getControlMode: getOverwatchControlMode, selectAIResponse: selectAIOverwatch, onEvent: (entry) => emit(event(entry.eventType, owner, entry.data, entry.actorId)) });
+      await resolveTacticalOverwatchWindows({ runtime: runtime.actionRuntime.overwatchRuntime, pulseIndex: owner.pulseIndex, fighters: state.fighters, validateRelease: validateOverwatchRelease, spendCanonicalAmmunition, executeCanonicalAttack, combatActive, onEvent: (entry) => emit(event(entry.eventType, owner, entry.data, entry.actorId)) });
+    }
+  }
   const intents = new Map();
   const actionIntentsCreated = [];
+  const overwatchIntentsCreated = [];
   const abortPulse = (reason, details = {}) => {
     for (const action of actionIntentsCreated) {
       cancelTacticalAction(runtime.actionRuntime, action.actorId, reason);
     }
+    for (const actorId of overwatchIntentsCreated) cancelTacticalOverwatch(runtime.actionRuntime.overwatchRuntime, actorId, reason);
     for (const intent of intents.values()) {
       if (!["completed", "blocked", "canceled", "expired"].includes(intent.state)) {
         intent.state = "canceled";
@@ -218,6 +274,14 @@ export async function resolveTacticalPulse({
       let actionOwnership = getTacticalActorOwnership(runtime.actionRuntime, actorId);
       let createdAction = null;
       let actionPlan = null;
+      if (actionOwnership.state === "unowned" && typeof planOverwatchIntent === "function") {
+        const overwatchPlan = await planOverwatchIntent({ actor, fighters: snapshot.fighters, positions: snapshot.positions, pulseIndex: owner.pulseIndex, generationId: owner.generationId, combatSession: owner.combatSession });
+        if (overwatchPlan?.type === "overwatch") {
+          const registered = registerTacticalOverwatch(runtime.actionRuntime.overwatchRuntime, overwatchPlan.input, { fighters: snapshot.fighters, validateOverwatch: validateOverwatchIntent });
+          for (const entry of registered.events || []) emit(event(entry.eventType, owner, entry.data, entry.actorId));
+          if (registered.accepted) { overwatchIntentsCreated.push(actorId); actionOwnership = getTacticalActorOwnership(runtime.actionRuntime, actorId); }
+        }
+      }
       if (actionOwnership.state === "unowned" && typeof planChargeBraceIntent === "function") {
         const tacticalPlan = await planChargeBraceIntent({
           actor,
@@ -558,6 +622,17 @@ export async function resolveTacticalPulse({
         }
         movedActorIds.add(proposal.actorId);
         emit(event("tactical-step-committed", owner, { actorId: proposal.actorId, intentId: proposal.intent.intentId, from: proposal.from, to: proposal.to, movementMode: proposal.intent.mode, stepPass, animationDurationMs: TACTICAL_ANIMATION_DURATION_MS[proposal.intent.mode], path: proposal.intent.path }, proposal.actorId));
+        const trigger = createAuthoritativeOverwatchTriggerEvent({
+          triggerEventId: `${owner.generationId}:${owner.combatSession}:${owner.pulseIndex}:${proposal.intent.intentId}:step-${stepPass}`,
+          generationId: owner.generationId, combatSession: owner.combatSession, pulseIndex: owner.pulseIndex,
+          kind: "movement-committed", actorId: proposal.actorId, from: proposal.from, to: proposal.to,
+          movementMode: proposal.intent.mode, movementOwnershipKey: `${key}:${proposal.actorId}:${proposal.intent.intentId}:step-${stepPass}`,
+          chargeIntentId: proposal.intent.chargeIntentId || null, authoritative: true, eventOrder: stepPass,
+        });
+        if (trigger.accepted) {
+          detectTacticalOverwatchTriggers({ runtime: runtime.actionRuntime.overwatchRuntime, triggerEvent: trigger.triggerEvent, fighters: state.fighters, positions: state.positions, validateTrigger: validateOverwatchTrigger, getControlMode: getOverwatchControlMode, selectAIResponse: selectAIOverwatch, onEvent: (entry) => emit(event(entry.eventType, owner, entry.data, entry.actorId)) });
+          await resolveTacticalOverwatchWindows({ runtime: runtime.actionRuntime.overwatchRuntime, pulseIndex: owner.pulseIndex, fighters: state.fighters, validateRelease: validateOverwatchRelease, spendCanonicalAmmunition, executeCanonicalAttack, combatActive, onEvent: (entry) => emit(event(entry.eventType, owner, entry.data, entry.actorId)) });
+        }
         if (proposal.intent.nextStepIndex >= proposal.intent.path.length) proposal.intent.state = "completed";
       }
     }

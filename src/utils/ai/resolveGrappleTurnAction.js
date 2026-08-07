@@ -11,6 +11,38 @@ function text(value) {
   return String(value || "").toLowerCase();
 }
 
+function canonicalStrength(actor = {}) {
+  return Number(
+    actor?.abilityScores?.strength ??
+    actor?.attributes?.might ??
+    actor?.attributes?.strength ??
+    actor?.attributes?.PS ??
+    actor?.PS ??
+    10
+  ) || 10;
+}
+
+function isPowerfulGrappleController(actor = {}) {
+  const descriptor = [
+    actor?.actorKey,
+    actor?.name,
+    actor?.size,
+    actor?.category,
+    actor?.aiRole,
+    ...(Array.isArray(actor?.tags) ? actor.tags : []),
+    ...(Array.isArray(actor?.traits) ? actor.traits : []),
+  ].filter(Boolean).join(" ").toLowerCase();
+  return canonicalStrength(actor) >= 18 || /minotaur|powerful build|mythic.*brute|large grappler/.test(descriptor);
+}
+
+function grappleControlState(actor = {}) {
+  return text(
+    actor?.grappleState?.groundControl?.state ||
+    actor?.grappleState?.controlState ||
+    actor?.grappleState?.control
+  );
+}
+
 export function getActiveGrappleOpponent(actor = {}, fighters = []) {
   const opponentId = actor?.grappleState?.opponent || actor?.grappleState?.opponentId;
   if (!opponentId) return null;
@@ -36,17 +68,14 @@ export function resolveGrappleTurnAction({
   source = "ai",
 } = {}) {
   const active = hasActiveGrappleState({ ...actor, grappleState }, opponent);
-  if (!active) {
-    return { handled: false, reason: "no-active-grapple" };
-  }
+  if (!active) return { handled: false, reason: "no-active-grapple" };
 
   const state = text(grappleState?.state);
   const weapons = Array.isArray(availableClinchWeapons) ? availableClinchWeapons : [];
   const routingActor = { ...actor, grappleState, attacks: [...(actor?.attacks || []), ...weapons] };
   const weaponState = normalizeCombatWeaponState(routingActor);
   const dagger = findEligibleClinchWeapon(routingActor);
-  const unarmed =
-    weapons.find((weapon) => /unarmed|fist|punch/.test(text(weapon?.name || weapon?.type))) ||
+  const unarmed = weapons.find((weapon) => /unarmed|fist|punch/.test(text(weapon?.name || weapon?.type))) ||
     { id: "Unarmed Attack", name: "Unarmed Attack", type: "unarmed" };
   const canAct = (Number(remainingActions ?? 0) || 0) > 0;
   const standing = isStandingClinch(routingActor, opponent);
@@ -54,6 +83,16 @@ export function resolveGrappleTurnAction({
   const defenderFirstEscape = standing && grappleState?.isAttacker !== true &&
     !weaponState.clinchWeaponReady && (Number(remainingActions ?? 0) || 0) > 1;
   const dominantGroundControl = grounded && hasSufficientGroundControl(routingActor, opponent);
+  const powerfulController = standing && grappleState?.isAttacker === true && isPowerfulGrappleController(routingActor);
+  const controlState = grappleControlState(routingActor);
+  const dominantStandingControl = ["dominant", "pinned"].includes(controlState);
+  const targetLifted = Boolean(
+    routingActor?.liftedTargetId === opponent?.id ||
+    grappleState?.liftedTargetId === opponent?.id ||
+    opponent?.grappleState?.lifted === true ||
+    opponent?.carriedById === actor?.id ||
+    opponent?.carriedBy === actor?.id
+  );
   const actionType = !canAct
     ? "pass"
     : grounded
@@ -64,63 +103,46 @@ export function resolveGrappleTurnAction({
           : "groundAttack"
       : defenderFirstEscape
         ? "breakFree"
-        : dagger && !weaponState.clinchWeaponReady
-          ? "drawClinchDagger"
-          : "clinchStrike";
-  const actionName = actionType === "drawClinchDagger"
-    ? "Draw Clinch Dagger"
-    : actionType === "breakFree"
-      ? "Break Free"
-      : actionType === "groundAttack"
-        ? "Ground Attack"
-        : actionType === "groundedArmorGapStrike"
-          ? "Grounded Armor-Gap Strike"
-          : actionType === "secureGroundControl"
-            ? "Secure Ground Control"
-            : actionType === "demandSurrender"
-              ? "Demand Surrender"
-        : canAct ? "Clinch Strike" : "Pass";
+        : powerfulController && targetLifted
+          ? "slam"
+          : powerfulController && dominantStandingControl
+            ? "lift"
+            : powerfulController
+              ? "improveControl"
+              : dagger && !weaponState.clinchWeaponReady
+                ? "drawClinchDagger"
+                : "clinchStrike";
+  const actionName = actionType === "drawClinchDagger" ? "Draw Clinch Dagger"
+    : actionType === "breakFree" ? "Break Free"
+    : actionType === "improveControl" ? "Improve Control"
+    : actionType === "lift" ? "Lift"
+    : actionType === "slam" ? "Slam"
+    : actionType === "groundAttack" ? "Ground Attack"
+    : actionType === "groundedArmorGapStrike" ? "Grounded Armor-Gap Strike"
+    : actionType === "secureGroundControl" ? "Secure Ground Control"
+    : actionType === "demandSurrender" ? "Demand Surrender"
+    : canAct ? "Clinch Strike" : "Pass";
   const weapon = weaponState.clinchWeaponReady ? dagger : (actionType === "clinchStrike" ? unarmed : dagger || unarmed || null);
   const executionKey = [
-    "grapple-turn",
-    generationId || "default",
-    turnToken || "missing-token",
-    actor?.id || "unknown-actor",
-    opponent?.id || grappleState?.opponent || "unknown-opponent",
-    actionType,
+    "grapple-turn", generationId || "default", turnToken || "missing-token",
+    actor?.id || "unknown-actor", opponent?.id || grappleState?.opponent || "unknown-opponent", actionType,
   ].join(":");
 
-  const routedActionType = actionType;
-  const routedActionName = actionName;
   return {
     handled: true,
     routeType: canAct ? "grapple-dispatch-required" : "legal-pass",
-    grappleAction: canAct
-      ? {
-          actionType: routedActionType,
-          actionName: routedActionName,
-          grappleActionId: executionKey,
-          actorId: actor?.id || null,
-          opponentId: opponent?.id || grappleState?.opponent || null,
-          generationId,
-          round,
-          initiativeIndex,
-          initiativeTurnId,
-          actionToken,
-          weaponId: weapon?.id || weapon?.name || null,
-          weaponName: weapon?.name || null,
-        }
-      : null,
-    actionType: routedActionType,
-    actionName: routedActionName,
-    grappleActionId: executionKey,
+    grappleAction: canAct ? {
+      actionType, actionName, grappleActionId: executionKey,
+      actorId: actor?.id || null,
+      opponentId: opponent?.id || grappleState?.opponent || null,
+      generationId, round, initiativeIndex, initiativeTurnId, actionToken,
+      weaponId: weapon?.id || weapon?.name || null,
+      weaponName: weapon?.name || null,
+    } : null,
+    actionType, actionName, grappleActionId: executionKey,
     actorId: actor?.id || null,
     opponentId: opponent?.id || grappleState?.opponent || null,
-    generationId,
-    round,
-    initiativeIndex,
-    initiativeTurnId,
-    actionToken,
+    generationId, round, initiativeIndex, initiativeTurnId, actionToken,
     actionAccepted: true,
     actionSpent: !canAct,
     staminaSpent: 0,

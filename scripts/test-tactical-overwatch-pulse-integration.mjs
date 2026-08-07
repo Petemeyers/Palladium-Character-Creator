@@ -1,0 +1,10 @@
+import assert from "node:assert/strict";
+import fs from "node:fs";
+const pulse = fs.readFileSync(new URL("../src/utils/combat/tacticalPulseResolver.js", import.meta.url), "utf8");
+assert.match(pulse, /progressTacticalOverwatch/);
+assert.match(pulse, /createAuthoritativeOverwatchTriggerEvent/);
+assert.match(pulse, /tactical-step-committed[\s\S]{0,2500}detectTacticalOverwatchTriggers/);
+assert.match(pulse, /kind: "charge-committed"/);
+assert.match(pulse, /resolveTacticalOverwatchWindows/);
+assert.match(pulse, /spendCanonicalAmmunition/);
+console.log("tactical overwatch pulse integration: 6/6 passed");

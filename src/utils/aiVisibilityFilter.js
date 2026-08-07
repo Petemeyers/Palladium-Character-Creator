@@ -758,32 +758,12 @@ export function attemptMidCombatHide(
   }
 }
 
+import { resolveCanonicalSurpriseAttack } from "./combat/canonicalSurpriseAttack.js";
+
 // --- Sneak Attack constants based on Medieval Combat Simulator 1994 rules ---
 // "An ambush or attack from behind gives the attacker a +2 bonus to attack
 //  and inflicts double damage on the first melee attack only."
 // Ã¢â‚¬â€ Medieval Combat Simulator (1994), Combat Rules Section
-
-const SNEAK_ATTACK_BONUS = {
-  attack: +2,
-  damageMultiplier: 2,
-};
-
-const BACKSTAB_BONUS = {
-  attack: +4,
-  damageMultiplier: 2,
-};
-
-/**
- * Determine PROFESSION (class) if available for backstab bonus
- * Assassin, Thief, and Ranger classes get enhanced backstab (+4 attack instead of +2)
- */
-function getPROFESSIONAttackBonus(attacker) {
-  const profession = attacker.profession?.toLowerCase() || attacker.PROFESSION?.toLowerCase() || "";
-  if (["thief", "assassin", "ranger"].some((c) => profession.includes(c))) {
-    return BACKSTAB_BONUS;
-  }
-  return SNEAK_ATTACK_BONUS;
-}
 
 /**
  * Determines if a sneak attack bonus applies and returns correct attack/damage modifiers
@@ -825,7 +805,7 @@ export function canPerformSneakAttack(attacker, target, options = {}) {
     };
   }
 
-  const bonus = getPROFESSIONAttackBonus(attacker);
+  const bonus = resolveCanonicalSurpriseAttack({ actor: attacker, eligible: canAmbush, alreadyUsed: false });
 
   if (firstAttackOnly) {
     attacker.hasUsedSneakBonus = true;
@@ -833,9 +813,9 @@ export function canPerformSneakAttack(attacker, target, options = {}) {
 
   return {
     allowed: true,
-    attackBonus: bonus.attack,
+    attackBonus: bonus.attackBonus,
     damageMultiplier: bonus.damageMultiplier,
-    log: `${attacker.name} launches a surprise attack! (+${bonus.attack} Attack, Ãƒâ€”${bonus.damageMultiplier} Damage)`,
+    log: `${attacker.name} launches a surprise attack! (+${bonus.attackBonus} attack; x${bonus.damageMultiplier} damage once)`,
     awareness,
   };
 }

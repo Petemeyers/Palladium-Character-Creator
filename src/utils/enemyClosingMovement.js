@@ -72,16 +72,29 @@ export function formatEnemyMovementDebug({
 
 export function getCombatantFootprintHexes(combatant = {}, center = null) {
   if (!center) return [];
-  const explicitRadius = Number(
+  const explicitRadiusValue =
     combatant?.footprint?.radiusHex ??
     combatant?.gridFootprint?.radiusHex ??
-    combatant?.occupiedRadiusHex
-  );
+    combatant?.occupiedRadiusHex;
+  const explicitRadius = Number(explicitRadiusValue);
+  const hasExplicitRadius =
+    explicitRadiusValue !== null &&
+    explicitRadiusValue !== undefined &&
+    explicitRadiusValue !== "" &&
+    Number.isFinite(explicitRadius);
   const sizeRank = Number(combatant?.sizeRank ?? combatant?.attributes?.sizeRank ?? 0) || 0;
   const sizeLabel = String(combatant?.sizeCategory || combatant?.size || "").toLowerCase();
-  const radiusHex = Number.isFinite(explicitRadius)
+  const explicitlySingleHex = ["tiny", "small", "medium"].some((label) =>
+    sizeLabel.includes(label)
+  );
+  const explicitlyMultiHex = ["large", "huge", "gargantuan", "colossal"].some((label) =>
+    sizeLabel.includes(label)
+  );
+  const radiusHex = hasExplicitRadius
     ? Math.max(0, Math.floor(explicitRadius))
-    : (sizeRank >= 1 || sizeLabel.includes("large") ? 1 : 0);
+    : explicitlySingleHex
+      ? 0
+      : (explicitlyMultiHex || sizeRank >= 3 ? 1 : 0);
 
   if (radiusHex <= 0) return [{ ...center }];
   const cells = [];

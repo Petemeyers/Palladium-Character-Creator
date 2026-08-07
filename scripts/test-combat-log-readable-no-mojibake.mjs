@@ -17,7 +17,9 @@ assert.equal(
 );
 
 const combatPage = fs.readFileSync(new URL("../src/pages/CombatPage.jsx", import.meta.url), "utf8");
-assert.match(combatPage, /const readableMessage = disambiguateDuplicateCombatActorNames\(/);
+assert.match(combatPage, /const readableMessage = immutableStructuredDisplay[\s\S]{0,180}: disambiguateDuplicateCombatActorNames\(/);
+assert.match(combatPage, /"round-initiative-summary",[\s\S]{0,80}\.includes\(message\.eventType\)/,
+  "immutable initiative summaries bypass duplicate-name rewriting");
 assert.match(combatPage, /sanitizeCombatLogMessage\(message\)/,
   "messages remain sanitized before duplicate-name labels are added");
 assert.match(combatPage, /message: readableMessage/,

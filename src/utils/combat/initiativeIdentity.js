@@ -1,3 +1,5 @@
+import { getCombatDisplayName } from "../combatActorIdentity.js";
+
 const actorIdOf = (actor = {}) => String(actor.id ?? actor._id ?? actor.actorId ?? "");
 
 const canonicalTeam = (actor = {}) => {
@@ -25,7 +27,7 @@ export function resolveCombatantDisplayIdentity(actorId, roster = []) {
   return Object.freeze({
     actorId: stableId,
     baseName,
-    displayName: `${baseName} [${sideLabel}]`,
+    displayName: actor?.battleLabel ? getCombatDisplayName(actor) : `${baseName} [${sideLabel}]`,
     team,
     type,
     sideLabel,
