@@ -1,0 +1,107 @@
+{
+  "generatedBy": "calibrate-mixed-unit-weapon-battles.mjs",
+  "seed": 20260806,
+  "iterationsPerScenario": 300,
+  "results": {
+    "spear-line-vs-swords": {
+      "iterations": 300,
+      "leftWins": 298,
+      "rightWins": 2,
+      "draws": 0,
+      "leftSurvivors": 803,
+      "rightSurvivors": 2,
+      "entryAttempts": 2445,
+      "entries": 553,
+      "denials": 1892,
+      "supportedEntryContests": 2236,
+      "controlReactions": 1883,
+      "specializedActions": {
+        "shield-bind-and-strike": 2140
+      },
+      "leftWinRate": 0.9933333333333333,
+      "rightWinRate": 0.006666666666666667,
+      "drawRate": 0,
+      "averageLeftSurvivors": 2.6766666666666667,
+      "averageRightSurvivors": 0.006666666666666667,
+      "entrySuccessRate": 0.2261758691206544,
+      "supportedContestRate": 0.914519427402863
+    },
+    "supported-pikes-vs-shielded-swords": {
+      "iterations": 300,
+      "leftWins": 300,
+      "rightWins": 0,
+      "draws": 0,
+      "leftSurvivors": 841,
+      "rightSurvivors": 0,
+      "entryAttempts": 1941,
+      "entries": 447,
+      "denials": 1494,
+      "supportedEntryContests": 1940,
+      "controlReactions": 1494,
+      "specializedActions": {
+        "set-pike": 3960,
+        "shield-bind-and-strike": 1132,
+        "withdraw-point": 809
+      },
+      "leftWinRate": 1,
+      "rightWinRate": 0,
+      "drawRate": 0,
+      "averageLeftSurvivors": 2.8033333333333332,
+      "averageRightSurvivors": 0,
+      "entrySuccessRate": 0.2302936630602782,
+      "supportedContestRate": 0.9994848016486347
+    },
+    "mixed-polearms-vs-mixed-close-weapons": {
+      "iterations": 300,
+      "leftWins": 300,
+      "rightWins": 0,
+      "draws": 0,
+      "leftSurvivors": 801,
+      "rightSurvivors": 0,
+      "entryAttempts": 2586,
+      "entries": 573,
+      "denials": 2013,
+      "supportedEntryContests": 2570,
+      "controlReactions": 1976,
+      "specializedActions": {
+        "halberd-point-thrust": 2142,
+        "mace-break-guard": 656,
+        "shield-bind-and-strike": 394,
+        "axe-hook-guard": 705,
+        "halberd-hook-and-draw": 162
+      },
+      "leftWinRate": 1,
+      "rightWinRate": 0,
+      "drawRate": 0,
+      "averageLeftSurvivors": 2.67,
+      "averageRightSurvivors": 0,
+      "entrySuccessRate": 0.22157772621809746,
+      "supportedContestRate": 0.9938128383604021
+    },
+    "close-weapon-team-vs-sword-line": {
+      "iterations": 300,
+      "leftWins": 5,
+      "rightWins": 295,
+      "draws": 0,
+      "leftSurvivors": 11,
+      "rightSurvivors": 786,
+      "entryAttempts": 3057,
+      "entries": 0,
+      "denials": 3057,
+      "supportedEntryContests": 2914,
+      "controlReactions": 0,
+      "specializedActions": {
+        "shield-bind-and-strike": 5155,
+        "axe-hook-guard": 813,
+        "mace-break-guard": 1961
+      },
+      "leftWinRate": 0.016666666666666666,
+      "rightWinRate": 0.9833333333333333,
+      "drawRate": 0,
+      "averageLeftSurvivors": 0.03666666666666667,
+      "averageRightSurvivors": 2.62,
+      "entrySuccessRate": 0,
+      "supportedContestRate": 0.953222113182859
+    }
+  }
+}

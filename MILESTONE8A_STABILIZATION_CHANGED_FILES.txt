@@ -1,0 +1,15 @@
+Milestone 8A live-combat stabilization changed/new files
+
+MODIFIED
+src/pages/CombatPage.jsx
+src/utils/combat/formationCommandAuthority.js
+README_MILESTONE8A.txt
+
+ADDED
+src/utils/combat/attackModifierAuthority.js
+src/utils/combat/formationCommandTurnReceipt.js
+scripts/test-milestone8a-stabilization.mjs
+MILESTONE8A_STABILIZATION_STATUS.md
+MILESTONE8A_STABILIZATION_VALIDATION.txt
+MILESTONE8A_STABILIZATION_CHANGED_FILES.txt
+combat-milestone-8a-live-stabilization.patch

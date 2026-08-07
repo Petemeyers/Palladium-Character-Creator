@@ -1,0 +1,17 @@
+Milestone 8 Phase 8A validation
+Date: 2026-08-06
+
+formation command authority test passed
+formation movement planner and automated command selection passed
+terrain formation authority test passed
+shield aftermath authority test passed
+milestone 7 calibration sample test passed
+milestone 7 source contract passed
+milestone 8A source contract passed
+large-battle calibration smoke passed: scenarios=12
+CombatPage JSX/JavaScript syntax parse passed
+JavaScript/MJS syntax checks passed
+Patch apply check passed
+
+Not run from partial package: production Vite build, browser combat regression, complete inherited bind test.
+Reason: those require the complete integrated game repository and Milestone 6 authority files not duplicated in this handoff.

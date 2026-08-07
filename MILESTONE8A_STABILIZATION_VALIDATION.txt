@@ -1,0 +1,31 @@
+Milestone 8A Live-Combat Stabilization Validation
+Date: 2026-08-07
+
+DIRECT HANDOFF TESTS
+PASS  scripts/test-milestone8a-stabilization.mjs
+PASS  scripts/test-milestone8a-source-contract.mjs
+PASS  scripts/test-milestone7-source-contract.mjs
+PASS  scripts/test-milestone7-calibration-sample.mjs
+PASS  scripts/test-terrain-formation-authority.mjs
+PASS  scripts/test-shield-aftermath-authority.mjs
+PASS  node --check src/utils/combat/attackModifierAuthority.js
+PASS  node --check src/utils/combat/formationCommandTurnReceipt.js
+PASS  node --check src/utils/combat/formationCommandAuthority.js
+PASS  TypeScript JSX parse: src/pages/CombatPage.jsx
+
+ISOLATED VALIDATION COPY
+The partial handoff does not contain inherited Milestone 6 modules weaponEngagementAuthority.js and weaponBindAuthority.js.
+Minimal validation-only stubs were added only to /mnt/data/m8stabilize_verify and were not copied into this deliverable.
+PASS  scripts/test-formation-command-authority.mjs
+PASS  scripts/test-formation-movement-planner.mjs
+PASS  scripts/test-weapon-bind-counterplay-authority.mjs
+
+KNOWN SOURCE LIMITATION
+Arena Champion's source/preset definition is absent from the handoff, so combatActorSchemaVersion migration was not fabricated at runtime. Migrate that actor definition in the full integrated repository.
+
+LIVE RETEST GATES
+- zero attack-roll-modifier-arithmetic-invalid events
+- no stale requested-coordinate reach/flank continuation after a clamped movement commit
+- no repeated successful recovery command in one initiative turn
+- no close-rankss narration
+- clean terminal combat cleanup

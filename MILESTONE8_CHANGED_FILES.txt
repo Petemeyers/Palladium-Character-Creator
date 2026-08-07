@@ -1,0 +1,20 @@
+MILESTONE 8 PHASE 8A — CHANGED FILES
+
+NEW
+- src/utils/combat/formationMovementPlanner.js
+- scripts/test-formation-movement-planner.mjs
+- scripts/test-milestone8a-source-contract.mjs
+- MILESTONE8_STATUS.md
+- README_MILESTONE8A.txt
+- MILESTONE8_VALIDATION.txt
+
+MODIFIED
+- src/utils/combat/formationCommandAuthority.js
+- src/pages/CombatPage.jsx
+
+PATCH
+- combat-tactical-movement-command-navigation-milestone-8-phase-8a.patch
+
+UNCHANGED MILESTONE 7 FILES
+The remaining source, tests, calibration sample, and Milestone 7 patch are
+retained so this archive can serve as a post-Milestone-7 handoff package.
