@@ -1673,6 +1673,7 @@ export function runEnemyTurnAI(enemy, context) {
     healerAbility,
     clericalHealingTouch,
     medicalTreatment,
+    applyHealingToFighter,
     getFighterTechniques: getFighterTechniquesFromContext,
     getFighterTacticalPowers,
     getFighterstamina,
@@ -2709,7 +2710,7 @@ export function runEnemyTurnAI(enemy, context) {
                     setFighters((prev) =>
                       prev.map((f) =>
                         f.id === targetAlly.id
-                          ? { ...f, currentHP: skillResult.currentHp }
+                          ? applyHealingToFighter(f, Number(skillResult.healed) || 0, powerName)
                           : f,
                       ),
                     );
@@ -2727,7 +2728,7 @@ export function runEnemyTurnAI(enemy, context) {
                   setFighters((prev) =>
                     prev.map((f) =>
                       f.id === targetAlly.id
-                        ? { ...f, currentHP: skillResult.currentHp }
+                        ? applyHealingToFighter(f, Number(skillResult.healed) || 0, "Healing Touch")
                         : f,
                     ),
                   );
@@ -2741,7 +2742,7 @@ export function runEnemyTurnAI(enemy, context) {
                   setFighters((prev) =>
                     prev.map((f) =>
                       f.id === targetAlly.id
-                        ? { ...f, currentHP: skillResult.currentHp }
+                        ? applyHealingToFighter(f, Number(skillResult.healed) || 0, "First Aid")
                         : f,
                     ),
                   );

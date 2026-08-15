@@ -20,6 +20,11 @@
 
 import { rollDice } from "./dice.js";
 import CryptoSecureDice from "./cryptoDice.js";
+import {
+  applyHPToFighter,
+  clampHP,
+  getFighterHP,
+} from "./combat/canonicalHpAuthority.js";
 
 /**
  * Roll percentile (d100) - 1-100
@@ -45,9 +50,7 @@ function rollPercentile() {
  * @returns {object} - { method, healed, currentHp }
  */
 export function naturalRecovery(character, days = 1) {
-  const maxHp = character.maxHP || character.maxHp || character.hp || 30;
-  const currentHp =
-    character.currentHP || character.currentHp || character.hp || 0;
+  const currentHp = getFighterHP(character);
 
   // Calculate healing: 2 HP/day for first 2 days, then 4 HP/day
   let healed = 0;
@@ -57,17 +60,9 @@ export function naturalRecovery(character, days = 1) {
     healed = 4 * (days - 2) + 4; // 2/day for first 2 days + 4/day after
   }
 
-  const newHp = Math.min(maxHp, currentHp + healed);
+  const newHp = clampHP(currentHp + healed, character);
   const actualHealed = newHp - currentHp;
-
-  // Update character HP (handle multiple field name variations)
-  if (character.currentHP !== undefined) {
-    character.currentHP = newHp;
-  } else if (character.currentHp !== undefined) {
-    character.currentHp = newHp;
-  } else {
-    character.hp = newHp;
-  }
+  applyHPToFighter(character, newHp, { updateStatus: false });
 
   return {
     method: "Natural Recovery",
@@ -98,8 +93,7 @@ export function naturalRecovery(character, days = 1) {
  * @returns {object} - { method, roll, success, healed, currentHp }
  */
 export function medicalTreatment(healer, target, skillPercent = 50) {
-  const maxHp = target.maxHP || target.maxHp || target.hp || 30;
-  const currentHp = target.currentHP || target.currentHp || target.hp || 0;
+  const currentHp = getFighterHP(target);
 
   // Roll skill check (d100 vs skill %)
   const roll = rollPercentile();
@@ -108,17 +102,8 @@ export function medicalTreatment(healer, target, skillPercent = 50) {
   // Success: 1D6 + 2 HP, Failure: 0 HP (wasted time)
   const healed = success ? rollDice("1d6") + 2 : 0;
 
-  const newHp = Math.min(maxHp, currentHp + healed);
+  const newHp = clampHP(currentHp + healed, target);
   const actualHealed = newHp - currentHp;
-
-  // Update target HP
-  if (target.currentHP !== undefined) {
-    target.currentHP = newHp;
-  } else if (target.currentHp !== undefined) {
-    target.currentHp = newHp;
-  } else {
-    target.hp = newHp;
-  }
 
   return {
     method: "Medical Treatment",
@@ -175,11 +160,9 @@ export function clericalHealingTouch(healer, target) {
   }
 
   // Cannot heal shuman
-  if (
-    healer._id === target._id ||
-    healer.id === target.id ||
-    healer.name === target.name
-  ) {
+  const healerId = healer.id ?? healer._id;
+  const targetId = target.id ?? target._id;
+  if (healerId && targetId ? String(healerId) === String(targetId) : healer === target) {
     return {
       error: "Cannot use Healing Touch on yourshuman.",
     };
@@ -198,23 +181,13 @@ export function clericalHealingTouch(healer, target) {
     };
   }
 
-  const maxHp = target.maxHP || target.maxHp || target.hp || 30;
-  const currentHp = target.currentHP || target.currentHp || target.hp || 0;
+  const currentHp = getFighterHP(target);
 
   // Healing Touch (Divine): Restores 2D6 + 2 HP per use
   const healed = rollDice("2d6") + 2;
 
-  const newHp = Math.min(maxHp, currentHp + healed);
+  const newHp = clampHP(currentHp + healed, target);
   const actualHealed = newHp - currentHp;
-
-  // Update target HP
-  if (target.currentHP !== undefined) {
-    target.currentHP = newHp;
-  } else if (target.currentHp !== undefined) {
-    target.currentHp = newHp;
-  } else {
-    target.hp = newHp;
-  }
 
   return {
     method: "Healing Touch (Divine)",
@@ -285,19 +258,9 @@ export function healerAbility(healer, target, power = "Healing Touch") {
 
       // Healing Touch: Restores 2D6+2 HP
       const healed = rollDice("2d6") + 2;
-      const maxHp = target.maxHP || target.maxHp || target.hp || 30;
-      const currentHp = target.currentHP || target.currentHp || target.hp || 0;
-      const newHp = Math.min(maxHp, currentHp + healed);
+      const currentHp = getFighterHP(target);
+      const newHp = clampHP(currentHp + healed, target);
       const actualHealed = newHp - currentHp;
-
-      // Update target HP
-      if (target.currentHP !== undefined) {
-        target.currentHP = newHp;
-      } else if (target.currentHp !== undefined) {
-        target.currentHp = newHp;
-      } else {
-        target.hp = newHp;
-      }
 
       return {
         power,
@@ -375,16 +338,10 @@ export function healerAbility(healer, target, power = "Healing Touch") {
       }
 
       // Stabilize at 1 HP if dying
-      const currentHp = target.currentHP || target.currentHp || target.hp || 0;
+      const currentHp = getFighterHP(target);
       if (currentHp <= 0) {
         const newHp = 1;
-        if (target.currentHP !== undefined) {
-          target.currentHP = newHp;
-        } else if (target.currentHp !== undefined) {
-          target.currentHp = newHp;
-        } else {
-          target.hp = newHp;
-        }
+        applyHPToFighter(target, newHp, { updateStatus: false });
 
         // Remove unconscious/coma/dying status
         if (target.status) {
@@ -436,7 +393,7 @@ export function healerAbility(healer, target, power = "Healing Touch") {
         };
       }
 
-      const currentHp = target.currentHP || target.currentHp || target.hp || 0;
+      const currentHp = getFighterHP(target);
       if (currentHp > -21) {
         return {
           error:
@@ -472,13 +429,7 @@ export function healerAbility(healer, target, power = "Healing Touch") {
       if (success) {
         // Restore to 1 HP
         const newHp = 1;
-        if (target.currentHP !== undefined) {
-          target.currentHP = newHp;
-        } else if (target.currentHp !== undefined) {
-          target.currentHp = newHp;
-        } else {
-          target.hp = newHp;
-        }
+        applyHPToFighter(target, newHp, { updateStatus: false });
 
         // Remove death status
         if (target.status) {
@@ -560,7 +511,7 @@ export function comaRecovery(
   method = "medical",
   applySideEffects = true
 ) {
-  const currentHp = target.currentHP || target.currentHp || target.hp || 0;
+  const currentHp = getFighterHP(target);
 
   // Must be at 0 HP or below to be in coma
   if (currentHp >= 1) {
@@ -584,13 +535,7 @@ export function comaRecovery(
   if (success) {
     // Awaken at 1 HP
     const newHp = 1;
-    if (target.currentHP !== undefined) {
-      target.currentHP = newHp;
-    } else if (target.currentHp !== undefined) {
-      target.currentHp = newHp;
-    } else {
-      target.hp = newHp;
-    }
+    applyHPToFighter(target, newHp, { updateStatus: false });
 
     // Optional Rulebook Side Effects
     let sideEffect = null;

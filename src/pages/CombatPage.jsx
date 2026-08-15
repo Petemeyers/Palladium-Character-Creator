@@ -90,6 +90,7 @@ import { resolveBracedCounterDefenderWeapon } from "../utils/combat/bracedCounte
 import {
   applyCanonicalCombatEffect,
 } from "../utils/combat/applyCanonicalCombatEffect.js";
+import { applyCanonicalLocalHealing } from "../utils/combat/canonicalLocalHealing.js";
 import { applyCanonicalGrappleImpact } from "../utils/combat/canonicalGrappleImpact.js";
 import {
   isCanonicalResolvedEffectEvent,
@@ -3450,31 +3451,6 @@ function CombatPage({ characters = [] }) {
       },
     };
   }, []);
-
-  const applyHealingToFighter = useCallback((fighter, amount, source = "healing") => {
-    if (!fighter) return fighter;
-    const maxHP = getCombatantMaxHP(fighter);
-    const nextHP = Math.min(maxHP, getCombatantHP(fighter) + (Number(amount) || 0));
-
-    if (nextHP > 0) {
-      const stabilized = stabilizeBleeding(fighter, source);
-      return {
-        ...stabilized,
-        currentHP: nextHP,
-        hp: nextHP,
-        status: "active",
-        condition: "conscious",
-        // Do not restore actions; they act on their next normal slot.
-        remainingActions: Number(fighter.remainingActions ?? 0) || 0,
-      };
-    }
-
-    return {
-      ...fighter,
-      currentHP: nextHP,
-      hp: nextHP,
-    };
-  }, [getCombatantHP, getCombatantMaxHP, stabilizeBleeding]);
 
   // FNV-1a 32-bit hash for deterministic scatter
   const hash32 = useCallback((str) => {
@@ -10698,6 +10674,21 @@ function CombatPage({ characters = [] }) {
     resolveLayeredArmorImpact,
     applyArmorImpactToFighter,
   };
+
+  const applyHealingToFighter = useCallback((fighter, amount, source = "healing") => {
+    const result = applyCanonicalLocalHealing({
+      fighter,
+      amount,
+      source,
+      stabilize: stabilizeBleeding,
+      authorities: {
+        getFighterHP,
+        clampHP,
+        applyHPToFighter,
+      },
+    });
+    return result.accepted ? result.fighter : fighter;
+  }, [applyHPToFighter, clampHP, getFighterHP, stabilizeBleeding]);
 
   const applyCriticalBleedingForNewMeleeRound = useCallback(
     (fighter, nextMeleeRound) => {
@@ -40944,6 +40935,7 @@ function CombatPage({ characters = [] }) {
         healerAbility,
         clericalHealingTouch,
         medicalTreatment,
+        applyHealingToFighter,
         getFighterTechniques,
         getFighterTacticalPowers,
         getFighterstamina,
@@ -42562,7 +42554,7 @@ function CombatPage({ characters = [] }) {
                   if (skillResult.healed !== undefined) {
                     commitFighters(prev => prev.map(f =>
                       f.id === targetAlly.id
-                        ? { ...f, currentHP: skillResult.currentHp }
+                        ? applyHealingToFighter(f, Number(skillResult.healed) || 0, powerName)
                         : f
                     ));
                   }
@@ -42575,7 +42567,7 @@ function CombatPage({ characters = [] }) {
                 if (!skillResult.error) {
                   commitFighters(prev => prev.map(f =>
                     f.id === targetAlly.id
-                      ? { ...f, currentHP: skillResult.currentHp }
+                      ? applyHealingToFighter(f, Number(skillResult.healed) || 0, "Healing Touch")
                       : f
                   ));
                   addLog(skillResult.message, "success");
@@ -42587,7 +42579,7 @@ function CombatPage({ characters = [] }) {
                 if (skillResult.healed > 0) {
                   commitFighters(prev => prev.map(f =>
                     f.id === targetAlly.id
-                      ? { ...f, currentHP: skillResult.currentHp }
+                      ? applyHealingToFighter(f, Number(skillResult.healed) || 0, "First Aid")
                       : f
                   ));
                 }
@@ -46645,6 +46637,7 @@ function CombatPage({ characters = [] }) {
     combatTerrain,
     arenaEnvironment,
     scheduleEndTurn,
+    applyHealingToFighter,
     applyOngoingCarryStaminaDrain,
     settings,
     canFighterAct,

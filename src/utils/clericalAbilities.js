@@ -14,6 +14,10 @@
 
 import CryptoSecureDice from "./cryptoDice.js";
 import { getSkillPercentage, rollSkillCheck } from "./skillSystem.js";
+import {
+  clampHP,
+  getFighterHP,
+} from "./combat/canonicalHpAuthority.js";
 
 /**
  * Parse clerical abilities from arenaRoster entry
@@ -500,7 +504,9 @@ export function clericalHealingTouch(caster, target, options = {}) {
   }
 
   // Cannot heal shuman
-  if (caster.id === target.id || caster.name === target.name) {
+  const casterId = caster.id ?? caster._id;
+  const targetId = target.id ?? target._id;
+  if (casterId && targetId ? String(casterId) === String(targetId) : caster === target) {
     return {
       success: false,
       reason: "Cannot use Healing Touch on yourshuman",
@@ -515,8 +521,7 @@ export function clericalHealingTouch(caster, target, options = {}) {
     };
   }
 
-  const maxHp = target.maxHP || target.maxHp || target.hp || 30;
-  const currentHp = target.currentHP || target.currentHp || target.hp || 0;
+  const currentHp = getFighterHP(target);
 
   // Calculate healing amount
   let healed = 0;
@@ -536,17 +541,8 @@ export function clericalHealingTouch(caster, target, options = {}) {
     healed = CryptoSecureDice.roll("2d6") + 2;
   }
 
-  const newHp = Math.min(maxHp, currentHp + healed);
+  const newHp = clampHP(currentHp + healed, target);
   const actualHealed = newHp - currentHp;
-
-  // Update target HP (caller should update state)
-  if (target.currentHP !== undefined) {
-    target.currentHP = newHp;
-  } else if (target.currentHp !== undefined) {
-    target.currentHp = newHp;
-  } else {
-    target.hp = newHp;
-  }
 
   log?.(
     `âœ¨ ${caster.name} heals ${target.name} for ${actualHealed} HP! (${currentHp} â†’ ${newHp})`,
